@@ -89,7 +89,7 @@ Games/
 
 - Win32 原生視窗與輸入
 - DirectX 12 device、swap chain 與 command queue
-- HLSL shader pipeline 與 root signature
+- 建置期編譯並嵌入 bytecode 的 HLSL shader pipeline 與 root signature，正式執行檔不再依賴 `D3DCOMPILER_47.dll`
 - 可在建立 D3D 裝置前選用的 NVIDIA Streamline 2.12 與 DLSS Super Resolution 模組
 - DLSS color、depth、motion-vector 與 output resources
 - 可成長 GPU upload vertex／index／instance buffer 與 fence synchronization

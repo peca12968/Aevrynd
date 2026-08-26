@@ -16,11 +16,46 @@ add_library(AevryndEngine STATIC
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
 )
+
+cmake_host_system_information(RESULT WINDOWS_KITS_ROOT QUERY WINDOWS_REGISTRY "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots" VALUE "KitsRoot10")
+set(AEVRYND_FXC "${WINDOWS_KITS_ROOT}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64/fxc.exe")
+if(NOT EXISTS "${AEVRYND_FXC}")
+  file(GLOB AEVRYND_FXC_CANDIDATES "${WINDOWS_KITS_ROOT}/bin/*/x64/fxc.exe")
+  list(SORT AEVRYND_FXC_CANDIDATES COMPARE NATURAL ORDER DESCENDING)
+  if(AEVRYND_FXC_CANDIDATES)
+    list(GET AEVRYND_FXC_CANDIDATES 0 AEVRYND_FXC)
+  else()
+    message(FATAL_ERROR "Windows SDK shader compiler fxc.exe was not found")
+  endif()
+endif()
+
+set(AEVRYND_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
+function(aevrynd_compile_shader output_name source_name entry profile symbol)
+  set(output "${AEVRYND_SHADER_OUTPUT_DIR}/${output_name}")
+  add_custom_command(
+    OUTPUT "${output}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${AEVRYND_SHADER_OUTPUT_DIR}"
+    COMMAND "${AEVRYND_FXC}" /nologo /O3 /T "${profile}" /E "${entry}" /Fh "${output}" /Vn "${symbol}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
+    VERBATIM
+  )
+  set(AEVRYND_SHADER_HEADERS ${AEVRYND_SHADER_HEADERS} "${output}" PARENT_SCOPE)
+endfunction()
+
+aevrynd_compile_shader(CanvasVertexShader.h Canvas.hlsl CanvasVertexMain vs_5_0 CanvasVertexShader)
+aevrynd_compile_shader(CanvasPixelShader.h Canvas.hlsl CanvasPixelMain ps_5_0 CanvasPixelShader)
+aevrynd_compile_shader(WorldVertexShader.h World.hlsl WorldVertexMain vs_5_0 WorldVertexShader)
+aevrynd_compile_shader(InstancedVertexShader.h World.hlsl InstancedVertexMain vs_5_0 InstancedVertexShader)
+aevrynd_compile_shader(WorldPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldPixelShader)
+add_custom_target(AevryndShaders DEPENDS ${AEVRYND_SHADER_HEADERS})
+add_dependencies(AevryndEngine AevryndShaders)
+target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl ${AEVRYND_SHADER_HEADERS})
+set_source_files_properties(shaders/Canvas.hlsl shaders/World.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
 set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
-target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include")
+target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include" "${AEVRYND_SHADER_OUTPUT_DIR}")
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(AevryndEngine PUBLIC "${STREAMLINE_ROOT}/lib/x64/sl.interposer.lib" d3dcompiler windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
+target_link_libraries(AevryndEngine PUBLIC "${STREAMLINE_ROOT}/lib/x64/sl.interposer.lib" windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
 
 add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
 target_compile_options(AevryndDrawListTest PRIVATE /W4 /permissive- /utf-8)
