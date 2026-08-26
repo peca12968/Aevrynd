@@ -23,12 +23,12 @@ private:
     struct Shot{Aevrynd::Vec2 pos{};size_t target{};float speed{},damage{},splash{};TowerKind kind{};bool dead{};};
     struct Particle{Aevrynd::Vec2 pos{},velocity{};Aevrynd::Color color{};float life{},size{};};
     struct Modifiers{float enemySpeed{1},damage{1},gold{1},range{1};};
-    void Reset();void BeginWave();void SpawnEnemy(EnemyKind kind);void Fire(Tower&,size_t);void Hit(Shot&);void Burst(Aevrynd::Vec2,Aevrynd::Color,int);void UsePulse();void UseTimeLock();void TryBuildAt(Aevrynd::Vec2);
+    void Reset();void BeginWave();void SpawnEnemy(EnemyKind kind);void Fire(Tower&,size_t);void Hit(Shot&);void DefeatEnemy(Enemy&,Aevrynd::Color);void Burst(Aevrynd::Vec2,Aevrynd::Color,int);void UsePulse();void UseTimeLock();void TryBuildAt(Aevrynd::Vec2);
     void SaveGame()const;void LoadGame();void ConfirmLanguage();
     void RequestEvent();void ApplyPendingEvent();Aevrynd::Vec2 PathPosition(float)const;float TowerRange(TowerKind)const;float TowerCost(TowerKind)const;
     const char* Tr(const char* traditionalChinese,const char* english)const{return language_==Language::TraditionalChinese?traditionalChinese:english;}
     std::vector<Enemy> enemies_;std::vector<Tower> towers_;std::vector<Shot> shots_;std::vector<Particle> particles_;
-    int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{};size_t nextEnemyId_{1},gamepadSpot_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true};
+    int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{};size_t nextEnemyId_{1},gamepadSpot_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true};
     Language language_{Language::None},pendingLanguage_{Language::English};bool progressLoaded_{};TowerKind selected_{TowerKind::Bolt};Modifiers mods_{};std::mt19937 rng_{std::random_device{}()};
     std::jthread qwenThread_;std::atomic_bool qwenBusy_{false};std::mutex eventMutex_;std::optional<GeneratedEvent> pendingEvent_;std::string eventName_="SYSTEM READY",statusMessage_="WELCOME, WARDEN";
 };
