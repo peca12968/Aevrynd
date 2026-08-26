@@ -1,5 +1,6 @@
 #include <Aevrynd/Camera.h>
 #include <Aevrynd/Camera2D.h>
+#include <Aevrynd/Engine.h>
 #include <Aevrynd/Geometry3D.h>
 #include <Aevrynd/Input.h>
 #include <Aevrynd/Viewport.h>
@@ -18,6 +19,7 @@ static_assert(Dot({1,2,3},{4,5,6})==32.f);
 static_assert(Cross({1,0,0},{0,1,0}).z==1.f);
 
 int main(){
+    if(!CommandLineHasOption(L"--renderer dx12 --dlss",L"--dlss")||!CommandLineHasOption(L"--renderer \"--dlss\"",L"--dlss")||CommandLineHasOption(L"--renderer --dlss-disabled",L"--dlss")||CommandLineHasOption(L"--renderer dx12",L"--dlss")){std::cerr<<"Exact launch option parsing failed\n";return 30;}
     CameraRig2D rig2D;const Vec2 identityScreen=rig2D.WorldToScreen({100,50});if(!Near(identityScreen.x,100)||!Near(identityScreen.y,50)){std::cerr<<"Default 2D camera identity failed\n";return 26;}
     rig2D.SetCamera({{740,410},{1280,720},1.5f,.3f});const Vec2 worldPoint{812,477},screenPoint=rig2D.WorldToScreen(worldPoint),roundTrip=rig2D.ScreenToWorld(screenPoint),transformedPoint=TransformPoint(rig2D.DrawTransform(),worldPoint);if(!Near(roundTrip.x,worldPoint.x,.01f)||!Near(roundTrip.y,worldPoint.y,.01f)||!Near(transformedPoint.x,screenPoint.x,.01f)||!Near(transformedPoint.y,screenPoint.y,.01f)){std::cerr<<"2D camera coordinate round trip failed\n";return 27;}
     const Vec2 parallaxPoint=rig2D.WorldToScreen({640,360},.25f);if(parallaxPoint.x>=640||parallaxPoint.y>=360){std::cerr<<"2D camera parallax failed\n";return 28;}

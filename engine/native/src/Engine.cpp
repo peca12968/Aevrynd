@@ -4,9 +4,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cwctype>
 #include <stdexcept>
 
 namespace Aevrynd {
+bool CommandLineHasOption(std::wstring_view commandLine,std::wstring_view option){std::size_t position{};while(position<commandLine.size()){while(position<commandLine.size()&&std::iswspace(commandLine[position]))++position;if(position==commandLine.size())break;const bool quoted=commandLine[position]==L'"';if(quoted)++position;const std::size_t start=position;while(position<commandLine.size()&&(quoted?commandLine[position]!=L'"':!std::iswspace(commandLine[position])))++position;if(commandLine.substr(start,position-start)==option)return true;if(quoted&&position<commandLine.size())++position;}return false;}
+bool IsDLSSStartupRequested(const wchar_t* commandLine){return(commandLine&&CommandLineHasOption(commandLine,L"--dlss"))||GetEnvironmentVariableW(L"AEVRYND_ENABLE_DLSS",nullptr,0)>0;}
 Engine::Engine(EngineConfig config):config_(std::move(config)),renderer_(std::make_unique<D3D12Renderer>()){}
 Engine::~Engine(){if(game_)game_->OnStop(*this);if(renderer_)renderer_->WaitIdle();}
 void Engine::SetTitle(const std::wstring& title){if(hwnd_)SetWindowTextW(hwnd_,title.c_str());}

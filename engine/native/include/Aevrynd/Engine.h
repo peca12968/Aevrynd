@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include "Audio.h"
 #include "Game.h"
@@ -12,6 +13,8 @@
 #include "Scene2D.h"
 
 namespace Aevrynd {
+[[nodiscard]] bool CommandLineHasOption(std::wstring_view commandLine,std::wstring_view option);
+[[nodiscard]] bool IsDLSSStartupRequested(const wchar_t* commandLine);
 struct Mesh3D;
 struct MeshResource3D;
 struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; };
