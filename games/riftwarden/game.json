@@ -4,7 +4,7 @@
   "subtitle": "RIFTWARDEN",
   "description": "以本地 Qwen3.8-27B 生成動態事件的原生 2.5D 塔防遊戲。",
   "version": "1.27.0",
-  "engineVersion": "1.21.0",
+  "engineVersion": "1.22.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "engineTelemetry": ["audio-device-state", "audio-voice-lifecycle", "gpu-timestamp-query", "triple-buffered-query-readback"],

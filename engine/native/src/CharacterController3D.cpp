@@ -1,4 +1,5 @@
 #include "Aevrynd/CharacterController3D.h"
+#include "Aevrynd/CollisionWorld3D.h"
 #include "Aevrynd/Geometry3D.h"
 #include <algorithm>
 #include <cmath>
@@ -14,5 +15,8 @@ void CharacterController3D::Step(CharacterControl3D control,std::span<const BoxC
     if(grounded_&&!wasGrounded)++stats_.landings;++stats_.steps;
 }
 
+void CharacterController3D::Step(CharacterControl3D control,const CollisionWorld3D& world,float deltaTime,uint32_t layerMask,uint32_t characterLayer){world.CollectBoxes(collisionScratch_,{layerMask,characterLayer,false});Step(control,collisionScratch_,deltaTime);}
+
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);float nearest=desiredDistance;for(const BoxCollider3D& collider:colliders){float distance{};if(RayIntersectsAabb(ray,collider.center,collider.extents,nearest,&distance))nearest=(std::min)(nearest,(std::max)(.1f,distance-(std::max)(0.f,padding)));}camera.position=target+ray.direction*nearest;camera.target=target;return camera;}
+Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding,uint32_t layerMask,uint32_t cameraLayer){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);const CollisionRayHit3D hit=world.Raycast(ray,desiredDistance,{layerMask,cameraLayer,false});if(hit)camera.position=target+ray.direction*(std::max)(.1f,hit.distance-(std::max)(0.f,padding));camera.target=target;return camera;}
 }

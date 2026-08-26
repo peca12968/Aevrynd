@@ -1,8 +1,8 @@
 #pragma once
 #include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
-#include <vector>
 
 class CharacterLabGame final:public Aevrynd::IGame {
 public:
@@ -13,7 +13,7 @@ public:
 private:
     void BuildEnvironment();
     Aevrynd::CharacterController3D controller_{};
-    std::vector<Aevrynd::BoxCollider3D> colliders_;
+    Aevrynd::CollisionWorld3D collisionWorld_;
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::SceneQueryStats3D queryStats_{};

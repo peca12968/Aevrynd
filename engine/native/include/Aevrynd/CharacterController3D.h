@@ -1,10 +1,11 @@
 #pragma once
 #include "Camera.h"
+#include "CollisionWorld3D.h"
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace Aevrynd {
-struct BoxCollider3D {Vec3 center{},extents{.5f,.5f,.5f};};
 struct CharacterControl3D {Vec3 movement{};bool jump{};};
 struct CharacterControllerSettings3D {
     float radius{.45f};
@@ -21,6 +22,7 @@ public:
     explicit CharacterController3D(CharacterControllerSettings3D settings={}):settings_(settings){}
     void Reset(Vec3 feetPosition={});
     void Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,float deltaTime);
+    void Step(CharacterControl3D control,const CollisionWorld3D& world,float deltaTime,uint32_t layerMask=0xffffffffu,uint32_t characterLayer=1);
     Vec3 Position()const{return position_;}
     Vec3 Velocity()const{return velocity_;}
     Vec3 Center()const{return position_+Vec3{0,settings_.height*.5f,0};}
@@ -33,7 +35,9 @@ private:
     CharacterControllerStats3D stats_{};
     Vec3 position_{},velocity_{};
     bool grounded_{};
+    std::vector<BoxCollider3D> collisionScratch_;
 };
 
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding=.2f);
+Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding=.2f,uint32_t layerMask=0xffffffffu,uint32_t cameraLayer=1);
 }
