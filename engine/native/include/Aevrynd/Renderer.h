@@ -70,6 +70,9 @@ struct RendererStats {
     size_t residentMeshes{};
     size_t residentMeshReferences{};
     size_t residentMeshBytes{};
+    size_t residentMeshResources{};
+    size_t peakResidentMeshResources{};
+    uint64_t meshResourceAllocations{};
     size_t meshMemoryBudgetBytes{};
     uint64_t meshCacheHits{};
     uint64_t meshBudgetRejections{};
