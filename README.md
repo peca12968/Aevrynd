@@ -2,14 +2,14 @@
 
 Aevrynd Engine（艾弗林德引擎）是 Aevrynd Studios 自研、可擴充的 Windows 原生遊戲引擎與遊戲集合。核心、遊戲邏輯、輸入與畫面均由 C++20 實作，使用 Win32 視窗與 DirectX 12 呈現，並能透過本機 Qwen 模型生成遊戲事件，不需要瀏覽器或 Node.js。
 
-第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）。每款遊戲各自封裝於 `games/<game-id>/`，並共用 `engine/native/` 的 Aevrynd Engine 能力。
+第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）。每款遊戲各自封裝於 `遊戲/<遊戲名稱>/`，並共用 `引擎/native/` 的 Aevrynd Engine 能力。
 
 ## 啟動遊戲
 
 雙擊 `啟動遊戲.bat`。它會在背景啟動本地 Qwen3.8-27B，接著執行：
 
 ```text
-games/riftwarden/dist/Riftwarden-DX12.exe
+遊戲/裂隙守望者/dist/Riftwarden-DX12.exe
 ```
 
 結束時可關閉遊戲視窗；若也要釋放本地模型，雙擊 `停止遊戲.bat`。
@@ -53,7 +53,7 @@ games/riftwarden/dist/Riftwarden-DX12.exe
 遊戲會自動保存語言設定與進度，包括波次、核心生命、金幣、擊殺數，以及每座防禦塔的位置、種類和等級。存檔位於：
 
 ```text
-games/riftwarden/saves/riftwarden-save.json
+遊戲/裂隙守望者/saves/riftwarden-save.json
 ```
 
 若在波次進行中離開，下次會保留資源與防禦塔，並從該波開頭重新挑戰，避免載入不完整的戰鬥狀態。
@@ -63,24 +63,19 @@ games/riftwarden/saves/riftwarden-save.json
 ```text
 Games/
 ├─ CMakeLists.txt
-├─ engine/native/                    # 共用 C++ 引擎靜態函式庫
-│  ├─ include/Aevrynd/
-│  │  ├─ Engine.h
-│  │  ├─ Game.h
-│  │  ├─ Input.h
-│  │  ├─ Math.h
-│  │  └─ Renderer.h
-│  └─ src/
-│     ├─ Engine.cpp                  # Win32 + fixed timestep
-│     └─ D3D12Renderer.cpp           # DirectX 12 GPU backend
-├─ games/riftwarden/
-│  ├─ game.json
-│  ├─ native/                        # 此遊戲的 C++ 邏輯
-│  └─ dist/Riftwarden-DX12.exe       # 可執行遊戲
-├─ runtime/
-│  ├─ llama.cpp/
-│  └─ models/Qwen3.8-27B-UD-Q4_K_M.gguf
-└─ legacy-web/                       # 舊版封存，不會被啟動
+├─ 引擎/
+│  ├─ native/                        # 共用 C++ 引擎靜態函式庫
+│  │  ├─ include/Aevrynd/
+│  │  └─ src/
+│  ├─ runtime/                       # llama.cpp 與本地模型
+│  ├─ third_party/                   # 第三方 SDK
+│  └─ build/                         # 原生建置輸出
+└─ 遊戲/
+   └─ 裂隙守望者/
+      ├─ game.json
+      ├─ native/                     # 此遊戲的 C++ 邏輯
+      ├─ dist/Riftwarden-DX12.exe    # 可執行遊戲
+      └─ legacy-web/                 # 舊版封存，不會被啟動
 ```
 
 ## 引擎能力
@@ -106,7 +101,7 @@ Games/
 powershell -ExecutionPolicy Bypass -File .\build-native.ps1
 ```
 
-新增遊戲時，在 `games/<game-id>/native/` 建立自己的 CMake target，連結共用的 `AevryndEngine`：
+新增遊戲時，在 `遊戲/<遊戲名稱>/native/` 建立自己的 CMake target，連結共用的 `AevryndEngine`：
 
 ```cmake
 target_link_libraries(MyGame PRIVATE AevryndEngine)
@@ -124,7 +119,7 @@ target_link_libraries(MyGame PRIVATE AevryndEngine)
 - `DLSS OFF 1280x720`：原生解析度 fallback
 - `DLSS N/A`：GPU、驅動或 Streamline plugin 不支援
 
-必要的 NVIDIA runtime 已隨遊戲放在 `games/riftwarden/dist/`：
+必要的 NVIDIA runtime 已隨遊戲放在 `遊戲/裂隙守望者/dist/`：
 
 ```text
 sl.interposer.dll
@@ -138,5 +133,5 @@ nvngx_dlss.dll
 可執行測試：
 
 ```text
-build/bin/Release/RiftwardenQwenTest.exe
+引擎/build/bin/Release/RiftwardenQwenTest.exe
 ```

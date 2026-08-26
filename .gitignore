@@ -1,5 +1,5 @@
 # RiftForge build outputs
-/build/
+/引擎/build/
 /.vs/
 /.vscode/
 **/CMakeFiles/
@@ -8,22 +8,22 @@
 **/*.pdb
 
 # Packaged games and player saves
-/games/*/dist/
-/games/*/saves/
+/遊戲/*/dist/
+/遊戲/*/saves/
 
 # Local AI runtime and large model weights
-/runtime/*
-!/runtime/README.md
+/引擎/runtime/*
+!/引擎/runtime/README.md
 *.gguf
 *.safetensors
 
 # Downloaded third-party SDKs
-/third_party/*
-!/third_party/README.md
+/引擎/third_party/*
+!/引擎/third_party/README.md
 *.zip
 
 # Archived browser prototype and local runtimes
-/legacy-web/
+/遊戲/*/legacy-web/
 
 # Runtime logs and temporary files
 *.log

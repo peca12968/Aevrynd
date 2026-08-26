@@ -5,7 +5,7 @@
 預期結構：
 
 ```text
-runtime/
+引擎/runtime/
 ├─ llama.cpp/
 │  └─ llama-server.exe
 └─ models/
