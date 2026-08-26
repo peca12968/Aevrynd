@@ -38,10 +38,12 @@ struct DrawListStats2D {
     size_t primitiveCullTests{},primitiveCulled{},primitiveCulledTriangles{};
     size_t ellipseSegments{},ellipseTrigonometricEvaluations{},ellipseTrigonometricEvaluationsSaved{};
     size_t sharedVertexTransforms{},sharedVertexTransformsSaved{};
+    size_t primitiveColorPacks{},primitiveColorPacksSaved{};
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalEllipseSegments{},totalEllipseTrigonometricEvaluationsSaved{};
     uint64_t totalSharedVertexTransforms{},totalSharedVertexTransformsSaved{};
+    uint64_t totalPrimitiveColorPacks{},totalPrimitiveColorPacksSaved{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
 };
 struct SystemGlyphCacheStats2D {
@@ -184,10 +186,10 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=0;}
-    void SetTranslation(Vec2 translation){transform_.translation=translation;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=0;}
+    void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
-    void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);}
+    void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
     Transform2D CurrentTransform2D()const{return transform_;}
     void ResetTransform2D(){SetTransform2D({});}
     void SetClipRect(Vec2 minimum,Vec2 maximum){clipMinimum_={(std::min)(minimum.x,maximum.x),(std::min)(minimum.y,maximum.y)};clipMaximum_={(std::max)(minimum.x,maximum.x),(std::max)(minimum.y,maximum.y)};clipEnabled_=true;}
@@ -226,12 +228,15 @@ public:
     std::vector<uint32_t> worldIndices;
     std::vector<MeshInstance3D> meshInstances;
 private:
-    Vec2 ApplyTransform2D(Vec2 point)const{const Vec2 local{(point.x-transform_.pivot.x)*transform_.scale.x,(point.y-transform_.pivot.y)*transform_.scale.y};return{local.x*transformCosine_-local.y*transformSine_+transform_.pivot.x+transform_.translation.x,local.x*transformSine_+local.y*transformCosine_+transform_.pivot.y+transform_.translation.y};}
-    void SubmitTransformedTriangle(Vec2 a,Vec2 b,Vec2 c,Color color);
+    void UpdateTransformIdentity2D(){transformIdentity_=transform_.translation.x==0.f&&transform_.translation.y==0.f&&transform_.scale.x==1.f&&transform_.scale.y==1.f&&transform_.rotation==0.f;}
+    Vec2 ApplyTransform2D(Vec2 point)const{if(transformIdentity_)return point;const Vec2 local{(point.x-transform_.pivot.x)*transform_.scale.x,(point.y-transform_.pivot.y)*transform_.scale.y};return{local.x*transformCosine_-local.y*transformSine_+transform_.pivot.x+transform_.translation.x,local.x*transformSine_+local.y*transformCosine_+transform_.pivot.y+transform_.translation.y};}
+    void SubmitTransformedTriangle(Vec2 a,Vec2 b,Vec2 c,float alpha,uint32_t packedColor);
     void RecordSharedVertexTransforms(size_t transforms,size_t saved);
+    void RecordPrimitiveColorPacks(size_t packs,size_t saved);
     bool CullTessellatedPrimitive(Vec2 minimum,Vec2 maximum,Color color,size_t triangles);
     Transform2D transform_{};
     float transformCosine_{1.f},transformSine_{};
+    bool transformIdentity_{true};
     Matrix4 viewProjection_{Matrix4::Identity()};
     DirectionalLight3D light_{};
     Atmosphere3D atmosphere_{};
