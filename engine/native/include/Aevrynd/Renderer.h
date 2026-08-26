@@ -35,6 +35,7 @@ struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};fl
 struct DrawListStats2D {
     size_t inputTriangles{},submittedTriangles{},culledTriangles{},peakSubmittedTriangles{};
     size_t textGlyphs{},textSourcePixels{},textSpans{};
+    size_t textContainmentTests{},textContainedSpans{},textContainmentBypassedTriangles{};
     size_t primitiveCullTests{},primitiveCulled{},primitiveCulledTriangles{};
     size_t primitiveContained{},primitiveContainedTriangles{};
     size_t ellipseSegments{},ellipseTrigonometricEvaluations{},ellipseTrigonometricEvaluationsSaved{};
@@ -47,6 +48,7 @@ struct DrawListStats2D {
     uint64_t totalSharedVertexTransforms{},totalSharedVertexTransformsSaved{};
     uint64_t totalPrimitiveColorPacks{},totalPrimitiveColorPacksSaved{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
+    uint64_t totalTextContainmentTests{},totalTextContainedSpans{},totalTextContainmentBypassedTriangles{};
 };
 struct SystemGlyphCacheStats2D {
     size_t residentGlyphs{},residentBytes{},peakResidentGlyphs{},peakResidentBytes{};
@@ -188,7 +190,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -233,8 +235,10 @@ private:
     enum class PrimitiveClipResult:uint8_t {Culled,Contained,Partial};
     void UpdateTransformIdentity2D(){transformIdentity_=transform_.translation.x==0.f&&transform_.translation.y==0.f&&transform_.scale.x==1.f&&transform_.scale.y==1.f&&transform_.rotation==0.f;}
     Vec2 ApplyTransform2D(Vec2 point)const{if(transformIdentity_)return point;const Vec2 local{(point.x-transform_.pivot.x)*transform_.scale.x,(point.y-transform_.pivot.y)*transform_.scale.y};return{local.x*transformCosine_-local.y*transformSine_+transform_.pivot.x+transform_.translation.x,local.x*transformSine_+local.y*transformCosine_+transform_.pivot.y+transform_.translation.y};}
+    bool ContainsTransformedBounds(Vec2 minimum,Vec2 maximum)const;
     void SubmitTransformedTriangle(Vec2 a,Vec2 b,Vec2 c,float alpha,uint32_t packedColor);
     void SubmitContainedTriangle(Vec2 a,Vec2 b,Vec2 c,uint32_t packedColor);
+    void SubmitContainedTextQuad(Vec2 center,Vec2 size,Color color);
     void RecordSharedVertexTransforms(size_t transforms,size_t saved);
     void RecordPrimitiveColorPacks(size_t packs,size_t saved);
     PrimitiveClipResult ClassifyTransformedPrimitive(std::span<const Vec2> points,float alpha,size_t triangles);
