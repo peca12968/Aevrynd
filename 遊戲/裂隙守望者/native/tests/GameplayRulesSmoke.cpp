@@ -14,5 +14,15 @@ int main() {
         std::cerr << "Combo and event gold modifiers must stack predictably\n";
         return 3;
     }
+    const auto first = RiftwardenRules::ComposeWave(1);
+    if (first.grunt != 9 || first.swift != 0 || first.tank != 0 || first.boss != 0) {
+        std::cerr << "The first wave composition is incorrect\n";
+        return 4;
+    }
+    const auto fourth = RiftwardenRules::ComposeWave(4);
+    if (fourth.grunt != 9 || fourth.swift != 3 || fourth.tank != 2 || fourth.boss != 1) {
+        std::cerr << "The fourth wave preview must match its spawn rules\n";
+        return 5;
+    }
     return 0;
 }
