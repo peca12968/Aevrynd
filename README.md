@@ -2,7 +2,7 @@
 
 Aevrynd Engine（艾弗林德引擎）是 Aevrynd Studios 自研、可擴充的 Windows 原生遊戲引擎與遊戲集合。核心、遊戲邏輯、輸入與畫面均由 C++20 實作，使用 Win32 視窗與 DirectX 12 呈現，並能透過本機 Qwen 模型生成遊戲事件，不需要瀏覽器或 Node.js。
 
-第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）。每款遊戲各自封裝於 `games/<game-name>/`，並共用 `engine/native/` 的 Aevrynd Engine 能力。
+第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）；`games/engine_lab/` 則是自動輪播不同相機並輸出場景統計的 3D 引擎驗證遊戲。每款遊戲各自封裝於 `games/<game-name>/`，並共用 `engine/native/` 的 Aevrynd Engine 能力。
 
 ## 啟動遊戲
 
@@ -77,6 +77,7 @@ Games/
 │  ├─ third_party/                   # 第三方 SDK
 │  └─ build/                         # 原生建置輸出
 └─ games/
+   ├─ engine_lab/                   # 3D 相機與場景效能驗證遊戲
    └─ riftwarden/
       ├─ game.json
       ├─ native/                     # 此遊戲的 C++ 邏輯
@@ -97,6 +98,7 @@ Games/
 - 頂點色彩採 GPU 原生 RGBA8 正規化格式，每頂點由 24 bytes 降為 12 bytes；雙緩衝最大上傳配置由 11,520,000 bytes 降為 5,760,000 bytes
 - Renderer telemetry 可分別追蹤提交幀、頂點／bytes、峰值、裁切、資源等待與 DLSS 驗證等待
 - 通用左手座標相機支援透視與正交投影，並提供第一人稱、第三人稱、上帝視角與等角 2.5D 預設
+- Scene3D 提供方塊、三角形、線段、視錐裁切、穩定遠近排序與可見／裁切統計；目前作為 GPU 深度管線前的驗證層
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
@@ -120,6 +122,12 @@ Games/
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-native.ps1
+```
+
+建置獨立 3D 驗證遊戲：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
 ```
 
 新增遊戲時，在 `games/<game-name>/native/` 建立自己的 CMake target，連結共用的 `AevryndEngine`：

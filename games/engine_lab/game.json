@@ -1,0 +1,11 @@
+{
+  "id": "engine_lab",
+  "title": "Aevrynd Engine Lab",
+  "description": "Automated 3D camera, projection, visibility, sorting, and renderer telemetry validation game.",
+  "version": "0.1.0",
+  "engineVersion": "1.7.0",
+  "platform": "windows-x64",
+  "renderer": "directx12",
+  "entry": "dist/Aevrynd-Engine-Lab.exe",
+  "features": ["scene3d", "first-person", "third-person", "god-view", "isometric-2.5d", "automatic-camera-cycle", "renderer-telemetry"]
+}
