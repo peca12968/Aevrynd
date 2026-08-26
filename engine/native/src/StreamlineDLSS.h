@@ -12,7 +12,7 @@ public:
     void Shutdown();
     void BeginScene(ID3D12GraphicsCommandList*,const float clear[4]);
     bool Evaluate(ID3D12GraphicsCommandList*,ID3D12Resource* backBuffer);
-    void ValidateOutput();
+    bool ValidateOutput();
     bool Supported()const{return supported_;}bool Enabled()const{return enabled_&&supported_;}
     void Toggle();
     uint32_t RenderWidth()const{return Enabled()?renderWidth_:outputWidth_;}

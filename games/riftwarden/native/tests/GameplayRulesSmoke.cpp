@@ -31,6 +31,10 @@ static_assert(RiftwardenRules::UpgradeCardAt(520.f, 370.f) == -1);
 static_assert(RiftwardenRules::UpgradeCardAt(640.f, 500.f) == -1);
 static_assert(RiftwardenRules::MoveUpgradeSelection(0, -1) == 2);
 static_assert(RiftwardenRules::MoveUpgradeSelection(2, 1) == 0);
+static_assert(RiftwardenRules::ShakeAmplitude(.2f, .4f, 8.f) == 4.f);
+static_assert(RiftwardenRules::ShakeAmplitude(.6f, .4f, 8.f) == 8.f);
+static_assert(RiftwardenRules::ShakeAmplitude(0.f, .4f, 8.f) == 0.f);
+static_assert(RiftwardenRules::ShakeAmplitude(.2f, 0.f, 8.f) == 0.f);
 
 int main() {
     if (RiftwardenRules::ComboReward(17, 1, 1.f) != 17) {

@@ -4,9 +4,9 @@
 namespace Aevrynd {
 struct Vec2 {
     float x{}, y{};
-    Vec2 operator+(Vec2 b) const { return {x+b.x,y+b.y}; }
-    Vec2 operator-(Vec2 b) const { return {x-b.x,y-b.y}; }
-    Vec2 operator*(float s) const { return {x*s,y*s}; }
+    constexpr Vec2 operator+(Vec2 b) const { return {x+b.x,y+b.y}; }
+    constexpr Vec2 operator-(Vec2 b) const { return {x-b.x,y-b.y}; }
+    constexpr Vec2 operator*(float s) const { return {x*s,y*s}; }
 };
 struct Color { float r{},g{},b{},a{1}; };
 inline float Length(Vec2 v){ return std::sqrt(v.x*v.x+v.y*v.y); }

@@ -98,4 +98,11 @@ constexpr int UpgradeCardAt(float x, float y) {
 constexpr int MoveUpgradeSelection(int current, int direction) {
     return (current + direction + 3) % 3;
 }
+
+// 鏡頭震動採線性衰減，結束時必須完全回到穩定畫面。
+constexpr float ShakeAmplitude(float remaining, float duration, float strength) {
+    if (remaining <= 0.f || duration <= 0.f || strength <= 0.f) return 0.f;
+    const float ratio = (std::min)(1.f, remaining / duration);
+    return strength * ratio;
+}
 }

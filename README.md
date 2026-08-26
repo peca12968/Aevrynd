@@ -90,10 +90,13 @@ Games/
 - NVIDIA Streamline 2.12 與 DLSS Super Resolution
 - DLSS color、depth、motion-vector 與 output resources
 - GPU upload vertex buffer 與 fence synchronization
+- 雙緩衝持久映射頂點上傳與逐幀 fence，CPU 只在重用忙碌資源或驗證 DLSS 輸出時等待
+- DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
 - 可重用的穩定深度排序，讓不同類型的 2.5D 場景物件依地面高度正確遮擋
+- 可重用的畫布平移，讓世界層能套用鏡頭震動而 HUD 與選單維持穩定
 - 依桌面工作區等比例縮放視窗，保留 1280×720 邏輯座標與輸入映射
 - 2.5D 路徑、深度感地形、塔、敵人、投射物與粒子
 - C++ WinHTTP 非同步呼叫本地 llama.cpp
