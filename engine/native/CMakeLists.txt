@@ -7,6 +7,7 @@ add_library(AevryndEngine STATIC
   src/Engine.cpp
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
+  src/Navigation3D.cpp
   src/StreamlineDLSS.cpp
   src/WorldStreamer3D.cpp
 )
@@ -60,6 +61,11 @@ add_executable(AevryndWorldStreamer3DTest tests/WorldStreamer3DSmoke.cpp)
 target_compile_options(AevryndWorldStreamer3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldStreamer3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldStreamer3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldStreamer3DTest>'")
+
+add_executable(AevryndNavigation3DTest tests/Navigation3DSmoke.cpp)
+target_compile_options(AevryndNavigation3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndNavigation3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndNavigation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndNavigation3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)

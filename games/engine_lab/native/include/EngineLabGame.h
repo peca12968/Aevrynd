@@ -2,6 +2,7 @@
 #include <Aevrynd/Animation3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Effects2D.h>
+#include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
 
@@ -29,6 +30,8 @@ private:
     Aevrynd::AnimationClip3D animationClip_{};
     Aevrynd::WorldStreamer3D worldStreamer_{};
     Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
+    Aevrynd::NavigationGrid3D navigationGrid_{};
+    Aevrynd::NavigationPath3D navigationPath_{};
     int cameraMode_{};
     int effectCycle_{-1};
     bool automatic_{true};

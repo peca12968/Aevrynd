@@ -4,6 +4,7 @@
 #include <Aevrynd/CharacterController3D.h>
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
+#include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
 #include <vector>
@@ -17,9 +18,10 @@ public:
 private:
     struct Building {FrontierWorldRules::BuildingKind kind{};Aevrynd::Vec3 position{};float yaw{};Aevrynd::ColliderHandle3D collider{};};
     enum class MonsterKind {Wolf,Golem};
-    struct Monster {Aevrynd::Vec3 position{};float health{},maximumHealth{},speed{},attackCooldown{};MonsterKind kind{};bool alive{true};};
+    struct Monster {Aevrynd::Vec3 position{};float health{},maximumHealth{},speed{},attackCooldown{};MonsterKind kind{};bool alive{true};std::vector<Aevrynd::Vec3> path;std::size_t pathIndex{};float repathClock{};};
     void PopulateWorld();
     void UpdateMonsters(float deltaTime);
+    void RebuildNavigation();
     void Attack();
     bool Build(FrontierWorldRules::BuildingKind kind,Aevrynd::Vec3 position,float yaw);
     void AddEnvironment();
@@ -36,6 +38,7 @@ private:
     Aevrynd::AnimationPlayer3D playerAnimation_{};
     Aevrynd::WorldStreamer3D worldStreamer_{};
     Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
+    Aevrynd::NavigationGrid3D navigationGrid_{};
     std::vector<Building> buildings_;
     std::vector<Monster> monsters_;
     Aevrynd::Camera3D camera_{};
@@ -43,5 +46,7 @@ private:
     float yaw_{},pitch_{.15f},attackCooldown_{},attackAnimationClock_{},automaticClock_{};
     int health_{100},wood_{120},stone_{80},experience_{},level_{1},kills_{};
     uint64_t attacks_{},hits_{},buildAttempts_{};
-    bool firstPerson_{},automatic_{true},moving_{};
+    uint64_t navigationSearches_{},navigationVisited_{};
+    std::size_t navigationBlockedCells_{},navigationPathPoints_{};
+    bool firstPerson_{},automatic_{true},moving_{},navigationDirty_{true};
 };
