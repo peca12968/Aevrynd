@@ -103,6 +103,8 @@ Games/
 - Scene3D 以保守球體同時支援透視與正交視錐裁切；6,561 mesh 壓力基準只提交 583 個可見物件，上傳量減少 91.1%，CPU 提交平均由 1,803 µs 降至 321 µs
 - 2D UI 與 3D 世界使用獨立頂點批次與 pipeline state，同一幀先深度繪製世界、再疊加 HUD
 - Mesh3D 提供可重用索引拓撲、位置／旋轉／縮放變換與材質 tint；Scene3D 將多個 mesh 合併為單一 indexed draw
+- MeshHandle3D 將任意合法索引網格一次上傳至 GPU DEFAULT heap，並以三緩衝 matrix／tint instance stream 合併相同 mesh 的 `DrawIndexedInstanced`；583 個可見 mesh 的逐幀上傳由 307,824 bytes 降至 39,644 bytes，再減少 87.1%
+- GPU 實例化同時保留 CPU 展開 fallback 與資源建立／銷毀統計；同一壓力場景的 Scene3D 提交平均由 323 µs 降至約 220 µs
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程

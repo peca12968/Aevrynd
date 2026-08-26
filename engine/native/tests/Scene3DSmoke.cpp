@@ -25,5 +25,7 @@ int main(){
     if(stats.meshInstances!=2||stats.visibleMeshInstances!=1||stats.culledMeshInstances!=1||stats.visibleTriangles!=12||stats.culledTriangles!=12||draw.worldVertices.size()!=24||draw.worldIndices.size()!=36){std::cerr<<"Mesh frustum culling failed\n";return 5;}
     draw.Clear();stats=scene.Submit(draw,camera,{1280,720},{false});
     if(stats.visibleMeshInstances!=2||stats.culledMeshInstances!=0||draw.worldVertices.size()!=48||draw.worldIndices.size()!=72){std::cerr<<"Frustum culling override failed\n";return 6;}
+    scene.SetBoxMesh({7});draw.Clear();stats=scene.Submit(draw,camera,{1280,720});
+    if(stats.visibleMeshInstances!=1||draw.meshInstances.size()!=1||draw.meshInstances.front().mesh.value!=7||!draw.worldVertices.empty()||!draw.worldIndices.empty()){std::cerr<<"Resident scene mesh submission failed\n";return 7;}
     return 0;
 }

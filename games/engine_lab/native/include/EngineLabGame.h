@@ -11,7 +11,9 @@ public:
 private:
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
+    Aevrynd::MeshHandle3D boxMesh_{};
     int cameraMode_{};
     bool automatic_{true};
     bool cullingEnabled_{true};
+    bool instancingEnabled_{true};
 };

@@ -17,6 +17,8 @@ public:
     void Triangle(Vec3 a,Vec3 b,Vec3 c,Color color){triangles_.push_back({a,b,c,color});}
     void Line(Vec3 a,Vec3 b,float width,Color color){lines_.push_back({a,b,width,color});}
     void Box(Vec3 center,Vec3 size,Color color){boxes_.push_back({Transform3D{center,{},size},Material3D{color}});}
+    void SetBoxMesh(MeshHandle3D mesh){boxMesh_=mesh;}
+    MeshHandle3D BoxMesh()const{return boxMesh_;}
 
     // CPU 路徑保留作為投影與排序的參考實作，方便對照硬體深度結果。
     Scene3DStats Render(DrawList& draw,const Camera3D& camera,Vec2 viewport)const{
@@ -36,7 +38,7 @@ public:
         draw.SetViewProjection(CreateViewProjectionMatrix(camera,viewport.x/(std::max)(1.f,viewport.y)));
         for(const auto& triangle:triangles_)draw.WorldTriangle(triangle.a,triangle.b,triangle.c,triangle.color);
         Scene3DStats stats{};stats.inputTriangles=TriangleCount();stats.visibleTriangles=triangles_.size();stats.inputLines=lines_.size();stats.meshInstances=boxes_.size();const float aspect=viewport.x/(std::max)(1.f,viewport.y);const Mesh3D& boxMesh=UnitBox();
-        for(const Box3D& box:boxes_){const Vec3 scale=box.transform.scale;const float radius=.5f*std::sqrt(scale.x*scale.x+scale.y*scale.y+scale.z*scale.z);if(options.frustumCulling&&!SphereIntersectsFrustum(box.transform.position,radius,camera,aspect)){++stats.culledMeshInstances;continue;}SubmitMesh(draw,boxMesh,box.transform,box.material);++stats.visibleMeshInstances;}
+        for(const Box3D& box:boxes_){const Vec3 scale=box.transform.scale;const float radius=.5f*std::sqrt(scale.x*scale.x+scale.y*scale.y+scale.z*scale.z);if(options.frustumCulling&&!SphereIntersectsFrustum(box.transform.position,radius,camera,aspect)){++stats.culledMeshInstances;continue;}if(boxMesh_)draw.MeshInstance(boxMesh_,box.transform.Matrix(),box.material.tint);else SubmitMesh(draw,boxMesh,box.transform,box.material);++stats.visibleMeshInstances;}
         stats.visibleTriangles+=stats.visibleMeshInstances*12;stats.culledTriangles=stats.inputTriangles-stats.visibleTriangles;const Vec3 cameraForward=Normalize(camera.target-camera.position);
         for(const auto& line:lines_){const Vec3 direction=Normalize(line.b-line.a);if(Length(direction)<.0001f)continue;Vec3 side=Normalize(Cross(direction,cameraForward));if(Length(side)<.0001f)side=Normalize(Cross(direction,camera.up));if(Length(side)<.0001f)continue;side=side*(line.width*.0125f);const uint32_t base=uint32_t(draw.worldVertices.size()),color=PackColorRgba8(line.color);for(Vec3 point:{line.a-side,line.a+side,line.b+side,line.b-side})draw.worldVertices.push_back({point.x,point.y,point.z,color});draw.worldIndices.insert(draw.worldIndices.end(),{base,base+1,base+2,base,base+2,base+3});++stats.visibleLines;}
         return stats;
@@ -54,5 +56,6 @@ private:
     std::vector<Triangle3D> triangles_;
     std::vector<Line3D> lines_;
     std::vector<Box3D> boxes_;
+    MeshHandle3D boxMesh_{};
 };
 }

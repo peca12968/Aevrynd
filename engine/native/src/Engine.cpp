@@ -1,4 +1,5 @@
 #include "Aevrynd/Engine.h"
+#include "Aevrynd/Mesh3D.h"
 #include <windowsx.h>
 #include <algorithm>
 #include <chrono>
@@ -9,6 +10,7 @@ namespace Aevrynd {
 Engine::Engine(EngineConfig config):config_(std::move(config)),renderer_(std::make_unique<D3D12Renderer>()){}
 Engine::~Engine(){if(game_)game_->OnStop(*this);if(renderer_)renderer_->WaitIdle();}
 void Engine::SetTitle(const std::wstring& title){if(hwnd_)SetWindowTextW(hwnd_,title.c_str());}
+MeshHandle3D Engine::CreateMesh3D(const Mesh3D& mesh){return mesh.Valid()?renderer_->CreateMesh(mesh.vertices,mesh.indices):MeshHandle3D{};}
 
 int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     game_=std::move(game);SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
