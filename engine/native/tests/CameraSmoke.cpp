@@ -1,6 +1,7 @@
 #include <Aevrynd/Camera.h>
 #include <Aevrynd/Geometry3D.h>
 #include <Aevrynd/Input.h>
+#include <Aevrynd/Viewport.h>
 #include <cmath>
 #include <iostream>
 
@@ -16,8 +17,11 @@ static_assert(Dot({1,2,3},{4,5,6})==32.f);
 static_assert(Cross({1,0,0},{0,1,0}).z==1.f);
 
 int main(){
+    const CanvasViewport wide=CalculateCanvasViewport({1280,720},{1024,768}),fit=CalculateCanvasViewport({1280,720},{853,480});
+    if(!Near(wide.x,0)||!Near(wide.y,96)||!Near(wide.width,1024)||!Near(wide.height,576)||!Near(fit.x,0)||!Near(fit.y,.09375f)){std::cerr<<"Canvas letterbox calculation failed\n";return 21;}
+    const Vec2 mapped=MapClientToCanvas({512,384},wide);if(!Near(mapped.x,640)||!Near(mapped.y,360)||!wide.Contains({512,384})||wide.Contains({512,32})){std::cerr<<"Canvas input mapping failed\n";return 22;}
     Input input;input.SetMouse({10,10});input.SetMouse({15,7});input.AddMouseWheel(2);
-    if(!Near(input.MouseDelta().x,5)||!Near(input.MouseDelta().y,-3)||!Near(input.MouseWheel(),2)){std::cerr<<"Mouse motion accumulation failed\n";return 11;}input.ConsumePresses();if(!Near(input.MouseDelta().x,0)||!Near(input.MouseWheel(),0)){std::cerr<<"Mouse motion consumption failed\n";return 12;}
+    if(!Near(input.MouseDelta().x,5)||!Near(input.MouseDelta().y,-3)||!Near(input.MouseWheel(),2)){std::cerr<<"Mouse motion accumulation failed\n";return 11;}input.SetMouse({20,20},false);input.SetMouse({30,30},true);if(!Near(input.MouseDelta().x,5)||input.MouseInsideCanvas()!=true){std::cerr<<"Letterbox mouse filtering failed\n";return 23;}input.ConsumePresses();if(!Near(input.MouseDelta().x,0)||!Near(input.MouseWheel(),0)){std::cerr<<"Mouse motion consumption failed\n";return 12;}
     CameraRig3D rig;rig.Reset(CameraViewMode3D::FirstPerson,{0,2,0});Camera3D controlled=rig.Update({{0,0,1},{1,0},0},1.f);if(rig.Mode()!=CameraViewMode3D::FirstPerson||!Near(Length(rig.Anchor()-Vec3{0,2,0}),1.4f)||!Near(rig.Yaw(),.18f)||controlled.projection.mode!=ProjectionMode::Perspective){std::cerr<<"First-person camera rig failed\n";return 13;}
     rig.Reset(CameraViewMode3D::ThirdPerson,{0,1,10});controlled=rig.Update({{}, {},1},.1f);if(!Near(rig.Distance(),36.2f)||!Near(Length(controlled.position-controlled.target),rig.Distance(),.01f)){std::cerr<<"Third-person camera rig failed\n";return 14;}
     rig.Reset(CameraViewMode3D::GodView,{5,0,7});controlled=rig.Update({{1,0,1},{1,0},1},.1f);if(controlled.projection.mode!=ProjectionMode::Orthographic||controlled.position.y<=controlled.target.y||!Finite(CreateViewProjectionMatrix(controlled,16.f/9.f))){std::cerr<<"God-view camera rig failed\n";return 15;}

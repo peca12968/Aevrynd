@@ -13,13 +13,14 @@ public:
     void SetKey(unsigned key,bool down){ if(key<256){if(down&&!keys_[key])pressed_[key]=true;keys_[key]=down;} }
     bool Down(unsigned key)const{return key<256&&keys_[key];}
     bool Pressed(unsigned key)const{return key<256&&pressed_[key];}
-    void SetMouse(Vec2 p){if(mouseInitialized_)mouseDelta_=mouseDelta_+(p-mouse_);mouse_=p;mouseInitialized_=true;}
+    void SetMouse(Vec2 p,bool insideCanvas=true){if(mouseInitialized_&&mouseInsideCanvas_&&insideCanvas)mouseDelta_=mouseDelta_+(p-mouse_);mouse_=p;mouseInitialized_=true;mouseInsideCanvas_=insideCanvas;}
     void AddMouseWheel(float delta){mouseWheel_+=delta;}
     void SetMouseButton(bool down){if(down&&!mouseDown_)mousePressed_=true;mouseDown_=down;}
     Vec2 Mouse()const{return mouse_;}
     Vec2 MouseDelta()const{return mouseDelta_;}
     float MouseWheel()const{return mouseWheel_;}
     bool MousePressed()const{return mousePressed_;}
+    bool MouseInsideCanvas()const{return mouseInsideCanvas_;}
     bool GamepadConnected()const{return gamepadConnected_;}
     bool GamepadDown(WORD button)const{return(gamepadButtons_&button)!=0;}
     bool GamepadPressed(WORD button)const{return(gamepadPressed_&button)!=0;}
@@ -27,7 +28,7 @@ public:
     float GamepadRightX()const{return gamepadRX_;}float GamepadRightY()const{return gamepadRY_;}
 private:
     std::array<bool,256> keys_{}; std::array<bool,256> pressed_{};
-    Vec2 mouse_{},mouseDelta_{};float mouseWheel_{};bool mouseInitialized_{},mouseDown_{},mousePressed_{};
+    Vec2 mouse_{},mouseDelta_{};float mouseWheel_{};bool mouseInitialized_{},mouseInsideCanvas_{true},mouseDown_{},mousePressed_{};
     bool gamepadConnected_{};WORD gamepadButtons_{},gamepadPressed_{};float gamepadLX_{},gamepadLY_{},gamepadRX_{},gamepadRY_{};
 };
 }

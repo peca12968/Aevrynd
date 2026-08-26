@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 #include "Math.h"
+#include "Viewport.h"
 
 namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
@@ -14,6 +15,9 @@ struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{re
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu};};
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 struct RendererStats {
+    unsigned outputWidth{},outputHeight{};
+    CanvasViewport canvasViewport{};
+    uint64_t resizeCount{};
     size_t lastSubmittedVertices{};
     size_t lastSubmittedWorldVertices{};
     size_t lastSubmittedWorldIndices{};
@@ -90,7 +94,7 @@ public:
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
     D3D12Renderer(); ~D3D12Renderer();
-    void Initialize(HWND hwnd,unsigned width,unsigned height);
+    void Initialize(HWND hwnd,unsigned width,unsigned height,unsigned logicalWidth=1280,unsigned logicalHeight=720);
     void Resize(unsigned width,unsigned height);
     void Render(const DrawList& list,Color clear);
     MeshHandle3D CreateMesh(std::span<const Vertex3D> vertices,std::span<const uint32_t> indices);

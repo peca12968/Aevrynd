@@ -12,7 +12,7 @@
 namespace Aevrynd {
 struct Mesh3D;
 struct MeshResource3D;
-struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; };
+struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true; };
 class Engine {
 public:
     explicit Engine(EngineConfig config={}); ~Engine();
