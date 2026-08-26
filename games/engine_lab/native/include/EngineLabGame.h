@@ -13,4 +13,5 @@ private:
     Aevrynd::Scene3DStats sceneStats_{};
     int cameraMode_{};
     bool automatic_{true};
+    bool cullingEnabled_{true};
 };

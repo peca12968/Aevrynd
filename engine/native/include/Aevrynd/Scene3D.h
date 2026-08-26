@@ -8,7 +8,8 @@ namespace Aevrynd {
 struct Triangle3D {Vec3 a{},b{},c{};Color color{};};
 struct Line3D {Vec3 a{},b{};float width{1.f};Color color{};};
 struct Box3D {Transform3D transform{};Material3D material{};};
-struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{};};
+struct Scene3DSubmissionOptions {bool frustumCulling{true};};
+struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{};};
 
 class Scene3D {
 public:
@@ -31,11 +32,12 @@ public:
     }
 
     // 網格與線段合併成單一索引批次，由 GPU 深度測試處理所有遮擋。
-    Scene3DStats Submit(DrawList& draw,const Camera3D& camera,Vec2 viewport)const{
+    Scene3DStats Submit(DrawList& draw,const Camera3D& camera,Vec2 viewport,Scene3DSubmissionOptions options={})const{
         draw.SetViewProjection(CreateViewProjectionMatrix(camera,viewport.x/(std::max)(1.f,viewport.y)));
         for(const auto& triangle:triangles_)draw.WorldTriangle(triangle.a,triangle.b,triangle.c,triangle.color);
-        const Mesh3D& boxMesh=UnitBox();for(const Box3D& box:boxes_)SubmitMesh(draw,boxMesh,box.transform,box.material);
-        Scene3DStats stats{};stats.inputTriangles=TriangleCount();stats.visibleTriangles=stats.inputTriangles;stats.inputLines=lines_.size();stats.meshInstances=boxes_.size();const Vec3 cameraForward=Normalize(camera.target-camera.position);
+        Scene3DStats stats{};stats.inputTriangles=TriangleCount();stats.visibleTriangles=triangles_.size();stats.inputLines=lines_.size();stats.meshInstances=boxes_.size();const float aspect=viewport.x/(std::max)(1.f,viewport.y);const Mesh3D& boxMesh=UnitBox();
+        for(const Box3D& box:boxes_){const Vec3 scale=box.transform.scale;const float radius=.5f*std::sqrt(scale.x*scale.x+scale.y*scale.y+scale.z*scale.z);if(options.frustumCulling&&!SphereIntersectsFrustum(box.transform.position,radius,camera,aspect)){++stats.culledMeshInstances;continue;}SubmitMesh(draw,boxMesh,box.transform,box.material);++stats.visibleMeshInstances;}
+        stats.visibleTriangles+=stats.visibleMeshInstances*12;stats.culledTriangles=stats.inputTriangles-stats.visibleTriangles;const Vec3 cameraForward=Normalize(camera.target-camera.position);
         for(const auto& line:lines_){const Vec3 direction=Normalize(line.b-line.a);if(Length(direction)<.0001f)continue;Vec3 side=Normalize(Cross(direction,cameraForward));if(Length(side)<.0001f)side=Normalize(Cross(direction,camera.up));if(Length(side)<.0001f)continue;side=side*(line.width*.0125f);const uint32_t base=uint32_t(draw.worldVertices.size()),color=PackColorRgba8(line.color);for(Vec3 point:{line.a-side,line.a+side,line.b+side,line.b-side})draw.worldVertices.push_back({point.x,point.y,point.z,color});draw.worldIndices.insert(draw.worldIndices.end(),{base,base+1,base+2,base,base+2,base+3});++stats.visibleLines;}
         return stats;
     }

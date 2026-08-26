@@ -34,6 +34,17 @@ inline Matrix4 CreateProjectionMatrix(const CameraProjection& projection,float a
 
 inline Matrix4 CreateViewProjectionMatrix(const Camera3D& camera,float aspectRatio){return CreateProjectionMatrix(camera.projection,aspectRatio)*CreateViewMatrix(camera);}
 
+// 使用視圖空間平面測試球體，讓透視與正交相機共用保守且不漏畫的物件裁切。
+inline bool SphereIntersectsFrustum(Vec3 center,float radius,const Camera3D& camera,float aspectRatio){
+    const Vec3 viewCenter=TransformPoint(CreateViewMatrix(camera),center);const float safeRadius=(std::max)(0.f,std::abs(radius));
+    const float nearPlane=(std::max)(.001f,camera.projection.nearPlane),farPlane=(std::max)(nearPlane+.001f,camera.projection.farPlane),aspect=(std::max)(.001f,aspectRatio);
+    if(viewCenter.z+safeRadius<nearPlane||viewCenter.z-safeRadius>farPlane)return false;
+    if(camera.projection.mode==ProjectionMode::Orthographic){const float halfHeight=(std::max)(.001f,camera.projection.orthographicHeight)*.5f,halfWidth=halfHeight*aspect;return std::abs(viewCenter.x)<=halfWidth+safeRadius&&std::abs(viewCenter.y)<=halfHeight+safeRadius;}
+    const float tangentY=std::tan(Clamp(camera.projection.verticalFieldOfView,.01f,3.13f)*.5f),tangentX=tangentY*aspect;
+    const float horizontalAllowance=safeRadius*std::sqrt(1.f+tangentX*tangentX),verticalAllowance=safeRadius*std::sqrt(1.f+tangentY*tangentY);
+    return viewCenter.z*tangentX-std::abs(viewCenter.x)+horizontalAllowance>=0.f&&viewCenter.z*tangentY-std::abs(viewCenter.y)+verticalAllowance>=0.f;
+}
+
 inline ProjectedPoint ProjectToViewport(Vec3 worldPosition,const Camera3D& camera,Vec2 viewport){Vec4 clip=CreateViewProjectionMatrix(camera,viewport.x/(std::max)(1.f,viewport.y))*Vec4{worldPosition.x,worldPosition.y,worldPosition.z,1.f};if(std::abs(clip.w)<.00001f)return{};const float inverseW=1.f/clip.w;Vec3 normalized{clip.x*inverseW,clip.y*inverseW,clip.z*inverseW};return{{(normalized.x*.5f+.5f)*viewport.x,(.5f-normalized.y*.5f)*viewport.y},normalized.z,clip.w>0&&normalized.x>=-1&&normalized.x<=1&&normalized.y>=-1&&normalized.y<=1&&normalized.z>=0&&normalized.z<=1};}
 
 inline Camera3D MakeFirstPersonCamera(Vec3 position,float yaw,float pitch,CameraProjection projection={}){const float safePitch=Clamp(pitch,-1.553343f,1.553343f);const float cosine=std::cos(safePitch);Vec3 forward{std::sin(yaw)*cosine,std::sin(safePitch),std::cos(yaw)*cosine};return{position,position+forward,{0,1,0},projection};}

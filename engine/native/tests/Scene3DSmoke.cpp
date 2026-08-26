@@ -21,5 +21,9 @@ int main(){
     if(stats.visibleTriangles!=2||draw.vertices.size()!=6||draw.vertices.front().color!=PackColorRgba8(farColor)){std::cerr<<"Stable far-to-near sorting failed\n";return 3;}
     scene.Line({-1,0,4},{1,0,4},1,{1,1,1,1});draw.Clear();stats=scene.Submit(draw,camera,{1280,720});
     if(stats.inputTriangles!=2||stats.visibleLines!=1||draw.worldVertices.size()!=10||draw.worldIndices.size()!=12||draw.vertices.size()!=0){std::cerr<<"GPU scene submission failed\n";return 4;}
+    scene.Clear();draw.Clear();scene.Box({0,1,6},{2,2,2},{.2f,.8f,.7f,1});scene.Box({1000,1,6},{2,2,2},{1,.2f,.2f,1});stats=scene.Submit(draw,camera,{1280,720});
+    if(stats.meshInstances!=2||stats.visibleMeshInstances!=1||stats.culledMeshInstances!=1||stats.visibleTriangles!=12||stats.culledTriangles!=12||draw.worldVertices.size()!=24||draw.worldIndices.size()!=36){std::cerr<<"Mesh frustum culling failed\n";return 5;}
+    draw.Clear();stats=scene.Submit(draw,camera,{1280,720},{false});
+    if(stats.visibleMeshInstances!=2||stats.culledMeshInstances!=0||draw.worldVertices.size()!=48||draw.worldIndices.size()!=72){std::cerr<<"Frustum culling override failed\n";return 6;}
     return 0;
 }
