@@ -1,5 +1,6 @@
 #pragma once
 #include "FrontierWorldRules.h"
+#include <Aevrynd/Animation3D.h>
 #include <Aevrynd/CharacterController3D.h>
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
@@ -29,12 +30,15 @@ private:
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},sphereHighMesh_{},sphereLowMesh_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
+    Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};
+    Aevrynd::AnimationClip3D idleClip_{},walkClip_{},attackClip_{},creatureWalkClip_{};
+    Aevrynd::AnimationPlayer3D playerAnimation_{};
     std::vector<Building> buildings_;
     std::vector<Monster> monsters_;
     Aevrynd::Camera3D camera_{};
     FrontierWorldRules::BuildingKind selectedBuilding_{FrontierWorldRules::BuildingKind::Foundation};
-    float yaw_{},pitch_{.15f},attackCooldown_{},automaticClock_{};
+    float yaw_{},pitch_{.15f},attackCooldown_{},attackAnimationClock_{},automaticClock_{};
     int health_{100},wood_{120},stone_{80},experience_{},level_{1},kills_{};
     uint64_t attacks_{},hits_{},buildAttempts_{},loadedChunks_{9};
-    bool firstPerson_{},automatic_{true};
+    bool firstPerson_{},automatic_{true},moving_{};
 };

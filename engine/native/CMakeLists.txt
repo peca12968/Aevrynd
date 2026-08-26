@@ -1,4 +1,5 @@
 add_library(AevryndEngine STATIC
+  src/Animation3D.cpp
   src/Audio.cpp
   src/CharacterController3D.cpp
   src/CollisionWorld3D.cpp
@@ -48,6 +49,11 @@ add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAudioTest PRIVATE AevryndEngine)
 add_test(NAME AevryndAudioTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAudioTest>'")
+
+add_executable(AevryndAnimation3DTest tests/Animation3DSmoke.cpp)
+target_compile_options(AevryndAnimation3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndAnimation3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndAnimation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAnimation3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)

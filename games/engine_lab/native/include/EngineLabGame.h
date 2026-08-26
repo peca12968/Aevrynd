@@ -1,4 +1,5 @@
 #pragma once
+#include <Aevrynd/Animation3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Scene3D.h>
@@ -23,6 +24,8 @@ private:
     Aevrynd::CameraRig3D cameraRig_{};
     Aevrynd::Camera3D camera_{};
     Aevrynd::ParticleSystem2D effects_{512};
+    Aevrynd::Skeleton3D animationSkeleton_{};
+    Aevrynd::AnimationClip3D animationClip_{};
     int cameraMode_{};
     int effectCycle_{-1};
     bool automatic_{true};
