@@ -126,7 +126,7 @@ int main() {
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
             stats.lastSubmittedMeshInstances != 3 || stats.peakSubmittedMeshInstances < 3 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
             stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 4 ||
-            stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds ||
+            stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds || stats.gpuTimingSamples != expectedFrames || !stats.lastGpuFrameNanoseconds || stats.totalGpuFrameNanoseconds < stats.peakGpuFrameNanoseconds ||
             (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||
             (stats.validationWaits == 0 && (stats.lastValidationWaitNanoseconds != 0 || stats.totalValidationWaitNanoseconds != 0))) {
             std::cerr << "Renderer telemetry did not match submitted GPU work\n";
@@ -134,7 +134,8 @@ int main() {
         }
         const uint64_t averageResourceWaitUs=stats.resourceWaits?stats.totalResourceWaitNanoseconds/stats.resourceWaits/1000:0;
         const uint64_t averageValidationWaitUs=stats.validationWaits?stats.totalValidationWaitNanoseconds/stats.validationWaits/1000:0;
-        std::cout<<"frames="<<stats.submittedFrames<<" resourceWaits="<<stats.resourceWaits<<" resourceAverageUs="<<averageResourceWaitUs<<" resourcePeakUs="<<stats.peakResourceWaitNanoseconds/1000<<" validationWaits="<<stats.validationWaits<<" validationAverageUs="<<averageValidationWaitUs<<" validationPeakUs="<<stats.peakValidationWaitNanoseconds/1000<<'\n';
+        const uint64_t averageGpuUs=stats.gpuTimingSamples?stats.totalGpuFrameNanoseconds/stats.gpuTimingSamples/1000:0;
+        std::cout<<"frames="<<stats.submittedFrames<<" resourceWaits="<<stats.resourceWaits<<" resourceAverageUs="<<averageResourceWaitUs<<" resourcePeakUs="<<stats.peakResourceWaitNanoseconds/1000<<" validationWaits="<<stats.validationWaits<<" validationAverageUs="<<averageValidationWaitUs<<" validationPeakUs="<<stats.peakValidationWaitNanoseconds/1000<<" gpuSamples="<<stats.gpuTimingSamples<<" gpuAverageUs="<<averageGpuUs<<" gpuPeakUs="<<stats.peakGpuFrameNanoseconds/1000<<'\n';
         renderer.DestroyMesh(boxHandle);renderer.DestroyMesh(triangleHandle);renderer.Render(draw,{.02f,.04f,.05f,1.f});renderer.WaitIdle();const RendererStats destroyedStats=renderer.GetStats();if(destroyedStats.residentMeshes!=0||destroyedStats.residentMeshBytes!=0||destroyedStats.lastSubmittedMeshInstances!=0||destroyedStats.totalDroppedMeshInstances!=draw.meshInstances.size()||destroyedStats.lastDrawCalls!=2){std::cerr<<"Resident mesh destruction failed\n";rendererResult=15;}
     } catch (const std::exception& error) {
         std::cerr << "D3D12 renderer smoke test failed: " << error.what() << '\n';

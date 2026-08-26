@@ -40,6 +40,10 @@ struct RendererStats {
     uint64_t lastValidationWaitNanoseconds{};
     uint64_t totalValidationWaitNanoseconds{};
     uint64_t peakValidationWaitNanoseconds{};
+    uint64_t gpuTimingSamples{};
+    uint64_t lastGpuFrameNanoseconds{};
+    uint64_t totalGpuFrameNanoseconds{};
+    uint64_t peakGpuFrameNanoseconds{};
 };
 class DrawList {
 public:
