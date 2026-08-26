@@ -5,8 +5,10 @@
 namespace RiftwardenRules {
 enum class TowerKind { Bolt, Frost, Nova };
 enum class EnemyKind { Grunt, Swift, Tank, Boss };
+enum class UpgradeKind { Damage, Gold, Range };
 struct WaveComposition { int grunt{}, swift{}, tank{}, boss{}; };
 struct HitRule { float multiplier{1.f}; float slowDuration{}; bool shatters{}; };
+struct UpgradeLevels { int damage{}, gold{}, range{}; };
 
 inline EnemyKind SpawnKindFor(int wave, int remaining) {
     if (wave % 4 == 0 && remaining == 1) return EnemyKind::Boss;
@@ -48,5 +50,30 @@ inline int ComboReward(int baseReward, int combo, float goldModifier) {
     const int clampedCombo = (std::max)(1, (std::min)(20, combo));
     const float comboBonus = 1.f + .05f * float((std::min)(10, clampedCombo - 1));
     return (std::max)(1, int(std::lround(baseReward * goldModifier * comboBonus)));
+}
+
+// 每局在第四波與第八波結束後提供一次永久強化選擇。
+constexpr bool UpgradeDueAfterWave(int wave) {
+    return wave == 4 || wave == 8;
+}
+
+// 單一強化最多兩級，確保兩次選擇不會讓倍率失控。
+constexpr int UpgradeLevel(const UpgradeLevels& levels, UpgradeKind kind) {
+    switch (kind) {
+    case UpgradeKind::Damage: return levels.damage;
+    case UpgradeKind::Gold: return levels.gold;
+    default: return levels.range;
+    }
+}
+
+constexpr UpgradeLevels ApplyUpgrade(UpgradeLevels levels, UpgradeKind kind) {
+    int* level = kind == UpgradeKind::Damage ? &levels.damage : kind == UpgradeKind::Gold ? &levels.gold : &levels.range;
+    *level = (std::min)(2, *level + 1);
+    return levels;
+}
+
+constexpr float UpgradeMultiplier(const UpgradeLevels& levels, UpgradeKind kind) {
+    const float step = kind == UpgradeKind::Damage ? .15f : kind == UpgradeKind::Gold ? .2f : .12f;
+    return 1.f + float((std::max)(0, (std::min)(2, UpgradeLevel(levels, kind)))) * step;
 }
 }

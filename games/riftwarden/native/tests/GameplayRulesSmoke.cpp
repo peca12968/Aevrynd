@@ -2,6 +2,23 @@
 #include <cmath>
 #include <iostream>
 
+// 這些斷言由編譯器執行，即使企業政策阻擋新測試程式也能驗證核心規則。
+constexpr auto FirstUpgrade = RiftwardenRules::ApplyUpgrade({}, RiftwardenRules::UpgradeKind::Damage);
+constexpr auto SecondUpgrade = RiftwardenRules::ApplyUpgrade(FirstUpgrade, RiftwardenRules::UpgradeKind::Damage);
+constexpr auto ClampedUpgrade = RiftwardenRules::ApplyUpgrade(SecondUpgrade, RiftwardenRules::UpgradeKind::Damage);
+constexpr auto GoldUpgrade = RiftwardenRules::ApplyUpgrade({}, RiftwardenRules::UpgradeKind::Gold);
+constexpr auto RangeUpgrade = RiftwardenRules::ApplyUpgrade({}, RiftwardenRules::UpgradeKind::Range);
+static_assert(RiftwardenRules::UpgradeDueAfterWave(4));
+static_assert(RiftwardenRules::UpgradeDueAfterWave(8));
+static_assert(!RiftwardenRules::UpgradeDueAfterWave(6));
+static_assert(ClampedUpgrade.damage == 2);
+static_assert(RiftwardenRules::UpgradeMultiplier(SecondUpgrade, RiftwardenRules::UpgradeKind::Damage) > 1.299f);
+static_assert(RiftwardenRules::UpgradeMultiplier(SecondUpgrade, RiftwardenRules::UpgradeKind::Damage) < 1.301f);
+static_assert(RiftwardenRules::UpgradeMultiplier(GoldUpgrade, RiftwardenRules::UpgradeKind::Gold) > 1.199f);
+static_assert(RiftwardenRules::UpgradeMultiplier(GoldUpgrade, RiftwardenRules::UpgradeKind::Gold) < 1.201f);
+static_assert(RiftwardenRules::UpgradeMultiplier(RangeUpgrade, RiftwardenRules::UpgradeKind::Range) > 1.119f);
+static_assert(RiftwardenRules::UpgradeMultiplier(RangeUpgrade, RiftwardenRules::UpgradeKind::Range) < 1.121f);
+
 int main() {
     if (RiftwardenRules::ComboReward(17, 1, 1.f) != 17) {
         std::cerr << "The first kill must retain its base reward\n";
