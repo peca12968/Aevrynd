@@ -32,7 +32,7 @@ games/riftwarden/dist/Riftwarden-DX12.exe
 - 第 4、8 波結束後必須選擇火力、賞金或射程永久強化；可用滑鼠、數字鍵、方向鍵或手把操作
 - `H`：顯示／隱藏簡易教學與操作說明
 - `Space`：暫停
-- `F2`：切換 DLSS Super Resolution／原生解析度
+- `F2`：在以 `--dlss` 啟動時切換 DLSS Super Resolution／原生解析度
 - `F3`：顯示／隱藏引擎渲染診斷，包括頂點、上傳量、峰值、等待與裁切統計
 - 自動化環境可在啟動前設定 `AEVRYND_RENDERER_STATS=1`，直接開啟相同診斷面板
 - `R`：勝敗畫面重新開始
@@ -48,7 +48,7 @@ games/riftwarden/dist/Riftwarden-DX12.exe
 - `Y`：顯示或隱藏說明
 - `Start`：暫停
 - `Back`／`View`：返回語言選單
-- 按下右搖桿：切換 DLSS
+- 按下右搖桿：在以 `--dlss` 啟動時切換 DLSS
 
 連接手把後，HUD 會自動切換成手把提示，目前選中的建造台會以金色顯示。鍵盤、滑鼠與手把可隨時交替使用；遠端開發時即使沒有鍵盤，也能只靠滑鼠完成教學與所有核心遊戲操作。
 
@@ -90,13 +90,14 @@ Games/
 - Win32 原生視窗與輸入
 - DirectX 12 device、swap chain 與 command queue
 - HLSL shader pipeline 與 root signature
-- NVIDIA Streamline 2.12 與 DLSS Super Resolution
+- 可在建立 D3D 裝置前選用的 NVIDIA Streamline 2.12 與 DLSS Super Resolution 模組
 - DLSS color、depth、motion-vector 與 output resources
-- GPU upload vertex buffer 與 fence synchronization
-- 三重緩衝持久映射頂點／索引上傳與逐幀 fence；240 幀固定負載基準將資源等待由 236 次、平均 5,377 µs 降為 0 次
+- 可成長 GPU upload vertex／index／instance buffer 與 fence synchronization
+- 三重緩衝持久映射上傳資源由 4,116,480 bytes 起始，依各幀需求倍增至既有硬上限；背景記憶體修剪會在 GPU 安全點釋放尖峰容量
+- 240 幀固定負載基準保持 0 次容量成長與 0 次資源等待，GPU 平均約 10 µs
 - DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
-- 頂點色彩採 GPU 原生 RGBA8 正規化格式，每個 2D 頂點由 24 bytes 降為 12 bytes；三重緩衝 2D 配置為 8,640,000 bytes，仍低於舊雙緩衝格式的 11,520,000 bytes
-- Renderer telemetry 可分別追蹤提交幀、頂點／bytes、峰值、裁切、資源等待與 DLSS 驗證等待
+- 頂點色彩採 GPU 原生 RGBA8 正規化格式，每個 2D 頂點由 24 bytes 降為 12 bytes；只有超過 32,768 個 2D 頂點的幀槽才會擴張上傳資源
+- Renderer telemetry 可分別追蹤提交幀、頂點／bytes、峰值、裁切、資源等待、幀上傳常駐容量／成長／修剪與 DLSS 模組狀態
 - Fence telemetry 量測資源重用與 DLSS 驗證等待的最近、累積、峰值奈秒及平均微秒，不再只記錄等待次數
 - 通用左手座標相機支援透視與正交投影，並提供第一人稱、第三人稱、上帝視角與等角 2.5D 預設
 - Scene3D 可將方塊、三角形與世界空間線段直接提交至硬體 3D 管線，使用 D32 深度緩衝處理遮擋，並保留 CPU 投影／排序路徑供比較驗證
@@ -153,11 +154,19 @@ target_link_libraries(MyGame PRIVATE AevryndEngine)
 
 ## DLSS 測試
 
-遊戲啟動時會在支援的 NVIDIA GPU 上嘗試 DLSS Quality。1280×720 輸出時，RTX 5080 上的內部渲染解析度為 853×480；遊戲標題列與右上角 HUD 會顯示目前模式。引擎會驗證實際 GPU 輸出，若 DLSS plugin 連續輸出黑幀便自動切回原生 DirectX 12，避免停留在黑畫面。
+Riftwarden 預設不初始化 DLSS 模組，以降低 2D／2.5D 遊戲的常駐記憶體。需要 DLSS 時必須在建立 D3D 裝置前選用模組，可使用下列任一方式：
+
+```powershell
+games/riftwarden/dist/Riftwarden-DX12.exe --dlss
+$env:AEVRYND_ENABLE_DLSS='1'; games/riftwarden/dist/Riftwarden-DX12.exe
+```
+
+Engine Lab、Character Lab 與 Frontier World 會透過 `EngineConfig.enableDLSS` 啟用模組，持續驗證 3D 路徑。1280×720 輸出時，RTX 5080 上的 DLSS Quality 內部渲染解析度為 853×480；引擎會驗證實際 GPU 輸出，若 DLSS plugin 連續輸出黑幀便自動切回原生 DirectX 12。
 
 - `DLSS QUALITY 853x480`：DLSS 正在執行升頻
 - `DLSS OFF 1280x720`：原生解析度 fallback
 - `DLSS N/A`：GPU、驅動或 Streamline plugin 不支援
+- `DLSS MODULE OFF`：本次啟動未選用 DLSS，僅使用原生 DirectX 12
 
 必要的 NVIDIA runtime 已隨遊戲放在 `games/riftwarden/dist/`：
 

@@ -14,7 +14,7 @@
 namespace Aevrynd {
 struct Mesh3D;
 struct MeshResource3D;
-struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true; };
+struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false; };
 struct EngineMemoryStats {
     ProcessMemoryStats process{};
     TransientMemoryStats draw{};
@@ -40,6 +40,7 @@ public:
     std::filesystem::path ExecutableDirectory()const;
     HWND Window()const{return hwnd_;}
     bool SupportsDLSS()const{return renderer_->SupportsDLSS();}
+    bool DLSSModuleRequested()const{return renderer_->DLSSModuleRequested();}
     bool DLSSOn()const{return renderer_->DLSSOn();}
     void ToggleDLSS(){renderer_->ToggleDLSS();}
     MeshHandle3D CreateMesh3D(const Mesh3D& mesh);

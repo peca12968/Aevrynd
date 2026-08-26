@@ -26,7 +26,7 @@ int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     RECT rect{0,0,desiredWidth,desiredHeight};DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|(config_.resizable?WS_THICKFRAME|WS_MAXIMIZEBOX:0);AdjustWindowRectEx(&rect,style,FALSE,0);
     const LONG windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,x=workArea.left+(workWidth-windowWidth)/2,y=workArea.top+(workHeight-windowHeight)/2;
     hwnd_=CreateWindowExW(0,wc.lpszClassName,config_.title.c_str(),style,x,y,windowWidth,windowHeight,nullptr,nullptr,instance,this);
-    if(!hwnd_)throw std::runtime_error("CreateWindow failed");ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)),config_.width,config_.height);audio_.Initialize();processMemoryStats_=QueryProcessMemoryStats();game_->OnStart(*this);
+    if(!hwnd_)throw std::runtime_error("CreateWindow failed");ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)),config_.width,config_.height,config_.enableDLSS);audio_.Initialize();processMemoryStats_=QueryProcessMemoryStats();game_->OnStart(*this);
     using Clock=std::chrono::steady_clock;auto last=Clock::now();double accumulator=0.0;MSG msg{};
     while(running_){
         input_.BeginFrame();

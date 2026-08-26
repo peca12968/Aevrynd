@@ -87,6 +87,8 @@ struct RendererStats {
     uint64_t dlssResourceAllocations{};
     uint64_t dlssResourceReleases{};
     bool dlssResourcesResident{};
+    bool dlssModuleRequested{};
+    bool dlssFrameworkLoaded{};
     size_t frameUploadResidentBytes{};
     size_t peakFrameUploadResidentBytes{};
     uint64_t frameUploadGrowths{};
@@ -190,7 +192,7 @@ public:
     static constexpr size_t InitialFrameUploadBytes=BufferedFrames*(InitialFrameVertices*sizeof(Vertex)+InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*MeshInstanceUploadBytes);
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
     D3D12Renderer(); ~D3D12Renderer();
-    void Initialize(HWND hwnd,unsigned width,unsigned height,unsigned logicalWidth=1280,unsigned logicalHeight=720);
+    void Initialize(HWND hwnd,unsigned width,unsigned height,unsigned logicalWidth=1280,unsigned logicalHeight=720,bool enableDLSS=false);
     void Resize(unsigned width,unsigned height);
     void Render(const DrawList& list,Color clear);
     MeshHandle3D CreateMesh(std::span<const Vertex3D> vertices,std::span<const uint32_t> indices);
@@ -203,6 +205,7 @@ public:
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void WaitIdle();
     bool SupportsDLSS() const;
+    bool DLSSModuleRequested()const;
     bool DLSSOn() const;
     void ToggleDLSS();
     RendererStats GetStats()const;

@@ -22,6 +22,7 @@ public:
     bool Evaluate(ID3D12GraphicsCommandList*,ID3D12Resource* backBuffer);
     bool ValidateOutput();
     bool Supported()const{return supported_;}bool Enabled()const{return enabled_&&supported_;}
+    bool FrameworkLoaded()const{return framework_;}
     StreamlineResourceStats Stats()const{return{residentBytes_,resourceAllocations_,resourceReleases_,residentBytes_>0};}
     void Toggle();
     uint32_t RenderWidth()const{return Enabled()?renderWidth_:outputWidth_;}

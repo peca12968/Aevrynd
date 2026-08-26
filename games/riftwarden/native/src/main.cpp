@@ -1,11 +1,13 @@
 #include <windows.h>
 #include <Aevrynd/Engine.h>
 #include "RiftwardenGame.h"
+#include <cwchar>
 #include <exception>
 
-int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show){
+int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show){
     try{
-        Aevrynd::Engine engine({L"裂隙守望者 · Aevrynd Engine / DirectX 12",1280,720,1.f/60.f});
+        const bool enableDLSS=(commandLine&&std::wcsstr(commandLine,L"--dlss"))||GetEnvironmentVariableW(L"AEVRYND_ENABLE_DLSS",nullptr,0)>0;
+        Aevrynd::Engine engine({L"裂隙守望者 · Aevrynd Engine / DirectX 12",1280,720,1.f/60.f,true,enableDLSS});
         return engine.Run(std::make_unique<RiftwardenGame>(),instance,show);
     }catch(const std::exception& e){MessageBoxA(nullptr,e.what(),"Aevrynd Engine fatal error",MB_OK|MB_ICONERROR);return 1;}
 }
