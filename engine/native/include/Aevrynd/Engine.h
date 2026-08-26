@@ -5,6 +5,7 @@
 #include "Game.h"
 #include "Input.h"
 #include "Renderer.h"
+#include "Scene2D.h"
 
 namespace Aevrynd {
 struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; };
