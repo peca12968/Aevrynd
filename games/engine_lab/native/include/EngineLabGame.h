@@ -3,6 +3,7 @@
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Scene3D.h>
+#include <Aevrynd/WorldStreamer3D.h>
 
 class EngineLabGame final:public Aevrynd::IGame {
 public:
@@ -26,6 +27,8 @@ private:
     Aevrynd::ParticleSystem2D effects_{512};
     Aevrynd::Skeleton3D animationSkeleton_{};
     Aevrynd::AnimationClip3D animationClip_{};
+    Aevrynd::WorldStreamer3D worldStreamer_{};
+    Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
     int cameraMode_{};
     int effectCycle_{-1};
     bool automatic_{true};

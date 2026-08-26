@@ -8,6 +8,7 @@ add_library(AevryndEngine STATIC
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
   src/StreamlineDLSS.cpp
+  src/WorldStreamer3D.cpp
 )
 set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
 target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include")
@@ -54,6 +55,11 @@ add_executable(AevryndAnimation3DTest tests/Animation3DSmoke.cpp)
 target_compile_options(AevryndAnimation3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAnimation3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndAnimation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAnimation3DTest>'")
+
+add_executable(AevryndWorldStreamer3DTest tests/WorldStreamer3DSmoke.cpp)
+target_compile_options(AevryndWorldStreamer3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldStreamer3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldStreamer3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldStreamer3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)
