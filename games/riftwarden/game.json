@@ -3,13 +3,13 @@
   "title": "裂隙守望者",
   "subtitle": "RIFTWARDEN",
   "description": "以本地 Qwen3.8-27B 生成動態事件的原生 2.5D 塔防遊戲。",
-  "version": "1.14.0",
-  "engineVersion": "1.6.0",
+  "version": "1.15.0",
+  "engineVersion": "1.8.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "entry": "dist/Riftwarden-DX12.exe",
   "cover": "assets/rift-valley.png",
   "genre": "2.5D 塔防",
   "tags": ["原生遊戲", "塔防", "本地 AI"],
-  "features": ["fixed-step", "directx12", "unified-camera", "buffered-frame-upload", "packed-rgba8-vertices", "renderer-telemetry", "dlss-super-resolution", "streamline-2.12", "local-qwen", "canvas-translation", "camera-shake", "isometric-primitives", "stable-depth-sorting", "adaptive-window-fit", "tower-synergy", "enemy-counterplay", "chill-shatter", "kill-combo", "wave-forecast", "permanent-run-upgrades", "isometric-upgrade-cards", "interactive-tutorial", "active-abilities", "enemy-variety", "traditional-chinese", "english", "runtime-language-switch", "persistent-settings", "save-game", "autosave", "keyboard", "mouse", "xinput-gamepad"]
+  "features": ["fixed-step", "directx12", "unified-camera", "mixed-2d-3d-pipeline", "buffered-frame-upload", "packed-rgba8-vertices", "renderer-telemetry", "dlss-super-resolution", "streamline-2.12", "local-qwen", "canvas-translation", "camera-shake", "isometric-primitives", "stable-depth-sorting", "adaptive-window-fit", "tower-synergy", "enemy-counterplay", "chill-shatter", "kill-combo", "wave-forecast", "permanent-run-upgrades", "isometric-upgrade-cards", "interactive-tutorial", "active-abilities", "enemy-variety", "traditional-chinese", "english", "runtime-language-switch", "persistent-settings", "save-game", "autosave", "keyboard", "mouse", "xinput-gamepad"]
 }

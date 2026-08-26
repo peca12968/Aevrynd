@@ -17,6 +17,7 @@ public:
     void Toggle();
     uint32_t RenderWidth()const{return Enabled()?renderWidth_:outputWidth_;}
     uint32_t RenderHeight()const{return Enabled()?renderHeight_:outputHeight_;}
+    D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()const{return dsvHeap_?dsvHeap_->GetCPUDescriptorHandleForHeapStart():D3D12_CPU_DESCRIPTOR_HANDLE{};}
 private:
     bool framework_{},supported_{},enabled_{true},reset_{true},outputValidated_{};uint32_t outputWidth_{},outputHeight_{},renderWidth_{},renderHeight_{},frameIndex_{},blackFrames_{};
     Microsoft::WRL::ComPtr<ID3D12Resource> input_,output_,motion_,depth_,validationReadback_;

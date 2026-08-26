@@ -19,5 +19,7 @@ int main(){
     scene.Triangle({-1,-1,10},{0,1,10},{1,-1,10},farColor);
     stats=scene.Render(draw,camera,{1280,720});
     if(stats.visibleTriangles!=2||draw.vertices.size()!=6||draw.vertices.front().color!=PackColorRgba8(farColor)){std::cerr<<"Stable far-to-near sorting failed\n";return 3;}
+    scene.Line({-1,0,4},{1,0,4},1,{1,1,1,1});draw.Clear();stats=scene.Submit(draw,camera,{1280,720});
+    if(stats.inputTriangles!=2||stats.visibleLines!=1||draw.worldVertices.size()!=12||draw.vertices.size()!=0){std::cerr<<"GPU scene submission failed\n";return 4;}
     return 0;
 }
