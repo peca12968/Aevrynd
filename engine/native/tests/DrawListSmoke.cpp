@@ -9,6 +9,7 @@
 #include <cmath>
 #include <exception>
 #include <iostream>
+#include <limits>
 
 using namespace Aevrynd;
 constexpr Color Cyan{.1f,.9f,.8f,1.f};
@@ -44,6 +45,55 @@ static_assert(D3D12Renderer::MaxMeshInstances * D3D12Renderer::MeshInstanceUploa
 static_assert(PackSurface3D({.2f,.8f,.4f,.6f}) == PackColorRgba8({.2f,.8f,.4f,.6f}));
 static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
 static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
+
+int ValidateSceneRuntime2D() {
+    MotionState2D motion;
+    motion.Reset({10, 20});
+    motion.Advance({30, 60});
+    if (Distance(motion.Previous(), {10, 20}) > .001f || Distance(motion.Current(), {30, 60}) > .001f || Distance(motion.Sample(.25f), {15, 30}) > .001f || Distance(motion.Sample(-1), {10, 20}) > .001f || Distance(motion.Sample(2), {30, 60}) > .001f) {
+        std::cerr << "Fixed-step 2D motion interpolation failed\n";
+        return 35;
+    }
+    motion.Synchronize();
+    if (Distance(motion.Sample(.25f), {30, 60}) > .001f) {
+        std::cerr << "Stationary 2D motion synchronization failed\n";
+        return 39;
+    }
+    DepthBatch2D batch(64);
+    batch.Add(3, 0);
+    batch.Add(1, 1);
+    batch.Add(3, 2);
+    batch.Add(std::numeric_limits<float>::quiet_NaN(), 3);
+    batch.Sort();
+    const auto& small = batch.Entries();
+    if (small[0].index != 3 || small[1].index != 1 || small[2].index != 0 || small[3].index != 2) {
+        std::cerr << "Stable small depth batch failed\n";
+        return 36;
+    }
+    batch.Clear();
+    constexpr std::size_t EntryCount = 10000;
+    for (std::size_t index = 0; index < EntryCount; ++index) batch.Add(float((EntryCount - index) % 257), index, index % 3);
+    const auto start = std::chrono::steady_clock::now();
+    batch.Sort();
+    const uint64_t elapsedMicroseconds = uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
+    const auto& large = batch.Entries();
+    for (std::size_t index = 1; index < large.size(); ++index) {
+        if (large[index].depth < large[index - 1].depth || (large[index].depth == large[index - 1].depth && large[index].index < large[index - 1].index)) {
+            std::cerr << "Adaptive large depth batch failed\n";
+            return 37;
+        }
+    }
+    const DepthBatch2DStats sortedStats = batch.Stats();
+    const std::size_t retainedCapacity = sortedStats.capacity;
+    batch.Clear();
+    const DepthBatch2DStats clearedStats = batch.Stats();
+    if (elapsedMicroseconds > 20000 || sortedStats.peakEntries != EntryCount || sortedStats.smallSorts != 1 || sortedStats.largeSorts != 1 || clearedStats.entries != 0 || clearedStats.capacity != retainedCapacity) {
+        std::cerr << "Reusable depth batch budget or telemetry failed\n";
+        return 38;
+    }
+    std::cout << "depthEntries=" << sortedStats.peakEntries << " depthCapacity=" << retainedCapacity << " depthSortUs=" << elapsedMicroseconds << " depthSmallSorts=" << sortedStats.smallSorts << " depthLargeSorts=" << sortedStats.largeSorts << '\n';
+    return 0;
+}
 
 int ValidateSpatial2D() {
     const Vec2 points[] = {{0, 0}, {30, 0}, {30, 40}};
@@ -130,6 +180,7 @@ int ValidateTextGeometry2D() {
 }
 
 int main() {
+    if (const int sceneRuntimeResult = ValidateSceneRuntime2D()) return sceneRuntimeResult;
     if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
     if (const int clipResult = ValidateClipCulling2D()) return clipResult;
     if (const int textResult = ValidateTextGeometry2D()) return textResult;
