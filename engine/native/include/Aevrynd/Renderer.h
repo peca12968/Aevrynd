@@ -108,6 +108,11 @@ struct RendererStats {
     uint64_t materialDerivedDataCacheWrites{};
     uint64_t materialDerivedDataCacheReadBytes{};
     uint64_t materialDerivedDataCacheWrittenBytes{};
+    size_t materialDerivedDataCacheResidentBytes{};
+    size_t peakMaterialDerivedDataCacheResidentBytes{};
+    uint64_t materialDerivedDataCacheEvictions{};
+    uint64_t materialDerivedDataCacheReleasedBytes{};
+    uint64_t materialDerivedDataCacheTrims{};
     size_t pendingGpuReleaseBytes{};
     size_t peakPendingGpuReleaseBytes{};
     uint64_t deferredGpuReleaseBatches{};
@@ -214,6 +219,7 @@ public:
     static constexpr size_t InitialFrameMeshInstances=DrawList::InitialMeshInstanceCapacity;
     static constexpr size_t DefaultMeshMemoryBudgetBytes=128*1024*1024;
     static constexpr size_t DefaultMaterialTextureMemoryBudgetBytes=256*1024*1024;
+    static constexpr size_t DefaultMaterialDerivedDataCacheBudgetBytes=512*1024*1024;
     static constexpr size_t MaxMeshUploadBatchBytes=32*1024*1024;
     static constexpr size_t MaxMeshUploadBatchMeshes=256;
     static constexpr size_t MaxMeshUploadStagingBytes=64*1024*1024;
@@ -237,6 +243,7 @@ public:
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
     void SetMaterialTextureMemoryBudget(size_t bytes);
     void SetMaterialDerivedDataCacheDirectory(std::filesystem::path directory);
+    void SetMaterialDerivedDataCacheBudget(size_t bytes);
     void TrimTransientMemory();
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void WaitIdle();
