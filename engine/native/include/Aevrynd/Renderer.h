@@ -83,6 +83,10 @@ struct RendererStats {
     uint64_t materialTextureBudgetRejections{};
     uint64_t totalMaterialTextureDecodedBytes{};
     uint64_t materialTexturePreflightRejectedBytes{};
+    size_t dlssResidentBytes{};
+    uint64_t dlssResourceAllocations{};
+    uint64_t dlssResourceReleases{};
+    bool dlssResourcesResident{};
     uint32_t lastDrawCalls{};
     bool lastBackfaceCulling{};
     uint64_t submittedFrames{};
