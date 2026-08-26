@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "Math.h"
 
 namespace Aevrynd {
 struct AudioClip {
@@ -28,8 +29,12 @@ AudioLoadResult LoadWaveFile(const std::filesystem::path& path);
 AudioClip GenerateTone(float frequency,float durationSeconds,float amplitude=.25f,uint32_t sampleRate=48000);
 
 struct SoundHandle {uint32_t value{};explicit operator bool()const{return value!=0;}bool operator==(const SoundHandle&)const=default;};
-struct AudioPlayback {float volume{1},pitch{1};bool loop{};};
-struct AudioStats {bool deviceAvailable{};uint32_t initializationError{};std::size_t residentSounds{},residentBytes{},activeVoices{};uint64_t playRequests{},successfulPlays{},droppedPlays{};float masterVolume{1};};
+struct AudioPlayback {float volume{1},pitch{1};bool loop{};float pan{};};
+struct AudioSpatial2D {Vec2 listener{},source{};float maximumDistance{800.f},rolloff{1.f},volume{1.f},pitch{1.f};};
+struct AudioSpatial3D {Vec3 listener{},listenerRight{1,0,0},source{};float maximumDistance{40.f},rolloff{1.f},volume{1.f},pitch{1.f};};
+AudioPlayback CalculateSpatialAudio(AudioSpatial2D spatial);
+AudioPlayback CalculateSpatialAudio(AudioSpatial3D spatial);
+struct AudioStats {bool deviceAvailable{};uint32_t initializationError{};std::size_t residentSounds{},residentBytes{},activeVoices{};uint64_t playRequests{},spatialPlayRequests{},successfulPlays{},droppedPlays{};float masterVolume{1},lastSpatialPan{},lastSpatialGain{};};
 
 class AudioEngine {
 public:
@@ -43,6 +48,8 @@ public:
     SoundHandle CreateSound(AudioClip clip);
     void DestroySound(SoundHandle sound);
     bool Play(SoundHandle sound,AudioPlayback playback={});
+    bool PlaySpatial(SoundHandle sound,AudioSpatial2D spatial);
+    bool PlaySpatial(SoundHandle sound,AudioSpatial3D spatial);
     void StopAll();
     void Update();
     void SetMasterVolume(float volume);

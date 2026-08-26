@@ -24,7 +24,7 @@ private:
     struct Tower{Aevrynd::Vec2 pos{};TowerKind kind{};int level{1};float cooldown{};};
     struct Shot{Aevrynd::Vec2 pos{};size_t target{};float speed{},damage{},splash{};TowerKind kind{};bool dead{};};
     struct Modifiers{float enemySpeed{1},damage{1},gold{1},range{1};};
-    void Reset();void BeginWave();void SpawnEnemy(EnemyKind kind);void Fire(Tower&,size_t);void Hit(Shot&);void DefeatEnemy(Enemy&,Aevrynd::Color);void Burst(Aevrynd::Vec2,Aevrynd::Color,int);void UsePulse();void UseTimeLock();void TryBuildAt(Aevrynd::Vec2);void ChooseUpgrade(UpgradeKind);void AddCameraShake(float,float);void PlayCue(Aevrynd::SoundHandle,float volume=1,float pitch=1);
+    void Reset();void BeginWave();void SpawnEnemy(EnemyKind kind);void Fire(Tower&,size_t);void Hit(Shot&);void DefeatEnemy(Enemy&,Aevrynd::Color);void Burst(Aevrynd::Vec2,Aevrynd::Color,int);void UsePulse();void UseTimeLock();void TryBuildAt(Aevrynd::Vec2);void ChooseUpgrade(UpgradeKind);void AddCameraShake(float,float);void PlayCue(Aevrynd::SoundHandle,float volume=1,float pitch=1);void PlayCueAt(Aevrynd::SoundHandle,Aevrynd::Vec2,float volume=1,float pitch=1);
     void SaveGame()const;void LoadGame();void ConfirmLanguage();
     void RequestEvent();void ApplyPendingEvent();Aevrynd::Vec2 PathPosition(float)const;float TowerRange(TowerKind)const;float TowerCost(TowerKind)const;
     const char* Tr(const char* traditionalChinese,const char* english)const{return language_==Language::TraditionalChinese?traditionalChinese:english;}
