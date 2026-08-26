@@ -102,6 +102,12 @@ struct RendererStats {
     uint64_t totalMaterialTextureDecodedBytes{};
     uint64_t totalMaterialTextureCompressedBytes{};
     uint64_t materialTexturePreflightRejectedBytes{};
+    uint64_t materialDerivedDataCacheHits{};
+    uint64_t materialDerivedDataCacheMisses{};
+    uint64_t materialDerivedDataCacheInvalidations{};
+    uint64_t materialDerivedDataCacheWrites{};
+    uint64_t materialDerivedDataCacheReadBytes{};
+    uint64_t materialDerivedDataCacheWrittenBytes{};
     size_t pendingGpuReleaseBytes{};
     size_t peakPendingGpuReleaseBytes{};
     uint64_t deferredGpuReleaseBatches{};
@@ -230,6 +236,7 @@ public:
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
     void SetMaterialTextureMemoryBudget(size_t bytes);
+    void SetMaterialDerivedDataCacheDirectory(std::filesystem::path directory);
     void TrimTransientMemory();
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void WaitIdle();
