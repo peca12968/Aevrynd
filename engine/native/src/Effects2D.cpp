@@ -1,6 +1,7 @@
 #include <Aevrynd/Effects2D.h>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace Aevrynd {
 namespace {
@@ -10,11 +11,15 @@ float UnitRandom(uint32_t& state){return float(NextRandom(state)&0x00ffffffu)/fl
 float Mix(float start,float end,float amount){return start+(end-start)*amount;}
 }
 
-ParticleSystem2D::ParticleSystem2D(std::size_t capacity):capacity_((std::max)(std::size_t{1},capacity)){particles_.reserve(capacity_);}
+ParticleSystem2D::ParticleSystem2D(std::size_t capacity,std::size_t retainedCapacity):capacity_((std::max)(std::size_t{1},capacity)),retainedCapacity_((std::min)(capacity_,retainedCapacity)){particles_.reserve(retainedCapacity_);}
 
 void ParticleSystem2D::Clear(bool resetStats){particles_.clear();if(resetStats)stats_={};}
 
-void ParticleSystem2D::Emit(Vec2 origin,Vec2 velocity,Color color,float life,float size,const ParticleBurst2D& settings){if(particles_.size()>=capacity_){++stats_.dropped;return;}const float safeLife=(std::max)(.001f,life),safeSize=(std::max)(0.f,size);particles_.push_back({origin,velocity,color,safeLife,safeLife,safeSize,safeSize*(std::max)(0.f,settings.endSizeScale),settings.gravity,(std::max)(0.f,settings.drag),settings.shape});++stats_.emitted;stats_.peakActive=(std::max)(stats_.peakActive,particles_.size());}
+void ParticleSystem2D::Emit(Vec2 origin,Vec2 velocity,Color color,float life,float size,const ParticleBurst2D& settings){if(particles_.size()>=capacity_){++stats_.dropped;return;}if(particles_.size()==particles_.capacity()){const std::size_t current=particles_.capacity(),doubled=current&&current<=capacity_/2?current*2:capacity_;particles_.reserve((std::min)(capacity_,(std::max)(particles_.size()+1,(std::max)(std::size_t{1},doubled))));}const float safeLife=(std::max)(.001f,life),safeSize=(std::max)(0.f,size);particles_.push_back({origin,velocity,color,safeLife,safeLife,safeSize,safeSize*(std::max)(0.f,settings.endSizeScale),settings.gravity,(std::max)(0.f,settings.drag),settings.shape});++stats_.emitted;stats_.peakActive=(std::max)(stats_.peakActive,particles_.size());}
+
+ReusableMemoryStats ParticleSystem2D::MemoryStats()const{const std::size_t bytes=particles_.capacity()*sizeof(Particle),target=(std::max)(particles_.size(),retainedCapacity_),reclaimable=particles_.capacity()>target?(particles_.capacity()-target)*sizeof(Particle):0;return{bytes,reclaimable,lastReleasedBytes_,trimCount_};}
+
+std::size_t ParticleSystem2D::TrimUnusedMemory(){const std::size_t before=MemoryStats().retainedCapacityBytes;std::vector<Particle> replacement;replacement.reserve((std::max)(particles_.size(),retainedCapacity_));replacement.insert(replacement.end(),std::make_move_iterator(particles_.begin()),std::make_move_iterator(particles_.end()));particles_.swap(replacement);const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_;}
 
 void ParticleSystem2D::EmitBurst(Vec2 origin,Color color,std::size_t count,ParticleBurst2D settings,uint32_t seed){uint32_t state=seed?seed:0x9e3779b9u;const float minimumSpeed=(std::max)(0.f,(std::min)(settings.minimumSpeed,settings.maximumSpeed)),maximumSpeed=(std::max)(minimumSpeed,(std::max)(settings.minimumSpeed,settings.maximumSpeed));const float minimumLife=(std::max)(.001f,(std::min)(settings.minimumLife,settings.maximumLife)),maximumLife=(std::max)(minimumLife,(std::max)(settings.minimumLife,settings.maximumLife));const float minimumSize=(std::max)(0.f,(std::min)(settings.minimumSize,settings.maximumSize)),maximumSize=(std::max)(minimumSize,(std::max)(settings.minimumSize,settings.maximumSize));for(std::size_t index=0;index<count;++index){const float angle=UnitRandom(state)*Tau,speed=Mix(minimumSpeed,maximumSpeed,UnitRandom(state)),life=Mix(minimumLife,maximumLife,UnitRandom(state)),size=Mix(minimumSize,maximumSize,UnitRandom(state));Emit(origin,{std::cos(angle)*speed+settings.velocityBias.x,std::sin(angle)*speed+settings.velocityBias.y},color,life,size,settings);}}
 

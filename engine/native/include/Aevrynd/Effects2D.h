@@ -1,4 +1,5 @@
 #pragma once
+#include "Memory.h"
 #include "Renderer.h"
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +24,7 @@ struct ParticleSystem2DStats {
 
 class ParticleSystem2D {
 public:
-    explicit ParticleSystem2D(std::size_t capacity=2048);
+    explicit ParticleSystem2D(std::size_t capacity=2048,std::size_t retainedCapacity=128);
     void Clear(bool resetStats=true);
     void EmitBurst(Vec2 origin,Color color,std::size_t count,ParticleBurst2D settings={},uint32_t seed=1);
     void EmitRing(Vec2 origin,Color color,std::size_t count,float speed,ParticleBurst2D settings={},float phase=0.f);
@@ -32,13 +33,16 @@ public:
     void Render(DrawList& draw,Bounds2D worldBounds)const;
     std::size_t ActiveCount()const{return particles_.size();}
     std::size_t Capacity()const{return capacity_;}
+    ReusableMemoryStats MemoryStats()const;
+    std::size_t TrimUnusedMemory();
     ParticleSystem2DStats Stats()const{return stats_;}
 private:
     struct Particle {Vec2 position{},velocity{};Color color{};float remaining{},lifetime{},startSize{},endSize{},gravity{},drag{};ParticleShape2D shape{ParticleShape2D::Circle};};
     void Emit(Vec2 origin,Vec2 velocity,Color color,float life,float size,const ParticleBurst2D& settings);
     void RenderInternal(DrawList& draw,const Bounds2D* worldBounds)const;
     std::vector<Particle> particles_;
-    std::size_t capacity_{};
+    std::size_t capacity_{},retainedCapacity_{},lastReleasedBytes_{};
+    std::uint64_t trimCount_{};
     mutable ParticleSystem2DStats stats_{};
 };
 
