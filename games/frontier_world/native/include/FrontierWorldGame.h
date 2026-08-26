@@ -26,7 +26,8 @@ private:
     Aevrynd::CharacterController3D controller_{};
     Aevrynd::CollisionWorld3D collisionWorld_;
     Aevrynd::Scene3D scene_;
-    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{};
+    Aevrynd::Scene3DStats sceneStats_{};
+    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},sphereHighMesh_{},sphereLowMesh_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
     std::vector<Building> buildings_;
     std::vector<Monster> monsters_;

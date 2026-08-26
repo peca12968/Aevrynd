@@ -16,6 +16,8 @@ private:
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::MeshResource3D pyramidMesh_{};
     Aevrynd::MeshResource3D probeMesh_{};
+    Aevrynd::MeshResource3D sphereHighMesh_{};
+    Aevrynd::MeshResource3D sphereLowMesh_{};
     Aevrynd::SoundHandle audioPing_{};
     Aevrynd::CameraRig3D cameraRig_{};
     Aevrynd::Camera3D camera_{};
