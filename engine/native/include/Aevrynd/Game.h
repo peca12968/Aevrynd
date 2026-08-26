@@ -1,4 +1,5 @@
 #pragma once
+#include "Memory.h"
 namespace Aevrynd {
 class Engine;
 class IGame {
@@ -8,5 +9,7 @@ public:
     virtual void OnUpdate(Engine&,float fixedDelta)=0;
     virtual void OnRender(Engine&,float alpha)=0;
     virtual void OnStop(Engine&) {}
+    virtual ReusableMemoryStats GetReusableMemoryStats()const{return{};}
+    virtual std::size_t TrimReusableMemory(){return 0;}
 };
 }

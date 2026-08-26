@@ -22,6 +22,7 @@ struct MemoryPressurePolicy {
 
 struct ReusableMemoryStats {
     std::size_t retainedCapacityBytes{};
+    std::size_t reclaimableCapacityBytes{};
     std::size_t lastReleasedBytes{};
     std::uint64_t trimCount{};
 };

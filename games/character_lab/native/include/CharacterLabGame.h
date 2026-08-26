@@ -10,6 +10,8 @@ public:
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
     void OnStop(Aevrynd::Engine&)override;
+    Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;
+    std::size_t TrimReusableMemory()override;
 private:
     void BuildEnvironment();
     Aevrynd::CharacterController3D controller_{};
@@ -24,5 +26,6 @@ private:
     float yaw_{},pitch_{.12f};
     int automaticPhase_{-1},lastJumpCycle_{-1};
     uint64_t modeSwitches_{},cameraObstructions_{};
+    std::size_t lastReusableMemoryReleasedBytes_{};uint64_t reusableMemoryTrimCount_{};
     bool firstPerson_{},automatic_{true};
 };

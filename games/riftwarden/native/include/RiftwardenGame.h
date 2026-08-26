@@ -18,6 +18,8 @@ public:
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
     void OnStop(Aevrynd::Engine&)override;
+    Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;
+    std::size_t TrimReusableMemory()override;
 private:
     using TowerKind=RiftwardenRules::TowerKind;
     using EnemyKind=RiftwardenRules::EnemyKind;
@@ -39,5 +41,6 @@ private:
     int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{},shatters_{},upgradeSelection_{};size_t nextEnemyId_{1},gamepadSpot_{};uint32_t effectSeed_{1},ambientSequence_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{},ambientEffectClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true},upgradePending_{},performanceVisible_{};
     Language language_{Language::None},pendingLanguage_{Language::English};bool progressLoaded_{};TowerKind selected_{TowerKind::Bolt};Modifiers mods_{};RiftwardenRules::UpgradeLevels upgrades_{};
     Aevrynd::AudioEngine* audio_{};Aevrynd::SoundHandle buildSound_{},waveSound_{},abilitySound_{},damageSound_{};
+    std::size_t lastReusableMemoryReleasedBytes_{};std::uint64_t reusableMemoryTrimCount_{};
     std::jthread qwenThread_;std::atomic_bool qwenBusy_{false};std::mutex eventMutex_;std::optional<GeneratedEvent> pendingEvent_;std::string eventName_="SYSTEM READY",statusMessage_="WELCOME, WARDEN";
 };

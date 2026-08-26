@@ -16,6 +16,8 @@ public:
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
     void OnStop(Aevrynd::Engine&)override;
+    Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;
+    std::size_t TrimReusableMemory()override;
 private:
     struct Building {FrontierWorldRules::BuildingKind kind{};Aevrynd::Vec3 position{};float yaw{};Aevrynd::ColliderHandle3D collider{};};
     enum class MonsterKind {Wolf,Golem};
@@ -51,6 +53,7 @@ private:
     int health_{100},wood_{120},stone_{80},experience_{},level_{1},kills_{};
     uint64_t attacks_{},hits_{},buildAttempts_{};
     uint64_t navigationSearches_{},navigationVisited_{};
+    std::size_t lastReusableMemoryReleasedBytes_{};uint64_t reusableMemoryTrimCount_{};
     std::size_t navigationBlockedCells_{},navigationPathPoints_{};
     bool firstPerson_{},automatic_{true},moving_{},navigationDirty_{true};
 };

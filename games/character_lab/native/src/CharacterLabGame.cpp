@@ -10,6 +10,9 @@ namespace {
 constexpr Color Cyan{.12f,.92f,.82f,1},Gold{1.f,.72f,.2f,1},Ink{.72f,.86f,.88f,1},Coral{1.f,.35f,.25f,1};
 }
 
+Aevrynd::ReusableMemoryStats CharacterLabGame::GetReusableMemoryStats()const{const ReusableMemoryStats collision=collisionWorld_.MemoryStats();return{collision.retainedCapacityBytes,collision.reclaimableCapacityBytes,lastReusableMemoryReleasedBytes_,reusableMemoryTrimCount_};}
+std::size_t CharacterLabGame::TrimReusableMemory(){lastReusableMemoryReleasedBytes_=collisionWorld_.TrimUnusedMemory();++reusableMemoryTrimCount_;return lastReusableMemoryReleasedBytes_;}
+
 void CharacterLabGame::OnStart(Engine& engine){
     const BoxCollider3D boxes[]={{{0,-.5f,0},{14,.5f,14}},{{-13.5f,2,0},{.5f,2,14}},{{13.5f,2,0},{.5f,2,14}},{{0,2,-13.5f},{14,2,.5f}},{{0,2,13.5f},{14,2,.5f}},{{0,1,2},{2,1,.5f}},{{-5,1,-2},{1,1,2}},{{5,.75f,4},{1.5f,.75f,1.5f}}};for(std::size_t index=0;index<std::size(boxes);++index)collisionWorld_.CreateBox({boxes[index],1,CollisionLayerAll3D,index,false});controller_.Reset({0,0,-8});boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());scene_.SetBoxMesh(boxMesh_);jumpSound_=engine.Audio().CreateSound(GenerateTone(520,.08f,.14f));if(engine.DLSSOn())engine.ToggleDLSS();
 }

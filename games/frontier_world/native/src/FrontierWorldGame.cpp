@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <iterator>
 
 using namespace Aevrynd;
 using namespace FrontierWorldRules;
@@ -22,10 +23,14 @@ void CreateAnimationLibrary(Skeleton3D& humanoid,Skeleton3D& creature,AnimationC
     creature.joints={{-1,Joint({0,.62f,0})},{0,Joint({0,.16f,.58f})},{0,Joint({-.4f,-.32f,.28f})},{0,Joint({.4f,-.32f,.28f})},{0,Joint({-.4f,-.32f,-.28f})},{0,Joint({.4f,-.32f,-.28f})}};
     creatureWalk={.65f,true,{Track(0,{{0,Joint({0,.62f,0})},{.325f,Joint({0,.68f,0})},{.65f,Joint({0,.62f,0})}}),Track(1,{{0,Joint({0,.16f,.58f},{.12f,0,0})},{.325f,Joint({0,.16f,.58f},{-.12f,0,0})},{.65f,Joint({0,.16f,.58f},{.12f,0,0})}}),Track(2,{{0,Joint({-.4f,-.32f,.28f},{-.45f,0,0})},{.325f,Joint({-.4f,-.32f,.28f},{.45f,0,0})},{.65f,Joint({-.4f,-.32f,.28f},{-.45f,0,0})}}),Track(3,{{0,Joint({.4f,-.32f,.28f},{.45f,0,0})},{.325f,Joint({.4f,-.32f,.28f},{-.45f,0,0})},{.65f,Joint({.4f,-.32f,.28f},{.45f,0,0})}}),Track(4,{{0,Joint({-.4f,-.32f,-.28f},{.45f,0,0})},{.325f,Joint({-.4f,-.32f,-.28f},{-.45f,0,0})},{.65f,Joint({-.4f,-.32f,-.28f},{.45f,0,0})}}),Track(5,{{0,Joint({.4f,-.32f,-.28f},{-.45f,0,0})},{.325f,Joint({.4f,-.32f,-.28f},{.45f,0,0})},{.65f,Joint({.4f,-.32f,-.28f},{-.45f,0,0})}})}};
 }
+
 Vec3 JointPosition(const AnimationPose3D& pose,std::size_t joint,Vec3 local={}){return TransformPoint(pose.globalMatrices[joint],local);}
 uint32_t NextRandom(uint32_t& state){state^=state<<13;state^=state>>17;state^=state<<5;return state;}
 float RandomRange(uint32_t& state,float minimum,float maximum){return minimum+(maximum-minimum)*float(NextRandom(state)&0x00ffffffu)/float(0x01000000u);}
 }
+
+Aevrynd::ReusableMemoryStats FrontierWorldGame::GetReusableMemoryStats()const{const ReusableMemoryStats collision=collisionWorld_.MemoryStats(),streaming=worldStreamer_.MemoryStats(),navigation=navigationWorkspace_.MemoryStats();std::size_t retained=collision.retainedCapacityBytes+streaming.retainedCapacityBytes+navigation.retainedCapacityBytes+buildings_.capacity()*sizeof(Building)+monsters_.capacity()*sizeof(Monster),reclaimable=collision.reclaimableCapacityBytes+streaming.reclaimableCapacityBytes+navigation.reclaimableCapacityBytes;for(const Monster& monster:monsters_){retained+=monster.path.capacity()*sizeof(Vec3);if(monster.path.capacity()>monster.path.size())reclaimable+=(monster.path.capacity()-monster.path.size())*sizeof(Vec3);}auto excess=[](std::size_t capacity,std::size_t size,std::size_t baseline,std::size_t element){const std::size_t target=(std::max)(size,baseline);return capacity>target?(capacity-target)*element:std::size_t{};};reclaimable+=excess(buildings_.capacity(),buildings_.size(),32,sizeof(Building))+excess(monsters_.capacity(),monsters_.size(),64,sizeof(Monster));return{retained,reclaimable,lastReusableMemoryReleasedBytes_,reusableMemoryTrimCount_};}
+std::size_t FrontierWorldGame::TrimReusableMemory(){const std::size_t before=GetReusableMemoryStats().retainedCapacityBytes;collisionWorld_.TrimUnusedMemory();worldStreamer_.TrimUnusedMemory();navigationWorkspace_.TrimUnusedMemory(std::size_t(navigationGrid_.Settings().width)*navigationGrid_.Settings().depth);auto compact=[]<class T>(std::vector<T>& values,std::size_t baseline){std::vector<T> replacement;replacement.reserve((std::max)(values.size(),baseline));replacement.insert(replacement.end(),std::make_move_iterator(values.begin()),std::make_move_iterator(values.end()));values.swap(replacement);};for(Monster& monster:monsters_)compact(monster.path,monster.path.size());compact(buildings_,32);compact(monsters_,64);const std::size_t after=GetReusableMemoryStats().retainedCapacityBytes;lastReusableMemoryReleasedBytes_=before>after?before-after:0;++reusableMemoryTrimCount_;return lastReusableMemoryReleasedBytes_;}
 
 void FrontierWorldGame::OnStart(Engine& engine){
     boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());pyramidMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitPyramid());cylinderMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCylinder(12));coneHighMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(14));coneLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(6));sphereHighMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(12,8));sphereLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(6,3));

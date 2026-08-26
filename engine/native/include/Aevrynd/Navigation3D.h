@@ -28,6 +28,7 @@ private:
     std::vector<int64_t> parents_;
     std::vector<uint8_t> closed_;
     std::vector<NavigationCell3D> raw_,simplified_;
+    std::size_t retainedCells_{};
     std::size_t lastReleasedBytes_{};
     uint64_t trimCount_{};
 };

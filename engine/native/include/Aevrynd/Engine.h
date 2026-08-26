@@ -19,6 +19,7 @@ struct EngineMemoryStats {
     ProcessMemoryStats process{};
     TransientMemoryStats draw{};
     TransientMemoryStats renderer{};
+    ReusableMemoryStats game{};
     size_t lastReleasedBytes{};
     uint64_t trimCount{};
     uint64_t automaticTrimCount{};

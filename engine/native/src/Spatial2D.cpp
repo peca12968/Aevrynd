@@ -112,7 +112,19 @@ ReusableMemoryStats SpatialIndex2D::MemoryStats() const {
     std::size_t bytes = entries_.capacity() * sizeof(SpatialEntry2D) + cells_.capacity() * sizeof(Cell) +
                         (cellLookup_.bucket_count() + idLookup_.bucket_count()) * sizeof(void*);
     for (const Cell& cell : cells_) bytes += cell.entries.capacity() * sizeof(uint32_t);
-    return {bytes, lastReleasedBytes_, trimCount_};
+    const std::size_t retainedEntries = (std::max)(entries_.size(), reservedEntryCapacity_);
+    const std::size_t retainedCells = (std::max)(activeCellCount_, reservedCellCapacity_);
+    std::size_t reclaimable = entries_.capacity() > retainedEntries ? (entries_.capacity() - retainedEntries) * sizeof(SpatialEntry2D) : 0;
+    reclaimable += cells_.capacity() > retainedCells ? (cells_.capacity() - retainedCells) * sizeof(Cell) : 0;
+    for (std::size_t index = 0; index < cells_.size(); ++index) {
+        const std::size_t retained = index < activeCellCount_ ? cells_[index].entries.size() : 0;
+        if (cells_[index].entries.capacity() > retained) reclaimable += (cells_[index].entries.capacity() - retained) * sizeof(uint32_t);
+    }
+    const std::size_t retainedCellBuckets = (std::max)(std::size_t(8), reservedCellCapacity_ * 2);
+    const std::size_t retainedEntryBuckets = (std::max)(std::size_t(8), reservedEntryCapacity_ * 2);
+    if (cellLookup_.empty() && cellLookup_.bucket_count() > retainedCellBuckets) reclaimable += (cellLookup_.bucket_count() - retainedCellBuckets) * sizeof(void*);
+    if (idLookup_.empty() && idLookup_.bucket_count() > retainedEntryBuckets) reclaimable += (idLookup_.bucket_count() - retainedEntryBuckets) * sizeof(void*);
+    return {bytes, reclaimable, lastReleasedBytes_, trimCount_};
 }
 
 std::size_t SpatialIndex2D::TrimUnusedMemory() {
@@ -128,8 +140,14 @@ std::size_t SpatialIndex2D::TrimUnusedMemory() {
     for (std::size_t index = 0; index < active; ++index) compact(cells_[index].entries, cells_[index].entries.size());
     cells_.resize(active);
     compact(cells_, reservedCellCapacity_);
-    cellLookup_.rehash((std::max)(cellLookup_.size(), reservedCellCapacity_));
-    idLookup_.rehash((std::max)(idLookup_.size(), reservedEntryCapacity_));
+    decltype(cellLookup_) compactCells;
+    compactCells.reserve((std::max)(cellLookup_.size(), reservedCellCapacity_));
+    compactCells.insert(std::make_move_iterator(cellLookup_.begin()), std::make_move_iterator(cellLookup_.end()));
+    cellLookup_.swap(compactCells);
+    decltype(idLookup_) compactIds;
+    compactIds.reserve((std::max)(idLookup_.size(), reservedEntryCapacity_));
+    compactIds.insert(std::make_move_iterator(idLookup_.begin()), std::make_move_iterator(idLookup_.end()));
+    idLookup_.swap(compactIds);
     const std::size_t after = MemoryStats().retainedCapacityBytes;
     lastReleasedBytes_ = before > after ? before - after : 0;
     ++trimCount_;

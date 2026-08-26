@@ -15,6 +15,8 @@ public:
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
     void OnStop(Aevrynd::Engine&)override;
+    Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;
+    std::size_t TrimReusableMemory()override;
 private:
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
@@ -43,6 +45,7 @@ private:
     Aevrynd::WorldBuilder3D worldBuilder_{};
     std::vector<Aevrynd::WorldObjectHandle3D> authoredDynamicObjects_{};
     Aevrynd::MaterialTextureSetHandle3D groundTextures_{},woodTextures_{},brickTextures_{};
+    std::size_t lastReusableMemoryReleasedBytes_{};std::uint64_t reusableMemoryTrimCount_{};
     int cameraMode_{};
     int effectCycle_{-1};
     int physicsImpulseCycle_{-1};
