@@ -87,6 +87,7 @@ struct RendererStats {
     size_t residentTextureBytes{};
     size_t materialTextureMemoryBudgetBytes{};
     size_t peakMaterialTextureCpuStagingBytes{};
+    size_t peakMaterialTextureCompressionStagingBytes{};
     size_t materialTextureUploadStagingBytes{};
     size_t peakMaterialTextureUploadStagingBytes{};
     uint64_t materialTextureUploads{};
@@ -99,6 +100,7 @@ struct RendererStats {
     uint64_t materialTextureCacheHits{};
     uint64_t materialTextureBudgetRejections{};
     uint64_t totalMaterialTextureDecodedBytes{};
+    uint64_t totalMaterialTextureCompressedBytes{};
     uint64_t materialTexturePreflightRejectedBytes{};
     size_t pendingGpuReleaseBytes{};
     size_t peakPendingGpuReleaseBytes{};

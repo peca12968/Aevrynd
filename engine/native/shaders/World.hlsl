@@ -96,13 +96,19 @@ float4 Triplanar(Texture2D source, float3 worldPosition, float3 normal, float sc
          + source.Sample(materialSampler, worldPosition.xy * scale) * blend.z;
 }
 
+float3 DecodeBc5Normal(float2 encoded)
+{
+    const float2 xy = encoded * 2.0 - 1.0;
+    return float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
+}
+
 float3 TriplanarNormal(float3 worldPosition, float3 geometricNormal, float scale)
 {
     const float3 blend = BlendWeights(geometricNormal);
     const float3 axisSign = sign(geometricNormal);
-    const float3 x = normalTexture.Sample(materialSampler, worldPosition.zy * scale).xyz * 2.0 - 1.0;
-    const float3 y = normalTexture.Sample(materialSampler, worldPosition.xz * scale).xyz * 2.0 - 1.0;
-    const float3 z = normalTexture.Sample(materialSampler, worldPosition.xy * scale).xyz * 2.0 - 1.0;
+    const float3 x = DecodeBc5Normal(normalTexture.Sample(materialSampler, worldPosition.zy * scale).rg);
+    const float3 y = DecodeBc5Normal(normalTexture.Sample(materialSampler, worldPosition.xz * scale).rg);
+    const float3 z = DecodeBc5Normal(normalTexture.Sample(materialSampler, worldPosition.xy * scale).rg);
     const float3 mappedX = float3(axisSign.x * x.z, x.y, x.x);
     const float3 mappedY = float3(y.x, axisSign.y * y.z, y.y);
     const float3 mappedZ = float3(z.x, z.y, axisSign.z * z.z);
