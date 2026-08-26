@@ -38,6 +38,11 @@ struct DrawListStats2D {
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
 };
+struct TransientMemoryStats {
+    size_t trackedCapacityBytes{};
+    size_t lastReleasedBytes{};
+    uint64_t trimCount{};
+};
 struct RendererStats {
     unsigned outputWidth{},outputHeight{};
     CanvasViewport canvasViewport{};
@@ -97,7 +102,10 @@ struct RendererStats {
 class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;
-    DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialVertexCapacity*3/2);meshInstances.reserve(1024);}
+    static constexpr size_t InitialWorldIndexCapacity=InitialVertexCapacity*3/2;
+    static constexpr size_t InitialMeshInstanceCapacity=1024;
+    static constexpr size_t InitialPointLightCapacity=16;
+    DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
     void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;}
     Vec2 Translation()const{return transform_.translation;}
@@ -109,6 +117,8 @@ public:
     bool ClipEnabled()const{return clipEnabled_;}
     DrawListStats2D Stats2D()const{return stats_;}
     void ResetStats2D(){stats_={};}
+    void TrimTransientMemory();
+    [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
     void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale)});}
@@ -146,6 +156,8 @@ private:
     Vec2 clipMinimum_{},clipMaximum_{};
     bool clipEnabled_{};
     DrawListStats2D stats_{};
+    size_t lastReleasedBytes_{};
+    uint64_t trimCount_{};
     bool backfaceCulling_{true};
 };
 class D3D12Renderer {
@@ -173,6 +185,8 @@ public:
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
     void SetMaterialTextureMemoryBudget(size_t bytes);
+    void TrimTransientMemory();
+    [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void WaitIdle();
     bool SupportsDLSS() const;
     bool DLSSOn() const;

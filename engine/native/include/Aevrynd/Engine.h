@@ -7,6 +7,7 @@
 #include "Audio.h"
 #include "Game.h"
 #include "Input.h"
+#include "Memory.h"
 #include "Renderer.h"
 #include "Scene2D.h"
 
@@ -14,6 +15,13 @@ namespace Aevrynd {
 struct Mesh3D;
 struct MeshResource3D;
 struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true; };
+struct EngineMemoryStats {
+    ProcessMemoryStats process{};
+    TransientMemoryStats draw{};
+    TransientMemoryStats renderer{};
+    size_t lastReleasedBytes{};
+    uint64_t trimCount{};
+};
 class Engine {
 public:
     explicit Engine(EngineConfig config={}); ~Engine();
@@ -41,15 +49,18 @@ public:
     MaterialTextureSetHandle3D CreateMaterialTextureSet3D(const MaterialTextureSetDefinition3D& definition){return renderer_->CreateMaterialTextureSet(definition);}
     void DestroyMaterialTextureSet3D(MaterialTextureSetHandle3D textures){renderer_->DestroyMaterialTextureSet(textures);}
     void SetMaterialTextureMemoryBudget(size_t bytes){renderer_->SetMaterialTextureMemoryBudget(bytes);}
+    size_t TrimUnusedMemory();
+    [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}
 private:
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
-    EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{}; float time_{};
+    EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{}; float time_{},lastMemorySampleTime_{-1.f};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
     std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
+    ProcessMemoryStats processMemoryStats_{};size_t lastReleasedBytes_{};uint64_t trimCount_{};
     Color clearColor_{.018f,.045f,.055f,1};
 };
 }

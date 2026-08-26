@@ -6,6 +6,7 @@ add_library(AevryndEngine STATIC
   src/Effects2D.cpp
   src/Engine.cpp
   src/HeightField3D.cpp
+  src/Memory.cpp
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
   src/Navigation3D.cpp
@@ -19,7 +20,7 @@ set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
 target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include")
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(AevryndEngine PUBLIC "${STREAMLINE_ROOT}/lib/x64/sl.interposer.lib" d3dcompiler windowscodecs ole32 user32 gdi32 xaudio2 xinput9_1_0)
+target_link_libraries(AevryndEngine PUBLIC "${STREAMLINE_ROOT}/lib/x64/sl.interposer.lib" d3dcompiler windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
 
 add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
 target_compile_options(AevryndDrawListTest PRIVATE /W4 /permissive- /utf-8)

@@ -3,6 +3,7 @@
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Mesh3D.h>
 #include <Aevrynd/MaterialQuality3D.h>
+#include <Aevrynd/Memory.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/PhysicsWorld3D.h>
 #include <Aevrynd/Scene2D.h>
@@ -80,6 +81,17 @@ int ValidateSceneRuntime2D() {
         std::cerr << "Occlusion field reuse failed\n";
         return 41;
     }
+    DrawList transientDraw;
+    const TransientMemoryStats baselineMemory=transientDraw.MemoryStats();
+    transientDraw.vertices.reserve(DrawList::InitialVertexCapacity*8);transientDraw.worldVertices.reserve(DrawList::InitialVertexCapacity*8);transientDraw.worldIndices.reserve(DrawList::InitialWorldIndexCapacity*8);transientDraw.meshInstances.reserve(DrawList::InitialMeshInstanceCapacity*8);
+    const TransientMemoryStats expandedMemory=transientDraw.MemoryStats();
+    transientDraw.TrimTransientMemory();
+    const TransientMemoryStats trimmedMemory=transientDraw.MemoryStats();
+    const ProcessMemoryStats processMemory=QueryProcessMemoryStats();
+    if(expandedMemory.trackedCapacityBytes<=baselineMemory.trackedCapacityBytes||trimmedMemory.trackedCapacityBytes>baselineMemory.trackedCapacityBytes||trimmedMemory.lastReleasedBytes!=expandedMemory.trackedCapacityBytes-trimmedMemory.trackedCapacityBytes||trimmedMemory.trimCount!=1||!processMemory.available||!processMemory.workingSetBytes||processMemory.peakWorkingSetBytes<processMemory.workingSetBytes||!processMemory.privateBytes){
+        std::cerr << "Transient or process memory telemetry failed\n";
+        return 42;
+    }
     DepthBatch2D batch(64);
     batch.Add(3, 0);
     batch.Add(1, 1);
@@ -112,7 +124,7 @@ int ValidateSceneRuntime2D() {
         std::cerr << "Reusable depth batch budget or telemetry failed\n";
         return 38;
     }
-    std::cout << "depthEntries=" << sortedStats.peakEntries << " depthCapacity=" << retainedCapacity << " depthSortUs=" << elapsedMicroseconds << " depthSmallSorts=" << sortedStats.smallSorts << " depthLargeSorts=" << sortedStats.largeSorts << '\n';
+    std::cout << "depthEntries=" << sortedStats.peakEntries << " depthCapacity=" << retainedCapacity << " depthSortUs=" << elapsedMicroseconds << " depthSmallSorts=" << sortedStats.smallSorts << " depthLargeSorts=" << sortedStats.largeSorts << " transientReleased=" << trimmedMemory.lastReleasedBytes << " workingSet=" << processMemory.workingSetBytes << " privateBytes=" << processMemory.privateBytes << '\n';
     return 0;
 }
 
@@ -404,6 +416,7 @@ int main() {
         const uint64_t averageValidationWaitUs=stats.validationWaits?stats.totalValidationWaitNanoseconds/stats.validationWaits/1000:0;
         const uint64_t averageGpuUs=stats.gpuTimingSamples?stats.totalGpuFrameNanoseconds/stats.gpuTimingSamples/1000:0;
         std::cout<<"frames="<<stats.submittedFrames<<" resourceWaits="<<stats.resourceWaits<<" resourceAverageUs="<<averageResourceWaitUs<<" resourcePeakUs="<<stats.peakResourceWaitNanoseconds/1000<<" validationWaits="<<stats.validationWaits<<" validationAverageUs="<<averageValidationWaitUs<<" validationPeakUs="<<stats.peakValidationWaitNanoseconds/1000<<" gpuSamples="<<stats.gpuTimingSamples<<" gpuAverageUs="<<averageGpuUs<<" gpuPeakUs="<<stats.peakGpuFrameNanoseconds/1000<<" meshReferences="<<stats.residentMeshReferences<<" meshBytes="<<stats.residentMeshBytes<<" meshCacheHits="<<stats.meshCacheHits<<" meshBudgetRejections="<<stats.meshBudgetRejections<<" textureCpuStagingBytes="<<stats.peakMaterialTextureCpuStagingBytes<<" textureUploadStagingBytes="<<stats.peakMaterialTextureUploadStagingBytes<<" textureDecodedBytes="<<stats.totalMaterialTextureDecodedBytes<<" texturePreflightRejectedBytes="<<stats.materialTexturePreflightRejectedBytes<<'\n';
+        renderer.TrimTransientMemory();renderer.Render(draw,{.02f,.04f,.05f,1.f});renderer.WaitIdle();const TransientMemoryStats rendererMemory=renderer.MemoryStats();if(rendererMemory.trimCount!=1||renderer.GetStats().lastSubmittedMeshInstances!=4){std::cerr<<"Renderer transient memory recovery failed\n";rendererResult=18;}
         renderer.DestroyMaterialTextureSet(textureSet);const RendererStats retainedTextureStats=renderer.GetStats();if(retainedTextureStats.residentMaterialTextureSets!=1||retainedTextureStats.residentMaterialTextureReferences!=32||retainedTextureStats.residentTextureBytes!=4194300){std::cerr<<"Shared material texture released too early\n";rendererResult=17;}for(MaterialTextureSetHandle3D shared:sharedTextureSets)renderer.DestroyMaterialTextureSet(shared);const RendererStats textureReleasedStats=renderer.GetStats();if(textureReleasedStats.residentMaterialTextureSets||textureReleasedStats.residentMaterialTextureReferences||textureReleasedStats.residentTextureBytes){std::cerr<<"Material texture destruction failed\n";rendererResult=17;}renderer.DestroyMesh(boxHandle);const RendererStats retainedMeshStats=renderer.GetStats();if(retainedMeshStats.residentMeshes!=2||retainedMeshStats.residentMeshReferences!=33||retainedMeshStats.residentMeshBytes!=696){std::cerr<<"Shared resident mesh released too early\n";rendererResult=15;}for(MeshHandle3D shared:sharedMeshHandles)renderer.DestroyMesh(shared);renderer.DestroyMesh(triangleHandle);renderer.Render(draw,{.02f,.04f,.05f,1.f});renderer.WaitIdle();const RendererStats destroyedStats=renderer.GetStats();if(destroyedStats.residentMeshes!=0||destroyedStats.residentMeshReferences!=0||destroyedStats.residentMeshBytes!=0||destroyedStats.lastSubmittedMeshInstances!=0||destroyedStats.lastSubmittedOverlayInstances!=0||destroyedStats.totalDroppedMeshInstances!=draw.meshInstances.size()||destroyedStats.lastDrawCalls!=2){std::cerr<<"Resident mesh destruction failed\n";rendererResult=15;}
     } catch (const std::exception& error) {
         std::cerr << "D3D12 renderer smoke test failed: " << error.what() << '\n';
