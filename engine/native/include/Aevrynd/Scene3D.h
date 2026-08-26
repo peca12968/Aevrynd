@@ -1,8 +1,10 @@
 #pragma once
 #include "Camera.h"
 #include "Geometry3D.h"
+#include "Memory.h"
 #include "Mesh3D.h"
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -17,6 +19,7 @@ struct ProjectedShadows3D {bool enabled{};float planeHeight{.025f},opacity{.22f}
 struct SceneVisibility3D {float maximumDistance{},minimumProjectedRadiusPixels{};};
 struct Scene3DSubmissionOptions {bool frustumCulling{true};bool gpuInstancing{true};ProjectedShadows3D shadows{};SceneVisibility3D visibility{};};
 struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{},distanceCulledMeshInstances{},screenSizeCulledMeshInstances{},lodMeshInstances{},nearLodInstances{},farLodInstances{},lodTrianglesSaved{},shadowCasters{},shadowInstances{},shadowSkipped{};};
+struct Scene3DCapacity {std::size_t triangles{},lines{},boxes{},meshes{},lodMeshes{};};
 enum class SceneObjectType3D {None,Triangle,Box,Mesh};
 struct SceneQueryStats3D {std::size_t boundsTested{},boundsRejected{},trianglesTested{};};
 struct SceneHit3D {SceneObjectType3D objectType{SceneObjectType3D::None};std::size_t objectIndex{},triangleIndex{};float distance{std::numeric_limits<float>::infinity()};Vec3 position{},normal{},barycentric{};explicit operator bool()const{return objectType!=SceneObjectType3D::None;}};
@@ -24,6 +27,19 @@ struct SceneHit3D {SceneObjectType3D objectType{SceneObjectType3D::None};std::si
 class Scene3D {
 public:
     void Clear(){triangles_.clear();lines_.clear();boxes_.clear();meshes_.clear();lodMeshes_.clear();}
+    void Reserve(Scene3DCapacity capacity){retainedCapacity_=capacity;triangles_.reserve(capacity.triangles);lines_.reserve(capacity.lines);boxes_.reserve(capacity.boxes);meshes_.reserve(capacity.meshes);lodMeshes_.reserve(capacity.lodMeshes);}
+    [[nodiscard]] ReusableMemoryStats MemoryStats()const{
+        const std::size_t retained=triangles_.capacity()*sizeof(Triangle3D)+lines_.capacity()*sizeof(Line3D)+boxes_.capacity()*sizeof(Box3D)+meshes_.capacity()*sizeof(MeshObject3D)+lodMeshes_.capacity()*sizeof(MeshLodObject3D);
+        const auto excess=[](std::size_t capacity,std::size_t size,std::size_t baseline,std::size_t element){const std::size_t target=(std::max)(size,baseline);return capacity>target?(capacity-target)*element:std::size_t{};};
+        const std::size_t reclaimable=excess(triangles_.capacity(),triangles_.size(),retainedCapacity_.triangles,sizeof(Triangle3D))+excess(lines_.capacity(),lines_.size(),retainedCapacity_.lines,sizeof(Line3D))+excess(boxes_.capacity(),boxes_.size(),retainedCapacity_.boxes,sizeof(Box3D))+excess(meshes_.capacity(),meshes_.size(),retainedCapacity_.meshes,sizeof(MeshObject3D))+excess(lodMeshes_.capacity(),lodMeshes_.size(),retainedCapacity_.lodMeshes,sizeof(MeshLodObject3D));
+        return{retained,reclaimable,lastReleasedBytes_,trimCount_};
+    }
+    std::size_t TrimUnusedMemory(){
+        const std::size_t before=MemoryStats().retainedCapacityBytes;
+        auto compact=[]<class T>(std::vector<T>& values,std::size_t baseline){std::vector<T> replacement;replacement.reserve((std::max)(values.size(),baseline));replacement.insert(replacement.end(),std::make_move_iterator(values.begin()),std::make_move_iterator(values.end()));values.swap(replacement);};
+        compact(triangles_,retainedCapacity_.triangles);compact(lines_,retainedCapacity_.lines);compact(boxes_,retainedCapacity_.boxes);compact(meshes_,retainedCapacity_.meshes);compact(lodMeshes_,retainedCapacity_.lodMeshes);
+        const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_;
+    }
     void Triangle(Vec3 a,Vec3 b,Vec3 c,Color color){triangles_.push_back({a,b,c,color});}
     void Line(Vec3 a,Vec3 b,float width,Color color){lines_.push_back({a,b,width,color});}
     void Box(Vec3 center,Vec3 size,Color color){boxes_.push_back({Transform3D{center,{},size},Material3D{color}});}
@@ -84,5 +100,8 @@ private:
     std::vector<MeshObject3D> meshes_;
     std::vector<MeshLodObject3D> lodMeshes_;
     MeshResource3D boxMesh_{};
+    Scene3DCapacity retainedCapacity_{};
+    std::size_t lastReleasedBytes_{};
+    std::uint64_t trimCount_{};
 };
 }
