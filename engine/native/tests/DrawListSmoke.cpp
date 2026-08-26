@@ -2,8 +2,10 @@
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Mesh3D.h>
 #include <Aevrynd/Scene2D.h>
+#include <Aevrynd/Spatial2D.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <iostream>
@@ -43,7 +45,46 @@ static_assert(PackSurface3D({.2f,.8f,.4f,.6f}) == PackColorRgba8({.2f,.8f,.4f,.6
 static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
 static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
 
+int ValidateSpatial2D() {
+    const Vec2 points[] = {{0, 0}, {30, 0}, {30, 40}};
+    PolylinePath2D path;
+    path.SetPoints(points);
+    const PathSample2D middle = path.Sample(.5f);
+    const PathSample2D closest = path.ClosestPoint({24, 17});
+    if (std::abs(path.Length() - 70.f) > .001f || path.SegmentCount() != 2 || Distance(middle.position, {30, 5}) > .001f || middle.segment != 1 || Distance(middle.tangent, {0, 1}) > .001f || Distance(closest.position, {30, 17}) > .001f || closest.segment != 1) {
+        std::cerr << "Cached arc-length path queries failed\n";
+        return 23;
+    }
+    SpatialIndex2D index(32.f);
+    index.Reserve(4096);
+    for (std::size_t item = 0; item < 4096; ++item) index.Insert(item + 1, item, {float(item % 64) * 8.f, float(item / 64) * 8.f}, item == 0 ? 3.f : 0.f, item % 2 ? 1u : 2u);
+    std::vector<SpatialHit2D> hits;
+    index.QueryCircle({0, 0}, 1.f, 2u, hits);
+    if (hits.size() != 1 || hits.front().id != 1 || !index.Find(1) || index.Find(1)->userIndex != 0) {
+        std::cerr << "Spatial radius and stable lookup failed\n";
+        return 24;
+    }
+    index.QueryCircle({128, 128}, 12.f, 1u, hits);
+    const auto nearest = index.Nearest({129, 129}, 20.f);
+    if (hits.empty() || !nearest || nearest->distanceSquared > 3.f) {
+        std::cerr << "Masked spatial query failed\n";
+        return 25;
+    }
+    constexpr int Iterations = 10000;
+    const auto start = std::chrono::steady_clock::now();
+    for (int iteration = 0; iteration < Iterations; ++iteration) index.QueryCircle({float(iteration % 512), float((iteration * 7) % 512)}, 48.f, 0xffffffffu, hits);
+    const uint64_t averageNanoseconds = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()) / Iterations;
+    const SpatialIndex2DStats stats = index.Stats();
+    if (averageNanoseconds > 250000 || stats.candidates >= uint64_t(Iterations) * 4096u) {
+        std::cerr << "Spatial query budget failed\n";
+        return 26;
+    }
+    std::cout << "pathLength=" << path.Length() << " spatialEntries=" << stats.entries << " spatialCells=" << stats.occupiedCells << " spatialQueries=" << stats.queries << " spatialCandidates=" << stats.candidates << " spatialAverageNs=" << averageNanoseconds << '\n';
+    return 0;
+}
+
 int main() {
+    if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
     std::vector<DepthEntry> entries = {
         {320.f, 0, 0},
         {120.f, 1, 1},

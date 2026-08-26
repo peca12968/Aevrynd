@@ -9,6 +9,7 @@ add_library(AevryndEngine STATIC
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
   src/Navigation3D.cpp
+  src/Spatial2D.cpp
   src/StreamlineDLSS.cpp
   src/WorldStreamer3D.cpp
 )
