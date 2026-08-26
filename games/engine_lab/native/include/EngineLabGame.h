@@ -17,4 +17,6 @@ private:
     bool automatic_{true};
     bool cullingEnabled_{true};
     bool instancingEnabled_{true};
+    bool backfaceCulling_{true};
+    bool lightingEnabled_{true};
 };

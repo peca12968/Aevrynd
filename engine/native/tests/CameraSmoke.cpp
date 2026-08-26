@@ -14,6 +14,10 @@ static_assert(Dot({1,2,3},{4,5,6})==32.f);
 static_assert(Cross({1,0,0},{0,1,0}).z==1.f);
 
 int main(){
+    const Matrix4 model=CreateTransformMatrix({3,4,5},{.3f,.7f,.2f},{2,4,.5f}),normalMatrix=CreateNormalMatrix(model);
+    const Vec3 localNormal=Normalize({1,1,0}),localTangent=Normalize({1,-1,0});
+    const Vec3 worldNormal=TransformNormal(normalMatrix,localNormal),worldTangent=Normalize(TransformPoint(model,localTangent)-TransformPoint(model,{}));
+    if(!Near(Length(worldNormal),1)||!Near(Dot(worldNormal,worldTangent),0,.002f)){std::cerr<<"Inverse-transpose normal transform failed\n";return 10;}
     Camera3D firstPerson=MakeFirstPersonCamera({0,0,0},0,0);
     ProjectedPoint center=ProjectToViewport({0,0,10},firstPerson,{1280,720});
     if(!center.visible||!Near(center.position.x,640)||!Near(center.position.y,360)||center.depth<=0||center.depth>=1){std::cerr<<"First-person projection failed\n";return 1;}

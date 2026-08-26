@@ -29,12 +29,14 @@ static_assert(D3D12Renderer::DrawableVertexCount(8) == 6);
 static_assert(D3D12Renderer::DrawableVertexCount(D3D12Renderer::MaxVertices + 100) == D3D12Renderer::MaxVertices);
 static_assert(sizeof(Vertex) == 12);
 static_assert(offsetof(Vertex, color) == 8);
-static_assert(sizeof(Vertex3D) == 16);
-static_assert(offsetof(Vertex3D, color) == 12);
+static_assert(sizeof(Vertex3D) == 20);
+static_assert(offsetof(Vertex3D, normal) == 12);
+static_assert(offsetof(Vertex3D, color) == 16);
 static_assert(D3D12Renderer::MaxVertices * sizeof(Vertex) * D3D12Renderer::BufferedFrames == 8640000);
-static_assert(D3D12Renderer::MaxWorldVertices * sizeof(Vertex3D) * D3D12Renderer::BufferedFrames == 11520000);
+static_assert(D3D12Renderer::MaxWorldVertices * sizeof(Vertex3D) * D3D12Renderer::BufferedFrames == 14400000);
 static_assert(D3D12Renderer::MaxWorldIndices * sizeof(uint32_t) * D3D12Renderer::BufferedFrames == 5760000);
-static_assert(D3D12Renderer::MaxMeshInstances * (sizeof(Matrix4)+sizeof(uint32_t)) * D3D12Renderer::BufferedFrames == 13369344);
+static_assert(D3D12Renderer::MeshInstanceUploadBytes == 116);
+static_assert(D3D12Renderer::MaxMeshInstances * D3D12Renderer::MeshInstanceUploadBytes * D3D12Renderer::BufferedFrames == 22806528);
 static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
 static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
 
@@ -107,7 +109,7 @@ int main() {
         renderer.Initialize(window, 1280, 720);
         if (renderer.DLSSOn()) renderer.ToggleDLSS();
         Mesh3D box=Mesh3D::CreateUnitBox();Mesh3D invalid=box;invalid.indices.back()=999;if(renderer.CreateMesh(invalid.vertices,invalid.indices)){std::cerr<<"Invalid resident mesh was accepted\n";rendererResult=13;}
-        const MeshHandle3D boxHandle=renderer.CreateMesh(box.vertices,box.indices);const std::array<Vertex3D,3> triangleVertices={Vertex3D{-.5f,-.5f,0,0xffffffffu},Vertex3D{0,.5f,0,0xffffffffu},Vertex3D{.5f,-.5f,0,0xffffffffu}};const std::array<uint32_t,3> triangleIndices={0,1,2};const MeshHandle3D triangleHandle=renderer.CreateMesh(triangleVertices,triangleIndices);if(!boxHandle||!triangleHandle){std::cerr<<"Resident mesh creation failed\n";rendererResult=14;}else{draw.MeshInstance(boxHandle,CreateTransformMatrix({-1,0,3},{},{1,2,1}),{.4f,.8f,1,1});draw.MeshInstance(boxHandle,CreateTransformMatrix({1,0,3},{},{1,1,1}),{1,.5f,.2f,1});draw.MeshInstance(triangleHandle,CreateTransformMatrix({0,1,2},{},{1,1,1}),{.7f,1,.4f,1});}
+        const MeshHandle3D boxHandle=renderer.CreateMesh(box.vertices,box.indices);const uint32_t forwardNormal=PackNormalSnorm8({0,0,-1});const std::array<Vertex3D,3> triangleVertices={Vertex3D{-.5f,-.5f,0,forwardNormal,0xffffffffu},Vertex3D{0,.5f,0,forwardNormal,0xffffffffu},Vertex3D{.5f,-.5f,0,forwardNormal,0xffffffffu}};const std::array<uint32_t,3> triangleIndices={0,1,2};const MeshHandle3D triangleHandle=renderer.CreateMesh(triangleVertices,triangleIndices);if(!boxHandle||!triangleHandle){std::cerr<<"Resident mesh creation failed\n";rendererResult=14;}else{draw.MeshInstance(boxHandle,CreateTransformMatrix({-1,0,3},{},{1,2,1}),{.4f,.8f,1,1});draw.MeshInstance(boxHandle,CreateTransformMatrix({1,0,3},{},{1,1,1}),{1,.5f,.2f,1});draw.MeshInstance(triangleHandle,CreateTransformMatrix({0,1,2},{},{1,1,1}),{.7f,1,.4f,1});}
         uint64_t expectedFrames = 4;
         for (int frame = 0; frame < 4; ++frame) renderer.Render(draw, {.02f, .04f, .05f, 1.f});
         if (renderer.SupportsDLSS()) {
@@ -120,9 +122,9 @@ int main() {
         if (stats.submittedFrames != expectedFrames || stats.lastSubmittedVertices != draw.vertices.size() ||
             stats.lastSubmittedWorldVertices != draw.worldVertices.size() ||
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
-            stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) + draw.meshInstances.size() * (sizeof(Matrix4)+sizeof(uint32_t)) ||
+            stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) + draw.meshInstances.size() * D3D12Renderer::MeshInstanceUploadBytes ||
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
-            stats.lastSubmittedMeshInstances != 3 || stats.peakSubmittedMeshInstances < 3 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 588 ||
+            stats.lastSubmittedMeshInstances != 3 || stats.peakSubmittedMeshInstances < 3 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
             stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 4 ||
             stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds ||
             (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||

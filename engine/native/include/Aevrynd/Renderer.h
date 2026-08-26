@@ -9,9 +9,10 @@
 
 namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
-struct Vertex3D {float x,y,z;uint32_t color;};
+struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
-struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};uint32_t tint{0xffffffffu};};
+struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu};};
+struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 struct RendererStats {
     size_t lastSubmittedVertices{};
     size_t lastSubmittedWorldVertices{};
@@ -29,6 +30,7 @@ struct RendererStats {
     size_t residentMeshes{};
     size_t residentMeshBytes{};
     uint32_t lastDrawCalls{};
+    bool lastBackfaceCulling{};
     uint64_t submittedFrames{};
     uint64_t resourceWaits{};
     uint64_t validationWaits{};
@@ -48,9 +50,13 @@ public:
     Vec2 Translation()const{return translation_;}
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
-    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1}){if(mesh)meshInstances.push_back({mesh,transform,PackColorRgba8(tint)});}
+    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1}){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint)});}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
+    void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
+    const DirectionalLight3D& DirectionalLight()const{return light_;}
+    void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
+    bool BackfaceCulling()const{return backfaceCulling_;}
     void Quad(Vec2 center,Vec2 size,Color color);
     void Diamond(Vec2 center,float rx,float ry,Color color);
     void IsoPrism(Vec2 center,float rx,float ry,float height,Color top,Color left,Color right);
@@ -65,6 +71,8 @@ public:
 private:
     Vec2 translation_{};
     Matrix4 viewProjection_{Matrix4::Identity()};
+    DirectionalLight3D light_{};
+    bool backfaceCulling_{true};
 };
 class D3D12Renderer {
 public:
@@ -73,6 +81,7 @@ public:
     static constexpr size_t MaxWorldVertices=240000;
     static constexpr size_t MaxWorldIndices=480000;
     static constexpr size_t MaxMeshInstances=65536;
+    static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t);
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
