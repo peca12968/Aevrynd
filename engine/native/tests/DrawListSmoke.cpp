@@ -7,6 +7,7 @@
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/PhysicsWorld3D.h>
 #include <Aevrynd/Scene2D.h>
+#include <Aevrynd/Scene25D.h>
 #include <Aevrynd/Spatial2D.h>
 #include <Aevrynd/WorldBuilder3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
@@ -84,6 +85,8 @@ int ValidateSceneRuntime2D() {
         std::cerr << "Occlusion field reuse failed\n";
         return 41;
     }
+    Scene25D scene25D(64,4);scene25D.AddOccluder({{100,100},20,60,5});scene25D.Add({100,80},0,1,8);scene25D.Add({100,120},1,2);scene25D.Add({120,80},2,1);scene25D.Finalize();const auto smallScene=scene25D.Entries();if(smallScene.size()!=3||smallScene[0].index!=0||smallScene[1].index!=2||smallScene[2].index!=1||smallScene[0].occlusionAmount<.99f||scene25D.Stats().smallSorts!=1){std::cerr<<"Unified 2.5D scene ordering or occlusion failed\n";return 43;}
+    scene25D.Clear();constexpr std::size_t SceneEntryCount=10000;for(int occluderIndex=0;occluderIndex<16;++occluderIndex)scene25D.AddOccluder({{float(occluderIndex*40),300},18,70,4});for(std::size_t index=0;index<SceneEntryCount;++index)scene25D.Add({float(index%640),float((SceneEntryCount-index)%257)},index,index%3,index%2?8.f:0.f);const auto sceneStart=std::chrono::steady_clock::now();scene25D.Finalize();const uint64_t sceneElapsedMicroseconds=uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-sceneStart).count());const auto largeScene=scene25D.Entries();for(std::size_t index=1;index<largeScene.size();++index)if(largeScene[index].depth<largeScene[index-1].depth||(largeScene[index].depth==largeScene[index-1].depth&&largeScene[index].index<largeScene[index-1].index)){std::cerr<<"Stable large 2.5D scene ordering failed\n";return 44;}const Scene25DStats sceneStats=scene25D.Stats();scene25D.Clear();scene25D.Reserve(128);const ReusableMemoryStats expandedSceneMemory=scene25D.MemoryStats();const std::size_t sceneReleased=scene25D.TrimUnusedMemory();const ReusableMemoryStats trimmedSceneMemory=scene25D.MemoryStats();if(sceneElapsedMicroseconds>30000||sceneStats.entries!=SceneEntryCount||sceneStats.largeSorts!=1||sceneStats.occlusion.queries!=SceneEntryCount/2||sceneStats.occlusion.tests!=uint64_t(SceneEntryCount/2)*16||!expandedSceneMemory.reclaimableCapacityBytes||!sceneReleased||trimmedSceneMemory.reclaimableCapacityBytes){std::cerr<<"2.5D scene throughput or memory recovery failed\n";return 45;}std::cout<<"scene25DEntries="<<sceneStats.entries<<" scene25DOcclusionTests="<<sceneStats.occlusion.tests<<" scene25DUs="<<sceneElapsedMicroseconds<<" scene25DReleased="<<sceneReleased<<'\n';
     DrawList transientDraw;
     const TransientMemoryStats baselineMemory=transientDraw.MemoryStats();
     transientDraw.vertices.reserve(DrawList::InitialVertexCapacity*8);transientDraw.worldVertices.reserve(DrawList::InitialVertexCapacity*8);transientDraw.worldIndices.reserve(DrawList::InitialWorldIndexCapacity*8);transientDraw.meshInstances.reserve(DrawList::InitialMeshInstanceCapacity*8);

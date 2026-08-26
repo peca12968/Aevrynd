@@ -1,5 +1,6 @@
 #pragma once
 #include "Math.h"
+#include "Memory.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -47,9 +48,9 @@ struct OcclusionField2DStats {
 
 class OcclusionField2D {
 public:
-    explicit OcclusionField2D(std::size_t initialCapacity = 0) { occluders_.reserve(initialCapacity); }
+    explicit OcclusionField2D(std::size_t initialCapacity = 0) { Reserve(initialCapacity); }
     void Clear() { occluders_.clear(); stats_.queries = stats_.tests = stats_.hits = 0; }
-    void Reserve(std::size_t capacity) { occluders_.reserve(capacity); }
+    void Reserve(std::size_t capacity) { retainedCapacity_ = capacity; occluders_.reserve(capacity); }
     void Add(VerticalOccluder2D occluder) { occluders_.push_back(occluder); stats_.peakOccluders = (std::max)(stats_.peakOccluders, occluders_.size()); }
     [[nodiscard]] float Query(Vec2 targetFoot, float targetRadius) {
         ++stats_.queries;
@@ -59,9 +60,13 @@ public:
         return amount;
     }
     [[nodiscard]] OcclusionField2DStats Stats() const { OcclusionField2DStats result = stats_; result.occluders = occluders_.size(); result.capacity = occluders_.capacity(); return result; }
+    [[nodiscard]] ReusableMemoryStats MemoryStats() const { const std::size_t bytes=occluders_.capacity()*sizeof(VerticalOccluder2D),target=(std::max)(occluders_.size(),retainedCapacity_),reclaimable=occluders_.capacity()>target?(occluders_.capacity()-target)*sizeof(VerticalOccluder2D):0;return{bytes,reclaimable,lastReleasedBytes_,trimCount_}; }
+    std::size_t TrimUnusedMemory() { const std::size_t before=MemoryStats().retainedCapacityBytes;std::vector<VerticalOccluder2D> replacement;replacement.reserve((std::max)(occluders_.size(),retainedCapacity_));replacement.insert(replacement.end(),occluders_.begin(),occluders_.end());occluders_.swap(replacement);const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_; }
 private:
     std::vector<VerticalOccluder2D> occluders_{};
     OcclusionField2DStats stats_{};
+    std::size_t retainedCapacity_{},lastReleasedBytes_{};
+    std::uint64_t trimCount_{};
 };
 
 // 小型批次使用穩定插入排序，避免額外配置並維持相同深度的提交順序。
@@ -102,9 +107,9 @@ struct DepthBatch2DStats {
 
 class DepthBatch2D {
 public:
-    explicit DepthBatch2D(std::size_t initialCapacity = 0) { entries_.reserve(initialCapacity); }
+    explicit DepthBatch2D(std::size_t initialCapacity = 0) { Reserve(initialCapacity); }
     void Clear() { entries_.clear(); }
-    void Reserve(std::size_t capacity) { entries_.reserve(capacity); }
+    void Reserve(std::size_t capacity) { retainedCapacity_ = capacity; entries_.reserve(capacity); }
     void Add(float depth, std::size_t index, std::size_t group = 0) {
         entries_.push_back({std::isfinite(depth) ? depth : 0.f, index, group});
         stats_.peakEntries = (std::max)(stats_.peakEntries, entries_.size());
@@ -126,9 +131,13 @@ public:
         result.capacity = entries_.capacity();
         return result;
     }
+    [[nodiscard]] ReusableMemoryStats MemoryStats() const { const std::size_t bytes=entries_.capacity()*sizeof(DepthEntry),target=(std::max)(entries_.size(),retainedCapacity_),reclaimable=entries_.capacity()>target?(entries_.capacity()-target)*sizeof(DepthEntry):0;return{bytes,reclaimable,lastReleasedBytes_,trimCount_}; }
+    std::size_t TrimUnusedMemory() { const std::size_t before=MemoryStats().retainedCapacityBytes;std::vector<DepthEntry> replacement;replacement.reserve((std::max)(entries_.size(),retainedCapacity_));replacement.insert(replacement.end(),entries_.begin(),entries_.end());entries_.swap(replacement);const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_; }
     static constexpr std::size_t SmallBatchLimit = 32;
 private:
     std::vector<DepthEntry> entries_{};
     DepthBatch2DStats stats_{};
+    std::size_t retainedCapacity_{},lastReleasedBytes_{};
+    std::uint64_t trimCount_{};
 };
 }
