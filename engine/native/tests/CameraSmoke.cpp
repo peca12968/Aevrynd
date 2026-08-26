@@ -38,6 +38,7 @@ int main(){
     if(ProjectToViewport({0,0,-10},firstPerson,{1280,720}).visible){std::cerr<<"Point behind camera must be hidden\n";return 2;}
     if(!Finite(CreateViewMatrix(MakeFirstPersonCamera({0,0,0},0,1.5707963f)))){std::cerr<<"Vertical first-person view must remain finite\n";return 7;}
     if(!SphereIntersectsFrustum({0,0,10},1,firstPerson,16.f/9.f)||SphereIntersectsFrustum({100,0,10},1,firstPerson,16.f/9.f)||SphereIntersectsFrustum({0,0,-10},1,firstPerson,16.f/9.f)){std::cerr<<"Perspective sphere frustum test failed\n";return 8;}
+    if(!Near(ProjectedSphereRadiusPixels({0,0,10},1,firstPerson,{1280,720}),62.3538f,.01f)||ProjectedSphereRadiusPixels({0,0,-10},1,firstPerson,{1280,720})!=0){std::cerr<<"Perspective projected radius failed\n";return 24;}
 
     Camera3D thirdPerson=MakeThirdPersonCamera({0,1,0},0,0,10);
     if(!Near(thirdPerson.position.x,0)||!Near(thirdPerson.position.y,1)||!Near(thirdPerson.position.z,-10)){std::cerr<<"Third-person orbit failed\n";return 3;}
@@ -48,6 +49,7 @@ int main(){
     ProjectedPoint overheadCenter=ProjectToViewport(overhead.target,overhead,{800,600});
     if(overhead.projection.mode!=ProjectionMode::Orthographic||!overheadCenter.visible||!Near(overheadCenter.position.x,400)||!Near(overheadCenter.position.y,300)){std::cerr<<"Overhead projection failed\n";return 5;}
     if(!SphereIntersectsFrustum(overhead.target,1,overhead,4.f/3.f)||SphereIntersectsFrustum({100,0,7},1,overhead,4.f/3.f)){std::cerr<<"Orthographic sphere frustum test failed\n";return 9;}
+    if(!Near(ProjectedSphereRadiusPixels(overhead.target,1,overhead,{800,600}),20)){std::cerr<<"Orthographic projected radius failed\n";return 25;}
 
     Camera3D isometric=MakeIsometricCamera({0,0,0},30,24);
     if(isometric.projection.mode!=ProjectionMode::Orthographic||!Near(Length(isometric.position-isometric.target),30,.01f)||!ProjectToViewport(isometric.target,isometric,{1280,720}).visible){std::cerr<<"Isometric projection failed\n";return 6;}

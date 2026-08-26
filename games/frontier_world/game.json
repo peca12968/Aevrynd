@@ -2,11 +2,11 @@
   "id": "frontier_world",
   "title": "Aevrynd Frontier World",
   "description": "A rendered MMO-world vertical slice with house construction, melee combat, monsters, progression, and deterministic world chunks.",
-  "version": "0.6.0",
-  "engineVersion": "1.27.0",
+  "version": "0.7.0",
+  "engineVersion": "1.28.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "entry": "dist/Aevrynd-Frontier-World.exe",
-  "rendering": ["dynamic-daylight", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "roughness", "metallic", "emissive", "ambient-occlusion", "projected-directional-shadows", "transparent-overlay-pass", "shadow-distance-budget", "dynamic-point-lights", "point-light-distance-budget", "atmosphere-clear-color", "mesh-lod", "procedural-spheres"],
+  "rendering": ["dynamic-daylight", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "roughness", "metallic", "emissive", "ambient-occlusion", "projected-directional-shadows", "transparent-overlay-pass", "shadow-distance-budget", "dynamic-point-lights", "point-light-distance-budget", "distance-visibility-budget", "projected-size-culling", "atmosphere-clear-color", "mesh-lod", "procedural-spheres"],
   "features": ["first-person", "third-person", "house-building", "grid-snapping", "resource-costs", "melee-combat", "monster-ai", "health", "experience", "leveling", "deterministic-world-chunks", "procedural-environment", "procedural-humanoid", "procedural-wolf", "procedural-golem", "automatic-world-validation"]
 }
