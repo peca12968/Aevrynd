@@ -98,12 +98,21 @@ int main() {
         D3D12Renderer renderer;
         renderer.Initialize(window, 1280, 720);
         if (renderer.DLSSOn()) renderer.ToggleDLSS();
+        uint64_t expectedFrames = 4;
         for (int frame = 0; frame < 4; ++frame) renderer.Render(draw, {.02f, .04f, .05f, 1.f});
         if (renderer.SupportsDLSS()) {
             renderer.ToggleDLSS();
             for (int frame = 0; frame < 4; ++frame) renderer.Render(draw, {.02f, .04f, .05f, 1.f});
+            expectedFrames += 4;
         }
         renderer.WaitIdle();
+        const RendererStats stats = renderer.GetStats();
+        if (stats.submittedFrames != expectedFrames || stats.lastSubmittedVertices != draw.vertices.size() ||
+            stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) || stats.peakSubmittedVertices < draw.vertices.size() ||
+            stats.totalDroppedVertices != 0) {
+            std::cerr << "Renderer telemetry did not match submitted GPU work\n";
+            rendererResult = 11;
+        }
     } catch (const std::exception& error) {
         std::cerr << "D3D12 renderer smoke test failed: " << error.what() << '\n';
         rendererResult = 10;

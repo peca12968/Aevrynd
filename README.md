@@ -33,6 +33,8 @@ games/riftwarden/dist/Riftwarden-DX12.exe
 - `H`：顯示／隱藏簡易教學與操作說明
 - `Space`：暫停
 - `F2`：切換 DLSS Super Resolution／原生解析度
+- `F3`：顯示／隱藏引擎渲染診斷，包括頂點、上傳量、峰值、等待與裁切統計
+- 自動化環境可在啟動前設定 `AEVRYND_RENDERER_STATS=1`，直接開啟相同診斷面板
 - `R`：勝敗畫面重新開始
 - `Esc`：離開遊戲
 
@@ -93,6 +95,7 @@ Games/
 - 雙緩衝持久映射頂點上傳與逐幀 fence，CPU 只在重用忙碌資源或驗證 DLSS 輸出時等待
 - DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
 - 頂點色彩採 GPU 原生 RGBA8 正規化格式，每頂點由 24 bytes 降為 12 bytes；雙緩衝最大上傳配置由 11,520,000 bytes 降為 5,760,000 bytes
+- Renderer telemetry 可分別追蹤提交幀、頂點／bytes、峰值、裁切、資源等待與 DLSS 驗證等待
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程

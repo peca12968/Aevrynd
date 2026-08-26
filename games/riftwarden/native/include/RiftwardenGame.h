@@ -30,7 +30,7 @@ private:
     void RequestEvent();void ApplyPendingEvent();Aevrynd::Vec2 PathPosition(float)const;float TowerRange(TowerKind)const;float TowerCost(TowerKind)const;
     const char* Tr(const char* traditionalChinese,const char* english)const{return language_==Language::TraditionalChinese?traditionalChinese:english;}
     std::vector<Enemy> enemies_;std::vector<Tower> towers_;std::vector<Shot> shots_;std::vector<Particle> particles_;
-    int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{},shatters_{},upgradeSelection_{};size_t nextEnemyId_{1},gamepadSpot_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{},shakeClock_{},shakeDuration_{},shakeStrength_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true},upgradePending_{};
+    int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{},shatters_{},upgradeSelection_{};size_t nextEnemyId_{1},gamepadSpot_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{},shakeClock_{},shakeDuration_{},shakeStrength_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true},upgradePending_{},performanceVisible_{};
     Language language_{Language::None},pendingLanguage_{Language::English};bool progressLoaded_{};TowerKind selected_{TowerKind::Bolt};Modifiers mods_{};RiftwardenRules::UpgradeLevels upgrades_{};std::mt19937 rng_{std::random_device{}()};
     std::jthread qwenThread_;std::atomic_bool qwenBusy_{false};std::mutex eventMutex_;std::optional<GeneratedEvent> pendingEvent_;std::string eventName_="SYSTEM READY",statusMessage_="WELCOME, WARDEN";
 };

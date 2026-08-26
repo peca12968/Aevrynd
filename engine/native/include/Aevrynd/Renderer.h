@@ -8,6 +8,15 @@
 
 namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
+struct RendererStats {
+    size_t lastSubmittedVertices{};
+    size_t lastUploadBytes{};
+    size_t peakSubmittedVertices{};
+    size_t totalDroppedVertices{};
+    uint64_t submittedFrames{};
+    uint64_t resourceWaits{};
+    uint64_t validationWaits{};
+};
 class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;
@@ -40,6 +49,7 @@ public:
     bool SupportsDLSS() const;
     bool DLSSOn() const;
     void ToggleDLSS();
+    RendererStats GetStats()const;
     unsigned RenderWidth() const;
     unsigned RenderHeight() const;
 private:
