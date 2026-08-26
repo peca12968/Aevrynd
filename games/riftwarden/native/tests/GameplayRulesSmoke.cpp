@@ -18,6 +18,19 @@ static_assert(RiftwardenRules::UpgradeMultiplier(GoldUpgrade, RiftwardenRules::U
 static_assert(RiftwardenRules::UpgradeMultiplier(GoldUpgrade, RiftwardenRules::UpgradeKind::Gold) < 1.201f);
 static_assert(RiftwardenRules::UpgradeMultiplier(RangeUpgrade, RiftwardenRules::UpgradeKind::Range) > 1.119f);
 static_assert(RiftwardenRules::UpgradeMultiplier(RangeUpgrade, RiftwardenRules::UpgradeKind::Range) < 1.121f);
+static_assert(RiftwardenRules::CanBeginWave(false, 4, false));
+static_assert(!RiftwardenRules::CanBeginWave(false, 4, true));
+static_assert(!RiftwardenRules::CanBeginWave(true, 4, false));
+static_assert(!RiftwardenRules::CanBeginWave(false, 12, false));
+static_assert(RiftwardenRules::CombinedModifier(1.2f, SecondUpgrade, RiftwardenRules::UpgradeKind::Damage) > 1.559f);
+static_assert(RiftwardenRules::CombinedModifier(1.2f, SecondUpgrade, RiftwardenRules::UpgradeKind::Damage) < 1.561f);
+static_assert(RiftwardenRules::UpgradeCardAt(400.f, 370.f) == 0);
+static_assert(RiftwardenRules::UpgradeCardAt(640.f, 370.f) == 1);
+static_assert(RiftwardenRules::UpgradeCardAt(880.f, 370.f) == 2);
+static_assert(RiftwardenRules::UpgradeCardAt(520.f, 370.f) == -1);
+static_assert(RiftwardenRules::UpgradeCardAt(640.f, 500.f) == -1);
+static_assert(RiftwardenRules::MoveUpgradeSelection(0, -1) == 2);
+static_assert(RiftwardenRules::MoveUpgradeSelection(2, 1) == 0);
 
 int main() {
     if (RiftwardenRules::ComboReward(17, 1, 1.f) != 17) {

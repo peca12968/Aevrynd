@@ -76,4 +76,26 @@ constexpr float UpgradeMultiplier(const UpgradeLevels& levels, UpgradeKind kind)
     const float step = kind == UpgradeKind::Damage ? .15f : kind == UpgradeKind::Gold ? .2f : .12f;
     return 1.f + float((std::max)(0, (std::min)(2, UpgradeLevel(levels, kind)))) * step;
 }
+
+// 強化選擇期間必須暫停波次推進，並讓永久與臨時倍率相乘。
+constexpr bool CanBeginWave(bool waveActive, int wave, bool upgradePending) {
+    return !waveActive && wave < 12 && !upgradePending;
+}
+
+constexpr float CombinedModifier(float temporaryModifier, const UpgradeLevels& levels, UpgradeKind kind) {
+    return temporaryModifier * UpgradeMultiplier(levels, kind);
+}
+
+// 將卡片命中區與選擇循環留在純規則層，方便自動驗證所有輸入方式。
+constexpr int UpgradeCardAt(float x, float y) {
+    if (y < 250.f || y > 490.f) return -1;
+    if (x >= 305.f && x <= 495.f) return 0;
+    if (x >= 545.f && x <= 735.f) return 1;
+    if (x >= 785.f && x <= 975.f) return 2;
+    return -1;
+}
+
+constexpr int MoveUpgradeSelection(int current, int direction) {
+    return (current + direction + 3) % 3;
+}
 }
