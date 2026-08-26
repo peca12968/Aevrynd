@@ -1,0 +1,33 @@
+# RiftForge build outputs
+/build/
+/.vs/
+/.vscode/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/*.user
+**/*.pdb
+
+# Packaged games and player saves
+/games/*/dist/
+/games/*/saves/
+
+# Local AI runtime and large model weights
+/runtime/*
+!/runtime/README.md
+*.gguf
+*.safetensors
+
+# Downloaded third-party SDKs
+/third_party/*
+!/third_party/README.md
+*.zip
+
+# Archived browser prototype and local runtimes
+/legacy-web/
+
+# Runtime logs and temporary files
+*.log
+*.tmp
+*.bak
+Thumbs.db
+.DS_Store
