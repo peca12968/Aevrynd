@@ -1,5 +1,6 @@
 # RiftForge build outputs
 /engine/build/
+/build/
 /.vs/
 /.vscode/
 **/CMakeFiles/
