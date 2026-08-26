@@ -15,7 +15,8 @@ struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
-struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};};
+enum class MeshRenderLayer3D:uint8_t {Opaque,Overlay};
+struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};};
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct RendererStats {
@@ -33,6 +34,7 @@ struct RendererStats {
     size_t totalDroppedWorldVertices{};
     size_t totalDroppedWorldIndices{};
     size_t lastSubmittedMeshInstances{};
+    size_t lastSubmittedOverlayInstances{};
     size_t peakSubmittedMeshInstances{};
     size_t totalDroppedMeshInstances{};
     size_t residentMeshes{};
@@ -62,7 +64,7 @@ public:
     Vec2 Translation()const{return translation_;}
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
-    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={}){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface)});}
+    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer});}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
@@ -76,6 +78,7 @@ public:
     void IsoPrism(Vec2 center,float rx,float ry,float height,Color top,Color left,Color right);
     void Circle(Vec2 center,float radius,Color color,int segments=18);
     void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
+    void ProjectedEllipseShadow(Vec2 base,float rx,float ry,Vec2 lightDirection,float height,float opacity=.4f,int segments=18);
     void Line(Vec2 a,Vec2 b,float width,Color color);
     void Text(Vec2 pos,std::string_view text,float scale,Color color);
     std::vector<Vertex> vertices;

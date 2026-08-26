@@ -100,6 +100,7 @@ int main() {
         std::cerr << "Ellipse emitted a non-finite vertex\n";
         return 8;
     }
+    const std::size_t shadowStart=draw.vertices.size();draw.ProjectedEllipseShadow({10,20},8,3,{1,0},5,.35f,18);if(draw.vertices.size()!=shadowStart+54||std::abs(draw.vertices[shadowStart].x-15.f)>.001f||std::abs(draw.vertices[shadowStart].y-20.f)>.001f){std::cerr<<"Projected 2.5D ellipse shadow failed\n";return 17;}
     draw.WorldTriangle({-.5f,-.5f,.5f},{0,.5f,.5f},{.5f,-.5f,.5f},{.2f,.8f,.7f,1.f});
     if(draw.worldIndices.size()!=3||draw.worldIndices[2]!=2){std::cerr<<"World triangle indices failed\n";return 12;}
 
@@ -115,7 +116,7 @@ int main() {
         renderer.Initialize(window, 1280, 720);
         if (renderer.DLSSOn()) renderer.ToggleDLSS();
         Mesh3D box=Mesh3D::CreateUnitBox();Mesh3D invalid=box;invalid.indices.back()=999;if(renderer.CreateMesh(invalid.vertices,invalid.indices)){std::cerr<<"Invalid resident mesh was accepted\n";rendererResult=13;}
-        const MeshHandle3D boxHandle=renderer.CreateMesh(box.vertices,box.indices);const uint32_t forwardNormal=PackNormalSnorm8({0,0,-1});const std::array<Vertex3D,3> triangleVertices={Vertex3D{-.5f,-.5f,0,forwardNormal,0xffffffffu},Vertex3D{0,.5f,0,forwardNormal,0xffffffffu},Vertex3D{.5f,-.5f,0,forwardNormal,0xffffffffu}};const std::array<uint32_t,3> triangleIndices={0,1,2};const MeshHandle3D triangleHandle=renderer.CreateMesh(triangleVertices,triangleIndices);if(!boxHandle||!triangleHandle){std::cerr<<"Resident mesh creation failed\n";rendererResult=14;}else{draw.MeshInstance(boxHandle,CreateTransformMatrix({-1,0,3},{},{1,2,1}),{.4f,.8f,1,1});draw.MeshInstance(boxHandle,CreateTransformMatrix({1,0,3},{},{1,1,1}),{1,.5f,.2f,1});draw.MeshInstance(triangleHandle,CreateTransformMatrix({0,1,2},{},{1,1,1}),{.7f,1,.4f,1});}
+        const MeshHandle3D boxHandle=renderer.CreateMesh(box.vertices,box.indices);const uint32_t forwardNormal=PackNormalSnorm8({0,0,-1});const std::array<Vertex3D,3> triangleVertices={Vertex3D{-.5f,-.5f,0,forwardNormal,0xffffffffu},Vertex3D{0,.5f,0,forwardNormal,0xffffffffu},Vertex3D{.5f,-.5f,0,forwardNormal,0xffffffffu}};const std::array<uint32_t,3> triangleIndices={0,1,2};const MeshHandle3D triangleHandle=renderer.CreateMesh(triangleVertices,triangleIndices);if(!boxHandle||!triangleHandle){std::cerr<<"Resident mesh creation failed\n";rendererResult=14;}else{draw.MeshInstance(boxHandle,CreateTransformMatrix({-1,0,3},{},{1,2,1}),{.4f,.8f,1,1});draw.MeshInstance(boxHandle,CreateTransformMatrix({1,0,3},{},{1,1,1}),{1,.5f,.2f,1});draw.MeshInstance(triangleHandle,CreateTransformMatrix({0,1,2},{},{1,1,1}),{.7f,1,.4f,1});draw.MeshInstance(triangleHandle,CreateDirectionalShadowMatrix({.4f,-1,.2f},.01f)*CreateTransformMatrix({0,1,2},{},{1,1,1}),{0,0,0,.25f},{1,1,0,1},MeshRenderLayer3D::Overlay);}
         uint64_t expectedFrames = 4;
         for (int frame = 0; frame < 4; ++frame) renderer.Render(draw, {.02f, .04f, .05f, 1.f});
         if (renderer.SupportsDLSS()) {
@@ -130,8 +131,8 @@ int main() {
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
             stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) + draw.meshInstances.size() * D3D12Renderer::MeshInstanceUploadBytes ||
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
-            stats.lastSubmittedMeshInstances != 3 || stats.peakSubmittedMeshInstances < 3 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
-            stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 4 ||
+            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
+            stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 5 ||
             stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds || stats.gpuTimingSamples != expectedFrames || !stats.lastGpuFrameNanoseconds || stats.totalGpuFrameNanoseconds < stats.peakGpuFrameNanoseconds ||
             (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||
             (stats.validationWaits == 0 && (stats.lastValidationWaitNanoseconds != 0 || stats.totalValidationWaitNanoseconds != 0))) {
@@ -142,7 +143,7 @@ int main() {
         const uint64_t averageValidationWaitUs=stats.validationWaits?stats.totalValidationWaitNanoseconds/stats.validationWaits/1000:0;
         const uint64_t averageGpuUs=stats.gpuTimingSamples?stats.totalGpuFrameNanoseconds/stats.gpuTimingSamples/1000:0;
         std::cout<<"frames="<<stats.submittedFrames<<" resourceWaits="<<stats.resourceWaits<<" resourceAverageUs="<<averageResourceWaitUs<<" resourcePeakUs="<<stats.peakResourceWaitNanoseconds/1000<<" validationWaits="<<stats.validationWaits<<" validationAverageUs="<<averageValidationWaitUs<<" validationPeakUs="<<stats.peakValidationWaitNanoseconds/1000<<" gpuSamples="<<stats.gpuTimingSamples<<" gpuAverageUs="<<averageGpuUs<<" gpuPeakUs="<<stats.peakGpuFrameNanoseconds/1000<<'\n';
-        renderer.DestroyMesh(boxHandle);renderer.DestroyMesh(triangleHandle);renderer.Render(draw,{.02f,.04f,.05f,1.f});renderer.WaitIdle();const RendererStats destroyedStats=renderer.GetStats();if(destroyedStats.residentMeshes!=0||destroyedStats.residentMeshBytes!=0||destroyedStats.lastSubmittedMeshInstances!=0||destroyedStats.totalDroppedMeshInstances!=draw.meshInstances.size()||destroyedStats.lastDrawCalls!=2){std::cerr<<"Resident mesh destruction failed\n";rendererResult=15;}
+        renderer.DestroyMesh(boxHandle);renderer.DestroyMesh(triangleHandle);renderer.Render(draw,{.02f,.04f,.05f,1.f});renderer.WaitIdle();const RendererStats destroyedStats=renderer.GetStats();if(destroyedStats.residentMeshes!=0||destroyedStats.residentMeshBytes!=0||destroyedStats.lastSubmittedMeshInstances!=0||destroyedStats.lastSubmittedOverlayInstances!=0||destroyedStats.totalDroppedMeshInstances!=draw.meshInstances.size()||destroyedStats.lastDrawCalls!=2){std::cerr<<"Resident mesh destruction failed\n";rendererResult=15;}
     } catch (const std::exception& error) {
         std::cerr << "D3D12 renderer smoke test failed: " << error.what() << '\n';
         rendererResult = 10;
