@@ -21,6 +21,7 @@ struct ParticleSystem2DStats {
     std::size_t emitted{},recycled{},dropped{},peakActive{};
     std::size_t rendered{},visibilityCulled{},renderCalls{},visibilityRenderCalls{};
     std::size_t lastSimulationCulled{},totalSimulationCulled{},updateCalls{},boundedUpdateCalls{};
+    std::size_t emissionCulled{},emissionCullBatches{},boundedEmissionBatches{};
 };
 
 class ParticleSystem2D {
@@ -28,7 +29,9 @@ public:
     explicit ParticleSystem2D(std::size_t capacity=2048,std::size_t retainedCapacity=128);
     void Clear(bool resetStats=true);
     void EmitBurst(Vec2 origin,Color color,std::size_t count,ParticleBurst2D settings={},uint32_t seed=1);
+    void EmitBurst(Vec2 origin,Color color,std::size_t count,Bounds2D emissionBounds,ParticleBurst2D settings={},uint32_t seed=1);
     void EmitRing(Vec2 origin,Color color,std::size_t count,float speed,ParticleBurst2D settings={},float phase=0.f);
+    void EmitRing(Vec2 origin,Color color,std::size_t count,float speed,Bounds2D emissionBounds,ParticleBurst2D settings={},float phase=0.f);
     void Update(float deltaTime);
     void Update(float deltaTime,Bounds2D simulationBounds);
     void Render(DrawList& draw)const;
