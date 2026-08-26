@@ -4,7 +4,9 @@
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/Navigation3D.h>
+#include <Aevrynd/PhysicsWorld3D.h>
 #include <Aevrynd/Scene3D.h>
+#include <Aevrynd/WorldBuilder3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
 
 class EngineLabGame final:public Aevrynd::IGame {
@@ -37,8 +39,12 @@ private:
     Aevrynd::NavigationGrid3D navigationGrid_{};
     Aevrynd::NavigationPath3D navigationPath_{};
     Aevrynd::NavigationQueryWorkspace3D navigationWorkspace_{};
+    Aevrynd::PhysicsWorld3D physicsWorld_{};
+    Aevrynd::WorldBuilder3D worldBuilder_{};
+    std::vector<Aevrynd::WorldObjectHandle3D> authoredDynamicObjects_{};
     int cameraMode_{};
     int effectCycle_{-1};
+    int physicsImpulseCycle_{-1};
     bool automatic_{true};
     bool cullingEnabled_{true};
     bool instancingEnabled_{true};

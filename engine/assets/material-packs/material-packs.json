@@ -1,0 +1,56 @@
+{
+  "license": "CC0-1.0",
+  "commercialUse": true,
+  "resolutionPolicy": {
+    "distant": 512,
+    "environment": 1024,
+    "near": 2048,
+    "hero": 4096,
+    "defaultImportedResolution": 1024
+  },
+  "packs": [
+    {
+      "id": "aerial-ground-rock",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/aerial_ground_rock",
+      "licenseUrl": "https://polyhaven.com/license",
+      "detailClass": "environment",
+      "directory": "poly-haven/aerial_ground_rock/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
+    },
+    {
+      "id": "bark-brown-02",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/bark_brown_02",
+      "licenseUrl": "https://polyhaven.com/license",
+      "detailClass": "near",
+      "directory": "poly-haven/bark_brown_02/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
+    },
+    {
+      "id": "brick-floor",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/brick_floor",
+      "licenseUrl": "https://polyhaven.com/license",
+      "detailClass": "environment",
+      "directory": "poly-haven/brick_floor/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
+    },
+    {
+      "id": "wood-siding-006",
+      "source": "ambientCG",
+      "sourceUrl": "https://ambientcg.com/view?id=WoodSiding006",
+      "licenseUrl": "https://ambientcg.com/index.php?menu=license",
+      "detailClass": "near",
+      "directory": "ambientcg/woodsiding006/1k"
+    },
+    {
+      "id": "ground-037",
+      "source": "ambientCG",
+      "sourceUrl": "https://ambientcg.com/view?id=Ground037",
+      "licenseUrl": "https://ambientcg.com/index.php?menu=license",
+      "detailClass": "environment",
+      "directory": "ambientcg/ground037/1k"
+    }
+  ]
+}

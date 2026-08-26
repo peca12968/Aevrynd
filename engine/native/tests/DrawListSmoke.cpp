@@ -2,9 +2,12 @@
 #include <Aevrynd/Animation3D.h>
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Mesh3D.h>
+#include <Aevrynd/MaterialQuality3D.h>
 #include <Aevrynd/Navigation3D.h>
+#include <Aevrynd/PhysicsWorld3D.h>
 #include <Aevrynd/Scene2D.h>
 #include <Aevrynd/Spatial2D.h>
+#include <Aevrynd/WorldBuilder3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
 #include <algorithm>
 #include <array>
@@ -171,6 +174,23 @@ int ValidateWorldRuntime3D() {
     return 0;
 }
 
+int ValidateAuthoringPhysics3D() {
+    constexpr MaterialResolutionPolicy3D resolutionPolicy{};
+    static_assert(resolutionPolicy.Select(MaterialDetailClass3D::Distant)==512);
+    static_assert(resolutionPolicy.Select(MaterialDetailClass3D::Environment)==1024);
+    static_assert(resolutionPolicy.Select(MaterialDetailClass3D::Near)==2048);
+    static_assert(resolutionPolicy.Select(MaterialDetailClass3D::Hero)==4096);
+    static_assert(resolutionPolicy.Select(MaterialDetailClass3D::Hero,MaterialQuality3D::Low)==512);
+    static_assert(EstimatePbrMaterialBytes(4096)>EstimatePbrMaterialBytes(1024)*15);
+    const Material3D metal=CreateMaterialPreset3D(MaterialPreset3D::Metal,{.7f,.75f,.8f,1}),glass=CreateMaterialPreset3D(MaterialPreset3D::Glass,{.4f,.7f,1,1}),emissive=CreateMaterialPreset3D(MaterialPreset3D::Emissive,{.1f,.8f,1,1});
+    if(metal.surface.metallic<.8f||glass.castsShadow||glass.tint.a>.42f||emissive.surface.emissive<.5f){std::cerr<<"Authoring material presets failed\n";return 50;}
+    PhysicsWorld3D physics;RigidBodySettings3D floor{};floor.transform.position={0,-.5f,0};floor.colliderExtents={8,.5f,8};floor.material={.8f,0};const RigidBodyHandle3D floorHandle=physics.CreateBody(floor);RigidBodySettings3D crate{};crate.type=RigidBodyType3D::Dynamic;crate.transform.position={0,5,0};crate.colliderExtents={.5f,.5f,.5f};crate.material={.7f,0};const RigidBodyHandle3D crateHandle=physics.CreateBody(crate);
+    const auto start=std::chrono::steady_clock::now();for(int step=0;step<600;++step)physics.Step(1.f/120.f,2);const uint64_t averageNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count())/600;const RigidBodyState3D* settled=physics.GetBody(crateHandle);const PhysicsWorldStats3D stats=physics.Stats();if(!floorHandle||!settled||std::abs(settled->settings.transform.position.y-.5f)>.01f||!settled->sleeping||stats.contacts==0||stats.staticBodies!=1||stats.dynamicBodies!=1||averageNanoseconds>500000){std::cerr<<"Deterministic rigid-body settling failed\n";return 51;}
+    if(!physics.ApplyImpulse(crateHandle,{0,3,0})||physics.GetBody(crateHandle)->sleeping||physics.GetBody(crateHandle)->velocity.y<2.9f){std::cerr<<"Rigid-body impulse wake failed\n";return 52;}
+    const RigidBodyHandle3D temporary=physics.CreateBody(crate);if(!physics.DestroyBody(temporary)||physics.GetBody(temporary)||physics.Stats().bodies!=2){std::cerr<<"Rigid-body resource release failed\n";return 53;}
+    std::cout<<"physicsBodies="<<stats.bodies<<" physicsContacts="<<stats.contacts<<" physicsSleeping="<<stats.sleepingBodies<<" physicsAverageNs="<<averageNanoseconds<<'\n';return 0;
+}
+
 int ValidateSpatial2D() {
     const Vec2 points[] = {{0, 0}, {30, 0}, {30, 40}};
     PolylinePath2D path;
@@ -259,6 +279,7 @@ int main() {
     if (const int sceneRuntimeResult = ValidateSceneRuntime2D()) return sceneRuntimeResult;
     if (const int runtimeSelectionResult = ValidateRuntimeSelection3D()) return runtimeSelectionResult;
     if (const int worldRuntimeResult = ValidateWorldRuntime3D()) return worldRuntimeResult;
+    if (const int authoringPhysicsResult = ValidateAuthoringPhysics3D()) return authoringPhysicsResult;
     if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
     if (const int clipResult = ValidateClipCulling2D()) return clipResult;
     if (const int textResult = ValidateTextGeometry2D()) return textResult;

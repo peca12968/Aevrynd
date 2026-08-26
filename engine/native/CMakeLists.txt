@@ -9,8 +9,10 @@ add_library(AevryndEngine STATIC
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
   src/Navigation3D.cpp
+  src/PhysicsWorld3D.cpp
   src/Spatial2D.cpp
   src/StreamlineDLSS.cpp
+  src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
 )
 set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
