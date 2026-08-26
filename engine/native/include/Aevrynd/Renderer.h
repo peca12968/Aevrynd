@@ -82,6 +82,9 @@ struct RendererStats {
     uint64_t meshUploadContextReuses{};
     uint64_t meshUploadPressureWaits{};
     uint64_t meshUploadPressureWaitNanoseconds{};
+    size_t meshUploadStagingResources{};
+    size_t peakMeshUploadStagingResources{};
+    uint64_t meshUploadBufferAllocations{};
     size_t residentMaterialTextureSets{};
     size_t residentMaterialTextureReferences{};
     size_t residentTextureBytes{};
