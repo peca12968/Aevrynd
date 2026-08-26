@@ -68,8 +68,12 @@ struct RendererStats {
     size_t residentMaterialTextureReferences{};
     size_t residentTextureBytes{};
     size_t materialTextureMemoryBudgetBytes{};
+    size_t peakMaterialTextureCpuStagingBytes{};
+    size_t peakMaterialTextureUploadStagingBytes{};
     uint64_t materialTextureCacheHits{};
     uint64_t materialTextureBudgetRejections{};
+    uint64_t totalMaterialTextureDecodedBytes{};
+    uint64_t materialTexturePreflightRejectedBytes{};
     uint32_t lastDrawCalls{};
     bool lastBackfaceCulling{};
     uint64_t submittedFrames{};
