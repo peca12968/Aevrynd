@@ -1,4 +1,5 @@
 #include <Aevrynd/Camera.h>
+#include <Aevrynd/Input.h>
 #include <cmath>
 #include <iostream>
 
@@ -14,6 +15,12 @@ static_assert(Dot({1,2,3},{4,5,6})==32.f);
 static_assert(Cross({1,0,0},{0,1,0}).z==1.f);
 
 int main(){
+    Input input;input.SetMouse({10,10});input.SetMouse({15,7});input.AddMouseWheel(2);
+    if(!Near(input.MouseDelta().x,5)||!Near(input.MouseDelta().y,-3)||!Near(input.MouseWheel(),2)){std::cerr<<"Mouse motion accumulation failed\n";return 11;}input.ConsumePresses();if(!Near(input.MouseDelta().x,0)||!Near(input.MouseWheel(),0)){std::cerr<<"Mouse motion consumption failed\n";return 12;}
+    CameraRig3D rig;rig.Reset(CameraViewMode3D::FirstPerson,{0,2,0});Camera3D controlled=rig.Update({{0,0,1},{1,0},0},1.f);if(rig.Mode()!=CameraViewMode3D::FirstPerson||!Near(Length(rig.Anchor()-Vec3{0,2,0}),1.4f)||!Near(rig.Yaw(),.18f)||controlled.projection.mode!=ProjectionMode::Perspective){std::cerr<<"First-person camera rig failed\n";return 13;}
+    rig.Reset(CameraViewMode3D::ThirdPerson,{0,1,10});controlled=rig.Update({{}, {},1},.1f);if(!Near(rig.Distance(),36.2f)||!Near(Length(controlled.position-controlled.target),rig.Distance(),.01f)){std::cerr<<"Third-person camera rig failed\n";return 14;}
+    rig.Reset(CameraViewMode3D::GodView,{5,0,7});controlled=rig.Update({{1,0,1},{1,0},1},.1f);if(controlled.projection.mode!=ProjectionMode::Orthographic||controlled.position.y<=controlled.target.y||!Finite(CreateViewProjectionMatrix(controlled,16.f/9.f))){std::cerr<<"God-view camera rig failed\n";return 15;}
+    rig.Reset(CameraViewMode3D::Isometric,{0,0,0});controlled=rig.Update({{}, {-1,1},-1},.1f);if(controlled.projection.mode!=ProjectionMode::Orthographic||!Near(Length(controlled.position-controlled.target),rig.Distance(),.01f)||!Finite(CreateViewProjectionMatrix(controlled,16.f/9.f))){std::cerr<<"Isometric camera rig failed\n";return 16;}
     const Matrix4 model=CreateTransformMatrix({3,4,5},{.3f,.7f,.2f},{2,4,.5f}),normalMatrix=CreateNormalMatrix(model);
     const Vec3 localNormal=Normalize({1,1,0}),localTangent=Normalize({1,-1,0});
     const Vec3 worldNormal=TransformNormal(normalMatrix,localNormal),worldTangent=Normalize(TransformPoint(model,localTangent)-TransformPoint(model,{}));

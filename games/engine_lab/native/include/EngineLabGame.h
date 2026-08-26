@@ -13,6 +13,8 @@ private:
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::MeshResource3D pyramidMesh_{};
+    Aevrynd::CameraRig3D cameraRig_{};
+    Aevrynd::Camera3D camera_{};
     int cameraMode_{};
     bool automatic_{true};
     bool cullingEnabled_{true};
