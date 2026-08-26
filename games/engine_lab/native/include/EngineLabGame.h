@@ -42,6 +42,7 @@ private:
     Aevrynd::PhysicsWorld3D physicsWorld_{};
     Aevrynd::WorldBuilder3D worldBuilder_{};
     std::vector<Aevrynd::WorldObjectHandle3D> authoredDynamicObjects_{};
+    Aevrynd::MaterialTextureSetHandle3D groundTextures_{},woodTextures_{},brickTextures_{};
     int cameraMode_{};
     int effectCycle_{-1};
     int physicsImpulseCycle_{-1};

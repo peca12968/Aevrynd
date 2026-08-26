@@ -22,7 +22,7 @@ public:
     void Initialize(Engine& engine);
     void Shutdown(Engine& engine,PhysicsWorld3D* physics=nullptr);
     WorldObjectHandle3D Create(WorldObjectDefinition3D definition,PhysicsWorld3D* physics=nullptr);
-    WorldObjectHandle3D Create(std::string name,PrimitiveShape3D primitive,Transform3D transform,MaterialPreset3D material,Color tint,RigidBodyType3D bodyType=RigidBodyType3D::Static,PhysicsWorld3D* physics=nullptr);
+    WorldObjectHandle3D Create(std::string name,PrimitiveShape3D primitive,Transform3D transform,MaterialPreset3D material,Color tint,RigidBodyType3D bodyType=RigidBodyType3D::Static,PhysicsWorld3D* physics=nullptr,MaterialTextureSetHandle3D textures={},float textureScale=.25f);
     bool Destroy(WorldObjectHandle3D handle,PhysicsWorld3D* physics=nullptr);
     bool SetTransform(WorldObjectHandle3D handle,Transform3D transform,PhysicsWorld3D* physics=nullptr);
     bool SetMaterial(WorldObjectHandle3D handle,Material3D material);

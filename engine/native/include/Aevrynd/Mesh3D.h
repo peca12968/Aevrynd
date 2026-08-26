@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace Aevrynd {
-struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};};
+struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};MaterialTextureSetHandle3D textures{};float textureScale{.25f};};
 struct Transform3D {Vec3 position{},rotation{},scale{1,1,1};Matrix4 Matrix()const{return CreateTransformMatrix(position,rotation,scale);}};
 struct MeshBounds3D {Vec3 center{};float radius{};Vec3 extents{};};
 

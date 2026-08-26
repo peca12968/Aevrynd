@@ -36,6 +36,8 @@ public:
     MeshHandle3D CreateMesh3D(const Mesh3D& mesh);
     MeshResource3D CreateMeshResource3D(const Mesh3D& mesh);
     void DestroyMesh3D(MeshHandle3D mesh){renderer_->DestroyMesh(mesh);}
+    MaterialTextureSetHandle3D CreateMaterialTextureSet3D(const MaterialTextureSetDefinition3D& definition){return renderer_->CreateMaterialTextureSet(definition);}
+    void DestroyMaterialTextureSet3D(MaterialTextureSetHandle3D textures){renderer_->DestroyMaterialTextureSet(textures);}
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}
