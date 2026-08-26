@@ -83,8 +83,37 @@ int ValidateSpatial2D() {
     return 0;
 }
 
+int ValidateClipCulling2D() {
+    DrawList clipped;
+    clipped.SetClipRect({0, 0}, {100, 100});
+    constexpr int PrimitiveCount = 20000;
+    const auto start = std::chrono::steady_clock::now();
+    for (int primitive = 0; primitive < PrimitiveCount; ++primitive) clipped.Quad(primitive % 2 ? Vec2{50, 50} : Vec2{-50, -50}, {20, 20}, Cyan);
+    const uint64_t elapsedMicroseconds = uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count());
+    DrawListStats2D stats = clipped.Stats2D();
+    if (stats.inputTriangles != PrimitiveCount * 2u || stats.submittedTriangles != PrimitiveCount || stats.culledTriangles != PrimitiveCount || clipped.vertices.size() != PrimitiveCount * 3u || elapsedMicroseconds > 20000) {
+        std::cerr << "Canvas-aware triangle culling failed\n";
+        return 27;
+    }
+    clipped.SetTranslation({-200, 0});
+    clipped.Triangle({10, 10}, {20, 10}, {10, 20}, Cyan);
+    if (clipped.Stats2D().culledTriangles != PrimitiveCount + 1u) {
+        std::cerr << "Translated triangle culling failed\n";
+        return 28;
+    }
+    const uint64_t totalCulled = clipped.Stats2D().totalCulledTriangles;
+    clipped.Clear();
+    if (clipped.ClipEnabled() || clipped.Stats2D().inputTriangles || clipped.Stats2D().totalCulledTriangles != totalCulled) {
+        std::cerr << "DrawList frame telemetry reset failed\n";
+        return 29;
+    }
+    std::cout << "clipInput=" << stats.inputTriangles << " clipSubmitted=" << stats.submittedTriangles << " clipCulled=" << stats.culledTriangles << " clipElapsedUs=" << elapsedMicroseconds << '\n';
+    return 0;
+}
+
 int main() {
     if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
+    if (const int clipResult = ValidateClipCulling2D()) return clipResult;
     std::vector<DepthEntry> entries = {
         {320.f, 0, 0},
         {120.f, 1, 1},
@@ -149,6 +178,7 @@ int main() {
     draw.WorldTriangle({-.5f,-.5f,.5f},{0,.5f,.5f},{.5f,-.5f,.5f},{.2f,.8f,.7f,1.f});
     if(draw.worldIndices.size()!=3||draw.worldIndices[2]!=2){std::cerr<<"World triangle indices failed\n";return 12;}
     draw.SetAtmosphere({{.2f,.3f,.4f,.8f},{0,0,0},20,80,true});draw.AddPointLight({{2,3,4},10,{1,.4f,.2f,1},2});draw.AddPointLight({{-2,2,3},8,{.2f,.6f,1,1},1.5f});draw.AddPointLight({{0,4,8},12,{.5f,1,.4f,1},1});draw.AddPointLight({{20,2,20},-4,{1,1,1,1},.5f});draw.AddPointLight({{},5,{1,1,1,1},0});if(draw.PointLights().size()!=4||draw.PointLights().back().radius<.001f){std::cerr<<"Point light validation failed\n";return 18;}
+    draw.SetClipRect({0,0},{1280,720});const std::size_t clippedVertexCount=draw.vertices.size();draw.Triangle({-30,-30},{-20,-30},{-30,-20},Cyan);if(draw.vertices.size()!=clippedVertexCount||draw.Stats2D().culledTriangles!=1){std::cerr<<"Renderer clip telemetry setup failed\n";return 30;}
 
     HWND window = CreateWindowExW(0, L"STATIC", L"AevryndRendererSmoke", WS_OVERLAPPED,
                                   0, 0, 1280, 720, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
@@ -177,7 +207,7 @@ int main() {
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
             stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) + draw.meshInstances.size() * D3D12Renderer::MeshInstanceUploadBytes ||
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
-            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.lastSubmittedPointLights != D3D12Renderer::MaxPointLights || stats.totalDroppedPointLights != expectedFrames || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
+            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.lastSubmittedPointLights != D3D12Renderer::MaxPointLights || stats.totalDroppedPointLights != expectedFrames || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling || stats.lastInputTriangles2D != draw.Stats2D().inputTriangles || stats.lastCulledTriangles2D != draw.Stats2D().culledTriangles || stats.totalCulledTriangles2D != draw.Stats2D().culledTriangles*expectedFrames ||
             stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 5 ||
             stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds || stats.gpuTimingSamples != expectedFrames || !stats.lastGpuFrameNanoseconds || stats.totalGpuFrameNanoseconds < stats.peakGpuFrameNanoseconds ||
             (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||
