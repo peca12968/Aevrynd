@@ -97,6 +97,9 @@ struct RendererStats {
     uint64_t materialTextureUploadContextReuses{};
     uint64_t materialTextureUploadPressureWaits{};
     uint64_t materialTextureUploadPressureWaitNanoseconds{};
+    size_t materialTextureUploadStagingResources{};
+    size_t peakMaterialTextureUploadStagingResources{};
+    uint64_t materialTextureUploadBufferAllocations{};
     uint64_t materialTextureCacheHits{};
     uint64_t materialTextureBudgetRejections{};
     uint64_t totalMaterialTextureDecodedBytes{};
