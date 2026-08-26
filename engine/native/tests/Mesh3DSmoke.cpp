@@ -1,4 +1,5 @@
 #include <Aevrynd/Mesh3D.h>
+#include <Aevrynd/MeshLoader.h>
 #include <cmath>
 #include <iostream>
 
@@ -7,6 +8,8 @@ using namespace Aevrynd;
 bool Near(float left,float right,float tolerance=.001f){return std::abs(left-right)<tolerance;}
 
 int main(){
+    constexpr std::string_view smoothObj="v -1 -1 0 255 64 32 1\nv 1 -1 0 255 64 32 1\nv 1 1 0 255 64 32 1\nv -1 1 0 255 64 32 1\ns 1\nf -4 -3 -2 -1\n";MeshLoadResult3D loaded=LoadObjMesh(smoothObj);if(!loaded||loaded.mesh.vertices.size()!=4||loaded.mesh.indices.size()!=6||loaded.mesh.vertices[0].color!=PackColorRgba8({1.f,64.f/255.f,32.f/255.f,1})){std::cerr<<"OBJ quad triangulation or vertex color failed\n";return 14;}for(const Vertex3D& vertex:loaded.mesh.vertices){const Vec4 normal=UnpackNormalSnorm8(vertex.normal);if(!Near(normal.z,-1)){std::cerr<<"OBJ generated normal or handedness conversion failed\n";return 15;}}
+    constexpr std::string_view normalObj="v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nvn 0 0 1\ns off\nf 1//1 2//1 3//1\nf 1 4 2\n";loaded=LoadObjMesh(normalObj);if(!loaded||loaded.mesh.indices.size()!=6||loaded.mesh.vertices.size()!=6){std::cerr<<"OBJ explicit and flat normal parsing failed\n";return 16;}if(LoadObjMesh("v 0 0 0\nf 1 2 3\n")){std::cerr<<"Malformed OBJ was accepted\n";return 17;}
     const Vec4 packed=UnpackNormalSnorm8(PackNormalSnorm8({0,-1,.5f},0));
     if(!Near(packed.x,0)||!Near(packed.y,-1)||!Near(packed.z,.5f,.005f)||!Near(packed.w,0)){std::cerr<<"Packed normal format failed\n";return 10;}
     Mesh3D box=Mesh3D::CreateUnitBox();

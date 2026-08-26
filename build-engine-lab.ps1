@@ -11,4 +11,7 @@ $dist = Join-Path $root 'games\engine_lab\dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 Copy-Item -LiteralPath (Join-Path $build 'bin\Release\Aevrynd-Engine-Lab.exe') -Destination (Join-Path $dist 'Aevrynd-Engine-Lab.exe') -Force
 Copy-Item -Path (Join-Path $build 'bin\Release\*.dll') -Destination $dist -Force
+$distAssets = Join-Path $dist 'assets'
+New-Item -ItemType Directory -Force -Path $distAssets | Out-Null
+Copy-Item -Path (Join-Path $root 'games\engine_lab\assets\*') -Destination $distAssets -Recurse -Force
 Write-Host "Built: $dist\Aevrynd-Engine-Lab.exe" -ForegroundColor Green

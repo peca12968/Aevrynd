@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include "Game.h"
@@ -22,6 +23,7 @@ public:
     float Time()const{return time_;}
     void Quit(){running_=false;}
     void SetTitle(const std::wstring& title);
+    std::filesystem::path ExecutableDirectory()const;
     HWND Window()const{return hwnd_;}
     bool SupportsDLSS()const{return renderer_->SupportsDLSS();}
     bool DLSSOn()const{return renderer_->DLSSOn();}

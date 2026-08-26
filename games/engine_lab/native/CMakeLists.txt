@@ -8,6 +8,11 @@ target_compile_options(EngineLab PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(EngineLab PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(EngineLab PRIVATE AevryndEngine)
 set_target_properties(EngineLab PROPERTIES OUTPUT_NAME "Aevrynd-Engine-Lab" VS_DPI_AWARE "PerMonitor")
+add_custom_command(TARGET EngineLab POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EngineLab>/assets"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_CURRENT_SOURCE_DIR}/../assets/engine_probe.obj"
+    "$<TARGET_FILE_DIR:EngineLab>/assets/engine_probe.obj")
 foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
   add_custom_command(TARGET EngineLab POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

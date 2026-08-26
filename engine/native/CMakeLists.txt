@@ -1,6 +1,7 @@
 add_library(AevryndEngine STATIC
   src/Engine.cpp
   src/D3D12Renderer.cpp
+  src/MeshLoader.cpp
   src/StreamlineDLSS.cpp
 )
 set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")

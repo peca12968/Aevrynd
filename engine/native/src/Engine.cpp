@@ -10,6 +10,7 @@ namespace Aevrynd {
 Engine::Engine(EngineConfig config):config_(std::move(config)),renderer_(std::make_unique<D3D12Renderer>()){}
 Engine::~Engine(){if(game_)game_->OnStop(*this);if(renderer_)renderer_->WaitIdle();}
 void Engine::SetTitle(const std::wstring& title){if(hwnd_)SetWindowTextW(hwnd_,title.c_str());}
+std::filesystem::path Engine::ExecutableDirectory()const{std::wstring path(32768,L'\0');const DWORD length=GetModuleFileNameW(nullptr,path.data(),DWORD(path.size()));if(!length||length>=path.size())return{};path.resize(length);return std::filesystem::path(path).parent_path();}
 MeshHandle3D Engine::CreateMesh3D(const Mesh3D& mesh){return mesh.Valid()?renderer_->CreateMesh(mesh.vertices,mesh.indices):MeshHandle3D{};}
 MeshResource3D Engine::CreateMeshResource3D(const Mesh3D& mesh){if(!mesh.Valid())return{};auto cpuMesh=std::make_shared<Mesh3D>(mesh);MeshHandle3D handle=renderer_->CreateMesh(cpuMesh->vertices,cpuMesh->indices);return handle?MeshResource3D{handle,cpuMesh->Bounds(),cpuMesh->vertices.size(),cpuMesh->indices.size(),std::move(cpuMesh)}:MeshResource3D{};}
 
