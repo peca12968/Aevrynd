@@ -24,7 +24,7 @@ int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     RECT rect{0,0,desiredWidth,desiredHeight};DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX;AdjustWindowRectEx(&rect,style,FALSE,0);
     const LONG windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,x=workArea.left+(workWidth-windowWidth)/2,y=workArea.top+(workHeight-windowHeight)/2;
     hwnd_=CreateWindowExW(0,wc.lpszClassName,config_.title.c_str(),style,x,y,windowWidth,windowHeight,nullptr,nullptr,instance,this);
-    if(!hwnd_)throw std::runtime_error("CreateWindow failed");RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)));ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);game_->OnStart(*this);
+    if(!hwnd_)throw std::runtime_error("CreateWindow failed");RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)));audio_.Initialize();ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);game_->OnStart(*this);
     using Clock=std::chrono::steady_clock;auto last=Clock::now();double accumulator=0.0;MSG msg{};
     while(running_){
         input_.BeginFrame();
@@ -32,9 +32,9 @@ int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
         while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT){running_=false;break;}TranslateMessage(&msg);DispatchMessageW(&msg);}if(!running_)break;
         auto now=Clock::now();double frame=std::chrono::duration<double>(now-last).count();last=now;if(frame>.25)frame=.25;accumulator+=frame;int updates=0;
         while(accumulator>=config_.fixedStep&&updates<5){game_->OnUpdate(*this,config_.fixedStep);input_.ConsumePresses();time_+=config_.fixedStep;accumulator-=config_.fixedStep;updates++;}
-        if(updates==5)accumulator=0;draw_.Clear();game_->OnRender(*this,float(accumulator/config_.fixedStep));renderer_->Render(draw_,{.018f,.045f,.055f,1});
+        if(updates==5)accumulator=0;audio_.Update();draw_.Clear();game_->OnRender(*this,float(accumulator/config_.fixedStep));renderer_->Render(draw_,{.018f,.045f,.055f,1});
     }
-    game_->OnStop(*this);game_.reset();return int(msg.wParam);
+    game_->OnStop(*this);game_.reset();audio_.Shutdown();return int(msg.wParam);
 }
 
 LRESULT CALLBACK Engine::WindowProc(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){Engine* self=reinterpret_cast<Engine*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(message==WM_NCCREATE){auto cs=reinterpret_cast<CREATESTRUCTW*>(lParam);self=static_cast<Engine*>(cs->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));self->hwnd_=hwnd;}return self?self->HandleMessage(message,wParam,lParam):DefWindowProcW(hwnd,message,wParam,lParam);}

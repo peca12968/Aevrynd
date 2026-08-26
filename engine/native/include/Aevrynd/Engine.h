@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include "Audio.h"
 #include "Game.h"
 #include "Input.h"
 #include "Renderer.h"
@@ -18,6 +19,8 @@ public:
     int Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand);
     DrawList& Draw(){return draw_;}
     Input& GetInput(){return input_;}
+    AudioEngine& Audio(){return audio_;}
+    const AudioEngine& Audio()const{return audio_;}
     unsigned Width()const{return config_.width;}
     unsigned Height()const{return config_.height;}
     float Time()const{return time_;}
@@ -38,6 +41,6 @@ private:
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
     EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{}; float time_{};
-    Input input_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
+    Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
 };
 }
