@@ -1,4 +1,5 @@
 #include <Aevrynd/Renderer.h>
+#include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Mesh3D.h>
 #include <Aevrynd/Scene2D.h>
 #include <algorithm>
@@ -8,6 +9,7 @@
 #include <iostream>
 
 using namespace Aevrynd;
+constexpr Color Cyan{.1f,.9f,.8f,1.f};
 
 constexpr auto SortedDepthEntries() {
     std::array<DepthEntry, 4> entries = {{{320.f, 0, 0}, {120.f, 1, 1}, {320.f, 2, 2}, {-40.f, 3, 0}}};
@@ -102,6 +104,7 @@ int main() {
         return 8;
     }
     const std::size_t shadowStart=draw.vertices.size();draw.ProjectedEllipseShadow({10,20},8,3,{1,0},5,.35f,18);if(draw.vertices.size()!=shadowStart+54||std::abs(draw.vertices[shadowStart].x-15.f)>.001f||std::abs(draw.vertices[shadowStart].y-20.f)>.001f){std::cerr<<"Projected 2.5D ellipse shadow failed\n";return 17;}
+    ParticleBurst2D particleSettings{};particleSettings.minimumSpeed=particleSettings.maximumSpeed=40;particleSettings.minimumLife=particleSettings.maximumLife=.05f;particleSettings.minimumSize=particleSettings.maximumSize=3;particleSettings.gravity=0;particleSettings.drag=0;particleSettings.shape=ParticleShape2D::Circle;ParticleSystem2D particleA(4),particleB(4);particleA.EmitBurst({20,30},Cyan,6,particleSettings,42);particleB.EmitBurst({20,30},Cyan,6,particleSettings,42);DrawList particleDrawA,particleDrawB;particleA.Render(particleDrawA);particleB.Render(particleDrawB);const ParticleSystem2DStats particleStats=particleA.Stats();if(particleA.ActiveCount()!=4||particleStats.emitted!=4||particleStats.dropped!=2||particleStats.peakActive!=4||particleDrawA.vertices.size()!=96||particleDrawA.vertices.size()!=particleDrawB.vertices.size()||particleDrawA.vertices.front().x!=particleDrawB.vertices.front().x||particleDrawA.vertices.front().y!=particleDrawB.vertices.front().y){std::cerr<<"Bounded deterministic particle burst failed\n";return 19;}particleA.Update(.1f);if(particleA.ActiveCount()!=0||particleA.Stats().recycled!=4){std::cerr<<"Particle recycling failed\n";return 20;}ScreenShake2D shake;shake.AddImpulse(8,.4f);shake.Update(.2f);if(std::abs(shake.Amplitude()-4.f)>.001f||!std::isfinite(shake.Offset().x)){std::cerr<<"Screen shake impulse failed\n";return 21;}shake.Update(.2f);if(shake.Active()||shake.Amplitude()!=0){std::cerr<<"Screen shake decay failed\n";return 22;}
     draw.WorldTriangle({-.5f,-.5f,.5f},{0,.5f,.5f},{.5f,-.5f,.5f},{.2f,.8f,.7f,1.f});
     if(draw.worldIndices.size()!=3||draw.worldIndices[2]!=2){std::cerr<<"World triangle indices failed\n";return 12;}
     draw.SetAtmosphere({{.2f,.3f,.4f,.8f},{0,0,0},20,80,true});draw.AddPointLight({{2,3,4},10,{1,.4f,.2f,1},2});draw.AddPointLight({{-2,2,3},8,{.2f,.6f,1,1},1.5f});draw.AddPointLight({{0,4,8},12,{.5f,1,.4f,1},1});draw.AddPointLight({{20,2,20},-4,{1,1,1,1},.5f});draw.AddPointLight({{},5,{1,1,1,1},0});if(draw.PointLights().size()!=4||draw.PointLights().back().radius<.001f){std::cerr<<"Point light validation failed\n";return 18;}

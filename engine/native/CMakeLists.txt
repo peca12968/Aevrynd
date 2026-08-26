@@ -2,6 +2,7 @@ add_library(AevryndEngine STATIC
   src/Audio.cpp
   src/CharacterController3D.cpp
   src/CollisionWorld3D.cpp
+  src/Effects2D.cpp
   src/Engine.cpp
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp

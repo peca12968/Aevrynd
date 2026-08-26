@@ -1,5 +1,6 @@
 #pragma once
 #include <Aevrynd/Engine.h>
+#include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Scene3D.h>
 
 class EngineLabGame final:public Aevrynd::IGame {
@@ -21,7 +22,9 @@ private:
     Aevrynd::SoundHandle audioPing_{};
     Aevrynd::CameraRig3D cameraRig_{};
     Aevrynd::Camera3D camera_{};
+    Aevrynd::ParticleSystem2D effects_{512};
     int cameraMode_{};
+    int effectCycle_{-1};
     bool automatic_{true};
     bool cullingEnabled_{true};
     bool instancingEnabled_{true};
