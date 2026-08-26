@@ -17,6 +17,12 @@ struct Vec3 {
     constexpr Vec3 operator*(float scale)const{return{x*scale,y*scale,z*scale};}
 };
 struct Vec4 {float x{},y{},z{},w{};};
+struct Transform2D {
+    Vec2 translation{};
+    Vec2 scale{1.f,1.f};
+    Vec2 pivot{};
+    float rotation{};
+};
 struct Matrix4 {
     float values[4][4]{};
     static constexpr Matrix4 Identity(){Matrix4 result{};result.values[0][0]=result.values[1][1]=result.values[2][2]=result.values[3][3]=1.f;return result;}
@@ -32,6 +38,7 @@ inline Vec4 UnpackNormalSnorm8(uint32_t packed){auto channel=[](uint32_t value){
 inline float Length(Vec2 v){ return std::sqrt(v.x*v.x+v.y*v.y); }
 inline float Distance(Vec2 a,Vec2 b){ return Length(a-b); }
 inline Vec2 Normalize(Vec2 v){ float l=Length(v); return l>.0001f?v*(1.f/l):Vec2{}; }
+inline Vec2 TransformPoint(const Transform2D& transform,Vec2 point){const float cosine=std::cos(transform.rotation),sine=std::sin(transform.rotation);const Vec2 local{(point.x-transform.pivot.x)*transform.scale.x,(point.y-transform.pivot.y)*transform.scale.y};return{local.x*cosine-local.y*sine+transform.pivot.x+transform.translation.x,local.x*sine+local.y*cosine+transform.pivot.y+transform.translation.y};}
 constexpr float Dot(Vec3 a,Vec3 b){return a.x*b.x+a.y*b.y+a.z*b.z;}
 constexpr Vec3 Cross(Vec3 a,Vec3 b){return{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 inline float Length(Vec3 value){return std::sqrt(Dot(value,value));}

@@ -84,6 +84,13 @@ int ValidateSpatial2D() {
 }
 
 int ValidateClipCulling2D() {
+    DrawList transformed;
+    transformed.SetTransform2D({{10,20},{2,2},{},1.570796327f});
+    transformed.Triangle({1,0},{2,0},{1,1},Cyan);
+    if (transformed.vertices.size() != 3 || std::abs(transformed.vertices.front().x - 10.f) > .001f || std::abs(transformed.vertices.front().y - 22.f) > .001f) {
+        std::cerr << "DrawList affine transform failed\n";
+        return 31;
+    }
     DrawList clipped;
     clipped.SetClipRect({0, 0}, {100, 100});
     constexpr int PrimitiveCount = 20000;

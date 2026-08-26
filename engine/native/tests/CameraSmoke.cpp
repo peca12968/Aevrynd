@@ -1,4 +1,5 @@
 #include <Aevrynd/Camera.h>
+#include <Aevrynd/Camera2D.h>
 #include <Aevrynd/Geometry3D.h>
 #include <Aevrynd/Input.h>
 #include <Aevrynd/Viewport.h>
@@ -17,6 +18,10 @@ static_assert(Dot({1,2,3},{4,5,6})==32.f);
 static_assert(Cross({1,0,0},{0,1,0}).z==1.f);
 
 int main(){
+    CameraRig2D rig2D;const Vec2 identityScreen=rig2D.WorldToScreen({100,50});if(!Near(identityScreen.x,100)||!Near(identityScreen.y,50)){std::cerr<<"Default 2D camera identity failed\n";return 26;}
+    rig2D.SetCamera({{740,410},{1280,720},1.5f,.3f});const Vec2 worldPoint{812,477},screenPoint=rig2D.WorldToScreen(worldPoint),roundTrip=rig2D.ScreenToWorld(screenPoint),transformedPoint=TransformPoint(rig2D.DrawTransform(),worldPoint);if(!Near(roundTrip.x,worldPoint.x,.01f)||!Near(roundTrip.y,worldPoint.y,.01f)||!Near(transformedPoint.x,screenPoint.x,.01f)||!Near(transformedPoint.y,screenPoint.y,.01f)){std::cerr<<"2D camera coordinate round trip failed\n";return 27;}
+    const Vec2 parallaxPoint=rig2D.WorldToScreen({640,360},.25f);if(parallaxPoint.x>=640||parallaxPoint.y>=360){std::cerr<<"2D camera parallax failed\n";return 28;}
+    rig2D.Reset({1280,720});for(int step=0;step<120;++step)rig2D.Update({740,410},5.f,6.1f,.1f);if(!Near(rig2D.Camera().position.x,740,.01f)||!Near(rig2D.Camera().position.y,410,.01f)||!Near(rig2D.Camera().zoom,2.f,.01f)||std::abs(rig2D.Camera().rotation)>.3f){std::cerr<<"2D camera smoothing or clamping failed\n";return 29;}
     const CanvasViewport wide=CalculateCanvasViewport({1280,720},{1024,768}),fit=CalculateCanvasViewport({1280,720},{853,480});
     if(!Near(wide.x,0)||!Near(wide.y,96)||!Near(wide.width,1024)||!Near(wide.height,576)||!Near(fit.x,0)||!Near(fit.y,.09375f)){std::cerr<<"Canvas letterbox calculation failed\n";return 21;}
     const Vec2 mapped=MapClientToCanvas({512,384},wide);if(!Near(mapped.x,640)||!Near(mapped.y,360)||!wide.Contains({512,384})||wide.Contains({512,32})){std::cerr<<"Canvas input mapping failed\n";return 22;}
