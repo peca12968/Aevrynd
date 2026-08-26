@@ -34,7 +34,7 @@ struct AudioSpatial2D {Vec2 listener{},source{};float maximumDistance{800.f},rol
 struct AudioSpatial3D {Vec3 listener{},listenerRight{1,0,0},source{};float maximumDistance{40.f},rolloff{1.f},volume{1.f},pitch{1.f};};
 AudioPlayback CalculateSpatialAudio(AudioSpatial2D spatial);
 AudioPlayback CalculateSpatialAudio(AudioSpatial3D spatial);
-struct AudioStats {bool deviceAvailable{};uint32_t initializationError{};std::size_t residentSounds{},residentBytes{},activeVoices{};uint64_t playRequests{},spatialPlayRequests{},successfulPlays{},droppedPlays{};float masterVolume{1},lastSpatialPan{},lastSpatialGain{};};
+struct AudioStats {bool deviceAvailable{};uint32_t initializationError{};std::size_t residentSounds{},residentBytes{},activeVoices{},peakActiveVoices{};uint64_t playRequests{},spatialPlayRequests{},successfulPlays{},droppedPlays{},outputMatrixBuilds{},outputMatrixHeapAllocationsAvoided{},voiceUpdateCalls{},completedVoices{},voiceCompactions{},voiceMoves{};float masterVolume{1},lastSpatialPan{},lastSpatialGain{};};
 
 class AudioEngine {
 public:
