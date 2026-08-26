@@ -65,7 +65,11 @@ struct RendererStats {
     size_t residentMeshes{};
     size_t residentMeshBytes{};
     size_t residentMaterialTextureSets{};
+    size_t residentMaterialTextureReferences{};
     size_t residentTextureBytes{};
+    size_t materialTextureMemoryBudgetBytes{};
+    uint64_t materialTextureCacheHits{};
+    uint64_t materialTextureBudgetRejections{};
     uint32_t lastDrawCalls{};
     bool lastBackfaceCulling{};
     uint64_t submittedFrames{};
@@ -145,6 +149,7 @@ public:
     static constexpr size_t MaxMeshInstances=65536;
     static constexpr size_t MaxPointLights=3;
     static constexpr size_t MaxMaterialTextureSets=64;
+    static constexpr size_t DefaultMaterialTextureMemoryBudgetBytes=256*1024*1024;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*3;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
@@ -157,6 +162,7 @@ public:
     void DestroyMesh(MeshHandle3D mesh);
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
+    void SetMaterialTextureMemoryBudget(size_t bytes);
     void WaitIdle();
     bool SupportsDLSS() const;
     bool DLSSOn() const;
