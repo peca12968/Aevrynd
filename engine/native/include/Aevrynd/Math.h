@@ -35,5 +35,10 @@ inline float Length(Vec3 value){return std::sqrt(Dot(value,value));}
 inline Vec3 Normalize(Vec3 value){float length=Length(value);return length>.0001f?value*(1.f/length):Vec3{};}
 constexpr Matrix4 operator*(const Matrix4& left,const Matrix4& right){Matrix4 result{};for(std::size_t row=0;row<4;++row)for(std::size_t column=0;column<4;++column)for(std::size_t index=0;index<4;++index)result[row][column]+=left[row][index]*right[index][column];return result;}
 constexpr Vec4 operator*(const Matrix4& matrix,Vec4 vector){return{matrix[0][0]*vector.x+matrix[0][1]*vector.y+matrix[0][2]*vector.z+matrix[0][3]*vector.w,matrix[1][0]*vector.x+matrix[1][1]*vector.y+matrix[1][2]*vector.z+matrix[1][3]*vector.w,matrix[2][0]*vector.x+matrix[2][1]*vector.y+matrix[2][2]*vector.z+matrix[2][3]*vector.w,matrix[3][0]*vector.x+matrix[3][1]*vector.y+matrix[3][2]*vector.z+matrix[3][3]*vector.w};}
+constexpr Matrix4 CreateTranslationMatrix(Vec3 translation){Matrix4 result=Matrix4::Identity();result[0][3]=translation.x;result[1][3]=translation.y;result[2][3]=translation.z;return result;}
+constexpr Matrix4 CreateScaleMatrix(Vec3 scale){Matrix4 result{};result[0][0]=scale.x;result[1][1]=scale.y;result[2][2]=scale.z;result[3][3]=1.f;return result;}
+inline Matrix4 CreateRotationMatrix(Vec3 rotation){const float sx=std::sin(rotation.x),cx=std::cos(rotation.x),sy=std::sin(rotation.y),cy=std::cos(rotation.y),sz=std::sin(rotation.z),cz=std::cos(rotation.z);Matrix4 x=Matrix4::Identity(),y=Matrix4::Identity(),z=Matrix4::Identity();x[1][1]=cx;x[1][2]=-sx;x[2][1]=sx;x[2][2]=cx;y[0][0]=cy;y[0][2]=sy;y[2][0]=-sy;y[2][2]=cy;z[0][0]=cz;z[0][1]=-sz;z[1][0]=sz;z[1][1]=cz;return y*x*z;}
+inline Matrix4 CreateTransformMatrix(Vec3 position,Vec3 rotation,Vec3 scale){return CreateTranslationMatrix(position)*CreateRotationMatrix(rotation)*CreateScaleMatrix(scale);}
+constexpr Vec3 TransformPoint(const Matrix4& matrix,Vec3 point){Vec4 value=matrix*Vec4{point.x,point.y,point.z,1};return std::abs(value.w)>.00001f?Vec3{value.x/value.w,value.y/value.w,value.z/value.w}:Vec3{value.x,value.y,value.z};}
 inline float Clamp(float v,float a,float b){ return v<a?a:(v>b?b:v); }
 }

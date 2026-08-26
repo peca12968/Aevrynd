@@ -7,7 +7,7 @@ int main(){
     Scene3D scene;
     scene.Box({0,1,6},{2,2,2},{.2f,.8f,.7f,1});
     scene.Line({-2,0,4},{2,0,4},2,{1,1,1,1});
-    if(scene.TriangleCount()!=12||scene.LineCount()!=1){std::cerr<<"Scene box topology failed\n";return 1;}
+    if(scene.TriangleCount()!=12||scene.LineCount()!=1||scene.MeshCount()!=1){std::cerr<<"Scene box topology failed\n";return 1;}
     DrawList draw;
     Camera3D camera=MakeFirstPersonCamera({0,1,0},0,0);
     Scene3DStats stats=scene.Render(draw,camera,{1280,720});
@@ -20,6 +20,6 @@ int main(){
     stats=scene.Render(draw,camera,{1280,720});
     if(stats.visibleTriangles!=2||draw.vertices.size()!=6||draw.vertices.front().color!=PackColorRgba8(farColor)){std::cerr<<"Stable far-to-near sorting failed\n";return 3;}
     scene.Line({-1,0,4},{1,0,4},1,{1,1,1,1});draw.Clear();stats=scene.Submit(draw,camera,{1280,720});
-    if(stats.inputTriangles!=2||stats.visibleLines!=1||draw.worldVertices.size()!=12||draw.vertices.size()!=0){std::cerr<<"GPU scene submission failed\n";return 4;}
+    if(stats.inputTriangles!=2||stats.visibleLines!=1||draw.worldVertices.size()!=10||draw.worldIndices.size()!=12||draw.vertices.size()!=0){std::cerr<<"GPU scene submission failed\n";return 4;}
     return 0;
 }

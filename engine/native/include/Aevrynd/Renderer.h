@@ -12,11 +12,14 @@ struct Vertex3D {float x,y,z;uint32_t color;};
 struct RendererStats {
     size_t lastSubmittedVertices{};
     size_t lastSubmittedWorldVertices{};
+    size_t lastSubmittedWorldIndices{};
     size_t lastUploadBytes{};
     size_t peakSubmittedVertices{};
     size_t peakSubmittedWorldVertices{};
+    size_t peakSubmittedWorldIndices{};
     size_t totalDroppedVertices{};
     size_t totalDroppedWorldVertices{};
+    size_t totalDroppedWorldIndices{};
     uint32_t lastDrawCalls{};
     uint64_t submittedFrames{};
     uint64_t resourceWaits{};
@@ -25,8 +28,8 @@ struct RendererStats {
 class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;
-    DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();translation_={};viewProjection_=Matrix4::Identity();}
+    DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialVertexCapacity*3/2);}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();translation_={};viewProjection_=Matrix4::Identity();}
     void SetTranslation(Vec2 translation){translation_=translation;}
     Vec2 Translation()const{return translation_;}
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
@@ -42,6 +45,7 @@ public:
     void Text(Vec2 pos,std::string_view text,float scale,Color color);
     std::vector<Vertex> vertices;
     std::vector<Vertex3D> worldVertices;
+    std::vector<uint32_t> worldIndices;
 private:
     Vec2 translation_{};
     Matrix4 viewProjection_{Matrix4::Identity()};
@@ -51,8 +55,10 @@ public:
     static constexpr unsigned BufferedFrames=2;
     static constexpr size_t MaxVertices=240000;
     static constexpr size_t MaxWorldVertices=240000;
+    static constexpr size_t MaxWorldIndices=480000;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
-    static constexpr size_t DrawableWorldVertexCount(size_t requested){const size_t limited=requested<MaxWorldVertices?requested:MaxWorldVertices;return limited-limited%3;}
+    static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
+    static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
     D3D12Renderer(); ~D3D12Renderer();
     void Initialize(HWND hwnd,unsigned width,unsigned height);
     void Resize(unsigned width,unsigned height);

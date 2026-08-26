@@ -32,6 +32,7 @@ static_assert(sizeof(Vertex3D) == 16);
 static_assert(offsetof(Vertex3D, color) == 12);
 static_assert(D3D12Renderer::MaxVertices * sizeof(Vertex) * D3D12Renderer::BufferedFrames == 5760000);
 static_assert(D3D12Renderer::MaxWorldVertices * sizeof(Vertex3D) * D3D12Renderer::BufferedFrames == 7680000);
+static_assert(D3D12Renderer::MaxWorldIndices * sizeof(uint32_t) * D3D12Renderer::BufferedFrames == 3840000);
 static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
 static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
 
@@ -90,6 +91,7 @@ int main() {
         return 8;
     }
     draw.WorldTriangle({-.5f,-.5f,.5f},{0,.5f,.5f},{.5f,-.5f,.5f},{.2f,.8f,.7f,1.f});
+    if(draw.worldIndices.size()!=3||draw.worldIndices[2]!=2){std::cerr<<"World triangle indices failed\n";return 12;}
 
     HWND window = CreateWindowExW(0, L"STATIC", L"AevryndRendererSmoke", WS_OVERLAPPED,
                                   0, 0, 1280, 720, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
@@ -113,9 +115,10 @@ int main() {
         const RendererStats stats = renderer.GetStats();
         if (stats.submittedFrames != expectedFrames || stats.lastSubmittedVertices != draw.vertices.size() ||
             stats.lastSubmittedWorldVertices != draw.worldVertices.size() ||
-            stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) ||
-            stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() ||
-            stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.lastDrawCalls != 2) {
+            stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
+            stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) ||
+            stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
+            stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 2) {
             std::cerr << "Renderer telemetry did not match submitted GPU work\n";
             rendererResult = 11;
         }
