@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include "LocalQwen.h"
+#include "RiftwardenRules.h"
 
 class RiftwardenGame final:public Aevrynd::IGame {
 public:
@@ -15,8 +16,8 @@ public:
     void OnRender(Aevrynd::Engine&,float)override;
     void OnStop(Aevrynd::Engine&)override;
 private:
-    enum class TowerKind{Bolt,Frost,Nova};
-    enum class EnemyKind{Grunt,Swift,Tank,Boss};
+    using TowerKind=RiftwardenRules::TowerKind;
+    using EnemyKind=RiftwardenRules::EnemyKind;
     enum class Language{None,TraditionalChinese,English};
     struct Enemy{size_t id{};Aevrynd::Vec2 pos{};float progress{},hp{},maxHp{},speed{},slow{};int reward{};EnemyKind kind{EnemyKind::Grunt};bool dead{};};
     struct Tower{Aevrynd::Vec2 pos{};TowerKind kind{};int level{1};float cooldown{};};
@@ -28,7 +29,7 @@ private:
     void RequestEvent();void ApplyPendingEvent();Aevrynd::Vec2 PathPosition(float)const;float TowerRange(TowerKind)const;float TowerCost(TowerKind)const;
     const char* Tr(const char* traditionalChinese,const char* english)const{return language_==Language::TraditionalChinese?traditionalChinese:english;}
     std::vector<Enemy> enemies_;std::vector<Tower> towers_;std::vector<Shot> shots_;std::vector<Particle> particles_;
-    int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{};size_t nextEnemyId_{1},gamepadSpot_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true};
+    int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{},shatters_{};size_t nextEnemyId_{1},gamepadSpot_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true};
     Language language_{Language::None},pendingLanguage_{Language::English};bool progressLoaded_{};TowerKind selected_{TowerKind::Bolt};Modifiers mods_{};std::mt19937 rng_{std::random_device{}()};
     std::jthread qwenThread_;std::atomic_bool qwenBusy_{false};std::mutex eventMutex_;std::optional<GeneratedEvent> pendingEvent_;std::string eventName_="SYSTEM READY",statusMessage_="WELCOME, WARDEN";
 };

@@ -1,4 +1,5 @@
 #include "RiftwardenRules.h"
+#include <cmath>
 #include <iostream>
 
 int main() {
@@ -23,6 +24,21 @@ int main() {
     if (fourth.grunt != 9 || fourth.swift != 3 || fourth.tank != 2 || fourth.boss != 1) {
         std::cerr << "The fourth wave preview must match its spawn rules\n";
         return 5;
+    }
+    const auto frostSwift = RiftwardenRules::ResolveHit(RiftwardenRules::TowerKind::Frost, RiftwardenRules::EnemyKind::Swift, false);
+    if (std::abs(frostSwift.multiplier - 1.4f) > .001f || std::abs(frostSwift.slowDuration - 2.2f) > .001f) {
+        std::cerr << "Frost must counter and chill swift enemies\n";
+        return 6;
+    }
+    const auto novaShatter = RiftwardenRules::ResolveHit(RiftwardenRules::TowerKind::Nova, RiftwardenRules::EnemyKind::Tank, true);
+    if (std::abs(novaShatter.multiplier - 1.755f) > .001f || !novaShatter.shatters) {
+        std::cerr << "Nova must counter tanks and shatter chilled targets\n";
+        return 7;
+    }
+    const auto bossSlow = RiftwardenRules::ResolveHit(RiftwardenRules::TowerKind::Frost, RiftwardenRules::EnemyKind::Boss, false);
+    if (std::abs(bossSlow.slowDuration - 1.2f) > .001f) {
+        std::cerr << "Boss chill resistance is incorrect\n";
+        return 8;
     }
     return 0;
 }

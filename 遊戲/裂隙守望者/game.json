@@ -3,7 +3,7 @@
   "title": "裂隙守望者",
   "subtitle": "RIFTWARDEN",
   "description": "以本地 Qwen3.8-27B 生成動態事件的原生 2.5D 塔防遊戲。",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "engineVersion": "1.1.0",
   "platform": "windows-x64",
   "renderer": "directx12",
@@ -11,5 +11,5 @@
   "cover": "assets/rift-valley.png",
   "genre": "2.5D 塔防",
   "tags": ["原生遊戲", "塔防", "本地 AI"],
-  "features": ["fixed-step", "directx12", "dlss-super-resolution", "streamline-2.12", "local-qwen", "isometric-primitives", "adaptive-window-fit", "kill-combo", "wave-forecast", "interactive-tutorial", "active-abilities", "enemy-variety", "traditional-chinese", "english", "runtime-language-switch", "persistent-settings", "save-game", "autosave", "keyboard", "mouse", "xinput-gamepad"]
+  "features": ["fixed-step", "directx12", "dlss-super-resolution", "streamline-2.12", "local-qwen", "isometric-primitives", "adaptive-window-fit", "tower-synergy", "enemy-counterplay", "chill-shatter", "kill-combo", "wave-forecast", "interactive-tutorial", "active-abilities", "enemy-variety", "traditional-chinese", "english", "runtime-language-switch", "persistent-settings", "save-game", "autosave", "keyboard", "mouse", "xinput-gamepad"]
 }
