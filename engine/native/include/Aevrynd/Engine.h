@@ -14,13 +14,14 @@
 namespace Aevrynd {
 struct Mesh3D;
 struct MeshResource3D;
-struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false; };
+struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; };
 struct EngineMemoryStats {
     ProcessMemoryStats process{};
     TransientMemoryStats draw{};
     TransientMemoryStats renderer{};
     size_t lastReleasedBytes{};
     uint64_t trimCount{};
+    uint64_t automaticTrimCount{};
 };
 class Engine {
 public:
@@ -58,10 +59,10 @@ public:
 private:
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
-    EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{}; float time_{},lastMemorySampleTime_{-1.f};
+    EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
     std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
-    ProcessMemoryStats processMemoryStats_{};size_t lastReleasedBytes_{};uint64_t trimCount_{};
+    ProcessMemoryStats processMemoryStats_{};size_t lastReleasedBytes_{};uint64_t trimCount_{},automaticTrimCount_{};float lastAutomaticTrimTime_{};
     Color clearColor_{.018f,.045f,.055f,1};
 };
 }

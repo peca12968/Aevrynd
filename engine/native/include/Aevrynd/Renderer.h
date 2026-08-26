@@ -40,6 +40,7 @@ struct DrawListStats2D {
 };
 struct TransientMemoryStats {
     size_t trackedCapacityBytes{};
+    size_t reclaimableCapacityBytes{};
     size_t lastReleasedBytes{};
     uint64_t trimCount{};
 };
