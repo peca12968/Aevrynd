@@ -13,3 +13,8 @@ add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
 target_compile_options(AevryndDrawListTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndDrawListTest PRIVATE AevryndEngine)
 add_test(NAME AevryndDrawListTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDrawListTest>'")
+
+add_executable(AevryndCameraTest tests/CameraSmoke.cpp)
+target_compile_options(AevryndCameraTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndCameraTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCameraTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCameraTest>'")

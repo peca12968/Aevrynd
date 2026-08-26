@@ -19,7 +19,7 @@ void DrawList::Diamond(Vec2 c,float rx,float ry,Color col){Triangle({c.x,c.y-ry}
 void DrawList::IsoPrism(Vec2 c,float rx,float ry,float h,Color top,Color left,Color right){Vec2 t{c.x,c.y-ry-h},r{c.x+rx,c.y-h},b{c.x,c.y+ry-h},l{c.x-rx,c.y-h},bottom{c.x,c.y+ry},bottomLeft{c.x-rx,c.y},bottomRight{c.x+rx,c.y};Triangle(l,b,bottom,left);Triangle(l,bottom,bottomLeft,left);Triangle(b,r,bottomRight,right);Triangle(b,bottomRight,bottom,right);Triangle(t,r,b,top);Triangle(t,b,l,top);}
 void DrawList::Ellipse(Vec2 c,float rx,float ry,Color col,int n){for(int i=0;i<n;i++){float a=float(i)*6.2831853f/n,b=float(i+1)*6.2831853f/n;Triangle(c,{c.x+std::cos(a)*rx,c.y+std::sin(a)*ry},{c.x+std::cos(b)*rx,c.y+std::sin(b)*ry},col);}}
 void DrawList::Circle(Vec2 c,float r,Color col,int n){Ellipse(c,r,r,col,n);}
-void DrawList::Line(Vec2 a,Vec2 b,float w,Color col){Vec2 n=Normalize({-(b.y-a.y),b.x-a.x})*(w*.5f);Triangle(a+n,b+n,b-n,col);Triangle(a+n,b-n,a-n,col);}
+void DrawList::Line(Vec2 a,Vec2 b,float w,Color col){Vec2 n=Normalize(Vec2{-(b.y-a.y),b.x-a.x})*(w*.5f);Triangle(a+n,b+n,b-n,col);Triangle(a+n,b-n,a-n,col);}
 
 static const std::unordered_map<char,std::array<unsigned char,7>> Font={
  {'A',{14,17,17,31,17,17,17}},{'B',{30,17,17,30,17,17,30}},{'C',{14,17,16,16,16,17,14}},

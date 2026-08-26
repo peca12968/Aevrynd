@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Aevrynd VERSION 1.13.0 LANGUAGES CXX)
+project(Aevrynd VERSION 1.14.0 LANGUAGES CXX)
 enable_testing()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
