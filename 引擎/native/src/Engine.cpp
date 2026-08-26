@@ -2,6 +2,7 @@
 #include <windowsx.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <stdexcept>
 
 namespace Aevrynd {
@@ -13,9 +14,13 @@ int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     game_=std::move(game);SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     WNDCLASSEXW wc{sizeof(wc)};wc.style=CS_HREDRAW|CS_VREDRAW;wc.lpfnWndProc=WindowProc;wc.hInstance=instance;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=nullptr;wc.lpszClassName=L"AevryndEngineWindow";
     if(!RegisterClassExW(&wc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)throw std::runtime_error("RegisterClass failed");
-    RECT rect{0,0,LONG(config_.width),LONG(config_.height)};DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX;AdjustWindowRectEx(&rect,style,FALSE,0);
-    hwnd_=CreateWindowExW(0,wc.lpszClassName,config_.title.c_str(),style,CW_USEDEFAULT,CW_USEDEFAULT,rect.right-rect.left,rect.bottom-rect.top,nullptr,nullptr,instance,this);
-    if(!hwnd_)throw std::runtime_error("CreateWindow failed");RECT client{},window{};GetClientRect(hwnd_,&client);GetWindowRect(hwnd_,&window);LONG clientWidth=client.right-client.left,clientHeight=client.bottom-client.top;if(clientWidth!=LONG(config_.width)||clientHeight!=LONG(config_.height))SetWindowPos(hwnd_,nullptr,0,0,(window.right-window.left)+(LONG(config_.width)-clientWidth),(window.bottom-window.top)+(LONG(config_.height)-clientHeight),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);renderer_->Initialize(hwnd_,config_.width,config_.height);ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);game_->OnStart(*this);
+    RECT workArea{};SystemParametersInfoW(SPI_GETWORKAREA,0,&workArea,0);const LONG workWidth=workArea.right-workArea.left,workHeight=workArea.bottom-workArea.top;
+    const float fit=(std::min)({1.f,float((std::max)(320L,workWidth-48))/config_.width,float((std::max)(180L,workHeight-72))/config_.height});
+    const LONG desiredWidth=LONG(std::lround(config_.width*fit)),desiredHeight=LONG(std::lround(config_.height*fit));
+    RECT rect{0,0,desiredWidth,desiredHeight};DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX;AdjustWindowRectEx(&rect,style,FALSE,0);
+    const LONG windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,x=workArea.left+(workWidth-windowWidth)/2,y=workArea.top+(workHeight-windowHeight)/2;
+    hwnd_=CreateWindowExW(0,wc.lpszClassName,config_.title.c_str(),style,x,y,windowWidth,windowHeight,nullptr,nullptr,instance,this);
+    if(!hwnd_)throw std::runtime_error("CreateWindow failed");RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)));ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);game_->OnStart(*this);
     using Clock=std::chrono::steady_clock;auto last=Clock::now();double accumulator=0.0;MSG msg{};
     while(running_){
         input_.BeginFrame();

@@ -13,7 +13,9 @@ public:
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void Quad(Vec2 center,Vec2 size,Color color);
     void Diamond(Vec2 center,float rx,float ry,Color color);
+    void IsoPrism(Vec2 center,float rx,float ry,float height,Color top,Color left,Color right);
     void Circle(Vec2 center,float radius,Color color,int segments=18);
+    void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
     void Line(Vec2 a,Vec2 b,float width,Color color);
     void Text(Vec2 pos,std::string_view text,float scale,Color color);
     std::vector<Vertex> vertices;
