@@ -55,7 +55,7 @@ set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
 target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include" "${AEVRYND_SHADER_OUTPUT_DIR}")
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(AevryndEngine PUBLIC "${STREAMLINE_ROOT}/lib/x64/sl.interposer.lib" windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
+target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
 
 add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
 target_compile_options(AevryndDrawListTest PRIVATE /W4 /permissive- /utf-8)

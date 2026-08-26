@@ -6,6 +6,7 @@
 #include <cstdint>
 
 namespace Aevrynd {
+struct StreamlineApi;
 struct StreamlineResourceStats {
     size_t residentBytes{};
     uint64_t allocations{};
@@ -14,8 +15,14 @@ struct StreamlineResourceStats {
 };
 class StreamlineDLSS {
 public:
+    StreamlineDLSS()=default;
+    StreamlineDLSS(const StreamlineDLSS&)=delete;
+    StreamlineDLSS& operator=(const StreamlineDLSS&)=delete;
+    ~StreamlineDLSS();
     bool InitializeFramework();
     bool InitializeDevice(ID3D12Device*,IDXGIAdapter1*,uint32_t outputWidth,uint32_t outputHeight);
+    HRESULT CreateFactory(UINT flags,REFIID interfaceId,void** factory)const;
+    HRESULT CreateDevice(IUnknown* adapter,D3D_FEATURE_LEVEL featureLevel,REFIID interfaceId,void** device)const;
     bool Resize(uint32_t outputWidth,uint32_t outputHeight);
     void Shutdown();
     void BeginScene(ID3D12GraphicsCommandList*,const float clear[4]);
@@ -35,6 +42,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> input_,output_,motion_,depth_,validationReadback_;
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_,dsvHeap_;
+    StreamlineApi* api_{};
     UINT rtvStep_{};
 };
 }

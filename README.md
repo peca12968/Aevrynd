@@ -90,7 +90,7 @@ Games/
 - Win32 原生視窗與輸入
 - DirectX 12 device、swap chain 與 command queue
 - 建置期編譯並嵌入 bytecode 的 HLSL shader pipeline 與 root signature，正式執行檔不再依賴 `D3DCOMPILER_47.dll`
-- 可在建立 D3D 裝置前選用的 NVIDIA Streamline 2.12 與 DLSS Super Resolution 模組
+- 可在建立 D3D 裝置前按需驗證簽章並動態載入的 NVIDIA Streamline 2.12 與 DLSS Super Resolution 模組；未選用時不載入 `sl.interposer.dll`
 - DLSS color、depth、motion-vector 與 output resources
 - 可成長 GPU upload vertex／index／instance buffer 與 fence synchronization
 - 三重緩衝持久映射上傳資源由 4,116,480 bytes 起始，依各幀需求倍增至既有硬上限；背景記憶體修剪會在 GPU 安全點釋放尖峰容量
@@ -154,7 +154,7 @@ target_link_libraries(MyGame PRIVATE AevryndEngine)
 
 ## DLSS 測試
 
-Riftwarden 預設不初始化 DLSS 模組，以降低 2D／2.5D 遊戲的常駐記憶體。需要 DLSS 時必須在建立 D3D 裝置前選用模組，可使用下列任一方式：
+Riftwarden 預設不載入 DLSS 模組，以降低 2D／2.5D 遊戲的常駐記憶體。需要 DLSS 時必須在建立 D3D 裝置前選用模組；引擎會先驗證 NVIDIA 雙重簽章，再動態載入 `sl.interposer.dll` 並透過代理 DXGI／D3D12 建立路徑完成整合。可使用下列任一方式：
 
 ```powershell
 games/riftwarden/dist/Riftwarden-DX12.exe --dlss
