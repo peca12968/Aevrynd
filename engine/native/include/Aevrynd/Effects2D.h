@@ -20,6 +20,7 @@ struct ParticleBurst2D {
 struct ParticleSystem2DStats {
     std::size_t emitted{},recycled{},dropped{},peakActive{};
     std::size_t rendered{},visibilityCulled{},renderCalls{},visibilityRenderCalls{};
+    std::size_t lastSimulationCulled{},totalSimulationCulled{},updateCalls{},boundedUpdateCalls{};
 };
 
 class ParticleSystem2D {
@@ -29,6 +30,7 @@ public:
     void EmitBurst(Vec2 origin,Color color,std::size_t count,ParticleBurst2D settings={},uint32_t seed=1);
     void EmitRing(Vec2 origin,Color color,std::size_t count,float speed,ParticleBurst2D settings={},float phase=0.f);
     void Update(float deltaTime);
+    void Update(float deltaTime,Bounds2D simulationBounds);
     void Render(DrawList& draw)const;
     void Render(DrawList& draw,Bounds2D worldBounds)const;
     std::size_t ActiveCount()const{return particles_.size();}
@@ -39,6 +41,7 @@ public:
 private:
     struct Particle {Vec2 position{},velocity{};Color color{};float remaining{},lifetime{},startSize{},endSize{},gravity{},drag{};ParticleShape2D shape{ParticleShape2D::Circle};};
     void Emit(Vec2 origin,Vec2 velocity,Color color,float life,float size,const ParticleBurst2D& settings);
+    void UpdateInternal(float deltaTime,const Bounds2D* simulationBounds);
     void RenderInternal(DrawList& draw,const Bounds2D* worldBounds)const;
     std::vector<Particle> particles_;
     std::size_t capacity_{},retainedCapacity_{},lastReleasedBytes_{};
