@@ -10,4 +10,7 @@ $distributionDirectory = Join-Path $projectRoot 'games\frontier_world\dist'
 New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
 Copy-Item -LiteralPath (Join-Path $buildDirectory 'bin\Release\Aevrynd-Frontier-World.exe') -Destination (Join-Path $distributionDirectory 'Aevrynd-Frontier-World.exe') -Force
 Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\*.dll') -Destination $distributionDirectory -Force
+$distributionAssets = Join-Path $distributionDirectory 'assets'
+New-Item -ItemType Directory -Force -Path $distributionAssets | Out-Null
+Copy-Item -Path (Join-Path $projectRoot 'games\frontier_world\assets\*') -Destination $distributionAssets -Recurse -Force
 Write-Host "Built: $distributionDirectory\Aevrynd-Frontier-World.exe" -ForegroundColor Green

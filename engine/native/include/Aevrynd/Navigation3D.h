@@ -10,6 +10,22 @@ struct NavigationCell3D {int x{},z{};constexpr bool operator==(const NavigationC
 struct NavigationGridSettings3D {Vec3 origin{-32,0,-32};unsigned width{64},depth{64};float cellSize{1.f};std::size_t maximumVisitedNodes{4096};bool allowDiagonal{true};};
 struct NavigationPathStats3D {std::size_t visitedNodes{},openPushes{},rawPoints{},simplifiedPoints{};float totalCost{};bool reachedGoal{},searchLimitReached{};};
 struct NavigationPath3D {std::vector<Vec3> points;NavigationPathStats3D stats{};explicit operator bool()const{return stats.reachedGoal&&!points.empty();}};
+struct NavigationWorkspaceStats3D {std::size_t cellCapacity{},openCapacity{},rawCapacity{},simplifiedCapacity{};};
+class NavigationGrid3D;
+
+class NavigationQueryWorkspace3D {
+public:
+    void Reserve(std::size_t cells);
+    NavigationWorkspaceStats3D Stats()const;
+private:
+    struct OpenNode {float score{};std::size_t index{};};
+    friend class NavigationGrid3D;
+    std::vector<OpenNode> open_;
+    std::vector<float> costs_;
+    std::vector<int64_t> parents_;
+    std::vector<uint8_t> closed_;
+    std::vector<NavigationCell3D> raw_,simplified_;
+};
 
 class NavigationGrid3D {
 public:
@@ -26,6 +42,7 @@ public:
     std::size_t Rasterize(const CollisionWorld3D& world,CollisionQueryFilter3D filter={},float agentRadius=.45f,float agentHeight=1.8f);
     std::size_t ApplyHeightField(const HeightField3D& terrain,float maximumSlopeDegrees=50.f,float slopeCostScale=6.f,bool blockOutside=true);
     NavigationPath3D FindPath(Vec3 start,Vec3 goal)const;
+    NavigationPathStats3D FindPathInto(Vec3 start,Vec3 goal,NavigationQueryWorkspace3D& workspace,std::vector<Vec3>& output)const;
     std::size_t BlockedCellCount()const;
     const NavigationGridSettings3D& Settings()const{return settings_;}
 private:

@@ -6,7 +6,8 @@
 
 namespace Aevrynd {
 struct HeightFieldSettings3D {Vec3 origin{};unsigned width{2},depth{2};float cellSize{1.f};};
-struct HeightFieldMeshSettings3D {Color lowColor{.12f,.28f,.1f,1},highColor{.42f,.5f,.32f,1},steepColor{.32f,.3f,.27f,1};float steepNormalY{.72f};};
+struct HeightFieldNaturalSettings3D {float amplitude{18.f},frequency{.012f},ridgeStrength{.58f},domainWarp{22.f};unsigned octaves{6};};
+struct HeightFieldMeshSettings3D {Color lowColor{.12f,.28f,.1f,1},highColor{.42f,.5f,.32f,1},steepColor{.32f,.3f,.27f,1};float steepNormalY{.72f};Color shoreColor{.24f,.18f,.1f,1};float shoreHeight{-10000.f},shoreBlend{0.f};};
 
 class HeightField3D {
 public:
@@ -14,6 +15,7 @@ public:
     void Configure(HeightFieldSettings3D settings);
     void Fill(float height);
     void Generate(uint32_t seed,float amplitude=6.f,float frequency=.025f,unsigned octaves=4);
+    void GenerateNatural(uint32_t seed,HeightFieldNaturalSettings3D settings={});
     bool SetHeight(unsigned x,unsigned z,float height);
     float Height(unsigned x,unsigned z)const;
     Vec3 SamplePosition(unsigned x,unsigned z)const;

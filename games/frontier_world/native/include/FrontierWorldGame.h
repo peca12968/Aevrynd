@@ -32,7 +32,7 @@ private:
     Aevrynd::CollisionWorld3D collisionWorld_;
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
-    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{};
+    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
     Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};
@@ -42,6 +42,7 @@ private:
     Aevrynd::WorldStreamer3D worldStreamer_{};
     Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
     Aevrynd::NavigationGrid3D navigationGrid_{};
+    Aevrynd::NavigationQueryWorkspace3D navigationWorkspace_{};
     std::vector<Building> buildings_;
     std::vector<Monster> monsters_;
     Aevrynd::Camera3D camera_{};

@@ -31,6 +31,7 @@ struct WorldStreamingSettings3D {
 struct WorldStreamingStats3D {
     WorldChunkCoordinate3D observerChunk{};
     std::size_t desiredChunks{},residentChunks{},queuedChunks{},lastLoaded{},lastUnloaded{},peakResidentChunks{};
+    std::size_t loadScratchCapacity{},unloadScratchCapacity{};
     uint64_t totalLoaded{},totalUnloaded{},updates{};
 };
 
@@ -55,5 +56,7 @@ private:
     WorldStreamingStats3D stats_{};
     std::unordered_map<WorldChunkCoordinate3D,WorldChunk3D,CoordinateHash> resident_;
     std::vector<WorldChunk3D> residentView_,loadedView_,unloadedView_;
+    std::vector<WorldChunk3D> loadScratch_;
+    std::vector<WorldChunkCoordinate3D> unloadScratch_;
 };
 }

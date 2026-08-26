@@ -2,8 +2,10 @@
 #include <Aevrynd/Animation3D.h>
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Mesh3D.h>
+#include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene2D.h>
 #include <Aevrynd/Spatial2D.h>
+#include <Aevrynd/WorldStreamer3D.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -108,6 +110,67 @@ int ValidateRuntimeSelection3D() {
     std::cout<<"lightCandidates="<<LightCount<<" lightSelectionAverageNs="<<lightAverageNanoseconds<<" animationJoints="<<pose.localTransforms.size()<<" animationAverageNs="<<poseAverageNanoseconds<<'\n';return 0;
 }
 
+int ValidateWorldRuntime3D() {
+    const Mesh3D cylinder = Mesh3D::CreateUnitCylinder(12), cone = Mesh3D::CreateUnitCone(12);
+    if (cylinder.vertices.size() != 26 || cylinder.indices.size() != 144 || cone.vertices.size() != 14 || cone.indices.size() != 72) {
+        std::cerr << "Procedural vegetation mesh topology failed\n";
+        return 48;
+    }
+    HeightField3D naturalA({{-32, 0, -32}, 33, 33, 2}), naturalB({{-32, 0, -32}, 33, 33, 2});
+    naturalA.GenerateNatural(0x4a17u, {18, .014f, .6f, 20, 6});naturalB.GenerateNatural(0x4a17u, {18, .014f, .6f, 20, 6});
+    const Mesh3D naturalMesh = naturalA.CreateMesh({{.08f,.2f,.07f,1},{.38f,.48f,.24f,1},{.3f,.28f,.25f,1},.76f,{.24f,.16f,.08f,1},0,4});
+    if (naturalA.MaximumHeight() - naturalA.MinimumHeight() < 8.f || std::abs(naturalA.Height(17, 19) - naturalB.Height(17, 19)) > .0001f || naturalMesh.vertices.size() != 1089 || naturalMesh.indices.size() != 6144) {
+        std::cerr << "Natural height-field generation failed\n";
+        return 49;
+    }
+    WorldStreamer3D streamer({32, 2, 3, 4, 8, 0x4a17u});
+    WorldStreamingStats3D streamingStats{};
+    for (int update = 0; update < 7; ++update) streamingStats = streamer.Update({0, 0, 0});
+    if (streamingStats.residentChunks != 25 || streamingStats.queuedChunks != 0 || streamingStats.loadScratchCapacity < 25 || streamingStats.unloadScratchCapacity < 49) {
+        std::cerr << "World streaming scratch reservation failed\n";
+        return 43;
+    }
+    const std::size_t loadCapacity = streamingStats.loadScratchCapacity, unloadCapacity = streamingStats.unloadScratchCapacity;
+    constexpr int StreamingIterations = 10000;
+    const auto streamingStart = std::chrono::steady_clock::now();
+    for (int iteration = 0; iteration < StreamingIterations; ++iteration) streamingStats = streamer.Update({float(iteration % 31), 0, float((iteration * 7) % 31)});
+    const uint64_t streamingAverageNanoseconds = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - streamingStart).count()) / StreamingIterations;
+    if (streamingStats.loadScratchCapacity != loadCapacity || streamingStats.unloadScratchCapacity != unloadCapacity || streamingAverageNanoseconds > 250000) {
+        std::cerr << "Reusable world streaming budget failed\n";
+        return 44;
+    }
+
+    NavigationGrid3D grid({{-16, 0, -16}, 32, 32, 1, 2048, true});
+    for (int z = 0; z < 32; ++z) if (z != 15) grid.SetBlocked({16, z});
+    NavigationQueryWorkspace3D workspace;
+    std::vector<Vec3> path;
+    NavigationPathStats3D pathStats = grid.FindPathInto({-14, 0, -14}, {14, 0, 14}, workspace, path);
+    if (!pathStats.reachedGoal || path.empty()) {
+        std::cerr << "Reusable navigation path failed\n";
+        return 45;
+    }
+    const NavigationWorkspaceStats3D warmStats = workspace.Stats();
+    const std::size_t pathCapacity = path.capacity();
+    constexpr int NavigationIterations = 1000;
+    const auto navigationStart = std::chrono::steady_clock::now();
+    for (int iteration = 0; iteration < NavigationIterations; ++iteration) {
+        const float offset = float(iteration % 12);
+        pathStats = grid.FindPathInto({-14, 0, -14 + offset}, {14, 0, 14 - offset}, workspace, path);
+        if (!pathStats.reachedGoal) {
+            std::cerr << "Repeated navigation query failed\n";
+            return 46;
+        }
+    }
+    const uint64_t navigationAverageNanoseconds = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - navigationStart).count()) / NavigationIterations;
+    const NavigationWorkspaceStats3D reusedStats = workspace.Stats();
+    if (reusedStats.cellCapacity != warmStats.cellCapacity || reusedStats.openCapacity != warmStats.openCapacity || reusedStats.rawCapacity != warmStats.rawCapacity || reusedStats.simplifiedCapacity != warmStats.simplifiedCapacity || path.capacity() != pathCapacity || navigationAverageNanoseconds > 1000000) {
+        std::cerr << "Reusable navigation workspace budget failed\n";
+        return 47;
+    }
+    std::cout << "streamResident=" << streamingStats.residentChunks << " streamLoadCapacity=" << loadCapacity << " streamUnloadCapacity=" << unloadCapacity << " streamAverageNs=" << streamingAverageNanoseconds << " navCellCapacity=" << reusedStats.cellCapacity << " navOpenCapacity=" << reusedStats.openCapacity << " navAverageNs=" << navigationAverageNanoseconds << '\n';
+    return 0;
+}
+
 int ValidateSpatial2D() {
     const Vec2 points[] = {{0, 0}, {30, 0}, {30, 40}};
     PolylinePath2D path;
@@ -195,6 +258,7 @@ int ValidateTextGeometry2D() {
 int main() {
     if (const int sceneRuntimeResult = ValidateSceneRuntime2D()) return sceneRuntimeResult;
     if (const int runtimeSelectionResult = ValidateRuntimeSelection3D()) return runtimeSelectionResult;
+    if (const int worldRuntimeResult = ValidateWorldRuntime3D()) return worldRuntimeResult;
     if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
     if (const int clipResult = ValidateClipCulling2D()) return clipResult;
     if (const int textResult = ValidateTextGeometry2D()) return textResult;

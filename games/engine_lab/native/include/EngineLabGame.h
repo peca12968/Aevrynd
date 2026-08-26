@@ -36,6 +36,7 @@ private:
     Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
     Aevrynd::NavigationGrid3D navigationGrid_{};
     Aevrynd::NavigationPath3D navigationPath_{};
+    Aevrynd::NavigationQueryWorkspace3D navigationWorkspace_{};
     int cameraMode_{};
     int effectCycle_{-1};
     bool automatic_{true};
