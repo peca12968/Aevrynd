@@ -58,6 +58,11 @@ int main() {
         std::cerr << "DrawList must reserve its initial vertex batch\n";
         return 2;
     }
+    draw.SetAtmosphere({{.2f,.3f,.4f,.8f},{1.f,2.f,3.f},25.f,20.f,true});
+    if (!draw.Atmosphere().enabled || std::abs(draw.Atmosphere().fogEnd - 25.001f) > .0001f) {
+        std::cerr << "Atmosphere range must remain valid\n";
+        return 16;
+    }
     draw.SetTranslation({7.f, -3.f});
     draw.Triangle({1.f, 2.f}, {3.f, 4.f}, {5.f, 6.f}, {1.f, 1.f, 1.f, 1.f});
     if (draw.vertices[0].x != 8.f || draw.vertices[0].y != -1.f || draw.vertices[2].x != 12.f || draw.vertices[2].y != 3.f || draw.vertices[0].color != 0xffffffffu) {
@@ -65,8 +70,8 @@ int main() {
         return 3;
     }
     draw.Clear();
-    if (draw.Translation().x != 0.f || draw.Translation().y != 0.f) {
-        std::cerr << "DrawList clear must reset translation\n";
+    if (draw.Translation().x != 0.f || draw.Translation().y != 0.f || draw.Atmosphere().enabled) {
+        std::cerr << "DrawList clear must reset transient scene state\n";
         return 4;
     }
     draw.IsoPrism({100.f, 80.f}, 30.f, 15.f, 12.f,

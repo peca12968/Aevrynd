@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <windows.h>
 #include <cstddef>
 #include <memory>
@@ -14,6 +15,7 @@ struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu};};
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
+struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct RendererStats {
     unsigned outputWidth{},outputHeight{};
     CanvasViewport canvasViewport{};
@@ -53,7 +55,7 @@ class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialVertexCapacity*3/2);meshInstances.reserve(1024);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();translation_={};viewProjection_=Matrix4::Identity();}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();translation_={};viewProjection_=Matrix4::Identity();atmosphere_={};}
     void SetTranslation(Vec2 translation){translation_=translation;}
     Vec2 Translation()const{return translation_;}
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
@@ -63,6 +65,8 @@ public:
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
     const DirectionalLight3D& DirectionalLight()const{return light_;}
+    void SetAtmosphere(Atmosphere3D atmosphere){atmosphere.fogEnd=(std::max)(atmosphere.fogStart+.001f,atmosphere.fogEnd);atmosphere_=atmosphere;}
+    const Atmosphere3D& Atmosphere()const{return atmosphere_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void Quad(Vec2 center,Vec2 size,Color color);
@@ -80,6 +84,7 @@ private:
     Vec2 translation_{};
     Matrix4 viewProjection_{Matrix4::Identity()};
     DirectionalLight3D light_{};
+    Atmosphere3D atmosphere_{};
     bool backfaceCulling_{true};
 };
 class D3D12Renderer {

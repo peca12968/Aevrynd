@@ -26,6 +26,8 @@ public:
     float Time()const{return time_;}
     void Quit(){running_=false;}
     void SetTitle(const std::wstring& title);
+    void SetClearColor(Color color){clearColor_=color;}
+    Color ClearColor()const{return clearColor_;}
     std::filesystem::path ExecutableDirectory()const;
     HWND Window()const{return hwnd_;}
     bool SupportsDLSS()const{return renderer_->SupportsDLSS();}
@@ -42,5 +44,6 @@ private:
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
     EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{}; float time_{};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
+    Color clearColor_{.018f,.045f,.055f,1};
 };
 }

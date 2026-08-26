@@ -2,10 +2,11 @@
   "id": "frontier_world",
   "title": "Aevrynd Frontier World",
   "description": "A rendered MMO-world vertical slice with house construction, melee combat, monsters, progression, and deterministic world chunks.",
-  "version": "0.1.0",
-  "engineVersion": "1.22.0",
+  "version": "0.2.0",
+  "engineVersion": "1.23.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "entry": "dist/Aevrynd-Frontier-World.exe",
+  "rendering": ["dynamic-daylight", "distance-fog", "atmosphere-clear-color"],
   "features": ["first-person", "third-person", "house-building", "grid-snapping", "resource-costs", "melee-combat", "monster-ai", "health", "experience", "leveling", "deterministic-world-chunks", "procedural-environment", "procedural-humanoid", "procedural-wolf", "procedural-golem", "automatic-world-validation"]
 }

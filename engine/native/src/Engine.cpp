@@ -32,7 +32,7 @@ int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
         while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT){running_=false;break;}TranslateMessage(&msg);DispatchMessageW(&msg);}if(!running_)break;
         auto now=Clock::now();double frame=std::chrono::duration<double>(now-last).count();last=now;if(frame>.25)frame=.25;accumulator+=frame;int updates=0;
         while(accumulator>=config_.fixedStep&&updates<5){game_->OnUpdate(*this,config_.fixedStep);input_.ConsumePresses();time_+=config_.fixedStep;accumulator-=config_.fixedStep;updates++;}
-        if(updates==5)accumulator=0;audio_.Update();draw_.Clear();game_->OnRender(*this,float(accumulator/config_.fixedStep));renderer_->Render(draw_,{.018f,.045f,.055f,1});
+        if(updates==5)accumulator=0;audio_.Update();draw_.Clear();game_->OnRender(*this,float(accumulator/config_.fixedStep));renderer_->Render(draw_,clearColor_);
     }
     game_->OnStop(*this);game_.reset();audio_.Shutdown();return int(msg.wParam);
 }
