@@ -7,7 +7,7 @@
 #include "Math.h"
 
 namespace Aevrynd {
-struct Vertex { float x,y; Color color; };
+struct Vertex { float x,y; uint32_t color; };
 class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;

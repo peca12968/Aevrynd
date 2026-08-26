@@ -92,6 +92,7 @@ Games/
 - GPU upload vertex buffer 與 fence synchronization
 - 雙緩衝持久映射頂點上傳與逐幀 fence，CPU 只在重用忙碌資源或驗證 DLSS 輸出時等待
 - DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
+- 頂點色彩採 GPU 原生 RGBA8 正規化格式，每頂點由 24 bytes 降為 12 bytes；雙緩衝最大上傳配置由 11,520,000 bytes 降為 5,760,000 bytes
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程

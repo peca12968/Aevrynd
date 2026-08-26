@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <iostream>
 
 using namespace Aevrynd;
@@ -25,6 +26,11 @@ static_assert(D3D12Renderer::MaxVertices % 3 == 0);
 static_assert(DrawList::InitialVertexCapacity <= D3D12Renderer::MaxVertices);
 static_assert(D3D12Renderer::DrawableVertexCount(8) == 6);
 static_assert(D3D12Renderer::DrawableVertexCount(D3D12Renderer::MaxVertices + 100) == D3D12Renderer::MaxVertices);
+static_assert(sizeof(Vertex) == 12);
+static_assert(offsetof(Vertex, color) == 8);
+static_assert(D3D12Renderer::MaxVertices * sizeof(Vertex) * D3D12Renderer::BufferedFrames == 5760000);
+static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
+static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
 
 int main() {
     std::vector<DepthEntry> entries = {
@@ -46,7 +52,7 @@ int main() {
     }
     draw.SetTranslation({7.f, -3.f});
     draw.Triangle({1.f, 2.f}, {3.f, 4.f}, {5.f, 6.f}, {1.f, 1.f, 1.f, 1.f});
-    if (draw.vertices[0].x != 8.f || draw.vertices[0].y != -1.f || draw.vertices[2].x != 12.f || draw.vertices[2].y != 3.f) {
+    if (draw.vertices[0].x != 8.f || draw.vertices[0].y != -1.f || draw.vertices[2].x != 12.f || draw.vertices[2].y != 3.f || draw.vertices[0].color != 0xffffffffu) {
         std::cerr << "DrawList translation must affect every triangle vertex\n";
         return 3;
     }
@@ -80,5 +86,29 @@ int main() {
         std::cerr << "Ellipse emitted a non-finite vertex\n";
         return 8;
     }
+
+    HWND window = CreateWindowExW(0, L"STATIC", L"AevryndRendererSmoke", WS_OVERLAPPED,
+                                  0, 0, 1280, 720, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!window) {
+        std::cerr << "Hidden renderer window creation failed\n";
+        return 9;
+    }
+    int rendererResult = 0;
+    try {
+        D3D12Renderer renderer;
+        renderer.Initialize(window, 1280, 720);
+        if (renderer.DLSSOn()) renderer.ToggleDLSS();
+        for (int frame = 0; frame < 4; ++frame) renderer.Render(draw, {.02f, .04f, .05f, 1.f});
+        if (renderer.SupportsDLSS()) {
+            renderer.ToggleDLSS();
+            for (int frame = 0; frame < 4; ++frame) renderer.Render(draw, {.02f, .04f, .05f, 1.f});
+        }
+        renderer.WaitIdle();
+    } catch (const std::exception& error) {
+        std::cerr << "D3D12 renderer smoke test failed: " << error.what() << '\n';
+        rendererResult = 10;
+    }
+    DestroyWindow(window);
+    if (rendererResult) return rendererResult;
     return 0;
 }
