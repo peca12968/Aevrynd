@@ -35,7 +35,9 @@ struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};fl
 struct DrawListStats2D {
     size_t inputTriangles{},submittedTriangles{},culledTriangles{},peakSubmittedTriangles{};
     size_t textGlyphs{},textSourcePixels{},textSpans{};
+    size_t primitiveCullTests{},primitiveCulled{},primitiveCulledTriangles{};
     uint64_t totalInputTriangles{},totalCulledTriangles{};
+    uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
 };
 struct SystemGlyphCacheStats2D {
@@ -178,7 +180,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);}
@@ -221,6 +223,7 @@ public:
     std::vector<MeshInstance3D> meshInstances;
 private:
     Vec2 ApplyTransform2D(Vec2 point)const{const Vec2 local{(point.x-transform_.pivot.x)*transform_.scale.x,(point.y-transform_.pivot.y)*transform_.scale.y};return{local.x*transformCosine_-local.y*transformSine_+transform_.pivot.x+transform_.translation.x,local.x*transformSine_+local.y*transformCosine_+transform_.pivot.y+transform_.translation.y};}
+    bool CullTessellatedPrimitive(Vec2 minimum,Vec2 maximum,Color color,size_t triangles);
     Transform2D transform_{};
     float transformCosine_{1.f},transformSine_{};
     Matrix4 viewProjection_{Matrix4::Identity()};
