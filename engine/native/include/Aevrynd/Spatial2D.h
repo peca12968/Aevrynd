@@ -1,5 +1,6 @@
 #pragma once
 #include "Math.h"
+#include "Memory.h"
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -66,6 +67,8 @@ public:
     explicit SpatialIndex2D(float cellSize = 64.f);
     void Clear(bool resetStats = false);
     void Reserve(std::size_t entryCapacity, std::size_t cellCapacity = 0);
+    std::size_t TrimUnusedMemory();
+    ReusableMemoryStats MemoryStats() const;
     void SetCellSize(float cellSize);
     void Insert(uint64_t id, std::size_t userIndex, Vec2 position, float radius = 0.f, uint32_t mask = 0xffffffffu);
     std::size_t QueryCircle(Vec2 center, float radius, uint32_t mask, std::vector<SpatialHit2D>& results) const;
@@ -86,6 +89,8 @@ private:
     std::unordered_map<uint64_t, uint32_t> cellLookup_;
     std::unordered_map<uint64_t, uint32_t> idLookup_;
     std::size_t activeCellCount_{};
+    std::size_t reservedEntryCapacity_{},reservedCellCapacity_{},lastReleasedBytes_{};
+    uint64_t trimCount_{};
     mutable SpatialIndex2DStats stats_{};
 };
 }

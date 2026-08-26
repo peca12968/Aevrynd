@@ -13,6 +13,8 @@ ColliderHandle3D CollisionWorld3D::CreateBox(StaticBoxCollider3D collider){colli
 bool CollisionWorld3D::UpdateBox(ColliderHandle3D handle,StaticBoxCollider3D collider){auto found=colliders_.find(handle.value);if(found==colliders_.end())return false;collider.bounds.extents=PositiveExtents(collider.bounds.extents);found->second=collider;return true;}
 bool CollisionWorld3D::Destroy(ColliderHandle3D handle){return colliders_.erase(handle.value)>0;}
 void CollisionWorld3D::Clear(){colliders_.clear();}
+ReusableMemoryStats CollisionWorld3D::MemoryStats()const{return{colliders_.bucket_count()*sizeof(void*)+colliders_.size()*sizeof(std::pair<const uint32_t,StaticBoxCollider3D>),lastReleasedBytes_,trimCount_};}
+std::size_t CollisionWorld3D::TrimUnusedMemory(){const std::size_t before=MemoryStats().retainedCapacityBytes;if(colliders_.empty())decltype(colliders_){}.swap(colliders_);else colliders_.rehash(colliders_.size());const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_;}
 const StaticBoxCollider3D* CollisionWorld3D::Get(ColliderHandle3D handle)const{const auto found=colliders_.find(handle.value);return found==colliders_.end()?nullptr:&found->second;}
 bool CollisionWorld3D::Matches(const StaticBoxCollider3D& collider,CollisionQueryFilter3D filter)const{return(filter.includeTriggers||!collider.trigger)&&(collider.layer&filter.layerMask)&&(collider.collisionMask&filter.queryLayer);}
 

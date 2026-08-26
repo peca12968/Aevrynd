@@ -1,6 +1,7 @@
 #include <Aevrynd/Spatial2D.h>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 
 namespace Aevrynd {
@@ -98,11 +99,41 @@ void SpatialIndex2D::Clear(bool resetStats) {
 }
 
 void SpatialIndex2D::Reserve(std::size_t entryCapacity, std::size_t cellCapacity) {
+    reservedEntryCapacity_ = entryCapacity;
     entries_.reserve(entryCapacity);
     idLookup_.reserve(entryCapacity);
     const std::size_t cells = cellCapacity ? cellCapacity : entryCapacity;
+    reservedCellCapacity_ = cells;
     cells_.reserve(cells);
     cellLookup_.reserve(cells);
+}
+
+ReusableMemoryStats SpatialIndex2D::MemoryStats() const {
+    std::size_t bytes = entries_.capacity() * sizeof(SpatialEntry2D) + cells_.capacity() * sizeof(Cell) +
+                        (cellLookup_.bucket_count() + idLookup_.bucket_count()) * sizeof(void*);
+    for (const Cell& cell : cells_) bytes += cell.entries.capacity() * sizeof(uint32_t);
+    return {bytes, lastReleasedBytes_, trimCount_};
+}
+
+std::size_t SpatialIndex2D::TrimUnusedMemory() {
+    const std::size_t before = MemoryStats().retainedCapacityBytes;
+    auto compact = []<class T>(std::vector<T>& values, std::size_t retained) {
+        std::vector<T> replacement;
+        replacement.reserve((std::max)(values.size(), retained));
+        replacement.insert(replacement.end(), std::make_move_iterator(values.begin()), std::make_move_iterator(values.end()));
+        values.swap(replacement);
+    };
+    compact(entries_,reservedEntryCapacity_);
+    const std::size_t active = (std::min)(activeCellCount_, cells_.size());
+    for (std::size_t index = 0; index < active; ++index) compact(cells_[index].entries, cells_[index].entries.size());
+    cells_.resize(active);
+    compact(cells_, reservedCellCapacity_);
+    cellLookup_.rehash((std::max)(cellLookup_.size(), reservedCellCapacity_));
+    idLookup_.rehash((std::max)(idLookup_.size(), reservedEntryCapacity_));
+    const std::size_t after = MemoryStats().retainedCapacityBytes;
+    lastReleasedBytes_ = before > after ? before - after : 0;
+    ++trimCount_;
+    return lastReleasedBytes_;
 }
 
 void SpatialIndex2D::SetCellSize(float cellSize) {

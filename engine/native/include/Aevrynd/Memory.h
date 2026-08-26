@@ -20,6 +20,12 @@ struct MemoryPressurePolicy {
     float cooldownSeconds{10.f};
 };
 
+struct ReusableMemoryStats {
+    std::size_t retainedCapacityBytes{};
+    std::size_t lastReleasedBytes{};
+    std::uint64_t trimCount{};
+};
+
 [[nodiscard]] ProcessMemoryStats QueryProcessMemoryStats();
 [[nodiscard]] bool ShouldTrimMemory(const ProcessMemoryStats& memory,std::size_t reclaimableBytes,float secondsSinceLastTrim,MemoryPressurePolicy policy={});
 }

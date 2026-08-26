@@ -1,6 +1,7 @@
 #include <Aevrynd/WorldStreamer3D.h>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 namespace Aevrynd {
 namespace {
@@ -11,6 +12,13 @@ float DistanceSquared(Vec3 left,Vec3 right){const Vec3 delta=left-right;return D
 std::size_t WorldStreamer3D::CoordinateHash::operator()(WorldChunkCoordinate3D coordinate)const noexcept{return(std::size_t(uint32_t(coordinate.x))*0x9e3779b1u)^std::size_t(uint32_t(coordinate.z)*0x85ebca77u);}
 void WorldStreamer3D::Configure(WorldStreamingSettings3D settings){settings.chunkSize=(std::max)(1.f,settings.chunkSize);settings.retainRadius=(std::max)(settings.loadRadius,settings.retainRadius);settings.maximumLoadsPerUpdate=(std::max)(std::size_t(1),settings.maximumLoadsPerUpdate);settings.maximumUnloadsPerUpdate=(std::max)(std::size_t(1),settings.maximumUnloadsPerUpdate);settings_=settings;Reset();const std::size_t loadDiameter=std::size_t(settings_.loadRadius)*2+1,retainDiameter=std::size_t(settings_.retainRadius)*2+1,desiredCapacity=loadDiameter*loadDiameter,residentCapacity=retainDiameter*retainDiameter+settings_.maximumLoadsPerUpdate;resident_.reserve(residentCapacity);residentView_.reserve(residentCapacity);loadedView_.reserve(settings_.maximumLoadsPerUpdate);unloadedView_.reserve(settings_.maximumUnloadsPerUpdate);loadScratch_.reserve(desiredCapacity);unloadScratch_.reserve(residentCapacity);}
 void WorldStreamer3D::Reset(){resident_.clear();residentView_.clear();loadedView_.clear();unloadedView_.clear();loadScratch_.clear();unloadScratch_.clear();stats_={};}
+ReusableMemoryStats WorldStreamer3D::MemoryStats()const{const std::size_t chunkCapacity=residentView_.capacity()+loadedView_.capacity()+unloadedView_.capacity()+loadScratch_.capacity();const std::size_t bytes=resident_.bucket_count()*sizeof(void*)+resident_.size()*sizeof(std::pair<const WorldChunkCoordinate3D,WorldChunk3D>)+chunkCapacity*sizeof(WorldChunk3D)+unloadScratch_.capacity()*sizeof(WorldChunkCoordinate3D);return{bytes,lastReleasedBytes_,trimCount_};}
+std::size_t WorldStreamer3D::TrimUnusedMemory(){
+    const std::size_t before=MemoryStats().retainedCapacityBytes,loadDiameter=std::size_t(settings_.loadRadius)*2+1,retainDiameter=std::size_t(settings_.retainRadius)*2+1,desiredCapacity=loadDiameter*loadDiameter,residentCapacity=retainDiameter*retainDiameter+settings_.maximumLoadsPerUpdate;
+    auto compact=[]<class T>(std::vector<T>& values,std::size_t retained){std::vector<T> replacement;replacement.reserve((std::max)(values.size(),retained));replacement.insert(replacement.end(),std::make_move_iterator(values.begin()),std::make_move_iterator(values.end()));values.swap(replacement);};
+    compact(residentView_,residentCapacity);compact(loadedView_,settings_.maximumLoadsPerUpdate);compact(unloadedView_,settings_.maximumUnloadsPerUpdate);loadScratch_.clear();compact(loadScratch_,desiredCapacity);unloadScratch_.clear();compact(unloadScratch_,residentCapacity);resident_.rehash((std::max)(resident_.size(),residentCapacity));
+    stats_.loadScratchCapacity=loadScratch_.capacity();stats_.unloadScratchCapacity=unloadScratch_.capacity();const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_;
+}
 WorldChunkCoordinate3D WorldStreamer3D::CoordinateAt(Vec3 position,float chunkSize){chunkSize=(std::max)(1.f,chunkSize);return{int(std::floor(position.x/chunkSize)),int(std::floor(position.z/chunkSize))};}
 Vec3 WorldStreamer3D::ChunkCenter(WorldChunkCoordinate3D coordinate,float chunkSize){chunkSize=(std::max)(1.f,chunkSize);return{(float(coordinate.x)+.5f)*chunkSize,0,(float(coordinate.z)+.5f)*chunkSize};}
 uint32_t WorldStreamer3D::ChunkSeed(WorldChunkCoordinate3D coordinate,uint32_t worldSeed){uint32_t value=worldSeed^uint32_t(coordinate.x)*0x9e3779b9u^uint32_t(coordinate.z)*0x85ebca6bu;value^=value>>16;value*=0x7feb352du;value^=value>>15;value*=0x846ca68bu;value^=value>>16;return value;}

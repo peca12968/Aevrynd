@@ -1,6 +1,7 @@
 #pragma once
 #include "CollisionWorld3D.h"
 #include "HeightField3D.h"
+#include "Memory.h"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -16,6 +17,8 @@ class NavigationGrid3D;
 class NavigationQueryWorkspace3D {
 public:
     void Reserve(std::size_t cells);
+    std::size_t TrimUnusedMemory(std::size_t retainedCells=0);
+    ReusableMemoryStats MemoryStats()const;
     NavigationWorkspaceStats3D Stats()const;
 private:
     struct OpenNode {float score{};std::size_t index{};};
@@ -25,6 +28,8 @@ private:
     std::vector<int64_t> parents_;
     std::vector<uint8_t> closed_;
     std::vector<NavigationCell3D> raw_,simplified_;
+    std::size_t lastReleasedBytes_{};
+    uint64_t trimCount_{};
 };
 
 class NavigationGrid3D {

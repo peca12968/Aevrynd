@@ -1,5 +1,6 @@
 #pragma once
 #include "Geometry3D.h"
+#include "Memory.h"
 #include <cstdint>
 #include <limits>
 #include <unordered_map>
@@ -20,6 +21,8 @@ public:
     bool UpdateBox(ColliderHandle3D handle,StaticBoxCollider3D collider);
     bool Destroy(ColliderHandle3D handle);
     void Clear();
+    std::size_t TrimUnusedMemory();
+    ReusableMemoryStats MemoryStats()const;
     const StaticBoxCollider3D* Get(ColliderHandle3D handle)const;
     CollisionRayHit3D Raycast(Ray3D ray,float maximumDistance=std::numeric_limits<float>::infinity(),CollisionQueryFilter3D filter={})const;
     bool OverlapsBox(Vec3 center,Vec3 extents,CollisionQueryFilter3D filter={})const;
@@ -30,6 +33,8 @@ private:
     bool Matches(const StaticBoxCollider3D& collider,CollisionQueryFilter3D filter)const;
     std::unordered_map<uint32_t,StaticBoxCollider3D> colliders_;
     mutable CollisionWorldStats3D stats_{};
+    std::size_t lastReleasedBytes_{};
+    uint64_t trimCount_{};
     uint32_t nextHandle_{1};
 };
 }

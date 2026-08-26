@@ -1,5 +1,6 @@
 #pragma once
 #include "Math.h"
+#include "Memory.h"
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -40,6 +41,8 @@ public:
     explicit WorldStreamer3D(WorldStreamingSettings3D settings={}){Configure(settings);}
     void Configure(WorldStreamingSettings3D settings);
     void Reset();
+    std::size_t TrimUnusedMemory();
+    ReusableMemoryStats MemoryStats()const;
     WorldStreamingStats3D Update(Vec3 observerPosition);
     bool Contains(WorldChunkCoordinate3D coordinate)const;
     std::span<const WorldChunk3D> ResidentChunks()const{return residentView_;}
@@ -58,5 +61,7 @@ private:
     std::vector<WorldChunk3D> residentView_,loadedView_,unloadedView_;
     std::vector<WorldChunk3D> loadScratch_;
     std::vector<WorldChunkCoordinate3D> unloadScratch_;
+    std::size_t lastReleasedBytes_{};
+    uint64_t trimCount_{};
 };
 }

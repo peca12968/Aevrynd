@@ -259,6 +259,17 @@ int ValidateSpatial2D() {
         std::cerr << "Spatial query budget failed\n";
         return 26;
     }
+    const ReusableMemoryStats expandedMemory = index.MemoryStats();
+    index.Clear();
+    index.Reserve(128, 32);
+    const std::size_t releasedBytes = index.TrimUnusedMemory();
+    const ReusableMemoryStats trimmedMemory = index.MemoryStats();
+    index.Insert(9001, 7, {4, 4}, 1.f);
+    index.QueryCircle({4, 4}, 2.f, 0xffffffffu, hits);
+    if (!releasedBytes || trimmedMemory.retainedCapacityBytes >= expandedMemory.retainedCapacityBytes || trimmedMemory.lastReleasedBytes != releasedBytes || trimmedMemory.trimCount != 1 || hits.size() != 1 || hits.front().id != 9001) {
+        std::cerr << "Spatial workspace memory recovery failed\n";
+        return 27;
+    }
     std::cout << "pathLength=" << path.Length() << " spatialEntries=" << stats.entries << " spatialCells=" << stats.occupiedCells << " spatialQueries=" << stats.queries << " spatialCandidates=" << stats.candidates << " spatialAverageNs=" << averageNanoseconds << '\n';
     return 0;
 }
