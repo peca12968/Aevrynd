@@ -31,6 +31,7 @@ private:
     Aevrynd::ParticleSystem2D effects_{512};
     Aevrynd::Skeleton3D animationSkeleton_{};
     Aevrynd::AnimationClip3D animationClip_{};
+    Aevrynd::AnimationPose3D animationPose_{};
     Aevrynd::WorldStreamer3D worldStreamer_{};
     Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
     Aevrynd::NavigationGrid3D navigationGrid_{};

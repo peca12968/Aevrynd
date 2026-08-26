@@ -1,4 +1,5 @@
 #include <Aevrynd/Renderer.h>
+#include <Aevrynd/Animation3D.h>
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/Mesh3D.h>
 #include <Aevrynd/Scene2D.h>
@@ -95,6 +96,18 @@ int ValidateSceneRuntime2D() {
     return 0;
 }
 
+int ValidateRuntimeSelection3D() {
+    const std::array<PointLight3D,4> orderedLights={PointLight3D{{},1,{.1f,0,0,1},1},PointLight3D{{},1,{.2f,0,0,1},5},PointLight3D{{},1,{.3f,0,0,1},3},PointLight3D{{},1,{.4f,0,0,1},5}};
+    const auto ordered=SelectInfluentialPointLights<3>(orderedLights,{});
+    if(ordered.count!=3||ordered.candidates!=4||ordered.lights[0].color.r!=.2f||ordered.lights[1].color.r!=.4f||ordered.lights[2].color.r!=.3f){std::cerr<<"Stable point-light influence selection failed\n";return 40;}
+    constexpr std::size_t LightCount=10000;std::vector<PointLight3D> lights;lights.reserve(LightCount);for(std::size_t index=0;index<LightCount;++index)lights.push_back({{},1,{float(index),0,0,1},float(index%997+1)});
+    constexpr int Iterations=100;float checksum=0;const auto lightStart=std::chrono::steady_clock::now();for(int iteration=0;iteration<Iterations;++iteration){const auto selected=SelectInfluentialPointLights<3>(lights,{});checksum+=selected.lights[0].color.r+selected.lights[1].color.r+selected.lights[2].color.r;}const uint64_t lightAverageNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-lightStart).count())/Iterations;
+    if(lightAverageNanoseconds>2000000||checksum<=0){std::cerr<<"Allocation-free point-light selection budget failed\n";return 41;}
+    Skeleton3D skeleton;for(int joint=0;joint<6;++joint)skeleton.joints.push_back({joint-1,{{0,1,0},{},{1,1,1}}});AnimationClip3D clip{1,true,{{0,{{0,{{0,1,0},{},{1,1,1}}},{1,{{1,1,0},{0,.5f,0},{1,1,1}}}}}}};AnimationPose3D pose;SampleAnimationClipInto(skeleton,clip,.25f,pose);const auto* localData=pose.localTransforms.data();const auto* globalData=pose.globalMatrices.data();constexpr int PoseIterations=10000;const auto poseStart=std::chrono::steady_clock::now();for(int iteration=0;iteration<PoseIterations;++iteration)SampleAnimationClipInto(skeleton,clip,float(iteration)*.001f,pose);const uint64_t poseAverageNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-poseStart).count())/PoseIterations;
+    if(pose.localTransforms.data()!=localData||pose.globalMatrices.data()!=globalData||pose.localTransforms.size()!=6||poseAverageNanoseconds>100000){std::cerr<<"Reusable animation pose budget failed\n";return 42;}
+    std::cout<<"lightCandidates="<<LightCount<<" lightSelectionAverageNs="<<lightAverageNanoseconds<<" animationJoints="<<pose.localTransforms.size()<<" animationAverageNs="<<poseAverageNanoseconds<<'\n';return 0;
+}
+
 int ValidateSpatial2D() {
     const Vec2 points[] = {{0, 0}, {30, 0}, {30, 40}};
     PolylinePath2D path;
@@ -181,6 +194,7 @@ int ValidateTextGeometry2D() {
 
 int main() {
     if (const int sceneRuntimeResult = ValidateSceneRuntime2D()) return sceneRuntimeResult;
+    if (const int runtimeSelectionResult = ValidateRuntimeSelection3D()) return runtimeSelectionResult;
     if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
     if (const int clipResult = ValidateClipCulling2D()) return clipResult;
     if (const int textResult = ValidateTextGeometry2D()) return textResult;
@@ -277,7 +291,7 @@ int main() {
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
             stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) + draw.meshInstances.size() * D3D12Renderer::MeshInstanceUploadBytes ||
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
-            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.lastSubmittedPointLights != D3D12Renderer::MaxPointLights || stats.totalDroppedPointLights != expectedFrames || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling || stats.lastInputTriangles2D != draw.Stats2D().inputTriangles || stats.lastCulledTriangles2D != draw.Stats2D().culledTriangles || stats.totalCulledTriangles2D != draw.Stats2D().culledTriangles*expectedFrames ||
+            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.lastSubmittedPointLights != D3D12Renderer::MaxPointLights || stats.lastPointLightCandidates != 4 || stats.totalDroppedPointLights != expectedFrames || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling || stats.lastInputTriangles2D != draw.Stats2D().inputTriangles || stats.lastCulledTriangles2D != draw.Stats2D().culledTriangles || stats.totalCulledTriangles2D != draw.Stats2D().culledTriangles*expectedFrames ||
             stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 5 ||
             stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds || stats.gpuTimingSamples != expectedFrames || !stats.lastGpuFrameNanoseconds || stats.totalGpuFrameNanoseconds < stats.peakGpuFrameNanoseconds ||
             (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||

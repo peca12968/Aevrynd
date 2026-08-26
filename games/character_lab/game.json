@@ -2,12 +2,12 @@
   "id": "character_lab",
   "title": "Aevrynd Character Lab",
   "description": "Automated first-person and third-person 3D character controller validation game.",
-  "version": "1.18.0",
-  "engineVersion": "1.39.0",
+  "version": "1.19.0",
+  "engineVersion": "1.40.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "entry": "dist/Aevrynd-Character-Lab.exe",
-  "rendering": ["atmosphere-clear-color", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "projected-directional-shadows", "transparent-overlay-pass", "dynamic-point-lights", "distance-visibility-budget", "projected-size-culling"],
+  "rendering": ["atmosphere-clear-color", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "projected-directional-shadows", "transparent-overlay-pass", "dynamic-point-lights", "influence-ranked-point-lights", "allocation-free-light-selection", "distance-visibility-budget", "projected-size-culling"],
   "physics": ["stable-collider-handles", "collision-layers", "collision-masks", "trigger-filtering", "nearest-raycast", "aabb-overlap-query"],
   "features": ["first-person", "third-person", "character-controller", "gravity", "jump", "grounding", "aabb-collision", "camera-obstruction", "center-ray-interaction", "automatic-validation", "renderer-telemetry"]
 }

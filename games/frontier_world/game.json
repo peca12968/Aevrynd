@@ -2,14 +2,14 @@
   "id": "frontier_world",
   "title": "Aevrynd Frontier World",
   "description": "A streamed MMO-world vertical slice with deterministic procedural chunks, house construction, melee combat, monsters, and progression.",
-  "version": "0.18.0",
-  "engineVersion": "1.39.0",
+  "version": "0.19.0",
+  "engineVersion": "1.40.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "entry": "dist/Aevrynd-Frontier-World.exe",
-  "rendering": ["dynamic-daylight", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "roughness", "metallic", "emissive", "ambient-occlusion", "projected-directional-shadows", "transparent-overlay-pass", "shadow-distance-budget", "dynamic-point-lights", "point-light-distance-budget", "distance-visibility-budget", "projected-size-culling", "atmosphere-clear-color", "mesh-lod", "procedural-spheres"],
+  "rendering": ["dynamic-daylight", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "roughness", "metallic", "emissive", "ambient-occlusion", "projected-directional-shadows", "transparent-overlay-pass", "shadow-distance-budget", "dynamic-point-lights", "influence-ranked-point-lights", "allocation-free-light-selection", "point-light-distance-budget", "distance-visibility-budget", "projected-size-culling", "atmosphere-clear-color", "mesh-lod", "procedural-spheres"],
   "worldStreaming": ["budgeted-chunk-loading", "budgeted-chunk-unloading", "retention-radius", "negative-world-coordinates", "deterministic-biomes", "streamed-ground", "streamed-river", "streamed-foliage", "streamed-rocks", "residency-telemetry"],
   "navigation": ["building-collision-rasterization", "weighted-a-star", "dynamic-navigation-rebuild", "monster-repath-budget", "smoothed-waypoints", "navigation-telemetry"],
   "terrain": ["deterministic-height-field", "terrain-mesh", "generated-normals", "flattened-building-zone", "carved-river", "terrain-grounded-character", "terrain-grounded-monsters", "terrain-camera-collision", "slope-aware-navigation"],
-  "features": ["hierarchical-animation", "idle-walk-melee-clips", "cross-faded-character-animation", "animated-wolves", "animated-golems", "first-person", "third-person", "house-building", "grid-snapping", "resource-costs", "melee-combat", "monster-ai", "health", "experience", "leveling", "deterministic-world-chunks", "procedural-environment", "procedural-humanoid", "procedural-wolf", "procedural-golem", "automatic-world-validation"]
+  "features": ["hierarchical-animation", "idle-walk-melee-clips", "cross-faded-character-animation", "reusable-animation-pose", "allocation-free-clip-validation", "animated-wolves", "animated-golems", "first-person", "third-person", "house-building", "grid-snapping", "resource-costs", "melee-combat", "monster-ai", "health", "experience", "leveling", "deterministic-world-chunks", "procedural-environment", "procedural-humanoid", "procedural-wolf", "procedural-golem", "automatic-world-validation"]
 }

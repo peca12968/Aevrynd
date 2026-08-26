@@ -1,5 +1,7 @@
 #pragma once
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <windows.h>
 #include <cstddef>
 #include <memory>
@@ -19,6 +21,13 @@ enum class MeshRenderLayer3D:uint8_t {Opaque,Overlay};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};};
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 struct PointLight3D {Vec3 position{};float radius{8.f};Color color{1.f,.72f,.38f,1.f};float intensity{1.f};};
+inline float PointLightInfluence(const PointLight3D& light,Vec3 reference){const Vec3 delta=light.position-reference;return light.intensity*light.radius*light.radius/(1.f+Dot(delta,delta));}
+template<std::size_t Capacity>struct PointLightSelection3D {std::array<PointLight3D,Capacity> lights{};std::array<float,Capacity> influences{};std::size_t count{},candidates{};};
+template<std::size_t Capacity>PointLightSelection3D<Capacity> SelectInfluentialPointLights(std::span<const PointLight3D> lights,Vec3 reference){
+    static_assert(Capacity>0);PointLightSelection3D<Capacity> result{};result.candidates=lights.size();
+    for(const PointLight3D& light:lights){const float influence=PointLightInfluence(light,reference);if(!std::isfinite(influence)||influence<=0.f)continue;std::size_t destination=result.count;while(destination>0&&influence>result.influences[destination-1])--destination;if(destination>=Capacity)continue;const std::size_t newCount=(std::min)(Capacity,result.count+1);for(std::size_t index=newCount-1;index>destination;--index){result.lights[index]=result.lights[index-1];result.influences[index]=result.influences[index-1];}result.lights[destination]=light;result.influences[destination]=influence;result.count=newCount;}
+    return result;
+}
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct DrawListStats2D {
     size_t inputTriangles{},submittedTriangles{},culledTriangles{},peakSubmittedTriangles{};
@@ -43,6 +52,7 @@ struct RendererStats {
     size_t lastSubmittedMeshInstances{};
     size_t lastSubmittedOverlayInstances{};
     size_t lastSubmittedPointLights{};
+    size_t lastPointLightCandidates{};
     size_t peakSubmittedMeshInstances{};
     size_t totalDroppedMeshInstances{};
     size_t totalDroppedPointLights{};

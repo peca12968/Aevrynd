@@ -38,6 +38,7 @@ private:
     Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};
     Aevrynd::AnimationClip3D idleClip_{},walkClip_{},attackClip_{},creatureWalkClip_{};
     Aevrynd::AnimationPlayer3D playerAnimation_{};
+    Aevrynd::AnimationPose3D playerPose_{},creaturePose_{};
     Aevrynd::WorldStreamer3D worldStreamer_{};
     Aevrynd::WorldStreamingStats3D worldStreamingStats_{};
     Aevrynd::NavigationGrid3D navigationGrid_{};
