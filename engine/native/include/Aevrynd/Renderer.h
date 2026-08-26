@@ -24,6 +24,12 @@ struct RendererStats {
     uint64_t submittedFrames{};
     uint64_t resourceWaits{};
     uint64_t validationWaits{};
+    uint64_t lastResourceWaitNanoseconds{};
+    uint64_t totalResourceWaitNanoseconds{};
+    uint64_t peakResourceWaitNanoseconds{};
+    uint64_t lastValidationWaitNanoseconds{};
+    uint64_t totalValidationWaitNanoseconds{};
+    uint64_t peakValidationWaitNanoseconds{};
 };
 class DrawList {
 public:
@@ -52,7 +58,7 @@ private:
 };
 class D3D12Renderer {
 public:
-    static constexpr unsigned BufferedFrames=2;
+    static constexpr unsigned BufferedFrames=3;
     static constexpr size_t MaxVertices=240000;
     static constexpr size_t MaxWorldVertices=240000;
     static constexpr size_t MaxWorldIndices=480000;

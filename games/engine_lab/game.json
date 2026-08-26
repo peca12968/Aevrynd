@@ -2,10 +2,10 @@
   "id": "engine_lab",
   "title": "Aevrynd Engine Lab",
   "description": "Automated 3D camera, projection, visibility, sorting, and renderer telemetry validation game.",
-  "version": "0.3.0",
-  "engineVersion": "1.9.0",
+  "version": "0.4.0",
+  "engineVersion": "1.10.0",
   "platform": "windows-x64",
   "renderer": "directx12",
   "entry": "dist/Aevrynd-Engine-Lab.exe",
-  "features": ["scene3d", "indexed-mesh-batching", "materials", "transforms", "gpu-depth-buffer", "world-space-lines", "first-person", "third-person", "god-view", "isometric-2.5d", "automatic-camera-cycle", "renderer-telemetry"]
+  "features": ["scene3d", "indexed-mesh-batching", "materials", "transforms", "gpu-depth-buffer", "world-space-lines", "triple-buffered-frame-upload", "fence-wait-timing", "first-person", "third-person", "god-view", "isometric-2.5d", "automatic-camera-cycle", "renderer-telemetry"]
 }

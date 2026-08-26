@@ -30,9 +30,9 @@ static_assert(sizeof(Vertex) == 12);
 static_assert(offsetof(Vertex, color) == 8);
 static_assert(sizeof(Vertex3D) == 16);
 static_assert(offsetof(Vertex3D, color) == 12);
-static_assert(D3D12Renderer::MaxVertices * sizeof(Vertex) * D3D12Renderer::BufferedFrames == 5760000);
-static_assert(D3D12Renderer::MaxWorldVertices * sizeof(Vertex3D) * D3D12Renderer::BufferedFrames == 7680000);
-static_assert(D3D12Renderer::MaxWorldIndices * sizeof(uint32_t) * D3D12Renderer::BufferedFrames == 3840000);
+static_assert(D3D12Renderer::MaxVertices * sizeof(Vertex) * D3D12Renderer::BufferedFrames == 8640000);
+static_assert(D3D12Renderer::MaxWorldVertices * sizeof(Vertex3D) * D3D12Renderer::BufferedFrames == 11520000);
+static_assert(D3D12Renderer::MaxWorldIndices * sizeof(uint32_t) * D3D12Renderer::BufferedFrames == 5760000);
 static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
 static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
 
@@ -118,10 +118,16 @@ int main() {
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
             stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) ||
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
-            stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 2) {
+            stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 2 ||
+            stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds ||
+            (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||
+            (stats.validationWaits == 0 && (stats.lastValidationWaitNanoseconds != 0 || stats.totalValidationWaitNanoseconds != 0))) {
             std::cerr << "Renderer telemetry did not match submitted GPU work\n";
             rendererResult = 11;
         }
+        const uint64_t averageResourceWaitUs=stats.resourceWaits?stats.totalResourceWaitNanoseconds/stats.resourceWaits/1000:0;
+        const uint64_t averageValidationWaitUs=stats.validationWaits?stats.totalValidationWaitNanoseconds/stats.validationWaits/1000:0;
+        std::cout<<"frames="<<stats.submittedFrames<<" resourceWaits="<<stats.resourceWaits<<" resourceAverageUs="<<averageResourceWaitUs<<" resourcePeakUs="<<stats.peakResourceWaitNanoseconds/1000<<" validationWaits="<<stats.validationWaits<<" validationAverageUs="<<averageValidationWaitUs<<" validationPeakUs="<<stats.peakValidationWaitNanoseconds/1000<<'\n';
     } catch (const std::exception& error) {
         std::cerr << "D3D12 renderer smoke test failed: " << error.what() << '\n';
         rendererResult = 10;

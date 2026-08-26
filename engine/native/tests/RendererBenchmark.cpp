@@ -1,0 +1,21 @@
+#include <Aevrynd/Renderer.h>
+#include <cstdint>
+#include <exception>
+#include <iostream>
+
+using namespace Aevrynd;
+
+int main(){
+    HWND window=CreateWindowExW(0,L"STATIC",L"AevryndRendererBenchmark",WS_OVERLAPPED,0,0,1280,720,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+    if(!window){std::cerr<<"Hidden benchmark window creation failed\n";return 1;}
+    int result=0;
+    try{
+        D3D12Renderer renderer;renderer.Initialize(window,1280,720);if(renderer.DLSSOn())renderer.ToggleDLSS();
+        DrawList draw;draw.Quad({640,360},{1280,720},{.02f,.04f,.05f,1});draw.WorldTriangle({-.5f,-.5f,.5f},{0,.5f,.5f},{.5f,-.5f,.5f},{.2f,.8f,.7f,1});
+        constexpr uint64_t Frames=240;for(uint64_t frame=0;frame<Frames;++frame)renderer.Render(draw,{.02f,.04f,.05f,1});renderer.WaitIdle();
+        RendererStats stats=renderer.GetStats();const uint64_t averageUs=stats.resourceWaits?stats.totalResourceWaitNanoseconds/stats.resourceWaits/1000:0,ratePermille=stats.submittedFrames?stats.resourceWaits*1000/stats.submittedFrames:0;
+        std::cout<<"frames="<<stats.submittedFrames<<" bufferedFrames="<<D3D12Renderer::BufferedFrames<<" waits="<<stats.resourceWaits<<" waitRatePermille="<<ratePermille<<" averageUs="<<averageUs<<" peakUs="<<stats.peakResourceWaitNanoseconds/1000<<" uploadBytes="<<stats.lastUploadBytes<<'\n';
+        if(stats.submittedFrames!=Frames||stats.totalDroppedVertices||stats.totalDroppedWorldVertices||stats.totalDroppedWorldIndices)result=2;
+    }catch(const std::exception& error){std::cerr<<"Renderer benchmark failed: "<<error.what()<<'\n';result=3;}
+    DestroyWindow(window);return result;
+}

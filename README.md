@@ -93,10 +93,11 @@ Games/
 - NVIDIA Streamline 2.12 與 DLSS Super Resolution
 - DLSS color、depth、motion-vector 與 output resources
 - GPU upload vertex buffer 與 fence synchronization
-- 雙緩衝持久映射頂點上傳與逐幀 fence，CPU 只在重用忙碌資源或驗證 DLSS 輸出時等待
+- 三重緩衝持久映射頂點／索引上傳與逐幀 fence；240 幀固定負載基準將資源等待由 236 次、平均 5,377 µs 降為 0 次
 - DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
-- 頂點色彩採 GPU 原生 RGBA8 正規化格式，每頂點由 24 bytes 降為 12 bytes；雙緩衝最大上傳配置由 11,520,000 bytes 降為 5,760,000 bytes
+- 頂點色彩採 GPU 原生 RGBA8 正規化格式，每個 2D 頂點由 24 bytes 降為 12 bytes；三重緩衝 2D 配置為 8,640,000 bytes，仍低於舊雙緩衝格式的 11,520,000 bytes
 - Renderer telemetry 可分別追蹤提交幀、頂點／bytes、峰值、裁切、資源等待與 DLSS 驗證等待
+- Fence telemetry 量測資源重用與 DLSS 驗證等待的最近、累積、峰值奈秒及平均微秒，不再只記錄等待次數
 - 通用左手座標相機支援透視與正交投影，並提供第一人稱、第三人稱、上帝視角與等角 2.5D 預設
 - Scene3D 可將方塊、三角形與世界空間線段直接提交至硬體 3D 管線，使用 D32 深度緩衝處理遮擋，並保留 CPU 投影／排序路徑供比較驗證
 - 2D UI 與 3D 世界使用獨立頂點批次與 pipeline state，同一幀先深度繪製世界、再疊加 HUD
