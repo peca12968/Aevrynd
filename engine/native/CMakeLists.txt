@@ -93,6 +93,12 @@ target_compile_options(AevryndMeshUploadStreamingTest PRIVATE /W4 /permissive- /
 target_link_libraries(AevryndMeshUploadStreamingTest PRIVATE AevryndEngine)
 add_test(NAME AevryndMeshUploadStreamingTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMeshUploadStreamingTest>'")
 
+add_executable(AevryndTextureUploadStreamingTest tests/TextureUploadStreamingSmoke.cpp)
+target_compile_options(AevryndTextureUploadStreamingTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndTextureUploadStreamingTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndTextureUploadStreamingTest PRIVATE AevryndEngine)
+add_test(NAME AevryndTextureUploadStreamingTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTextureUploadStreamingTest>'")
+
 add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAudioTest PRIVATE AevryndEngine)
