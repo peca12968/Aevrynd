@@ -94,6 +94,7 @@ Games/
 - DLSS color、depth、motion-vector 與 output resources
 - 可成長 GPU upload vertex／index／instance buffer 與 fence synchronization
 - 三重緩衝持久映射上傳資源由 4,116,480 bytes 起始，依各幀需求倍增至既有硬上限；背景記憶體修剪會在 GPU 安全點釋放尖峰容量
+- Mesh 與材質最後一個引用釋放時會立即退出常駐資源表，並透過 fence 延後回收仍可能被既有幀使用的 GPU 資源與材質描述符，避免世界串流卸載時同步等待整條 GPU queue
 - 240 幀固定負載基準保持 0 次容量成長與 0 次資源等待，GPU 平均約 10 µs
 - DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
 - 頂點色彩採 GPU 原生 RGBA8 正規化格式，每個 2D 頂點由 24 bytes 降為 12 bytes；只有超過 32,768 個 2D 頂點的幀槽才會擴張上傳資源

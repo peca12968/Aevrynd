@@ -83,6 +83,10 @@ struct RendererStats {
     uint64_t materialTextureBudgetRejections{};
     uint64_t totalMaterialTextureDecodedBytes{};
     uint64_t materialTexturePreflightRejectedBytes{};
+    size_t pendingGpuReleaseBytes{};
+    size_t peakPendingGpuReleaseBytes{};
+    uint64_t deferredGpuReleaseBatches{};
+    uint64_t completedGpuReleaseBatches{};
     size_t dlssResidentBytes{};
     uint64_t dlssResourceAllocations{};
     uint64_t dlssResourceReleases{};
