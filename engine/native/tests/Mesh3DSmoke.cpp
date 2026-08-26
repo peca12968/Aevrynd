@@ -19,5 +19,7 @@ int main(){
     draw.Clear();if(!draw.meshInstances.empty()){std::cerr<<"Mesh instances were not cleared\n";return 7;}
     const std::vector<uint32_t> clipped={0,1,2,3,4,99};
     if(D3D12Renderer::DrawableWorldIndexCount(clipped,5)!=3){std::cerr<<"Index clipping failed\n";return 5;}
+    Mesh3D pyramid=Mesh3D::CreateUnitPyramid();const MeshBounds3D bounds=pyramid.Bounds();if(!pyramid.Valid()||pyramid.vertices.size()!=16||pyramid.indices.size()!=18||!Near(bounds.center.x,0)||!Near(bounds.center.y,0)||!Near(bounds.center.z,0)||!Near(bounds.radius,std::sqrt(.75f))){std::cerr<<"Pyramid topology or bounds failed\n";return 8;}
+    const MeshBounds3D transformed=TransformBounds(bounds,{{3,4,5},{.2f,.7f,0},{2,4,3}});if(!Near(transformed.center.x,3)||!Near(transformed.center.y,4)||!Near(transformed.center.z,5)||!Near(transformed.radius,bounds.radius*4)){std::cerr<<"Transformed mesh bounds failed\n";return 9;}
     return 0;
 }

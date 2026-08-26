@@ -11,6 +11,7 @@ Engine::Engine(EngineConfig config):config_(std::move(config)),renderer_(std::ma
 Engine::~Engine(){if(game_)game_->OnStop(*this);if(renderer_)renderer_->WaitIdle();}
 void Engine::SetTitle(const std::wstring& title){if(hwnd_)SetWindowTextW(hwnd_,title.c_str());}
 MeshHandle3D Engine::CreateMesh3D(const Mesh3D& mesh){return mesh.Valid()?renderer_->CreateMesh(mesh.vertices,mesh.indices):MeshHandle3D{};}
+MeshResource3D Engine::CreateMeshResource3D(const Mesh3D& mesh){if(!mesh.Valid())return{};auto cpuMesh=std::make_shared<Mesh3D>(mesh);MeshHandle3D handle=renderer_->CreateMesh(cpuMesh->vertices,cpuMesh->indices);return handle?MeshResource3D{handle,cpuMesh->Bounds(),cpuMesh->vertices.size(),cpuMesh->indices.size(),std::move(cpuMesh)}:MeshResource3D{};}
 
 int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     game_=std::move(game);SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
