@@ -60,6 +60,13 @@ struct RendererStats {
     size_t totalDroppedWorldIndices{};
     size_t lastSubmittedMeshInstances{};
     size_t lastSubmittedOverlayInstances{};
+    size_t residentInstanceGroups{};
+    size_t peakResidentInstanceGroups{};
+    size_t residentInstanceGroupCapacityBytes{};
+    size_t peakInstanceGroupCapacityBytes{};
+    uint64_t instanceGroupCreations{};
+    uint64_t instanceGroupEvictions{};
+    uint64_t instanceGroupReleasedBytes{};
     size_t lastSubmittedPointLights{};
     size_t lastPointLightCandidates{};
     size_t peakSubmittedMeshInstances{};
@@ -225,6 +232,7 @@ public:
     static constexpr size_t MaxWorldVertices=240000;
     static constexpr size_t MaxWorldIndices=480000;
     static constexpr size_t MaxMeshInstances=65536;
+    static constexpr uint64_t InstanceGroupRetentionFrames=300;
     static constexpr size_t MaxPointLights=3;
     static constexpr size_t MaxMaterialTextureSets=64;
     static constexpr size_t InitialFrameVertices=DrawList::InitialVertexCapacity;
