@@ -13,6 +13,10 @@
 #include "Scene2D.h"
 
 namespace Aevrynd {
+#ifndef AEVRYND_ENGINE_VERSION
+#define AEVRYND_ENGINE_VERSION "development"
+#endif
+inline constexpr std::string_view EngineVersion{AEVRYND_ENGINE_VERSION};
 [[nodiscard]] bool CommandLineHasOption(std::wstring_view commandLine,std::wstring_view option);
 [[nodiscard]] bool IsDLSSStartupRequested(const wchar_t* commandLine);
 struct Mesh3D;
