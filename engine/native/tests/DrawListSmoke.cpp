@@ -60,6 +60,7 @@ int main() {
         return 2;
     }
     draw.SetAtmosphere({{.2f,.3f,.4f,.8f},{1.f,2.f,3.f},25.f,20.f,true});
+    draw.AddPointLight({{1,2,3},0,{1,.5f,.2f,1},2});
     if (!draw.Atmosphere().enabled || std::abs(draw.Atmosphere().fogEnd - 25.001f) > .0001f) {
         std::cerr << "Atmosphere range must remain valid\n";
         return 16;
@@ -71,7 +72,7 @@ int main() {
         return 3;
     }
     draw.Clear();
-    if (draw.Translation().x != 0.f || draw.Translation().y != 0.f || draw.Atmosphere().enabled) {
+    if (draw.Translation().x != 0.f || draw.Translation().y != 0.f || draw.Atmosphere().enabled || !draw.PointLights().empty()) {
         std::cerr << "DrawList clear must reset transient scene state\n";
         return 4;
     }
@@ -103,6 +104,7 @@ int main() {
     const std::size_t shadowStart=draw.vertices.size();draw.ProjectedEllipseShadow({10,20},8,3,{1,0},5,.35f,18);if(draw.vertices.size()!=shadowStart+54||std::abs(draw.vertices[shadowStart].x-15.f)>.001f||std::abs(draw.vertices[shadowStart].y-20.f)>.001f){std::cerr<<"Projected 2.5D ellipse shadow failed\n";return 17;}
     draw.WorldTriangle({-.5f,-.5f,.5f},{0,.5f,.5f},{.5f,-.5f,.5f},{.2f,.8f,.7f,1.f});
     if(draw.worldIndices.size()!=3||draw.worldIndices[2]!=2){std::cerr<<"World triangle indices failed\n";return 12;}
+    draw.SetAtmosphere({{.2f,.3f,.4f,.8f},{0,0,0},20,80,true});draw.AddPointLight({{2,3,4},10,{1,.4f,.2f,1},2});draw.AddPointLight({{-2,2,3},8,{.2f,.6f,1,1},1.5f});draw.AddPointLight({{0,4,8},12,{.5f,1,.4f,1},1});draw.AddPointLight({{20,2,20},-4,{1,1,1,1},.5f});draw.AddPointLight({{},5,{1,1,1,1},0});if(draw.PointLights().size()!=4||draw.PointLights().back().radius<.001f){std::cerr<<"Point light validation failed\n";return 18;}
 
     HWND window = CreateWindowExW(0, L"STATIC", L"AevryndRendererSmoke", WS_OVERLAPPED,
                                   0, 0, 1280, 720, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
@@ -131,7 +133,7 @@ int main() {
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||
             stats.lastUploadBytes != draw.vertices.size() * sizeof(Vertex) + draw.worldVertices.size() * sizeof(Vertex3D) + draw.worldIndices.size() * sizeof(uint32_t) + draw.meshInstances.size() * D3D12Renderer::MeshInstanceUploadBytes ||
             stats.peakSubmittedVertices < draw.vertices.size() || stats.peakSubmittedWorldVertices < draw.worldVertices.size() || stats.peakSubmittedWorldIndices < draw.worldIndices.size() ||
-            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
+            stats.lastSubmittedMeshInstances != 4 || stats.lastSubmittedOverlayInstances != 1 || stats.lastSubmittedPointLights != D3D12Renderer::MaxPointLights || stats.totalDroppedPointLights != expectedFrames || stats.peakSubmittedMeshInstances < 4 || stats.totalDroppedMeshInstances != 0 || stats.residentMeshes != 2 || stats.residentMeshBytes != 696 || !stats.lastBackfaceCulling ||
             stats.totalDroppedVertices != 0 || stats.totalDroppedWorldVertices != 0 || stats.totalDroppedWorldIndices != 0 || stats.lastDrawCalls != 5 ||
             stats.totalResourceWaitNanoseconds < stats.peakResourceWaitNanoseconds || stats.totalValidationWaitNanoseconds < stats.peakValidationWaitNanoseconds || stats.gpuTimingSamples != expectedFrames || !stats.lastGpuFrameNanoseconds || stats.totalGpuFrameNanoseconds < stats.peakGpuFrameNanoseconds ||
             (stats.resourceWaits == 0 && (stats.lastResourceWaitNanoseconds != 0 || stats.totalResourceWaitNanoseconds != 0)) ||

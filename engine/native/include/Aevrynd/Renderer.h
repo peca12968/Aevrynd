@@ -18,6 +18,7 @@ constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surfa
 enum class MeshRenderLayer3D:uint8_t {Opaque,Overlay};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};};
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
+struct PointLight3D {Vec3 position{};float radius{8.f};Color color{1.f,.72f,.38f,1.f};float intensity{1.f};};
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct RendererStats {
     unsigned outputWidth{},outputHeight{};
@@ -35,8 +36,10 @@ struct RendererStats {
     size_t totalDroppedWorldIndices{};
     size_t lastSubmittedMeshInstances{};
     size_t lastSubmittedOverlayInstances{};
+    size_t lastSubmittedPointLights{};
     size_t peakSubmittedMeshInstances{};
     size_t totalDroppedMeshInstances{};
+    size_t totalDroppedPointLights{};
     size_t residentMeshes{};
     size_t residentMeshBytes{};
     uint32_t lastDrawCalls{};
@@ -59,7 +62,7 @@ class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialVertexCapacity*3/2);meshInstances.reserve(1024);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();translation_={};viewProjection_=Matrix4::Identity();atmosphere_={};}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();translation_={};viewProjection_=Matrix4::Identity();atmosphere_={};}
     void SetTranslation(Vec2 translation){translation_=translation;}
     Vec2 Translation()const{return translation_;}
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
@@ -69,6 +72,8 @@ public:
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
     const DirectionalLight3D& DirectionalLight()const{return light_;}
+    void AddPointLight(PointLight3D light){light.radius=(std::max)(.001f,light.radius);light.intensity=(std::max)(0.f,light.intensity);if(light.intensity>0.f)pointLights_.push_back(light);}
+    const std::vector<PointLight3D>& PointLights()const{return pointLights_;}
     void SetAtmosphere(Atmosphere3D atmosphere){atmosphere.fogEnd=(std::max)(atmosphere.fogStart+.001f,atmosphere.fogEnd);atmosphere_=atmosphere;}
     const Atmosphere3D& Atmosphere()const{return atmosphere_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
@@ -90,6 +95,7 @@ private:
     Matrix4 viewProjection_{Matrix4::Identity()};
     DirectionalLight3D light_{};
     Atmosphere3D atmosphere_{};
+    std::vector<PointLight3D> pointLights_;
     bool backfaceCulling_{true};
 };
 class D3D12Renderer {
@@ -99,6 +105,7 @@ public:
     static constexpr size_t MaxWorldVertices=240000;
     static constexpr size_t MaxWorldIndices=480000;
     static constexpr size_t MaxMeshInstances=65536;
+    static constexpr size_t MaxPointLights=3;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*2;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
