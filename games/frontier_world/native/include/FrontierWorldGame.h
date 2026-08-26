@@ -4,6 +4,7 @@
 #include <Aevrynd/CharacterController3D.h>
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
+#include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
@@ -31,7 +32,8 @@ private:
     Aevrynd::CollisionWorld3D collisionWorld_;
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
-    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},sphereHighMesh_{},sphereLowMesh_{};
+    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{};
+    Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
     Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};
     Aevrynd::AnimationClip3D idleClip_{},walkClip_{},attackClip_{},creatureWalkClip_{};

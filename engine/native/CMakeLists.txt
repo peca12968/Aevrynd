@@ -5,6 +5,7 @@ add_library(AevryndEngine STATIC
   src/CollisionWorld3D.cpp
   src/Effects2D.cpp
   src/Engine.cpp
+  src/HeightField3D.cpp
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
   src/Navigation3D.cpp
@@ -66,6 +67,11 @@ add_executable(AevryndNavigation3DTest tests/Navigation3DSmoke.cpp)
 target_compile_options(AevryndNavigation3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndNavigation3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndNavigation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndNavigation3DTest>'")
+
+add_executable(AevryndHeightField3DTest tests/HeightField3DSmoke.cpp)
+target_compile_options(AevryndHeightField3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndHeightField3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndHeightField3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndHeightField3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)

@@ -1,6 +1,7 @@
 #pragma once
 #include "Camera.h"
 #include "CollisionWorld3D.h"
+#include "HeightField3D.h"
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -14,8 +15,9 @@ struct CharacterControllerSettings3D {
     float jumpSpeed{7.f};
     float gravity{20.f};
     float maximumFallSpeed{35.f};
+    float groundSnapDistance{.4f};
 };
-struct CharacterControllerStats3D {uint64_t steps{},collisions{},jumps{},landings{};};
+struct CharacterControllerStats3D {uint64_t steps{},collisions{},jumps{},landings{},terrainContacts{};};
 
 class CharacterController3D {
 public:
@@ -23,6 +25,8 @@ public:
     void Reset(Vec3 feetPosition={});
     void Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,float deltaTime);
     void Step(CharacterControl3D control,const CollisionWorld3D& world,float deltaTime,uint32_t layerMask=0xffffffffu,uint32_t characterLayer=1);
+    void Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,const HeightField3D& terrain,float deltaTime);
+    void Step(CharacterControl3D control,const CollisionWorld3D& world,const HeightField3D& terrain,float deltaTime,uint32_t layerMask=0xffffffffu,uint32_t characterLayer=1);
     Vec3 Position()const{return position_;}
     Vec3 Velocity()const{return velocity_;}
     Vec3 Center()const{return position_+Vec3{0,settings_.height*.5f,0};}
@@ -40,4 +44,5 @@ private:
 
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding=.2f);
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding=.2f,uint32_t layerMask=0xffffffffu,uint32_t cameraLayer=1);
+Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const HeightField3D& terrain,float padding=.2f,unsigned samples=32);
 }

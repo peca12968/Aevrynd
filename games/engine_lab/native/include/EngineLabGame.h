@@ -2,6 +2,7 @@
 #include <Aevrynd/Animation3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Effects2D.h>
+#include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
@@ -22,6 +23,8 @@ private:
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
+    Aevrynd::MeshResource3D terrainMesh_{};
+    Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle audioPing_{};
     Aevrynd::CameraRig3D cameraRig_{};
     Aevrynd::Camera3D camera_{};

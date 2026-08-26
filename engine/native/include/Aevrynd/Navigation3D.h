@@ -1,5 +1,6 @@
 #pragma once
 #include "CollisionWorld3D.h"
+#include "HeightField3D.h"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -23,6 +24,7 @@ public:
     NavigationCell3D CoordinateAt(Vec3 position)const;
     Vec3 WorldPosition(NavigationCell3D cell)const;
     std::size_t Rasterize(const CollisionWorld3D& world,CollisionQueryFilter3D filter={},float agentRadius=.45f,float agentHeight=1.8f);
+    std::size_t ApplyHeightField(const HeightField3D& terrain,float maximumSlopeDegrees=50.f,float slopeCostScale=6.f,bool blockOutside=true);
     NavigationPath3D FindPath(Vec3 start,Vec3 goal)const;
     std::size_t BlockedCellCount()const;
     const NavigationGridSettings3D& Settings()const{return settings_;}
