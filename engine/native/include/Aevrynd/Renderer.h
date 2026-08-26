@@ -38,6 +38,10 @@ struct DrawListStats2D {
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
 };
+struct SystemGlyphCacheStats2D {
+    size_t residentGlyphs{},residentBytes{},peakResidentGlyphs{},peakResidentBytes{};
+    uint64_t hits{},misses{},evictions{},releasedBytes{},trims{};
+};
 struct TransientMemoryStats {
     size_t trackedCapacityBytes{};
     size_t reclaimableCapacityBytes{};
@@ -170,6 +174,9 @@ public:
     static constexpr size_t InitialWorldIndexCapacity=InitialVertexCapacity*3/2;
     static constexpr size_t InitialMeshInstanceCapacity=1024;
     static constexpr size_t InitialPointLightCapacity=16;
+    static constexpr size_t MaxSystemGlyphCacheEntries=512;
+    static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
+    static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
     void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;}
@@ -184,6 +191,8 @@ public:
     void ResetStats2D(){stats_={};}
     void TrimTransientMemory();
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
+    [[nodiscard]] static SystemGlyphCacheStats2D SystemGlyphCacheStats();
+    static size_t TrimSystemGlyphCache(size_t retainedGlyphs=RetainedSystemGlyphsAfterTrim);
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
     void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale)});}
