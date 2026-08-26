@@ -73,6 +73,15 @@ struct RendererStats {
     size_t meshMemoryBudgetBytes{};
     uint64_t meshCacheHits{};
     uint64_t meshBudgetRejections{};
+    size_t meshUploadStagingBytes{};
+    size_t peakMeshUploadStagingBytes{};
+    uint64_t meshUploads{};
+    uint64_t meshUploadBatches{};
+    uint64_t completedMeshUploadBatches{};
+    uint64_t meshUploadContextCreations{};
+    uint64_t meshUploadContextReuses{};
+    uint64_t meshUploadPressureWaits{};
+    uint64_t meshUploadPressureWaitNanoseconds{};
     size_t residentMaterialTextureSets{};
     size_t residentMaterialTextureReferences{};
     size_t residentTextureBytes{};
@@ -189,6 +198,9 @@ public:
     static constexpr size_t InitialFrameMeshInstances=DrawList::InitialMeshInstanceCapacity;
     static constexpr size_t DefaultMeshMemoryBudgetBytes=128*1024*1024;
     static constexpr size_t DefaultMaterialTextureMemoryBudgetBytes=256*1024*1024;
+    static constexpr size_t MaxMeshUploadBatchBytes=32*1024*1024;
+    static constexpr size_t MaxMeshUploadBatchMeshes=256;
+    static constexpr size_t MaxMeshUploadStagingBytes=64*1024*1024;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*3;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}

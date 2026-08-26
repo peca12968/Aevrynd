@@ -88,6 +88,11 @@ target_compile_options(AevryndMesh3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndMesh3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndMesh3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMesh3DTest>'")
 
+add_executable(AevryndMeshUploadStreamingTest tests/MeshUploadStreamingSmoke.cpp)
+target_compile_options(AevryndMeshUploadStreamingTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndMeshUploadStreamingTest PRIVATE AevryndEngine)
+add_test(NAME AevryndMeshUploadStreamingTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMeshUploadStreamingTest>'")
+
 add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAudioTest PRIVATE AevryndEngine)
