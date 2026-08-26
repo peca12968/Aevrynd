@@ -34,6 +34,7 @@ private:
     std::vector<Enemy> enemies_;std::vector<Tower> towers_;std::vector<Shot> shots_;Aevrynd::ParticleSystem2D particles_{2048};Aevrynd::ScreenShake2D screenShake_{};
     Aevrynd::PolylinePath2D path_{};Aevrynd::SpatialIndex2D spatialIndex_{96.f};std::vector<Aevrynd::SpatialHit2D> spatialHits_{};
     Aevrynd::DepthBatch2D depthBatch_{128};
+    Aevrynd::OcclusionField2D occlusionField_{32};std::vector<float> enemyOcclusion_{};
     Aevrynd::CameraRig2D cameraRig2D_{{4.5f,6.f,6.f,.82f,1.18f}};
     int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{},shatters_{},upgradeSelection_{};size_t nextEnemyId_{1},gamepadSpot_{};uint32_t effectSeed_{1},ambientSequence_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{},ambientEffectClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true},upgradePending_{},performanceVisible_{};
     Language language_{Language::None},pendingLanguage_{Language::English};bool progressLoaded_{};TowerKind selected_{TowerKind::Bolt};Modifiers mods_{};RiftwardenRules::UpgradeLevels upgrades_{};

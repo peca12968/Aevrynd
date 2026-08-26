@@ -65,6 +65,21 @@ int ValidateSceneRuntime2D() {
         std::cerr << "Stationary 2D motion synchronization failed\n";
         return 39;
     }
+    OcclusionField2D occlusion(4);
+    occlusion.Add({{100,100},20,60,5});
+    const float centeredOcclusion=occlusion.Query({100,80},8),sideOcclusion=occlusion.Query({140,80},8),frontOcclusion=occlusion.Query({100,115},8);
+    const float invalidOcclusion=VerticalOcclusionAmount2D({100,80},8,{{100,100},std::numeric_limits<float>::quiet_NaN(),60,5});
+    const OcclusionField2DStats occlusionStats=occlusion.Stats();
+    if(centeredOcclusion<.99f||sideOcclusion!=0.f||frontOcclusion!=0.f||invalidOcclusion!=0.f||occlusionStats.occluders!=1||occlusionStats.capacity<4||occlusionStats.peakOccluders!=1||occlusionStats.queries!=3||occlusionStats.tests!=3||occlusionStats.hits!=1){
+        std::cerr << "Vertical 2.5D occlusion field failed\n";
+        return 40;
+    }
+    occlusion.Clear();
+    const OcclusionField2DStats clearedOcclusionStats=occlusion.Stats();
+    if(clearedOcclusionStats.occluders!=0||clearedOcclusionStats.queries||clearedOcclusionStats.tests||clearedOcclusionStats.hits||clearedOcclusionStats.peakOccluders!=1){
+        std::cerr << "Occlusion field reuse failed\n";
+        return 41;
+    }
     DepthBatch2D batch(64);
     batch.Add(3, 0);
     batch.Add(1, 1);
