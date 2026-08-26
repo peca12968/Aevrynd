@@ -63,7 +63,11 @@ struct RendererStats {
     size_t lastCulledTriangles2D{};
     uint64_t totalCulledTriangles2D{};
     size_t residentMeshes{};
+    size_t residentMeshReferences{};
     size_t residentMeshBytes{};
+    size_t meshMemoryBudgetBytes{};
+    uint64_t meshCacheHits{};
+    uint64_t meshBudgetRejections{};
     size_t residentMaterialTextureSets{};
     size_t residentMaterialTextureReferences{};
     size_t residentTextureBytes{};
@@ -153,6 +157,7 @@ public:
     static constexpr size_t MaxMeshInstances=65536;
     static constexpr size_t MaxPointLights=3;
     static constexpr size_t MaxMaterialTextureSets=64;
+    static constexpr size_t DefaultMeshMemoryBudgetBytes=128*1024*1024;
     static constexpr size_t DefaultMaterialTextureMemoryBudgetBytes=256*1024*1024;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*3;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
@@ -164,6 +169,7 @@ public:
     void Render(const DrawList& list,Color clear);
     MeshHandle3D CreateMesh(std::span<const Vertex3D> vertices,std::span<const uint32_t> indices);
     void DestroyMesh(MeshHandle3D mesh);
+    void SetMeshMemoryBudget(size_t bytes);
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
     void SetMaterialTextureMemoryBudget(size_t bytes);

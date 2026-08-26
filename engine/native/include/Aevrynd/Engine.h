@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include "Audio.h"
 #include "Game.h"
 #include "Input.h"
@@ -36,6 +37,7 @@ public:
     MeshHandle3D CreateMesh3D(const Mesh3D& mesh);
     MeshResource3D CreateMeshResource3D(const Mesh3D& mesh);
     void DestroyMesh3D(MeshHandle3D mesh){renderer_->DestroyMesh(mesh);}
+    void SetMeshMemoryBudget(size_t bytes){renderer_->SetMeshMemoryBudget(bytes);}
     MaterialTextureSetHandle3D CreateMaterialTextureSet3D(const MaterialTextureSetDefinition3D& definition){return renderer_->CreateMaterialTextureSet(definition);}
     void DestroyMaterialTextureSet3D(MaterialTextureSetHandle3D textures){renderer_->DestroyMaterialTextureSet(textures);}
     void SetMaterialTextureMemoryBudget(size_t bytes){renderer_->SetMaterialTextureMemoryBudget(bytes);}
@@ -47,6 +49,7 @@ private:
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
     EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{}; float time_{};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
+    std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
     Color clearColor_{.018f,.045f,.055f,1};
 };
 }
