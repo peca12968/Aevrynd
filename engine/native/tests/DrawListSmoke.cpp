@@ -118,9 +118,21 @@ int ValidateClipCulling2D() {
     return 0;
 }
 
+int ValidateTextGeometry2D() {
+    DrawList textDraw;
+    textDraw.Text({0,0},"ENGINE TELEMETRY 12345",2.f,Cyan);
+    const DrawListStats2D asciiStats=textDraw.Stats2D();
+    const Vec2 asciiSize=textDraw.MeasureText("AB",2.f);
+    if(asciiStats.textGlyphs!=22||!asciiStats.textSpans||asciiStats.textSpans>=asciiStats.textSourcePixels||textDraw.vertices.size()!=asciiStats.textSpans*6||std::abs(asciiSize.x-24.f)>.001f||std::abs(asciiSize.y-14.f)>.001f){std::cerr<<"ASCII span text geometry failed\n";return 32;}
+    textDraw.Clear();textDraw.Text({0,0},"繁體中文",2.f,Cyan);const DrawListStats2D unicodeStats=textDraw.Stats2D();const Vec2 unicodeSize=textDraw.MeasureText("繁體中文",2.f);if(unicodeStats.textGlyphs!=4||unicodeStats.textSpans>unicodeStats.textSourcePixels||textDraw.vertices.size()!=unicodeStats.textSpans*6||unicodeSize.x<=0||unicodeSize.y<=0){std::cerr<<"Unicode span text geometry failed\n";return 33;}
+    constexpr int Iterations=10000;float measuredWidth=0;const auto start=std::chrono::steady_clock::now();for(int iteration=0;iteration<Iterations;++iteration)measuredWidth+=textDraw.MeasureText("裂隙守望者 RIFTWARDEN",2.f).x;const uint64_t averageNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count())/Iterations;if(averageNanoseconds>50000||measuredWidth<=0){std::cerr<<"Cached UTF-8 measurement budget failed\n";return 34;}
+    const size_t saved=asciiStats.textSourcePixels-asciiStats.textSpans;std::cout<<"textPixels="<<asciiStats.textSourcePixels<<" textSpans="<<asciiStats.textSpans<<" textSaved="<<saved<<" unicodePixels="<<unicodeStats.textSourcePixels<<" unicodeSpans="<<unicodeStats.textSpans<<" measureAverageNs="<<averageNanoseconds<<'\n';return 0;
+}
+
 int main() {
     if (const int spatialResult = ValidateSpatial2D()) return spatialResult;
     if (const int clipResult = ValidateClipCulling2D()) return clipResult;
+    if (const int textResult = ValidateTextGeometry2D()) return textResult;
     std::vector<DepthEntry> entries = {
         {320.f, 0, 0},
         {120.f, 1, 1},

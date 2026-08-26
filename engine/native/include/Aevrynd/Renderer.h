@@ -22,7 +22,9 @@ struct PointLight3D {Vec3 position{};float radius{8.f};Color color{1.f,.72f,.38f
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct DrawListStats2D {
     size_t inputTriangles{},submittedTriangles{},culledTriangles{},peakSubmittedTriangles{};
+    size_t textGlyphs{},textSourcePixels{},textSpans{};
     uint64_t totalInputTriangles{},totalCulledTriangles{};
+    uint64_t totalTextSourcePixels{},totalTextSpans{};
 };
 struct RendererStats {
     unsigned outputWidth{},outputHeight{};
@@ -69,7 +71,7 @@ class DrawList {
 public:
     static constexpr size_t InitialVertexCapacity=32768;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialVertexCapacity*3/2);meshInstances.reserve(1024);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);}
@@ -101,6 +103,7 @@ public:
     void ProjectedEllipseShadow(Vec2 base,float rx,float ry,Vec2 lightDirection,float height,float opacity=.4f,int segments=18);
     void Line(Vec2 a,Vec2 b,float width,Color color);
     void Text(Vec2 pos,std::string_view text,float scale,Color color);
+    Vec2 MeasureText(std::string_view text,float scale)const;
     std::vector<Vertex> vertices;
     std::vector<Vertex3D> worldVertices;
     std::vector<uint32_t> worldIndices;
