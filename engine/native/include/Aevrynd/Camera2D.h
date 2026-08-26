@@ -2,6 +2,7 @@
 #include "Math.h"
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 
 namespace Aevrynd {
 struct Camera2D {
@@ -30,6 +31,7 @@ public:
     Transform2D DrawTransform(float parallax=1.f,Vec2 screenOffset={})const{const Vec2 center=camera_.viewport*.5f,viewOrigin=center+(camera_.position-center)*parallax;Transform2D transform{};transform.scale={camera_.zoom,camera_.zoom};transform.rotation=-camera_.rotation;const Vec2 transformedOrigin=TransformPoint(transform,viewOrigin);transform.translation=center-transformedOrigin+screenOffset;return transform;}
     Vec2 WorldToScreen(Vec2 world,float parallax=1.f)const{return TransformPoint(DrawTransform(parallax),world);}
     Vec2 ScreenToWorld(Vec2 screen,float parallax=1.f)const{const Vec2 center=camera_.viewport*.5f,viewOrigin=center+(camera_.position-center)*parallax,local=(screen-center)*(1.f/(std::max)(.0001f,camera_.zoom));const float cosine=std::cos(camera_.rotation),sine=std::sin(camera_.rotation);return{local.x*cosine-local.y*sine+viewOrigin.x,local.x*sine+local.y*cosine+viewOrigin.y};}
+    Bounds2D WorldBounds(float screenPadding=0.f,float parallax=1.f)const{screenPadding=std::isfinite(screenPadding)?(std::max)(0.f,screenPadding):0.f;const Vec2 first=ScreenToWorld({-screenPadding,-screenPadding},parallax);Bounds2D bounds{first,first};for(const Vec2 corner:{Vec2{camera_.viewport.x+screenPadding,-screenPadding},Vec2{camera_.viewport.x+screenPadding,camera_.viewport.y+screenPadding},Vec2{-screenPadding,camera_.viewport.y+screenPadding}}){const Vec2 point=ScreenToWorld(corner,parallax);bounds.minimum.x=(std::min)(bounds.minimum.x,point.x);bounds.minimum.y=(std::min)(bounds.minimum.y,point.y);bounds.maximum.x=(std::max)(bounds.maximum.x,point.x);bounds.maximum.y=(std::max)(bounds.maximum.y,point.y);}return bounds;}
 private:
     CameraRigSettings2D settings_{};
     Camera2D camera_{};

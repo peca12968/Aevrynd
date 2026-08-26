@@ -10,6 +10,7 @@ struct Vec2 {
     constexpr Vec2 operator-(Vec2 b) const { return {x-b.x,y-b.y}; }
     constexpr Vec2 operator*(float s) const { return {x*s,y*s}; }
 };
+struct Bounds2D {Vec2 minimum{},maximum{};};
 struct Vec3 {
     float x{},y{},z{};
     constexpr Vec3 operator+(Vec3 value)const{return{x+value.x,y+value.y,z+value.z};}
