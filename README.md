@@ -1,8 +1,8 @@
-# RiftForge — C++ / DirectX 12 Local AI Game Engine
+# Aevrynd Engine — C++ / DirectX 12 Local AI Game Engine
 
-RiftForge 是可擴充的 Windows 原生遊戲引擎與遊戲集合。核心、遊戲邏輯、輸入與畫面均由 C++20 實作，使用 Win32 視窗與 DirectX 12 呈現，並能透過本機 Qwen 模型生成遊戲事件，不需要瀏覽器或 Node.js。
+Aevrynd Engine（艾弗林德引擎）是 Aevrynd Studios 自研、可擴充的 Windows 原生遊戲引擎與遊戲集合。核心、遊戲邏輯、輸入與畫面均由 C++20 實作，使用 Win32 視窗與 DirectX 12 呈現，並能透過本機 Qwen 模型生成遊戲事件，不需要瀏覽器或 Node.js。
 
-第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）。每款遊戲各自封裝於 `games/<game-id>/`，並共用 `engine/native/` 的 RiftForge 引擎能力。
+第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）。每款遊戲各自封裝於 `games/<game-id>/`，並共用 `engine/native/` 的 Aevrynd Engine 能力。
 
 ## 啟動遊戲
 
@@ -64,7 +64,7 @@ games/riftwarden/saves/riftwarden-save.json
 Games/
 ├─ CMakeLists.txt
 ├─ engine/native/                    # 共用 C++ 引擎靜態函式庫
-│  ├─ include/Rift/
+│  ├─ include/Aevrynd/
 │  │  ├─ Engine.h
 │  │  ├─ Game.h
 │  │  ├─ Input.h
@@ -106,10 +106,10 @@ Games/
 powershell -ExecutionPolicy Bypass -File .\build-native.ps1
 ```
 
-新增遊戲時，在 `games/<game-id>/native/` 建立自己的 CMake target，連結共用的 `RiftEngine`：
+新增遊戲時，在 `games/<game-id>/native/` 建立自己的 CMake target，連結共用的 `AevryndEngine`：
 
 ```cmake
-target_link_libraries(MyGame PRIVATE RiftEngine)
+target_link_libraries(MyGame PRIVATE AevryndEngine)
 ```
 
 ## 本地 AI

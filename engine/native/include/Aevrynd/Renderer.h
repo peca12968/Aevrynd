@@ -5,7 +5,7 @@
 #include <vector>
 #include "Math.h"
 
-namespace Rift {
+namespace Aevrynd {
 struct Vertex { float x,y; Color color; };
 class DrawList {
 public:

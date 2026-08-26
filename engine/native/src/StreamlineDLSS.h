@@ -4,7 +4,7 @@
 #include <wrl/client.h>
 #include <cstdint>
 
-namespace Rift {
+namespace Aevrynd {
 class StreamlineDLSS {
 public:
     bool InitializeFramework();

@@ -6,8 +6,8 @@
 #include "Input.h"
 #include "Renderer.h"
 
-namespace Rift {
-struct EngineConfig { std::wstring title=L"Rift Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; };
+namespace Aevrynd {
+struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; };
 class Engine {
 public:
     explicit Engine(EngineConfig config={}); ~Engine();

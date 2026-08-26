@@ -4,7 +4,7 @@
 #include <Xinput.h>
 #include "Math.h"
 
-namespace Rift {
+namespace Aevrynd {
 class Input {
 public:
     void BeginFrame(){}

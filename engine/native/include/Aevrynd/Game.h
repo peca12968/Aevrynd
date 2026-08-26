@@ -1,5 +1,5 @@
 #pragma once
-namespace Rift {
+namespace Aevrynd {
 class Engine;
 class IGame {
 public:

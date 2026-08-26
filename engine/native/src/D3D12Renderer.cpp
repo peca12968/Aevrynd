@@ -1,4 +1,4 @@
-#include "Rift/Renderer.h"
+#include "Aevrynd/Renderer.h"
 #include "StreamlineDLSS.h"
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -10,7 +10,7 @@
 #include <unordered_map>
 
 using Microsoft::WRL::ComPtr;
-namespace Rift {
+namespace Aevrynd {
 static void Check(HRESULT hr,const char* message){if(FAILED(hr))throw std::runtime_error(message);}
 
 void DrawList::Triangle(Vec2 a,Vec2 b,Vec2 c,Color color){vertices.push_back({a.x,a.y,color});vertices.push_back({b.x,b.y,color});vertices.push_back({c.x,c.y,color});}

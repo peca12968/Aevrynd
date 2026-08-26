@@ -1,7 +1,7 @@
 #pragma once
 #include <cmath>
 
-namespace Rift {
+namespace Aevrynd {
 struct Vec2 {
     float x{}, y{};
     Vec2 operator+(Vec2 b) const { return {x+b.x,y+b.y}; }
