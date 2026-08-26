@@ -91,6 +91,10 @@ struct RendererStats {
     size_t residentMaterialTextureSets{};
     size_t residentMaterialTextureReferences{};
     size_t residentTextureBytes{};
+    size_t residentTextureAllocationBytes{};
+    size_t peakResidentTextureAllocationBytes{};
+    size_t residentMaterialTextureHeaps{};
+    uint64_t materialTextureHeapAllocations{};
     size_t materialTextureMemoryBudgetBytes{};
     size_t peakMaterialTextureCpuStagingBytes{};
     size_t peakMaterialTextureCompressionStagingBytes{};
