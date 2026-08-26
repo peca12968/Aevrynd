@@ -3,7 +3,7 @@ add_library(AevryndEngine STATIC
   src/D3D12Renderer.cpp
   src/StreamlineDLSS.cpp
 )
-set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/引擎/third_party/streamline")
+set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
 target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include")
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
