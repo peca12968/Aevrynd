@@ -35,8 +35,9 @@ static_assert(offsetof(Vertex3D, color) == 16);
 static_assert(D3D12Renderer::MaxVertices * sizeof(Vertex) * D3D12Renderer::BufferedFrames == 8640000);
 static_assert(D3D12Renderer::MaxWorldVertices * sizeof(Vertex3D) * D3D12Renderer::BufferedFrames == 14400000);
 static_assert(D3D12Renderer::MaxWorldIndices * sizeof(uint32_t) * D3D12Renderer::BufferedFrames == 5760000);
-static_assert(D3D12Renderer::MeshInstanceUploadBytes == 116);
-static_assert(D3D12Renderer::MaxMeshInstances * D3D12Renderer::MeshInstanceUploadBytes * D3D12Renderer::BufferedFrames == 22806528);
+static_assert(D3D12Renderer::MeshInstanceUploadBytes == 120);
+static_assert(D3D12Renderer::MaxMeshInstances * D3D12Renderer::MeshInstanceUploadBytes * D3D12Renderer::BufferedFrames == 23592960);
+static_assert(PackSurface3D({.2f,.8f,.4f,.6f}) == PackColorRgba8({.2f,.8f,.4f,.6f}));
 static_assert(PackColorRgba8({1.f, .5f, 0.f, 1.f}) == 0xff0080ffu);
 static_assert(PackColorRgba8({-1.f, 2.f, .25f, .5f}) == 0x8040ff00u);
 

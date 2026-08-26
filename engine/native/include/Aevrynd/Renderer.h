@@ -13,7 +13,9 @@ namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
-struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu};};
+struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
+constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
+struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};};
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct RendererStats {
@@ -60,7 +62,7 @@ public:
     Vec2 Translation()const{return translation_;}
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
-    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1}){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint)});}
+    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={}){if(mesh)meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface)});}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
@@ -94,7 +96,7 @@ public:
     static constexpr size_t MaxWorldVertices=240000;
     static constexpr size_t MaxWorldIndices=480000;
     static constexpr size_t MaxMeshInstances=65536;
-    static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t);
+    static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*2;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
