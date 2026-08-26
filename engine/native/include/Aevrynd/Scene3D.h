@@ -1,7 +1,9 @@
 #pragma once
 #include "Camera.h"
+#include "Geometry3D.h"
 #include "Mesh3D.h"
 #include <algorithm>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -12,6 +14,9 @@ struct Box3D {Transform3D transform{};Material3D material{};};
 struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};};
 struct Scene3DSubmissionOptions {bool frustumCulling{true};bool gpuInstancing{true};};
 struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{};};
+enum class SceneObjectType3D {None,Triangle,Box,Mesh};
+struct SceneQueryStats3D {std::size_t boundsTested{},boundsRejected{},trianglesTested{};};
+struct SceneHit3D {SceneObjectType3D objectType{SceneObjectType3D::None};std::size_t objectIndex{},triangleIndex{};float distance{std::numeric_limits<float>::infinity()};Vec3 position{},normal{},barycentric{};explicit operator bool()const{return objectType!=SceneObjectType3D::None;}};
 
 class Scene3D {
 public:
@@ -22,6 +27,15 @@ public:
     void Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={}){if(mesh)meshes_.push_back({mesh,transform,material});}
     void SetBoxMesh(MeshResource3D mesh){boxMesh_=std::move(mesh);}
     const MeshResource3D& BoxMesh()const{return boxMesh_;}
+
+    SceneHit3D Raycast(Ray3D ray,float maximumDistance=std::numeric_limits<float>::infinity(),SceneQueryStats3D* queryStats=nullptr,bool cullBackfaces=false)const{
+        SceneQueryStats3D stats{};SceneHit3D closest{};ray.direction=Normalize(ray.direction);if(Length(ray.direction)<.0001f){if(queryStats)*queryStats=stats;return closest;}const float limit=(std::max)(0.f,maximumDistance);
+        auto testTriangle=[&](Vec3 a,Vec3 b,Vec3 c,SceneObjectType3D type,std::size_t objectIndex,std::size_t triangleIndex){++stats.trianglesTested;const RayTriangleHit3D hit=RayIntersectsTriangle(ray,a,b,c,(std::min)(limit,closest.distance),cullBackfaces);if(!hit)return;closest={type,objectIndex,triangleIndex,hit.distance,ray.origin+ray.direction*hit.distance,hit.normal,hit.barycentric};};
+        for(std::size_t index=0;index<triangles_.size();++index){const Triangle3D& triangle=triangles_[index];testTriangle(triangle.a,triangle.b,triangle.c,SceneObjectType3D::Triangle,index,0);}
+        auto testMesh=[&](const Mesh3D& mesh,const MeshBounds3D& localBounds,const Transform3D& transform,SceneObjectType3D type,std::size_t objectIndex){++stats.boundsTested;const MeshBounds3D bounds=TransformBounds(localBounds,transform);if(!RayIntersectsAabb(ray,bounds.center,bounds.extents,(std::min)(limit,closest.distance))){++stats.boundsRejected;return;}const Matrix4 matrix=transform.Matrix();for(std::size_t triangleIndex=0;triangleIndex<mesh.indices.size()/3;++triangleIndex){const std::size_t first=triangleIndex*3;const auto point=[&](uint32_t index){const Vertex3D& vertex=mesh.vertices[index];return TransformPoint(matrix,{vertex.x,vertex.y,vertex.z});};testTriangle(point(mesh.indices[first]),point(mesh.indices[first+1]),point(mesh.indices[first+2]),type,objectIndex,triangleIndex);}};
+        const Mesh3D& unitBox=UnitBox();for(std::size_t index=0;index<boxes_.size();++index)testMesh(unitBox,UnitBoxBounds(),boxes_[index].transform,SceneObjectType3D::Box,index);for(std::size_t index=0;index<meshes_.size();++index){const MeshObject3D& mesh=meshes_[index];if(mesh.mesh.cpuMesh)testMesh(*mesh.mesh.cpuMesh,mesh.mesh.bounds,mesh.transform,SceneObjectType3D::Mesh,index);}
+        if(queryStats)*queryStats=stats;return closest;
+    }
 
     // CPU 路徑保留作為投影與排序的參考實作，方便對照硬體深度結果。
     Scene3DStats Render(DrawList& draw,const Camera3D& camera,Vec2 viewport)const{
@@ -41,7 +55,7 @@ public:
         draw.SetViewProjection(CreateViewProjectionMatrix(camera,viewport.x/(std::max)(1.f,viewport.y)));
         for(const auto& triangle:triangles_)draw.WorldTriangle(triangle.a,triangle.b,triangle.c,triangle.color);
         Scene3DStats stats{};stats.inputTriangles=TriangleCount();stats.visibleTriangles=triangles_.size();stats.inputLines=lines_.size();stats.meshInstances=MeshCount();const float aspect=viewport.x/(std::max)(1.f,viewport.y);const Mesh3D& fallbackBox=UnitBox();
-        auto submit=[&](const MeshResource3D& resource,const Mesh3D* fallback,const MeshBounds3D* fallbackBounds,const Transform3D& transform,Material3D material){const MeshBounds3D localBounds=resource?resource.bounds:*fallbackBounds,worldBounds=TransformBounds(localBounds,transform);const std::size_t triangles=resource?resource.TriangleCount():fallback->indices.size()/3;if(options.frustumCulling&&!SphereIntersectsFrustum(worldBounds.center,worldBounds.radius,camera,aspect)){++stats.culledMeshInstances;return;}if(options.gpuInstancing&&resource)draw.MeshInstance(resource.handle,transform.Matrix(),material.tint);else if(resource.cpuMesh)SubmitMesh(draw,*resource.cpuMesh,transform,material);else if(fallback)SubmitMesh(draw,*fallback,transform,material);++stats.visibleMeshInstances;stats.visibleTriangles+=triangles;};
+        auto submit=[&](const MeshResource3D& resource,const Mesh3D* fallback,const MeshBounds3D* fallbackBounds,const Transform3D& transform,Material3D material){const MeshBounds3D localBounds=resource?resource.bounds:*fallbackBounds,worldBounds=TransformSphereBounds(localBounds,transform);const std::size_t triangles=resource?resource.TriangleCount():fallback->indices.size()/3;if(options.frustumCulling&&!SphereIntersectsFrustum(worldBounds.center,worldBounds.radius,camera,aspect)){++stats.culledMeshInstances;return;}if(options.gpuInstancing&&resource)draw.MeshInstance(resource.handle,transform.Matrix(),material.tint);else if(resource.cpuMesh)SubmitMesh(draw,*resource.cpuMesh,transform,material);else if(fallback)SubmitMesh(draw,*fallback,transform,material);++stats.visibleMeshInstances;stats.visibleTriangles+=triangles;};
         for(const Box3D& box:boxes_)submit(boxMesh_,&fallbackBox,&UnitBoxBounds(),box.transform,box.material);for(const MeshObject3D& mesh:meshes_)submit(mesh.mesh,mesh.mesh.cpuMesh.get(),nullptr,mesh.transform,mesh.material);
         stats.culledTriangles=stats.inputTriangles-stats.visibleTriangles;const Vec3 cameraForward=Normalize(camera.target-camera.position);
         for(const auto& line:lines_){const Vec3 direction=Normalize(line.b-line.a);if(Length(direction)<.0001f)continue;Vec3 side=Normalize(Cross(direction,cameraForward));if(Length(side)<.0001f)side=Normalize(Cross(direction,camera.up));if(Length(side)<.0001f)continue;side=side*(line.width*.0125f);const uint32_t base=uint32_t(draw.worldVertices.size()),color=PackColorRgba8(line.color),normal=PackNormalSnorm8({0,1,0},0);for(Vec3 point:{line.a-side,line.a+side,line.b+side,line.b-side})draw.worldVertices.push_back({point.x,point.y,point.z,normal,color});draw.worldIndices.insert(draw.worldIndices.end(),{base,base+1,base+2,base,base+2,base+3});++stats.visibleLines;}

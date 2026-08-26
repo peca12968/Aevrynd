@@ -1,4 +1,5 @@
 #include <Aevrynd/Camera.h>
+#include <Aevrynd/Geometry3D.h>
 #include <Aevrynd/Input.h>
 #include <cmath>
 #include <iostream>
@@ -26,6 +27,8 @@ int main(){
     const Vec3 worldNormal=TransformNormal(normalMatrix,localNormal),worldTangent=Normalize(TransformPoint(model,localTangent)-TransformPoint(model,{}));
     if(!Near(Length(worldNormal),1)||!Near(Dot(worldNormal,worldTangent),0,.002f)){std::cerr<<"Inverse-transpose normal transform failed\n";return 10;}
     Camera3D firstPerson=MakeFirstPersonCamera({0,0,0},0,0);
+    const Ray3D centerRay=ScreenPointToRay(firstPerson,{1280,720},{640,360}),rightRay=ScreenPointToRay(firstPerson,{1280,720},{1280,360});if(!Near(centerRay.origin.z,0)||!Near(centerRay.direction.x,0)||!Near(centerRay.direction.z,1)||rightRay.direction.x<=0){std::cerr<<"Perspective screen ray failed\n";return 17;}
+    float entryDistance{};if(!RayIntersectsAabb(centerRay,{0,0,5},{1,1,1},100,&entryDistance)||!Near(entryDistance,4)||RayIntersectsAabb(centerRay,{5,0,5},{1,1,1},100)){std::cerr<<"Ray AABB intersection failed\n";return 18;}const RayTriangleHit3D triangleHit=RayIntersectsTriangle(centerRay,{-1,-1,5},{0,1,5},{1,-1,5});if(!triangleHit||!Near(triangleHit.distance,5)||!Near(triangleHit.normal.z,-1)||!Near(triangleHit.barycentric.x+triangleHit.barycentric.y+triangleHit.barycentric.z,1)||!RayIntersectsTriangle(centerRay,{-1,-1,5},{0,1,5},{1,-1,5},100,true)||RayIntersectsTriangle(centerRay,{1,-1,5},{0,1,5},{-1,-1,5},100,true)){std::cerr<<"Ray triangle intersection failed\n";return 19;}
     ProjectedPoint center=ProjectToViewport({0,0,10},firstPerson,{1280,720});
     if(!center.visible||!Near(center.position.x,640)||!Near(center.position.y,360)||center.depth<=0||center.depth>=1){std::cerr<<"First-person projection failed\n";return 1;}
     if(ProjectToViewport({0,0,-10},firstPerson,{1280,720}).visible){std::cerr<<"Point behind camera must be hidden\n";return 2;}
@@ -37,6 +40,7 @@ int main(){
     if(!ProjectToViewport(thirdPerson.target,thirdPerson,{1280,720}).visible){std::cerr<<"Third-person target must be visible\n";return 4;}
 
     Camera3D overhead=MakeOverheadCamera({5,0,7},20,true);
+    const Ray3D overheadCenterRay=ScreenPointToRay(overhead,{800,600},{400,300}),overheadCornerRay=ScreenPointToRay(overhead,{800,600},{800,0});if(!Near(overheadCenterRay.direction.y,-1)||!Near(overheadCenterRay.origin.x,5)||Near(overheadCornerRay.origin.x,5)||!Near(Dot(overheadCenterRay.direction,overheadCornerRay.direction),1)){std::cerr<<"Orthographic screen ray failed\n";return 20;}
     ProjectedPoint overheadCenter=ProjectToViewport(overhead.target,overhead,{800,600});
     if(overhead.projection.mode!=ProjectionMode::Orthographic||!overheadCenter.visible||!Near(overheadCenter.position.x,400)||!Near(overheadCenter.position.y,300)){std::cerr<<"Overhead projection failed\n";return 5;}
     if(!SphereIntersectsFrustum(overhead.target,1,overhead,4.f/3.f)||SphereIntersectsFrustum({100,0,7},1,overhead,4.f/3.f)){std::cerr<<"Orthographic sphere frustum test failed\n";return 9;}

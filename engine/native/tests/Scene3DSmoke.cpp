@@ -1,7 +1,9 @@
 #include <Aevrynd/Scene3D.h>
+#include <cmath>
 #include <iostream>
 
 using namespace Aevrynd;
+bool Near(float left,float right,float tolerance=.001f){return std::abs(left-right)<tolerance;}
 
 int main(){
     Scene3D scene;
@@ -30,5 +32,9 @@ int main(){
     scene.Clear();scene.SetBoxMesh({});auto pyramidCpu=std::make_shared<Mesh3D>(Mesh3D::CreateUnitPyramid());MeshResource3D pyramid{{9},pyramidCpu->Bounds(),pyramidCpu->vertices.size(),pyramidCpu->indices.size(),pyramidCpu};scene.Mesh(pyramid,{{0,1,6},{0,.4f,0},{2,3,2}},{{.4f,.8f,1,1}});draw.Clear();stats=scene.Submit(draw,camera,{1280,720});
     if(stats.meshInstances!=1||stats.visibleMeshInstances!=1||stats.inputTriangles!=6||stats.visibleTriangles!=6||draw.meshInstances.size()!=1||draw.meshInstances.front().mesh.value!=9){std::cerr<<"Generic resident mesh submission failed\n";return 8;}
     draw.Clear();stats=scene.Submit(draw,camera,{1280,720},{true,false});if(!draw.meshInstances.empty()||draw.worldVertices.size()!=16||draw.worldIndices.size()!=18){std::cerr<<"Generic mesh CPU fallback failed\n";return 9;}
+    Scene3D queryScene;queryScene.Box({0,1,6},{2,2,2},{1,1,1,1});SceneQueryStats3D queryStats{};const Ray3D sceneRay=ScreenPointToRay(camera,{1280,720},{640,360});SceneHit3D hit=queryScene.Raycast(sceneRay,100,&queryStats);if(!hit||hit.objectType!=SceneObjectType3D::Box||hit.objectIndex!=0||!Near(hit.distance,5)||!Near(hit.position.z,5)||!Near(hit.normal.z,-1)||queryStats.boundsTested!=1||queryStats.boundsRejected!=0||queryStats.trianglesTested!=12||queryScene.Raycast(sceneRay,4.9f)){std::cerr<<"Scene box raycast failed\n";return 10;}
+    hit=queryScene.Raycast({{20,1,0},{0,0,1}},100,&queryStats);if(hit||queryStats.boundsTested!=1||queryStats.boundsRejected!=1||queryStats.trianglesTested!=0){std::cerr<<"Scene raycast broad phase failed\n";return 11;}
+    queryScene.Clear();queryScene.Triangle({-2,-1,8},{0,2,8},{2,-1,8},{1,1,1,1});queryScene.Triangle({-1,-1,4},{0,1,4},{1,-1,4},{1,1,1,1});hit=queryScene.Raycast({{0,0,0},{0,0,4}},100,&queryStats);if(!hit||hit.objectType!=SceneObjectType3D::Triangle||hit.objectIndex!=1||!Near(hit.distance,4)||queryStats.trianglesTested!=2){std::cerr<<"Nearest normalized scene raycast failed\n";return 12;}
+    queryScene.Clear();auto queryMeshCpu=std::make_shared<Mesh3D>(Mesh3D::CreateUnitBox());MeshResource3D queryMesh{{10},queryMeshCpu->Bounds(),queryMeshCpu->vertices.size(),queryMeshCpu->indices.size(),queryMeshCpu};queryScene.Mesh(queryMesh,{{0,1,7},{0,.4f,0},{2,3,2}});hit=queryScene.Raycast({{0,1,0},{0,0,1}},100,&queryStats);if(!hit||hit.objectType!=SceneObjectType3D::Mesh||hit.objectIndex!=0||hit.distance<=5||hit.distance>=7||queryStats.boundsRejected!=0){std::cerr<<"Transformed mesh raycast failed\n";return 13;}
     return 0;
 }

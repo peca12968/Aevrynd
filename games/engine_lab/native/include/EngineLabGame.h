@@ -11,6 +11,8 @@ public:
 private:
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
+    Aevrynd::SceneQueryStats3D queryStats_{};
+    Aevrynd::SceneHit3D sceneHit_{};
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::MeshResource3D pyramidMesh_{};
     Aevrynd::MeshResource3D probeMesh_{};

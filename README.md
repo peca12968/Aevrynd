@@ -108,6 +108,7 @@ Games/
 - MeshResource3D 封裝 handle、自動 AABB 球體 bounds、拓撲統計與共用 CPU fallback；Scene3D 可混合任意網格、transform 與 material，先逐物件裁切再依 mesh handle 分批實例化
 - Bounds 轉換支援偏心網格、旋轉與非等比縮放；中心位於原點的常見資產走無矩陣快速路徑，6,561 物件基準維持約 240 µs GPU 實例提交
 - Engine Lab 同幀混合常駐 box、pyramid 與外部 OBJ 三種網格；OBJ 載入器支援多邊形三角化、負索引、頂點色、平滑／平面法線生成與右手轉左手座標，GPU／CPU 場景驗證僅一個瞬時像素超過 1/255
+- Scene3D 支援透視／正交畫面射線、世界 AABB 粗篩與最近三角形命中；6,561 物件、240 次查詢平均 77 微秒，99.9% 候選在精確測試前排除，並回傳位置、法線、重心座標與物件索引
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
