@@ -87,6 +87,10 @@ struct RendererStats {
     uint64_t dlssResourceAllocations{};
     uint64_t dlssResourceReleases{};
     bool dlssResourcesResident{};
+    size_t frameUploadResidentBytes{};
+    size_t peakFrameUploadResidentBytes{};
+    uint64_t frameUploadGrowths{};
+    uint64_t frameUploadTrims{};
     uint32_t lastDrawCalls{};
     bool lastBackfaceCulling{};
     uint64_t submittedFrames{};
@@ -173,11 +177,17 @@ public:
     static constexpr size_t MaxMeshInstances=65536;
     static constexpr size_t MaxPointLights=3;
     static constexpr size_t MaxMaterialTextureSets=64;
+    static constexpr size_t InitialFrameVertices=DrawList::InitialVertexCapacity;
+    static constexpr size_t InitialFrameWorldVertices=DrawList::InitialVertexCapacity;
+    static constexpr size_t InitialFrameWorldIndices=DrawList::InitialWorldIndexCapacity;
+    static constexpr size_t InitialFrameMeshInstances=DrawList::InitialMeshInstanceCapacity;
     static constexpr size_t DefaultMeshMemoryBudgetBytes=128*1024*1024;
     static constexpr size_t DefaultMaterialTextureMemoryBudgetBytes=256*1024*1024;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*3;
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
+    static constexpr size_t NextFrameUploadCapacity(size_t current,size_t required,size_t maximum){size_t capacity=(std::max)(size_t{1},current);while(capacity<required&&capacity<maximum)capacity=capacity>maximum/2?maximum:capacity*2;return(std::min)(capacity,maximum);}
+    static constexpr size_t InitialFrameUploadBytes=BufferedFrames*(InitialFrameVertices*sizeof(Vertex)+InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*MeshInstanceUploadBytes);
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
     D3D12Renderer(); ~D3D12Renderer();
     void Initialize(HWND hwnd,unsigned width,unsigned height,unsigned logicalWidth=1280,unsigned logicalHeight=720);
