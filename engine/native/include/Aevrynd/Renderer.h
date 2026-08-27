@@ -250,6 +250,7 @@ public:
     void Quad(Vec2 center,Vec2 size,Color color);
     void Diamond(Vec2 center,float rx,float ry,Color color);
     void IsoPrism(Vec2 center,float rx,float ry,float height,Color top,Color left,Color right);
+    void IsoFrustum(Vec2 center,float rx,float ry,float topScale,float height,Color top,Color lightSide,Color darkSide,int segments=14);
     void Circle(Vec2 center,float radius,Color color,int segments=18);
     void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
     void EllipseOutline(Vec2 center,float rx,float ry,float width,Color color,int segments=24);

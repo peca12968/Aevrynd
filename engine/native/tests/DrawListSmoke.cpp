@@ -414,6 +414,9 @@ int main() {
         return 6;
     }
 
+    draw.Clear();draw.IsoFrustum({100,80},20,10,.6f,20,{.8f,.9f,1,1},{.4f,.6f,.7f,1},{.18f,.28f,.34f,1},12);const DrawListStats2D frustumStats=draw.Stats2D();const auto [frustumMinY,frustumMaxY]=std::minmax_element(draw.vertices.begin(),draw.vertices.end(),[](const Vertex& a,const Vertex& b){return a.y<b.y;});if(draw.vertices.size()!=108||frustumStats.inputTriangles!=36||frustumStats.submittedTriangles!=36||frustumStats.ellipseSegments!=12||frustumStats.ellipseTrigonometricEvaluations!=2||frustumStats.sharedVertexTransforms!=25||frustumStats.sharedVertexTransformsSaved!=83||frustumStats.primitiveColorPacks!=3||frustumStats.primitiveColorPacksSaved!=33||std::abs(frustumMinY->y-54.f)>.001f||std::abs(frustumMaxY->y-90.f)>.001f){std::cerr<<"IsoFrustum geometry or telemetry failed\n";return 87;}
+    DrawList culledFrustumDraw;culledFrustumDraw.SetClipRect({0,0},{100,100});culledFrustumDraw.IsoFrustum({10000,50},20,10,.6f,20,Cyan,Gold,Ink,12);const DrawListStats2D culledFrustumStats=culledFrustumDraw.Stats2D();if(!culledFrustumDraw.vertices.empty()||culledFrustumStats.inputTriangles!=36||culledFrustumStats.culledTriangles!=36||culledFrustumStats.ellipseSegments||culledFrustumStats.ellipseStepCacheMisses){std::cerr<<"Pre-tessellation IsoFrustum culling failed\n";return 88;}
+
     draw.Clear();
     draw.Ellipse({50.f, 40.f}, 20.f, 8.f, {1.f, 1.f, 1.f, 1.f}, 24);
     if (draw.vertices.size() != 72) {
