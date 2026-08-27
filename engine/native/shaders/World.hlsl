@@ -50,6 +50,7 @@ struct WorldPixelInput
     float4 material : TEXCOORD2;
     float3 textureData : TEXCOORD3;
     float2 uv : TEXCOORD4;
+    nointerpolation uint materialClass : TEXCOORD5;
 };
 
 float3 ApplyWind(float3 position, float packedWeight)
@@ -71,6 +72,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.material = float4(0.72, 0.0, 0.0, 1.0);
     output.textureData = float3(0.0, 0.25, 0.0);
     output.uv = input.uv;
+    output.materialClass = 0;
     return output;
 }
 
@@ -95,6 +97,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
                                 max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
                                 (input.textureData >> 1) & 1);
     output.uv = input.uv;
+    output.materialClass = (input.textureData >> 2) & 3;
     return output;
 }
 
@@ -271,7 +274,8 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
                          + float3(1.0, 0.52, 0.24) * sunGlow * 0.24
                          + float3(0.34, 0.20, 0.12) * horizonGlow * 0.16);
 
-    const float waterMask = saturate((0.32 - roughness) * 5.0) * step(0.62, normal.y) * saturate((1.0 - input.color.a) * 6.0);
+    // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
+    const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
     const float2 ripple = float2(sin(input.worldPosition.z * 0.82 + input.worldPosition.x * 0.17 + fogEndEnabled.w * 1.35),
                                  cos(input.worldPosition.x * 0.68 - input.worldPosition.z * 0.23 - fogEndEnabled.w * 1.08));
     normal = normalize(normal + float3(ripple.x, 0.0, ripple.y) * waterMask * 0.075);

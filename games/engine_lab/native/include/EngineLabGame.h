@@ -31,6 +31,11 @@ private:
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::MeshResource3D pyramidMesh_{};
     Aevrynd::MeshResource3D cylinderMesh_{};
+    Aevrynd::MeshResource3D grassHighMesh_{};
+    Aevrynd::MeshResource3D grassLowMesh_{};
+    Aevrynd::MeshResource3D treeHighMesh_{};
+    Aevrynd::MeshResource3D treeLowMesh_{};
+    Aevrynd::MeshResource3D riverMesh_{};
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
