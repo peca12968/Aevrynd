@@ -28,6 +28,8 @@ private:
     Bounds2D bounds_{};
 };
 enum class DrawListCapacityProfile:uint8_t {Frame,Minimal2D};
+enum class BlendMode2D:uint8_t {Alpha,Additive};
+struct DrawSpan2D {size_t firstVertex{},vertexCount{};};
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
@@ -57,6 +59,7 @@ struct DrawListStats2D {
     size_t sharedVertexTransforms{},sharedVertexTransformsSaved{};
     size_t primitiveColorPacks{},primitiveColorPacksSaved{};
     size_t geometryBatches{},geometryCulledBatches{},geometryVertices{},geometryTransformsSaved{};
+    size_t additiveTriangles{},additiveSpans{};
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalPrimitiveContainedTriangles{};
@@ -66,6 +69,7 @@ struct DrawListStats2D {
     uint64_t totalPrimitiveColorPacks{},totalPrimitiveColorPacksSaved{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
     uint64_t totalTextContainmentTests{},totalTextContainedSpans{},totalTextContainmentBypassedTriangles{},totalTextCulledSpans{},totalTextCullingBypassedTriangles{};
+    uint64_t totalAdditiveTriangles{},totalAdditiveSpans{};
 };
 struct SystemGlyphCacheStats2D {
     size_t residentGlyphs{},residentBytes{},peakResidentGlyphs{},peakResidentBytes{};
@@ -108,7 +112,10 @@ struct RendererStats {
     size_t totalDroppedPointLights{};
     size_t lastInputTriangles2D{};
     size_t lastCulledTriangles2D{};
+    size_t lastAdditiveTriangles2D{};
+    size_t lastAdditiveDrawCalls2D{};
     uint64_t totalCulledTriangles2D{};
+    uint64_t totalAdditiveTriangles2D{};
     size_t residentMeshes{};
     size_t residentMeshReferences{};
     size_t residentMeshBytes{};
@@ -212,12 +219,13 @@ public:
     static constexpr size_t InitialWorldIndexCapacity=InitialVertexCapacity*3/2;
     static constexpr size_t InitialMeshInstanceCapacity=1024;
     static constexpr size_t InitialPointLightCapacity=16;
+    static constexpr size_t InitialAdditiveSpanCapacity=32;
     static constexpr size_t Minimal2DVertexCapacity=256;
     static constexpr size_t MaxSystemGlyphCacheEntries=512;
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
-    explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
+    explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);additiveSpans_.reserve(InitialAdditiveSpanCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -247,6 +255,9 @@ public:
     float EnvironmentTime()const{return environmentTime_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
+    void SetBlendMode2D(BlendMode2D mode){blendMode_=mode;}
+    BlendMode2D CurrentBlendMode2D()const{return blendMode_;}
+    std::span<const DrawSpan2D> AdditiveSpans2D()const{return additiveSpans_;}
     void Quad(Vec2 center,Vec2 size,Color color);
     void GradientQuad(Vec2 center,Vec2 size,Color top,Color bottom);
     void Diamond(Vec2 center,float rx,float ry,Color color);
@@ -279,6 +290,7 @@ private:
     void CullTextQuad();
     void RecordSharedVertexTransforms(size_t transforms,size_t saved);
     void RecordPrimitiveColorPacks(size_t packs,size_t saved);
+    void RecordSubmittedVertices(size_t firstVertex,size_t vertexCount);
     EllipseStepResult EllipseStep(int segments);
     PrimitiveClipResult ClassifyTransformedPrimitive(std::span<const Vec2> points,float alpha,size_t triangles);
     PrimitiveClipResult ClassifyTessellatedPrimitive(Vec2 minimum,Vec2 maximum,Color color,size_t triangles);
@@ -290,6 +302,7 @@ private:
     Atmosphere3D atmosphere_{};
     float environmentTime_{};
     std::vector<PointLight3D> pointLights_;
+    std::vector<DrawSpan2D> additiveSpans_;
     Vec2 clipMinimum_{},clipMaximum_{};
     bool clipEnabled_{};
     DrawListStats2D stats_{};
@@ -298,6 +311,7 @@ private:
     std::array<EllipseStepCacheEntry,4> ellipseStepCache_{};
     uint64_t ellipseStepCacheClock_{};
     bool backfaceCulling_{true};
+    BlendMode2D blendMode_{BlendMode2D::Alpha};
     DrawListCapacityProfile capacityProfile_{DrawListCapacityProfile::Frame};
 };
 class D3D12Renderer {
