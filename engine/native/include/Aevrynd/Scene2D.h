@@ -49,19 +49,22 @@ struct OcclusionField2DStats {
     std::uint64_t indexBuilds{};
     std::uint64_t linearQueries{};
     std::uint64_t indexedQueries{};
+    std::uint64_t preparedBatches{};
+    std::uint64_t indexedBatches{};
 };
 
 class OcclusionField2D {
 public:
     explicit OcclusionField2D(std::size_t initialCapacity = 0) { Reserve(initialCapacity); }
-    void Clear() { occluders_.clear(); sortedIndices_.clear(); maximumHalfWidth_=0.f;indexDirty_=true;stats_.queries=stats_.tests=stats_.hits=stats_.broadphaseRejected=stats_.indexBuilds=stats_.linearQueries=stats_.indexedQueries=0; }
+    void Clear() { occluders_.clear(); sortedIndices_.clear(); maximumHalfWidth_=0.f;indexDirty_=true;preferIndexedQueries_=false;stats_.queries=stats_.tests=stats_.hits=stats_.broadphaseRejected=stats_.indexBuilds=stats_.linearQueries=stats_.indexedQueries=stats_.preparedBatches=stats_.indexedBatches=0; }
     void Reserve(std::size_t capacity) { retainedCapacity_ = capacity; occluders_.reserve(capacity); sortedIndices_.reserve(capacity); }
-    void Add(VerticalOccluder2D occluder) { occluders_.push_back(occluder); sortedIndices_.clear();indexDirty_=true;stats_.peakOccluders = (std::max)(stats_.peakOccluders, occluders_.size()); }
+    void Add(VerticalOccluder2D occluder) { occluders_.push_back(occluder); sortedIndices_.clear();indexDirty_=true;preferIndexedQueries_=false;stats_.peakOccluders = (std::max)(stats_.peakOccluders, occluders_.size()); }
+    void PrepareQueries(std::size_t expectedQueries) { ++stats_.preparedBatches;preferIndexedQueries_=!occluders_.empty()&&expectedQueries&&(occluders_.size()>IndexThreshold||expectedQueries>IndexedBatchWorkThreshold/occluders_.size());if(preferIndexedQueries_){EnsureIndex();++stats_.indexedBatches;} }
     [[nodiscard]] float Query(Vec2 targetFoot, float targetRadius) {
         ++stats_.queries;
         if(!std::isfinite(targetFoot.x)||!std::isfinite(targetFoot.y)||!std::isfinite(targetRadius))return 0.f;
         float amount{};
-        if(occluders_.size()<=IndexThreshold){++stats_.linearQueries;for(const VerticalOccluder2D& occluder:occluders_){++stats_.tests;amount=(std::max)(amount,VerticalOcclusionAmount2D(targetFoot,targetRadius,occluder));}}
+        if(occluders_.size()<=IndexThreshold&&!preferIndexedQueries_){++stats_.linearQueries;for(const VerticalOccluder2D& occluder:occluders_){++stats_.tests;amount=(std::max)(amount,VerticalOcclusionAmount2D(targetFoot,targetRadius,occluder));}}
         else{
             EnsureIndex();++stats_.indexedQueries;targetRadius=(std::max)(0.f,targetRadius);const float reach=maximumHalfWidth_+targetRadius,minimumX=targetFoot.x-reach,maximumX=targetFoot.x+reach;
             const auto lower=std::lower_bound(sortedIndices_.begin(),sortedIndices_.end(),minimumX,[this](std::uint32_t index,float value){return SortPosition(index)<value;});
@@ -76,6 +79,7 @@ public:
     [[nodiscard]] ReusableMemoryStats MemoryStats() const { const std::size_t target=(std::max)(occluders_.size(),retainedCapacity_),indexTarget=indexDirty_?retainedCapacity_:(std::max)(sortedIndices_.size(),retainedCapacity_),bytes=occluders_.capacity()*sizeof(VerticalOccluder2D)+sortedIndices_.capacity()*sizeof(std::uint32_t),reclaimable=(occluders_.capacity()>target?(occluders_.capacity()-target)*sizeof(VerticalOccluder2D):0)+(sortedIndices_.capacity()>indexTarget?(sortedIndices_.capacity()-indexTarget)*sizeof(std::uint32_t):0);return{bytes,reclaimable,lastReleasedBytes_,trimCount_}; }
     std::size_t TrimUnusedMemory() { const std::size_t before=MemoryStats().retainedCapacityBytes;std::vector<VerticalOccluder2D> occluderReplacement;occluderReplacement.reserve((std::max)(occluders_.size(),retainedCapacity_));occluderReplacement.insert(occluderReplacement.end(),occluders_.begin(),occluders_.end());occluders_.swap(occluderReplacement);std::vector<std::uint32_t> indexReplacement;indexReplacement.reserve((std::max)(sortedIndices_.size(),retainedCapacity_));indexReplacement.insert(indexReplacement.end(),sortedIndices_.begin(),sortedIndices_.end());sortedIndices_.swap(indexReplacement);const std::size_t after=MemoryStats().retainedCapacityBytes;lastReleasedBytes_=before>after?before-after:0;++trimCount_;return lastReleasedBytes_; }
     static constexpr std::size_t IndexThreshold=32;
+    static constexpr std::size_t IndexedBatchWorkThreshold=2048;
 private:
     [[nodiscard]] float SortPosition(std::uint32_t index)const{const float value=occluders_[index].foot.x;return std::isfinite(value)?value:0.f;}
     void EnsureIndex(){if(!indexDirty_)return;sortedIndices_.resize(occluders_.size());std::iota(sortedIndices_.begin(),sortedIndices_.end(),std::uint32_t{});std::stable_sort(sortedIndices_.begin(),sortedIndices_.end(),[this](std::uint32_t left,std::uint32_t right){return SortPosition(left)<SortPosition(right);});maximumHalfWidth_=0.f;for(const VerticalOccluder2D& occluder:occluders_)if(std::isfinite(occluder.halfWidth))maximumHalfWidth_=(std::max)(maximumHalfWidth_,std::abs(occluder.halfWidth));indexDirty_=false;++stats_.indexBuilds;}
@@ -85,7 +89,7 @@ private:
     std::size_t retainedCapacity_{},lastReleasedBytes_{};
     std::uint64_t trimCount_{};
     float maximumHalfWidth_{};
-    bool indexDirty_{true};
+    bool indexDirty_{true},preferIndexedQueries_{};
 };
 
 // 小型批次使用穩定插入排序，避免額外配置並維持相同深度的提交順序。
