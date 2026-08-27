@@ -118,6 +118,7 @@ Games/
 - PhysicsWorld3D 獨立回歸涵蓋 static／dynamic／kinematic、layer mask、sleep／wake、高速 CCD、stale handle 與 4,096 bodies 工作區回收
 - 寫實 3D 資產清單強制 CC0-1.0 商用來源、SHA-256、完整 PBR 通道、Far／General／Near／Hero 貼圖層級、Mesh LOD、切線、碰撞、Atlas／Trim Sheet 與幾何最佳化資訊；失敗不會污染既有輸出
 - Scene/ECS 3D 橋接可批次同步 Transform、雙材質 Mesh LOD 與局部 PointLight；1,000 entity 自動測試涵蓋 visibility layer、完整燈光 transform、stale handle、slot 退役與記憶體修剪
+- Mesh LOD 支援中心／物件邊界距離策略、有界雙網格過渡與固定雜訊互補淡化；過渡資料沿用既有 124-byte GPU instance，透明水面維持單級選擇，陰影僅由主 LOD 投射
 - 有界 CPU profiler 提供跨執行緒 scope、counter、gauge、固定 frame ring、JSON／CSV 匯出與記憶體修剪；非法數值、跨幀 scope 與容量溢位會被拒絕並留下 dropped telemetry
 - World shader 採用 Cook-Torrance GGX、Smith 幾何遮蔽、Schlick Fresnel、能量守恆漫反射與 ACES tone mapping，並以精確 sRGB 輸出轉換及 CPU 黃金參考測試避免 gamma 錯誤
 - 3D World pass 使用成對 UNORM／sRGB RTV：不透明、透明水體與 3D overlay 由硬體在線性顯示空間完成混合及 sRGB 編碼，2D Canvas 再切回 UNORM，避免河岸、霧與 UI 發生 gamma 空間混色或重複編碼；一般交換鏈僅增加三個 RTV 描述符，DLSS 輸入僅增加一個

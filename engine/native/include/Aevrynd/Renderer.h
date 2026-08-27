@@ -40,12 +40,18 @@ struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,rough
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
-static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D;
+static constexpr std::size_t MaximumMeshInstancesPerFrame3D=65536;
+static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D,MeshInstanceLodCoverageShift3D=4u,MeshInstanceLodCoverageMask3D=255u<<MeshInstanceLodCoverageShift3D,MeshInstanceLodInvertBit3D=1u<<12,MeshInstanceLodSeedShift3D=13u,MeshInstanceLodSeedMask3D=7u<<MeshInstanceLodSeedShift3D;
 constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return value==MaterialClass3D::Water||value==MaterialClass3D::Foliage||value==MaterialClass3D::Terrain?value:MaterialClass3D::Surface;}
 constexpr uint32_t PackMeshInstanceFlags3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass){return(hasTextures?MeshInstanceHasTexturesBit3D:0u)|(hasTextures&&usesUv?MeshInstanceUsesUvBit3D:0u)|(uint32_t(NormalizeMaterialClass3D(materialClass))<<MeshInstanceMaterialClassShift3D);}
 constexpr MaterialClass3D UnpackMeshInstanceMaterialClass3D(uint32_t value){return NormalizeMaterialClass3D(MaterialClass3D((value&MeshInstanceMaterialClassMask3D)>>MeshInstanceMaterialClassShift3D));}
+inline uint32_t PackMeshInstanceLodData3D(float transition,uint32_t seed,bool invert=false){transition=Clamp(std::isfinite(transition)?transition:1.f,0.f,1.f);invert=invert||(seed&8u)!=0;const uint32_t quantized=uint32_t(std::lround(transition*255.f));return(quantized<<MeshInstanceLodCoverageShift3D)|(invert?MeshInstanceLodInvertBit3D:0u)|((seed&7u)<<MeshInstanceLodSeedShift3D);}
+constexpr float UnpackMeshInstanceLodCoverage3D(uint32_t value){return float((value&MeshInstanceLodCoverageMask3D)>>MeshInstanceLodCoverageShift3D)/255.f;}
+constexpr uint32_t UnpackMeshInstanceLodSeed3D(uint32_t value){return(value&MeshInstanceLodSeedMask3D)>>MeshInstanceLodSeedShift3D;}
+constexpr bool UnpackMeshInstanceLodInvert3D(uint32_t value){return(value&MeshInstanceLodInvertBit3D)!=0;}
+inline bool MeshInstanceLodSampleSurvives3D(uint32_t value,float threshold){const float transition=UnpackMeshInstanceLodCoverage3D(value);threshold=Clamp(std::isfinite(threshold)?threshold:1.f,0.f,1.f);return UnpackMeshInstanceLodInvert3D(value)?threshold>transition:threshold<=transition;}
 enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay};
-struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};};
+struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};};
 constexpr bool TransparentBackToFront3D(const MeshInstance3D& left,const MeshInstance3D& right){return left.cameraDepth>right.cameraDepth;}
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 constexpr uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,float splitDistance=32.f){return std::isfinite(cameraDistance)&&cameraDistance>=splitDistance?1u:0u;}
@@ -302,7 +308,7 @@ public:
     static size_t TrimSystemGlyphCache(size_t retainedGlyphs=RetainedSystemGlyphsAfterTrim);
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
-    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,float cameraDepth=std::numeric_limits<float>::quiet_NaN(),bool castsShadow=true){if(mesh){materialClass=NormalizeMaterialClass3D(materialClass);if(materialClass==MaterialClass3D::Water)layer=MeshRenderLayer3D::Transparent;if(!std::isfinite(cameraDepth))cameraDepth=TransformPoint(viewProjection_,TransformPoint(transform,{})).z;meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale),useUv,materialClass,cameraDepth,castsShadow});}}
+    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,float cameraDepth=std::numeric_limits<float>::quiet_NaN(),bool castsShadow=true,float lodCoverage=1.f,uint32_t lodSeed=0,bool lodInvert=false){if(mesh){materialClass=NormalizeMaterialClass3D(materialClass);if(materialClass==MaterialClass3D::Water)layer=MeshRenderLayer3D::Transparent;if(!std::isfinite(cameraDepth))cameraDepth=TransformPoint(viewProjection_,TransformPoint(transform,{})).z;lodCoverage=Clamp(std::isfinite(lodCoverage)?lodCoverage:1.f,0.f,1.f);lodSeed=(lodSeed&7u)|(lodInvert?8u:0u);meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale),useUv,materialClass,cameraDepth,castsShadow,lodCoverage,lodSeed});}}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
@@ -387,7 +393,7 @@ public:
     static constexpr size_t MaxVertices=240000;
     static constexpr size_t MaxWorldVertices=240000;
     static constexpr size_t MaxWorldIndices=480000;
-    static constexpr size_t MaxMeshInstances=65536;
+    static constexpr size_t MaxMeshInstances=MaximumMeshInstancesPerFrame3D;
     static constexpr uint64_t InstanceGroupRetentionFrames=300;
     static constexpr size_t MaxPointLights=3;
     static constexpr size_t MaxMaterialTextureSets=64;

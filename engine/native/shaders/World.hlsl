@@ -65,6 +65,9 @@ struct WorldPixelInput
     nointerpolation uint materialClass : TEXCOORD5;
     float4 shadowPosition : TEXCOORD6;
     float4 farShadowPosition : TEXCOORD7;
+    nointerpolation float lodCoverage : TEXCOORD8;
+    nointerpolation uint lodSeed : TEXCOORD9;
+    nointerpolation uint lodInvert : TEXCOORD10;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; };
@@ -107,6 +110,9 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.textureData = float3(0.0, 0.25, 0.0);
     output.uv = input.uv;
     output.materialClass = 0;
+    output.lodCoverage = 1.0;
+    output.lodSeed = 0;
+    output.lodInvert = 0;
     output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
     output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
@@ -134,6 +140,11 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
                                 (input.textureData >> 1) & 1);
     output.uv = input.uv;
     output.materialClass = (input.textureData >> 2) & 3;
+    output.lodCoverage = float((input.textureData >> 4) & 255) / 255.0;
+    output.lodInvert = (input.textureData >> 12) & 1;
+    // 物件平移量擴充有限的封裝 seed，讓密集植被不會同步顯示相同的螢幕孔點。
+    const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
+    output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
@@ -429,6 +440,17 @@ float PointLightAttenuation(float distanceSquared, float radius)
 
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
+    // 固定的螢幕空間雜訊讓兩級網格互補淡化，不依賴時間所以不會逐幀閃爍。
+    if (input.lodCoverage < 0.999)
+    {
+        const uint2 pixel = uint2(input.position.xy);
+        uint noise = pixel.x * 1973u + pixel.y * 9277u + input.lodSeed * 26699u + 911u;
+        noise = (noise << 13u) ^ noise;
+        noise = noise * (noise * noise * 15731u + 789221u) + 1376312589u;
+        const float threshold = float(noise & 255u) / 255.0;
+        const float signedCoverage = input.lodInvert != 0 ? threshold - input.lodCoverage - 0.0000001 : input.lodCoverage - threshold;
+        clip(signedCoverage);
+    }
     const float3 geometricNormal = normalize(input.normal.xyz);
     float3 normal = geometricNormal;
     float roughness = clamp(input.material.x, 0.045, 1.0);

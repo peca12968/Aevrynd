@@ -19,6 +19,8 @@ struct SceneMeshRenderable3D {
     MeshResource3D nearMesh{};
     MeshResource3D farMesh{};
     float lodSwitchDistance{40.f};
+    float lodTransitionWidth{};
+    MeshLodDistanceMetric3D lodDistanceMetric{MeshLodDistanceMetric3D::Center};
     Material3D nearMaterial{};
     Material3D farMaterial{};
     std::uint32_t layer{1};
