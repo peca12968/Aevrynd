@@ -164,6 +164,52 @@ float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
     return rayleighColor + mieColor + horizonColor * horizon * 0.42 + float3(1.0, 0.78, 0.48) * (sunDisk * 7.0 + sunGlow * 0.16);
 }
 
+float CloudHash(float2 coordinate)
+{
+    coordinate = frac(coordinate * float2(123.34, 456.21));
+    coordinate += dot(coordinate, coordinate + 45.32);
+    return frac(coordinate.x * coordinate.y);
+}
+
+float CloudNoise(float2 coordinate)
+{
+    const float2 cell = floor(coordinate);
+    const float2 fraction = frac(coordinate);
+    const float2 smoothFraction = fraction * fraction * (3.0 - 2.0 * fraction);
+    const float lower = lerp(CloudHash(cell), CloudHash(cell + float2(1.0, 0.0)), smoothFraction.x);
+    const float upper = lerp(CloudHash(cell + float2(0.0, 1.0)), CloudHash(cell + 1.0), smoothFraction.x);
+    return lerp(lower, upper, smoothFraction.y);
+}
+
+float CloudFbm(float2 coordinate)
+{
+    float value = 0.0;
+    float amplitude = 0.52;
+    [unroll] for (int octave = 0; octave < 5; ++octave)
+    {
+        value += CloudNoise(coordinate) * amplitude;
+        coordinate = mul(float2x2(1.62, 1.17, -1.17, 1.62), coordinate) + 7.13;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
+float3 ApplyProceduralClouds(float3 atmosphere, float3 rayDirection, float3 sunDirection)
+{
+    const float horizonFade = smoothstep(0.025, 0.205, rayDirection.y);
+    const float projectionHeight = max(0.12, rayDirection.y + 0.18);
+    const float2 wind = float2(0.72, 0.34) * fogEndEnabled.w * 0.012;
+    const float2 cloudPoint = rayDirection.xz / projectionHeight * 1.35 + wind;
+    const float broad = CloudFbm(cloudPoint);
+    const float erosion = CloudFbm(cloudPoint * 2.17 - wind * 1.6);
+    const float density = smoothstep(0.54, 0.72, broad - erosion * 0.16) * horizonFade;
+    const float sunAmount = pow(saturate(dot(rayDirection, sunDirection) * 0.5 + 0.5), 3.0);
+    const float edge = saturate(density * (1.0 - density) * 4.0);
+    const float3 cloudShade = lerp(float3(0.34, 0.39, 0.46), float3(1.05, 0.91, 0.72), sunAmount);
+    const float3 silverLining = float3(1.0, 0.78, 0.52) * edge * pow(saturate(dot(rayDirection, sunDirection)), 8.0) * 0.9;
+    return lerp(atmosphere, cloudShade + silverLining, density * 0.78);
+}
+
 float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 normal, float3 lightDirection)
 {
     const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
@@ -355,7 +401,8 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float skyMask = 1.0 - saturate(input.normal.w);
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
-    baseColor = lerp(baseColor, EvaluateAtmosphere(skyRay, skyLightDirection), skyMask);
+    [branch] if (skyMask > 0.5)
+        baseColor = ApplyProceduralClouds(EvaluateAtmosphere(skyRay, skyLightDirection), skyRay, skyLightDirection);
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
     const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;

@@ -22,6 +22,10 @@ struct HeightFieldLodMeshSettings3D {
     float skirtDepth{2.f};
     std::size_t maximumVertices{4194304},maximumIndices{25165824};
 };
+struct HeightFieldChunkLodSettings3D {
+    unsigned startX{},startZ{},cellExtentX{1},cellExtentZ{1};
+    HeightFieldLodMeshSettings3D lod{};
+};
 
 class HeightField3D {
 public:
@@ -41,6 +45,7 @@ public:
     void FlattenCircle(Vec3 center,float innerRadius,float targetHeight,float blendDistance=0.f);
     Mesh3D CreateMesh(HeightFieldMeshSettings3D settings={})const;
     Mesh3D CreateLodMesh(HeightFieldLodMeshSettings3D lodSettings,HeightFieldMeshSettings3D meshSettings={})const;
+    Mesh3D CreateChunkLodMesh(HeightFieldChunkLodSettings3D chunkSettings,HeightFieldMeshSettings3D meshSettings={})const;
     float MinimumHeight()const{return minimumHeight_;}
     float MaximumHeight()const{return maximumHeight_;}
     const HeightFieldSettings3D& Settings()const{return settings_;}

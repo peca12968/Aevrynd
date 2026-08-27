@@ -50,8 +50,8 @@ private:
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
-    Aevrynd::MeshResource3D terrainMesh_{};
-    Aevrynd::MeshResource3D terrainLowMesh_{};
+    struct TerrainChunkResources3D {Aevrynd::MeshResource3D high{},low{};};
+    std::vector<TerrainChunkResources3D> terrainChunks_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle audioPing_{};
     Aevrynd::CameraRig3D cameraRig_{};
