@@ -45,6 +45,7 @@ enum class MeshLodCpuRetention3D:std::uint8_t {None,Level0Only,AllLevels};
 struct MeshCpuMemoryStats3D {std::size_t residentResources{},residentBytes{},cacheEntries{},expiredCacheEntries{};};
 enum class RenderQuality3D:std::uint8_t {Low,Medium,High,Ultra};
 constexpr std::string_view RenderQualityName3D(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return"LOW";case RenderQuality3D::Medium:return"MEDIUM";case RenderQuality3D::High:return"HIGH";default:return"ULTRA";}}
+constexpr RenderQuality3D NextRenderQuality3D(RenderQuality3D quality){return quality==RenderQuality3D::Low?RenderQuality3D::Medium:quality==RenderQuality3D::Medium?RenderQuality3D::High:quality==RenderQuality3D::High?RenderQuality3D::Ultra:RenderQuality3D::Low;}
 struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; RenderQuality3D renderQuality{RenderQuality3D::Ultra}; };
 struct EngineMemoryStats {
     ProcessMemoryStats process{};
@@ -68,6 +69,7 @@ public:
     unsigned Width()const{return config_.width;}
     unsigned Height()const{return config_.height;}
     RenderQuality3D RenderQuality()const{return config_.renderQuality;}
+    void SetRenderQuality(RenderQuality3D quality);
     float Time()const{return time_;}
     void Quit(){running_=false;}
     void SetTitle(const std::wstring& title);

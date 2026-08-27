@@ -33,6 +33,21 @@ constexpr auto SortedDepthEntries() {
 constexpr auto VerifiedDepthEntries = SortedDepthEntries();
 constexpr Vec2 VerifiedTranslation = Vec2{12.f, 8.f} + Vec2{-5.f, 3.f};
 static_assert(VerifiedDepthEntries[0].index == 3);
+
+int VerifyRuntimeRenderQuality3D(){
+    HWND window=CreateWindowExW(0,L"STATIC",L"AevryndRenderQualityTest",WS_OVERLAPPED,0,0,320,180,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+    if(!window)return 1;
+    int result{};
+    {
+        D3D12Renderer renderer;renderer.Initialize(window,320,180,320,180,false);const Mesh3D box=Mesh3D::CreateUnitBox();const MeshHandle3D mesh=renderer.CreateMesh(box.vertices,box.indices);DrawList draw;draw.MeshInstance(mesh,Matrix4::Identity());renderer.Render(draw,{0,0,0,1});renderer.WaitIdle();const RendererStats ultra=renderer.GetStats();
+        renderer.SetQualitySettings({true,true,false});const RendererStats medium=renderer.GetStats();renderer.Render(draw,{0,0,0,1});renderer.WaitIdle();const RendererStats mediumRendered=renderer.GetStats();
+        renderer.SetQualitySettings({false,false,false});const RendererStats low=renderer.GetStats();renderer.Render(draw,{0,0,0,1});renderer.WaitIdle();const RendererStats lowRendered=renderer.GetStats();
+        renderer.SetQualitySettings({true,true,true});renderer.Render(draw,{0,0,0,1});renderer.WaitIdle();const RendererStats restored=renderer.GetStats();
+        const bool ultraResources=!ultra.multisampleSupported||ultra.multisampleEnabled&&ultra.multisampleResidentBytes;const bool mediumReleased=!medium.multisampleEnabled&&!medium.multisampleResidentBytes&&medium.ambientOcclusionBytes&&medium.directionalShadowMapBytes;const bool lowReleased=!low.multisampleResidentBytes&&!low.ambientOcclusionBytes&&!low.directionalShadowMapBytes&&!lowRendered.ambientOcclusionEnabled&&!lowRendered.lastDirectionalShadowCascades;const bool restoredResources=!restored.multisampleSupported||restored.multisampleEnabled&&restored.multisampleResidentBytes;
+        if(!mesh||!ultraResources||!mediumReleased||mediumRendered.multisampleEnabled||!lowReleased||!restoredResources||restored.qualitySwitches!=3||restored.qualitySwitchFlushes!=2||restored.qualityResourceReleases<3||restored.requestedQuality!=RendererQualitySettings3D{}||restored.effectiveQuality.multisampling!=restored.multisampleSupported){std::cerr<<"Runtime render quality resource lifecycle failed switches="<<restored.qualitySwitches<<" flushes="<<restored.qualitySwitchFlushes<<" releases="<<restored.qualityResourceReleases<<'\n';result=1;}renderer.DestroyMesh(mesh);renderer.WaitIdle();
+    }
+    DestroyWindow(window);return result;
+}
 static_assert(VerifiedDepthEntries[1].index == 1);
 static_assert(VerifiedDepthEntries[2].index == 0);
 static_assert(VerifiedDepthEntries[3].index == 2);
@@ -360,6 +375,7 @@ int ValidateTextGeometry2D() {
 }
 
 int main() {
+    if(const int qualityResult=VerifyRuntimeRenderQuality3D())return qualityResult;
     if (const int sceneRuntimeResult = ValidateSceneRuntime2D()) return sceneRuntimeResult;
     if (const int runtimeSelectionResult = ValidateRuntimeSelection3D()) return runtimeSelectionResult;
     if (const int worldRuntimeResult = ValidateWorldRuntime3D()) return worldRuntimeResult;

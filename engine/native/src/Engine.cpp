@@ -11,8 +11,9 @@
 namespace Aevrynd {
 bool CommandLineHasOption(std::wstring_view commandLine,std::wstring_view option){std::size_t position{};while(position<commandLine.size()){while(position<commandLine.size()&&std::iswspace(commandLine[position]))++position;if(position==commandLine.size())break;const bool quoted=commandLine[position]==L'"';if(quoted)++position;const std::size_t start=position;while(position<commandLine.size()&&(quoted?commandLine[position]!=L'"':!std::iswspace(commandLine[position])))++position;if(commandLine.substr(start,position-start)==option)return true;if(quoted&&position<commandLine.size())++position;}return false;}
 bool IsDLSSStartupRequested(const wchar_t* commandLine){return(commandLine&&CommandLineHasOption(commandLine,L"--dlss"))||GetEnvironmentVariableW(L"AEVRYND_ENABLE_DLSS",nullptr,0)>0;}
-Engine::Engine(EngineConfig config):config_(std::move(config)),renderer_(std::make_unique<D3D12Renderer>()){}
+Engine::Engine(EngineConfig config):config_(std::move(config)),renderer_(std::make_unique<D3D12Renderer>()){SetRenderQuality(config_.renderQuality);}
 Engine::~Engine(){if(game_)game_->OnStop(*this);if(renderer_)renderer_->WaitIdle();}
+void Engine::SetRenderQuality(RenderQuality3D quality){config_.renderQuality=quality;RendererQualitySettings3D settings{};switch(quality){case RenderQuality3D::Low:settings={false,false,false};break;case RenderQuality3D::Medium:settings={true,true,false};break;case RenderQuality3D::High:case RenderQuality3D::Ultra:settings={true,true,true};break;}renderer_->SetQualitySettings(settings);}
 void Engine::SetTitle(const std::wstring& title){if(hwnd_)SetWindowTextW(hwnd_,title.c_str());}
 std::filesystem::path Engine::ExecutableDirectory()const{std::wstring path(32768,L'\0');const DWORD length=GetModuleFileNameW(nullptr,path.data(),DWORD(path.size()));if(!length||length>=path.size())return{};path.resize(length);return std::filesystem::path(path).parent_path();}
 MeshHandle3D Engine::CreateMesh3D(const Mesh3D& mesh){return mesh.Valid()?renderer_->CreateMesh(mesh.vertices,mesh.indices):MeshHandle3D{};}

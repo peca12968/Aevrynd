@@ -104,6 +104,7 @@ template<std::size_t Capacity>PointLightSelection3D<Capacity> SelectInfluentialP
 }
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
 struct AmbientOcclusionSettings3D {bool enabled{true};float radius{1.35f},bias{.035f},intensity{1.05f};};
+struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion{true},multisampling{true};friend constexpr bool operator==(const RendererQualitySettings3D&,const RendererQualitySettings3D&)=default;};
 inline AmbientOcclusionSettings3D NormalizeAmbientOcclusionSettings3D(AmbientOcclusionSettings3D settings){settings.radius=Clamp(std::isfinite(settings.radius)?settings.radius:1.35f,.1f,8.f);settings.bias=Clamp(std::isfinite(settings.bias)?settings.bias:.035f,0.f,.5f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:1.05f,0.f,4.f);return settings;}
 inline constexpr size_t AmbientOcclusionResidentBytes3D(unsigned width,unsigned height){return size_t((width+1)/2)*((height+1)/2)*2;}
 struct DrawListStats2D {
@@ -145,6 +146,8 @@ struct RendererStats {
     unsigned outputWidth{},outputHeight{};
     CanvasViewport canvasViewport{};
     uint64_t resizeCount{};
+    RendererQualitySettings3D requestedQuality{},effectiveQuality{};
+    uint64_t qualitySwitches{},qualitySwitchFlushes{},qualityResourceReleases{};
     bool linearWorldBlending{};
     size_t worldSrgbRenderTargetViews{};
     bool linearHdrSceneComposition{};
@@ -520,6 +523,8 @@ public:
     bool DLSSModuleRequested()const;
     bool DLSSOn() const;
     void ToggleDLSS();
+    void SetQualitySettings(RendererQualitySettings3D settings);
+    RendererQualitySettings3D QualitySettings()const;
     RendererStats GetStats()const;
     unsigned RenderWidth() const;
     unsigned RenderHeight() const;

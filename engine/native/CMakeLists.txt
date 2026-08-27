@@ -29,6 +29,7 @@ add_library(AevryndEngine STATIC
   src/SkinnedRenderable3D.cpp
   src/Spatial2D.cpp
   src/TerrainClipmap3D.cpp
+  src/TemporalMotion3D.cpp
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
 )
@@ -278,6 +279,11 @@ add_executable(AevryndPbrLightingReferenceTest tests/PbrLightingReferenceSmoke.c
 target_compile_options(AevryndPbrLightingReferenceTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndPbrLightingReferenceTest PRIVATE AevryndEngine)
 add_test(NAME AevryndPbrLightingReferenceTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndPbrLightingReferenceTest>'")
+
+add_executable(AevryndTemporalMotion3DTest tests/TemporalMotion3DSmoke.cpp)
+target_compile_options(AevryndTemporalMotion3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndTemporalMotion3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndTemporalMotion3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTemporalMotion3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)
