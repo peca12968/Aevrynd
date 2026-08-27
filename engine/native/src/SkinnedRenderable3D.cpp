@@ -30,7 +30,7 @@ bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
         if(!draw.SkinnedMeshInstance(mesh,palette,transform,material.tint,material.surface,
             material.textures,material.textureScale,material.useUv,material.materialClass,
             material.castsShadow,DirectionalShadowAllCascades3D,submesh.firstIndex,
-            submesh.indexCount)){
+            submesh.indexCount,material.shadingModel)){
             draw.skinnedMeshInstances.resize(originalSize);
             return false;
         }

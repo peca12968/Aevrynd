@@ -3,8 +3,8 @@
   "version": 1,
   "root": {
     "materials": {
-      "SkinWarmPBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 4.0, "useUv": true, "castsShadow": true },
-      "LipsRosePBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 5.0, "useUv": true, "castsShadow": true },
+      "SkinWarmPBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 4.0, "useUv": true, "castsShadow": true, "shadingModel": "skin" },
+      "LipsRosePBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 5.0, "useUv": true, "castsShadow": true, "shadingModel": "skin" },
       "EyeScleraPBR": { "textures": { "baseColor": "eye/base-color.png", "roughness": "eye/roughness.png", "normal": "eye/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 1.0, "useUv": true, "castsShadow": true },
       "IrisHazelPBR": { "textures": { "baseColor": "eye/base-color.png", "roughness": "eye/roughness.png", "normal": "eye/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 1.0, "useUv": true, "castsShadow": true },
       "HairChestnutPBR": { "textures": { "baseColor": "hair/base-color.png", "roughness": "hair/roughness.png", "normal": "hair/normal-dx.png", "maximumResolution": 512 }, "textureScale": 2.0, "useUv": true, "castsShadow": true },

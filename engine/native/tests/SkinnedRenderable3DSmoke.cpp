@@ -17,13 +17,14 @@ int main(){
     const SkinnedMeshHandle3D mesh{7};
     const std::array<SkinnedSubmesh3D,2> submeshes{{{0,3,1,0},{3,6,0,0}}};
     std::array<Material3D,2> materials{};
-    materials[0].tint={1,0,0,1};materials[0].textures={11};
+    materials[0].tint={1,0,0,1};materials[0].textures={11};materials[0].shadingModel=CharacterShadingModel3D::Skin;
     materials[1].tint={0,1,0,1};materials[1].textures={22};materials[1].materialClass=MaterialClass3D::Foliage;
     if(!SubmitSkinnedRenderable3D(draw,mesh,palette,Matrix4::Identity(),9,submeshes,materials)||
         draw.skinnedMeshInstances.size()!=2||draw.skinPaletteJoints.size()!=1||
         draw.skinnedMeshInstances[0].textures.value!=22||draw.skinnedMeshInstances[0].firstIndex||
         draw.skinnedMeshInstances[1].textures.value!=11||draw.skinnedMeshInstances[1].firstIndex!=3||
-        draw.skinnedMeshInstances[1].indexCount!=6){std::cerr<<"Multi-material submission failed\n";return 1;}
+        draw.skinnedMeshInstances[1].indexCount!=6||draw.skinnedMeshInstances[1].shadingModel!=CharacterShadingModel3D::Skin){std::cerr<<"Multi-material submission failed\n";return 1;}
+    const uint32_t skinPacked=PackSkinnedMeshInstanceData3D(true,true,MaterialClass3D::Surface,.25f,CharacterShadingModel3D::Skin),defaultPacked=PackSkinnedMeshInstanceData3D(false,false,MaterialClass3D::Surface,.25f),invalidPacked=PackSkinnedMeshInstanceData3D(false,false,MaterialClass3D::Surface,.25f,CharacterShadingModel3D(7));if(UnpackSkinnedCharacterShadingModel3D(skinPacked)!=CharacterShadingModel3D::Skin||UnpackSkinnedCharacterShadingModel3D(defaultPacked)!=CharacterShadingModel3D::Default||UnpackSkinnedCharacterShadingModel3D(invalidPacked)!=CharacterShadingModel3D::Default||(skinPacked&3u)!=3u){std::cerr<<"Skinned shading model packing failed\n";return 7;}
     const std::size_t accepted=draw.skinnedMeshInstances.size();
     auto expectAtomicFailure=[&](std::span<const SkinnedSubmesh3D> ranges,std::span<const Material3D> bindings,std::uint32_t indices){
         const bool acceptedInvalid=SubmitSkinnedRenderable3D(draw,mesh,palette,Matrix4::Identity(),indices,ranges,bindings);

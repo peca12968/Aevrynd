@@ -208,13 +208,19 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             return Failure(ErrorCode::InvalidSchema, "Sidecar is missing AESKIN material slot '" + slot + "'");
         }
         SerializationObject definition;
-        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "useUv", "castsShadow"}) ||
+        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "useUv", "castsShadow", "shadingModel"}) ||
             !definition.Contains("textures")) {
             return Failure(ErrorCode::InvalidSchema, "Material '" + slot + "' definition is invalid");
         }
         MaterialAssetDefinition3D material;
         material.name = slot;
         material.material.useUv = true;
+        if(definition.Contains("shadingModel")){
+            std::string shadingModel;
+            if(!definition.Read("shadingModel",shadingModel)||(shadingModel!="default"&&shadingModel!="skin"))
+                return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' shadingModel must be 'default' or 'skin'");
+            material.material.shadingModel=shadingModel=="skin"?CharacterShadingModel3D::Skin:CharacterShadingModel3D::Default;
+        }
         if (!definition.Read("textureScale", material.material.textureScale) || !definition.Read("useUv", material.material.useUv) ||
             !definition.Read("castsShadow", material.material.castsShadow) || !std::isfinite(material.material.textureScale) ||
             material.material.textureScale <= 0.0f || material.material.textureScale > limits.maximumTextureScale) {

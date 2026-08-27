@@ -20,7 +20,7 @@ void WriteFile(const std::filesystem::path& path, std::string_view contents = "t
 }
 
 std::string ValidDocument() {
-    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"useUv":true,"castsShadow":true},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75}}}})";
+    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75}}}})";
 }
 
 } // 匿名命名空間
@@ -44,6 +44,7 @@ int main() {
         passed &= Expect(!parsed.materials[0].textures.additionalLayers[0].baseColorPath.empty(), "additional texture layer was not resolved");
         passed &= Expect(std::abs(parsed.materials[0].material.textureScale - 1.5f) < 0.0001f, "textureScale was not applied");
         passed &= Expect(std::abs(parsed.materials[0].material.surface.roughness - 0.46f) < 0.0001f, "PBR override was not applied");
+        passed &= Expect(parsed.materials[0].material.shadingModel == CharacterShadingModel3D::Skin && parsed.materials[1].material.shadingModel == CharacterShadingModel3D::Default, "character shading model was not applied or defaulted");
         passed &= Expect(parsed.materials[0].textures.baseColorPath.is_absolute(), "resolved texture path is not absolute");
     }
 

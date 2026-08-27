@@ -85,6 +85,50 @@ def cube(name: str, location: tuple[float, float, float], scale: tuple[float, fl
     return finish_object(obj, object_material, bone)
 
 
+def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], object_material: bpy.types.Material,
+               segments: int = 24) -> bpy.types.Object:
+    vertices = []
+    faces = []
+    for z, radius_x, radius_y in rings:
+        for segment in range(segments):
+            angle = math.tau * segment / segments
+            # 胸前只有輕微解剖起伏，避免形成獨立球狀肌肉。
+            front = max(0.0, -math.sin(angle))
+            contour = 1.0 + front * front * 0.035 * max(0.0, (z - 1.18) / 0.45)
+            vertices.append((math.cos(angle) * radius_x, math.sin(angle) * radius_y * contour, z))
+    for ring in range(len(rings) - 1):
+        for segment in range(segments):
+            next_segment = (segment + 1) % segments
+            lower = ring * segments + segment
+            upper = (ring + 1) * segments + segment
+            faces.append((lower, lower - segment + next_segment, upper - segment + next_segment, upper))
+    top = (len(rings) - 1) * segments
+    for segment in range(1, segments - 1):
+        faces.append((0, segment + 1, segment))
+        faces.append((top, top + segment, top + segment + 1))
+    mesh = bpy.data.meshes.new(f"{name}Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.materials.append(object_material)
+    uv = mesh.uv_layers.new(name="UVMap")
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+        for loop_index in polygon.loop_indices:
+            vertex = mesh.vertices[mesh.loops[loop_index].vertex_index].co
+            uv.data[loop_index].uv = (math.atan2(vertex.y, vertex.x) / math.tau + 0.5, (vertex.z - rings[0][0]) / (rings[-1][0] - rings[0][0]))
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    groups = {bone: obj.vertex_groups.new(name=bone) for bone in ("Hips", "Spine", "Chest")}
+    for vertex in mesh.vertices:
+        z = vertex.co.z
+        if z <= 1.17:
+            blend = max(0.0, min(1.0, (z - 1.02) / 0.15)); weights = (("Hips", 1.0 - blend), ("Spine", blend))
+        else:
+            blend = max(0.0, min(1.0, (z - 1.17) / 0.30)); weights = (("Spine", 1.0 - blend), ("Chest", blend))
+        for bone, weight in weights:
+            if weight > 0.0: groups[bone].add([vertex.index], weight, "REPLACE")
+    return obj
+
+
 def create_armature() -> bpy.types.Object:
     armature = bpy.data.armatures.new("MaleHumanoidArmature")
     rig = bpy.data.objects.new("MaleHumanoidRig", armature)
@@ -134,17 +178,8 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
     objects: list[bpy.types.Object] = []
 
     # 軀幹使用多個解剖量體建立自然肩背、胸肌與腹肌輪廓。
-    objects += [ellipsoid("TorsoCore", (0, 0.015, 1.39), (0.36, 0.20, 0.39), shirt, "Chest")]
-    objects += [ellipsoid("LeftPectoral", (0.17, -0.155, 1.53), (0.20, 0.075, 0.14), shirt, "Chest"),
-                ellipsoid("RightPectoral", (-0.17, -0.155, 1.53), (0.20, 0.075, 0.14), shirt, "Chest")]
-    objects += [ellipsoid("LeftLatissimus", (0.27, 0.07, 1.43), (0.15, 0.13, 0.27), shirt, "Chest"),
-                ellipsoid("RightLatissimus", (-0.27, 0.07, 1.43), (0.15, 0.13, 0.27), shirt, "Chest")]
-    objects += [ellipsoid("Waist", (0, 0.02, 1.17), (0.255, 0.17, 0.25), shirt, "Spine"),
-                ellipsoid("Pelvis", (0, 0.02, 1.01), (0.31, 0.19, 0.20), trousers, "Hips")]
-    for row, height in enumerate((1.36, 1.25, 1.14)):
-        for side, sign in (("Left", 1), ("Right", -1)):
-            objects.append(ellipsoid(f"{side}Abdominal{row + 1}", (0.075 * sign, -0.165, height),
-                                     (0.072, 0.035, 0.075), shirt, "Spine", 20, 12))
+    objects += [torso_loft("ContinuousShirtTorso", ((1.04, .29, .18), (1.14, .255, .165), (1.27, .27, .175), (1.42, .34, .19), (1.56, .39, .20), (1.64, .31, .17)), shirt),
+                ellipsoid("Pelvis", (0, 0.02, 1.01), (0.29, 0.18, 0.18), trousers, "Hips")]
 
     objects += [ellipsoid("Head", (0, -0.005, 1.86), (0.145, 0.125, 0.19), skin_light, "Head"),
                 cube("Jaw", (0, -0.052, 1.785), (0.105, 0.078, 0.075), skin, "Head", 0.045),
@@ -243,12 +278,14 @@ def main() -> None:
     triangle_count = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
     coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
     height = max(value.z for value in coordinates) - min(value.z for value in coordinates)
-    if vertex_count > 22000 or triangle_count > 38000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15:
+    shoulder_ratio, chest_depth_ratio, waist_hip_ratio = .78 / height, .40 / height, .51 / .58
+    if vertex_count > 22000 or triangle_count > 38000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15 or not .34 <= shoulder_ratio <= .39 or not .17 <= chest_depth_ratio <= .21 or not .82 <= waist_hip_ratio <= .92:
         raise RuntimeError("Male character geometry budget or proportion validation failed.")
     output_path = export_asset(destination, [character], rig)
     print(f"REALISTIC_MALE_ASSET={output_path}")
     print(f"OBJECTS=1 MATERIALS={len(character.data.materials)} VERTICES={vertex_count} TRIANGLES={triangle_count} BONES={len(rig.data.bones)}")
     print(f"REALISTIC_MALE_HEIGHT={height:.4f}")
+    print(f"REALISTIC_MALE_RATIOS=SHOULDER:{shoulder_ratio:.4f} CHEST_DEPTH:{chest_depth_ratio:.4f} WAIST_HIP:{waist_hip_ratio:.4f}")
 
 
 main()

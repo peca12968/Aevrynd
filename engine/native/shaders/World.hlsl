@@ -146,6 +146,7 @@ struct WorldPixelInput
     nointerpolation uint lodSeed : TEXCOORD9;
     nointerpolation uint lodInvert : TEXCOORD10;
     float4 tangent : TEXCOORD11;
+    nointerpolation uint characterShadingModel : TEXCOORD12;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; };
@@ -210,6 +211,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.lodSeed = 0;
     output.lodInvert = 0;
     output.tangent = 0.0;
+    output.characterShadingModel = 0;
     output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
     output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
@@ -240,6 +242,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
     output.tangent = 0.0;
+    output.characterShadingModel = 0;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
@@ -286,6 +289,7 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
     output.tangent = validWorldBasis
         ? float4(worldTangent, dot(cross(normalizedWorldNormal, worldTangent), worldBitangent) < 0.0 ? -1.0 : 1.0)
         : float4(0.0, 0.0, 0.0, 0.0);
+    output.characterShadingModel = (input.textureData >> 13) & 7;
     output.material = input.material;
     output.textureData = float3(input.textureData & 1,
                                 max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
@@ -601,6 +605,22 @@ float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirecti
     return (diffuseWeight * baseColor * (1.0 / 3.14159265) + specular) * radiance * normalLight;
 }
 
+float3 EvaluateSkinSupplement(float3 normal,float3 viewDirection,float3 lightDirection,
+                              float3 radiance,float3 baseColor,float roughness)
+{
+    const float normalLight = dot(normal,lightDirection);
+    const float wrapped = saturate((normalLight + 0.25) / 1.25);
+    const float wrapExtra = max(0.0,wrapped - saturate(normalLight));
+    const float backScatter = pow(saturate(dot(-lightDirection,viewDirection)),4.0)
+                            * saturate(-normalLight);
+    const float narrowRoughness = max(0.09,roughness * 0.45);
+    const float3 narrowSpecular = EvaluatePbrLight(normal,viewDirection,lightDirection,
+                                                    radiance,0.0,narrowRoughness,0.0) * 0.18;
+    const float3 warmScatter = baseColor * float3(1.0,0.48,0.32)
+                             * radiance * (wrapExtra * 0.20 + backScatter * 0.08);
+    return narrowSpecular + warmScatter;
+}
+
 float PointLightAttenuation(float distanceSquared, float radius)
 {
     const float safeRadius = max(radius, 0.001);
@@ -634,7 +654,8 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float3 geometricNormal = normalize(input.normal.xyz);
     float3 normal = geometricNormal;
     float roughness = clamp(input.material.x, 0.045, 1.0);
-    const float metallic = saturate(input.material.y);
+    const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
+    const float metallic = lerp(saturate(input.material.y),0.0,skinMask);
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
@@ -754,6 +775,11 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
                   + baseColor * emissive * 2.0;
+    [branch] if(skinMask > 0.5){
+        const float skinShadow=CascadedDirectionalShadow(input,normal,lightDirection);
+        shaded+=skinShadow*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
+                    lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
+    }
     [branch] if (foliageMask > 0.5)
     {
         const float foliageWrappedDiffuse = saturate((dot(normal, lightDirection) + 0.35) / 1.35);
@@ -777,6 +803,9 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
         shaded += EvaluatePbrLight(normal, viewDirection, localDirection,
                                    pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w * attenuation,
                                    baseColor, roughness, metallic);
+        if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
+                    pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
+                    baseColor,roughness);
     }
 
     [branch] if (waterMask > 0.5)
