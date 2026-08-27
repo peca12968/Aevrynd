@@ -248,11 +248,13 @@ public:
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void Quad(Vec2 center,Vec2 size,Color color);
+    void GradientQuad(Vec2 center,Vec2 size,Color top,Color bottom);
     void Diamond(Vec2 center,float rx,float ry,Color color);
     void IsoPrism(Vec2 center,float rx,float ry,float height,Color top,Color left,Color right);
     void IsoFrustum(Vec2 center,float rx,float ry,float topScale,float height,Color top,Color lightSide,Color darkSide,int segments=14);
     void Circle(Vec2 center,float radius,Color color,int segments=18);
     void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
+    void RadialGradientEllipse(Vec2 center,float rx,float ry,Color inner,Color outer,int segments=24);
     void EllipseOutline(Vec2 center,float rx,float ry,float width,Color color,int segments=24);
     void ProjectedEllipseShadow(Vec2 base,float rx,float ry,Vec2 lightDirection,float height,float opacity=.4f,int segments=18);
     void Line(Vec2 a,Vec2 b,float width,Color color);
@@ -272,6 +274,7 @@ private:
     PrimitiveClipResult ClassifyTransformedBounds(Vec2 minimum,Vec2 maximum)const;
     void SubmitTransformedTriangle(Vec2 a,Vec2 b,Vec2 c,float alpha,uint32_t packedColor);
     void SubmitContainedTriangle(Vec2 a,Vec2 b,Vec2 c,uint32_t packedColor);
+    void SubmitGradientTriangle(Vec2 a,uint32_t colorA,Vec2 b,uint32_t colorB,Vec2 c,uint32_t colorC,bool contained);
     void SubmitContainedTextQuad(Vec2 center,Vec2 size,Color color);
     void CullTextQuad();
     void RecordSharedVertexTransforms(size_t transforms,size_t saved);
