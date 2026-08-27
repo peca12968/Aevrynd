@@ -6,7 +6,10 @@ target_link_libraries(FrontierWorld PRIVATE AevryndEngine)
 set_target_properties(FrontierWorld PROPERTIES OUTPUT_NAME "Aevrynd-Frontier-World" VS_DPI_AWARE "PerMonitor")
 add_custom_command(TARGET FrontierWorld POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:FrontierWorld>/assets"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/material-packs" "$<TARGET_FILE_DIR:FrontierWorld>/assets/material-packs")
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/material-packs" "$<TARGET_FILE_DIR:FrontierWorld>/assets/material-packs"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/model-packs" "$<TARGET_FILE_DIR:FrontierWorld>/assets/model-packs"
+  COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:FrontierWorld>/assets/model-packs/poly-haven/quiver_tree_02/source"
+  COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:FrontierWorld>/assets/model-packs/poly-haven/rock_09/source")
 if(AEVRYND_STREAMLINE_AVAILABLE)
   foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
     add_custom_command(TARGET FrontierWorld POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STREAMLINE_ROOT}/bin/x64/${SL_DLL}" "$<TARGET_FILE_DIR:FrontierWorld>/${SL_DLL}")

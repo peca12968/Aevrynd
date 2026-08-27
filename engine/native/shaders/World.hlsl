@@ -20,6 +20,7 @@ struct WorldVertexInput
     float3 position : POSITION;
     float4 normal : NORMAL;
     float4 color : COLOR;
+    float2 uv : TEXCOORD0;
 };
 
 struct InstancedVertexInput
@@ -27,6 +28,7 @@ struct InstancedVertexInput
     float3 position : POSITION;
     float4 normal : NORMAL;
     float4 color : COLOR;
+    float2 uv : TEXCOORD0;
     float4 transformRow0 : INSTANCE0;
     float4 transformRow1 : INSTANCE1;
     float4 transformRow2 : INSTANCE2;
@@ -46,7 +48,8 @@ struct WorldPixelInput
     float3 worldPosition : TEXCOORD0;
     float4 normal : TEXCOORD1;
     float4 material : TEXCOORD2;
-    float2 textureData : TEXCOORD3;
+    float3 textureData : TEXCOORD3;
+    float2 uv : TEXCOORD4;
 };
 
 WorldPixelInput WorldVertexMain(WorldVertexInput input)
@@ -57,7 +60,8 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.worldPosition = input.position;
     output.normal = input.normal;
     output.material = float4(0.72, 0.0, 0.0, 1.0);
-    output.textureData = float2(0.0, 0.25);
+    output.textureData = float3(0.0, 0.25, 0.0);
+    output.uv = input.uv;
     return output;
 }
 
@@ -77,8 +81,10 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.worldPosition = worldPosition.xyz;
     output.normal = float4(normalize(worldNormal), input.normal.w);
     output.material = input.material;
-    output.textureData = float2(input.textureData & 1,
-                                max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)));
+    output.textureData = float3(input.textureData & 1,
+                                max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
+                                (input.textureData >> 1) & 1);
+    output.uv = input.uv;
     return output;
 }
 
@@ -115,6 +121,18 @@ float3 TriplanarNormal(float3 worldPosition, float3 geometricNormal, float scale
     return normalize(mappedX * blend.x + mappedY * blend.y + mappedZ * blend.z);
 }
 
+float3 UvNormal(float3 worldPosition, float3 geometricNormal, float2 uv)
+{
+    const float3 positionX = ddx(worldPosition);
+    const float3 positionY = ddy(worldPosition);
+    const float2 uvX = ddx(uv);
+    const float2 uvY = ddy(uv);
+    const float3 tangent = normalize(positionX * uvY.y - positionY * uvX.y);
+    const float3 bitangent = normalize(-positionX * uvY.x + positionY * uvX.x);
+    const float3 mapped = DecodeBc5Normal(normalTexture.Sample(materialSampler, uv).rg);
+    return normalize(mapped.x * tangent + mapped.y * bitangent + mapped.z * geometricNormal);
+}
+
 float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
 {
     float3 normal = normalize(input.normal.xyz);
@@ -125,9 +143,18 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     float3 baseColor = input.color.rgb;
     if (input.textureData.x > 0.5)
     {
-        baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
-        roughness = saturate(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r);
-        normal = normalize(lerp(normal, TriplanarNormal(input.worldPosition, normal, input.textureData.y), 0.78));
+        if (input.textureData.z > 0.5)
+        {
+            baseColor *= baseColorTexture.Sample(materialSampler, input.uv).rgb;
+            roughness = saturate(roughness * roughnessTexture.Sample(materialSampler, input.uv).r);
+            normal = normalize(lerp(normal, UvNormal(input.worldPosition, normal, input.uv), 0.78));
+        }
+        else
+        {
+            baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
+            roughness = saturate(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r);
+            normal = normalize(lerp(normal, TriplanarNormal(input.worldPosition, normal, input.textureData.y), 0.78));
+        }
     }
 
     const float waterMask = saturate((0.32 - roughness) * 5.0) * step(0.62, normal.y) * saturate((1.0 - input.color.a) * 6.0);

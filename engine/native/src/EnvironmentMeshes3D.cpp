@@ -6,14 +6,14 @@ namespace Aevrynd {
 namespace {
 constexpr float Pi=3.14159265358979323846f;
 
-void AppendTransformed(Mesh3D& destination,const Mesh3D& source,Vec3 position,Vec3 scale){
+void AppendTransformed(Mesh3D& destination,const Mesh3D& source,Vec3 position,Vec3 scale,Color tint={1,1,1,1}){
     const uint32_t base=uint32_t(destination.vertices.size());
     destination.vertices.reserve(destination.vertices.size()+source.vertices.size());
     destination.indices.reserve(destination.indices.size()+source.indices.size());
     for(const Vertex3D& vertex:source.vertices){
         const Vec4 unpacked=UnpackNormalSnorm8(vertex.normal);
         const Vec3 normal=Normalize({unpacked.x/(std::max)(.001f,std::abs(scale.x)),unpacked.y/(std::max)(.001f,std::abs(scale.y)),unpacked.z/(std::max)(.001f,std::abs(scale.z))});
-        destination.vertices.push_back({position.x+vertex.x*scale.x,position.y+vertex.y*scale.y,position.z+vertex.z*scale.z,PackNormalSnorm8(normal,unpacked.w),vertex.color});
+        const Color sourceColor=UnpackColorRgba8(vertex.color);destination.vertices.push_back({position.x+vertex.x*scale.x,position.y+vertex.y*scale.y,position.z+vertex.z*scale.z,PackNormalSnorm8(normal,unpacked.w),PackColorRgba8({sourceColor.r*tint.r,sourceColor.g*tint.g,sourceColor.b*tint.b,sourceColor.a*tint.a}),vertex.u,vertex.v});
     }
     for(uint32_t index:source.indices)destination.indices.push_back(base+index);
 }
@@ -47,6 +47,10 @@ Mesh3D CreateBroadleafCrownMesh3D(unsigned slices,unsigned stacks){
     AppendTransformed(mesh,lobe,{.08f,.2f,-.42f},{.88f,.76f,.75f});
     AppendTransformed(mesh,lobe,{-.18f,.32f,.34f},{.72f,.68f,.7f});
     return mesh;
+}
+
+Mesh3D CreateTreeLodMesh3D(unsigned sides){
+    Mesh3D mesh;AppendTransformed(mesh,Mesh3D::CreateUnitCylinder((std::max)(3u,sides)),{0,.5f,0},{.12f,1.f,.12f},{.34f,.2f,.1f,1});AppendTransformed(mesh,CreateBroadleafCrownMesh3D(6,4),{0,1.13f,0},{.5f,.38f,.5f},{.12f,.42f,.09f,1});return mesh;
 }
 
 Mesh3D CreateCurvedRibbonMesh3D(std::span<const Vec3> centers,std::span<const float> halfWidths,float heightOffset){

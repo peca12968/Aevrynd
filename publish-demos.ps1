@@ -41,6 +41,11 @@ foreach ($distributionDirectory in $distributionDirectories) {
     }
 }
 
+$demoModelPacks = Join-Path $demoAssets 'model-packs'
+if (Test-Path -LiteralPath $demoModelPacks) {
+    Get-ChildItem -LiteralPath $demoModelPacks -Directory -Filter 'source' -Recurse | Remove-Item -Recurse -Force
+}
+
 $executables = Get-ChildItem -LiteralPath $demoDirectory -File -Filter '*.exe' | Sort-Object Name
 Write-Host "Published $($executables.Count) executable demos to $demoDirectory" -ForegroundColor Green
 $executables | ForEach-Object { Write-Host "  $($_.Name)" }

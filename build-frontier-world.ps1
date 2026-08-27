@@ -16,6 +16,9 @@ Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\*.dll') -Destination $di
 $distributionAssets = Join-Path $distributionDirectory 'assets'
 New-Item -ItemType Directory -Force -Path $distributionAssets | Out-Null
 Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\assets\material-packs') -Destination $distributionAssets -Recurse -Force
+Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\assets\model-packs') -Destination $distributionAssets -Recurse -Force
+$distributionModelPacks = Join-Path $distributionAssets 'model-packs'
+Get-ChildItem -LiteralPath $distributionModelPacks -Directory -Filter 'source' -Recurse | Remove-Item -Recurse -Force
 Copy-Item -Path (Join-Path $projectRoot 'games\frontier_world\assets\*') -Destination $distributionAssets -Recurse -Force
 Write-Host "Built: $distributionDirectory\Aevrynd-Frontier-World.exe" -ForegroundColor Green
 Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green

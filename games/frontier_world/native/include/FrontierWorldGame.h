@@ -7,6 +7,7 @@
 #include <Aevrynd/EnvironmentMeshes3D.h>
 #include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/MaterialLibrary3D.h>
+#include <Aevrynd/MeshLoader.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
@@ -37,10 +38,10 @@ private:
     Aevrynd::CollisionWorld3D collisionWorld_;
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
-    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{},grassHighMesh_{},grassLowMesh_{},crownHighMesh_{},crownLowMesh_{},riverMesh_{},riverFoamLeftMesh_{},riverFoamRightMesh_{};
-    Aevrynd::MaterialLibrary3D materialLibrary_{};
+    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{},grassHighMesh_{},grassLowMesh_{},treeLowMesh_{},riverMesh_{},riverFoamLeftMesh_{},riverFoamRightMesh_{},quiverTreeMesh_{},rock09Mesh_{};
+    Aevrynd::MaterialLibrary3D materialLibrary_{},modelMaterialLibrary_{};
     Aevrynd::MaterialLibraryStats3D materialLibraryStats_{};
-    Aevrynd::Material3D groundMaterial_{},woodMaterial_{},barkMaterial_{},rockMaterial_{};
+    Aevrynd::Material3D groundMaterial_{},woodMaterial_{},barkMaterial_{},rockMaterial_{},quiverTreeMaterial_{},rock09Material_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
     Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};

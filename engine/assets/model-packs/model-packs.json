@@ -1,0 +1,31 @@
+{
+  "license": "CC0-1.0",
+  "commercialUse": true,
+  "textureResolution": 1024,
+  "conversionTool": "tools/convert-gltf-to-aemesh.ps1",
+  "packs": [
+    {
+      "id": "quiver-tree-02",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/quiver_tree_02",
+      "licenseUrl": "https://polyhaven.com/license",
+      "mesh": "poly-haven/quiver_tree_02/quiver_tree_02.aemesh",
+      "sourceMesh": "poly-haven/quiver_tree_02/source/quiver_tree_02_1k.gltf",
+      "vertices": 49005,
+      "triangles": 82074,
+      "maps": ["1k/base-color.jpg", "1k/normal-dx.jpg", "1k/roughness.jpg"]
+    },
+    {
+      "id": "rock-09",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/rock_09",
+      "licenseUrl": "https://polyhaven.com/license",
+      "mesh": "poly-haven/rock_09/rock_09.aemesh",
+      "sourceMesh": "poly-haven/rock_09/source/rock_09_1k.gltf",
+      "conversionScale": 10,
+      "vertices": 6628,
+      "triangles": 12416,
+      "maps": ["1k/base-color.jpg", "1k/normal-dx.jpg", "1k/roughness.jpg"]
+    }
+  ]
+}

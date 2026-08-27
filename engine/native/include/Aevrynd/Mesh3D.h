@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace Aevrynd {
-struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};MaterialTextureSetHandle3D textures{};float textureScale{.25f};};
+struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};};
 struct Transform3D {Vec3 position{},rotation{},scale{1,1,1};Matrix4 Matrix()const{return CreateTransformMatrix(position,rotation,scale);}};
 struct MeshBounds3D {Vec3 center{};float radius{};Vec3 extents{};};
 
@@ -38,5 +38,5 @@ inline MeshBounds3D TransformBounds(const MeshBounds3D& bounds,const Transform3D
 inline Color UnpackColorRgba8(uint32_t packed){constexpr float inverse=1.f/255.f;return{float(packed&255)*inverse,float((packed>>8)&255)*inverse,float((packed>>16)&255)*inverse,float((packed>>24)&255)*inverse};}
 
 // 網格拓撲可跨實例重用；每幀只展開變換後的唯一頂點與偏移索引，避免重複三角形頂點。
-inline bool SubmitMesh(DrawList& draw,const Mesh3D& mesh,const Transform3D& transform,Material3D material={}){if(!mesh.Valid())return false;const uint32_t base=uint32_t(draw.worldVertices.size());const Matrix4 matrix=transform.Matrix(),normalMatrix=CreateNormalMatrix(matrix);for(const Vertex3D& vertex:mesh.vertices){Vec3 position=TransformPoint(matrix,{vertex.x,vertex.y,vertex.z});const Vec4 unpackedNormal=UnpackNormalSnorm8(vertex.normal);const Vec3 normal=TransformNormal(normalMatrix,{unpackedNormal.x,unpackedNormal.y,unpackedNormal.z});Color source=UnpackColorRgba8(vertex.color);Color color{source.r*material.tint.r,source.g*material.tint.g,source.b*material.tint.b,source.a*material.tint.a};draw.worldVertices.push_back({position.x,position.y,position.z,PackNormalSnorm8(normal,unpackedNormal.w),PackColorRgba8(color)});}for(uint32_t index:mesh.indices)draw.worldIndices.push_back(base+index);return true;}
+inline bool SubmitMesh(DrawList& draw,const Mesh3D& mesh,const Transform3D& transform,Material3D material={}){if(!mesh.Valid())return false;const uint32_t base=uint32_t(draw.worldVertices.size());const Matrix4 matrix=transform.Matrix(),normalMatrix=CreateNormalMatrix(matrix);for(const Vertex3D& vertex:mesh.vertices){Vec3 position=TransformPoint(matrix,{vertex.x,vertex.y,vertex.z});const Vec4 unpackedNormal=UnpackNormalSnorm8(vertex.normal);const Vec3 normal=TransformNormal(normalMatrix,{unpackedNormal.x,unpackedNormal.y,unpackedNormal.z});Color source=UnpackColorRgba8(vertex.color);Color color{source.r*material.tint.r,source.g*material.tint.g,source.b*material.tint.b,source.a*material.tint.a};draw.worldVertices.push_back({position.x,position.y,position.z,PackNormalSnorm8(normal,unpackedNormal.w),PackColorRgba8(color),vertex.u,vertex.v});}for(uint32_t index:mesh.indices)draw.worldIndices.push_back(base+index);return true;}
 }

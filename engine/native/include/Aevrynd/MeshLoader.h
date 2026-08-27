@@ -18,4 +18,5 @@ struct MeshLoadResult3D {
 
 MeshLoadResult3D LoadObjMesh(std::string_view source,ObjLoadOptions3D options={});
 MeshLoadResult3D LoadObjMeshFile(const std::filesystem::path& path,ObjLoadOptions3D options={});
+MeshLoadResult3D LoadAevryndMeshFile(const std::filesystem::path& path);
 }
