@@ -378,6 +378,7 @@ int main() {
     }
 
     DrawList draw;
+    draw.SetEnvironmentTime(12.5f);if(draw.EnvironmentTime()!=12.5f){std::cerr<<"Environment time submission failed\n";return 87;}draw.SetEnvironmentTime((std::numeric_limits<float>::quiet_NaN)());if(draw.EnvironmentTime()!=0.f){std::cerr<<"Environment time validation failed\n";return 88;}
     if (draw.vertices.capacity() < DrawList::InitialVertexCapacity) {
         std::cerr << "DrawList must reserve its initial vertex batch\n";
         return 2;

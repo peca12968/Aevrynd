@@ -8,6 +8,7 @@ namespace Aevrynd {
 Mesh3D CreateGrassClumpMesh3D(unsigned bladeCount=9,unsigned segments=3);
 Mesh3D CreateBroadleafCrownMesh3D(unsigned slices=10,unsigned stacks=6);
 Mesh3D CreateTreeLodMesh3D(unsigned sides=6);
+Mesh3D CreateSkyDomeMesh3D(unsigned slices=32,unsigned stacks=16);
 Mesh3D CreateCurvedRibbonMesh3D(std::span<const Vec3> centers,std::span<const float> halfWidths,float heightOffset=0.f);
 
 }

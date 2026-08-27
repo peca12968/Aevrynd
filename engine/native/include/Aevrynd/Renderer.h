@@ -243,6 +243,8 @@ public:
     const std::vector<PointLight3D>& PointLights()const{return pointLights_;}
     void SetAtmosphere(Atmosphere3D atmosphere){atmosphere.fogEnd=(std::max)(atmosphere.fogStart+.001f,atmosphere.fogEnd);atmosphere_=atmosphere;}
     const Atmosphere3D& Atmosphere()const{return atmosphere_;}
+    void SetEnvironmentTime(float seconds){environmentTime_=std::isfinite(seconds)?seconds:0.f;}
+    float EnvironmentTime()const{return environmentTime_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void Quad(Vec2 center,Vec2 size,Color color);
@@ -282,6 +284,7 @@ private:
     Matrix4 viewProjection_{Matrix4::Identity()};
     DirectionalLight3D light_{};
     Atmosphere3D atmosphere_{};
+    float environmentTime_{};
     std::vector<PointLight3D> pointLights_;
     Vec2 clipMinimum_{},clipMaximum_{};
     bool clipEnabled_{};

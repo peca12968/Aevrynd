@@ -52,13 +52,22 @@ struct WorldPixelInput
     float2 uv : TEXCOORD4;
 };
 
+float3 ApplyWind(float3 position, float packedWeight)
+{
+    const float weight = step(0.0, packedWeight) * (1.0 - saturate(packedWeight));
+    const float primary = sin(fogEndEnabled.w * 1.7 + position.x * 0.43 + position.z * 0.31);
+    const float detail = sin(fogEndEnabled.w * 3.1 - position.x * 0.19 + position.z * 0.67);
+    return position + float3(primary + detail * 0.35, abs(detail) * 0.08, detail * 0.55) * weight * 0.13;
+}
+
 WorldPixelInput WorldVertexMain(WorldVertexInput input)
 {
     WorldPixelInput output;
-    output.position = mul(viewProjection, float4(input.position, 1.0));
+    const float3 animatedPosition = ApplyWind(input.position, input.normal.w);
+    output.position = mul(viewProjection, float4(animatedPosition, 1.0));
     output.color = input.color;
-    output.worldPosition = input.position;
-    output.normal = input.normal;
+    output.worldPosition = animatedPosition;
+    output.normal = float4(input.normal.xyz, input.normal.w < 0.0 ? 0.0 : 1.0);
     output.material = float4(0.72, 0.0, 0.0, 1.0);
     output.textureData = float3(0.0, 0.25, 0.0);
     output.uv = input.uv;
@@ -68,10 +77,11 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
 WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
 {
     const float4 localPosition = float4(input.position, 1.0);
-    const float4 worldPosition = float4(dot(input.transformRow0, localPosition),
-                                        dot(input.transformRow1, localPosition),
-                                        dot(input.transformRow2, localPosition),
-                                        dot(input.transformRow3, localPosition));
+    float4 worldPosition = float4(dot(input.transformRow0, localPosition),
+                                  dot(input.transformRow1, localPosition),
+                                  dot(input.transformRow2, localPosition),
+                                  dot(input.transformRow3, localPosition));
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
     const float3 worldNormal = float3(dot(input.normalRow0.xyz, input.normal.xyz),
                                       dot(input.normalRow1.xyz, input.normal.xyz),
                                       dot(input.normalRow2.xyz, input.normal.xyz));
@@ -79,7 +89,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.position = mul(viewProjection, worldPosition);
     output.color = float4(input.color.rgb * input.tint.rgb, input.color.a * input.tint.a);
     output.worldPosition = worldPosition.xyz;
-    output.normal = float4(normalize(worldNormal), input.normal.w);
+    output.normal = float4(normalize(worldNormal), input.normal.w < 0.0 ? 0.0 : 1.0);
     output.material = input.material;
     output.textureData = float3(input.textureData & 1,
                                 max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
@@ -157,9 +167,19 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
         }
     }
 
+    const float skyMask = 1.0 - saturate(input.normal.w);
+    const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
+    const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
+    const float sunDisk = pow(saturate(dot(skyRay, skyLightDirection)), 640.0);
+    const float sunGlow = pow(saturate(dot(skyRay, skyLightDirection)), 18.0);
+    const float horizonGlow = pow(saturate(1.0 - abs(skyRay.y)), 5.0);
+    baseColor += skyMask * (float3(1.0, 0.76, 0.42) * sunDisk * 2.8
+                         + float3(1.0, 0.52, 0.24) * sunGlow * 0.24
+                         + float3(0.34, 0.20, 0.12) * horizonGlow * 0.16);
+
     const float waterMask = saturate((0.32 - roughness) * 5.0) * step(0.62, normal.y) * saturate((1.0 - input.color.a) * 6.0);
-    const float2 ripple = float2(sin(input.worldPosition.z * 0.82 + input.worldPosition.x * 0.17),
-                                 cos(input.worldPosition.x * 0.68 - input.worldPosition.z * 0.23));
+    const float2 ripple = float2(sin(input.worldPosition.z * 0.82 + input.worldPosition.x * 0.17 + fogEndEnabled.w * 1.35),
+                                 cos(input.worldPosition.x * 0.68 - input.worldPosition.z * 0.23 - fogEndEnabled.w * 1.08));
     normal = normalize(normal + float3(ripple.x, 0.0, ripple.y) * waterMask * 0.075);
 
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
@@ -198,6 +218,6 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     shaded = lerp(shaded, float3(0.24, 0.48, 0.62) + fresnel * 0.7, waterMask * (0.18 + fresnel * 0.46));
     const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
     const float fogAmount = saturate((distance(input.worldPosition, cameraFogStart.xyz) - cameraFogStart.w)
-                          / max(0.001, fogEndEnabled.x - cameraFogStart.w)) * fogEndEnabled.y * fogColor.a;
+                          / max(0.001, fogEndEnabled.x - cameraFogStart.w)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     return float4(lerp(lit, fogColor.rgb, fogAmount), input.color.a);
 }

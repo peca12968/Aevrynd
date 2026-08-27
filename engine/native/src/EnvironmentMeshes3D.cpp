@@ -32,7 +32,7 @@ Mesh3D CreateGrassClumpMesh3D(unsigned bladeCount,unsigned segments){
             const Vec3 center=forward*radial+forward*bend+Vec3{0,t*height,0};
             const Vec3 normal=Normalize(Cross(right,Vec3{0,height,0}+forward*bend));
             const uint32_t color=PackColorRgba8({.72f+.2f*t,.84f+.13f*t,.58f+.18f*t,1});
-            for(float side:{-1.f,1.f}){const Vec3 point=center+right*(side*width*taper);mesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8(normal),color});}
+            for(float side:{-1.f,1.f}){const Vec3 point=center+right*(side*width*taper);mesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8(normal,1.f-t),color});}
         }
         for(unsigned segment=0;segment<segments;++segment){const uint32_t a=base+segment*2,b=a+1,c=a+2,d=a+3;mesh.indices.insert(mesh.indices.end(),{a,c,b,b,c,d,b,c,a,b,d,c});}
     }
@@ -53,13 +53,17 @@ Mesh3D CreateTreeLodMesh3D(unsigned sides){
     Mesh3D mesh;AppendTransformed(mesh,Mesh3D::CreateUnitCylinder((std::max)(3u,sides)),{0,.5f,0},{.12f,1.f,.12f},{.34f,.2f,.1f,1});AppendTransformed(mesh,CreateBroadleafCrownMesh3D(6,4),{0,1.13f,0},{.5f,.38f,.5f},{.12f,.42f,.09f,1});return mesh;
 }
 
+Mesh3D CreateSkyDomeMesh3D(unsigned slices,unsigned stacks){
+    Mesh3D mesh=Mesh3D::CreateUnitSphere((std::max)(8u,slices),(std::max)(6u,stacks));for(Vertex3D& vertex:mesh.vertices){const Vec4 source=UnpackNormalSnorm8(vertex.normal);const float height=Clamp(vertex.y*2.f,0.f,1.f),haze=Clamp(1.f-std::abs(vertex.y)*4.f,0.f,1.f);const Color horizon{.46f,.67f,.86f,1},zenith{.065f,.19f,.39f,1};const Color color{horizon.r+(zenith.r-horizon.r)*height+.1f*haze,horizon.g+(zenith.g-horizon.g)*height+.055f*haze,horizon.b+(zenith.b-horizon.b)*height,1};vertex.normal=PackNormalSnorm8({-source.x,-source.y,-source.z},-1.f);vertex.color=PackColorRgba8(color);}for(std::size_t index=0;index<mesh.indices.size();index+=3)std::swap(mesh.indices[index+1],mesh.indices[index+2]);return mesh;
+}
+
 Mesh3D CreateCurvedRibbonMesh3D(std::span<const Vec3> centers,std::span<const float> halfWidths,float heightOffset){
     Mesh3D mesh;if(centers.size()<2||centers.size()!=halfWidths.size())return mesh;mesh.vertices.reserve(centers.size()*2);mesh.indices.reserve((centers.size()-1)*6);
     for(std::size_t index=0;index<centers.size();++index){
         const Vec3 previous=centers[index?index-1:index],next=centers[index+1<centers.size()?index+1:index];const Vec3 tangent=Normalize(Vec3{next.x-previous.x,0,next.z-previous.z});const Vec3 side=Normalize(Vec3{-tangent.z,0,tangent.x});
         for(float sign:{-1.f,1.f}){const Vec3 point=centers[index]+side*(halfWidths[index]*sign)+Vec3{0,heightOffset,0};mesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8({0,1,0}),PackColorRgba8({.86f,.94f,1,1})});}
     }
-    for(uint32_t index=0;index+1<uint32_t(centers.size());++index){const uint32_t a=index*2,b=a+1,c=a+2,d=a+3;mesh.indices.insert(mesh.indices.end(),{a,c,b,b,c,d});}
+    for(uint32_t index=0;index+1<uint32_t(centers.size());++index){const uint32_t a=index*2,b=a+1,c=a+2,d=a+3;mesh.indices.insert(mesh.indices.end(),{a,b,c,b,d,c});}
     return mesh;
 }
 }
