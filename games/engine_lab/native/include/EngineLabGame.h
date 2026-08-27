@@ -7,6 +7,7 @@
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/PhysicsWorld3D.h>
 #include <Aevrynd/Scene3D.h>
+#include <Aevrynd/TerrainClipmap3D.h>
 #include <Aevrynd/WorldBuilder3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
 #include <cstddef>
@@ -50,8 +51,10 @@ private:
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
-    struct TerrainChunkResources3D {Aevrynd::MeshResource3D high{},low{};};
+    struct TerrainChunkResources3D {Aevrynd::MeshResource3D high{},medium{},low{};};
     std::vector<TerrainChunkResources3D> terrainChunks_{};
+    Aevrynd::TerrainClipmap3D terrainClipmap_{};
+    Aevrynd::TerrainClipmapStats3D terrainClipmapStats_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle audioPing_{};
     Aevrynd::CameraRig3D cameraRig_{};

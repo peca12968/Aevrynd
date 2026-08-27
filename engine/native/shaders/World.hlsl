@@ -210,17 +210,29 @@ float3 ApplyProceduralClouds(float3 atmosphere, float3 rayDirection, float3 sunD
     return lerp(atmosphere, cloudShade + silverLining, density * 0.78);
 }
 
-float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 normal, float3 lightDirection)
+float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPosition, float3 normal, float3 lightDirection)
 {
     const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
     const float2 uv = float2(projected.x * 0.5 + 0.5, -projected.y * 0.5 + 0.5);
     if (shadowParameters.x < 0.5 || projected.z <= 0.0 || projected.z >= 1.0 || any(uv < 0.0) || any(uv > 1.0)) return 1.0;
-    const float bias = max(shadowParameters.z, shadowParameters.y * (1.0 - saturate(dot(normal, lightDirection))));
+    const float receiverCosine = saturate(dot(normal, lightDirection));
+    const float receiverSlope = sqrt(max(0.0, 1.0 - receiverCosine * receiverCosine)) / max(0.2, receiverCosine);
+    const float bias = min(0.006, shadowParameters.z + shadowParameters.y * receiverSlope);
+    const uint rotationIndex = min(3u, (uint)(CloudHash(floor(worldPosition.xz * 2.0) * 0.173 + float(cascadeIndex) * 19.19) * 4.0));
+    const float swapAxes = float(rotationIndex & 1u);
+    const float2 rotationSigns = float2((rotationIndex == 1u || rotationIndex == 2u) ? -1.0 : 1.0, rotationIndex >= 2u ? -1.0 : 1.0);
+    static const float2 poisson[12] = {
+        float2(-0.326, -0.406), float2(-0.840, -0.074), float2(-0.696, 0.457), float2(-0.203, 0.621),
+        float2(0.962, -0.195), float2(0.473, -0.480), float2(0.519, 0.768), float2(0.185, -0.893),
+        float2(0.507, 0.064), float2(0.896, 0.412), float2(-0.322, -0.933), float2(-0.792, -0.598)
+    };
     float visibility = 0.0;
-    [unroll] for (int y = -1; y <= 1; ++y)
-    [unroll] for (int x = -1; x <= 1; ++x)
-        visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * shadowParameters.w, cascadeIndex), projected.z - bias);
-    return visibility / 9.0;
+    [unroll] for (int sampleIndex = 0; sampleIndex < 12; ++sampleIndex)
+    {
+        const float2 offset = lerp(poisson[sampleIndex], poisson[sampleIndex].yx, swapAxes) * rotationSigns * shadowParameters.w * 1.45;
+        visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv + offset, cascadeIndex), projected.z - bias);
+    }
+    return visibility / 12.0;
 }
 
 float CascadedDirectionalShadow(WorldPixelInput input, float3 normal, float3 lightDirection)
@@ -228,12 +240,12 @@ float CascadedDirectionalShadow(WorldPixelInput input, float3 normal, float3 lig
     const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
     const float halfWidth = shadowTransition.x * 0.5;
     float visibility = 1.0;
-    if (cameraDistance <= shadowParameters.x - halfWidth) visibility = DirectionalShadow(input.shadowPosition, 0, normal, lightDirection);
-    else if (cameraDistance >= shadowParameters.x + halfWidth) visibility = DirectionalShadow(input.farShadowPosition, 1, normal, lightDirection);
+    if (cameraDistance <= shadowParameters.x - halfWidth) visibility = DirectionalShadow(input.shadowPosition, 0, input.worldPosition, normal, lightDirection);
+    else if (cameraDistance >= shadowParameters.x + halfWidth) visibility = DirectionalShadow(input.farShadowPosition, 1, input.worldPosition, normal, lightDirection);
     else
     {
         const float blend = smoothstep(shadowParameters.x - halfWidth, shadowParameters.x + halfWidth, cameraDistance);
-        visibility = lerp(DirectionalShadow(input.shadowPosition, 0, normal, lightDirection), DirectionalShadow(input.farShadowPosition, 1, normal, lightDirection), blend);
+        visibility = lerp(DirectionalShadow(input.shadowPosition, 0, input.worldPosition, normal, lightDirection), DirectionalShadow(input.farShadowPosition, 1, input.worldPosition, normal, lightDirection), blend);
     }
     return visibility;
 }
