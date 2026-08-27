@@ -33,6 +33,9 @@ struct MeshLodResourceChain3D {
     MeshLodResourceChain3D& operator=(MeshLodResourceChain3D&& other)noexcept{if(this!=&other){levels=std::move(other.levels);levelCount=other.levelCount;processing=other.processing;other.levels={};other.levelCount=0;other.processing={};}return*this;}
     explicit operator bool()const{return levelCount>=2&&bool(levels[0]);}
 };
+enum class MeshCpuRetention3D:std::uint8_t {Discard,RetainForQueries};
+enum class MeshLodCpuRetention3D:std::uint8_t {None,Level0Only,AllLevels};
+struct MeshCpuMemoryStats3D {std::size_t residentResources{},residentBytes{},cacheEntries{},expiredCacheEntries{};};
 enum class RenderQuality3D:std::uint8_t {Low,Medium,High,Ultra};
 constexpr std::string_view RenderQualityName3D(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return"LOW";case RenderQuality3D::Medium:return"MEDIUM";case RenderQuality3D::High:return"HIGH";default:return"ULTRA";}}
 struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; RenderQuality3D renderQuality{RenderQuality3D::Ultra}; };
@@ -42,6 +45,7 @@ struct EngineMemoryStats {
     TransientMemoryStats renderer{};
     ReusableMemoryStats audio{};
     ReusableMemoryStats game{};
+    MeshCpuMemoryStats3D meshCpu{};
     size_t lastReleasedBytes{};
     uint64_t trimCount{};
     uint64_t automaticTrimCount{};
@@ -69,8 +73,8 @@ public:
     bool DLSSOn()const{return renderer_->DLSSOn();}
     void ToggleDLSS(){renderer_->ToggleDLSS();}
     MeshHandle3D CreateMesh3D(const Mesh3D& mesh);
-    MeshResource3D CreateMeshResource3D(const Mesh3D& mesh);
-    bool CreateMeshLodResourceChain3D(const Mesh3D& mesh,MeshLodResourceChain3D& output,MeshLodChainSettings3D settings={},MeshProcessingError3D* error=nullptr);
+    MeshResource3D CreateMeshResource3D(const Mesh3D& mesh,MeshCpuRetention3D retention=MeshCpuRetention3D::RetainForQueries);
+    bool CreateMeshLodResourceChain3D(const Mesh3D& mesh,MeshLodResourceChain3D& output,MeshLodChainSettings3D settings={},MeshProcessingError3D* error=nullptr,MeshLodCpuRetention3D retention=MeshLodCpuRetention3D::Level0Only);
     void DestroyMeshLodResourceChain3D(MeshLodResourceChain3D& chain);
     void DestroyMesh3D(MeshHandle3D mesh){renderer_->DestroyMesh(mesh);}
     void SetMeshMemoryBudget(size_t bytes){renderer_->SetMeshMemoryBudget(bytes);}

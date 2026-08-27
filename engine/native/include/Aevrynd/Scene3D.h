@@ -31,8 +31,8 @@ inline MeshLodChainSelection3D EvaluateMeshLodChain3D(float centerDistance,float
 struct MeshLodObject3D {std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> levels{};std::size_t levelCount{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};Transform3D transform{};MeshBounds3D bounds{};};
 struct ProjectedShadows3D {bool enabled{};float planeHeight{.025f},opacity{.22f},maximumDistance{55.f};std::size_t maximumCasters{256};};
 struct SceneVisibility3D {float maximumDistance{},minimumProjectedRadiusPixels{};};
-struct Scene3DSubmissionOptions {bool frustumCulling{true};bool gpuInstancing{true};ProjectedShadows3D shadows{};SceneVisibility3D visibility{};std::size_t maximumLodTransitionInstances{512};};
-struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{},distanceCulledMeshInstances{},screenSizeCulledMeshInstances{},lodMeshInstances{},nearLodInstances{},farLodInstances{},lodTrianglesSaved{},lodTransitionInstances{},lodDualSubmittedInstances{},lodTransitionTriangles{},lodTransitionBudgetFallbacks{},shadowCasters{},shadowInstances{},shadowSkipped{};std::array<std::size_t,MaximumMeshLodLevels3D> selectedLodLevels{};};
+struct Scene3DSubmissionOptions {bool frustumCulling{true};bool gpuInstancing{true};ProjectedShadows3D shadows{};SceneVisibility3D visibility{};std::size_t maximumLodTransitionInstances{512},maximumShadowOnlyInstances{2048};};
+struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{},distanceCulledMeshInstances{},screenSizeCulledMeshInstances{},lodMeshInstances{},nearLodInstances{},farLodInstances{},lodTrianglesSaved{},lodTransitionInstances{},lodDualSubmittedInstances{},lodTransitionTriangles{},lodTransitionBudgetFallbacks{},shadowCasters{},shadowInstances{},shadowSkipped{},shadowOnlyCandidates{},shadowOnlyInstances{},shadowOnlyBudgetDropped{},shadowDistanceRejected{},cpuFallbackUnavailable{};std::array<std::size_t,MaximumMeshLodLevels3D> selectedLodLevels{};};
 struct Scene3DCapacity {std::size_t triangles{},lines{},boxes{},meshes{},lodMeshes{};};
 enum class SceneObjectType3D {None,Triangle,Box,Mesh};
 struct SceneQueryStats3D {std::size_t boundsTested{},boundsRejected{},trianglesTested{},bvhNodesTested{},bvhNodesRejected{},bvhLeavesVisited{},bvhObjectCandidates{},meshBvhNodesTested{},meshBvhNodesRejected{},meshBvhLeavesVisited{},meshTriangleCandidates{};std::uint64_t bvhBuilds{},meshBvhBuilds{};};
@@ -102,16 +102,298 @@ public:
     }
 
     // 網格與線段合併成單一索引批次，由 GPU 深度測試處理所有遮擋。
-    Scene3DStats Submit(DrawList& draw,const Camera3D& camera,Vec2 viewport,Scene3DSubmissionOptions options={})const{
-        draw.SetViewProjection(CreateViewProjectionMatrix(camera,viewport.x/(std::max)(1.f,viewport.y)));
-        for(const auto& triangle:triangles_)draw.WorldTriangle(triangle.a,triangle.b,triangle.c,triangle.color);
-        Scene3DStats stats{};stats.inputTriangles=TriangleCount();stats.visibleTriangles=triangles_.size();stats.inputLines=lines_.size();stats.meshInstances=MeshCount();const float aspect=viewport.x/(std::max)(1.f,viewport.y);const Mesh3D& fallbackBox=UnitBox();const Vec3 shadowDirection=draw.DirectionalLight().direction;const bool validShadowDirection=std::abs(shadowDirection.y)>.05f;const Matrix4 shadowProjection=CreateDirectionalShadowMatrix(shadowDirection,options.shadows.planeHeight),viewMatrix=CreateViewMatrix(camera);const float projectionScalePixels=camera.projection.mode==ProjectionMode::Orthographic?viewport.y/(std::max)(.001f,camera.projection.orthographicHeight):viewport.y*.5f/std::tan(Clamp(camera.projection.verticalFieldOfView,.01f,3.13f)*.5f);
-        auto visible=[&](MeshBounds3D worldBounds){const float distanceToCamera=Length(worldBounds.center-camera.position);if(options.visibility.maximumDistance>0.f&&distanceToCamera-worldBounds.radius>options.visibility.maximumDistance){++stats.culledMeshInstances;++stats.distanceCulledMeshInstances;return false;}if(options.frustumCulling&&!SphereIntersectsFrustum(worldBounds.center,worldBounds.radius,camera,aspect)){++stats.culledMeshInstances;return false;}if(options.visibility.minimumProjectedRadiusPixels>0.f){const float viewDepth=camera.projection.mode==ProjectionMode::Orthographic?1.f:TransformPoint(viewMatrix,worldBounds.center).z,projectedRadius=viewDepth>.001f?worldBounds.radius*projectionScalePixels/viewDepth:0.f;if(projectedRadius<options.visibility.minimumProjectedRadiusPixels){++stats.culledMeshInstances;++stats.screenSizeCulledMeshInstances;return false;}}return true;};
-        auto submit=[&](const MeshResource3D& resource,const Mesh3D* fallback,const MeshBounds3D* fallbackBounds,const Transform3D& transform,Material3D material,float lodCoverage=1.f,std::uint32_t lodSeed=0,bool allowShadow=true,bool visibilityAccepted=false,bool lodInvert=false){const MeshBounds3D localBounds=resource?resource.bounds:*fallbackBounds,worldBounds=TransformSphereBounds(localBounds,transform);const std::size_t triangles=resource?resource.TriangleCount():fallback->indices.size()/3;const float distanceToCamera=Length(worldBounds.center-camera.position);if(!visibilityAccepted&&!visible(worldBounds))return false;const bool castsShadow=material.castsShadow&&allowShadow;if(options.shadows.enabled&&!draw.DirectionalShadowMapEnabled()&&castsShadow&&resource){++stats.shadowCasters;if(validShadowDirection&&stats.shadowInstances<options.shadows.maximumCasters&&distanceToCamera<=options.shadows.maximumDistance){draw.MeshInstance(resource.handle,shadowProjection*transform.Matrix(),{0,0,0,options.shadows.opacity},{1,1,0,1},MeshRenderLayer3D::Overlay);++stats.shadowInstances;}else ++stats.shadowSkipped;}if(options.gpuInstancing&&resource)draw.MeshInstance(resource.handle,transform.Matrix(),material.tint,material.surface,MeshRenderLayer3D::Opaque,material.textures,material.textureScale,material.useUv,material.materialClass,std::numeric_limits<float>::quiet_NaN(),castsShadow,lodCoverage,lodSeed,lodInvert);else if(resource.cpuMesh)SubmitMesh(draw,*resource.cpuMesh,transform,material);else if(fallback)SubmitMesh(draw,*fallback,transform,material);++stats.visibleMeshInstances;stats.visibleTriangles+=triangles;return true;};
-        for(const Box3D& box:boxes_)submit(boxMesh_,&fallbackBox,&UnitBoxBounds(),box.transform,box.material);for(const MeshObject3D& mesh:meshes_)submit(mesh.mesh,mesh.mesh.cpuMesh.get(),nullptr,mesh.transform,mesh.material);for(std::size_t lodIndex=0;lodIndex<lodMeshes_.size();++lodIndex){const MeshLodObject3D& lod=lodMeshes_[lodIndex];++stats.lodMeshInstances;const MeshBounds3D worldBounds=TransformSphereBounds(lod.bounds,lod.transform);MeshLodChainSelection3D selection=EvaluateMeshLodChain3D(Length(worldBounds.center-camera.position),worldBounds.radius,std::span<const MeshLodLevel3D>{lod.levels.data(),lod.levelCount},lod.distanceMetric);const MeshLodLevel3D& nearLevel=lod.levels[selection.nearLevel];const MeshLodLevel3D& farLevel=lod.levels[selection.farLevel];const bool primaryFar=selection.primaryLevel>0,transparent=nearLevel.material.materialClass==MaterialClass3D::Water||farLevel.material.materialClass==MaterialClass3D::Water;bool transition=selection.transition&&options.gpuInstancing&&!transparent;if(!visible(worldBounds))continue;if(primaryFar)++stats.farLodInstances;else ++stats.nearLodInstances;++stats.selectedLodLevels[selection.primaryLevel];if(transition&&(stats.lodTransitionInstances>=options.maximumLodTransitionInstances||draw.meshInstances.size()>MaximumMeshInstancesPerFrame3D-4))transition=false;if(selection.transition&&!transition){++stats.lodTransitionBudgetFallbacks;}if(transition){++stats.lodTransitionInstances;++stats.lodDualSubmittedInstances;stats.lodTransitionTriangles+=nearLevel.mesh.TriangleCount()+farLevel.mesh.TriangleCount();const std::uint32_t transitionCode=std::uint32_t((lodIndex*5u+selection.nearLevel*3u+3u)&7u);submit(nearLevel.mesh,nearLevel.mesh.cpuMesh.get(),nullptr,lod.transform,nearLevel.material,selection.farCoverage,transitionCode,selection.primaryLevel==selection.nearLevel,true,true);submit(farLevel.mesh,farLevel.mesh.cpuMesh.get(),nullptr,lod.transform,farLevel.material,selection.farCoverage,transitionCode,selection.primaryLevel==selection.farLevel,true,false);}else{const MeshLodLevel3D& selected=lod.levels[selection.primaryLevel];if(submit(selected.mesh,selected.mesh.cpuMesh.get(),nullptr,lod.transform,selected.material,1.f,0,true,true)&&lod.levels[0].mesh.TriangleCount()>selected.mesh.TriangleCount())stats.lodTrianglesSaved+=lod.levels[0].mesh.TriangleCount()-selected.mesh.TriangleCount();}}
-        stats.culledTriangles=stats.inputTriangles>stats.visibleTriangles?stats.inputTriangles-stats.visibleTriangles:0;const Vec3 cameraForward=Normalize(camera.target-camera.position);
-        for(const auto& line:lines_){const Vec3 direction=Normalize(line.b-line.a);if(Length(direction)<.0001f)continue;Vec3 side=Normalize(Cross(direction,cameraForward));if(Length(side)<.0001f)side=Normalize(Cross(direction,camera.up));if(Length(side)<.0001f)continue;side=side*(line.width*.0125f);const uint32_t base=uint32_t(draw.worldVertices.size()),color=PackColorRgba8(line.color),normal=PackNormalSnorm8({0,1,0},0);for(Vec3 point:{line.a-side,line.a+side,line.b+side,line.b-side})draw.worldVertices.push_back({point.x,point.y,point.z,normal,color});draw.worldIndices.insert(draw.worldIndices.end(),{base,base+1,base+2,base,base+2,base+3});++stats.visibleLines;}
-        return stats;
+    Scene3DStats Submit(DrawList &draw, const Camera3D &camera, Vec2 viewport,
+                        Scene3DSubmissionOptions options = {}) const {
+      draw.SetViewProjection(CreateViewProjectionMatrix(
+          camera, viewport.x / (std::max)(1.f, viewport.y)));
+      for (const auto &triangle : triangles_)
+        draw.WorldTriangle(triangle.a, triangle.b, triangle.c, triangle.color);
+      Scene3DStats stats{};
+      stats.inputTriangles = TriangleCount();
+      stats.visibleTriangles = triangles_.size();
+      stats.inputLines = lines_.size();
+      stats.meshInstances = MeshCount();
+      const float aspect = viewport.x / (std::max)(1.f, viewport.y);
+      const Mesh3D &fallbackBox = UnitBox();
+      const Vec3 shadowDirection = draw.DirectionalLight().direction;
+      const bool validShadowDirection = std::abs(shadowDirection.y) > .05f;
+      const Matrix4 shadowProjection = CreateDirectionalShadowMatrix(
+                        shadowDirection, options.shadows.planeHeight),
+                    viewMatrix = CreateViewMatrix(camera);
+      const float projectionScalePixels =
+          camera.projection.mode == ProjectionMode::Orthographic
+              ? viewport.y /
+                    (std::max)(.001f, camera.projection.orthographicHeight)
+              : viewport.y * .5f /
+                    std::tan(Clamp(camera.projection.verticalFieldOfView, .01f,
+                                   3.13f) *
+                             .5f);
+      auto visible = [&](MeshBounds3D worldBounds) {
+        const float distanceToCamera =
+            Length(worldBounds.center - camera.position);
+        if (options.visibility.maximumDistance > 0.f &&
+            distanceToCamera - worldBounds.radius >
+                options.visibility.maximumDistance) {
+          ++stats.culledMeshInstances;
+          ++stats.distanceCulledMeshInstances;
+          return false;
+        }
+        if (options.frustumCulling &&
+            !SphereIntersectsFrustum(worldBounds.center, worldBounds.radius,
+                                     camera, aspect)) {
+          ++stats.culledMeshInstances;
+          return false;
+        }
+        if (options.visibility.minimumProjectedRadiusPixels > 0.f) {
+          const float
+              viewDepth =
+                  camera.projection.mode == ProjectionMode::Orthographic
+                      ? 1.f
+                      : TransformPoint(viewMatrix, worldBounds.center).z,
+              projectedRadius =
+                  viewDepth > .001f
+                      ? worldBounds.radius * projectionScalePixels / viewDepth
+                      : 0.f;
+          if (projectedRadius <
+              options.visibility.minimumProjectedRadiusPixels) {
+            ++stats.culledMeshInstances;
+            ++stats.screenSizeCulledMeshInstances;
+            return false;
+          }
+        }
+        return true;
+      };
+      const auto shadowEligible = [&](MeshBounds3D worldBounds,
+                                      Material3D material,
+                                      const MeshResource3D &resource) {
+        if (!options.shadows.enabled || !draw.DirectionalShadowMapEnabled() ||
+            !options.gpuInstancing || !resource || !material.castsShadow ||
+            material.materialClass == MaterialClass3D::Water)
+          return false;
+        return Length(worldBounds.center - camera.position) -
+                   worldBounds.radius <=
+               options.shadows.maximumDistance;
+      };
+      auto submit = [&](const MeshResource3D &resource, const Mesh3D *fallback,
+                        const MeshBounds3D *fallbackBounds,
+                        const Transform3D &transform, Material3D material,
+                        float lodCoverage = 1.f, std::uint32_t lodSeed = 0,
+                        bool allowShadow = true,
+                        bool visibilityAccepted = false,
+                        bool lodInvert = false,
+                        MeshRenderLayer3D layer = MeshRenderLayer3D::Opaque) {
+        const MeshBounds3D localBounds =
+                               resource ? resource.bounds : *fallbackBounds,
+                           worldBounds =
+                               TransformSphereBounds(localBounds, transform);
+        const std::size_t triangles =
+            resource ? resource.TriangleCount() : fallback->indices.size() / 3;
+        const float distanceToCamera =
+            Length(worldBounds.center - camera.position);
+        if (layer != MeshRenderLayer3D::ShadowOnly && !visibilityAccepted &&
+            !visible(worldBounds))
+          return false;
+        const bool castsShadow = material.castsShadow && allowShadow;
+        if (options.shadows.enabled && !draw.DirectionalShadowMapEnabled() &&
+            castsShadow && resource) {
+          ++stats.shadowCasters;
+          if (validShadowDirection &&
+              stats.shadowInstances < options.shadows.maximumCasters &&
+              distanceToCamera <= options.shadows.maximumDistance) {
+            draw.MeshInstance(resource.handle,
+                              shadowProjection * transform.Matrix(),
+                              {0, 0, 0, options.shadows.opacity}, {1, 1, 0, 1},
+                              MeshRenderLayer3D::Overlay);
+            ++stats.shadowInstances;
+          } else
+            ++stats.shadowSkipped;
+        }
+        if (options.gpuInstancing && resource)
+          draw.MeshInstance(resource.handle, transform.Matrix(), material.tint,
+                            material.surface, layer,
+                            material.textures, material.textureScale,
+                            material.useUv, material.materialClass,
+                            std::numeric_limits<float>::quiet_NaN(),
+                            castsShadow, lodCoverage, lodSeed, lodInvert);
+        else if (resource.cpuMesh)
+          SubmitMesh(draw, *resource.cpuMesh, transform, material);
+        else if (fallback)
+          SubmitMesh(draw, *fallback, transform, material);
+        else {
+          ++stats.cpuFallbackUnavailable;
+          return false;
+        }
+        if (layer == MeshRenderLayer3D::ShadowOnly)
+          ++stats.shadowOnlyInstances;
+        else {
+          ++stats.visibleMeshInstances;
+          stats.visibleTriangles += triangles;
+        }
+        return true;
+      };
+      const auto submitObject = [&](const MeshResource3D &resource,
+                                    const Mesh3D *fallback,
+                                    const MeshBounds3D *fallbackBounds,
+                                    const Transform3D &transform,
+                                    Material3D material) {
+        const MeshBounds3D localBounds =
+                               resource ? resource.bounds : *fallbackBounds,
+                           worldBounds =
+                               TransformSphereBounds(localBounds, transform);
+        if (visible(worldBounds)) {
+          const bool withinShadowDistance =
+              !options.shadows.enabled || !draw.DirectionalShadowMapEnabled() ||
+              Length(worldBounds.center - camera.position) -
+                      worldBounds.radius <=
+                  options.shadows.maximumDistance;
+          if (material.castsShadow && !withinShadowDistance)
+            ++stats.shadowDistanceRejected;
+          submit(resource, fallback, fallbackBounds, transform, material, 1.f,
+                 0, withinShadowDistance, true);
+          return;
+        }
+        if (!shadowEligible(worldBounds, material, resource))
+          return;
+        ++stats.shadowOnlyCandidates;
+        if (stats.shadowOnlyInstances >= options.maximumShadowOnlyInstances) {
+          ++stats.shadowOnlyBudgetDropped;
+          return;
+        }
+        submit(resource, fallback, fallbackBounds, transform, material, 1.f, 0,
+               true, true, false, MeshRenderLayer3D::ShadowOnly);
+      };
+      for (const Box3D &box : boxes_)
+        submitObject(boxMesh_, &fallbackBox, &UnitBoxBounds(), box.transform,
+                     box.material);
+      for (const MeshObject3D &mesh : meshes_)
+        submitObject(mesh.mesh, mesh.mesh.cpuMesh.get(), nullptr,
+                     mesh.transform, mesh.material);
+      for (std::size_t lodIndex = 0; lodIndex < lodMeshes_.size(); ++lodIndex) {
+        const MeshLodObject3D &lod = lodMeshes_[lodIndex];
+        ++stats.lodMeshInstances;
+        const MeshBounds3D worldBounds =
+            TransformSphereBounds(lod.bounds, lod.transform);
+        MeshLodChainSelection3D selection = EvaluateMeshLodChain3D(
+            Length(worldBounds.center - camera.position), worldBounds.radius,
+            std::span<const MeshLodLevel3D>{lod.levels.data(), lod.levelCount},
+            lod.distanceMetric);
+        const MeshLodLevel3D &nearLevel = lod.levels[selection.nearLevel];
+        const MeshLodLevel3D &farLevel = lod.levels[selection.farLevel];
+        const bool primaryFar = selection.primaryLevel > 0,
+                   transparent = nearLevel.material.materialClass ==
+                                     MaterialClass3D::Water ||
+                                 farLevel.material.materialClass ==
+                                     MaterialClass3D::Water;
+        bool transition =
+            selection.transition && options.gpuInstancing && !transparent;
+        if (!visible(worldBounds)) {
+          const MeshLodLevel3D &selected = lod.levels[selection.primaryLevel];
+          if (shadowEligible(worldBounds, selected.material, selected.mesh)) {
+            ++stats.shadowOnlyCandidates;
+            if (stats.shadowOnlyInstances <
+                options.maximumShadowOnlyInstances)
+              submit(selected.mesh, selected.mesh.cpuMesh.get(), nullptr,
+                     lod.transform, selected.material, 1.f, 0, true, true,
+                     false, MeshRenderLayer3D::ShadowOnly);
+            else
+              ++stats.shadowOnlyBudgetDropped;
+          }
+          continue;
+        }
+        if (primaryFar)
+          ++stats.farLodInstances;
+        else
+          ++stats.nearLodInstances;
+        ++stats.selectedLodLevels[selection.primaryLevel];
+        if (transition &&
+            (stats.lodTransitionInstances >=
+                 options.maximumLodTransitionInstances ||
+             draw.meshInstances.size() > MaximumMeshInstancesPerFrame3D - 4))
+          transition = false;
+        if (selection.transition && !transition) {
+          ++stats.lodTransitionBudgetFallbacks;
+        }
+        if (transition) {
+          const bool withinShadowDistance =
+              !options.shadows.enabled || !draw.DirectionalShadowMapEnabled() ||
+              Length(worldBounds.center - camera.position) -
+                      worldBounds.radius <=
+                  options.shadows.maximumDistance;
+          if ((selection.primaryLevel == selection.nearLevel
+                   ? nearLevel.material.castsShadow
+                   : farLevel.material.castsShadow) &&
+              !withinShadowDistance)
+            ++stats.shadowDistanceRejected;
+          ++stats.lodTransitionInstances;
+          ++stats.lodDualSubmittedInstances;
+          stats.lodTransitionTriangles +=
+              nearLevel.mesh.TriangleCount() + farLevel.mesh.TriangleCount();
+          const std::uint32_t transitionCode = std::uint32_t(
+              (lodIndex * 5u + selection.nearLevel * 3u + 3u) & 7u);
+          submit(nearLevel.mesh, nearLevel.mesh.cpuMesh.get(), nullptr,
+                 lod.transform, nearLevel.material, selection.farCoverage,
+                 transitionCode,
+                 withinShadowDistance &&
+                     selection.primaryLevel == selection.nearLevel,
+                 true, true);
+          submit(farLevel.mesh, farLevel.mesh.cpuMesh.get(), nullptr,
+                 lod.transform, farLevel.material, selection.farCoverage,
+                 transitionCode,
+                 withinShadowDistance &&
+                     selection.primaryLevel == selection.farLevel,
+                 true, false);
+        } else {
+          const MeshLodLevel3D *selected = &lod.levels[selection.primaryLevel];
+          if (!options.gpuInstancing && !selected->mesh.cpuMesh)
+            for (std::size_t level = selection.primaryLevel + 1; level-- > 0;)
+              if (lod.levels[level].mesh.cpuMesh) {
+                selected = &lod.levels[level];
+                break;
+              }
+          const bool withinShadowDistance =
+              !options.shadows.enabled || !draw.DirectionalShadowMapEnabled() ||
+              Length(worldBounds.center - camera.position) -
+                      worldBounds.radius <=
+                  options.shadows.maximumDistance;
+          if (selected->material.castsShadow && !withinShadowDistance)
+            ++stats.shadowDistanceRejected;
+          if (submit(selected->mesh, selected->mesh.cpuMesh.get(), nullptr,
+                     lod.transform, selected->material, 1.f, 0,
+                     withinShadowDistance, true) &&
+              lod.levels[0].mesh.TriangleCount() >
+                  selected->mesh.TriangleCount())
+            stats.lodTrianglesSaved += lod.levels[0].mesh.TriangleCount() -
+                                       selected->mesh.TriangleCount();
+        }
+      }
+      stats.culledTriangles =
+          stats.inputTriangles > stats.visibleTriangles
+              ? stats.inputTriangles - stats.visibleTriangles
+              : 0;
+      const Vec3 cameraForward = Normalize(camera.target - camera.position);
+      for (const auto &line : lines_) {
+        const Vec3 direction = Normalize(line.b - line.a);
+        if (Length(direction) < .0001f)
+          continue;
+        Vec3 side = Normalize(Cross(direction, cameraForward));
+        if (Length(side) < .0001f)
+          side = Normalize(Cross(direction, camera.up));
+        if (Length(side) < .0001f)
+          continue;
+        side = side * (line.width * .0125f);
+        const uint32_t base = uint32_t(draw.worldVertices.size()),
+                       color = PackColorRgba8(line.color),
+                       normal = PackNormalSnorm8({0, 1, 0}, 0);
+        for (Vec3 point :
+             {line.a - side, line.a + side, line.b + side, line.b - side})
+          draw.worldVertices.push_back(
+              {point.x, point.y, point.z, normal, color});
+        draw.worldIndices.insert(
+            draw.worldIndices.end(),
+            {base, base + 1, base + 2, base, base + 2, base + 3});
+        ++stats.visibleLines;
+      }
+      return stats;
     }
 
     std::size_t TriangleCount()const{std::size_t count=triangles_.size()+boxes_.size()*12;for(const MeshObject3D& mesh:meshes_)count+=mesh.mesh.TriangleCount();for(const MeshLodObject3D& mesh:lodMeshes_)count+=mesh.levels[0].mesh.TriangleCount();return count;}

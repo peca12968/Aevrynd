@@ -50,7 +50,7 @@ void AddTree(Scene3D& scene,const HeightField3D& terrain,const MeshResource3D& t
 void AddHouse(Scene3D& scene,const HeightField3D& terrain,const MeshResource3D& cottageHigh,const MeshResource3D& cottageLow,Vec3 center,float scale,float yaw,Material3D material){
     center.y=terrain.SampleHeight(center.x,center.z);scene.MeshLod(cottageHigh,cottageLow,WorldLod(52),{center,{0,yaw,0},{scale,scale,scale}},material);
 }
-void MergeSceneStats(Scene3DStats& target,const Scene3DStats& source){target.inputTriangles+=source.inputTriangles;target.visibleTriangles+=source.visibleTriangles;target.culledTriangles+=source.culledTriangles;target.inputLines+=source.inputLines;target.visibleLines+=source.visibleLines;target.meshInstances+=source.meshInstances;target.visibleMeshInstances+=source.visibleMeshInstances;target.culledMeshInstances+=source.culledMeshInstances;target.distanceCulledMeshInstances+=source.distanceCulledMeshInstances;target.screenSizeCulledMeshInstances+=source.screenSizeCulledMeshInstances;target.lodMeshInstances+=source.lodMeshInstances;target.nearLodInstances+=source.nearLodInstances;target.farLodInstances+=source.farLodInstances;target.lodTrianglesSaved+=source.lodTrianglesSaved;target.lodTransitionInstances+=source.lodTransitionInstances;target.lodDualSubmittedInstances+=source.lodDualSubmittedInstances;target.lodTransitionTriangles+=source.lodTransitionTriangles;target.lodTransitionBudgetFallbacks+=source.lodTransitionBudgetFallbacks;target.shadowCasters+=source.shadowCasters;target.shadowInstances+=source.shadowInstances;target.shadowSkipped+=source.shadowSkipped;for(std::size_t level=0;level<MaximumMeshLodLevels3D;++level)target.selectedLodLevels[level]+=source.selectedLodLevels[level];}
+void MergeSceneStats(Scene3DStats& target,const Scene3DStats& source){target.inputTriangles+=source.inputTriangles;target.visibleTriangles+=source.visibleTriangles;target.culledTriangles+=source.culledTriangles;target.inputLines+=source.inputLines;target.visibleLines+=source.visibleLines;target.meshInstances+=source.meshInstances;target.visibleMeshInstances+=source.visibleMeshInstances;target.culledMeshInstances+=source.culledMeshInstances;target.distanceCulledMeshInstances+=source.distanceCulledMeshInstances;target.screenSizeCulledMeshInstances+=source.screenSizeCulledMeshInstances;target.lodMeshInstances+=source.lodMeshInstances;target.nearLodInstances+=source.nearLodInstances;target.farLodInstances+=source.farLodInstances;target.lodTrianglesSaved+=source.lodTrianglesSaved;target.lodTransitionInstances+=source.lodTransitionInstances;target.lodDualSubmittedInstances+=source.lodDualSubmittedInstances;target.lodTransitionTriangles+=source.lodTransitionTriangles;target.lodTransitionBudgetFallbacks+=source.lodTransitionBudgetFallbacks;target.shadowCasters+=source.shadowCasters;target.shadowInstances+=source.shadowInstances;target.shadowSkipped+=source.shadowSkipped;target.shadowOnlyCandidates+=source.shadowOnlyCandidates;target.shadowOnlyInstances+=source.shadowOnlyInstances;target.shadowOnlyBudgetDropped+=source.shadowOnlyBudgetDropped;target.shadowDistanceRejected+=source.shadowDistanceRejected;target.cpuFallbackUnavailable+=source.cpuFallbackUnavailable;for(std::size_t level=0;level<MaximumMeshLodLevels3D;++level)target.selectedLodLevels[level]+=source.selectedLodLevels[level];}
 struct BundledMaterialAsset {int resourceId;std::filesystem::path relativePath;};
 std::filesystem::path BundledMaterialRoot(){
     const std::filesystem::path root=std::filesystem::temp_directory_path()/"Aevrynd"/"EngineLab"/"material-packs-v1";
@@ -64,23 +64,364 @@ std::filesystem::path BundledMaterialRoot(){
 Aevrynd::ReusableMemoryStats EngineLabGame::GetReusableMemoryStats()const{const ReusableMemoryStats scene=scene_.MemoryStats(),landscape=landscapeScene_.MemoryStats(),physics=physicsWorld_.MemoryStats(),streaming=worldStreamer_.MemoryStats(),navigation=navigationWorkspace_.MemoryStats();const std::size_t retained=scene.retainedCapacityBytes+landscape.retainedCapacityBytes+physics.retainedCapacityBytes+streaming.retainedCapacityBytes+navigation.retainedCapacityBytes+terrainClipmap_.CapacityBytes()+authoredDynamicObjects_.capacity()*sizeof(WorldObjectHandle3D),reclaimable=scene.reclaimableCapacityBytes+landscape.reclaimableCapacityBytes+physics.reclaimableCapacityBytes+streaming.reclaimableCapacityBytes+navigation.reclaimableCapacityBytes+(authoredDynamicObjects_.capacity()>authoredDynamicObjects_.size()?(authoredDynamicObjects_.capacity()-authoredDynamicObjects_.size())*sizeof(WorldObjectHandle3D):0);return{retained,reclaimable,lastReusableMemoryReleasedBytes_,reusableMemoryTrimCount_};}
 std::size_t EngineLabGame::TrimReusableMemory(){const std::size_t before=GetReusableMemoryStats().retainedCapacityBytes;scene_.TrimUnusedMemory();landscapeScene_.TrimUnusedMemory();physicsWorld_.TrimUnusedMemory();worldStreamer_.TrimUnusedMemory();navigationWorkspace_.TrimUnusedMemory(std::size_t(navigationGrid_.Settings().width)*navigationGrid_.Settings().depth);std::vector<WorldObjectHandle3D>(authoredDynamicObjects_).swap(authoredDynamicObjects_);const std::size_t after=GetReusableMemoryStats().retainedCapacityBytes;lastReusableMemoryReleasedBytes_=before>after?before-after:0;++reusableMemoryTrimCount_;return lastReusableMemoryReleasedBytes_;}
 
-void EngineLabGame::OnStart(Engine& engine){
-    cameraMode_=0;effectCycle_=-1;effects_.Clear();automatic_=true;cullingEnabled_=true;instancingEnabled_=true;backfaceCulling_=true;lightingEnabled_=true;cameraRig_.Reset(CameraViewMode3D::FirstPerson,{0,3.f,-12});camera_=cameraRig_.Camera();worldStreamer_.Configure({16,2,3,4,8,0x31aeu});for(int index=0;index<7;++index)worldStreamingStats_=worldStreamer_.Update({0,0,25});
-    MeshLodChainSettings3D automaticLodSettings;automaticLodSettings.targetTriangleRatios={.6f,.3f,.08f};MeshProcessingError3D automaticLodError;if(!engine.CreateMeshLodResourceChain3D(Mesh3D::CreateUnitSphere(32,20),automaticSphereLod_,automaticLodSettings,&automaticLodError))throw std::runtime_error("Automatic GPU LOD chain creation failed");
-    MeshLodResourceChain3D automaticLodCacheProbe;if(!engine.CreateMeshLodResourceChain3D(Mesh3D::CreateUnitSphere(32,20),automaticLodCacheProbe,automaticLodSettings,&automaticLodError))throw std::runtime_error("Automatic GPU LOD cache probe failed");for(std::size_t level=0;level<automaticSphereLod_.levelCount;++level)if(automaticSphereLod_.levels[level].handle!=automaticLodCacheProbe.levels[level].handle||automaticSphereLod_.levels[level].cpuMesh!=automaticLodCacheProbe.levels[level].cpuMesh)throw std::runtime_error("Automatic GPU LOD cache mismatch");engine.DestroyMeshLodResourceChain3D(automaticLodCacheProbe);
-    Mesh3D budgetProbeSource=Mesh3D::CreateUnitSphere(32,20);for(Vertex3D& vertex:budgetProbeSource.vertices)vertex.color^=0x00010101u;std::vector<Mesh3D> budgetProbeCpuLevels;if(!MeshProcessing3D::GenerateLodChain(budgetProbeSource,budgetProbeCpuLevels,automaticLodSettings,nullptr,&automaticLodError))throw std::runtime_error("Automatic GPU LOD budget fixture failed");const auto meshBytes=[](const Mesh3D& mesh){return mesh.vertices.size()*sizeof(Vertex3D)+mesh.indices.size()*sizeof(std::uint32_t);};const RendererStats beforeBudgetProbe=engine.GetRendererStats();engine.SetMeshMemoryBudget(beforeBudgetProbe.residentMeshBytes+meshBytes(budgetProbeSource)+meshBytes(budgetProbeCpuLevels[0]));MeshLodResourceChain3D rejectedBudgetChain;if(engine.CreateMeshLodResourceChain3D(budgetProbeSource,rejectedBudgetChain,automaticLodSettings,&automaticLodError)||automaticLodError.code!=MeshProcessingErrorCode3D::LimitExceeded)throw std::runtime_error("Automatic GPU LOD budget rejection failed");const RendererStats afterBudgetProbe=engine.GetRendererStats();if(afterBudgetProbe.residentMeshResources!=beforeBudgetProbe.residentMeshResources||afterBudgetProbe.residentMeshReferences!=beforeBudgetProbe.residentMeshReferences||afterBudgetProbe.residentMeshBytes!=beforeBudgetProbe.residentMeshBytes)throw std::runtime_error("Automatic GPU LOD rollback leaked a resident resource");engine.SetMeshMemoryBudget(64*1024*1024);
-    engine.SetMeshMemoryBudget(64*1024*1024);boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());pyramidMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitPyramid());cylinderMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCylinder(12));sphereHighMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(12,8));sphereLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(6,3));grassHighMesh_=engine.CreateMeshResource3D(CreateGrassClumpMesh3D(11,3));grassLowMesh_=engine.CreateMeshResource3D(CreateGrassClumpMesh3D(4,2));treeHighMesh_=engine.CreateMeshResource3D(CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,0x31aeu));treeLowMesh_=engine.CreateMeshResource3D(CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Far,0x31aeu));coniferHighMesh_=engine.CreateMeshResource3D(CreateConiferTreeMesh3D(EnvironmentMeshDetail3D::Near,0x48d2u));coniferLowMesh_=engine.CreateMeshResource3D(CreateConiferTreeMesh3D(EnvironmentMeshDetail3D::Far,0x48d2u));CottageMeshSettings3D cottageSettings{};cottageSettings.width=5.8f;cottageSettings.depth=5.2f;cottageSettings.wallHeight=3.4f;cottageSettings.roofHeight=1.7f;cottageSettings.seed=0x31aeu;cottageHighMesh_=engine.CreateMeshResource3D(CreateCottageMesh3D(cottageSettings));cottageSettings.detail=ArchitectureMeshDetail3D::Far;cottageLowMesh_=engine.CreateMeshResource3D(CreateCottageMesh3D(cottageSettings));terrain_.Configure({{-64,0,-32},65,65,2});HeightFieldUltraSettings3D ultraTerrain{};ultraTerrain.amplitude=8.5f;ultraTerrain.frequency=.012f;ultraTerrain.ridgeStrength=.54f;ultraTerrain.valleyStrength=.22f;ultraTerrain.domainWarp=22.f;ultraTerrain.octaves=6;ultraTerrain.talusSlope=.82f;ultraTerrain.depositionStrength=.15f;if(!terrain_.GenerateUltra(0x31aeu,ultraTerrain))throw std::runtime_error("Ultra terrain generation failed");terrain_.FlattenCircle({-12,0,18},13,0,7);terrain_.FlattenCircle({8,0,36},18,0,8);riverMesh_=engine.CreateMeshResource3D(CreateLandscapeRiverMesh(terrain_));HeightFieldMeshSettings3D terrainMeshSettings{{1,1,1,1},{1,1,1,1},{1,1,1,1},.74f};terrainMeshSettings.macroBiomeSeed=0x31aeu;terrainMeshSettings.macroBiomeScale=.014f;terrainMeshSettings.macroBiomeStrength=0;terrainMeshSettings.biomeLayerStrength=1;terrainMeshSettings.grassBiomeColor={1,1,1,1};terrainMeshSettings.soilBiomeColor={1,1,1,1};terrainMeshSettings.rockBiomeColor={1,1,1,1};terrainMeshSettings.soilAltitudeNormalized=.38f;terrainMeshSettings.rockAltitudeNormalized=.7f;terrainMeshSettings.altitudeBlend=.14f;terrainMeshSettings.slopeRockNormalY=.7f;terrainMeshSettings.slopeBlend=.13f;terrainChunks_.clear();terrainChunks_.reserve(16);std::size_t highTerrainIndices{},mediumTerrainIndices{},lowTerrainIndices{};for(unsigned chunkZ=0;chunkZ<4;++chunkZ)for(unsigned chunkX=0;chunkX<4;++chunkX){HeightFieldChunkLodSettings3D highSettings{chunkX*16,chunkZ*16,16,16,{1,true,3.f}},mediumSettings{chunkX*16,chunkZ*16,16,16,{2,true,3.f}},lowSettings{chunkX*16,chunkZ*16,16,16,{4,true,3.f}};const Mesh3D highDefinition=terrain_.CreateChunkLodMesh(highSettings,terrainMeshSettings),mediumDefinition=terrain_.CreateChunkLodMesh(mediumSettings,terrainMeshSettings),lowDefinition=terrain_.CreateChunkLodMesh(lowSettings,terrainMeshSettings);if(!highDefinition.Valid()||!mediumDefinition.Valid()||!lowDefinition.Valid())throw std::runtime_error("Terrain chunk LOD generation failed");highTerrainIndices+=highDefinition.indices.size();mediumTerrainIndices+=mediumDefinition.indices.size();lowTerrainIndices+=lowDefinition.indices.size();terrainChunks_.push_back({engine.CreateMeshResource3D(highDefinition),engine.CreateMeshResource3D(mediumDefinition),engine.CreateMeshResource3D(lowDefinition)});}if(terrainChunks_.size()!=16||mediumTerrainIndices>=highTerrainIndices||lowTerrainIndices>=mediumTerrainIndices)throw std::runtime_error("Terrain chunk LOD validation failed");constexpr std::array<float,2> terrainLodBands={42.f,78.f};if(!terrainClipmap_.Configure({{-64,0,-32},4,4,32.f,terrainLodBands,6.f,16,16,3}))throw std::runtime_error("Terrain clipmap configuration failed");for(int convergence=0;convergence<3;++convergence)if(!terrainClipmap_.Update({0,0,25}))throw std::runtime_error("Terrain clipmap initialization failed");terrainClipmapStats_=terrainClipmap_.Stats();if(terrainClipmapStats_.deferredChunks)throw std::runtime_error("Terrain clipmap convergence failed");const Mesh3D cacheDefinition=terrain_.CreateChunkLodMesh({0,0,16,16,{1,true,3.f}},terrainMeshSettings);for(int cacheRequest=0;cacheRequest<16;++cacheRequest){const MeshResource3D sharedTerrain=engine.CreateMeshResource3D(cacheDefinition);if(sharedTerrain.handle!=terrainChunks_.front().high.handle||sharedTerrain.cpuMesh!=terrainChunks_.front().high.cpuMesh)throw std::runtime_error("Mesh cache validation failed");engine.DestroyMesh3D(sharedTerrain.handle);}const MeshLoadResult3D probe=LoadObjMeshFile(engine.ExecutableDirectory()/"assets"/"engine_probe.obj");if(probe)probeMesh_=engine.CreateMeshResource3D(probe.mesh);scene_.SetBoxMesh(boxMesh_);scene_.Reserve({0,128,2048,512,320});audioPing_=engine.Audio().CreateSound(GenerateTone(660,.09f,.16f));engine.Audio().Play(audioPing_);
-    worldBuilder_.Initialize(engine);physicsWorld_.Clear();authoredDynamicObjects_.clear();physicsImpulseCycle_=-1;engine.SetMaterialTextureMemoryBudget(96*1024*1024);const std::filesystem::path materialsRoot=BundledMaterialRoot();constexpr MaterialResolutionPolicy3D resolutionPolicy{};const unsigned environmentResolution=resolutionPolicy.Select(MaterialDetailClass3D::Environment,MaterialQualityFor(engine.RenderQuality()));MaterialTextureSetDefinition3D groundDefinition{materialsRoot/"ambientcg"/"ground037"/"1k"/"Ground037_1K-JPG_Color.jpg",materialsRoot/"ambientcg"/"ground037"/"1k"/"Ground037_1K-JPG_Roughness.jpg",environmentResolution,materialsRoot/"ambientcg"/"ground037"/"1k"/"Ground037_1K-JPG_NormalDX.jpg"};groundDefinition.additionalLayers={MaterialTextureLayerDefinition3D{materialsRoot/"poly-haven"/"aerial_ground_rock"/"1k"/"base-color.jpg",materialsRoot/"poly-haven"/"aerial_ground_rock"/"1k"/"roughness.jpg",materialsRoot/"poly-haven"/"aerial_ground_rock"/"1k"/"normal-dx.jpg"},MaterialTextureLayerDefinition3D{materialsRoot/"poly-haven"/"rock_surface"/"1k"/"base-color.jpg",materialsRoot/"poly-haven"/"rock_surface"/"1k"/"roughness.jpg",materialsRoot/"poly-haven"/"rock_surface"/"1k"/"normal-dx.jpg"}};const MaterialTextureSetHandle3D releaseProbe=engine.CreateMaterialTextureSet3D({groundDefinition.baseColorPath,groundDefinition.roughnessPath,512,groundDefinition.normalPath});engine.DestroyMaterialTextureSet3D(releaseProbe);materialLibrary_.Initialize(engine,materialsRoot);const std::array<MaterialAssetDefinition3D,3> materialDefinitions={MaterialAssetDefinition3D{"ground",groundDefinition},MaterialAssetDefinition3D{"wood",{"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg","ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",environmentResolution,"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"}},MaterialAssetDefinition3D{"brick",{"poly-haven/brick_floor/1k/base-color.jpg","poly-haven/brick_floor/1k/roughness.jpg",environmentResolution,"poly-haven/brick_floor/1k/normal-dx.jpg"}}};if(!materialLibrary_.LoadAll(materialDefinitions))throw std::runtime_error("Material library validation failed");const MaterialTextureSetHandle3D groundTextures=materialLibrary_.Textures("ground"),woodTextures=materialLibrary_.Textures("wood"),brickTextures=materialLibrary_.Textures("brick");for(int cacheRequest=0;cacheRequest<32;++cacheRequest){const MaterialTextureSetHandle3D sharedGroundProbe=engine.CreateMaterialTextureSet3D(groundDefinition);engine.DestroyMaterialTextureSet3D(sharedGroundProbe);}
-    materialLibraryStats_=materialLibrary_.Stats();groundMaterial_=*materialLibrary_.Find("ground");woodMaterial_=*materialLibrary_.Find("wood");brickMaterial_=*materialLibrary_.Find("brick");groundMaterial_.tint={.66f,.7f,.62f,1};groundMaterial_.surface=GroundSurface;groundMaterial_.castsShadow=false;groundMaterial_.textureScale=.055f;groundMaterial_.materialClass=MaterialClass3D::Terrain;woodMaterial_.surface={.78f,0,0,.92f};woodMaterial_.textureScale=.42f;brickMaterial_.surface={.88f,0,0,.94f};brickMaterial_.textureScale=.36f;
-    worldBuilder_.Create("authoring_floor",PrimitiveShape3D::Box,{{-12,.25f,18},{},{10,.5f,8}},MaterialPreset3D::Stone,{1,1,1,1},RigidBodyType3D::Static,&physicsWorld_,groundTextures,.28f);
-    worldBuilder_.Create("authoring_backstop",PrimitiveShape3D::Box,{{-12,1.5f,21.8f},{},{10,2.5f,.35f}},MaterialPreset3D::Stone,{1,1,1,1},RigidBodyType3D::Static,&physicsWorld_,brickTextures,.42f);
-    worldBuilder_.Create("material_ground_panel",PrimitiveShape3D::Box,{{-15.6f,3.f,16},{},{3.2f,5.f,.35f}},MaterialPreset3D::Stone,{1,1,1,1},RigidBodyType3D::Static,&physicsWorld_,groundTextures,.34f);
-    worldBuilder_.Create("material_wood_panel",PrimitiveShape3D::Box,{{-12,3.f,16},{},{3.2f,5.f,.35f}},MaterialPreset3D::Wood,{1,1,1,1},RigidBodyType3D::Static,&physicsWorld_,woodTextures,.5f);
-    worldBuilder_.Create("material_brick_panel",PrimitiveShape3D::Box,{{-8.4f,3.f,16},{},{3.2f,5.f,.35f}},MaterialPreset3D::Stone,{1,1,1,1},RigidBodyType3D::Static,&physicsWorld_,brickTextures,.48f);
-    constexpr std::array<PrimitiveShape3D,5> shapes={PrimitiveShape3D::Box,PrimitiveShape3D::Sphere,PrimitiveShape3D::Cylinder,PrimitiveShape3D::Cone,PrimitiveShape3D::Pyramid};constexpr std::array<MaterialPreset3D,5> materials={MaterialPreset3D::Wood,MaterialPreset3D::Metal,MaterialPreset3D::Glass,MaterialPreset3D::Emissive,MaterialPreset3D::Matte};constexpr std::array<Color,5> tints={Color{.5f,.22f,.07f,1},Color{.62f,.68f,.72f,1},Color{.2f,.68f,1,.4f},Color{.12f,.92f,.75f,1},Color{.72f,.2f,.14f,1}};
-    for(int index=0;index<10;++index){const float x=-16.2f+float(index%5)*2.05f,z=16.8f+float(index/5)*2.1f,y=2.4f+float(index%3)*1.15f;const MaterialTextureSetHandle3D textures=index%3==0?woodTextures:index%3==1?brickTextures:groundTextures;authoredDynamicObjects_.push_back(worldBuilder_.Create(std::format("runtime_object_{}",index),shapes[std::size_t(index)%shapes.size()],{{x,y,z},{0,float(index)*.17f,0},{1.05f,1.05f,1.05f}},materials[std::size_t(index)%materials.size()],{.9f,.9f,.9f,tints[std::size_t(index)%tints.size()].a},RigidBodyType3D::Dynamic,&physicsWorld_,textures,.65f));}
-    animationSkeleton_.joints={{-1,AnimationJoint({0,1,0})},{0,AnimationJoint({0,1.2f,0})},{1,AnimationJoint({0,1.1f,0})}};animationClip_={2,true,{AnimationTrack(0,{{0,AnimationJoint({0,1,0},{0,0,-.35f})},{1,AnimationJoint({0,1,0},{0,0,.35f})},{2,AnimationJoint({0,1,0},{0,0,-.35f})}}),AnimationTrack(1,{{0,AnimationJoint({0,1.2f,0},{.45f,0,0})},{1,AnimationJoint({0,1.2f,0},{-.45f,0,0})},{2,AnimationJoint({0,1.2f,0},{.45f,0,0})}}),AnimationTrack(2,{{0,AnimationJoint({0,1.1f,0},{0,-.5f,0})},{1,AnimationJoint({0,1.1f,0},{0,.5f,0})},{2,AnimationJoint({0,1.1f,0},{0,-.5f,0})}})}};navigationGrid_.Configure({{-20,0,5},40,40,1,1600,true});for(int z=0;z<40;++z)if(z<18||z>21)navigationGrid_.SetBlocked({20,z});navigationPath_.stats=navigationGrid_.FindPathInto({-15,0,10},{15,0,40},navigationWorkspace_,navigationPath_.points);
-    skyDomeMesh_=engine.CreateMeshResource3D(CreateSkyDomeMesh3D(32,16));mountainHighMesh_=engine.CreateMeshResource3D(CreateMountainRangeMesh3D(EnvironmentMeshDetail3D::Near,0x31aeu));mountainLowMesh_=engine.CreateMeshResource3D(CreateMountainRangeMesh3D(EnvironmentMeshDetail3D::Far,0x31aeu));rockHighMesh_=engine.CreateMeshResource3D(CreateRockMesh3D(EnvironmentMeshDetail3D::Near,0x714bu));rockLowMesh_=engine.CreateMeshResource3D(CreateRockMesh3D(EnvironmentMeshDetail3D::Far,0x714bu));BuildLandscapeScene();if(engine.DLSSOn())engine.ToggleDLSS();
+void EngineLabGame::OnStart(Engine &engine) {
+  cameraMode_ = 0;
+  effectCycle_ = -1;
+  effects_.Clear();
+  automatic_ = true;
+  cullingEnabled_ = true;
+  instancingEnabled_ = true;
+  backfaceCulling_ = true;
+  lightingEnabled_ = true;
+  cameraRig_.Reset(CameraViewMode3D::FirstPerson, {0, 3.f, -12});
+  camera_ = cameraRig_.Camera();
+  worldStreamer_.Configure({16, 2, 3, 4, 8, 0x31aeu});
+  for (int index = 0; index < 7; ++index)
+    worldStreamingStats_ = worldStreamer_.Update({0, 0, 25});
+  MeshLodChainSettings3D automaticLodSettings;
+  automaticLodSettings.targetTriangleRatios = {.6f, .3f, .08f};
+  MeshProcessingError3D automaticLodError;
+  if (!engine.CreateMeshLodResourceChain3D(
+          Mesh3D::CreateUnitSphere(32, 20), automaticSphereLod_,
+          automaticLodSettings, &automaticLodError))
+    throw std::runtime_error("Automatic GPU LOD chain creation failed");
+  if (!automaticSphereLod_.levels[0].cpuMesh ||
+      std::ranges::any_of(
+          std::span{automaticSphereLod_.levels}.subspan(
+              1, automaticSphereLod_.levelCount - 1),
+          [](const MeshResource3D &level) { return bool(level.cpuMesh); }))
+    throw std::runtime_error("Automatic GPU LOD CPU retention failed");
+  const std::size_t compactLodCpuBytes =
+      engine.GetMemoryStats().meshCpu.residentBytes;
+  MeshLodResourceChain3D allCpuLodProbe;
+  if (!engine.CreateMeshLodResourceChain3D(
+          Mesh3D::CreateUnitSphere(32, 20), allCpuLodProbe,
+          automaticLodSettings, &automaticLodError,
+          MeshLodCpuRetention3D::AllLevels) ||
+      std::ranges::any_of(
+          std::span{allCpuLodProbe.levels}.first(allCpuLodProbe.levelCount),
+          [](const MeshResource3D &level) { return !level.cpuMesh; }) ||
+      engine.GetMemoryStats().meshCpu.residentBytes <= compactLodCpuBytes)
+    throw std::runtime_error("Automatic GPU LOD full CPU retention failed");
+  engine.DestroyMeshLodResourceChain3D(allCpuLodProbe);
+  MeshLodResourceChain3D automaticLodCacheProbe;
+  if (!engine.CreateMeshLodResourceChain3D(
+          Mesh3D::CreateUnitSphere(32, 20), automaticLodCacheProbe,
+          automaticLodSettings, &automaticLodError))
+    throw std::runtime_error("Automatic GPU LOD cache probe failed");
+  for (std::size_t level = 0; level < automaticSphereLod_.levelCount; ++level)
+    if (automaticSphereLod_.levels[level].handle !=
+            automaticLodCacheProbe.levels[level].handle ||
+        automaticSphereLod_.levels[level].cpuMesh !=
+            automaticLodCacheProbe.levels[level].cpuMesh)
+      throw std::runtime_error("Automatic GPU LOD cache mismatch");
+  engine.DestroyMeshLodResourceChain3D(automaticLodCacheProbe);
+  Mesh3D budgetProbeSource = Mesh3D::CreateUnitSphere(32, 20);
+  for (Vertex3D &vertex : budgetProbeSource.vertices)
+    vertex.color ^= 0x00010101u;
+  std::vector<Mesh3D> budgetProbeCpuLevels;
+  if (!MeshProcessing3D::GenerateLodChain(
+          budgetProbeSource, budgetProbeCpuLevels, automaticLodSettings,
+          nullptr, &automaticLodError))
+    throw std::runtime_error("Automatic GPU LOD budget fixture failed");
+  const auto meshBytes = [](const Mesh3D &mesh) {
+    return mesh.vertices.size() * sizeof(Vertex3D) +
+           mesh.indices.size() * sizeof(std::uint32_t);
+  };
+  const RendererStats beforeBudgetProbe = engine.GetRendererStats();
+  engine.SetMeshMemoryBudget(beforeBudgetProbe.residentMeshBytes +
+                             meshBytes(budgetProbeSource) +
+                             meshBytes(budgetProbeCpuLevels[0]));
+  MeshLodResourceChain3D rejectedBudgetChain;
+  if (engine.CreateMeshLodResourceChain3D(
+          budgetProbeSource, rejectedBudgetChain, automaticLodSettings,
+          &automaticLodError) ||
+      automaticLodError.code != MeshProcessingErrorCode3D::LimitExceeded)
+    throw std::runtime_error("Automatic GPU LOD budget rejection failed");
+  const RendererStats afterBudgetProbe = engine.GetRendererStats();
+  if (afterBudgetProbe.residentMeshResources !=
+          beforeBudgetProbe.residentMeshResources ||
+      afterBudgetProbe.residentMeshReferences !=
+          beforeBudgetProbe.residentMeshReferences ||
+      afterBudgetProbe.residentMeshBytes != beforeBudgetProbe.residentMeshBytes)
+    throw std::runtime_error(
+        "Automatic GPU LOD rollback leaked a resident resource");
+  engine.SetMeshMemoryBudget(64 * 1024 * 1024);
+  boxMesh_ = engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());
+  pyramidMesh_ = engine.CreateMeshResource3D(Mesh3D::CreateUnitPyramid());
+  cylinderMesh_ = engine.CreateMeshResource3D(Mesh3D::CreateUnitCylinder(12));
+  sphereHighMesh_ =
+      engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(12, 8));
+  sphereLowMesh_ = engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(6, 3));
+  grassHighMesh_ = engine.CreateMeshResource3D(CreateGrassClumpMesh3D(11, 3));
+  grassLowMesh_ = engine.CreateMeshResource3D(CreateGrassClumpMesh3D(4, 2));
+  treeHighMesh_ = engine.CreateMeshResource3D(
+      CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near, 0x31aeu));
+  treeLowMesh_ = engine.CreateMeshResource3D(
+      CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Far, 0x31aeu));
+  coniferHighMesh_ = engine.CreateMeshResource3D(
+      CreateConiferTreeMesh3D(EnvironmentMeshDetail3D::Near, 0x48d2u));
+  coniferLowMesh_ = engine.CreateMeshResource3D(
+      CreateConiferTreeMesh3D(EnvironmentMeshDetail3D::Far, 0x48d2u));
+  CottageMeshSettings3D cottageSettings{};
+  cottageSettings.width = 5.8f;
+  cottageSettings.depth = 5.2f;
+  cottageSettings.wallHeight = 3.4f;
+  cottageSettings.roofHeight = 1.7f;
+  cottageSettings.seed = 0x31aeu;
+  cottageHighMesh_ =
+      engine.CreateMeshResource3D(CreateCottageMesh3D(cottageSettings));
+  cottageSettings.detail = ArchitectureMeshDetail3D::Far;
+  cottageLowMesh_ =
+      engine.CreateMeshResource3D(CreateCottageMesh3D(cottageSettings));
+  terrain_.Configure({{-64, 0, -32}, 65, 65, 2});
+  HeightFieldUltraSettings3D ultraTerrain{};
+  ultraTerrain.amplitude = 8.5f;
+  ultraTerrain.frequency = .012f;
+  ultraTerrain.ridgeStrength = .54f;
+  ultraTerrain.valleyStrength = .22f;
+  ultraTerrain.domainWarp = 22.f;
+  ultraTerrain.octaves = 6;
+  ultraTerrain.talusSlope = .82f;
+  ultraTerrain.depositionStrength = .15f;
+  if (!terrain_.GenerateUltra(0x31aeu, ultraTerrain))
+    throw std::runtime_error("Ultra terrain generation failed");
+  terrain_.FlattenCircle({-12, 0, 18}, 13, 0, 7);
+  terrain_.FlattenCircle({8, 0, 36}, 18, 0, 8);
+  riverMesh_ = engine.CreateMeshResource3D(CreateLandscapeRiverMesh(terrain_));
+  HeightFieldMeshSettings3D terrainMeshSettings{
+      {1, 1, 1, 1}, {1, 1, 1, 1}, {1, 1, 1, 1}, .74f};
+  terrainMeshSettings.macroBiomeSeed = 0x31aeu;
+  terrainMeshSettings.macroBiomeScale = .014f;
+  terrainMeshSettings.macroBiomeStrength = 0;
+  terrainMeshSettings.biomeLayerStrength = 1;
+  terrainMeshSettings.grassBiomeColor = {1, 1, 1, 1};
+  terrainMeshSettings.soilBiomeColor = {1, 1, 1, 1};
+  terrainMeshSettings.rockBiomeColor = {1, 1, 1, 1};
+  terrainMeshSettings.soilAltitudeNormalized = .38f;
+  terrainMeshSettings.rockAltitudeNormalized = .7f;
+  terrainMeshSettings.altitudeBlend = .14f;
+  terrainMeshSettings.slopeRockNormalY = .7f;
+  terrainMeshSettings.slopeBlend = .13f;
+  terrainChunks_.clear();
+  terrainChunks_.reserve(16);
+  std::size_t highTerrainIndices{}, mediumTerrainIndices{}, lowTerrainIndices{};
+  for (unsigned chunkZ = 0; chunkZ < 4; ++chunkZ)
+    for (unsigned chunkX = 0; chunkX < 4; ++chunkX) {
+      HeightFieldChunkLodSettings3D highSettings{
+          chunkX * 16, chunkZ * 16, 16, 16, {1, true, 3.f}},
+          mediumSettings{chunkX * 16, chunkZ * 16, 16, 16, {2, true, 3.f}},
+          lowSettings{chunkX * 16, chunkZ * 16, 16, 16, {4, true, 3.f}};
+      const Mesh3D highDefinition = terrain_.CreateChunkLodMesh(
+                       highSettings, terrainMeshSettings),
+                   mediumDefinition = terrain_.CreateChunkLodMesh(
+                       mediumSettings, terrainMeshSettings),
+                   lowDefinition = terrain_.CreateChunkLodMesh(
+                       lowSettings, terrainMeshSettings);
+      if (!highDefinition.Valid() || !mediumDefinition.Valid() ||
+          !lowDefinition.Valid())
+        throw std::runtime_error("Terrain chunk LOD generation failed");
+      highTerrainIndices += highDefinition.indices.size();
+      mediumTerrainIndices += mediumDefinition.indices.size();
+      lowTerrainIndices += lowDefinition.indices.size();
+      terrainChunks_.push_back({engine.CreateMeshResource3D(highDefinition),
+                                engine.CreateMeshResource3D(mediumDefinition),
+                                engine.CreateMeshResource3D(lowDefinition)});
+    }
+  if (terrainChunks_.size() != 16 ||
+      mediumTerrainIndices >= highTerrainIndices ||
+      lowTerrainIndices >= mediumTerrainIndices)
+    throw std::runtime_error("Terrain chunk LOD validation failed");
+  constexpr std::array<float, 2> terrainLodBands = {42.f, 78.f};
+  if (!terrainClipmap_.Configure(
+          {{-64, 0, -32}, 4, 4, 32.f, terrainLodBands, 6.f, 16, 16, 3}))
+    throw std::runtime_error("Terrain clipmap configuration failed");
+  for (int convergence = 0; convergence < 3; ++convergence)
+    if (!terrainClipmap_.Update({0, 0, 25}))
+      throw std::runtime_error("Terrain clipmap initialization failed");
+  terrainClipmapStats_ = terrainClipmap_.Stats();
+  if (terrainClipmapStats_.deferredChunks)
+    throw std::runtime_error("Terrain clipmap convergence failed");
+  const Mesh3D cacheDefinition = terrain_.CreateChunkLodMesh(
+      {0, 0, 16, 16, {1, true, 3.f}}, terrainMeshSettings);
+  for (int cacheRequest = 0; cacheRequest < 16; ++cacheRequest) {
+    const MeshResource3D sharedTerrain =
+        engine.CreateMeshResource3D(cacheDefinition);
+    if (sharedTerrain.handle != terrainChunks_.front().high.handle ||
+        sharedTerrain.cpuMesh != terrainChunks_.front().high.cpuMesh)
+      throw std::runtime_error("Mesh cache validation failed");
+    engine.DestroyMesh3D(sharedTerrain.handle);
+  }
+  const MeshLoadResult3D probe = LoadObjMeshFile(engine.ExecutableDirectory() /
+                                                 "assets" / "engine_probe.obj");
+  if (probe)
+    probeMesh_ = engine.CreateMeshResource3D(probe.mesh);
+  scene_.SetBoxMesh(boxMesh_);
+  scene_.Reserve({0, 128, 2048, 512, 320});
+  audioPing_ = engine.Audio().CreateSound(GenerateTone(660, .09f, .16f));
+  engine.Audio().Play(audioPing_);
+  worldBuilder_.Initialize(engine);
+  physicsWorld_.Clear();
+  authoredDynamicObjects_.clear();
+  physicsImpulseCycle_ = -1;
+  engine.SetMaterialTextureMemoryBudget(96 * 1024 * 1024);
+  const std::filesystem::path materialsRoot = BundledMaterialRoot();
+  constexpr MaterialResolutionPolicy3D resolutionPolicy{};
+  const unsigned environmentResolution =
+      resolutionPolicy.Select(MaterialDetailClass3D::Environment,
+                              MaterialQualityFor(engine.RenderQuality()));
+  MaterialTextureSetDefinition3D groundDefinition{
+      materialsRoot / "ambientcg" / "ground037" / "1k" /
+          "Ground037_1K-JPG_Color.jpg",
+      materialsRoot / "ambientcg" / "ground037" / "1k" /
+          "Ground037_1K-JPG_Roughness.jpg",
+      environmentResolution,
+      materialsRoot / "ambientcg" / "ground037" / "1k" /
+          "Ground037_1K-JPG_NormalDX.jpg"};
+  groundDefinition.additionalLayers = {
+      MaterialTextureLayerDefinition3D{
+          materialsRoot / "poly-haven" / "aerial_ground_rock" / "1k" /
+              "base-color.jpg",
+          materialsRoot / "poly-haven" / "aerial_ground_rock" / "1k" /
+              "roughness.jpg",
+          materialsRoot / "poly-haven" / "aerial_ground_rock" / "1k" /
+              "normal-dx.jpg"},
+      MaterialTextureLayerDefinition3D{
+          materialsRoot / "poly-haven" / "rock_surface" / "1k" /
+              "base-color.jpg",
+          materialsRoot / "poly-haven" / "rock_surface" / "1k" /
+              "roughness.jpg",
+          materialsRoot / "poly-haven" / "rock_surface" / "1k" /
+              "normal-dx.jpg"}};
+  const MaterialTextureSetHandle3D releaseProbe =
+      engine.CreateMaterialTextureSet3D({groundDefinition.baseColorPath,
+                                         groundDefinition.roughnessPath, 512,
+                                         groundDefinition.normalPath});
+  engine.DestroyMaterialTextureSet3D(releaseProbe);
+  materialLibrary_.Initialize(engine, materialsRoot);
+  const std::array<MaterialAssetDefinition3D, 3> materialDefinitions = {
+      MaterialAssetDefinition3D{"ground", groundDefinition},
+      MaterialAssetDefinition3D{
+          "wood",
+          {"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg",
+           "ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",
+           environmentResolution,
+           "ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"}},
+      MaterialAssetDefinition3D{"brick",
+                                {"poly-haven/brick_floor/1k/base-color.jpg",
+                                 "poly-haven/brick_floor/1k/roughness.jpg",
+                                 environmentResolution,
+                                 "poly-haven/brick_floor/1k/normal-dx.jpg"}}};
+  if (!materialLibrary_.LoadAll(materialDefinitions))
+    throw std::runtime_error("Material library validation failed");
+  const MaterialTextureSetHandle3D groundTextures =
+                                       materialLibrary_.Textures("ground"),
+                                   woodTextures =
+                                       materialLibrary_.Textures("wood"),
+                                   brickTextures =
+                                       materialLibrary_.Textures("brick");
+  for (int cacheRequest = 0; cacheRequest < 32; ++cacheRequest) {
+    const MaterialTextureSetHandle3D sharedGroundProbe =
+        engine.CreateMaterialTextureSet3D(groundDefinition);
+    engine.DestroyMaterialTextureSet3D(sharedGroundProbe);
+  }
+  materialLibraryStats_ = materialLibrary_.Stats();
+  groundMaterial_ = *materialLibrary_.Find("ground");
+  woodMaterial_ = *materialLibrary_.Find("wood");
+  brickMaterial_ = *materialLibrary_.Find("brick");
+  groundMaterial_.tint = {.66f, .7f, .62f, 1};
+  groundMaterial_.surface = GroundSurface;
+  groundMaterial_.castsShadow = false;
+  groundMaterial_.textureScale = .055f;
+  groundMaterial_.materialClass = MaterialClass3D::Terrain;
+  woodMaterial_.surface = {.78f, 0, 0, .92f};
+  woodMaterial_.textureScale = .42f;
+  brickMaterial_.surface = {.88f, 0, 0, .94f};
+  brickMaterial_.textureScale = .36f;
+  worldBuilder_.Create("authoring_floor", PrimitiveShape3D::Box,
+                       {{-12, .25f, 18}, {}, {10, .5f, 8}},
+                       MaterialPreset3D::Stone, {1, 1, 1, 1},
+                       RigidBodyType3D::Static, &physicsWorld_, groundTextures,
+                       .28f);
+  worldBuilder_.Create("authoring_backstop", PrimitiveShape3D::Box,
+                       {{-12, 1.5f, 21.8f}, {}, {10, 2.5f, .35f}},
+                       MaterialPreset3D::Stone, {1, 1, 1, 1},
+                       RigidBodyType3D::Static, &physicsWorld_, brickTextures,
+                       .42f);
+  worldBuilder_.Create("material_ground_panel", PrimitiveShape3D::Box,
+                       {{-15.6f, 3.f, 16}, {}, {3.2f, 5.f, .35f}},
+                       MaterialPreset3D::Stone, {1, 1, 1, 1},
+                       RigidBodyType3D::Static, &physicsWorld_, groundTextures,
+                       .34f);
+  worldBuilder_.Create(
+      "material_wood_panel", PrimitiveShape3D::Box,
+      {{-12, 3.f, 16}, {}, {3.2f, 5.f, .35f}}, MaterialPreset3D::Wood,
+      {1, 1, 1, 1}, RigidBodyType3D::Static, &physicsWorld_, woodTextures, .5f);
+  worldBuilder_.Create("material_brick_panel", PrimitiveShape3D::Box,
+                       {{-8.4f, 3.f, 16}, {}, {3.2f, 5.f, .35f}},
+                       MaterialPreset3D::Stone, {1, 1, 1, 1},
+                       RigidBodyType3D::Static, &physicsWorld_, brickTextures,
+                       .48f);
+  constexpr std::array<PrimitiveShape3D, 5> shapes = {
+      PrimitiveShape3D::Box, PrimitiveShape3D::Sphere,
+      PrimitiveShape3D::Cylinder, PrimitiveShape3D::Cone,
+      PrimitiveShape3D::Pyramid};
+  constexpr std::array<MaterialPreset3D, 5> materials = {
+      MaterialPreset3D::Wood, MaterialPreset3D::Metal, MaterialPreset3D::Glass,
+      MaterialPreset3D::Emissive, MaterialPreset3D::Matte};
+  constexpr std::array<Color, 5> tints = {
+      Color{.5f, .22f, .07f, 1}, Color{.62f, .68f, .72f, 1},
+      Color{.2f, .68f, 1, .4f}, Color{.12f, .92f, .75f, 1},
+      Color{.72f, .2f, .14f, 1}};
+  for (int index = 0; index < 10; ++index) {
+    const float x = -16.2f + float(index % 5) * 2.05f,
+                z = 16.8f + float(index / 5) * 2.1f,
+                y = 2.4f + float(index % 3) * 1.15f;
+    const MaterialTextureSetHandle3D textures = index % 3 == 0 ? woodTextures
+                                                : index % 3 == 1
+                                                    ? brickTextures
+                                                    : groundTextures;
+    authoredDynamicObjects_.push_back(worldBuilder_.Create(
+        std::format("runtime_object_{}", index),
+        shapes[std::size_t(index) % shapes.size()],
+        {{x, y, z}, {0, float(index) * .17f, 0}, {1.05f, 1.05f, 1.05f}},
+        materials[std::size_t(index) % materials.size()],
+        {.9f, .9f, .9f, tints[std::size_t(index) % tints.size()].a},
+        RigidBodyType3D::Dynamic, &physicsWorld_, textures, .65f));
+  }
+  animationSkeleton_.joints = {{-1, AnimationJoint({0, 1, 0})},
+                               {0, AnimationJoint({0, 1.2f, 0})},
+                               {1, AnimationJoint({0, 1.1f, 0})}};
+  animationClip_ = {
+      2,
+      true,
+      {AnimationTrack(0, {{0, AnimationJoint({0, 1, 0}, {0, 0, -.35f})},
+                          {1, AnimationJoint({0, 1, 0}, {0, 0, .35f})},
+                          {2, AnimationJoint({0, 1, 0}, {0, 0, -.35f})}}),
+       AnimationTrack(1, {{0, AnimationJoint({0, 1.2f, 0}, {.45f, 0, 0})},
+                          {1, AnimationJoint({0, 1.2f, 0}, {-.45f, 0, 0})},
+                          {2, AnimationJoint({0, 1.2f, 0}, {.45f, 0, 0})}}),
+       AnimationTrack(2, {{0, AnimationJoint({0, 1.1f, 0}, {0, -.5f, 0})},
+                          {1, AnimationJoint({0, 1.1f, 0}, {0, .5f, 0})},
+                          {2, AnimationJoint({0, 1.1f, 0}, {0, -.5f, 0})}})}};
+  navigationGrid_.Configure({{-20, 0, 5}, 40, 40, 1, 1600, true});
+  for (int z = 0; z < 40; ++z)
+    if (z < 18 || z > 21)
+      navigationGrid_.SetBlocked({20, z});
+  navigationPath_.stats = navigationGrid_.FindPathInto(
+      {-15, 0, 10}, {15, 0, 40}, navigationWorkspace_, navigationPath_.points);
+  skyDomeMesh_ = engine.CreateMeshResource3D(CreateSkyDomeMesh3D(32, 16));
+  mountainHighMesh_ = engine.CreateMeshResource3D(
+      CreateMountainRangeMesh3D(EnvironmentMeshDetail3D::Near, 0x31aeu));
+  mountainLowMesh_ = engine.CreateMeshResource3D(
+      CreateMountainRangeMesh3D(EnvironmentMeshDetail3D::Far, 0x31aeu));
+  rockHighMesh_ = engine.CreateMeshResource3D(
+      CreateRockMesh3D(EnvironmentMeshDetail3D::Near, 0x714bu));
+  rockLowMesh_ = engine.CreateMeshResource3D(
+      CreateRockMesh3D(EnvironmentMeshDetail3D::Far, 0x714bu));
+  BuildLandscapeScene();
+  if (engine.DLSSOn())
+    engine.ToggleDLSS();
 }
 
 void EngineLabGame::BuildLandscapeScene(){

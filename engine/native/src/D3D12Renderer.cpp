@@ -220,9 +220,9 @@ struct D3D12Renderer::Impl{
  ComPtr<IDXGIFactory6> factory;ComPtr<ID3D12Device> device;ComPtr<ID3D12CommandQueue> queue;ComPtr<IDXGISwapChain3> swap;
  ComPtr<ID3D12DescriptorHeap> rtvHeap,dsvHeap,shadowDsvHeap,textureHeap;ComPtr<ID3D12Resource> depth,shadowDepth;std::array<ComPtr<ID3D12Resource>,Frames> targets;std::array<ComPtr<ID3D12CommandAllocator>,Frames> alloc;
  ComPtr<ID3D12GraphicsCommandList> list;ComPtr<ID3D12Fence> fence;ComPtr<ID3D12RootSignature> root,postProcessRoot;ComPtr<ID3D12PipelineState> pipeline,additivePipeline,worldPipeline,instancedPipeline,instancedCulledPipeline,instancedTransparentPipeline,instancedOverlayPipeline,shadowWorldPipeline,shadowInstancedPipeline,postProcessPipeline;ComPtr<ID3D12QueryHeap> timestampHeap;ComPtr<ID3D12Resource> timestampReadback,sceneConstants,shadowConstants,hdrSceneColor;std::array<ComPtr<ID3D12Resource>,Frames> vertexBuffers,worldVertexBuffers,worldIndexBuffers,instanceBuffers;std::array<Vertex*,Frames> mapped{};std::array<Vertex3D*,Frames> worldMapped{};std::array<uint32_t*,Frames> worldIndexMapped{};std::array<GpuMeshInstance*,Frames> instanceMapped{};std::array<size_t,Frames> vertexCapacity{},worldVertexCapacity{},worldIndexCapacity{},instanceCapacity{};uint64_t* timestampMapped{};float* sceneConstantsMapped{};float* shadowConstantsMapped{};StreamlineDLSS dlss;MeshUploadBatch3D meshUploadBatch;std::vector<PendingMeshUpload3D> pendingMeshUploads;std::vector<MeshUploadContext3D> availableMeshUploadContexts;TextureUploadBatch3D textureUploadBatch;std::vector<PendingTextureUpload3D> pendingTextureUploads;std::vector<MeshUploadContext3D> availableTextureUploadContexts;
- std::array<D3D12_VERTEX_BUFFER_VIEW,Frames> vbv{},worldVbv{};std::array<D3D12_INDEX_BUFFER_VIEW,Frames> worldIbv{};std::array<UINT64,Frames> frameFenceValues{};std::array<bool,Frames> timestampValid{};uint64_t timestampFrequency{};UINT textureStep{};size_t activeShadowSrvDescriptor{ShadowNullSrvDescriptor3D};std::unordered_map<uint32_t,ResidentMesh3D> residentMeshes;std::unordered_map<MeshCacheKey3D,uint32_t,MeshCacheKeyHasher3D> meshCache;std::unordered_map<uint32_t,ResidentMaterialTextureSet3D> residentMaterialTextureSets;std::unordered_map<std::wstring,uint32_t> materialTextureCache;std::unordered_map<uint64_t,InstanceGroup3D> instanceGroups,overlayInstanceGroups;std::vector<ActiveMeshGroup3D> activeMeshGroups,activeOverlayMeshGroups;std::vector<uint32_t> freeTextureSlots;std::vector<RetiredGpuResources3D> retiredGpuResources;std::filesystem::path materialDerivedDataCacheDirectory{DefaultMaterialCacheDirectory()},pendingCapturePath{};size_t materialDerivedDataCacheBudgetBytes{D3D12Renderer::DefaultMaterialDerivedDataCacheBudgetBytes};bool materialDerivedDataCacheSurveyed{};size_t meshMemoryBudgetBytes{D3D12Renderer::DefaultMeshMemoryBudgetBytes},textureMemoryBudgetBytes{D3D12Renderer::DefaultMaterialTextureMemoryBudgetBytes},pendingMeshReleaseBytes{},pendingTextureReleaseBytes{},lastTransientMemoryReleasedBytes{};uint32_t nextMeshHandle{1},nextMaterialTextureSetHandle{1},nextTextureSlot{1};uint64_t transientMemoryTrimCount{};RendererStats stats{};
- size_t InstanceGroupCapacityBytes()const{size_t bytes{};for(const auto& [key,group]:instanceGroups){(void)key;bytes+=group.instances.capacity()*sizeof(GpuMeshInstance);}for(const auto& [key,group]:overlayInstanceGroups){(void)key;bytes+=group.instances.capacity()*sizeof(GpuMeshInstance);}return bytes;}
- void RefreshInstanceGroupStats(){stats.residentInstanceGroups=instanceGroups.size()+overlayInstanceGroups.size();stats.peakResidentInstanceGroups=(std::max)(stats.peakResidentInstanceGroups,stats.residentInstanceGroups);stats.residentInstanceGroupCapacityBytes=InstanceGroupCapacityBytes();stats.peakInstanceGroupCapacityBytes=(std::max)(stats.peakInstanceGroupCapacityBytes,stats.residentInstanceGroupCapacityBytes);}
+ std::array<D3D12_VERTEX_BUFFER_VIEW,Frames> vbv{},worldVbv{};std::array<D3D12_INDEX_BUFFER_VIEW,Frames> worldIbv{};std::array<UINT64,Frames> frameFenceValues{};std::array<bool,Frames> timestampValid{};uint64_t timestampFrequency{};UINT textureStep{};size_t activeShadowSrvDescriptor{ShadowNullSrvDescriptor3D};std::unordered_map<uint32_t,ResidentMesh3D> residentMeshes;std::unordered_map<MeshCacheKey3D,uint32_t,MeshCacheKeyHasher3D> meshCache;std::unordered_map<uint32_t,ResidentMaterialTextureSet3D> residentMaterialTextureSets;std::unordered_map<std::wstring,uint32_t> materialTextureCache;std::unordered_map<uint64_t,InstanceGroup3D> instanceGroups,overlayInstanceGroups,shadowOnlyInstanceGroups;std::vector<ActiveMeshGroup3D> activeMeshGroups,activeOverlayMeshGroups,activeShadowOnlyMeshGroups;std::vector<uint32_t> freeTextureSlots;std::vector<RetiredGpuResources3D> retiredGpuResources;std::filesystem::path materialDerivedDataCacheDirectory{DefaultMaterialCacheDirectory()},pendingCapturePath{};size_t materialDerivedDataCacheBudgetBytes{D3D12Renderer::DefaultMaterialDerivedDataCacheBudgetBytes};bool materialDerivedDataCacheSurveyed{};size_t meshMemoryBudgetBytes{D3D12Renderer::DefaultMeshMemoryBudgetBytes},textureMemoryBudgetBytes{D3D12Renderer::DefaultMaterialTextureMemoryBudgetBytes},pendingMeshReleaseBytes{},pendingTextureReleaseBytes{},lastTransientMemoryReleasedBytes{};uint32_t nextMeshHandle{1},nextMaterialTextureSetHandle{1},nextTextureSlot{1};uint64_t transientMemoryTrimCount{};RendererStats stats{};
+ size_t InstanceGroupCapacityBytes()const{size_t bytes{};const auto add=[&](const auto& groups){for(const auto& [key,group]:groups){(void)key;bytes+=group.instances.capacity()*sizeof(GpuMeshInstance);}};add(instanceGroups);add(overlayInstanceGroups);add(shadowOnlyInstanceGroups);return bytes;}
+ void RefreshInstanceGroupStats(){stats.residentInstanceGroups=instanceGroups.size()+overlayInstanceGroups.size()+shadowOnlyInstanceGroups.size();stats.peakResidentInstanceGroups=(std::max)(stats.peakResidentInstanceGroups,stats.residentInstanceGroups);stats.residentInstanceGroupCapacityBytes=InstanceGroupCapacityBytes();stats.peakInstanceGroupCapacityBytes=(std::max)(stats.peakInstanceGroupCapacityBytes,stats.residentInstanceGroupCapacityBytes);}
  void TrimMaterialDerivedDataCache(){const MaterialCacheTrimResult3D trim=TrimMaterialCache3D(materialDerivedDataCacheDirectory,materialDerivedDataCacheBudgetBytes);stats.materialDerivedDataCacheResidentBytes=trim.residentBytes;stats.peakMaterialDerivedDataCacheResidentBytes=(std::max)(stats.peakMaterialDerivedDataCacheResidentBytes,trim.residentBytes+size_t(trim.releasedBytes));if(trim.evictions){stats.materialDerivedDataCacheEvictions+=trim.evictions;stats.materialDerivedDataCacheReleasedBytes+=trim.releasedBytes;++stats.materialDerivedDataCacheTrims;}materialDerivedDataCacheSurveyed=true;}
  template<class T>bool ReleaseFrameUploadBuffer(ComPtr<ID3D12Resource>& buffer,T*& mappedData,size_t& capacity){if(!buffer)return false;buffer->Unmap(0,nullptr);buffer.Reset();stats.frameUploadResidentBytes-=capacity*sizeof(T);mappedData=nullptr;capacity=0;++stats.frameUploadBufferReleases;return true;}
  template<class T>void EnsureFrameUploadBuffer(ComPtr<ID3D12Resource>& buffer,T*& mappedData,size_t& capacity,size_t required,size_t initial,size_t maximum){const size_t target=D3D12Renderer::NextFrameUploadCapacity(capacity?capacity:initial,required,maximum);if(buffer&&capacity>=target)return;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=target*sizeof(T);desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;ComPtr<ID3D12Resource> replacement;T* replacementMapped{};Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&replacement)),"Frame upload buffer failed");Check(replacement->Map(0,nullptr,reinterpret_cast<void**>(&replacementMapped)),"Frame upload map failed");const bool growing=bool(buffer);if(growing)ReleaseFrameUploadBuffer(buffer,mappedData,capacity);buffer=std::move(replacement);mappedData=replacementMapped;capacity=target;stats.frameUploadResidentBytes+=capacity*sizeof(T);stats.peakFrameUploadResidentBytes=(std::max)(stats.peakFrameUploadResidentBytes,stats.frameUploadResidentBytes);++stats.frameUploadBufferAllocations;if(growing)++stats.frameUploadGrowths;}
@@ -296,7 +296,7 @@ MeshHandle3D D3D12Renderer::CreateMesh(std::span<const Vertex3D> vertices,std::s
  d.stats.residentMeshes=d.residentMeshes.size();++d.stats.residentMeshReferences;d.stats.residentMeshBytes+=meshBytes;++d.stats.residentMeshResources;d.stats.peakResidentMeshResources=(std::max)(d.stats.peakResidentMeshResources,d.stats.residentMeshResources);++d.stats.meshResourceAllocations;if(d.meshUploadBatch.meshes>=D3D12Renderer::MaxMeshUploadBatchMeshes||d.meshUploadBatch.bytes>=D3D12Renderer::MaxMeshUploadBatchBytes)d.SubmitMeshUploadBatch();return handle;
 }
 
-void D3D12Renderer::DestroyMesh(MeshHandle3D handle){if(!impl_||!handle)return;auto& d=*impl_;auto found=d.residentMeshes.find(handle.value);if(found==d.residentMeshes.end())return;if(found->second.references>1){--found->second.references;--d.stats.residentMeshReferences;return;}d.SubmitMeshUploadBatch();d.PrepareGpuRetirement();RetiredGpuResources3D retired{};retired.resources[0]=std::move(found->second.buffer);retired.bytes=found->second.bytes;d.stats.residentMeshBytes-=retired.bytes;--d.stats.residentMeshResources;--d.stats.residentMeshReferences;const auto cached=d.meshCache.find(found->second.cacheKey);if(cached!=d.meshCache.end()&&cached->second==handle.value)d.meshCache.erase(cached);d.residentMeshes.erase(found);for(auto* groups:{&d.instanceGroups,&d.overlayInstanceGroups})for(auto iterator=groups->begin();iterator!=groups->end();)if(uint32_t(iterator->first)==handle.value)iterator=groups->erase(iterator);else++iterator;d.RefreshInstanceGroupStats();d.stats.residentMeshes=d.residentMeshes.size();d.RetireGpuResources(std::move(retired));}
+void D3D12Renderer::DestroyMesh(MeshHandle3D handle){if(!impl_||!handle)return;auto& d=*impl_;auto found=d.residentMeshes.find(handle.value);if(found==d.residentMeshes.end())return;if(found->second.references>1){--found->second.references;--d.stats.residentMeshReferences;return;}d.SubmitMeshUploadBatch();d.PrepareGpuRetirement();RetiredGpuResources3D retired{};retired.resources[0]=std::move(found->second.buffer);retired.bytes=found->second.bytes;d.stats.residentMeshBytes-=retired.bytes;--d.stats.residentMeshResources;--d.stats.residentMeshReferences;const auto cached=d.meshCache.find(found->second.cacheKey);if(cached!=d.meshCache.end()&&cached->second==handle.value)d.meshCache.erase(cached);d.residentMeshes.erase(found);for(auto* groups:{&d.instanceGroups,&d.overlayInstanceGroups,&d.shadowOnlyInstanceGroups})for(auto iterator=groups->begin();iterator!=groups->end();)if(uint32_t(iterator->first)==handle.value)iterator=groups->erase(iterator);else++iterator;d.RefreshInstanceGroupStats();d.stats.residentMeshes=d.residentMeshes.size();d.RetireGpuResources(std::move(retired));}
 
 void D3D12Renderer::SetMeshMemoryBudget(size_t bytes){if(!impl_)return;auto& d=*impl_;d.meshMemoryBudgetBytes=(std::max)(size_t(1),bytes);d.stats.meshMemoryBudgetBytes=d.meshMemoryBudgetBytes;}
 
@@ -321,9 +321,9 @@ void D3D12Renderer::SetMaterialDerivedDataCacheBudget(size_t bytes){if(!impl_)re
 
 TransientMemoryStats D3D12Renderer::MemoryStats()const{
  if(!impl_)return{};const auto& d=*impl_;
- size_t bytes=d.stats.frameUploadResidentBytes+d.stats.hdrSceneColorBytes+d.stats.nativeDepthBufferBytes+d.stats.directionalShadowMapBytes+(d.instanceGroups.bucket_count()+d.overlayInstanceGroups.bucket_count())*sizeof(void*)+d.activeMeshGroups.capacity()*sizeof(ActiveMeshGroup3D)+d.activeOverlayMeshGroups.capacity()*sizeof(ActiveMeshGroup3D)+d.meshUploadBatch.staging.capacity()*sizeof(ComPtr<ID3D12Resource>)+d.pendingMeshUploads.capacity()*sizeof(PendingMeshUpload3D)+d.availableMeshUploadContexts.capacity()*sizeof(MeshUploadContext3D)+d.textureUploadBatch.staging.capacity()*sizeof(ComPtr<ID3D12Resource>)+d.pendingTextureUploads.capacity()*sizeof(PendingTextureUpload3D)+d.availableTextureUploadContexts.capacity()*sizeof(MeshUploadContext3D)+d.retiredGpuResources.capacity()*sizeof(RetiredGpuResources3D)+d.freeTextureSlots.capacity()*sizeof(uint32_t),reclaimable{};
+ size_t bytes=d.stats.frameUploadResidentBytes+d.stats.hdrSceneColorBytes+d.stats.nativeDepthBufferBytes+d.stats.directionalShadowMapBytes+(d.instanceGroups.bucket_count()+d.overlayInstanceGroups.bucket_count()+d.shadowOnlyInstanceGroups.bucket_count())*sizeof(void*)+(d.activeMeshGroups.capacity()+d.activeOverlayMeshGroups.capacity()+d.activeShadowOnlyMeshGroups.capacity())*sizeof(ActiveMeshGroup3D)+d.meshUploadBatch.staging.capacity()*sizeof(ComPtr<ID3D12Resource>)+d.pendingMeshUploads.capacity()*sizeof(PendingMeshUpload3D)+d.availableMeshUploadContexts.capacity()*sizeof(MeshUploadContext3D)+d.textureUploadBatch.staging.capacity()*sizeof(ComPtr<ID3D12Resource>)+d.pendingTextureUploads.capacity()*sizeof(PendingTextureUpload3D)+d.availableTextureUploadContexts.capacity()*sizeof(MeshUploadContext3D)+d.retiredGpuResources.capacity()*sizeof(RetiredGpuResources3D)+d.freeTextureSlots.capacity()*sizeof(uint32_t),reclaimable{};
  for(unsigned index=0;index<Impl::Frames;++index){if(d.stats.lastSubmittedVertices<=D3D12Renderer::InitialFrameVertices&&d.vertexCapacity[index]>D3D12Renderer::InitialFrameVertices)reclaimable+=(d.vertexCapacity[index]-D3D12Renderer::InitialFrameVertices)*sizeof(Vertex);const bool idle3D=!d.stats.lastSubmittedWorldVertices&&!d.stats.lastSubmittedWorldIndices&&!d.stats.lastSubmittedMeshInstances&&!d.stats.lastSubmittedOverlayInstances;if(idle3D){reclaimable+=d.worldVertexCapacity[index]*sizeof(Vertex3D)+d.worldIndexCapacity[index]*sizeof(uint32_t)+d.instanceCapacity[index]*sizeof(GpuMeshInstance);}else{if(d.stats.lastSubmittedWorldVertices<=D3D12Renderer::InitialFrameWorldVertices&&d.worldVertexCapacity[index]>D3D12Renderer::InitialFrameWorldVertices)reclaimable+=(d.worldVertexCapacity[index]-D3D12Renderer::InitialFrameWorldVertices)*sizeof(Vertex3D);if(d.stats.lastSubmittedWorldIndices<=D3D12Renderer::InitialFrameWorldIndices&&d.worldIndexCapacity[index]>D3D12Renderer::InitialFrameWorldIndices)reclaimable+=(d.worldIndexCapacity[index]-D3D12Renderer::InitialFrameWorldIndices)*sizeof(uint32_t);if(d.stats.lastSubmittedMeshInstances+d.stats.lastSubmittedOverlayInstances<=D3D12Renderer::InitialFrameMeshInstances&&d.instanceCapacity[index]>D3D12Renderer::InitialFrameMeshInstances)reclaimable+=(d.instanceCapacity[index]-D3D12Renderer::InitialFrameMeshInstances)*sizeof(GpuMeshInstance);}}
- for(const auto& [key,group]:d.instanceGroups){(void)key;bytes+=group.instances.capacity()*sizeof(GpuMeshInstance);if(group.instances.empty())reclaimable+=group.instances.capacity()*sizeof(GpuMeshInstance);}for(const auto& [key,group]:d.overlayInstanceGroups){(void)key;bytes+=group.instances.capacity()*sizeof(GpuMeshInstance);if(group.instances.empty())reclaimable+=group.instances.capacity()*sizeof(GpuMeshInstance);}
+ for(const auto* groups:{&d.instanceGroups,&d.overlayInstanceGroups,&d.shadowOnlyInstanceGroups})for(const auto& [key,group]:*groups){(void)key;bytes+=group.instances.capacity()*sizeof(GpuMeshInstance);if(group.instances.empty())reclaimable+=group.instances.capacity()*sizeof(GpuMeshInstance);}
  reclaimable+=d.availableMeshUploadContexts.capacity()*sizeof(MeshUploadContext3D)+d.availableTextureUploadContexts.capacity()*sizeof(MeshUploadContext3D);if(d.pendingMeshUploads.empty())reclaimable+=d.pendingMeshUploads.capacity()*sizeof(PendingMeshUpload3D);if(d.pendingTextureUploads.empty())reclaimable+=d.pendingTextureUploads.capacity()*sizeof(PendingTextureUpload3D);if(d.retiredGpuResources.empty())reclaimable+=d.retiredGpuResources.capacity()*sizeof(RetiredGpuResources3D);const bool idle3D=!d.stats.lastSubmittedWorldVertices&&!d.stats.lastSubmittedWorldIndices&&!d.stats.lastSubmittedMeshInstances&&!d.stats.lastSubmittedOverlayInstances;if(d.hdrSceneColor&&idle3D)reclaimable+=d.stats.hdrSceneColorBytes;if(d.depth&&(idle3D||d.dlss.Enabled()))reclaimable+=d.stats.nativeDepthBufferBytes;if(d.shadowDepth&&!d.stats.lastDirectionalShadowCascades)reclaimable+=d.stats.directionalShadowMapBytes;
  return{bytes,reclaimable,d.lastTransientMemoryReleasedBytes,d.transientMemoryTrimCount};
 }
@@ -333,23 +333,693 @@ void D3D12Renderer::TrimTransientMemory(){
  if(releaseHdrScene)d.ReleaseHdrSceneColor();if(releaseDepth)d.ReleaseDepth();if(releaseShadowDepth)d.ReleaseShadowDepth();
  if(expanded||release3DUploads){bool trimmed=false;for(unsigned i=0;i<Impl::Frames;++i){if(expanded){trimmed|=d.TrimFrameUploadBuffer(d.vertexBuffers[i],d.mapped[i],d.vertexCapacity[i],D3D12Renderer::InitialFrameVertices,D3D12Renderer::MaxVertices);if(d.vertexBuffers[i])d.vbv[i]={d.vertexBuffers[i]->GetGPUVirtualAddress(),UINT(d.vertexCapacity[i]*sizeof(Vertex)),sizeof(Vertex)};}if(release3DUploads){trimmed|=d.ReleaseFrameUploadBuffer(d.worldVertexBuffers[i],d.worldMapped[i],d.worldVertexCapacity[i]);d.worldVbv[i]={};trimmed|=d.ReleaseFrameUploadBuffer(d.worldIndexBuffers[i],d.worldIndexMapped[i],d.worldIndexCapacity[i]);d.worldIbv[i]={};trimmed|=d.ReleaseFrameUploadBuffer(d.instanceBuffers[i],d.instanceMapped[i],d.instanceCapacity[i]);}else if(expanded){trimmed|=d.TrimFrameUploadBuffer(d.worldVertexBuffers[i],d.worldMapped[i],d.worldVertexCapacity[i],D3D12Renderer::InitialFrameWorldVertices,D3D12Renderer::MaxWorldVertices);if(d.worldVertexBuffers[i])d.worldVbv[i]={d.worldVertexBuffers[i]->GetGPUVirtualAddress(),UINT(d.worldVertexCapacity[i]*sizeof(Vertex3D)),sizeof(Vertex3D)};trimmed|=d.TrimFrameUploadBuffer(d.worldIndexBuffers[i],d.worldIndexMapped[i],d.worldIndexCapacity[i],D3D12Renderer::InitialFrameWorldIndices,D3D12Renderer::MaxWorldIndices);if(d.worldIndexBuffers[i])d.worldIbv[i]={d.worldIndexBuffers[i]->GetGPUVirtualAddress(),UINT(d.worldIndexCapacity[i]*sizeof(uint32_t)),DXGI_FORMAT_R32_UINT};trimmed|=d.TrimFrameUploadBuffer(d.instanceBuffers[i],d.instanceMapped[i],d.instanceCapacity[i],D3D12Renderer::InitialFrameMeshInstances,D3D12Renderer::MaxMeshInstances);}}if(trimmed)++d.stats.frameUploadTrims;}
  const size_t releasedMeshContexts=d.availableMeshUploadContexts.size(),releasedTextureContexts=d.availableTextureUploadContexts.size();d.stats.meshUploadContextReleases+=releasedMeshContexts;d.stats.materialTextureUploadContextReleases+=releasedTextureContexts;d.stats.residentMeshUploadContexts=d.stats.residentMeshUploadContexts>=releasedMeshContexts?d.stats.residentMeshUploadContexts-releasedMeshContexts:0;d.stats.residentMaterialTextureUploadContexts=d.stats.residentMaterialTextureUploadContexts>=releasedTextureContexts?d.stats.residentMaterialTextureUploadContexts-releasedTextureContexts:0;decltype(d.availableMeshUploadContexts){}.swap(d.availableMeshUploadContexts);decltype(d.availableTextureUploadContexts){}.swap(d.availableTextureUploadContexts);decltype(d.pendingMeshUploads){}.swap(d.pendingMeshUploads);decltype(d.pendingTextureUploads){}.swap(d.pendingTextureUploads);decltype(d.retiredGpuResources){}.swap(d.retiredGpuResources);
- decltype(d.instanceGroups){}.swap(d.instanceGroups);decltype(d.overlayInstanceGroups){}.swap(d.overlayInstanceGroups);d.RefreshInstanceGroupStats();std::vector<ActiveMeshGroup3D> regular,overlay;regular.reserve(64);overlay.reserve(64);d.activeMeshGroups.swap(regular);d.activeOverlayMeshGroups.swap(overlay);const size_t after=MemoryStats().trackedCapacityBytes;d.lastTransientMemoryReleasedBytes=before>after?before-after:0;++d.transientMemoryTrimCount;
+ decltype(d.instanceGroups){}.swap(d.instanceGroups);decltype(d.overlayInstanceGroups){}.swap(d.overlayInstanceGroups);decltype(d.shadowOnlyInstanceGroups){}.swap(d.shadowOnlyInstanceGroups);d.RefreshInstanceGroupStats();std::vector<ActiveMeshGroup3D> regular,overlay,shadowOnly;regular.reserve(64);overlay.reserve(64);shadowOnly.reserve(64);d.activeMeshGroups.swap(regular);d.activeOverlayMeshGroups.swap(overlay);d.activeShadowOnlyMeshGroups.swap(shadowOnly);const size_t after=MemoryStats().trackedCapacityBytes;d.lastTransientMemoryReleasedBytes=before>after?before-after:0;++d.transientMemoryTrimCount;
 }
 
 void D3D12Renderer::Render(const DrawList& dl,Color clear){
  // 相同 handle 的實例共用一次 indexed draw，逐幀只上傳模型矩陣、法線矩陣與 tint。
- auto& d=*impl_;const std::filesystem::path capturePath=std::exchange(d.pendingCapturePath,{});d.SubmitMeshUploadBatch();d.SubmitTextureUploadBatch();d.WaitForFrame(d.frame);d.CollectGpuTiming(d.frame);const size_t count=DrawableVertexCount(dl.vertices.size()),worldCount=DrawableWorldVertexCount(dl.worldVertices.size()),worldIndexCount=DrawableWorldIndexCount(dl.worldIndices,worldCount);const uint64_t currentFrame=d.stats.submittedFrames;auto prepareGroups=[&](auto& groups){for(auto iterator=groups.begin();iterator!=groups.end();){auto& group=iterator->second;group.instances.clear();if(currentFrame-group.lastUsedFrame>D3D12Renderer::InstanceGroupRetentionFrames){d.stats.instanceGroupReleasedBytes+=group.instances.capacity()*sizeof(GpuMeshInstance);++d.stats.instanceGroupEvictions;iterator=groups.erase(iterator);}else ++iterator;}if(groups.empty()&&groups.bucket_count()>128){d.stats.instanceGroupReleasedBytes+=groups.bucket_count()*sizeof(void*);groups.rehash(0);}};prepareGroups(d.instanceGroups);prepareGroups(d.overlayInstanceGroups);struct TransparentSubmission{GpuMeshInstance gpu{};ResidentMesh3D* mesh{};MaterialTextureSetHandle3D textures{};float depth{};};std::vector<TransparentSubmission> transparentSubmissions;transparentSubmissions.reserve((std::min)(dl.meshInstances.size(),MaxMeshInstances));d.stats.lastSubmittedFoliageInstances=0;d.stats.lastSubmittedTerrainInstances=0;size_t acceptedInstances=0,acceptedOverlayInstances=0,acceptedTexturedInstances=0,droppedInstances=0;
- for(size_t index=0;index<dl.meshInstances.size();++index){if(acceptedInstances>=MaxMeshInstances){droppedInstances+=dl.meshInstances.size()-index;break;}const MeshInstance3D& instance=dl.meshInstances[index];if(d.residentMeshes.find(instance.mesh.value)==d.residentMeshes.end()){++droppedInstances;continue;}const bool validTextures=instance.textures&&d.residentMaterialTextureSets.contains(instance.textures.value);GpuMeshInstance gpu{};gpu.transform=instance.transform;for(size_t row=0;row<3;++row)gpu.normalRows[row]={instance.normalTransform[row][0],instance.normalTransform[row][1],instance.normalTransform[row][2],0};gpu.tint=instance.tint;gpu.surface=instance.surface;const uint32_t packedTextureScale=uint32_t(std::lround(Clamp(instance.textureScale/16.f,0.f,1.f)*65535.f));gpu.textureData=PackMeshInstanceFlags3D(validTextures,instance.useUv,instance.materialClass)|PackMeshInstanceLodData3D(instance.lodCoverage,instance.lodSeed)|(packedTextureScale<<16);if(instance.layer==MeshRenderLayer3D::Transparent){transparentSubmissions.push_back({gpu,&d.residentMeshes.find(instance.mesh.value)->second,validTextures?instance.textures:MaterialTextureSetHandle3D{},instance.cameraDepth});}else{auto& groups=instance.layer==MeshRenderLayer3D::Overlay?d.overlayInstanceGroups:d.instanceGroups;const uint64_t groupKey=(uint64_t(validTextures?instance.textures.value:0)<<32)|instance.mesh.value|(instance.castsShadow?1ull<<63:0)|(instance.materialClass==MaterialClass3D::Foliage?1ull<<62:0);auto [groupIterator,created]=groups.try_emplace(groupKey);if(created)++d.stats.instanceGroupCreations;groupIterator->second.lastUsedFrame=currentFrame;groupIterator->second.instances.push_back(gpu);}acceptedOverlayInstances+=instance.layer==MeshRenderLayer3D::Overlay;acceptedTexturedInstances+=validTextures;d.stats.lastSubmittedFoliageInstances+=instance.materialClass==MaterialClass3D::Foliage;d.stats.lastSubmittedTerrainInstances+=instance.materialClass==MaterialClass3D::Terrain;++acceptedInstances;}d.RefreshInstanceGroupStats();
- if(count){d.EnsureFrameUploadBuffer(d.vertexBuffers[d.frame],d.mapped[d.frame],d.vertexCapacity[d.frame],count,InitialFrameVertices,MaxVertices);d.vbv[d.frame]={d.vertexBuffers[d.frame]->GetGPUVirtualAddress(),UINT(d.vertexCapacity[d.frame]*sizeof(Vertex)),sizeof(Vertex)};}if(worldCount){d.EnsureFrameUploadBuffer(d.worldVertexBuffers[d.frame],d.worldMapped[d.frame],d.worldVertexCapacity[d.frame],worldCount,InitialFrameWorldVertices,MaxWorldVertices);d.worldVbv[d.frame]={d.worldVertexBuffers[d.frame]->GetGPUVirtualAddress(),UINT(d.worldVertexCapacity[d.frame]*sizeof(Vertex3D)),sizeof(Vertex3D)};}if(worldIndexCount){d.EnsureFrameUploadBuffer(d.worldIndexBuffers[d.frame],d.worldIndexMapped[d.frame],d.worldIndexCapacity[d.frame],worldIndexCount,InitialFrameWorldIndices,MaxWorldIndices);d.worldIbv[d.frame]={d.worldIndexBuffers[d.frame]->GetGPUVirtualAddress(),UINT(d.worldIndexCapacity[d.frame]*sizeof(uint32_t)),DXGI_FORMAT_R32_UINT};}if(acceptedInstances)d.EnsureFrameUploadBuffer(d.instanceBuffers[d.frame],d.instanceMapped[d.frame],d.instanceCapacity[d.frame],acceptedInstances,InitialFrameMeshInstances,MaxMeshInstances);
- const PointLightSelection3D<MaxPointLights> pointLights=SelectInfluentialPointLights<MaxPointLights>(dl.PointLights(),dl.Atmosphere().cameraPosition);
- SceneConstants3D scene{};const DirectionalLight3D& sceneLight=dl.DirectionalLight();const Atmosphere3D& sceneAtmosphere=dl.Atmosphere();memcpy(scene.values.data(),&dl.ViewProjection().values[0][0],sizeof(float)*16);const float directionAmbient[4]={sceneLight.direction.x,sceneLight.direction.y,sceneLight.direction.z,sceneLight.ambient},colorIntensity[4]={sceneLight.color.r,sceneLight.color.g,sceneLight.color.b,sceneLight.intensity},fogColor[4]={sceneAtmosphere.fogColor.r,sceneAtmosphere.fogColor.g,sceneAtmosphere.fogColor.b,sceneAtmosphere.fogColor.a},cameraFogStart[4]={sceneAtmosphere.cameraPosition.x,sceneAtmosphere.cameraPosition.y,sceneAtmosphere.cameraPosition.z,sceneAtmosphere.fogStart},fogEndEnabled[4]={sceneAtmosphere.fogEnd,sceneAtmosphere.enabled?1.f:0.f,float(pointLights.count),dl.EnvironmentTime()};memcpy(scene.values.data()+16,directionAmbient,sizeof(directionAmbient));memcpy(scene.values.data()+20,colorIntensity,sizeof(colorIntensity));memcpy(scene.values.data()+24,fogColor,sizeof(fogColor));memcpy(scene.values.data()+28,cameraFogStart,sizeof(cameraFogStart));memcpy(scene.values.data()+32,fogEndEnabled,sizeof(fogEndEnabled));for(std::size_t index=0;index<pointLights.count;++index){const PointLight3D& point=pointLights.lights[index];const float positionRadius[4]={point.position.x,point.position.y,point.position.z,point.radius},pointIntensity[4]={point.color.r,point.color.g,point.color.b,point.intensity};memcpy(scene.values.data()+36+index*4,positionRadius,sizeof(positionRadius));memcpy(scene.values.data()+48+index*4,pointIntensity,sizeof(pointIntensity));}scene.values[60]=std::exp2(dl.ExposureCompensation());memcpy(d.sceneConstantsMapped+d.frame*64,scene.values.data(),sizeof(scene));d.stats.lastExposureCompensationEv=dl.ExposureCompensation();
- d.activeMeshGroups.clear();d.activeOverlayMeshGroups.clear();std::vector<ActiveMeshGroup3D> activeTransparentMeshGroups;activeTransparentMeshGroups.reserve(transparentSubmissions.size());std::ranges::stable_sort(transparentSubmissions,[](const TransparentSubmission& left,const TransparentSubmission& right){return left.depth>right.depth;});size_t instanceOffset=0;auto activate=[&](auto& source,auto& active){for(auto& [groupKey,group]:source){auto& instances=group.instances;if(instances.empty())continue;const uint32_t meshHandle=uint32_t(groupKey),textureHandle=uint32_t(groupKey>>32)&0x3fffffffu;const bool castsShadow=(groupKey>>63)!=0,doubleSided=(groupKey&(1ull<<62))!=0;auto mesh=d.residentMeshes.find(meshHandle);if(mesh==d.residentMeshes.end())continue;memcpy(d.instanceMapped[d.frame]+instanceOffset,instances.data(),instances.size()*sizeof(GpuMeshInstance));active.push_back({&mesh->second,{textureHandle},instanceOffset,instances.size(),castsShadow,doubleSided});instanceOffset+=instances.size();}};activate(d.instanceGroups,d.activeMeshGroups);for(const TransparentSubmission& submission:transparentSubmissions){d.instanceMapped[d.frame][instanceOffset]=submission.gpu;activeTransparentMeshGroups.push_back({submission.mesh,submission.textures,instanceOffset,1});++instanceOffset;}activate(d.overlayInstanceGroups,d.activeOverlayMeshGroups);
- const DrawListStats2D drawStats=dl.Stats2D();auto forEachCanvasSpan=[&](auto&& callback){size_t cursor=0;for(const DrawSpan2D& span:dl.AdditiveSpans2D()){if(span.firstVertex>=count)break;const size_t first=(std::max)(cursor,span.firstVertex),available=count-span.firstVertex,end=span.vertexCount>=available?count:span.firstVertex+span.vertexCount;if(first>cursor)callback(cursor,first-cursor,false);if(end>first)callback(first,end-first,true);cursor=(std::max)(cursor,end);}if(cursor<count)callback(cursor,count-cursor,false);};uint32_t canvasDrawCalls=0,additiveDrawCalls=0;forEachCanvasSpan([&](size_t,size_t vertexCount,bool additive){if(!vertexCount)return;++canvasDrawCalls;additiveDrawCalls+=additive;});d.stats.lastSubmittedVertices=count;d.stats.lastSubmittedWorldVertices=worldCount;d.stats.lastSubmittedWorldIndices=worldIndexCount;d.stats.lastSubmittedMeshInstances=acceptedInstances;d.stats.lastSubmittedOverlayInstances=acceptedOverlayInstances;d.stats.lastSubmittedTexturedMeshInstances=acceptedTexturedInstances;d.stats.lastSubmittedPointLights=pointLights.count;d.stats.lastPointLightCandidates=pointLights.candidates;d.stats.lastInputTriangles2D=drawStats.inputTriangles;d.stats.lastCulledTriangles2D=drawStats.culledTriangles;d.stats.lastAdditiveTriangles2D=drawStats.additiveTriangles;d.stats.lastAdditiveDrawCalls2D=additiveDrawCalls;d.stats.totalCulledTriangles2D+=drawStats.culledTriangles;d.stats.totalAdditiveTriangles2D+=drawStats.additiveTriangles;d.stats.lastUploadBytes=count*sizeof(Vertex)+worldCount*sizeof(Vertex3D)+worldIndexCount*sizeof(uint32_t)+acceptedInstances*sizeof(GpuMeshInstance);d.stats.peakSubmittedVertices=(std::max)(d.stats.peakSubmittedVertices,count);d.stats.peakSubmittedWorldVertices=(std::max)(d.stats.peakSubmittedWorldVertices,worldCount);d.stats.peakSubmittedWorldIndices=(std::max)(d.stats.peakSubmittedWorldIndices,worldIndexCount);d.stats.peakSubmittedMeshInstances=(std::max)(d.stats.peakSubmittedMeshInstances,acceptedInstances);d.stats.totalDroppedVertices+=dl.vertices.size()-count;d.stats.totalDroppedWorldVertices+=dl.worldVertices.size()-worldCount;d.stats.totalDroppedWorldIndices+=dl.worldIndices.size()-worldIndexCount;d.stats.totalDroppedMeshInstances+=droppedInstances;d.stats.totalDroppedPointLights+=pointLights.candidates-pointLights.count;d.stats.lastDrawCalls=canvasDrawCalls+uint32_t(worldCount>0&&worldIndexCount>0)+uint32_t(d.activeMeshGroups.size()+activeTransparentMeshGroups.size()+d.activeOverlayMeshGroups.size());d.stats.lastBackfaceCulling=dl.BackfaceCulling();++d.stats.submittedFrames;
- size_t actualAdditiveVertices=0;forEachCanvasSpan([&](size_t,size_t vertexCount,bool additive){if(additive)actualAdditiveVertices+=vertexCount;});const size_t actualAdditiveTriangles=actualAdditiveVertices/3;d.stats.totalAdditiveTriangles2D-=drawStats.additiveTriangles;d.stats.totalAdditiveTriangles2D+=actualAdditiveTriangles;d.stats.lastAdditiveTriangles2D=actualAdditiveTriangles;
- if(count)memcpy(d.mapped[d.frame],dl.vertices.data(),count*sizeof(Vertex));if(worldCount)memcpy(d.worldMapped[d.frame],dl.worldVertices.data(),worldCount*sizeof(Vertex3D));if(worldIndexCount)memcpy(d.worldIndexMapped[d.frame],dl.worldIndices.data(),worldIndexCount*sizeof(uint32_t));Check(d.alloc[d.frame]->Reset(),"Allocator reset failed");Check(d.list->Reset(d.alloc[d.frame].Get(),d.pipeline.Get()),"List reset failed");const UINT timestampStart=d.frame*2;d.list->EndQuery(d.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,timestampStart);float c[4]={clear.r,clear.g,clear.b,clear.a};const Matrix4 lightViewProjection[2]={CreateDirectionalLightViewProjection3D(dl.Atmosphere().cameraPosition,dl.DirectionalLight().direction,28.f),CreateDirectionalLightViewProjection3D(dl.Atmosphere().cameraPosition,dl.DirectionalLight().direction,90.f)};const bool hasShadowCaster=std::ranges::any_of(d.activeMeshGroups,[](const ActiveMeshGroup3D& group){return group.castsShadow;});const bool renderShadowMap=dl.DirectionalShadowMapEnabled()&&((worldCount&&worldIndexCount)||hasShadowCaster);d.stats.lastDirectionalShadowCascades=renderShadowMap?2:0;d.stats.directionalShadowCascadeSplit=32.f;d.stats.directionalShadowTransitionWidth=6.f;d.stats.directionalShadowBasePcfSamples=12;d.stats.directionalShadowTransitionPcfSamples=24;d.stats.lastDirectionalShadowCasters=0;for(const ActiveMeshGroup3D& group:d.activeMeshGroups)if(group.castsShadow)d.stats.lastDirectionalShadowCasters+=group.instanceCount;d.stats.lastDirectionalShadowCasters+=worldCount&&worldIndexCount;d.stats.lastDirectionalShadowDrawCalls=size_t(worldCount&&worldIndexCount);if(renderShadowMap)for(const ActiveMeshGroup3D& group:d.activeMeshGroups)d.stats.lastDirectionalShadowDrawCalls+=group.castsShadow;else d.stats.lastDirectionalShadowDrawCalls=0;d.stats.lastDirectionalShadowDrawCalls*=2;if(!renderShadowMap)d.stats.lastDirectionalShadowCasters=0;if(renderShadowMap&&!d.shadowDepth)d.CreateShadowDepth();const float shadowParameters[4]={renderShadowMap?32.f:0.f,.0015f,.00035f,1.f/2048.f};const float shadowTransition[4]={6.f,0,0,0};float* shadowConstants=d.shadowConstantsMapped+d.frame*64;memcpy(shadowConstants,&lightViewProjection[0].values[0][0],sizeof(float)*16);memcpy(shadowConstants+16,&lightViewProjection[1].values[0][0],sizeof(float)*16);memcpy(shadowConstants+32,shadowParameters,sizeof(shadowParameters));memcpy(shadowConstants+36,shadowTransition,sizeof(shadowTransition));if(renderShadowMap){D3D12_RESOURCE_BARRIER shadowWrite{};shadowWrite.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;shadowWrite.Transition={d.shadowDepth.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_DEPTH_WRITE};d.list->ResourceBarrier(1,&shadowWrite);D3D12_VIEWPORT shadowViewport{0,0,2048,2048,0,1};D3D12_RECT shadowRect{0,0,2048,2048};d.list->RSSetViewports(1,&shadowViewport);d.list->RSSetScissorRects(1,&shadowRect);D3D12_CPU_DESCRIPTOR_HANDLE shadowDsv=d.shadowDsvHeap->GetCPUDescriptorHandleForHeapStart();const UINT shadowDsvStep=d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);for(UINT cascade=0;cascade<2;++cascade){d.list->ClearDepthStencilView(shadowDsv,D3D12_CLEAR_FLAG_DEPTH,1,0,0,nullptr);d.list->OMSetRenderTargets(0,nullptr,FALSE,&shadowDsv);d.list->SetGraphicsRootSignature(d.root.Get());D3D12_GPU_DESCRIPTOR_HANDLE sceneCbv=d.textureHeap->GetGPUDescriptorHandleForHeapStart(),shadowCbv=sceneCbv;sceneCbv.ptr+=UINT64(SceneCbvDescriptorBase3D+d.frame)*d.textureStep;shadowCbv.ptr+=UINT64(ShadowCbvDescriptorBase3D+d.frame)*d.textureStep;d.list->SetDescriptorHeaps(1,d.textureHeap.GetAddressOf());d.list->SetGraphicsRootDescriptorTable(0,sceneCbv);d.list->SetGraphicsRootDescriptorTable(3,shadowCbv);const UINT drawConstants[2]={cascade,0};d.list->SetGraphicsRoot32BitConstants(4,2,drawConstants,0);d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);for(const ActiveMeshGroup3D& group:d.activeMeshGroups){if(!group.castsShadow)continue;d.list->SetPipelineState(d.shadowInstancedPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={group.mesh->vertexView,{d.instanceBuffers[d.frame]->GetGPUVirtualAddress()+group.instanceOffset*sizeof(GpuMeshInstance),UINT(group.instanceCount*sizeof(GpuMeshInstance)),sizeof(GpuMeshInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&group.mesh->indexView);d.list->DrawIndexedInstanced(group.mesh->indexCount,UINT(group.instanceCount),0,0,0);}if(worldCount&&worldIndexCount){d.list->SetPipelineState(d.shadowWorldPipeline.Get());d.list->IASetVertexBuffers(0,1,&d.worldVbv[d.frame]);d.list->IASetIndexBuffer(&d.worldIbv[d.frame]);d.list->DrawIndexedInstanced(UINT(worldIndexCount),1,0,0,0);}shadowDsv.ptr+=shadowDsvStep;}std::swap(shadowWrite.Transition.StateBefore,shadowWrite.Transition.StateAfter);d.list->ResourceBarrier(1,&shadowWrite);}
- const bool useDLSS=d.dlss.Enabled();d.stats.worldSrgbRenderTargetViews=0;bool dlssEvaluationFailed=false;const bool hasWorldPass=(worldCount&&worldIndexCount)||!d.activeMeshGroups.empty()||!activeTransparentMeshGroups.empty()||!d.activeOverlayMeshGroups.empty();if(hasWorldPass&&!useDLSS&&!d.depth)d.CreateDepth();if(hasWorldPass&&!useDLSS&&!d.hdrSceneColor)d.CreateHdrSceneColor();D3D12_RESOURCE_BARRIER toRT{};toRT.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;toRT.Transition={d.targets[d.frame].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_PRESENT,D3D12_RESOURCE_STATE_RENDER_TARGET};d.list->ResourceBarrier(1,&toRT);D3D12_CPU_DESCRIPTOR_HANDLE rtv=d.rtvHeap->GetCPUDescriptorHandleForHeapStart(),dsv=useDLSS?d.dlss.DepthStencilView():d.dsvHeap->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=SIZE_T(d.frame)*d.rtvStep;d.list->ClearRenderTargetView(rtv,c,0,nullptr);d.list->OMSetRenderTargets(1,&rtv,FALSE,nullptr);D3D12_RESOURCE_BARRIER hdrWrite{};if(hasWorldPass){if(useDLSS)d.dlss.BeginScene(d.list.Get(),c);else{hdrWrite.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;hdrWrite.Transition={d.hdrSceneColor.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET};d.list->ResourceBarrier(1,&hdrWrite);D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv=d.rtvHeap->GetCPUDescriptorHandleForHeapStart();hdrRtv.ptr+=SIZE_T(Impl::Frames*2)*d.rtvStep;d.list->ClearRenderTargetView(hdrRtv,c,0,nullptr);d.list->ClearDepthStencilView(dsv,D3D12_CLEAR_FLAG_DEPTH,1.f,0,0,nullptr);d.list->OMSetRenderTargets(1,&hdrRtv,FALSE,&dsv);}}
- const unsigned rw=useDLSS?d.dlss.RenderWidth():d.width,rh=useDLSS?d.dlss.RenderHeight():d.height;const CanvasViewport worldCanvas=CalculateCanvasViewport({float(d.logicalWidth),float(d.logicalHeight)},{float(rw),float(rh)});D3D12_VIEWPORT vp{worldCanvas.x,worldCanvas.y,worldCanvas.width,worldCanvas.height,0,1};D3D12_RECT sr{LONG(worldCanvas.x),LONG(worldCanvas.y),LONG(worldCanvas.x+worldCanvas.width),LONG(worldCanvas.y+worldCanvas.height)};d.list->RSSetViewports(1,&vp);d.list->RSSetScissorRects(1,&sr);d.list->SetGraphicsRootSignature(d.root.Get());ID3D12DescriptorHeap* descriptorHeaps[]={d.textureHeap.Get()};d.list->SetDescriptorHeaps(1,descriptorHeaps);d.list->SetGraphicsRootDescriptorTable(1,d.textureHeap->GetGPUDescriptorHandleForHeapStart());D3D12_GPU_DESCRIPTOR_HANDLE shadowSrv=d.textureHeap->GetGPUDescriptorHandleForHeapStart();shadowSrv.ptr+=UINT64(d.activeShadowSrvDescriptor)*d.textureStep;d.list->SetGraphicsRootDescriptorTable(2,shadowSrv);d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);if(hasWorldPass){D3D12_GPU_DESCRIPTOR_HANDLE sceneCbv=d.textureHeap->GetGPUDescriptorHandleForHeapStart(),shadowCbv=sceneCbv;sceneCbv.ptr+=UINT64(SceneCbvDescriptorBase3D+d.frame)*d.textureStep;shadowCbv.ptr+=UINT64(ShadowCbvDescriptorBase3D+d.frame)*d.textureStep;d.list->SetGraphicsRootDescriptorTable(0,sceneCbv);d.list->SetGraphicsRootDescriptorTable(3,shadowCbv);}
- auto bindTextures=[&](MaterialTextureSetHandle3D handle){D3D12_GPU_DESCRIPTOR_HANDLE descriptor=d.textureHeap->GetGPUDescriptorHandleForHeapStart();if(handle){const auto found=d.residentMaterialTextureSets.find(handle.value);if(found!=d.residentMaterialTextureSets.end())descriptor.ptr+=UINT64(found->second.descriptorOffset)*d.textureStep;}d.list->SetGraphicsRootDescriptorTable(1,descriptor);};for(const ActiveMeshGroup3D& group:d.activeMeshGroups){bindTextures(group.textures);d.list->SetPipelineState(dl.BackfaceCulling()&&!group.doubleSided?d.instancedCulledPipeline.Get():d.instancedPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={group.mesh->vertexView,{d.instanceBuffers[d.frame]->GetGPUVirtualAddress()+group.instanceOffset*sizeof(GpuMeshInstance),UINT(group.instanceCount*sizeof(GpuMeshInstance)),sizeof(GpuMeshInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&group.mesh->indexView);d.list->DrawIndexedInstanced(group.mesh->indexCount,UINT(group.instanceCount),0,0,0);}if(worldCount&&worldIndexCount){bindTextures({});d.list->SetPipelineState(d.worldPipeline.Get());d.list->IASetVertexBuffers(0,1,&d.worldVbv[d.frame]);d.list->IASetIndexBuffer(&d.worldIbv[d.frame]);d.list->DrawIndexedInstanced(UINT(worldIndexCount),1,0,0,0);}for(const ActiveMeshGroup3D& group:activeTransparentMeshGroups){bindTextures(group.textures);d.list->SetPipelineState(d.instancedTransparentPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={group.mesh->vertexView,{d.instanceBuffers[d.frame]->GetGPUVirtualAddress()+group.instanceOffset*sizeof(GpuMeshInstance),UINT(group.instanceCount*sizeof(GpuMeshInstance)),sizeof(GpuMeshInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&group.mesh->indexView);d.list->DrawIndexedInstanced(group.mesh->indexCount,UINT(group.instanceCount),0,0,0);}for(const ActiveMeshGroup3D& group:d.activeOverlayMeshGroups){bindTextures(group.textures);d.list->SetPipelineState(d.instancedOverlayPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={group.mesh->vertexView,{d.instanceBuffers[d.frame]->GetGPUVirtualAddress()+group.instanceOffset*sizeof(GpuMeshInstance),UINT(group.instanceCount*sizeof(GpuMeshInstance)),sizeof(GpuMeshInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&group.mesh->indexView);d.list->DrawIndexedInstanced(group.mesh->indexCount,UINT(group.instanceCount),0,0,0);}const CanvasViewport outputCanvas=CalculateCanvasViewport({float(d.logicalWidth),float(d.logicalHeight)},{float(d.width),float(d.height)});if(hasWorldPass){D3D12_GPU_DESCRIPTOR_HANDLE hdrSrv=d.textureHeap->GetGPUDescriptorHandleForHeapStart();float sourceRect[4]{};if(useDLSS){const bool evaluated=d.dlss.Evaluate(d.list.Get());dlssEvaluationFailed=!evaluated;hdrSrv.ptr+=UINT64(evaluated?DlssOutputSrvDescriptor3D:DlssInputSrvDescriptor3D)*d.textureStep;if(evaluated){const float scaleX=float(d.width)/d.dlss.RenderWidth(),scaleY=float(d.height)/d.dlss.RenderHeight();sourceRect[0]=worldCanvas.x*scaleX;sourceRect[1]=worldCanvas.y*scaleY;sourceRect[2]=worldCanvas.width*scaleX;sourceRect[3]=worldCanvas.height*scaleY;}else{D3D12_RESOURCE_BARRIER fallbackRead{};fallbackRead.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;fallbackRead.Transition={d.dlss.InputResource(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};d.list->ResourceBarrier(1,&fallbackRead);sourceRect[0]=worldCanvas.x;sourceRect[1]=worldCanvas.y;sourceRect[2]=worldCanvas.width;sourceRect[3]=worldCanvas.height;}}else{std::swap(hdrWrite.Transition.StateBefore,hdrWrite.Transition.StateAfter);d.list->ResourceBarrier(1,&hdrWrite);hdrSrv.ptr+=UINT64(HdrSceneSrvDescriptor3D)*d.textureStep;sourceRect[0]=worldCanvas.x;sourceRect[1]=worldCanvas.y;sourceRect[2]=worldCanvas.width;sourceRect[3]=worldCanvas.height;}D3D12_VIEWPORT outputViewport{outputCanvas.x,outputCanvas.y,outputCanvas.width,outputCanvas.height,0,1};D3D12_RECT outputScissor{LONG(outputCanvas.x),LONG(outputCanvas.y),LONG(outputCanvas.x+outputCanvas.width),LONG(outputCanvas.y+outputCanvas.height)};d.list->RSSetViewports(1,&outputViewport);d.list->RSSetScissorRects(1,&outputScissor);d.list->OMSetRenderTargets(1,&rtv,FALSE,nullptr);d.list->SetGraphicsRootSignature(d.postProcessRoot.Get());d.list->SetGraphicsRootDescriptorTable(0,hdrSrv);const float compositeConstants[8]={sourceRect[0],sourceRect[1],sourceRect[2],sourceRect[3],outputCanvas.x,outputCanvas.y,outputCanvas.width,outputCanvas.height};d.list->SetGraphicsRoot32BitConstants(1,8,compositeConstants,0);d.list->SetPipelineState(d.postProcessPipeline.Get());d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);d.list->DrawInstanced(3,1,0,0);++d.stats.hdrPostProcessPasses;if(useDLSS){if(!dlssEvaluationFailed)d.dlss.FinishComposite(d.list.Get());else{D3D12_RESOURCE_BARRIER fallbackWrite{};fallbackWrite.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;fallbackWrite.Transition={d.dlss.InputResource(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET};d.list->ResourceBarrier(1,&fallbackWrite);}}}if(count){D3D12_VIEWPORT outputViewport{outputCanvas.x,outputCanvas.y,outputCanvas.width,outputCanvas.height,0,1};D3D12_RECT outputScissor{LONG(outputCanvas.x),LONG(outputCanvas.y),LONG(outputCanvas.x+outputCanvas.width),LONG(outputCanvas.y+outputCanvas.height)};d.list->RSSetViewports(1,&outputViewport);d.list->RSSetScissorRects(1,&outputScissor);d.list->OMSetRenderTargets(1,&rtv,FALSE,nullptr);d.list->SetGraphicsRootSignature(d.root.Get());d.list->SetDescriptorHeaps(1,descriptorHeaps);const float logicalSize[2]={float(d.logicalWidth),float(d.logicalHeight)};d.list->SetGraphicsRoot32BitConstants(4,2,logicalSize,0);d.list->IASetVertexBuffers(0,1,&d.vbv[d.frame]);forEachCanvasSpan([&](size_t firstVertex,size_t vertexCount,bool additive){if(!vertexCount)return;d.list->SetPipelineState(additive?d.additivePipeline.Get():d.pipeline.Get());d.list->DrawInstanced(UINT(vertexCount),1,UINT(firstVertex),0);});}
+ auto &d = *impl_;
+ const std::filesystem::path capturePath =
+     std::exchange(d.pendingCapturePath, {});
+ d.SubmitMeshUploadBatch();
+ d.SubmitTextureUploadBatch();
+ d.WaitForFrame(d.frame);
+ d.CollectGpuTiming(d.frame);
+ const size_t count = DrawableVertexCount(dl.vertices.size()),
+              worldCount = DrawableWorldVertexCount(dl.worldVertices.size()),
+              worldIndexCount =
+                  DrawableWorldIndexCount(dl.worldIndices, worldCount);
+ const uint64_t currentFrame = d.stats.submittedFrames;
+ auto prepareGroups = [&](auto &groups) {
+   for (auto iterator = groups.begin(); iterator != groups.end();) {
+     auto &group = iterator->second;
+     group.instances.clear();
+     if (currentFrame - group.lastUsedFrame >
+         D3D12Renderer::InstanceGroupRetentionFrames) {
+       d.stats.instanceGroupReleasedBytes +=
+           group.instances.capacity() * sizeof(GpuMeshInstance);
+       ++d.stats.instanceGroupEvictions;
+       iterator = groups.erase(iterator);
+     } else
+       ++iterator;
+   }
+   if (groups.empty() && groups.bucket_count() > 128) {
+     d.stats.instanceGroupReleasedBytes +=
+         groups.bucket_count() * sizeof(void *);
+     groups.rehash(0);
+   }
+ };
+ prepareGroups(d.instanceGroups);
+ prepareGroups(d.overlayInstanceGroups);
+ prepareGroups(d.shadowOnlyInstanceGroups);
+ struct TransparentSubmission {
+   GpuMeshInstance gpu{};
+   ResidentMesh3D *mesh{};
+   MaterialTextureSetHandle3D textures{};
+   float depth{};
+ };
+ std::vector<TransparentSubmission> transparentSubmissions;
+ transparentSubmissions.reserve(
+     (std::min)(dl.meshInstances.size(), MaxMeshInstances));
+ d.stats.lastSubmittedFoliageInstances = 0;
+ d.stats.lastSubmittedTerrainInstances = 0;
+ size_t acceptedInstances = 0, acceptedOverlayInstances = 0,
+        acceptedShadowOnlyInstances = 0, acceptedTexturedInstances = 0,
+        droppedInstances = 0;
+ for (size_t index = 0; index < dl.meshInstances.size(); ++index) {
+   if (acceptedInstances >= MaxMeshInstances) {
+     droppedInstances += dl.meshInstances.size() - index;
+     break;
+   }
+   const MeshInstance3D &instance = dl.meshInstances[index];
+   if (d.residentMeshes.find(instance.mesh.value) == d.residentMeshes.end() ||
+       (instance.layer == MeshRenderLayer3D::ShadowOnly &&
+        !instance.castsShadow)) {
+     ++droppedInstances;
+     continue;
+   }
+   const bool shadowOnly = instance.layer == MeshRenderLayer3D::ShadowOnly,
+              validTextures = !shadowOnly && instance.textures &&
+                              d.residentMaterialTextureSets.contains(
+                                  instance.textures.value);
+   GpuMeshInstance gpu{};
+   gpu.transform = instance.transform;
+   for (size_t row = 0; row < 3; ++row)
+     gpu.normalRows[row] = {instance.normalTransform[row][0],
+                            instance.normalTransform[row][1],
+                            instance.normalTransform[row][2], 0};
+   gpu.tint = instance.tint;
+   gpu.surface = instance.surface;
+   const uint32_t packedTextureScale = uint32_t(
+       std::lround(Clamp(instance.textureScale / 16.f, 0.f, 1.f) * 65535.f));
+   gpu.textureData =
+       PackMeshInstanceFlags3D(validTextures, instance.useUv,
+                               instance.materialClass) |
+       PackMeshInstanceLodData3D(instance.lodCoverage, instance.lodSeed) |
+       (packedTextureScale << 16);
+   if (instance.layer == MeshRenderLayer3D::Transparent) {
+     transparentSubmissions.push_back(
+         {gpu, &d.residentMeshes.find(instance.mesh.value)->second,
+          validTextures ? instance.textures : MaterialTextureSetHandle3D{},
+          instance.cameraDepth});
+   } else {
+     auto &groups = shadowOnly ? d.shadowOnlyInstanceGroups
+                    : instance.layer == MeshRenderLayer3D::Overlay
+                        ? d.overlayInstanceGroups
+                        : d.instanceGroups;
+     const uint64_t groupKey =
+         (uint64_t(validTextures ? instance.textures.value : 0) << 32) |
+         instance.mesh.value | (instance.castsShadow ? 1ull << 63 : 0) |
+         (instance.materialClass == MaterialClass3D::Foliage ? 1ull << 62 : 0);
+     auto [groupIterator, created] = groups.try_emplace(groupKey);
+     if (created)
+       ++d.stats.instanceGroupCreations;
+     groupIterator->second.lastUsedFrame = currentFrame;
+     groupIterator->second.instances.push_back(gpu);
+   }
+   acceptedOverlayInstances += instance.layer == MeshRenderLayer3D::Overlay;
+   acceptedShadowOnlyInstances += shadowOnly;
+   acceptedTexturedInstances += validTextures;
+   d.stats.lastSubmittedFoliageInstances +=
+       !shadowOnly && instance.materialClass == MaterialClass3D::Foliage;
+   d.stats.lastSubmittedTerrainInstances +=
+       !shadowOnly && instance.materialClass == MaterialClass3D::Terrain;
+   ++acceptedInstances;
+ }
+ d.RefreshInstanceGroupStats();
+ if (count) {
+   d.EnsureFrameUploadBuffer(d.vertexBuffers[d.frame], d.mapped[d.frame],
+                             d.vertexCapacity[d.frame], count,
+                             InitialFrameVertices, MaxVertices);
+   d.vbv[d.frame] = {d.vertexBuffers[d.frame]->GetGPUVirtualAddress(),
+                     UINT(d.vertexCapacity[d.frame] * sizeof(Vertex)),
+                     sizeof(Vertex)};
+ }
+ if (worldCount) {
+   d.EnsureFrameUploadBuffer(d.worldVertexBuffers[d.frame],
+                             d.worldMapped[d.frame],
+                             d.worldVertexCapacity[d.frame], worldCount,
+                             InitialFrameWorldVertices, MaxWorldVertices);
+   d.worldVbv[d.frame] = {
+       d.worldVertexBuffers[d.frame]->GetGPUVirtualAddress(),
+       UINT(d.worldVertexCapacity[d.frame] * sizeof(Vertex3D)),
+       sizeof(Vertex3D)};
+ }
+ if (worldIndexCount) {
+   d.EnsureFrameUploadBuffer(d.worldIndexBuffers[d.frame],
+                             d.worldIndexMapped[d.frame],
+                             d.worldIndexCapacity[d.frame], worldIndexCount,
+                             InitialFrameWorldIndices, MaxWorldIndices);
+   d.worldIbv[d.frame] = {
+       d.worldIndexBuffers[d.frame]->GetGPUVirtualAddress(),
+       UINT(d.worldIndexCapacity[d.frame] * sizeof(uint32_t)),
+       DXGI_FORMAT_R32_UINT};
+ }
+ if (acceptedInstances)
+   d.EnsureFrameUploadBuffer(d.instanceBuffers[d.frame],
+                             d.instanceMapped[d.frame],
+                             d.instanceCapacity[d.frame], acceptedInstances,
+                             InitialFrameMeshInstances, MaxMeshInstances);
+ const PointLightSelection3D<MaxPointLights> pointLights =
+     SelectInfluentialPointLights<MaxPointLights>(
+         dl.PointLights(), dl.Atmosphere().cameraPosition);
+ SceneConstants3D scene{};
+ const DirectionalLight3D &sceneLight = dl.DirectionalLight();
+ const Atmosphere3D &sceneAtmosphere = dl.Atmosphere();
+ memcpy(scene.values.data(), &dl.ViewProjection().values[0][0],
+        sizeof(float) * 16);
+ const float directionAmbient[4] = {sceneLight.direction.x,
+                                    sceneLight.direction.y,
+                                    sceneLight.direction.z, sceneLight.ambient},
+             colorIntensity[4] = {sceneLight.color.r, sceneLight.color.g,
+                                  sceneLight.color.b, sceneLight.intensity},
+             fogColor[4] = {sceneAtmosphere.fogColor.r,
+                            sceneAtmosphere.fogColor.g,
+                            sceneAtmosphere.fogColor.b,
+                            sceneAtmosphere.fogColor.a},
+             cameraFogStart[4] = {sceneAtmosphere.cameraPosition.x,
+                                  sceneAtmosphere.cameraPosition.y,
+                                  sceneAtmosphere.cameraPosition.z,
+                                  sceneAtmosphere.fogStart},
+             fogEndEnabled[4] = {
+                 sceneAtmosphere.fogEnd, sceneAtmosphere.enabled ? 1.f : 0.f,
+                 float(pointLights.count), dl.EnvironmentTime()};
+ memcpy(scene.values.data() + 16, directionAmbient, sizeof(directionAmbient));
+ memcpy(scene.values.data() + 20, colorIntensity, sizeof(colorIntensity));
+ memcpy(scene.values.data() + 24, fogColor, sizeof(fogColor));
+ memcpy(scene.values.data() + 28, cameraFogStart, sizeof(cameraFogStart));
+ memcpy(scene.values.data() + 32, fogEndEnabled, sizeof(fogEndEnabled));
+ for (std::size_t index = 0; index < pointLights.count; ++index) {
+   const PointLight3D &point = pointLights.lights[index];
+   const float positionRadius[4] = {point.position.x, point.position.y,
+                                    point.position.z, point.radius},
+               pointIntensity[4] = {point.color.r, point.color.g, point.color.b,
+                                    point.intensity};
+   memcpy(scene.values.data() + 36 + index * 4, positionRadius,
+          sizeof(positionRadius));
+   memcpy(scene.values.data() + 48 + index * 4, pointIntensity,
+          sizeof(pointIntensity));
+ }
+ scene.values[60] = std::exp2(dl.ExposureCompensation());
+ memcpy(d.sceneConstantsMapped + d.frame * 64, scene.values.data(),
+        sizeof(scene));
+ d.stats.lastExposureCompensationEv = dl.ExposureCompensation();
+ d.activeMeshGroups.clear();
+ d.activeOverlayMeshGroups.clear();
+ d.activeShadowOnlyMeshGroups.clear();
+ std::vector<ActiveMeshGroup3D> activeTransparentMeshGroups;
+ activeTransparentMeshGroups.reserve(transparentSubmissions.size());
+ std::ranges::stable_sort(
+     transparentSubmissions,
+     [](const TransparentSubmission &left, const TransparentSubmission &right) {
+       return left.depth > right.depth;
+     });
+ size_t instanceOffset = 0;
+ auto activate = [&](auto &source, auto &active) {
+   for (auto &[groupKey, group] : source) {
+     auto &instances = group.instances;
+     if (instances.empty())
+       continue;
+     const uint32_t meshHandle = uint32_t(groupKey),
+                    textureHandle = uint32_t(groupKey >> 32) & 0x3fffffffu;
+     const bool castsShadow = (groupKey >> 63) != 0,
+                doubleSided = (groupKey & (1ull << 62)) != 0;
+     auto mesh = d.residentMeshes.find(meshHandle);
+     if (mesh == d.residentMeshes.end())
+       continue;
+     memcpy(d.instanceMapped[d.frame] + instanceOffset, instances.data(),
+            instances.size() * sizeof(GpuMeshInstance));
+     active.push_back({&mesh->second,
+                       {textureHandle},
+                       instanceOffset,
+                       instances.size(),
+                       castsShadow,
+                       doubleSided});
+     instanceOffset += instances.size();
+   }
+ };
+ activate(d.instanceGroups, d.activeMeshGroups);
+ for (const TransparentSubmission &submission : transparentSubmissions) {
+   d.instanceMapped[d.frame][instanceOffset] = submission.gpu;
+   activeTransparentMeshGroups.push_back(
+       {submission.mesh, submission.textures, instanceOffset, 1});
+   ++instanceOffset;
+ }
+ activate(d.overlayInstanceGroups, d.activeOverlayMeshGroups);
+ activate(d.shadowOnlyInstanceGroups, d.activeShadowOnlyMeshGroups);
+ const DrawListStats2D drawStats = dl.Stats2D();
+ auto forEachCanvasSpan = [&](auto &&callback) {
+   size_t cursor = 0;
+   for (const DrawSpan2D &span : dl.AdditiveSpans2D()) {
+     if (span.firstVertex >= count)
+       break;
+     const size_t first = (std::max)(cursor, span.firstVertex),
+                  available = count - span.firstVertex,
+                  end = span.vertexCount >= available
+                            ? count
+                            : span.firstVertex + span.vertexCount;
+     if (first > cursor)
+       callback(cursor, first - cursor, false);
+     if (end > first)
+       callback(first, end - first, true);
+     cursor = (std::max)(cursor, end);
+   }
+   if (cursor < count)
+     callback(cursor, count - cursor, false);
+ };
+ uint32_t canvasDrawCalls = 0, additiveDrawCalls = 0;
+ forEachCanvasSpan([&](size_t, size_t vertexCount, bool additive) {
+   if (!vertexCount)
+     return;
+   ++canvasDrawCalls;
+   additiveDrawCalls += additive;
+ });
+ d.stats.lastSubmittedVertices = count;
+ d.stats.lastSubmittedWorldVertices = worldCount;
+ d.stats.lastSubmittedWorldIndices = worldIndexCount;
+ d.stats.lastSubmittedMeshInstances = acceptedInstances;
+ d.stats.lastSubmittedOverlayInstances = acceptedOverlayInstances;
+ d.stats.lastSubmittedShadowOnlyInstances = acceptedShadowOnlyInstances;
+ d.stats.lastSubmittedTexturedMeshInstances = acceptedTexturedInstances;
+ d.stats.lastSubmittedPointLights = pointLights.count;
+ d.stats.lastPointLightCandidates = pointLights.candidates;
+ d.stats.lastInputTriangles2D = drawStats.inputTriangles;
+ d.stats.lastCulledTriangles2D = drawStats.culledTriangles;
+ d.stats.lastAdditiveTriangles2D = drawStats.additiveTriangles;
+ d.stats.lastAdditiveDrawCalls2D = additiveDrawCalls;
+ d.stats.totalCulledTriangles2D += drawStats.culledTriangles;
+ d.stats.totalAdditiveTriangles2D += drawStats.additiveTriangles;
+ d.stats.lastUploadBytes = count * sizeof(Vertex) +
+                           worldCount * sizeof(Vertex3D) +
+                           worldIndexCount * sizeof(uint32_t) +
+                           acceptedInstances * sizeof(GpuMeshInstance);
+ d.stats.peakSubmittedVertices =
+     (std::max)(d.stats.peakSubmittedVertices, count);
+ d.stats.peakSubmittedWorldVertices =
+     (std::max)(d.stats.peakSubmittedWorldVertices, worldCount);
+ d.stats.peakSubmittedWorldIndices =
+     (std::max)(d.stats.peakSubmittedWorldIndices, worldIndexCount);
+ d.stats.peakSubmittedMeshInstances =
+     (std::max)(d.stats.peakSubmittedMeshInstances, acceptedInstances);
+ d.stats.totalDroppedVertices += dl.vertices.size() - count;
+ d.stats.totalDroppedWorldVertices += dl.worldVertices.size() - worldCount;
+ d.stats.totalDroppedWorldIndices += dl.worldIndices.size() - worldIndexCount;
+ d.stats.totalDroppedMeshInstances += droppedInstances;
+ d.stats.totalDroppedPointLights += pointLights.candidates - pointLights.count;
+ d.stats.lastDrawCalls =
+     canvasDrawCalls + uint32_t(worldCount > 0 && worldIndexCount > 0) +
+     uint32_t(d.activeMeshGroups.size() + activeTransparentMeshGroups.size() +
+              d.activeOverlayMeshGroups.size());
+ d.stats.lastBackfaceCulling = dl.BackfaceCulling();
+ ++d.stats.submittedFrames;
+ size_t actualAdditiveVertices = 0;
+ forEachCanvasSpan([&](size_t, size_t vertexCount, bool additive) {
+   if (additive)
+     actualAdditiveVertices += vertexCount;
+ });
+ const size_t actualAdditiveTriangles = actualAdditiveVertices / 3;
+ d.stats.totalAdditiveTriangles2D -= drawStats.additiveTriangles;
+ d.stats.totalAdditiveTriangles2D += actualAdditiveTriangles;
+ d.stats.lastAdditiveTriangles2D = actualAdditiveTriangles;
+ if (count)
+   memcpy(d.mapped[d.frame], dl.vertices.data(), count * sizeof(Vertex));
+ if (worldCount)
+   memcpy(d.worldMapped[d.frame], dl.worldVertices.data(),
+          worldCount * sizeof(Vertex3D));
+ if (worldIndexCount)
+   memcpy(d.worldIndexMapped[d.frame], dl.worldIndices.data(),
+          worldIndexCount * sizeof(uint32_t));
+ Check(d.alloc[d.frame]->Reset(), "Allocator reset failed");
+ Check(d.list->Reset(d.alloc[d.frame].Get(), d.pipeline.Get()),
+       "List reset failed");
+ const UINT timestampStart = d.frame * 2;
+ d.list->EndQuery(d.timestampHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                  timestampStart);
+ float c[4] = {clear.r, clear.g, clear.b, clear.a};
+ const Matrix4 lightViewProjection[2] = {
+     CreateDirectionalLightViewProjection3D(
+         dl.Atmosphere().cameraPosition, dl.DirectionalLight().direction, 28.f),
+     CreateDirectionalLightViewProjection3D(dl.Atmosphere().cameraPosition,
+                                            dl.DirectionalLight().direction,
+                                            90.f)};
+ const bool hasShadowCaster =
+     !d.activeShadowOnlyMeshGroups.empty() ||
+     std::ranges::any_of(d.activeMeshGroups, [](const ActiveMeshGroup3D &group) {
+       return group.castsShadow;
+     });
+ const bool renderShadowMap =
+     dl.DirectionalShadowMapEnabled() &&
+     ((worldCount && worldIndexCount) || hasShadowCaster);
+ d.stats.lastDirectionalShadowCascades = renderShadowMap ? 2 : 0;
+ d.stats.directionalShadowCascadeSplit = 32.f;
+ d.stats.directionalShadowTransitionWidth = 6.f;
+ d.stats.directionalShadowBasePcfSamples = 12;
+ d.stats.directionalShadowTransitionPcfSamples = 24;
+ d.stats.lastDirectionalShadowCasters = 0;
+ for (const ActiveMeshGroup3D &group : d.activeMeshGroups)
+   if (group.castsShadow)
+     d.stats.lastDirectionalShadowCasters += group.instanceCount;
+ for (const ActiveMeshGroup3D &group : d.activeShadowOnlyMeshGroups)
+   d.stats.lastDirectionalShadowCasters += group.instanceCount;
+ d.stats.lastDirectionalShadowCasters += worldCount && worldIndexCount;
+ d.stats.lastDirectionalShadowDrawCalls = size_t(worldCount && worldIndexCount);
+ if (renderShadowMap)
+   for (const ActiveMeshGroup3D &group : d.activeMeshGroups)
+     d.stats.lastDirectionalShadowDrawCalls += group.castsShadow;
+ if (renderShadowMap)
+   d.stats.lastDirectionalShadowDrawCalls +=
+       d.activeShadowOnlyMeshGroups.size();
+ else
+   d.stats.lastDirectionalShadowDrawCalls = 0;
+ d.stats.lastDirectionalShadowDrawCalls *= 2;
+ if (!renderShadowMap)
+   d.stats.lastDirectionalShadowCasters = 0;
+ if (renderShadowMap && !d.shadowDepth)
+   d.CreateShadowDepth();
+ const float shadowParameters[4] = {renderShadowMap ? 32.f : 0.f, .0015f,
+                                    .00035f, 1.f / 2048.f};
+ const float shadowTransition[4] = {6.f, 0, 0, 0};
+ float *shadowConstants = d.shadowConstantsMapped + d.frame * 64;
+ memcpy(shadowConstants, &lightViewProjection[0].values[0][0],
+        sizeof(float) * 16);
+ memcpy(shadowConstants + 16, &lightViewProjection[1].values[0][0],
+        sizeof(float) * 16);
+ memcpy(shadowConstants + 32, shadowParameters, sizeof(shadowParameters));
+ memcpy(shadowConstants + 36, shadowTransition, sizeof(shadowTransition));
+ if (renderShadowMap) {
+   D3D12_RESOURCE_BARRIER shadowWrite{};
+   shadowWrite.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+   shadowWrite.Transition = {d.shadowDepth.Get(),
+                             D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                             D3D12_RESOURCE_STATE_DEPTH_WRITE};
+   d.list->ResourceBarrier(1, &shadowWrite);
+   D3D12_VIEWPORT shadowViewport{0, 0, 2048, 2048, 0, 1};
+   D3D12_RECT shadowRect{0, 0, 2048, 2048};
+   d.list->RSSetViewports(1, &shadowViewport);
+   d.list->RSSetScissorRects(1, &shadowRect);
+   D3D12_CPU_DESCRIPTOR_HANDLE shadowDsv =
+       d.shadowDsvHeap->GetCPUDescriptorHandleForHeapStart();
+   const UINT shadowDsvStep = d.device->GetDescriptorHandleIncrementSize(
+       D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+   for (UINT cascade = 0; cascade < 2; ++cascade) {
+     d.list->ClearDepthStencilView(shadowDsv, D3D12_CLEAR_FLAG_DEPTH, 1, 0, 0,
+                                   nullptr);
+     d.list->OMSetRenderTargets(0, nullptr, FALSE, &shadowDsv);
+     d.list->SetGraphicsRootSignature(d.root.Get());
+     D3D12_GPU_DESCRIPTOR_HANDLE sceneCbv =
+                                     d.textureHeap
+                                         ->GetGPUDescriptorHandleForHeapStart(),
+                                 shadowCbv = sceneCbv;
+     sceneCbv.ptr += UINT64(SceneCbvDescriptorBase3D + d.frame) * d.textureStep;
+     shadowCbv.ptr +=
+         UINT64(ShadowCbvDescriptorBase3D + d.frame) * d.textureStep;
+     d.list->SetDescriptorHeaps(1, d.textureHeap.GetAddressOf());
+     d.list->SetGraphicsRootDescriptorTable(0, sceneCbv);
+     d.list->SetGraphicsRootDescriptorTable(3, shadowCbv);
+     const UINT drawConstants[2] = {cascade, 0};
+     d.list->SetGraphicsRoot32BitConstants(4, 2, drawConstants, 0);
+     d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+     for (const ActiveMeshGroup3D &group : d.activeMeshGroups) {
+       if (!group.castsShadow)
+         continue;
+       d.list->SetPipelineState(d.shadowInstancedPipeline.Get());
+       D3D12_VERTEX_BUFFER_VIEW views[2] = {
+           group.mesh->vertexView,
+           {d.instanceBuffers[d.frame]->GetGPUVirtualAddress() +
+                group.instanceOffset * sizeof(GpuMeshInstance),
+            UINT(group.instanceCount * sizeof(GpuMeshInstance)),
+            sizeof(GpuMeshInstance)}};
+       d.list->IASetVertexBuffers(0, 2, views);
+       d.list->IASetIndexBuffer(&group.mesh->indexView);
+       d.list->DrawIndexedInstanced(group.mesh->indexCount,
+                                    UINT(group.instanceCount), 0, 0, 0);
+     }
+     for (const ActiveMeshGroup3D &group : d.activeShadowOnlyMeshGroups) {
+       d.list->SetPipelineState(d.shadowInstancedPipeline.Get());
+       D3D12_VERTEX_BUFFER_VIEW views[2] = {
+           group.mesh->vertexView,
+           {d.instanceBuffers[d.frame]->GetGPUVirtualAddress() +
+                group.instanceOffset * sizeof(GpuMeshInstance),
+            UINT(group.instanceCount * sizeof(GpuMeshInstance)),
+            sizeof(GpuMeshInstance)}};
+       d.list->IASetVertexBuffers(0, 2, views);
+       d.list->IASetIndexBuffer(&group.mesh->indexView);
+       d.list->DrawIndexedInstanced(group.mesh->indexCount,
+                                    UINT(group.instanceCount), 0, 0, 0);
+     }
+     if (worldCount && worldIndexCount) {
+       d.list->SetPipelineState(d.shadowWorldPipeline.Get());
+       d.list->IASetVertexBuffers(0, 1, &d.worldVbv[d.frame]);
+       d.list->IASetIndexBuffer(&d.worldIbv[d.frame]);
+       d.list->DrawIndexedInstanced(UINT(worldIndexCount), 1, 0, 0, 0);
+     }
+     shadowDsv.ptr += shadowDsvStep;
+   }
+   std::swap(shadowWrite.Transition.StateBefore,
+             shadowWrite.Transition.StateAfter);
+   d.list->ResourceBarrier(1, &shadowWrite);
+ }
+ const bool useDLSS = d.dlss.Enabled();
+ d.stats.worldSrgbRenderTargetViews = 0;
+ bool dlssEvaluationFailed = false;
+ const bool hasWorldPass =
+     (worldCount && worldIndexCount) || !d.activeMeshGroups.empty() ||
+     !activeTransparentMeshGroups.empty() || !d.activeOverlayMeshGroups.empty();
+ if (hasWorldPass && !useDLSS && !d.depth)
+   d.CreateDepth();
+ if (hasWorldPass && !useDLSS && !d.hdrSceneColor)
+   d.CreateHdrSceneColor();
+ D3D12_RESOURCE_BARRIER toRT{};
+ toRT.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+ toRT.Transition = {
+     d.targets[d.frame].Get(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+     D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET};
+ d.list->ResourceBarrier(1, &toRT);
+ D3D12_CPU_DESCRIPTOR_HANDLE
+     rtv = d.rtvHeap->GetCPUDescriptorHandleForHeapStart(),
+     dsv = useDLSS ? d.dlss.DepthStencilView()
+                   : d.dsvHeap->GetCPUDescriptorHandleForHeapStart();
+ rtv.ptr += SIZE_T(d.frame) * d.rtvStep;
+ d.list->ClearRenderTargetView(rtv, c, 0, nullptr);
+ d.list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+ D3D12_RESOURCE_BARRIER hdrWrite{};
+ if (hasWorldPass) {
+   if (useDLSS)
+     d.dlss.BeginScene(d.list.Get(), c);
+   else {
+     hdrWrite.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+     hdrWrite.Transition = {d.hdrSceneColor.Get(),
+                            D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                            D3D12_RESOURCE_STATE_RENDER_TARGET};
+     d.list->ResourceBarrier(1, &hdrWrite);
+     D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv =
+         d.rtvHeap->GetCPUDescriptorHandleForHeapStart();
+     hdrRtv.ptr += SIZE_T(Impl::Frames * 2) * d.rtvStep;
+     d.list->ClearRenderTargetView(hdrRtv, c, 0, nullptr);
+     d.list->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0,
+                                   nullptr);
+     d.list->OMSetRenderTargets(1, &hdrRtv, FALSE, &dsv);
+   }
+ }
+ const unsigned rw = useDLSS ? d.dlss.RenderWidth() : d.width,
+                rh = useDLSS ? d.dlss.RenderHeight() : d.height;
+ const CanvasViewport worldCanvas = CalculateCanvasViewport(
+     {float(d.logicalWidth), float(d.logicalHeight)}, {float(rw), float(rh)});
+ D3D12_VIEWPORT vp{
+     worldCanvas.x, worldCanvas.y, worldCanvas.width, worldCanvas.height, 0, 1};
+ D3D12_RECT sr{LONG(worldCanvas.x), LONG(worldCanvas.y),
+               LONG(worldCanvas.x + worldCanvas.width),
+               LONG(worldCanvas.y + worldCanvas.height)};
+ d.list->RSSetViewports(1, &vp);
+ d.list->RSSetScissorRects(1, &sr);
+ d.list->SetGraphicsRootSignature(d.root.Get());
+ ID3D12DescriptorHeap *descriptorHeaps[] = {d.textureHeap.Get()};
+ d.list->SetDescriptorHeaps(1, descriptorHeaps);
+ d.list->SetGraphicsRootDescriptorTable(
+     1, d.textureHeap->GetGPUDescriptorHandleForHeapStart());
+ D3D12_GPU_DESCRIPTOR_HANDLE shadowSrv =
+     d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+ shadowSrv.ptr += UINT64(d.activeShadowSrvDescriptor) * d.textureStep;
+ d.list->SetGraphicsRootDescriptorTable(2, shadowSrv);
+ d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+ if (hasWorldPass) {
+   D3D12_GPU_DESCRIPTOR_HANDLE sceneCbv =
+                                   d.textureHeap
+                                       ->GetGPUDescriptorHandleForHeapStart(),
+                               shadowCbv = sceneCbv;
+   sceneCbv.ptr += UINT64(SceneCbvDescriptorBase3D + d.frame) * d.textureStep;
+   shadowCbv.ptr += UINT64(ShadowCbvDescriptorBase3D + d.frame) * d.textureStep;
+   d.list->SetGraphicsRootDescriptorTable(0, sceneCbv);
+   d.list->SetGraphicsRootDescriptorTable(3, shadowCbv);
+ }
+ auto bindTextures = [&](MaterialTextureSetHandle3D handle) {
+   D3D12_GPU_DESCRIPTOR_HANDLE descriptor =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   if (handle) {
+     const auto found = d.residentMaterialTextureSets.find(handle.value);
+     if (found != d.residentMaterialTextureSets.end())
+       descriptor.ptr += UINT64(found->second.descriptorOffset) * d.textureStep;
+   }
+   d.list->SetGraphicsRootDescriptorTable(1, descriptor);
+ };
+ for (const ActiveMeshGroup3D &group : d.activeMeshGroups) {
+   bindTextures(group.textures);
+   d.list->SetPipelineState(dl.BackfaceCulling() && !group.doubleSided
+                                ? d.instancedCulledPipeline.Get()
+                                : d.instancedPipeline.Get());
+   D3D12_VERTEX_BUFFER_VIEW views[2] = {
+       group.mesh->vertexView,
+       {d.instanceBuffers[d.frame]->GetGPUVirtualAddress() +
+            group.instanceOffset * sizeof(GpuMeshInstance),
+        UINT(group.instanceCount * sizeof(GpuMeshInstance)),
+        sizeof(GpuMeshInstance)}};
+   d.list->IASetVertexBuffers(0, 2, views);
+   d.list->IASetIndexBuffer(&group.mesh->indexView);
+   d.list->DrawIndexedInstanced(group.mesh->indexCount,
+                                UINT(group.instanceCount), 0, 0, 0);
+ }
+ if (worldCount && worldIndexCount) {
+   bindTextures({});
+   d.list->SetPipelineState(d.worldPipeline.Get());
+   d.list->IASetVertexBuffers(0, 1, &d.worldVbv[d.frame]);
+   d.list->IASetIndexBuffer(&d.worldIbv[d.frame]);
+   d.list->DrawIndexedInstanced(UINT(worldIndexCount), 1, 0, 0, 0);
+ }
+ for (const ActiveMeshGroup3D &group : activeTransparentMeshGroups) {
+   bindTextures(group.textures);
+   d.list->SetPipelineState(d.instancedTransparentPipeline.Get());
+   D3D12_VERTEX_BUFFER_VIEW views[2] = {
+       group.mesh->vertexView,
+       {d.instanceBuffers[d.frame]->GetGPUVirtualAddress() +
+            group.instanceOffset * sizeof(GpuMeshInstance),
+        UINT(group.instanceCount * sizeof(GpuMeshInstance)),
+        sizeof(GpuMeshInstance)}};
+   d.list->IASetVertexBuffers(0, 2, views);
+   d.list->IASetIndexBuffer(&group.mesh->indexView);
+   d.list->DrawIndexedInstanced(group.mesh->indexCount,
+                                UINT(group.instanceCount), 0, 0, 0);
+ }
+ for (const ActiveMeshGroup3D &group : d.activeOverlayMeshGroups) {
+   bindTextures(group.textures);
+   d.list->SetPipelineState(d.instancedOverlayPipeline.Get());
+   D3D12_VERTEX_BUFFER_VIEW views[2] = {
+       group.mesh->vertexView,
+       {d.instanceBuffers[d.frame]->GetGPUVirtualAddress() +
+            group.instanceOffset * sizeof(GpuMeshInstance),
+        UINT(group.instanceCount * sizeof(GpuMeshInstance)),
+        sizeof(GpuMeshInstance)}};
+   d.list->IASetVertexBuffers(0, 2, views);
+   d.list->IASetIndexBuffer(&group.mesh->indexView);
+   d.list->DrawIndexedInstanced(group.mesh->indexCount,
+                                UINT(group.instanceCount), 0, 0, 0);
+ }
+ const CanvasViewport outputCanvas =
+     CalculateCanvasViewport({float(d.logicalWidth), float(d.logicalHeight)},
+                             {float(d.width), float(d.height)});
+ if (hasWorldPass) {
+   D3D12_GPU_DESCRIPTOR_HANDLE hdrSrv =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   float sourceRect[4]{};
+   if (useDLSS) {
+     const bool evaluated = d.dlss.Evaluate(d.list.Get());
+     dlssEvaluationFailed = !evaluated;
+     hdrSrv.ptr += UINT64(evaluated ? DlssOutputSrvDescriptor3D
+                                    : DlssInputSrvDescriptor3D) *
+                   d.textureStep;
+     if (evaluated) {
+       const float scaleX = float(d.width) / d.dlss.RenderWidth(),
+                   scaleY = float(d.height) / d.dlss.RenderHeight();
+       sourceRect[0] = worldCanvas.x * scaleX;
+       sourceRect[1] = worldCanvas.y * scaleY;
+       sourceRect[2] = worldCanvas.width * scaleX;
+       sourceRect[3] = worldCanvas.height * scaleY;
+     } else {
+       D3D12_RESOURCE_BARRIER fallbackRead{};
+       fallbackRead.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+       fallbackRead.Transition = {d.dlss.InputResource(),
+                                  D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                  D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                  D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
+       d.list->ResourceBarrier(1, &fallbackRead);
+       sourceRect[0] = worldCanvas.x;
+       sourceRect[1] = worldCanvas.y;
+       sourceRect[2] = worldCanvas.width;
+       sourceRect[3] = worldCanvas.height;
+     }
+   } else {
+     std::swap(hdrWrite.Transition.StateBefore, hdrWrite.Transition.StateAfter);
+     d.list->ResourceBarrier(1, &hdrWrite);
+     hdrSrv.ptr += UINT64(HdrSceneSrvDescriptor3D) * d.textureStep;
+     sourceRect[0] = worldCanvas.x;
+     sourceRect[1] = worldCanvas.y;
+     sourceRect[2] = worldCanvas.width;
+     sourceRect[3] = worldCanvas.height;
+   }
+   D3D12_VIEWPORT outputViewport{outputCanvas.x,
+                                 outputCanvas.y,
+                                 outputCanvas.width,
+                                 outputCanvas.height,
+                                 0,
+                                 1};
+   D3D12_RECT outputScissor{LONG(outputCanvas.x), LONG(outputCanvas.y),
+                            LONG(outputCanvas.x + outputCanvas.width),
+                            LONG(outputCanvas.y + outputCanvas.height)};
+   d.list->RSSetViewports(1, &outputViewport);
+   d.list->RSSetScissorRects(1, &outputScissor);
+   d.list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+   d.list->SetGraphicsRootSignature(d.postProcessRoot.Get());
+   d.list->SetGraphicsRootDescriptorTable(0, hdrSrv);
+   const float compositeConstants[8] = {
+       sourceRect[0],  sourceRect[1],  sourceRect[2],      sourceRect[3],
+       outputCanvas.x, outputCanvas.y, outputCanvas.width, outputCanvas.height};
+   d.list->SetGraphicsRoot32BitConstants(1, 8, compositeConstants, 0);
+   d.list->SetPipelineState(d.postProcessPipeline.Get());
+   d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+   d.list->DrawInstanced(3, 1, 0, 0);
+   ++d.stats.hdrPostProcessPasses;
+   if (useDLSS) {
+     if (!dlssEvaluationFailed)
+       d.dlss.FinishComposite(d.list.Get());
+     else {
+       D3D12_RESOURCE_BARRIER fallbackWrite{};
+       fallbackWrite.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+       fallbackWrite.Transition = {d.dlss.InputResource(),
+                                   D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                   D3D12_RESOURCE_STATE_RENDER_TARGET};
+       d.list->ResourceBarrier(1, &fallbackWrite);
+     }
+   }
+ }
+ if (count) {
+   D3D12_VIEWPORT outputViewport{outputCanvas.x,
+                                 outputCanvas.y,
+                                 outputCanvas.width,
+                                 outputCanvas.height,
+                                 0,
+                                 1};
+   D3D12_RECT outputScissor{LONG(outputCanvas.x), LONG(outputCanvas.y),
+                            LONG(outputCanvas.x + outputCanvas.width),
+                            LONG(outputCanvas.y + outputCanvas.height)};
+   d.list->RSSetViewports(1, &outputViewport);
+   d.list->RSSetScissorRects(1, &outputScissor);
+   d.list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+   d.list->SetGraphicsRootSignature(d.root.Get());
+   d.list->SetDescriptorHeaps(1, descriptorHeaps);
+   const float logicalSize[2] = {float(d.logicalWidth), float(d.logicalHeight)};
+   d.list->SetGraphicsRoot32BitConstants(4, 2, logicalSize, 0);
+   d.list->IASetVertexBuffers(0, 1, &d.vbv[d.frame]);
+   forEachCanvasSpan(
+       [&](size_t firstVertex, size_t vertexCount, bool additive) {
+         if (!vertexCount)
+           return;
+         d.list->SetPipelineState(additive ? d.additivePipeline.Get()
+                                           : d.pipeline.Get());
+         d.list->DrawInstanced(UINT(vertexCount), 1, UINT(firstVertex), 0);
+       });
+ }
  ComPtr<ID3D12Resource> captureReadback;D3D12_PLACED_SUBRESOURCE_FOOTPRINT captureFootprint{};UINT64 captureBytes{};
  if(!capturePath.empty()){const D3D12_RESOURCE_DESC targetDescription=d.targets[d.frame]->GetDesc();UINT rowCount{};UINT64 rowBytes{};d.device->GetCopyableFootprints(&targetDescription,0,1,0,&captureFootprint,&rowCount,&rowBytes,&captureBytes);D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_READBACK;D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=captureBytes;buffer.Height=1;buffer.DepthOrArraySize=1;buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;Check(d.device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&captureReadback)),"Frame capture readback failed");D3D12_RESOURCE_BARRIER toCopy{};toCopy.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;toCopy.Transition={d.targets[d.frame].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_SOURCE};d.list->ResourceBarrier(1,&toCopy);D3D12_TEXTURE_COPY_LOCATION destination{};destination.pResource=captureReadback.Get();destination.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;destination.PlacedFootprint=captureFootprint;D3D12_TEXTURE_COPY_LOCATION source{};source.pResource=d.targets[d.frame].Get();source.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;source.SubresourceIndex=0;d.list->CopyTextureRegion(&destination,0,0,0,&source,nullptr);toCopy.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;toCopy.Transition.StateAfter=D3D12_RESOURCE_STATE_PRESENT;d.list->ResourceBarrier(1,&toCopy);}else{std::swap(toRT.Transition.StateBefore,toRT.Transition.StateAfter);d.list->ResourceBarrier(1,&toRT);}d.list->EndQuery(d.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,timestampStart+1);d.list->ResolveQueryData(d.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,timestampStart,2,d.timestampReadback.Get(),sizeof(uint64_t)*timestampStart);Check(d.list->Close(),"Close failed");ID3D12CommandList* lists[]={d.list.Get()};d.queue->ExecuteCommandLists(1,lists);const unsigned submittedFrame=d.frame;d.timestampValid[submittedFrame]=true;Check(d.swap->Present(1,0),"Present failed");const UINT64 submittedFence=d.SignalFrame(submittedFrame);d.frame=d.swap->GetCurrentBackBufferIndex();if(captureReadback){d.WaitForValue(submittedFence);void* mapped{};const D3D12_RANGE readRange{0,SIZE_T(captureBytes)};if(SUCCEEDED(captureReadback->Map(0,&readRange,&mapped))){const std::span pixels{static_cast<const std::uint8_t*>(mapped),size_t(captureBytes)};const FrameCaptureAnalysis3D analysis=AnalyzeFrameCaptureRgba8(d.width,d.height,captureFootprint.Footprint.RowPitch,pixels);const bool plausibleExposure=analysis.valid&&analysis.averageLuminance>.01&&analysis.averageLuminance<.99&&analysis.luminanceVariance>.00001&&analysis.darkPixelFraction<.98&&analysis.brightPixelFraction<.98;const bool encoded=EncodeFrameCapturePng3D(capturePath,d.width,d.height,captureFootprint.Footprint.RowPitch,pixels);if(plausibleExposure&&encoded){++d.stats.successfulFrameCaptures;d.stats.lastCapturedAverageLuminance=analysis.averageLuminance;d.stats.lastCapturedLuminanceVariance=analysis.luminanceVariance;d.stats.lastCapturedDarkPixelFraction=analysis.darkPixelFraction;d.stats.lastCapturedBrightPixelFraction=analysis.brightPixelFraction;}else ++d.stats.rejectedFrameCaptures;const D3D12_RANGE writtenRange{};captureReadback->Unmap(0,&writtenRange);}else ++d.stats.rejectedFrameCaptures;}if(dlssEvaluationFailed){d.WaitForValue(submittedFence);d.dlss.Toggle();d.UpdateDlssSceneDescriptors();d.dlssValidationComplete=false;}else if(useDLSS&&!d.dlssValidationComplete){const uint64_t elapsed=d.WaitForValue(submittedFence);d.stats.lastValidationWaitNanoseconds=elapsed;if(elapsed){++d.stats.validationWaits;d.stats.totalValidationWaitNanoseconds+=elapsed;d.stats.peakValidationWaitNanoseconds=(std::max)(d.stats.peakValidationWaitNanoseconds,elapsed);}d.dlssValidationComplete=d.dlss.ValidateOutput();}
 }
