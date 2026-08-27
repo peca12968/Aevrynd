@@ -325,7 +325,7 @@ float3 LinearToSrgb(float3 linearColor)
                   linearColor.z <= 0.0031308 ? low.z : high.z);
 }
 
-float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
+float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     float3 normal = normalize(input.normal.xyz);
     float roughness = clamp(input.material.x, 0.045, 1.0);
@@ -349,6 +349,9 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
         }
     }
 
+    const float foliageMask = input.materialClass == 2 ? 1.0 : 0.0;
+    if (foliageMask > 0.5 && !isFrontFace) normal = -normal;
+
     const float skyMask = 1.0 - saturate(input.normal.w);
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
@@ -365,6 +368,7 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
 
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
+    roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
     const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
     const float skyVisibility = saturate(normal.y * 0.5 + 0.5);
     const float3 skyBounce = lerp(float3(0.22, 0.17, 0.12), float3(0.38, 0.52, 0.68), skyVisibility);
@@ -376,6 +380,15 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
                   + baseColor * emissive * 2.0;
+    [branch] if (foliageMask > 0.5)
+    {
+        const float foliageWrappedDiffuse = saturate((dot(normal, lightDirection) + 0.35) / 1.35);
+        const float foliageBackLight = saturate(dot(-normal, lightDirection));
+        const float foliageForwardScatter = saturate(dot(viewDirection, lightDirection));
+        const float foliageTransmission = foliageBackLight * foliageBackLight * (0.45 + 0.55 * foliageForwardScatter);
+        const float foliageShadow = CascadedDirectionalShadow(input, normal, lightDirection);
+        shaded += baseColor * lightColorIntensity.rgb * lightColorIntensity.w * (foliageWrappedDiffuse * 0.22 + foliageTransmission * 0.48) * foliageShadow;
+    }
 
     [unroll]
     for (uint pointIndex = 0; pointIndex < 3; ++pointIndex)

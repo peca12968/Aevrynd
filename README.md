@@ -123,7 +123,7 @@ Games/
 - MeshProcessing3D 提供退化面移除、完整頂點屬性去重、平滑／硬邊法線重建、保護 UV 與法線接縫的保守 LOD，以及具實測 cache miss 改善的索引重排
 - Engine Lab 的靜態開放世界景觀包含 Ultra 自然地形、蜿蜒河流、森林、岩石、聚落、遠山與地標塔，分離靜態／動態 Scene3D 提交並保留跨場景完整統計
 - 3D 材質使用明確的水體分類傳入 GPU，不再借用透明度猜測表面類型；連續河道具雙尺度波紋法線、Schlick Fresnel、Beer–Lambert RGB 吸收與解析天空反射，維持透明 pass 且不增加貼圖或顯存資源
-- 程序環境網格提供具非對稱寬度與雙軸彎曲的草叢、多葉簇樹冠、具山麓 flare／分形稜脊／侵蝕凹槽／崩積坡的山體，以及封閉擾動多面體岩塊；Rock Near／Far 為 120／28 面，遠景樹冠仍低於近景三分之一索引預算
+- 程序環境網格新增具分段樹幹、錯落下垂針葉層與非對稱輪廓的 Conifer Near／Far LOD（378／102 面），並保留草叢、闊葉樹、侵蝕山體與封閉岩塊等有界網格生成器
 - Scene3D 靜態射線查詢採用有界記憶體 BVH，維持最近命中與完整材質／LOD 語意，同時避免大型世界逐物件掃描
 - Water 材質使用獨立透明 3D pass，在不寫入深度的情況下保留深度測試並依鏡頭距離由後向前繪製，避免不透明水面遮蔽岸邊與水下幾何
 - 網格級三角形 BVH 可跨 MeshResource3D 實例共用，將大型地形命中由完整三角形掃描縮小為少量候選，同時保留 transform、backface 與最近命中語意
@@ -132,7 +132,8 @@ Games/
 - 方向光使用固定 2048²×2 D32 cascade array、獨立 depth-only world／instanced pass、light-space texel snapping、3×3 comparison PCF 與斜率 bias；split 周圍以 6 world-unit transition band 平滑混合兩層，帶外維持 9 taps、帶內最多 18 taps，材質可明確停用投影
 - CSM 採三重緩衝、每幀 256-byte 對齊常數緩衝，root signature 維持 63 DWORD，並回報固定 32 MiB、cascade、split、實際 caster 與 draw call；真陰影啟用時不再建立舊式平面假陰影
 - 解析大氣以方向光驅動 Rayleigh／Henyey-Greenstein Mie 近似、太陽盤、光暈與地平線霧，保持線性 HDR、ACES 與精確 sRGB 輸出，且不新增 LUT 或常駐 GPU 資源
-- HeightField3D `GenerateUltra` 提供雙軸 domain warp、旋轉 octave、ridge／valley 與有界 talus/deposition 近似；66,049 樣本、7 octaves、3 次沉積約 7 ms，所有容量與 scratch 限制失敗皆具原子性
+- HeightField3D `GenerateUltra` 提供雙軸 domain warp、旋轉 octave、ridge／valley 與有界 talus/deposition 近似；`CreateLodMesh` 支援 power-of-two stride、非整除邊界與四邊 skirt，測試案例遠景降面約 90.5%
+- Foliage 是明確 GPU 材質類別，使用雙面繪製、背面法線修正、wrap diffuse、方向光背光透射與低成本 subsurface；Water、Surface、CSM、instance layout 與 root signature 維持原語意且無常駐 GPU 資源增量
 - FrameCapture3D 以最多 262,144 個像素樣本分析平均亮度、變異、全黑與全白比例；不合理曝光不會被計為有效畫面驗證
 - Broadleaf 近景 LOD 使用可重現的分枝、細枝與雙面不規則葉片輪廓；程序 cottage 近景 LOD 增加突出石基、雙側木框窗與五列屋瓦層次
 - ProceduralPlacement3D 使用確定性亂數、最小間距與空間雜湊建立自然配置，新增零配置 acceptance callback 表達多尺度森林群落、林間空地與 biome mask；密度／數量、縮放、旋轉、排除區、地形回呼及所有硬上限維持不變
@@ -148,7 +149,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.9 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.0 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

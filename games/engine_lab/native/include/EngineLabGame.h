@@ -37,6 +37,8 @@ private:
     Aevrynd::MeshResource3D grassLowMesh_{};
     Aevrynd::MeshResource3D treeHighMesh_{};
     Aevrynd::MeshResource3D treeLowMesh_{};
+    Aevrynd::MeshResource3D coniferHighMesh_{};
+    Aevrynd::MeshResource3D coniferLowMesh_{};
     Aevrynd::MeshResource3D cottageHighMesh_{};
     Aevrynd::MeshResource3D cottageLowMesh_{};
     Aevrynd::MeshResource3D riverMesh_{};
@@ -49,6 +51,7 @@ private:
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
     Aevrynd::MeshResource3D terrainMesh_{};
+    Aevrynd::MeshResource3D terrainLowMesh_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle audioPing_{};
     Aevrynd::CameraRig3D cameraRig_{};

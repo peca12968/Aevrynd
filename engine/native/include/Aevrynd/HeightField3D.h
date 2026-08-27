@@ -16,6 +16,12 @@ struct HeightFieldUltraSettings3D {
     std::size_t maximumSamples{4194304},maximumScratchBytes{64u*1024u*1024u};
 };
 struct HeightFieldMeshSettings3D {Color lowColor{.12f,.28f,.1f,1},highColor{.42f,.5f,.32f,1},steepColor{.32f,.3f,.27f,1};float steepNormalY{.72f};Color shoreColor{.24f,.18f,.1f,1};float shoreHeight{-10000.f},shoreBlend{0.f};};
+struct HeightFieldLodMeshSettings3D {
+    unsigned sampleStride{1};
+    bool includeSkirt{};
+    float skirtDepth{2.f};
+    std::size_t maximumVertices{4194304},maximumIndices{25165824};
+};
 
 class HeightField3D {
 public:
@@ -34,6 +40,7 @@ public:
     Vec3 SampleNormal(float x,float z)const;
     void FlattenCircle(Vec3 center,float innerRadius,float targetHeight,float blendDistance=0.f);
     Mesh3D CreateMesh(HeightFieldMeshSettings3D settings={})const;
+    Mesh3D CreateLodMesh(HeightFieldLodMeshSettings3D lodSettings,HeightFieldMeshSettings3D meshSettings={})const;
     float MinimumHeight()const{return minimumHeight_;}
     float MaximumHeight()const{return maximumHeight_;}
     const HeightFieldSettings3D& Settings()const{return settings_;}

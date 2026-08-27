@@ -38,9 +38,9 @@ struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator 
 struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;};
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
-enum class MaterialClass3D:uint8_t {Surface,Water};
+enum class MaterialClass3D:uint8_t {Surface,Water,Foliage};
 static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D;
-constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return value==MaterialClass3D::Water?value:MaterialClass3D::Surface;}
+constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return value==MaterialClass3D::Water||value==MaterialClass3D::Foliage?value:MaterialClass3D::Surface;}
 constexpr uint32_t PackMeshInstanceFlags3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass){return(hasTextures?MeshInstanceHasTexturesBit3D:0u)|(hasTextures&&usesUv?MeshInstanceUsesUvBit3D:0u)|(uint32_t(NormalizeMaterialClass3D(materialClass))<<MeshInstanceMaterialClassShift3D);}
 constexpr MaterialClass3D UnpackMeshInstanceMaterialClass3D(uint32_t value){return NormalizeMaterialClass3D(MaterialClass3D((value&MeshInstanceMaterialClassMask3D)>>MeshInstanceMaterialClassShift3D));}
 enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay};
@@ -54,6 +54,8 @@ inline float RayleighPhase3D(float cosine){cosine=Clamp(cosine,-1.f,1.f);return 
 inline float MiePhase3D(float cosine,float anisotropy=.76f){cosine=Clamp(cosine,-1.f,1.f);anisotropy=Clamp(anisotropy,-.95f,.95f);const float squared=anisotropy*anisotropy,denominator=(std::max)(.0001f,1.f+squared-2.f*anisotropy*cosine);return 3.f*(1.f-squared)*(1.f+cosine*cosine)/(8.f*3.14159265359f*(2.f+squared)*std::pow(denominator,1.5f));}
 inline float WaterFresnel3D(float viewNormalCosine,float reflectance=.02f){const float inverse=1.f-Clamp(viewNormalCosine,0.f,1.f),inverse2=inverse*inverse;return Clamp(reflectance+(1.f-reflectance)*inverse2*inverse2*inverse,0.f,1.f);}
 inline float WaterTransmission3D(float absorption,float pathLength){if(!std::isfinite(absorption)||!std::isfinite(pathLength))return 0.f;return std::exp(-(std::max)(0.f,absorption)*(std::max)(0.f,pathLength));}
+inline float FoliageWrapDiffuse3D(float normalLightCosine,float wrap=.35f){if(!std::isfinite(normalLightCosine)||!std::isfinite(wrap))return 0.f;wrap=Clamp(wrap,0.f,1.f);return Clamp((normalLightCosine+wrap)/(1.f+wrap),0.f,1.f);}
+inline float FoliageTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
 struct PointLight3D {Vec3 position{};float radius{8.f};Color color{1.f,.72f,.38f,1.f};float intensity{1.f};};
 inline float PointLightInfluence(const PointLight3D& light,Vec3 reference){const Vec3 delta=light.position-reference;return light.intensity*light.radius*light.radius/(1.f+Dot(delta,delta));}
 template<std::size_t Capacity>struct PointLightSelection3D {std::array<PointLight3D,Capacity> lights{};std::array<float,Capacity> influences{};std::size_t count{},candidates{};};
@@ -115,6 +117,7 @@ struct RendererStats {
     size_t lastSubmittedMeshInstances{};
     size_t lastSubmittedOverlayInstances{};
     size_t lastSubmittedTexturedMeshInstances{};
+    size_t lastSubmittedFoliageInstances{};
     size_t lastDirectionalShadowCasters{};
     size_t lastDirectionalShadowDrawCalls{};
     size_t directionalShadowMapBytes{};
