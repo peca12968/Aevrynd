@@ -28,5 +28,5 @@ struct ReusableMemoryStats {
 };
 
 [[nodiscard]] ProcessMemoryStats QueryProcessMemoryStats();
-[[nodiscard]] bool ShouldTrimMemory(const ProcessMemoryStats& memory,std::size_t reclaimableBytes,float secondsSinceLastTrim,MemoryPressurePolicy policy={});
+[[nodiscard]] bool ShouldTrimMemory(const ProcessMemoryStats& memory,std::size_t reclaimableBytes,float secondsSinceLastTrim,MemoryPressurePolicy policy={},bool hasDisposableResources=false);
 }

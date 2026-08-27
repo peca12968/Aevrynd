@@ -107,6 +107,10 @@ struct RendererStats {
     uint64_t completedMeshUploadBatches{};
     uint64_t meshUploadContextCreations{};
     uint64_t meshUploadContextReuses{};
+    size_t residentMeshUploadContexts{};
+    size_t peakResidentMeshUploadContexts{};
+    size_t idleMeshUploadContexts{};
+    uint64_t meshUploadContextReleases{};
     uint64_t meshUploadPressureWaits{};
     uint64_t meshUploadPressureWaitNanoseconds{};
     size_t meshUploadStagingResources{};
@@ -129,6 +133,10 @@ struct RendererStats {
     uint64_t completedMaterialTextureUploadBatches{};
     uint64_t materialTextureUploadContextCreations{};
     uint64_t materialTextureUploadContextReuses{};
+    size_t residentMaterialTextureUploadContexts{};
+    size_t peakResidentMaterialTextureUploadContexts{};
+    size_t idleMaterialTextureUploadContexts{};
+    uint64_t materialTextureUploadContextReleases{};
     uint64_t materialTextureUploadPressureWaits{};
     uint64_t materialTextureUploadPressureWaitNanoseconds{};
     size_t materialTextureUploadStagingResources{};

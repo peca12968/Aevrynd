@@ -12,8 +12,8 @@ ProcessMemoryStats QueryProcessMemoryStats() {
     return {counters.WorkingSetSize,counters.PeakWorkingSetSize,counters.PrivateUsage,counters.PagefileUsage,std::size_t(system.ullAvailPhys),std::size_t(system.ullTotalPhys),system.dwMemoryLoad,true};
 }
 
-bool ShouldTrimMemory(const ProcessMemoryStats& memory,std::size_t reclaimableBytes,float secondsSinceLastTrim,MemoryPressurePolicy policy){
+bool ShouldTrimMemory(const ProcessMemoryStats& memory,std::size_t reclaimableBytes,float secondsSinceLastTrim,MemoryPressurePolicy policy,bool hasDisposableResources){
     if(!memory.available||!policy.thresholdPercent||policy.thresholdPercent>100||policy.cooldownSeconds<0.f)return false;
-    return memory.physicalMemoryLoadPercent>=policy.thresholdPercent&&reclaimableBytes>=policy.minimumReclaimableBytes&&secondsSinceLastTrim>=policy.cooldownSeconds;
+    return memory.physicalMemoryLoadPercent>=policy.thresholdPercent&&(hasDisposableResources||reclaimableBytes>=policy.minimumReclaimableBytes)&&secondsSinceLastTrim>=policy.cooldownSeconds;
 }
 }
