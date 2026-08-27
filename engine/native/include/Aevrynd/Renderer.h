@@ -142,6 +142,8 @@ struct RendererStats {
     size_t directionalShadowMapBytes{};
     uint64_t directionalShadowMapAllocations{};
     uint64_t directionalShadowMapReleases{};
+    uint64_t directionalShadowDescriptorSwitches{};
+    uint64_t directionalShadowInitializationFlushes{};
     size_t lastDirectionalShadowCascades{};
     float directionalShadowCascadeSplit{32.f};
     float directionalShadowTransitionWidth{6.f};
