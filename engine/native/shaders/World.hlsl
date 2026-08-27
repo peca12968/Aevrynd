@@ -9,6 +9,8 @@ cbuffer Scene : register(b0)
     float4 pointPositionRadius[3];
     float4 pointColorIntensity[3];
     float4 colorPipeline;
+    row_major float4x4 inverseViewProjection;
+    float4 worldViewport;
 };
 cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; };
 cbuffer DrawConstants : register(b2) { uint shadowCascadeIndex; uint drawConstantReserved; };
@@ -26,7 +28,9 @@ Texture2D rockBaseColorTexture : register(t7);
 Texture2D rockRoughnessTexture : register(t8);
 Texture2D rockNormalTexture : register(t9);
 Texture2D<float> ambientOcclusionTexture : register(t11);
+Texture2D<float> sceneDepthTexture : register(t12);
 SamplerState materialSampler : register(s0);
+SamplerState screenPointClampSampler : register(s2);
 
 struct WorldVertexInput
 {
@@ -439,6 +443,14 @@ float PointLightAttenuation(float distanceSquared, float radius)
     return rangeWindow * rangeWindow / max(distanceSquared + 1.0, 0.0001);
 }
 
+float3 ReconstructWorldPosition(float2 screenUv, float depth)
+{
+    const float2 viewportUv = (screenUv - worldViewport.xy) / max(worldViewport.zw, float2(0.000001, 0.000001));
+    const float4 clipPosition = float4(viewportUv * float2(2.0, -2.0) + float2(-1.0, 1.0), depth, 1.0);
+    const float4 worldPosition = mul(inverseViewProjection, clipPosition);
+    return worldPosition.xyz / max(abs(worldPosition.w), 0.000001);
+}
+
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     // 固定的螢幕空間雜訊讓兩級網格互補淡化，不依賴時間所以不會逐幀閃爍。
@@ -524,7 +536,32 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
     const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
-    const float foamMask = waterMask * smoothstep(0.30, 0.50, roughness);
+    float foamMask = waterMask * smoothstep(0.30, 0.50, roughness);
+    float waterThickness = 1.6;
+    float waterDepthValid = 0.0;
+    float waterOutputAlpha = input.color.a;
+    [branch] if (waterMask > 0.5 && worldViewport.z > 0.0 && worldViewport.w > 0.0)
+    {
+        const float2 screenUv = input.position.xy * colorPipeline.zw;
+        const float2 viewportMaximum = worldViewport.xy + worldViewport.zw;
+        const float opaqueDepth = sceneDepthTexture.SampleLevel(screenPointClampSampler, screenUv, 0.0);
+        const bool insideViewport = all(screenUv >= worldViewport.xy) && all(screenUv <= viewportMaximum);
+        if (insideViewport && opaqueDepth > 0.0 && opaqueDepth < 0.999999)
+        {
+            const float3 bottomWorldPosition = ReconstructWorldPosition(screenUv, opaqueDepth);
+            const float measuredThickness = distance(bottomWorldPosition, input.worldPosition);
+            if (measuredThickness >= 0.0 && measuredThickness < 100000.0)
+            {
+                waterDepthValid = 1.0;
+                waterThickness = clamp(measuredThickness, 0.0, 8.0);
+                // 真實河床深度取代人工岸線網格；近岸泡沫在淺水處自然形成並快速破碎。
+                const float shore = 1.0 - smoothstep(0.06, 0.72, waterThickness);
+                const float shoreNoise = lerp(0.62, 1.0, CloudNoise(input.worldPosition.xz * 0.58 + fogEndEnabled.ww * float2(0.035, -0.021)));
+                foamMask = saturate(shore * shoreNoise);
+                waterOutputAlpha = lerp(0.34, 0.91, smoothstep(0.04, 4.5, waterThickness));
+            }
+        }
+    }
     [branch] if (waterMask > 0.5)
     {
         const float2 broadRipple = float2(sin(input.worldPosition.z * 0.38 + input.worldPosition.x * 0.11 + fogEndEnabled.w * 0.72),
@@ -578,7 +615,7 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
         const float waterViewCosine = saturate(dot(normal, viewDirection));
         const float waterReflectance = 0.0203732;
         const float fresnel = waterReflectance + (1.0 - waterReflectance) * pow(1.0 - waterViewCosine, 5.0);
-        const float waterPathLength = min(8.0, 1.6 / max(0.16, waterViewCosine));
+        const float waterPathLength = min(8.0, waterThickness / max(0.16, waterViewCosine));
         const float3 waterTransmission = exp(-float3(0.42, 0.16, 0.08) * waterPathLength);
         const float3 deepWaterColor = lerp(float3(0.012, 0.055, 0.070), baseColor, 0.24);
         const float3 absorbedWater = shaded * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
@@ -605,6 +642,6 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
     const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     // 世界著色器只輸出曝光後的線性 HDR；ACES 與 sRGB 由全畫面後處理統一執行。
-    const float outputAlpha = input.materialClass == 3 ? 1.0 : input.color.a;
+    const float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
     return float4(max(0.0, lerp(lit, fogColor.rgb, fogAmount) * colorPipeline.x), outputAlpha);
 }

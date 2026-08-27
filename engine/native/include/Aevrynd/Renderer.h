@@ -145,6 +145,8 @@ struct RendererStats {
     uint64_t ambientOcclusionDepthPrepasses{};
     uint64_t ambientOcclusionEvaluationPasses{};
     uint64_t ambientOcclusionBlurPasses{};
+    bool depthAwareWaterEnabled{};
+    uint64_t depthAwareWaterPasses{};
     uint64_t hdrPostProcessPasses{};
     size_t sceneConstantBufferBytes{};
     size_t rootSignatureDwords{};

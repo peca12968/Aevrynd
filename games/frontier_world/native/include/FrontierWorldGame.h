@@ -40,7 +40,7 @@ private:
     Aevrynd::CollisionWorld3D collisionWorld_;
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
-    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{},grassHighMesh_{},grassLowMesh_{},treeLowMesh_{},skyDomeMesh_{},riverMesh_{},riverFoamLeftMesh_{},riverFoamRightMesh_{},quiverTreeMesh_{},rock09Mesh_{};
+    Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{},grassHighMesh_{},grassLowMesh_{},treeLowMesh_{},skyDomeMesh_{},riverMesh_{},quiverTreeMesh_{},rock09Mesh_{};
     Aevrynd::MaterialLibrary3D materialLibrary_{},modelMaterialLibrary_{};
     Aevrynd::MaterialLibraryStats3D materialLibraryStats_{};
     Aevrynd::Material3D groundMaterial_{},woodMaterial_{},barkMaterial_{},rockMaterial_{},quiverTreeMaterial_{},rock09Material_{};
