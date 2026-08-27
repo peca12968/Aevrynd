@@ -115,6 +115,9 @@ Games/
 - generation-safe ECS 提供 1,600 萬 entity 明確上限、可回收 index、永久退役的 generation overflow slot、bounded sparse component storage、typed view、延遲銷毀、殭屍 component 過濾與記憶體修剪
 - 版本化序列化核心使用受限 UTF-8 JSON 封裝，精確保存 64-bit 整數，支援 Vec2、Vec3、Transform3D 與巢狀物件；未知欄位、預設值、原子失敗、文件／字串／欄位／深度上限均有自動測試
 - PhysicsWorld3D 獨立回歸涵蓋 static／dynamic／kinematic、layer mask、sleep／wake、高速 CCD、stale handle 與 4,096 bodies 工作區回收
+- 寫實 3D 資產清單強制 CC0-1.0 商用來源、SHA-256、完整 PBR 通道、Far／General／Near／Hero 貼圖層級、Mesh LOD、切線、碰撞、Atlas／Trim Sheet 與幾何最佳化資訊；失敗不會污染既有輸出
+- Scene/ECS 3D 橋接可批次同步 Transform、雙材質 Mesh LOD 與局部 PointLight；1,000 entity 自動測試涵蓋 visibility layer、完整燈光 transform、stale handle、slot 退役與記憶體修剪
+- 有界 CPU profiler 提供跨執行緒 scope、counter、gauge、固定 frame ring、JSON／CSV 匯出與記憶體修剪；非法數值、跨幀 scope 與容量溢位會被拒絕並留下 dropped telemetry
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
@@ -127,7 +130,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.0 已自動完成繁中選擇、建塔、啟動第一波、持續戰鬥與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.1 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

@@ -1,5 +1,6 @@
 add_library(AevryndEngine STATIC
   src/Animation3D.cpp
+  src/AssetManifest.cpp
   src/Audio.cpp
   src/CharacterController3D.cpp
   src/CollisionWorld3D.cpp
@@ -14,6 +15,8 @@ add_library(AevryndEngine STATIC
   src/MeshLoader.cpp
   src/Navigation3D.cpp
   src/PhysicsWorld3D.cpp
+  src/Profiling.cpp
+  src/SceneECS3D.cpp
   src/Serialization.cpp
   src/Spatial2D.cpp
   src/WorldBuilder3D.cpp
@@ -164,6 +167,21 @@ add_executable(AevryndPhysicsWorld3DTest tests/PhysicsWorld3DSmoke.cpp)
 target_compile_options(AevryndPhysicsWorld3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndPhysicsWorld3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndPhysicsWorld3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndPhysicsWorld3DTest>'")
+
+add_executable(AevryndAssetManifestTest tests/AssetManifestSmoke.cpp)
+target_compile_options(AevryndAssetManifestTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndAssetManifestTest PRIVATE AevryndEngine)
+add_test(NAME AevryndAssetManifestTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAssetManifestTest>'")
+
+add_executable(AevryndProfilingTest tests/ProfilingSmoke.cpp)
+target_compile_options(AevryndProfilingTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndProfilingTest PRIVATE AevryndEngine)
+add_test(NAME AevryndProfilingTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndProfilingTest>'")
+
+add_executable(AevryndSceneECS3DTest tests/SceneECS3DSmoke.cpp)
+target_compile_options(AevryndSceneECS3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSceneECS3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSceneECS3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSceneECS3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)
