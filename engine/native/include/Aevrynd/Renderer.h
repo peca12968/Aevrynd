@@ -86,6 +86,9 @@ template<std::size_t Capacity>PointLightSelection3D<Capacity> SelectInfluentialP
     return result;
 }
 struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
+struct AmbientOcclusionSettings3D {bool enabled{true};float radius{1.35f},bias{.035f},intensity{1.05f};};
+inline AmbientOcclusionSettings3D NormalizeAmbientOcclusionSettings3D(AmbientOcclusionSettings3D settings){settings.radius=Clamp(std::isfinite(settings.radius)?settings.radius:1.35f,.1f,8.f);settings.bias=Clamp(std::isfinite(settings.bias)?settings.bias:.035f,0.f,.5f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:1.05f,0.f,4.f);return settings;}
+inline constexpr size_t AmbientOcclusionResidentBytes3D(unsigned width,unsigned height){return size_t((width+1)/2)*((height+1)/2)*2;}
 struct DrawListStats2D {
     size_t inputTriangles{},submittedTriangles{},culledTriangles{},peakSubmittedTriangles{};
     size_t textGlyphs{},textSourcePixels{},textSpans{};
@@ -134,6 +137,14 @@ struct RendererStats {
     size_t nativeDepthBufferBytes{};
     uint64_t nativeDepthBufferAllocations{};
     uint64_t nativeDepthBufferReleases{};
+    bool ambientOcclusionEnabled{};
+    unsigned ambientOcclusionWidth{},ambientOcclusionHeight{};
+    size_t ambientOcclusionBytes{};
+    uint64_t ambientOcclusionAllocations{};
+    uint64_t ambientOcclusionReleases{};
+    uint64_t ambientOcclusionDepthPrepasses{};
+    uint64_t ambientOcclusionEvaluationPasses{};
+    uint64_t ambientOcclusionBlurPasses{};
     uint64_t hdrPostProcessPasses{};
     size_t sceneConstantBufferBytes{};
     size_t rootSignatureDwords{};
@@ -343,6 +354,8 @@ public:
     float EnvironmentTime()const{return environmentTime_;}
     void SetExposureCompensation(float ev){exposureCompensationEv_=(std::clamp)(std::isfinite(ev)?ev:0.f,-10.f,10.f);}
     float ExposureCompensation()const{return exposureCompensationEv_;}
+    void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
+    const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void SetBlendMode2D(BlendMode2D mode){blendMode_=mode;}
@@ -393,6 +406,7 @@ private:
     Atmosphere3D atmosphere_{};
     float environmentTime_{};
     float exposureCompensationEv_{};
+    AmbientOcclusionSettings3D ambientOcclusion_{};
     std::vector<PointLight3D> pointLights_;
     std::vector<DrawSpan2D> additiveSpans_;
     Vec2 clipMinimum_{},clipMaximum_{};

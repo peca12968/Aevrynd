@@ -25,6 +25,7 @@ Texture2D soilNormalTexture : register(t6);
 Texture2D rockBaseColorTexture : register(t7);
 Texture2D rockRoughnessTexture : register(t8);
 Texture2D rockNormalTexture : register(t9);
+Texture2D<float> ambientOcclusionTexture : register(t11);
 SamplerState materialSampler : register(s0);
 
 struct WorldVertexInput
@@ -537,8 +538,12 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
     roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
+    // SSAO 僅調制間接環境光，避免把太陽、點光、自發光與水面反射一起壓暗。
+    const float screenOcclusion = colorPipeline.y > 0.5 && waterMask < 0.5
+                                ? ambientOcclusionTexture.SampleLevel(materialSampler, input.position.xy * colorPipeline.zw, 0.0)
+                                : 1.0;
     float3 shaded = EvaluateEnvironmentLighting(normal, viewDirection, baseColor, roughness, metallic,
-                                                occlusion, lightDirectionAmbient.w, skyLightDirection)
+                                                occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection)
                   + CascadedDirectionalShadow(input, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
