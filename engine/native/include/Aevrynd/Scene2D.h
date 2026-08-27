@@ -38,6 +38,11 @@ inline float VerticalOcclusionAmount2D(Vec2 targetFoot, float targetRadius, Vert
     return horizontal * (std::min)(topFade, frontFade);
 }
 
+inline bool VerticalOcclusionBoundsOverlap2D(Vec2 targetFoot,float targetRadius,VerticalOccluder2D occluder){
+    if(!std::isfinite(targetFoot.x)||!std::isfinite(targetFoot.y)||!std::isfinite(targetRadius)||!std::isfinite(occluder.foot.x)||!std::isfinite(occluder.foot.y)||!std::isfinite(occluder.halfWidth)||!std::isfinite(occluder.height)||!std::isfinite(occluder.depthPadding))return false;
+    targetRadius=(std::max)(0.f,targetRadius);occluder.halfWidth=(std::max)(.001f,std::abs(occluder.halfWidth));occluder.height=(std::max)(.001f,std::abs(occluder.height));occluder.depthPadding=(std::max)(0.f,occluder.depthPadding);const float depth=occluder.foot.y-targetFoot.y;return depth>-occluder.depthPadding-targetRadius&&depth<occluder.height+targetRadius&&std::abs(targetFoot.x-occluder.foot.x)<occluder.halfWidth+targetRadius;
+}
+
 struct OcclusionField2DStats {
     std::size_t occluders{};
     std::size_t capacity{};
@@ -52,12 +57,13 @@ struct OcclusionField2DStats {
     std::uint64_t preparedBatches{};
     std::uint64_t indexedBatches{};
     std::uint64_t indexReuses{};
+    std::uint64_t boundsRejected{};
 };
 
 class OcclusionField2D {
 public:
     explicit OcclusionField2D(std::size_t initialCapacity = 0) { Reserve(initialCapacity); }
-    void Clear() { occluders_.clear(); maximumHalfWidth_=0.f;indexDirty_=true;preferIndexedQueries_=false;stats_.queries=stats_.tests=stats_.hits=stats_.broadphaseRejected=stats_.indexBuilds=stats_.linearQueries=stats_.indexedQueries=stats_.preparedBatches=stats_.indexedBatches=stats_.indexReuses=0; }
+    void Clear() { occluders_.clear(); maximumHalfWidth_=0.f;indexDirty_=true;preferIndexedQueries_=false;stats_.queries=stats_.tests=stats_.hits=stats_.broadphaseRejected=stats_.indexBuilds=stats_.linearQueries=stats_.indexedQueries=stats_.preparedBatches=stats_.indexedBatches=stats_.indexReuses=stats_.boundsRejected=0; }
     void Reserve(std::size_t capacity) { retainedCapacity_ = capacity; occluders_.reserve(capacity); sortedIndices_.reserve(capacity); }
     void Add(VerticalOccluder2D occluder) { occluders_.push_back(occluder);indexDirty_=true;preferIndexedQueries_=false;stats_.peakOccluders = (std::max)(stats_.peakOccluders, occluders_.size()); }
     void PrepareQueries(std::size_t expectedQueries) { ++stats_.preparedBatches;preferIndexedQueries_=!occluders_.empty()&&expectedQueries&&(occluders_.size()>IndexThreshold||expectedQueries>IndexedBatchWorkThreshold/occluders_.size());if(preferIndexedQueries_){EnsureIndex();++stats_.indexedBatches;} }
@@ -65,13 +71,14 @@ public:
         ++stats_.queries;
         if(!std::isfinite(targetFoot.x)||!std::isfinite(targetFoot.y)||!std::isfinite(targetRadius))return 0.f;
         float amount{};
-        if(occluders_.size()<=IndexThreshold&&!preferIndexedQueries_){++stats_.linearQueries;for(const VerticalOccluder2D& occluder:occluders_){++stats_.tests;amount=(std::max)(amount,VerticalOcclusionAmount2D(targetFoot,targetRadius,occluder));}}
+        const auto test=[&](const VerticalOccluder2D& occluder){if(!VerticalOcclusionBoundsOverlap2D(targetFoot,targetRadius,occluder)){++stats_.boundsRejected;return;}++stats_.tests;amount=(std::max)(amount,VerticalOcclusionAmount2D(targetFoot,targetRadius,occluder));};
+        if(occluders_.size()<=IndexThreshold&&!preferIndexedQueries_){++stats_.linearQueries;for(const VerticalOccluder2D& occluder:occluders_)test(occluder);}
         else{
             EnsureIndex();++stats_.indexedQueries;targetRadius=(std::max)(0.f,targetRadius);const float reach=maximumHalfWidth_+targetRadius,minimumX=targetFoot.x-reach,maximumX=targetFoot.x+reach;
             const auto lower=std::lower_bound(sortedIndices_.begin(),sortedIndices_.end(),minimumX,[this](std::uint32_t index,float value){return SortPosition(index)<value;});
             const auto upper=std::upper_bound(lower,sortedIndices_.end(),maximumX,[this](float value,std::uint32_t index){return value<SortPosition(index);});
             const std::uint64_t candidates=std::uint64_t(upper-lower);stats_.broadphaseRejected+=occluders_.size()-candidates;
-            for(auto iterator=lower;iterator!=upper;++iterator){++stats_.tests;amount=(std::max)(amount,VerticalOcclusionAmount2D(targetFoot,targetRadius,occluders_[*iterator]));}
+            for(auto iterator=lower;iterator!=upper;++iterator)test(occluders_[*iterator]);
         }
         if (amount > 0.f) ++stats_.hits;
         return amount;
