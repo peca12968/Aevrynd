@@ -1,4 +1,4 @@
-cbuffer Canvas : register(b0)
+cbuffer Canvas : register(b2)
 {
     float2 logicalSize;
 };

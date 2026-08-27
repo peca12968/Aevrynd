@@ -32,5 +32,7 @@ inline double PbrLinearToSrgb(double linearColor){if(!std::isfinite(linearColor)
 inline double PbrSrgbToLinear(double srgbColor){if(!std::isfinite(srgbColor))return 0;srgbColor=(std::clamp)(srgbColor,0.0,1.0);return srgbColor<=.04045?srgbColor/12.92:std::pow((srgbColor+.055)/1.055,2.4);}
 inline double PbrLinearBlendToSrgb(double sourceLinear,double destinationSrgb,double sourceAlpha){sourceAlpha=(std::clamp)(std::isfinite(sourceAlpha)?sourceAlpha:0.0,0.0,1.0);const double blended=(std::max)(0.0,sourceLinear)*sourceAlpha+PbrSrgbToLinear(destinationSrgb)*(1.0-sourceAlpha);return PbrLinearToSrgb(blended);}
 inline double PbrToneMapToSrgb(double color){return PbrLinearToSrgb(PbrAcesToneMap(color));}
+inline double PbrExposureScale(double compensationEv){compensationEv=(std::clamp)(std::isfinite(compensationEv)?compensationEv:0.0,-10.0,10.0);return std::exp2(compensationEv);}
+inline double PbrToneMapToSrgb(double color,double compensationEv){return PbrToneMapToSrgb(color*PbrExposureScale(compensationEv));}
 
 }

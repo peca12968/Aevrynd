@@ -111,6 +111,9 @@ struct RendererStats {
     uint64_t resizeCount{};
     bool linearWorldBlending{};
     size_t worldSrgbRenderTargetViews{};
+    size_t sceneConstantBufferBytes{};
+    size_t rootSignatureDwords{};
+    float lastExposureCompensationEv{};
     size_t lastSubmittedVertices{};
     size_t lastSubmittedWorldVertices{};
     size_t lastSubmittedWorldIndices{};
@@ -298,6 +301,8 @@ public:
     const Atmosphere3D& Atmosphere()const{return atmosphere_;}
     void SetEnvironmentTime(float seconds){environmentTime_=std::isfinite(seconds)?seconds:0.f;}
     float EnvironmentTime()const{return environmentTime_;}
+    void SetExposureCompensation(float ev){exposureCompensationEv_=(std::clamp)(std::isfinite(ev)?ev:0.f,-10.f,10.f);}
+    float ExposureCompensation()const{return exposureCompensationEv_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void SetBlendMode2D(BlendMode2D mode){blendMode_=mode;}
@@ -347,6 +352,7 @@ private:
     DirectionalLight3D light_{};
     Atmosphere3D atmosphere_{};
     float environmentTime_{};
+    float exposureCompensationEv_{};
     std::vector<PointLight3D> pointLights_;
     std::vector<DrawSpan2D> additiveSpans_;
     Vec2 clipMinimum_{},clipMaximum_{};

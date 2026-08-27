@@ -8,8 +8,10 @@ cbuffer Scene : register(b0)
     float4 fogEndEnabled;
     float4 pointPositionRadius[3];
     float4 pointColorIntensity[3];
+    float4 colorPipeline;
 };
 cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; };
+cbuffer DrawConstants : register(b2) { uint shadowCascadeIndex; uint drawConstantReserved; };
 
 Texture2DArray<float> shadowTexture : register(t3);
 SamplerComparisonState shadowSampler : register(s1);
@@ -71,7 +73,7 @@ float3 ApplyWind(float3 position, float packedWeight);
 ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
 {
     ShadowVertexOutput output;
-    output.position = mul(lightViewProjection[(uint)fogEndEnabled.w], float4(ApplyWind(input.position, input.normal.w), 1.0));
+    output.position = mul(lightViewProjection[shadowCascadeIndex], float4(ApplyWind(input.position, input.normal.w), 1.0));
     return output;
 }
 
@@ -81,7 +83,7 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
     float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
     ShadowVertexOutput output;
-    output.position = mul(lightViewProjection[(uint)fogEndEnabled.w], worldPosition);
+    output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
     return output;
 }
 
@@ -521,5 +523,5 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     // 世界著色器輸出線性顯示值；sRGB RTV 會先在線性空間混合透明材質，再由硬體編碼。
     const float outputAlpha = input.materialClass == 3 ? 1.0 : input.color.a;
-    return float4(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount)), outputAlpha);
+    return float4(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount) * colorPipeline.x), outputAlpha);
 }
