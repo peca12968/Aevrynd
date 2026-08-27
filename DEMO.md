@@ -1,14 +1,14 @@
 # Versioned demos
 
-每次重大引擎或遊戲版本更新後，建置腳本都會保留一份帶版本號的可執行檔，不會覆蓋先前版本。
+每次重大展示更新都會保留獨立版本的執行檔，不會覆蓋舊版。請保留 `dist` 內的 DLL 與 `assets` 資料夾，材質包會由執行檔旁的資源路徑載入。
 
 ## Engine 3D feature demo
 
 ```text
-games/engine_lab/dist/Aevrynd-Engine-Demo-v2.6.0.exe
+games/engine_lab/dist/Aevrynd-Engine-Demo-v2.6.0-Lab-v1.77.0.exe
 ```
 
-重新產生最新版與版本化 Demo：
+啟動後第一個自動鏡頭會近距離展示 Ground、Wood 與 Brick 三組 CC0 PBR 材質，畫面上方的 `CC0 PBR 3/3` 表示三組材質已成功載入。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
@@ -17,20 +17,18 @@ powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
 ## Frontier open-world demo
 
 ```text
-games/frontier_world/dist/Aevrynd-Frontier-World-Demo-v0.68.0.exe
+games/frontier_world/dist/Aevrynd-Frontier-World-Demo-v0.69.0.exe
 ```
 
-重新產生最新版與版本化 Demo：
+地表、房屋木板、樹皮與岩石會使用四組 CC0 PBR 材質，畫面上方的 `CC0 PBR 4/4` 表示四組材質已成功載入。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-frontier-world.ps1
 ```
 
-Frontier World 視角控制：
+Frontier World controls:
 
-- `F1`：第一人稱
-- `F2`：第三人稱
-- `F3`：上帝視角
-- `F4`：自動展示
-
-版本化 `.exe` 會與同一個 `dist` 資料夾內的 DLL 和 `assets` 共用執行資源，因此不要單獨移走執行檔。
+- `F1`: First-person view
+- `F2`: Third-person view
+- `F3`: God view
+- `F4`: Toggle automatic demonstration

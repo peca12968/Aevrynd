@@ -38,6 +38,7 @@ private:
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{};
     Aevrynd::MaterialLibrary3D materialLibrary_{};
+    Aevrynd::MaterialLibraryStats3D materialLibraryStats_{};
     Aevrynd::Material3D groundMaterial_{},woodMaterial_{},barkMaterial_{},rockMaterial_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};

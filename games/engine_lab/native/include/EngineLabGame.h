@@ -46,6 +46,7 @@ private:
     Aevrynd::WorldBuilder3D worldBuilder_{};
     std::vector<Aevrynd::WorldObjectHandle3D> authoredDynamicObjects_{};
     Aevrynd::MaterialLibrary3D materialLibrary_{};
+    Aevrynd::MaterialLibraryStats3D materialLibraryStats_{};
     std::size_t lastReusableMemoryReleasedBytes_{};std::uint64_t reusableMemoryTrimCount_{};
     int cameraMode_{};
     int effectCycle_{-1};
