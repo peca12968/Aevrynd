@@ -68,6 +68,7 @@ private:
     Aevrynd::Material3D groundMaterial_{};
     Aevrynd::Material3D woodMaterial_{};
     Aevrynd::Material3D brickMaterial_{};
+    std::size_t landscapePlacementInstances_{},landscapePlacementAttempts_{};
     std::size_t lastReusableMemoryReleasedBytes_{};std::uint64_t reusableMemoryTrimCount_{};
     int cameraMode_{};
     int effectCycle_{-1};

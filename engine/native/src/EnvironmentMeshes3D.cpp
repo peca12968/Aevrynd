@@ -49,14 +49,14 @@ Mesh3D CreateGrassClumpMesh3D(unsigned bladeCount,unsigned segments){
     for(unsigned blade=0;blade<bladeCount;++blade){
         const float angle=2.f*Pi*float(blade)/float(bladeCount)+std::sin(float(blade)*12.9898f)*.34f;
         const Vec3 right{std::cos(angle),0,-std::sin(angle)},forward{std::sin(angle),0,std::cos(angle)};
-        const float radial=.08f+.24f*float((blade*7u)%11u)/10.f,height=.68f+.32f*float((blade*5u)%13u)/12.f,width=.055f+.035f*float((blade*3u)%7u)/6.f;
+        const float radial=.06f+.27f*Variation(73,blade*5+1),height=.61f+.43f*Variation(73,blade*5+2),width=.035f+.065f*Variation(73,blade*5+3),sideBias=(Variation(73,blade*5+4)-.5f)*.18f,bendStrength=.1f+.2f*Variation(73,blade*5+5);
         const uint32_t base=uint32_t(mesh.vertices.size());
         for(unsigned segment=0;segment<=segments;++segment){
-            const float t=float(segment)/float(segments),taper=1.f-t*.88f,bend=t*t*(.1f+.12f*float(blade%3));
-            const Vec3 center=forward*radial+forward*bend+Vec3{0,t*height,0};
-            const Vec3 normal=Normalize(Cross(right,Vec3{0,height,0}+forward*bend));
-            const uint32_t color=PackColorRgba8({.72f+.2f*t,.84f+.13f*t,.58f+.18f*t,1});
-            for(float side:{-1.f,1.f}){const Vec3 point=center+right*(side*width*taper);mesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8(normal,1.f-t),color});}
+            const float t=float(segment)/float(segments),taper=std::pow(1.f-t,.72f)*.94f+.035f,bend=t*t*bendStrength,lateral=std::sin(t*Pi)*sideBias;
+            const Vec3 center=forward*(radial+bend)+right*lateral+Vec3{0,t*height,0},tangent=Normalize(Vec3{0,height,0}+forward*(2.f*bendStrength*t)+right*(sideBias*Pi*std::cos(t*Pi)));
+            const Vec3 normal=Normalize(Cross(right,tangent));const float bladeShade=.82f+.2f*Variation(91,blade+3),sunlit=.1f*t;
+            const uint32_t color=PackColorRgba8({(.48f+sunlit)*bladeShade,(.72f+.16f*t)*bladeShade,(.28f+.12f*t)*bladeShade,1});
+            const float leftWidth=width*taper*(1.f+.12f*Variation(37,blade+1)),rightWidth=width*taper*(.88f+.16f*Variation(43,blade+2));for(float offset:{-leftWidth,rightWidth}){const Vec3 point=center+right*offset;mesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8(normal,1.f-t),color});}
         }
         for(unsigned segment=0;segment<segments;++segment){const uint32_t a=base+segment*2,b=a+1,c=a+2,d=a+3;mesh.indices.insert(mesh.indices.end(),{a,c,b,b,c,d,b,c,a,b,d,c});}
     }
@@ -82,8 +82,8 @@ Mesh3D CreateSkyDomeMesh3D(unsigned slices,unsigned stacks){
 }
 
 Mesh3D CreateMountainMesh3D(unsigned radialSegments,unsigned rings,unsigned variationSeed){
-    radialSegments=(std::clamp)(radialSegments,6u,64u);rings=(std::clamp)(rings,2u,16u);Mesh3D mesh;mesh.vertices.reserve(1+std::size_t(radialSegments)*rings);mesh.indices.reserve(std::size_t(radialSegments)*(1+(rings-1)*2)*3);mesh.vertices.push_back({0,1,0,PackNormalSnorm8({0,1,0}),PackColorRgba8({.72f,.74f,.72f,1}),.5f,0});
-    for(unsigned ring=1;ring<=rings;++ring){const float t=float(ring)/rings,baseHeight=std::pow(1.f-t,1.42f);for(unsigned segment=0;segment<radialSegments;++segment){const float angle=2.f*Pi*float(segment)/radialSegments,largeRidge=.13f*std::sin(angle*3.f+Variation(variationSeed,4)*Pi),smallRidge=.07f*std::sin(angle*7.f+Variation(variationSeed,9)*Pi),radius=t*(.48f+largeRidge+smallRidge*t),height=(std::max)(0.f,baseHeight+(Variation(variationSeed,ring*radialSegments+segment)-.5f)*.12f*t*(1.f-t));const Color rock{.48f+.16f*height,.5f+.15f*height,.49f+.14f*height,1};mesh.vertices.push_back({std::sin(angle)*radius,height,std::cos(angle)*radius,PackNormalSnorm8({0,1,0}),PackColorRgba8(rock),float(segment)/radialSegments,t});}}
+    radialSegments=(std::clamp)(radialSegments,6u,64u);rings=(std::clamp)(rings,2u,16u);Mesh3D mesh;mesh.vertices.reserve(1+std::size_t(radialSegments)*rings);mesh.indices.reserve(std::size_t(radialSegments)*(1+(rings-1)*2)*3);const float ridgeAngle=2.f*Pi*Variation(variationSeed,2),peakX=std::sin(ridgeAngle)*.09f,peakZ=std::cos(ridgeAngle)*.09f;mesh.vertices.push_back({peakX,1.04f,peakZ,PackNormalSnorm8({0,1,0}),PackColorRgba8({.72f,.74f,.72f,1}),.5f,0});
+    for(unsigned ring=1;ring<=rings;++ring){const float t=float(ring)/rings,baseHeight=std::pow(1.f-t,1.38f),centerWeight=1.f-t,centerX=peakX*centerWeight,centerZ=peakZ*centerWeight;for(unsigned segment=0;segment<radialSegments;++segment){const float angle=2.f*Pi*float(segment)/radialSegments,largeRidge=.15f*std::sin(angle*3.f+Variation(variationSeed,4)*Pi),smallRidge=.065f*std::sin(angle*7.f+Variation(variationSeed,9)*Pi),secondaryAlignment=(std::max)(0.f,std::cos(angle-ridgeAngle-Pi*.72f)),secondaryPeak=.17f*secondaryAlignment*secondaryAlignment*std::sin(Pi*t)*(1.f-.35f*t),erosion=.022f*std::sin(t*Pi*float(3u+(variationSeed%3u))+angle*2.f);const float radius=t*(.48f+largeRidge+smallRidge*t),height=(std::max)(0.f,baseHeight+secondaryPeak+erosion+(Variation(variationSeed,ring*radialSegments+segment)-.5f)*.1f*t*(1.f-t));const float stratum=.035f*float((ring+segment/3u)&1u),sun=.035f*std::cos(angle-ridgeAngle);const Color rock{.43f+.19f*height+sun+stratum,.45f+.17f*height+sun*.7f+stratum,.44f+.15f*height+sun*.45f+stratum*.75f,1};mesh.vertices.push_back({centerX+std::sin(angle)*radius,height,centerZ+std::cos(angle)*radius,PackNormalSnorm8({0,1,0}),PackColorRgba8(rock),float(segment)/radialSegments,t});}}
     for(unsigned segment=0;segment<radialSegments;++segment){const std::uint32_t current=1+segment,next=1+(segment+1)%radialSegments;mesh.indices.insert(mesh.indices.end(),{0,next,current});}
     for(unsigned ring=1;ring<rings;++ring){const std::uint32_t inner=1+(ring-1)*radialSegments,outer=inner+radialSegments;for(unsigned segment=0;segment<radialSegments;++segment){const std::uint32_t next=(segment+1)%radialSegments,a=inner+segment,b=inner+next,c=outer+segment,d=outer+next;mesh.indices.insert(mesh.indices.end(),{a,b,c,b,d,c});}}
     RebuildNormals(mesh);return mesh;

@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <filesystem>
 #include <memory>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -21,7 +22,9 @@ inline constexpr std::string_view EngineVersion{AEVRYND_ENGINE_VERSION};
 [[nodiscard]] bool IsDLSSStartupRequested(const wchar_t* commandLine);
 struct Mesh3D;
 struct MeshResource3D;
-struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; };
+enum class RenderQuality3D:std::uint8_t {Low,Medium,High,Ultra};
+constexpr std::string_view RenderQualityName3D(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return"LOW";case RenderQuality3D::Medium:return"MEDIUM";case RenderQuality3D::High:return"HIGH";default:return"ULTRA";}}
+struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; RenderQuality3D renderQuality{RenderQuality3D::Ultra}; };
 struct EngineMemoryStats {
     ProcessMemoryStats process{};
     TransientMemoryStats draw{};
@@ -42,6 +45,7 @@ public:
     const AudioEngine& Audio()const{return audio_;}
     unsigned Width()const{return config_.width;}
     unsigned Height()const{return config_.height;}
+    RenderQuality3D RenderQuality()const{return config_.renderQuality;}
     float Time()const{return time_;}
     void Quit(){running_=false;}
     void SetTitle(const std::wstring& title);

@@ -495,7 +495,7 @@ int main() {
         }
         renderer.WaitIdle();
         const RendererStats stats = renderer.GetStats();
-        if(stats.directionalShadowMapBytes!=2048ull*2048*4||!stats.lastDirectionalShadowCasters||!stats.lastDirectionalShadowDrawCalls){std::cerr<<"Directional shadow map pass did not execute bytes="<<stats.directionalShadowMapBytes<<" casters="<<stats.lastDirectionalShadowCasters<<" draws="<<stats.lastDirectionalShadowDrawCalls<<"\n";rendererResult=20;}
+        if(stats.directionalShadowMapBytes!=2048ull*2048*4*2||stats.lastDirectionalShadowCascades!=2||stats.directionalShadowCascadeSplit!=32.f||!stats.lastDirectionalShadowCasters||stats.lastDirectionalShadowDrawCalls<2){std::cerr<<"Cascaded directional shadow map pass did not execute bytes="<<stats.directionalShadowMapBytes<<" cascades="<<stats.lastDirectionalShadowCascades<<" casters="<<stats.lastDirectionalShadowCasters<<" draws="<<stats.lastDirectionalShadowDrawCalls<<"\n";rendererResult=20;}
         if (stats.submittedFrames != expectedFrames || stats.lastSubmittedVertices != draw.vertices.size() ||
             stats.lastSubmittedWorldVertices != draw.worldVertices.size() ||
             stats.lastSubmittedWorldIndices != draw.worldIndices.size() ||

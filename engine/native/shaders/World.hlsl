@@ -9,9 +9,9 @@ cbuffer Scene : register(b0)
     float4 pointPositionRadius[3];
     float4 pointColorIntensity[3];
 };
-cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection; float4 shadowParameters; };
+cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; };
 
-Texture2D<float> shadowTexture : register(t3);
+Texture2DArray<float> shadowTexture : register(t3);
 SamplerComparisonState shadowSampler : register(s1);
 
 Texture2D baseColorTexture : register(t0);
@@ -56,6 +56,7 @@ struct WorldPixelInput
     float2 uv : TEXCOORD4;
     nointerpolation uint materialClass : TEXCOORD5;
     float4 shadowPosition : TEXCOORD6;
+    float4 farShadowPosition : TEXCOORD7;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; };
@@ -64,7 +65,7 @@ float3 ApplyWind(float3 position, float packedWeight);
 ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
 {
     ShadowVertexOutput output;
-    output.position = mul(lightViewProjection, float4(ApplyWind(input.position, input.normal.w), 1.0));
+    output.position = mul(lightViewProjection[(uint)fogEndEnabled.w], float4(ApplyWind(input.position, input.normal.w), 1.0));
     return output;
 }
 
@@ -74,7 +75,7 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
     float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
     ShadowVertexOutput output;
-    output.position = mul(lightViewProjection, worldPosition);
+    output.position = mul(lightViewProjection[(uint)fogEndEnabled.w], worldPosition);
     return output;
 }
 
@@ -98,7 +99,8 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.textureData = float3(0.0, 0.25, 0.0);
     output.uv = input.uv;
     output.materialClass = 0;
-    output.shadowPosition = mul(lightViewProjection, float4(animatedPosition, 1.0));
+    output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
+    output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
 }
 
@@ -124,7 +126,8 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
                                 (input.textureData >> 1) & 1);
     output.uv = input.uv;
     output.materialClass = (input.textureData >> 2) & 3;
-    output.shadowPosition = mul(lightViewProjection, worldPosition);
+    output.shadowPosition = mul(lightViewProjection[0], worldPosition);
+    output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
 }
 
@@ -134,7 +137,7 @@ float3 BlendWeights(float3 normal)
     return blend / max(0.001, blend.x + blend.y + blend.z);
 }
 
-float DirectionalShadow(float4 shadowPosition, float3 normal, float3 lightDirection)
+float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 normal, float3 lightDirection)
 {
     const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
     const float2 uv = float2(projected.x * 0.5 + 0.5, -projected.y * 0.5 + 0.5);
@@ -143,7 +146,7 @@ float DirectionalShadow(float4 shadowPosition, float3 normal, float3 lightDirect
     float visibility = 0.0;
     [unroll] for (int y = -1; y <= 1; ++y)
     [unroll] for (int x = -1; x <= 1; ++x)
-        visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, uv + float2(x, y) * shadowParameters.w, projected.z - bias);
+        visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * shadowParameters.w, cascadeIndex), projected.z - bias);
     return visibility / 9.0;
 }
 
@@ -329,7 +332,7 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     const float3 ambientDiffuseWeight = (1.0 - ambientFresnel) * (1.0 - metallic);
     float3 shaded = ambientDiffuseWeight * baseColor * skyBounce * lightDirectionAmbient.w * occlusion * 2.8
                   + ambientFresnel * skyBounce * lightDirectionAmbient.w * occlusion * (0.3 + (1.0 - roughness) * 0.35)
-                  + DirectionalShadow(input.shadowPosition, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
+                  + DirectionalShadow(distance(input.worldPosition, cameraFogStart.xyz) < shadowParameters.x ? input.shadowPosition : input.farShadowPosition, distance(input.worldPosition, cameraFogStart.xyz) < shadowParameters.x ? 0 : 1, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
                   + baseColor * emissive * 2.0;

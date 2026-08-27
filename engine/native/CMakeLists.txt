@@ -19,6 +19,7 @@ add_library(AevryndEngine STATIC
   src/Navigation3D.cpp
   src/PhysicsWorld3D.cpp
   src/Profiling.cpp
+  src/ProceduralPlacement3D.cpp
   src/SceneECS3D.cpp
   src/Serialization.cpp
   src/Spatial2D.cpp
@@ -125,6 +126,11 @@ add_executable(AevryndEnvironmentMeshes3DTest tests/EnvironmentMeshes3DSmoke.cpp
 target_compile_options(AevryndEnvironmentMeshes3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEnvironmentMeshes3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndEnvironmentMeshes3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentMeshes3DTest>'")
+
+add_executable(AevryndProceduralPlacement3DTest tests/ProceduralPlacement3DSmoke.cpp)
+target_compile_options(AevryndProceduralPlacement3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndProceduralPlacement3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndProceduralPlacement3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndProceduralPlacement3DTest>'")
 
 add_executable(AevryndArchitectureMeshes3DTest tests/ArchitectureMeshes3DSmoke.cpp)
 target_compile_options(AevryndArchitectureMeshes3DTest PRIVATE /W4 /permissive- /utf-8)
