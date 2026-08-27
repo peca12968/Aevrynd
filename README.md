@@ -120,6 +120,7 @@ Games/
 - Scene/ECS 3D 橋接可批次同步 Transform、雙材質 Mesh LOD 與局部 PointLight；1,000 entity 自動測試涵蓋 visibility layer、完整燈光 transform、stale handle、slot 退役與記憶體修剪
 - 有界 CPU profiler 提供跨執行緒 scope、counter、gauge、固定 frame ring、JSON／CSV 匯出與記憶體修剪；非法數值、跨幀 scope 與容量溢位會被拒絕並留下 dropped telemetry
 - World shader 採用 Cook-Torrance GGX、Smith 幾何遮蔽、Schlick Fresnel、能量守恆漫反射與 ACES tone mapping，並以精確 sRGB 輸出轉換及 CPU 黃金參考測試避免 gamma 錯誤
+- Terrain 材質以單一 handle 原子管理草地、土壤與岩石九張 BC PBR 貼圖，依高度、坡度與世界程序雜訊混合三層；Ultra shader 固定最多 15 次材質取樣，instance 維持 124 bytes、root signature 維持 63 DWORD，三層 1K 完整 mip 常駐約 8 MiB
 - MeshProcessing3D 提供退化面移除、完整頂點屬性去重、平滑／硬邊法線重建、保護 UV 與法線接縫的保守 LOD，以及具實測 cache miss 改善的索引重排
 - Engine Lab 的靜態開放世界景觀包含 Ultra 自然地形、蜿蜒河流、森林、岩石、聚落、連續多峰山脈與地標塔；天空加入固定成本且零新增 GPU 資源的日照程序雲層，分離靜態／動態 Scene3D 提交並保留跨場景完整統計
 - 3D 材質使用明確的水體分類傳入 GPU，不再借用透明度猜測表面類型；連續河道具雙尺度波紋法線、Schlick Fresnel、Beer–Lambert RGB 吸收與解析天空反射，維持透明 pass 且不增加貼圖或顯存資源
@@ -127,7 +128,7 @@ Games/
 - Scene3D 靜態射線查詢採用有界記憶體 BVH，維持最近命中與完整材質／LOD 語意，同時避免大型世界逐物件掃描
 - Water 材質使用獨立透明 3D pass，在不寫入深度的情況下保留深度測試並依鏡頭距離由後向前繪製，避免不透明水面遮蔽岸邊與水下幾何
 - 網格級三角形 BVH 可跨 MeshResource3D 實例共用，將大型地形命中由完整三角形掃描縮小為少量候選，同時保留 transform、backface 與最近命中語意
-- ArchitectureMeshes3D 可依尺寸、seed 與 Near／Far 細節級別建立含屋簷、門窗、木樑及煙囪的程序建築；目前 cottage LOD 由 308 面降至 32 面
+- ArchitectureMeshes3D 可依尺寸、seed 與 Near／Far 細節級別建立含石基、屋簷、門窗、木樑、遮棚及煙囪的程序建築；目前 cottage LOD 由 688 面降至 38 面
 - FrameCapture3D 直接由 DX12 back buffer 執行有界 R8G8B8A8 readback 與原子 PNG 輸出；Engine Lab 的 `--capture-demo` 會自動輸出第一人稱、第三人稱、上帝視角及 2.5D 四種實際渲染畫面
 - 方向光使用固定 2048²×2 D32 cascade array、獨立 depth-only world／instanced pass、light-space texel snapping、3×3 comparison PCF 與斜率 bias；split 周圍以 6 world-unit transition band 平滑混合兩層，帶外維持 9 taps、帶內最多 18 taps，材質可明確停用投影
 - CSM 採三重緩衝、每幀 256-byte 對齊常數緩衝與 12-tap Poisson disk；以穩定四方向旋轉取代每像素 `sincos`，cascade 過渡最多 24 taps，root signature 維持 63 DWORD、陰影資源固定 32 MiB
@@ -150,7 +151,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.3 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.4 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

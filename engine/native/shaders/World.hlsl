@@ -17,6 +17,12 @@ SamplerComparisonState shadowSampler : register(s1);
 Texture2D baseColorTexture : register(t0);
 Texture2D roughnessTexture : register(t1);
 Texture2D normalTexture : register(t2);
+Texture2D soilBaseColorTexture : register(t4);
+Texture2D soilRoughnessTexture : register(t5);
+Texture2D soilNormalTexture : register(t6);
+Texture2D rockBaseColorTexture : register(t7);
+Texture2D rockRoughnessTexture : register(t8);
+Texture2D rockNormalTexture : register(t9);
 SamplerState materialSampler : register(s0);
 
 struct WorldVertexInput
@@ -264,17 +270,29 @@ float3 DecodeBc5Normal(float2 encoded)
     return float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
 }
 
-float3 TriplanarNormal(float3 worldPosition, float3 geometricNormal, float scale)
+float3 TriplanarNormalFrom(Texture2D source, float3 worldPosition, float3 geometricNormal, float scale)
 {
     const float3 blend = BlendWeights(geometricNormal);
     const float3 axisSign = sign(geometricNormal);
-    const float3 x = DecodeBc5Normal(normalTexture.Sample(materialSampler, worldPosition.zy * scale).rg);
-    const float3 y = DecodeBc5Normal(normalTexture.Sample(materialSampler, worldPosition.xz * scale).rg);
-    const float3 z = DecodeBc5Normal(normalTexture.Sample(materialSampler, worldPosition.xy * scale).rg);
+    const float3 x = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.zy * scale).rg);
+    const float3 y = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.xz * scale).rg);
+    const float3 z = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.xy * scale).rg);
     const float3 mappedX = float3(axisSign.x * x.z, x.y, x.x);
     const float3 mappedY = float3(y.x, axisSign.y * y.z, y.y);
     const float3 mappedZ = float3(z.x, z.y, axisSign.z * z.z);
     return normalize(mappedX * blend.x + mappedY * blend.y + mappedZ * blend.z);
+}
+
+float3 TriplanarNormal(float3 worldPosition, float3 geometricNormal, float scale)
+{
+    return TriplanarNormalFrom(normalTexture, worldPosition, geometricNormal, scale);
+}
+
+float3 TerrainTopDownNormal(Texture2D source, float3 worldPosition, float3 geometricNormal, float scale)
+{
+    const float3 sampled = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.xz * scale).rg);
+    const float3 mapped = float3(sampled.x, sign(geometricNormal.y) * sampled.z, sampled.y);
+    return normalize(mapped);
 }
 
 float3 UvNormal(float3 worldPosition, float3 geometricNormal, float2 uv)
@@ -392,7 +410,7 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
-    if (input.textureData.x > 0.5)
+    if (input.textureData.x > 0.5 && input.materialClass != 3)
     {
         if (input.textureData.z > 0.5)
         {
@@ -418,11 +436,28 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
         const float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
         const float soilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
         const float grassWeight = max(0.0, 1.0 - rockWeight - soilWeight);
-        const float3 terrainTint = grassWeight * float3(0.72, 0.91, 0.63) + soilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
-        baseColor *= terrainTint * lerp(0.94, 1.06, microNoise);
-        roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74), 0.045, 1.0);
-        const float terrainNormalStrength = grassWeight * 0.58 + soilWeight * 0.75 + rockWeight;
-        normal = normalize(lerp(geometricNormal, normal, terrainNormalStrength));
+        if (input.textureData.x > 0.5)
+        {
+            const float2 terrainUv = input.worldPosition.xz * input.textureData.y;
+            const float3 grassColor = baseColorTexture.Sample(materialSampler, terrainUv).rgb;
+            const float3 soilColor = soilBaseColorTexture.Sample(materialSampler, terrainUv).rgb;
+            const float3 rockColor = Triplanar(rockBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
+            const float grassRoughness = roughnessTexture.Sample(materialSampler, terrainUv).r;
+            const float soilRoughness = soilRoughnessTexture.Sample(materialSampler, terrainUv).r;
+            const float rockRoughness = Triplanar(rockRoughnessTexture, input.worldPosition, geometricNormal, input.textureData.y).r;
+            const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.y);
+            const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.y);
+            const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.y);
+            baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * lerp(0.94, 1.06, microNoise);
+            roughness = clamp(roughness * (grassRoughness * grassWeight + soilRoughness * soilWeight + rockRoughness * rockWeight), 0.045, 1.0);
+            normal = normalize(grassNormal * grassWeight + soilNormal * soilWeight + rockNormal * rockWeight);
+        }
+        else
+        {
+            const float3 terrainTint = grassWeight * float3(0.72, 0.91, 0.63) + soilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
+            baseColor *= terrainTint * lerp(0.94, 1.06, microNoise);
+            roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74), 0.045, 1.0);
+        }
     }
 
     const float foliageMask = input.materialClass == 2 ? 1.0 : 0.0;

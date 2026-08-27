@@ -2,9 +2,15 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $demoDirectory = Join-Path $projectRoot 'Demo'
 $demoAssets = Join-Path $demoDirectory 'assets'
+$publishMutex = [System.Threading.Mutex]::new($false, 'Local\AevryndDemoPublisher')
+$publishLockTaken = $false
 
-New-Item -ItemType Directory -Force -Path $demoDirectory | Out-Null
-New-Item -ItemType Directory -Force -Path $demoAssets | Out-Null
+try {
+    $publishLockTaken = $publishMutex.WaitOne([TimeSpan]::FromMinutes(5))
+    if (-not $publishLockTaken) { throw 'Timed out waiting for the demo publisher lock.' }
+
+    New-Item -ItemType Directory -Force -Path $demoDirectory | Out-Null
+    New-Item -ItemType Directory -Force -Path $demoAssets | Out-Null
 
 function Copy-DemoFile {
     param(
@@ -46,6 +52,10 @@ if (Test-Path -LiteralPath $demoModelPacks) {
     Get-ChildItem -LiteralPath $demoModelPacks -Directory -Filter 'source' -Recurse | Remove-Item -Recurse -Force
 }
 
-$executables = Get-ChildItem -LiteralPath $demoDirectory -File -Filter '*.exe' | Sort-Object Name
-Write-Host "Published $($executables.Count) executable demos to $demoDirectory" -ForegroundColor Green
-$executables | ForEach-Object { Write-Host "  $($_.Name)" }
+    $executables = Get-ChildItem -LiteralPath $demoDirectory -File -Filter '*.exe' | Sort-Object Name
+    Write-Host "Published $($executables.Count) executable demos to $demoDirectory" -ForegroundColor Green
+    $executables | ForEach-Object { Write-Host "  $($_.Name)" }
+} finally {
+    if ($publishLockTaken) { $publishMutex.ReleaseMutex() }
+    $publishMutex.Dispose()
+}

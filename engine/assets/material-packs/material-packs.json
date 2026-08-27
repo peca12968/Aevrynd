@@ -19,6 +19,21 @@
       "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
     },
     {
+      "id": "rock-surface",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/rock_surface",
+      "licenseUrl": "https://polyhaven.com/license",
+      "retrievedAt": "2026-08-27",
+      "detailClass": "environment",
+      "directory": "poly-haven/rock_surface/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"],
+      "sha256": {
+        "base-color.jpg": "07EDDA2BBE4715B01AAE2E4BAC9F21F204CF4AAE37B4733EF01DE33281E5E60E",
+        "normal-dx.jpg": "1E1AA5B06F74D22734318CD93ECF49FFE7095C4B2307C5C9B3A4550207C6B1B7",
+        "roughness.jpg": "CA710D895B01CF323BF00F53194C43504A39D2C964FBFC343C4F45C7D41B10DC"
+      }
+    },
+    {
       "id": "bark-brown-02",
       "source": "Poly Haven",
       "sourceUrl": "https://polyhaven.com/a/bark_brown_02",
