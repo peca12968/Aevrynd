@@ -3,7 +3,7 @@
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
-#include <Aevrynd/SkinnedModel3D.h>
+#include <Aevrynd/SkinnedModelAsset.h>
 #include <filesystem>
 
 class CharacterLabGame final:public Aevrynd::IGame {
@@ -25,6 +25,8 @@ private:
     Aevrynd::SceneHit3D aimHit_{};
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{};
+    std::vector<Aevrynd::SkinnedSubmesh3D> femaleSubmeshes_{},maleSubmeshes_{};
+    std::vector<std::string> femaleMaterialNames_{},maleMaterialNames_{};
     Aevrynd::SkinnedMeshResource3D gpuFemale_{},gpuMale_{};
     Aevrynd::AnimationClip3D femaleClip_{},maleClip_{};
     Aevrynd::AnimationPlayer3D femalePlayer_{},malePlayer_{};

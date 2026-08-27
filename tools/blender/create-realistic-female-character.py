@@ -107,28 +107,28 @@ def create_rig() -> bpy.types.Object:
     add("Chest", (0, 0, 1.27), (0, 0, 1.45), "Spine", True)
     add("Neck", (0, 0, 1.45), (0, 0, 1.54), "Chest", True)
     add("Head", (0, 0, 1.54), (0, 0, 1.76), "Neck", True)
-    for side, sign in (("L", 1.0), ("R", -1.0)):
-        add(f"Shoulder.{side}", (0.05 * sign, 0, 1.43), (0.205 * sign, 0, 1.42), "Chest")
-        add(f"UpperArm.{side}", (0.205 * sign, 0, 1.42), (0.315 * sign, 0, 1.18), f"Shoulder.{side}", True)
-        add(f"Forearm.{side}", (0.315 * sign, 0, 1.18), (0.355 * sign, -0.015, 0.96), f"UpperArm.{side}", True)
-        add(f"Hand.{side}", (0.355 * sign, -0.015, 0.96), (0.36 * sign, -0.035, 0.87), f"Forearm.{side}", True)
-        add(f"UpperLeg.{side}", (0.105 * sign, 0, 0.94), (0.095 * sign, 0.01, 0.51), "Hips")
-        add(f"LowerLeg.{side}", (0.095 * sign, 0.01, 0.51), (0.085 * sign, 0, 0.10), f"UpperLeg.{side}", True)
-        add(f"Foot.{side}", (0.10 * sign, 0, 0.11), (0.10 * sign, -0.17, 0.055), f"LowerLeg.{side}")
+    for side, sign in (("Left", 1.0), ("Right", -1.0)):
+        add(f"{side}Shoulder", (0.05 * sign, 0, 1.43), (0.205 * sign, 0, 1.42), "Chest")
+        add(f"{side}UpperArm", (0.205 * sign, 0, 1.42), (0.315 * sign, 0, 1.18), f"{side}Shoulder", True)
+        add(f"{side}LowerArm", (0.315 * sign, 0, 1.18), (0.355 * sign, -0.015, 0.96), f"{side}UpperArm", True)
+        add(f"{side}Hand", (0.355 * sign, -0.015, 0.96), (0.36 * sign, -0.035, 0.87), f"{side}LowerArm", True)
+        add(f"{side}UpperLeg", (0.105 * sign, 0, 0.94), (0.095 * sign, 0.01, 0.51), "Hips")
+        add(f"{side}LowerLeg", (0.095 * sign, 0.01, 0.51), (0.085 * sign, 0, 0.10), f"{side}UpperLeg", True)
+        add(f"{side}Foot", (0.10 * sign, 0, 0.11), (0.10 * sign, -0.17, 0.055), f"{side}LowerLeg")
     bpy.ops.object.mode_set(mode="OBJECT")
     return rig
 
 
 def create_character(rig: bpy.types.Object) -> bpy.types.Object:
-    skin = material("SkinWarmPBR", (0.64, 0.34, 0.25, 1.0), 0.47)
-    lips = material("LipsRosePBR", (0.42, 0.075, 0.07, 1.0), 0.38)
+    skin = material("SkinWarmPBR", (0.82, 0.54, 0.40, 1.0), 0.47)
+    lips = material("LipsRosePBR", (0.58, 0.12, 0.14, 1.0), 0.38)
     sclera = material("EyeScleraPBR", (0.86, 0.88, 0.84, 1.0), 0.23)
     iris = material("IrisHazelPBR", (0.10, 0.19, 0.10, 1.0), 0.18)
-    hair = material("HairChestnutPBR", (0.055, 0.018, 0.009, 1.0), 0.31)
-    cloth = material("DressEmeraldPBR", (0.018, 0.16, 0.115, 1.0), 0.61)
-    cloth_dark = material("DressTrimPBR", (0.008, 0.045, 0.04, 1.0), 0.52)
-    leather = material("BootLeatherPBR", (0.055, 0.018, 0.014, 1.0), 0.48)
-    metal = material("AccessoryGoldPBR", (0.55, 0.31, 0.055, 1.0), 0.24, 0.82)
+    hair = material("HairChestnutPBR", (0.16, 0.055, 0.025, 1.0), 0.31)
+    cloth = material("DressEmeraldPBR", (0.035, 0.38, 0.24, 1.0), 0.61)
+    cloth_dark = material("DressTrimPBR", (0.018, 0.14, 0.105, 1.0), 0.52)
+    leather = material("BootLeatherPBR", (0.14, 0.045, 0.025, 1.0), 0.48)
+    metal = material("AccessoryGoldPBR", (0.78, 0.48, 0.09, 1.0), 0.24, 0.82)
 
     parts: list[bpy.types.Object] = []
     # 軀幹採多個平滑體塊形成肩、腰與骨盆的自然連續比例。
@@ -143,14 +143,14 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
         sphere("UpperLip", (0, -0.105, 1.618), (0.034, 0.009, 0.009), lips, "Head", 16, 8),
         sphere("LowerLip", (0, -0.107, 1.607), (0.031, 0.010, 0.009), lips, "Head", 16, 8),
     ]
-    for side, sign in (("L", 1.0), ("R", -1.0)):
+    for side, sign in (("Left", 1.0), ("Right", -1.0)):
         parts += [
-            tapered_limb(f"UpperArm.{side}", (0.205 * sign, 0, 1.42), (0.315 * sign, 0, 1.18), (0.066, 0.054), skin, f"UpperArm.{side}"),
-            tapered_limb(f"Forearm.{side}", (0.315 * sign, 0, 1.18), (0.355 * sign, -0.015, 0.96), (0.053, 0.040), skin, f"Forearm.{side}"),
-            sphere(f"Hand.{side}", (0.358 * sign, -0.025, 0.91), (0.043, 0.028, 0.075), skin, f"Hand.{side}", 18, 12),
-            tapered_limb(f"Thigh.{side}", (0.105 * sign, 0, 0.92), (0.095 * sign, 0.005, 0.51), (0.102, 0.076), cloth_dark, f"UpperLeg.{side}", 20),
-            tapered_limb(f"Calf.{side}", (0.095 * sign, 0.005, 0.51), (0.085 * sign, 0, 0.11), (0.076, 0.048), skin, f"LowerLeg.{side}", 20),
-            sphere(f"Boot.{side}", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"Foot.{side}", 20, 12),
+            tapered_limb(f"{side}UpperArm", (0.205 * sign, 0, 1.42), (0.315 * sign, 0, 1.18), (0.066, 0.054), skin, f"{side}UpperArm"),
+            tapered_limb(f"{side}LowerArm", (0.315 * sign, 0, 1.18), (0.355 * sign, -0.015, 0.96), (0.053, 0.040), skin, f"{side}LowerArm"),
+            sphere(f"{side}Hand", (0.358 * sign, -0.025, 0.91), (0.043, 0.028, 0.075), skin, f"{side}Hand", 18, 12),
+            tapered_limb(f"{side}Thigh", (0.105 * sign, 0, 0.92), (0.095 * sign, 0.005, 0.51), (0.102, 0.076), cloth_dark, f"{side}UpperLeg", 20),
+            tapered_limb(f"{side}Calf", (0.095 * sign, 0.005, 0.51), (0.085 * sign, 0, 0.11), (0.076, 0.048), skin, f"{side}LowerLeg", 20),
+            sphere(f"{side}Boot", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"{side}Foot", 20, 12),
             sphere(f"EyeWhite.{side}", (0.039 * sign, -0.094, 1.678), (0.029, 0.014, 0.017), sclera, "Head", 18, 10),
             sphere(f"Iris.{side}", (0.039 * sign, -0.108, 1.678), (0.011, 0.005, 0.011), iris, "Head", 14, 8),
             sphere(f"UpperEyelid.{side}", (0.039 * sign, -0.106, 1.691), (0.031, 0.006, 0.008), skin, "Head", 14, 8),
@@ -178,15 +178,12 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
     character = bpy.context.object
     character.name = "RealisticFemaleCharacter"
     character.data.name = "RealisticFemaleMesh"
-    # AESKIN v1 僅支援單一 primitive；部位差異已寫入頂點色，材質槽統一為一個 PBR atlas 入口。
-    unified = material("FemaleCharacterUnifiedPBR", (1.0, 1.0, 1.0, 1.0), 0.46)
-    vertex_color = unified.node_tree.nodes.new("ShaderNodeVertexColor")
-    vertex_color.layer_name = "Color"
-    unified.node_tree.links.new(vertex_color.outputs["Color"], unified.node_tree.nodes["Principled BSDF"].inputs["Base Color"])
-    character.data.materials.clear()
-    character.data.materials.append(unified)
-    for polygon in character.data.polygons:
-        polygon.material_index = 0
+    # AESKIN v2 會保留材質槽與連續索引範圍，頂點色同時作為無貼圖時的可靠外觀後備。
+    character.data.color_attributes.active_color = character.data.color_attributes.get("Color")
+    for character_material in character.data.materials:
+        vertex_color = character_material.node_tree.nodes.new("ShaderNodeVertexColor")
+        vertex_color.layer_name = "Color"
+        character_material.node_tree.links.new(vertex_color.outputs["Color"], character_material.node_tree.nodes["Principled BSDF"].inputs["Base Color"])
     modifier = character.modifiers.new(name="HumanoidSkin", type="ARMATURE")
     modifier.object = rig
     character.parent = rig

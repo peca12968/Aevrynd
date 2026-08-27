@@ -122,15 +122,15 @@ def create_armature() -> bpy.types.Object:
 
 
 def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
-    skin = material("WarmSkinPBR", (0.48, 0.235, 0.14, 1), 0.48, subsurface=0.08)
-    skin_light = material("FaceHighlightPBR", (0.57, 0.31, 0.21, 1), 0.43, subsurface=0.10)
-    hair = material("DarkBrownHairPBR", (0.028, 0.014, 0.009, 1), 0.34)
+    skin = material("WarmSkinPBR", (0.70, 0.40, 0.25, 1), 0.48, subsurface=0.08)
+    skin_light = material("FaceHighlightPBR", (0.78, 0.49, 0.34, 1), 0.43, subsurface=0.10)
+    hair = material("DarkBrownHairPBR", (0.11, 0.045, 0.022, 1), 0.34)
     eye_white = material("EyeScleraPBR", (0.78, 0.76, 0.70, 1), 0.22)
     iris = material("HazelIrisPBR", (0.12, 0.20, 0.10, 1), 0.16)
-    shirt = material("DeepBlueShirtPBR", (0.025, 0.075, 0.13, 1), 0.74)
-    trousers = material("CharcoalClothPBR", (0.035, 0.045, 0.055, 1), 0.82)
-    leather = material("BrownLeatherPBR", (0.09, 0.035, 0.018, 1), 0.46)
-    metal = material("BuckleMetalPBR", (0.25, 0.27, 0.28, 1), 0.24, metallic=0.82)
+    shirt = material("DeepBlueShirtPBR", (0.045, 0.20, 0.48, 1), 0.68)
+    trousers = material("CharcoalClothPBR", (0.10, 0.13, 0.17, 1), 0.78)
+    leather = material("BrownLeatherPBR", (0.20, 0.075, 0.035, 1), 0.46)
+    metal = material("BuckleMetalPBR", (0.48, 0.52, 0.56, 1), 0.24, metallic=0.82)
     objects: list[bpy.types.Object] = []
 
     # 軀幹使用多個解剖量體建立自然肩背、胸肌與腹肌輪廓。
@@ -200,15 +200,12 @@ def consolidate_character(objects: list[bpy.types.Object], rig: bpy.types.Object
     character.data.name = "RealisticMaleCharacterMesh"
     character.data.color_attributes.active_color = character.data.color_attributes.get("CharacterColor")
 
-    character.data.materials.clear()
-    combined = material("CharacterVertexColorPBR", (1.0, 1.0, 1.0, 1.0), 0.48, subsurface=0.04)
-    vertex_color = combined.node_tree.nodes.new("ShaderNodeVertexColor")
-    vertex_color.layer_name = "CharacterColor"
-    shader = combined.node_tree.nodes.get("Principled BSDF")
-    combined.node_tree.links.new(vertex_color.outputs["Color"], shader.inputs["Base Color"])
-    character.data.materials.append(combined)
-    for polygon in character.data.polygons:
-        polygon.material_index = 0
+    # 保留原始材質槽，讓 AESKIN v2 能以同一份 GPU 幾何依 submesh 套用不同 PBR 參數。
+    for character_material in character.data.materials:
+        vertex_color = character_material.node_tree.nodes.new("ShaderNodeVertexColor")
+        vertex_color.layer_name = "CharacterColor"
+        shader = character_material.node_tree.nodes.get("Principled BSDF")
+        character_material.node_tree.links.new(vertex_color.outputs["Color"], shader.inputs["Base Color"])
     character.parent = rig
     return character
 
