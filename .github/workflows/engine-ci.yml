@@ -1,0 +1,45 @@
+name: Engine CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-benchmark:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure clean build
+        shell: pwsh
+        run: cmake -S . -B build-ci -A x64 -DAEVRYND_ENABLE_STREAMLINE=OFF
+
+      - name: Build engine games and tests
+        shell: pwsh
+        run: cmake --build build-ci --config Release -- /m:2
+
+      - name: Run tests and performance gates
+        shell: pwsh
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tools/ci/run-engine-validation.ps1 -BuildDirectory build-ci -Configuration Release
+
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-validation-${{ github.run_number }}
+          path: build-ci/artifacts
+          if-no-files-found: warn
+          retention-days: 14

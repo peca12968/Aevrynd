@@ -12,10 +12,18 @@ add_library(AevryndEngine STATIC
   src/Navigation3D.cpp
   src/PhysicsWorld3D.cpp
   src/Spatial2D.cpp
-  src/StreamlineDLSS.cpp
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
 )
+
+set(AEVRYND_STREAMLINE_AVAILABLE OFF)
+if(AEVRYND_ENABLE_STREAMLINE AND EXISTS "${STREAMLINE_ROOT}/include/sl.h" AND EXISTS "${STREAMLINE_ROOT}/bin/x64/sl.interposer.dll")
+  set(AEVRYND_STREAMLINE_AVAILABLE ON)
+  target_sources(AevryndEngine PRIVATE src/StreamlineDLSS.cpp)
+else()
+  target_sources(AevryndEngine PRIVATE src/StreamlineDLSSStub.cpp)
+endif()
+set(AEVRYND_STREAMLINE_AVAILABLE "${AEVRYND_STREAMLINE_AVAILABLE}" CACHE INTERNAL "NVIDIA Streamline SDK availability" FORCE)
 
 cmake_host_system_information(RESULT WINDOWS_KITS_ROOT QUERY WINDOWS_REGISTRY "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots" VALUE "KitsRoot10")
 set(AEVRYND_FXC "${WINDOWS_KITS_ROOT}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64/fxc.exe")
@@ -51,9 +59,11 @@ add_custom_target(AevryndShaders DEPENDS ${AEVRYND_SHADER_HEADERS})
 add_dependencies(AevryndEngine AevryndShaders)
 target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl ${AEVRYND_SHADER_HEADERS})
 set_source_files_properties(shaders/Canvas.hlsl shaders/World.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
-set(STREAMLINE_ROOT "${CMAKE_SOURCE_DIR}/engine/third_party/streamline")
-target_include_directories(AevryndEngine PUBLIC include PRIVATE "${STREAMLINE_ROOT}/include" "${AEVRYND_SHADER_OUTPUT_DIR}")
-target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}")
+target_include_directories(AevryndEngine PUBLIC include PRIVATE "${AEVRYND_SHADER_OUTPUT_DIR}")
+if(AEVRYND_STREAMLINE_AVAILABLE)
+  target_include_directories(AevryndEngine PRIVATE "${STREAMLINE_ROOT}/include")
+endif()
+target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}" AEVRYND_STREAMLINE_AVAILABLE=$<BOOL:${AEVRYND_STREAMLINE_AVAILABLE}>)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
 
