@@ -137,6 +137,33 @@ float3 BlendWeights(float3 normal)
     return blend / max(0.001, blend.x + blend.y + blend.z);
 }
 
+float RayleighPhase(float cosine)
+{
+    return 3.0 * (1.0 + cosine * cosine) / (16.0 * 3.14159265);
+}
+
+float MiePhase(float cosine, float anisotropy)
+{
+    const float squared = anisotropy * anisotropy;
+    const float denominator = max(0.0001, 1.0 + squared - 2.0 * anisotropy * cosine);
+    return 3.0 * (1.0 - squared) * (1.0 + cosine * cosine) / (8.0 * 3.14159265 * (2.0 + squared) * pow(denominator, 1.5));
+}
+
+float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
+{
+    const float height = clamp(rayDirection.y, -0.08, 1.0);
+    const float opticalDepth = min(8.0, 1.0 / max(0.09, height + 0.13));
+    const float sunCosine = clamp(dot(rayDirection, sunDirection), -1.0, 1.0);
+    const float3 rayleighColor = float3(0.23, 0.48, 1.0) * RayleighPhase(sunCosine) * (0.75 + opticalDepth * 0.16);
+    const float3 mieColor = float3(1.0, 0.68, 0.38) * MiePhase(sunCosine, 0.76) * (0.045 + opticalDepth * 0.018);
+    const float horizon = pow(saturate(1.0 - abs(height)), 4.0);
+    const float sunsetAmount = 1.0 - saturate(max(0.0, sunDirection.y) * 2.2);
+    const float3 horizonColor = lerp(float3(0.26, 0.38, 0.52), float3(0.72, 0.49, 0.30), sunsetAmount);
+    const float sunDisk = pow(saturate(sunCosine), 1400.0);
+    const float sunGlow = pow(saturate(sunCosine), 22.0);
+    return rayleighColor + mieColor + horizonColor * horizon * 0.42 + float3(1.0, 0.78, 0.48) * (sunDisk * 7.0 + sunGlow * 0.16);
+}
+
 float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 normal, float3 lightDirection)
 {
     const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
@@ -325,18 +352,16 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     const float skyMask = 1.0 - saturate(input.normal.w);
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
-    const float sunDisk = pow(saturate(dot(skyRay, skyLightDirection)), 640.0);
-    const float sunGlow = pow(saturate(dot(skyRay, skyLightDirection)), 18.0);
-    const float horizonGlow = pow(saturate(1.0 - abs(skyRay.y)), 5.0);
-    baseColor += skyMask * (float3(1.0, 0.76, 0.42) * sunDisk * 2.8
-                         + float3(1.0, 0.52, 0.24) * sunGlow * 0.24
-                         + float3(0.34, 0.20, 0.12) * horizonGlow * 0.16);
+    baseColor = lerp(baseColor, EvaluateAtmosphere(skyRay, skyLightDirection), skyMask);
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
     const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
-    const float2 ripple = float2(sin(input.worldPosition.z * 0.82 + input.worldPosition.x * 0.17 + fogEndEnabled.w * 1.35),
-                                 cos(input.worldPosition.x * 0.68 - input.worldPosition.z * 0.23 - fogEndEnabled.w * 1.08));
-    normal = normalize(normal + float3(ripple.x, 0.0, ripple.y) * waterMask * 0.075);
+    const float2 broadRipple = float2(sin(input.worldPosition.z * 0.38 + input.worldPosition.x * 0.11 + fogEndEnabled.w * 0.72),
+                                      cos(input.worldPosition.x * 0.31 - input.worldPosition.z * 0.16 - fogEndEnabled.w * 0.61));
+    const float2 detailRipple = float2(sin(input.worldPosition.z * 1.73 - input.worldPosition.x * 0.64 + fogEndEnabled.w * 1.91),
+                                       cos(input.worldPosition.x * 1.42 + input.worldPosition.z * 0.57 - fogEndEnabled.w * 1.67));
+    const float2 waterRipple = broadRipple * 0.68 + detailRipple * 0.32;
+    normal = normalize(normal + float3(waterRipple.x, 0.0, waterRipple.y) * waterMask * 0.085);
 
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
@@ -367,11 +392,18 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
                                    baseColor, roughness, metallic);
     }
 
-    const float fresnel = pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
-    shaded = lerp(shaded, float3(0.24, 0.48, 0.62) + fresnel * 0.7, waterMask * (0.18 + fresnel * 0.46));
+    const float waterViewCosine = saturate(dot(normal, viewDirection));
+    const float fresnel = 0.02 + 0.98 * pow(1.0 - waterViewCosine, 5.0);
+    const float waterPathLength = min(8.0, 1.6 / max(0.16, waterViewCosine));
+    const float3 waterTransmission = exp(-float3(0.42, 0.16, 0.08) * waterPathLength);
+    const float3 absorbedWater = lerp(float3(0.018, 0.105, 0.14), shaded, waterTransmission);
+    const float3 reflectedWater = EvaluateAtmosphere(reflect(-viewDirection, normal), skyLightDirection) * 0.72;
+    shaded = lerp(shaded, lerp(absorbedWater, reflectedWater, fresnel), waterMask);
     const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
-    const float fogAmount = saturate((distance(input.worldPosition, cameraFogStart.xyz) - cameraFogStart.w)
-                          / max(0.001, fogEndEnabled.x - cameraFogStart.w)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
+    const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
+    const float distanceFog = saturate((cameraDistance - cameraFogStart.w) / max(0.001, fogEndEnabled.x - cameraFogStart.w));
+    const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
+    const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     // World shader 的材質、天空、水與霧均在線性空間合成；UNORM RTV 前需明確轉為 sRGB。
     return float4(LinearToSrgb(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount))), input.color.a);
 }

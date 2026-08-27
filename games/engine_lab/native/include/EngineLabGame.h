@@ -43,6 +43,8 @@ private:
     Aevrynd::MeshResource3D skyDomeMesh_{};
     Aevrynd::MeshResource3D mountainHighMesh_{};
     Aevrynd::MeshResource3D mountainLowMesh_{};
+    Aevrynd::MeshResource3D rockHighMesh_{};
+    Aevrynd::MeshResource3D rockLowMesh_{};
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
