@@ -5,10 +5,10 @@
 ## Riftwarden 2.5D demo
 
 ```text
-games/riftwarden/dist/Riftwarden-Demo-v1.97.0-Engine-v2.7.0.exe
+games/riftwarden/dist/Riftwarden-Demo-v1.98.0-Engine-v2.8.0.exe
 ```
 
-此版本使用 Engine 2.7 的早期 2.5D 視野剔除。啟動時不需要 Qwen；按 `F3` 可查看引擎、場景剔除與記憶體遙測。
+此版本使用 Engine 2.8 的靜態 2D 幾何快取與早期 2.5D 視野剔除。啟動時不需要 Qwen；按 `F3` 可查看引擎、場景剔除與記憶體遙測。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-native.ps1
@@ -17,7 +17,7 @@ powershell -ExecutionPolicy Bypass -File .\build-native.ps1
 ## Engine 3D feature demo
 
 ```text
-games/engine_lab/dist/Aevrynd-Engine-Demo-v2.7.0-Lab-v1.77.0.exe
+games/engine_lab/dist/Aevrynd-Engine-Demo-v2.8.0-Lab-v1.77.0.exe
 ```
 
 啟動後第一個自動鏡頭會近距離展示 Ground、Wood 與 Brick 三組 CC0 PBR 材質，畫面上方的 `CC0 PBR 3/3` 表示三組材質已成功載入。

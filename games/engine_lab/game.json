@@ -3,7 +3,7 @@
   "title": "Aevrynd Engine Lab",
   "description": "Automated 3D authoring, rigid-body physics, material quality, multi-view camera, rendering, audio, navigation, and streaming validation game.",
   "version": "1.77.0",
-  "engineVersion": "2.7.0",
+  "engineVersion": "2.8.0",
   "currentOptimization": ["named-pbr-material-library", "atomic-material-batch-loading", "centralized-texture-release"],
   "platform": "windows-x64",
   "renderer": "directx12",

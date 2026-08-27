@@ -14,6 +14,19 @@
 
 namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
+class Geometry2D {
+public:
+    void Assign(std::span<const Vertex> source){vertices_.clear();vertices_.reserve(source.size());bool initialized=false;for(std::size_t index=0;index+2<source.size();index+=3){const Vertex& a=source[index];const Vertex& b=source[index+1];const Vertex& c=source[index+2];if(!std::isfinite(a.x)||!std::isfinite(a.y)||!std::isfinite(b.x)||!std::isfinite(b.y)||!std::isfinite(c.x)||!std::isfinite(c.y))continue;vertices_.insert(vertices_.end(),{a,b,c});for(const Vertex* vertex:{&a,&b,&c}){if(!initialized){bounds_={{vertex->x,vertex->y},{vertex->x,vertex->y}};initialized=true;}else{bounds_.minimum.x=(std::min)(bounds_.minimum.x,vertex->x);bounds_.minimum.y=(std::min)(bounds_.minimum.y,vertex->y);bounds_.maximum.x=(std::max)(bounds_.maximum.x,vertex->x);bounds_.maximum.y=(std::max)(bounds_.maximum.y,vertex->y);}}}if(!initialized)bounds_={};}
+    void Clear(){vertices_.clear();bounds_={};}
+    std::size_t TrimUnusedMemory(){const std::size_t before=RetainedBytes();std::vector<Vertex>(vertices_).swap(vertices_);const std::size_t after=RetainedBytes();return before>after?before-after:0;}
+    [[nodiscard]] std::span<const Vertex> Vertices()const{return vertices_;}
+    [[nodiscard]] Bounds2D Bounds()const{return bounds_;}
+    [[nodiscard]] std::size_t RetainedBytes()const{return vertices_.capacity()*sizeof(Vertex);}
+    [[nodiscard]] bool Empty()const{return vertices_.empty();}
+private:
+    std::vector<Vertex> vertices_{};
+    Bounds2D bounds_{};
+};
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
@@ -41,6 +54,7 @@ struct DrawListStats2D {
     size_t ellipseSegments{},ellipseTrigonometricEvaluations{},ellipseTrigonometricEvaluationsSaved{};
     size_t sharedVertexTransforms{},sharedVertexTransformsSaved{};
     size_t primitiveColorPacks{},primitiveColorPacksSaved{};
+    size_t geometryBatches{},geometryCulledBatches{},geometryVertices{},geometryTransformsSaved{};
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalPrimitiveContainedTriangles{};
@@ -198,7 +212,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -233,6 +247,7 @@ public:
     void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
     void ProjectedEllipseShadow(Vec2 base,float rx,float ry,Vec2 lightDirection,float height,float opacity=.4f,int segments=18);
     void Line(Vec2 a,Vec2 b,float width,Color color);
+    void Geometry(const Geometry2D& geometry);
     void Text(Vec2 pos,std::string_view text,float scale,Color color);
     Vec2 MeasureText(std::string_view text,float scale)const;
     std::vector<Vertex> vertices;

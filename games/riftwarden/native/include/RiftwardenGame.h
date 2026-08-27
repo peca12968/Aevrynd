@@ -30,12 +30,13 @@ private:
     struct Shot{Aevrynd::MotionState2D motion{};size_t target{};float speed{},damage{},splash{};TowerKind kind{};bool dead{};};
     struct Modifiers{float enemySpeed{1},damage{1},gold{1},range{1};};
     void Reset();void BeginWave();void SpawnEnemy(EnemyKind kind);void Fire(Tower&,size_t);void Hit(Shot&);void DefeatEnemy(Enemy&,Aevrynd::Color);void Burst(Aevrynd::Vec2,Aevrynd::Color,int);void UsePulse();void UseTimeLock();void TryBuildAt(Aevrynd::Vec2);void ChooseUpgrade(UpgradeKind);void AddCameraShake(float,float);void PlayCue(Aevrynd::SoundHandle,float volume=1,float pitch=1);void PlayCueAt(Aevrynd::SoundHandle,Aevrynd::Vec2,float volume=1,float pitch=1);
-    void SaveGame()const;void LoadGame();void ConfirmLanguage();void UpdateWindowTitle(Aevrynd::Engine&);
+    void SaveGame()const;void LoadGame();void ConfirmLanguage();void UpdateWindowTitle(Aevrynd::Engine&);void BuildStaticGeometry();
     void RequestEvent();void ApplyPendingEvent();Aevrynd::PathSample2D SamplePath(float)const;void RebuildSpatialIndex();float TowerRange(TowerKind)const;float TowerCost(TowerKind)const;
     const char* Tr(const char* traditionalChinese,const char* english)const{return language_==Language::TraditionalChinese?traditionalChinese:english;}
     std::vector<Enemy> enemies_;std::vector<Tower> towers_;std::vector<Shot> shots_;Aevrynd::ParticleSystem2D particles_{2048};Aevrynd::ScreenShake2D screenShake_{};
     Aevrynd::PolylinePath2D path_{};Aevrynd::SpatialIndex2D spatialIndex_{96.f};std::vector<Aevrynd::SpatialHit2D> spatialHits_{};
     Aevrynd::Scene25D scene25D_{128,32};
+    Aevrynd::Geometry2D parallaxGeometry_{},battlefieldGeometry_{};
     Aevrynd::CameraRig2D cameraRig2D_{{4.5f,6.f,6.f,.82f,1.18f}};
     int wave_{},lives_{20},gold_{300},kills_{},spawnLeft_{},tutorialStep_{},combo_{},bestCombo_{},shatters_{},upgradeSelection_{};size_t nextEnemyId_{1},gamepadSpot_{};uint32_t effectSeed_{1},ambientSequence_{};float spawnClock_{},betweenWaves_{8},eventClock_{},pulseCooldown_{},lockCooldown_{},messageClock_{},comboClock_{},ambientEffectClock_{};bool waveActive_{},paused_{},gameOver_{},helpVisible_{true},upgradePending_{},performanceVisible_{};
     Language language_{Language::None},pendingLanguage_{Language::English};bool progressLoaded_{};TowerKind selected_{TowerKind::Bolt};Modifiers mods_{};RiftwardenRules::UpgradeLevels upgrades_{};
