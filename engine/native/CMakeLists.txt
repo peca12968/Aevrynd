@@ -13,6 +13,7 @@ add_library(AevryndEngine STATIC
   src/MaterialLibrary3D.cpp
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
+  src/MeshProcessing3D.cpp
   src/Navigation3D.cpp
   src/PhysicsWorld3D.cpp
   src/Profiling.cpp
@@ -182,6 +183,16 @@ add_executable(AevryndSceneECS3DTest tests/SceneECS3DSmoke.cpp)
 target_compile_options(AevryndSceneECS3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSceneECS3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSceneECS3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSceneECS3DTest>'")
+
+add_executable(AevryndMeshProcessing3DTest tests/MeshProcessing3DSmoke.cpp)
+target_compile_options(AevryndMeshProcessing3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndMeshProcessing3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndMeshProcessing3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMeshProcessing3DTest>'")
+
+add_executable(AevryndPbrLightingReferenceTest tests/PbrLightingReferenceSmoke.cpp)
+target_compile_options(AevryndPbrLightingReferenceTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndPbrLightingReferenceTest PRIVATE AevryndEngine)
+add_test(NAME AevryndPbrLightingReferenceTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndPbrLightingReferenceTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)

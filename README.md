@@ -118,6 +118,9 @@ Games/
 - 寫實 3D 資產清單強制 CC0-1.0 商用來源、SHA-256、完整 PBR 通道、Far／General／Near／Hero 貼圖層級、Mesh LOD、切線、碰撞、Atlas／Trim Sheet 與幾何最佳化資訊；失敗不會污染既有輸出
 - Scene/ECS 3D 橋接可批次同步 Transform、雙材質 Mesh LOD 與局部 PointLight；1,000 entity 自動測試涵蓋 visibility layer、完整燈光 transform、stale handle、slot 退役與記憶體修剪
 - 有界 CPU profiler 提供跨執行緒 scope、counter、gauge、固定 frame ring、JSON／CSV 匯出與記憶體修剪；非法數值、跨幀 scope 與容量溢位會被拒絕並留下 dropped telemetry
+- World shader 採用 Cook-Torrance GGX、Smith 幾何遮蔽、Schlick Fresnel、能量守恆漫反射與 ACES tone mapping，並以精確 sRGB 輸出轉換及 CPU 黃金參考測試避免 gamma 錯誤
+- MeshProcessing3D 提供退化面移除、完整頂點屬性去重、平滑／硬邊法線重建、保護 UV 與法線接縫的保守 LOD，以及具實測 cache miss 改善的索引重排
+- Engine Lab 的靜態開放世界景觀包含地形、蜿蜒河流、森林、岩石、聚落、遠山與地標塔，分離靜態／動態 Scene3D 提交並保留跨場景完整統計
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
@@ -130,7 +133,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.1 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.2 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

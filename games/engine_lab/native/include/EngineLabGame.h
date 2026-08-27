@@ -9,6 +9,9 @@
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldBuilder3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 class EngineLabGame final:public Aevrynd::IGame {
 public:
@@ -19,12 +22,15 @@ public:
     Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;
     std::size_t TrimReusableMemory()override;
 private:
+    void BuildLandscapeScene();
     Aevrynd::Scene3D scene_;
+    Aevrynd::Scene3D landscapeScene_;
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::SceneQueryStats3D queryStats_{};
     Aevrynd::SceneHit3D sceneHit_{};
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::MeshResource3D pyramidMesh_{};
+    Aevrynd::MeshResource3D cylinderMesh_{};
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};

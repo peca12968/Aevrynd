@@ -137,16 +137,110 @@ float3 UvNormal(float3 worldPosition, float3 geometricNormal, float2 uv)
     const float3 positionY = ddy(worldPosition);
     const float2 uvX = ddx(uv);
     const float2 uvY = ddy(uv);
-    const float3 tangent = normalize(positionX * uvY.y - positionY * uvX.y);
-    const float3 bitangent = normalize(-positionX * uvY.x + positionY * uvX.x);
+    const float3 tangentRaw = positionX * uvY.y - positionY * uvX.y;
+    const float3 bitangentRaw = -positionX * uvY.x + positionY * uvX.x;
+    const float tangentLengthSquared = dot(tangentRaw, tangentRaw);
+    const float bitangentLengthSquared = dot(bitangentRaw, bitangentRaw);
+    const float3 basisCross = cross(tangentRaw, bitangentRaw);
+    const float basisAreaSquared = dot(basisCross, basisCross);
+    // NaN 會讓比較式為 false；極小與極大的導數都退回幾何法線，避免退化 UV 污染整個像素。
+    if (!(tangentLengthSquared > 1e-10 && tangentLengthSquared < 1e20
+       && bitangentLengthSquared > 1e-10 && bitangentLengthSquared < 1e20
+       && basisAreaSquared > 1e-16 && basisAreaSquared < 1e30))
+        return geometricNormal;
+    const float3 tangent = tangentRaw * rsqrt(tangentLengthSquared);
+    const float3 bitangent = bitangentRaw * rsqrt(bitangentLengthSquared);
     const float3 mapped = DecodeBc5Normal(normalTexture.Sample(materialSampler, uv).rg);
-    return normalize(mapped.x * tangent + mapped.y * bitangent + mapped.z * geometricNormal);
+    const float3 mappedWorld = mapped.x * tangent + mapped.y * bitangent + mapped.z * geometricNormal;
+    const float mappedLengthSquared = dot(mappedWorld, mappedWorld);
+    if (!(mappedLengthSquared > 1e-10 && mappedLengthSquared < 1e20))
+        return geometricNormal;
+    return mappedWorld * rsqrt(mappedLengthSquared);
+}
+
+// 使用穩定化 GGX；分母下限犧牲極窄尖峰，避免低 roughness 產生 firefly。
+float DistributionGgxStabilized(float3 normal, float3 halfDirection, float roughness)
+{
+    const float alpha = roughness * roughness;
+    const float alphaSquared = alpha * alpha;
+    const float normalHalf = saturate(dot(normal, halfDirection));
+    const float denominator = normalHalf * normalHalf * (alphaSquared - 1.0) + 1.0;
+    return alphaSquared / max(3.14159265 * denominator * denominator, 0.000001);
+}
+
+float GeometrySchlickGgx(float normalDirection, float roughness)
+{
+    const float value = roughness + 1.0;
+    const float k = value * value * 0.125;
+    return normalDirection / max(normalDirection * (1.0 - k) + k, 0.0001);
+}
+
+float GeometrySmith(float3 normal, float3 viewDirection, float3 lightDirection, float roughness)
+{
+    return GeometrySchlickGgx(saturate(dot(normal, viewDirection)), roughness)
+         * GeometrySchlickGgx(saturate(dot(normal, lightDirection)), roughness);
+}
+
+float3 FresnelSchlick(float cosine, float3 reflectance)
+{
+    const float factor = pow(1.0 - saturate(cosine), 5.0);
+    return reflectance + (1.0 - reflectance) * factor;
+}
+
+float3 FresnelSchlickRoughness(float cosine, float3 reflectance, float roughness)
+{
+    const float3 grazing = max(1.0 - roughness, reflectance);
+    return reflectance + (grazing - reflectance) * pow(1.0 - saturate(cosine), 5.0);
+}
+
+float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirection,
+                        float3 radiance, float3 baseColor, float roughness, float metallic)
+{
+    const float normalLight = saturate(dot(normal, lightDirection));
+    const float normalView = saturate(dot(normal, viewDirection));
+    if (normalLight <= 0.0 || normalView <= 0.0)
+        return 0.0;
+    const float3 halfVector = lightDirection + viewDirection;
+    const float3 halfDirection = halfVector * rsqrt(max(dot(halfVector, halfVector), 0.000001));
+    const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+    const float3 fresnel = FresnelSchlick(saturate(dot(halfDirection, viewDirection)), reflectance);
+    const float distribution = DistributionGgxStabilized(normal, halfDirection, roughness);
+    const float geometry = GeometrySmith(normal, viewDirection, lightDirection, roughness);
+    const float3 specular = distribution * geometry * fresnel
+                          / max(4.0 * normalView * normalLight, 0.0001);
+    const float3 diffuseWeight = (1.0 - fresnel) * (1.0 - metallic);
+    return (diffuseWeight * baseColor * (1.0 / 3.14159265) + specular) * radiance * normalLight;
+}
+
+float PointLightAttenuation(float distanceSquared, float radius)
+{
+    const float safeRadius = max(radius, 0.001);
+    const float normalizedDistanceSquared = distanceSquared / (safeRadius * safeRadius);
+    const float rangeWindow = saturate(1.0 - normalizedDistanceSquared * normalizedDistanceSquared);
+    // 半徑只控制平滑截止；分母的軟化項避免光源中心產生無限亮度。
+    return rangeWindow * rangeWindow / max(distanceSquared + 1.0, 0.0001);
+}
+
+float3 AcesToneMap(float3 color)
+{
+    color = max(color, 0.0) * 1.1;
+    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
+}
+
+float3 LinearToSrgb(float3 linearColor)
+{
+    linearColor = saturate(linearColor);
+    const float3 low = linearColor * 12.92;
+    const float3 high = 1.055 * pow(linearColor, 1.0 / 2.4) - 0.055;
+    return float3(linearColor.x <= 0.0031308 ? low.x : high.x,
+                  linearColor.y <= 0.0031308 ? low.y : high.y,
+                  linearColor.z <= 0.0031308 ? low.z : high.z);
 }
 
 float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
 {
     float3 normal = normalize(input.normal.xyz);
-    float roughness = saturate(input.material.x);
+    float roughness = clamp(input.material.x, 0.045, 1.0);
     const float metallic = saturate(input.material.y);
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
@@ -156,13 +250,13 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
         if (input.textureData.z > 0.5)
         {
             baseColor *= baseColorTexture.Sample(materialSampler, input.uv).rgb;
-            roughness = saturate(roughness * roughnessTexture.Sample(materialSampler, input.uv).r);
+            roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
             normal = normalize(lerp(normal, UvNormal(input.worldPosition, normal, input.uv), 0.78));
         }
         else
         {
             baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
-            roughness = saturate(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r);
+            roughness = clamp(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r, 0.045, 1.0);
             normal = normalize(lerp(normal, TriplanarNormal(input.worldPosition, normal, input.textureData.y), 0.78));
         }
     }
@@ -184,18 +278,17 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
 
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
-    const float3 halfDirection = normalize(lightDirection + viewDirection);
-    const float diffuse = saturate((dot(normal, lightDirection) + 0.18) / 1.18);
-    const float specular = pow(saturate(dot(normal, halfDirection)), lerp(128.0, 4.0, roughness)) * (1.0 - roughness * 0.65);
-    const float3 diffuseColor = baseColor * (1.0 - metallic * 0.72);
-    const float3 specularColor = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+    const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
     const float skyVisibility = saturate(normal.y * 0.5 + 0.5);
     const float3 skyBounce = lerp(float3(0.22, 0.17, 0.12), float3(0.38, 0.52, 0.68), skyVisibility);
-    const float backScatter = pow(saturate(dot(-lightDirection, viewDirection)), 3.0) * saturate(1.0 - roughness);
-    float3 shaded = diffuseColor * (lightDirectionAmbient.w * occlusion * skyBounce * 2.8 + lightColorIntensity.rgb * lightColorIntensity.w * diffuse)
-                  + specularColor * lightColorIntensity.rgb * lightColorIntensity.w * specular
-                  + baseColor * emissive * 2.0
-                  + lightColorIntensity.rgb * backScatter * 0.08;
+    const float3 ambientFresnel = FresnelSchlickRoughness(saturate(dot(normal, viewDirection)), reflectance, roughness);
+    const float3 ambientDiffuseWeight = (1.0 - ambientFresnel) * (1.0 - metallic);
+    float3 shaded = ambientDiffuseWeight * baseColor * skyBounce * lightDirectionAmbient.w * occlusion * 2.8
+                  + ambientFresnel * skyBounce * lightDirectionAmbient.w * occlusion * (0.3 + (1.0 - roughness) * 0.35)
+                  + EvaluatePbrLight(normal, viewDirection, lightDirection,
+                                     lightColorIntensity.rgb * lightColorIntensity.w,
+                                     baseColor, roughness, metallic)
+                  + baseColor * emissive * 2.0;
 
     [unroll]
     for (uint pointIndex = 0; pointIndex < 3; ++pointIndex)
@@ -203,15 +296,13 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
         if (pointIndex >= (uint)fogEndEnabled.z)
             break;
         const float3 delta = pointPositionRadius[pointIndex].xyz - input.worldPosition;
-        const float lightDistance = max(0.001, length(delta));
-        const float attenuation = saturate(1.0 - lightDistance / pointPositionRadius[pointIndex].w);
+        const float distanceSquared = max(0.0001, dot(delta, delta));
+        const float lightDistance = sqrt(distanceSquared);
+        const float attenuation = PointLightAttenuation(distanceSquared, pointPositionRadius[pointIndex].w);
         const float3 localDirection = delta / lightDistance;
-        const float3 localHalf = normalize(localDirection + viewDirection);
-        const float localDiffuse = saturate(dot(normal, localDirection));
-        const float localSpecular = pow(saturate(dot(normal, localHalf)), lerp(128.0, 4.0, roughness)) * (1.0 - roughness * 0.65);
-        shaded += (diffuseColor * localDiffuse + specularColor * localSpecular)
-                * pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w
-                * attenuation * attenuation;
+        shaded += EvaluatePbrLight(normal, viewDirection, localDirection,
+                                   pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w * attenuation,
+                                   baseColor, roughness, metallic);
     }
 
     const float fresnel = pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
@@ -219,5 +310,6 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
     const float fogAmount = saturate((distance(input.worldPosition, cameraFogStart.xyz) - cameraFogStart.w)
                           / max(0.001, fogEndEnabled.x - cameraFogStart.w)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
-    return float4(lerp(lit, fogColor.rgb, fogAmount), input.color.a);
+    // World shader 的材質、天空、水與霧均在線性空間合成；UNORM RTV 前需明確轉為 sRGB。
+    return float4(LinearToSrgb(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount))), input.color.a);
 }
