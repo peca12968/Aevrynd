@@ -194,9 +194,6 @@ public:
             !visible(worldBounds))
           return false;
         const bool castsShadow = material.castsShadow && allowShadow;
-        const uint8_t shadowCascadeMask = castsShadow
-            ? DirectionalShadowCasterCascadeMask3D(worldBounds.center,worldBounds.radius,camera.position,shadowDirection)
-            : 0u;
         if (options.shadows.enabled && !draw.DirectionalShadowMapEnabled() &&
             castsShadow && resource) {
           ++stats.shadowCasters;
@@ -217,8 +214,7 @@ public:
                             material.textures, material.textureScale,
                             material.useUv, material.materialClass,
                             std::numeric_limits<float>::quiet_NaN(),
-                            castsShadow, lodCoverage, lodSeed, lodInvert,
-                            shadowCascadeMask);
+                            castsShadow, lodCoverage, lodSeed, lodInvert);
         else if (resource.cpuMesh)
           SubmitMesh(draw, *resource.cpuMesh, transform, material);
         else if (fallback)

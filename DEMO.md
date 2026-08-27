@@ -7,10 +7,10 @@
 ## Riftwarden 2.5D demo
 
 ```text
-games/riftwarden/dist/Riftwarden-Demo-v2.18.0-Engine-v2.46.0.exe
+games/riftwarden/dist/Riftwarden-Demo-v2.19.0-Engine-v2.47.0.exe
 ```
 
-此版本使用 Engine 2.46.0 的級聯感知陰影批次、低記憶體 GPU Mesh LOD 資源鏈、有界 shadow-only caster、相鄰層淡化、解析天空環境光與物理水面 Fresnel。跨級聯物件只上傳一次實例資料，啟動時不需要 Qwen，按 `F3` 可查看引擎、場景剔除與記憶體遙測。
+此版本使用 Engine 2.47.0 的 Renderer 權威 light-space bounds 裁切、級聯感知陰影批次與低記憶體 GPU Mesh LOD。直接 DrawList 與 Scene 都會使用 resident mesh bounds，自動排除完全離開 shadow volume 的物件；跨級聯物件仍只上傳一次實例資料。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-native.ps1
@@ -19,10 +19,10 @@ powershell -ExecutionPolicy Bypass -File .\build-native.ps1
 ## Engine 3D feature demo
 
 ```text
-games/engine_lab/dist/Aevrynd-Engine-Demo-v2.46.0-Lab-v2.6.0.exe
+games/engine_lab/dist/Aevrynd-Engine-Demo-v2.47.0-Lab-v2.7.0.exe
 ```
 
-新版 EXE 已內嵌 Ground、Wood 與 Brick 三組展示用 CC0 PBR 材質，並套用級聯感知陰影批次。近、遠物件只送入需要的 shadow cascade，跨區物件仍共用單一 GPU 實例上傳；近級陰影範圍也已覆蓋完整混合帶與 PCF 邊界。
+新版 EXE 已內嵌 Ground、Wood 與 Brick 三組展示用 CC0 PBR 材質，並以實際網格 AABB 在 light clip space 自動裁切陰影。六個 D3D12 clip plane 採含邊界測試並保留 PCF、texel snapping 安全距離；無效或不確定資料會保守回退兩級聯。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
 ## Frontier open-world demo
 
 ```text
-games/frontier_world/dist/Aevrynd-Frontier-World-Demo-v0.91.0.exe
+games/frontier_world/dist/Aevrynd-Frontier-World-Demo-v0.92.0.exe
 ```
 
 地表、房屋木板、樹皮與岩石會使用四組 CC0 PBR 材質，畫面上方的 `CC0 PBR 4/4` 表示四組材質已成功載入。

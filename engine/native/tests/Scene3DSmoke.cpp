@@ -75,7 +75,7 @@ int main(){
         draw.meshInstances.size() != 1 ||
         draw.meshInstances.front().layer != MeshRenderLayer3D::Opaque ||
         !draw.meshInstances.front().castsShadow ||
-        draw.meshInstances.front().shadowCascadeMask != DirectionalShadowNearCascadeBit3D) {
+        draw.meshInstances.front().shadowCascadeSelection != ShadowCascadeSelection3D::Automatic) {
       std::cerr << "Directional shadow scene routing failed\n";
       return 19;
     }
@@ -107,7 +107,7 @@ int main(){
         stats.shadowOnlyBudgetDropped != 1 || draw.meshInstances.size() != 1 ||
         draw.meshInstances.front().layer != MeshRenderLayer3D::ShadowOnly ||
         !draw.meshInstances.front().castsShadow ||
-        draw.meshInstances.front().shadowCascadeMask != DirectionalShadowNearCascadeBit3D) {
+        draw.meshInstances.front().shadowCascadeSelection != ShadowCascadeSelection3D::Automatic) {
       std::cerr << "Bounded shadow-only scene routing failed\n";
       return 33;
     }
@@ -118,7 +118,7 @@ int main(){
     draw.Clear();
     stats = farCascadeScene.Submit(draw, camera, {1280, 720});
     if (draw.meshInstances.size() != 1 ||
-        draw.meshInstances.front().shadowCascadeMask != DirectionalShadowFarCascadeBit3D) {
+        draw.meshInstances.front().shadowCascadeSelection != ShadowCascadeSelection3D::Automatic) {
       std::cerr << "Far cascade scene routing failed\n";
       return 36;
     }

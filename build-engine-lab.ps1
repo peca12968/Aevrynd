@@ -5,7 +5,7 @@ if (-not (Test-Path -LiteralPath $cmake)) { throw 'CMake is not installed.' }
 $build = Join-Path $root 'engine\build'
 & $cmake -S $root -B $build -G 'Visual Studio 17 2022' -A x64
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
-& $cmake --build $build --config Release --target EngineLab --parallel 1
+& $cmake --build $build --config Release --target EngineLab --parallel 4
 if ($LASTEXITCODE -ne 0) { throw 'Engine Lab build failed.' }
 $dist = Join-Path $root 'games\engine_lab\dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null

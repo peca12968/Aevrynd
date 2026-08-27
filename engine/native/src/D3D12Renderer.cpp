@@ -29,6 +29,20 @@ using Microsoft::WRL::ComPtr;
 namespace Aevrynd {
 static void Check(HRESULT hr,const char* message){if(FAILED(hr))throw std::runtime_error(message);}
 Matrix4 CreateDirectionalLightViewProjection3D(Vec3 center,Vec3 direction,float extent=80.f){direction=Normalize(direction);if(Length(direction)<.001f)direction={.4f,-1.f,.3f};const Vec3 forward=direction;Vec3 right=Normalize(Cross({0,1,0},forward));if(Length(right)<.001f)right={1,0,0};const Vec3 up=Cross(forward,right);const float texelWorldSize=extent*2.f/2048.f;const float rightCoordinate=Dot(center,right),upCoordinate=Dot(center,up);center=center+right*(SnapDirectionalShadowCoordinate3D(rightCoordinate,texelWorldSize)-rightCoordinate)+up*(SnapDirectionalShadowCoordinate3D(upCoordinate,texelWorldSize)-upCoordinate);const Vec3 eye=center-direction*100.f;Matrix4 view=Matrix4::Identity();view[0][0]=right.x;view[0][1]=right.y;view[0][2]=right.z;view[0][3]=-Dot(right,eye);view[1][0]=up.x;view[1][1]=up.y;view[1][2]=up.z;view[1][3]=-Dot(up,eye);view[2][0]=forward.x;view[2][1]=forward.y;view[2][2]=forward.z;view[2][3]=-Dot(forward,eye);Matrix4 projection{};projection[0][0]=1.f/extent;projection[1][1]=1.f/extent;projection[2][2]=1.f/240.f;projection[2][3]=40.f/240.f;projection[3][3]=1.f;return projection*view;}
+struct ResidentMeshBounds3D {Vec3 center{},extents{};};
+bool CalculateResidentMeshBounds3D(std::span<const Vertex3D> vertices,ResidentMeshBounds3D& result){
+ if(vertices.empty())return false;double minimum[3]={vertices.front().x,vertices.front().y,vertices.front().z},maximum[3]={minimum[0],minimum[1],minimum[2]};
+ for(const Vertex3D& vertex:vertices){const double values[3]={vertex.x,vertex.y,vertex.z};for(size_t axis=0;axis<3;++axis){if(!std::isfinite(values[axis]))return false;minimum[axis]=(std::min)(minimum[axis],values[axis]);maximum[axis]=(std::max)(maximum[axis],values[axis]);}}
+ double center[3]{},extents[3]{};for(size_t axis=0;axis<3;++axis){center[axis]=minimum[axis]+(maximum[axis]-minimum[axis])*.5;extents[axis]=(maximum[axis]-minimum[axis])*.5;if(!std::isfinite(center[axis])||!std::isfinite(extents[axis])||std::abs(center[axis])>(std::numeric_limits<float>::max)()||extents[axis]>(std::numeric_limits<float>::max)())return false;}
+ result={{float(center[0]),float(center[1]),float(center[2])},{float(extents[0]),float(extents[1]),float(extents[2])}};return true;
+}
+struct DirectionalShadowLightSpaceMaskResult3D {uint8_t mask{DirectionalShadowAllCascades3D};bool fallback{};};
+DirectionalShadowLightSpaceMaskResult3D DirectionalShadowLightSpaceMask3D(const ResidentMeshBounds3D& bounds,const Matrix4& transform,const Matrix4 (&lightViewProjection)[2]){
+ constexpr float MarginXY=2.f*(1.45f+1.f)/2048.f,MarginZ=1e-5f;
+ auto finite=[](float value){return std::isfinite(value);};for(float value:{bounds.center.x,bounds.center.y,bounds.center.z,bounds.extents.x,bounds.extents.y,bounds.extents.z})if(!finite(value))return{DirectionalShadowAllCascades3D,true};if(bounds.extents.x<0||bounds.extents.y<0||bounds.extents.z<0)return{DirectionalShadowAllCascades3D,true};
+ uint8_t mask{};for(size_t cascade=0;cascade<2;++cascade){const Matrix4 clipFromLocal=lightViewProjection[cascade]*transform;for(const auto& row:clipFromLocal.values)for(float value:row)if(!finite(value))return{DirectionalShadowAllCascades3D,true};if(std::abs(clipFromLocal[3][0])+std::abs(clipFromLocal[3][1])+std::abs(clipFromLocal[3][2])>1e-5f)return{DirectionalShadowAllCascades3D,true};const Vec4 center=clipFromLocal*Vec4{bounds.center.x,bounds.center.y,bounds.center.z,1};if(!finite(center.x)||!finite(center.y)||!finite(center.z)||!finite(center.w)||center.w<=0)return{DirectionalShadowAllCascades3D,true};const Vec3 extent{std::abs(clipFromLocal[0][0])*bounds.extents.x+std::abs(clipFromLocal[0][1])*bounds.extents.y+std::abs(clipFromLocal[0][2])*bounds.extents.z,std::abs(clipFromLocal[1][0])*bounds.extents.x+std::abs(clipFromLocal[1][1])*bounds.extents.y+std::abs(clipFromLocal[1][2])*bounds.extents.z,std::abs(clipFromLocal[2][0])*bounds.extents.x+std::abs(clipFromLocal[2][1])*bounds.extents.y+std::abs(clipFromLocal[2][2])*bounds.extents.z};if(!finite(extent.x)||!finite(extent.y)||!finite(extent.z))return{DirectionalShadowAllCascades3D,true};const bool overlaps=center.x+extent.x>=-center.w-MarginXY&&center.x-extent.x<=center.w+MarginXY&&center.y+extent.y>=-center.w-MarginXY&&center.y-extent.y<=center.w+MarginXY&&center.z+extent.z>=-MarginZ&&center.z-extent.z<=center.w+MarginZ;if(overlaps)mask|=uint8_t(1u<<cascade);}
+ return{mask,false};
+}
 struct GpuMeshInstance {Matrix4 transform;Vec4 normalRows[3];uint32_t tint,surface,textureData;};
 static_assert(sizeof(GpuMeshInstance)==D3D12Renderer::MeshInstanceUploadBytes);
 static_assert(offsetof(GpuMeshInstance,textureData)==120);
@@ -50,7 +64,7 @@ struct InstanceGroupKeyHasher3D {size_t operator()(const InstanceGroupKey3D& key
 struct MeshCacheKey3D {uint64_t primary{},secondary{};size_t vertexCount{},indexCount{};bool operator==(const MeshCacheKey3D&)const=default;};
 struct MeshCacheKeyHasher3D {size_t operator()(const MeshCacheKey3D& key)const{return size_t(key.primary^(key.secondary+0x9e3779b97f4a7c15ull+(key.primary<<6)+(key.primary>>2)));}};
 MeshCacheKey3D CreateMeshCacheKey(std::span<const Vertex3D> vertices,std::span<const uint32_t> indices){MeshCacheKey3D key{1469598103934665603ull,1099511628211ull,vertices.size(),indices.size()};auto mix=[&](std::span<const std::byte> bytes){for(std::byte item:bytes){const uint64_t value=std::to_integer<uint8_t>(item);key.primary=(key.primary^value)*1099511628211ull;key.secondary^=value+0x9e3779b97f4a7c15ull+(key.secondary<<6)+(key.secondary>>2);}};mix(std::as_bytes(vertices));mix(std::as_bytes(indices));return key;}
-struct ResidentMesh3D {ComPtr<ID3D12Resource> buffer;MeshCacheKey3D cacheKey{};D3D12_VERTEX_BUFFER_VIEW vertexView{};D3D12_INDEX_BUFFER_VIEW indexView{};UINT indexCount{},references{1};size_t bytes{};};
+struct ResidentMesh3D {ComPtr<ID3D12Resource> buffer;MeshCacheKey3D cacheKey{};ResidentMeshBounds3D bounds{};D3D12_VERTEX_BUFFER_VIEW vertexView{};D3D12_INDEX_BUFFER_VIEW indexView{};UINT indexCount{},references{1};size_t bytes{};};
 struct ResidentMaterialTextureSet3D {ComPtr<ID3D12Heap> heap;std::array<ComPtr<ID3D12Resource>,9> textures;std::wstring cacheKey;uint32_t descriptorOffset{},references{1};size_t bytes{},allocationBytes{};};
 struct RetiredGpuResources3D {ComPtr<ID3D12Heap> heap;std::array<ComPtr<ID3D12Resource>,9> resources;UINT64 fenceValue{};size_t bytes{};uint32_t textureSlot{UINT_MAX};bool textures{};};
 struct MeshUploadContext3D {ComPtr<ID3D12CommandAllocator> allocator;ComPtr<ID3D12GraphicsCommandList> list;};
@@ -289,9 +303,10 @@ void D3D12Renderer::Initialize(HWND hwnd,unsigned width,unsigned height,unsigned
 // 靜態幾何只在建立時經 upload heap 搬入 DEFAULT heap，之後每幀不再重傳頂點與索引。
 MeshHandle3D D3D12Renderer::CreateMesh(std::span<const Vertex3D> vertices,std::span<const uint32_t> indices){
  auto& d=*impl_;if(!d.device||vertices.empty()||indices.empty()||indices.size()%3!=0||std::any_of(indices.begin(),indices.end(),[&](uint32_t index){return index>=vertices.size();}))return{};
+ ResidentMeshBounds3D bounds{};if(!CalculateResidentMeshBounds3D(vertices,bounds)){++d.stats.invalidMeshBoundsRejections;return{};}
  const size_t vertexBytes=vertices.size_bytes(),indexBytes=indices.size_bytes(),indexOffset=(vertexBytes+alignof(uint32_t)-1)&~size_t(alignof(uint32_t)-1),meshBytes=indexOffset+indexBytes;if(vertexBytes>UINT_MAX||indexBytes>UINT_MAX)return{};d.CollectCompletedGpuWork();const MeshCacheKey3D cacheKey=CreateMeshCacheKey(vertices,indices);if(const auto cached=d.meshCache.find(cacheKey);cached!=d.meshCache.end()){const auto resident=d.residentMeshes.find(cached->second);if(resident!=d.residentMeshes.end()){++resident->second.references;++d.stats.residentMeshReferences;++d.stats.meshCacheHits;return{cached->second};}d.meshCache.erase(cached);}if(meshBytes>d.meshMemoryBudgetBytes||d.stats.residentMeshBytes+d.pendingMeshReleaseBytes>d.meshMemoryBudgetBytes-meshBytes){++d.stats.meshBudgetRejections;return{};}d.residentMeshes.reserve(d.residentMeshes.size()+1);d.meshCache.reserve(d.meshCache.size()+1);
  D3D12_HEAP_PROPERTIES defaultHeap{},uploadHeap{};defaultHeap.Type=D3D12_HEAP_TYPE_DEFAULT;uploadHeap.Type=D3D12_HEAP_TYPE_UPLOAD;auto bufferDesc=[](size_t bytes){D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=bytes;desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;return desc;};
- ResidentMesh3D mesh{};mesh.cacheKey=cacheKey;ComPtr<ID3D12Resource> upload;D3D12_RESOURCE_DESC meshDesc=bufferDesc(meshBytes);Check(d.device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&mesh.buffer)),"Resident mesh buffer failed");Check(d.device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"Resident mesh upload failed");
+ ResidentMesh3D mesh{};mesh.cacheKey=cacheKey;mesh.bounds=bounds;ComPtr<ID3D12Resource> upload;D3D12_RESOURCE_DESC meshDesc=bufferDesc(meshBytes);Check(d.device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&mesh.buffer)),"Resident mesh buffer failed");Check(d.device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"Resident mesh upload failed");
  void* mappedData{};Check(upload->Map(0,nullptr,&mappedData),"Resident mesh map failed");memcpy(mappedData,vertices.data(),vertexBytes);memcpy(static_cast<uint8_t*>(mappedData)+indexOffset,indices.data(),indexBytes);upload->Unmap(0,nullptr);const D3D12_GPU_VIRTUAL_ADDRESS meshAddress=mesh.buffer->GetGPUVirtualAddress();mesh.vertexView={meshAddress,UINT(vertexBytes),sizeof(Vertex3D)};mesh.indexView={meshAddress+indexOffset,UINT(indexBytes),DXGI_FORMAT_R32_UINT};mesh.indexCount=UINT(indices.size());mesh.bytes=meshBytes;
  // 先完成所有可能配置記憶體的容器操作，再把資源位址錄進 GPU command list，避免配置失敗留下懸空 copy 指令。
  d.PrepareMeshUpload(meshBytes);d.meshUploadBatch.staging.reserve(d.meshUploadBatch.staging.size()+1);const MeshHandle3D handle{d.nextMeshHandle};auto residentInsertion=d.residentMeshes.emplace(handle.value,std::move(mesh));if(!residentInsertion.second)return{};try{if(!d.meshCache.emplace(cacheKey,handle.value).second){d.residentMeshes.erase(residentInsertion.first);return{};}}catch(...){d.residentMeshes.erase(residentInsertion.first);throw;}++d.nextMeshHandle;ResidentMesh3D& resident=residentInsertion.first->second;auto* uploadList=d.meshUploadBatch.context.list.Get();uploadList->CopyBufferRegion(resident.buffer.Get(),0,upload.Get(),0,vertexBytes);uploadList->CopyBufferRegion(resident.buffer.Get(),indexOffset,upload.Get(),indexOffset,indexBytes);D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={resident.buffer.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER|D3D12_RESOURCE_STATE_INDEX_BUFFER};uploadList->ResourceBarrier(1,&barrier);d.meshUploadBatch.staging.push_back(std::move(upload));d.meshUploadBatch.bytes+=meshBytes;++d.meshUploadBatch.meshes;d.stats.meshUploadStagingBytes+=meshBytes;d.stats.peakMeshUploadStagingBytes=(std::max)(d.stats.peakMeshUploadStagingBytes,d.stats.meshUploadStagingBytes);++d.stats.meshUploadStagingResources;d.stats.peakMeshUploadStagingResources=(std::max)(d.stats.peakMeshUploadStagingResources,d.stats.meshUploadStagingResources);++d.stats.meshUploadBufferAllocations;++d.stats.meshUploads;
@@ -352,6 +367,12 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
               worldIndexCount =
                   DrawableWorldIndexCount(dl.worldIndices, worldCount);
  const uint64_t currentFrame = d.stats.submittedFrames;
+ const Matrix4 lightViewProjection[2] = {
+     CreateDirectionalLightViewProjection3D(
+         dl.Atmosphere().cameraPosition, dl.DirectionalLight().direction, 38.f),
+     CreateDirectionalLightViewProjection3D(dl.Atmosphere().cameraPosition,
+                                            dl.DirectionalLight().direction,
+                                            90.f)};
  auto prepareGroups = [&](auto &groups) {
    for (auto iterator = groups.begin(); iterator != groups.end();) {
      auto &group = iterator->second;
@@ -388,15 +409,19 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  size_t acceptedInstances = 0, acceptedOverlayInstances = 0,
         acceptedShadowOnlyInstances = 0, acceptedTexturedInstances = 0,
         droppedInstances = 0;
+ d.stats.lastDirectionalShadowAutomaticMasks = 0;
+ d.stats.lastDirectionalShadowManualMasks = 0;
+ d.stats.lastDirectionalShadowLightSpaceRejected = {};
+ d.stats.lastDirectionalShadowMaskFallbacks = 0;
  for (size_t index = 0; index < dl.meshInstances.size(); ++index) {
    if (acceptedInstances >= MaxMeshInstances) {
      droppedInstances += dl.meshInstances.size() - index;
      break;
    }
    const MeshInstance3D &instance = dl.meshInstances[index];
-   if (d.residentMeshes.find(instance.mesh.value) == d.residentMeshes.end() ||
-       (instance.layer == MeshRenderLayer3D::ShadowOnly &&
-        !instance.castsShadow)) {
+   const auto residentMesh = d.residentMeshes.find(instance.mesh.value);
+   if (residentMesh == d.residentMeshes.end() ||
+       (instance.layer == MeshRenderLayer3D::ShadowOnly && !instance.castsShadow)) {
      ++droppedInstances;
      continue;
    }
@@ -404,6 +429,29 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
               validTextures = !shadowOnly && instance.textures &&
                               d.residentMaterialTextureSets.contains(
                                   instance.textures.value);
+   const bool shadowLayer = instance.layer == MeshRenderLayer3D::Opaque || shadowOnly;
+   uint8_t shadowCascadeMask{};
+   if (shadowLayer && instance.castsShadow) {
+     if (instance.shadowCascadeSelection == ShadowCascadeSelection3D::Manual) {
+       shadowCascadeMask = instance.shadowCascadeMask & DirectionalShadowAllCascades3D;
+       ++d.stats.lastDirectionalShadowManualMasks;
+     } else {
+       const DirectionalShadowLightSpaceMaskResult3D result =
+           DirectionalShadowLightSpaceMask3D(residentMesh->second.bounds,
+                                             instance.transform,
+                                             lightViewProjection);
+       shadowCascadeMask = result.mask;
+       ++d.stats.lastDirectionalShadowAutomaticMasks;
+       d.stats.lastDirectionalShadowMaskFallbacks += result.fallback;
+       for (size_t cascade = 0; cascade < 2; ++cascade)
+         d.stats.lastDirectionalShadowLightSpaceRejected[cascade] +=
+             !result.fallback && !(result.mask & (1u << cascade));
+     }
+   }
+   if (shadowOnly && !shadowCascadeMask) {
+     ++droppedInstances;
+     continue;
+   }
    GpuMeshInstance gpu{};
    gpu.transform = instance.transform;
    for (size_t row = 0; row < 3; ++row)
@@ -421,7 +469,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
        (packedTextureScale << 16);
    if (instance.layer == MeshRenderLayer3D::Transparent) {
      transparentSubmissions.push_back(
-         {gpu, &d.residentMeshes.find(instance.mesh.value)->second,
+         {gpu, &residentMesh->second,
           validTextures ? instance.textures : MaterialTextureSetHandle3D{},
           instance.cameraDepth});
    } else {
@@ -432,7 +480,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
      const InstanceGroupKey3D groupKey{
          instance.mesh.value,
          validTextures ? instance.textures.value : 0,
-         uint8_t(instance.castsShadow ? instance.shadowCascadeMask : 0u),
+         shadowCascadeMask,
          uint8_t(instance.materialClass == MaterialClass3D::Foliage)};
      auto [groupIterator, created] = groups.try_emplace(groupKey);
      if (created)
@@ -657,12 +705,6 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  d.list->EndQuery(d.timestampHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
                   timestampStart);
  float c[4] = {clear.r, clear.g, clear.b, clear.a};
- const Matrix4 lightViewProjection[2] = {
-     CreateDirectionalLightViewProjection3D(
-         dl.Atmosphere().cameraPosition, dl.DirectionalLight().direction, 38.f),
-     CreateDirectionalLightViewProjection3D(dl.Atmosphere().cameraPosition,
-                                            dl.DirectionalLight().direction,
-                                            90.f)};
  const bool hasShadowCaster =
      !d.activeShadowOnlyMeshGroups.empty() ||
      std::ranges::any_of(d.activeMeshGroups, [](const ActiveMeshGroup3D &group) {

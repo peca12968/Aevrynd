@@ -4,7 +4,7 @@ $cmakeExecutable = 'C:\Program Files\CMake\bin\cmake.exe'
 $buildDirectory = Join-Path $projectRoot 'engine\build'
 & $cmakeExecutable -S $projectRoot -B $buildDirectory -G 'Visual Studio 17 2022' -A x64
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
-& $cmakeExecutable --build $buildDirectory --config Release --target FrontierWorld --parallel 1
+& $cmakeExecutable --build $buildDirectory --config Release --target FrontierWorld --parallel 4
 if ($LASTEXITCODE -ne 0) { throw 'Frontier World build failed.' }
 $distributionDirectory = Join-Path $projectRoot 'games\frontier_world\dist'
 New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
