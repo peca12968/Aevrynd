@@ -52,7 +52,7 @@ struct DrawListStats2D {
     size_t textContainmentTests{},textContainedSpans{},textContainmentBypassedTriangles{},textCulledSpans{},textCullingBypassedTriangles{};
     size_t primitiveCullTests{},primitiveCulled{},primitiveCulledTriangles{};
     size_t primitiveContained{},primitiveContainedTriangles{};
-    size_t ellipseSegments{},ellipseTrigonometricEvaluations{},ellipseTrigonometricEvaluationsSaved{};
+    size_t ellipseSegments{},ellipseOutlineSegments{},ellipseTrigonometricEvaluations{},ellipseTrigonometricEvaluationsSaved{};
     size_t ellipseStepCacheHits{},ellipseStepCacheMisses{};
     size_t sharedVertexTransforms{},sharedVertexTransformsSaved{};
     size_t primitiveColorPacks{},primitiveColorPacksSaved{};
@@ -60,7 +60,7 @@ struct DrawListStats2D {
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalPrimitiveContainedTriangles{};
-    uint64_t totalEllipseSegments{},totalEllipseTrigonometricEvaluationsSaved{};
+    uint64_t totalEllipseSegments{},totalEllipseOutlineSegments{},totalEllipseTrigonometricEvaluationsSaved{};
     uint64_t totalEllipseStepCacheHits{},totalEllipseStepCacheMisses{};
     uint64_t totalSharedVertexTransforms{},totalSharedVertexTransformsSaved{};
     uint64_t totalPrimitiveColorPacks{},totalPrimitiveColorPacksSaved{};
@@ -217,7 +217,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -250,6 +250,7 @@ public:
     void IsoPrism(Vec2 center,float rx,float ry,float height,Color top,Color left,Color right);
     void Circle(Vec2 center,float radius,Color color,int segments=18);
     void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
+    void EllipseOutline(Vec2 center,float rx,float ry,float width,Color color,int segments=24);
     void ProjectedEllipseShadow(Vec2 base,float rx,float ry,Vec2 lightDirection,float height,float opacity=.4f,int segments=18);
     void Line(Vec2 a,Vec2 b,float width,Color color);
     void Geometry(const Geometry2D& geometry);

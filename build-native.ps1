@@ -16,3 +16,4 @@ Copy-Item -LiteralPath (Join-Path $build 'bin\Release\Riftwarden-DX12.exe') -Des
 Copy-Item -Path (Join-Path $build 'bin\Release\*.dll') -Destination $dist -Force
 Write-Host "Built: $dist\Riftwarden-DX12.exe" -ForegroundColor Green
 Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green
+& (Join-Path $root 'publish-demos.ps1')

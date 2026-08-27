@@ -23,3 +23,4 @@ if (Test-Path -LiteralPath $materialPacks) {
 }
 Write-Host "Built: $dist\Aevrynd-Engine-Lab.exe" -ForegroundColor Green
 Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green
+& (Join-Path $root 'publish-demos.ps1')

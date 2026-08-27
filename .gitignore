@@ -11,6 +11,8 @@
 # Packaged games and player saves
 /games/*/dist/
 /games/*/saves/
+/saves/
+/Demo/
 
 # Local AI runtime and large model weights
 /engine/runtime/*

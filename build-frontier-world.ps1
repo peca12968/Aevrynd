@@ -19,3 +19,4 @@ Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\assets\material-packs') 
 Copy-Item -Path (Join-Path $projectRoot 'games\frontier_world\assets\*') -Destination $distributionAssets -Recurse -Force
 Write-Host "Built: $distributionDirectory\Aevrynd-Frontier-World.exe" -ForegroundColor Green
 Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green
+& (Join-Path $projectRoot 'publish-demos.ps1')
