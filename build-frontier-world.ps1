@@ -4,7 +4,7 @@ $cmakeExecutable = 'C:\Program Files\CMake\bin\cmake.exe'
 $buildDirectory = Join-Path $projectRoot 'engine\build'
 & $cmakeExecutable -S $projectRoot -B $buildDirectory -G 'Visual Studio 17 2022' -A x64
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
-& $cmakeExecutable --build $buildDirectory --config Release --target FrontierWorld --parallel 2
+& $cmakeExecutable --build $buildDirectory --config Release --target FrontierWorld --parallel 1
 if ($LASTEXITCODE -ne 0) { throw 'Frontier World build failed.' }
 $distributionDirectory = Join-Path $projectRoot 'games\frontier_world\dist'
 New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
@@ -12,5 +12,6 @@ Copy-Item -LiteralPath (Join-Path $buildDirectory 'bin\Release\Aevrynd-Frontier-
 Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\*.dll') -Destination $distributionDirectory -Force
 $distributionAssets = Join-Path $distributionDirectory 'assets'
 New-Item -ItemType Directory -Force -Path $distributionAssets | Out-Null
+Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\assets\material-packs') -Destination $distributionAssets -Recurse -Force
 Copy-Item -Path (Join-Path $projectRoot 'games\frontier_world\assets\*') -Destination $distributionAssets -Recurse -Force
 Write-Host "Built: $distributionDirectory\Aevrynd-Frontier-World.exe" -ForegroundColor Green

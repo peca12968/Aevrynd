@@ -27,6 +27,7 @@
 /games/*/legacy-web/
 
 # Runtime logs and temporary files
+/artifacts/
 *.log
 *.tmp
 *.bak

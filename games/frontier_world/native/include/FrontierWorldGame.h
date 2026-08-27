@@ -19,6 +19,7 @@ public:
     Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;
     std::size_t TrimReusableMemory()override;
 private:
+    enum class ViewMode {FirstPerson,ThirdPerson,GodView};
     struct Building {FrontierWorldRules::BuildingKind kind{};Aevrynd::Vec3 position{};float yaw{};Aevrynd::ColliderHandle3D collider{};};
     enum class MonsterKind {Wolf,Golem};
     struct Monster {Aevrynd::Vec3 position{};float health{},maximumHealth{},speed{},attackCooldown{};MonsterKind kind{};bool alive{true};std::vector<Aevrynd::Vec3> path;std::size_t pathIndex{};float repathClock{};};
@@ -35,6 +36,7 @@ private:
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{};
+    Aevrynd::MaterialTextureSetHandle3D groundTextures_{},woodTextures_{},barkTextures_{},rockTextures_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
     Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};
@@ -48,6 +50,7 @@ private:
     std::vector<Building> buildings_;
     std::vector<Monster> monsters_;
     Aevrynd::Camera3D camera_{};
+    ViewMode viewMode_{ViewMode::ThirdPerson};
     FrontierWorldRules::BuildingKind selectedBuilding_{FrontierWorldRules::BuildingKind::Foundation};
     float yaw_{},pitch_{.15f},attackCooldown_{},attackAnimationClock_{},automaticClock_{};
     int health_{100},wood_{120},stone_{80},experience_{},level_{1},kills_{};
@@ -55,5 +58,5 @@ private:
     uint64_t navigationSearches_{},navigationVisited_{};
     std::size_t lastReusableMemoryReleasedBytes_{};uint64_t reusableMemoryTrimCount_{};
     std::size_t navigationBlockedCells_{},navigationPathPoints_{};
-    bool firstPerson_{},automatic_{true},moving_{},navigationDirty_{true};
+    bool automatic_{true},moving_{},navigationDirty_{true};
 };
