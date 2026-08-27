@@ -2,6 +2,7 @@
 #include <Aevrynd/CharacterController3D.h>
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
+#include <Aevrynd/MaterialLibrary3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/SkinnedRenderable3D.h>
@@ -28,6 +29,7 @@ private:
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{};
     std::vector<Aevrynd::SkinnedSubmesh3D> femaleSubmeshes_{},maleSubmeshes_{};
     std::vector<Aevrynd::Material3D> femaleMaterials_{},maleMaterials_{};
+    Aevrynd::MaterialLibrary3D femaleMaterialLibrary_{},maleMaterialLibrary_{};
     Aevrynd::SkinnedMeshResource3D gpuFemale_{},gpuMale_{};
     Aevrynd::AnimationClip3D femaleClip_{},maleClip_{};
     Aevrynd::AnimationPlayer3D femalePlayer_{},malePlayer_{};

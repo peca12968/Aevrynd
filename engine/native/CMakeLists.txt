@@ -25,6 +25,7 @@ add_library(AevryndEngine STATIC
   src/Serialization.cpp
   src/SkinnedModel3D.cpp
   src/SkinnedModelAsset.cpp
+  src/SkinnedMaterialSidecar3D.cpp
   src/SkinnedRenderable3D.cpp
   src/Spatial2D.cpp
   src/TerrainClipmap3D.cpp
@@ -193,6 +194,10 @@ add_executable(AevryndSkinnedModelAssetV2Test tests/SkinnedModelAssetV2Smoke.cpp
 target_compile_options(AevryndSkinnedModelAssetV2Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSkinnedModelAssetV2Test PRIVATE AevryndEngine)
 add_test(NAME AevryndSkinnedModelAssetV2Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedModelAssetV2Test>'")
+add_executable(AevryndSkinnedMaterialSidecar3DTest tests/SkinnedMaterialSidecar3DSmoke.cpp)
+target_compile_options(AevryndSkinnedMaterialSidecar3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSkinnedMaterialSidecar3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSkinnedMaterialSidecar3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedMaterialSidecar3DTest>'")
 add_executable(AevryndSkinnedModelAssetV2Inspect tests/SkinnedModelAssetV2Inspect.cpp)
 target_compile_options(AevryndSkinnedModelAssetV2Inspect PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSkinnedModelAssetV2Inspect PRIVATE AevryndEngine)

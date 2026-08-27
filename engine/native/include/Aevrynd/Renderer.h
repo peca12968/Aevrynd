@@ -171,6 +171,10 @@ struct RendererStats {
     size_t lastSubmittedOverlayInstances{};
     size_t lastSubmittedShadowOnlyInstances{};
     size_t lastSubmittedTexturedMeshInstances{};
+    size_t lastSubmittedTexturedSkinnedInstances{};
+    size_t lastSkinnedMaterialDescriptorBinds{};
+    uint64_t totalSkinnedMaterialDescriptorBinds{};
+    uint64_t missingSkinnedTextureBindings{};
     size_t lastSubmittedFoliageInstances{};
     size_t lastSubmittedTerrainInstances{};
     size_t lastDirectionalShadowCasters{};

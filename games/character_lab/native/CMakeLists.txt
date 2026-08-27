@@ -16,6 +16,10 @@ foreach(CHARACTER_ASSET realistic-female realistic-male)
       "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin"
       "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin")
 endforeach()
+add_custom_command(TARGET CharacterLab POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/games/character_lab/assets/material-packs"
+    "$<TARGET_FILE_DIR:CharacterLab>/assets/material-packs")
 if(AEVRYND_STREAMLINE_AVAILABLE)
   foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
     add_custom_command(TARGET CharacterLab POST_BUILD

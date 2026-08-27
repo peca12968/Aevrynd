@@ -549,11 +549,13 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  auto resolveSkinnedInstance=[&](const SkinnedMeshInstance3D& instance,ResidentSkinnedMesh3D*& resident,uint32_t& indexCount){const auto found=d.residentSkinnedMeshes.find(instance.mesh.value);if(found==d.residentSkinnedMeshes.end()||instance.firstIndex>found->second.indexCount)return false;indexCount=instance.indexCount?instance.indexCount:found->second.indexCount-instance.firstIndex;if(indexCount>found->second.indexCount-instance.firstIndex||!indexCount||instance.firstIndex%3||indexCount%3||instance.palette.firstJoint>dl.skinPaletteJoints.size()||instance.palette.jointCount>dl.skinPaletteJoints.size()-instance.palette.firstJoint||instance.palette.jointCount<found->second.jointCount||instance.materialClass==MaterialClass3D::Water||instance.materialClass==MaterialClass3D::Terrain)return false;resident=&found->second;return true;};
  size_t validSkinnedInstances{};for(const SkinnedMeshInstance3D& instance:dl.skinnedMeshInstances){ResidentSkinnedMesh3D* resident{};uint32_t indexCount{};if(resolveSkinnedInstance(instance,resident,indexCount)&&++validSkinnedInstances>=DrawList::MaximumSkinnedMeshInstancesPerFrame)break;}
  if(validSkinnedInstances)d.EnsureFrameUploadBuffer(d.skinnedInstanceBuffers[d.frame],d.skinnedInstanceMapped[d.frame],d.skinnedInstanceCapacity[d.frame],validSkinnedInstances,DrawList::MaximumSkinPalettesPerFrame,DrawList::MaximumSkinnedMeshInstancesPerFrame);
- size_t acceptedSkinnedInstances{};
+ size_t acceptedSkinnedInstances{},acceptedTexturedSkinnedInstances{};
  for(const SkinnedMeshInstance3D& instance:dl.skinnedMeshInstances){
    if(acceptedSkinnedInstances>=DrawList::MaximumSkinnedMeshInstancesPerFrame){++d.stats.rejectedSkinnedInstances;continue;}
    ResidentSkinnedMesh3D* mesh{};uint32_t indexCount{};if(!resolveSkinnedInstance(instance,mesh,indexCount)){++d.stats.rejectedSkinnedInstances;continue;}
    const bool validTextures=instance.textures&&d.residentMaterialTextureSets.contains(instance.textures.value);
+   if(validTextures)++acceptedTexturedSkinnedInstances;
+   else if(instance.textures)++d.stats.missingSkinnedTextureBindings;
    GpuSkinnedInstance gpu{};gpu.instance.transform=instance.transform;for(size_t row=0;row<3;++row)gpu.instance.normalRows[row]={instance.normalTransform[row][0],instance.normalTransform[row][1],instance.normalTransform[row][2],0};gpu.instance.tint=instance.tint;gpu.instance.surface=instance.surface;gpu.instance.textureData=PackSkinnedMeshInstanceData3D(validTextures,instance.useUv,instance.materialClass,instance.textureScale);gpu.skinPaletteBase=instance.palette.firstJoint;
    d.skinnedInstanceMapped[d.frame][acceptedSkinnedInstances]=gpu;
    activeSkinnedMeshes.push_back({mesh,validTextures?instance.textures:MaterialTextureSetHandle3D{},acceptedSkinnedInstances,instance.firstIndex,indexCount,instance.castsShadow?uint8_t(instance.shadowCascadeMask&DirectionalShadowAllCascades3D):uint8_t{},instance.materialClass==MaterialClass3D::Foliage});
@@ -566,6 +568,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
    ++d.stats.skinPaletteUploads;d.stats.lastUploadedSkinJoints=jointCount;
  }else d.stats.lastUploadedSkinJoints=0;
  d.stats.lastSubmittedSkinnedInstances=acceptedSkinnedInstances;
+ d.stats.lastSubmittedTexturedSkinnedInstances=acceptedTexturedSkinnedInstances;
  d.stats.skinPaletteResidentBytes=0;for(size_t capacity:d.skinPaletteCapacity)d.stats.skinPaletteResidentBytes+=capacity*sizeof(SkinPaletteJoint3D);d.stats.peakSkinPaletteResidentBytes=(std::max)(d.stats.peakSkinPaletteResidentBytes,d.stats.skinPaletteResidentBytes);
  d.RefreshInstanceGroupStats();
  if (count) {
@@ -1041,7 +1044,8 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
                                 UINT(group.instanceCount), 0, 0, 0);
  }
  if(!activeSkinnedMeshes.empty())d.list->SetGraphicsRootShaderResourceView(7,d.skinPaletteBuffers[d.frame]->GetGPUVirtualAddress());
- for(const ActiveSkinnedMesh3D& mesh:activeSkinnedMeshes){bindTextures(mesh.textures);d.list->SetPipelineState(dl.BackfaceCulling()&&!mesh.doubleSided?d.skinnedCulledPipeline.Get():d.skinnedPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={mesh.mesh->vertexView,{d.skinnedInstanceBuffers[d.frame]->GetGPUVirtualAddress()+mesh.instanceOffset*sizeof(GpuSkinnedInstance),UINT(sizeof(GpuSkinnedInstance)),sizeof(GpuSkinnedInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&mesh.mesh->indexView);d.list->DrawIndexedInstanced(mesh.indexCount,1,mesh.firstIndex,0,0);}
+ d.stats.lastSkinnedMaterialDescriptorBinds=0;
+ for(const ActiveSkinnedMesh3D& mesh:activeSkinnedMeshes){bindTextures(mesh.textures);if(mesh.textures){++d.stats.lastSkinnedMaterialDescriptorBinds;++d.stats.totalSkinnedMaterialDescriptorBinds;}d.list->SetPipelineState(dl.BackfaceCulling()&&!mesh.doubleSided?d.skinnedCulledPipeline.Get():d.skinnedPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={mesh.mesh->vertexView,{d.skinnedInstanceBuffers[d.frame]->GetGPUVirtualAddress()+mesh.instanceOffset*sizeof(GpuSkinnedInstance),UINT(sizeof(GpuSkinnedInstance)),sizeof(GpuSkinnedInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&mesh.mesh->indexView);d.list->DrawIndexedInstanced(mesh.indexCount,1,mesh.firstIndex,0,0);}
  if (worldCount && worldIndexCount) {
    bindTextures({});
    d.list->SetPipelineState(useAmbientOcclusion?d.ambientOcclusionWorldColorPipeline.Get():d.worldPipeline.Get());
