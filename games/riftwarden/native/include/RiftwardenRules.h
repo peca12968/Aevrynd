@@ -1,6 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <string_view>
 
 namespace RiftwardenRules {
 enum class TowerKind { Bolt, Frost, Nova };
@@ -9,6 +11,8 @@ enum class UpgradeKind { Damage, Gold, Range };
 struct WaveComposition { int grunt{}, swift{}, tank{}, boss{}; };
 struct HitRule { float multiplier{1.f}; float slowDuration{}; bool shatters{}; };
 struct UpgradeLevels { int damage{}, gold{}, range{}; };
+
+inline std::wstring SaveFileName(std::wstring_view executableStem){return executableStem.find(L"-Demo-v")!=std::wstring_view::npos?std::wstring(executableStem)+L"-save.json":L"riftwarden-save.json";}
 
 inline EnemyKind SpawnKindFor(int wave, int remaining) {
     if (wave % 4 == 0 && remaining == 1) return EnemyKind::Boss;

@@ -1,5 +1,6 @@
 add_executable(EngineLab WIN32
   app.manifest
+  material_assets.rc
   src/main.cpp
   src/EngineLabGame.cpp
 )

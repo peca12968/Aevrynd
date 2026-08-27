@@ -3,7 +3,7 @@
   "title": "Aevrynd Character Lab",
   "description": "Automated first-person and third-person 3D character controller validation game.",
   "version": "1.66.0",
-  "engineVersion": "2.8.0",
+  "engineVersion": "2.9.0",
   "currentOptimization": ["clean-clone-builds", "optional-streamline-integration", "github-engine-ci"],
   "platform": "windows-x64",
   "renderer": "directx12",

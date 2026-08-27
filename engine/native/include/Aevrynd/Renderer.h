@@ -27,6 +27,7 @@ private:
     std::vector<Vertex> vertices_{};
     Bounds2D bounds_{};
 };
+enum class DrawListCapacityProfile:uint8_t {Frame,Minimal2D};
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
@@ -208,10 +209,11 @@ public:
     static constexpr size_t InitialWorldIndexCapacity=InitialVertexCapacity*3/2;
     static constexpr size_t InitialMeshInstanceCapacity=1024;
     static constexpr size_t InitialPointLightCapacity=16;
+    static constexpr size_t Minimal2DVertexCapacity=256;
     static constexpr size_t MaxSystemGlyphCacheEntries=512;
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
-    DrawList(){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}
+    explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
     void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
@@ -280,6 +282,7 @@ private:
     size_t lastReleasedBytes_{};
     uint64_t trimCount_{};
     bool backfaceCulling_{true};
+    DrawListCapacityProfile capacityProfile_{DrawListCapacityProfile::Frame};
 };
 class D3D12Renderer {
 public:

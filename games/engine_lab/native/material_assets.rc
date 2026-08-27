@@ -1,0 +1,11 @@
+#include "include/EngineLabResources.h"
+
+IDR_GROUND_BASE_COLOR RCDATA "../../../engine/assets/material-packs/ambientcg/ground037/1k/Ground037_1K-JPG_Color.jpg"
+IDR_GROUND_ROUGHNESS RCDATA "../../../engine/assets/material-packs/ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg"
+IDR_GROUND_NORMAL RCDATA "../../../engine/assets/material-packs/ambientcg/ground037/1k/Ground037_1K-JPG_NormalDX.jpg"
+IDR_WOOD_BASE_COLOR RCDATA "../../../engine/assets/material-packs/ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg"
+IDR_WOOD_ROUGHNESS RCDATA "../../../engine/assets/material-packs/ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg"
+IDR_WOOD_NORMAL RCDATA "../../../engine/assets/material-packs/ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"
+IDR_BRICK_BASE_COLOR RCDATA "../../../engine/assets/material-packs/poly-haven/brick_floor/1k/base-color.jpg"
+IDR_BRICK_ROUGHNESS RCDATA "../../../engine/assets/material-packs/poly-haven/brick_floor/1k/roughness.jpg"
+IDR_BRICK_NORMAL RCDATA "../../../engine/assets/material-packs/poly-haven/brick_floor/1k/normal-dx.jpg"
