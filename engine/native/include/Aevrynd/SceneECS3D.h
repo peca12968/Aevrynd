@@ -25,6 +25,8 @@ struct SceneMeshRenderable3D {
     Material3D farMaterial{};
     std::uint32_t layer{1};
     bool visible{true};
+    std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> lodLevels{};
+    std::uint32_t lodLevelCount{};
 };
 struct ScenePointLightComponent3D {
     PointLight3D light{};

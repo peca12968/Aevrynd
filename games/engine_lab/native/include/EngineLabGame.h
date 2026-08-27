@@ -51,6 +51,7 @@ private:
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
+    Aevrynd::MeshLodResourceChain3D automaticSphereLod_{};
     struct TerrainChunkResources3D {Aevrynd::MeshResource3D high{},medium{},low{};};
     std::vector<TerrainChunkResources3D> terrainChunks_{};
     Aevrynd::TerrainClipmap3D terrainClipmap_{};
