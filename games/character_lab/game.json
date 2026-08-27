@@ -2,8 +2,8 @@
   "id": "character_lab",
   "title": "Aevrynd Character Lab",
   "description": "Automated first-person and third-person 3D character controller validation game.",
-  "version": "1.76.0",
-  "engineVersion": "2.57.0",
+  "version": "1.77.0",
+  "engineVersion": "2.58.0",
   "currentOptimization": ["clean-clone-builds", "optional-streamline-integration", "github-engine-ci"],
   "skinningPipeline": ["blender-5.2", "gltf-2.0", "aeskin-v1", "quaternion-bind-pose", "four-joint-unorm16-weights", "bounded-asset-loader", "gpu-palette-skinning", "opaque-pass", "cascaded-shadow-pass", "ambient-occlusion-depth-pass", "lazy-frame-upload", "pressure-trimmable"],
   "platform": "windows-x64",
@@ -12,5 +12,5 @@
   "entry": "dist/Aevrynd-Character-Lab.exe",
   "rendering": ["fence-deferred-gpu-release", "dynamically-loaded-streamline", "startup-selected-dlss-module", "atmosphere-clear-color", "per-pixel-distance-fog", "per-pixel-lighting", "surface-materials", "projected-directional-shadows", "transparent-overlay-pass", "dynamic-point-lights", "influence-ranked-point-lights", "allocation-free-light-selection", "distance-visibility-budget", "projected-size-culling"],
   "physics": ["stable-collider-handles", "collision-layers", "collision-masks", "trigger-filtering", "nearest-raycast", "aabb-overlap-query"],
-  "features": ["first-person", "third-person", "character-controller", "gravity", "jump", "grounding", "aabb-collision", "camera-obstruction", "center-ray-interaction", "automatic-validation", "renderer-telemetry", "bounded-cpu-skinning", "reusable-skinning-workspace", "original-adult-female-character", "original-adult-muscular-male-character", "vertex-color-character-regions", "dual-gpu-skinned-showcase", "automated-character-capture", "cc0-procedural-character-pbr", "bounded-skinned-material-sidecar", "textured-skinned-draw-telemetry"]
+  "features": ["first-person", "third-person", "character-controller", "gravity", "jump", "grounding", "aabb-collision", "camera-obstruction", "center-ray-interaction", "automatic-validation", "renderer-telemetry", "bounded-cpu-skinning", "reusable-skinning-workspace", "original-adult-female-character", "original-adult-muscular-male-character", "vertex-color-character-regions", "dual-gpu-skinned-showcase", "automated-character-capture", "cc0-procedural-character-pbr", "bounded-skinned-material-sidecar", "textured-skinned-draw-telemetry", "mikk-tangent-character-assets", "gpu-skinned-tangent-frame", "mirrored-uv-handedness", "detailed-eyelids-ears-hands-hair"]
 }

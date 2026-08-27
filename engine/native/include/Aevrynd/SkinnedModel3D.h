@@ -24,6 +24,8 @@ struct SkinnedModel3D {
     Skeleton3D skeleton;
     std::vector<SkinInfluences3D> influences;
     std::vector<Matrix4> inverseBindMatrices;
+    // 空陣列代表載入舊資產；每筆為 xyz snorm8 與 w 切線手性。
+    std::vector<std::uint32_t> tangents;
     [[nodiscard]] bool Valid(const SkinnedModelLimits3D& limits={})const;
 };
 

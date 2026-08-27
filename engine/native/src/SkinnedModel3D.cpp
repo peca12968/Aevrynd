@@ -13,12 +13,13 @@ bool FiniteVertex(const Vertex3D& vertex){return Finite(vertex.x)&&Finite(vertex
 }
 
 bool SkinnedModel3D::Valid(const SkinnedModelLimits3D& limits)const{
-    if(!bindMesh.Valid()||bindMesh.vertices.size()>limits.maximumVertices||bindMesh.indices.size()>limits.maximumIndices||!skeleton.Valid()||skeleton.joints.size()>limits.maximumJoints||influences.size()!=bindMesh.vertices.size()||inverseBindMatrices.size()!=skeleton.joints.size())return false;
+    if(!bindMesh.Valid()||bindMesh.vertices.size()>limits.maximumVertices||bindMesh.indices.size()>limits.maximumIndices||!skeleton.Valid()||skeleton.joints.size()>limits.maximumJoints||influences.size()!=bindMesh.vertices.size()||inverseBindMatrices.size()!=skeleton.joints.size()||(!tangents.empty()&&tangents.size()!=bindMesh.vertices.size()))return false;
     if(bindMesh.vertices.size()>(std::numeric_limits<std::size_t>::max)()/sizeof(Vertex3D)||bindMesh.indices.size()>(std::numeric_limits<std::size_t>::max)()/sizeof(std::uint32_t)||skeleton.joints.size()>(std::numeric_limits<std::size_t>::max)()/(sizeof(Matrix4)*2))return false;
-    const std::size_t vertexBytes=bindMesh.vertices.size()*sizeof(Vertex3D),indexBytes=bindMesh.indices.size()*sizeof(std::uint32_t),matrixBytes=skeleton.joints.size()*sizeof(Matrix4)*2;if(vertexBytes>limits.maximumWorkspaceBytes||indexBytes>limits.maximumWorkspaceBytes-vertexBytes||matrixBytes>limits.maximumWorkspaceBytes-vertexBytes-indexBytes)return false;
+    const std::size_t vertexBytes=bindMesh.vertices.size()*sizeof(Vertex3D),indexBytes=bindMesh.indices.size()*sizeof(std::uint32_t),matrixBytes=skeleton.joints.size()*sizeof(Matrix4)*2,tangentBytes=tangents.size()*sizeof(std::uint32_t);if(vertexBytes>limits.maximumWorkspaceBytes||indexBytes>limits.maximumWorkspaceBytes-vertexBytes||matrixBytes>limits.maximumWorkspaceBytes-vertexBytes-indexBytes||tangentBytes>limits.maximumWorkspaceBytes-vertexBytes-indexBytes-matrixBytes)return false;
     for(const Vertex3D& vertex:bindMesh.vertices)if(!FiniteVertex(vertex))return false;
     for(const SkeletonJoint3D& joint:skeleton.joints)if(!FiniteTransform(joint.bindTransform))return false;
     for(const Matrix4& inverse:inverseBindMatrices)if(!FiniteMatrix(inverse))return false;
+    for(const std::uint32_t packed:tangents){const Vec4 tangent=UnpackNormalSnorm8(packed);const float length=Length(Vec3{tangent.x,tangent.y,tangent.z});if(!Finite(length)||length<.8f||length>1.2f||(std::uint8_t(packed>>24)!=0x7fu&&std::uint8_t(packed>>24)!=0x81u))return false;}
     for(const SkinInfluences3D& influence:influences){std::uint32_t total{};for(std::size_t slot=0;slot<4;++slot){total+=influence.weights[slot];if(influence.weights[slot]&&influence.joints[slot]>=skeleton.joints.size())return false;if(!influence.weights[slot]&&influence.joints[slot])return false;if(slot&&influence.weights[slot]>influence.weights[slot-1])return false;}if(total!=65535u)return false;}
     return true;
 }
@@ -46,8 +47,17 @@ bool SkinModelInto(const SkinnedModel3D& model,const AnimationPose3D& pose,Skinn
 bool BuildGpuSkinnedVertices(const SkinnedModel3D& model,std::vector<SkinnedVertex3D>& output,const SkinnedModelLimits3D& limits){
     if(!model.Valid(limits))return false;
     try{
+        std::vector<std::uint32_t> generatedTangents;
+        const std::vector<std::uint32_t>* tangents=&model.tangents;
+        if(tangents->empty()){
+            const std::size_t vertexCount=model.bindMesh.vertices.size();
+            constexpr std::size_t BytesPerGeneratedVertex=sizeof(Vec3)*2+sizeof(std::uint32_t)+sizeof(SkinnedVertex3D);if(vertexCount>(std::numeric_limits<std::size_t>::max)()/BytesPerGeneratedVertex||vertexCount*BytesPerGeneratedVertex>limits.maximumWorkspaceBytes)return false;
+            std::vector<Vec3> tangentSums(vertexCount),bitangentSums(vertexCount);
+            for(std::size_t offset=0;offset<model.bindMesh.indices.size();offset+=3){const std::uint32_t ia=model.bindMesh.indices[offset],ib=model.bindMesh.indices[offset+1],ic=model.bindMesh.indices[offset+2];const Vertex3D& a=model.bindMesh.vertices[ia];const Vertex3D& b=model.bindMesh.vertices[ib];const Vertex3D& c=model.bindMesh.vertices[ic];const Vec3 edge1{b.x-a.x,b.y-a.y,b.z-a.z},edge2{c.x-a.x,c.y-a.y,c.z-a.z};const float du1=b.u-a.u,dv1=b.v-a.v,du2=c.u-a.u,dv2=c.v-a.v,determinant=du1*dv2-du2*dv1;if(!Finite(determinant)||std::abs(determinant)<1e-12f)continue;const float inverse=1.f/determinant;const Vec3 tangent=(edge1*dv2-edge2*dv1)*inverse,bitangent=(edge2*du1-edge1*du2)*inverse;if(!Finite(tangent.x)||!Finite(tangent.y)||!Finite(tangent.z)||!Finite(bitangent.x)||!Finite(bitangent.y)||!Finite(bitangent.z))continue;for(const std::uint32_t vertex:{ia,ib,ic}){tangentSums[vertex]=tangentSums[vertex]+tangent;bitangentSums[vertex]=bitangentSums[vertex]+bitangent;}}
+            generatedTangents.reserve(vertexCount);for(std::size_t index=0;index<vertexCount;++index){const Vec4 packedNormal=UnpackNormalSnorm8(model.bindMesh.vertices[index].normal);Vec3 normal{packedNormal.x,packedNormal.y,packedNormal.z};normal=Length(normal)>=.5f?Normalize(normal):Vec3{0,1,0};Vec3 tangent=tangentSums[index]-normal*Dot(normal,tangentSums[index]);if(Length(tangent)<1e-6f){const Vec3 axis=std::abs(normal.y)<.9f?Vec3{0,1,0}:Vec3{1,0,0};tangent=Cross(axis,normal);}tangent=Normalize(tangent);const float handedness=Length(bitangentSums[index])>=1e-6f&&Dot(Cross(normal,tangent),bitangentSums[index])<0.f?-1.f:1.f;generatedTangents.push_back(PackNormalSnorm8(tangent,handedness));}tangents=&generatedTangents;
+        }
         std::vector<SkinnedVertex3D> temporary;temporary.reserve(model.bindMesh.vertices.size());
-        for(std::size_t index=0;index<model.bindMesh.vertices.size();++index){const Vertex3D& vertex=model.bindMesh.vertices[index];const SkinInfluences3D& influence=model.influences[index];temporary.push_back({vertex.x,vertex.y,vertex.z,vertex.normal,vertex.color,vertex.u,vertex.v,influence.joints,influence.weights});}
+        for(std::size_t index=0;index<model.bindMesh.vertices.size();++index){const Vertex3D& vertex=model.bindMesh.vertices[index];const SkinInfluences3D& influence=model.influences[index];temporary.push_back({vertex.x,vertex.y,vertex.z,vertex.normal,vertex.color,vertex.u,vertex.v,(*tangents)[index],influence.joints,influence.weights});}
         output.swap(temporary);return true;
     }catch(const std::bad_alloc&){return false;}
 }

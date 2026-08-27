@@ -56,11 +56,11 @@ def ellipsoid(name: str, location: tuple[float, float, float], scale: tuple[floa
 
 
 def capsule(name: str, start: tuple[float, float, float], end: tuple[float, float, float], radius: float,
-            object_material: bpy.types.Material, bone: str, taper: float = 0.86) -> bpy.types.Object:
+            object_material: bpy.types.Material, bone: str, taper: float = 0.86, segments: int = 24, rings: int = 14) -> bpy.types.Object:
     start_point, end_point = Vector(start), Vector(end)
     direction = end_point - start_point
     middle = (start_point + end_point) * 0.5
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=14, location=middle)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, location=middle)
     obj = bpy.context.object
     obj.name = name
     obj.scale = (radius, radius * taper, direction.length * 0.5 + radius * 0.38)
@@ -151,18 +151,25 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
                 ellipsoid("Chin", (0, -0.092, 1.745), (0.070, 0.040, 0.040), skin_light, "Head", 20, 12),
                 ellipsoid("NoseBridge", (0, -0.124, 1.895), (0.025, 0.038, 0.067), skin_light, "Head", 20, 12),
                 ellipsoid("NoseTip", (0, -0.147, 1.855), (0.030, 0.025, 0.025), skin_light, "Head", 20, 12),
-                capsule("Mouth", (-0.035, -0.137, 1.805), (0.035, -0.137, 1.805), 0.009, hair, "Head", 0.55),
+                capsule("UpperLip", (-0.034, -0.139, 1.810), (0.034, -0.139, 1.810), 0.007, skin_light, "Head", 0.55, 12, 8),
+                capsule("LowerLip", (-0.030, -0.140, 1.798), (0.030, -0.140, 1.798), 0.008, skin_light, "Head", 0.55, 12, 8),
                 ellipsoid("LeftCheek", (0.074, -0.105, 1.845), (0.058, 0.032, 0.052), skin_light, "Head", 20, 12),
                 ellipsoid("RightCheek", (-0.074, -0.105, 1.845), (0.058, 0.032, 0.052), skin_light, "Head", 20, 12)]
     for side, sign in (("Left", 1), ("Right", -1)):
         objects += [ellipsoid(f"{side}Eye", (0.049 * sign, -0.124, 1.905), (0.026, 0.012, 0.015), eye_white, "Head", 20, 12),
                     ellipsoid(f"{side}Iris", (0.049 * sign, -0.137, 1.905), (0.009, 0.004, 0.009), iris, "Head", 16, 10),
+                    ellipsoid(f"{side}Pupil", (0.049 * sign, -0.141, 1.905), (0.0038, 0.002, 0.0038), hair, "Head", 10, 6),
+                    capsule(f"{side}UpperEyelid", (0.024 * sign, -0.139, 1.921), (0.076 * sign, -0.136, 1.921), 0.005, skin, "Head", 0.55, 12, 8),
+                    capsule(f"{side}LowerEyelid", (0.026 * sign, -0.138, 1.889), (0.074 * sign, -0.136, 1.889), 0.004, skin, "Head", 0.55, 12, 8),
+                    capsule(f"{side}EarRim", (0.142 * sign, 0.0, 1.910), (0.144 * sign, 0.0, 1.815), 0.014, skin, "Head", 0.65, 12, 8),
                     capsule(f"{side}Brow", (0.024 * sign, -0.139, 1.940), (0.076 * sign, -0.135, 1.944), 0.006, hair, "Head")]
-    objects += [ellipsoid("HairBase", (0, 0.026, 2.005), (0.143, 0.113, 0.070), hair, "Head"),
+    objects += [ellipsoid("HairBase", (0, 0.032, 2.010), (0.135, 0.104, 0.060), hair, "Head", 28, 16),
                 capsule("HairFrontLeft", (-0.082, -0.080, 2.016), (-0.010, -0.095, 2.052), 0.028, hair, "Head", 0.62),
                 capsule("HairFrontRight", (0.076, -0.080, 2.014), (0.012, -0.096, 2.050), 0.026, hair, "Head", 0.62),
                 capsule("HairCrown", (-0.025, 0.005, 2.042), (0.045, -0.015, 2.080), 0.032, hair, "Head", 0.60),
                 capsule("NeckForm", (0, 0, 1.62), (0, 0, 1.76), 0.092, skin, "Neck")]
+    for index, x in enumerate((-0.105, -0.078, -0.050, -0.020, 0.012, 0.045, 0.076, 0.105)):
+        objects.append(capsule(f"HairStrand{index:02d}", (x, -0.070, 2.010 + 0.025 * math.cos(index)), (x * 0.72, -0.090, 2.050 + 0.020 * math.sin(index * 1.7)), 0.012, hair, "Head", 0.55, 10, 7))
 
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
         objects += [ellipsoid(f"{side}Deltoid", (0.335 * sign, 0, 1.545), (0.125, 0.125, 0.145), shirt, f"{side}UpperArm"),
@@ -172,6 +179,9 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
                     capsule(f"{side}ThighForm", (0.16 * sign, 0, 0.98), (0.17 * sign, 0, 0.54), 0.145, trousers, f"{side}UpperLeg", 0.82),
                     capsule(f"{side}CalfForm", (0.17 * sign, 0.01, 0.52), (0.16 * sign, 0.015, 0.11), 0.103, skin, f"{side}LowerLeg", 0.70),
                     ellipsoid(f"{side}FootForm", (0.16 * sign, -0.11, 0.055), (0.105, 0.190, 0.060), leather, f"{side}Foot", 24, 14)]
+        for index, (offset, length) in enumerate(((-0.027, 0.070), (-0.009, 0.080), (0.009, 0.076), (0.027, 0.064))):
+            objects.append(capsule(f"{side}Finger{index}", (0.558 * sign + offset, -0.035, 0.945), (0.558 * sign + offset, -0.045, 0.945 - length), 0.008, skin, f"{side}Hand", 0.62, 10, 7))
+        objects.append(capsule(f"{side}Thumb", (0.542 * sign, -0.04, 1.005), (0.515 * sign, -0.070, 0.970), 0.010, skin, f"{side}Hand", 0.62, 10, 7))
 
     objects += [cube("Belt", (0, -0.005, 1.075), (0.305, 0.19, 0.025), leather, "Hips", 0.025),
                 cube("BeltBuckle", (0, -0.205, 1.075), (0.045, 0.012, 0.035), metal, "Hips", 0.008)]
@@ -218,7 +228,7 @@ def export_asset(destination: Path, objects: list[bpy.types.Object], rig: bpy.ty
     bpy.context.view_layer.objects.active = rig
     output_path = destination / "realistic-male-character.gltf"
     bpy.ops.export_scene.gltf(filepath=str(output_path), export_format="GLTF_SEPARATE", use_selection=True,
-                              export_animations=False, export_skins=True, export_yup=True,
+                              export_animations=False, export_skins=True, export_tangents=True, export_yup=True,
                               export_materials="EXPORT", export_cameras=False, export_lights=False)
     return output_path
 
@@ -229,11 +239,16 @@ def main() -> None:
     rig = create_armature()
     objects = create_character(rig)
     character = consolidate_character(objects, rig)
-    output_path = export_asset(destination, [character], rig)
     vertex_count = len(character.data.vertices)
     triangle_count = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
+    coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
+    height = max(value.z for value in coordinates) - min(value.z for value in coordinates)
+    if vertex_count > 22000 or triangle_count > 38000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15:
+        raise RuntimeError("Male character geometry budget or proportion validation failed.")
+    output_path = export_asset(destination, [character], rig)
     print(f"REALISTIC_MALE_ASSET={output_path}")
     print(f"OBJECTS=1 MATERIALS={len(character.data.materials)} VERTICES={vertex_count} TRIANGLES={triangle_count} BONES={len(rig.data.bones)}")
+    print(f"REALISTIC_MALE_HEIGHT={height:.4f}")
 
 
 main()

@@ -72,6 +72,7 @@ struct SkinnedVertexInput
     float4 normal : NORMAL;
     float4 color : COLOR;
     float2 uv : TEXCOORD0;
+    float4 tangent : TANGENT;
     float4 transformRow0 : INSTANCE0;
     float4 transformRow1 : INSTANCE1;
     float4 transformRow2 : INSTANCE2;
@@ -87,12 +88,20 @@ struct SkinnedVertexInput
     float4 blendWeights : BLENDWEIGHT;
 };
 
-void SkinLocalVertex(SkinnedVertexInput input, out float3 position, out float3 normal)
+void SkinLocalVertex(SkinnedVertexInput input, out float3 position, out float3 normal,
+                     out float3 tangent, out float3 bitangent)
 {
     const float weightSum = dot(input.blendWeights, float4(1.0, 1.0, 1.0, 1.0));
     const float4 weights = input.blendWeights / max(weightSum, 1e-6);
     position = 0.0;
     normal = 0.0;
+    tangent = 0.0;
+    bitangent = 0.0;
+    const float3 sourceNormal = input.normal.xyz;
+    const float tangentLengthSquared = dot(input.tangent.xyz, input.tangent.xyz);
+    const float3 sourceTangent = tangentLengthSquared > 1e-8 && tangentLengthSquared < 1e8
+        ? input.tangent.xyz * rsqrt(tangentLengthSquared) : float3(0.0, 0.0, 0.0);
+    const float3 sourceBitangent = cross(sourceNormal, sourceTangent) * (input.tangent.w < 0.0 ? -1.0 : 1.0);
     [unroll] for (uint influence = 0; influence < 4; ++influence)
     {
         const SkinPaletteJoint joint = skinPalette[input.skinPaletteBase + input.blendIndices[influence]];
@@ -103,8 +112,22 @@ void SkinLocalVertex(SkinnedVertexInput input, out float3 position, out float3 n
         normal += float3(dot(joint.normalRow0.xyz, input.normal.xyz),
                          dot(joint.normalRow1.xyz, input.normal.xyz),
                          dot(joint.normalRow2.xyz, input.normal.xyz)) * weights[influence];
+        tangent += float3(dot(joint.normalRow0.xyz, sourceTangent),
+                          dot(joint.normalRow1.xyz, sourceTangent),
+                          dot(joint.normalRow2.xyz, sourceTangent)) * weights[influence];
+        bitangent += float3(dot(joint.normalRow0.xyz, sourceBitangent),
+                            dot(joint.normalRow1.xyz, sourceBitangent),
+                            dot(joint.normalRow2.xyz, sourceBitangent)) * weights[influence];
     }
-    normal = normalize(normal);
+    const float normalLengthSquared = dot(normal, normal);
+    normal = normalLengthSquared > 1e-10 && normalLengthSquared < 1e20
+        ? normal * rsqrt(normalLengthSquared) : float3(0.0, 1.0, 0.0);
+    tangent -= normal * dot(normal, tangent);
+    const float skinnedTangentLengthSquared = dot(tangent, tangent);
+    if (skinnedTangentLengthSquared > 1e-10 && skinnedTangentLengthSquared < 1e20)
+        tangent *= rsqrt(skinnedTangentLengthSquared);
+    else
+        tangent = 0.0;
 }
 
 struct WorldPixelInput
@@ -122,6 +145,7 @@ struct WorldPixelInput
     nointerpolation float lodCoverage : TEXCOORD8;
     nointerpolation uint lodSeed : TEXCOORD9;
     nointerpolation uint lodInvert : TEXCOORD10;
+    float4 tangent : TEXCOORD11;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; };
@@ -151,7 +175,9 @@ ShadowVertexOutput ShadowSkinnedVertexMain(SkinnedVertexInput input)
 {
     float3 skinnedPosition;
     float3 skinnedNormal;
-    SkinLocalVertex(input, skinnedPosition, skinnedNormal);
+    float3 skinnedTangent;
+    float3 skinnedBitangent;
+    SkinLocalVertex(input, skinnedPosition, skinnedNormal, skinnedTangent, skinnedBitangent);
     const float4 localPosition = float4(skinnedPosition, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
@@ -183,6 +209,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.lodCoverage = 1.0;
     output.lodSeed = 0;
     output.lodInvert = 0;
+    output.tangent = 0.0;
     output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
     output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
@@ -212,6 +239,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     // 物件平移量擴充有限的封裝 seed，讓密集植被不會同步顯示相同的螢幕孔點。
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
+    output.tangent = 0.0;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
@@ -221,7 +249,9 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
 {
     float3 skinnedPosition;
     float3 skinnedNormal;
-    SkinLocalVertex(input, skinnedPosition, skinnedNormal);
+    float3 skinnedTangent;
+    float3 skinnedBitangent;
+    SkinLocalVertex(input, skinnedPosition, skinnedNormal, skinnedTangent, skinnedBitangent);
     const float4 localPosition = float4(skinnedPosition, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition),
                                   dot(input.transformRow1, localPosition),
@@ -231,11 +261,31 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
     const float3 worldNormal = float3(dot(input.normalRow0.xyz, skinnedNormal),
                                       dot(input.normalRow1.xyz, skinnedNormal),
                                       dot(input.normalRow2.xyz, skinnedNormal));
+    const float worldNormalLengthSquared = dot(worldNormal, worldNormal);
+    const bool validWorldNormal = worldNormalLengthSquared > 1e-10 && worldNormalLengthSquared < 1e20;
+    float3 normalizedWorldNormal = validWorldNormal
+        ? worldNormal * rsqrt(worldNormalLengthSquared) : skinnedNormal;
+    float3 worldTangent = float3(dot(input.normalRow0.xyz, skinnedTangent),
+                                 dot(input.normalRow1.xyz, skinnedTangent),
+                                 dot(input.normalRow2.xyz, skinnedTangent));
+    const float3 worldBitangent = float3(dot(input.normalRow0.xyz, skinnedBitangent),
+                                         dot(input.normalRow1.xyz, skinnedBitangent),
+                                         dot(input.normalRow2.xyz, skinnedBitangent));
+    worldTangent -= normalizedWorldNormal * dot(normalizedWorldNormal, worldTangent);
+    const float worldTangentLengthSquared = dot(worldTangent, worldTangent);
+    const float worldBitangentLengthSquared = dot(worldBitangent, worldBitangent);
+    const bool validWorldBasis = worldTangentLengthSquared > 1e-10 && worldTangentLengthSquared < 1e20
+                              && worldBitangentLengthSquared > 1e-10 && worldBitangentLengthSquared < 1e20;
+    if (validWorldBasis) worldTangent *= rsqrt(worldTangentLengthSquared);
     WorldPixelInput output = (WorldPixelInput)0;
     output.position = mul(viewProjection, worldPosition);
     output.color = float4(input.color.rgb * input.tint.rgb, input.color.a * input.tint.a);
     output.worldPosition = worldPosition.xyz;
-    output.normal = float4(normalize(worldNormal), input.normal.w < 0.0 ? 0.0 : 1.0);
+    output.normal = float4(normalizedWorldNormal, input.normal.w < 0.0 ? 0.0 : 1.0);
+    // 由實際變形後的 bitangent 回推 handedness，可涵蓋負縮放與混合蒙皮；奇異基底交由像素端退回導數路徑。
+    output.tangent = validWorldBasis
+        ? float4(worldTangent, dot(cross(normalizedWorldNormal, worldTangent), worldBitangent) < 0.0 ? -1.0 : 1.0)
+        : float4(0.0, 0.0, 0.0, 0.0);
     output.material = input.material;
     output.textureData = float3(input.textureData & 1,
                                 max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
@@ -461,6 +511,27 @@ float3 UvNormal(float3 worldPosition, float3 geometricNormal, float2 uv)
     return mappedWorld * rsqrt(mappedLengthSquared);
 }
 
+float3 UvOrVertexTangentNormal(float3 geometricNormal,float4 vertexTangent,
+                               float2 uv,float3 derivativeFallback)
+{
+    const float tangentLengthSquared = dot(vertexTangent.xyz, vertexTangent.xyz);
+    if (!(tangentLengthSquared > 1e-10 && tangentLengthSquared < 1e20
+       && abs(vertexTangent.w) > 0.5 && abs(vertexTangent.w) < 1.5))
+        return derivativeFallback;
+    float3 tangent = vertexTangent.xyz * rsqrt(tangentLengthSquared);
+    tangent -= geometricNormal * dot(geometricNormal, tangent);
+    const float orthogonalLengthSquared = dot(tangent, tangent);
+    if (!(orthogonalLengthSquared > 1e-10 && orthogonalLengthSquared < 1e20))
+        return derivativeFallback;
+    tangent *= rsqrt(orthogonalLengthSquared);
+    const float3 bitangent = cross(geometricNormal, tangent) * (vertexTangent.w < 0.0 ? -1.0 : 1.0);
+    const float3 mapped = DecodeBc5Normal(normalTexture.Sample(materialSampler, uv).rg);
+    const float3 mappedWorld = mapped.x * tangent + mapped.y * bitangent + mapped.z * geometricNormal;
+    const float mappedLengthSquared = dot(mappedWorld, mappedWorld);
+    return mappedLengthSquared > 1e-10 && mappedLengthSquared < 1e20
+        ? mappedWorld * rsqrt(mappedLengthSquared) : geometricNormal;
+}
+
 // 使用穩定化 GGX；分母下限犧牲極窄尖峰，避免低 roughness 產生 firefly。
 float DistributionGgxStabilized(float3 normal, float3 halfDirection, float roughness)
 {
@@ -573,7 +644,9 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
         {
             baseColor *= baseColorTexture.Sample(materialSampler, input.uv).rgb;
             roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
-            normal = normalize(lerp(normal, UvNormal(input.worldPosition, normal, input.uv), 0.78));
+            // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
+            const float3 derivativeNormal = UvNormal(input.worldPosition, normal, input.uv);
+            normal = normalize(lerp(normal, UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal), 0.78));
         }
         else
         {

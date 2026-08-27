@@ -33,7 +33,7 @@ enum class BlendMode2D:uint8_t {Alpha,Additive};
 struct DrawSpan2D {size_t firstVertex{},vertexCount{};};
 struct RadialLight2D {Vec2 center{},radius{32,16};Color color{1,1,1,.25f};float intensity{1.f};int segments{18};};
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};};
-struct SkinnedVertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};std::array<uint16_t,4> joints{},weights{};};
+struct SkinnedVertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};uint32_t tangent{};std::array<uint16_t,4> joints{},weights{};};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct SkinnedMeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const SkinnedMeshHandle3D&)const=default;};
 struct SkinPaletteRange3D {uint32_t firstJoint{},jointCount{},generation{};explicit constexpr operator bool()const{return jointCount!=0;}};

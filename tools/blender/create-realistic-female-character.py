@@ -153,13 +153,19 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
             sphere(f"{side}Boot", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"{side}Foot", 20, 12),
             sphere(f"EyeWhite.{side}", (0.039 * sign, -0.094, 1.678), (0.029, 0.014, 0.017), sclera, "Head", 18, 10),
             sphere(f"Iris.{side}", (0.039 * sign, -0.108, 1.678), (0.011, 0.005, 0.011), iris, "Head", 14, 8),
+            sphere(f"Pupil.{side}", (0.039 * sign, -0.113, 1.678), (0.0045, 0.0025, 0.0045), hair, "Head", 10, 6),
             sphere(f"UpperEyelid.{side}", (0.039 * sign, -0.106, 1.691), (0.031, 0.006, 0.008), skin, "Head", 14, 8),
+            sphere(f"LowerEyelid.{side}", (0.039 * sign, -0.106, 1.665), (0.030, 0.005, 0.006), skin, "Head", 14, 8),
+            tapered_limb(f"EarRim.{side}", (0.108 * sign, -0.004, 1.690), (0.110 * sign, -0.006, 1.610), (0.014, 0.009), skin, "Head", 10),
             tapered_limb(f"Lash.{side}", (0.012 * sign, -0.111, 1.690), (0.066 * sign, -0.108, 1.690), (0.0025, 0.0015), hair, "Head", 8),
             tapered_limb(f"Brow.{side}", (0.012 * sign, -0.109, 1.712), (0.067 * sign, -0.104, 1.708), (0.0045, 0.003), hair, "Head", 10),
         ]
+        for index, (offset, length) in enumerate(((-0.022, 0.060), (-0.008, 0.070), (0.008, 0.066), (0.022, 0.055))):
+            parts.append(tapered_limb(f"Finger.{side}.{index}", (0.358 * sign + offset, -0.038, 0.895), (0.358 * sign + offset, -0.050, 0.895 - length), (0.008, 0.005), skin, f"{side}Hand", 8))
+        parts.append(tapered_limb(f"Thumb.{side}", (0.345 * sign, -0.035, 0.925), (0.325 * sign, -0.065, 0.895), (0.010, 0.006), skin, f"{side}Hand", 8))
     # 後腦與錯落髮束避免單一頭盔形髮型，仍維持可控面數。
-    parts.append(sphere("HairCrown", (0.008, 0.028, 1.704), (0.119, 0.102, 0.105), hair, "Head", 28, 18))
-    strand_roots = ((-0.105, 1.72, 0.34), (-0.072, 1.745, 0.40), (-0.025, 1.755, 0.45), (0.022, 1.75, 0.39), (0.067, 1.735, 0.35), (0.105, 1.705, 0.31))
+    parts.append(sphere("HairCrown", (0.008, 0.034, 1.710), (0.112, 0.094, 0.092), hair, "Head", 24, 16))
+    strand_roots = ((-0.108, 1.72, 0.34), (-0.088, 1.74, 0.37), (-0.068, 1.75, 0.40), (-0.045, 1.755, 0.43), (-0.020, 1.76, 0.45), (0.008, 1.758, 0.42), (0.035, 1.75, 0.39), (0.062, 1.74, 0.36), (0.086, 1.725, 0.33), (0.108, 1.705, 0.30))
     for index, (x, top, length) in enumerate(strand_roots):
         sway = (-0.018 if index < 3 else 0.026) + 0.009 * math.sin(index * 2.3)
         parts.append(tapered_limb(f"HairStrand.{index:02d}", (x, 0.068, top), (x + sway, 0.075 + 0.008 * (index % 2), top - length), (0.024, 0.012), hair, "Head", 12))
@@ -212,6 +218,9 @@ def export_asset(destination: Path, character: bpy.types.Object, rig: bpy.types.
     character.select_set(True)
     rig.select_set(True)
     bpy.context.view_layer.objects.active = character
+    # 先三角化才能讓 Blender 為所有材質 primitive 產生一致的 MikkTSpace tangent。
+    triangulate = character.modifiers.new(name="TriangulateForTangentExport", type="TRIANGULATE")
+    bpy.ops.object.modifier_apply(modifier=triangulate.name)
     output_path = destination / "realistic-female.gltf"
     bpy.ops.export_scene.gltf(
         filepath=str(output_path),
@@ -219,6 +228,7 @@ def export_asset(destination: Path, character: bpy.types.Object, rig: bpy.types.
         use_selection=True,
         export_animations=True,
         export_skins=True,
+        export_tangents=True,
         export_yup=True,
         export_apply=False,
     )
@@ -235,13 +245,18 @@ def main() -> None:
     rig = create_rig()
     character = create_character(rig)
     create_idle_animation(rig)
-    output = export_asset(destination, character, rig)
     triangles = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
+    coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
+    height = max(value.z for value in coordinates) - min(value.z for value in coordinates)
+    if len(character.data.vertices) > 11500 or triangles > 19000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.70 <= height <= 1.85:
+        raise RuntimeError("Female character geometry budget or proportion validation failed.")
+    output = export_asset(destination, character, rig)
     print(f"FEMALE_CHARACTER_GLTF={output}")
     print(f"FEMALE_CHARACTER_VERTICES={len(character.data.vertices)}")
     print(f"FEMALE_CHARACTER_TRIANGLES={triangles}")
     print(f"FEMALE_CHARACTER_BONES={len(rig.data.bones)}")
     print(f"FEMALE_CHARACTER_MATERIALS={len(character.data.materials)}")
+    print(f"FEMALE_CHARACTER_HEIGHT={height:.4f}")
 
 
 if __name__ == "__main__":
