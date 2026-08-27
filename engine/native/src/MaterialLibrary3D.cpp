@@ -1,0 +1,23 @@
+#include <Aevrynd/MaterialLibrary3D.h>
+#include <algorithm>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
+namespace Aevrynd {
+namespace {
+bool SameColor(Color left,Color right){return left.r==right.r&&left.g==right.g&&left.b==right.b&&left.a==right.a;}
+bool SameSurface(Surface3D left,Surface3D right){return left.roughness==right.roughness&&left.metallic==right.metallic&&left.emissive==right.emissive&&left.occlusion==right.occlusion;}
+bool SameDefinition(const MaterialAssetDefinition3D& left,const MaterialAssetDefinition3D& right){return left.name==right.name&&left.textures.baseColorPath==right.textures.baseColorPath&&left.textures.roughnessPath==right.textures.roughnessPath&&left.textures.normalPath==right.textures.normalPath&&left.textures.maximumResolution==right.textures.maximumResolution&&SameColor(left.material.tint,right.material.tint)&&SameSurface(left.material.surface,right.material.surface)&&left.material.castsShadow==right.material.castsShadow&&left.material.textureScale==right.material.textureScale;}
+}
+
+bool MaterialLibrary3D::Initialize(Engine& engine,std::filesystem::path assetRoot){if(engine_&&engine_!=&engine)return false;if(!entries_.empty())return engine_==&engine&&assetRoot_.lexically_normal()==assetRoot.lexically_normal();engine_=&engine;assetRoot_=std::move(assetRoot).lexically_normal();return true;}
+MaterialAssetDefinition3D MaterialLibrary3D::Resolve(MaterialAssetDefinition3D definition)const{auto resolve=[this](std::filesystem::path& path){if(!path.empty()&&path.is_relative())path=(assetRoot_/path).lexically_normal();else path=path.lexically_normal();};resolve(definition.textures.baseColorPath);resolve(definition.textures.roughnessPath);resolve(definition.textures.normalPath);definition.material.textures={};definition.material.textureScale=(std::max)(.001f,definition.material.textureScale);return definition;}
+bool MaterialLibrary3D::Load(MaterialAssetDefinition3D definition){++stats_.loadRequests;if(!engine_||definition.name.empty()){++stats_.loadFailures;return false;}definition=Resolve(std::move(definition));if(const auto found=entries_.find(definition.name);found!=entries_.end()){if(SameDefinition(found->second.definition,definition)){++stats_.cacheHits;return true;}++stats_.loadFailures;++stats_.nameConflicts;return false;}const MaterialTextureSetHandle3D textures=engine_->CreateMaterialTextureSet3D(definition.textures);if(!textures){++stats_.loadFailures;return false;}Material3D material=definition.material;material.textures=textures;std::string name=definition.name;entries_.emplace(std::move(name),Entry{std::move(definition),material});return true;}
+bool MaterialLibrary3D::LoadAll(std::span<const MaterialAssetDefinition3D> definitions){std::vector<std::string> loaded;loaded.reserve(definitions.size());for(const MaterialAssetDefinition3D& definition:definitions){const bool existed=Find(definition.name)!=nullptr;if(Load(definition)){if(!existed)loaded.push_back(definition.name);continue;}for(auto iterator=loaded.rbegin();iterator!=loaded.rend();++iterator)Unload(*iterator);++stats_.batchRollbacks;return false;}return true;}
+bool MaterialLibrary3D::Unload(std::string_view name){const auto found=entries_.find(std::string(name));if(found==entries_.end())return false;engine_->DestroyMaterialTextureSet3D(found->second.material.textures);entries_.erase(found);++stats_.unloaded;return true;}
+void MaterialLibrary3D::Shutdown(){if(engine_)for(const auto& [name,entry]:entries_){(void)name;engine_->DestroyMaterialTextureSet3D(entry.material.textures);}std::unordered_map<std::string,Entry>{}.swap(entries_);engine_=nullptr;assetRoot_.clear();}
+const Material3D* MaterialLibrary3D::Find(std::string_view name)const{const auto found=entries_.find(std::string(name));return found==entries_.end()?nullptr:&found->second.material;}
+MaterialTextureSetHandle3D MaterialLibrary3D::Textures(std::string_view name)const{const Material3D* material=Find(name);return material?material->textures:MaterialTextureSetHandle3D{};}
+MaterialLibraryStats3D MaterialLibrary3D::Stats()const{MaterialLibraryStats3D result=stats_;result.materials=entries_.size();std::unordered_set<uint32_t> handles;handles.reserve(entries_.size());for(const auto& [name,entry]:entries_){(void)name;if(entry.material.textures)handles.insert(entry.material.textures.value);}result.uniqueTextureSets=handles.size();return result;}
+}

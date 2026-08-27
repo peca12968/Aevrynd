@@ -7,6 +7,7 @@ add_library(AevryndEngine STATIC
   src/Engine.cpp
   src/HeightField3D.cpp
   src/Memory.cpp
+  src/MaterialLibrary3D.cpp
   src/D3D12Renderer.cpp
   src/MeshLoader.cpp
   src/Navigation3D.cpp
@@ -108,6 +109,12 @@ target_compile_options(AevryndTextureUploadStreamingTest PRIVATE /W4 /permissive
 target_compile_definitions(AevryndTextureUploadStreamingTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndTextureUploadStreamingTest PRIVATE AevryndEngine)
 add_test(NAME AevryndTextureUploadStreamingTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTextureUploadStreamingTest>'")
+
+add_executable(AevryndMaterialLibrary3DTest tests/MaterialLibrary3DSmoke.cpp)
+target_compile_options(AevryndMaterialLibrary3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndMaterialLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndMaterialLibrary3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndMaterialLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMaterialLibrary3DTest>'")
 
 add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)

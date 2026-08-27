@@ -4,7 +4,7 @@
   "subtitle": "RIFTWARDEN",
   "description": "A bilingual 2.5D tower-defense game with local Qwen-driven world events.",
   "version": "1.96.0",
-  "engineVersion": "2.5.0",
+  "engineVersion": "2.6.0",
   "currentOptimization": ["clean-clone-builds", "optional-streamline-integration", "github-engine-ci"],
   "platform": "windows-x64",
   "renderer": "directx12",

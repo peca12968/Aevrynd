@@ -5,6 +5,7 @@
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/HeightField3D.h>
+#include <Aevrynd/MaterialLibrary3D.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
@@ -36,7 +37,8 @@ private:
     Aevrynd::Scene3D scene_;
     Aevrynd::Scene3DStats sceneStats_{};
     Aevrynd::MeshResource3D boxMesh_{},pyramidMesh_{},cylinderMesh_{},coneHighMesh_{},coneLowMesh_{},sphereHighMesh_{},sphereLowMesh_{},terrainMesh_{};
-    Aevrynd::MaterialTextureSetHandle3D groundTextures_{},woodTextures_{},barkTextures_{},rockTextures_{};
+    Aevrynd::MaterialLibrary3D materialLibrary_{};
+    Aevrynd::Material3D groundMaterial_{},woodMaterial_{},barkMaterial_{},rockMaterial_{};
     Aevrynd::HeightField3D terrain_{};
     Aevrynd::SoundHandle swingSound_{},buildSound_{};
     Aevrynd::Skeleton3D humanoidSkeleton_{},creatureSkeleton_{};

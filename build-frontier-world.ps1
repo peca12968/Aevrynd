@@ -9,9 +9,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Frontier World build failed.' }
 $distributionDirectory = Join-Path $projectRoot 'games\frontier_world\dist'
 New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
 Copy-Item -LiteralPath (Join-Path $buildDirectory 'bin\Release\Aevrynd-Frontier-World.exe') -Destination (Join-Path $distributionDirectory 'Aevrynd-Frontier-World.exe') -Force
+$manifest = Get-Content -LiteralPath (Join-Path $projectRoot 'games\frontier_world\game.json') -Raw | ConvertFrom-Json
+$versionedDemo = Join-Path $distributionDirectory "Aevrynd-Frontier-World-Demo-v$($manifest.version).exe"
+Copy-Item -LiteralPath (Join-Path $buildDirectory 'bin\Release\Aevrynd-Frontier-World.exe') -Destination $versionedDemo -Force
 Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\*.dll') -Destination $distributionDirectory -Force
 $distributionAssets = Join-Path $distributionDirectory 'assets'
 New-Item -ItemType Directory -Force -Path $distributionAssets | Out-Null
 Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\assets\material-packs') -Destination $distributionAssets -Recurse -Force
 Copy-Item -Path (Join-Path $projectRoot 'games\frontier_world\assets\*') -Destination $distributionAssets -Recurse -Force
 Write-Host "Built: $distributionDirectory\Aevrynd-Frontier-World.exe" -ForegroundColor Green
+Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green

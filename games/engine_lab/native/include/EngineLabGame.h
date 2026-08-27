@@ -3,6 +3,7 @@
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Effects2D.h>
 #include <Aevrynd/HeightField3D.h>
+#include <Aevrynd/MaterialLibrary3D.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/PhysicsWorld3D.h>
 #include <Aevrynd/Scene3D.h>
@@ -44,7 +45,7 @@ private:
     Aevrynd::PhysicsWorld3D physicsWorld_{};
     Aevrynd::WorldBuilder3D worldBuilder_{};
     std::vector<Aevrynd::WorldObjectHandle3D> authoredDynamicObjects_{};
-    Aevrynd::MaterialTextureSetHandle3D groundTextures_{},woodTextures_{},brickTextures_{};
+    Aevrynd::MaterialLibrary3D materialLibrary_{};
     std::size_t lastReusableMemoryReleasedBytes_{};std::uint64_t reusableMemoryTrimCount_{};
     int cameraMode_{};
     int effectCycle_{-1};
