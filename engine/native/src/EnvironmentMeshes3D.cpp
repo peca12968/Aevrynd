@@ -64,6 +64,14 @@ Mesh3D CreateSkyDomeMesh3D(unsigned slices,unsigned stacks){
     Mesh3D mesh=Mesh3D::CreateUnitSphere((std::max)(8u,slices),(std::max)(6u,stacks));for(Vertex3D& vertex:mesh.vertices){const Vec4 source=UnpackNormalSnorm8(vertex.normal);const float height=Clamp(vertex.y*2.f,0.f,1.f),haze=Clamp(1.f-std::abs(vertex.y)*4.f,0.f,1.f);const Color horizon{.46f,.67f,.86f,1},zenith{.065f,.19f,.39f,1};const Color color{horizon.r+(zenith.r-horizon.r)*height+.1f*haze,horizon.g+(zenith.g-horizon.g)*height+.055f*haze,horizon.b+(zenith.b-horizon.b)*height,1};vertex.normal=PackNormalSnorm8({-source.x,-source.y,-source.z},-1.f);vertex.color=PackColorRgba8(color);}for(std::size_t index=0;index<mesh.indices.size();index+=3)std::swap(mesh.indices[index+1],mesh.indices[index+2]);return mesh;
 }
 
+Mesh3D CreateMountainMesh3D(unsigned radialSegments,unsigned rings,unsigned variationSeed){
+    radialSegments=(std::clamp)(radialSegments,6u,64u);rings=(std::clamp)(rings,2u,16u);Mesh3D mesh;mesh.vertices.reserve(1+std::size_t(radialSegments)*rings);mesh.indices.reserve(std::size_t(radialSegments)*(1+(rings-1)*2)*3);mesh.vertices.push_back({0,1,0,PackNormalSnorm8({0,1,0}),PackColorRgba8({.72f,.74f,.72f,1}),.5f,0});
+    for(unsigned ring=1;ring<=rings;++ring){const float t=float(ring)/rings,baseHeight=std::pow(1.f-t,1.42f);for(unsigned segment=0;segment<radialSegments;++segment){const float angle=2.f*Pi*float(segment)/radialSegments,largeRidge=.13f*std::sin(angle*3.f+Variation(variationSeed,4)*Pi),smallRidge=.07f*std::sin(angle*7.f+Variation(variationSeed,9)*Pi),radius=t*(.48f+largeRidge+smallRidge*t),height=(std::max)(0.f,baseHeight+(Variation(variationSeed,ring*radialSegments+segment)-.5f)*.12f*t*(1.f-t));const Color rock{.48f+.16f*height,.5f+.15f*height,.49f+.14f*height,1};mesh.vertices.push_back({std::sin(angle)*radius,height,std::cos(angle)*radius,PackNormalSnorm8({0,1,0}),PackColorRgba8(rock),float(segment)/radialSegments,t});}}
+    for(unsigned segment=0;segment<radialSegments;++segment){const std::uint32_t current=1+segment,next=1+(segment+1)%radialSegments;mesh.indices.insert(mesh.indices.end(),{0,next,current});}
+    for(unsigned ring=1;ring<rings;++ring){const std::uint32_t inner=1+(ring-1)*radialSegments,outer=inner+radialSegments;for(unsigned segment=0;segment<radialSegments;++segment){const std::uint32_t next=(segment+1)%radialSegments,a=inner+segment,b=inner+next,c=outer+segment,d=outer+next;mesh.indices.insert(mesh.indices.end(),{a,b,c,b,d,c});}}
+    RebuildNormals(mesh);return mesh;
+}
+
 Mesh3D CreateCurvedRibbonMesh3D(std::span<const Vec3> centers,std::span<const float> halfWidths,float heightOffset){
     Mesh3D mesh;if(centers.size()<2||centers.size()!=halfWidths.size())return mesh;mesh.vertices.reserve(centers.size()*2);mesh.indices.reserve((centers.size()-1)*6);
     for(std::size_t index=0;index<centers.size();++index){

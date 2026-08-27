@@ -2,6 +2,7 @@
 #include "Renderer.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
 #include <span>
 #include <vector>
@@ -10,10 +11,29 @@ namespace Aevrynd {
 struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};};
 struct Transform3D {Vec3 position{},rotation{},scale{1,1,1};Matrix4 Matrix()const{return CreateTransformMatrix(position,rotation,scale);}};
 struct MeshBounds3D {Vec3 center{};float radius{};Vec3 extents{};};
+struct MeshRaycastEntry3D {Vec3 center{},extents{};std::uint32_t triangleIndex{};};
+struct MeshRaycastNode3D {Vec3 center{},extents{};std::uint32_t first{},count{},left{},right{};};
+struct MeshRaycastIndex3D {
+    std::vector<MeshRaycastEntry3D> entries;
+    std::vector<MeshRaycastNode3D> nodes;
+    std::size_t RetainedBytes()const{return entries.capacity()*sizeof(MeshRaycastEntry3D)+nodes.capacity()*sizeof(MeshRaycastNode3D);}
+};
+struct MeshRaycastCache3D {std::atomic<std::shared_ptr<const MeshRaycastIndex3D>> index;};
 
 struct Mesh3D {
     std::vector<Vertex3D> vertices;
     std::vector<uint32_t> indices;
+    // 網格建立完成後視為不可變；共享快取讓相同 CPU 網格的所有世界實例只建索引一次。
+    mutable std::shared_ptr<MeshRaycastCache3D> raycastCache{std::make_shared<MeshRaycastCache3D>()};
+    Mesh3D()=default;
+    Mesh3D(const Mesh3D& other):vertices(other.vertices),indices(other.indices){}
+    Mesh3D& operator=(const Mesh3D& other){if(this!=&other){vertices=other.vertices;indices=other.indices;raycastCache=std::make_shared<MeshRaycastCache3D>();}return *this;}
+    Mesh3D(Mesh3D&&)=default;
+    Mesh3D& operator=(Mesh3D&&)=default;
+    // 公開頂點或索引被修改後必須呼叫此函式，避免沿用舊的碰撞加速索引。
+    void InvalidateRaycastIndex()const{raycastCache->index.store({},std::memory_order_release);}
+    std::size_t RaycastIndexBytes()const{const auto index=raycastCache->index.load(std::memory_order_acquire);return index?index->RetainedBytes():0;}
+    std::size_t TrimRaycastIndex()const{const auto index=raycastCache->index.exchange({},std::memory_order_acq_rel);return index?index->RetainedBytes():0;}
     bool Valid()const{return !vertices.empty()&&!indices.empty()&&indices.size()%3==0&&std::all_of(indices.begin(),indices.end(),[this](uint32_t index){return index<vertices.size();});}
     MeshBounds3D Bounds()const{if(vertices.empty())return{};Vec3 minimum{vertices.front().x,vertices.front().y,vertices.front().z},maximum=minimum;for(const Vertex3D& vertex:vertices){minimum.x=(std::min)(minimum.x,vertex.x);minimum.y=(std::min)(minimum.y,vertex.y);minimum.z=(std::min)(minimum.z,vertex.z);maximum.x=(std::max)(maximum.x,vertex.x);maximum.y=(std::max)(maximum.y,vertex.y);maximum.z=(std::max)(maximum.z,vertex.z);}const Vec3 center=(minimum+maximum)*.5f;float radius=0;for(const Vertex3D& vertex:vertices)radius=(std::max)(radius,Length(Vec3{vertex.x,vertex.y,vertex.z}-center));return{center,radius,(maximum-minimum)*.5f};}
     static Mesh3D CreateUnitBox(){Mesh3D mesh;mesh.vertices.reserve(24);mesh.indices.reserve(36);auto face=[&](std::array<Vec3,4> points,float shade){const uint32_t base=uint32_t(mesh.vertices.size()),color=PackColorRgba8({shade,shade,shade,1}),normal=PackNormalSnorm8(Normalize(Cross(points[2]-points[0],points[1]-points[0])));for(Vec3 point:points)mesh.vertices.push_back({point.x,point.y,point.z,normal,color});mesh.indices.insert(mesh.indices.end(),{base,base+2,base+1,base,base+3,base+2});};face({Vec3{-.5f,-.5f,-.5f},Vec3{.5f,-.5f,-.5f},Vec3{.5f,.5f,-.5f},Vec3{-.5f,.5f,-.5f}},.55f);face({Vec3{.5f,-.5f,.5f},Vec3{-.5f,-.5f,.5f},Vec3{-.5f,.5f,.5f},Vec3{.5f,.5f,.5f}},.85f);face({Vec3{-.5f,-.5f,.5f},Vec3{-.5f,-.5f,-.5f},Vec3{-.5f,.5f,-.5f},Vec3{-.5f,.5f,.5f}},.68f);face({Vec3{.5f,-.5f,-.5f},Vec3{.5f,-.5f,.5f},Vec3{.5f,.5f,.5f},Vec3{.5f,.5f,-.5f}},.76f);face({Vec3{-.5f,.5f,-.5f},Vec3{.5f,.5f,-.5f},Vec3{.5f,.5f,.5f},Vec3{-.5f,.5f,.5f}},1.f);face({Vec3{-.5f,-.5f,.5f},Vec3{.5f,-.5f,.5f},Vec3{.5f,-.5f,-.5f},Vec3{-.5f,-.5f,-.5f}},.45f);return mesh;}

@@ -27,7 +27,7 @@ bool HasSoundTopology(const Mesh3D& mesh){
 }
 
 int main(){
-    const Mesh3D grassHigh=CreateGrassClumpMesh3D(11,3),grassLow=CreateGrassClumpMesh3D(4,2),crownHigh=CreateBroadleafCrownMesh3D(10,6),crownLow=CreateBroadleafCrownMesh3D(6,4),treeNear=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,17),treeFar=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Far,17),treeLow=CreateTreeLodMesh3D(),skyDome=CreateSkyDomeMesh3D();
+    const Mesh3D grassHigh=CreateGrassClumpMesh3D(11,3),grassLow=CreateGrassClumpMesh3D(4,2),crownHigh=CreateBroadleafCrownMesh3D(10,6),crownLow=CreateBroadleafCrownMesh3D(6,4),treeNear=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,17),treeFar=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Far,17),treeLow=CreateTreeLodMesh3D(),skyDome=CreateSkyDomeMesh3D(),mountainNear=CreateMountainMesh3D(24,6,17),mountainFar=CreateMountainMesh3D(10,3,17);
     if(!grassHigh.Valid()||!grassLow.Valid()||grassLow.indices.size()>=grassHigh.indices.size()){std::cerr<<"Grass LOD generation failed\n";return 1;}
     bool anchoredBlade=false,windTip=false;for(const Vertex3D& vertex:grassHigh.vertices){const float weight=UnpackNormalSnorm8(vertex.normal).w;anchoredBlade|=weight>.95f;windTip|=weight<.05f;}if(!anchoredBlade||!windTip){std::cerr<<"Grass wind weights failed\n";return 7;}
     if(!crownHigh.Valid()||!crownLow.Valid()||crownLow.indices.size()>=crownHigh.indices.size()){std::cerr<<"Crown LOD generation failed\n";return 2;}
@@ -38,6 +38,7 @@ int main(){
     if(nearBounds.extents.y<1.f||nearBounds.extents.x<.45f||nearBounds.extents.z<.35f||farBounds.extents.y<.8f){std::cerr<<"Broadleaf tree silhouette bounds failed\n";return 11;}
     const Mesh3D treeVariation=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,19);bool varied=false;for(size_t index=0;index<treeNear.vertices.size()&&index<treeVariation.vertices.size();++index){const Vertex3D& a=treeNear.vertices[index],&b=treeVariation.vertices[index];if(std::abs(a.x-b.x)+std::abs(a.y-b.y)+std::abs(a.z-b.z)>.001f){varied=true;break;}}if(!varied){std::cerr<<"Broadleaf tree variation failed\n";return 12;}
     const Vec4 skyNormal=UnpackNormalSnorm8(skyDome.vertices.front().normal);if(!skyDome.Valid()||skyNormal.w>-.99f){std::cerr<<"Sky dome generation failed\n";return 6;}
+    if(!HasSoundTopology(mountainNear)||!HasSoundTopology(mountainFar)||mountainFar.indices.size()>=mountainNear.indices.size()/2||mountainNear.Bounds().extents.y<.45f){std::cerr<<"Mountain LOD generation failed\n";return 13;}
     const std::array<Vec3,3> centers={Vec3{-2,0,0},Vec3{0,.1f,2},Vec3{3,0,4}};const std::array<float,3> widths={1.f,1.5f,2.f};const Mesh3D ribbon=CreateCurvedRibbonMesh3D(centers,widths,.05f);
     if(!ribbon.Valid()||ribbon.vertices.size()!=6||ribbon.indices.size()!=12){std::cerr<<"Curved ribbon generation failed\n";return 3;}
     const Vertex3D& ribbonA=ribbon.vertices[ribbon.indices[0]],&ribbonB=ribbon.vertices[ribbon.indices[1]],&ribbonC=ribbon.vertices[ribbon.indices[2]];if(Cross(Vec3{ribbonB.x-ribbonA.x,ribbonB.y-ribbonA.y,ribbonB.z-ribbonA.z},Vec3{ribbonC.x-ribbonA.x,ribbonC.y-ribbonA.y,ribbonC.z-ribbonA.z}).y<=0){std::cerr<<"Ribbon front face must point upward\n";return 8;}

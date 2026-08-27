@@ -30,18 +30,18 @@ int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     const LONG windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,x=workArea.left+(workWidth-windowWidth)/2,y=workArea.top+(workHeight-windowHeight)/2;
     hwnd_=CreateWindowExW(0,wc.lpszClassName,config_.title.c_str(),style,x,y,windowWidth,windowHeight,nullptr,nullptr,instance,this);
     if(!hwnd_)throw std::runtime_error("CreateWindow failed");ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)),config_.width,config_.height,config_.enableDLSS);audio_.Initialize();processMemoryStats_=QueryProcessMemoryStats();game_->OnStart(*this);
-    using Clock=std::chrono::steady_clock;auto last=Clock::now();double accumulator=0.0;MSG msg{};
+    using Clock=std::chrono::steady_clock;auto last=Clock::now();double accumulator=0.0;MSG msg{};int exitCode{};
     while(running_){
         input_.BeginFrame();
         input_.PollGamepad();
-        while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT){running_=false;break;}TranslateMessage(&msg);DispatchMessageW(&msg);}if(!running_)break;
+        while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT){exitCode=int(msg.wParam);running_=false;break;}TranslateMessage(&msg);DispatchMessageW(&msg);}if(!running_)break;
         // 最小化時停止提交畫面，並只在進入背景時修剪一次暫存容量。
         if(minimized_){if(trimPending_){TrimUnusedMemory();trimPending_=false;}audio_.Update();input_.ConsumePresses();accumulator=0;Sleep(50);last=Clock::now();continue;}
         auto now=Clock::now();double frame=std::chrono::duration<double>(now-last).count();last=now;if(frame>.25)frame=.25;accumulator+=frame;int updates=0;
         while(accumulator>=config_.fixedStep&&updates<5){game_->OnUpdate(*this,config_.fixedStep);input_.ConsumePresses();time_+=config_.fixedStep;accumulator-=config_.fixedStep;updates++;}
         if(updates==5)accumulator=0;audio_.Update();draw_.Clear();draw_.SetClipRect({0,0},{float(config_.width),float(config_.height)});game_->OnRender(*this,float(accumulator/config_.fixedStep));renderer_->Render(draw_,clearColor_);if(lastMemorySampleTime_<0||time_-lastMemorySampleTime_>=.5f){processMemoryStats_=QueryProcessMemoryStats();lastMemorySampleTime_=time_;const TransientMemoryStats drawMemory=draw_.MemoryStats(),rendererMemory=renderer_->MemoryStats();const ReusableMemoryStats audioMemory=audio_.MemoryStats(),gameMemory=game_->GetReusableMemoryStats();const RendererStats rendererStats=renderer_->GetStats();const size_t reclaimable=drawMemory.reclaimableCapacityBytes+rendererMemory.reclaimableCapacityBytes+audioMemory.reclaimableCapacityBytes+gameMemory.reclaimableCapacityBytes;const bool disposableGpuResources=rendererStats.idleMeshUploadContexts||rendererStats.idleMaterialTextureUploadContexts;const MemoryPressurePolicy policy{config_.memoryPressureThresholdPercent,config_.minimumAutomaticMemoryReclaimBytes,config_.memoryTrimCooldownSeconds};const float secondsSinceAutomaticTrim=automaticTrimmed_?time_-lastAutomaticTrimTime_:config_.memoryTrimCooldownSeconds;if(config_.enableAutomaticMemoryTrim&&ShouldTrimMemory(processMemoryStats_,reclaimable,secondsSinceAutomaticTrim,policy,disposableGpuResources)){TrimUnusedMemory();lastAutomaticTrimTime_=time_;automaticTrimmed_=true;++automaticTrimCount_;}}
     }
-    game_->OnStop(*this);game_.reset();audio_.Shutdown();return int(msg.wParam);
+    game_->OnStop(*this);game_.reset();audio_.Shutdown();return exitCode;
 }
 
 LRESULT CALLBACK Engine::WindowProc(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){Engine* self=reinterpret_cast<Engine*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(message==WM_NCCREATE){auto cs=reinterpret_cast<CREATESTRUCTW*>(lParam);self=static_cast<Engine*>(cs->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));self->hwnd_=hwnd;}return self?self->HandleMessage(message,wParam,lParam):DefWindowProcW(hwnd,message,wParam,lParam);}

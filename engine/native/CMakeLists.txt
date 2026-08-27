@@ -1,4 +1,5 @@
 add_library(AevryndEngine STATIC
+  src/ArchitectureMeshes3D.cpp
   src/Animation3D.cpp
   src/AssetManifest.cpp
   src/Audio.cpp
@@ -8,6 +9,7 @@ add_library(AevryndEngine STATIC
   src/Effects2D.cpp
   src/Engine.cpp
   src/EnvironmentMeshes3D.cpp
+  src/FrameCapture3D.cpp
   src/HeightField3D.cpp
   src/Memory.cpp
   src/MaterialLibrary3D.cpp
@@ -106,6 +108,11 @@ target_compile_options(AevryndScene3DBvhTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndScene3DBvhTest PRIVATE AevryndEngine)
 add_test(NAME AevryndScene3DBvhTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScene3DBvhTest>'")
 
+add_executable(AevryndMeshRaycastBvhTest tests/MeshRaycastBvhSmoke.cpp)
+target_compile_options(AevryndMeshRaycastBvhTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndMeshRaycastBvhTest PRIVATE AevryndEngine)
+add_test(NAME AevryndMeshRaycastBvhTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMeshRaycastBvhTest>'")
+
 add_executable(AevryndMesh3DTest tests/Mesh3DSmoke.cpp)
 target_compile_options(AevryndMesh3DTest PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(AevryndMesh3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
@@ -116,6 +123,16 @@ add_executable(AevryndEnvironmentMeshes3DTest tests/EnvironmentMeshes3DSmoke.cpp
 target_compile_options(AevryndEnvironmentMeshes3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEnvironmentMeshes3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndEnvironmentMeshes3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentMeshes3DTest>'")
+
+add_executable(AevryndArchitectureMeshes3DTest tests/ArchitectureMeshes3DSmoke.cpp)
+target_compile_options(AevryndArchitectureMeshes3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndArchitectureMeshes3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndArchitectureMeshes3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndArchitectureMeshes3DTest>'")
+
+add_executable(AevryndFrameCapture3DTest tests/FrameCapture3DSmoke.cpp)
+target_compile_options(AevryndFrameCapture3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndFrameCapture3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndFrameCapture3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndFrameCapture3DTest>'")
 
 add_executable(AevryndMeshUploadStreamingTest tests/MeshUploadStreamingSmoke.cpp)
 target_compile_options(AevryndMeshUploadStreamingTest PRIVATE /W4 /permissive- /utf-8)
@@ -210,3 +227,7 @@ target_link_libraries(AevryndScene3DBenchmark PRIVATE AevryndEngine)
 add_executable(AevryndScene3DBvhBenchmark tests/Scene3DBvhBenchmark.cpp)
 target_compile_options(AevryndScene3DBvhBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndScene3DBvhBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndMeshRaycastBvhBenchmark tests/MeshRaycastBvhBenchmark.cpp)
+target_compile_options(AevryndMeshRaycastBvhBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndMeshRaycastBvhBenchmark PRIVATE AevryndEngine)

@@ -11,10 +11,12 @@
 #include <Aevrynd/WorldStreamer3D.h>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <vector>
 
 class EngineLabGame final:public Aevrynd::IGame {
 public:
+    explicit EngineLabGame(std::filesystem::path captureDirectory={}):captureDirectory_(std::move(captureDirectory)){}
     void OnStart(Aevrynd::Engine&)override;
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
@@ -35,7 +37,12 @@ private:
     Aevrynd::MeshResource3D grassLowMesh_{};
     Aevrynd::MeshResource3D treeHighMesh_{};
     Aevrynd::MeshResource3D treeLowMesh_{};
+    Aevrynd::MeshResource3D cottageHighMesh_{};
+    Aevrynd::MeshResource3D cottageLowMesh_{};
     Aevrynd::MeshResource3D riverMesh_{};
+    Aevrynd::MeshResource3D skyDomeMesh_{};
+    Aevrynd::MeshResource3D mountainHighMesh_{};
+    Aevrynd::MeshResource3D mountainLowMesh_{};
     Aevrynd::MeshResource3D probeMesh_{};
     Aevrynd::MeshResource3D sphereHighMesh_{};
     Aevrynd::MeshResource3D sphereLowMesh_{};
@@ -70,4 +77,7 @@ private:
     bool instancingEnabled_{true};
     bool backfaceCulling_{true};
     bool lightingEnabled_{true};
+    std::filesystem::path captureDirectory_{};
+    std::size_t captureIndex_{};
+    float nextCaptureTime_{1.5f};
 };

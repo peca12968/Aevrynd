@@ -65,6 +65,7 @@ public:
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}
+    bool CaptureNextFrame3D(const std::filesystem::path& path){return renderer_->CaptureNextFrame(path);}
 private:
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
