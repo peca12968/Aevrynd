@@ -5,6 +5,7 @@ add_library(AevryndEngine STATIC
   src/CollisionWorld3D.cpp
   src/Effects2D.cpp
   src/Engine.cpp
+  src/EnvironmentMeshes3D.cpp
   src/HeightField3D.cpp
   src/Memory.cpp
   src/MaterialLibrary3D.cpp
@@ -98,6 +99,11 @@ add_executable(AevryndMesh3DTest tests/Mesh3DSmoke.cpp)
 target_compile_options(AevryndMesh3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndMesh3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndMesh3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMesh3DTest>'")
+
+add_executable(AevryndEnvironmentMeshes3DTest tests/EnvironmentMeshes3DSmoke.cpp)
+target_compile_options(AevryndEnvironmentMeshes3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndEnvironmentMeshes3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndEnvironmentMeshes3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentMeshes3DTest>'")
 
 add_executable(AevryndMeshUploadStreamingTest tests/MeshUploadStreamingSmoke.cpp)
 target_compile_options(AevryndMeshUploadStreamingTest PRIVATE /W4 /permissive- /utf-8)

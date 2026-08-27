@@ -130,16 +130,25 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
         normal = normalize(lerp(normal, TriplanarNormal(input.worldPosition, normal, input.textureData.y), 0.78));
     }
 
+    const float waterMask = saturate((0.32 - roughness) * 5.0) * step(0.62, normal.y) * saturate((1.0 - input.color.a) * 6.0);
+    const float2 ripple = float2(sin(input.worldPosition.z * 0.82 + input.worldPosition.x * 0.17),
+                                 cos(input.worldPosition.x * 0.68 - input.worldPosition.z * 0.23));
+    normal = normalize(normal + float3(ripple.x, 0.0, ripple.y) * waterMask * 0.075);
+
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
     const float3 halfDirection = normalize(lightDirection + viewDirection);
-    const float diffuse = saturate(dot(normal, lightDirection));
+    const float diffuse = saturate((dot(normal, lightDirection) + 0.18) / 1.18);
     const float specular = pow(saturate(dot(normal, halfDirection)), lerp(128.0, 4.0, roughness)) * (1.0 - roughness * 0.65);
     const float3 diffuseColor = baseColor * (1.0 - metallic * 0.72);
     const float3 specularColor = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
-    float3 shaded = diffuseColor * (lightDirectionAmbient.w * occlusion + lightColorIntensity.rgb * lightColorIntensity.w * diffuse)
+    const float skyVisibility = saturate(normal.y * 0.5 + 0.5);
+    const float3 skyBounce = lerp(float3(0.22, 0.17, 0.12), float3(0.38, 0.52, 0.68), skyVisibility);
+    const float backScatter = pow(saturate(dot(-lightDirection, viewDirection)), 3.0) * saturate(1.0 - roughness);
+    float3 shaded = diffuseColor * (lightDirectionAmbient.w * occlusion * skyBounce * 2.8 + lightColorIntensity.rgb * lightColorIntensity.w * diffuse)
                   + specularColor * lightColorIntensity.rgb * lightColorIntensity.w * specular
-                  + baseColor * emissive * 2.0;
+                  + baseColor * emissive * 2.0
+                  + lightColorIntensity.rgb * backScatter * 0.08;
 
     [unroll]
     for (uint pointIndex = 0; pointIndex < 3; ++pointIndex)
@@ -158,6 +167,8 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
                 * attenuation * attenuation;
     }
 
+    const float fresnel = pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
+    shaded = lerp(shaded, float3(0.24, 0.48, 0.62) + fresnel * 0.7, waterMask * (0.18 + fresnel * 0.46));
     const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
     const float fogAmount = saturate((distance(input.worldPosition, cameraFogStart.xyz) - cameraFogStart.w)
                           / max(0.001, fogEndEnabled.x - cameraFogStart.w)) * fogEndEnabled.y * fogColor.a;
