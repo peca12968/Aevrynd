@@ -22,11 +22,23 @@ struct NamedAnimationClip3D {
     AnimationClip3D clip;
 };
 
+enum class SkinnedMaterialAlphaMode3D : std::uint8_t {Opaque,Mask,Blend};
+
+struct SkinnedMaterialDefinition3D {
+    Color baseColorFactor{1,1,1,1};
+    Vec3 emissiveFactor{};
+    float emissiveStrength{1},roughnessFactor{1},metallicFactor{1},alphaCutoff{.5f},normalScale{1},occlusionStrength{1};
+    SkinnedMaterialAlphaMode3D alphaMode{SkinnedMaterialAlphaMode3D::Opaque};
+    bool doubleSided{},unlit{};
+};
+
 struct SkinnedModelAssetData {
     SkinnedModel3D model;
     std::vector<std::string> jointNames;
     std::vector<SkinnedSubmesh3D> submeshes;
     std::vector<std::string> materialSlotNames;
+    // 空陣列代表舊格式未攜帶材質因子；非空時與材質槽一一對應。
+    std::vector<SkinnedMaterialDefinition3D> materials;
     std::vector<NamedAnimationClip3D> clips;
 };
 

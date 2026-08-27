@@ -1,0 +1,54 @@
+#include <Aevrynd/SkinnedRenderable3D.h>
+#include <array>
+#include <iostream>
+
+using namespace Aevrynd;
+
+namespace {
+SkinPaletteJoint3D IdentityJoint(){
+    return{Matrix4::Identity(),{Vec4{1,0,0,0},Vec4{0,1,0,0},Vec4{0,0,1,0}}};
+}
+}
+
+int main(){
+    DrawList draw(DrawListCapacityProfile::Minimal2D);
+    const std::array<SkinPaletteJoint3D,1> joints{IdentityJoint()};
+    const SkinPaletteRange3D palette=draw.AddSkinPalette(joints);
+    const SkinnedMeshHandle3D mesh{7};
+    const std::array<SkinnedSubmesh3D,2> submeshes{{{0,3,1,0},{3,6,0,0}}};
+    std::array<Material3D,2> materials{};
+    materials[0].tint={1,0,0,1};materials[0].textures={11};
+    materials[1].tint={0,1,0,1};materials[1].textures={22};materials[1].materialClass=MaterialClass3D::Foliage;
+    if(!SubmitSkinnedRenderable3D(draw,mesh,palette,Matrix4::Identity(),9,submeshes,materials)||
+        draw.skinnedMeshInstances.size()!=2||draw.skinPaletteJoints.size()!=1||
+        draw.skinnedMeshInstances[0].textures.value!=22||draw.skinnedMeshInstances[0].firstIndex||
+        draw.skinnedMeshInstances[1].textures.value!=11||draw.skinnedMeshInstances[1].firstIndex!=3||
+        draw.skinnedMeshInstances[1].indexCount!=6){std::cerr<<"Multi-material submission failed\n";return 1;}
+    const std::size_t accepted=draw.skinnedMeshInstances.size();
+    auto expectAtomicFailure=[&](std::span<const SkinnedSubmesh3D> ranges,std::span<const Material3D> bindings,std::uint32_t indices){
+        const bool acceptedInvalid=SubmitSkinnedRenderable3D(draw,mesh,palette,Matrix4::Identity(),indices,ranges,bindings);
+        return !acceptedInvalid&&draw.skinnedMeshInstances.size()==accepted&&draw.skinPaletteJoints.size()==1;
+    };
+    const std::array<SkinnedSubmesh3D,2> gap{{{0,3,0,0},{6,3,1,0}}},overlap{{{0,6,0,0},{3,6,1,0}}},badSlot{{{0,3,2,0},{3,6,0,0}}},badAlignment{{{0,4,0,0},{4,5,1,0}}};
+    if(!expectAtomicFailure(gap,materials,9)||!expectAtomicFailure(overlap,materials,9)||
+        !expectAtomicFailure(badSlot,materials,9)||!expectAtomicFailure(badAlignment,materials,9)){
+        std::cerr<<"Range or slot failure was not atomic\n";return 2;
+    }
+    materials[1].materialClass=MaterialClass3D::Water;
+    if(!expectAtomicFailure(submeshes,materials,9)){std::cerr<<"Unsupported material was accepted\n";return 3;}
+    materials[1].materialClass=MaterialClass3D::Foliage;
+    DrawList bounded(DrawListCapacityProfile::Minimal2D);const SkinPaletteRange3D boundedPalette=bounded.AddSkinPalette(joints);
+    const std::array<SkinnedSubmesh3D,1> one{{{0,3,0,0}}};
+    for(std::size_t index=0;index<DrawList::MaximumSkinnedMeshInstancesPerFrame-1;++index)
+        if(!SubmitSkinnedRenderable3D(bounded,mesh,boundedPalette,Matrix4::Identity(),3,one,std::span<const Material3D>{materials.data(),1}))return 4;
+    const std::array<SkinnedSubmesh3D,2> two{{{0,3,0,0},{3,3,1,0}}};
+    const std::size_t before=bounded.skinnedMeshInstances.size();
+    if(SubmitSkinnedRenderable3D(bounded,mesh,boundedPalette,Matrix4::Identity(),6,two,materials)||
+        bounded.skinnedMeshInstances.size()!=before||bounded.skinPaletteJoints.size()!=1){
+        std::cerr<<"Bounded submission was partial\n";return 5;
+    }
+    if(!SubmitSkinnedRenderable3D(bounded,mesh,boundedPalette,Matrix4::Identity(),3,one,std::span<const Material3D>{materials.data(),1})||
+        bounded.skinnedMeshInstances.size()!=DrawList::MaximumSkinnedMeshInstancesPerFrame||
+        bounded.skinPaletteJoints.size()!=1){std::cerr<<"Final bounded slot failed\n";return 6;}
+    std::cout<<"submeshes=2 bounded="<<bounded.skinnedMeshInstances.size()<<" paletteJoints="<<bounded.skinPaletteJoints.size()<<'\n';
+}

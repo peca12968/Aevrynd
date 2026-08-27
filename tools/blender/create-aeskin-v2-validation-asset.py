@@ -10,9 +10,14 @@ bpy.ops.object.select_all(action="SELECT")
 bpy.ops.object.delete(use_global=False)
 
 materials = []
-for name, color in (("ValidationRed", (0.8, 0.1, 0.05, 1.0)), ("ValidationBlue", (0.05, 0.2, 0.8, 1.0))):
+for index, (name, color) in enumerate((("ValidationRed", (0.8, 0.1, 0.05, 1.0)), ("ValidationBlue", (0.05, 0.2, 0.8, 1.0)))):
     value = bpy.data.materials.new(name)
     value.diffuse_color = color
+    value.use_nodes = True
+    shader = value.node_tree.nodes.get("Principled BSDF")
+    shader.inputs["Base Color"].default_value = color
+    shader.inputs["Roughness"].default_value = (0.35, 0.8)[index]
+    shader.inputs["Metallic"].default_value = (0.1, 0.6)[index]
     materials.append(value)
 
 mesh = bpy.data.meshes.new("V2ValidationMesh")

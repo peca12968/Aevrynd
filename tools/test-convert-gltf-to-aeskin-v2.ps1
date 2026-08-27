@@ -14,20 +14,24 @@ try {
     $reader = [IO.BinaryReader]::new([IO.MemoryStream]::new($bytes, $false))
     try {
         if ($reader.ReadUInt32() -ne 0x4B534541 -or $reader.ReadUInt32() -ne 2 -or $reader.ReadUInt32() -ne 64 -or $reader.ReadUInt32() -ne 0) { throw 'Header identity failed.' }
-        if ($reader.ReadUInt64() -ne $bytes.LongLength -or $reader.ReadUInt64() -ne 64 -or $reader.ReadUInt32() -ne 11) { throw 'Header bounds failed.' }
+        if ($reader.ReadUInt64() -ne $bytes.LongLength -or $reader.ReadUInt64() -ne 64 -or $reader.ReadUInt32() -ne 12) { throw 'Header bounds failed.' }
         $reader.BaseStream.Position = 64
-        $types = for ($entry = 0; $entry -lt 11; ++$entry) {
+        $types = for ($entry = 0; $entry -lt 12; ++$entry) {
             $type = [Text.Encoding]::ASCII.GetString($reader.ReadBytes(4))
-            $reader.BaseStream.Position += 4
+            $version = $reader.ReadUInt16(); $flags = $reader.ReadUInt16()
             $offset = $reader.ReadUInt64()
-            $reader.BaseStream.Position += 16
+            $size = $reader.ReadUInt64(); $count = $reader.ReadUInt32(); $stride = $reader.ReadUInt32()
             if ($type -eq 'VERT') { $vertexOffset = $offset }
+            if ($type -eq 'MATL') { if ($version -ne 1 -or $flags -ne 0 -or $size -ne 128 -or $count -ne 2 -or $stride -ne 64) { throw 'MATL TOC contract failed.' }; $materialOffset = $offset }
             $type
         }
-        if (($types -join ',') -ne 'VERT,INDX,JOIN,WGHT,IBND,JNAM,SUBM,CLIP,TRAK,KEYF,STRS') { throw 'TOC chunk order failed.' }
+        if (($types -join ',') -ne 'VERT,INDX,JOIN,WGHT,IBND,JNAM,SUBM,MATL,CLIP,TRAK,KEYF,STRS') { throw 'TOC chunk order failed.' }
         $reader.BaseStream.Position = $vertexOffset + 16
         $firstVertexColor = $reader.ReadUInt32()
         if ($firstVertexColor -eq 0 -or $firstVertexColor -eq 0xFFFFFFFF) { throw 'Vertex color packing regression detected.' }
+        $reader.BaseStream.Position = $materialOffset
+        $slot = $reader.ReadUInt32(); $materialFlags = $reader.ReadUInt32(); $baseColor = 1..4 | ForEach-Object { $reader.ReadSingle() }; $emissive = 1..3 | ForEach-Object { $reader.ReadSingle() }; $emissiveStrength = $reader.ReadSingle(); $roughness = $reader.ReadSingle(); $metallic = $reader.ReadSingle(); $alphaCutoff = $reader.ReadSingle(); $normalScale = $reader.ReadSingle(); $occlusion = $reader.ReadSingle(); $reserved = $reader.ReadSingle()
+        if ($slot -ne 0 -or $materialFlags -ne 4 -or [Math]::Abs($baseColor[0] - 0.8) -gt 0.001 -or [Math]::Abs($roughness - 0.35) -gt 0.001 -or [Math]::Abs($metallic - 0.1) -gt 0.001 -or $emissiveStrength -ne 1 -or $alphaCutoff -ne 0.5 -or $normalScale -ne 1 -or $occlusion -ne 1 -or $reserved -ne 0) { throw 'MATL payload or strict defaults failed.' }
     } finally { $reader.Dispose() }
 
     cmake --build $BuildDirectory --config Release --target AevryndSkinnedModelAssetV2Inspect
@@ -44,7 +48,7 @@ try {
     $failed = $false
     try { & (Join-Path $PSScriptRoot 'convert-gltf-to-aeskin-v2.ps1') -Source $stepSource -Output (Join-Path $temporary 'step.aeskin') } catch { $failed = $_.Exception.Message -like '*STEP*unsupported*' }
     if (-not $failed) { throw 'STEP animation was not explicitly rejected.' }
-    Write-Output "AESKIN_V2_CI=PASS bytes=$($bytes.Length) chunks=11 primitives=2 materials=2 animations=1 loader=LoadDetailed"
+    Write-Output "AESKIN_V2_CI=PASS bytes=$($bytes.Length) chunks=12 primitives=2 materials=2 animations=1 matl=validated loader=LoadDetailed"
 } finally {
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
 }

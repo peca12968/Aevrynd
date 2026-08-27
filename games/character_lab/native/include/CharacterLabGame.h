@@ -4,6 +4,7 @@
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/SkinnedModelAsset.h>
+#include <Aevrynd/SkinnedRenderable3D.h>
 #include <filesystem>
 
 class CharacterLabGame final:public Aevrynd::IGame {
@@ -26,7 +27,7 @@ private:
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{};
     std::vector<Aevrynd::SkinnedSubmesh3D> femaleSubmeshes_{},maleSubmeshes_{};
-    std::vector<std::string> femaleMaterialNames_{},maleMaterialNames_{};
+    std::vector<Aevrynd::Material3D> femaleMaterials_{},maleMaterials_{};
     Aevrynd::SkinnedMeshResource3D gpuFemale_{},gpuMale_{};
     Aevrynd::AnimationClip3D femaleClip_{},maleClip_{};
     Aevrynd::AnimationPlayer3D femalePlayer_{},malePlayer_{};
@@ -40,6 +41,7 @@ private:
     std::size_t lastReusableMemoryReleasedBytes_{};uint64_t reusableMemoryTrimCount_{};
     std::filesystem::path captureDirectory_{};
     std::uint64_t captureSuccessfulBaseline_{},captureRejectedBaseline_{};
+    std::size_t captureIndex_{};
     double nextCaptureTime_{.8};
     bool capturePending_{};
     bool firstPerson_{},automatic_{true},femaleActive_{true};
