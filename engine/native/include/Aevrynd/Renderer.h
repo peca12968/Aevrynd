@@ -115,6 +115,9 @@ struct RendererStats {
     size_t hdrSceneColorBytes{};
     uint64_t hdrSceneColorAllocations{};
     uint64_t hdrSceneColorReleases{};
+    size_t nativeDepthBufferBytes{};
+    uint64_t nativeDepthBufferAllocations{};
+    uint64_t nativeDepthBufferReleases{};
     uint64_t hdrPostProcessPasses{};
     size_t sceneConstantBufferBytes{};
     size_t rootSignatureDwords{};
@@ -137,6 +140,8 @@ struct RendererStats {
     size_t lastDirectionalShadowCasters{};
     size_t lastDirectionalShadowDrawCalls{};
     size_t directionalShadowMapBytes{};
+    uint64_t directionalShadowMapAllocations{};
+    uint64_t directionalShadowMapReleases{};
     size_t lastDirectionalShadowCascades{};
     float directionalShadowCascadeSplit{32.f};
     float directionalShadowTransitionWidth{6.f};
