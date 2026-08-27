@@ -20,7 +20,7 @@ void WriteFile(const std::filesystem::path& path, std::string_view contents = "t
 }
 
 std::string ValidDocument() {
-    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair"}}}})";
+    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true}}}})";
 }
 
 } // 匿名命名空間
@@ -45,6 +45,7 @@ int main() {
         passed &= Expect(std::abs(parsed.materials[0].material.textureScale - 1.5f) < 0.0001f, "textureScale was not applied");
         passed &= Expect(std::abs(parsed.materials[0].material.surface.roughness - 0.46f) < 0.0001f, "PBR override was not applied");
         passed &= Expect(parsed.materials[0].material.shadingModel == CharacterShadingModel3D::Skin && parsed.materials[1].material.shadingModel == CharacterShadingModel3D::Hair, "character shading model was not applied");
+        passed &= Expect(parsed.materials[1].material.alphaMode == MaterialAlphaMode3D::Mask && parsed.materials[1].textures.alphaMode == MaterialAlphaMode3D::Mask && std::abs(parsed.materials[1].material.alphaCutoff-.42f)<.0001f && parsed.materials[1].material.doubleSided, "masked material fields were not propagated");
         passed &= Expect(parsed.materials[0].textures.baseColorPath.is_absolute(), "resolved texture path is not absolute");
     }
 
@@ -75,6 +76,11 @@ int main() {
     const std::size_t shadingModelPosition = invalidShadingModel.find("\"shadingModel\":\"hair\"");
     invalidShadingModel.replace(shadingModelPosition, std::string("\"shadingModel\":\"hair\"").size(), "\"shadingModel\":\"fur\"");
     passed &= Expect(!ParseSkinnedMaterialSidecar3D(invalidShadingModel, slots, root), "unknown character shading model was accepted");
+
+    std::string invalidAlpha = ValidDocument();
+    const std::size_t alphaPosition = invalidAlpha.find("\"alphaCutoff\":0.42");
+    invalidAlpha.replace(alphaPosition, std::string("\"alphaCutoff\":0.42").size(), "\"alphaCutoff\":1.2");
+    passed &= Expect(!ParseSkinnedMaterialSidecar3D(invalidAlpha, slots, root), "out-of-range alpha cutoff was accepted");
 
     std::string unknownSlot = ValidDocument();
     const std::size_t hairPosition = unknownSlot.find("\"Hair\"");

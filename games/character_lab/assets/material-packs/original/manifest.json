@@ -86,8 +86,8 @@
       "channels": {
         "base-color": {
           "path": "hair/base-color.png",
-          "sha256": "6038279c047052b3434ce053ff6aca89111c0a7b2191fea62f7dd6ce409fd817",
-          "bytes": 133154
+          "sha256": "2085c69616a161a9871e3865252ef7c3c9e107055898fb75d9a54e8ce860fbc3",
+          "bytes": 185226
         },
         "roughness": {
           "path": "hair/roughness.png",

@@ -155,6 +155,36 @@ def limb_loft(name: str, points: tuple[tuple[float, float, float], ...], radii: 
     return obj
 
 
+def set_opaque_hair_uv(obj: bpy.types.Object) -> None:
+    uv = obj.data.uv_layers.active or obj.data.uv_layers.new(name="UVMap")
+    for item in uv.data:
+        item.uv = (0.125, 0.5)
+
+
+def hair_card(name: str, root: tuple[float, float, float], tip: tuple[float, float, float], width: float,
+              tile: int, surface: bpy.types.Material) -> bpy.types.Object:
+    start = mathutils.Vector(root); end = mathutils.Vector(tip); direction = end - start
+    across = mathutils.Vector((-direction.y, direction.x, 0.0))
+    if across.length < 1.0e-5: across = mathutils.Vector((1.0, 0.0, 0.0))
+    across.normalize()
+    centers = [start.lerp(end, value / 3.0) + mathutils.Vector((0.0, -0.010 * math.sin(value * math.pi / 3.0), 0.0)) for value in range(4)]
+    vertices = []
+    for ring, center in enumerate(centers):
+        half_width = width * (1.0 - 0.55 * ring / 3.0)
+        vertices.extend((tuple(center - across * half_width), tuple(center + across * half_width)))
+    faces = [(ring * 2, ring * 2 + 1, ring * 2 + 3, ring * 2 + 2) for ring in range(3)]
+    mesh = bpy.data.meshes.new(f"{name}Mesh"); mesh.from_pydata(vertices, [], faces); mesh.materials.append(surface)
+    uv = mesh.uv_layers.new(name="UVMap"); tile_min = 0.25 + (tile % 6) * 0.125
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index = mesh.loops[loop_index].vertex_index
+            uv.data[loop_index].uv = (tile_min + (vertex_index % 2) * 0.125, (vertex_index // 2) / 3.0)
+    obj = bpy.data.objects.new(name, mesh); bpy.context.scene.collection.objects.link(obj)
+    add_vertex_color(obj, tuple(surface.diffuse_color)); group = obj.vertex_groups.new(name="Head")
+    group.add(range(len(mesh.vertices)), 1.0, "REPLACE")
+    return obj
+
+
 def create_rig() -> bpy.types.Object:
     armature = bpy.data.armatures.new("RealisticFemaleArmature")
     rig = bpy.data.objects.new("RealisticFemaleRig", armature)
@@ -234,19 +264,29 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
         for index, (offset, length) in enumerate(((-0.022, 0.060), (-0.008, 0.070), (0.008, 0.066), (0.022, 0.055))):
             parts.append(tapered_limb(f"Finger.{side}.{index}", (0.358 * sign + offset, -0.038, 0.895), (0.358 * sign + offset, -0.050, 0.895 - length), (0.008, 0.005), skin, f"{side}Hand", 8))
         parts.append(tapered_limb(f"Thumb.{side}", (0.345 * sign, -0.035, 0.925), (0.325 * sign, -0.065, 0.895), (0.010, 0.006), skin, f"{side}Hand", 8))
-    # 後腦與錯落髮束避免單一頭盔形髮型，仍維持可控面數。
-    parts.append(sphere("HairCrown", (0.008, 0.034, 1.710), (0.112, 0.094, 0.092), hair, "Head", 24, 16))
-    strand_roots = ((-0.108, 1.72, 0.34), (-0.088, 1.74, 0.37), (-0.068, 1.75, 0.40), (-0.045, 1.755, 0.43), (-0.020, 1.76, 0.45), (0.008, 1.758, 0.42), (0.035, 1.75, 0.39), (0.062, 1.74, 0.36), (0.086, 1.725, 0.33), (0.108, 1.705, 0.30))
-    for index, (x, top, length) in enumerate(strand_roots):
-        sway = (-0.018 if index < 3 else 0.026) + 0.009 * math.sin(index * 2.3)
-        parts.append(tapered_limb(f"HairStrand.{index:02d}", (x, 0.068, top), (x + sway, 0.075 + 0.008 * (index % 2), top - length), (0.024, 0.012), hair, "Head", 12))
-    parts.append(tapered_limb("SideFringe", (-0.082, -0.075, 1.744), (0.028, -0.101, 1.700), (0.018, 0.008), hair, "Head", 12))
+    # 低模頭皮遮底，髮片以固定分布提供可裁切輪廓。
+    scalp = sphere("HairScalp", (0.0, 0.025, 1.710), (0.111, 0.092, 0.090), hair, "Head", 18, 10); set_opaque_hair_uv(scalp); parts.append(scalp)
+    for index in range(56):
+        band, column = divmod(index, 14); angle = math.tau * column / 14.0 + band * 0.071
+        root = (math.sin(angle) * (0.102 - band * 0.006), 0.025 + math.cos(angle) * (0.082 - band * 0.004), 1.755 - band * 0.018)
+        length = 0.25 + 0.045 * band + 0.018 * math.sin(index * 2.17)
+        tip = (root[0] * 1.10 + 0.012 * math.sin(index * 1.31), root[1] + 0.012, root[2] - length)
+        parts.append(hair_card(f"HairCard.{index:02d}", root, tip, 0.018 + 0.002 * (index % 3), index, hair))
     parts += [
         sphere("WaistBelt", (0, -0.005, 1.075), (0.179, 0.132, 0.026), cloth_dark, "Spine", 24, 10),
         sphere("BeltClasp", (0, -0.137, 1.075), (0.028, 0.010, 0.025), metal, "Spine", 14, 8),
     ]
 
+    hair_cards = [part for part in parts if part.name.startswith("HairCard")]
+    hairstyle_triangles = sum(sum(len(face.vertices) - 2 for face in part.data.polygons)
+                              for part in parts if part.name.startswith(("HairCard", "HairScalp")))
+    assert 48 <= len(hair_cards) <= 64 and hairstyle_triangles <= 900
+    print(f"FEMALE_HAIR_CARDS={len(hair_cards)} HAIRSTYLE_TRIANGLES={hairstyle_triangles}")
+
     bpy.ops.object.select_all(action="DESELECT")
+    for part in parts:
+        if part.data.materials and part.data.materials[0] == hair and not part.name.startswith("HairCard"):
+            set_opaque_hair_uv(part)
     for part in parts:
         part.select_set(True)
     bpy.context.view_layer.objects.active = parts[0]

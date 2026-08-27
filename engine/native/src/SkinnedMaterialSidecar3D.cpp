@@ -208,7 +208,7 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             return Failure(ErrorCode::InvalidSchema, "Sidecar is missing AESKIN material slot '" + slot + "'");
         }
         SerializationObject definition;
-        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "useUv", "castsShadow", "shadingModel"}) ||
+        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "useUv", "castsShadow", "shadingModel", "alphaMode", "alphaCutoff", "doubleSided"}) ||
             !definition.Contains("textures")) {
             return Failure(ErrorCode::InvalidSchema, "Material '" + slot + "' definition is invalid");
         }
@@ -221,6 +221,12 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
                 return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' shadingModel must be 'default', 'skin', or 'hair'");
             material.material.shadingModel=shadingModel=="skin"?CharacterShadingModel3D::Skin:shadingModel=="hair"?CharacterShadingModel3D::Hair:CharacterShadingModel3D::Default;
         }
+        if(definition.Contains("alphaMode")){
+            std::string alphaMode;
+            if(!definition.Read("alphaMode",alphaMode)||(alphaMode!="opaque"&&alphaMode!="mask"&&alphaMode!="blend"))return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' alphaMode must be 'opaque', 'mask', or 'blend'");
+            material.material.alphaMode=alphaMode=="mask"?MaterialAlphaMode3D::Mask:alphaMode=="blend"?MaterialAlphaMode3D::Blend:MaterialAlphaMode3D::Opaque;
+        }
+        if(!definition.Read("alphaCutoff",material.material.alphaCutoff)||!definition.Read("doubleSided",material.material.doubleSided)||!std::isfinite(material.material.alphaCutoff)||material.material.alphaCutoff<0.f||material.material.alphaCutoff>1.f)return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' alphaCutoff or doubleSided is invalid");
         if (!definition.Read("textureScale", material.material.textureScale) || !definition.Read("useUv", material.material.useUv) ||
             !definition.Read("castsShadow", material.material.castsShadow) || !std::isfinite(material.material.textureScale) ||
             material.material.textureScale <= 0.0f || material.material.textureScale > limits.maximumTextureScale) {
@@ -234,6 +240,8 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
         if (!ParseTextures(textures, slot, canonicalRoot, limits, material.textures, parseError)) {
             return Failure(parseError.code, std::move(parseError.message), parseError.offset);
         }
+        material.textures.alphaMode=material.material.alphaMode;
+        material.textures.alphaCutoff=material.material.alphaCutoff;
         if (definition.Contains("pbr")) {
             SerializationObject pbr;
             if (!definition.Read("pbr", pbr) || !ParsePbr(pbr, slot, material.material, parseError)) {

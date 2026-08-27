@@ -104,7 +104,7 @@ void SkinLocalVertex(SkinnedVertexInput input, out float3 position, out float3 n
     const float3 sourceBitangent = cross(sourceNormal, sourceTangent) * (input.tangent.w < 0.0 ? -1.0 : 1.0);
     [unroll] for (uint influence = 0; influence < 4; ++influence)
     {
-        const SkinPaletteJoint joint = skinPalette[input.skinPaletteBase + input.blendIndices[influence]];
+        const SkinPaletteJoint joint = skinPalette[(input.skinPaletteBase & 4095u) + input.blendIndices[influence]];
         const float4 sourcePosition = float4(input.position, 1.0);
         position += float3(dot(joint.transform[0], sourcePosition),
                            dot(joint.transform[1], sourcePosition),
@@ -147,14 +147,16 @@ struct WorldPixelInput
     nointerpolation uint lodInvert : TEXCOORD10;
     float4 tangent : TEXCOORD11;
     nointerpolation uint characterShadingModel : TEXCOORD12;
+    nointerpolation float alphaCutoff : TEXCOORD13;
+    nointerpolation uint alphaMasked : TEXCOORD14;
 };
 
-struct ShadowVertexOutput { float4 position : SV_POSITION; };
+struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; };
 float3 ApplyWind(float3 position, float packedWeight);
 
 ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
 {
-    ShadowVertexOutput output;
+    ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], float4(ApplyWind(input.position, input.normal.w), 1.0));
     return output;
 }
@@ -167,7 +169,7 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
                                   dot(input.transformRow2, localPosition),
                                   dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
-    ShadowVertexOutput output;
+    ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
     return output;
 }
@@ -182,9 +184,18 @@ ShadowVertexOutput ShadowSkinnedVertexMain(SkinnedVertexInput input)
     const float4 localPosition = float4(skinnedPosition, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
-    ShadowVertexOutput output;
+    ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
+    output.uv=input.uv;
+    output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
+    output.alphaMasked=(input.skinPaletteBase>>20)&1u;
+    output.alpha=input.color.a*input.tint.a;
     return output;
+}
+
+void ShadowSkinnedPixelMain(ShadowVertexOutput input)
+{
+    if(input.alphaMasked!=0)clip(input.alpha*baseColorTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
 }
 
 float3 ApplyWind(float3 position, float packedWeight)
@@ -212,6 +223,8 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.lodInvert = 0;
     output.tangent = 0.0;
     output.characterShadingModel = 0;
+    output.alphaCutoff = 0.5;
+    output.alphaMasked = 0;
     output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
     output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
@@ -243,6 +256,8 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
     output.tangent = 0.0;
     output.characterShadingModel = 0;
+    output.alphaCutoff = 0.5;
+    output.alphaMasked = 0;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
@@ -290,6 +305,8 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
         ? float4(worldTangent, dot(cross(normalizedWorldNormal, worldTangent), worldBitangent) < 0.0 ? -1.0 : 1.0)
         : float4(0.0, 0.0, 0.0, 0.0);
     output.characterShadingModel = (input.textureData >> 13) & 7;
+    output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
+    output.alphaMasked=(input.skinPaletteBase>>20)&1u;
     output.material = input.material;
     output.textureData = float3(input.textureData & 1,
                                 max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
@@ -689,7 +706,9 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     {
         if (input.textureData.z > 0.5)
         {
-            baseColor *= baseColorTexture.Sample(materialSampler, input.uv).rgb;
+            const float4 sampledBaseColor=baseColorTexture.Sample(materialSampler,input.uv);
+            if(input.alphaMasked!=0)clip(input.color.a*sampledBaseColor.a-input.alphaCutoff);
+            baseColor *= sampledBaseColor.rgb;
             roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
             const float3 derivativeNormal = UvNormal(input.worldPosition, normal, input.uv);

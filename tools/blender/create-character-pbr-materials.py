@@ -104,6 +104,32 @@ def write_png(path: Path, size: int, kind: str, channel: str, seed: int) -> None
     path.write_bytes(header + chunk(b"IDAT", bytes(compressed)) + chunk(b"IEND", b""))
 
 
+def write_hair_base_color(path: Path, size: int, seed: int) -> None:
+    compressor = zlib.compressobj(9)
+    compressed = bytearray()
+    for y in range(size):
+        row = bytearray((0,))
+        v = y / max(1, size - 1)
+        for x in range(size):
+            rgb = color("hair", "base-color", x, y, size, seed)
+            if x < size // 4:
+                alpha = 255
+            else:
+                tile_width = size / 8.0
+                local_u = ((x - size / 4.0) % tile_width) / tile_width
+                strand = abs(local_u - 0.5)
+                width = (0.43 - 0.18 * v) * (0.82 + 0.18 * noise(x // 3, y // 5, seed ^ 0xA17A))
+                edge = max(0.0, min(1.0, (width - strand) * 40.0))
+                tip = max(0.0, min(1.0, (1.0 - v) * 8.0))
+                alpha = round(255.0 * edge * tip)
+            row.extend((*rgb, alpha))
+        compressed.extend(compressor.compress(row))
+    compressed.extend(compressor.flush())
+    header = b"\x89PNG\r\n\x1a\n"
+    header += chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
+    path.write_bytes(header + chunk(b"IDAT", bytes(compressed)) + chunk(b"IEND", b""))
+
+
 def main() -> None:
     destination = output_directory()
     entries = []
@@ -114,7 +140,11 @@ def main() -> None:
         files = {}
         for channel_index, channel in enumerate(("base-color", "roughness", "normal-dx")):
             path = folder / f"{channel}.png"
-            write_png(path, size, kind, channel, SEED ^ (material_index * 0x9E3779B9) ^ channel_index)
+            texture_seed = SEED ^ (material_index * 0x9E3779B9) ^ channel_index
+            if kind == "hair" and channel == "base-color":
+                write_hair_base_color(path, size, texture_seed)
+            else:
+                write_png(path, size, kind, channel, texture_seed)
             files[channel] = {"path": str(path.relative_to(destination)).replace("\\", "/"), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size}
         entries.append({"id": kind, "resolution": [size, size], "channels": files})
     manifest = {"schemaVersion": 1, "name": "Aevrynd Original Character PBR Materials", "seed": SEED,

@@ -1,5 +1,6 @@
 Texture2D<float> sceneDepth : register(t0);
 Texture2D<float> ambientOcclusion : register(t1);
+Texture2D baseColorTexture : register(t2);
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -9,6 +10,7 @@ struct SkinPaletteJoint
 };
 StructuredBuffer<SkinPaletteJoint> skinPalette : register(t13);
 SamplerState pointClampSampler : register(s0);
+SamplerState materialSampler : register(s1);
 
 cbuffer Scene : register(b0)
 {
@@ -87,7 +89,7 @@ void SkinLocalVertex(SkinnedVertexInput input, out float3 position, out float3 n
     normal = 0.0;
     [unroll] for (uint influence = 0; influence < 4; ++influence)
     {
-        const SkinPaletteJoint joint = skinPalette[input.skinPaletteBase + input.blendIndices[influence]];
+        const SkinPaletteJoint joint = skinPalette[(input.skinPaletteBase & 4095u) + input.blendIndices[influence]];
         const float4 sourcePosition = float4(input.position, 1.0);
         position += float3(dot(joint.transform[0], sourcePosition),
                            dot(joint.transform[1], sourcePosition),
@@ -105,6 +107,10 @@ struct DepthVertexOutput
     nointerpolation float lodCoverage : TEXCOORD0;
     nointerpolation uint lodSeed : TEXCOORD1;
     nointerpolation uint lodInvert : TEXCOORD2;
+    float2 uv : TEXCOORD3;
+    nointerpolation float alphaCutoff : TEXCOORD4;
+    nointerpolation uint alphaMasked : TEXCOORD5;
+    float alpha : TEXCOORD6;
 };
 
 float3 ApplyDepthWind(float3 position, float packedWeight)
@@ -117,7 +123,7 @@ float3 ApplyDepthWind(float3 position, float packedWeight)
 
 DepthVertexOutput DepthWorldVertexMain(WorldVertexInput input)
 {
-    DepthVertexOutput output;
+    DepthVertexOutput output = (DepthVertexOutput)0;
     output.position = mul(viewProjection, float4(ApplyDepthWind(input.position, input.normal.w), 1.0));
     output.lodCoverage = 1.0;
     output.lodSeed = 0;
@@ -134,7 +140,7 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
                                   dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w);
 
-    DepthVertexOutput output;
+    DepthVertexOutput output = (DepthVertexOutput)0;
     output.position = mul(viewProjection, worldPosition);
     output.lodCoverage = float((input.textureData >> 4) & 255) / 255.0;
     output.lodInvert = (input.textureData >> 12) & 1;
@@ -156,17 +162,22 @@ DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input)
                                   dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w);
 
-    DepthVertexOutput output;
+    DepthVertexOutput output = (DepthVertexOutput)0;
     output.position = mul(viewProjection, worldPosition);
     output.lodCoverage = float((input.textureData >> 4) & 255) / 255.0;
     output.lodInvert = (input.textureData >> 12) & 1;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
+    output.uv=input.uv;
+    output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
+    output.alphaMasked=(input.skinPaletteBase>>20)&1u;
+    output.alpha=input.color.a*input.tint.a;
     return output;
 }
 
 void DepthPixelMain(DepthVertexOutput input)
 {
+    if(input.alphaMasked!=0)clip(input.alpha*baseColorTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
     // 固定螢幕雜訊完整重現不透明通道的 LOD 互補淡化。
     if (input.lodCoverage < 0.999)
     {
