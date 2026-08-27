@@ -34,6 +34,7 @@ public:
     void Toggle();
     uint32_t RenderWidth()const{return Enabled()?renderWidth_:outputWidth_;}
     uint32_t RenderHeight()const{return Enabled()?renderHeight_:outputHeight_;}
+    D3D12_CPU_DESCRIPTOR_HANDLE SceneRenderTargetView(bool srgb)const{D3D12_CPU_DESCRIPTOR_HANDLE handle=rtvHeap_?rtvHeap_->GetCPUDescriptorHandleForHeapStart():D3D12_CPU_DESCRIPTOR_HANDLE{};if(srgb)handle.ptr+=rtvStep_;return handle;}
     D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView()const{return dsvHeap_?dsvHeap_->GetCPUDescriptorHandleForHeapStart():D3D12_CPU_DESCRIPTOR_HANDLE{};}
 private:
     bool CreateResources(uint32_t outputWidth,uint32_t outputHeight);

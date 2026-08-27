@@ -391,16 +391,6 @@ float3 AcesToneMap(float3 color)
     return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
 }
 
-float3 LinearToSrgb(float3 linearColor)
-{
-    linearColor = saturate(linearColor);
-    const float3 low = linearColor * 12.92;
-    const float3 high = 1.055 * pow(linearColor, 1.0 / 2.4) - 0.055;
-    return float3(linearColor.x <= 0.0031308 ? low.x : high.x,
-                  linearColor.y <= 0.0031308 ? low.y : high.y,
-                  linearColor.z <= 0.0031308 ? low.z : high.z);
-}
-
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     const float3 geometricNormal = normalize(input.normal.xyz);
@@ -529,7 +519,7 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float distanceFog = saturate((cameraDistance - cameraFogStart.w) / max(0.001, fogEndEnabled.x - cameraFogStart.w));
     const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
     const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
-    // World shader 的材質、天空、水與霧均在線性空間合成；UNORM RTV 前需明確轉為 sRGB。
+    // 世界著色器輸出線性顯示值；sRGB RTV 會先在線性空間混合透明材質，再由硬體編碼。
     const float outputAlpha = input.materialClass == 3 ? 1.0 : input.color.a;
-    return float4(LinearToSrgb(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount))), outputAlpha);
+    return float4(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount)), outputAlpha);
 }

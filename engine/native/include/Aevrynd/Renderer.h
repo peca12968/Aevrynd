@@ -109,6 +109,8 @@ struct RendererStats {
     unsigned outputWidth{},outputHeight{};
     CanvasViewport canvasViewport{};
     uint64_t resizeCount{};
+    bool linearWorldBlending{};
+    size_t worldSrgbRenderTargetViews{};
     size_t lastSubmittedVertices{};
     size_t lastSubmittedWorldVertices{};
     size_t lastSubmittedWorldIndices{};

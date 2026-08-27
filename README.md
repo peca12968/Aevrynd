@@ -120,6 +120,7 @@ Games/
 - Scene/ECS 3D 橋接可批次同步 Transform、雙材質 Mesh LOD 與局部 PointLight；1,000 entity 自動測試涵蓋 visibility layer、完整燈光 transform、stale handle、slot 退役與記憶體修剪
 - 有界 CPU profiler 提供跨執行緒 scope、counter、gauge、固定 frame ring、JSON／CSV 匯出與記憶體修剪；非法數值、跨幀 scope 與容量溢位會被拒絕並留下 dropped telemetry
 - World shader 採用 Cook-Torrance GGX、Smith 幾何遮蔽、Schlick Fresnel、能量守恆漫反射與 ACES tone mapping，並以精確 sRGB 輸出轉換及 CPU 黃金參考測試避免 gamma 錯誤
+- 3D World pass 使用成對 UNORM／sRGB RTV：不透明、透明水體與 3D overlay 由硬體在線性顯示空間完成混合及 sRGB 編碼，2D Canvas 再切回 UNORM，避免河岸、霧與 UI 發生 gamma 空間混色或重複編碼；一般交換鏈僅增加三個 RTV 描述符，DLSS 輸入僅增加一個
 - Terrain 材質以單一 handle 原子管理草地、土壤與岩石九張 BC PBR 貼圖，依高度、坡度與世界程序雜訊混合三層；Ultra shader 固定最多 15 次材質取樣，instance 維持 124 bytes、root signature 維持 63 DWORD，三層 1K 完整 mip 常駐約 8 MiB
 - MeshProcessing3D 提供退化面移除、完整頂點屬性去重、平滑／硬邊法線重建、保護 UV 與法線接縫的保守 LOD，以及具實測 cache miss 改善的索引重排
 - Engine Lab 的靜態開放世界景觀包含 Ultra 自然地形、蜿蜒河流、森林、岩石、聚落、連續多峰山脈與地標塔；天空加入固定成本且零新增 GPU 資源的日照程序雲層，分離靜態／動態 Scene3D 提交並保留跨場景完整統計
@@ -151,7 +152,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.4 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.6 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

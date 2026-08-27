@@ -29,6 +29,8 @@ inline double PbrPointLightAttenuation(double distance,double radius){if(!std::i
 
 inline double PbrAcesToneMap(double color){color=(std::max)(color,0.0)*1.1;return(std::clamp)((color*(2.51*color+.03))/(color*(2.43*color+.59)+.14),0.0,1.0);}
 inline double PbrLinearToSrgb(double linearColor){if(!std::isfinite(linearColor))return 0;linearColor=(std::clamp)(linearColor,0.0,1.0);return linearColor<=.0031308?linearColor*12.92:1.055*std::pow(linearColor,1.0/2.4)-.055;}
+inline double PbrSrgbToLinear(double srgbColor){if(!std::isfinite(srgbColor))return 0;srgbColor=(std::clamp)(srgbColor,0.0,1.0);return srgbColor<=.04045?srgbColor/12.92:std::pow((srgbColor+.055)/1.055,2.4);}
+inline double PbrLinearBlendToSrgb(double sourceLinear,double destinationSrgb,double sourceAlpha){sourceAlpha=(std::clamp)(std::isfinite(sourceAlpha)?sourceAlpha:0.0,0.0,1.0);const double blended=(std::max)(0.0,sourceLinear)*sourceAlpha+PbrSrgbToLinear(destinationSrgb)*(1.0-sourceAlpha);return PbrLinearToSrgb(blended);}
 inline double PbrToneMapToSrgb(double color){return PbrLinearToSrgb(PbrAcesToneMap(color));}
 
 }
