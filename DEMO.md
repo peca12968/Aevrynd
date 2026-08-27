@@ -7,10 +7,10 @@
 ## Riftwarden 2.5D demo
 
 ```text
-games/riftwarden/dist/Riftwarden-Demo-v2.17.0-Engine-v2.45.0.exe
+games/riftwarden/dist/Riftwarden-Demo-v2.18.0-Engine-v2.46.0.exe
 ```
 
-此版本使用 Engine 2.45.0 的低記憶體 GPU Mesh LOD 資源鏈、有界 shadow-only caster、相鄰層淡化、解析天空環境光與物理水面 Fresnel。自動 LOD 預設只保留第 0 級 CPU 查詢幾何，其餘層級僅駐留 GPU；啟動時不需要 Qwen，按 `F3` 可查看引擎、場景剔除與記憶體遙測。
+此版本使用 Engine 2.46.0 的級聯感知陰影批次、低記憶體 GPU Mesh LOD 資源鏈、有界 shadow-only caster、相鄰層淡化、解析天空環境光與物理水面 Fresnel。跨級聯物件只上傳一次實例資料，啟動時不需要 Qwen，按 `F3` 可查看引擎、場景剔除與記憶體遙測。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-native.ps1
@@ -19,10 +19,10 @@ powershell -ExecutionPolicy Bypass -File .\build-native.ps1
 ## Engine 3D feature demo
 
 ```text
-games/engine_lab/dist/Aevrynd-Engine-Demo-v2.45.0-Lab-v2.5.0.exe
+games/engine_lab/dist/Aevrynd-Engine-Demo-v2.46.0-Lab-v2.6.0.exe
 ```
 
-新版 EXE 已內嵌 Ground、Wood 與 Brick 三組展示用 CC0 PBR 材質，並直接套用到主要地形、岩體、建築與世界物件；3D 場景先在 FP16 線性 HDR 完成不透明、透明與覆蓋物合成，再統一執行 ACES 與 sRGB 輸出。畫面上方的 `CC0 PBR 3/3` 表示三組材質已成功載入，`LIVE 已貼圖實例/全部實例` 則顯示目前畫面真正使用貼圖的物件數。
+新版 EXE 已內嵌 Ground、Wood 與 Brick 三組展示用 CC0 PBR 材質，並套用級聯感知陰影批次。近、遠物件只送入需要的 shadow cascade，跨區物件仍共用單一 GPU 實例上傳；近級陰影範圍也已覆蓋完整混合帶與 PCF 邊界。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\build-engine-lab.ps1
 ## Frontier open-world demo
 
 ```text
-games/frontier_world/dist/Aevrynd-Frontier-World-Demo-v0.90.0.exe
+games/frontier_world/dist/Aevrynd-Frontier-World-Demo-v0.91.0.exe
 ```
 
 地表、房屋木板、樹皮與岩石會使用四組 CC0 PBR 材質，畫面上方的 `CC0 PBR 4/4` 表示四組材質已成功載入。

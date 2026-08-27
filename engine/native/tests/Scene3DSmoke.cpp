@@ -74,7 +74,8 @@ int main(){
     if (stats.shadowCasters || stats.shadowInstances || stats.shadowSkipped ||
         draw.meshInstances.size() != 1 ||
         draw.meshInstances.front().layer != MeshRenderLayer3D::Opaque ||
-        !draw.meshInstances.front().castsShadow) {
+        !draw.meshInstances.front().castsShadow ||
+        draw.meshInstances.front().shadowCascadeMask != DirectionalShadowNearCascadeBit3D) {
       std::cerr << "Directional shadow scene routing failed\n";
       return 19;
     }
@@ -105,9 +106,21 @@ int main(){
         stats.shadowOnlyInstances != 1 ||
         stats.shadowOnlyBudgetDropped != 1 || draw.meshInstances.size() != 1 ||
         draw.meshInstances.front().layer != MeshRenderLayer3D::ShadowOnly ||
-        !draw.meshInstances.front().castsShadow) {
+        !draw.meshInstances.front().castsShadow ||
+        draw.meshInstances.front().shadowCascadeMask != DirectionalShadowNearCascadeBit3D) {
       std::cerr << "Bounded shadow-only scene routing failed\n";
       return 33;
+    }
+    Scene3D farCascadeScene;
+    farCascadeScene.SetBoxMesh(
+        {{7}, boxCpu->Bounds(), boxCpu->vertices.size(), boxCpu->indices.size(), boxCpu});
+    farCascadeScene.Box({0, 1, 50}, {2, 2, 2}, {1, 1, 1, 1});
+    draw.Clear();
+    stats = farCascadeScene.Submit(draw, camera, {1280, 720});
+    if (draw.meshInstances.size() != 1 ||
+        draw.meshInstances.front().shadowCascadeMask != DirectionalShadowFarCascadeBit3D) {
+      std::cerr << "Far cascade scene routing failed\n";
+      return 36;
     }
     Scene3D distantShadowScene;
     distantShadowScene.SetBoxMesh(

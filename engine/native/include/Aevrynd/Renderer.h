@@ -51,12 +51,21 @@ constexpr uint32_t UnpackMeshInstanceLodSeed3D(uint32_t value){return(value&Mesh
 constexpr bool UnpackMeshInstanceLodInvert3D(uint32_t value){return(value&MeshInstanceLodInvertBit3D)!=0;}
 inline bool MeshInstanceLodSampleSurvives3D(uint32_t value,float threshold){const float transition=UnpackMeshInstanceLodCoverage3D(value);threshold=Clamp(std::isfinite(threshold)?threshold:1.f,0.f,1.f);return UnpackMeshInstanceLodInvert3D(value)?threshold>transition:threshold<=transition;}
 enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay,ShadowOnly};
-struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};};
+static constexpr uint8_t DirectionalShadowNearCascadeBit3D=1u,DirectionalShadowFarCascadeBit3D=2u,DirectionalShadowAllCascades3D=DirectionalShadowNearCascadeBit3D|DirectionalShadowFarCascadeBit3D;
+struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};};
 constexpr bool TransparentBackToFront3D(const MeshInstance3D& left,const MeshInstance3D& right){return left.cameraDepth>right.cameraDepth;}
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 constexpr uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,float splitDistance=32.f){return std::isfinite(cameraDistance)&&cameraDistance>=splitDistance?1u:0u;}
 inline float SnapDirectionalShadowCoordinate3D(float value,float texelWorldSize){return std::isfinite(value)&&std::isfinite(texelWorldSize)&&texelWorldSize>0.f?std::round(value/texelWorldSize)*texelWorldSize:value;}
 inline float DirectionalShadowCascadeBlend3D(float cameraDistance,float splitDistance=32.f,float transitionWidth=6.f){if(!std::isfinite(cameraDistance)||!std::isfinite(splitDistance)||!std::isfinite(transitionWidth)||transitionWidth<=0.f)return cameraDistance>=splitDistance?1.f:0.f;const float value=Clamp((cameraDistance-(splitDistance-transitionWidth*.5f))/transitionWidth,0.f,1.f);return value*value*(3.f-2.f*value);}
+inline uint8_t DirectionalShadowCasterCascadeMask3D(Vec3 center,float radius,Vec3 cameraPosition,Vec3 lightDirection,float splitDistance=32.f,float transitionWidth=6.f){
+    // 以包圍球加上光線水平投影估算陰影可到達範圍；資料不可靠時保守保留兩級聯。
+    if(!std::isfinite(center.x)||!std::isfinite(center.y)||!std::isfinite(center.z)||!std::isfinite(radius)||radius<0.f||!std::isfinite(cameraPosition.x)||!std::isfinite(cameraPosition.y)||!std::isfinite(cameraPosition.z)||!std::isfinite(lightDirection.x)||!std::isfinite(lightDirection.y)||!std::isfinite(lightDirection.z)||!std::isfinite(splitDistance)||splitDistance<=0.f||!std::isfinite(transitionWidth)||transitionWidth<0.f)return DirectionalShadowAllCascades3D;
+    lightDirection=Normalize(lightDirection);const float vertical=std::abs(lightDirection.y);if(vertical<.05f)return DirectionalShadowAllCascades3D;
+    const float horizontal=std::sqrt(lightDirection.x*lightDirection.x+lightDirection.z*lightDirection.z),shadowReach=radius*(1.f+horizontal/vertical),distance=Length(center-cameraPosition),halfTransition=transitionWidth*.5f;
+    if(!std::isfinite(shadowReach)||!std::isfinite(distance))return DirectionalShadowAllCascades3D;
+    uint8_t mask{};if(distance-shadowReach<=splitDistance+halfTransition)mask|=DirectionalShadowNearCascadeBit3D;if(distance+shadowReach>=splitDistance-halfTransition)mask|=DirectionalShadowFarCascadeBit3D;return mask;
+}
 inline float RayleighPhase3D(float cosine){cosine=Clamp(cosine,-1.f,1.f);return 3.f*(1.f+cosine*cosine)/(16.f*3.14159265359f);}
 inline float MiePhase3D(float cosine,float anisotropy=.76f){cosine=Clamp(cosine,-1.f,1.f);anisotropy=Clamp(anisotropy,-.95f,.95f);const float squared=anisotropy*anisotropy,denominator=(std::max)(.0001f,1.f+squared-2.f*anisotropy*cosine);return 3.f*(1.f-squared)*(1.f+cosine*cosine)/(8.f*3.14159265359f*(2.f+squared)*std::pow(denominator,1.5f));}
 inline float WaterFresnel3D(float viewNormalCosine,float reflectance=.02f){const float inverse=1.f-Clamp(viewNormalCosine,0.f,1.f),inverse2=inverse*inverse;return Clamp(reflectance+(1.f-reflectance)*inverse2*inverse2*inverse,0.f,1.f);}
@@ -146,6 +155,10 @@ struct RendererStats {
     size_t lastSubmittedTerrainInstances{};
     size_t lastDirectionalShadowCasters{};
     size_t lastDirectionalShadowDrawCalls{};
+    std::array<size_t,2> lastDirectionalShadowCascadeInstances{};
+    std::array<size_t,2> lastDirectionalShadowCascadeDrawCalls{};
+    size_t lastDirectionalShadowSharedInstances{};
+    size_t lastDirectionalShadowInstancePassesSaved{};
     size_t directionalShadowMapBytes{};
     uint64_t directionalShadowMapAllocations{};
     uint64_t directionalShadowMapReleases{};
@@ -309,7 +322,7 @@ public:
     static size_t TrimSystemGlyphCache(size_t retainedGlyphs=RetainedSystemGlyphsAfterTrim);
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
-    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,float cameraDepth=std::numeric_limits<float>::quiet_NaN(),bool castsShadow=true,float lodCoverage=1.f,uint32_t lodSeed=0,bool lodInvert=false){if(mesh){materialClass=NormalizeMaterialClass3D(materialClass);if(materialClass==MaterialClass3D::Water)layer=MeshRenderLayer3D::Transparent;if(!std::isfinite(cameraDepth))cameraDepth=TransformPoint(viewProjection_,TransformPoint(transform,{})).z;lodCoverage=Clamp(std::isfinite(lodCoverage)?lodCoverage:1.f,0.f,1.f);lodSeed=(lodSeed&7u)|(lodInvert?8u:0u);meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale),useUv,materialClass,cameraDepth,castsShadow,lodCoverage,lodSeed});}}
+    void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,float cameraDepth=std::numeric_limits<float>::quiet_NaN(),bool castsShadow=true,float lodCoverage=1.f,uint32_t lodSeed=0,bool lodInvert=false,uint8_t shadowCascadeMask=DirectionalShadowAllCascades3D){if(mesh){materialClass=NormalizeMaterialClass3D(materialClass);if(materialClass==MaterialClass3D::Water)layer=MeshRenderLayer3D::Transparent;if(!std::isfinite(cameraDepth))cameraDepth=TransformPoint(viewProjection_,TransformPoint(transform,{})).z;lodCoverage=Clamp(std::isfinite(lodCoverage)?lodCoverage:1.f,0.f,1.f);lodSeed=(lodSeed&7u)|(lodInvert?8u:0u);shadowCascadeMask=castsShadow?(shadowCascadeMask&DirectionalShadowAllCascades3D):0u;meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale),useUv,materialClass,cameraDepth,castsShadow&&shadowCascadeMask!=0,lodCoverage,lodSeed,shadowCascadeMask});}}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
