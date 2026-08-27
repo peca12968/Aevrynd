@@ -3,7 +3,7 @@
   "title": "Aevrynd Frontier World",
   "description": "A streamed MMO-world vertical slice with deterministic procedural chunks, house construction, melee combat, monsters, and progression.",
   "version": "0.69.0",
-  "engineVersion": "2.10.0",
+  "engineVersion": "2.11.0",
   "currentOptimization": ["named-pbr-material-library", "atomic-material-batch-loading", "centralized-texture-release"],
   "platform": "windows-x64",
   "renderer": "directx12",

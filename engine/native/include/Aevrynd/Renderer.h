@@ -53,6 +53,7 @@ struct DrawListStats2D {
     size_t primitiveCullTests{},primitiveCulled{},primitiveCulledTriangles{};
     size_t primitiveContained{},primitiveContainedTriangles{};
     size_t ellipseSegments{},ellipseTrigonometricEvaluations{},ellipseTrigonometricEvaluationsSaved{};
+    size_t ellipseStepCacheHits{},ellipseStepCacheMisses{};
     size_t sharedVertexTransforms{},sharedVertexTransformsSaved{};
     size_t primitiveColorPacks{},primitiveColorPacksSaved{};
     size_t geometryBatches{},geometryCulledBatches{},geometryVertices{},geometryTransformsSaved{};
@@ -60,6 +61,7 @@ struct DrawListStats2D {
     uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalPrimitiveContainedTriangles{};
     uint64_t totalEllipseSegments{},totalEllipseTrigonometricEvaluationsSaved{};
+    uint64_t totalEllipseStepCacheHits{},totalEllipseStepCacheMisses{};
     uint64_t totalSharedVertexTransforms{},totalSharedVertexTransformsSaved{};
     uint64_t totalPrimitiveColorPacks{},totalPrimitiveColorPacksSaved{};
     uint64_t totalTextSourcePixels{},totalTextSpans{};
@@ -91,6 +93,7 @@ struct RendererStats {
     size_t totalDroppedWorldIndices{};
     size_t lastSubmittedMeshInstances{};
     size_t lastSubmittedOverlayInstances{};
+    size_t lastSubmittedTexturedMeshInstances{};
     size_t residentInstanceGroups{};
     size_t peakResidentInstanceGroups{};
     size_t residentInstanceGroupCapacityBytes{};
@@ -214,7 +217,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -258,6 +261,8 @@ public:
     std::vector<MeshInstance3D> meshInstances;
 private:
     enum class PrimitiveClipResult:uint8_t {Culled,Contained,Partial};
+    struct EllipseStepCacheEntry {int segments{};float cosine{},sine{};uint64_t lastUsed{};};
+    struct EllipseStepResult {float cosine{},sine{};bool cached{};};
     void UpdateTransformIdentity2D(){transformIdentity_=transform_.translation.x==0.f&&transform_.translation.y==0.f&&transform_.scale.x==1.f&&transform_.scale.y==1.f&&transform_.rotation==0.f;}
     Vec2 ApplyTransform2D(Vec2 point)const{if(transformIdentity_)return point;const Vec2 local{(point.x-transform_.pivot.x)*transform_.scale.x,(point.y-transform_.pivot.y)*transform_.scale.y};return{local.x*transformCosine_-local.y*transformSine_+transform_.pivot.x+transform_.translation.x,local.x*transformSine_+local.y*transformCosine_+transform_.pivot.y+transform_.translation.y};}
     PrimitiveClipResult ClassifyTransformedBounds(Vec2 minimum,Vec2 maximum)const;
@@ -267,6 +272,7 @@ private:
     void CullTextQuad();
     void RecordSharedVertexTransforms(size_t transforms,size_t saved);
     void RecordPrimitiveColorPacks(size_t packs,size_t saved);
+    EllipseStepResult EllipseStep(int segments);
     PrimitiveClipResult ClassifyTransformedPrimitive(std::span<const Vec2> points,float alpha,size_t triangles);
     PrimitiveClipResult ClassifyTessellatedPrimitive(Vec2 minimum,Vec2 maximum,Color color,size_t triangles);
     Transform2D transform_{};
@@ -281,6 +287,8 @@ private:
     DrawListStats2D stats_{};
     size_t lastReleasedBytes_{};
     uint64_t trimCount_{};
+    std::array<EllipseStepCacheEntry,4> ellipseStepCache_{};
+    uint64_t ellipseStepCacheClock_{};
     bool backfaceCulling_{true};
     DrawListCapacityProfile capacityProfile_{DrawListCapacityProfile::Frame};
 };
