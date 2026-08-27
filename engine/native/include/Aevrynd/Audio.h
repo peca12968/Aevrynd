@@ -26,6 +26,7 @@ struct AudioLoadResult {
 };
 
 AudioLoadResult LoadWave(std::span<const uint8_t> source);
+AudioLoadResult LoadWave(std::vector<uint8_t>&& source);
 AudioLoadResult LoadWaveFile(const std::filesystem::path& path);
 AudioClip GenerateTone(float frequency,float durationSeconds,float amplitude=.25f,uint32_t sampleRate=48000);
 

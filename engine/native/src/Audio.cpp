@@ -6,8 +6,8 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <numbers>
-#include <sstream>
 #include <unordered_map>
 
 namespace Aevrynd {
@@ -15,16 +15,22 @@ namespace {
 uint16_t ReadU16(std::span<const uint8_t> source,std::size_t offset){return uint16_t(source[offset])|uint16_t(source[offset+1])<<8;}
 uint32_t ReadU32(std::span<const uint8_t> source,std::size_t offset){return uint32_t(source[offset])|uint32_t(source[offset+1])<<8|uint32_t(source[offset+2])<<16|uint32_t(source[offset+3])<<24;}
 bool Matches(std::span<const uint8_t> source,std::size_t offset,std::string_view text){return offset+text.size()<=source.size()&&std::equal(text.begin(),text.end(),source.begin()+offset);}
+struct ParsedWave {uint32_t sampleRate{};uint16_t channels{},bitsPerSample{};std::size_t sampleOffset{},sampleBytes{};std::string error;explicit operator bool()const{return error.empty();}};
+ParsedWave ParseWave(std::span<const uint8_t> source){
+    if(source.size()<12||!Matches(source,0,"RIFF")||!Matches(source,8,"WAVE"))return{{},{},{},{},{},"Invalid RIFF/WAVE header"};const std::size_t containerSize=std::size_t(ReadU32(source,4))+8;if(containerSize>source.size()||containerSize<12)return{{},{},{},{},{},"Invalid RIFF container size"};
+    uint16_t formatTag{},channels{},bitsPerSample{},blockAlign{};uint32_t sampleRate{},byteRate{};std::size_t sampleOffset{},sampleBytes{};bool hasFormat{};
+    for(std::size_t offset=12;offset+8<=containerSize;){const uint32_t chunkSize=ReadU32(source,offset+4);const std::size_t payload=offset+8,next=payload+std::size_t(chunkSize)+(chunkSize&1u);if(payload+chunkSize>containerSize||next>containerSize)return{{},{},{},{},{},"WAVE chunk exceeds container"};if(Matches(source,offset,"fmt ")){if(chunkSize<16)return{{},{},{},{},{},"WAVE format chunk is too small"};formatTag=ReadU16(source,payload);channels=ReadU16(source,payload+2);sampleRate=ReadU32(source,payload+4);byteRate=ReadU32(source,payload+8);blockAlign=ReadU16(source,payload+12);bitsPerSample=ReadU16(source,payload+14);hasFormat=true;}else if(Matches(source,offset,"data")){sampleOffset=payload;sampleBytes=chunkSize;}offset=next;}
+    if(!hasFormat||!sampleBytes)return{{},{},{},{},{},"WAVE requires format and sample data"};if(formatTag!=WAVE_FORMAT_PCM)return{{},{},{},{},{},"Only PCM WAVE data is supported"};const uint16_t expectedBlock=uint16_t(channels*(bitsPerSample/8));if(sampleRate<8000||sampleRate>192000||(channels!=1&&channels!=2)||(bitsPerSample!=8&&bitsPerSample!=16)||sampleBytes%expectedBlock||blockAlign!=expectedBlock||byteRate!=sampleRate*blockAlign)return{{},{},{},{},{},"Unsupported or inconsistent PCM format"};return{sampleRate,channels,bitsPerSample,sampleOffset,sampleBytes,{}};
+}
 }
 
 AudioLoadResult LoadWave(std::span<const uint8_t> source){
-    if(source.size()<12||!Matches(source,0,"RIFF")||!Matches(source,8,"WAVE"))return{{},"Invalid RIFF/WAVE header"};const std::size_t containerSize=std::size_t(ReadU32(source,4))+8;if(containerSize>source.size()||containerSize<12)return{{},"Invalid RIFF container size"};
-    uint16_t formatTag{},channels{},bitsPerSample{},blockAlign{};uint32_t sampleRate{},byteRate{};std::span<const uint8_t> samples;bool hasFormat{};
-    for(std::size_t offset=12;offset+8<=containerSize;){const uint32_t chunkSize=ReadU32(source,offset+4);const std::size_t payload=offset+8,next=payload+std::size_t(chunkSize)+(chunkSize&1u);if(payload+chunkSize>containerSize||next>containerSize)return{{},"WAVE chunk exceeds container"};if(Matches(source,offset,"fmt ")){if(chunkSize<16)return{{},"WAVE format chunk is too small"};formatTag=ReadU16(source,payload);channels=ReadU16(source,payload+2);sampleRate=ReadU32(source,payload+4);byteRate=ReadU32(source,payload+8);blockAlign=ReadU16(source,payload+12);bitsPerSample=ReadU16(source,payload+14);hasFormat=true;}else if(Matches(source,offset,"data"))samples=source.subspan(payload,chunkSize);offset=next;}
-    if(!hasFormat||samples.empty())return{{},"WAVE requires format and sample data"};if(formatTag!=WAVE_FORMAT_PCM)return{{},"Only PCM WAVE data is supported"};AudioClip clip{sampleRate,channels,bitsPerSample,{samples.begin(),samples.end()}};const uint16_t expectedBlock=uint16_t(channels*(bitsPerSample/8));if(!clip.Valid()||blockAlign!=expectedBlock||byteRate!=sampleRate*blockAlign)return{{},"Unsupported or inconsistent PCM format"};return{std::move(clip),{}};
+    const ParsedWave parsed=ParseWave(source);if(!parsed)return{{},parsed.error};const auto samples=source.subspan(parsed.sampleOffset,parsed.sampleBytes);return{{parsed.sampleRate,parsed.channels,parsed.bitsPerSample,{samples.begin(),samples.end()}},{}};
 }
 
-AudioLoadResult LoadWaveFile(const std::filesystem::path& path){std::ifstream file(path,std::ios::binary);if(!file)return{{},"Unable to open WAVE file: "+path.string()};std::vector<uint8_t> source{std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>()};return LoadWave(source);}
+AudioLoadResult LoadWave(std::vector<uint8_t>&& source){const ParsedWave parsed=ParseWave(source);if(!parsed)return{{},parsed.error};std::memmove(source.data(),source.data()+parsed.sampleOffset,parsed.sampleBytes);source.resize(parsed.sampleBytes);return{{parsed.sampleRate,parsed.channels,parsed.bitsPerSample,std::move(source)},{}};}
+
+AudioLoadResult LoadWaveFile(const std::filesystem::path& path){std::ifstream file(path,std::ios::binary|std::ios::ate);if(!file)return{{},"Unable to open WAVE file: "+path.string()};const std::streamoff length=file.tellg();if(length<0||uintmax_t(length)>(std::numeric_limits<std::size_t>::max)())return{{},"Unable to size WAVE file: "+path.string()};std::vector<uint8_t> source;source.resize(std::size_t(length));file.seekg(0,std::ios::beg);if(!source.empty()&&!file.read(reinterpret_cast<char*>(source.data()),std::streamsize(source.size())))return{{},"Unable to read WAVE file: "+path.string()};return LoadWave(std::move(source));}
 
 AudioClip GenerateTone(float frequency,float durationSeconds,float amplitude,uint32_t sampleRate){AudioClip clip;clip.sampleRate=(std::max)(8000u,(std::min)(192000u,sampleRate));clip.channels=1;clip.bitsPerSample=16;const float duration=(std::max)(.001f,durationSeconds),gain=(std::max)(0.f,(std::min)(1.f,amplitude)),safeFrequency=(std::max)(0.f,(std::min)(frequency,float(clip.sampleRate)*.5f));const std::size_t frames=std::size_t(std::ceil(duration*clip.sampleRate));clip.samples.resize(frames*sizeof(int16_t));for(std::size_t index=0;index<frames;++index){const float time=float(index)/float(clip.sampleRate),release=(std::min)(1.f,(duration-time)/.035f),attack=(std::min)(1.f,time/.006f),envelope=(std::max)(0.f,(std::min)(attack,release));const int16_t sample=int16_t(std::sin(time*safeFrequency*2.f*std::numbers::pi_v<float>)*gain*envelope*32767.f);std::memcpy(clip.samples.data()+index*sizeof(sample),&sample,sizeof(sample));}return clip;}
 
