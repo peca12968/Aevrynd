@@ -18,6 +18,7 @@ add_library(AevryndEngine STATIC
   src/MeshProcessing3D.cpp
   src/Navigation3D.cpp
   src/PhysicsWorld3D.cpp
+  src/PbrMaterialCooker3D.cpp
   src/Profiling.cpp
   src/ProceduralPlacement3D.cpp
   src/SceneECS3D.cpp
@@ -217,6 +218,11 @@ add_executable(AevryndAssetManifestTest tests/AssetManifestSmoke.cpp)
 target_compile_options(AevryndAssetManifestTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAssetManifestTest PRIVATE AevryndEngine)
 add_test(NAME AevryndAssetManifestTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAssetManifestTest>'")
+
+add_executable(AevryndPbrMaterialCooker3DTest tests/PbrMaterialCooker3DSmoke.cpp)
+target_compile_options(AevryndPbrMaterialCooker3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndPbrMaterialCooker3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndPbrMaterialCooker3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndPbrMaterialCooker3DTest>'")
 
 add_executable(AevryndProfilingTest tests/ProfilingSmoke.cpp)
 target_compile_options(AevryndProfilingTest PRIVATE /W4 /permissive- /utf-8)

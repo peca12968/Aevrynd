@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 namespace Aevrynd {
+struct PbrMaterialCookPlan3D;
 struct MaterialAssetDefinition3D {
     std::string name;
     MaterialTextureSetDefinition3D textures{};
@@ -27,6 +28,7 @@ public:
     bool Initialize(Engine& engine,std::filesystem::path assetRoot={});
     bool Load(MaterialAssetDefinition3D definition);
     bool LoadAll(std::span<const MaterialAssetDefinition3D> definitions);
+    bool LoadCookPlan(const PbrMaterialCookPlan3D& plan);
     bool Unload(std::string_view name);
     void Shutdown();
     const Material3D* Find(std::string_view name)const;

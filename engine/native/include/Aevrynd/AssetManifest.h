@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -27,6 +28,22 @@ struct TextureMetadata {
     TextureResolutionTier resolutionTier{TextureResolutionTier::General};
     uint32_t width{};
     uint32_t height{};
+    bool directXNormal{true};
+};
+
+struct AssetMaterialLayerMetadata {
+    std::string baseColorTexture;
+    std::string roughnessTexture;
+    std::string normalTexture;
+};
+
+struct AssetMaterialMetadata {
+    std::array<AssetMaterialLayerMetadata,3> layers{};
+    TextureResolutionTier resolutionTier{TextureResolutionTier::Hero};
+    float textureScale{.25f};
+    bool useUv{};
+    bool castsShadow{true};
+    uint8_t materialClass{};
 };
 
 struct AssetLodMetadata {
@@ -74,6 +91,7 @@ struct AssetManifestEntry {
     AssetAtlasMetadata atlas;
     AssetTrimSheetMetadata trimSheet;
     AssetPbrMetadata pbr;
+    AssetMaterialMetadata material;
     AssetMeshOptimizationMetadata mesh;
     std::string cacheKey;
 };
@@ -96,7 +114,7 @@ struct AssetManifestLimits {
 
 enum class AssetManifestErrorCode : uint8_t {
     None,UnsupportedVersion,LimitExceeded,InvalidIdentifier,InvalidPath,PathEscapesRoot,
-    InvalidSource,InvalidHash,LicenseNotCc0,CommercialUseDenied,InvalidTexture,
+    InvalidSource,InvalidHash,LicenseNotCc0,CommercialUseDenied,InvalidTexture,InvalidMaterial,
     InvalidLod,InvalidAtlas,InvalidTrimSheet,InvalidPbr,InvalidMesh,DuplicateIdentifier,DuplicatePath
 };
 
@@ -109,8 +127,8 @@ struct AssetManifestError {
 
 class AssetManifestValidator {
 public:
-    static constexpr uint32_t CacheSchemaVersion=2;
-    static constexpr uint32_t CookerPolicyVersion=1;
+    static constexpr uint32_t CacheSchemaVersion=3;
+    static constexpr uint32_t CookerPolicyVersion=2;
     // 此函式只處理詞法正規化；cooker 開檔時仍須以最終實體路徑阻擋 junction、symlink 與 reparse point 逃逸。
     static bool NormalizeRelativePath(std::string_view input,std::string& output);
     static bool ValidateAndNormalize(const AssetManifest& input,AssetManifest& output,
