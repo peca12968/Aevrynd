@@ -1,0 +1,28 @@
+#include "Aevrynd/Mesh3D.h"
+#include "Aevrynd/Renderer.h"
+#include <cmath>
+#include <iostream>
+#include <limits>
+using namespace Aevrynd;
+
+static float MaximumMagnitude(const VelocityCapture3D& capture){float result{};for(const Vec2 velocity:capture.pixels)result=(std::max)(result,std::abs(velocity.x)+std::abs(velocity.y));return result;}
+
+int main(){
+    HWND window=CreateWindowExW(0,L"STATIC",L"VelocityProbe",WS_OVERLAPPED,0,0,128,128,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+    if(!window)return 1;
+    try{
+        D3D12Renderer renderer;renderer.Initialize(window,128,128,128,128,false);renderer.SetQualitySettings({false,false,false});
+        DrawList pure2D{DrawListCapacityProfile::Minimal2D};pure2D.Quad({32,32},{16,16},{1,1,1,1});renderer.RequestVelocityReadback3D();renderer.Render(pure2D,{0,0,0,1});
+        if(renderer.TakeVelocityReadback3D()||renderer.GetStats().velocityResidentBytes||renderer.GetStats().velocityReadbackRejections!=1){std::cerr<<"Pure 2D allocated velocity resources\n";return 2;}
+        const Mesh3D box=Mesh3D::CreateUnitBox();const auto mesh=renderer.CreateMesh(box.vertices,box.indices);
+        auto make=[&](Matrix4 current,Matrix4 previous,bool valid,bool cut=false){DrawList draw;draw.SetViewProjection(Matrix4::Identity());draw.SetBackfaceCulling(false);draw.SetCameraCut3D(cut);draw.MeshInstance(mesh,current,{1,1,1,1},{},MeshRenderLayer3D::Opaque,{},.25f,false,MaterialClass3D::Surface,std::numeric_limits<float>::quiet_NaN(),false,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,previous,valid);return draw;};
+        renderer.RequestVelocityReadback3D();renderer.Render(make(Matrix4::Identity(),Matrix4::Identity(),true,true),{0,0,0,1});const auto cut=renderer.TakeVelocityReadback3D();
+        renderer.RequestVelocityReadback3D();renderer.Render(make(Matrix4::Identity(),Matrix4::Identity(),true),{0,0,0,1});const auto stationary=renderer.TakeVelocityReadback3D();
+        renderer.RequestVelocityReadback3D();renderer.Render(make(CreateTranslationMatrix({.1f,0,0}),Matrix4::Identity(),true),{0,0,0,1});const auto moving=renderer.TakeVelocityReadback3D();
+        const Vec2 moved=moving?moving->pixels[64*128+64]:Vec2{};if(!mesh||!cut||!stationary||!moving||MaximumMagnitude(*cut)>.01f||MaximumMagnitude(*stationary)>.01f||std::abs(moved.x-6.4f)>.08f||std::abs(moved.y)>.02f){std::cerr<<"Velocity values failed cut="<<(cut?MaximumMagnitude(*cut):-1)<<" static="<<(stationary?MaximumMagnitude(*stationary):-1)<<" moved="<<moved.x<<','<<moved.y<<'\n';return 3;}
+        renderer.Resize(96,64);renderer.RequestVelocityReadback3D();renderer.Render(make(Matrix4::Identity(),Matrix4::Identity(),true,true),{0,0,0,1});const auto resized=renderer.TakeVelocityReadback3D();const RendererStats resizedStats=renderer.GetStats();if(!resized||resized->width!=96||resized->height!=64||MaximumMagnitude(*resized)>.01f||resizedStats.velocityResidentBytes!=96ull*64*4||resizedStats.velocityAllocations!=2||resizedStats.velocityReleases!=1){std::cerr<<"Velocity resize lifecycle failed\n";return 4;}
+        renderer.TrimTransientMemory();const RendererStats trimmed=renderer.GetStats();if(trimmed.velocityResidentBytes||trimmed.velocityReleases!=2||trimmed.temporalHistoryValid){std::cerr<<"Velocity trim lifecycle failed\n";return 5;}
+        renderer.RequestVelocityReadback3D();renderer.Render(make(Matrix4::Identity(),Matrix4::Identity(),true,true),{0,0,0,1});const auto recreated=renderer.TakeVelocityReadback3D();const RendererStats finalStats=renderer.GetStats();if(!recreated||MaximumMagnitude(*recreated)>.01f||finalStats.velocityAllocations!=3||finalStats.velocityReadbackRequests!=6||finalStats.velocityReadbackCompletions!=5||finalStats.velocityReadbackRejections!=1){std::cerr<<"Velocity recreation telemetry failed\n";return 6;}
+        renderer.DestroyMesh(mesh);renderer.WaitIdle();DestroyWindow(window);std::cout<<"velocityPixels="<<moving->pixels.size()<<" movedX="<<moved.x<<" allocations="<<finalStats.velocityAllocations<<" releases="<<finalStats.velocityReleases<<'\n';return 0;
+    }catch(const std::exception& error){std::cerr<<error.what()<<'\n';DestroyWindow(window);return 7;}
+}

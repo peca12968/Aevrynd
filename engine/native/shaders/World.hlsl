@@ -11,7 +11,60 @@ cbuffer Scene : register(b0)
     float4 colorPipeline;
     row_major float4x4 inverseViewProjection;
     float4 worldViewport;
+    row_major float4x4 previousViewProjection;
+    float4 motionParameters;
 };
+
+struct MotionInstanceInput
+{
+    float3 position : POSITION;
+    float4 transformRow0 : INSTANCE0;
+    float4 transformRow1 : INSTANCE1;
+    float4 transformRow2 : INSTANCE2;
+    float4 transformRow3 : INSTANCE3;
+    float4 previousRow0 : PREVIOUS0;
+    float4 previousRow1 : PREVIOUS1;
+    float4 previousRow2 : PREVIOUS2;
+    float4 previousRow3 : PREVIOUS3;
+};
+struct MotionWorldInput { float3 position : POSITION; };
+
+struct MotionVertexOutput
+{
+    float4 position : SV_POSITION;
+    float4 currentClip : TEXCOORD0;
+    float4 previousClip : TEXCOORD1;
+};
+
+MotionVertexOutput VelocityWorldVertexMain(MotionWorldInput input)
+{
+    MotionVertexOutput output;
+    output.currentClip = mul(viewProjection, float4(input.position, 1.0));
+    output.previousClip = mul(previousViewProjection, float4(input.position, 1.0));
+    output.position = output.currentClip;
+    return output;
+}
+
+MotionVertexOutput VelocityInstancedVertexMain(MotionInstanceInput input)
+{
+    const float4 localPosition = float4(input.position, 1.0);
+    const float4 currentWorld = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
+    const float4 previousWorld = float4(dot(input.previousRow0, localPosition), dot(input.previousRow1, localPosition), dot(input.previousRow2, localPosition), dot(input.previousRow3, localPosition));
+    MotionVertexOutput output;
+    output.currentClip = mul(viewProjection, currentWorld);
+    output.previousClip = mul(previousViewProjection, previousWorld);
+    output.position = output.currentClip;
+    return output;
+}
+
+float2 VelocityPixelMain(MotionVertexOutput input) : SV_TARGET
+{
+    if (motionParameters.x < 0.5 || input.currentClip.w <= 1e-6 || input.previousClip.w <= 1e-6)
+        return 0.0;
+    const float2 currentNdc = input.currentClip.xy / input.currentClip.w;
+    const float2 previousNdc = input.previousClip.xy / input.previousClip.w;
+    return (currentNdc - previousNdc) * float2(motionParameters.y, -motionParameters.z);
+}
 cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; };
 cbuffer DrawConstants : register(b2) { uint shadowCascadeIndex; uint drawConstantReserved; };
 
