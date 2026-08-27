@@ -30,6 +30,7 @@ private:
 enum class DrawListCapacityProfile:uint8_t {Frame,Minimal2D};
 enum class BlendMode2D:uint8_t {Alpha,Additive};
 struct DrawSpan2D {size_t firstVertex{},vertexCount{};};
+struct RadialLight2D {Vec2 center{},radius{32,16};Color color{1,1,1,.25f};float intensity{1.f};int segments{18};};
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
@@ -60,6 +61,7 @@ struct DrawListStats2D {
     size_t primitiveColorPacks{},primitiveColorPacksSaved{};
     size_t geometryBatches{},geometryCulledBatches{},geometryVertices{},geometryTransformsSaved{};
     size_t additiveTriangles{},additiveSpans{};
+    size_t radialLightBatches{},radialLightCandidates{},radialLightsSubmitted{},radialLightsCulled{},radialLightsBudgetDropped{};
     uint64_t totalInputTriangles{},totalCulledTriangles{};
     uint64_t totalPrimitiveCulledTriangles{};
     uint64_t totalPrimitiveContainedTriangles{};
@@ -70,6 +72,7 @@ struct DrawListStats2D {
     uint64_t totalTextSourcePixels{},totalTextSpans{};
     uint64_t totalTextContainmentTests{},totalTextContainedSpans{},totalTextContainmentBypassedTriangles{},totalTextCulledSpans{},totalTextCullingBypassedTriangles{};
     uint64_t totalAdditiveTriangles{},totalAdditiveSpans{};
+    uint64_t totalRadialLightBatches{},totalRadialLightCandidates{},totalRadialLightsSubmitted{},totalRadialLightsCulled{},totalRadialLightsBudgetDropped{};
 };
 struct SystemGlyphCacheStats2D {
     size_t residentGlyphs{},residentBytes{},peakResidentGlyphs{},peakResidentBytes{};
@@ -220,12 +223,13 @@ public:
     static constexpr size_t InitialMeshInstanceCapacity=1024;
     static constexpr size_t InitialPointLightCapacity=16;
     static constexpr size_t InitialAdditiveSpanCapacity=32;
+    static constexpr size_t MaxRadialLightsPerBatch=64;
     static constexpr size_t Minimal2DVertexCapacity=256;
     static constexpr size_t MaxSystemGlyphCacheEntries=512;
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);additiveSpans_.reserve(InitialAdditiveSpanCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -266,6 +270,7 @@ public:
     void Circle(Vec2 center,float radius,Color color,int segments=18);
     void Ellipse(Vec2 center,float rx,float ry,Color color,int segments=24);
     void RadialGradientEllipse(Vec2 center,float rx,float ry,Color inner,Color outer,int segments=24);
+    void RadialLights(std::span<const RadialLight2D> lights,size_t maximumLights=MaxRadialLightsPerBatch);
     void EllipseOutline(Vec2 center,float rx,float ry,float width,Color color,int segments=24);
     void ProjectedEllipseShadow(Vec2 base,float rx,float ry,Vec2 lightDirection,float height,float opacity=.4f,int segments=18);
     void Line(Vec2 a,Vec2 b,float width,Color color);
