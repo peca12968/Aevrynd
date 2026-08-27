@@ -128,6 +128,10 @@ Games/
 - 網格級三角形 BVH 可跨 MeshResource3D 實例共用，將大型地形命中由完整三角形掃描縮小為少量候選，同時保留 transform、backface 與最近命中語意
 - ArchitectureMeshes3D 可依尺寸、seed 與 Near／Far 細節級別建立含屋簷、門窗、木樑及煙囪的程序建築；目前 cottage LOD 由 308 面降至 32 面
 - FrameCapture3D 直接由 DX12 back buffer 執行有界 R8G8B8A8 readback 與原子 PNG 輸出；Engine Lab 的 `--capture-demo` 會自動輸出第一人稱、第三人稱、上帝視角及 2.5D 四種實際渲染畫面
+- 方向光使用固定 2048² D32 shadow map、獨立 depth-only world／instanced pass、3×3 comparison PCF 與斜率 bias；材質可明確停用投影，避免天空穹頂、山體與地形污染陰影深度
+- Shadow pass 採三重緩衝、每幀 256-byte 對齊常數緩衝，並回報固定 16 MiB、實際 caster 與 draw call；真陰影啟用時不再建立舊式平面假陰影
+- FrameCapture3D 以最多 262,144 個像素樣本分析平均亮度、變異、全黑與全白比例；不合理曝光不會被計為有效畫面驗證
+- Broadleaf 近景 LOD 使用可重現的分枝、細枝與雙面不規則葉片輪廓；程序 cottage 近景 LOD 增加突出石基、雙側木框窗與五列屋瓦層次
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
@@ -140,7 +144,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.5 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.6 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

@@ -2,12 +2,20 @@
 #include <Windows.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#include <algorithm>
 #include <limits>
 
 using Microsoft::WRL::ComPtr;
 namespace Aevrynd {
 namespace {
 struct CaptureComApartment3D {HRESULT result{CoInitializeEx(nullptr,COINIT_MULTITHREADED)};~CaptureComApartment3D(){if(result==S_OK||result==S_FALSE)CoUninitialize();}};
+}
+
+FrameCaptureAnalysis3D AnalyzeFrameCaptureRgba8(unsigned width,unsigned height,std::size_t rowPitch,std::span<const std::uint8_t> pixels){
+    FrameCaptureAnalysis3D result{};if(!width||!height||width>MaximumFrameCaptureDimension3D||height>MaximumFrameCaptureDimension3D||rowPitch<std::size_t(width)*4||std::size_t(height-1)>(std::numeric_limits<std::size_t>::max)()/rowPitch)return result;const std::size_t required=std::size_t(height-1)*rowPitch+std::size_t(width)*4;if(required>pixels.size())return result;
+    const std::size_t pixelCount=std::size_t(width)*height,sampleStride=(std::max)(std::size_t{1},(pixelCount+MaximumFrameAnalysisSamples3D-1)/MaximumFrameAnalysisSamples3D);std::size_t dark{},bright{};double mean{},m2{};
+    for(std::size_t index=0;index<pixelCount;index+=sampleStride){const std::size_t y=index/width,x=index-y*width,offset=y*rowPitch+x*4;const double red=pixels[offset]/255.0,green=pixels[offset+1]/255.0,blue=pixels[offset+2]/255.0,luminance=.2126*red+.7152*green+.0722*blue;dark+=luminance<.02;bright+=luminance>.98;++result.sampledPixels;const double delta=luminance-mean;mean+=delta/double(result.sampledPixels);m2+=delta*(luminance-mean);}
+    if(!result.sampledPixels)return result;result.valid=true;result.averageLuminance=mean;result.luminanceVariance=result.sampledPixels>1?m2/double(result.sampledPixels-1):0;result.darkPixelFraction=double(dark)/result.sampledPixels;result.brightPixelFraction=double(bright)/result.sampledPixels;return result;
 }
 
 bool EncodeFrameCapturePng3D(const std::filesystem::path& path,unsigned width,unsigned height,std::size_t rowPitch,std::span<const std::uint8_t> pixels){

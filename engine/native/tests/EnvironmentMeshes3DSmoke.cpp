@@ -24,6 +24,11 @@ bool HasSoundTopology(const Mesh3D& mesh){
     }
     return true;
 }
+bool EqualMesh(const Mesh3D& a,const Mesh3D& b){
+    if(a.indices!=b.indices||a.vertices.size()!=b.vertices.size())return false;
+    for(size_t index=0;index<a.vertices.size();++index){const Vertex3D& x=a.vertices[index],&y=b.vertices[index];if(x.x!=y.x||x.y!=y.y||x.z!=y.z||x.normal!=y.normal||x.color!=y.color||x.u!=y.u||x.v!=y.v)return false;}
+    return true;
+}
 }
 
 int main(){
@@ -33,7 +38,8 @@ int main(){
     if(!crownHigh.Valid()||!crownLow.Valid()||crownLow.indices.size()>=crownHigh.indices.size()){std::cerr<<"Crown LOD generation failed\n";return 2;}
     if(!treeLow.Valid()||treeLow.Bounds().extents.y<.6f){std::cerr<<"Tree LOD generation failed\n";return 5;}
     if(!HasSoundTopology(treeNear)||!HasSoundTopology(treeFar)){std::cerr<<"Broadleaf tree topology or normals failed\n";return 9;}
-    if(treeNear.vertices.size()>800||treeFar.vertices.size()>200||treeFar.indices.size()>=treeNear.indices.size()/2){std::cerr<<"Broadleaf tree LOD budget failed\n";return 10;}
+    if(!EqualMesh(treeNear,CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,17))){std::cerr<<"Broadleaf tree seed is not deterministic\n";return 13;}
+    if(treeNear.vertices.size()>1300||treeNear.indices.size()/3>950||treeFar.vertices.size()>200||treeFar.indices.size()>=treeNear.indices.size()/2){std::cerr<<"Broadleaf tree LOD budget failed\n";return 10;}
     const MeshBounds3D nearBounds=treeNear.Bounds(),farBounds=treeFar.Bounds();
     if(nearBounds.extents.y<1.f||nearBounds.extents.x<.45f||nearBounds.extents.z<.35f||farBounds.extents.y<.8f){std::cerr<<"Broadleaf tree silhouette bounds failed\n";return 11;}
     const Mesh3D treeVariation=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,19);bool varied=false;for(size_t index=0;index<treeNear.vertices.size()&&index<treeVariation.vertices.size();++index){const Vertex3D& a=treeNear.vertices[index],&b=treeVariation.vertices[index];if(std::abs(a.x-b.x)+std::abs(a.y-b.y)+std::abs(a.z-b.z)>.001f){varied=true;break;}}if(!varied){std::cerr<<"Broadleaf tree variation failed\n";return 12;}
@@ -43,5 +49,5 @@ int main(){
     if(!ribbon.Valid()||ribbon.vertices.size()!=6||ribbon.indices.size()!=12){std::cerr<<"Curved ribbon generation failed\n";return 3;}
     const Vertex3D& ribbonA=ribbon.vertices[ribbon.indices[0]],&ribbonB=ribbon.vertices[ribbon.indices[1]],&ribbonC=ribbon.vertices[ribbon.indices[2]];if(Cross(Vec3{ribbonB.x-ribbonA.x,ribbonB.y-ribbonA.y,ribbonB.z-ribbonA.z},Vec3{ribbonC.x-ribbonA.x,ribbonC.y-ribbonA.y,ribbonC.z-ribbonA.z}).y<=0){std::cerr<<"Ribbon front face must point upward\n";return 8;}
     if(CreateCurvedRibbonMesh3D(std::span<const Vec3>{centers}.first(2),widths).Valid()){std::cerr<<"Mismatched ribbon inputs must fail\n";return 4;}
-    std::cout<<"grassHighTriangles="<<grassHigh.indices.size()/3<<" grassLowTriangles="<<grassLow.indices.size()/3<<" crownHighTriangles="<<crownHigh.indices.size()/3<<" crownLowTriangles="<<crownLow.indices.size()/3<<" treeNearTriangles="<<treeNear.indices.size()/3<<" treeFarTriangles="<<treeFar.indices.size()/3<<'\n';
+    std::cout<<"grassHighTriangles="<<grassHigh.indices.size()/3<<" grassLowTriangles="<<grassLow.indices.size()/3<<" crownHighTriangles="<<crownHigh.indices.size()/3<<" crownLowTriangles="<<crownLow.indices.size()/3<<" treeNearTriangles="<<treeNear.indices.size()/3<<" treeFarTriangles="<<treeFar.indices.size()/3<<" treeNearVertices="<<treeNear.vertices.size()<<" treeFarVertices="<<treeFar.vertices.size()<<'\n';
 }

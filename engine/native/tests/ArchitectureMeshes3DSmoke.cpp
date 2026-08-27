@@ -15,8 +15,9 @@ int main(){
     const Mesh3D nearMesh=CreateCottageMesh3D(settings),repeatMesh=CreateCottageMesh3D(settings);settings.detail=ArchitectureMeshDetail3D::Far;const Mesh3D farMesh=CreateCottageMesh3D(settings);
     if(!SoundMesh(nearMesh)||!SoundMesh(farMesh)){std::cerr<<"Architecture topology or normals failed\n";return 1;}
     if(!EqualMesh(nearMesh,repeatMesh)){std::cerr<<"Architecture generation is not deterministic\n";return 2;}
-    if(nearMesh.vertices.size()>700||farMesh.vertices.size()>100||farMesh.indices.size()>=nearMesh.indices.size()/3){std::cerr<<"Architecture LOD budget failed\n";return 3;}
+    if(nearMesh.vertices.size()>1100||nearMesh.indices.size()/3>550||farMesh.vertices.size()>100||farMesh.indices.size()>=nearMesh.indices.size()/5){std::cerr<<"Architecture LOD budget failed\n";return 3;}
     const MeshBounds3D bounds=nearMesh.Bounds();if(bounds.extents.x<3.7f||bounds.extents.y<2.4f||bounds.extents.z<2.7f||bounds.center.y<2.f){std::cerr<<"Architecture bounds failed\n";return 4;}
+    if(nearMesh.indices.size()/3<farMesh.indices.size()/3+300){std::cerr<<"Near architecture detail is missing\n";return 6;}
     settings.width=1.f;if(CreateCottageMesh3D(settings).Valid()){std::cerr<<"Invalid architecture dimensions accepted\n";return 5;}
     std::cout<<"nearTriangles="<<nearMesh.indices.size()/3<<" farTriangles="<<farMesh.indices.size()/3<<" nearVertices="<<nearMesh.vertices.size()<<" farVertices="<<farMesh.vertices.size()<<'\n';
 }

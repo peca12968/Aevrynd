@@ -65,6 +65,8 @@ aevrynd_compile_shader(CanvasPixelShader.h Canvas.hlsl CanvasPixelMain ps_5_0 Ca
 aevrynd_compile_shader(WorldVertexShader.h World.hlsl WorldVertexMain vs_5_0 WorldVertexShader)
 aevrynd_compile_shader(InstancedVertexShader.h World.hlsl InstancedVertexMain vs_5_0 InstancedVertexShader)
 aevrynd_compile_shader(WorldPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldPixelShader)
+aevrynd_compile_shader(ShadowWorldVertexShader.h World.hlsl ShadowWorldVertexMain vs_5_0 ShadowWorldVertexShader)
+aevrynd_compile_shader(ShadowInstancedVertexShader.h World.hlsl ShadowInstancedVertexMain vs_5_0 ShadowInstancedVertexShader)
 add_custom_target(AevryndShaders DEPENDS ${AEVRYND_SHADER_HEADERS})
 add_dependencies(AevryndEngine AevryndShaders)
 target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl ${AEVRYND_SHADER_HEADERS})

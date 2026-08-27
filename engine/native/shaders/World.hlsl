@@ -9,6 +9,10 @@ cbuffer Scene : register(b0)
     float4 pointPositionRadius[3];
     float4 pointColorIntensity[3];
 };
+cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection; float4 shadowParameters; };
+
+Texture2D<float> shadowTexture : register(t3);
+SamplerComparisonState shadowSampler : register(s1);
 
 Texture2D baseColorTexture : register(t0);
 Texture2D roughnessTexture : register(t1);
@@ -51,7 +55,28 @@ struct WorldPixelInput
     float3 textureData : TEXCOORD3;
     float2 uv : TEXCOORD4;
     nointerpolation uint materialClass : TEXCOORD5;
+    float4 shadowPosition : TEXCOORD6;
 };
+
+struct ShadowVertexOutput { float4 position : SV_POSITION; };
+float3 ApplyWind(float3 position, float packedWeight);
+
+ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
+{
+    ShadowVertexOutput output;
+    output.position = mul(lightViewProjection, float4(ApplyWind(input.position, input.normal.w), 1.0));
+    return output;
+}
+
+ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
+{
+    const float4 localPosition = float4(input.position, 1.0);
+    float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
+    ShadowVertexOutput output;
+    output.position = mul(lightViewProjection, worldPosition);
+    return output;
+}
 
 float3 ApplyWind(float3 position, float packedWeight)
 {
@@ -73,6 +98,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.textureData = float3(0.0, 0.25, 0.0);
     output.uv = input.uv;
     output.materialClass = 0;
+    output.shadowPosition = mul(lightViewProjection, float4(animatedPosition, 1.0));
     return output;
 }
 
@@ -98,6 +124,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
                                 (input.textureData >> 1) & 1);
     output.uv = input.uv;
     output.materialClass = (input.textureData >> 2) & 3;
+    output.shadowPosition = mul(lightViewProjection, worldPosition);
     return output;
 }
 
@@ -105,6 +132,19 @@ float3 BlendWeights(float3 normal)
 {
     const float3 blend = pow(abs(normal), 4.0);
     return blend / max(0.001, blend.x + blend.y + blend.z);
+}
+
+float DirectionalShadow(float4 shadowPosition, float3 normal, float3 lightDirection)
+{
+    const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
+    const float2 uv = float2(projected.x * 0.5 + 0.5, -projected.y * 0.5 + 0.5);
+    if (shadowParameters.x < 0.5 || projected.z <= 0.0 || projected.z >= 1.0 || any(uv < 0.0) || any(uv > 1.0)) return 1.0;
+    const float bias = max(shadowParameters.z, shadowParameters.y * (1.0 - saturate(dot(normal, lightDirection))));
+    float visibility = 0.0;
+    [unroll] for (int y = -1; y <= 1; ++y)
+    [unroll] for (int x = -1; x <= 1; ++x)
+        visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, uv + float2(x, y) * shadowParameters.w, projected.z - bias);
+    return visibility / 9.0;
 }
 
 float4 Triplanar(Texture2D source, float3 worldPosition, float3 normal, float scale)
@@ -289,7 +329,7 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     const float3 ambientDiffuseWeight = (1.0 - ambientFresnel) * (1.0 - metallic);
     float3 shaded = ambientDiffuseWeight * baseColor * skyBounce * lightDirectionAmbient.w * occlusion * 2.8
                   + ambientFresnel * skyBounce * lightDirectionAmbient.w * occlusion * (0.3 + (1.0 - roughness) * 0.35)
-                  + EvaluatePbrLight(normal, viewDirection, lightDirection,
+                  + DirectionalShadow(input.shadowPosition, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
                   + baseColor * emissive * 2.0;

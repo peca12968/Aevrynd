@@ -47,6 +47,23 @@ void AppendWindow(Mesh3D& mesh,float x,float y,float z,float width,float height)
     AppendBox(mesh,{x,y,z-.1f},{frame,height,.13f},timber);AppendBox(mesh,{x,y,z-.1f},{width,frame,.13f},timber);
 }
 
+void AppendSideWindow(Mesh3D& mesh,float x,float y,float z,float width,float height){
+    const Color timber{.29f,.16f,.075f,1},glass{.34f,.58f,.69f,1};constexpr float frame=.09f;
+    AppendBox(mesh,{x,y,z},{.07f,height,width},glass);
+    AppendBox(mesh,{x,y,z-width*.5f},{.12f,height+.18f,frame},timber);AppendBox(mesh,{x,y,z+width*.5f},{.12f,height+.18f,frame},timber);
+    AppendBox(mesh,{x,y-height*.5f,z},{.12f,frame,width+.18f},timber);AppendBox(mesh,{x,y+height*.5f,z},{.12f,frame,width+.18f},timber);
+    AppendBox(mesh,{x,y,z},{.13f,height,frame},timber);AppendBox(mesh,{x,y,z},{.13f,frame,width},timber);
+}
+
+void AppendRoofCourses(Mesh3D& mesh,const CottageMeshSettings3D& settings,Color roof){
+    const float halfWidth=settings.width*.5f+settings.roofOverhang,halfDepth=settings.depth*.5f+settings.roofOverhang;
+    constexpr std::uint32_t courses=5;for(std::uint32_t course=0;course<courses;++course){const float start=float(course)/float(courses),end=float(course+1)/float(courses),lift=.018f+.004f*float(course&1u);Color tile=roof;const float shade=.88f+.12f*Variation(settings.seed,31+course);tile.r*=shade;tile.g*=shade;tile.b*=shade;
+        const float leftStart=-halfWidth+halfWidth*start,leftEnd=-halfWidth+halfWidth*end,leftY=settings.wallHeight+settings.roofHeight*start,rightY=settings.wallHeight+settings.roofHeight*end;
+        AppendFace(mesh,{Vec3{leftStart,leftY+lift,-halfDepth},Vec3{leftStart,leftY+lift,halfDepth},Vec3{leftEnd,rightY+lift,halfDepth},Vec3{leftEnd,rightY+lift,-halfDepth}},tile);
+        AppendFace(mesh,{Vec3{-leftEnd,rightY+lift,-halfDepth},Vec3{-leftEnd,rightY+lift,halfDepth},Vec3{-leftStart,leftY+lift,halfDepth},Vec3{-leftStart,leftY+lift,-halfDepth}},tile);
+    }
+}
+
 }
 
 Mesh3D CreateCottageMesh3D(const CottageMeshSettings3D& settings){
@@ -57,14 +74,19 @@ Mesh3D CreateCottageMesh3D(const CottageMeshSettings3D& settings){
     AppendGableRoof(mesh,settings.width,settings.depth,settings.wallHeight,settings.roofHeight,settings.roofOverhang,roof);
     if(!detailed){AppendBox(mesh,{settings.width*.28f,settings.wallHeight+settings.roofHeight*.72f,.3f},{.42f,settings.roofHeight*.72f,.5f},{.32f,.24f,.19f,1});return mesh;}
     const float front=-settings.depth*.5f-.07f,doorWidth=(std::min)(1.15f,settings.width*.22f),doorHeight=(std::min)(2.15f,settings.wallHeight*.78f);
+    // 突出的石材牆基切斷大面積灰泥白盒輪廓，遠距離版本仍維持單純量體。
+    AppendBox(mesh,{0,.19f,0},{settings.width+.12f,.38f,settings.depth+.12f},{.34f,.32f,.28f,1});
     AppendBox(mesh,{0,doorHeight*.5f,front},{doorWidth,doorHeight,.14f},{.3f,.17f,.08f,1});
     AppendBox(mesh,{-doorWidth*.58f,doorHeight*.5f,front-.06f},{.13f,doorHeight+.2f,.16f},timber);AppendBox(mesh,{doorWidth*.58f,doorHeight*.5f,front-.06f},{.13f,doorHeight+.2f,.16f},timber);AppendBox(mesh,{0,doorHeight+.07f,front-.06f},{doorWidth+.28f,.14f,.16f},timber);
     const float windowOffset=settings.width*.31f,windowY=settings.wallHeight*.57f;AppendWindow(mesh,-windowOffset,windowY,front,.92f,1.05f);AppendWindow(mesh,windowOffset,windowY,front,.92f,1.05f);
+    const float sideOffset=settings.width*.5f+.07f;AppendSideWindow(mesh,-sideOffset,windowY,0,.92f,1.05f);AppendSideWindow(mesh,sideOffset,windowY,0,.92f,1.05f);
     for(float x:{-settings.width*.47f,settings.width*.47f})AppendBox(mesh,{x,settings.wallHeight*.5f,front-.04f},{.16f,settings.wallHeight,.16f},timber);
     AppendBox(mesh,{0,settings.wallHeight-.18f,front-.04f},{settings.width-.22f,.17f,.16f},timber);
     AppendBox(mesh,{0,settings.wallHeight+.02f,-settings.depth*.5f-settings.roofOverhang*.62f},{settings.width+settings.roofOverhang*1.7f,.13f,.16f},timber);
     AppendBox(mesh,{settings.width*.28f,settings.wallHeight+settings.roofHeight*.72f,.3f},{.48f,settings.roofHeight*.78f,.58f},{.34f,.25f,.2f,1});
     AppendBox(mesh,{settings.width*.28f,settings.wallHeight+settings.roofHeight+.08f,.3f},{.64f,.14f,.72f},{.28f,.2f,.16f,1});
+    // 屋瓦以少量坡面層次表現重疊瓦列，避免為每片瓦建立昂貴立體幾何。
+    AppendRoofCourses(mesh,settings,roof);
     return mesh;
 }
 
