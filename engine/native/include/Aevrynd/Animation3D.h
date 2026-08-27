@@ -4,11 +4,21 @@
 #include <vector>
 
 namespace Aevrynd {
+struct Quaternion3D {
+    float x{},y{},z{},w{1.f};
+};
+
+Quaternion3D NormalizeQuaternion3D(Quaternion3D value);
+Quaternion3D QuaternionFromEuler3D(Vec3 rotation);
+Quaternion3D SlerpQuaternion3D(Quaternion3D from,Quaternion3D to,float amount);
+
 struct JointTransform3D {
     Vec3 translation{};
     Vec3 rotation{};
     Vec3 scale{1,1,1};
-    Matrix4 Matrix()const{return CreateTransformMatrix(translation,rotation,scale);}
+    Quaternion3D quaternion{};
+    bool usesQuaternion{};
+    Matrix4 Matrix()const;
 };
 
 struct SkeletonJoint3D {

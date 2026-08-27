@@ -24,6 +24,7 @@ add_library(AevryndEngine STATIC
   src/SceneECS3D.cpp
   src/Serialization.cpp
   src/SkinnedModel3D.cpp
+  src/SkinnedModelAsset.cpp
   src/Spatial2D.cpp
   src/TerrainClipmap3D.cpp
   src/WorldBuilder3D.cpp
@@ -189,6 +190,11 @@ add_executable(AevryndSkinnedModel3DTest tests/SkinnedModel3DSmoke.cpp)
 target_compile_options(AevryndSkinnedModel3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSkinnedModel3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSkinnedModel3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedModel3DTest>'")
+
+add_executable(AevryndSkinnedModelAssetTest tests/SkinnedModelAssetSmoke.cpp)
+target_compile_options(AevryndSkinnedModelAssetTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSkinnedModelAssetTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSkinnedModelAssetTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedModelAssetTest>'")
 
 add_executable(AevryndWorldStreamer3DTest tests/WorldStreamer3DSmoke.cpp)
 target_compile_options(AevryndWorldStreamer3DTest PRIVATE /W4 /permissive- /utf-8)
