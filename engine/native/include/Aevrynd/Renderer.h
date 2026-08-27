@@ -250,6 +250,8 @@ struct RendererStats {
     bool dlssFrameworkLoaded{};
     size_t frameUploadResidentBytes{};
     size_t peakFrameUploadResidentBytes{};
+    uint64_t frameUploadBufferAllocations{};
+    uint64_t frameUploadBufferReleases{};
     uint64_t frameUploadGrowths{};
     uint64_t frameUploadTrims{};
     uint32_t lastDrawCalls{};
@@ -404,7 +406,9 @@ public:
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
     static constexpr size_t NextFrameUploadCapacity(size_t current,size_t required,size_t maximum){size_t capacity=(std::max)(size_t{1},current);while(capacity<required&&capacity<maximum)capacity=capacity>maximum/2?maximum:capacity*2;return(std::min)(capacity,maximum);}
-    static constexpr size_t InitialFrameUploadBytes=BufferedFrames*(InitialFrameVertices*sizeof(Vertex)+InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*MeshInstanceUploadBytes);
+    static constexpr size_t Initial2DFrameUploadBytes=BufferedFrames*InitialFrameVertices*sizeof(Vertex);
+    static constexpr size_t Initial3DFrameUploadBytes=BufferedFrames*(InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*MeshInstanceUploadBytes);
+    static constexpr size_t InitialFrameUploadBytes=Initial2DFrameUploadBytes+Initial3DFrameUploadBytes;
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
     D3D12Renderer(); ~D3D12Renderer();
     void Initialize(HWND hwnd,unsigned width,unsigned height,unsigned logicalWidth=1280,unsigned logicalHeight=720,bool enableDLSS=false);
