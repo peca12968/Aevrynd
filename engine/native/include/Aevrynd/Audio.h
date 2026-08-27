@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 #include "Math.h"
+#include "Memory.h"
 
 namespace Aevrynd {
 struct AudioClip {
@@ -39,6 +40,7 @@ struct AudioStats {bool deviceAvailable{};uint32_t initializationError{};std::si
 class AudioEngine {
 public:
     static constexpr std::size_t MaximumVoices=64;
+    static constexpr std::size_t InitialSoundCapacity=16;
     AudioEngine();
     ~AudioEngine();
     AudioEngine(const AudioEngine&)=delete;
@@ -53,6 +55,8 @@ public:
     void StopAll();
     void Update();
     void SetMasterVolume(float volume);
+    std::size_t TrimUnusedMemory();
+    ReusableMemoryStats MemoryStats()const;
     AudioStats GetStats()const;
 private:
     struct Impl;
