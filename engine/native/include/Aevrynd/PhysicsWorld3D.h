@@ -11,8 +11,8 @@ enum class RigidBodyType3D : uint8_t {Static,Dynamic,Kinematic};
 struct PhysicsMaterial3D {float friction{.58f},restitution{.08f};};
 struct RigidBodyHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const RigidBodyHandle3D&)const=default;};
 struct RigidBodySettings3D {RigidBodyType3D type{RigidBodyType3D::Static};Transform3D transform{};Vec3 colliderExtents{.5f,.5f,.5f};float mass{1.f},gravityScale{1.f};PhysicsMaterial3D material{};uint32_t layer{1},collisionMask{0xffffffffu};bool allowSleep{true};};
-struct RigidBodyState3D {RigidBodyHandle3D handle{};RigidBodySettings3D settings{};Vec3 velocity{},accumulatedForce{},staticContactNormal{};float sleepClock{};bool sleeping{};};
-struct PhysicsWorldStats3D {std::size_t bodies{},staticBodies{},dynamicBodies{},kinematicBodies{},sleepingBodies{},broadPhaseObstacles{},broadPhaseDynamicBodies{};uint64_t steps{},substeps{},broadPhaseQueries{},broadPhaseCandidates{},broadPhaseTests{},broadPhaseRejected{},layerRejected{},continuousCollisionTests{},continuousContacts{},broadPhaseBuilds{},broadPhaseReuses{},dynamicPairPasses{},dynamicPairCandidates{},dynamicPairTests{},dynamicPairRejected{},dynamicLayerRejected{},dynamicContacts{},contacts{},sleepTransitions{};};
+struct RigidBodyState3D {RigidBodyHandle3D handle{};RigidBodySettings3D settings{};Vec3 velocity{},accumulatedForce{},staticContactNormal{},previousPosition{};float sleepClock{};bool sleeping{};};
+struct PhysicsWorldStats3D {std::size_t bodies{},staticBodies{},dynamicBodies{},kinematicBodies{},sleepingBodies{},broadPhaseObstacles{},broadPhaseDynamicBodies{};uint64_t steps{},substeps{},broadPhaseQueries{},broadPhaseCandidates{},broadPhaseTests{},broadPhaseRejected{},layerRejected{},continuousCollisionTests{},continuousContacts{},broadPhaseBuilds{},broadPhaseReuses{},dynamicPairPasses{},dynamicPairCandidates{},dynamicPairTests{},dynamicPairRejected{},dynamicLayerRejected{},dynamicContinuousCollisionTests{},dynamicContinuousContacts{},dynamicContacts{},contacts{},sleepTransitions{};};
 
 class PhysicsWorld3D {
 public:
