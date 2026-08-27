@@ -1,0 +1,53 @@
+#pragma once
+#include "Animation3D.h"
+#include "Memory.h"
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace Aevrynd {
+struct SkinInfluences3D {
+    std::array<std::uint16_t,4> joints{};
+    std::array<std::uint16_t,4> weights{};
+};
+
+struct SkinnedModelLimits3D {
+    std::size_t maximumVertices{100000};
+    std::size_t maximumIndices{300000};
+    std::size_t maximumJoints{128};
+    std::size_t maximumWorkspaceBytes{16*1024*1024};
+};
+
+struct SkinnedModel3D {
+    Mesh3D bindMesh;
+    Skeleton3D skeleton;
+    std::vector<SkinInfluences3D> influences;
+    std::vector<Matrix4> inverseBindMatrices;
+    [[nodiscard]] bool Valid(const SkinnedModelLimits3D& limits={})const;
+};
+
+struct SkinningStats3D {
+    std::size_t vertices{};
+    std::size_t influences{};
+    std::size_t outputBytes{};
+};
+
+class SkinningWorkspace3D {
+public:
+    [[nodiscard]] ReusableMemoryStats MemoryStats()const;
+    std::size_t TrimUnusedMemory();
+private:
+    friend bool SkinModelInto(const SkinnedModel3D&,const AnimationPose3D&,
+        SkinningWorkspace3D&,Mesh3D&,SkinningStats3D*,const SkinnedModelLimits3D&);
+    Mesh3D scratch_{};
+    std::vector<Matrix4> skinMatrices_{};
+    std::vector<Matrix4> normalMatrices_{};
+    std::size_t lastReleasedBytes_{};
+    std::uint64_t trimCount_{};
+};
+
+bool SkinModelInto(const SkinnedModel3D& model,const AnimationPose3D& pose,
+    SkinningWorkspace3D& workspace,Mesh3D& output,SkinningStats3D* stats=nullptr,
+    const SkinnedModelLimits3D& limits={});
+}
