@@ -34,5 +34,8 @@ inline double PbrLinearBlendToSrgb(double sourceLinear,double destinationSrgb,do
 inline double PbrToneMapToSrgb(double color){return PbrLinearToSrgb(PbrAcesToneMap(color));}
 inline double PbrExposureScale(double compensationEv){compensationEv=(std::clamp)(std::isfinite(compensationEv)?compensationEv:0.0,-10.0,10.0);return std::exp2(compensationEv);}
 inline double PbrToneMapToSrgb(double color,double compensationEv){return PbrToneMapToSrgb(color*PbrExposureScale(compensationEv));}
+inline double PbrApplyExposure(double color,double compensationEv){return(std::max)(std::isfinite(color)?color:0.0,0.0)*PbrExposureScale(compensationEv);}
+inline double PbrBlendHdr(double source,double destination,double sourceAlpha){sourceAlpha=(std::clamp)(std::isfinite(sourceAlpha)?sourceAlpha:0.0,0.0,1.0);return(std::max)(std::isfinite(source)?source:0.0,0.0)*sourceAlpha+(std::max)(std::isfinite(destination)?destination:0.0,0.0)*(1.0-sourceAlpha);}
+inline double PbrCompositeHdrToSrgb(double color){return PbrToneMapToSrgb(color);}
 
 }

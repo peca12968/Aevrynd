@@ -133,12 +133,13 @@ Games/
 - ArchitectureMeshes3D 可依尺寸、seed 與 Near／Far 細節級別建立含石基、屋簷、門窗、木樑、遮棚及煙囪的程序建築；目前 cottage LOD 由 688 面降至 38 面
 - FrameCapture3D 直接由 DX12 back buffer 執行有界 R8G8B8A8 readback 與原子 PNG 輸出；Engine Lab 的 `--capture-demo` 會自動輸出第一人稱、第三人稱、上帝視角及 2.5D 四種實際渲染畫面
 - 方向光使用固定 2048²×2 D32 cascade array、獨立 depth-only world／instanced pass、light-space texel snapping、3×3 comparison PCF 與斜率 bias；split 周圍以 6 world-unit transition band 平滑混合兩層，帶外維持 9 taps、帶內最多 18 taps，材質可明確停用投影
-- CSM 採三重緩衝、每幀 256-byte 對齊常數緩衝與 12-tap Poisson disk；以穩定四方向旋轉取代每像素 `sincos`，cascade 過渡最多 24 taps，root signature 維持 63 DWORD、陰影資源固定 32 MiB
+- CSM 採三重緩衝、每幀 256-byte 對齊常數緩衝與 12-tap Poisson disk；以穩定四方向旋轉取代每像素 `sincos`，cascade 過渡最多 24 taps，主要 root signature 壓縮為 6 DWORD、陰影資源固定 32 MiB
 - 解析大氣以方向光驅動 Rayleigh／Henyey-Greenstein Mie 近似、太陽盤、光暈與地平線霧，保持線性 HDR、ACES 與精確 sRGB 輸出，且不新增 LUT 或常駐 GPU 資源
 - HeightField3D `GenerateUltra` 提供雙軸 domain warp、旋轉 octave、ridge／valley 與有界 talus/deposition 近似；`CreateChunkLodMesh` 支援獨立 region、power-of-two stride、非整除邊界與四邊 skirt，相鄰 chunk 的共同接縫資料逐位一致，測試案例遠景降面約 90.5%
 - TerrainClipmap3D 提供有界 distance bands、hysteresis、每幀更新預算與相鄰 LOD 級差限制；1024 chunks 常駐約 16.4 KiB，移動觀察者更新平均約 6.7 微秒且更新期間零配置
 - Foliage 是明確 GPU 材質類別，使用雙面繪製、背面法線修正、wrap diffuse、方向光背光透射與低成本 subsurface；Water、Surface、CSM、instance layout 與 root signature 維持原語意且無常駐 GPU 資源增量
-- FrameCapture3D 以最多 262,144 個像素樣本分析平均亮度、變異、全黑與全白比例；不合理曝光不會被計為有效畫面驗證
+- 所有 3D 不透明、透明與覆蓋物先合成至 `R16G16B16A16_FLOAT` 線性 HDR 場景；DLSS 也使用 HDR 輸入／輸出，最後只執行一次 ACES 與精確 sRGB 轉換，再繪製清晰 UI
+- FrameCapture3D 以最多 262,144 個像素樣本分析平均亮度、變異、全黑／全白比例及線性亮度 P05／P50／P95／P99；不合理曝光不會被計為有效畫面驗證
 - Broadleaf 近景 LOD 使用可重現的分枝、細枝與雙面不規則葉片輪廓；程序 cottage 近景 LOD 增加突出石基、雙側木框窗與五列屋瓦層次
 - ProceduralPlacement3D 使用確定性亂數、最小間距與空間雜湊建立自然配置，新增零配置 acceptance callback 表達多尺度森林群落、林間空地與 biome mask；密度／數量、縮放、旋轉、排除區、地形回呼及所有硬上限維持不變
 - 60Hz fixed timestep 遊戲迴圈
@@ -153,7 +154,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.7 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.8.9 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 

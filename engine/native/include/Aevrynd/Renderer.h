@@ -111,6 +111,11 @@ struct RendererStats {
     uint64_t resizeCount{};
     bool linearWorldBlending{};
     size_t worldSrgbRenderTargetViews{};
+    bool linearHdrSceneComposition{};
+    size_t hdrSceneColorBytes{};
+    uint64_t hdrSceneColorAllocations{};
+    uint64_t hdrSceneColorReleases{};
+    uint64_t hdrPostProcessPasses{};
     size_t sceneConstantBufferBytes{};
     size_t rootSignatureDwords{};
     float lastExposureCompensationEv{};

@@ -14,6 +14,8 @@ struct FrameCaptureAnalysis3D {
     std::size_t sampledPixels{};
     double averageLuminance{},luminanceVariance{};
     double darkPixelFraction{},brightPixelFraction{};
+    double linearAverageLuminance{};
+    double linearLuminanceP05{},linearLuminanceP50{},linearLuminanceP95{},linearLuminanceP99{};
 };
 
 // 將 R8G8B8A8 GPU readback 的 row-pitch 影像以原子替換方式寫成 PNG。

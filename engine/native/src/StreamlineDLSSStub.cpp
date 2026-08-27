@@ -9,7 +9,8 @@ HRESULT StreamlineDLSS::CreateDevice(IUnknown* adapter,D3D_FEATURE_LEVEL feature
 bool StreamlineDLSS::Resize(uint32_t outputWidth,uint32_t outputHeight){outputWidth_=outputWidth;outputHeight_=outputHeight;renderWidth_=outputWidth;renderHeight_=outputHeight;return false;}
 void StreamlineDLSS::Shutdown(){ReleaseResources();framework_=false;supported_=false;enabled_=false;api_=nullptr;}
 void StreamlineDLSS::BeginScene(ID3D12GraphicsCommandList*,const float[4]){}
-bool StreamlineDLSS::Evaluate(ID3D12GraphicsCommandList*,ID3D12Resource*){return false;}
+bool StreamlineDLSS::Evaluate(ID3D12GraphicsCommandList*){return false;}
+void StreamlineDLSS::FinishComposite(ID3D12GraphicsCommandList*){}
 bool StreamlineDLSS::ValidateOutput(){return true;}
 void StreamlineDLSS::Toggle(){}
 bool StreamlineDLSS::CreateResources(uint32_t,uint32_t){return false;}

@@ -387,12 +387,6 @@ float PointLightAttenuation(float distanceSquared, float radius)
     return rangeWindow * rangeWindow / max(distanceSquared + 1.0, 0.0001);
 }
 
-float3 AcesToneMap(float3 color)
-{
-    color = max(color, 0.0) * 1.1;
-    return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
-}
-
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     const float3 geometricNormal = normalize(input.normal.xyz);
@@ -521,7 +515,7 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float distanceFog = saturate((cameraDistance - cameraFogStart.w) / max(0.001, fogEndEnabled.x - cameraFogStart.w));
     const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
     const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
-    // 世界著色器輸出線性顯示值；sRGB RTV 會先在線性空間混合透明材質，再由硬體編碼。
+    // 世界著色器只輸出曝光後的線性 HDR；ACES 與 sRGB 由全畫面後處理統一執行。
     const float outputAlpha = input.materialClass == 3 ? 1.0 : input.color.a;
-    return float4(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount) * colorPipeline.x), outputAlpha);
+    return float4(max(0.0, lerp(lit, fogColor.rgb, fogAmount) * colorPipeline.x), outputAlpha);
 }
