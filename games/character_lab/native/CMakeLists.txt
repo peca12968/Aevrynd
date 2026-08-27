@@ -8,6 +8,14 @@ target_compile_options(CharacterLab PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(CharacterLab PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(CharacterLab PRIVATE AevryndEngine)
 set_target_properties(CharacterLab PROPERTIES OUTPUT_NAME "Aevrynd-Character-Lab" VS_DPI_AWARE "PerMonitor")
+foreach(CHARACTER_ASSET realistic-female realistic-male)
+  add_custom_command(TARGET CharacterLab POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+      "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/${CHARACTER_ASSET}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin"
+      "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin")
+endforeach()
 if(AEVRYND_STREAMLINE_AVAILABLE)
   foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
     add_custom_command(TARGET CharacterLab POST_BUILD

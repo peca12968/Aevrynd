@@ -89,6 +89,18 @@ function Convert-PackedNormal([float[]]$Value) {
     return [uint32]([uint64]$x -bor ([uint64]$y -shl 8) -bor ([uint64]$z -shl 16) -bor ([uint64]127 -shl 24))
 }
 
+function Convert-PackedColor([float[]]$Value) {
+    if ($Value.Count -ne 3 -and $Value.Count -ne 4) { throw 'glTF vertex color must contain RGB or RGBA values.' }
+    $channels = [byte[]]@(0, 0, 0, 255)
+    for ($channel = 0; $channel -lt $Value.Count; ++$channel) {
+        $component = [double]$Value[$channel]
+        if (-not [double]::IsFinite($component)) { throw 'glTF vertex color contains a non-finite value.' }
+        $component = [Math]::Max(0.0, [Math]::Min(1.0, $component))
+        $channels[$channel] = [byte][Math]::Floor($component * 255.0 + 0.5)
+    }
+    return [uint32]([uint64]$channels[0] -bor ([uint64]$channels[1] -shl 8) -bor ([uint64]$channels[2] -shl 16) -bor ([uint64]$channels[3] -shl 24))
+}
+
 function Get-NodeTransform([int]$NodeIndex) {
     $node = $document.nodes[$NodeIndex]
     if ($null -ne $node.matrix) { throw 'Matrix-authored joint nodes are not supported by AESK v1.' }
@@ -178,9 +190,15 @@ $normals = Read-Accessor ([int]$primitive.attributes.NORMAL)
 $textureCoordinates = Read-Accessor ([int]$primitive.attributes.TEXCOORD_0)
 $jointValues = Read-Accessor ([int]$primitive.attributes.JOINTS_0)
 $weightValues = Read-Accessor ([int]$primitive.attributes.WEIGHTS_0)
+$colorValues = if ($null -ne $primitive.attributes.COLOR_0) { Read-Accessor ([int]$primitive.attributes.COLOR_0) } else { $null }
 $indexValues = Read-Accessor ([int]$primitive.indices)
 if ($positions.Components -ne 3 -or $normals.Components -ne 3 -or $textureCoordinates.Components -ne 2 -or $jointValues.Components -ne 4 -or $weightValues.Components -ne 4 -or $indexValues.Components -ne 1) { throw 'glTF accessor component counts are invalid.' }
 if ($positions.Count -ne $normals.Count -or $positions.Count -ne $textureCoordinates.Count -or $positions.Count -ne $jointValues.Count -or $positions.Count -ne $weightValues.Count -or $indexValues.Count % 3) { throw 'glTF attribute counts are inconsistent.' }
+if ($null -ne $colorValues) {
+    if (($colorValues.Components -ne 3 -and $colorValues.Components -ne 4) -or $colorValues.Count -ne $positions.Count) { throw 'glTF COLOR_0 accessor is invalid.' }
+    $colorAccessor = $document.accessors[[int]$primitive.attributes.COLOR_0]
+    if ($colorValues.ComponentType -ne 5126 -and $colorAccessor.normalized -ne $true) { throw 'Integer glTF COLOR_0 accessors must be normalized.' }
+}
 if ($positions.Count -gt 100000 -or $indexValues.Count -gt 300000) { throw 'Skinned model exceeds the engine asset limits.' }
 
 $meshNodes = @()
@@ -266,7 +284,8 @@ try {
     for ($vertex = 0; $vertex -lt $positions.Count; ++$vertex) {
         $position = $positions.Values[$vertex]; $uv = $textureCoordinates.Values[$vertex]
         $writer.Write([float]($position[0] * $Scale)); $writer.Write([float]($position[1] * $Scale)); $writer.Write([float](-$position[2] * $Scale))
-        $writer.Write((Convert-PackedNormal $normals.Values[$vertex])); $writer.Write([uint32]::MaxValue)
+        $writer.Write((Convert-PackedNormal $normals.Values[$vertex]))
+        $writer.Write($(if ($null -ne $colorValues) { Convert-PackedColor $colorValues.Values[$vertex] } else { [uint32]::MaxValue }))
         $writer.Write([float]$uv[0]); $writer.Write([float]$uv[1])
     }
     for ($triangle = 0; $triangle -lt $indexValues.Count; $triangle += 3) {

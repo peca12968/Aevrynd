@@ -24,11 +24,11 @@ private:
     Aevrynd::SceneQueryStats3D queryStats_{};
     Aevrynd::SceneHit3D aimHit_{};
     Aevrynd::MeshResource3D boxMesh_{};
-    Aevrynd::SkinnedModel3D characterModel_{};
-    Aevrynd::SkinnedMeshResource3D gpuCharacter_{};
-    Aevrynd::AnimationClip3D walkClip_{};
-    Aevrynd::AnimationPlayer3D animationPlayer_{};
-    Aevrynd::AnimationPose3D characterPose_{};
+    Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{};
+    Aevrynd::SkinnedMeshResource3D gpuFemale_{},gpuMale_{};
+    Aevrynd::AnimationClip3D femaleClip_{},maleClip_{};
+    Aevrynd::AnimationPlayer3D femalePlayer_{},malePlayer_{};
+    Aevrynd::AnimationPose3D femalePose_{},malePose_{};
     Aevrynd::SkinningWorkspace3D skinningWorkspace_{};
     Aevrynd::SoundHandle jumpSound_{};
     Aevrynd::Camera3D camera_{};
@@ -40,5 +40,5 @@ private:
     std::uint64_t captureSuccessfulBaseline_{},captureRejectedBaseline_{};
     double nextCaptureTime_{.8};
     bool capturePending_{};
-    bool firstPerson_{},automatic_{true};
+    bool firstPerson_{},automatic_{true},femaleActive_{true};
 };

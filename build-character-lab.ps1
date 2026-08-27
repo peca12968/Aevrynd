@@ -15,6 +15,10 @@ $manifest = Get-Content -LiteralPath (Join-Path $projectRoot 'games\character_la
 $versionedDemo = Join-Path $distributionDirectory "Aevrynd-Character-Lab-Demo-v$($manifest.version)-Engine-v$($manifest.engineVersion).exe"
 Copy-Item -LiteralPath (Join-Path $buildDirectory 'bin\Release\Aevrynd-Character-Lab.exe') -Destination $versionedDemo -Force
 Copy-Item -Path (Join-Path $buildDirectory 'bin\Release\*.dll') -Destination $distributionDirectory -Force
+$assetSource = Join-Path $projectRoot 'games\character_lab\assets'
+$assetDestination = Join-Path $distributionDirectory 'assets'
+if (Test-Path -LiteralPath $assetDestination) { Remove-Item -LiteralPath $assetDestination -Recurse -Force }
+Copy-Item -LiteralPath $assetSource -Destination $assetDestination -Recurse
 Write-Host "Built: $distributionDirectory\Aevrynd-Character-Lab.exe" -ForegroundColor Green
 Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green
 & (Join-Path $projectRoot 'publish-demos.ps1')

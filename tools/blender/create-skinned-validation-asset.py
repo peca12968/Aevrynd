@@ -53,12 +53,15 @@ def create_character() -> tuple[bpy.types.Object, bpy.types.Object]:
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
     uv_layer = mesh.uv_layers.new(name="UVMap")
+    color_layer = mesh.color_attributes.new(name="Color", type="BYTE_COLOR", domain="CORNER")
     for polygon in mesh.polygons:
         polygon.use_smooth = True
         for loop_index in polygon.loop_indices:
             vertex = mesh.vertices[mesh.loops[loop_index].vertex_index].co
             angle = math.atan2(vertex.y, vertex.x) / math.tau + 0.5
             uv_layer.data[loop_index].uv = (angle, max(0.0, min(1.0, vertex.z / heights[-1])))
+            # 使用非白色測試資料，確保頂點色能完整通過 Blender、glTF 與 AESKIN。
+            color_layer.data[loop_index].color = (0.85, 0.20, 0.08, 1.0)
 
     mesh_object = bpy.data.objects.new("ValidationCharacter", mesh)
     bpy.context.scene.collection.objects.link(mesh_object)
