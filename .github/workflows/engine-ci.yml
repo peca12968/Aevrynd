@@ -35,6 +35,10 @@ jobs:
         shell: pwsh
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tools/ci/run-engine-validation.ps1 -BuildDirectory build-ci -Configuration Release
 
+      - name: Run automated runtime memory stress
+        shell: pwsh
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./tools/ci/run-runtime-stress.ps1 -BuildDirectory build-ci -Configuration Release -DurationSeconds 20 -WarmupSeconds 4 -SampleIntervalSeconds 2
+
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
