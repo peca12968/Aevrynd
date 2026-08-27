@@ -37,7 +37,7 @@ static_assert(RiftwardenRules::ShakeAmplitude(0.f, .4f, 8.f) == 0.f);
 static_assert(RiftwardenRules::ShakeAmplitude(.2f, 0.f, 8.f) == 0.f);
 
 int main() {
-    if(RiftwardenRules::SaveFileName(L"Riftwarden-DX12")!=L"riftwarden-save.json"||RiftwardenRules::SaveFileName(L"Riftwarden-Demo-v1.99.0-Engine-v2.9.0")!=L"Riftwarden-Demo-v1.99.0-Engine-v2.9.0-save.json"){
+    if(RiftwardenRules::SaveFileName(L"Riftwarden-DX12")!=L"riftwarden-save.json"||RiftwardenRules::SaveFileName(L"Riftwarden-Demo-v2.0.0-Engine-v2.10.0")!=L"Riftwarden-Demo-v2.0.0-Engine-v2.10.0-save.json"){
         std::cerr<<"Versioned demo save isolation failed\n";
         return 9;
     }
