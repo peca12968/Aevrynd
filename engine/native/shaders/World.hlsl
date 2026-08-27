@@ -9,7 +9,7 @@ cbuffer Scene : register(b0)
     float4 pointPositionRadius[3];
     float4 pointColorIntensity[3];
 };
-cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; };
+cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; };
 
 Texture2DArray<float> shadowTexture : register(t3);
 SamplerComparisonState shadowSampler : register(s1);
@@ -89,7 +89,7 @@ float3 ApplyWind(float3 position, float packedWeight)
 
 WorldPixelInput WorldVertexMain(WorldVertexInput input)
 {
-    WorldPixelInput output;
+    WorldPixelInput output = (WorldPixelInput)0;
     const float3 animatedPosition = ApplyWind(input.position, input.normal.w);
     output.position = mul(viewProjection, float4(animatedPosition, 1.0));
     output.color = input.color;
@@ -115,7 +115,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     const float3 worldNormal = float3(dot(input.normalRow0.xyz, input.normal.xyz),
                                       dot(input.normalRow1.xyz, input.normal.xyz),
                                       dot(input.normalRow2.xyz, input.normal.xyz));
-    WorldPixelInput output;
+    WorldPixelInput output = (WorldPixelInput)0;
     output.position = mul(viewProjection, worldPosition);
     output.color = float4(input.color.rgb * input.tint.rgb, input.color.a * input.tint.a);
     output.worldPosition = worldPosition.xyz;
@@ -148,6 +148,21 @@ float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 normal,
     [unroll] for (int x = -1; x <= 1; ++x)
         visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * shadowParameters.w, cascadeIndex), projected.z - bias);
     return visibility / 9.0;
+}
+
+float CascadedDirectionalShadow(WorldPixelInput input, float3 normal, float3 lightDirection)
+{
+    const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
+    const float halfWidth = shadowTransition.x * 0.5;
+    float visibility = 1.0;
+    if (cameraDistance <= shadowParameters.x - halfWidth) visibility = DirectionalShadow(input.shadowPosition, 0, normal, lightDirection);
+    else if (cameraDistance >= shadowParameters.x + halfWidth) visibility = DirectionalShadow(input.farShadowPosition, 1, normal, lightDirection);
+    else
+    {
+        const float blend = smoothstep(shadowParameters.x - halfWidth, shadowParameters.x + halfWidth, cameraDistance);
+        visibility = lerp(DirectionalShadow(input.shadowPosition, 0, normal, lightDirection), DirectionalShadow(input.farShadowPosition, 1, normal, lightDirection), blend);
+    }
+    return visibility;
 }
 
 float4 Triplanar(Texture2D source, float3 worldPosition, float3 normal, float scale)
@@ -332,7 +347,7 @@ float4 WorldPixelMain(WorldPixelInput input) : SV_TARGET
     const float3 ambientDiffuseWeight = (1.0 - ambientFresnel) * (1.0 - metallic);
     float3 shaded = ambientDiffuseWeight * baseColor * skyBounce * lightDirectionAmbient.w * occlusion * 2.8
                   + ambientFresnel * skyBounce * lightDirectionAmbient.w * occlusion * (0.3 + (1.0 - roughness) * 0.35)
-                  + DirectionalShadow(distance(input.worldPosition, cameraFogStart.xyz) < shadowParameters.x ? input.shadowPosition : input.farShadowPosition, distance(input.worldPosition, cameraFogStart.xyz) < shadowParameters.x ? 0 : 1, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
+                  + CascadedDirectionalShadow(input, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
                   + baseColor * emissive * 2.0;

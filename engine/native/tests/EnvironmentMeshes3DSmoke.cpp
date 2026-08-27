@@ -40,7 +40,8 @@ int main(){
     if(!treeLow.Valid()||treeLow.Bounds().extents.y<.6f){std::cerr<<"Tree LOD generation failed\n";return 5;}
     if(!HasSoundTopology(treeNear)||!HasSoundTopology(treeFar)){std::cerr<<"Broadleaf tree topology or normals failed\n";return 9;}
     if(!EqualMesh(treeNear,CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,17))){std::cerr<<"Broadleaf tree seed is not deterministic\n";return 13;}
-    if(treeNear.vertices.size()>1300||treeNear.indices.size()/3>950||treeFar.vertices.size()>200||treeFar.indices.size()>=treeNear.indices.size()/2){std::cerr<<"Broadleaf tree LOD budget failed\n";return 10;}
+    if(!EqualMesh(treeFar,CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Far,17))||!EqualMesh(crownLow,CreateBroadleafCrownMesh3D(6,4))){std::cerr<<"Far crown generation is not deterministic\n";return 16;}
+    if(treeNear.vertices.size()>1300||treeNear.indices.size()/3>950||treeFar.vertices.size()>280||treeFar.indices.size()/3>240||treeFar.indices.size()>=treeNear.indices.size()/3){std::cerr<<"Broadleaf tree LOD budget failed\n";return 10;}
     const MeshBounds3D nearBounds=treeNear.Bounds(),farBounds=treeFar.Bounds();
     if(nearBounds.extents.y<1.f||nearBounds.extents.x<.45f||nearBounds.extents.z<.35f||farBounds.extents.y<.8f){std::cerr<<"Broadleaf tree silhouette bounds failed\n";return 11;}
     const Mesh3D treeVariation=CreateBroadleafTreeMesh3D(EnvironmentMeshDetail3D::Near,19);bool varied=false;for(size_t index=0;index<treeNear.vertices.size()&&index<treeVariation.vertices.size();++index){const Vertex3D& a=treeNear.vertices[index],&b=treeVariation.vertices[index];if(std::abs(a.x-b.x)+std::abs(a.y-b.y)+std::abs(a.z-b.z)>.001f){varied=true;break;}}if(!varied){std::cerr<<"Broadleaf tree variation failed\n";return 12;}

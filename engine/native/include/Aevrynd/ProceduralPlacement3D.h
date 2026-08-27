@@ -11,6 +11,7 @@ struct PlacementBounds3D {Vec3 minimum{},maximum{};};
 struct PlacementExclusion3D {Vec3 center{};float radius{};};
 struct PlacementInstance3D {Vec3 position{};float scale{1.f};float yaw{};};
 using PlacementHeightCallback3D=bool(*)(float x,float z,float& height,void* context);
+using PlacementAcceptanceCallback3D=float(*)(float x,float z,void* context);
 
 struct ProceduralPlacementSettings3D {
     PlacementBounds3D bounds{};
@@ -26,6 +27,8 @@ struct ProceduralPlacementSettings3D {
     std::span<const PlacementExclusion3D> exclusions{};
     PlacementHeightCallback3D heightCallback{};
     void* heightContext{};
+    PlacementAcceptanceCallback3D acceptanceCallback{};
+    void* acceptanceContext{};
 };
 
 struct ProceduralPlacementResult3D {

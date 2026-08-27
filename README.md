@@ -123,17 +123,17 @@ Games/
 - MeshProcessing3D 提供退化面移除、完整頂點屬性去重、平滑／硬邊法線重建、保護 UV 與法線接縫的保守 LOD，以及具實測 cache miss 改善的索引重排
 - Engine Lab 的靜態開放世界景觀包含地形、蜿蜒河流、森林、岩石、聚落、遠山與地標塔，分離靜態／動態 Scene3D 提交並保留跨場景完整統計
 - 3D 材質使用明確的水體分類傳入 GPU，不再借用透明度猜測表面類型；連續河道網格可穩定套用水波法線與 Fresnel 反射
-- 程序環境網格提供具非對稱寬度與雙軸彎曲的草叢、多葉簇樹冠、含偏移主稜／方向性次峰／侵蝕色帶的不規則山體與天空穹頂；近遠 LOD 保留可大量實例化的頂點預算
+- 程序環境網格提供具非對稱寬度與雙軸彎曲的草叢、多葉簇樹冠、含偏移主稜／方向性次峰／侵蝕色帶的不規則山體與天空穹頂；遠景樹冠採多軸、錯落高度的交錯葉團，避免單一平面圓盤輪廓，且仍低於近景三分之一索引預算
 - Scene3D 靜態射線查詢採用有界記憶體 BVH，維持最近命中與完整材質／LOD 語意，同時避免大型世界逐物件掃描
 - Water 材質使用獨立透明 3D pass，在不寫入深度的情況下保留深度測試並依鏡頭距離由後向前繪製，避免不透明水面遮蔽岸邊與水下幾何
 - 網格級三角形 BVH 可跨 MeshResource3D 實例共用，將大型地形命中由完整三角形掃描縮小為少量候選，同時保留 transform、backface 與最近命中語意
 - ArchitectureMeshes3D 可依尺寸、seed 與 Near／Far 細節級別建立含屋簷、門窗、木樑及煙囪的程序建築；目前 cottage LOD 由 308 面降至 32 面
 - FrameCapture3D 直接由 DX12 back buffer 執行有界 R8G8B8A8 readback 與原子 PNG 輸出；Engine Lab 的 `--capture-demo` 會自動輸出第一人稱、第三人稱、上帝視角及 2.5D 四種實際渲染畫面
-- 方向光使用固定 2048²×2 D32 cascade array、獨立 depth-only world／instanced pass、近遠距離選擇、3×3 comparison PCF 與斜率 bias；材質可明確停用投影，避免天空穹頂、山體與地形污染陰影深度
+- 方向光使用固定 2048²×2 D32 cascade array、獨立 depth-only world／instanced pass、light-space texel snapping、3×3 comparison PCF 與斜率 bias；split 周圍以 6 world-unit transition band 平滑混合兩層，帶外維持 9 taps、帶內最多 18 taps，材質可明確停用投影
 - CSM 採三重緩衝、每幀 256-byte 對齊常數緩衝，root signature 維持 63 DWORD，並回報固定 32 MiB、cascade、split、實際 caster 與 draw call；真陰影啟用時不再建立舊式平面假陰影
 - FrameCapture3D 以最多 262,144 個像素樣本分析平均亮度、變異、全黑與全白比例；不合理曝光不會被計為有效畫面驗證
 - Broadleaf 近景 LOD 使用可重現的分枝、細枝與雙面不規則葉片輪廓；程序 cottage 近景 LOD 增加突出石基、雙側木框窗與五列屋瓦層次
-- ProceduralPlacement3D 使用確定性亂數、最小間距與空間雜湊建立自然配置，支援密度／數量、縮放、旋轉、排除區與地形回呼；所有實例、格網與候選嘗試皆有硬上限
+- ProceduralPlacement3D 使用確定性亂數、最小間距與空間雜湊建立自然配置，新增零配置 acceptance callback 表達多尺度森林群落、林間空地與 biome mask；密度／數量、縮放、旋轉、排除區、地形回呼及所有硬上限維持不變
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
@@ -146,7 +146,7 @@ Games/
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.7 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.8 由自動化流程執行啟動、渲染、記憶體與正常關閉驗證
 
 ## 編譯
 
