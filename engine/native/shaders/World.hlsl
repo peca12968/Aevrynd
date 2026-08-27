@@ -621,6 +621,31 @@ float3 EvaluateSkinSupplement(float3 normal,float3 viewDirection,float3 lightDir
     return narrowSpecular + warmScatter;
 }
 
+float3 EvaluateHairSupplement(float3 normal,float3 tangent,float3 viewDirection,float3 lightDirection,
+                              float3 radiance,float3 baseColor,float roughness)
+{
+    // 髮絲切線無效時保留標準 PBR；避免退化骨架或奇異縮放把 NaN 傳入 HDR。
+    const float tangentLengthSquared=dot(tangent,tangent);
+    const float halfLengthSquared=dot(viewDirection+lightDirection,viewDirection+lightDirection);
+    if(tangentLengthSquared<0.000001||tangentLengthSquared>1000000.0||halfLengthSquared<0.000001||halfLengthSquared>1000000.0)return 0.0;
+    const float3 projectedStrand=tangent-normal*dot(normal,tangent);
+    const float strandLengthSquared=dot(projectedStrand,projectedStrand);
+    if(strandLengthSquared<0.000001||strandLengthSquared>1000000.0)return 0.0;
+    const float3 strand=projectedStrand*rsqrt(strandLengthSquared);
+    const float3 halfDirection=(viewDirection+lightDirection)*rsqrt(halfLengthSquared);
+    const float normalLight=saturate(dot(normal,lightDirection));
+    const float primarySine=sqrt(saturate(1.0-dot(strand,halfDirection)*dot(strand,halfDirection)));
+    const float3 shiftedStrand=normalize(strand+normal*0.18);
+    const float secondarySine=sqrt(saturate(1.0-dot(shiftedStrand,halfDirection)*dot(shiftedStrand,halfDirection)));
+    const float smoothness=1.0-saturate(roughness);
+    const float primary=pow(primarySine,lerp(18.0,72.0,smoothness));
+    const float secondary=pow(secondarySine,lerp(36.0,112.0,smoothness));
+    const float3 fiberReflectance=lerp(0.04,baseColor,0.18);
+    const float3 supplement=radiance*fiberReflectance*normalLight*(primary*0.12+secondary*0.06);
+    // 雙高光的額外能量逐通道限制在入射光 24%，讓 Default/Skin 的基準能量不受影響。
+    return min(max(supplement,0.0),max(radiance,0.0)*0.24);
+}
+
 float PointLightAttenuation(float distanceSquared, float radius)
 {
     const float safeRadius = max(radius, 0.001);
@@ -655,7 +680,8 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     float3 normal = geometricNormal;
     float roughness = clamp(input.material.x, 0.045, 1.0);
     const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
-    const float metallic = lerp(saturate(input.material.y),0.0,skinMask);
+    const float hairMask = input.characterShadingModel == 2 ? 1.0 : 0.0;
+    const float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask));
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
@@ -780,6 +806,11 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
         shaded+=skinShadow*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
+    [branch] if(hairMask>0.5){
+        const float hairShadow=CascadedDirectionalShadow(input,normal,lightDirection);
+        shaded+=hairShadow*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
+                    lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
+    }
     [branch] if (foliageMask > 0.5)
     {
         const float foliageWrappedDiffuse = saturate((dot(normal, lightDirection) + 0.35) / 1.35);
@@ -804,6 +835,9 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
                                    pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w * attenuation,
                                    baseColor, roughness, metallic);
         if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
+                    pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
+                    baseColor,roughness);
+        if(hairMask>0.5)shaded+=EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,localDirection,
                     pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
                     baseColor,roughness);
     }

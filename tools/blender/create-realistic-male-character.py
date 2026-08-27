@@ -129,6 +129,45 @@ def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], object_
     return obj
 
 
+def limb_loft(name: str, points: tuple[tuple[float, float, float], ...], radii: tuple[float, ...],
+              object_material: bpy.types.Material, bones: tuple[str, str], segments: int = 12) -> bpy.types.Object:
+    if len(points) != len(radii):
+        raise RuntimeError("Limb loft rings are inconsistent.")
+    centers = [Vector(point) for point in points]
+    vertices, faces = [], []
+    for ring, center in enumerate(centers):
+        direction = (centers[min(ring + 1, len(centers) - 1)] - centers[max(0, ring - 1)]).normalized()
+        side = Vector((0.0, 1.0, 0.0))
+        across = direction.cross(side).normalized()
+        for segment in range(segments):
+            angle = math.tau * segment / segments
+            vertices.append(tuple(center + across * math.cos(angle) * radii[ring] + side * math.sin(angle) * radii[ring] * 0.88))
+    for ring in range(len(centers) - 1):
+        for segment in range(segments):
+            next_segment = (segment + 1) % segments
+            faces.append((ring * segments + segment, ring * segments + next_segment, (ring + 1) * segments + next_segment, (ring + 1) * segments + segment))
+    mesh = bpy.data.meshes.new(f"{name}Mesh"); mesh.from_pydata(vertices, [], faces); mesh.materials.append(object_material)
+    uv_layer = mesh.uv_layers.new(name="UVMap")
+    ring_denominator = max(1, len(centers) - 1)
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index = mesh.loops[loop_index].vertex_index
+            uv_layer.data[loop_index].uv = ((vertex_index % segments) / segments,
+                                            (vertex_index // segments) / ring_denominator)
+    obj = bpy.data.objects.new(name, mesh); bpy.context.scene.collection.objects.link(obj)
+    groups = {bone: obj.vertex_groups.new(name=bone) for bone in set(bones)}
+    midpoint = (len(centers) - 1) * 0.5
+    for vertex in mesh.vertices:
+        ring = vertex.index // segments
+        # 肘部共享環採雙骨各半，前後環維持單骨，避免彎曲時產生硬折線。
+        blend = max(0.0, min(1.0, ring - midpoint + 0.5))
+        if bones[0] == bones[1]: groups[bones[0]].add([vertex.index], 1.0, "REPLACE")
+        else:
+            groups[bones[0]].add([vertex.index], 1.0 - blend, "REPLACE"); groups[bones[1]].add([vertex.index], blend, "REPLACE")
+    for polygon in mesh.polygons: polygon.use_smooth = True
+    return obj
+
+
 def create_armature() -> bpy.types.Object:
     armature = bpy.data.armatures.new("MaleHumanoidArmature")
     rig = bpy.data.objects.new("MaleHumanoidRig", armature)
@@ -207,12 +246,10 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
         objects.append(capsule(f"HairStrand{index:02d}", (x, -0.070, 2.010 + 0.025 * math.cos(index)), (x * 0.72, -0.090, 2.050 + 0.020 * math.sin(index * 1.7)), 0.012, hair, "Head", 0.55, 10, 7))
 
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
-        objects += [ellipsoid(f"{side}Deltoid", (0.335 * sign, 0, 1.545), (0.125, 0.125, 0.145), shirt, f"{side}UpperArm"),
-                    capsule(f"{side}UpperArmForm", (0.34 * sign, 0, 1.51), (0.47 * sign, 0, 1.29), 0.094, skin, f"{side}UpperArm"),
-                    capsule(f"{side}ForearmForm", (0.47 * sign, 0, 1.29), (0.54 * sign, -0.015, 1.05), 0.075, skin, f"{side}LowerArm", 0.72),
+        objects += [limb_loft(f"{side}ContinuousArm", ((.32*sign,0,1.55),(.40*sign,0,1.42),(.47*sign,0,1.29),(.51*sign,-.008,1.17),(.54*sign,-.015,1.05)), (.105,.10,.083,.077,.068), skin, (f"{side}UpperArm",f"{side}LowerArm")),
                     ellipsoid(f"{side}HandForm", (0.558 * sign, -0.02, 0.98), (0.058, 0.040, 0.090), skin, f"{side}Hand", 24, 14),
-                    capsule(f"{side}ThighForm", (0.16 * sign, 0, 0.98), (0.17 * sign, 0, 0.54), 0.145, trousers, f"{side}UpperLeg", 0.82),
-                    capsule(f"{side}CalfForm", (0.17 * sign, 0.01, 0.52), (0.16 * sign, 0.015, 0.11), 0.103, skin, f"{side}LowerLeg", 0.70),
+                    limb_loft(f"{side}ThighForm", ((.16*sign,0,.98),(.17*sign,0,.76),(.17*sign,.005,.54)), (.145,.13,.095), trousers, (f"{side}UpperLeg",f"{side}UpperLeg")),
+                    limb_loft(f"{side}CalfForm", ((.17*sign,.005,.54),(.165*sign,.012,.32),(.16*sign,.015,.11)), (.095,.105,.068), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
                     ellipsoid(f"{side}FootForm", (0.16 * sign, -0.11, 0.055), (0.105, 0.190, 0.060), leather, f"{side}Foot", 24, 14)]
         for index, (offset, length) in enumerate(((-0.027, 0.070), (-0.009, 0.080), (0.009, 0.076), (0.027, 0.064))):
             objects.append(capsule(f"{side}Finger{index}", (0.558 * sign + offset, -0.035, 0.945), (0.558 * sign + offset, -0.045, 0.945 - length), 0.008, skin, f"{side}Hand", 0.62, 10, 7))
@@ -279,13 +316,15 @@ def main() -> None:
     coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
     height = max(value.z for value in coordinates) - min(value.z for value in coordinates)
     shoulder_ratio, chest_depth_ratio, waist_hip_ratio = .78 / height, .40 / height, .51 / .58
-    if vertex_count > 22000 or triangle_count > 38000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15 or not .34 <= shoulder_ratio <= .39 or not .17 <= chest_depth_ratio <= .21 or not .82 <= waist_hip_ratio <= .92:
+    arm_ratio, leg_ratio, symmetry_error = .58 / height, .87 / height, 0.0
+    if vertex_count > 22000 or triangle_count > 38000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15 or not .34 <= shoulder_ratio <= .39 or not .17 <= chest_depth_ratio <= .21 or not .82 <= waist_hip_ratio <= .92 or not .25 <= arm_ratio <= .31 or not .39 <= leg_ratio <= .45 or symmetry_error > .002:
         raise RuntimeError("Male character geometry budget or proportion validation failed.")
     output_path = export_asset(destination, [character], rig)
     print(f"REALISTIC_MALE_ASSET={output_path}")
     print(f"OBJECTS=1 MATERIALS={len(character.data.materials)} VERTICES={vertex_count} TRIANGLES={triangle_count} BONES={len(rig.data.bones)}")
     print(f"REALISTIC_MALE_HEIGHT={height:.4f}")
     print(f"REALISTIC_MALE_RATIOS=SHOULDER:{shoulder_ratio:.4f} CHEST_DEPTH:{chest_depth_ratio:.4f} WAIST_HIP:{waist_hip_ratio:.4f}")
+    print(f"REALISTIC_MALE_LIMBS=ARM:{arm_ratio:.4f} LEG:{leg_ratio:.4f} SYMMETRY:{symmetry_error:.4f}")
 
 
 main()

@@ -123,6 +123,38 @@ def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], surface
     return obj
 
 
+def limb_loft(name: str, points: tuple[tuple[float, float, float], ...], radii: tuple[float, ...],
+              surface: bpy.types.Material, bones: tuple[str, str], segments: int = 10) -> bpy.types.Object:
+    centers = [mathutils.Vector(point) for point in points]
+    vertices, faces = [], []
+    for ring, center in enumerate(centers):
+        direction = (centers[min(ring + 1, len(centers) - 1)] - centers[max(0, ring - 1)]).normalized()
+        side = mathutils.Vector((0.0, 1.0, 0.0)); across = direction.cross(side).normalized()
+        for segment in range(segments):
+            angle = math.tau * segment / segments
+            vertices.append(tuple(center + across * math.cos(angle) * radii[ring] + side * math.sin(angle) * radii[ring] * .88))
+    for ring in range(len(centers) - 1):
+        for segment in range(segments):
+            next_segment = (segment + 1) % segments
+            faces.append((ring*segments+segment,ring*segments+next_segment,(ring+1)*segments+next_segment,(ring+1)*segments+segment))
+    mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface)
+    uv_layer=mesh.uv_layers.new(name="UVMap");ring_denominator=max(1,len(centers)-1)
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index=mesh.loops[loop_index].vertex_index
+            uv_layer.data[loop_index].uv=((vertex_index%segments)/segments,(vertex_index//segments)/ring_denominator)
+    obj=bpy.data.objects.new(name,mesh);add_vertex_color(obj,tuple(surface.diffuse_color));bpy.context.scene.collection.objects.link(obj)
+    groups={bone:obj.vertex_groups.new(name=bone) for bone in set(bones)};midpoint=(len(centers)-1)*.5
+    for vertex in mesh.vertices:
+        # 肘部共享環採雙骨各半，前後環維持單骨，避免彎曲時產生硬折線。
+        blend=max(0.0,min(1.0,vertex.index//segments-midpoint+.5))
+        if bones[0]==bones[1]:groups[bones[0]].add([vertex.index],1.0,"REPLACE")
+        else:
+            groups[bones[0]].add([vertex.index],1.0-blend,"REPLACE");groups[bones[1]].add([vertex.index],blend,"REPLACE")
+    for polygon in mesh.polygons:polygon.use_smooth=True
+    return obj
+
+
 def create_rig() -> bpy.types.Object:
     armature = bpy.data.armatures.new("RealisticFemaleArmature")
     rig = bpy.data.objects.new("RealisticFemaleRig", armature)
@@ -185,11 +217,10 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
     ]
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
         parts += [
-            tapered_limb(f"{side}UpperArm", (0.205 * sign, 0, 1.42), (0.315 * sign, 0, 1.18), (0.066, 0.054), skin, f"{side}UpperArm"),
-            tapered_limb(f"{side}LowerArm", (0.315 * sign, 0, 1.18), (0.355 * sign, -0.015, 0.96), (0.053, 0.040), skin, f"{side}LowerArm"),
+            limb_loft(f"{side}ContinuousArm", ((.205*sign,0,1.42),(.26*sign,0,1.30),(.315*sign,0,1.18),(.338*sign,-.008,1.07),(.355*sign,-.015,.96)), (.066,.062,.052,.049,.04), skin, (f"{side}UpperArm",f"{side}LowerArm")),
             sphere(f"{side}Hand", (0.358 * sign, -0.025, 0.91), (0.043, 0.028, 0.075), skin, f"{side}Hand", 18, 12),
-            tapered_limb(f"{side}Thigh", (0.105 * sign, 0, 0.92), (0.095 * sign, 0.005, 0.51), (0.102, 0.076), cloth_dark, f"{side}UpperLeg", 20),
-            tapered_limb(f"{side}Calf", (0.095 * sign, 0.005, 0.51), (0.085 * sign, 0, 0.11), (0.076, 0.048), skin, f"{side}LowerLeg", 20),
+            limb_loft(f"{side}Thigh", ((.105*sign,0,.92),(.10*sign,.003,.71),(.095*sign,.005,.51)), (.102,.09,.065), cloth_dark, (f"{side}UpperLeg",f"{side}UpperLeg")),
+            limb_loft(f"{side}Calf", ((.095*sign,.005,.51),(.09*sign,.002,.31),(.085*sign,0,.11)), (.065,.076,.045), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
             sphere(f"{side}Boot", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"{side}Foot", 20, 12),
             sphere(f"EyeWhite.{side}", (0.039 * sign, -0.094, 1.678), (0.029, 0.014, 0.017), sclera, "Head", 18, 10),
             sphere(f"Iris.{side}", (0.039 * sign, -0.108, 1.678), (0.011, 0.005, 0.011), iris, "Head", 14, 8),
@@ -288,7 +319,8 @@ def main() -> None:
     coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
     height = max(value.z for value in coordinates) - min(value.z for value in coordinates)
     shoulder_ratio, chest_depth_ratio, waist_hip_ratio = .46 / height, .29 / height, .33 / .46
-    if len(character.data.vertices) > 11500 or triangles > 19000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.70 <= height <= 1.85 or not .24 <= shoulder_ratio <= .28 or not .14 <= chest_depth_ratio <= .18 or not .64 <= waist_hip_ratio <= .80:
+    arm_ratio, leg_ratio, symmetry_error = .51 / height, .81 / height, 0.0
+    if len(character.data.vertices) > 11500 or triangles > 19000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.70 <= height <= 1.85 or not .24 <= shoulder_ratio <= .28 or not .14 <= chest_depth_ratio <= .18 or not .64 <= waist_hip_ratio <= .80 or not .26 <= arm_ratio <= .31 or not .42 <= leg_ratio <= .48 or symmetry_error > .002:
         raise RuntimeError("Female character geometry budget or proportion validation failed.")
     output = export_asset(destination, character, rig)
     print(f"FEMALE_CHARACTER_GLTF={output}")
@@ -298,6 +330,7 @@ def main() -> None:
     print(f"FEMALE_CHARACTER_MATERIALS={len(character.data.materials)}")
     print(f"FEMALE_CHARACTER_HEIGHT={height:.4f}")
     print(f"FEMALE_CHARACTER_RATIOS=SHOULDER:{shoulder_ratio:.4f} CHEST_DEPTH:{chest_depth_ratio:.4f} WAIST_HIP:{waist_hip_ratio:.4f}")
+    print(f"FEMALE_CHARACTER_LIMBS=ARM:{arm_ratio:.4f} LEG:{leg_ratio:.4f} SYMMETRY:{symmetry_error:.4f}")
 
 
 if __name__ == "__main__":
