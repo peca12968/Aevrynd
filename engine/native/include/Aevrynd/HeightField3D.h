@@ -15,7 +15,7 @@ struct HeightFieldUltraSettings3D {
     float maximumAbsoluteCoordinate{1000000.f};
     std::size_t maximumSamples{4194304},maximumScratchBytes{64u*1024u*1024u};
 };
-struct HeightFieldMeshSettings3D {Color lowColor{.12f,.28f,.1f,1},highColor{.42f,.5f,.32f,1},steepColor{.32f,.3f,.27f,1};float steepNormalY{.72f};Color shoreColor{.24f,.18f,.1f,1};float shoreHeight{-10000.f},shoreBlend{0.f};};
+struct HeightFieldMeshSettings3D {Color lowColor{.12f,.28f,.1f,1},highColor{.42f,.5f,.32f,1},steepColor{.32f,.3f,.27f,1};float steepNormalY{.72f};Color shoreColor{.24f,.18f,.1f,1};float shoreHeight{-10000.f},shoreBlend{0.f};std::uint32_t macroBiomeSeed{1};float macroBiomeScale{.006f},macroBiomeStrength{},biomeLayerStrength{};Color grassBiomeColor{.14f,.34f,.09f,1},soilBiomeColor{.31f,.22f,.13f,1},rockBiomeColor{.4f,.39f,.36f,1};float soilAltitudeNormalized{.34f},rockAltitudeNormalized{.72f},altitudeBlend{.12f},slopeRockNormalY{.68f},slopeBlend{.12f};};
 struct HeightFieldLodMeshSettings3D {
     unsigned sampleStride{1};
     bool includeSkirt{};

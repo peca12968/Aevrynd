@@ -72,19 +72,26 @@ Mesh3D CreateCottageMesh3D(const CottageMeshSettings3D& settings){
     const float stoneShift=(Variation(settings.seed,3)-.5f)*.06f;const Color plaster{.76f+stoneShift,.69f+stoneShift,.55f+stoneShift,1},roof{.42f+.08f*Variation(settings.seed,5),.16f,.09f,1},timber{.28f,.15f,.07f,1};
     AppendBox(mesh,{0,settings.wallHeight*.5f,0},{settings.width,settings.wallHeight,settings.depth},plaster);
     AppendGableRoof(mesh,settings.width,settings.depth,settings.wallHeight,settings.roofHeight,settings.roofOverhang,roof);
-    if(!detailed){AppendBox(mesh,{settings.width*.28f,settings.wallHeight+settings.roofHeight*.72f,.3f},{.42f,settings.roofHeight*.72f,.5f},{.32f,.24f,.19f,1});return mesh;}
+    const float chimneySide=Variation(settings.seed,11)<.5f?-1.f:1.f,chimneyX=chimneySide*settings.width*(.24f+.06f*Variation(settings.seed,12)),chimneyZ=(Variation(settings.seed,13)-.5f)*settings.depth*.18f;
+    if(!detailed){const float front=-settings.depth*.5f-.012f,doorWidth=(std::min)(1.15f,settings.width*.22f),doorHeight=(std::min)(2.15f,settings.wallHeight*.78f),windowY=settings.wallHeight*.57f,windowOffset=settings.width*.31f;AppendFace(mesh,{Vec3{-doorWidth*.5f,0,front},Vec3{doorWidth*.5f,0,front},Vec3{doorWidth*.5f,doorHeight,front},Vec3{-doorWidth*.5f,doorHeight,front}},{.3f,.17f,.08f,1});for(float x:{-windowOffset,windowOffset})AppendFace(mesh,{Vec3{x-.46f,windowY-.52f,front-.002f},Vec3{x+.46f,windowY-.52f,front-.002f},Vec3{x+.46f,windowY+.52f,front-.002f},Vec3{x-.46f,windowY+.52f,front-.002f}},{.3f,.52f,.62f,1});AppendBox(mesh,{chimneyX,settings.wallHeight+settings.roofHeight*.72f,chimneyZ},{.42f,settings.roofHeight*.72f,.5f},{.32f,.24f,.19f,1});return mesh;}
     const float front=-settings.depth*.5f-.07f,doorWidth=(std::min)(1.15f,settings.width*.22f),doorHeight=(std::min)(2.15f,settings.wallHeight*.78f);
     // 突出的石材牆基切斷大面積灰泥白盒輪廓，遠距離版本仍維持單純量體。
     AppendBox(mesh,{0,.19f,0},{settings.width+.12f,.38f,settings.depth+.12f},{.34f,.32f,.28f,1});
     AppendBox(mesh,{0,doorHeight*.5f,front},{doorWidth,doorHeight,.14f},{.3f,.17f,.08f,1});
-    AppendBox(mesh,{-doorWidth*.58f,doorHeight*.5f,front-.06f},{.13f,doorHeight+.2f,.16f},timber);AppendBox(mesh,{doorWidth*.58f,doorHeight*.5f,front-.06f},{.13f,doorHeight+.2f,.16f},timber);AppendBox(mesh,{0,doorHeight+.07f,front-.06f},{doorWidth+.28f,.14f,.16f},timber);
+    AppendBox(mesh,{-doorWidth*.58f,doorHeight*.5f+.1f,front-.06f},{.13f,doorHeight+.2f,.16f},timber);AppendBox(mesh,{doorWidth*.58f,doorHeight*.5f+.1f,front-.06f},{.13f,doorHeight+.2f,.16f},timber);AppendBox(mesh,{0,doorHeight+.07f,front-.06f},{doorWidth+.28f,.14f,.16f},timber);
     const float windowOffset=settings.width*.31f,windowY=settings.wallHeight*.57f;AppendWindow(mesh,-windowOffset,windowY,front,.92f,1.05f);AppendWindow(mesh,windowOffset,windowY,front,.92f,1.05f);
     const float sideOffset=settings.width*.5f+.07f;AppendSideWindow(mesh,-sideOffset,windowY,0,.92f,1.05f);AppendSideWindow(mesh,sideOffset,windowY,0,.92f,1.05f);
     for(float x:{-settings.width*.47f,settings.width*.47f})AppendBox(mesh,{x,settings.wallHeight*.5f,front-.04f},{.16f,settings.wallHeight,.16f},timber);
+    for(float x:{-settings.width*.47f,settings.width*.47f})AppendBox(mesh,{x,settings.wallHeight*.5f,settings.depth*.5f+.04f},{.16f,settings.wallHeight,.16f},timber);
     AppendBox(mesh,{0,settings.wallHeight-.18f,front-.04f},{settings.width-.22f,.17f,.16f},timber);
+    for(float x:{-sideOffset,sideOffset})AppendBox(mesh,{x,settings.wallHeight-.18f,0},{.16f,.17f,settings.depth-.22f},timber);
+    AppendBox(mesh,{0,.08f,front-.22f},{doorWidth+.35f,.16f,.42f},{.37f,.34f,.29f,1});
+    AppendBox(mesh,{0,doorHeight+.38f,front-.33f},{doorWidth+.55f,.15f,.68f},timber);for(float x:{-doorWidth*.58f,doorWidth*.58f})AppendBox(mesh,{x,doorHeight+.22f,front-.22f},{.1f,.42f,.1f},timber);
+    for(float x:{-windowOffset,windowOffset})AppendBox(mesh,{x,windowY-.62f,front-.13f},{1.14f,.13f,.24f},timber);for(float x:{-sideOffset,sideOffset})AppendBox(mesh,{x+(x<0?-.12f:.12f),windowY-.62f,0},{.24f,.13f,1.14f},timber);
     AppendBox(mesh,{0,settings.wallHeight+.02f,-settings.depth*.5f-settings.roofOverhang*.62f},{settings.width+settings.roofOverhang*1.7f,.13f,.16f},timber);
-    AppendBox(mesh,{settings.width*.28f,settings.wallHeight+settings.roofHeight*.72f,.3f},{.48f,settings.roofHeight*.78f,.58f},{.34f,.25f,.2f,1});
-    AppendBox(mesh,{settings.width*.28f,settings.wallHeight+settings.roofHeight+.08f,.3f},{.64f,.14f,.72f},{.28f,.2f,.16f,1});
+    const float roofHalfWidth=settings.width*.5f+settings.roofOverhang,roofDepth=settings.depth+settings.roofOverhang*2.f;AppendBox(mesh,{0,settings.wallHeight+settings.roofHeight+.045f,0},{.16f,.13f,roofDepth+.12f},{.3f,.13f,.07f,1});for(float x:{-roofHalfWidth,roofHalfWidth})AppendBox(mesh,{x,settings.wallHeight+.01f,0},{.13f,.15f,roofDepth+.08f},timber);
+    AppendBox(mesh,{chimneyX,settings.wallHeight+settings.roofHeight*.72f,chimneyZ},{.48f,settings.roofHeight*.78f,.58f},{.34f,.25f,.2f,1});
+    AppendBox(mesh,{chimneyX,settings.wallHeight+settings.roofHeight+.08f,chimneyZ},{.64f,.14f,.72f},{.28f,.2f,.16f,1});
     // 屋瓦以少量坡面層次表現重疊瓦列，避免為每片瓦建立昂貴立體幾何。
     AppendRoofCourses(mesh,settings,roof);
     return mesh;

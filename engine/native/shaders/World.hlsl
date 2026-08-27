@@ -385,7 +385,8 @@ float3 LinearToSrgb(float3 linearColor)
 
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
-    float3 normal = normalize(input.normal.xyz);
+    const float3 geometricNormal = normalize(input.normal.xyz);
+    float3 normal = geometricNormal;
     float roughness = clamp(input.material.x, 0.045, 1.0);
     const float metallic = saturate(input.material.y);
     const float emissive = saturate(input.material.z);
@@ -405,6 +406,23 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
             roughness = clamp(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r, 0.045, 1.0);
             normal = normalize(lerp(normal, TriplanarNormal(input.worldPosition, normal, input.textureData.y), 0.78));
         }
+    }
+
+    const float terrainMask = input.materialClass == 3 ? 1.0 : 0.0;
+    [branch] if (terrainMask > 0.5)
+    {
+        const float macroNoise = CloudNoise(input.worldPosition.xz * 0.021);
+        const float microNoise = CloudHash(floor(input.worldPosition.xz * 3.2));
+        const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
+        const float terrainHeight = saturate(input.color.a);
+        const float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
+        const float soilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
+        const float grassWeight = max(0.0, 1.0 - rockWeight - soilWeight);
+        const float3 terrainTint = grassWeight * float3(0.72, 0.91, 0.63) + soilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
+        baseColor *= terrainTint * lerp(0.94, 1.06, microNoise);
+        roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74), 0.045, 1.0);
+        const float terrainNormalStrength = grassWeight * 0.58 + soilWeight * 0.75 + rockWeight;
+        normal = normalize(lerp(geometricNormal, normal, terrainNormalStrength));
     }
 
     const float foliageMask = input.materialClass == 2 ? 1.0 : 0.0;
@@ -477,5 +495,6 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
     const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     // World shader 的材質、天空、水與霧均在線性空間合成；UNORM RTV 前需明確轉為 sRGB。
-    return float4(LinearToSrgb(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount))), input.color.a);
+    const float outputAlpha = input.materialClass == 3 ? 1.0 : input.color.a;
+    return float4(LinearToSrgb(AcesToneMap(lerp(lit, fogColor.rgb, fogAmount))), outputAlpha);
 }
