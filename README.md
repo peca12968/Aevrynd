@@ -142,6 +142,8 @@ Games/
 - FP16 HDR 場景目標採延遲配置：純 2D／2.5D 啟動不配置約 7 MiB 的 1280×720 HDR 資源；首次 3D draw 才建立，切回純 2D 後可由統一記憶體回收流程安全釋放並在需要時重建
 - 原生 D32 深度與 2048²×2 CSM 陰影圖採需求式配置：純 2D 啟動與 Resize 不再常駐約 35.5 MiB 的 3D GPU 資源；Trim、DLSS 切換及再次進入 3D 都有自動化生命週期驗證
 - CSM 的 null／live SRV 採 immutable 雙槽 descriptor 版本切換，第一次進入 3D 陰影場景不再為覆寫使用中的 descriptor 而等待整個 GPU queue；Trim 後仍可安全釋放及重建
+- PBR 環境光使用解析半球漫反射與粗糙度感知天空鏡面反射：金屬會反射帶有天空色相的環境，粗糙表面會展寬並降低反射峰值，全程不新增貼圖取樣、render pass 或常駐 VRAM
+- 水面以折射率 1.333 推導 Fresnel F0、Beer–Lambert RGB 吸收及雙尺度法線波紋；岸線泡沫使用有界程序破碎圖樣，維持 straight-alpha 透明語意
 - Frame upload buffers 採零配置啟動與逐 stream／逐 frame slot 建立；純 2D／2.5D 不再常駐約 3.55 MiB 的 world vertex、world index 與 instance upload 資源，首次配置與 grow 也改為成功建立後才原子替換
 - FrameCapture3D 以最多 262,144 個像素樣本分析平均亮度、變異、全黑／全白比例及線性亮度 P05／P50／P95／P99；不合理曝光不會被計為有效畫面驗證
 - Broadleaf 近景 LOD 使用可重現的分枝、細枝與雙面不規則葉片輪廓；程序 cottage 近景 LOD 增加突出石基、雙側木框窗與五列屋瓦層次

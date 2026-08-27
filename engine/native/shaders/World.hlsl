@@ -157,19 +157,44 @@ float MiePhase(float cosine, float anisotropy)
     return 3.0 * (1.0 - squared) * (1.0 + cosine * cosine) / (8.0 * 3.14159265 * (2.0 + squared) * pow(denominator, 1.5));
 }
 
-float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
+float3 EvaluateAnalyticSkyRadiance(float3 rayDirection, float3 sunDirection, float roughness)
 {
-    const float height = clamp(rayDirection.y, -0.08, 1.0);
+    const float blur = saturate(roughness) * saturate(roughness);
+    const float3 blurredDirection = normalize(lerp(rayDirection, float3(0.0, 1.0, 0.0), blur * 0.28));
+    const float height = clamp(blurredDirection.y, -0.08, 1.0);
     const float opticalDepth = min(8.0, 1.0 / max(0.09, height + 0.13));
-    const float sunCosine = clamp(dot(rayDirection, sunDirection), -1.0, 1.0);
+    const float sunCosine = clamp(dot(blurredDirection, sunDirection), -1.0, 1.0);
     const float3 rayleighColor = float3(0.23, 0.48, 1.0) * RayleighPhase(sunCosine) * (0.75 + opticalDepth * 0.16);
     const float3 mieColor = float3(1.0, 0.68, 0.38) * MiePhase(sunCosine, 0.76) * (0.045 + opticalDepth * 0.018);
     const float horizon = pow(saturate(1.0 - abs(height)), 4.0);
     const float sunsetAmount = 1.0 - saturate(max(0.0, sunDirection.y) * 2.2);
     const float3 horizonColor = lerp(float3(0.26, 0.38, 0.52), float3(0.72, 0.49, 0.30), sunsetAmount);
-    const float sunDisk = pow(saturate(sunCosine), 1400.0);
-    const float sunGlow = pow(saturate(sunCosine), 22.0);
-    return rayleighColor + mieColor + horizonColor * horizon * 0.42 + float3(1.0, 0.78, 0.48) * (sunDisk * 7.0 + sunGlow * 0.16);
+    const float sunDisk = pow(saturate(sunCosine), lerp(1400.0, 12.0, blur));
+    const float sunGlow = pow(saturate(sunCosine), lerp(22.0, 4.0, blur));
+    const float sunAmplitude = lerp(7.0, 0.10, blur);
+    return clamp(rayleighColor + mieColor + horizonColor * horizon * 0.42
+               + float3(1.0, 0.78, 0.48) * (sunDisk * sunAmplitude + sunGlow * lerp(0.16, 0.04, blur)), 0.0, 16.0);
+}
+
+float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
+{
+    return EvaluateAnalyticSkyRadiance(rayDirection, sunDirection, 0.0);
+}
+
+float3 EvaluateAnalyticSkyDiffuse(float3 normal, float3 sunDirection)
+{
+    const float upperHemisphere = saturate(normal.y * 0.5 + 0.5);
+    const float horizon = pow(saturate(1.0 - abs(normal.y)), 2.0);
+    const float sunsetAmount = 1.0 - saturate(max(0.0, sunDirection.y) * 2.2);
+    const float3 horizonColor = lerp(float3(0.26, 0.38, 0.52), float3(0.72, 0.49, 0.30), sunsetAmount);
+    const float3 hemisphereColor = lerp(float3(0.055, 0.045, 0.035), float3(0.16, 0.36, 0.78), upperHemisphere);
+    const float sunWrap = pow(saturate(dot(normal, sunDirection) * 0.5 + 0.5), 4.0);
+    return clamp((hemisphereColor + horizonColor * horizon * 0.38 + float3(1.0, 0.68, 0.38) * sunWrap * 0.055) * 2.4, 0.0, 4.0);
+}
+
+float3 EvaluateAnalyticSkySpecular(float3 reflectionDirection, float3 sunDirection, float roughness)
+{
+    return EvaluateAnalyticSkyRadiance(reflectionDirection, sunDirection, clamp(roughness, 0.045, 1.0));
 }
 
 float CloudHash(float2 coordinate)
@@ -359,6 +384,21 @@ float3 FresnelSchlickRoughness(float cosine, float3 reflectance, float roughness
     return reflectance + (grazing - reflectance) * pow(1.0 - saturate(cosine), 5.0);
 }
 
+float3 EvaluateEnvironmentLighting(float3 normal, float3 viewDirection, float3 baseColor,
+                                   float roughness, float metallic, float occlusion,
+                                   float ambientIntensity, float3 sunDirection)
+{
+    const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+    const float3 fresnel = FresnelSchlickRoughness(saturate(dot(normal, viewDirection)), reflectance, roughness);
+    const float3 diffuseWeight = (1.0 - fresnel) * (1.0 - metallic);
+    const float3 skyDiffuse = EvaluateAnalyticSkyDiffuse(normal, sunDirection);
+    const float3 reflectionDirection = reflect(-viewDirection, normal);
+    const float3 skySpecular = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection, roughness);
+    const float specularEnergy = 0.35 + 0.65 * (1.0 - roughness);
+    return (diffuseWeight * baseColor * skyDiffuse + fresnel * skySpecular * specularEnergy)
+         * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
+}
+
 float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirection,
                         float3 radiance, float3 baseColor, float roughness, float metallic)
 {
@@ -453,27 +493,30 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
     [branch] if (skyMask > 0.5)
+    {
         baseColor = ApplyProceduralClouds(EvaluateAtmosphere(skyRay, skyLightDirection), skyRay, skyLightDirection);
+        // 天空不需要執行材質、陰影與點光源路徑，直接輸出曝光後的線性 HDR。
+        return float4(max(0.0, baseColor * colorPipeline.x), input.color.a);
+    }
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
     const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
-    const float2 broadRipple = float2(sin(input.worldPosition.z * 0.38 + input.worldPosition.x * 0.11 + fogEndEnabled.w * 0.72),
-                                      cos(input.worldPosition.x * 0.31 - input.worldPosition.z * 0.16 - fogEndEnabled.w * 0.61));
-    const float2 detailRipple = float2(sin(input.worldPosition.z * 1.73 - input.worldPosition.x * 0.64 + fogEndEnabled.w * 1.91),
-                                       cos(input.worldPosition.x * 1.42 + input.worldPosition.z * 0.57 - fogEndEnabled.w * 1.67));
-    const float2 waterRipple = broadRipple * 0.68 + detailRipple * 0.32;
-    normal = normalize(normal + float3(waterRipple.x, 0.0, waterRipple.y) * waterMask * 0.085);
+    const float foamMask = waterMask * smoothstep(0.30, 0.50, roughness);
+    [branch] if (waterMask > 0.5)
+    {
+        const float2 broadRipple = float2(sin(input.worldPosition.z * 0.38 + input.worldPosition.x * 0.11 + fogEndEnabled.w * 0.72),
+                                          cos(input.worldPosition.x * 0.31 - input.worldPosition.z * 0.16 - fogEndEnabled.w * 0.61));
+        const float2 detailRipple = float2(sin(input.worldPosition.z * 1.73 - input.worldPosition.x * 0.64 + fogEndEnabled.w * 1.91),
+                                           cos(input.worldPosition.x * 1.42 + input.worldPosition.z * 0.57 - fogEndEnabled.w * 1.67));
+        const float2 waterRipple = broadRipple * 0.68 + detailRipple * 0.32;
+        normal = normalize(normal + float3(waterRipple.x, 0.0, waterRipple.y) * lerp(0.085, 0.035, foamMask));
+    }
 
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
     roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
-    const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
-    const float skyVisibility = saturate(normal.y * 0.5 + 0.5);
-    const float3 skyBounce = lerp(float3(0.22, 0.17, 0.12), float3(0.38, 0.52, 0.68), skyVisibility);
-    const float3 ambientFresnel = FresnelSchlickRoughness(saturate(dot(normal, viewDirection)), reflectance, roughness);
-    const float3 ambientDiffuseWeight = (1.0 - ambientFresnel) * (1.0 - metallic);
-    float3 shaded = ambientDiffuseWeight * baseColor * skyBounce * lightDirectionAmbient.w * occlusion * 2.8
-                  + ambientFresnel * skyBounce * lightDirectionAmbient.w * occlusion * (0.3 + (1.0 - roughness) * 0.35)
+    float3 shaded = EvaluateEnvironmentLighting(normal, viewDirection, baseColor, roughness, metallic,
+                                                occlusion, lightDirectionAmbient.w, skyLightDirection)
                   + CascadedDirectionalShadow(input, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
                                      lightColorIntensity.rgb * lightColorIntensity.w,
                                      baseColor, roughness, metallic)
@@ -503,13 +546,32 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
                                    baseColor, roughness, metallic);
     }
 
-    const float waterViewCosine = saturate(dot(normal, viewDirection));
-    const float fresnel = 0.02 + 0.98 * pow(1.0 - waterViewCosine, 5.0);
-    const float waterPathLength = min(8.0, 1.6 / max(0.16, waterViewCosine));
-    const float3 waterTransmission = exp(-float3(0.42, 0.16, 0.08) * waterPathLength);
-    const float3 absorbedWater = lerp(float3(0.018, 0.105, 0.14), shaded, waterTransmission);
-    const float3 reflectedWater = EvaluateAtmosphere(reflect(-viewDirection, normal), skyLightDirection) * 0.72;
-    shaded = lerp(shaded, lerp(absorbedWater, reflectedWater, fresnel), waterMask);
+    [branch] if (waterMask > 0.5)
+    {
+        const float waterViewCosine = saturate(dot(normal, viewDirection));
+        const float waterReflectance = 0.0203732;
+        const float fresnel = waterReflectance + (1.0 - waterReflectance) * pow(1.0 - waterViewCosine, 5.0);
+        const float waterPathLength = min(8.0, 1.6 / max(0.16, waterViewCosine));
+        const float3 waterTransmission = exp(-float3(0.42, 0.16, 0.08) * waterPathLength);
+        const float3 deepWaterColor = lerp(float3(0.012, 0.055, 0.070), baseColor, 0.24);
+        const float3 absorbedWater = shaded * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
+        const float waterReflectionRoughness = clamp(roughness, 0.045, 0.18);
+        const float3 reflectedWater = EvaluateAnalyticSkySpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
+                                    * lerp(1.0, 0.55, waterReflectionRoughness);
+        float3 waterComposite = lerp(absorbedWater, reflectedWater, fresnel);
+        [branch] if (foamMask > 0.01)
+        {
+            // 岸線泡沫使用有界程序破碎圖樣，避免整條河岸成為均勻發光帶。
+            const float2 foamFlow = input.worldPosition.xz * 0.42 + float2(fogEndEnabled.w * 0.07, -fogEndEnabled.w * 0.04);
+            const float foamNoise = CloudNoise(foamFlow);
+            const float foamWave = 0.5 + 0.5 * sin(input.worldPosition.z * 1.35 + input.worldPosition.x * 0.31 + fogEndEnabled.w * 1.8);
+            const float foamCoverage = smoothstep(0.34, 0.76, foamNoise * 0.72 + foamWave * 0.28);
+            const float3 foamColor = baseColor * lerp(0.58, 0.96, foamCoverage)
+                                   + EvaluateAnalyticSkyDiffuse(normal, skyLightDirection) * 0.055;
+            waterComposite = lerp(waterComposite, foamColor, foamMask * lerp(0.42, 0.88, foamCoverage));
+        }
+        shaded = waterComposite;
+    }
     const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
     const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
     const float distanceFog = saturate((cameraDistance - cameraFogStart.w) / max(0.001, fogEndEnabled.x - cameraFogStart.w));

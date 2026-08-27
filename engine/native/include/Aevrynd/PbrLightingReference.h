@@ -10,13 +10,23 @@ struct PbrEnergyWeights {
     double specular{};
     double specularResponse{};
 };
+struct PbrEnvironmentWeights {
+    double diffuse{};
+    double specular{};
+    double total{};
+};
 
-inline double PbrClampedRoughness(double roughness){return(std::clamp)(roughness,.045,1.0);}
+inline double PbrClampedRoughness(double roughness){return(std::clamp)(std::isfinite(roughness)?roughness:1.0,.045,1.0);}
 
 // 與 shader 相同的分母下限是 anti-firefly 穩定化策略，不是未修改的解析 GGX。
 inline double PbrDistributionGgxStabilized(double normalHalf,double roughness){const double alpha=PbrClampedRoughness(roughness)*PbrClampedRoughness(roughness),alphaSquared=alpha*alpha,denominator=normalHalf*normalHalf*(alphaSquared-1.0)+1.0;return alphaSquared/(std::max)(3.141592653589793*denominator*denominator,.000001);}
 inline double PbrGeometrySchlickGgx(double normalDirection,double roughness){const double value=PbrClampedRoughness(roughness)+1.0,k=value*value*.125;return normalDirection/(std::max)(normalDirection*(1.0-k)+k,.0001);}
 inline double PbrFresnelSchlick(double cosine,double reflectance){return reflectance+(1.0-reflectance)*std::pow(1.0-(std::clamp)(cosine,0.0,1.0),5.0);}
+inline double PbrFresnelSchlickRoughness(double cosine,double reflectance,double roughness){reflectance=(std::clamp)(reflectance,0.0,1.0);roughness=PbrClampedRoughness(roughness);const double grazing=(std::max)(1.0-roughness,reflectance);return reflectance+(grazing-reflectance)*std::pow(1.0-(std::clamp)(cosine,0.0,1.0),5.0);}
+inline PbrEnvironmentWeights PbrReferenceEnvironment(double baseColor,double metallic,double roughness,double normalView,double skyDiffuse,double skySpecular,double ambient=1.0,double occlusion=1.0){baseColor=(std::clamp)(std::isfinite(baseColor)?baseColor:0.0,0.0,1.0);metallic=(std::clamp)(std::isfinite(metallic)?metallic:0.0,0.0,1.0);roughness=PbrClampedRoughness(roughness);normalView=(std::clamp)(std::isfinite(normalView)?normalView:0.0,0.0,1.0);skyDiffuse=(std::clamp)(std::isfinite(skyDiffuse)?skyDiffuse:0.0,0.0,4.0);skySpecular=(std::clamp)(std::isfinite(skySpecular)?skySpecular:0.0,0.0,16.0);ambient=(std::clamp)(std::isfinite(ambient)?ambient:0.0,0.0,2.0);occlusion=(std::clamp)(std::isfinite(occlusion)?occlusion:0.0,0.0,1.0);const double reflectance=.04*(1.0-metallic)+baseColor*metallic,fresnel=PbrFresnelSchlickRoughness(normalView,reflectance,roughness),diffuse=(1.0-fresnel)*(1.0-metallic)*baseColor*skyDiffuse,specular=fresnel*skySpecular*(.35+.65*(1.0-roughness));return{diffuse*ambient*occlusion,specular*ambient*occlusion,(diffuse+specular)*ambient*occlusion};}
+inline double PbrWaterReflectance(double refractiveIndex=1.333){if(!std::isfinite(refractiveIndex)||refractiveIndex<=0)return 0;const double ratio=(refractiveIndex-1.0)/(refractiveIndex+1.0);return(std::clamp)(ratio*ratio,0.0,1.0);}
+inline double PbrWaterFresnel(double normalView,double refractiveIndex=1.333){return PbrFresnelSchlick(normalView,PbrWaterReflectance(refractiveIndex));}
+inline double PbrBeerLambertTransmittance(double absorption,double pathLength){absorption=(std::clamp)(std::isfinite(absorption)?absorption:0.0,0.0,2.0);pathLength=(std::clamp)(std::isfinite(pathLength)?pathLength:0.0,0.0,8.0);return std::exp(-absorption*pathLength);}
 
 // 此參考函式驗證 shader 使用的能量分配，不取代 GPU 的向量化實作。
 inline PbrEnergyWeights PbrReferenceEnergy(double baseColor,double metallic,double roughness,double normalView,double normalLight,double normalHalf,double viewHalf){

@@ -11,10 +11,12 @@
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
+#include <filesystem>
 #include <vector>
 
 class FrontierWorldGame final:public Aevrynd::IGame {
 public:
+    explicit FrontierWorldGame(std::filesystem::path captureDirectory={}):captureDirectory_(std::move(captureDirectory)){}
     void OnStart(Aevrynd::Engine&)override;
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
@@ -64,4 +66,9 @@ private:
     std::size_t lastReusableMemoryReleasedBytes_{};uint64_t reusableMemoryTrimCount_{};
     std::size_t navigationBlockedCells_{},navigationPathPoints_{};
     bool automatic_{true},moving_{},navigationDirty_{true},riverView_{};
+    std::filesystem::path captureDirectory_{};
+    std::size_t captureIndex_{},appliedCaptureIndex_{std::size_t(-1)};
+    uint64_t captureSuccessfulBaseline_{},captureRejectedBaseline_{};
+    float nextCaptureTime_{1.5f};
+    bool capturePending_{};
 };
