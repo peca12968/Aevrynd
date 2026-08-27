@@ -622,6 +622,60 @@ float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirecti
     return (diffuseWeight * baseColor * (1.0 / 3.14159265) + specular) * radiance * normalLight;
 }
 
+float CorneaFresnel(float cosine)
+{
+    // 人眼角膜折射率約 1.376，對空氣的法線入射反射率約為 2.5%。
+    const float corneaReflectance = 0.0250428;
+    return corneaReflectance + (1.0 - corneaReflectance) * pow(1.0 - saturate(cosine), 5.0);
+}
+
+float CorneaRoughness(float materialRoughness)
+{
+    // 角膜層維持有限寬度，避免次像素眼球產生過尖且不穩定的高光。
+    return clamp(materialRoughness * 0.12, 0.025, 0.08);
+}
+
+float3 EvaluateEyeLight(float3 baseNormal, float3 corneaNormal, float3 viewDirection,
+                        float3 lightDirection, float3 radiance, float3 baseColor,
+                        float materialRoughness)
+{
+    const float3 baseLayer = EvaluatePbrLight(baseNormal, viewDirection, lightDirection,
+                                               radiance, baseColor, materialRoughness, 0.0);
+    const float normalLight = saturate(dot(corneaNormal, lightDirection));
+    const float normalView = saturate(dot(corneaNormal, viewDirection));
+    if (normalLight <= 0.0 || normalView <= 0.0)
+        return baseLayer;
+    const float3 halfVector = lightDirection + viewDirection;
+    const float halfLengthSquared = dot(halfVector, halfVector);
+    if (halfLengthSquared < 0.000001 || halfLengthSquared > 1000000.0)
+        return baseLayer;
+    const float3 halfDirection = halfVector * rsqrt(halfLengthSquared);
+    const float fresnel = CorneaFresnel(dot(halfDirection, viewDirection));
+    const float roughness = CorneaRoughness(materialRoughness);
+    const float distribution = DistributionGgxStabilized(corneaNormal, halfDirection, roughness);
+    const float geometry = GeometrySmith(corneaNormal, viewDirection, lightDirection, roughness);
+    const float3 clearcoat = distribution * geometry * fresnel
+                           / max(4.0 * normalView * normalLight, 0.0001)
+                           * radiance * normalLight;
+    // 角膜先取走 Fresnel 能量，再讓剩餘能量進入虹膜／鞏膜基底。
+    return baseLayer * (1.0 - fresnel) + clearcoat;
+}
+
+float3 EvaluateEyeEnvironment(float3 baseNormal, float3 corneaNormal, float3 viewDirection,
+                              float3 baseColor, float materialRoughness, float occlusion,
+                              float ambientIntensity, float3 sunDirection)
+{
+    const float3 baseLayer = EvaluateEnvironmentLighting(baseNormal, viewDirection, baseColor,
+                                                          materialRoughness, 0.0, occlusion,
+                                                          ambientIntensity, sunDirection);
+    const float fresnel = CorneaFresnel(dot(corneaNormal, viewDirection));
+    const float3 reflectionDirection = reflect(-viewDirection, corneaNormal);
+    const float3 clearcoat = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection,
+                                                         CorneaRoughness(materialRoughness))
+                           * fresnel * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
+    return baseLayer * (1.0 - fresnel) + clearcoat;
+}
+
 float3 EvaluateSkinSupplement(float3 normal,float3 viewDirection,float3 lightDirection,
                               float3 radiance,float3 baseColor,float roughness)
 {
@@ -698,7 +752,8 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     float roughness = clamp(input.material.x, 0.045, 1.0);
     const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
     const float hairMask = input.characterShadingModel == 2 ? 1.0 : 0.0;
-    const float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask));
+    const float eyeMask = input.characterShadingModel == 3 ? 1.0 : 0.0;
+    const float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask));
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
@@ -814,11 +869,18 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float screenOcclusion = colorPipeline.y > 0.5 && waterMask < 0.5
                                 ? ambientOcclusionTexture.SampleLevel(materialSampler, input.position.xy * colorPipeline.zw, 0.0)
                                 : 1.0;
-    float3 shaded = EvaluateEnvironmentLighting(normal, viewDirection, baseColor, roughness, metallic,
-                                                occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection)
-                  + CascadedDirectionalShadow(input, normal, lightDirection) * EvaluatePbrLight(normal, viewDirection, lightDirection,
-                                     lightColorIntensity.rgb * lightColorIntensity.w,
-                                     baseColor, roughness, metallic)
+    const float3 environmentLighting = eyeMask > 0.5
+        ? EvaluateEyeEnvironment(normal, geometricNormal, viewDirection, baseColor, roughness,
+                                 occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection)
+        : EvaluateEnvironmentLighting(normal, viewDirection, baseColor, roughness, metallic,
+                                      occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection);
+    const float3 directionalLighting = eyeMask > 0.5
+        ? EvaluateEyeLight(normal, geometricNormal, viewDirection, lightDirection,
+                           lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness)
+        : EvaluatePbrLight(normal, viewDirection, lightDirection,
+                           lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness, metallic);
+    float3 shaded = environmentLighting
+                  + CascadedDirectionalShadow(input, eyeMask > 0.5 ? geometricNormal : normal, lightDirection) * directionalLighting
                   + baseColor * emissive * 2.0;
     [branch] if(skinMask > 0.5){
         const float skinShadow=CascadedDirectionalShadow(input,normal,lightDirection);
@@ -850,9 +912,10 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
         const float lightDistance = sqrt(distanceSquared);
         const float attenuation = PointLightAttenuation(distanceSquared, pointPositionRadius[pointIndex].w);
         const float3 localDirection = delta / lightDistance;
-        shaded += EvaluatePbrLight(normal, viewDirection, localDirection,
-                                   pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w * attenuation,
-                                   baseColor, roughness, metallic);
+        const float3 pointRadiance = pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w * attenuation;
+        shaded += eyeMask > 0.5
+                ? EvaluateEyeLight(normal, geometricNormal, viewDirection, localDirection, pointRadiance, baseColor, roughness)
+                : EvaluatePbrLight(normal, viewDirection, localDirection, pointRadiance, baseColor, roughness, metallic);
         if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
                     pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
                     baseColor,roughness);

@@ -144,7 +144,7 @@ def limb_loft(name: str, points: tuple[tuple[float, float, float], ...], radii: 
             vertex_index=mesh.loops[loop_index].vertex_index
             uv_layer.data[loop_index].uv=((vertex_index%segments)/segments,(vertex_index//segments)/ring_denominator)
     obj=bpy.data.objects.new(name,mesh);add_vertex_color(obj,tuple(surface.diffuse_color));bpy.context.scene.collection.objects.link(obj)
-    groups={bone:obj.vertex_groups.new(name=bone) for bone in set(bones)};midpoint=(len(centers)-1)*.5
+    groups={bone:obj.vertex_groups.new(name=bone) for bone in dict.fromkeys(bones)};midpoint=(len(centers)-1)*.5
     for vertex in mesh.vertices:
         # 肘部共享環採雙骨各半，前後環維持單骨，避免彎曲時產生硬折線。
         blend=max(0.0,min(1.0,vertex.index//segments-midpoint+.5))
@@ -183,6 +183,60 @@ def hair_card(name: str, root: tuple[float, float, float], tip: tuple[float, flo
     add_vertex_color(obj, tuple(surface.diffuse_color)); group = obj.vertex_groups.new(name="Head")
     group.add(range(len(mesh.vertices)), 1.0, "REPLACE")
     return obj
+
+
+def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float, float, float],
+               surface: bpy.types.Material, feminine: bool) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=28, location=center)
+    obj = bpy.context.object; obj.name = name
+    for vertex in obj.data.vertices:
+        x, y, z = vertex.co
+        normalized_z = z
+        jaw = 0.80 + 0.20 * max(0.0, min(1.0, (normalized_z + 0.72) / 0.62))
+        vertex.co.x *= scale[0] * jaw
+        vertex.co.y *= scale[1] * (0.94 + 0.08 * math.exp(-((normalized_z - 0.05) / 0.34) ** 2))
+        vertex.co.z *= scale[2]
+        if y < 0.0:
+            nose = math.exp(-(x / 0.24) ** 2 - ((normalized_z - 0.06) / 0.29) ** 2)
+            vertex.co.y -= (0.030 if feminine else 0.038) * nose
+            vertex.co.y -= 0.009 * math.exp(-(x / 0.52) ** 2 - ((normalized_z + 0.12) / 0.22) ** 2)
+    obj.data.materials.append(surface); add_vertex_color(obj, tuple(surface.diffuse_color)); smooth_object(obj)
+    group = obj.vertex_groups.new(name="Head"); group.add(range(len(obj.data.vertices)), 1.0, "REPLACE")
+    return obj
+
+
+def facial_ribbon(name: str, center: tuple[float, float, float], width: float, height: float,
+                  surface: bpy.types.Material, upper: bool, segments: int = 16) -> bpy.types.Object:
+    vertices = []
+    for row in range(2):
+        for index in range(segments + 1):
+            t = index / segments * 2.0 - 1.0
+            cupid = (1.0 - abs(t)) * (0.22 if upper else -0.08)
+            z = center[2] + (height * (0.45 - row) + height * cupid)
+            vertices.append((center[0] + t * width, center[1] - 0.002 * (1.0 - t*t), z))
+    faces = [(i, i+1, segments+2+i, segments+1+i) for i in range(segments)]
+    mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index=mesh.loops[loop_index].vertex_index;uv.data[loop_index].uv=((vertex_index%(segments+1))/segments,vertex_index//(segments+1))
+    obj=bpy.data.objects.new(name,mesh);bpy.context.scene.collection.objects.link(obj);add_vertex_color(obj,tuple(surface.diffuse_color))
+    group=obj.vertex_groups.new(name="Head");group.add(range(len(mesh.vertices)),1.0,"REPLACE");return obj
+
+
+def eyelid_ribbon(name: str, eye_x: float, center_y: float, center_z: float, upper: bool,
+                  surface: bpy.types.Material, segments: int = 12) -> bpy.types.Object:
+    vertices=[]; sign=1.0 if upper else -1.0
+    for row in range(2):
+        for index in range(segments+1):
+            t=index/segments*2.0-1.0; arc=math.sqrt(max(0.0,1.0-t*t))
+            vertices.append((eye_x+t*.030,center_y-.001*arc,center_z+sign*(.0105*arc+row*.0025)))
+    faces=[(i,i+1,segments+2+i,segments+1+i) for i in range(segments)]
+    mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index=mesh.loops[loop_index].vertex_index;uv.data[loop_index].uv=((vertex_index%(segments+1))/segments,vertex_index//(segments+1))
+    obj=bpy.data.objects.new(name,mesh);bpy.context.scene.collection.objects.link(obj);add_vertex_color(obj,tuple(surface.diffuse_color))
+    group=obj.vertex_groups.new(name="Head");group.add(range(len(mesh.vertices)),1.0,"REPLACE");return obj
 
 
 def create_rig() -> bpy.types.Object:
@@ -239,11 +293,9 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
     parts += [
         torso_loft("ContinuousDressTorso", ((.82,.23,.16),(.94,.22,.155),(1.05,.19,.14),(1.16,.165,.125),(1.29,.205,.14),(1.40,.23,.145),(1.46,.18,.12)), cloth),
         sphere("Neck", (0, 0, 1.50), (0.064, 0.058, 0.095), skin, "Neck", 20, 12),
-        sphere("Head", (0, -0.005, 1.655), (0.112, 0.096, 0.135), skin, "Head", 32, 24),
-        sphere("Jaw", (0, -0.061, 1.615), (0.082, 0.048, 0.072), skin, "Head", 24, 16),
-        sphere("Nose", (0, -0.102, 1.663), (0.020, 0.028, 0.034), skin, "Head", 16, 10),
-        sphere("UpperLip", (0, -0.105, 1.618), (0.034, 0.009, 0.009), lips, "Head", 16, 8),
-        sphere("LowerLip", (0, -0.107, 1.607), (0.031, 0.010, 0.009), lips, "Head", 16, 8),
+        face_shell("ContinuousFace", (0, -0.005, 1.655), (0.112, 0.096, 0.135), skin, True),
+        facial_ribbon("UpperLip", (0,-0.108,1.619),.034,.010,lips,True),
+        facial_ribbon("LowerLip", (0,-0.109,1.607),.031,.010,lips,False),
     ]
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
         parts += [
@@ -255,8 +307,8 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
             sphere(f"EyeWhite.{side}", (0.039 * sign, -0.094, 1.678), (0.029, 0.014, 0.017), sclera, "Head", 18, 10),
             sphere(f"Iris.{side}", (0.039 * sign, -0.108, 1.678), (0.011, 0.005, 0.011), iris, "Head", 14, 8),
             sphere(f"Pupil.{side}", (0.039 * sign, -0.113, 1.678), (0.0045, 0.0025, 0.0045), hair, "Head", 10, 6),
-            sphere(f"UpperEyelid.{side}", (0.039 * sign, -0.106, 1.691), (0.031, 0.006, 0.008), skin, "Head", 14, 8),
-            sphere(f"LowerEyelid.{side}", (0.039 * sign, -0.106, 1.665), (0.030, 0.005, 0.006), skin, "Head", 14, 8),
+            eyelid_ribbon(f"UpperEyelid.{side}",0.039*sign,-0.107,1.678,True,skin),
+            eyelid_ribbon(f"LowerEyelid.{side}",0.039*sign,-0.107,1.678,False,skin),
             tapered_limb(f"EarRim.{side}", (0.108 * sign, -0.004, 1.690), (0.110 * sign, -0.006, 1.610), (0.014, 0.009), skin, "Head", 10),
             tapered_limb(f"Lash.{side}", (0.012 * sign, -0.111, 1.690), (0.066 * sign, -0.108, 1.690), (0.0025, 0.0015), hair, "Head", 8),
             tapered_limb(f"Brow.{side}", (0.012 * sign, -0.109, 1.712), (0.067 * sign, -0.104, 1.708), (0.0045, 0.003), hair, "Head", 10),
@@ -291,6 +343,8 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
         part.select_set(True)
     bpy.context.view_layer.objects.active = parts[0]
     bpy.ops.object.join()
+    bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.dissolve_degenerate(threshold=1.0e-8); bpy.ops.object.mode_set(mode="OBJECT")
     character = bpy.context.object
     character.name = "RealisticFemaleCharacter"
     character.data.name = "RealisticFemaleMesh"

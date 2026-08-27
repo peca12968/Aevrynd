@@ -217,9 +217,9 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
         material.material.useUv = true;
         if(definition.Contains("shadingModel")){
             std::string shadingModel;
-            if(!definition.Read("shadingModel",shadingModel)||(shadingModel!="default"&&shadingModel!="skin"&&shadingModel!="hair"))
-                return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' shadingModel must be 'default', 'skin', or 'hair'");
-            material.material.shadingModel=shadingModel=="skin"?CharacterShadingModel3D::Skin:shadingModel=="hair"?CharacterShadingModel3D::Hair:CharacterShadingModel3D::Default;
+            if(!definition.Read("shadingModel",shadingModel)||(shadingModel!="default"&&shadingModel!="skin"&&shadingModel!="hair"&&shadingModel!="eye"))
+                return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' shadingModel must be 'default', 'skin', 'hair', or 'eye'");
+            material.material.shadingModel=shadingModel=="skin"?CharacterShadingModel3D::Skin:shadingModel=="hair"?CharacterShadingModel3D::Hair:shadingModel=="eye"?CharacterShadingModel3D::Eye:CharacterShadingModel3D::Default;
         }
         if(definition.Contains("alphaMode")){
             std::string alphaMode;

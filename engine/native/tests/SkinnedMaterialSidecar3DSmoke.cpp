@@ -20,7 +20,7 @@ void WriteFile(const std::filesystem::path& path, std::string_view contents = "t
 }
 
 std::string ValidDocument() {
-    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true}}}})";
+    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true},"Eye":{"textures":{"baseColor":"eye/base.png","roughness":"eye/rough.png","normal":"eye/normal.png","maximumResolution":1024},"pbr":{"roughness":0.18,"metallic":0},"textureScale":1.0,"shadingModel":"eye"}}}})";
 }
 
 } // 匿名命名空間
@@ -30,28 +30,29 @@ int main() {
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "aevrynd-skinned-material-sidecar-smoke";
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
-    for (const char* path : {"skin/base.png", "skin/rough.png", "skin/normal.png", "detail/base.png", "detail/rough.png", "detail/normal.png", "hair/base.png", "hair/rough.png", "hair/normal.png"}) {
+    for (const char* path : {"skin/base.png", "skin/rough.png", "skin/normal.png", "detail/base.png", "detail/rough.png", "detail/normal.png", "hair/base.png", "hair/rough.png", "hair/normal.png", "eye/base.png", "eye/rough.png", "eye/normal.png"}) {
         WriteFile(root / path);
     }
-    const std::array<std::string, 2> slots{"Skin", "Hair"};
+    const std::array<std::string, 3> slots{"Skin", "Hair", "Eye"};
     bool passed = true;
 
     const auto parsed = ParseSkinnedMaterialSidecar3D(ValidDocument(), slots, root);
-    passed &= Expect(parsed && parsed.materials.size() == 2u, "valid sidecar did not parse");
-    if (parsed && parsed.materials.size() == 2u) {
-        passed &= Expect(parsed.materials[0].name == "Skin" && parsed.materials[1].name == "Hair", "AESKIN slot order was not preserved");
+    passed &= Expect(parsed && parsed.materials.size() == 3u, "valid sidecar did not parse");
+    if (parsed && parsed.materials.size() == 3u) {
+        passed &= Expect(parsed.materials[0].name == "Skin" && parsed.materials[1].name == "Hair" && parsed.materials[2].name == "Eye", "AESKIN slot order was not preserved");
         passed &= Expect(parsed.materials[0].textures.maximumResolution == 2048u, "maximumResolution was not applied");
         passed &= Expect(!parsed.materials[0].textures.additionalLayers[0].baseColorPath.empty(), "additional texture layer was not resolved");
         passed &= Expect(std::abs(parsed.materials[0].material.textureScale - 1.5f) < 0.0001f, "textureScale was not applied");
         passed &= Expect(std::abs(parsed.materials[0].material.surface.roughness - 0.46f) < 0.0001f, "PBR override was not applied");
         passed &= Expect(parsed.materials[0].material.shadingModel == CharacterShadingModel3D::Skin && parsed.materials[1].material.shadingModel == CharacterShadingModel3D::Hair, "character shading model was not applied");
+        passed &= Expect(parsed.materials[2].material.shadingModel == CharacterShadingModel3D::Eye, "eye shading model was not applied");
         passed &= Expect(parsed.materials[1].material.alphaMode == MaterialAlphaMode3D::Mask && parsed.materials[1].textures.alphaMode == MaterialAlphaMode3D::Mask && std::abs(parsed.materials[1].material.alphaCutoff-.42f)<.0001f && parsed.materials[1].material.doubleSided, "masked material fields were not propagated");
         passed &= Expect(parsed.materials[0].textures.baseColorPath.is_absolute(), "resolved texture path is not absolute");
     }
 
     const std::filesystem::path sidecar = root / "character.materials.json";
     WriteFile(sidecar, ValidDocument());
-    passed &= Expect(LoadSkinnedMaterialSidecarFile3D(sidecar, slots, root).materials.size() == 2u, "file sidecar did not load");
+    passed &= Expect(LoadSkinnedMaterialSidecarFile3D(sidecar, slots, root).materials.size() == 3u, "file sidecar did not load");
 
     std::string missing = ValidDocument();
     const std::size_t missingPosition = missing.find("hair/normal.png");

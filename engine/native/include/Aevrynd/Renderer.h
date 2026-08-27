@@ -46,14 +46,14 @@ struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,rough
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
-enum class CharacterShadingModel3D:uint8_t {Default,Skin,Hair};
+enum class CharacterShadingModel3D:uint8_t {Default,Skin,Hair,Eye};
 static constexpr std::size_t MaximumMeshInstancesPerFrame3D=65536;
 static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D,MeshInstanceLodCoverageShift3D=4u,MeshInstanceLodCoverageMask3D=255u<<MeshInstanceLodCoverageShift3D,MeshInstanceLodInvertBit3D=1u<<12,MeshInstanceLodSeedShift3D=13u,MeshInstanceLodSeedMask3D=7u<<MeshInstanceLodSeedShift3D;
 constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return value==MaterialClass3D::Water||value==MaterialClass3D::Foliage||value==MaterialClass3D::Terrain?value:MaterialClass3D::Surface;}
 constexpr uint32_t PackMeshInstanceFlags3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass){return(hasTextures?MeshInstanceHasTexturesBit3D:0u)|(hasTextures&&usesUv?MeshInstanceUsesUvBit3D:0u)|(uint32_t(NormalizeMaterialClass3D(materialClass))<<MeshInstanceMaterialClassShift3D);}
 constexpr MaterialClass3D UnpackMeshInstanceMaterialClass3D(uint32_t value){return NormalizeMaterialClass3D(MaterialClass3D((value&MeshInstanceMaterialClassMask3D)>>MeshInstanceMaterialClassShift3D));}
 inline uint32_t PackMeshInstanceLodData3D(float transition,uint32_t seed,bool invert=false){transition=Clamp(std::isfinite(transition)?transition:1.f,0.f,1.f);invert=invert||(seed&8u)!=0;const uint32_t quantized=uint32_t(std::lround(transition*255.f));return(quantized<<MeshInstanceLodCoverageShift3D)|(invert?MeshInstanceLodInvertBit3D:0u)|((seed&7u)<<MeshInstanceLodSeedShift3D);}
-constexpr CharacterShadingModel3D NormalizeCharacterShadingModel3D(CharacterShadingModel3D value){return value==CharacterShadingModel3D::Skin||value==CharacterShadingModel3D::Hair?value:CharacterShadingModel3D::Default;}
+constexpr CharacterShadingModel3D NormalizeCharacterShadingModel3D(CharacterShadingModel3D value){return value==CharacterShadingModel3D::Skin||value==CharacterShadingModel3D::Hair||value==CharacterShadingModel3D::Eye?value:CharacterShadingModel3D::Default;}
 inline uint32_t PackSkinnedMeshInstanceData3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass,float textureScale,CharacterShadingModel3D shadingModel=CharacterShadingModel3D::Default){const uint32_t packedTextureScale=uint32_t(std::lround(Clamp(std::isfinite(textureScale)?textureScale/16.f:0.f,0.f,1.f)*65535.f));return PackMeshInstanceFlags3D(hasTextures,usesUv,materialClass)|PackMeshInstanceLodData3D(1.f,uint32_t(NormalizeCharacterShadingModel3D(shadingModel)))|(packedTextureScale<<16);}
 constexpr CharacterShadingModel3D UnpackSkinnedCharacterShadingModel3D(uint32_t value){return NormalizeCharacterShadingModel3D(CharacterShadingModel3D((value>>13)&7u));}
 static constexpr uint32_t SkinnedPaletteBaseMask3D=4095u,SkinnedAlphaCutoffShift3D=12u,SkinnedAlphaMaskBit3D=1u<<20,SkinnedDoubleSidedBit3D=1u<<21;
@@ -185,6 +185,7 @@ struct RendererStats {
     size_t lastSubmittedTexturedSkinnedInstances{};
     size_t lastSubmittedSkinShadedInstances{};
     size_t lastSubmittedHairShadedInstances{};
+    size_t lastSubmittedEyeShadedInstances{};
     size_t lastSubmittedMaskedSkinnedInstances{};
     size_t lastSubmittedDoubleSidedSkinnedInstances{};
     size_t lastMaskedSkinnedShadowDrawCalls{};
