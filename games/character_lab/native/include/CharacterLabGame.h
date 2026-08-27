@@ -25,12 +25,11 @@ private:
     Aevrynd::SceneHit3D aimHit_{};
     Aevrynd::MeshResource3D boxMesh_{};
     Aevrynd::SkinnedModel3D characterModel_{};
+    Aevrynd::SkinnedMeshResource3D gpuCharacter_{};
     Aevrynd::AnimationClip3D walkClip_{};
     Aevrynd::AnimationPlayer3D animationPlayer_{};
     Aevrynd::AnimationPose3D characterPose_{};
     Aevrynd::SkinningWorkspace3D skinningWorkspace_{};
-    Aevrynd::Mesh3D skinnedCharacter_{};
-    Aevrynd::SkinningStats3D skinningStats_{};
     Aevrynd::SoundHandle jumpSound_{};
     Aevrynd::Camera3D camera_{};
     float yaw_{},pitch_{.12f};

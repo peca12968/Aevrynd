@@ -14,6 +14,7 @@
 #include "MeshProcessing3D.h"
 #include "Renderer.h"
 #include "Scene2D.h"
+#include "SkinnedModel3D.h"
 
 namespace Aevrynd {
 #ifndef AEVRYND_ENGINE_VERSION
@@ -32,6 +33,12 @@ struct MeshLodResourceChain3D {
     MeshLodResourceChain3D(MeshLodResourceChain3D&& other)noexcept{*this=std::move(other);}
     MeshLodResourceChain3D& operator=(MeshLodResourceChain3D&& other)noexcept{if(this!=&other){levels=std::move(other.levels);levelCount=other.levelCount;processing=other.processing;other.levels={};other.levelCount=0;other.processing={};}return*this;}
     explicit operator bool()const{return levelCount>=2&&bool(levels[0]);}
+};
+struct SkinnedMeshResource3D {
+    SkinnedMeshHandle3D handle{};
+    MeshBounds3D bounds{};
+    std::size_t vertexCount{},indexCount{},jointCount{};
+    explicit operator bool()const{return bool(handle)&&vertexCount&&indexCount&&jointCount;}
 };
 enum class MeshCpuRetention3D:std::uint8_t {Discard,RetainForQueries};
 enum class MeshLodCpuRetention3D:std::uint8_t {None,Level0Only,AllLevels};
@@ -74,9 +81,11 @@ public:
     void ToggleDLSS(){renderer_->ToggleDLSS();}
     MeshHandle3D CreateMesh3D(const Mesh3D& mesh);
     MeshResource3D CreateMeshResource3D(const Mesh3D& mesh,MeshCpuRetention3D retention=MeshCpuRetention3D::RetainForQueries);
+    SkinnedMeshResource3D CreateSkinnedMeshResource3D(const SkinnedModel3D& model);
     bool CreateMeshLodResourceChain3D(const Mesh3D& mesh,MeshLodResourceChain3D& output,MeshLodChainSettings3D settings={},MeshProcessingError3D* error=nullptr,MeshLodCpuRetention3D retention=MeshLodCpuRetention3D::Level0Only);
     void DestroyMeshLodResourceChain3D(MeshLodResourceChain3D& chain);
     void DestroyMesh3D(MeshHandle3D mesh){renderer_->DestroyMesh(mesh);}
+    void DestroySkinnedMesh3D(SkinnedMeshHandle3D mesh){renderer_->DestroySkinnedMesh(mesh);}
     void SetMeshMemoryBudget(size_t bytes){renderer_->SetMeshMemoryBudget(bytes);}
     MaterialTextureSetHandle3D CreateMaterialTextureSet3D(const MaterialTextureSetDefinition3D& definition){return renderer_->CreateMaterialTextureSet(definition);}
     void DestroyMaterialTextureSet3D(MaterialTextureSetHandle3D textures){renderer_->DestroyMaterialTextureSet(textures);}

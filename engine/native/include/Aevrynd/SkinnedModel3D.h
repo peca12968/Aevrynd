@@ -40,14 +40,22 @@ public:
 private:
     friend bool SkinModelInto(const SkinnedModel3D&,const AnimationPose3D&,
         SkinningWorkspace3D&,Mesh3D&,SkinningStats3D*,const SkinnedModelLimits3D&);
+    friend SkinPaletteRange3D AddSkinPaletteFromPose(DrawList&,const SkinnedModel3D&,
+        const AnimationPose3D&,SkinningWorkspace3D&,const SkinnedModelLimits3D&);
     Mesh3D scratch_{};
     std::vector<Matrix4> skinMatrices_{};
     std::vector<Matrix4> normalMatrices_{};
+    std::vector<SkinPaletteJoint3D> paletteJoints_{};
     std::size_t lastReleasedBytes_{};
     std::uint64_t trimCount_{};
 };
 
 bool SkinModelInto(const SkinnedModel3D& model,const AnimationPose3D& pose,
     SkinningWorkspace3D& workspace,Mesh3D& output,SkinningStats3D* stats=nullptr,
+    const SkinnedModelLimits3D& limits={});
+bool BuildGpuSkinnedVertices(const SkinnedModel3D& model,std::vector<SkinnedVertex3D>& output,
+    const SkinnedModelLimits3D& limits={});
+SkinPaletteRange3D AddSkinPaletteFromPose(DrawList& draw,const SkinnedModel3D& model,
+    const AnimationPose3D& pose,SkinningWorkspace3D& workspace,
     const SkinnedModelLimits3D& limits={});
 }

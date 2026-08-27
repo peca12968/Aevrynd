@@ -1,5 +1,13 @@
 Texture2D<float> sceneDepth : register(t0);
 Texture2D<float> ambientOcclusion : register(t1);
+struct SkinPaletteJoint
+{
+    row_major float4x4 transform;
+    float4 normalRow0;
+    float4 normalRow1;
+    float4 normalRow2;
+};
+StructuredBuffer<SkinPaletteJoint> skinPalette : register(t13);
 SamplerState pointClampSampler : register(s0);
 
 cbuffer Scene : register(b0)
@@ -50,6 +58,47 @@ struct InstancedVertexInput
     uint textureData : TEXTURE;
 };
 
+struct SkinnedVertexInput
+{
+    float3 position : POSITION;
+    float4 normal : NORMAL;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD0;
+    float4 transformRow0 : INSTANCE0;
+    float4 transformRow1 : INSTANCE1;
+    float4 transformRow2 : INSTANCE2;
+    float4 transformRow3 : INSTANCE3;
+    float4 normalRow0 : NROW0;
+    float4 normalRow1 : NROW1;
+    float4 normalRow2 : NROW2;
+    float4 tint : TINT;
+    float4 material : MATERIAL;
+    uint textureData : TEXTURE;
+    uint skinPaletteBase : SKINBASE;
+    uint4 blendIndices : BLENDINDICES;
+    float4 blendWeights : BLENDWEIGHT;
+};
+
+void SkinLocalVertex(SkinnedVertexInput input, out float3 position, out float3 normal)
+{
+    const float weightSum = dot(input.blendWeights, float4(1.0, 1.0, 1.0, 1.0));
+    const float4 weights = input.blendWeights / max(weightSum, 1e-6);
+    position = 0.0;
+    normal = 0.0;
+    [unroll] for (uint influence = 0; influence < 4; ++influence)
+    {
+        const SkinPaletteJoint joint = skinPalette[input.skinPaletteBase + input.blendIndices[influence]];
+        const float4 sourcePosition = float4(input.position, 1.0);
+        position += float3(dot(joint.transform[0], sourcePosition),
+                           dot(joint.transform[1], sourcePosition),
+                           dot(joint.transform[2], sourcePosition)) * weights[influence];
+        normal += float3(dot(joint.normalRow0.xyz, input.normal.xyz),
+                         dot(joint.normalRow1.xyz, input.normal.xyz),
+                         dot(joint.normalRow2.xyz, input.normal.xyz)) * weights[influence];
+    }
+    normal = normalize(normal);
+}
+
 struct DepthVertexOutput
 {
     float4 position : SV_POSITION;
@@ -90,6 +139,27 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
     output.lodCoverage = float((input.textureData >> 4) & 255) / 255.0;
     output.lodInvert = (input.textureData >> 12) & 1;
     // 平移量必須採用與主著色器相同的雜湊，深度與色彩通道才會保留相同孔點。
+    const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
+    output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
+    return output;
+}
+
+DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input)
+{
+    float3 skinnedPosition;
+    float3 skinnedNormal;
+    SkinLocalVertex(input, skinnedPosition, skinnedNormal);
+    const float4 localPosition = float4(skinnedPosition, 1.0);
+    float4 worldPosition = float4(dot(input.transformRow0, localPosition),
+                                  dot(input.transformRow1, localPosition),
+                                  dot(input.transformRow2, localPosition),
+                                  dot(input.transformRow3, localPosition));
+    worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w);
+
+    DepthVertexOutput output;
+    output.position = mul(viewProjection, worldPosition);
+    output.lodCoverage = float((input.textureData >> 4) & 255) / 255.0;
+    output.lodInvert = (input.textureData >> 12) & 1;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
     return output;

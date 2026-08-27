@@ -33,7 +33,11 @@ enum class BlendMode2D:uint8_t {Alpha,Additive};
 struct DrawSpan2D {size_t firstVertex{},vertexCount{};};
 struct RadialLight2D {Vec2 center{},radius{32,16};Color color{1,1,1,.25f};float intensity{1.f};int segments{18};};
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};};
+struct SkinnedVertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};std::array<uint16_t,4> joints{},weights{};};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
+struct SkinnedMeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const SkinnedMeshHandle3D&)const=default;};
+struct SkinPaletteRange3D {uint32_t firstJoint{},jointCount{},generation{};explicit constexpr operator bool()const{return jointCount!=0;}};
+struct SkinPaletteJoint3D {Matrix4 skin{};std::array<Vec4,3> normalRows{};};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
 struct MaterialTextureLayerDefinition3D {std::filesystem::path baseColorPath,roughnessPath,normalPath;};
 struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;std::array<MaterialTextureLayerDefinition3D,2> additionalLayers{};};
@@ -46,6 +50,7 @@ constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return
 constexpr uint32_t PackMeshInstanceFlags3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass){return(hasTextures?MeshInstanceHasTexturesBit3D:0u)|(hasTextures&&usesUv?MeshInstanceUsesUvBit3D:0u)|(uint32_t(NormalizeMaterialClass3D(materialClass))<<MeshInstanceMaterialClassShift3D);}
 constexpr MaterialClass3D UnpackMeshInstanceMaterialClass3D(uint32_t value){return NormalizeMaterialClass3D(MaterialClass3D((value&MeshInstanceMaterialClassMask3D)>>MeshInstanceMaterialClassShift3D));}
 inline uint32_t PackMeshInstanceLodData3D(float transition,uint32_t seed,bool invert=false){transition=Clamp(std::isfinite(transition)?transition:1.f,0.f,1.f);invert=invert||(seed&8u)!=0;const uint32_t quantized=uint32_t(std::lround(transition*255.f));return(quantized<<MeshInstanceLodCoverageShift3D)|(invert?MeshInstanceLodInvertBit3D:0u)|((seed&7u)<<MeshInstanceLodSeedShift3D);}
+inline uint32_t PackSkinnedMeshInstanceData3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass,float textureScale){const uint32_t packedTextureScale=uint32_t(std::lround(Clamp(std::isfinite(textureScale)?textureScale/16.f:0.f,0.f,1.f)*65535.f));return PackMeshInstanceFlags3D(hasTextures,usesUv,materialClass)|PackMeshInstanceLodData3D(1.f,0)|(packedTextureScale<<16);}
 constexpr float UnpackMeshInstanceLodCoverage3D(uint32_t value){return float((value&MeshInstanceLodCoverageMask3D)>>MeshInstanceLodCoverageShift3D)/255.f;}
 constexpr uint32_t UnpackMeshInstanceLodSeed3D(uint32_t value){return(value&MeshInstanceLodSeedMask3D)>>MeshInstanceLodSeedShift3D;}
 constexpr bool UnpackMeshInstanceLodInvert3D(uint32_t value){return(value&MeshInstanceLodInvertBit3D)!=0;}
@@ -54,6 +59,7 @@ enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay,ShadowOnly};
 static constexpr uint8_t DirectionalShadowNearCascadeBit3D=1u,DirectionalShadowFarCascadeBit3D=2u,DirectionalShadowAllCascades3D=DirectionalShadowNearCascadeBit3D|DirectionalShadowFarCascadeBit3D;
 enum class ShadowCascadeSelection3D:uint8_t {Automatic,Manual};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};ShadowCascadeSelection3D shadowCascadeSelection{ShadowCascadeSelection3D::Automatic};};
+struct SkinnedMeshInstance3D {SkinnedMeshHandle3D mesh{};SkinPaletteRange3D palette{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};bool castsShadow{true};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};};
 constexpr bool TransparentBackToFront3D(const MeshInstance3D& left,const MeshInstance3D& right){return left.cameraDepth>right.cameraDepth;}
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 constexpr uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,float splitDistance=32.f){return std::isfinite(cameraDistance)&&cameraDistance>=splitDistance?1u:0u;}
@@ -310,9 +316,13 @@ struct RendererStats {
     uint64_t lastGpuFrameNanoseconds{};
     uint64_t totalGpuFrameNanoseconds{};
     uint64_t peakGpuFrameNanoseconds{};
+    size_t residentSkinnedMeshes{},residentSkinnedMeshReferences{},residentSkinnedMeshBytes{};
+    size_t lastSubmittedSkinnedInstances{},lastUploadedSkinJoints{},skinPaletteResidentBytes{},peakSkinPaletteResidentBytes{};
+    uint64_t skinnedMeshUploads{},skinnedMeshCacheHits{},skinnedMeshReleases{},skinPaletteUploads{},rejectedSkinnedInstances{},rejectedSkinPalettes{};
 };
 class DrawList {
 public:
+    static constexpr size_t MaximumSkinJointsPerFrame=4096,MaximumSkinPalettesPerFrame=64;
     static constexpr size_t InitialVertexCapacity=32768;
     static constexpr size_t InitialWorldIndexCapacity=InitialVertexCapacity*3/2;
     static constexpr size_t InitialMeshInstanceCapacity=1024;
@@ -324,7 +334,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);additiveSpans_.reserve(InitialAdditiveSpanCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();skinnedMeshInstances.clear();skinPaletteJoints.clear();skinPaletteCount_=0;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -342,6 +352,8 @@ public:
     void Triangle(Vec2 a,Vec2 b,Vec2 c,Color color);
     void WorldTriangle(Vec3 a,Vec3 b,Vec3 c,Color color);
     void MeshInstance(MeshHandle3D mesh,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MeshRenderLayer3D layer=MeshRenderLayer3D::Opaque,MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,float cameraDepth=std::numeric_limits<float>::quiet_NaN(),bool castsShadow=true,float lodCoverage=1.f,uint32_t lodSeed=0,bool lodInvert=false,uint8_t shadowCascadeMask=DirectionalShadowAllCascades3D,ShadowCascadeSelection3D shadowCascadeSelection=ShadowCascadeSelection3D::Automatic){if(mesh){materialClass=NormalizeMaterialClass3D(materialClass);if(materialClass==MaterialClass3D::Water)layer=MeshRenderLayer3D::Transparent;if(!std::isfinite(cameraDepth))cameraDepth=TransformPoint(viewProjection_,TransformPoint(transform,{})).z;lodCoverage=Clamp(std::isfinite(lodCoverage)?lodCoverage:1.f,0.f,1.f);lodSeed=(lodSeed&7u)|(lodInvert?8u:0u);shadowCascadeMask=castsShadow?(shadowCascadeMask&DirectionalShadowAllCascades3D):0u;meshInstances.push_back({mesh,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),layer,textures,(std::max)(.001f,textureScale),useUv,materialClass,cameraDepth,castsShadow&&shadowCascadeMask!=0,lodCoverage,lodSeed,shadowCascadeMask,shadowCascadeSelection});}}
+    SkinPaletteRange3D AddSkinPalette(std::span<const SkinPaletteJoint3D> joints){if(joints.empty()||skinPaletteCount_>=MaximumSkinPalettesPerFrame||joints.size()>MaximumSkinJointsPerFrame-skinPaletteJoints.size())return{};for(const SkinPaletteJoint3D& joint:joints){for(const auto& row:joint.skin.values)for(float value:row)if(!std::isfinite(value))return{};for(const Vec4& row:joint.normalRows)if(!std::isfinite(row.x)||!std::isfinite(row.y)||!std::isfinite(row.z)||!std::isfinite(row.w))return{};}const SkinPaletteRange3D range{uint32_t(skinPaletteJoints.size()),uint32_t(joints.size()),skinPaletteGeneration_};skinPaletteJoints.insert(skinPaletteJoints.end(),joints.begin(),joints.end());++skinPaletteCount_;return range;}
+    bool SkinnedMeshInstance(SkinnedMeshHandle3D mesh,SkinPaletteRange3D palette,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,bool castsShadow=true,uint8_t shadowCascadeMask=DirectionalShadowAllCascades3D){materialClass=NormalizeMaterialClass3D(materialClass);if(!mesh||!palette||palette.generation!=skinPaletteGeneration_||palette.firstJoint>skinPaletteJoints.size()||palette.jointCount>skinPaletteJoints.size()-palette.firstJoint||skinnedMeshInstances.size()>=MaximumSkinPalettesPerFrame||materialClass==MaterialClass3D::Water||materialClass==MaterialClass3D::Terrain)return false;shadowCascadeMask=castsShadow?(shadowCascadeMask&DirectionalShadowAllCascades3D):0;skinnedMeshInstances.push_back({mesh,palette,transform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),textures,(std::max)(.001f,textureScale),useUv,materialClass,castsShadow&&shadowCascadeMask!=0,shadowCascadeMask});return true;}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
@@ -382,6 +394,8 @@ public:
     std::vector<Vertex3D> worldVertices;
     std::vector<uint32_t> worldIndices;
     std::vector<MeshInstance3D> meshInstances;
+    std::vector<SkinnedMeshInstance3D> skinnedMeshInstances;
+    std::vector<SkinPaletteJoint3D> skinPaletteJoints;
 private:
     enum class PrimitiveClipResult:uint8_t {Culled,Contained,Partial};
     struct EllipseStepCacheEntry {int segments{};float cosine{},sine{};uint64_t lastUsed{};};
@@ -416,6 +430,7 @@ private:
     DrawListStats2D stats_{};
     size_t lastReleasedBytes_{};
     uint64_t trimCount_{};
+    uint32_t skinPaletteGeneration_{1},skinPaletteCount_{};
     std::array<EllipseStepCacheEntry,4> ellipseStepCache_{};
     uint64_t ellipseStepCacheClock_{};
     bool backfaceCulling_{true};
@@ -461,6 +476,8 @@ public:
     bool CaptureNextFrame(const std::filesystem::path& path);
     MeshHandle3D CreateMesh(std::span<const Vertex3D> vertices,std::span<const uint32_t> indices);
     void DestroyMesh(MeshHandle3D mesh);
+    SkinnedMeshHandle3D CreateSkinnedMesh(std::span<const SkinnedVertex3D> vertices,std::span<const uint32_t> indices,uint32_t jointCount);
+    void DestroySkinnedMesh(SkinnedMeshHandle3D mesh);
     void SetMeshMemoryBudget(size_t bytes);
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
