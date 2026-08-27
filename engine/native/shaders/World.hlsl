@@ -734,7 +734,14 @@ float3 ReconstructWorldPosition(float2 screenUv, float depth)
     return worldPosition.xyz / max(abs(worldPosition.w), 0.000001);
 }
 
-float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
+float MaskedAlphaToCoverage(float materialAlpha, float alphaCutoff)
+{
+    // 只在門檻附近保留窄漸層，讓 MSAA alpha-to-coverage 產生穩定的子像素覆蓋率。
+    const float transitionWidth = max(fwidth(materialAlpha) * 0.5, 1.0 / 255.0);
+    return smoothstep(alphaCutoff - transitionWidth, alphaCutoff + transitionWidth, materialAlpha);
+}
+
+float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToCoverage)
 {
     // 固定的螢幕空間雜訊讓兩級網格互補淡化，不依賴時間所以不會逐幀閃爍。
     if (input.lodCoverage < 0.999)
@@ -757,12 +764,14 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
+    float materialAlpha = input.color.a;
     if (input.textureData.x > 0.5 && input.materialClass != 3)
     {
         if (input.textureData.z > 0.5)
         {
             const float4 sampledBaseColor=baseColorTexture.Sample(materialSampler,input.uv);
-            if(input.alphaMasked!=0)clip(input.color.a*sampledBaseColor.a-input.alphaCutoff);
+            materialAlpha *= sampledBaseColor.a;
+            if(input.alphaMasked!=0&&!alphaToCoverage)clip(materialAlpha-input.alphaCutoff);
             baseColor *= sampledBaseColor.rgb;
             roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
@@ -821,7 +830,10 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     {
         baseColor = ApplyProceduralClouds(EvaluateAtmosphere(skyRay, skyLightDirection), skyRay, skyLightDirection);
         // 天空不需要執行材質、陰影與點光源路徑，直接輸出曝光後的線性 HDR。
-        return float4(max(0.0, baseColor * colorPipeline.x), input.color.a);
+        const float skyAlpha = alphaToCoverage && input.alphaMasked != 0
+                             ? MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff)
+                             : input.color.a;
+        return float4(max(0.0, baseColor * colorPipeline.x), skyAlpha);
     }
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
@@ -956,6 +968,18 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
     const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
     const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     // 世界著色器只輸出曝光後的線性 HDR；ACES 與 sRGB 由全畫面後處理統一執行。
-    const float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
+    float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
+    if(alphaToCoverage && input.alphaMasked != 0)
+        outputAlpha = MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff);
     return float4(max(0.0, lerp(lit, fogColor.rgb, fogAmount) * colorPipeline.x), outputAlpha);
+}
+
+float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
+{
+    return EvaluateWorldPixel(input, isFrontFace, false);
+}
+
+float4 WorldMaskedPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
+{
+    return EvaluateWorldPixel(input, isFrontFace, true);
 }

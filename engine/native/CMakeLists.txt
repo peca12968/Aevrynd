@@ -73,6 +73,7 @@ aevrynd_compile_shader(WorldVertexShader.h World.hlsl WorldVertexMain vs_5_0 Wor
 aevrynd_compile_shader(InstancedVertexShader.h World.hlsl InstancedVertexMain vs_5_0 InstancedVertexShader)
 aevrynd_compile_shader(SkinnedVertexShader.h World.hlsl SkinnedVertexMain vs_5_0 SkinnedVertexShader)
 aevrynd_compile_shader(WorldPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldPixelShader)
+aevrynd_compile_shader(WorldMaskedPixelShader.h World.hlsl WorldMaskedPixelMain ps_5_0 WorldMaskedPixelShader)
 aevrynd_compile_shader(ShadowWorldVertexShader.h World.hlsl ShadowWorldVertexMain vs_5_0 ShadowWorldVertexShader)
 aevrynd_compile_shader(ShadowInstancedVertexShader.h World.hlsl ShadowInstancedVertexMain vs_5_0 ShadowInstancedVertexShader)
 aevrynd_compile_shader(ShadowSkinnedVertexShader.h World.hlsl ShadowSkinnedVertexMain vs_5_0 ShadowSkinnedVertexShader)

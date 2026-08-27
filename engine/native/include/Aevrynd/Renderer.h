@@ -165,6 +165,12 @@ struct RendererStats {
     bool depthAwareWaterEnabled{};
     uint64_t depthAwareWaterPasses{};
     uint64_t hdrPostProcessPasses{};
+    bool multisampleSupported{},multisampleEnabled{};
+    unsigned multisampleCount{1},multisampleQuality{};
+    size_t multisampleResidentBytes{};
+    uint64_t multisampleAllocations{},multisampleReleases{},multisampleResolves{};
+    size_t lastMultisampleMaskedDrawCalls{};
+    uint64_t multisampleWaterDepthPrepasses{};
     size_t sceneConstantBufferBytes{};
     size_t rootSignatureDwords{};
     float lastExposureCompensationEv{};

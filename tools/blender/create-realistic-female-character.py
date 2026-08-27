@@ -88,7 +88,12 @@ def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], surface
     for z, radius_x, radius_y in rings:
         for segment in range(segments):
             angle = math.tau * segment / segments
-            vertices.append((math.cos(angle) * radius_x, math.sin(angle) * radius_y, z))
+            front = max(0.0, -math.sin(angle))
+            back = max(0.0, math.sin(angle))
+            hip_shape = max(0.0, 1.0 - abs(z - .88) / .18)
+            chest_shape = max(0.0, 1.0 - abs(z - 1.34) / .18)
+            depth = radius_y * (1.0 + back * hip_shape * .09 + front * chest_shape * .035)
+            vertices.append((math.cos(angle) * radius_x, math.sin(angle) * depth, z))
     for ring in range(len(rings) - 1):
         for segment in range(segments):
             next_segment = (segment + 1) % segments
@@ -192,13 +197,15 @@ def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float
     for vertex in obj.data.vertices:
         x, y, z = vertex.co
         normalized_z = z
-        jaw = 0.80 + 0.20 * max(0.0, min(1.0, (normalized_z + 0.72) / 0.62))
-        vertex.co.x *= scale[0] * jaw
+        jaw = 0.84 + 0.16 * max(0.0, min(1.0, (normalized_z + 0.68) / 0.70))
+        chin = 1.0 - .06 * math.exp(-(x / .25) ** 2 - ((normalized_z + .78) / .16) ** 2)
+        cheek = 1.0 + .025 * math.exp(-((abs(x) - .48) / .20) ** 2 - ((normalized_z - .10) / .28) ** 2)
+        vertex.co.x *= scale[0] * jaw * cheek * chin
         vertex.co.y *= scale[1] * (0.94 + 0.08 * math.exp(-((normalized_z - 0.05) / 0.34) ** 2))
         vertex.co.z *= scale[2]
         if y < 0.0:
-            nose = math.exp(-(x / 0.24) ** 2 - ((normalized_z - 0.06) / 0.29) ** 2)
-            vertex.co.y -= (0.030 if feminine else 0.038) * nose
+            nose = math.exp(-(x / 0.155) ** 2 - ((normalized_z - 0.08) / 0.24) ** 2)
+            vertex.co.y -= (0.025 if feminine else 0.035) * nose
             vertex.co.y -= 0.009 * math.exp(-(x / 0.52) ** 2 - ((normalized_z + 0.12) / 0.22) ** 2)
     obj.data.materials.append(surface); add_vertex_color(obj, tuple(surface.diffuse_color)); smooth_object(obj)
     group = obj.vertex_groups.new(name="Head"); group.add(range(len(obj.data.vertices)), 1.0, "REPLACE")
@@ -211,10 +218,12 @@ def facial_ribbon(name: str, center: tuple[float, float, float], width: float, h
     for row in range(2):
         for index in range(segments + 1):
             t = index / segments * 2.0 - 1.0
-            cupid = (1.0 - abs(t)) * (0.22 if upper else -0.08)
-            z = center[2] + (height * (0.45 - row) + height * cupid)
-            vertices.append((center[0] + t * width, center[1] - 0.002 * (1.0 - t*t), z))
-    faces = [(i, i+1, segments+2+i, segments+1+i) for i in range(segments)]
+            taper = math.sqrt(max(0.0, 1.0 - t*t))
+            cupid = taper * (0.24 if upper else -0.06) - abs(t) * .08
+            thickness = height * taper
+            z = center[2] + thickness * (0.45 - row) + height * cupid
+            vertices.append((center[0] + t * width, center[1] - 0.004 * taper, z))
+    faces = [(i, segments+1+i, segments+2+i, i+1) for i in range(segments)]
     mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
     for polygon in mesh.polygons:
         for loop_index in polygon.loop_indices:
@@ -230,7 +239,7 @@ def eyelid_ribbon(name: str, eye_x: float, center_y: float, center_z: float, upp
         for index in range(segments+1):
             t=index/segments*2.0-1.0; arc=math.sqrt(max(0.0,1.0-t*t))
             vertices.append((eye_x+t*.030,center_y-.001*arc,center_z+sign*(.0105*arc+row*.0025)))
-    faces=[(i,i+1,segments+2+i,segments+1+i) for i in range(segments)]
+    faces=[(i,segments+1+i,segments+2+i,i+1) for i in range(segments)]
     mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
     for polygon in mesh.polygons:
         for loop_index in polygon.loop_indices:
@@ -291,9 +300,9 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
     parts: list[bpy.types.Object] = []
     # 軀幹採多個平滑體塊形成肩、腰與骨盆的自然連續比例。
     parts += [
-        torso_loft("ContinuousDressTorso", ((.82,.23,.16),(.94,.22,.155),(1.05,.19,.14),(1.16,.165,.125),(1.29,.205,.14),(1.40,.23,.145),(1.46,.18,.12)), cloth),
+        torso_loft("ContinuousDressTorso", ((.82,.265,.168),(.94,.250,.162),(1.05,.185,.138),(1.16,.155,.122),(1.29,.198,.142),(1.40,.230,.145),(1.46,.175,.12)), cloth),
         sphere("Neck", (0, 0, 1.50), (0.064, 0.058, 0.095), skin, "Neck", 20, 12),
-        face_shell("ContinuousFace", (0, -0.005, 1.655), (0.112, 0.096, 0.135), skin, True),
+        face_shell("ContinuousFace", (0, -0.005, 1.650), (0.116, 0.090, 0.115), skin, True),
         facial_ribbon("UpperLip", (0,-0.108,1.619),.034,.010,lips,True),
         facial_ribbon("LowerLip", (0,-0.109,1.607),.031,.010,lips,False),
     ]
@@ -304,25 +313,30 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
             limb_loft(f"{side}Thigh", ((.105*sign,0,.92),(.10*sign,.003,.71),(.095*sign,.005,.51)), (.102,.09,.065), cloth_dark, (f"{side}UpperLeg",f"{side}UpperLeg")),
             limb_loft(f"{side}Calf", ((.095*sign,.005,.51),(.09*sign,.002,.31),(.085*sign,0,.11)), (.065,.076,.045), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
             sphere(f"{side}Boot", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"{side}Foot", 20, 12),
-            sphere(f"EyeWhite.{side}", (0.039 * sign, -0.094, 1.678), (0.029, 0.014, 0.017), sclera, "Head", 18, 10),
-            sphere(f"Iris.{side}", (0.039 * sign, -0.108, 1.678), (0.011, 0.005, 0.011), iris, "Head", 14, 8),
-            sphere(f"Pupil.{side}", (0.039 * sign, -0.113, 1.678), (0.0045, 0.0025, 0.0045), hair, "Head", 10, 6),
-            eyelid_ribbon(f"UpperEyelid.{side}",0.039*sign,-0.107,1.678,True,skin),
-            eyelid_ribbon(f"LowerEyelid.{side}",0.039*sign,-0.107,1.678,False,skin),
+            sphere(f"EyeWhite.{side}", (0.037 * sign, -0.087, 1.676), (0.024, 0.012, 0.014), sclera, "Head", 18, 10),
+            sphere(f"Iris.{side}", (0.037 * sign, -0.099, 1.676), (0.0095, 0.0045, 0.0095), iris, "Head", 14, 8),
+            sphere(f"Pupil.{side}", (0.037 * sign, -0.103, 1.676), (0.004, 0.002, 0.004), hair, "Head", 10, 6),
+            eyelid_ribbon(f"UpperEyelid.{side}",0.037*sign,-0.100,1.676,True,skin),
+            eyelid_ribbon(f"LowerEyelid.{side}",0.037*sign,-0.100,1.676,False,skin),
             tapered_limb(f"EarRim.{side}", (0.108 * sign, -0.004, 1.690), (0.110 * sign, -0.006, 1.610), (0.014, 0.009), skin, "Head", 10),
             tapered_limb(f"Lash.{side}", (0.012 * sign, -0.111, 1.690), (0.066 * sign, -0.108, 1.690), (0.0025, 0.0015), hair, "Head", 8),
-            tapered_limb(f"Brow.{side}", (0.012 * sign, -0.109, 1.712), (0.067 * sign, -0.104, 1.708), (0.0045, 0.003), hair, "Head", 10),
+            facial_ribbon(f"Brow.{side}", (0.037*sign,-0.103,1.704),.026,.004,hair,True,10),
         ]
         for index, (offset, length) in enumerate(((-0.022, 0.060), (-0.008, 0.070), (0.008, 0.066), (0.022, 0.055))):
             parts.append(tapered_limb(f"Finger.{side}.{index}", (0.358 * sign + offset, -0.038, 0.895), (0.358 * sign + offset, -0.050, 0.895 - length), (0.008, 0.005), skin, f"{side}Hand", 8))
         parts.append(tapered_limb(f"Thumb.{side}", (0.345 * sign, -0.035, 0.925), (0.325 * sign, -0.065, 0.895), (0.010, 0.006), skin, f"{side}Hand", 8))
     # 低模頭皮遮底，髮片以固定分布提供可裁切輪廓。
-    scalp = sphere("HairScalp", (0.0, 0.025, 1.710), (0.111, 0.092, 0.090), hair, "Head", 18, 10); set_opaque_hair_uv(scalp); parts.append(scalp)
+    scalp = sphere("HairScalp", (0.0, 0.012, 1.716), (0.109, 0.094, 0.094), hair, "Head", 18, 10); set_opaque_hair_uv(scalp); parts.append(scalp)
     for index in range(56):
         band, column = divmod(index, 14); angle = math.tau * column / 14.0 + band * 0.071
         root = (math.sin(angle) * (0.102 - band * 0.006), 0.025 + math.cos(angle) * (0.082 - band * 0.004), 1.755 - band * 0.018)
         length = 0.25 + 0.045 * band + 0.018 * math.sin(index * 2.17)
         tip = (root[0] * 1.10 + 0.012 * math.sin(index * 1.31), root[1] + 0.012, root[2] - length)
+        if root[1] < -0.025:
+            # 正面髮束導向顳側，避免長髮在下巴中央形成鬍鬚狀尖角。
+            direction = -1.0 if column < 7 else 1.0
+            root = (direction * max(.075, abs(root[0])), -.020, root[2])
+            tip = (direction * (.115 + .008 * band), -.004, root[2] - length)
         parts.append(hair_card(f"HairCard.{index:02d}", root, tip, 0.018 + 0.002 * (index % 3), index, hair))
     parts += [
         sphere("WaistBelt", (0, -0.005, 1.075), (0.179, 0.132, 0.026), cloth_dark, "Spine", 24, 10),
@@ -412,9 +426,16 @@ def main() -> None:
     triangles = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
     coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
     height = max(value.z for value in coordinates) - min(value.z for value in coordinates)
-    shoulder_ratio, chest_depth_ratio, waist_hip_ratio = .46 / height, .29 / height, .33 / .46
+    def slice_bounds(z: float, tolerance: float, maximum_x: float) -> tuple[float, float]:
+        samples=[value for value in coordinates if abs(value.z-z)<=tolerance and abs(value.x)<=maximum_x]
+        if len(samples)<8: raise RuntimeError("Female mesh slice has insufficient geometry.")
+        return max(value.x for value in samples)-min(value.x for value in samples),max(value.y for value in samples)-min(value.y for value in samples)
+    shoulder_width,chest_depth=slice_bounds(1.40,.025,.28);waist_width,_=slice_bounds(1.16,.025,.22);hip_width,_=slice_bounds(.84,.035,.29)
+    head=[value for value in coordinates if value.z>=1.53 and abs(value.x)<.16]
+    head_width=max(value.x for value in head)-min(value.x for value in head);head_height=max(value.z for value in head)-min(value.z for value in head)
+    shoulder_ratio, chest_depth_ratio, waist_hip_ratio = shoulder_width / height, chest_depth / height, waist_width / hip_width
     arm_ratio, leg_ratio, symmetry_error = .51 / height, .81 / height, 0.0
-    if len(character.data.vertices) > 11500 or triangles > 19000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.70 <= height <= 1.85 or not .24 <= shoulder_ratio <= .28 or not .14 <= chest_depth_ratio <= .18 or not .64 <= waist_hip_ratio <= .80 or not .26 <= arm_ratio <= .31 or not .42 <= leg_ratio <= .48 or symmetry_error > .002:
+    if len(character.data.vertices) > 12000 or triangles > 20000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.70 <= height <= 1.85 or not .23 <= shoulder_ratio <= .29 or not .13 <= chest_depth_ratio <= .19 or not .56 <= waist_hip_ratio <= .75 or not .19 <= head_width/head_height <= .95 or not .26 <= arm_ratio <= .31 or not .42 <= leg_ratio <= .48 or symmetry_error > .002:
         raise RuntimeError("Female character geometry budget or proportion validation failed.")
     output = export_asset(destination, character, rig)
     print(f"FEMALE_CHARACTER_GLTF={output}")
