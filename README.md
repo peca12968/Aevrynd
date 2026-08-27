@@ -1,6 +1,6 @@
 # Aevrynd Engine — C++ / DirectX 12 Local AI Game Engine
 
-Aevrynd Engine（艾弗林德引擎）是 Aevrynd Studios 自研、可擴充的 Windows 原生遊戲引擎與遊戲集合。核心、遊戲邏輯、輸入與畫面均由 C++20 實作，使用 Win32 視窗與 DirectX 12 呈現，並能透過本機 Qwen 模型生成遊戲事件，不需要瀏覽器或 Node.js。
+Aevrynd Engine（艾弗林德引擎）是 Aevrynd Studios 自研、可擴充的 Windows 原生遊戲引擎與遊戲集合。核心、遊戲邏輯、輸入與畫面均由 C++20 實作，使用 Win32 視窗與 DirectX 12 呈現，不需要瀏覽器或 Node.js。
 
 第一款遊戲是 2.5D 塔防《裂隙守望者》（Riftwarden）；`games/engine_lab/` 則是自動輪播不同相機並輸出場景統計的 3D 引擎驗證遊戲。每款遊戲各自封裝於 `games/<game-name>/`，並共用 `engine/native/` 的 Aevrynd Engine 能力。
 
@@ -95,14 +95,14 @@ Games/
 - 可成長 GPU upload vertex／index／instance buffer 與 fence synchronization
 - 三重緩衝持久映射上傳資源由 4,116,480 bytes 起始，依各幀需求倍增至既有硬上限；背景記憶體修剪會在 GPU 安全點釋放尖峰容量
 - Mesh 與材質最後一個引用釋放時會立即退出常駐資源表，並透過 fence 延後回收仍可能被既有幀使用的 GPU 資源與材質描述符，避免世界串流卸載時同步等待整條 GPU queue
-- 240 幀固定負載基準保持 0 次容量成長與 0 次資源等待，GPU 平均約 10 µs
+- 240 幀固定負載基準保持 0 次容量成長與 0 次資源等待，GPU 平均約 11 µs
 - DrawList 預留 32,768 頂點並跨幀重用容量，240,000 頂點上限會裁切至完整三角形
 - 頂點色彩採 GPU 原生 RGBA8 正規化格式，每個 2D 頂點由 24 bytes 降為 12 bytes；只有超過 32,768 個 2D 頂點的幀槽才會擴張上傳資源
 - Renderer telemetry 可分別追蹤提交幀、頂點／bytes、峰值、裁切、資源等待、幀上傳常駐容量／成長／修剪與 DLSS 模組狀態
 - Fence telemetry 量測資源重用與 DLSS 驗證等待的最近、累積、峰值奈秒及平均微秒，不再只記錄等待次數
 - 通用左手座標相機支援透視與正交投影，並提供第一人稱、第三人稱、上帝視角與等角 2.5D 預設
 - Scene3D 可將方塊、三角形與世界空間線段直接提交至硬體 3D 管線，使用 D32 深度緩衝處理遮擋，並保留 CPU 投影／排序路徑供比較驗證
-- Scene3D 以保守球體同時支援透視與正交視錐裁切；6,561 mesh 壓力基準只提交 583 個可見物件，上傳量減少 91.1%，CPU 提交平均由 1,803 µs 降至 321 µs
+- Scene3D 以保守球體同時支援透視與正交視錐裁切；6,561 mesh 壓力基準只提交 593 個可見物件，上傳量減少 90.9%，CPU 完整展開平均 3,076 µs，實例化提交平均 304 µs
 - 2D UI 與 3D 世界使用獨立頂點批次與 pipeline state，同一幀先深度繪製世界、再疊加 HUD
 - Mesh3D 提供可重用索引拓撲、位置／旋轉／縮放變換與材質 tint；Scene3D 將多個 mesh 合併為單一 indexed draw
 - MeshHandle3D 將任意合法索引網格一次上傳至 GPU DEFAULT heap，並以三緩衝 matrix／tint instance stream 合併相同 mesh 的 `DrawIndexedInstanced`；583 個可見 mesh 的逐幀上傳由 307,824 bytes 降至 39,644 bytes，再減少 87.1%
@@ -112,6 +112,9 @@ Games/
 - Engine Lab 同幀混合常駐 box、pyramid 與外部 OBJ 三種網格；OBJ 載入器支援多邊形三角化、負索引、頂點色、平滑／平面法線生成與右手轉左手座標，GPU／CPU 場景驗證僅一個瞬時像素超過 1/255
 - Scene3D 支援透視／正交畫面射線、世界 AABB 粗篩與最近三角形命中；6,561 物件、240 次查詢平均 77 微秒，99.9% 候選在精確測試前排除，並回傳位置、法線、重心座標與物件索引
 - AudioEngine 使用 Windows XAudio2 提供 PCM WAV、程序音色、音量／音高／循環播放、64 voice 資源上限與完整遙測；Engine Lab 驗證 4 voice 同時播放後自動回收，Riftwarden 的出兵、建造、技能、受創與升級事件共用同一管線
+- generation-safe ECS 提供 1,600 萬 entity 明確上限、可回收 index、永久退役的 generation overflow slot、bounded sparse component storage、typed view、延遲銷毀、殭屍 component 過濾與記憶體修剪
+- 版本化序列化核心使用受限 UTF-8 JSON 封裝，精確保存 64-bit 整數，支援 Vec2、Vec3、Transform3D 與巢狀物件；未知欄位、預設值、原子失敗、文件／字串／欄位／深度上限均有自動測試
+- PhysicsWorld3D 獨立回歸涵蓋 static／dynamic／kinematic、layer mask、sleep／wake、高速 CCD、stale handle 與 4,096 bodies 工作區回收
 - 60Hz fixed timestep 遊戲迴圈
 - CPU draw-list：三角形、矩形、菱形、圓形、線段、像素字型
 - 可重用的等角立體柱與橢圓投影原語，用於 2.5D 地形、單位、陰影與射程
@@ -119,13 +122,12 @@ Games/
 - 可重用的畫布平移，讓世界層能套用鏡頭震動而 HUD 與選單維持穩定
 - 依桌面工作區等比例縮放視窗，保留 1280×720 邏輯座標與輸入映射
 - 2.5D 路徑、深度感地形、塔、敵人、投射物與粒子
-- C++ WinHTTP 非同步呼叫本地 llama.cpp
 
 ## 玩法規則核心
 
 - 局內永久強化節點定義於第 4、8 波結束後
 - 火力每級增加 15%、賞金每級增加 20%、射程每級增加 12%，單項最多兩級
-- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；新執行檔仍需通過系統簽章政策才能完成實機驗證
+- 規則、存檔與 2.5D 選擇介面已整合，並以 C++20 編譯期斷言驗證倍率疊加及波次阻擋；Demo 2.7.0 已自動完成繁中選擇、建塔、啟動第一波、持續戰鬥與正常關閉驗證
 
 ## 編譯
 

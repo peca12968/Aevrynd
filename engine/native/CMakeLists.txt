@@ -3,6 +3,7 @@ add_library(AevryndEngine STATIC
   src/Audio.cpp
   src/CharacterController3D.cpp
   src/CollisionWorld3D.cpp
+  src/ECS.cpp
   src/Effects2D.cpp
   src/Engine.cpp
   src/EnvironmentMeshes3D.cpp
@@ -13,6 +14,7 @@ add_library(AevryndEngine STATIC
   src/MeshLoader.cpp
   src/Navigation3D.cpp
   src/PhysicsWorld3D.cpp
+  src/Serialization.cpp
   src/Spatial2D.cpp
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
@@ -147,6 +149,21 @@ add_executable(AevryndHeightField3DTest tests/HeightField3DSmoke.cpp)
 target_compile_options(AevryndHeightField3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndHeightField3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndHeightField3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndHeightField3DTest>'")
+
+add_executable(AevryndECSTest tests/ECSSmoke.cpp)
+target_compile_options(AevryndECSTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndECSTest PRIVATE AevryndEngine)
+add_test(NAME AevryndECSTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndECSTest>'")
+
+add_executable(AevryndSerializationTest tests/SerializationSmoke.cpp)
+target_compile_options(AevryndSerializationTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSerializationTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSerializationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSerializationTest>'")
+
+add_executable(AevryndPhysicsWorld3DTest tests/PhysicsWorld3DSmoke.cpp)
+target_compile_options(AevryndPhysicsWorld3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndPhysicsWorld3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndPhysicsWorld3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndPhysicsWorld3DTest>'")
 
 add_executable(AevryndRendererBenchmark tests/RendererBenchmark.cpp)
 target_compile_options(AevryndRendererBenchmark PRIVATE /W4 /permissive- /utf-8)
