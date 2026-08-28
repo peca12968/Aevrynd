@@ -1130,10 +1130,12 @@ float3 EvaluateEnvironmentLighting(float3 worldPosition,float3 normal, float3 vi
     const float3 skyDiffuse = EvaluateEnvironmentDiffuse(normal, sunDirection);
     const float3 reflectionDirection = reflect(-viewDirection, normal);
     const float3 skySpecular = EvaluateEnvironmentSpecular(worldPosition,reflectionDirection, sunDirection, roughness);
-    const float2 brdf = environmentEnabled > 0.5
+    const float2 analyticBrdf=float2(0.35 + 0.65 * (1.0 - roughness), 0.0);
+    const float2 sampledBrdf=environmentEnabled > 0.5
         ? environmentBrdfTexture.SampleLevel(screenPointClampSampler,
               float2(saturate(dot(normal, viewDirection)), saturate(roughness)), 0.0)
-        : float2(0.35 + 0.65 * (1.0 - roughness), 0.0);
+        : float2(0.0,0.0);
+    const float2 brdf=sampledBrdf.x+sampledBrdf.y>0.00001?sampledBrdf:analyticBrdf;
     return (diffuseWeight * baseColor * skyDiffuse + skySpecular * (fresnel * brdf.x + brdf.y))
          * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
 }
