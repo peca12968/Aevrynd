@@ -10,6 +10,103 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$internalWorker = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_INTERNAL_WORKER') -eq '1'
+
+if (-not $internalWorker) {
+    # 外層監督器不載入模型，也不參與 worker 清理；worker 即使卡在 PowerShell 關閉階段，仍可準時回傳 fallback。
+    $supervisorTimer = [Diagnostics.Stopwatch]::StartNew()
+    $workerProcess = $null
+    $workerStdoutTask = $null
+    $workerStderrTask = $null
+    $hardLimitMilliseconds = ($TimeoutSeconds * 1000) + 5000
+    $workerArguments = [Collections.Generic.List[string]]::new()
+    foreach ($argument in @('-NoProfile','-File',$PSCommandPath,'-Task',$Task)) { $workerArguments.Add([string]$argument) }
+    if ($Files.Count -gt 0) {
+        $workerArguments.Add('-Files')
+        foreach ($file in $Files) { $workerArguments.Add([string]$file) }
+    }
+    foreach ($argument in @(
+        '-MaxTokens',[string]$MaxTokens,
+        '-JsonSchema',$JsonSchema,
+        '-ProjectRoot',$ProjectRoot,
+        '-TimeoutSeconds',[string]$TimeoutSeconds,
+        '-CpuThreads',[string]$CpuThreads,
+        '-MaximumRamGiB',[string]$MaximumRamGiB
+    )) { $workerArguments.Add([string]$argument) }
+
+    function Write-SupervisorFallback([string]$Code,[bool]$WasLaunched,[bool]$TreeKilled,[string]$Phase) {
+        [ordered]@{
+            ok=$false
+            fallbackToCodex=$true
+            error=[ordered]@{code=$Code;message='Local QWEN worker did not return a valid receipt; use Codex fallback.'}
+            resource=[ordered]@{
+                launched=$WasLaunched
+                elapsedMilliseconds=[int64]$supervisorTimer.ElapsedMilliseconds
+                peakWorkingSetBytes=0L
+                inputBytes=0L
+                promptBytes=0L
+                exitCode=$null
+                jobAssigned=$false
+                supervisor=[ordered]@{phase=$Phase;hardLimitMilliseconds=$hardLimitMilliseconds;treeKilled=$TreeKilled}
+                termination=[ordered]@{graceMilliseconds=5000;timedOut=($Code -eq 'LocalQwenSupervisorTimeout');streamDrainTimedOut=$false}
+                output=[ordered]@{bytes=0;consoleBytes=0;promptEchoBytes=0;promptEchoPrefixMatched=$false;promptEchoCommonPrefixChars=0;responseMarkerFound=$false;runtimeError='none';runtimeKind='unknown';candidates=0;jsonCandidates=0;schemaCandidates=0;lastCandidateStart=-1;lastCandidateEnd=-1;candidateKeys=@()}
+                limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
+            }
+        } | ConvertTo-Json -Depth 8 -Compress
+    }
+
+    try {
+        $workerStartInfo = [Diagnostics.ProcessStartInfo]::new()
+        $workerStartInfo.FileName = (Get-Command pwsh -ErrorAction Stop).Source
+        $workerStartInfo.WorkingDirectory = [IO.Path]::GetFullPath($ProjectRoot)
+        $workerStartInfo.UseShellExecute = $false
+        $workerStartInfo.CreateNoWindow = $true
+        $workerStartInfo.RedirectStandardOutput = $true
+        $workerStartInfo.RedirectStandardError = $true
+        foreach ($argument in $workerArguments) { $workerStartInfo.ArgumentList.Add($argument) }
+        $workerStartInfo.Environment['AEVRYND_QWEN_INTERNAL_WORKER'] = '1'
+        $workerProcess = [Diagnostics.Process]::new()
+        $workerProcess.StartInfo = $workerStartInfo
+        if (-not $workerProcess.Start()) { throw 'Worker launch failed.' }
+        $workerStdoutTask = $workerProcess.StandardOutput.ReadToEndAsync()
+        $workerStderrTask = $workerProcess.StandardError.ReadToEndAsync()
+        if (-not $workerProcess.WaitForExit($hardLimitMilliseconds)) {
+            try { $workerProcess.Kill($true) } catch {}
+            try { $workerProcess.WaitForExit(500) | Out-Null } catch {}
+            Write-SupervisorFallback 'LocalQwenSupervisorTimeout' $true $true 'worker-exit'
+            exit 0
+        }
+        $remainingMilliseconds = [Math]::Max(0,$hardLimitMilliseconds - [int]$supervisorTimer.ElapsedMilliseconds)
+        $streamTasks = [Threading.Tasks.Task[]]@($workerStdoutTask,$workerStderrTask)
+        $streamsCompleted = try { [Threading.Tasks.Task]::WaitAll($streamTasks,$remainingMilliseconds) } catch { $false }
+        if (-not $streamsCompleted) {
+            try { $workerProcess.Kill($true) } catch {}
+            Write-SupervisorFallback 'LocalQwenSupervisorTimeout' $true $true 'worker-streams'
+            exit 0
+        }
+        $workerStdout = $workerStdoutTask.GetAwaiter().GetResult().Trim()
+        $workerStderr = $workerStderrTask.GetAwaiter().GetResult().Trim()
+        $workerReceipt = $null
+        try { $workerReceipt = $workerStdout | ConvertFrom-Json -ErrorAction Stop } catch {}
+        if ($workerProcess.ExitCode -ne 0 -or $workerStderr.Length -ne 0 -or $null -eq $workerReceipt -or
+            $null -eq $workerReceipt.PSObject.Properties['ok'] -or $null -eq $workerReceipt.PSObject.Properties['fallbackToCodex'] -or
+            $null -eq $workerReceipt.PSObject.Properties['resource']) {
+            Write-SupervisorFallback 'LocalQwenWorkerProtocolInvalid' $true $false 'receipt-validation'
+            exit 0
+        }
+        # 重新序列化已解析的單一物件，避免 worker 將額外 console 文字帶給呼叫端。
+        $workerReceipt | ConvertTo-Json -Depth 100 -Compress
+    } catch {
+        if ($null -ne $workerProcess) {
+            try { if (-not $workerProcess.HasExited) { $workerProcess.Kill($true) } } catch {}
+        }
+        Write-SupervisorFallback 'LocalQwenSupervisorFailed' ($null -ne $workerProcess) $true 'supervisor-exception'
+    } finally {
+        if ($null -ne $workerProcess) { try { $workerProcess.Dispose() } catch {} }
+    }
+    exit 0
+}
+
 $expectedProjectPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')).TrimEnd('\')
 $projectPath = [IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\')
 $runtimePath = Join-Path $projectPath 'engine\runtime\llama.cpp\llama-cli.exe'
@@ -47,6 +144,20 @@ $terminationTimedOut = $false
 $streamDrainTimedOut = $false
 $syntheticMode = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_SYNTHETIC_MODE')
 $terminationTimer = $null
+$tracePath = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TEST_TRACE_PATH')
+
+function Write-WorkerTrace([string]$Phase) {
+    if ([Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -ne '1' -or [string]::IsNullOrWhiteSpace($script:tracePath)) { return }
+    try {
+        $fullTracePath = [IO.Path]::GetFullPath($script:tracePath)
+        $systemTemporaryPath = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
+        if ($fullTracePath.StartsWith($systemTemporaryPath + '\',[StringComparison]::OrdinalIgnoreCase)) {
+            [IO.File]::AppendAllText($fullTracePath,"$Phase`n",[Text.UTF8Encoding]::new($false))
+        }
+    } catch {}
+}
+
+Write-WorkerTrace 'worker-start'
 
 if (-not ('AevryndPathSecurity' -as [type])) {
 Add-Type -TypeDefinition @'
@@ -378,6 +489,7 @@ $responseMarker
     [IO.File]::WriteAllText($promptPath,$prompt,[Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($schemaPath,$generationSchema,[Text.UTF8Encoding]::new($false))
     $failurePhase = 'runtime-launch'
+    Write-WorkerTrace 'runtime-launch-before'
     # Chat template 會讓結束回合的特殊 token 經過 JSON grammar 而初始化失敗；completion 模式沒有此衝突。
     # 固定短 prompt 讓 single-turn 進入生成；完整內容與 schema 仍只經過暫存檔傳入。
     $arguments = @('-m',$modelPath,'--prompt','Follow the complete task from the attached prompt file.','--file',$promptPath,'-n',[string]$MaxTokens,'-c','4096','-t',[string]$CpuThreads,'-tb',[string]$CpuThreads,'-ngl','32','--flash-attn','auto','--reasoning','off','--reasoning-budget','0','--json-schema-file',$schemaPath,'--output-file',$outputPath,'--log-file',$logPath,'--no-jinja','--single-turn','--simple-io','--no-display-prompt','--color','off','--no-perf')
@@ -387,6 +499,13 @@ $responseMarker
         if ($syntheticMarker -notmatch '^[a-f0-9]{32}$') { throw 'Synthetic test marker is invalid.' }
         $startInfoFileName = (Get-Command pwsh -ErrorAction Stop).Source
         $childCommand = '$nested=Start-Process pwsh -ArgumentList @(''-NoProfile'',''-Command'',''Start-Sleep -Seconds 300'',''{0}'') -NoNewWindow -PassThru; [Console]::Out.Write((''x''*65536)); Start-Sleep -Seconds 300' -f $syntheticMarker
+        $arguments = @('-NoProfile','-Command',$childCommand)
+    } elseif ($syntheticMode -eq 'HostHangAfterChildExit' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        # 子程序正常退出並建立有效結果，但 worker 在 finally 後掛住，用來驗證外層監督器的硬界線。
+        $escapedOutputPath = $outputPath.Replace("'","''")
+        $escapedSyntheticOutput = ($responseMarker + '{"synthetic":true}').Replace("'","''")
+        $startInfoFileName = (Get-Command pwsh -ErrorAction Stop).Source
+        $childCommand = "[IO.File]::WriteAllText('$escapedOutputPath','$escapedSyntheticOutput',[Text.UTF8Encoding]::new(`$false)); exit 0"
         $arguments = @('-NoProfile','-Command',$childCommand)
     } else {
         $startInfoFileName = $runtimePath
@@ -402,6 +521,7 @@ $responseMarker
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     if (-not $process.Start()) { throw 'Local QWEN could not be started.' }
+    Write-WorkerTrace 'runtime-process-started'
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
     $launched = $true
@@ -418,6 +538,7 @@ $responseMarker
         if ($process.WorkingSet64 -gt $maximumBytes) { Stop-BoundedRuntime;throw 'Local QWEN exceeded its RAM budget.' }
         Start-Sleep -Milliseconds 100
     }
+    Write-WorkerTrace 'runtime-process-exited'
     if (-not $process.WaitForExit($terminationGraceMilliseconds)) { Stop-BoundedRuntime;throw 'Local QWEN did not complete process shutdown.' }
     $exitCode = $process.ExitCode
     if ($process.ExitCode -ne 0) {
@@ -428,6 +549,7 @@ $responseMarker
         Stop-BoundedRuntime
         throw 'Local QWEN did not close redirected output streams.'
     }
+    Write-WorkerTrace 'runtime-streams-drained'
     $consoleText = $stdoutTask.GetAwaiter().GetResult()
     $stderrText = $stderrTask.GetAwaiter().GetResult()
     $diagnosticText = $consoleText + "`n" + $stderrText
@@ -470,6 +592,7 @@ $responseMarker
         throw "Local QWEN did not return schema-valid JSON (stdoutBytes=$([Text.Encoding]::UTF8.GetByteCount($raw)))."
     }
     $resultObject=$json|ConvertFrom-Json
+    Write-WorkerTrace 'receipt-serialization-before'
     [ordered]@{
         ok=$true
         fallbackToCodex=$false
@@ -488,12 +611,23 @@ $responseMarker
             limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
         }
     } | ConvertTo-Json -Depth 100 -Compress
+    Write-WorkerTrace 'receipt-serialization-after'
 } catch {
     # 僅回傳固定階段名稱，讓呼叫端可診斷而不暴露路徑或模型輸出。
     $code = if ($null -ne $failureCode) { $failureCode } else { 'LocalQwenFailed.' + $failurePhase }
+    Write-WorkerTrace ('fallback-before-' + $failurePhase)
     Write-Fallback $code 'Local QWEN could not complete this bounded task; use Codex fallback.'
+    Write-WorkerTrace ('fallback-after-' + $failurePhase)
 } finally {
+    Write-WorkerTrace 'finally-stop-before'
     Stop-BoundedRuntime
+    Write-WorkerTrace 'finally-stop-after'
     if ($null -ne $process) { try { $process.Dispose() } catch {} }
+    Write-WorkerTrace 'finally-process-disposed'
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-WorkerTrace 'finally-temp-removed'
+    if ($syntheticMode -eq 'HostHangAfterChildExit' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        Write-WorkerTrace 'synthetic-host-hang'
+        Start-Sleep -Seconds 300
+    }
 }

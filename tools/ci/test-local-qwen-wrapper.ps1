@@ -66,6 +66,8 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
         StreamsCompleted = $streamsCompleted
         TerminationTimedOut = if ($null -ne $payload) { [bool]$payload.resource.termination.timedOut } else { $null }
         StreamDrainTimedOut = if ($null -ne $payload) { [bool]$payload.resource.termination.streamDrainTimedOut } else { $null }
+        SupervisorPhase = if ($null -ne $payload) { $payload.resource.supervisor.phase } else { $null }
+        SupervisorTreeKilled = if ($null -ne $payload) { [bool]$payload.resource.supervisor.treeKilled } else { $null }
         StderrBytes = [Text.Encoding]::UTF8.GetByteCount($stderr)
     })
 }
@@ -96,6 +98,30 @@ try {
         $syntheticResult.WallMilliseconds -le 15000 -and -not $syntheticResult.TerminationTimedOut -and
         -not $syntheticResult.StreamDrainTimedOut
     $syntheticResult | Add-Member -NotePropertyName OrphanCount -NotePropertyValue $orphanCount
+
+    $hostHangTracePath = Join-Path $temporaryRoot 'host-hang-trace.log'
+    Invoke-Wrapper 'host-hang-after-child-exit' @('-Task','synthetic host hang','-MaxTokens','32','-TimeoutSeconds','10') $true $false 'LocalQwenSupervisorTimeout' @{
+        AEVRYND_QWEN_TESTING='1'
+        AEVRYND_QWEN_SYNTHETIC_MODE='HostHangAfterChildExit'
+        AEVRYND_QWEN_TEST_TRACE_PATH=$hostHangTracePath
+    } 16
+    $hostHangTrace = if (Test-Path -LiteralPath $hostHangTracePath) { Get-Content -LiteralPath $hostHangTracePath } else { @() }
+    $hostHangResult = $results[$results.Count - 1]
+    $remainingQwenTemporaryDirectories = @(
+        Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'aevrynd-qwen-*' -ErrorAction SilentlyContinue |
+            Where-Object { -not $_.FullName.Equals($temporaryRoot,[StringComparison]::OrdinalIgnoreCase) }
+    ).Count
+    $requiredTracePhases = @(
+        'runtime-process-exited','runtime-streams-drained','receipt-serialization-after',
+        'finally-stop-after','finally-process-disposed','finally-temp-removed','synthetic-host-hang'
+    )
+    $hostHangResult.Passed = $hostHangResult.Passed -and
+        $hostHangResult.WallMilliseconds -ge 14500 -and $hostHangResult.WallMilliseconds -le 16000 -and
+        $hostHangResult.SupervisorPhase -eq 'worker-exit' -and $hostHangResult.SupervisorTreeKilled -and
+        @($requiredTracePhases | Where-Object { $_ -notin $hostHangTrace }).Count -eq 0 -and
+        $remainingQwenTemporaryDirectories -eq 0
+    $hostHangResult | Add-Member -NotePropertyName TracePhases -NotePropertyValue ($hostHangTrace -join ',')
+    $hostHangResult | Add-Member -NotePropertyName RemainingQwenTemporaryDirectories -NotePropertyValue $remainingQwenTemporaryDirectories
 
     $largeInputPath = Join-Path (Split-Path -Parent $PSScriptRoot) '.qwen-wrapper-test-large.txt'
     try {
