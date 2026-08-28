@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $cmakeExecutable = 'C:\Program Files\CMake\bin\cmake.exe'
 $buildDirectory = Join-Path $projectRoot 'engine\build'
-$buildParallelism = [Math]::Min(8, [Environment]::ProcessorCount)
+$buildParallelism = [Math]::Min(4, [Environment]::ProcessorCount)
 & $cmakeExecutable -S $projectRoot -B $buildDirectory -G 'Visual Studio 17 2022' -A x64
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 & $cmakeExecutable --build $buildDirectory --config Release --target FrontierWorld --parallel $buildParallelism

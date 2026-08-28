@@ -36,8 +36,15 @@ try {
         $male = Join-Path $root 'male'
         [IO.Directory]::CreateDirectory($female) | Out-Null
         [IO.Directory]::CreateDirectory($male) | Out-Null
-        & $Blender --background --factory-startup --python $generator -- $Bundle $female $male
+        $generationOutput = @(& $Blender --background --factory-startup --python $generator -- $Bundle $female $male 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "Character generation failed for $name." }
+        $generationText = $generationOutput -join "`n"
+        if ($generationText -notmatch 'CC0_CHARACTER=F2 .*GARMENT_FACES=1608 GARMENT_VERTICES=1685 GARMENT_RIM=158 GARMENT_BOUNDARY=158 COLLAR_VERTICES=124 GARMENT_TRIANGLES=3656') {
+            throw "Female garment topology contract failed for $name."
+        }
+        if ($generationText -notmatch 'CC0_CHARACTER=M2 .*GARMENT_FACES=1560 GARMENT_VERTICES=1646 GARMENT_RIM=176 GARMENT_BOUNDARY=176 COLLAR_VERTICES=128 GARMENT_TRIANGLES=3600') {
+            throw "Male garment topology contract failed for $name."
+        }
         $runs += [pscustomobject]@{ Root = $root; Female = $female; Male = $male }
     }
 
@@ -68,11 +75,11 @@ try {
     $inspector = Join-Path ([IO.Path]::GetFullPath((Join-Path $projectRoot $BuildDirectory))) 'bin\Release\AevryndSkinnedModelAssetV2Inspect.exe'
     if (-not (Test-Path -LiteralPath $inspector -PathType Leaf)) { throw "Inspector is missing: $inspector" }
     $femaleInspection = & $inspector $committedFemale
-    if ($LASTEXITCODE -ne 0 -or $femaleInspection -notmatch 'vertices=19458 indices=101592 joints=20 submeshes=9 materials=9 clips=1') {
+    if ($LASTEXITCODE -ne 0 -or $femaleInspection -notmatch 'vertices=20236 indices=103236 joints=20 submeshes=9 materials=9 clips=1') {
         throw "Female asset inspection failed: $femaleInspection"
     }
     $maleInspection = & $inspector $committedMale
-    if ($LASTEXITCODE -ne 0 -or $maleInspection -notmatch 'vertices=19362 indices=101184 joints=20 submeshes=9 materials=9 clips=1') {
+    if ($LASTEXITCODE -ne 0 -or $maleInspection -notmatch 'vertices=20216 indices=102948 joints=20 submeshes=9 materials=9 clips=1') {
         throw "Male asset inspection failed: $maleInspection"
     }
 

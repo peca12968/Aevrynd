@@ -3,7 +3,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $cmake = 'C:\Program Files\CMake\bin\cmake.exe'
 if (-not (Test-Path -LiteralPath $cmake)) { throw 'CMake is not installed.' }
 $build = Join-Path $root 'engine\build'
-$buildParallelism = [Math]::Min(8, [Environment]::ProcessorCount)
+$buildParallelism = [Math]::Min(4, [Environment]::ProcessorCount)
 & $cmake -S $root -B $build -G 'Visual Studio 17 2022' -A x64
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
 & $cmake --build $build --config Release --target EngineLab --parallel $buildParallelism

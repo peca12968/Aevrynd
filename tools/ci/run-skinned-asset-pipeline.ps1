@@ -1,7 +1,7 @@
 param(
     [string]$BuildDirectory = 'engine/build',
     [ValidateSet('Debug', 'Release', 'RelWithDebInfo', 'MinSizeRel')][string]$Configuration = 'Release',
-    [int]$Parallel = 28
+    [int]$Parallel = 4
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,7 +12,8 @@ $blender = Get-ChildItem 'C:\Program Files\Blender Foundation' -Recurse -Filter 
     Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
 if (-not (Test-Path -LiteralPath $cmake)) { throw 'CMake is not installed.' }
 if (-not $blender) { throw 'Blender is not installed.' }
-if ($Parallel -lt 1) { throw 'Parallel must be at least one.' }
+# 將外部輸入限制在保守的工作數，避免長時間資產驗證推高記憶體。
+$effectiveParallel = [Math]::Max(1, [Math]::Min(4, $Parallel))
 
 $fixtureDirectory = Join-Path $resolvedBuild 'skinned-asset-pipeline'
 New-Item -ItemType Directory -Force -Path $fixtureDirectory | Out-Null
@@ -25,7 +26,7 @@ $assetPath = Join-Path $fixtureDirectory 'validation-character.aeskin'
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $gltfPath)) { throw 'Blender skinned glTF generation failed.' }
 & $converter -Source $gltfPath -Output $assetPath
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $assetPath)) { throw 'glTF to AESK conversion failed.' }
-& $cmake --build $resolvedBuild --config $Configuration --parallel $Parallel --target AevryndSkinnedModelAssetTest
+& $cmake --build $resolvedBuild --config $Configuration --parallel $effectiveParallel --target AevryndSkinnedModelAssetTest
 if ($LASTEXITCODE -ne 0) { throw 'Skinned model asset test build failed.' }
 $testExecutable = Join-Path $resolvedBuild "bin\$Configuration\AevryndSkinnedModelAssetTest.exe"
 & $testExecutable $assetPath

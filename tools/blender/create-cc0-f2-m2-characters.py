@@ -5,6 +5,9 @@ from pathlib import Path
 import bpy
 from mathutils import Matrix, Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from aevrynd_garment_pipeline import create_upper_garment_shell
+
 
 def arguments() -> tuple[Path, Path, Path]:
     separator = sys.argv.index("--")
@@ -372,7 +375,8 @@ def export_character(bundle: Path, destination: Path, female: bool) -> None:
     rig = create_rig(female)
     extras = objects[1:] + features
     bind_to_rig(objects[0], extras, rig)
-    character = consolidate([objects[0]] + extras, rig, materials, "RealisticFemaleCharacter" if female else "RealisticMaleCharacter")
+    garment, garment_metrics = create_upper_garment_shell(objects[0], rig, materials[5], female)
+    character = consolidate([objects[0], garment] + extras, rig, materials, "RealisticFemaleCharacter" if female else "RealisticMaleCharacter")
     create_animation(rig)
     bpy.ops.object.select_all(action="DESELECT"); character.select_set(True); rig.select_set(True); bpy.context.view_layer.objects.active = rig
     filename = "realistic-female.gltf" if female else "realistic-male-character.gltf"
@@ -382,9 +386,11 @@ def export_character(bundle: Path, destination: Path, female: bool) -> None:
     bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=str(destination / ("realistic-female.blend" if female else "realistic-male.blend")))
     triangles = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
-    print(f"CC0_CHARACTER={'F2' if female else 'M2'} VERTICES={len(character.data.vertices)} TRIANGLES={triangles} BONES={len(rig.data.bones)} MATERIALS={len(character.data.materials)} HAIR_CARDS={len(hair_cards)} HAIR_TRIANGLES={hair_triangles}")
+    print(f"CC0_CHARACTER={'F2' if female else 'M2'} VERTICES={len(character.data.vertices)} TRIANGLES={triangles} BONES={len(rig.data.bones)} MATERIALS={len(character.data.materials)} HAIR_CARDS={len(hair_cards)} HAIR_TRIANGLES={hair_triangles} GARMENT_FACES={garment_metrics.source_faces} GARMENT_VERTICES={garment_metrics.outer_vertices} GARMENT_RIM={garment_metrics.rim_vertices} GARMENT_BOUNDARY={garment_metrics.boundary_edges} COLLAR_VERTICES={garment_metrics.collar_vertices} GARMENT_TRIANGLES={garment_metrics.triangles}")
     if (len(character.data.vertices) > 30000 or triangles > 60000 or len(rig.data.bones) != 20
-            or len(character.data.materials) != 9 or len(hair_cards) != expected_hair_cards or hair_triangles > 900):
+            or len(character.data.materials) != 9 or len(hair_cards) != expected_hair_cards or hair_triangles > 900
+            or garment_metrics.source_faces < 1000 or garment_metrics.boundary_edges < 100
+            or garment_metrics.collar_vertices < 32 or garment_metrics.triangles > 4000):
         raise RuntimeError("CC0 character geometry budget validation failed.")
 
 
