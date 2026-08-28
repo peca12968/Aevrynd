@@ -196,6 +196,9 @@ struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion
 enum class GpuInstanceSubmissionMode3D:uint8_t {Aggregate,MultiGroup};
 struct GpuInstanceCullingSettings3D {bool enabled{};float maximumDistance{};GpuInstanceSubmissionMode3D submissionMode{GpuInstanceSubmissionMode3D::MultiGroup};friend constexpr bool operator==(const GpuInstanceCullingSettings3D&,const GpuInstanceCullingSettings3D&)=default;};
 inline GpuInstanceCullingSettings3D NormalizeGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){settings.maximumDistance=std::isfinite(settings.maximumDistance)&&settings.maximumDistance>0.f?settings.maximumDistance:0.f;return settings;}
+enum class HzbOcclusionQuality3D:uint8_t {Off,Conservative,Aggressive};
+struct HzbOcclusionSettings3D {HzbOcclusionQuality3D quality{HzbOcclusionQuality3D::Conservative};uint32_t minimumCandidates{2048},maximumOccluderDraws{256},maximumOccluderTriangles{200000};float minimumOccluderPixels{64.f},depthBias{.0005f};friend constexpr bool operator==(const HzbOcclusionSettings3D&,const HzbOcclusionSettings3D&)=default;};
+inline HzbOcclusionSettings3D NormalizeHzbOcclusionSettings3D(HzbOcclusionSettings3D settings){settings.minimumCandidates=(std::clamp)(settings.minimumCandidates,1024u,1u<<24);settings.maximumOccluderDraws=(std::clamp)(settings.maximumOccluderDraws,1u,4096u);settings.maximumOccluderTriangles=(std::clamp)(settings.maximumOccluderTriangles,1u,1u<<26);settings.minimumOccluderPixels=Clamp(std::isfinite(settings.minimumOccluderPixels)?settings.minimumOccluderPixels:64.f,1.f,4096.f);settings.depthBias=Clamp(std::isfinite(settings.depthBias)?settings.depthBias:.0005f,0.f,.05f);return settings;}
 struct VelocityCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};bool historyValid{};};
 inline AmbientOcclusionSettings3D NormalizeAmbientOcclusionSettings3D(AmbientOcclusionSettings3D settings){settings.radius=Clamp(std::isfinite(settings.radius)?settings.radius:1.35f,.1f,8.f);settings.bias=Clamp(std::isfinite(settings.bias)?settings.bias:.035f,0.f,.5f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:1.05f,0.f,4.f);return settings;}
 inline constexpr size_t AmbientOcclusionResidentBytes3D(unsigned width,unsigned height){return size_t((width+1)/2)*((height+1)/2)*2;}
@@ -240,6 +243,7 @@ struct RendererStats {
     uint64_t resizeCount{};
     RendererQualitySettings3D requestedQuality{},effectiveQuality{};
     GpuInstanceCullingSettings3D gpuInstanceCulling{};
+    HzbOcclusionSettings3D hzbOcclusion{};
     bool gpuInstanceCullingResourcesResident{};
     size_t gpuInstanceCullingResidentBytes{},lastGpuInstanceCullingCpuGroups{},lastGpuInstanceCullingStaticOpaqueColorGroups{},lastGpuInstanceCullingColorDirectGroups{},lastGpuInstanceCullingShadowDirectGroups{},lastGpuInstanceCullingAmbientOcclusionDirectGroups{},lastGpuInstanceCullingVelocityDirectGroups{},lastGpuInstanceCullingProbeDirectGroups{},lastGpuInstanceCullingCandidates{},lastGpuInstanceCullingVisible{},lastGpuInstanceCullingRejected{};
     size_t lastGpuInstanceSubmissionBuckets{},lastGpuInstanceSubmissionCommands{},lastGpuInstanceSubmissionCalls{},lastGpuInstanceSubmissionBindingSets{},gpuInstanceCommandTemplateBytes{};
@@ -248,8 +252,11 @@ struct RendererStats {
     uint64_t lastRenderPreparationCpuNanoseconds{},lastRenderCommandRecordingCpuNanoseconds{},lastRenderQueueExecuteCpuNanoseconds{},lastRenderFenceWaitCpuNanoseconds{},lastRenderPresentCpuNanoseconds{};
     std::vector<uint32_t> lastGpuInstanceCullingGroupVisible{};
     std::vector<uint64_t> lastGpuInstanceCullingGroupIdentityHashes{};
+    std::vector<std::vector<uint64_t>> lastGpuInstanceCullingGroupIdentities{};
     size_t gpuInstanceCullingValidationReadbackBytes{};
     uint64_t gpuInstanceCullingDispatches{},gpuInstanceIndirectDraws{},gpuInstanceDirectFallbackDraws{};
+    bool lastHzbOcclusionActive{};size_t hzbOcclusionResidentBytes{},lastHzbOccluderDraws{},lastHzbOccluderTriangles{},lastHzbCandidatesTested{},lastHzbOccluded{};uint64_t hzbDepthPrepasses{},hzbBuildDispatches{},lastHzbPrepassGpuNanoseconds{},lastHzbBuildGpuNanoseconds{},lastHzbCullGpuNanoseconds{},lastHzbColorGpuNanoseconds{};
+    uint64_t lastHzbSelectionCpuNanoseconds{},lastHzbPrepassRecordingCpuNanoseconds{},lastHzbBuildRecordingCpuNanoseconds{},lastHzbCullRecordingCpuNanoseconds{};
     uint64_t qualitySwitches{},qualitySwitchFlushes{},qualityResourceReleases{};
     bool linearWorldBlending{};
     size_t worldSrgbRenderTargetViews{};
@@ -759,6 +766,8 @@ public:
     void SetGpuInstanceCullingSettings(GpuInstanceCullingSettings3D settings);
     GpuInstanceCullingSettings3D GpuInstanceCullingSettings()const;
     bool RequestGpuInstanceCullingValidationReadback3D();
+    void SetHzbOcclusionSettings3D(HzbOcclusionSettings3D settings);
+    HzbOcclusionSettings3D HzbOcclusionSettings()const;
     RendererStats GetStats()const;
     SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const;
     unsigned RenderWidth() const;
