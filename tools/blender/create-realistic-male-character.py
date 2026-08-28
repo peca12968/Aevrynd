@@ -86,7 +86,7 @@ def cube(name: str, location: tuple[float, float, float], scale: tuple[float, fl
 
 
 def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], object_material: bpy.types.Material,
-               segments: int = 24) -> bpy.types.Object:
+               segments: int = 32) -> bpy.types.Object:
     vertices = []
     faces = []
     for z, radius_x, radius_y in rings:
@@ -97,7 +97,9 @@ def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], object_
             chest = max(0.0, 1.0 - abs(z - 1.47) / .22)
             abdomen = max(0.0, 1.0 - abs(z - 1.23) / .22)
             side_lats = abs(math.cos(angle)) ** 3 * chest
-            contour = 1.0 + front * front * (.065 * chest + .018 * abdomen) + back * .045 * chest + side_lats * .035
+            chest_lobes = max(0.0, abs(math.cos(angle)) - .30) * front * chest
+            sternum = max(0.0, 1.0 - abs(math.cos(angle)) * 5.0) * front * chest
+            contour = 1.0 + front * front * (.060 * chest + .018 * abdomen) + chest_lobes * .055 - sternum * .020 + back * .055 * chest + side_lats * .045
             vertices.append((math.cos(angle) * radius_x, math.sin(angle) * radius_y * contour, z))
     for ring in range(len(rings) - 1):
         for segment in range(segments):
@@ -133,7 +135,7 @@ def torso_loft(name: str, rings: tuple[tuple[float, float, float], ...], object_
 
 
 def limb_loft(name: str, points: tuple[tuple[float, float, float], ...], radii: tuple[float, ...],
-              object_material: bpy.types.Material, bones: tuple[str, str], segments: int = 12) -> bpy.types.Object:
+              object_material: bpy.types.Material, bones: tuple[str, str], segments: int = 16) -> bpy.types.Object:
     if len(points) != len(radii):
         raise RuntimeError("Limb loft rings are inconsistent.")
     centers = [Vector(point) for point in points]
@@ -147,7 +149,10 @@ def limb_loft(name: str, points: tuple[tuple[float, float, float], ...], radii: 
             muscle = 1.0
             if bones[0].endswith("UpperArm"):
                 phase = ring / max(1, len(centers) - 1)
-                muscle += max(0.0, 1.0 - abs(phase - .38) / .34) * (.08 * max(0.0, -math.sin(angle)) + .055 * max(0.0, math.sin(angle)))
+                biceps = max(0.0, 1.0 - abs(phase - .38) / .25) * max(0.0, -math.sin(angle))
+                triceps = max(0.0, 1.0 - abs(phase - .48) / .28) * max(0.0, math.sin(angle))
+                forearm = max(0.0, 1.0 - abs(phase - .76) / .24)
+                muscle += .095 * biceps + .070 * triceps + .050 * forearm
             vertices.append(tuple(center + across * math.cos(angle) * radii[ring] * muscle + side * math.sin(angle) * radii[ring] * 0.88 * muscle))
     for ring in range(len(centers) - 1):
         for segment in range(segments):
@@ -185,30 +190,36 @@ def hair_card(name: str, root: tuple[float, float, float], tip: tuple[float, flo
     start, end = Vector(root), Vector(tip); direction = end - start
     across = Vector((-direction.y, direction.x, 0.0))
     if across.length < 1.0e-5: across = Vector((1.0, 0.0, 0.0))
-    across.normalize(); centers = [start.lerp(end, value / 3.0) for value in range(4)]; vertices = []
+    across.normalize(); phase = tile * 1.4142136; centers = []; vertices = []
+    for value in range(6):
+        t = value / 5.0; wave = math.sin(math.pi * t)
+        centers.append(start.lerp(end, t) + Vector((.008 * wave * math.sin(math.tau * t + phase), .004 * wave * math.sin(math.tau * 2.0 * t + phase), .006 * wave)))
     for ring, center in enumerate(centers):
-        half_width = width * (1.0 - 0.55 * ring / 3.0); vertices += [tuple(center - across * half_width), tuple(center + across * half_width)]
-    faces = [(ring*2,ring*2+1,ring*2+3,ring*2+2) for ring in range(3)]
+        t = ring / 5.0; half_width = width * (1.0 - .65 * t); vertices += [tuple(center - across * half_width), tuple(center + across * half_width)]
+    faces = [(ring*2,ring*2+1,ring*2+3,ring*2+2) for ring in range(5)]
     mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface)
     uv=mesh.uv_layers.new(name="UVMap");tile_min=.25+(tile%6)*.125
     for polygon in mesh.polygons:
         for loop_index in polygon.loop_indices:
-            vertex_index=mesh.loops[loop_index].vertex_index;uv.data[loop_index].uv=(tile_min+(vertex_index%2)*.125,(vertex_index//2)/3.0)
+            vertex_index=mesh.loops[loop_index].vertex_index;uv.data[loop_index].uv=(tile_min+(vertex_index%2)*.125,(vertex_index//2)/5.0)
     obj=bpy.data.objects.new(name,mesh);bpy.context.scene.collection.objects.link(obj)
     group=obj.vertex_groups.new(name="Head");group.add(range(len(mesh.vertices)),1.0,"REPLACE");return obj
 
 
 def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float, float, float],
                surface: bpy.types.Material) -> bpy.types.Object:
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=28, location=center); obj=bpy.context.object;obj.name=name
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, location=center); obj=bpy.context.object;obj.name=name
     for vertex in obj.data.vertices:
-        x,y,z=vertex.co; lower=max(0.0,min(1.0,(z+.70)/.68));jaw=.88+.12*lower
-        if z<-.72: jaw*=.94
-        cheek=1.0+.045*math.exp(-((abs(x)-.50)/.24)**2-((z-.02)/.34)**2);vertex.co.x*=scale[0]*jaw*cheek
+        x,y,z=vertex.co; lower=max(0.0,min(1.0,(z+.78)/.53));jaw=.84+.16*lower
+        jaw_angle=1.0+.038*math.exp(-((abs(x)-.55)/.18)**2-((z+.48)/.20)**2)
+        chin=1.0-.040*math.exp(-(x/.22)**2-((z+.72)/.16)**2)
+        temple=1.0-.020*math.exp(-((abs(x)-.60)/.18)**2-((z-.35)/.22)**2)
+        cheek=1.0+.045*math.exp(-((abs(x)-.46)/.24)**2-((z-.08)/.32)**2);vertex.co.x*=scale[0]*jaw*jaw_angle*chin*temple*cheek
         if z<-.58: vertex.co.z=max(vertex.co.z,-.82)
         vertex.co.y*=scale[1]*(.95+.08*math.exp(-((z-.04)/.35)**2));vertex.co.z*=scale[2]
         if y<0.0:
-            vertex.co.y-=.040*math.exp(-(x/.17)**2-((z-.07)/.27)**2)
+            bridge=math.exp(-(x/.12)**2-((z-.16)/.28)**2);tip=math.exp(-(x/.18)**2-((z+.04)/.13)**2);chin_projection=math.exp(-(x/.24)**2-((z+.70)/.18)**2)
+            vertex.co.y-=.025*bridge+.017*tip+.007*chin_projection
             vertex.co.y-=.010*math.exp(-(x/.52)**2-((z+.13)/.23)**2)
     obj.data.materials.append(surface)
     for polygon in obj.data.polygons: polygon.use_smooth=True
@@ -232,11 +243,11 @@ def facial_ribbon(name: str, center: tuple[float,float,float], width: float, hei
 
 
 def eyelid_ribbon(name: str, eye_x: float, center_y: float, center_z: float, upper: bool,
-                  surface: bpy.types.Material, segments: int=12) -> bpy.types.Object:
+                  surface: bpy.types.Material, segments: int=16) -> bpy.types.Object:
     vertices=[];sign=1.0 if upper else -1.0
     for row in range(2):
         for index in range(segments+1):
-            t=index/segments*2.0-1.0;arc=math.sqrt(max(0.0,1.0-t*t));vertices.append((eye_x+t*.023,center_y-.001*arc,center_z+sign*(.0080*arc+row*.0020)))
+            t=index/segments*2.0-1.0;arc=math.sqrt(max(0.0,1.0-t*t));height=.0090 if upper else .0060;vertices.append((eye_x+t*.026,center_y-.001*arc,center_z+sign*(height*arc+row*.0018)))
     faces=[(i,segments+1+i,segments+2+i,i+1) for i in range(segments)]
     mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
     for polygon in mesh.polygons:
@@ -310,34 +321,33 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
     objects: list[bpy.types.Object] = []
 
     # 軀幹使用多個解剖量體建立自然肩背、胸肌與腹肌輪廓。
-    objects += [torso_loft("ContinuousShirtTorso", ((1.04,.30,.19),(1.14,.245,.170),(1.27,.282,.188),(1.38,.365,.210),(1.50,.428,.220),(1.58,.438,.212),(1.64,.315,.175)), shirt),
+    objects += [torso_loft("ContinuousShirtTorso", ((1.04,.30,.19),(1.14,.245,.170),(1.20,.255,.176),(1.27,.282,.188),(1.33,.325,.202),(1.38,.365,.210),(1.44,.405,.220),(1.50,.428,.220),(1.56,.438,.214),(1.60,.405,.200),(1.64,.315,.175)), shirt),
                 ellipsoid("Pelvis", (0, 0.02, 1.01), (0.29, 0.18, 0.18), trousers, "Hips")]
 
     objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.138,.104,.142),skin_light),
-                facial_ribbon("UpperLip",(0,-.141,1.810),.034,.010,skin_light,True),
-                facial_ribbon("LowerLip",(0,-.142,1.797),.031,.011,skin_light,False)]
+                facial_ribbon("UpperLip",(0,-.141,1.810),.038,.010,skin_light,True),
+                facial_ribbon("LowerLip",(0,-.142,1.797),.035,.011,skin_light,False)]
     for side, sign in (("Left", 1), ("Right", -1)):
-        objects += [ellipsoid(f"{side}Eye", (0.043 * sign, -0.106, 1.897), (0.019, 0.009, 0.010), eye_white, "Head", 20, 12),
-                    ellipsoid(f"{side}Iris", (0.043 * sign, -0.115, 1.897), (0.0072, 0.0035, 0.0072), iris, "Head", 16, 10),
-                    ellipsoid(f"{side}Pupil", (0.043 * sign, -0.119, 1.897), (0.0030, 0.0016, 0.0030), hair, "Head", 10, 6),
-                    eyelid_ribbon(f"{side}UpperEyelid",.043*sign,-.118,1.897,True,skin),
-                    eyelid_ribbon(f"{side}LowerEyelid",.043*sign,-.118,1.897,False,skin),
+        objects += [ellipsoid(f"{side}Eye", (0.045 * sign, -0.106, 1.897), (0.021, 0.010, 0.0115), eye_white, "Head", 22, 14),
+                    ellipsoid(f"{side}Iris", (0.045 * sign, -0.116, 1.897), (0.0078, 0.0038, 0.0078), iris, "Head", 16, 10),
+                    ellipsoid(f"{side}Pupil", (0.045 * sign, -0.120, 1.897), (0.0030, 0.0016, 0.0030), hair, "Head", 10, 6),
+                    eyelid_ribbon(f"{side}UpperEyelid",.045*sign,-.119,1.897,True,skin),
+                    eyelid_ribbon(f"{side}LowerEyelid",.045*sign,-.119,1.897,False,skin),
                     capsule(f"{side}EarRim", (0.142 * sign, 0.0, 1.910), (0.144 * sign, 0.0, 1.815), 0.014, skin, "Head", 0.65, 12, 8),
-                    facial_ribbon(f"{side}Brow",(.043*sign,-.119,1.922),.024,.004,hair,True,10)]
-    scalp=ellipsoid("HairScalp",(0,.032,2.010),(.132,.101,.058),hair,"Head",16,8);set_opaque_hair_uv(scalp)
+                    facial_ribbon(f"{side}Brow",(.045*sign,-.120,1.922),.029,.004,hair,True,12)]
+    scalp=ellipsoid("HairScalp",(0,.032,2.010),(.132,.101,.058),hair,"Head",20,10);set_opaque_hair_uv(scalp)
     objects += [scalp, capsule("NeckForm", (0, 0, 1.62), (0, 0, 1.76), 0.075, skin, "Neck")]
     for index in range(40):
         band,column=divmod(index,10);angle=math.tau*column/10.0+band*.09
         root=(math.sin(angle)*(.122-band*.007),.032+math.cos(angle)*(.091-band*.005),2.035-band*.014)
         length=.075+.012*band+.008*math.sin(index*1.73);tip=(root[0]*.82+.010*math.sin(index*1.41),root[1]-.012+.008*math.cos(index*1.19),root[2]-length)
         objects.append(hair_card(f"HairCard{index:02d}",root,tip,.018+(index%3)*.002,index,hair))
-    # 連續短鬍輪廓比離散髮片更適合近距離觀察，並沿用既有頭髮材質。
-    objects.append(jawline_beard("BeardTrim",hair))
+    # 現有髮絲圖集會把寬鬍鬚卡裁成斷續線；保留乾淨下顎，待專用鬍渣材質通道完成後再啟用。
 
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
         objects += [limb_loft(f"{side}ContinuousArm", ((.32*sign,0,1.55),(.38*sign,0,1.48),(.44*sign,0,1.38),(.48*sign,0,1.29),(.51*sign,-.008,1.17),(.54*sign,-.015,1.05)), (.136,.128,.114,.090,.080,.070), skin, (f"{side}UpperArm",f"{side}LowerArm")),
                     ellipsoid(f"{side}HandForm", (0.558 * sign, -0.02, 0.98), (0.058, 0.040, 0.090), skin, f"{side}Hand", 24, 14),
-                    limb_loft(f"{side}ThighForm", ((.16*sign,0,.98),(.17*sign,0,.76),(.17*sign,.005,.54)), (.145,.13,.095), trousers, (f"{side}UpperLeg",f"{side}UpperLeg")),
+                    limb_loft(f"{side}ThighForm", ((.16*sign,0,.98),(.17*sign,0,.76),(.17*sign,.005,.54)), (.152,.136,.095), trousers, (f"{side}UpperLeg",f"{side}UpperLeg")),
                     limb_loft(f"{side}CalfForm", ((.17*sign,.005,.54),(.165*sign,.012,.32),(.16*sign,.015,.11)), (.095,.105,.068), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
                     ellipsoid(f"{side}FootForm", (0.16 * sign, -0.11, 0.055), (0.105, 0.190, 0.060), leather, f"{side}Foot", 24, 14)]
         for index, (offset, length) in enumerate(((-0.027, 0.070), (-0.009, 0.080), (0.009, 0.076), (0.027, 0.064))):

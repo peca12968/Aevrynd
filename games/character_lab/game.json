@@ -2,7 +2,7 @@
   "id": "character_lab",
   "title": "Aevrynd Character Lab",
   "description": "Automated first-person and third-person 3D character controller validation game.",
-  "version": "1.90.0",
+  "version": "1.91.0",
   "engineVersion": "2.70.0",
   "renderQuality": ["runtime-low", "runtime-medium", "runtime-high", "runtime-ultra", "edge-adaptive-hdr-antialiasing", "safe-gpu-resource-release"],
   "temporalMotionFoundation": ["unjittered-clip-contract", "rigid-velocity-golden", "skinned-velocity-golden", "camera-cut-invalidation"],
