@@ -206,18 +206,21 @@ def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float
     for vertex in obj.data.vertices:
         x, y, z = vertex.co
         normalized_z = z
-        jaw = 0.83 + 0.17 * max(0.0, min(1.0, (normalized_z + 0.58) / 0.62))
-        chin = 1.0 - .030 * math.exp(-(x / .30) ** 2 - ((normalized_z + .72) / .18) ** 2)
-        cheek = 1.0 + .036 * math.exp(-((abs(x) - .42) / .20) ** 2 - ((normalized_z - .05) / .28) ** 2)
-        vertex.co.x *= scale[0] * jaw * cheek * chin
+        jaw = 0.84 + 0.16 * max(0.0, min(1.0, (normalized_z + 0.58) / 0.62))
+        jaw_angle = 1.0 + .028 * math.exp(-((abs(x) - .51) / .18) ** 2 - ((normalized_z + .48) / .18) ** 2)
+        chin = 1.0 - .024 * math.exp(-(x / .28) ** 2 - ((normalized_z + .72) / .18) ** 2)
+        cheek = 1.0 + .045 * math.exp(-((abs(x) - .43) / .19) ** 2 - ((normalized_z - .04) / .27) ** 2)
+        temple = 1.0 - .018 * math.exp(-((abs(x) - .57) / .18) ** 2 - ((normalized_z - .35) / .23) ** 2)
+        vertex.co.x *= scale[0] * jaw * jaw_angle * cheek * chin * temple
         vertex.co.y *= scale[1] * (0.94 + 0.08 * math.exp(-((normalized_z - 0.05) / 0.34) ** 2))
         vertex.co.z *= scale[2]
         if y < 0.0:
-            nose_bridge = math.exp(-(x / .11) ** 2 - ((normalized_z - .15) / .28) ** 2)
-            nose_tip = math.exp(-(x / .15) ** 2 - ((normalized_z + .03) / .14) ** 2)
-            nose_alar = math.exp(-(x / .27) ** 2 - ((normalized_z + .12) / .10) ** 2)
+            nose_root = math.exp(-(x / .13) ** 2 - ((normalized_z - .34) / .16) ** 2)
+            nose_bridge = math.exp(-(x / .105) ** 2 - ((normalized_z - .14) / .26) ** 2)
+            nose_tip = math.exp(-(x / .15) ** 2 - ((normalized_z + .04) / .13) ** 2)
+            nose_alar = math.exp(-((abs(x) - .13) / .11) ** 2 - ((normalized_z + .10) / .10) ** 2)
             chin_projection = math.exp(-(x / .30) ** 2 - ((normalized_z + .72) / .18) ** 2)
-            vertex.co.y -= .018 * nose_bridge + .010 * nose_tip + .005 * nose_alar + .006 * chin_projection
+            vertex.co.y -= .006 * nose_root + .020 * nose_bridge + .012 * nose_tip + .004 * nose_alar + .007 * chin_projection
             vertex.co.y -= 0.009 * math.exp(-(x / 0.52) ** 2 - ((normalized_z + 0.12) / 0.22) ** 2)
     obj.data.materials.append(surface); add_vertex_color(obj, tuple(surface.diffuse_color)); smooth_object(obj)
     group = obj.vertex_groups.new(name="Head"); group.add(range(len(obj.data.vertices)), 1.0, "REPLACE")
@@ -305,15 +308,15 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
     sclera = material("EyeScleraPBR", (0.86, 0.88, 0.84, 1.0), 0.23)
     iris = material("IrisHazelPBR", (0.10, 0.19, 0.10, 1.0), 0.18)
     hair = material("HairChestnutPBR", (0.035, 0.018, 0.012, 1.0), 0.31)
-    cloth = material("DressEmeraldPBR", (0.72, 0.62, 0.48, 1.0), 0.66)
-    cloth_dark = material("DressTrimPBR", (0.075, 0.030, 0.018, 1.0), 0.52)
+    cloth = material("DressEmeraldPBR", (0.055, 0.050, 0.045, 1.0), 0.68)
+    cloth_dark = material("DressTrimPBR", (0.025, 0.022, 0.020, 1.0), 0.58)
     leather = material("BootLeatherPBR", (0.09, 0.025, 0.014, 1.0), 0.48)
     metal = material("AccessoryGoldPBR", (0.78, 0.48, 0.09, 1.0), 0.24, 0.82)
 
     parts: list[bpy.types.Object] = []
     # 軀幹採多個平滑體塊形成肩、腰與骨盆的自然連續比例。
     parts += [
-        torso_loft("ContinuousDressTorso", ((.80,.265,.178),(.88,.285,.190),(.97,.260,.180),(1.05,.205,.148),(1.15,.165,.126),(1.25,.202,.150),(1.34,.232,.164),(1.41,.242,.156),(1.47,.185,.126)), cloth),
+        torso_loft("ContinuousFittedTorso", ((.80,.265,.178),(.88,.285,.190),(.97,.260,.180),(1.05,.205,.148),(1.15,.165,.126),(1.25,.202,.150),(1.34,.232,.164),(1.41,.242,.156),(1.47,.185,.126)), cloth),
         sphere("Neck", (0, 0, 1.50), (0.052, 0.050, 0.090), skin, "Neck", 20, 12),
         face_shell("ContinuousFace", (0, -0.005, 1.650), (0.118, 0.088, 0.112), skin, True),
         facial_ribbon("UpperLip", (0,-0.108,1.619),.032,.0085,lips,True),

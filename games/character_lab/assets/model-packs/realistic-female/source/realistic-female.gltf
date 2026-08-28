@@ -1132,7 +1132,7 @@
 			"name":"DressEmeraldPBR",
 			"pbrMetallicRoughness":{
 				"metallicFactor":0,
-				"roughnessFactor":0.6600000262260437
+				"roughnessFactor":0.6800000071525574
 			}
 		},
 		{
@@ -1210,7 +1210,7 @@
 			"name":"DressTrimPBR",
 			"pbrMetallicRoughness":{
 				"metallicFactor":0,
-				"roughnessFactor":0.5199999809265137
+				"roughnessFactor":0.5799999833106995
 			}
 		},
 		{
@@ -1458,7 +1458,7 @@
 			"max":[
 				0.4003467559814453,
 				1.7619999647140503,
-				0.12553855776786804
+				0.12760525941848755
 			],
 			"min":[
 				-0.4003467559814453,

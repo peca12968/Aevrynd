@@ -210,16 +210,16 @@ def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float
                surface: bpy.types.Material) -> bpy.types.Object:
     bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, location=center); obj=bpy.context.object;obj.name=name
     for vertex in obj.data.vertices:
-        x,y,z=vertex.co; lower=max(0.0,min(1.0,(z+.78)/.53));jaw=.84+.16*lower
-        jaw_angle=1.0+.038*math.exp(-((abs(x)-.55)/.18)**2-((z+.48)/.20)**2)
-        chin=1.0-.040*math.exp(-(x/.22)**2-((z+.72)/.16)**2)
+        x,y,z=vertex.co; lower=max(0.0,min(1.0,(z+.78)/.53));jaw=.89+.11*lower
+        jaw_angle=1.0+.060*math.exp(-((abs(x)-.55)/.18)**2-((z+.48)/.20)**2)
+        chin=1.0-.018*math.exp(-(x/.22)**2-((z+.72)/.16)**2)
         temple=1.0-.020*math.exp(-((abs(x)-.60)/.18)**2-((z-.35)/.22)**2)
         cheek=1.0+.045*math.exp(-((abs(x)-.46)/.24)**2-((z-.08)/.32)**2);vertex.co.x*=scale[0]*jaw*jaw_angle*chin*temple*cheek
         if z<-.58: vertex.co.z=max(vertex.co.z,-.82)
         vertex.co.y*=scale[1]*(.95+.08*math.exp(-((z-.04)/.35)**2));vertex.co.z*=scale[2]
         if y<0.0:
-            bridge=math.exp(-(x/.12)**2-((z-.16)/.28)**2);tip=math.exp(-(x/.18)**2-((z+.04)/.13)**2);chin_projection=math.exp(-(x/.24)**2-((z+.70)/.18)**2)
-            vertex.co.y-=.025*bridge+.017*tip+.007*chin_projection
+            bridge=math.exp(-(x/.12)**2-((z-.16)/.28)**2);tip=math.exp(-(x/.18)**2-((z+.04)/.13)**2);alar=math.exp(-((abs(x)-.14)/.11)**2-((z+.10)/.10)**2);chin_projection=math.exp(-(x/.24)**2-((z+.70)/.18)**2)
+            vertex.co.y-=.030*bridge+.017*tip+.004*alar+.008*chin_projection
             vertex.co.y-=.010*math.exp(-(x/.52)**2-((z+.13)/.23)**2)
     obj.data.materials.append(surface)
     for polygon in obj.data.polygons: polygon.use_smooth=True
@@ -314,17 +314,17 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
     hair = material("DarkBrownHairPBR", (0.035, 0.018, 0.012, 1), 0.34)
     eye_white = material("EyeScleraPBR", (0.78, 0.76, 0.70, 1), 0.22)
     iris = material("HazelIrisPBR", (0.12, 0.20, 0.10, 1), 0.16)
-    shirt = material("DeepBlueShirtPBR", (0.70, 0.61, 0.47, 1), 0.68)
+    shirt = material("DeepBlueShirtPBR", (0.045, 0.050, 0.060, 1), 0.68)
     trousers = material("CharcoalClothPBR", (0.075, 0.065, 0.055, 1), 0.78)
     leather = material("BrownLeatherPBR", (0.11, 0.036, 0.018, 1), 0.46)
     metal = material("BuckleMetalPBR", (0.48, 0.52, 0.56, 1), 0.24, metallic=0.82)
     objects: list[bpy.types.Object] = []
 
     # 軀幹使用多個解剖量體建立自然肩背、胸肌與腹肌輪廓。
-    objects += [torso_loft("ContinuousShirtTorso", ((1.04,.30,.19),(1.14,.245,.170),(1.20,.255,.176),(1.27,.282,.188),(1.33,.325,.202),(1.38,.365,.210),(1.44,.405,.220),(1.50,.428,.220),(1.56,.438,.214),(1.60,.405,.200),(1.64,.315,.175)), shirt),
+    objects += [torso_loft("ContinuousShirtTorso", ((1.04,.30,.19),(1.14,.250,.174),(1.20,.260,.180),(1.27,.290,.190),(1.33,.330,.202),(1.38,.360,.210),(1.44,.390,.220),(1.50,.405,.220),(1.56,.410,.214),(1.60,.385,.200),(1.64,.315,.175)), shirt),
                 ellipsoid("Pelvis", (0, 0.02, 1.01), (0.29, 0.18, 0.18), trousers, "Hips")]
 
-    objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.138,.104,.142),skin_light),
+    objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.144,.104,.135),skin_light),
                 facial_ribbon("UpperLip",(0,-.141,1.810),.038,.010,skin_light,True),
                 facial_ribbon("LowerLip",(0,-.142,1.797),.035,.011,skin_light,False)]
     for side, sign in (("Left", 1), ("Right", -1)):
@@ -334,8 +334,8 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
                     eyelid_ribbon(f"{side}UpperEyelid",.045*sign,-.119,1.897,True,skin),
                     eyelid_ribbon(f"{side}LowerEyelid",.045*sign,-.119,1.897,False,skin),
                     capsule(f"{side}EarRim", (0.142 * sign, 0.0, 1.910), (0.144 * sign, 0.0, 1.815), 0.014, skin, "Head", 0.65, 12, 8),
-                    facial_ribbon(f"{side}Brow",(.045*sign,-.120,1.922),.029,.004,hair,True,12)]
-    scalp=ellipsoid("HairScalp",(0,.032,2.010),(.132,.101,.058),hair,"Head",20,10);set_opaque_hair_uv(scalp)
+                    facial_ribbon(f"{side}Brow",(.045*sign,-.120,1.922),.032,.0045,hair,True,12)]
+    scalp=ellipsoid("HairScalp",(0,.032,2.003),(.136,.103,.052),hair,"Head",20,10);set_opaque_hair_uv(scalp)
     objects += [scalp, capsule("NeckForm", (0, 0, 1.62), (0, 0, 1.76), 0.075, skin, "Neck")]
     for index in range(40):
         band,column=divmod(index,10);angle=math.tau*column/10.0+band*.09
@@ -345,7 +345,7 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
     # 現有髮絲圖集會把寬鬍鬚卡裁成斷續線；保留乾淨下顎，待專用鬍渣材質通道完成後再啟用。
 
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
-        objects += [limb_loft(f"{side}ContinuousArm", ((.32*sign,0,1.55),(.38*sign,0,1.48),(.44*sign,0,1.38),(.48*sign,0,1.29),(.51*sign,-.008,1.17),(.54*sign,-.015,1.05)), (.136,.128,.114,.090,.080,.070), skin, (f"{side}UpperArm",f"{side}LowerArm")),
+        objects += [limb_loft(f"{side}ContinuousArm", ((.29*sign,0,1.57),(.34*sign,0,1.53),(.39*sign,0,1.47),(.44*sign,0,1.38),(.48*sign,0,1.29),(.51*sign,-.008,1.17),(.54*sign,-.015,1.05)), (.125,.140,.128,.114,.090,.080,.070), skin, (f"{side}UpperArm",f"{side}LowerArm")),
                     ellipsoid(f"{side}HandForm", (0.558 * sign, -0.02, 0.98), (0.058, 0.040, 0.090), skin, f"{side}Hand", 24, 14),
                     limb_loft(f"{side}ThighForm", ((.16*sign,0,.98),(.17*sign,0,.76),(.17*sign,.005,.54)), (.152,.136,.095), trousers, (f"{side}UpperLeg",f"{side}UpperLeg")),
                     limb_loft(f"{side}CalfForm", ((.17*sign,.005,.54),(.165*sign,.012,.32),(.16*sign,.015,.11)), (.095,.105,.068), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
