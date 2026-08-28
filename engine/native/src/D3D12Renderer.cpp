@@ -515,7 +515,8 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  d.stats.lastSubmittedTerrainInstances = 0;
  size_t acceptedInstances = 0, acceptedOverlayInstances = 0,
         acceptedShadowOnlyInstances = 0, acceptedTexturedInstances = 0,
-        droppedInstances = 0;
+        acceptedNormalScaleOverrides = 0,
+        acceptedEffectiveNormalScaledInstances = 0, droppedInstances = 0;
  d.stats.lastDirectionalShadowAutomaticMasks = 0;
  d.stats.lastDirectionalShadowManualMasks = 0;
  d.stats.lastDirectionalShadowLightSpaceRejected = {};
@@ -565,7 +566,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
    for (size_t row = 0; row < 3; ++row)
      gpu.normalRows[row] = {instance.normalTransform[row][0],
                             instance.normalTransform[row][1],
-                            instance.normalTransform[row][2], 0};
+                            instance.normalTransform[row][2], row==0?instance.normalScale:0.f};
    gpu.tint = instance.tint;
    gpu.surface = instance.surface;
    const uint32_t packedTextureScale = uint32_t(
@@ -600,6 +601,9 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
    acceptedOverlayInstances += instance.layer == MeshRenderLayer3D::Overlay;
    acceptedShadowOnlyInstances += shadowOnly;
    acceptedTexturedInstances += validTextures;
+   const bool normalScaleOverride = std::abs(instance.normalScale-1.f)>.0001f;
+   acceptedNormalScaleOverrides += normalScaleOverride;
+   acceptedEffectiveNormalScaledInstances += normalScaleOverride && validTextures;
    d.stats.lastSubmittedFoliageInstances +=
        !shadowOnly && instance.materialClass == MaterialClass3D::Foliage;
    d.stats.lastSubmittedTerrainInstances +=
@@ -828,6 +832,8 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  d.stats.lastSubmittedOverlayInstances = acceptedOverlayInstances;
  d.stats.lastSubmittedShadowOnlyInstances = acceptedShadowOnlyInstances;
  d.stats.lastSubmittedTexturedMeshInstances = acceptedTexturedInstances;
+ d.stats.lastSubmittedNormalScaleOverrides = acceptedNormalScaleOverrides;
+ d.stats.lastEffectiveNormalScaledMeshInstances = acceptedEffectiveNormalScaledInstances;
  d.stats.lastSubmittedPointLights = pointLights.count;
  d.stats.lastPointLightCandidates = pointLights.candidates;
  d.stats.lastInputTriangles2D = drawStats.inputTriangles;

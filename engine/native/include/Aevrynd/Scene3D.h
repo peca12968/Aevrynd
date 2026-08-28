@@ -214,7 +214,10 @@ public:
                             material.textures, material.textureScale,
                             material.useUv, material.materialClass,
                             std::numeric_limits<float>::quiet_NaN(),
-                            castsShadow, lodCoverage, lodSeed, lodInvert);
+                            castsShadow, lodCoverage, lodSeed, lodInvert,
+                            DirectionalShadowAllCascades3D,
+                            ShadowCascadeSelection3D::Automatic,
+                            Matrix4::Identity(),false,material.normalScale);
         else if (resource.cpuMesh)
           SubmitMesh(draw, *resource.cpuMesh, transform, material);
         else if (fallback)

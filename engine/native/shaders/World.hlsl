@@ -362,7 +362,8 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.characterShadingModel = 0;
     output.alphaCutoff = 0.5;
     output.alphaMasked = 0;
-    output.normalScale = 1.0;
+    // normal matrix 第一列的 w 原本未使用，直接承載逐材質強度而不擴充 instance stride。
+    output.normalScale = input.normalRow0.w;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;

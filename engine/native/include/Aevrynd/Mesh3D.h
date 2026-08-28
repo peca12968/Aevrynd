@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace Aevrynd {
-struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};CharacterShadingModel3D shadingModel{CharacterShadingModel3D::Default};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{};};
+struct Material3D {Color tint{1,1,1,1};Surface3D surface{};bool castsShadow{true};MaterialTextureSetHandle3D textures{};float textureScale{.25f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};CharacterShadingModel3D shadingModel{CharacterShadingModel3D::Default};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{};float normalScale{1.f};};
 struct Transform3D {Vec3 position{},rotation{},scale{1,1,1};Matrix4 Matrix()const{return CreateTransformMatrix(position,rotation,scale);}};
 struct MeshBounds3D {Vec3 center{};float radius{};Vec3 extents{};};
 struct MeshRaycastEntry3D {Vec3 center{},extents{};std::uint32_t triangleIndex{};};

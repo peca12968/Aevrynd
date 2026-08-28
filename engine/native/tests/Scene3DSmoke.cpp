@@ -60,6 +60,7 @@ int main(){
                       boxCpu->vertices.size(),
                       boxCpu->indices.size(),
                       boxCpu});
+    Scene3D normalScaleScene;normalScaleScene.SetBoxMesh({{7},boxCpu->Bounds(),boxCpu->vertices.size(),boxCpu->indices.size(),boxCpu});Material3D detailedMaterial;detailedMaterial.normalScale=-1.75f;normalScaleScene.MaterialBox({0,1,6},{2,2,2},detailedMaterial);DrawList normalScaleDraw;const Scene3DStats normalScaleStats=normalScaleScene.Submit(normalScaleDraw,camera,{1280,720});if(normalScaleStats.visibleMeshInstances!=1||normalScaleDraw.meshInstances.size()!=1||normalScaleDraw.meshInstances.front().normalScale!=-1.75f){std::cerr<<"Scene material normal scale propagation failed\n";return 39;}
     draw.Clear();
     stats = scene.Submit(draw, camera, {1280, 720});
     if (stats.visibleMeshInstances != 1 || draw.meshInstances.size() != 1 ||

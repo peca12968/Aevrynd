@@ -333,11 +333,14 @@ void EngineLabGame::OnStart(Engine &engine) {
   groundMaterial_.surface = GroundSurface;
   groundMaterial_.castsShadow = false;
   groundMaterial_.textureScale = .055f;
+  groundMaterial_.normalScale = .68f;
   groundMaterial_.materialClass = MaterialClass3D::Terrain;
   woodMaterial_.surface = {.78f, 0, 0, .92f};
   woodMaterial_.textureScale = .42f;
+  woodMaterial_.normalScale = .82f;
   brickMaterial_.surface = {.88f, 0, 0, .94f};
   brickMaterial_.textureScale = .36f;
+  brickMaterial_.normalScale = 1.08f;
   worldBuilder_.Create("authoring_floor", PrimitiveShape3D::Box,
                        {{-12, .25f, 18}, {}, {10, .5f, 8}},
                        MaterialPreset3D::Stone, {1, 1, 1, 1},
