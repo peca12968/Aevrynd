@@ -42,6 +42,11 @@ $outputCandidateKeys = @()
 $runtimeOutputError = 'none'
 $runtimeOutputKind = 'unknown'
 $failureCode = $null
+$terminationGraceMilliseconds = 5000
+$terminationTimedOut = $false
+$streamDrainTimedOut = $false
+$syntheticMode = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_SYNTHETIC_MODE')
+$terminationTimer = $null
 
 if (-not ('AevryndPathSecurity' -as [type])) {
 Add-Type -TypeDefinition @'
@@ -189,10 +194,39 @@ function Write-Fallback([string]$Code,[string]$Message) {
             promptBytes=$promptBytes
             exitCode=$exitCode
             jobAssigned=$jobAssigned
+            termination=[ordered]@{graceMilliseconds=$terminationGraceMilliseconds;timedOut=$terminationTimedOut;streamDrainTimedOut=$streamDrainTimedOut}
             output=[ordered]@{bytes=$outputBytes;consoleBytes=$consoleBytes;promptEchoBytes=$promptEchoBytes;promptEchoPrefixMatched=$promptEchoPrefixMatched;promptEchoCommonPrefixChars=$promptEchoCommonPrefixChars;responseMarkerFound=$responseMarkerFound;runtimeError=$runtimeOutputError;runtimeKind=$runtimeOutputKind;candidates=$outputCandidateCount;jsonCandidates=$outputJsonCandidateCount;schemaCandidates=$outputSchemaCandidateCount;lastCandidateStart=$outputLastCandidateStart;lastCandidateEnd=$outputLastCandidateEnd;candidateKeys=$outputCandidateKeys}
             limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
         }
     } | ConvertTo-Json -Depth 8 -Compress
+}
+
+function Wait-RedirectedStreams([int]$Milliseconds) {
+    $tasks = @($script:stdoutTask,$script:stderrTask) | Where-Object { $null -ne $_ }
+    if ($tasks.Count -eq 0) { return $true }
+    try { return [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]$tasks,$Milliseconds) } catch { return $false }
+}
+
+function Stop-BoundedRuntime {
+    # 先關閉 Job，讓 KILL_ON_JOB_CLOSE 終止整棵程序樹；不可先對主程序做無限期 WaitForExit。
+    if ($null -eq $script:terminationTimer) { $script:terminationTimer = [Diagnostics.Stopwatch]::StartNew() }
+    if ($null -ne $script:jobHandle) {
+        try { $script:jobHandle.Dispose() } catch {}
+        $script:jobHandle = $null
+    }
+    if ($null -ne $script:process) {
+        try {
+            if (-not $script:process.HasExited) { $script:process.Kill($false) }
+            $remaining = [Math]::Max(0,$script:terminationGraceMilliseconds - [int]$script:terminationTimer.ElapsedMilliseconds)
+            if (-not $script:process.WaitForExit($remaining)) {
+                $script:terminationTimedOut = $true
+            } elseif ($script:exitCode -eq $null) {
+                try { $script:exitCode = $script:process.ExitCode } catch {}
+            }
+        } catch { $script:terminationTimedOut = $true }
+    }
+    $streamRemaining = [Math]::Max(0,$script:terminationGraceMilliseconds - [int]$script:terminationTimer.ElapsedMilliseconds)
+    if (-not (Wait-RedirectedStreams ([Math]::Min(500,$streamRemaining)))) { $script:streamDrainTimedOut = $true }
 }
 
 function Find-MatchingJson([string]$Text,[string]$Schema) {
@@ -347,8 +381,18 @@ $responseMarker
     # Chat template 會讓結束回合的特殊 token 經過 JSON grammar 而初始化失敗；completion 模式沒有此衝突。
     # 固定短 prompt 讓 single-turn 進入生成；完整內容與 schema 仍只經過暫存檔傳入。
     $arguments = @('-m',$modelPath,'--prompt','Follow the complete task from the attached prompt file.','--file',$promptPath,'-n',[string]$MaxTokens,'-c','4096','-t',[string]$CpuThreads,'-tb',[string]$CpuThreads,'-ngl','32','--flash-attn','auto','--reasoning','off','--reasoning-budget','0','--json-schema-file',$schemaPath,'--output-file',$outputPath,'--log-file',$logPath,'--no-jinja','--single-turn','--simple-io','--no-display-prompt','--color','off','--no-perf')
+    if ($syntheticMode -eq 'HungStream' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        # 測試模式建立會持有輸出 pipe 的子孫程序，驗證 timeout 不會被 stream EOF 卡住。
+        $syntheticMarker = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TEST_MARKER')
+        if ($syntheticMarker -notmatch '^[a-f0-9]{32}$') { throw 'Synthetic test marker is invalid.' }
+        $startInfoFileName = (Get-Command pwsh -ErrorAction Stop).Source
+        $childCommand = '$nested=Start-Process pwsh -ArgumentList @(''-NoProfile'',''-Command'',''Start-Sleep -Seconds 300'',''{0}'') -NoNewWindow -PassThru; [Console]::Out.Write((''x''*65536)); Start-Sleep -Seconds 300' -f $syntheticMarker
+        $arguments = @('-NoProfile','-Command',$childCommand)
+    } else {
+        $startInfoFileName = $runtimePath
+    }
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $runtimePath
+    $startInfo.FileName = $startInfoFileName
     $startInfo.WorkingDirectory = $temporaryRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
@@ -368,16 +412,21 @@ $responseMarker
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $failurePhase = 'runtime-execution'
     while (-not $process.HasExited) {
-        if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) { $process.Kill($true);$process.WaitForExit();throw 'Local QWEN timed out.' }
+        if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) { Stop-BoundedRuntime;throw 'Local QWEN timed out.' }
         $process.Refresh()
         if ($process.WorkingSet64 -gt $peakWorkingSetBytes) { $peakWorkingSetBytes=$process.WorkingSet64 }
-        if ($process.WorkingSet64 -gt $maximumBytes) { $process.Kill($true);$process.WaitForExit();throw 'Local QWEN exceeded its RAM budget.' }
+        if ($process.WorkingSet64 -gt $maximumBytes) { Stop-BoundedRuntime;throw 'Local QWEN exceeded its RAM budget.' }
         Start-Sleep -Milliseconds 100
     }
-    $process.WaitForExit()
+    if (-not $process.WaitForExit($terminationGraceMilliseconds)) { Stop-BoundedRuntime;throw 'Local QWEN did not complete process shutdown.' }
     $exitCode = $process.ExitCode
     if ($process.ExitCode -ne 0) {
         throw "Local QWEN exited with code $($process.ExitCode)."
+    }
+    if (-not (Wait-RedirectedStreams $terminationGraceMilliseconds)) {
+        $streamDrainTimedOut = $true
+        Stop-BoundedRuntime
+        throw 'Local QWEN did not close redirected output streams.'
     }
     $consoleText = $stdoutTask.GetAwaiter().GetResult()
     $stderrText = $stderrTask.GetAwaiter().GetResult()
@@ -444,7 +493,7 @@ $responseMarker
     $code = if ($null -ne $failureCode) { $failureCode } else { 'LocalQwenFailed.' + $failurePhase }
     Write-Fallback $code 'Local QWEN could not complete this bounded task; use Codex fallback.'
 } finally {
-    if ($null -ne $process) { try { if (-not $process.HasExited) {$process.Kill($true);$process.WaitForExit()};$process.Dispose() } catch {} }
-    if ($null -ne $jobHandle) { try { $jobHandle.Dispose() } catch {} }
+    Stop-BoundedRuntime
+    if ($null -ne $process) { try { $process.Dispose() } catch {} }
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }

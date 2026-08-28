@@ -7,7 +7,7 @@ $scriptPath = (Resolve-Path (Join-Path $PSScriptRoot 'invoke-local-qwen.ps1')).P
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('aevrynd-qwen-wrapper-test-' + [Guid]::NewGuid().ToString('N'))
 $results = [Collections.Generic.List[object]]::new()
 
-function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[bool]$ExpectSuccess,[string]$ExpectedErrorCode = '') {
+function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[bool]$ExpectSuccess,[string]$ExpectedErrorCode = '',[hashtable]$Environment = @{},[ValidateRange(1,60)][int]$MaximumWallSeconds = 20) {
     $caseRoot = Join-Path $temporaryRoot $Name
     New-Item -ItemType Directory -Path $caseRoot | Out-Null
     $stdoutPath = Join-Path $caseRoot 'stdout.json'
@@ -23,17 +23,22 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
     foreach ($argument in (@('-NoProfile','-File',$scriptPath) + $Arguments)) { $startInfo.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
+    foreach ($entry in $Environment.GetEnumerator()) { $process.StartInfo.Environment[$entry.Key] = [string]$entry.Value }
+    $wallTimer = [Diagnostics.Stopwatch]::StartNew()
     if (-not $process.Start()) { throw "Could not start wrapper test case: $Name" }
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
-    $process.WaitForExit()
-    $stdout = $stdoutTask.GetAwaiter().GetResult().Trim()
-    $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
-    $exitCode = $process.ExitCode
+    $completedInTime = $process.WaitForExit($MaximumWallSeconds * 1000)
+    if (-not $completedInTime) { try { $process.Kill($true) } catch {}; $process.WaitForExit(2000) | Out-Null }
+    $streams = [Threading.Tasks.Task[]]@($stdoutTask,$stderrTask)
+    $streamsCompleted = try { [Threading.Tasks.Task]::WaitAll($streams,2000) } catch { $false }
+    $stdout = if ($streamsCompleted) { $stdoutTask.GetAwaiter().GetResult().Trim() } else { '' }
+    $stderr = if ($streamsCompleted) { $stderrTask.GetAwaiter().GetResult().Trim() } else { '' }
+    $exitCode = try { if ($process.HasExited) { $process.ExitCode } else { -1 } } catch { -1 }
     $process.Dispose()
     $payload = $null
     try { $payload = $stdout | ConvertFrom-Json -ErrorAction Stop } catch {}
-    $passed = $exitCode -eq 0 -and $null -ne $payload -and
+    $passed = $completedInTime -and $streamsCompleted -and $exitCode -eq 0 -and $null -ne $payload -and
         [bool]$payload.resource.launched -eq $ExpectLaunch -and [bool]$payload.ok -eq $ExpectSuccess -and
         [bool]$payload.fallbackToCodex -eq (-not $ExpectSuccess) -and $stderr.Length -eq 0
     if ($ExpectedErrorCode.Length -gt 0) { $passed = $passed -and $payload.error.code -eq $ExpectedErrorCode }
@@ -41,6 +46,9 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
         $passed = $passed -and $payload.resource.limits.timeoutSeconds -le 30 -and
             $payload.resource.limits.maxTokens -le 512 -and $payload.resource.limits.cpuThreads -le 4 -and
             $payload.resource.limits.maximumRamBytes -le 24GB
+        if ($null -ne $payload.resource.termination) {
+            $passed = $passed -and $payload.resource.termination.graceMilliseconds -le 5000
+        }
     }
     $results.Add([pscustomobject]@{
         Name = $Name
@@ -53,6 +61,11 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
         PromptBytes = if ($null -ne $payload) { $payload.resource.promptBytes } else { $null }
         ElapsedMilliseconds = if ($null -ne $payload) { $payload.resource.elapsedMilliseconds } else { $null }
         PeakWorkingSetBytes = if ($null -ne $payload) { $payload.resource.peakWorkingSetBytes } else { $null }
+        WallMilliseconds = [int64]$wallTimer.ElapsedMilliseconds
+        CompletedInTime = $completedInTime
+        StreamsCompleted = $streamsCompleted
+        TerminationTimedOut = if ($null -ne $payload) { [bool]$payload.resource.termination.timedOut } else { $null }
+        StreamDrainTimedOut = if ($null -ne $payload) { [bool]$payload.resource.termination.streamDrainTimedOut } else { $null }
         StderrBytes = [Text.Encoding]::UTF8.GetByteCount($stderr)
     })
 }
@@ -68,6 +81,21 @@ try {
     Invoke-Wrapper 'outside-root' @('-Task','classify','-Files','..\outside.txt') $false $false
     Invoke-Wrapper 'non-object-schema' @('-Task','classify','-JsonSchema','{"type":"array"}') $false $false
     Invoke-Wrapper 'oversized-prompt' @('-Task',('x' * 17000)) $false $false
+
+    $syntheticMarker = [Guid]::NewGuid().ToString('N')
+    Invoke-Wrapper 'hung-stream-timeout' @('-Task','synthetic timeout','-MaxTokens','32','-TimeoutSeconds','10') $true $false 'LocalQwenFailed.runtime-execution' @{
+        AEVRYND_QWEN_TESTING='1'
+        AEVRYND_QWEN_SYNTHETIC_MODE='HungStream'
+        AEVRYND_QWEN_TEST_MARKER=$syntheticMarker
+    } 15
+    Start-Sleep -Milliseconds 300
+    $orphanCount = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$syntheticMarker*" }).Count
+    $syntheticResult = $results[$results.Count - 1]
+    $syntheticResult.Passed = $syntheticResult.Passed -and $orphanCount -eq 0 -and
+        $syntheticResult.ElapsedMilliseconds -ge 9500 -and $syntheticResult.WallMilliseconds -ge 9500 -and
+        $syntheticResult.WallMilliseconds -le 15000 -and -not $syntheticResult.TerminationTimedOut -and
+        -not $syntheticResult.StreamDrainTimedOut
+    $syntheticResult | Add-Member -NotePropertyName OrphanCount -NotePropertyValue $orphanCount
 
     $largeInputPath = Join-Path (Split-Path -Parent $PSScriptRoot) '.qwen-wrapper-test-large.txt'
     try {
