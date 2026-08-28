@@ -115,6 +115,12 @@ inline unsigned TerrainMaterialTextureSamples3D(float cameraDistance,bool hasTex
 inline float TerrainMacroVariation3D(Vec2 worldPosition,const TerrainDistanceMaterialSettings3D& source={}){const TerrainDistanceMaterialSettings3D settings=NormalizeTerrainDistanceMaterialSettings3D(source);if(!settings.enabled||settings.macroVariationStrength<=0||!std::isfinite(worldPosition.x)||!std::isfinite(worldPosition.y))return 1.f;const float value=std::sin(worldPosition.x*settings.macroVariationScale*1.731f+worldPosition.y*settings.macroVariationScale*.917f)*.5f+.5f;return 1.f-settings.macroVariationStrength+2.f*settings.macroVariationStrength*value;}
 inline float FoliageWrapDiffuse3D(float normalLightCosine,float wrap=.35f){if(!std::isfinite(normalLightCosine)||!std::isfinite(wrap))return 0.f;wrap=Clamp(wrap,0.f,1.f);return Clamp((normalLightCosine+wrap)/(1.f+wrap),0.f,1.f);}
 inline float FoliageTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
+struct SkinSubsurfaceSettings3D {bool enabled{true};float strength{.62f},wrap{.3f},curvatureScale{1.35f},transmission{.18f};friend constexpr bool operator==(const SkinSubsurfaceSettings3D&,const SkinSubsurfaceSettings3D&)=default;};
+inline SkinSubsurfaceSettings3D NormalizeSkinSubsurfaceSettings3D(SkinSubsurfaceSettings3D settings){settings.strength=Clamp(std::isfinite(settings.strength)?settings.strength:.62f,0.f,2.f);settings.wrap=Clamp(std::isfinite(settings.wrap)?settings.wrap:.3f,.02f,.75f);settings.curvatureScale=Clamp(std::isfinite(settings.curvatureScale)?settings.curvatureScale:1.35f,0.f,8.f);settings.transmission=Clamp(std::isfinite(settings.transmission)?settings.transmission:.18f,0.f,1.f);return settings;}
+inline Vec3 EvaluateSkinSubsurfaceDiffusion3D(float normalLightCosine,float viewAgainstLightCosine,float curvature,const SkinSubsurfaceSettings3D& source={}){
+    // RGB 使用不同包覆半徑近似皮膚擴散輪廓；只回傳超出 Lambert 的能量，便於 shader 守恆限幅。
+    const auto settings=NormalizeSkinSubsurfaceSettings3D(source);if(!settings.enabled||settings.strength<=0.f||!std::isfinite(normalLightCosine)||!std::isfinite(viewAgainstLightCosine)||!std::isfinite(curvature))return{};const float direct=Clamp(normalLightCosine,0.f,1.f),curve=Clamp(curvature*settings.curvatureScale,0.f,1.f),back=Clamp(-normalLightCosine,0.f,1.f);const auto wrapped=[&](float radius){return Clamp((normalLightCosine+radius)/(1.f+radius),0.f,1.f);};const float red=(std::max)(0.f,wrapped(settings.wrap)-direct),green=(std::max)(0.f,wrapped(settings.wrap*.62f)-direct),blue=(std::max)(0.f,wrapped(settings.wrap*.34f)-direct),forward=std::pow(Clamp(viewAgainstLightCosine,0.f,1.f),4.f),transmission=back*back*forward*settings.transmission,curveWeight=.35f+.65f*curve;return{Clamp((red*curveWeight+transmission)*settings.strength,0.f,.3f),Clamp((green*curveWeight+transmission*.42f)*settings.strength,0.f,.3f),Clamp((blue*curveWeight+transmission*.16f)*settings.strength,0.f,.3f)};
+}
 inline float ProceduralCloudDensity3D(float noiseSample,float coverage=.54f,float softness=.18f){if(!std::isfinite(noiseSample)||!std::isfinite(coverage)||!std::isfinite(softness)||softness<=0.f)return 0.f;const float value=Clamp((noiseSample-coverage)/softness,0.f,1.f);return value*value*(3.f-2.f*value);}
 inline float CloudHorizonFade3D(float rayHeight){if(!std::isfinite(rayHeight))return 0.f;const float value=Clamp((rayHeight-.025f)/.18f,0.f,1.f);return value*value*(3.f-2.f*value);}
 struct VolumetricCloudSettings3D {bool enabled{true};float baseAltitude{1200.f},thickness{1800.f},coverage{.52f},density{1.15f},erosion{.24f},windSpeed{18.f};uint32_t sampleCount{16};bool shadowsEnabled{true};float shadowStrength{.72f};friend constexpr bool operator==(const VolumetricCloudSettings3D&,const VolumetricCloudSettings3D&)=default;};
@@ -226,6 +232,7 @@ struct RendererStats {
     bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
     bool volumetricCloudsEnabled{},volumetricCloudShadowsEnabled{};unsigned volumetricCloudSampleCount{};size_t volumetricCloudResidentBytes{},volumetricCloudShadowResidentBytes{};uint64_t volumetricCloudConfiguredFrames{},volumetricCloudShadowConfiguredFrames{};
     bool directionalLightShaftsEnabled{};unsigned directionalLightShaftSampleCount{};size_t directionalLightShaftResidentBytes{};uint64_t directionalLightShaftConfiguredFrames{};
+    bool skinSubsurfaceEnabled{};size_t skinSubsurfaceResidentBytes{};uint64_t skinSubsurfaceConfiguredFrames{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
     bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
@@ -525,6 +532,8 @@ public:
     const VolumetricCloudSettings3D& VolumetricClouds()const{return volumetricClouds_;}
     void SetDirectionalLightShafts(DirectionalLightShaftSettings3D settings){directionalLightShafts_=NormalizeDirectionalLightShaftSettings3D(settings);}
     const DirectionalLightShaftSettings3D& DirectionalLightShafts()const{return directionalLightShafts_;}
+    void SetSkinSubsurface(SkinSubsurfaceSettings3D settings){skinSubsurface_=NormalizeSkinSubsurfaceSettings3D(settings);}
+    const SkinSubsurfaceSettings3D& SkinSubsurface()const{return skinSubsurface_;}
     void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetSoftDirectionalShadows(SoftDirectionalShadowSettings3D settings){softDirectionalShadows_=NormalizeSoftDirectionalShadowSettings3D(settings);}
@@ -586,6 +595,7 @@ private:
     TerrainDistanceMaterialSettings3D terrainDistanceMaterial_{};
     VolumetricCloudSettings3D volumetricClouds_{};
     DirectionalLightShaftSettings3D directionalLightShafts_{};
+    SkinSubsurfaceSettings3D skinSubsurface_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
     SoftDirectionalShadowSettings3D softDirectionalShadows_{};
     std::vector<PointLight3D> pointLights_;

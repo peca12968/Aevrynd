@@ -403,6 +403,17 @@ target_compile_definitions(AevryndDirectionalLightShaftD3D12VisualTest PRIVATE A
 target_link_libraries(AevryndDirectionalLightShaftD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndDirectionalLightShaftD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDirectionalLightShaftD3D12VisualTest>'")
 
+add_executable(AevryndSkinSubsurface3DTest tests/SkinSubsurface3DSmoke.cpp)
+target_compile_options(AevryndSkinSubsurface3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSkinSubsurface3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSkinSubsurface3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinSubsurface3DTest>'")
+
+add_executable(AevryndSkinSubsurfaceD3D12VisualTest tests/SkinSubsurfaceD3D12VisualSmoke.cpp)
+target_compile_options(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/skin-subsurface")
+target_link_libraries(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSkinSubsurfaceD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinSubsurfaceD3D12VisualTest>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)

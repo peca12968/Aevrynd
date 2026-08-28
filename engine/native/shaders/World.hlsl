@@ -172,6 +172,13 @@ cbuffer DirectionalLightShaftConstants : register(b8)
     float directionalLightShaftMaximumDistance;
     float directionalLightShaftSampleCount;
 };
+cbuffer SkinSubsurfaceConstants : register(b9)
+{
+    float skinSubsurfaceStrength;
+    float skinSubsurfaceWrap;
+    float skinSubsurfaceCurvatureScale;
+    float skinSubsurfaceTransmission;
+};
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -1182,19 +1189,24 @@ float3 EvaluateEyeEnvironment(float3 baseNormal, float3 corneaNormal, float3 vie
 }
 
 float3 EvaluateSkinSupplement(float3 normal,float3 viewDirection,float3 lightDirection,
-                              float3 radiance,float3 baseColor,float roughness)
+                              float3 radiance,float3 baseColor,float roughness,float curvature)
 {
     const float normalLight = dot(normal,lightDirection);
-    const float wrapped = saturate((normalLight + 0.25) / 1.25);
-    const float wrapExtra = max(0.0,wrapped - saturate(normalLight));
-    const float backScatter = pow(saturate(dot(-lightDirection,viewDirection)),4.0)
-                            * saturate(-normalLight);
     const float narrowRoughness = max(0.09,roughness * 0.45);
     const float3 narrowSpecular = EvaluatePbrLight(normal,viewDirection,lightDirection,
                                                     radiance,0.0,narrowRoughness,0.0) * 0.18;
-    const float3 warmScatter = baseColor * float3(1.0,0.48,0.32)
-                             * radiance * (wrapExtra * 0.20 + backScatter * 0.08);
-    return narrowSpecular + warmScatter;
+    if(skinSubsurfaceStrength<=0.0)return narrowSpecular;
+    const float direct=saturate(normalLight);
+    const float red=max(0.0,saturate((normalLight+skinSubsurfaceWrap)/(1.0+skinSubsurfaceWrap))-direct);
+    const float green=max(0.0,saturate((normalLight+skinSubsurfaceWrap*.62)/(1.0+skinSubsurfaceWrap*.62))-direct);
+    const float blue=max(0.0,saturate((normalLight+skinSubsurfaceWrap*.34)/(1.0+skinSubsurfaceWrap*.34))-direct);
+    const float curveWeight=.35+.65*saturate(curvature*skinSubsurfaceCurvatureScale);
+    const float back=saturate(-normalLight),forward=pow(saturate(dot(-lightDirection,viewDirection)),4.0);
+    const float transmission=back*back*forward*skinSubsurfaceTransmission;
+    const float3 diffusion=min(float3(.3,.3,.3),float3(red*curveWeight+transmission,green*curveWeight+transmission*.42,blue*curveWeight+transmission*.16)*skinSubsurfaceStrength);
+    // 擴散補光逐通道限制在入射光 30%，避免與基礎 Lambert 疊加後超出皮膚可用能量。
+    const float3 warmScatter=min(max(radiance,0.0)*.3,baseColor*radiance*diffusion);
+    return narrowSpecular+warmScatter;
 }
 
 float3 EvaluateHairSupplement(float3 normal,float3 tangent,float3 viewDirection,float3 lightDirection,
@@ -1448,6 +1460,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         normal = normalize(normal + float3(waterRipple.x, 0.0, waterRipple.y) * lerp(0.085, 0.035, foamMask));
     }
 
+    float skinCurvature=0.0;
+    // 材質法線完成後才估算螢幕空間曲率；Skin 為 nointerpolation 旗標，分支在三角形內一致。
+    [branch] if(skinMask>0.5&&skinSubsurfaceStrength>0.0)skinCurvature=length(ddx(normal))+length(ddy(normal));
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
     roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
@@ -1476,7 +1491,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                   + baseColor * emissive * 2.0;
     [branch] if(skinMask > 0.5){
         shaded+=directionalVisibility*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
-                    lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
+                    lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness,skinCurvature);
     }
     [branch] if(hairMask>0.5){
         shaded+=directionalVisibility*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
@@ -1512,7 +1527,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 : EvaluatePbrLight(normal, viewDirection, localDirection, pointRadiance, baseColor, roughness, metallic);
         if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
                     pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
-                    baseColor,roughness);
+                    baseColor,roughness,skinCurvature);
         if(hairMask>0.5)shaded+=EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,localDirection,
                     pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
                     baseColor,roughness);
