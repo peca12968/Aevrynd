@@ -197,15 +197,16 @@ def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float
     for vertex in obj.data.vertices:
         x, y, z = vertex.co
         normalized_z = z
-        jaw = 0.84 + 0.16 * max(0.0, min(1.0, (normalized_z + 0.68) / 0.70))
-        chin = 1.0 - .06 * math.exp(-(x / .25) ** 2 - ((normalized_z + .78) / .16) ** 2)
-        cheek = 1.0 + .025 * math.exp(-((abs(x) - .48) / .20) ** 2 - ((normalized_z - .10) / .28) ** 2)
+        jaw = 0.76 + 0.24 * max(0.0, min(1.0, (normalized_z + 0.68) / 0.70))
+        chin = 1.0 - .08 * math.exp(-(x / .24) ** 2 - ((normalized_z + .78) / .16) ** 2)
+        cheek = 1.0 + .050 * math.exp(-((abs(x) - .48) / .20) ** 2 - ((normalized_z - .10) / .28) ** 2)
         vertex.co.x *= scale[0] * jaw * cheek * chin
         vertex.co.y *= scale[1] * (0.94 + 0.08 * math.exp(-((normalized_z - 0.05) / 0.34) ** 2))
         vertex.co.z *= scale[2]
         if y < 0.0:
-            nose = math.exp(-(x / 0.155) ** 2 - ((normalized_z - 0.08) / 0.24) ** 2)
-            vertex.co.y -= (0.025 if feminine else 0.035) * nose
+            nose = math.exp(-(x / 0.135) ** 2 - ((normalized_z - 0.08) / 0.28) ** 2)
+            nose_alar = math.exp(-(x / 0.24) ** 2 - ((normalized_z + 0.12) / 0.12) ** 2)
+            vertex.co.y -= (0.030 if feminine else 0.038) * nose + .008 * nose_alar
             vertex.co.y -= 0.009 * math.exp(-(x / 0.52) ** 2 - ((normalized_z + 0.12) / 0.22) ** 2)
     obj.data.materials.append(surface); add_vertex_color(obj, tuple(surface.diffuse_color)); smooth_object(obj)
     group = obj.vertex_groups.new(name="Head"); group.add(range(len(obj.data.vertices)), 1.0, "REPLACE")
@@ -238,7 +239,7 @@ def eyelid_ribbon(name: str, eye_x: float, center_y: float, center_z: float, upp
     for row in range(2):
         for index in range(segments+1):
             t=index/segments*2.0-1.0; arc=math.sqrt(max(0.0,1.0-t*t))
-            vertices.append((eye_x+t*.030,center_y-.001*arc,center_z+sign*(.0105*arc+row*.0025)))
+            vertices.append((eye_x+t*.023,center_y-.001*arc,center_z+sign*(.0080*arc+row*.0020)))
     faces=[(i,segments+1+i,segments+2+i,i+1) for i in range(segments)]
     mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
     for polygon in mesh.polygons:
@@ -287,54 +288,55 @@ def create_rig() -> bpy.types.Object:
 
 
 def create_character(rig: bpy.types.Object) -> bpy.types.Object:
-    skin = material("SkinWarmPBR", (0.82, 0.54, 0.40, 1.0), 0.47)
-    lips = material("LipsRosePBR", (0.58, 0.12, 0.14, 1.0), 0.38)
+    skin = material("SkinWarmPBR", (0.62, 0.34, 0.20, 1.0), 0.47)
+    lips = material("LipsRosePBR", (0.42, 0.12, 0.11, 1.0), 0.38)
     sclera = material("EyeScleraPBR", (0.86, 0.88, 0.84, 1.0), 0.23)
     iris = material("IrisHazelPBR", (0.10, 0.19, 0.10, 1.0), 0.18)
-    hair = material("HairChestnutPBR", (0.16, 0.055, 0.025, 1.0), 0.31)
-    cloth = material("DressEmeraldPBR", (0.035, 0.38, 0.24, 1.0), 0.61)
-    cloth_dark = material("DressTrimPBR", (0.018, 0.14, 0.105, 1.0), 0.52)
-    leather = material("BootLeatherPBR", (0.14, 0.045, 0.025, 1.0), 0.48)
+    hair = material("HairChestnutPBR", (0.035, 0.018, 0.012, 1.0), 0.31)
+    cloth = material("DressEmeraldPBR", (0.72, 0.62, 0.48, 1.0), 0.66)
+    cloth_dark = material("DressTrimPBR", (0.075, 0.030, 0.018, 1.0), 0.52)
+    leather = material("BootLeatherPBR", (0.09, 0.025, 0.014, 1.0), 0.48)
     metal = material("AccessoryGoldPBR", (0.78, 0.48, 0.09, 1.0), 0.24, 0.82)
 
     parts: list[bpy.types.Object] = []
     # 軀幹採多個平滑體塊形成肩、腰與骨盆的自然連續比例。
     parts += [
-        torso_loft("ContinuousDressTorso", ((.82,.265,.168),(.94,.250,.162),(1.05,.185,.138),(1.16,.155,.122),(1.29,.198,.142),(1.40,.230,.145),(1.46,.175,.12)), cloth),
-        sphere("Neck", (0, 0, 1.50), (0.064, 0.058, 0.095), skin, "Neck", 20, 12),
-        face_shell("ContinuousFace", (0, -0.005, 1.650), (0.116, 0.090, 0.115), skin, True),
+        torso_loft("ContinuousDressTorso", ((.82,.278,.178),(.94,.266,.174),(1.05,.194,.145),(1.16,.160,.126),(1.29,.207,.150),(1.40,.238,.154),(1.46,.182,.126)), cloth),
+        sphere("Neck", (0, 0, 1.50), (0.052, 0.050, 0.090), skin, "Neck", 20, 12),
+        face_shell("ContinuousFace", (0, -0.005, 1.650), (0.112, 0.086, 0.108), skin, True),
         facial_ribbon("UpperLip", (0,-0.108,1.619),.034,.010,lips,True),
         facial_ribbon("LowerLip", (0,-0.109,1.607),.031,.010,lips,False),
     ]
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
         parts += [
-            limb_loft(f"{side}ContinuousArm", ((.205*sign,0,1.42),(.26*sign,0,1.30),(.315*sign,0,1.18),(.338*sign,-.008,1.07),(.355*sign,-.015,.96)), (.066,.062,.052,.049,.04), skin, (f"{side}UpperArm",f"{side}LowerArm")),
+            limb_loft(f"{side}ContinuousArm", ((.205*sign,0,1.42),(.26*sign,0,1.30),(.315*sign,0,1.18),(.338*sign,-.008,1.07),(.355*sign,-.015,.96)), (.069,.065,.054,.050,.04), skin, (f"{side}UpperArm",f"{side}LowerArm")),
             sphere(f"{side}Hand", (0.358 * sign, -0.025, 0.91), (0.043, 0.028, 0.075), skin, f"{side}Hand", 18, 12),
-            limb_loft(f"{side}Thigh", ((.105*sign,0,.92),(.10*sign,.003,.71),(.095*sign,.005,.51)), (.102,.09,.065), cloth_dark, (f"{side}UpperLeg",f"{side}UpperLeg")),
+            limb_loft(f"{side}Thigh", ((.105*sign,0,.92),(.10*sign,.003,.71),(.095*sign,.005,.51)), (.108,.095,.068), cloth_dark, (f"{side}UpperLeg",f"{side}UpperLeg")),
             limb_loft(f"{side}Calf", ((.095*sign,.005,.51),(.09*sign,.002,.31),(.085*sign,0,.11)), (.065,.076,.045), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
             sphere(f"{side}Boot", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"{side}Foot", 20, 12),
-            sphere(f"EyeWhite.{side}", (0.037 * sign, -0.087, 1.676), (0.024, 0.012, 0.014), sclera, "Head", 18, 10),
-            sphere(f"Iris.{side}", (0.037 * sign, -0.099, 1.676), (0.0095, 0.0045, 0.0095), iris, "Head", 14, 8),
-            sphere(f"Pupil.{side}", (0.037 * sign, -0.103, 1.676), (0.004, 0.002, 0.004), hair, "Head", 10, 6),
-            eyelid_ribbon(f"UpperEyelid.{side}",0.037*sign,-0.100,1.676,True,skin),
-            eyelid_ribbon(f"LowerEyelid.{side}",0.037*sign,-0.100,1.676,False,skin),
+            sphere(f"EyeWhite.{side}", (0.035 * sign, -0.084, 1.674), (0.019, 0.009, 0.010), sclera, "Head", 18, 10),
+            sphere(f"Iris.{side}", (0.035 * sign, -0.093, 1.674), (0.0072, 0.0035, 0.0072), iris, "Head", 14, 8),
+            sphere(f"Pupil.{side}", (0.035 * sign, -0.097, 1.674), (0.0032, 0.0016, 0.0032), hair, "Head", 10, 6),
+            eyelid_ribbon(f"UpperEyelid.{side}",0.035*sign,-0.096,1.674,True,skin),
+            eyelid_ribbon(f"LowerEyelid.{side}",0.035*sign,-0.096,1.674,False,skin),
             tapered_limb(f"EarRim.{side}", (0.108 * sign, -0.004, 1.690), (0.110 * sign, -0.006, 1.610), (0.014, 0.009), skin, "Head", 10),
             tapered_limb(f"Lash.{side}", (0.012 * sign, -0.111, 1.690), (0.066 * sign, -0.108, 1.690), (0.0025, 0.0015), hair, "Head", 8),
-            facial_ribbon(f"Brow.{side}", (0.037*sign,-0.103,1.704),.026,.004,hair,True,10),
+            facial_ribbon(f"Brow.{side}", (0.035*sign,-0.097,1.700),.023,.0035,hair,True,10),
         ]
         for index, (offset, length) in enumerate(((-0.022, 0.060), (-0.008, 0.070), (0.008, 0.066), (0.022, 0.055))):
             parts.append(tapered_limb(f"Finger.{side}.{index}", (0.358 * sign + offset, -0.038, 0.895), (0.358 * sign + offset, -0.050, 0.895 - length), (0.008, 0.005), skin, f"{side}Hand", 8))
         parts.append(tapered_limb(f"Thumb.{side}", (0.345 * sign, -0.035, 0.925), (0.325 * sign, -0.065, 0.895), (0.010, 0.006), skin, f"{side}Hand", 8))
     # 低模頭皮遮底，髮片以固定分布提供可裁切輪廓。
     scalp = sphere("HairScalp", (0.0, 0.012, 1.716), (0.109, 0.094, 0.094), hair, "Head", 18, 10); set_opaque_hair_uv(scalp); parts.append(scalp)
-    for index in range(56):
-        band, column = divmod(index, 14); angle = math.tau * column / 14.0 + band * 0.071
+    for index in range(64):
+        band, column = divmod(index, 16); angle = math.tau * column / 16.0 + band * 0.071
         root = (math.sin(angle) * (0.102 - band * 0.006), 0.025 + math.cos(angle) * (0.082 - band * 0.004), 1.755 - band * 0.018)
         length = 0.25 + 0.045 * band + 0.018 * math.sin(index * 2.17)
-        tip = (root[0] * 1.10 + 0.012 * math.sin(index * 1.31), root[1] + 0.012, root[2] - length)
+        curl = .022 * math.sin(index * 1.31 + band * .8)
+        tip = (root[0] * 1.12 + curl, root[1] + 0.012 + .012 * math.cos(index * 1.17), root[2] - length)
         if root[1] < -0.025:
             # 正面髮束導向顳側，避免長髮在下巴中央形成鬍鬚狀尖角。
-            direction = -1.0 if column < 7 else 1.0
+            direction = -1.0 if column < 8 else 1.0
             root = (direction * max(.075, abs(root[0])), -.020, root[2])
             tip = (direction * (.115 + .008 * band), -.004, root[2] - length)
         parts.append(hair_card(f"HairCard.{index:02d}", root, tip, 0.018 + 0.002 * (index % 3), index, hair))

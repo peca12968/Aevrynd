@@ -47,6 +47,12 @@ foreach ($distributionDirectory in $distributionDirectories) {
     }
 }
 
+# 角色實驗室是人物模型的權威發行來源；避免其他 Demo 的舊模型包覆蓋新版角色資產。
+$characterAssets = Join-Path $projectRoot 'games\character_lab\dist\assets'
+if (Test-Path -LiteralPath $characterAssets) {
+    Copy-Item -Path (Join-Path $characterAssets '*') -Destination $demoAssets -Recurse -Force
+}
+
 $demoModelPacks = Join-Path $demoAssets 'model-packs'
 if (Test-Path -LiteralPath $demoModelPacks) {
     Get-ChildItem -LiteralPath $demoModelPacks -Directory -Filter 'source' -Recurse | Remove-Item -Recurse -Force

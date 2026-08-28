@@ -202,13 +202,13 @@ def face_shell(name: str, center: tuple[float, float, float], scale: tuple[float
                surface: bpy.types.Material) -> bpy.types.Object:
     bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=28, location=center); obj=bpy.context.object;obj.name=name
     for vertex in obj.data.vertices:
-        x,y,z=vertex.co; lower=max(0.0,min(1.0,(z+.70)/.68));jaw=.92+.08*lower
-        if z<-.72: jaw*=.92
-        cheek=1.0-.045*math.exp(-((abs(x)-.50)/.24)**2-((z-.02)/.34)**2);vertex.co.x*=scale[0]*jaw*cheek
+        x,y,z=vertex.co; lower=max(0.0,min(1.0,(z+.70)/.68));jaw=.88+.12*lower
+        if z<-.72: jaw*=.94
+        cheek=1.0+.045*math.exp(-((abs(x)-.50)/.24)**2-((z-.02)/.34)**2);vertex.co.x*=scale[0]*jaw*cheek
         if z<-.58: vertex.co.z=max(vertex.co.z,-.82)
         vertex.co.y*=scale[1]*(.95+.08*math.exp(-((z-.04)/.35)**2));vertex.co.z*=scale[2]
         if y<0.0:
-            vertex.co.y-=.035*math.exp(-(x/.16)**2-((z-.07)/.25)**2)
+            vertex.co.y-=.040*math.exp(-(x/.17)**2-((z-.07)/.27)**2)
             vertex.co.y-=.010*math.exp(-(x/.52)**2-((z+.13)/.23)**2)
     obj.data.materials.append(surface)
     for polygon in obj.data.polygons: polygon.use_smooth=True
@@ -236,7 +236,22 @@ def eyelid_ribbon(name: str, eye_x: float, center_y: float, center_z: float, upp
     vertices=[];sign=1.0 if upper else -1.0
     for row in range(2):
         for index in range(segments+1):
-            t=index/segments*2.0-1.0;arc=math.sqrt(max(0.0,1.0-t*t));vertices.append((eye_x+t*.030,center_y-.001*arc,center_z+sign*(.0105*arc+row*.0025)))
+            t=index/segments*2.0-1.0;arc=math.sqrt(max(0.0,1.0-t*t));vertices.append((eye_x+t*.023,center_y-.001*arc,center_z+sign*(.0080*arc+row*.0020)))
+    faces=[(i,segments+1+i,segments+2+i,i+1) for i in range(segments)]
+    mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index=mesh.loops[loop_index].vertex_index;uv.data[loop_index].uv=((vertex_index%(segments+1))/segments,vertex_index//(segments+1))
+    obj=bpy.data.objects.new(name,mesh);bpy.context.scene.collection.objects.link(obj)
+    group=obj.vertex_groups.new(name="Head");group.add(range(len(mesh.vertices)),1.0,"REPLACE");return obj
+
+
+def jawline_beard(name: str, surface: bpy.types.Material, segments: int=28) -> bpy.types.Object:
+    vertices=[]
+    for row in range(2):
+        for index in range(segments+1):
+            t=index/segments*2.0-1.0
+            vertices.append((t*.102,-.111+.018*abs(t),1.758+.050*abs(t)+row*.010))
     faces=[(i,segments+1+i,segments+2+i,i+1) for i in range(segments)]
     mesh=bpy.data.meshes.new(f"{name}Mesh");mesh.from_pydata(vertices,[],faces);mesh.materials.append(surface);uv=mesh.uv_layers.new(name="UVMap")
     for polygon in mesh.polygons:
@@ -283,42 +298,44 @@ def create_armature() -> bpy.types.Object:
 
 
 def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
-    skin = material("WarmSkinPBR", (0.70, 0.40, 0.25, 1), 0.48, subsurface=0.08)
-    skin_light = material("FaceHighlightPBR", (0.78, 0.49, 0.34, 1), 0.43, subsurface=0.10)
-    hair = material("DarkBrownHairPBR", (0.11, 0.045, 0.022, 1), 0.34)
+    skin = material("WarmSkinPBR", (0.58, 0.30, 0.17, 1), 0.48, subsurface=0.08)
+    skin_light = material("FaceHighlightPBR", (0.64, 0.36, 0.22, 1), 0.43, subsurface=0.10)
+    hair = material("DarkBrownHairPBR", (0.035, 0.018, 0.012, 1), 0.34)
     eye_white = material("EyeScleraPBR", (0.78, 0.76, 0.70, 1), 0.22)
     iris = material("HazelIrisPBR", (0.12, 0.20, 0.10, 1), 0.16)
-    shirt = material("DeepBlueShirtPBR", (0.045, 0.20, 0.48, 1), 0.68)
-    trousers = material("CharcoalClothPBR", (0.10, 0.13, 0.17, 1), 0.78)
-    leather = material("BrownLeatherPBR", (0.20, 0.075, 0.035, 1), 0.46)
+    shirt = material("DeepBlueShirtPBR", (0.70, 0.61, 0.47, 1), 0.68)
+    trousers = material("CharcoalClothPBR", (0.075, 0.065, 0.055, 1), 0.78)
+    leather = material("BrownLeatherPBR", (0.11, 0.036, 0.018, 1), 0.46)
     metal = material("BuckleMetalPBR", (0.48, 0.52, 0.56, 1), 0.24, metallic=0.82)
     objects: list[bpy.types.Object] = []
 
     # 軀幹使用多個解剖量體建立自然肩背、胸肌與腹肌輪廓。
-    objects += [torso_loft("ContinuousShirtTorso", ((1.04,.29,.18),(1.14,.238,.162),(1.27,.272,.178),(1.38,.345,.195),(1.50,.405,.205),(1.58,.415,.198),(1.64,.30,.165)), shirt),
+    objects += [torso_loft("ContinuousShirtTorso", ((1.04,.30,.19),(1.14,.245,.170),(1.27,.282,.188),(1.38,.365,.210),(1.50,.428,.220),(1.58,.438,.212),(1.64,.315,.175)), shirt),
                 ellipsoid("Pelvis", (0, 0.02, 1.01), (0.29, 0.18, 0.18), trousers, "Hips")]
 
-    objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.142,.108,.155),skin_light),
+    objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.138,.104,.142),skin_light),
                 facial_ribbon("UpperLip",(0,-.141,1.810),.034,.010,skin_light,True),
                 facial_ribbon("LowerLip",(0,-.142,1.797),.031,.011,skin_light,False)]
     for side, sign in (("Left", 1), ("Right", -1)):
-        objects += [ellipsoid(f"{side}Eye", (0.046 * sign, -0.111, 1.902), (0.023, 0.011, 0.013), eye_white, "Head", 20, 12),
-                    ellipsoid(f"{side}Iris", (0.046 * sign, -0.122, 1.902), (0.0085, 0.004, 0.0085), iris, "Head", 16, 10),
-                    ellipsoid(f"{side}Pupil", (0.046 * sign, -0.126, 1.902), (0.0035, 0.002, 0.0035), hair, "Head", 10, 6),
-                    eyelid_ribbon(f"{side}UpperEyelid",.046*sign,-.125,1.902,True,skin),
-                    eyelid_ribbon(f"{side}LowerEyelid",.046*sign,-.125,1.902,False,skin),
+        objects += [ellipsoid(f"{side}Eye", (0.043 * sign, -0.106, 1.897), (0.019, 0.009, 0.010), eye_white, "Head", 20, 12),
+                    ellipsoid(f"{side}Iris", (0.043 * sign, -0.115, 1.897), (0.0072, 0.0035, 0.0072), iris, "Head", 16, 10),
+                    ellipsoid(f"{side}Pupil", (0.043 * sign, -0.119, 1.897), (0.0030, 0.0016, 0.0030), hair, "Head", 10, 6),
+                    eyelid_ribbon(f"{side}UpperEyelid",.043*sign,-.118,1.897,True,skin),
+                    eyelid_ribbon(f"{side}LowerEyelid",.043*sign,-.118,1.897,False,skin),
                     capsule(f"{side}EarRim", (0.142 * sign, 0.0, 1.910), (0.144 * sign, 0.0, 1.815), 0.014, skin, "Head", 0.65, 12, 8),
-                    facial_ribbon(f"{side}Brow",(.046*sign,-.126,1.930),.027,.0045,hair,True,10)]
+                    facial_ribbon(f"{side}Brow",(.043*sign,-.119,1.922),.024,.004,hair,True,10)]
     scalp=ellipsoid("HairScalp",(0,.032,2.010),(.132,.101,.058),hair,"Head",16,8);set_opaque_hair_uv(scalp)
-    objects += [scalp, capsule("NeckForm", (0, 0, 1.62), (0, 0, 1.76), 0.092, skin, "Neck")]
-    for index in range(34):
-        band,column=divmod(index,9);angle=math.tau*column/9.0+band*.09
+    objects += [scalp, capsule("NeckForm", (0, 0, 1.62), (0, 0, 1.76), 0.075, skin, "Neck")]
+    for index in range(40):
+        band,column=divmod(index,10);angle=math.tau*column/10.0+band*.09
         root=(math.sin(angle)*(.122-band*.007),.032+math.cos(angle)*(.091-band*.005),2.035-band*.014)
-        length=.075+.012*band+.008*math.sin(index*1.73);tip=(root[0]*.82,root[1]-.012,root[2]-length)
+        length=.075+.012*band+.008*math.sin(index*1.73);tip=(root[0]*.82+.010*math.sin(index*1.41),root[1]-.012+.008*math.cos(index*1.19),root[2]-length)
         objects.append(hair_card(f"HairCard{index:02d}",root,tip,.018+(index%3)*.002,index,hair))
+    # 連續短鬍輪廓比離散髮片更適合近距離觀察，並沿用既有頭髮材質。
+    objects.append(jawline_beard("BeardTrim",hair))
 
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
-        objects += [limb_loft(f"{side}ContinuousArm", ((.32*sign,0,1.55),(.38*sign,0,1.48),(.44*sign,0,1.38),(.48*sign,0,1.29),(.51*sign,-.008,1.17),(.54*sign,-.015,1.05)), (.128,.120,.108,.086,.077,.068), skin, (f"{side}UpperArm",f"{side}LowerArm")),
+        objects += [limb_loft(f"{side}ContinuousArm", ((.32*sign,0,1.55),(.38*sign,0,1.48),(.44*sign,0,1.38),(.48*sign,0,1.29),(.51*sign,-.008,1.17),(.54*sign,-.015,1.05)), (.136,.128,.114,.090,.080,.070), skin, (f"{side}UpperArm",f"{side}LowerArm")),
                     ellipsoid(f"{side}HandForm", (0.558 * sign, -0.02, 0.98), (0.058, 0.040, 0.090), skin, f"{side}Hand", 24, 14),
                     limb_loft(f"{side}ThighForm", ((.16*sign,0,.98),(.17*sign,0,.76),(.17*sign,.005,.54)), (.145,.13,.095), trousers, (f"{side}UpperLeg",f"{side}UpperLeg")),
                     limb_loft(f"{side}CalfForm", ((.17*sign,.005,.54),(.165*sign,.012,.32),(.16*sign,.015,.11)), (.095,.105,.068), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
@@ -331,11 +348,11 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
                 cube("BeltBuckle", (0, -0.205, 1.075), (0.045, 0.012, 0.035), metal, "Hips", 0.008)]
     hair_cards = [obj for obj in objects if obj.name.startswith("HairCard")]
     hairstyle_triangles = sum(sum(len(face.vertices) - 2 for face in obj.data.polygons)
-                              for obj in objects if obj.name.startswith(("HairCard", "HairScalp")))
-    assert 28 <= len(hair_cards) <= 40 and hairstyle_triangles <= 650
+                              for obj in objects if obj.name.startswith(("HairCard", "BeardCard", "HairScalp")))
+    assert 36 <= len(hair_cards) <= 48 and hairstyle_triangles <= 900
     print(f"MALE_HAIR_CARDS={len(hair_cards)} HAIRSTYLE_TRIANGLES={hairstyle_triangles}")
     for obj in objects:
-        if obj.data.materials and obj.data.materials[0] == hair and not obj.name.startswith("HairCard"):
+        if obj.data.materials and obj.data.materials[0] == hair and not obj.name.startswith(("HairCard", "BeardCard")):
             set_opaque_hair_uv(obj)
         modifier = obj.modifiers.new(name="HumanoidSkin", type="ARMATURE")
         modifier.object = rig
@@ -373,7 +390,25 @@ def consolidate_character(objects: list[bpy.types.Object], rig: bpy.types.Object
     return character
 
 
+def create_idle_animation(rig: bpy.types.Object) -> None:
+    action = bpy.data.actions.new("IdleBreathing")
+    rig.animation_data_create()
+    rig.animation_data.action = action
+    for frame, chest_angle in ((1, -.015), (31, .019), (61, -.015)):
+        rig.pose.bones["Chest"].rotation_mode = "XYZ"
+        rig.pose.bones["Chest"].rotation_euler.x = chest_angle
+        rig.pose.bones["Chest"].keyframe_insert(data_path="rotation_euler", frame=frame)
+    action.frame_range = (1, 61)
+    bpy.context.scene.frame_start = 1
+    bpy.context.scene.frame_end = 61
+    bpy.context.scene.render.fps = 30
+
+
 def export_asset(destination: Path, objects: list[bpy.types.Object], rig: bpy.types.Object) -> Path:
+    for obj in objects:
+        bpy.context.view_layer.objects.active = obj
+        triangulate = obj.modifiers.new(name="TriangulateForTangentExport", type="TRIANGULATE")
+        bpy.ops.object.modifier_apply(modifier=triangulate.name)
     bpy.ops.object.select_all(action="DESELECT")
     rig.select_set(True)
     for obj in objects:
@@ -381,8 +416,11 @@ def export_asset(destination: Path, objects: list[bpy.types.Object], rig: bpy.ty
     bpy.context.view_layer.objects.active = rig
     output_path = destination / "realistic-male-character.gltf"
     bpy.ops.export_scene.gltf(filepath=str(output_path), export_format="GLTF_SEPARATE", use_selection=True,
-                              export_animations=False, export_skins=True, export_tangents=True, export_yup=True,
+                              export_animations=True, export_skins=True, export_tangents=True, export_yup=True,
                               export_materials="EXPORT", export_cameras=False, export_lights=False)
+    blend_path = destination / "realistic-male.blend"
+    bpy.context.preferences.filepaths.save_version = 0
+    bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
     return output_path
 
 
@@ -392,6 +430,7 @@ def main() -> None:
     rig = create_armature()
     objects = create_character(rig)
     character = consolidate_character(objects, rig)
+    create_idle_animation(rig)
     vertex_count = len(character.data.vertices)
     triangle_count = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
     coordinates = [character.matrix_world @ vertex.co for vertex in character.data.vertices]
@@ -405,7 +444,8 @@ def main() -> None:
     head_width=max(value.x for value in head)-min(value.x for value in head);head_height=max(value.z for value in head)-min(value.z for value in head)
     shoulder_ratio, chest_depth_ratio, waist_hip_ratio = shoulder_width / height, chest_depth / height, waist_width / hip_width
     arm_ratio, leg_ratio, symmetry_error = .58 / height, .87 / height, 0.0
-    if vertex_count > 22500 or triangle_count > 39000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15 or not .34 <= shoulder_ratio <= .42 or not .17 <= chest_depth_ratio <= .23 or not .76 <= waist_hip_ratio <= .94 or not .30 <= head_width/head_height <= 1.05 or not .25 <= arm_ratio <= .31 or not .39 <= leg_ratio <= .45 or symmetry_error > .002:
+    print(f"MALE_VALIDATION=HEIGHT:{height:.4f} SHOULDER:{shoulder_ratio:.4f} CHEST_DEPTH:{chest_depth_ratio:.4f} WAIST_HIP:{waist_hip_ratio:.4f} HEAD:{head_width/head_height:.4f} ARM:{arm_ratio:.4f} LEG:{leg_ratio:.4f} VERTICES:{vertex_count} TRIANGLES:{triangle_count}")
+    if vertex_count > 22500 or triangle_count > 39000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9 or not 1.95 <= height <= 2.15 or not .38 <= shoulder_ratio <= .44 or not .17 <= chest_depth_ratio <= .23 or not .76 <= waist_hip_ratio <= .94 or not .30 <= head_width/head_height <= 1.05 or not .25 <= arm_ratio <= .31 or not .39 <= leg_ratio <= .45 or symmetry_error > .002:
         raise RuntimeError("Male character geometry budget or proportion validation failed.")
     output_path = export_asset(destination, [character], rig)
     print(f"REALISTIC_MALE_ASSET={output_path}")
