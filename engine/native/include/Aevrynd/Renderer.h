@@ -172,9 +172,11 @@ struct RendererStats {
     uint64_t hdrPostProcessPasses{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
-    bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{};
+    bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
+    Vec2 currentTemporalJitterPixels{},previousTemporalJitterPixels{};
+    unsigned temporalJitterSequenceIndex{};
     size_t temporalHistoryResidentBytes{};
-    uint64_t temporalHistoryAllocations{},temporalHistoryReleases{},temporalResolvePasses{};
+    uint64_t temporalHistoryAllocations{},temporalHistoryReleases{},temporalResolvePasses{},temporalJitteredFrames{},temporalJitterResets{};
     bool multisampleSupported{},multisampleEnabled{};
     unsigned multisampleCount{1},multisampleQuality{};
     size_t multisampleResidentBytes{};

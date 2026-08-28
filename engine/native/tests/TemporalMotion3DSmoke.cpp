@@ -28,6 +28,29 @@ int main() {
     const Matrix4 identity = Matrix4::Identity();
     TemporalMotionSettings3D settings{{100.0f, 100.0f}, true, false};
 
+    Vec2 jitterMean{};
+    std::array<Vec2, TemporalJitterSampleCount3D> jitterSamples{};
+    for (std::uint32_t index = 0; index < TemporalJitterSampleCount3D; ++index) {
+        const TemporalJitterSample3D sample = CalculateTemporalJitterSample3D(index);
+        if (sample.sequenceIndex != index || sample.pixelOffset.x < -0.5f || sample.pixelOffset.x >= 0.5f ||
+            sample.pixelOffset.y < -0.5f || sample.pixelOffset.y >= 0.5f) return 15;
+        for (std::uint32_t previous = 0; previous < index; ++previous) {
+            if (Near(sample.pixelOffset.x, jitterSamples[previous].x, 0.000001f) &&
+                Near(sample.pixelOffset.y, jitterSamples[previous].y, 0.000001f)) return 16;
+        }
+        jitterSamples[index] = sample.pixelOffset;
+        jitterMean = jitterMean + sample.pixelOffset;
+    }
+    if (!Near(jitterMean.x, 0.0f, 0.000001f) || !Near(jitterMean.y, 0.0f, 0.000001f) ||
+        CalculateTemporalJitterSample3D(TemporalJitterSampleCount3D).sequenceIndex != 0) return 17;
+    const Matrix4 jittered = ApplyTemporalProjectionJitter3D(identity, {.25f, -.5f}, {128.0f, 64.0f});
+    if (!Near(jittered[0][3], .00390625f) || !Near(jittered[1][3], .015625f) ||
+        !Near(jittered[2][2], 1.0f) || !Near(jittered[3][3], 1.0f)) return 18;
+    const Vec2 historyUv = ReprojectTemporalHistoryUv3D({.5f, .5f}, {2.0f, -1.0f},
+                                                        {.25f, -.5f}, {-.25f, .25f},
+                                                        {100.0f, 50.0f});
+    if (!Near(historyUv.x, .475f) || !Near(historyUv.y, .535f)) return 19;
+
     if (!PixelVelocity(EvaluateRigidTemporalMotion3D({}, identity, identity, identity, identity, settings), 0.0f, 0.0f)) return 1;
 
     // 相機向右移動一像素時，靜態世界在螢幕上向左一像素。

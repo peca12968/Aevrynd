@@ -31,6 +31,71 @@ Vec3 TransformAffinePoint(const Matrix4& matrix, Vec3 point) {
     return {transformed.x, transformed.y, transformed.z};
 }
 
+float RadicalInverse(std::uint32_t index, std::uint32_t base) {
+    float result = 0.0f;
+    float fraction = 1.0f / static_cast<float>(base);
+    while (index) {
+        result += static_cast<float>(index % base) * fraction;
+        index /= base;
+        fraction /= static_cast<float>(base);
+    }
+    return result;
+}
+
+}
+
+TemporalJitterSample3D CalculateTemporalJitterSample3D(std::uint64_t frameIndex) {
+    const std::uint32_t sequenceIndex = static_cast<std::uint32_t>(frameIndex % TemporalJitterSampleCount3D);
+    Vec2 mean{};
+    for (std::uint32_t index = 0; index < TemporalJitterSampleCount3D; ++index) {
+        mean.x += RadicalInverse(index + 1, 2);
+        mean.y += RadicalInverse(index + 1, 3);
+    }
+    mean = mean * (1.0f / static_cast<float>(TemporalJitterSampleCount3D));
+    return {{RadicalInverse(sequenceIndex + 1, 2) - mean.x,
+             RadicalInverse(sequenceIndex + 1, 3) - mean.y},
+            sequenceIndex};
+}
+
+Matrix4 ApplyTemporalProjectionJitter3D(
+    const Matrix4& unjitteredViewProjection,
+    Vec2 pixelOffset,
+    Vec2 renderSize) {
+    if (!IsFinite(pixelOffset.x) || !IsFinite(pixelOffset.y) ||
+        !IsFinite(renderSize.x) || !IsFinite(renderSize.y) ||
+        renderSize.x <= 0.0f || renderSize.y <= 0.0f ||
+        !IsFinite(unjitteredViewProjection)) {
+        return unjitteredViewProjection;
+    }
+    Matrix4 result = unjitteredViewProjection;
+    const float jitterNdcX = pixelOffset.x * 2.0f / renderSize.x;
+    const float jitterNdcY = pixelOffset.y * -2.0f / renderSize.y;
+    for (std::size_t column = 0; column < 4; ++column) {
+        result[0][column] += jitterNdcX * unjitteredViewProjection[3][column];
+        result[1][column] += jitterNdcY * unjitteredViewProjection[3][column];
+    }
+    return result;
+}
+
+Vec2 ReprojectTemporalHistoryUv3D(
+    Vec2 currentUv,
+    Vec2 velocityPixels,
+    Vec2 currentJitterPixels,
+    Vec2 previousJitterPixels,
+    Vec2 renderSize) {
+    if (!IsFinite(currentUv.x) || !IsFinite(currentUv.y) ||
+        !IsFinite(velocityPixels.x) || !IsFinite(velocityPixels.y) ||
+        !IsFinite(currentJitterPixels.x) || !IsFinite(currentJitterPixels.y) ||
+        !IsFinite(previousJitterPixels.x) || !IsFinite(previousJitterPixels.y) ||
+        !IsFinite(renderSize.x) || !IsFinite(renderSize.y) ||
+        renderSize.x <= 0.0f || renderSize.y <= 0.0f) {
+        return currentUv;
+    }
+    const Vec2 inverseSize{1.0f / renderSize.x, 1.0f / renderSize.y};
+    return {currentUv.x - velocityPixels.x * inverseSize.x +
+                (previousJitterPixels.x - currentJitterPixels.x) * inverseSize.x,
+            currentUv.y - velocityPixels.y * inverseSize.y +
+                (previousJitterPixels.y - currentJitterPixels.y) * inverseSize.y};
 }
 
 TemporalMotionSample3D EvaluateTemporalMotionClip3D(

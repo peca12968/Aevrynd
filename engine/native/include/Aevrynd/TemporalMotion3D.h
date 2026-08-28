@@ -9,6 +9,12 @@
 namespace Aevrynd {
 
 inline constexpr float TemporalMotionMinimumClipW3D = 0.00001f;
+inline constexpr std::uint32_t TemporalJitterSampleCount3D = 8;
+
+struct TemporalJitterSample3D {
+    Vec2 pixelOffset{};
+    std::uint32_t sequenceIndex{};
+};
 
 struct TemporalMotionSettings3D {
     Vec2 outputSize{};
@@ -30,6 +36,22 @@ struct TemporalSkinInfluence3D {
     std::array<std::uint16_t, 4> joints{};
     std::array<float, 4> weights{};
 };
+
+// 固定八點 Halton 週期先扣除週期平均值，避免長時間累積相機偏移。
+TemporalJitterSample3D CalculateTemporalJitterSample3D(std::uint64_t frameIndex);
+
+// pixel offset 採左上原點；投影仍維持 DirectX NDC 的正 Y 向上。
+Matrix4 ApplyTemporalProjectionJitter3D(
+    const Matrix4& unjitteredViewProjection,
+    Vec2 pixelOffset,
+    Vec2 renderSize);
+
+Vec2 ReprojectTemporalHistoryUv3D(
+    Vec2 currentUv,
+    Vec2 velocityPixels,
+    Vec2 currentJitterPixels,
+    Vec2 previousJitterPixels,
+    Vec2 renderSize);
 
 // UV 與輸出像素採左上原點，因此正 X 向右、正 Y 向下。
 TemporalMotionSample3D EvaluateTemporalMotionClip3D(

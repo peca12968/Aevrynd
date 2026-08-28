@@ -8,6 +8,7 @@ cbuffer TemporalComposite : register(b0)
     float4 sourceRect;
     float4 targetRect;
     float4 temporalParameters;
+    float4 jitterPixels;
 };
 
 struct TemporalVertexOutput { float4 position : SV_POSITION; };
@@ -43,7 +44,7 @@ float4 TemporalResolvePixelMain(TemporalVertexOutput input) : SV_TARGET
     const float3 neighborhoodMinimum = min(center, min(min(north, south), min(west, east)));
     const float3 neighborhoodMaximum = max(center, max(max(north, south), max(west, east)));
     const float2 velocityPixels = sceneVelocity.SampleLevel(linearClampSampler, sourceUv, 0.0);
-    const float2 previousUv = sourceUv - velocityPixels * texel;
+    const float2 previousUv = sourceUv - velocityPixels * texel + (jitterPixels.zw - jitterPixels.xy) * texel;
     const float inside = all(previousUv >= 0.0) && all(previousUv <= 1.0) ? 1.0 : 0.0;
     float3 history = previousSceneColor.SampleLevel(linearClampSampler, saturate(previousUv), 0.0).rgb;
     history = clamp(history, neighborhoodMinimum, neighborhoodMaximum);

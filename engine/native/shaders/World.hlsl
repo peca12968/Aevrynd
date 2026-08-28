@@ -13,6 +13,8 @@ cbuffer Scene : register(b0)
     float4 worldViewport;
     row_major float4x4 previousViewProjection;
     float4 motionParameters;
+    row_major float4x4 currentUnjitteredViewProjection;
+    float4 temporalJitterPixels;
 };
 
 struct MotionInstanceInput
@@ -39,9 +41,10 @@ struct MotionVertexOutput
 MotionVertexOutput VelocityWorldVertexMain(MotionWorldInput input)
 {
     MotionVertexOutput output;
-    output.currentClip = mul(viewProjection, float4(input.position, 1.0));
-    output.previousClip = mul(previousViewProjection, float4(input.position, 1.0));
-    output.position = output.currentClip;
+    const float4 worldPosition = float4(input.position, 1.0);
+    output.position = mul(viewProjection, worldPosition);
+    output.currentClip = mul(currentUnjitteredViewProjection, worldPosition);
+    output.previousClip = mul(previousViewProjection, worldPosition);
     return output;
 }
 
@@ -51,9 +54,9 @@ MotionVertexOutput VelocityInstancedVertexMain(MotionInstanceInput input)
     const float4 currentWorld = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     const float4 previousWorld = float4(dot(input.previousRow0, localPosition), dot(input.previousRow1, localPosition), dot(input.previousRow2, localPosition), dot(input.previousRow3, localPosition));
     MotionVertexOutput output;
-    output.currentClip = mul(viewProjection, currentWorld);
+    output.position = mul(viewProjection, currentWorld);
+    output.currentClip = mul(currentUnjitteredViewProjection, currentWorld);
     output.previousClip = mul(previousViewProjection, previousWorld);
-    output.position = output.currentClip;
     return output;
 }
 
@@ -133,9 +136,9 @@ MotionVertexOutput VelocitySkinnedVertexMain(MotionSkinnedVertexInput input)
     const float4 currentWorld = float4(dot(input.transformRow0, currentLocal), dot(input.transformRow1, currentLocal), dot(input.transformRow2, currentLocal), dot(input.transformRow3, currentLocal));
     const float4 previousWorld = float4(dot(input.previousRow0, previousLocal), dot(input.previousRow1, previousLocal), dot(input.previousRow2, previousLocal), dot(input.previousRow3, previousLocal));
     MotionVertexOutput output;
-    output.currentClip = mul(viewProjection, currentWorld);
+    output.position = mul(viewProjection, currentWorld);
+    output.currentClip = mul(currentUnjitteredViewProjection, currentWorld);
     output.previousClip = mul(previousViewProjection, previousWorld);
-    output.position = output.currentClip;
     return output;
 }
 
