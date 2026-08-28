@@ -87,6 +87,9 @@ struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()
 struct SkinnedMeshInstance3D {SkinnedMeshHandle3D mesh{};SkinPaletteRange3D palette{},previousPalette{};Matrix4 transform{Matrix4::Identity()},previousTransform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f},baseTextureScale{.25f},detailTextureScale{.25f};uint32_t firstIndex{},indexCount{};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};CharacterShadingModel3D shadingModel{CharacterShadingModel3D::Default};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{},castsShadow{true},motionValid{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};uint32_t submissionGroupId{},submissionDrawGeneration{};uint64_t submissionNonce{},submissionResourceIdentity{};};
 constexpr bool TransparentBackToFront3D(const MeshInstance3D& left,const MeshInstance3D& right){return left.cameraDepth>right.cameraDepth;}
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
+struct SoftDirectionalShadowSettings3D {bool enabled{true};float blockerSearchRadiusTexels{24.f},lightSourceRadiusTexels{128.f},maximumPenumbraRadiusTexels{32.f};};
+inline SoftDirectionalShadowSettings3D NormalizeSoftDirectionalShadowSettings3D(SoftDirectionalShadowSettings3D settings){settings.blockerSearchRadiusTexels=Clamp(std::isfinite(settings.blockerSearchRadiusTexels)?settings.blockerSearchRadiusTexels:24.f,1.f,24.f);settings.lightSourceRadiusTexels=Clamp(std::isfinite(settings.lightSourceRadiusTexels)?settings.lightSourceRadiusTexels:128.f,1.f,128.f);settings.maximumPenumbraRadiusTexels=Clamp(std::isfinite(settings.maximumPenumbraRadiusTexels)?settings.maximumPenumbraRadiusTexels:32.f,1.45f,32.f);return settings;}
+inline float DirectionalShadowPenumbraRadius3D(float receiverDepth,float averageBlockerDepth,const SoftDirectionalShadowSettings3D& source={}){const SoftDirectionalShadowSettings3D settings=NormalizeSoftDirectionalShadowSettings3D(source);if(!settings.enabled||!std::isfinite(receiverDepth)||!std::isfinite(averageBlockerDepth)||receiverDepth<=averageBlockerDepth||averageBlockerDepth<=0.f)return 1.45f;const float ratio=(receiverDepth-averageBlockerDepth)/(std::max)(averageBlockerDepth,.0001f);return Clamp(ratio*settings.lightSourceRadiusTexels,1.45f,settings.maximumPenumbraRadiusTexels);}
 constexpr uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,float splitDistance=32.f){return std::isfinite(cameraDistance)&&cameraDistance>=splitDistance?1u:0u;}
 inline float SnapDirectionalShadowCoordinate3D(float value,float texelWorldSize){return std::isfinite(value)&&std::isfinite(texelWorldSize)&&texelWorldSize>0.f?std::round(value/texelWorldSize)*texelWorldSize:value;}
 inline float DirectionalShadowCascadeBlend3D(float cameraDistance,float splitDistance=32.f,float transitionWidth=6.f){if(!std::isfinite(cameraDistance)||!std::isfinite(splitDistance)||!std::isfinite(transitionWidth)||transitionWidth<=0.f)return cameraDistance>=splitDistance?1.f:0.f;const float value=Clamp((cameraDistance-(splitDistance-transitionWidth*.5f))/transitionWidth,0.f,1.f);return value*value*(3.f-2.f*value);}
@@ -282,6 +285,11 @@ struct RendererStats {
     float directionalShadowTransitionWidth{6.f};
     size_t directionalShadowBasePcfSamples{12};
     size_t directionalShadowTransitionPcfSamples{24};
+    bool softDirectionalShadowsEnabled{};
+    size_t softDirectionalShadowBlockerSamples{};
+    float softDirectionalShadowBlockerSearchRadiusTexels{};
+    float softDirectionalShadowLightSourceRadiusTexels{};
+    float softDirectionalShadowMaximumPenumbraRadiusTexels{};
     uint64_t successfulFrameCaptures{};
     uint64_t rejectedFrameCaptures{};
     double lastCapturedAverageLuminance{};
@@ -493,6 +501,8 @@ public:
     const WaterOpticsSettings3D& WaterOptics()const{return waterOptics_;}
     void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
+    void SetSoftDirectionalShadows(SoftDirectionalShadowSettings3D settings){softDirectionalShadows_=NormalizeSoftDirectionalShadowSettings3D(settings);}
+    const SoftDirectionalShadowSettings3D& SoftDirectionalShadows()const{return softDirectionalShadows_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void SetBlendMode2D(BlendMode2D mode){blendMode_=mode;}
@@ -548,6 +558,7 @@ private:
     BloomSettings3D bloom_{};
     WaterOpticsSettings3D waterOptics_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
+    SoftDirectionalShadowSettings3D softDirectionalShadows_{};
     std::vector<PointLight3D> pointLights_;
     std::vector<DrawSpan2D> additiveSpans_;
     std::vector<AssetLease3D> resourceLeases_;

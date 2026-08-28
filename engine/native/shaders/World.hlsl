@@ -69,7 +69,7 @@ float2 VelocityPixelMain(MotionVertexOutput input) : SV_TARGET
     const float2 previousNdc = input.previousClip.xy / input.previousClip.w;
     return (currentNdc - previousNdc) * float2(motionParameters.y, -motionParameters.z);
 }
-cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; };
+cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; float4 shadowSoftness; };
 cbuffer DrawConstants : register(b2) { uint shadowCascadeIndex; uint drawConstantReserved; };
 
 Texture2DArray<float> shadowTexture : register(t3);
@@ -694,10 +694,33 @@ float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPo
         float2(0.962, -0.195), float2(0.473, -0.480), float2(0.519, 0.768), float2(0.185, -0.893),
         float2(0.507, 0.064), float2(0.896, 0.412), float2(-0.322, -0.933), float2(-0.792, -0.598)
     };
+    float filterRadiusTexels = 1.45;
+    if (shadowSoftness.x > 0.5)
+    {
+        float blockerDepthSum = 0.0;
+        float blockerCount = 0.0;
+        [unroll] for (int blockerIndex = 0; blockerIndex < 8; ++blockerIndex)
+        {
+            const float2 blockerOffset = lerp(poisson[blockerIndex], poisson[blockerIndex].yx, swapAxes) * rotationSigns * shadowParameters.w * shadowSoftness.y;
+            const float2 blockerUv = uv + blockerOffset;
+            const float sampledDepth = any(blockerUv < 0.0) || any(blockerUv > 1.0) ? 1.0 : shadowTexture.SampleLevel(screenPointClampSampler, float3(blockerUv, cascadeIndex), 0.0);
+            if (sampledDepth < projected.z - bias)
+            {
+                blockerDepthSum += sampledDepth;
+                blockerCount += 1.0;
+            }
+        }
+        if (blockerCount > 0.0)
+        {
+            const float averageBlockerDepth = blockerDepthSum / blockerCount;
+            const float penumbraRatio = max(0.0, projected.z - bias - averageBlockerDepth) / max(0.0001, averageBlockerDepth);
+            filterRadiusTexels = clamp(penumbraRatio * shadowSoftness.z, 1.45, shadowSoftness.w);
+        }
+    }
     float visibility = 0.0;
     [unroll] for (int sampleIndex = 0; sampleIndex < 12; ++sampleIndex)
     {
-        const float2 offset = lerp(poisson[sampleIndex], poisson[sampleIndex].yx, swapAxes) * rotationSigns * shadowParameters.w * 1.45;
+        const float2 offset = lerp(poisson[sampleIndex], poisson[sampleIndex].yx, swapAxes) * rotationSigns * shadowParameters.w * filterRadiusTexels;
         visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv + offset, cascadeIndex), projected.z - bias);
     }
     return visibility / 12.0;

@@ -128,6 +128,15 @@ target_compile_definitions(AevryndDrawListTest PRIVATE AEVRYND_SOURCE_DIR=L"${CM
 target_link_libraries(AevryndDrawListTest PRIVATE AevryndEngine)
 add_test(NAME AevryndDrawListTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDrawListTest>'")
 
+add_executable(AevryndSoftDirectionalShadow3DTest tests/SoftDirectionalShadow3DSmoke.cpp)
+target_compile_options(AevryndSoftDirectionalShadow3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSoftDirectionalShadow3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSoftDirectionalShadow3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSoftDirectionalShadow3DTest>'")
+
+add_executable(AevryndSoftDirectionalShadow3DBenchmark tests/SoftDirectionalShadow3DBenchmark.cpp)
+target_compile_options(AevryndSoftDirectionalShadow3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSoftDirectionalShadow3DBenchmark PRIVATE AevryndEngine)
+
 add_executable(AevryndCameraTest tests/CameraSmoke.cpp)
 target_compile_options(AevryndCameraTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCameraTest PRIVATE AevryndEngine)

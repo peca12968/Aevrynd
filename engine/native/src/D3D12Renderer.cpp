@@ -1263,6 +1263,12 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  d.stats.directionalShadowTransitionWidth = 6.f;
  d.stats.directionalShadowBasePcfSamples = 12;
  d.stats.directionalShadowTransitionPcfSamples = 24;
+ const SoftDirectionalShadowSettings3D softShadowSettings=dl.SoftDirectionalShadows();
+ d.stats.softDirectionalShadowsEnabled=renderShadowMap&&softShadowSettings.enabled;
+ d.stats.softDirectionalShadowBlockerSamples=d.stats.softDirectionalShadowsEnabled?8:0;
+ d.stats.softDirectionalShadowBlockerSearchRadiusTexels=d.stats.softDirectionalShadowsEnabled?softShadowSettings.blockerSearchRadiusTexels:0.f;
+ d.stats.softDirectionalShadowLightSourceRadiusTexels=d.stats.softDirectionalShadowsEnabled?softShadowSettings.lightSourceRadiusTexels:0.f;
+ d.stats.softDirectionalShadowMaximumPenumbraRadiusTexels=d.stats.softDirectionalShadowsEnabled?softShadowSettings.maximumPenumbraRadiusTexels:0.f;
  d.stats.lastDirectionalShadowCasters = 0;
  for (const ActiveMeshGroup3D &group : d.activeMeshGroups)
    if (group.shadowCascadeMask)
@@ -1308,6 +1314,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  const float shadowParameters[4] = {renderShadowMap ? 32.f : 0.f, .0015f,
                                     .00035f, 1.f / 2048.f};
  const float shadowTransition[4] = {6.f, 0, 0, 0};
+ const float shadowSoftness[4] = {d.stats.softDirectionalShadowsEnabled?1.f:0.f,softShadowSettings.blockerSearchRadiusTexels,softShadowSettings.lightSourceRadiusTexels,softShadowSettings.maximumPenumbraRadiusTexels};
  float *shadowConstants = d.shadowConstantsMapped + d.frame * 64;
  memcpy(shadowConstants, &lightViewProjection[0].values[0][0],
         sizeof(float) * 16);
@@ -1315,6 +1322,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
         sizeof(float) * 16);
  memcpy(shadowConstants + 32, shadowParameters, sizeof(shadowParameters));
  memcpy(shadowConstants + 36, shadowTransition, sizeof(shadowTransition));
+ memcpy(shadowConstants + 40, shadowSoftness, sizeof(shadowSoftness));
  if (renderShadowMap) {
    D3D12_RESOURCE_BARRIER shadowWrite{};
    shadowWrite.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
