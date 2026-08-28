@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00547","kind":"git-commit","sourcePath":"git/history","sourceSha256":"612635bca8f2a2cd75d4df3ecb352b4cfcd43f6f6df7ea405831d0f12c0dd9cc","sourceRevision":"c3e482385b0358b822196b9239095cb88a767028","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"建立ECS與版本化序列化引擎底座"}

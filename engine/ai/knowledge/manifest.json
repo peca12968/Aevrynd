@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "3db9a4146c3b956e842bdb58567d5f37be060468",
+  "snapshotRevision": "750697fde27db6d57fc14c44243107b111f674f2",
   "chunkCharacters": 3000,
-  "chunkCount": 542,
-  "sourceCount": 136,
+  "chunkCount": 548,
+  "sourceCount": 138,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "bc5a17982eeb01cb566c29ada85c08ad09374417cfd44af2b925d3e59cce9543",
+  "knowledgeSha256": "baff5e9b38479dbe31aaee38b7bcbb227cffafc7ccae236f8963b14edda59258",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "0eea59c6db727151cca137638f81560ee36226917184be44bf7a218caf8f686c",
-      "revision": "3db9a4146c3b956e842bdb58567d5f37be060468",
-      "bytes": 39116
+      "sha256": "ea064291d9908d9d823897f9ea4dd454dffdc989da947d50f28c7e39cc3cd2af",
+      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
+      "bytes": 40432
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "9339015944cbc0cd990ae60ce68066f25e886dc50735b00a77f86ce22d395ec3",
-      "revision": "3db9a4146c3b956e842bdb58567d5f37be060468",
-      "bytes": 87981
+      "sha256": "cb554b63bf5faa8d358e27d1c209c5779dbcdd5cb03de3441dcc1fa8d946fecb",
+      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
+      "bytes": 89486
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -534,6 +534,20 @@
       "sha256": "65f98453b3144d007153a60f5416124c1e599c4d1034568b7fc9cfb197a8b106",
       "revision": "e10ab0270e00257f62b180926523429f73724143",
       "bytes": 3330
+    },
+    {
+      "path": "engine/native/tests/GpuInstanceCulling3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "ddf78c1f294f133c19298d52403cdc0e55693ec8f221189ef1a360c789615970",
+      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
+      "bytes": 3467
+    },
+    {
+      "path": "engine/native/tests/GpuInstanceCulling3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "635227ee06686bac6c84e464c2803b128a3911eb794b72eaae4301784e997fae",
+      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
+      "bytes": 11777
     },
     {
       "path": "engine/native/tests/HeightField3DSmoke.cpp",
