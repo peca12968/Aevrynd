@@ -116,7 +116,17 @@ template<std::size_t Capacity>PointLightSelection3D<Capacity> SelectInfluentialP
     for(const PointLight3D& light:lights){const float influence=PointLightInfluence(light,reference);if(!std::isfinite(influence)||influence<=0.f)continue;std::size_t destination=result.count;while(destination>0&&influence>result.influences[destination-1])--destination;if(destination>=Capacity)continue;const std::size_t newCount=(std::min)(Capacity,result.count+1);for(std::size_t index=newCount-1;index>destination;--index){result.lights[index]=result.lights[index-1];result.influences[index]=result.influences[index-1];}result.lights[destination]=light;result.influences[destination]=influence;result.count=newCount;}
     return result;
 }
-struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};};
+struct Atmosphere3D {Color fogColor{.35f,.48f,.52f,1.f};Vec3 cameraPosition{};float fogStart{45.f},fogEnd{140.f};bool enabled{};float heightFogDensity{},heightFogFalloff{.12f},heightFogBaseHeight{},heightFogMaximumOpacity{.92f};};
+inline Atmosphere3D NormalizeAtmosphere3D(Atmosphere3D atmosphere){
+    atmosphere.fogStart=std::isfinite(atmosphere.fogStart)?atmosphere.fogStart:45.f;atmosphere.fogEnd=(std::max)(atmosphere.fogStart+.001f,std::isfinite(atmosphere.fogEnd)?atmosphere.fogEnd:140.f);
+    atmosphere.heightFogDensity=Clamp(std::isfinite(atmosphere.heightFogDensity)?atmosphere.heightFogDensity:0.f,0.f,1.f);atmosphere.heightFogFalloff=Clamp(std::isfinite(atmosphere.heightFogFalloff)?atmosphere.heightFogFalloff:.12f,0.f,4.f);atmosphere.heightFogBaseHeight=std::isfinite(atmosphere.heightFogBaseHeight)?atmosphere.heightFogBaseHeight:0.f;atmosphere.heightFogMaximumOpacity=Clamp(std::isfinite(atmosphere.heightFogMaximumOpacity)?atmosphere.heightFogMaximumOpacity:.92f,0.f,1.f);return atmosphere;
+}
+inline float EvaluateHeightFogAmount3D(const Atmosphere3D& source,Vec3 worldPosition){
+    // 使用線段兩端密度的梯形積分，讓 CPU 參考與即時 shader 保持一致且不需額外資源。
+    const Atmosphere3D atmosphere=NormalizeAtmosphere3D(source);if(!atmosphere.enabled||atmosphere.heightFogDensity<=0.f||!std::isfinite(worldPosition.x)||!std::isfinite(worldPosition.y)||!std::isfinite(worldPosition.z)||!std::isfinite(atmosphere.cameraPosition.x)||!std::isfinite(atmosphere.cameraPosition.y)||!std::isfinite(atmosphere.cameraPosition.z))return 0.f;
+    const Vec3 delta=worldPosition-atmosphere.cameraPosition;const float distance=Length(delta);if(!std::isfinite(distance)||distance<=0.f)return 0.f;
+    const float cameraExponent=Clamp(-atmosphere.heightFogFalloff*(atmosphere.cameraPosition.y-atmosphere.heightFogBaseHeight),-20.f,20.f),fragmentExponent=Clamp(-atmosphere.heightFogFalloff*(worldPosition.y-atmosphere.heightFogBaseHeight),-20.f,20.f);const float opticalDepth=distance*atmosphere.heightFogDensity*.5f*(std::exp(cameraExponent)+std::exp(fragmentExponent));return Clamp(1.f-std::exp(-(std::min)(opticalDepth,80.f)),0.f,atmosphere.heightFogMaximumOpacity);
+}
 struct AmbientOcclusionSettings3D {bool enabled{true};float radius{1.35f},bias{.035f},intensity{1.05f};};
 struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion{true},multisampling{true},postProcessAntiAliasing{true};friend constexpr bool operator==(const RendererQualitySettings3D&,const RendererQualitySettings3D&)=default;};
 struct VelocityCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};bool historyValid{};};
@@ -461,7 +471,7 @@ public:
     bool DirectionalShadowMapEnabled()const{return directionalShadowMapEnabled_;}
     void AddPointLight(PointLight3D light){light.radius=(std::max)(.001f,light.radius);light.intensity=(std::max)(0.f,light.intensity);if(light.intensity>0.f)pointLights_.push_back(light);}
     const std::vector<PointLight3D>& PointLights()const{return pointLights_;}
-    void SetAtmosphere(Atmosphere3D atmosphere){atmosphere.fogEnd=(std::max)(atmosphere.fogStart+.001f,atmosphere.fogEnd);atmosphere_=atmosphere;}
+    void SetAtmosphere(Atmosphere3D atmosphere){atmosphere_=NormalizeAtmosphere3D(atmosphere);}
     const Atmosphere3D& Atmosphere()const{return atmosphere_;}
     void SetEnvironmentTime(float seconds){environmentTime_=std::isfinite(seconds)?seconds:0.f;}
     float EnvironmentTime()const{return environmentTime_;}

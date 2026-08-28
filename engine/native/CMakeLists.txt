@@ -333,6 +333,15 @@ target_compile_options(AevryndPbrLightingReferenceTest PRIVATE /W4 /permissive- 
 target_link_libraries(AevryndPbrLightingReferenceTest PRIVATE AevryndEngine)
 add_test(NAME AevryndPbrLightingReferenceTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndPbrLightingReferenceTest>'")
 
+add_executable(AevryndHeightFog3DTest tests/HeightFog3DSmoke.cpp)
+target_compile_options(AevryndHeightFog3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndHeightFog3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndHeightFog3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndHeightFog3DTest>'")
+
+add_executable(AevryndHeightFog3DBenchmark tests/HeightFog3DBenchmark.cpp)
+target_compile_options(AevryndHeightFog3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndHeightFog3DBenchmark PRIVATE AevryndEngine)
+
 add_executable(AevryndTemporalMotion3DTest tests/TemporalMotion3DSmoke.cpp)
 target_compile_options(AevryndTemporalMotion3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndTemporalMotion3DTest PRIVATE AevryndEngine)

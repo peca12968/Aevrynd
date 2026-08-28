@@ -96,8 +96,8 @@ constexpr size_t MaximumEnvironmentLightingSets3D=16;
 constexpr size_t EnvironmentDescriptorBase3D=EnvironmentFallbackDescriptorBase3D+3;
 constexpr size_t TotalTextureDescriptorCount3D=EnvironmentDescriptorBase3D+MaximumEnvironmentLightingSets3D*3;
 constexpr size_t SceneConstantStride3D=512;
-struct SceneConstants3D {std::array<float,124> values{};};
-static_assert(sizeof(SceneConstants3D)==496);
+struct SceneConstants3D {std::array<float,128> values{};};
+static_assert(sizeof(SceneConstants3D)==512);
 bool InvertMatrix4x4(const Matrix4& source,Matrix4& result){
  double augmented[4][8]{};for(size_t row=0;row<4;++row){for(size_t column=0;column<4;++column)augmented[row][column]=source[row][column];augmented[row][row+4]=1.;}
  for(size_t column=0;column<4;++column){size_t pivot=column;for(size_t row=column+1;row<4;++row)if(std::abs(augmented[row][column])>std::abs(augmented[pivot][column]))pivot=row;if(std::abs(augmented[pivot][column])<1e-12)return false;if(pivot!=column)for(size_t value=0;value<8;++value)std::swap(augmented[pivot][value],augmented[column][value]);const double divisor=augmented[column][column];for(double& value:augmented[column])value/=divisor;for(size_t row=0;row<4;++row){if(row==column)continue;const double factor=augmented[row][column];for(size_t value=0;value<8;++value)augmented[row][value]-=factor*augmented[column][value];}}
@@ -1095,6 +1095,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
   scene.values[80]=worldCanvas.x/float(rw);scene.values[81]=worldCanvas.y/float(rh);scene.values[82]=inverseViewProjectionValid?worldCanvas.width/float(rw):0.f;scene.values[83]=inverseViewProjectionValid?worldCanvas.height/float(rh):0.f;
   memcpy(scene.values.data()+84,&d.previousViewProjection.values[0][0],sizeof(float)*16);scene.values[100]=d.temporalHistoryValid?1.f:0.f;scene.values[101]=float(rw)*.5f;scene.values[102]=float(rh)*.5f;
   memcpy(scene.values.data()+104,&dl.ViewProjection().values[0][0],sizeof(float)*16);scene.values[120]=currentTemporalJitterPixels.x;scene.values[121]=currentTemporalJitterPixels.y;scene.values[122]=d.previousTemporalJitterPixels.x;scene.values[123]=d.previousTemporalJitterPixels.y;
+  scene.values[124]=sceneAtmosphere.enabled?sceneAtmosphere.heightFogDensity:0.f;scene.values[125]=sceneAtmosphere.heightFogFalloff;scene.values[126]=sceneAtmosphere.heightFogBaseHeight;scene.values[127]=sceneAtmosphere.heightFogMaximumOpacity;
   d.stats.temporalJitterEnabled=temporalJitterRequested;d.stats.currentTemporalJitterPixels=currentTemporalJitterPixels;d.stats.previousTemporalJitterPixels=d.previousTemporalJitterPixels;d.stats.temporalJitterSequenceIndex=temporalJitter.sequenceIndex;
   memcpy(d.sceneConstantsMapped + d.frame * (SceneConstantStride3D/sizeof(float)), scene.values.data(),
          sizeof(scene));

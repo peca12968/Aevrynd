@@ -15,6 +15,7 @@ cbuffer Scene : register(b0)
     float4 motionParameters;
     row_major float4x4 currentUnjitteredViewProjection;
     float4 temporalJitterPixels;
+    float4 heightFogParameters;
 };
 
 struct MotionInstanceInput
@@ -1266,7 +1267,19 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
     const float distanceFog = saturate((cameraDistance - cameraFogStart.w) / max(0.001, fogEndEnabled.x - cameraFogStart.w));
     const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
-    const float fogAmount = saturate(max(distanceFog, horizonFog * 0.72)) * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
+    const float legacyFog = saturate(max(distanceFog, horizonFog * 0.72));
+    float combinedFog = legacyFog;
+    [branch]
+    if (heightFogParameters.x > 0.0)
+    {
+        // 端點梯形積分近似指數高度霧；指數限幅避免極端世界座標產生非有限值。
+        const float cameraDensity = heightFogParameters.x * exp(clamp(-heightFogParameters.y * (cameraFogStart.y - heightFogParameters.z), -20.0, 20.0));
+        const float fragmentDensity = heightFogParameters.x * exp(clamp(-heightFogParameters.y * (input.worldPosition.y - heightFogParameters.z), -20.0, 20.0));
+        const float opticalDepth = min(cameraDistance * 0.5 * (cameraDensity + fragmentDensity), 80.0);
+        const float heightFog = min(1.0 - exp(-opticalDepth), saturate(heightFogParameters.w));
+        combinedFog = saturate(1.0 - (1.0 - legacyFog) * (1.0 - heightFog));
+    }
+    const float fogAmount = combinedFog * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
     // 世界著色器只輸出曝光後的線性 HDR；ACES 與 sRGB 由全畫面後處理統一執行。
     float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
     if(alphaToCoverage && input.alphaMasked != 0)
