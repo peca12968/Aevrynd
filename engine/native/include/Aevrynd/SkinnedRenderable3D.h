@@ -9,6 +9,7 @@ namespace Aevrynd {
 bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
     SkinPaletteRange3D palette,Matrix4 transform,std::uint32_t totalIndexCount,
     std::span<const SkinnedSubmesh3D> submeshes,
-    std::span<const Material3D> materialBindings);
+    std::span<const Material3D> materialBindings,SkinPaletteRange3D previousPalette={},
+    Matrix4 previousTransform=Matrix4::Identity(),bool motionValid=false);
 
 }

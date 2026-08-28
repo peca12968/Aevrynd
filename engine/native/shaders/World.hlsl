@@ -93,6 +93,52 @@ StructuredBuffer<SkinPaletteJoint> skinPalette : register(t13);
 SamplerState materialSampler : register(s0);
 SamplerState screenPointClampSampler : register(s2);
 
+struct MotionSkinnedVertexInput
+{
+    float3 position : POSITION;
+    uint4 blendIndices : BLENDINDICES;
+    float4 blendWeights : BLENDWEIGHT;
+    float4 transformRow0 : INSTANCE0;
+    float4 transformRow1 : INSTANCE1;
+    float4 transformRow2 : INSTANCE2;
+    float4 transformRow3 : INSTANCE3;
+    uint skinPaletteBase : SKINBASE;
+    float4 previousRow0 : PREVIOUS0;
+    float4 previousRow1 : PREVIOUS1;
+    float4 previousRow2 : PREVIOUS2;
+    float4 previousRow3 : PREVIOUS3;
+    uint previousPaletteBase : PREVIOUSPALETTE;
+};
+
+float3 SkinMotionPosition(float3 position, uint4 indices, float4 blendWeights, uint paletteBase)
+{
+    const float weightSum = dot(blendWeights, float4(1.0, 1.0, 1.0, 1.0));
+    const float4 weights = blendWeights / max(weightSum, 1e-6);
+    const float4 sourcePosition = float4(position, 1.0);
+    float3 result = 0.0;
+    [unroll] for (uint influence = 0; influence < 4; ++influence)
+    {
+        const SkinPaletteJoint joint = skinPalette[(paletteBase & 4095u) + indices[influence]];
+        result += float3(dot(joint.transform[0], sourcePosition),
+                         dot(joint.transform[1], sourcePosition),
+                         dot(joint.transform[2], sourcePosition)) * weights[influence];
+    }
+    return result;
+}
+
+MotionVertexOutput VelocitySkinnedVertexMain(MotionSkinnedVertexInput input)
+{
+    const float4 currentLocal = float4(SkinMotionPosition(input.position, input.blendIndices, input.blendWeights, input.skinPaletteBase), 1.0);
+    const float4 previousLocal = float4(SkinMotionPosition(input.position, input.blendIndices, input.blendWeights, input.previousPaletteBase), 1.0);
+    const float4 currentWorld = float4(dot(input.transformRow0, currentLocal), dot(input.transformRow1, currentLocal), dot(input.transformRow2, currentLocal), dot(input.transformRow3, currentLocal));
+    const float4 previousWorld = float4(dot(input.previousRow0, previousLocal), dot(input.previousRow1, previousLocal), dot(input.previousRow2, previousLocal), dot(input.previousRow3, previousLocal));
+    MotionVertexOutput output;
+    output.currentClip = mul(viewProjection, currentWorld);
+    output.previousClip = mul(previousViewProjection, previousWorld);
+    output.position = output.currentClip;
+    return output;
+}
+
 struct WorldVertexInput
 {
     float3 position : POSITION;

@@ -6,7 +6,8 @@ namespace Aevrynd {
 bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
     SkinPaletteRange3D palette,Matrix4 transform,std::uint32_t totalIndexCount,
     std::span<const SkinnedSubmesh3D> submeshes,
-    std::span<const Material3D> materialBindings){
+    std::span<const Material3D> materialBindings,SkinPaletteRange3D previousPalette,
+    Matrix4 previousTransform,bool motionValid){
     if(!mesh||!palette||!totalIndexCount||totalIndexCount%3||submeshes.empty()||
         materialBindings.empty()||submeshes.size()>DrawList::MaximumSkinnedMeshInstancesPerFrame-
             (std::min)(draw.skinnedMeshInstances.size(),DrawList::MaximumSkinnedMeshInstancesPerFrame)||
@@ -32,7 +33,8 @@ bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
         if(!draw.SkinnedMeshInstance(mesh,palette,transform,material.tint,material.surface,
             material.textures,material.textureScale,material.useUv,material.materialClass,
             material.castsShadow,DirectionalShadowAllCascades3D,submesh.firstIndex,
-            submesh.indexCount,material.shadingModel,material.alphaMode,material.alphaCutoff,material.doubleSided)){
+            submesh.indexCount,material.shadingModel,material.alphaMode,material.alphaCutoff,material.doubleSided,
+            previousPalette,previousTransform,motionValid)){
             draw.skinnedMeshInstances.resize(originalSize);
             return false;
         }

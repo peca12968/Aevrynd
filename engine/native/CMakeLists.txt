@@ -74,6 +74,7 @@ aevrynd_compile_shader(WorldVertexShader.h World.hlsl WorldVertexMain vs_5_0 Wor
 aevrynd_compile_shader(InstancedVertexShader.h World.hlsl InstancedVertexMain vs_5_0 InstancedVertexShader)
 aevrynd_compile_shader(VelocityWorldVertexShader.h World.hlsl VelocityWorldVertexMain vs_5_0 VelocityWorldVertexShader)
 aevrynd_compile_shader(VelocityInstancedVertexShader.h World.hlsl VelocityInstancedVertexMain vs_5_0 VelocityInstancedVertexShader)
+aevrynd_compile_shader(VelocitySkinnedVertexShader.h World.hlsl VelocitySkinnedVertexMain vs_5_0 VelocitySkinnedVertexShader)
 aevrynd_compile_shader(VelocityPixelShader.h World.hlsl VelocityPixelMain ps_5_0 VelocityPixelShader)
 aevrynd_compile_shader(SkinnedVertexShader.h World.hlsl SkinnedVertexMain vs_5_0 SkinnedVertexShader)
 aevrynd_compile_shader(WorldPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldPixelShader)
