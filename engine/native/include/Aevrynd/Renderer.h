@@ -14,6 +14,7 @@
 #include <vector>
 #include "Math.h"
 #include "Viewport.h"
+#include "EnvironmentIbl3D.h"
 
 namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
@@ -339,6 +340,22 @@ struct RendererStats {
     uint64_t materialTextureUploadBufferAllocations{};
     uint64_t materialTextureCacheHits{};
     uint64_t materialTextureBudgetRejections{};
+    size_t residentEnvironmentLightingSets{};
+    size_t residentEnvironmentLightingBytes{};
+    size_t peakResidentEnvironmentLightingBytes{};
+    size_t pendingEnvironmentLightingReleaseBytes{};
+    size_t environmentLightingUploadStagingBytes{};
+    size_t peakEnvironmentLightingUploadStagingBytes{};
+    size_t residentEnvironmentLightingDescriptors{};
+    size_t environmentLightingFallbackDescriptors{};
+    uint64_t environmentLightingUploads{};
+    uint64_t environmentLightingResourceAllocations{};
+    uint64_t environmentLightingResourceReleases{};
+    uint64_t environmentLightingDescriptorSwitches{};
+    uint64_t environmentLightingInvalidRejections{};
+    uint64_t environmentLightingAtomicRollbacks{};
+    uint64_t environmentLightingTrims{};
+    bool environmentLightingActive{};
     uint64_t totalMaterialTextureDecodedBytes{};
     uint64_t totalMaterialTextureCompressedBytes{};
     uint64_t materialTexturePreflightRejectedBytes{};
@@ -575,6 +592,11 @@ public:
     void SetMaterialTextureMemoryBudget(size_t bytes);
     void SetMaterialDerivedDataCacheDirectory(std::filesystem::path directory);
     void SetMaterialDerivedDataCacheBudget(size_t bytes);
+    bool CreateEnvironmentLighting(const EnvironmentLightingStore3D& store,EnvironmentLightingHandle3D handle);
+    void DestroyEnvironmentLighting(EnvironmentLightingHandle3D handle);
+    bool SetEnvironmentLighting(EnvironmentLightingHandle3D handle);
+    EnvironmentLightingHandle3D ActiveEnvironmentLighting()const;
+    void TrimEnvironmentLighting();
     void TrimTransientMemory();
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void WaitIdle();
@@ -593,6 +615,9 @@ private:
     struct Impl; std::unique_ptr<Impl> impl_;
 };
 #if defined(AEVRYND_TESTING)
-struct D3D12RendererTestAccess3D {static void SetSkinnedAllocatorState(D3D12Renderer& renderer,uint32_t nextHandle,uint64_t nextIdentity);};
+struct D3D12RendererTestAccess3D {
+    static void SetSkinnedAllocatorState(D3D12Renderer& renderer,uint32_t nextHandle,uint64_t nextIdentity);
+    static void SetEnvironmentResourceFailureCheckpoint(D3D12Renderer& renderer,int checkpoint);
+};
 #endif
 }

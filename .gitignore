@@ -2,6 +2,9 @@
 /engine/build/
 /build/
 /build-native/
+/build-ibl-*/
+/build-release-*/
+/*.obj
 /.vs/
 /.vscode/
 **/CMakeFiles/

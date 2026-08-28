@@ -85,6 +85,16 @@ Texture2D rockRoughnessTexture : register(t8);
 Texture2D rockNormalTexture : register(t9);
 Texture2D<float> ambientOcclusionTexture : register(t11);
 Texture2D<float> sceneDepthTexture : register(t12);
+TextureCube<float3> environmentSpecularTexture : register(t16);
+TextureCube<float3> environmentIrradianceTexture : register(t17);
+Texture2D<float2> environmentBrdfTexture : register(t18);
+cbuffer EnvironmentConstants : register(b3)
+{
+    float environmentRotationRadians;
+    float environmentSpecularMaximumMip;
+    float environmentEnabled;
+    float environmentReserved;
+};
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -584,6 +594,35 @@ float3 EvaluateAnalyticSkySpecular(float3 reflectionDirection, float3 sunDirecti
     return EvaluateAnalyticSkyRadiance(reflectionDirection, sunDirection, clamp(roughness, 0.045, 1.0));
 }
 
+float3 RotateEnvironmentDirection(float3 direction)
+{
+    const float sineValue = sin(environmentRotationRadians);
+    const float cosineValue = cos(environmentRotationRadians);
+    return float3(direction.x * cosineValue - direction.z * sineValue,
+                  direction.y,
+                  direction.x * sineValue + direction.z * cosineValue);
+}
+
+float3 EvaluateEnvironmentDiffuse(float3 normal, float3 sunDirection)
+{
+    float3 lighting = EvaluateAnalyticSkyDiffuse(normal, sunDirection);
+    [branch] if (environmentEnabled >= 0.5)
+        lighting = environmentIrradianceTexture.SampleLevel(materialSampler,
+                   RotateEnvironmentDirection(normal), 0.0);
+    return max(float3(0.0, 0.0, 0.0), lighting);
+}
+
+float3 EvaluateEnvironmentSpecular(float3 reflectionDirection, float3 sunDirection,
+                                   float roughness)
+{
+    float3 lighting = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection, roughness);
+    [branch] if (environmentEnabled >= 0.5)
+        lighting = environmentSpecularTexture.SampleLevel(materialSampler,
+                   RotateEnvironmentDirection(reflectionDirection),
+                   saturate(roughness) * environmentSpecularMaximumMip);
+    return max(float3(0.0, 0.0, 0.0), lighting);
+}
+
 float CloudHash(float2 coordinate)
 {
     coordinate = frac(coordinate * float2(123.34, 456.21));
@@ -799,11 +838,14 @@ float3 EvaluateEnvironmentLighting(float3 normal, float3 viewDirection, float3 b
     const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
     const float3 fresnel = FresnelSchlickRoughness(saturate(dot(normal, viewDirection)), reflectance, roughness);
     const float3 diffuseWeight = (1.0 - fresnel) * (1.0 - metallic);
-    const float3 skyDiffuse = EvaluateAnalyticSkyDiffuse(normal, sunDirection);
+    const float3 skyDiffuse = EvaluateEnvironmentDiffuse(normal, sunDirection);
     const float3 reflectionDirection = reflect(-viewDirection, normal);
-    const float3 skySpecular = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection, roughness);
-    const float specularEnergy = 0.35 + 0.65 * (1.0 - roughness);
-    return (diffuseWeight * baseColor * skyDiffuse + fresnel * skySpecular * specularEnergy)
+    const float3 skySpecular = EvaluateEnvironmentSpecular(reflectionDirection, sunDirection, roughness);
+    const float2 brdf = environmentEnabled > 0.5
+        ? environmentBrdfTexture.SampleLevel(screenPointClampSampler,
+              float2(saturate(dot(normal, viewDirection)), saturate(roughness)), 0.0)
+        : float2(0.35 + 0.65 * (1.0 - roughness), 0.0);
+    return (diffuseWeight * baseColor * skyDiffuse + skySpecular * (fresnel * brdf.x + brdf.y))
          * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
 }
 
@@ -874,7 +916,7 @@ float3 EvaluateEyeEnvironment(float3 baseNormal, float3 corneaNormal, float3 vie
                                                           ambientIntensity, sunDirection);
     const float fresnel = CorneaFresnel(dot(corneaNormal, viewDirection));
     const float3 reflectionDirection = reflect(-viewDirection, corneaNormal);
-    const float3 clearcoat = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection,
+    const float3 clearcoat = EvaluateEnvironmentSpecular(reflectionDirection, sunDirection,
                                                          CorneaRoughness(materialRoughness))
                            * fresnel * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
     return baseLayer * (1.0 - fresnel) + clearcoat;
@@ -1204,7 +1246,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float3 deepWaterColor = lerp(float3(0.012, 0.055, 0.070), baseColor, 0.24);
         const float3 absorbedWater = shaded * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
         const float waterReflectionRoughness = clamp(roughness, 0.045, 0.18);
-        const float3 reflectedWater = EvaluateAnalyticSkySpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
+        const float3 reflectedWater = EvaluateEnvironmentSpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
                                     * lerp(1.0, 0.55, waterReflectionRoughness);
         float3 waterComposite = lerp(absorbedWater, reflectedWater, fresnel);
         [branch] if (foamMask > 0.01)
@@ -1215,7 +1257,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float foamWave = 0.5 + 0.5 * sin(input.worldPosition.z * 1.35 + input.worldPosition.x * 0.31 + fogEndEnabled.w * 1.8);
             const float foamCoverage = smoothstep(0.34, 0.76, foamNoise * 0.72 + foamWave * 0.28);
             const float3 foamColor = baseColor * lerp(0.58, 0.96, foamCoverage)
-                                   + EvaluateAnalyticSkyDiffuse(normal, skyLightDirection) * 0.055;
+                                   + EvaluateEnvironmentDiffuse(normal, skyLightDirection) * 0.055;
             waterComposite = lerp(waterComposite, foamColor, foamMask * lerp(0.42, 0.88, foamCoverage));
         }
         shaded = waterComposite;

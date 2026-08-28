@@ -15,6 +15,7 @@ add_library(AevryndEngine STATIC
   src/Memory.cpp
   src/MaterialLibrary3D.cpp
   src/D3D12Renderer.cpp
+  src/EnvironmentIbl3D.cpp
   src/MeshLoader.cpp
   src/MeshProcessing3D.cpp
   src/Navigation3D.cpp
@@ -34,6 +35,7 @@ add_library(AevryndEngine STATIC
   src/TemporalMotion3D.cpp
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
+  src/VisibilityBvh3D.cpp
 )
 
 set(AEVRYND_STREAMLINE_AVAILABLE OFF)
@@ -150,6 +152,21 @@ add_executable(AevryndScene3DBvhTest tests/Scene3DBvhSmoke.cpp)
 target_compile_options(AevryndScene3DBvhTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndScene3DBvhTest PRIVATE AevryndEngine)
 add_test(NAME AevryndScene3DBvhTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScene3DBvhTest>'")
+
+add_executable(AevryndVisibilityBvh3DTest tests/VisibilityBvh3DSmoke.cpp)
+target_compile_options(AevryndVisibilityBvh3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndVisibilityBvh3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVisibilityBvh3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVisibilityBvh3DTest>'")
+
+add_executable(AevryndEnvironmentLighting3DTest tests/EnvironmentLighting3DSmoke.cpp)
+target_compile_options(AevryndEnvironmentLighting3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndEnvironmentLighting3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndEnvironmentLighting3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentLighting3DTest>'")
+add_executable(AevryndEnvironmentLightingD3D12Test tests/EnvironmentLightingD3D12Smoke.cpp)
+target_compile_options(AevryndEnvironmentLightingD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndEnvironmentLightingD3D12Test PRIVATE AEVRYND_TESTING=1)
+target_link_libraries(AevryndEnvironmentLightingD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndEnvironmentLightingD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentLightingD3D12Test>'")
 
 add_executable(AevryndMeshRaycastBvhTest tests/MeshRaycastBvhSmoke.cpp)
 target_compile_options(AevryndMeshRaycastBvhTest PRIVATE /W4 /permissive- /utf-8)
@@ -336,3 +353,19 @@ target_link_libraries(AevryndScene3DBvhBenchmark PRIVATE AevryndEngine)
 add_executable(AevryndMeshRaycastBvhBenchmark tests/MeshRaycastBvhBenchmark.cpp)
 target_compile_options(AevryndMeshRaycastBvhBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndMeshRaycastBvhBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndEnvironmentLighting3DBenchmark tests/EnvironmentLighting3DBenchmark.cpp)
+target_compile_options(AevryndEnvironmentLighting3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndEnvironmentLighting3DBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndEnvironmentLightingD3D12Benchmark tests/EnvironmentLightingD3D12Benchmark.cpp)
+target_compile_options(AevryndEnvironmentLightingD3D12Benchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndEnvironmentLightingD3D12Benchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndEnvironmentLightingD3D12VisualTest tests/EnvironmentLightingD3D12VisualSmoke.cpp)
+target_compile_options(AevryndEnvironmentLightingD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndEnvironmentLightingD3D12VisualTest PRIVATE
+  AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}"
+  AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/environment-lighting")
+target_link_libraries(AevryndEnvironmentLightingD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndEnvironmentLightingD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentLightingD3D12VisualTest>'")
