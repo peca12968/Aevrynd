@@ -165,6 +165,13 @@ cbuffer VolumetricCloudShadowConstants : register(b7)
     float cloudShadowEnabled;
     float2 cloudShadowReserved;
 };
+cbuffer DirectionalLightShaftConstants : register(b8)
+{
+    float directionalLightShaftIntensity;
+    float directionalLightShaftAnisotropy;
+    float directionalLightShaftMaximumDistance;
+    float directionalLightShaftSampleCount;
+};
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -900,6 +907,67 @@ float CascadedDirectionalShadow(WorldPixelInput input, float3 normal, float3 lig
     return visibility;
 }
 
+float DirectionalLightShaftCascadeShadow(float3 worldPosition, uint cascadeIndex)
+{
+    // 光柱每步只做一次硬體比較取樣；表面仍使用完整 PCSS，避免體積積分成本隨 PCSS tap 數放大。
+    const float4 shadowPosition = mul(lightViewProjection[cascadeIndex], float4(worldPosition, 1.0));
+    if (shadowPosition.w <= 0.0001) return 1.0;
+    const float3 projected = shadowPosition.xyz / shadowPosition.w;
+    const float2 uv = float2(projected.x * 0.5 + 0.5, -projected.y * 0.5 + 0.5);
+    if (projected.z <= 0.0 || projected.z >= 1.0 || any(uv < 0.0) || any(uv > 1.0)) return 1.0;
+    return shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv, cascadeIndex), projected.z - max(0.0007, shadowParameters.z));
+}
+
+float DirectionalLightShaftShadow(float3 worldPosition)
+{
+    if (shadowParameters.x < 0.5) return 1.0;
+    const float cameraDistance = distance(worldPosition, cameraFogStart.xyz);
+    const float halfWidth = shadowTransition.x * 0.5;
+    if (cameraDistance <= shadowParameters.x - halfWidth) return DirectionalLightShaftCascadeShadow(worldPosition, 0u);
+    if (cameraDistance >= shadowParameters.x + halfWidth) return DirectionalLightShaftCascadeShadow(worldPosition, 1u);
+    const float blend = smoothstep(shadowParameters.x - halfWidth, shadowParameters.x + halfWidth, cameraDistance);
+    return lerp(DirectionalLightShaftCascadeShadow(worldPosition, 0u), DirectionalLightShaftCascadeShadow(worldPosition, 1u), blend);
+}
+
+float3 EvaluateDirectionalLightShafts(float3 worldPosition, float3 sunDirection)
+{
+    const float3 rayVector = worldPosition - cameraFogStart.xyz;
+    const float rayLengthSquared = dot(rayVector, rayVector);
+    const bool validRay = rayLengthSquared > 0.0001 && rayLengthSquared <= 1.0e12;
+    const float3 safeRayVector = validRay ? rayVector : float3(0.0, 0.0, 1.0);
+    const float rayLength = validRay ? sqrt(rayLengthSquared) : 1.0;
+    const float pathLength = validRay ? min(rayLength, directionalLightShaftMaximumDistance) : 0.0;
+    const float3 rayDirection = safeRayVector / rayLength;
+    const uint sampleCount = (uint)clamp(directionalLightShaftSampleCount, 2.0, 8.0);
+    const float stepLength = max(0.0, pathLength) / float(sampleCount);
+    float transmittance = 1.0;
+    float integratedScattering = 0.0;
+    const bool enabled = directionalLightShaftIntensity > 0.0 &&
+                         heightFogParameters.x > 0.0 && fogEndEnabled.y >= 0.5 && pathLength > 0.001;
+    [branch] if (enabled)
+    {
+        [loop] for (uint sampleIndex = 0u; sampleIndex < sampleCount; ++sampleIndex)
+        {
+            // 固定中點步進不含時間抖動，因此同一相機與時間的 capture 可逐位元重現。
+            const float distanceAlongRay = (float(sampleIndex) + 0.5) * stepLength;
+            const float3 samplePosition = cameraFogStart.xyz + rayDirection * distanceAlongRay;
+            const float density = heightFogParameters.x * exp(clamp(-heightFogParameters.y * (samplePosition.y - heightFogParameters.z), -20.0, 20.0));
+            const float stepOpacity = 1.0 - exp(-min(density * stepLength, 80.0));
+            integratedScattering += transmittance * stepOpacity * DirectionalLightShaftShadow(samplePosition);
+            transmittance *= 1.0 - stepOpacity;
+            if (transmittance < 0.005) break;
+        }
+    }
+    float cloudVisibility = 1.0;
+    [branch] if (enabled && volumetricCloudEnabled >= 0.5 && cloudShadowEnabled >= 0.5 && cloudShadowStrength > 0.0 &&
+                 cloudDensityScale > 0.0 && sunDirection.y > 0.02)
+        cloudVisibility = EvaluateCloudShadowTransmittance(cameraFogStart.xyz + rayDirection * (pathLength * 0.5), sunDirection);
+    const float phase = MiePhase(clamp(dot(rayDirection, sunDirection), -1.0, 1.0), directionalLightShaftAnisotropy);
+    const float scattering = min(3.0,
+        max(0.0, integratedScattering * cloudVisibility * phase * directionalLightShaftIntensity));
+    return enabled ? max(0.0, lightColorIntensity.rgb * lightColorIntensity.w * scattering) : float3(0.0, 0.0, 0.0);
+}
+
 float4 Triplanar(Texture2D source, float3 worldPosition, float3 normal, float scale)
 {
     const float3 blend = BlendWeights(normal);
@@ -1512,7 +1580,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
     if(alphaToCoverage && input.alphaMasked != 0)
         outputAlpha = MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff);
-    return float4(max(0.0, lerp(lit, fogColor.rgb, fogAmount) * colorPipeline.x), outputAlpha);
+    const float3 directionalLightShafts = EvaluateDirectionalLightShafts(input.worldPosition, lightDirection) * saturate(input.normal.w);
+    return float4(max(0.0, (lerp(lit, fogColor.rgb, fogAmount) + directionalLightShafts) * colorPipeline.x), outputAlpha);
 }
 
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET

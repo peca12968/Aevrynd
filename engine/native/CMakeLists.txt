@@ -392,6 +392,17 @@ target_compile_definitions(AevryndCloudShadowD3D12VisualTest PRIVATE AEVRYND_TES
 target_link_libraries(AevryndCloudShadowD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndCloudShadowD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCloudShadowD3D12VisualTest>'")
 
+add_executable(AevryndDirectionalLightShaft3DTest tests/DirectionalLightShaft3DSmoke.cpp)
+target_compile_options(AevryndDirectionalLightShaft3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndDirectionalLightShaft3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndDirectionalLightShaft3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDirectionalLightShaft3DTest>'")
+
+add_executable(AevryndDirectionalLightShaftD3D12VisualTest tests/DirectionalLightShaftD3D12VisualSmoke.cpp)
+target_compile_options(AevryndDirectionalLightShaftD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndDirectionalLightShaftD3D12VisualTest PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/directional-light-shafts")
+target_link_libraries(AevryndDirectionalLightShaftD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndDirectionalLightShaftD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDirectionalLightShaftD3D12VisualTest>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)

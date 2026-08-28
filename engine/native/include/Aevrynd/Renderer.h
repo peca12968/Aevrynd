@@ -148,6 +148,12 @@ inline float EvaluateHeightFogAmount3D(const Atmosphere3D& source,Vec3 worldPosi
     const Vec3 delta=worldPosition-atmosphere.cameraPosition;const float distance=Length(delta);if(!std::isfinite(distance)||distance<=0.f)return 0.f;
     const float cameraExponent=Clamp(-atmosphere.heightFogFalloff*(atmosphere.cameraPosition.y-atmosphere.heightFogBaseHeight),-20.f,20.f),fragmentExponent=Clamp(-atmosphere.heightFogFalloff*(worldPosition.y-atmosphere.heightFogBaseHeight),-20.f,20.f);const float opticalDepth=distance*atmosphere.heightFogDensity*.5f*(std::exp(cameraExponent)+std::exp(fragmentExponent));return Clamp(1.f-std::exp(-(std::min)(opticalDepth,80.f)),0.f,atmosphere.heightFogMaximumOpacity);
 }
+struct DirectionalLightShaftSettings3D {bool enabled{true};float intensity{.65f},anisotropy{.72f},maximumDistance{320.f};uint32_t sampleCount{4};friend constexpr bool operator==(const DirectionalLightShaftSettings3D&,const DirectionalLightShaftSettings3D&)=default;};
+inline DirectionalLightShaftSettings3D NormalizeDirectionalLightShaftSettings3D(DirectionalLightShaftSettings3D settings){settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:.65f,0.f,4.f);settings.anisotropy=Clamp(std::isfinite(settings.anisotropy)?settings.anisotropy:.72f,-.9f,.9f);settings.maximumDistance=Clamp(std::isfinite(settings.maximumDistance)?settings.maximumDistance:320.f,1.f,5000.f);settings.sampleCount=(std::clamp)(settings.sampleCount,2u,8u);return settings;}
+inline float EvaluateDirectionalLightShaftScattering3D(float opticalDepth,float shadowVisibility,float cloudTransmittance,float viewSunCosine,const DirectionalLightShaftSettings3D& source={}){
+    // CPU 參考以相同的 Mie 相位與 Beer-Lambert 消光驗證 GPU 光柱輸出，輸入無效時關閉效果。
+    const auto settings=NormalizeDirectionalLightShaftSettings3D(source);if(!settings.enabled||settings.intensity<=0.f||!std::isfinite(opticalDepth)||!std::isfinite(shadowVisibility)||!std::isfinite(cloudTransmittance)||!std::isfinite(viewSunCosine)||opticalDepth<=0.f)return 0.f;const float scattered=Clamp(1.f-std::exp(-(std::min)(opticalDepth,80.f)),0.f,1.f)*Clamp(shadowVisibility,0.f,1.f)*Clamp(cloudTransmittance,0.f,1.f)*MiePhase3D(viewSunCosine,settings.anisotropy)*settings.intensity;return Clamp(scattered,0.f,3.f);
+}
 struct AmbientOcclusionSettings3D {bool enabled{true};float radius{1.35f},bias{.035f},intensity{1.05f};};
 struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion{true},multisampling{true},postProcessAntiAliasing{true};friend constexpr bool operator==(const RendererQualitySettings3D&,const RendererQualitySettings3D&)=default;};
 struct VelocityCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};bool historyValid{};};
@@ -219,6 +225,7 @@ struct RendererStats {
     uint64_t hdrPostProcessPasses{};
     bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
     bool volumetricCloudsEnabled{},volumetricCloudShadowsEnabled{};unsigned volumetricCloudSampleCount{};size_t volumetricCloudResidentBytes{},volumetricCloudShadowResidentBytes{};uint64_t volumetricCloudConfiguredFrames{},volumetricCloudShadowConfiguredFrames{};
+    bool directionalLightShaftsEnabled{};unsigned directionalLightShaftSampleCount{};size_t directionalLightShaftResidentBytes{};uint64_t directionalLightShaftConfiguredFrames{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
     bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
@@ -516,6 +523,8 @@ public:
     const TerrainDistanceMaterialSettings3D& TerrainDistanceMaterial()const{return terrainDistanceMaterial_;}
     void SetVolumetricClouds(VolumetricCloudSettings3D settings){volumetricClouds_=NormalizeVolumetricCloudSettings3D(settings);}
     const VolumetricCloudSettings3D& VolumetricClouds()const{return volumetricClouds_;}
+    void SetDirectionalLightShafts(DirectionalLightShaftSettings3D settings){directionalLightShafts_=NormalizeDirectionalLightShaftSettings3D(settings);}
+    const DirectionalLightShaftSettings3D& DirectionalLightShafts()const{return directionalLightShafts_;}
     void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetSoftDirectionalShadows(SoftDirectionalShadowSettings3D settings){softDirectionalShadows_=NormalizeSoftDirectionalShadowSettings3D(settings);}
@@ -576,6 +585,7 @@ private:
     WaterOpticsSettings3D waterOptics_{};
     TerrainDistanceMaterialSettings3D terrainDistanceMaterial_{};
     VolumetricCloudSettings3D volumetricClouds_{};
+    DirectionalLightShaftSettings3D directionalLightShafts_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
     SoftDirectionalShadowSettings3D softDirectionalShadows_{};
     std::vector<PointLight3D> pointLights_;
