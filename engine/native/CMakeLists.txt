@@ -414,6 +414,17 @@ target_compile_definitions(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE AEVRYND_
 target_link_libraries(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSkinSubsurfaceD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinSubsurfaceD3D12VisualTest>'")
 
+add_executable(AevryndScreenSpaceReflection3DTest tests/ScreenSpaceReflection3DSmoke.cpp)
+target_compile_options(AevryndScreenSpaceReflection3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndScreenSpaceReflection3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndScreenSpaceReflection3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScreenSpaceReflection3DTest>'")
+
+add_executable(AevryndScreenSpaceReflectionD3D12VisualTest tests/ScreenSpaceReflectionD3D12VisualSmoke.cpp)
+target_compile_options(AevryndScreenSpaceReflectionD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndScreenSpaceReflectionD3D12VisualTest PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/screen-space-reflection")
+target_link_libraries(AevryndScreenSpaceReflectionD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndScreenSpaceReflectionD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScreenSpaceReflectionD3D12VisualTest>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)

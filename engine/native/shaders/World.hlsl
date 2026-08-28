@@ -178,6 +178,13 @@ cbuffer SkinSubsurfaceConstants : register(b9)
     float skinSubsurfaceWrap;
     float skinSubsurfaceCurvatureScale;
     float skinSubsurfaceTransmission;
+    float screenSpaceReflectionIntensity;
+    float screenSpaceReflectionMaximumDistance;
+    float screenSpaceReflectionThickness;
+    float screenSpaceReflectionMaximumRoughness;
+    float screenSpaceReflectionSampleCount;
+    float screenSpaceReflectionSceneAvailable;
+    float2 screenSpaceReflectionReserved;
 };
 struct SkinPaletteJoint
 {
@@ -1284,6 +1291,43 @@ float3 ReconstructWorldPosition(float2 screenUv, float depth)
     return worldPosition.xyz / max(abs(worldPosition.w), 0.000001);
 }
 
+float4 EvaluateWaterScreenSpaceReflection(float3 worldPosition,float3 normal,float3 viewDirection,float roughness)
+{
+    if(screenSpaceReflectionIntensity<=0.0||screenSpaceReflectionSceneAvailable<0.5||roughness>=screenSpaceReflectionMaximumRoughness)return 0.0;
+    const float3 reflectionDirection=normalize(reflect(-viewDirection,normal));
+    const float3 rayOrigin=worldPosition+normal*.035;
+    const float minimumDistance=min(.18,screenSpaceReflectionMaximumDistance*.02);
+    const float2 viewportMaximum=worldViewport.xy+worldViewport.zw;
+    [loop] for(uint stepIndex=0;stepIndex<16u;++stepIndex)
+    {
+        if(stepIndex>=(uint)screenSpaceReflectionSampleCount)break;
+        const float fraction=float(stepIndex+1u)/screenSpaceReflectionSampleCount;
+        const float rayDistance=lerp(minimumDistance,screenSpaceReflectionMaximumDistance,fraction*fraction);
+        const float3 rayPosition=rayOrigin+reflectionDirection*rayDistance;
+        const float4 clipPosition=mul(viewProjection,float4(rayPosition,1.0));
+        if(clipPosition.w<=0.000001)break;
+        const float2 viewportUv=clipPosition.xy/clipPosition.w*float2(.5,-.5)+.5;
+        const float2 screenUv=worldViewport.xy+viewportUv*worldViewport.zw;
+        if(any(screenUv<=worldViewport.xy)||any(screenUv>=viewportMaximum))break;
+        const float sampledDepth=sceneDepthTexture.SampleLevel(screenPointClampSampler,screenUv,0.0);
+        if(sampledDepth<=0.0||sampledDepth>=.999999)continue;
+        const float3 sampledWorldPosition=ReconstructWorldPosition(screenUv,sampledDepth);
+        const float rayCameraDistance=distance(cameraFogStart.xyz,rayPosition);
+        const float sceneCameraDistance=distance(cameraFogStart.xyz,sampledWorldPosition);
+        const float depthGap=rayCameraDistance-sceneCameraDistance;
+        if(depthGap>=0.0&&depthGap<=screenSpaceReflectionThickness)
+        {
+            const float2 edgeDistance=min(viewportUv,1.0-viewportUv);
+            const float edgeFade=saturate(min(edgeDistance.x,edgeDistance.y)*12.0);
+            const float roughnessFade=1.0-saturate(roughness/screenSpaceReflectionMaximumRoughness);
+            const float hitConfidence=(1.0-depthGap/screenSpaceReflectionThickness)*edgeFade*roughnessFade*screenSpaceReflectionIntensity;
+            // SSR 僅補上畫面內可見幾何；低信心與 miss 由既有 IBL 無縫接手。
+            return float4(opaqueSceneColorTexture.SampleLevel(screenPointClampSampler,screenUv,0.0).rgb,saturate(hitConfidence));
+        }
+    }
+    return 0.0;
+}
+
 float MaskedAlphaToCoverage(float materialAlpha, float alphaCutoff)
 {
     // 只在門檻附近保留窄漸層，讓 MSAA alpha-to-coverage 產生穩定的子像素覆蓋率。
@@ -1558,8 +1602,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         const float3 absorbedWater = transmittedScene * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
         const float waterReflectionRoughness = clamp(roughness, 0.045, 0.18);
-        const float3 reflectedWater = EvaluateEnvironmentSpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
-                                    * lerp(1.0, 0.55, waterReflectionRoughness);
+        float3 reflectedWater = EvaluateEnvironmentSpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
+                              * lerp(1.0, 0.55, waterReflectionRoughness);
+        const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
+        reflectedWater=lerp(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
         float3 waterComposite = lerp(absorbedWater, reflectedWater, fresnel);
         [branch] if (foamMask > 0.01)
         {
