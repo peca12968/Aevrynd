@@ -14,6 +14,11 @@
 
 namespace Aevrynd {
 
+struct StaticMeshImportedLod3D {
+    std::filesystem::path meshPath;
+    ObjLoadOptions3D objOptions{};
+};
+
 struct StaticMeshAssetDefinition3D {
     std::string name;
     std::filesystem::path meshPath;
@@ -24,6 +29,8 @@ struct StaticMeshAssetDefinition3D {
     std::array<float,MaximumGeneratedMeshLodLevels3D> lodTransitionWidths{4.f,8.f,12.f};
     MeshLodDistanceMetric3D lodDistanceMetric{MeshLodDistanceMetric3D::BoundsSurface};
     MeshLodCpuRetention3D cpuRetention{MeshLodCpuRetention3D::Level0Only};
+    std::array<StaticMeshImportedLod3D,MaximumGeneratedMeshLodLevels3D> importedLods{};
+    std::uint32_t importedLodCount{};
     bool generateLods{true};
 };
 
@@ -31,10 +38,13 @@ struct StaticMeshAssetLibraryStats3D {
     std::size_t assets{},materialReferences{},meshLevels{},sourceTriangles{},residentTriangles{},liveInstances{};
     std::uint64_t loadRequests{},cacheHits{},loadFailures{},nameConflicts{},batchRollbacks{},unloaded{};
     std::uint64_t instancesCreated{},instancesDestroyed{},externallyDestroyedInstances{},instanceFailures{},unloadRejections{};
+    std::uint64_t generatedAssets{},importedAssets{},singleLevelAssets{},importedLevels{};
 };
 
 struct StaticMeshAssetLibraryLimits3D {
     std::size_t maximumAssets{4096},maximumInstances{1024*1024},maximumSourceFileBytes{256*1024*1024};
+    std::size_t maximumAggregateSourceBytes{512*1024*1024};
+    float maximumBoundsCenterDriftRatio{.08f},minimumBoundsExtentRatio{.70f},maximumBoundsExtentRatio{1.15f};
 };
 
 class StaticMeshAssetLibrary3D {
