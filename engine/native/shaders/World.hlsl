@@ -795,7 +795,7 @@ float3 EvaluateSkinSupplement(float3 normal,float3 viewDirection,float3 lightDir
 }
 
 float3 EvaluateHairSupplement(float3 normal,float3 tangent,float3 viewDirection,float3 lightDirection,
-                              float3 radiance,float3 baseColor,float roughness)
+                               float3 radiance,float3 baseColor,float roughness)
 {
     // 髮絲切線無效時保留標準 PBR；避免退化骨架或奇異縮放把 NaN 傳入 HDR。
     const float tangentLengthSquared=dot(tangent,tangent);
@@ -817,6 +817,12 @@ float3 EvaluateHairSupplement(float3 normal,float3 tangent,float3 viewDirection,
     const float3 supplement=radiance*fiberReflectance*normalLight*(primary*0.12+secondary*0.06);
     // 雙高光的額外能量逐通道限制在入射光 24%，讓 Default/Skin 的基準能量不受影響。
     return min(max(supplement,0.0),max(radiance,0.0)*0.24);
+}
+
+float CharacterNormalDetailStrength(float skinMask,float hairMask,float eyeMask)
+{
+    // 皮膚與角膜只保留低幅細節，避免壓縮法線在近距離形成塑膠凹凸；髮絲仍保留較強方向性。
+    return lerp(0.78,0.56,skinMask)+hairMask*(0.68-0.78)+eyeMask*(0.32-0.78);
 }
 
 float PointLightAttenuation(float distanceSquared, float radius)
@@ -862,6 +868,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
     const float hairMask = input.characterShadingModel == 2 ? 1.0 : 0.0;
     const float eyeMask = input.characterShadingModel == 3 ? 1.0 : 0.0;
+    const float normalDetailStrength=CharacterNormalDetailStrength(skinMask,hairMask,eyeMask);
     const float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask));
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
@@ -878,13 +885,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
             const float3 derivativeNormal = UvNormal(input.worldPosition, normal, input.uv);
-            normal = normalize(lerp(normal, UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal), 0.78));
+            normal = normalize(lerp(normal, UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal),normalDetailStrength));
         }
         else
         {
             baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
             roughness = clamp(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r, 0.045, 1.0);
-            normal = normalize(lerp(normal, TriplanarNormal(input.worldPosition, normal, input.textureData.y), 0.78));
+            normal = normalize(lerp(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.y),normalDetailStrength));
         }
     }
 
@@ -993,17 +1000,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness)
         : EvaluatePbrLight(normal, viewDirection, lightDirection,
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness, metallic);
+    // 基礎 PBR 與角色補光共用同一次級聯陰影，避免 Skin/Hair 每像素重複取樣陰影圖。
+    const float directionalShadow=CascadedDirectionalShadow(input,eyeMask>0.5?geometricNormal:normal,lightDirection);
     float3 shaded = environmentLighting
-                  + CascadedDirectionalShadow(input, eyeMask > 0.5 ? geometricNormal : normal, lightDirection) * directionalLighting
+                  + directionalShadow * directionalLighting
                   + baseColor * emissive * 2.0;
     [branch] if(skinMask > 0.5){
-        const float skinShadow=CascadedDirectionalShadow(input,normal,lightDirection);
-        shaded+=skinShadow*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
+        shaded+=directionalShadow*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
     [branch] if(hairMask>0.5){
-        const float hairShadow=CascadedDirectionalShadow(input,normal,lightDirection);
-        shaded+=hairShadow*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
+        shaded+=directionalShadow*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
     [branch] if (foliageMask > 0.5)
