@@ -33,6 +33,7 @@ function Copy-DemoFile {
 }
 
 $distributionDirectories = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'games') -Directory |
+    Where-Object Name -ne 'character_lab' |
     ForEach-Object { Join-Path $_.FullName 'dist' } |
     Where-Object { Test-Path -LiteralPath $_ }
 
@@ -45,12 +46,6 @@ foreach ($distributionDirectory in $distributionDirectories) {
     if (Test-Path -LiteralPath $assets) {
         Copy-Item -Path (Join-Path $assets '*') -Destination $demoAssets -Recurse -Force
     }
-}
-
-# 角色實驗室是人物模型的權威發行來源；避免其他 Demo 的舊模型包覆蓋新版角色資產。
-$characterAssets = Join-Path $projectRoot 'games\character_lab\dist\assets'
-if (Test-Path -LiteralPath $characterAssets) {
-    Copy-Item -Path (Join-Path $characterAssets '*') -Destination $demoAssets -Recurse -Force
 }
 
 $demoModelPacks = Join-Path $demoAssets 'model-packs'

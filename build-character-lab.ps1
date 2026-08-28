@@ -6,7 +6,7 @@ $buildDirectory = Join-Path $projectRoot 'engine\build'
 $buildParallelism = [Math]::Min(4, [Environment]::ProcessorCount)
 & $cmakeExecutable -S $projectRoot -B $buildDirectory -G 'Visual Studio 17 2022' -A x64
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed.' }
-& $cmakeExecutable --build $buildDirectory --config Release --target CharacterLab --parallel $buildParallelism
+& $cmakeExecutable --build $buildDirectory --config Release --target CharacterLab CharacterLabDemoLauncher --parallel $buildParallelism
 if ($LASTEXITCODE -ne 0) { throw 'Character Lab build failed.' }
 $distributionDirectory = Join-Path $projectRoot 'games\character_lab\dist'
 New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
@@ -21,4 +21,4 @@ if (Test-Path -LiteralPath $assetDestination) { Remove-Item -LiteralPath $assetD
 Copy-Item -LiteralPath $assetSource -Destination $assetDestination -Recurse
 Write-Host "Built: $distributionDirectory\Aevrynd-Character-Lab.exe" -ForegroundColor Green
 Write-Host "Versioned demo: $versionedDemo" -ForegroundColor Green
-& (Join-Path $projectRoot 'publish-demos.ps1')
+& (Join-Path $projectRoot 'tools\ci\publish-character-lab-release.ps1') -ProjectRoot $projectRoot

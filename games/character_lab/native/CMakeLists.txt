@@ -6,8 +6,13 @@ add_executable(CharacterLab WIN32
 target_include_directories(CharacterLab PRIVATE include)
 target_compile_options(CharacterLab PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(CharacterLab PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(CharacterLab PRIVATE AevryndEngine)
+target_link_libraries(CharacterLab PRIVATE AevryndEngine bcrypt)
 set_target_properties(CharacterLab PROPERTIES OUTPUT_NAME "Aevrynd-Character-Lab" VS_DPI_AWARE "PerMonitor")
+add_executable(CharacterLabDemoLauncher WIN32 src/DemoLauncher.cpp)
+target_compile_options(CharacterLabDemoLauncher PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(CharacterLabDemoLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(CharacterLabDemoLauncher PRIVATE bcrypt)
+set_target_properties(CharacterLabDemoLauncher PROPERTIES OUTPUT_NAME "Aevrynd-Character-Lab-Launcher" VS_DPI_AWARE "PerMonitor")
 foreach(CHARACTER_ASSET realistic-female realistic-male)
   add_custom_command(TARGET CharacterLab POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
