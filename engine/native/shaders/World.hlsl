@@ -328,7 +328,7 @@ struct WorldPixelInput
     float3 worldPosition : TEXCOORD0;
     float4 normal : TEXCOORD1;
     float4 material : TEXCOORD2;
-    float3 textureData : TEXCOORD3;
+    float4 textureData : TEXCOORD3;
     float2 uv : TEXCOORD4;
     nointerpolation uint materialClass : TEXCOORD5;
     float4 shadowPosition : TEXCOORD6;
@@ -363,7 +363,7 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
-    output.uv = input.uv;
+    output.uv = input.uv * max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0));
     output.alphaCutoff = saturate(input.normalRow1.w);
     output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     output.alpha = input.color.a * input.tint.a;
@@ -382,7 +382,7 @@ ShadowVertexOutput ShadowSkinnedVertexMain(SkinnedVertexInput input)
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
-    output.uv=input.uv;
+    output.uv=input.uv*max(0.001,float((input.textureData>>16)&255u)*(16.0/255.0));
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
     output.alphaMasked=(input.skinPaletteBase>>20)&1u;
     output.alpha=input.color.a*input.tint.a;
@@ -411,7 +411,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.worldPosition = animatedPosition;
     output.normal = float4(input.normal.xyz, input.normal.w < 0.0 ? 0.0 : 1.0);
     output.material = float4(0.72, 0.0, 0.0, 1.0);
-    output.textureData = float3(0.0, 0.25, 0.0);
+    output.textureData = float4(0.0, 0.25, 0.25, 0.0);
     output.uv = input.uv;
     output.materialClass = 0;
     output.lodCoverage = 1.0;
@@ -441,9 +441,8 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.worldPosition = worldPosition.xyz;
     output.normal = float4(normalize(worldNormal), input.normal.w < 0.0 ? 0.0 : 1.0);
     output.material = input.material;
-    output.textureData = float3(input.textureData & 1,
-                                max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
-                                (input.textureData >> 1) & 1);
+    const float textureScale=max(0.001,float((input.textureData>>16)&65535)*(16.0/65535.0));
+    output.textureData = float4(input.textureData & 1,textureScale,textureScale,(input.textureData >> 1) & 1);
     output.uv = input.uv;
     output.materialClass = (input.textureData >> 2) & 3;
     output.lodCoverage = float((input.textureData >> 4) & 255) / 255.0;
@@ -512,8 +511,9 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
     const int signedNormalScale=encodedNormalScale>=512u?int(encodedNormalScale)-1024:int(encodedNormalScale);
     output.normalScale=float(signedNormalScale)/32.0;
     output.material = input.material;
-    output.textureData = float3(input.textureData & 1,
-                                max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
+    output.textureData = float4(input.textureData & 1,
+                                max(0.001,float((input.textureData>>16)&255u)*(16.0/255.0)),
+                                max(0.001,float((input.textureData>>24)&255u)*(16.0/255.0)),
                                 (input.textureData >> 1) & 1);
     output.uv = input.uv;
     output.materialClass = (input.textureData >> 2) & 3;
@@ -921,10 +921,29 @@ float3 EvaluateHairSupplement(float3 normal,float3 tangent,float3 viewDirection,
     return min(max(supplement,0.0),max(radiance,0.0)*0.24);
 }
 
-float CharacterNormalDetailStrength(float skinMask,float hairMask,float eyeMask)
+float3 EvaluateClothSupplement(float3 normal,float3 viewDirection,float3 lightDirection,
+                               float3 radiance,float3 baseColor,float roughness)
+{
+    const float3 halfVector=viewDirection+lightDirection;
+    const float halfLengthSquared=dot(halfVector,halfVector);
+    if(halfLengthSquared<0.000001||halfLengthSquared>1000000.0)return 0.0;
+    const float3 halfDirection=halfVector*rsqrt(halfLengthSquared);
+    const float normalLight=saturate(dot(normal,lightDirection));
+    const float normalView=saturate(dot(normal,viewDirection));
+    const float normalHalf=saturate(dot(normal,halfDirection));
+    // 以有界 Charlie-like 纖維高光模擬布料絨毛，不增加貼圖、pass 或 instance stride。
+    const float sheenPower=lerp(2.0,7.0,1.0-saturate(roughness));
+    const float grazingSheen=pow(saturate(1.0-normalHalf),sheenPower);
+    const float viewFuzz=pow(saturate(1.0-normalView),4.0);
+    const float3 fiberColor=sqrt(max(baseColor,0.0));
+    const float3 supplement=radiance*fiberColor*normalLight*(grazingSheen*0.14+viewFuzz*0.035);
+    return min(max(supplement,0.0),max(radiance,0.0)*0.18);
+}
+
+float CharacterNormalDetailStrength(float skinMask,float hairMask,float eyeMask,float clothMask)
 {
     // 皮膚與角膜只保留低幅細節，避免壓縮法線在近距離形成塑膠凹凸；髮絲仍保留較強方向性。
-    return lerp(0.78,0.56,skinMask)+hairMask*(0.68-0.78)+eyeMask*(0.32-0.78);
+    return lerp(0.78,0.56,skinMask)+hairMask*(0.68-0.78)+eyeMask*(0.32-0.78)+clothMask*(0.92-0.78);
 }
 
 float3 ScaleNormalDetail(float3 geometricNormal,float3 detailNormal,float signedScale)
@@ -978,36 +997,39 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
     const float hairMask = input.characterShadingModel == 2 ? 1.0 : 0.0;
     const float eyeMask = input.characterShadingModel == 3 ? 1.0 : 0.0;
-    const float normalDetailStrength=CharacterNormalDetailStrength(skinMask,hairMask,eyeMask)*input.normalScale;
-    float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask));
+    const float clothMask = input.characterShadingModel == 4 ? 1.0 : 0.0;
+    const float normalDetailStrength=CharacterNormalDetailStrength(skinMask,hairMask,eyeMask,clothMask)*input.normalScale;
+    float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask+clothMask));
     const float emissive = saturate(input.material.z);
     float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
     float materialAlpha = input.color.a;
     if (input.textureData.x > 0.5 && input.materialClass != 3)
     {
-        if (input.textureData.z > 0.5)
+        if (input.textureData.w > 0.5)
         {
-            const float4 sampledBaseColor=baseColorTexture.Sample(materialSampler,input.uv);
+            const float2 baseUv=input.uv*input.textureData.y;
+            const float2 detailUv=input.uv*input.textureData.z;
+            const float4 sampledBaseColor=baseColorTexture.Sample(materialSampler,baseUv);
             materialAlpha *= sampledBaseColor.a;
             if(input.alphaMasked!=0&&!alphaToCoverage)clip(materialAlpha-input.alphaCutoff);
             baseColor *= sampledBaseColor.rgb;
-            const float4 surfaceSample=roughnessTexture.Sample(materialSampler,input.uv);
+            const float4 surfaceSample=roughnessTexture.Sample(materialSampler,detailUv);
             occlusion*=surfaceSample.r;
             roughness=clamp(roughness*surfaceSample.a,0.045,1.0);
             metallic*=surfaceSample.b;
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
-            const float3 derivativeNormal = UvNormal(input.worldPosition, normal, input.uv);
-            normal = ScaleNormalDetail(normal,UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal),normalDetailStrength);
+            const float3 derivativeNormal = UvNormal(input.worldPosition, normal, detailUv);
+            normal = ScaleNormalDetail(normal,UvOrVertexTangentNormal(normal,input.tangent,detailUv,derivativeNormal),normalDetailStrength);
         }
         else
         {
             baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
-            const float4 surfaceSample=Triplanar(roughnessTexture,input.worldPosition,normal,input.textureData.y);
+            const float4 surfaceSample=Triplanar(roughnessTexture,input.worldPosition,normal,input.textureData.z);
             occlusion*=surfaceSample.r;
             roughness=clamp(roughness*surfaceSample.a,0.045,1.0);
             metallic*=surfaceSample.b;
-            normal = ScaleNormalDetail(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.y),normalDetailStrength);
+            normal = ScaleNormalDetail(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.z),normalDetailStrength);
         }
     }
 
@@ -1023,17 +1045,18 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float grassWeight = max(0.0, 1.0 - rockWeight - soilWeight);
         if (input.textureData.x > 0.5)
         {
-            const float2 terrainUv = input.worldPosition.xz * input.textureData.y;
-            const float3 grassColor = baseColorTexture.Sample(materialSampler, terrainUv).rgb;
-            const float3 soilColor = soilBaseColorTexture.Sample(materialSampler, terrainUv).rgb;
+            const float2 terrainBaseUv = input.worldPosition.xz * input.textureData.y;
+            const float2 terrainDetailUv = input.worldPosition.xz * input.textureData.z;
+            const float3 grassColor = baseColorTexture.Sample(materialSampler, terrainBaseUv).rgb;
+            const float3 soilColor = soilBaseColorTexture.Sample(materialSampler, terrainBaseUv).rgb;
             const float3 rockColor = Triplanar(rockBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
-            const float4 grassSurface=roughnessTexture.Sample(materialSampler,terrainUv);
-            const float4 soilSurface=soilRoughnessTexture.Sample(materialSampler,terrainUv);
-            const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.y);
+            const float4 grassSurface=roughnessTexture.Sample(materialSampler,terrainDetailUv);
+            const float4 soilSurface=soilRoughnessTexture.Sample(materialSampler,terrainDetailUv);
+            const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
             const float4 terrainSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
-            const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.y);
-            const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.y);
-            const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.y);
+            const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+            const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+            const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
             baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * lerp(0.94, 1.06, microNoise);
             occlusion*=terrainSurface.r;
             roughness=clamp(roughness*terrainSurface.a,0.045,1.0);
@@ -1132,6 +1155,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         shaded+=directionalShadow*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
+    [branch] if(clothMask>0.5){
+        shaded+=directionalShadow*EvaluateClothSupplement(normal,viewDirection,lightDirection,
+                    lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
+    }
     [branch] if (foliageMask > 0.5)
     {
         const float foliageWrappedDiffuse = saturate((dot(normal, lightDirection) + 0.35) / 1.35);
@@ -1160,6 +1187,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
                     baseColor,roughness);
         if(hairMask>0.5)shaded+=EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,localDirection,
+                    pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
+                    baseColor,roughness);
+        if(clothMask>0.5)shaded+=EvaluateClothSupplement(normal,viewDirection,localDirection,
                     pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
                     baseColor,roughness);
     }

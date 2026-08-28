@@ -643,7 +643,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  size_t validSkinnedInstances{};for(const SkinnedMeshInstance3D& instance:dl.skinnedMeshInstances){ResidentSkinnedMesh3D* resident{};uint32_t indexCount{};if(resolveSkinnedInstance(instance,resident,indexCount)&&++validSkinnedInstances>=DrawList::MaximumSkinnedMeshInstancesPerFrame)break;}
  if(validSkinnedInstances)d.EnsureFrameUploadBuffer(d.skinnedInstanceBuffers[d.frame],d.skinnedInstanceMapped[d.frame],d.skinnedInstanceCapacity[d.frame],validSkinnedInstances,DrawList::MaximumSkinPalettesPerFrame,DrawList::MaximumSkinnedMeshInstancesPerFrame);
  if(validSkinnedInstances&&motionVectorsRequested)d.EnsureFrameUploadBuffer(d.skinnedMotionInstanceBuffers[d.frame],d.skinnedMotionInstanceMapped[d.frame],d.skinnedMotionInstanceCapacity[d.frame],validSkinnedInstances,DrawList::MaximumSkinPalettesPerFrame,DrawList::MaximumSkinnedMeshInstancesPerFrame);
- size_t acceptedSkinnedInstances{},acceptedTexturedSkinnedInstances{},acceptedSkinShadedInstances{},acceptedHairShadedInstances{},acceptedEyeShadedInstances{},acceptedMaskedSkinnedInstances{},acceptedDoubleSidedSkinnedInstances{};
+ size_t acceptedSkinnedInstances{},acceptedTexturedSkinnedInstances{},acceptedSkinShadedInstances{},acceptedHairShadedInstances{},acceptedEyeShadedInstances{},acceptedClothShadedInstances{},acceptedMaskedSkinnedInstances{},acceptedDoubleSidedSkinnedInstances{};
  for(const SkinnedMeshInstance3D& instance:dl.skinnedMeshInstances){
    if(acceptedSkinnedInstances>=DrawList::MaximumSkinnedMeshInstancesPerFrame){++d.stats.rejectedSkinnedInstances;continue;}
    if(instance.alphaMode==MaterialAlphaMode3D::Mask){const auto texture=d.residentMaterialTextureSets.find(instance.textures.value);if(!instance.textures||texture==d.residentMaterialTextureSets.end()||!texture->second.alphaMaskCapable){++d.stats.rejectedSkinnedAlphaBindings;++d.stats.rejectedSkinnedInstances;continue;}}
@@ -654,9 +654,10 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
    if(instance.shadingModel==CharacterShadingModel3D::Skin)++acceptedSkinShadedInstances;
    if(instance.shadingModel==CharacterShadingModel3D::Hair)++acceptedHairShadedInstances;
    if(instance.shadingModel==CharacterShadingModel3D::Eye)++acceptedEyeShadedInstances;
+   if(instance.shadingModel==CharacterShadingModel3D::Cloth)++acceptedClothShadedInstances;
    if(instance.alphaMode==MaterialAlphaMode3D::Mask)++acceptedMaskedSkinnedInstances;
    if(instance.doubleSided)++acceptedDoubleSidedSkinnedInstances;
-   GpuSkinnedInstance gpu{};gpu.instance.transform=instance.transform;for(size_t row=0;row<3;++row)gpu.instance.normalRows[row]={instance.normalTransform[row][0],instance.normalTransform[row][1],instance.normalTransform[row][2],0};gpu.instance.tint=instance.tint;gpu.instance.surface=instance.surface;gpu.instance.textureData=PackSkinnedMeshInstanceData3D(validTextures,instance.useUv,instance.materialClass,instance.textureScale,instance.shadingModel);gpu.skinPaletteBase=PackSkinnedPaletteMaterialData3D(instance.palette.firstJoint,instance.alphaMode,instance.alphaCutoff,instance.doubleSided,instance.normalScale);
+   GpuSkinnedInstance gpu{};gpu.instance.transform=instance.transform;for(size_t row=0;row<3;++row)gpu.instance.normalRows[row]={instance.normalTransform[row][0],instance.normalTransform[row][1],instance.normalTransform[row][2],0};gpu.instance.tint=instance.tint;gpu.instance.surface=instance.surface;gpu.instance.textureData=PackSkinnedMeshInstanceData3D(validTextures,instance.useUv,instance.materialClass,instance.baseTextureScale,instance.detailTextureScale,instance.shadingModel);gpu.skinPaletteBase=PackSkinnedPaletteMaterialData3D(instance.palette.firstJoint,instance.alphaMode,instance.alphaCutoff,instance.doubleSided,instance.normalScale);
    d.skinnedInstanceMapped[d.frame][acceptedSkinnedInstances]=gpu;
    if(motionVectorsRequested)d.skinnedMotionInstanceMapped[d.frame][acceptedSkinnedInstances]={instance.motionValid?instance.previousTransform:instance.transform,instance.motionValid?instance.previousPalette.firstJoint:instance.palette.firstJoint};
    activeSkinnedMeshes.push_back({mesh,validTextures?instance.textures:MaterialTextureSetHandle3D{},acceptedSkinnedInstances,instance.firstIndex,indexCount,instance.castsShadow?uint8_t(instance.shadowCascadeMask&DirectionalShadowAllCascades3D):uint8_t{},instance.doubleSided,instance.alphaMode==MaterialAlphaMode3D::Mask});
@@ -673,6 +674,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
  d.stats.lastSubmittedSkinShadedInstances=acceptedSkinShadedInstances;
  d.stats.lastSubmittedHairShadedInstances=acceptedHairShadedInstances;
  d.stats.lastSubmittedEyeShadedInstances=acceptedEyeShadedInstances;
+ d.stats.lastSubmittedClothShadedInstances=acceptedClothShadedInstances;
  d.stats.lastSubmittedMaskedSkinnedInstances=acceptedMaskedSkinnedInstances;
  d.stats.lastSubmittedDoubleSidedSkinnedInstances=acceptedDoubleSidedSkinnedInstances;
  d.stats.lastMaskedSkinnedShadowDrawCalls=0;

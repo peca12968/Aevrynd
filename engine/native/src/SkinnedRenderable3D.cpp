@@ -53,7 +53,7 @@ bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
         if(materialClass==MaterialClass3D::Water||materialClass==MaterialClass3D::Terrain||
             NormalizeMaterialAlphaMode3D(material.alphaMode)==MaterialAlphaMode3D::Blend||
             (NormalizeMaterialAlphaMode3D(material.alphaMode)==MaterialAlphaMode3D::Mask&&(!material.textures||!material.useUv))||
-            !std::isfinite(material.textureScale)||material.textureScale<=0||!std::isfinite(material.normalScale)||!std::isfinite(material.alphaCutoff))return false;
+            !std::isfinite(material.textureScale)||material.textureScale<=0||!std::isfinite(material.baseTextureScale)||!std::isfinite(material.detailTextureScale)||material.baseTextureScale<0||material.detailTextureScale<0||!std::isfinite(material.normalScale)||!std::isfinite(material.alphaCutoff))return false;
         expectedFirst+=submesh.indexCount;
     }
     if(expectedFirst!=totalIndexCount)return false;
@@ -64,7 +64,7 @@ bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
             material.textures,material.textureScale,material.useUv,material.materialClass,
             material.castsShadow,DirectionalShadowAllCascades3D,submesh.firstIndex,
             submesh.indexCount,material.shadingModel,material.alphaMode,material.alphaCutoff,material.doubleSided,
-            previousPalette,previousTransform,motionValid,material.normalScale)){
+            previousPalette,previousTransform,motionValid,material.normalScale,material.baseTextureScale,material.detailTextureScale)){
             draw.skinnedMeshInstances.resize(originalSize);
             return false;
         }

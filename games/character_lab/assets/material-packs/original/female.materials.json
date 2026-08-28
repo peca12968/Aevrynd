@@ -3,15 +3,15 @@
   "version": 1,
   "root": {
     "materials": {
-      "SkinWarmPBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 4.0, "useUv": true, "castsShadow": true, "shadingModel": "skin" },
-      "LipsRosePBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 5.0, "useUv": true, "castsShadow": true, "shadingModel": "skin" },
+      "SkinWarmPBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 4.0, "baseTextureScale": 1.0, "detailTextureScale": 4.0, "useUv": true, "castsShadow": true, "shadingModel": "skin" },
+      "LipsRosePBR": { "textures": { "baseColor": "skin/base-color.png", "roughness": "skin/roughness.png", "normal": "skin/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 5.0, "baseTextureScale": 1.0, "detailTextureScale": 5.0, "useUv": true, "castsShadow": true, "shadingModel": "skin" },
       "EyeScleraPBR": { "textures": { "baseColor": "eye/base-color.png", "roughness": "eye/roughness.png", "normal": "eye/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 1.0, "useUv": true, "castsShadow": true, "shadingModel": "eye" },
       "IrisHazelPBR": { "textures": { "baseColor": "eye/base-color.png", "roughness": "eye/roughness.png", "normal": "eye/normal-dx.png", "maximumResolution": 1024 }, "textureScale": 1.0, "useUv": true, "castsShadow": true, "shadingModel": "eye" },
-      "HairChestnutPBR": { "textures": { "baseColor": "hair/base-color.png", "roughness": "hair/roughness.png", "normal": "hair/normal-dx.png", "maximumResolution": 512 }, "textureScale": 2.0, "useUv": true, "castsShadow": true, "shadingModel": "hair", "alphaMode": "mask", "alphaCutoff": 0.42, "doubleSided": true },
-      "DressEmeraldPBR": { "textures": { "baseColor": "cloth/base-color.png", "roughness": "cloth/roughness.png", "normal": "cloth/normal-dx.png", "maximumResolution": 512 }, "textureScale": 6.0, "useUv": true, "castsShadow": true },
-      "DressTrimPBR": { "textures": { "baseColor": "cloth/base-color.png", "roughness": "cloth/roughness.png", "normal": "cloth/normal-dx.png", "maximumResolution": 512 }, "textureScale": 7.0, "useUv": true, "castsShadow": true },
-      "BootLeatherPBR": { "textures": { "baseColor": "leather/base-color.png", "roughness": "leather/roughness.png", "normal": "leather/normal-dx.png", "maximumResolution": 512 }, "textureScale": 3.0, "useUv": true, "castsShadow": true },
-      "AccessoryGoldPBR": { "textures": { "baseColor": "metal/base-color.png", "roughness": "metal/roughness.png", "normal": "metal/normal-dx.png", "maximumResolution": 512 }, "textureScale": 2.0, "useUv": true, "castsShadow": true }
+      "HairChestnutPBR": { "textures": { "baseColor": "hair/base-color.png", "roughness": "hair/roughness.png", "normal": "hair/normal-dx.png", "maximumResolution": 512 }, "textureScale": 2.0, "baseTextureScale": 1.0, "detailTextureScale": 2.0, "useUv": true, "castsShadow": true, "shadingModel": "hair", "alphaMode": "mask", "alphaCutoff": 0.42, "doubleSided": true },
+      "DressEmeraldPBR": { "textures": { "baseColor": "cloth/base-color.png", "roughness": "cloth/roughness.png", "normal": "cloth/normal-dx.png", "maximumResolution": 512 }, "textureScale": 6.0, "baseTextureScale": 1.0, "detailTextureScale": 6.0, "useUv": true, "castsShadow": true, "shadingModel": "cloth" },
+      "DressTrimPBR": { "textures": { "baseColor": "cloth/base-color.png", "roughness": "cloth/roughness.png", "normal": "cloth/normal-dx.png", "maximumResolution": 512 }, "textureScale": 7.0, "baseTextureScale": 1.0, "detailTextureScale": 7.0, "useUv": true, "castsShadow": true, "shadingModel": "cloth" },
+      "BootLeatherPBR": { "textures": { "baseColor": "leather/base-color.png", "roughness": "leather/roughness.png", "normal": "leather/normal-dx.png", "maximumResolution": 512 }, "textureScale": 3.0, "baseTextureScale": 1.0, "detailTextureScale": 3.0, "useUv": true, "castsShadow": true },
+      "AccessoryGoldPBR": { "textures": { "baseColor": "metal/base-color.png", "roughness": "metal/roughness.png", "normal": "metal/normal-dx.png", "maximumResolution": 512 }, "textureScale": 2.0, "baseTextureScale": 1.0, "detailTextureScale": 2.0, "useUv": true, "castsShadow": true }
     }
   }
 }

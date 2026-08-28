@@ -214,7 +214,7 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             return Failure(ErrorCode::InvalidSchema, "Sidecar is missing AESKIN material slot '" + slot + "'");
         }
         SerializationObject definition;
-        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "normalScale", "useUv", "castsShadow", "shadingModel", "alphaMode", "alphaCutoff", "doubleSided"}) ||
+        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "baseTextureScale", "detailTextureScale", "normalScale", "useUv", "castsShadow", "shadingModel", "alphaMode", "alphaCutoff", "doubleSided"}) ||
             !definition.Contains("textures")) {
             return Failure(ErrorCode::InvalidSchema, "Material '" + slot + "' definition is invalid");
         }
@@ -223,9 +223,9 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
         material.material.useUv = true;
         if(definition.Contains("shadingModel")){
             std::string shadingModel;
-            if(!definition.Read("shadingModel",shadingModel)||(shadingModel!="default"&&shadingModel!="skin"&&shadingModel!="hair"&&shadingModel!="eye"))
-                return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' shadingModel must be 'default', 'skin', 'hair', or 'eye'");
-            material.material.shadingModel=shadingModel=="skin"?CharacterShadingModel3D::Skin:shadingModel=="hair"?CharacterShadingModel3D::Hair:shadingModel=="eye"?CharacterShadingModel3D::Eye:CharacterShadingModel3D::Default;
+            if(!definition.Read("shadingModel",shadingModel)||(shadingModel!="default"&&shadingModel!="skin"&&shadingModel!="hair"&&shadingModel!="eye"&&shadingModel!="cloth"))
+                return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' shadingModel must be 'default', 'skin', 'hair', 'eye', or 'cloth'");
+            material.material.shadingModel=shadingModel=="skin"?CharacterShadingModel3D::Skin:shadingModel=="hair"?CharacterShadingModel3D::Hair:shadingModel=="eye"?CharacterShadingModel3D::Eye:shadingModel=="cloth"?CharacterShadingModel3D::Cloth:CharacterShadingModel3D::Default;
         }
         if(definition.Contains("alphaMode")){
             std::string alphaMode;
@@ -238,6 +238,9 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             material.material.textureScale <= 0.0f || material.material.textureScale > limits.maximumTextureScale) {
             return Failure(ErrorCode::InvalidValue, "Material '" + slot + "' textureScale or flags are invalid");
         }
+        if((definition.Contains("baseTextureScale")&&(!definition.Read("baseTextureScale",material.material.baseTextureScale)||!std::isfinite(material.material.baseTextureScale)||material.material.baseTextureScale<=0.f||material.material.baseTextureScale>limits.maximumTextureScale))||
+           (definition.Contains("detailTextureScale")&&(!definition.Read("detailTextureScale",material.material.detailTextureScale)||!std::isfinite(material.material.detailTextureScale)||material.material.detailTextureScale<=0.f||material.material.detailTextureScale>limits.maximumTextureScale)))
+            return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' baseTextureScale or detailTextureScale is invalid");
         if(definition.Contains("normalScale")&&(!definition.Read("normalScale",material.material.normalScale)||!std::isfinite(material.material.normalScale)||material.material.normalScale<-16.f||material.material.normalScale>15.96875f))
             return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' normalScale must be finite and within the runtime range");
         SerializationObject textures;
