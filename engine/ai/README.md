@@ -28,6 +28,8 @@ The deterministic retrieval baseline always covers the complete fixed evaluation
 
 The current routing evidence is intentionally narrow. A 528-byte Bloom classification completed in 19.408 seconds with a 14.94 GiB peak working set at 96 tokens. A 3,218-byte, three-feature batch with 512 tokens timed out at 30 seconds, so multi-feature batching is not eligible for local dispatch.
 
+The checked-in snapshot also covers the committed WaterOptics screen-space refraction API, directional-light PCSS contact-hardening controls, and the QWEN timeout supervisor. Fixed retrieval cases verify those systems together with the single-feature routing boundary. External Info documents, build outputs, captures, generated files, and the AI pack itself are never accepted as snapshot sources.
+
 ## Integration roadmap
 
 1. Read-only RAG: reproducible evidence, citations, deterministic retrieval tests, and bounded local inference.

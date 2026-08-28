@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00493","kind":"git-commit","sourcePath":"git/history","sourceSha256":"4db89330169dc5794fbd82b54d78275b22eb8f5a20e5642fad285df1deedfd75","sourceRevision":"ec5ecc6eaca49f045bb8b0f4013be807498a0b58","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入2.5D早期視野剔除並發布引擎2.7"}

@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
+  "snapshotRevision": "c8bc0831976f73c957f2e65208219cd65e8dcbb5",
   "chunkCharacters": 3000,
-  "chunkCount": 485,
+  "chunkCount": 494,
   "sourceCount": 118,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "2bf533f62dea862d7f0312d3608a27b9c13fbf8cca01dd1dd1b5c3225bda2c2c",
+  "knowledgeSha256": "c2d945e7b0b4439e5fdbebe2d4b66ab7bde7f51815dcbfe613e823d30f384cd6",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "cdd06e2375ff64a4d6c7de12748a6b45a1b3676afb3ee637daca4aff5f9ce0d2",
-      "revision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
-      "bytes": 29028
+      "sha256": "fc1d9401a6f9a47a1f557707c39132f05325e6a8bda07da9e6b43c99de74868e",
+      "revision": "c8bc0831976f73c957f2e65208219cd65e8dcbb5",
+      "bytes": 30375
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "88633f95e3b92b333f4f827ed1ef9be9e9049fcc4445afdfdcd4c50ab9216c3c",
-      "revision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
-      "bytes": 62565
+      "sha256": "9df7d18c88fe2d86ef071270ece1139974f25703f0a59dbefccfc7c4ddad4132",
+      "revision": "c8bc0831976f73c957f2e65208219cd65e8dcbb5",
+      "bytes": 66139
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -447,8 +447,8 @@
     {
       "path": "engine/native/tests/DrawListSmoke.cpp",
       "kind": "test",
-      "sha256": "b7817cb8cc91e2165abf27d9a2dbe8bacb2f9e01c739dddd1b1d7a212318d6ed",
-      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "sha256": "5580da2b37de85ccc25040f6e3fb734752d7dddce3c50a899ad74e74ee67b2e9",
+      "revision": "e332a57dd573a7606a5f74187441cf233416ffc4",
       "bytes": 149229
     },
     {
@@ -711,6 +711,20 @@
       "bytes": 23400
     },
     {
+      "path": "engine/native/tests/SoftDirectionalShadow3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "1f461716d514da5da9c6aee16d05a4d925d6b95f2fa9e146e3c6a1e2db4803be",
+      "revision": "c8bc0831976f73c957f2e65208219cd65e8dcbb5",
+      "bytes": 5992
+    },
+    {
+      "path": "engine/native/tests/SoftDirectionalShadow3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "23c022b8d1781e2166e9a15b25179a181669e76499803bd600bf978b65263ed5",
+      "revision": "c8bc0831976f73c957f2e65208219cd65e8dcbb5",
+      "bytes": 1781
+    },
+    {
       "path": "engine/native/tests/StaticMeshAssetLibrary3DSmoke.cpp",
       "kind": "test",
       "sha256": "b4eb7e476531fa772e9ced3437a9bb5a8f7446e5883e90b1daf7704da3883b30",
@@ -760,6 +774,20 @@
       "bytes": 12351
     },
     {
+      "path": "engine/native/tests/WaterOptics3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "c911ae40231a50347c85caf033a4bb5805e164b4414fc1cdc7387eff1a40c82b",
+      "revision": "e332a57dd573a7606a5f74187441cf233416ffc4",
+      "bytes": 1916
+    },
+    {
+      "path": "engine/native/tests/WaterRefraction3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "fe46b946d6dddc5b26c75e1bb7a21d48fdbd50f1fa69f68c2bc126cd3e56c501",
+      "revision": "e332a57dd573a7606a5f74187441cf233416ffc4",
+      "bytes": 5074
+    },
+    {
       "path": "engine/native/tests/WorldStreamer3DSmoke.cpp",
       "kind": "test",
       "sha256": "9703d4deeb28f1bf1a5e77b42b89c592221a262ce86808489d5d8caefad41196",
@@ -797,44 +825,16 @@
     {
       "path": "tools/ci/invoke-local-qwen.ps1",
       "kind": "tool",
-      "sha256": "70e62894afbea01d2cfd6aca5075be69d7b5aeac55ca671667e52781cdeb8e91",
-      "revision": "e2ecf6c8fe53f3a11a225c70c6a65348b5fd8bf8",
-      "bytes": 23000
+      "sha256": "7fa1ec0889674e17285813acd5615eac04a674f02f696839717779a2d1f55bb6",
+      "revision": "f00c13a45ea0d5f379adadcadc53d8a1c288cecb",
+      "bytes": 33790
     },
     {
       "path": "tools/ci/test-local-qwen-wrapper.ps1",
       "kind": "tool",
-      "sha256": "dd227713684a7b084ed57cade6101ebf756f11997d09afd6285573064f41d662",
-      "revision": "e2ecf6c8fe53f3a11a225c70c6a65348b5fd8bf8",
-      "bytes": 7109
-    },
-    {
-      "path": "../Info/EngineChangeLog.md",
-      "kind": "info",
-      "sha256": "f7c7745fed1814405fdd7e065f4b719f5a37f5c67370aee43d41e4c81e514ae7",
-      "revision": "external-info",
-      "bytes": 2823
-    },
-    {
-      "path": "../Info/EngineFeatureCatalog.md",
-      "kind": "info",
-      "sha256": "90b2b093e5f55b9be7ffdf787bf4af1ceee3ce7369380f2395ea5e13cf17e93c",
-      "revision": "external-info",
-      "bytes": 5108
-    },
-    {
-      "path": "../Info/EngineTypeInventory.md",
-      "kind": "info",
-      "sha256": "a86978b058770cc6f985a172d81c99fa708e2c73a520027b4f4e22c1ddbbb898",
-      "revision": "external-info",
-      "bytes": 3066
-    },
-    {
-      "path": "../Info/README.md",
-      "kind": "info",
-      "sha256": "030ba2e62685d3625992f5eb1cf831fcce5f2ad2e2dcd4d4acfe4bee4aeaef21",
-      "revision": "external-info",
-      "bytes": 1363
+      "sha256": "df185f40cd5095dffd5895316c6918b21fd213deb8b4ee2c5eda0c2c76e9237a",
+      "revision": "f00c13a45ea0d5f379adadcadc53d8a1c288cecb",
+      "bytes": 11412
     }
   ],
   "exclusions": [

@@ -27,6 +27,15 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $schema = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json
 $routingPolicy = Get-Content -LiteralPath $routingPolicyPath -Raw | ConvertFrom-Json
 $actualKnowledgeSha = (Get-FileHash -LiteralPath $knowledgePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$sourceSnapshotPassed = $true
+foreach ($source in @($manifest.sources)) {
+    $snapshotContent = ((& git -C $projectPath show ($manifest.snapshotRevision + ':' + $source.path)) -join "`n") + "`n"
+    if ($LASTEXITCODE -ne 0) { $sourceSnapshotPassed=$false;break }
+    $snapshotSha = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($snapshotContent))).ToLowerInvariant()
+    $snapshotRevision = (& git -C $projectPath log -1 --format=%H $manifest.snapshotRevision -- $source.path | Select-Object -First 1).Trim()
+    # 每個來源都要能由 manifest 指定的 HEAD 快照重算，不能只驗證產物彼此一致。
+    if ($snapshotSha -cne [string]$source.sha256 -or [Text.Encoding]::UTF8.GetByteCount($snapshotContent) -ne [int64]$source.bytes -or $snapshotRevision -cne [string]$source.revision) { $sourceSnapshotPassed=$false;break }
+}
 $metadataPassed = 0
 $largestChunkBytes = 0L
 $chunkLines = 0
@@ -49,7 +58,7 @@ $excludedSourceCount = @($manifest.sources | Where-Object {
 $schemaContractPassed = -not [bool]$schema.'$defs'.chunk.additionalProperties -and -not [bool]$schema.'$defs'.manifest.additionalProperties -and
     @($schema.'$defs'.chunk.required).Count -eq 12 -and @($schema.'$defs'.manifest.required).Count -eq 12 -and
     $schema.'$defs'.manifest.properties.trainingEligible.const -eq $false
-$manifestPassed = $actualKnowledgeSha -eq $manifest.knowledgeSha256 -and $chunkLines -eq $manifest.chunkCount -and $metadataPassed -eq $chunkLines -and
+$manifestPassed = $sourceSnapshotPassed -and $actualKnowledgeSha -eq $manifest.knowledgeSha256 -and $chunkLines -eq $manifest.chunkCount -and $metadataPassed -eq $chunkLines -and
     $chunkParityPassed -and $largestChunkBytes -lt 8192 -and -not [bool]$manifest.trainingEligible -and
     $manifest.sensitiveContentScan -eq 'passed' -and $exclusionsComplete -and $excludedSourceCount -eq 0 -and $schemaContractPassed
 $retrievalPassed = 0
@@ -115,7 +124,7 @@ try {
 $negativeSafetyPassed = $negativePassed -eq 5
 
 $uniqueSystems = @($cases.system | Sort-Object -Unique).Count
-$evaluationCoveragePassed = $cases.Count -eq 23 -and $uniqueSystems -ge 15
+$evaluationCoveragePassed = $cases.Count -eq 27 -and $uniqueSystems -ge 15
 $roadmapText = (Get-Content -LiteralPath $readmePath -Raw) + "`n" + (Get-Content -LiteralPath $infoPath -Raw)
 $learningGatesPassed = -not [bool]$manifest.trainingEligible -and $roadmapText -match '2,000' -and $roadmapText -match '200' -and
     $roadmapText -match '90%' -and $roadmapText -match '85%' -and $roadmapText -match '2[^\r\n]*(percentage|百分點|個百分點)'
@@ -148,7 +157,7 @@ foreach ($case in ($cases | Select-Object -First $ModelCases)) {
 $gpuReceipt = 'Not attributable from the current dispatcher receipt; the prior bounded baseline measured 0 MiB.'
 [ordered]@{
     ok=($manifestPassed -and $unknownFallbackPassed -and $readOnlyPassed -and $negativeSafetyPassed -and $evaluationCoveragePassed -and $learningGatesPassed -and $routingPolicyPassed -and $retrievalPassed -eq $cases.Count -and ($ModelCases -eq 0 -or $modelPassed -eq $ModelCases))
-    knowledge=[ordered]@{passed=$manifestPassed;manifestSha256=$manifest.knowledgeSha256;actualSha256=$actualKnowledgeSha;packSha256=$afterReadOnlyPackSha;chunks=$chunkLines;metadataComplete=$metadataPassed;chunkParity=$chunkParityPassed;largestChunkBytes=$largestChunkBytes;trainingEligible=[bool]$manifest.trainingEligible;schemaContract=$schemaContractPassed;exclusionsComplete=$exclusionsComplete;excludedSources=$excludedSourceCount}
+    knowledge=[ordered]@{passed=$manifestPassed;manifestSha256=$manifest.knowledgeSha256;actualSha256=$actualKnowledgeSha;packSha256=$afterReadOnlyPackSha;chunks=$chunkLines;metadataComplete=$metadataPassed;chunkParity=$chunkParityPassed;sourceSnapshot=$sourceSnapshotPassed;largestChunkBytes=$largestChunkBytes;trainingEligible=[bool]$manifest.trainingEligible;schemaContract=$schemaContractPassed;exclusionsComplete=$exclusionsComplete;excludedSources=$excludedSourceCount}
     safety=[ordered]@{unknownQuestionFallback=$unknownFallbackPassed;readOnlyHashStable=$readOnlyPassed;negativeCasesPassed=$negativePassed;negativeCasesTotal=5;tamperFailClosed=$negativeSafetyPassed;learningGatesDocumented=$learningGatesPassed;routingPolicyPassed=$routingPolicyPassed;policyProbeLaunched=[bool]$policyProbe.resource.launched}
     retrieval=[ordered]@{passed=$retrievalPassed;total=$cases.Count;accuracy=[Math]::Round($retrievalPassed/[double]$cases.Count,4);uniqueSystems=$uniqueSystems;coveragePassed=$evaluationCoveragePassed}
     model=[ordered]@{passed=$modelPassed;total=$ModelCases;accuracy=if($ModelCases){[Math]::Round($modelPassed/[double]$ModelCases,4)}else{0};elapsedMilliseconds=$elapsed;peakWorkingSetBytes=$peak;gpuReceipt=$gpuReceipt;cases=$modelResults}

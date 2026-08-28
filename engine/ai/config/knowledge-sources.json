@@ -5,7 +5,6 @@
   "engineVersionFile": "CMakeLists.txt",
   "chunkCharacters": 3000,
   "sources": [
-    { "kind": "info", "root": "../Info", "patterns": ["*.md"] },
     { "kind": "public-header", "root": "engine/native/include/Aevrynd", "patterns": ["*.h", "*.hpp"] },
     { "kind": "test", "root": "engine/native/tests", "patterns": ["*.cpp"] },
     { "kind": "tool", "root": "tools/ci", "patterns": ["invoke-local-qwen.ps1", "test-local-qwen-wrapper.ps1"] },
