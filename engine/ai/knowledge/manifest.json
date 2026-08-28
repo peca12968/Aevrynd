@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+  "snapshotRevision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
   "chunkCharacters": 3000,
-  "chunkCount": 561,
-  "sourceCount": 141,
+  "chunkCount": 571,
+  "sourceCount": 144,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "23fd3cffa4743d63ea9cf70b5617e3c13666261001946194d0b60edcea217609",
+  "knowledgeSha256": "7ba82022e2e1029d2eea436ec8e07d9d9d0850ca024e2d655f4084f4668b7e82",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "c9d72cbd146bdb18639e86732e33a7d9a1623e69798fa364bf07c60e6e422439",
-      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
-      "bytes": 41944
+      "sha256": "a7cc1cfb33fe7bf610fd458ce5dc2aac19a5a8c5d433ea41deb52c111205dcc6",
+      "revision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
+      "bytes": 42822
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "3b2368cf991cad0387951c202ace10f49610cde9f590fa0943d3fa0a3f4f2270",
-      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
-      "bytes": 93520
+      "sha256": "10bb8bc69953ff174c8e5c65c4b6d9b79f4ed1f63330605992ff4fe28b76502c",
+      "revision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
+      "bytes": 95275
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -457,6 +457,27 @@
       "sha256": "fbce9aee3e7f316176c303c65b2dfe77c524030ea219da0b282b4675a81b97ec",
       "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
       "bytes": 3156
+    },
+    {
+      "path": "engine/native/tests/CurrentFrameHzbOcclusion3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "011254b2399d103a96aa241bbef8469fd6cedd42b049e940eeda9a94dd725572",
+      "revision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
+      "bytes": 8379
+    },
+    {
+      "path": "engine/native/tests/CurrentFrameHzbOcclusion3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "95503b2f89eb2aedefeb20148e0d87168a6e47b03fa8b72dd992a6939798c4cc",
+      "revision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
+      "bytes": 9770
+    },
+    {
+      "path": "engine/native/tests/CurrentFrameHzbSoftwareReference3D.h",
+      "kind": "test",
+      "sha256": "49a6ff8c4f65dcd65c3dadb7d2c2ce5833b10c6f8ceca7fdcf30250149dd8717",
+      "revision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
+      "bytes": 5477
     },
     {
       "path": "engine/native/tests/DirectionalLightShaft3DSmoke.cpp",
