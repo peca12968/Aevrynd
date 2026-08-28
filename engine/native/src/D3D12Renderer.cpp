@@ -1613,15 +1613,18 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
    d.list->SetGraphicsRootSignature(d.postProcessRoot.Get());
    d.list->SetGraphicsRootDescriptorTable(0, hdrSrv);
    const bool usePostProcessAntiAliasing=d.quality.postProcessAntiAliasing&&!useDLSS&&!useTemporalAntiAliasing;
-   const float compositeConstants[12] = {
+   const BloomSettings3D bloom=dl.Bloom();const bool useBloom=bloom.enabled&&bloom.intensity>0.f;
+   const float compositeConstants[16] = {
        sourceRect[0],  sourceRect[1],  sourceRect[2],      sourceRect[3],
        outputCanvas.x, outputCanvas.y, outputCanvas.width, outputCanvas.height,
-       1.f/float(d.width),1.f/float(d.height),usePostProcessAntiAliasing?1.f:0.f,.085f};
-   d.list->SetGraphicsRoot32BitConstants(1, 12, compositeConstants, 0);
+       1.f/float(d.width),1.f/float(d.height),usePostProcessAntiAliasing?1.f:0.f,dl.ExposureCompensation(),
+       bloom.threshold,bloom.softKnee,bloom.radiusPixels,useBloom?bloom.intensity:0.f};
+   d.list->SetGraphicsRoot32BitConstants(1, 16, compositeConstants, 0);
    d.list->SetPipelineState(d.postProcessPipeline.Get());
    d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
    d.list->DrawInstanced(3, 1, 0, 0);
    ++d.stats.hdrPostProcessPasses;
+   d.stats.bloomEnabled=useBloom;d.stats.bloomResidentBytes=0;if(useBloom){++d.stats.bloomPasses;d.stats.bloomTextureSamples+=uint64_t((std::max)(0.f,sourceRect[2]))*uint64_t((std::max)(0.f,sourceRect[3]))*8;}
    d.stats.postProcessAntiAliasingEnabled=usePostProcessAntiAliasing||useTemporalAntiAliasing;
    if(usePostProcessAntiAliasing){++d.stats.postProcessAntiAliasingPasses;d.stats.postProcessAntiAliasingTextureSamples+=uint64_t((std::max)(0.f,sourceRect[2]))*uint64_t((std::max)(0.f,sourceRect[3]))*5;}else if(useTemporalAntiAliasing){++d.stats.postProcessAntiAliasingPasses;d.stats.postProcessAntiAliasingTextureSamples+=uint64_t((std::max)(0.f,sourceRect[2]))*uint64_t((std::max)(0.f,sourceRect[3]))*8;}
    if (useDLSS) {

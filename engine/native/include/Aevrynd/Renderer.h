@@ -106,6 +106,9 @@ inline float FoliageWrapDiffuse3D(float normalLightCosine,float wrap=.35f){if(!s
 inline float FoliageTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
 inline float ProceduralCloudDensity3D(float noiseSample,float coverage=.54f,float softness=.18f){if(!std::isfinite(noiseSample)||!std::isfinite(coverage)||!std::isfinite(softness)||softness<=0.f)return 0.f;const float value=Clamp((noiseSample-coverage)/softness,0.f,1.f);return value*value*(3.f-2.f*value);}
 inline float CloudHorizonFade3D(float rayHeight){if(!std::isfinite(rayHeight))return 0.f;const float value=Clamp((rayHeight-.025f)/.18f,0.f,1.f);return value*value*(3.f-2.f*value);}
+struct BloomSettings3D {bool enabled{true};float threshold{1.f},softKnee{.5f},intensity{.12f},radiusPixels{2.5f};};
+inline BloomSettings3D NormalizeBloomSettings3D(BloomSettings3D settings){settings.threshold=Clamp(std::isfinite(settings.threshold)?settings.threshold:1.f,0.f,32.f);settings.softKnee=Clamp(std::isfinite(settings.softKnee)?settings.softKnee:.5f,0.f,1.f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:.12f,0.f,4.f);settings.radiusPixels=Clamp(std::isfinite(settings.radiusPixels)?settings.radiusPixels:2.5f,.5f,16.f);return settings;}
+inline float BloomSoftThreshold3D(float luminance,const BloomSettings3D& source={}){const BloomSettings3D settings=NormalizeBloomSettings3D(source);if(!settings.enabled||!std::isfinite(luminance))return 0.f;const float knee=(std::max)(settings.threshold*settings.softKnee,.0001f),soft=Clamp((luminance-settings.threshold+knee)/(2.f*knee),0.f,1.f);return(std::max)(luminance-settings.threshold,0.f)+soft*soft*knee;}
 inline float DirectionalShadowReceiverBias3D(float normalLightCosine,float slopeScale=.0015f,float minimumBias=.00035f,float maximumBias=.006f){if(!std::isfinite(normalLightCosine)||!std::isfinite(slopeScale)||!std::isfinite(minimumBias)||!std::isfinite(maximumBias))return(std::max)(0.f,minimumBias);const float cosine=Clamp(normalLightCosine,0.f,1.f),slope=std::sqrt((std::max)(0.f,1.f-cosine*cosine))/(std::max)(.2f,cosine);return Clamp((std::max)(0.f,minimumBias)+(std::max)(0.f,slopeScale)*slope,(std::max)(0.f,minimumBias),(std::max)(minimumBias,maximumBias));}
 inline Vec3 TerrainLayerWeights3D(float slope,float normalizedHeight,float macroNoise){if(!std::isfinite(slope)||!std::isfinite(normalizedHeight)||!std::isfinite(macroNoise))return{1,0,0};slope=Clamp(slope,0.f,1.f);normalizedHeight=Clamp(normalizedHeight,0.f,1.f);macroNoise=Clamp(macroNoise,0.f,1.f);const auto smooth=[](float edge0,float edge1,float value){value=Clamp((value-edge0)/(edge1-edge0),0.f,1.f);return value*value*(3.f-2.f*value);};const float rock=smooth(.38f,.78f,slope+(std::max)(0.f,normalizedHeight-.62f)*.35f),soil=(1.f-rock)*smooth(.18f,.62f,slope+(1.f-macroNoise)*.18f);return{(std::max)(0.f,1.f-rock-soil),soil,rock};}
 struct PointLight3D {Vec3 position{};float radius{8.f};Color color{1.f,.72f,.38f,1.f};float intensity{1.f};};
@@ -193,6 +196,7 @@ struct RendererStats {
     bool depthAwareWaterEnabled{};
     uint64_t depthAwareWaterPasses{};
     uint64_t hdrPostProcessPasses{};
+    bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
     bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
@@ -477,6 +481,8 @@ public:
     float EnvironmentTime()const{return environmentTime_;}
     void SetExposureCompensation(float ev){exposureCompensationEv_=(std::clamp)(std::isfinite(ev)?ev:0.f,-10.f,10.f);}
     float ExposureCompensation()const{return exposureCompensationEv_;}
+    void SetBloom(BloomSettings3D settings){bloom_=NormalizeBloomSettings3D(settings);}
+    const BloomSettings3D& Bloom()const{return bloom_;}
     void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
@@ -531,6 +537,7 @@ private:
     Atmosphere3D atmosphere_{};
     float environmentTime_{};
     float exposureCompensationEv_{};
+    BloomSettings3D bloom_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
     std::vector<PointLight3D> pointLights_;
     std::vector<DrawSpan2D> additiveSpans_;
