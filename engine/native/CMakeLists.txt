@@ -28,6 +28,7 @@ add_library(AevryndEngine STATIC
   src/SkinnedMaterialSidecar3D.cpp
   src/SkinnedRenderable3D.cpp
   src/Spatial2D.cpp
+  src/StaticMeshAssetLibrary3D.cpp
   src/TerrainClipmap3D.cpp
   src/TemporalMotion3D.cpp
   src/WorldBuilder3D.cpp
@@ -197,6 +198,12 @@ target_compile_options(AevryndMaterialLibrary3DTest PRIVATE /W4 /permissive- /ut
 target_compile_definitions(AevryndMaterialLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndMaterialLibrary3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndMaterialLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMaterialLibrary3DTest>'")
+
+add_executable(AevryndStaticMeshAssetLibrary3DTest tests/StaticMeshAssetLibrary3DSmoke.cpp)
+target_compile_options(AevryndStaticMeshAssetLibrary3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndStaticMeshAssetLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndStaticMeshAssetLibrary3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndStaticMeshAssetLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndStaticMeshAssetLibrary3DTest>'")
 
 add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)

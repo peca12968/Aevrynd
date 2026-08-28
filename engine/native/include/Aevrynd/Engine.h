@@ -30,8 +30,8 @@ struct MeshLodResourceChain3D {
     MeshLodResourceChain3D()=default;
     MeshLodResourceChain3D(const MeshLodResourceChain3D&)=delete;
     MeshLodResourceChain3D& operator=(const MeshLodResourceChain3D&)=delete;
-    MeshLodResourceChain3D(MeshLodResourceChain3D&& other)noexcept{*this=std::move(other);}
-    MeshLodResourceChain3D& operator=(MeshLodResourceChain3D&& other)noexcept{if(this!=&other){levels=std::move(other.levels);levelCount=other.levelCount;processing=other.processing;other.levels={};other.levelCount=0;other.processing={};}return*this;}
+    MeshLodResourceChain3D(MeshLodResourceChain3D&& other)noexcept:levels(std::move(other.levels)),levelCount(other.levelCount),processing(other.processing){other.levels={};other.levelCount=0;other.processing={};}
+    MeshLodResourceChain3D& operator=(MeshLodResourceChain3D&&)=delete;
     explicit operator bool()const{return levelCount>=2&&bool(levels[0]);}
 };
 struct SkinnedMeshResource3D {
