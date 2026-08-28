@@ -57,6 +57,7 @@ JointTransform3D InterpolateJointTransform(JointTransform3D from,JointTransform3
 void SampleAnimationClipInto(const Skeleton3D& skeleton,const AnimationClip3D& clip,float time,AnimationPose3D& output,Matrix4 root=Matrix4::Identity());
 AnimationPose3D SampleAnimationClip(const Skeleton3D& skeleton,const AnimationClip3D& clip,float time,Matrix4 root=Matrix4::Identity());
 void BlendAnimationPosesInto(const Skeleton3D& skeleton,const AnimationPose3D& from,const AnimationPose3D& to,float amount,AnimationPose3D& output,Matrix4 root=Matrix4::Identity());
+void BuildAnimationPoseGlobalMatrices3D(const Skeleton3D& skeleton,AnimationPose3D& pose,Matrix4 root=Matrix4::Identity());
 AnimationPose3D BlendAnimationPoses(const Skeleton3D& skeleton,const AnimationPose3D& from,const AnimationPose3D& to,float amount,Matrix4 root=Matrix4::Identity());
 
 class AnimationPlayer3D {

@@ -1,5 +1,6 @@
 #pragma once
 #include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/AnimationGraph3D.h>
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/MaterialLibrary3D.h>
@@ -36,13 +37,17 @@ private:
     std::array<Aevrynd::Material3D,1> femaleEquipmentMaterial_{},maleEquipmentMaterial_{};
     Aevrynd::SkinnedRenderableGroupHistory3D femaleGroupHistory_{},maleGroupHistory_{};
     Aevrynd::SkinnedRenderableGroupStats3D equipmentGroupStats_{};
-    Aevrynd::AnimationClip3D femaleClip_{},maleClip_{};
+    std::array<Aevrynd::AnimationClip3D,4> femaleGraphClips_{},maleGraphClips_{};
+    std::vector<float> femaleUpperMask_{},maleUpperMask_{};
+    Aevrynd::AnimationGraph3D femaleGraph_{},maleGraph_{};
     Aevrynd::AnimationPlayer3D femalePlayer_{},malePlayer_{};
     Aevrynd::AnimationPose3D femalePose_{},malePose_{};
     Aevrynd::SkinningWorkspace3D skinningWorkspace_{};
     Aevrynd::SoundHandle jumpSound_{};
     Aevrynd::Camera3D camera_{};
     float yaw_{},pitch_{.12f};
+    float leftFootMinimum_{},rightFootMinimum_{},footPhaseDifference_{},contactDrift_{},maximumJointStep_{};
+    std::uint64_t animationPoseHash_{};
     int automaticPhase_{-1},lastJumpCycle_{-1};
     uint64_t modeSwitches_{},cameraObstructions_{};
     std::uint64_t equipmentRevision_{},renderFrame_{};
