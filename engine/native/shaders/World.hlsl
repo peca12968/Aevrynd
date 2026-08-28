@@ -123,6 +123,7 @@ Texture2D<float4> opaqueSceneColorTexture : register(t14);
 TextureCube<float3> environmentSpecularTexture : register(t16);
 TextureCube<float3> environmentIrradianceTexture : register(t17);
 Texture2D<float2> environmentBrdfTexture : register(t18);
+StructuredBuffer<float4> localReflectionProbeData : register(t19);
 cbuffer EnvironmentConstants : register(b3)
 {
     float environmentRotationRadians;
@@ -738,13 +739,28 @@ float3 EvaluateEnvironmentDiffuse(float3 normal, float3 sunDirection)
     return max(float3(0.0, 0.0, 0.0), lighting);
 }
 
-float3 EvaluateEnvironmentSpecular(float3 reflectionDirection, float3 sunDirection,
+float3 BoxProjectedEnvironmentDirection(float3 worldPosition,float3 reflectionDirection)
+{
+    if(environmentReserved<.5)return reflectionDirection;
+    const uint base=(uint(environmentReserved)-1u)*3u;
+    const float3 boxMinimum=localReflectionProbeData[base].xyz;
+    const float3 boxMaximum=localReflectionProbeData[base+1u].xyz;
+    const float3 capturePosition=localReflectionProbeData[base+2u].xyz;
+    const float3 safeMagnitude=max(abs(reflectionDirection),.000001);
+    const float3 safeDirection=lerp(-safeMagnitude,safeMagnitude,step(0.0,reflectionDirection));
+    const float3 distances=lerp((boxMinimum-worldPosition)/safeDirection,(boxMaximum-worldPosition)/safeDirection,step(0.0,reflectionDirection));
+    const float hitDistance=max(0.0,min(distances.x,min(distances.y,distances.z)));
+    const float3 corrected=worldPosition+reflectionDirection*hitDistance-capturePosition;
+    return dot(corrected,corrected)>.000001?normalize(corrected):reflectionDirection;
+}
+
+float3 EvaluateEnvironmentSpecular(float3 worldPosition,float3 reflectionDirection,float3 sunDirection,
                                    float roughness)
 {
     float3 lighting = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection, roughness);
     [branch] if (environmentEnabled >= 0.5)
         lighting = environmentSpecularTexture.SampleLevel(materialSampler,
-                   RotateEnvironmentDirection(reflectionDirection),
+                   RotateEnvironmentDirection(BoxProjectedEnvironmentDirection(worldPosition,reflectionDirection)),
                    saturate(roughness) * environmentSpecularMaximumMip);
     return max(float3(0.0, 0.0, 0.0), lighting);
 }
@@ -1104,7 +1120,7 @@ float3 FresnelSchlickRoughness(float cosine, float3 reflectance, float roughness
     return reflectance + (grazing - reflectance) * pow(1.0 - saturate(cosine), 5.0);
 }
 
-float3 EvaluateEnvironmentLighting(float3 normal, float3 viewDirection, float3 baseColor,
+float3 EvaluateEnvironmentLighting(float3 worldPosition,float3 normal, float3 viewDirection, float3 baseColor,
                                    float roughness, float metallic, float occlusion,
                                    float ambientIntensity, float3 sunDirection)
 {
@@ -1113,7 +1129,7 @@ float3 EvaluateEnvironmentLighting(float3 normal, float3 viewDirection, float3 b
     const float3 diffuseWeight = (1.0 - fresnel) * (1.0 - metallic);
     const float3 skyDiffuse = EvaluateEnvironmentDiffuse(normal, sunDirection);
     const float3 reflectionDirection = reflect(-viewDirection, normal);
-    const float3 skySpecular = EvaluateEnvironmentSpecular(reflectionDirection, sunDirection, roughness);
+    const float3 skySpecular = EvaluateEnvironmentSpecular(worldPosition,reflectionDirection, sunDirection, roughness);
     const float2 brdf = environmentEnabled > 0.5
         ? environmentBrdfTexture.SampleLevel(screenPointClampSampler,
               float2(saturate(dot(normal, viewDirection)), saturate(roughness)), 0.0)
@@ -1180,16 +1196,16 @@ float3 EvaluateEyeLight(float3 baseNormal, float3 corneaNormal, float3 viewDirec
     return baseLayer * (1.0 - fresnel) + clearcoat;
 }
 
-float3 EvaluateEyeEnvironment(float3 baseNormal, float3 corneaNormal, float3 viewDirection,
+float3 EvaluateEyeEnvironment(float3 worldPosition,float3 baseNormal, float3 corneaNormal, float3 viewDirection,
                               float3 baseColor, float materialRoughness, float occlusion,
                               float ambientIntensity, float3 sunDirection)
 {
-    const float3 baseLayer = EvaluateEnvironmentLighting(baseNormal, viewDirection, baseColor,
+    const float3 baseLayer = EvaluateEnvironmentLighting(worldPosition,baseNormal, viewDirection, baseColor,
                                                           materialRoughness, 0.0, occlusion,
                                                           ambientIntensity, sunDirection);
     const float fresnel = CorneaFresnel(dot(corneaNormal, viewDirection));
     const float3 reflectionDirection = reflect(-viewDirection, corneaNormal);
-    const float3 clearcoat = EvaluateEnvironmentSpecular(reflectionDirection, sunDirection,
+    const float3 clearcoat = EvaluateEnvironmentSpecular(worldPosition,reflectionDirection, sunDirection,
                                                          CorneaRoughness(materialRoughness))
                            * fresnel * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
     return baseLayer * (1.0 - fresnel) + clearcoat;
@@ -1515,9 +1531,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                                 ? ambientOcclusionTexture.SampleLevel(materialSampler, input.position.xy * colorPipeline.zw, 0.0)
                                 : 1.0;
     const float3 environmentLighting = eyeMask > 0.5
-        ? EvaluateEyeEnvironment(normal, geometricNormal, viewDirection, baseColor, roughness,
+        ? EvaluateEyeEnvironment(input.worldPosition,normal, geometricNormal, viewDirection, baseColor, roughness,
                                  occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection)
-        : EvaluateEnvironmentLighting(normal, viewDirection, baseColor, roughness, metallic,
+        : EvaluateEnvironmentLighting(input.worldPosition,normal, viewDirection, baseColor, roughness, metallic,
                                       occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection);
     const float3 directionalLighting = eyeMask > 0.5
         ? EvaluateEyeLight(normal, geometricNormal, viewDirection, lightDirection,
@@ -1602,7 +1618,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         const float3 absorbedWater = transmittedScene * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
         const float waterReflectionRoughness = clamp(roughness, 0.045, 0.18);
-        float3 reflectedWater = EvaluateEnvironmentSpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
+        float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
                               * lerp(1.0, 0.55, waterReflectionRoughness);
         const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
         reflectedWater=lerp(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);

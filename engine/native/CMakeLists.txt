@@ -425,6 +425,17 @@ target_compile_definitions(AevryndScreenSpaceReflectionD3D12VisualTest PRIVATE A
 target_link_libraries(AevryndScreenSpaceReflectionD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndScreenSpaceReflectionD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScreenSpaceReflectionD3D12VisualTest>'")
 
+add_executable(AevryndLocalReflectionProbe3DTest tests/LocalReflectionProbe3DSmoke.cpp)
+target_compile_options(AevryndLocalReflectionProbe3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndLocalReflectionProbe3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndLocalReflectionProbe3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndLocalReflectionProbe3DTest>'")
+
+add_executable(AevryndLocalReflectionProbeD3D12VisualTest tests/LocalReflectionProbeD3D12VisualSmoke.cpp)
+target_compile_options(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}" AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/local-reflection-probe")
+target_link_libraries(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndLocalReflectionProbeD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndLocalReflectionProbeD3D12VisualTest>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)

@@ -93,7 +93,7 @@ int main() {
     if (baseline.environmentLightingResourceAllocations ||
         baseline.residentEnvironmentLightingBytes ||
         baseline.residentEnvironmentLightingDescriptors ||
-        baseline.environmentLightingFallbackDescriptors != 3 ||
+        baseline.environmentLightingFallbackDescriptors != 4 ||
         baseline.environmentLightingActive)
       result = 5;
 

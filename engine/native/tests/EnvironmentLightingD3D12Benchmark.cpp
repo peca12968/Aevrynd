@@ -194,7 +194,7 @@ int main() {
                 << stats.residentEnvironmentLightingDescriptors << '\n';
       if (!performancePass || !memoryPass ||
           stats.residentEnvironmentLightingDescriptors != 3 ||
-          stats.environmentLightingFallbackDescriptors != 3) {
+          stats.environmentLightingFallbackDescriptors != 4) {
         std::cerr << "IBL GPU performance or allocation budget failed\n";
         result = 7;
       }
