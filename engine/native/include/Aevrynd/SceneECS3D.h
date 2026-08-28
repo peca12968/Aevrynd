@@ -16,6 +16,8 @@ struct SceneEntity3D {
 
 struct SceneTransformComponent3D { Transform3D value{}; };
 struct SceneMeshRenderable3D {
+    // 資產租約隨元件複製與影格提交傳遞，避免卸載後留下失效的 GPU 控制代碼。
+    AssetLease3D assetLease{};
     MeshResource3D nearMesh{};
     MeshResource3D farMesh{};
     float lodSwitchDistance{40.f};

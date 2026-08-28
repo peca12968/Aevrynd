@@ -15,7 +15,7 @@ namespace Aevrynd {
 struct Triangle3D {Vec3 a{},b{},c{};Color color{};};
 struct Line3D {Vec3 a{},b{};float width{1.f};Color color{};};
 struct Box3D {Transform3D transform{};Material3D material{};};
-struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};};
+struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};AssetLease3D assetLease{};};
 enum class MeshLodDistanceMetric3D : std::uint8_t {Center,BoundsSurface};
 struct MeshLodPolicy3D {float switchDistance{40.f},transitionWidth{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};};
 struct MeshLodSelection3D {float nearCoverage{1.f},farCoverage{};bool submitNear{true},submitFar{};};
@@ -28,7 +28,7 @@ struct MeshLodChainSelection3D {std::size_t primaryLevel{},nearLevel{},farLevel{
 inline MeshLodChainSelection3D EvaluateMeshLodChain3D(float centerDistance,float boundsRadius,std::span<const MeshLodLevel3D> levels,MeshLodDistanceMetric3D metric){
     if(levels.size()<2)return{};for(std::size_t level=0;level+1<levels.size();++level){const MeshLodSelection3D selection=EvaluateMeshLod3D(centerDistance,boundsRadius,{levels[level].switchDistance,levels[level].transitionWidth,metric});if(selection.submitNear){const bool transition=selection.submitFar;return{selection.farCoverage>=selection.nearCoverage?level+1:level,level,level+1,selection.farCoverage,transition};}}const std::size_t last=levels.size()-1;return{last,last,last,1.f,false};
 }
-struct MeshLodObject3D {std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> levels{};std::size_t levelCount{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};Transform3D transform{};MeshBounds3D bounds{};};
+struct MeshLodObject3D {std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> levels{};std::size_t levelCount{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};Transform3D transform{};MeshBounds3D bounds{};AssetLease3D assetLease{};};
 struct ProjectedShadows3D {bool enabled{};float planeHeight{.025f},opacity{.22f},maximumDistance{55.f};std::size_t maximumCasters{256};};
 struct SceneVisibility3D {float maximumDistance{},minimumProjectedRadiusPixels{};};
 struct Scene3DSubmissionOptions {bool frustumCulling{true};bool gpuInstancing{true};ProjectedShadows3D shadows{};SceneVisibility3D visibility{};std::size_t maximumLodTransitionInstances{512},maximumShadowOnlyInstances{2048};};
@@ -60,14 +60,14 @@ public:
     void Line(Vec3 a,Vec3 b,float width,Color color){lines_.push_back({a,b,width,color});}
     void Box(Vec3 center,Vec3 size,Color color){boxes_.push_back({Transform3D{center,{},size},Material3D{color}});InvalidateRaycastIndex();}
     void MaterialBox(Vec3 center,Vec3 size,Material3D material){boxes_.push_back({Transform3D{center,{},size},material});InvalidateRaycastIndex();}
-    void Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={}){if(mesh){meshes_.push_back({mesh,transform,material});InvalidateRaycastIndex();}}
+    void Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={},AssetLease3D assetLease={}){if(mesh){meshes_.push_back({mesh,transform,material,std::move(assetLease)});InvalidateRaycastIndex();}}
     void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,float switchDistance,Transform3D transform,Material3D material={}){MeshLod(nearMesh,farMesh,MeshLodPolicy3D{switchDistance},transform,material,material);}
     void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,float switchDistance,Transform3D transform,Material3D nearMaterial,Material3D farMaterial){MeshLod(nearMesh,farMesh,MeshLodPolicy3D{switchDistance},transform,nearMaterial,farMaterial);}
     void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,MeshLodPolicy3D policy,Transform3D transform,Material3D material={}){MeshLod(nearMesh,farMesh,policy,transform,material,material);}
-    void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,MeshLodPolicy3D policy,Transform3D transform,Material3D nearMaterial,Material3D farMaterial){if(!std::isfinite(policy.switchDistance)||policy.switchDistance<=0.f)policy.switchDistance=40.f;if(!std::isfinite(policy.transitionWidth)||policy.transitionWidth<0.f)policy.transitionWidth=0.f;const std::array<MeshLodLevel3D,2> levels{{{nearMesh,nearMaterial,policy.switchDistance,policy.transitionWidth},{farMesh,farMaterial}}};MeshLodChain(levels,policy.distanceMetric,transform);}
-    void MeshLodChain(std::span<const MeshLodLevel3D> levels,MeshLodDistanceMetric3D distanceMetric,Transform3D transform){
+    void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,MeshLodPolicy3D policy,Transform3D transform,Material3D nearMaterial,Material3D farMaterial,AssetLease3D assetLease={}){if(!std::isfinite(policy.switchDistance)||policy.switchDistance<=0.f)policy.switchDistance=40.f;if(!std::isfinite(policy.transitionWidth)||policy.transitionWidth<0.f)policy.transitionWidth=0.f;const std::array<MeshLodLevel3D,2> levels{{{nearMesh,nearMaterial,policy.switchDistance,policy.transitionWidth},{farMesh,farMaterial}}};MeshLodChain(levels,policy.distanceMetric,transform,std::move(assetLease));}
+    void MeshLodChain(std::span<const MeshLodLevel3D> levels,MeshLodDistanceMetric3D distanceMetric,Transform3D transform,AssetLease3D assetLease={}){
         if(levels.size()<2||levels.size()>MaximumMeshLodLevels3D||(distanceMetric!=MeshLodDistanceMetric3D::Center&&distanceMetric!=MeshLodDistanceMetric3D::BoundsSurface))return;float previousSwitch{},previousEnd=-std::numeric_limits<float>::infinity();std::size_t previousTriangles=(std::numeric_limits<std::size_t>::max)();for(std::size_t level=0;level<levels.size();++level){const MeshLodLevel3D& value=levels[level];if(!value.mesh||value.mesh.TriangleCount()>previousTriangles)return;previousTriangles=value.mesh.TriangleCount();if(level+1<levels.size()){if(!std::isfinite(value.switchDistance)||value.switchDistance<=previousSwitch||!std::isfinite(value.transitionWidth)||value.transitionWidth<0.f)return;const float halfWidth=value.transitionWidth*.5f,start=value.switchDistance-halfWidth,end=value.switchDistance+halfWidth;if(!std::isfinite(halfWidth)||!std::isfinite(start)||!std::isfinite(end)||start<previousEnd)return;previousSwitch=value.switchDistance;previousEnd=end;}}
-        MeshLodObject3D object{};object.levelCount=levels.size();object.distanceMetric=distanceMetric;object.transform=transform;for(std::size_t level=0;level<levels.size();++level)object.levels[level]=levels[level];Vec3 minimum=levels[0].mesh.bounds.center-levels[0].mesh.bounds.extents,maximum=levels[0].mesh.bounds.center+levels[0].mesh.bounds.extents;for(std::size_t level=1;level<levels.size();++level){const MeshBounds3D& bounds=levels[level].mesh.bounds;const Vec3 levelMinimum=bounds.center-bounds.extents,levelMaximum=bounds.center+bounds.extents;minimum.x=(std::min)(minimum.x,levelMinimum.x);minimum.y=(std::min)(minimum.y,levelMinimum.y);minimum.z=(std::min)(minimum.z,levelMinimum.z);maximum.x=(std::max)(maximum.x,levelMaximum.x);maximum.y=(std::max)(maximum.y,levelMaximum.y);maximum.z=(std::max)(maximum.z,levelMaximum.z);}object.bounds.center=(minimum+maximum)*.5f;object.bounds.extents=(maximum-minimum)*.5f;object.bounds.radius=Length(object.bounds.extents);lodMeshes_.push_back(std::move(object));InvalidateRaycastIndex();
+        MeshLodObject3D object{};object.levelCount=levels.size();object.distanceMetric=distanceMetric;object.transform=transform;object.assetLease=std::move(assetLease);for(std::size_t level=0;level<levels.size();++level)object.levels[level]=levels[level];Vec3 minimum=levels[0].mesh.bounds.center-levels[0].mesh.bounds.extents,maximum=levels[0].mesh.bounds.center+levels[0].mesh.bounds.extents;for(std::size_t level=1;level<levels.size();++level){const MeshBounds3D& bounds=levels[level].mesh.bounds;const Vec3 levelMinimum=bounds.center-bounds.extents,levelMaximum=bounds.center+bounds.extents;minimum.x=(std::min)(minimum.x,levelMinimum.x);minimum.y=(std::min)(minimum.y,levelMinimum.y);minimum.z=(std::min)(minimum.z,levelMinimum.z);maximum.x=(std::max)(maximum.x,levelMaximum.x);maximum.y=(std::max)(maximum.y,levelMaximum.y);maximum.z=(std::max)(maximum.z,levelMaximum.z);}object.bounds.center=(minimum+maximum)*.5f;object.bounds.extents=(maximum-minimum)*.5f;object.bounds.radius=Length(object.bounds.extents);lodMeshes_.push_back(std::move(object));InvalidateRaycastIndex();
     }
     void SetBoxMesh(MeshResource3D mesh){boxMesh_=std::move(mesh);}
     const MeshResource3D& BoxMesh()const{return boxMesh_;}
@@ -181,7 +181,8 @@ public:
                         bool allowShadow = true,
                         bool visibilityAccepted = false,
                         bool lodInvert = false,
-                        MeshRenderLayer3D layer = MeshRenderLayer3D::Opaque) {
+                        MeshRenderLayer3D layer = MeshRenderLayer3D::Opaque,
+                        AssetLease3D assetLease = {}) {
         const MeshBounds3D localBounds =
                                resource ? resource.bounds : *fallbackBounds,
                            worldBounds =
@@ -226,6 +227,7 @@ public:
           ++stats.cpuFallbackUnavailable;
           return false;
         }
+        draw.RetainAssetLease(std::move(assetLease));
         if (layer == MeshRenderLayer3D::ShadowOnly)
           ++stats.shadowOnlyInstances;
         else {
@@ -238,7 +240,8 @@ public:
                                     const Mesh3D *fallback,
                                     const MeshBounds3D *fallbackBounds,
                                     const Transform3D &transform,
-                                    Material3D material) {
+                                    Material3D material,
+                                    AssetLease3D assetLease = {}) {
         const MeshBounds3D localBounds =
                                resource ? resource.bounds : *fallbackBounds,
                            worldBounds =
@@ -252,7 +255,8 @@ public:
           if (material.castsShadow && !withinShadowDistance)
             ++stats.shadowDistanceRejected;
           submit(resource, fallback, fallbackBounds, transform, material, 1.f,
-                 0, withinShadowDistance, true);
+                 0, withinShadowDistance, true, false,
+                 MeshRenderLayer3D::Opaque, std::move(assetLease));
           return;
         }
         if (!shadowEligible(worldBounds, material, resource))
@@ -263,14 +267,15 @@ public:
           return;
         }
         submit(resource, fallback, fallbackBounds, transform, material, 1.f, 0,
-               true, true, false, MeshRenderLayer3D::ShadowOnly);
+               true, true, false, MeshRenderLayer3D::ShadowOnly,
+               std::move(assetLease));
       };
       for (const Box3D &box : boxes_)
         submitObject(boxMesh_, &fallbackBox, &UnitBoxBounds(), box.transform,
                      box.material);
       for (const MeshObject3D &mesh : meshes_)
         submitObject(mesh.mesh, mesh.mesh.cpuMesh.get(), nullptr,
-                     mesh.transform, mesh.material);
+                     mesh.transform, mesh.material, mesh.assetLease);
       for (std::size_t lodIndex = 0; lodIndex < lodMeshes_.size(); ++lodIndex) {
         const MeshLodObject3D &lod = lodMeshes_[lodIndex];
         ++stats.lodMeshInstances;
@@ -297,7 +302,7 @@ public:
                 options.maximumShadowOnlyInstances)
               submit(selected.mesh, selected.mesh.cpuMesh.get(), nullptr,
                      lod.transform, selected.material, 1.f, 0, true, true,
-                     false, MeshRenderLayer3D::ShadowOnly);
+                     false, MeshRenderLayer3D::ShadowOnly, lod.assetLease);
             else
               ++stats.shadowOnlyBudgetDropped;
           }
@@ -338,13 +343,13 @@ public:
                  transitionCode,
                  withinShadowDistance &&
                      selection.primaryLevel == selection.nearLevel,
-                 true, true);
+                 true, true, MeshRenderLayer3D::Opaque, lod.assetLease);
           submit(farLevel.mesh, farLevel.mesh.cpuMesh.get(), nullptr,
                  lod.transform, farLevel.material, selection.farCoverage,
                  transitionCode,
                  withinShadowDistance &&
                      selection.primaryLevel == selection.farLevel,
-                 true, false);
+                 true, false, MeshRenderLayer3D::Opaque, lod.assetLease);
         } else {
           const MeshLodLevel3D *selected = &lod.levels[selection.primaryLevel];
           if (!options.gpuInstancing && !selected->mesh.cpuMesh)
@@ -362,7 +367,8 @@ public:
             ++stats.shadowDistanceRejected;
           if (submit(selected->mesh, selected->mesh.cpuMesh.get(), nullptr,
                      lod.transform, selected->material, 1.f, 0,
-                     withinShadowDistance, true) &&
+                     withinShadowDistance, true, false,
+                     MeshRenderLayer3D::Opaque, lod.assetLease) &&
               lod.levels[0].mesh.TriangleCount() >
                   selected->mesh.TriangleCount())
             stats.lodTrianglesSaved += lod.levels[0].mesh.TriangleCount() -

@@ -35,10 +35,10 @@ struct StaticMeshAssetDefinition3D {
 };
 
 struct StaticMeshAssetLibraryStats3D {
-    std::size_t assets{},materialReferences{},meshLevels{},sourceTriangles{},residentTriangles{},liveInstances{};
+    std::size_t assets{},materialReferences{},meshLevels{},sourceTriangles{},residentTriangles{},liveInstances{},assetBorrowers{};
     std::uint64_t loadRequests{},cacheHits{},loadFailures{},nameConflicts{},batchRollbacks{},unloaded{};
     std::uint64_t instancesCreated{},instancesDestroyed{},externallyDestroyedInstances{},instanceFailures{},unloadRejections{};
-    std::uint64_t generatedAssets{},importedAssets{},singleLevelAssets{},importedLevels{};
+    std::uint64_t generatedAssets{},importedAssets{},singleLevelAssets{},importedLevels{},leaseUnloadRejections{},shutdownRejections{};
 };
 
 struct StaticMeshAssetLibraryLimits3D {
@@ -56,7 +56,7 @@ public:
     bool Load(StaticMeshAssetDefinition3D definition);
     bool LoadAll(std::span<const StaticMeshAssetDefinition3D> definitions);
     bool Unload(std::string_view name);
-    void Shutdown();
+    bool Shutdown();
     [[nodiscard]] bool Contains(std::string_view name)const;
     SceneEntity3D Instantiate(std::string_view name,Transform3D transform={},std::uint32_t layer=1,bool visible=true);
     bool DestroyInstance(SceneEntity3D entity);
@@ -70,6 +70,7 @@ private:
         StaticMeshAssetDefinition3D definition{};
         MeshLodResourceChain3D meshes{};
         Material3D material{};
+        AssetLease3D assetLease{};
     };
     struct Instance {SceneEntity3D entity{};std::string assetName;};
     StaticMeshAssetDefinition3D Resolve(StaticMeshAssetDefinition3D definition)const;
