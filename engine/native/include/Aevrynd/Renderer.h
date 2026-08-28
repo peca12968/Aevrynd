@@ -227,6 +227,10 @@ struct RendererStats {
     uint64_t rejectedStaticAlphaBindings{};
     size_t lastMaskedStaticShadowDrawCalls{};
     size_t lastMaskedStaticAmbientOcclusionDrawCalls{};
+    size_t lastMaskedStaticVelocityDrawCalls{};
+    size_t lastMaskedSkinnedVelocityDrawCalls{};
+    size_t lastMaskedStaticSingleDepthDrawCalls{};
+    size_t lastMaskedSkinnedSingleDepthDrawCalls{};
     size_t lastSubmittedFoliageInstances{};
     size_t lastSubmittedTerrainInstances{};
     size_t lastDirectionalShadowCasters{};

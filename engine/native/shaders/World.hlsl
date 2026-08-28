@@ -40,7 +40,7 @@ struct MotionVertexOutput
 
 MotionVertexOutput VelocityWorldVertexMain(MotionWorldInput input)
 {
-    MotionVertexOutput output;
+    MotionVertexOutput output = (MotionVertexOutput)0;
     const float4 worldPosition = float4(input.position, 1.0);
     output.position = mul(viewProjection, worldPosition);
     output.currentClip = mul(currentUnjitteredViewProjection, worldPosition);
@@ -53,7 +53,7 @@ MotionVertexOutput VelocityInstancedVertexMain(MotionInstanceInput input)
     const float4 localPosition = float4(input.position, 1.0);
     const float4 currentWorld = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     const float4 previousWorld = float4(dot(input.previousRow0, localPosition), dot(input.previousRow1, localPosition), dot(input.previousRow2, localPosition), dot(input.previousRow3, localPosition));
-    MotionVertexOutput output;
+    MotionVertexOutput output = (MotionVertexOutput)0;
     output.position = mul(viewProjection, currentWorld);
     output.currentClip = mul(currentUnjitteredViewProjection, currentWorld);
     output.previousClip = mul(previousViewProjection, previousWorld);
@@ -96,6 +96,79 @@ StructuredBuffer<SkinPaletteJoint> skinPalette : register(t13);
 SamplerState materialSampler : register(s0);
 SamplerState screenPointClampSampler : register(s2);
 
+struct MotionMaterialInstanceInput
+{
+    float3 position : POSITION;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD0;
+    float4 transformRow0 : INSTANCE0;
+    float4 transformRow1 : INSTANCE1;
+    float4 transformRow2 : INSTANCE2;
+    float4 transformRow3 : INSTANCE3;
+    float4 normalRow1 : NROW1;
+    float4 normalRow2 : NROW2;
+    float4 tint : TINT;
+    float4 previousRow0 : PREVIOUS0;
+    float4 previousRow1 : PREVIOUS1;
+    float4 previousRow2 : PREVIOUS2;
+    float4 previousRow3 : PREVIOUS3;
+};
+
+struct MotionMaterialSkinnedInput
+{
+    float3 position : POSITION;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD0;
+    uint4 blendIndices : BLENDINDICES;
+    float4 blendWeights : BLENDWEIGHT;
+    float4 transformRow0 : INSTANCE0;
+    float4 transformRow1 : INSTANCE1;
+    float4 transformRow2 : INSTANCE2;
+    float4 transformRow3 : INSTANCE3;
+    float4 tint : TINT;
+    uint skinPaletteBase : SKINBASE;
+    float4 previousRow0 : PREVIOUS0;
+    float4 previousRow1 : PREVIOUS1;
+    float4 previousRow2 : PREVIOUS2;
+    float4 previousRow3 : PREVIOUS3;
+    uint previousPaletteBase : PREVIOUSPALETTE;
+};
+
+struct MotionMaterialVertexOutput
+{
+    float4 position : SV_POSITION;
+    float4 currentClip : TEXCOORD0;
+    float4 previousClip : TEXCOORD1;
+    float2 uv : TEXCOORD2;
+    nointerpolation float alphaCutoff : TEXCOORD3;
+    nointerpolation float alpha : TEXCOORD4;
+};
+
+MotionMaterialVertexOutput VelocityMaskedInstancedVertexMain(MotionMaterialInstanceInput input)
+{
+    const float4 localPosition=float4(input.position,1.0);
+    const float4 currentWorld=float4(dot(input.transformRow0,localPosition),dot(input.transformRow1,localPosition),dot(input.transformRow2,localPosition),dot(input.transformRow3,localPosition));
+    const float4 previousWorld=float4(dot(input.previousRow0,localPosition),dot(input.previousRow1,localPosition),dot(input.previousRow2,localPosition),dot(input.previousRow3,localPosition));
+    MotionMaterialVertexOutput output;
+    output.position=mul(viewProjection,currentWorld);
+    output.currentClip=mul(currentUnjitteredViewProjection,currentWorld);
+    output.previousClip=mul(previousViewProjection,previousWorld);
+    output.uv=input.uv;
+    output.alphaCutoff=saturate(input.normalRow1.w);
+    output.alpha=input.color.a*input.tint.a;
+    return output;
+}
+
+float2 VelocityMaskedPixelMain(MotionMaterialVertexOutput input) : SV_TARGET
+{
+    // 速度根簽章將基色描述符映射至 t2，因此此處以同一資源槽裁切透明遮罩。
+    clip(input.alpha*normalTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
+    if(motionParameters.x<0.5||input.currentClip.w<=1e-6||input.previousClip.w<=1e-6)return 0.0;
+    const float2 currentNdc=input.currentClip.xy/input.currentClip.w;
+    const float2 previousNdc=input.previousClip.xy/input.previousClip.w;
+    return(currentNdc-previousNdc)*float2(motionParameters.y,-motionParameters.z);
+}
+
 struct MotionSkinnedVertexInput
 {
     float3 position : POSITION;
@@ -129,13 +202,29 @@ float3 SkinMotionPosition(float3 position, uint4 indices, float4 blendWeights, u
     return result;
 }
 
+MotionMaterialVertexOutput VelocityMaskedSkinnedVertexMain(MotionMaterialSkinnedInput input)
+{
+    const float4 currentLocal=float4(SkinMotionPosition(input.position,input.blendIndices,input.blendWeights,input.skinPaletteBase),1.0);
+    const float4 previousLocal=float4(SkinMotionPosition(input.position,input.blendIndices,input.blendWeights,input.previousPaletteBase),1.0);
+    const float4 currentWorld=float4(dot(input.transformRow0,currentLocal),dot(input.transformRow1,currentLocal),dot(input.transformRow2,currentLocal),dot(input.transformRow3,currentLocal));
+    const float4 previousWorld=float4(dot(input.previousRow0,previousLocal),dot(input.previousRow1,previousLocal),dot(input.previousRow2,previousLocal),dot(input.previousRow3,previousLocal));
+    MotionMaterialVertexOutput output;
+    output.position=mul(viewProjection,currentWorld);
+    output.currentClip=mul(currentUnjitteredViewProjection,currentWorld);
+    output.previousClip=mul(previousViewProjection,previousWorld);
+    output.uv=input.uv;
+    output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
+    output.alpha=input.color.a*input.tint.a;
+    return output;
+}
+
 MotionVertexOutput VelocitySkinnedVertexMain(MotionSkinnedVertexInput input)
 {
     const float4 currentLocal = float4(SkinMotionPosition(input.position, input.blendIndices, input.blendWeights, input.skinPaletteBase), 1.0);
     const float4 previousLocal = float4(SkinMotionPosition(input.position, input.blendIndices, input.blendWeights, input.previousPaletteBase), 1.0);
     const float4 currentWorld = float4(dot(input.transformRow0, currentLocal), dot(input.transformRow1, currentLocal), dot(input.transformRow2, currentLocal), dot(input.transformRow3, currentLocal));
     const float4 previousWorld = float4(dot(input.previousRow0, previousLocal), dot(input.previousRow1, previousLocal), dot(input.previousRow2, previousLocal), dot(input.previousRow3, previousLocal));
-    MotionVertexOutput output;
+    MotionVertexOutput output = (MotionVertexOutput)0;
     output.position = mul(viewProjection, currentWorld);
     output.currentClip = mul(currentUnjitteredViewProjection, currentWorld);
     output.previousClip = mul(previousViewProjection, previousWorld);
