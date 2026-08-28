@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "defaultLicense": "project-internal-unverified",
+  "trainingEligible": false,
+  "engineVersionFile": "CMakeLists.txt",
+  "chunkCharacters": 3000,
+  "sources": [
+    { "kind": "info", "root": "../Info", "patterns": ["*.md"] },
+    { "kind": "public-header", "root": "engine/native/include/Aevrynd", "patterns": ["*.h", "*.hpp"] },
+    { "kind": "test", "root": "engine/native/tests", "patterns": ["*.cpp"] },
+    { "kind": "tool", "root": "tools/ci", "patterns": ["invoke-local-qwen.ps1", "test-local-qwen-wrapper.ps1"] },
+    { "kind": "build", "root": ".", "patterns": ["CMakeLists.txt"] },
+    { "kind": "build", "root": "engine/native", "patterns": ["CMakeLists.txt"] }
+  ],
+  "excludedPathFragments": [
+    "/.git/",
+    "/build/",
+    "/build-",
+    "/bin/",
+    "/binary/",
+    "/binaries/",
+    "/obj/",
+    "/out/",
+    "/demo/",
+    "/artifacts/",
+    "/runtime/",
+    "/models/",
+    "/fixtures/",
+    "/private/",
+    "/secrets/",
+    "/generated/",
+    "/qwenenginecopilot.md"
+  ],
+  "sensitivePatterns": [
+    "-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----",
+    "AKIA[0-9A-Z]{16}",
+    "ghp_[A-Za-z0-9]{36}",
+    "(?:api[_-]?key|password|client[_-]?secret)\\s*[:=]\\s*[\"'][^\"']{8,}[\"']"
+  ]
+}

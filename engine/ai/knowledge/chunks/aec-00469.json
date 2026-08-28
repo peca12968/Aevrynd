@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00469","kind":"git-commit","sourcePath":"git/history","sourceSha256":"8a02bb3d31340aa3233d7f92993a00f35588729cb29c9b46d3cd0ea610b79012","sourceRevision":"c43fb3f9e10896cc5acebd9528d4a0652b118f63","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入GPU漸層光照與裂隙戰場氛圍"}

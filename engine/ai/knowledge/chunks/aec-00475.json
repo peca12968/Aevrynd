@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00475","kind":"git-commit","sourcePath":"git/history","sourceSha256":"7406b5f868905f9d4d0bc0c8fa6da23f13aab2dbaca116a9da27cfebf82e56b2","sourceRevision":"9475c84da4e02feaa27195f9e8397b7be2ee826c","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"完成引擎2.11快取並修正開放世界材質展示"}

@@ -1,0 +1,23 @@
+{"id":"version","system":"Core","question":"Aevrynd 目前的引擎版本是什麼？","expectedTerms":["2.86.0"],"expectedSources":["CMakeLists.txt","EngineFeatureCatalog.md"]}
+{"id":"visibility","system":"Visibility","question":"VisibilityBvh3D 如何降低大型 3D 世界候選數？","expectedTerms":["VisibilityBvh3D","BVH"],"expectedSources":["VisibilityBvh3D.h","EngineFeatureCatalog.md"]}
+{"id":"ibl","system":"Rendering","question":"EnvironmentLightingStore3D 提供哪些 IBL 資源與生命週期保障？","expectedTerms":["EnvironmentLightingStore3D","irradiance","BRDF"],"expectedSources":["EnvironmentIbl3D.h","EngineFeatureCatalog.md"]}
+{"id":"scene-ecs","system":"SceneECS","question":"SceneECSRegistry3D 的實體與 generation 安全如何使用？","expectedTerms":["SceneECSRegistry3D","generation"],"expectedSources":["SceneECS3D.h","EngineFeatureCatalog.md"]}
+{"id":"scene-25d","system":"Scene25D","question":"Scene25D 支援哪些 2.5D 排序與統計能力？","expectedTerms":["Scene25D","depth"],"expectedSources":["Scene25D.h","EngineFeatureCatalog.md"]}
+{"id":"physics","system":"Physics","question":"PhysicsWorld3D 能處理哪些剛體與查詢工作？","expectedTerms":["PhysicsWorld3D","rigid"],"expectedSources":["PhysicsWorld3D.h","EngineFeatureCatalog.md"]}
+{"id":"navigation","system":"Navigation","question":"NavigationGrid3D 如何提供 3D 遊戲尋路？","expectedTerms":["NavigationGrid3D","path"],"expectedSources":["Navigation3D.h","EngineFeatureCatalog.md"]}
+{"id":"terrain","system":"Terrain","question":"TerrainClipmap3D 如何服務開放世界地形？","expectedTerms":["TerrainClipmap3D","clipmap"],"expectedSources":["TerrainClipmap3D.h","EngineFeatureCatalog.md"]}
+{"id":"streaming","system":"WorldStreaming","question":"WorldStreamer3D 如何限制世界區塊快取與卸載？","expectedTerms":["WorldStreamer3D","chunk"],"expectedSources":["WorldStreamer3D.h","WorldStreamer3DSmoke.cpp"]}
+{"id":"materials","system":"Materials","question":"MaterialLibrary3D 如何載入與限制 PBR 紋理？","expectedTerms":["MaterialLibrary3D","texture"],"expectedSources":["MaterialLibrary3D.h","EngineFeatureCatalog.md"]}
+{"id":"mesh","system":"Mesh","question":"StaticMeshAssetLibrary3D 支援哪些網格載入與 LOD 能力？","expectedTerms":["StaticMeshAssetLibrary3D","LOD"],"expectedSources":["StaticMeshAssetLibrary3D.h","EngineFeatureCatalog.md"]}
+{"id":"animation","system":"Animation","question":"AnimationGraph3D 如何組合 BlendSpace 與動畫 layer？","expectedTerms":["AnimationGraph3D","BlendSpace"],"expectedSources":["AnimationGraph3D.h","EngineFeatureCatalog.md"]}
+{"id":"skinning","system":"Skinning","question":"SkinnedModel3D 的骨架與 GPU palette 契約為何？","expectedTerms":["SkinnedModel3D","palette"],"expectedSources":["SkinnedModel3D.h","EngineFeatureCatalog.md"]}
+{"id":"audio","system":"Audio","question":"AudioEngine 提供哪些 2D、3D 聲音與資源統計？","expectedTerms":["AudioEngine","AudioStats"],"expectedSources":["Audio.h","AudioSmoke.cpp"]}
+{"id":"serialization","system":"Serialization","question":"SerializationDocument 如何處理未知欄位、限制與損壞資料？","expectedTerms":["SerializationDocument","SerializationLimits"],"expectedSources":["Serialization.h","SerializationSmoke.cpp"]}
+{"id":"capture","system":"Capture","question":"FrameCapture3D 如何支援無人值守影像驗證？","expectedTerms":["FrameCapture","capture"],"expectedSources":["FrameCapture3D.h","FrameCapture3DSmoke.cpp"]}
+{"id":"memory","system":"Memory","question":"EngineMemoryStats 可觀測哪些資源釋放資訊？","expectedTerms":["EngineMemoryStats","workingSet"],"expectedSources":["Memory.h","Engine.h"]}
+{"id":"input","system":"Input","question":"Input 類別提供哪些鍵盤與滑鼠狀態？","expectedTerms":["Input","keyboard"],"expectedSources":["Input.h"]}
+{"id":"asset-security","system":"AssetSafety","question":"AssetManifest 如何驗證資產 SHA-256 與路徑安全？","expectedTerms":["AssetManifest","SHA"],"expectedSources":["AssetManifest.h","AssetManifestSmoke.cpp"]}
+{"id":"qwen-safety","system":"LocalAI","question":"本機 QWEN Engine Copilot 為何必須維持唯讀並在失敗時 fallback？","expectedTerms":["read-only","fallback"],"expectedSources":["invoke-local-qwen.ps1","test-local-qwen-wrapper.ps1"]}
+{"id":"height-fog","system":"Atmosphere","question":"EvaluateHeightFogAmount3D 與 Atmosphere3D 如何計算並限制高度霧？","expectedTerms":["EvaluateHeightFogAmount3D","Atmosphere3D"],"expectedSources":["Renderer.h","HeightFog3DSmoke.cpp"]}
+{"id":"bloom","system":"PostProcessing","question":"BloomSettings3D 如何控制亮部柔和門檻、強度與關閉成本？","expectedTerms":["BloomSettings3D","BloomSoftThreshold3D"],"expectedSources":["Renderer.h","Bloom3DSmoke.cpp"]}
+{"id":"qwen-wrapper","system":"LocalAIWrapper","question":"invoke-local-qwen 如何限制本機模型的檔案、逾時、記憶體與結構化輸出？","expectedTerms":["invoke-local-qwen","fallbackToCodex"],"expectedSources":["invoke-local-qwen.ps1","test-local-qwen-wrapper.ps1"]}

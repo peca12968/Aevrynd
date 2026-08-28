@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00408","kind":"git-commit","sourcePath":"git/history","sourceSha256":"fa29ad4c64ec8acb1ae1c265f87dbf29a03a8be2a4f991621a06e90732c83eb4","sourceRevision":"4bbe626cf411baa93de1a5d2bde4e1f328bbb7b6","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入靜態材質法線強度控制"}

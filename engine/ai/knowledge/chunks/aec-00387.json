@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00387","kind":"git-commit","sourcePath":"git/history","sourceSha256":"9b4700067510e5a63540c096abf76eb4be90308da7ca7cf87b9ca3ea841b7788","sourceRevision":"e2ecf6c8fe53f3a11a225c70c6a65348b5fd8bf8","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"新增本機Qwen唯讀任務分派器"}

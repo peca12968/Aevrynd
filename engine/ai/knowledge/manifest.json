@@ -1,0 +1,859 @@
+{
+  "schemaVersion": 1,
+  "engineVersion": "2.86.0",
+  "snapshotRevision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
+  "chunkCharacters": 3000,
+  "chunkCount": 485,
+  "sourceCount": 118,
+  "defaultLicense": "project-internal-unverified",
+  "trainingEligible": false,
+  "sensitiveContentScan": "passed",
+  "knowledgeSha256": "2bf533f62dea862d7f0312d3608a27b9c13fbf8cca01dd1dd1b5c3225bda2c2c",
+  "sources": [
+    {
+      "path": "CMakeLists.txt",
+      "kind": "build",
+      "sha256": "cc1406f0c8262ede785b4a303cfb10344046eb727e2be466d402fba84f023cdc",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 613
+    },
+    {
+      "path": "engine/native/CMakeLists.txt",
+      "kind": "build",
+      "sha256": "cdd06e2375ff64a4d6c7de12748a6b45a1b3676afb3ee637daca4aff5f9ce0d2",
+      "revision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
+      "bytes": 29028
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Animation3D.h",
+      "kind": "public-header",
+      "sha256": "ef0a301a73f0ce3adb3627c9d36da020e9cc1526925f3cc592f97dd65f7b77e6",
+      "revision": "66ac61e1b04e5647fc2eafe93dc2f60ac41789a3",
+      "bytes": 2768
+    },
+    {
+      "path": "engine/native/include/Aevrynd/AnimationGraph3D.h",
+      "kind": "public-header",
+      "sha256": "4782d499852d644064e26b09fbd08630e2de0f31e46a39578b20cf40852bf918",
+      "revision": "66ac61e1b04e5647fc2eafe93dc2f60ac41789a3",
+      "bytes": 3179
+    },
+    {
+      "path": "engine/native/include/Aevrynd/ArchitectureMeshes3D.h",
+      "kind": "public-header",
+      "sha256": "8f0d99138bcdd3329096ffe809cb0ae02fcd6e55ba86e7f3ee58f6c9e35b4353",
+      "revision": "d0c29dcac968f202e74b5aa56e9c69fc8d95fe03",
+      "bytes": 566
+    },
+    {
+      "path": "engine/native/include/Aevrynd/AssetManifest.h",
+      "kind": "public-header",
+      "sha256": "146ff194b98b26b5f054e9939535be13ebbf9ad07c7d5cfdcd33047a7e852060",
+      "revision": "8a021db4fdc4f3405324c4827faef4fdad0e8525",
+      "bytes": 4149
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Audio.h",
+      "kind": "public-header",
+      "sha256": "6f1caa1aea4ca54bcf35ac6d3f5b0a70adce2b4d8057cb67d3254aaa90a7e1af",
+      "revision": "58013c545d72e86692d3cfbab640b8980b322b0c",
+      "bytes": 3017
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Camera.h",
+      "kind": "public-header",
+      "sha256": "210078ab655a405317fadd1177103d310c2dca7ec504f0ed48e8b699cd37553f",
+      "revision": "821b3188495eac26cb0bfd9f8075a663c342607b",
+      "bytes": 9763
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Camera2D.h",
+      "kind": "public-header",
+      "sha256": "46dd86563120528a0e42f610b5f24fb265f119c3fb1caf6c20c34c9dcc31e68f",
+      "revision": "3bf64e2b2fc23c444f2839314353bae90088ee5b",
+      "bytes": 3583
+    },
+    {
+      "path": "engine/native/include/Aevrynd/CharacterController3D.h",
+      "kind": "public-header",
+      "sha256": "8633c6bbd1fb9a08791c9c20dd9492ec296253c5f54bda2c667e8a0c8fa054ef",
+      "revision": "540f7ae4be8bf09a9ac58e385d277bede0ae2475",
+      "bytes": 2355
+    },
+    {
+      "path": "engine/native/include/Aevrynd/CollisionWorld3D.h",
+      "kind": "public-header",
+      "sha256": "a910593c2e4c425778c6aadb7714c51344e4676cfd98129eb466a2eb06d20b69",
+      "revision": "973993cdf41d1322dfc29bcda44fc1e7b1f45aa9",
+      "bytes": 2188
+    },
+    {
+      "path": "engine/native/include/Aevrynd/ECS.h",
+      "kind": "public-header",
+      "sha256": "0818d85cf62d17bd4a683cf9409f3c1d3d51e3eecb1906e26b913a7e77a3e19c",
+      "revision": "c3e482385b0358b822196b9239095cb88a767028",
+      "bytes": 7306
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Effects2D.h",
+      "kind": "public-header",
+      "sha256": "a6cb7bf27d6a643e06cabca997e2a1fc577b3afd78a4935c99e4788ec483103e",
+      "revision": "4a9b03fab11b78883d22619c35c51329535766f7",
+      "bytes": 2931
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Engine.h",
+      "kind": "public-header",
+      "sha256": "5af67c777862b968d3fead38e84aa85c0d63dddfcab5e7f14271daab7c08cb79",
+      "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
+      "bytes": 6740
+    },
+    {
+      "path": "engine/native/include/Aevrynd/EnvironmentIbl3D.h",
+      "kind": "public-header",
+      "sha256": "748fc6876922311371106e71603809a0097959b1f5a5df0ead1d22ce2e6909bc",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 4559
+    },
+    {
+      "path": "engine/native/include/Aevrynd/EnvironmentMeshes3D.h",
+      "kind": "public-header",
+      "sha256": "7c7e133581e7aaef0fcfd144aff0cff923920d1a09664e40f6bcab213b784580",
+      "revision": "8378a83d7dea31527c51b7ffee41e029f4d300bf",
+      "bytes": 1176
+    },
+    {
+      "path": "engine/native/include/Aevrynd/FrameCapture3D.h",
+      "kind": "public-header",
+      "sha256": "e8e1b6609226c1ff0919a57e706f649c835807c4e27ed188d5c04998da3465d0",
+      "revision": "e10ab0270e00257f62b180926523429f73724143",
+      "bytes": 1065
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Game.h",
+      "kind": "public-header",
+      "sha256": "1eceea45afb21567673e29a3f15280d0dbbef8d0699c2c71b0714600b31af724",
+      "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
+      "bytes": 431
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Geometry3D.h",
+      "kind": "public-header",
+      "sha256": "f163d2f708cda01ce7ccc08b6818a9c66c4eded5730fa3fd3289e3fa51191039",
+      "revision": "f86aa9c87d2e4395ad121824cb4638653c099f82",
+      "bytes": 3673
+    },
+    {
+      "path": "engine/native/include/Aevrynd/HeightField3D.h",
+      "kind": "public-header",
+      "sha256": "0228758212ee9d433d5df58e42edd200d32ba95e5065bc9b518f850e2e3588cd",
+      "revision": "669a4e156e44fd5c7340d99102b7d25595e5b603",
+      "bytes": 3351
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Input.h",
+      "kind": "public-header",
+      "sha256": "b79c2dc58a9caddde12ce652205f38ceedacb455fd05a509906dcdeedaf85662",
+      "revision": "868c40f143c788a6a82be0eb2e1f9f8170f9944e",
+      "bytes": 2671
+    },
+    {
+      "path": "engine/native/include/Aevrynd/MaterialLibrary3D.h",
+      "kind": "public-header",
+      "sha256": "8491aea8d4153fca10e104e86fbfa63deb4b064bd59dfefe09efff885f6e57a4",
+      "revision": "8a021db4fdc4f3405324c4827faef4fdad0e8525",
+      "bytes": 1658
+    },
+    {
+      "path": "engine/native/include/Aevrynd/MaterialQuality3D.h",
+      "kind": "public-header",
+      "sha256": "6f8e76a5569dad0743557fe6ebef6617d23f198f8bb847be553363eaca07b476",
+      "revision": "a6a6184275f846b66971d39b65c06d13cf6e5b3c",
+      "bytes": 1945
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Math.h",
+      "kind": "public-header",
+      "sha256": "2450b08816ba138d47bbd9632aaf7d02fc80c1f9e9f8cb4214a9825b8b0976e9",
+      "revision": "3bf64e2b2fc23c444f2839314353bae90088ee5b",
+      "bytes": 6566
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Memory.h",
+      "kind": "public-header",
+      "sha256": "6cfbbc8e7b788fddc7c464f15501b5465fca161dd9e49b4055c38841d432554e",
+      "revision": "67463a0feb3878a41c4a4af29ad134f3cf25a0bb",
+      "bytes": 990
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Mesh3D.h",
+      "kind": "public-header",
+      "sha256": "922432a9c0505caf865fb189a7df6a40dea742e31afd85745450e9f60f7370fc",
+      "revision": "265c6d32ae90573c6fc5aceae52755e053a176c5",
+      "bytes": 11848
+    },
+    {
+      "path": "engine/native/include/Aevrynd/MeshLoader.h",
+      "kind": "public-header",
+      "sha256": "5d185f7ae679c2a44288e720574bf62a673035c0da873de8058102f1eb5377b5",
+      "revision": "f1631559d07e534c6ab2ea8bdd8b5b54895304e6",
+      "bytes": 623
+    },
+    {
+      "path": "engine/native/include/Aevrynd/MeshProcessing3D.h",
+      "kind": "public-header",
+      "sha256": "c593170a7174991fe110995a83a614ca2cb9cc6ce4e7b025194a3ff7cc94daee",
+      "revision": "91446d964411c28cb20fb9af8b60578a010a538f",
+      "bytes": 3465
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Navigation3D.h",
+      "kind": "public-header",
+      "sha256": "2f1693f712328b1bab0e0943ba7462aebd211b0481fa5fb20971af6df6decda7",
+      "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
+      "bytes": 3275
+    },
+    {
+      "path": "engine/native/include/Aevrynd/PbrLightingReference.h",
+      "kind": "public-header",
+      "sha256": "6a1b04d2ea3587cfc19362e6b824484d0a750ee211d3c407e0a8db9ec980e0c4",
+      "revision": "0d867e317e8dc524e667f91b13c0997b5bbde4aa",
+      "bytes": 10902
+    },
+    {
+      "path": "engine/native/include/Aevrynd/PbrMaterialCooker3D.h",
+      "kind": "public-header",
+      "sha256": "49fd5241ce1ee30be5f74451b8c38b84d81b355fd2eca8db1d3b16fdd1c7b064",
+      "revision": "8a021db4fdc4f3405324c4827faef4fdad0e8525",
+      "bytes": 1558
+    },
+    {
+      "path": "engine/native/include/Aevrynd/PhysicsWorld3D.h",
+      "kind": "public-header",
+      "sha256": "15da948fbde007651293a2f75a537ee5daf268a9834c6fd9702c8fd37f4bf93e",
+      "revision": "9d2405eb444811267f53a41740a85fbd5d7ff426",
+      "bytes": 3137
+    },
+    {
+      "path": "engine/native/include/Aevrynd/ProceduralPlacement3D.h",
+      "kind": "public-header",
+      "sha256": "34ced8a0bc2e52a855abfd725d38543d1fadacf5fe8b781bfbb571cd8d7ae6a3",
+      "revision": "9f82d93a8f81107a91e3a945d933fab72ec49728",
+      "bytes": 1428
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Profiling.h",
+      "kind": "public-header",
+      "sha256": "f4d192cd6c24c169853e211104a584b20aba3504f4f5d2faa276e9134b2e95db",
+      "revision": "0dea5cbcdd6b0e16a624150b1942930cba526cd1",
+      "bytes": 4111
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Renderer.h",
+      "kind": "public-header",
+      "sha256": "88633f95e3b92b333f4f827ed1ef9be9e9049fcc4445afdfdcd4c50ab9216c3c",
+      "revision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
+      "bytes": 62565
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Scene25D.h",
+      "kind": "public-header",
+      "sha256": "87ecad01322dfb3ea04b59086ae5e9c4b17167e76a95f420dc6b4ec328836fb7",
+      "revision": "c8b0e05f96711e4a5dc1a23c5fbc01736cc00dea",
+      "bytes": 7981
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Scene2D.h",
+      "kind": "public-header",
+      "sha256": "4598b3f3e7e32f2eea5ba18ad5d8da3a135169ec531a579ed3b399145fc4c791",
+      "revision": "6f0045d793d6fd1669fdcece6fb10beb99c5ae47",
+      "bytes": 12322
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Scene3D.h",
+      "kind": "public-header",
+      "sha256": "3e2755d55deec54ab569812cfea91571604bb860a00644ef21e0581ff78a8550",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 57602
+    },
+    {
+      "path": "engine/native/include/Aevrynd/SceneECS3D.h",
+      "kind": "public-header",
+      "sha256": "9618d4b8e2fd02eb0b7dda5e53f7e75e54cb0af13ce26d80351526f725c634f7",
+      "revision": "8d4c099c6bb2834ec664b743cd75a1d3461a304f",
+      "bytes": 3740
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Serialization.h",
+      "kind": "public-header",
+      "sha256": "ba10768d083b114025924d955b13e698d910700adbd50cf05485e8d6f191579c",
+      "revision": "c3e482385b0358b822196b9239095cb88a767028",
+      "bytes": 3787
+    },
+    {
+      "path": "engine/native/include/Aevrynd/SkinnedMaterialSidecar3D.h",
+      "kind": "public-header",
+      "sha256": "772173060ecd233fc2c24512fe23972be44267b87ee6bc770ab20fe49ccab79b",
+      "revision": "755557cb938731003376124e0b58abf8eb8e3b2e",
+      "bytes": 1765
+    },
+    {
+      "path": "engine/native/include/Aevrynd/SkinnedModel3D.h",
+      "kind": "public-header",
+      "sha256": "f78b28dc470bf5c795e5aa302f40603a407ddca74d43c7d08205ebe8b835fa22",
+      "revision": "c93afcfecd46799a26fb447a7d10dbfc0a7dfe03",
+      "bytes": 2809
+    },
+    {
+      "path": "engine/native/include/Aevrynd/SkinnedModelAsset.h",
+      "kind": "public-header",
+      "sha256": "af69ed982c75b8f432ff29c093c29f201c9ba2302af5a25b464a523d009cd590",
+      "revision": "50604b8a85f649f0addce7b845d583daed208d41",
+      "bytes": 2747
+    },
+    {
+      "path": "engine/native/include/Aevrynd/SkinnedRenderable3D.h",
+      "kind": "public-header",
+      "sha256": "6c98345e6360074b18f8bd7bff7c5f66818e21ffc56d4c8122c542b7a493d8a1",
+      "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
+      "bytes": 5418
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Spatial2D.h",
+      "kind": "public-header",
+      "sha256": "55025a2986427a0e47b157345e49134d63a36b51e303580053c0efa9e832bb50",
+      "revision": "973993cdf41d1322dfc29bcda44fc1e7b1f45aa9",
+      "bytes": 2992
+    },
+    {
+      "path": "engine/native/include/Aevrynd/StaticMeshAssetLibrary3D.h",
+      "kind": "public-header",
+      "sha256": "47fe9608c7cd74f9443fa02405ce883d0e1dfcb4e581896010eefb17def9448c",
+      "revision": "8d4c099c6bb2834ec664b743cd75a1d3461a304f",
+      "bytes": 4006
+    },
+    {
+      "path": "engine/native/include/Aevrynd/TemporalMotion3D.h",
+      "kind": "public-header",
+      "sha256": "7d79103e4827b8c90e86f3cc325baa9b414704012fee096d5573dc6b3a38f2c5",
+      "revision": "51ac3033f6e45179ca540f92e97c84a3dbaa4b8c",
+      "bytes": 2779
+    },
+    {
+      "path": "engine/native/include/Aevrynd/TerrainClipmap3D.h",
+      "kind": "public-header",
+      "sha256": "23a6ae70c4b6f4f9b3fed62ff00818de93e26f16c83a9212aa2b52e805ba2187",
+      "revision": "88a7da2cd1f02e5cd10c41dc84f72076b2d774bf",
+      "bytes": 1215
+    },
+    {
+      "path": "engine/native/include/Aevrynd/Viewport.h",
+      "kind": "public-header",
+      "sha256": "01b7fa25e4a1aa2ab9072de00f8ef181900b2ce1d814e5fb5d30f16d724967f0",
+      "revision": "868c40f143c788a6a82be0eb2e1f9f8170f9944e",
+      "bytes": 1023
+    },
+    {
+      "path": "engine/native/include/Aevrynd/VisibilityBvh3D.h",
+      "kind": "public-header",
+      "sha256": "c3959c35d5a2b30e9fed03532daec6a85790c16d64aefd7f8d0048d797a5aa8d",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 2160
+    },
+    {
+      "path": "engine/native/include/Aevrynd/WorldBuilder3D.h",
+      "kind": "public-header",
+      "sha256": "3caeff83fd159aa22ce71e57448e2549de43a0943e58d30f4799acbdd7c05baf",
+      "revision": "3d5ffd1e6671f74ed2ca555d8c36dc18c4bde4df",
+      "bytes": 2612
+    },
+    {
+      "path": "engine/native/include/Aevrynd/WorldStreamer3D.h",
+      "kind": "public-header",
+      "sha256": "06ed0a99750475c8bf09bfb79611a8d3c8004ba667edce126dc3d01c68efffc2",
+      "revision": "973993cdf41d1322dfc29bcda44fc1e7b1f45aa9",
+      "bytes": 2520
+    },
+    {
+      "path": "engine/native/tests/Animation3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "c6bdfb859351f5d0fd2f0d18b41919eaf49a230fac7fdad1d24c68cd9a835612",
+      "revision": "efcad0a99c9d083fa8a1f84b93ac8254ae0f9745",
+      "bytes": 4336
+    },
+    {
+      "path": "engine/native/tests/AnimationGraph3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "1f56645daffb29c8ef2389d3bd1970d080e346c2a8a922629d3b5edc4cc8f081",
+      "revision": "66ac61e1b04e5647fc2eafe93dc2f60ac41789a3",
+      "bytes": 8404
+    },
+    {
+      "path": "engine/native/tests/ArchitectureMeshes3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "d19aab72b6d3027ca93ffa4665235ddda99926881f4253a2e14fa387ce53851d",
+      "revision": "669a4e156e44fd5c7340d99102b7d25595e5b603",
+      "bytes": 3747
+    },
+    {
+      "path": "engine/native/tests/AssetManifestSmoke.cpp",
+      "kind": "test",
+      "sha256": "837c8c2e0a7949c8a2372da3981c8f3d347f7bab3dfb293163cd2cee032f2971",
+      "revision": "8a021db4fdc4f3405324c4827faef4fdad0e8525",
+      "bytes": 9255
+    },
+    {
+      "path": "engine/native/tests/AudioSmoke.cpp",
+      "kind": "test",
+      "sha256": "d36b2b3a9cbefb59ee4e2b0bee6c2bfc711e6d3c96d3214e3ab7fb24406465a6",
+      "revision": "58013c545d72e86692d3cfbab640b8980b322b0c",
+      "bytes": 7691
+    },
+    {
+      "path": "engine/native/tests/Bloom3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "38c0805f472ae63f4916db94aba38a18c21068c0bb9e8ac5c1b855b7016576bd",
+      "revision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
+      "bytes": 2376
+    },
+    {
+      "path": "engine/native/tests/Bloom3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "3d038501d346f73401f7ae19b1ce04f5ad68f5edef850840dca4de1d63f29e7c",
+      "revision": "85997d12ee8f0fe8821761ebd36d16cee9d7cd85",
+      "bytes": 1289
+    },
+    {
+      "path": "engine/native/tests/CameraSmoke.cpp",
+      "kind": "test",
+      "sha256": "f9f29215b8c50f527d3b2bb4987d5a178f2dc3b07bdda25842a3c782765bbbde",
+      "revision": "3bf64e2b2fc23c444f2839314353bae90088ee5b",
+      "bytes": 9599
+    },
+    {
+      "path": "engine/native/tests/CharacterControllerSmoke.cpp",
+      "kind": "test",
+      "sha256": "dd258972722adb99bd1d15ff01969e82e66ef237910c2ab0fd706fa591d74ce5",
+      "revision": "540f7ae4be8bf09a9ac58e385d277bede0ae2475",
+      "bytes": 3245
+    },
+    {
+      "path": "engine/native/tests/CollisionWorldSmoke.cpp",
+      "kind": "test",
+      "sha256": "fbce9aee3e7f316176c303c65b2dfe77c524030ea219da0b282b4675a81b97ec",
+      "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
+      "bytes": 3156
+    },
+    {
+      "path": "engine/native/tests/DrawListSmoke.cpp",
+      "kind": "test",
+      "sha256": "b7817cb8cc91e2165abf27d9a2dbe8bacb2f9e01c739dddd1b1d7a212318d6ed",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 149229
+    },
+    {
+      "path": "engine/native/tests/ECSSmoke.cpp",
+      "kind": "test",
+      "sha256": "25cb27f86020e159db8bc978cb9ca842d20f8f5f2fcfb1c5762f2a358fee59f0",
+      "revision": "c3e482385b0358b822196b9239095cb88a767028",
+      "bytes": 3905
+    },
+    {
+      "path": "engine/native/tests/EnvironmentLighting3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "80d1196d29c6cd68dbc4e54e125fb99b282cbc6bcd6008aea86550b04115fddd",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 7629
+    },
+    {
+      "path": "engine/native/tests/EnvironmentLighting3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "489bfacf7405a0deee2b23e074e8ea9af1daefd0d7d75a61681d27e94f1e849b",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 34498
+    },
+    {
+      "path": "engine/native/tests/EnvironmentLightingD3D12Benchmark.cpp",
+      "kind": "test",
+      "sha256": "acc8f8492589cffb0519dc3cbac1e1bac8f506ebd539a800122b740e42586409",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 8593
+    },
+    {
+      "path": "engine/native/tests/EnvironmentLightingD3D12Smoke.cpp",
+      "kind": "test",
+      "sha256": "96ab3d334a024bc57ded6d164a4d6ddc022b4532eebf3499aa5239b4d0d5b5d2",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 9549
+    },
+    {
+      "path": "engine/native/tests/EnvironmentLightingD3D12VisualSmoke.cpp",
+      "kind": "test",
+      "sha256": "b9be43b523d5f92ee963b38427e27a0ad67ebff5e77747e775ae925bd4054ebf",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 15282
+    },
+    {
+      "path": "engine/native/tests/EnvironmentMeshes3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "9e3ac5d38e19ee5d00469b3305db465a6d6e1add96b34b5a65d7c057df0f3211",
+      "revision": "88a7da2cd1f02e5cd10c41dc84f72076b2d774bf",
+      "bytes": 12538
+    },
+    {
+      "path": "engine/native/tests/FrameCapture3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "65f98453b3144d007153a60f5416124c1e599c4d1034568b7fc9cfb197a8b106",
+      "revision": "e10ab0270e00257f62b180926523429f73724143",
+      "bytes": 3330
+    },
+    {
+      "path": "engine/native/tests/HeightField3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "12b4be6b62021c1df0304580ee4d9ffc34c75f8d2ea628f3e640a8d7a8a1ffe7",
+      "revision": "669a4e156e44fd5c7340d99102b7d25595e5b603",
+      "bytes": 12877
+    },
+    {
+      "path": "engine/native/tests/HeightFog3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "d10120f09216fee7678a6054cfdb3e68980db6fbb07e85840a682e98fc5b5f0e",
+      "revision": "c24c7e20c19152adaa19202513ba7acf3844b81a",
+      "bytes": 2590
+    },
+    {
+      "path": "engine/native/tests/HeightFog3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "e95a84fbd270aa1c73d1f06cf9ec6f09d6d4a6addd85219a323ed4f9f46d8d37",
+      "revision": "c24c7e20c19152adaa19202513ba7acf3844b81a",
+      "bytes": 2701
+    },
+    {
+      "path": "engine/native/tests/MaterialLibrary3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "261724efb5156e4d2b9dd0e70e9b1193b416c4b3f214b1c9440b1be77a12fdbe",
+      "revision": "8a021db4fdc4f3405324c4827faef4fdad0e8525",
+      "bytes": 4693
+    },
+    {
+      "path": "engine/native/tests/Mesh3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "c9f43b4467ce6a7e2ba6db8fcf5d5396cca19a068bdd15b9d4830819f063664a",
+      "revision": "6d52ae105d768dfa9aa98584986a557035babe61",
+      "bytes": 15501
+    },
+    {
+      "path": "engine/native/tests/MeshProcessing3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "0b14403162fb73cee64198becff2701a2116c038da58777f38e8821d9dca1f72",
+      "revision": "91446d964411c28cb20fb9af8b60578a010a538f",
+      "bytes": 14946
+    },
+    {
+      "path": "engine/native/tests/MeshRaycastBvhBenchmark.cpp",
+      "kind": "test",
+      "sha256": "ac404b72048728ca213eb625f4d921ee55237fa2c9f3651ae957c403a746a7cc",
+      "revision": "d0c29dcac968f202e74b5aa56e9c69fc8d95fe03",
+      "bytes": 2090
+    },
+    {
+      "path": "engine/native/tests/MeshRaycastBvhSmoke.cpp",
+      "kind": "test",
+      "sha256": "f8b2d60c9fd5d2f357abf9ef7f89e950e46be43af2531006961c218621093054",
+      "revision": "d0c29dcac968f202e74b5aa56e9c69fc8d95fe03",
+      "bytes": 4012
+    },
+    {
+      "path": "engine/native/tests/MeshUploadStreamingSmoke.cpp",
+      "kind": "test",
+      "sha256": "2b78b0da2c401de975afd98e95ac3067f10a53e1d7d2b77b136a7ff50a5b47b6",
+      "revision": "4ca3da5486f58f3e1ffab1b050a6fff4da296b90",
+      "bytes": 4377
+    },
+    {
+      "path": "engine/native/tests/Navigation3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "945a3504541c9f838153bdacd7d43180b18ff9d88a9e22b48e2b00de6bd11fa1",
+      "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
+      "bytes": 3715
+    },
+    {
+      "path": "engine/native/tests/PbrLightingReferenceSmoke.cpp",
+      "kind": "test",
+      "sha256": "518eea9a614c7b77a1f38f7656abec738a23340066b5914eb828953bdf7c1a91",
+      "revision": "0d867e317e8dc524e667f91b13c0997b5bbde4aa",
+      "bytes": 10661
+    },
+    {
+      "path": "engine/native/tests/PbrMaterialCooker3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "7a46dbde3816498e734c302caf53c3e0ba4940295185dcfe8983551200a1591a",
+      "revision": "a6a6184275f846b66971d39b65c06d13cf6e5b3c",
+      "bytes": 7403
+    },
+    {
+      "path": "engine/native/tests/PhysicsWorld3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "af5e1c2f5835465b5428c19373c3f480c7954295627e115bd0b09141efe15574",
+      "revision": "c3e482385b0358b822196b9239095cb88a767028",
+      "bytes": 7434
+    },
+    {
+      "path": "engine/native/tests/ProceduralPlacement3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "8c6df080d7c284af1ac35befe4073767cad02359fe8f8984ae8b95ae61f1e659",
+      "revision": "9f82d93a8f81107a91e3a945d933fab72ec49728",
+      "bytes": 4173
+    },
+    {
+      "path": "engine/native/tests/ProfilingSmoke.cpp",
+      "kind": "test",
+      "sha256": "4a4339e438797ea5da4dd7895b2f99f576e8db9b1bee90001455e3e548884068",
+      "revision": "0dea5cbcdd6b0e16a624150b1942930cba526cd1",
+      "bytes": 7404
+    },
+    {
+      "path": "engine/native/tests/RendererBenchmark.cpp",
+      "kind": "test",
+      "sha256": "7441196639319a2ac4cda6434fe8c9e186d4f92cd6e59d812a49e0a921213561",
+      "revision": "0d4718a8084070139b027ee1bf3df6a8e8bb36af",
+      "bytes": 5414
+    },
+    {
+      "path": "engine/native/tests/Scene3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "7ad83af9e8f4043a7fb9ee7c5861cb692465270a5e870d8a2d48e88605428b78",
+      "revision": "bee7755f2b0e0bc8b0c40fb33d52bf3a3900ef1c",
+      "bytes": 7541
+    },
+    {
+      "path": "engine/native/tests/Scene3DBvhBenchmark.cpp",
+      "kind": "test",
+      "sha256": "56e40db318c0197b796ddcbcf42dbf5faa515912b7a5f3e0d1b61a9760f3c71a",
+      "revision": "128737f5baa85e277f600dac4a6e41019aa40fcd",
+      "bytes": 1356
+    },
+    {
+      "path": "engine/native/tests/Scene3DBvhSmoke.cpp",
+      "kind": "test",
+      "sha256": "9d1182d4e2279de956c1666fabf9eda9e2da3de12427c120b5fd25b1b4365308",
+      "revision": "128737f5baa85e277f600dac4a6e41019aa40fcd",
+      "bytes": 2997
+    },
+    {
+      "path": "engine/native/tests/Scene3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "61e5da7619797c674bf35663d1e375e1fa7f3521aa82cbe65f6aba8a6da6e224",
+      "revision": "4bbe626cf411baa93de1a5d2bde4e1f328bbb7b6",
+      "bytes": 23978
+    },
+    {
+      "path": "engine/native/tests/SceneECS3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "d76301eaf40af74d0d4c144c8404e7451108a6e1d627e6d995fd83960bb85127",
+      "revision": "72278770c673d48d1b2b70be6f59e77ddac801e3",
+      "bytes": 6450
+    },
+    {
+      "path": "engine/native/tests/SerializationSmoke.cpp",
+      "kind": "test",
+      "sha256": "ac7fd8b5731d33a28e7167fcb4e10b2501d9cfcfd90cd58574ea449c998d70d2",
+      "revision": "c3e482385b0358b822196b9239095cb88a767028",
+      "bytes": 5788
+    },
+    {
+      "path": "engine/native/tests/SkinnedGroupVelocityReadbackSmoke.cpp",
+      "kind": "test",
+      "sha256": "3f182ba117c18ae86e2c2e15e76a2db5616dea196fd2dcda26b47bb14bdf60c4",
+      "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
+      "bytes": 8369
+    },
+    {
+      "path": "engine/native/tests/SkinnedMaterialSidecar3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "90a4622c0c7c1cfc9132b0eac503dec2356a7def5d2452f3a0d284d25bdf15e2",
+      "revision": "265c6d32ae90573c6fc5aceae52755e053a176c5",
+      "bytes": 8819
+    },
+    {
+      "path": "engine/native/tests/SkinnedModel3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "6394d3d29a3b7a3394585939003726b1912c2a003f84f723d7ceef717ab10349",
+      "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
+      "bytes": 15738
+    },
+    {
+      "path": "engine/native/tests/SkinnedModelAssetSmoke.cpp",
+      "kind": "test",
+      "sha256": "2e445ce4ec132405e554344bb0cc74ea0d7fc9aa2bedc1d4c6b043be36af70ec",
+      "revision": "c899eb6be0e8ca9261546cd93e1fd8a529bf3643",
+      "bytes": 4907
+    },
+    {
+      "path": "engine/native/tests/SkinnedModelAssetV2Inspect.cpp",
+      "kind": "test",
+      "sha256": "5b73843afac84734fe9accafd5e20494aabfa6921a230990b6119dbef0063b2c",
+      "revision": "38cbde6eac7e51271431d2faabec82079a389b81",
+      "bytes": 770
+    },
+    {
+      "path": "engine/native/tests/SkinnedModelAssetV2Smoke.cpp",
+      "kind": "test",
+      "sha256": "c6335bbed5ee20d3164778341f9a9e15babe6bdf424515814d1475ead88bd062",
+      "revision": "c93afcfecd46799a26fb447a7d10dbfc0a7dfe03",
+      "bytes": 3660
+    },
+    {
+      "path": "engine/native/tests/SkinnedRenderable3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "9f9f4e8065b93f21395b5666d6d43c7dbdec8f04091f8443398eff4aa73380e9",
+      "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
+      "bytes": 23400
+    },
+    {
+      "path": "engine/native/tests/StaticMeshAssetLibrary3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "b4eb7e476531fa772e9ced3437a9bb5a8f7446e5883e90b1daf7704da3883b30",
+      "revision": "8d4c099c6bb2834ec664b743cd75a1d3461a304f",
+      "bytes": 15919
+    },
+    {
+      "path": "engine/native/tests/TemporalAntiAliasingSmoke.cpp",
+      "kind": "test",
+      "sha256": "03b5fc7494e95389d18585dd4d892fb954c29bc0ecbb69e88d0a127a56723615",
+      "revision": "51ac3033f6e45179ca540f92e97c84a3dbaa4b8c",
+      "bytes": 6001
+    },
+    {
+      "path": "engine/native/tests/TemporalMotion3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "a41c9bcf2891a88eac55f9e4f504938cc3194000dd2ed21b1ee359508998c641",
+      "revision": "51ac3033f6e45179ca540f92e97c84a3dbaa4b8c",
+      "bytes": 6416
+    },
+    {
+      "path": "engine/native/tests/TerrainClipmap3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "e94e92a3c61017b982893d057619c85b09bd3eda72d2b45d1f2a359353bb7319",
+      "revision": "88a7da2cd1f02e5cd10c41dc84f72076b2d774bf",
+      "bytes": 3803
+    },
+    {
+      "path": "engine/native/tests/TextureUploadStreamingSmoke.cpp",
+      "kind": "test",
+      "sha256": "67586fab7e96bdf3d8cb28ea18d6a416ecf9089243fea7b7cf4a8f2298ff3ba0",
+      "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
+      "bytes": 22317
+    },
+    {
+      "path": "engine/native/tests/VelocityReadbackSmoke.cpp",
+      "kind": "test",
+      "sha256": "75d0a12c99b7bf3c6b6a2e44da1bb060e037d22fd8e0ceeeb15f59d63589a0e3",
+      "revision": "c93afcfecd46799a26fb447a7d10dbfc0a7dfe03",
+      "bytes": 9201
+    },
+    {
+      "path": "engine/native/tests/VisibilityBvh3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "b602259541ba49ad147a56f444040d58a88ce68ca0295cdfdf76ff99a9313d51",
+      "revision": "f3f194a50f57769ba7c2865d6725deffb046da93",
+      "bytes": 12351
+    },
+    {
+      "path": "engine/native/tests/WorldStreamer3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "9703d4deeb28f1bf1a5e77b42b89c592221a262ce86808489d5d8caefad41196",
+      "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
+      "bytes": 2586
+    },
+    {
+      "path": "games/character_lab/native/CMakeLists.txt",
+      "kind": "build",
+      "sha256": "3b220f52d78864195657c01ca8cf331d1c26d1dbf12c7c12617bb79b28071faa",
+      "revision": "27ea58cdc9048d9e135d1288068f6ce37130fc32",
+      "bytes": 2479
+    },
+    {
+      "path": "games/engine_lab/native/CMakeLists.txt",
+      "kind": "build",
+      "sha256": "52fda705db01a2e4e080e6a357b7d87c064da4f57b11b1f00f0e9565c3b6f079",
+      "revision": "0457c85f3b582e34910534d0848004b46228cccf",
+      "bytes": 1110
+    },
+    {
+      "path": "games/frontier_world/native/CMakeLists.txt",
+      "kind": "build",
+      "sha256": "09fee279f571ae3b7200f0ba8b4d8b56502505a0bd459a1eb3021c130b517a19",
+      "revision": "f1631559d07e534c6ab2ea8bdd8b5b54895304e6",
+      "bytes": 1937
+    },
+    {
+      "path": "games/riftwarden/native/CMakeLists.txt",
+      "kind": "build",
+      "sha256": "21861f7a9111c4dc0d76d3f11ca2c439b7fd72d1c86cb37dc2a47cf9556d647f",
+      "revision": "b45d8b340cab3c37ca69ec1978218ebab9a91ce6",
+      "bytes": 1627
+    },
+    {
+      "path": "tools/ci/invoke-local-qwen.ps1",
+      "kind": "tool",
+      "sha256": "70e62894afbea01d2cfd6aca5075be69d7b5aeac55ca671667e52781cdeb8e91",
+      "revision": "e2ecf6c8fe53f3a11a225c70c6a65348b5fd8bf8",
+      "bytes": 23000
+    },
+    {
+      "path": "tools/ci/test-local-qwen-wrapper.ps1",
+      "kind": "tool",
+      "sha256": "dd227713684a7b084ed57cade6101ebf756f11997d09afd6285573064f41d662",
+      "revision": "e2ecf6c8fe53f3a11a225c70c6a65348b5fd8bf8",
+      "bytes": 7109
+    },
+    {
+      "path": "../Info/EngineChangeLog.md",
+      "kind": "info",
+      "sha256": "f7c7745fed1814405fdd7e065f4b719f5a37f5c67370aee43d41e4c81e514ae7",
+      "revision": "external-info",
+      "bytes": 2823
+    },
+    {
+      "path": "../Info/EngineFeatureCatalog.md",
+      "kind": "info",
+      "sha256": "90b2b093e5f55b9be7ffdf787bf4af1ceee3ce7369380f2395ea5e13cf17e93c",
+      "revision": "external-info",
+      "bytes": 5108
+    },
+    {
+      "path": "../Info/EngineTypeInventory.md",
+      "kind": "info",
+      "sha256": "a86978b058770cc6f985a172d81c99fa708e2c73a520027b4f4e22c1ddbbb898",
+      "revision": "external-info",
+      "bytes": 3066
+    },
+    {
+      "path": "../Info/README.md",
+      "kind": "info",
+      "sha256": "030ba2e62685d3625992f5eb1cf831fcce5f2ad2e2dcd4d4acfe4bee4aeaef21",
+      "revision": "external-info",
+      "bytes": 1363
+    }
+  ],
+  "exclusions": [
+    "/.git/",
+    "/build/",
+    "/build-",
+    "/bin/",
+    "/binary/",
+    "/binaries/",
+    "/obj/",
+    "/out/",
+    "/demo/",
+    "/artifacts/",
+    "/runtime/",
+    "/models/",
+    "/fixtures/",
+    "/private/",
+    "/secrets/",
+    "/generated/",
+    "/qwenenginecopilot.md"
+  ]
+}

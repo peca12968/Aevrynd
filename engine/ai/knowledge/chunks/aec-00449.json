@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00449","kind":"git-commit","sourcePath":"git/history","sourceSha256":"56c363fff00964471d4843bd50ec69192c52147e571eea208df810b3bb65ce0f","sourceRevision":"fc9ed73cf4084183b2e73af887e8d432a09c4c91","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"修正透明材質線性混合與DLSS色彩目標"}

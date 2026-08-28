@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00484","kind":"git-commit","sourcePath":"git/history","sourceSha256":"329772842f1db6f5928bbe920dad89ff7f96c09aeb595ee4748f57e974dd7867","sourceRevision":"b45d8b340cab3c37ca69ec1978218ebab9a91ce6","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"建立可重現的引擎自動測試流程"}

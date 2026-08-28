@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00474","kind":"git-commit","sourcePath":"git/history","sourceSha256":"71ad9a55590f3bc76918615469d0da8cdeb3f9938138ee55d06d6799fcfed5d9","sourceRevision":"85225d47da2e8ec085f23b43ca8d89fd4c02754f","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入快取輪廓並集中發布歷代測試程式"}
