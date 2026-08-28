@@ -374,7 +374,15 @@ int ValidateTextGeometry2D() {
     const size_t saved=asciiStats.textSourcePixels-asciiStats.textSpans;std::cout<<"textPixels="<<asciiStats.textSourcePixels<<" textSpans="<<asciiStats.textSpans<<" textSaved="<<saved<<" unicodePixels="<<unicodeStats.textSourcePixels<<" unicodeSpans="<<unicodeStats.textSpans<<" measureAverageNs="<<averageNanoseconds<<" glyphCachePeak="<<boundedCache.peakResidentGlyphs<<" glyphCacheBytes="<<boundedCache.peakResidentBytes<<" glyphEvictions="<<boundedCache.evictions-emptyCache.evictions<<" glyphReleasedBytes="<<releasedGlyphBytes<<'\n';return 0;
 }
 
+int ValidateStaticAlphaMaterialContract3D(){
+    DrawList draw;const MeshHandle3D mesh{1};const MaterialTextureSetHandle3D textures{2};
+    if(draw.MeshInstance(mesh,Matrix4::Identity(),{1,1,1,1},{},MeshRenderLayer3D::Opaque,{},.25f,true,MaterialClass3D::Foliage,std::numeric_limits<float>::quiet_NaN(),true,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,1,MaterialAlphaMode3D::Mask,.42f,true)||draw.MeshInstance(mesh,Matrix4::Identity(),{1,1,1,1},{},MeshRenderLayer3D::Transparent,textures,.25f,true,MaterialClass3D::Foliage,std::numeric_limits<float>::quiet_NaN(),true,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,1,MaterialAlphaMode3D::Mask,.42f,true)||draw.MeshInstance(mesh,Matrix4::Identity(),{1,1,1,1},{},MeshRenderLayer3D::Opaque,textures,.25f,true,MaterialClass3D::Surface,std::numeric_limits<float>::quiet_NaN(),true,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,1,MaterialAlphaMode3D::Blend,.5f,false)||!draw.meshInstances.empty()){std::cerr<<"Invalid static alpha contract was accepted\n";return 45;}
+    if(!draw.MeshInstance(mesh,Matrix4::Identity(),{1,1,1,1},{},MeshRenderLayer3D::Opaque,textures,.25f,true,MaterialClass3D::Foliage,std::numeric_limits<float>::quiet_NaN(),true,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,.75f,MaterialAlphaMode3D::Mask,.42f,true)||draw.meshInstances.size()!=1||draw.meshInstances[0].alphaMode!=MaterialAlphaMode3D::Mask||std::abs(draw.meshInstances[0].alphaCutoff-.42f)>.0001f||!draw.meshInstances[0].doubleSided||std::abs(draw.meshInstances[0].normalScale-.75f)>.0001f){std::cerr<<"Static MASK material fields were not preserved\n";return 46;}
+    DrawList sided;if(!sided.MeshInstance(mesh,Matrix4::Identity(),{1,1,1,1},{},MeshRenderLayer3D::Opaque,{},.25f,false,MaterialClass3D::Foliage)||sided.meshInstances[0].doubleSided){std::cerr<<"Static double-sided state still depends on foliage class\n";return 47;}return 0;
+}
+
 int main() {
+    if(const int alphaResult=ValidateStaticAlphaMaterialContract3D())return alphaResult;
     if(const int qualityResult=VerifyRuntimeRenderQuality3D())return qualityResult;
     if (const int sceneRuntimeResult = ValidateSceneRuntime2D()) return sceneRuntimeResult;
     if (const int runtimeSelectionResult = ValidateRuntimeSelection3D()) return runtimeSelectionResult;

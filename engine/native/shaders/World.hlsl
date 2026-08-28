@@ -274,6 +274,10 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
+    output.uv = input.uv;
+    output.alphaCutoff = saturate(input.normalRow1.w);
+    output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
+    output.alpha = input.color.a * input.tint.a;
     return output;
 }
 
@@ -360,8 +364,9 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
     output.tangent = 0.0;
     output.characterShadingModel = 0;
-    output.alphaCutoff = 0.5;
-    output.alphaMasked = 0;
+    // normal matrix 其餘兩列的 w 承載 MASK 參數，維持既有 instance stride。
+    output.alphaCutoff = saturate(input.normalRow1.w);
+    output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     // normal matrix 第一列的 w 原本未使用，直接承載逐材質強度而不擴充 instance stride。
     output.normalScale = input.normalRow0.w;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);

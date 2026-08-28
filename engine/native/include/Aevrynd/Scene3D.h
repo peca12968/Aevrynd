@@ -218,7 +218,9 @@ public:
                             castsShadow, lodCoverage, lodSeed, lodInvert,
                             DirectionalShadowAllCascades3D,
                             ShadowCascadeSelection3D::Automatic,
-                            Matrix4::Identity(),false,material.normalScale);
+                            Matrix4::Identity(),false,material.normalScale,
+                            material.alphaMode,material.alphaCutoff,
+                            material.doubleSided);
         else if (resource.cpuMesh)
           SubmitMesh(draw, *resource.cpuMesh, transform, material);
         else if (fallback)

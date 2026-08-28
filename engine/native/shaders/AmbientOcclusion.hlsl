@@ -147,6 +147,10 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
     // 平移量必須採用與主著色器相同的雜湊，深度與色彩通道才會保留相同孔點。
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
+    output.uv = input.uv;
+    output.alphaCutoff = saturate(input.normalRow1.w);
+    output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
+    output.alpha = input.color.a * input.tint.a;
     return output;
 }
 
