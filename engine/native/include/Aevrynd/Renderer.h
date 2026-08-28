@@ -102,6 +102,9 @@ inline float RayleighPhase3D(float cosine){cosine=Clamp(cosine,-1.f,1.f);return 
 inline float MiePhase3D(float cosine,float anisotropy=.76f){cosine=Clamp(cosine,-1.f,1.f);anisotropy=Clamp(anisotropy,-.95f,.95f);const float squared=anisotropy*anisotropy,denominator=(std::max)(.0001f,1.f+squared-2.f*anisotropy*cosine);return 3.f*(1.f-squared)*(1.f+cosine*cosine)/(8.f*3.14159265359f*(2.f+squared)*std::pow(denominator,1.5f));}
 inline float WaterFresnel3D(float viewNormalCosine,float reflectance=.02f){const float inverse=1.f-Clamp(viewNormalCosine,0.f,1.f),inverse2=inverse*inverse;return Clamp(reflectance+(1.f-reflectance)*inverse2*inverse2*inverse,0.f,1.f);}
 inline float WaterTransmission3D(float absorption,float pathLength){if(!std::isfinite(absorption)||!std::isfinite(pathLength))return 0.f;return std::exp(-(std::max)(0.f,absorption)*(std::max)(0.f,pathLength));}
+struct WaterOpticsSettings3D {bool screenSpaceRefraction{true};float refractionStrength{.018f},depthScale{.35f},maximumUvOffset{.035f};};
+inline WaterOpticsSettings3D NormalizeWaterOpticsSettings3D(WaterOpticsSettings3D settings){settings.refractionStrength=Clamp(std::isfinite(settings.refractionStrength)?settings.refractionStrength:.018f,0.f,.12f);settings.depthScale=Clamp(std::isfinite(settings.depthScale)?settings.depthScale:.35f,0.f,4.f);settings.maximumUvOffset=Clamp(std::isfinite(settings.maximumUvOffset)?settings.maximumUvOffset:.035f,0.f,.2f);return settings;}
+inline Vec2 WaterRefractionOffset3D(Vec2 surfaceSlope,float thickness,const WaterOpticsSettings3D& source={}){const WaterOpticsSettings3D settings=NormalizeWaterOpticsSettings3D(source);if(!settings.screenSpaceRefraction||!std::isfinite(surfaceSlope.x)||!std::isfinite(surfaceSlope.y)||!std::isfinite(thickness))return{};const float scale=(std::min)(settings.maximumUvOffset,settings.refractionStrength*Clamp(thickness*settings.depthScale,0.f,1.f));return{Clamp(surfaceSlope.x*scale,-settings.maximumUvOffset,settings.maximumUvOffset),Clamp(surfaceSlope.y*scale,-settings.maximumUvOffset,settings.maximumUvOffset)};}
 inline float FoliageWrapDiffuse3D(float normalLightCosine,float wrap=.35f){if(!std::isfinite(normalLightCosine)||!std::isfinite(wrap))return 0.f;wrap=Clamp(wrap,0.f,1.f);return Clamp((normalLightCosine+wrap)/(1.f+wrap),0.f,1.f);}
 inline float FoliageTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
 inline float ProceduralCloudDensity3D(float noiseSample,float coverage=.54f,float softness=.18f){if(!std::isfinite(noiseSample)||!std::isfinite(coverage)||!std::isfinite(softness)||softness<=0.f)return 0.f;const float value=Clamp((noiseSample-coverage)/softness,0.f,1.f);return value*value*(3.f-2.f*value);}
@@ -195,6 +198,9 @@ struct RendererStats {
     uint64_t ambientOcclusionBlurPasses{};
     bool depthAwareWaterEnabled{};
     uint64_t depthAwareWaterPasses{};
+    bool screenSpaceWaterRefractionEnabled{};
+    size_t waterOpaqueSceneColorBytes{};
+    uint64_t waterOpaqueSceneColorAllocations{},waterOpaqueSceneColorReleases{},waterOpaqueSceneColorCopies{},screenSpaceWaterRefractionPasses{};
     uint64_t hdrPostProcessPasses{};
     bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
     bool postProcessAntiAliasingEnabled{};
@@ -483,6 +489,8 @@ public:
     float ExposureCompensation()const{return exposureCompensationEv_;}
     void SetBloom(BloomSettings3D settings){bloom_=NormalizeBloomSettings3D(settings);}
     const BloomSettings3D& Bloom()const{return bloom_;}
+    void SetWaterOptics(WaterOpticsSettings3D settings){waterOptics_=NormalizeWaterOpticsSettings3D(settings);}
+    const WaterOpticsSettings3D& WaterOptics()const{return waterOptics_;}
     void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
@@ -538,6 +546,7 @@ private:
     float environmentTime_{};
     float exposureCompensationEv_{};
     BloomSettings3D bloom_{};
+    WaterOpticsSettings3D waterOptics_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
     std::vector<PointLight3D> pointLights_;
     std::vector<DrawSpan2D> additiveSpans_;

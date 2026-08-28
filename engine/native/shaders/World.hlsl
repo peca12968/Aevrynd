@@ -86,6 +86,7 @@ Texture2D rockRoughnessTexture : register(t8);
 Texture2D rockNormalTexture : register(t9);
 Texture2D<float> ambientOcclusionTexture : register(t11);
 Texture2D<float> sceneDepthTexture : register(t12);
+Texture2D<float4> opaqueSceneColorTexture : register(t14);
 TextureCube<float3> environmentSpecularTexture : register(t16);
 TextureCube<float3> environmentIrradianceTexture : register(t17);
 Texture2D<float2> environmentBrdfTexture : register(t18);
@@ -95,6 +96,13 @@ cbuffer EnvironmentConstants : register(b3)
     float environmentSpecularMaximumMip;
     float environmentEnabled;
     float environmentReserved;
+};
+cbuffer WaterOpticsConstants : register(b4)
+{
+    float waterRefractionStrength;
+    float waterRefractionDepthScale;
+    float waterMaximumUvOffset;
+    float waterSceneColorEnabled;
 };
 struct SkinPaletteJoint
 {
@@ -1136,9 +1144,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     float waterThickness = 1.6;
     float waterDepthValid = 0.0;
     float waterOutputAlpha = input.color.a;
+    const float2 waterScreenUv = input.position.xy * colorPipeline.zw;
     [branch] if (waterMask > 0.5 && worldViewport.z > 0.0 && worldViewport.w > 0.0)
     {
-        const float2 screenUv = input.position.xy * colorPipeline.zw;
+        const float2 screenUv = waterScreenUv;
         const float2 viewportMaximum = worldViewport.xy + worldViewport.zw;
         const float opaqueDepth = sceneDepthTexture.SampleLevel(screenPointClampSampler, screenUv, 0.0);
         const bool insideViewport = all(screenUv >= worldViewport.xy) && all(screenUv <= viewportMaximum);
@@ -1245,7 +1254,19 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float waterPathLength = min(8.0, waterThickness / max(0.16, waterViewCosine));
         const float3 waterTransmission = exp(-float3(0.42, 0.16, 0.08) * waterPathLength);
         const float3 deepWaterColor = lerp(float3(0.012, 0.055, 0.070), baseColor, 0.24);
-        const float3 absorbedWater = shaded * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
+        float3 transmittedScene = shaded;
+        [branch] if (waterSceneColorEnabled > 0.5 && waterDepthValid > 0.5)
+        {
+            // 折射位移受水深與最大 UV 偏移雙重限制，避免岸邊越界及遠景拉伸。
+            const float refractionScale = min(waterMaximumUvOffset,
+                waterRefractionStrength * saturate(waterThickness * waterRefractionDepthScale));
+            const float2 viewportMinimum = worldViewport.xy + colorPipeline.zw * 1.5;
+            const float2 viewportMaximum = worldViewport.xy + worldViewport.zw - colorPipeline.zw * 1.5;
+            const float2 refractedUv = clamp(waterScreenUv + normal.xz * refractionScale,
+                                             viewportMinimum, viewportMaximum);
+            transmittedScene = opaqueSceneColorTexture.SampleLevel(screenPointClampSampler, refractedUv, 0.0).rgb;
+        }
+        const float3 absorbedWater = transmittedScene * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
         const float waterReflectionRoughness = clamp(roughness, 0.045, 0.18);
         const float3 reflectedWater = EvaluateEnvironmentSpecular(reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
                                     * lerp(1.0, 0.55, waterReflectionRoughness);
