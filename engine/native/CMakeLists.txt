@@ -203,6 +203,17 @@ target_compile_options(AevryndTerrainClipmap3DTest PRIVATE /W4 /permissive- /utf
 target_link_libraries(AevryndTerrainClipmap3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndTerrainClipmap3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTerrainClipmap3DTest>'")
 
+add_executable(AevryndTerrainDistanceMaterial3DTest tests/TerrainDistanceMaterial3DSmoke.cpp)
+target_compile_options(AevryndTerrainDistanceMaterial3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndTerrainDistanceMaterial3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndTerrainDistanceMaterial3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndTerrainDistanceMaterial3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTerrainDistanceMaterial3DTest>'")
+
+add_executable(AevryndTerrainDistanceMaterial3DBenchmark tests/TerrainDistanceMaterial3DBenchmark.cpp)
+target_compile_options(AevryndTerrainDistanceMaterial3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndTerrainDistanceMaterial3DBenchmark PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndTerrainDistanceMaterial3DBenchmark PRIVATE AevryndEngine)
+
 add_executable(AevryndArchitectureMeshes3DTest tests/ArchitectureMeshes3DSmoke.cpp)
 target_compile_options(AevryndArchitectureMeshes3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndArchitectureMeshes3DTest PRIVATE AevryndEngine)

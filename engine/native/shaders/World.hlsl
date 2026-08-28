@@ -104,6 +104,17 @@ cbuffer WaterOpticsConstants : register(b4)
     float waterMaximumUvOffset;
     float waterSceneColorEnabled;
 };
+cbuffer TerrainDistanceMaterialConstants : register(b5)
+{
+    float terrainDetailFadeStart;
+    float terrainDetailFadeEnd;
+    float terrainMacroVariationScale;
+    float terrainMacroVariationStrength;
+    float terrainNormalDetailStrength;
+    float terrainFarRoughnessBoost;
+    float terrainDistanceMaterialEnabled;
+    float terrainDistanceMaterialReserved;
+};
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -1112,6 +1123,16 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     {
         const float macroNoise = CloudNoise(input.worldPosition.xz * 0.021);
         const float microNoise = CloudHash(floor(input.worldPosition.xz * 3.2));
+        const float terrainCameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
+        float terrainDetailWeight = 1.0;
+        float distanceMacroVariation = 1.0;
+        // 關閉時維持舊路徑且不計算額外噪聲；純 2D 不進入 terrain branch，因此沒有像素成本。
+        [branch] if (terrainDistanceMaterialEnabled > 0.5)
+        {
+            terrainDetailWeight = 1.0 - smoothstep(terrainDetailFadeStart, terrainDetailFadeEnd, terrainCameraDistance);
+            const float distanceMacroNoise = CloudNoise(input.worldPosition.xz * terrainMacroVariationScale);
+            distanceMacroVariation = lerp(1.0 - terrainMacroVariationStrength, 1.0 + terrainMacroVariationStrength, distanceMacroNoise);
+        }
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
         const float terrainHeight = saturate(input.color.a);
         const float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
@@ -1124,24 +1145,33 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float3 grassColor = baseColorTexture.Sample(materialSampler, terrainBaseUv).rgb;
             const float3 soilColor = soilBaseColorTexture.Sample(materialSampler, terrainBaseUv).rgb;
             const float3 rockColor = Triplanar(rockBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
-            const float4 grassSurface=roughnessTexture.Sample(materialSampler,terrainDetailUv);
-            const float4 soilSurface=soilRoughnessTexture.Sample(materialSampler,terrainDetailUv);
-            const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
-            const float4 terrainSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
-            const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.z);
-            const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
-            const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
-            baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * lerp(0.94, 1.06, microNoise);
+            float4 terrainSurface = 1.0;
+            float3 terrainNormal = geometricNormal;
+            // 遠距離分支省略六次細節貼圖取樣；近景維持完整表面與法線，轉場以解析度無關權重淡化。
+            [branch] if (terrainDetailWeight > 0.001)
+            {
+                const float4 grassSurface=roughnessTexture.Sample(materialSampler,terrainDetailUv);
+                const float4 soilSurface=soilRoughnessTexture.Sample(materialSampler,terrainDetailUv);
+                const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
+                const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
+                terrainSurface=lerp(1.0,sampledSurface,terrainDetailWeight);
+                const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+                const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+                const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+                const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
+                terrainNormal=normalize(lerp(geometricNormal,sampledNormal,saturate(terrainDetailWeight*terrainNormalDetailStrength)));
+            }
+            baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
             occlusion*=terrainSurface.r;
-            roughness=clamp(roughness*terrainSurface.a,0.045,1.0);
+            roughness=clamp(roughness*terrainSurface.a*(1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)),0.045,1.0);
             metallic*=terrainSurface.b;
-            normal = normalize(grassNormal * grassWeight + soilNormal * soilWeight + rockNormal * rockWeight);
+            normal = terrainNormal;
         }
         else
         {
             const float3 terrainTint = grassWeight * float3(0.72, 0.91, 0.63) + soilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
-            baseColor *= terrainTint * lerp(0.94, 1.06, microNoise);
-            roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74), 0.045, 1.0);
+            baseColor *= terrainTint * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
+            roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74) * (1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)), 0.045, 1.0);
         }
     }
 
