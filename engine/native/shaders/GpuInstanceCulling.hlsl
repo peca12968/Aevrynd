@@ -1,5 +1,5 @@
 struct GpuMeshInstance {row_major float4x4 transform;float4 normalRows[3];uint tint;uint surface;uint textureData;};
-struct GpuCullGroup {uint inputOffset;uint instanceCount;uint outputOffset;uint indexCount;float3 boundsCenter;float _pad0;float3 boundsExtents;float maximumDistance;};
+struct GpuCullGroup {uint inputOffset;uint instanceCount;uint outputOffset;uint commandIndex;float3 boundsCenter;float _pad0;float3 boundsExtents;float maximumDistance;};
 StructuredBuffer<GpuMeshInstance> InputInstances:register(t0);
 StructuredBuffer<GpuCullGroup> Groups:register(t1);
 RWStructuredBuffer<GpuMeshInstance> OutputInstances:register(u0);
@@ -7,8 +7,7 @@ RWByteAddressBuffer Arguments:register(u1);
 cbuffer CullConstants:register(b0){row_major float4x4 viewProjection;float3 cameraPosition;uint groupCount;uint totalCandidates;uint distanceEnabled;uint2 _pad1;}
 
 [numthreads(64,1,1)] void GpuInstanceCullingClearMain(uint3 id:SV_DispatchThreadID){
- if(id.x>=groupCount)return;GpuCullGroup group=Groups[id.x];uint address=id.x*20;
- Arguments.Store(address,group.indexCount);Arguments.Store(address+4,0);Arguments.Store(address+8,0);Arguments.Store(address+12,0);Arguments.Store(address+16,0);
+ if(id.x>=groupCount)return;GpuCullGroup group=Groups[id.x];Arguments.Store(group.commandIndex*72+52,0);
 }
 bool Visible(GpuMeshInstance instance,GpuCullGroup group){
  float3 worldCenter=mul(instance.transform,float4(group.boundsCenter,1)).xyz;
@@ -25,5 +24,5 @@ bool Visible(GpuMeshInstance instance,GpuCullGroup group){
 [numthreads(64,1,1)] void GpuInstanceCullingMain(uint3 groupId:SV_GroupID,uint3 lane:SV_GroupThreadID){
  if(groupId.x>=groupCount)return;uint groupIndex=groupId.x;GpuCullGroup group=Groups[groupIndex];
  for(uint localIndex=lane.x;localIndex<group.instanceCount;localIndex+=64){GpuMeshInstance instance=InputInstances[group.inputOffset+localIndex];if(!Visible(instance,group))continue;
-  uint outputIndex;Arguments.InterlockedAdd(groupIndex*20+4,1,outputIndex);OutputInstances[group.outputOffset+outputIndex]=instance;}
+  uint outputIndex;Arguments.InterlockedAdd(group.commandIndex*72+52,1,outputIndex);OutputInstances[group.outputOffset+outputIndex]=instance;}
 }

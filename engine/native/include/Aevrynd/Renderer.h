@@ -85,6 +85,21 @@ enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay,ShadowOnly};
 static constexpr uint8_t DirectionalShadowNearCascadeBit3D=1u,DirectionalShadowFarCascadeBit3D=2u,DirectionalShadowAllCascades3D=DirectionalShadowNearCascadeBit3D|DirectionalShadowFarCascadeBit3D;
 enum class ShadowCascadeSelection3D:uint8_t {Automatic,Manual};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};ShadowCascadeSelection3D shadowCascadeSelection{ShadowCascadeSelection3D::Automatic};Matrix4 previousTransform{Matrix4::Identity()};bool motionValid{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{};};
+class StaticMeshSubmission3D {
+public:
+    StaticMeshSubmission3D()=default;
+    explicit StaticMeshSubmission3D(std::span<const MeshInstance3D> instances):instances_(std::make_shared<const std::vector<MeshInstance3D>>(instances.begin(),instances.end())),contentRevision_(NextRevision()),layoutRevision_(contentRevision_),cacheEligible_(std::ranges::all_of(instances,[](const MeshInstance3D& instance){return instance.layer==MeshRenderLayer3D::Opaque&&instance.alphaMode==MaterialAlphaMode3D::Opaque&&!instance.motionValid&&!instance.castsShadow;})){}
+    [[nodiscard]] std::span<const MeshInstance3D> Instances()const{return instances_?std::span<const MeshInstance3D>{*instances_}:std::span<const MeshInstance3D>{};}
+    [[nodiscard]] uint64_t ContentRevision()const{return contentRevision_;}
+    [[nodiscard]] uint64_t LayoutRevision()const{return layoutRevision_;}
+    [[nodiscard]] size_t RetainedBytes()const{return instances_?instances_->capacity()*sizeof(MeshInstance3D):0;}
+    [[nodiscard]] bool CacheEligible()const{return cacheEligible_;}
+    [[nodiscard]] std::weak_ptr<const void> LifetimeToken()const{return instances_;}
+    explicit operator bool()const{return instances_!=nullptr;}
+private:
+    static uint64_t NextRevision(){static std::atomic<uint64_t> next{1};return next.fetch_add(1,std::memory_order_relaxed);}
+    std::shared_ptr<const std::vector<MeshInstance3D>> instances_{};uint64_t contentRevision_{},layoutRevision_{};bool cacheEligible_{};
+};
 struct SkinnedMeshInstance3D {SkinnedMeshHandle3D mesh{};SkinPaletteRange3D palette{},previousPalette{};Matrix4 transform{Matrix4::Identity()},previousTransform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f},baseTextureScale{.25f},detailTextureScale{.25f};uint32_t firstIndex{},indexCount{};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};CharacterShadingModel3D shadingModel{CharacterShadingModel3D::Default};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{},castsShadow{true},motionValid{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};uint32_t submissionGroupId{},submissionDrawGeneration{};uint64_t submissionNonce{},submissionResourceIdentity{};};
 constexpr bool TransparentBackToFront3D(const MeshInstance3D& left,const MeshInstance3D& right){return left.cameraDepth>right.cameraDepth;}
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
@@ -178,7 +193,8 @@ inline float EvaluateDirectionalLightShaftScattering3D(float opticalDepth,float 
 }
 struct AmbientOcclusionSettings3D {bool enabled{true};float radius{1.35f},bias{.035f},intensity{1.05f};};
 struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion{true},multisampling{true},postProcessAntiAliasing{true};friend constexpr bool operator==(const RendererQualitySettings3D&,const RendererQualitySettings3D&)=default;};
-struct GpuInstanceCullingSettings3D {bool enabled{};float maximumDistance{};friend constexpr bool operator==(const GpuInstanceCullingSettings3D&,const GpuInstanceCullingSettings3D&)=default;};
+enum class GpuInstanceSubmissionMode3D:uint8_t {Aggregate,MultiGroup};
+struct GpuInstanceCullingSettings3D {bool enabled{};float maximumDistance{};GpuInstanceSubmissionMode3D submissionMode{GpuInstanceSubmissionMode3D::MultiGroup};friend constexpr bool operator==(const GpuInstanceCullingSettings3D&,const GpuInstanceCullingSettings3D&)=default;};
 inline GpuInstanceCullingSettings3D NormalizeGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){settings.maximumDistance=std::isfinite(settings.maximumDistance)&&settings.maximumDistance>0.f?settings.maximumDistance:0.f;return settings;}
 struct VelocityCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};bool historyValid{};};
 inline AmbientOcclusionSettings3D NormalizeAmbientOcclusionSettings3D(AmbientOcclusionSettings3D settings){settings.radius=Clamp(std::isfinite(settings.radius)?settings.radius:1.35f,.1f,8.f);settings.bias=Clamp(std::isfinite(settings.bias)?settings.bias:.035f,0.f,.5f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:1.05f,0.f,4.f);return settings;}
@@ -226,6 +242,10 @@ struct RendererStats {
     GpuInstanceCullingSettings3D gpuInstanceCulling{};
     bool gpuInstanceCullingResourcesResident{};
     size_t gpuInstanceCullingResidentBytes{},lastGpuInstanceCullingCpuGroups{},lastGpuInstanceCullingStaticOpaqueColorGroups{},lastGpuInstanceCullingColorDirectGroups{},lastGpuInstanceCullingShadowDirectGroups{},lastGpuInstanceCullingAmbientOcclusionDirectGroups{},lastGpuInstanceCullingVelocityDirectGroups{},lastGpuInstanceCullingProbeDirectGroups{},lastGpuInstanceCullingCandidates{},lastGpuInstanceCullingVisible{},lastGpuInstanceCullingRejected{};
+    size_t lastGpuInstanceSubmissionBuckets{},lastGpuInstanceSubmissionCommands{},lastGpuInstanceSubmissionCalls{},lastGpuInstanceSubmissionBindingSets{},gpuInstanceCommandTemplateBytes{};
+    uint64_t lastGpuInstanceSubmissionCpuNanoseconds{};
+    bool lastStaticMeshSubmissionWarmHit{},lastStaticMeshSubmissionCpuRebuild{},lastStaticMeshSubmissionCacheEligible{};size_t lastStaticMeshSubmissionCopiedBytes{},lastStaticMeshSubmissionInstanceCopiedBytes{},lastStaticMeshSubmissionGroupCopiedBytes{},lastStaticMeshSubmissionCommandCopiedBytes{},lastStaticMeshSubmissionPreparationIterations{};
+    uint64_t lastRenderPreparationCpuNanoseconds{},lastRenderCommandRecordingCpuNanoseconds{},lastRenderQueueExecuteCpuNanoseconds{},lastRenderFenceWaitCpuNanoseconds{},lastRenderPresentCpuNanoseconds{};
     std::vector<uint32_t> lastGpuInstanceCullingGroupVisible{};
     std::vector<uint64_t> lastGpuInstanceCullingGroupIdentityHashes{};
     size_t gpuInstanceCullingValidationReadbackBytes{};
@@ -505,7 +525,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);additiveSpans_.reserve(InitialAdditiveSpanCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();skinnedMeshInstances.clear();skinPaletteJoints.clear();localReflectionProbes_.clear();resourceLeases_.clear();resourceLeaseKeys_.clear();skinPaletteCount_=0;nextSkinnedSubmissionGroupId_=1;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();cameraCut3D_=false;atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
+    void Clear(){vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();staticMeshSubmission_={};staticMeshSubmissionGeneration_=0;skinnedMeshInstances.clear();skinPaletteJoints.clear();localReflectionProbes_.clear();resourceLeases_.clear();resourceLeaseKeys_.clear();skinPaletteCount_=0;nextSkinnedSubmissionGroupId_=1;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();cameraCut3D_=false;atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -517,6 +537,14 @@ public:
     DrawListStats2D Stats2D()const{return stats_;}
     void ResetStats2D(){stats_={};}
     void TrimTransientMemory();
+    [[nodiscard]] StaticMeshSubmission3D FreezeMeshInstances3D()const{return StaticMeshSubmission3D{meshInstances};}
+    void SetStaticMeshSubmission3D(StaticMeshSubmission3D submission){meshInstances.clear();staticMeshSubmission_=std::move(submission);staticMeshSubmissionGeneration_=skinPaletteGeneration_;}
+    void ClearStaticMeshSubmission3D(){staticMeshSubmission_={};staticMeshSubmissionGeneration_=0;}
+    [[nodiscard]] std::span<const MeshInstance3D> EffectiveMeshInstances3D()const{return meshInstances.empty()&&staticMeshSubmission_&&staticMeshSubmissionGeneration_==skinPaletteGeneration_?staticMeshSubmission_.Instances():std::span<const MeshInstance3D>{meshInstances};}
+    [[nodiscard]] uint64_t StaticMeshSubmissionRevision3D()const{return meshInstances.empty()&&staticMeshSubmission_&&staticMeshSubmissionGeneration_==skinPaletteGeneration_?staticMeshSubmission_.ContentRevision():0;}
+    [[nodiscard]] uint64_t StaticMeshSubmissionLayoutRevision3D()const{return meshInstances.empty()&&staticMeshSubmission_&&staticMeshSubmissionGeneration_==skinPaletteGeneration_?staticMeshSubmission_.LayoutRevision():0;}
+    [[nodiscard]] bool StaticMeshSubmissionCacheEligible3D()const{return meshInstances.empty()&&staticMeshSubmission_&&staticMeshSubmissionGeneration_==skinPaletteGeneration_&&staticMeshSubmission_.CacheEligible();}
+    [[nodiscard]] size_t StaticMeshSubmissionRetainedBytes3D()const{return staticMeshSubmission_.RetainedBytes();}
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
     [[nodiscard]] static SystemGlyphCacheStats2D SystemGlyphCacheStats();
     static size_t TrimSystemGlyphCache(size_t retainedGlyphs=RetainedSystemGlyphsAfterTrim);
@@ -599,6 +627,7 @@ public:
     std::vector<SkinnedMeshInstance3D> skinnedMeshInstances;
     std::vector<SkinPaletteJoint3D> skinPaletteJoints;
 private:
+    StaticMeshSubmission3D staticMeshSubmission_{};uint32_t staticMeshSubmissionGeneration_{};
     enum class PrimitiveClipResult:uint8_t {Culled,Contained,Partial};
     struct EllipseStepCacheEntry {int segments{};float cosine{},sine{};uint64_t lastUsed{};};
     struct EllipseStepResult {float cosine{},sine{};bool cached{};};
