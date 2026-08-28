@@ -318,9 +318,12 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
     parts += [
         torso_loft("ContinuousFittedTorso", ((.80,.265,.178),(.88,.285,.190),(.97,.260,.180),(1.05,.205,.148),(1.15,.165,.126),(1.25,.202,.150),(1.34,.232,.164),(1.41,.242,.156),(1.47,.185,.126)), cloth),
         sphere("Neck", (0, 0, 1.50), (0.052, 0.050, 0.090), skin, "Neck", 20, 12),
-        face_shell("ContinuousFace", (0, -0.005, 1.650), (0.118, 0.088, 0.112), skin, True),
-        facial_ribbon("UpperLip", (0,-0.108,1.619),.032,.0085,lips,True),
-        facial_ribbon("LowerLip", (0,-0.109,1.607),.030,.0095,lips,False),
+        # F2 採較窄的顴骨、較長的下顎與成人尺寸五官，避免球形娃娃臉。
+        face_shell("ContinuousFace", (0, -0.005, 1.650), (0.098, 0.092, 0.128), skin, True),
+        sphere("NoseBridge", (0, -0.106, 1.651), (0.014, 0.024, 0.032), skin, "Head", 20, 12),
+        sphere("NoseTip", (0, -0.126, 1.633), (0.017, 0.015, 0.013), skin, "Head", 18, 10),
+        facial_ribbon("UpperLip", (0,-0.110,1.608),.026,.0058,lips,True),
+        facial_ribbon("LowerLip", (0,-0.111,1.599),.025,.0065,lips,False),
     ]
     for side, sign in (("Left", 1.0), ("Right", -1.0)):
         parts += [
@@ -329,20 +332,20 @@ def create_character(rig: bpy.types.Object) -> bpy.types.Object:
             limb_loft(f"{side}Thigh", ((.118*sign,0,.92),(.108*sign,.003,.71),(.095*sign,.005,.51)), (.125,.105,.068), cloth_dark, (f"{side}UpperLeg",f"{side}UpperLeg")),
             limb_loft(f"{side}Calf", ((.095*sign,.005,.51),(.09*sign,.002,.31),(.085*sign,0,.11)), (.070,.076,.045), skin, (f"{side}LowerLeg",f"{side}LowerLeg")),
             sphere(f"{side}Boot", (0.085 * sign, -0.072, 0.066), (0.066, 0.145, 0.062), leather, f"{side}Foot", 20, 12),
-            sphere(f"EyeWhite.{side}", (0.037 * sign, -0.086, 1.674), (0.0205, 0.0095, 0.0105), sclera, "Head", 20, 12),
-            sphere(f"Iris.{side}", (0.037 * sign, -0.095, 1.674), (0.0078, 0.0037, 0.0078), iris, "Head", 16, 10),
-            sphere(f"Pupil.{side}", (0.037 * sign, -0.099, 1.674), (0.0032, 0.0016, 0.0032), hair, "Head", 10, 6),
-            eyelid_ribbon(f"UpperEyelid.{side}",0.037*sign,-0.098,1.674,True,skin),
-            eyelid_ribbon(f"LowerEyelid.{side}",0.037*sign,-0.098,1.674,False,skin),
-            tapered_limb(f"EarRim.{side}", (0.108 * sign, -0.004, 1.690), (0.110 * sign, -0.006, 1.610), (0.014, 0.009), skin, "Head", 10),
-            tapered_limb(f"Lash.{side}", (0.012 * sign, -0.111, 1.690), (0.066 * sign, -0.108, 1.690), (0.0025, 0.0015), hair, "Head", 8),
-            facial_ribbon(f"Brow.{side}", (0.038*sign,-0.099,1.700),.026,.0035,hair,True,12),
+            sphere(f"EyeWhite.{side}", (0.032 * sign, -0.094, 1.681), (0.0145, 0.0072, 0.0068), sclera, "Head", 20, 12),
+            sphere(f"Iris.{side}", (0.032 * sign, -0.101, 1.681), (0.0052, 0.0026, 0.0052), iris, "Head", 16, 10),
+            sphere(f"Pupil.{side}", (0.032 * sign, -0.104, 1.681), (0.0022, 0.0012, 0.0022), hair, "Head", 10, 6),
+            eyelid_ribbon(f"UpperEyelid.{side}",0.032*sign,-0.104,1.681,True,skin),
+            eyelid_ribbon(f"LowerEyelid.{side}",0.032*sign,-0.104,1.681,False,skin),
+            tapered_limb(f"EarRim.{side}", (0.094 * sign, -0.004, 1.695), (0.096 * sign, -0.006, 1.610), (0.012, 0.008), skin, "Head", 10),
+            tapered_limb(f"Lash.{side}", (0.017 * sign, -0.109, 1.691), (0.047 * sign, -0.107, 1.691), (0.0018, 0.0011), hair, "Head", 8),
+            facial_ribbon(f"Brow.{side}", (0.032*sign,-0.106,1.705),.021,.0030,hair,True,12),
         ]
         for index, (offset, length) in enumerate(((-0.022, 0.060), (-0.008, 0.070), (0.008, 0.066), (0.022, 0.055))):
             parts.append(tapered_limb(f"Finger.{side}.{index}", (0.358 * sign + offset, -0.038, 0.895), (0.358 * sign + offset, -0.050, 0.895 - length), (0.008, 0.005), skin, f"{side}Hand", 8))
         parts.append(tapered_limb(f"Thumb.{side}", (0.345 * sign, -0.035, 0.925), (0.325 * sign, -0.065, 0.895), (0.010, 0.006), skin, f"{side}Hand", 8))
     # 低模頭皮遮底，髮片以固定分布提供可裁切輪廓。
-    scalp = sphere("HairScalp", (0.0, 0.012, 1.716), (0.113, 0.097, 0.096), hair, "Head", 18, 10); set_opaque_hair_uv(scalp); parts.append(scalp)
+    scalp = sphere("HairScalp", (0.0, 0.014, 1.724), (0.098, 0.098, 0.093), hair, "Head", 18, 10); set_opaque_hair_uv(scalp); parts.append(scalp)
     for index in range(56):
         band, column = divmod(index, 14); angle = math.tau * column / 14.0 + band * 0.071
         root = (math.sin(angle) * (0.102 - band * 0.006), 0.025 + math.cos(angle) * (0.082 - band * 0.004), 1.755 - band * 0.018)

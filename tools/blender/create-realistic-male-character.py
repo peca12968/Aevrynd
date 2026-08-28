@@ -324,18 +324,21 @@ def create_character(rig: bpy.types.Object) -> list[bpy.types.Object]:
     objects += [torso_loft("ContinuousShirtTorso", ((1.04,.30,.19),(1.14,.250,.174),(1.20,.260,.180),(1.27,.290,.190),(1.33,.330,.202),(1.38,.360,.210),(1.44,.390,.220),(1.50,.405,.220),(1.56,.410,.214),(1.60,.385,.200),(1.64,.315,.175)), shirt),
                 ellipsoid("Pelvis", (0, 0.02, 1.01), (0.29, 0.18, 0.18), trousers, "Hips")]
 
-    objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.144,.104,.135),skin_light),
-                facial_ribbon("UpperLip",(0,-.141,1.810),.038,.010,skin_light,True),
-                facial_ribbon("LowerLip",(0,-.142,1.797),.035,.011,skin_light,False)]
+    # M2 採較長且較窄的成熟臉型，搭配明確鼻樑與較克制的五官尺寸。
+    objects += [face_shell("ContinuousFace",(0,-.005,1.845),(.108,.112,.148),skin_light),
+                ellipsoid("NoseBridge",(0,-.126,1.858),(.017,.030,.040),skin_light,"Head",22,14),
+                ellipsoid("NoseTip",(0,-.151,1.832),(.021,.017,.015),skin_light,"Head",18,10),
+                facial_ribbon("UpperLip",(0,-.146,1.801),.030,.0065,skin_light,True),
+                facial_ribbon("LowerLip",(0,-.147,1.791),.028,.0070,skin_light,False)]
     for side, sign in (("Left", 1), ("Right", -1)):
-        objects += [ellipsoid(f"{side}Eye", (0.045 * sign, -0.106, 1.897), (0.021, 0.010, 0.0115), eye_white, "Head", 22, 14),
-                    ellipsoid(f"{side}Iris", (0.045 * sign, -0.116, 1.897), (0.0078, 0.0038, 0.0078), iris, "Head", 16, 10),
-                    ellipsoid(f"{side}Pupil", (0.045 * sign, -0.120, 1.897), (0.0030, 0.0016, 0.0030), hair, "Head", 10, 6),
-                    eyelid_ribbon(f"{side}UpperEyelid",.045*sign,-.119,1.897,True,skin),
-                    eyelid_ribbon(f"{side}LowerEyelid",.045*sign,-.119,1.897,False,skin),
-                    capsule(f"{side}EarRim", (0.142 * sign, 0.0, 1.910), (0.144 * sign, 0.0, 1.815), 0.014, skin, "Head", 0.65, 12, 8),
-                    facial_ribbon(f"{side}Brow",(.045*sign,-.120,1.922),.032,.0045,hair,True,12)]
-    scalp=ellipsoid("HairScalp",(0,.032,2.003),(.136,.103,.052),hair,"Head",20,10);set_opaque_hair_uv(scalp)
+        objects += [ellipsoid(f"{side}Eye", (0.036 * sign, -0.116, 1.904), (0.0155, 0.0075, 0.0072), eye_white, "Head", 22, 14),
+                    ellipsoid(f"{side}Iris", (0.036 * sign, -0.123, 1.904), (0.0054, 0.0027, 0.0054), iris, "Head", 16, 10),
+                    ellipsoid(f"{side}Pupil", (0.036 * sign, -0.126, 1.904), (0.0023, 0.0012, 0.0023), hair, "Head", 10, 6),
+                    eyelid_ribbon(f"{side}UpperEyelid",.036*sign,-.126,1.904,True,skin),
+                    eyelid_ribbon(f"{side}LowerEyelid",.036*sign,-.126,1.904,False,skin),
+                    capsule(f"{side}EarRim", (0.108 * sign, 0.0, 1.916), (0.110 * sign, 0.0, 1.812), 0.012, skin, "Head", 0.65, 12, 8),
+                    facial_ribbon(f"{side}Brow",(.036*sign,-.129,1.932),.025,.0038,hair,True,12)]
+    scalp=ellipsoid("HairScalp",(0,.032,2.012),(.108,.110,.058),hair,"Head",20,10);set_opaque_hair_uv(scalp)
     objects += [scalp, capsule("NeckForm", (0, 0, 1.62), (0, 0, 1.76), 0.075, skin, "Neck")]
     for index in range(40):
         band,column=divmod(index,10);angle=math.tau*column/10.0+band*.09
