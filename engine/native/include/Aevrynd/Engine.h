@@ -95,6 +95,7 @@ public:
     size_t TrimUnusedMemory();
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
+    SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const{return renderer_->QuerySkinnedSubmission(receipt);}
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}
     bool CaptureNextFrame3D(const std::filesystem::path& path){return renderer_->CaptureNextFrame(path);}

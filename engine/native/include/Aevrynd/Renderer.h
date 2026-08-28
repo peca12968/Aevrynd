@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <windows.h>
@@ -37,9 +38,11 @@ struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};};
 struct SkinnedVertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};uint32_t tangent{};std::array<uint16_t,4> joints{},weights{};};
 struct MeshHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D&)const=default;};
 struct SkeletonCompatibilityId3D {uint64_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const SkeletonCompatibilityId3D&)const=default;};
-struct SkinnedMeshHandle3D {uint32_t value{};SkeletonCompatibilityId3D skeletonCompatibilityId{};uint32_t jointCount{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const SkinnedMeshHandle3D&)const=default;};
+struct SkinnedMeshHandle3D {uint32_t value{};SkeletonCompatibilityId3D skeletonCompatibilityId{};uint32_t jointCount{};uint64_t resourceIdentity{};constexpr SkinnedMeshHandle3D()=default;constexpr SkinnedMeshHandle3D(uint32_t handle,SkeletonCompatibilityId3D compatibility,uint32_t joints=0,uint64_t identity=0):value(handle),skeletonCompatibilityId(compatibility),jointCount(joints),resourceIdentity(identity?identity:(handle?0x9e3779b97f4a7c15ull^uint64_t(handle)*0xbf58476d1ce4e5b9ull:0)){}explicit constexpr operator bool()const{return value!=0&&resourceIdentity!=0;}constexpr bool operator==(const SkinnedMeshHandle3D&)const=default;};
 struct SkinPaletteRange3D {uint32_t firstJoint{},jointCount{},generation{};SkeletonCompatibilityId3D skeletonCompatibilityId{};explicit constexpr operator bool()const{return jointCount!=0;}friend constexpr bool operator==(const SkinPaletteRange3D&,const SkinPaletteRange3D&)=default;};
 struct SkinPaletteJoint3D {Matrix4 skin{};std::array<Vec4,3> normalRows{};};
+struct SkinnedSubmissionReceipt3D {uint64_t submissionNonce{};uint32_t drawGeneration{},groupId{};uint64_t resourceIdentity{};explicit constexpr operator bool()const{return submissionNonce&&drawGeneration&&groupId&&resourceIdentity;}constexpr bool operator==(const SkinnedSubmissionReceipt3D&)const=default;};
+enum class SkinnedSubmissionResult3D:uint8_t {Unknown,Accepted,Rejected,Expired};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
 struct AssetLeaseState3D {std::uint64_t identity{};};
 using AssetLease3D=std::shared_ptr<const AssetLeaseState3D>;
@@ -80,7 +83,7 @@ enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay,ShadowOnly};
 static constexpr uint8_t DirectionalShadowNearCascadeBit3D=1u,DirectionalShadowFarCascadeBit3D=2u,DirectionalShadowAllCascades3D=DirectionalShadowNearCascadeBit3D|DirectionalShadowFarCascadeBit3D;
 enum class ShadowCascadeSelection3D:uint8_t {Automatic,Manual};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};ShadowCascadeSelection3D shadowCascadeSelection{ShadowCascadeSelection3D::Automatic};Matrix4 previousTransform{Matrix4::Identity()};bool motionValid{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{};};
-struct SkinnedMeshInstance3D {SkinnedMeshHandle3D mesh{};SkinPaletteRange3D palette{},previousPalette{};Matrix4 transform{Matrix4::Identity()},previousTransform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f},baseTextureScale{.25f},detailTextureScale{.25f};uint32_t firstIndex{},indexCount{};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};CharacterShadingModel3D shadingModel{CharacterShadingModel3D::Default};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{},castsShadow{true},motionValid{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};uint32_t submissionGroupId{};};
+struct SkinnedMeshInstance3D {SkinnedMeshHandle3D mesh{};SkinPaletteRange3D palette{},previousPalette{};Matrix4 transform{Matrix4::Identity()},previousTransform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f},baseTextureScale{.25f},detailTextureScale{.25f};uint32_t firstIndex{},indexCount{};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};CharacterShadingModel3D shadingModel{CharacterShadingModel3D::Default};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{},castsShadow{true},motionValid{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};uint32_t submissionGroupId{},submissionDrawGeneration{};uint64_t submissionNonce{},submissionResourceIdentity{};};
 constexpr bool TransparentBackToFront3D(const MeshInstance3D& left,const MeshInstance3D& right){return left.cameraDepth>right.cameraDepth;}
 struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Color color{1.f,.96f,.86f,1.f};float intensity{.72f};};
 constexpr uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,float splitDistance=32.f){return std::isfinite(cameraDistance)&&cameraDistance>=splitDistance?1u:0u;}
@@ -423,8 +426,13 @@ public:
     void RetainAssetLease(AssetLease3D lease){if(!lease)return;const AssetLeaseState3D* key=lease.get();const auto found=std::lower_bound(resourceLeaseKeys_.begin(),resourceLeaseKeys_.end(),key,std::less<const AssetLeaseState3D*>{});if(found!=resourceLeaseKeys_.end()&&*found==key)return;resourceLeaseKeys_.insert(found,key);resourceLeases_.push_back(std::move(lease));}
     [[nodiscard]] std::size_t AssetLeaseCount()const noexcept{return resourceLeases_.size();}
     SkinPaletteRange3D AddSkinPalette(std::span<const SkinPaletteJoint3D> joints,SkeletonCompatibilityId3D skeletonCompatibilityId={}){if(joints.empty()||skinPaletteCount_>=MaximumSkinPalettesPerFrame||joints.size()>MaximumSkinJointsPerFrame-skinPaletteJoints.size())return{};for(const SkinPaletteJoint3D& joint:joints){for(const auto& row:joint.skin.values)for(float value:row)if(!std::isfinite(value))return{};for(const Vec4& row:joint.normalRows)if(!std::isfinite(row.x)||!std::isfinite(row.y)||!std::isfinite(row.z)||!std::isfinite(row.w))return{};}const SkinPaletteRange3D range{uint32_t(skinPaletteJoints.size()),uint32_t(joints.size()),skinPaletteGeneration_,skeletonCompatibilityId};skinPaletteJoints.insert(skinPaletteJoints.end(),joints.begin(),joints.end());++skinPaletteCount_;return range;}
+    struct SkinPaletteCheckpoint3D {std::size_t jointCount{},skinnedInstanceCount{};std::uint32_t paletteCount{},generation{};};
+    SkinPaletteCheckpoint3D SkinPaletteCheckpoint()const noexcept{return{skinPaletteJoints.size(),skinnedMeshInstances.size(),skinPaletteCount_,skinPaletteGeneration_};}
+    bool RestoreSkinPaletteCheckpoint(SkinPaletteCheckpoint3D checkpoint)noexcept{if(checkpoint.generation!=skinPaletteGeneration_||checkpoint.skinnedInstanceCount!=skinnedMeshInstances.size()||checkpoint.jointCount>skinPaletteJoints.size()||checkpoint.paletteCount>skinPaletteCount_)return false;skinPaletteJoints.resize(checkpoint.jointCount);skinPaletteCount_=checkpoint.paletteCount;return true;}
     uint32_t AllocateSkinnedSubmissionGroupId3D()noexcept{if(!nextSkinnedSubmissionGroupId_)nextSkinnedSubmissionGroupId_=1;return nextSkinnedSubmissionGroupId_++;}
+    uint64_t AllocateSkinnedSubmissionNonce3D()noexcept{uint64_t value=nextSkinnedSubmissionNonce_.load(std::memory_order_relaxed);while(value&&value!=UINT64_MAX){if(nextSkinnedSubmissionNonce_.compare_exchange_weak(value,value+1,std::memory_order_relaxed))return value;}return 0;}
     bool ContainsSkinPalette(SkinPaletteRange3D palette)const noexcept{return palette&&palette.generation==skinPaletteGeneration_&&palette.firstJoint<=skinPaletteJoints.size()&&palette.jointCount<=skinPaletteJoints.size()-palette.firstJoint;}
+    uint32_t Generation3D()const noexcept{return skinPaletteGeneration_;}
     bool SkinnedMeshInstance(SkinnedMeshHandle3D mesh,SkinPaletteRange3D palette,Matrix4 transform,Color tint={1,1,1,1},Surface3D surface={},MaterialTextureSetHandle3D textures={},float textureScale=.25f,bool useUv=false,MaterialClass3D materialClass=MaterialClass3D::Surface,bool castsShadow=true,uint8_t shadowCascadeMask=DirectionalShadowAllCascades3D,uint32_t firstIndex=0,uint32_t indexCount=0,CharacterShadingModel3D shadingModel=CharacterShadingModel3D::Default,MaterialAlphaMode3D alphaMode=MaterialAlphaMode3D::Opaque,float alphaCutoff=.5f,bool doubleSided=false,SkinPaletteRange3D previousPalette={},Matrix4 previousTransform=Matrix4::Identity(),bool motionValid=false,float normalScale=1.f,float baseTextureScale=0.f,float detailTextureScale=0.f,uint32_t submissionGroupId=0){materialClass=NormalizeMaterialClass3D(materialClass);shadingModel=NormalizeCharacterShadingModel3D(shadingModel);alphaMode=NormalizeMaterialAlphaMode3D(alphaMode);const bool validPrevious=!motionValid||(previousPalette&&previousPalette.generation==skinPaletteGeneration_&&previousPalette.firstJoint<=skinPaletteJoints.size()&&previousPalette.jointCount<=skinPaletteJoints.size()-previousPalette.firstJoint);if(baseTextureScale<=0)baseTextureScale=textureScale;if(detailTextureScale<=0)detailTextureScale=textureScale;const bool validScales=std::isfinite(textureScale)&&textureScale>0&&std::isfinite(baseTextureScale)&&baseTextureScale>0&&std::isfinite(detailTextureScale)&&detailTextureScale>0;if(!mesh||!palette||palette.generation!=skinPaletteGeneration_||palette.firstJoint>skinPaletteJoints.size()||palette.jointCount>skinPaletteJoints.size()-palette.firstJoint||!validPrevious||skinnedMeshInstances.size()>=MaximumSkinnedMeshInstancesPerFrame||firstIndex%3||indexCount%3||materialClass==MaterialClass3D::Water||materialClass==MaterialClass3D::Terrain||alphaMode==MaterialAlphaMode3D::Blend||!std::isfinite(alphaCutoff)||!std::isfinite(normalScale)||!validScales||(alphaMode==MaterialAlphaMode3D::Mask&&(!textures||!useUv)))return false;shadowCascadeMask=castsShadow?(shadowCascadeMask&DirectionalShadowAllCascades3D):0;if(!motionValid){previousPalette=palette;previousTransform=transform;}skinnedMeshInstances.push_back({mesh,palette,previousPalette,transform,previousTransform,CreateNormalMatrix(transform),PackColorRgba8(tint),PackSurface3D(surface),textures,(std::max)(.001f,textureScale),Clamp(normalScale,-16.f,15.96875f),(std::max)(.001f,baseTextureScale),(std::max)(.001f,detailTextureScale),firstIndex,indexCount,useUv,materialClass,shadingModel,alphaMode,Clamp(alphaCutoff,0.f,1.f),doubleSided,castsShadow&&shadowCascadeMask!=0,motionValid,shadowCascadeMask,submissionGroupId});return true;}
     void SetViewProjection(Matrix4 matrix){viewProjection_=matrix;}
     const Matrix4& ViewProjection()const{return viewProjection_;}
@@ -507,6 +515,7 @@ private:
     size_t lastReleasedBytes_{};
     uint64_t trimCount_{};
     uint32_t skinPaletteGeneration_{1},skinPaletteCount_{},nextSkinnedSubmissionGroupId_{1};
+    inline static std::atomic<uint64_t> nextSkinnedSubmissionNonce_{1};
     std::array<EllipseStepCacheEntry,4> ellipseStepCache_{};
     uint64_t ellipseStepCacheClock_{};
     bool backfaceCulling_{true};
@@ -515,6 +524,7 @@ private:
     BlendMode2D blendMode_{BlendMode2D::Alpha};
     DrawListCapacityProfile capacityProfile_{DrawListCapacityProfile::Frame};
 };
+struct D3D12RendererTestAccess3D;
 class D3D12Renderer {
 public:
     static constexpr unsigned BufferedFrames=3;
@@ -575,9 +585,14 @@ public:
     void SetQualitySettings(RendererQualitySettings3D settings);
     RendererQualitySettings3D QualitySettings()const;
     RendererStats GetStats()const;
+    SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const;
     unsigned RenderWidth() const;
     unsigned RenderHeight() const;
 private:
+    friend struct D3D12RendererTestAccess3D;
     struct Impl; std::unique_ptr<Impl> impl_;
 };
+#if defined(AEVRYND_TESTING)
+struct D3D12RendererTestAccess3D {static void SetSkinnedAllocatorState(D3D12Renderer& renderer,uint32_t nextHandle,uint64_t nextIdentity);};
+#endif
 }

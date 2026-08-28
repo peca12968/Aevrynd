@@ -237,8 +237,14 @@ add_test(NAME AevryndSkinnedModel3DTest COMMAND powershell.exe -NoProfile -Execu
 
 add_executable(AevryndSkinnedRenderable3DTest tests/SkinnedRenderable3DSmoke.cpp)
 target_compile_options(AevryndSkinnedRenderable3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndSkinnedRenderable3DTest PRIVATE AEVRYND_TESTING=1)
 target_link_libraries(AevryndSkinnedRenderable3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSkinnedRenderable3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedRenderable3DTest>'")
+add_executable(AevryndSkinnedGroupVelocityReadbackTest tests/SkinnedGroupVelocityReadbackSmoke.cpp)
+target_compile_definitions(AevryndSkinnedGroupVelocityReadbackTest PRIVATE AEVRYND_TESTING=1)
+target_compile_options(AevryndSkinnedGroupVelocityReadbackTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndSkinnedGroupVelocityReadbackTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSkinnedGroupVelocityReadbackTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedGroupVelocityReadbackTest>'")
 
 add_executable(AevryndSkinnedModelAssetTest tests/SkinnedModelAssetSmoke.cpp)
 target_compile_options(AevryndSkinnedModelAssetTest PRIVATE /W4 /permissive- /utf-8)

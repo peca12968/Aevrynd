@@ -31,6 +31,11 @@ private:
     std::vector<Aevrynd::Material3D> femaleMaterials_{},maleMaterials_{};
     Aevrynd::MaterialLibrary3D femaleMaterialLibrary_{},maleMaterialLibrary_{};
     Aevrynd::SkinnedMeshResource3D gpuFemale_{},gpuMale_{};
+    Aevrynd::SkinnedMeshResource3D femaleShoulder_{},femaleSword_{},femaleAxe_{};
+    Aevrynd::SkinnedMeshResource3D maleShoulder_{},maleSword_{},maleAxe_{};
+    std::array<Aevrynd::Material3D,1> femaleEquipmentMaterial_{},maleEquipmentMaterial_{};
+    Aevrynd::SkinnedRenderableGroupHistory3D femaleGroupHistory_{},maleGroupHistory_{};
+    Aevrynd::SkinnedRenderableGroupStats3D equipmentGroupStats_{};
     Aevrynd::AnimationClip3D femaleClip_{},maleClip_{};
     Aevrynd::AnimationPlayer3D femalePlayer_{},malePlayer_{};
     Aevrynd::AnimationPose3D femalePose_{},malePose_{};
@@ -40,11 +45,13 @@ private:
     float yaw_{},pitch_{.12f};
     int automaticPhase_{-1},lastJumpCycle_{-1};
     uint64_t modeSwitches_{},cameraObstructions_{};
+    std::uint64_t equipmentRevision_{},renderFrame_{};
+    std::size_t lastEquipmentCaptureIndex_{static_cast<std::size_t>(-1)};
     std::size_t lastReusableMemoryReleasedBytes_{};uint64_t reusableMemoryTrimCount_{};
     std::filesystem::path captureDirectory_{};
     std::uint64_t captureSuccessfulBaseline_{},captureRejectedBaseline_{};
     std::size_t captureIndex_{};
     double nextCaptureTime_{.8};
     bool capturePending_{};
-    bool firstPerson_{},automatic_{true},femaleActive_{true};
+    bool firstPerson_{},automatic_{true},femaleActive_{true},armorVisible_{true},axeEquipped_{},lastRenderedFirstPerson_{};
 };
