@@ -885,9 +885,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float hairMask = input.characterShadingModel == 2 ? 1.0 : 0.0;
     const float eyeMask = input.characterShadingModel == 3 ? 1.0 : 0.0;
     const float normalDetailStrength=CharacterNormalDetailStrength(skinMask,hairMask,eyeMask)*input.normalScale;
-    const float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask));
+    float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask));
     const float emissive = saturate(input.material.z);
-    const float occlusion = saturate(input.material.w);
+    float occlusion = saturate(input.material.w);
     float3 baseColor = input.color.rgb;
     float materialAlpha = input.color.a;
     if (input.textureData.x > 0.5 && input.materialClass != 3)
@@ -898,7 +898,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             materialAlpha *= sampledBaseColor.a;
             if(input.alphaMasked!=0&&!alphaToCoverage)clip(materialAlpha-input.alphaCutoff);
             baseColor *= sampledBaseColor.rgb;
-            roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
+            const float4 surfaceSample=roughnessTexture.Sample(materialSampler,input.uv);
+            occlusion*=surfaceSample.r;
+            roughness=clamp(roughness*surfaceSample.a,0.045,1.0);
+            metallic*=surfaceSample.b;
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
             const float3 derivativeNormal = UvNormal(input.worldPosition, normal, input.uv);
             normal = ScaleNormalDetail(normal,UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal),normalDetailStrength);
@@ -906,7 +909,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         else
         {
             baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
-            roughness = clamp(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r, 0.045, 1.0);
+            const float4 surfaceSample=Triplanar(roughnessTexture,input.worldPosition,normal,input.textureData.y);
+            occlusion*=surfaceSample.r;
+            roughness=clamp(roughness*surfaceSample.a,0.045,1.0);
+            metallic*=surfaceSample.b;
             normal = ScaleNormalDetail(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.y),normalDetailStrength);
         }
     }
@@ -927,14 +933,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float3 grassColor = baseColorTexture.Sample(materialSampler, terrainUv).rgb;
             const float3 soilColor = soilBaseColorTexture.Sample(materialSampler, terrainUv).rgb;
             const float3 rockColor = Triplanar(rockBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
-            const float grassRoughness = roughnessTexture.Sample(materialSampler, terrainUv).r;
-            const float soilRoughness = soilRoughnessTexture.Sample(materialSampler, terrainUv).r;
-            const float rockRoughness = Triplanar(rockRoughnessTexture, input.worldPosition, geometricNormal, input.textureData.y).r;
+            const float4 grassSurface=roughnessTexture.Sample(materialSampler,terrainUv);
+            const float4 soilSurface=soilRoughnessTexture.Sample(materialSampler,terrainUv);
+            const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.y);
+            const float4 terrainSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
             const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.y);
             const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.y);
             const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.y);
             baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * lerp(0.94, 1.06, microNoise);
-            roughness = clamp(roughness * (grassRoughness * grassWeight + soilRoughness * soilWeight + rockRoughness * rockWeight), 0.045, 1.0);
+            occlusion*=terrainSurface.r;
+            roughness=clamp(roughness*terrainSurface.a,0.045,1.0);
+            metallic*=terrainSurface.b;
             normal = normalize(grassNormal * grassWeight + soilNormal * soilWeight + rockNormal * rockWeight);
         }
         else

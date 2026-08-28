@@ -40,10 +40,12 @@ struct SkinnedMeshHandle3D {uint32_t value{};explicit constexpr operator bool()c
 struct SkinPaletteRange3D {uint32_t firstJoint{},jointCount{},generation{};explicit constexpr operator bool()const{return jointCount!=0;}friend constexpr bool operator==(const SkinPaletteRange3D&,const SkinPaletteRange3D&)=default;};
 struct SkinPaletteJoint3D {Matrix4 skin{};std::array<Vec4,3> normalRows{};};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
-struct MaterialTextureLayerDefinition3D {std::filesystem::path baseColorPath,roughnessPath,normalPath;};
+enum class MaterialSurfaceMapEncoding3D:uint8_t {RoughnessR,PackedOrm};
+constexpr std::array<uint8_t,4> CanonicalMaterialSurfaceTexel3D(std::array<uint8_t,4> texel,MaterialSurfaceMapEncoding3D encoding){return encoding==MaterialSurfaceMapEncoding3D::PackedOrm?std::array<uint8_t,4>{texel[0],texel[1],texel[2],texel[1]}:std::array<uint8_t,4>{255,texel[0],255,texel[0]};}
+struct MaterialTextureLayerDefinition3D {std::filesystem::path baseColorPath,roughnessPath,normalPath;MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};};
 enum class MaterialAlphaMode3D:uint8_t {Opaque,Mask,Blend};
 constexpr MaterialAlphaMode3D NormalizeMaterialAlphaMode3D(MaterialAlphaMode3D value){return value==MaterialAlphaMode3D::Mask||value==MaterialAlphaMode3D::Blend?value:MaterialAlphaMode3D::Opaque;}
-struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;std::array<MaterialTextureLayerDefinition3D,2> additionalLayers{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};};
+struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;std::array<MaterialTextureLayerDefinition3D,2> additionalLayers{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};};
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};

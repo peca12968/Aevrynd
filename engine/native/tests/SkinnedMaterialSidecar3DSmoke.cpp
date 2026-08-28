@@ -54,6 +54,13 @@ int main() {
     WriteFile(sidecar, ValidDocument());
     passed &= Expect(LoadSkinnedMaterialSidecarFile3D(sidecar, slots, root).materials.size() == 3u, "file sidecar did not load");
 
+    std::string packedOrm = ValidDocument();
+    const std::size_t ormPosition = packedOrm.find("\"roughness\":\"skin/rough.png\"");
+    packedOrm.replace(ormPosition, std::string("\"roughness\":\"skin/rough.png\"").size(), "\"orm\":\"skin/rough.png\"");
+    const auto ormResult = ParseSkinnedMaterialSidecar3D(packedOrm, slots, root);
+    passed &= Expect(ormResult && ormResult.materials[0].textures.surfaceEncoding == MaterialSurfaceMapEncoding3D::PackedOrm,
+        "packed ORM surface map was not propagated");
+
     std::string missing = ValidDocument();
     const std::size_t missingPosition = missing.find("hair/normal.png");
     missing.replace(missingPosition, std::string("hair/normal.png").size(), "hair/missing.png");

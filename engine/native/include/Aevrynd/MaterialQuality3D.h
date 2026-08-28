@@ -18,5 +18,5 @@ struct MaterialResolutionPolicy3D {
 constexpr std::size_t EstimateTextureBytes(unsigned width,unsigned height,unsigned channels=4,bool mipmaps=true){const std::size_t base=std::size_t(width)*height*channels;return mipmaps?base+base/3:base;}
 constexpr std::size_t EstimatePbrMaterialBytes(unsigned resolution,unsigned textureCount=3,bool mipmaps=true){return EstimateTextureBytes(resolution,resolution,4,mipmaps)*textureCount;}
 constexpr std::size_t EstimateBlockCompressedTextureBytes(unsigned width,unsigned height,unsigned blockBytes=8,bool mipmaps=true){std::size_t bytes{};do{bytes+=std::size_t((width+3)/4)*((height+3)/4)*blockBytes;if(!mipmaps||(width==1&&height==1))break;width=(std::max)(1u,width/2);height=(std::max)(1u,height/2);}while(true);return bytes;}
-constexpr std::size_t EstimateCompressedPbrMaterialBytes(unsigned resolution,bool mipmaps=true){return EstimateBlockCompressedTextureBytes(resolution,resolution,8,mipmaps)*2+EstimateBlockCompressedTextureBytes(resolution,resolution,16,mipmaps);}
+constexpr std::size_t EstimateCompressedPbrMaterialBytes(unsigned resolution,bool mipmaps=true){return EstimateBlockCompressedTextureBytes(resolution,resolution,8,mipmaps)+EstimateBlockCompressedTextureBytes(resolution,resolution,16,mipmaps)*2;}
 }

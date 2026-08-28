@@ -74,20 +74,23 @@ bool ParseTextureLayer(
     const std::filesystem::path& canonicalRoot,
     MaterialTextureLayerDefinition3D& output,
     SkinnedMaterialSidecarError3D& error) {
-    if (!HasOnlyFields(object, {"baseColor", "roughness", "normal"}) ||
-        !object.Contains("baseColor") || !object.Contains("roughness") || !object.Contains("normal")) {
-        error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' " + std::string(prefix) + " must contain only baseColor, roughness, and normal"};
+    const bool hasRoughness=object.Contains("roughness"),hasOrm=object.Contains("orm");
+    if (!HasOnlyFields(object, {"baseColor", "roughness", "orm", "normal"}) ||
+        !object.Contains("baseColor") || hasRoughness==hasOrm || !object.Contains("normal")) {
+        error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' " + std::string(prefix) + " must contain baseColor, normal, and exactly one of roughness or orm"};
         return false;
     }
     std::string baseColor;
     std::string roughness;
     std::string normal;
-    if (!object.Read("baseColor", baseColor) || !object.Read("roughness", roughness) || !object.Read("normal", normal)) {
+    const std::string_view surfaceField=hasOrm?"orm":"roughness";
+    if (!object.Read("baseColor", baseColor) || !object.Read(surfaceField, roughness) || !object.Read("normal", normal)) {
         error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' " + std::string(prefix) + " texture paths must be strings"};
         return false;
     }
+    output.surfaceEncoding=hasOrm?MaterialSurfaceMapEncoding3D::PackedOrm:MaterialSurfaceMapEncoding3D::RoughnessR;
     return ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + ".baseColor", baseColor, output.baseColorPath, error) &&
-           ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + ".roughness", roughness, output.roughnessPath, error) &&
+           ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + "." + std::string(surfaceField), roughness, output.roughnessPath, error) &&
            ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + ".normal", normal, output.normalPath, error);
 }
 
@@ -98,15 +101,17 @@ bool ParseTextures(
     const SkinnedMaterialSidecarLimits3D& limits,
     MaterialTextureSetDefinition3D& output,
     SkinnedMaterialSidecarError3D& error) {
-    if (!HasOnlyFields(object, {"baseColor", "roughness", "normal", "maximumResolution", "layer1", "layer2"}) ||
-        !object.Contains("baseColor") || !object.Contains("roughness") || !object.Contains("normal")) {
+    const bool hasRoughness=object.Contains("roughness"),hasOrm=object.Contains("orm");
+    if (!HasOnlyFields(object, {"baseColor", "roughness", "orm", "normal", "maximumResolution", "layer1", "layer2"}) ||
+        !object.Contains("baseColor") || hasRoughness==hasOrm || !object.Contains("normal")) {
         error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' textures have missing or unknown fields"};
         return false;
     }
     std::string baseColor;
     std::string roughness;
     std::string normal;
-    if (!object.Read("baseColor", baseColor) || !object.Read("roughness", roughness) || !object.Read("normal", normal) ||
+    const std::string_view surfaceField=hasOrm?"orm":"roughness";
+    if (!object.Read("baseColor", baseColor) || !object.Read(surfaceField, roughness) || !object.Read("normal", normal) ||
         !object.Read("maximumResolution", output.maximumResolution)) {
         error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' texture fields have invalid types"};
         return false;
@@ -115,8 +120,9 @@ bool ParseTextures(
         error = {ErrorCode::InvalidValue, 0u, "Material '" + std::string(slot) + "' maximumResolution is outside the configured limit"};
         return false;
     }
+    output.surfaceEncoding=hasOrm?MaterialSurfaceMapEncoding3D::PackedOrm:MaterialSurfaceMapEncoding3D::RoughnessR;
     if (!ResolveTexturePath(canonicalRoot, slot, "textures.baseColor", baseColor, output.baseColorPath, error) ||
-        !ResolveTexturePath(canonicalRoot, slot, "textures.roughness", roughness, output.roughnessPath, error) ||
+        !ResolveTexturePath(canonicalRoot, slot, std::string("textures.")+std::string(surfaceField), roughness, output.roughnessPath, error) ||
         !ResolveTexturePath(canonicalRoot, slot, "textures.normal", normal, output.normalPath, error)) {
         return false;
     }
