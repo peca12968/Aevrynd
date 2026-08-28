@@ -436,6 +436,11 @@ target_compile_definitions(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE AE
 target_link_libraries(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndLocalReflectionProbeD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndLocalReflectionProbeD3D12VisualTest>'")
 
+add_executable(AevryndReflectionProbeCaptureD3D12Test tests/ReflectionProbeCaptureD3D12Smoke.cpp)
+target_compile_options(AevryndReflectionProbeCaptureD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReflectionProbeCaptureD3D12Test PRIVATE AevryndEngine Psapi)
+add_test(NAME AevryndReflectionProbeCaptureD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndReflectionProbeCaptureD3D12Test>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)
