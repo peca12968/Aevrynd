@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "2330b257826cf70411f1f74a612c95e12550bbfb",
+  "snapshotRevision": "c64edf966a804dac0a003dd4e8013a8bbbc1d235",
   "chunkCharacters": 3000,
-  "chunkCount": 505,
-  "sourceCount": 124,
+  "chunkCount": 528,
+  "sourceCount": 133,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "c3fff55a6b323c4512b8c9688e039d7281ad2dd37f343cbfc15744238b9efb1b",
+  "knowledgeSha256": "5d89252258f1c5aa675206027530d50d6d30c5d43d4de9e7a78b6b8d55980bf7",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "5ec6ddf1ba5ac84330734382c41239e8dfc99ba4ade49d3a88a02c46f4cf379d",
-      "revision": "2330b257826cf70411f1f74a612c95e12550bbfb",
-      "bytes": 32556
+      "sha256": "2eef2175d0b865772c3072f1a5529cd7625be691b631e57dcbb50b55d612c90b",
+      "revision": "c64edf966a804dac0a003dd4e8013a8bbbc1d235",
+      "bytes": 37319
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "9e8f63e3e446629631dca1834c0ca84b07e0f1d3f458334e05cece2a16b7f576",
-      "revision": "b3ab9606ebfb9c0eb7a70370d5b5ba7dcf09eec2",
-      "bytes": 68968
+      "sha256": "ad32066b780b5cc567d655445e513ba979afad4de36aa1e409e0367e0029f097",
+      "revision": "c64edf966a804dac0a003dd4e8013a8bbbc1d235",
+      "bytes": 80346
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -445,11 +445,32 @@
       "bytes": 3245
     },
     {
+      "path": "engine/native/tests/CloudShadowD3D12VisualSmoke.cpp",
+      "kind": "test",
+      "sha256": "fa7b85b80bb1e4c93404293eb9470c6b9505987a96a34edd87928c7358758426",
+      "revision": "2b01b6cdf8133787a75dbdc3477982d06dee9e93",
+      "bytes": 4964
+    },
+    {
       "path": "engine/native/tests/CollisionWorldSmoke.cpp",
       "kind": "test",
       "sha256": "fbce9aee3e7f316176c303c65b2dfe77c524030ea219da0b282b4675a81b97ec",
       "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
       "bytes": 3156
+    },
+    {
+      "path": "engine/native/tests/DirectionalLightShaft3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "9944c72edae4a0a01457870ee30a268abecaa676f2d2387b1d7c29fb51e7510f",
+      "revision": "04d7ee6c85377eed9b2a543576d3042bc8dc7957",
+      "bytes": 2335
+    },
+    {
+      "path": "engine/native/tests/DirectionalLightShaftD3D12VisualSmoke.cpp",
+      "kind": "test",
+      "sha256": "e52f6c781eaf999bdc0532ccdeaaa80a33fa4078d525f1e577f710fa89c9aa6d",
+      "revision": "04d7ee6c85377eed9b2a543576d3042bc8dc7957",
+      "bytes": 5872
     },
     {
       "path": "engine/native/tests/DrawListSmoke.cpp",
@@ -662,6 +683,20 @@
       "bytes": 6450
     },
     {
+      "path": "engine/native/tests/ScreenSpaceReflection3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "50a2539ce2e93951cc0071bf6f9c5ff0eb9efabbbef420cc8318f6e0d4065028",
+      "revision": "c64edf966a804dac0a003dd4e8013a8bbbc1d235",
+      "bytes": 2517
+    },
+    {
+      "path": "engine/native/tests/ScreenSpaceReflectionD3D12VisualSmoke.cpp",
+      "kind": "test",
+      "sha256": "e11ae53b5e81c1c828380359a717c8d69e8f424b0cab7163fc76a78c1c9b9e23",
+      "revision": "c64edf966a804dac0a003dd4e8013a8bbbc1d235",
+      "bytes": 6768
+    },
+    {
       "path": "engine/native/tests/SerializationSmoke.cpp",
       "kind": "test",
       "sha256": "ac7fd8b5731d33a28e7167fcb4e10b2501d9cfcfd90cd58574ea449c998d70d2",
@@ -716,6 +751,20 @@
       "sha256": "9f9f4e8065b93f21395b5666d6d43c7dbdec8f04091f8443398eff4aa73380e9",
       "revision": "3a2413c6c285c0169a49062008e48a0788a7e78d",
       "bytes": 23400
+    },
+    {
+      "path": "engine/native/tests/SkinSubsurface3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "ef345fb9897b0920c942bed9590f718ab3b4917be4e9c5000c88214571ba4527",
+      "revision": "e9c3dc35f314163b038d4729f3f98a69179c26fa",
+      "bytes": 2191
+    },
+    {
+      "path": "engine/native/tests/SkinSubsurfaceD3D12VisualSmoke.cpp",
+      "kind": "test",
+      "sha256": "4cd01555c4bfa71c87e514e4f03fb871f0ec4a44e318c9748bd71e200ae649cb",
+      "revision": "e9c3dc35f314163b038d4729f3f98a69179c26fa",
+      "bytes": 6630
     },
     {
       "path": "engine/native/tests/SoftDirectionalShadow3DBenchmark.cpp",
@@ -816,6 +865,20 @@
       "bytes": 12351
     },
     {
+      "path": "engine/native/tests/VolumetricCloud3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "53d16b0db3fdaeb96d326ef546665406688baf759668a2a750a7c6bdf96d25e1",
+      "revision": "2b01b6cdf8133787a75dbdc3477982d06dee9e93",
+      "bytes": 3409
+    },
+    {
+      "path": "engine/native/tests/VolumetricCloudD3D12VisualSmoke.cpp",
+      "kind": "test",
+      "sha256": "485dcda2cae42df474662fe341f472d42f1968c4df6d41e3424647abea5382b0",
+      "revision": "67ccf490969c448abf45e1e291ead8996278f0ed",
+      "bytes": 4181
+    },
+    {
       "path": "engine/native/tests/WaterOptics3DSmoke.cpp",
       "kind": "test",
       "sha256": "c911ae40231a50347c85caf033a4bb5805e164b4414fc1cdc7387eff1a40c82b",
@@ -825,9 +888,9 @@
     {
       "path": "engine/native/tests/WaterRefraction3DBenchmark.cpp",
       "kind": "test",
-      "sha256": "fe46b946d6dddc5b26c75e1bb7a21d48fdbd50f1fa69f68c2bc126cd3e56c501",
-      "revision": "e332a57dd573a7606a5f74187441cf233416ffc4",
-      "bytes": 5074
+      "sha256": "8f7fdb79e5b845f4c186ff9f3fe22de8915981304129b80c9ebe6f43f27bbe74",
+      "revision": "c64edf966a804dac0a003dd4e8013a8bbbc1d235",
+      "bytes": 5114
     },
     {
       "path": "engine/native/tests/WorldStreamer3DSmoke.cpp",
