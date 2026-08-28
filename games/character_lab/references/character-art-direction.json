@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "female": {
+    "selection": "F2",
+    "selectionReference": "f2-female-selection.png",
+    "modelingReference": "f2-female-modeling-v1.png",
+    "bodyDirection": "athletic-hourglass",
+    "materialDirection": "photorealistic-pbr"
+  },
+  "male": {
+    "selection": "M2",
+    "selectionReference": "m2-male-selection.png",
+    "modelingReference": "m2-male-modeling-v1.png",
+    "bodyDirection": "athletic-muscular",
+    "materialDirection": "photorealistic-pbr"
+  }
+}

@@ -172,6 +172,9 @@ struct RendererStats {
     uint64_t hdrPostProcessPasses{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
+    bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{};
+    size_t temporalHistoryResidentBytes{};
+    uint64_t temporalHistoryAllocations{},temporalHistoryReleases{},temporalResolvePasses{};
     bool multisampleSupported{},multisampleEnabled{};
     unsigned multisampleCount{1},multisampleQuality{};
     size_t multisampleResidentBytes{};
@@ -505,11 +508,13 @@ public:
     static constexpr size_t MaxMaterialTextureUploadBatchTextures=48;
     static constexpr size_t MaxMaterialTextureUploadStagingBytes=96*1024*1024;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*3;
+    static constexpr size_t MotionInstanceUploadBytes=sizeof(Matrix4);
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
     static constexpr size_t NextFrameUploadCapacity(size_t current,size_t required,size_t maximum){size_t capacity=(std::max)(size_t{1},current);while(capacity<required&&capacity<maximum)capacity=capacity>maximum/2?maximum:capacity*2;return(std::min)(capacity,maximum);}
     static constexpr size_t Initial2DFrameUploadBytes=BufferedFrames*InitialFrameVertices*sizeof(Vertex);
     static constexpr size_t Initial3DFrameUploadBytes=BufferedFrames*(InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*MeshInstanceUploadBytes);
+    static constexpr size_t InitialMotionFrameUploadBytes=BufferedFrames*InitialFrameMeshInstances*MotionInstanceUploadBytes;
     static constexpr size_t InitialFrameUploadBytes=Initial2DFrameUploadBytes+Initial3DFrameUploadBytes;
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
     D3D12Renderer(); ~D3D12Renderer();
