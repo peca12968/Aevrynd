@@ -178,6 +178,8 @@ inline float EvaluateDirectionalLightShaftScattering3D(float opticalDepth,float 
 }
 struct AmbientOcclusionSettings3D {bool enabled{true};float radius{1.35f},bias{.035f},intensity{1.05f};};
 struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion{true},multisampling{true},postProcessAntiAliasing{true};friend constexpr bool operator==(const RendererQualitySettings3D&,const RendererQualitySettings3D&)=default;};
+struct GpuInstanceCullingSettings3D {bool enabled{};float maximumDistance{};friend constexpr bool operator==(const GpuInstanceCullingSettings3D&,const GpuInstanceCullingSettings3D&)=default;};
+inline GpuInstanceCullingSettings3D NormalizeGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){settings.maximumDistance=std::isfinite(settings.maximumDistance)&&settings.maximumDistance>0.f?settings.maximumDistance:0.f;return settings;}
 struct VelocityCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};bool historyValid{};};
 inline AmbientOcclusionSettings3D NormalizeAmbientOcclusionSettings3D(AmbientOcclusionSettings3D settings){settings.radius=Clamp(std::isfinite(settings.radius)?settings.radius:1.35f,.1f,8.f);settings.bias=Clamp(std::isfinite(settings.bias)?settings.bias:.035f,0.f,.5f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:1.05f,0.f,4.f);return settings;}
 inline constexpr size_t AmbientOcclusionResidentBytes3D(unsigned width,unsigned height){return size_t((width+1)/2)*((height+1)/2)*2;}
@@ -221,6 +223,13 @@ struct RendererStats {
     CanvasViewport canvasViewport{};
     uint64_t resizeCount{};
     RendererQualitySettings3D requestedQuality{},effectiveQuality{};
+    GpuInstanceCullingSettings3D gpuInstanceCulling{};
+    bool gpuInstanceCullingResourcesResident{};
+    size_t gpuInstanceCullingResidentBytes{},lastGpuInstanceCullingCpuGroups{},lastGpuInstanceCullingStaticOpaqueColorGroups{},lastGpuInstanceCullingColorDirectGroups{},lastGpuInstanceCullingShadowDirectGroups{},lastGpuInstanceCullingAmbientOcclusionDirectGroups{},lastGpuInstanceCullingVelocityDirectGroups{},lastGpuInstanceCullingProbeDirectGroups{},lastGpuInstanceCullingCandidates{},lastGpuInstanceCullingVisible{},lastGpuInstanceCullingRejected{};
+    std::vector<uint32_t> lastGpuInstanceCullingGroupVisible{};
+    std::vector<uint64_t> lastGpuInstanceCullingGroupIdentityHashes{};
+    size_t gpuInstanceCullingValidationReadbackBytes{};
+    uint64_t gpuInstanceCullingDispatches{},gpuInstanceIndirectDraws{},gpuInstanceDirectFallbackDraws{};
     uint64_t qualitySwitches{},qualitySwitchFlushes{},qualityResourceReleases{};
     bool linearWorldBlending{};
     size_t worldSrgbRenderTargetViews{};
@@ -718,6 +727,9 @@ public:
     void ToggleDLSS();
     void SetQualitySettings(RendererQualitySettings3D settings);
     RendererQualitySettings3D QualitySettings()const;
+    void SetGpuInstanceCullingSettings(GpuInstanceCullingSettings3D settings);
+    GpuInstanceCullingSettings3D GpuInstanceCullingSettings()const;
+    bool RequestGpuInstanceCullingValidationReadback3D();
     RendererStats GetStats()const;
     SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const;
     unsigned RenderWidth() const;
