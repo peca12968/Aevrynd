@@ -11,7 +11,7 @@ int main(){
     HWND window=CreateWindowExW(0,L"STATIC",L"VelocityProbe",WS_OVERLAPPED,0,0,128,128,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
     if(!window)return 1;
     try{
-        D3D12Renderer renderer;renderer.Initialize(window,128,128,128,128,false);renderer.SetQualitySettings({false,false,false});
+        D3D12Renderer renderer;renderer.Initialize(window,128,128,128,128,false);renderer.SetQualitySettings({false,false,false,false});
         DrawList pure2D{DrawListCapacityProfile::Minimal2D};pure2D.Quad({32,32},{16,16},{1,1,1,1});renderer.RequestVelocityReadback3D();renderer.Render(pure2D,{0,0,0,1});
         if(renderer.TakeVelocityReadback3D()||renderer.GetStats().velocityResidentBytes||renderer.GetStats().velocityReadbackRejections!=1){std::cerr<<"Pure 2D allocated velocity resources\n";return 2;}
         const Mesh3D box=Mesh3D::CreateUnitBox();const auto mesh=renderer.CreateMesh(box.vertices,box.indices);
