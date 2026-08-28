@@ -36,6 +36,7 @@ add_library(AevryndEngine STATIC
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
   src/VisibilityBvh3D.cpp
+  src/Vegetation3D.cpp
 )
 
 set(AEVRYND_STREAMLINE_AVAILABLE OFF)
@@ -166,6 +167,18 @@ add_executable(AevryndVisibilityBvh3DTest tests/VisibilityBvh3DSmoke.cpp)
 target_compile_options(AevryndVisibilityBvh3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndVisibilityBvh3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndVisibilityBvh3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVisibilityBvh3DTest>'")
+add_executable(AevryndVegetation3DTest tests/Vegetation3DSmoke.cpp)
+target_compile_options(AevryndVegetation3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndVegetation3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVegetation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVegetation3DTest>'")
+add_executable(AevryndVegetation3DBenchmark tests/Vegetation3DBenchmark.cpp)
+target_compile_options(AevryndVegetation3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndVegetation3DBenchmark PRIVATE AevryndEngine)
+add_test(NAME AevryndVegetation3DBenchmark COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVegetation3DBenchmark>'")
+add_executable(AevryndVegetationD3D12VisualTest tests/VegetationD3D12VisualSmoke.cpp)
+target_compile_options(AevryndVegetationD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndVegetationD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVegetationD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVegetationD3D12VisualTest>'")
 
 add_executable(AevryndEnvironmentLighting3DTest tests/EnvironmentLighting3DSmoke.cpp)
 target_compile_options(AevryndEnvironmentLighting3DTest PRIVATE /W4 /permissive- /utf-8)

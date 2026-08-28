@@ -113,9 +113,10 @@ struct DepthVertexOutput
     float alpha : TEXCOORD6;
 };
 
-float3 ApplyDepthWind(float3 position, float packedWeight)
+float3 ApplyDepthWind(float3 position, float packedWeight, uint materialClass)
 {
-    const float weight = step(0.0, packedWeight) * (1.0 - saturate(packedWeight));
+    // 深度通道必須與主色彩通道使用相同 foliage 判斷，避免一般模型寫入錯誤 AO 輪廓。
+    const float weight = (materialClass == 2u ? 1.0 : 0.0) * step(0.0, packedWeight) * (1.0 - saturate(packedWeight));
     const float primary = sin(fogEndEnabled.w * 1.7 + position.x * 0.43 + position.z * 0.31);
     const float detail = sin(fogEndEnabled.w * 3.1 - position.x * 0.19 + position.z * 0.67);
     return position + float3(primary + detail * 0.35, abs(detail) * 0.08, detail * 0.55) * weight * 0.13;
@@ -124,7 +125,7 @@ float3 ApplyDepthWind(float3 position, float packedWeight)
 DepthVertexOutput DepthWorldVertexMain(WorldVertexInput input)
 {
     DepthVertexOutput output = (DepthVertexOutput)0;
-    output.position = mul(viewProjection, float4(ApplyDepthWind(input.position, input.normal.w), 1.0));
+    output.position = mul(viewProjection, float4(input.position, 1.0));
     output.lodCoverage = 1.0;
     output.lodSeed = 0;
     output.lodInvert = 0;
@@ -138,7 +139,7 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
                                   dot(input.transformRow1, localPosition),
                                   dot(input.transformRow2, localPosition),
                                   dot(input.transformRow3, localPosition));
-    worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w);
+    worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
 
     DepthVertexOutput output = (DepthVertexOutput)0;
     output.position = mul(viewProjection, worldPosition);
@@ -164,7 +165,7 @@ DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input)
                                   dot(input.transformRow1, localPosition),
                                   dot(input.transformRow2, localPosition),
                                   dot(input.transformRow3, localPosition));
-    worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w);
+    worldPosition.xyz = ApplyDepthWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
 
     DepthVertexOutput output = (DepthVertexOutput)0;
     output.position = mul(viewProjection, worldPosition);

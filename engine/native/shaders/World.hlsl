@@ -18,13 +18,23 @@ cbuffer Scene : register(b0)
     float4 heightFogParameters;
 };
 
+float3 ApplyVelocityWind(float3 position,float packedWeight,uint materialClass,float time)
+{
+    const float weight=(materialClass==2u?1.0:0.0)*step(0.0,packedWeight)*(1.0-saturate(packedWeight));
+    const float primary=sin(time*1.7+position.x*0.43+position.z*0.31);
+    const float detail=sin(time*3.1-position.x*0.19+position.z*0.67);
+    return position+float3(primary+detail*0.35,abs(detail)*0.08,detail*0.55)*weight*0.13;
+}
+
 struct MotionInstanceInput
 {
     float3 position : POSITION;
+    float4 normal : NORMAL;
     float4 transformRow0 : INSTANCE0;
     float4 transformRow1 : INSTANCE1;
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
+    uint textureData : TEXTURE;
     float4 previousRow0 : PREVIOUS0;
     float4 previousRow1 : PREVIOUS1;
     float4 previousRow2 : PREVIOUS2;
@@ -37,7 +47,21 @@ struct MotionVertexOutput
     float4 position : SV_POSITION;
     float4 currentClip : TEXCOORD0;
     float4 previousClip : TEXCOORD1;
+    nointerpolation float lodCoverage : TEXCOORD2;
+    nointerpolation uint lodSeed : TEXCOORD3;
+    nointerpolation uint lodInvert : TEXCOORD4;
 };
+
+void ClipMotionLod(float4 position, float coverage, uint seed, uint invert)
+{
+    if (coverage >= 0.999) return;
+    const uint2 pixel = uint2(position.xy);
+    uint noise = pixel.x * 1973u + pixel.y * 9277u + seed * 26699u + 911u;
+    noise = (noise << 13u) ^ noise;
+    noise = noise * (noise * noise * 15731u + 789221u) + 1376312589u;
+    const float threshold = float(noise & 255u) / 255.0;
+    clip(invert != 0u ? threshold - coverage - 0.0000001 : coverage - threshold);
+}
 
 MotionVertexOutput VelocityWorldVertexMain(MotionWorldInput input)
 {
@@ -46,23 +70,32 @@ MotionVertexOutput VelocityWorldVertexMain(MotionWorldInput input)
     output.position = mul(viewProjection, worldPosition);
     output.currentClip = mul(currentUnjitteredViewProjection, worldPosition);
     output.previousClip = mul(previousViewProjection, worldPosition);
+    output.lodCoverage = 1.0;
+    output.lodSeed = 0u;
+    output.lodInvert = 0u;
     return output;
 }
 
 MotionVertexOutput VelocityInstancedVertexMain(MotionInstanceInput input)
 {
     const float4 localPosition = float4(input.position, 1.0);
-    const float4 currentWorld = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
-    const float4 previousWorld = float4(dot(input.previousRow0, localPosition), dot(input.previousRow1, localPosition), dot(input.previousRow2, localPosition), dot(input.previousRow3, localPosition));
+    float4 currentWorld = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
+    float4 previousWorld = float4(dot(input.previousRow0, localPosition), dot(input.previousRow1, localPosition), dot(input.previousRow2, localPosition), dot(input.previousRow3, localPosition));
+    const uint materialClass=(input.textureData>>2)&3u;currentWorld.xyz=ApplyVelocityWind(currentWorld.xyz,input.normal.w,materialClass,fogEndEnabled.w);previousWorld.xyz=ApplyVelocityWind(previousWorld.xyz,input.normal.w,materialClass,motionParameters.w);
     MotionVertexOutput output = (MotionVertexOutput)0;
     output.position = mul(viewProjection, currentWorld);
     output.currentClip = mul(currentUnjitteredViewProjection, currentWorld);
     output.previousClip = mul(previousViewProjection, previousWorld);
+    output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
+    output.lodInvert = (input.textureData >> 12) & 1u;
+    const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
+    output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
     return output;
 }
 
 float2 VelocityPixelMain(MotionVertexOutput input) : SV_TARGET
 {
+    ClipMotionLod(input.position, input.lodCoverage, input.lodSeed, input.lodInvert);
     if (motionParameters.x < 0.5 || input.currentClip.w <= 1e-6 || input.previousClip.w <= 1e-6)
         return 0.0;
     const float2 currentNdc = input.currentClip.xy / input.currentClip.w;
@@ -129,12 +162,14 @@ SamplerState screenPointClampSampler : register(s2);
 struct MotionMaterialInstanceInput
 {
     float3 position : POSITION;
+    float4 normal : NORMAL;
     float4 color : COLOR;
     float2 uv : TEXCOORD0;
     float4 transformRow0 : INSTANCE0;
     float4 transformRow1 : INSTANCE1;
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
+    uint textureData : TEXTURE;
     float4 normalRow1 : NROW1;
     float4 normalRow2 : NROW2;
     float4 tint : TINT;
@@ -147,6 +182,7 @@ struct MotionMaterialInstanceInput
 struct MotionMaterialSkinnedInput
 {
     float3 position : POSITION;
+    float4 normal : NORMAL;
     float4 color : COLOR;
     float2 uv : TEXCOORD0;
     uint4 blendIndices : BLENDINDICES;
@@ -155,6 +191,7 @@ struct MotionMaterialSkinnedInput
     float4 transformRow1 : INSTANCE1;
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
+    uint textureData : TEXTURE;
     float4 tint : TINT;
     uint skinPaletteBase : SKINBASE;
     float4 previousRow0 : PREVIOUS0;
@@ -172,13 +209,17 @@ struct MotionMaterialVertexOutput
     float2 uv : TEXCOORD2;
     nointerpolation float alphaCutoff : TEXCOORD3;
     nointerpolation float alpha : TEXCOORD4;
+    nointerpolation float lodCoverage : TEXCOORD5;
+    nointerpolation uint lodSeed : TEXCOORD6;
+    nointerpolation uint lodInvert : TEXCOORD7;
 };
 
 MotionMaterialVertexOutput VelocityMaskedInstancedVertexMain(MotionMaterialInstanceInput input)
 {
     const float4 localPosition=float4(input.position,1.0);
-    const float4 currentWorld=float4(dot(input.transformRow0,localPosition),dot(input.transformRow1,localPosition),dot(input.transformRow2,localPosition),dot(input.transformRow3,localPosition));
-    const float4 previousWorld=float4(dot(input.previousRow0,localPosition),dot(input.previousRow1,localPosition),dot(input.previousRow2,localPosition),dot(input.previousRow3,localPosition));
+    float4 currentWorld=float4(dot(input.transformRow0,localPosition),dot(input.transformRow1,localPosition),dot(input.transformRow2,localPosition),dot(input.transformRow3,localPosition));
+    float4 previousWorld=float4(dot(input.previousRow0,localPosition),dot(input.previousRow1,localPosition),dot(input.previousRow2,localPosition),dot(input.previousRow3,localPosition));
+    const uint materialClass=(input.textureData>>2)&3u;currentWorld.xyz=ApplyVelocityWind(currentWorld.xyz,input.normal.w,materialClass,fogEndEnabled.w);previousWorld.xyz=ApplyVelocityWind(previousWorld.xyz,input.normal.w,materialClass,motionParameters.w);
     MotionMaterialVertexOutput output;
     output.position=mul(viewProjection,currentWorld);
     output.currentClip=mul(currentUnjitteredViewProjection,currentWorld);
@@ -186,6 +227,10 @@ MotionMaterialVertexOutput VelocityMaskedInstancedVertexMain(MotionMaterialInsta
     output.uv=input.uv;
     output.alphaCutoff=saturate(input.normalRow1.w);
     output.alpha=input.color.a*input.tint.a;
+    output.lodCoverage=float((input.textureData>>4)&255u)/255.0;
+    output.lodInvert=(input.textureData>>12)&1u;
+    const uint objectSeed=asuint(input.transformRow0.w)*73856093u^asuint(input.transformRow1.w)*19349663u^asuint(input.transformRow2.w)*83492791u;
+    output.lodSeed=((input.textureData>>13)&7u)^objectSeed;
     return output;
 }
 
@@ -193,6 +238,7 @@ float2 VelocityMaskedPixelMain(MotionMaterialVertexOutput input) : SV_TARGET
 {
     // 速度根簽章將基色描述符映射至 t2，因此此處以同一資源槽裁切透明遮罩。
     clip(input.alpha*normalTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
+    ClipMotionLod(input.position,input.lodCoverage,input.lodSeed,input.lodInvert);
     if(motionParameters.x<0.5||input.currentClip.w<=1e-6||input.previousClip.w<=1e-6)return 0.0;
     const float2 currentNdc=input.currentClip.xy/input.currentClip.w;
     const float2 previousNdc=input.previousClip.xy/input.previousClip.w;
@@ -202,12 +248,14 @@ float2 VelocityMaskedPixelMain(MotionMaterialVertexOutput input) : SV_TARGET
 struct MotionSkinnedVertexInput
 {
     float3 position : POSITION;
+    float4 normal : NORMAL;
     uint4 blendIndices : BLENDINDICES;
     float4 blendWeights : BLENDWEIGHT;
     float4 transformRow0 : INSTANCE0;
     float4 transformRow1 : INSTANCE1;
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
+    uint textureData : TEXTURE;
     uint skinPaletteBase : SKINBASE;
     float4 previousRow0 : PREVIOUS0;
     float4 previousRow1 : PREVIOUS1;
@@ -236,8 +284,9 @@ MotionMaterialVertexOutput VelocityMaskedSkinnedVertexMain(MotionMaterialSkinned
 {
     const float4 currentLocal=float4(SkinMotionPosition(input.position,input.blendIndices,input.blendWeights,input.skinPaletteBase),1.0);
     const float4 previousLocal=float4(SkinMotionPosition(input.position,input.blendIndices,input.blendWeights,input.previousPaletteBase),1.0);
-    const float4 currentWorld=float4(dot(input.transformRow0,currentLocal),dot(input.transformRow1,currentLocal),dot(input.transformRow2,currentLocal),dot(input.transformRow3,currentLocal));
-    const float4 previousWorld=float4(dot(input.previousRow0,previousLocal),dot(input.previousRow1,previousLocal),dot(input.previousRow2,previousLocal),dot(input.previousRow3,previousLocal));
+    float4 currentWorld=float4(dot(input.transformRow0,currentLocal),dot(input.transformRow1,currentLocal),dot(input.transformRow2,currentLocal),dot(input.transformRow3,currentLocal));
+    float4 previousWorld=float4(dot(input.previousRow0,previousLocal),dot(input.previousRow1,previousLocal),dot(input.previousRow2,previousLocal),dot(input.previousRow3,previousLocal));
+    const uint materialClass=(input.textureData>>2)&3u;currentWorld.xyz=ApplyVelocityWind(currentWorld.xyz,input.normal.w,materialClass,fogEndEnabled.w);previousWorld.xyz=ApplyVelocityWind(previousWorld.xyz,input.normal.w,materialClass,motionParameters.w);
     MotionMaterialVertexOutput output;
     output.position=mul(viewProjection,currentWorld);
     output.currentClip=mul(currentUnjitteredViewProjection,currentWorld);
@@ -245,6 +294,10 @@ MotionMaterialVertexOutput VelocityMaskedSkinnedVertexMain(MotionMaterialSkinned
     output.uv=input.uv;
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
     output.alpha=input.color.a*input.tint.a;
+    output.lodCoverage=float((input.textureData>>4)&255u)/255.0;
+    output.lodInvert=(input.textureData>>12)&1u;
+    const uint objectSeed=asuint(input.transformRow0.w)*73856093u^asuint(input.transformRow1.w)*19349663u^asuint(input.transformRow2.w)*83492791u;
+    output.lodSeed=((input.textureData>>13)&7u)^objectSeed;
     return output;
 }
 
@@ -252,12 +305,17 @@ MotionVertexOutput VelocitySkinnedVertexMain(MotionSkinnedVertexInput input)
 {
     const float4 currentLocal = float4(SkinMotionPosition(input.position, input.blendIndices, input.blendWeights, input.skinPaletteBase), 1.0);
     const float4 previousLocal = float4(SkinMotionPosition(input.position, input.blendIndices, input.blendWeights, input.previousPaletteBase), 1.0);
-    const float4 currentWorld = float4(dot(input.transformRow0, currentLocal), dot(input.transformRow1, currentLocal), dot(input.transformRow2, currentLocal), dot(input.transformRow3, currentLocal));
-    const float4 previousWorld = float4(dot(input.previousRow0, previousLocal), dot(input.previousRow1, previousLocal), dot(input.previousRow2, previousLocal), dot(input.previousRow3, previousLocal));
+    float4 currentWorld = float4(dot(input.transformRow0, currentLocal), dot(input.transformRow1, currentLocal), dot(input.transformRow2, currentLocal), dot(input.transformRow3, currentLocal));
+    float4 previousWorld = float4(dot(input.previousRow0, previousLocal), dot(input.previousRow1, previousLocal), dot(input.previousRow2, previousLocal), dot(input.previousRow3, previousLocal));
+    const uint materialClass=(input.textureData>>2)&3u;currentWorld.xyz=ApplyVelocityWind(currentWorld.xyz,input.normal.w,materialClass,fogEndEnabled.w);previousWorld.xyz=ApplyVelocityWind(previousWorld.xyz,input.normal.w,materialClass,motionParameters.w);
     MotionVertexOutput output = (MotionVertexOutput)0;
     output.position = mul(viewProjection, currentWorld);
     output.currentClip = mul(currentUnjitteredViewProjection, currentWorld);
     output.previousClip = mul(previousViewProjection, previousWorld);
+    output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
+    output.lodInvert = (input.textureData >> 12) & 1u;
+    const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
+    output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
     return output;
 }
 
@@ -373,13 +431,13 @@ struct WorldPixelInput
     nointerpolation float normalScale : TEXCOORD15;
 };
 
-struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; };
-float3 ApplyWind(float3 position, float packedWeight);
+struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; nointerpolation float lodCoverage : TEXCOORD4; nointerpolation uint lodSeed : TEXCOORD5; nointerpolation uint lodInvert : TEXCOORD6; };
+float3 ApplyWind(float3 position, float packedWeight, uint materialClass);
 
 ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
 {
     ShadowVertexOutput output = (ShadowVertexOutput)0;
-    output.position = mul(lightViewProjection[shadowCascadeIndex], float4(ApplyWind(input.position, input.normal.w), 1.0));
+    output.position = mul(lightViewProjection[shadowCascadeIndex], float4(input.position, 1.0));
     return output;
 }
 
@@ -390,13 +448,17 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
                                   dot(input.transformRow1, localPosition),
                                   dot(input.transformRow2, localPosition),
                                   dot(input.transformRow3, localPosition));
-    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
     output.uv = input.uv * max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0));
     output.alphaCutoff = saturate(input.normalRow1.w);
     output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     output.alpha = input.color.a * input.tint.a;
+    output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
+    output.lodInvert = (input.textureData >> 12) & 1u;
+    const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
+    output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
     return output;
 }
 
@@ -409,24 +471,30 @@ ShadowVertexOutput ShadowSkinnedVertexMain(SkinnedVertexInput input)
     SkinLocalVertex(input, skinnedPosition, skinnedNormal, skinnedTangent, skinnedBitangent);
     const float4 localPosition = float4(skinnedPosition, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
-    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
     output.uv=input.uv*max(0.001,float((input.textureData>>16)&255u)*(16.0/255.0));
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
     output.alphaMasked=(input.skinPaletteBase>>20)&1u;
     output.alpha=input.color.a*input.tint.a;
+    output.lodCoverage=float((input.textureData>>4)&255u)/255.0;
+    output.lodInvert=(input.textureData>>12)&1u;
+    const uint objectSeed=asuint(input.transformRow0.w)*73856093u^asuint(input.transformRow1.w)*19349663u^asuint(input.transformRow2.w)*83492791u;
+    output.lodSeed=((input.textureData>>13)&7u)^objectSeed;
     return output;
 }
 
 void ShadowSkinnedPixelMain(ShadowVertexOutput input)
 {
     if(input.alphaMasked!=0)clip(input.alpha*baseColorTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
+    if(input.lodCoverage<0.999){const uint2 pixel=uint2(input.position.xy);uint noise=pixel.x*1973u+pixel.y*9277u+input.lodSeed*26699u+911u;noise=(noise<<13u)^noise;noise=noise*(noise*noise*15731u+789221u)+1376312589u;const float threshold=float(noise&255u)/255.0;clip(input.lodInvert!=0?threshold-input.lodCoverage-0.0000001:input.lodCoverage-threshold);}
 }
 
-float3 ApplyWind(float3 position, float packedWeight)
+float3 ApplyWind(float3 position, float packedWeight, uint materialClass)
 {
-    const float weight = step(0.0, packedWeight) * (1.0 - saturate(packedWeight));
+    // 只有 foliage 材質會使用頂點 normal.w 的風權重，避免一般模型與角色被意外扭曲。
+    const float weight = (materialClass == 2u ? 1.0 : 0.0) * step(0.0, packedWeight) * (1.0 - saturate(packedWeight));
     const float primary = sin(fogEndEnabled.w * 1.7 + position.x * 0.43 + position.z * 0.31);
     const float detail = sin(fogEndEnabled.w * 3.1 - position.x * 0.19 + position.z * 0.67);
     return position + float3(primary + detail * 0.35, abs(detail) * 0.08, detail * 0.55) * weight * 0.13;
@@ -435,7 +503,7 @@ float3 ApplyWind(float3 position, float packedWeight)
 WorldPixelInput WorldVertexMain(WorldVertexInput input)
 {
     WorldPixelInput output = (WorldPixelInput)0;
-    const float3 animatedPosition = ApplyWind(input.position, input.normal.w);
+    const float3 animatedPosition = input.position;
     output.position = mul(viewProjection, float4(animatedPosition, 1.0));
     output.color = input.color;
     output.worldPosition = animatedPosition;
@@ -461,7 +529,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
 {
     const float4 localPosition = float4(input.position, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
-    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
     const float3 worldNormal = float3(dot(input.normalRow0.xyz, input.normal.xyz),
                                       dot(input.normalRow1.xyz, input.normal.xyz),
                                       dot(input.normalRow2.xyz, input.normal.xyz));
@@ -504,7 +572,7 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
                                   dot(input.transformRow1, localPosition),
                                   dot(input.transformRow2, localPosition),
                                   dot(input.transformRow3, localPosition));
-    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w);
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
     const float3 worldNormal = float3(dot(input.normalRow0.xyz, skinnedNormal),
                                       dot(input.normalRow1.xyz, skinnedNormal),
                                       dot(input.normalRow2.xyz, skinnedNormal));
