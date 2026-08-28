@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "750697fde27db6d57fc14c44243107b111f674f2",
+  "snapshotRevision": "e4656cab07f4c89473004d2079fc1f153b90742f",
   "chunkCharacters": 3000,
-  "chunkCount": 548,
-  "sourceCount": 138,
+  "chunkCount": 561,
+  "sourceCount": 141,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "baff5e9b38479dbe31aaee38b7bcbb227cffafc7ccae236f8963b14edda59258",
+  "knowledgeSha256": "23fd3cffa4743d63ea9cf70b5617e3c13666261001946194d0b60edcea217609",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "ea064291d9908d9d823897f9ea4dd454dffdc989da947d50f28c7e39cc3cd2af",
-      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
-      "bytes": 40432
+      "sha256": "c9d72cbd146bdb18639e86732e33a7d9a1623e69798fa364bf07c60e6e422439",
+      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+      "bytes": 41944
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "cb554b63bf5faa8d358e27d1c209c5779dbcdd5cb03de3441dcc1fa8d946fecb",
-      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
-      "bytes": 89486
+      "sha256": "3b2368cf991cad0387951c202ace10f49610cde9f590fa0943d3fa0a3f4f2270",
+      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+      "bytes": 93520
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -545,9 +545,30 @@
     {
       "path": "engine/native/tests/GpuInstanceCulling3DSmoke.cpp",
       "kind": "test",
-      "sha256": "635227ee06686bac6c84e464c2803b128a3911eb794b72eaae4301784e997fae",
-      "revision": "750697fde27db6d57fc14c44243107b111f674f2",
-      "bytes": 11777
+      "sha256": "3a8c5c2cad6aae2dc94799e18f355678ce30ff554478c3bd90d575f722c7bd4e",
+      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+      "bytes": 15044
+    },
+    {
+      "path": "engine/native/tests/GpuInstanceMultiGroup3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "ba85b03bd80a2df9c91b76dfe2f073d339c53fc0e84202ac77fb4799ce694939",
+      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+      "bytes": 4466
+    },
+    {
+      "path": "engine/native/tests/GpuStaticSubmissionCache3DBenchmark.cpp",
+      "kind": "test",
+      "sha256": "47495537472c677ceed062b5790ea84bdc57ae2fa81fcb319b79a255bf2aab2e",
+      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+      "bytes": 11095
+    },
+    {
+      "path": "engine/native/tests/GpuStaticSubmissionCache3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "4d0d218adc3496faedcef0a287d4b65549749919e549a1273df80486851430f0",
+      "revision": "e4656cab07f4c89473004d2079fc1f153b90742f",
+      "bytes": 6758
     },
     {
       "path": "engine/native/tests/HeightField3DSmoke.cpp",

@@ -124,7 +124,7 @@ try {
 $negativeSafetyPassed = $negativePassed -eq 5
 
 $uniqueSystems = @($cases.system | Sort-Object -Unique).Count
-$evaluationCoveragePassed = $cases.Count -eq 40 -and $uniqueSystems -ge 15
+$evaluationCoveragePassed = $cases.Count -eq 43 -and $uniqueSystems -ge 15
 $roadmapText = (Get-Content -LiteralPath $readmePath -Raw) + "`n" + (Get-Content -LiteralPath $infoPath -Raw)
 $learningGatesPassed = -not [bool]$manifest.trainingEligible -and $roadmapText -match '2,000' -and $roadmapText -match '200' -and
     $roadmapText -match '90%' -and $roadmapText -match '85%' -and $roadmapText -match '2[^\r\n]*(percentage|百分點|個百分點)'
