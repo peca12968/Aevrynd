@@ -3,6 +3,36 @@
 
 namespace Aevrynd {
 
+SkinnedMotionHistorySample3D SkinnedMotionHistory3D::Advance(DrawList& draw,
+    SkinPaletteRange3D currentPalette,Matrix4 currentTransform,bool reset){
+    if(!draw.ContainsSkinPalette(currentPalette))return{};
+    if(reset)Invalidate();
+    SkinnedMotionHistorySample3D result{currentPalette,currentTransform,false};
+    if(valid_&&previousJoints_.size()==currentPalette.jointCount){
+        const SkinPaletteRange3D previousPalette=draw.AddSkinPalette(previousJoints_);
+        if(previousPalette){result.previousPalette=previousPalette;result.previousTransform=previousTransform_;result.motionValid=true;}
+    }
+    const auto first=draw.skinPaletteJoints.begin()+currentPalette.firstJoint;
+    previousJoints_.assign(first,first+currentPalette.jointCount);
+    previousTransform_=currentTransform;
+    valid_=true;
+    return result;
+}
+
+ReusableMemoryStats SkinnedMotionHistory3D::MemoryStats()const noexcept{
+    const std::size_t bytes=previousJoints_.capacity()*sizeof(SkinPaletteJoint3D);
+    return{bytes,valid_?0:bytes,lastReleasedBytes_,trimCount_};
+}
+
+std::size_t SkinnedMotionHistory3D::TrimUnusedMemory(){
+    if(valid_){lastReleasedBytes_=0;return 0;}
+    const std::size_t before=previousJoints_.capacity()*sizeof(SkinPaletteJoint3D);
+    std::vector<SkinPaletteJoint3D>{}.swap(previousJoints_);
+    lastReleasedBytes_=before;
+    ++trimCount_;
+    return before;
+}
+
 bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
     SkinPaletteRange3D palette,Matrix4 transform,std::uint32_t totalIndexCount,
     std::span<const SkinnedSubmesh3D> submeshes,
