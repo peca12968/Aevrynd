@@ -208,7 +208,7 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             return Failure(ErrorCode::InvalidSchema, "Sidecar is missing AESKIN material slot '" + slot + "'");
         }
         SerializationObject definition;
-        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "useUv", "castsShadow", "shadingModel", "alphaMode", "alphaCutoff", "doubleSided"}) ||
+        if (!materials.Read(slot, definition) || !HasOnlyFields(definition, {"textures", "pbr", "textureScale", "normalScale", "useUv", "castsShadow", "shadingModel", "alphaMode", "alphaCutoff", "doubleSided"}) ||
             !definition.Contains("textures")) {
             return Failure(ErrorCode::InvalidSchema, "Material '" + slot + "' definition is invalid");
         }
@@ -232,6 +232,8 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             material.material.textureScale <= 0.0f || material.material.textureScale > limits.maximumTextureScale) {
             return Failure(ErrorCode::InvalidValue, "Material '" + slot + "' textureScale or flags are invalid");
         }
+        if(definition.Contains("normalScale")&&(!definition.Read("normalScale",material.material.normalScale)||!std::isfinite(material.material.normalScale)||material.material.normalScale<-16.f||material.material.normalScale>15.96875f))
+            return Failure(ErrorCode::InvalidValue,"Material '"+slot+"' normalScale must be finite and within the runtime range");
         SerializationObject textures;
         if (!definition.Read("textures", textures)) {
             return Failure(ErrorCode::InvalidSchema, "Material '" + slot + "' textures must be an object");

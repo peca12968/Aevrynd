@@ -30,7 +30,7 @@ std::vector<Material3D> CharacterMaterials(const SkinnedModelAssetData& asset){
     for(std::size_t slot=0;slot<asset.materialSlotNames.size();++slot){
         Material3D material;material.useUv=false;
         if(asset.materials.empty())material.surface=CharacterSurface(asset.materialSlotNames[slot]);
-        else{const SkinnedMaterialDefinition3D& source=asset.materials[slot];material.tint=source.baseColorFactor;material.surface={source.roughnessFactor,source.metallicFactor,Clamp((std::max)({source.emissiveFactor.x,source.emissiveFactor.y,source.emissiveFactor.z})*source.emissiveStrength,0.f,1.f),source.occlusionStrength};material.alphaMode=source.alphaMode==SkinnedMaterialAlphaMode3D::Mask?MaterialAlphaMode3D::Mask:source.alphaMode==SkinnedMaterialAlphaMode3D::Blend?MaterialAlphaMode3D::Blend:MaterialAlphaMode3D::Opaque;material.alphaCutoff=source.alphaCutoff;material.doubleSided=source.doubleSided;}
+        else{const SkinnedMaterialDefinition3D& source=asset.materials[slot];material.tint=source.baseColorFactor;material.surface={source.roughnessFactor,source.metallicFactor,Clamp((std::max)({source.emissiveFactor.x,source.emissiveFactor.y,source.emissiveFactor.z})*source.emissiveStrength,0.f,1.f),source.occlusionStrength};material.normalScale=source.normalScale;material.alphaMode=source.alphaMode==SkinnedMaterialAlphaMode3D::Mask?MaterialAlphaMode3D::Mask:source.alphaMode==SkinnedMaterialAlphaMode3D::Blend?MaterialAlphaMode3D::Blend:MaterialAlphaMode3D::Opaque;material.alphaCutoff=source.alphaCutoff;material.doubleSided=source.doubleSided;}
         result.push_back(material);
     }
     return result;

@@ -251,6 +251,7 @@ struct WorldPixelInput
     nointerpolation uint characterShadingModel : TEXCOORD12;
     nointerpolation float alphaCutoff : TEXCOORD13;
     nointerpolation uint alphaMasked : TEXCOORD14;
+    nointerpolation float normalScale : TEXCOORD15;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; };
@@ -327,6 +328,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.characterShadingModel = 0;
     output.alphaCutoff = 0.5;
     output.alphaMasked = 0;
+    output.normalScale = 1.0;
     output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
     output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
@@ -360,6 +362,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.characterShadingModel = 0;
     output.alphaCutoff = 0.5;
     output.alphaMasked = 0;
+    output.normalScale = 1.0;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
@@ -409,6 +412,10 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
     output.characterShadingModel = (input.textureData >> 13) & 7;
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
     output.alphaMasked=(input.skinPaletteBase>>20)&1u;
+    // 10 位元二補數 Q5 定點數可在不擴充實例資料的情況下保存 glTF normalTexture.scale。
+    const uint encodedNormalScale=(input.skinPaletteBase>>22)&1023u;
+    const int signedNormalScale=encodedNormalScale>=512u?int(encodedNormalScale)-1024:int(encodedNormalScale);
+    output.normalScale=float(signedNormalScale)/32.0;
     output.material = input.material;
     output.textureData = float3(input.textureData & 1,
                                 max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0)),
@@ -825,6 +832,14 @@ float CharacterNormalDetailStrength(float skinMask,float hairMask,float eyeMask)
     return lerp(0.78,0.56,skinMask)+hairMask*(0.68-0.78)+eyeMask*(0.32-0.78);
 }
 
+float3 ScaleNormalDetail(float3 geometricNormal,float3 detailNormal,float signedScale)
+{
+    // 保留取樣法線的 Z 分量並只縮放切線偏移，因此 scale=1 可精確還原原細節，負值則反轉 X/Y。
+    const float axialDetail=dot(geometricNormal,detailNormal);
+    const float3 tangentialDetail=detailNormal-geometricNormal*axialDetail;
+    return normalize(geometricNormal*axialDetail+tangentialDetail*signedScale);
+}
+
 float PointLightAttenuation(float distanceSquared, float radius)
 {
     const float safeRadius = max(radius, 0.001);
@@ -868,7 +883,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
     const float hairMask = input.characterShadingModel == 2 ? 1.0 : 0.0;
     const float eyeMask = input.characterShadingModel == 3 ? 1.0 : 0.0;
-    const float normalDetailStrength=CharacterNormalDetailStrength(skinMask,hairMask,eyeMask);
+    const float normalDetailStrength=CharacterNormalDetailStrength(skinMask,hairMask,eyeMask)*input.normalScale;
     const float metallic = lerp(saturate(input.material.y),0.0,saturate(skinMask+hairMask+eyeMask));
     const float emissive = saturate(input.material.z);
     const float occlusion = saturate(input.material.w);
@@ -885,13 +900,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             roughness = clamp(roughness * roughnessTexture.Sample(materialSampler, input.uv).r, 0.045, 1.0);
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
             const float3 derivativeNormal = UvNormal(input.worldPosition, normal, input.uv);
-            normal = normalize(lerp(normal, UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal),normalDetailStrength));
+            normal = ScaleNormalDetail(normal,UvOrVertexTangentNormal(normal,input.tangent,input.uv,derivativeNormal),normalDetailStrength);
         }
         else
         {
             baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
             roughness = clamp(roughness * Triplanar(roughnessTexture, input.worldPosition, normal, input.textureData.y).r, 0.045, 1.0);
-            normal = normalize(lerp(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.y),normalDetailStrength));
+            normal = ScaleNormalDetail(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.y),normalDetailStrength);
         }
     }
 
