@@ -118,7 +118,26 @@ function Chunk([string]$type,[uint32]$count,[uint32]$stride,[scriptblock]$body){
 $strings=[Collections.Generic.List[byte]]::new();$jointRefs=@();$jointNames=@();foreach($nodeIndex in $jointNodes){$name=[string]$document.nodes[$nodeIndex].name;if($jointNames-contains$name){throw 'Joint names must be unique.'};$jointNames+=$name;$jointRefs+=,(Add-String $strings $name)}
 $materials=@($document.materials);$materialNames=@();$materialRefs=@();for($i=0;$i-lt$materials.Count;$i++){$name=[string]$materials[$i].name;if([string]::IsNullOrWhiteSpace($name)){$name="Material_$i"};$materialNames+=$name;$materialRefs+=,(Add-String $strings $name)}
 $vert=Chunk VERT $totalVertices 28 {param($w)foreach($part in $decoded){for($v=0;$v-lt$part.P.Count;$v++){$w.Write([float]($part.P.Values[$v][0]*$Scale));$w.Write([float]($part.P.Values[$v][1]*$Scale));$w.Write([float](-$part.P.Values[$v][2]*$Scale));$w.Write((Pack-Normal $part.N.Values[$v]));$vertexColor=if($null-ne$part.C){[double[]]$part.C.Values[$v]}else{[double[]]@(1,1,1,1)};$w.Write((Pack-Color $vertexColor));$w.Write([float]$part.Uv.Values[$v][0]);$w.Write([float]$part.Uv.Values[$v][1])}}}
-$indx=Chunk INDX $totalIndices 4 {param($w)$base=0;foreach($part in $decoded){for($t=0;$t-lt$part.I.Count;$t+=3){$a=[uint32]$part.I.Values[$t][0];$b=[uint32]$part.I.Values[$t+1][0];$c=[uint32]$part.I.Values[$t+2][0];if($a-ge$part.P.Count-or$b-ge$part.P.Count-or$c-ge$part.P.Count){throw 'Index out of range.'};$w.Write([uint32]($base+$a));$w.Write([uint32]($base+$c));$w.Write([uint32]($base+$b))};$base+=$part.P.Count}}
+$indx=Chunk INDX $totalIndices 4 {param($w)$base=0;foreach($part in $decoded){
+    $triangles=[Collections.Generic.List[object]]::new()
+    for($t=0;$t-lt$part.I.Count;$t+=3){
+        [uint32]$a=$part.I.Values[$t][0];[uint32]$b=$part.I.Values[$t+1][0];[uint32]$c=$part.I.Values[$t+2][0]
+        if($a-ge$part.P.Count-or$b-ge$part.P.Count-or$c-ge$part.P.Count){throw 'Index out of range.'}
+        # 先轉為引擎左手座標繞向，再循環旋轉到字典序最小表示；旋轉不會翻轉三角形。
+        [uint32[]]$oriented=@($a,$c,$b);$start=0
+        for($candidate=1;$candidate-lt3;$candidate++){
+            $better=$false
+            for($component=0;$component-lt3;$component++){
+                $left=$oriented[($candidate+$component)%3];$right=$oriented[($start+$component)%3]
+                if($left-lt$right){$better=$true;break};if($left-gt$right){break}
+            }
+            if($better){$start=$candidate}
+        }
+        $triangles.Add([pscustomobject]@{A=$oriented[$start];B=$oriented[($start+1)%3];C=$oriented[($start+2)%3]})
+    }
+    foreach($triangle in @($triangles|Sort-Object A,B,C)){$w.Write([uint32]($base+$triangle.A));$w.Write([uint32]($base+$triangle.B));$w.Write([uint32]($base+$triangle.C))}
+    $base+=$part.P.Count
+}}
 $join=Chunk JOIN $jointNodes.Count 44 {param($w)for($i=0;$i-lt$jointNodes.Count;$i++){$nodeIndex=$jointNodes[$i];$parentNode=if($parents.ContainsKey($nodeIndex)){[int]$parents[$nodeIndex]}else{-1};while($parentNode-ge0 -and -not $nodeToJoint.ContainsKey($parentNode)){$parentNode=if($parents.ContainsKey($parentNode)){[int]$parents[$parentNode]}else{-1}};$parent=if($parentNode-ge0){[int]$nodeToJoint[$parentNode]}else{-1};if($parent-ge$i){throw 'Joints must be parent-first.'};$w.Write([int32]$parent);Write-Trs $w $document.nodes[$nodeIndex]}}
 $wght=Chunk WGHT $totalVertices 16 {param($w)foreach($part in $decoded){for($v=0;$v-lt$part.P.Count;$v++){for($k=0;$k-lt4;$k++){$j=[int]$part.J.Values[$v][$k];if($j-lt0-or$j-ge$jointNodes.Count){throw 'Joint influence invalid.'};$w.Write([uint16]$j)};$sum=($part.W.Values[$v]|Measure-Object -Sum).Sum;if($sum-le0){throw 'Weight sum is zero.'};$q=@(0,0,0,0);$largest=0;for($k=0;$k-lt4;$k++){if($part.W.Values[$v][$k]-gt$part.W.Values[$v][$largest]){$largest=$k};$q[$k]=[int][Math]::Floor($part.W.Values[$v][$k]/$sum*65535)};$q[$largest]+=65535-($q|Measure-Object -Sum).Sum;for($k=0;$k-lt4;$k++){$w.Write([uint16]$q[$k])}}}}
 $allTangents=$true;foreach($part in $decoded){if($null-eq$part.T){$allTangents=$false}};if(-not$allTangents-and@($decoded|Where-Object{$null-ne$_.T}).Count){throw 'TANGENT must be present on every primitive or none.'}
