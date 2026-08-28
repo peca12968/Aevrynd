@@ -8,13 +8,14 @@ SkinnedMotionHistorySample3D SkinnedMotionHistory3D::Advance(DrawList& draw,
     if(!draw.ContainsSkinPalette(currentPalette))return{};
     if(reset)Invalidate();
     SkinnedMotionHistorySample3D result{currentPalette,currentTransform,false};
-    if(valid_&&previousJoints_.size()==currentPalette.jointCount){
-        const SkinPaletteRange3D previousPalette=draw.AddSkinPalette(previousJoints_);
+    if(valid_&&previousJoints_.size()==currentPalette.jointCount&&previousCompatibilityId_&&previousCompatibilityId_==currentPalette.skeletonCompatibilityId){
+        const SkinPaletteRange3D previousPalette=draw.AddSkinPalette(previousJoints_,previousCompatibilityId_);
         if(previousPalette){result.previousPalette=previousPalette;result.previousTransform=previousTransform_;result.motionValid=true;}
     }
     const auto first=draw.skinPaletteJoints.begin()+currentPalette.firstJoint;
     previousJoints_.assign(first,first+currentPalette.jointCount);
     previousTransform_=currentTransform;
+    previousCompatibilityId_=currentPalette.skeletonCompatibilityId;
     valid_=true;
     return result;
 }
@@ -38,11 +39,12 @@ bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
     std::span<const SkinnedSubmesh3D> submeshes,
     std::span<const Material3D> materialBindings,SkinPaletteRange3D previousPalette,
     Matrix4 previousTransform,bool motionValid){
-    if(!mesh||!palette||!totalIndexCount||totalIndexCount%3||submeshes.empty()||
+    if(!mesh||!mesh.skeletonCompatibilityId||!palette||!palette.skeletonCompatibilityId||mesh.skeletonCompatibilityId!=palette.skeletonCompatibilityId||!totalIndexCount||totalIndexCount%3||submeshes.empty()||
         materialBindings.empty()||submeshes.size()>DrawList::MaximumSkinnedMeshInstancesPerFrame-
             (std::min)(draw.skinnedMeshInstances.size(),DrawList::MaximumSkinnedMeshInstancesPerFrame)||
         palette.firstJoint>draw.skinPaletteJoints.size()||
-        palette.jointCount>draw.skinPaletteJoints.size()-palette.firstJoint)return false;
+        palette.jointCount>draw.skinPaletteJoints.size()-palette.firstJoint||
+        (motionValid&&(!previousPalette.skeletonCompatibilityId||previousPalette.skeletonCompatibilityId!=palette.skeletonCompatibilityId)))return false;
     std::uint32_t expectedFirst{};
     for(const SkinnedSubmesh3D& submesh:submeshes){
         if(!submesh.indexCount||submesh.firstIndex!=expectedFirst||submesh.firstIndex%3||

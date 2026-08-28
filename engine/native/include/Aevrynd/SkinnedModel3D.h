@@ -4,6 +4,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <string>
 #include <vector>
 
 namespace Aevrynd {
@@ -26,8 +28,16 @@ struct SkinnedModel3D {
     std::vector<Matrix4> inverseBindMatrices;
     // 空陣列代表載入舊資產；每筆為 xyz snorm8 與 w 切線手性。
     std::vector<std::uint32_t> tangents;
+    SkeletonCompatibilityId3D skeletonCompatibilityId{};
     [[nodiscard]] bool Valid(const SkinnedModelLimits3D& limits={})const;
 };
+
+enum class SkeletonCompatibilityProvenance3D : std::uint8_t {NamedAsset,LegacySynthetic,Structural};
+SkeletonCompatibilityId3D ComputeSkeletonCompatibilityId3D(std::span<const std::string> jointNames,
+    const Skeleton3D& skeleton,std::span<const Matrix4> inverseBindMatrices,
+    SkeletonCompatibilityProvenance3D provenance=SkeletonCompatibilityProvenance3D::NamedAsset);
+SkeletonCompatibilityId3D ComputeStructuralSkeletonCompatibilityId3D(const Skeleton3D& skeleton,
+    std::span<const Matrix4> inverseBindMatrices);
 
 struct SkinningStats3D {
     std::size_t vertices{};

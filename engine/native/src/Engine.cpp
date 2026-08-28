@@ -21,7 +21,8 @@ MeshResource3D Engine::CreateMeshResource3D(const Mesh3D& mesh,MeshCpuRetention3
 SkinnedMeshResource3D Engine::CreateSkinnedMeshResource3D(const SkinnedModel3D& model){
     std::vector<SkinnedVertex3D> vertices;
     if(!BuildGpuSkinnedVertices(model,vertices))return{};
-    const SkinnedMeshHandle3D handle=renderer_->CreateSkinnedMesh(vertices,model.bindMesh.indices,static_cast<std::uint32_t>(model.skeleton.joints.size()));
+    const SkeletonCompatibilityId3D compatibility=model.skeletonCompatibilityId?model.skeletonCompatibilityId:ComputeStructuralSkeletonCompatibilityId3D(model.skeleton,model.inverseBindMatrices);
+    const SkinnedMeshHandle3D handle=renderer_->CreateSkinnedMesh(vertices,model.bindMesh.indices,static_cast<std::uint32_t>(model.skeleton.joints.size()),compatibility);
     return handle?SkinnedMeshResource3D{handle,model.bindMesh.Bounds(),vertices.size(),model.bindMesh.indices.size(),model.skeleton.joints.size()}:SkinnedMeshResource3D{};
 }
 bool Engine::CreateMeshLodResourceChain3D(const Mesh3D& mesh,MeshLodResourceChain3D& output,MeshLodChainSettings3D settings,MeshProcessingError3D* error,MeshLodCpuRetention3D retention){

@@ -12,6 +12,37 @@ bool FiniteTransform(const JointTransform3D& transform){return Finite(transform.
 bool FiniteVertex(const Vertex3D& vertex){return Finite(vertex.x)&&Finite(vertex.y)&&Finite(vertex.z)&&Finite(vertex.u)&&Finite(vertex.v);}
 }
 
+SkeletonCompatibilityId3D ComputeSkeletonCompatibilityId3D(std::span<const std::string> jointNames,
+    const Skeleton3D& skeleton,std::span<const Matrix4> inverseBindMatrices,SkeletonCompatibilityProvenance3D provenance){
+    const bool structural=provenance==SkeletonCompatibilityProvenance3D::Structural;
+    if(skeleton.joints.empty()||(!structural&&(jointNames.empty()||jointNames.size()!=skeleton.joints.size()))||inverseBindMatrices.size()!=skeleton.joints.size()||!skeleton.Valid())return{};
+    std::uint64_t hash=14695981039346656037ull;
+    auto mixByte=[&](std::uint8_t value){hash=(hash^value)*1099511628211ull;};
+    auto mixU64=[&](std::uint64_t value){for(unsigned shift=0;shift<64;shift+=8)mixByte(std::uint8_t(value>>shift));};
+    // 版本標籤可讓未來調整量化契約時明確失配，而不是靜默誤綁。
+    for(const char value:"AevryndSkeletonCompatibility3D/v2")mixByte(std::uint8_t(value));
+    mixByte(std::uint8_t(provenance));mixU64(skeleton.joints.size());
+    auto mixQuantized=[&](float value){if(!std::isfinite(value)||std::abs(value)>1.0e9f)return false;mixU64(std::uint64_t(std::llround(double(value)*1000000.0)));return true;};
+    for(std::size_t index=0;index<skeleton.joints.size();++index){
+        if(!structural){if(jointNames[index].empty())return{};mixU64(jointNames[index].size());for(unsigned char value:jointNames[index])mixByte(value);}
+        const SkeletonJoint3D& joint=skeleton.joints[index];mixU64(std::uint64_t(std::int64_t(joint.parent)));
+        const Quaternion3D rotation=joint.bindTransform.usesQuaternion?NormalizeQuaternion3D(joint.bindTransform.quaternion):QuaternionFromEuler3D(joint.bindTransform.rotation);
+        Quaternion3D canonical=rotation;if(canonical.w<0.f||(canonical.w==0.f&&(canonical.z<0.f||(canonical.z==0.f&&(canonical.y<0.f||(canonical.y==0.f&&canonical.x<0.f))))))canonical={-canonical.x,-canonical.y,-canonical.z,-canonical.w};
+        for(float value:{joint.bindTransform.translation.x,joint.bindTransform.translation.y,joint.bindTransform.translation.z,canonical.x,canonical.y,canonical.z,canonical.w,joint.bindTransform.scale.x,joint.bindTransform.scale.y,joint.bindTransform.scale.z})if(!mixQuantized(value))return{};
+        for(const auto& row:inverseBindMatrices[index].values)for(float value:row){
+            if(!std::isfinite(value)||std::abs(value)>1.0e9f)return{};
+            // 微米級量化會正規化 -0 與無意義的序列化浮點雜訊。
+            const std::int64_t quantized=std::llround(double(value)*1000000.0);
+            mixU64(std::uint64_t(quantized));
+        }
+    }
+    if(!hash)hash=1;
+    return{hash};
+}
+
+SkeletonCompatibilityId3D ComputeStructuralSkeletonCompatibilityId3D(const Skeleton3D& skeleton,
+    std::span<const Matrix4> inverseBindMatrices){return ComputeSkeletonCompatibilityId3D({},skeleton,inverseBindMatrices,SkeletonCompatibilityProvenance3D::Structural);}
+
 bool SkinnedModel3D::Valid(const SkinnedModelLimits3D& limits)const{
     if(!bindMesh.Valid()||bindMesh.vertices.size()>limits.maximumVertices||bindMesh.indices.size()>limits.maximumIndices||!skeleton.Valid()||skeleton.joints.size()>limits.maximumJoints||influences.size()!=bindMesh.vertices.size()||inverseBindMatrices.size()!=skeleton.joints.size()||(!tangents.empty()&&tangents.size()!=bindMesh.vertices.size()))return false;
     if(bindMesh.vertices.size()>(std::numeric_limits<std::size_t>::max)()/sizeof(Vertex3D)||bindMesh.indices.size()>(std::numeric_limits<std::size_t>::max)()/sizeof(std::uint32_t)||skeleton.joints.size()>(std::numeric_limits<std::size_t>::max)()/(sizeof(Matrix4)*2))return false;
@@ -67,7 +98,8 @@ SkinPaletteRange3D AddSkinPaletteFromPose(DrawList& draw,const SkinnedModel3D& m
     try{
         workspace.paletteJoints_.clear();workspace.paletteJoints_.reserve(model.skeleton.joints.size());
         for(std::size_t joint=0;joint<model.skeleton.joints.size();++joint){const Matrix4 skin=pose.globalMatrices[joint]*model.inverseBindMatrices[joint],normal=CreateNormalMatrix(skin);if(!FiniteMatrix(skin)||!FiniteMatrix(normal))return{};SkinPaletteJoint3D palette{};palette.skin=skin;for(std::size_t row=0;row<3;++row)palette.normalRows[row]={normal[row][0],normal[row][1],normal[row][2],0};workspace.paletteJoints_.push_back(palette);}
-        return draw.AddSkinPalette(workspace.paletteJoints_);
+        const SkeletonCompatibilityId3D compatibility=model.skeletonCompatibilityId?model.skeletonCompatibilityId:ComputeStructuralSkeletonCompatibilityId3D(model.skeleton,model.inverseBindMatrices);
+        return draw.AddSkinPalette(workspace.paletteJoints_,compatibility);
     }catch(const std::bad_alloc&){return{};}
 }
 }

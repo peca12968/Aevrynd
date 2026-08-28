@@ -14,8 +14,9 @@ SkinPaletteJoint3D IdentityJoint(){
 int main(){
     DrawList draw(DrawListCapacityProfile::Minimal2D);
     const std::array<SkinPaletteJoint3D,1> joints{IdentityJoint()};
-    const SkinPaletteRange3D palette=draw.AddSkinPalette(joints);
-    const SkinnedMeshHandle3D mesh{7};
+    constexpr SkeletonCompatibilityId3D compatibility{0x8d5b7f140d11a931ull};
+    const SkinPaletteRange3D palette=draw.AddSkinPalette(joints,compatibility);
+    const SkinnedMeshHandle3D mesh{7,compatibility};
     if(draw.SkinnedMeshInstance(mesh,palette,Matrix4::Identity(),{1,1,1,1},{},{},.25f,true,MaterialClass3D::Surface,true,DirectionalShadowAllCascades3D,0,3,CharacterShadingModel3D::Default,MaterialAlphaMode3D::Mask,.5f,false)||draw.SkinnedMeshInstance(mesh,palette,Matrix4::Identity(),{1,1,1,1},{},{9},.25f,false,MaterialClass3D::Surface,true,DirectionalShadowAllCascades3D,0,3,CharacterShadingModel3D::Default,MaterialAlphaMode3D::Mask,.5f,false)||!draw.skinnedMeshInstances.empty()){std::cerr<<"Direct MASK validation was not atomic\n";return 11;}
     const std::array<SkinnedSubmesh3D,2> submeshes{{{0,3,1,0},{3,6,0,0}}};
     std::array<Material3D,2> materials{};
@@ -32,9 +33,15 @@ int main(){
     for(uint32_t code=0;code<1024;++code){const int32_t signedCode=code>=512?int32_t(code)-1024:int32_t(code);const float decoded=float(signedCode)/32.f;const uint32_t repacked=PackSkinnedPaletteMaterialData3D(0,MaterialAlphaMode3D::Opaque,.5f,false,decoded);if(((repacked>>SkinnedNormalScaleShift3D)&1023u)!=code||UnpackSkinnedNormalScale3D(repacked)!=decoded){std::cerr<<"Skinned normal scale exhaustive packing failed\n";return 16;}}
     const uint32_t lowPacked=PackSkinnedPaletteMaterialData3D(0,MaterialAlphaMode3D::Opaque,.5f,false,-99.f),highPacked=PackSkinnedPaletteMaterialData3D(0,MaterialAlphaMode3D::Opaque,.5f,false,99.f),nanPacked=PackSkinnedPaletteMaterialData3D(0,MaterialAlphaMode3D::Opaque,.5f,false,(std::numeric_limits<float>::quiet_NaN)());if(UnpackSkinnedNormalScale3D(lowPacked)!=-16.f||UnpackSkinnedNormalScale3D(highPacked)!=15.96875f||UnpackSkinnedNormalScale3D(nanPacked)!=1.f){std::cerr<<"Skinned normal scale saturation failed\n";return 17;}
     const std::size_t accepted=draw.skinnedMeshInstances.size();
+    const SkinPaletteRange3D incompatible=draw.AddSkinPalette(joints,{compatibility.value+1});
+    if(SubmitSkinnedRenderable3D(draw,mesh,incompatible,Matrix4::Identity(),9,submeshes,materials)||
+        SubmitSkinnedRenderable3D(draw,{mesh.value,{}},palette,Matrix4::Identity(),9,submeshes,materials)||
+        SubmitSkinnedRenderable3D(draw,mesh,palette,Matrix4::Identity(),9,submeshes,materials,incompatible,Matrix4::Identity(),true)||
+        draw.skinnedMeshInstances.size()!=accepted){std::cerr<<"Skeleton compatibility rejection was not atomic\n";return 19;}
+    const std::size_t acceptedPaletteJoints=draw.skinPaletteJoints.size();
     auto expectAtomicFailure=[&](std::span<const SkinnedSubmesh3D> ranges,std::span<const Material3D> bindings,std::uint32_t indices){
         const bool acceptedInvalid=SubmitSkinnedRenderable3D(draw,mesh,palette,Matrix4::Identity(),indices,ranges,bindings);
-        return !acceptedInvalid&&draw.skinnedMeshInstances.size()==accepted&&draw.skinPaletteJoints.size()==1;
+        return !acceptedInvalid&&draw.skinnedMeshInstances.size()==accepted&&draw.skinPaletteJoints.size()==acceptedPaletteJoints;
     };
     const std::array<SkinnedSubmesh3D,2> gap{{{0,3,0,0},{6,3,1,0}}},overlap{{{0,6,0,0},{3,6,1,0}}},badSlot{{{0,3,2,0},{3,6,0,0}}},badAlignment{{{0,4,0,0},{4,5,1,0}}};
     if(!expectAtomicFailure(gap,materials,9)||!expectAtomicFailure(overlap,materials,9)||
@@ -49,7 +56,7 @@ int main(){
     materials[1].alphaMode=MaterialAlphaMode3D::Mask;materials[1].textures={};
     if(!expectAtomicFailure(submeshes,materials,9)){std::cerr<<"MASK material without a base texture was accepted\n";return 10;}
     materials[1].textures={22};
-    DrawList bounded(DrawListCapacityProfile::Minimal2D);const SkinPaletteRange3D boundedPalette=bounded.AddSkinPalette(joints);
+    DrawList bounded(DrawListCapacityProfile::Minimal2D);const SkinPaletteRange3D boundedPalette=bounded.AddSkinPalette(joints,compatibility);
     const std::array<SkinnedSubmesh3D,1> one{{{0,3,0,0}}};
     for(std::size_t index=0;index<DrawList::MaximumSkinnedMeshInstancesPerFrame-1;++index)
         if(!SubmitSkinnedRenderable3D(bounded,mesh,boundedPalette,Matrix4::Identity(),3,one,std::span<const Material3D>{materials.data(),1}))return 4;
@@ -62,8 +69,8 @@ int main(){
     if(!SubmitSkinnedRenderable3D(bounded,mesh,boundedPalette,Matrix4::Identity(),3,one,std::span<const Material3D>{materials.data(),1})||
         bounded.skinnedMeshInstances.size()!=DrawList::MaximumSkinnedMeshInstancesPerFrame||
         bounded.skinPaletteJoints.size()!=1){std::cerr<<"Final bounded slot failed\n";return 6;}
-    SkinnedMotionHistory3D history;DrawList firstFrame(DrawListCapacityProfile::Minimal2D);const auto firstCurrent=firstFrame.AddSkinPalette(joints);const Matrix4 firstTransform=CreateTranslationMatrix({.1f,0,0});const auto firstHistory=history.Advance(firstFrame,firstCurrent,firstTransform);if(!history.Valid()||firstHistory.motionValid||firstHistory.previousPalette!=firstCurrent||history.MemoryStats().retainedCapacityBytes<sizeof(SkinPaletteJoint3D)){std::cerr<<"Initial skinned history fallback failed\n";return 12;}
-    DrawList secondFrame(DrawListCapacityProfile::Minimal2D);auto movedJoints=joints;movedJoints[0].skin=CreateTranslationMatrix({.2f,0,0});const auto secondCurrent=secondFrame.AddSkinPalette(movedJoints);const Matrix4 secondTransform=CreateTranslationMatrix({.3f,0,0});const auto secondHistory=history.Advance(secondFrame,secondCurrent,secondTransform);if(!secondHistory.motionValid||secondHistory.previousPalette==secondCurrent||secondFrame.skinPaletteJoints.size()!=2||std::abs(secondFrame.skinPaletteJoints[secondHistory.previousPalette.firstJoint].skin[0][3])>.0001f||std::abs(secondHistory.previousTransform[0][3]-.1f)>.0001f||!SubmitSkinnedRenderable3D(secondFrame,mesh,secondCurrent,secondTransform,3,one,std::span<const Material3D>{materials.data(),1},secondHistory.previousPalette,secondHistory.previousTransform,secondHistory.motionValid)||!secondFrame.skinnedMeshInstances.back().motionValid){std::cerr<<"Continuous skinned history submission failed\n";return 13;}
+    SkinnedMotionHistory3D history;DrawList firstFrame(DrawListCapacityProfile::Minimal2D);const auto firstCurrent=firstFrame.AddSkinPalette(joints,compatibility);const Matrix4 firstTransform=CreateTranslationMatrix({.1f,0,0});const auto firstHistory=history.Advance(firstFrame,firstCurrent,firstTransform);if(!history.Valid()||firstHistory.motionValid||firstHistory.previousPalette!=firstCurrent||history.MemoryStats().retainedCapacityBytes<sizeof(SkinPaletteJoint3D)){std::cerr<<"Initial skinned history fallback failed\n";return 12;}
+    DrawList secondFrame(DrawListCapacityProfile::Minimal2D);auto movedJoints=joints;movedJoints[0].skin=CreateTranslationMatrix({.2f,0,0});const auto secondCurrent=secondFrame.AddSkinPalette(movedJoints,compatibility);const Matrix4 secondTransform=CreateTranslationMatrix({.3f,0,0});const auto secondHistory=history.Advance(secondFrame,secondCurrent,secondTransform);if(!secondHistory.motionValid||secondHistory.previousPalette==secondCurrent||secondFrame.skinPaletteJoints.size()!=2||std::abs(secondFrame.skinPaletteJoints[secondHistory.previousPalette.firstJoint].skin[0][3])>.0001f||std::abs(secondHistory.previousTransform[0][3]-.1f)>.0001f||!SubmitSkinnedRenderable3D(secondFrame,mesh,secondCurrent,secondTransform,3,one,std::span<const Material3D>{materials.data(),1},secondHistory.previousPalette,secondHistory.previousTransform,secondHistory.motionValid)||!secondFrame.skinnedMeshInstances.back().motionValid){std::cerr<<"Continuous skinned history submission failed\n";return 13;}
     const auto stalePalette=secondCurrent;secondFrame.Clear();if(history.Advance(secondFrame,stalePalette,Matrix4::Identity()).previousPalette){std::cerr<<"Stale skinned history palette was accepted\n";return 14;}history.Invalidate();const std::size_t reclaimable=history.MemoryStats().reclaimableCapacityBytes;if(!reclaimable||history.TrimUnusedMemory()!=reclaimable||history.MemoryStats().retainedCapacityBytes){std::cerr<<"Skinned history memory trim failed\n";return 15;}
     std::cout<<"submeshes=2 bounded="<<bounded.skinnedMeshInstances.size()<<" paletteJoints="<<bounded.skinPaletteJoints.size()<<'\n';
 }
