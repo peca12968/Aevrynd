@@ -159,6 +159,12 @@ cbuffer VolumetricCloudConstants : register(b6)
     float cloudSampleCount;
     float volumetricCloudEnabled;
 };
+cbuffer VolumetricCloudShadowConstants : register(b7)
+{
+    float cloudShadowStrength;
+    float cloudShadowEnabled;
+    float2 cloudShadowReserved;
+};
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -795,6 +801,14 @@ float SampleCloudVolumeDensity(float3 position)
     return smoothstep(cloudCoverage,cloudCoverage+0.18,broad-cloudErosion*erosion)*profile*cloudDensityScale;
 }
 
+float EvaluateCloudShadowTransmittance(float3 worldPosition,float3 sunDirection)
+{
+    const float targetHeight=cloudBaseAltitude+cloudThickness*0.5;
+    const float distance=(targetHeight-worldPosition.y)/sunDirection.y;
+    const float density=SampleCloudVolumeDensity(worldPosition+sunDirection*distance);
+    return lerp(1.0,exp(-density*1.35),cloudShadowStrength);
+}
+
 float3 ApplyVolumetricClouds(float3 atmosphere,float3 rayDirection,float3 sunDirection,float2 pixelPosition)
 {
     const float entry=max(0.0,(cloudBaseAltitude-cameraFogStart.y)/rayDirection.y);
@@ -1385,19 +1399,23 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness, metallic);
     // 基礎 PBR 與角色補光共用同一次級聯陰影，避免 Skin/Hair 每像素重複取樣陰影圖。
     const float directionalShadow=CascadedDirectionalShadow(input,eyeMask>0.5?geometricNormal:normal,lightDirection);
+    float cloudShadow=1.0;
+    [branch] if(volumetricCloudEnabled>=0.5&&cloudShadowEnabled>=0.5&&cloudShadowStrength>0.0&&cloudDensityScale>0.0&&lightDirection.y>0.02&&input.worldPosition.y<cloudBaseAltitude+cloudThickness*0.5)
+        cloudShadow=EvaluateCloudShadowTransmittance(input.worldPosition,lightDirection);
+    const float directionalVisibility=directionalShadow*cloudShadow;
     float3 shaded = environmentLighting
-                  + directionalShadow * directionalLighting
+                  + directionalVisibility * directionalLighting
                   + baseColor * emissive * 2.0;
     [branch] if(skinMask > 0.5){
-        shaded+=directionalShadow*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
+        shaded+=directionalVisibility*EvaluateSkinSupplement(normal,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
     [branch] if(hairMask>0.5){
-        shaded+=directionalShadow*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
+        shaded+=directionalVisibility*EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
     [branch] if(clothMask>0.5){
-        shaded+=directionalShadow*EvaluateClothSupplement(normal,viewDirection,lightDirection,
+        shaded+=directionalVisibility*EvaluateClothSupplement(normal,viewDirection,lightDirection,
                     lightColorIntensity.rgb*lightColorIntensity.w,baseColor,roughness);
     }
     [branch] if (foliageMask > 0.5)
@@ -1407,7 +1425,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float foliageForwardScatter = saturate(dot(viewDirection, lightDirection));
         const float foliageTransmission = foliageBackLight * foliageBackLight * (0.45 + 0.55 * foliageForwardScatter);
         const float foliageShadow = CascadedDirectionalShadow(input, normal, lightDirection);
-        shaded += baseColor * lightColorIntensity.rgb * lightColorIntensity.w * (foliageWrappedDiffuse * 0.22 + foliageTransmission * 0.48) * foliageShadow;
+        shaded += baseColor * lightColorIntensity.rgb * lightColorIntensity.w * (foliageWrappedDiffuse * 0.22 + foliageTransmission * 0.48) * foliageShadow*cloudShadow;
     }
 
     [unroll]

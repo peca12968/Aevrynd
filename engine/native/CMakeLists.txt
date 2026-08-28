@@ -386,6 +386,12 @@ target_compile_definitions(AevryndVolumetricCloudD3D12VisualTest PRIVATE AEVRYND
 target_link_libraries(AevryndVolumetricCloudD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndVolumetricCloudD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVolumetricCloudD3D12VisualTest>'")
 
+add_executable(AevryndCloudShadowD3D12VisualTest tests/CloudShadowD3D12VisualSmoke.cpp)
+target_compile_options(AevryndCloudShadowD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndCloudShadowD3D12VisualTest PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/cloud-shadows")
+target_link_libraries(AevryndCloudShadowD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCloudShadowD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCloudShadowD3D12VisualTest>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)
