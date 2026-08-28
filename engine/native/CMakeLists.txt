@@ -375,6 +375,17 @@ add_executable(AevryndHeightFog3DBenchmark tests/HeightFog3DBenchmark.cpp)
 target_compile_options(AevryndHeightFog3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndHeightFog3DBenchmark PRIVATE AevryndEngine)
 
+add_executable(AevryndVolumetricCloud3DTest tests/VolumetricCloud3DSmoke.cpp)
+target_compile_options(AevryndVolumetricCloud3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndVolumetricCloud3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVolumetricCloud3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVolumetricCloud3DTest>'")
+
+add_executable(AevryndVolumetricCloudD3D12VisualTest tests/VolumetricCloudD3D12VisualSmoke.cpp)
+target_compile_options(AevryndVolumetricCloudD3D12VisualTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndVolumetricCloudD3D12VisualTest PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/volumetric-clouds")
+target_link_libraries(AevryndVolumetricCloudD3D12VisualTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVolumetricCloudD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVolumetricCloudD3D12VisualTest>'")
+
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndBloom3DTest PRIVATE AevryndEngine)

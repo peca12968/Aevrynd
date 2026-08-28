@@ -148,6 +148,17 @@ cbuffer TerrainDistanceMaterialConstants : register(b5)
     float terrainDistanceMaterialEnabled;
     float terrainDistanceMaterialReserved;
 };
+cbuffer VolumetricCloudConstants : register(b6)
+{
+    float cloudBaseAltitude;
+    float cloudThickness;
+    float cloudCoverage;
+    float cloudDensityScale;
+    float cloudErosion;
+    float cloudWindSpeed;
+    float cloudSampleCount;
+    float volumetricCloudEnabled;
+};
 struct SkinPaletteJoint
 {
     row_major float4x4 transform;
@@ -757,6 +768,61 @@ float3 ApplyProceduralClouds(float3 atmosphere, float3 rayDirection, float3 sunD
     return lerp(atmosphere, cloudShade + silverLining, density * 0.78);
 }
 
+float CloudVolumeNoise(float3 position)
+{
+    float2 coordinate=position.xz*0.00042+position.y*float2(0.000071,-0.000053);
+    float value=0.0;
+    float amplitude=0.58;
+    [unroll] for(int octave=0;octave<3;++octave)
+    {
+        value+=CloudNoise(coordinate)*amplitude;
+        coordinate=mul(float2x2(1.71,1.09,-1.09,1.71),coordinate)+5.37;
+        amplitude*=0.48;
+    }
+    return value;
+}
+
+float SampleCloudVolumeDensity(float3 position)
+{
+    const float normalizedHeight=saturate((position.y-cloudBaseAltitude)/max(10.0,cloudThickness));
+    const float lower=saturate(normalizedHeight/0.16);
+    const float upper=saturate((1.0-normalizedHeight)/0.28);
+    const float profile=lower*upper;
+    const float2 wind=float2(0.72,0.34)*fogEndEnabled.w*cloudWindSpeed;
+    const float3 moved=float3(position.x+wind.x,position.y,position.z+wind.y);
+    const float broad=CloudVolumeNoise(moved);
+    const float erosion=CloudVolumeNoise(moved*2.13+float3(31.7,11.3,-19.1));
+    return smoothstep(cloudCoverage,cloudCoverage+0.18,broad-cloudErosion*erosion)*profile*cloudDensityScale;
+}
+
+float3 ApplyVolumetricClouds(float3 atmosphere,float3 rayDirection,float3 sunDirection,float2 pixelPosition)
+{
+    const float entry=max(0.0,(cloudBaseAltitude-cameraFogStart.y)/rayDirection.y);
+    const float exit=max(entry,(cloudBaseAltitude+cloudThickness-cameraFogStart.y)/rayDirection.y);
+    const int samples=clamp((int)cloudSampleCount,4,16);
+    const float stepLength=(exit-entry)/float(samples);
+    const float jitter=CloudHash(floor(pixelPosition)+float2(17.0,43.0));
+    const float horizonFade=smoothstep(0.02,0.14,rayDirection.y);
+    float transmittance=1.0;
+    float3 scattering=0.0;
+    [loop] for(int sampleIndex=0;sampleIndex<16;++sampleIndex)
+    {
+        if(sampleIndex>=samples||transmittance<0.015)break;
+        const float distance=entry+(float(sampleIndex)+jitter)*stepLength;
+        const float3 position=cameraFogStart.xyz+rayDirection*distance;
+        const float density=SampleCloudVolumeDensity(position);
+        if(density<=0.001)continue;
+        const float lightDensity=SampleCloudVolumeDensity(position+sunDirection*380.0);
+        const float lightTransmission=exp(-lightDensity*0.82);
+        const float forward=MiePhase(saturate(dot(rayDirection,sunDirection)),0.62);
+        const float3 shade=lerp(float3(0.32,0.38,0.46),float3(1.06,0.91,0.72),lightTransmission)*(.72+forward*1.8);
+        const float opacity=1.0-exp(-density*0.18*horizonFade);
+        scattering+=transmittance*opacity*shade;
+        transmittance*=1.0-opacity;
+    }
+    return atmosphere*transmittance+scattering;
+}
+
 float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPosition, float3 normal, float3 lightDirection)
 {
     const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
@@ -1251,7 +1317,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
     [branch] if (skyMask > 0.5)
     {
-        baseColor = ApplyProceduralClouds(EvaluateAtmosphere(skyRay, skyLightDirection), skyRay, skyLightDirection);
+        baseColor=EvaluateAtmosphere(skyRay,skyLightDirection);
+        [branch] if(volumetricCloudEnabled>=0.5&&cloudDensityScale>0.0&&skyRay.y>0.001&&cameraFogStart.y<cloudBaseAltitude+cloudThickness)
+            baseColor=ApplyVolumetricClouds(baseColor,skyRay,skyLightDirection,input.position.xy);
         // 天空不需要執行材質、陰影與點光源路徑，直接輸出曝光後的線性 HDR。
         const float skyAlpha = alphaToCoverage && input.alphaMasked != 0
                              ? MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff)

@@ -117,6 +117,11 @@ inline float FoliageWrapDiffuse3D(float normalLightCosine,float wrap=.35f){if(!s
 inline float FoliageTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
 inline float ProceduralCloudDensity3D(float noiseSample,float coverage=.54f,float softness=.18f){if(!std::isfinite(noiseSample)||!std::isfinite(coverage)||!std::isfinite(softness)||softness<=0.f)return 0.f;const float value=Clamp((noiseSample-coverage)/softness,0.f,1.f);return value*value*(3.f-2.f*value);}
 inline float CloudHorizonFade3D(float rayHeight){if(!std::isfinite(rayHeight))return 0.f;const float value=Clamp((rayHeight-.025f)/.18f,0.f,1.f);return value*value*(3.f-2.f*value);}
+struct VolumetricCloudSettings3D {bool enabled{true};float baseAltitude{1200.f},thickness{1800.f},coverage{.52f},density{1.15f},erosion{.24f},windSpeed{18.f};uint32_t sampleCount{16};friend constexpr bool operator==(const VolumetricCloudSettings3D&,const VolumetricCloudSettings3D&)=default;};
+inline VolumetricCloudSettings3D NormalizeVolumetricCloudSettings3D(VolumetricCloudSettings3D settings){settings.baseAltitude=Clamp(std::isfinite(settings.baseAltitude)?settings.baseAltitude:1200.f,-10000.f,50000.f);settings.thickness=Clamp(std::isfinite(settings.thickness)?settings.thickness:1800.f,10.f,20000.f);settings.coverage=Clamp(std::isfinite(settings.coverage)?settings.coverage:.52f,.05f,.95f);settings.density=Clamp(std::isfinite(settings.density)?settings.density:1.15f,0.f,4.f);settings.erosion=Clamp(std::isfinite(settings.erosion)?settings.erosion:.24f,0.f,.8f);settings.windSpeed=Clamp(std::isfinite(settings.windSpeed)?settings.windSpeed:18.f,-200.f,200.f);settings.sampleCount=(std::clamp)(settings.sampleCount,4u,16u);return settings;}
+inline float VolumetricCloudDensity3D(float baseNoise,float erosionNoise,float normalizedHeight,const VolumetricCloudSettings3D& source={}){const auto settings=NormalizeVolumetricCloudSettings3D(source);if(!settings.enabled||settings.density<=0.f||!std::isfinite(baseNoise)||!std::isfinite(erosionNoise)||!std::isfinite(normalizedHeight))return 0.f;const float height=Clamp(normalizedHeight,0.f,1.f),profile=Clamp(height/.16f,0.f,1.f)*Clamp((1.f-height)/.28f,0.f,1.f),shape=baseNoise-settings.erosion*erosionNoise;return ProceduralCloudDensity3D(shape,settings.coverage,.18f)*profile*settings.density;}
+inline float VolumetricCloudTransmittance3D(float integratedDensity){return std::isfinite(integratedDensity)&&integratedDensity>0.f?std::exp(-(std::min)(integratedDensity,80.f)):1.f;}
+inline float VolumetricCloudRayLength3D(float cameraHeight,float rayHeight,const VolumetricCloudSettings3D& source={}){const auto settings=NormalizeVolumetricCloudSettings3D(source);if(!settings.enabled||settings.density<=0.f||!std::isfinite(cameraHeight)||!std::isfinite(rayHeight)||rayHeight<=.001f||cameraHeight>=settings.baseAltitude+settings.thickness)return 0.f;const float entry=(std::max)(0.f,(settings.baseAltitude-cameraHeight)/rayHeight),exit=(settings.baseAltitude+settings.thickness-cameraHeight)/rayHeight;return std::isfinite(entry)&&std::isfinite(exit)&&exit>entry?exit-entry:0.f;}
 struct BloomSettings3D {bool enabled{true};float threshold{1.f},softKnee{.5f},intensity{.12f},radiusPixels{2.5f};};
 inline BloomSettings3D NormalizeBloomSettings3D(BloomSettings3D settings){settings.threshold=Clamp(std::isfinite(settings.threshold)?settings.threshold:1.f,0.f,32.f);settings.softKnee=Clamp(std::isfinite(settings.softKnee)?settings.softKnee:.5f,0.f,1.f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:.12f,0.f,4.f);settings.radiusPixels=Clamp(std::isfinite(settings.radiusPixels)?settings.radiusPixels:2.5f,.5f,16.f);return settings;}
 inline float BloomSoftThreshold3D(float luminance,const BloomSettings3D& source={}){const BloomSettings3D settings=NormalizeBloomSettings3D(source);if(!settings.enabled||!std::isfinite(luminance))return 0.f;const float knee=(std::max)(settings.threshold*settings.softKnee,.0001f),soft=Clamp((luminance-settings.threshold+knee)/(2.f*knee),0.f,1.f);return(std::max)(luminance-settings.threshold,0.f)+soft*soft*knee;}
@@ -211,6 +216,7 @@ struct RendererStats {
     uint64_t waterOpaqueSceneColorAllocations{},waterOpaqueSceneColorReleases{},waterOpaqueSceneColorCopies{},screenSpaceWaterRefractionPasses{};
     uint64_t hdrPostProcessPasses{};
     bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
+    bool volumetricCloudsEnabled{};unsigned volumetricCloudSampleCount{};size_t volumetricCloudResidentBytes{};uint64_t volumetricCloudConfiguredFrames{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
     bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
@@ -506,6 +512,8 @@ public:
     const WaterOpticsSettings3D& WaterOptics()const{return waterOptics_;}
     void SetTerrainDistanceMaterial(TerrainDistanceMaterialSettings3D settings){terrainDistanceMaterial_=NormalizeTerrainDistanceMaterialSettings3D(settings);}
     const TerrainDistanceMaterialSettings3D& TerrainDistanceMaterial()const{return terrainDistanceMaterial_;}
+    void SetVolumetricClouds(VolumetricCloudSettings3D settings){volumetricClouds_=NormalizeVolumetricCloudSettings3D(settings);}
+    const VolumetricCloudSettings3D& VolumetricClouds()const{return volumetricClouds_;}
     void SetAmbientOcclusion(AmbientOcclusionSettings3D settings){ambientOcclusion_=NormalizeAmbientOcclusionSettings3D(settings);}
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetSoftDirectionalShadows(SoftDirectionalShadowSettings3D settings){softDirectionalShadows_=NormalizeSoftDirectionalShadowSettings3D(settings);}
@@ -565,6 +573,7 @@ private:
     BloomSettings3D bloom_{};
     WaterOpticsSettings3D waterOptics_{};
     TerrainDistanceMaterialSettings3D terrainDistanceMaterial_{};
+    VolumetricCloudSettings3D volumetricClouds_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
     SoftDirectionalShadowSettings3D softDirectionalShadows_{};
     std::vector<PointLight3D> pointLights_;
