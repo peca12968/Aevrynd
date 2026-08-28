@@ -12,7 +12,28 @@ bool SubmitSkinnedRenderable3D(DrawList& draw,SkinnedMeshHandle3D mesh,
     SkinPaletteRange3D palette,Matrix4 transform,std::uint32_t totalIndexCount,
     std::span<const SkinnedSubmesh3D> submeshes,
     std::span<const Material3D> materialBindings,SkinPaletteRange3D previousPalette={},
-    Matrix4 previousTransform=Matrix4::Identity(),bool motionValid=false);
+    Matrix4 previousTransform=Matrix4::Identity(),bool motionValid=false,
+    std::uint32_t submissionGroupId=0);
+
+struct SkinnedRenderablePart3D {
+    SkinnedMeshHandle3D mesh{};
+    Matrix4 transform{Matrix4::Identity()},previousTransform{Matrix4::Identity()};
+    std::uint32_t totalIndexCount{};
+    std::span<const SkinnedSubmesh3D> submeshes{};
+    std::span<const Material3D> materialBindings{};
+};
+
+enum class SkinnedRenderableGroupFailure3D : std::uint8_t {None,Empty,UnknownSkeleton,SkeletonMismatch,CurrentPaletteMismatch,PreviousPaletteMismatch,Range,Material,Capacity};
+struct SkinnedRenderableGroupStats3D {
+    std::uint64_t acceptedGroups{},acceptedParts{},acceptedInstances{},rejectedGroups{};
+    std::uint64_t unknownSkeletonRejections{},skeletonMismatchRejections{},currentPaletteMismatchRejections{},previousPaletteMismatchRejections{};
+    std::uint64_t rangeRejections{},materialRejections{},capacityRejections{};
+    SkinnedRenderableGroupFailure3D lastFailure{SkinnedRenderableGroupFailure3D::None};
+};
+
+bool SubmitSkinnedRenderableGroup3D(DrawList& draw,SkinPaletteRange3D palette,
+    std::span<const SkinnedRenderablePart3D> parts,SkinPaletteRange3D previousPalette={},
+    bool motionValid=false,SkinnedRenderableGroupStats3D* stats=nullptr);
 
 struct SkinnedMotionHistorySample3D {
     SkinPaletteRange3D previousPalette{};
