@@ -42,7 +42,7 @@ def material_set(female: bool) -> list[bpy.types.Material]:
             create_material("LipsRosePBR", (.42, .12, .11, 1), .38),
             create_material("EyeScleraPBR", (.86, .88, .84, 1), .23),
             create_material("IrisHazelPBR", (.10, .19, .10, 1), .18),
-            create_material("HairChestnutPBR", (.035, .018, .012, 1), .31),
+            create_material("HairChestnutPBR", (.025, .012, .008, 1), .48),
             create_material("DressEmeraldPBR", (.055, .050, .045, 1), .68),
             create_material("DressTrimPBR", (.025, .022, .020, 1), .58),
             create_material("BootLeatherPBR", (.09, .025, .014, 1), .48),
@@ -51,7 +51,7 @@ def material_set(female: bool) -> list[bpy.types.Material]:
     return [
         create_material("WarmSkinPBR", (.58, .30, .17, 1), .48),
         create_material("FaceHighlightPBR", (.64, .36, .22, 1), .43),
-        create_material("DarkBrownHairPBR", (.035, .018, .012, 1), .34),
+        create_material("DarkBrownHairPBR", (.025, .012, .008, 1), .50),
         create_material("EyeScleraPBR", (.78, .76, .70, 1), .22),
         create_material("HazelIrisPBR", (.12, .20, .10, 1), .16),
         create_material("DeepBlueShirtPBR", (.045, .050, .060, 1), .68),
@@ -167,13 +167,14 @@ def assign_materials(body: bpy.types.Object, eyes: list[bpy.types.Object], mater
         body.data.materials.append(value)
     skin, shirt, trousers, boots = (0, 5, 6, 7)
     for polygon in body.data.polygons:
-        center = sum((body.data.vertices[index].co for index in polygon.vertices), Vector()) / len(polygon.vertices)
-        radius = abs(center.x)
-        if center.z < .23:
+        points = [body.data.vertices[index].co for index in polygon.vertices]
+        maximum_z = max(point.z for point in points)
+        maximum_radius = max(abs(point.x) for point in points)
+        if maximum_z < .23:
             polygon.material_index = boots
-        elif center.z < (1.02 if female else 1.12):
+        elif maximum_z < (1.02 if female else 1.12):
             polygon.material_index = trousers
-        elif center.z < (1.48 if female else 1.66) and radius < (.29 if female else .43):
+        elif maximum_z < (1.48 if female else 1.66) and maximum_radius < (.29 if female else .43):
             polygon.material_index = shirt
         else:
             polygon.material_index = skin
@@ -199,6 +200,86 @@ def sphere_part(name: str, location: tuple[float, float, float], scale: tuple[fl
     return obj
 
 
+def hair_card(name: str, points: tuple[tuple[float, float, float], ...], width: float,
+              tile: int, surface: bpy.types.Material) -> bpy.types.Object:
+    centers = [Vector(point) for point in points]
+    vertices: list[tuple[float, float, float]] = []
+    for index, center in enumerate(centers):
+        direction = centers[min(index + 1, len(centers) - 1)] - centers[max(0, index - 1)]
+        across = Vector((-direction.z, 0.0, direction.x))
+        if across.length < 1.0e-5:
+            across = Vector((1.0, 0.0, 0.0))
+        across.normalize()
+        progress = index / max(1, len(centers) - 1)
+        half_width = width * (1.0 - progress * .72)
+        vertices.extend((tuple(center - across * half_width), tuple(center + across * half_width)))
+    faces = [(index * 2, index * 2 + 1, index * 2 + 3, index * 2 + 2)
+             for index in range(len(centers) - 1)]
+    mesh = bpy.data.meshes.new(f"{name}Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.materials.append(surface)
+    uv = mesh.uv_layers.new(name="UVMap")
+    tile_min = 0.0 if tile < 0 else .25 + (tile % 6) * .125
+    for polygon in mesh.polygons:
+        for loop_index in polygon.loop_indices:
+            vertex_index = mesh.loops[loop_index].vertex_index
+            uv.data[loop_index].uv = (tile_min + (vertex_index % 2) * .125,
+                                      (vertex_index // 2) / max(1, len(centers) - 1))
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def create_hair_cards(materials: list[bpy.types.Material], female: bool) -> list[bpy.types.Object]:
+    hair_material = materials[4 if female else 2]
+    cards: list[bpy.types.Object] = []
+    if female:
+        # F2 使用四層後側長髮與四束臉側髮，避免球形髮帽的塑膠頭盔輪廓。
+        for layer in range(4):
+            for column in range(13):
+                angle = -1.45 + column * (2.90 / 12.0) + layer * .022
+                root = (math.sin(angle) * (.104 + layer * .006),
+                        .018 + math.cos(angle) * (.096 + layer * .006),
+                        1.735 - layer * .010 - abs(math.sin(angle)) * .012)
+                length = .31 + .11 * math.cos(angle) ** 2 + .025 * math.sin(column * 1.7 + layer)
+                tip = (root[0] * 1.24 + math.sin(column * 1.31 + layer) * .012,
+                       .052 + layer * .010,
+                       root[2] - length)
+                first = (root[0] * .96 + tip[0] * .04,
+                         root[1] + .018,
+                         root[2] - length * .18)
+                middle = ((root[0] + tip[0]) * .5 + math.sin(column * 1.11 + layer) * .014,
+                          (root[1] + tip[1]) * .5 + .025,
+                          (root[2] + tip[2]) * .5 + .025)
+                cards.append(hair_card(f"F2LongHair.{len(cards):02d}", (root, first, middle, tip),
+                                       .015 + (column % 3) * .002, len(cards), hair_material))
+        for side in (-1.0, 1.0):
+            for layer in range(2):
+                root = (side * (.070 + layer * .014), -.058 + layer * .006, 1.735 - layer * .012)
+                middle = (side * (.098 + layer * .010), -.070, 1.565 - layer * .025)
+                tip = (side * (.115 + layer * .012), -.030, 1.355 - layer * .035)
+                cards.append(hair_card(f"F2FaceHair.{len(cards):02d}", (root, middle, tip),
+                                       .014 + layer * .002, len(cards), hair_material))
+    else:
+        # M2 以四圈短髮建立漸短側邊，上方髮束略向一側梳起，保持成熟俐落輪廓。
+        for band in range(4):
+            for column in range(12):
+                angle = math.tau * column / 12.0 + band * .045
+                root = (math.sin(angle) * (.112 - band * .006),
+                        .020 + math.cos(angle) * (.098 - band * .005),
+                        2.038 + band * .014)
+                swept_angle = angle + .25 + band * .035
+                tip = (math.sin(swept_angle) * (.090 - band * .004) + .012,
+                       .018 + math.cos(swept_angle) * (.084 - band * .004),
+                       root[2] + .010 + band * .003)
+                middle = ((root[0] + tip[0]) * .5 + .006,
+                          (root[1] + tip[1]) * .5,
+                          (root[2] + tip[2]) * .5 + .010)
+                cards.append(hair_card(f"M2ShortHair.{len(cards):02d}", (root, middle, tip),
+                                       .014 + (column % 3) * .0015, -1, hair_material))
+    return cards
+
+
 def create_face_features(eyes: list[bpy.types.Object], materials: list[bpy.types.Material], female: bool) -> list[bpy.types.Object]:
     iris_material = materials[3 if female else 4]
     hair_material = materials[4 if female else 2]
@@ -210,12 +291,23 @@ def create_face_features(eyes: list[bpy.types.Object], materials: list[bpy.types
                                     (.019 if female else .020, .009, .010), sclera_material))
         features.append(sphere_part(f"Iris.{index}", (eye_x * sign, eye_y - .0085, eye_z),
                                     (.0065 if female else .0070, .0022, .0065 if female else .0070), iris_material))
+        features.append(sphere_part(f"Pupil.{index}", (eye_x * sign, eye_y - .0105, eye_z),
+                                    (.0028, .0012, .0028), hair_material, True))
+        features.append(sphere_part(f"Brow.{index}", (eye_x * sign, eye_y - .004, eye_z + (.028 if female else .031)),
+                                    (.028 if female else .032, .004, .0045), hair_material, True))
+    lip_z = 1.604 if female else 1.824
+    lip_y = -.117 if female else -.128
+    features.append(sphere_part("UpperLip", (0, lip_y, lip_z + .004),
+                                (.029 if female else .032, .004, .006), materials[1]))
+    features.append(sphere_part("LowerLip", (0, lip_y - .001, lip_z - .005),
+                                (.027 if female else .030, .0045, .0065), materials[1]))
     if female:
         # F2 的長髮先以貼頭髮帽建立乾淨髮際線；後續髮片可在不改身體拓撲下持續增加。
-        features.append(sphere_part("F2HairScalp", (0, .018, 1.690), (.112, .105, .115), hair_material, True))
+        features.append(sphere_part("F2HairScalp", (0, -.004, 1.700), (.116, .120, .116), hair_material, True))
     else:
         # M2 採短髮輪廓，避免舊版寬亮面髮帽造成卡通感。
-        features.append(sphere_part("M2HairScalp", (0, .020, 1.940), (.118, .110, .088), hair_material, True))
+        features.append(sphere_part("M2HairScalp", (0, -.004, 1.990), (.126, .128, .104), hair_material, True))
+    features.extend(create_hair_cards(materials, female))
     # AESKIN sidecar採嚴格材質集合；尚未外露的唇妝／金屬槽以體內微型標記保留穩定索引。
     for material_index in (1, 8):
         features.append(sphere_part(f"MaterialMarker.{material_index}", (0, 0, .5 + material_index * .001),
@@ -274,6 +366,9 @@ def export_character(bundle: Path, destination: Path, female: bool) -> None:
     materials = material_set(female)
     assign_materials(objects[0], [], materials, female)
     features = create_face_features([], materials, female)
+    hair_cards = [obj for obj in features if obj.name.startswith(("F2LongHair", "F2FaceHair", "M2ShortHair"))]
+    expected_hair_cards = 56 if female else 48
+    hair_triangles = sum(sum(len(polygon.vertices) - 2 for polygon in obj.data.polygons) for obj in hair_cards)
     rig = create_rig(female)
     extras = objects[1:] + features
     bind_to_rig(objects[0], extras, rig)
@@ -287,8 +382,9 @@ def export_character(bundle: Path, destination: Path, female: bool) -> None:
     bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=str(destination / ("realistic-female.blend" if female else "realistic-male.blend")))
     triangles = sum(len(polygon.vertices) - 2 for polygon in character.data.polygons)
-    print(f"CC0_CHARACTER={'F2' if female else 'M2'} VERTICES={len(character.data.vertices)} TRIANGLES={triangles} BONES={len(rig.data.bones)} MATERIALS={len(character.data.materials)}")
-    if len(character.data.vertices) > 30000 or triangles > 60000 or len(rig.data.bones) != 20 or len(character.data.materials) != 9:
+    print(f"CC0_CHARACTER={'F2' if female else 'M2'} VERTICES={len(character.data.vertices)} TRIANGLES={triangles} BONES={len(rig.data.bones)} MATERIALS={len(character.data.materials)} HAIR_CARDS={len(hair_cards)} HAIR_TRIANGLES={hair_triangles}")
+    if (len(character.data.vertices) > 30000 or triangles > 60000 or len(rig.data.bones) != 20
+            or len(character.data.materials) != 9 or len(hair_cards) != expected_hair_cards or hair_triangles > 900):
         raise RuntimeError("CC0 character geometry budget validation failed.")
 
 
