@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00504","kind":"git-commit","sourcePath":"git/history","sourceSha256":"92040f576f10f0ec31cfa9e2ceb542431ad52f7d39d39ad063ba568407b12d83","sourceRevision":"c8b0e05f96711e4a5dc1a23c5fbc01736cc00dea","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入自適應2.5D排序並發布引擎2.10"}
