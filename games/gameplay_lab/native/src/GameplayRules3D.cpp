@@ -1,0 +1,23 @@
+#include "GameplayRules3D.h"
+#include <algorithm>
+#include <cmath>
+
+using namespace Aevrynd;
+namespace GameplayLab {
+void Rules3D::Reset(){*this=Rules3D{};}
+void Rules3D::SetCamera(CameraMode mode){if(camera_!=mode){camera_=mode;++stats_.cameraSwitches;}}
+void Rules3D::CycleCamera(){SetCamera(CameraMode((unsigned(camera_)+1)%3));}
+void Rules3D::SetLighting(LightingPhase phase){lighting_=phase;}
+void Rules3D::CycleLighting(){lighting_=LightingPhase((unsigned(lighting_)+1)%3);}
+void Rules3D::PushEdit(Edit edit){if(undo_.size()==HistoryCapacity)undo_.erase(undo_.begin());undo_.push_back(edit);redo_.clear();}
+bool Rules3D::Place(Vec3 position,bool dynamic){if(entities_.size()>=MaximumEntities||!std::isfinite(position.x)||!std::isfinite(position.y)||!std::isfinite(position.z)){++stats_.placementRejected;return false;}position.x=std::round(position.x*.5f)*2.f;position.z=std::round(position.z*.5f)*2.f;Entity entity{nextEntityId_++,category_,position,0,dynamic,true};if(!entity.id){++stats_.placementRejected;return false;}entities_.push_back(entity);PushEdit({true,entity});++stats_.placements;return true;}
+bool Rules3D::RollbackLastPlacement(std::uint64_t id){if(entities_.empty()||undo_.empty()||entities_.back().id!=id||!undo_.back().placement||undo_.back().entity.id!=id)return false;entities_.pop_back();undo_.pop_back();redo_.clear();if(nextEntityId_==id+1)nextEntityId_=id;if(stats_.placements)--stats_.placements;return true;}
+bool Rules3D::Delete(std::uint64_t id){auto found=std::find_if(entities_.begin(),entities_.end(),[&](const Entity& e){return e.id==id;});if(found==entities_.end())return false;const Entity copy=*found;entities_.erase(found);PushEdit({false,copy});++stats_.deletes;if(grabbed_==id)EndGrab();return true;}
+bool Rules3D::Undo(){if(undo_.empty())return false;Edit edit=undo_.back();undo_.pop_back();if(edit.placement){auto found=std::find_if(entities_.begin(),entities_.end(),[&](const Entity& e){return e.id==edit.entity.id;});if(found!=entities_.end())entities_.erase(found);}else entities_.push_back(edit.entity);redo_.push_back(edit);++stats_.undo;return true;}
+bool Rules3D::Redo(){if(redo_.empty())return false;Edit edit=redo_.back();redo_.pop_back();if(edit.placement)entities_.push_back(edit.entity);else{auto found=std::find_if(entities_.begin(),entities_.end(),[&](const Entity& e){return e.id==edit.entity.id;});if(found!=entities_.end())entities_.erase(found);}undo_.push_back(edit);++stats_.redo;return true;}
+bool Rules3D::BeginGrab(std::uint64_t id,float distance){if(distance<0||distance>MaximumGrabDistance||grabbed_)return false;const auto found=std::find_if(entities_.begin(),entities_.end(),[&](const Entity& e){return e.id==id&&e.dynamic;});if(found==entities_.end())return false;grabbed_=id;++stats_.grabs;return true;}
+void Rules3D::EndGrab(){if(grabbed_){grabbed_.reset();++stats_.drops;}}
+void Rules3D::Tick(TickInput input,float dt){dt=Clamp(std::isfinite(dt)?dt:0.f,0.f,.1f);++tick_;++stats_.ticks;if(input.togglePalette)paletteOpen_=!paletteOpen_;if(input.crouch){if(!crouched_){crouched_=true;++stats_.crouches;}else if(headroomClear_)crouched_=false;else ++stats_.headroomRejected;}const float speed=input.run?7.f:crouched_?2.f:4.f;const float horizontal=std::sqrt(input.movement.x*input.movement.x+input.movement.z*input.movement.z);if(horizontal>.001f){const Vec3 direction=input.movement*(1.f/(std::max)(1.f,horizontal));characterPosition_=characterPosition_+direction*(speed*dt);locomotion_=crouched_?LocomotionState::Crouch:input.run?LocomotionState::Run:LocomotionState::Walk;}else locomotion_=crouched_?LocomotionState::Crouch:LocomotionState::Idle;if(input.jump&&grounded_&&!crouched_){verticalVelocity_=6.5f;grounded_=false;locomotion_=LocomotionState::Jump;++stats_.jumps;}if(!grounded_){verticalVelocity_-=19.f*dt;characterPosition_.y+=verticalVelocity_*dt;if(characterPosition_.y<=0){characterPosition_.y=0;verticalVelocity_=0;grounded_=true;}else locomotion_=verticalVelocity_>=0?LocomotionState::Jump:LocomotionState::Fall;}if(input.undo)Undo();if(input.redo)Redo();}
+LightingState Rules3D::EvaluateLighting(float blend)const{blend=Clamp(blend,0.f,1.f);(void)blend;switch(lighting_){case LightingPhase::Day:return{{.38f,-1,.24f},{1,.96f,.87f,1},{.44f,.60f,.72f,1},{.10f,.23f,.34f,1},1.8f,1.f,.006f};case LightingPhase::Dusk:return{{-.65f,-.34f,.28f},{1,.46f,.22f,1},{.34f,.19f,.25f,1},{.18f,.065f,.08f,1},1.2f,.9f,.014f};default:return{{.25f,-.72f,-.34f},{.32f,.48f,1,1},{.075f,.09f,.16f,1},{.008f,.012f,.035f,1},.48f,.72f,.022f};}}
+Stats Rules3D::GetStats()const{Stats result=stats_;result.entities=entities_.size();result.undoDepth=undo_.size();result.redoDepth=redo_.size();return result;}
+}

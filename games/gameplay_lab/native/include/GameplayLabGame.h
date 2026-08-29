@@ -1,0 +1,31 @@
+#pragma once
+#include "GameplayRules3D.h"
+#include "GameplayInputReplay3D.h"
+#include "GameplayAnimation3D.h"
+#include "GameplayCombat3D.h"
+#include "ObjectPaletteAdapter3D.h"
+#include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/Engine.h>
+#include <Aevrynd/PhysicsWorld3D.h>
+#include <Aevrynd/Scene3D.h>
+#include <Aevrynd/SkinnedModelAsset.h>
+#include <Aevrynd/SkinnedModel3D.h>
+#include <filesystem>
+#include <string>
+
+std::string CreateGameplayLabRunId();
+
+class GameplayLabGame final:public Aevrynd::IGame {
+public:
+    explicit GameplayLabGame(std::filesystem::path captureDirectory={}):combat_(std::make_unique<GameplayLab::GameplayCombat3D>(collisions_,physics_)),palette_(std::make_unique<GameplayLab::ObjectPaletteAdapter3D>(rules_,collisions_,physics_,sceneEcs_)),captureDirectory_(std::move(captureDirectory)),runId_(CreateGameplayLabRunId()){}
+    void OnStart(Aevrynd::Engine&)override;void OnUpdate(Aevrynd::Engine&,float)override;void OnRender(Aevrynd::Engine&,float)override;void OnStop(Aevrynd::Engine&)override;
+    Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;std::size_t TrimReusableMemory()override;
+private:
+    void BuildWorld(Aevrynd::Engine&);void UpdateCamera();void UpdateCapture(Aevrynd::Engine&);
+    GameplayLab::Rules3D rules_{};Aevrynd::CharacterController3D controller_{};Aevrynd::CollisionWorld3D collisions_{};Aevrynd::PhysicsWorld3D physics_{};Aevrynd::SceneECSRegistry3D sceneEcs_{};Aevrynd::Scene3D scene_{};
+    Aevrynd::MeshResource3D boxMesh_{},sphereMesh_{};std::vector<Aevrynd::RigidBodyHandle3D> bodies_{};Aevrynd::Camera3D camera_{};float yaw_{},pitch_{.2f};
+    Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{};std::vector<std::string> femaleJointNames_{},maleJointNames_{};Aevrynd::SkinnedMeshResource3D femaleMesh_{},maleMesh_{};Aevrynd::AnimationPose3D femalePose_{},malePose_{};Aevrynd::SkinningWorkspace3D skinning_{};
+    std::unique_ptr<GameplayLab::GameplayCombat3D> combat_{};GameplayLab::GameplayAnimation3D gameplayAnimation_{},monsterAnimation_{};Aevrynd::AnimationPose3D monsterPose_{};std::array<std::uint64_t,11> femalePoseHashes_{},malePoseHashes_{};
+    std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};
+    std::filesystem::path captureDirectory_{};std::optional<Aevrynd::Vec3> captureValidGhost_{},captureInvalidGhost_{};std::size_t captureIndex_{};bool capturePending_{},combatSpawned_{},crouchFeetInvariant_{true},weaponAttachmentPassed_{},weaponHitWindowEvidence_{};Aevrynd::ColliderHandle3D captureCeiling_{},captureEvidenceCollider_{};float minimumControllerHeight_{1.8f};double nextCapture_{.5};std::uint64_t captureSuccess_{},captureReject_{},femaleGpuDraws_{},maleGpuDraws_{};std::size_t released_{};std::uint64_t trims_{};std::string runId_{};
+};

@@ -32,6 +32,7 @@ public:
     Vec3 Center()const{return position_+Vec3{0,settings_.height*.5f,0};}
     Vec3 Extents()const{return{settings_.radius,settings_.height*.5f,settings_.radius};}
     bool Grounded()const{return grounded_;}
+    bool SetHeight(float height){if(!std::isfinite(height)||height<.6f||height>3.f)return false;settings_.height=height;return true;}
     const CharacterControllerSettings3D& Settings()const{return settings_;}
     CharacterControllerStats3D Stats()const{return stats_;}
     bool CanRebaseOrigin(Vec3 delta)const noexcept;

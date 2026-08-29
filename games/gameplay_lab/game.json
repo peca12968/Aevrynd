@@ -1,0 +1,9 @@
+{
+  "id": "gameplay_lab",
+  "title": "Aevrynd Gameplay Lab",
+  "version": "1.0.0",
+  "engineVersion": "2.86.0",
+  "entry": "dist/Aevrynd-Gameplay-Lab.exe",
+  "maturity": "deterministic local gameplay validation WIP",
+  "features": ["first-person", "third-person", "god-view", "character-controller", "rigid-body-playground", "bounded-grab", "deterministic-melee", "monster-target", "object-palette", "undo-redo", "day-dusk-night", "automated-framebuffer-capture"]
+}
