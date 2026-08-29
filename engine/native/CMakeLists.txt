@@ -123,6 +123,20 @@ target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
 
+set(AEVRYND_WINDOWS_GUI_TEST_WRAPPER "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1")
+function(aevrynd_add_windows_gui_test test_name target_name)
+  add_test(
+    NAME ${test_name}
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${AEVRYND_WINDOWS_GUI_TEST_WRAPPER}" -Executable "$<TARGET_FILE:${target_name}>"
+  )
+endfunction()
+
+add_executable(AevryndWindowsGuiTestWrapperFailureTest tests/WindowsGuiTestWrapperFailureSmoke.cpp)
+target_compile_options(AevryndWindowsGuiTestWrapperFailureTest PRIVATE /W4 /permissive- /utf-8)
+# 這個測試刻意讓子處理序回傳 37，用來確認包裝器會把非零結束碼交還 CTest。
+aevrynd_add_windows_gui_test(AevryndWindowsGuiTestWrapperExitCodeSelfTest AevryndWindowsGuiTestWrapperFailureTest)
+set_tests_properties(AevryndWindowsGuiTestWrapperExitCodeSelfTest PROPERTIES WILL_FAIL TRUE)
+
 add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
 add_executable(AevryndVelocityReadbackTest tests/VelocityReadbackSmoke.cpp)
 add_executable(AevryndTemporalAntiAliasingTest tests/TemporalAntiAliasingSmoke.cpp)
@@ -354,12 +368,12 @@ add_executable(AevryndWorldPartition3DD3D12Test WIN32 tests/WorldPartition3DD3D1
 target_compile_options(AevryndWorldPartition3DD3D12Test PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(AevryndWorldPartition3DD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndWorldPartition3DD3D12Test PRIVATE AevryndEngine)
-add_test(NAME AevryndWorldPartition3DD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartition3DD3D12Test>'")
+aevrynd_add_windows_gui_test(AevryndWorldPartition3DD3D12Test AevryndWorldPartition3DD3D12Test)
 
 add_executable(AevryndWorldPartitionTerrainVegetationD3D12Test WIN32 tests/WorldPartitionTerrainVegetationD3D12Smoke.cpp)
 target_compile_options(AevryndWorldPartitionTerrainVegetationD3D12Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldPartitionTerrainVegetationD3D12Test PRIVATE AevryndEngine)
-add_test(NAME AevryndWorldPartitionTerrainVegetationD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartitionTerrainVegetationD3D12Test>'")
+aevrynd_add_windows_gui_test(AevryndWorldPartitionTerrainVegetationD3D12Test AevryndWorldPartitionTerrainVegetationD3D12Test)
 
 add_executable(AevryndNavigation3DTest tests/Navigation3DSmoke.cpp)
 target_compile_options(AevryndNavigation3DTest PRIVATE /W4 /permissive- /utf-8)
@@ -490,6 +504,10 @@ add_executable(AevryndReflectionProbeCaptureD3D12Test tests/ReflectionProbeCaptu
 target_compile_options(AevryndReflectionProbeCaptureD3D12Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndReflectionProbeCaptureD3D12Test PRIVATE AevryndEngine Psapi)
 add_test(NAME AevryndReflectionProbeCaptureD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndReflectionProbeCaptureD3D12Test>'")
+add_executable(AevryndReflectionProbeOriginRebaseD3D12Test WIN32 tests/ReflectionProbeOriginRebaseD3D12Smoke.cpp)
+target_compile_options(AevryndReflectionProbeOriginRebaseD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReflectionProbeOriginRebaseD3D12Test PRIVATE AevryndEngine)
+aevrynd_add_windows_gui_test(AevryndReflectionProbeOriginRebaseD3D12Test AevryndReflectionProbeOriginRebaseD3D12Test)
 add_executable(AevryndWorldOriginRendererTest tests/WorldOriginRendererSmoke.cpp)
 target_compile_options(AevryndWorldOriginRendererTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldOriginRendererTest PRIVATE AevryndEngine)
@@ -502,6 +520,10 @@ add_executable(AevryndWorldOriginRuntime3DTest tests/WorldOriginRuntime3DSmoke.c
 target_compile_options(AevryndWorldOriginRuntime3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldOriginRuntime3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldOriginRuntime3DTest COMMAND AevryndWorldOriginRuntime3DTest)
+add_executable(AevryndWorldOriginThreadGuardTest tests/WorldOriginThreadGuardSmoke.cpp)
+target_compile_options(AevryndWorldOriginThreadGuardTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldOriginThreadGuardTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldOriginThreadGuardTest COMMAND AevryndWorldOriginThreadGuardTest)
 
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)

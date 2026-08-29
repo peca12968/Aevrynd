@@ -103,6 +103,7 @@ public:
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}
     bool CaptureNextFrame3D(const std::filesystem::path& path){return renderer_->CaptureNextFrame(path);}
+    bool RebaseReflectionProbeCaptures3D(Vec3 localDelta,uint64_t originGeneration){return renderer_&&renderer_->RebaseReflectionProbeCaptures3D(localDelta,originGeneration);}
 private:
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
