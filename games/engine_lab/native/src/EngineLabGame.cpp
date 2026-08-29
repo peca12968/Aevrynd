@@ -7,6 +7,7 @@
 #include <Aevrynd/MeshLoader.h>
 #include <Aevrynd/ProceduralPlacement3D.h>
 #include <Windows.h>
+#include <objbase.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -40,6 +41,7 @@ float ForestClusterAcceptance(float x,float z,void* opaque){
 }
 Material3D LandscapeMaterial(Material3D material,Color tint,float textureScale){material.tint=tint;material.textureScale=textureScale;return material;}
 MaterialQuality3D MaterialQualityFor(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return MaterialQuality3D::Low;case RenderQuality3D::Medium:return MaterialQuality3D::Medium;case RenderQuality3D::High:return MaterialQuality3D::High;default:return MaterialQuality3D::Ultra;}}
+std::string CreateGpuValidationRunId(){GUID value{};if(FAILED(CoCreateGuid(&value)))throw std::runtime_error("GPU validation run GUID unavailable");return std::format("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",value.Data1,value.Data2,value.Data3,value.Data4[0],value.Data4[1],value.Data4[2],value.Data4[3],value.Data4[4],value.Data4[5],value.Data4[6],value.Data4[7]);}
 Mesh3D CreateLandscapeRiverMesh(const HeightField3D& terrain){
     std::vector<Vec3> centers;std::vector<float> widths;centers.reserve(39);widths.reserve(39);
     for(int segment=0;segment<=38;++segment){const float z=-25.f+float(segment)*3.f,x=25.f+std::sin(z*.105f)*5.f,width=3.f+LandscapeNoise(segment,83)*.42f;const float waterHeight=(std::max)({terrain.SampleHeight(x,z),terrain.SampleHeight(x-width,z),terrain.SampleHeight(x+width,z)});centers.push_back({x,waterHeight,z});widths.push_back(width);}
@@ -66,6 +68,7 @@ Aevrynd::ReusableMemoryStats EngineLabGame::GetReusableMemoryStats()const{const 
 std::size_t EngineLabGame::TrimReusableMemory(){const std::size_t before=GetReusableMemoryStats().retainedCapacityBytes;scene_.TrimUnusedMemory();landscapeScene_.TrimUnusedMemory();physicsWorld_.TrimUnusedMemory();worldStreamer_.TrimUnusedMemory();navigationWorkspace_.TrimUnusedMemory(std::size_t(navigationGrid_.Settings().width)*navigationGrid_.Settings().depth);std::vector<WorldObjectHandle3D>(authoredDynamicObjects_).swap(authoredDynamicObjects_);const std::size_t after=GetReusableMemoryStats().retainedCapacityBytes;lastReusableMemoryReleasedBytes_=before>after?before-after:0;++reusableMemoryTrimCount_;return lastReusableMemoryReleasedBytes_;}
 
 void EngineLabGame::OnStart(Engine &engine) {
+  gpuValidationRunId_=CreateGpuValidationRunId();
   cameraMode_ = 0;
   effectCycle_ = -1;
   effects_.Clear();
@@ -489,7 +492,7 @@ void EngineLabGame::OnUpdate(Engine& engine,float deltaTime){
         const auto pa = replicationClientA_->Predicted();
         const auto pb = replicationClientB_->Predicted();
         receipt << std::format(
-            "{{\"phase\":\"network-v254\",\"seed\":{},\"serverTick\":{},"
+            "{{\"runId\":\"{}\",\"phase\":\"network-v254\",\"seed\":{},\"serverTick\":{},"
             "\"clients\":{},\"snapshots\":{},\"full\":{},\"delta\":{},\"acks\":"
             "{},\"loss\":{},\"duplicate\":{},\"reorder\":{},"
             "\"client1Interest\":{},\"client2Interest\":{},\"visible1\":{},"
@@ -506,7 +509,7 @@ void EngineLabGame::OnUpdate(Engine& engine,float deltaTime){
             "\"gpuValidationErrors\":{},\"gpuValidationWarnings\":{},"
             "\"gpuValidationFirstErrorId\":{},\"gpuValidationSource\":"
             "\"D3D12InfoQueue\",\"gpuValidationEntry\":\"EngineLabCapture\"}}",
-            0x2a54c0deull, server.ticks, replicationServer_->ClientCount(),
+            gpuValidationRunId_,0x2a54c0deull, server.ticks, replicationServer_->ClientCount(),
             server.snapshotsSent, server.fullSnapshots, server.deltaSnapshots,
             server.acks, transport.lost, transport.duplicated,
             transport.reordered, a.interestChunks, b.interestChunks,
@@ -530,11 +533,11 @@ void EngineLabGame::OnUpdate(Engine& engine,float deltaTime){
             gpu.debugLayerEnabled ? 1 : 0, gpu.debugErrorCount,
             gpu.debugWarningCount, gpu.debugFirstErrorId);
         receipt.close();
-        if (gpu.gpuValidationRequested) {
+        {
           std::ofstream diagnostics(captureDirectory_ /
                                         "gpu-validation-diagnostics.txt",
                                     std::ios::binary | std::ios::trunc);
-          diagnostics << "errors=" << gpu.debugErrorCount
+          diagnostics << "runId="<<gpuValidationRunId_<<"\nsource=D3D12InfoQueue\nentry=EngineLabCapture\nerrors=" << gpu.debugErrorCount
                       << " warnings=" << gpu.debugWarningCount << " ids=";
           for (size_t index = 0; index < gpu.debugErrorIdCount; ++index)
             diagnostics << '\n'

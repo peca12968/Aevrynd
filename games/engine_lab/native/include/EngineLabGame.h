@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 class EngineLabMutationTarget final:public Aevrynd::IDurableMutationTarget3D {
@@ -98,6 +99,7 @@ private:
     bool backfaceCulling_{true};
     bool lightingEnabled_{true};
     std::filesystem::path captureDirectory_{};
+    std::string gpuValidationRunId_{};
     std::size_t captureIndex_{};
     std::uint64_t captureFrameCounter_{};
     float nextCaptureTime_{1.5f};
