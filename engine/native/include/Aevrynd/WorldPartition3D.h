@@ -1,5 +1,6 @@
 #pragma once
 #include "WorldStreamer3D.h"
+#include "WorldOrigin3D.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -60,12 +61,15 @@ public:
  ~WorldPartition3D();
  WorldPartition3D(const WorldPartition3D&)=delete;WorldPartition3D& operator=(const WorldPartition3D&)=delete;
  void Update(Vec3 observerPosition);
+ // 全域觀測者不依賴目前 render origin，因此 rebase 不會取消或重建載入請求。
+ bool UpdateGlobal(GlobalPosition3D observerPosition,float globalChunkSize=32.f);
  void Reset();
  void WaitIdle();
  std::size_t TrimUnusedMemory();
  WorldPartitionStats3D Stats()const{return stats_;}
  std::span<const WorldPartitionChunkStatus3D> Chunks()const{return view_;}
 private:
+ void UpdateCoordinate(WorldChunkCoordinate3D observer);
  struct Impl;std::unique_ptr<Impl> impl_;WorldPartitionStats3D stats_{};std::vector<WorldPartitionChunkStatus3D> view_;
 };
 }

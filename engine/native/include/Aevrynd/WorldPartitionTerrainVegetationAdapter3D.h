@@ -21,6 +21,7 @@ struct TerrainVegetationChunkSettings3D {
 };
 
 struct TerrainVegetationChunkPayload3D {
+    GlobalChunkCoordinate3D globalChunk{};
     Mesh3D terrain{};
     std::vector<VegetationInstance3D> vegetation{};
     std::size_t cpuBytes{},conservativeGpuBytes{};
@@ -43,7 +44,7 @@ private:
     std::vector<std::jthread> workers_{};std::size_t active_{};
 };
 
-class TerrainVegetationWorldChunkActivationTarget3D final:public IWorldChunkActivationTarget3D {
+class TerrainVegetationWorldChunkActivationTarget3D final:public IWorldChunkActivationTarget3D,public IWorldOriginParticipant3D {
 public:
     TerrainVegetationWorldChunkActivationTarget3D(Engine& engine,SceneECSRegistry3D& scene,ChunkedVegetationWorld3D& vegetation,TerrainVegetationChunkSettings3D settings={});
     ~TerrainVegetationWorldChunkActivationTarget3D()override;
@@ -58,6 +59,11 @@ public:
     std::size_t TrimUnusedMemory()override;
     void SetActivationFailureCheckpointForTesting(int value)noexcept{failureCheckpoint_=value;}
     std::size_t PendingRetirements()const noexcept;
+    bool SetWorldOriginSnapshot3D(WorldOrigin3D origin)noexcept;
+    WorldOrigin3D WorldOriginSnapshot3D()const noexcept{return origin_;}
+    bool PrepareWorldOriginRebase3D(const WorldOriginRebaseEvent3D& event)override;
+    void CommitWorldOriginRebase3D(const WorldOriginRebaseEvent3D& event)noexcept override;
+    void AbortWorldOriginRebase3D()noexcept override{preparedOrigin_={};}
 private:
     // GPU、ECS 與植被發布只能由建立 target 的主執行緒操作；跨執行緒呼叫一律 fail-closed。
     bool OnOwnerThread()const noexcept{return std::this_thread::get_id()==ownerThread_;}
@@ -66,6 +72,6 @@ private:
     bool EnsureShared(const TerrainVegetationChunkPayload3D& payload,std::size_t& physicalBytes);
     void ReleaseRecord(Record& record);
     Engine& engine_;SceneECSRegistry3D& scene_;ChunkedVegetationWorld3D& vegetation_;TerrainVegetationChunkSettings3D settings_{};
-    SharedVegetation shared_{};mutable std::unordered_map<std::uint64_t,Record> records_{};std::thread::id ownerThread_{};std::uint64_t next_{1};int failureCheckpoint_{-1};
+    SharedVegetation shared_{};mutable std::unordered_map<std::uint64_t,Record> records_{};std::thread::id ownerThread_{};std::uint64_t next_{1};int failureCheckpoint_{-1};WorldOrigin3D origin_{};WorldOrigin3D preparedOrigin_{};
 };
 }
