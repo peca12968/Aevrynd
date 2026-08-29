@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
+  "snapshotRevision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
   "chunkCharacters": 3000,
-  "chunkCount": 618,
-  "sourceCount": 167,
+  "chunkCount": 661,
+  "sourceCount": 174,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "47d8334e10e69c19738bd6302cb187254c092a85db0a53933109dd4e187e321d",
+  "knowledgeSha256": "798373a065eb424dba2b6f0cf681689e023f24aaad72e8e255bb429354fbfb93",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "9592d51f2eea319a61b175baaa67ed453d4dd6e54de76ed6a6aa78257def1b40",
-      "revision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
-      "bytes": 50215
+      "sha256": "070e3ab22c553db7be4d10d5ec1dce9560204d7a6b68ce97e5cccc48a424088a",
+      "revision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
+      "bytes": 53062
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -146,9 +146,9 @@
     {
       "path": "engine/native/include/Aevrynd/HeightField3D.h",
       "kind": "public-header",
-      "sha256": "0228758212ee9d433d5df58e42edd200d32ba95e5065bc9b518f850e2e3588cd",
-      "revision": "669a4e156e44fd5c7340d99102b7d25595e5b603",
-      "bytes": 3351
+      "sha256": "e1480e8d4a4040720a15e18a3c7a9b1dcf5237ad965f042b7491d36f8a6d5a2c",
+      "revision": "a546ef619f137a5cfaeeec23cbe6dfdd948db894",
+      "bytes": 3497
     },
     {
       "path": "engine/native/include/Aevrynd/Input.h",
@@ -375,6 +375,13 @@
       "bytes": 2612
     },
     {
+      "path": "engine/native/include/Aevrynd/WorldDeltaPersistence3D.h",
+      "kind": "public-header",
+      "sha256": "94ba0c1fba89195b7c2a0e95fddbfb3574313d32939df98cdf3088a0dd98ba48",
+      "revision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
+      "bytes": 6205
+    },
+    {
       "path": "engine/native/include/Aevrynd/WorldOrigin3D.h",
       "kind": "public-header",
       "sha256": "1266854c6057aa8a1a374866dddb220c7baabad55ab85b15b8e5f57a33bdeabb",
@@ -391,9 +398,9 @@
     {
       "path": "engine/native/include/Aevrynd/WorldPartition3D.h",
       "kind": "public-header",
-      "sha256": "38b3e0c6ddbd58996fb585ee6ef1a8731bc6b9c79419d5b635953f86ac243eab",
-      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
-      "bytes": 4253
+      "sha256": "a2317942c42caf3355cd006a640763efc87a09262cc94e8a2f27e2df6581c1d3",
+      "revision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
+      "bytes": 6129
     },
     {
       "path": "engine/native/include/Aevrynd/WorldPartitionD3D12Adapter3D.h",
@@ -405,9 +412,9 @@
     {
       "path": "engine/native/include/Aevrynd/WorldPartitionTerrainVegetationAdapter3D.h",
       "kind": "public-header",
-      "sha256": "24f10f3ef4d543e47bd181f09437f8ec2aaf2e727fa92b8a795626d5881c127a",
-      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
-      "bytes": 4471
+      "sha256": "51ace53641628dd2026c57e76e73af4573f4da3f281cf3967401cf1688fa0854",
+      "revision": "a546ef619f137a5cfaeeec23cbe6dfdd948db894",
+      "bytes": 7181
     },
     {
       "path": "engine/native/include/Aevrynd/WorldStreamer3D.h",
@@ -1047,6 +1054,27 @@
       "bytes": 30
     },
     {
+      "path": "engine/native/tests/WorldDeltaFormat3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "607ed4fb8b3699c1ead20fe3b5b5b4ffeb1a3f1f6f8d30607b4a5ade4c873e36",
+      "revision": "15292c9556a6ba6066229d1f4bc1c0bd1272ecc0",
+      "bytes": 6839
+    },
+    {
+      "path": "engine/native/tests/WorldDeltaPersistence3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "5479ed9458c936f40796a00fca85c1677c866518a1a67db392964951de9ec63c",
+      "revision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
+      "bytes": 16091
+    },
+    {
+      "path": "engine/native/tests/WorldDeltaRecoveryBudget3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "5137a66c45c8ad4bd1645c8465444a5429b0eb7e8244b97dade627ce7e4841eb",
+      "revision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
+      "bytes": 14658
+    },
+    {
       "path": "engine/native/tests/WorldOrigin3DSmoke.cpp",
       "kind": "test",
       "sha256": "d22595ecbbd894d3ca819fa13ee8bf07071fb8b0b887d4fcf0a1872210f08710",
@@ -1103,6 +1131,13 @@
       "bytes": 7690
     },
     {
+      "path": "engine/native/tests/WorldPartitionDeltaGateFakeSmoke.cpp",
+      "kind": "test",
+      "sha256": "103ab36aa201a64194a3b3ead8c8d37eb169c131892a66579318dc3162a1152b",
+      "revision": "73f10a96e24f4a9c253808e7014e49a52d10b9aa",
+      "bytes": 15990
+    },
+    {
       "path": "engine/native/tests/WorldPartitionOriginIntegrationSmoke.cpp",
       "kind": "test",
       "sha256": "acc94c4cc2779733f85d31c94ea66591ee39abf813e1a74c898662359fca9b2e",
@@ -1126,9 +1161,23 @@
     {
       "path": "engine/native/tests/WorldPartitionTerrainVegetationD3D12Smoke.cpp",
       "kind": "test",
-      "sha256": "1206f83110b8bacb7e1ee7b1527282630ac13a5268516a264baf54966548a570",
-      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
-      "bytes": 6776
+      "sha256": "f99a01e6ec7548d33337ef97969acf6c29ce3096f6ef3d4d32d15bc1cd0159bb",
+      "revision": "a546ef619f137a5cfaeeec23cbe6dfdd948db894",
+      "bytes": 6909
+    },
+    {
+      "path": "engine/native/tests/WorldPartitionTerrainVegetationDeltaComposeFakeSmoke.cpp",
+      "kind": "test",
+      "sha256": "c8ee86ade0e51ad839150304e8aaa791cc7ee694a20d3f6cd49665b7368ffa62",
+      "revision": "a546ef619f137a5cfaeeec23cbe6dfdd948db894",
+      "bytes": 8847
+    },
+    {
+      "path": "engine/native/tests/WorldPartitionTerrainVegetationDeltaD3D12Smoke.cpp",
+      "kind": "test",
+      "sha256": "415ed87813fd201384ed68ae55b10941099ae5627615e5f875716edd1368851e",
+      "revision": "a546ef619f137a5cfaeeec23cbe6dfdd948db894",
+      "bytes": 40507
     },
     {
       "path": "engine/native/tests/WorldStreamer3DSmoke.cpp",

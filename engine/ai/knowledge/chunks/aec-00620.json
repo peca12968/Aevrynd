@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00620","kind":"git-commit","sourcePath":"git/history","sourceSha256":"eb8ebe764956fce23cd4181d96df1cf582759838eb73c53ead84b076b258e2b0","sourceRevision":"de83a170ac9fd2531aa8b0af7691c5bc59835949","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"補齊靜態遮罩材質渲染管線"}

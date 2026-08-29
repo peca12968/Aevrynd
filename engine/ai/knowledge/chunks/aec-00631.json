@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00631","kind":"git-commit","sourcePath":"git/history","sourceSha256":"29719bf3c35a4ad33d23f787398d861d672ebb77a617b2a9fdfa1757d1a54d6b","sourceRevision":"51ac3033f6e45179ca540f92e97c84a3dbaa4b8c","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入零偏移Halton子像素時域取樣"}

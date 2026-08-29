@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00619","kind":"git-commit","sourcePath":"git/history","sourceSha256":"085480146497b2867926ece016f5cae270ea64ed5aaed19ac52807971916553a","sourceRevision":"11d5d3dd8cd68d8a1149b16bcc4e2302620ff8fa","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"補齊遮罩材質的速度與深度通道"}
