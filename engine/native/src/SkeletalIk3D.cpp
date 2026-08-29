@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 namespace Aevrynd { namespace {
 constexpr float Epsilon=1e-5f;
@@ -9,6 +10,7 @@ bool Finite(float value)noexcept{return std::isfinite(value);}
 bool Finite(Vec3 value)noexcept{return Finite(value.x)&&Finite(value.y)&&Finite(value.z);}
 bool Finite(Quaternion3D value)noexcept{return Finite(value.x)&&Finite(value.y)&&Finite(value.z)&&Finite(value.w);}
 bool Finite(const Matrix4& value)noexcept{for(std::size_t row=0;row<4;++row)for(std::size_t column=0;column<4;++column)if(!Finite(value[row][column]))return false;return true;}
+float DiagnosticDistance(Vec3 left,Vec3 right)noexcept{const double x=double(left.x)-double(right.x),y=double(left.y)-double(right.y),z=double(left.z)-double(right.z),distance=std::sqrt(x*x+y*y+z*z);return float((std::min)(distance,double((std::numeric_limits<float>::max)())));}
 bool Near(const Matrix4& left,const Matrix4& right)noexcept{for(std::size_t row=0;row<4;++row)for(std::size_t column=0;column<4;++column)if(std::abs(left[row][column]-right[row][column])>1e-3f)return false;return true;}
 Quaternion3D Multiply(Quaternion3D left,Quaternion3D right)noexcept{return NormalizeQuaternion3D({left.w*right.x+left.x*right.w+left.y*right.z-left.z*right.y,left.w*right.y-left.x*right.z+left.y*right.w+left.z*right.x,left.w*right.z+left.x*right.y-left.y*right.x+left.z*right.w,left.w*right.w-left.x*right.x-left.y*right.y-left.z*right.z});}
 Quaternion3D Conjugate(Quaternion3D value)noexcept{return{-value.x,-value.y,-value.z,value.w};}
@@ -63,7 +65,7 @@ bool SolveTwoBoneIk3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,TwoBoneI
     const Vec3 upperPosition=TransformPoint(pose.globalMatrices[chain.upper],{}),middlePosition=TransformPoint(pose.globalMatrices[chain.middle],{}),endPosition=TransformPoint(pose.globalMatrices[chain.end],{});
     const float upperLength=Length(middlePosition-upperPosition),lowerLength=Length(endPosition-middlePosition);
     if(!Finite(upperPosition)||!Finite(middlePosition)||!Finite(endPosition)||upperLength<Epsilon||lowerLength<Epsilon)return fail(TwoBoneIkStatus3D::Degenerate);
-    if(target.weight==0){report.status=TwoBoneIkStatus3D::Solved;report.solvedPositionModel=endPosition;report.endError=Length(endPosition-target.positionModel);if(result)*result=report;return true;}
+    if(target.weight==0){report.status=TwoBoneIkStatus3D::Solved;report.solvedPositionModel=endPosition;report.endError=DiagnosticDistance(endPosition,target.positionModel);if(result)*result=report;return true;}
     const Vec3 weightedTarget=endPosition+(target.positionModel-endPosition)*target.weight,targetVector=weightedTarget-upperPosition;float distance=Length(targetVector);
     if(distance<Epsilon)return fail(TwoBoneIkStatus3D::Degenerate);const Vec3 direction=targetVector*(1.f/distance);const float maximum=upperLength+lowerLength-Epsilon,minimum=std::abs(upperLength-lowerLength)+Epsilon;
     float solvedDistance=Clamp(distance,minimum,maximum);report.clamped=solvedDistance!=distance;
@@ -83,7 +85,7 @@ bool SolveTwoBoneIk3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,TwoBoneI
     JointTransform3D upperTransform=pose.localTransforms[chain.upper],middleTransform=pose.localTransforms[chain.middle];upperTransform.quaternion=newUpperLocal;upperTransform.usesQuaternion=true;middleTransform.quaternion=newMiddleLocal;middleTransform.usesQuaternion=true;
     std::array<Matrix4,256> solvedGlobals{};std::array<bool,256> affected{};
     for(std::size_t joint=0;joint<skeleton.joints.size();++joint){const int parent=skeleton.joints[joint].parent;affected[joint]=joint==chain.upper||(parent>=0&&affected[std::size_t(parent)]);if(!affected[joint]){solvedGlobals[joint]=pose.globalMatrices[joint];continue;}const JointTransform3D& local=joint==chain.upper?upperTransform:joint==chain.middle?middleTransform:pose.localTransforms[joint];solvedGlobals[joint]=parent<0?poseRoot*local.Matrix():solvedGlobals[std::size_t(parent)]*local.Matrix();if(!Finite(solvedGlobals[joint]))return fail(TwoBoneIkStatus3D::InvalidPose);}
-    const Vec3 solvedPosition=TransformPoint(solvedGlobals[chain.end],{});const float endError=Length(solvedPosition-target.positionModel);if(!Finite(solvedPosition)||!Finite(endError)||!Finite(bendNormal))return fail(TwoBoneIkStatus3D::InvalidPose);
+    const Vec3 solvedPosition=TransformPoint(solvedGlobals[chain.end],{});const float endError=DiagnosticDistance(solvedPosition,target.positionModel);if(!Finite(solvedPosition)||!Finite(endError)||!Finite(bendNormal))return fail(TwoBoneIkStatus3D::InvalidPose);
     pose.localTransforms[chain.upper]=upperTransform;pose.localTransforms[chain.middle]=middleTransform;for(std::size_t joint=0;joint<skeleton.joints.size();++joint)pose.globalMatrices[joint]=solvedGlobals[joint];
     report.solvedPositionModel=solvedPosition;report.bendNormalModel=bendNormal;report.endError=endError;report.status=report.clamped?TwoBoneIkStatus3D::Clamped:TwoBoneIkStatus3D::Solved;
     if(result)*result=report;return true;
