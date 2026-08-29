@@ -102,7 +102,7 @@ float2 VelocityPixelMain(MotionVertexOutput input) : SV_TARGET
     const float2 previousNdc = input.previousClip.xy / input.previousClip.w;
     return (currentNdc - previousNdc) * float2(motionParameters.y, -motionParameters.z);
 }
-cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[2]; float4 shadowParameters; float4 shadowTransition; float4 shadowSoftness; };
+cbuffer ShadowScene : register(b1) { row_major float4x4 lightViewProjection[4]; float4 shadowCascadeSplits; float4 shadowParameters; float4 shadowTransition; float4 shadowSoftness; float4 contactShadowParameters; };
 cbuffer DrawConstants : register(b2) { uint shadowCascadeIndex; uint drawConstantReserved; };
 
 Texture2DArray<float> shadowTexture : register(t3);
@@ -117,7 +117,7 @@ Texture2D soilNormalTexture : register(t6);
 Texture2D rockBaseColorTexture : register(t7);
 Texture2D rockRoughnessTexture : register(t8);
 Texture2D rockNormalTexture : register(t9);
-Texture2D<float> ambientOcclusionTexture : register(t11);
+Texture2D<float2> ambientOcclusionTexture : register(t11);
 Texture2D<float> sceneDepthTexture : register(t12);
 Texture2D<float4> opaqueSceneColorTexture : register(t14);
 TextureCube<float3> environmentSpecularTexture : register(t16);
@@ -480,21 +480,51 @@ ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
     return output;
 }
 
-ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
+struct ShadowPackedInstancedVertexInput
+{
+    float3 position : POSITION;
+    float4 normal : NORMAL;
+    float4 color : COLOR;
+    float2 uv : TEXCOORD0;
+    float4 transformRow0 : INSTANCE0;
+    float4 transformRow1 : INSTANCE1;
+    float4 transformRow2 : INSTANCE2;
+    float4 transformRow3 : INSTANCE3;
+    float4 shadowData : SHADOWDATA0;
+};
+
+ShadowVertexOutput ShadowPackedInstancedVertexMain(ShadowPackedInstancedVertexInput input)
 {
     const float4 localPosition = float4(input.position, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition),
                                   dot(input.transformRow1, localPosition),
                                   dot(input.transformRow2, localPosition),
                                   dot(input.transformRow3, localPosition));
+    const uint textureData = asuint(input.shadowData.w);
+    worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (textureData >> 2) & 3u);
+    ShadowVertexOutput output = (ShadowVertexOutput)0;
+    output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
+    output.uv = input.uv * max(0.001, float((textureData >> 16) & 65535) * (16.0 / 65535.0));
+    output.alphaCutoff = saturate(input.shadowData.x);
+    output.alphaMasked = input.shadowData.y > 0.5 ? 1u : 0u;
+    output.alpha = input.color.a * input.shadowData.z;
+    output.lodCoverage = float((textureData >> 4) & 255u) / 255.0;
+    output.lodInvert = (textureData >> 12) & 1u;
+    const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
+    output.lodSeed = ((textureData >> 13) & 7u) ^ objectSeed;
+    return output;
+}
+
+ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
+{
+    const float4 localPosition = float4(input.position, 1.0);
+    float4 worldPosition = float4(dot(input.transformRow0, localPosition), dot(input.transformRow1, localPosition), dot(input.transformRow2, localPosition), dot(input.transformRow3, localPosition));
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
     output.uv = input.uv * max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0));
-    output.alphaCutoff = saturate(input.normalRow1.w);
-    output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
-    output.alpha = input.color.a * input.tint.a;
-    output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
+    output.alphaCutoff = saturate(input.normalRow1.w); output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
+    output.alpha = input.color.a * input.tint.a; output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
     output.lodInvert = (input.textureData >> 12) & 1u;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
@@ -924,16 +954,12 @@ float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPo
 
 float CascadedDirectionalShadow(WorldPixelInput input, float3 normal, float3 lightDirection)
 {
-    const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
-    const float halfWidth = shadowTransition.x * 0.5;
-    float visibility = 1.0;
-    if (cameraDistance <= shadowParameters.x - halfWidth) visibility = DirectionalShadow(input.shadowPosition, 0, input.worldPosition, normal, lightDirection);
-    else if (cameraDistance >= shadowParameters.x + halfWidth) visibility = DirectionalShadow(input.farShadowPosition, 1, input.worldPosition, normal, lightDirection);
-    else
-    {
-        const float blend = smoothstep(shadowParameters.x - halfWidth, shadowParameters.x + halfWidth, cameraDistance);
-        visibility = lerp(DirectionalShadow(input.shadowPosition, 0, input.worldPosition, normal, lightDirection), DirectionalShadow(input.farShadowPosition, 1, input.worldPosition, normal, lightDirection), blend);
-    }
+    if (shadowParameters.x < 0.5) return 1.0;
+    const uint cascadeCount=max(1u,min(4u,(uint)shadowParameters.x));
+    float3 viewDepthAxis=viewProjection[3].xyz;if(length(viewDepthAxis)<1e-6)viewDepthAxis=viewProjection[2].xyz;const float cameraDistance=abs(dot(input.worldPosition-cameraFogStart.xyz,normalize(viewDepthAxis)));
+    uint cascade=0u;[unroll]for(uint index=0u;index<3u;++index)if(index+1u<cascadeCount&&cameraDistance>=shadowCascadeSplits[index])cascade=index+1u;
+    float visibility=DirectionalShadow(mul(lightViewProjection[cascade],float4(input.worldPosition,1.0)),cascade,input.worldPosition,normal,lightDirection);
+    if(cascade+1u<cascadeCount){const float previous=cascade?shadowCascadeSplits[cascade-1u]:0.0;const float width=max(.001,(shadowCascadeSplits[cascade]-previous)*shadowTransition.x);const float blend=smoothstep(shadowCascadeSplits[cascade]-width,shadowCascadeSplits[cascade],cameraDistance);if(blend>0.0)visibility=lerp(visibility,DirectionalShadow(mul(lightViewProjection[cascade+1u],float4(input.worldPosition,1.0)),cascade+1u,input.worldPosition,normal,lightDirection),blend);}
     return visibility;
 }
 
@@ -951,12 +977,7 @@ float DirectionalLightShaftCascadeShadow(float3 worldPosition, uint cascadeIndex
 float DirectionalLightShaftShadow(float3 worldPosition)
 {
     if (shadowParameters.x < 0.5) return 1.0;
-    const float cameraDistance = distance(worldPosition, cameraFogStart.xyz);
-    const float halfWidth = shadowTransition.x * 0.5;
-    if (cameraDistance <= shadowParameters.x - halfWidth) return DirectionalLightShaftCascadeShadow(worldPosition, 0u);
-    if (cameraDistance >= shadowParameters.x + halfWidth) return DirectionalLightShaftCascadeShadow(worldPosition, 1u);
-    const float blend = smoothstep(shadowParameters.x - halfWidth, shadowParameters.x + halfWidth, cameraDistance);
-    return lerp(DirectionalLightShaftCascadeShadow(worldPosition, 0u), DirectionalLightShaftCascadeShadow(worldPosition, 1u), blend);
+    const uint cascadeCount=max(1u,min(4u,(uint)shadowParameters.x));float3 viewDepthAxis=viewProjection[3].xyz;if(length(viewDepthAxis)<1e-6)viewDepthAxis=viewProjection[2].xyz;const float cameraDistance=abs(dot(worldPosition-cameraFogStart.xyz,normalize(viewDepthAxis)));uint cascade=0u;[unroll]for(uint index=0u;index<3u;++index)if(index+1u<cascadeCount&&cameraDistance>=shadowCascadeSplits[index])cascade=index+1u;return DirectionalLightShaftCascadeShadow(worldPosition,cascade);
 }
 
 float3 EvaluateDirectionalLightShafts(float3 worldPosition, float3 sunDirection)
@@ -1529,14 +1550,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
     roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
     // SSAO 僅調制間接環境光，避免把太陽、點光、自發光與水面反射一起壓暗。
-    const float screenOcclusion = colorPipeline.y > 0.5 && waterMask < 0.5
+    const float2 screenOcclusion = colorPipeline.y > 0.5 && waterMask < 0.5
                                 ? ambientOcclusionTexture.SampleLevel(materialSampler, input.position.xy * colorPipeline.zw, 0.0)
                                 : 1.0;
     const float3 environmentLighting = eyeMask > 0.5
         ? EvaluateEyeEnvironment(input.worldPosition,normal, geometricNormal, viewDirection, baseColor, roughness,
-                                 occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection)
+                                 occlusion * screenOcclusion.x, lightDirectionAmbient.w, skyLightDirection)
         : EvaluateEnvironmentLighting(input.worldPosition,normal, viewDirection, baseColor, roughness, metallic,
-                                      occlusion * screenOcclusion, lightDirectionAmbient.w, skyLightDirection);
+                                      occlusion * screenOcclusion.x, lightDirectionAmbient.w, skyLightDirection);
     const float3 directionalLighting = eyeMask > 0.5
         ? EvaluateEyeLight(normal, geometricNormal, viewDirection, lightDirection,
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness)
@@ -1547,7 +1568,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     float cloudShadow=1.0;
     [branch] if(volumetricCloudEnabled>=0.5&&cloudShadowEnabled>=0.5&&cloudShadowStrength>0.0&&cloudDensityScale>0.0&&lightDirection.y>0.02&&input.worldPosition.y<cloudBaseAltitude+cloudThickness*0.5)
         cloudShadow=EvaluateCloudShadowTransmittance(input.worldPosition,lightDirection);
-    const float directionalVisibility=directionalShadow*cloudShadow;
+    const float directionalVisibility=directionalShadow*cloudShadow*screenOcclusion.y;
     float3 shaded = environmentLighting
                   + directionalVisibility * directionalLighting
                   + baseColor * emissive * 2.0;

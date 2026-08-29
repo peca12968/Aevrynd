@@ -99,6 +99,7 @@ aevrynd_compile_shader(WorldPixelShader.h World.hlsl WorldPixelMain ps_5_0 World
 aevrynd_compile_shader(WorldMaskedPixelShader.h World.hlsl WorldMaskedPixelMain ps_5_0 WorldMaskedPixelShader)
 aevrynd_compile_shader(ShadowWorldVertexShader.h World.hlsl ShadowWorldVertexMain vs_5_0 ShadowWorldVertexShader)
 aevrynd_compile_shader(ShadowInstancedVertexShader.h World.hlsl ShadowInstancedVertexMain vs_5_0 ShadowInstancedVertexShader)
+aevrynd_compile_shader(ShadowPackedInstancedVertexShader.h World.hlsl ShadowPackedInstancedVertexMain vs_5_0 ShadowPackedInstancedVertexShader)
 aevrynd_compile_shader(ShadowSkinnedVertexShader.h World.hlsl ShadowSkinnedVertexMain vs_5_0 ShadowSkinnedVertexShader)
 aevrynd_compile_shader(ShadowSkinnedPixelShader.h World.hlsl ShadowSkinnedPixelMain ps_5_0 ShadowSkinnedPixelShader)
 aevrynd_compile_shader(PostProcessVertexShader.h PostProcess.hlsl PostProcessVertexMain vs_5_0 PostProcessVertexShader)
@@ -164,8 +165,10 @@ target_link_libraries(AevryndSoftDirectionalShadow3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSoftDirectionalShadow3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSoftDirectionalShadow3DTest>'")
 
 add_executable(AevryndSoftDirectionalShadow3DBenchmark tests/SoftDirectionalShadow3DBenchmark.cpp)
+target_compile_definitions(AevryndSoftDirectionalShadow3DBenchmark PRIVATE AEVRYND_TESTING=1)
 target_compile_options(AevryndSoftDirectionalShadow3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSoftDirectionalShadow3DBenchmark PRIVATE AevryndEngine)
+add_test(NAME AevryndContactShadowCaptureTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/tools/ci/test-contact-shadow-captures.ps1" -Executable "$<TARGET_FILE:AevryndSoftDirectionalShadow3DBenchmark>" -OutputDirectory "${CMAKE_BINARY_DIR}/contact-shadow-capture-test" -ReplaceOutput)
 
 add_executable(AevryndCameraTest tests/CameraSmoke.cpp)
 target_compile_options(AevryndCameraTest PRIVATE /W4 /permissive- /utf-8)

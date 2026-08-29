@@ -84,8 +84,10 @@ constexpr uint32_t UnpackMeshInstanceLodSeed3D(uint32_t value){return(value&Mesh
 constexpr bool UnpackMeshInstanceLodInvert3D(uint32_t value){return(value&MeshInstanceLodInvertBit3D)!=0;}
 inline bool MeshInstanceLodSampleSurvives3D(uint32_t value,float threshold){const float transition=UnpackMeshInstanceLodCoverage3D(value);threshold=Clamp(std::isfinite(threshold)?threshold:1.f,0.f,1.f);return UnpackMeshInstanceLodInvert3D(value)?threshold>transition:threshold<=transition;}
 enum class MeshRenderLayer3D:uint8_t {Opaque,Transparent,Overlay,ShadowOnly};
-static constexpr uint8_t DirectionalShadowNearCascadeBit3D=1u,DirectionalShadowFarCascadeBit3D=2u,DirectionalShadowAllCascades3D=DirectionalShadowNearCascadeBit3D|DirectionalShadowFarCascadeBit3D;
+static constexpr uint32_t MaximumDirectionalShadowCascades3D=4;
+static constexpr uint8_t DirectionalShadowNearCascadeBit3D=1u,DirectionalShadowFarCascadeBit3D=2u,DirectionalShadowCascade2Bit3D=4u,DirectionalShadowCascade3Bit3D=8u,DirectionalShadowAllCascades3D=15u;
 enum class ShadowCascadeSelection3D:uint8_t {Automatic,Manual};
+enum ShadowCascadeInvalidationReason3D:uint32_t {ShadowCascadeInvalidationNone3D=0,ShadowCascadeInvalidationCameraLight3D=1u<<0,ShadowCascadeInvalidationResource3D=1u<<1,ShadowCascadeInvalidationTopology3D=1u<<2,ShadowCascadeInvalidationTransform3D=1u<<3,ShadowCascadeInvalidationPalette3D=1u<<4,ShadowCascadeInvalidationWorld3D=1u<<5};
 struct MeshInstance3D {MeshHandle3D mesh{};Matrix4 transform{Matrix4::Identity()};Matrix4 normalTransform{Matrix4::Identity()};uint32_t tint{0xffffffffu},surface{PackSurface3D({})};MeshRenderLayer3D layer{MeshRenderLayer3D::Opaque};MaterialTextureSetHandle3D textures{};float textureScale{.25f},normalScale{1.f};bool useUv{};MaterialClass3D materialClass{MaterialClass3D::Surface};float cameraDepth{};bool castsShadow{true};float lodCoverage{1.f};uint32_t lodSeed{};uint8_t shadowCascadeMask{DirectionalShadowAllCascades3D};ShadowCascadeSelection3D shadowCascadeSelection{ShadowCascadeSelection3D::Automatic};Matrix4 previousTransform{Matrix4::Identity()};bool motionValid{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};bool doubleSided{};};
 class StaticMeshSubmission3D {
 public:
@@ -108,6 +110,21 @@ struct DirectionalLight3D {Vec3 direction{.4f,-1.f,.3f};float ambient{.28f};Colo
 struct SoftDirectionalShadowSettings3D {bool enabled{true};float blockerSearchRadiusTexels{24.f},lightSourceRadiusTexels{128.f},maximumPenumbraRadiusTexels{32.f};};
 inline SoftDirectionalShadowSettings3D NormalizeSoftDirectionalShadowSettings3D(SoftDirectionalShadowSettings3D settings){settings.blockerSearchRadiusTexels=Clamp(std::isfinite(settings.blockerSearchRadiusTexels)?settings.blockerSearchRadiusTexels:24.f,1.f,24.f);settings.lightSourceRadiusTexels=Clamp(std::isfinite(settings.lightSourceRadiusTexels)?settings.lightSourceRadiusTexels:128.f,1.f,128.f);settings.maximumPenumbraRadiusTexels=Clamp(std::isfinite(settings.maximumPenumbraRadiusTexels)?settings.maximumPenumbraRadiusTexels:32.f,1.45f,32.f);return settings;}
 inline float DirectionalShadowPenumbraRadius3D(float receiverDepth,float averageBlockerDepth,const SoftDirectionalShadowSettings3D& source={}){const SoftDirectionalShadowSettings3D settings=NormalizeSoftDirectionalShadowSettings3D(source);if(!settings.enabled||!std::isfinite(receiverDepth)||!std::isfinite(averageBlockerDepth)||receiverDepth<=averageBlockerDepth||averageBlockerDepth<=0.f)return 1.45f;const float ratio=(receiverDepth-averageBlockerDepth)/(std::max)(averageBlockerDepth,.0001f);return Clamp(ratio*settings.lightSourceRadiusTexels,1.45f,settings.maximumPenumbraRadiusTexels);}
+struct DirectionalShadowCascadeSettings3D {uint32_t cascadeCount{4},resolution{2048};float nearDistance{.1f},farDistance{180.f},splitLambda{.65f},transitionFraction{.08f};friend constexpr bool operator==(const DirectionalShadowCascadeSettings3D&,const DirectionalShadowCascadeSettings3D&)=default;};
+inline DirectionalShadowCascadeSettings3D NormalizeDirectionalShadowCascadeSettings3D(DirectionalShadowCascadeSettings3D value){value.cascadeCount=(std::clamp)(value.cascadeCount,1u,MaximumDirectionalShadowCascades3D);value.resolution=(std::clamp)(value.resolution,512u,2048u);value.nearDistance=Clamp(std::isfinite(value.nearDistance)?value.nearDistance:.1f,.01f,10.f);value.farDistance=Clamp(std::isfinite(value.farDistance)?value.farDistance:180.f,value.nearDistance+.01f,2000.f);value.splitLambda=Clamp(std::isfinite(value.splitLambda)?value.splitLambda:.65f,0.f,1.f);value.transitionFraction=Clamp(std::isfinite(value.transitionFraction)?value.transitionFraction:.08f,0.f,.25f);return value;}
+inline std::array<float,MaximumDirectionalShadowCascades3D> DirectionalShadowPracticalSplits3D(DirectionalShadowCascadeSettings3D source={}){const auto value=NormalizeDirectionalShadowCascadeSettings3D(source);std::array<float,MaximumDirectionalShadowCascades3D> result{};for(uint32_t index=1;index<=value.cascadeCount;++index){const float ratio=float(index)/float(value.cascadeCount),logarithmic=value.nearDistance*std::pow(value.farDistance/value.nearDistance,ratio),uniform=value.nearDistance+(value.farDistance-value.nearDistance)*ratio;result[index-1]=index==value.cascadeCount?value.farDistance:std::lerp(uniform,logarithmic,value.splitLambda);}for(uint32_t index=value.cascadeCount;index<MaximumDirectionalShadowCascades3D;++index)result[index]=value.farDistance;return result;}
+inline uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,const std::array<float,MaximumDirectionalShadowCascades3D>& splits,uint32_t cascadeCount){if(!std::isfinite(cameraDistance))return 0;cascadeCount=(std::clamp)(cascadeCount,1u,MaximumDirectionalShadowCascades3D);for(uint32_t index=0;index+1<cascadeCount;++index)if(cameraDistance<splits[index])return index;return cascadeCount-1;}
+inline float DirectionalShadowLinearDepth3D(const Matrix4& viewProjection,Vec3 worldPosition,Vec3 cameraPosition){Vec3 axis{viewProjection[3][0],viewProjection[3][1],viewProjection[3][2]};if(Length(axis)<1e-6f)axis={viewProjection[2][0],viewProjection[2][1],viewProjection[2][2]};const float length=Length(axis);if(length<1e-6f||!std::isfinite(length))return 0.f;return std::abs(Dot(worldPosition-cameraPosition,Normalize(axis)));}
+inline uint8_t DirectionalShadowDepthBandMask3D(float centerDepth,float casterReach,const std::array<float,MaximumDirectionalShadowCascades3D>& splits,DirectionalShadowCascadeSettings3D source={}){const auto settings=NormalizeDirectionalShadowCascadeSettings3D(source);if(!std::isfinite(centerDepth)||!std::isfinite(casterReach)||centerDepth<0.f||casterReach<0.f)return DirectionalShadowAllCascades3D;uint8_t mask{};for(uint32_t cascade=0;cascade<settings.cascadeCount;++cascade){const float minimum=cascade? splits[cascade-1]:settings.nearDistance,maximum=splits[cascade],blend=(maximum-minimum)*settings.transitionFraction;if(centerDepth+casterReach>=minimum-blend&&centerDepth-casterReach<=maximum+blend)mask|=uint8_t(1u<<cascade);}return mask?mask:uint8_t(1u<<SelectDirectionalShadowCascade3D(centerDepth,splits,settings.cascadeCount));}
+struct DirectionalShadowCascadeFit3D {
+    std::array<Matrix4,MaximumDirectionalShadowCascades3D> lightViewProjections{};
+    std::array<std::array<Vec3,8>,MaximumDirectionalShadowCascades3D> sliceCorners{};
+    std::array<float,MaximumDirectionalShadowCascades3D> splits{};
+    bool valid{},fallback{},reversedDepth{};
+};
+DirectionalShadowCascadeFit3D FitDirectionalShadowCascades3D(const Matrix4& viewProjection,Vec3 cameraPosition,Vec3 lightDirection,DirectionalShadowCascadeSettings3D settings={},float casterDepthPadding=32.f,float receiverDepthPadding=4.f);
+struct ContactShadowSettings3D {bool enabled{true};uint32_t maximumSteps{12};float maximumDistance{1.5f},thickness{.04f},strength{.8f};friend constexpr bool operator==(const ContactShadowSettings3D&,const ContactShadowSettings3D&)=default;};
+inline ContactShadowSettings3D NormalizeContactShadowSettings3D(ContactShadowSettings3D value){value.maximumSteps=(std::clamp)(value.maximumSteps,1u,24u);value.maximumDistance=Clamp(std::isfinite(value.maximumDistance)?value.maximumDistance:1.5f,.05f,5.f);value.thickness=Clamp(std::isfinite(value.thickness)?value.thickness:.04f,.001f,.25f);value.strength=Clamp(std::isfinite(value.strength)?value.strength:.8f,0.f,1.f);return value;}
 constexpr uint32_t SelectDirectionalShadowCascade3D(float cameraDistance,float splitDistance=32.f){return std::isfinite(cameraDistance)&&cameraDistance>=splitDistance?1u:0u;}
 inline float SnapDirectionalShadowCoordinate3D(float value,float texelWorldSize){return std::isfinite(value)&&std::isfinite(texelWorldSize)&&texelWorldSize>0.f?std::round(value/texelWorldSize)*texelWorldSize:value;}
 inline float DirectionalShadowCascadeBlend3D(float cameraDistance,float splitDistance=32.f,float transitionWidth=6.f){if(!std::isfinite(cameraDistance)||!std::isfinite(splitDistance)||!std::isfinite(transitionWidth)||transitionWidth<=0.f)return cameraDistance>=splitDistance?1.f:0.f;const float value=Clamp((cameraDistance-(splitDistance-transitionWidth*.5f))/transitionWidth,0.f,1.f);return value*value*(3.f-2.f*value);}
@@ -203,7 +220,7 @@ struct HzbOcclusionSettings3D {HzbOcclusionQuality3D quality{HzbOcclusionQuality
 inline HzbOcclusionSettings3D NormalizeHzbOcclusionSettings3D(HzbOcclusionSettings3D settings){settings.minimumCandidates=(std::clamp)(settings.minimumCandidates,1024u,1u<<24);settings.maximumOccluderDraws=(std::clamp)(settings.maximumOccluderDraws,1u,4096u);settings.maximumOccluderTriangles=(std::clamp)(settings.maximumOccluderTriangles,1u,1u<<26);settings.minimumOccluderPixels=Clamp(std::isfinite(settings.minimumOccluderPixels)?settings.minimumOccluderPixels:64.f,1.f,4096.f);settings.depthBias=Clamp(std::isfinite(settings.depthBias)?settings.depthBias:.0005f,0.f,.05f);return settings;}
 struct VelocityCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};bool historyValid{};};
 inline AmbientOcclusionSettings3D NormalizeAmbientOcclusionSettings3D(AmbientOcclusionSettings3D settings){settings.radius=Clamp(std::isfinite(settings.radius)?settings.radius:1.35f,.1f,8.f);settings.bias=Clamp(std::isfinite(settings.bias)?settings.bias:.035f,0.f,.5f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:1.05f,0.f,4.f);return settings;}
-inline constexpr size_t AmbientOcclusionResidentBytes3D(unsigned width,unsigned height){return size_t((width+1)/2)*((height+1)/2)*2;}
+inline constexpr size_t AmbientOcclusionResidentBytes3D(unsigned width,unsigned height){return size_t((width+1)/2)*((height+1)/2)*4;}
 struct DrawListStats2D {
     size_t inputTriangles{},submittedTriangles{},culledTriangles{},peakSubmittedTriangles{};
     size_t textGlyphs{},textSourcePixels{},textSpans{};
@@ -352,13 +369,13 @@ struct RendererStats {
     size_t lastSubmittedTerrainInstances{};
     size_t lastDirectionalShadowCasters{};
     size_t lastDirectionalShadowDrawCalls{};
-    std::array<size_t,2> lastDirectionalShadowCascadeInstances{};
-    std::array<size_t,2> lastDirectionalShadowCascadeDrawCalls{};
+    std::array<size_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowCascadeInstances{};
+    std::array<size_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowCascadeDrawCalls{};
     size_t lastDirectionalShadowSharedInstances{};
     size_t lastDirectionalShadowInstancePassesSaved{};
     size_t lastDirectionalShadowAutomaticMasks{};
     size_t lastDirectionalShadowManualMasks{};
-    std::array<size_t,2> lastDirectionalShadowLightSpaceRejected{};
+    std::array<size_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowLightSpaceRejected{};
     size_t lastDirectionalShadowMaskFallbacks{};
     size_t directionalShadowMapBytes{};
     uint64_t directionalShadowMapAllocations{};
@@ -367,6 +384,11 @@ struct RendererStats {
     uint64_t directionalShadowInitializationFlushes{};
     size_t lastDirectionalShadowCascades{};
     float directionalShadowCascadeSplit{32.f};
+    std::array<float,MaximumDirectionalShadowCascades3D> directionalShadowCascadeSplits{};
+    std::array<uint64_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowCascadeRendered{},lastDirectionalShadowCascadeReused{};uint64_t directionalShadowCascadeCacheInvalidations{};
+    std::array<uint64_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowCascadeFingerprints{};
+    std::array<uint32_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowCascadeInvalidationReasons{};
+    bool contactShadowsEnabled{},contactShadowTemporalFiltering{};uint32_t contactShadowMaximumSteps{};float contactShadowMaximumDistance{},contactShadowThickness{},contactShadowStrength{};uint64_t contactShadowFrames{},contactShadowFallbackFrames{},contactShadowEvaluationPasses{};
     float directionalShadowTransitionWidth{6.f};
     size_t directionalShadowBasePcfSamples{12};
     size_t directionalShadowTransitionPcfSamples{24};
@@ -501,6 +523,18 @@ struct RendererStats {
     uint64_t frameUploadBufferReleases{};
     uint64_t frameUploadGrowths{};
     uint64_t frameUploadTrims{};
+    size_t directionalShadowPackedResidentBytes{};
+    size_t lastDirectionalShadowPackedBytes{};
+    size_t lastDirectionalShadowPackedInstances{};
+    size_t lastDirectionalShadowPackedGroups{};
+    uint64_t lastDirectionalShadowPackingCpuNanoseconds{};
+    size_t lastDirectionalShadowMappedSourceViolations{};
+    uint64_t directionalShadowPackedBufferAllocations{};
+    uint64_t directionalShadowPackedBufferReleases{};
+    uint64_t directionalShadowPackedBufferGrowths{};
+    std::vector<uint8_t> lastPackedShadowCascadeMasks;
+    uint64_t lastPackedShadowCascadeMaskHash{};
+    size_t packedShadowCascadeMaskCapacityBytes{};
     uint32_t lastDrawCalls{};
     bool lastBackfaceCulling{};
     uint64_t submittedFrames{};
@@ -635,6 +669,10 @@ public:
     const AmbientOcclusionSettings3D& AmbientOcclusion()const{return ambientOcclusion_;}
     void SetSoftDirectionalShadows(SoftDirectionalShadowSettings3D settings){softDirectionalShadows_=NormalizeSoftDirectionalShadowSettings3D(settings);}
     const SoftDirectionalShadowSettings3D& SoftDirectionalShadows()const{return softDirectionalShadows_;}
+    void SetDirectionalShadowCascades(DirectionalShadowCascadeSettings3D settings){directionalShadowCascades_=NormalizeDirectionalShadowCascadeSettings3D(settings);}
+    const DirectionalShadowCascadeSettings3D& DirectionalShadowCascades()const{return directionalShadowCascades_;}
+    void SetContactShadows(ContactShadowSettings3D settings){contactShadows_=NormalizeContactShadowSettings3D(settings);}
+    const ContactShadowSettings3D& ContactShadows()const{return contactShadows_;}
     void SetBackfaceCulling(bool enabled){backfaceCulling_=enabled;}
     bool BackfaceCulling()const{return backfaceCulling_;}
     void SetBlendMode2D(BlendMode2D mode){blendMode_=mode;}
@@ -698,6 +736,8 @@ private:
     SkinSubsurfaceSettings3D skinSubsurface_{};
     AmbientOcclusionSettings3D ambientOcclusion_{};
     SoftDirectionalShadowSettings3D softDirectionalShadows_{};
+    DirectionalShadowCascadeSettings3D directionalShadowCascades_{2,2048,.1f,180.f,.65f,.08f};
+    ContactShadowSettings3D contactShadows_{};
     std::vector<PointLight3D> pointLights_;
     std::vector<DrawSpan2D> additiveSpans_;
     std::vector<AssetLease3D> resourceLeases_;
@@ -742,12 +782,13 @@ public:
     static constexpr size_t MaxMaterialTextureUploadBatchTextures=48;
     static constexpr size_t MaxMaterialTextureUploadStagingBytes=96*1024*1024;
     static constexpr size_t MeshInstanceUploadBytes=sizeof(Matrix4)+sizeof(float)*12+sizeof(uint32_t)*3;
+    static constexpr size_t ShadowInstanceUploadBytes=80;
     static constexpr size_t MotionInstanceUploadBytes=sizeof(Matrix4);
     static constexpr size_t DrawableVertexCount(size_t requested){const size_t limited=requested<MaxVertices?requested:MaxVertices;return limited-limited%3;}
     static constexpr size_t DrawableWorldVertexCount(size_t requested){return requested<MaxWorldVertices?requested:MaxWorldVertices;}
     static constexpr size_t NextFrameUploadCapacity(size_t current,size_t required,size_t maximum){size_t capacity=(std::max)(size_t{1},current);while(capacity<required&&capacity<maximum)capacity=capacity>maximum/2?maximum:capacity*2;return(std::min)(capacity,maximum);}
     static constexpr size_t Initial2DFrameUploadBytes=BufferedFrames*InitialFrameVertices*sizeof(Vertex);
-    static constexpr size_t Initial3DFrameUploadBytes=BufferedFrames*(InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*MeshInstanceUploadBytes);
+    static constexpr size_t Initial3DFrameUploadBytes=BufferedFrames*(InitialFrameWorldVertices*sizeof(Vertex3D)+InitialFrameWorldIndices*sizeof(uint32_t)+InitialFrameMeshInstances*(MeshInstanceUploadBytes+ShadowInstanceUploadBytes));
     static constexpr size_t InitialMotionFrameUploadBytes=BufferedFrames*InitialFrameMeshInstances*MotionInstanceUploadBytes;
     static constexpr size_t InitialFrameUploadBytes=Initial2DFrameUploadBytes+Initial3DFrameUploadBytes;
     static size_t DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount);
@@ -816,6 +857,7 @@ struct D3D12RendererTestAccess3D {
     static void SetSkinnedAllocatorState(D3D12Renderer& renderer,uint32_t nextHandle,uint64_t nextIdentity);
     static void SetEnvironmentResourceFailureCheckpoint(D3D12Renderer& renderer,int checkpoint);
     static void SetFixedProbeClearMismatch(D3D12Renderer& renderer,bool enabled);
+    static void RecreateDirectionalShadowResources(D3D12Renderer& renderer);
 };
 #endif
 }

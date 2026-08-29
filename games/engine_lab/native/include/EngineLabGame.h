@@ -12,6 +12,7 @@
 #include <Aevrynd/TerrainClipmap3D.h>
 #include <Aevrynd/WorldBuilder3D.h>
 #include <Aevrynd/WorldStreamer3D.h>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -28,7 +29,7 @@ public:
 
 class EngineLabGame final:public Aevrynd::IGame {
 public:
-    explicit EngineLabGame(std::filesystem::path captureDirectory={}):captureDirectory_(std::move(captureDirectory)){}
+    explicit EngineLabGame(std::filesystem::path captureDirectory={},bool shadowCaptureMode=false):captureDirectory_(std::move(captureDirectory)),shadowCaptureMode_(shadowCaptureMode){}
     void OnStart(Aevrynd::Engine&)override;
     void OnUpdate(Aevrynd::Engine&,float)override;
     void OnRender(Aevrynd::Engine&,float)override;
@@ -99,6 +100,17 @@ private:
     bool backfaceCulling_{true};
     bool lightingEnabled_{true};
     std::filesystem::path captureDirectory_{};
+    bool shadowCaptureMode_{};
+    std::uint32_t shadowCascadeCount_{4};
+    std::array<float,Aevrynd::MaximumDirectionalShadowCascades3D> shadowCascadeSplits_{};
+    std::array<std::uint64_t,Aevrynd::MaximumDirectionalShadowCascades3D> shadowCascadeRendered_{};
+    std::array<std::uint64_t,Aevrynd::MaximumDirectionalShadowCascades3D> shadowCascadeReused_{};
+    std::uint64_t shadowContactEvaluationPasses_{};
+    std::uint64_t shadowGpuNanoseconds_{};
+    std::size_t shadowMapBytes_{};
+    std::size_t shadowFarCascadeInstances_{},shadowManualMasks_{};
+    std::uint64_t shadowCaptureCompleted_{};
+    double contactDisabledLuminance_{},contactEnabledLuminance_{};
     std::string gpuValidationRunId_{};
     std::size_t captureIndex_{};
     std::uint64_t captureFrameCounter_{};

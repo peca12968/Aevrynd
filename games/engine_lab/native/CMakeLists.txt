@@ -15,6 +15,19 @@ if(WIN32)
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/EngineLabNetworkCaptureSmoke.ps1"
       -Executable "$<TARGET_FILE:EngineLab>")
   set_tests_properties(EngineLabNetworkCaptureSmoke PROPERTIES TIMEOUT 420)
+  add_test(NAME EngineLabShadowCaptureNormalSmoke
+    COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/EngineLabShadowCaptureSmoke.ps1"
+      -Executable "$<TARGET_FILE:EngineLab>" -SourceRoot "${CMAKE_SOURCE_DIR}" -Mode normal -CascadeCount 4)
+  add_test(NAME EngineLabShadowCaptureFallbackSmoke
+    COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/EngineLabShadowCaptureSmoke.ps1"
+      -Executable "$<TARGET_FILE:EngineLab>" -SourceRoot "${CMAKE_SOURCE_DIR}" -Mode normal -CascadeCount 2)
+  add_test(NAME EngineLabShadowCaptureGbvSmoke
+    COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/EngineLabShadowCaptureSmoke.ps1"
+      -Executable "$<TARGET_FILE:EngineLab>" -SourceRoot "${CMAKE_SOURCE_DIR}" -Mode gbv -CascadeCount 4)
+  set_tests_properties(EngineLabShadowCaptureNormalSmoke EngineLabShadowCaptureFallbackSmoke EngineLabShadowCaptureGbvSmoke PROPERTIES TIMEOUT 420 RUN_SERIAL TRUE)
 endif()
 add_custom_command(TARGET EngineLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EngineLab>/assets"

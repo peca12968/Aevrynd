@@ -1,5 +1,5 @@
 Texture2D<float> sceneDepth : register(t0);
-Texture2D<float> ambientOcclusion : register(t1);
+Texture2D<float2> ambientOcclusion : register(t1);
 Texture2D baseColorTexture : register(t2);
 struct SkinPaletteJoint
 {
@@ -32,6 +32,7 @@ cbuffer AmbientOcclusionConstants : register(b1)
     float4 occlusionParameters;
     float4 filterParameters;
     float4 viewportParameters;
+    float4 contactShadowParameters;
 };
 
 struct WorldVertexInput
@@ -249,7 +250,7 @@ float3 ReconstructViewNormal(float2 uv, float3 centerPosition)
     return all(isfinite(normal)) ? normal : float3(0.0, 0.0, -1.0);
 }
 
-float AmbientOcclusionPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
+float2 AmbientOcclusionPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
 {
     const float2 uv = saturate(input.uv);
     const float2 viewportUv = ViewportUv(uv);
@@ -302,10 +303,13 @@ float AmbientOcclusionPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
     }
 
     const float normalizedOcclusion = weightSum > 1e-5 ? occlusion / weightSum : 0.0;
-    return pow(saturate(1.0 - normalizedOcclusion * intensity), power);
+    const float ambientVisibility=pow(saturate(1.0-normalizedOcclusion*intensity),power);
+    float contactVisibility=1.0;const uint contactSteps=min(24u,(uint)contactShadowParameters.x);
+    if(contactSteps>0u){const float maximumDistance=contactShadowParameters.y,thickness=contactShadowParameters.z,strength=contactShadowParameters.w;const float3 rayDirection=-normalize(lightDirectionAmbient.xyz);[loop]for(uint stepIndex=1u;stepIndex<=24u;++stepIndex){if(stepIndex>contactSteps)break;const float travel=maximumDistance*(float(stepIndex)/float(contactSteps));const float3 rayPosition=centerPosition+normal*thickness+rayDirection*travel;const float4 rayClip=mul(viewProjection,float4(rayPosition,1.0));if(rayClip.w<=1e-5)break;const float2 rayUv=rayClip.xy/rayClip.w*float2(.5,-.5)+.5;const float2 rayViewport=ViewportUv(rayUv);if(any(rayViewport<0.0)||any(rayViewport>1.0))break;const float sampledDepth=sceneDepth.SampleLevel(pointClampSampler,rayUv,0.0);if(sampledDepth>=.999999)continue;const float3 sampledPosition=ReconstructViewPosition(rayUv,sampledDepth);const float rayCameraDepth=length(rayPosition-cameraFogStart.xyz),sampleCameraDepth=length(sampledPosition-cameraFogStart.xyz);if(sampleCameraDepth+thickness<rayCameraDepth){contactVisibility=1.0-strength*(1.0-float(stepIndex-1u)/float(contactSteps));break;}}}
+    return float2(ambientVisibility,saturate(contactVisibility));
 }
 
-float AmbientOcclusionBilateralBlurPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
+float2 AmbientOcclusionBilateralBlurPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
 {
     const float2 uv = saturate(input.uv);
     const float centerDepth = ViewDepth(uv);
@@ -314,7 +318,7 @@ float AmbientOcclusionBilateralBlurPixelMain(AmbientOcclusionVertexOutput input)
 
     static const float weights[3] = { 0.33421, 0.14650, 0.03645 };
     const float depthSharpness = max(filterParameters.x, 0.0);
-    float result = ambientOcclusion.SampleLevel(pointClampSampler, uv, 0.0) * weights[0];
+    float2 result = ambientOcclusion.SampleLevel(pointClampSampler, uv, 0.0) * weights[0];
     float weightSum = weights[0];
     [unroll] for (uint axis = 0; axis < 2; ++axis)
     {
