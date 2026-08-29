@@ -436,8 +436,11 @@ bool WorldChunkDeltaStore3D::EnqueueSave(
   std::vector<std::byte> encoded;
   if (!id || !epoch ||
       !EncodeWorldChunkDeltaSnapshot3D(snapshot, encoded,
-                                       settings_.maximumSnapshotBytes))
+                                       settings_.maximumSnapshotBytes)) {
+    std::lock_guard lock(mutex_);
+    ++stats_.rejected;
     return false;
+  }
   std::lock_guard lock(mutex_);
   if (!settings_.enabled || queue_.size() >= settings_.maximumQueuedRequests ||
       encoded.size() > settings_.maximumQueuedBytes - stats_.queuedBytes) {

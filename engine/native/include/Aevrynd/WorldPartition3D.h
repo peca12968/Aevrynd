@@ -82,6 +82,16 @@ public:
     (void)delta;
     return Activate(request, payload);
   }
+  // 回傳啟用前必須一起完成的唯讀 canonical owner delta；主區塊本身不列入。
+  virtual std::size_t PersistentDependencyCoordinates(
+      WorldChunkRequest3D,
+      std::span<WorldChunkCoordinate3D>) const noexcept { return 0; }
+  virtual WorldChunkActivation3D ActivatePersistentDependencies(
+      WorldChunkRequest3D request, const WorldChunkPayload3D &payload,
+      const WorldChunkDeltaSnapshot3D *delta,
+      std::span<const WorldChunkDeltaSnapshot3D>) {
+    return ActivatePersistent(request, payload, delta);
+  }
   virtual bool
   IsActivationComplete(WorldChunkActivation3D activation) const = 0;
   virtual void Rollback(WorldChunkActivation3D activation) = 0;

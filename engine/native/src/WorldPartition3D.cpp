@@ -32,9 +32,11 @@ struct WorldPartition3D::Impl {
     WorldChunkState3D state{WorldChunkState3D::Missing};
     WorldChunkPayload3D payload{};
     WorldChunkDeltaSnapshot3D delta{};
+    std::vector<WorldChunkDeltaSnapshot3D> deltaDependencies{};
     WorldChunkActivation3D activation{}, retirement{};
     std::stop_source stop;
     uint64_t queuedAt{}, deltaIoRequest{};
+    std::size_t pendingDeltaLoads{};
     bool desired{true}, dirty{};
   };
   IWorldChunkSource3D &source;
@@ -112,23 +114,37 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
   if (d.settings.persistence) {
     WorldDeltaLoadResult3D loaded{};
     while (d.settings.persistence->TryPopLoad(loaded)) {
-      auto it =
-          d.chunks.find({int(loaded.key.chunk.x), int(loaded.key.chunk.z)});
-      if (it == d.chunks.end() ||
-          it->second.state != WorldChunkState3D::LoadingDelta ||
-          it->second.deltaIoRequest != loaded.requestId ||
-          it->second.request.epoch != loaded.epoch) {
+      auto it = std::find_if(d.chunks.begin(), d.chunks.end(), [&](auto &pair) {
+        return pair.second.state == WorldChunkState3D::LoadingDelta &&
+               pair.second.deltaIoRequest == loaded.requestId &&
+               pair.second.request.epoch == loaded.epoch;
+      });
+      if (it == d.chunks.end()) {
         ++stats_.staleDeltaCompletions;
         continue;
       }
       auto &e = it->second;
-      e.deltaIoRequest = 0;
       if (loaded.status == WorldDeltaLoadStatus3D::Clean ||
           loaded.status == WorldDeltaLoadStatus3D::Loaded) {
-        e.delta = std::move(loaded.snapshot);
-        e.state = WorldChunkState3D::CpuReady;
+        if (loaded.status == WorldDeltaLoadStatus3D::Clean) {
+          loaded.snapshot.key = loaded.key;
+          loaded.snapshot.base = d.settings.persistenceBase;
+        }
+        const auto primary = DeltaKey(d.settings, e.request.coordinate);
+        if (loaded.key == primary)
+          e.delta = std::move(loaded.snapshot);
+        else
+          e.deltaDependencies.push_back(std::move(loaded.snapshot));
+        if (e.pendingDeltaLoads)
+          --e.pendingDeltaLoads;
         ++stats_.deltaLoads;
+        if (!e.pendingDeltaLoads) {
+          e.deltaIoRequest = 0;
+          e.state = WorldChunkState3D::CpuReady;
+        }
       } else {
+        e.deltaIoRequest = 0;
+        e.pendingDeltaLoads = 0;
         stats_.cpuReadyBytes = stats_.cpuReadyBytes >= e.payload.cpuBytes
                                    ? stats_.cpuReadyBytes - e.payload.cpuBytes
                                    : 0;
@@ -142,7 +158,8 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
     while (d.settings.persistence->TryPopSave(saved)) {
       auto it = d.chunks.find({int(saved.key.chunk.x), int(saved.key.chunk.z)});
       if (it == d.chunks.end() ||
-          it->second.state != WorldChunkState3D::SavingDelta ||
+          (it->second.state != WorldChunkState3D::SavingDelta &&
+           it->second.state != WorldChunkState3D::Resident) ||
           it->second.deltaIoRequest != saved.requestId ||
           it->second.request.epoch != saved.epoch) {
         ++stats_.staleDeltaCompletions;
@@ -156,6 +173,10 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
       }
       e.dirty = false;
       ++stats_.deltaSaves;
+      if (e.state == WorldChunkState3D::Resident &&
+          Distance(e.request.coordinate, observer) <=
+              d.settings.spatial.retainRadius)
+        continue;
       if (Distance(e.request.coordinate, observer) <=
           d.settings.spatial.retainRadius) {
         e.desired = true;
@@ -172,7 +193,9 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
       ++stats_.totalRetired;
     }
     for (auto &[coordinate, e] : d.chunks)
-      if (e.state == WorldChunkState3D::SavingDelta && !e.deltaIoRequest) {
+      if ((e.state == WorldChunkState3D::SavingDelta ||
+           (e.state == WorldChunkState3D::Resident && e.dirty)) &&
+          !e.deltaIoRequest) {
         e.deltaIoRequest = e.request.requestId;
         if (!d.settings.persistence->EnqueueSave(e.deltaIoRequest,
                                                  e.request.epoch, e.delta)) {
@@ -220,12 +243,28 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
     stats_.cpuReadyBytes += e.payload.cpuBytes;
     if (d.settings.persistence) {
       e.deltaIoRequest = e.request.requestId;
-      if (d.settings.persistence->EnqueueLoad(
-              e.deltaIoRequest, e.request.epoch,
-              DeltaKey(d.settings, e.request.coordinate),
-              d.settings.persistenceBase))
+      std::array<WorldChunkCoordinate3D, 8> dependencies{};
+      const auto dependencyCount = d.target.PersistentDependencyCoordinates(
+          e.request, dependencies);
+      bool admitted = dependencyCount <= dependencies.size() &&
+                      d.settings.persistence->EnqueueLoad(
+                          e.deltaIoRequest, e.request.epoch,
+                          DeltaKey(d.settings, e.request.coordinate),
+                          d.settings.persistenceBase);
+      e.pendingDeltaLoads = admitted ? 1 : 0;
+      for (std::size_t index = 0; admitted && index < dependencyCount;
+           ++index) {
+        admitted = d.settings.persistence->EnqueueLoad(
+            e.deltaIoRequest, e.request.epoch,
+            DeltaKey(d.settings, dependencies[index]),
+            d.settings.persistenceBase);
+        if (admitted)
+          ++e.pendingDeltaLoads;
+      }
+      if (admitted)
         e.state = WorldChunkState3D::LoadingDelta;
       else {
+        e.pendingDeltaLoads = 0;
         stats_.cpuReadyBytes -= e.payload.cpuBytes;
         e.payload = {};
         e.state = WorldChunkState3D::Failed;
@@ -276,12 +315,18 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
       if (d.settings.persistence && e.dirty) {
         e.delta.key = DeltaKey(d.settings, e.request.coordinate);
         e.delta.base = d.settings.persistenceBase;
-        e.deltaIoRequest = e.request.requestId;
-        if (d.settings.persistence->EnqueueSave(e.deltaIoRequest,
-                                                e.request.epoch, e.delta))
+        if (e.deltaIoRequest)
           e.state = WorldChunkState3D::SavingDelta;
-        else
-          ++stats_.deltaSaveFailures;
+        else {
+          e.deltaIoRequest = e.request.requestId;
+          if (d.settings.persistence->EnqueueSave(
+                  e.deltaIoRequest, e.request.epoch, e.delta))
+            e.state = WorldChunkState3D::SavingDelta;
+          else {
+            e.deltaIoRequest = 0;
+            ++stats_.deltaSaveFailures;
+          }
+        }
         ++it;
         continue;
       }
@@ -436,9 +481,11 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
               d.settings.maximumActivationBytesPerUpdate) ||
         !Fits(physical, reserved, d.settings.maximumGpuResidentBytes))
       continue;
-    auto activation = d.target.ActivatePersistent(
+    auto activation = d.target.ActivatePersistentDependencies(
         e->request, e->payload,
-        e->delta.operations.empty() ? nullptr : &e->delta);
+        e->delta.operations.empty() ? nullptr : &e->delta,
+        e->deltaDependencies);
+    e->deltaDependencies.clear();
     if (!activation) {
       fail(WorldPartitionFailureReason3D::ActivationFailed,
            stats_.activationFailures);
@@ -517,8 +564,14 @@ bool WorldPartition3D::SetChunkDelta(WorldChunkCoordinate3D coordinate,
     return false;
   snapshot.key = expected;
   snapshot.base = d.settings.persistenceBase;
+  if (found->second.deltaIoRequest ||
+      !d.settings.persistence->EnqueueSave(found->second.request.requestId,
+                                           found->second.request.epoch,
+                                           snapshot))
+    return false;
   found->second.delta = std::move(snapshot);
   found->second.dirty = true;
+  found->second.deltaIoRequest = found->second.request.requestId;
   return true;
 }
 void WorldPartition3D::Reset() {

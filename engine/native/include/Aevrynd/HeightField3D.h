@@ -37,6 +37,8 @@ public:
     // 失敗時保留原高度資料，避免容量或輸入錯誤留下半成品。
     bool GenerateUltra(uint32_t seed,HeightFieldUltraSettings3D settings={});
     bool SetHeight(unsigned x,unsigned z,float height);
+    // 批次 absolute edit 完成後重新計算高度範圍，避免舊極值污染材質分層。
+    void RecalculateRange(){RefreshRange();}
     float Height(unsigned x,unsigned z)const;
     Vec3 SamplePosition(unsigned x,unsigned z)const;
     bool Contains(float x,float z)const;

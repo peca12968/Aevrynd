@@ -231,14 +231,15 @@ int main() {
     FakeChunkSource3D source;
     PersistentActivationTarget target;
     WorldPartition3D partition(source, target, PartitionSettings(store));
-    if (!LoadToResident(partition, source, target, store, false) ||
-        !partition.SetChunkDelta({0, 0}, Snapshot({0, 0}, 3)))
+    if (!LoadToResident(partition, source, target, store, false))
       return 9;
-    partition.Update({64, 0, 0});
-    if (!partition.Stats().deltaSaveFailures || target.fake.retires ||
-        partition.Stats().resident != 1 || partition.Stats().savingDelta) {
-      std::cerr << "Failed save did not retain the dirty resident chunk\n";
+    if (partition.SetChunkDelta({0, 0}, Snapshot({0, 0}, 3)))
       return 10;
+    partition.Update({64, 0, 0});
+    if (!store.Stats().rejected || target.fake.retires != 1 ||
+        partition.Stats().savingDelta) {
+      std::cerr << "Backpressure changed gameplay state or blocked clean retire\n";
+      return 11;
     }
   }
 
