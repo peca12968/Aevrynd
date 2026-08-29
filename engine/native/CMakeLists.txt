@@ -350,6 +350,11 @@ add_executable(AevryndWorldPartition3DFakeSourceTest tests/WorldPartition3DFakeS
 target_compile_options(AevryndWorldPartition3DFakeSourceTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldPartition3DFakeSourceTest PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldPartition3DFakeSourceTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartition3DFakeSourceTest>'")
+
+add_executable(AevryndWorldPartitionDeltaGateFakeTest tests/WorldPartitionDeltaGateFakeSmoke.cpp)
+target_compile_options(AevryndWorldPartitionDeltaGateFakeTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldPartitionDeltaGateFakeTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartitionDeltaGateFakeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartitionDeltaGateFakeTest>'")
 add_executable(AevryndWorldPartitionTerrainVegetationAdapterFakeTest tests/WorldPartitionTerrainVegetationAdapterFakeSmoke.cpp)
 target_compile_options(AevryndWorldPartitionTerrainVegetationAdapterFakeTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldPartitionTerrainVegetationAdapterFakeTest PRIVATE AevryndEngine)
