@@ -36,6 +36,7 @@ public:
  ~DurableMutationAuthority3D();
  bool Submit(ReplicationMutationRequest3D request,WorldChunkDeltaSnapshot3D current,std::uint64_t serverTick);
  void Poll();bool Close();bool TryPopReceipt(ReplicationMutationReceipt3D& receipt);DurableMutationAuthorityStats3D Stats()const{return stats_;}
+ std::size_t PendingCapacity()const noexcept{return settings_.maximumPending;}std::size_t CompletedCapacity()const noexcept{return settings_.maximumCompleted;}
 private:struct TerminalState;struct Pending{ReplicationMutationRequest3D request{};WorldChunkDeltaSnapshot3D snapshot{};std::uint64_t ioId{};std::shared_ptr<TerminalState>terminal{};};struct CompletionState;std::shared_ptr<CompletionState> completionState_{};WorldChunkDeltaStore3D::SaveOwnerLease saveOwner_{};std::shared_ptr<IDurableMutationTarget3D>target_{};DurableMutationAuthoritySettings3D settings_{};std::map<std::uint64_t,Pending> pending_{};std::map<std::pair<std::uint32_t,std::uint64_t>,ReplicationMutationReceipt3D> dedup_{};std::deque<std::pair<std::uint32_t,std::uint64_t>> dedupOrder_{};std::deque<ReplicationMutationReceipt3D> completed_{};std::uint64_t nextIo_{1};bool closed_{};DurableMutationAuthorityStats3D stats_{};
 };
 }

@@ -27,6 +27,8 @@ public:
  void Reset();
  std::size_t TrimUnusedMemory();
  LoopbackNetworkStats3D Stats()const{return stats_;}
+ std::size_t PacketCapacity()const noexcept{return settings_.maximumQueuedPackets;}
+ std::size_t ByteCapacity()const noexcept{return settings_.maximumQueuedBytes;}
 private:
  struct Queued {NetworkPacket3D packet{};std::uint64_t order{};};
  std::uint64_t Random()noexcept;

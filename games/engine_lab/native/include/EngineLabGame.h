@@ -6,6 +6,8 @@
 #include <Aevrynd/MaterialLibrary3D.h>
 #include <Aevrynd/Navigation3D.h>
 #include <Aevrynd/PhysicsWorld3D.h>
+#include <Aevrynd/ReplicationRuntime3D.h>
+#include <Aevrynd/ReplicationWorldAdapter3D.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/TerrainClipmap3D.h>
 #include <Aevrynd/WorldBuilder3D.h>
@@ -14,6 +16,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <vector>
+
+class EngineLabMutationTarget final:public Aevrynd::IDurableMutationTarget3D {
+public:
+    bool Prepare(std::uint64_t,const Aevrynd::WorldChunkDeltaSnapshot3D&)override{return true;}
+    void Commit(std::uint64_t,const Aevrynd::WorldChunkDeltaSnapshot3D&)noexcept override{++commits;}
+    void Abort(std::uint64_t)noexcept override{++aborts;}
+    std::uint64_t commits{},aborts{};
+};
 
 class EngineLabGame final:public Aevrynd::IGame {
 public:
@@ -89,5 +99,22 @@ private:
     bool lightingEnabled_{true};
     std::filesystem::path captureDirectory_{};
     std::size_t captureIndex_{};
+    std::uint64_t captureFrameCounter_{};
     float nextCaptureTime_{1.5f};
+    std::unique_ptr<Aevrynd::LoopbackNetworkTransport3D> networkTransport_{};
+    std::unique_ptr<Aevrynd::ReplicationServer3D> replicationServer_{};
+    std::unique_ptr<Aevrynd::ReplicationClient3D> replicationClientA_{},replicationClientB_{};
+    std::unique_ptr<Aevrynd::WorldChunkDeltaStore3D> mutationStore_{};
+    std::filesystem::path networkStoreRoot_{};
+    std::unique_ptr<Aevrynd::WorldChunkDeltaStore3D> networkRestartStore_{};
+    std::shared_ptr<EngineLabMutationTarget> mutationTarget_{};
+    Aevrynd::ReplicationChunkInterest3D networkInterestA_{{1,2,32}},networkInterestB_{{1,2,32}};
+    Aevrynd::ReplicationInterestDelta3D networkInterestDeltaA_{},networkInterestDeltaB_{};
+    std::uint64_t networkInterestEnteredA_{},networkInterestLeftA_{},networkInterestEnteredB_{},networkInterestLeftB_{};
+    std::uint64_t networkServerDespawns_{},networkServerSnapshotEntities_{};
+    std::unique_ptr<Aevrynd::DurableMutationAuthority3D> mutationAuthority_{};
+    std::uint64_t networkTick_{},networkDurableReceipts_{},networkDeniedMutations_{};
+    std::uint64_t networkAuthorizedMutations_{};
+    bool networkMutationSubmitted_{};
+    bool networkRestartRequested_{},networkRestartVerified_{};
 };
