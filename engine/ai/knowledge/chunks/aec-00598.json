@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00598","kind":"git-commit","sourcePath":"git/history","sourceSha256":"967abdce37aa7c5cd1d12fa9208c28f74d82944e853d2bb85f19da5ea86f8fb7","sourceRevision":"306f8d0cd7a456da9e66c4976dd9586a2ef62891","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"重構場景常數緩衝並加入手動曝光控制"}

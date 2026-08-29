@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
+  "snapshotRevision": "4568daa1e038d723755e461cb93db1692f827ee6",
   "chunkCharacters": 3000,
-  "chunkCount": 586,
-  "sourceCount": 151,
+  "chunkCount": 603,
+  "sourceCount": 158,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "c5133188c1461362ee82507ad422c32d441f4852547b8a6e2fd5b89d63257f12",
+  "knowledgeSha256": "c591e27ba42ddd9ad4d384396a7c0b7c9b4fef7483a282497336d525fbb2174b",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "457fb5bf3815e962f0df11727c115053a1d93ad1e14645962e77d03aff810746",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 44647
+      "sha256": "5d343ebc71b613b2739d0da69ac3afaac2be48064acc7951b5f7a2e84d907706",
+      "revision": "2989a594c1058187b31ecd5965f59830a3ea91de",
+      "bytes": 46963
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -279,9 +279,9 @@
     {
       "path": "engine/native/include/Aevrynd/SceneECS3D.h",
       "kind": "public-header",
-      "sha256": "cdadebd0ee76545e93986a7f42a4d766d0bea49ac689de2a4cd7ebb5ebd5be59",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 4182
+      "sha256": "37766a911efda32bc144fc8557352a630f4ebc3e133ce51e67929590195e1bbb",
+      "revision": "68ecb7223df9577024f0a70a22915fa703ff6b69",
+      "bytes": 4334
     },
     {
       "path": "engine/native/include/Aevrynd/Serialization.h",
@@ -349,9 +349,9 @@
     {
       "path": "engine/native/include/Aevrynd/Vegetation3D.h",
       "kind": "public-header",
-      "sha256": "51d55d41139413427f6a6808d5526b30b566e53a910e87d86fcd96e30b2f7926",
-      "revision": "2330b257826cf70411f1f74a612c95e12550bbfb",
-      "bytes": 2326
+      "sha256": "bbf75c02e37c33018144ebe02ba1ce1706aa3cdb438ce5e1110167eb52cfa415",
+      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
+      "bytes": 4610
     },
     {
       "path": "engine/native/include/Aevrynd/Viewport.h",
@@ -387,6 +387,13 @@
       "sha256": "d69cb691f95b4907b7d537093f5dd8d09adbf9eafa5b1f854cd0763252ac7379",
       "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
       "bytes": 2976
+    },
+    {
+      "path": "engine/native/include/Aevrynd/WorldPartitionTerrainVegetationAdapter3D.h",
+      "kind": "public-header",
+      "sha256": "d0332d08d977e068c73788139fd5d7586d395762b8df3b6b6e90e9b6c61a89a9",
+      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
+      "bytes": 3951
     },
     {
       "path": "engine/native/include/Aevrynd/WorldStreamer3D.h",
@@ -459,6 +466,13 @@
       "bytes": 3245
     },
     {
+      "path": "engine/native/tests/ChunkedVegetation3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "8bbb99203e40b1954952084649f53184a1a1af49a590830c4920b7df914ebd32",
+      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
+      "bytes": 3549
+    },
+    {
       "path": "engine/native/tests/CloudShadowD3D12VisualSmoke.cpp",
       "kind": "test",
       "sha256": "fa7b85b80bb1e4c93404293eb9470c6b9505987a96a34edd87928c7358758426",
@@ -475,9 +489,9 @@
     {
       "path": "engine/native/tests/CurrentFrameHzbOcclusion3DBenchmark.cpp",
       "kind": "test",
-      "sha256": "011254b2399d103a96aa241bbef8469fd6cedd42b049e940eeda9a94dd725572",
-      "revision": "aa3a122bc8f51846daefe70b62a617a1df63ca0d",
-      "bytes": 8379
+      "sha256": "b1c68259c0130a6bfcb2af87b72d65df87ce9c29c87c91752f4407bb6c75b89c",
+      "revision": "2989a594c1058187b31ecd5965f59830a3ea91de",
+      "bytes": 14601
     },
     {
       "path": "engine/native/tests/CurrentFrameHzbOcclusion3DSmoke.cpp",
@@ -697,6 +711,20 @@
       "bytes": 3715
     },
     {
+      "path": "engine/native/tests/PairedBenchmarkStatistics.h",
+      "kind": "test",
+      "sha256": "e0d1e5a5415d2c1d763453ce310610686b7de7f5f332a26be96a8f0d7f3f21cf",
+      "revision": "2989a594c1058187b31ecd5965f59830a3ea91de",
+      "bytes": 3713
+    },
+    {
+      "path": "engine/native/tests/PairedBenchmarkStatisticsSmoke.cpp",
+      "kind": "test",
+      "sha256": "a9aac780dac1e4440e6e915529bdab5d3163f0b8b955aaf1308df4c477f8cf28",
+      "revision": "2989a594c1058187b31ecd5965f59830a3ea91de",
+      "bytes": 1836
+    },
+    {
       "path": "engine/native/tests/PbrLightingReferenceSmoke.cpp",
       "kind": "test",
       "sha256": "518eea9a614c7b77a1f38f7656abec738a23340066b5914eb828953bdf7c1a91",
@@ -776,9 +804,9 @@
     {
       "path": "engine/native/tests/SceneECS3DSmoke.cpp",
       "kind": "test",
-      "sha256": "581ee26028c713b25744f1bb0b1f362128a9b50934d768f4fb94954e5339c493",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 7822
+      "sha256": "59f8990306e59e15d0a30d1ef59da10a1e0408e6445fe8b9de845418c8860af3",
+      "revision": "68ecb7223df9577024f0a70a22915fa703ff6b69",
+      "bytes": 8406
     },
     {
       "path": "engine/native/tests/ScreenSpaceReflection3DSmoke.cpp",
@@ -1017,6 +1045,27 @@
       "sha256": "9e93127f00ad47d3f118652aff1015f541f0b253f0f99bb84d3938923d8fbf15",
       "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
       "bytes": 7690
+    },
+    {
+      "path": "engine/native/tests/WorldPartitionTerrainVegetationAdapterBenchmark.cpp",
+      "kind": "test",
+      "sha256": "d0712975785340635854c903335b289a53aa512499cec20b308523cadb94ba1a",
+      "revision": "68ecb7223df9577024f0a70a22915fa703ff6b69",
+      "bytes": 1182
+    },
+    {
+      "path": "engine/native/tests/WorldPartitionTerrainVegetationAdapterFakeSmoke.cpp",
+      "kind": "test",
+      "sha256": "3e9f50d9e819878fe3a92282722459b3f9e96ec07a3df3cd866662cbcb49ae03",
+      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
+      "bytes": 5690
+    },
+    {
+      "path": "engine/native/tests/WorldPartitionTerrainVegetationD3D12Smoke.cpp",
+      "kind": "test",
+      "sha256": "ce76671223bd7efbb56b7960226a3096b9425f6c88bc908c39feb6f24e80e04f",
+      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
+      "bytes": 6598
     },
     {
       "path": "engine/native/tests/WorldStreamer3DSmoke.cpp",

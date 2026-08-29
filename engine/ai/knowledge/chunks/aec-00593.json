@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00593","kind":"git-commit","sourcePath":"git/history","sourceSha256":"8a254714e0f2b57af2cedcf25ae3e53d22b496dff0c786426e1be45b2f06e66b","sourceRevision":"816f9456453935e4550501bad11b4b7304ab2421","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"移除首次陰影的GPU全佇列等待"}
