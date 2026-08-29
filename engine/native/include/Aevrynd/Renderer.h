@@ -781,6 +781,9 @@ public:
     EnvironmentLightingHandle3D ReflectionProbeCaptureEnvironment3D(ReflectionProbeCaptureHandle3D handle)const;
     void SetReflectionProbeCaptureBudget(size_t bytes);
     void TrimReflectionProbeCaptures3D();
+    bool PrepareRebaseReflectionProbeCaptures3D(Vec3 delta,uint64_t originGeneration);
+    void CommitPreparedReflectionProbeCaptureRebase3D()noexcept;
+    void AbortPreparedReflectionProbeCaptureRebase3D()noexcept;
     bool RebaseReflectionProbeCaptures3D(Vec3 delta,uint64_t originGeneration);
     void TrimTransientMemory();
     [[nodiscard]] TransientMemoryStats MemoryStats()const;

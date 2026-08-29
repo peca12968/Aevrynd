@@ -134,8 +134,9 @@ endfunction()
 add_executable(AevryndWindowsGuiTestWrapperFailureTest tests/WindowsGuiTestWrapperFailureSmoke.cpp)
 target_compile_options(AevryndWindowsGuiTestWrapperFailureTest PRIVATE /W4 /permissive- /utf-8)
 # 這個測試刻意讓子處理序回傳 37，用來確認包裝器會把非零結束碼交還 CTest。
-aevrynd_add_windows_gui_test(AevryndWindowsGuiTestWrapperExitCodeSelfTest AevryndWindowsGuiTestWrapperFailureTest)
-set_tests_properties(AevryndWindowsGuiTestWrapperExitCodeSelfTest PROPERTIES WILL_FAIL TRUE)
+aevrynd_add_windows_gui_test(AevryndWindowsGuiTestWrapperNonzeroPropagationTest AevryndWindowsGuiTestWrapperFailureTest)
+set_tests_properties(AevryndWindowsGuiTestWrapperNonzeroPropagationTest PROPERTIES WILL_FAIL TRUE)
+add_test(NAME AevryndWindowsGuiTestWrapperExactExitCodeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/VerifyWindowsGuiTestWrapper.ps1" -Wrapper "${AEVRYND_WINDOWS_GUI_TEST_WRAPPER}" -Executable "$<TARGET_FILE:AevryndWindowsGuiTestWrapperFailureTest>" -ExpectedExitCode 37)
 
 add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
 add_executable(AevryndVelocityReadbackTest tests/VelocityReadbackSmoke.cpp)
