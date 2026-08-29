@@ -13,6 +13,15 @@ struct ColliderHandle3D {uint32_t value{};explicit constexpr operator bool()cons
 struct StaticBoxCollider3D {BoxCollider3D bounds{};uint32_t layer{1},collisionMask{CollisionLayerAll3D};uint64_t userData{};bool trigger{};};
 struct CollisionQueryFilter3D {uint32_t layerMask{CollisionLayerAll3D},queryLayer{1};bool includeTriggers{};};
 struct CollisionRayHit3D {ColliderHandle3D collider{};float distance{std::numeric_limits<float>::infinity()};Vec3 position{},normal{};uint64_t userData{};explicit operator bool()const{return bool(collider);}};
+// 球體掃掠結果；fraction 位於 [0,1]，position 是球面與碰撞盒接觸點，center 是命中時球心。
+struct CollisionSphereSweepHit3D {
+    ColliderHandle3D collider{};
+    float fraction{std::numeric_limits<float>::infinity()},distance{std::numeric_limits<float>::infinity()};
+    Vec3 center{},position{},normal{};
+    uint64_t userData{};
+    bool startedOverlapping{};
+    explicit operator bool()const{return bool(collider);}
+};
 struct CollisionWorldStats3D {std::size_t colliders{},solidColliders{},triggers{};uint64_t queries{},boundsTested{},hits{};};
 
 class CollisionWorld3D {
@@ -25,6 +34,8 @@ public:
     ReusableMemoryStats MemoryStats()const;
     const StaticBoxCollider3D* Get(ColliderHandle3D handle)const;
     CollisionRayHit3D Raycast(Ray3D ray,float maximumDistance=std::numeric_limits<float>::infinity(),CollisionQueryFilter3D filter={})const;
+    // 精確求 moving sphere 對 AABB 的 rounded face/edge/corner TOI；radius >= 0，無效輸入 fail-closed 且不配置記憶體。
+    CollisionSphereSweepHit3D SweepSphere(Vec3 center,float radius,Vec3 displacement,CollisionQueryFilter3D filter={})const;
     bool OverlapsBox(Vec3 center,Vec3 extents,CollisionQueryFilter3D filter={})const;
     std::vector<ColliderHandle3D> QueryBox(Vec3 center,Vec3 extents,CollisionQueryFilter3D filter={})const;
     void CollectBoxes(std::vector<BoxCollider3D>& output,CollisionQueryFilter3D filter={})const;
