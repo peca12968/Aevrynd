@@ -4,6 +4,7 @@
 #include "WorldStreamer3D.h"
 #include <map>
 #include <set>
+#include <functional>
 
 namespace Aevrynd {
 struct ReplicatedSceneState3D {SceneEntity3D entity{};GlobalPosition3D previous{},current{};std::uint64_t tick{};};
@@ -24,14 +25,16 @@ public:explicit ReplicationChunkInterest3D(ReplicationInterestSettings3D setting
 private:ReplicationInterestSettings3D settings_{};std::set<std::pair<int,int>> chunks_{};std::vector<WorldChunkCoordinate3D> view_{};std::uint64_t epoch_{};
 };
 class IDurableMutationTarget3D {public:virtual~IDurableMutationTarget3D()=default;virtual bool Prepare(std::uint64_t transaction,const WorldChunkDeltaSnapshot3D& snapshot)=0;virtual void Commit(std::uint64_t transaction,const WorldChunkDeltaSnapshot3D& snapshot)noexcept=0;virtual void Abort(std::uint64_t transaction)noexcept=0;};
-struct DurableMutationAuthoritySettings3D {std::uint64_t sessionEpoch{1};std::size_t maximumPending{128},maximumCompleted{256};};
-struct DurableMutationAuthorityStats3D {std::size_t pending{},completed{};std::uint64_t submitted{},durable{},duplicates{},rejected{},saveFailures{},committed{};};
+struct DurableMutationAuthorizationContext3D {std::uint64_t sessionEpoch{},serverTick{};std::uint32_t clientId{};WorldDeltaChunkKey3D key{};std::uint64_t targetGeneration{},baseVersion{};};
+using DurableMutationAuthorize3D=std::function<bool(const ReplicationMutationRequest3D&,const DurableMutationAuthorizationContext3D&)>;
+struct DurableMutationAuthoritySettings3D {std::uint64_t sessionEpoch{1};std::size_t maximumPending{128},maximumCompleted{256};DurableMutationAuthorize3D authorize{};};
+struct DurableMutationAuthorityStats3D {std::size_t pending{},completed{};std::uint64_t submitted{},durable{},duplicates{},rejected{},unauthorized{},saveFailures{},committed{};bool closed{};};
 class DurableMutationAuthority3D {
 public:
  DurableMutationAuthority3D(WorldChunkDeltaStore3D& store,IDurableMutationTarget3D& target,DurableMutationAuthoritySettings3D settings={});
  ~DurableMutationAuthority3D();
  bool Submit(ReplicationMutationRequest3D request,WorldChunkDeltaSnapshot3D current,std::uint64_t serverTick);
- void Poll();bool TryPopReceipt(ReplicationMutationReceipt3D& receipt);DurableMutationAuthorityStats3D Stats()const{return stats_;}
-private:struct Pending{ReplicationMutationRequest3D request{};WorldChunkDeltaSnapshot3D snapshot{};std::uint64_t ioId{};};WorldChunkDeltaStore3D&store_;IDurableMutationTarget3D&target_;DurableMutationAuthoritySettings3D settings_{};std::map<std::uint64_t,Pending> pending_{};std::map<std::pair<std::uint32_t,std::uint64_t>,ReplicationMutationReceipt3D> dedup_{};std::deque<std::pair<std::uint32_t,std::uint64_t>> dedupOrder_{};std::deque<ReplicationMutationReceipt3D> completed_{};std::uint64_t nextIo_{1};DurableMutationAuthorityStats3D stats_{};
+ void Poll();bool Close();bool TryPopReceipt(ReplicationMutationReceipt3D& receipt);DurableMutationAuthorityStats3D Stats()const{return stats_;}
+private:struct Pending{ReplicationMutationRequest3D request{};WorldChunkDeltaSnapshot3D snapshot{};std::uint64_t ioId{};};WorldChunkDeltaStore3D&store_;IDurableMutationTarget3D&target_;DurableMutationAuthoritySettings3D settings_{};std::map<std::uint64_t,Pending> pending_{};std::map<std::pair<std::uint32_t,std::uint64_t>,ReplicationMutationReceipt3D> dedup_{};std::deque<std::pair<std::uint32_t,std::uint64_t>> dedupOrder_{};std::deque<ReplicationMutationReceipt3D> completed_{};std::uint64_t nextIo_{1};bool closed_{};DurableMutationAuthorityStats3D stats_{};
 };
 }

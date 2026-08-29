@@ -4,9 +4,10 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <set>
 
 namespace Aevrynd {
-struct ReplicationRuntimeSettings3D {std::uint32_t tickRate{60};std::size_t maximumClients{8},maximumInputHistory{256},maximumSnapshotHistory{64},maximumPacketsPerTick{256};float movementPerTick{.1f};};
+struct ReplicationRuntimeSettings3D {std::uint32_t tickRate{60};std::size_t maximumClients{8},maximumInputHistory{256},maximumSnapshotHistory{64},maximumPacketsPerTick{256},maximumSnapshotEntities{4096};std::int32_t interestLoadRadius{2},interestRetainRadius{3};float interestChunkSize{32.f},movementPerTick{.1f};};
 struct ReplicationRuntimeStats3D {std::uint64_t ticks{},inputsReceived{},duplicateInputs{},staleInputs{},futureInputs{},snapshotsSent{},fullSnapshots{},deltaSnapshots{},acks{},reconciliations{},replayedInputs{},historyDrops{},packetRejects{};};
 struct ReplicationPlayerState3D {NetworkEntityId3D entity{};GlobalPosition3D position{};Vec3 velocity{};std::uint64_t tick{};};
 
@@ -14,11 +15,12 @@ class ReplicationServer3D {
 public:
  ReplicationServer3D(LoopbackNetworkTransport3D& transport,NetworkEndpoint3D endpoint,std::uint64_t sessionEpoch,ReplicationRuntimeSettings3D settings={});
  bool AddClient(std::uint32_t clientId,NetworkEndpoint3D endpoint,GlobalPosition3D spawn={});
+ bool SetClientPosition(std::uint32_t clientId,GlobalPosition3D position);
  void Tick();
  std::optional<ReplicationPlayerState3D> Player(std::uint32_t clientId)const;
  ReplicationRuntimeStats3D Stats()const{return stats_;}
 private:
- struct Client {NetworkEndpoint3D endpoint{};ReplicationPlayerState3D player{};std::map<std::uint64_t,ReplicationInputCommand3D> inputs{};std::deque<ReplicationSnapshot3D> snapshots{};std::uint64_t lastInputSequence{},lastInputTick{},ackSnapshotTick{},interestEpoch{1};};
+ struct Client {NetworkEndpoint3D endpoint{};ReplicationPlayerState3D player{};std::map<std::uint64_t,ReplicationInputCommand3D> inputs{};std::deque<ReplicationSnapshot3D> snapshots{};std::set<std::pair<std::int64_t,std::int64_t>> interest{};std::set<NetworkEntityId3D> visible{};std::uint64_t lastInputSequence{},lastInputTick{},ackSnapshotTick{},interestEpoch{};};
  void Receive();void SendSnapshots();
  LoopbackNetworkTransport3D& transport_;NetworkEndpoint3D endpoint_{};std::uint64_t sessionEpoch_{},tick_{};ReplicationRuntimeSettings3D settings_{};std::map<std::uint32_t,Client> clients_{};ReplicationRuntimeStats3D stats_{};
 };
