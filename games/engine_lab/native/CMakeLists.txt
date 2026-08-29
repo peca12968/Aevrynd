@@ -21,11 +21,4 @@ add_custom_command(TARGET EngineLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/../assets/engine_probe.obj"
     "$<TARGET_FILE_DIR:EngineLab>/assets/engine_probe.obj")
-if(AEVRYND_STREAMLINE_AVAILABLE)
-  foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
-    add_custom_command(TARGET EngineLab POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${STREAMLINE_ROOT}/bin/x64/${SL_DLL}"
-        "$<TARGET_FILE_DIR:EngineLab>/${SL_DLL}")
-  endforeach()
-endif()
+aevrynd_package_streamline_runtime(EngineLab)

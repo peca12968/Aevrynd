@@ -10,14 +10,7 @@ target_compile_definitions(Riftwarden PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_ME
 target_link_libraries(Riftwarden PRIVATE AevryndEngine winhttp)
 set_target_properties(Riftwarden PROPERTIES OUTPUT_NAME "Riftwarden-DX12")
 set_target_properties(Riftwarden PROPERTIES VS_DPI_AWARE "PerMonitor")
-if(AEVRYND_STREAMLINE_AVAILABLE)
-  foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
-    add_custom_command(TARGET Riftwarden POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${STREAMLINE_ROOT}/bin/x64/${SL_DLL}"
-        "$<TARGET_FILE_DIR:Riftwarden>/${SL_DLL}")
-  endforeach()
-endif()
+aevrynd_package_streamline_runtime(Riftwarden)
 
 add_executable(RiftwardenQwenTest src/QwenSmoke.cpp src/LocalQwen.cpp)
 target_include_directories(RiftwardenQwenTest PRIVATE include)

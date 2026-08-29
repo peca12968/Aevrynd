@@ -25,14 +25,7 @@ add_custom_command(TARGET CharacterLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_SOURCE_DIR}/games/character_lab/assets/material-packs"
     "$<TARGET_FILE_DIR:CharacterLab>/assets/material-packs")
-if(AEVRYND_STREAMLINE_AVAILABLE)
-  foreach(SL_DLL sl.interposer.dll sl.common.dll sl.dlss.dll nvngx_dlss.dll)
-    add_custom_command(TARGET CharacterLab POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${STREAMLINE_ROOT}/bin/x64/${SL_DLL}"
-        "$<TARGET_FILE_DIR:CharacterLab>/${SL_DLL}")
-  endforeach()
-endif()
+aevrynd_package_streamline_runtime(CharacterLab)
 
 add_executable(CharacterLabAutomationTest tests/CharacterLabAutomationSmoke.cpp)
 target_include_directories(CharacterLabAutomationTest PRIVATE include)
