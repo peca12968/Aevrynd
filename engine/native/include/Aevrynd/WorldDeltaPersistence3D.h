@@ -90,17 +90,24 @@ struct WorldDeltaSaveResult3D {
 struct WorldDeltaStoreSettings3D {
   std::filesystem::path root{};
   std::size_t maximumQueuedRequests{256}, maximumQueuedBytes{16 * 1024 * 1024},
-      maximumSnapshotBytes{8 * 1024 * 1024};
+      maximumSnapshotBytes{8 * 1024 * 1024},
+      maximumCompletedResults{256},
+      maximumCompletedBytes{64 * 1024 * 1024},
+      minimumConcurrentLoadCompletions{4};
   bool enabled{true};
 };
 struct WorldDeltaStoreStats3D {
   std::size_t queuedRequests{}, queuedBytes{}, peakQueuedBytes{},
-      retainedBytes{};
+      activeRequests{}, activeBytes{}, completedResults{}, completedBytes{},
+      peakCompletedBytes{}, reservedCompletedResults{},
+      reservedCompletedBytes{}, retainedBytes{};
   std::uint64_t loads{}, saves{}, durableSaves{}, rejected{}, corruptions{},
       tornTails{}, truncatedBytes{}, trimmedBytes{};
 };
 
 std::uint32_t WorldDeltaCrc32C3D(std::span<const std::byte> bytes) noexcept;
+bool WorldDeltaSha2563D(std::span<const std::byte> bytes,
+                       std::array<std::byte, 32> &digest) noexcept;
 StableObjectId3D DeriveStableObjectId3D(StableObjectId3D world,
                                         GlobalChunkCoordinate3D chunk,
                                         std::uint64_t revision,
@@ -143,7 +150,7 @@ private:
     WorldDeltaChunkKey3D key{};
     WorldChunkBaseRevision3D base{};
     WorldChunkDeltaSnapshot3D snapshot{};
-    std::size_t bytes{};
+    std::size_t bytes{}, completionBytes{};
   };
   void Worker(std::stop_token stop);
   WorldDeltaStoreSettings3D settings_{};
@@ -152,8 +159,10 @@ private:
   std::deque<Request> queue_{};
   std::deque<WorldDeltaLoadResult3D> loads_{};
   std::deque<WorldDeltaSaveResult3D> saves_{};
+  std::deque<std::size_t> loadCompletionBytes_{}, saveCompletionBytes_{};
   std::jthread worker_{};
-  std::size_t active_{};
+  std::size_t active_{}, activeBytes_{}, reservedCompletedResults_{},
+      reservedCompletedBytes_{};
   WorldDeltaStoreStats3D stats_{};
   std::uint64_t resetEpoch_{1};
 };

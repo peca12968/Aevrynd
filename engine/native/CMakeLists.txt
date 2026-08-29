@@ -122,7 +122,7 @@ if(AEVRYND_STREAMLINE_AVAILABLE)
 endif()
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}" AEVRYND_STREAMLINE_AVAILABLE=$<BOOL:${AEVRYND_STREAMLINE_AVAILABLE}>)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0)
+target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0 bcrypt)
 
 set(AEVRYND_WINDOWS_GUI_TEST_WRAPPER "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1")
 function(aevrynd_add_windows_gui_test test_name target_name)
@@ -420,6 +420,11 @@ add_executable(AevryndWorldDeltaPersistence3DTest tests/WorldDeltaPersistence3DS
 target_compile_options(AevryndWorldDeltaPersistence3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldDeltaPersistence3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldDeltaPersistence3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldDeltaPersistence3DTest>'")
+
+add_executable(AevryndWorldDeltaRecoveryBudget3DTest tests/WorldDeltaRecoveryBudget3DSmoke.cpp)
+target_compile_options(AevryndWorldDeltaRecoveryBudget3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldDeltaRecoveryBudget3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldDeltaRecoveryBudget3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldDeltaRecoveryBudget3DTest>'")
 
 add_executable(AevryndPhysicsWorld3DTest tests/PhysicsWorld3DSmoke.cpp)
 target_compile_options(AevryndPhysicsWorld3DTest PRIVATE /W4 /permissive- /utf-8)

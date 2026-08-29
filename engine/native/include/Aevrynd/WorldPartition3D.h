@@ -133,7 +133,7 @@ struct WorldPartitionStats3D {
       retiringGpuBytes{}, lastPreparedBytes{}, lastActivatedBytes{},
       partitionOwnedWorkers{}, requestedSourceWorkers{};
   std::uint64_t deltaLoads{}, deltaLoadFailures{}, deltaSaves{},
-      deltaSaveFailures{}, staleDeltaCompletions{};
+      deltaSaveFailures{}, staleDeltaCompletions{}, ownerThreadViolations{};
 };
 
 struct WorldPartitionChunkStatus3D {

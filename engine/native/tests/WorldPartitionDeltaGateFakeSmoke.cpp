@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 using namespace Aevrynd;
 using namespace Aevrynd::Tests;
@@ -395,9 +396,40 @@ int main() {
     }
   }
 
+  {
+    WorldChunkDeltaStore3D store(StoreSettings(root / "owner-thread"));
+    FakeChunkSource3D source;
+    PersistentActivationTarget target;
+    WorldPartition3D partition(source, target, PartitionSettings(store));
+    if (!LoadToResident(partition, source, target, store, false))
+      return 29;
+    const auto before = partition.Chunks().front();
+    bool globalAccepted{}, deltaAccepted{};
+    std::size_t trimmed = 1;
+    std::thread foreign([&] {
+      partition.Update({64, 0, 0});
+      globalAccepted = partition.UpdateGlobal({{2, 0, 0}, {}});
+      deltaAccepted =
+          partition.SetChunkDelta({0, 0}, Snapshot({0, 0}, 99));
+      partition.Reset();
+      partition.WaitIdle();
+      trimmed = partition.TrimUnusedMemory();
+    });
+    foreign.join();
+    const auto after = partition.Chunks().front();
+    if (globalAccepted || deltaAccepted || trimmed ||
+        partition.Stats().ownerThreadViolations != 6 ||
+        partition.Stats().resident != 1 || partition.Chunks().size() != 1 ||
+        before.coordinate != after.coordinate || before.state != after.state ||
+        before.requestId != after.requestId || before.revision != after.revision) {
+      std::cerr << "Foreign-thread mutation was not rejected\n";
+      return 30;
+    }
+  }
+
   std::cout << "load_before_activate=1 clean_no_save=1 durable_before_retire=1 "
                "failed_save_closed=1 stale_epoch_request=1 reset_dirty=durable "
                "reset_failure=closed wait_idle=throws clean_reset=1 "
-               "dirty_reset_cycles=128\n";
+               "dirty_reset_cycles=128 owner_thread_guard=6\n";
   return 0;
 }

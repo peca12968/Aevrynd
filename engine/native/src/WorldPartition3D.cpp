@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <thread>
 #include <unordered_map>
 
 namespace Aevrynd {
@@ -42,6 +43,7 @@ struct WorldPartition3D::Impl {
   IWorldChunkSource3D &source;
   IWorldChunkActivationTarget3D &target;
   WorldPartitionSettings3D settings;
+  std::thread::id ownerThread{std::this_thread::get_id()};
   std::unordered_map<WorldChunkCoordinate3D, Entry, Hash> chunks;
   Vec3 lastObserver{};
   bool hasObserver{};
@@ -68,6 +70,9 @@ WorldPartition3D::WorldPartition3D(IWorldChunkSource3D &s,
   stats_.requestedSourceWorkers = v.workerCount;
 }
 WorldPartition3D::~WorldPartition3D() {
+  // 分區 teardown 會觸及 ECS/GPU target，不能藉由改寫 owner 身分繞過執行緒契約。
+  if (impl_ && impl_->ownerThread != std::this_thread::get_id())
+    return;
   Reset();
   try {
     WaitIdle();
@@ -78,13 +83,23 @@ WorldPartition3D::~WorldPartition3D() {
 void WorldPartition3D::Update(Vec3 position) {
   if (!impl_)
     return;
+  if (impl_->ownerThread != std::this_thread::get_id()) {
+    ++stats_.ownerThreadViolations;
+    return;
+  }
   const auto coordinate = WorldStreamer3D::CoordinateAt(
       position, impl_->settings.spatial.chunkSize);
   UpdateCoordinate(coordinate);
 }
 bool WorldPartition3D::UpdateGlobal(GlobalPosition3D position,
                                     float globalChunkSize) {
-  if (!impl_ || !std::isfinite(globalChunkSize) || globalChunkSize <= 0 ||
+  if (!impl_)
+    return false;
+  if (impl_->ownerThread != std::this_thread::get_id()) {
+    ++stats_.ownerThreadViolations;
+    return false;
+  }
+  if (!std::isfinite(globalChunkSize) || globalChunkSize <= 0 ||
       !NormalizeGlobalPosition3D(position, globalChunkSize))
     return false;
   const double x = double(position.chunk.x) * globalChunkSize +
@@ -548,7 +563,13 @@ void WorldPartition3D::UpdateCoordinate(WorldChunkCoordinate3D observer) {
 }
 bool WorldPartition3D::SetChunkDelta(WorldChunkCoordinate3D coordinate,
                                      WorldChunkDeltaSnapshot3D snapshot) {
-  if (!impl_ || !impl_->settings.persistence || !snapshot.durableGeneration)
+  if (!impl_)
+    return false;
+  if (impl_->ownerThread != std::this_thread::get_id()) {
+    ++stats_.ownerThreadViolations;
+    return false;
+  }
+  if (!impl_->settings.persistence || !snapshot.durableGeneration)
     return false;
   auto &d = *impl_;
   const auto found = d.chunks.find(coordinate);
@@ -577,6 +598,10 @@ bool WorldPartition3D::SetChunkDelta(WorldChunkCoordinate3D coordinate,
 void WorldPartition3D::Reset() {
   if (!impl_)
     return;
+  if (impl_->ownerThread != std::this_thread::get_id()) {
+    ++stats_.ownerThreadViolations;
+    return;
+  }
   auto &d = *impl_;
   d.hasObserver = false;
   if (stats_.epoch == (std::numeric_limits<std::uint64_t>::max)())
@@ -710,6 +735,10 @@ void WorldPartition3D::Reset() {
 void WorldPartition3D::WaitIdle() {
   if (!impl_)
     return;
+  if (impl_->ownerThread != std::this_thread::get_id()) {
+    ++stats_.ownerThreadViolations;
+    return;
+  }
   auto &d = *impl_;
   if (!d.hasObserver) {
     for (std::size_t iteration = 0; iteration < 64; ++iteration) {
@@ -736,6 +765,10 @@ void WorldPartition3D::WaitIdle() {
 std::size_t WorldPartition3D::TrimUnusedMemory() {
   if (!impl_)
     return 0;
+  if (impl_->ownerThread != std::this_thread::get_id()) {
+    ++stats_.ownerThreadViolations;
+    return 0;
+  }
   const size_t persistenceBytes =
       impl_->settings.persistence
           ? impl_->settings.persistence->TrimUnusedMemory()

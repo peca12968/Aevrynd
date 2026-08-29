@@ -1,5 +1,6 @@
 #include <Aevrynd/WorldDeltaPersistence3D.h>
 #include <Windows.h>
+#include <bcrypt.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -11,8 +12,21 @@ namespace Aevrynd {
 namespace {
 constexpr std::array<std::byte, 8> Magic{
     std::byte{'A'}, std::byte{'E'}, std::byte{'W'}, std::byte{'D'},
+    std::byte{'L'}, std::byte{'T'}, std::byte{'A'}, std::byte{'2'}};
+constexpr std::array<std::byte, 8> LegacyMagic{
+    std::byte{'A'}, std::byte{'E'}, std::byte{'W'}, std::byte{'D'},
     std::byte{'L'}, std::byte{'T'}, std::byte{'A'}, std::byte{'1'}};
 constexpr std::uint32_t Version = 1;
+constexpr std::size_t FrameHeaderBytes = 8 + 8 + 4 + 32 + 32;
+constexpr std::size_t LegacyFrameHeaderBytes = 8 + 8 + 4;
+constexpr std::size_t MaximumDiagnosticBytes = 256;
+bool CheckedAdd(std::size_t left, std::size_t right,
+                std::size_t &result) noexcept {
+  if (right > (std::numeric_limits<std::size_t>::max)() - left)
+    return false;
+  result = left + right;
+  return true;
+}
 template <class T> void Put(std::vector<std::byte> &out, T value) {
   static_assert(std::is_integral_v<T>);
   using U = std::make_unsigned_t<T>;
@@ -126,35 +140,81 @@ bool ReadBytes(const std::filesystem::path &path, std::vector<std::byte> &bytes,
          bool(input.read(reinterpret_cast<char *>(bytes.data()),
                          std::streamsize(bytes.size())));
 }
-std::vector<std::byte> Frame(std::span<const std::byte> payload) {
+bool ChainedDigest(const std::array<std::byte, 32> &parent,
+                   std::span<const std::byte> payload,
+                   std::array<std::byte, 32> &digest) {
+  std::size_t total{};
+  if (!CheckedAdd(parent.size(), payload.size(), total))
+    return false;
+  try {
+    std::vector<std::byte> chained;
+    chained.reserve(total);
+    chained.insert(chained.end(), parent.begin(), parent.end());
+    chained.insert(chained.end(), payload.begin(), payload.end());
+    return WorldDeltaSha2563D(chained, digest);
+  } catch (const std::bad_alloc &) {
+    return false;
+  }
+}
+std::vector<std::byte>
+Frame(std::span<const std::byte> payload,
+      const std::array<std::byte, 32> &parent = {}) {
   std::vector<std::byte> result;
+  std::array<std::byte, 32> digest{};
+  if (!ChainedDigest(parent, payload, digest))
+    return result;
   result.insert(result.end(), Magic.begin(), Magic.end());
   Put(result, std::uint64_t(payload.size()));
   Put(result, WorldDeltaCrc32C3D(payload));
+  result.insert(result.end(), parent.begin(), parent.end());
+  result.insert(result.end(), digest.begin(), digest.end());
   result.insert(result.end(), payload.begin(), payload.end());
   return result;
 }
 bool ParseFrame(std::span<const std::byte> bytes,
                 WorldChunkDeltaSnapshot3D &snapshot, std::size_t maximum,
-                bool allowTail, std::size_t *validBytes = nullptr) {
+                bool allowTail, std::size_t *validBytes = nullptr,
+                std::array<std::byte, 32> *finalDigest = nullptr) {
   std::size_t at{};
   WorldChunkDeltaSnapshot3D latest{};
+  std::array<std::byte, 32> previousDigest{};
   bool any{};
   while (at < bytes.size()) {
     const std::size_t start = at;
-    if (bytes.size() - at < Magic.size() + 12) {
+    if (bytes.size() - at < LegacyFrameHeaderBytes) {
       if (allowTail)
         break;
       return false;
     }
-    if (!std::equal(Magic.begin(), Magic.end(),
-                    bytes.begin() + std::ptrdiff_t(at)))
+    const bool legacy = std::equal(LegacyMagic.begin(), LegacyMagic.end(),
+                                   bytes.begin() + std::ptrdiff_t(at));
+    const bool current = std::equal(Magic.begin(), Magic.end(),
+                                    bytes.begin() + std::ptrdiff_t(at));
+    if (!legacy && !current)
       return false;
+    if (current && bytes.size() - start < FrameHeaderBytes) {
+      if (allowTail)
+        break;
+      return false;
+    }
     at += Magic.size();
     std::uint64_t length{};
     std::uint32_t crc{};
     if (!Get(bytes, at, length) || !Get(bytes, at, crc) || length > maximum)
       return false;
+    std::array<std::byte, 32> parentDigest{}, storedDigest{}, actualDigest{};
+    if (current) {
+      if (parentDigest.size() > bytes.size() - at)
+        return false;
+      std::copy_n(bytes.begin() + std::ptrdiff_t(at), parentDigest.size(),
+                  parentDigest.begin());
+      at += parentDigest.size();
+      if (storedDigest.size() > bytes.size() - at)
+        return false;
+      std::copy_n(bytes.begin() + std::ptrdiff_t(at), storedDigest.size(),
+                  storedDigest.begin());
+      at += storedDigest.size();
+    }
     if (length > bytes.size() - at) {
       if (allowTail) {
         at = start;
@@ -163,14 +223,20 @@ bool ParseFrame(std::span<const std::byte> bytes,
       return false;
     }
     const auto payload = bytes.subspan(at, std::size_t(length));
-    if (WorldDeltaCrc32C3D(payload) != crc)
+    if (WorldDeltaCrc32C3D(payload) != crc ||
+        !ChainedDigest(parentDigest, payload, actualDigest) ||
+        (current && ((any && parentDigest != previousDigest) ||
+                     actualDigest != storedDigest)))
       return false;
+    if (legacy)
+      storedDigest = actualDigest;
     WorldChunkDeltaSnapshot3D decoded{};
     if (!DecodeWorldChunkDeltaSnapshot3D(payload, decoded, maximum))
       return false;
     if (any && decoded.lastSequence < latest.lastSequence)
       return false;
     latest = std::move(decoded);
+    previousDigest = storedDigest;
     any = true;
     at += std::size_t(length);
   }
@@ -178,6 +244,8 @@ bool ParseFrame(std::span<const std::byte> bytes,
     *validBytes = at;
   if (!any)
     return bytes.empty();
+  if (finalDigest)
+    *finalDigest = previousDigest;
   snapshot = std::move(latest);
   return true;
 }
@@ -191,6 +259,35 @@ std::uint32_t WorldDeltaCrc32C3D(std::span<const std::byte> bytes) noexcept {
       crc = (crc >> 1) ^ (0x82f63b78u & std::uint32_t(0 - int(crc & 1)));
   }
   return ~crc;
+}
+bool WorldDeltaSha2563D(std::span<const std::byte> bytes,
+                       std::array<std::byte, 32> &digest) noexcept {
+  BCRYPT_ALG_HANDLE algorithm{};
+  BCRYPT_HASH_HANDLE hash{};
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr,
+                                  0) < 0)
+    return false;
+  bool succeeded = BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0,
+                                    0) >= 0;
+  auto remaining = bytes;
+  while (succeeded && !remaining.empty()) {
+    const auto count = static_cast<ULONG>((std::min)(
+        remaining.size(),
+        std::size_t((std::numeric_limits<ULONG>::max)())));
+    succeeded = BCryptHashData(
+                    hash,
+                    reinterpret_cast<PUCHAR>(
+                        const_cast<std::byte *>(remaining.data())),
+                    count, 0) >= 0;
+    remaining = remaining.subspan(count);
+  }
+  succeeded = succeeded &&
+              BCryptFinishHash(hash, reinterpret_cast<PUCHAR>(digest.data()),
+                               static_cast<ULONG>(digest.size()), 0) >= 0;
+  if (hash)
+    BCryptDestroyHash(hash);
+  BCryptCloseAlgorithmProvider(algorithm, 0);
+  return succeeded;
 }
 StableObjectId3D DeriveStableObjectId3D(StableObjectId3D world,
                                         GlobalChunkCoordinate3D chunk,
@@ -313,7 +410,8 @@ bool DecodeWorldChunkDeltaSnapshot3D(std::span<const std::byte> in,
   if (WorldDeltaCrc32C3D(in.first(in.size() - 4)) != stored)
     return false;
   std::size_t at{};
-  if (!std::equal(Magic.begin(), Magic.end(), in.begin()))
+  if (!std::equal(Magic.begin(), Magic.end(), in.begin()) &&
+      !std::equal(LegacyMagic.begin(), LegacyMagic.end(), in.begin()))
     return false;
   at += Magic.size();
   std::uint32_t version{};
@@ -401,9 +499,23 @@ bool DecodeWorldChunkDeltaSnapshot3D(std::span<const std::byte> in,
 
 WorldChunkDeltaStore3D::WorldChunkDeltaStore3D(WorldDeltaStoreSettings3D s)
     : settings_(std::move(s)) {
+  std::size_t perLoadCompletion{}, requiredLoadCompletions{};
+  const bool completionBudgetValid =
+      CheckedAdd(sizeof(WorldDeltaLoadResult3D) + MaximumDiagnosticBytes,
+                 settings_.maximumSnapshotBytes, perLoadCompletion) &&
+      settings_.minimumConcurrentLoadCompletions &&
+      perLoadCompletion <=
+          (std::numeric_limits<std::size_t>::max)() /
+              settings_.minimumConcurrentLoadCompletions &&
+      (requiredLoadCompletions =
+           perLoadCompletion * settings_.minimumConcurrentLoadCompletions,
+       settings_.maximumCompletedResults >=
+               settings_.minimumConcurrentLoadCompletions &&
+           settings_.maximumCompletedBytes >= requiredLoadCompletions);
   if (settings_.enabled && !settings_.root.empty() &&
       settings_.maximumQueuedRequests && settings_.maximumQueuedBytes &&
-      settings_.maximumSnapshotBytes)
+      settings_.maximumSnapshotBytes && settings_.maximumCompletedResults &&
+      settings_.maximumCompletedBytes && completionBudgetValid)
     worker_ = std::jthread([this](std::stop_token stop) { Worker(stop); });
   else
     settings_.enabled = false;
@@ -420,13 +532,43 @@ bool WorldChunkDeltaStore3D::EnqueueLoad(std::uint64_t id, std::uint64_t epoch,
                                          WorldChunkBaseRevision3D base) {
   if (!id || !epoch || !key.chunkSizeRevision)
     return false;
+  std::size_t completionBytes{};
+  if (!CheckedAdd(sizeof(WorldDeltaLoadResult3D) + MaximumDiagnosticBytes,
+                  settings_.maximumSnapshotBytes, completionBytes))
+    return false;
+  const std::size_t requestBytes = sizeof(Request);
   std::lock_guard lock(mutex_);
-  if (!settings_.enabled || queue_.size() >= settings_.maximumQueuedRequests) {
+  std::size_t requestUsed{};
+  if (!CheckedAdd(stats_.queuedBytes, activeBytes_, requestUsed) ||
+      !settings_.enabled ||
+      queue_.size() + active_ >= settings_.maximumQueuedRequests ||
+      requestBytes > settings_.maximumQueuedBytes -
+                         (std::min)(requestUsed,
+                                    settings_.maximumQueuedBytes) ||
+      reservedCompletedResults_ >= settings_.maximumCompletedResults ||
+      completionBytes > settings_.maximumCompletedBytes -
+                            (std::min)(reservedCompletedBytes_,
+                                       settings_.maximumCompletedBytes)) {
     ++stats_.rejected;
     return false;
   }
-  queue_.push_back({Request::Kind::Load, id, epoch, key, base, {}, {}});
+  Request request{};
+  request.kind = Request::Kind::Load;
+  request.requestId = id;
+  request.epoch = epoch;
+  request.key = key;
+  request.base = base;
+  request.bytes = requestBytes;
+  request.completionBytes = completionBytes;
+  queue_.push_back(std::move(request));
+  stats_.queuedBytes += requestBytes;
+  stats_.peakQueuedBytes =
+      (std::max)(stats_.peakQueuedBytes, stats_.queuedBytes + activeBytes_);
+  ++reservedCompletedResults_;
+  reservedCompletedBytes_ += completionBytes;
   stats_.queuedRequests = queue_.size();
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
   wake_.notify_one();
   return true;
 }
@@ -442,8 +584,19 @@ bool WorldChunkDeltaStore3D::EnqueueSave(
     return false;
   }
   std::lock_guard lock(mutex_);
-  if (!settings_.enabled || queue_.size() >= settings_.maximumQueuedRequests ||
-      encoded.size() > settings_.maximumQueuedBytes - stats_.queuedBytes) {
+  std::size_t requestBytes{}, completionBytes{}, requestUsed{};
+  if (!CheckedAdd(sizeof(Request), encoded.size(), requestBytes) ||
+      !CheckedAdd(sizeof(WorldDeltaSaveResult3D), MaximumDiagnosticBytes,
+                  completionBytes) ||
+      !CheckedAdd(stats_.queuedBytes, activeBytes_, requestUsed) ||
+      !settings_.enabled ||
+      queue_.size() + active_ >= settings_.maximumQueuedRequests ||
+      requestUsed > settings_.maximumQueuedBytes ||
+      requestBytes > settings_.maximumQueuedBytes - requestUsed ||
+      reservedCompletedResults_ >= settings_.maximumCompletedResults ||
+      reservedCompletedBytes_ > settings_.maximumCompletedBytes ||
+      completionBytes >
+          settings_.maximumCompletedBytes - reservedCompletedBytes_) {
     ++stats_.rejected;
     return false;
   }
@@ -453,12 +606,17 @@ bool WorldChunkDeltaStore3D::EnqueueSave(
   request.epoch = epoch;
   request.key = snapshot.key;
   request.snapshot = snapshot;
-  request.bytes = encoded.size();
+  request.bytes = requestBytes;
+  request.completionBytes = completionBytes;
   queue_.push_back(std::move(request));
-  stats_.queuedBytes += encoded.size();
+  stats_.queuedBytes += requestBytes;
   stats_.peakQueuedBytes =
-      (std::max)(stats_.peakQueuedBytes, stats_.queuedBytes);
+      (std::max)(stats_.peakQueuedBytes, stats_.queuedBytes + activeBytes_);
+  ++reservedCompletedResults_;
+  reservedCompletedBytes_ += completionBytes;
   stats_.queuedRequests = queue_.size();
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
   wake_.notify_one();
   return true;
 }
@@ -468,6 +626,14 @@ bool WorldChunkDeltaStore3D::TryPopLoad(WorldDeltaLoadResult3D &r) {
     return false;
   r = std::move(loads_.front());
   loads_.pop_front();
+  const auto bytes = loadCompletionBytes_.front();
+  loadCompletionBytes_.pop_front();
+  reservedCompletedResults_ = reservedCompletedResults_ ? reservedCompletedResults_ - 1 : 0;
+  reservedCompletedBytes_ = reservedCompletedBytes_ >= bytes ? reservedCompletedBytes_ - bytes : 0;
+  stats_.completedResults = stats_.completedResults ? stats_.completedResults - 1 : 0;
+  stats_.completedBytes = stats_.completedBytes >= bytes ? stats_.completedBytes - bytes : 0;
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
   return true;
 }
 bool WorldChunkDeltaStore3D::TryPopSave(WorldDeltaSaveResult3D &r) {
@@ -476,6 +642,14 @@ bool WorldChunkDeltaStore3D::TryPopSave(WorldDeltaSaveResult3D &r) {
     return false;
   r = std::move(saves_.front());
   saves_.pop_front();
+  const auto bytes = saveCompletionBytes_.front();
+  saveCompletionBytes_.pop_front();
+  reservedCompletedResults_ = reservedCompletedResults_ ? reservedCompletedResults_ - 1 : 0;
+  reservedCompletedBytes_ = reservedCompletedBytes_ >= bytes ? reservedCompletedBytes_ - bytes : 0;
+  stats_.completedResults = stats_.completedResults ? stats_.completedResults - 1 : 0;
+  stats_.completedBytes = stats_.completedBytes >= bytes ? stats_.completedBytes - bytes : 0;
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
   return true;
 }
 void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
@@ -496,6 +670,9 @@ void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
                                : 0;
       stats_.queuedRequests = queue_.size();
       ++active_;
+      activeBytes_ += request.bytes;
+      stats_.activeRequests = active_;
+      stats_.activeBytes = activeBytes_;
     }
     const auto directory = ChunkDirectory(settings_, request.key),
                snapshotPath = directory / L"snapshot.aewdelta",
@@ -509,19 +686,30 @@ void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
         std::filesystem::create_directories(directory);
         if (EncodeWorldChunkDeltaSnapshot3D(request.snapshot, payload,
                                             settings_.maximumSnapshotBytes)) {
-          const auto framed = Frame(payload);
-          HANDLE journal = CreateFileW(journalPath.c_str(), FILE_APPEND_DATA,
-                                       FILE_SHARE_READ, nullptr, OPEN_ALWAYS,
-                                       FILE_ATTRIBUTE_NORMAL, nullptr);
-          if (journal != INVALID_HANDLE_VALUE) {
-            const bool appended =
-                WriteAll(journal, framed) && FlushFileBuffers(journal);
-            CloseHandle(journal);
-            result.durable = appended && AtomicWrite(snapshotPath, framed);
-            if (!result.durable)
-              result.diagnostic = "durable write failed";
-          } else
-            result.diagnostic = "journal open failed";
+          std::array<std::byte, 32> parentDigest{};
+          if (std::filesystem::exists(snapshotPath)) {
+            std::vector<std::byte> previousBytes;
+            WorldChunkDeltaSnapshot3D previous{};
+            std::size_t snapshotLimit{};
+            if (!CheckedAdd(settings_.maximumSnapshotBytes,
+                            FrameHeaderBytes, snapshotLimit) ||
+                !ReadBytes(snapshotPath, previousBytes, snapshotLimit) ||
+                !ParseFrame(previousBytes, previous,
+                            settings_.maximumSnapshotBytes, false, nullptr,
+                            &parentDigest)) {
+              result.diagnostic = "previous committed snapshot is corrupt";
+            }
+          }
+          if (result.diagnostic.empty()) {
+            const auto framed = Frame(payload, parentDigest);
+            if (!framed.empty() && AtomicWrite(snapshotPath, framed)) {
+              result.durable = true;
+              if (!AtomicWrite(journalPath, framed))
+                result.diagnostic = "snapshot committed; journal mirror failed";
+            } else {
+              result.diagnostic = "snapshot atomic commit failed";
+            }
+          }
         }
       } catch (const std::exception &error) {
         result.diagnostic = error.what();
@@ -532,55 +720,137 @@ void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
         if (result.durable)
           ++stats_.durableSaves;
         saves_.push_back(std::move(result));
+        saveCompletionBytes_.push_back(request.completionBytes);
+        ++stats_.completedResults;
+        stats_.completedBytes += request.completionBytes;
+        stats_.peakCompletedBytes =
+            (std::max)(stats_.peakCompletedBytes, stats_.completedBytes);
       }
     } else {
       WorldDeltaLoadResult3D result{request.requestId, request.epoch,
                                     request.key};
-      std::vector<std::byte> bytes;
+      bool observedCorruption{}, baseMismatch{}, keyMismatch{};
       try {
-        if (!std::filesystem::exists(snapshotPath) &&
-            !std::filesystem::exists(journalPath))
-          result.status = WorldDeltaLoadStatus3D::Clean;
-        else if (ReadBytes(journalPath, bytes,
-                           settings_.maximumSnapshotBytes * 4)) {
-          std::size_t valid{};
-          if (ParseFrame(bytes, result.snapshot, settings_.maximumSnapshotBytes,
-                         true, &valid)) {
-            if (valid < bytes.size()) {
-              std::filesystem::resize_file(journalPath, valid);
-              std::lock_guard lock(mutex_);
-              ++stats_.tornTails;
-              stats_.truncatedBytes += bytes.size() - valid;
-            }
-            if (result.snapshot.base == request.base) {
-              result.status = WorldDeltaLoadStatus3D::Loaded;
-            } else {
-              result.status = WorldDeltaLoadStatus3D::BaseMismatch;
-              result.snapshot = {};
-            }
-          } else {
-            result.status = WorldDeltaLoadStatus3D::Corrupt;
-            result.diagnostic = "journal corruption";
-            const auto quarantine =
+        enum class CandidateState { Missing, Valid, Corrupt, IoError };
+        struct Candidate {
+          CandidateState state{CandidateState::Missing};
+          WorldChunkDeltaSnapshot3D snapshot{};
+          std::array<std::byte, 32> digest{};
+        };
+        auto quarantine = [&](const std::filesystem::path &path,
+                              std::wstring_view reason) {
+          for (unsigned attempt = 0; attempt < 16; ++attempt) {
+            const auto destination =
                 directory /
-                (L"journal.corrupt." + std::to_wstring(GetTickCount64()));
-            std::error_code ignored;
-            std::filesystem::rename(journalPath, quarantine, ignored);
-            // journal 中段損毀時保留證據，並只回復已原子發布的最後 snapshot。
-            std::vector<std::byte> snapshotBytes;
-            WorldChunkDeltaSnapshot3D fallback{};
-            if (ReadBytes(snapshotPath, snapshotBytes,
-                          settings_.maximumSnapshotBytes + 20) &&
-                ParseFrame(snapshotBytes, fallback,
-                           settings_.maximumSnapshotBytes, false) &&
-                fallback.base == request.base) {
-              result.snapshot = std::move(fallback);
-              result.status = WorldDeltaLoadStatus3D::Loaded;
-              result.diagnostic = "recovered atomic snapshot after journal corruption";
-            }
+                (path.stem().wstring() + L".corrupt." + std::wstring(reason) +
+                 L"." + std::to_wstring(GetTickCount64()) + L"." +
+                 std::to_wstring(attempt));
+            std::error_code moveError;
+            std::filesystem::rename(path, destination, moveError);
+            if (!moveError)
+              return;
+            if (!std::filesystem::exists(path))
+              return;
           }
-        } else
+        };
+        auto readCandidate = [&](const std::filesystem::path &path,
+                                 bool allowTail) {
+          Candidate candidate;
+          std::error_code existsError;
+          if (!std::filesystem::exists(path, existsError)) {
+            candidate.state = existsError ? CandidateState::IoError
+                                          : CandidateState::Missing;
+            return candidate;
+          }
+          std::size_t fileLimit{};
+          if (!CheckedAdd(settings_.maximumSnapshotBytes, FrameHeaderBytes,
+                          fileLimit)) {
+            candidate.state = CandidateState::IoError;
+            return candidate;
+          }
+          std::vector<std::byte> bytes;
+          if (!ReadBytes(path, bytes, fileLimit)) {
+            candidate.state = CandidateState::Corrupt;
+            observedCorruption = true;
+            quarantine(path, L"size-or-read");
+            return candidate;
+          }
+          if (bytes.empty()) {
+            candidate.state = CandidateState::Missing;
+            return candidate;
+          }
+          std::size_t valid{};
+          if (!ParseFrame(bytes, candidate.snapshot,
+                          settings_.maximumSnapshotBytes, allowTail, &valid,
+                          &candidate.digest)) {
+            candidate.state = CandidateState::Corrupt;
+            observedCorruption = true;
+            quarantine(path, L"frame");
+            return candidate;
+          }
+          if (allowTail && valid < bytes.size()) {
+            std::filesystem::resize_file(path, valid);
+            std::lock_guard lock(mutex_);
+            ++stats_.tornTails;
+            stats_.truncatedBytes += bytes.size() - valid;
+          }
+          if (candidate.snapshot.key != request.key) {
+            candidate.state = CandidateState::Corrupt;
+            keyMismatch = observedCorruption = true;
+            quarantine(path, L"key");
+            candidate.snapshot = {};
+            return candidate;
+          }
+          if (!(candidate.snapshot.base == request.base)) {
+            candidate.state = CandidateState::Corrupt;
+            baseMismatch = observedCorruption = true;
+            quarantine(path, L"base");
+            candidate.snapshot = {};
+            return candidate;
+          }
+          candidate.state = CandidateState::Valid;
+          return candidate;
+        };
+
+        Candidate snapshot = readCandidate(snapshotPath, false);
+        Candidate journal = readCandidate(journalPath, true);
+        if (snapshot.state == CandidateState::Valid &&
+            journal.state == CandidateState::Valid &&
+            (journal.snapshot.durableGeneration >
+                 snapshot.snapshot.durableGeneration ||
+             (journal.snapshot.durableGeneration ==
+                  snapshot.snapshot.durableGeneration &&
+              journal.digest != snapshot.digest))) {
+          observedCorruption = true;
+          quarantine(snapshotPath, L"commit-disagreement");
+          quarantine(journalPath, L"commit-disagreement");
+          snapshot.state = journal.state = CandidateState::Corrupt;
+        }
+        if (keyMismatch || baseMismatch) {
+          result.status = baseMismatch ? WorldDeltaLoadStatus3D::BaseMismatch
+                                       : WorldDeltaLoadStatus3D::Corrupt;
+          result.diagnostic = baseMismatch ? "base identity mismatch"
+                                           : "chunk key mismatch";
+        } else if (snapshot.state == CandidateState::Valid) {
+          result.snapshot = std::move(snapshot.snapshot);
+          result.status = WorldDeltaLoadStatus3D::Loaded;
+          if (journal.state == CandidateState::Corrupt)
+            result.diagnostic = "recovered committed snapshot";
+        } else if (journal.state == CandidateState::Valid) {
+          result.snapshot = std::move(journal.snapshot);
+          result.status = WorldDeltaLoadStatus3D::Loaded;
+          if (snapshot.state == CandidateState::Corrupt)
+            result.diagnostic = "recovered journal mirror";
+        } else if (snapshot.state == CandidateState::IoError ||
+                   journal.state == CandidateState::IoError) {
           result.status = WorldDeltaLoadStatus3D::IoError;
+          result.diagnostic = "delta file query failed";
+        } else if (observedCorruption) {
+          result.status = WorldDeltaLoadStatus3D::Corrupt;
+          result.diagnostic = "no valid committed delta";
+        } else {
+          result.status = WorldDeltaLoadStatus3D::Clean;
+        }
       } catch (const std::exception &error) {
         result.status = WorldDeltaLoadStatus3D::IoError;
         result.diagnostic = error.what();
@@ -588,15 +858,24 @@ void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
       {
         std::lock_guard lock(mutex_);
         ++stats_.loads;
-        if (result.status == WorldDeltaLoadStatus3D::Corrupt ||
-            result.diagnostic.find("journal corruption") != std::string::npos)
+        if (observedCorruption)
           ++stats_.corruptions;
         loads_.push_back(std::move(result));
+        loadCompletionBytes_.push_back(request.completionBytes);
+        ++stats_.completedResults;
+        stats_.completedBytes += request.completionBytes;
+        stats_.peakCompletedBytes =
+            (std::max)(stats_.peakCompletedBytes, stats_.completedBytes);
       }
     }
     {
       std::lock_guard lock(mutex_);
       --active_;
+      activeBytes_ = activeBytes_ >= request.bytes
+                         ? activeBytes_ - request.bytes
+                         : 0;
+      stats_.activeRequests = active_;
+      stats_.activeBytes = activeBytes_;
       if (queue_.empty() && !active_)
         idle_.notify_all();
     }
@@ -612,35 +891,44 @@ void WorldChunkDeltaStore3D::Reset() {
   queue_.clear();
   loads_.clear();
   saves_.clear();
+  loadCompletionBytes_.clear();
+  saveCompletionBytes_.clear();
+  reservedCompletedResults_ = reservedCompletedBytes_ = 0;
   stats_.queuedBytes = stats_.queuedRequests = 0;
+  stats_.completedResults = stats_.completedBytes = 0;
+  stats_.reservedCompletedResults = stats_.reservedCompletedBytes = 0;
   if (++resetEpoch_ == 0)
     resetEpoch_ = 1;
 }
 std::size_t WorldChunkDeltaStore3D::TrimUnusedMemory() {
   WaitIdle();
   std::lock_guard lock(mutex_);
-  const auto before = queue_.size() * sizeof(Request) +
-                      loads_.size() * sizeof(WorldDeltaLoadResult3D) +
-                      saves_.size() * sizeof(WorldDeltaSaveResult3D);
   std::deque<Request>(queue_).swap(queue_);
   std::deque<WorldDeltaLoadResult3D>(loads_).swap(loads_);
   std::deque<WorldDeltaSaveResult3D>(saves_).swap(saves_);
-  stats_.trimmedBytes += before;
-  return before;
+  std::deque<std::size_t>(loadCompletionBytes_).swap(loadCompletionBytes_);
+  std::deque<std::size_t>(saveCompletionBytes_).swap(saveCompletionBytes_);
+  return 0;
 }
 WorldDeltaStoreStats3D WorldChunkDeltaStore3D::Stats() const {
   std::lock_guard lock(mutex_);
   auto result = stats_;
-  result.retainedBytes = queue_.size() * sizeof(Request) +
-                         loads_.size() * sizeof(WorldDeltaLoadResult3D) +
-                         saves_.size() * sizeof(WorldDeltaSaveResult3D);
+  result.retainedBytes = stats_.queuedBytes + activeBytes_ +
+                         stats_.completedBytes;
   return result;
 }
 bool WorldChunkDeltaStore3D::RecoverFileForTesting(
     const std::filesystem::path &path, WorldChunkDeltaSnapshot3D &snapshot,
     std::size_t maximum) {
+  constexpr std::size_t TestingFrameAllowance = 2;
+  if (maximum > ((std::numeric_limits<std::size_t>::max)() -
+                 TestingFrameAllowance * FrameHeaderBytes) /
+                    TestingFrameAllowance)
+    return false;
+  const std::size_t readLimit =
+      TestingFrameAllowance * (maximum + FrameHeaderBytes);
   std::vector<std::byte> bytes;
-  if (!ReadBytes(path, bytes, maximum * 4))
+  if (!ReadBytes(path, bytes, readLimit))
     return false;
   return ParseFrame(bytes, snapshot, maximum, true);
 }

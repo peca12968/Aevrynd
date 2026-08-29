@@ -109,7 +109,7 @@ FrameSnapshot(const WorldChunkDeltaSnapshot3D &snapshot) {
     return {};
   std::vector<std::byte> frame{
       std::byte{'A'}, std::byte{'E'}, std::byte{'W'}, std::byte{'D'},
-      std::byte{'L'}, std::byte{'T'}, std::byte{'A'}, std::byte{'1'},
+      std::byte{'L'}, std::byte{'T'}, std::byte{'A'}, std::byte{'2'},
   };
   const std::uint64_t length = payload.size();
   for (unsigned shift = 0; shift < 64; shift += 8)
@@ -117,6 +117,14 @@ FrameSnapshot(const WorldChunkDeltaSnapshot3D &snapshot) {
   const std::uint32_t crc = WorldDeltaCrc32C3D(payload);
   for (unsigned shift = 0; shift < 32; shift += 8)
     frame.push_back(std::byte((crc >> shift) & 0xff));
+  const std::array<std::byte, 32> parent{};
+  frame.insert(frame.end(), parent.begin(), parent.end());
+  std::vector<std::byte> chained(parent.begin(), parent.end());
+  chained.insert(chained.end(), payload.begin(), payload.end());
+  std::array<std::byte, 32> digest{};
+  if (!WorldDeltaSha2563D(chained, digest))
+    return {};
+  frame.insert(frame.end(), digest.begin(), digest.end());
   frame.insert(frame.end(), payload.begin(), payload.end());
   return frame;
 }
@@ -181,17 +189,6 @@ int main() {
       std::cerr << "Durable file reload failed\n";
       return 5;
     }
-    auto mismatched = Base();
-    ++mismatched.contentRevision;
-    if (!store.EnqueueLoad(21, 2, keyA, mismatched))
-      return 6;
-    store.WaitIdle();
-    if (!store.TryPopLoad(loaded) ||
-        loaded.status != WorldDeltaLoadStatus3D::BaseMismatch) {
-      std::cerr << "Base mismatch did not fail closed\n";
-      return 7;
-    }
-
     const auto journalA = FindJournal(root, keyA);
     if (journalA.empty()) {
       std::cerr << "Chunk journal was not created\n";
@@ -276,10 +273,9 @@ int main() {
     duplicateFrames.insert(duplicateFrames.end(), frame.begin(), frame.end());
     const auto duplicateJournal = root / "duplicate-frame.aewdelta";
     WriteBytes(duplicateJournal, duplicateFrames);
-    if (!WorldChunkDeltaStore3D::RecoverFileForTesting(duplicateJournal,
-                                                       recovered) ||
-        recovered.operations.size() != 4 || recovered.lastSequence != 4) {
-      std::cerr << "Duplicate frame replay was not idempotent\n";
+    if (WorldChunkDeltaStore3D::RecoverFileForTesting(duplicateJournal,
+                                                      recovered)) {
+      std::cerr << "Duplicate frame bypassed the digest chain\n";
       return 23;
     }
     auto older = Snapshot(keyA, 2);
@@ -295,6 +291,17 @@ int main() {
                                                       recovered)) {
       std::cerr << "Out-of-order frame replay was accepted\n";
       return 24;
+    }
+
+    auto mismatched = Base();
+    ++mismatched.contentRevision;
+    if (!store.EnqueueLoad(21, 2, keyA, mismatched))
+      return 6;
+    store.WaitIdle();
+    if (!store.TryPopLoad(loaded) ||
+        loaded.status != WorldDeltaLoadStatus3D::BaseMismatch) {
+      std::cerr << "Base mismatch did not fail closed\n";
+      return 7;
     }
 
     for (std::uint64_t cycle = 2; cycle <= 129; ++cycle) {
