@@ -462,7 +462,100 @@ void EngineLabGame::OnUpdate(Engine& engine,float deltaTime){
     if(networkTransport_&&captureIndex_<6){++networkTick_;replicationClientA_->SubmitInput(1800,900);replicationClientB_->SubmitInput(-1200,1500);replicationClientA_->Tick();replicationClientB_->Tick();if(networkTick_==50)replicationServer_->SetClientPosition(2,{{20,0,0},{0,0,0}});if(networkTick_==80)replicationServer_->SetClientPosition(2,{{-2,0,-1},{12,0,8}});networkTransport_->AdvanceTo(networkTick_);replicationServer_->Tick();const auto a=replicationClientA_->Predicted(),b=replicationClientB_->Predicted();if(const auto telemetry=replicationServer_->ClientTelemetry(1)){networkServerDespawns_+=telemetry->lastSnapshotDespawns;networkServerSnapshotEntities_+=telemetry->lastSnapshotEntities;}networkInterestA_.Update(a.position,networkInterestDeltaA_);networkInterestB_.Update(b.position,networkInterestDeltaB_);networkInterestEnteredA_+=networkInterestDeltaA_.entered.size();networkInterestLeftA_+=networkInterestDeltaA_.left.size();networkInterestEnteredB_+=networkInterestDeltaB_.entered.size();networkInterestLeftB_+=networkInterestDeltaB_.left.size();if(!networkMutationSubmitted_){networkMutationSubmitted_=true;for(std::uint64_t index=0;index<3;++index){WorldChunkDeltaSnapshot3D snapshot{};snapshot.key={{0x254,1},1,1,{std::int64_t(index),0,0}};snapshot.base={1,1,0x254,1,{}};snapshot.durableGeneration=1;ReplicationMutationRequest3D request{};request.sessionEpoch=0x254;request.clientRequestId=100+index;request.clientId=1;request.key=snapshot.key;if(index==0)request.operation.payload=PlaceBuildingDelta3D{{{10,1},7,3,{{0,0,0},{4,0,4}},{},{1,1,1},1}};else if(index==1)request.operation.payload=SetTerrainHeightDelta3D{4,4,2.5f};else request.operation.payload=RemoveVegetationDelta3D{{20,2}};if(mutationAuthority_->Submit(request,snapshot,networkTick_))++networkAuthorizedMutations_;}WorldChunkDeltaSnapshot3D denied{};denied.key={{0x254,1},1,1,{8,0,0}};denied.base={1,1,0x254,1,{}};denied.durableGeneration=1;ReplicationMutationRequest3D request{};request.sessionEpoch=0x254;request.clientRequestId=999;request.clientId=2;request.key=denied.key;request.operation.payload=SetTerrainHeightDelta3D{0,0,99};if(!mutationAuthority_->Submit(request,denied,networkTick_))++networkDeniedMutations_;}mutationAuthority_->Poll();ReplicationMutationReceipt3D receipt;while(mutationAuthority_->TryPopReceipt(receipt))if(receipt.durable)++networkDurableReceipts_;if(networkDurableReceipts_==3&&!networkRestartRequested_){networkRestartRequested_=true;WorldDeltaStoreSettings3D reopened{};reopened.root=networkStoreRoot_;networkRestartStore_=std::make_unique<WorldChunkDeltaStore3D>(reopened);networkRestartStore_->EnqueueLoad(700,0x254,{{0x254,1},1,1,{0,0,0}},{1,1,0x254,1,{}});} }if(networkRestartRequested_&&!networkRestartVerified_){WorldDeltaLoadResult3D loaded;if(networkRestartStore_->TryPopLoad(loaded))networkRestartVerified_=loaded.status==WorldDeltaLoadStatus3D::Loaded&&loaded.snapshot.operations.size()==1;}
     for(int index=0;index<4;++index)if(input.Pressed(VK_F1+index)){cameraMode_=index;automatic_=false;const Vec3 anchor=index==0?Vec3{0,3.f,-12}:Vec3{0,1.5f,25};cameraRig_.Reset(CameraViewMode3D(index),anchor);camera_=cameraRig_.Camera();engine.Audio().Play(audioPing_,{.12f,1.f+float(index)*.12f,false});}if(!captureDirectory_.empty()){cameraMode_=int((std::min)(captureIndex_,std::size_t{3}));automatic_=true;}else if(automatic_)cameraMode_=int(engine.Time()/6.f)%4;
     if(!automatic_){const Vec2 mouseLook=input.Down(VK_SHIFT)?input.MouseDelta()*-.035f:Vec2{};CameraControl3D control;control.movement={float(input.Down('D'))-float(input.Down('A'))+input.GamepadLeftX(),float(input.Down('E'))-float(input.Down('Q')),float(input.Down('W'))-float(input.Down('S'))+input.GamepadLeftY()};control.look={float(input.Down(VK_RIGHT))-float(input.Down(VK_LEFT))+input.GamepadRightX()-mouseLook.x,float(input.Down(VK_UP))-float(input.Down(VK_DOWN))+input.GamepadRightY()+mouseLook.y};control.zoom=float(input.Down(VK_OEM_PLUS)||input.Down(VK_ADD))-float(input.Down(VK_OEM_MINUS)||input.Down(VK_SUBTRACT))+input.MouseWheel()*8.f;camera_=cameraRig_.Update(control,deltaTime);}
-    if(!captureDirectory_.empty()&&captureIndex_==6){bool capturesReady=true;constexpr std::array<const wchar_t*,6> names={L"first-person.png",L"third-person.png",L"god-view.png",L"isometric-2-5d.png",L"network-replication-overview.png",L"network-interest-durability.png"};for(const wchar_t* name:names)capturesReady&=std::filesystem::is_regular_file(captureDirectory_/name);if(capturesReady){const auto transport=networkTransport_->Stats();const auto server=replicationServer_->Stats();const auto a=replicationServer_->ClientTelemetry(1).value_or(ReplicationServerClientTelemetry3D{});const auto b=replicationServer_->ClientTelemetry(2).value_or(ReplicationServerClientTelemetry3D{});const auto authority=mutationAuthority_->Stats();std::ofstream receipt(captureDirectory_/"network-runtime-receipt.json",std::ios::binary|std::ios::trunc);const auto pa=replicationClientA_->Predicted();const auto pb=replicationClientB_->Predicted();receipt<<std::format("{{\"phase\":\"network-v254\",\"seed\":{},\"serverTick\":{},\"clients\":{},\"snapshots\":{},\"full\":{},\"delta\":{},\"acks\":{},\"loss\":{},\"duplicate\":{},\"reorder\":{},\"client1Interest\":{},\"client2Interest\":{},\"visible1\":{},\"visible2\":{},\"interestEntered\":{},\"interestExited\":{},\"reentries\":{},\"despawns\":{},\"authorized\":{},\"durable\":{},\"denied\":{},\"committed\":{},\"aborted\":{},\"restart\":{},\"pending\":{},\"queuePackets\":{},\"packetCapacity\":{},\"queueBytes\":{},\"byteCapacity\":{},\"auth1ChunkX\":{},\"auth1OffsetX\":{:.3f},\"pred1ChunkX\":{},\"pred1OffsetX\":{:.3f},\"auth2ChunkX\":{},\"auth2OffsetX\":{:.3f},\"pred2ChunkX\":{},\"pred2OffsetX\":{:.3f}}}",0x2a54c0deull,server.ticks,replicationServer_->ClientCount(),server.snapshotsSent,server.fullSnapshots,server.deltaSnapshots,server.acks,transport.lost,transport.duplicated,transport.reordered,a.interestChunks,b.interestChunks,a.visibleEntities,b.visibleEntities,a.interestEntered+b.interestEntered,a.interestExited+b.interestExited,a.entityReentries+b.entityReentries,a.entityDespawns+b.entityDespawns,networkAuthorizedMutations_,networkDurableReceipts_,networkDeniedMutations_,mutationTarget_->commits,mutationTarget_->aborts,networkRestartVerified_?1:0,authority.pending,transport.queuedPackets,networkTransport_->PacketCapacity(),transport.queuedBytes,networkTransport_->ByteCapacity(),a.authoritativePosition.chunk.x,a.authoritativePosition.offset.x,pa.position.chunk.x,pa.position.offset.x,b.authoritativePosition.chunk.x,b.authoritativePosition.offset.x,pb.position.chunk.x,pb.position.offset.x);receipt.close();engine.Quit();return;}}
+    if (!captureDirectory_.empty() && captureIndex_ == 6) {
+      bool capturesReady = true;
+      constexpr std::array<const wchar_t *, 6> names = {
+          L"first-person.png",
+          L"third-person.png",
+          L"god-view.png",
+          L"isometric-2-5d.png",
+          L"network-replication-overview.png",
+          L"network-interest-durability.png"};
+      for (const wchar_t *name : names)
+        capturesReady &=
+            std::filesystem::is_regular_file(captureDirectory_ / name);
+      if (capturesReady) {
+        const auto gpu = engine.GetRendererStats();
+        const auto transport = networkTransport_->Stats();
+        const auto server = replicationServer_->Stats();
+        const auto a = replicationServer_->ClientTelemetry(1).value_or(
+            ReplicationServerClientTelemetry3D{});
+        const auto b = replicationServer_->ClientTelemetry(2).value_or(
+            ReplicationServerClientTelemetry3D{});
+        const auto authority = mutationAuthority_->Stats();
+        std::ofstream receipt(captureDirectory_ /
+                                  "network-runtime-receipt.json",
+                              std::ios::binary | std::ios::trunc);
+        const auto pa = replicationClientA_->Predicted();
+        const auto pb = replicationClientB_->Predicted();
+        receipt << std::format(
+            "{{\"phase\":\"network-v254\",\"seed\":{},\"serverTick\":{},"
+            "\"clients\":{},\"snapshots\":{},\"full\":{},\"delta\":{},\"acks\":"
+            "{},\"loss\":{},\"duplicate\":{},\"reorder\":{},"
+            "\"client1Interest\":{},\"client2Interest\":{},\"visible1\":{},"
+            "\"visible2\":{},\"interestEntered\":{},\"interestExited\":{},"
+            "\"reentries\":{},\"despawns\":{},\"authorized\":{},\"durable\":{},"
+            "\"denied\":{},\"committed\":{},\"aborted\":{},\"restart\":{},"
+            "\"pending\":{},\"queuePackets\":{},\"packetCapacity\":{},"
+            "\"queueBytes\":{},\"byteCapacity\":{},\"auth1ChunkX\":{},"
+            "\"auth1OffsetX\":{:.3f},\"pred1ChunkX\":{},\"pred1OffsetX\":{:.3f}"
+            ",\"auth2ChunkX\":{},\"auth2OffsetX\":{:.3f},\"pred2ChunkX\":{},"
+            "\"pred2OffsetX\":{:.3f},\"gpuValidationRequested\":{},"
+            "\"gpuValidationAvailable\":{},\"gpuValidationExecuted\":{},"
+            "\"gpuValidationPassed\":{},\"debugLayerEnabled\":{},"
+            "\"gpuValidationErrors\":{},\"gpuValidationWarnings\":{},"
+            "\"gpuValidationFirstErrorId\":{},\"gpuValidationSource\":"
+            "\"D3D12InfoQueue\",\"gpuValidationEntry\":\"EngineLabCapture\"}}",
+            0x2a54c0deull, server.ticks, replicationServer_->ClientCount(),
+            server.snapshotsSent, server.fullSnapshots, server.deltaSnapshots,
+            server.acks, transport.lost, transport.duplicated,
+            transport.reordered, a.interestChunks, b.interestChunks,
+            a.visibleEntities, b.visibleEntities,
+            a.interestEntered + b.interestEntered,
+            a.interestExited + b.interestExited,
+            a.entityReentries + b.entityReentries,
+            a.entityDespawns + b.entityDespawns, networkAuthorizedMutations_,
+            networkDurableReceipts_, networkDeniedMutations_,
+            mutationTarget_->commits, mutationTarget_->aborts,
+            networkRestartVerified_ ? 1 : 0, authority.pending,
+            transport.queuedPackets, networkTransport_->PacketCapacity(),
+            transport.queuedBytes, networkTransport_->ByteCapacity(),
+            a.authoritativePosition.chunk.x, a.authoritativePosition.offset.x,
+            pa.position.chunk.x, pa.position.offset.x,
+            b.authoritativePosition.chunk.x, b.authoritativePosition.offset.x,
+            pb.position.chunk.x, pb.position.offset.x,
+            gpu.gpuValidationRequested ? 1 : 0,
+            gpu.gpuValidationAvailable ? 1 : 0,
+            gpu.gpuValidationExecuted ? 1 : 0, gpu.gpuValidationPassed ? 1 : 0,
+            gpu.debugLayerEnabled ? 1 : 0, gpu.debugErrorCount,
+            gpu.debugWarningCount, gpu.debugFirstErrorId);
+        receipt.close();
+        if (gpu.gpuValidationRequested) {
+          std::ofstream diagnostics(captureDirectory_ /
+                                        "gpu-validation-diagnostics.txt",
+                                    std::ios::binary | std::ios::trunc);
+          diagnostics << "errors=" << gpu.debugErrorCount
+                      << " warnings=" << gpu.debugWarningCount << " ids=";
+          for (size_t index = 0; index < gpu.debugErrorIdCount; ++index)
+            diagnostics << '\n'
+                        << gpu.debugErrorIds[index] << '\t'
+                        << gpu.debugErrorDescriptions[index].substr(0, 512);
+          diagnostics << "\nwarning-ids=";
+          for (size_t index = 0; index < gpu.debugWarningIdCount; ++index)
+            diagnostics << '\n'
+                        << gpu.debugWarningIds[index] << '\t'
+                        << gpu.debugWarningOccurrences[index] << '\t'
+                        << gpu.debugWarningDescriptions[index].substr(0, 512);
+        }
+        if (gpu.gpuValidationRequested &&
+            (!gpu.gpuValidationAvailable || !gpu.gpuValidationExecuted ||
+             !gpu.gpuValidationPassed || !gpu.debugLayerEnabled ||
+             gpu.debugErrorCount))
+          ExitProcess(86);
+        engine.Quit();
+        return;
+      }
+    }
     physicsWorld_.Step(deltaTime,2);worldBuilder_.Synchronize(physicsWorld_);const int impulseCycle=int(engine.Time()/3.f);if(impulseCycle!=physicsImpulseCycle_&&!authoredDynamicObjects_.empty()){physicsImpulseCycle_=impulseCycle;const WorldObjectHandle3D handle=authoredDynamicObjects_[std::size_t(impulseCycle)%authoredDynamicObjects_.size()];if(const WorldObject3D* object=worldBuilder_.Get(handle))physicsWorld_.ApplyImpulse(object->rigidBody,{std::sin(engine.Time())*2.2f,4.8f,std::cos(engine.Time())*2.2f});}
     const int effectCycle=int(engine.Time()*2.f);if(effectCycle!=effectCycle_){effectCycle_=effectCycle;ParticleBurst2D effect{};effect.minimumSpeed=25;effect.maximumSpeed=75;effect.minimumLife=.35f;effect.maximumLife=.7f;effect.gravity=18;effect.shape=ParticleShape2D(effectCycle%3);effects_.EmitBurst({640+std::sin(engine.Time())*180,390},effectCycle%2?Cyan:Gold,24,effect,uint32_t(effectCycle+1));const Vec3 forward=Normalize(camera_.target-camera_.position),right=Normalize(Cross(camera_.up,forward)),source{std::sin(engine.Time())*18,3,25+std::cos(engine.Time())*18};engine.Audio().PlaySpatial(audioPing_,AudioSpatial3D{camera_.position,right,source,70,1.2f,.12f,1.f+float(effectCycle%4)*.08f});}effects_.Update(deltaTime);worldStreamingStats_=worldStreamer_.Update({std::sin(engine.Time()*.4f)*40,0,25+std::cos(engine.Time()*.31f)*40});const RendererStats renderer=engine.GetRendererStats();const AudioStats audio=engine.Audio().GetStats();
     engine.SetTitle(std::format(L"Aevrynd Engine Lab | {} | OUT {}x{} R{} | AUDIO {} E{} V{} P{}/{} | OBJ {}/{} | MAT {}/{} | HIT {:.1f} Q {}/{} | MESH {}/{} CULL {} | LOD N{} F{} S{} | CSM {} C{} D{} {}MB S{:.0f} | PLACE {}/{} | INST {} O{} V{} I{} | BUF {}/{}/{}KB H{} B{}MB R{} A{} P{} | TEX {}/{}/{}MB H{} B{}MB R{} S{}/{}MB A{} P{} | GPU {}/{}US | W {}/{}US DROP {}",cameraMode_+1,renderer.outputWidth,renderer.outputHeight,renderer.resizeCount,audio.deviceAvailable?L"ON":L"OFF",audio.initializationError,audio.activeVoices,audio.successfulPlays,audio.droppedPlays,probeMesh_.vertexCount,probeMesh_.TriangleCount(),renderer.lastSubmittedTexturedMeshInstances,renderer.lastSubmittedMeshInstances,sceneHit_?sceneHit_.distance:0.f,queryStats_.trianglesTested,queryStats_.boundsTested,sceneStats_.visibleMeshInstances,sceneStats_.meshInstances,sceneStats_.culledMeshInstances,sceneStats_.nearLodInstances,sceneStats_.farLodInstances,sceneStats_.lodTrianglesSaved,renderer.lastDirectionalShadowCascades,renderer.lastDirectionalShadowCasters,renderer.lastDirectionalShadowDrawCalls,renderer.directionalShadowMapBytes/1048576,renderer.directionalShadowCascadeSplit,landscapePlacementInstances_,landscapePlacementAttempts_,renderer.lastSubmittedMeshInstances,renderer.lastSubmittedOverlayInstances,renderer.lastSubmittedWorldVertices,renderer.lastSubmittedWorldIndices,renderer.residentMeshes,renderer.residentMeshReferences,(renderer.residentMeshBytes+512)/1024,renderer.meshCacheHits,renderer.meshMemoryBudgetBytes/1048576,renderer.meshBudgetRejections,renderer.meshUploadBufferAllocations,renderer.peakMeshUploadStagingResources,renderer.residentMaterialTextureSets,renderer.residentMaterialTextureReferences,(renderer.residentTextureBytes+524288)/1048576,renderer.materialTextureCacheHits,renderer.materialTextureMemoryBudgetBytes/1048576,renderer.materialTextureBudgetRejections,(renderer.peakMaterialTextureCpuStagingBytes+524288)/1048576,(renderer.peakMaterialTextureUploadStagingBytes+524288)/1048576,renderer.materialTextureUploadBufferAllocations,renderer.peakMaterialTextureUploadStagingResources,renderer.lastGpuFrameNanoseconds/1000,AverageGpuMicroseconds(renderer),renderer.resourceWaits,AverageWaitMicroseconds(renderer),renderer.totalDroppedVertices+renderer.totalDroppedWorldVertices+renderer.totalDroppedWorldIndices+renderer.totalDroppedMeshInstances));

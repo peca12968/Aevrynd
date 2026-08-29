@@ -10,6 +10,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -242,6 +243,9 @@ struct RendererStats {
     unsigned outputWidth{},outputHeight{};
     CanvasViewport canvasViewport{};
     uint64_t resizeCount{};
+    bool gpuValidationRequested{},gpuValidationAvailable{},gpuValidationExecuted{},gpuValidationPassed{},debugLayerEnabled{};
+    uint64_t debugErrorCount{},debugWarningCount{};uint32_t debugFirstErrorId{};std::array<uint32_t,16> debugErrorIds{};std::array<std::string,16> debugErrorDescriptions{};size_t debugErrorIdCount{};
+    std::array<uint32_t,32> debugWarningIds{};std::array<uint64_t,32> debugWarningOccurrences{};std::array<std::string,32> debugWarningDescriptions{};size_t debugWarningIdCount{};
     RendererQualitySettings3D requestedQuality{},effectiveQuality{};
     GpuInstanceCullingSettings3D gpuInstanceCulling{};
     HzbOcclusionSettings3D hzbOcclusion{};

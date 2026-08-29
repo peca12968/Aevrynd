@@ -335,7 +335,7 @@ struct D3D12Renderer::Impl{
  static constexpr unsigned HzbMaximumMips=16,TimestampQueriesPerFrame=8;
  unsigned width{},height{},logicalWidth{1280},logicalHeight{720},frame{};UINT rtvStep{};HANDLE fenceEvent{};UINT64 deviceEpoch{NextGpuUploadDeviceEpoch3D.fetch_add(1,std::memory_order_relaxed)},nextFenceValue{1},lastMeshUploadFenceValue{},lastTextureUploadFenceValue{};bool dlssRequested{},dlssValidationComplete{};RendererQualitySettings3D quality{};GpuInstanceCullingSettings3D gpuInstanceCulling{};HzbOcclusionSettings3D hzbOcclusion{};
  ComPtr<ID3D12PipelineState> shadowSkinnedCulledPipeline,shadowSkinnedMaskedPipeline,shadowSkinnedMaskedCulledPipeline,ambientOcclusionDepthSkinnedCulledPipeline;
- ComPtr<IDXGIFactory6> factory;ComPtr<ID3D12Device> device;ComPtr<ID3D12CommandQueue> queue;ComPtr<IDXGISwapChain3> swap;
+ ComPtr<IDXGIFactory6> factory;ComPtr<ID3D12Device> device;ComPtr<ID3D12InfoQueue> infoQueue;ComPtr<ID3D12CommandQueue> queue;ComPtr<IDXGISwapChain3> swap;
  ComPtr<ID3D12Resource> msaaHdrSceneColor,msaaDepth,velocityTarget;
  std::array<ComPtr<ID3D12Resource>,2> temporalHistoryTargets{};
  ComPtr<ID3D12PipelineState> temporalResolvePipeline,reflectionProbeFilterPipeline;
@@ -419,7 +419,7 @@ struct D3D12Renderer::Impl{
   const auto buffer=[](size_t bytes,D3D12_RESOURCE_FLAGS flags=D3D12_RESOURCE_FLAG_NONE){D3D12_RESOURCE_DESC result{};result.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;result.Width=bytes;result.Height=1;result.DepthOrArraySize=1;result.MipLevels=1;result.SampleDesc.Count=1;result.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;result.Flags=flags;return result;};
   const auto inputDesc=buffer(gpuInstanceCandidateCapacity*sizeof(GpuMeshInstance)),groupDesc=buffer(gpuInstanceGroupCapacity*sizeof(GpuCullGroup3D)),outputDesc=buffer(gpuInstanceCandidateCapacity*sizeof(GpuMeshInstance),D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS),argsDesc=buffer(gpuInstanceGroupCapacity*sizeof(GpuMultiDrawCommand3D)+sizeof(uint32_t),D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS),argsReadbackDesc=buffer(gpuInstanceGroupCapacity*sizeof(GpuMultiDrawCommand3D)+sizeof(uint32_t)),constantDesc=buffer(256);
   const UINT descriptorStep=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-  for(unsigned frameIndex=0;frameIndex<Frames;++frameIndex){Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&inputDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&gpuInstanceInput[frameIndex])),"GPU culling input failed");Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&groupDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&gpuInstanceGroups[frameIndex])),"GPU culling groups failed");Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&outputDesc,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,nullptr,IID_PPV_ARGS(&gpuInstanceCompacted[frameIndex])),"GPU culling compacted instances failed");Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&argsDesc,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,nullptr,IID_PPV_ARGS(&gpuInstanceArguments[frameIndex])),"GPU culling arguments failed");Check(device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&groupDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&gpuInstanceGroupUpload[frameIndex])),"GPU culling group upload failed");Check(gpuInstanceGroupUpload[frameIndex]->Map(0,nullptr,reinterpret_cast<void**>(&gpuInstanceGroupMapped[frameIndex])),"GPU culling group upload map failed");Check(device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&constantDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&gpuInstanceConstants[frameIndex])),"GPU culling constants failed");Check(gpuInstanceConstants[frameIndex]->Map(0,nullptr,reinterpret_cast<void**>(&gpuInstanceConstantsMapped[frameIndex])),"GPU culling constant map failed");Check(device->CreateCommittedResource(&readbackHeap,D3D12_HEAP_FLAG_NONE,&argsReadbackDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&gpuInstanceReadback[frameIndex])),"GPU culling readback failed");gpuInstanceInputState[frameIndex]=gpuInstanceGroupsState[frameIndex]=D3D12_RESOURCE_STATE_COPY_DEST;gpuInstanceCompactedState[frameIndex]=gpuInstanceArgumentsState[frameIndex]=D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+  for(unsigned frameIndex=0;frameIndex<Frames;++frameIndex){Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&inputDesc,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&gpuInstanceInput[frameIndex])),"GPU culling input failed");Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&groupDesc,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&gpuInstanceGroups[frameIndex])),"GPU culling groups failed");Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&outputDesc,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,nullptr,IID_PPV_ARGS(&gpuInstanceCompacted[frameIndex])),"GPU culling compacted instances failed");Check(device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&argsDesc,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,nullptr,IID_PPV_ARGS(&gpuInstanceArguments[frameIndex])),"GPU culling arguments failed");Check(device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&groupDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&gpuInstanceGroupUpload[frameIndex])),"GPU culling group upload failed");Check(gpuInstanceGroupUpload[frameIndex]->Map(0,nullptr,reinterpret_cast<void**>(&gpuInstanceGroupMapped[frameIndex])),"GPU culling group upload map failed");Check(device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&constantDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&gpuInstanceConstants[frameIndex])),"GPU culling constants failed");Check(gpuInstanceConstants[frameIndex]->Map(0,nullptr,reinterpret_cast<void**>(&gpuInstanceConstantsMapped[frameIndex])),"GPU culling constant map failed");Check(device->CreateCommittedResource(&readbackHeap,D3D12_HEAP_FLAG_NONE,&argsReadbackDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&gpuInstanceReadback[frameIndex])),"GPU culling readback failed");gpuInstanceInputState[frameIndex]=gpuInstanceGroupsState[frameIndex]=D3D12_RESOURCE_STATE_COMMON;gpuInstanceCompactedState[frameIndex]=gpuInstanceArgumentsState[frameIndex]=D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
    D3D12_CPU_DESCRIPTOR_HANDLE descriptor=gpuInstanceCullDescriptorHeap->GetCPUDescriptorHandleForHeapStart();descriptor.ptr+=SIZE_T(frameIndex*5)*descriptorStep;D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.ViewDimension=D3D12_SRV_DIMENSION_BUFFER;srv.Format=DXGI_FORMAT_UNKNOWN;srv.Buffer.NumElements=UINT(gpuInstanceCandidateCapacity);srv.Buffer.StructureByteStride=sizeof(GpuMeshInstance);device->CreateShaderResourceView(gpuInstanceInput[frameIndex].Get(),&srv,descriptor);descriptor.ptr+=descriptorStep;srv.Buffer.NumElements=UINT(gpuInstanceGroupCapacity);srv.Buffer.StructureByteStride=sizeof(GpuCullGroup3D);device->CreateShaderResourceView(gpuInstanceGroups[frameIndex].Get(),&srv,descriptor);descriptor.ptr+=descriptorStep;D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.ViewDimension=D3D12_UAV_DIMENSION_BUFFER;uav.Format=DXGI_FORMAT_UNKNOWN;uav.Buffer.NumElements=UINT(gpuInstanceCandidateCapacity);uav.Buffer.StructureByteStride=sizeof(GpuMeshInstance);device->CreateUnorderedAccessView(gpuInstanceCompacted[frameIndex].Get(),nullptr,&uav,descriptor);descriptor.ptr+=descriptorStep;uav.Format=DXGI_FORMAT_R32_TYPELESS;uav.Buffer.NumElements=UINT(gpuInstanceGroupCapacity*sizeof(GpuDrawIndexedArguments3D)/sizeof(uint32_t));uav.Buffer.StructureByteStride=0;uav.Buffer.Flags=D3D12_BUFFER_UAV_FLAG_RAW;device->CreateUnorderedAccessView(gpuInstanceArguments[frameIndex].Get(),nullptr,&uav,descriptor);descriptor.ptr+=descriptorStep;D3D12_SHADER_RESOURCE_VIEW_DESC nullHzb{};nullHzb.Format=DXGI_FORMAT_R32_FLOAT;nullHzb.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;nullHzb.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;nullHzb.Texture2D.MipLevels=1;device->CreateShaderResourceView(nullptr,&nullHzb,descriptor);
   }
   for(unsigned frameIndex=0;frameIndex<Frames;++frameIndex){Check(device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&argsReadbackDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&gpuInstanceCommandUpload[frameIndex])),"GPU command template upload failed");Check(gpuInstanceCommandUpload[frameIndex]->Map(0,nullptr,reinterpret_cast<void**>(&gpuInstanceCommandMapped[frameIndex])),"GPU command template map failed");D3D12_CPU_DESCRIPTOR_HANDLE argumentDescriptor=gpuInstanceCullDescriptorHeap->GetCPUDescriptorHandleForHeapStart();argumentDescriptor.ptr+=SIZE_T(frameIndex*5+3)*descriptorStep;D3D12_UNORDERED_ACCESS_VIEW_DESC argumentUav{};argumentUav.ViewDimension=D3D12_UAV_DIMENSION_BUFFER;argumentUav.Format=DXGI_FORMAT_R32_TYPELESS;argumentUav.Buffer.NumElements=UINT(argsDesc.Width/sizeof(uint32_t));argumentUav.Buffer.Flags=D3D12_BUFFER_UAV_FLAG_RAW;device->CreateUnorderedAccessView(gpuInstanceArguments[frameIndex].Get(),nullptr,&argumentUav,argumentDescriptor);}
@@ -466,12 +466,67 @@ struct D3D12Renderer::Impl{
  void CreateTemporalHistory(){if(temporalHistoryTargets[0]&&temporalHistoryTargets[1])return;ReleaseTemporalHistory();D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=width;desc.Height=height;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.Format=DXGI_FORMAT_R11G11B10_FLOAT;desc.SampleDesc.Count=1;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;D3D12_CLEAR_VALUE clear{};clear.Format=desc.Format;D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=desc.Format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;for(unsigned index=0;index<2;++index){Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,&clear,IID_PPV_ARGS(&temporalHistoryTargets[index])),"Temporal history target failed");D3D12_CPU_DESCRIPTOR_HANDLE rtv=rtvHeap->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=SIZE_T(Frames*2+5+index)*rtvStep;device->CreateRenderTargetView(temporalHistoryTargets[index].Get(),nullptr,rtv);D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(TemporalHistorySrvDescriptorBase3D+index)*textureStep;device->CreateShaderResourceView(temporalHistoryTargets[index].Get(),&srv,handle);}temporalHistoryWriteIndex=0;stats.temporalHistoryResidentBytes=size_t(width)*height*8;++stats.temporalHistoryAllocations;}
  void CreateAmbientOcclusion(){ReleaseAmbientOcclusion();const unsigned aoWidth=(width+1)/2,aoHeight=(height+1)/2;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=aoWidth;desc.Height=aoHeight;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.Format=DXGI_FORMAT_R8_UNORM;desc.SampleDesc.Count=1;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;D3D12_CLEAR_VALUE clear{};clear.Format=desc.Format;clear.Color[0]=clear.Color[1]=clear.Color[2]=clear.Color[3]=1.f;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,&clear,IID_PPV_ARGS(&ambientOcclusionRaw)),"Ambient occlusion raw target failed");Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,&clear,IID_PPV_ARGS(&ambientOcclusionBlur)),"Ambient occlusion blur target failed");D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=desc.Format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;D3D12_CPU_DESCRIPTOR_HANDLE srvHandle=textureHeap->GetCPUDescriptorHandleForHeapStart();srvHandle.ptr+=SIZE_T(AmbientOcclusionRawSrvDescriptor3D)*textureStep;device->CreateShaderResourceView(ambientOcclusionRaw.Get(),&srv,srvHandle);srvHandle.ptr+=textureStep;device->CreateShaderResourceView(ambientOcclusionBlur.Get(),&srv,srvHandle);D3D12_CPU_DESCRIPTOR_HANDLE rtv=rtvHeap->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=SIZE_T(Frames*2+1)*rtvStep;device->CreateRenderTargetView(ambientOcclusionRaw.Get(),nullptr,rtv);rtv.ptr+=rtvStep;device->CreateRenderTargetView(ambientOcclusionBlur.Get(),nullptr,rtv);stats.ambientOcclusionWidth=aoWidth;stats.ambientOcclusionHeight=aoHeight;stats.ambientOcclusionBytes=AmbientOcclusionResidentBytes3D(width,height);++stats.ambientOcclusionAllocations;}
  void ReleaseHdrSceneColor(){ReleaseWaterOpaqueSceneColor();if(!hdrSceneColor)return;ReleaseMultisampleTargets();hdrSceneColor.Reset();stats.hdrSceneColorBytes=0;++stats.hdrSceneColorReleases;}
- void CreateHdrSceneColor(){ReleaseHdrSceneColor();D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=width;desc.Height=height;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;desc.SampleDesc.Count=1;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;D3D12_CLEAR_VALUE clear{};clear.Format=desc.Format;clear.Color[3]=1.f;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,&clear,IID_PPV_ARGS(&hdrSceneColor)),"HDR scene color failed");D3D12_CPU_DESCRIPTOR_HANDLE rtv=rtvHeap->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=SIZE_T(Frames*2)*rtvStep;device->CreateRenderTargetView(hdrSceneColor.Get(),nullptr,rtv);D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=desc.Format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(HdrSceneSrvDescriptor3D)*textureStep;device->CreateShaderResourceView(hdrSceneColor.Get(),&srv,handle);stats.hdrSceneColorBytes=size_t(width)*height*8;++stats.hdrSceneColorAllocations;}
+ void CreateHdrSceneColor(){ReleaseHdrSceneColor();D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=width;desc.Height=height;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;desc.SampleDesc.Count=1;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,nullptr,IID_PPV_ARGS(&hdrSceneColor)),"HDR scene color failed");D3D12_CPU_DESCRIPTOR_HANDLE rtv=rtvHeap->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=SIZE_T(Frames*2)*rtvStep;device->CreateRenderTargetView(hdrSceneColor.Get(),nullptr,rtv);D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=desc.Format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(HdrSceneSrvDescriptor3D)*textureStep;device->CreateShaderResourceView(hdrSceneColor.Get(),&srv,handle);stats.hdrSceneColorBytes=size_t(width)*height*8;++stats.hdrSceneColorAllocations;}
  void WriteNullWaterSceneColorSrv(){if(!device||!textureHeap)return;D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(WaterSceneColorSrvDescriptor3D)*textureStep;device->CreateShaderResourceView(nullptr,&srv,handle);}
  void ReleaseWaterOpaqueSceneColor(){if(!waterOpaqueSceneColor)return;waterOpaqueSceneColor.Reset();waterSceneColorAvailable=false;stats.waterOpaqueSceneColorBytes=0;++stats.waterOpaqueSceneColorReleases;WriteNullWaterSceneColorSrv();}
  void CreateWaterOpaqueSceneColor(){if(waterOpaqueSceneColor)return;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=width;desc.Height=height;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;desc.SampleDesc.Count=1;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,nullptr,IID_PPV_ARGS(&waterOpaqueSceneColor)),"Water opaque scene color failed");D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=desc.Format;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(WaterSceneColorSrvDescriptor3D)*textureStep;device->CreateShaderResourceView(waterOpaqueSceneColor.Get(),&srv,handle);stats.waterOpaqueSceneColorBytes=size_t(width)*height*8;++stats.waterOpaqueSceneColorAllocations;}
  void ReleaseMultisampleTargets(){if(!msaaHdrSceneColor&&!msaaDepth)return;msaaHdrSceneColor.Reset();msaaDepth.Reset();stats.multisampleResidentBytes=0;stats.multisampleEnabled=false;stats.multisampleCount=1;++stats.multisampleReleases;}
- void CreateMultisampleTargets(){if(!stats.multisampleSupported||dlss.Enabled()||msaaHdrSceneColor||msaaDepth)return;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=width;desc.Height=height;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc={4,stats.multisampleQuality};desc.Layout=D3D12_TEXTURE_LAYOUT_UNKNOWN;desc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;D3D12_CLEAR_VALUE colorClear{};colorClear.Format=desc.Format;colorClear.Color[3]=1.f;ComPtr<ID3D12Resource> color,depthTarget;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_RENDER_TARGET,&colorClear,IID_PPV_ARGS(&color)),"MSAA HDR target failed");desc.Format=DXGI_FORMAT_D32_FLOAT;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;D3D12_CLEAR_VALUE depthClear{};depthClear.Format=desc.Format;depthClear.DepthStencil.Depth=1.f;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_DEPTH_WRITE,&depthClear,IID_PPV_ARGS(&depthTarget)),"MSAA depth target failed");msaaHdrSceneColor=std::move(color);msaaDepth=std::move(depthTarget);D3D12_CPU_DESCRIPTOR_HANDLE rtv=rtvHeap->GetCPUDescriptorHandleForHeapStart();rtv.ptr+=SIZE_T(Frames*2+3)*rtvStep;D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};rtvDesc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;rtvDesc.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2DMS;device->CreateRenderTargetView(msaaHdrSceneColor.Get(),&rtvDesc,rtv);D3D12_CPU_DESCRIPTOR_HANDLE dsv=dsvHeap->GetCPUDescriptorHandleForHeapStart();dsv.ptr+=SIZE_T(2)*device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};dsvDesc.Format=DXGI_FORMAT_D32_FLOAT;dsvDesc.ViewDimension=D3D12_DSV_DIMENSION_TEXTURE2DMS;device->CreateDepthStencilView(msaaDepth.Get(),&dsvDesc,dsv);stats.multisampleResidentBytes=size_t(width)*height*48;stats.multisampleEnabled=true;stats.multisampleCount=4;++stats.multisampleAllocations;}
+ void CreateMultisampleTargets() {
+   if (!stats.multisampleSupported || dlss.Enabled() || msaaHdrSceneColor ||
+       msaaDepth)
+     return;
+   D3D12_HEAP_PROPERTIES heap{};
+   heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+   D3D12_RESOURCE_DESC desc{};
+   desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+   desc.Width = width;
+   desc.Height = height;
+   desc.DepthOrArraySize = 1;
+   desc.MipLevels = 1;
+   desc.SampleDesc = {4, stats.multisampleQuality};
+   desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+   desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+   desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+   D3D12_CLEAR_VALUE colorClear{};
+   colorClear.Format = desc.Format;
+   colorClear.Color[3] = 1.f;
+   ComPtr<ID3D12Resource> color, depthTarget;
+   Check(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+                                         D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                         nullptr, IID_PPV_ARGS(&color)),
+         "MSAA HDR target failed");
+   desc.Format = DXGI_FORMAT_D32_FLOAT;
+   desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+   D3D12_CLEAR_VALUE depthClear{};
+   depthClear.Format = desc.Format;
+   depthClear.DepthStencil.Depth = 1.f;
+   Check(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+                                         D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                                         &depthClear,
+                                         IID_PPV_ARGS(&depthTarget)),
+         "MSAA depth target failed");
+   msaaHdrSceneColor = std::move(color);
+   msaaDepth = std::move(depthTarget);
+   D3D12_CPU_DESCRIPTOR_HANDLE rtv =
+       rtvHeap->GetCPUDescriptorHandleForHeapStart();
+   rtv.ptr += SIZE_T(Frames * 2 + 3) * rtvStep;
+   D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
+   rtvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+   rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
+   device->CreateRenderTargetView(msaaHdrSceneColor.Get(), &rtvDesc, rtv);
+   D3D12_CPU_DESCRIPTOR_HANDLE dsv =
+       dsvHeap->GetCPUDescriptorHandleForHeapStart();
+   dsv.ptr += SIZE_T(2) * device->GetDescriptorHandleIncrementSize(
+                              D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+   D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};
+   dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;
+   dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
+   device->CreateDepthStencilView(msaaDepth.Get(), &dsvDesc, dsv);
+   stats.multisampleResidentBytes = size_t(width) * height * 48;
+   stats.multisampleEnabled = true;
+   stats.multisampleCount = 4;
+   ++stats.multisampleAllocations;
+ }
  void UpdateDlssSceneDescriptors(){D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=1;D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(DlssOutputSrvDescriptor3D)*textureStep;device->CreateShaderResourceView(dlss.OutputResource(),&srv,handle);handle.ptr+=textureStep;device->CreateShaderResourceView(dlss.InputResource(),&srv,handle);}
  void WriteNullShadowSrv(size_t descriptor){if(!device||!textureHeap)return;D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R32_FLOAT;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2DARRAY;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2DArray.MipLevels=1;srv.Texture2DArray.ArraySize=2;D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(descriptor)*textureStep;device->CreateShaderResourceView(nullptr,&srv,handle);}
  void WriteLocalReflectionProbeDescriptors(){D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_UNKNOWN;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.ViewDimension=D3D12_SRV_DIMENSION_BUFFER;srv.Buffer.NumElements=UINT(Frames*DrawList::MaximumLocalReflectionProbes*3);srv.Buffer.StructureByteStride=sizeof(Vec4);const auto write=[&](size_t descriptor){D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(descriptor)*textureStep;device->CreateShaderResourceView(localReflectionProbeBuffer.Get(),&srv,handle);};write(EnvironmentFallbackDescriptorBase3D+3);for(size_t slot=0;slot<MaximumEnvironmentLightingSets3D;++slot)write(EnvironmentDescriptorBase3D+slot*EnvironmentDescriptorStride3D+3);}
@@ -480,7 +535,7 @@ struct D3D12Renderer::Impl{
  void CreateReflectionProbeCaptureConstants(){if(reflectionProbeCaptureConstants)return;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=Frames*6*SceneConstantStride3D;desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&reflectionProbeCaptureConstants)),"Reflection probe capture constants failed");Check(reflectionProbeCaptureConstants->Map(0,nullptr,reinterpret_cast<void**>(&reflectionProbeCaptureConstantsMapped)),"Reflection probe capture constants map failed");for(size_t index=0;index<Frames*6;++index){D3D12_CONSTANT_BUFFER_VIEW_DESC cbv{reflectionProbeCaptureConstants->GetGPUVirtualAddress()+index*SceneConstantStride3D,UINT(SceneConstantStride3D)};D3D12_CPU_DESCRIPTOR_HANDLE handle=textureHeap->GetCPUDescriptorHandleForHeapStart();handle.ptr+=SIZE_T(ReflectionProbeCaptureSceneCbvBase3D+index)*textureStep;device->CreateConstantBufferView(&cbv,handle);}}
  bool CreateReflectionProbeCaptureResources(ResidentReflectionProbeCapture3D& capture){if(capture.cube&&capture.depth)return true;const size_t bytes=size_t(capture.settings.resolution)*capture.settings.resolution*52;if(stats.reflectionProbeCaptureResidentBytes>reflectionProbeCaptureBudgetBytes||bytes>reflectionProbeCaptureBudgetBytes-stats.reflectionProbeCaptureResidentBytes){capture.stage=ReflectionProbeCaptureStage3D::BudgetRejected;++stats.reflectionProbeCaptureBudgetRejections;return false;}D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;desc.Width=capture.settings.resolution;desc.Height=capture.settings.resolution;desc.DepthOrArraySize=6;desc.MipLevels=1;desc.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;desc.SampleDesc.Count=1;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;D3D12_CLEAR_VALUE clear{};clear.Format=desc.Format;clear.Color[3]=1.f;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,&clear,IID_PPV_ARGS(&capture.cube)),"Reflection probe raw cube failed");desc.DepthOrArraySize=1;desc.Format=DXGI_FORMAT_D32_FLOAT;desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;clear={};clear.Format=desc.Format;clear.DepthStencil.Depth=1.f;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_DEPTH_WRITE,&clear,IID_PPV_ARGS(&capture.depth)),"Reflection probe depth failed");capture.bytes=bytes;stats.reflectionProbeCaptureResidentBytes+=bytes;++stats.reflectionProbeCaptureAllocations;return true;}
  void CreateReflectionProbeFilterDescriptors(ResidentReflectionProbeCapture3D& capture,uint32_t frameIndex){const size_t base=ReflectionProbeFilterDescriptorBase3D+size_t(frameIndex)*ReflectionProbeFilterDescriptorStride3D;D3D12_CPU_DESCRIPTOR_HANDLE descriptor=textureHeap->GetCPUDescriptorHandleForHeapStart();descriptor.ptr+=SIZE_T(base)*textureStep;D3D12_SHADER_RESOURCE_VIEW_DESC raw{};raw.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;raw.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;raw.ViewDimension=D3D12_SRV_DIMENSION_TEXTURECUBE;raw.TextureCube.MipLevels=1;device->CreateShaderResourceView(capture.cube.Get(),&raw,descriptor);for(uint32_t mip=0;mip<capture.specularMipCount;++mip){descriptor.ptr+=textureStep;D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};uav.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;uav.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2DARRAY;uav.Texture2DArray.MipSlice=mip;uav.Texture2DArray.ArraySize=6;device->CreateUnorderedAccessView(capture.filteredGpu->textures[0].Get(),nullptr,&uav,descriptor);}descriptor=textureHeap->GetCPUDescriptorHandleForHeapStart();descriptor.ptr+=SIZE_T(base+11)*textureStep;D3D12_UNORDERED_ACCESS_VIEW_DESC irradiance{};irradiance.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;irradiance.ViewDimension=D3D12_UAV_DIMENSION_TEXTURE2DARRAY;irradiance.Texture2DArray.ArraySize=6;device->CreateUnorderedAccessView(capture.filteredGpu->textures[1].Get(),nullptr,&irradiance,descriptor);}
- void WriteReflectionProbeEnvironmentDescriptors(ResidentReflectionProbeCapture3D& capture){const auto& gpu=*capture.filteredGpu;D3D12_CPU_DESCRIPTOR_HANDLE descriptor=textureHeap->GetCPUDescriptorHandleForHeapStart();descriptor.ptr+=SIZE_T(EnvironmentDescriptorBase3D+size_t(gpu.descriptorSlot)*EnvironmentDescriptorStride3D)*textureStep;for(size_t index=0;index<2;++index){D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURECUBE;srv.TextureCube.MipLevels=index?1:capture.specularMipCount;device->CreateShaderResourceView(gpu.textures[index].Get(),&srv,descriptor);descriptor.ptr+=textureStep;}D3D12_CPU_DESCRIPTOR_HANDLE brdfSource=textureHeap->GetCPUDescriptorHandleForHeapStart();brdfSource.ptr+=SIZE_T(EnvironmentFallbackDescriptorBase3D+2)*textureStep;device->CopyDescriptorsSimple(1,descriptor,brdfSource,D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);}
+ void WriteReflectionProbeEnvironmentDescriptors(ResidentReflectionProbeCapture3D& capture){const auto& gpu=*capture.filteredGpu;D3D12_CPU_DESCRIPTOR_HANDLE descriptor=textureHeap->GetCPUDescriptorHandleForHeapStart();descriptor.ptr+=SIZE_T(EnvironmentDescriptorBase3D+size_t(gpu.descriptorSlot)*EnvironmentDescriptorStride3D)*textureStep;for(size_t index=0;index<2;++index){D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURECUBE;srv.TextureCube.MipLevels=index?1:capture.specularMipCount;device->CreateShaderResourceView(gpu.textures[index].Get(),&srv,descriptor);descriptor.ptr+=textureStep;}D3D12_SHADER_RESOURCE_VIEW_DESC brdf{};brdf.Format=DXGI_FORMAT_R16G16_FLOAT;brdf.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;brdf.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;brdf.Texture2D.MipLevels=1;device->CreateShaderResourceView(nullptr,&brdf,descriptor);}
  bool CreateReflectionProbeFilteredResources(ResidentReflectionProbeCapture3D& capture,uint32_t handle){if(capture.filteredGpu)return true;if(freeEnvironmentSlots.empty()){capture.stage=ReflectionProbeCaptureStage3D::BudgetRejected;++stats.reflectionProbeCaptureBudgetRejections;return false;}capture.specularMipCount=std::bit_width(capture.settings.resolution);D3D12_RESOURCE_DESC specular{};specular.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;specular.Width=capture.settings.resolution;specular.Height=capture.settings.resolution;specular.DepthOrArraySize=6;specular.MipLevels=UINT16(capture.specularMipCount);specular.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;specular.SampleDesc.Count=1;specular.Flags=D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;D3D12_RESOURCE_DESC irradiance=specular;irradiance.Width=irradiance.Height=16;irradiance.MipLevels=1;const auto specularAllocation=device->GetResourceAllocationInfo(0,1,&specular),irradianceAllocation=device->GetResourceAllocationInfo(0,1,&irradiance);if(specularAllocation.SizeInBytes==UINT64_MAX||irradianceAllocation.SizeInBytes==UINT64_MAX||specularAllocation.SizeInBytes>SIZE_MAX-irradianceAllocation.SizeInBytes){capture.stage=ReflectionProbeCaptureStage3D::BudgetRejected;++stats.reflectionProbeCaptureBudgetRejections;return false;}const size_t filteredBytes=size_t(specularAllocation.SizeInBytes+irradianceAllocation.SizeInBytes);if(stats.reflectionProbeCaptureResidentBytes>reflectionProbeCaptureBudgetBytes||filteredBytes>reflectionProbeCaptureBudgetBytes-stats.reflectionProbeCaptureResidentBytes){capture.stage=ReflectionProbeCaptureStage3D::BudgetRejected;++stats.reflectionProbeCaptureBudgetRejections;return false;}const EnvironmentLightingHandle3D environment{0xffff000000000000ull|uint64_t(handle)};if(residentEnvironmentLighting.contains(environment.value)){capture.stage=ReflectionProbeCaptureStage3D::BudgetRejected;++stats.reflectionProbeCaptureBudgetRejections;return false;}auto gpu=std::make_shared<ResidentEnvironmentGpu3D>();gpu->descriptorSlot=freeEnvironmentSlots.back();gpu->bytes=filteredBytes;gpu->maximumSpecularMip=float(capture.specularMipCount-1);D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&specular,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,nullptr,IID_PPV_ARGS(&gpu->textures[0])),"Reflection probe specular filter allocation failed");Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&irradiance,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,nullptr,IID_PPV_ARGS(&gpu->textures[1])),"Reflection probe irradiance allocation failed");freeEnvironmentSlots.pop_back();capture.filteredGpu=std::move(gpu);capture.environment=environment;capture.bytes+=filteredBytes;stats.reflectionProbeCaptureResidentBytes+=filteredBytes;stats.reflectionProbeCaptureFilteredBytes+=filteredBytes;stats.residentEnvironmentLightingDescriptors+=3;residentEnvironmentLighting.emplace(environment.value,ResidentEnvironmentInstance3D{capture.filteredGpu,0.f,1,true});stats.residentEnvironmentLightingSets=residentEnvironmentLighting.size();WriteReflectionProbeEnvironmentDescriptors(capture);++stats.reflectionProbeCaptureAllocations;return true;}
  void ReleaseReflectionProbeCaptureResources(ResidentReflectionProbeCapture3D& capture){if(!capture.cube&&!capture.depth&&!capture.readback&&!capture.filteredReadback&&!capture.filteredGpu)return;if(capture.filteredGpu){if(activeEnvironmentLighting==capture.environment){activeEnvironmentLighting={};stats.environmentLightingActive=false;}residentEnvironmentLighting.erase(capture.environment.value);freeEnvironmentSlots.push_back(capture.filteredGpu->descriptorSlot);stats.residentEnvironmentLightingSets=residentEnvironmentLighting.size();stats.residentEnvironmentLightingDescriptors-=3;stats.reflectionProbeCaptureFilteredBytes-=capture.filteredGpu->bytes;capture.filteredGpu.reset();capture.environment={};capture.specularMipCount=0;}if(capture.bytes<=stats.reflectionProbeCaptureResidentBytes)stats.reflectionProbeCaptureResidentBytes-=capture.bytes;capture.cube.Reset();capture.depth.Reset();capture.readback.Reset();capture.filteredReadback.Reset();capture.filteredFootprints.clear();capture.bytes=capture.readbackBytes=capture.filteredReadbackBytes=0;capture.filteredReadbackRequested=false;capture.pendingFence=0;capture.completedReadback.reset();capture.stage=ReflectionProbeCaptureStage3D::Dirty;++stats.reflectionProbeCaptureReleases;}
  void UpdateReflectionProbeCaptureCompletions(){
@@ -512,15 +567,27 @@ void D3D12RendererTestAccess3D::SetEnvironmentResourceFailureCheckpoint(D3D12Ren
 D3D12Renderer::D3D12Renderer():impl_(std::make_unique<Impl>()){} D3D12Renderer::~D3D12Renderer(){if(impl_&&impl_->device){impl_->Flush();for(unsigned index=0;index<Impl::Frames;++index){impl_->CollectGpuTiming(index);impl_->CollectGpuInstanceCullingReadback(index);}impl_->ReleaseGpuInstanceCullingResources();for(auto&buffer:impl_->vertexBuffers)if(buffer)buffer->Unmap(0,nullptr);for(auto&buffer:impl_->worldVertexBuffers)if(buffer)buffer->Unmap(0,nullptr);for(auto&buffer:impl_->worldIndexBuffers)if(buffer)buffer->Unmap(0,nullptr);for(auto&buffer:impl_->instanceBuffers)if(buffer)buffer->Unmap(0,nullptr);for(auto&buffer:impl_->skinnedInstanceBuffers)if(buffer)buffer->Unmap(0,nullptr);for(auto&buffer:impl_->skinPaletteBuffers)if(buffer)buffer->Unmap(0,nullptr);if(impl_->localReflectionProbeMapped&&impl_->localReflectionProbeBuffer)impl_->localReflectionProbeBuffer->Unmap(0,nullptr);impl_->localReflectionProbeMapped=nullptr;if(impl_->reflectionProbeCaptureConstantsMapped&&impl_->reflectionProbeCaptureConstants)impl_->reflectionProbeCaptureConstants->Unmap(0,nullptr);impl_->reflectionProbeCaptureConstantsMapped=nullptr;if(impl_->timestampReadback)impl_->timestampReadback->Unmap(0,nullptr);if(impl_->sceneConstants)impl_->sceneConstants->Unmap(0,nullptr);if(impl_->shadowConstants)impl_->shadowConstants->Unmap(0,nullptr);impl_->dlss.Shutdown();}if(impl_&&impl_->fenceEvent)CloseHandle(impl_->fenceEvent);}
 size_t D3D12Renderer::DrawableWorldIndexCount(const std::vector<uint32_t>& indices,size_t vertexCount){const size_t limit=(std::min)(indices.size(),MaxWorldIndices);size_t count=0;while(count+2<limit&&indices[count]<vertexCount&&indices[count+1]<vertexCount&&indices[count+2]<vertexCount)count+=3;return count;}
 void D3D12Renderer::Initialize(HWND hwnd,unsigned width,unsigned height,unsigned logicalWidth,unsigned logicalHeight,bool enableDLSS){auto& d=*impl_;d.width=(std::max)(1u,width);d.height=(std::max)(1u,height);d.logicalWidth=(std::max)(1u,logicalWidth);d.logicalHeight=(std::max)(1u,logicalHeight);width=d.width;height=d.height;d.stats.outputWidth=width;d.stats.outputHeight=height;d.stats.linearWorldBlending=true;d.stats.linearHdrSceneComposition=true;d.stats.worldSrgbRenderTargetViews=Impl::Frames;d.stats.meshMemoryBudgetBytes=d.meshMemoryBudgetBytes;d.stats.materialTextureMemoryBudgetBytes=d.textureMemoryBudgetBytes;d.stats.reflectionProbeCaptureBudgetBytes=d.reflectionProbeCaptureBudgetBytes;d.stats.canvasViewport=CalculateCanvasViewport({float(d.logicalWidth),float(d.logicalHeight)},{float(width),float(height)});d.dlssRequested=enableDLSS;
- if(d.dlssRequested)d.dlss.InitializeFramework();
-#ifdef _DEBUG
- ComPtr<ID3D12Debug> debug;if(SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))){debug->EnableDebugLayer();wchar_t validation[2]{};if(GetEnvironmentVariableW(L"AEVRYND_GPU_VALIDATION",validation,2)&&validation[0]==L'1'){ComPtr<ID3D12Debug1> debug1;if(SUCCEEDED(debug.As(&debug1)))debug1->SetEnableGPUBasedValidation(TRUE);}}
-#endif
+ if(d.dlssRequested)d.dlss.InitializeFramework();wchar_t validation[2]{},forcedUnavailable[2]{};d.stats.gpuValidationRequested=GetEnvironmentVariableW(L"AEVRYND_GPU_VALIDATION",validation,2)>0&&validation[0]==L'1';const bool validationUnavailableForTesting=GetEnvironmentVariableW(L"AEVRYND_GPU_VALIDATION_FORCE_UNAVAILABLE",forcedUnavailable,2)>0&&forcedUnavailable[0]==L'1';
+ ComPtr<ID3D12Debug> debug;if(d.stats.gpuValidationRequested&&!validationUnavailableForTesting&&SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))){debug->EnableDebugLayer();d.stats.debugLayerEnabled=true;ComPtr<ID3D12Debug1> debug1;if(SUCCEEDED(debug.As(&debug1))){d.stats.gpuValidationAvailable=true;debug1->SetEnableGPUBasedValidation(TRUE);}}
  UINT flags=0;Check(d.dlss.CreateFactory(flags,IID_PPV_ARGS(&d.factory)),"DXGI factory failed");
  ComPtr<IDXGIAdapter1> adapter;for(UINT i=0;d.factory->EnumAdapterByGpuPreference(i,DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,IID_PPV_ARGS(&adapter))!=DXGI_ERROR_NOT_FOUND;i++){DXGI_ADAPTER_DESC1 desc{};adapter->GetDesc1(&desc);if(!(desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)&&SUCCEEDED(d.dlss.CreateDevice(adapter.Get(),D3D_FEATURE_LEVEL_12_0,IID_PPV_ARGS(&d.device))))break;adapter.Reset();}
  if(!d.device&&SUCCEEDED(d.factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter))))d.dlss.CreateDevice(adapter.Get(),D3D_FEATURE_LEVEL_12_0,IID_PPV_ARGS(&d.device));if(!d.device)Check(d.dlss.CreateDevice(nullptr,D3D_FEATURE_LEVEL_12_0,IID_PPV_ARGS(&d.device)),"DirectX 12 device unavailable");if(d.dlssRequested)d.dlss.InitializeDevice(d.device.Get(),adapter.Get(),width,height);
  D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msaaQuality{DXGI_FORMAT_R16G16B16A16_FLOAT,4,D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE,0},depthMsaaQuality{DXGI_FORMAT_D32_FLOAT,4,D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE,0};const bool colorMsaa=SUCCEEDED(d.device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,&msaaQuality,sizeof(msaaQuality)))&&msaaQuality.NumQualityLevels,depthMsaa=SUCCEEDED(d.device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS,&depthMsaaQuality,sizeof(depthMsaaQuality)))&&depthMsaaQuality.NumQualityLevels;d.stats.multisampleSupported=colorMsaa&&depthMsaa;if(d.stats.multisampleSupported)d.stats.multisampleQuality=(std::min)(msaaQuality.NumQualityLevels,depthMsaaQuality.NumQualityLevels)-1;
- D3D12_COMMAND_QUEUE_DESC q{};q.Type=D3D12_COMMAND_LIST_TYPE_DIRECT;Check(d.device->CreateCommandQueue(&q,IID_PPV_ARGS(&d.queue)),"Queue failed");Check(d.queue->GetTimestampFrequency(&d.timestampFrequency),"Timestamp frequency failed");
+ if (d.stats.debugLayerEnabled && SUCCEEDED(d.device.As(&d.infoQueue))) {
+   D3D12_INFO_QUEUE_FILTER filter{};
+   D3D12_MESSAGE_SEVERITY severities[]{D3D12_MESSAGE_SEVERITY_CORRUPTION,
+                                       D3D12_MESSAGE_SEVERITY_ERROR,
+                                       D3D12_MESSAGE_SEVERITY_WARNING};
+   filter.AllowList.NumSeverities = UINT(std::size(severities));
+   filter.AllowList.pSeverityList = severities;
+   d.infoQueue->PushStorageFilter(&filter);
+ }
+ D3D12_COMMAND_QUEUE_DESC q{};
+ q.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+ Check(d.device->CreateCommandQueue(&q, IID_PPV_ARGS(&d.queue)),
+       "Queue failed");
+ Check(d.queue->GetTimestampFrequency(&d.timestampFrequency),
+       "Timestamp frequency failed");
  DXGI_SWAP_CHAIN_DESC1 sc{};sc.Width=width;sc.Height=height;sc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;sc.SampleDesc.Count=1;sc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;sc.BufferCount=Impl::Frames;sc.SwapEffect=DXGI_SWAP_EFFECT_FLIP_DISCARD;
  ComPtr<IDXGISwapChain1> swap1;Check(d.factory->CreateSwapChainForHwnd(d.queue.Get(),hwnd,&sc,nullptr,nullptr,&swap1),"Swap chain failed");Check(swap1.As(&d.swap),"Swap cast failed");d.frame=d.swap->GetCurrentBackBufferIndex();
  D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.NumDescriptors=Impl::Frames*2+7+Impl::Frames*6;hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;Check(d.device->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&d.rtvHeap)),"RTV heap failed");d.rtvStep=d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);d.Targets();
@@ -570,10 +637,10 @@ MeshHandle3D D3D12Renderer::CreateMesh(std::span<const Vertex3D> vertices,std::s
  ResidentMeshBounds3D bounds{};if(!CalculateResidentMeshBounds3D(vertices,bounds)){++d.stats.invalidMeshBoundsRejections;return{};}
  const size_t vertexBytes=vertices.size_bytes(),indexBytes=indices.size_bytes(),indexOffset=(vertexBytes+alignof(uint32_t)-1)&~size_t(alignof(uint32_t)-1),meshBytes=indexOffset+indexBytes;if(vertexBytes>UINT_MAX||indexBytes>UINT_MAX)return{};d.CollectCompletedGpuWork();const MeshCacheKey3D cacheKey=CreateMeshCacheKey(vertices,indices);if(const auto cached=d.meshCache.find(cacheKey);cached!=d.meshCache.end()){const auto resident=d.residentMeshes.find(cached->second);if(resident!=d.residentMeshes.end()){++resident->second.references;++d.stats.residentMeshReferences;++d.stats.meshCacheHits;return{cached->second};}d.meshCache.erase(cached);}if(meshBytes>d.meshMemoryBudgetBytes||d.stats.residentMeshBytes+d.pendingMeshReleaseBytes>d.meshMemoryBudgetBytes-meshBytes){++d.stats.meshBudgetRejections;return{};}d.residentMeshes.reserve(d.residentMeshes.size()+1);d.meshCache.reserve(d.meshCache.size()+1);
  D3D12_HEAP_PROPERTIES defaultHeap{},uploadHeap{};defaultHeap.Type=D3D12_HEAP_TYPE_DEFAULT;uploadHeap.Type=D3D12_HEAP_TYPE_UPLOAD;auto bufferDesc=[](size_t bytes){D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=bytes;desc.Height=1;desc.DepthOrArraySize=1;desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;return desc;};
- ResidentMesh3D mesh{};mesh.cacheKey=cacheKey;mesh.bounds=bounds;ComPtr<ID3D12Resource> upload;D3D12_RESOURCE_DESC meshDesc=bufferDesc(meshBytes);Check(d.device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&mesh.buffer)),"Resident mesh buffer failed");Check(d.device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"Resident mesh upload failed");
+ ResidentMesh3D mesh{};mesh.cacheKey=cacheKey;mesh.bounds=bounds;ComPtr<ID3D12Resource> upload;D3D12_RESOURCE_DESC meshDesc=bufferDesc(meshBytes);Check(d.device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&mesh.buffer)),"Resident mesh buffer failed");Check(d.device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&meshDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"Resident mesh upload failed");
  void* mappedData{};Check(upload->Map(0,nullptr,&mappedData),"Resident mesh map failed");memcpy(mappedData,vertices.data(),vertexBytes);memcpy(static_cast<uint8_t*>(mappedData)+indexOffset,indices.data(),indexBytes);upload->Unmap(0,nullptr);const D3D12_GPU_VIRTUAL_ADDRESS meshAddress=mesh.buffer->GetGPUVirtualAddress();mesh.vertexView={meshAddress,UINT(vertexBytes),sizeof(Vertex3D)};mesh.indexView={meshAddress+indexOffset,UINT(indexBytes),DXGI_FORMAT_R32_UINT};mesh.indexCount=UINT(indices.size());mesh.bytes=meshBytes;
  // 先完成所有可能配置記憶體的容器操作，再把資源位址錄進 GPU command list，避免配置失敗留下懸空 copy 指令。
- d.PrepareMeshUpload(meshBytes);d.meshUploadBatch.staging.reserve(d.meshUploadBatch.staging.size()+1);const MeshHandle3D handle{d.nextMeshHandle};auto residentInsertion=d.residentMeshes.emplace(handle.value,std::move(mesh));if(!residentInsertion.second)return{};try{if(!d.meshCache.emplace(cacheKey,handle.value).second){d.residentMeshes.erase(residentInsertion.first);return{};}}catch(...){d.residentMeshes.erase(residentInsertion.first);throw;}++d.nextMeshHandle;ResidentMesh3D& resident=residentInsertion.first->second;auto* uploadList=d.meshUploadBatch.context.list.Get();uploadList->CopyBufferRegion(resident.buffer.Get(),0,upload.Get(),0,vertexBytes);uploadList->CopyBufferRegion(resident.buffer.Get(),indexOffset,upload.Get(),indexOffset,indexBytes);D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={resident.buffer.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER|D3D12_RESOURCE_STATE_INDEX_BUFFER};uploadList->ResourceBarrier(1,&barrier);d.meshUploadBatch.staging.push_back(std::move(upload));d.meshUploadBatch.bytes+=meshBytes;++d.meshUploadBatch.meshes;d.stats.meshUploadStagingBytes+=meshBytes;d.stats.peakMeshUploadStagingBytes=(std::max)(d.stats.peakMeshUploadStagingBytes,d.stats.meshUploadStagingBytes);++d.stats.meshUploadStagingResources;d.stats.peakMeshUploadStagingResources=(std::max)(d.stats.peakMeshUploadStagingResources,d.stats.meshUploadStagingResources);++d.stats.meshUploadBufferAllocations;++d.stats.meshUploads;
+ d.PrepareMeshUpload(meshBytes);d.meshUploadBatch.staging.reserve(d.meshUploadBatch.staging.size()+1);const MeshHandle3D handle{d.nextMeshHandle};auto residentInsertion=d.residentMeshes.emplace(handle.value,std::move(mesh));if(!residentInsertion.second)return{};try{if(!d.meshCache.emplace(cacheKey,handle.value).second){d.residentMeshes.erase(residentInsertion.first);return{};}}catch(...){d.residentMeshes.erase(residentInsertion.first);throw;}++d.nextMeshHandle;ResidentMesh3D& resident=residentInsertion.first->second;auto* uploadList=d.meshUploadBatch.context.list.Get();D3D12_RESOURCE_BARRIER toCopy{};toCopy.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;toCopy.Transition={resident.buffer.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_COPY_DEST};uploadList->ResourceBarrier(1,&toCopy);uploadList->CopyBufferRegion(resident.buffer.Get(),0,upload.Get(),0,vertexBytes);uploadList->CopyBufferRegion(resident.buffer.Get(),indexOffset,upload.Get(),indexOffset,indexBytes);D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={resident.buffer.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER|D3D12_RESOURCE_STATE_INDEX_BUFFER};uploadList->ResourceBarrier(1,&barrier);d.meshUploadBatch.staging.push_back(std::move(upload));d.meshUploadBatch.bytes+=meshBytes;++d.meshUploadBatch.meshes;d.stats.meshUploadStagingBytes+=meshBytes;d.stats.peakMeshUploadStagingBytes=(std::max)(d.stats.peakMeshUploadStagingBytes,d.stats.meshUploadStagingBytes);++d.stats.meshUploadStagingResources;d.stats.peakMeshUploadStagingResources=(std::max)(d.stats.peakMeshUploadStagingResources,d.stats.meshUploadStagingResources);++d.stats.meshUploadBufferAllocations;++d.stats.meshUploads;
  d.stats.residentMeshes=d.residentMeshes.size();++d.stats.residentMeshReferences;d.stats.residentMeshBytes+=meshBytes;++d.stats.residentMeshResources;d.stats.peakResidentMeshResources=(std::max)(d.stats.peakResidentMeshResources,d.stats.residentMeshResources);++d.stats.meshResourceAllocations;if(d.meshUploadBatch.meshes>=D3D12Renderer::MaxMeshUploadBatchMeshes||d.meshUploadBatch.bytes>=D3D12Renderer::MaxMeshUploadBatchBytes)d.SubmitMeshUploadBatch();return handle;
 }
 
@@ -615,7 +682,7 @@ SkinnedMeshHandle3D D3D12Renderer::CreateSkinnedMesh(std::span<const SkinnedVert
     mesh.skeletonCompatibilityId=skeletonCompatibilityId;
     mesh.resourceIdentity=resourceIdentity;
     mesh.bytes=bytes;
-    Check(d.device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&mesh.buffer)),"Skinned mesh buffer failed");
+    Check(d.device->CreateCommittedResource(&defaultHeap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_COMMON,nullptr,IID_PPV_ARGS(&mesh.buffer)),"Skinned mesh buffer failed");
     ComPtr<ID3D12Resource> upload;
     Check(d.device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)),"Skinned mesh upload failed");
     void* mapped{};
@@ -633,7 +700,11 @@ SkinnedMeshHandle3D D3D12Renderer::CreateSkinnedMesh(std::span<const SkinnedVert
     d.meshUploadBatch.staging.push_back(upload);
     }catch(...){d.residentSkinnedMeshes.erase(found);
     throw;
-    }d.meshUploadBatch.context.list->CopyBufferRegion(found->second.buffer.Get(),0,upload.Get(),0,bytes);
+    }D3D12_RESOURCE_BARRIER toCopy{};
+    toCopy.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    toCopy.Transition={found->second.buffer.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COMMON,D3D12_RESOURCE_STATE_COPY_DEST};
+    d.meshUploadBatch.context.list->ResourceBarrier(1,&toCopy);
+    d.meshUploadBatch.context.list->CopyBufferRegion(found->second.buffer.Get(),0,upload.Get(),0,bytes);
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Transition={found->second.buffer.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER|D3D12_RESOURCE_STATE_INDEX_BUFFER};
@@ -691,7 +762,209 @@ MaterialTextureSetHandle3D D3D12Renderer::CreateMaterialTextureSet(const Materia
  auto abandon=[&](){d.SubmitTextureUploadBatch();const bool hasResources=std::ranges::any_of(resident.textures,[](const auto& texture){return texture.Get()!=nullptr;});if(!hasResources){d.freeTextureSlots.push_back(textureSlot);return;}d.PrepareGpuRetirement();RetiredGpuResources3D retired{};retired.resources=std::move(resident.textures);retired.heap=std::move(resident.heap);retired.bytes=resident.allocationBytes;retired.textureSlot=textureSlot;retired.textures=true;d.RetireGpuResources(std::move(retired));};
  if(!d.materialDerivedDataCacheSurveyed)d.TrimMaterialDerivedDataCache();
  std::array<UINT64,9> materialUploadOffsets{},materialUploadBytes{};UINT64 materialSetUploadBytes{};for(size_t index=0;index<textureCount;++index){D3D12_RESOURCE_DESC textureDesc{};textureDesc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;textureDesc.Width=extents[index].width;textureDesc.Height=extents[index].height;textureDesc.DepthOrArraySize=1;textureDesc.MipLevels=UINT16(ImageMipCount3D(extents[index]));textureDesc.Format=formats[index];textureDesc.SampleDesc.Count=1;d.device->GetCopyableFootprints(&textureDesc,0,textureDesc.MipLevels,0,nullptr,nullptr,nullptr,&materialUploadBytes[index]);materialSetUploadBytes=(materialSetUploadBytes+UINT64(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT-1))&~UINT64(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT-1);materialUploadOffsets[index]=materialSetUploadBytes;materialSetUploadBytes+=materialUploadBytes[index];} if(materialSetUploadBytes>D3D12Renderer::MaxMaterialTextureUploadStagingBytes){abandon();return{};}
- ComPtr<ID3D12Resource> materialUpload;bool materialUploadRetained{};try{for(std::size_t index=0;index<textureCount;++index){CompressedImage3D compressed{};size_t decodedBytes{},cacheBytes{};const uint64_t derivedKey=MaterialCacheKey3D(paths[index],maximumResolution,mipModes[index],definition.alphaCutoff);const MaterialCacheLoadResult3D cacheResult=LoadMaterialCache3D(d.materialDerivedDataCacheDirectory,derivedKey,extents[index],mipModes[index],compressed,cacheBytes);if(cacheResult==MaterialCacheLoadResult3D::Hit){++d.stats.materialDerivedDataCacheHits;d.stats.materialDerivedDataCacheReadBytes+=cacheBytes;TouchMaterialCache3D(d.materialDerivedDataCacheDirectory,derivedKey);}else{if(!d.materialDerivedDataCacheDirectory.empty()){if(cacheResult==MaterialCacheLoadResult3D::Invalid)++d.stats.materialDerivedDataCacheInvalidations;else ++d.stats.materialDerivedDataCacheMisses;}DecodedImage3D image=DecodeImageRgba8(paths[index],maximumResolution);if(!image.Valid()){abandon();return{};}GenerateImageMips(image,mipModes[index],definition.alphaCutoff);decodedBytes=image.Bytes();d.stats.totalMaterialTextureDecodedBytes+=decodedBytes;d.stats.peakMaterialTextureCpuStagingBytes=(std::max)(d.stats.peakMaterialTextureCpuStagingBytes,decodedBytes);compressed=CompressImage(image,mipModes[index]);if(!compressed.Valid()){abandon();return{};}const size_t replacedCacheBytes=MaterialCacheFileBytes3D(d.materialDerivedDataCacheDirectory,derivedKey);size_t storedBytes{};if(d.materialDerivedDataCacheBudgetBytes&&StoreMaterialCache3D(d.materialDerivedDataCacheDirectory,derivedKey,mipModes[index],compressed,storedBytes)){++d.stats.materialDerivedDataCacheWrites;d.stats.materialDerivedDataCacheWrittenBytes+=storedBytes;const size_t storedFileBytes=MaterialCacheFileBytes3D(d.materialDerivedDataCacheDirectory,derivedKey);d.stats.materialDerivedDataCacheResidentBytes=d.stats.materialDerivedDataCacheResidentBytes>=replacedCacheBytes?d.stats.materialDerivedDataCacheResidentBytes-replacedCacheBytes:0;d.stats.materialDerivedDataCacheResidentBytes+=storedFileBytes;d.stats.peakMaterialDerivedDataCacheResidentBytes=(std::max)(d.stats.peakMaterialDerivedDataCacheResidentBytes,d.stats.materialDerivedDataCacheResidentBytes);if(d.stats.materialDerivedDataCacheResidentBytes>d.materialDerivedDataCacheBudgetBytes)d.TrimMaterialDerivedDataCache();}}const size_t compressedBytes=compressed.Bytes();d.stats.totalMaterialTextureCompressedBytes+=compressedBytes;d.stats.peakMaterialTextureCompressionStagingBytes=(std::max)(d.stats.peakMaterialTextureCompressionStagingBytes,decodedBytes+compressedBytes);resident.bytes+=compressedBytes;const UINT mipCount=UINT(compressed.mips.size());const D3D12_RESOURCE_DESC& textureDesc=textureDescs[index];if(mipCount!=textureDesc.MipLevels)throw std::runtime_error("Material texture mip count mismatch");Check(d.device->CreatePlacedResource(resident.heap.Get(),textureHeapOffsets[index],&textureDesc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&resident.textures[index])),"Material texture placement failed");std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(mipCount);std::vector<UINT> rowCounts(mipCount);std::vector<UINT64> rowBytes(mipCount);d.device->GetCopyableFootprints(&textureDesc,0,mipCount,materialUploadOffsets[index],footprints.data(),rowCounts.data(),rowBytes.data(),nullptr);if(!materialUpload){d.PrepareTextureUpload(size_t(materialSetUploadBytes));D3D12_RESOURCE_DESC uploadDesc{};uploadDesc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;uploadDesc.Width=materialSetUploadBytes;uploadDesc.Height=1;uploadDesc.DepthOrArraySize=1;uploadDesc.MipLevels=1;uploadDesc.SampleDesc.Count=1;uploadDesc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;Check(d.device->CreateCommittedResource(&uploadHeap,D3D12_HEAP_FLAG_NONE,&uploadDesc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&materialUpload)),"Material texture upload allocation failed");}uint8_t* mapped{};Check(materialUpload->Map(0,nullptr,reinterpret_cast<void**>(&mapped)),"Material texture map failed");for(UINT mipIndex=0;mipIndex<mipCount;++mipIndex){const CompressedImageMip3D& mip=compressed.mips[mipIndex];const auto& footprint=footprints[mipIndex];if(rowBytes[mipIndex]!=mip.rowBytes||std::size_t(rowCounts[mipIndex])*mip.rowBytes!=mip.pixels.size())throw std::runtime_error("Compressed texture footprint mismatch");for(UINT row=0;row<rowCounts[mipIndex];++row)memcpy(mapped+footprint.Offset+std::size_t(row)*footprint.Footprint.RowPitch,mip.pixels.data()+std::size_t(row)*mip.rowBytes,mip.rowBytes);}materialUpload->Unmap(0,nullptr);if(!materialUploadRetained){d.textureUploadBatch.staging.push_back(materialUpload);d.textureUploadBatch.bytes+=size_t(materialSetUploadBytes);d.stats.materialTextureUploadStagingBytes+=size_t(materialSetUploadBytes);d.stats.peakMaterialTextureUploadStagingBytes=(std::max)(d.stats.peakMaterialTextureUploadStagingBytes,d.stats.materialTextureUploadStagingBytes);++d.stats.materialTextureUploadStagingResources;d.stats.peakMaterialTextureUploadStagingResources=(std::max)(d.stats.peakMaterialTextureUploadStagingResources,d.stats.materialTextureUploadStagingResources);++d.stats.materialTextureUploadBufferAllocations;materialUploadRetained=true;}++d.textureUploadBatch.textures;++d.stats.materialTextureUploads;auto* uploadList=d.textureUploadBatch.context.list.Get();ID3D12Resource* uploadResource=materialUpload.Get();for(UINT mipIndex=0;mipIndex<mipCount;++mipIndex){D3D12_TEXTURE_COPY_LOCATION destination{};destination.pResource=resident.textures[index].Get();destination.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;destination.SubresourceIndex=mipIndex;D3D12_TEXTURE_COPY_LOCATION source{};source.pResource=uploadResource;source.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;source.PlacedFootprint=footprints[mipIndex];uploadList->CopyTextureRegion(&destination,0,0,0,&source,nullptr);}D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={resident.textures[index].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};uploadList->ResourceBarrier(1,&barrier);if(index+1==textureCount&&(d.textureUploadBatch.textures>=D3D12Renderer::MaxMaterialTextureUploadBatchTextures||d.textureUploadBatch.bytes>=D3D12Renderer::MaxMaterialTextureUploadBatchBytes))d.SubmitTextureUploadBatch();D3D12_SHADER_RESOURCE_VIEW_DESC srv{};srv.Format=formats[index];srv.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;srv.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;srv.Texture2D.MipLevels=mipCount;d.device->CreateShaderResourceView(resident.textures[index].Get(),&srv,descriptor);descriptor.ptr+=d.textureStep;}if(textureCount==3){const D3D12_CPU_DESCRIPTOR_HANDLE slotStart={d.textureHeap->GetCPUDescriptorHandleForHeapStart().ptr+SIZE_T(resident.descriptorOffset)*d.textureStep};for(size_t descriptorIndex=3;descriptorIndex<9;++descriptorIndex){const D3D12_CPU_DESCRIPTOR_HANDLE source={slotStart.ptr+SIZE_T(descriptorIndex%3)*d.textureStep},destination={slotStart.ptr+SIZE_T(descriptorIndex)*d.textureStep};d.device->CopyDescriptorsSimple(1,destination,source,D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);}}const MaterialTextureSetHandle3D handle{d.nextMaterialTextureSetHandle++};d.stats.residentTextureBytes+=resident.bytes;d.stats.residentTextureAllocationBytes+=resident.allocationBytes;d.stats.peakResidentTextureAllocationBytes=(std::max)(d.stats.peakResidentTextureAllocationBytes,d.stats.residentTextureAllocationBytes);++d.stats.residentMaterialTextureHeaps;++d.stats.materialTextureHeapAllocations;d.materialTextureCache.emplace(resident.cacheKey,handle.value);d.residentMaterialTextureSets.emplace(handle.value,std::move(resident));d.stats.residentMaterialTextureSets=d.residentMaterialTextureSets.size();++d.stats.residentMaterialTextureReferences;return handle;}catch(...){abandon();throw;}
+ ComPtr<ID3D12Resource> materialUpload;
+ bool materialUploadRetained{};
+ try {
+   for (std::size_t index = 0; index < textureCount; ++index) {
+     CompressedImage3D compressed{};
+     size_t decodedBytes{}, cacheBytes{};
+     const uint64_t derivedKey =
+         MaterialCacheKey3D(paths[index], maximumResolution, mipModes[index],
+                            definition.alphaCutoff);
+     const MaterialCacheLoadResult3D cacheResult = LoadMaterialCache3D(
+         d.materialDerivedDataCacheDirectory, derivedKey, extents[index],
+         mipModes[index], compressed, cacheBytes);
+     if (cacheResult == MaterialCacheLoadResult3D::Hit) {
+       ++d.stats.materialDerivedDataCacheHits;
+       d.stats.materialDerivedDataCacheReadBytes += cacheBytes;
+       TouchMaterialCache3D(d.materialDerivedDataCacheDirectory, derivedKey);
+     } else {
+       if (!d.materialDerivedDataCacheDirectory.empty()) {
+         if (cacheResult == MaterialCacheLoadResult3D::Invalid)
+           ++d.stats.materialDerivedDataCacheInvalidations;
+         else
+           ++d.stats.materialDerivedDataCacheMisses;
+       }
+       DecodedImage3D image = DecodeImageRgba8(paths[index], maximumResolution);
+       if (!image.Valid()) {
+         abandon();
+         return {};
+       }
+       GenerateImageMips(image, mipModes[index], definition.alphaCutoff);
+       decodedBytes = image.Bytes();
+       d.stats.totalMaterialTextureDecodedBytes += decodedBytes;
+       d.stats.peakMaterialTextureCpuStagingBytes =
+           (std::max)(d.stats.peakMaterialTextureCpuStagingBytes, decodedBytes);
+       compressed = CompressImage(image, mipModes[index]);
+       if (!compressed.Valid()) {
+         abandon();
+         return {};
+       }
+       const size_t replacedCacheBytes = MaterialCacheFileBytes3D(
+           d.materialDerivedDataCacheDirectory, derivedKey);
+       size_t storedBytes{};
+       if (d.materialDerivedDataCacheBudgetBytes &&
+           StoreMaterialCache3D(d.materialDerivedDataCacheDirectory, derivedKey,
+                                mipModes[index], compressed, storedBytes)) {
+         ++d.stats.materialDerivedDataCacheWrites;
+         d.stats.materialDerivedDataCacheWrittenBytes += storedBytes;
+         const size_t storedFileBytes = MaterialCacheFileBytes3D(
+             d.materialDerivedDataCacheDirectory, derivedKey);
+         d.stats.materialDerivedDataCacheResidentBytes =
+             d.stats.materialDerivedDataCacheResidentBytes >= replacedCacheBytes
+                 ? d.stats.materialDerivedDataCacheResidentBytes -
+                       replacedCacheBytes
+                 : 0;
+         d.stats.materialDerivedDataCacheResidentBytes += storedFileBytes;
+         d.stats.peakMaterialDerivedDataCacheResidentBytes =
+             (std::max)(d.stats.peakMaterialDerivedDataCacheResidentBytes,
+                        d.stats.materialDerivedDataCacheResidentBytes);
+         if (d.stats.materialDerivedDataCacheResidentBytes >
+             d.materialDerivedDataCacheBudgetBytes)
+           d.TrimMaterialDerivedDataCache();
+       }
+     }
+     const size_t compressedBytes = compressed.Bytes();
+     d.stats.totalMaterialTextureCompressedBytes += compressedBytes;
+     d.stats.peakMaterialTextureCompressionStagingBytes =
+         (std::max)(d.stats.peakMaterialTextureCompressionStagingBytes,
+                    decodedBytes + compressedBytes);
+     resident.bytes += compressedBytes;
+     const UINT mipCount = UINT(compressed.mips.size());
+     const D3D12_RESOURCE_DESC &textureDesc = textureDescs[index];
+     if (mipCount != textureDesc.MipLevels)
+       throw std::runtime_error("Material texture mip count mismatch");
+     Check(d.device->CreatePlacedResource(
+               resident.heap.Get(), textureHeapOffsets[index], &textureDesc,
+               D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+               IID_PPV_ARGS(&resident.textures[index])),
+           "Material texture placement failed");
+     std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> footprints(mipCount);
+     std::vector<UINT> rowCounts(mipCount);
+     std::vector<UINT64> rowBytes(mipCount);
+     d.device->GetCopyableFootprints(
+         &textureDesc, 0, mipCount, materialUploadOffsets[index],
+         footprints.data(), rowCounts.data(), rowBytes.data(), nullptr);
+     if (!materialUpload) {
+       d.PrepareTextureUpload(size_t(materialSetUploadBytes));
+       D3D12_RESOURCE_DESC uploadDesc{};
+       uploadDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+       uploadDesc.Width = materialSetUploadBytes;
+       uploadDesc.Height = 1;
+       uploadDesc.DepthOrArraySize = 1;
+       uploadDesc.MipLevels = 1;
+       uploadDesc.SampleDesc.Count = 1;
+       uploadDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+       Check(d.device->CreateCommittedResource(
+                 &uploadHeap, D3D12_HEAP_FLAG_NONE, &uploadDesc,
+                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                 IID_PPV_ARGS(&materialUpload)),
+             "Material texture upload allocation failed");
+     }
+     uint8_t *mapped{};
+     Check(materialUpload->Map(0, nullptr, reinterpret_cast<void **>(&mapped)),
+           "Material texture map failed");
+     for (UINT mipIndex = 0; mipIndex < mipCount; ++mipIndex) {
+       const CompressedImageMip3D &mip = compressed.mips[mipIndex];
+       const auto &footprint = footprints[mipIndex];
+       if (rowBytes[mipIndex] != mip.rowBytes ||
+           std::size_t(rowCounts[mipIndex]) * mip.rowBytes != mip.pixels.size())
+         throw std::runtime_error("Compressed texture footprint mismatch");
+       for (UINT row = 0; row < rowCounts[mipIndex]; ++row)
+         memcpy(mapped + footprint.Offset +
+                    std::size_t(row) * footprint.Footprint.RowPitch,
+                mip.pixels.data() + std::size_t(row) * mip.rowBytes,
+                mip.rowBytes);
+     }
+     materialUpload->Unmap(0, nullptr);
+     if (!materialUploadRetained) {
+       d.textureUploadBatch.staging.push_back(materialUpload);
+       d.textureUploadBatch.bytes += size_t(materialSetUploadBytes);
+       d.stats.materialTextureUploadStagingBytes +=
+           size_t(materialSetUploadBytes);
+       d.stats.peakMaterialTextureUploadStagingBytes =
+           (std::max)(d.stats.peakMaterialTextureUploadStagingBytes,
+                      d.stats.materialTextureUploadStagingBytes);
+       ++d.stats.materialTextureUploadStagingResources;
+       d.stats.peakMaterialTextureUploadStagingResources =
+           (std::max)(d.stats.peakMaterialTextureUploadStagingResources,
+                      d.stats.materialTextureUploadStagingResources);
+       ++d.stats.materialTextureUploadBufferAllocations;
+       materialUploadRetained = true;
+     }
+     ++d.textureUploadBatch.textures;
+     ++d.stats.materialTextureUploads;
+     auto *uploadList = d.textureUploadBatch.context.list.Get();
+     ID3D12Resource *uploadResource = materialUpload.Get();
+     for (UINT mipIndex = 0; mipIndex < mipCount; ++mipIndex) {
+       D3D12_TEXTURE_COPY_LOCATION destination{};
+       destination.pResource = resident.textures[index].Get();
+       destination.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+       destination.SubresourceIndex = mipIndex;
+       D3D12_TEXTURE_COPY_LOCATION source{};
+       source.pResource = uploadResource;
+       source.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+       source.PlacedFootprint = footprints[mipIndex];
+       uploadList->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+     }
+     D3D12_RESOURCE_BARRIER barrier{};
+     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+     barrier.Transition = {resident.textures[index].Get(),
+                           D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                           D3D12_RESOURCE_STATE_COPY_DEST,
+                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
+     uploadList->ResourceBarrier(1, &barrier);
+     if (index + 1 == textureCount &&
+         (d.textureUploadBatch.textures >=
+              D3D12Renderer::MaxMaterialTextureUploadBatchTextures ||
+          d.textureUploadBatch.bytes >=
+              D3D12Renderer::MaxMaterialTextureUploadBatchBytes))
+       d.SubmitTextureUploadBatch();
+     D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+     srv.Format = formats[index];
+     srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+     srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+     srv.Texture2D.MipLevels = mipCount;
+     d.device->CreateShaderResourceView(resident.textures[index].Get(), &srv,
+                                        descriptor);
+     descriptor.ptr += d.textureStep;
+   }
+   if (textureCount == 3) {
+     const D3D12_CPU_DESCRIPTOR_HANDLE slotStart = {
+         d.textureHeap->GetCPUDescriptorHandleForHeapStart().ptr +
+         SIZE_T(resident.descriptorOffset) * d.textureStep};
+     for (size_t descriptorIndex = 3; descriptorIndex < 9; ++descriptorIndex) {
+       const size_t sourceIndex = descriptorIndex % 3;
+       const D3D12_CPU_DESCRIPTOR_HANDLE destination = {
+           slotStart.ptr + SIZE_T(descriptorIndex) * d.textureStep};
+       D3D12_SHADER_RESOURCE_VIEW_DESC repeated{};
+       repeated.Format = formats[sourceIndex];
+       repeated.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+       repeated.Shader4ComponentMapping =
+           D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+       repeated.Texture2D.MipLevels =
+           UINT(resident.textures[sourceIndex]->GetDesc().MipLevels);
+       d.device->CreateShaderResourceView(resident.textures[sourceIndex].Get(),
+                                          &repeated, destination);
+     }
+   }
+   const MaterialTextureSetHandle3D handle{d.nextMaterialTextureSetHandle++};
+   d.stats.residentTextureBytes += resident.bytes;
+   d.stats.residentTextureAllocationBytes += resident.allocationBytes;
+   d.stats.peakResidentTextureAllocationBytes =
+       (std::max)(d.stats.peakResidentTextureAllocationBytes,
+                  d.stats.residentTextureAllocationBytes);
+   ++d.stats.residentMaterialTextureHeaps;
+   ++d.stats.materialTextureHeapAllocations;
+   d.materialTextureCache.emplace(resident.cacheKey, handle.value);
+   d.residentMaterialTextureSets.emplace(handle.value, std::move(resident));
+   d.stats.residentMaterialTextureSets = d.residentMaterialTextureSets.size();
+   ++d.stats.residentMaterialTextureReferences;
+   return handle;
+ } catch (...) {
+   abandon();
+   throw;
+ }
 }
 
 void D3D12Renderer::DestroyMaterialTextureSet(MaterialTextureSetHandle3D handle){if(!impl_||!handle)return;auto& d=*impl_;auto found=d.residentMaterialTextureSets.find(handle.value);if(found==d.residentMaterialTextureSets.end())return;if(found->second.references>1){--found->second.references;--d.stats.residentMaterialTextureReferences;return;}++d.staticSubmissionResourceRevision;d.SubmitTextureUploadBatch();d.PrepareGpuRetirement();RetiredGpuResources3D retired{};retired.resources=std::move(found->second.textures);retired.heap=std::move(found->second.heap);retired.bytes=found->second.allocationBytes;retired.textureSlot=found->second.descriptorOffset/9;retired.textures=true;d.stats.residentTextureBytes-=found->second.bytes;d.stats.residentTextureAllocationBytes-=found->second.allocationBytes;--d.stats.residentMaterialTextureHeaps;--d.stats.residentMaterialTextureReferences;const auto cached=d.materialTextureCache.find(found->second.cacheKey);if(cached!=d.materialTextureCache.end()&&cached->second==handle.value)d.materialTextureCache.erase(cached);d.residentMaterialTextureSets.erase(found);for(auto* groups:{&d.instanceGroups,&d.overlayInstanceGroups})for(auto iterator=groups->begin();iterator!=groups->end();)if(iterator->first.texture==handle.value)iterator=groups->erase(iterator);else++iterator;d.RefreshInstanceGroupStats();d.stats.residentMaterialTextureSets=d.residentMaterialTextureSets.size();d.RetireGpuResources(std::move(retired));}
@@ -1437,6 +1710,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
   if(hzbActive)d.list->EndQuery(d.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,timestampStart+4);const auto hzbCullRecordBegin=std::chrono::steady_clock::now();ID3D12DescriptorHeap* cullHeaps[]={d.gpuInstanceCullDescriptorHeap.Get()};d.list->SetDescriptorHeaps(1,cullHeaps);d.list->SetComputeRootSignature(d.gpuInstanceCullRoot.Get());D3D12_GPU_DESCRIPTOR_HANDLE descriptor=d.gpuInstanceCullDescriptorHeap->GetGPUDescriptorHandleForHeapStart();descriptor.ptr+=UINT64(frameIndex*5)*d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);const UINT descriptorStep=d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);for(UINT rootIndex=0;rootIndex<5;++rootIndex){d.list->SetComputeRootDescriptorTable(rootIndex,descriptor);descriptor.ptr+=descriptorStep;}d.list->SetComputeRootConstantBufferView(5,d.gpuInstanceConstants[frameIndex]->GetGPUVirtualAddress());d.list->SetPipelineState(d.gpuInstanceCullClearPipeline.Get());d.list->Dispatch(UINT((gpuCullGroups+63)/64),1,1);D3D12_RESOURCE_BARRIER argumentOrder{};argumentOrder.Type=D3D12_RESOURCE_BARRIER_TYPE_UAV;argumentOrder.UAV.pResource=d.gpuInstanceArguments[frameIndex].Get();d.list->ResourceBarrier(1,&argumentOrder);d.list->SetPipelineState(d.gpuInstanceCullPipeline.Get());d.list->Dispatch(UINT(gpuCullGroups),1,1);D3D12_RESOURCE_BARRIER orders[2]{};orders[0]=argumentOrder;orders[1].Type=D3D12_RESOURCE_BARRIER_TYPE_UAV;orders[1].UAV.pResource=d.gpuInstanceCompacted[frameIndex].Get();d.list->ResourceBarrier(2,orders);transition(d.gpuInstanceCompacted[frameIndex].Get(),d.gpuInstanceCompactedState[frameIndex],D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);transition(d.gpuInstanceArguments[frameIndex].Get(),d.gpuInstanceArgumentsState[frameIndex],D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);d.stats.gpuInstanceCullingDispatches+=2;d.stats.lastHzbCullRecordingCpuNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-hzbCullRecordBegin).count());if(hzbActive)d.list->EndQuery(d.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,timestampStart+5);
  }
  float c[4] = {clear.r, clear.g, clear.b, clear.a};
+ const float optimizedHdrClear[4] = {0.f,0.f,0.f,1.f};
  const bool hasShadowCaster =
      !d.activeShadowOnlyMeshGroups.empty() ||
      std::ranges::any_of(activeSkinnedMeshes,[](const ActiveSkinnedMesh3D& mesh){return mesh.shadowCascadeMask!=0;})||
@@ -1589,7 +1863,340 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
              shadowWrite.Transition.StateAfter);
    d.list->ResourceBarrier(1, &shadowWrite);
  }
- if(scheduledProbeCapture&&scheduledProbeCapture->stage==ReflectionProbeCaptureStage3D::Pending){auto& capture=*scheduledProbeCapture;const uint32_t resolution=capture.settings.resolution;D3D12_RESOURCE_BARRIER cubeWrite{};cubeWrite.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;cubeWrite.Transition={capture.cube.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_RENDER_TARGET};d.list->ResourceBarrier(1,&cubeWrite);D3D12_DEPTH_STENCIL_VIEW_DESC dsvDescription{};dsvDescription.Format=DXGI_FORMAT_D32_FLOAT;dsvDescription.ViewDimension=D3D12_DSV_DIMENSION_TEXTURE2D;D3D12_CPU_DESCRIPTOR_HANDLE captureDsv=d.dsvHeap->GetCPUDescriptorHandleForHeapStart();captureDsv.ptr+=SIZE_T(3+d.frame)*d.device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);d.device->CreateDepthStencilView(capture.depth.Get(),&dsvDescription,captureDsv);D3D12_VIEWPORT captureViewport{0,0,float(resolution),float(resolution),0,1};D3D12_RECT captureScissor{0,0,LONG(resolution),LONG(resolution)};d.list->RSSetViewports(1,&captureViewport);d.list->RSSetScissorRects(1,&captureScissor);D3D12_GPU_DESCRIPTOR_HANDLE nullShadow=d.textureHeap->GetGPUDescriptorHandleForHeapStart();nullShadow.ptr+=UINT64(ShadowNullSrvDescriptor3D)*d.textureStep;D3D12_GPU_DESCRIPTOR_HANDLE nullAo=d.textureHeap->GetGPUDescriptorHandleForHeapStart();nullAo.ptr+=UINT64(AmbientOcclusionNullSrvDescriptor3D)*d.textureStep;D3D12_GPU_DESCRIPTOR_HANDLE nullDepth=d.textureHeap->GetGPUDescriptorHandleForHeapStart();nullDepth.ptr+=UINT64(WaterDepthNullSrvDescriptor3D)*d.textureStep;D3D12_GPU_DESCRIPTOR_HANDLE captureShadowCbv=d.textureHeap->GetGPUDescriptorHandleForHeapStart();captureShadowCbv.ptr+=UINT64(ShadowCbvDescriptorBase3D+d.frame)*d.textureStep;for(size_t face=0;face<6;++face){D3D12_RENDER_TARGET_VIEW_DESC rtvDescription{};rtvDescription.Format=DXGI_FORMAT_R16G16B16A16_FLOAT;rtvDescription.ViewDimension=D3D12_RTV_DIMENSION_TEXTURE2DARRAY;rtvDescription.Texture2DArray.ArraySize=1;rtvDescription.Texture2DArray.FirstArraySlice=UINT(face);rtvDescription.Texture2DArray.MipSlice=0;D3D12_CPU_DESCRIPTOR_HANDLE captureRtv=d.rtvHeap->GetCPUDescriptorHandleForHeapStart();captureRtv.ptr+=SIZE_T(Impl::Frames*2+7+d.frame*6+face)*d.rtvStep;d.device->CreateRenderTargetView(capture.cube.Get(),&rtvDescription,captureRtv);d.list->ClearRenderTargetView(captureRtv,c,0,nullptr);d.list->ClearDepthStencilView(captureDsv,D3D12_CLEAR_FLAG_DEPTH,1.f,0,0,nullptr);d.list->OMSetRenderTargets(1,&captureRtv,FALSE,&captureDsv);d.BindWorldRootSignature();d.BindEnvironmentLightingFallback();D3D12_GPU_DESCRIPTOR_HANDLE faceCbv=d.textureHeap->GetGPUDescriptorHandleForHeapStart();faceCbv.ptr+=UINT64(ReflectionProbeCaptureSceneCbvBase3D+d.frame*6+face)*d.textureStep;d.list->SetGraphicsRootDescriptorTable(0,faceCbv);d.list->SetGraphicsRootDescriptorTable(2,nullShadow);d.list->SetGraphicsRootDescriptorTable(3,captureShadowCbv);d.list->SetGraphicsRootDescriptorTable(5,nullAo);d.list->SetGraphicsRootDescriptorTable(6,nullDepth);const float zero4[4]{},zero8[8]{};d.list->SetGraphicsRoot32BitConstants(12,8,zero8,0);d.list->SetGraphicsRoot32BitConstants(13,8,zero8,0);d.list->SetGraphicsRoot32BitConstants(14,4,zero4,0);d.list->SetGraphicsRoot32BitConstants(15,4,zero4,0);d.list->SetGraphicsRoot32BitConstants(16,4,zero4,0);d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);for(const ActiveMeshGroup3D& group:d.activeMeshGroups){D3D12_GPU_DESCRIPTOR_HANDLE material=d.textureHeap->GetGPUDescriptorHandleForHeapStart();if(group.textures){const auto found=d.residentMaterialTextureSets.find(group.textures.value);if(found!=d.residentMaterialTextureSets.end())material.ptr+=UINT64(found->second.descriptorOffset)*d.textureStep;}d.list->SetGraphicsRootDescriptorTable(1,material);d.list->SetPipelineState(dl.BackfaceCulling()&&!group.doubleSided?d.instancedCulledPipeline.Get():d.instancedPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={group.mesh->vertexView,{d.instanceBuffers[d.frame]->GetGPUVirtualAddress()+group.instanceOffset*sizeof(GpuMeshInstance),UINT(group.instanceCount*sizeof(GpuMeshInstance)),sizeof(GpuMeshInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&group.mesh->indexView);d.list->DrawIndexedInstanced(group.mesh->indexCount,UINT(group.instanceCount),0,0,0);++d.stats.reflectionProbeCaptureDraws;}if(!activeSkinnedMeshes.empty())d.list->SetGraphicsRootShaderResourceView(7,d.skinPaletteBuffers[d.frame]->GetGPUVirtualAddress());for(const ActiveSkinnedMesh3D& mesh:activeSkinnedMeshes){D3D12_GPU_DESCRIPTOR_HANDLE material=d.textureHeap->GetGPUDescriptorHandleForHeapStart();if(mesh.textures){const auto found=d.residentMaterialTextureSets.find(mesh.textures.value);if(found!=d.residentMaterialTextureSets.end())material.ptr+=UINT64(found->second.descriptorOffset)*d.textureStep;}d.list->SetGraphicsRootDescriptorTable(1,material);d.list->SetPipelineState(dl.BackfaceCulling()&&!mesh.doubleSided?d.skinnedCulledPipeline.Get():d.skinnedPipeline.Get());D3D12_VERTEX_BUFFER_VIEW views[2]={mesh.mesh->vertexView,{d.skinnedInstanceBuffers[d.frame]->GetGPUVirtualAddress()+mesh.instanceOffset*sizeof(GpuSkinnedInstance),UINT(sizeof(GpuSkinnedInstance)),sizeof(GpuSkinnedInstance)}};d.list->IASetVertexBuffers(0,2,views);d.list->IASetIndexBuffer(&mesh.mesh->indexView);d.list->DrawIndexedInstanced(mesh.indexCount,1,mesh.firstIndex,0,0);++d.stats.reflectionProbeCaptureDraws;}if(worldCount&&worldIndexCount){d.list->SetPipelineState(d.worldPipeline.Get());d.list->IASetVertexBuffers(0,1,&d.worldVbv[d.frame]);d.list->IASetIndexBuffer(&d.worldIbv[d.frame]);d.list->DrawIndexedInstanced(UINT(worldIndexCount),1,0,0,0);++d.stats.reflectionProbeCaptureDraws;}++d.stats.reflectionProbeCaptureFacesRendered;}cubeWrite.Transition.StateBefore=D3D12_RESOURCE_STATE_RENDER_TARGET;if(capture.readbackRequested){const D3D12_RESOURCE_DESC cubeDescription=capture.cube->GetDesc();UINT rows[6]{};UINT64 rowBytes[6]{},totalBytes{};d.device->GetCopyableFootprints(&cubeDescription,0,6,0,capture.footprints.data(),rows,rowBytes,&totalBytes);D3D12_HEAP_PROPERTIES readbackHeap{};readbackHeap.Type=D3D12_HEAP_TYPE_READBACK;D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=totalBytes;buffer.Height=1;buffer.DepthOrArraySize=1;buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;Check(d.device->CreateCommittedResource(&readbackHeap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&capture.readback)),"Reflection probe readback failed");capture.readbackBytes=size_t(totalBytes);cubeWrite.Transition.StateAfter=D3D12_RESOURCE_STATE_COPY_SOURCE;d.list->ResourceBarrier(1,&cubeWrite);for(size_t face=0;face<6;++face){D3D12_TEXTURE_COPY_LOCATION destination{};destination.pResource=capture.readback.Get();destination.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;destination.PlacedFootprint=capture.footprints[face];D3D12_TEXTURE_COPY_LOCATION source{};source.pResource=capture.cube.Get();source.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;source.SubresourceIndex=UINT(face);d.list->CopyTextureRegion(&destination,0,0,0,&source,nullptr);}cubeWrite.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;cubeWrite.Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;d.list->ResourceBarrier(1,&cubeWrite);capture.filteredReadbackRequested=true;capture.readbackRequested=false;}else{cubeWrite.Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;d.list->ResourceBarrier(1,&cubeWrite);}d.CreateReflectionProbeFilterDescriptors(capture,d.frame);if(capture.generation>1){D3D12_RESOURCE_BARRIER begin[2]{};for(size_t index=0;index<2;++index){begin[index].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;begin[index].Transition={capture.filteredGpu->textures[index].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,D3D12_RESOURCE_STATE_UNORDERED_ACCESS};}d.list->ResourceBarrier(2,begin);}d.list->SetComputeRootSignature(d.reflectionProbeFilterRoot.Get());d.list->SetPipelineState(d.reflectionProbeFilterPipeline.Get());ID3D12DescriptorHeap* filterHeaps[]={d.textureHeap.Get()};d.list->SetDescriptorHeaps(1,filterHeaps);const size_t filterBase=ReflectionProbeFilterDescriptorBase3D+size_t(d.frame)*ReflectionProbeFilterDescriptorStride3D;D3D12_GPU_DESCRIPTOR_HANDLE filterSrv=d.textureHeap->GetGPUDescriptorHandleForHeapStart();filterSrv.ptr+=UINT64(filterBase)*d.textureStep;d.list->SetComputeRootDescriptorTable(0,filterSrv);for(uint32_t mip=0;mip<capture.specularMipCount;++mip){const uint32_t mipResolution=(std::max)(1u,resolution>>mip);const float roughness=capture.specularMipCount>1?float(mip)/float(capture.specularMipCount-1):0.f;struct FilterConstants{uint32_t resolution,samples,mode;float roughness;} constants{mipResolution,mip?32u:1u,0u,roughness};D3D12_GPU_DESCRIPTOR_HANDLE output=filterSrv;output.ptr+=UINT64(1+mip)*d.textureStep;d.list->SetComputeRootDescriptorTable(1,output);d.list->SetComputeRoot32BitConstants(2,4,&constants,0);d.list->Dispatch((mipResolution+7)/8,(mipResolution+7)/8,6);D3D12_RESOURCE_BARRIER order{};order.Type=D3D12_RESOURCE_BARRIER_TYPE_UAV;order.UAV.pResource=capture.filteredGpu->textures[0].Get();d.list->ResourceBarrier(1,&order);++d.stats.reflectionProbeCapturePrefilterPasses;}struct IrradianceConstants{uint32_t resolution,samples,mode;float roughness;} irradianceConstants{16,64,1,1.f};D3D12_GPU_DESCRIPTOR_HANDLE irradianceOutput=filterSrv;irradianceOutput.ptr+=UINT64(11)*d.textureStep;d.list->SetComputeRootDescriptorTable(1,irradianceOutput);d.list->SetComputeRoot32BitConstants(2,4,&irradianceConstants,0);d.list->Dispatch(2,2,6);D3D12_RESOURCE_BARRIER finish[2]{};for(size_t index=0;index<2;++index){finish[index].Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;finish[index].Transition={capture.filteredGpu->textures[index].Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_UNORDERED_ACCESS,capture.filteredReadbackRequested?D3D12_RESOURCE_STATE_COPY_SOURCE:D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};}d.list->ResourceBarrier(2,finish);if(capture.filteredReadbackRequested){const D3D12_RESOURCE_DESC specularDescription=capture.filteredGpu->textures[0]->GetDesc(),irradianceDescription=capture.filteredGpu->textures[1]->GetDesc();const UINT specularCount=UINT(capture.specularMipCount*6),totalCount=specularCount+6;capture.filteredFootprints.resize(totalCount);std::vector<UINT> rows(totalCount);std::vector<UINT64> rowBytes(totalCount);UINT64 specularBytes{},irradianceBytes{},combinedRequired{},totalBytes{};d.device->GetCopyableFootprints(&specularDescription,0,specularCount,0,capture.filteredFootprints.data(),rows.data(),rowBytes.data(),&specularBytes);d.device->GetCopyableFootprints(&irradianceDescription,0,6,0,nullptr,nullptr,nullptr,&irradianceBytes);if(specularBytes>UINT64_MAX-irradianceBytes)throw std::overflow_error("Reflection probe filtered readback size overflow");totalBytes=specularBytes+irradianceBytes;d.device->GetCopyableFootprints(&irradianceDescription,0,6,specularBytes,capture.filteredFootprints.data()+specularCount,rows.data()+specularCount,rowBytes.data()+specularCount,&combinedRequired);if(capture.filteredFootprints.size()!=totalCount)throw std::runtime_error("Reflection probe filtered footprint count mismatch");for(UINT index=0;index<totalCount;++index){const auto& footprint=capture.filteredFootprints[index];if(!rows[index]||!rowBytes[index]||footprint.Offset>totalBytes||UINT64(footprint.Footprint.RowPitch)>UINT64_MAX/rows[index]||UINT64(footprint.Footprint.RowPitch)*(rows[index]-1)>totalBytes-footprint.Offset||rowBytes[index]>totalBytes-footprint.Offset-UINT64(footprint.Footprint.RowPitch)*(rows[index]-1))throw std::runtime_error("Reflection probe filtered footprint exceeds buffer");}D3D12_HEAP_PROPERTIES readbackHeap{};readbackHeap.Type=D3D12_HEAP_TYPE_READBACK;D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=totalBytes;buffer.Height=1;buffer.DepthOrArraySize=1;buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;Check(d.device->CreateCommittedResource(&readbackHeap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&capture.filteredReadback)),"Reflection probe filtered readback failed");capture.filteredReadbackBytes=size_t(totalBytes);for(UINT subresource=0;subresource<totalCount;++subresource){D3D12_TEXTURE_COPY_LOCATION destination{};destination.pResource=capture.filteredReadback.Get();destination.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;destination.PlacedFootprint=capture.filteredFootprints[subresource];D3D12_TEXTURE_COPY_LOCATION source{};source.pResource=subresource<specularCount?capture.filteredGpu->textures[0].Get():capture.filteredGpu->textures[1].Get();source.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;source.SubresourceIndex=subresource<specularCount?subresource:subresource-specularCount;d.list->CopyTextureRegion(&destination,0,0,0,&source,nullptr);}for(size_t index=0;index<2;++index){finish[index].Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_SOURCE;finish[index].Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;}d.list->ResourceBarrier(2,finish);capture.filteredReadbackRequested=false;}++d.stats.reflectionProbeCaptureIrradiancePasses;scheduledProbeCaptureRecorded=true;}
+ if (scheduledProbeCapture &&
+     scheduledProbeCapture->stage == ReflectionProbeCaptureStage3D::Pending) {
+   auto &capture = *scheduledProbeCapture;
+   const uint32_t resolution = capture.settings.resolution;
+   D3D12_RESOURCE_BARRIER cubeWrite{};
+   cubeWrite.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+   cubeWrite.Transition = {capture.cube.Get(),
+                           D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                           D3D12_RESOURCE_STATE_RENDER_TARGET};
+   d.list->ResourceBarrier(1, &cubeWrite);
+   D3D12_DEPTH_STENCIL_VIEW_DESC dsvDescription{};
+   dsvDescription.Format = DXGI_FORMAT_D32_FLOAT;
+   dsvDescription.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+   D3D12_CPU_DESCRIPTOR_HANDLE captureDsv =
+       d.dsvHeap->GetCPUDescriptorHandleForHeapStart();
+   captureDsv.ptr +=
+       SIZE_T(3 + d.frame) * d.device->GetDescriptorHandleIncrementSize(
+                                 D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+   d.device->CreateDepthStencilView(capture.depth.Get(), &dsvDescription,
+                                    captureDsv);
+   D3D12_VIEWPORT captureViewport{0, 0, float(resolution), float(resolution),
+                                  0, 1};
+   D3D12_RECT captureScissor{0, 0, LONG(resolution), LONG(resolution)};
+   d.list->RSSetViewports(1, &captureViewport);
+   d.list->RSSetScissorRects(1, &captureScissor);
+   D3D12_GPU_DESCRIPTOR_HANDLE nullShadow =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   nullShadow.ptr += UINT64(ShadowNullSrvDescriptor3D) * d.textureStep;
+   D3D12_GPU_DESCRIPTOR_HANDLE nullAo =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   nullAo.ptr += UINT64(AmbientOcclusionNullSrvDescriptor3D) * d.textureStep;
+   D3D12_GPU_DESCRIPTOR_HANDLE nullDepth =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   nullDepth.ptr += UINT64(WaterDepthNullSrvDescriptor3D) * d.textureStep;
+   D3D12_GPU_DESCRIPTOR_HANDLE captureShadowCbv =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   captureShadowCbv.ptr +=
+       UINT64(ShadowCbvDescriptorBase3D + d.frame) * d.textureStep;
+   for (size_t face = 0; face < 6; ++face) {
+     D3D12_RENDER_TARGET_VIEW_DESC rtvDescription{};
+     rtvDescription.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+     rtvDescription.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+     rtvDescription.Texture2DArray.ArraySize = 1;
+     rtvDescription.Texture2DArray.FirstArraySlice = UINT(face);
+     rtvDescription.Texture2DArray.MipSlice = 0;
+     D3D12_CPU_DESCRIPTOR_HANDLE captureRtv =
+         d.rtvHeap->GetCPUDescriptorHandleForHeapStart();
+     captureRtv.ptr +=
+         SIZE_T(Impl::Frames * 2 + 7 + d.frame * 6 + face) * d.rtvStep;
+     d.device->CreateRenderTargetView(capture.cube.Get(), &rtvDescription,
+                                      captureRtv);
+     d.list->ClearRenderTargetView(captureRtv, optimizedHdrClear, 0, nullptr);
+     d.list->ClearDepthStencilView(captureDsv, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0,
+                                   0, nullptr);
+     d.list->OMSetRenderTargets(1, &captureRtv, FALSE, &captureDsv);
+     d.BindWorldRootSignature();
+     d.BindEnvironmentLightingFallback();
+     D3D12_GPU_DESCRIPTOR_HANDLE faceCbv =
+         d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+     faceCbv.ptr +=
+         UINT64(ReflectionProbeCaptureSceneCbvBase3D + d.frame * 6 + face) *
+         d.textureStep;
+     d.list->SetGraphicsRootDescriptorTable(0, faceCbv);
+     d.list->SetGraphicsRootDescriptorTable(2, nullShadow);
+     d.list->SetGraphicsRootDescriptorTable(3, captureShadowCbv);
+     d.list->SetGraphicsRootDescriptorTable(5, nullAo);
+     d.list->SetGraphicsRootDescriptorTable(6, nullDepth);
+     const float zero4[4]{}, zero8[8]{};
+     d.list->SetGraphicsRoot32BitConstants(12, 8, zero8, 0);
+     d.list->SetGraphicsRoot32BitConstants(13, 8, zero8, 0);
+     d.list->SetGraphicsRoot32BitConstants(14, 4, zero4, 0);
+     d.list->SetGraphicsRoot32BitConstants(15, 4, zero4, 0);
+     d.list->SetGraphicsRoot32BitConstants(16, 4, zero4, 0);
+     d.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+     for (const ActiveMeshGroup3D &group : d.activeMeshGroups) {
+       D3D12_GPU_DESCRIPTOR_HANDLE material =
+           d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+       if (group.textures) {
+         const auto found =
+             d.residentMaterialTextureSets.find(group.textures.value);
+         if (found != d.residentMaterialTextureSets.end())
+           material.ptr +=
+               UINT64(found->second.descriptorOffset) * d.textureStep;
+       }
+       d.list->SetGraphicsRootDescriptorTable(1, material);
+       d.list->SetPipelineState(dl.BackfaceCulling() && !group.doubleSided
+                                    ? d.instancedCulledPipeline.Get()
+                                    : d.instancedPipeline.Get());
+       D3D12_VERTEX_BUFFER_VIEW views[2] = {
+           group.mesh->vertexView,
+           {d.instanceBuffers[d.frame]->GetGPUVirtualAddress() +
+                group.instanceOffset * sizeof(GpuMeshInstance),
+            UINT(group.instanceCount * sizeof(GpuMeshInstance)),
+            sizeof(GpuMeshInstance)}};
+       d.list->IASetVertexBuffers(0, 2, views);
+       d.list->IASetIndexBuffer(&group.mesh->indexView);
+       d.list->DrawIndexedInstanced(group.mesh->indexCount,
+                                    UINT(group.instanceCount), 0, 0, 0);
+       ++d.stats.reflectionProbeCaptureDraws;
+     }
+     if (!activeSkinnedMeshes.empty())
+       d.list->SetGraphicsRootShaderResourceView(
+           7, d.skinPaletteBuffers[d.frame]->GetGPUVirtualAddress());
+     for (const ActiveSkinnedMesh3D &mesh : activeSkinnedMeshes) {
+       D3D12_GPU_DESCRIPTOR_HANDLE material =
+           d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+       if (mesh.textures) {
+         const auto found =
+             d.residentMaterialTextureSets.find(mesh.textures.value);
+         if (found != d.residentMaterialTextureSets.end())
+           material.ptr +=
+               UINT64(found->second.descriptorOffset) * d.textureStep;
+       }
+       d.list->SetGraphicsRootDescriptorTable(1, material);
+       d.list->SetPipelineState(dl.BackfaceCulling() && !mesh.doubleSided
+                                    ? d.skinnedCulledPipeline.Get()
+                                    : d.skinnedPipeline.Get());
+       D3D12_VERTEX_BUFFER_VIEW views[2] = {
+           mesh.mesh->vertexView,
+           {d.skinnedInstanceBuffers[d.frame]->GetGPUVirtualAddress() +
+                mesh.instanceOffset * sizeof(GpuSkinnedInstance),
+            UINT(sizeof(GpuSkinnedInstance)), sizeof(GpuSkinnedInstance)}};
+       d.list->IASetVertexBuffers(0, 2, views);
+       d.list->IASetIndexBuffer(&mesh.mesh->indexView);
+       d.list->DrawIndexedInstanced(mesh.indexCount, 1, mesh.firstIndex, 0, 0);
+       ++d.stats.reflectionProbeCaptureDraws;
+     }
+     if (worldCount && worldIndexCount) {
+       d.list->SetPipelineState(d.worldPipeline.Get());
+       d.list->IASetVertexBuffers(0, 1, &d.worldVbv[d.frame]);
+       d.list->IASetIndexBuffer(&d.worldIbv[d.frame]);
+       d.list->DrawIndexedInstanced(UINT(worldIndexCount), 1, 0, 0, 0);
+       ++d.stats.reflectionProbeCaptureDraws;
+     }
+     ++d.stats.reflectionProbeCaptureFacesRendered;
+   }
+   cubeWrite.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+   if (capture.readbackRequested) {
+     const D3D12_RESOURCE_DESC cubeDescription = capture.cube->GetDesc();
+     UINT rows[6]{};
+     UINT64 rowBytes[6]{}, totalBytes{};
+     d.device->GetCopyableFootprints(&cubeDescription, 0, 6, 0,
+                                     capture.footprints.data(), rows, rowBytes,
+                                     &totalBytes);
+     D3D12_HEAP_PROPERTIES readbackHeap{};
+     readbackHeap.Type = D3D12_HEAP_TYPE_READBACK;
+     D3D12_RESOURCE_DESC buffer{};
+     buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+     buffer.Width = totalBytes;
+     buffer.Height = 1;
+     buffer.DepthOrArraySize = 1;
+     buffer.MipLevels = 1;
+     buffer.SampleDesc.Count = 1;
+     buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+     Check(d.device->CreateCommittedResource(
+               &readbackHeap, D3D12_HEAP_FLAG_NONE, &buffer,
+               D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+               IID_PPV_ARGS(&capture.readback)),
+           "Reflection probe readback failed");
+     capture.readbackBytes = size_t(totalBytes);
+     cubeWrite.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+     d.list->ResourceBarrier(1, &cubeWrite);
+     for (size_t face = 0; face < 6; ++face) {
+       D3D12_TEXTURE_COPY_LOCATION destination{};
+       destination.pResource = capture.readback.Get();
+       destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+       destination.PlacedFootprint = capture.footprints[face];
+       D3D12_TEXTURE_COPY_LOCATION source{};
+       source.pResource = capture.cube.Get();
+       source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+       source.SubresourceIndex = UINT(face);
+       d.list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+     }
+     cubeWrite.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+     cubeWrite.Transition.StateAfter =
+         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+     d.list->ResourceBarrier(1, &cubeWrite);
+     capture.filteredReadbackRequested = true;
+     capture.readbackRequested = false;
+   } else {
+     cubeWrite.Transition.StateAfter =
+         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+     d.list->ResourceBarrier(1, &cubeWrite);
+   }
+   d.CreateReflectionProbeFilterDescriptors(capture, d.frame);
+   if (capture.generation > 1) {
+     D3D12_RESOURCE_BARRIER begin[2]{};
+     for (size_t index = 0; index < 2; ++index) {
+       begin[index].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+       begin[index].Transition = {capture.filteredGpu->textures[index].Get(),
+                                  D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                  D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                  D3D12_RESOURCE_STATE_UNORDERED_ACCESS};
+     }
+     d.list->ResourceBarrier(2, begin);
+   }
+   d.list->SetComputeRootSignature(d.reflectionProbeFilterRoot.Get());
+   d.list->SetPipelineState(d.reflectionProbeFilterPipeline.Get());
+   ID3D12DescriptorHeap *filterHeaps[] = {d.textureHeap.Get()};
+   d.list->SetDescriptorHeaps(1, filterHeaps);
+   const size_t filterBase =
+       ReflectionProbeFilterDescriptorBase3D +
+       size_t(d.frame) * ReflectionProbeFilterDescriptorStride3D;
+   D3D12_GPU_DESCRIPTOR_HANDLE filterSrv =
+       d.textureHeap->GetGPUDescriptorHandleForHeapStart();
+   filterSrv.ptr += UINT64(filterBase) * d.textureStep;
+   d.list->SetComputeRootDescriptorTable(0, filterSrv);
+   for (uint32_t mip = 0; mip < capture.specularMipCount; ++mip) {
+     const uint32_t mipResolution = (std::max)(1u, resolution >> mip);
+     const float roughness =
+         capture.specularMipCount > 1
+             ? float(mip) / float(capture.specularMipCount - 1)
+             : 0.f;
+     struct FilterConstants {
+       uint32_t resolution, samples, mode;
+       float roughness;
+     } constants{mipResolution, mip ? 32u : 1u, 0u, roughness};
+     D3D12_GPU_DESCRIPTOR_HANDLE output = filterSrv;
+     output.ptr += UINT64(1 + mip) * d.textureStep;
+     d.list->SetComputeRootDescriptorTable(1, output);
+     d.list->SetComputeRoot32BitConstants(2, 4, &constants, 0);
+     d.list->Dispatch((mipResolution + 7) / 8, (mipResolution + 7) / 8, 6);
+     D3D12_RESOURCE_BARRIER order{};
+     order.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+     order.UAV.pResource = capture.filteredGpu->textures[0].Get();
+     d.list->ResourceBarrier(1, &order);
+     ++d.stats.reflectionProbeCapturePrefilterPasses;
+   }
+   struct IrradianceConstants {
+     uint32_t resolution, samples, mode;
+     float roughness;
+   } irradianceConstants{16, 64, 1, 1.f};
+   D3D12_GPU_DESCRIPTOR_HANDLE irradianceOutput = filterSrv;
+   irradianceOutput.ptr += UINT64(11) * d.textureStep;
+   d.list->SetComputeRootDescriptorTable(1, irradianceOutput);
+   d.list->SetComputeRoot32BitConstants(2, 4, &irradianceConstants, 0);
+   d.list->Dispatch(2, 2, 6);
+   D3D12_RESOURCE_BARRIER finish[2]{};
+   for (size_t index = 0; index < 2; ++index) {
+     finish[index].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+     finish[index].Transition = {
+         capture.filteredGpu->textures[index].Get(),
+         D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+         capture.filteredReadbackRequested
+             ? D3D12_RESOURCE_STATE_COPY_SOURCE
+             : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};
+   }
+   d.list->ResourceBarrier(2, finish);
+   if (capture.filteredReadbackRequested) {
+     const D3D12_RESOURCE_DESC specularDescription =
+                                   capture.filteredGpu->textures[0]->GetDesc(),
+                               irradianceDescription =
+                                   capture.filteredGpu->textures[1]->GetDesc();
+     const UINT specularCount = UINT(capture.specularMipCount * 6),
+                totalCount = specularCount + 6;
+     capture.filteredFootprints.resize(totalCount);
+     std::vector<UINT> rows(totalCount);
+     std::vector<UINT64> rowBytes(totalCount);
+     UINT64 specularBytes{}, irradianceBytes{}, combinedRequired{},
+         totalBytes{};
+     d.device->GetCopyableFootprints(&specularDescription, 0, specularCount, 0,
+                                     capture.filteredFootprints.data(),
+                                     rows.data(), rowBytes.data(),
+                                     &specularBytes);
+     d.device->GetCopyableFootprints(&irradianceDescription, 0, 6, 0, nullptr,
+                                     nullptr, nullptr, &irradianceBytes);
+     if (specularBytes > UINT64_MAX - irradianceBytes)
+       throw std::overflow_error(
+           "Reflection probe filtered readback size overflow");
+     totalBytes = specularBytes + irradianceBytes;
+     d.device->GetCopyableFootprints(
+         &irradianceDescription, 0, 6, specularBytes,
+         capture.filteredFootprints.data() + specularCount,
+         rows.data() + specularCount, rowBytes.data() + specularCount,
+         &combinedRequired);
+     if (capture.filteredFootprints.size() != totalCount)
+       throw std::runtime_error(
+           "Reflection probe filtered footprint count mismatch");
+     for (UINT index = 0; index < totalCount; ++index) {
+       const auto &footprint = capture.filteredFootprints[index];
+       if (!rows[index] || !rowBytes[index] || footprint.Offset > totalBytes ||
+           UINT64(footprint.Footprint.RowPitch) > UINT64_MAX / rows[index] ||
+           UINT64(footprint.Footprint.RowPitch) * (rows[index] - 1) >
+               totalBytes - footprint.Offset ||
+           rowBytes[index] >
+               totalBytes - footprint.Offset -
+                   UINT64(footprint.Footprint.RowPitch) * (rows[index] - 1))
+         throw std::runtime_error(
+             "Reflection probe filtered footprint exceeds buffer");
+     }
+     D3D12_HEAP_PROPERTIES readbackHeap{};
+     readbackHeap.Type = D3D12_HEAP_TYPE_READBACK;
+     D3D12_RESOURCE_DESC buffer{};
+     buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+     buffer.Width = totalBytes;
+     buffer.Height = 1;
+     buffer.DepthOrArraySize = 1;
+     buffer.MipLevels = 1;
+     buffer.SampleDesc.Count = 1;
+     buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+     Check(d.device->CreateCommittedResource(
+               &readbackHeap, D3D12_HEAP_FLAG_NONE, &buffer,
+               D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+               IID_PPV_ARGS(&capture.filteredReadback)),
+           "Reflection probe filtered readback failed");
+     capture.filteredReadbackBytes = size_t(totalBytes);
+     for (UINT subresource = 0; subresource < totalCount; ++subresource) {
+       D3D12_TEXTURE_COPY_LOCATION destination{};
+       destination.pResource = capture.filteredReadback.Get();
+       destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+       destination.PlacedFootprint = capture.filteredFootprints[subresource];
+       D3D12_TEXTURE_COPY_LOCATION source{};
+       source.pResource = subresource < specularCount
+                              ? capture.filteredGpu->textures[0].Get()
+                              : capture.filteredGpu->textures[1].Get();
+       source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+       source.SubresourceIndex = subresource < specularCount
+                                     ? subresource
+                                     : subresource - specularCount;
+       d.list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+     }
+     for (size_t index = 0; index < 2; ++index) {
+       finish[index].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+       finish[index].Transition.StateAfter =
+           D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+     }
+     d.list->ResourceBarrier(2, finish);
+     capture.filteredReadbackRequested = false;
+   }
+   ++d.stats.reflectionProbeCaptureIrradiancePasses;
+   scheduledProbeCaptureRecorded = true;
+ }
  if(scheduledProbeCaptureRecorded){d.stats.lastGpuInstanceCullingProbeDirectGroups=d.activeMeshGroups.size();d.stats.reflectionProbeCaptureRecursionSuppressions+=6;}
   const bool useDLSS = d.dlss.Enabled();
   d.activeWaterOptics=NormalizeWaterOpticsSettings3D(dl.WaterOptics());
@@ -1647,7 +2254,10 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
      D3D12_CPU_DESCRIPTOR_HANDLE hdrRtv =
          d.rtvHeap->GetCPUDescriptorHandleForHeapStart();
      hdrRtv.ptr += SIZE_T(Impl::Frames * 2+(useMsaa?3:0)) * d.rtvStep;
+     bool dynamicClearFilterPushed=false;
+     if(d.infoQueue){D3D12_INFO_QUEUE_FILTER filter{};D3D12_MESSAGE_ID id=D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE;filter.DenyList.NumIDs=1;filter.DenyList.pIDList=&id;dynamicClearFilterPushed=SUCCEEDED(d.infoQueue->PushStorageFilter(&filter));}
      d.list->ClearRenderTargetView(hdrRtv, c, 0, nullptr);
+     if(dynamicClearFilterPushed)d.infoQueue->PopStorageFilter();
      d.list->ClearDepthStencilView(dsv, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0,
                                    nullptr);
      d.list->OMSetRenderTargets(1, &hdrRtv, FALSE, &dsv);
@@ -1921,5 +2531,60 @@ HzbOcclusionSettings3D D3D12Renderer::HzbOcclusionSettings()const{return impl_?i
 GpuUploadReceipt3D D3D12Renderer::SubmitPendingUploads3D(){if(!impl_||!impl_->queue||!impl_->fence)return{};auto& d=*impl_;const bool mesh=d.SubmitMeshUploadBatch(),texture=d.SubmitTextureUploadBatch();if(!mesh&&!texture)return{};return{d.deviceEpoch,(std::max)(d.lastMeshUploadFenceValue,d.lastTextureUploadFenceValue)};}
 bool D3D12Renderer::IsUploadComplete(GpuUploadReceipt3D receipt)const{if(!receipt)return true;if(!impl_||!impl_->fence||receipt.deviceEpoch!=impl_->deviceEpoch)return false;return impl_->fence->GetCompletedValue()>=receipt.fenceValue;}
 SkinnedSubmissionResult3D D3D12Renderer::QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const{if(!impl_||!receipt)return SkinnedSubmissionResult3D::Unknown;for(size_t index=0;index<impl_->skinnedSubmissionResultCount;++index)if(impl_->skinnedSubmissionReceipts[index]==receipt)return impl_->skinnedSubmissionResults[index];return SkinnedSubmissionResult3D::Expired;}
-RendererStats D3D12Renderer::GetStats()const{if(!impl_)return{};RendererStats result=impl_->stats;result.requestedQuality=impl_->quality;result.effectiveQuality={impl_->quality.directionalShadows,impl_->quality.ambientOcclusion&&!impl_->dlss.Enabled(),impl_->quality.multisampling&&result.multisampleSupported&&!impl_->dlss.Enabled(),impl_->quality.postProcessAntiAliasing&&!impl_->dlss.Enabled()};result.idleMeshUploadContexts=impl_->availableMeshUploadContexts.size();result.idleMaterialTextureUploadContexts=impl_->availableTextureUploadContexts.size();const StreamlineResourceStats dlss=impl_->dlss.Stats();result.dlssResidentBytes=dlss.residentBytes;result.dlssResourceAllocations=dlss.allocations;result.dlssResourceReleases=dlss.releases;result.dlssResourcesResident=dlss.resourcesResident;result.dlssModuleRequested=impl_->dlssRequested;result.dlssFrameworkLoaded=impl_->dlss.FrameworkLoaded();return result;}unsigned D3D12Renderer::RenderWidth()const{return impl_?(impl_->dlss.Enabled()?impl_->dlss.RenderWidth():impl_->width):0;}unsigned D3D12Renderer::RenderHeight()const{return impl_?(impl_->dlss.Enabled()?impl_->dlss.RenderHeight():impl_->height):0;}
+RendererStats D3D12Renderer::GetStats()const{
+ if(!impl_)return{};RendererStats result=impl_->stats;result.gpuValidationExecuted=result.gpuValidationRequested&&result.gpuValidationAvailable&&result.submittedFrames>0;
+ if (impl_->infoQueue) {
+   const UINT64 count = impl_->infoQueue->GetNumStoredMessages();
+   result.debugErrorCount = 0;
+   result.debugWarningCount = 0;
+   result.debugWarningIdCount = 0;
+   result.debugFirstErrorId = 0;
+   result.debugErrorIdCount = 0;
+   for (UINT64 index = 0; index < count; ++index) {
+     SIZE_T bytes{};
+     if (FAILED(impl_->infoQueue->GetMessage(index, nullptr, &bytes)) || !bytes)
+       continue;
+     std::vector<std::byte> storage(bytes);
+     auto *message = reinterpret_cast<D3D12_MESSAGE *>(storage.data());
+     if (FAILED(impl_->infoQueue->GetMessage(index, message, &bytes)))
+       continue;
+     const bool error =
+         message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION ||
+         message->Severity == D3D12_MESSAGE_SEVERITY_ERROR;
+     if (error) {
+       ++result.debugErrorCount;
+       if (!result.debugFirstErrorId)
+         result.debugFirstErrorId = uint32_t(message->ID);
+       bool known = false;
+       for (size_t item = 0; item < result.debugErrorIdCount; ++item)
+         known |= result.debugErrorIds[item] == uint32_t(message->ID);
+       if (!known && result.debugErrorIdCount < result.debugErrorIds.size()) {
+         result.debugErrorIds[result.debugErrorIdCount] = uint32_t(message->ID);
+         result.debugErrorDescriptions[result.debugErrorIdCount] =
+             message->pDescription ? message->pDescription : "";
+         ++result.debugErrorIdCount;
+       }
+     } else if (message->Severity == D3D12_MESSAGE_SEVERITY_WARNING) {
+       ++result.debugWarningCount;
+       size_t warningIndex = 0;
+       while (warningIndex < result.debugWarningIdCount &&
+              result.debugWarningIds[warningIndex] != uint32_t(message->ID))
+         ++warningIndex;
+       if (warningIndex == result.debugWarningIdCount &&
+           warningIndex < result.debugWarningIds.size()) {
+         result.debugWarningIds[warningIndex] = uint32_t(message->ID);
+         result.debugWarningDescriptions[warningIndex] =
+             message->pDescription ? message->pDescription : "";
+         ++result.debugWarningIdCount;
+       }
+       if (warningIndex < result.debugWarningOccurrences.size())
+         ++result.debugWarningOccurrences[warningIndex];
+     }
+   }
+   result.gpuValidationPassed =
+       result.gpuValidationExecuted && !result.debugErrorCount;
+ }
+ result.requestedQuality=impl_->quality;result.effectiveQuality={impl_->quality.directionalShadows,impl_->quality.ambientOcclusion&&!impl_->dlss.Enabled(),impl_->quality.multisampling&&result.multisampleSupported&&!impl_->dlss.Enabled(),impl_->quality.postProcessAntiAliasing&&!impl_->dlss.Enabled()};result.idleMeshUploadContexts=impl_->availableMeshUploadContexts.size();result.idleMaterialTextureUploadContexts=impl_->availableTextureUploadContexts.size();const StreamlineResourceStats dlss=impl_->dlss.Stats();result.dlssResidentBytes=dlss.residentBytes;result.dlssResourceAllocations=dlss.allocations;result.dlssResourceReleases=dlss.releases;result.dlssResourcesResident=dlss.resourcesResident;result.dlssModuleRequested=impl_->dlssRequested;result.dlssFrameworkLoaded=impl_->dlss.FrameworkLoaded();return result;
+}
+unsigned D3D12Renderer::RenderWidth()const{return impl_?(impl_->dlss.Enabled()?impl_->dlss.RenderWidth():impl_->width):0;}unsigned D3D12Renderer::RenderHeight()const{return impl_?(impl_->dlss.Enabled()?impl_->dlss.RenderHeight():impl_->height):0;}
 }
