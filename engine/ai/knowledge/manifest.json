@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
+  "snapshotRevision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
   "chunkCharacters": 3000,
-  "chunkCount": 585,
+  "chunkCount": 586,
   "sourceCount": 151,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "f42e4aeb1967a9d74cdcca62bd46eb344c8f82ea35cf5b49f1ff0403ce3c56bb",
+  "knowledgeSha256": "c5133188c1461362ee82507ad422c32d441f4852547b8a6e2fd5b89d63257f12",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -104,9 +104,9 @@
     {
       "path": "engine/native/include/Aevrynd/Engine.h",
       "kind": "public-header",
-      "sha256": "c05bf10872a2326e28cf38288d4f822dbb6c393bf9675deb048f66ef6dd7290e",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 6994
+      "sha256": "c39fc68bad3a1dd42524a6d184a2ad94865c631748ddab9e3f49cebdbec37341",
+      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
+      "bytes": 7209
     },
     {
       "path": "engine/native/include/Aevrynd/EnvironmentIbl3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "0b0ac498be100993bfc887d8df8dc5affc70dcb4873c8fec5cb5ee2092a01051",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 95608
+      "sha256": "b4be24d03453f241b5f7ea337227c5310a96071000ac64b67ecde6d62eaf96b6",
+      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
+      "bytes": 95748
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -384,9 +384,9 @@
     {
       "path": "engine/native/include/Aevrynd/WorldPartitionD3D12Adapter3D.h",
       "kind": "public-header",
-      "sha256": "d908bdc20cb14e246992f135c64e89bc489ea7ca35b023f8605985c746a6fb58",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 2719
+      "sha256": "d69cb691f95b4907b7d537093f5dd8d09adbf9eafa5b1f854cd0763252ac7379",
+      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
+      "bytes": 2976
     },
     {
       "path": "engine/native/include/Aevrynd/WorldStreamer3D.h",
@@ -1000,9 +1000,9 @@
     {
       "path": "engine/native/tests/WorldPartition3DD3D12Smoke.cpp",
       "kind": "test",
-      "sha256": "1090f12ada66ff53e76569e62cc6445902cc088044bedd402c4a0aea2adb8aa1",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 8398
+      "sha256": "e9fa41e608666df6020ea8dbe107d889e73090317be9f90b0fa7937ef37dc992",
+      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
+      "bytes": 9500
     },
     {
       "path": "engine/native/tests/WorldPartition3DFakeFixtures.h",
