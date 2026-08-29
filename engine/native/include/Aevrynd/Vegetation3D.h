@@ -103,6 +103,7 @@ private:
     };
     std::unordered_map<VegetationChunkKey3D,Block> blocks_{};
     std::unordered_set<VisibilityEntityKey3D> instanceKeys_{};
+    std::vector<VegetationChunkKey3D> queryOrder_{};
     std::vector<VegetationDraw3D> draws_{};
     ChunkedVegetationStats3D stats_{};
     std::size_t reservedInstances_{},lastReleasedBytes_{};

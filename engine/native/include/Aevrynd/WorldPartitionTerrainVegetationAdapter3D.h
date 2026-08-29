@@ -46,6 +46,7 @@ private:
 class TerrainVegetationWorldChunkActivationTarget3D final:public IWorldChunkActivationTarget3D {
 public:
     TerrainVegetationWorldChunkActivationTarget3D(Engine& engine,SceneECSRegistry3D& scene,ChunkedVegetationWorld3D& vegetation,TerrainVegetationChunkSettings3D settings={});
+    ~TerrainVegetationWorldChunkActivationTarget3D()override;
     std::size_t PreparationBytes(WorldChunkRequest3D,const WorldChunkPayload3D& payload)const override{return payload.cpuBytes;}
     std::size_t PhysicalAllocationBytes(WorldChunkRequest3D,const WorldChunkPayload3D& payload)const override;
     WorldChunkActivation3D Activate(WorldChunkRequest3D request,const WorldChunkPayload3D& payload)override;
@@ -58,11 +59,13 @@ public:
     void SetActivationFailureCheckpointForTesting(int value)noexcept{failureCheckpoint_=value;}
     std::size_t PendingRetirements()const noexcept;
 private:
+    // GPU、ECS 與植被發布只能由建立 target 的主執行緒操作；跨執行緒呼叫一律 fail-closed。
+    bool OnOwnerThread()const noexcept{return std::this_thread::get_id()==ownerThread_;}
     struct SharedVegetation {std::array<MeshResource3D,3> meshes{};MaterialTextureSetHandle3D textures{};AssetLease3D lease{};std::size_t references{},physicalBytes{};};
     struct Record {WorldChunkRequest3D request{};MeshResource3D terrain{};MaterialTextureSetHandle3D terrainTextures{};SceneEntity3D terrainEntity{};VegetationChunkHandle3D vegetation{};GpuUploadReceipt3D receipt{};std::size_t physicalBytes{};bool retiring{},released{};};
     bool EnsureShared(const TerrainVegetationChunkPayload3D& payload,std::size_t& physicalBytes);
     void ReleaseRecord(Record& record);
     Engine& engine_;SceneECSRegistry3D& scene_;ChunkedVegetationWorld3D& vegetation_;TerrainVegetationChunkSettings3D settings_{};
-    SharedVegetation shared_{};mutable std::unordered_map<std::uint64_t,Record> records_{};std::uint64_t next_{1};int failureCheckpoint_{-1};
+    SharedVegetation shared_{};mutable std::unordered_map<std::uint64_t,Record> records_{};std::thread::id ownerThread_{};std::uint64_t next_{1};int failureCheckpoint_{-1};
 };
 }
