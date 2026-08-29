@@ -6,6 +6,8 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Aevrynd {
@@ -63,5 +65,47 @@ private:
     VegetationStats3D stats_{};
     std::size_t lastReleasedBytes_{};
     std::uint64_t trimCount_{};
+};
+
+using VegetationChunkKey3D = std::uint64_t;
+struct VegetationChunkHandle3D {
+    VegetationChunkKey3D key{};
+    std::uint64_t generation{};
+    explicit operator bool()const{return key!=0&&generation!=0;}
+    auto operator<=>(const VegetationChunkHandle3D&)const=default;
+};
+struct ChunkedVegetationStats3D {
+    std::size_t chunks{},instances{},candidates{},submitted{},nearInstances{},farInstances{},impostorInstances{},transitionInstances{},transitionDrawsDropped{},shadowCasters{};
+    std::size_t frustumRejected{},distanceRejected{},missingAssetRejected{};
+    std::uint64_t generation{},attaches{},detaches{},queries{},duplicateRejects{},overflowRejects{},buildRejects{};
+};
+
+class ChunkedVegetationWorld3D {
+public:
+    bool AttachChunk(VegetationChunkKey3D chunk,std::span<const VegetationAsset3D> assets,std::span<const VegetationInstance3D> instances,VegetationChunkHandle3D* handle=nullptr);
+    bool AttachChunkAtomic(VegetationChunkKey3D chunk,std::span<const VegetationAsset3D> assets,std::span<const VegetationInstance3D> instances,VegetationChunkHandle3D* handle=nullptr);
+    bool DetachChunk(VegetationChunkHandle3D handle);
+    bool DetachChunk(VegetationChunkKey3D chunk);
+    bool BeginDetach(VegetationChunkHandle3D handle){return DetachChunk(handle);}
+    bool Contains(VegetationChunkKey3D chunk)const;
+    VegetationChunkHandle3D Handle(VegetationChunkKey3D chunk)const;
+    std::span<const VegetationDraw3D> Query(const VegetationView3D& view);
+    void Clear();
+    bool Reserve(std::size_t chunks,std::size_t instances);
+    std::size_t TrimUnusedMemory();
+    const ChunkedVegetationStats3D& Stats()const{return stats_;}
+    ReusableMemoryStats MemoryStats()const;
+private:
+    struct Block {
+        VegetationChunkHandle3D handle{};
+        std::vector<VisibilityEntityKey3D> keys{};
+        VegetationWorld3D world{};
+    };
+    std::unordered_map<VegetationChunkKey3D,Block> blocks_{};
+    std::unordered_set<VisibilityEntityKey3D> instanceKeys_{};
+    std::vector<VegetationDraw3D> draws_{};
+    ChunkedVegetationStats3D stats_{};
+    std::size_t reservedInstances_{},lastReleasedBytes_{};
+    std::uint64_t nextGeneration_{1},trimCount_{};
 };
 }

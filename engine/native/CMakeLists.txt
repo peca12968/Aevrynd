@@ -37,6 +37,7 @@ add_library(AevryndEngine STATIC
   src/WorldStreamer3D.cpp
   src/WorldPartition3D.cpp
   src/WorldPartitionD3D12Adapter3D.cpp
+  src/WorldPartitionTerrainVegetationAdapter3D.cpp
   src/VisibilityBvh3D.cpp
   src/Vegetation3D.cpp
 )
@@ -177,6 +178,10 @@ add_executable(AevryndVegetation3DTest tests/Vegetation3DSmoke.cpp)
 target_compile_options(AevryndVegetation3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndVegetation3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndVegetation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVegetation3DTest>'")
+add_executable(AevryndChunkedVegetation3DTest tests/ChunkedVegetation3DSmoke.cpp)
+target_compile_options(AevryndChunkedVegetation3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndChunkedVegetation3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndChunkedVegetation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndChunkedVegetation3DTest>'")
 add_executable(AevryndVegetation3DBenchmark tests/Vegetation3DBenchmark.cpp)
 target_compile_options(AevryndVegetation3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndVegetation3DBenchmark PRIVATE AevryndEngine)
@@ -327,6 +332,13 @@ add_executable(AevryndWorldPartition3DFakeSourceTest tests/WorldPartition3DFakeS
 target_compile_options(AevryndWorldPartition3DFakeSourceTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldPartition3DFakeSourceTest PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldPartition3DFakeSourceTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartition3DFakeSourceTest>'")
+add_executable(AevryndWorldPartitionTerrainVegetationAdapterFakeTest tests/WorldPartitionTerrainVegetationAdapterFakeSmoke.cpp)
+target_compile_options(AevryndWorldPartitionTerrainVegetationAdapterFakeTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldPartitionTerrainVegetationAdapterFakeTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartitionTerrainVegetationAdapterFakeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartitionTerrainVegetationAdapterFakeTest>'")
+add_executable(AevryndWorldPartitionTerrainVegetationAdapterBenchmark tests/WorldPartitionTerrainVegetationAdapterBenchmark.cpp)
+target_compile_options(AevryndWorldPartitionTerrainVegetationAdapterBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldPartitionTerrainVegetationAdapterBenchmark PRIVATE AevryndEngine)
 
 add_executable(AevryndWorldPartition3DBenchmark tests/WorldPartition3DBenchmark.cpp)
 target_compile_options(AevryndWorldPartition3DBenchmark PRIVATE /W4 /permissive- /utf-8)
@@ -337,6 +349,11 @@ target_compile_options(AevryndWorldPartition3DD3D12Test PRIVATE /W4 /permissive-
 target_compile_definitions(AevryndWorldPartition3DD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndWorldPartition3DD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldPartition3DD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartition3DD3D12Test>'")
+
+add_executable(AevryndWorldPartitionTerrainVegetationD3D12Test WIN32 tests/WorldPartitionTerrainVegetationD3D12Smoke.cpp)
+target_compile_options(AevryndWorldPartitionTerrainVegetationD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldPartitionTerrainVegetationD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartitionTerrainVegetationD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartitionTerrainVegetationD3D12Test>'")
 
 add_executable(AevryndNavigation3DTest tests/Navigation3DSmoke.cpp)
 target_compile_options(AevryndNavigation3DTest PRIVATE /W4 /permissive- /utf-8)

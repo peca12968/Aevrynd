@@ -55,6 +55,8 @@ public:
     SceneEntity3D Create();
     // 整批元件只有在全部驗證及建立成功後才對呼叫端可見；失敗會銷毀本批所有實體。
     bool CreateBatchAtomic(std::span<const SceneEntityDefinition3D> definitions,std::vector<SceneEntity3D>& entities);
+    // 先驗證整批 handle，再一次移除，供分區 owner 原子下架。
+    bool DestroyBatchAtomic(std::span<const SceneEntity3D> entities);
     bool Destroy(SceneEntity3D entity);
     bool Alive(SceneEntity3D entity) const;
     void Clear();
