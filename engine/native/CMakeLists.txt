@@ -25,6 +25,7 @@ add_library(AevryndEngine STATIC
   src/ProceduralPlacement3D.cpp
   src/SceneECS3D.cpp
   src/Serialization.cpp
+  src/WorldDeltaPersistence3D.cpp
   src/SkinnedModel3D.cpp
   src/SkinnedModelAsset.cpp
   src/SkinnedMaterialSidecar3D.cpp
@@ -395,6 +396,16 @@ add_executable(AevryndSerializationTest tests/SerializationSmoke.cpp)
 target_compile_options(AevryndSerializationTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSerializationTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSerializationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSerializationTest>'")
+
+add_executable(AevryndWorldDeltaFormat3DTest tests/WorldDeltaFormat3DSmoke.cpp)
+target_compile_options(AevryndWorldDeltaFormat3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldDeltaFormat3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldDeltaFormat3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldDeltaFormat3DTest>'")
+
+add_executable(AevryndWorldDeltaPersistence3DTest tests/WorldDeltaPersistence3DSmoke.cpp)
+target_compile_options(AevryndWorldDeltaPersistence3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldDeltaPersistence3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldDeltaPersistence3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldDeltaPersistence3DTest>'")
 
 add_executable(AevryndPhysicsWorld3DTest tests/PhysicsWorld3DSmoke.cpp)
 target_compile_options(AevryndPhysicsWorld3DTest PRIVATE /W4 /permissive- /utf-8)
