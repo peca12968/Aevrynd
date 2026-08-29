@@ -815,6 +815,7 @@ private:
 struct D3D12RendererTestAccess3D {
     static void SetSkinnedAllocatorState(D3D12Renderer& renderer,uint32_t nextHandle,uint64_t nextIdentity);
     static void SetEnvironmentResourceFailureCheckpoint(D3D12Renderer& renderer,int checkpoint);
+    static void SetFixedProbeClearMismatch(D3D12Renderer& renderer,bool enabled);
 };
 #endif
 }

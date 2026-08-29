@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Executable)
+param([Parameter(Mandatory=$true)][string]$Executable,[switch]$SkipUnavailableGate)
 $ErrorActionPreference = 'Stop'
 $captureDirectory = Join-Path (Split-Path -Parent $Executable) 'captures'
 $names = @('first-person.png','third-person.png','god-view.png','isometric-2-5d.png','network-replication-overview.png','network-interest-durability.png')
@@ -48,7 +48,7 @@ $overviewTelemetry=@{serverTick=$secondRuntime.serverTick;snapshots=$secondRunti
 $durabilityTelemetry=@{visible1=$secondRuntime.visible1;visible2=$secondRuntime.visible2;interestEntered=$secondRuntime.interestEntered;interestExited=$secondRuntime.interestExited;reentries=$secondRuntime.reentries;despawns=$secondRuntime.despawns;authorized=$secondRuntime.authorized;durable=$secondRuntime.durable;denied=$secondRuntime.denied;committed=$secondRuntime.committed;aborted=$secondRuntime.aborted;restart=$secondRuntime.restart;pending=$secondRuntime.pending;queuePackets=$secondRuntime.queuePackets;packetCapacity=$secondRuntime.packetCapacity;queueBytes=$secondRuntime.queueBytes;byteCapacity=$secondRuntime.byteCapacity}
 $captures=@(@{file='network-replication-overview.png';sha256=$overviewSha;width=1280;height=720;variance='pass';phase='replication-overview';telemetry=$overviewTelemetry},@{file='network-interest-durability.png';sha256=$durabilitySha;width=1280;height=720;variance='pass';phase='interest-durability';telemetry=$durabilityTelemetry})
 @{schema=1;seed=$secondRuntime.seed;runtime=$secondRuntime;captures=$captures}|ConvertTo-Json -Depth 5|Set-Content -Encoding utf8 -LiteralPath (Join-Path $captureDirectory 'network-capture-receipt.json')
-$env:AEVRYND_GPU_VALIDATION='1';$env:AEVRYND_GPU_VALIDATION_FORCE_UNAVAILABLE='1'
+if(-not $SkipUnavailableGate){$env:AEVRYND_GPU_VALIDATION='1';$env:AEVRYND_GPU_VALIDATION_FORCE_UNAVAILABLE='1'
 try{
   if(Test-Path -LiteralPath $captureDirectory){Remove-Item -LiteralPath $captureDirectory -Recurse -Force}
   $process=Start-Process -FilePath $Executable -ArgumentList '--capture-demo' -WorkingDirectory (Split-Path -Parent $Executable) -WindowStyle Hidden -PassThru
@@ -56,5 +56,5 @@ try{
   if($process.ExitCode-ne 86){throw "Unavailable validation gate returned $($process.ExitCode), expected 86"}
   $unavailable=Get-Content -Raw -LiteralPath (Join-Path $captureDirectory 'network-runtime-receipt.json')|ConvertFrom-Json
   if($unavailable.gpuValidationRequested-ne 1-or$unavailable.gpuValidationAvailable-ne 0-or$unavailable.gpuValidationExecuted-ne 0-or$unavailable.gpuValidationPassed-ne 0-or$unavailable.debugLayerEnabled-ne 0-or$unavailable.gpuValidationErrors-ne 0){throw 'Unavailable validation receipt was not fail-closed'}
-}finally{Remove-Item Env:AEVRYND_GPU_VALIDATION -ErrorAction SilentlyContinue;Remove-Item Env:AEVRYND_GPU_VALIDATION_FORCE_UNAVAILABLE -ErrorAction SilentlyContinue}
+}finally{Remove-Item Env:AEVRYND_GPU_VALIDATION -ErrorAction SilentlyContinue;Remove-Item Env:AEVRYND_GPU_VALIDATION_FORCE_UNAVAILABLE -ErrorAction SilentlyContinue}}
 Write-Output "captures=6 dimensions=1280x720 overviewHamming=$overviewDistance durabilityHamming=$durabilityDistance variance=pass"
