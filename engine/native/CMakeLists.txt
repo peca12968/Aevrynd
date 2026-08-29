@@ -19,10 +19,12 @@ add_library(AevryndEngine STATIC
   src/MeshLoader.cpp
   src/MeshProcessing3D.cpp
   src/Navigation3D.cpp
+  src/NetworkTransport3D.cpp
   src/PhysicsWorld3D.cpp
   src/PbrMaterialCooker3D.cpp
   src/Profiling.cpp
   src/ProceduralPlacement3D.cpp
+  src/ReplicationProtocol3D.cpp
   src/SceneECS3D.cpp
   src/Serialization.cpp
   src/WorldDeltaPersistence3D.cpp
@@ -641,3 +643,17 @@ target_compile_definitions(AevryndEnvironmentLightingD3D12VisualTest PRIVATE
   AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/environment-lighting")
 target_link_libraries(AevryndEnvironmentLightingD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndEnvironmentLightingD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentLightingD3D12VisualTest>'")
+
+add_executable(AevryndReplicationProtocol3DTest tests/ReplicationProtocol3DSmoke.cpp)
+target_compile_options(AevryndReplicationProtocol3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationProtocol3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndReplicationProtocol3DTest COMMAND AevryndReplicationProtocol3DTest)
+
+add_executable(AevryndReplicationProtocol3DFuzzTest tests/ReplicationProtocol3DFuzzSmoke.cpp)
+target_compile_options(AevryndReplicationProtocol3DFuzzTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationProtocol3DFuzzTest PRIVATE AevryndEngine)
+add_test(NAME AevryndReplicationProtocol3DFuzzTest COMMAND AevryndReplicationProtocol3DFuzzTest)
+
+add_executable(AevryndReplicationProtocol3DBenchmark tests/ReplicationProtocol3DBenchmark.cpp)
+target_compile_options(AevryndReplicationProtocol3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationProtocol3DBenchmark PRIVATE AevryndEngine)

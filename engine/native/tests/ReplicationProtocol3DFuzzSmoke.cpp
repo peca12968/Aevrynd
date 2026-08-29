@@ -1,0 +1,4 @@
+#include <Aevrynd/ReplicationProtocol3D.h>
+#include <iostream>
+using namespace Aevrynd;
+int main(){std::uint64_t state=9;auto random=[&]{state^=state>>12;state^=state<<25;state^=state>>27;return state*2685821657736338717ull;};ReplicationMessage3D decoded;for(unsigned caseIndex=0;caseIndex<20000;++caseIndex){const std::size_t size=random()%1024;std::vector<std::byte> bytes(size);for(auto& value:bytes)value=std::byte(random());(void)DecodeReplicationPacket3D(bytes,decoded);}ReplicationSnapshot3D snapshot{1,2,0,1,1,1,true};for(unsigned i=0;i<64;++i)snapshot.entities.push_back({{1,i+1},{{-10,0,20},{float(i%32),0,0}},{},0});std::vector<std::byte> valid;if(!EncodeReplicationPacket3D(snapshot,valid))return 1;for(std::size_t bit=0;bit<valid.size()*8;++bit){auto changed=valid;changed[bit/8]^=std::byte(1u<<(bit&7));if(DecodeReplicationPacket3D(changed,decoded))return 2;}std::cout<<"randomCases=20000 bitFlips="<<valid.size()*8<<'\n';return 0;}
