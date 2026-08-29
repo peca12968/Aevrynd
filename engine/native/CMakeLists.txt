@@ -2,6 +2,9 @@ add_library(AevryndEngine STATIC
   src/ArchitectureMeshes3D.cpp
   src/Animation3D.cpp
   src/AnimationGraph3D.cpp
+  src/SkeletalIk3D.cpp
+  src/SkeletalSocket3D.cpp
+  src/SkeletonSemantics3D.cpp
   src/AssetManifest.cpp
   src/Audio.cpp
   src/CharacterController3D.cpp
@@ -315,6 +318,11 @@ add_executable(AevryndAnimationGraph3DTest tests/AnimationGraph3DSmoke.cpp)
 target_compile_options(AevryndAnimationGraph3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAnimationGraph3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndAnimationGraph3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAnimationGraph3DTest>'")
+add_executable(AevryndSkeletalIk3DTest tests/SkeletalIk3DSmoke.cpp)
+target_compile_options(AevryndSkeletalIk3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndSkeletalIk3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndSkeletalIk3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSkeletalIk3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkeletalIk3DTest>'")
 add_executable(AevryndSkinnedModelAssetV2Test tests/SkinnedModelAssetV2Smoke.cpp)
 target_compile_options(AevryndSkinnedModelAssetV2Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSkinnedModelAssetV2Test PRIVATE AevryndEngine)
