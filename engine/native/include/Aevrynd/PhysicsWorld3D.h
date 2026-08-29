@@ -31,6 +31,8 @@ public:
     PhysicsWorldStats3D Stats()const;
     ReusableMemoryStats MemoryStats()const;
     std::size_t TrimUnusedMemory();
+    bool CanRebaseOrigin(Vec3 delta)const noexcept;
+    void RebaseOrigin(Vec3 delta)noexcept;
 private:
     static constexpr std::size_t RetainedBroadPhaseObstacles=64;
     static bool LayersMatch(const RigidBodyState3D& left,const RigidBodyState3D& right);

@@ -34,6 +34,8 @@ public:
     bool Grounded()const{return grounded_;}
     const CharacterControllerSettings3D& Settings()const{return settings_;}
     CharacterControllerStats3D Stats()const{return stats_;}
+    bool CanRebaseOrigin(Vec3 delta)const noexcept;
+    void RebaseOrigin(Vec3 delta)noexcept;
 private:
     CharacterControllerSettings3D settings_{};
     CharacterControllerStats3D stats_{};

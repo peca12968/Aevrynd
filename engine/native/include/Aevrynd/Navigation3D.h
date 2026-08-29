@@ -51,6 +51,8 @@ public:
     NavigationPathStats3D FindPathInto(Vec3 start,Vec3 goal,NavigationQueryWorkspace3D& workspace,std::vector<Vec3>& output)const;
     std::size_t BlockedCellCount()const;
     const NavigationGridSettings3D& Settings()const{return settings_;}
+    bool CanRebaseOrigin(Vec3 delta)const noexcept;
+    void RebaseOrigin(Vec3 delta)noexcept;
 private:
     std::size_t Index(NavigationCell3D cell)const{return std::size_t(cell.z)*settings_.width+std::size_t(cell.x);}
     NavigationCell3D Cell(std::size_t index)const{return{int(index%settings_.width),int(index/settings_.width)};}

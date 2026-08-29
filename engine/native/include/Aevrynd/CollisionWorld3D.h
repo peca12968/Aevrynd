@@ -29,6 +29,8 @@ public:
     std::vector<ColliderHandle3D> QueryBox(Vec3 center,Vec3 extents,CollisionQueryFilter3D filter={})const;
     void CollectBoxes(std::vector<BoxCollider3D>& output,CollisionQueryFilter3D filter={})const;
     CollisionWorldStats3D Stats()const;
+    bool CanRebaseOrigin(Vec3 delta)const noexcept;
+    void RebaseOrigin(Vec3 delta)noexcept;
 private:
     bool Matches(const StaticBoxCollider3D& collider,CollisionQueryFilter3D filter)const;
     std::unordered_map<uint32_t,StaticBoxCollider3D> colliders_;

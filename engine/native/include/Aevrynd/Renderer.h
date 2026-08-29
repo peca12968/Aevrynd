@@ -574,6 +574,10 @@ public:
     const Matrix4& ViewProjection()const{return viewProjection_;}
     void SetCameraCut3D(bool cut=true){cameraCut3D_=cut;}
     bool CameraCut3D()const{return cameraCut3D_;}
+    void SetOriginGeneration3D(uint64_t generation){originGeneration3D_=generation;}
+    uint64_t OriginGeneration3D()const{return originGeneration3D_;}
+    // 原點切換會失效跨幀歷史，並將所有渲染環境座標移入新的本地空間。
+    bool ApplyWorldOriginShift3D(Vec3 delta,uint64_t generation){if(!generation||generation==originGeneration3D_||!std::isfinite(delta.x)||!std::isfinite(delta.y)||!std::isfinite(delta.z))return false;originGeneration3D_=generation;cameraCut3D_=true;atmosphere_.cameraPosition=atmosphere_.cameraPosition-delta;atmosphere_.heightFogBaseHeight-=delta.y;volumetricClouds_.baseAltitude-=delta.y;for(auto& probe:localReflectionProbes_){probe.minimum=probe.minimum-delta;probe.maximum=probe.maximum-delta;probe.capturePosition=probe.capturePosition-delta;}for(auto& instance:meshInstances){instance.motionValid=false;instance.previousTransform=instance.transform;}for(auto& instance:skinnedMeshInstances){instance.motionValid=false;instance.previousTransform=instance.transform;instance.previousPalette=instance.palette;}return true;}
     void SetDirectionalLight(DirectionalLight3D light){light.direction=Normalize(light.direction);if(Length(light.direction)<.0001f)light.direction={0,-1,0};light_=light;}
     const DirectionalLight3D& DirectionalLight()const{return light_;}
     void SetDirectionalShadowMapEnabled(bool enabled){directionalShadowMapEnabled_=enabled;}
@@ -686,7 +690,7 @@ private:
     uint64_t ellipseStepCacheClock_{};
     bool backfaceCulling_{true};
     bool directionalShadowMapEnabled_{true};
-    bool cameraCut3D_{};
+    bool cameraCut3D_{};uint64_t originGeneration3D_{};
     BlendMode2D blendMode_{BlendMode2D::Alpha};
     DrawListCapacityProfile capacityProfile_{DrawListCapacityProfile::Frame};
 };
@@ -758,6 +762,7 @@ public:
     EnvironmentLightingHandle3D ReflectionProbeCaptureEnvironment3D(ReflectionProbeCaptureHandle3D handle)const;
     void SetReflectionProbeCaptureBudget(size_t bytes);
     void TrimReflectionProbeCaptures3D();
+    bool RebaseReflectionProbeCaptures3D(Vec3 delta,uint64_t originGeneration);
     void TrimTransientMemory();
     [[nodiscard]] TransientMemoryStats MemoryStats()const;
     void WaitIdle();

@@ -38,6 +38,8 @@ add_library(AevryndEngine STATIC
   src/WorldPartition3D.cpp
   src/WorldPartitionD3D12Adapter3D.cpp
   src/WorldPartitionTerrainVegetationAdapter3D.cpp
+  src/WorldOrigin3D.cpp
+  src/WorldOriginRuntime3D.cpp
   src/VisibilityBvh3D.cpp
   src/Vegetation3D.cpp
 )
@@ -484,6 +486,18 @@ add_executable(AevryndReflectionProbeCaptureD3D12Test tests/ReflectionProbeCaptu
 target_compile_options(AevryndReflectionProbeCaptureD3D12Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndReflectionProbeCaptureD3D12Test PRIVATE AevryndEngine Psapi)
 add_test(NAME AevryndReflectionProbeCaptureD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndReflectionProbeCaptureD3D12Test>'")
+add_executable(AevryndWorldOriginRendererTest tests/WorldOriginRendererSmoke.cpp)
+target_compile_options(AevryndWorldOriginRendererTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldOriginRendererTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldOriginRendererTest COMMAND AevryndWorldOriginRendererTest)
+add_executable(AevryndWorldOrigin3DTest tests/WorldOrigin3DSmoke.cpp)
+target_compile_options(AevryndWorldOrigin3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldOrigin3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldOrigin3DTest COMMAND AevryndWorldOrigin3DTest)
+add_executable(AevryndWorldOriginRuntime3DTest tests/WorldOriginRuntime3DSmoke.cpp)
+target_compile_options(AevryndWorldOriginRuntime3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldOriginRuntime3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldOriginRuntime3DTest COMMAND AevryndWorldOriginRuntime3DTest)
 
 add_executable(AevryndBloom3DTest tests/Bloom3DSmoke.cpp)
 target_compile_options(AevryndBloom3DTest PRIVATE /W4 /permissive- /utf-8)

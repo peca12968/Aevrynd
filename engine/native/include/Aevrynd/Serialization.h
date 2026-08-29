@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Math.h"
+#include "WorldOrigin3D.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -63,6 +64,7 @@ public:
     bool Write(std::string_view name, Vec2 value);
     bool Write(std::string_view name, Vec3 value);
     bool Write(std::string_view name, const Transform3D& value);
+    bool Write(std::string_view name,const GlobalPosition3D& value);
     bool Write(std::string_view name, const SerializationObject& value);
 
     // 缺少欄位時保留呼叫端既有值，讓新舊版本可安全共用預設值。
@@ -77,6 +79,7 @@ public:
     bool Read(std::string_view name, Vec2& value) const;
     bool Read(std::string_view name, Vec3& value) const;
     bool Read(std::string_view name, Transform3D& value) const;
+    bool Read(std::string_view name,GlobalPosition3D& value)const;
     bool Read(std::string_view name, SerializationObject& value) const;
 
     bool Contains(std::string_view name) const;

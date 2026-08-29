@@ -54,6 +54,8 @@ public:
     std::size_t TrimUnusedMemory();
     const VegetationStats3D& Stats()const{return stats_;}
     ReusableMemoryStats MemoryStats()const;
+    bool CanRebaseOrigin(Vec3 delta)const noexcept;
+    void RebaseOrigin(Vec3 delta)noexcept;
 private:
     std::vector<VegetationAsset3D> assets_{};
     std::vector<VegetationInstance3D> instances_{};
@@ -95,6 +97,8 @@ public:
     std::size_t TrimUnusedMemory();
     const ChunkedVegetationStats3D& Stats()const{return stats_;}
     ReusableMemoryStats MemoryStats()const;
+    bool CanRebaseOrigin(Vec3 delta)const noexcept;
+    void RebaseOrigin(Vec3 delta)noexcept;
 private:
     struct Block {
         VegetationChunkHandle3D handle{};

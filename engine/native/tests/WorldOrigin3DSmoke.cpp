@@ -1,0 +1,10 @@
+#include <Aevrynd/WorldOrigin3D.h>
+#include <cmath>
+#include <iostream>
+#include <limits>
+using namespace Aevrynd;
+
+struct Participant final:IWorldOriginParticipant3D {Participant(int& target,bool shouldReject=false):value(&target),reject(shouldReject){}int* value{};bool reject{};int prepared{},committed{},aborted{};bool PrepareWorldOriginRebase3D(const WorldOriginRebaseEvent3D&)override{++prepared;return!reject;}void CommitWorldOriginRebase3D(const WorldOriginRebaseEvent3D& event)noexcept override{*value-=int(event.localDelta.x);++committed;}void AbortWorldOriginRebase3D()noexcept override{++aborted;}};
+int main(){GlobalPosition3D position{{31250000,0,-31250000},{0,0,0}};WorldOrigin3D origin{{{31249990,0,-31249990},{0,0,0}},7};Vec3 local{};if(!ToLocalPosition3D(position,origin,local)||local.x!=320||local.z!=-320)return 1;GlobalPosition3D roundTrip{};if(!ToGlobalPosition3D(local,origin,roundTrip)||roundTrip!=position)return 2;GlobalPosition3D normalized{{-1,0,1},{-17,0,17}};if(!NormalizeGlobalPosition3D(normalized)||normalized.chunk.x!=-2||normalized.offset.x!=15||normalized.chunk.z!=2||normalized.offset.z!=-15)return 3;GlobalPosition3D invalid{{}, {NAN,0,0}};if(NormalizeGlobalPosition3D(invalid))return 4;
+ int first=100,second=200;Participant a{first},b{second,true};WorldOriginCoordinator3D coordinator{};if(!coordinator.Register(a)||!coordinator.Register(b)||!coordinator.Request({{1,0,0},{}})||coordinator.ApplyFrameBoundary()||first!=100||second!=200||a.aborted!=1||coordinator.Origin().generation!=1)return 5;b.reject=false;if(!coordinator.ApplyFrameBoundary()||first!=68||second!=168||coordinator.Origin().generation!=2)return 6;
+ for(int index=0;index<128;++index){GlobalPosition3D target=index&1?GlobalPosition3D{{1,0,0},{}}:GlobalPosition3D{};if(!coordinator.Request(target)||!coordinator.ApplyFrameBoundary())return 7;}if(!coordinator.Request({})||!coordinator.ApplyFrameBoundary()||first!=100||second!=200)return 8;std::cout<<"world origin core smoke passed\n";}
