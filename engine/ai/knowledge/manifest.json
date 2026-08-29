@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "4568daa1e038d723755e461cb93db1692f827ee6",
+  "snapshotRevision": "348615b7ae0d49b3577341e05911dd7e77fec1f7",
   "chunkCharacters": 3000,
   "chunkCount": 603,
   "sourceCount": 158,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "c591e27ba42ddd9ad4d384396a7c0b7c9b4fef7483a282497336d525fbb2174b",
+  "knowledgeSha256": "d007f0c680b61ffaaab44ebfd8440b8ac2af7e48898aa2e1ce1ffff8bd7a9519",
   "sources": [
     {
       "path": "CMakeLists.txt",
