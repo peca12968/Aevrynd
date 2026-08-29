@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "engineVersion": "2.86.0",
-  "snapshotRevision": "348615b7ae0d49b3577341e05911dd7e77fec1f7",
+  "snapshotRevision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
   "chunkCharacters": 3000,
-  "chunkCount": 603,
-  "sourceCount": 158,
+  "chunkCount": 618,
+  "sourceCount": 167,
   "defaultLicense": "project-internal-unverified",
   "trainingEligible": false,
   "sensitiveContentScan": "passed",
-  "knowledgeSha256": "d007f0c680b61ffaaab44ebfd8440b8ac2af7e48898aa2e1ce1ffff8bd7a9519",
+  "knowledgeSha256": "47d8334e10e69c19738bd6302cb187254c092a85db0a53933109dd4e187e321d",
   "sources": [
     {
       "path": "CMakeLists.txt",
@@ -20,9 +20,9 @@
     {
       "path": "engine/native/CMakeLists.txt",
       "kind": "build",
-      "sha256": "5d343ebc71b613b2739d0da69ac3afaac2be48064acc7951b5f7a2e84d907706",
-      "revision": "2989a594c1058187b31ecd5965f59830a3ea91de",
-      "bytes": 46963
+      "sha256": "9592d51f2eea319a61b175baaa67ed453d4dd6e54de76ed6a6aa78257def1b40",
+      "revision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
+      "bytes": 50215
     },
     {
       "path": "engine/native/include/Aevrynd/Animation3D.h",
@@ -76,16 +76,16 @@
     {
       "path": "engine/native/include/Aevrynd/CharacterController3D.h",
       "kind": "public-header",
-      "sha256": "8633c6bbd1fb9a08791c9c20dd9492ec296253c5f54bda2c667e8a0c8fa054ef",
-      "revision": "540f7ae4be8bf09a9ac58e385d277bede0ae2475",
-      "bytes": 2355
+      "sha256": "91dcf00ffd090e9db7d603fd07b73bcacc157460baf159a746ca9ede346781e5",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 2450
     },
     {
       "path": "engine/native/include/Aevrynd/CollisionWorld3D.h",
       "kind": "public-header",
-      "sha256": "a910593c2e4c425778c6aadb7714c51344e4676cfd98129eb466a2eb06d20b69",
-      "revision": "973993cdf41d1322dfc29bcda44fc1e7b1f45aa9",
-      "bytes": 2188
+      "sha256": "c109d2415d09f51f563e9995117d1ce7542373dc11d9144b4da67d4a01abce50",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 2283
     },
     {
       "path": "engine/native/include/Aevrynd/ECS.h",
@@ -104,9 +104,9 @@
     {
       "path": "engine/native/include/Aevrynd/Engine.h",
       "kind": "public-header",
-      "sha256": "c39fc68bad3a1dd42524a6d184a2ad94865c631748ddab9e3f49cebdbec37341",
-      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
-      "bytes": 7209
+      "sha256": "baea2b0ab6d6d1535a3040f613b07ad4b415b435ce998f8e328ae6b9282f1245",
+      "revision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
+      "bytes": 7847
     },
     {
       "path": "engine/native/include/Aevrynd/EnvironmentIbl3D.h",
@@ -209,9 +209,9 @@
     {
       "path": "engine/native/include/Aevrynd/Navigation3D.h",
       "kind": "public-header",
-      "sha256": "2f1693f712328b1bab0e0943ba7462aebd211b0481fa5fb20971af6df6decda7",
-      "revision": "e3f786ef24e231926a5f3a5f2b8e3160cced2ebb",
-      "bytes": 3275
+      "sha256": "f68edfb2c6812a9dc92ec70c3978e4f8383f079a3be7ae292d164bf18373cd3d",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 3370
     },
     {
       "path": "engine/native/include/Aevrynd/PbrLightingReference.h",
@@ -230,9 +230,9 @@
     {
       "path": "engine/native/include/Aevrynd/PhysicsWorld3D.h",
       "kind": "public-header",
-      "sha256": "15da948fbde007651293a2f75a537ee5daf268a9834c6fd9702c8fd37f4bf93e",
-      "revision": "9d2405eb444811267f53a41740a85fbd5d7ff426",
-      "bytes": 3137
+      "sha256": "6c681164198f89ec6dc49834da422be41204c07906c041e8e5d856efb5512b37",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 3232
     },
     {
       "path": "engine/native/include/Aevrynd/ProceduralPlacement3D.h",
@@ -251,9 +251,9 @@
     {
       "path": "engine/native/include/Aevrynd/Renderer.h",
       "kind": "public-header",
-      "sha256": "b4be24d03453f241b5f7ea337227c5310a96071000ac64b67ecde6d62eaf96b6",
-      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
-      "bytes": 95748
+      "sha256": "5e445e44ef2bd89159554d45179817714caa1a73ebefd1f9979c00e084ae98f8",
+      "revision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
+      "bytes": 100065
     },
     {
       "path": "engine/native/include/Aevrynd/Scene25D.h",
@@ -279,16 +279,16 @@
     {
       "path": "engine/native/include/Aevrynd/SceneECS3D.h",
       "kind": "public-header",
-      "sha256": "37766a911efda32bc144fc8557352a630f4ebc3e133ce51e67929590195e1bbb",
-      "revision": "68ecb7223df9577024f0a70a22915fa703ff6b69",
-      "bytes": 4334
+      "sha256": "0b906421554530fdb35bbc430d9ce348e22b80da5adcab4202ef2f2a8d47acf1",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 4429
     },
     {
       "path": "engine/native/include/Aevrynd/Serialization.h",
       "kind": "public-header",
-      "sha256": "ba10768d083b114025924d955b13e698d910700adbd50cf05485e8d6f191579c",
-      "revision": "c3e482385b0358b822196b9239095cb88a767028",
-      "bytes": 3787
+      "sha256": "073d278553b9ae82f93fcdcb6a04443dfa46a5d6124d0e0af5b6f31184fa0214",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 3950
     },
     {
       "path": "engine/native/include/Aevrynd/SkinnedMaterialSidecar3D.h",
@@ -349,9 +349,9 @@
     {
       "path": "engine/native/include/Aevrynd/Vegetation3D.h",
       "kind": "public-header",
-      "sha256": "bbf75c02e37c33018144ebe02ba1ce1706aa3cdb438ce5e1110167eb52cfa415",
-      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
-      "bytes": 4610
+      "sha256": "c3b70caaa06c9da289512f3d89af5302aec7dc243197cc874fdb674715d91f5e",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 4800
     },
     {
       "path": "engine/native/include/Aevrynd/Viewport.h",
@@ -375,11 +375,25 @@
       "bytes": 2612
     },
     {
+      "path": "engine/native/include/Aevrynd/WorldOrigin3D.h",
+      "kind": "public-header",
+      "sha256": "1266854c6057aa8a1a374866dddb220c7baabad55ab85b15b8e5f57a33bdeabb",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 2308
+    },
+    {
+      "path": "engine/native/include/Aevrynd/WorldOriginRuntime3D.h",
+      "kind": "public-header",
+      "sha256": "8b5f3f9873c095c0214f8a695bb1608df20b9dd0d2b22ee787c930989eb3dde3",
+      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
+      "bytes": 1046
+    },
+    {
       "path": "engine/native/include/Aevrynd/WorldPartition3D.h",
       "kind": "public-header",
-      "sha256": "ddb1f1f5b40a3e377e5fb9910cc6f1a68721de04b14cf4068cceadbf8902042e",
-      "revision": "a2d8cdc11a6da6f9ea8be4fc54dd5515da0ec002",
-      "bytes": 3985
+      "sha256": "38b3e0c6ddbd58996fb585ee6ef1a8731bc6b9c79419d5b635953f86ac243eab",
+      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
+      "bytes": 4253
     },
     {
       "path": "engine/native/include/Aevrynd/WorldPartitionD3D12Adapter3D.h",
@@ -391,9 +405,9 @@
     {
       "path": "engine/native/include/Aevrynd/WorldPartitionTerrainVegetationAdapter3D.h",
       "kind": "public-header",
-      "sha256": "d0332d08d977e068c73788139fd5d7586d395762b8df3b6b6e90e9b6c61a89a9",
-      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
-      "bytes": 3951
+      "sha256": "24f10f3ef4d543e47bd181f09437f8ec2aaf2e727fa92b8a795626d5881c127a",
+      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
+      "bytes": 4471
     },
     {
       "path": "engine/native/include/Aevrynd/WorldStreamer3D.h",
@@ -767,6 +781,13 @@
       "bytes": 14410
     },
     {
+      "path": "engine/native/tests/ReflectionProbeOriginRebaseD3D12Smoke.cpp",
+      "kind": "test",
+      "sha256": "faed58c1863e910e62c79e2a9bb5020762291957a8c0ac664b30e9a9788aaf9a",
+      "revision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
+      "bytes": 4206
+    },
+    {
       "path": "engine/native/tests/RendererBenchmark.cpp",
       "kind": "test",
       "sha256": "7441196639319a2ac4cda6434fe8c9e186d4f92cd6e59d812a49e0a921213561",
@@ -825,9 +846,9 @@
     {
       "path": "engine/native/tests/SerializationSmoke.cpp",
       "kind": "test",
-      "sha256": "ac7fd8b5731d33a28e7167fcb4e10b2501d9cfcfd90cd58574ea449c998d70d2",
-      "revision": "c3e482385b0358b822196b9239095cb88a767028",
-      "bytes": 5788
+      "sha256": "fcd5302ae818144443d0f40d03967204a31794d35c9bf4dc9db4218cce177558",
+      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
+      "bytes": 7122
     },
     {
       "path": "engine/native/tests/SkinnedGroupVelocityReadbackSmoke.cpp",
@@ -1019,6 +1040,41 @@
       "bytes": 5114
     },
     {
+      "path": "engine/native/tests/WindowsGuiTestWrapperFailureSmoke.cpp",
+      "kind": "test",
+      "sha256": "ff157d95efa79a19999a77251047fe2084ccd7f1cd6efcb39aace8fca559d281",
+      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
+      "bytes": 30
+    },
+    {
+      "path": "engine/native/tests/WorldOrigin3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "d22595ecbbd894d3ca819fa13ee8bf07071fb8b0b887d4fcf0a1872210f08710",
+      "revision": "e1584944dbfc91d2e9c423813bb712d2e732c526",
+      "bytes": 2983
+    },
+    {
+      "path": "engine/native/tests/WorldOriginRendererSmoke.cpp",
+      "kind": "test",
+      "sha256": "30694538767315447b8b4aa9e0ea6155b41c3fad226f6b8d05eed693742bdfcb",
+      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
+      "bytes": 3571
+    },
+    {
+      "path": "engine/native/tests/WorldOriginRuntime3DSmoke.cpp",
+      "kind": "test",
+      "sha256": "7b0087228e194d7960c24bef1628d1baae5958598518419cceb575d40f34b0e8",
+      "revision": "66796c45a8d0e70df6b94833d614a5b7797029fe",
+      "bytes": 2070
+    },
+    {
+      "path": "engine/native/tests/WorldOriginThreadGuardSmoke.cpp",
+      "kind": "test",
+      "sha256": "8a23844eb8ada73008b162c6de4bdc840f92393d945a043ca97efb514211f890",
+      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
+      "bytes": 1611
+    },
+    {
       "path": "engine/native/tests/WorldPartition3DBenchmark.cpp",
       "kind": "test",
       "sha256": "beb58e86e522fb6cac21acfb70c50603974b01a789b2d99a021f0567e5430fbc",
@@ -1028,9 +1084,9 @@
     {
       "path": "engine/native/tests/WorldPartition3DD3D12Smoke.cpp",
       "kind": "test",
-      "sha256": "e9fa41e608666df6020ea8dbe107d889e73090317be9f90b0fa7937ef37dc992",
-      "revision": "4479204869cd82ae9dec4c840afdd56c0dca8348",
-      "bytes": 9500
+      "sha256": "8bf97034a96646cde30461c97e738751e6308b5759c55e8de84968ee296be5ad",
+      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
+      "bytes": 9503
     },
     {
       "path": "engine/native/tests/WorldPartition3DFakeFixtures.h",
@@ -1047,6 +1103,13 @@
       "bytes": 7690
     },
     {
+      "path": "engine/native/tests/WorldPartitionOriginIntegrationSmoke.cpp",
+      "kind": "test",
+      "sha256": "acc94c4cc2779733f85d31c94ea66591ee39abf813e1a74c898662359fca9b2e",
+      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
+      "bytes": 2114
+    },
+    {
       "path": "engine/native/tests/WorldPartitionTerrainVegetationAdapterBenchmark.cpp",
       "kind": "test",
       "sha256": "d0712975785340635854c903335b289a53aa512499cec20b308523cadb94ba1a",
@@ -1056,16 +1119,16 @@
     {
       "path": "engine/native/tests/WorldPartitionTerrainVegetationAdapterFakeSmoke.cpp",
       "kind": "test",
-      "sha256": "3e9f50d9e819878fe3a92282722459b3f9e96ec07a3df3cd866662cbcb49ae03",
-      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
-      "bytes": 5690
+      "sha256": "ad3fac06c279bc447910e06f7173953f7c3e91d456e0403789dbfe842d9e45a2",
+      "revision": "e0c23c078beab2a71c96b959c8c1020bacfa987f",
+      "bytes": 5792
     },
     {
       "path": "engine/native/tests/WorldPartitionTerrainVegetationD3D12Smoke.cpp",
       "kind": "test",
-      "sha256": "ce76671223bd7efbb56b7960226a3096b9425f6c88bc908c39feb6f24e80e04f",
-      "revision": "4568daa1e038d723755e461cb93db1692f827ee6",
-      "bytes": 6598
+      "sha256": "1206f83110b8bacb7e1ee7b1527282630ac13a5268516a264baf54966548a570",
+      "revision": "2f235c33887dad1a7caf18bef102778fda69cadb",
+      "bytes": 6776
     },
     {
       "path": "engine/native/tests/WorldStreamer3DSmoke.cpp",

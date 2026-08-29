@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"aec-00611","kind":"git-commit","sourcePath":"git/history","sourceSha256":"bf8ac20fc00016f933911e06d4dab815b21890c3237b33723ca6c903e46baeae","sourceRevision":"91446d964411c28cb20fb9af8b60578a010a538f","license":"project-internal-unverified","trainingEligible":false,"engineVersion":"2.86.0","offset":0,"symbol":"Commit","content":"加入自動多級模型LOD管線"}
