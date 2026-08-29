@@ -26,6 +26,7 @@ add_library(AevryndEngine STATIC
   src/ProceduralPlacement3D.cpp
   src/ReplicationProtocol3D.cpp
   src/ReplicationRuntime3D.cpp
+  src/ReplicationWorldAdapter3D.cpp
   src/SceneECS3D.cpp
   src/Serialization.cpp
   src/WorldDeltaPersistence3D.cpp
@@ -667,3 +668,12 @@ add_test(NAME AevryndReplicationRuntime3DTest COMMAND AevryndReplicationRuntime3
 add_executable(AevryndReplicationRuntime3DBenchmark tests/ReplicationRuntime3DBenchmark.cpp)
 target_compile_options(AevryndReplicationRuntime3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndReplicationRuntime3DBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndReplicationWorldAdapter3DTest tests/ReplicationWorldAdapter3DSmoke.cpp)
+target_compile_options(AevryndReplicationWorldAdapter3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationWorldAdapter3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndReplicationWorldAdapter3DTest COMMAND AevryndReplicationWorldAdapter3DTest)
+
+add_executable(AevryndReplicationWorldAdapter3DBenchmark tests/ReplicationWorldAdapter3DBenchmark.cpp)
+target_compile_options(AevryndReplicationWorldAdapter3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationWorldAdapter3DBenchmark PRIVATE AevryndEngine)
