@@ -7,8 +7,29 @@
 #include <fstream>
 #include <limits>
 #include <system_error>
+#include <unordered_map>
 
 namespace Aevrynd {
+struct WorldChunkDeltaStore3D::SaveOwnerState {
+  SaveOwnerState(std::uint64_t value, SaveCompletionSink3D completionSink)
+      : ownerNamespace(value), sink(completionSink) {}
+  const std::uint64_t ownerNamespace;
+  std::mutex mutex{};
+  std::condition_variable idle{};
+  std::uint64_t lastAcceptedToken{};
+  std::deque<WorldDeltaSaveResult3D> completions{};
+  std::deque<std::size_t> completionBytes{};
+  std::size_t inFlight{};
+  bool attached{true};
+  SaveCompletionSink3D sink{};
+};
+struct WorldChunkDeltaStore3D::StoreCore {
+  std::mutex mutex{};
+  std::unordered_map<std::uint64_t, std::weak_ptr<SaveOwnerState>> owners{};
+  WorldChunkDeltaStore3D *store{};
+  std::uint64_t nextOwnerNamespace{1};
+  bool ownerNamespacesExhausted{};
+};
 namespace {
 constexpr std::array<std::byte, 8> Magic{
     std::byte{'A'}, std::byte{'E'}, std::byte{'W'}, std::byte{'D'},
@@ -498,7 +519,8 @@ bool DecodeWorldChunkDeltaSnapshot3D(std::span<const std::byte> in,
 }
 
 WorldChunkDeltaStore3D::WorldChunkDeltaStore3D(WorldDeltaStoreSettings3D s)
-    : settings_(std::move(s)) {
+    : settings_(std::move(s)), core_(std::make_shared<StoreCore>()) {
+  core_->store = this;
   std::size_t perLoadCompletion{}, requiredLoadCompletions{};
   const bool completionBudgetValid =
       CheckedAdd(sizeof(WorldDeltaLoadResult3D) + MaximumDiagnosticBytes,
@@ -520,12 +542,115 @@ WorldChunkDeltaStore3D::WorldChunkDeltaStore3D(WorldDeltaStoreSettings3D s)
   else
     settings_.enabled = false;
 }
+WorldChunkDeltaStore3D::SaveOwnerLease
+WorldChunkDeltaStore3D::AcquireSaveOwner(SaveCompletionSink3D sink) {
+  if (!core_ || (bool(sink.lifetime) != bool(sink.invoke)))
+    return {};
+  std::lock_guard lock(core_->mutex);
+  if (core_->ownerNamespacesExhausted || !core_->nextOwnerNamespace)
+    return {};
+  const auto ownerNamespace = core_->nextOwnerNamespace;
+  if (ownerNamespace == (std::numeric_limits<std::uint64_t>::max)())
+    core_->ownerNamespacesExhausted = true;
+  else
+    ++core_->nextOwnerNamespace;
+  std::shared_ptr<SaveOwnerState> state;
+  try {
+    state = std::make_shared<SaveOwnerState>(ownerNamespace, std::move(sink));
+    core_->owners.emplace(ownerNamespace, state);
+  } catch (...) {
+    return {};
+  }
+  SaveOwnerLease lease;
+  lease.core_ = core_;
+  lease.state_ = std::move(state);
+  return lease;
+}
+bool WorldChunkDeltaStore3D::SetNextSaveOwnerNamespaceForTesting(
+    std::uint64_t nextNamespace) {
+  if (!core_ || !nextNamespace)
+    return false;
+  std::lock_guard lock(core_->mutex);
+  for (const auto &[unused, owner] : core_->owners)
+    if (!owner.expired())
+      return false;
+  core_->nextOwnerNamespace = nextNamespace;
+  core_->ownerNamespacesExhausted = false;
+  return true;
+}
 WorldChunkDeltaStore3D::~WorldChunkDeltaStore3D() {
+  {
+    std::lock_guard lock(core_->mutex);
+    core_->store = nullptr;
+  }
   if (worker_.joinable()) {
     worker_.request_stop();
     wake_.notify_all();
     worker_.join();
   }
+}
+WorldChunkDeltaStore3D::SaveOwnerLease::~SaveOwnerLease() {
+  if (core_ && state_) {
+    std::lock_guard lock(core_->mutex);
+    if (core_->store)
+      core_->store->DetachSaveOwner(state_);
+    core_->owners.erase(state_->ownerNamespace);
+  }
+}
+WorldChunkDeltaStore3D::SaveOwnerLease::SaveOwnerLease(
+    SaveOwnerLease &&other) noexcept
+    : core_(std::move(other.core_)), state_(std::move(other.state_)) {}
+WorldChunkDeltaStore3D::SaveOwnerLease &
+WorldChunkDeltaStore3D::SaveOwnerLease::operator=(SaveOwnerLease &&other) noexcept {
+  if (this == &other)
+    return *this;
+  this->~SaveOwnerLease();
+  new (this) SaveOwnerLease(std::move(other));
+  return *this;
+}
+std::uint64_t
+WorldChunkDeltaStore3D::SaveOwnerLease::OwnerNamespace() const noexcept {
+  return state_ ? state_->ownerNamespace : 0;
+}
+bool WorldChunkDeltaStore3D::SaveOwnerLease::EnqueueSave(
+    std::uint64_t token, std::uint64_t epoch,
+    const WorldChunkDeltaSnapshot3D &snapshot) const {
+  if (!core_ || !state_)
+    return false;
+  std::lock_guard lock(core_->mutex);
+  return core_->store &&
+         core_->store->EnqueueSave(*this, token, epoch, snapshot);
+}
+bool WorldChunkDeltaStore3D::SaveOwnerLease::TryPopSave(
+    WorldDeltaSaveResult3D &result) const {
+  if (!core_ || !state_)
+    return false;
+  std::lock_guard lock(core_->mutex);
+  return core_->store && core_->store->TryPopSave(*this, result);
+}
+void WorldChunkDeltaStore3D::SaveOwnerLease::WaitIdle() const {
+  if (!core_ || !state_)
+    return;
+  std::unique_lock lock(core_->mutex);
+  auto *store = core_->store;
+  if (!store)
+    return;
+  store->WaitOwnerIdle(*this);
+}
+void WorldChunkDeltaStore3D::DetachSaveOwner(
+    const std::shared_ptr<SaveOwnerState> &owner) noexcept {
+  std::scoped_lock lock(mutex_, owner->mutex);
+  owner->attached = false;
+  for (const auto bytes : owner->completionBytes) {
+    reservedCompletedResults_ = reservedCompletedResults_ ? reservedCompletedResults_ - 1 : 0;
+    reservedCompletedBytes_ = reservedCompletedBytes_ >= bytes ? reservedCompletedBytes_ - bytes : 0;
+    stats_.completedResults = stats_.completedResults ? stats_.completedResults - 1 : 0;
+    stats_.completedBytes = stats_.completedBytes >= bytes ? stats_.completedBytes - bytes : 0;
+  }
+  owner->completions.clear();
+  owner->completionBytes.clear();
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
 }
 bool WorldChunkDeltaStore3D::EnqueueLoad(std::uint64_t id, std::uint64_t epoch,
                                          WorldDeltaChunkKey3D key,
@@ -620,6 +745,79 @@ bool WorldChunkDeltaStore3D::EnqueueSave(
   wake_.notify_one();
   return true;
 }
+bool WorldChunkDeltaStore3D::EnqueueSave(
+    const SaveOwnerLease &owner, std::uint64_t token, std::uint64_t epoch,
+    const WorldChunkDeltaSnapshot3D &snapshot) {
+  if (!owner.state_ || owner.core_.get() != core_.get() || !token || !epoch)
+    return false;
+  bool staleToken{};
+  {
+    std::lock_guard ownerLock(owner.state_->mutex);
+    staleToken = token <= owner.state_->lastAcceptedToken;
+  }
+  if (staleToken) {
+    std::lock_guard lock(mutex_);
+    ++stats_.rejected;
+    return false;
+  }
+  std::vector<std::byte> encoded;
+  if (!EncodeWorldChunkDeltaSnapshot3D(snapshot, encoded,
+                                       settings_.maximumSnapshotBytes)) {
+    std::lock_guard lock(mutex_);
+    ++stats_.rejected;
+    return false;
+  }
+  Request request{};
+  try {
+    request.kind = Request::Kind::Save;
+    request.requestId = token;
+    request.epoch = epoch;
+    request.key = snapshot.key;
+    request.snapshot = snapshot;
+    request.saveOwner = owner.state_;
+  } catch (...) {
+    std::lock_guard lock(mutex_);
+    ++stats_.rejected;
+    return false;
+  }
+  std::scoped_lock lock(mutex_, owner.state_->mutex);
+  std::size_t requestBytes{}, completionBytes{}, requestUsed{};
+  if (token <= owner.state_->lastAcceptedToken ||
+      !CheckedAdd(sizeof(Request), encoded.size(), requestBytes) ||
+      !CheckedAdd(sizeof(WorldDeltaSaveResult3D), MaximumDiagnosticBytes,
+                  completionBytes) ||
+      !CheckedAdd(stats_.queuedBytes, activeBytes_, requestUsed) ||
+      !settings_.enabled ||
+      queue_.size() + active_ >= settings_.maximumQueuedRequests ||
+      requestUsed > settings_.maximumQueuedBytes ||
+      requestBytes > settings_.maximumQueuedBytes - requestUsed ||
+      reservedCompletedResults_ >= settings_.maximumCompletedResults ||
+      reservedCompletedBytes_ > settings_.maximumCompletedBytes ||
+      completionBytes > settings_.maximumCompletedBytes - reservedCompletedBytes_) {
+    ++stats_.rejected;
+    return false;
+  }
+  request.bytes = requestBytes;
+  request.completionBytes = completionBytes;
+  try {
+    queue_.push_back(std::move(request));
+  } catch (...) {
+    ++stats_.rejected;
+    return false;
+  }
+  owner.state_->lastAcceptedToken = token;
+  ++owner.state_->inFlight;
+  stats_.queuedBytes += requestBytes;
+  stats_.peakQueuedBytes =
+      (std::max)(stats_.peakQueuedBytes, stats_.queuedBytes + activeBytes_);
+  ++reservedCompletedResults_;
+  reservedCompletedBytes_ += completionBytes;
+  stats_.queuedRequests = queue_.size();
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
+  wake_.notify_one();
+  return true;
+}
 bool WorldChunkDeltaStore3D::TryPopLoad(WorldDeltaLoadResult3D &r) {
   std::lock_guard lock(mutex_);
   if (loads_.empty())
@@ -652,6 +850,31 @@ bool WorldChunkDeltaStore3D::TryPopSave(WorldDeltaSaveResult3D &r) {
   stats_.reservedCompletedBytes = reservedCompletedBytes_;
   return true;
 }
+bool WorldChunkDeltaStore3D::TryPopSave(const SaveOwnerLease &owner,
+                                        WorldDeltaSaveResult3D &r) {
+  if (!owner.state_ || owner.core_.get() != core_.get())
+    return false;
+  std::scoped_lock lock(mutex_, owner.state_->mutex);
+  if (owner.state_->completions.empty())
+    return false;
+  r = std::move(owner.state_->completions.front());
+  owner.state_->completions.pop_front();
+  const auto bytes = owner.state_->completionBytes.front();
+  owner.state_->completionBytes.pop_front();
+  reservedCompletedResults_ = reservedCompletedResults_ ? reservedCompletedResults_ - 1 : 0;
+  reservedCompletedBytes_ = reservedCompletedBytes_ >= bytes ? reservedCompletedBytes_ - bytes : 0;
+  stats_.completedResults = stats_.completedResults ? stats_.completedResults - 1 : 0;
+  stats_.completedBytes = stats_.completedBytes >= bytes ? stats_.completedBytes - bytes : 0;
+  stats_.reservedCompletedResults = reservedCompletedResults_;
+  stats_.reservedCompletedBytes = reservedCompletedBytes_;
+  return true;
+}
+void WorldChunkDeltaStore3D::WaitOwnerIdle(const SaveOwnerLease &owner) {
+  if (!owner.state_ || owner.core_.get() != core_.get())
+    return;
+  std::unique_lock lock(owner.state_->mutex);
+  owner.state_->idle.wait(lock, [&] { return owner.state_->inFlight == 0; });
+}
 void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
   for (;;) {
     Request request{};
@@ -681,6 +904,7 @@ void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
       WorldDeltaSaveResult3D result{request.requestId, request.epoch,
                                     request.snapshot.durableGeneration,
                                     request.key};
+      SaveCompletionSink3D completionSink{};
       std::vector<std::byte> payload;
       try {
         std::filesystem::create_directories(directory);
@@ -716,15 +940,65 @@ void WorldChunkDeltaStore3D::Worker(std::stop_token stop) {
       }
       {
         std::lock_guard lock(mutex_);
+        bool retainedCompletion = true;
         ++stats_.saves;
         if (result.durable)
           ++stats_.durableSaves;
-        saves_.push_back(std::move(result));
-        saveCompletionBytes_.push_back(request.completionBytes);
-        ++stats_.completedResults;
-        stats_.completedBytes += request.completionBytes;
-        stats_.peakCompletedBytes =
-            (std::max)(stats_.peakCompletedBytes, stats_.completedBytes);
+        if (request.saveOwner) {
+          std::lock_guard ownerLock(request.saveOwner->mutex);
+          completionSink = request.saveOwner->sink;
+          if (request.saveOwner->attached) {
+            try {
+              request.saveOwner->completionBytes.push_back(
+                  request.completionBytes);
+              try {
+                request.saveOwner->completions.push_back(result);
+              } catch (...) {
+                request.saveOwner->completionBytes.pop_back();
+                throw;
+              }
+            } catch (...) {
+              retainedCompletion = false;
+            }
+          } else {
+            retainedCompletion = false;
+          }
+          if (!retainedCompletion) {
+            reservedCompletedResults_ = reservedCompletedResults_ ? reservedCompletedResults_ - 1 : 0;
+            reservedCompletedBytes_ = reservedCompletedBytes_ >= request.completionBytes ? reservedCompletedBytes_ - request.completionBytes : 0;
+            stats_.reservedCompletedResults = reservedCompletedResults_;
+            stats_.reservedCompletedBytes = reservedCompletedBytes_;
+          }
+        } else {
+          try {
+            saveCompletionBytes_.push_back(request.completionBytes);
+            try {
+              saves_.push_back(std::move(result));
+            } catch (...) {
+              saveCompletionBytes_.pop_back();
+              throw;
+            }
+          } catch (...) {
+            retainedCompletion = false;
+            reservedCompletedResults_ = reservedCompletedResults_ ? reservedCompletedResults_ - 1 : 0;
+            reservedCompletedBytes_ = reservedCompletedBytes_ >= request.completionBytes ? reservedCompletedBytes_ - request.completionBytes : 0;
+            stats_.reservedCompletedResults = reservedCompletedResults_;
+            stats_.reservedCompletedBytes = reservedCompletedBytes_;
+          }
+        }
+        if (retainedCompletion) {
+          ++stats_.completedResults;
+          stats_.completedBytes += request.completionBytes;
+          stats_.peakCompletedBytes =
+              (std::max)(stats_.peakCompletedBytes, stats_.completedBytes);
+        }
+      }
+      if (completionSink.invoke)
+        completionSink.invoke(completionSink.lifetime.get(), result);
+      if (request.saveOwner) {
+        std::lock_guard ownerLock(request.saveOwner->mutex);
+        --request.saveOwner->inFlight;
+        request.saveOwner->idle.notify_all();
       }
     } else {
       WorldDeltaLoadResult3D result{request.requestId, request.epoch,
@@ -886,6 +1160,16 @@ void WorldChunkDeltaStore3D::WaitIdle() {
   idle_.wait(lock, [&] { return queue_.empty() && !active_; });
 }
 void WorldChunkDeltaStore3D::Reset() {
+  (void)TryReset();
+}
+bool WorldChunkDeltaStore3D::TryReset() {
+  std::unique_lock coreLock(core_->mutex);
+  for (const auto &[unused, owner] : core_->owners)
+    if (!owner.expired()) {
+      std::lock_guard lock(mutex_);
+      ++stats_.rejected;
+      return false;
+    }
   WaitIdle();
   std::lock_guard lock(mutex_);
   queue_.clear();
@@ -899,6 +1183,7 @@ void WorldChunkDeltaStore3D::Reset() {
   stats_.reservedCompletedResults = stats_.reservedCompletedBytes = 0;
   if (++resetEpoch_ == 0)
     resetEpoch_ = 1;
+  return true;
 }
 std::size_t WorldChunkDeltaStore3D::TrimUnusedMemory() {
   WaitIdle();

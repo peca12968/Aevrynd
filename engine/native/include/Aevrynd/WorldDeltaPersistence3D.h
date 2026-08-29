@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <memory>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -123,7 +124,32 @@ bool DecodeWorldChunkDeltaSnapshot3D(std::span<const std::byte> bytes,
                                                                 1024);
 
 class WorldChunkDeltaStore3D {
+  struct SaveOwnerState;
+  struct StoreCore;
 public:
+  class SaveOwnerLease {
+  public:
+    SaveOwnerLease() = default;
+    ~SaveOwnerLease();
+    SaveOwnerLease(SaveOwnerLease &&other) noexcept;
+    SaveOwnerLease &operator=(SaveOwnerLease &&other) noexcept;
+    SaveOwnerLease(const SaveOwnerLease &) = delete;
+    SaveOwnerLease &operator=(const SaveOwnerLease &) = delete;
+    explicit operator bool() const noexcept { return state_ != nullptr; }
+    std::uint64_t OwnerNamespace() const noexcept;
+    bool EnqueueSave(std::uint64_t token, std::uint64_t epoch,
+                     const WorldChunkDeltaSnapshot3D &snapshot) const;
+    bool TryPopSave(WorldDeltaSaveResult3D &result) const;
+    void WaitIdle() const;
+  private:
+    friend class WorldChunkDeltaStore3D;
+    std::shared_ptr<StoreCore> core_{};
+    std::shared_ptr<SaveOwnerState> state_{};
+  };
+  struct SaveCompletionSink3D {
+    std::shared_ptr<void> lifetime{};
+    void (*invoke)(void *, const WorldDeltaSaveResult3D &) noexcept{};
+  };
   explicit WorldChunkDeltaStore3D(WorldDeltaStoreSettings3D settings = {});
   ~WorldChunkDeltaStore3D();
   WorldChunkDeltaStore3D(const WorldChunkDeltaStore3D &) = delete;
@@ -132,10 +158,19 @@ public:
                    WorldDeltaChunkKey3D key, WorldChunkBaseRevision3D base);
   bool EnqueueSave(std::uint64_t requestId, std::uint64_t epoch,
                    const WorldChunkDeltaSnapshot3D &snapshot);
+  SaveOwnerLease AcquireSaveOwner(SaveCompletionSink3D sink = {});
+  bool EnqueueSave(const SaveOwnerLease &owner, std::uint64_t token,
+                   std::uint64_t epoch,
+                   const WorldChunkDeltaSnapshot3D &snapshot);
+  bool TryPopSave(const SaveOwnerLease &owner,
+                  WorldDeltaSaveResult3D &result);
+  void WaitOwnerIdle(const SaveOwnerLease &owner);
+  bool SetNextSaveOwnerNamespaceForTesting(std::uint64_t nextNamespace);
   bool TryPopLoad(WorldDeltaLoadResult3D &result);
   bool TryPopSave(WorldDeltaSaveResult3D &result);
   void WaitIdle();
   void Reset();
+  bool TryReset();
   std::size_t TrimUnusedMemory();
   WorldDeltaStoreStats3D Stats() const;
   static bool RecoverFileForTesting(const std::filesystem::path &journal,
@@ -150,9 +185,11 @@ private:
     WorldDeltaChunkKey3D key{};
     WorldChunkBaseRevision3D base{};
     WorldChunkDeltaSnapshot3D snapshot{};
+    std::shared_ptr<SaveOwnerState> saveOwner{};
     std::size_t bytes{}, completionBytes{};
   };
   void Worker(std::stop_token stop);
+  void DetachSaveOwner(const std::shared_ptr<SaveOwnerState> &owner) noexcept;
   WorldDeltaStoreSettings3D settings_{};
   mutable std::mutex mutex_{};
   std::condition_variable_any wake_{}, idle_{};
@@ -165,5 +202,6 @@ private:
       reservedCompletedBytes_{};
   WorldDeltaStoreStats3D stats_{};
   std::uint64_t resetEpoch_{1};
+  std::shared_ptr<StoreCore> core_{};
 };
 } // namespace Aevrynd

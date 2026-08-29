@@ -31,10 +31,11 @@ struct DurableMutationAuthoritySettings3D {std::uint64_t sessionEpoch{1};std::si
 struct DurableMutationAuthorityStats3D {std::size_t pending{},completed{};std::uint64_t submitted{},durable{},duplicates{},rejected{},unauthorized{},saveFailures{},committed{};bool closed{};};
 class DurableMutationAuthority3D {
 public:
- DurableMutationAuthority3D(WorldChunkDeltaStore3D& store,IDurableMutationTarget3D& target,DurableMutationAuthoritySettings3D settings={});
+ // 中文：外觀層僅限建立它的主執行緒；背景工作只接觸共享完成狀態。
+ DurableMutationAuthority3D(WorldChunkDeltaStore3D& store,std::shared_ptr<IDurableMutationTarget3D> target,DurableMutationAuthoritySettings3D settings={});
  ~DurableMutationAuthority3D();
  bool Submit(ReplicationMutationRequest3D request,WorldChunkDeltaSnapshot3D current,std::uint64_t serverTick);
  void Poll();bool Close();bool TryPopReceipt(ReplicationMutationReceipt3D& receipt);DurableMutationAuthorityStats3D Stats()const{return stats_;}
-private:struct Pending{ReplicationMutationRequest3D request{};WorldChunkDeltaSnapshot3D snapshot{};std::uint64_t ioId{};};WorldChunkDeltaStore3D&store_;IDurableMutationTarget3D&target_;DurableMutationAuthoritySettings3D settings_{};std::map<std::uint64_t,Pending> pending_{};std::map<std::pair<std::uint32_t,std::uint64_t>,ReplicationMutationReceipt3D> dedup_{};std::deque<std::pair<std::uint32_t,std::uint64_t>> dedupOrder_{};std::deque<ReplicationMutationReceipt3D> completed_{};std::uint64_t nextIo_{1};bool closed_{};DurableMutationAuthorityStats3D stats_{};
+private:struct TerminalState;struct Pending{ReplicationMutationRequest3D request{};WorldChunkDeltaSnapshot3D snapshot{};std::uint64_t ioId{};std::shared_ptr<TerminalState>terminal{};};struct CompletionState;std::shared_ptr<CompletionState> completionState_{};WorldChunkDeltaStore3D::SaveOwnerLease saveOwner_{};std::shared_ptr<IDurableMutationTarget3D>target_{};DurableMutationAuthoritySettings3D settings_{};std::map<std::uint64_t,Pending> pending_{};std::map<std::pair<std::uint32_t,std::uint64_t>,ReplicationMutationReceipt3D> dedup_{};std::deque<std::pair<std::uint32_t,std::uint64_t>> dedupOrder_{};std::deque<ReplicationMutationReceipt3D> completed_{};std::uint64_t nextIo_{1};bool closed_{};DurableMutationAuthorityStats3D stats_{};
 };
 }

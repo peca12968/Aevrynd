@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cwctype>
@@ -330,6 +331,116 @@ int main() {
     }
   }
 
+  {
+    WorldDeltaStoreSettings3D settings;
+    settings.root = root / "owner-namespace-wrap";
+    settings.maximumQueuedRequests = 8;
+    settings.maximumQueuedBytes = 1024 * 1024;
+    settings.maximumSnapshotBytes = 256 * 1024;
+    WorldChunkDeltaStore3D store(settings);
+    if (!store.SetNextSaveOwnerNamespaceForTesting(
+            (std::numeric_limits<std::uint64_t>::max)()))
+      return 42;
+    auto last = store.AcquireSaveOwner();
+    if (!last ||
+        last.OwnerNamespace() !=
+            (std::numeric_limits<std::uint64_t>::max)() ||
+        store.AcquireSaveOwner()) {
+      std::cerr << "Owner namespace wrap did not fail closed\n";
+      return 43;
+    }
+  }
+
+  {
+    WorldDeltaStoreSettings3D settings;
+    settings.root = root / "owner-callback";
+    settings.maximumQueuedRequests = 8;
+    settings.maximumQueuedBytes = 1024 * 1024;
+    settings.maximumSnapshotBytes = 256 * 1024;
+    WorldChunkDeltaStore3D store(settings);
+    struct CallbackState {
+      std::atomic<unsigned> calls{};
+      std::atomic<std::uint64_t> token{};
+    };
+    auto callback = std::make_shared<CallbackState>();
+    auto late = store.AcquireSaveOwner(
+        {callback, [](void *context,
+                       const WorldDeltaSaveResult3D &receipt) noexcept {
+           auto &state = *static_cast<CallbackState *>(context);
+           state.token.store(receipt.requestId);
+           state.calls.fetch_add(1);
+         }});
+    if (!late || !store.EnqueueSave(late, 71, 11, Snapshot(keyA, 301)))
+      return 44;
+    late = {};
+    store.WaitIdle();
+    if (callback->calls.load() != 1 || callback->token.load() != 71 ||
+        store.Stats().reservedCompletedResults != 0) {
+      std::cerr << "Detached late completion callback was not terminal\n";
+      return 45;
+    }
+
+  }
+
+  {
+    WorldDeltaStoreSettings3D settings;
+    settings.root = root / "owner-token-bounded";
+    settings.maximumQueuedRequests = 8;
+    settings.maximumQueuedBytes = 1024 * 1024;
+    settings.maximumSnapshotBytes = 256 * 1024;
+    WorldChunkDeltaStore3D store(settings);
+    auto owner = store.AcquireSaveOwner();
+    const auto boundedSnapshot = Snapshot(keyA, 304);
+    if (!owner || !owner.EnqueueSave(100001, 13, boundedSnapshot))
+      return 46;
+    owner.WaitIdle();
+    const auto retained = store.Stats().retainedBytes;
+    for (std::uint64_t token = 1; token <= 100000; ++token)
+      if (owner.EnqueueSave(token, 13, boundedSnapshot))
+        return 47;
+    if (store.Stats().retainedBytes != retained || store.TryReset()) {
+      std::cerr << "Owner tokens grew memory or live-owner reset succeeded\n";
+      return 48;
+    }
+    WorldDeltaSaveResult3D receipt;
+    if (!owner.TryPopSave(receipt) || store.TryPopSave(receipt)) {
+      std::cerr << "Owner/global completion isolation failed\n";
+      return 49;
+    }
+  }
+
+  {
+    WorldDeltaStoreSettings3D settings;
+    settings.root = root / "owner-completion-cap";
+    settings.maximumQueuedRequests = 8;
+    settings.maximumQueuedBytes = 1024 * 1024;
+    settings.maximumSnapshotBytes = 256 * 1024;
+    settings.maximumCompletedResults = 4;
+    WorldChunkDeltaStore3D store(settings);
+    auto owner = store.AcquireSaveOwner();
+    if (!owner)
+      return 37;
+    for (std::uint64_t token = 1; token <= 4; ++token) {
+      if (!store.EnqueueSave(owner, token, 10, Snapshot(keyA, 200 + token)))
+        return 38;
+    }
+    store.WaitOwnerIdle(owner);
+    if (store.EnqueueSave(owner, 5, 10, Snapshot(keyA, 205)) ||
+        store.Stats().completedResults != 4 ||
+        store.Stats().reservedCompletedResults != 4) {
+      std::cerr << "Owner completion cap overflow was admitted\n";
+      return 39;
+    }
+    WorldDeltaSaveResult3D receipt;
+    if (!store.TryPopSave(owner, receipt) ||
+        !store.EnqueueSave(owner, 5, 10, Snapshot(keyA, 205))) {
+      std::cerr << "Owner completion capacity was not released\n";
+      return 40;
+    }
+    store.WaitOwnerIdle(owner);
+    while (store.TryPopSave(owner, receipt)) {}
+  }
+
   for (const auto &entry :
        std::filesystem::recursive_directory_iterator(root)) {
     if (!IsBelowRoot(root, entry.path())) {
@@ -416,10 +527,67 @@ int main() {
     }
   }
 
+  {
+    WorldDeltaStoreSettings3D settings;
+    settings.root = root / "owner-routing";
+    settings.maximumQueuedRequests = 8;
+    settings.maximumQueuedBytes = 1024 * 1024;
+    settings.maximumSnapshotBytes = 256 * 1024;
+    WorldChunkDeltaStore3D store(settings);
+    auto first = store.AcquireSaveOwner();
+    auto second = store.AcquireSaveOwner();
+    if (!first || !second ||
+        first.OwnerNamespace() == second.OwnerNamespace() ||
+        !store.EnqueueSave(first, 1, 7, Snapshot(keyA, 140)) ||
+        !store.EnqueueSave(second, 1, 8, Snapshot(keyB, 141)) ||
+        store.EnqueueSave(first, 1, 7, Snapshot(keyA, 142))) {
+      std::cerr << "Save owner admission or lifetime token dedup failed\n";
+      return 32;
+    }
+    store.WaitOwnerIdle(first);
+    WorldDeltaSaveResult3D receipt;
+    if (!store.TryPopSave(first, receipt) || receipt.requestId != 1 ||
+        receipt.epoch != 7 || receipt.key != keyA ||
+        store.TryPopSave(first, receipt) || store.TryPopSave(receipt)) {
+      std::cerr << "First owner completion escaped its route\n";
+      return 33;
+    }
+    store.WaitOwnerIdle(second);
+    if (!store.TryPopSave(second, receipt) || receipt.requestId != 1 ||
+        receipt.epoch != 8 || receipt.key != keyB ||
+        store.EnqueueSave(second, 1, 8, Snapshot(keyB, 143))) {
+      std::cerr << "Second owner completion or token namespace failed\n";
+      return 34;
+    }
+
+    auto detached = store.AcquireSaveOwner();
+    if (!detached ||
+        !store.EnqueueSave(detached, 9, 9, Snapshot(keyA, 144)))
+      return 35;
+    detached = {};
+    auto replacement = store.AcquireSaveOwner();
+    if (!replacement ||
+        !store.EnqueueSave(replacement, 9, 10, Snapshot(keyB, 145))) {
+      std::cerr << "Detached owner namespace was not reusable\n";
+      return 36;
+    }
+    store.WaitIdle();
+    store.WaitOwnerIdle(replacement);
+    if (!store.TryPopSave(replacement, receipt) || receipt.epoch != 10 ||
+        receipt.key != keyB || store.Stats().completedResults != 0 ||
+        store.Stats().reservedCompletedResults != 0) {
+      std::cerr << "Detached late completion retained budget or namespace\n";
+      return 41;
+    }
+  }
+
   std::filesystem::remove_all(root, error);
   std::cout << "chunks=2 ops=4 cycles=128 torn_tail=every_byte "
                "corruption=magic+crc+length duplicate=idempotent "
                "out_of_order=rejected atomic_rename=old_preserved "
-               "base_mismatch=1 backpressure=1 trim=1 path_bounds=1\n";
+               "base_mismatch=1 backpressure=1 trim=1 path_bounds=1 "
+               "owner_routing=2 token_dedup=1 detach=1 owner_cap=4 "
+               "owner_namespace_wrap=closed callback_late=1 sink=noexcept "
+               "tokens=100000_bounded live_reset=closed\n";
   return 0;
 }
