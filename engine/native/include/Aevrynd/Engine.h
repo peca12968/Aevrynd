@@ -95,6 +95,9 @@ public:
     size_t TrimUnusedMemory();
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
+    GpuUploadReceipt3D SubmitPendingUploads3D(){return renderer_->SubmitPendingUploads3D();}
+    bool IsUploadComplete3D(GpuUploadReceipt3D receipt)const{return renderer_->IsUploadComplete(receipt);}
+    void WaitRendererIdle3D(){renderer_->WaitIdle();}
     SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const{return renderer_->QuerySkinnedSubmission(receipt);}
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}

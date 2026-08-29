@@ -35,6 +35,8 @@ add_library(AevryndEngine STATIC
   src/TemporalMotion3D.cpp
   src/WorldBuilder3D.cpp
   src/WorldStreamer3D.cpp
+  src/WorldPartition3D.cpp
+  src/WorldPartitionD3D12Adapter3D.cpp
   src/VisibilityBvh3D.cpp
   src/Vegetation3D.cpp
 )
@@ -252,6 +254,12 @@ target_compile_definitions(AevryndTextureUploadStreamingTest PRIVATE AEVRYND_SOU
 target_link_libraries(AevryndTextureUploadStreamingTest PRIVATE AevryndEngine)
 add_test(NAME AevryndTextureUploadStreamingTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTextureUploadStreamingTest>'")
 
+add_executable(AevryndGpuUploadReceipt3DTest tests/GpuUploadReceipt3DSmoke.cpp)
+target_compile_options(AevryndGpuUploadReceipt3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndGpuUploadReceipt3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndGpuUploadReceipt3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndGpuUploadReceipt3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndGpuUploadReceipt3DTest>'")
+
 add_executable(AevryndMaterialLibrary3DTest tests/MaterialLibrary3DSmoke.cpp)
 target_compile_options(AevryndMaterialLibrary3DTest PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(AevryndMaterialLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
@@ -314,6 +322,21 @@ add_executable(AevryndWorldStreamer3DTest tests/WorldStreamer3DSmoke.cpp)
 target_compile_options(AevryndWorldStreamer3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndWorldStreamer3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldStreamer3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldStreamer3DTest>'")
+
+add_executable(AevryndWorldPartition3DFakeSourceTest tests/WorldPartition3DFakeSourceSmoke.cpp)
+target_compile_options(AevryndWorldPartition3DFakeSourceTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldPartition3DFakeSourceTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartition3DFakeSourceTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartition3DFakeSourceTest>'")
+
+add_executable(AevryndWorldPartition3DBenchmark tests/WorldPartition3DBenchmark.cpp)
+target_compile_options(AevryndWorldPartition3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndWorldPartition3DBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndWorldPartition3DD3D12Test WIN32 tests/WorldPartition3DD3D12Smoke.cpp)
+target_compile_options(AevryndWorldPartition3DD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndWorldPartition3DD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndWorldPartition3DD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartition3DD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndWorldPartition3DD3D12Test>'")
 
 add_executable(AevryndNavigation3DTest tests/Navigation3DSmoke.cpp)
 target_compile_options(AevryndNavigation3DTest PRIVATE /W4 /permissive- /utf-8)

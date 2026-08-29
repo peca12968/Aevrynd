@@ -37,6 +37,12 @@ struct ScenePointLightComponent3D {
     bool inheritTransform{true};
 };
 
+struct SceneEntityDefinition3D {
+    std::optional<SceneTransformComponent3D> transform;
+    std::optional<SceneMeshRenderable3D> renderable;
+    std::optional<ScenePointLightComponent3D> pointLight;
+};
+
 struct SceneECSCollectionStats3D {
     std::size_t aliveEntities{}, transformComponents{}, renderableComponents{}, pointLightComponents{};
     std::size_t renderableCandidates{}, submittedRenderables{}, submittedLodRenderables{}, submittedPointLights{};
@@ -47,6 +53,8 @@ struct SceneECSCollectionStats3D {
 class SceneECSRegistry3D {
 public:
     SceneEntity3D Create();
+    // 整批元件只有在全部驗證及建立成功後才對呼叫端可見；失敗會銷毀本批所有實體。
+    bool CreateBatchAtomic(std::span<const SceneEntityDefinition3D> definitions,std::vector<SceneEntity3D>& entities);
     bool Destroy(SceneEntity3D entity);
     bool Alive(SceneEntity3D entity) const;
     void Clear();

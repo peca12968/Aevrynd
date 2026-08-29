@@ -5,6 +5,7 @@
 #include "SceneECS3D.h"
 #include <array>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -47,12 +48,25 @@ struct StaticMeshAssetLibraryLimits3D {
     float maximumBoundsCenterDriftRatio{.08f},minimumBoundsExtentRatio{.70f},maximumBoundsExtentRatio{1.15f};
 };
 
+struct StaticMeshAssetKey3D {std::string canonical;std::uint64_t contentIdentity{};explicit operator bool()const{return !canonical.empty()&&contentIdentity!=0;}};
+struct PreparedStaticMeshAsset3D {
+    StaticMeshAssetDefinition3D definition{};
+    std::array<Mesh3D,1+MaximumGeneratedMeshLodLevels3D> cpuMeshes{};
+    std::uint32_t levelCount{};
+    MeshLodChainStats3D processing{};
+    StaticMeshAssetKey3D assetKey{};
+    explicit operator bool()const{return !definition.name.empty()&&levelCount&&assetKey;}
+};
+
 class StaticMeshAssetLibrary3D {
 public:
     StaticMeshAssetLibrary3D()=default;
     StaticMeshAssetLibrary3D(const StaticMeshAssetLibrary3D&)=delete;
     StaticMeshAssetLibrary3D& operator=(const StaticMeshAssetLibrary3D&)=delete;
     bool Initialize(Engine& engine,SceneECSRegistry3D& registry,std::filesystem::path assetRoot={},StaticMeshAssetLibraryLimits3D limits={});
+    [[nodiscard]] std::optional<PreparedStaticMeshAsset3D> PrepareCpu(StaticMeshAssetDefinition3D definition)const;
+    bool AcquirePrepared(PreparedStaticMeshAsset3D prepared);
+    [[nodiscard]] bool ContainsPreparedPhysical(const PreparedStaticMeshAsset3D& prepared)const{return prepared&&physicalAssets_.contains(prepared.assetKey.canonical);}
     bool Load(StaticMeshAssetDefinition3D definition);
     bool LoadAll(std::span<const StaticMeshAssetDefinition3D> definitions);
     bool Unload(std::string_view name);
@@ -66,23 +80,23 @@ public:
     [[nodiscard]] bool Initialized()const{return engine_!=nullptr;}
     [[nodiscard]] const std::filesystem::path& AssetRoot()const{return assetRoot_;}
 private:
+    struct PhysicalAssetRecord {MeshLodResourceChain3D meshes{};Material3D material{};std::string materialName;AssetLease3D assetLease{};std::size_t aliasCount{},physicalBytes{};};
     struct Entry {
         StaticMeshAssetDefinition3D definition{};
-        MeshLodResourceChain3D meshes{};
-        Material3D material{};
-        AssetLease3D assetLease{};
+        std::string assetKey;
     };
     struct Instance {SceneEntity3D entity{};std::string assetName;};
     StaticMeshAssetDefinition3D Resolve(StaticMeshAssetDefinition3D definition)const;
     std::optional<SceneMeshRenderable3D> CreateRenderable(std::string_view name,std::uint32_t layer,bool visible)const;
     void CollectDeadInstances();
-    void DestroyMeshes(Entry& entry);
+    void DestroyPhysical(PhysicalAssetRecord& asset);
     Engine* engine_{};
     SceneECSRegistry3D* registry_{};
     std::filesystem::path assetRoot_{};
     StaticMeshAssetLibraryLimits3D limits_{};
     MaterialLibrary3D materials_{};
     std::unordered_map<std::string,Entry> entries_{};
+    std::unordered_map<std::string,std::unique_ptr<PhysicalAssetRecord>> physicalAssets_{};
     std::unordered_map<std::string,std::size_t> materialReferences_{};
     std::vector<Instance> instances_{};
     StaticMeshAssetLibraryStats3D stats_{};

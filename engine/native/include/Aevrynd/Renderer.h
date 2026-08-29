@@ -46,6 +46,7 @@ struct SkinPaletteJoint3D {Matrix4 skin{};std::array<Vec4,3> normalRows{};};
 struct SkinnedSubmissionReceipt3D {uint64_t submissionNonce{};uint32_t drawGeneration{},groupId{};uint64_t resourceIdentity{};explicit constexpr operator bool()const{return submissionNonce&&drawGeneration&&groupId&&resourceIdentity;}constexpr bool operator==(const SkinnedSubmissionReceipt3D&)const=default;};
 enum class SkinnedSubmissionResult3D:uint8_t {Unknown,Accepted,Rejected,Expired};
 struct MaterialTextureSetHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D&)const=default;};
+struct GpuUploadReceipt3D {uint64_t deviceEpoch{},fenceValue{};explicit constexpr operator bool()const{return deviceEpoch!=0&&fenceValue!=0;}constexpr bool operator==(const GpuUploadReceipt3D&)const=default;};
 struct AssetLeaseState3D {std::uint64_t identity{};};
 using AssetLease3D=std::shared_ptr<const AssetLeaseState3D>;
 enum class MaterialSurfaceMapEncoding3D:uint8_t {RoughnessR,PackedOrm};
@@ -736,6 +737,8 @@ public:
     void DestroySkinnedMesh(SkinnedMeshHandle3D mesh);
     void SetMeshMemoryBudget(size_t bytes);
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
+    GpuUploadReceipt3D SubmitPendingUploads3D();
+    [[nodiscard]] bool IsUploadComplete(GpuUploadReceipt3D receipt)const;
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
     void SetMaterialTextureMemoryBudget(size_t bytes);
     void SetMaterialDerivedDataCacheDirectory(std::filesystem::path directory);

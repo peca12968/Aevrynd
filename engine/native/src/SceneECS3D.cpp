@@ -12,6 +12,12 @@ bool ValidLodLevels(const SceneMeshRenderable3D& component){if(component.lodLeve
 bool ValidLight(const PointLight3D& light){return Finite(light.position)&&std::isfinite(light.radius)&&light.radius>0.f&&std::isfinite(light.intensity)&&light.intensity>0.f;}
 }
 SceneEntity3D SceneECSRegistry3D::Create(){std::uint32_t index{};if(freeSlots_.empty()){if(slots_.size()>=(std::numeric_limits<std::uint32_t>::max)())return{};index=static_cast<std::uint32_t>(slots_.size());slots_.emplace_back();slots_.back().generation=1;}else{index=freeSlots_.back();freeSlots_.pop_back();}Slot& slot=slots_[index];slot.alive=true;slot.transform.reset();slot.renderable.reset();slot.pointLight.reset();return{index,slot.generation};}
+bool SceneECSRegistry3D::CreateBatchAtomic(std::span<const SceneEntityDefinition3D> definitions,std::vector<SceneEntity3D>& entities){
+    std::vector<SceneEntity3D> created;try{created.reserve(definitions.size());}catch(...){return false;}
+    try{for(const auto& definition:definitions){const SceneEntity3D entity=Create();if(!entity||(definition.transform&&!SetTransform(entity,*definition.transform))||(definition.renderable&&!SetRenderable(entity,*definition.renderable))||(definition.pointLight&&!SetPointLight(entity,*definition.pointLight))){if(entity)Destroy(entity);for(auto iterator=created.rbegin();iterator!=created.rend();++iterator)Destroy(*iterator);return false;}created.push_back(entity);}}
+    catch(...){for(auto iterator=created.rbegin();iterator!=created.rend();++iterator)Destroy(*iterator);return false;}
+    try{entities.reserve(entities.size()+created.size());entities.insert(entities.end(),created.begin(),created.end());}catch(...){for(auto iterator=created.rbegin();iterator!=created.rend();++iterator)Destroy(*iterator);return false;}return true;
+}
 SceneECSRegistry3D::Slot* SceneECSRegistry3D::Find(SceneEntity3D entity){if(entity.index>=slots_.size())return nullptr;Slot& slot=slots_[entity.index];return slot.alive&&slot.generation==entity.generation?&slot:nullptr;}
 const SceneECSRegistry3D::Slot* SceneECSRegistry3D::Find(SceneEntity3D entity)const{if(entity.index>=slots_.size())return nullptr;const Slot& slot=slots_[entity.index];return slot.alive&&slot.generation==entity.generation?&slot:nullptr;}
 bool SceneECSRegistry3D::Alive(SceneEntity3D entity)const{return Find(entity)!=nullptr;}
