@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "sha256-utf8-ordinal-path-size-hash-lf-v1",
+  "files": [
+    {
+      "path": "Test-EngineLabNetworkReleaseCandidate.ps1",
+      "size": 56920,
+      "sha256": "79712bdb101fdf2abbd4131fb19b8e4b0cd215e5ca7103ba7e109b91ef43045b"
+    },
+    {
+      "path": "test-engine-lab-network-release-candidate-verifier-hostile.ps1",
+      "size": 28498,
+      "sha256": "ebf94a1d8295a517d73dba9f3678d440ce07cbf4ff5d43c492e43745602a4081"
+    },
+    {
+      "path": "test-engine-lab-network-release-candidate-verifier.ps1",
+      "size": 6657,
+      "sha256": "8e5e263270c1e74ab317c73dc4242c51254ba3bb34f8ff12387402cc0e54bf55"
+    }
+  ],
+  "bundleSha256": "472134687a6d53fd1724ac84494cccd19de3842bfa21506110966ab96cc053dc"
+}
