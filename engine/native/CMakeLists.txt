@@ -25,6 +25,7 @@ add_library(AevryndEngine STATIC
   src/Profiling.cpp
   src/ProceduralPlacement3D.cpp
   src/ReplicationProtocol3D.cpp
+  src/ReplicationRuntime3D.cpp
   src/SceneECS3D.cpp
   src/Serialization.cpp
   src/WorldDeltaPersistence3D.cpp
@@ -657,3 +658,12 @@ add_test(NAME AevryndReplicationProtocol3DFuzzTest COMMAND AevryndReplicationPro
 add_executable(AevryndReplicationProtocol3DBenchmark tests/ReplicationProtocol3DBenchmark.cpp)
 target_compile_options(AevryndReplicationProtocol3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndReplicationProtocol3DBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndReplicationRuntime3DTest tests/ReplicationRuntime3DSmoke.cpp)
+target_compile_options(AevryndReplicationRuntime3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationRuntime3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndReplicationRuntime3DTest COMMAND AevryndReplicationRuntime3DTest)
+
+add_executable(AevryndReplicationRuntime3DBenchmark tests/ReplicationRuntime3DBenchmark.cpp)
+target_compile_options(AevryndReplicationRuntime3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndReplicationRuntime3DBenchmark PRIVATE AevryndEngine)

@@ -1,0 +1,5 @@
+#include <Aevrynd/ReplicationRuntime3D.h>
+#include <chrono>
+#include <iostream>
+using namespace Aevrynd;
+int main(){LoopbackNetworkSettings3D n{};n.maximumEndpoints=3;n.maximumQueuedPackets=16384;n.maximumQueuedBytes=16*1024*1024;LoopbackNetworkTransport3D t(n);t.RegisterEndpoint({1});t.RegisterEndpoint({2});t.RegisterEndpoint({3});ReplicationRuntimeSettings3D s{};ReplicationServer3D server(t,{1},1,s);server.AddClient(1,{2});server.AddClient(2,{3});ReplicationClient3D a(t,{2},{1},1,1,s),b(t,{3},{1},1,2,s);constexpr int Ticks=10000;const auto begin=std::chrono::steady_clock::now();for(int tick=1;tick<=Ticks;++tick){a.SubmitInput(1000,2000);b.SubmitInput(-2000,1000);a.Tick();b.Tick();t.AdvanceTo(tick);server.Tick();}const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-begin).count();std::cout<<"ticks="<<Ticks<<" nsPerTick="<<ns/Ticks<<" peakPackets="<<t.Stats().peakQueuedPackets<<" peakBytes="<<t.Stats().peakQueuedBytes<<'\n';return ns/Ticks<2'000'000?0:1;}
