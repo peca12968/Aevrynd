@@ -737,6 +737,7 @@ public:
     void DestroySkinnedMesh(SkinnedMeshHandle3D mesh);
     void SetMeshMemoryBudget(size_t bytes);
     MaterialTextureSetHandle3D CreateMaterialTextureSet(const MaterialTextureSetDefinition3D& definition);
+    [[nodiscard]] std::optional<size_t> EstimateMaterialTextureSetAllocationBytes3D(const MaterialTextureSetDefinition3D& definition)const;
     GpuUploadReceipt3D SubmitPendingUploads3D();
     [[nodiscard]] bool IsUploadComplete(GpuUploadReceipt3D receipt)const;
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);

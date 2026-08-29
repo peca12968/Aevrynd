@@ -40,8 +40,10 @@ public:
  void SetActivationFailureCheckpointForTesting(int checkpoint)noexcept{activationFailureCheckpoint_=checkpoint;}
  void SetNextActivationIdForTesting(uint64_t value)noexcept{next_=value;}
  std::size_t PendingRetirements()const noexcept;
+ std::size_t LastEstimatedPhysicalBytes()const noexcept{return lastEstimatedPhysicalBytes_;}
+ std::size_t LastActualPhysicalBytes()const noexcept{return lastActualPhysicalBytes_;}
 private:
  struct Record {std::string assetName;SceneEntity3D entity{};GpuUploadReceipt3D upload{};std::size_t physicalBytes{};bool retiring{},unloadCompleted{};};
- Engine& engine_;StaticMeshAssetLibrary3D& library_;uint64_t next_{1};int activationFailureCheckpoint_{-1};mutable std::unordered_map<uint64_t,Record> records_;
+ Engine& engine_;StaticMeshAssetLibrary3D& library_;uint64_t next_{1};int activationFailureCheckpoint_{-1};mutable std::size_t lastEstimatedPhysicalBytes_{},lastActualPhysicalBytes_{};mutable std::unordered_map<uint64_t,Record> records_;
 };
 }

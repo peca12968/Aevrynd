@@ -90,6 +90,7 @@ public:
     void DestroySkinnedMesh3D(SkinnedMeshHandle3D mesh){renderer_->DestroySkinnedMesh(mesh);}
     void SetMeshMemoryBudget(size_t bytes){renderer_->SetMeshMemoryBudget(bytes);}
     MaterialTextureSetHandle3D CreateMaterialTextureSet3D(const MaterialTextureSetDefinition3D& definition){return renderer_->CreateMaterialTextureSet(definition);}
+    [[nodiscard]] std::optional<size_t> EstimateMaterialTextureSetAllocationBytes3D(const MaterialTextureSetDefinition3D& definition)const{return renderer_->EstimateMaterialTextureSetAllocationBytes3D(definition);}
     void DestroyMaterialTextureSet3D(MaterialTextureSetHandle3D textures){renderer_->DestroyMaterialTextureSet(textures);}
     void SetMaterialTextureMemoryBudget(size_t bytes){renderer_->SetMaterialTextureMemoryBudget(bytes);}
     size_t TrimUnusedMemory();
