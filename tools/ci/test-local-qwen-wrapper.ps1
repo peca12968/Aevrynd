@@ -74,6 +74,13 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
         WorkerProtocolStdoutBytes = if ($null -ne $payload) { $payload.resource.workerProtocol.stdoutBytes } else { $null }
         WorkerProtocolStderrBytes = if ($null -ne $payload) { $payload.resource.workerProtocol.stderrBytes } else { $null }
         ResultReceivedFiles = if ($null -ne $payload) { $payload.result.receivedFiles } else { $null }
+        PreflightEvaluated = if ($null -ne $payload.resource.memoryPreflight) { [bool]$payload.resource.memoryPreflight.evaluated } else { $null }
+        PreflightPassed = if ($null -ne $payload.resource.memoryPreflight) { [bool]$payload.resource.memoryPreflight.passed } else { $null }
+        PreflightReason = if ($null -ne $payload.resource.memoryPreflight) { $payload.resource.memoryPreflight.reason } else { $null }
+        PreflightModelBytes = if ($null -ne $payload.resource.memoryPreflight) { $payload.resource.memoryPreflight.modelBytes } else { $null }
+        PreflightEstimatedPeakBytes = if ($null -ne $payload.resource.memoryPreflight) { $payload.resource.memoryPreflight.estimatedPeakBytes } else { $null }
+        PreflightRequiredAvailableBytes = if ($null -ne $payload.resource.memoryPreflight) { $payload.resource.memoryPreflight.requiredAvailableBytes } else { $null }
+        ContextSize = if ($null -ne $payload) { $payload.resource.limits.contextSize } else { $null }
         LeakedSyntheticStderr = $stdout.Contains('synthetic worker stderr',[StringComparison]::Ordinal)
         StderrBytes = [Text.Encoding]::UTF8.GetByteCount($stderr)
     })
@@ -129,6 +136,9 @@ try {
         @{Name='worker-success-no-job';Mode='SuccessNoJob';Reason='receipt-schema'},
         @{Name='worker-fallback-pretends-success';Mode='FallbackPretendsSuccess';Reason='receipt-schema'},
         @{Name='worker-bad-limits';Mode='BadLimits';Reason='receipt-schema'},
+        @{Name='worker-bad-memory-preflight';Mode='BadPreflight';Reason='receipt-schema'},
+        @{Name='worker-bad-memory-formula';Mode='BadPreflightFormula';Reason='receipt-schema'},
+        @{Name='worker-peak-over-budget';Mode='PeakOverBudget';Reason='receipt-schema'},
         @{Name='worker-large-stdout';Mode='LargeStdout';Reason='worker-stdout-limit'},
         @{Name='worker-large-stderr';Mode='LargeStderr';Reason='worker-stderr-limit'}
     )) {
@@ -159,6 +169,93 @@ try {
     Invoke-Wrapper 'runtime-stub-ram-gate' @('-Task','synthetic RAM gate','-MaxTokens','32') $true $false 'LocalQwenRamBudgetExceeded' @{
         AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubRamGate'
     }
+
+    # 所有覆寫都只配合 StubSuccess，保證測試永遠不會選到真實 llama-cli.exe。
+    $modelBytes = 8GB
+    $contextSize = 512
+    $estimatedPeakBytes = $modelBytes + ($contextSize * 393216L) + 1GB + 512MB
+    $requiredAvailableBytes = $estimatedPeakBytes + 4GB
+    function New-SyntheticMemoryEnvironment([long]$AvailablePhysical,[long]$AvailableCommit,[long]$SyntheticModelBytes=$modelBytes) {
+        return @{
+            AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubSuccess'
+            AEVRYND_QWEN_TEST_MODEL_BYTES=[string]$SyntheticModelBytes
+            AEVRYND_QWEN_TEST_TOTAL_PHYSICAL_BYTES=[string](64GB)
+            AEVRYND_QWEN_TEST_AVAILABLE_PHYSICAL_BYTES=[string]$AvailablePhysical
+            AEVRYND_QWEN_TEST_COMMIT_LIMIT_BYTES=[string](64GB)
+            AEVRYND_QWEN_TEST_AVAILABLE_COMMIT_BYTES=[string]$AvailableCommit
+        }
+    }
+    Invoke-Wrapper 'preflight-exact-threshold' @('-Task','synthetic threshold','-MaxTokens','32','-ContextSize',[string]$contextSize,'-JsonSchema',$stubSchema) $true $true '' (New-SyntheticMemoryEnvironment $requiredAvailableBytes $requiredAvailableBytes)
+    $thresholdResult = $results[$results.Count - 1]
+    $thresholdResult.Passed = $thresholdResult.Passed -and $thresholdResult.PreflightEvaluated -and $thresholdResult.PreflightPassed -and
+        $thresholdResult.PreflightReason -eq 'ok' -and $thresholdResult.PreflightEstimatedPeakBytes -eq $estimatedPeakBytes -and
+        $thresholdResult.PreflightRequiredAvailableBytes -eq $requiredAvailableBytes -and $thresholdResult.ContextSize -eq $contextSize
+
+    Invoke-Wrapper 'preflight-physical-one-byte-short' @('-Task','synthetic physical gate','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenPreflightRejected' (New-SyntheticMemoryEnvironment ($requiredAvailableBytes - 1) $requiredAvailableBytes)
+    $physicalResult = $results[$results.Count - 1]
+    $physicalResult.Passed = $physicalResult.Passed -and $physicalResult.PreflightEvaluated -and -not $physicalResult.PreflightPassed -and $physicalResult.PreflightReason -eq 'physical-memory-insufficient'
+
+    Invoke-Wrapper 'preflight-commit-one-byte-short' @('-Task','synthetic commit gate','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenPreflightRejected' (New-SyntheticMemoryEnvironment $requiredAvailableBytes ($requiredAvailableBytes - 1))
+    $commitResult = $results[$results.Count - 1]
+    $commitResult.Passed = $commitResult.Passed -and $commitResult.PreflightEvaluated -and -not $commitResult.PreflightPassed -and $commitResult.PreflightReason -eq 'commit-insufficient'
+
+    Invoke-Wrapper 'preflight-model-size-growth' @('-Task','synthetic model growth','-MaxTokens','32','-ContextSize',[string]$contextSize) $true $true '' (New-SyntheticMemoryEnvironment 40GB 40GB 16GB)
+    $modelGrowthResult = $results[$results.Count - 1]
+    $modelGrowthResult.Passed = $modelGrowthResult.Passed -and $modelGrowthResult.PreflightModelBytes -eq 16GB -and $modelGrowthResult.PreflightEstimatedPeakBytes -gt $thresholdResult.PreflightEstimatedPeakBytes
+
+    Invoke-Wrapper 'preflight-job-budget' @('-Task','synthetic job gate','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenPreflightRejected' (New-SyntheticMemoryEnvironment 64GB 64GB 23GB)
+    $jobResult = $results[$results.Count - 1]
+    $jobResult.Passed = $jobResult.Passed -and $jobResult.PreflightReason -eq 'job-budget-insufficient' -and -not $jobResult.Launched
+
+    foreach ($configurationCase in @(
+        @{Name='context-negative';Arguments=@('-ContextSize','-1')},
+        @{Name='context-too-large';Arguments=@('-ContextSize','32769')},
+        @{Name='context-overflow-policy';Arguments=@('-ContextSize',[string][long]::MaxValue)},
+        @{Name='reserve-negative';Arguments=@('-SafetyReserveGiB','-1')},
+        @{Name='reserve-too-large';Arguments=@('-SafetyReserveGiB','17')}
+    )) {
+        Invoke-Wrapper $configurationCase.Name (@('-Task','synthetic invalid configuration','-MaxTokens','32') + $configurationCase.Arguments) $false $false 'LocalQwenConfigurationInvalid'
+        $configurationResult = $results[$results.Count - 1]
+        $configurationResult.Passed = $configurationResult.Passed -and -not $configurationResult.WorkerLaunched
+    }
+
+    Invoke-Wrapper 'preflight-partial-fake-free-memory' @('-Task','synthetic partial memory','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenFailed.memory-preflight' @{
+        AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubSuccess';AEVRYND_QWEN_TEST_MODEL_BYTES=[string]$modelBytes
+        AEVRYND_QWEN_TEST_AVAILABLE_PHYSICAL_BYTES=[string](64GB)
+    }
+    $partialOverrideResult = $results[$results.Count - 1]
+    $partialOverrideResult.Passed = $partialOverrideResult.Passed -and -not $partialOverrideResult.Launched
+
+    Invoke-Wrapper 'preflight-inconsistent-fake-free-memory' @('-Task','synthetic inconsistent memory','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenFailed.memory-preflight' (New-SyntheticMemoryEnvironment 65GB 64GB)
+    $inconsistentResult = $results[$results.Count - 1]
+    $inconsistentResult.Passed = $inconsistentResult.Passed -and -not $inconsistentResult.Launched
+
+    foreach ($modelBoundaryCase in @(
+        @{Name='preflight-model-zero';Bytes=0L},
+        @{Name='preflight-model-too-large';Bytes=(1TB + 1L)}
+    )) {
+        Invoke-Wrapper $modelBoundaryCase.Name @('-Task','synthetic model boundary','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenFailed.memory-preflight' (New-SyntheticMemoryEnvironment 64GB 64GB $modelBoundaryCase.Bytes)
+        $modelBoundaryResult = $results[$results.Count - 1]
+        $modelBoundaryResult.Passed = $modelBoundaryResult.Passed -and -not $modelBoundaryResult.Launched
+    }
+
+    # 即使偽造四個極高計數，只要沒有合成 runtime，就必須直接拒絕而非讀取覆寫或啟動 llama。
+    Invoke-Wrapper 'preflight-fake-free-without-synthetic-runtime' @('-Task','reject fake free memory','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenFailed.memory-preflight' @{
+        AEVRYND_QWEN_TESTING='1'
+        AEVRYND_QWEN_TEST_TOTAL_PHYSICAL_BYTES=[string](64GB)
+        AEVRYND_QWEN_TEST_AVAILABLE_PHYSICAL_BYTES=[string](64GB)
+        AEVRYND_QWEN_TEST_COMMIT_LIMIT_BYTES=[string](64GB)
+        AEVRYND_QWEN_TEST_AVAILABLE_COMMIT_BYTES=[string](64GB)
+    }
+    $noSyntheticOverrideResult = $results[$results.Count - 1]
+    $noSyntheticOverrideResult.Passed = $noSyntheticOverrideResult.Passed -and -not $noSyntheticOverrideResult.Launched
+
+    # 重複拒絕必須得到相同估算，且兩次都不建立 runtime。
+    Invoke-Wrapper 'preflight-repeat-a' @('-Task','synthetic repeat','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenPreflightRejected' (New-SyntheticMemoryEnvironment ($requiredAvailableBytes - 1) $requiredAvailableBytes)
+    Invoke-Wrapper 'preflight-repeat-b' @('-Task','synthetic repeat','-MaxTokens','32','-ContextSize',[string]$contextSize) $false $false 'LocalQwenPreflightRejected' (New-SyntheticMemoryEnvironment ($requiredAvailableBytes - 1) $requiredAvailableBytes)
+    $repeatA = $results[$results.Count - 2];$repeatB = $results[$results.Count - 1]
+    $repeatA.Passed = $repeatA.Passed -and -not $repeatA.Launched
+    $repeatB.Passed = $repeatB.Passed -and -not $repeatB.Launched -and $repeatA.PreflightEstimatedPeakBytes -eq $repeatB.PreflightEstimatedPeakBytes -and $repeatA.PreflightRequiredAvailableBytes -eq $repeatB.PreflightRequiredAvailableBytes
     foreach ($runtimeOutputCase in @('StubRuntimeLargeStdout','StubRuntimeLargeStderr')) {
         Invoke-Wrapper ('runtime-output-limit-' + $runtimeOutputCase.ToLowerInvariant()) @('-Task','synthetic runtime output limit','-MaxTokens','32') $true $false 'LocalQwenRuntimeOutputExceeded' @{
             AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE=$runtimeOutputCase

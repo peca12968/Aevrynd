@@ -6,7 +6,9 @@ param(
     [string]$ProjectRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [ValidateRange(10,30)] [int]$TimeoutSeconds = 30,
     [ValidateRange(1,4)] [int]$CpuThreads = 4,
-    [ValidateRange(4,24)] [int]$MaximumRamGiB = 24
+    [ValidateRange(4,24)] [int]$MaximumRamGiB = 24,
+    [long]$ContextSize = 4096,
+    [long]$SafetyReserveGiB = 4
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,12 +83,19 @@ if ($internalWorker) {
     # 這些 stub 只驗證 worker/supervisor 協定，不會讀模型或啟動 llama runtime。
     $protocolStub = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_WORKER_PROTOCOL_STUB')
     if ($null -eq $workerBootstrapError -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1' -and -not [string]::IsNullOrEmpty($protocolStub)) {
-        $stubLimits = [ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
+        $stubLimits = [ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB);contextSize=$ContextSize;safetyReserveBytes=($SafetyReserveGiB * 1GB)}
+        $stubModelBytes = 1GB
+        $stubKvCacheBytes = [int64]([decimal]$ContextSize * 393216)
+        $stubRuntimeOverheadBytes = [Math]::Max(1GB,[int64][Math]::Ceiling([decimal]$stubModelBytes / 16))
+        $stubAllocatorMarginBytes = 512MB
+        $stubEstimatedPeakBytes = $stubModelBytes + $stubKvCacheBytes + $stubRuntimeOverheadBytes + $stubAllocatorMarginBytes
+        $stubRequiredAvailableBytes = $stubEstimatedPeakBytes + ($SafetyReserveGiB * 1GB)
+        $stubPreflight = [ordered]@{evaluated=$true;passed=$true;reason='ok';modelBytes=$stubModelBytes;contextSize=$ContextSize;kvCacheBytes=$stubKvCacheBytes;runtimeOverheadBytes=$stubRuntimeOverheadBytes;allocatorMarginBytes=$stubAllocatorMarginBytes;estimatedPeakBytes=$stubEstimatedPeakBytes;safetyReserveBytes=($SafetyReserveGiB * 1GB);requiredAvailableBytes=$stubRequiredAvailableBytes;observed=[ordered]@{availablePhysicalBytes=64GB;totalPhysicalBytes=64GB;availableCommitBytes=64GB;commitLimitBytes=64GB;source='synthetic-runtime-only'};gates=[ordered]@{jobBudget=$true;physical=$true;commit=$true}}
         switch ($protocolStub) {
             'Valid' {
                 [ordered]@{
                     ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true;receivedFiles=$Files.Count}
-                    resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;termination=[ordered]@{graceMilliseconds=5000;timedOut=$false;streamDrainTimedOut=$false};output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';limits=$stubLimits}
+                    resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;termination=[ordered]@{graceMilliseconds=5000;timedOut=$false;streamDrainTimedOut=$false};output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';memoryPreflight=$stubPreflight;limits=$stubLimits}
                 } | ConvertTo-Json -Depth 8 -Compress
                 exit 0
             }
@@ -114,6 +123,22 @@ if ($internalWorker) {
             'BadLimits' {
                 $stubLimits.timeoutSeconds = [string]$TimeoutSeconds
                 [ordered]@{ok=$false;fallbackToCodex=$true;error=[ordered]@{code='SyntheticFailure'};resource=[ordered]@{launched=$false;elapsedMilliseconds=0L;peakWorkingSetBytes=0L;inputBytes=0L;promptBytes=0L;exitCode=$null;jobAssigned=$false;output=[ordered]@{bytes=0L;responseMarkerFound=$false;schemaCandidates=0};limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'BadPreflight' {
+                $stubPreflight.gates.physical = $false
+                [ordered]@{ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true};resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';memoryPreflight=$stubPreflight;limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'BadPreflightFormula' {
+                $stubPreflight.kvCacheBytes++
+                $stubPreflight.estimatedPeakBytes++
+                $stubPreflight.requiredAvailableBytes++
+                [ordered]@{ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true};resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';memoryPreflight=$stubPreflight;limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'PeakOverBudget' {
+                [ordered]@{ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true};resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=(([int64]$MaximumRamGiB * 1GB) + 1L);inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';memoryPreflight=$stubPreflight;limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
                 exit 0
             }
             default { [Console]::Error.Write('unknown synthetic protocol stub'); exit 2 }
@@ -144,7 +169,9 @@ if (-not $internalWorker) {
         '-ProjectRoot',$ProjectRoot,
         '-TimeoutSeconds',[string]$TimeoutSeconds,
         '-CpuThreads',[string]$CpuThreads,
-        '-MaximumRamGiB',[string]$MaximumRamGiB
+        '-MaximumRamGiB',[string]$MaximumRamGiB,
+        '-ContextSize',[string]$ContextSize,
+        '-SafetyReserveGiB',[string]$SafetyReserveGiB
     )) { $workerArguments.Add([string]$argument) }
 
     function Test-ProtocolInteger([object]$Value,[long]$Minimum,[long]$Maximum) {
@@ -169,12 +196,16 @@ if (-not $internalWorker) {
                 workerProtocol=[ordered]@{workerLaunched=$WasLaunched;exitCode=$workerExitCode;stdoutBytes=$workerStdoutBytes;stderrBytes=$workerStderrBytes;receiptParsed=$workerReceiptParsed;failureReason=$workerProtocolFailure}
                 termination=[ordered]@{graceMilliseconds=5000;timedOut=($Code -eq 'LocalQwenSupervisorTimeout');streamDrainTimedOut=$false}
                 output=[ordered]@{bytes=0;consoleBytes=0;promptEchoBytes=0;promptEchoPrefixMatched=$false;promptEchoCommonPrefixChars=0;responseMarkerFound=$false;runtimeError='none';runtimeKind='unknown';candidates=0;jsonCandidates=0;schemaCandidates=0;lastCandidateStart=-1;lastCandidateEnd=-1;candidateKeys=@()}
-                limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
+                limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB);contextSize=$ContextSize;safetyReserveBytes=($SafetyReserveGiB * 1GB)}
             }
         } | ConvertTo-Json -Depth 8 -Compress
     }
 
     try {
+        if ($ContextSize -lt 512 -or $ContextSize -gt 32768 -or $SafetyReserveGiB -lt 4 -or $SafetyReserveGiB -gt 16) {
+            Write-SupervisorFallback 'LocalQwenConfigurationInvalid' $false $false 'configuration-validation'
+            exit 0
+        }
         # sender 在建立子程序前先驗證 transport，避免超大環境變數或模糊的陣列繫結進入 worker。
         if ($Files.Count -gt 64) { throw 'The sender file list is oversized.' }
         foreach ($file in $Files) {
@@ -262,17 +293,55 @@ if (-not $internalWorker) {
                 -not (Test-ProtocolInteger $resource.inputBytes 0 16384) -or
                 -not (Test-ProtocolInteger $resource.promptBytes 0 ([long]::MaxValue)) -or
                 $resource.jobAssigned -isnot [bool] -or $resource.output -isnot [pscustomobject] -or
-                -not (Test-ProtocolInteger $resource.output.bytes 0 65536) -or $resource.limits -isnot [pscustomobject]
+                -not (Test-ProtocolInteger $resource.output.bytes 0 65536) -or $resource.limits -isnot [pscustomobject] -or
+                $resource.memoryPreflight -isnot [pscustomobject]
             if (-not $receiptInvalid) {
+                $preflight = $resource.memoryPreflight
                 $receiptInvalid = -not (Test-ProtocolInteger $resource.limits.timeoutSeconds 10 30) -or $resource.limits.timeoutSeconds -ne $TimeoutSeconds -or
                     -not (Test-ProtocolInteger $resource.limits.maxTokens 1 512) -or $resource.limits.maxTokens -ne $MaxTokens -or
                     -not (Test-ProtocolInteger $resource.limits.cpuThreads 1 4) -or $resource.limits.cpuThreads -ne $CpuThreads -or
-                    -not (Test-ProtocolInteger $resource.limits.maximumRamBytes (4GB) (24GB)) -or $resource.limits.maximumRamBytes -ne ([int64]$MaximumRamGiB * 1GB)
+                    -not (Test-ProtocolInteger $resource.limits.maximumRamBytes (4GB) (24GB)) -or $resource.limits.maximumRamBytes -ne ([int64]$MaximumRamGiB * 1GB) -or
+                    -not (Test-ProtocolInteger $resource.limits.contextSize 512 32768) -or $resource.limits.contextSize -ne $ContextSize -or
+                    -not (Test-ProtocolInteger $resource.limits.safetyReserveBytes (4GB) (16GB)) -or $resource.limits.safetyReserveBytes -ne ($SafetyReserveGiB * 1GB) -or
+                    $preflight.evaluated -isnot [bool] -or $preflight.passed -isnot [bool] -or [string]::IsNullOrWhiteSpace([string]$preflight.reason) -or
+                    -not (Test-ProtocolInteger $preflight.modelBytes 0 (1TB)) -or -not (Test-ProtocolInteger $preflight.contextSize 512 32768) -or
+                    $preflight.contextSize -ne $ContextSize -or -not (Test-ProtocolInteger $preflight.kvCacheBytes 0 ([long]::MaxValue)) -or
+                    -not (Test-ProtocolInteger $preflight.runtimeOverheadBytes 0 ([long]::MaxValue)) -or -not (Test-ProtocolInteger $preflight.allocatorMarginBytes 0 ([long]::MaxValue)) -or
+                    -not (Test-ProtocolInteger $preflight.estimatedPeakBytes 0 ([long]::MaxValue)) -or -not (Test-ProtocolInteger $preflight.safetyReserveBytes 0 ([long]::MaxValue)) -or
+                    -not (Test-ProtocolInteger $preflight.requiredAvailableBytes 0 ([long]::MaxValue)) -or $preflight.observed -isnot [pscustomobject] -or $preflight.gates -isnot [pscustomobject] -or
+                    -not (Test-ProtocolInteger $preflight.observed.availablePhysicalBytes 0 ([long]::MaxValue)) -or -not (Test-ProtocolInteger $preflight.observed.totalPhysicalBytes 0 ([long]::MaxValue)) -or
+                    -not (Test-ProtocolInteger $preflight.observed.availableCommitBytes 0 ([long]::MaxValue)) -or -not (Test-ProtocolInteger $preflight.observed.commitLimitBytes 0 ([long]::MaxValue)) -or
+                    $preflight.gates.jobBudget -isnot [bool] -or $preflight.gates.physical -isnot [bool] -or $preflight.gates.commit -isnot [bool]
+            }
+            if (-not $receiptInvalid -and $preflight.evaluated) {
+                $expectedKvCache = [decimal]$ContextSize * 393216
+                $expectedRuntimeOverhead = [Math]::Max(1GB,[int64][Math]::Ceiling([decimal]$preflight.modelBytes / 16))
+                $expectedAllocatorMargin = 512MB
+                $expectedSafetyReserve = [decimal]$SafetyReserveGiB * 1GB
+                $expectedPeak = [decimal]$preflight.modelBytes + $expectedKvCache + $expectedRuntimeOverhead + $expectedAllocatorMargin
+                $expectedRequired = $expectedPeak + $preflight.safetyReserveBytes
+                $expectedJobGate = ([int64]$MaximumRamGiB * 1GB) -ge $preflight.estimatedPeakBytes
+                $expectedPhysicalGate = $preflight.observed.availablePhysicalBytes -ge $preflight.requiredAvailableBytes
+                $expectedCommitGate = $preflight.observed.availableCommitBytes -ge $preflight.requiredAvailableBytes
+                $expectedPassed = $expectedJobGate -and $expectedPhysicalGate -and $expectedCommitGate
+                $expectedReason = if (-not $expectedJobGate) {'job-budget-insufficient'} elseif (-not $expectedPhysicalGate) {'physical-memory-insufficient'} elseif (-not $expectedCommitGate) {'commit-insufficient'} else {'ok'}
+                $receiptInvalid = $expectedKvCache -gt [long]::MaxValue -or $expectedPeak -gt [long]::MaxValue -or $expectedRequired -gt [long]::MaxValue -or
+                    $preflight.kvCacheBytes -ne [int64]$expectedKvCache -or $preflight.runtimeOverheadBytes -ne [int64]$expectedRuntimeOverhead -or
+                    $preflight.allocatorMarginBytes -ne [int64]$expectedAllocatorMargin -or $preflight.safetyReserveBytes -ne [int64]$expectedSafetyReserve -or
+                    $preflight.estimatedPeakBytes -ne [int64]$expectedPeak -or $preflight.requiredAvailableBytes -ne [int64]$expectedRequired -or
+                    $preflight.observed.availablePhysicalBytes -gt $preflight.observed.totalPhysicalBytes -or $preflight.observed.availableCommitBytes -gt $preflight.observed.commitLimitBytes -or
+                    $preflight.gates.jobBudget -ne $expectedJobGate -or $preflight.gates.physical -ne $expectedPhysicalGate -or $preflight.gates.commit -ne $expectedCommitGate -or
+                    $preflight.passed -ne $expectedPassed -or $preflight.reason -ne $expectedReason
+            } elseif (-not $receiptInvalid) {
+                $receiptInvalid = $preflight.passed -or $preflight.reason -ne 'not-evaluated' -or $preflight.modelBytes -ne 0 -or
+                    $preflight.kvCacheBytes -ne 0 -or $preflight.runtimeOverheadBytes -ne 0 -or $preflight.allocatorMarginBytes -ne 0 -or
+                    $preflight.estimatedPeakBytes -ne 0 -or $preflight.requiredAvailableBytes -ne 0 -or
+                    $preflight.gates.jobBudget -or $preflight.gates.physical -or $preflight.gates.commit
             }
             if (-not $receiptInvalid -and $workerReceipt.ok) {
                 $receiptInvalid = $workerReceipt.result -isnot [pscustomobject] -or $null -ne $workerReceipt.PSObject.Properties['error'] -or
-                    -not $resource.launched -or -not $resource.jobAssigned -or -not (Test-ProtocolInteger $resource.exitCode 0 0) -or
-                    $resource.peakWorkingSetBytes -lt 1 -or $resource.promptBytes -lt 1 -or $resource.promptBytes -gt 16384 -or
+                    -not $resource.launched -or -not $resource.jobAssigned -or -not $preflight.evaluated -or -not $preflight.passed -or -not (Test-ProtocolInteger $resource.exitCode 0 0) -or
+                    $resource.peakWorkingSetBytes -lt 1 -or $resource.peakWorkingSetBytes -gt ([int64]$MaximumRamGiB * 1GB) -or $resource.promptBytes -lt 1 -or $resource.promptBytes -gt 16384 -or
                     $resource.output.bytes -lt 1 -or
                     $resource.output.responseMarkerFound -isnot [bool] -or -not $resource.output.responseMarkerFound -or
                     -not (Test-ProtocolInteger $resource.output.schemaCandidates 1 ([long]::MaxValue)) -or
@@ -282,8 +351,9 @@ if (-not $internalWorker) {
                 $receiptInvalid = $workerReceipt.error -isnot [pscustomobject] -or [string]::IsNullOrWhiteSpace([string]$workerReceipt.error.code) -or
                     $null -ne $workerReceipt.PSObject.Properties['result']
                 if (-not $receiptInvalid -and $resource.launched) {
-                    $receiptInvalid = $null -ne $resource.exitCode -and
+                    $receiptInvalid = -not $preflight.evaluated -or -not $preflight.passed -or ($null -ne $resource.exitCode -and
                         -not (Test-ProtocolInteger $resource.exitCode ([int]::MinValue) ([int]::MaxValue))
+                    )
                     if (-not $receiptInvalid -and $resource.jobAssigned -and (Test-ProtocolInteger $resource.exitCode 0 0) -and
                         $resource.output.responseMarkerFound -is [bool] -and $resource.output.responseMarkerFound -and
                         (Test-ProtocolInteger $resource.output.schemaCandidates 1 ([long]::MaxValue))) {
@@ -353,6 +423,8 @@ $streamDrainTimedOut = $false
 $syntheticMode = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_SYNTHETIC_MODE')
 $terminationTimer = $null
 $tracePath = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TEST_TRACE_PATH')
+$modelLockStream = $null
+$memoryPreflight = [ordered]@{evaluated=$false;passed=$false;reason='not-evaluated';modelBytes=0L;contextSize=$ContextSize;kvCacheBytes=0L;runtimeOverheadBytes=0L;allocatorMarginBytes=0L;estimatedPeakBytes=0L;safetyReserveBytes=0L;requiredAvailableBytes=0L;observed=[ordered]@{availablePhysicalBytes=0L;totalPhysicalBytes=0L;availableCommitBytes=0L;commitLimitBytes=0L;source='none'};gates=[ordered]@{jobBudget=$false;physical=$false;commit=$false}}
 
 function Write-WorkerTrace([string]$Phase) {
     if ([Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -ne '1' -or [string]::IsNullOrWhiteSpace($script:tracePath)) { return }
@@ -480,6 +552,134 @@ public static class AevryndPathSecurity
 '@
 }
 
+if (-not ('AevryndMemoryProbe' -as [type])) {
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public sealed class AevryndMemorySnapshot
+{
+    public long TotalPhysicalBytes { get; set; }
+    public long AvailablePhysicalBytes { get; set; }
+    public long CommitLimitBytes { get; set; }
+    public long AvailableCommitBytes { get; set; }
+}
+
+public static class AevryndMemoryProbe
+{
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PerformanceInformation
+    {
+        public uint Size;
+        public UIntPtr CommitTotal;
+        public UIntPtr CommitLimit;
+        public UIntPtr CommitPeak;
+        public UIntPtr PhysicalTotal;
+        public UIntPtr PhysicalAvailable;
+        public UIntPtr SystemCache;
+        public UIntPtr KernelTotal;
+        public UIntPtr KernelPaged;
+        public UIntPtr KernelNonpaged;
+        public UIntPtr PageSize;
+        public uint HandleCount;
+        public uint ProcessCount;
+        public uint ThreadCount;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    private static extern bool GetPerformanceInfo(out PerformanceInformation value, uint size);
+
+    private static long PagesToBytes(UIntPtr pages, ulong pageSize)
+    {
+        ulong count = pages.ToUInt64();
+        if (pageSize == 0 || count > ((ulong)long.MaxValue / pageSize))
+            throw new OverflowException("Memory counter overflow.");
+        return checked((long)(count * pageSize));
+    }
+
+    public static AevryndMemorySnapshot Read()
+    {
+        PerformanceInformation value;
+        uint size = (uint)Marshal.SizeOf(typeof(PerformanceInformation));
+        if (!GetPerformanceInfo(out value, size))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        ulong pageSize = value.PageSize.ToUInt64();
+        long commitLimit = PagesToBytes(value.CommitLimit, pageSize);
+        long commitTotal = PagesToBytes(value.CommitTotal, pageSize);
+        if (commitTotal < 0 || commitTotal > commitLimit)
+            throw new InvalidOperationException("Invalid commit counters.");
+        return new AevryndMemorySnapshot {
+            TotalPhysicalBytes = PagesToBytes(value.PhysicalTotal, pageSize),
+            AvailablePhysicalBytes = PagesToBytes(value.PhysicalAvailable, pageSize),
+            CommitLimitBytes = commitLimit,
+            AvailableCommitBytes = commitLimit - commitTotal
+        };
+    }
+}
+'@
+}
+
+function Convert-TestMemoryValue([string]$Name) {
+    $raw = [Environment]::GetEnvironmentVariable($Name)
+    $value = 0L
+    if ([string]::IsNullOrWhiteSpace($raw) -or -not [long]::TryParse($raw,[Globalization.NumberStyles]::None,[Globalization.CultureInfo]::InvariantCulture,[ref]$value) -or $value -lt 0) {
+        throw "Synthetic memory value is invalid: $Name"
+    }
+    return $value
+}
+
+function Get-MemoryPreflight([long]$ModelBytes) {
+    if ($ContextSize -lt 512 -or $ContextSize -gt 32768 -or $SafetyReserveGiB -lt 4 -or $SafetyReserveGiB -gt 16) {
+        throw 'Local QWEN memory configuration is outside the safe policy.'
+    }
+    if ($ModelBytes -lt 1 -or $ModelBytes -gt 1TB) { throw 'The model size is outside the safe policy.' }
+
+    # 以每 token 384 KiB 保守涵蓋 27B GQA KV cache，再加入模型解壓/映射與 allocator 餘量。
+    $kvCacheBytes = [int64]([decimal]$ContextSize * 393216)
+    $runtimeOverheadBytes = [Math]::Max(1GB,[int64][Math]::Ceiling([decimal]$ModelBytes / 16))
+    $allocatorMarginBytes = 512MB
+    $estimatedPeakDecimal = [decimal]$ModelBytes + $kvCacheBytes + $runtimeOverheadBytes + $allocatorMarginBytes
+    $safetyReserveBytes = [int64]([decimal]$SafetyReserveGiB * 1GB)
+    $requiredAvailableDecimal = $estimatedPeakDecimal + $safetyReserveBytes
+    if ($estimatedPeakDecimal -gt [long]::MaxValue -or $requiredAvailableDecimal -gt [long]::MaxValue) { throw 'The memory estimate overflowed.' }
+    $estimatedPeakBytes = [int64]$estimatedPeakDecimal
+    $requiredAvailableBytes = [int64]$requiredAvailableDecimal
+
+    $recognizedSyntheticModes = @('StubSuccess','StubBadMarker','StubBadSchema','StubRamGate','StubRuntimeLargeStdout','StubRuntimeLargeStderr','HungStream','HostHangAfterChildExit')
+    $isSyntheticRuntime = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1' -and $syntheticMode -in $recognizedSyntheticModes
+    $overrideNames = @('AEVRYND_QWEN_TEST_TOTAL_PHYSICAL_BYTES','AEVRYND_QWEN_TEST_AVAILABLE_PHYSICAL_BYTES','AEVRYND_QWEN_TEST_COMMIT_LIMIT_BYTES','AEVRYND_QWEN_TEST_AVAILABLE_COMMIT_BYTES')
+    $provided = @($overrideNames | Where-Object { -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+    if (-not $isSyntheticRuntime -and $provided.Count -gt 0) { throw 'Synthetic memory counters require a synthetic runtime.' }
+    $source = 'operating-system'
+    if ($isSyntheticRuntime) {
+        # 測試覆寫只能配合不可能選到 llama-cli.exe 的合成 runtime，且四個計數必須成組提供。
+        if ($provided.Count -eq 0) {
+            $totalPhysicalBytes=64GB;$availablePhysicalBytes=64GB;$commitLimitBytes=64GB;$availableCommitBytes=64GB
+        } elseif ($provided.Count -eq $overrideNames.Count) {
+            $totalPhysicalBytes=Convert-TestMemoryValue $overrideNames[0]
+            $availablePhysicalBytes=Convert-TestMemoryValue $overrideNames[1]
+            $commitLimitBytes=Convert-TestMemoryValue $overrideNames[2]
+            $availableCommitBytes=Convert-TestMemoryValue $overrideNames[3]
+        } else { throw 'Synthetic memory counters must be supplied as one complete set.' }
+        $source = 'synthetic-runtime-only'
+    } else {
+        $snapshot = [AevryndMemoryProbe]::Read()
+        $totalPhysicalBytes=$snapshot.TotalPhysicalBytes;$availablePhysicalBytes=$snapshot.AvailablePhysicalBytes
+        $commitLimitBytes=$snapshot.CommitLimitBytes;$availableCommitBytes=$snapshot.AvailableCommitBytes
+    }
+    if ($totalPhysicalBytes -lt 1 -or $availablePhysicalBytes -gt $totalPhysicalBytes -or $commitLimitBytes -lt 1 -or $availableCommitBytes -gt $commitLimitBytes) {
+        throw 'Memory counters are inconsistent.'
+    }
+    $maximumBytes = [int64]$MaximumRamGiB * 1GB
+    $jobGate = $maximumBytes -ge $estimatedPeakBytes
+    $physicalGate = $availablePhysicalBytes -ge $requiredAvailableBytes
+    $commitGate = $availableCommitBytes -ge $requiredAvailableBytes
+    $passed = $jobGate -and $physicalGate -and $commitGate
+    $reason = if (-not $jobGate) {'job-budget-insufficient'} elseif (-not $physicalGate) {'physical-memory-insufficient'} elseif (-not $commitGate) {'commit-insufficient'} else {'ok'}
+    return [ordered]@{evaluated=$true;passed=$passed;reason=$reason;modelBytes=$ModelBytes;contextSize=$ContextSize;kvCacheBytes=$kvCacheBytes;runtimeOverheadBytes=$runtimeOverheadBytes;allocatorMarginBytes=$allocatorMarginBytes;estimatedPeakBytes=$estimatedPeakBytes;safetyReserveBytes=$safetyReserveBytes;requiredAvailableBytes=$requiredAvailableBytes;observed=[ordered]@{availablePhysicalBytes=$availablePhysicalBytes;totalPhysicalBytes=$totalPhysicalBytes;availableCommitBytes=$availableCommitBytes;commitLimitBytes=$commitLimitBytes;source=$source};gates=[ordered]@{jobBudget=$jobGate;physical=$physicalGate;commit=$commitGate}}
+}
+
 function Test-ContainedPath([string]$Candidate,[string]$Root) {
     return $Candidate.Equals($Root,[StringComparison]::OrdinalIgnoreCase) -or
         $Candidate.StartsWith($Root + '\',[StringComparison]::OrdinalIgnoreCase)
@@ -515,7 +715,8 @@ function Write-Fallback([string]$Code,[string]$Message) {
             jobAssigned=$jobAssigned
             termination=[ordered]@{graceMilliseconds=$terminationGraceMilliseconds;timedOut=$terminationTimedOut;streamDrainTimedOut=$streamDrainTimedOut}
             output=[ordered]@{bytes=$outputBytes;consoleBytes=$consoleBytes;promptEchoBytes=$promptEchoBytes;promptEchoPrefixMatched=$promptEchoPrefixMatched;promptEchoCommonPrefixChars=$promptEchoCommonPrefixChars;responseMarkerFound=$responseMarkerFound;runtimeError=$runtimeOutputError;runtimeKind=$runtimeOutputKind;candidates=$outputCandidateCount;jsonCandidates=$outputJsonCandidateCount;schemaCandidates=$outputSchemaCandidateCount;lastCandidateStart=$outputLastCandidateStart;lastCandidateEnd=$outputLastCandidateEnd;candidateKeys=$outputCandidateKeys}
-            limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
+            memoryPreflight=$memoryPreflight
+            limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB);contextSize=$ContextSize;safetyReserveBytes=($SafetyReserveGiB * 1GB)}
         }
     } | ConvertTo-Json -Depth 8 -Compress
 }
@@ -702,11 +903,29 @@ $responseMarker
     $logPath = Join-Path $temporaryRoot 'runtime.log'
     [IO.File]::WriteAllText($promptPath,$prompt,[Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($schemaPath,$generationSchema,[Text.UTF8Encoding]::new($false))
+    $failurePhase = 'memory-preflight'
+    $recognizedSyntheticRuntime = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1' -and $syntheticMode -in @('StubSuccess','StubBadMarker','StubBadSchema','StubRamGate','StubRuntimeLargeStdout','StubRuntimeLargeStderr','HungStream','HostHangAfterChildExit')
+    if ($recognizedSyntheticRuntime) {
+        $modelBytes = (Get-Item -LiteralPath $modelPath -Force).Length
+        $syntheticModelBytes = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TEST_MODEL_BYTES')
+        if (-not [string]::IsNullOrWhiteSpace($syntheticModelBytes)) { $modelBytes = Convert-TestMemoryValue 'AEVRYND_QWEN_TEST_MODEL_BYTES' }
+    } else {
+        # 持有不允許寫入、刪除或重新命名的唯讀 handle，封閉長度檢查到 runtime 開檔之間的 TOCTOU。
+        $modelLockStream = [IO.File]::Open($modelPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        $lockedModelPath = [IO.Path]::GetFullPath([AevryndPathSecurity]::GetFinalPath($modelLockStream.SafeFileHandle))
+        if (-not $lockedModelPath.Equals([IO.Path]::GetFullPath($modelPath),[StringComparison]::OrdinalIgnoreCase)) { throw 'The model path changed while it was opened.' }
+        $modelBytes = $modelLockStream.Length
+    }
+    $memoryPreflight = Get-MemoryPreflight $modelBytes
+    if (-not $memoryPreflight.passed) {
+        $failureCode = 'LocalQwenPreflightRejected'
+        throw ('Local QWEN pre-start memory gate rejected launch: ' + $memoryPreflight.reason)
+    }
     $failurePhase = 'runtime-launch'
     Write-WorkerTrace 'runtime-launch-before'
     # Chat template 會讓結束回合的特殊 token 經過 JSON grammar 而初始化失敗；completion 模式沒有此衝突。
     # 固定短 prompt 讓 single-turn 進入生成；完整內容與 schema 仍只經過暫存檔傳入。
-    $arguments = @('-m',$modelPath,'--prompt','Follow the complete task from the attached prompt file.','--file',$promptPath,'-n',[string]$MaxTokens,'-c','4096','-t',[string]$CpuThreads,'-tb',[string]$CpuThreads,'-ngl','32','--flash-attn','auto','--reasoning','off','--reasoning-budget','0','--json-schema-file',$schemaPath,'--output-file',$outputPath,'--log-file',$logPath,'--no-jinja','--single-turn','--simple-io','--no-display-prompt','--color','off','--no-perf')
+    $arguments = @('-m',$modelPath,'--prompt','Follow the complete task from the attached prompt file.','--file',$promptPath,'-n',[string]$MaxTokens,'-c',[string]$ContextSize,'-t',[string]$CpuThreads,'-tb',[string]$CpuThreads,'-ngl','32','--flash-attn','auto','--reasoning','off','--reasoning-budget','0','--json-schema-file',$schemaPath,'--output-file',$outputPath,'--log-file',$logPath,'--no-jinja','--single-turn','--simple-io','--no-display-prompt','--color','off','--no-perf')
     if ($syntheticMode -in @('StubSuccess','StubBadMarker','StubBadSchema') -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
         # 以本機短命 PowerShell stub 驗證 marker/schema 協定，完全不載入真實模型。
         $syntheticResponse = if ($syntheticMode -eq 'StubBadSchema') { '{"answer":3}' } else { '{"answer":2}' }
@@ -760,6 +979,7 @@ $responseMarker
     $maximumBytes = [int64]$MaximumRamGiB * 1GB
     $jobHandle = [AevryndPathSecurity]::CreateBoundedKillOnCloseJob($process.Handle,[uint64]$maximumBytes)
     $jobAssigned = $true
+    if ($null -ne $modelLockStream -and $modelLockStream.Length -ne $memoryPreflight.modelBytes) { Stop-BoundedRuntime;throw 'The locked model length changed unexpectedly.' }
     try { $process.PriorityClass = [Diagnostics.ProcessPriorityClass]::BelowNormal } catch {}
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $failurePhase = 'runtime-execution'
@@ -860,7 +1080,8 @@ $responseMarker
             output=[ordered]@{bytes=$outputBytes;consoleBytes=$consoleBytes;promptEchoBytes=$promptEchoBytes;promptEchoPrefixMatched=$promptEchoPrefixMatched;promptEchoCommonPrefixChars=$promptEchoCommonPrefixChars;responseMarkerFound=$responseMarkerFound;runtimeError=$runtimeOutputError;runtimeKind=$runtimeOutputKind;candidates=$outputCandidateCount;jsonCandidates=$outputJsonCandidateCount;schemaCandidates=$outputSchemaCandidateCount;lastCandidateStart=$outputLastCandidateStart;lastCandidateEnd=$outputLastCandidateEnd;candidateKeys=$outputCandidateKeys}
             requestedGpuLayers=32
             modelFile=[IO.Path]::GetFileName($modelPath)
-            limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
+            memoryPreflight=$memoryPreflight
+            limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB);contextSize=$ContextSize;safetyReserveBytes=($SafetyReserveGiB * 1GB)}
         }
     } | ConvertTo-Json -Depth 100 -Compress
     Write-WorkerTrace 'receipt-serialization-after'
@@ -875,6 +1096,7 @@ $responseMarker
     Stop-BoundedRuntime
     Write-WorkerTrace 'finally-stop-after'
     if ($null -ne $process) { try { $process.Dispose() } catch {} }
+    if ($null -ne $modelLockStream) { try { $modelLockStream.Dispose() } catch {} }
     Write-WorkerTrace 'finally-process-disposed'
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue }
     Write-WorkerTrace 'finally-temp-removed'
