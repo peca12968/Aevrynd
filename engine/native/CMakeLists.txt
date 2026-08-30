@@ -5,6 +5,7 @@ add_library(AevryndEngine STATIC
   src/SkeletalIk3D.cpp
   src/FootPlacement3D.cpp
   src/RootMotion3D.cpp
+  src/RootMotionInterval3D.cpp
   src/RootMotionController3D.cpp
   src/SkeletalSocket3D.cpp
   src/SkeletonSemantics3D.cpp
@@ -326,6 +327,10 @@ add_executable(AevryndAnimationGraph3DTest tests/AnimationGraph3DSmoke.cpp)
 target_compile_options(AevryndAnimationGraph3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAnimationGraph3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndAnimationGraph3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAnimationGraph3DTest>'")
+add_executable(AevryndAnimationGraphRootMotion3DTest tests/AnimationGraphRootMotion3DSmoke.cpp)
+target_compile_options(AevryndAnimationGraphRootMotion3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndAnimationGraphRootMotion3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndAnimationGraphRootMotion3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAnimationGraphRootMotion3DTest>'")
 add_executable(AevryndSkeletalIk3DTest tests/SkeletalIk3DSmoke.cpp)
 target_compile_options(AevryndSkeletalIk3DTest PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(AevryndSkeletalIk3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")

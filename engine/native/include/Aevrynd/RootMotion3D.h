@@ -77,7 +77,9 @@ public:
     // Reset 保留 prepared clip/scratch 容量；下一個 tick=1 只建立零位移 anchor。
     void Reset()noexcept;
     // Teleport 保留 prepared 資源，將下一個合法 tick 鎖為 previousTick+1，且該 tick delta 為零。
-    void Teleport(std::uint64_t previousTick)noexcept;
+    // 未 Prepare 或 previousTick==UINT64_MAX 時 fail-closed，committed state 不變。
+    [[nodiscard]] bool CanTeleport(std::uint64_t previousTick)const noexcept;
+    bool Teleport(std::uint64_t previousTick)noexcept;
     // Trim 釋放所有 prepared 容量並使物件回到 unprepared；需重新 Prepare。
     std::size_t TrimUnusedMemory();
     // 回報 scratch、clip 與 skeleton 深拷貝的容量及最近釋放資訊。
