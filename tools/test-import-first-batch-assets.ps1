@@ -65,8 +65,17 @@ try {
     [IO.Directory]::CreateDirectory($hostileRoot) | Out-Null
     [IO.File]::WriteAllBytes((Join-Path $temporary 'outside.bin'), [byte[]](0,1,2,3))
     [IO.File]::WriteAllText((Join-Path $hostileRoot 'escape.gltf'), '{"asset":{"version":"2.0"},"buffers":[{"uri":"../outside.bin","byteLength":4}]}', [Text.UTF8Encoding]::new($false))
-    & $Blender --background --python-exit-code 1 --python (Join-Path $PSScriptRoot 'blender/build-static-mesh-lods.py') -- --source (Join-Path $hostileRoot 'escape.gltf') --output $hostileOutput --asset-name hostile-escape --ratios 1 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath (Join-Path $hostileOutput 'hostile-escape-lod0.glb'))) { throw 'glTF dependency path escape did not fail closed.' }
+    $hostileCommand = Join-Path $temporary 'run-hostile.cmd'
+    $hostileStdoutPath = Join-Path $temporary 'hostile-stdout.txt'
+    $hostileStderrPath = Join-Path $temporary 'hostile-stderr.txt'
+    $hostileCommandText = '@echo off' + "`r`n" + '"' + $Blender + '" --background --python-exit-code 1 --python "' + (Join-Path $PSScriptRoot 'blender/build-static-mesh-lods.py') + '" -- --source "' + (Join-Path $hostileRoot 'escape.gltf') + '" --output "' + $hostileOutput + '" --asset-name hostile-escape --ratios 1 >"' + $hostileStdoutPath + '" 2>"' + $hostileStderrPath + '"' + "`r`n" + 'exit /b %ERRORLEVEL%' + "`r`n"
+    [IO.File]::WriteAllText($hostileCommand, $hostileCommandText, [Text.Encoding]::ASCII)
+    & cmd.exe /d /c $hostileCommand
+    $hostileExitCode = $LASTEXITCODE
+    $hostileOutputText = (Get-Content -LiteralPath $hostileStdoutPath -Raw) + "`n" + (Get-Content -LiteralPath $hostileStderrPath -Raw)
+    if ($hostileExitCode -eq 0 -or $hostileOutputText -notmatch 'glTF dependency escapes source directory' -or (Test-Path -LiteralPath (Join-Path $hostileOutput 'hostile-escape-lod0.glb'))) {
+        throw 'glTF dependency path escape did not fail closed with the expected diagnostic.'
+    }
     Write-Output "FIRST_BATCH_IMPORT_TEST=PASS assets=10 missingFailClosed=true pathEscapeRejected=true memoryGate=$($runtime.memoryGate) blender=$Blender"
 } finally {
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
