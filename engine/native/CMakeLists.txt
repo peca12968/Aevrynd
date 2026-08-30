@@ -13,6 +13,7 @@ add_library(AevryndEngine STATIC
   src/AssetManifest.cpp
   src/Audio.cpp
   src/CharacterController3D.cpp
+  src/CharacterPresentation3D.cpp
   src/CollisionWorld3D.cpp
   src/ECS.cpp
   src/Effects2D.cpp
@@ -324,6 +325,11 @@ add_executable(AevryndAnimation3DTest tests/Animation3DSmoke.cpp)
 target_compile_options(AevryndAnimation3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAnimation3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndAnimation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAnimation3DTest>'")
+add_executable(AevryndCharacterPresentation3DTest tests/CharacterPresentation3DSmoke.cpp)
+target_compile_options(AevryndCharacterPresentation3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndCharacterPresentation3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndCharacterPresentation3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterPresentation3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterPresentation3DTest>'")
 add_executable(AevryndAnimationGraph3DTest tests/AnimationGraph3DSmoke.cpp)
 target_compile_options(AevryndAnimationGraph3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAnimationGraph3DTest PRIVATE AevryndEngine)

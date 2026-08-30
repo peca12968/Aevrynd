@@ -10,13 +10,8 @@
 using namespace Aevrynd;using namespace GameplayLab;
 namespace {constexpr std::array<const wchar_t*,11> Names={L"first-day.png",L"third-day.png",L"god-day.png",L"first-dusk.png",L"third-dusk.png",L"god-dusk.png",L"first-night.png",L"third-night.png",L"god-night.png",L"palette-building.png",L"melee-combat.png"};constexpr Color Cyan{.08f,.9f,.8f,1},Gold{1,.68f,.18f,1};std::string RunId(){GUID g{};if(FAILED(CoCreateGuid(&g)))throw std::runtime_error("Gameplay capture GUID unavailable");return std::format("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",g.Data1,g.Data2,g.Data3,g.Data4[0],g.Data4[1],g.Data4[2],g.Data4[3],g.Data4[4],g.Data4[5],g.Data4[6],g.Data4[7]);}}
 std::string CreateGameplayLabRunId(){return RunId();}
-namespace {
-std::size_t SemanticJoint(std::span<const std::string> names,std::initializer_list<std::string_view> candidates,std::size_t fallback){const auto lower=[](std::string_view value){std::string result(value);std::ranges::transform(result,result.begin(),[](unsigned char c){return char(std::tolower(c));});return result;};for(const auto candidate:candidates){const auto wanted=lower(candidate);for(std::size_t i=0;i<names.size();++i){const auto name=lower(names[i]);if(name==wanted||name.ends_with(wanted))return i;}}return names.empty()?0:(std::min)(fallback,names.size()-1);}
-void RotateJoint(JointTransform3D& joint,Vec3 delta){if(joint.usesQuaternion){const Quaternion3D a=joint.quaternion,b=QuaternionFromEuler3D(delta);joint.quaternion=NormalizeQuaternion3D({a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w,a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z});}else joint.rotation=joint.rotation+delta;}
-void ApplyGameplayPose(const SkinnedModel3D& model,std::span<const std::string> names,AnimationPose3D& destination,const GameplayAnimation3D& source){destination.localTransforms.resize(model.skeleton.joints.size());for(std::size_t i=0;i<model.skeleton.joints.size();++i)destination.localTransforms[i]=model.skeleton.joints[i].bindTransform;const auto root=SemanticJoint(names,{"Root","Hips"},0),spine=SemanticJoint(names,{"Spine","Spine1"},1),head=SemanticJoint(names,{"Head"},2),leftArm=SemanticJoint(names,{"LeftUpperArm","LeftShoulder"},3),rightArm=SemanticJoint(names,{"RightUpperArm","RightShoulder"},4),leftLeg=SemanticJoint(names,{"LeftUpperLeg","LeftLeg"},5),rightLeg=SemanticJoint(names,{"RightUpperLeg","RightLeg"},6);const float wave=source.Pose().localTransforms.size()>2?source.Pose().localTransforms[2].rotation.x:0;switch(source.State()){case AnimationState3D::Walk:case AnimationState3D::Run:RotateJoint(destination.localTransforms[leftArm],{wave,0,0});RotateJoint(destination.localTransforms[rightArm],{-wave,0,0});RotateJoint(destination.localTransforms[leftLeg],{-wave,0,0});RotateJoint(destination.localTransforms[rightLeg],{wave,0,0});break;case AnimationState3D::Crouch:destination.localTransforms[root].translation.y-=.35f;RotateJoint(destination.localTransforms[spine],{.28f,0,0});break;case AnimationState3D::Jump:destination.localTransforms[root].translation.y+=.22f;RotateJoint(destination.localTransforms[leftLeg],{-.55f,0,0});RotateJoint(destination.localTransforms[rightLeg],{-.55f,0,0});break;case AnimationState3D::Fall:RotateJoint(destination.localTransforms[leftArm],{0,0,-.8f});RotateJoint(destination.localTransforms[rightArm],{0,0,.8f});break;case AnimationState3D::Attack1:RotateJoint(destination.localTransforms[rightArm],{-1.1f,0,-.25f});break;case AnimationState3D::Attack2:RotateJoint(destination.localTransforms[leftArm],{-1.1f,0,.25f});break;case AnimationState3D::Attack3:RotateJoint(destination.localTransforms[spine],{0,1.05f,0});RotateJoint(destination.localTransforms[rightArm],{-1.65f,.35f,-.55f});break;case AnimationState3D::Hit:RotateJoint(destination.localTransforms[spine],{-.5f,0,0});break;case AnimationState3D::Death:RotateJoint(destination.localTransforms[root],{0,0,1.45f});break;default:RotateJoint(destination.localTransforms[head],{0,.04f,0});break;}BuildAnimationPoseGlobalMatrices3D(model.skeleton,destination);}
-}
-namespace {Vec3 SkinSocketWorld(const SkinnedModel3D& model,const AnimationPose3D& pose,std::size_t joint,const Matrix4& world){Vec3 total{};float count=0;const auto size=(std::min)(model.bindMesh.vertices.size(),model.influences.size());for(std::size_t i=0;i<size;++i){const auto& influence=model.influences[i];bool attached=false;for(std::size_t k=0;k<4;++k)attached=attached||(influence.joints[k]==joint&&influence.weights[k]>=16384);if(!attached)continue;const auto& vertex=model.bindMesh.vertices[i];const Vec3 bind{vertex.x,vertex.y,vertex.z};Vec3 skinned{};float weightSum=0;for(std::size_t k=0;k<4;++k){const auto bone=influence.joints[k];const float weight=float(influence.weights[k])/65535.f;if(!weight||bone>=pose.globalMatrices.size()||bone>=model.inverseBindMatrices.size())continue;skinned=skinned+TransformPoint(pose.globalMatrices[bone]*model.inverseBindMatrices[bone],bind)*weight;weightSum+=weight;}if(weightSum>.0001f){total=total+TransformPoint(world,skinned*(1.f/weightSum));count+=1;}}return count>0?total*(1.f/count):TransformPoint(world*pose.globalMatrices[joint],{});}}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){std::uint64_t hash=14695981039346656037ull;for(const auto& matrix:pose.globalMatrices)for(const auto& row:matrix.values)for(float value:row){const auto* bytes=reinterpret_cast<const unsigned char*>(&value);for(std::size_t i=0;i<sizeof(value);++i){hash^=bytes[i];hash*=1099511628211ull;}}return hash;}}
+namespace {Matrix4 InverseAffineViewmodelSocket(const Matrix4& source){const double a=source[0][0],b=source[0][1],c=source[0][2],d=source[1][0],e=source[1][1],f=source[1][2],g=source[2][0],h=source[2][1],i=source[2][2],det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(!std::isfinite(det)||std::abs(det)<1e-12)throw std::runtime_error("Viewmodel grip socket is singular");Matrix4 inverse=Matrix4::Identity();inverse[0][0]=float((e*i-f*h)/det);inverse[0][1]=float((c*h-b*i)/det);inverse[0][2]=float((b*f-c*e)/det);inverse[1][0]=float((f*g-d*i)/det);inverse[1][1]=float((a*i-c*g)/det);inverse[1][2]=float((c*d-a*f)/det);inverse[2][0]=float((d*h-e*g)/det);inverse[2][1]=float((b*g-a*h)/det);inverse[2][2]=float((a*e-b*d)/det);const float tx=source[0][3],ty=source[1][3],tz=source[2][3];inverse[0][3]=-(inverse[0][0]*tx+inverse[0][1]*ty+inverse[0][2]*tz);inverse[1][3]=-(inverse[1][0]*tx+inverse[1][1]*ty+inverse[1][2]*tz);inverse[2][3]=-(inverse[2][0]*tx+inverse[2][1]*ty+inverse[2][2]*tz);return inverse;}}
 namespace {void PostCombatFinishInput(Engine& engine,std::uint64_t tick){if(tick==132||tick==166||(tick>=200&&tick<=440&&tick%40==0)){PostMessageW(engine.Window(),WM_LBUTTONDOWN,0,0);PostMessageW(engine.Window(),WM_LBUTTONUP,0,0);}}}
 namespace {
 void PostReplayInput(Engine &engine, std::uint64_t tick) {
@@ -56,6 +51,9 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
   case 20:
     PostMessageW(engine.Window(), WM_KEYUP, 'W', 0);
     tap('3');
+    break;
+  case 21:
+    tap('C');
     break;
   case 22:
     tap(VK_TAB);
@@ -145,9 +143,75 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
   }
 }
 } // namespace
-ReusableMemoryStats GameplayLabGame::GetReusableMemoryStats()const{const auto c=collisions_.MemoryStats(),p=physics_.MemoryStats(),s=scene_.MemoryStats();return{c.retainedCapacityBytes+p.retainedCapacityBytes+s.retainedCapacityBytes,c.reclaimableCapacityBytes+p.reclaimableCapacityBytes+s.reclaimableCapacityBytes,released_,trims_};}
-std::size_t GameplayLabGame::TrimReusableMemory(){const auto before=GetReusableMemoryStats().retainedCapacityBytes;collisions_.TrimUnusedMemory();physics_.TrimUnusedMemory();scene_.TrimUnusedMemory();const auto after=GetReusableMemoryStats().retainedCapacityBytes;released_=before>after?before-after:0;++trims_;return released_;}
-void GameplayLabGame::OnStart(Engine& engine){rules_.Reset();controller_.Reset({0,0,5});boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());sphereMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(18,12));const auto root=engine.ExecutableDirectory()/"assets"/"model-packs";auto female=LoadSkinnedModelAssetFileDetailed(root/"realistic-female"/"realistic-female.aeskin"),male=LoadSkinnedModelAssetFileDetailed(root/"realistic-male"/"realistic-male.aeskin");if(!female||!male)throw std::runtime_error("Gameplay Lab requires the existing F2/M2 character packs");femaleJointNames_=female.asset.jointNames;maleJointNames_=male.asset.jointNames;femaleModel_=std::move(female.asset.model);maleModel_=std::move(male.asset.model);femaleMesh_=engine.CreateSkinnedMeshResource3D(femaleModel_);maleMesh_=engine.CreateSkinnedMeshResource3D(maleModel_);AnimationClip3D bind{};bind.duration=1;SampleAnimationClipInto(femaleModel_.skeleton,bind,0,femalePose_);SampleAnimationClipInto(maleModel_.skeleton,bind,0,malePose_);SampleAnimationClipInto(maleModel_.skeleton,bind,0,monsterPose_);for(unsigned state=0;state<11;++state){gameplayAnimation_.SetState(AnimationState3D(state),true);gameplayAnimation_.Tick(.173f);ApplyGameplayPose(femaleModel_,femaleJointNames_,femalePose_,gameplayAnimation_);ApplyGameplayPose(maleModel_,maleJointNames_,malePose_,gameplayAnimation_);femalePoseHashes_[state]=HashPose(femalePose_);malePoseHashes_[state]=HashPose(malePose_);}gameplayAnimation_.SetState(AnimationState3D::Idle,true);scene_.SetBoxMesh(boxMesh_);collisions_.CreateBox({{{0,-.5f,0},{30,.5f,30}},1,0xffffffffu});collisions_.CreateBox({{{0,1.5f,-12},{4,1.5f,.6f}},1,0xffffffffu});physics_.CreateBody({RigidBodyType3D::Static,{{0,-.5f,0},{},{30,1,30}},{30,.5f,30}});for(int i=0;i<18;++i){const Vec3 p{-8.f+float(i%6)*1.6f,.65f+float(i/6)*1.25f,-3.f};if(!palette_->PlaceAt(p,PaletteCategory::Physics))throw std::runtime_error("Initial gameplay palette transaction failed");}if(!captureDirectory_.empty()){std::filesystem::create_directories(captureDirectory_);{std::unordered_set<std::uint64_t> femaleUnique(femalePoseHashes_.begin(),femalePoseHashes_.end()),maleUnique(malePoseHashes_.begin(),malePoseHashes_.end());if(femaleUnique.size()!=11||maleUnique.size()!=11||std::ranges::any_of(femalePoseHashes_,[](auto value){return value==0;})||std::ranges::any_of(malePoseHashes_,[](auto value){return value==0;}))throw std::runtime_error("Semantic gameplay pose hashes are not unique");std::ofstream poseOut(captureDirectory_/"gameplay-pose-receipt.json",std::ios::trunc);poseOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabSemanticSkinning\",\"female\":[";for(std::size_t i=0;i<11;++i){if(i)poseOut<<",";poseOut<<femalePoseHashes_[i];}poseOut<<"],\"male\":[";for(std::size_t i=0;i<11;++i){if(i)poseOut<<",";poseOut<<malePoseHashes_[i];}poseOut<<"]}";}const auto weaponJoint=SemanticJoint(maleJointNames_,{"RightHand","RightWrist","RightUpperArm","RightShoulder"},4);std::ofstream jointOut(captureDirectory_/"weapon-joint.txt",std::ios::trunc);jointOut<<weaponJoint<<" "<<(weaponJoint<maleJointNames_.size()?maleJointNames_[weaponJoint]:"missing");for(auto name:Names){std::error_code ec;std::filesystem::remove(captureDirectory_/name,ec);}}}
+ReusableMemoryStats GameplayLabGame::GetReusableMemoryStats()const{const auto c=collisions_.MemoryStats(),p=physics_.MemoryStats(),s=scene_.MemoryStats(),k=skinning_.MemoryStats(),fa=femaleAnimation_.MemoryStats(),ma=maleAnimation_.MemoryStats(),mo=monsterAnimation_.MemoryStats(),ff=femaleFootPlacement_.MemoryStats(),mf=maleFootPlacement_.MemoryStats(),ph=playerHistory_.MemoryStats(),mh=monsterHistory_.MemoryStats();return{c.retainedCapacityBytes+p.retainedCapacityBytes+s.retainedCapacityBytes+k.retainedCapacityBytes+fa.retainedCapacityBytes+ma.retainedCapacityBytes+mo.retainedCapacityBytes+ff.retainedCapacityBytes+mf.retainedCapacityBytes+ph.retainedCapacityBytes+mh.retainedCapacityBytes,c.reclaimableCapacityBytes+p.reclaimableCapacityBytes+s.reclaimableCapacityBytes+k.reclaimableCapacityBytes+fa.reclaimableCapacityBytes+ma.reclaimableCapacityBytes+mo.reclaimableCapacityBytes+ff.reclaimableCapacityBytes+mf.reclaimableCapacityBytes+ph.reclaimableCapacityBytes+mh.reclaimableCapacityBytes,released_,trims_};}
+std::size_t GameplayLabGame::TrimReusableMemory(){const auto before=GetReusableMemoryStats().retainedCapacityBytes;collisions_.TrimUnusedMemory();physics_.TrimUnusedMemory();scene_.TrimUnusedMemory();skinning_.TrimUnusedMemory();femaleAnimation_.TrimUnusedMemory();maleAnimation_.TrimUnusedMemory();monsterAnimation_.TrimUnusedMemory();femaleFootPlacement_.TrimUnusedMemory();maleFootPlacement_.TrimUnusedMemory();playerHistory_.TrimUnusedMemory();monsterHistory_.TrimUnusedMemory();const auto after=GetReusableMemoryStats().retainedCapacityBytes;released_=before>after?before-after:0;++trims_;return released_;}
+void GameplayLabGame::OnStart(Engine& engine){
+  std::array<char,128> expectedFingerprint{};
+  const DWORD expectedLength=GetEnvironmentVariableA("AEVRYND_EXPECTED_CHARACTER_FINGERPRINT",expectedFingerprint.data(),DWORD(expectedFingerprint.size()));
+  if(expectedLength&&expectedLength<expectedFingerprint.size())expectedSourceFingerprint_.assign(expectedFingerprint.data(),expectedLength);
+  sourceFingerprintPassed_=expectedSourceFingerprint_.empty()||expectedSourceFingerprint_==actualSourceFingerprint_;
+  if(!sourceFingerprintPassed_)throw std::runtime_error("Gameplay character build fingerprint mismatch");
+  std::array<char,32768> phasePath{};const DWORD phaseLength=GetEnvironmentVariableA("AEVRYND_FATAL_DIAGNOSTIC_PATH",phasePath.data(),DWORD(phasePath.size()));if(phaseLength&&phaseLength<phasePath.size()){std::ofstream phase(std::filesystem::path(std::string(phasePath.data(),phaseLength)),std::ios::app);phase<<"BuildFingerprint:"<<actualSourceFingerprint_<<'\n';phase.flush();}
+  rules_.Reset();controller_.Reset({0,0,5});
+  boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());
+  sphereMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(18,12));
+  const auto assetRoot=engine.ExecutableDirectory()/"assets";
+  const auto modelRoot=assetRoot/"model-packs";
+  const auto materialRoot=assetRoot/"material-packs"/"original";
+  auto female=LoadSkinnedModelAssetFileDetailed(modelRoot/"realistic-female"/"realistic-female.aeskin");
+  auto male=LoadSkinnedModelAssetFileDetailed(modelRoot/"realistic-male"/"realistic-male.aeskin");
+  if(!female||!male)throw std::runtime_error("Gameplay Lab requires the existing F2/M2 character packs");
+  std::string error;
+  if(!LoadCharacterMaterialBindings3D(engine,femaleMaterialLibrary_,female.asset,materialRoot,materialRoot/"female.materials.json",femaleMaterials_,&error)||
+     !LoadCharacterMaterialBindings3D(engine,maleMaterialLibrary_,male.asset,materialRoot,materialRoot/"male.materials.json",maleMaterials_,&error))
+    throw std::runtime_error(error);
+  if(femaleMaterials_.size()!=9||maleMaterials_.size()!=9)throw std::runtime_error("Gameplay character material count mismatch");
+  if(!femaleAnimation_.Initialize(female.asset,&error)||!maleAnimation_.Initialize(male.asset,&error)||!monsterAnimation_.Initialize(male.asset,&error))
+    throw std::runtime_error(error);
+  CharacterEquipmentAsset3D femaleWeapon{},maleWeapon{};
+  if(!CreateCharacterEquipmentAsset3D(female.asset,femaleAnimation_.Rig(),CharacterEquipmentShape3D::Sword,femaleWeapon,&error)||
+     !CreateCharacterEquipmentAsset3D(male.asset,maleAnimation_.Rig(),CharacterEquipmentShape3D::Sword,maleWeapon,&error))
+    throw std::runtime_error(error);
+  femaleWeaponSubmeshes_=femaleWeapon.submeshes;maleWeaponSubmeshes_=maleWeapon.submeshes;
+  femaleWeaponMaterials_={femaleMaterials_[8],femaleMaterials_[7]};
+  maleWeaponMaterials_={maleMaterials_[8],maleMaterials_[7]};
+  femaleSubmeshes_=female.asset.submeshes;maleSubmeshes_=male.asset.submeshes;
+  femaleModel_=std::move(female.asset.model);maleModel_=std::move(male.asset.model);
+  femaleMesh_=engine.CreateSkinnedMeshResource3D(femaleModel_);
+  maleMesh_=engine.CreateSkinnedMeshResource3D(maleModel_);
+  femaleWeaponMesh_=engine.CreateSkinnedMeshResource3D(femaleWeapon.model);
+  maleWeaponMesh_=engine.CreateSkinnedMeshResource3D(maleWeapon.model);
+  if(!femaleMesh_||!maleMesh_||!femaleWeaponMesh_||!maleWeaponMesh_)throw std::runtime_error("Gameplay character GPU resource creation failed");
+  if(!femaleFootPlacement_.Prepare(femaleModel_.skeleton,femaleAnimation_.Rig(),femaleModel_.skeletonCompatibilityId)||
+     !maleFootPlacement_.Prepare(maleModel_.skeleton,maleAnimation_.Rig(),maleModel_.skeletonCompatibilityId))
+    throw std::runtime_error("Gameplay foot placement preparation failed");
+  for(unsigned state=0;state<11;++state){
+    femaleAnimation_.SetState(AnimationState3D(state),true);femaleAnimation_.Tick(.173f);
+    maleAnimation_.SetState(AnimationState3D(state),true);maleAnimation_.Tick(.173f);
+    if(!femaleAnimation_.EvaluateInto(femalePose_)||!maleAnimation_.EvaluateInto(malePose_))throw std::runtime_error("Fallback animation evaluation failed");
+    femalePoseHashes_[state]=HashPose(femalePose_);malePoseHashes_[state]=HashPose(malePose_);
+  }
+  femaleAnimation_.SetState(AnimationState3D::Idle,true);maleAnimation_.SetState(AnimationState3D::Idle,true);monsterAnimation_.SetState(AnimationState3D::Idle,true);
+  scene_.SetBoxMesh(boxMesh_);
+  collisions_.CreateBox({{{0,-.5f,0},{30,.5f,30}},1,0xffffffffu});
+  collisions_.CreateBox({{{0,1.5f,-12},{4,1.5f,.6f}},1,0xffffffffu});
+  physics_.CreateBody({RigidBodyType3D::Static,{{0,-.5f,0},{},{30,1,30}},{30,.5f,30}});
+  for(int i=0;i<18;++i){const Vec3 p{-8.f+float(i%6)*1.6f,.65f+float(i/6)*1.25f,-3.f};if(!palette_->PlaceAt(p,PaletteCategory::Physics))throw std::runtime_error("Initial gameplay palette transaction failed");}
+  if(!captureDirectory_.empty()){
+    std::filesystem::create_directories(captureDirectory_);
+    std::unordered_set<std::uint64_t> femaleUnique(femalePoseHashes_.begin(),femalePoseHashes_.end()),maleUnique(malePoseHashes_.begin(),malePoseHashes_.end());
+    if(femaleUnique.size()!=11||maleUnique.size()!=11||std::ranges::any_of(femalePoseHashes_,[](auto value){return value==0;})||std::ranges::any_of(malePoseHashes_,[](auto value){return value==0;}))throw std::runtime_error("Semantic gameplay pose hashes are not unique");
+    std::ofstream poseOut(captureDirectory_/"gameplay-pose-receipt.json",std::ios::trunc);
+    poseOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabSemanticSkinning\",\"female\":[";
+    for(std::size_t i=0;i<11;++i){if(i)poseOut<<",";poseOut<<femalePoseHashes_[i];}
+    poseOut<<"],\"male\":[";
+    for(std::size_t i=0;i<11;++i){if(i)poseOut<<",";poseOut<<malePoseHashes_[i];}
+    poseOut<<"]}";
+    std::ofstream jointOut(captureDirectory_/"weapon-joint.txt",std::ios::trunc);
+    jointOut<<maleAnimation_.Rig().Joint(HumanoidJoint3D::RightHand)<<" RightHand";
+    for(auto name:Names){std::error_code ec;std::filesystem::remove(captureDirectory_/name,ec);}
+  }
+}
 void GameplayLabGame::OnStop(Engine &engine) {
   palette_->EndGrab();
   if (!captureDirectory_.empty()) {
@@ -165,18 +229,36 @@ void GameplayLabGame::OnStop(Engine &engine) {
   physics_.Clear();
   collisions_.Clear();
   scene_.SetBoxMesh({});
+  playerHistory_.DiscardSubmitted();
+  monsterHistory_.DiscardSubmitted();
+  playerHistory_.Invalidate();
+  monsterHistory_.Invalidate();
+  femaleMaterialLibrary_.Shutdown();
+  maleMaterialLibrary_.Shutdown();
   engine.DestroySkinnedMesh3D(femaleMesh_.handle);
   engine.DestroySkinnedMesh3D(maleMesh_.handle);
+  engine.DestroySkinnedMesh3D(femaleWeaponMesh_.handle);
+  engine.DestroySkinnedMesh3D(maleWeaponMesh_.handle);
   engine.DestroyMesh3D(boxMesh_.handle);
   engine.DestroyMesh3D(sphereMesh_.handle);
   femaleMesh_ = {};
   maleMesh_ = {};
+  femaleWeaponMesh_ = {};
+  maleWeaponMesh_ = {};
   femaleModel_ = {};
   maleModel_ = {};
+  femaleSubmeshes_.clear();maleSubmeshes_.clear();femaleWeaponSubmeshes_.clear();maleWeaponSubmeshes_.clear();femaleMaterials_.clear();maleMaterials_.clear();
   boxMesh_ = {};
   sphereMesh_ = {};
   skinning_.TrimUnusedMemory();
   TrimReusableMemory();
+  if(!captureDirectory_.empty()){
+    engine.TrimUnusedMemory();
+    const auto renderer=engine.GetRendererStats();
+    const auto memory=engine.GetMemoryStats();
+    std::ofstream releaseOut(captureDirectory_/"gameplay-character-release-receipt.json",std::ios::trunc);
+    releaseOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayLabCharacterRelease\",\"sourceFingerprint\":\"{}\",\"residentSkinnedMeshes\":{},\"residentSkinnedMeshBytes\":{},\"residentMaterialTextureSets\":{},\"residentMaterialTextureReferences\":{},\"skinnedMeshReleases\":{},\"engineTrimCount\":{},\"gameTrimCount\":{},\"gameRetainedBytes\":{},\"gameReclaimableBytes\":{}}}",runId_,actualSourceFingerprint_,renderer.residentSkinnedMeshes,renderer.residentSkinnedMeshBytes,renderer.residentMaterialTextureSets,renderer.residentMaterialTextureReferences,renderer.skinnedMeshReleases,memory.trimCount,memory.game.trimCount,memory.game.retainedCapacityBytes,memory.game.reclaimableCapacityBytes);
+  }
 }
 void GameplayLabGame::UpdateCamera() {
   const Vec3 feet = controller_.Position(), focus = feet + Vec3{0, 1.1f, 0};
@@ -187,7 +269,7 @@ void GameplayLabGame::UpdateCamera() {
     break;
   case CameraMode::ThirdPerson:
     camera_ = ConstrainThirdPersonCamera(
-        MakeThirdPersonCamera(focus, yaw_, .28f, 6.5f), focus, collisions_,
+        MakeThirdPersonCamera(focus, yaw_, .24f, 3.4f), focus, collisions_,
         .25f);
     break;
   default:
@@ -196,6 +278,7 @@ void GameplayLabGame::UpdateCamera() {
   }
 }
 void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
+  simulationDelta_=GameplayPresentationDelta3D(dt);
   Input &in = engine.GetInput();
   if (in.Pressed(VK_ESCAPE))
     engine.Quit();
@@ -295,14 +378,26 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   else if (Length(mapped.tick.movement) > .1f)
     animation =
         mapped.tick.run ? AnimationState3D::Run : AnimationState3D::Walk;
-  if (!combat_->Monster().alive)
-    animation = AnimationState3D::Attack3;
-  gameplayAnimation_.SetState(animation);
-  gameplayAnimation_.Tick(dt);
+  if (!captureDirectory_.empty() && captureIndex_ == 4)
+    animation = AnimationState3D::Crouch;
+  femaleAnimation_.SetState(animation);
+  maleAnimation_.SetState(animation);
+  femaleAnimation_.Tick(dt);
+  maleAnimation_.Tick(dt);
+  if(combat_->CurrentAttack()!=Attack3D::None){
+    femaleAnimation_.SynchronizeNormalizedPhase(combat_->NormalizedAttackPhase());
+    maleAnimation_.SynchronizeNormalizedPhase(combat_->NormalizedAttackPhase());
+  }
   monsterAnimation_.SetState(combat_->Monster().alive
                                  ? AnimationState3D::Walk
                                  : AnimationState3D::Death);
   monsterAnimation_.Tick(dt);
+  if(combat_->CurrentAttack()!=Attack3D::None&&
+     (captureDirectory_.empty()||captureIndex_!=4)){
+    const float error=std::abs(femaleAnimation_.NormalizedPhase()-combat_->NormalizedAttackPhase());
+    maximumWeaponPhaseError_=(std::max)(maximumWeaponPhaseError_,error);
+    weaponAnimationSyncPassed_=weaponAnimationSyncPassed_&&error<=.035f;
+  }
   physics_.Step(dt, 2);
   if (!captureDirectory_.empty() && rules_.GetStats().ticks == 240)
     captureAuthoritativePhysicsSteps_ = physics_.Stats().steps;
@@ -405,8 +500,14 @@ void GameplayLabGame::UpdateCapture(Engine &engine) {
   const auto renderer = engine.GetRendererStats();
   if (capturePending_ && (renderer.successfulFrameCaptures > captureSuccess_ ||
                           renderer.rejectedFrameCaptures > captureReject_)) {
-    if (renderer.successfulFrameCaptures > captureSuccess_)
+    if (renderer.successfulFrameCaptures > captureSuccess_) {
       ++captureIndex_;
+      // 第三人稱黃昏固定展示 C 蹲姿，下一張之前恢復站姿。
+      if (captureIndex_ == 4 || captureIndex_ == 5) {
+        PostMessageW(engine.Window(), WM_KEYDOWN, 'C', 0);
+        PostMessageW(engine.Window(), WM_KEYUP, 'C', 0);
+      }
+    }
     capturePending_ = false;
     nextCapture_ = engine.Time() + .2;
   }
@@ -418,11 +519,13 @@ void GameplayLabGame::UpdateCapture(Engine &engine) {
     const auto r = engine.GetRendererStats();
     const auto c = combat_->Stats();
     const auto palette = palette_->Stats();
+    const auto femaleMaterialStats = femaleMaterialLibrary_.Stats();
+    const auto maleMaterialStats = maleMaterialLibrary_.Stats();
     if (captureAuthoritativePhysicsSteps_ != 240)
       throw std::runtime_error(
           "Gameplay capture missed its authoritative physics tick");
     out << std::format(
-        "{{\"runId\":\"{}\",\"source\":\"GameplayLabFramebuffer\",\"entry\":\"-"
+        "{{\"runId\":\"{}\",\"source\":\"GameplayLabFramebuffer\",\"sourceFingerprint\":\"{}\",\"sourceFingerprintPassed\":{},\"entry\":\"-"
         "-capture-demo\",\"captures\":11,\"ticks\":{},"
         "\"authoritativePhysicsTick\":240,\"authoritativePhysicsSteps\":{},"
         "\"entities\":{},\"physicsBodies\":{},"
@@ -436,7 +539,13 @@ void GameplayLabGame::UpdateCapture(Engine &engine) {
         "\"maleModelIdentity\":{},\"femalePoseHash\":{},\"malePoseHash\":{},"
         "\"minimumControllerHeight\":{},\"headroomRejected\":{},"
         "\"crouchFeetInvariant\":{},\"weaponAttachmentPassed\":{},"
-        "\"weaponHitWindowEvidence\":{},\"gpuValidationRequested\":{},"
+        "\"weaponHitWindowEvidence\":{},\"weaponPbrDraws\":{},"
+        "\"weaponAnimationSyncPassed\":{},\"maximumWeaponPhaseError\":{},"
+        "\"firstPersonBodyHidden\":{},\"weaponTrajectoryHash\":{},"
+        "\"attackTrajectoryHashes\":[{},{},{}],\"characterMaterialCount\":{},"
+        "\"characterMaterialLoadFailures\":{},\"skinnedGroups\":{},"
+        "\"skinnedInstances\":{},\"rejectedSkinnedGroups\":{},"
+        "\"residentSkinnedMeshBytes\":{},\"gpuValidationRequested\":{},"
         "\"gpuValidationAvailable\":{},\"gpuValidationExecuted\":{},"
         "\"debugLayerEnabled\":{},\"gpuValidationPassed\":{},\"gpuErrors\":{},"
         "\"gpuWarnings\":{},\"lighting\":[{{\"phase\":\"day\",\"sun\":[0.38,-1."
@@ -445,22 +554,39 @@ void GameplayLabGame::UpdateCapture(Engine &engine) {
         "\"intensity\":1.2,\"exposure\":0.9,\"fogDensity\":0.014,\"shadow\":1}}"
         ",{{\"phase\":\"night\",\"sun\":[0.25,-0.72,-0.34],\"intensity\":0.48,"
         "\"exposure\":0.72,\"fogDensity\":0.022,\"shadow\":1}}]}}",
-        runId_, s.ticks, captureAuthoritativePhysicsSteps_, s.entities,
+        runId_, actualSourceFingerprint_,sourceFingerprintPassed_?1:0,s.ticks, captureAuthoritativePhysicsSteps_, s.entities,
         p.bodies, p.steps, s.cameraSwitches,
         controller_.Stats().jumps, s.crouches, palette.previews,
         palette.validPreviews, palette.collisionRejected,
         unsigned(rules_.Category()), palette.commits, c.sweeps, c.hits, c.kills,
-        combat_->Monster().health, unsigned(gameplayAnimation_.State()),
+        combat_->Monster().health, unsigned((rules_.Female()?femaleAnimation_:maleAnimation_).State()),
         unsigned(monsterAnimation_.State()),
         combatSpawned_ && !combat_->Monster().alive ? 1 : 0, femaleGpuDraws_,
         maleGpuDraws_, femaleMesh_.handle.resourceIdentity,
         maleMesh_.handle.resourceIdentity, HashPose(femalePose_),
         HashPose(malePose_), minimumControllerHeight_, s.headroomRejected,
         crouchFeetInvariant_ ? 1 : 0, weaponAttachmentPassed_ ? 1 : 0,
-        weaponHitWindowEvidence_ ? 1 : 0, r.gpuValidationRequested ? 1 : 0,
+        weaponHitWindowEvidence_ ? 1 : 0, weaponPbrDraws_,
+        weaponAnimationSyncPassed_ ? 1 : 0, maximumWeaponPhaseError_,
+        firstPersonBodyHidden_ ? 1 : 0, weaponTrajectoryHash_,
+        attackTrajectoryHashes_[0], attackTrajectoryHashes_[1], attackTrajectoryHashes_[2],
+        femaleMaterialStats.materials + maleMaterialStats.materials,
+        femaleMaterialStats.loadFailures + maleMaterialStats.loadFailures,
+        r.lastSubmittedSkinnedGroups, r.lastSubmittedSkinnedInstances,
+        r.rejectedSkinnedGroups, r.residentSkinnedMeshBytes,
+        r.gpuValidationRequested ? 1 : 0,
         r.gpuValidationAvailable ? 1 : 0, r.gpuValidationExecuted ? 1 : 0,
         r.debugLayerEnabled ? 1 : 0, r.gpuValidationPassed ? 1 : 0,
         r.debugErrorCount, r.debugWarningCount);
+    std::ofstream captureOut(captureDirectory_ / "gameplay-character-capture-receipt.json", std::ios::trunc);
+    captureOut << "{\"runId\":\"" << runId_ << "\",\"source\":\"GameplayLabCharacterPresentation\",\"sourceFingerprint\":\""<<actualSourceFingerprint_<<"\",\"captures\":[";
+    for(std::size_t index=0;index<Names.size();++index){
+      if(index)captureOut<<",";
+      const bool female=index<5;
+      const char* camera=index<9?(index%3==0?"first":index%3==1?"third":"god"):"third";
+      captureOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"character\":\""<<(female?"female-f2":"male-m2")<<"\",\"camera\":\""<<camera<<"\",\"crouch\":"<<(index==4?1:0)<<",\"attack\":"<<(index==10?1:0)<<",\"bodyMaterialSlots\":"<<captureBodyMaterialSlots_[index]<<",\"weaponMaterialRanges\":"<<captureWeaponMaterialRanges_[index]<<",\"weaponAnchorError\":"<<captureWeaponAnchorErrors_[index]<<",\"weaponScreenCoverage\":"<<captureWeaponScreenCoverage_[index]<<",\"weaponMinimumDepth\":"<<captureWeaponMinimumDepth_[index]<<",\"weaponCenterExcluded\":"<<unsigned(captureWeaponCenterExcluded_[index])<<",\"weaponNearClipClear\":"<<unsigned(captureWeaponNearClipClear_[index])<<",\"weaponHudOverlap\":"<<unsigned(captureWeaponHudOverlap_[index])<<",\"weaponGripX\":"<<captureWeaponGripX_[index]<<",\"weaponGripY\":"<<captureWeaponGripY_[index]<<",\"weaponBladeY\":"<<captureWeaponBladeY_[index]<<",\"gripEdgeAnchored\":"<<unsigned(captureWeaponGripEdgeAnchored_[index])<<",\"bladeAboveGrip\":"<<unsigned(captureWeaponBladeAboveGrip_[index])<<"}";
+    }
+    captureOut<<"]}";
     engine.Quit();
     return;
   }
@@ -511,4 +637,110 @@ void GameplayLabGame::UpdateCapture(Engine &engine) {
     nextCapture_ = engine.Time() + .25;
   }
 }
-void GameplayLabGame::OnRender(Engine& engine,float){BuildWorld(engine);ApplyGameplayPose(femaleModel_,femaleJointNames_,femalePose_,gameplayAnimation_);ApplyGameplayPose(maleModel_,maleJointNames_,malePose_,gameplayAnimation_);ApplyGameplayPose(maleModel_,maleJointNames_,monsterPose_,monsterAnimation_);DrawList& draw=engine.Draw();if(rules_.Camera()!=CameraMode::FirstPerson){const auto& playerModel=rules_.Female()?femaleModel_:maleModel_;const auto& playerPose=rules_.Female()?femalePose_:malePose_;const auto playerMesh=rules_.Female()?femaleMesh_.handle:maleMesh_.handle;const auto palette=AddSkinPaletteFromPose(draw,playerModel,playerPose,skinning_);if(draw.SkinnedMeshInstance(playerMesh,palette,CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1}),rules_.Female()?Color{1,.82f,.74f,1}:Color{.55f,.72f,1,1},{.42f,0,0,1})){if(rules_.Female())++femaleGpuDraws_;else ++maleGpuDraws_;}}if(combatSpawned_){const auto palette=AddSkinPaletteFromPose(draw,maleModel_,monsterPose_,skinning_);draw.SkinnedMeshInstance(maleMesh_.handle,palette,CreateTransformMatrix(combat_->Monster().position,{0,-.8f,0},{1.08f,1.08f,1.08f}),{.38f,.62f,.28f,1},{.58f,.04f,0,1});}const auto& weaponPose=rules_.Female()?femalePose_:malePose_;const auto& weaponNames=rules_.Female()?femaleJointNames_:maleJointNames_;const auto hand=SemanticJoint(weaponNames,{"RightHand","RightWrist","RightUpperArm","RightShoulder"},4);const Matrix4 playerWorld=CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1});const Matrix4 jointWorld=hand<weaponPose.globalMatrices.size()?playerWorld*weaponPose.globalMatrices[hand]:playerWorld;const Vec3 handAnchor=hand<weaponPose.globalMatrices.size()?SkinSocketWorld(rules_.Female()?femaleModel_:maleModel_,weaponPose,hand,playerWorld):TransformPoint(playerWorld,{});const Matrix4 handWorld=CreateTranslationMatrix(handAnchor-TransformPoint(jointWorld,{}))*jointWorld;const Vec3 basisX=TransformPoint(handWorld,{1,0,0})-handAnchor,basisY=TransformPoint(handWorld,{0,1,0})-handAnchor,basisZ=TransformPoint(handWorld,{0,0,1})-handAnchor;const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};const bool finiteBasis=finite(handAnchor)&&finite(basisX)&&finite(basisY)&&finite(basisZ);const auto unit=[](Vec3 value){const float length=Length(value);return std::isfinite(length)&&length>.0001f;};const Matrix4 gripWorld=handWorld;const Vec3 gripAnchor=TransformPoint(gripWorld,{});weaponAttachmentPassed_=finiteBasis&&unit(basisX)&&unit(basisY)&&unit(basisZ)&&Length(gripAnchor-handAnchor)<.001f;draw.MeshInstance(sphereMesh_.handle,gripWorld*CreateScaleMatrix({.12f,.12f,.12f}),Gold,{.3f,.8f,.15f,1.f});const Matrix4 blade=handWorld*CreateRotationMatrix({1.5707963f,0,0})*CreateTranslationMatrix({0,0,.58f})*CreateScaleMatrix({.08f,.08f,1.15f});draw.MeshInstance(boxMesh_.handle,blade,Gold,{.25f,.85f,.1f,1.f});draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});draw.Text({18,14},"GAMEPLAY LAB  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);draw.Quad({190,585},{360,230},{.008f,.018f,.022f,.9f});draw.Text({22,486},"OBJECT PALETTE",1.7f,Gold);draw.Text({22,520},"[4] PRIMITIVES  [5] PHYSICS  [6] PROPS",1.2f,Cyan);draw.Text({22,550},"[7] BUILDING  [8] CHARACTERS  [9] LIGHTS",1.2f,Cyan);draw.Text({22,582},std::format("SELECTED {}  GHOST VALID {} INVALID {}",unsigned(rules_.Category()),palette_->Stats().validPreviews,palette_->Stats().collisionRejected),1.15f,Gold);draw.Text({22,614},"DRAG/LMB PLACE  RMB CANCEL  R ROTATE",1.05f,Cyan);const auto s=rules_.GetStats();draw.Text({22,638},std::format("ENT {}/{}  UNDO {} REDO {}",s.entities,Rules3D::MaximumEntities,s.undoDepth,s.redoDepth),1.f,Gold);draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);}
+void GameplayLabGame::OnRender(Engine& engine,float){
+  if(playerHistory_.HasPendingSubmission())playerHistory_.ResolveSubmitted(engine);
+  if(monsterHistory_.HasPendingSubmission())monsterHistory_.ResolveSubmitted(engine);
+  BuildWorld(engine);
+  if(!femaleAnimation_.EvaluateInto(femalePose_)||!maleAnimation_.EvaluateInto(malePose_)||!monsterAnimation_.EvaluateInto(monsterPose_))
+    throw std::runtime_error("Gameplay fallback animation evaluation failed");
+  const Matrix4 playerWorld=CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1});
+  const Matrix4 playerWorldInverse=CreateRotationMatrix({0,-yaw_,0})*CreateTranslationMatrix(controller_.Position()*-1.f);
+  FootPlacementFrame3D footFrame{};
+  footFrame.collisionWorld=&collisions_;
+  footFrame.modelToWorld=playerWorld;
+  footFrame.worldToModel=playerWorldInverse;
+  // Render 插值可能恰為零；足部放置必須使用最近一次固定模擬步長。
+  footFrame.deltaTime=simulationDelta_;
+  footFrame.cameraDistance=Length(camera_.position-controller_.Position());
+  footFrame.frameIndex=rules_.GetStats().ticks;
+  AnimationPose3D& activePose=rules_.Female()?femalePose_:malePose_;
+  FootPlacement3D& activePlacement=rules_.Female()?femaleFootPlacement_:maleFootPlacement_;
+  const SkinnedModel3D& activeModel=rules_.Female()?femaleModel_:maleModel_;
+  const HumanoidSkeletonMap3D& activeRig=rules_.Female()?femaleAnimation_.Rig():maleAnimation_.Rig();
+  FootPlacementResult3D footResult{};
+  if(!activePlacement.Evaluate(activeModel.skeleton,activeRig,footFrame,activePose,&footResult))
+    throw std::runtime_error("Gameplay foot placement evaluation failed");
+  DrawList& draw=engine.Draw();
+  const auto bodyMesh=rules_.Female()?femaleMesh_.handle:maleMesh_.handle;
+  const auto weaponMesh=rules_.Female()?femaleWeaponMesh_.handle:maleWeaponMesh_.handle;
+  const auto& bodySubmeshes=rules_.Female()?femaleSubmeshes_:maleSubmeshes_;
+  const auto& bodyMaterials=rules_.Female()?femaleMaterials_:maleMaterials_;
+  const auto& weaponSubmeshes=rules_.Female()?femaleWeaponSubmeshes_:maleWeaponSubmeshes_;
+  const auto& weaponMaterials=rules_.Female()?femaleWeaponMaterials_:maleWeaponMaterials_;
+  const auto palette=AddSkinPaletteFromPose(draw,activeModel,activePose,skinning_);
+  Matrix4 weaponWorld=playerWorld;
+  const bool firstPerson=rules_.Camera()==CameraMode::FirstPerson;
+  if(rules_.Camera()==CameraMode::FirstPerson){
+    Vec3 forward=Normalize(camera_.target-camera_.position),right=Normalize(Cross(camera_.up,forward)),up=Normalize(Cross(forward,right));
+    if(Length(forward)<.001f||Length(right)<.001f||Length(up)<.001f)throw std::runtime_error("First-person weapon camera basis failed");
+    Matrix4 cameraWorld=Matrix4::Identity();
+    cameraWorld[0][0]=right.x;cameraWorld[1][0]=right.y;cameraWorld[2][0]=right.z;
+    cameraWorld[0][1]=up.x;cameraWorld[1][1]=up.y;cameraWorld[2][1]=up.z;
+    cameraWorld[0][2]=forward.x;cameraWorld[1][2]=forward.y;cameraWorld[2][2]=forward.z;
+    cameraWorld[0][3]=camera_.position.x;cameraWorld[1][3]=camera_.position.y;cameraWorld[2][3]=camera_.position.z;
+    // Viewmodel 使用獨立 camera-space 比例與方向，不依賴世界角色手部 socket。
+    Matrix4 modelHandSocket{};if(!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,activePose,Matrix4::Identity(),modelHandSocket))throw std::runtime_error("Viewmodel semantic grip socket failed");
+    const Matrix4 modelGripSocket=modelHandSocket*CreateTranslationMatrix({0,.105f,.02f});
+    const Matrix4 desiredGrip=CreateTransformMatrix({.82f,-.07f,.90f},{-.12f,.08f,-.18f},{.43f,.43f,.43f});
+    weaponWorld=cameraWorld*desiredGrip*InverseAffineViewmodelSocket(modelGripSocket);
+  }
+  std::array<SkinnedRenderablePart3D,2> playerParts{};
+  std::size_t playerPartCount=0;
+  if(rules_.Camera()!=CameraMode::FirstPerson)
+    playerParts[playerPartCount++]={bodyMesh,playerWorld,Matrix4::Identity(),std::uint32_t(activeModel.bindMesh.indices.size()),bodySubmeshes,bodyMaterials,{1}};
+  playerParts[playerPartCount++]={weaponMesh,weaponWorld,Matrix4::Identity(),std::uint32_t(rules_.Female()?femaleWeaponMesh_.indexCount:maleWeaponMesh_.indexCount),weaponSubmeshes,weaponMaterials,{2}};
+  firstPersonBodyHidden_=firstPersonBodyHidden_&&(rules_.Camera()!=CameraMode::FirstPerson||playerPartCount==1);
+  if(palette&&playerHistory_.Submit(draw,palette,std::span<const SkinnedRenderablePart3D>{playerParts.data(),playerPartCount},false,&skinnedGroupStats_)){
+    ++weaponPbrDraws_;
+    if(rules_.Camera()!=CameraMode::FirstPerson){if(rules_.Female())++femaleGpuDraws_;else ++maleGpuDraws_;}
+  }
+  Matrix4 socketWorld{},bodySocketWorld{};
+  if(!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,activePose,weaponWorld,socketWorld)||
+     (!firstPerson&&!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,activePose,playerWorld,bodySocketWorld)))
+    throw std::runtime_error("Gameplay semantic weapon socket failed");
+  const Vec3 handAnchor=TransformPoint(socketWorld,{});
+  const Vec3 weaponTip=TransformPoint(socketWorld,{0,-.72f,0});
+  const float thirdPersonAnchorError=firstPerson?0.f:Length(handAnchor-TransformPoint(bodySocketWorld,{}));
+  weaponAttachmentPassed_=std::isfinite(handAnchor.x)&&std::isfinite(handAnchor.y)&&std::isfinite(handAnchor.z)&&thirdPersonAnchorError<=.001f;
+  if(captureIndex_<Names.size()){
+    captureBodyMaterialSlots_[captureIndex_]=rules_.Camera()==CameraMode::FirstPerson?0u:std::uint32_t(bodyMaterials.size());
+    captureWeaponMaterialRanges_[captureIndex_]=std::uint32_t(weaponSubmeshes.size());
+    captureWeaponAnchorErrors_[captureIndex_]=thirdPersonAnchorError;
+    if(firstPerson){
+      float minimumX=1280,minimumY=720,maximumX=0,maximumY=0,minimumDepth=1000;
+      constexpr std::array<Vec3,8> envelope={Vec3{-.14f,-.15f,-.06f},Vec3{.14f,-.15f,-.06f},Vec3{-.14f,.68f,-.06f},Vec3{.14f,.68f,-.06f},Vec3{-.14f,-.15f,.06f},Vec3{.14f,-.15f,.06f},Vec3{-.14f,.68f,.06f},Vec3{.14f,.68f,.06f}};
+      for(Vec3 local:envelope){const Vec3 world=TransformPoint(socketWorld,local);const auto projected=ProjectToViewport(world,camera_,{1280,720});minimumX=(std::min)(minimumX,projected.position.x);minimumY=(std::min)(minimumY,projected.position.y);maximumX=(std::max)(maximumX,projected.position.x);maximumY=(std::max)(maximumY,projected.position.y);minimumDepth=(std::min)(minimumDepth,TransformPoint(CreateViewMatrix(camera_),world).z);}
+      const float width=(std::max)(0.f,maximumX-minimumX),height=(std::max)(0.f,maximumY-minimumY);
+      captureWeaponScreenCoverage_[captureIndex_]=width*height/(1280.f*720.f);
+      captureWeaponMinimumDepth_[captureIndex_]=minimumDepth;
+      captureWeaponCenterExcluded_[captureIndex_]=!(minimumX<=640&&maximumX>=640&&minimumY<=360&&maximumY>=360);
+      captureWeaponNearClipClear_[captureIndex_]=minimumDepth>camera_.projection.nearPlane+.015f;
+      const bool topHud=minimumY<66&&maximumY>0, paletteHud=minimumX<372&&maximumX>0&&minimumY<720&&maximumY>470,rightHud=minimumX<1272&&maximumX>778&&minimumY<638&&maximumY>512;
+      captureWeaponHudOverlap_[captureIndex_]=topHud||paletteHud||rightHud;
+      const auto grip=ProjectToViewport(TransformPoint(socketWorld,{0,.105f,.02f}),camera_,{1280,720});
+      const auto blade=ProjectToViewport(TransformPoint(socketWorld,{0,.65f,0}),camera_,{1280,720});captureWeaponGripX_[captureIndex_]=grip.position.x;captureWeaponGripY_[captureIndex_]=grip.position.y;captureWeaponBladeY_[captureIndex_]=blade.position.y;
+      captureWeaponGripEdgeAnchored_[captureIndex_]=grip.position.x>=1040&&grip.position.x<=1278&&grip.position.y>=80&&grip.position.y<=510;
+      captureWeaponBladeAboveGrip_[captureIndex_]=blade.position.y+80<grip.position.y;
+    }
+  }
+  const auto hashPoint=[&](std::uint64_t& hash,Vec3 point){for(float value:{point.x,point.y,point.z}){const auto* bytes=reinterpret_cast<const unsigned char*>(&value);for(std::size_t index=0;index<sizeof(value);++index){hash^=bytes[index];hash*=1099511628211ull;}}};
+  hashPoint(weaponTrajectoryHash_,weaponTip);
+  if(combat_->CurrentAttack()!=Attack3D::None)hashPoint(attackTrajectoryHashes_[std::size_t(combat_->CurrentAttack())-1],weaponTip);
+  if(combatSpawned_){
+    const auto monsterPalette=AddSkinPaletteFromPose(draw,maleModel_,monsterPose_,skinning_);
+    const Matrix4 monsterWorld=CreateTransformMatrix(combat_->Monster().position,{0,-.8f,0},{1.08f,1.08f,1.08f});
+    const SkinnedRenderablePart3D monsterPart{maleMesh_.handle,monsterWorld,Matrix4::Identity(),std::uint32_t(maleModel_.bindMesh.indices.size()),maleSubmeshes_,maleMaterials_,{11}};
+    monsterHistory_.Submit(draw,monsterPalette,std::span<const SkinnedRenderablePart3D>{&monsterPart,1},false,&skinnedGroupStats_);
+  }
+  draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});
+  draw.Text({18,14},"GAMEPLAY LAB  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);
+  draw.Quad({190,585},{360,230},{.008f,.018f,.022f,.9f});
+  draw.Text({22,486},"OBJECT PALETTE",1.7f,Gold);
+  draw.Text({22,520},"[4] PRIMITIVES  [5] PHYSICS  [6] PROPS",1.2f,Cyan);
+  draw.Text({22,550},"[7] BUILDING  [8] CHARACTERS  [9] LIGHTS",1.2f,Cyan);
+  draw.Text({22,582},std::format("SELECTED {}  GHOST VALID {} INVALID {}",unsigned(rules_.Category()),palette_->Stats().validPreviews,palette_->Stats().collisionRejected),1.15f,Gold);
+  draw.Text({22,614},"DRAG/LMB PLACE  RMB CANCEL  R ROTATE",1.05f,Cyan);
+  const auto stats=rules_.GetStats();
+  draw.Text({22,638},std::format("ENT {}/{}  UNDO {} REDO {}",stats.entities,Rules3D::MaximumEntities,stats.undoDepth,stats.redoDepth),1.f,Gold);
+  draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
+}

@@ -18,6 +18,9 @@ public:
     [[nodiscard]] const MonsterState3D& Monster()const{return monster_;}
     [[nodiscard]] Attack3D CurrentAttack()const{return attack_;}
     [[nodiscard]] bool InHitWindow()const{return attack_!=Attack3D::None&&attackClock_>=.12f&&attackClock_<=.24f;}
+    [[nodiscard]] float AttackClock()const{return attackClock_;}
+    [[nodiscard]] float AttackDuration()const{return .55f;}
+    [[nodiscard]] float NormalizedAttackPhase()const{return attack_==Attack3D::None?0.f:Aevrynd::Clamp(attackClock_/AttackDuration(),0.f,1.f);}
     [[nodiscard]] const CombatStats3D& Stats()const{return stats_;}
 private:
     void BeginAttack();void Sweep(const CombatInput3D& input);

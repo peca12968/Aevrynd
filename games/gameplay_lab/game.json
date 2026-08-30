@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "engineVersion": "2.86.0",
   "entry": "dist/Aevrynd-Gameplay-Lab.exe",
-  "maturity": "deterministic local gameplay validation WIP",
-  "features": ["first-person", "third-person", "god-view", "character-controller", "rigid-body-playground", "bounded-grab", "deterministic-melee", "monster-target", "object-palette", "undo-redo", "day-dusk-night", "automated-framebuffer-capture"]
+  "maturity": "deterministic local gameplay validation WIP; fallback animation, not mocap or root motion",
+  "features": ["first-person-weapon-viewmodel", "third-person-pbr-character", "god-view-pbr-character", "cc0-f2-m2-nine-slot-pbr", "semantic-weapon-socket", "fallback-idle-walk-run-crouch-attack-combo", "character-controller", "rigid-body-playground", "bounded-grab", "deterministic-melee", "monster-target", "object-palette", "undo-redo", "day-dusk-night", "automated-framebuffer-capture"]
 }
