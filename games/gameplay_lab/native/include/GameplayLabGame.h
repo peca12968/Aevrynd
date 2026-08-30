@@ -23,9 +23,10 @@ public:
 private:
     void BuildWorld(Aevrynd::Engine&);void UpdateCamera();void UpdateCapture(Aevrynd::Engine&);
     GameplayLab::Rules3D rules_{};Aevrynd::CharacterController3D controller_{};Aevrynd::CollisionWorld3D collisions_{};Aevrynd::PhysicsWorld3D physics_{};Aevrynd::SceneECSRegistry3D sceneEcs_{};Aevrynd::Scene3D scene_{};
+    // 僅保留未來除錯剛體的可視化清單；所有可互動物件的擁有權都在 palette_。
     Aevrynd::MeshResource3D boxMesh_{},sphereMesh_{};std::vector<Aevrynd::RigidBodyHandle3D> bodies_{};Aevrynd::Camera3D camera_{};float yaw_{},pitch_{.2f};
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{};std::vector<std::string> femaleJointNames_{},maleJointNames_{};Aevrynd::SkinnedMeshResource3D femaleMesh_{},maleMesh_{};Aevrynd::AnimationPose3D femalePose_{},malePose_{};Aevrynd::SkinningWorkspace3D skinning_{};
     std::unique_ptr<GameplayLab::GameplayCombat3D> combat_{};GameplayLab::GameplayAnimation3D gameplayAnimation_{},monsterAnimation_{};Aevrynd::AnimationPose3D monsterPose_{};std::array<std::uint64_t,11> femalePoseHashes_{},malePoseHashes_{};
     std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};
-    std::filesystem::path captureDirectory_{};std::optional<Aevrynd::Vec3> captureValidGhost_{},captureInvalidGhost_{};std::size_t captureIndex_{};bool capturePending_{},combatSpawned_{},crouchFeetInvariant_{true},weaponAttachmentPassed_{},weaponHitWindowEvidence_{};Aevrynd::ColliderHandle3D captureCeiling_{},captureEvidenceCollider_{};float minimumControllerHeight_{1.8f};double nextCapture_{.5};std::uint64_t captureSuccess_{},captureReject_{},femaleGpuDraws_{},maleGpuDraws_{};std::size_t released_{};std::uint64_t trims_{};std::string runId_{};
+    std::filesystem::path captureDirectory_{};std::optional<Aevrynd::Vec3> captureValidGhost_{},captureInvalidGhost_{};std::size_t captureIndex_{};bool capturePending_{},combatSpawned_{},crouchFeetInvariant_{true},weaponAttachmentPassed_{},weaponHitWindowEvidence_{},captureGrabSeeded_{};Aevrynd::ColliderHandle3D captureCeiling_{},captureEvidenceCollider_{};float minimumControllerHeight_{1.8f};double nextCapture_{.5};std::uint64_t captureSuccess_{},captureReject_{},femaleGpuDraws_{},maleGpuDraws_{},captureAuthoritativePhysicsSteps_{};std::size_t released_{};std::uint64_t trims_{};std::string runId_{};
 };
