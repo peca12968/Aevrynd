@@ -1,4 +1,5 @@
 #pragma once
+#include "StableId3D.h"
 #include "WorldOrigin3D.h"
 #include <array>
 #include <condition_variable>
@@ -17,10 +18,6 @@
 #include <vector>
 
 namespace Aevrynd {
-struct StableObjectId3D {
-  std::uint64_t high{}, low{};
-  constexpr auto operator<=>(const StableObjectId3D &) const = default;
-};
 struct WorldDeltaChunkKey3D {
   StableObjectId3D world{};
   std::uint32_t layer{}, chunkSizeRevision{1};

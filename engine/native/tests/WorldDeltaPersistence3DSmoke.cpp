@@ -14,6 +14,11 @@
 #include <vector>
 
 using namespace Aevrynd;
+static_assert(sizeof(StableObjectId3D) == 16);
+static_assert(StableObjectId3D{1, 8} < StableObjectId3D{1, 9});
+static_assert(StableObjectId3D{1, 9} < StableObjectId3D{2, 0});
+static_assert(StableObjectIdScalarHash3D({1, 9}) ==
+              StableObjectIdScalarHash3D(StableObjectId3D{1, 9}));
 
 namespace {
 StableObjectId3D Id(std::uint64_t value) {
@@ -140,6 +145,13 @@ struct TemporaryRoot {
 }
 
 int main() {
+  if (StableObjectIdScalarHash3D({1, 8}) ==
+          StableObjectIdScalarHash3D({1, 9}) ||
+      StableObjectIdHash3D{}({1, 9}) !=
+          static_cast<std::size_t>(StableObjectIdScalarHash3D({1, 9}))) {
+    std::cerr << "Stable ID scalar hash contract failed\n";
+    return 90;
+  }
   const auto root =
       std::filesystem::temp_directory_path() /
       ("aevrynd-world-delta-" + std::to_string(GetCurrentProcessId()));
