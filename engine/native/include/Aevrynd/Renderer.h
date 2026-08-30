@@ -17,6 +17,7 @@
 #include "Math.h"
 #include "Viewport.h"
 #include "EnvironmentIbl3D.h"
+#include "VolumetricAtmospherePassD3D12.h"
 
 namespace Aevrynd {
 struct Vertex { float x,y; uint32_t color; };
@@ -306,6 +307,11 @@ struct RendererStats {
     uint64_t hdrPostProcessPasses{};
     bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
     bool volumetricCloudsEnabled{},volumetricCloudShadowsEnabled{};unsigned volumetricCloudSampleCount{};size_t volumetricCloudResidentBytes{},volumetricCloudShadowResidentBytes{};uint64_t volumetricCloudConfiguredFrames{},volumetricCloudShadowConfiguredFrames{};
+    bool volumetricAtmosphereConfigured{},volumetricAtmosphereDispatched{};
+    VolumetricAtmospherePhase3D volumetricAtmospherePhase{VolumetricAtmospherePhase3D::Day};
+    unsigned volumetricAtmosphereWidth{},volumetricAtmosphereHeight{};
+    size_t volumetricAtmosphereResidentBytes{};
+    uint64_t volumetricAtmosphereConfiguredFrames{},volumetricAtmosphereDispatches{},volumetricAtmosphereCompositePasses{},volumetricAtmosphereThreadGroups{},volumetricAtmosphereResourceCreates{},volumetricAtmosphereResourceReleases{},lastVolumetricAtmosphereGpuNanoseconds{};
     bool directionalLightShaftsEnabled{};unsigned directionalLightShaftSampleCount{};size_t directionalLightShaftResidentBytes{};uint64_t directionalLightShaftConfiguredFrames{};
     bool skinSubsurfaceEnabled{};size_t skinSubsurfaceResidentBytes{};uint64_t skinSubsurfaceConfiguredFrames{};
     bool postProcessAntiAliasingEnabled{};
@@ -645,6 +651,8 @@ public:
     const Atmosphere3D& Atmosphere()const{return atmosphere_;}
     void SetEnvironmentTime(float seconds){environmentTime_=std::isfinite(seconds)?seconds:0.f;}
     float EnvironmentTime()const{return environmentTime_;}
+    void SetVolumetricAtmospherePhase(VolumetricAtmospherePhase3D phase){volumetricAtmospherePhase_=std::uint32_t(phase)<=std::uint32_t(VolumetricAtmospherePhase3D::Night)?phase:VolumetricAtmospherePhase3D::Day;}
+    VolumetricAtmospherePhase3D VolumetricAtmospherePhase()const{return volumetricAtmospherePhase_;}
     void SetExposureCompensation(float ev){exposureCompensationEv_=(std::clamp)(std::isfinite(ev)?ev:0.f,-10.f,10.f);}
     float ExposureCompensation()const{return exposureCompensationEv_;}
     void SetBloom(BloomSettings3D settings){bloom_=NormalizeBloomSettings3D(settings);}
@@ -725,6 +733,7 @@ private:
     DirectionalLight3D light_{};
     Atmosphere3D atmosphere_{};
     float environmentTime_{};
+    VolumetricAtmospherePhase3D volumetricAtmospherePhase_{VolumetricAtmospherePhase3D::Day};
     float exposureCompensationEv_{};
     BloomSettings3D bloom_{};
     WaterOpticsSettings3D waterOptics_{};

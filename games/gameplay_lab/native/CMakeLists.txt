@@ -3,6 +3,9 @@ set(CHARACTER_PRESENTATION_FINGERPRINT_FILES
   engine/native/CMakeLists.txt engine/native/include/Aevrynd/CharacterPresentation3D.h
   engine/native/src/CharacterPresentation3D.cpp engine/native/src/Engine.cpp
   engine/native/tests/CharacterPresentation3DSmoke.cpp games/character_lab/native/src/CharacterLabGame.cpp
+  engine/native/include/Aevrynd/EnvironmentCollisionStreaming3D.h
+  engine/native/src/EnvironmentCollisionStreaming3D.cpp
+  engine/native/tests/EnvironmentCollisionStreaming3DSmoke.cpp
   games/gameplay_lab/game.json games/gameplay_lab/native/CMakeLists.txt
   games/gameplay_lab/native/include/GameplayAnimation3D.h games/gameplay_lab/native/include/GameplayCombat3D.h
   games/gameplay_lab/native/include/GameplayLabGame.h games/gameplay_lab/native/src/GameplayAnimation3D.cpp

@@ -15,6 +15,7 @@ add_library(AevryndEngine STATIC
   src/CharacterController3D.cpp
   src/CharacterPresentation3D.cpp
   src/CollisionWorld3D.cpp
+  src/EnvironmentCollisionStreaming3D.cpp
   src/ECS.cpp
   src/Effects2D.cpp
   src/Engine.cpp
@@ -56,6 +57,7 @@ add_library(AevryndEngine STATIC
   src/WorldOriginRuntime3D.cpp
   src/VisibilityBvh3D.cpp
   src/Vegetation3D.cpp
+  src/VolumetricAtmospherePassD3D12.cpp
 )
 
 set(AEVRYND_STREAMLINE_AVAILABLE OFF)
@@ -126,10 +128,13 @@ aevrynd_compile_shader(ReflectionProbeFilterShader.h ReflectionProbeFilter.hlsl 
 aevrynd_compile_shader(GpuInstanceCullingClearShader.h GpuInstanceCulling.hlsl GpuInstanceCullingClearMain cs_5_0 GpuInstanceCullingClearShader)
 aevrynd_compile_shader(GpuInstanceCullingShader.h GpuInstanceCulling.hlsl GpuInstanceCullingMain cs_5_0 GpuInstanceCullingShader)
 aevrynd_compile_shader(HzbBuildShader.h HzbBuild.hlsl HzbBuildMain cs_5_0 HzbBuildShader)
+aevrynd_compile_shader(VolumetricAtmosphereComputeShader.h VolumetricAtmosphere.hlsl VolumetricAtmosphereMain cs_5_0 VolumetricAtmosphereComputeShader)
+aevrynd_compile_shader(VolumetricAtmosphereCompositeVertexShader.h VolumetricAtmosphereComposite.hlsl VolumetricAtmosphereCompositeVertexMain vs_5_0 VolumetricAtmosphereCompositeVertexShader)
+aevrynd_compile_shader(VolumetricAtmosphereCompositePixelShader.h VolumetricAtmosphereComposite.hlsl VolumetricAtmosphereCompositePixelMain ps_5_0 VolumetricAtmosphereCompositePixelShader)
 add_custom_target(AevryndShaders DEPENDS ${AEVRYND_SHADER_HEADERS})
 add_dependencies(AevryndEngine AevryndShaders)
-target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl ${AEVRYND_SHADER_HEADERS})
-set_source_files_properties(shaders/Canvas.hlsl shaders/World.hlsl shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
+target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl shaders/VolumetricAtmosphere.hlsl shaders/VolumetricAtmosphereComposite.hlsl ${AEVRYND_SHADER_HEADERS})
+set_source_files_properties(shaders/Canvas.hlsl shaders/World.hlsl shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl shaders/VolumetricAtmosphere.hlsl shaders/VolumetricAtmosphereComposite.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
 target_include_directories(AevryndEngine PUBLIC include PRIVATE "${AEVRYND_SHADER_OUTPUT_DIR}")
 if(AEVRYND_STREAMLINE_AVAILABLE)
   target_include_directories(AevryndEngine PRIVATE "${STREAMLINE_ROOT}/include")
@@ -198,6 +203,22 @@ add_executable(AevryndCollisionWorldTest tests/CollisionWorldSmoke.cpp)
 target_compile_options(AevryndCollisionWorldTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCollisionWorldTest PRIVATE AevryndEngine)
 add_test(NAME AevryndCollisionWorldTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCollisionWorldTest>'")
+
+add_executable(AevryndEnvironmentCollisionStreaming3DTest tests/EnvironmentCollisionStreaming3DSmoke.cpp)
+target_compile_options(AevryndEnvironmentCollisionStreaming3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndEnvironmentCollisionStreaming3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndEnvironmentCollisionStreaming3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentCollisionStreaming3DTest>'")
+
+add_executable(AevryndVolumetricAtmospherePassD3D12Test tests/VolumetricAtmospherePassD3D12Smoke.cpp)
+target_compile_options(AevryndVolumetricAtmospherePassD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_include_directories(AevryndVolumetricAtmospherePassD3D12Test PRIVATE "${AEVRYND_SHADER_OUTPUT_DIR}")
+target_link_libraries(AevryndVolumetricAtmospherePassD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndVolumetricAtmospherePassD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVolumetricAtmospherePassD3D12Test>'")
+
+add_executable(AevryndVolumetricAtmosphereRendererIntegrationTest tests/VolumetricAtmosphereRendererIntegrationSmoke.cpp)
+target_compile_options(AevryndVolumetricAtmosphereRendererIntegrationTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndVolumetricAtmosphereRendererIntegrationTest PRIVATE AevryndEngine)
+aevrynd_add_windows_gui_test(AevryndVolumetricAtmosphereRendererIntegrationTest AevryndVolumetricAtmosphereRendererIntegrationTest)
 
 add_executable(AevryndScene3DTest tests/Scene3DSmoke.cpp)
 target_compile_options(AevryndScene3DTest PRIVATE /W4 /permissive- /utf-8)

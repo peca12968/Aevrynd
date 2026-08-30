@@ -11,15 +11,30 @@
 
 using namespace Aevrynd;using namespace GameplayLab;
 namespace {constexpr std::array<const wchar_t*,11> Names={L"first-day.png",L"third-day.png",L"god-day.png",L"first-dusk.png",L"third-dusk.png",L"god-dusk.png",L"first-night.png",L"third-night.png",L"god-night.png",L"palette-building.png",L"melee-combat.png"};constexpr Color Cyan{.08f,.9f,.8f,1},Gold{1,.68f,.18f,1};std::string RunId(){GUID g{};if(FAILED(CoCreateGuid(&g)))throw std::runtime_error("Gameplay capture GUID unavailable");return std::format("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",g.Data1,g.Data2,g.Data3,g.Data4[0],g.Data4[1],g.Data4[2],g.Data4[3],g.Data4[4],g.Data4[5],g.Data4[6],g.Data4[7]);}}
+namespace {
+constexpr std::uint64_t EnvironmentPartitionId=0xaec047454e560001ull;
+constexpr std::uint64_t EnvironmentMirrorUserData=0xe000000000000000ull;
+EnvironmentColliderSemantic3D EnvironmentSemantic(ShowcaseSceneKind3D kind){switch(kind){case ShowcaseSceneKind3D::Terrain:return EnvironmentColliderSemantic3D::Terrain;case ShowcaseSceneKind3D::Water:return EnvironmentColliderSemantic3D::Water;case ShowcaseSceneKind3D::Tree:return EnvironmentColliderSemantic3D::Tree;case ShowcaseSceneKind3D::Grass:return EnvironmentColliderSemantic3D::Grass;case ShowcaseSceneKind3D::Rock:return EnvironmentColliderSemantic3D::Rock;case ShowcaseSceneKind3D::Building:return EnvironmentColliderSemantic3D::Building;}return EnvironmentColliderSemantic3D::Decoration;}
+EnvironmentColliderDescriptor3D EnvironmentProxy(const ShowcaseSceneDescriptor3D& source,std::size_t index){EnvironmentColliderDescriptor3D result{};result.id={EnvironmentPartitionId,index+1};result.semantic=EnvironmentSemantic(source.kind);result.yaw=source.yaw;result.layer=1;result.collisionMask=CollisionLayerAll3D;result.userData=EnvironmentMirrorUserData|result.id.low;switch(source.kind){
+  case ShowcaseSceneKind3D::Terrain:result.center={source.position.x,-.5f,source.position.z};result.extents={(std::max)(1.f,source.scale.x*.5f),.5f,(std::max)(1.f,source.scale.z*.5f)};break;
+  case ShowcaseSceneKind3D::Tree:{const float radius=Clamp(source.scale.x*.18f,.24f,.82f),halfHeight=(std::max)(1.f,source.scale.y*.45f);result.center=source.position+Vec3{0,halfHeight,0};result.extents={radius,halfHeight,radius};break;}
+  case ShowcaseSceneKind3D::Rock:result.extents={(std::max)(.35f,source.scale.x*.5f),(std::max)(.3f,source.scale.y*.48f),(std::max)(.35f,source.scale.z*.5f)};result.center=source.position+Vec3{0,result.extents.y,0};break;
+  case ShowcaseSceneKind3D::Building:result.center=source.position;result.extents={(std::max)(.1f,source.scale.x*.5f),(std::max)(.1f,source.scale.y*.5f),(std::max)(.1f,source.scale.z*.5f)};break;
+  case ShowcaseSceneKind3D::Water:
+  case ShowcaseSceneKind3D::Grass:result.center=source.position;result.extents={(std::max)(.05f,source.scale.x*.5f),(std::max)(.05f,source.scale.y*.5f),(std::max)(.05f,source.scale.z*.5f)};break;
+  }return result;}
+BoxCollider3D RotatedEnvironmentProxy(const EnvironmentColliderDescriptor3D& value){const float sine=std::abs(std::sin(value.yaw)),cosine=std::abs(std::cos(value.yaw));return{value.center,{cosine*value.extents.x+sine*value.extents.z,value.extents.y,sine*value.extents.x+cosine*value.extents.z}};}
+bool EnvironmentSolid(EnvironmentColliderSemantic3D semantic){return semantic==EnvironmentColliderSemantic3D::Terrain||semantic==EnvironmentColliderSemantic3D::Tree||semantic==EnvironmentColliderSemantic3D::Rock||semantic==EnvironmentColliderSemantic3D::Building;}
+}
 std::string CreateGameplayLabRunId(){return RunId();}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){std::uint64_t hash=14695981039346656037ull;for(const auto& matrix:pose.globalMatrices)for(const auto& row:matrix.values)for(float value:row){const auto* bytes=reinterpret_cast<const unsigned char*>(&value);for(std::size_t i=0;i<sizeof(value);++i){hash^=bytes[i];hash*=1099511628211ull;}}return hash;}}
 namespace {Matrix4 InverseAffineViewmodelSocket(const Matrix4& source){const double a=source[0][0],b=source[0][1],c=source[0][2],d=source[1][0],e=source[1][1],f=source[1][2],g=source[2][0],h=source[2][1],i=source[2][2],det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(!std::isfinite(det)||std::abs(det)<1e-12)throw std::runtime_error("Viewmodel grip socket is singular");Matrix4 inverse=Matrix4::Identity();inverse[0][0]=float((e*i-f*h)/det);inverse[0][1]=float((c*h-b*i)/det);inverse[0][2]=float((b*f-c*e)/det);inverse[1][0]=float((f*g-d*i)/det);inverse[1][1]=float((a*i-c*g)/det);inverse[1][2]=float((c*d-a*f)/det);inverse[2][0]=float((d*h-e*g)/det);inverse[2][1]=float((b*g-a*h)/det);inverse[2][2]=float((a*e-b*d)/det);const float tx=source[0][3],ty=source[1][3],tz=source[2][3];inverse[0][3]=-(inverse[0][0]*tx+inverse[0][1]*ty+inverse[0][2]*tz);inverse[1][3]=-(inverse[1][0]*tx+inverse[1][1]*ty+inverse[1][2]*tz);inverse[2][3]=-(inverse[2][0]*tx+inverse[2][1]*ty+inverse[2][2]*tz);return inverse;}}
-namespace {void PostCombatFinishInput(Engine& engine,std::uint64_t tick){if(tick==132||tick==166||(tick>=200&&tick<=440&&tick%40==0)){PostMessageW(engine.Window(),WM_LBUTTONDOWN,0,0);PostMessageW(engine.Window(),WM_LBUTTONUP,0,0);}}}
+namespace {void ApplyCombatFinishInput(Input& input,std::uint64_t tick){if(tick==132||tick==166||(tick>=200&&tick<=440&&tick%40==0)){input.SetMouseButton(true);input.SetMouseButton(false);}}}
 namespace {
-void PostReplayInput(Engine &engine, std::uint64_t tick) {
+void ApplyReplayInput(Input &input, std::uint64_t tick) {
   const auto tap = [&](WPARAM key) {
-    PostMessageW(engine.Window(), WM_KEYDOWN, key, 0);
-    PostMessageW(engine.Window(), WM_KEYUP, key, 0);
+    input.SetKey(unsigned(key), true);
+    input.SetKey(unsigned(key), false);
   };
   switch (tick) {
   case 2:
@@ -35,10 +50,10 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
     tap('V');
     break;
   case 10:
-    PostMessageW(engine.Window(), WM_KEYDOWN, 'W', 0);
+    input.SetKey('W', true);
     break;
   case 12:
-    PostMessageW(engine.Window(), WM_KEYDOWN, VK_SHIFT, 0);
+    input.SetKey(VK_SHIFT, true);
     break;
   case 14:
     tap(VK_SPACE);
@@ -47,11 +62,11 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
     tap('C');
     break;
   case 18:
-    PostMessageW(engine.Window(), WM_KEYUP, VK_SHIFT, 0);
+    input.SetKey(VK_SHIFT, false);
     tap('C');
     break;
   case 20:
-    PostMessageW(engine.Window(), WM_KEYUP, 'W', 0);
+    input.SetKey('W', false);
     tap('3');
     break;
   case 21:
@@ -61,32 +76,32 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
     tap(VK_TAB);
     break;
   case 24:
-    PostMessageW(engine.Window(), WM_MOUSEMOVE, 0, MAKELPARAM(80, 515));
-    PostMessageW(engine.Window(), WM_LBUTTONDOWN, 0, 0);
+    input.SetMouse({80,515},true);
+    input.SetMouseButton(true);
     break;
   case 25:
-    PostMessageW(engine.Window(), WM_MOUSEMOVE, 0, MAKELPARAM(700, 390));
+    input.SetMouse({700,390},true);
     break;
   case 26:
     tap('R');
-    PostMessageW(engine.Window(), WM_LBUTTONUP, 0, 0);
+    input.SetMouseButton(false);
     break;
   case 28:
-    PostMessageW(engine.Window(), WM_RBUTTONDOWN, 0, 0);
-    PostMessageW(engine.Window(), WM_RBUTTONUP, 0, 0);
+    input.SetRightMouseButton(true);
+    input.SetRightMouseButton(false);
     break;
   case 30:
     tap(VK_DELETE);
     break;
   case 32:
-    PostMessageW(engine.Window(), WM_KEYDOWN, VK_CONTROL, 0);
+    input.SetKey(VK_CONTROL, true);
     tap('Z');
-    PostMessageW(engine.Window(), WM_KEYUP, VK_CONTROL, 0);
+    input.SetKey(VK_CONTROL, false);
     break;
   case 34:
-    PostMessageW(engine.Window(), WM_KEYDOWN, VK_CONTROL, 0);
+    input.SetKey(VK_CONTROL, true);
     tap('Y');
-    PostMessageW(engine.Window(), WM_KEYUP, VK_CONTROL, 0);
+    input.SetKey(VK_CONTROL, false);
     break;
   case 36:
     tap(VK_F2);
@@ -131,22 +146,25 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
   case 78:
   case 96:
   case 114:
-    PostMessageW(engine.Window(), WM_LBUTTONDOWN, 0, 0);
-    PostMessageW(engine.Window(), WM_LBUTTONUP, 0, 0);
+    input.SetMouseButton(true);
+    input.SetMouseButton(false);
     break;
   case 260:
-    PostMessageW(engine.Window(), WM_KEYDOWN, 'G', 0);
+    input.SetKey('G', true);
     break;
   case 268:
-    PostMessageW(engine.Window(), WM_KEYUP, 'G', 0);
+    input.SetKey('G', false);
     break;
   default:
     break;
   }
 }
 } // namespace
-ReusableMemoryStats GameplayLabGame::GetReusableMemoryStats()const{const auto c=collisions_.MemoryStats(),p=physics_.MemoryStats(),s=scene_.MemoryStats(),k=skinning_.MemoryStats(),fa=femaleAnimation_.MemoryStats(),ma=maleAnimation_.MemoryStats(),mo=monsterAnimation_.MemoryStats(),ff=femaleFootPlacement_.MemoryStats(),mf=maleFootPlacement_.MemoryStats(),ph=playerHistory_.MemoryStats(),mh=monsterHistory_.MemoryStats();return{c.retainedCapacityBytes+p.retainedCapacityBytes+s.retainedCapacityBytes+k.retainedCapacityBytes+fa.retainedCapacityBytes+ma.retainedCapacityBytes+mo.retainedCapacityBytes+ff.retainedCapacityBytes+mf.retainedCapacityBytes+ph.retainedCapacityBytes+mh.retainedCapacityBytes,c.reclaimableCapacityBytes+p.reclaimableCapacityBytes+s.reclaimableCapacityBytes+k.reclaimableCapacityBytes+fa.reclaimableCapacityBytes+ma.reclaimableCapacityBytes+mo.reclaimableCapacityBytes+ff.reclaimableCapacityBytes+mf.reclaimableCapacityBytes+ph.reclaimableCapacityBytes+mh.reclaimableCapacityBytes,released_,trims_};}
+ReusableMemoryStats GameplayLabGame::GetReusableMemoryStats()const{const auto c=collisions_.MemoryStats(),p=physics_.MemoryStats(),s=scene_.MemoryStats(),k=skinning_.MemoryStats(),fa=femaleAnimation_.MemoryStats(),ma=maleAnimation_.MemoryStats(),mo=monsterAnimation_.MemoryStats(),ff=femaleFootPlacement_.MemoryStats(),mf=maleFootPlacement_.MemoryStats(),ph=playerHistory_.MemoryStats(),mh=monsterHistory_.MemoryStats();const std::size_t environmentBytes=(environmentCollisions_?environmentCollisions_->Receipt().retainedBytes:0)+environmentCollisionDescriptors_.capacity()*sizeof(EnvironmentColliderDescriptor3D)+environmentGameplayColliders_.capacity()*sizeof(ColliderHandle3D);return{c.retainedCapacityBytes+p.retainedCapacityBytes+s.retainedCapacityBytes+k.retainedCapacityBytes+fa.retainedCapacityBytes+ma.retainedCapacityBytes+mo.retainedCapacityBytes+ff.retainedCapacityBytes+mf.retainedCapacityBytes+ph.retainedCapacityBytes+mh.retainedCapacityBytes+environmentBytes,c.reclaimableCapacityBytes+p.reclaimableCapacityBytes+s.reclaimableCapacityBytes+k.reclaimableCapacityBytes+fa.reclaimableCapacityBytes+ma.reclaimableCapacityBytes+mo.reclaimableCapacityBytes+ff.reclaimableCapacityBytes+mf.reclaimableCapacityBytes+ph.reclaimableCapacityBytes+mh.reclaimableCapacityBytes,released_,trims_};}
 std::size_t GameplayLabGame::TrimReusableMemory(){const auto before=GetReusableMemoryStats().retainedCapacityBytes;collisions_.TrimUnusedMemory();physics_.TrimUnusedMemory();scene_.TrimUnusedMemory();skinning_.TrimUnusedMemory();femaleAnimation_.TrimUnusedMemory();maleAnimation_.TrimUnusedMemory();monsterAnimation_.TrimUnusedMemory();femaleFootPlacement_.TrimUnusedMemory();maleFootPlacement_.TrimUnusedMemory();playerHistory_.TrimUnusedMemory();monsterHistory_.TrimUnusedMemory();const auto after=GetReusableMemoryStats().retainedCapacityBytes;released_=before>after?before-after:0;++trims_;return released_;}
+void GameplayLabGame::ReleaseEnvironmentGameplayColliders(){for(const auto handle:environmentGameplayColliders_)collisions_.Destroy(handle);environmentGameplayColliders_.clear();}
+bool GameplayLabGame::SyncEnvironmentCollision(Vec3 observer){if(!environmentCollisions_||!environmentCollisions_->UpdateObserver(observer))return false;const bool active=environmentCollisions_->IsPartitionActive(EnvironmentPartitionId);if(!active){ReleaseEnvironmentGameplayColliders();return true;}if(!environmentGameplayColliders_.empty())return true;std::vector<ColliderHandle3D> created;try{created.reserve(environmentCollisionActiveReceipt_.solidDescriptors?environmentCollisionActiveReceipt_.solidDescriptors:91);for(const auto& descriptor:environmentCollisionDescriptors_){if(!EnvironmentSolid(descriptor.semantic))continue;const auto handle=collisions_.CreateBox({RotatedEnvironmentProxy(descriptor),descriptor.layer,descriptor.collisionMask,descriptor.userData,false});if(!handle)throw std::runtime_error("Gameplay environment mirror collider creation failed");created.push_back(handle);}}catch(...){for(const auto handle:created)collisions_.Destroy(handle);return false;}environmentGameplayColliders_=std::move(created);return true;}
+bool GameplayLabGame::InitializeEnvironmentCollision(){environmentCollisionDescriptors_.clear();environmentCollisionDescriptors_.reserve(showcaseEnvironment_.Descriptors().size());std::size_t index{};for(const auto& descriptor:showcaseEnvironment_.Descriptors())environmentCollisionDescriptors_.push_back(EnvironmentProxy(descriptor,index++));environmentCollisions_=std::make_unique<EnvironmentCollisionStreaming3D>(physics_,EnvironmentCollisionStreamingSettings3D{2,256,128,1.2f,{.78f,.02f}});if(!environmentCollisions_->RegisterPartition({EnvironmentPartitionId,{0,0,0},320},environmentCollisionDescriptors_))return false;const auto registered=environmentCollisions_->Receipt();if(registered.registeredDescriptors!=156||registered.solidDescriptors!=91||registered.nonSolidDescriptors!=65)return false;if(!environmentCollisions_->UpdateObserver(controller_.Position()))return false;const auto firstActive=environmentCollisions_->Receipt();const auto terrainHit=environmentCollisions_->Raycast(MakeRay3D({0,4,0},{0,-1,0}),12);environmentRayEvidence_=terrainHit&&terrainHit.object.id==StableObjectId3D{EnvironmentPartitionId,1};const auto tree=std::ranges::find_if(environmentCollisionDescriptors_,[](const auto& value){return value.semantic==EnvironmentColliderSemantic3D::Tree;});if(tree==environmentCollisionDescriptors_.end())return false;const auto treeObjects=environmentCollisions_->QueryBox(tree->center,tree->extents+Vec3{.01f,.01f,.01f});environmentStableIdEvidence_=std::ranges::any_of(treeObjects,[&](const auto& value){return value.id==tree->id;});const auto rock=std::ranges::find_if(environmentCollisionDescriptors_,[](const auto& value){return value.semantic==EnvironmentColliderSemantic3D::Rock;});if(rock==environmentCollisionDescriptors_.end())return false;const auto meleeObjects=environmentCollisions_->QueryBox(rock->center,rock->extents+Vec3{.25f,.25f,.25f});environmentMeleeQueryEvidence_=std::ranges::any_of(meleeObjects,[&](const auto& value){return value.id==rock->id;});if(!environmentCollisions_->UpdateObserver({10000,10000,10000})||environmentCollisions_->IsPartitionActive(EnvironmentPartitionId))return false;if(!SyncEnvironmentCollision(controller_.Position()))return false;environmentCollisionActiveReceipt_=environmentCollisions_->Receipt();environmentCollisionReloadStable_=firstActive.stateHash==environmentCollisionActiveReceipt_.stateHash;return environmentCollisionReloadStable_&&environmentStableIdEvidence_&&environmentRayEvidence_&&environmentMeleeQueryEvidence_&&environmentGameplayColliders_.size()==91;}
 void GameplayLabGame::OnStart(Engine& engine){
   engine.SetRenderQuality(RenderQuality3D::Ultra);
   std::array<char,128> expectedFingerprint{};
@@ -240,9 +258,8 @@ void GameplayLabGame::OnStart(Engine& engine){
   paletteUi_->SetLayout({18,502,344,150},4);
   showcaseEnvironment_.ApplyUltraProfile(engine.Draw());
   showcaseRendererBaseline_=engine.GetRendererStats();
-  collisions_.CreateBox({{{0,-.5f,0},{30,.5f,30}},1,0xffffffffu});
+  if(!InitializeEnvironmentCollision())throw std::runtime_error("Gameplay environment collision streaming initialization failed");
   collisions_.CreateBox({{{0,1.5f,-12},{4,1.5f,.6f}},1,0xffffffffu});
-  physics_.CreateBody({RigidBodyType3D::Static,{{0,-.5f,0},{},{30,1,30}},{30,.5f,30}});
   for(int i=0;i<18;++i){const Vec3 p{-8.f+float(i%6)*1.6f,.65f+float(i/6)*1.25f,-3.f};if(!palette_->PlaceAt(p,PaletteCategory::Physics))throw std::runtime_error("Initial gameplay palette transaction failed");}
   if(!captureDirectory_.empty()){
     std::filesystem::create_directories(captureDirectory_);
@@ -278,6 +295,17 @@ void GameplayLabGame::OnStop(Engine &engine) {
     uiOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayObjectPaletteUi3D\",\"categories\":6,\"drawnFrames\":{},\"pointerDowns\":{},\"drags\":{},\"previews\":{},\"commits\":{},\"invalidPlacements\":{},\"cancels\":{},\"deterministicHash\":{}}}",runId_,paletteUiDrawnFrames_,ui.pointerDowns,ui.drags,ui.previews,ui.commits,ui.invalidPlacements,ui.cancels,ui.deterministicHash);
   }
   palette_->Clear();
+  const auto environmentCollisionBeforeRelease=environmentCollisionActiveReceipt_;
+  ReleaseEnvironmentGameplayColliders();
+  EnvironmentCollisionReleaseReceipt3D environmentCollisionRelease{};
+  EnvironmentCollisionStreamingReceipt3D environmentCollisionAfterRelease{};
+  if(environmentCollisions_){environmentCollisionRelease=environmentCollisions_->Release();environmentCollisionAfterRelease=environmentCollisions_->Receipt();environmentCollisions_.reset();}
+  std::vector<EnvironmentColliderDescriptor3D>{}.swap(environmentCollisionDescriptors_);
+  std::vector<ColliderHandle3D>{}.swap(environmentGameplayColliders_);
+  if(!captureDirectory_.empty()){
+    std::ofstream collisionOut(captureDirectory_/"gameplay-environment-collision-receipt.json",std::ios::trunc);
+    collisionOut<<std::format("{{\"runId\":\"{}\",\"source\":\"EnvironmentCollisionStreaming3D\",\"partitionId\":{},\"stateHash\":{},\"descriptors\":{},\"solidDescriptors\":{},\"nonSolidDescriptors\":{},\"activePartitions\":{},\"activeColliders\":{},\"activePhysicsBodies\":{},\"activations\":{},\"deactivations\":{},\"failedActivations\":{},\"rollbacks\":{},\"stableIdEvidence\":{},\"rayEvidence\":{},\"meleeQueryEvidence\":{},\"reloadStable\":{},\"releasedDescriptors\":{},\"releasedColliders\":{},\"releasedPhysicsBodies\":{},\"retainedBytesAfterRelease\":{},\"activeCollidersAfterRelease\":{},\"activePhysicsBodiesAfterRelease\":{}}}",runId_,EnvironmentPartitionId,environmentCollisionBeforeRelease.stateHash,environmentCollisionBeforeRelease.registeredDescriptors,environmentCollisionBeforeRelease.solidDescriptors,environmentCollisionBeforeRelease.nonSolidDescriptors,environmentCollisionBeforeRelease.activePartitions,environmentCollisionBeforeRelease.activeColliders,environmentCollisionBeforeRelease.activePhysicsBodies,environmentCollisionBeforeRelease.activations,environmentCollisionBeforeRelease.deactivations,environmentCollisionBeforeRelease.failedActivations,environmentCollisionBeforeRelease.rollbacks,environmentStableIdEvidence_?1:0,environmentRayEvidence_?1:0,environmentMeleeQueryEvidence_?1:0,environmentCollisionReloadStable_?1:0,environmentCollisionRelease.descriptorsReleased,environmentCollisionRelease.collidersReleased,environmentCollisionRelease.physicsBodiesReleased,environmentCollisionRelease.retainedBytesAfter,environmentCollisionAfterRelease.activeColliders,environmentCollisionAfterRelease.activePhysicsBodies);
+  }
   const auto showcaseRendererAfter=engine.GetRendererStats();
   const auto showcaseExecution=showcaseEnvironment_.ExecutionReceipt(showcaseRendererBaseline_,showcaseRendererAfter);
   showcaseExecutionObserved_=showcaseExecution.executed;
@@ -336,6 +364,7 @@ void GameplayLabGame::UpdateCamera() {
     camera_ = ConstrainThirdPersonCamera(
         MakeThirdPersonCamera(focus, yaw_, .24f, 3.4f), focus, collisions_,
         .25f);
+    camera_ = ConstrainThirdPersonCamera(camera_, focus, showcaseTerrain_, .25f);
     break;
   default:
     camera_ = MakeOverheadCamera(focus, 22, true);
@@ -352,6 +381,12 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   if (!combatSpawned_) {
     combat_->SpawnMonster({4, 0, 3});
     combatSpawned_ = true;
+  }
+  if(!captureDirectory_.empty()){
+    const auto replayTick=rules_.GetStats().ticks;
+    ApplyReplayInput(in,replayTick);
+    ApplyCombatFinishInput(in,replayTick);
+    if(captureCrouchTapPending_){in.SetKey('C',true);in.SetKey('C',false);captureCrouchTapPending_=false;}
   }
   const ProductionInput3D mapped = ReadProductionInput3D(in, yaw_);
   if (mapped.camera)
@@ -370,6 +405,8 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     rules_.SetCharacterFemale(false);
   yaw_ -= mapped.mouseDelta.x * .0025f;
   pitch_ = Clamp(pitch_ - mapped.mouseDelta.y * .0025f, -.75f, .9f);
+  if(!SyncEnvironmentCollision(controller_.Position()))throw std::runtime_error("Gameplay environment collision streaming update failed");
+  if(environmentCollisions_&&environmentCollisions_->IsPartitionActive(EnvironmentPartitionId))environmentCollisionActiveReceipt_=environmentCollisions_->Receipt();
   const auto beforeCrouchPosition = controller_.Position();
   if (!captureDirectory_.empty() && rules_.GetStats().ticks == 16 &&
       !captureCeiling_)
@@ -400,13 +437,15 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     captureCeiling_ = {};
   }
   CharacterControl3D control{mapped.tick.movement, mapped.tick.jump};
-  controller_.Step(control, collisions_, dt);
+  controller_.Step(control, collisions_, showcaseTerrain_, dt);
   const auto gameplayTick = rules_.GetStats().ticks;
-  if (!captureDirectory_.empty() && gameplayTick >= 258 &&
-      gameplayTick <= 268)
-    rules_.SetCamera(CameraMode::FirstPerson);
   UpdateCamera();
-  Ray3D cursorRay = ScreenPointToRay(camera_, {1280, 720}, mapped.mouse);
+  // 自動抓取用固定第一人稱射線，不改 capture 展示相機，避免 GPU capture ack
+  // 時機與 gameplay cameraSwitches 統計互相干擾。
+  Camera3D interactionCamera=camera_;
+  if(!captureDirectory_.empty()&&gameplayTick>=258&&gameplayTick<=268)
+    interactionCamera=MakeFirstPersonCamera(controller_.Position()+Vec3{0,rules_.CharacterHeight()-.12f,0},yaw_,pitch_);
+  Ray3D cursorRay = ScreenPointToRay(interactionCamera, {1280, 720}, mapped.mouse);
   const PaletteUiPoint3D pointer{mapped.mouse.x,mapped.mouse.y};
   const bool pointerOverPalette=rules_.PaletteOpen()&&paletteUi_->HitTest(pointer).has_value();
   if (!captureDirectory_.empty() && gameplayTick == 258 &&
@@ -582,9 +621,6 @@ void GameplayLabGame::AddShowcaseEnvironment(){
 void GameplayLabGame::UpdateCapture(Engine &engine) {
   if (captureDirectory_.empty())
     return;
-  const auto replayTick = rules_.GetStats().ticks;
-  PostReplayInput(engine, replayTick);
-  PostCombatFinishInput(engine, replayTick);
   const auto renderer = engine.GetRendererStats();
   if (capturePending_ && (renderer.successfulFrameCaptures > captureSuccess_ ||
                           renderer.rejectedFrameCaptures > captureReject_)) {
@@ -592,8 +628,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine) {
       ++captureIndex_;
       // 第三人稱黃昏固定展示 C 蹲姿，下一張之前恢復站姿。
       if (captureIndex_ == 4 || captureIndex_ == 5) {
-        PostMessageW(engine.Window(), WM_KEYDOWN, 'C', 0);
-        PostMessageW(engine.Window(), WM_KEYUP, 'C', 0);
+        captureCrouchTapPending_=true;
       }
     }
     capturePending_ = false;
