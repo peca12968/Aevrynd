@@ -11,6 +11,7 @@
 #include <string_view>
 
 namespace Aevrynd {
+class AnimationGraphRootMotionController3D;
 struct AnimationBlendSample1D3D {float parameter{};const AnimationClip3D* clip{};};
 struct AnimationGraphState3D {std::string_view name{};std::span<const AnimationBlendSample1D3D> samples{};};
 struct AnimationGraphLayer3D {const AnimationClip3D* clip{};std::span<const float> jointWeights{};float weight{};};
@@ -42,6 +43,7 @@ class AnimationGraphRootMotionPreviewToken3D {
 public: AnimationGraphRootMotionPreviewToken3D()=default;
 private:
     friend class AnimationGraph3D;
+    friend class AnimationGraphRootMotionController3D;
     std::uintptr_t owner{};const AnimationPose3D* pose{};
     std::uint64_t generation{},serial{},tick{},baseStateHash{},poseHash{},candidateHash{};
     bool valid{};
@@ -77,7 +79,12 @@ public:
     bool EvaluateRootMotionTick(const Skeleton3D&,SkeletonCompatibilityId3D,AnimationGraphRootMotionTick3D,AnimationPose3D&,AnimationGraphRootMotionResult3D* output=nullptr)noexcept;
     void ResetRootMotion()noexcept;
     bool TeleportRootMotion(std::uint64_t previousTick)noexcept;
+    [[nodiscard]] bool CanResetRootMotion()const noexcept;
+    [[nodiscard]] bool CanTeleportRootMotion(std::uint64_t previousTick)const noexcept;
+    [[nodiscard]] bool RootMotionPrepared()const noexcept{return rootMotionPrepared_;}
+    [[nodiscard]] std::uint64_t RootMotionLastTick()const noexcept{return rootLastTick_;}
 private:
+    friend class AnimationGraphRootMotionController3D;
     struct OwnedSample {float parameter{};AnimationClip3D clip{};};
     struct StateStorage {std::string name{};std::array<OwnedSample,MaximumSamplesPerState> samples{};std::size_t count{};};
     bool SampleState(const Skeleton3D&,std::size_t,float,AnimationPose3D&,Matrix4);
@@ -86,6 +93,7 @@ private:
     bool BuildRootMotionDestination(std::size_t,std::int64_t,float,std::array<RootMotionLeaf,MaximumRootMotionLeaves>&,std::size_t&,std::uint64_t&)const noexcept;
     bool BeginRootMotionTransition(std::size_t,float,bool)noexcept;
     void InvalidateRootMotionPreview(bool committedMutation)noexcept;
+    void CommitRootMotionPreviewUnchecked(AnimationGraphRootMotionPreviewToken3D&,AnimationPose3D&)noexcept;
     [[nodiscard]] std::uint64_t RootMotionStateHash()const noexcept;
     std::array<StateStorage,MaximumStates> states_{};std::size_t stateCount_{},state_{};
     SkeletonCompatibilityId3D compatibility_{};std::size_t jointCount_{};

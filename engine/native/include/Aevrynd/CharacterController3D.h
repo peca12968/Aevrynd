@@ -50,6 +50,7 @@ public:
 private:
     friend class CharacterController3D;
     friend class RootMotionController3D;
+    friend class AnimationGraphRootMotionController3D;
     // owner 綁定建立 preview 的 controller instance；不得序列化、仿造或跨 instance 使用。
     std::uintptr_t owner{};
     // generation/serial/tick/baseStateHash/candidateHash 共同防止 stale、replay 與 committed state 修改。
@@ -59,6 +60,7 @@ private:
 };
 
 class RootMotionController3D;
+class AnimationGraphRootMotionController3D;
 
 class CharacterController3D {
 public:
@@ -91,6 +93,8 @@ public:
     // actor yaw 的唯一 controller 權威值，範圍為 (-pi,pi]。
     float Yaw()const{return yaw_;}
     // 原子傳送並重設 direct timeline；下一合法 tick 是 previousTick+1。
+    [[nodiscard]] bool CanResetDirectDisplacement(Vec3 feetPosition,float yawRadians=0)const noexcept;
+    [[nodiscard]] bool CanTeleportDirectDisplacement(Vec3 feetPosition,float yawRadians,uint64_t previousTick)const noexcept;
     bool Teleport(Vec3 feetPosition,float yawRadians,uint64_t previousTick)noexcept;
     bool SetHeight(float height);
     const CharacterControllerSettings3D& Settings()const{return settings_;}
@@ -103,6 +107,9 @@ public:
     void RebaseOrigin(Vec3 delta)noexcept;
 private:
     friend class RootMotionController3D;
+    friend class AnimationGraphRootMotionController3D;
+    void ResetDirectDisplacementUnchecked(Vec3 feetPosition,float yawRadians)noexcept;
+    void TeleportDirectDisplacementUnchecked(Vec3 feetPosition,float yawRadians,uint64_t previousTick)noexcept;
     void CommitDirectDisplacementPreviewUnchecked(CharacterDirectDisplacementPreviewToken3D&)noexcept;
     void InvalidateDirectPreview(bool committedMutation)noexcept;
     CharacterControllerSettings3D settings_{};
