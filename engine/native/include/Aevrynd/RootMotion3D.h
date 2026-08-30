@@ -2,6 +2,7 @@
 #include "SkeletonSemantics3D.h"
 #include "Memory.h"
 #include <cstdint>
+#include <cstddef>
 
 namespace Aevrynd {
 // RootMotion 單次 tick 的資源與抽取政策；所有欄位均於 Prepare 深拷貝保存。
@@ -43,6 +44,24 @@ struct RootMotionResult3D {
     explicit constexpr operator bool()const noexcept{return status==RootMotionStatus3D::Applied||status==RootMotionStatus3D::NoMotion;}
 };
 
+// 單一 RootMotion preview 的不可序列化權杖；只可交回原 owner instance。
+class RootMotionPreviewToken3D {
+public:
+    RootMotionPreviewToken3D()=default;
+private:
+    friend class RootMotion3D;
+    friend class RootMotionController3D;
+    // owner 與 pose 綁定建立 preview 的模組實例及原始 pose 物件；不得仿造或跨物件使用。
+    std::uintptr_t owner{};
+    const AnimationPose3D* pose{};
+    // generation/serial/tick/baseStateHash/poseHash/candidateHash 共同防止 stale、replay 與外部 pose 修改。
+    std::uint64_t generation{},serial{},tick{},baseStateHash{},poseHash{},candidateHash{};
+    // valid 僅表示權杖曾成功建立；仍須由 CanCommitPreview 完整驗證。
+    bool valid{};
+};
+
+class RootMotionController3D;
+
 class RootMotion3D {
 public:
     static constexpr std::size_t MaximumJoints=256;
@@ -51,6 +70,10 @@ public:
     bool Prepare(const Skeleton3D&,const HumanoidSkeletonMap3D&,SkeletonCompatibilityId3D,const AnimationClip3D&,RootMotionSettings3D settings={});
     // pose 必須是 clip 在 currentTime wrapped phase 的完整取樣；pose/state/output 共同原子提交。
     bool EvaluateTick(const Skeleton3D&,RootMotionTick3D,AnimationPose3D&,RootMotionResult3D* output=nullptr)noexcept;
+    // Preview 只寫 pending workspace；committed state、pose 與 StateHash 均不變。
+    bool PreviewTick(const Skeleton3D&,RootMotionTick3D,const AnimationPose3D&,RootMotionPreviewToken3D&,RootMotionResult3D* preview=nullptr)noexcept;
+    bool CanCommitPreview(const RootMotionPreviewToken3D&,const AnimationPose3D&)const noexcept;
+    bool CancelPreview(RootMotionPreviewToken3D&)noexcept;
     // Reset 保留 prepared clip/scratch 容量；下一個 tick=1 只建立零位移 anchor。
     void Reset()noexcept;
     // Teleport 保留 prepared 資源，將下一個合法 tick 鎖為 previousTick+1，且該 tick delta 為零。
@@ -59,13 +82,18 @@ public:
     std::size_t TrimUnusedMemory();
     // 回報 scratch、clip 與 skeleton 深拷貝的容量及最近釋放資訊。
     [[nodiscard]] ReusableMemoryStats MemoryStats()const noexcept;
-    // 穩定狀態雜湊供 rollback/network 測試；包含 timeline 與 scratch 內容。
+    // 穩定 committed 狀態雜湊供 rollback/network 測試；pending workspace 與容量不屬於語意狀態。
     [[nodiscard]] std::uint64_t StateHash()const noexcept;
+    [[nodiscard]] std::uint64_t LastTick()const noexcept{return lastTick_;}
     // 回傳 Prepare 成功後的不可變抽取設定。
     [[nodiscard]] const RootMotionSettings3D& Settings()const noexcept{return settings_;}
 private:
+    friend class RootMotionController3D;
+    void CommitPreviewUnchecked(RootMotionPreviewToken3D&,AnimationPose3D&)noexcept;
+    void InvalidatePreview(bool committedMutation)noexcept;
     RootMotionSettings3D settings_{};
     AnimationPose3D scratch_{};
+    AnimationPose3D previewScratch_{};
     Skeleton3D skeleton_{};
     SkeletonCompatibilityId3D compatibility_{};
     std::size_t jointCount_{},rootJoint_{};
@@ -73,5 +101,10 @@ private:
     bool anchored_{};
     double lastTime_{};
     std::uint64_t lastTick_{},lastReleasedBytes_{},trimCount_{};
+    std::uint64_t generation_{1},previewSerial_{};
+    bool previewPending_{};
+    RootMotionResult3D previewResult_{};
+    double previewLastTime_{};
+    std::uint64_t previewBaseStateHash_{};
 };
 }

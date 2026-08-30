@@ -43,6 +43,22 @@ struct CharacterDirectDisplacementResult3D {
     bool grounded{};
     uint32_t collisionCount{};
 };
+// Controller direct preview 的本機權杖；不可序列化或跨 instance 使用。
+class CharacterDirectDisplacementPreviewToken3D {
+public:
+    CharacterDirectDisplacementPreviewToken3D()=default;
+private:
+    friend class CharacterController3D;
+    friend class RootMotionController3D;
+    // owner 綁定建立 preview 的 controller instance；不得序列化、仿造或跨 instance 使用。
+    std::uintptr_t owner{};
+    // generation/serial/tick/baseStateHash/candidateHash 共同防止 stale、replay 與 committed state 修改。
+    uint64_t generation{},serial{},tick{},baseStateHash{},candidateHash{};
+    // valid 仍須搭配 CanCommitDirectDisplacementPreview 驗證，不代表可直接提交。
+    bool valid{};
+};
+
+class RootMotionController3D;
 
 class CharacterController3D {
 public:
@@ -55,6 +71,14 @@ public:
     bool ApplyDirectDisplacementTick(CharacterDirectDisplacementTick3D,const CollisionWorld3D&,CollisionQueryFilter3D filter={},CharacterDirectDisplacementResult3D* output=nullptr)noexcept;
     bool ApplyDirectDisplacementTick(CharacterDirectDisplacementTick3D,std::span<const BoxCollider3D>,const HeightField3D&,CharacterDirectDisplacementResult3D* output=nullptr)noexcept;
     bool ApplyDirectDisplacementTick(CharacterDirectDisplacementTick3D,const CollisionWorld3D&,const HeightField3D&,CollisionQueryFilter3D filter={},CharacterDirectDisplacementResult3D* output=nullptr)noexcept;
+    // Preview overload 只改 pending workspace；committed state、StateHash 與 output 在失敗時不變。
+    bool PreviewDirectDisplacementTick(CharacterDirectDisplacementTick3D,std::span<const BoxCollider3D>,CharacterDirectDisplacementPreviewToken3D&,CharacterDirectDisplacementResult3D* preview=nullptr)noexcept;
+    bool PreviewDirectDisplacementTick(CharacterDirectDisplacementTick3D,const CollisionWorld3D&,CollisionQueryFilter3D,CharacterDirectDisplacementPreviewToken3D&,CharacterDirectDisplacementResult3D* preview=nullptr)noexcept;
+    bool PreviewDirectDisplacementTick(CharacterDirectDisplacementTick3D,std::span<const BoxCollider3D>,const HeightField3D&,CharacterDirectDisplacementPreviewToken3D&,CharacterDirectDisplacementResult3D* preview=nullptr)noexcept;
+    bool PreviewDirectDisplacementTick(CharacterDirectDisplacementTick3D,const CollisionWorld3D&,const HeightField3D&,CollisionQueryFilter3D,CharacterDirectDisplacementPreviewToken3D&,CharacterDirectDisplacementResult3D* preview=nullptr)noexcept;
+    // CanCommit 僅驗證不提交；Cancel 只撤銷同 owner 的 outstanding preview，兩者皆不改 committed state。
+    bool CanCommitDirectDisplacementPreview(const CharacterDirectDisplacementPreviewToken3D&)const noexcept;
+    bool CancelDirectDisplacementPreview(CharacterDirectDisplacementPreviewToken3D&)noexcept;
     void Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,float deltaTime);
     void Step(CharacterControl3D control,const CollisionWorld3D& world,float deltaTime,uint32_t layerMask=0xffffffffu,uint32_t characterLayer=1);
     void Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,const HeightField3D& terrain,float deltaTime);
@@ -68,15 +92,19 @@ public:
     float Yaw()const{return yaw_;}
     // 原子傳送並重設 direct timeline；下一合法 tick 是 previousTick+1。
     bool Teleport(Vec3 feetPosition,float yawRadians,uint64_t previousTick)noexcept;
-    bool SetHeight(float height){if(!std::isfinite(height)||height<.6f||height>3.f)return false;settings_.height=height;return true;}
+    bool SetHeight(float height);
     const CharacterControllerSettings3D& Settings()const{return settings_;}
     CharacterControllerStats3D Stats()const{return stats_;}
     [[nodiscard]] ReusableMemoryStats MemoryStats()const noexcept;
     std::size_t TrimUnusedMemory();
     [[nodiscard]] uint64_t StateHash()const noexcept;
+    [[nodiscard]] uint64_t DirectLastTick()const noexcept{return directLastTick_;}
     bool CanRebaseOrigin(Vec3 delta)const noexcept;
     void RebaseOrigin(Vec3 delta)noexcept;
 private:
+    friend class RootMotionController3D;
+    void CommitDirectDisplacementPreviewUnchecked(CharacterDirectDisplacementPreviewToken3D&)noexcept;
+    void InvalidateDirectPreview(bool committedMutation)noexcept;
     CharacterControllerSettings3D settings_{};
     CharacterControllerStats3D stats_{};
     Vec3 position_{},velocity_{};
@@ -87,7 +115,15 @@ private:
     // World 查詢先寫入 staging；只有整筆 direct transaction 成功才與 active scratch 交換。
     std::vector<BoxCollider3D> collisionCandidateScratch_;
     std::size_t maximumDirectWorldColliders_{};
-    bool ApplyDirectDisplacementTickInternal(CharacterDirectDisplacementTick3D,std::span<const BoxCollider3D>,const HeightField3D*,CharacterDirectDisplacementResult3D*)noexcept;
+    uint64_t directGeneration_{1},directPreviewSerial_{};
+    bool directPreviewPending_{},directPreviewUsesWorldScratch_{};
+    CharacterDirectDisplacementResult3D directPreviewResult_{};
+    CharacterControllerStats3D directPreviewStats_{};
+    Vec3 directPreviewPosition_{},directPreviewVelocity_{};
+    float directPreviewYaw_{};
+    bool directPreviewGrounded_{};
+    uint64_t directPreviewBaseStateHash_{};
+    bool PreviewDirectDisplacementTickInternal(CharacterDirectDisplacementTick3D,std::span<const BoxCollider3D>,const HeightField3D*,bool,CharacterDirectDisplacementPreviewToken3D&,CharacterDirectDisplacementResult3D*)noexcept;
 };
 
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding=.2f);

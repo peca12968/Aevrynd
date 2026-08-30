@@ -5,6 +5,7 @@ add_library(AevryndEngine STATIC
   src/SkeletalIk3D.cpp
   src/FootPlacement3D.cpp
   src/RootMotion3D.cpp
+  src/RootMotionController3D.cpp
   src/SkeletalSocket3D.cpp
   src/SkeletonSemantics3D.cpp
   src/AssetManifest.cpp
@@ -338,6 +339,10 @@ add_executable(AevryndRootMotion3DTest tests/RootMotion3DSmoke.cpp)
 target_compile_options(AevryndRootMotion3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndRootMotion3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndRootMotion3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndRootMotion3DTest>'")
+add_executable(AevryndRootMotionController3DTest tests/RootMotionController3DSmoke.cpp)
+target_compile_options(AevryndRootMotionController3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndRootMotionController3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndRootMotionController3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndRootMotionController3DTest>'")
 add_executable(AevryndSkinnedModelAssetV2Test tests/SkinnedModelAssetV2Smoke.cpp)
 target_compile_options(AevryndSkinnedModelAssetV2Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSkinnedModelAssetV2Test PRIVATE AevryndEngine)
