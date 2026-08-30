@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "dead-tree-trunk-02",
+  "lod": 2,
+  "sourceFile": "dead-tree-trunk-02-lod2.glb",
+  "sourceSha256": "0d7c7c67959d2516cfd6776b771ab4dccc29dd4058d4d0828f3e12c06c4c8ea9",
+  "outputs": [
+    {
+      "file": "dead-tree-trunk-02-lod2-node0-mesh0-primitive0-material0-dead-tree-trunk-02.aemesh",
+      "sha256": "1cff326a0e81653eece33aecfdb0fb40f795e08f278176eb5fd0ad7505395d88",
+      "bytes": 393160,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "dead-tree-trunk-02",
+      "vertices": 8697,
+      "indices": 37407,
+      "triangles": 12469,
+      "boundsMinimumGltf": [
+        -1.9235177040100098,
+        -0.33023911714553833,
+        -0.5007607936859131
+      ],
+      "boundsMaximumGltf": [
+        2.127664566040039,
+        0.7269576787948608,
+        0.5553922653198242
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true
+    }
+  ],
+  "outputCount": 1,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 393160,
+  "totalTriangles": 12469,
+  "peakWorkingSetBytes": 39890944,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

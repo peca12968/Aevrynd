@@ -1,0 +1,767 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "runtimeManifestSha256": "2a63bc8ab04f0f7ddad51b4883fe17ecbaa6bcd7b64609320defde57f1812240",
+  "quality": "Ultra",
+  "mipPolicy": "complete-chain",
+  "tool": {
+    "name": "DirectXTex texconv",
+    "tag": "may2026",
+    "commit": "4feb3e1",
+    "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+  },
+  "memoryGate": "pass",
+  "peakWorkingSetLimitBytes": 2147483648,
+  "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
+  "assets": [
+    {
+      "assetName": "forest-ground-04",
+      "assetId": "forest_ground_04",
+      "officialPage": "https://polyhaven.com/a/forest_ground_04",
+      "outputResolution": 2048,
+      "expectedMipCount": 12,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "forest-ground-04/source/forest_ground_04_diff_2k.jpg",
+              "sha256": "24b8aaf4c8547305d80b0e029ec365219ab1b90748d4ca5651bdc9e75bfde5e6"
+            },
+            "normal": {
+              "path": "forest-ground-04/source/forest_ground_04_nor_gl_2k.jpg",
+              "sha256": "b37ac799ed410976541e0011c246fca254e74eaa3f096ae7a7d74178db5a6d9b"
+            },
+            "arm": {
+              "path": "forest-ground-04/source/forest_ground_04_arm_2k.jpg",
+              "sha256": "a6086cb5611fabcc3dd4c9ac74bcf6cf8ed5d07e136ebe51255a5a3bea9e42c6"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "forest-ground-04/slot-0-base.dds",
+              "bytes": 5592580,
+              "sha256": "dba770a1b96ef6f0a45e0edff99594499fcc8d76abfa62a0986153313f350865",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "forest-ground-04/slot-0-normal.dds",
+              "bytes": 5592580,
+              "sha256": "56e687b2a208f2eaaf9b0e3670530f0a36e5e88d6e74b26090633daaa4e9db93",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "forest-ground-04/slot-0-arm.dds",
+              "bytes": 5592580,
+              "sha256": "3427bf0a83e0c33326a207f700305620402fd0fb6c532240f204bcebefeabcc4",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "ground108",
+      "assetId": "Ground108",
+      "officialPage": "https://ambientcg.com/view?id=Ground108",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "AO/Roughness packed with explicit non-metallic scalar 0",
+          "sources": {
+            "base": {
+              "path": "ground108/source/Ground108_1K-JPG_Color.jpg",
+              "sha256": "a0ccdc1264230444f9eaab9d8fd2a809052209fb682c911da9795fa3213b3bf5"
+            },
+            "normal": {
+              "path": "ground108/source/Ground108_1K-JPG_NormalGL.jpg",
+              "sha256": "908957d4302f6a0e5c8bdddd50ff837175f77992775b7a242311ec0b4337f16c"
+            },
+            "ambientOcclusion": {
+              "path": "ground108/source/Ground108_1K-JPG_AmbientOcclusion.jpg",
+              "sha256": "55c4c608a84c0a73fe1964e460ec9f8dce9ab860173e48a1f54df94720f27943"
+            },
+            "roughness": {
+              "path": "ground108/source/Ground108_1K-JPG_Roughness.jpg",
+              "sha256": "4e78fbde7da89c2e48e6162ed6feba621a2eab6ee82e03b1d6e92c7169133b64"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "ground108/slot-0-base.dds",
+              "bytes": 1398276,
+              "sha256": "2703b20ee77d556daa64535af15433bb3157083174e6d71671aa052ccae11589",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "ground108/slot-0-normal.dds",
+              "bytes": 1398276,
+              "sha256": "e63efd69f4d1e7978f1cd152c5b2115151bcbc208f9f661bc35af0ec6af80032",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "ground108/slot-0-arm.dds",
+              "bytes": 1398276,
+              "sha256": "ce0c636264a9c1c5cb5055259dde80b92c9bea3145dc8ea8f28a7f9f3903e5ed",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "coastal-cliff-01",
+      "assetId": "coastal_cliff_01",
+      "officialPage": "https://polyhaven.com/a/coastal_cliff_01",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "coastal-cliff-01/textures/coastal_cliff_01_diff_1k.jpg",
+              "sha256": "6c9626fdb5550ba260b195638c8c89053faedc22005f4ca94d3be5df72ae525a"
+            },
+            "normal": {
+              "path": "coastal-cliff-01/textures/coastal_cliff_01_nor_gl_1k.jpg",
+              "sha256": "afbe8c2f9ff62dd616f776c074b996d2d275eef982a40aee1f28f4f3b3a3cf0e"
+            },
+            "arm": {
+              "path": "coastal-cliff-01/textures/coastal_cliff_01_arm_1k.jpg",
+              "sha256": "7f287d0b44a3162b5e360fe45ccc8b6009c189d21bd33c1094060eef613c6fa6"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "coastal-cliff-01/slot-0-base.dds",
+              "bytes": 1398276,
+              "sha256": "410dd7ad59fac581d97c3d11dca6117c4697f8abcb32c5478085421b2585a38c",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "coastal-cliff-01/slot-0-normal.dds",
+              "bytes": 1398276,
+              "sha256": "93c7e9da6acb5d9237e322b15aae6e907c7b65ef37fd698bbf103a31a12bd09f",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "coastal-cliff-01/slot-0-arm.dds",
+              "bytes": 1398276,
+              "sha256": "a9262b140284f58b1574e661c842d026bf76a5596ef561f70b1dfddd34080e02",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "boulder-01",
+      "assetId": "boulder_01",
+      "officialPage": "https://polyhaven.com/a/boulder_01",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "boulder-01/textures/boulder_01_diff_1k.jpg",
+              "sha256": "c38f0e918f6dc16b8d386ba3cdd89805c78320c119a1ceec85856f82b09a65b8"
+            },
+            "normal": {
+              "path": "boulder-01/textures/boulder_01_nor_gl_1k.jpg",
+              "sha256": "0810cf6e89d89bb6eb065b4d2e2855288f5dcbd2c15c6e40ab90d462021b50aa"
+            },
+            "arm": {
+              "path": "boulder-01/textures/boulder_01_arm_1k.jpg",
+              "sha256": "c57187c5746b6be913fa53846cb44ff78743e7ca5000f131c9627b99563c2b87"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "boulder-01/slot-0-base.dds",
+              "bytes": 1398276,
+              "sha256": "5a847a3174e09505b3a404c93716cbae576a5cb8bd32f69ec6395e8c95008d36",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "boulder-01/slot-0-normal.dds",
+              "bytes": 1398276,
+              "sha256": "68fbbe04ffdb1c6d327f4262b9230438623f0d3b4b17a0a5155eb13b9ed21e83",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "boulder-01/slot-0-arm.dds",
+              "bytes": 1398276,
+              "sha256": "564be8685c266fe7fa03acda76c6c06f706911c4344777ceab6563d743284a1e",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "island-tree-01",
+      "assetId": "island_tree_01",
+      "officialPage": "https://polyhaven.com/a/island_tree_01",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "trunk",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "island-tree-01/textures/island_tree_01_diff_1k.jpg",
+              "sha256": "51bff9a3a6ed7d89ff4c73f01708b7267ed8d7a82b0cb12343741894f708218f"
+            },
+            "normal": {
+              "path": "island-tree-01/textures/island_tree_01_nor_gl_1k.jpg",
+              "sha256": "ca22e428e1b1ebac47b2fc67ec355700c8779d6628d2fc6c3ebae9002988f63e"
+            },
+            "arm": {
+              "path": "island-tree-01/textures/island_tree_01_arm_1k.jpg",
+              "sha256": "bf972dff0fbc71f146b4c02103fc3596477a49a9eff46b87b13c89b7b90d18ca"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "island-tree-01/trunk-base.dds",
+              "bytes": 1398276,
+              "sha256": "977054e93d60b7a79e3d43745912b0b1ee44abf56bbfdb7bd6a5a5a4ddc4e9bf",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "island-tree-01/trunk-normal.dds",
+              "bytes": 1398276,
+              "sha256": "24eba3fcb9e8d59b088e9cf312bdf25b32445562ce466262aa1d7834cd17bb7a",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "island-tree-01/trunk-arm.dds",
+              "bytes": 1398276,
+              "sha256": "638e6710501bb04d9626294b182246f7e651970b6ef2f791efb941e2fad9aaa4",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        },
+        {
+          "slot": "branches",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "island-tree-01/textures/island_tree_01_branches_diff_1k.jpg",
+              "sha256": "bee5ec22196e9e31ad0c95a5a9b4636571cc0124d5bb27a92f1e307d289cc60d"
+            },
+            "normal": {
+              "path": "island-tree-01/textures/island_tree_01_branches_nor_gl_1k.jpg",
+              "sha256": "2d67393ba76a0f49cf965fa0c99d8c16268e71e87b1203d35539bfdb971a514e"
+            },
+            "arm": {
+              "path": "island-tree-01/textures/island_tree_01_branches_arm_1k.jpg",
+              "sha256": "9e3f82263247ce4f619692cea4c4f6fe9936ff465a86623481849062642c7d05"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "island-tree-01/branches-base.dds",
+              "bytes": 1398276,
+              "sha256": "6373a1b967113facb26bc5cc3f6e15183b8968b8c8304067b5a911f59fb051d2",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "island-tree-01/branches-normal.dds",
+              "bytes": 1398276,
+              "sha256": "1aa3118c6fba3891c31fb2e5c961edd463e2a65084f611158dea4adc3e39dbbb",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "island-tree-01/branches-arm.dds",
+              "bytes": 1398276,
+              "sha256": "92e5ae39785dbcefc885588deaafd35a1b45d7e5e47f222320b85cb9ce810f05",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        },
+        {
+          "slot": "leaves",
+          "alphaMode": "mask",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "island-tree-01/textures/island_tree_01_leaves_diff_1k.jpg",
+              "sha256": "f56d762a1507754752abf164cc12acbc1e87ce87fa609ac44b98a1b0037c89d8"
+            },
+            "normal": {
+              "path": "island-tree-01/textures/island_tree_01_leaves_nor_gl_1k.jpg",
+              "sha256": "07ba461c0c95da4e49a42981766bdb6191d4c3c4d815796c082266dcc3cecdb8"
+            },
+            "arm": {
+              "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
+              "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "island-tree-01/leaves-base.dds",
+              "bytes": 1398276,
+              "sha256": "03d33629af39476d1d1b8a6a9cecc7d63f7c4417e96e17a514478aa8378a9214",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "island-tree-01/leaves-normal.dds",
+              "bytes": 1398276,
+              "sha256": "cc43d9a2635a0f8a6a750e41cc9857600a16d39fe9edc2d7f2403d39790595ee",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "island-tree-01/leaves-arm.dds",
+              "bytes": 1398276,
+              "sha256": "792095487b7b49038da96ca9cb9e417a52b29f98eb109d953ef4eedcb82e9013",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "dead-tree-trunk-02",
+      "assetId": "dead_tree_trunk_02",
+      "officialPage": "https://polyhaven.com/a/dead_tree_trunk_02",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_diff_1k.jpg",
+              "sha256": "fac23e81ab5639dcde93db605e5dd94c65e0aa2b1fb4a303f37de9afbb9af5b4"
+            },
+            "normal": {
+              "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_nor_gl_1k.jpg",
+              "sha256": "9b26c29b89afced0ddb91dbe6f917e59038bed5ba6076dfceb8d1b4b00ca04f7"
+            },
+            "arm": {
+              "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_arm_1k.jpg",
+              "sha256": "ea15561ce36572ebd0db3c997f70d68a76d4bcbfef7efb4f91c8fd3b5f766e62"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "dead-tree-trunk-02/slot-0-base.dds",
+              "bytes": 1398276,
+              "sha256": "ec34d15de64c18940cf08a70442e367118ac7583abfd1136329037099b52d5c6",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "dead-tree-trunk-02/slot-0-normal.dds",
+              "bytes": 1398276,
+              "sha256": "6d353d62f9120e13b331bcd66e1c2716e145ffed5f530170310e45dec25c567e",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "dead-tree-trunk-02/slot-0-arm.dds",
+              "bytes": 1398276,
+              "sha256": "a79aae7247fb82577d6434c36efe0eef02793dff0de91ae411ecd1eabc593546",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "roofing-tiles014-b",
+      "assetId": "RoofingTiles014B",
+      "officialPage": "https://ambientcg.com/view?id=RoofingTiles014B",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "AO/Roughness packed with explicit non-metallic scalar 0",
+          "sources": {
+            "base": {
+              "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_Color.jpg",
+              "sha256": "19d984cdf32b07ddd2df209318c5fe77bcd6d844373fec40f4c79dcea39ac898"
+            },
+            "normal": {
+              "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_NormalGL.jpg",
+              "sha256": "a0a78b16f67b1b2f92eca2eabf32e8f09fd83bbc6a7c02dc3463942bb00269c0"
+            },
+            "ambientOcclusion": {
+              "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_AmbientOcclusion.jpg",
+              "sha256": "d024563853d609dce0d078200ecdacea5d3190a0bea9b8c0d92cdd44033d66e6"
+            },
+            "roughness": {
+              "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_Roughness.jpg",
+              "sha256": "6a91f9db4d37a28f586e3f71d6caeba8c2508dc5d811e49bcf916619f66299d2"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "roofing-tiles014-b/slot-0-base.dds",
+              "bytes": 1398276,
+              "sha256": "b373ca39a3fa5054156b5a19e826044fd1e9d790765b341d6845a64235b01992",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "roofing-tiles014-b/slot-0-normal.dds",
+              "bytes": 1398276,
+              "sha256": "535682da7e8f938bf7206d7a626e5139266125b18d5447faaa0cc4c631ea7e6c",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "roofing-tiles014-b/slot-0-arm.dds",
+              "bytes": 1398276,
+              "sha256": "db37169d0ee712c3b9bad805878612f2380c3e7ba57a323910b6e21e12ae4de6",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "bricks100",
+      "assetId": "Bricks100",
+      "officialPage": "https://ambientcg.com/view?id=Bricks100",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "AO/Roughness packed with explicit non-metallic scalar 0",
+          "sources": {
+            "base": {
+              "path": "bricks100/source/Bricks100_1K-JPG_Color.jpg",
+              "sha256": "e5596ce79d9a63d6b9a9e9ac15a0bb60d8a5c39b684999a872467641bc91d30d"
+            },
+            "normal": {
+              "path": "bricks100/source/Bricks100_1K-JPG_NormalGL.jpg",
+              "sha256": "3fd468809d149512cbbb7a0ee298bdb1d7c2213da05e5453e6612b8006bd3708"
+            },
+            "ambientOcclusion": {
+              "path": "bricks100/source/Bricks100_1K-JPG_AmbientOcclusion.jpg",
+              "sha256": "7ef8dd9bfd21202fab3b445dd7962ecce22a30035637a9ddca1c40a856d6474b"
+            },
+            "roughness": {
+              "path": "bricks100/source/Bricks100_1K-JPG_Roughness.jpg",
+              "sha256": "907a11988e16ff1ec831523b8fd31a61b3493a37b2253b04718b7f711356786f"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "bricks100/slot-0-base.dds",
+              "bytes": 699236,
+              "sha256": "90f9e96af5fd5d95cfd374e933381055e42af319895e9c24c9764c1b87657676",
+              "height": 512,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "bricks100/slot-0-normal.dds",
+              "bytes": 699236,
+              "sha256": "733119afb13dffef439275247d75b5d80e21929c538bdb7b9cdbabeab411d6fb",
+              "height": 512,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "bricks100/slot-0-arm.dds",
+              "bytes": 699236,
+              "sha256": "476cd54c699996f73bbb11faf0e9d93a3c2c9c69df330e348fbc718eeda3d914",
+              "height": 512,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "assetName": "stony-dirt-path",
+      "assetId": "stony_dirt_path",
+      "officialPage": "https://polyhaven.com/a/stony_dirt_path",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "slot-0",
+          "alphaMode": "opaque",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "sources": {
+            "base": {
+              "path": "stony-dirt-path/source/stony_dirt_path_diff_1k.jpg",
+              "sha256": "a662000ff3f7f64e23c25d2b8cd5947b9c8fd893510c5ed49c0daa2847004758"
+            },
+            "normal": {
+              "path": "stony-dirt-path/source/stony_dirt_path_nor_gl_1k.jpg",
+              "sha256": "2866303f71066f42bd218410bf6d38d9a21cda34c6e3543a8ac92900b7a09c75"
+            },
+            "arm": {
+              "path": "stony-dirt-path/source/stony_dirt_path_arm_1k.jpg",
+              "sha256": "e38820894100350df10c2490dbe8a1b4c31dc523266a84c6c7a1a829d2792502"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "stony-dirt-path/slot-0-base.dds",
+              "bytes": 1398276,
+              "sha256": "ad65700bedb816e745c8f742b26c1f5e59428e350261b1c7b667399ba21a03a4",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "stony-dirt-path/slot-0-normal.dds",
+              "bytes": 1398276,
+              "sha256": "1c5a312de5e4c6a7ede14ef6d8f4ea51d7319bd70a3c725085296cda316635e0",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "stony-dirt-path/slot-0-arm.dds",
+              "bytes": 1398276,
+              "sha256": "bfdeb9645baa1db8949bbd2e29c957bd070f25fee4b7064343209cb6d9f93abd",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

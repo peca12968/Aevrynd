@@ -1,17 +1,18 @@
 {
   "assetCount": 10,
   "schemaVersion": 1,
-  "downloadedInputBytes": 135968108,
+  "downloadedInputBytes": 139386834,
   "memoryGate": "pass",
   "memoryGateMethod": "gltfpack-process-tree",
   "memoryGateDetail": "Windows Job Object peak memory plus sampled process-tree working set; conservative maximum under 2 GiB.",
   "catalogId": "gameplay-ultra-realistic-cc0",
   "downloadBudgetBytes": 1073741824,
-  "runtimeBytes": 174366299.0,
+  "runtimeBytes": 177787439.0,
   "assets": [
     {
       "commercialUse": true,
       "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
       "files": [
         {
           "path": "forest-ground-04/source/forest_ground_04_diff_2k.jpg",
@@ -33,13 +34,29 @@
           "bytes": 2509805,
           "height": 2048,
           "sha256": "24194662948424c323c75e0918461ad9d38bc0a275022000144f248b3efb4119"
+        },
+        {
+          "path": "forest-ground-04/source/forest_ground_04_arm_2k.jpg",
+          "width": 2048,
+          "bytes": 3418726,
+          "height": 2048,
+          "sha256": "a6086cb5611fabcc3dd4c9ac74bcf6cf8ed5d07e136ebe51255a5a3bea9e42c6",
+          "officialSource": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forest_ground_04/forest_ground_04_arm_2k.jpg",
+          "officialMd5": "c688030cc91fbaab71cbc71fc6b280fe"
+        },
+        {
+          "path": "forest-ground-04/forest-ground-04.materials.json",
+          "width": 0,
+          "bytes": 374,
+          "height": 0,
+          "sha256": "84a8b4a16a8ab65e6f01919d34018365e1037f9ebfbbf5fd4149a261880fd7e3"
         }
       ],
       "id": "forest_ground_04",
       "lodLevels": null,
       "source": "poly-haven",
       "resolution": "2k",
-      "textureBytes": 12327975.0,
+      "textureBytes": 15746701.0,
       "assetName": "forest-ground-04",
       "license": "CC0-1.0",
       "kind": "pbr-material",
@@ -49,6 +66,7 @@
     {
       "commercialUse": true,
       "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
       "files": [
         {
           "path": "ground108/source/Ground108_1K-JPG_AmbientOcclusion.jpg",
@@ -98,6 +116,13 @@
           "bytes": 495744,
           "height": 512,
           "sha256": "d814761db879d09d185b340572cf2fd2bfc03537f360cd910e4e43bd45cd6560"
+        },
+        {
+          "path": "ground108/ground108.materials.json",
+          "width": 0,
+          "bytes": 475,
+          "height": 0,
+          "sha256": "5e7cb914450293d4966af5405ad1d6c64923a4eb6fd94db3cd525c7bc42a9f62"
         }
       ],
       "id": "Ground108",
@@ -142,8 +167,8 @@
         },
         {
           "path": "coastal-cliff-01/coastal-cliff-01.materials.json",
-          "bytes": 336,
-          "sha256": "9917993342860e63d78900e452d7dca8fe6ab747a3c0e92ae8166bd6f949e00c"
+          "bytes": 390,
+          "sha256": "1b34d77191ced74f4c4693925bbbfa3cacdb23a149abea0f6e867c8eb3e88d76"
         },
         {
           "path": "coastal-cliff-01/textures/coastal_cliff_01_arm_1k.jpg",
@@ -234,8 +259,8 @@
         },
         {
           "path": "boulder-01/boulder-01.materials.json",
-          "bytes": 318,
-          "sha256": "c37becda34ef6ab5df5eb1133b53e960c57bc98d89f29bc1affc529ea0deaaef"
+          "bytes": 372,
+          "sha256": "bb0349133838c9a9fb405029c22fccacd255a7c1e1dc9380921b4c4f9b5b39f9"
         },
         {
           "path": "boulder-01/textures/boulder_01_arm_1k.jpg",
@@ -301,6 +326,7 @@
     {
       "commercialUse": true,
       "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
       "files": [
         {
           "path": "island-tree-01/island-tree-01-lod0.glb",
@@ -327,8 +353,8 @@
           "path": "island-tree-01/island-tree-01.materials.json",
           "width": 0,
           "height": 0,
-          "bytes": 829,
-          "sha256": "d6654a631eb89fd82a2b745cd7a2b219ead15b28458fe83765b1189320c3b8c2"
+          "bytes": 883,
+          "sha256": "94324773f125c7b10b04a71f8e7f23ac221c2bb352e954cc3f73e2993b97924e"
         },
         {
           "path": "island-tree-01/textures/island_tree_01_arm_1k.jpg",
@@ -503,8 +529,8 @@
         },
         {
           "path": "dead-tree-trunk-02/dead-tree-trunk-02.materials.json",
-          "bytes": 342,
-          "sha256": "805f152f8c41982a1d499898f9662058876788a012880e1965ebcaba83071388"
+          "bytes": 396,
+          "sha256": "7124b09081bdc9ad6ab854587ba199ac64d6bd8eb65ddb0e5696c963302e7f50"
         },
         {
           "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_arm_1k.jpg",
@@ -570,6 +596,7 @@
     {
       "commercialUse": true,
       "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
       "files": [
         {
           "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_AmbientOcclusion.jpg",
@@ -626,6 +653,13 @@
           "bytes": 338554,
           "height": 512,
           "sha256": "a16d4dfcf09536e83119a8284c0cd8ca42da38918c402439ace3a9da5897f474"
+        },
+        {
+          "path": "roofing-tiles014-b/roofing-tiles014-b.materials.json",
+          "width": 0,
+          "bytes": 503,
+          "height": 0,
+          "sha256": "fa08e72ca0d87f0a6c155eced1aaf67c048ed65ed1dace50192f8306a354f4a7"
         }
       ],
       "id": "RoofingTiles014B",
@@ -645,6 +679,7 @@
     {
       "commercialUse": true,
       "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
       "files": [
         {
           "path": "bricks100/source/Bricks100_1K-JPG_AmbientOcclusion.jpg",
@@ -694,6 +729,13 @@
           "bytes": 429720,
           "height": 512,
           "sha256": "8858e77a5261a56e82bf270fcf9c83d668ce1c7e9cccb8d7107b0a1cc4c3c412"
+        },
+        {
+          "path": "bricks100/bricks100.materials.json",
+          "width": 0,
+          "bytes": 475,
+          "height": 0,
+          "sha256": "52ca174982319e70bb7278ace7f3c4ebe17b751a1b8276f2b215298b5f7f4874"
         }
       ],
       "id": "Bricks100",
@@ -713,6 +755,7 @@
     {
       "commercialUse": true,
       "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
       "files": [
         {
           "path": "stony-dirt-path/source/stony_dirt_path_arm_1k.jpg",
@@ -734,6 +777,13 @@
           "bytes": 1416394,
           "height": 1024,
           "sha256": "2866303f71066f42bd218410bf6d38d9a21cda34c6e3543a8ac92900b7a09c75"
+        },
+        {
+          "path": "stony-dirt-path/stony-dirt-path.materials.json",
+          "width": 0,
+          "bytes": 371,
+          "height": 0,
+          "sha256": "c7db86d06c1c0105e10584b440f0614c2cebad0fcc8301f4ff500ffb9d4abe35"
         }
       ],
       "id": "stony_dirt_path",

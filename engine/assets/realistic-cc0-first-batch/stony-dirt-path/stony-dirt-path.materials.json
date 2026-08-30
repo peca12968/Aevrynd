@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "binding": "runtime-sidecar",
+  "normalConvention": "OpenGL",
+  "outputResolution": 1024,
+  "expectedMipCount": 11,
+  "materials": [
+    {
+      "name": "slot-0",
+      "baseColor": "source/stony_dirt_path_diff_1k.jpg",
+      "normalGl": "source/stony_dirt_path_nor_gl_1k.jpg",
+      "packedArm": "source/stony_dirt_path_arm_1k.jpg"
+    }
+  ]
+}

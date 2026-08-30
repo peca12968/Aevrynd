@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "boulder-01",
+  "lod": 1,
+  "sourceFile": "boulder-01-lod1.glb",
+  "sourceSha256": "ac41bbdffc041c80aa9f2176a2ffc0f3443440112afe54ef143277dba08ba02a",
+  "outputs": [
+    {
+      "file": "boulder-01-lod1-node0-mesh0-primitive0-material0-boulder-01.aemesh",
+      "sha256": "4c5172dca2fa20ab7fc0a44dd9c38c5853e59f8bf3ab95eb711f1f8b2771728b",
+      "bytes": 2240604,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "boulder-01",
+      "vertices": 65852,
+      "indices": 99183,
+      "triangles": 33061,
+      "boundsMinimumGltf": [
+        -0.7512483596801758,
+        -0.07368797063827515,
+        -0.9484404921531677
+      ],
+      "boundsMaximumGltf": [
+        0.5239759087562561,
+        0.9320645332336426,
+        0.8814364671707153
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true
+    }
+  ],
+  "outputCount": 1,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 2240604,
+  "totalTriangles": 33061,
+  "peakWorkingSetBytes": 107941888,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

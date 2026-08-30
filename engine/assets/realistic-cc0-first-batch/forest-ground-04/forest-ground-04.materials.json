@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "binding": "runtime-sidecar",
+  "normalConvention": "OpenGL",
+  "outputResolution": 2048,
+  "expectedMipCount": 12,
+  "materials": [
+    {
+      "name": "slot-0",
+      "baseColor": "source/forest_ground_04_diff_2k.jpg",
+      "normalGl": "source/forest_ground_04_nor_gl_2k.jpg",
+      "packedArm": "source/forest_ground_04_arm_2k.jpg"
+    }
+  ]
+}

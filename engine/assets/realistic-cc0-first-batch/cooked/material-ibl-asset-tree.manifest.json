@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "fileCount": 38,
+  "totalBytes": 56864608,
+  "files": [
+    {
+      "path": "ibl/environment-brdf.dds",
+      "bytes": 65684,
+      "sha256": "b36b75cc849301004b795f89a1daed5f5f78b8686b93679ef15b763006f2b2f6"
+    },
+    {
+      "path": "ibl/environment-irradiance.dds",
+      "bytes": 8500,
+      "sha256": "b058aa7278fc3127ace7685e9710a613e904c18337f3ee676d5d1647faa9de5e"
+    },
+    {
+      "path": "ibl/environment-specular.dds",
+      "bytes": 131380,
+      "sha256": "6fba886f002d6fcd9fdda655c0c604611bcb6c1f9c6b5e0d67ab255282a6fad1"
+    },
+    {
+      "path": "ibl/ibl-bake-receipt.json",
+      "bytes": 1872,
+      "sha256": "173ae2ffcee789bd285f980207f5119b073702c1fddc92e3871f1929161f0bf2"
+    },
+    {
+      "path": "materials/boulder-01/slot-0-arm.dds",
+      "bytes": 1398276,
+      "sha256": "564be8685c266fe7fa03acda76c6c06f706911c4344777ceab6563d743284a1e"
+    },
+    {
+      "path": "materials/boulder-01/slot-0-base.dds",
+      "bytes": 1398276,
+      "sha256": "5a847a3174e09505b3a404c93716cbae576a5cb8bd32f69ec6395e8c95008d36"
+    },
+    {
+      "path": "materials/boulder-01/slot-0-normal.dds",
+      "bytes": 1398276,
+      "sha256": "68fbbe04ffdb1c6d327f4262b9230438623f0d3b4b17a0a5155eb13b9ed21e83"
+    },
+    {
+      "path": "materials/bricks100/slot-0-arm.dds",
+      "bytes": 699236,
+      "sha256": "476cd54c699996f73bbb11faf0e9d93a3c2c9c69df330e348fbc718eeda3d914"
+    },
+    {
+      "path": "materials/bricks100/slot-0-base.dds",
+      "bytes": 699236,
+      "sha256": "90f9e96af5fd5d95cfd374e933381055e42af319895e9c24c9764c1b87657676"
+    },
+    {
+      "path": "materials/bricks100/slot-0-normal.dds",
+      "bytes": 699236,
+      "sha256": "733119afb13dffef439275247d75b5d80e21929c538bdb7b9cdbabeab411d6fb"
+    },
+    {
+      "path": "materials/coastal-cliff-01/slot-0-arm.dds",
+      "bytes": 1398276,
+      "sha256": "a9262b140284f58b1574e661c842d026bf76a5596ef561f70b1dfddd34080e02"
+    },
+    {
+      "path": "materials/coastal-cliff-01/slot-0-base.dds",
+      "bytes": 1398276,
+      "sha256": "410dd7ad59fac581d97c3d11dca6117c4697f8abcb32c5478085421b2585a38c"
+    },
+    {
+      "path": "materials/coastal-cliff-01/slot-0-normal.dds",
+      "bytes": 1398276,
+      "sha256": "93c7e9da6acb5d9237e322b15aae6e907c7b65ef37fd698bbf103a31a12bd09f"
+    },
+    {
+      "path": "materials/dead-tree-trunk-02/slot-0-arm.dds",
+      "bytes": 1398276,
+      "sha256": "a79aae7247fb82577d6434c36efe0eef02793dff0de91ae411ecd1eabc593546"
+    },
+    {
+      "path": "materials/dead-tree-trunk-02/slot-0-base.dds",
+      "bytes": 1398276,
+      "sha256": "ec34d15de64c18940cf08a70442e367118ac7583abfd1136329037099b52d5c6"
+    },
+    {
+      "path": "materials/dead-tree-trunk-02/slot-0-normal.dds",
+      "bytes": 1398276,
+      "sha256": "6d353d62f9120e13b331bcd66e1c2716e145ffed5f530170310e45dec25c567e"
+    },
+    {
+      "path": "materials/forest-ground-04/slot-0-arm.dds",
+      "bytes": 5592580,
+      "sha256": "3427bf0a83e0c33326a207f700305620402fd0fb6c532240f204bcebefeabcc4"
+    },
+    {
+      "path": "materials/forest-ground-04/slot-0-base.dds",
+      "bytes": 5592580,
+      "sha256": "dba770a1b96ef6f0a45e0edff99594499fcc8d76abfa62a0986153313f350865"
+    },
+    {
+      "path": "materials/forest-ground-04/slot-0-normal.dds",
+      "bytes": 5592580,
+      "sha256": "56e687b2a208f2eaaf9b0e3670530f0a36e5e88d6e74b26090633daaa4e9db93"
+    },
+    {
+      "path": "materials/ground108/slot-0-arm.dds",
+      "bytes": 1398276,
+      "sha256": "ce0c636264a9c1c5cb5055259dde80b92c9bea3145dc8ea8f28a7f9f3903e5ed"
+    },
+    {
+      "path": "materials/ground108/slot-0-base.dds",
+      "bytes": 1398276,
+      "sha256": "2703b20ee77d556daa64535af15433bb3157083174e6d71671aa052ccae11589"
+    },
+    {
+      "path": "materials/ground108/slot-0-normal.dds",
+      "bytes": 1398276,
+      "sha256": "e63efd69f4d1e7978f1cd152c5b2115151bcbc208f9f661bc35af0ec6af80032"
+    },
+    {
+      "path": "materials/island-tree-01/branches-arm.dds",
+      "bytes": 1398276,
+      "sha256": "92e5ae39785dbcefc885588deaafd35a1b45d7e5e47f222320b85cb9ce810f05"
+    },
+    {
+      "path": "materials/island-tree-01/branches-base.dds",
+      "bytes": 1398276,
+      "sha256": "6373a1b967113facb26bc5cc3f6e15183b8968b8c8304067b5a911f59fb051d2"
+    },
+    {
+      "path": "materials/island-tree-01/branches-normal.dds",
+      "bytes": 1398276,
+      "sha256": "1aa3118c6fba3891c31fb2e5c961edd463e2a65084f611158dea4adc3e39dbbb"
+    },
+    {
+      "path": "materials/island-tree-01/leaves-arm.dds",
+      "bytes": 1398276,
+      "sha256": "792095487b7b49038da96ca9cb9e417a52b29f98eb109d953ef4eedcb82e9013"
+    },
+    {
+      "path": "materials/island-tree-01/leaves-base.dds",
+      "bytes": 1398276,
+      "sha256": "03d33629af39476d1d1b8a6a9cecc7d63f7c4417e96e17a514478aa8378a9214"
+    },
+    {
+      "path": "materials/island-tree-01/leaves-normal.dds",
+      "bytes": 1398276,
+      "sha256": "cc43d9a2635a0f8a6a750e41cc9857600a16d39fe9edc2d7f2403d39790595ee"
+    },
+    {
+      "path": "materials/island-tree-01/trunk-arm.dds",
+      "bytes": 1398276,
+      "sha256": "638e6710501bb04d9626294b182246f7e651970b6ef2f791efb941e2fad9aaa4"
+    },
+    {
+      "path": "materials/island-tree-01/trunk-base.dds",
+      "bytes": 1398276,
+      "sha256": "977054e93d60b7a79e3d43745912b0b1ee44abf56bbfdb7bd6a5a5a4ddc4e9bf"
+    },
+    {
+      "path": "materials/island-tree-01/trunk-normal.dds",
+      "bytes": 1398276,
+      "sha256": "24eba3fcb9e8d59b088e9cf312bdf25b32445562ce466262aa1d7834cd17bb7a"
+    },
+    {
+      "path": "materials/material-bake-receipt.json",
+      "bytes": 28272,
+      "sha256": "56eae307076ae9c5411dc33972d803013b514c445b54691f5d7099056a29040f"
+    },
+    {
+      "path": "materials/roofing-tiles014-b/slot-0-arm.dds",
+      "bytes": 1398276,
+      "sha256": "db37169d0ee712c3b9bad805878612f2380c3e7ba57a323910b6e21e12ae4de6"
+    },
+    {
+      "path": "materials/roofing-tiles014-b/slot-0-base.dds",
+      "bytes": 1398276,
+      "sha256": "b373ca39a3fa5054156b5a19e826044fd1e9d790765b341d6845a64235b01992"
+    },
+    {
+      "path": "materials/roofing-tiles014-b/slot-0-normal.dds",
+      "bytes": 1398276,
+      "sha256": "535682da7e8f938bf7206d7a626e5139266125b18d5447faaa0cc4c631ea7e6c"
+    },
+    {
+      "path": "materials/stony-dirt-path/slot-0-arm.dds",
+      "bytes": 1398276,
+      "sha256": "bfdeb9645baa1db8949bbd2e29c957bd070f25fee4b7064343209cb6d9f93abd"
+    },
+    {
+      "path": "materials/stony-dirt-path/slot-0-base.dds",
+      "bytes": 1398276,
+      "sha256": "ad65700bedb816e745c8f742b26c1f5e59428e350261b1c7b667399ba21a03a4"
+    },
+    {
+      "path": "materials/stony-dirt-path/slot-0-normal.dds",
+      "bytes": 1398276,
+      "sha256": "1c5a312de5e4c6a7ede14ef6d8f4ea51d7319bd70a3c725085296cda316635e0"
+    }
+  ]
+}

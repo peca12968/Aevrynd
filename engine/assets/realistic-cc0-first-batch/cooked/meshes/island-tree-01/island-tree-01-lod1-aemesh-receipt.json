@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "island-tree-01",
+  "lod": 1,
+  "sourceFile": "island-tree-01-lod1.glb",
+  "sourceSha256": "c1da336cd188f30c886ec3bb33a5fd41bdfa65c37326359537e110af8f0d8472",
+  "outputs": [
+    {
+      "file": "island-tree-01-lod1-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
+      "sha256": "0bb0948a5cb7c39d129a8a847ddf8410c71c1429955be5b35c25121d16e93c5d",
+      "bytes": 493660,
+      "nodeIndex": 0,
+      "nodePath": [
+        1,
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "island-tree-01",
+      "vertices": 10176,
+      "indices": 52179,
+      "triangles": 17393,
+      "boundsMinimumGltf": [
+        -1.4261055244099998,
+        -0.0203278996,
+        -1.731667658984
+      ],
+      "boundsMaximumGltf": [
+        1.7236054972140002,
+        3.559921368647,
+        1.2547886604279999
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true
+    },
+    {
+      "file": "island-tree-01-lod1-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
+      "sha256": "29e303ee33a8e821f8a036d2e52197b813f6389d805da704eda4951da755ac40",
+      "bytes": 21375028,
+      "nodeIndex": 0,
+      "nodePath": [
+        1,
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 1,
+      "materialIndex": 1,
+      "materialName": "island-tree-01-leaves",
+      "vertices": 536244,
+      "indices": 1590045,
+      "triangles": 530015,
+      "boundsMinimumGltf": [
+        -2.34364605,
+        0.63023595132,
+        -2.58353806
+      ],
+      "boundsMaximumGltf": [
+        2.410686847313,
+        5.007119067203,
+        2.2340100039590003
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true
+    },
+    {
+      "file": "island-tree-01-lod1-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
+      "sha256": "34aceb1f5aa93d40a38a094f95417f96d225c46998fc3f1979927e16ca8822ba",
+      "bytes": 8328656,
+      "nodeIndex": 0,
+      "nodePath": [
+        1,
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 2,
+      "materialIndex": 2,
+      "materialName": "island-tree-01-branches",
+      "vertices": 190897,
+      "indices": 745881,
+      "triangles": 248627,
+      "boundsMinimumGltf": [
+        -2.314800294346,
+        0.652330572672,
+        -2.5427243844469998
+      ],
+      "boundsMaximumGltf": [
+        2.354836554451,
+        4.9509619046,
+        2.2024024206360004
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true
+    }
+  ],
+  "outputCount": 3,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 30197344,
+  "totalTriangles": 796035,
+  "peakWorkingSetBytes": 807960576,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

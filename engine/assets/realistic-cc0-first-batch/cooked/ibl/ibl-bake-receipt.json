@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "source": "D:\\Download\\Aevrynd\\Games\\engine\\assets\\realistic-cc0-first-batch\\xanderklinge\\source\\xanderklinge_1k.hdr",
+  "sourceSha256": "e688f624cd66973515154f200d6998b8731fd57dd8f6c2d71eb315454e9c3ef8",
+  "sourceLicense": "CC0-1.0",
+  "commercialUse": true,
+  "rotationDegrees": 0.0,
+  "specularSamples": 64,
+  "irradianceSamples": 128,
+  "brdfSamples": 128,
+  "tool": {
+    "name": "DirectXTex texconv",
+    "tag": "may2026",
+    "commit": "4feb3e1",
+    "officialUrl": "https://github.com/microsoft/DirectXTex/releases/tag/may2026",
+    "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+  },
+  "memoryGate": "pass",
+  "peakWorkingSetLimitBytes": 2147483648,
+  "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
+  "outputs": [
+    {
+      "path": "environment-specular.dds",
+      "bytes": 131380,
+      "sha256": "6fba886f002d6fcd9fdda655c0c604611bcb6c1f9c6b5e0d67ab255282a6fad1",
+      "height": 128,
+      "width": 128,
+      "mips": 8,
+      "caps2": 65024,
+      "format": 95,
+      "dimension": 3,
+      "misc": 4,
+      "array": 1
+    },
+    {
+      "path": "environment-irradiance.dds",
+      "bytes": 8500,
+      "sha256": "b058aa7278fc3127ace7685e9710a613e904c18337f3ee676d5d1647faa9de5e",
+      "height": 32,
+      "width": 32,
+      "mips": 6,
+      "caps2": 65024,
+      "format": 95,
+      "dimension": 3,
+      "misc": 4,
+      "array": 1
+    },
+    {
+      "path": "environment-brdf.dds",
+      "bytes": 65684,
+      "sha256": "b36b75cc849301004b795f89a1daed5f5f78b8686b93679ef15b763006f2b2f6",
+      "height": 128,
+      "width": 128,
+      "mips": 1,
+      "caps2": 0,
+      "format": 34,
+      "dimension": 3,
+      "misc": 0,
+      "array": 1
+    }
+  ]
+}

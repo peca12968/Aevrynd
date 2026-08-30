@@ -1,0 +1,44 @@
+{
+    "schemaVersion":  1,
+    "converter":  "convert-glb-to-aemesh.py",
+    "assets":  [
+                   "boulder-01",
+                   "coastal-cliff-01",
+                   "dead-tree-trunk-02",
+                   "island-tree-01"
+               ],
+    "lodReceipts":  12,
+    "outputFiles":  18,
+    "totalBytes":  128801268,
+    "totalTriangles":  3655484,
+    "maximumPeakWorkingSetBytes":  1443921920,
+    "peakWorkingSetScope":  "converter-process-no-children",
+    "peakLimitBytes":  2147483648,
+    "memoryGate":  true,
+    "islandMaterialSlotsByLod":  [
+                                     {
+                                         "lod":  0,
+                                         "slots":  [
+                                                       0,
+                                                       1,
+                                                       2
+                                                   ]
+                                     },
+                                     {
+                                         "lod":  1,
+                                         "slots":  [
+                                                       0,
+                                                       1,
+                                                       2
+                                                   ]
+                                     },
+                                     {
+                                         "lod":  2,
+                                         "slots":  [
+                                                       0,
+                                                       1,
+                                                       2
+                                                   ]
+                                     }
+                                 ]
+}

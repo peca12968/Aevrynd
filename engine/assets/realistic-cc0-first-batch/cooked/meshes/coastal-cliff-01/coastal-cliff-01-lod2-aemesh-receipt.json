@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "coastal-cliff-01",
+  "lod": 2,
+  "sourceFile": "coastal-cliff-01-lod2.glb",
+  "sourceSha256": "6ac7a47e9212e7a9b3e745fe754eaadafda4dacf5c6d545a9006e3f55d8ae6ae",
+  "outputs": [
+    {
+      "file": "coastal-cliff-01-lod2-node0-mesh0-primitive0-material0-coastal-cliff-01.aemesh",
+      "sha256": "01d08ff97699086915750bb8f7febfb414afea47691d3edc3ac62d0c793cd451",
+      "bytes": 1934912,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "coastal-cliff-01",
+      "vertices": 39415,
+      "indices": 207819,
+      "triangles": 69273,
+      "boundsMinimumGltf": [
+        -45.05914306640625,
+        -0.6485205888748169,
+        -6.205799102783203
+      ],
+      "boundsMaximumGltf": [
+        46.918636322021484,
+        9.674300193786621,
+        4.751523971557617
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true
+    }
+  ],
+  "outputCount": 1,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 1934912,
+  "totalTriangles": 69273,
+  "peakWorkingSetBytes": 93753344,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

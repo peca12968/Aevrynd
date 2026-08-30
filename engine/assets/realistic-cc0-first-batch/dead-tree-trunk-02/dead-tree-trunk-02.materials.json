@@ -2,6 +2,8 @@
   "schemaVersion": 1,
   "binding": "runtime-sidecar",
   "meshMaterialBinding": "integration-required",
+  "outputResolution": 1024,
+  "expectedMipCount": 11,
   "materials": [
     {
       "slot": 0,

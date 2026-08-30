@@ -3,6 +3,8 @@
   "assetName": "island-tree-01",
   "resolutionPolicy": "1k-runtime",
   "normalConvention": "OpenGL",
+  "outputResolution": 1024,
+  "expectedMipCount": 11,
   "materials": [
     {
       "name": "trunk",

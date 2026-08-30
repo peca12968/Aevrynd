@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "binding": "runtime-sidecar",
+  "normalConvention": "OpenGL",
+  "outputResolution": 1024,
+  "expectedMipCount": 11,
+  "materials": [
+    {
+      "name": "slot-0",
+      "baseColor": "source/RoofingTiles014B_1K-JPG_Color.jpg",
+      "normalGl": "source/RoofingTiles014B_1K-JPG_NormalGL.jpg",
+      "ambientOcclusion": "source/RoofingTiles014B_1K-JPG_AmbientOcclusion.jpg",
+      "roughness": "source/RoofingTiles014B_1K-JPG_Roughness.jpg",
+      "metallicScalar": 0
+    }
+  ]
+}
