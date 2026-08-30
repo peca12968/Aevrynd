@@ -1,4 +1,6 @@
 #include "GameplayLabGame.h"
+#include <Aevrynd/EnvironmentMeshes3D.h>
+#include <Aevrynd/MeshLoader.h>
 #include <array>
 #include <cctype>
 #include <format>
@@ -59,7 +61,7 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
     tap(VK_TAB);
     break;
   case 24:
-    PostMessageW(engine.Window(), WM_MOUSEMOVE, 0, MAKELPARAM(640, 360));
+    PostMessageW(engine.Window(), WM_MOUSEMOVE, 0, MAKELPARAM(80, 515));
     PostMessageW(engine.Window(), WM_LBUTTONDOWN, 0, 0);
     break;
   case 25:
@@ -146,6 +148,7 @@ void PostReplayInput(Engine &engine, std::uint64_t tick) {
 ReusableMemoryStats GameplayLabGame::GetReusableMemoryStats()const{const auto c=collisions_.MemoryStats(),p=physics_.MemoryStats(),s=scene_.MemoryStats(),k=skinning_.MemoryStats(),fa=femaleAnimation_.MemoryStats(),ma=maleAnimation_.MemoryStats(),mo=monsterAnimation_.MemoryStats(),ff=femaleFootPlacement_.MemoryStats(),mf=maleFootPlacement_.MemoryStats(),ph=playerHistory_.MemoryStats(),mh=monsterHistory_.MemoryStats();return{c.retainedCapacityBytes+p.retainedCapacityBytes+s.retainedCapacityBytes+k.retainedCapacityBytes+fa.retainedCapacityBytes+ma.retainedCapacityBytes+mo.retainedCapacityBytes+ff.retainedCapacityBytes+mf.retainedCapacityBytes+ph.retainedCapacityBytes+mh.retainedCapacityBytes,c.reclaimableCapacityBytes+p.reclaimableCapacityBytes+s.reclaimableCapacityBytes+k.reclaimableCapacityBytes+fa.reclaimableCapacityBytes+ma.reclaimableCapacityBytes+mo.reclaimableCapacityBytes+ff.reclaimableCapacityBytes+mf.reclaimableCapacityBytes+ph.reclaimableCapacityBytes+mh.reclaimableCapacityBytes,released_,trims_};}
 std::size_t GameplayLabGame::TrimReusableMemory(){const auto before=GetReusableMemoryStats().retainedCapacityBytes;collisions_.TrimUnusedMemory();physics_.TrimUnusedMemory();scene_.TrimUnusedMemory();skinning_.TrimUnusedMemory();femaleAnimation_.TrimUnusedMemory();maleAnimation_.TrimUnusedMemory();monsterAnimation_.TrimUnusedMemory();femaleFootPlacement_.TrimUnusedMemory();maleFootPlacement_.TrimUnusedMemory();playerHistory_.TrimUnusedMemory();monsterHistory_.TrimUnusedMemory();const auto after=GetReusableMemoryStats().retainedCapacityBytes;released_=before>after?before-after:0;++trims_;return released_;}
 void GameplayLabGame::OnStart(Engine& engine){
+  engine.SetRenderQuality(RenderQuality3D::Ultra);
   std::array<char,128> expectedFingerprint{};
   const DWORD expectedLength=GetEnvironmentVariableA("AEVRYND_EXPECTED_CHARACTER_FINGERPRINT",expectedFingerprint.data(),DWORD(expectedFingerprint.size()));
   if(expectedLength&&expectedLength<expectedFingerprint.size())expectedSourceFingerprint_.assign(expectedFingerprint.data(),expectedLength);
@@ -155,7 +158,47 @@ void GameplayLabGame::OnStart(Engine& engine){
   rules_.Reset();controller_.Reset({0,0,5});
   boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());
   sphereMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(18,12));
+  if(!showcaseEnvironment_.Initialize(0x4a17u))throw std::runtime_error("Gameplay showcase environment initialization failed");
+  showcaseCylinderMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCylinder(14));
+  showcaseConeHighMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(16));
+  showcaseConeLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(7));
+  showcaseGrassHighMesh_=engine.CreateMeshResource3D(CreateGrassClumpMesh3D(11,3));
+  showcaseGrassLowMesh_=engine.CreateMeshResource3D(CreateGrassClumpMesh3D(4,2));
+  showcaseTreeLowMesh_=engine.CreateMeshResource3D(CreateTreeLodMesh3D());
+  showcaseRockLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(7,4));
+  showcaseTerrain_.Configure({{-256,0,-256},129,129,4});
+  showcaseTerrain_.GenerateNatural(0x4a17u,{19,.012f,.6f,25,6});
+  showcaseTerrain_.FlattenCircle({0,0,5},28,0,18);
+  showcaseTerrainMesh_=engine.CreateMeshResource3D(showcaseTerrain_.CreateMesh({{.08f,.2f,.055f,1},{.36f,.42f,.18f,1},{.31f,.28f,.24f,1},.74f,{.24f,.15f,.075f,1},-1.6f,5.f}));
+  if(!showcaseCylinderMesh_||!showcaseConeHighMesh_||!showcaseConeLowMesh_||!showcaseGrassHighMesh_||!showcaseGrassLowMesh_||!showcaseTreeLowMesh_||!showcaseRockLowMesh_||!showcaseTerrainMesh_)throw std::runtime_error("Gameplay showcase procedural GPU upload failed");
   const auto assetRoot=engine.ExecutableDirectory()/"assets";
+  engine.SetMaterialTextureMemoryBudget(128*1024*1024);
+  showcaseMaterialLibrary_.Initialize(engine,assetRoot/"environment-material-packs");
+  const std::array<MaterialAssetDefinition3D,4> showcaseMaterials={
+    MaterialAssetDefinition3D{"ground",{"ambientcg/ground037/1k/Ground037_1K-JPG_Color.jpg","ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg",1024,"ambientcg/ground037/1k/Ground037_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.78f,0,0,.9f},false,{},.085f}},
+    MaterialAssetDefinition3D{"wood",{"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg","ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",1024,"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.48f,0,0,1},true,{},.48f}},
+    MaterialAssetDefinition3D{"bark",{"poly-haven/bark_brown_02/1k/base-color.jpg","poly-haven/bark_brown_02/1k/roughness.jpg",1024,"poly-haven/bark_brown_02/1k/normal-dx.jpg"},{{1,1,1,1},{.82f,0,0,.92f},true,{},1.f}},
+    MaterialAssetDefinition3D{"rock",{"poly-haven/aerial_ground_rock/1k/base-color.jpg","poly-haven/aerial_ground_rock/1k/roughness.jpg",1024,"poly-haven/aerial_ground_rock/1k/normal-dx.jpg"},{{1,1,1,1},{.76f,0,0,1},true,{},.5f}}};
+  if(!showcaseMaterialLibrary_.LoadAll(showcaseMaterials))throw std::runtime_error("Gameplay showcase CC0 PBR material loading failed");
+  if(const auto* value=showcaseMaterialLibrary_.Find("ground"))showcaseGroundMaterial_=*value;
+  if(const auto* value=showcaseMaterialLibrary_.Find("wood"))showcaseWoodMaterial_=*value;
+  if(const auto* value=showcaseMaterialLibrary_.Find("bark"))showcaseBarkMaterial_=*value;
+  if(const auto* value=showcaseMaterialLibrary_.Find("rock"))showcaseRockMaterial_=*value;
+  showcaseGroundMaterial_.normalScale=.65f;showcaseWoodMaterial_.normalScale=.8f;showcaseBarkMaterial_.normalScale=1.1f;showcaseRockMaterial_.normalScale=1.2f;
+  const auto showcaseModelRoot=assetRoot/"environment-model-packs";
+  showcaseModelMaterialLibrary_.Initialize(engine,showcaseModelRoot);
+  const std::array<MaterialAssetDefinition3D,2> showcaseModelMaterials={
+    MaterialAssetDefinition3D{"quiver-tree-02",{"poly-haven/quiver_tree_02/1k/base-color.jpg","poly-haven/quiver_tree_02/1k/roughness.jpg",1024,"poly-haven/quiver_tree_02/1k/normal-dx.jpg"},{{1,1,1,1},{.82f,0,0,.92f},true,{},1.f,true}},
+    MaterialAssetDefinition3D{"rock-09",{"poly-haven/rock_09/1k/base-color.jpg","poly-haven/rock_09/1k/roughness.jpg",1024,"poly-haven/rock_09/1k/normal-dx.jpg"},{{1,1,1,1},{.76f,0,0,1},true,{},1.f,true}}};
+  if(!showcaseModelMaterialLibrary_.LoadAll(showcaseModelMaterials))throw std::runtime_error("Gameplay showcase CC0 model material loading failed");
+  if(const auto* value=showcaseModelMaterialLibrary_.Find("quiver-tree-02"))showcaseQuiverTreeMaterial_=*value;
+  if(const auto* value=showcaseModelMaterialLibrary_.Find("rock-09"))showcaseRock09Material_=*value;
+  showcaseQuiverTreeMaterial_.materialClass=MaterialClass3D::Foliage;showcaseQuiverTreeMaterial_.normalScale=.9f;showcaseRock09Material_.normalScale=1.15f;
+  const auto quiverTree=LoadAevryndMeshFile(showcaseModelRoot/"poly-haven"/"quiver_tree_02"/"quiver_tree_02.aemesh");
+  const auto rock09=LoadAevryndMeshFile(showcaseModelRoot/"poly-haven"/"rock_09"/"rock_09.aemesh");
+  if(!quiverTree||!rock09)throw std::runtime_error("Gameplay showcase CC0 model mesh loading failed");
+  showcaseQuiverTreeMesh_=engine.CreateMeshResource3D(quiverTree.mesh);showcaseRock09Mesh_=engine.CreateMeshResource3D(rock09.mesh);
+  if(!showcaseQuiverTreeMesh_||!showcaseRock09Mesh_)throw std::runtime_error("Gameplay showcase CC0 model GPU upload failed");
   const auto modelRoot=assetRoot/"model-packs";
   const auto materialRoot=assetRoot/"material-packs"/"original";
   auto female=LoadSkinnedModelAssetFileDetailed(modelRoot/"realistic-female"/"realistic-female.aeskin");
@@ -193,6 +236,10 @@ void GameplayLabGame::OnStart(Engine& engine){
   }
   femaleAnimation_.SetState(AnimationState3D::Idle,true);maleAnimation_.SetState(AnimationState3D::Idle,true);monsterAnimation_.SetState(AnimationState3D::Idle,true);
   scene_.SetBoxMesh(boxMesh_);
+  scene_.Reserve({0,64,256,512,256});
+  paletteUi_->SetLayout({18,502,344,150},4);
+  showcaseEnvironment_.ApplyUltraProfile(engine.Draw());
+  showcaseRendererBaseline_=engine.GetRendererStats();
   collisions_.CreateBox({{{0,-.5f,0},{30,.5f,30}},1,0xffffffffu});
   collisions_.CreateBox({{{0,1.5f,-12},{4,1.5f,.6f}},1,0xffffffffu});
   physics_.CreateBody({RigidBodyType3D::Static,{{0,-.5f,0},{},{30,1,30}},{30,.5f,30}});
@@ -225,7 +272,23 @@ void GameplayLabGame::OnStop(Engine &engine) {
         runId_, grab.pickAttempts, grab.pickRejected, grab.grabs,
         grab.dragSteps, grab.drops, palette_->Grabbed() ? 1 : 0);
   }
+  if(!captureDirectory_.empty()){
+    const auto ui=paletteUi_->Receipt();
+    std::ofstream uiOut(captureDirectory_/"gameplay-palette-ui-receipt.json",std::ios::trunc);
+    uiOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayObjectPaletteUi3D\",\"categories\":6,\"drawnFrames\":{},\"pointerDowns\":{},\"drags\":{},\"previews\":{},\"commits\":{},\"invalidPlacements\":{},\"cancels\":{},\"deterministicHash\":{}}}",runId_,paletteUiDrawnFrames_,ui.pointerDowns,ui.drags,ui.previews,ui.commits,ui.invalidPlacements,ui.cancels,ui.deterministicHash);
+  }
   palette_->Clear();
+  const auto showcaseRendererAfter=engine.GetRendererStats();
+  const auto showcaseExecution=showcaseEnvironment_.ExecutionReceipt(showcaseRendererBaseline_,showcaseRendererAfter);
+  showcaseExecutionObserved_=showcaseExecution.executed;
+  const auto showcaseReceipt=showcaseEnvironment_.Receipt();
+  const auto showcaseRelease=showcaseEnvironment_.Release();
+  if(!captureDirectory_.empty()){
+    std::ofstream showcaseOut(captureDirectory_/"gameplay-environment-receipt.json",std::ios::trunc);
+    showcaseOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayShowcaseEnvironment3D\",\"worldHash\":"<<showcaseReceipt.worldHash<<",\"descriptors\":"<<(showcaseReceipt.terrain+showcaseReceipt.water+showcaseReceipt.vegetation+showcaseReceipt.rocks+showcaseReceipt.buildings)<<",\"submittedDescriptors\":"<<showcaseSubmittedDescriptors_<<",\"executionObserved\":"<<(showcaseExecution.executed?1:0)<<",\"counterDeltas\":[";
+    for(std::size_t index=0;index<showcaseExecution.deltas.size();++index){if(index)showcaseOut<<',';showcaseOut<<showcaseExecution.deltas[index];}
+    showcaseOut<<"],\"releasedDescriptors\":"<<showcaseRelease.descriptorsReleased<<",\"retainedBytesAfterRelease\":"<<showcaseRelease.retainedBytesAfter<<"}";
+  }
   physics_.Clear();
   collisions_.Clear();
   scene_.SetBoxMesh({});
@@ -241,6 +304,8 @@ void GameplayLabGame::OnStop(Engine &engine) {
   engine.DestroySkinnedMesh3D(maleWeaponMesh_.handle);
   engine.DestroyMesh3D(boxMesh_.handle);
   engine.DestroyMesh3D(sphereMesh_.handle);
+  for(auto* mesh:{&showcaseTerrainMesh_,&showcaseCylinderMesh_,&showcaseConeHighMesh_,&showcaseConeLowMesh_,&showcaseGrassHighMesh_,&showcaseGrassLowMesh_,&showcaseTreeLowMesh_,&showcaseRockLowMesh_,&showcaseQuiverTreeMesh_,&showcaseRock09Mesh_}){engine.DestroyMesh3D(mesh->handle);*mesh={};}
+  showcaseModelMaterialLibrary_.Shutdown();showcaseMaterialLibrary_.Shutdown();
   femaleMesh_ = {};
   maleMesh_ = {};
   femaleWeaponMesh_ = {};
@@ -280,8 +345,10 @@ void GameplayLabGame::UpdateCamera() {
 void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   simulationDelta_=GameplayPresentationDelta3D(dt);
   Input &in = engine.GetInput();
-  if (in.Pressed(VK_ESCAPE))
-    engine.Quit();
+  if (in.Pressed(VK_ESCAPE)){
+    if(paletteUi_->Active()||palette_->Preview().active)paletteUi_->Cancel();
+    else engine.Quit();
+  }
   if (!combatSpawned_) {
     combat_->SpawnMonster({4, 0, 3});
     combatSpawned_ = true;
@@ -340,6 +407,8 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     rules_.SetCamera(CameraMode::FirstPerson);
   UpdateCamera();
   Ray3D cursorRay = ScreenPointToRay(camera_, {1280, 720}, mapped.mouse);
+  const PaletteUiPoint3D pointer{mapped.mouse.x,mapped.mouse.y};
+  const bool pointerOverPalette=rules_.PaletteOpen()&&paletteUi_->HitTest(pointer).has_value();
   if (!captureDirectory_.empty() && gameplayTick == 258 &&
       !captureGrabSeeded_) {
     const float directionLength = Length(cursorRay.direction);
@@ -362,7 +431,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   }
   const Vec3 forward{std::sin(yaw_), 0, std::cos(yaw_)};
   combat_->Tick({controller_.Position(), forward,
-                 mapped.tick.attack && !rules_.PaletteOpen()},
+                 mapped.tick.attack && !rules_.PaletteOpen()&&!paletteUi_->Active()},
                 dt);
   if (combat_->CurrentAttack() == Attack3D::Attack3 && combat_->InHitWindow())
     weaponHitWindowEvidence_ = true;
@@ -403,15 +472,20 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     captureAuthoritativePhysicsSteps_ = physics_.Stats().steps;
   if (!palette_->SyncDynamicTransforms())
     engine.Quit();
-  if (rules_.PaletteOpen() && mapped.tick.attack && !palette_->Preview().active)
-    palette_->Begin(cursorRay, rules_.Category());
-  if (palette_->Preview().active) {
-    palette_->Update(cursorRay, mapped.rotate);
-    if (!in.MouseDown())
-      palette_->Commit();
+  // 指標命中UI時優先攔截；鍵盤與指標共用同一個transaction包裝器。
+  if(rules_.PaletteOpen()&&in.MousePressed()&&pointerOverPalette){
+    if(const auto category=paletteUi_->HitTest(pointer))rules_.SetPaletteCategory(*category);
+    palettePointerInteraction_=paletteUi_->PointerDown(pointer,cursorRay);
+  }else if(rules_.PaletteOpen()&&mapped.tick.attack&&!pointerOverPalette&&!paletteUi_->Active()){
+    palettePointerInteraction_=false;paletteUi_->KeyboardBegin(rules_.Category(),cursorRay);
   }
-  if (mapped.tick.cancel)
-    palette_->Cancel();
+  if(paletteUi_->Active()){
+    if(mapped.tick.cancel){paletteUi_->Cancel();palettePointerInteraction_=false;}
+    else if(in.MouseDown()){
+      if(palettePointerInteraction_)paletteUi_->PointerDrag(cursorRay,mapped.rotate);
+      else paletteUi_->KeyboardPreview(cursorRay,mapped.rotate);
+    }else{paletteUi_->PointerUp(true);palettePointerInteraction_=false;}
+  }
   if (mapped.tick.erase && !rules_.Entities().empty())
     palette_->Delete(rules_.Entities().back().id);
   if (mapped.tick.undo)
@@ -423,16 +497,9 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
 void GameplayLabGame::BuildWorld(Engine &engine) {
   scene_.Clear();
   scene_.SetBoxMesh(boxMesh_);
-  scene_.MaterialBox({0, -.5f, 0}, {60, 1, 60},
-                     {{.12f, .18f, .13f, 1}, {.78f, 0, 0, .9f}, false});
+  AddShowcaseEnvironment();
   scene_.MaterialBox({0, 1.5f, -12}, {8, 3, 1.2f},
                      {{.24f, .13f, .08f, 1}, {.48f, 0, 0, 1}, false});
-  for (int i = -28; i <= 28; i += 2) {
-    scene_.Line({float(i), .011f, -28}, {float(i), .011f, 28}, 1,
-                {.12f, .2f, .17f, .5f});
-    scene_.Line({-28, .011f, float(i)}, {28, .011f, float(i)}, 1,
-                {.12f, .2f, .17f, .5f});
-  }
   for (auto handle : bodies_)
     if (const auto *b = physics_.GetBody(handle))
       scene_.MaterialBox(b->settings.transform.position,
@@ -461,16 +528,10 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
       scene_.MaterialBox(*invalid, {1.25f, 1.25f, 1.25f},
                          {{1.f, .01f, .01f, .9f}, {.1f, 0, 0, 1.f}, false});
   }
-  const LightingState light = rules_.EvaluateLighting();
-  engine.SetClearColor(light.clearColor);
   DrawList &draw = engine.Draw();
-  draw.SetDirectionalLight(
-      {light.sunDirection, .65f, light.sunColor, light.intensity});
-  draw.SetAtmosphere({light.fogColor, camera_.position, 18, 120, true,
-                      light.fogDensity, .12f, 0, .9f});
-  draw.SetExposureCompensation(std::log2(light.exposure));
-  draw.SetVolumetricClouds(
-      {true, 1200, 1800, .48f, 1, .22f, 12, 12, true, .6f});
+  const auto showcaseLighting=rules_.Lighting()==LightingPhase::Day?ShowcaseLightingProfile3D::Day:rules_.Lighting()==LightingPhase::Dusk?ShowcaseLightingProfile3D::Dusk:ShowcaseLightingProfile3D::Night;
+  const auto lightingState=showcaseEnvironment_.EvaluateLighting(showcaseLighting);
+  engine.SetClearColor(lightingState.sky);showcaseEnvironment_.ApplyUltraProfile(draw);showcaseEnvironment_.ApplyLighting(draw,showcaseLighting,camera_.position);
   const auto grabbed = palette_->Grabbed();
   const auto grabbedCategory = palette_->GrabbedCategory();
   draw.Quad({1025, 575}, {490, 122}, {.008f, .018f, .022f, .9f});
@@ -490,6 +551,33 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   scene_.Submit(draw, camera_, {1280, 720},
                 {true, true, {true, .02f, .2f, 80, 256}, {150, .1f}});
   scene_.Clear();
+}
+
+void GameplayLabGame::AddShowcaseEnvironment(){
+  showcaseSubmittedDescriptors_=0;
+  const auto foliageMaterial=[](Color tint){Material3D material{tint,{.82f,0,0,.92f},true};material.materialClass=MaterialClass3D::Foliage;material.doubleSided=true;return material;};
+  const auto waterMaterial=[](){Material3D material{{.025f,.19f,.27f,.86f},{.07f,.02f,.04f,1},false};material.materialClass=MaterialClass3D::Water;return material;};
+  for(const auto& descriptor:showcaseEnvironment_.Descriptors()){
+    bool submitted=false;
+    const Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
+    switch(descriptor.kind){
+    case ShowcaseSceneKind3D::Terrain:
+      submitted=scene_.Mesh(showcaseTerrainMesh_,{},showcaseGroundMaterial_)!=0;break;
+    case ShowcaseSceneKind3D::Water:
+      submitted=scene_.Mesh(boxMesh_,transform,waterMaterial())!=0;break;
+    case ShowcaseSceneKind3D::Tree:
+      if(descriptor.lodGroup==0){const float uniform=descriptor.scale.y/1.42f;const auto before=scene_.MeshCount();scene_.MeshLod(showcaseQuiverTreeMesh_,showcaseTreeLowMesh_,{52,8,MeshLodDistanceMetric3D::BoundsSurface},{descriptor.position,{0,descriptor.yaw,0},{uniform,uniform,uniform}},showcaseQuiverTreeMaterial_,foliageMaterial({.12f,.32f,.06f,1}));submitted=scene_.MeshCount()==before+1;}
+      else{const auto before=scene_.MeshCount();scene_.MeshLod(showcaseTreeLowMesh_,showcaseConeLowMesh_,{38,6,MeshLodDistanceMetric3D::BoundsSurface},transform,foliageMaterial({.1f,.29f,.055f,1}),foliageMaterial({.08f,.23f,.04f,1}));submitted=scene_.MeshCount()==before+1;}break;
+    case ShowcaseSceneKind3D::Grass:
+      {const auto before=scene_.MeshCount();scene_.MeshLod(showcaseGrassHighMesh_,showcaseGrassLowMesh_,{24,5,MeshLodDistanceMetric3D::BoundsSurface},transform,foliageMaterial({.075f,.28f,.035f,1}));submitted=scene_.MeshCount()==before+1;}break;
+    case ShowcaseSceneKind3D::Rock:
+      if(descriptor.lodGroup==0){const auto before=scene_.MeshCount();scene_.MeshLod(showcaseRock09Mesh_,showcaseRockLowMesh_,{32,7,MeshLodDistanceMetric3D::BoundsSurface},transform,showcaseRock09Material_,showcaseRockMaterial_);submitted=scene_.MeshCount()==before+1;}
+      else submitted=scene_.Mesh(showcaseRockLowMesh_,transform,showcaseRockMaterial_)!=0;break;
+    case ShowcaseSceneKind3D::Building:
+      submitted=scene_.Mesh(boxMesh_,transform,showcaseWoodMaterial_)!=0;break;
+    }
+    if(submitted)++showcaseSubmittedDescriptors_;
+  }
 }
 void GameplayLabGame::UpdateCapture(Engine &engine) {
   if (captureDirectory_.empty())
@@ -736,11 +824,14 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   draw.Text({18,14},"GAMEPLAY LAB  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);
   draw.Quad({190,585},{360,230},{.008f,.018f,.022f,.9f});
   draw.Text({22,486},"OBJECT PALETTE",1.7f,Gold);
-  draw.Text({22,520},"[4] PRIMITIVES  [5] PHYSICS  [6] PROPS",1.2f,Cyan);
-  draw.Text({22,550},"[7] BUILDING  [8] CHARACTERS  [9] LIGHTS",1.2f,Cyan);
-  draw.Text({22,582},std::format("SELECTED {}  GHOST VALID {} INVALID {}",unsigned(rules_.Category()),palette_->Stats().validPreviews,palette_->Stats().collisionRejected),1.15f,Gold);
-  draw.Text({22,614},"DRAG/LMB PLACE  RMB CANCEL  R ROTATE",1.05f,Cyan);
   const auto stats=rules_.GetStats();
-  draw.Text({22,638},std::format("ENT {}/{}  UNDO {} REDO {}",stats.entities,Rules3D::MaximumEntities,stats.undoDepth,stats.redoDepth),1.f,Gold);
+  draw.Text({22,658},std::format("ENT {}/{}  UNDO {} REDO {}",stats.entities,Rules3D::MaximumEntities,stats.undoDepth,stats.redoDepth),1.f,Gold);
+  draw.Text({22,680},"DRAG/LMB PLACE  RMB/ESC CANCEL",.94f,Cyan);
   draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
+  for(std::size_t index=0;index<GameplayObjectPaletteUi3D::Categories.size();++index){
+    const auto bounds=paletteUi_->ItemBounds(index);const bool selected=rules_.Category()==GameplayObjectPaletteUi3D::Categories[index];
+    draw.Quad({bounds.x+bounds.width*.5f,bounds.y+bounds.height*.5f},{bounds.width,bounds.height},selected?Color{.14f,.34f,.3f,.94f}:Color{.025f,.055f,.065f,.9f});
+    draw.Text({bounds.x+9,bounds.y+4},std::format("[{}] {}",index+4,GameplayObjectPaletteUi3D::Labels[index]),1.05f,selected?Gold:Cyan);
+  }
+  ++paletteUiDrawnFrames_;
 }

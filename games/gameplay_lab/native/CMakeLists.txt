@@ -1,4 +1,4 @@
-add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp)
+add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/GameplayObjectPaletteUi3D.cpp)
 set(CHARACTER_PRESENTATION_FINGERPRINT_FILES
   engine/native/CMakeLists.txt engine/native/include/Aevrynd/CharacterPresentation3D.h
   engine/native/src/CharacterPresentation3D.cpp engine/native/src/Engine.cpp
@@ -6,6 +6,8 @@ set(CHARACTER_PRESENTATION_FINGERPRINT_FILES
   games/gameplay_lab/game.json games/gameplay_lab/native/CMakeLists.txt
   games/gameplay_lab/native/include/GameplayAnimation3D.h games/gameplay_lab/native/include/GameplayCombat3D.h
   games/gameplay_lab/native/include/GameplayLabGame.h games/gameplay_lab/native/src/GameplayAnimation3D.cpp
+  games/gameplay_lab/native/include/GameplayShowcaseEnvironment3D.h games/gameplay_lab/native/src/GameplayShowcaseEnvironment3D.cpp
+  games/gameplay_lab/native/include/GameplayObjectPaletteUi3D.h games/gameplay_lab/native/src/GameplayObjectPaletteUi3D.cpp
   games/gameplay_lab/native/src/GameplayLabGame.cpp games/gameplay_lab/native/src/main.cpp
   games/gameplay_lab/native/tests/GameplayCombatAnimationSmoke.cpp games/gameplay_lab/native/tests/GameplayLabCaptureSmoke.ps1)
 set(CHARACTER_PRESENTATION_FINGERPRINT_INPUT "")
@@ -29,11 +31,33 @@ add_custom_command(TARGET GameplayLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/CC0-HUMAN-BASE-MESHES.md"
     "$<TARGET_FILE_DIR:GameplayLab>/assets/model-packs/CC0-HUMAN-BASE-MESHES.md")
+add_custom_command(TARGET GameplayLab POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/engine/assets/material-packs"
+    "$<TARGET_FILE_DIR:GameplayLab>/assets/environment-material-packs"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/engine/assets/model-packs"
+    "$<TARGET_FILE_DIR:GameplayLab>/assets/environment-model-packs")
 add_executable(GameplayLabRulesTest tests/GameplayLabRulesSmoke.cpp src/GameplayRules3D.cpp)
 target_include_directories(GameplayLabRulesTest PRIVATE include)
 target_compile_options(GameplayLabRulesTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(GameplayLabRulesTest PRIVATE AevryndEngine)
 add_test(NAME GameplayLabRulesTest COMMAND GameplayLabRulesTest)
+add_executable(GameplayShowcaseEnvironmentTest tests/GameplayShowcaseEnvironment3DSmoke.cpp src/GameplayShowcaseEnvironment3D.cpp)
+target_include_directories(GameplayShowcaseEnvironmentTest PRIVATE include)
+target_compile_options(GameplayShowcaseEnvironmentTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(GameplayShowcaseEnvironmentTest PRIVATE AevryndEngine)
+add_test(NAME GameplayShowcaseEnvironmentTest COMMAND GameplayShowcaseEnvironmentTest)
+add_executable(GameplayProductionInputReplayTest tests/GameplayProductionInputReplaySmoke.cpp src/GameplayRules3D.cpp)
+target_include_directories(GameplayProductionInputReplayTest PRIVATE include tests)
+target_compile_options(GameplayProductionInputReplayTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(GameplayProductionInputReplayTest PRIVATE AevryndEngine)
+add_test(NAME GameplayProductionInputReplayTest COMMAND GameplayProductionInputReplayTest)
+add_executable(GameplayObjectPaletteUiTest tests/GameplayObjectPaletteUi3DSmoke.cpp src/GameplayObjectPaletteUi3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayRules3D.cpp)
+target_include_directories(GameplayObjectPaletteUiTest PRIVATE include)
+target_compile_options(GameplayObjectPaletteUiTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(GameplayObjectPaletteUiTest PRIVATE AevryndEngine)
+add_test(NAME GameplayObjectPaletteUiTest COMMAND GameplayObjectPaletteUiTest)
 add_executable(GameplayProductionInputPaletteTest tests/GameplayProductionInputPaletteSmoke.cpp src/GameplayRules3D.cpp src/ObjectPaletteAdapter3D.cpp)
 target_include_directories(GameplayProductionInputPaletteTest PRIVATE include)
 target_compile_options(GameplayProductionInputPaletteTest PRIVATE /W4 /permissive- /utf-8)
