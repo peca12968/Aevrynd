@@ -4,10 +4,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $scriptPath = (Resolve-Path (Join-Path $PSScriptRoot 'invoke-local-qwen.ps1')).Path
+$multiFileCallerPath = (Resolve-Path (Join-Path $PSScriptRoot 'test-local-qwen-multifile-caller.ps1')).Path
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('aevrynd-qwen-wrapper-test-' + [Guid]::NewGuid().ToString('N'))
 $results = [Collections.Generic.List[object]]::new()
 
-function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[bool]$ExpectSuccess,[string]$ExpectedErrorCode = '',[hashtable]$Environment = @{},[ValidateRange(1,60)][int]$MaximumWallSeconds = 20) {
+function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[bool]$ExpectSuccess,[string]$ExpectedErrorCode = '',[hashtable]$Environment = @{},[ValidateRange(1,60)][int]$MaximumWallSeconds = 20,[string]$EntryScript = $scriptPath) {
     $caseRoot = Join-Path $temporaryRoot $Name
     New-Item -ItemType Directory -Path $caseRoot | Out-Null
     $stdoutPath = Join-Path $caseRoot 'stdout.json'
@@ -20,7 +21,7 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($argument in (@('-NoProfile','-File',$scriptPath) + $Arguments)) { $startInfo.ArgumentList.Add($argument) }
+    foreach ($argument in (@('-NoProfile','-File',$EntryScript) + $Arguments)) { $startInfo.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     foreach ($entry in $Environment.GetEnumerator()) { $process.StartInfo.Environment[$entry.Key] = [string]$entry.Value }
@@ -68,6 +69,12 @@ function Invoke-Wrapper([string]$Name,[string[]]$Arguments,[bool]$ExpectLaunch,[
         StreamDrainTimedOut = if ($null -ne $payload) { [bool]$payload.resource.termination.streamDrainTimedOut } else { $null }
         SupervisorPhase = if ($null -ne $payload) { $payload.resource.supervisor.phase } else { $null }
         SupervisorTreeKilled = if ($null -ne $payload) { [bool]$payload.resource.supervisor.treeKilled } else { $null }
+        WorkerLaunched = if ($null -ne $payload) { [bool]$payload.resource.workerProtocol.workerLaunched } else { $null }
+        WorkerProtocolFailure = if ($null -ne $payload) { $payload.resource.workerProtocol.failureReason } else { $null }
+        WorkerProtocolStdoutBytes = if ($null -ne $payload) { $payload.resource.workerProtocol.stdoutBytes } else { $null }
+        WorkerProtocolStderrBytes = if ($null -ne $payload) { $payload.resource.workerProtocol.stderrBytes } else { $null }
+        ResultReceivedFiles = if ($null -ne $payload) { $payload.result.receivedFiles } else { $null }
+        LeakedSyntheticStderr = $stdout.Contains('synthetic worker stderr',[StringComparison]::Ordinal)
         StderrBytes = [Text.Encoding]::UTF8.GetByteCount($stderr)
     })
 }
@@ -83,6 +90,82 @@ try {
     Invoke-Wrapper 'outside-root' @('-Task','classify','-Files','..\outside.txt') $false $false
     Invoke-Wrapper 'non-object-schema' @('-Task','classify','-JsonSchema','{"type":"array"}') $false $false
     Invoke-Wrapper 'oversized-prompt' @('-Task',('x' * 17000)) $false $false
+
+    $stubSchema = '{"type":"object","required":["answer"],"properties":{"answer":{"type":"integer","const":2}},"additionalProperties":false}'
+    Invoke-Wrapper 'worker-protocol-valid-multifile' @() $true $true '' @{
+        AEVRYND_QWEN_TESTING='1'
+        AEVRYND_QWEN_WORKER_PROTOCOL_STUB='Valid'
+    } 20 $multiFileCallerPath
+    $multiFileResult = $results[$results.Count - 1]
+    $multiFileResult.Passed = $multiFileResult.Passed -and $multiFileResult.ResultReceivedFiles -eq 2
+    foreach ($senderCase in @(
+        @{Name='sender-too-many-files';Mode='TooMany'},
+        @{Name='sender-path-too-long';Mode='TooLong'}
+    )) {
+        Invoke-Wrapper $senderCase.Name @($senderCase.Mode) $false $false 'LocalQwenSupervisorFailed' @{} 10 $multiFileCallerPath
+        $senderResult = $results[$results.Count - 1]
+        $senderResult.Passed = $senderResult.Passed -and -not $senderResult.WorkerLaunched
+    }
+    Invoke-Wrapper 'duplicate-final-path' @('DuplicateFinal') $false $false 'LocalQwenFailed.input-validation' @{} 10 $multiFileCallerPath
+
+    foreach ($bootstrapCase in @(
+        @{Name='worker-bootstrap-empty';Payload=''},
+        @{Name='worker-bootstrap-bad-base64';Payload='not-base64'},
+        @{Name='worker-bootstrap-null-json';Payload='bnVsbA=='}
+    )) {
+        Invoke-Wrapper $bootstrapCase.Name @('-Task','synthetic bootstrap','-MaxTokens','32') $false $false 'LocalQwenFailed.worker-bootstrap' @{
+            AEVRYND_QWEN_INTERNAL_WORKER='1'
+            AEVRYND_QWEN_TESTING='1'
+            AEVRYND_QWEN_WORKER_PROTOCOL_STUB='Valid'
+            AEVRYND_QWEN_WORKER_FILES_B64=$bootstrapCase.Payload
+        }
+    }
+    foreach ($protocolCase in @(
+        @{Name='worker-protocol-bad-json';Mode='BadJson';Reason='receipt-json'},
+        @{Name='worker-protocol-bad-receipt';Mode='BadReceipt';Reason='receipt-schema'},
+        @{Name='worker-protocol-stderr';Mode='Stderr';Reason='worker-stderr'},
+        @{Name='worker-success-not-launched';Mode='SuccessNotLaunched';Reason='receipt-schema'},
+        @{Name='worker-success-bad-exit';Mode='SuccessBadExit';Reason='receipt-schema'},
+        @{Name='worker-success-no-job';Mode='SuccessNoJob';Reason='receipt-schema'},
+        @{Name='worker-fallback-pretends-success';Mode='FallbackPretendsSuccess';Reason='receipt-schema'},
+        @{Name='worker-bad-limits';Mode='BadLimits';Reason='receipt-schema'},
+        @{Name='worker-large-stdout';Mode='LargeStdout';Reason='worker-stdout-limit'},
+        @{Name='worker-large-stderr';Mode='LargeStderr';Reason='worker-stderr-limit'}
+    )) {
+        Invoke-Wrapper $protocolCase.Name @('-Task','synthetic protocol','-MaxTokens','32') $false $false 'LocalQwenWorkerProtocolInvalid' @{
+            AEVRYND_QWEN_TESTING='1'
+            AEVRYND_QWEN_WORKER_PROTOCOL_STUB=$protocolCase.Mode
+        }
+        $protocolResult = $results[$results.Count - 1]
+        $protocolResult.Passed = $protocolResult.Passed -and $protocolResult.WorkerLaunched -and
+            $protocolResult.WorkerProtocolFailure -eq $protocolCase.Reason -and -not $protocolResult.LeakedSyntheticStderr
+        if ($protocolCase.Mode -eq 'LargeStdout') {
+            $protocolResult.Passed = $protocolResult.Passed -and $protocolResult.SupervisorTreeKilled -and
+                $protocolResult.WorkerProtocolStdoutBytes -gt 262144 -and $protocolResult.WallMilliseconds -lt 5000
+        } elseif ($protocolCase.Mode -eq 'LargeStderr') {
+            $protocolResult.Passed = $protocolResult.Passed -and $protocolResult.SupervisorTreeKilled -and
+                $protocolResult.WorkerProtocolStderrBytes -gt 65536 -and $protocolResult.WallMilliseconds -lt 5000
+        }
+    }
+    Invoke-Wrapper 'runtime-stub-success' @('-Task','synthetic success','-MaxTokens','32','-JsonSchema',$stubSchema) $true $true '' @{
+        AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubSuccess'
+    }
+    Invoke-Wrapper 'runtime-stub-bad-marker' @('-Task','synthetic bad marker','-MaxTokens','32','-JsonSchema',$stubSchema) $true $false 'ModelOutputInvalid' @{
+        AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubBadMarker'
+    }
+    Invoke-Wrapper 'runtime-stub-bad-schema' @('-Task','synthetic bad schema','-MaxTokens','32','-JsonSchema',$stubSchema) $true $false 'ModelOutputInvalid' @{
+        AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubBadSchema'
+    }
+    Invoke-Wrapper 'runtime-stub-ram-gate' @('-Task','synthetic RAM gate','-MaxTokens','32') $true $false 'LocalQwenRamBudgetExceeded' @{
+        AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE='StubRamGate'
+    }
+    foreach ($runtimeOutputCase in @('StubRuntimeLargeStdout','StubRuntimeLargeStderr')) {
+        Invoke-Wrapper ('runtime-output-limit-' + $runtimeOutputCase.ToLowerInvariant()) @('-Task','synthetic runtime output limit','-MaxTokens','32') $true $false 'LocalQwenRuntimeOutputExceeded' @{
+            AEVRYND_QWEN_TESTING='1';AEVRYND_QWEN_SYNTHETIC_MODE=$runtimeOutputCase
+        } 10
+        $runtimeOutputResult = $results[$results.Count - 1]
+        $runtimeOutputResult.Passed = $runtimeOutputResult.Passed -and $runtimeOutputResult.WallMilliseconds -lt 5000
+    }
 
     $syntheticMarker = [Guid]::NewGuid().ToString('N')
     Invoke-Wrapper 'hung-stream-timeout' @('-Task','synthetic timeout','-MaxTokens','32','-TimeoutSeconds','10') $true $false 'LocalQwenFailed.runtime-execution' @{
@@ -100,7 +183,7 @@ try {
     $syntheticResult | Add-Member -NotePropertyName OrphanCount -NotePropertyValue $orphanCount
 
     $hostHangTracePath = Join-Path $temporaryRoot 'host-hang-trace.log'
-    Invoke-Wrapper 'host-hang-after-child-exit' @('-Task','synthetic host hang','-MaxTokens','32','-TimeoutSeconds','10') $true $false 'LocalQwenSupervisorTimeout' @{
+    Invoke-Wrapper 'host-hang-after-child-exit' @('-Task','synthetic host hang','-MaxTokens','32','-TimeoutSeconds','10') $false $false 'LocalQwenSupervisorTimeout' @{
         AEVRYND_QWEN_TESTING='1'
         AEVRYND_QWEN_SYNTHETIC_MODE='HostHangAfterChildExit'
         AEVRYND_QWEN_TEST_TRACE_PATH=$hostHangTracePath
@@ -117,7 +200,7 @@ try {
     )
     $hostHangResult.Passed = $hostHangResult.Passed -and
         $hostHangResult.WallMilliseconds -ge 14500 -and $hostHangResult.WallMilliseconds -le 16000 -and
-        $hostHangResult.SupervisorPhase -eq 'worker-exit' -and $hostHangResult.SupervisorTreeKilled -and
+        $hostHangResult.SupervisorPhase -eq 'worker-exit' -and $hostHangResult.SupervisorTreeKilled -and $hostHangResult.WorkerLaunched -and
         @($requiredTracePhases | Where-Object { $_ -notin $hostHangTrace }).Count -eq 0 -and
         $remainingQwenTemporaryDirectories -eq 0
     $hostHangResult | Add-Member -NotePropertyName TracePhases -NotePropertyValue ($hostHangTrace -join ',')

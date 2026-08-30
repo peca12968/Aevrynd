@@ -11,20 +11,133 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $internalWorker = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_INTERNAL_WORKER') -eq '1'
+$workerBootstrapError = $null
+$maximumFilesJsonBytes = 24570
+$maximumFilesBase64Bytes = 32760
+
+if (-not ('AevryndBoundedTextReader' -as [type])) {
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+
+public sealed class AevryndBoundedTextResult
+{
+    public string Text { get; set; }
+    public long Utf8Bytes { get; set; }
+    public bool LimitExceeded { get; set; }
+}
+
+public static class AevryndBoundedTextReader
+{
+    public static async Task<AevryndBoundedTextResult> ReadAsync(StreamReader reader, long maximumUtf8Bytes)
+    {
+        char[] buffer = new char[4096];
+        StringBuilder text = new StringBuilder();
+        long bytes = 0;
+        while (true)
+        {
+            int count = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+            if (count == 0) break;
+            bytes = checked(bytes + Encoding.UTF8.GetByteCount(buffer, 0, count));
+            if (bytes > maximumUtf8Bytes)
+                return new AevryndBoundedTextResult { Text = text.ToString(), Utf8Bytes = bytes, LimitExceeded = true };
+            text.Append(buffer, 0, count);
+        }
+        return new AevryndBoundedTextResult { Text = text.ToString(), Utf8Bytes = bytes, LimitExceeded = false };
+    }
+}
+'@
+}
+
+if ($internalWorker) {
+    # PowerShell -File 無法可靠地把多個離散引數繫結到 string[]；監督器改用有界 JSON 跨程序傳遞。
+    $encodedFiles = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_WORKER_FILES_B64')
+    if ([string]::IsNullOrEmpty($encodedFiles)) {
+        $workerBootstrapError = 'The worker file payload is missing.'
+        $Files = @()
+    } else {
+        try {
+            if ([Text.Encoding]::ASCII.GetByteCount($encodedFiles) -gt $maximumFilesBase64Bytes) { throw 'The worker file payload is oversized.' }
+            $filePayload = [Text.UTF8Encoding]::new($false,$true).GetString([Convert]::FromBase64String($encodedFiles))
+            if ([Text.Encoding]::UTF8.GetByteCount($filePayload) -gt $maximumFilesJsonBytes) { throw 'The worker file JSON is oversized.' }
+            $decodedValue = ConvertFrom-Json -InputObject $filePayload -NoEnumerate -ErrorAction Stop
+            if ($null -eq $decodedValue -or $decodedValue -isnot [array]) { throw 'The worker file payload must be a JSON array.' }
+            $decodedFiles = @($decodedValue)
+            if ($decodedFiles.Count -gt 64) { throw 'The worker file list is oversized.' }
+            foreach ($file in $decodedFiles) {
+                if ($file -isnot [string] -or [string]::IsNullOrWhiteSpace($file) -or $file.Length -gt 1024) {
+                    throw 'The worker file list is invalid.'
+                }
+            }
+            $Files = [string[]]$decodedFiles
+        } catch {
+            $workerBootstrapError = 'The worker file payload could not be decoded safely.'
+            $Files = @()
+        }
+    }
+
+    # 這些 stub 只驗證 worker/supervisor 協定，不會讀模型或啟動 llama runtime。
+    $protocolStub = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_WORKER_PROTOCOL_STUB')
+    if ($null -eq $workerBootstrapError -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1' -and -not [string]::IsNullOrEmpty($protocolStub)) {
+        $stubLimits = [ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
+        switch ($protocolStub) {
+            'Valid' {
+                [ordered]@{
+                    ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true;receivedFiles=$Files.Count}
+                    resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;termination=[ordered]@{graceMilliseconds=5000;timedOut=$false;streamDrainTimedOut=$false};output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';limits=$stubLimits}
+                } | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'BadJson' { [Console]::Out.Write('{bad-json'); exit 0 }
+            'BadReceipt' { [Console]::Out.Write('{"ok":true,"fallbackToCodex":false}'); exit 0 }
+            'Stderr' { [Console]::Error.Write('synthetic worker stderr'); exit 0 }
+            'LargeStdout' { [Console]::Out.Write(('x' * 300000)); Start-Sleep -Seconds 300; exit 0 }
+            'LargeStderr' { [Console]::Error.Write(('x' * 100000)); Start-Sleep -Seconds 300; exit 0 }
+            'SuccessNotLaunched' {
+                [ordered]@{ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true};resource=[ordered]@{launched=$false;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=0;modelFile='stub.gguf';limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'SuccessBadExit' {
+                [ordered]@{ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true};resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode='0';jobAssigned=$true;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=0;modelFile='stub.gguf';limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'SuccessNoJob' {
+                [ordered]@{ok=$true;fallbackToCodex=$false;result=[ordered]@{synthetic=$true};resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$false;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=0;modelFile='stub.gguf';limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'FallbackPretendsSuccess' {
+                [ordered]@{ok=$false;fallbackToCodex=$true;error=[ordered]@{code='SyntheticFailure'};resource=[ordered]@{launched=$true;elapsedMilliseconds=1L;peakWorkingSetBytes=1L;inputBytes=0L;promptBytes=1L;exitCode=0;jobAssigned=$true;output=[ordered]@{bytes=1L;responseMarkerFound=$true;schemaCandidates=1};requestedGpuLayers=32;modelFile='Qwen3.8-27B-UD-Q4_K_M.gguf';limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            'BadLimits' {
+                $stubLimits.timeoutSeconds = [string]$TimeoutSeconds
+                [ordered]@{ok=$false;fallbackToCodex=$true;error=[ordered]@{code='SyntheticFailure'};resource=[ordered]@{launched=$false;elapsedMilliseconds=0L;peakWorkingSetBytes=0L;inputBytes=0L;promptBytes=0L;exitCode=$null;jobAssigned=$false;output=[ordered]@{bytes=0L;responseMarkerFound=$false;schemaCandidates=0};limits=$stubLimits}} | ConvertTo-Json -Depth 8 -Compress
+                exit 0
+            }
+            default { [Console]::Error.Write('unknown synthetic protocol stub'); exit 2 }
+        }
+    }
+}
 
 if (-not $internalWorker) {
     # 外層監督器不載入模型，也不參與 worker 清理；worker 即使卡在 PowerShell 關閉階段，仍可準時回傳 fallback。
     $supervisorTimer = [Diagnostics.Stopwatch]::StartNew()
     $workerProcess = $null
+    $workerStarted = $false
     $workerStdoutTask = $null
     $workerStderrTask = $null
+    $workerExitCode = $null
+    $workerStdoutBytes = 0
+    $workerStderrBytes = 0
+    $workerReceiptParsed = $false
+    $workerProtocolFailure = 'none'
+    $maximumWorkerStdoutBytes = 262144L
+    $maximumWorkerStderrBytes = 65536L
     $hardLimitMilliseconds = ($TimeoutSeconds * 1000) + 5000
     $workerArguments = [Collections.Generic.List[string]]::new()
     foreach ($argument in @('-NoProfile','-File',$PSCommandPath,'-Task',$Task)) { $workerArguments.Add([string]$argument) }
-    if ($Files.Count -gt 0) {
-        $workerArguments.Add('-Files')
-        foreach ($file in $Files) { $workerArguments.Add([string]$file) }
-    }
     foreach ($argument in @(
         '-MaxTokens',[string]$MaxTokens,
         '-JsonSchema',$JsonSchema,
@@ -34,13 +147,18 @@ if (-not $internalWorker) {
         '-MaximumRamGiB',[string]$MaximumRamGiB
     )) { $workerArguments.Add([string]$argument) }
 
+    function Test-ProtocolInteger([object]$Value,[long]$Minimum,[long]$Maximum) {
+        return $Value -is [long] -and $Value -ge $Minimum -and $Value -le $Maximum
+    }
+
     function Write-SupervisorFallback([string]$Code,[bool]$WasLaunched,[bool]$TreeKilled,[string]$Phase) {
         [ordered]@{
             ok=$false
             fallbackToCodex=$true
             error=[ordered]@{code=$Code;message='Local QWEN worker did not return a valid receipt; use Codex fallback.'}
             resource=[ordered]@{
-                launched=$WasLaunched
+                # 協定失敗時無法證明模型 runtime 曾啟動；worker 啟動狀態另列，避免冒充本機推論。
+                launched=$false
                 elapsedMilliseconds=[int64]$supervisorTimer.ElapsedMilliseconds
                 peakWorkingSetBytes=0L
                 inputBytes=0L
@@ -48,6 +166,7 @@ if (-not $internalWorker) {
                 exitCode=$null
                 jobAssigned=$false
                 supervisor=[ordered]@{phase=$Phase;hardLimitMilliseconds=$hardLimitMilliseconds;treeKilled=$TreeKilled}
+                workerProtocol=[ordered]@{workerLaunched=$WasLaunched;exitCode=$workerExitCode;stdoutBytes=$workerStdoutBytes;stderrBytes=$workerStderrBytes;receiptParsed=$workerReceiptParsed;failureReason=$workerProtocolFailure}
                 termination=[ordered]@{graceMilliseconds=5000;timedOut=($Code -eq 'LocalQwenSupervisorTimeout');streamDrainTimedOut=$false}
                 output=[ordered]@{bytes=0;consoleBytes=0;promptEchoBytes=0;promptEchoPrefixMatched=$false;promptEchoCommonPrefixChars=0;responseMarkerFound=$false;runtimeError='none';runtimeKind='unknown';candidates=0;jsonCandidates=0;schemaCandidates=0;lastCandidateStart=-1;lastCandidateEnd=-1;candidateKeys=@()}
                 limits=[ordered]@{timeoutSeconds=$TimeoutSeconds;maxTokens=$MaxTokens;cpuThreads=$CpuThreads;maximumRamBytes=([int64]$MaximumRamGiB * 1GB)}
@@ -56,6 +175,19 @@ if (-not $internalWorker) {
     }
 
     try {
+        # sender 在建立子程序前先驗證 transport，避免超大環境變數或模糊的陣列繫結進入 worker。
+        if ($Files.Count -gt 64) { throw 'The sender file list is oversized.' }
+        foreach ($file in $Files) {
+            if ($null -eq $file -or [string]::IsNullOrWhiteSpace($file) -or $file.Length -gt 1024) {
+                throw 'The sender file list is invalid.'
+            }
+        }
+        $workerFilesJson = ConvertTo-Json -InputObject @($Files) -Compress
+        $workerFilesJsonBytes = [Text.Encoding]::UTF8.GetByteCount($workerFilesJson)
+        if ($workerFilesJsonBytes -gt $maximumFilesJsonBytes) { throw 'The sender file JSON is oversized.' }
+        $workerFilesBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($workerFilesJson))
+        if ([Text.Encoding]::ASCII.GetByteCount($workerFilesBase64) -gt $maximumFilesBase64Bytes) { throw 'The sender file payload is oversized.' }
+
         $workerStartInfo = [Diagnostics.ProcessStartInfo]::new()
         $workerStartInfo.FileName = (Get-Command pwsh -ErrorAction Stop).Source
         $workerStartInfo.WorkingDirectory = [IO.Path]::GetFullPath($ProjectRoot)
@@ -65,16 +197,33 @@ if (-not $internalWorker) {
         $workerStartInfo.RedirectStandardError = $true
         foreach ($argument in $workerArguments) { $workerStartInfo.ArgumentList.Add($argument) }
         $workerStartInfo.Environment['AEVRYND_QWEN_INTERNAL_WORKER'] = '1'
+        $workerStartInfo.Environment['AEVRYND_QWEN_WORKER_FILES_B64'] = $workerFilesBase64
         $workerProcess = [Diagnostics.Process]::new()
         $workerProcess.StartInfo = $workerStartInfo
         if (-not $workerProcess.Start()) { throw 'Worker launch failed.' }
-        $workerStdoutTask = $workerProcess.StandardOutput.ReadToEndAsync()
-        $workerStderrTask = $workerProcess.StandardError.ReadToEndAsync()
-        if (-not $workerProcess.WaitForExit($hardLimitMilliseconds)) {
-            try { $workerProcess.Kill($true) } catch {}
-            try { $workerProcess.WaitForExit(500) | Out-Null } catch {}
-            Write-SupervisorFallback 'LocalQwenSupervisorTimeout' $true $true 'worker-exit'
-            exit 0
+        $workerStarted = $true
+        $workerStdoutTask = [AevryndBoundedTextReader]::ReadAsync($workerProcess.StandardOutput,$maximumWorkerStdoutBytes)
+        $workerStderrTask = [AevryndBoundedTextReader]::ReadAsync($workerProcess.StandardError,$maximumWorkerStderrBytes)
+        while (-not $workerProcess.HasExited) {
+            $overflowStream = $null
+            if ($workerStdoutTask.IsCompletedSuccessfully -and $workerStdoutTask.Result.LimitExceeded) { $overflowStream = 'stdout' }
+            elseif ($workerStderrTask.IsCompletedSuccessfully -and $workerStderrTask.Result.LimitExceeded) { $overflowStream = 'stderr' }
+            if ($null -ne $overflowStream) {
+                $workerProtocolFailure = 'worker-' + $overflowStream + '-limit'
+                if ($workerStdoutTask.IsCompletedSuccessfully) { $workerStdoutBytes = $workerStdoutTask.Result.Utf8Bytes }
+                if ($workerStderrTask.IsCompletedSuccessfully) { $workerStderrBytes = $workerStderrTask.Result.Utf8Bytes }
+                try { $workerProcess.Kill($true) } catch {}
+                try { $workerProcess.WaitForExit(500) | Out-Null } catch {}
+                Write-SupervisorFallback 'LocalQwenWorkerProtocolInvalid' $true $true 'worker-stream-limit'
+                exit 0
+            }
+            if ($supervisorTimer.ElapsedMilliseconds -ge $hardLimitMilliseconds) {
+                try { $workerProcess.Kill($true) } catch {}
+                try { $workerProcess.WaitForExit(500) | Out-Null } catch {}
+                Write-SupervisorFallback 'LocalQwenSupervisorTimeout' $true $true 'worker-exit'
+                exit 0
+            }
+            Start-Sleep -Milliseconds 20
         }
         $remainingMilliseconds = [Math]::Max(0,$hardLimitMilliseconds - [int]$supervisorTimer.ElapsedMilliseconds)
         $streamTasks = [Threading.Tasks.Task[]]@($workerStdoutTask,$workerStderrTask)
@@ -84,23 +233,80 @@ if (-not $internalWorker) {
             Write-SupervisorFallback 'LocalQwenSupervisorTimeout' $true $true 'worker-streams'
             exit 0
         }
-        $workerStdout = $workerStdoutTask.GetAwaiter().GetResult().Trim()
-        $workerStderr = $workerStderrTask.GetAwaiter().GetResult().Trim()
+        $workerStdoutResult = $workerStdoutTask.GetAwaiter().GetResult()
+        $workerStderrResult = $workerStderrTask.GetAwaiter().GetResult()
+        if ($workerStdoutResult.LimitExceeded -or $workerStderrResult.LimitExceeded) {
+            $workerProtocolFailure = if ($workerStdoutResult.LimitExceeded) { 'worker-stdout-limit' } else { 'worker-stderr-limit' }
+            $workerStdoutBytes = $workerStdoutResult.Utf8Bytes
+            $workerStderrBytes = $workerStderrResult.Utf8Bytes
+            Write-SupervisorFallback 'LocalQwenWorkerProtocolInvalid' $true $false 'worker-stream-limit'
+            exit 0
+        }
+        $workerStdout = $workerStdoutResult.Text.Trim()
+        $workerStderr = $workerStderrResult.Text.Trim()
+        $workerExitCode = $workerProcess.ExitCode
+        $workerStdoutBytes = $workerStdoutResult.Utf8Bytes
+        $workerStderrBytes = $workerStderrResult.Utf8Bytes
         $workerReceipt = $null
-        try { $workerReceipt = $workerStdout | ConvertFrom-Json -ErrorAction Stop } catch {}
-        if ($workerProcess.ExitCode -ne 0 -or $workerStderr.Length -ne 0 -or $null -eq $workerReceipt -or
-            $null -eq $workerReceipt.PSObject.Properties['ok'] -or $null -eq $workerReceipt.PSObject.Properties['fallbackToCodex'] -or
-            $null -eq $workerReceipt.PSObject.Properties['resource']) {
+        try { $workerReceipt = $workerStdout | ConvertFrom-Json -ErrorAction Stop; $workerReceiptParsed = $true } catch {}
+        if ($workerExitCode -ne 0) { $workerProtocolFailure = 'worker-nonzero-exit' }
+        elseif ($workerStderrBytes -ne 0) { $workerProtocolFailure = 'worker-stderr' }
+        elseif (-not $workerReceiptParsed) { $workerProtocolFailure = 'receipt-json' }
+        else {
+            $resource = $workerReceipt.resource
+            $receiptInvalid = $workerReceipt -isnot [pscustomobject] -or $workerReceipt.ok -isnot [bool] -or
+                $workerReceipt.fallbackToCodex -isnot [bool] -or $workerReceipt.ok -eq $workerReceipt.fallbackToCodex -or
+                $resource -isnot [pscustomobject] -or $resource.launched -isnot [bool] -or
+                -not (Test-ProtocolInteger $resource.elapsedMilliseconds 0 ([long]::MaxValue)) -or
+                -not (Test-ProtocolInteger $resource.peakWorkingSetBytes 0 ([long]::MaxValue)) -or
+                -not (Test-ProtocolInteger $resource.inputBytes 0 16384) -or
+                -not (Test-ProtocolInteger $resource.promptBytes 0 ([long]::MaxValue)) -or
+                $resource.jobAssigned -isnot [bool] -or $resource.output -isnot [pscustomobject] -or
+                -not (Test-ProtocolInteger $resource.output.bytes 0 65536) -or $resource.limits -isnot [pscustomobject]
+            if (-not $receiptInvalid) {
+                $receiptInvalid = -not (Test-ProtocolInteger $resource.limits.timeoutSeconds 10 30) -or $resource.limits.timeoutSeconds -ne $TimeoutSeconds -or
+                    -not (Test-ProtocolInteger $resource.limits.maxTokens 1 512) -or $resource.limits.maxTokens -ne $MaxTokens -or
+                    -not (Test-ProtocolInteger $resource.limits.cpuThreads 1 4) -or $resource.limits.cpuThreads -ne $CpuThreads -or
+                    -not (Test-ProtocolInteger $resource.limits.maximumRamBytes (4GB) (24GB)) -or $resource.limits.maximumRamBytes -ne ([int64]$MaximumRamGiB * 1GB)
+            }
+            if (-not $receiptInvalid -and $workerReceipt.ok) {
+                $receiptInvalid = $workerReceipt.result -isnot [pscustomobject] -or $null -ne $workerReceipt.PSObject.Properties['error'] -or
+                    -not $resource.launched -or -not $resource.jobAssigned -or -not (Test-ProtocolInteger $resource.exitCode 0 0) -or
+                    $resource.peakWorkingSetBytes -lt 1 -or $resource.promptBytes -lt 1 -or $resource.promptBytes -gt 16384 -or
+                    $resource.output.bytes -lt 1 -or
+                    $resource.output.responseMarkerFound -isnot [bool] -or -not $resource.output.responseMarkerFound -or
+                    -not (Test-ProtocolInteger $resource.output.schemaCandidates 1 ([long]::MaxValue)) -or
+                    -not (Test-ProtocolInteger $resource.requestedGpuLayers 32 32) -or
+                    $resource.modelFile -ne 'Qwen3.8-27B-UD-Q4_K_M.gguf'
+            } elseif (-not $receiptInvalid) {
+                $receiptInvalid = $workerReceipt.error -isnot [pscustomobject] -or [string]::IsNullOrWhiteSpace([string]$workerReceipt.error.code) -or
+                    $null -ne $workerReceipt.PSObject.Properties['result']
+                if (-not $receiptInvalid -and $resource.launched) {
+                    $receiptInvalid = $null -ne $resource.exitCode -and
+                        -not (Test-ProtocolInteger $resource.exitCode ([int]::MinValue) ([int]::MaxValue))
+                    if (-not $receiptInvalid -and $resource.jobAssigned -and (Test-ProtocolInteger $resource.exitCode 0 0) -and
+                        $resource.output.responseMarkerFound -is [bool] -and $resource.output.responseMarkerFound -and
+                        (Test-ProtocolInteger $resource.output.schemaCandidates 1 ([long]::MaxValue))) {
+                        $receiptInvalid = $true
+                    }
+                } elseif (-not $receiptInvalid) {
+                    $receiptInvalid = $resource.jobAssigned -or $null -ne $resource.exitCode
+                }
+            }
+            if ($receiptInvalid) { $workerProtocolFailure = 'receipt-schema' }
+        }
+        if ($workerProtocolFailure -ne 'none') {
             Write-SupervisorFallback 'LocalQwenWorkerProtocolInvalid' $true $false 'receipt-validation'
             exit 0
         }
         # 重新序列化已解析的單一物件，避免 worker 將額外 console 文字帶給呼叫端。
         $workerReceipt | ConvertTo-Json -Depth 100 -Compress
     } catch {
+        $treeKilled = $false
         if ($null -ne $workerProcess) {
-            try { if (-not $workerProcess.HasExited) { $workerProcess.Kill($true) } } catch {}
+            try { if ($workerStarted -and -not $workerProcess.HasExited) { $workerProcess.Kill($true); $treeKilled = $true } } catch {}
         }
-        Write-SupervisorFallback 'LocalQwenSupervisorFailed' ($null -ne $workerProcess) $true 'supervisor-exception'
+        Write-SupervisorFallback 'LocalQwenSupervisorFailed' $workerStarted $treeKilled 'supervisor-exception'
     } finally {
         if ($null -ne $workerProcess) { try { $workerProcess.Dispose() } catch {} }
     }
@@ -139,6 +345,8 @@ $outputCandidateKeys = @()
 $runtimeOutputError = 'none'
 $runtimeOutputKind = 'unknown'
 $failureCode = $null
+$maximumRuntimeStdoutBytes = 262144L
+$maximumRuntimeStderrBytes = 262144L
 $terminationGraceMilliseconds = 5000
 $terminationTimedOut = $false
 $streamDrainTimedOut = $false
@@ -404,6 +612,10 @@ function Add-GenerationBounds([object]$Schema,[int]$StringLimit) {
 }
 
 try {
+    if ($null -ne $workerBootstrapError) {
+        $failurePhase = 'worker-bootstrap'
+        throw $workerBootstrapError
+    }
     $failurePhase = 'repository-boundary'
     if (-not $projectPath.Equals($expectedProjectPath,[StringComparison]::OrdinalIgnoreCase)) {
         throw 'ProjectRoot must be the repository that contains this wrapper.'
@@ -426,6 +638,7 @@ try {
     Add-GenerationBounds $generationSchemaObject ([Math]::Max(8,[Math]::Floor($MaxTokens / 2)))
     $generationSchema = $generationSchemaObject | ConvertTo-Json -Depth 100 -Compress
     $sections = [Collections.Generic.List[string]]::new()
+    $canonicalInputPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $failurePhase = 'input-validation'
     foreach ($file in $Files) {
         try { $resolved = (Resolve-Path -LiteralPath (Join-Path $projectPath $file) -ErrorAction Stop).Path } catch { throw 'An input file could not be resolved safely.' }
@@ -441,6 +654,7 @@ try {
         try {
             $finalPath = [IO.Path]::GetFullPath([AevryndPathSecurity]::GetFinalPath($stream.SafeFileHandle))
             if (-not (Test-ContainedPath $finalPath $projectPath)) { throw 'An opened input file escaped the repository root.' }
+            if (-not $canonicalInputPaths.Add($finalPath)) { throw 'Duplicate input files are not allowed.' }
             Assert-NoReparsePath $resolved $projectPath
             $remainingBytes = 16384 - $totalBytes
             if ($stream.Length -gt $remainingBytes) { throw 'Input files exceed the 16 KiB local-worker policy.' }
@@ -493,7 +707,25 @@ $responseMarker
     # Chat template 會讓結束回合的特殊 token 經過 JSON grammar 而初始化失敗；completion 模式沒有此衝突。
     # 固定短 prompt 讓 single-turn 進入生成；完整內容與 schema 仍只經過暫存檔傳入。
     $arguments = @('-m',$modelPath,'--prompt','Follow the complete task from the attached prompt file.','--file',$promptPath,'-n',[string]$MaxTokens,'-c','4096','-t',[string]$CpuThreads,'-tb',[string]$CpuThreads,'-ngl','32','--flash-attn','auto','--reasoning','off','--reasoning-budget','0','--json-schema-file',$schemaPath,'--output-file',$outputPath,'--log-file',$logPath,'--no-jinja','--single-turn','--simple-io','--no-display-prompt','--color','off','--no-perf')
-    if ($syntheticMode -eq 'HungStream' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+    if ($syntheticMode -in @('StubSuccess','StubBadMarker','StubBadSchema') -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        # 以本機短命 PowerShell stub 驗證 marker/schema 協定，完全不載入真實模型。
+        $syntheticResponse = if ($syntheticMode -eq 'StubBadSchema') { '{"answer":3}' } else { '{"answer":2}' }
+        $syntheticContents = if ($syntheticMode -eq 'StubBadMarker') { $syntheticResponse } else { $responseMarker + $syntheticResponse }
+        $escapedOutputPath = $outputPath.Replace("'","''")
+        $escapedSyntheticOutput = $syntheticContents.Replace("'","''")
+        $startInfoFileName = (Get-Command pwsh -ErrorAction Stop).Source
+        $childCommand = "[IO.File]::WriteAllText('$escapedOutputPath','$escapedSyntheticOutput',[Text.UTF8Encoding]::new(`$false)); exit 0"
+        $arguments = @('-NoProfile','-Command',$childCommand)
+    } elseif ($syntheticMode -eq 'StubRamGate' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        # RAM gate 測試由 worker 主迴圈注入超限收據；stub 本身只等待被安全終止。
+        $startInfoFileName = (Get-Command pwsh -ErrorAction Stop).Source
+        $arguments = @('-NoProfile','-Command','Start-Sleep -Seconds 300')
+    } elseif ($syntheticMode -in @('StubRuntimeLargeStdout','StubRuntimeLargeStderr') -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        # 大量輸出 stub 驗證 worker 也會限制 runtime pipe，而非只限制外層收據 pipe。
+        $startInfoFileName = (Get-Command pwsh -ErrorAction Stop).Source
+        $streamExpression = if ($syntheticMode -eq 'StubRuntimeLargeStdout') { '[Console]::Out' } else { '[Console]::Error' }
+        $arguments = @('-NoProfile','-Command',"$streamExpression.Write(('x' * 300000)); Start-Sleep -Seconds 300")
+    } elseif ($syntheticMode -eq 'HungStream' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
         # 測試模式建立會持有輸出 pipe 的子孫程序，驗證 timeout 不會被 stream EOF 卡住。
         $syntheticMarker = [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TEST_MARKER')
         if ($syntheticMarker -notmatch '^[a-f0-9]{32}$') { throw 'Synthetic test marker is invalid.' }
@@ -522,8 +754,8 @@ $responseMarker
     $process.StartInfo = $startInfo
     if (-not $process.Start()) { throw 'Local QWEN could not be started.' }
     Write-WorkerTrace 'runtime-process-started'
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $stdoutTask = [AevryndBoundedTextReader]::ReadAsync($process.StandardOutput,$maximumRuntimeStdoutBytes)
+    $stderrTask = [AevryndBoundedTextReader]::ReadAsync($process.StandardError,$maximumRuntimeStderrBytes)
     $launched = $true
     $maximumBytes = [int64]$MaximumRamGiB * 1GB
     $jobHandle = [AevryndPathSecurity]::CreateBoundedKillOnCloseJob($process.Handle,[uint64]$maximumBytes)
@@ -531,11 +763,25 @@ $responseMarker
     try { $process.PriorityClass = [Diagnostics.ProcessPriorityClass]::BelowNormal } catch {}
     $timer = [Diagnostics.Stopwatch]::StartNew()
     $failurePhase = 'runtime-execution'
+    if ($syntheticMode -eq 'StubRamGate' -and [Environment]::GetEnvironmentVariable('AEVRYND_QWEN_TESTING') -eq '1') {
+        $peakWorkingSetBytes = $maximumBytes + 1
+        $failureCode = 'LocalQwenRamBudgetExceeded'
+        Stop-BoundedRuntime
+        throw 'Synthetic runtime exceeded its RAM budget.'
+    }
     while (-not $process.HasExited) {
+        if (($stdoutTask.IsCompletedSuccessfully -and $stdoutTask.Result.LimitExceeded) -or
+            ($stderrTask.IsCompletedSuccessfully -and $stderrTask.Result.LimitExceeded)) {
+            $failureCode = 'LocalQwenRuntimeOutputExceeded'
+            $runtimeOutputError = 'output-limit'
+            if ($stdoutTask.IsCompletedSuccessfully) { $consoleBytes = $stdoutTask.Result.Utf8Bytes }
+            Stop-BoundedRuntime
+            throw 'Local QWEN exceeded its redirected output budget.'
+        }
         if ($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds) { Stop-BoundedRuntime;throw 'Local QWEN timed out.' }
         $process.Refresh()
         if ($process.WorkingSet64 -gt $peakWorkingSetBytes) { $peakWorkingSetBytes=$process.WorkingSet64 }
-        if ($process.WorkingSet64 -gt $maximumBytes) { Stop-BoundedRuntime;throw 'Local QWEN exceeded its RAM budget.' }
+        if ($process.WorkingSet64 -gt $maximumBytes) { $failureCode = 'LocalQwenRamBudgetExceeded';Stop-BoundedRuntime;throw 'Local QWEN exceeded its RAM budget.' }
         Start-Sleep -Milliseconds 100
     }
     Write-WorkerTrace 'runtime-process-exited'
@@ -550,8 +796,14 @@ $responseMarker
         throw 'Local QWEN did not close redirected output streams.'
     }
     Write-WorkerTrace 'runtime-streams-drained'
-    $consoleText = $stdoutTask.GetAwaiter().GetResult()
-    $stderrText = $stderrTask.GetAwaiter().GetResult()
+    $runtimeStdoutResult = $stdoutTask.GetAwaiter().GetResult()
+    $runtimeStderrResult = $stderrTask.GetAwaiter().GetResult()
+    if ($runtimeStdoutResult.LimitExceeded -or $runtimeStderrResult.LimitExceeded) {
+        $failureCode = 'LocalQwenRuntimeOutputExceeded'
+        throw 'Local QWEN exceeded its redirected output budget.'
+    }
+    $consoleText = $runtimeStdoutResult.Text
+    $stderrText = $runtimeStderrResult.Text
     $diagnosticText = $consoleText + "`n" + $stderrText
     if ($diagnosticText -match 'JSON schema to constrain generations') { $runtimeOutputKind = 'help' }
     elseif ($diagnosticText -match 'Loading model') { $runtimeOutputKind = 'model-session' }

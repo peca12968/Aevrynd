@@ -9,6 +9,8 @@ This directory contains the first read-only integration stage for the local QWEN
 - Rebuilds fail closed when a source matches a private-key or common credential pattern.
 - Queries read the checked-in knowledge pack and cannot write repository files.
 - Local inference is delegated to `tools/ci/invoke-local-qwen.ps1`, which enforces file type, input size, timeout, CPU, memory, structured-output, and fallback limits.
+- Multi-file requests cross the supervisor boundary as bounded base64-encoded JSON rather than positional `pwsh -File` array arguments. Both sender and worker cap the array, each string, JSON bytes, and base64 bytes; the worker resolves every path independently and rejects duplicate canonical final paths.
+- Supervisor receipts validate success/fallback exclusivity, result/error shape, exact numeric resource limits, and runtime-launch evidence. Success requires a launched, job-contained, zero-exit runtime with a marked schema-valid result; fallback cannot reuse that success shape. Invalid worker JSON, schema, exit status, stderr, or bounded stdout/stderr limit fails closed with sanitized byte counts, kills the process tree when necessary, and never forwards raw child output.
 - Model output is advisory. It cannot edit files, execute commands, approve a release, or decide code correctness.
 - Every citation retains its source path, source SHA-256, source revision, engine version, and chunk identifier.
 - Every query validates the strict manifest contract, knowledge SHA-256, exact JSONL-to-chunk parity, expected chunk count, safe source paths, and required exclusions before any model process can start.
@@ -22,7 +24,10 @@ This directory contains the first read-only integration stage for the local QWEN
 pwsh -NoProfile -File tools/ai/build-engine-knowledge.ps1
 pwsh -NoProfile -File tools/ai/query-engine-copilot.ps1 -Question "What does VisibilityBvh3D do?"
 pwsh -NoProfile -File tools/ai/test-engine-copilot.ps1 -ModelCases 0
+pwsh -NoProfile -File tools/ci/test-local-qwen-wrapper.ps1
 ```
+
+The wrapper test command uses deterministic PowerShell stubs for bootstrap transport, strict success/fallback receipts, bounded stdout/stderr, canonical-path deduplication, response marker, JSON schema, timeout, process-tree cleanup, and RAM-gate coverage. It does not load the large QWEN model unless `-IncludeSmoke` is explicitly supplied.
 
 The deterministic retrieval baseline always covers the complete fixed evaluation set. Local generation remains policy-gated: the measured safe route is a fixed-schema, single-feature classification of at most 1 KiB and 96 output tokens. Larger grounded-answer cases fall back to Codex until a matching benchmark passes.
 
