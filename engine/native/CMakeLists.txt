@@ -32,6 +32,7 @@ add_library(AevryndEngine STATIC
   src/NetworkTransport3D.cpp
   src/PhysicsWorld3D.cpp
   src/PbrMaterialCooker3D.cpp
+  src/PhotorealAssetProfile3D.cpp
   src/Profiling.cpp
   src/ProceduralPlacement3D.cpp
   src/ReplicationProtocol3D.cpp
@@ -59,6 +60,7 @@ add_library(AevryndEngine STATIC
   src/Vegetation3D.cpp
   src/VolumetricAtmospherePassD3D12.cpp
 )
+target_sources(AevryndEngine PRIVATE include/Aevrynd/PhotorealAssetProfile3D.h)
 
 set(AEVRYND_STREAMLINE_AVAILABLE OFF)
 if(AEVRYND_ENABLE_STREAMLINE AND EXISTS "${STREAMLINE_ROOT}/include/sl.h" AND EXISTS "${STREAMLINE_ROOT}/bin/x64/sl.interposer.dll")
@@ -142,6 +144,13 @@ endif()
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}" AEVRYND_STREAMLINE_AVAILABLE=$<BOOL:${AEVRYND_STREAMLINE_AVAILABLE}>)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0 bcrypt)
+
+add_executable(AevryndPhotorealAssetProfile3DTest tests/PhotorealAssetProfile3DSmoke.cpp)
+target_compile_options(AevryndPhotorealAssetProfile3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndPhotorealAssetProfile3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndPhotorealAssetProfile3DTest COMMAND AevryndPhotorealAssetProfile3DTest
+  "${CMAKE_SOURCE_DIR}/engine/assets/asset-catalogs/realistic-cc0-assets.json"
+  "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/runtime-asset-manifest.json")
 
 set(AEVRYND_WINDOWS_GUI_TEST_WRAPPER "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1")
 function(aevrynd_add_windows_gui_test test_name target_name)

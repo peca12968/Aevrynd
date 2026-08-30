@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "assetName": "boulder-01",
+  "source": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\boulder_01_1k.gltf",
+  "sourceSha256": "51487934DB898B4C24072780A451E34ECA5C02E3ADA24A62BBC600BBC4019E92",
+  "blenderVersion": "5.2.1 LTS",
+  "peakWorkingSetBytes": 793247744,
+  "levels": [
+    {
+      "level": 0,
+      "requestedRatio": 1.0,
+      "vertices": 67042,
+      "triangles": 66122,
+      "file": "boulder-01-lod0.glb",
+      "bytes": 6229588,
+      "sha256": "82550460F2B28C80D95846AC64222AB7A9D3FDB3B4530710E23739EBA79B6412"
+    },
+    {
+      "level": 1,
+      "requestedRatio": 0.5,
+      "vertices": 38482,
+      "triangles": 33061,
+      "file": "boulder-01-lod1.glb",
+      "bytes": 5336184,
+      "sha256": "AC41BBDFFC041C80AA9F2176A2FFC0F3443440112AFE54EF143277DBA08BA02A"
+    },
+    {
+      "level": 2,
+      "requestedRatio": 0.15,
+      "vertices": 33466,
+      "triangles": 26611,
+      "file": "boulder-01-lod2.glb",
+      "bytes": 4813872,
+      "sha256": "5FC3940F5DF446E228BD7A3DC64BAB63AD033FDA14C2BBA446D08836DF6C169F"
+    }
+  ]
+}

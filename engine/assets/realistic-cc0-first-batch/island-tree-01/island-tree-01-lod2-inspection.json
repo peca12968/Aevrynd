@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "source": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\gltfpack-island-tree\\island-tree-01-lod2.glb",
+  "vertices": 307739,
+  "triangles": 235039,
+  "meshObjects": 1,
+  "materialSlots": 3,
+  "hasUv": true,
+  "hasNormals": true,
+  "boundsMinimum": [
+    -2.3436460494995117,
+    -2.233956813812256,
+    -0.01643257960677147
+  ],
+  "boundsMaximum": [
+    2.4106826782226562,
+    2.583538055419922,
+    5.0071187019348145
+  ],
+  "visualNonEmpty": true
+}

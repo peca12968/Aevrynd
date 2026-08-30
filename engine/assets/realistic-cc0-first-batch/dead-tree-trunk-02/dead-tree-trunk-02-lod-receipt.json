@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "assetName": "dead-tree-trunk-02",
+  "source": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\dead_tree_trunk_02_1k.gltf",
+  "sourceSha256": "B486AB1F0C7F4972E0EEC97B19DE53B26A34D09F07DA5F9C2A70F8621F9E574C",
+  "blenderVersion": "5.2.1 LTS",
+  "peakWorkingSetBytes": 2304614400,
+  "levels": [
+    {
+      "level": 0,
+      "requestedRatio": 1.0,
+      "vertices": 46112,
+      "triangles": 83128,
+      "file": "dead-tree-trunk-02-lod0.glb",
+      "bytes": 4905968,
+      "sha256": "897040E0CFC9883B9FA68DB0F16B02976E2F3C3E125BF9840CE9F9E565D4AB9B"
+    },
+    {
+      "level": 1,
+      "requestedRatio": 0.5,
+      "vertices": 24883,
+      "triangles": 41564,
+      "file": "dead-tree-trunk-02-lod1.glb",
+      "bytes": 3977256,
+      "sha256": "664E159A4B4CDDD5C016785611B0461852F52E666B181124512D529640E21DDC"
+    },
+    {
+      "level": 2,
+      "requestedRatio": 0.15,
+      "vertices": 8705,
+      "triangles": 12469,
+      "file": "dead-tree-trunk-02-lod2.glb",
+      "bytes": 3284664,
+      "sha256": "0D7C7C67959D2516CFD6776B771AB4DCCC29DD4058D4D0828F3E12C06C4C8EA9"
+    }
+  ]
+}

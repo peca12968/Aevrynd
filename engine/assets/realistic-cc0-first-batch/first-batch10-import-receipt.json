@@ -1,0 +1,517 @@
+[
+  {
+    "schemaVersion": 1,
+    "assetName": "forest-ground-04",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "forest_ground_04",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/forest_ground_04",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\forest-ground-04\\textures\\forest_ground_04_diff_2k.jpg",
+    "sourceSha256": "24B8AAF4C8547305D80B0E029EC365219AB1B90748D4CA5651BDC9E75BFDE5E6",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\forest-ground-04\\forest_ground_04_2k.gltf",
+        "bytes": 2732,
+        "sha256": "DA47757CF724E56B85FE07D355FF3BC902D814BF18A526AB38E9AAF63EE5E92A"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\forest-ground-04\\forest_ground_04.bin",
+        "bytes": 2369652,
+        "sha256": "198883CB523FDA223EA74C9B46B6CC7397783DA818881924126266D37EBB7C9B"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\forest-ground-04\\textures\\forest_ground_04_diff_2k.jpg",
+        "bytes": 4529321,
+        "sha256": "24B8AAF4C8547305D80B0E029EC365219AB1B90748D4CA5651BDC9E75BFDE5E6"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\forest-ground-04\\textures\\forest_ground_04_nor_gl_2k.jpg",
+        "bytes": 5288849,
+        "sha256": "B37AC799ED410976541E0011C246FCA254E74EAA3F096AE7A7D74178DB5A6D9B"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\forest-ground-04\\textures\\forest_ground_04_rough_2k.jpg",
+        "bytes": 2509805,
+        "sha256": "24194662948424C323C75E0918461AD9D38BC0A275022000144F248B3EFB4119"
+      }
+    ],
+    "kind": "pbr-material",
+    "status": "validated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "ground108",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "Ground108",
+    "sourceProvider": "ambientcg",
+    "officialPage": "https://ambientcg.com/view?id=Ground108",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_AmbientOcclusion.jpg",
+    "sourceSha256": "55C4C608A84C0A73FE1964E460EC9F8DCE9AB860173E48A1F54DF94720F27943",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_AmbientOcclusion.jpg",
+        "bytes": 860514,
+        "sha256": "55C4C608A84C0A73FE1964E460EC9F8DCE9AB860173E48A1F54DF94720F27943"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_Color.jpg",
+        "bytes": 1637079,
+        "sha256": "A0CCDC1264230444F9EAAB9D8FD2A809052209FB682C911DA9795FA3213B3BF5"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_Displacement.jpg",
+        "bytes": 493979,
+        "sha256": "C7CE1D834C3A04358AE1866F9F9DB61EAF812EC39BD8A4C7F2E7B83C2FA49056"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_NormalDX.jpg",
+        "bytes": 2108413,
+        "sha256": "A89F4CB69CF7CD37399F0D27A8B4C3DAE8E21F7E77C939DDBA1142E52F206E4A"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_NormalGL.jpg",
+        "bytes": 2108634,
+        "sha256": "908957D4302F6A0E5C8BDDDD50FF837175F77992775B7A242311EC0B4337F16C"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG_Roughness.jpg",
+        "bytes": 797916,
+        "sha256": "4E78FBDE7DA89C2E48E6162ED6FEBA621A2EAB6EE82E03B1D6E92C7169133B64"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG.blend",
+        "bytes": 1324737,
+        "sha256": "1DABCAF55F17FEFDB583909E59BC4E38F88D8DF34BB6ACB1114D7A0E875FEB51"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG.mtlx",
+        "bytes": 2272,
+        "sha256": "64506C2CFF43004C727C8A057002DC107F0BE01B826C3FCC3D32F6B47801E0E2"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG.tres",
+        "bytes": 1020,
+        "sha256": "64029AEDB6F12BED1DDF48F88AC4729C3723D1B9B2CB1F78F54DE088715D89AF"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108_1K-JPG.usdc",
+        "bytes": 3144,
+        "sha256": "AEAF305236C66D0B84B024DCEC53827A45CA37DDCDB57BA3D012CB5EA5EF5F61"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\ground108\\Ground108.png",
+        "bytes": 495744,
+        "sha256": "D814761DB879D09D185B340572CF2FD2BFC03537F360CD910E4E43BD45CD6560"
+      }
+    ],
+    "kind": "pbr-material",
+    "status": "validated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "coastal-cliff-01",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "coastal_cliff_01",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/coastal_cliff_01",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\coastal_cliff_01_1k.gltf",
+    "sourceSha256": "2E6BB1F77965B314208B309AC89B94B8148C6A08EE6C9808CD71455E5475602D",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\coastal_cliff_01_1k.gltf",
+        "bytes": 2825,
+        "sha256": "2E6BB1F77965B314208B309AC89B94B8148C6A08EE6C9808CD71455E5475602D"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\coastal_cliff_01.bin",
+        "bytes": 13179840,
+        "sha256": "6833DFAF75E0D039E64BC09AD642C4BE3361739F20048AF32AD50FD8E6471A65"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\textures\\coastal_cliff_01_arm_1k.jpg",
+        "bytes": 640985,
+        "sha256": "7F287D0B44A3162B5E360FE45CCC8B6009C189D21BD33C1094060EEF613C6FA6"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\textures\\coastal_cliff_01_diff_1k.jpg",
+        "bytes": 699457,
+        "sha256": "6C9626FDB5550BA260B195638C8C89053FAEDC22005F4CA94D3BE5DF72AE525A"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\textures\\coastal_cliff_01_nor_gl_1k.jpg",
+        "bytes": 853524,
+        "sha256": "AFBE8C2F9FF62DD616F776C074B996D2D275EEF982A40AEE1F28F4F3B3A3CF0E"
+      }
+    ],
+    "kind": "mesh-pbr",
+    "status": "lod-generated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "boulder-01",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "boulder_01",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/boulder_01",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\boulder_01_1k.gltf",
+    "sourceSha256": "51487934DB898B4C24072780A451E34ECA5C02E3ADA24A62BBC600BBC4019E92",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\boulder_01_1k.gltf",
+        "bytes": 2773,
+        "sha256": "51487934DB898B4C24072780A451E34ECA5C02E3ADA24A62BBC600BBC4019E92"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\boulder_01.bin",
+        "bytes": 2938808,
+        "sha256": "7F5B06503D62BD95BFE9C6B8A354A5CC8FF04A4D271A8CF87A3E3125DB4232D7"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\textures\\boulder_01_arm_1k.jpg",
+        "bytes": 659386,
+        "sha256": "C57187C5746B6BE913FA53846CB44FF78743E7CA5000F131C9627B99563C2B87"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\textures\\boulder_01_diff_1k.jpg",
+        "bytes": 987467,
+        "sha256": "C38F0E918F6DC16B8D386BA3CDD89805C78320C119A1CEEC85856F82B09A65B8"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\boulder-01\\textures\\boulder_01_nor_gl_1k.jpg",
+        "bytes": 1183552,
+        "sha256": "0810CF6E89D89BB6EB065B4D2E2855288F5DCBD2C15C6E40AB90D462021B50AA"
+      }
+    ],
+    "kind": "mesh-pbr",
+    "status": "lod-generated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "island-tree-01",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "island_tree_01",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/island_tree_01",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\island_tree_01_1k.gltf",
+    "sourceSha256": "78E905A40670BFABB2760601D4D9A6C17193A50D68E6271C66893EB7BD75906D",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\island_tree_01_1k.gltf",
+        "bytes": 8576,
+        "sha256": "78E905A40670BFABB2760601D4D9A6C17193A50D68E6271C66893EB7BD75906D"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\island_tree_01.bin",
+        "bytes": 60709812,
+        "sha256": "1FAA817B46E24ED6FC90D3EC72188A0DC5AC75E82C89B3DD3C5FDAECF7CC005C"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_arm_1k.jpg",
+        "bytes": 727403,
+        "sha256": "BF972DFF0FBC71F146B4C02103FC3596477A49A9EFF46B87B13C89B7B90D18CA"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_branches_arm_1k.jpg",
+        "bytes": 484806,
+        "sha256": "9E3F82263247CE4F619692CEA4C4F6FE9936FF465A86623481849062642C7D05"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_branches_diff_1k.jpg",
+        "bytes": 528304,
+        "sha256": "BEE5EC22196E9E31AD0C95A5A9B4636571CC0124D5BB27A92F1E307D289CC60D"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_branches_nor_gl_1k.jpg",
+        "bytes": 819101,
+        "sha256": "2D67393BA76A0F49CF965FA0C99D8C16268E71E87B1203D35539BFDB971A514E"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_diff_1k.jpg",
+        "bytes": 791327,
+        "sha256": "51BFF9A3A6ED7D89FF4C73F01708B7267ED8D7A82B0CB12343741894F708218F"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_leaves_arm_1k.jpg",
+        "bytes": 489476,
+        "sha256": "90DA3A072DBCB052715B1313B9DBC69A4AA8A09A31A4B3868411A2BB51D72037"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_leaves_diff_1k.jpg",
+        "bytes": 191886,
+        "sha256": "F56D762A1507754752ABF164CC12ACBC1E87CE87FA609AC44B98A1B0037C89D8"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_leaves_nor_gl_1k.jpg",
+        "bytes": 379443,
+        "sha256": "07BA461C0C95DA4E49A42981766BDB6191D4C3C4D815796C082266DCC3CECDB8"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\island-tree-01\\textures\\island_tree_01_nor_gl_1k.jpg",
+        "bytes": 1207134,
+        "sha256": "CA22E428E1B1EBAC47B2FC67EC355700C8779D6628D2FC6C3EBAE9002988F63E"
+      }
+    ],
+    "kind": "mesh-pbr",
+    "status": "lod-generated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "dead-tree-trunk-02",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "dead_tree_trunk_02",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/dead_tree_trunk_02",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\dead_tree_trunk_02_1k.gltf",
+    "sourceSha256": "B486AB1F0C7F4972E0EEC97B19DE53B26A34D09F07DA5F9C2A70F8621F9E574C",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\dead_tree_trunk_02_1k.gltf",
+        "bytes": 2849,
+        "sha256": "B486AB1F0C7F4972E0EEC97B19DE53B26A34D09F07DA5F9C2A70F8621F9E574C"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\dead_tree_trunk_02.bin",
+        "bytes": 1974352,
+        "sha256": "2B1B7CA07D98396DDC1987E367DCFF9734DF16B62E997C14837512D134687DED"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\textures\\dead_tree_trunk_02_arm_1k.jpg",
+        "bytes": 805609,
+        "sha256": "EA15561CE36572EBD0DB3C997F70D68A76D4BCBFEF7EFB4F91C8FD3B5F766E62"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\textures\\dead_tree_trunk_02_diff_1k.jpg",
+        "bytes": 932059,
+        "sha256": "FAC23E81AB5639DCDE93DB605E5DD94C65E0AA2B1FB4A303F37DE9AFBB9AF5B4"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\dead-tree-trunk-02\\textures\\dead_tree_trunk_02_nor_gl_1k.jpg",
+        "bytes": 1192056,
+        "sha256": "9B26C29B89AFCED0DDB91DBE6F917E59038BED5BA6076DFCEB8D1B4B00CA04F7"
+      }
+    ],
+    "kind": "mesh-pbr",
+    "status": "lod-generated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "roofing-tiles014-b",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "RoofingTiles014B",
+    "sourceProvider": "ambientcg",
+    "officialPage": "https://ambientcg.com/view?id=RoofingTiles014B",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_AmbientOcclusion.jpg",
+    "sourceSha256": "D024563853D609DCE0D078200ECDACEA5D3190A0BEA9B8C0D92CDD44033D66E6",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_AmbientOcclusion.jpg",
+        "bytes": 466317,
+        "sha256": "D024563853D609DCE0D078200ECDACEA5D3190A0BEA9B8C0D92CDD44033D66E6"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_Color.jpg",
+        "bytes": 979821,
+        "sha256": "19D984CDF32B07DDD2DF209318C5FE77BCD6D844373FEC40F4C79DCEA39AC898"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_Displacement.jpg",
+        "bytes": 297391,
+        "sha256": "5AEBF3806C2F9E2314929C0F0F263786D4210081F002AC4FDDA956ACAB72F62E"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_NormalDX.jpg",
+        "bytes": 1307038,
+        "sha256": "688D099E799DD1AB88B41053AFB23772C80944A0F0768538634470FB83B3508B"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_NormalGL.jpg",
+        "bytes": 1294439,
+        "sha256": "A0A78B16F67B1B2F92ECA2EABF32E8F09FD83BBC6A7C02DC3463942BB00269C0"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_Opacity.jpg",
+        "bytes": 5749,
+        "sha256": "2008DE7B3881528FC666F36141AA619785494E29C4C801DE14B220FF4452A23F"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG_Roughness.jpg",
+        "bytes": 662184,
+        "sha256": "6A91F9DB4D37A28F586E3F71D6CAEBA8C2508DC5D811E49BCF916619F66299D2"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG.blend",
+        "bytes": 1120852,
+        "sha256": "E90067EA2D9DE59948F8EDA5B213AD0B152D6070518AAC74165A30D226DB0A20"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG.mtlx",
+        "bytes": 2734,
+        "sha256": "A08D9A0B48796244CC517C8E99EBB6991A157CFF1FDD758D3BB0C58FF8F17E00"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG.tres",
+        "bytes": 1055,
+        "sha256": "928167CFB0726338C1DB54C729ACBF00AD65BE0DB44D8999894BD46F61864836"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B_1K-JPG.usdc",
+        "bytes": 3143,
+        "sha256": "905375D0E6761F6D4E8E98185FC324740EC3E5FB2441CEC2E23073F6805086E9"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\roofing-tiles014-b\\RoofingTiles014B.png",
+        "bytes": 338554,
+        "sha256": "A16D4DFCF09536E83119A8284C0CD8CA42DA38918C402439ACE3A9DA5897F474"
+      }
+    ],
+    "kind": "pbr-material",
+    "status": "validated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "bricks100",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "Bricks100",
+    "sourceProvider": "ambientcg",
+    "officialPage": "https://ambientcg.com/view?id=Bricks100",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_AmbientOcclusion.jpg",
+    "sourceSha256": "7EF8DD9BFD21202FAB3B445DD7962ECCE22A30035637A9DDCA1C40A856D6474B",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_AmbientOcclusion.jpg",
+        "bytes": 359977,
+        "sha256": "7EF8DD9BFD21202FAB3B445DD7962ECCE22A30035637A9DDCA1C40A856D6474B"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_Color.jpg",
+        "bytes": 727003,
+        "sha256": "E5596CE79D9A63D6B9A9E9AC15A0BB60D8A5C39B684999A872467641BC91D30D"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_Displacement.jpg",
+        "bytes": 186182,
+        "sha256": "E9D0FC436330C9C0829E437D5E0F48926AE6396279E02874E0D79DD3AF4A839F"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_NormalDX.jpg",
+        "bytes": 829625,
+        "sha256": "E54950F7DCAFE8E7593D0D3D6B02930C04ADBE31FE43D51A6825AD57BC2B547E"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_NormalGL.jpg",
+        "bytes": 830327,
+        "sha256": "3FD468809D149512CBBB7A0EE298BDB1D7C2213DA05E5453E6612B8006BD3708"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG_Roughness.jpg",
+        "bytes": 346000,
+        "sha256": "907A11988E16FF1EC831523B8FD31A61B3493A37B2253B04718B7F711356786F"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG.blend",
+        "bytes": 1110052,
+        "sha256": "83FFDAD9C3FFDCF06D5513980149260F6C7C5C678A0F9FD86EF83FD313A5AB0E"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG.mtlx",
+        "bytes": 2272,
+        "sha256": "10ABEBCEDF5B62374B59827F13EBD5EFBB25390D03E039547C47B486FFF4FC58"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG.tres",
+        "bytes": 1020,
+        "sha256": "36DF5A4E1CD22990366EE5D094DE110CF68E8B9EB3DF4356D462F87A4658536F"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100_1K-JPG.usdc",
+        "bytes": 3035,
+        "sha256": "AD68F87101CD9C060FC67A845B0E4DA2B06F318CC63815E8D5275A8BDA0A45C2"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\bricks100\\Bricks100.png",
+        "bytes": 429720,
+        "sha256": "8858E77A5261A56E82BF270FCF9C83D668CE1C7E9CCCB8D7107B0A1CC4C3C412"
+      }
+    ],
+    "kind": "pbr-material",
+    "status": "validated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "stony-dirt-path",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "stony_dirt_path",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/stony_dirt_path",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\stony-dirt-path\\textures\\stony_dirt_path_arm_1k.jpg",
+    "sourceSha256": "E38820894100350DF10C2490DBE8A1B4C31DC523266A84C6C7A1A829D2792502",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\stony-dirt-path\\stony_dirt_path_1k.gltf",
+        "bytes": 2805,
+        "sha256": "507A1D21BE00AEA1133EB716008594718031CC932FC0F8A976B9311DAD3FB35B"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\stony-dirt-path\\stony_dirt_path.bin",
+        "bytes": 2369940,
+        "sha256": "3499A79ED87DED7B7643E09DCA53112025C760A5022EC9835C272584488DB83E"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\stony-dirt-path\\textures\\stony_dirt_path_arm_1k.jpg",
+        "bytes": 848546,
+        "sha256": "E38820894100350DF10C2490DBE8A1B4C31DC523266A84C6C7A1A829D2792502"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\stony-dirt-path\\textures\\stony_dirt_path_diff_1k.jpg",
+        "bytes": 1234067,
+        "sha256": "A662000FF3F7F64E23C25D2B8CD5947B9C8FD893510C5ED49C0DAA2847004758"
+      },
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\stony-dirt-path\\textures\\stony_dirt_path_nor_gl_1k.jpg",
+        "bytes": 1416394,
+        "sha256": "2866303F71066F42BD218410BF6D38D9A21CDA34C6E3543A8AC92900B7A09C75"
+      }
+    ],
+    "kind": "pbr-material",
+    "status": "validated"
+  },
+  {
+    "schemaVersion": 1,
+    "assetName": "xanderklinge",
+    "catalogId": "gameplay-ultra-realistic-cc0",
+    "sourceId": "xanderklinge",
+    "sourceProvider": "poly-haven",
+    "officialPage": "https://polyhaven.com/a/xanderklinge",
+    "license": "CC0-1.0",
+    "commercialUse": true,
+    "sourceFile": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\xanderklinge\\xanderklinge_1k.hdr",
+    "sourceSha256": "E688F624CD66973515154F200D6998B8731FD57DD8F6C2D71EB315454E9C3EF8",
+    "sourceFiles": [
+      {
+        "file": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\xanderklinge\\xanderklinge_1k.hdr",
+        "bytes": 1865245,
+        "sha256": "E688F624CD66973515154F200D6998B8731FD57DD8F6C2D71EB315454E9C3EF8"
+      }
+    ],
+    "kind": "hdri",
+    "status": "validated"
+  }
+]

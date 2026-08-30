@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "assetName": "coastal-cliff-01",
+  "source": "D:\\Download\\Aevrynd\\AssetCache\\cc0-first-batch\\input\\coastal-cliff-01\\coastal_cliff_01_1k.gltf",
+  "sourceSha256": "2E6BB1F77965B314208B309AC89B94B8148C6A08EE6C9808CD71455E5475602D",
+  "blenderVersion": "5.2.1 LTS",
+  "peakWorkingSetBytes": 793247744,
+  "levels": [
+    {
+      "level": 0,
+      "requestedRatio": 1.0,
+      "vertices": 238686,
+      "triangles": 461824,
+      "file": "coastal-cliff-01-lod0.glb",
+      "bytes": 15375624,
+      "sha256": "13924D67FA9D6DDD8CF480C4669134E8E8EF7CD0E9276F98EA5B31E6ED941A54"
+    },
+    {
+      "level": 1,
+      "requestedRatio": 0.5,
+      "vertices": 122455,
+      "triangles": 230911,
+      "file": "coastal-cliff-01-lod1.glb",
+      "bytes": 8885268,
+      "sha256": "3006DF5BFF695E9463F4287859EDDD92F794D6432094FACCBF65D35D838924DA"
+    },
+    {
+      "level": 2,
+      "requestedRatio": 0.15,
+      "vertices": 39417,
+      "triangles": 69273,
+      "file": "coastal-cliff-01-lod2.glb",
+      "bytes": 3872688,
+      "sha256": "6AC7A47E9212E7A9B3E745FE754EAADAFDA4DACF5C6D545A9006E3F55D8AE6AE"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "binding": "runtime-sidecar",
+  "meshMaterialBinding": "integration-required",
+  "materials": [
+    {
+      "slot": 0,
+      "baseColor": "textures/boulder_01_diff_1k.jpg",
+      "normalGl": "textures/boulder_01_nor_gl_1k.jpg",
+      "packedArm": "textures/boulder_01_arm_1k.jpg"
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "decimator": {
+    "license": "MIT",
+    "peakGate": "pass",
+    "memoryGate": "pass",
+    "memoryGateMethod": "gltfpack-process-tree",
+    "memoryGateReason": null,
+    "upstream": "https://github.com/zeux/meshoptimizer",
+    "commit": "9d9890c73011d75920af614485296d1e03e95448",
+    "name": "gltfpack",
+    "peDependencies": [
+      "MSVCP140.dll",
+      "VCRUNTIME140.dll",
+      "VCRUNTIME140_1.dll",
+      "api-ms-win-crt-*",
+      "KERNEL32.dll"
+    ],
+    "executableSha256": "1517a5e6fd3af9fc8a07b57e9bc018d882fec1058e77120777db9c79d938288b",
+    "tag": "v1.2",
+    "archiveSha256": "e40f71b809cdf3361b9a4def85fd44534e8733ce29d4b943c145b76859e4c2b4",
+    "peakLimitBytes": 2147483648,
+    "malwareScan": "windows-defender-no-threats",
+    "archiveUrl": "https://github.com/zeux/meshoptimizer/archive/refs/tags/v1.2.tar.gz",
+    "peakWorkingSetBytes": 368406528,
+    "peakJobMemoryBytes": 366972928,
+    "peakProcessTreeBytes": 368406528,
+    "memorySampleCount": 16,
+    "maxProcessCount": 2
+  },
+  "sourceFile": "island_tree_01_1k.gltf",
+  "status": "imported",
+  "license": "CC0-1.0",
+  "levels": [
+    {
+      "hasNormals": true,
+      "hasUv": true,
+      "boundsMaximum": [
+        2.4108076095581055,
+        2.583538055419922,
+        5.0071187019348145
+      ],
+      "ratio": 1.0,
+      "level": 0,
+      "triangles": 1599403,
+      "sha256": "b101d353477c8695f9d28781d0ad4344863b012b86a726668540a46b450ee6ff",
+      "boundsMinimum": [
+        -2.3444457054138184,
+        -2.2340102195739746,
+        -0.020327899605035782
+      ],
+      "bytes": 39852252,
+      "visualNonEmpty": true,
+      "file": "island-tree-01-lod0.glb",
+      "materialSlots": 3,
+      "vertices": 1303928
+    },
+    {
+      "hasNormals": true,
+      "hasUv": true,
+      "boundsMaximum": [
+        2.41068696975708,
+        2.583538055419922,
+        5.0071187019348145
+      ],
+      "ratio": 0.5,
+      "level": 1,
+      "triangles": 795949,
+      "sha256": "c1da336cd188f30c886ec3bb33a5fd41bdfa65c37326359537e110af8f0d8472",
+      "boundsMinimum": [
+        -2.3436460494995117,
+        -2.2340102195739746,
+        -0.020327899605035782
+      ],
+      "bytes": 21250416,
+      "visualNonEmpty": true,
+      "file": "island-tree-01-lod1.glb",
+      "materialSlots": 3,
+      "vertices": 737317
+    },
+    {
+      "hasNormals": true,
+      "hasUv": true,
+      "boundsMaximum": [
+        2.4106826782226562,
+        2.583538055419922,
+        5.0071187019348145
+      ],
+      "ratio": 0.15,
+      "level": 2,
+      "triangles": 235039,
+      "sha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24",
+      "boundsMinimum": [
+        -2.3436460494995117,
+        -2.233956813812256,
+        -0.01643257960677147
+      ],
+      "bytes": 7718788,
+      "visualNonEmpty": true,
+      "file": "island-tree-01-lod2.glb",
+      "materialSlots": 3,
+      "vertices": 307739
+    }
+  ],
+  "schemaVersion": 2,
+  "assetName": "island-tree-01",
+  "officialPage": "https://polyhaven.com/a/island_tree_01",
+  "sourceSha256": "78e905a40670bfabb2760601d4d9a6c17193a50d68e6271c66893eb7bd75906d",
+  "sourceProvider": "poly-haven"
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "binding": "runtime-sidecar",
+  "meshMaterialBinding": "integration-required",
+  "materials": [
+    {
+      "slot": 0,
+      "baseColor": "textures/coastal_cliff_01_diff_1k.jpg",
+      "normalGl": "textures/coastal_cliff_01_nor_gl_1k.jpg",
+      "packedArm": "textures/coastal_cliff_01_arm_1k.jpg"
+    }
+  ]
+}
