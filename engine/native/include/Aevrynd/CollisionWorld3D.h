@@ -40,14 +40,20 @@ public:
     std::vector<ColliderHandle3D> QueryBox(Vec3 center,Vec3 extents,CollisionQueryFilter3D filter={})const;
     void CollectBoxes(std::vector<BoxCollider3D>& output,CollisionQueryFilter3D filter={})const;
     CollisionWorldStats3D Stats()const;
+    // 僅雜湊可重播的語意狀態；不納入 bucket、容量、統計與位址。
+    [[nodiscard]] uint64_t StateHash()const noexcept;
     bool CanRebaseOrigin(Vec3 delta)const noexcept;
     void RebaseOrigin(Vec3 delta)noexcept;
 private:
+    friend struct CollisionWorld3DTestAccess;
     bool Matches(const StaticBoxCollider3D& collider,CollisionQueryFilter3D filter)const;
     std::unordered_map<uint32_t,StaticBoxCollider3D> colliders_;
+    // 查詢一律依 handle 升序走訪；unordered_map 只負責 O(1) 定位。
+    std::vector<uint32_t> canonicalIds_;
     mutable CollisionWorldStats3D stats_{};
     std::size_t lastReleasedBytes_{};
     uint64_t trimCount_{};
     uint32_t nextHandle_{1};
+    bool handlesExhausted_{};
 };
 }
