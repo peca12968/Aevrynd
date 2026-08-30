@@ -185,6 +185,11 @@ target_compile_options(AevryndCharacterControllerTest PRIVATE /W4 /permissive- /
 target_link_libraries(AevryndCharacterControllerTest PRIVATE AevryndEngine)
 add_test(NAME AevryndCharacterControllerTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterControllerTest>'")
 
+add_executable(AevryndCharacterDirectDisplacement3DTest tests/CharacterDirectDisplacement3DSmoke.cpp)
+target_compile_options(AevryndCharacterDirectDisplacement3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndCharacterDirectDisplacement3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterDirectDisplacement3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterDirectDisplacement3DTest>'")
+
 add_executable(AevryndCollisionWorldTest tests/CollisionWorldSmoke.cpp)
 target_compile_options(AevryndCollisionWorldTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCollisionWorldTest PRIVATE AevryndEngine)
