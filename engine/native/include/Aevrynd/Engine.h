@@ -34,6 +34,27 @@ struct MeshLodResourceChain3D {
     MeshLodResourceChain3D& operator=(MeshLodResourceChain3D&&)=delete;
     explicit operator bool()const{return levelCount>=2&&bool(levels[0]);}
 };
+
+enum class EnvironmentLightingGpuOperation3D : std::uint8_t {
+    Create,
+    Set,
+    Clear,
+    Destroy,
+    Trim
+};
+
+struct EnvironmentLightingGpuReceipt3D {
+    std::uint64_t sequence{};
+    EnvironmentLightingGpuOperation3D operation{};
+    EnvironmentLightingHandle3D handle{};
+    std::size_t residentSetsBefore{}, residentSetsAfter{};
+    std::size_t residentBytesBefore{}, residentBytesAfter{};
+    std::size_t descriptorsBefore{}, descriptorsAfter{};
+    std::size_t pendingReleaseBytesAfter{};
+    bool rendererAccepted{};
+    bool activeAfter{};
+    explicit operator bool() const noexcept { return sequence != 0; }
+};
 struct SkinnedMeshResource3D {
     SkinnedMeshHandle3D handle{};
     MeshBounds3D bounds{};
@@ -93,6 +114,17 @@ public:
     [[nodiscard]] std::optional<size_t> EstimateMaterialTextureSetAllocationBytes3D(const MaterialTextureSetDefinition3D& definition)const{return renderer_->EstimateMaterialTextureSetAllocationBytes3D(definition);}
     void DestroyMaterialTextureSet3D(MaterialTextureSetHandle3D textures){renderer_->DestroyMaterialTextureSet(textures);}
     void SetMaterialTextureMemoryBudget(size_t bytes){renderer_->SetMaterialTextureMemoryBudget(bytes);}
+    bool CreateEnvironmentLighting3D(const EnvironmentLightingStore3D& store,
+        EnvironmentLightingHandle3D handle,EnvironmentLightingGpuReceipt3D* receipt=nullptr);
+    bool SetEnvironmentLighting3D(const EnvironmentLightingStore3D& store,
+        EnvironmentLightingHandle3D handle,
+        EnvironmentLightingGpuReceipt3D* receipt=nullptr);
+    bool ClearEnvironmentLighting3D(EnvironmentLightingGpuReceipt3D* receipt=nullptr);
+    bool DestroyEnvironmentLighting3D(const EnvironmentLightingStore3D& store,
+        EnvironmentLightingHandle3D handle,
+        EnvironmentLightingGpuReceipt3D* receipt=nullptr);
+    void TrimEnvironmentLighting3D(EnvironmentLightingGpuReceipt3D* receipt=nullptr);
+    [[nodiscard]] EnvironmentLightingHandle3D ActiveEnvironmentLighting3D()const{return renderer_->ActiveEnvironmentLighting();}
     size_t TrimUnusedMemory();
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
@@ -113,6 +145,12 @@ private:
     EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
     std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
+    struct EnvironmentLightingBinding3D {
+        std::shared_ptr<const EnvironmentIblValidatedData3D> payload{};
+        std::uint32_t references{};
+    };
+    std::unordered_map<std::uint64_t,EnvironmentLightingBinding3D> environmentLightingBindings_{};
+    std::uint64_t environmentLightingReceiptSequence_{};
     ProcessMemoryStats processMemoryStats_{};size_t lastReleasedBytes_{};uint64_t trimCount_{},automaticTrimCount_{};float lastAutomaticTrimTime_{};
     Color clearColor_{.018f,.045f,.055f,1};
 };

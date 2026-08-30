@@ -15,6 +15,7 @@ add_library(AevryndEngine STATIC
   src/CharacterController3D.cpp
   src/CharacterPresentation3D.cpp
   src/CollisionWorld3D.cpp
+  src/CookedRenderManifest3D.cpp
   src/EnvironmentCollisionStreaming3D.cpp
   src/ECS.cpp
   src/Effects2D.cpp
@@ -24,6 +25,7 @@ add_library(AevryndEngine STATIC
   src/HeightField3D.cpp
   src/Memory.cpp
   src/MaterialLibrary3D.cpp
+  src/NativeMaterialDds3D.cpp
   src/D3D12Renderer.cpp
   src/EnvironmentIbl3D.cpp
   src/MeshLoader.cpp
@@ -33,6 +35,7 @@ add_library(AevryndEngine STATIC
   src/PhysicsWorld3D.cpp
   src/PbrMaterialCooker3D.cpp
   src/PhotorealAssetProfile3D.cpp
+  src/PhotorealMaterialImport3D.cpp
   src/Profiling.cpp
   src/ProceduralPlacement3D.cpp
   src/ReplicationProtocol3D.cpp
@@ -144,6 +147,37 @@ endif()
 target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}" AEVRYND_STREAMLINE_AVAILABLE=$<BOOL:${AEVRYND_STREAMLINE_AVAILABLE}>)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0 bcrypt)
+
+add_executable(AevryndCookedRenderManifest3DTest tests/CookedRenderManifest3DSmoke.cpp)
+target_compile_definitions(AevryndCookedRenderManifest3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_options(AevryndCookedRenderManifest3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndCookedRenderManifest3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCookedRenderManifest3DTest COMMAND AevryndCookedRenderManifest3DTest)
+
+add_executable(AevryndPhotorealMaterialImport3DTest tests/PhotorealMaterialImport3DSmoke.cpp)
+target_compile_definitions(AevryndPhotorealMaterialImport3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_options(AevryndPhotorealMaterialImport3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndPhotorealMaterialImport3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndPhotorealMaterialImport3DTest COMMAND AevryndPhotorealMaterialImport3DTest
+  "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch")
+
+add_executable(AevryndPhotorealCookedD3D12Test tests/PhotorealCookedD3D12Smoke.cpp)
+target_compile_definitions(AevryndPhotorealCookedD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_options(AevryndPhotorealCookedD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndPhotorealCookedD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndPhotorealCookedD3D12Test
+  COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndPhotorealCookedD3D12Test>")
+add_test(NAME AevryndPhotorealCookedD3D12GpuValidationTest
+  COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndPhotorealCookedD3D12Test>")
+
+add_executable(AevryndEngineEnvironmentLightingD3D12Test tests/EngineEnvironmentLightingD3D12Smoke.cpp)
+target_compile_definitions(AevryndEngineEnvironmentLightingD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_options(AevryndEngineEnvironmentLightingD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndEngineEnvironmentLightingD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndEngineEnvironmentLightingD3D12Test
+  COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndEngineEnvironmentLightingD3D12Test>")
+add_test(NAME AevryndEngineEnvironmentLightingD3D12GpuValidationTest
+  COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndEngineEnvironmentLightingD3D12Test>")
 
 add_executable(AevryndPhotorealAssetProfile3DTest tests/PhotorealAssetProfile3DSmoke.cpp)
 target_compile_options(AevryndPhotorealAssetProfile3DTest PRIVATE /W4 /permissive- /utf-8)
@@ -339,6 +373,12 @@ target_compile_options(AevryndMaterialLibrary3DTest PRIVATE /W4 /permissive- /ut
 target_compile_definitions(AevryndMaterialLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndMaterialLibrary3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndMaterialLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMaterialLibrary3DTest>'")
+
+add_executable(AevryndNativeMaterialDds3DTest tests/NativeMaterialDds3DSmoke.cpp)
+target_compile_options(AevryndNativeMaterialDds3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndNativeMaterialDds3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndNativeMaterialDds3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndNativeMaterialDds3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndNativeMaterialDds3DTest>'")
 
 add_executable(AevryndStaticMeshAssetLibrary3DTest tests/StaticMeshAssetLibrary3DSmoke.cpp)
 target_compile_options(AevryndStaticMeshAssetLibrary3DTest PRIVATE /W4 /permissive- /utf-8)

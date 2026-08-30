@@ -30,6 +30,61 @@ bool Engine::CreateMeshLodResourceChain3D(const Mesh3D& mesh,MeshLodResourceChai
     std::vector<Mesh3D> generated;MeshLodChainStats3D processing;MeshLodResourceChain3D temporary{};const auto clear=[&](MeshLodResourceChain3D& chain){chain.levels={};chain.levelCount=0;chain.processing={};};const auto rollback=[&](){for(std::uint32_t level=temporary.levelCount;level>0;--level)if(temporary.levels[level-1])DestroyMesh3D(temporary.levels[level-1].handle);clear(temporary);};const auto retainLevel=[&](std::size_t level){return retention==MeshLodCpuRetention3D::AllLevels||(retention==MeshLodCpuRetention3D::Level0Only&&level==0)?MeshCpuRetention3D::RetainForQueries:MeshCpuRetention3D::Discard;};try{if(!MeshProcessing3D::GenerateLodChain(mesh,generated,settings,&processing,error))return false;temporary.processing=processing;temporary.levelCount=static_cast<std::uint32_t>(generated.size()+1);temporary.levels[0]=CreateMeshResource3D(mesh,retainLevel(0));if(!temporary.levels[0])throw std::bad_alloc{};for(std::size_t level=0;level<generated.size();++level){temporary.levels[level+1]=CreateMeshResource3D(generated[level],retainLevel(level+1));if(!temporary.levels[level+1])throw std::bad_alloc{};}}catch(const std::bad_alloc&){rollback();if(error)*error={MeshProcessingErrorCode3D::LimitExceeded,0};return false;}DestroyMeshLodResourceChain3D(output);output.levels=std::move(temporary.levels);output.levelCount=temporary.levelCount;output.processing=temporary.processing;clear(temporary);if(error)*error={};return true;
 }
 void Engine::DestroyMeshLodResourceChain3D(MeshLodResourceChain3D& chain){for(std::uint32_t level=(std::min)(chain.levelCount,static_cast<std::uint32_t>(chain.levels.size()));level>0;--level)if(chain.levels[level-1])DestroyMesh3D(chain.levels[level-1].handle);chain.levels={};chain.levelCount=0;chain.processing={};}
+namespace {
+EnvironmentLightingGpuReceipt3D EnvironmentReceipt(
+    std::uint64_t sequence,EnvironmentLightingGpuOperation3D operation,
+    EnvironmentLightingHandle3D handle,const RendererStats& before,
+    const RendererStats& after,bool accepted){
+    return{sequence,operation,handle,before.residentEnvironmentLightingSets,
+        after.residentEnvironmentLightingSets,before.residentEnvironmentLightingBytes,
+        after.residentEnvironmentLightingBytes,before.residentEnvironmentLightingDescriptors,
+        after.residentEnvironmentLightingDescriptors,
+        after.pendingEnvironmentLightingReleaseBytes,accepted,
+        after.environmentLightingActive};
+}
+}
+bool Engine::CreateEnvironmentLighting3D(const EnvironmentLightingStore3D& store,
+    EnvironmentLightingHandle3D handle,EnvironmentLightingGpuReceipt3D* receipt){
+    const auto before=renderer_->GetStats();const auto lease=store.Resolve(handle);bool accepted=false;
+    if(lease&&lease.payload){
+        const auto found=environmentLightingBindings_.find(handle.value);
+        if(found==environmentLightingBindings_.end()){
+            if(renderer_->CreateEnvironmentLighting(store,handle))try{
+                environmentLightingBindings_.emplace(handle.value,EnvironmentLightingBinding3D{lease.payload,1});accepted=true;
+            }catch(...){renderer_->DestroyEnvironmentLighting(handle);}
+        }else if(found->second.payload.get()==lease.payload.get()&&found->second.references<UINT32_MAX&&renderer_->CreateEnvironmentLighting(store,handle)){
+            ++found->second.references;accepted=true;
+        }
+    }
+    const auto after=renderer_->GetStats();
+    if(receipt)*receipt=EnvironmentReceipt(++environmentLightingReceiptSequence_,EnvironmentLightingGpuOperation3D::Create,handle,before,after,accepted);else ++environmentLightingReceiptSequence_;
+    return accepted;
+}
+bool Engine::SetEnvironmentLighting3D(const EnvironmentLightingStore3D& store,EnvironmentLightingHandle3D handle,
+    EnvironmentLightingGpuReceipt3D* receipt){
+    const auto before=renderer_->GetStats();const auto lease=store.Resolve(handle);const auto found=environmentLightingBindings_.find(handle.value);
+    const bool accepted=lease&&found!=environmentLightingBindings_.end()&&found->second.payload.get()==lease.payload.get()&&renderer_->SetEnvironmentLighting(handle);const auto after=renderer_->GetStats();
+    if(receipt)*receipt=EnvironmentReceipt(++environmentLightingReceiptSequence_,EnvironmentLightingGpuOperation3D::Set,handle,before,after,accepted);else ++environmentLightingReceiptSequence_;
+    return accepted;
+}
+bool Engine::ClearEnvironmentLighting3D(EnvironmentLightingGpuReceipt3D* receipt){
+    const auto before=renderer_->GetStats();const bool accepted=renderer_->SetEnvironmentLighting({});const auto after=renderer_->GetStats();
+    if(receipt)*receipt=EnvironmentReceipt(++environmentLightingReceiptSequence_,EnvironmentLightingGpuOperation3D::Clear,{},before,after,accepted);else ++environmentLightingReceiptSequence_;
+    return accepted;
+}
+bool Engine::DestroyEnvironmentLighting3D(const EnvironmentLightingStore3D& store,EnvironmentLightingHandle3D handle,
+    EnvironmentLightingGpuReceipt3D* receipt){
+    const auto before=renderer_->GetStats();const auto lease=store.Resolve(handle);const auto found=environmentLightingBindings_.find(handle.value);
+    const bool accepted=lease&&found!=environmentLightingBindings_.end()&&found->second.payload.get()==lease.payload.get();
+    if(accepted){renderer_->DestroyEnvironmentLighting(handle);if(--found->second.references==0)environmentLightingBindings_.erase(found);}
+    const auto after=renderer_->GetStats();
+    if(receipt)*receipt=EnvironmentReceipt(++environmentLightingReceiptSequence_,EnvironmentLightingGpuOperation3D::Destroy,handle,before,after,accepted);else ++environmentLightingReceiptSequence_;
+    return accepted;
+}
+void Engine::TrimEnvironmentLighting3D(EnvironmentLightingGpuReceipt3D* receipt){
+    const auto before=renderer_->GetStats();renderer_->TrimEnvironmentLighting();const auto after=renderer_->GetStats();
+    if(receipt)*receipt=EnvironmentReceipt(++environmentLightingReceiptSequence_,EnvironmentLightingGpuOperation3D::Trim,{},before,after,true);else ++environmentLightingReceiptSequence_;
+}
 EngineMemoryStats Engine::GetMemoryStats()const{MeshCpuMemoryStats3D meshCpu{};meshCpu.cacheEntries=meshCpuCache_.size();for(const auto& [handle,cached]:meshCpuCache_)if(const auto mesh=cached.lock()){++meshCpu.residentResources;meshCpu.residentBytes+=mesh->vertices.size()*sizeof(Vertex3D)+mesh->indices.size()*sizeof(std::uint32_t);}else ++meshCpu.expiredCacheEntries;return{processMemoryStats_,draw_.MemoryStats(),renderer_->MemoryStats(),audio_.MemoryStats(),game_?game_->GetReusableMemoryStats():ReusableMemoryStats{},meshCpu,lastReleasedBytes_,trimCount_,automaticTrimCount_};}
 size_t Engine::TrimUnusedMemory(){for(auto iterator=meshCpuCache_.begin();iterator!=meshCpuCache_.end();)if(iterator->second.expired())iterator=meshCpuCache_.erase(iterator);else++iterator;if(meshCpuCache_.empty())meshCpuCache_.rehash(0);const size_t audioReleased=audio_.TrimUnusedMemory(),gameReleased=game_?game_->TrimReusableMemory():0;draw_.TrimTransientMemory();renderer_->TrimTransientMemory();lastReleasedBytes_=audioReleased+gameReleased+draw_.MemoryStats().lastReleasedBytes+renderer_->MemoryStats().lastReleasedBytes;++trimCount_;processMemoryStats_=QueryProcessMemoryStats();return lastReleasedBytes_;}
 

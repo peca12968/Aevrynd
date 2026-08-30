@@ -53,10 +53,11 @@ struct AssetLeaseState3D {std::uint64_t identity{};};
 using AssetLease3D=std::shared_ptr<const AssetLeaseState3D>;
 enum class MaterialSurfaceMapEncoding3D:uint8_t {RoughnessR,PackedOrm};
 constexpr std::array<uint8_t,4> CanonicalMaterialSurfaceTexel3D(std::array<uint8_t,4> texel,MaterialSurfaceMapEncoding3D encoding){return encoding==MaterialSurfaceMapEncoding3D::PackedOrm?std::array<uint8_t,4>{texel[0],texel[1],texel[2],texel[1]}:std::array<uint8_t,4>{255,texel[0],255,texel[0]};}
-struct MaterialTextureLayerDefinition3D {std::filesystem::path baseColorPath,roughnessPath,normalPath;MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};};
+struct MaterialTextureIntegrity3D {std::uint64_t expectedBytes{};std::string expectedSha256;};
+struct MaterialTextureLayerDefinition3D {std::filesystem::path baseColorPath,roughnessPath,normalPath;MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};std::array<MaterialTextureIntegrity3D,3> integrity{};};
 enum class MaterialAlphaMode3D:uint8_t {Opaque,Mask,Blend};
 constexpr MaterialAlphaMode3D NormalizeMaterialAlphaMode3D(MaterialAlphaMode3D value){return value==MaterialAlphaMode3D::Mask||value==MaterialAlphaMode3D::Blend?value:MaterialAlphaMode3D::Opaque;}
-struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;std::array<MaterialTextureLayerDefinition3D,2> additionalLayers{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};};
+struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;std::array<MaterialTextureLayerDefinition3D,2> additionalLayers{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};std::array<MaterialTextureIntegrity3D,3> integrity{};};
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
