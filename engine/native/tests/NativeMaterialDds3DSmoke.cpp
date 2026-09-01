@@ -81,6 +81,39 @@ int main() {
                                      699236))
             return 4;
     }
+    const auto terrainRoot = std::filesystem::path{AEVRYND_SOURCE_DIR} /
+                             "engine/assets/realistic-cc0-first-batch/cooked/materials/forest-ground-04";
+    struct TerrainFixture {
+        const wchar_t *name;
+        NativeMaterialDdsRole3D role;
+        DXGI_FORMAT format;
+        const char *sha256;
+    };
+    const TerrainFixture terrainFixtures[] = {
+        {L"slot-0-base.dds", NativeMaterialDdsRole3D::BaseColor,
+         DXGI_FORMAT_BC7_UNORM_SRGB,
+         "00850c7c033be2bcb2818c0ab3db91a62c8353eba746daede3c0de373c3e32b4"},
+        {L"slot-0-arm.dds", NativeMaterialDdsRole3D::Surface,
+         DXGI_FORMAT_BC7_UNORM,
+         "3427bf0a83e0c33326a207f700305620402fd0fb6c532240f204bcebefeabcc4"},
+        {L"slot-0-normal.dds", NativeMaterialDdsRole3D::Normal,
+         DXGI_FORMAT_BC5_UNORM,
+         "56e687b2a208f2eaaf9b0e3670530f0a36e5e88d6e74b26090633daaa4e9db93"}};
+    for (const auto &fixture : terrainFixtures) {
+        NativeMaterialDds3D image{};
+        NativeMaterialDdsError3D error{};
+        if (!LoadNativeMaterialDds3D(terrainRoot / fixture.name, fixture.role,
+                                     4096, false, image, &error,
+                                     fixture.sha256, 5592580) ||
+            image.width != 2048 || image.height != 2048 ||
+            image.mipCount != 12 || image.format != fixture.format ||
+            image.payloadBytes != 5592432 || image.sha256 != fixture.sha256) {
+            std::cerr << "Forest ground DDS contract failed error="
+                      << unsigned(error) << " format=" << unsigned(image.format)
+                      << " bytes=" << image.payloadBytes << '\n';
+            return 18;
+        }
+    }
     const auto temporary = std::filesystem::temp_directory_path() /
                            ("aevrynd-native-dds-hostile-" +
                             std::to_string(GetCurrentProcessId()));

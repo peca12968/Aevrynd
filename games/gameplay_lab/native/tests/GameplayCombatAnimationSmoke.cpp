@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -47,15 +48,36 @@ int main() {
     }
     std::set<std::uint64_t> poseHashes;
     AnimationPose3D pose;
+    const std::size_t productionJointCount = loaded.asset.model.skeleton.joints.size();
     for (int value = 0; value < 11; ++value) {
         animation.SetState(AnimationState3D(value), true);
         animation.Tick(animation.Duration() * .47f);
-        if (!animation.EvaluateInto(pose) || pose.globalMatrices.size() != 20) return 2;
+        if (!animation.EvaluateInto(pose) ||
+            pose.localTransforms.size() != productionJointCount ||
+            pose.globalMatrices.size() != productionJointCount) {
+            std::cerr << "Gameplay animation pose contract failed state=" << value
+                      << " skeletonJoints=" << productionJointCount
+                      << " local=" << pose.localTransforms.size()
+                      << " global=" << pose.globalMatrices.size() << '\n';
+            return 2;
+        }
         poseHashes.insert(HashPose(pose));
     }
     if (poseHashes.size() != 11) {
         std::cerr << "Gameplay animation states were not distinct\n";
         return 3;
+    }
+    AnimationPose3D missingSocketPose = pose;
+    missingSocketPose.globalMatrices.clear();
+    Matrix4 unchangedSocket = CreateScaleMatrix({3.f, 4.f, 5.f});
+    const Matrix4 socketSentinel = unchangedSocket;
+    if (CharacterSocketTransform3D(loaded.asset.model.skeleton, animation.Rig(),
+                                   HumanoidJoint3D::RightHand,
+                                   missingSocketPose, Matrix4::Identity(),
+                                   unchangedSocket) ||
+        std::memcmp(&unchangedSocket, &socketSentinel, sizeof(Matrix4)) != 0) {
+        std::cerr << "Gameplay animation accepted missing socket pose\n";
+        return 12;
     }
     if (std::abs(GameplayPresentationDelta3D(0.f)-1.f/60.f)>1e-6f ||
         std::abs(GameplayPresentationDelta3D(std::numeric_limits<float>::infinity())-1.f/60.f)>1e-6f ||
@@ -116,6 +138,12 @@ int main() {
                   << maximumPhaseError << '\n';
         return 6;
     }
-    std::cout << "combatHits=3 kills=1 animationStates=11 joints=20 trajectories=3 phaseError="
+    CollisionWorld3D reachCollision;PhysicsWorld3D reachPhysics;GameplayCombat3D reachCombat(reachCollision,reachPhysics);
+    reachCombat.SpawnMonster({GameplayMonsterStopDistance3D,0,0},100);
+    const auto obstacle=reachCollision.CreateBox({{{0,1,.4f},{.2f,.8f,.2f}},2,1,99,false});
+    reachCombat.Tick({{}, {1,0,0}, true},.1f);reachCombat.Tick({{}, {1,0,0}, false},.02f);
+    if(!obstacle||reachCombat.Stats().hits!=1||std::abs(reachCombat.Monster().health-70.f)>.001f||Length(reachCombat.Monster().position-Vec3{GameplayMonsterStopDistance3D,0,0})>.001f||!reachCollision.Get(obstacle))return 11;
+    std::cout << "combatHits=3 kills=1 animationStates=11 joints="
+              << productionJointCount << " trajectories=3 phaseError="
               << maximumPhaseError << '\n';
 }

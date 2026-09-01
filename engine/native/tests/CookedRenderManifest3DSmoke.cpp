@@ -12,12 +12,20 @@ using namespace Aevrynd;
 namespace {
 constexpr auto FixtureSha =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+constexpr auto ProductionManifestSha =
+    "20a4f80009c7d48b33cd7825f262a089f1fd0608532a5cf6fc04c5473f01ab7d";
 
 bool WriteFixture(const std::filesystem::path &root, std::string_view path) {
     const auto absolute = root / path;
     std::filesystem::create_directories(absolute.parent_path());
     std::ofstream output(absolute, std::ios::binary | std::ios::trunc);
     output.write("abc", 3);
+    return bool(output);
+}
+
+bool WriteText(const std::filesystem::path &path, std::string_view text) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    output.write(text.data(), static_cast<std::streamsize>(text.size()));
     return bool(output);
 }
 
@@ -50,6 +58,17 @@ bool Expect(bool condition, const char *message) {
     if (!condition)
         std::cerr << message << '\n';
     return condition;
+}
+
+bool MatchesFixtureReceipt(const CookedRenderManifest3D &manifest) {
+    const auto &stats = manifest.Stats();
+    return stats.files == 9 && stats.materials == 1 && stats.meshParts == 1 &&
+           stats.referencedFiles == 9 && stats.validatedFiles == 9 &&
+           stats.validatedMaterials == 1 && stats.validatedMeshParts == 1 &&
+           stats.validatedReferencedFiles == 9 &&
+           manifest.FindFile("materials/base.dds") &&
+           manifest.FindMaterial("fixture:slot-0") &&
+           manifest.FindMeshPart("fixture:part-0");
 }
 
 bool CreateDirectoryJunction(const std::filesystem::path &link,
@@ -104,6 +123,53 @@ int main() {
                          manifest.FindFile("ibl/brdf.dds"),
                      "typed manifest lookup failed");
     const auto acceptedFingerprint = manifest.Stats().fingerprint;
+
+    CookedRenderManifest3D receiptMutation;
+    auto receiptHostile = valid;
+    ReplaceOnce(receiptHostile, "fixture:slot-0", "fixture:slot-mutated");
+    passed &= Expect(!receiptMutation.LoadJson(receiptHostile, root, &error) ||
+                         !MatchesFixtureReceipt(receiptMutation),
+                     "material identity mutation passed the exact receipt gate");
+    receiptHostile = valid;
+    ReplaceOnce(receiptHostile, "fixture:part-0", "fixture:part-mutated");
+    passed &= Expect(receiptMutation.LoadJson(receiptHostile, root, &error) &&
+                         !MatchesFixtureReceipt(receiptMutation),
+                     "mesh-part identity mutation passed the exact receipt gate");
+    receiptMutation.Clear();
+
+    const auto syntheticManifestPath = root / "runtime-render-manifest.json";
+    passed &= Expect(WriteText(syntheticManifestPath, valid) &&
+                         manifest.LoadFile(syntheticManifestPath, &error) &&
+                         manifest.Stats().manifestSha256.size() == 64 &&
+                         manifest.Stats().validatedFiles == 9 &&
+                         manifest.Stats().validatedMaterials == 1 &&
+                         manifest.Stats().validatedMeshParts == 1 &&
+                         manifest.Stats().validatedReferencedFiles == 9,
+                     "file-backed manifest SHA/count receipt failed");
+    const auto firstManifestSha256 = manifest.Stats().manifestSha256;
+    const auto firstFileFingerprint = manifest.Stats().fingerprint;
+    const std::string whitespaceVariant = valid + "\n";
+    passed &= Expect(WriteText(syntheticManifestPath, whitespaceVariant) &&
+                         manifest.LoadFile(syntheticManifestPath, &error) &&
+                         manifest.Stats().manifestSha256 != firstManifestSha256 &&
+                         manifest.Stats().fingerprint == firstFileFingerprint,
+                     "manifest byte change did not change SHA-256 evidence");
+    const auto acceptedFileSha256 = manifest.Stats().manifestSha256;
+    HANDLE manifestWriter = CreateFileW(
+        syntheticManifestPath.c_str(), GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    passed &= Expect(manifestWriter != INVALID_HANDLE_VALUE &&
+                         !manifest.LoadFile(syntheticManifestPath, &error) &&
+                         manifest.Stats().manifestSha256 == acceptedFileSha256,
+                     "writable manifest handle bypassed pinned read/hash/parse");
+    if (manifestWriter != INVALID_HANDLE_VALUE)
+        CloseHandle(manifestWriter);
+    passed &= Expect(WriteText(syntheticManifestPath, "{invalid") &&
+                         !manifest.LoadFile(syntheticManifestPath, &error) &&
+                         manifest.Stats().manifestSha256 == acceptedFileSha256 &&
+                         manifest.Stats().validatedFiles == 9,
+                     "invalid file-backed manifest replaced validated evidence");
 
     auto hostile = valid;
     ReplaceOnce(hostile, "\"schemaVersion\":1", "\"schemaVersion\":2");
@@ -220,7 +286,13 @@ int main() {
     passed &= Expect(production.Stats().files == 54 &&
                          production.Stats().materials == 11 &&
                          production.Stats().meshParts == 6 &&
-                         production.Stats().referencedFiles == 54,
+                         production.Stats().referencedFiles == 54 &&
+                         production.Stats().manifestSha256 ==
+                             ProductionManifestSha &&
+                         production.Stats().validatedFiles == 54 &&
+                         production.Stats().validatedMaterials == 11 &&
+                         production.Stats().validatedMeshParts == 6 &&
+                         production.Stats().validatedReferencedFiles == 54,
                      "production exact-set counts changed");
     const auto *leaves = production.FindMaterial("island_tree_01:leaves");
     const auto leavesDefinition =

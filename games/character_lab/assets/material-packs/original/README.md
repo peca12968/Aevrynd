@@ -1,12 +1,12 @@
 # Original Character PBR Materials
 
-執行期使用的 18 張 PBR 貼圖由 Aevrynd 專案的 Blender Python 工具以固定 seed 原創程序化產生，未使用外部圖片、模型或第三方材質。`skin/source` 內的圖片是本專案生成並納入同一 CC0 授權的視覺參考，不會在執行期載入。
+執行期使用 27 張 PBR 貼圖，涵蓋 skin、lips、sclera、iris、cloth、leather、hair、eye 與 metal 九組材質；每組都有 base color、roughness 與 DirectX normal。所有貼圖皆由 Aevrynd 專案自行程序化產生或由同一批專案自製貼圖衍生，未混入外部圖片、模型或第三方材質，並以 CC0-1.0 釋出。`skin/source` 內的圖片是本專案生成並納入同一授權的視覺參考，不會在執行期載入。
 
 - License: CC0-1.0，可商用、修改與再散布。
 - Channels: base color、roughness、DirectX normal。
 - Base color 維持約 0.82–1.0 的中性微細節，執行期再乘上 AESKIN 頂點色；因此男女角色可共用材質類型而不會雙重變暗或被固定色調覆蓋。
-- Resolution: skin 與 eye 為 1024×1024，其餘為 512×512。
-- Generator: `tools/blender/create-character-pbr-materials.py`
-- Manifest: `manifest.json` 記錄固定 seed、尺寸、檔案大小與 SHA-256。
+- Resolution: skin、lips、sclera 與 iris 為 2048×2048；cloth 與 hair 為 1024×1024；leather、eye 與 metal 為 512×512。
+- Generator: `tools/generate-character-materials.py`
+- Manifest: `manifest.json` 以 exact-set 記錄九組材質、27 張執行期貼圖、固定 seed、尺寸、檔案大小與 SHA-256。
 
-重新產生時，請以 Blender 5.2 background 執行並將此目錄作為輸出位置。
+重新產生時，請使用專案鎖定的 Python 與 Pillow 環境執行 `tools/generate-character-materials.py`，並將此目錄作為唯一輸出位置；完成後必須核對 `manifest.json` 的 exact-set、大小與 SHA-256。

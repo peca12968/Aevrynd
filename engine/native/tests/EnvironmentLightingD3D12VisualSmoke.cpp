@@ -129,6 +129,20 @@ double MeanAbsoluteDifference(const Image &left, const Image &right,
   return count ? sum / double(count) : 0;
 }
 
+double DirectionalRotationMoment(const Image &left, const Image &right,
+                                 Region region) {
+  const double center = (double(region.left) + region.right) * .5;
+  double moment{};
+  std::size_t count{};
+  for (unsigned y = region.top; y < region.bottom; ++y)
+    for (unsigned x = region.left; x < region.right; ++x) {
+      moment += (Luminance(right, x, y) - Luminance(left, x, y)) *
+                (double(x) - center);
+      ++count;
+    }
+  return count ? moment / double(count) : 0;
+}
+
 std::array<double, 2> HighlightCentroid(const Image &image, Region region) {
   double maximum{};
   for (unsigned y = region.top; y < region.bottom; ++y)
@@ -279,6 +293,10 @@ int main() {
                      centroid90[1] - centroid0[1]);
       const double rotationDifference =
           MeanAbsoluteDifference(image0, image90, full);
+      const double rotationMoment =
+          DirectionalRotationMoment(image0, image90, highlight);
+      const double unchangedRotationMoment =
+          DirectionalRotationMoment(image0, image0, highlight);
       const std::array<double, 3> roughnessEnergy = {
           MeanLuminance(image90, roughnessRegions[0]),
           MeanLuminance(image90, roughnessRegions[1]),
@@ -290,13 +308,17 @@ int main() {
       const double dielectricEnergy = MeanLuminance(image90, dielectric);
       const bool finite =
           std::isfinite(rotationDifference) && std::isfinite(centroidDistance) &&
+          std::isfinite(rotationMoment) &&
           std::ranges::all_of(roughnessEnergy,
                               [](double value) { return std::isfinite(value); }) &&
           std::isfinite(metalDiffuseDelta) &&
           std::isfinite(dielectricDiffuseDelta) &&
           std::isfinite(dielectricEnergy);
+      // 方向性矩量直接量測旋轉前後球面左右能量搬移；亮點最大值在寬粗糙度下可維持同一像素。
       const bool rotationPass = rotationDifference > .003 &&
-                                centroidDistance > 2.0;
+                                std::abs(rotationMoment) > .15 &&
+                                unchangedRotationMoment == 0.0 &&
+                                Fnv1a64(path0) != Fnv1a64(path90);
       const bool roughnessPass = roughnessEnergy[0] > roughnessEnergy[1] &&
                                  roughnessEnergy[1] > roughnessEnergy[2];
       const bool materialPass = dielectricDiffuseDelta > .003 &&
@@ -314,6 +336,7 @@ int main() {
              << "rotationRadians=0," << HalfPi << '\n'
              << "rotationDifference=" << rotationDifference << '\n'
              << "highlightCentroidDistance=" << centroidDistance << '\n'
+             << "rotationDirectionalMoment=" << rotationMoment << '\n'
              << "roughnessEnergy=" << roughnessEnergy[0] << ','
              << roughnessEnergy[1] << ',' << roughnessEnergy[2] << '\n'
              << "metalDiffuseDelta=" << metalDiffuseDelta << '\n'
@@ -329,12 +352,36 @@ int main() {
       output.close();
       std::cout << "rotationDifference=" << rotationDifference
                 << " centroidDistance=" << centroidDistance
+                << " rotationMoment=" << rotationMoment
                 << " roughness=" << roughnessEnergy[0] << ','
                 << roughnessEnergy[1] << ',' << roughnessEnergy[2]
                 << " metalDelta=" << metalDiffuseDelta
                 << " dielectricDelta=" << dielectricDiffuseDelta
+                << " hashes=" << Fnv1a64(path0) << '/' << Fnv1a64(path90)
                 << " artifacts=" << artifacts.string() << '\n';
-      if (!finite || !rotationPass || !roughnessPass || !materialPass) {
+      const auto iblStats = renderer.GetStats();
+      const bool iblReceipt = iblStats.environmentLightingActive &&
+          iblStats.residentEnvironmentLightingSets == 3 &&
+          iblStats.residentEnvironmentLightingDescriptors == 6 &&
+          iblStats.residentEnvironmentLightingBytes > 0 &&
+          iblStats.environmentLightingUploads == 2 &&
+          iblStats.environmentLightingResourceAllocations == 6 &&
+          iblStats.environmentLightingDescriptorSwitches >= 3 &&
+          !iblStats.debugErrorCount && !iblStats.debugWarningCount &&
+          (!iblStats.gpuValidationRequested ||
+           (iblStats.gpuValidationAvailable && iblStats.gpuValidationExecuted &&
+            iblStats.gpuValidationPassed));
+      std::cout << " ibl=" << iblStats.environmentLightingActive << '/'
+                << iblStats.residentEnvironmentLightingSets << '/'
+                << iblStats.residentEnvironmentLightingDescriptors << '/'
+                << iblStats.residentEnvironmentLightingBytes << '/'
+                << iblStats.environmentLightingUploads << '/'
+                << iblStats.environmentLightingResourceAllocations << '/'
+                << iblStats.environmentLightingDescriptorSwitches
+                << " debug=" << iblStats.debugErrorCount << '/'
+                << iblStats.debugWarningCount << '\n';
+      if (!finite || !rotationPass || !roughnessPass || !materialPass ||
+          !iblReceipt) {
         std::cerr << "IBL visual/readback contract failed\n";
         result = 7;
       }

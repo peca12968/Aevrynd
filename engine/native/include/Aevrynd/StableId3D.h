@@ -8,6 +8,7 @@ namespace Aevrynd {
 // 跨存檔、網路與重播的 128-bit 識別；排序固定為 high 再 low 的字典序。
 struct StableObjectId3D {
     std::uint64_t high{},low{};
+    explicit constexpr operator bool()const noexcept{return high!=0||low!=0;}
     constexpr auto operator<=>(const StableObjectId3D&)const=default;
 };
 

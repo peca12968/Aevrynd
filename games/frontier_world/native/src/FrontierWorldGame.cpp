@@ -2,15 +2,41 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <span>
+#include <string_view>
 
 using namespace Aevrynd;
 using namespace FrontierWorldRules;
 namespace {
+constexpr std::size_t ShowcaseCpuWindowCount = 7;
+constexpr uint64_t ShowcaseCpuBudgetNanoseconds = 8'000'000;
+constexpr uint64_t ShowcaseCpuCatastrophicNanoseconds = 50'000'000;
+struct ShowcaseCpuPerformanceReceipt {
+  std::size_t sampleCount{};
+  std::array<std::size_t, ShowcaseCpuWindowCount> windowSampleCounts{};
+  std::array<uint64_t, ShowcaseCpuWindowCount> windowP95Nanoseconds{};
+  uint64_t rawP95Nanoseconds{}, medianWindowP95Nanoseconds{}, maximumNanoseconds{};
+  bool coverageComplete{}, passed{};
+};
+struct ThreadCycleCalibrationReceipt {std::array<uint64_t,7> cyclesPerSecond{};uint64_t medianCyclesPerSecond{};bool valid{};};
+ThreadCycleCalibrationReceipt CalibrateCurrentThreadCycles(){ThreadCycleCalibrationReceipt result{};LARGE_INTEGER frequency{};if(!QueryPerformanceFrequency(&frequency)||frequency.QuadPart<=0)return result;for(std::size_t sample=0;sample<result.cyclesPerSecond.size();++sample){ULONG64 beginCycles{},endCycles{};LARGE_INTEGER begin{},now{};if(!QueryThreadCycleTime(GetCurrentThread(),&beginCycles)||!QueryPerformanceCounter(&begin))return result;do{YieldProcessor();QueryPerformanceCounter(&now);}while(now.QuadPart-begin.QuadPart<frequency.QuadPart/20);if(!QueryThreadCycleTime(GetCurrentThread(),&endCycles)||endCycles<=beginCycles||now.QuadPart<=begin.QuadPart)return result;const long double cyclesPerSecond=long double(endCycles-beginCycles)*long double(frequency.QuadPart)/long double(now.QuadPart-begin.QuadPart);if(!std::isfinite(double(cyclesPerSecond))||cyclesPerSecond<1||cyclesPerSecond>long double((std::numeric_limits<uint64_t>::max)()))return result;result.cyclesPerSecond[sample]=uint64_t(cyclesPerSecond);}auto sorted=result.cyclesPerSecond;std::ranges::sort(sorted);result.medianCyclesPerSecond=sorted[3];result.valid=result.medianCyclesPerSecond&&double(sorted.back()-sorted.front())/double(result.medianCyclesPerSecond)<=.10;return result;}
+ShowcaseCpuPerformanceReceipt EvaluateShowcaseCpuPerformance(std::span<const uint64_t> samples,uint64_t medianBudgetNanoseconds=ShowcaseCpuBudgetNanoseconds,uint64_t maximumBudgetNanoseconds=ShowcaseCpuCatastrophicNanoseconds) {
+  ShowcaseCpuPerformanceReceipt result{};
+  result.sampleCount=samples.size();
+  if(samples.size()<ShowcaseCpuWindowCount||std::ranges::any_of(samples,[](uint64_t value){return value==0;}))return result;
+  const auto percentile95=[](std::vector<uint64_t> values){std::sort(values.begin(),values.end());return values[(values.size()-1)*95/100];};
+  result.rawP95Nanoseconds=percentile95({samples.begin(),samples.end()});
+  result.maximumNanoseconds=*std::ranges::max_element(samples);
+  std::size_t covered=0;
+  for(std::size_t window=0;window<ShowcaseCpuWindowCount;++window){const std::size_t begin=samples.size()*window/ShowcaseCpuWindowCount,end=samples.size()*(window+1)/ShowcaseCpuWindowCount;result.windowSampleCounts[window]=end-begin;if(begin==end)return result;result.windowP95Nanoseconds[window]=percentile95({samples.begin()+begin,samples.begin()+end});covered+=end-begin;}
+  auto medians=result.windowP95Nanoseconds;std::ranges::sort(medians);result.medianWindowP95Nanoseconds=medians[ShowcaseCpuWindowCount/2];result.coverageComplete=covered==samples.size();result.passed=result.coverageComplete&&result.medianWindowP95Nanoseconds<=medianBudgetNanoseconds&&result.maximumNanoseconds<=maximumBudgetNanoseconds;return result;
+}
 constexpr uint32_t WorldLayer = 1, BuildingLayer = 2, ActorLayer = 4;
 constexpr Color Grass{.19f, .39f, .18f, 1}, DarkGrass{.1f, .26f, .13f, 1},
     Wood{.42f, .21f, .08f, 1}, Stone{.4f, .44f, .45f, 1},
@@ -237,19 +263,23 @@ void FrontierWorldGame::OnStart(Engine &engine) {
   engine.SetRenderQuality(RenderQuality3D::Ultra);
   showcaseGpuSamples_.reserve(4096);
   showcaseCpuSamples_.reserve(4096);
-  DrawList &ultra = engine.Draw();
-  ultra.SetDirectionalShadowCascades({4, 2048, .1f, 220.f, .7f, .1f});
-  ultra.SetSoftDirectionalShadows({true, 24.f, 128.f, 36.f});
-  ultra.SetContactShadows({true, 16, 1.8f, .045f, .85f});
-  ultra.SetAmbientOcclusion({true, 1.5f, .03f, 1.15f});
-  ultra.SetScreenSpaceReflections({true, .82f, 42.f, .7f, .32f, 16});
-  ultra.SetBloom({true, 1.05f, .55f, .13f, 3.f});
-  ultra.SetVolumetricClouds(
+  showcaseCpuWorkSamples_.reserve(4096);
+  for(auto& samples:showcaseCpuStageSamples_)samples.reserve(4096);
+  if(!captureDirectory_.empty()){const ThreadCycleCalibrationReceipt calibration=CalibrateCurrentThreadCycles();showcaseThreadCycleCalibration_=calibration.cyclesPerSecond;showcaseThreadCyclesPerSecond_=calibration.medianCyclesPerSecond;showcaseThreadCycleCalibrationValid_=calibration.valid;ULONG64 cycles{};if(showcaseThreadCycleCalibrationValid_&&QueryThreadCycleTime(GetCurrentThread(),&cycles))showcasePreviousThreadCycles_=cycles;else showcaseThreadCycleCalibrationValid_=false;}
+  DrawList &high = engine.Draw();
+  high.SetDirectionalShadowCascades({4, 2048, .1f, 220.f, .7f, .1f});
+  high.SetSoftDirectionalShadows({true, 24.f, 128.f, 36.f});
+  high.SetContactShadows({true, 16, 1.8f, .045f, .85f});
+  high.SetAmbientOcclusion({true, 1.5f, .03f, 1.15f});
+  high.SetScreenSpaceReflections({true, .82f, 42.f, .7f, .32f, 16});
+  high.SetBloom({true, 1.05f, .55f, .13f, 3.f});
+  high.SetVolumetricClouds(
       {true, 1100.f, 1700.f, .48f, 1.08f, .28f, 14.f, 16, true, .7f});
-  ultra.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
-  ultra.SetTerrainDistanceMaterial(
+  high.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
+  high.SetTerrainDistanceMaterial(
       {true, 44.f, 196.f, .0065f, .16f, 1.f, .14f});
-  ultra.SetWaterOptics({true, .022f, .42f, .04f});
+  high.SetWaterOptics({true, .022f, .42f, .04f});
+  if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra)high.SetDirectionalShadowCascades({4,4096,.1f,220.f,.70f,.10f});
   if (!captureDirectory_.empty()) {
     std::filesystem::create_directories(captureDirectory_);
     showcaseRunId_ =
@@ -610,7 +640,7 @@ void FrontierWorldGame::OnUpdate(Engine &engine, float deltaTime) {
   if (input.Pressed(VK_F4))
     automatic_ = !automatic_;
   if (input.Pressed(VK_F5))
-    engine.SetRenderQuality(NextRenderQuality3D(engine.RenderQuality()));
+    engine.SetRenderQuality(NextRenderQuality3D(engine.RequestedRenderQuality()));
   if (input.Pressed(VK_F1)) {
     viewMode_ = ViewMode::FirstPerson;
     automatic_ = false;
@@ -642,14 +672,24 @@ void FrontierWorldGame::OnUpdate(Engine &engine, float deltaTime) {
       if (showcaseGpuSamples_.size() < 4096)
         showcaseGpuSamples_.push_back(rendererStats.lastGpuFrameNanoseconds);
     }
-    const uint64_t cpuFrameNanoseconds =
+    const uint64_t rendererCpuWorkNanoseconds =
         rendererStats.lastRenderPreparationCpuNanoseconds +
         rendererStats.lastRenderCommandRecordingCpuNanoseconds +
-        rendererStats.lastRenderQueueExecuteCpuNanoseconds +
+        rendererStats.lastRenderQueueExecuteCpuNanoseconds;
+    uint64_t cpuFrameNanoseconds = rendererCpuWorkNanoseconds +
         rendererStats.lastRenderFenceWaitCpuNanoseconds +
         rendererStats.lastRenderPresentCpuNanoseconds;
+    uint64_t cpuWorkNanoseconds{};
+    if(showcaseThreadCycleCalibrationValid_&&showcaseThreadCyclesPerSecond_&&rendererStats.lastRenderThreadCpuQuerySucceeded&&rendererStats.lastRenderThreadCpuCycles){const long double nanoseconds=long double(rendererStats.lastRenderThreadCpuCycles)*1'000'000'000.0L/long double(showcaseThreadCyclesPerSecond_);if(std::isfinite(double(nanoseconds))&&nanoseconds>0&&nanoseconds<=long double((std::numeric_limits<uint64_t>::max)()))cpuWorkNanoseconds=uint64_t(nanoseconds);else showcaseThreadCycleCalibrationValid_=false;}else showcaseThreadCycleCalibrationValid_=false;
     if (cpuFrameNanoseconds && showcaseCpuSamples_.size() < 4096)
       showcaseCpuSamples_.push_back(cpuFrameNanoseconds);
+    if (cpuWorkNanoseconds && showcaseCpuWorkSamples_.size() < 4096)
+      showcaseCpuWorkSamples_.push_back(cpuWorkNanoseconds);
+    const std::array<uint64_t,5> cpuStages={rendererStats.lastRenderPreparationCpuNanoseconds,rendererStats.lastRenderCommandRecordingCpuNanoseconds,rendererStats.lastRenderQueueExecuteCpuNanoseconds,rendererStats.lastRenderFenceWaitCpuNanoseconds,rendererStats.lastRenderPresentCpuNanoseconds};
+    for(std::size_t stage=0;stage<cpuStages.size();++stage)if(cpuStages[stage]&&showcaseCpuStageSamples_[stage].size()<4096)showcaseCpuStageSamples_[stage].push_back(cpuStages[stage]);
+    const uint64_t steadyAllocationTotal=rendererStats.performanceTelemetryMutationAllocations+rendererStats.hdrSceneColorAllocations+rendererStats.nativeDepthBufferAllocations+rendererStats.ambientOcclusionAllocations+rendererStats.waterOpaqueSceneColorAllocations+rendererStats.waterOpaqueSceneColorReleases+rendererStats.volumetricAtmosphereResourceCreates+rendererStats.volumetricAtmosphereResourceReleases+rendererStats.temporalHistoryAllocations+rendererStats.temporalHistoryReleases+rendererStats.multisampleAllocations+rendererStats.multisampleReleases+rendererStats.velocityAllocations+rendererStats.velocityReleases+rendererStats.directionalShadowMapAllocations+rendererStats.directionalShadowResourceGeneration+rendererStats.frameUploadBufferAllocations;
+    const std::array<uint64_t,16> resourceCounters={rendererStats.performanceTelemetryMutationAllocations,rendererStats.hdrSceneColorAllocations,rendererStats.nativeDepthBufferAllocations,rendererStats.ambientOcclusionAllocations,rendererStats.waterOpaqueSceneColorAllocations,rendererStats.waterOpaqueSceneColorReleases,rendererStats.volumetricAtmosphereResourceCreates,rendererStats.volumetricAtmosphereResourceReleases,rendererStats.temporalHistoryAllocations,rendererStats.temporalHistoryReleases,rendererStats.multisampleAllocations,rendererStats.multisampleReleases,rendererStats.velocityAllocations,rendererStats.velocityReleases,rendererStats.directionalShadowMapAllocations,rendererStats.directionalShadowResourceGeneration};
+    const bool ultraApplied=engine.DevelopmentUltraReceipt().rendererApplied;if(ultraApplied&&!showcaseStartupResourceCounterEnd_)showcaseStartupResourceCounterEnd_=steadyAllocationTotal;if(captureIndex_>=12&&!showcaseTransitionResourceCounterStart_)showcaseTransitionResourceCounterStart_=steadyAllocationTotal;if(ultraApplied&&captureIndex_<12){const std::size_t phase=captureIndex_;const bool changed=showcasePreviousSteadyAllocationTotal_&&steadyAllocationTotal!=showcasePreviousSteadyAllocationTotal_;const uint64_t phaseFrame=++showcasePhaseAllocationFrames_[phase];if(changed){showcasePhaseSteadyCoverage_[phase]=0;++showcaseWarmupResourceChanges_;}else if(phaseFrame>15){++showcasePhaseSteadyCoverage_[phase];++showcaseSteadyAllocationFrames_;}if(phaseFrame>15&&rendererStats.pendingGpuReleaseBytes)++showcaseSteadyPendingViolations_;}showcaseSteadyAllocationEstablished_=std::ranges::all_of(showcasePhaseSteadyCoverage_,[](uint64_t coverage){return coverage>=8;});showcasePreviousResourceCounters_=resourceCounters;showcasePreviousSteadyAllocationTotal_=steadyAllocationTotal;
     showcaseMaximumWorkingSetBytes_ = (std::max)(
         showcaseMaximumWorkingSetBytes_, memory.process.workingSetBytes);
     const std::size_t trackedVram =
@@ -1152,6 +1192,14 @@ void FrontierWorldGame::WriteShowcaseReceipt(Engine &engine) {
     return values[(values.size() - 1) * 95 / 100];
   };
   const uint64_t gpuP95 = percentile95(showcaseGpuSamples_);
+  const ShowcaseCpuPerformanceReceipt cpuPerformance=EvaluateShowcaseCpuPerformance(showcaseCpuWorkSamples_);
+  const ShowcaseCpuPerformanceReceipt endToEndPerformance=EvaluateShowcaseCpuPerformance(showcaseCpuSamples_,ShowcaseCpuCatastrophicNanoseconds,ShowcaseCpuCatastrophicNanoseconds);
+  std::array<ShowcaseCpuPerformanceReceipt,5> cpuStagePerformance{};for(std::size_t stage=0;stage<cpuStagePerformance.size();++stage)cpuStagePerformance[stage]=EvaluateShowcaseCpuPerformance(showcaseCpuStageSamples_[stage],ShowcaseCpuCatastrophicNanoseconds,ShowcaseCpuCatastrophicNanoseconds);
+  constexpr std::array<uint64_t,7> ValidCpuContract={1'000'000,1'000'000,1'000'000,1'000'000,1'000'000,1'000'000,1'000'000};
+  constexpr std::array<uint64_t,1> SingleWindowMutation={1'000'000};
+  constexpr std::array<uint64_t,7> ZeroMutation={1'000'000,1'000'000,1'000'000,0,1'000'000,1'000'000,1'000'000};
+  constexpr std::array<uint64_t,7> OverflowMutation={1'000'000,1'000'000,1'000'000,(std::numeric_limits<uint64_t>::max)(),1'000'000,1'000'000,1'000'000};
+  const bool cpuHostileContractPassed=EvaluateShowcaseCpuPerformance(ValidCpuContract).passed&&!EvaluateShowcaseCpuPerformance(SingleWindowMutation).passed&&!EvaluateShowcaseCpuPerformance(ZeroMutation).passed&&!EvaluateShowcaseCpuPerformance(OverflowMutation).passed;
   const uint64_t cpuP95 = percentile95(showcaseCpuSamples_);
   const RendererStats before = engine.GetRendererStats();
   const EngineMemoryStats memoryBefore = engine.GetMemoryStats();
@@ -1173,15 +1221,23 @@ void FrontierWorldGame::WriteShowcaseReceipt(Engine &engine) {
                           showcaseMaximumTrackedVramBytes_ <= 768ull * 1024 * 1024 &&
                           before.materialTextureBudgetRejections == 0 &&
                           before.pendingGpuReleaseBytes == 0 &&
-                          after.pendingGpuReleaseBytes == 0;
+                          after.pendingGpuReleaseBytes == 0 &&
+                          showcaseSteadyAllocationChanges_ == 0 &&
+                          showcaseSteadyAllocationEstablished_ &&
+                          showcaseSteadyPendingViolations_ == 0 &&
+                          showcaseSteadyAllocationFrames_ >= 120;
   const bool gpuGate = gpuP95 > 0 && gpuP95 <= 12000000ull;
-  const bool cpuGate = cpuP95 > 0 && cpuP95 <= 8000000ull;
+  const bool cpuGate = showcaseThreadCycleCalibrationValid_&&cpuPerformance.passed&&endToEndPerformance.passed&&cpuHostileContractPassed;
   // Receipt只記錄renderer實際執行計數，不以requested設定冒充功能通過。
   std::ofstream receipt(captureDirectory_ / "frontier-showcase-receipt.json",
                         std::ios::binary | std::ios::trunc);
   receipt << "{\n"
-          << "  \"source\": \"FrontierWorldUltraShowcase\",\n"
+          << "  \"source\": \"FrontierWorldHighShowcase\",\n"
           << "  \"entry\": \"--capture-demo\",\n"
+          << "  \"requestedRenderQuality\": \"" << RenderQualityName3D(engine.RequestedRenderQuality()) << "\",\n"
+          << "  \"actualRenderQuality\": \"" << RenderQualityName3D(engine.RenderQuality()) << "\",\n"
+          << "  \"developmentUltraRendererApplied\": " << (engine.DevelopmentUltraReceipt().rendererApplied?1:0) << ",\n"
+          << "  \"developmentUltraTransitionApplied\": " << (engine.DevelopmentUltraReceipt().transitionPolicyApplied?1:0) << ",\n"
           << "  \"runId\": \"" << showcaseRunId_ << "\",\n"
           << "  \"worldCaptures\": 12,\n"
           << "  \"diagnosticCaptures\": 2,\n"
@@ -1261,7 +1317,48 @@ void FrontierWorldGame::WriteShowcaseReceipt(Engine &engine) {
           << "  \"maximumGpuFrameNanoseconds\": "
           << showcaseMaximumGpuFrameNanoseconds_ << ",\n"
           << "  \"gpuP95Nanoseconds\": " << gpuP95 << ",\n"
+          << "  \"drawCalls\": " << before.lastDrawCalls << ",\n"
+          << "  \"meshInstances\": " << before.lastSubmittedMeshInstances << ",\n"
+          << "  \"worldVertices\": " << before.lastSubmittedWorldVertices << ",\n"
+          << "  \"hzbPrepassRecordingCpuNanoseconds\": " << before.lastHzbPrepassRecordingCpuNanoseconds << ",\n"
+          << "  \"hzbBuildRecordingCpuNanoseconds\": " << before.lastHzbBuildRecordingCpuNanoseconds << ",\n"
+          << "  \"hzbCullRecordingCpuNanoseconds\": " << before.lastHzbCullRecordingCpuNanoseconds << ",\n"
           << "  \"cpuP95Nanoseconds\": " << cpuP95 << ",\n"
+          << "  \"cpuWorkClock\": \"QueryThreadCycleTime\",\n"
+          << "  \"cpuThreadCycleCalibrationValid\": " << (showcaseThreadCycleCalibrationValid_?1:0) << ",\n"
+          << "  \"cpuThreadCyclesPerSecond\": " << showcaseThreadCyclesPerSecond_ << ",\n"
+          << "  \"cpuThreadCycleCalibration\": [" << showcaseThreadCycleCalibration_[0] << ',' << showcaseThreadCycleCalibration_[1] << ',' << showcaseThreadCycleCalibration_[2] << ',' << showcaseThreadCycleCalibration_[3] << ',' << showcaseThreadCycleCalibration_[4] << ',' << showcaseThreadCycleCalibration_[5] << ',' << showcaseThreadCycleCalibration_[6] << "],\n"
+          << "  \"cpuSampleCount\": " << cpuPerformance.sampleCount << ",\n"
+          << "  \"cpuWorkRawP95Nanoseconds\": " << cpuPerformance.rawP95Nanoseconds << ",\n"
+          << "  \"cpuWindowCount\": " << ShowcaseCpuWindowCount << ",\n"
+          << "  \"cpuWindowSampleCounts\": [" << cpuPerformance.windowSampleCounts[0] << ',' << cpuPerformance.windowSampleCounts[1] << ',' << cpuPerformance.windowSampleCounts[2] << ',' << cpuPerformance.windowSampleCounts[3] << ',' << cpuPerformance.windowSampleCounts[4] << ',' << cpuPerformance.windowSampleCounts[5] << ',' << cpuPerformance.windowSampleCounts[6] << "],\n"
+          << "  \"cpuWindowP95Nanoseconds\": [" << cpuPerformance.windowP95Nanoseconds[0] << ',' << cpuPerformance.windowP95Nanoseconds[1] << ',' << cpuPerformance.windowP95Nanoseconds[2] << ',' << cpuPerformance.windowP95Nanoseconds[3] << ',' << cpuPerformance.windowP95Nanoseconds[4] << ',' << cpuPerformance.windowP95Nanoseconds[5] << ',' << cpuPerformance.windowP95Nanoseconds[6] << "],\n"
+          << "  \"cpuMedianWindowP95Nanoseconds\": " << cpuPerformance.medianWindowP95Nanoseconds << ",\n"
+          << "  \"cpuMaximumNanoseconds\": " << cpuPerformance.maximumNanoseconds << ",\n"
+          << "  \"endToEndSampleCount\": " << endToEndPerformance.sampleCount << ",\n"
+          << "  \"endToEndWindowSampleCounts\": [" << endToEndPerformance.windowSampleCounts[0] << ',' << endToEndPerformance.windowSampleCounts[1] << ',' << endToEndPerformance.windowSampleCounts[2] << ',' << endToEndPerformance.windowSampleCounts[3] << ',' << endToEndPerformance.windowSampleCounts[4] << ',' << endToEndPerformance.windowSampleCounts[5] << ',' << endToEndPerformance.windowSampleCounts[6] << "],\n"
+          << "  \"endToEndWindowP95Nanoseconds\": [" << endToEndPerformance.windowP95Nanoseconds[0] << ',' << endToEndPerformance.windowP95Nanoseconds[1] << ',' << endToEndPerformance.windowP95Nanoseconds[2] << ',' << endToEndPerformance.windowP95Nanoseconds[3] << ',' << endToEndPerformance.windowP95Nanoseconds[4] << ',' << endToEndPerformance.windowP95Nanoseconds[5] << ',' << endToEndPerformance.windowP95Nanoseconds[6] << "],\n"
+          << "  \"endToEndRawP95Nanoseconds\": " << endToEndPerformance.rawP95Nanoseconds << ",\n"
+          << "  \"endToEndMedianWindowP95Nanoseconds\": " << endToEndPerformance.medianWindowP95Nanoseconds << ",\n"
+          << "  \"endToEndMaximumNanoseconds\": " << endToEndPerformance.maximumNanoseconds << ",\n"
+          << "  \"endToEndCoverageComplete\": " << (endToEndPerformance.coverageComplete?1:0) << ",\n"
+          << "  \"cpuStages\": {\"preparation\":{\"samples\":" << cpuStagePerformance[0].sampleCount << ",\"rawP95\":" << cpuStagePerformance[0].rawP95Nanoseconds << ",\"medianWindowP95\":" << cpuStagePerformance[0].medianWindowP95Nanoseconds << ",\"max\":" << cpuStagePerformance[0].maximumNanoseconds << "},\"commandRecording\":{\"samples\":" << cpuStagePerformance[1].sampleCount << ",\"rawP95\":" << cpuStagePerformance[1].rawP95Nanoseconds << ",\"medianWindowP95\":" << cpuStagePerformance[1].medianWindowP95Nanoseconds << ",\"max\":" << cpuStagePerformance[1].maximumNanoseconds << "},\"queueSubmit\":{\"samples\":" << cpuStagePerformance[2].sampleCount << ",\"rawP95\":" << cpuStagePerformance[2].rawP95Nanoseconds << ",\"medianWindowP95\":" << cpuStagePerformance[2].medianWindowP95Nanoseconds << ",\"max\":" << cpuStagePerformance[2].maximumNanoseconds << "},\"fenceWait\":{\"samples\":" << cpuStagePerformance[3].sampleCount << ",\"rawP95\":" << cpuStagePerformance[3].rawP95Nanoseconds << ",\"medianWindowP95\":" << cpuStagePerformance[3].medianWindowP95Nanoseconds << ",\"max\":" << cpuStagePerformance[3].maximumNanoseconds << "},\"present\":{\"samples\":" << cpuStagePerformance[4].sampleCount << ",\"rawP95\":" << cpuStagePerformance[4].rawP95Nanoseconds << ",\"medianWindowP95\":" << cpuStagePerformance[4].medianWindowP95Nanoseconds << ",\"max\":" << cpuStagePerformance[4].maximumNanoseconds << "}},\n"
+          << "  \"cpuBudgetNanoseconds\": " << ShowcaseCpuBudgetNanoseconds << ",\n"
+          << "  \"cpuCatastrophicBudgetNanoseconds\": " << ShowcaseCpuCatastrophicNanoseconds << ",\n"
+          << "  \"cpuCoverageComplete\": " << (cpuPerformance.coverageComplete?1:0) << ",\n"
+          << "  \"cpuHostileContractPassed\": " << (cpuHostileContractPassed?1:0) << ",\n"
+          << "  \"steadyAllocationTotal\": " << showcasePreviousSteadyAllocationTotal_ << ",\n"
+          << "  \"steadyAllocationChanges\": " << showcaseSteadyAllocationChanges_ << ",\n"
+          << "  \"steadyAllocationFrames\": " << showcaseSteadyAllocationFrames_ << ",\n"
+          << "  \"steadyAllocationEstablished\": " << (showcaseSteadyAllocationEstablished_?1:0) << ",\n"
+          << "  \"warmupResourceChanges\": " << showcaseWarmupResourceChanges_ << ",\n"
+          << "  \"phaseSteadyCoverage\": [" << showcasePhaseSteadyCoverage_[0] << ',' << showcasePhaseSteadyCoverage_[1] << ',' << showcasePhaseSteadyCoverage_[2] << ',' << showcasePhaseSteadyCoverage_[3] << ',' << showcasePhaseSteadyCoverage_[4] << ',' << showcasePhaseSteadyCoverage_[5] << ',' << showcasePhaseSteadyCoverage_[6] << ',' << showcasePhaseSteadyCoverage_[7] << ',' << showcasePhaseSteadyCoverage_[8] << ',' << showcasePhaseSteadyCoverage_[9] << ',' << showcasePhaseSteadyCoverage_[10] << ',' << showcasePhaseSteadyCoverage_[11] << "],\n"
+          << "  \"phaseSteadyChanges\": [" << showcasePhaseSteadyChanges_[0] << ',' << showcasePhaseSteadyChanges_[1] << ',' << showcasePhaseSteadyChanges_[2] << ',' << showcasePhaseSteadyChanges_[3] << ',' << showcasePhaseSteadyChanges_[4] << ',' << showcasePhaseSteadyChanges_[5] << ',' << showcasePhaseSteadyChanges_[6] << ',' << showcasePhaseSteadyChanges_[7] << ',' << showcasePhaseSteadyChanges_[8] << ',' << showcasePhaseSteadyChanges_[9] << ',' << showcasePhaseSteadyChanges_[10] << ',' << showcasePhaseSteadyChanges_[11] << "],\n"
+          << "  \"steadyResourceCounterChanges\": [" << showcaseSteadyResourceCounterChanges_[0] << ',' << showcaseSteadyResourceCounterChanges_[1] << ',' << showcaseSteadyResourceCounterChanges_[2] << ',' << showcaseSteadyResourceCounterChanges_[3] << ',' << showcaseSteadyResourceCounterChanges_[4] << ',' << showcaseSteadyResourceCounterChanges_[5] << ',' << showcaseSteadyResourceCounterChanges_[6] << ',' << showcaseSteadyResourceCounterChanges_[7] << ',' << showcaseSteadyResourceCounterChanges_[8] << ',' << showcaseSteadyResourceCounterChanges_[9] << ',' << showcaseSteadyResourceCounterChanges_[10] << ',' << showcaseSteadyResourceCounterChanges_[11] << ',' << showcaseSteadyResourceCounterChanges_[12] << ',' << showcaseSteadyResourceCounterChanges_[13] << ',' << showcaseSteadyResourceCounterChanges_[14] << ',' << showcaseSteadyResourceCounterChanges_[15] << "],\n"
+          << "  \"steadyPendingViolations\": " << showcaseSteadyPendingViolations_ << ",\n"
+          << "  \"startupResourceCounterEnd\": " << showcaseStartupResourceCounterEnd_ << ",\n"
+          << "  \"transitionResourceCounterStart\": " << showcaseTransitionResourceCounterStart_ << ",\n"
+          << "  \"transitionResourceCounterEnd\": " << showcasePreviousSteadyAllocationTotal_ << ",\n"
           << "  \"featuresExecuted\": " << (featuresExecuted ? 1 : 0)
           << ",\n"
           << "  \"memoryGatePassed\": " << (memoryGate ? 1 : 0) << ",\n"
@@ -1294,6 +1391,7 @@ void FrontierWorldGame::OnRender(Engine &engine, float) {
   for (const Monster &monster : monsters_)
     AddMonster(monster);
   DrawList &draw = engine.Draw();
+  draw.SetPerformanceTelemetryEnabled3D(!captureDirectory_.empty());
   const bool fixedProfile = !captureDirectory_.empty();
   const float profileTime = lightingProfile_ == LightingProfile::Day
                                 ? 43200.f

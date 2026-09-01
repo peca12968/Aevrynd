@@ -90,6 +90,9 @@ struct CookedRenderIbl3D {
 struct CookedRenderManifestStats3D {
     std::size_t files{}, materials{}, meshParts{}, referencedFiles{};
     std::uint64_t aggregateBytes{}, fingerprint{};
+    std::string manifestSha256;
+    std::size_t validatedFiles{}, validatedMaterials{}, validatedMeshParts{},
+        validatedReferencedFiles{};
 };
 
 class CookedRenderManifest3D {

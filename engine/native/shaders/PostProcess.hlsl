@@ -96,3 +96,16 @@ float4 PostProcessPixelMain(PostProcessVertexOutput input) : SV_TARGET
     const float3 hdr = (EdgeAdaptiveHdr(sourceUv, hdrCenter)+BloomContribution(sourceUv))*exp2(antiAliasing.w);
     return float4(LinearToSrgb(AcesToneMap(hdr)), 1.0);
 }
+
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+float4 PostProcessLinearExposurePixelMain(PostProcessVertexOutput input) : SV_TARGET
+{
+    uint sourceWidth, sourceHeight;
+    hdrSceneColor.GetDimensions(sourceWidth, sourceHeight);
+    const float2 normalizedPosition = saturate((input.position.xy - targetRect.xy) / max(targetRect.zw, 1.0));
+    const float2 sourcePosition = sourceRect.xy + normalizedPosition * sourceRect.zw;
+    const float2 sourceUv = sourcePosition / float2(sourceWidth, sourceHeight);
+    // 測試專用輸出保留 FP16 線性值，只執行正式曝光運算，不執行 bloom、ACES 或 sRGB。
+    return float4(max(0.0, hdrSceneColor.SampleLevel(hdrSampler, sourceUv, 0.0).rgb) * exp2(antiAliasing.w), 1.0);
+}
+#endif

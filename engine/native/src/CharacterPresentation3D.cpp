@@ -210,11 +210,36 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
     }
     const Skeleton3D& skeleton = asset.model.skeleton;
     const auto joint = [&](HumanoidJoint3D semantic) { return rig.Joint(semantic); };
+    const auto namedJoint = [&](std::string_view name) {
+        const auto found = std::ranges::find(asset.jointNames, name);
+        return found == asset.jointNames.end()
+            ? skeleton.joints.size()
+            : std::size_t(found - asset.jointNames.begin());
+    };
     const std::size_t hips = joint(HumanoidJoint3D::Hips), spine = joint(HumanoidJoint3D::Spine);
     const std::size_t leftUpperLeg = joint(HumanoidJoint3D::LeftUpperLeg), leftLowerLeg = joint(HumanoidJoint3D::LeftLowerLeg), leftFoot = joint(HumanoidJoint3D::LeftFoot);
     const std::size_t rightUpperLeg = joint(HumanoidJoint3D::RightUpperLeg), rightLowerLeg = joint(HumanoidJoint3D::RightLowerLeg), rightFoot = joint(HumanoidJoint3D::RightFoot);
     const std::size_t leftUpperArm = joint(HumanoidJoint3D::LeftUpperArm), leftLowerArm = joint(HumanoidJoint3D::LeftLowerArm), leftHand = joint(HumanoidJoint3D::LeftHand);
     const std::size_t rightUpperArm = joint(HumanoidJoint3D::RightUpperArm), rightLowerArm = joint(HumanoidJoint3D::RightLowerArm), rightHand = joint(HumanoidJoint3D::RightHand);
+    const std::size_t head = joint(HumanoidJoint3D::Head);
+    const std::size_t leftFingers = namedJoint("LeftFingers"), rightFingers = namedJoint("RightFingers");
+    const std::size_t leftToe = namedJoint("LeftToe"), rightToe = namedJoint("RightToe");
+    const auto appendOptional = [&](AnimationClip3D& clip, std::size_t optionalJoint,
+                                    std::initializer_list<std::pair<float, Vec3>> rotations,
+                                    std::initializer_list<std::pair<float, Vec3>> translations = {}) {
+        if (optionalJoint < skeleton.joints.size())
+            clip.tracks.push_back(Track(skeleton, optionalJoint, clip.duration,
+                                        rotations, translations));
+    };
+    AnimationClip3D& idle = clips[std::size_t(FallbackHumanoidClip3D::Idle)];
+    idle.tracks.push_back(Track(skeleton, head, idle.duration,
+        {{0.f,{0,-.018f,0}}, {.5f,{.012f,.018f,0}}, {1.f,{0,-.018f,0}}}));
+    idle.tracks.push_back(Track(skeleton, leftHand, idle.duration,
+        {{0.f,{.02f,0,-.08f}}, {.5f,{.035f,0,-.10f}}, {1.f,{.02f,0,-.08f}}}));
+    idle.tracks.push_back(Track(skeleton, rightHand, idle.duration,
+        {{0.f,{.02f,0,.08f}}, {.5f,{.035f,0,.10f}}, {1.f,{.02f,0,.08f}}}));
+    appendOptional(idle, leftFingers, {{0.f,{.16f,0,-.05f}}, {.5f,{.24f,0,-.08f}}, {1.f,{.16f,0,-.05f}}});
+    appendOptional(idle, rightFingers, {{0.f,{.16f,0,.05f}}, {.5f,{.24f,0,.08f}}, {1.f,{.16f,0,.05f}}});
     const auto gait = [&](FallbackHumanoidClip3D id, float duration, float hipAmount, float kneeAmount) {
         AnimationClip3D& clip = clips[std::size_t(id)];
         clip.duration = duration;
@@ -225,7 +250,18 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
             Track(skeleton, leftLowerLeg, duration, {{0.f,{kneeAmount,0,0}}, {.5f,{0,0,0}}, {1.f,{kneeAmount,0,0}}}),
             Track(skeleton, rightLowerLeg, duration, {{0.f,{0,0,0}}, {.5f,{kneeAmount,0,0}}, {1.f,{0,0,0}}}),
             Track(skeleton, leftUpperArm, duration, {{0.f,{-hipAmount*.7f,0,0}}, {.5f,{hipAmount*.7f,0,0}}, {1.f,{-hipAmount*.7f,0,0}}}),
-            Track(skeleton, rightUpperArm, duration, {{0.f,{hipAmount*.7f,0,0}}, {.5f,{-hipAmount*.7f,0,0}}, {1.f,{hipAmount*.7f,0,0}}})};
+            Track(skeleton, rightUpperArm, duration, {{0.f,{hipAmount*.7f,0,0}}, {.5f,{-hipAmount*.7f,0,0}}, {1.f,{hipAmount*.7f,0,0}}}),
+            Track(skeleton, hips, duration, {{0.f,{0,-.035f,0}}, {.25f,{0,.025f,0}}, {.5f,{0,-.035f,0}}, {.75f,{0,.025f,0}}, {1.f,{0,-.035f,0}}},
+                  {{0.f,{-.022f,-.007f,0}}, {.25f,{0,.009f,0}}, {.5f,{.022f,-.007f,0}}, {.75f,{0,.009f,0}}, {1.f,{-.022f,-.007f,0}}}),
+            Track(skeleton, leftFoot, duration, {{0.f,{-.18f,0,0}}, {.25f,{.32f,0,0}}, {.5f,{.08f,0,0}}, {1.f,{-.18f,0,0}}}),
+            Track(skeleton, rightFoot, duration, {{0.f,{.08f,0,0}}, {.5f,{-.18f,0,0}}, {.75f,{.32f,0,0}}, {1.f,{.08f,0,0}}}),
+            Track(skeleton, leftHand, duration, {{0.f,{.08f,0,-.10f}}, {.5f,{.18f,0,-.16f}}, {1.f,{.08f,0,-.10f}}}),
+            Track(skeleton, rightHand, duration, {{0.f,{.18f,0,.16f}}, {.5f,{.08f,0,.10f}}, {1.f,{.18f,0,.16f}}}),
+            Track(skeleton, head, duration, {{0.f,{0,-.035f,0}}, {.5f,{0,.035f,0}}, {1.f,{0,-.035f,0}}})};
+        appendOptional(clip, leftFingers, {{0.f,{.20f,0,-.06f}}, {.5f,{.34f,0,-.10f}}, {1.f,{.20f,0,-.06f}}});
+        appendOptional(clip, rightFingers, {{0.f,{.34f,0,.10f}}, {.5f,{.20f,0,.06f}}, {1.f,{.34f,0,.10f}}});
+        appendOptional(clip, leftToe, {{0.f,{-.20f,0,0}}, {.25f,{.38f,0,0}}, {.5f,{0,0,0}}, {1.f,{-.20f,0,0}}});
+        appendOptional(clip, rightToe, {{0.f,{0,0,0}}, {.5f,{-.20f,0,0}}, {.75f,{.38f,0,0}}, {1.f,{0,0,0}}});
     };
     gait(FallbackHumanoidClip3D::Walk, .86f, .34f, .44f);
     gait(FallbackHumanoidClip3D::Run, .58f, .58f, .72f);
@@ -241,6 +277,8 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
         Track(skeleton, rightLowerLeg, crouch.duration, {{0.f,{0,0,0}}, {.25f,{.58f,0,0}}, {1.f,{.58f,0,0}}}),
         Track(skeleton, leftFoot, crouch.duration, {{0.f,{0,0,0}}, {.25f,{-.22f,0,0}}, {1.f,{-.22f,0,0}}}),
         Track(skeleton, rightFoot, crouch.duration, {{0.f,{0,0,0}}, {.25f,{-.22f,0,0}}, {1.f,{-.22f,0,0}}})};
+    appendOptional(crouch, leftToe, {{0.f,{0,0,0}}, {.25f,{.24f,0,0}}, {1.f,{.24f,0,0}}});
+    appendOptional(crouch, rightToe, {{0.f,{0,0,0}}, {.25f,{.24f,0,0}}, {1.f,{.24f,0,0}}});
 
     AnimationClip3D& jump = clips[std::size_t(FallbackHumanoidClip3D::Jump)];
     jump.duration = .55f; jump.looping = false;
@@ -249,6 +287,8 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
         Track(skeleton, rightUpperLeg, jump.duration, {{0.f,{0,0,0}}, {.35f,{-.48f,0,0}}, {1.f,{-.25f,0,0}}}),
         Track(skeleton, leftLowerLeg, jump.duration, {{0.f,{0,0,0}}, {.35f,{.75f,0,0}}, {1.f,{.35f,0,0}}}),
         Track(skeleton, rightLowerLeg, jump.duration, {{0.f,{0,0,0}}, {.35f,{.75f,0,0}}, {1.f,{.35f,0,0}}})};
+    appendOptional(jump, leftToe, {{0.f,{-.15f,0,0}}, {.35f,{.42f,0,0}}, {1.f,{.18f,0,0}}});
+    appendOptional(jump, rightToe, {{0.f,{-.15f,0,0}}, {.35f,{.42f,0,0}}, {1.f,{.18f,0,0}}});
     AnimationClip3D& fall = clips[std::size_t(FallbackHumanoidClip3D::Fall)];
     fall.duration = .6f; fall.looping = true;
     fall.tracks = {
@@ -267,6 +307,8 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
             Track(skeleton, upper, clip.duration, {{0.f,{-.25f,0,side*.22f}}, {.22f,{-1.15f,side*.25f,side*-.35f}}, {.55f,{-1.55f,side*reach,side*-.52f}}, {1.f,{-.22f,0,0}}}),
             Track(skeleton, lower, clip.duration, {{0.f,{-.25f,0,0}}, {.22f,{-.72f,0,0}}, {.55f,{-.25f,0,0}}, {1.f,{0,0,0}}}),
             Track(skeleton, hand, clip.duration, {{0.f,{0,0,0}}, {.22f,{-.18f,side*.18f,0}}, {.55f,{.2f,side*-.12f,0}}, {1.f,{0,0,0}}})};
+        appendOptional(clip, left ? leftFingers : rightFingers,
+            {{0.f,{.22f,0,side*.05f}}, {.22f,{.48f,0,side*.12f}}, {.55f,{.55f,0,side*.08f}}, {1.f,{.22f,0,side*.05f}}});
     };
     attack(FallbackHumanoidClip3D::Attack1, false, .35f, .25f);
     attack(FallbackHumanoidClip3D::Attack2, true, -.42f, .32f);

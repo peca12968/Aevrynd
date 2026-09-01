@@ -1,4 +1,4 @@
-struct GpuMeshInstance {row_major float4x4 transform;float4 normalRows[3];uint tint;uint surface;uint textureData;};
+struct GpuMeshInstance {row_major float4x4 transform;float4 normalRows[3];uint tint;uint surface;uint textureData;uint objectToken;float occlusionOpacity;uint occlusionSeed0;uint occlusionSeed1;};
 struct GpuCullGroup {uint inputOffset;uint instanceCount;uint outputOffset;uint commandIndex;float3 boundsCenter;uint occluder;float3 boundsExtents;float maximumDistance;};
 StructuredBuffer<GpuMeshInstance> InputInstances:register(t0);
 StructuredBuffer<GpuCullGroup> Groups:register(t1);

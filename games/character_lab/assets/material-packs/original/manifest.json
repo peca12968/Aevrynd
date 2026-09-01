@@ -8,48 +8,120 @@
     {
       "id": "skin",
       "resolution": [
-        1024,
-        1024
+        2048,
+        2048
       ],
       "channels": {
         "base-color": {
           "path": "skin/base-color.png",
-          "sha256": "0ed66155837e65b9199f92d0a3f3e726d30b5c2c3da502b65ac4ef89c6fa6467",
-          "bytes": 492629
+          "sha256": "ac13ed5ee1e788814ad35cd6ca0410f49b5383618a3c611cc8be90dc3bb03a66",
+          "bytes": 1727656
         },
         "roughness": {
           "path": "skin/roughness.png",
-          "sha256": "13f9aecce2eb67d5dec04731d8d1bea65ac371d1185732fd3b68242ee92a1210",
-          "bytes": 717592
+          "sha256": "e51b1a067e208c4764d5897aedf1f258e1af8b71ce19f731e22e0092407da183",
+          "bytes": 2269354
         },
         "normal-dx": {
           "path": "skin/normal-dx.png",
-          "sha256": "a9c1b1b6278ec36770481bb7cb74c5ebf608b099f2b77b31e0c724d02def3960",
-          "bytes": 2163759
+          "sha256": "c1d352d99f27d68abe62863c659f1258e7554a740611f4b5533c1aa147b113ef",
+          "bytes": 7591008
+        }
+      }
+    },
+    {
+      "id": "lips",
+      "resolution": [
+        2048,
+        2048
+      ],
+      "channels": {
+        "base-color": {
+          "path": "lips/base-color.png",
+          "sha256": "d8ac6b18c4a549f990eae5f149e66d193c23954a6bb2dfe197ad6bff8d4da8ed",
+          "bytes": 2455662
+        },
+        "roughness": {
+          "path": "lips/roughness.png",
+          "sha256": "a7ad5dbbc1ca962915ee47d8ed06dddd415c767594f55c90765eb5693ed0dbbe",
+          "bytes": 15787
+        },
+        "normal-dx": {
+          "path": "lips/normal-dx.png",
+          "sha256": "c1d352d99f27d68abe62863c659f1258e7554a740611f4b5533c1aa147b113ef",
+          "bytes": 7591008
+        }
+      }
+    },
+    {
+      "id": "sclera",
+      "resolution": [
+        2048,
+        2048
+      ],
+      "channels": {
+        "base-color": {
+          "path": "sclera/base-color.png",
+          "sha256": "b626017636223c2d8baa4f1f21ce1966b36e8baf4efc499969efbe546c2048a6",
+          "bytes": 1443361
+        },
+        "roughness": {
+          "path": "sclera/roughness.png",
+          "sha256": "23d09153326e2f67108e69b3265d23d1456a03d597f0911e7f6932d36b383eb8",
+          "bytes": 15787
+        },
+        "normal-dx": {
+          "path": "sclera/normal-dx.png",
+          "sha256": "66adfb15f839257aa89c680cda81840881d62321f6a75041273adca2ba34279a",
+          "bytes": 586547
+        }
+      }
+    },
+    {
+      "id": "iris",
+      "resolution": [
+        2048,
+        2048
+      ],
+      "channels": {
+        "base-color": {
+          "path": "iris/base-color.png",
+          "sha256": "48b2d452e67b88a42a683f7977a052d34f7e52d155e2a0a5645d9b1b134f73ca",
+          "bytes": 1878197
+        },
+        "roughness": {
+          "path": "iris/roughness.png",
+          "sha256": "1b05a7fbdd18771d92887e6dca70fb27dce0099224e5a482f05924457b4f3e05",
+          "bytes": 15787
+        },
+        "normal-dx": {
+          "path": "iris/normal-dx.png",
+          "sha256": "66adfb15f839257aa89c680cda81840881d62321f6a75041273adca2ba34279a",
+          "bytes": 586547
         }
       }
     },
     {
       "id": "cloth",
       "resolution": [
-        512,
-        512
+        1024,
+        1024
       ],
       "channels": {
         "base-color": {
           "path": "cloth/base-color.png",
-          "sha256": "d91a3f8e8e4123c21e56c2676de364b0011522bdb62b380508b04abefe11b33c",
-          "bytes": 110377
+          "sha256": "13c08aa1c90a62ef324c5d42b433b1e9f9f4ff41d32ce51e2013c0ab8dddc671",
+          "bytes": 360206
         },
         "roughness": {
           "path": "cloth/roughness.png",
-          "sha256": "7b8f0b17bef3613fb14ba5df9deb5705c5e80740b1eac3313579a94cb8d2de0a",
-          "bytes": 166932
+          "sha256": "9bf5461f825d25719eac0ec786b920ebcb6b72a37a6452cd2dc0a691edfcd24f",
+          "bytes": 550189
         },
         "normal-dx": {
           "path": "cloth/normal-dx.png",
-          "sha256": "670ada63d03801d5bbcd134a0009e2bda32d07c5dad951b93387f9b0363e8767",
-          "bytes": 50721
+          "sha256": "3ab8082981b9446da4196e9b5c0fb9cc77818a2de55976d4eb0e6667d213f9bf",
+          "bytes": 44832
         }
       }
     },
@@ -80,24 +152,24 @@
     {
       "id": "hair",
       "resolution": [
-        512,
-        512
+        1024,
+        1024
       ],
       "channels": {
         "base-color": {
           "path": "hair/base-color.png",
-          "sha256": "2085c69616a161a9871e3865252ef7c3c9e107055898fb75d9a54e8ce860fbc3",
-          "bytes": 185226
+          "sha256": "58fe70d841393f1e7efc40c4ee6fbd717ee3bc191fee99b759ab59d9eba6385f",
+          "bytes": 651367
         },
         "roughness": {
           "path": "hair/roughness.png",
-          "sha256": "b1dbb553b9381296e61009d40ec45829c88809eed73b45a5edd774ce4a766dde",
-          "bytes": 190800
+          "sha256": "5b2f7eac47f51b7b735e74c364b317abf828a0e9607067b2a83680dd1963a7ac",
+          "bytes": 561713
         },
         "normal-dx": {
           "path": "hair/normal-dx.png",
-          "sha256": "4a1968b7d526addb5bf012ad4095d4526e8f8f3a4002980d2e32c3f3bc00954a",
-          "bytes": 664805
+          "sha256": "9afa9b5e31a07e3b42fcca71687fcd13dce85ef094cb687a71922cabdac0d2ff",
+          "bytes": 1347909
         }
       }
     },

@@ -1,3 +1,5 @@
+option(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS "Build internal renderer diagnostic and mutation hooks" OFF)
+
 add_library(AevryndEngine STATIC
   src/ArchitectureMeshes3D.cpp
   src/Animation3D.cpp
@@ -5,6 +7,7 @@ add_library(AevryndEngine STATIC
   src/AnimationGraphRootMotionController3D.cpp
   src/SkeletalIk3D.cpp
   src/FootPlacement3D.cpp
+  src/FirstPersonArmsSkinnedMesh3D.cpp
   src/RootMotion3D.cpp
   src/RootMotionInterval3D.cpp
   src/RootMotionController3D.cpp
@@ -14,6 +17,7 @@ add_library(AevryndEngine STATIC
   src/Audio.cpp
   src/CharacterController3D.cpp
   src/CharacterPresentation3D.cpp
+  src/DevelopmentUltraQuality3D.cpp
   src/CollisionWorld3D.cpp
   src/CookedRenderManifest3D.cpp
   src/EnvironmentCollisionStreaming3D.cpp
@@ -65,6 +69,38 @@ add_library(AevryndEngine STATIC
 )
 target_sources(AevryndEngine PRIVATE include/Aevrynd/PhotorealAssetProfile3D.h)
 
+add_executable(AevryndDevelopmentUltraQuality3DTest tests/DevelopmentUltraQuality3DSmoke.cpp)
+target_compile_options(AevryndDevelopmentUltraQuality3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndDevelopmentUltraQuality3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndDevelopmentUltraQuality3DTest COMMAND AevryndDevelopmentUltraQuality3DTest)
+
+add_executable(AevryndDevelopmentUltraDxgiTest tests/DevelopmentUltraDxgiSmoke.cpp)
+target_compile_options(AevryndDevelopmentUltraDxgiTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndDevelopmentUltraDxgiTest PRIVATE AevryndEngine)
+add_test(NAME AevryndDevelopmentUltraDxgiTest COMMAND AevryndDevelopmentUltraDxgiTest)
+add_test(NAME AevryndDevelopmentUltraDxgiGpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 "$<TARGET_FILE:AevryndDevelopmentUltraDxgiTest>")
+
+add_executable(AevryndDevelopmentUltraRendererIntegrationTest tests/DevelopmentUltraRendererIntegrationSmoke.cpp)
+target_compile_options(AevryndDevelopmentUltraRendererIntegrationTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndDevelopmentUltraRendererIntegrationTest PRIVATE AevryndEngine)
+add_test(NAME AevryndDevelopmentUltraRendererIntegrationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraRendererIntegrationTest>")
+add_test(NAME AevryndDevelopmentUltraRendererIntegrationGpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraRendererIntegrationTest>")
+
+add_executable(AevryndDevelopmentUltraEngineRuntimeTest tests/DevelopmentUltraEngineRuntimeSmoke.cpp)
+target_compile_options(AevryndDevelopmentUltraEngineRuntimeTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndDevelopmentUltraEngineRuntimeTest PRIVATE AEVRYND_ENGINE_TEST_ACCESS=1)
+target_link_libraries(AevryndDevelopmentUltraEngineRuntimeTest PRIVATE AevryndEngine)
+add_test(NAME AevryndDevelopmentUltraEngineRuntimeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+add_test(NAME AevryndDevelopmentUltraEngineRuntimeGpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+add_test(NAME AevryndDevelopmentUltraEngineApplyRollbackTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_ULTRA_FAILURE=apply powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+add_test(NAME AevryndDevelopmentUltraEnginePendingRollbackTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_ULTRA_FAILURE=pending powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+add_test(NAME AevryndDevelopmentUltraEnginePendingRollbackGpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_ULTRA_FAILURE=pending AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+
+add_executable(AevryndEngineRenderQuality3DTest tests/EngineRenderQuality3DSmoke.cpp)
+target_compile_options(AevryndEngineRenderQuality3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndEngineRenderQuality3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndEngineRenderQuality3DTest COMMAND AevryndEngineRenderQuality3DTest)
+
 set(AEVRYND_STREAMLINE_AVAILABLE OFF)
 if(AEVRYND_ENABLE_STREAMLINE AND EXISTS "${STREAMLINE_ROOT}/include/sl.h" AND EXISTS "${STREAMLINE_ROOT}/bin/x64/sl.interposer.dll")
   set(AEVRYND_STREAMLINE_AVAILABLE ON)
@@ -89,11 +125,15 @@ endif()
 set(AEVRYND_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
 function(aevrynd_compile_shader output_name source_name entry profile symbol)
   set(output "${AEVRYND_SHADER_OUTPUT_DIR}/${output_name}")
+  set(shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}")
+  if(source_name STREQUAL "World.hlsl" OR source_name STREQUAL "AmbientOcclusion.hlsl")
+    list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/OcclusionDither.hlsli")
+  endif()
   add_custom_command(
     OUTPUT "${output}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${AEVRYND_SHADER_OUTPUT_DIR}"
-    COMMAND "${AEVRYND_FXC}" /nologo /O3 /T "${profile}" /E "${entry}" /Fh "${output}" /Vn "${symbol}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
+    COMMAND "${AEVRYND_FXC}" /nologo /WX /O3 /T "${profile}" /E "${entry}" /Fh "${output}" /Vn "${symbol}" ${ARGN} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
+    DEPENDS ${shader_dependencies}
     VERBATIM
   )
   set(AEVRYND_SHADER_HEADERS ${AEVRYND_SHADER_HEADERS} "${output}" PARENT_SCOPE)
@@ -112,7 +152,24 @@ aevrynd_compile_shader(VelocityMaskedSkinnedVertexShader.h World.hlsl VelocityMa
 aevrynd_compile_shader(VelocityMaskedPixelShader.h World.hlsl VelocityMaskedPixelMain ps_5_0 VelocityMaskedPixelShader)
 aevrynd_compile_shader(SkinnedVertexShader.h World.hlsl SkinnedVertexMain vs_5_0 SkinnedVertexShader)
 aevrynd_compile_shader(WorldPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldPixelShader)
+aevrynd_compile_shader(BaseSkyVertexShader.h BaseSky.hlsl BaseSkyVertexMain vs_5_0 BaseSkyVertexShader)
+aevrynd_compile_shader(BaseSkyPixelShader.h BaseSky.hlsl BaseSkyPixelMain ps_5_0 BaseSkyPixelShader)
+if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  aevrynd_compile_shader(BaseSkyLegacyBluePixelShader.h BaseSky.hlsl BaseSkyPixelMain ps_5_0 BaseSkyLegacyBluePixelShader /D AEVRYND_BASE_SKY_LEGACY_BLUE=1)
+  aevrynd_compile_shader(BaseSkyLegacyClipMatrixPixelShader.h BaseSky.hlsl BaseSkyPixelMain ps_5_0 BaseSkyLegacyClipMatrixPixelShader /D AEVRYND_WORLD_RAY_LEGACY_CLIP_MATRIX=1)
+  aevrynd_compile_shader(BaseSkySignedNegativeWPixelShader.h BaseSky.hlsl BaseSkyPixelMain ps_5_0 BaseSkySignedNegativeWPixelShader /D AEVRYND_WORLD_RAY_FORCE_NEGATIVE_W_FIXTURE=1)
+  aevrynd_compile_shader(BaseSkyLegacyAbsWPixelShader.h BaseSky.hlsl BaseSkyPixelMain ps_5_0 BaseSkyLegacyAbsWPixelShader /D AEVRYND_WORLD_RAY_FORCE_NEGATIVE_W_FIXTURE=1 /D AEVRYND_WORLD_RAY_LEGACY_ABS_W=1)
+  aevrynd_compile_shader(BaseSkyHemisphereFlipPixelShader.h BaseSky.hlsl BaseSkyPixelMain ps_5_0 BaseSkyHemisphereFlipPixelShader /D AEVRYND_WORLD_RAY_HEMISPHERE_FLIP=1)
+  aevrynd_compile_shader(WorldLegacyArmAlphaPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldLegacyArmAlphaPixelShader /D AEVRYND_WORLD_LEGACY_ARM_ALPHA=1)
+  aevrynd_compile_shader(WorldTerrainHeightDisabledPixelShader.h World.hlsl WorldPixelMain ps_5_0 WorldTerrainHeightDisabledPixelShader /D AEVRYND_WORLD_TERRAIN_HEIGHT_DISABLED=1)
+endif()
 aevrynd_compile_shader(WorldMaskedPixelShader.h World.hlsl WorldMaskedPixelMain ps_5_0 WorldMaskedPixelShader)
+aevrynd_compile_shader(ObjectIdPixelShader.h World.hlsl ObjectIdPixelMain ps_5_0 ObjectIdPixelShader)
+aevrynd_compile_shader(ObjectIdMaskedPixelShader.h World.hlsl ObjectIdMaskedPixelMain ps_5_0 ObjectIdMaskedPixelShader)
+aevrynd_compile_shader(ObjectIdColorPixelShader.h World.hlsl ObjectIdColorPixelMain ps_5_0 ObjectIdColorPixelShader)
+aevrynd_compile_shader(ObjectIdMaskedColorPixelShader.h World.hlsl ObjectIdMaskedColorPixelMain ps_5_0 ObjectIdMaskedColorPixelShader)
+aevrynd_compile_shader(ObjectIdInstancedVertexShader.h World.hlsl ObjectIdInstancedVertexMain vs_5_0 ObjectIdInstancedVertexShader)
+aevrynd_compile_shader(ObjectIdSkinnedVertexShader.h World.hlsl ObjectIdSkinnedVertexMain vs_5_0 ObjectIdSkinnedVertexShader)
 aevrynd_compile_shader(ShadowWorldVertexShader.h World.hlsl ShadowWorldVertexMain vs_5_0 ShadowWorldVertexShader)
 aevrynd_compile_shader(ShadowInstancedVertexShader.h World.hlsl ShadowInstancedVertexMain vs_5_0 ShadowInstancedVertexShader)
 aevrynd_compile_shader(ShadowPackedInstancedVertexShader.h World.hlsl ShadowPackedInstancedVertexMain vs_5_0 ShadowPackedInstancedVertexShader)
@@ -120,6 +177,9 @@ aevrynd_compile_shader(ShadowSkinnedVertexShader.h World.hlsl ShadowSkinnedVerte
 aevrynd_compile_shader(ShadowSkinnedPixelShader.h World.hlsl ShadowSkinnedPixelMain ps_5_0 ShadowSkinnedPixelShader)
 aevrynd_compile_shader(PostProcessVertexShader.h PostProcess.hlsl PostProcessVertexMain vs_5_0 PostProcessVertexShader)
 aevrynd_compile_shader(PostProcessPixelShader.h PostProcess.hlsl PostProcessPixelMain ps_5_0 PostProcessPixelShader)
+if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  aevrynd_compile_shader(PostProcessLinearExposurePixelShader.h PostProcess.hlsl PostProcessLinearExposurePixelMain ps_5_0 PostProcessLinearExposurePixelShader /D AEVRYND_INTERNAL_RENDERER_TEST_HOOKS=1)
+endif()
 aevrynd_compile_shader(TemporalResolveVertexShader.h TemporalResolve.hlsl TemporalResolveVertexMain vs_5_0 TemporalResolveVertexShader)
 aevrynd_compile_shader(TemporalResolvePixelShader.h TemporalResolve.hlsl TemporalResolvePixelMain ps_5_0 TemporalResolvePixelShader)
 aevrynd_compile_shader(AmbientOcclusionVertexShader.h AmbientOcclusion.hlsl AmbientOcclusionVertexMain vs_5_0 AmbientOcclusionVertexShader)
@@ -133,18 +193,27 @@ aevrynd_compile_shader(ReflectionProbeFilterShader.h ReflectionProbeFilter.hlsl 
 aevrynd_compile_shader(GpuInstanceCullingClearShader.h GpuInstanceCulling.hlsl GpuInstanceCullingClearMain cs_5_0 GpuInstanceCullingClearShader)
 aevrynd_compile_shader(GpuInstanceCullingShader.h GpuInstanceCulling.hlsl GpuInstanceCullingMain cs_5_0 GpuInstanceCullingShader)
 aevrynd_compile_shader(HzbBuildShader.h HzbBuild.hlsl HzbBuildMain cs_5_0 HzbBuildShader)
-aevrynd_compile_shader(VolumetricAtmosphereComputeShader.h VolumetricAtmosphere.hlsl VolumetricAtmosphereMain cs_5_0 VolumetricAtmosphereComputeShader)
+if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  set(AEVRYND_VOLUMETRIC_DIAGNOSTIC_DEFINE /D AEVRYND_VOLUMETRIC_DIAGNOSTICS=1)
+else()
+  set(AEVRYND_VOLUMETRIC_DIAGNOSTIC_DEFINE /D AEVRYND_VOLUMETRIC_DIAGNOSTICS=0)
+endif()
+aevrynd_compile_shader(VolumetricAtmosphereComputeShader.h VolumetricAtmosphere.hlsl VolumetricAtmosphereMain cs_5_0 VolumetricAtmosphereComputeShader ${AEVRYND_VOLUMETRIC_DIAGNOSTIC_DEFINE})
 aevrynd_compile_shader(VolumetricAtmosphereCompositeVertexShader.h VolumetricAtmosphereComposite.hlsl VolumetricAtmosphereCompositeVertexMain vs_5_0 VolumetricAtmosphereCompositeVertexShader)
 aevrynd_compile_shader(VolumetricAtmosphereCompositePixelShader.h VolumetricAtmosphereComposite.hlsl VolumetricAtmosphereCompositePixelMain ps_5_0 VolumetricAtmosphereCompositePixelShader)
+if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  aevrynd_compile_shader(VolumetricAtmosphereCompositeLegacyDepthPixelShader.h VolumetricAtmosphereComposite.hlsl VolumetricAtmosphereCompositeLegacyDepthPixelMain ps_5_0 VolumetricAtmosphereCompositeLegacyDepthPixelShader)
+  aevrynd_compile_shader(VolumetricAtmosphereCompositeNearestPixelShader.h VolumetricAtmosphereComposite.hlsl VolumetricAtmosphereCompositeNearestPixelMain ps_5_0 VolumetricAtmosphereCompositeNearestPixelShader)
+endif()
 add_custom_target(AevryndShaders DEPENDS ${AEVRYND_SHADER_HEADERS})
 add_dependencies(AevryndEngine AevryndShaders)
-target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl shaders/VolumetricAtmosphere.hlsl shaders/VolumetricAtmosphereComposite.hlsl ${AEVRYND_SHADER_HEADERS})
-set_source_files_properties(shaders/Canvas.hlsl shaders/World.hlsl shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl shaders/VolumetricAtmosphere.hlsl shaders/VolumetricAtmosphereComposite.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
+target_sources(AevryndEngine PRIVATE shaders/Canvas.hlsl shaders/World.hlsl shaders/OcclusionDither.hlsli shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl shaders/VolumetricAtmosphere.hlsl shaders/VolumetricAtmosphereComposite.hlsl ${AEVRYND_SHADER_HEADERS})
+set_source_files_properties(shaders/Canvas.hlsl shaders/World.hlsl shaders/OcclusionDither.hlsli shaders/PostProcess.hlsl shaders/AmbientOcclusion.hlsl shaders/ReflectionProbeFilter.hlsl shaders/GpuInstanceCulling.hlsl shaders/HzbBuild.hlsl shaders/VolumetricAtmosphere.hlsl shaders/VolumetricAtmosphereComposite.hlsl PROPERTIES HEADER_FILE_ONLY TRUE)
 target_include_directories(AevryndEngine PUBLIC include PRIVATE "${AEVRYND_SHADER_OUTPUT_DIR}")
 if(AEVRYND_STREAMLINE_AVAILABLE)
   target_include_directories(AevryndEngine PRIVATE "${STREAMLINE_ROOT}/include")
 endif()
-target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}" AEVRYND_STREAMLINE_AVAILABLE=$<BOOL:${AEVRYND_STREAMLINE_AVAILABLE}>)
+target_compile_definitions(AevryndEngine PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX AEVRYND_ENGINE_VERSION="${PROJECT_VERSION}" AEVRYND_STREAMLINE_AVAILABLE=$<BOOL:${AEVRYND_STREAMLINE_AVAILABLE}> AEVRYND_INTERNAL_RENDERER_TEST_HOOKS=$<BOOL:${AEVRYND_INTERNAL_RENDERER_TEST_HOOKS}>)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0 bcrypt)
 
@@ -227,6 +296,12 @@ target_compile_options(AevryndSoftDirectionalShadow3DBenchmark PRIVATE /W4 /perm
 target_link_libraries(AevryndSoftDirectionalShadow3DBenchmark PRIVATE AevryndEngine)
 add_test(NAME AevryndContactShadowCaptureTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/tools/ci/test-contact-shadow-captures.ps1" -Executable "$<TARGET_FILE:AevryndSoftDirectionalShadow3DBenchmark>" -OutputDirectory "${CMAKE_BINARY_DIR}/contact-shadow-capture-test" -ReplaceOutput)
 
+add_executable(AevryndShadowSemanticFingerprintD3D12Test tests/ShadowSemanticFingerprintD3D12Smoke.cpp)
+target_compile_definitions(AevryndShadowSemanticFingerprintD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_options(AevryndShadowSemanticFingerprintD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndShadowSemanticFingerprintD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndShadowSemanticFingerprintD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndShadowSemanticFingerprintD3D12Test>'")
+
 add_executable(AevryndCameraTest tests/CameraSmoke.cpp)
 target_compile_options(AevryndCameraTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCameraTest PRIVATE AevryndEngine)
@@ -258,13 +333,25 @@ target_include_directories(AevryndVolumetricAtmospherePassD3D12Test PRIVATE "${A
 target_link_libraries(AevryndVolumetricAtmospherePassD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndVolumetricAtmospherePassD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVolumetricAtmospherePassD3D12Test>'")
 
-add_executable(AevryndVolumetricAtmosphereRendererIntegrationTest tests/VolumetricAtmosphereRendererIntegrationSmoke.cpp)
-target_compile_options(AevryndVolumetricAtmosphereRendererIntegrationTest PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(AevryndVolumetricAtmosphereRendererIntegrationTest PRIVATE AevryndEngine)
-aevrynd_add_windows_gui_test(AevryndVolumetricAtmosphereRendererIntegrationTest AevryndVolumetricAtmosphereRendererIntegrationTest)
+add_executable(AevryndVolumetricAtmospherePhysicalTest tests/VolumetricAtmospherePhysicalSmoke.cpp)
+target_compile_options(AevryndVolumetricAtmospherePhysicalTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndVolumetricAtmospherePhysicalTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVolumetricAtmospherePhysicalTest COMMAND AevryndVolumetricAtmospherePhysicalTest)
+
+if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  add_executable(AevryndVolumetricAtmosphereRendererIntegrationTest tests/VolumetricAtmosphereRendererIntegrationSmoke.cpp)
+  target_compile_options(AevryndVolumetricAtmosphereRendererIntegrationTest PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(AevryndVolumetricAtmosphereRendererIntegrationTest PRIVATE AevryndEngine)
+  aevrynd_add_windows_gui_test(AevryndVolumetricAtmosphereRendererIntegrationTest AevryndVolumetricAtmosphereRendererIntegrationTest)
+else()
+  add_executable(AevryndVolumetricAtmosphereProductionContractTest tests/VolumetricAtmosphereProductionContractSmoke.cpp)
+  target_compile_options(AevryndVolumetricAtmosphereProductionContractTest PRIVATE /W4 /permissive- /utf-8)
+  target_link_libraries(AevryndVolumetricAtmosphereProductionContractTest PRIVATE AevryndEngine)
+  aevrynd_add_windows_gui_test(AevryndVolumetricAtmosphereProductionContractTest AevryndVolumetricAtmosphereProductionContractTest)
+endif()
 
 add_executable(AevryndScene3DTest tests/Scene3DSmoke.cpp)
-target_compile_options(AevryndScene3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_options(AevryndScene3DTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(AevryndScene3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndScene3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScene3DTest>'")
 
@@ -303,6 +390,23 @@ target_compile_options(AevryndEnvironmentLightingD3D12Test PRIVATE /W4 /permissi
 target_compile_definitions(AevryndEnvironmentLightingD3D12Test PRIVATE AEVRYND_TESTING=1)
 target_link_libraries(AevryndEnvironmentLightingD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndEnvironmentLightingD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentLightingD3D12Test>'")
+if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  add_executable(AevryndBaseSkyD3D12Test tests/BaseSkyD3D12Smoke.cpp)
+  target_compile_definitions(AevryndBaseSkyD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+  target_compile_options(AevryndBaseSkyD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+  target_link_libraries(AevryndBaseSkyD3D12Test PRIVATE AevryndEngine)
+  add_test(NAME AevryndBaseSkyD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndBaseSkyD3D12Test>")
+  add_test(NAME AevryndBaseSkyD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndBaseSkyD3D12Test>")
+
+  add_executable(AevryndTerrainLightingIsolationD3D12Test tests/TerrainLightingIsolationD3D12Smoke.cpp ${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/src/GameplayShowcaseEnvironment3D.cpp)
+  target_include_directories(AevryndTerrainLightingIsolationD3D12Test PRIVATE ${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/include)
+  target_compile_definitions(AevryndTerrainLightingIsolationD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+  target_compile_definitions(AevryndTerrainLightingIsolationD3D12Test PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/terrain-lighting-isolation")
+  target_compile_options(AevryndTerrainLightingIsolationD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+  target_link_libraries(AevryndTerrainLightingIsolationD3D12Test PRIVATE AevryndEngine)
+  add_test(NAME AevryndTerrainLightingIsolationD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndTerrainLightingIsolationD3D12Test>")
+  add_test(NAME AevryndTerrainLightingIsolationD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndTerrainLightingIsolationD3D12Test>")
+endif()
 
 add_executable(AevryndMeshRaycastBvhTest tests/MeshRaycastBvhSmoke.cpp)
 target_compile_options(AevryndMeshRaycastBvhTest PRIVATE /W4 /permissive- /utf-8)
@@ -332,7 +436,7 @@ add_test(NAME AevryndTerrainClipmap3DTest COMMAND powershell.exe -NoProfile -Exe
 
 add_executable(AevryndTerrainDistanceMaterial3DTest tests/TerrainDistanceMaterial3DSmoke.cpp)
 target_compile_options(AevryndTerrainDistanceMaterial3DTest PRIVATE /W4 /permissive- /utf-8)
-target_compile_definitions(AevryndTerrainDistanceMaterial3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_definitions(AevryndTerrainDistanceMaterial3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}" AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/terrain-surface")
 target_link_libraries(AevryndTerrainDistanceMaterial3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndTerrainDistanceMaterial3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTerrainDistanceMaterial3DTest>'")
 
@@ -445,6 +549,12 @@ add_executable(AevryndSkinnedModel3DTest tests/SkinnedModel3DSmoke.cpp)
 target_compile_options(AevryndSkinnedModel3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndSkinnedModel3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSkinnedModel3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedModel3DTest>'")
+
+add_executable(AevryndFirstPersonArmsSkinnedMesh3DTest tests/FirstPersonArmsSkinnedMesh3DSmoke.cpp)
+target_compile_definitions(AevryndFirstPersonArmsSkinnedMesh3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_options(AevryndFirstPersonArmsSkinnedMesh3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndFirstPersonArmsSkinnedMesh3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndFirstPersonArmsSkinnedMesh3DTest COMMAND AevryndFirstPersonArmsSkinnedMesh3DTest)
 
 add_executable(AevryndSkinnedRenderable3DTest tests/SkinnedRenderable3DSmoke.cpp)
 target_compile_options(AevryndSkinnedRenderable3DTest PRIVATE /W4 /permissive- /utf-8)
@@ -591,6 +701,16 @@ add_executable(AevryndHeightFog3DBenchmark tests/HeightFog3DBenchmark.cpp)
 target_compile_options(AevryndHeightFog3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndHeightFog3DBenchmark PRIVATE AevryndEngine)
 
+add_executable(AevryndAerialPerspective3DTest tests/AerialPerspective3DSmoke.cpp)
+target_compile_options(AevryndAerialPerspective3DTest PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndAerialPerspective3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndAerialPerspective3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndAerialPerspective3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndAerialPerspective3DTest>'")
+
+add_executable(AevryndAerialPerspective3DBenchmark tests/AerialPerspective3DBenchmark.cpp)
+target_compile_options(AevryndAerialPerspective3DBenchmark PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndAerialPerspective3DBenchmark PRIVATE AevryndEngine)
+
 add_executable(AevryndVolumetricCloud3DTest tests/VolumetricCloud3DSmoke.cpp)
 target_compile_options(AevryndVolumetricCloud3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndVolumetricCloud3DTest PRIVATE AevryndEngine)
@@ -629,6 +749,13 @@ target_compile_options(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE /W4 /permiss
 target_compile_definitions(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/skin-subsurface")
 target_link_libraries(AevryndSkinSubsurfaceD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndSkinSubsurfaceD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinSubsurfaceD3D12VisualTest>'")
+
+add_executable(AevryndCharacterVisualQualityD3D12Test tests/CharacterVisualQualityD3D12Smoke.cpp)
+target_compile_options(AevryndCharacterVisualQualityD3D12Test PRIVATE /W4 /permissive- /utf-8)
+target_compile_definitions(AevryndCharacterVisualQualityD3D12Test PRIVATE AEVRYND_TESTING=1 AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}" AEVRYND_TEST_ARTIFACT_DIR=L"${CMAKE_BINARY_DIR}/test-artifacts/character-visual-quality")
+target_link_libraries(AevryndCharacterVisualQualityD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterVisualQualityD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterVisualQualityD3D12Test>'")
+add_test(NAME AevryndCharacterVisualQualityD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterVisualQualityD3D12Test>'")
 
 add_executable(AevryndScreenSpaceReflection3DTest tests/ScreenSpaceReflection3DSmoke.cpp)
 target_compile_options(AevryndScreenSpaceReflection3DTest PRIVATE /W4 /permissive- /utf-8)
@@ -799,3 +926,33 @@ add_test(NAME AevryndReplicationWorldAdapter3DTest COMMAND AevryndReplicationWor
 add_executable(AevryndReplicationWorldAdapter3DBenchmark tests/ReplicationWorldAdapter3DBenchmark.cpp)
 target_compile_options(AevryndReplicationWorldAdapter3DBenchmark PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndReplicationWorldAdapter3DBenchmark PRIVATE AevryndEngine)
+
+add_executable(AevryndObjectIdReadbackD3D12Test tests/ObjectIdReadbackD3D12Smoke.cpp)
+target_compile_options(AevryndObjectIdReadbackD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndObjectIdReadbackD3D12Test PRIVATE AEVRYND_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndObjectIdReadbackD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndObjectIdReadbackD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndObjectIdReadbackD3D12Test>'")
+add_test(NAME AevryndObjectIdReadbackFullSuiteD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndObjectIdReadbackD3D12Test>'")
+add_executable(AevryndDepthReadbackD3D12Test tests/DepthReadbackD3D12Smoke.cpp)
+target_compile_options(AevryndDepthReadbackD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndDepthReadbackD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndDepthReadbackD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDepthReadbackD3D12Test>'")
+add_test(NAME AevryndReadbackProvenanceD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndDepthReadbackD3D12Test>'")
+add_executable(AevryndReadbackCaptureSequenceD3D12Test tests/ReadbackCaptureSequenceD3D12Smoke.cpp)
+target_compile_options(AevryndReadbackCaptureSequenceD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndReadbackCaptureSequenceD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndReadbackCaptureSequenceD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndReadbackCaptureSequenceD3D12Test>'")
+add_test(NAME AevryndReadbackCaptureSequenceD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndReadbackCaptureSequenceD3D12Test>'")
+add_executable(AevryndObjectIdReadbackFreshD3D12Test tests/ObjectIdReadbackFreshD3D12Smoke.cpp)
+target_compile_options(AevryndObjectIdReadbackFreshD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndObjectIdReadbackFreshD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndObjectIdReadbackFreshD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndObjectIdReadbackFreshD3D12Test>'")
+add_test(NAME AevryndObjectIdReadbackFreshD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndObjectIdReadbackFreshD3D12Test>'")
+add_executable(AevryndSkinnedFingerprintD3D12Test tests/SkinnedFingerprintD3D12Smoke.cpp)
+target_compile_options(AevryndSkinnedFingerprintD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndSkinnedFingerprintD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndSkinnedFingerprintD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndSkinnedFingerprintD3D12Test>'")
+add_executable(AevryndTerrainObjectIdD3D12Test tests/TerrainObjectIdD3D12Smoke.cpp)
+target_compile_options(AevryndTerrainObjectIdD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndTerrainObjectIdD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndTerrainObjectIdD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTerrainObjectIdD3D12Test>'")

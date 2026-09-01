@@ -289,12 +289,14 @@ bool NormalizePath(std::string_view input, std::string &output) {
     if (input.empty() || input.size() > 4096 || input.front() == '/' ||
         input.find('\\') != input.npos || input.find(':') != input.npos)
         return false;
-    std::filesystem::path path{input};
+    // 呼叫端允許輸入與輸出指向同一字串；先保留來源以避免指派後 string_view 失效。
+    const std::string original{input};
+    std::filesystem::path path{original};
     for (const auto &component : path)
         if (component == "." || component == ".." || component.empty())
             return false;
     output = path.generic_string();
-    return !output.empty() && output == input;
+    return !output.empty() && output == original;
 }
 
 bool NormalizeSha(std::string &value) {
@@ -403,6 +405,46 @@ bool HashHandle(HANDLE file, std::string &output) {
     }
     passed = passed && BCryptFinishHash(hash, digest.data(),
                               static_cast<ULONG>(digest.size()), 0) >= 0;
+    if (hash)
+        BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    if (!passed)
+        return false;
+    constexpr char Hex[] = "0123456789abcdef";
+    output.resize(64);
+    for (std::size_t index = 0; index < digest.size(); ++index) {
+        output[index * 2] = Hex[digest[index] >> 4];
+        output[index * 2 + 1] = Hex[digest[index] & 15];
+    }
+    return true;
+}
+
+bool HashMemorySha256(std::string_view bytes, std::string &output) {
+    BCRYPT_ALG_HANDLE algorithm{};
+    BCRYPT_HASH_HANDLE hash{};
+    DWORD objectBytes{}, copied{};
+    std::vector<UCHAR> object;
+    std::array<UCHAR, 32> digest{};
+    if (bytes.size() > ULONG_MAX ||
+        BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM,
+                                    nullptr, 0) < 0)
+        return false;
+    bool passed = BCryptGetProperty(
+                      algorithm, BCRYPT_OBJECT_LENGTH,
+                      reinterpret_cast<PUCHAR>(&objectBytes),
+                      sizeof(objectBytes), &copied, 0) >= 0;
+    if (passed)
+        object.resize(objectBytes);
+    passed = passed && BCryptCreateHash(algorithm, &hash, object.data(),
+                                        objectBytes, nullptr, 0, 0) >= 0;
+    passed = passed && BCryptHashData(
+                           hash,
+                           const_cast<PUCHAR>(
+                               reinterpret_cast<const UCHAR *>(bytes.data())),
+                           static_cast<ULONG>(bytes.size()), 0) >= 0;
+    passed = passed && BCryptFinishHash(hash, digest.data(),
+                                        static_cast<ULONG>(digest.size()),
+                                        0) >= 0;
     if (hash)
         BCryptDestroyHash(hash);
     BCryptCloseAlgorithmProvider(algorithm, 0);
@@ -556,7 +598,20 @@ bool CookedRenderManifest3D::LoadFile(
                  "Unable to read runtime render manifest");
         return false;
     }
-    return LoadJson(json, parent, error, limits);
+    std::string manifestSha256;
+    if (!HashMemorySha256(json, manifestSha256)) {
+        SetError(error, CookedRenderManifestErrorCode3D::IoFailure, 0,
+                 "Unable to hash runtime render manifest bytes");
+        return false;
+    }
+    if (!LoadJson(json, parent, error, limits))
+        return false;
+    stats_.manifestSha256 = std::move(manifestSha256);
+    stats_.validatedFiles = files_.size();
+    stats_.validatedMaterials = materials_.size();
+    stats_.validatedMeshParts = meshParts_.size();
+    stats_.validatedReferencedFiles = stats_.referencedFiles;
+    return true;
 }
 
 bool CookedRenderManifest3D::LoadJson(

@@ -1,148 +1,69 @@
+#include <Aevrynd/Camera.h>
+#include <Aevrynd/Mesh3D.h>
 #include <Aevrynd/Renderer.h>
-
+#include <Windows.h>
+#include <wincodec.h>
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
+#include <vector>
+#include <wrl/client.h>
 
+using Microsoft::WRL::ComPtr;
 using namespace Aevrynd;
 
 namespace {
-std::uint64_t HashFile(const std::filesystem::path &path) {
-  std::ifstream input(path, std::ios::binary);
-  std::uint64_t hash = 1469598103934665603ull;
-  for (char value{}; input.get(value);)
-    hash = (hash ^ std::uint8_t(value)) * 1099511628211ull;
-  return hash;
+struct Image { unsigned width{},height{};std::vector<std::uint8_t> rgba; };
+std::uint64_t ImageHash(const Image& image){std::uint64_t hash=14695981039346656037ull;for(std::uint8_t value:image.rgba){hash^=value;hash*=1099511628211ull;}return hash;}
+bool DecodePng(const std::filesystem::path& path,Image& out){ComPtr<IWICImagingFactory> factory;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;ComPtr<IWICFormatConverter> converter;UINT width{},height{};if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))||FAILED(factory->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder))||FAILED(decoder->GetFrame(0,&frame))||FAILED(frame->GetSize(&width,&height))||!width||!height||FAILED(factory->CreateFormatConverter(&converter))||FAILED(converter->Initialize(frame.Get(),GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom)))return false;out={width,height,std::vector<std::uint8_t>(std::size_t(width)*height*4)};return SUCCEEDED(converter->CopyPixels(nullptr,width*4,UINT(out.rgba.size()),out.rgba.data()));}
+struct Metrics{double mean{},p99{},changed{},brightGrowth{};unsigned maximum{},verticalRun{};std::size_t pixels{};};
+template<class Predicate>Metrics Measure(const Image& off,const Image& on,Predicate include){Metrics result{};if(off.width!=on.width||off.height!=on.height||off.rgba.empty()){result.maximum=1000;return result;}std::vector<unsigned> values;std::vector<unsigned> runs(off.width);std::uint64_t sum{};std::size_t changed{},bright{};for(unsigned y=0;y<off.height;++y)for(unsigned x=0;x<off.width;++x){if(!include(x,y)){runs[x]=0;continue;}const std::size_t p=(std::size_t(y)*off.width+x)*4;unsigned difference{};for(unsigned c=0;c<3;++c)difference+=unsigned(std::abs(int(off.rgba[p+c])-int(on.rgba[p+c])));values.push_back(difference);sum+=difference;result.maximum=(std::max)(result.maximum,difference);changed+=difference!=0;const unsigned before=off.rgba[p]+off.rgba[p+1]+off.rgba[p+2],after=on.rgba[p]+on.rgba[p+1]+on.rgba[p+2];bright+=before<=690&&after>690;runs[x]=difference>4?runs[x]+1:0;result.verticalRun=(std::max)(result.verticalRun,runs[x]);}if(values.empty())return result;std::ranges::sort(values);result.pixels=values.size();result.mean=double(sum)/values.size();result.p99=values[values.size()*99/100];result.changed=double(changed)/values.size();result.brightGrowth=double(bright)/values.size();return result;}
+bool Foreground(const DepthCapture3D& depth,unsigned x,unsigned y){return x<depth.width&&y<depth.height&&depth.pixels[std::size_t(y)*depth.width+x]<.999999f;}
+bool InteriorForeground(const DepthCapture3D& depth,unsigned x,unsigned y){if(x<1||y<1||x+1>=depth.width||y+1>=depth.height)return false;for(int oy=-1;oy<=1;++oy)for(int ox=-1;ox<=1;++ox)if(!Foreground(depth,unsigned(int(x)+ox),unsigned(int(y)+oy)))return false;return true;}
+bool ErodedForeground(const DepthCapture3D& depth,unsigned x,unsigned y){if(x<2||y<2||x+2>=depth.width||y+2>=depth.height)return false;for(int oy=-2;oy<=2;++oy)for(int ox=-2;ox<=2;++ox)if(!Foreground(depth,unsigned(int(x)+ox),unsigned(int(y)+oy)))return false;return true;}
+std::vector<std::uint8_t> RasterizeMeshMask(const Mesh3D& mesh,const Matrix4& transform,const Camera3D& camera,unsigned width,unsigned height){std::vector<std::uint8_t> mask(std::size_t(width)*height);const auto edge=[](Vec2 a,Vec2 b,Vec2 p){return(p.x-a.x)*(b.y-a.y)-(p.y-a.y)*(b.x-a.x);};for(std::size_t first=0;first+2<mesh.indices.size();first+=3){std::array<Vec2,3> points{};bool visible=true;for(std::size_t corner=0;corner<3;++corner){const Vertex3D& vertex=mesh.vertices[mesh.indices[first+corner]];const auto projected=ProjectToViewport(TransformPoint(transform,{vertex.x,vertex.y,vertex.z}),camera,{float(width),float(height)});points[corner]=projected.position;visible&=projected.depth>=0&&projected.depth<=1;}if(!visible)continue;const int minimumX=(std::max)(0,int(std::floor((std::min)({points[0].x,points[1].x,points[2].x})))),maximumX=(std::min)(int(width)-1,int(std::ceil((std::max)({points[0].x,points[1].x,points[2].x}))));const int minimumY=(std::max)(0,int(std::floor((std::min)({points[0].y,points[1].y,points[2].y})))),maximumY=(std::min)(int(height)-1,int(std::ceil((std::max)({points[0].y,points[1].y,points[2].y}))));const float area=edge(points[0],points[1],points[2]);if(std::abs(area)<1e-5f)continue;for(int y=minimumY;y<=maximumY;++y)for(int x=minimumX;x<=maximumX;++x){const Vec2 p{float(x)+.5f,float(y)+.5f};const float a=edge(points[0],points[1],p),b=edge(points[1],points[2],p),c=edge(points[2],points[0],p);if((area>0&&a>=0&&b>=0&&c>=0)||(area<0&&a<=0&&b<=0&&c<=0))mask[std::size_t(y)*width+x]=1;}}return mask;}
+double BlockBoundaryEnergy(const Image& off,const Image& on,const std::vector<std::uint8_t>& mask){if(off.width!=on.width||mask.size()!=std::size_t(on.width)*on.height)return 1e9;double sum{};std::size_t count{};for(unsigned y=1;y<on.height;++y)for(unsigned x=1;x<on.width;++x){if(!mask[std::size_t(y)*on.width+x])continue;const std::size_t p=(std::size_t(y)*on.width+x)*4,left=p-4,up=p-std::size_t(on.width)*4;for(unsigned channel=0;channel<3;++channel){const int center=int(on.rgba[p+channel])-int(off.rgba[p+channel]);if((x&1)==0){const int neighbor=int(on.rgba[left+channel])-int(off.rgba[left+channel]);sum+=std::abs(center-neighbor);++count;}if((y&1)==0){const int neighbor=int(on.rgba[up+channel])-int(off.rgba[up+channel]);sum+=std::abs(center-neighbor);++count;}}}return count?sum/count:1e9;}
+double RmsRgb(const Image& first,const Image& second){if(first.width!=second.width||first.height!=second.height||first.rgba.size()!=second.rgba.size()||first.rgba.empty())return 1e9;double squares{};std::size_t count{};for(std::size_t pixel=0;pixel<first.rgba.size();pixel+=4)for(std::size_t channel=0;channel<3;++channel){const double difference=double(first.rgba[pixel+channel])-second.rgba[pixel+channel];squares+=difference*difference;++count;}return std::sqrt(squares/double(count));}
+struct PhaseCapture{Image off,on,legacyFixtureOff,legacyFixtureProduction,legacy,nearest,legacyPlanar,noPathCap,additiveShaft,wholeSegment;DepthCapture3D depth;RendererStats stats{};};
 }
-} // namespace
 
-int main() {
-  const HINSTANCE instance = GetModuleHandleW(nullptr);
-  const wchar_t *className = L"AevryndVolumetricAtmosphereRendererGate";
-  WNDCLASSW windowClass{};
-  windowClass.lpfnWndProc = DefWindowProcW;
-  windowClass.hInstance = instance;
-  windowClass.lpszClassName = className;
-  RegisterClassW(&windowClass);
-  const HWND window = CreateWindowW(className, L"Volumetric atmosphere gate",
-                                    WS_OVERLAPPED, 0, 0, 640, 360, nullptr,
-                                    nullptr, instance, nullptr);
-  if (!window)
-    return 1;
-
-  const auto output = std::filesystem::temp_directory_path() /
-                      "aevrynd-volumetric-atmosphere-renderer-gate";
-  std::filesystem::create_directories(output);
-  const std::array phases{VolumetricAtmospherePhase3D::Day,
-                          VolumetricAtmospherePhase3D::Dusk,
-                          VolumetricAtmospherePhase3D::Night};
-  const std::array names{"day.png", "dusk.png", "night.png"};
-  std::array<std::uint64_t, 3> hashes{};
-  std::array<std::uint64_t, 3> gpuTimes{};
-  std::size_t residentBytes{};
-
-  int result{};
-  {
-    D3D12Renderer renderer;
-    renderer.Initialize(window, 640, 360, 640, 360, false);
-    renderer.SetQualitySettings({false, false, false, false});
-    DrawList draw{DrawListCapacityProfile::Minimal2D};
-    draw.SetViewProjection(Matrix4::Identity());
-    draw.SetBackfaceCulling(false);
-    draw.SetAtmosphere({{.025f, .04f, .075f, 1}, {0, 1.6f, -4}, 4, 120,
-                        true, .008f, 0, .02f, .85f});
-    draw.SetVolumetricClouds({true, 1200, 1800, .42f, 1.35f, .2f, 24, 16,
-                              true, .72f});
-    draw.SetDirectionalLightShafts({true, 1.1f, .72f, 320, 4});
-    draw.SetDirectionalLight({{-.35f, -.82f, .44f}, .12f,
-                              {1, .9f, .72f, 1}, 2.2f});
-    draw.WorldTriangle({-.72f, -.82f, .55f}, {0, .45f, .55f},
-                       {.72f, -.82f, .55f}, {.16f, .22f, .12f, 1});
-
-    for (std::size_t index = 0; index < phases.size(); ++index) {
-      draw.SetVolumetricAtmospherePhase(phases[index]);
-      draw.SetEnvironmentTime(float(index) * 3.5f);
-      for (int warmup = 0; warmup < 12; ++warmup)
-        renderer.Render(draw, {.015f, .025f, .05f, 1});
-      const auto capture = output / names[index];
-      std::error_code error;
-      std::filesystem::remove(capture, error);
-      if (!renderer.CaptureNextFrame(capture)) {
-        result = 2;
-        break;
-      }
-      renderer.Render(draw, {.015f, .025f, .05f, 1});
-      renderer.WaitIdle();
-      const auto stats = renderer.GetStats();
-      if (!std::filesystem::exists(capture) ||
-          !std::filesystem::file_size(capture) ||
-          !stats.volumetricAtmosphereConfigured ||
-          !stats.volumetricAtmosphereDispatched ||
-          stats.volumetricAtmospherePhase != phases[index] ||
-          stats.volumetricAtmosphereWidth != 320 ||
-          stats.volumetricAtmosphereHeight != 180 ||
-          !stats.volumetricAtmosphereThreadGroups ||
-          !stats.volumetricAtmosphereResidentBytes ||
-          !stats.volumetricAtmosphereDispatches ||
-          !stats.volumetricAtmosphereCompositePasses ||
-          !stats.lastVolumetricAtmosphereGpuNanoseconds ||
-          stats.debugErrorCount || stats.debugWarningCount ||
-          (stats.gpuValidationRequested &&
-           (!stats.gpuValidationAvailable || !stats.gpuValidationExecuted ||
-            !stats.gpuValidationPassed))) {
-        result = 3;
-        break;
-      }
-      hashes[index] = HashFile(capture);
-      gpuTimes[index] = stats.lastVolumetricAtmosphereGpuNanoseconds;
-      residentBytes = stats.volumetricAtmosphereResidentBytes;
-    }
-    if (!result && (hashes[0] == hashes[1] || hashes[0] == hashes[2] ||
-                    hashes[1] == hashes[2]))
-      result = 4;
-
-    if (!result) {
-      renderer.Resize(800, 450);
-      renderer.Render(draw, {.015f, .025f, .05f, 1});
-      renderer.WaitIdle();
-      const auto resized = renderer.GetStats();
-      if (resized.volumetricAtmosphereWidth != 400 ||
-          resized.volumetricAtmosphereHeight != 225 ||
-          resized.volumetricAtmosphereResourceCreates < 4 ||
-          resized.volumetricAtmosphereResourceReleases < 2)
-        result = 5;
-    }
-
-    if (!result) {
-      auto disabled = draw.VolumetricClouds();
-      disabled.enabled = false;
-      draw.SetVolumetricClouds(disabled);
-      auto shafts = draw.DirectionalLightShafts();
-      shafts.enabled = false;
-      draw.SetDirectionalLightShafts(shafts);
-      renderer.Render(draw, {.015f, .025f, .05f, 1});
-      renderer.WaitIdle();
-      const auto off = renderer.GetStats();
-      if (off.volumetricAtmosphereConfigured ||
-          off.volumetricAtmosphereDispatched ||
-          off.volumetricAtmosphereThreadGroups ||
-          off.lastVolumetricAtmosphereGpuNanoseconds)
-        result = 6;
-      renderer.TrimTransientMemory();
-      const auto released = renderer.GetStats();
-      if (released.volumetricAtmosphereResidentBytes ||
-          released.volumetricAtmosphereResourceReleases < 4)
-        result = 7;
-    }
+int main(){
+ const HRESULT apartment=CoInitializeEx(nullptr,COINIT_MULTITHREADED);const HINSTANCE instance=GetModuleHandleW(nullptr);const wchar_t* className=L"AevryndVolumetricAtmosphereDepthGate";WNDCLASSW wc{};wc.lpfnWndProc=DefWindowProcW;wc.hInstance=instance;wc.lpszClassName=className;RegisterClassW(&wc);const HWND window=CreateWindowW(className,L"Volumetric depth gate",WS_OVERLAPPED,0,0,960,540,nullptr,nullptr,instance,nullptr);if(!window)return 1;
+ int result{};const std::filesystem::path output=std::filesystem::temp_directory_path()/"aevrynd-volumetric-depth-gate";std::filesystem::create_directories(output);{
+  D3D12Renderer renderer;renderer.Initialize(window,960,540,960,540,false);D3D12RendererTestAccess3D::SetVolumetricAtmosphereDiagnostics(renderer,true);renderer.SetQualitySettings({false,false,true,false});const Mesh3D box=Mesh3D::CreateUnitBox();const MeshHandle3D mesh=renderer.CreateMesh(box.vertices,box.indices);if(!mesh){DestroyWindow(window);return 2;}
+  Camera3D camera{{0,95,-260},{0,155,520},{0,1,0},{}};camera.projection.nearPlane=.25f;camera.projection.farPlane=2600.f;DrawList draw{DrawListCapacityProfile::Minimal2D};draw.SetBackfaceCulling(false);draw.SetViewProjection(CreateViewProjectionMatrix(camera,16.f/9.f));draw.SetAtmosphere({{.025f,.04f,.075f,1},camera.position,210.f,360.f,true,.008f,0,.02f,.85f});draw.SetDirectionalLight({{-.35f,-.82f,.44f},.12f,{1,.9f,.72f,1},2.2f});VolumetricCloudSettings3D clouds{true,210,360,.05f,4.f,0.f,24,14,false,0.f};clouds.maximumDistance=420.f;draw.SetVolumetricClouds(clouds);draw.SetDirectionalLightShafts({true,2.f,.72f,520,4});
+  const Matrix4 waterTransform=CreateTransformMatrix({-320,4,390},{},{360,4,420});const Matrix4 overlayTransform=CreateTransformMatrix({290,110,120},{},{38,150,38});const Matrix4 thinNearTransform=CreateTransformMatrix({1.f,120,500},{},{1.5f,80,1.5f});
+  // 大面積近地表、雲後方遠景牆、細薄近景、透明水面及 overlay 分別驗證 pass 排序。
+  draw.MeshInstance(mesh,CreateTransformMatrix({0,-15,700},{},{1500,24,2200}),{.2f,.31f,.14f,1},{.86f,0,0,1},MeshRenderLayer3D::Opaque,{},.25f,false,MaterialClass3D::Terrain,1,false);
+  draw.MeshInstance(mesh,CreateTransformMatrix({0,300,1450},{},{300,260,45}),{.34f,.27f,.19f,1},{.72f,0,0,1},MeshRenderLayer3D::Opaque,{},.25f,false,MaterialClass3D::Surface,1,false);
+  draw.MeshInstance(mesh,thinNearTransform,{.7f,.72f,.68f,1},{.55f,0,0,1},MeshRenderLayer3D::Opaque,{},.25f,false,MaterialClass3D::Surface,1,false);
+  draw.MeshInstance(mesh,waterTransform,{.08f,.21f,.31f,.72f},{.35f,0,0,1},MeshRenderLayer3D::Transparent,{},.25f,false,MaterialClass3D::Water,1,false);
+  draw.MeshInstance(mesh,overlayTransform,{.72f,.18f,.12f,1},{.48f,0,0,1},MeshRenderLayer3D::Overlay,{},.25f,false,MaterialClass3D::Surface,1,false);
+  const std::array phases{VolumetricAtmospherePhase3D::Day,VolumetricAtmospherePhase3D::Dusk,VolumetricAtmospherePhase3D::Night};const std::array names{"day","dusk","night"};std::array<PhaseCapture,3> captures{};
+  auto capture=[&](std::size_t index,bool enabled,Image& image,DepthCapture3D* depth,const char* suffix=nullptr){auto cloud=clouds;cloud.enabled=enabled;draw.SetVolumetricClouds(cloud);auto shafts=draw.DirectionalLightShafts();shafts.enabled=enabled;draw.SetDirectionalLightShafts(shafts);draw.SetVolumetricAtmospherePhase(phases[index]);draw.SetEnvironmentTime(float(index)*7.25f);for(int warmup=0;warmup<8;++warmup){draw.SetCameraCut3D(warmup==0);renderer.Render(draw,{.015f,.025f,.05f,1});}draw.SetCameraCut3D(false);const auto path=output/(std::string("volumetric-depth-")+names[index]+(suffix?suffix:(enabled?"-on.png":"-off.png")));std::error_code error;std::filesystem::remove(path,error);if(depth&&!renderer.RequestDepthReadback3D())return false;if(!renderer.CaptureNextFrame(path))return false;renderer.Render(draw,{.015f,.025f,.05f,1});renderer.WaitIdle();if(depth){auto value=renderer.TakeDepthReadback3D();if(!value||!value->Complete())return false;*depth=std::move(*value);}return DecodePng(path,image);};
+  for(std::size_t i=0;i<phases.size()&&!result;++i){if(!capture(i,false,captures[i].off,nullptr)||!capture(i,true,captures[i].on,&captures[i].depth)){result=3;break;}if(i==0){D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::Nearest);const bool nearestCaptured=capture(i,true,captures[i].nearest,nullptr,"-nearest.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::Production);renderer.SetQualitySettings({false,false,false,false});const bool fixtureOffCaptured=capture(i,false,captures[i].legacyFixtureOff,nullptr,"-legacy-fixture-off.png");const bool fixtureProductionCaptured=capture(i,true,captures[i].legacyFixtureProduction,nullptr,"-legacy-fixture-production.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::LegacyDepth);const bool legacyCaptured=capture(i,true,captures[i].legacy,nullptr,"-legacy.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::LegacyPlanarNoise);const bool planarCaptured=capture(i,true,captures[i].legacyPlanar,nullptr,"-legacy-planar.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::NoPathCap);const bool noCapCaptured=capture(i,true,captures[i].noPathCap,nullptr,"-no-path-cap.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::AdditiveShaft);const bool additiveCaptured=capture(i,true,captures[i].additiveShaft,nullptr,"-additive-shaft.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::WholeSegmentPerStep);const bool wholeCaptured=capture(i,true,captures[i].wholeSegment,nullptr,"-whole-segment.png");D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::Production);renderer.SetQualitySettings({false,false,true,false});renderer.Render(draw,{.015f,.025f,.05f,1});const auto productionHash=ImageHash(captures[i].on);if(!legacyCaptured||!nearestCaptured||!fixtureOffCaptured||!fixtureProductionCaptured||!planarCaptured||!noCapCaptured||!additiveCaptured||!wholeCaptured||ImageHash(captures[i].legacyPlanar)==productionHash||ImageHash(captures[i].noPathCap)==productionHash||ImageHash(captures[i].additiveShaft)==productionHash||ImageHash(captures[i].wholeSegment)==productionHash){result=3;break;}}captures[i].stats=renderer.GetStats();const auto& stats=captures[i].stats;const bool invalidGbv=stats.gpuValidationRequested&&(!stats.gpuValidationAvailable||!stats.gpuValidationExecuted||!stats.gpuValidationPassed);const bool typedRouting=stats.volumetricAtmosphereAppliedFingerprint&&stats.volumetricAtmosphereAppliedCloudSamples==14&&stats.volumetricAtmosphereAppliedShaftSamples==4&&stats.volumetricAtmosphereAppliedShadowSamples==3&&std::abs(stats.volumetricAtmosphereAppliedCloudMaximumDistance-420.f)<.01f&&std::abs(stats.volumetricAtmosphereAppliedShaftMaximumDistance-520.f)<.01f&&stats.volumetricAtmosphereBlueNoiseBytes==4096;if(!stats.volumetricAtmosphereDiagnosticsAvailable||!stats.volumetricAtmosphereDiagnosticsEnabled||!stats.volumetricAtmosphereMutationAvailable||!stats.volumetricAtmosphereDispatched||!stats.volumetricAtmosphereCompositePasses||!typedRouting||!stats.multisampleEnabled||stats.multisampleCount!=4||stats.debugErrorCount||stats.debugWarningCount||invalidGbv){std::cerr<<"stats phase="<<names[i]<<" dispatched="<<stats.volumetricAtmosphereDispatched<<" composite="<<stats.volumetricAtmosphereCompositePasses<<" typed="<<typedRouting<<" fingerprint="<<stats.volumetricAtmosphereAppliedFingerprint<<" samples="<<stats.volumetricAtmosphereAppliedCloudSamples<<'/'<<stats.volumetricAtmosphereAppliedShaftSamples<<'/'<<stats.volumetricAtmosphereAppliedShadowSamples<<" msaa="<<stats.multisampleEnabled<<'/'<<stats.multisampleCount<<" gbv="<<stats.gpuValidationRequested<<'/'<<stats.gpuValidationAvailable<<'/'<<stats.gpuValidationExecuted<<'/'<<stats.gpuValidationPassed<<" errors="<<stats.debugErrorCount<<" warnings="<<stats.debugWarningCount<<" firstError="<<stats.debugFirstErrorId<<'\n';for(std::size_t message=0;message<stats.debugErrorIdCount;++message)std::cerr<<"error id="<<stats.debugErrorIds[message]<<" text="<<stats.debugErrorDescriptions[message]<<'\n';result=4;}}
+  const auto waterMask=RasterizeMeshMask(box,waterTransform,camera,960,540),overlayMask=RasterizeMeshMask(box,overlayTransform,camera,960,540),thinNearMask=RasterizeMeshMask(box,thinNearTransform,camera,960,540);const auto thinCenter=ProjectToViewport({1.f,120,500},camera,{960,540});const auto maskPixels=[](const auto& mask){return std::ranges::count(mask,std::uint8_t{1});};const auto waterCoverage=double(maskPixels(waterMask))/waterMask.size(),overlayCoverage=double(maskPixels(overlayMask))/overlayMask.size(),thinCoverage=double(maskPixels(thinNearMask))/thinNearMask.size();std::cout<<"mask water="<<maskPixels(waterMask)<<" overlay="<<maskPixels(overlayMask)<<" thin="<<maskPixels(thinNearMask)<<" thinCenterX="<<thinCenter.position.x<<'\n';if(!maskPixels(waterMask)||!maskPixels(overlayMask)||!maskPixels(thinNearMask))result=5;
+  constexpr unsigned legacyFixtureX=480,legacyFixtureY=270;const std::size_t legacyFixturePixel=std::size_t(legacyFixtureY)*960+legacyFixtureX;const bool legacyFixtureCovered=thinNearMask[legacyFixturePixel]!=0&&std::abs(captures[0].depth.pixels[legacyFixturePixel]-thinCenter.depth)<.0002f;std::cout<<"legacy fixture pixel="<<legacyFixtureX<<','<<legacyFixtureY<<" covered="<<legacyFixtureCovered<<'\n';if(!legacyFixtureCovered)result=5;
+  for(std::size_t i=0;i<captures.size()&&!result;++i){const auto& phase=captures[i];const auto thinSemantic=[&](unsigned x,unsigned y){return x==legacyFixtureX&&y==legacyFixtureY&&thinNearMask[std::size_t(y)*phase.depth.width+x]!=0&&std::abs(phase.depth.pixels[std::size_t(y)*phase.depth.width+x]-thinCenter.depth)<.0002f;};const auto nearMask=[&](unsigned x,unsigned y){return x>phase.depth.width/3&&x<phase.depth.width*2/3&&y>phase.depth.height*2/3&&ErodedForeground(phase.depth,x,y);};const auto nearMetrics=Measure(phase.off,phase.on,nearMask);std::vector<std::uint8_t> skyMask(std::size_t(phase.depth.width)*phase.depth.height);for(unsigned y=0;y<phase.depth.height*2/3;++y)for(unsigned x=0;x<phase.depth.width;++x)skyMask[std::size_t(y)*phase.depth.width+x]=!Foreground(phase.depth,x,y);const auto sky=Measure(phase.off,phase.on,[&](unsigned x,unsigned y){return skyMask[std::size_t(y)*phase.depth.width+x]!=0;});const auto farMetrics=Measure(phase.off,phase.on,[&](unsigned x,unsigned y){return y<phase.depth.height*2/3&&Foreground(phase.depth,x,y);});const auto edge=Measure(phase.off,phase.on,[&](unsigned x,unsigned y){return y>phase.depth.height*2/3&&InteriorForeground(phase.depth,x,y)&&!ErodedForeground(phase.depth,x,y);});const auto water=Measure(phase.off,phase.on,[&](unsigned x,unsigned y){return waterMask[std::size_t(y)*phase.depth.width+x]!=0;});const auto overlay=Measure(phase.off,phase.on,[&](unsigned x,unsigned y){return overlayMask[std::size_t(y)*phase.depth.width+x]!=0;});const auto thinProduction=i==0?Measure(phase.legacyFixtureOff,phase.legacyFixtureProduction,thinSemantic):Metrics{};
+   // 負向 gate 直接執行舊 lerp(.06,.22,hardwareDepth) pixel shader，而非以代數估算。
+   const auto legacyNear=i==0?Measure(phase.legacyFixtureOff,phase.legacy,thinSemantic):Metrics{};const double bilateralBlocks=i==0?BlockBoundaryEnergy(phase.off,phase.on,skyMask):0,nearestBlocks=i==0?BlockBoundaryEnergy(phase.off,phase.nearest,skyMask):0;const bool legacyRejected=i!=0||(legacyNear.pixels>0&&(legacyNear.mean>.5||legacyNear.p99>2||legacyNear.maximum>2));const bool bilateralImproved=i!=0||(std::isfinite(bilateralBlocks)&&std::isfinite(nearestBlocks)&&bilateralBlocks<nearestBlocks);std::cout<<"phase="<<names[i]<<" nearMean="<<nearMetrics.mean<<" nearP99="<<nearMetrics.p99<<" nearMax="<<nearMetrics.maximum<<" skyChanged="<<sky.changed<<" skyMean="<<sky.mean<<" farMean="<<farMetrics.mean<<" edgeP99="<<edge.p99<<" edgeRun="<<edge.verticalRun<<" waterPixels="<<water.pixels<<" waterCoverage="<<waterCoverage<<" waterChanged="<<water.changed<<" overlayPixels="<<overlay.pixels<<" overlayCoverage="<<overlayCoverage<<" overlayChanged="<<overlay.changed<<" thinPixels="<<thinProduction.pixels<<" thinCoverage="<<thinCoverage<<" thinMean="<<thinProduction.mean<<" brightGrowth="<<nearMetrics.brightGrowth<<" legacyNearMean="<<legacyNear.mean<<" legacyRejected="<<legacyRejected<<" bilateralBlocks="<<bilateralBlocks<<" nearestBlocks="<<nearestBlocks<<" bilateralImproved="<<bilateralImproved<<'\n';
+   if(nearMetrics.pixels<1000||nearMetrics.mean>.5||nearMetrics.p99>2||nearMetrics.maximum>2||nearMetrics.brightGrowth>.0001||(i==0&&(thinProduction.pixels==0||thinProduction.mean>.5||thinProduction.p99>2))||sky.pixels<1000||sky.changed<.05||sky.mean<1||farMetrics.pixels<50||farMetrics.mean<=0||farMetrics.mean>=sky.mean||edge.p99>4||edge.verticalRun>2||water.pixels==0||water.changed>.65||overlay.pixels==0||overlay.changed>.65||!legacyRejected||!bilateralImproved)result=5;
   }
-  DestroyWindow(window);
-  std::cout << "VolumetricAtmosphereRendererIntegration "
-            << (result ? "FAIL" : "PASS") << " dayHash=" << hashes[0]
-            << " duskHash=" << hashes[1] << " nightHash=" << hashes[2]
-            << " dayGpuNs=" << gpuTimes[0] << " duskGpuNs=" << gpuTimes[1]
-            << " nightGpuNs=" << gpuTimes[2]
-            << " residentBytes=" << residentBytes
-            << '\n';
-  return result;
+  // 連續 perspective pan/rotate 及 God/Isometric orthographic zoom，驗證歷史重投影與投影類型切換。
+  auto setCamera=[&](const Camera3D& animated){draw.SetViewProjection(CreateViewProjectionMatrix(animated,16.f/9.f));auto atmosphere=draw.Atmosphere();atmosphere.cameraPosition=animated.position;draw.SetAtmosphere(atmosphere);};auto animateCamera=[&](const Camera3D& animated,bool cut){setCamera(animated);draw.SetCameraCut3D(cut);renderer.Render(draw,{.015f,.025f,.05f,1});draw.SetCameraCut3D(false);};
+  auto captureDynamic=[&](const char* name,const Camera3D& animated,bool reset,Image& image){setCamera(animated);const auto path=output/(std::string(name)+".png");std::error_code error;std::filesystem::remove(path,error);if(!renderer.CaptureNextFrame(path))return false;draw.SetCameraCut3D(reset);renderer.Render(draw,{.015f,.025f,.05f,1});draw.SetCameraCut3D(false);renderer.WaitIdle();return DecodePng(path,image);};
+  auto verifySequence=[&](const char* name,const Camera3D& finalCamera){Image stableA,stableB,reset;if(!captureDynamic((std::string(name)+"-stable-a").c_str(),finalCamera,false,stableA)||!captureDynamic((std::string(name)+"-stable-b").c_str(),finalCamera,false,stableB)||!captureDynamic((std::string(name)+"-reset").c_str(),finalCamera,true,reset))return false;const auto reference=Measure(reset,stableB,[](unsigned,unsigned){return true;});const auto stableHash=ImageHash(stableB),resetHash=ImageHash(reset);const double staticRms=RmsRgb(stableA,stableB);std::cout<<"sequence="<<name<<" stableHash="<<stableHash<<" resetHash="<<resetHash<<" staticRms="<<staticRms<<" referenceMean="<<reference.mean<<" referenceChanged="<<reference.changed<<" referenceP99="<<reference.p99<<'\n';return stableHash&&resetHash&&reference.pixels==std::size_t(stableB.width)*stableB.height&&staticRms<=1.0&&reference.changed>0&&reference.p99<=8;};
+  Camera3D perspectiveFinal=camera;for(int frame=0;frame<10&&!result;++frame){perspectiveFinal=camera;perspectiveFinal.position.x+=float(frame)*5;perspectiveFinal.target.x+=float(frame)*7;perspectiveFinal.target.z+=float(frame)*3;animateCamera(perspectiveFinal,frame==0);}if(!result&&!verifySequence("perspective-pan-rotate",perspectiveFinal))result=6;
+  Camera3D godFinal{};for(int frame=0;frame<8&&!result;++frame){godFinal=MakeOverheadCamera({float(frame)*5,0,650},480,true);godFinal.projection.orthographicHeight=720.f-float(frame)*18;godFinal.projection.farPlane=2600;animateCamera(godFinal,frame==0);}if(!result&&!verifySequence("god-ortho-zoom",godFinal))result=6;
+  Camera3D isometricFinal{};for(int frame=0;frame<8&&!result;++frame){isometricFinal=MakeIsometricCamera({float(frame)*4,0,650},720,680-float(frame)*16);isometricFinal.projection.farPlane=2600;animateCamera(isometricFinal,frame==0);}if(!result&&!verifySequence("isometric-pan-zoom",isometricFinal))result=6;
+  Camera3D disoccluded=camera;disoccluded.position.x+=180.f;disoccluded.target.x-=120.f;Image disocclusionCapture;if(!result&&!captureDynamic("disocclusion",disoccluded,false,disocclusionCapture))result=6;
+  // 相同 moving-wind sequence 分別跑正確與反號重投影，再以最終時間 explicit reset 當參考。
+  auto runWindSequence=[&](D3D12RendererTestAccess3D::VolumetricAtmosphereMutation mutation,const char* name,Image& image){D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,mutation);setCamera(camera);for(int frame=0;frame<=8;++frame){draw.SetEnvironmentTime(40.f+float(frame)*.04f);draw.SetCameraCut3D(frame==0);renderer.Render(draw,{.015f,.025f,.05f,1});}draw.SetCameraCut3D(false);return captureDynamic(name,camera,false,image);};
+  Image windCorrect,windRepeat,windWrong,windReference;if(!result&&(!runWindSequence(D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::Production,"wind-correct",windCorrect)||!runWindSequence(D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::Production,"wind-repeat",windRepeat)||!runWindSequence(D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::WrongWindReprojection,"wind-wrong",windWrong))){result=6;}D3D12RendererTestAccess3D::SetVolumetricAtmosphereMutation(renderer,D3D12RendererTestAccess3D::VolumetricAtmosphereMutation::Production);draw.SetEnvironmentTime(40.32f);setCamera(camera);for(int frame=0;frame<8;++frame){draw.SetCameraCut3D(frame==0);renderer.Render(draw,{.015f,.025f,.05f,1});}draw.SetCameraCut3D(false);if(!result&&!captureDynamic("wind-reference",camera,false,windReference))result=6;if(!result){const double correctRms=RmsRgb(windCorrect,windReference),wrongRms=RmsRgb(windWrong,windReference);const bool deterministic=ImageHash(windCorrect)==ImageHash(windRepeat);std::cout<<"wind correctRms="<<correctRms<<" wrongSignRms="<<wrongRms<<" deterministic="<<deterministic<<'\n';if(!deterministic||!std::isfinite(correctRms)||!std::isfinite(wrongRms)||correctRms>wrongRms)result=6;}
+  for(int drain=0;drain<4&&!result;++drain)animateCamera(isometricFinal,false);renderer.WaitIdle();const auto dynamicStats=renderer.GetStats();std::cout<<"temporal accepted="<<dynamicStats.volumetricAtmosphereTemporalAcceptedPixels<<" rejected="<<dynamicStats.volumetricAtmosphereTemporalRejectedPixels<<" invalid="<<dynamicStats.volumetricAtmosphereTemporalInvalidPixels<<" diagnosticFrames="<<dynamicStats.volumetricAtmosphereTemporalDiagnosticFrames<<'\n';if(dynamicStats.debugErrorCount||dynamicStats.debugWarningCount||!dynamicStats.volumetricAtmosphereDispatched||!dynamicStats.volumetricAtmosphereTemporalAcceptedPixels||!dynamicStats.volumetricAtmosphereTemporalRejectedPixels||dynamicStats.volumetricAtmosphereTemporalDiagnosticFrames<10)result=6;
+  renderer.DestroyMesh(mesh);renderer.WaitIdle();
+ }
+ DestroyWindow(window);if(apartment==S_OK||apartment==S_FALSE)CoUninitialize();std::cout<<"VolumetricAtmosphereDepthIntegration "<<(result?"FAIL":"PASS")<<" captures="<<output.string()<<'\n';return result;
 }

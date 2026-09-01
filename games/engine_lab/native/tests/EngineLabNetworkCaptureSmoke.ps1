@@ -1,6 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Executable,[switch]$SkipUnavailableGate)
 $ErrorActionPreference = 'Stop'
 $captureDirectory = Join-Path (Split-Path -Parent $Executable) 'captures'
+$artifactDirectory = Join-Path (Split-Path -Parent $Executable) 'network-capture-run-artifacts'
 $names = @('first-person.png','third-person.png','god-view.png','isometric-2-5d.png','network-replication-overview.png','network-interest-durability.png')
 
 function Invoke-CaptureRun {
@@ -26,6 +27,16 @@ function Assert-CurrentEvidence($Runtime){
   $diagnostics=Get-Content -Raw -LiteralPath $diagnosticPath
   Assert-RunIdentity $Runtime.runId $capture.runId $capture.runtime.runId $capture.gpuValidationSource $capture.gpuValidationEntry $diagnostics
 }
+function Assert-TickProvenance($Runtime){
+  if($Runtime.serverTickSource-ne'ReplicationServer3D'-or$Runtime.serverTickStep-ne 1-or$Runtime.serverTickEpoch-lt 0-or$Runtime.serverTickRelative-lt 0-or$Runtime.serverTick-ne($Runtime.serverTickEpoch+$Runtime.serverTickRelative*$Runtime.serverTickStep)){throw 'Authoritative server tick provenance was inconsistent'}
+}
+function Save-RunArtifact($Runtime,[string]$Ordinal){
+  New-Item -ItemType Directory -Force -Path $artifactDirectory|Out-Null
+  $source=Join-Path $captureDirectory 'network-runtime-receipt.json'
+  $destination=Join-Path $artifactDirectory ("$Ordinal-$($Runtime.runId)-network-runtime-receipt.json")
+  Copy-Item -LiteralPath $source -Destination $destination
+  return $destination
+}
 
 Add-Type -AssemblyName System.Drawing
 function Get-VisualReceipt([string]$Path) {
@@ -45,6 +56,8 @@ Invoke-CaptureRun
 $firstRuntime=Get-Content -Raw -LiteralPath (Join-Path $captureDirectory 'network-runtime-receipt.json')|ConvertFrom-Json
 if($firstRuntime.runId-notmatch'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'){throw 'First run ID was missing or malformed'}
 Assert-CurrentEvidence $firstRuntime
+Assert-TickProvenance $firstRuntime
+$firstArtifact=Save-RunArtifact $firstRuntime 'first'
 if($env:AEVRYND_GPU_VALIDATION-eq'1'){
   if($firstRuntime.gpuValidationRequested-ne 1-or$firstRuntime.gpuValidationAvailable-ne 1-or$firstRuntime.gpuValidationExecuted-ne 1-or$firstRuntime.gpuValidationPassed-ne 1-or$firstRuntime.debugLayerEnabled-ne 1-or$firstRuntime.gpuValidationErrors-ne 0-or$firstRuntime.gpuValidationWarnings-ne 0-or$firstRuntime.gpuValidationFirstErrorId-ne 0){throw 'Requested GPU validation did not produce a clean executed receipt'}
 }elseif($firstRuntime.gpuValidationRequested-ne 0-or$firstRuntime.gpuValidationAvailable-ne 0-or$firstRuntime.gpuValidationExecuted-ne 0-or$firstRuntime.gpuValidationPassed-ne 0-or$firstRuntime.debugLayerEnabled-ne 0-or$firstRuntime.gpuValidationErrors-ne 0-or$firstRuntime.gpuValidationWarnings-ne 0-or$firstRuntime.gpuValidationFirstErrorId-ne 0){throw 'Normal capture unexpectedly created GPU validation resources'}
@@ -55,7 +68,14 @@ Invoke-CaptureRun
 $secondRuntime=Get-Content -Raw -LiteralPath (Join-Path $captureDirectory 'network-runtime-receipt.json')|ConvertFrom-Json
 if($secondRuntime.runId-notmatch'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'-or$secondRuntime.runId-eq$firstRuntime.runId){throw 'Run IDs were not unique GUIDs'}
 Assert-CurrentEvidence $secondRuntime
-foreach($field in @('seed','serverTick','clients','snapshots','full','delta','acks','loss','duplicate','reorder','client1Interest','client2Interest','visible1','visible2','interestEntered','interestExited','reentries','despawns','authorized','durable','denied','committed','aborted','restart','pending','queuePackets','packetCapacity','queueBytes','byteCapacity','auth1ChunkX','auth1OffsetX','pred1ChunkX','pred1OffsetX','auth2ChunkX','auth2OffsetX','pred2ChunkX','pred2OffsetX','gpuValidationRequested','gpuValidationAvailable','gpuValidationExecuted','gpuValidationPassed','debugLayerEnabled','gpuValidationErrors','gpuValidationWarnings','gpuValidationSource','gpuValidationEntry')){if($firstRuntime.$field-ne$secondRuntime.$field){throw "Runtime telemetry was not deterministic: $field"}}
+Assert-TickProvenance $secondRuntime
+$secondArtifact=Save-RunArtifact $secondRuntime 'second'
+foreach($field in @('seed','serverTick','serverTickEpoch','serverTickRelative','serverTickStep','serverTickSource','clients','snapshots','full','delta','acks','loss','duplicate','reorder','client1Interest','client2Interest','visible1','visible2','interestEntered','interestExited','reentries','despawns','authorized','durable','denied','committed','aborted','restart','pending','queuePackets','packetCapacity','queueBytes','byteCapacity','auth1ChunkX','auth1OffsetX','pred1ChunkX','pred1OffsetX','auth2ChunkX','auth2OffsetX','pred2ChunkX','pred2OffsetX','gpuValidationRequested','gpuValidationAvailable','gpuValidationExecuted','gpuValidationPassed','debugLayerEnabled','gpuValidationErrors','gpuValidationWarnings','gpuValidationSource','gpuValidationEntry')){if($firstRuntime.$field-ne$secondRuntime.$field){throw "Runtime telemetry was not deterministic: $field"}}
+$tickMutation=$secondRuntime|ConvertTo-Json -Depth 4|ConvertFrom-Json
+$tickMutation.serverTickRelative++
+$tickMutationRejected=$false
+try{Assert-TickProvenance $tickMutation}catch{$tickMutationRejected=$true}
+if(-not$tickMutationRejected){throw 'Inconsistent server tick provenance mutation was accepted'}
 $secondOverview=Get-VisualReceipt (Join-Path $captureDirectory 'network-replication-overview.png')
 $secondDurability=Get-VisualReceipt (Join-Path $captureDirectory 'network-interest-durability.png')
 function Get-Hamming([string]$A,[string]$B){$distance=0;for($i=0;$i-lt$A.Length;$i++){if($A[$i]-ne$B[$i]){$distance++}};return $distance}

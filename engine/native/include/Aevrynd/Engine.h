@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <utility>
 #include "Audio.h"
+#include "DevelopmentUltraQuality3D.h"
 #include "Game.h"
 #include "Input.h"
 #include "Memory.h"
@@ -17,6 +18,7 @@
 #include "SkinnedModel3D.h"
 
 namespace Aevrynd {
+struct EngineDevelopmentUltraTestAccess3D;
 #ifndef AEVRYND_ENGINE_VERSION
 #define AEVRYND_ENGINE_VERSION "development"
 #endif
@@ -65,7 +67,7 @@ enum class MeshCpuRetention3D:std::uint8_t {Discard,RetainForQueries};
 enum class MeshLodCpuRetention3D:std::uint8_t {None,Level0Only,AllLevels};
 struct MeshCpuMemoryStats3D {std::size_t residentResources{},residentBytes{},cacheEntries{},expiredCacheEntries{};};
 enum class RenderQuality3D:std::uint8_t {Low,Medium,High,Ultra};
-constexpr std::string_view RenderQualityName3D(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return"LOW";case RenderQuality3D::Medium:return"MEDIUM";case RenderQuality3D::High:return"HIGH";default:return"ULTRA";}}
+constexpr std::string_view RenderQualityName3D(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return"LOW";case RenderQuality3D::Medium:return"MEDIUM";case RenderQuality3D::High:return"HIGH";case RenderQuality3D::Ultra:return"ULTRA";default:return"UNKNOWN";}}
 constexpr RenderQuality3D NextRenderQuality3D(RenderQuality3D quality){return quality==RenderQuality3D::Low?RenderQuality3D::Medium:quality==RenderQuality3D::Medium?RenderQuality3D::High:quality==RenderQuality3D::High?RenderQuality3D::Ultra:RenderQuality3D::Low;}
 struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; RenderQuality3D renderQuality{RenderQuality3D::Ultra}; };
 struct EngineMemoryStats {
@@ -90,6 +92,8 @@ public:
     unsigned Width()const{return config_.width;}
     unsigned Height()const{return config_.height;}
     RenderQuality3D RenderQuality()const{return config_.renderQuality;}
+    RenderQuality3D RequestedRenderQuality()const{return requestedRenderQuality_;}
+    const DevelopmentUltraReceipt3D& DevelopmentUltraReceipt()const{return developmentUltraReceipt_;}
     void SetRenderQuality(RenderQuality3D quality);
     float Time()const{return time_;}
     void Quit(){running_=false;}
@@ -135,14 +139,29 @@ public:
     unsigned RenderWidth()const{return renderer_->RenderWidth();}
     unsigned RenderHeight()const{return renderer_->RenderHeight();}
     bool CaptureNextFrame3D(const std::filesystem::path& path){return renderer_->CaptureNextFrame(path);}
+    bool RequestObjectIdReadback3D(ObjectIdCaptureRequestMetadata3D metadata={}){return renderer_&&renderer_->RequestObjectIdReadback3D(metadata);}
+    bool CancelObjectIdReadback3D()noexcept{return renderer_&&renderer_->CancelObjectIdReadback3D();}
+    std::optional<ObjectIdCapture3D> TakeObjectIdReadback3D(){return renderer_?renderer_->TakeObjectIdReadback3D():std::optional<ObjectIdCapture3D>{};}
+    bool RequestDepthReadback3D(DepthCaptureRequestMetadata3D metadata={}){return renderer_&&renderer_->RequestDepthReadback3D(metadata);}
+    bool CancelDepthReadback3D()noexcept{return renderer_&&renderer_->CancelDepthReadback3D();}
+    std::optional<DepthCapture3D> TakeDepthReadback3D(){return renderer_?renderer_->TakeDepthReadback3D():std::optional<DepthCapture3D>{};}
+    std::optional<ReadbackCaptureSequenceToken3D> BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D descriptor){return renderer_?renderer_->BeginReadbackCaptureSequence3D(descriptor):std::optional<ReadbackCaptureSequenceToken3D>{};}
+    std::optional<ReadbackCaptureSequenceToken3D> BeginReadbackCaptureSequence3D(uint32_t expectedPhaseCount){return BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{expectedPhaseCount});}
+    ReadbackCaptureSequenceResult3D EndReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token){return renderer_?renderer_->EndReadbackCaptureSequence3D(token):ReadbackCaptureSequenceResult3D{ReadbackCaptureSequenceStatus3D::DeviceLost,{}};}
+    ReadbackCaptureSequenceGpuProvenance3D ReadbackCaptureSequenceGpuProvenance(ReadbackCaptureSequenceToken3D token)const{return renderer_?renderer_->ReadbackCaptureSequenceGpuProvenance(token):ReadbackCaptureSequenceGpuProvenance3D{};}
+    bool CancelReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token)noexcept{return renderer_&&renderer_->CancelReadbackCaptureSequence3D(token);}
     bool PrepareRebaseReflectionProbeCaptures3D(Vec3 localDelta,uint64_t originGeneration){return renderer_&&renderer_->PrepareRebaseReflectionProbeCaptures3D(localDelta,originGeneration);}
     void CommitPreparedReflectionProbeCaptureRebase3D()noexcept{if(renderer_)renderer_->CommitPreparedReflectionProbeCaptureRebase3D();}
     void AbortPreparedReflectionProbeCaptureRebase3D()noexcept{if(renderer_)renderer_->AbortPreparedReflectionProbeCaptureRebase3D();}
     bool RebaseReflectionProbeCaptures3D(Vec3 localDelta,uint64_t originGeneration){return renderer_&&renderer_->RebaseReflectionProbeCaptures3D(localDelta,originGeneration);}
 private:
+    friend struct EngineDevelopmentUltraTestAccess3D;
+    void RefreshDevelopmentUltraGpuTruth();
+    bool ExitDevelopmentUltraToLastKnownGood();
+    bool RestoreDevelopmentUltraRendererBaseline(bool trim);
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
-    EngineConfig config_; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
+    EngineConfig config_; RenderQuality3D requestedRenderQuality_{RenderQuality3D::High}; DevelopmentUltraReceipt3D developmentUltraReceipt_{}; DevelopmentUltraQuality3D stagedDevelopmentUltraProfile_{}; DevelopmentUltraGpuTruthSequence3D developmentUltraGpuTruth_{}; DevelopmentUltraRendererBaseline3D lastKnownGoodRendererBaseline_{}; DirectionalShadowCascadeSettings3D lastKnownGoodShadowCascades_{}; std::uint64_t renderQualityEpoch_{}; std::uint8_t developmentUltraTestFailure_{}; bool developmentUltraStaged_{},developmentUltraApplied_{}; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
     std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
     struct EnvironmentLightingBinding3D {
@@ -154,4 +173,10 @@ private:
     ProcessMemoryStats processMemoryStats_{};size_t lastReleasedBytes_{};uint64_t trimCount_{},automaticTrimCount_{};float lastAutomaticTrimTime_{};
     Color clearColor_{.018f,.045f,.055f,1};
 };
+#if defined(AEVRYND_ENGINE_TEST_ACCESS)
+struct EngineDevelopmentUltraTestAccess3D {
+    enum class Failure : std::uint8_t {None,RendererApply,PostApplyPending};
+    static void ForceFailure(Engine& engine,Failure failure){engine.developmentUltraTestFailure_=static_cast<std::uint8_t>(failure);}
+};
+#endif
 }

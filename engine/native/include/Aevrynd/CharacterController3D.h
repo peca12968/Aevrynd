@@ -7,7 +7,12 @@
 #include <vector>
 
 namespace Aevrynd {
-struct CharacterControl3D {Vec3 movement{};bool jump{};};
+struct CharacterControl3D {
+    Vec3 movement{};
+    bool jump{};
+    // 非有限或 <=0 回退 1；其餘夾在 [.25,4]，且仍走同一碰撞、地形與 grounded Step。
+    float speedMultiplier{1.f};
+};
 struct CharacterControllerSettings3D {
     float radius{.45f};
     float height{1.8f};

@@ -114,6 +114,21 @@ private:
       showcaseMaximumGpuFrameNanoseconds_{};
   std::size_t showcaseMaximumWorkingSetBytes_{},
       showcaseMaximumTrackedVramBytes_{};
-  std::vector<uint64_t> showcaseGpuSamples_{}, showcaseCpuSamples_{};
+  std::vector<uint64_t> showcaseGpuSamples_{}, showcaseCpuSamples_{},
+      showcaseCpuWorkSamples_{};
+  std::array<std::vector<uint64_t>, 5> showcaseCpuStageSamples_{};
+  uint64_t showcasePreviousSteadyAllocationTotal_{},
+      showcaseSteadyAllocationChanges_{}, showcaseSteadyAllocationFrames_{};
+  uint64_t showcaseStartupResourceCounterEnd_{},
+      showcaseTransitionResourceCounterStart_{},
+      showcaseSteadyPendingViolations_{}, showcaseWarmupResourceChanges_{};
+  bool showcaseSteadyAllocationEstablished_{};
+  std::array<uint64_t, 12> showcasePhaseAllocationFrames_{},
+      showcasePhaseSteadyCoverage_{}, showcasePhaseSteadyChanges_{};
+  std::array<uint64_t, 16> showcasePreviousResourceCounters_{},
+      showcaseSteadyResourceCounterChanges_{};
+  uint64_t showcaseThreadCyclesPerSecond_{}, showcasePreviousThreadCycles_{};
+  std::array<uint64_t, 7> showcaseThreadCycleCalibration_{};
+  bool showcaseThreadCycleCalibrationValid_{};
   std::array<ShowcaseSlotReceipt, 14> showcaseSlots_{};
 };

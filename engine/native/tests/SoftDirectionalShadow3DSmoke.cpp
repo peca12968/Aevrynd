@@ -24,8 +24,13 @@ int main(){
     DirectionalShadowCascadeSettings3D cascades{4,4096,.1f,200.f,.65f,.1f};
     cascades=NormalizeDirectionalShadowCascadeSettings3D(cascades);
     const auto splits=DirectionalShadowPracticalSplits3D(cascades);
-    if(cascades.resolution!=2048||splits[3]!=200.f||!(splits[0]>.1f&&splits[0]<splits[1]&&splits[1]<splits[2]&&splits[2]<splits[3])){std::cerr<<"Practical cascade splits failed\n";return 6;}
-    for(uint32_t index=0;index<4;++index){const float sample=index?std::nextafter(splits[index-1],std::numeric_limits<float>::infinity()):.1f;if(SelectDirectionalShadowCascade3D(sample,splits,4)!=index){std::cerr<<"Cascade boundary selection failed\n";return 7;}}
+    const auto oversized=NormalizeDirectionalShadowCascadeSettings3D({4,8192,.1f,200.f,.65f,.1f});
+    const auto oversizedSplits=DirectionalShadowPracticalSplits3D({4,8192,.1f,200.f,.65f,.1f});
+    const auto uniformSplits=DirectionalShadowPracticalSplits3D({4,4096,.1f,200.f,0.f,.1f});
+    const auto logarithmicSplits=DirectionalShadowPracticalSplits3D({4,4096,.1f,200.f,1.f,.1f});
+    // 4096 是 DevelopmentUltra 的正式陰影解析度；解析度不得改變實際分割距離。
+    if(cascades.resolution!=4096||oversized.resolution!=4096||splits!=oversizedSplits||splits[3]!=200.f||!(splits[0]>.1f&&splits[0]<splits[1]&&splits[1]<splits[2]&&splits[2]<splits[3])||!(logarithmicSplits[0]<splits[0]&&splits[0]<uniformSplits[0])){std::cerr<<"Practical cascade splits failed resolution="<<cascades.resolution<<" oversized="<<oversized.resolution<<" splits="<<splits[0]<<','<<splits[1]<<','<<splits[2]<<','<<splits[3]<<" uniform0="<<uniformSplits[0]<<" logarithmic0="<<logarithmicSplits[0]<<'\n';return 6;}
+    for(uint32_t index=0;index<4;++index){const float sample=index?splits[index-1]:.1f;if(SelectDirectionalShadowCascade3D(sample,splits,4)!=index){std::cerr<<"Cascade exact boundary selection failed index="<<index<<" sample="<<sample<<'\n';return 7;}if(index&&SelectDirectionalShadowCascade3D(std::nextafter(splits[index-1],0.f),splits,4)!=index-1){std::cerr<<"Cascade lower boundary selection failed index="<<index<<'\n';return 7;}}
     const float texel=80.f*2.f/2048.f,snapped=SnapDirectionalShadowCoordinate3D(13.237f,texel);if(std::abs(snapped/texel-std::round(snapped/texel))>1e-5f){std::cerr<<"Cascade texel snapping failed\n";return 8;}
     draw.SetDirectionalShadowCascades({0,1,std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity(),-1.f,2.f});
     if(draw.DirectionalShadowCascades().cascadeCount!=1||draw.DirectionalShadowCascades().resolution!=512||draw.DirectionalShadowCascades().nearDistance!=.1f||draw.DirectionalShadowCascades().farDistance!=180.f){std::cerr<<"Cascade settings normalization failed\n";return 9;}

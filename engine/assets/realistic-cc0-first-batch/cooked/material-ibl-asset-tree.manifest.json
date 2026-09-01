@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "fileCount": 38,
-  "totalBytes": 56864608,
+  "totalBytes": 56864740,
   "files": [
     {
       "path": "ibl/environment-brdf.dds",
@@ -91,7 +91,7 @@
     {
       "path": "materials/forest-ground-04/slot-0-base.dds",
       "bytes": 5592580,
-      "sha256": "dba770a1b96ef6f0a45e0edff99594499fcc8d76abfa62a0986153313f350865"
+      "sha256": "00850c7c033be2bcb2818c0ab3db91a62c8353eba746daede3c0de373c3e32b4"
     },
     {
       "path": "materials/forest-ground-04/slot-0-normal.dds",
@@ -160,8 +160,8 @@
     },
     {
       "path": "materials/material-bake-receipt.json",
-      "bytes": 28272,
-      "sha256": "56eae307076ae9c5411dc33972d803013b514c445b54691f5d7099056a29040f"
+      "bytes": 28404,
+      "sha256": "2ca64ef54bf2a4c9815ad41afea3a04eb913ff7a99d6f353ce7f02f31c5bba58"
     },
     {
       "path": "materials/roofing-tiles014-b/slot-0-arm.dds",

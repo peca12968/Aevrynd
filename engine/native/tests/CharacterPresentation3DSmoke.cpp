@@ -28,9 +28,10 @@ std::uint64_t HashPose(const AnimationPose3D& pose) {
 bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVertices,
                     std::uint64_t expectedIndices) {
     const auto loaded = LoadSkinnedModelAssetFileDetailed(path);
+    constexpr std::size_t ExpectedJointCount = 24;
     if (!loaded || loaded.asset.model.bindMesh.vertices.size() != expectedVertices ||
         loaded.asset.model.bindMesh.indices.size() != expectedIndices ||
-        loaded.asset.model.skeleton.joints.size() != 20 || loaded.asset.submeshes.size() != 9 ||
+        loaded.asset.model.skeleton.joints.size() != ExpectedJointCount || loaded.asset.submeshes.size() != 9 ||
         loaded.asset.materialSlotNames.size() != 9) {
         std::cerr << "F2/M2 production asset contract failed: " << path << '\n';
         return false;
@@ -47,7 +48,7 @@ bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVer
     AnimationPose3D pose;
     for (const AnimationClip3D& clip : fallback.clips) {
         SampleAnimationClipInto(loaded.asset.model.skeleton, clip, clip.duration * .47f, pose);
-        if (pose.globalMatrices.size() != 20) return false;
+        if (pose.globalMatrices.size() != ExpectedJointCount) return false;
         hashes.insert(HashPose(pose));
     }
     if (hashes.size() != fallback.clips.size()) {
@@ -113,7 +114,7 @@ int main() {
         return 1;
     }
     if (!CheckCharacter(assets / "model-packs" / "realistic-female" / "realistic-female.aeskin",
-                        20236, 103236) ||
+                        20174, 102180) ||
         !CheckCharacter(assets / "model-packs" / "realistic-male" / "realistic-male.aeskin",
-                        20216, 102948)) return 2;
+                        20066, 101688)) return 2;
 }

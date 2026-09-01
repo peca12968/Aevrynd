@@ -7,10 +7,10 @@ using namespace Aevrynd;
 namespace { bool Near(float a,float b){return std::abs(a-b)<.0001f;} }
 
 int main(){
- DrawList draw;Atmosphere3D atmosphere{};atmosphere.enabled=true;atmosphere.cameraPosition={120,40,-80};atmosphere.heightFogBaseHeight=12;draw.SetAtmosphere(atmosphere);VolumetricCloudSettings3D clouds{};clouds.baseAltitude=1400;draw.SetVolumetricClouds(clouds);if(!draw.AddLocalReflectionProbe({EnvironmentLightingHandle3D{1},{100,0,-100},{140,40,-60},{120,20,-80},1}))return 1;
+ DrawList draw;Atmosphere3D atmosphere{};atmosphere.enabled=true;atmosphere.cameraPosition={120,40,-80};atmosphere.heightFogBaseHeight=12;atmosphere.aerialPerspective.baseHeight=17;draw.SetAtmosphere(atmosphere);VolumetricCloudSettings3D clouds{};clouds.baseAltitude=1400;draw.SetVolumetricClouds(clouds);if(!draw.AddLocalReflectionProbe({EnvironmentLightingHandle3D{1},{100,0,-100},{140,40,-60},{120,20,-80},1}))return 1;
  const MeshHandle3D mesh{1};draw.MeshInstance(mesh,CreateTranslationMatrix({120,4,-80}),{}, {},MeshRenderLayer3D::Opaque,{},.25f,false,MaterialClass3D::Surface,0,false,1,0,false,0,ShadowCascadeSelection3D::Automatic,CreateTranslationMatrix({119,4,-80}),true);draw.SetOriginGeneration3D(1);
  if(!draw.ApplyWorldOriginShift3D({100,10,-50},2)||!draw.CameraCut3D()||draw.OriginGeneration3D()!=2)return 2;
- if(!Near(draw.Atmosphere().cameraPosition.x,20)||!Near(draw.Atmosphere().cameraPosition.y,30)||!Near(draw.Atmosphere().heightFogBaseHeight,2)||!Near(draw.VolumetricClouds().baseAltitude,1390))return 3;
+ if(!Near(draw.Atmosphere().cameraPosition.x,20)||!Near(draw.Atmosphere().cameraPosition.y,30)||!Near(draw.Atmosphere().heightFogBaseHeight,2)||!Near(draw.Atmosphere().aerialPerspective.baseHeight,7)||!Near(draw.VolumetricClouds().baseAltitude,1390))return 3;
  const auto probes=draw.LocalReflectionProbes();if(probes.size()!=1||!Near(probes[0].minimum.x,0)||!Near(probes[0].maximum.y,30)||!Near(probes[0].capturePosition.z,-30))return 4;
  const Vec3 shiftedDynamic=TransformPoint(draw.meshInstances[0].transform,{});if(draw.meshInstances.size()!=1||draw.meshInstances[0].motionValid||!Near(shiftedDynamic.x,20)||!Near(shiftedDynamic.y,-6)||!Near(shiftedDynamic.z,-30))return 5;
  if(draw.ApplyWorldOriginShift3D({1,0,0},2)||draw.ApplyWorldOriginShift3D({NAN,0,0},3))return 6;

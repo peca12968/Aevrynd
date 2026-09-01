@@ -1,3 +1,5 @@
+#include "OcclusionDither.hlsli"
+
 Texture2D<float> sceneDepth : register(t0);
 Texture2D<float2> ambientOcclusion : register(t1);
 Texture2D baseColorTexture : register(t2);
@@ -59,6 +61,8 @@ struct InstancedVertexInput
     float4 tint : TINT;
     float4 material : MATERIAL;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
 };
 
 struct SkinnedVertexInput
@@ -77,6 +81,8 @@ struct SkinnedVertexInput
     float4 tint : TINT;
     float4 material : MATERIAL;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
     uint skinPaletteBase : SKINBASE;
     uint4 blendIndices : BLENDINDICES;
     float4 blendWeights : BLENDWEIGHT;
@@ -112,6 +118,9 @@ struct DepthVertexOutput
     nointerpolation float alphaCutoff : TEXCOORD4;
     nointerpolation uint alphaMasked : TEXCOORD5;
     float alpha : TEXCOORD6;
+    nointerpolation float occlusionOpacity : TEXCOORD7;
+    nointerpolation uint2 occlusionSeeds : TEXCOORD8;
+    float3 occlusionCoordinate : TEXCOORD9;
 };
 
 float3 ApplyDepthWind(float3 position, float packedWeight, uint materialClass)
@@ -130,6 +139,8 @@ DepthVertexOutput DepthWorldVertexMain(WorldVertexInput input)
     output.lodCoverage = 1.0;
     output.lodSeed = 0;
     output.lodInvert = 0;
+    output.occlusionOpacity = 1.0;
+    output.occlusionCoordinate=input.position;
     return output;
 }
 
@@ -149,10 +160,13 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
     // 平移量必須採用與主著色器相同的雜湊，深度與色彩通道才會保留相同孔點。
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
-    output.uv = input.uv;
+    output.uv=input.uv*max(0.001,float((input.textureData>>16)&65535u)*(16.0/65535.0));
     output.alphaCutoff = saturate(input.normalRow1.w);
     output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     output.alpha = input.color.a * input.tint.a;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
+    output.occlusionCoordinate=input.position;
     return output;
 }
 
@@ -174,10 +188,13 @@ DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input)
     output.lodInvert = (input.textureData >> 12) & 1;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
-    output.uv=input.uv;
+    output.uv=input.uv*max(0.001,float((input.textureData>>16)&255u)*(16.0/255.0));
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
     output.alphaMasked=(input.skinPaletteBase>>20)&1u;
     output.alpha=input.color.a*input.tint.a;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
+    output.occlusionCoordinate=skinnedPosition;
     return output;
 }
 
@@ -195,6 +212,7 @@ void DepthPixelMain(DepthVertexOutput input)
         const float signedCoverage = input.lodInvert != 0 ? threshold - input.lodCoverage - 0.0000001 : input.lodCoverage - threshold;
         clip(signedCoverage);
     }
+    ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
 }
 
 struct AmbientOcclusionVertexOutput

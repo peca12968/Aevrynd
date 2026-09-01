@@ -6,6 +6,7 @@
 #include "VisibilityBvh3D.h"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <iterator>
 #include <limits>
 #include <new>
@@ -17,8 +18,8 @@
 namespace Aevrynd {
 struct Triangle3D {Vec3 a{},b{},c{};Color color{};};
 struct Line3D {Vec3 a{},b{};float width{1.f};Color color{};};
-struct Box3D {Transform3D transform{};Material3D material{};};
-struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};AssetLease3D assetLease{};};
+struct Box3D {Transform3D transform{};Material3D material{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f};};
+struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};AssetLease3D assetLease{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f};};
 enum class MeshLodDistanceMetric3D : std::uint8_t {Center,BoundsSurface};
 struct MeshLodPolicy3D {float switchDistance{40.f},transitionWidth{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};};
 struct MeshLodSelection3D {float nearCoverage{1.f},farCoverage{};bool submitNear{true},submitFar{};};
@@ -31,11 +32,11 @@ struct MeshLodChainSelection3D {std::size_t primaryLevel{},nearLevel{},farLevel{
 inline MeshLodChainSelection3D EvaluateMeshLodChain3D(float centerDistance,float boundsRadius,std::span<const MeshLodLevel3D> levels,MeshLodDistanceMetric3D metric){
     if(levels.size()<2)return{};for(std::size_t level=0;level+1<levels.size();++level){const MeshLodSelection3D selection=EvaluateMeshLod3D(centerDistance,boundsRadius,{levels[level].switchDistance,levels[level].transitionWidth,metric});if(selection.submitNear){const bool transition=selection.submitFar;return{selection.farCoverage>=selection.nearCoverage?level+1:level,level,level+1,selection.farCoverage,transition};}}const std::size_t last=levels.size()-1;return{last,last,last,1.f,false};
 }
-struct MeshLodObject3D {std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> levels{};std::size_t levelCount{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};Transform3D transform{};MeshBounds3D bounds{};AssetLease3D assetLease{};};
+struct MeshLodObject3D {std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> levels{};std::size_t levelCount{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};Transform3D transform{};MeshBounds3D bounds{};AssetLease3D assetLease{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f};};
 struct ProjectedShadows3D {bool enabled{};float planeHeight{.025f},opacity{.22f},maximumDistance{55.f};std::size_t maximumCasters{256};};
 struct SceneVisibility3D {float maximumDistance{},minimumProjectedRadiusPixels{};};
 struct Scene3DSubmissionOptions {bool frustumCulling{true};bool gpuInstancing{true};ProjectedShadows3D shadows{};SceneVisibility3D visibility{};std::size_t maximumLodTransitionInstances{512},maximumShadowOnlyInstances{2048};bool linearVisibilityReference{};};
-struct Scene3DStats {std::size_t inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{},distanceCulledMeshInstances{},screenSizeCulledMeshInstances{},lodMeshInstances{},nearLodInstances{},farLodInstances{},lodTrianglesSaved{},lodTransitionInstances{},lodDualSubmittedInstances{},lodTransitionTriangles{},lodTransitionBudgetFallbacks{},shadowCasters{},shadowInstances{},shadowSkipped{},shadowOnlyCandidates{},shadowOnlyInstances{},shadowOnlyBudgetDropped{},shadowDistanceRejected{},cpuFallbackUnavailable{},visibilityCandidates{},visibilityNodesTested{},visibilityNodesRejected{};std::array<std::size_t,MaximumMeshLodLevels3D> selectedLodLevels{};};
+struct Scene3DStats {std::uint64_t submissionSerial{},drawListRevision{},acceptedIdentityOrderFingerprint{};std::size_t acceptedIdentityCount{},inputTriangles{},visibleTriangles{},culledTriangles{},inputLines{},visibleLines{},meshInstances{},visibleMeshInstances{},culledMeshInstances{},distanceCulledMeshInstances{},screenSizeCulledMeshInstances{},lodMeshInstances{},nearLodInstances{},farLodInstances{},lodTrianglesSaved{},lodTransitionInstances{},lodDualSubmittedInstances{},lodTransitionTriangles{},lodTransitionBudgetFallbacks{},shadowCasters{},shadowInstances{},shadowSkipped{},shadowOnlyCandidates{},shadowOnlyInstances{},shadowOnlyBudgetDropped{},shadowDistanceRejected{},cpuFallbackUnavailable{},visibilityCandidates{},visibilityNodesTested{},visibilityNodesRejected{};std::array<std::size_t,MaximumMeshLodLevels3D> selectedLodLevels{};};
 struct Scene3DCapacity {std::size_t triangles{},lines{},boxes{},meshes{},lodMeshes{};};
 enum class SceneObjectType3D {None,Triangle,Box,Mesh};
 struct SceneQueryStats3D {std::size_t boundsTested{},boundsRejected{},trianglesTested{},bvhNodesTested{},bvhNodesRejected{},bvhLeavesVisited{},bvhObjectCandidates{},meshBvhNodesTested{},meshBvhNodesRejected{},meshBvhLeavesVisited{},meshTriangleCandidates{};std::uint64_t bvhBuilds{},meshBvhBuilds{};};
@@ -62,19 +63,21 @@ public:
     void Triangle(Vec3 a,Vec3 b,Vec3 c,Color color){triangles_.push_back({a,b,c,color});InvalidateRaycastIndex();}
     void Line(Vec3 a,Vec3 b,float width,Color color){lines_.push_back({a,b,width,color});}
     VisibilityEntityKey3D Box(Vec3 center,Vec3 size,Color color){return MaterialBox(center,size,Material3D{color});}
-    VisibilityEntityKey3D MaterialBox(Vec3 center,Vec3 size,Material3D material){const Transform3D transform{center,{},size};if(!ValidVisibilityBounds(TransformSphereBounds(UnitBoxBounds(),transform)))return 0;const auto key=NextVisibilityKey(),index=boxes_.size();if(!key)return 0;boxes_.push_back({transform,material});try{boxKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Box,index});}catch(...){if(boxKeys_.size()>index)boxKeys_.pop_back();boxes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
-    VisibilityEntityKey3D Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={},AssetLease3D assetLease={}){if(!mesh||!ValidVisibilityBounds(TransformSphereBounds(mesh.bounds,transform)))return 0;const auto key=NextVisibilityKey(),index=meshes_.size();if(!key)return 0;meshes_.push_back({mesh,transform,material,std::move(assetLease)});try{meshKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Mesh,index});}catch(...){if(meshKeys_.size()>index)meshKeys_.pop_back();meshes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
+    VisibilityEntityKey3D MaterialBox(Vec3 center,Vec3 size,Material3D material,RenderObjectIdentity3D identity={},float occlusionOpacity=1.f){const Transform3D transform{center,{},size};if(!ValidVisibilityBounds(TransformSphereBounds(UnitBoxBounds(),transform))||!ValidOcclusionOpacity3D(occlusionOpacity)||(occlusionOpacity<1.f&&!identity)||(identity.id&&!identity.generation))return 0;const auto key=NextVisibilityKey(),index=boxes_.size();if(!key)return 0;boxes_.push_back({transform,material,identity,occlusionOpacity});try{boxKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Box,index});}catch(...){if(boxKeys_.size()>index)boxKeys_.pop_back();boxes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
+    VisibilityEntityKey3D Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={},AssetLease3D assetLease={},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f){if(!mesh||!ValidVisibilityBounds(TransformSphereBounds(mesh.bounds,transform))||!ValidOcclusionOpacity3D(occlusionOpacity)||(occlusionOpacity<1.f&&!identity)||(identity.id&&!identity.generation))return 0;const auto key=NextVisibilityKey(),index=meshes_.size();if(!key)return 0;meshes_.push_back({mesh,transform,material,std::move(assetLease),identity,occlusionOpacity});try{meshKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Mesh,index});}catch(...){if(meshKeys_.size()>index)meshKeys_.pop_back();meshes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
     bool UpdateTransform(VisibilityEntityKey3D key,Transform3D transform){const auto found=visibilityLocations_.find(key);if(found==visibilityLocations_.end())return false;MeshBounds3D bounds{};switch(found->second.kind){case VisibilityKind::Box:bounds=TransformSphereBounds(UnitBoxBounds(),transform);break;case VisibilityKind::Mesh:bounds=TransformSphereBounds(meshes_[found->second.index].mesh.bounds,transform);break;case VisibilityKind::Lod:bounds=TransformSphereBounds(lodMeshes_[found->second.index].bounds,transform);break;}if(!ValidVisibilityBounds(bounds))return false;if(!visibilityDirty_&&!visibilityIndex_.Update(key,bounds))return false;switch(found->second.kind){case VisibilityKind::Box:boxes_[found->second.index].transform=transform;break;case VisibilityKind::Mesh:meshes_[found->second.index].transform=transform;break;case VisibilityKind::Lod:lodMeshes_[found->second.index].transform=transform;break;}visibilityNeedsRefit_|=!visibilityDirty_;InvalidateRaycastIndex();return true;}
     bool UpdateMeshTransform(VisibilityEntityKey3D key,Transform3D transform){const auto found=visibilityLocations_.find(key);return found!=visibilityLocations_.end()&&found->second.kind==VisibilityKind::Mesh&&UpdateTransform(key,transform);}
     bool Remove(VisibilityEntityKey3D key){const auto found=visibilityLocations_.find(key);if(found==visibilityLocations_.end())return false;const VisibilityLocation location=found->second;const auto swapRemove=[&](auto& values,auto& keys){const std::size_t last=values.size()-1;if(location.index!=last){values[location.index]=std::move(values[last]);keys[location.index]=keys[last];visibilityLocations_[keys[location.index]].index=location.index;}values.pop_back();keys.pop_back();};switch(location.kind){case VisibilityKind::Box:swapRemove(boxes_,boxKeys_);break;case VisibilityKind::Mesh:swapRemove(meshes_,meshKeys_);break;case VisibilityKind::Lod:swapRemove(lodMeshes_,lodMeshKeys_);break;}visibilityLocations_.erase(found);visibilityDirty_=true;visibilityNeedsRefit_=false;InvalidateRaycastIndex();return true;}
     void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,float switchDistance,Transform3D transform,Material3D material={}){MeshLod(nearMesh,farMesh,MeshLodPolicy3D{switchDistance},transform,material,material);}
     void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,float switchDistance,Transform3D transform,Material3D nearMaterial,Material3D farMaterial){MeshLod(nearMesh,farMesh,MeshLodPolicy3D{switchDistance},transform,nearMaterial,farMaterial);}
     void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,MeshLodPolicy3D policy,Transform3D transform,Material3D material={}){MeshLod(nearMesh,farMesh,policy,transform,material,material);}
-    void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,MeshLodPolicy3D policy,Transform3D transform,Material3D nearMaterial,Material3D farMaterial,AssetLease3D assetLease={}){if(!std::isfinite(policy.switchDistance)||policy.switchDistance<=0.f)policy.switchDistance=40.f;if(!std::isfinite(policy.transitionWidth)||policy.transitionWidth<0.f)policy.transitionWidth=0.f;const std::array<MeshLodLevel3D,2> levels{{{nearMesh,nearMaterial,policy.switchDistance,policy.transitionWidth},{farMesh,farMaterial}}};MeshLodChain(levels,policy.distanceMetric,transform,std::move(assetLease));}
-    VisibilityEntityKey3D MeshLodChain(std::span<const MeshLodLevel3D> levels,MeshLodDistanceMetric3D distanceMetric,Transform3D transform,AssetLease3D assetLease={}){
+    void MeshLod(const MeshResource3D& nearMesh,const MeshResource3D& farMesh,MeshLodPolicy3D policy,Transform3D transform,Material3D nearMaterial,Material3D farMaterial,AssetLease3D assetLease={},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f){if(!std::isfinite(policy.switchDistance)||policy.switchDistance<=0.f)policy.switchDistance=40.f;if(!std::isfinite(policy.transitionWidth)||policy.transitionWidth<0.f)policy.transitionWidth=0.f;const std::array<MeshLodLevel3D,2> levels{{{nearMesh,nearMaterial,policy.switchDistance,policy.transitionWidth},{farMesh,farMaterial}}};MeshLodChain(levels,policy.distanceMetric,transform,std::move(assetLease),identity,occlusionOpacity);}
+    VisibilityEntityKey3D MeshLodChain(std::span<const MeshLodLevel3D> levels,MeshLodDistanceMetric3D distanceMetric,Transform3D transform,AssetLease3D assetLease={},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f){
+        if(!ValidOcclusionOpacity3D(occlusionOpacity)||(occlusionOpacity<1.f&&!identity)||(identity.id&&!identity.generation))return 0;
         if(levels.size()<2||levels.size()>MaximumMeshLodLevels3D||(distanceMetric!=MeshLodDistanceMetric3D::Center&&distanceMetric!=MeshLodDistanceMetric3D::BoundsSurface))return 0;float previousSwitch{},previousEnd=-std::numeric_limits<float>::infinity();std::size_t previousTriangles=(std::numeric_limits<std::size_t>::max)();for(std::size_t level=0;level<levels.size();++level){const MeshLodLevel3D& value=levels[level];if(!value.mesh||value.mesh.TriangleCount()>previousTriangles)return 0;previousTriangles=value.mesh.TriangleCount();if(level+1<levels.size()){if(!std::isfinite(value.switchDistance)||value.switchDistance<=previousSwitch||!std::isfinite(value.transitionWidth)||value.transitionWidth<0.f)return 0;const float halfWidth=value.transitionWidth*.5f,start=value.switchDistance-halfWidth,end=value.switchDistance+halfWidth;if(!std::isfinite(halfWidth)||!std::isfinite(start)||!std::isfinite(end)||start<previousEnd)return 0;previousSwitch=value.switchDistance;previousEnd=end;}}
-        MeshLodObject3D object{};object.levelCount=levels.size();object.distanceMetric=distanceMetric;object.transform=transform;object.assetLease=std::move(assetLease);for(std::size_t level=0;level<levels.size();++level)object.levels[level]=levels[level];Vec3 minimum=levels[0].mesh.bounds.center-levels[0].mesh.bounds.extents,maximum=levels[0].mesh.bounds.center+levels[0].mesh.bounds.extents;for(std::size_t level=1;level<levels.size();++level){const MeshBounds3D& bounds=levels[level].mesh.bounds;const Vec3 levelMinimum=bounds.center-bounds.extents,levelMaximum=bounds.center+bounds.extents;minimum.x=(std::min)(minimum.x,levelMinimum.x);minimum.y=(std::min)(minimum.y,levelMinimum.y);minimum.z=(std::min)(minimum.z,levelMinimum.z);maximum.x=(std::max)(maximum.x,levelMaximum.x);maximum.y=(std::max)(maximum.y,levelMaximum.y);maximum.z=(std::max)(maximum.z,levelMaximum.z);}object.bounds.center=(minimum+maximum)*.5f;object.bounds.extents=(maximum-minimum)*.5f;object.bounds.radius=Length(object.bounds.extents);if(!ValidVisibilityBounds(TransformSphereBounds(object.bounds,transform)))return 0;const auto key=NextVisibilityKey(),index=lodMeshes_.size();if(!key)return 0;lodMeshes_.push_back(std::move(object));try{lodMeshKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Lod,index});}catch(...){if(lodMeshKeys_.size()>index)lodMeshKeys_.pop_back();lodMeshes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;
+        MeshLodObject3D object{};object.identity=identity;object.occlusionOpacity=occlusionOpacity;object.levelCount=levels.size();object.distanceMetric=distanceMetric;object.transform=transform;object.assetLease=std::move(assetLease);for(std::size_t level=0;level<levels.size();++level)object.levels[level]=levels[level];Vec3 minimum=levels[0].mesh.bounds.center-levels[0].mesh.bounds.extents,maximum=levels[0].mesh.bounds.center+levels[0].mesh.bounds.extents;for(std::size_t level=1;level<levels.size();++level){const MeshBounds3D& bounds=levels[level].mesh.bounds;const Vec3 levelMinimum=bounds.center-bounds.extents,levelMaximum=bounds.center+bounds.extents;minimum.x=(std::min)(minimum.x,levelMinimum.x);minimum.y=(std::min)(minimum.y,levelMinimum.y);minimum.z=(std::min)(minimum.z,levelMinimum.z);maximum.x=(std::max)(maximum.x,levelMaximum.x);maximum.y=(std::max)(maximum.y,levelMaximum.y);maximum.z=(std::max)(maximum.z,levelMaximum.z);}object.bounds.center=(minimum+maximum)*.5f;object.bounds.extents=(maximum-minimum)*.5f;object.bounds.radius=Length(object.bounds.extents);if(!ValidVisibilityBounds(TransformSphereBounds(object.bounds,transform)))return 0;const auto key=NextVisibilityKey(),index=lodMeshes_.size();if(!key)return 0;lodMeshes_.push_back(std::move(object));try{lodMeshKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Lod,index});}catch(...){if(lodMeshKeys_.size()>index)lodMeshKeys_.pop_back();lodMeshes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;
     }
+    ObjectOcclusionOpacityUpdate3D SetObjectOcclusionOpacity(RenderObjectIdentity3D identity,float opacity){ObjectOcclusionOpacityUpdate3D result{};if(!identity||!ValidOcclusionOpacity3D(opacity))return result;const auto countConflicts=[&](const auto& values){for(const auto& value:values)if(value.identity.id==identity.id&&value.identity.generation!=identity.generation)++result.generationConflicts;};countConflicts(boxes_);countConflicts(meshes_);countConflicts(lodMeshes_);if(result.generationConflicts)return result;const auto update=[&](auto& values){for(auto& value:values)if(value.identity==identity){value.occlusionOpacity=opacity;++result.matchedStatic;}};update(boxes_);update(meshes_);update(lodMeshes_);result.matchedMultipart=result.matchedStatic>1?result.matchedStatic:0;result.missing=result.matchedStatic==0;return result;}
     void SetBoxMesh(MeshResource3D mesh){boxMesh_=std::move(mesh);}
     const MeshResource3D& BoxMesh()const{return boxMesh_;}
 
@@ -110,11 +113,13 @@ public:
     // 網格與線段合併成單一索引批次，由 GPU 深度測試處理所有遮擋。
     Scene3DStats Submit(DrawList &draw, const Camera3D &camera, Vec2 viewport,
                         Scene3DSubmissionOptions options = {}) const {
+      const std::size_t meshSubmissionBegin=draw.meshInstances.size(),worldVertexBegin=draw.worldVertices.size(),worldIndexBegin=draw.worldIndices.size();
       draw.SetViewProjection(CreateViewProjectionMatrix(
           camera, viewport.x / (std::max)(1.f, viewport.y)));
       for (const auto &triangle : triangles_)
         draw.WorldTriangle(triangle.a, triangle.b, triangle.c, triangle.color);
       Scene3DStats stats{};
+      stats.submissionSerial=++submissionSerial_;if(!stats.submissionSerial)stats.submissionSerial=++submissionSerial_;
       stats.inputTriangles = TriangleCount();
       stats.visibleTriangles = triangles_.size();
       stats.inputLines = lines_.size();
@@ -151,15 +156,21 @@ public:
           return false;
         }
         if (options.visibility.minimumProjectedRadiusPixels > 0.f) {
-          const float
-              viewDepth =
-                  camera.projection.mode == ProjectionMode::Orthographic
-                      ? 1.f
-                      : TransformPoint(viewMatrix, worldBounds.center).z,
-              projectedRadius =
-                  viewDepth > .001f
-                      ? worldBounds.radius * projectionScalePixels / viewDepth
-                      : 0.f;
+          const float viewDepth =
+              camera.projection.mode == ProjectionMode::Orthographic
+                  ? 1.f
+                  : TransformPoint(viewMatrix, worldBounds.center).z;
+          // 球體跨越相機平面時中心可在相機後方，但可見表面仍可能覆蓋整個畫面；
+          // 此時不得以中心深度為零把大型地形誤降為僅陰影物件。
+          const float projectedRadius =
+              camera.projection.mode == ProjectionMode::Orthographic
+                  ? worldBounds.radius * projectionScalePixels
+                  : viewDepth + worldBounds.radius <= .001f
+                        ? 0.f
+                        : viewDepth - worldBounds.radius <= .001f
+                              ? (std::numeric_limits<float>::infinity)()
+                              : worldBounds.radius * projectionScalePixels /
+                                    viewDepth;
           if (projectedRadius <
               options.visibility.minimumProjectedRadiusPixels) {
             ++stats.culledMeshInstances;
@@ -188,7 +199,7 @@ public:
                         bool visibilityAccepted = false,
                         bool lodInvert = false,
                         MeshRenderLayer3D layer = MeshRenderLayer3D::Opaque,
-                        AssetLease3D assetLease = {}) {
+                        AssetLease3D assetLease = {},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f) {
         const MeshBounds3D localBounds =
                                resource ? resource.bounds : *fallbackBounds,
                            worldBounds =
@@ -226,7 +237,7 @@ public:
                             ShadowCascadeSelection3D::Automatic,
                             Matrix4::Identity(),false,material.normalScale,
                             material.alphaMode,material.alphaCutoff,
-                            material.doubleSided);
+                            material.doubleSided,identity,occlusionOpacity);
         else if (resource.cpuMesh)
           SubmitMesh(draw, *resource.cpuMesh, transform, material);
         else if (fallback)
@@ -249,7 +260,7 @@ public:
                                     const MeshBounds3D *fallbackBounds,
                                     const Transform3D &transform,
                                     Material3D material,
-                                    AssetLease3D assetLease = {}) {
+                                    AssetLease3D assetLease = {},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f) {
         const MeshBounds3D localBounds =
                                resource ? resource.bounds : *fallbackBounds,
                            worldBounds =
@@ -264,7 +275,7 @@ public:
             ++stats.shadowDistanceRejected;
           submit(resource, fallback, fallbackBounds, transform, material, 1.f,
                  0, withinShadowDistance, true, false,
-                 MeshRenderLayer3D::Opaque, std::move(assetLease));
+                 MeshRenderLayer3D::Opaque, std::move(assetLease),identity,occlusionOpacity);
           return;
         }
         if (!shadowEligible(worldBounds, material, resource))
@@ -276,11 +287,11 @@ public:
         }
         submit(resource, fallback, fallbackBounds, transform, material, 1.f, 0,
                true, true, false, MeshRenderLayer3D::ShadowOnly,
-               std::move(assetLease));
+               std::move(assetLease),identity,occlusionOpacity);
       };
       const auto submitVisibilityObject = [&](std::size_t objectIndex) {
-        if(objectIndex<boxes_.size()){const Box3D& box=boxes_[objectIndex];submitObject(boxMesh_,&fallbackBox,&UnitBoxBounds(),box.transform,box.material);return;}
-        objectIndex-=boxes_.size();if(objectIndex<meshes_.size()){const MeshObject3D& mesh=meshes_[objectIndex];submitObject(mesh.mesh,mesh.mesh.cpuMesh.get(),nullptr,mesh.transform,mesh.material,mesh.assetLease);return;}
+        if(objectIndex<boxes_.size()){const Box3D& box=boxes_[objectIndex];submitObject(boxMesh_,&fallbackBox,&UnitBoxBounds(),box.transform,box.material,{},box.identity,box.occlusionOpacity);return;}
+        objectIndex-=boxes_.size();if(objectIndex<meshes_.size()){const MeshObject3D& mesh=meshes_[objectIndex];submitObject(mesh.mesh,mesh.mesh.cpuMesh.get(),nullptr,mesh.transform,mesh.material,mesh.assetLease,mesh.identity,mesh.occlusionOpacity);return;}
         const std::size_t lodIndex=objectIndex-meshes_.size();if(lodIndex>=lodMeshes_.size())return;
         const MeshLodObject3D &lod = lodMeshes_[lodIndex];
         ++stats.lodMeshInstances;
@@ -307,7 +318,7 @@ public:
                 options.maximumShadowOnlyInstances)
               submit(selected.mesh, selected.mesh.cpuMesh.get(), nullptr,
                      lod.transform, selected.material, 1.f, 0, true, true,
-                     false, MeshRenderLayer3D::ShadowOnly, lod.assetLease);
+                     false, MeshRenderLayer3D::ShadowOnly, lod.assetLease,lod.identity,lod.occlusionOpacity);
             else
               ++stats.shadowOnlyBudgetDropped;
           }
@@ -348,13 +359,13 @@ public:
                  transitionCode,
                  withinShadowDistance &&
                      selection.primaryLevel == selection.nearLevel,
-                 true, true, MeshRenderLayer3D::Opaque, lod.assetLease);
+                 true, true, MeshRenderLayer3D::Opaque, lod.assetLease,lod.identity,lod.occlusionOpacity);
           submit(farLevel.mesh, farLevel.mesh.cpuMesh.get(), nullptr,
                  lod.transform, farLevel.material, selection.farCoverage,
                  transitionCode,
                  withinShadowDistance &&
                      selection.primaryLevel == selection.farLevel,
-                 true, false, MeshRenderLayer3D::Opaque, lod.assetLease);
+                 true, false, MeshRenderLayer3D::Opaque, lod.assetLease,lod.identity,lod.occlusionOpacity);
         } else {
           const MeshLodLevel3D *selected = &lod.levels[selection.primaryLevel];
           if (!options.gpuInstancing && !selected->mesh.cpuMesh)
@@ -373,7 +384,7 @@ public:
           if (submit(selected->mesh, selected->mesh.cpuMesh.get(), nullptr,
                      lod.transform, selected->material, 1.f, 0,
                      withinShadowDistance, true, false,
-                     MeshRenderLayer3D::Opaque, lod.assetLease) &&
+                     MeshRenderLayer3D::Opaque, lod.assetLease,lod.identity,lod.occlusionOpacity) &&
               lod.levels[0].mesh.TriangleCount() >
                   selected->mesh.TriangleCount())
             stats.lodTrianglesSaved += lod.levels[0].mesh.TriangleCount() -
@@ -411,6 +422,11 @@ public:
             {base, base + 1, base + 2, base, base + 2, base + 3});
         ++stats.visibleLines;
       }
+      const auto mix=[](std::uint64_t& hash,std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};
+      stats.drawListRevision=14695981039346656037ull;stats.acceptedIdentityOrderFingerprint=14695981039346656037ull;
+      mix(stats.drawListRevision,draw.meshInstances.size()-meshSubmissionBegin);mix(stats.drawListRevision,draw.worldVertices.size()-worldVertexBegin);mix(stats.drawListRevision,draw.worldIndices.size()-worldIndexBegin);
+      for(std::size_t index=meshSubmissionBegin;index<draw.meshInstances.size();++index){const auto& instance=draw.meshInstances[index];mix(stats.drawListRevision,instance.mesh.value);mix(stats.drawListRevision,std::uint64_t(instance.layer));mix(stats.drawListRevision,instance.textures.value);mix(stats.drawListRevision,std::bit_cast<std::uint32_t>(instance.lodCoverage));mix(stats.drawListRevision,instance.lodSeed);mix(stats.drawListRevision,instance.identity.id.high);mix(stats.drawListRevision,instance.identity.id.low);mix(stats.drawListRevision,instance.identity.generation);for(const auto& row:instance.transform.values)for(float value:row)mix(stats.drawListRevision,std::bit_cast<std::uint32_t>(value));if(instance.identity){mix(stats.acceptedIdentityOrderFingerprint,instance.identity.id.high);mix(stats.acceptedIdentityOrderFingerprint,instance.identity.id.low);mix(stats.acceptedIdentityOrderFingerprint,instance.identity.generation);++stats.acceptedIdentityCount;}}
+      if(!stats.acceptedIdentityCount)stats.acceptedIdentityOrderFingerprint=0;
       return stats;
     }
 
@@ -478,5 +494,6 @@ private:
     Scene3DCapacity retainedCapacity_{};
     std::size_t lastReleasedBytes_{};
     std::uint64_t trimCount_{};
+    mutable std::uint64_t submissionSerial_{};
 };
 }

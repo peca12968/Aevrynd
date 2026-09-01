@@ -1,3 +1,5 @@
+#include "OcclusionDither.hlsli"
+
 cbuffer Scene : register(b0)
 {
     row_major float4x4 viewProjection;
@@ -16,6 +18,19 @@ cbuffer Scene : register(b0)
     row_major float4x4 currentUnjitteredViewProjection;
     float4 temporalJitterPixels;
     float4 heightFogParameters;
+    float4 aerialExtinctionScatteringHeight;
+    float4 aerialDistancePhase;
+    float4 aerialSkyRadianceSunScale;
+    float4 environmentDiffuseScaleIntensity;
+    float4 environmentSpecularScaleIntensity;
+    float4 environmentAnalyticIblWeights;
+    uint4 environmentPhaseReceipt;
+    float4 phaseSkyZenith;
+    float4 phaseSkyHorizon;
+    float4 phaseSkyGround;
+    float4 phaseAnalyticDiffuse;
+    float4 phaseSunDisk;
+    float4 environmentObjectFill;
 };
 
 float3 ApplyVelocityWind(float3 position,float packedWeight,uint materialClass,float time)
@@ -97,7 +112,7 @@ float2 VelocityPixelMain(MotionVertexOutput input) : SV_TARGET
 {
     ClipMotionLod(input.position, input.lodCoverage, input.lodSeed, input.lodInvert);
     if (motionParameters.x < 0.5 || input.currentClip.w <= 1e-6 || input.previousClip.w <= 1e-6)
-        return 0.0;
+        return float2(0.0,0.0);
     const float2 currentNdc = input.currentClip.xy / input.currentClip.w;
     const float2 previousNdc = input.previousClip.xy / input.previousClip.w;
     return (currentNdc - previousNdc) * float2(motionParameters.y, -motionParameters.z);
@@ -278,7 +293,7 @@ float2 VelocityMaskedPixelMain(MotionMaterialVertexOutput input) : SV_TARGET
     // 速度根簽章將基色描述符映射至 t2，因此此處以同一資源槽裁切透明遮罩。
     clip(input.alpha*normalTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
     ClipMotionLod(input.position,input.lodCoverage,input.lodSeed,input.lodInvert);
-    if(motionParameters.x<0.5||input.currentClip.w<=1e-6||input.previousClip.w<=1e-6)return 0.0;
+    if(motionParameters.x<0.5||input.currentClip.w<=1e-6||input.previousClip.w<=1e-6)return float2(0.0,0.0);
     const float2 currentNdc=input.currentClip.xy/input.currentClip.w;
     const float2 previousNdc=input.previousClip.xy/input.previousClip.w;
     return(currentNdc-previousNdc)*float2(motionParameters.y,-motionParameters.z);
@@ -382,6 +397,8 @@ struct InstancedVertexInput
     float4 tint : TINT;
     float4 material : MATERIAL;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
 };
 
 struct SkinnedVertexInput
@@ -401,6 +418,8 @@ struct SkinnedVertexInput
     float4 tint : TINT;
     float4 material : MATERIAL;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
     uint skinPaletteBase : SKINBASE;
     uint4 blendIndices : BLENDINDICES;
     float4 blendWeights : BLENDWEIGHT;
@@ -468,6 +487,10 @@ struct WorldPixelInput
     nointerpolation float alphaCutoff : TEXCOORD13;
     nointerpolation uint alphaMasked : TEXCOORD14;
     nointerpolation float normalScale : TEXCOORD15;
+    nointerpolation float occlusionOpacity : TEXCOORD16;
+    nointerpolation uint2 occlusionSeeds : TEXCOORD17;
+    float3 occlusionCoordinate : TEXCOORD18;
+    nointerpolation uint objectToken : OBJECTID;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; nointerpolation float lodCoverage : TEXCOORD4; nointerpolation uint lodSeed : TEXCOORD5; nointerpolation uint lodInvert : TEXCOORD6; };
@@ -589,6 +612,8 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.alphaCutoff = 0.5;
     output.alphaMasked = 0;
     output.normalScale = 1.0;
+    output.occlusionOpacity = 1.0;
+    output.occlusionCoordinate = input.position;
     output.shadowPosition = mul(lightViewProjection[0], float4(animatedPosition, 1.0));
     output.farShadowPosition = mul(lightViewProjection[1], float4(animatedPosition, 1.0));
     return output;
@@ -624,6 +649,9 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     // normal matrix 第一列的 w 原本未使用，直接承載逐材質強度而不擴充 instance stride。
     output.normalScale = input.normalRow0.w;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
+    output.occlusionCoordinate=input.position;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
     return output;
@@ -688,8 +716,25 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
     output.lodInvert = (input.textureData >> 12) & 1;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
+    output.occlusionCoordinate=skinnedPosition;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
+    return output;
+}
+
+WorldPixelInput ObjectIdInstancedVertexMain(InstancedVertexInput input, uint objectToken : OBJECTID)
+{
+    WorldPixelInput output=InstancedVertexMain(input);
+    output.objectToken=objectToken;
+    return output;
+}
+
+WorldPixelInput ObjectIdSkinnedVertexMain(SkinnedVertexInput input, uint objectToken : OBJECTID)
+{
+    WorldPixelInput output=SkinnedVertexMain(input);
+    output.objectToken=objectToken;
     return output;
 }
 
@@ -697,6 +742,26 @@ float3 BlendWeights(float3 normal)
 {
     const float3 blend = pow(abs(normal), 4.0);
     return blend / max(0.001, blend.x + blend.y + blend.z);
+}
+
+float PackedArmRoughness(float4 surfaceSample)
+{
+    // 正式路徑固定讀 G；legacy 分支只會被測試版 bytecode 啟用，用來證明 GPU oracle 能抓回歸。
+#if defined(AEVRYND_WORLD_LEGACY_ARM_ALPHA)
+    return surfaceSample.a;
+#else
+    return surfaceSample.g;
+#endif
+}
+
+float TerrainBiomeHeight(float vertexAlpha)
+{
+    // height-disabled 只存在於測試 bytecode，用來證明 GPU oracle 確實依賴正式 alpha 高度契約。
+#if defined(AEVRYND_WORLD_TERRAIN_HEIGHT_DISABLED)
+    return 0.0;
+#else
+    return saturate(vertexAlpha);
+#endif
 }
 
 float RayleighPhase(float cosine)
@@ -738,12 +803,10 @@ float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
 float3 EvaluateAnalyticSkyDiffuse(float3 normal, float3 sunDirection)
 {
     const float upperHemisphere = saturate(normal.y * 0.5 + 0.5);
-    const float horizon = pow(saturate(1.0 - abs(normal.y)), 2.0);
-    const float sunsetAmount = 1.0 - saturate(max(0.0, sunDirection.y) * 2.2);
-    const float3 horizonColor = lerp(float3(0.26, 0.38, 0.52), float3(0.72, 0.49, 0.30), sunsetAmount);
-    const float3 hemisphereColor = lerp(float3(0.055, 0.045, 0.035), float3(0.16, 0.36, 0.78), upperHemisphere);
+    const float horizon = pow(saturate(1.0 - abs(normal.y)), phaseSkyHorizon.a);
+    const float3 hemisphereColor = lerp(phaseSkyGround.rgb,phaseSkyZenith.rgb,upperHemisphere);
     const float sunWrap = pow(saturate(dot(normal, sunDirection) * 0.5 + 0.5), 4.0);
-    return clamp((hemisphereColor + horizonColor * horizon * 0.38 + float3(1.0, 0.68, 0.38) * sunWrap * 0.055) * 2.4, 0.0, 4.0);
+    return max(0.0,(lerp(hemisphereColor,phaseSkyHorizon.rgb,horizon*.42)+phaseSunDisk.rgb*sunWrap*.018)*phaseAnalyticDiffuse.rgb*phaseAnalyticDiffuse.a);
 }
 
 float3 EvaluateAnalyticSkySpecular(float3 reflectionDirection, float3 sunDirection, float roughness)
@@ -762,11 +825,20 @@ float3 RotateEnvironmentDirection(float3 direction)
 
 float3 EvaluateEnvironmentDiffuse(float3 normal, float3 sunDirection)
 {
-    float3 lighting = EvaluateAnalyticSkyDiffuse(normal, sunDirection);
+    const float3 analyticLighting = EvaluateAnalyticSkyDiffuse(normal, sunDirection);
+    float3 lighting = analyticLighting;
     [branch] if (environmentEnabled >= 0.5)
-        lighting = environmentIrradianceTexture.SampleLevel(materialSampler,
-                   RotateEnvironmentDirection(normal), 0.0);
-    return max(float3(0.0, 0.0, 0.0), lighting);
+    {
+        const float3 iblLighting = environmentIrradianceTexture.SampleLevel(materialSampler,
+                                   RotateEnvironmentDirection(normal), 0.0);
+        lighting = analyticLighting * environmentAnalyticIblWeights.x
+                 + iblLighting * environmentAnalyticIblWeights.y;
+    }
+    const float3 blendedEnvironment=max(float3(0.0,0.0,0.0),lighting)
+         * environmentDiffuseScaleIntensity.rgb * environmentDiffuseScaleIntensity.a;
+    // 中文：物件專用的 typed 解析底光位於 IBL 混合後，不修改天空、曝光或各相位的混合權重。
+    const float3 objectFill=environmentObjectFill.rgb*environmentObjectFill.a;
+    return blendedEnvironment+objectFill*step(0.5,environmentEnabled);
 }
 
 float3 BoxProjectedEnvironmentDirection(float3 worldPosition,float3 reflectionDirection)
@@ -787,12 +859,18 @@ float3 BoxProjectedEnvironmentDirection(float3 worldPosition,float3 reflectionDi
 float3 EvaluateEnvironmentSpecular(float3 worldPosition,float3 reflectionDirection,float3 sunDirection,
                                    float roughness)
 {
-    float3 lighting = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection, roughness);
+    const float3 analyticLighting = EvaluateAnalyticSkySpecular(reflectionDirection, sunDirection, roughness);
+    float3 lighting = analyticLighting;
     [branch] if (environmentEnabled >= 0.5)
-        lighting = environmentSpecularTexture.SampleLevel(materialSampler,
-                   RotateEnvironmentDirection(BoxProjectedEnvironmentDirection(worldPosition,reflectionDirection)),
-                   saturate(roughness) * environmentSpecularMaximumMip);
-    return max(float3(0.0, 0.0, 0.0), lighting);
+    {
+        const float3 iblLighting = environmentSpecularTexture.SampleLevel(materialSampler,
+                                   RotateEnvironmentDirection(BoxProjectedEnvironmentDirection(worldPosition,reflectionDirection)),
+                                   saturate(roughness) * environmentSpecularMaximumMip);
+        lighting = analyticLighting * environmentAnalyticIblWeights.z
+                 + iblLighting * environmentAnalyticIblWeights.w;
+    }
+    return max(float3(0.0, 0.0, 0.0), lighting)
+         * environmentSpecularScaleIntensity.rgb * environmentSpecularScaleIntensity.a;
 }
 
 float CloudHash(float2 coordinate)
@@ -1167,7 +1245,7 @@ float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirecti
     const float normalLight = saturate(dot(normal, lightDirection));
     const float normalView = saturate(dot(normal, viewDirection));
     if (normalLight <= 0.0 || normalView <= 0.0)
-        return 0.0;
+        return float3(0.0,0.0,0.0);
     const float3 halfVector = lightDirection + viewDirection;
     const float3 halfDirection = halfVector * rsqrt(max(dot(halfVector, halfVector), 0.000001));
     const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
@@ -1261,10 +1339,10 @@ float3 EvaluateHairSupplement(float3 normal,float3 tangent,float3 viewDirection,
     // 髮絲切線無效時保留標準 PBR；避免退化骨架或奇異縮放把 NaN 傳入 HDR。
     const float tangentLengthSquared=dot(tangent,tangent);
     const float halfLengthSquared=dot(viewDirection+lightDirection,viewDirection+lightDirection);
-    if(tangentLengthSquared<0.000001||tangentLengthSquared>1000000.0||halfLengthSquared<0.000001||halfLengthSquared>1000000.0)return 0.0;
+    if(tangentLengthSquared<0.000001||tangentLengthSquared>1000000.0||halfLengthSquared<0.000001||halfLengthSquared>1000000.0)return float3(0.0,0.0,0.0);
     const float3 projectedStrand=tangent-normal*dot(normal,tangent);
     const float strandLengthSquared=dot(projectedStrand,projectedStrand);
-    if(strandLengthSquared<0.000001||strandLengthSquared>1000000.0)return 0.0;
+    if(strandLengthSquared<0.000001||strandLengthSquared>1000000.0)return float3(0.0,0.0,0.0);
     const float3 strand=projectedStrand*rsqrt(strandLengthSquared);
     const float3 halfDirection=(viewDirection+lightDirection)*rsqrt(halfLengthSquared);
     const float normalLight=saturate(dot(normal,lightDirection));
@@ -1285,7 +1363,7 @@ float3 EvaluateClothSupplement(float3 normal,float3 viewDirection,float3 lightDi
 {
     const float3 halfVector=viewDirection+lightDirection;
     const float halfLengthSquared=dot(halfVector,halfVector);
-    if(halfLengthSquared<0.000001||halfLengthSquared>1000000.0)return 0.0;
+    if(halfLengthSquared<0.000001||halfLengthSquared>1000000.0)return float3(0.0,0.0,0.0);
     const float3 halfDirection=halfVector*rsqrt(halfLengthSquared);
     const float normalLight=saturate(dot(normal,lightDirection));
     const float normalView=saturate(dot(normal,viewDirection));
@@ -1332,7 +1410,7 @@ float3 ReconstructWorldPosition(float2 screenUv, float depth)
 
 float4 EvaluateWaterScreenSpaceReflection(float3 worldPosition,float3 normal,float3 viewDirection,float roughness)
 {
-    if(screenSpaceReflectionIntensity<=0.0||screenSpaceReflectionSceneAvailable<0.5||roughness>=screenSpaceReflectionMaximumRoughness)return 0.0;
+    if(screenSpaceReflectionIntensity<=0.0||screenSpaceReflectionSceneAvailable<0.5||roughness>=screenSpaceReflectionMaximumRoughness)return float4(0.0,0.0,0.0,0.0);
     const float3 reflectionDirection=normalize(reflect(-viewDirection,normal));
     const float3 rayOrigin=worldPosition+normal*.035;
     const float minimumDistance=min(.18,screenSpaceReflectionMaximumDistance*.02);
@@ -1364,7 +1442,7 @@ float4 EvaluateWaterScreenSpaceReflection(float3 worldPosition,float3 normal,flo
             return float4(opaqueSceneColorTexture.SampleLevel(screenPointClampSampler,screenUv,0.0).rgb,saturate(hitConfidence));
         }
     }
-    return 0.0;
+    return float4(0.0,0.0,0.0,0.0);
 }
 
 float MaskedAlphaToCoverage(float materialAlpha, float alphaCutoff)
@@ -1374,7 +1452,7 @@ float MaskedAlphaToCoverage(float materialAlpha, float alphaCutoff)
     return smoothstep(alphaCutoff - transitionWidth, alphaCutoff + transitionWidth, materialAlpha);
 }
 
-float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToCoverage)
+void ClipWorldLod(WorldPixelInput input)
 {
     // 固定的螢幕空間雜訊讓兩級網格互補淡化，不依賴時間所以不會逐幀閃爍。
     if (input.lodCoverage < 0.999)
@@ -1387,6 +1465,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float signedCoverage = input.lodInvert != 0 ? threshold - input.lodCoverage - 0.0000001 : input.lodCoverage - threshold;
         clip(signedCoverage);
     }
+}
+
+float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToCoverage)
+{
+    ClipWorldLod(input);
     const float3 geometricNormal = normalize(input.normal.xyz);
     float3 normal = geometricNormal;
     float roughness = clamp(input.material.x, 0.045, 1.0);
@@ -1412,7 +1495,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             baseColor *= sampledBaseColor.rgb;
             const float4 surfaceSample=roughnessTexture.Sample(materialSampler,detailUv);
             occlusion*=surfaceSample.r;
-            roughness=clamp(roughness*surfaceSample.a,0.045,1.0);
+            // Packed ARM 固定使用 R/G/B=AO/Roughness/Metallic；A 僅保留給資產容器，不得改變 PBR。
+            roughness=clamp(roughness*PackedArmRoughness(surfaceSample),0.045,1.0);
             metallic*=surfaceSample.b;
             // 導數必須在一致控制流中計算；有可靠頂點 tangent 時僅將它保留為奇異變形的安全退路。
             const float3 derivativeNormal = UvNormal(input.worldPosition, normal, detailUv);
@@ -1423,11 +1507,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             baseColor *= Triplanar(baseColorTexture, input.worldPosition, normal, input.textureData.y).rgb;
             const float4 surfaceSample=Triplanar(roughnessTexture,input.worldPosition,normal,input.textureData.z);
             occlusion*=surfaceSample.r;
-            roughness=clamp(roughness*surfaceSample.a,0.045,1.0);
+            roughness=clamp(roughness*PackedArmRoughness(surfaceSample),0.045,1.0);
             metallic*=surfaceSample.b;
             normal = ScaleNormalDetail(normal,TriplanarNormal(input.worldPosition,normal,input.textureData.z),normalDetailStrength);
         }
     }
+    // MASK 的材質 alpha 已先裁切；遮擋淡化再套用同一個穩定圖樣。
+    ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
 
     const float terrainMask = input.materialClass == 3 ? 1.0 : 0.0;
     [branch] if (terrainMask > 0.5)
@@ -1445,36 +1531,38 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             distanceMacroVariation = lerp(1.0 - terrainMacroVariationStrength, 1.0 + terrainMacroVariationStrength, distanceMacroNoise);
         }
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
-        const float terrainHeight = saturate(input.color.a);
+        const float terrainHeight = TerrainBiomeHeight(input.color.a);
         const float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
         const float soilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
         const float grassWeight = max(0.0, 1.0 - rockWeight - soilWeight);
         if (input.textureData.x > 0.5)
         {
-            const float2 terrainBaseUv = input.worldPosition.xz * input.textureData.y;
-            const float2 terrainDetailUv = input.worldPosition.xz * input.textureData.z;
-            const float3 grassColor = baseColorTexture.Sample(materialSampler, terrainBaseUv).rgb;
-            const float3 soilColor = soilBaseColorTexture.Sample(materialSampler, terrainBaseUv).rgb;
+            // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
+            const float3 grassColor = Triplanar(baseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
+            const float3 soilColor = Triplanar(soilBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
             const float3 rockColor = Triplanar(rockBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
             float4 terrainSurface = 1.0;
             float3 terrainNormal = geometricNormal;
             // 遠距離分支省略六次細節貼圖取樣；近景維持完整表面與法線，轉場以解析度無關權重淡化。
             [branch] if (terrainDetailWeight > 0.001)
             {
-                const float4 grassSurface=roughnessTexture.Sample(materialSampler,terrainDetailUv);
-                const float4 soilSurface=soilRoughnessTexture.Sample(materialSampler,terrainDetailUv);
+                // surface map 固定為 R=AO、G=roughness、B=metallic；A 不參與材質能量。
+                const float4 grassSurface=Triplanar(roughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
+                const float4 soilSurface=Triplanar(soilRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
                 const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
                 const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
                 terrainSurface=lerp(1.0,sampledSurface,terrainDetailWeight);
-                const float3 grassNormal = TerrainTopDownNormal(normalTexture, input.worldPosition, geometricNormal, input.textureData.z);
-                const float3 soilNormal = TerrainTopDownNormal(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+                const float3 grassNormal = TriplanarNormalFrom(normalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+                const float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
                 const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
                 const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
                 terrainNormal=normalize(lerp(geometricNormal,sampledNormal,saturate(terrainDetailWeight*terrainNormalDetailStrength)));
             }
-            baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
+            // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
+            const float microVariation=lerp(1.0,lerp(0.94,1.06,microNoise),terrainDetailWeight);
+            baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * microVariation * distanceMacroVariation;
             occlusion*=terrainSurface.r;
-            roughness=clamp(roughness*terrainSurface.a*(1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)),0.045,1.0);
+            roughness=clamp(roughness*PackedArmRoughness(terrainSurface)*(1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)),0.045,1.0);
             metallic*=terrainSurface.b;
             normal = terrainNormal;
         }
@@ -1492,17 +1580,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float skyMask = 1.0 - saturate(input.normal.w);
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
-    [branch] if (skyMask > 0.5)
+    float4 evaluatedOutput=float4(0.0,0.0,0.0,0.0);
+    if (skyMask > 0.5)
     {
-        baseColor=EvaluateAtmosphere(skyRay,skyLightDirection);
+        float3 skyColor=EvaluateAtmosphere(skyRay,skyLightDirection);
         [branch] if(volumetricCloudEnabled>=0.5&&cloudDensityScale>0.0&&skyRay.y>0.001&&cameraFogStart.y<cloudBaseAltitude+cloudThickness)
-            baseColor=ApplyVolumetricClouds(baseColor,skyRay,skyLightDirection,input.position.xy);
+            skyColor=ApplyVolumetricClouds(skyColor,skyRay,skyLightDirection,input.position.xy);
         // 天空不需要執行材質、陰影與點光源路徑，直接輸出曝光後的線性 HDR。
         const float skyAlpha = alphaToCoverage && input.alphaMasked != 0
                              ? MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff)
                              : input.color.a;
-        return float4(max(0.0, baseColor * colorPipeline.x), skyAlpha);
+        evaluatedOutput=float4(max(0.0, skyColor), skyAlpha);
     }
+    else
+    {
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
     const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
@@ -1660,28 +1751,53 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         shaded = waterComposite;
     }
     const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
-    const float cameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
-    const float distanceFog = saturate((cameraDistance - cameraFogStart.w) / max(0.001, fogEndEnabled.x - cameraFogStart.w));
-    const float horizonFog = pow(saturate(1.0 - abs(normalize(input.worldPosition - cameraFogStart.xyz).y)), 4.0) * saturate(cameraDistance / max(1.0, fogEndEnabled.x));
-    const float legacyFog = saturate(max(distanceFog, horizonFog * 0.72));
-    float combinedFog = legacyFog;
-    [branch]
-    if (heightFogParameters.x > 0.0)
+    float aerialTransmittance = 1.0;
+    float3 aerialInscattering = 0.0;
+    [branch] if (fogEndEnabled.y > 0.5 && aerialExtinctionScatteringHeight.x > 0.0 && input.normal.w > 0.0)
     {
-        // 端點梯形積分近似指數高度霧；指數限幅避免極端世界座標產生非有限值。
-        const float cameraDensity = heightFogParameters.x * exp(clamp(-heightFogParameters.y * (cameraFogStart.y - heightFogParameters.z), -20.0, 20.0));
-        const float fragmentDensity = heightFogParameters.x * exp(clamp(-heightFogParameters.y * (input.worldPosition.y - heightFogParameters.z), -20.0, 20.0));
-        const float opticalDepth = min(cameraDistance * 0.5 * (cameraDensity + fragmentDensity), 80.0);
-        const float heightFog = min(1.0 - exp(-opticalDepth), saturate(heightFogParameters.w));
-        combinedFog = saturate(1.0 - (1.0 - legacyFog) * (1.0 - heightFog));
+        const float3 cameraRay = input.worldPosition - cameraFogStart.xyz;
+        const float cameraDistance = length(cameraRay);
+        const float availableDistance = max(0.0, min(cameraDistance, aerialDistancePhase.z) -
+                                                  aerialDistancePhase.x);
+        const float onset = smoothstep(0.0, max(0.001, aerialDistancePhase.y), availableDistance);
+        const float effectiveDistance = availableDistance * onset;
+        [branch] if (effectiveDistance > 0.0 && cameraDistance > 0.0)
+        {
+            const float3 rayDirection = cameraRay / cameraDistance;
+            const float startHeight = cameraFogStart.y + rayDirection.y * aerialDistancePhase.x;
+            const float startDensity = exp(clamp(-aerialExtinctionScatteringHeight.z *
+                                                  (startHeight - aerialExtinctionScatteringHeight.w), -20.0, 20.0));
+            const float heightRate = aerialExtinctionScatteringHeight.z * rayDirection.y;
+            float densityIntegral = abs(heightRate) < 0.00001
+                ? startDensity * availableDistance
+                : startDensity * (1.0 - exp(clamp(-heightRate * availableDistance, -20.0, 20.0))) / heightRate;
+            densityIntegral *= onset;
+            const float opticalDepth = min(80.0, max(0.0, aerialExtinctionScatteringHeight.x * densityIntegral));
+            const float transmittance = exp(-opticalDepth);
+            const float scatteredFraction = saturate(aerialExtinctionScatteringHeight.y /
+                                                      aerialExtinctionScatteringHeight.x) * (1.0 - transmittance);
+            const float viewSunCosine = dot(rayDirection, lightDirection);
+            const float anisotropy = clamp(aerialDistancePhase.w, -0.8, 0.85);
+            const float phaseDenominator = max(0.0001, 1.0 + anisotropy * anisotropy -
+                                                2.0 * anisotropy * viewSunCosine);
+            const float phaseRatio = (1.0 - anisotropy * anisotropy) /
+                                     (phaseDenominator * sqrt(phaseDenominator));
+            const float3 sourceRadiance = aerialSkyRadianceSunScale.rgb +
+                lightColorIntensity.rgb * lightColorIntensity.w *
+                aerialSkyRadianceSunScale.w * phaseRatio;
+            const float surfaceWeight = saturate(input.normal.w);
+            aerialTransmittance = lerp(1.0, transmittance, surfaceWeight);
+            aerialInscattering = max(0.0, sourceRadiance) * scatteredFraction * surfaceWeight;
+        }
     }
-    const float fogAmount = combinedFog * fogEndEnabled.y * fogColor.a * saturate(input.normal.w);
-    // 世界著色器只輸出曝光後的線性 HDR；ACES 與 sRGB 由全畫面後處理統一執行。
+    // 世界著色器只輸出未曝光線性 HDR；曝光、ACES 與 sRGB 由全畫面後處理統一執行。
     float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
     if(alphaToCoverage && input.alphaMasked != 0)
         outputAlpha = MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff);
-    const float3 directionalLightShafts = EvaluateDirectionalLightShafts(input.worldPosition, lightDirection) * saturate(input.normal.w);
-    return float4(max(0.0, (lerp(lit, fogColor.rgb, fogAmount) + directionalLightShafts) * colorPipeline.x), outputAlpha);
+    // 光柱只由全螢幕 VolumetricAtmosphere pass 依 scene depth 合成；在每個表面再次積分會形成垂直白柱並雙重加色。
+    evaluatedOutput=float4(max(0.0, lit * aerialTransmittance + aerialInscattering), outputAlpha);
+    }
+    return evaluatedOutput;
 }
 
 float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
@@ -1692,4 +1808,34 @@ float4 WorldPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) 
 float4 WorldMaskedPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
     return EvaluateWorldPixel(input, isFrontFace, true);
+}
+
+uint ObjectIdPixelMain(WorldPixelInput input) : SV_TARGET
+{
+    // ID pass 重用正式 LOD 點陣裁切；surface 四個 UNORM bytes 在此承載無損 frame token。
+    ClipWorldLod(input);
+    ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
+    return input.objectToken;
+}
+
+uint ObjectIdMaskedPixelMain(WorldPixelInput input) : SV_TARGET
+{
+    clip(input.color.a*baseColorTexture.Sample(materialSampler,input.uv*input.textureData.y).a-input.alphaCutoff);
+    return ObjectIdPixelMain(input);
+}
+
+struct ObjectIdColorOutput { float4 color : SV_TARGET0; uint objectToken : SV_TARGET1; };
+ObjectIdColorOutput ObjectIdColorPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace)
+{
+    ObjectIdColorOutput output;
+    output.color=EvaluateWorldPixel(input,isFrontFace,false);
+    output.objectToken=input.objectToken;
+    return output;
+}
+ObjectIdColorOutput ObjectIdMaskedColorPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace)
+{
+    ObjectIdColorOutput output;
+    output.color=EvaluateWorldPixel(input,isFrontFace,true);
+    output.objectToken=input.objectToken;
+    return output;
 }

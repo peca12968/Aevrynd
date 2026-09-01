@@ -22,5 +22,5 @@ int main(){
     if(normalized.heightFogDensity!=0.f||!Near(normalized.heightFogFalloff,.12f)||normalized.heightFogMaximumOpacity!=0.f||EvaluateHeightFogAmount3D(atmosphere,{std::numeric_limits<float>::infinity(),0.f,0.f})!=0.f){std::cerr<<"Invalid input was not fail-closed\n";return 5;}
     constexpr int Iterations=1000000;volatile float sink{};const auto start=std::chrono::steady_clock::now();for(int index=0;index<Iterations;++index)sink=sink+EvaluateHeightFogAmount3D(atmosphere,{float(index%400),float(index%70),float(index%900)});const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-start).count();
     if(!std::isfinite(float(sink))||elapsed>100000){std::cerr<<"Height fog CPU budget exceeded: "<<elapsed<<" us\n";return 6;}
-    std::cout<<"HeightFog3D PASS evaluations="<<Iterations<<" cpuUs="<<elapsed<<" sceneConstantBytes=512 additionalResidentBytes=0\n";return 0;
+    std::cout<<"HeightFog3D PASS evaluations="<<Iterations<<" cpuUs="<<elapsed<<" sceneConstantBytes=768 additionalResidentBytes=0\n";return 0;
 }

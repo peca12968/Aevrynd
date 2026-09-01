@@ -5,6 +5,14 @@
 #include <unordered_set>
 
 namespace GameplayLab {
+// 近戰有效距離由武器長度、雙方碰撞半徑與動作接觸餘量共同決定；AI停止距離
+// 稍小於有效距離，確保畫面模型、collider與AI座標完全一致且仍可命中。
+inline constexpr float GameplayMeleeWeaponLength3D=.72f;
+inline constexpr float GameplayPlayerCapsuleRadius3D=.38f;
+inline constexpr float GameplayMonsterCapsuleRadius3D=.45f;
+inline constexpr float GameplayMeleeMotionAllowance3D=.40f;
+inline constexpr float GameplayMeleeContactReach3D=GameplayMeleeWeaponLength3D+GameplayPlayerCapsuleRadius3D+GameplayMonsterCapsuleRadius3D+GameplayMeleeMotionAllowance3D;
+inline constexpr float GameplayMonsterStopDistance3D=GameplayMeleeContactReach3D-.02f;
 enum class Attack3D : std::uint8_t {None,Attack1,Attack2,Attack3};
 struct CombatInput3D {Aevrynd::Vec3 playerPosition{},playerForward{0,0,1};bool attackPressed{};};
 struct CombatStats3D {std::uint64_t sweeps{},hits{},duplicateHits{},kills{};};

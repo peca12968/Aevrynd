@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "pass",
-  "runtimeManifestSha256": "2a63bc8ab04f0f7ddad51b4883fe17ecbaa6bcd7b64609320defde57f1812240",
+  "runtimeManifestSha256": "20a4f80009c7d48b33cd7825f262a089f1fd0608532a5cf6fc04c5473f01ab7d",
   "quality": "Ultra",
   "mipPolicy": "complete-chain",
   "tool": {
@@ -46,8 +46,9 @@
             {
               "channel": "base",
               "path": "forest-ground-04/slot-0-base.dds",
+              "sourceColorSpace": "sRGB",
               "bytes": 5592580,
-              "sha256": "dba770a1b96ef6f0a45e0edff99594499fcc8d76abfa62a0986153313f350865",
+              "sha256": "00850c7c033be2bcb2818c0ab3db91a62c8353eba746daede3c0de373c3e32b4",
               "height": 2048,
               "width": 2048,
               "mips": 12,
@@ -58,6 +59,7 @@
             {
               "channel": "normal",
               "path": "forest-ground-04/slot-0-normal.dds",
+              "sourceColorSpace": "linear",
               "bytes": 5592580,
               "sha256": "56e687b2a208f2eaaf9b0e3670530f0a36e5e88d6e74b26090633daaa4e9db93",
               "height": 2048,
@@ -70,6 +72,7 @@
             {
               "channel": "arm",
               "path": "forest-ground-04/slot-0-arm.dds",
+              "sourceColorSpace": "linear",
               "bytes": 5592580,
               "sha256": "3427bf0a83e0c33326a207f700305620402fd0fb6c532240f204bcebefeabcc4",
               "height": 2048,

@@ -53,7 +53,10 @@ float HalfToFloat(std::uint16_t half) {
 struct Capture {
   std::uint64_t hash{14695981039346656037ull};
   double average{}, variance{};
+  double nonzeroFraction{}, neutralWhiteFraction{}, maximumVerticalRunFraction{},
+      longColumnFraction{};
   std::uint64_t gpuNanoseconds{};
+  std::uint64_t temporalAccepted{}, temporalRejected{}, temporalInvalid{};
 };
 
 void WriteBmp(const std::filesystem::path &path, std::uint32_t width,
@@ -212,6 +215,9 @@ int main() {
 
     auto execute = [&](VolumetricAtmospherePassSettings3D settings,
                        const char *captureName) {
+      const auto acceptedBefore = pass.Stats().temporalAcceptedPixels;
+      const auto rejectedBefore = pass.Stats().temporalRejectedPixels;
+      const auto invalidBefore = pass.Stats().temporalInvalidPixels;
       Require(allocator->Reset(), "Allocator reset failed");
       Require(list->Reset(allocator.Get(), nullptr), "List reset failed");
       list->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
@@ -226,11 +232,12 @@ int main() {
                                       &rowBytes, &totalBytes);
         D3D12_RESOURCE_DESC buffer = timestampDescription;
         buffer.Width = totalBytes;
-        Require(device->CreateCommittedResource(
+        const HRESULT pixelReadbackResult=device->CreateCommittedResource(
                     &readbackHeap, D3D12_HEAP_FLAG_NONE, &buffer,
                     D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                    IID_PPV_ARGS(&pixelReadback)),
-                "Pixel readback failed");
+                    IID_PPV_ARGS(&pixelReadback));
+        if(FAILED(pixelReadbackResult)){std::cerr<<"Pixel readback HRESULT=0x"<<std::hex<<std::uint32_t(pixelReadbackResult)<<" removed=0x"<<std::uint32_t(device->GetDeviceRemovedReason())<<std::dec<<'\n';if(infoQueue){const auto count=infoQueue->GetNumStoredMessagesAllowedByRetrievalFilter();for(std::uint64_t index=0;index<count;++index){SIZE_T bytes{};infoQueue->GetMessage(index,nullptr,&bytes);std::vector<std::byte> storage(bytes);auto* message=reinterpret_cast<D3D12_MESSAGE*>(storage.data());if(SUCCEEDED(infoQueue->GetMessage(index,message,&bytes)))std::cerr<<"D3D id="<<message->ID<<" severity="<<message->Severity<<" text="<<message->pDescription<<'\n';}}}
+        Require(pixelReadbackResult,"Pixel readback failed");
         D3D12_RESOURCE_BARRIER copy{};
         copy.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         copy.Transition = {pass.OutputResource(),
@@ -256,7 +263,11 @@ int main() {
       ID3D12CommandList *lists[] = {list.Get()};
       queue->ExecuteCommandLists(1, lists);
       wait();
+      (void)pass.CollectTemporalDiagnostics(settings.frameSlice);
       Capture capture{};
+      capture.temporalAccepted = pass.Stats().temporalAcceptedPixels - acceptedBefore;
+      capture.temporalRejected = pass.Stats().temporalRejectedPixels - rejectedBefore;
+      capture.temporalInvalid = pass.Stats().temporalInvalidPixels - invalidBefore;
       std::uint64_t *timestamps{};
       D3D12_RANGE timestampRange{0, 16};
       Require(timestampReadback->Map(0, &timestampRange,
@@ -279,16 +290,23 @@ int main() {
       const auto width = pass.Stats().outputWidth;
       const auto height = pass.Stats().outputHeight;
       double sum{}, squareSum{};
+      std::size_t nonzero{}, neutralWhite{};
+      std::vector<std::uint32_t> currentRuns(width), maximumRuns(width);
       for (std::uint32_t y = 0; y < height; ++y) {
         const auto *row = reinterpret_cast<const std::uint16_t *>(
             pixels + std::size_t(y) * footprint.Footprint.RowPitch);
         for (std::uint32_t x = 0; x < width; ++x) {
-          const double luminance =
-              HalfToFloat(row[x * 4]) * .2126 +
-              HalfToFloat(row[x * 4 + 1]) * .7152 +
-              HalfToFloat(row[x * 4 + 2]) * .0722;
+          const float red=(std::max)(0.f,HalfToFloat(row[x*4])),green=(std::max)(0.f,HalfToFloat(row[x*4+1])),blue=(std::max)(0.f,HalfToFloat(row[x*4+2]));
+          const double luminance=red*.2126+green*.7152+blue*.0722;
           sum += luminance;
           squareSum += luminance * luminance;
+          nonzero += luminance > 1e-5;
+          const float maximum=(std::max)({red,green,blue}),minimum=(std::min)({red,green,blue});
+          const bool white=maximum>.8f&&(maximum-minimum)/(std::max)(maximum,1e-5f)<=.03f;
+          neutralWhite+=white;
+          const bool column=maximum>.6f&&(maximum-minimum)/(std::max)(maximum,1e-5f)<=.15f;
+          currentRuns[x]=column?currentRuns[x]+1u:0u;
+          maximumRuns[x]=(std::max)(maximumRuns[x],currentRuns[x]);
           for (std::uint32_t channel = 0; channel < 4; ++channel) {
             const auto value = row[x * 4 + channel];
             capture.hash = (capture.hash ^ (value & 0xffu)) * 1099511628211ull;
@@ -299,6 +317,11 @@ int main() {
       const double count = double(width) * height;
       capture.average = sum / count;
       capture.variance = squareSum / count - capture.average * capture.average;
+      capture.nonzeroFraction=double(nonzero)/count;
+      capture.neutralWhiteFraction=double(neutralWhite)/count;
+      const auto maximumRun=*std::ranges::max_element(maximumRuns);
+      capture.maximumVerticalRunFraction=double(maximumRun)/height;
+      capture.longColumnFraction=double(std::ranges::count_if(maximumRuns,[&](std::uint32_t run){return run>height*.18;}))/width;
       WriteBmp(captureDirectory / captureName, width, height,
                footprint.Footprint.RowPitch, pixels);
       pixelReadback->Unmap(0, &noWrite);
@@ -306,12 +329,17 @@ int main() {
     };
 
     VolumetricAtmospherePassSettings3D settings{};
+    settings.enableTemporalDiagnostics = true;
+    // 單位投影只決定射線方向；雲層仍使用公里級世界座標以覆蓋程序噪音。
+    settings.viewportWidth = 960.f;
+    settings.viewportHeight = 540.f;
     settings.resetHistory = true;
     const auto day = execute(settings, "day.bmp");
     settings.resetHistory = false;
     Capture dayTemporal{};
     for (std::uint32_t sample = 1; sample < 8; ++sample) {
       settings.temporalSampleIndex = sample;
+      settings.frameSlice = sample % 3;
       dayTemporal = execute(settings, "day-temporal.bmp");
     }
     settings.resetHistory = true;
@@ -325,8 +353,50 @@ int main() {
     settings.historyWeight = (std::numeric_limits<float>::quiet_NaN)();
     settings.cloudCoverage = (std::numeric_limits<float>::infinity)();
     settings.cloudDensity = -(std::numeric_limits<float>::infinity)();
+    settings.lightShaftIntensity = (std::numeric_limits<float>::infinity)();
+    settings.heightFogDensity = (std::numeric_limits<float>::infinity)();
+    settings.heightFogMaximumOpacity = (std::numeric_limits<float>::infinity)();
     settings.sunDirectionX = settings.sunDirectionY = settings.sunDirectionZ = 0;
     const auto hostile = execute(settings, "hostile-normalized.bmp");
+    VolumetricAtmospherePassSettings3D temporalReset{};
+    temporalReset.enableTemporalDiagnostics = true;
+    temporalReset.viewportWidth = 960.f;
+    temporalReset.viewportHeight = 540.f;
+    temporalReset.resetHistory = true;
+    temporalReset.timeSeconds = 1.f;
+    execute(temporalReset, "temporal-reset.bmp");
+    temporalReset.resetHistory = false;
+    temporalReset.frameSlice = 1;
+    temporalReset.timeSeconds = 1.1f;
+    execute(temporalReset, "temporal-history.bmp");
+    const auto timeJumpsBefore = pass.Stats().temporalTimeJumpResets;
+    temporalReset.frameSlice = 2;
+    temporalReset.timeSeconds = 20.f;
+    execute(temporalReset, "temporal-time-jump.bmp");
+    const auto topologyBefore = pass.Stats().temporalTopologyResets;
+    temporalReset.frameSlice = 0;
+    temporalReset.timeSeconds = 20.1f;
+    temporalReset.phase = VolumetricAtmospherePhase3D::Dusk;
+    execute(temporalReset, "temporal-phase-reset.bmp");
+    if (pass.Stats().temporalTimeJumpResets != timeJumpsBefore + 1 ||
+        pass.Stats().temporalTopologyResets != topologyBefore + 1)
+      return 10;
+    const std::array routePhases{VolumetricAtmospherePhase3D::Day,
+                                 VolumetricAtmospherePhase3D::Dusk,
+                                 VolumetricAtmospherePhase3D::Night};
+    const std::array routeNames{"day","dusk","night"};
+    for(std::size_t routePhase=0;routePhase<routePhases.size();++routePhase){
+      VolumetricAtmospherePassSettings3D route{};route.enableTemporalDiagnostics=true;route.viewportWidth=960;route.viewportHeight=540;route.phase=routePhases[routePhase];route.resetHistory=true;route.frameSlice=std::uint32_t(routePhase%3);
+      route.cloudDensity=0;route.lightShaftIntensity=0;const auto bothOff=execute(route,(std::string("route-")+routeNames[routePhase]+"-off.bmp").c_str());
+      route.cloudDensity=1.08f;route.lightShaftIntensity=0;const auto cloudOnly=execute(route,(std::string("route-")+routeNames[routePhase]+"-cloud.bmp").c_str());
+      route.cloudDensity=0;route.lightShaftIntensity=.68f;const auto shaftOnly=execute(route,(std::string("route-")+routeNames[routePhase]+"-shaft.bmp").c_str());
+      route.cloudDensity=1.08f;route.lightShaftIntensity=.68f;const auto both=execute(route,(std::string("route-")+routeNames[routePhase]+"-both.bmp").c_str());
+      const auto repeated=execute(route,(std::string("route-")+routeNames[routePhase]+"-repeat.bmp").c_str());
+      const double whiteLimit=routePhase==0?.03:(routePhase==1?.01:.001);
+      const bool routeValid=bothOff.nonzeroFraction==0&&cloudOnly.nonzeroFraction>=.05&&cloudOnly.nonzeroFraction<=.8&&cloudOnly.variance>1e-7&&shaftOnly.nonzeroFraction>0&&both.nonzeroFraction>0&&both.hash==repeated.hash&&both.neutralWhiteFraction<=whiteLimit&&both.maximumVerticalRunFraction<=.18&&both.longColumnFraction<=.02&&both.gpuNanoseconds<=1500000ull&&both.gpuNanoseconds<=bothOff.gpuNanoseconds+750000ull;
+      std::cout<<"route phase="<<routeNames[routePhase]<<" cloudChanged="<<cloudOnly.nonzeroFraction<<" cloudVariance="<<cloudOnly.variance<<" shaftChanged="<<shaftOnly.nonzeroFraction<<" white="<<both.neutralWhiteFraction<<" vertical="<<both.maximumVerticalRunFraction<<" columns="<<both.longColumnFraction<<" gpuUs="<<bothOff.gpuNanoseconds/1000<<'/'<<both.gpuNanoseconds/1000<<" deterministic="<<(both.hash==repeated.hash)<<'\n';
+      if(!routeValid)return 9;
+    }
     const auto dispatchesBeforeDisabled = pass.Stats().dispatches;
     const auto groupsBeforeDisabled = pass.Stats().dispatchedThreadGroups;
     settings.enabled = false;
@@ -340,8 +410,25 @@ int main() {
             14695981039346656037ull ||
         mismatch.hash != 14695981039346656037ull)
       return 4;
+    std::cout << "probe day=" << day.average << '/' << day.variance << '/' << day.hash
+              << " temporal=" << dayTemporal.average << '/' << dayTemporal.hash
+              << " repeat=" << dayRepeat.average << '/' << dayRepeat.hash
+              << " dusk=" << dusk.average << '/' << dusk.variance << '/' << dusk.hash
+              << " night=" << night.average << '/' << night.variance << '/' << night.hash
+              << " hostile=" << hostile.average << '/' << hostile.variance
+              << " temporalCounters=" << day.temporalAccepted << '/'
+              << dayTemporal.temporalAccepted << '/' << dayTemporal.temporalRejected
+              << '\n';
+    const bool temporalCaptureProvenance =
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+        day.temporalAccepted == 0 &&
+        dayTemporal.temporalAccepted + dayTemporal.temporalRejected > 0;
+#else
+        true;
+#endif
     if (!day.gpuNanoseconds || !dusk.gpuNanoseconds || !night.gpuNanoseconds ||
         day.hash == dayTemporal.hash || day.hash != dayRepeat.hash ||
+        !temporalCaptureProvenance ||
         day.hash == dusk.hash || dusk.hash == night.hash ||
         day.average <= night.average || day.variance <= .000001 ||
         dusk.variance <= .000001 || night.variance <= .000001 ||
@@ -352,7 +439,7 @@ int main() {
     const auto releasesBeforeResize = pass.Stats().resourceReleases;
     if (!pass.Resize(640, 360, .25f) || pass.Stats().outputWidth != 160 ||
         pass.Stats().outputHeight != 90 ||
-        pass.Stats().resourceReleases != releasesBeforeResize + 2 ||
+        pass.Stats().resourceReleases != releasesBeforeResize + 4 ||
         pass.Stats().historyValid)
       return 6;
     settings.resolutionScale = .25f;
@@ -367,9 +454,24 @@ int main() {
     const auto dispatches = pass.Stats().dispatches;
     const auto groups = pass.Stats().dispatchedThreadGroups;
     const auto resident = pass.Stats().residentBytes;
+    const auto temporalAccepted=pass.Stats().temporalAcceptedPixels,temporalRejected=pass.Stats().temporalRejectedPixels,temporalInvalid=pass.Stats().temporalInvalidPixels,temporalDiagnosticFrames=pass.Stats().temporalDiagnosticFrames;
+    std::cout << "temporal counters before shutdown accepted=" << temporalAccepted
+              << " rejected=" << temporalRejected << " invalid=" << temporalInvalid
+              << " frames=" << temporalDiagnosticFrames << '\n';
+    // 無場景深度的 pass smoke 僅驗證 counter 管線；完整三分類由 renderer integration 強制驗證。
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+    if (!(temporalAccepted + temporalRejected + temporalInvalid) ||
+        temporalDiagnosticFrames < 8)
+      return 8;
+#else
+    if (temporalAccepted || temporalRejected || temporalInvalid ||
+        temporalDiagnosticFrames || pass.Stats().temporalDiagnosticsAvailable)
+      return 8;
+#endif
     pass.Shutdown();
     if (pass.Stats().residentBytes || pass.OutputResource() ||
-        pass.Stats().resourceReleases != releasesBeforeShutdown + 2 ||
+        pass.Stats().resourceReleases != releasesBeforeShutdown +
+            (AEVRYND_INTERNAL_RENDERER_TEST_HOOKS ? 12 : 5) ||
         resourcesCreated != pass.Stats().resourceReleases)
       return 8;
 
@@ -381,12 +483,15 @@ int main() {
     settings.resetHistory = true;
     const auto rebuilt = execute(settings, "rebuilt-device-state.bmp");
     if (!rebuilt.hash || !pass.Stats().historyValid ||
-        pass.Stats().resourceCreates != 2 || pass.Stats().dispatches != 1)
+        pass.Stats().resourceCreates !=
+            (AEVRYND_INTERNAL_RENDERER_TEST_HOOKS ? 12 : 5) ||
+        pass.Stats().dispatches != 1)
       return 8;
     wait();
     pass.Shutdown();
     if (pass.Stats().residentBytes || pass.OutputResource() ||
-        pass.Stats().resourceReleases != 2)
+        pass.Stats().resourceReleases !=
+            (AEVRYND_INTERNAL_RENDERER_TEST_HOOKS ? 12 : 5))
       return 8;
 
     std::uint64_t gpuErrors{}, gpuWarnings{};
@@ -413,6 +518,10 @@ int main() {
               << " gpuErrors=" << gpuErrors << " gpuWarnings=" << gpuWarnings
               << " dayHash=" << day.hash << " duskHash=" << dusk.hash
               << " nightHash=" << night.hash
+              << " temporalAccepted=" << temporalAccepted
+              << " temporalRejected=" << temporalRejected
+              << " temporalInvalid=" << temporalInvalid
+              << " temporalDiagnosticFrames=" << temporalDiagnosticFrames
               << " captures=" << captureDirectory.string() << '\n';
     CloseHandle(eventHandle);
     return gpuErrors || gpuWarnings || FAILED(removed) ? 9 : 0;

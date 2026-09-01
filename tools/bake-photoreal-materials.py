@@ -18,6 +18,11 @@ from PIL import Image
 
 DIRECTXTEX_SHA256 = "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
 PEAK_WORKING_SET_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
+CHANNEL_COOK_CONTRACT = {
+    "base": {"format": "BC7_UNORM_SRGB", "formatId": 99, "sourceColorSpace": "sRGB"},
+    "normal": {"format": "BC5_UNORM", "formatId": 83, "sourceColorSpace": "linear"},
+    "arm": {"format": "BC7_UNORM", "formatId": 98, "sourceColorSpace": "linear"},
+}
 
 
 def sha256(path: Path) -> str:
@@ -85,9 +90,25 @@ def dds_header(path: Path) -> dict[str, int]:
     return {"height": values[2], "width": values[3], "mips": values[6], "format": dx10[0], "dimension": dx10[1], "array": dx10[3]}
 
 
-def run_texconv(texconv: Path, source: Path, output: Path, format_name: str) -> int:
+def texconv_command(texconv: Path, source: Path, output: Path, channel: str) -> list[str]:
+    contract = CHANNEL_COOK_CONTRACT.get(channel)
+    if contract is None:
+        raise ValueError(f"Unknown material cook channel: {channel}")
+    format_is_srgb = contract["format"].endswith("_SRGB")
+    source_is_srgb = contract["sourceColorSpace"] == "sRGB"
+    if format_is_srgb != source_is_srgb or source_is_srgb != (channel == "base"):
+        raise ValueError(f"Material color-space contract is inconsistent: {channel}")
+    command = [str(texconv), "-nologo", "-y", "-dx10", "-m", "0", "-f", contract["format"]]
+    # 中文註解：只有顏色貼圖宣告 sRGB 輸入；data map 一律保持 linear，避免二次 gamma。
+    if source_is_srgb:
+        command.append("-srgb")
+    command.extend(["-o", str(output.parent), str(source)])
+    return command
+
+
+def run_texconv(texconv: Path, source: Path, output: Path, channel: str) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
-    completed = subprocess.Popen([str(texconv), "-nologo", "-y", "-dx10", "-m", "0", "-f", format_name, "-o", str(output.parent), str(source)],
+    completed = subprocess.Popen(texconv_command(texconv, source, output, channel),
                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = completed.communicate(timeout=300)
     tool_peak = peak_working_set_handle(int(completed._handle)) if os.name == "nt" else 0
@@ -209,18 +230,19 @@ def cook(args: argparse.Namespace) -> dict:
                     arm_image = Image.fromarray(np.stack((ao, roughness, metallic, alpha), axis=-1), "RGBA")
                     packing = f"AO/Roughness packed with explicit non-metallic scalar {material['metallicScalar']:g}"
                 prepared = {"base": images["base"], "normal": Image.fromarray(normal, "RGBA"), "arm": arm_image}
-                formats = {"base": ("BC7_UNORM_SRGB", 99), "normal": ("BC5_UNORM", 83), "arm": ("BC7_UNORM", 98)}
                 material_output = []
                 for channel, image in prepared.items():
                     png = temporary / f"{material['name']}-{channel}.png"
                     image.save(png, format="PNG", compress_level=1)
                     destination = output / name / f"{material['name']}-{channel}.dds"
-                    tool_peak = max(tool_peak, run_texconv(texconv, png, destination, formats[channel][0]))
+                    contract = CHANNEL_COOK_CONTRACT[channel]
+                    tool_peak = max(tool_peak, run_texconv(texconv, png, destination, channel))
                     header = dds_header(destination)
-                    if (header["format"] != formats[channel][1] or header["mips"] != expected_mips or
+                    if (header["format"] != contract["formatId"] or header["mips"] != expected_mips or
                             max(header["width"], header["height"]) != output_resolution or header["dimension"] != 3):
                         raise ValueError(f"Cooked DDS contract failed: {destination}")
                     material_output.append({"channel": channel, "path": destination.relative_to(output).as_posix(),
+                                            "sourceColorSpace": contract["sourceColorSpace"],
                                             "bytes": destination.stat().st_size, "sha256": sha256(destination), **header})
                 asset_outputs.append({"slot": material["name"], "alphaMode": material["alphaMode"],
                                       "normalConversion": "OpenGL green inverted to DirectX", "surfacePacking": packing,
