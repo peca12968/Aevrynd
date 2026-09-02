@@ -29,7 +29,7 @@ $coreFiles = @(
 )
 $scriptFiles = @(
     'Common.ps1', 'Install.ps1', 'Register-Startup.ps1', 'Set-Configuration.ps1',
-    'Set-Credentials.ps1', 'Start-Gateway.ps1', 'Start-Tunnel.ps1',
+    'Set-Credentials.ps1', 'Set-SecondaryQwenCredential.ps1', 'Start-Gateway.ps1', 'Start-Tunnel.ps1',
     'Stop-Gateway.ps1', 'Stop-Tunnel.ps1', 'Test-Health.ps1',
     'Test-TunnelConfiguration.ps1', 'Funnel.Common.ps1', 'Start-Funnel.ps1',
     'Stop-Funnel.ps1', 'Test-FunnelConfiguration.ps1', 'Uninstall.ps1', 'gateway_runner.py',

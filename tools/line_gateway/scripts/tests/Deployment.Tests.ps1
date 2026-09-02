@@ -34,6 +34,11 @@ function Invoke-Test {
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "aevrynd-line-gateway-tests-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 try {
+    Invoke-Test 'secondary Qwen credential setter has no plaintext input path' {
+        $content = Get-Content -Raw (Join-Path $scriptsRoot 'Set-SecondaryQwenCredential.ps1')
+        foreach ($required in @('Assert-Administrator','InstallFile','Read-Host','AsSecureString','CredWriteW','Aevrynd/LineGateway/SecondaryQwenApiKey','ZeroFreeCoTaskMemUnicode','1280')) { if (-not $content.Contains($required)) { throw "secondary credential setter lacks $required" } }
+        if ($content -match '(?i)param\([^)]*(ApiKey|Secret|Token)' -or $content -match '(?i)(Set-Content|WriteAllText|WriteAllBytes).*secure') { throw 'secondary credential setter exposes plaintext input or persistence' }
+    }
     $credentialPath = Join-Path $temporaryRoot '11111111-1111-1111-1111-111111111111.json'
     [IO.File]::WriteAllText($credentialPath, '{}', [Text.UTF8Encoding]::new($false))
     $validLines = @(
