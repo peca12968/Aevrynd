@@ -200,16 +200,43 @@ class Worker:
         assistant_route = job.route if selected_route is None else selected_route
         client = self._qwen_clients.get(assistant_route)
         if client is None:
+            if selected_route is None:
+                self._finish(job, self._assistant_unavailable_text(assistant_route))
+                return
             raise QwenClientError("Named assistant is not configured")
-        if selected_route is None and not client.slots_ready():
-            raise QwenClientError("Named assistant did not pass the slot gate")
+        if selected_route is None:
+            try:
+                ready = client.slots_ready()
+            except RetryableQwenError:
+                if job.attempt_count < job.max_attempts:
+                    raise
+                self._finish(job, self._assistant_unavailable_text(assistant_route))
+                return
+            except QwenClientError:
+                self._finish(job, self._assistant_unavailable_text(assistant_route))
+                return
+            if not ready:
+                self._finish(job, self._assistant_unavailable_text(assistant_route))
+                return
         self._notify_assistant_progress(job, assistant_route)
         system = ASSISTANT_SYSTEM_PROMPTS[assistant_route] + (
             ' Schema: {"schemaVersion":1,"action":"answer|codex","answer":"",'
             '"requestKind":"none|complex|image|file","attachments":[]}. '
             'Attachment items are exactly {"kind":"image|file","status":"requested"}.'
         )
-        reply = client.chat(job.request_text, system_prompt=system)
+        try:
+            reply = client.chat(job.request_text, system_prompt=system)
+        except RetryableQwenError:
+            if selected_route is not None or job.attempt_count < job.max_attempts:
+                raise
+            self._finish(job, self._assistant_unavailable_text(assistant_route))
+            return
+        except QwenClientError:
+            if selected_route is not None:
+                raise
+            self._finish(job, self._assistant_unavailable_text(assistant_route))
+            return
+        # 協議解析刻意放在 transport 例外處理之外，惡意或無效輸出不得偽裝成離線。
         decision = self._parse_assistant_decision(reply.text)
         label = "台中" if assistant_route == Route.TAICHUNG.value else "桃園"
         if decision["action"] == "answer":
@@ -240,6 +267,12 @@ class Worker:
             expected_lease_owner=self._worker_id,
         )
         self._start_codex(job, partial_result=partial_result, request_text=handoff_request)
+
+    @staticmethod
+    def _assistant_unavailable_text(assistant_route: str) -> str:
+        label = "台中" if assistant_route == Route.TAICHUNG.value else "桃園"
+        alternative = "桃園" if label == "台中" else "台中"
+        return f"[{label} Qwen]\n目前未連線，請改用{alternative}或稍後再試。"
 
     def _notify_assistant_progress(self, job: ClaimedJob, assistant_route: str) -> None:
         progress = self._queue_store.prepare_assistant_progress(

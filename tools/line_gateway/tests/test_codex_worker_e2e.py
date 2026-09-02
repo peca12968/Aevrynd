@@ -93,6 +93,15 @@ class FailingQwenClient(FakeQwenClient):
         raise self.failure
 
 
+class FailingSlotsClient(FakeQwenClient):
+    def __init__(self, failure: QwenClientError) -> None:
+        super().__init__()
+        self.failure = failure
+
+    def slots_ready(self) -> bool:
+        raise self.failure
+
+
 def _write_response(handoff: CodexHandoff, job_id: str, digest: str, result: str) -> None:
     path = handoff.root / "responses" / f"{job_id}.json"
     path.write_text(
@@ -242,6 +251,102 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual(2, len(self.line.pushes))
         self.assertNotEqual(self.line.pushes[0][2], self.line.pushes[1][2])
         self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_explicit_city_unconfigured_or_permanently_unreachable_returns_safe_offline_text(self) -> None:
+        for suffix, clients in (
+            ("missing", {}),
+            ("unauthorized", {"taoyuan": FailingSlotsClient(QwenClientError("401"))}),
+        ):
+            with self.subTest(suffix=suffix):
+                line = FakeLineClient()
+                worker = Worker(
+                    self.store, line, HostTasks(self.store), self.handoff,
+                    qwen_client=self.qwen, qwen_clients=clients,
+                    worker_id=f"offline-{suffix}",
+                )
+                queued = self.store.enqueue(
+                    webhook_event_id=f"offline-{suffix}", route=Route.TAOYUAN.value,
+                    source_id="group", requester_id="user", request_text="hello",
+                )
+                worker.process_once()
+                self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+                self.assertEqual(
+                    "[桃園 Qwen]\n目前未連線，請改用台中或稍後再試。",
+                    line.pushes[-1][1],
+                )
+                self.assertNotIn("401", line.pushes[-1][1])
+
+    def test_explicit_city_retryable_slot_error_retries_before_offline_notice(self) -> None:
+        failing = FailingSlotsClient(RetryableQwenError("temporary"))
+        line = FakeLineClient()
+        worker = Worker(
+            self.store, line, HostTasks(self.store), self.handoff,
+            qwen_client=failing, qwen_clients={"taoyuan": failing}, worker_id="offline-retry",
+        )
+        base = time.time()
+        queued = self.store.enqueue(
+            webhook_event_id="offline-retry", route=Route.TAOYUAN.value,
+            source_id="group", requester_id="user", request_text="hello",
+            max_attempts=2, now=base,
+        )
+        job = self.store.claim_next("offline-retry", now=base)
+        worker._dispatch(job)
+        self.assertEqual("queued", self.store.status(queued.job_id)["status"])
+        self.assertIsNone(self.store.claim_delivery("offline-retry", now=base))
+        retried = self.store.claim_next("offline-retry", now=base + 3)
+        worker._dispatch(retried)
+        delivery = self.store.claim_delivery("offline-retry", now=base + 3)
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+        self.assertEqual("[桃園 Qwen]\n目前未連線，請改用台中或稍後再試。", delivery.message_text)
+
+    def test_explicit_city_chat_failures_retry_then_return_safe_offline_text(self) -> None:
+        for suffix, failure, max_attempts in (
+            ("permanent", QwenClientError("authorization detail"), 3),
+            ("retryable", RetryableQwenError("timeout detail"), 2),
+        ):
+            with self.subTest(suffix=suffix):
+                line = FakeLineClient()
+                failing = FailingQwenClient(failure)
+                worker = Worker(
+                    self.store, line, HostTasks(self.store), self.handoff,
+                    qwen_client=failing, qwen_clients={"taoyuan": failing},
+                    worker_id=f"chat-{suffix}",
+                )
+                base = time.time()
+                queued = self.store.enqueue(
+                    webhook_event_id=f"chat-{suffix}", route=Route.TAOYUAN.value,
+                    source_id="group", requester_id="user", request_text="hello",
+                    max_attempts=max_attempts, now=base,
+                )
+                first = self.store.claim_next(f"chat-{suffix}", now=base)
+                worker._dispatch(first)
+                if suffix == "retryable":
+                    self.assertEqual("queued", self.store.status(queued.job_id)["status"])
+                    retried = self.store.claim_next(f"chat-{suffix}", now=base + 3)
+                    worker._dispatch(retried)
+                self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+                while worker.process_once():
+                    if any("目前未連線" in message for _, message, _ in line.pushes):
+                        break
+                offline = [message for _, message, _ in line.pushes if "目前未連線" in message]
+                self.assertEqual(
+                    ["[桃園 Qwen]\n目前未連線，請改用台中或稍後再試。"], offline
+                )
+                self.assertFalse(any("detail" in message for _, message, _ in line.pushes))
+
+    def test_invalid_assistant_protocol_is_not_misreported_as_offline(self) -> None:
+        invalid = FakeQwenClient("not-json")
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=invalid, qwen_clients={"taoyuan": invalid}, worker_id="invalid-protocol",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="invalid-protocol", route=Route.TAOYUAN.value,
+            source_id="group", requester_id="user", request_text="hello", max_attempts=1,
+        )
+        worker.process_once()
+        self.assertNotEqual("completed", self.store.status(queued.job_id)["status"])
+        self.assertFalse(any("目前未連線" in message for _, message, _ in self.line.pushes))
 
     def test_progress_retry_failure_does_not_start_chat_or_duplicate_identity(self) -> None:
         line = RetryOnceLineClient()
