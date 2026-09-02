@@ -547,6 +547,9 @@ struct RendererStats {
     uint64_t depthAwareWaterPasses{};
     bool waterSingleCompositeEnabled{};
     uint64_t waterSingleCompositePasses{},waterSingleCompositeCopies{},waterSingleCompositeDraws{};
+    bool waterAerialSingleCompositeOwnershipEnabled{};
+    uint64_t waterAerialSingleCompositePasses{};
+    uint32_t waterAerialOwnershipMutation{};
     bool screenSpaceWaterRefractionEnabled{};
     size_t waterOpaqueSceneColorBytes{};
     uint64_t waterOpaqueSceneColorAllocations{},waterOpaqueSceneColorReleases{},waterOpaqueSceneColorCopies{},screenSpaceWaterRefractionPasses{};
@@ -1180,6 +1183,7 @@ struct D3D12RendererTestAccess3D {
     enum class BaseSkyMutation { Production, LegacyBlue, LegacyClipMatrix, SignedNegativeW, LegacyAbsW, HemisphereFlip };
     enum class CloudContributorRouting { Production, InlineOnly, PhysicalOnly, FullDouble };
     enum class WorldPixelMutation { Production, LegacyArmAlpha, TerrainHeightDisabled };
+    enum class WaterAerialOwnershipMutation { Production, LegacyDouble, SnapshotOwned, LocalOnly, Transmittance, Inscattering };
     enum class VolumetricAtmosphereMutation { Production, LegacyDepth, Nearest, LegacyPlanarNoise, NoPathCap, AdditiveShaft, WholeSegmentPerStep, WrongWindReprojection, NightIncidentZero, UpscaleFixtureProduction, UpscaleFixtureNearest };
     static void SetTimeOfDayExposureApplyFailure(D3D12Renderer& renderer,bool enabled);
     static std::optional<LinearHdrCapture3D> CaptureLinearHdr(D3D12Renderer& renderer,float exposureEv);
@@ -1189,6 +1193,7 @@ struct D3D12RendererTestAccess3D {
     static bool SetCloudContributorRouting(D3D12Renderer& renderer,CloudContributorRouting routing);
     static bool SetCloudContributorSkyProxy(D3D12Renderer& renderer,bool enabled);
     static bool SetWorldPixelMutation(D3D12Renderer& renderer,WorldPixelMutation mutation);
+    static bool SetWaterAerialOwnershipMutation(D3D12Renderer& renderer,WaterAerialOwnershipMutation mutation,uint32_t waterOrdinal=0xffffffffu);
     static bool SetLegacyTemporalDepthRejection(D3D12Renderer& renderer,bool enabled);
     static bool SetLegacyTemporalFarSkyClassification(D3D12Renderer& renderer,bool enabled);
     static void SetVolumetricAtmosphereDiagnostics(D3D12Renderer& renderer,bool enabled);

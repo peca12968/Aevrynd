@@ -1807,6 +1807,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     baseColor,roughness);
     }
 
+    float3 aerialOwnedSceneContribution = 0.0;
     [branch] if (waterCompositeMask > 0.5)
     {
         const float waterViewCosine = saturate(dot(normal, viewDirection));
@@ -1829,6 +1830,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float2 refractedUv = clamp(waterScreenUv + normal.xz * refractionScale,
                                              viewportMinimum, viewportMaximum);
             transmittedScene = opaqueSceneColorTexture.SampleLevel(screenPointClampSampler, refractedUv, 0.0).rgb;
+            aerialOwnedSceneContribution = transmittedScene;
         }
         const float3 absorbedWater = transmittedScene * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
         const float waterReflectionRoughness = clamp(roughness, waterMinimumRoughness, waterMaximumRoughness);
@@ -1842,12 +1844,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float3 waterComposite=waterSurfaceEnabled!=0u
             ? absorbedWater*(1.0-fresnel)+reflectedWater*fresnel
             : lerp(absorbedWater,reflectedWater,fresnel);
+        aerialOwnedSceneContribution *= waterTransmission * (1.0 - fresnel);
         // 水體側壁仍屬透明體積邊界；保留背景透射，避免掠射 Fresnel 將箱型水網格變成不透明鏡牆。
         const float waterLocalContribution = lerp(0.35, 1.0, waterMask);
         const float3 sideTransmittedScene = waterSceneColorEnabled > 0.5
             ? opaqueSceneColorTexture.SampleLevel(screenPointClampSampler, waterScreenUv, 0.0).rgb
             : transmittedScene;
+        const float3 sideAerialOwnedScene = waterSceneColorEnabled > 0.5 ? sideTransmittedScene : aerialOwnedSceneContribution;
         waterComposite = waterSurfaceEnabled != 0u ? lerp(sideTransmittedScene, waterComposite, waterLocalContribution) : waterComposite;
+        aerialOwnedSceneContribution = waterSurfaceEnabled != 0u
+            ? lerp(sideAerialOwnedScene, aerialOwnedSceneContribution, waterLocalContribution)
+            : aerialOwnedSceneContribution;
         [branch] if (foamMask > 0.01)
         {
             // 岸線泡沫使用有界程序破碎圖樣，避免整條河岸成為均勻發光帶。
@@ -1857,11 +1864,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float foamCoverage = smoothstep(0.34, 0.76, foamNoise * 0.72 + foamWave * 0.28);
             const float3 foamColor = baseColor * lerp(0.58, 0.96, foamCoverage)
                                    + EvaluateEnvironmentDiffuse(normal, skyLightDirection) * 0.055;
-            waterComposite=lerp(waterComposite,foamColor,foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage));
+            const float foamBlend=foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage);
+            waterComposite=lerp(waterComposite,foamColor,foamBlend);
+            aerialOwnedSceneContribution *= 1.0 - foamBlend;
         }
         shaded = waterComposite;
     }
-    const float3 lit = lerp(baseColor, shaded, saturate(input.normal.w));
+    const float surfaceWeight = saturate(input.normal.w);
+    const float3 lit = lerp(baseColor, shaded, surfaceWeight);
+    aerialOwnedSceneContribution *= surfaceWeight;
     float aerialTransmittance = 1.0;
     float3 aerialInscattering = 0.0;
     [branch] if (fogEndEnabled.y > 0.5 && aerialExtinctionScatteringHeight.x > 0.0 && input.normal.w > 0.0)
@@ -1896,7 +1907,6 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float3 sourceRadiance = aerialSkyRadianceSunScale.rgb +
                 lightColorIntensity.rgb * lightColorIntensity.w *
                 aerialSkyRadianceSunScale.w * phaseRatio;
-            const float surfaceWeight = saturate(input.normal.w);
             aerialTransmittance = lerp(1.0, transmittance, surfaceWeight);
             aerialInscattering = max(0.0, sourceRadiance) * scatteredFraction * surfaceWeight;
         }
@@ -1908,7 +1918,25 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     if(alphaToCoverage && input.alphaMasked != 0)
         outputAlpha = MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff);
     // 光柱只由全螢幕 VolumetricAtmosphere pass 依 scene depth 合成；在每個表面再次積分會形成垂直白柱並雙重加色。
-    evaluatedOutput=float4(max(0.0, lit * aerialTransmittance + aerialInscattering), outputAlpha);
+    float3 aerialOutput = lit * aerialTransmittance + aerialInscattering;
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 1
+    // 負向控制保留舊版整體再次套用 aerial 的輸出。
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 2
+    aerialOutput = aerialOwnedSceneContribution;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 3
+    aerialOutput = max(0.0, lit - aerialOwnedSceneContribution);
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 4
+    aerialOutput = aerialTransmittance.xxx;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 5
+    aerialOutput = aerialInscattering;
+#else
+    [branch] if(screenSpaceReflectionReserved.x > 0.5 && waterMaterialMask > 0.5)
+    {
+        // 單次水體合成取樣的是已完成 aerial 的 HDR；僅豁免該 snapshot 份額，水體本地吸收、反射與泡沫仍套用目前距離的 aerial。
+        aerialOutput += aerialOwnedSceneContribution * (1.0 - aerialTransmittance);
+    }
+#endif
+    evaluatedOutput=float4(max(0.0, aerialOutput), outputAlpha);
     }
     return evaluatedOutput;
 }
