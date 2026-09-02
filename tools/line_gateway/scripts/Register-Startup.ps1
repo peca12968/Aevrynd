@@ -11,8 +11,7 @@ Assert-Administrator
 $paths = Get-GatewayPaths -InstallRoot $InstallRoot
 $transportLock = Enter-PublicTransportLock
 try {
-$pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
-if ($null -eq $pwsh) { throw 'PowerShell 7 executable was not found.' }
+$pwsh = Get-TrustedSystemPowerShell
 if (-not (Test-Path -LiteralPath (Join-Path $paths.Scripts 'Start-Gateway.ps1') -PathType Leaf)) {
     throw 'Installed gateway start script is missing.'
 }
@@ -41,7 +40,7 @@ $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCo
     -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $bootstrapScript = Join-Path $paths.Scripts 'Bootstrap.ps1'
 $gatewayArguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$bootstrapScript`" -Entry Gateway -InstallRoot `"$InstallRoot`" -Wait"
-$gatewayAction = New-ScheduledTaskAction -Execute $pwsh.Source -Argument $gatewayArguments -WorkingDirectory $paths.Root
+$gatewayAction = New-ScheduledTaskAction -Execute $pwsh -Argument $gatewayArguments -WorkingDirectory $paths.Root
 $gatewayTask = New-ScheduledTask -Action $gatewayAction -Trigger $trigger -Principal $principal -Settings $settings
 Register-ScheduledTask -TaskName 'Aevrynd-Line-Gateway' -InputObject $gatewayTask -Force | Out-Null
 
@@ -62,7 +61,7 @@ if ($PublicTransport -eq 'Funnel') {
 if($PublicTransport-eq'Ngrok'-and$null-ne$existingTunnel){Unregister-ScheduledTask -TaskName 'Aevrynd-Line-Gateway-Tunnel' -Confirm:$false}
 if($PublicTransport-eq'Cloudflare'-and$null-ne$existingNgrok){Unregister-ScheduledTask -TaskName 'Aevrynd-Line-Gateway-Ngrok' -Confirm:$false}
 $tunnelArguments = if($PublicTransport-eq'Ngrok'){"-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$bootstrapScript`" -Entry Ngrok -InstallRoot `"$InstallRoot`""}else{"-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$bootstrapScript`" -Entry Cloudflare -InstallRoot `"$InstallRoot`" -ConfigPath `"$($tunnel.ConfigPath)`""}
-$tunnelAction = New-ScheduledTaskAction -Execute $pwsh.Source -Argument $tunnelArguments -WorkingDirectory $paths.Root
+$tunnelAction = New-ScheduledTaskAction -Execute $pwsh -Argument $tunnelArguments -WorkingDirectory $paths.Root
 $tunnelTask = New-ScheduledTask -Action $tunnelAction -Trigger $trigger -Principal $principal -Settings $settings
 Register-ScheduledTask -TaskName $(if($PublicTransport-eq'Ngrok'){'Aevrynd-Line-Gateway-Ngrok'}else{'Aevrynd-Line-Gateway-Tunnel'}) -InputObject $tunnelTask -Force | Out-Null
 Write-Output 'Gateway and validated named tunnel startup tasks registered for the current user.'

@@ -7,6 +7,14 @@ function Assert-PowerShellSeven {
     }
 }
 
+function Get-TrustedSystemPowerShell {
+    $programFiles=[IO.Path]::GetFullPath([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)).TrimEnd('\')
+    $candidates=[Collections.Generic.List[string]]::new();$candidates.Add((Join-Path $programFiles 'PowerShell\7\pwsh.exe'))
+    foreach($entry in Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\PowerShellCore\InstalledVersions\*' -ErrorAction SilentlyContinue){if(-not[string]::IsNullOrWhiteSpace([string]$entry.InstallLocation)){$candidates.Add((Join-Path ([string]$entry.InstallLocation) 'pwsh.exe'))}}
+    foreach($candidateValue in $candidates){try{$candidate=[IO.Path]::GetFullPath($candidateValue);if(-not$candidate.StartsWith($programFiles+'\',[StringComparison]::OrdinalIgnoreCase)-or-not(Test-Path -LiteralPath $candidate -PathType Leaf)){continue};$cursor=[IO.Path]::GetDirectoryName($candidate);while($cursor.Length-ge$programFiles.Length){$item=Get-Item -LiteralPath $cursor -Force;if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw 'System PowerShell path contains a reparse point.'};if($cursor-ceq$programFiles){break};$cursor=[IO.Path]::GetDirectoryName($cursor)};$file=Get-Item -LiteralPath $candidate -Force;if(($file.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0-or$file.VersionInfo.FileVersionRaw.Major-lt7){continue};$signature=Get-AuthenticodeSignature -LiteralPath $candidate;if($signature.Status-ne'Valid'-or$signature.SignerCertificate.Subject-notmatch'(?i)O=Microsoft Corporation'){continue};return $candidate}catch{continue}}
+    throw 'A trusted system-wide PowerShell 7 installation was not found under Program Files or HKLM.'
+}
+
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)

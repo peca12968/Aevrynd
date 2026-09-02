@@ -273,6 +273,7 @@ try {
         [IO.File]::WriteAllText((Join-Path $fixtureScripts 'Common.ps1'), @"
 function Assert-Administrator {}
 function Get-GatewayPaths { param([string]`$InstallRoot) return @{Root='$escapedRoot';Scripts='$escapedScripts'} }
+function Get-TrustedSystemPowerShell { return 'C:\Program Files\PowerShell\7\pwsh.exe' }
 function Enter-PublicTransportLock { return [pscustomobject]@{Acquired=`$true} }
 function Exit-PublicTransportLock { param([object]`$Lock) }
 "@, [Text.UTF8Encoding]::new($false))
@@ -321,6 +322,13 @@ Invoke-Test 'gateway timestamp writes canonical UTC normalizes exact legacy and 
 Invoke-Test 'gateway state preserves and normalizes fixed legacy timestamp text' {
     $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) "aevrynd-gateway-state-$([Guid]::NewGuid().ToString('N'))";New-Item -ItemType Directory $fixtureRoot|Out-Null;$fixture=@{StateFile=(Join-Path $fixtureRoot 'gateway-state.json')}
     try{[IO.File]::WriteAllText($fixture.StateFile,'{"schemaVersion":1,"pid":154244,"startedUtc":"2026-09-02T18:04:49.6200313Z","bindHost":"127.0.0.1","port":8787}');$state=Read-GatewayState $fixture;if($state.startedUtc-cne'2026-09-02T18:04:49.6200313+00:00'){throw "Fixed legacy timestamp normalized incorrectly: $($state.startedUtc)"}}finally{Remove-Item $fixtureRoot -Recurse -Force}
+}
+
+Invoke-Test 'startup rejects PATH shadowing and selects only signed system PowerShell' {
+    $register=Get-Content -Raw (Join-Path $scriptsRoot 'Register-Startup.ps1');$common=Get-Content -Raw (Join-Path $scriptsRoot 'Common.ps1')
+    if($register-match'Get-Command\s+pwsh' -or$register-match'\.Source'){throw 'Startup still trusts PATH command discovery.'}
+    foreach($required in @('Get-TrustedSystemPowerShell','SpecialFolder]::ProgramFiles','HKLM:\SOFTWARE\Microsoft\PowerShellCore\InstalledVersions','StartsWith($programFiles+','ReparsePoint','FileVersionRaw.Major-lt7','Get-AuthenticodeSignature','O=Microsoft Corporation')){if(-not($register.Contains($required)-or$common.Contains($required))){throw "Trusted PowerShell discovery lacks $required"}}
+    if($common.Contains('.cache\codex-runtimes')-or$common.Contains('WindowsApps\pwsh.exe')){throw 'User-scoped PowerShell path entered the trusted candidates.'}
 }
 
 Write-Output "Deployment tests: passed=$script:passed failed=$script:failed"
