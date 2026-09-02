@@ -1,0 +1,21 @@
+{
+  "node_id": "main",
+  "profile": "light",
+  "owner": "REPLACE_WITH_WINDOWS_ACCOUNT",
+  "executable_path": "C:\\Program Files\\AevryndQwen\\llama-server.exe",
+  "executable_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "argv": [
+    "C:\\Program Files\\AevryndQwen\\llama-server.exe",
+    "--model",
+    "C:\\ProgramData\\Aevrynd\\Qwen\\models\\REPLACE_LIGHT_MODEL.gguf",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8080",
+    "--slots",
+    "1"
+  ],
+  "command_sha256": "REPLACE_WITH_64_LOWERCASE_HEX",
+  "model_path": "C:\\ProgramData\\Aevrynd\\Qwen\\models\\REPLACE_LIGHT_MODEL.gguf",
+  "model_sha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+}
