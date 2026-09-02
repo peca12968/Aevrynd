@@ -94,8 +94,8 @@
     {
       "source": "windows_runtime.py",
       "destination": "app/tools/game_mode_controller/windows_runtime.py",
-      "size": 21133,
-      "sha256": "c9da378e89ba93dcee378e585aa15e29f168243106c54db251383193415f79fd"
+      "size": 21213,
+      "sha256": "1ab596aff11b6fd89f351b2f6b934f7c80da9716f68b247f46111896ac2b9c80"
     },
     {
       "source": "scripts/Capture-MainRuntimeManifest.ps1",

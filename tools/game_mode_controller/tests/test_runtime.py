@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from tools.game_mode_controller.api import HubApi
+from tools.game_mode_controller.acceptance import QwenAcceptanceProbe
 from tools.game_mode_controller.atomic_store import AtomicJsonStore
 from tools.game_mode_controller.coordinator import HubCoordinator
 from tools.game_mode_controller.deployment_transaction import DeploymentTransaction
@@ -212,7 +213,56 @@ class RuntimeTests(unittest.TestCase):
         loaded = load_runtime_manifest(output, expected_node_id="main", expected_sha256=digest)
         self.assertEqual(observed.argv, loaded.argv)
 
+    def test_msix_physical_model_path_preserves_exact_api_model_id_for_acceptance(self) -> None:
+        package = self.root / "msix-physical"
+        executable = package / "bin" / "llama-server.exe"
+        physical_model = package / "models" / "Qwen3-4B-Q4_K_M.gguf"
+        executable.parent.mkdir(parents=True); physical_model.parent.mkdir(parents=True)
+        executable.write_bytes(b"runtime"); physical_model.write_bytes(b"model")
+        api_model_id = r"C:\Users\USER\AppData\Local\AevryndQwenLight\models\Qwen3-4B-Q4_K_M.gguf"
+        argv = (str(executable), "--model", api_model_id, "--host", "127.0.0.1", "--port", "18080", "--parallel", "1")
+        legacy = self.root / "msix-state.json"
+        legacy.write_text(json.dumps({
+            "schemaVersion": 1, "pid": 7712, "startedUtc": "2026-09-03T00:00:00Z",
+            "executablePath": str(executable), "modelSha256": file_sha256(physical_model),
+            "host": "127.0.0.1", "port": 18080, "context": 2048, "parallel": 1,
+            "threads": 4, "gpuLayers": 0,
+        }), encoding="utf-8")
+        observed = ObservedProcess(7712, "DOMAIN\\User", str(executable), argv, file_sha256(executable))
+        output = self.root / "msix-captured.json"
+        digest = capture_main_runtime_manifest(output, api_model_id, state_path=legacy, inspector=FakeInspector(observed))
+        loaded = load_runtime_manifest(output, expected_node_id="main", expected_sha256=digest)
+        self.assertEqual(str(physical_model.resolve()), loaded.model_path)
+        self.assertEqual(str(physical_model.resolve()), loaded.argv[loaded.argv.index("--model") + 1])
+        self.assertEqual(api_model_id, loaded.model_id)
+
+        class Response:
+            def __init__(self, value: object) -> None: self.value = value
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def getcode(self) -> int: return 200
+            def read(self, _limit: int) -> bytes: return json.dumps(self.value).encode()
+
+        def opener(request, timeout):
+            del timeout
+            if request.full_url.endswith("/health"): return Response({"status": "ok"})
+            if request.full_url.endswith("/v1/models"): return Response({"data": [{"id": api_model_id}]})
+            if request.full_url.endswith("/slots"): return Response([{"id": 0}])
+            return Response({"choices": [{"message": {"content": "QWEN_LIGHT_OK"}}]})
+
+        QwenAcceptanceProbe("http://127.0.0.1:18080", loaded.model_id, None, opener=opener).run()
+
     def test_signed_loopback_client_rejects_unsigned_and_accepts_signed_status(self) -> None:
+        import socket
+        guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                guard.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            guard.bind(("127.0.0.1", 8766))
+        except OSError as error:
+            guard.close()
+            self.skipTest(f"fixed hub port already owned by a live controller: {error}")
+        guard.close()
         coordinator = HubCoordinator(AtomicJsonStore(self.root / "hub.json"))
         api = HubApi(coordinator, RequestAuthenticator(lambda _: SECRET, ReplayLedger(self.root / "nonce.sqlite3")), lambda _: SECRET)
         try:

@@ -327,6 +327,9 @@ def _kernel32():  # type: ignore[no-untyped-def]
 def capture_main_runtime_manifest(output_path: str | Path, model_id: str, *, state_path: str | Path | None = None, inspector: WindowsProcessInspector | None = None) -> str:
     """Capture the already-running fixed light service after authoritative inspection."""
 
+    if not isinstance(model_id, str) or not model_id or len(model_id) > 512 or any(character in model_id for character in "\r\n\x00"):
+        raise ProcessIdentityError("Qwen API model ID is invalid")
+
     local_app_data = os.environ.get("LOCALAPPDATA")
     if state_path is None:
         if not local_app_data:
@@ -353,13 +356,12 @@ def capture_main_runtime_manifest(output_path: str | Path, model_id: str, *, sta
     observed_root = Path(observed.executable_path).resolve().parent.parent
     physical_model = (observed_root / "models" / Path(model_arguments[0]).name).resolve()
     model_path = physical_model if physical_model.is_file() else Path(model_arguments[0]).resolve()
-    normalized_model_id = str(model_path) if model_id.casefold() == model_arguments[0].casefold() else model_id
     normalized_argv = list(observed.argv)
     normalized_argv[0] = observed.executable_path
     normalized_argv[normalized_argv.index("--model") + 1] = str(model_path)
     manifest = RuntimeManifest(
         "main", "light", observed.owner, observed.executable_path, observed.executable_sha256,
-        tuple(normalized_argv), command_digest(normalized_argv), str(model_path), file_sha256(model_path), normalized_model_id,
+        tuple(normalized_argv), command_digest(normalized_argv), str(model_path), file_sha256(model_path), model_id,
     )
     manifest._validate_network_contract()
     manifest.verify_files()
