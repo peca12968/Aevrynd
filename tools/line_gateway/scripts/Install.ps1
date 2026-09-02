@@ -33,7 +33,7 @@ $scriptFiles = @(
     'Stop-Gateway.ps1', 'Stop-Tunnel.ps1', 'Test-Health.ps1',
     'Test-TunnelConfiguration.ps1', 'Funnel.Common.ps1', 'Start-Funnel.ps1',
     'Stop-Funnel.ps1', 'Test-FunnelConfiguration.ps1', 'Uninstall.ps1', 'gateway_runner.py',
-    'Bootstrap.ps1',
+    'Bootstrap.ps1', 'Enrollment.Common.ps1', 'Discover-Allowlist.ps1',
     'Ngrok.Common.ps1', 'Set-NgrokConfiguration.ps1', 'Set-NgrokCredential.ps1',
     'Start-Ngrok.ps1', 'Stop-Ngrok.ps1', 'Test-NgrokConfiguration.ps1',
     'Remove-NgrokPlaintextCredential.ps1', 'ngrok-package-identity.json'

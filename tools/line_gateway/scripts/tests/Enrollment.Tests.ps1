@@ -189,5 +189,8 @@ Run 'valid request can continue after timed-out rejection' {
     }finally{$valid.Dispose()}
 }
 
+Run 'installer includes the complete one-shot enrollment closure' {$install=Get-Content -Raw (Join-Path $PSScriptRoot '..\Install.ps1');foreach($name in @('Discover-Allowlist.ps1','Enrollment.Common.ps1','Common.ps1','Funnel.Common.ps1','Test-FunnelConfiguration.ps1','Test-NgrokConfiguration.ps1')){if(-not$install.Contains("'$name'")){throw "Enrollment deployment dependency missing: $name"}}}
+Run 'owner-only capture DACL applies without SACL privilege' {$temp=Join-Path ([IO.Path]::GetTempPath()) "aevrynd-enrollment-dacl-$([Guid]::NewGuid().ToString('N'))";New-Item -ItemType Directory $temp|Out-Null;$file=Join-Path $temp 'capture.json';[IO.File]::WriteAllText($file,'{}');$sid=[Security.Principal.WindowsIdentity]::GetCurrent().User;try{Set-EnrollmentOwnerOnlyDacl -Path $temp -OwnerSid $sid -Directory;Set-EnrollmentOwnerOnlyDacl -Path $file -OwnerSid $sid;foreach($path in @($temp,$file)){$acl=Get-Acl $path;if(-not$acl.AreAccessRulesProtected-or@($acl.Access|Where-Object{$_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value-cne$sid.Value}).Count){throw 'Owner-only DACL verification failed.'}}}finally{Remove-Item $temp -Recurse -Force}}
+
 if($failed){throw "$failed enrollment tests failed; $passed passed."}
-"Enrollment hostile tests passed ($passed/26)."
+"Enrollment hostile tests passed ($passed/$passed)."

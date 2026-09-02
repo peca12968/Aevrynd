@@ -1,6 +1,26 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
+if(-not('AevryndEnrollmentDacl'-as[type])){Add-Type @'
+using System;using System.ComponentModel;using System.Runtime.InteropServices;
+public static class AevryndEnrollmentDacl {
+ const uint DACL_SECURITY_INFORMATION=0x00000004,PROTECTED_DACL_SECURITY_INFORMATION=0x80000000;
+ [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool SetFileSecurityW(string path,uint info,byte[] descriptor);
+ public static void Set(string path,string sid,bool directory){var sddl=directory?"D:P(A;OICI;FA;;;"+sid+")":"D:P(A;;FA;;;"+sid+")";var raw=new System.Security.AccessControl.RawSecurityDescriptor(sddl);var bytes=new byte[raw.BinaryLength];raw.GetBinaryForm(bytes,0);try{if(!SetFileSecurityW(path,DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,bytes))throw new Win32Exception(Marshal.GetLastWin32Error());}finally{Array.Clear(bytes,0,bytes.Length);}}
+}
+'@}
+
+function Set-EnrollmentOwnerOnlyDacl {
+    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][Security.Principal.SecurityIdentifier]$OwnerSid,[switch]$Directory)
+    $item=Get-Item -LiteralPath $Path -Force
+    if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw 'Enrollment capture path must not be a reparse point.'}
+    $owner=(Get-Acl -LiteralPath $Path).Owner;try{$actual=([Security.Principal.NTAccount]$owner).Translate([Security.Principal.SecurityIdentifier])}catch{$actual=[Security.Principal.SecurityIdentifier]::new($owner)}
+    if($actual.Value-cne$OwnerSid.Value){throw 'Enrollment capture path is not owned by the current user.'}
+    [AevryndEnrollmentDacl]::Set([IO.Path]::GetFullPath($Path),$OwnerSid.Value,$Directory.IsPresent)
+    $acl=Get-Acl -LiteralPath $Path;if(-not$acl.AreAccessRulesProtected){throw 'Enrollment capture DACL is not protected.'}
+    foreach($rule in $acl.Access){if($rule.AccessControlType-ne[Security.AccessControl.AccessControlType]::Allow-or$rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value-cne$OwnerSid.Value){throw 'Enrollment capture DACL grants access outside the owner.'}}
+}
+
 function Test-FixedTimeBytes {
     param([byte[]]$Actual,[byte[]]$Expected)
     if($Actual.Length-ne$Expected.Length){return $false}
