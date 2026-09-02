@@ -46,6 +46,7 @@ foreach ($target in @(
     'Aevrynd/LineGateway/ChannelSecret',
     'Aevrynd/LineGateway/ChannelAccessToken',
     'Aevrynd/LineGateway/QwenApiKey'
+    'Aevrynd/LineGateway/SecondaryQwenApiKey'
 )) {
     [AevryndCredentialRemover]::DeleteIfPresent($target)
 }

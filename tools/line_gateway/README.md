@@ -35,9 +35,34 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 
 `Set-Credentials.ps1` 會以隱密輸入依序要求三個值，不會顯示或寫入檔案。請勿把已在聊天或文件中曝光的舊密鑰再次使用。
 
-主要 Qwen 預設為 `http://192.168.50.98:8080/v1`。`http://100.89.42.36:8080/v1` 只先保留於非機密設定供後續健康派工器使用；目前 Python Qwen client 僅允許主要主機，部署層不會宣稱第二台已投入派工。
+主要 Qwen 預設為 `http://192.168.50.98:8080/v1`。`http://100.89.42.36:8080/v1` 已加入固定 allowlist 作為第二節點；主要節點只有發生可重試錯誤時，Gateway 才會先以各自憑證檢查 secondary `/slots`，通過後轉移單一請求。單一 worker 不會平行送出多個 secondary 請求，永久授權／輸入錯誤也不會觸發故障轉移。
+
+單節點安裝執行 `Set-Credentials.ps1` 只寫入三個必要憑證；要啟用第二節點時才加上 `-EnableSecondaryQwen`。未加此 switch 不會讀取空白輸入，也不會覆寫既有 secondary credential。primary 與 secondary 角色固定，不能只交換 URL 來改變助理位置映射。
 
 第二節點的 API key 閘門不得以未授權 `GET /v1/models` 必須回傳 401 作判定；llama.cpp 可將 models 保持公開並回傳 200。安全驗收應使用未授權 `POST /v1/chat/completions` 或 `GET /slots`，結果必須為 401 或 403；另外必須在遠端主機獨立確認 Windows Firewall 的 TCP 8080 inbound rule 只允許 Gateway Tailscale IPv4 `100.115.174.48`。API 授權與來源 IP 防火牆是兩個不同 gate，缺少任一項都不可啟用第二節點派工。
+
+## LINE 內的台中與桃園助理
+
+- 群組：使用 LINE 的真正 mention 功能提及官方帳號後直接輸入問題。Gateway 只接受 webhook `mention.mentionees[]` 中 `type=user` 且 `isSelf=true` 的項目，並依官方 UTF-16 `index`／`length` 移除顯示名稱；單靠文字偽造 `@官方帳號` 不會通過。
+- 指定助理：mention 後的內容以 `台中 <問題>`、`台中：<問題>`、`桃園 <問題>` 或 `桃園：<問題>` 開頭。只有此開頭 selector 會 pin；例如「比較台中和桃園」仍採自動分配。
+- 一對一聊天：直接輸入問題即可自動分配；也可沿用 `@台中 <問題>`、`@桃園 <問題>` 相容前綴。
+- 自動分配：以 job ID 的穩定 SHA-256 決定首選，讓同一 job 重試與重啟後不漂移，且大量工作近似平均分配；首選必須通過 authenticated single-slot gate，否則才選另一台。
+- `@台中` 預設固定 `.98`，`@桃園` 預設固定 `.36`。非機密設定可交換兩個助理的 primary／secondary role，但兩個實際 endpoint 的 primary／secondary 角色及 allowlist 不可交換。
+- `@主機` 保留只讀主機操作；`@Codex` 直接建立耐久 Codex handoff；`@全部` 固定收集主機、primary-first Qwen 與 Codex 三段結果，不等同對兩個城市助理各問一次。
+
+一般問題由指定 Qwen 直接回答。Qwen 若判定為複雜工作、圖片或檔案需求，只能輸出 exact schema 的 JSON 決策；Gateway 不採用模型提供的命令、路徑或任意 handoff request，而是以原始使用者問題、固定 assistant identity 及受限 attachment manifest 建立耐久 Codex handoff，因此 webhook 不會同步等待 Codex。
+
+目前尚未部署安全 artifact server。attachment manifest 只會記錄 `image`／`file` 的 requested 狀態，回覆會明確顯示尚未提供下載，不暴露本機路徑，也不宣稱 LINE 已收到附件。後續圖片須使用公開 HTTPS（TLS 1.2+）的 original／preview URL，原圖限 JPEG／PNG 10 MB、preview 1 MB；一般檔案不假設可直接用 LINE message 傳送，應以安全限時下載連結的文字或 Flex message 回傳。
+
+範例：
+
+```text
+[群組 mention 官方帳號] 請整理今天的待辦
+[群組 mention 官方帳號] 台中：請分析這段錯誤
+[群組 mention 官方帳號] 桃園 請產生場景概念圖需求
+@Codex 請進行完整程式碼審查
+@全部 回報服務與專案狀態
+```
 
 ## 啟動與檢查
 

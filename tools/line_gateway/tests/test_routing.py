@@ -33,6 +33,8 @@ class RoutingTests(unittest.TestCase):
         cases = {
             "@主機 health": Route.HOST,
             "@Qwen hello": Route.QWEN,
+            "@台中 hello": Route.TAICHUNG,
+            "@桃園 hello": Route.TAOYUAN,
             "@Codex task": Route.CODEX,
             "@全部 task": Route.ALL,
         }
@@ -62,7 +64,36 @@ class RoutingTests(unittest.TestCase):
             "source": {"type": "user", "userId": "allowed-user"},
             "message": {"type": "text", "text": "hello"},
         }
-        self.assertEqual(Route.HELP, route_event(event, _config()).route)
+        self.assertEqual(Route.AUTO_QWEN, route_event(event, _config()).route)
+
+    def test_self_mention_routes_auto_or_exact_city_selector(self) -> None:
+        def mentioned(text: str, index: int = 0, length: int = 4) -> dict:
+            event = _event(text)
+            event["message"]["mention"] = {"mentionees": [{"index": index, "length": length, "type": "user", "isSelf": True}]}
+            return event
+
+        self.assertEqual(Route.AUTO_QWEN, route_event(mentioned("@Bot 比較台中和桃園"), _config()).route)
+        taichung = route_event(mentioned("@Bot 台中：請回答"), _config())
+        self.assertEqual((Route.TAICHUNG, "請回答"), (taichung.route, taichung.command_text))
+        taoyuan = route_event(mentioned("@Bot 桃園 問題"), _config())
+        self.assertEqual((Route.TAOYUAN, "問題"), (taoyuan.route, taoyuan.command_text))
+        self.assertEqual(Route.AUTO_QWEN, route_event(mentioned("@Bot 台中桃園"), _config()).route)
+        for text in ("@Bot 台中：桃園：問題", "@Bot 桃園："):
+            with self.subTest(text=text):
+                self.assertEqual(Route.IGNORE, route_event(mentioned(text), _config()).route)
+
+    def test_self_mention_rejects_forgery_and_malformed_ranges(self) -> None:
+        plain = _event("@Official hello")
+        self.assertEqual(Route.IGNORE, route_event(plain, _config()).route)
+        for mentionees in (
+            [{"index": 999, "length": 1, "type": "user", "isSelf": True}],
+            [{"index": 0, "length": 4, "type": "user", "isSelf": True}, {"index": 2, "length": 2, "type": "user"}],
+            [{"index": 0, "length": 0, "type": "user", "isSelf": True}],
+        ):
+            event = _event("@Bot hello")
+            event["message"]["mention"] = {"mentionees": mentionees}
+            with self.subTest(mentionees=mentionees):
+                self.assertEqual(Route.IGNORE, route_event(event, _config()).route)
 
 
 if __name__ == "__main__":

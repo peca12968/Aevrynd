@@ -4,6 +4,8 @@ param(
     [string]$QwenBaseUrl = 'http://192.168.50.98:8080/v1',
     [string]$QwenModel = 'Qwen3.8-27B-UD-Q4_K_M.gguf',
     [string]$SecondaryQwenBaseUrl = 'http://100.89.42.36:8080/v1',
+    [ValidateSet('primary','secondary')][string]$TaichungQwenRole = 'primary',
+    [ValidateSet('primary','secondary')][string]$TaoyuanQwenRole = 'secondary',
     [string]$InstallRoot = "$env:ProgramData\Aevrynd\LineGateway"
 )
 
@@ -37,6 +39,7 @@ if ($QwenBaseUrl -ne 'http://192.168.50.98:8080/v1') {
 if ($SecondaryQwenBaseUrl -ne 'http://100.89.42.36:8080/v1') {
     throw 'The reserved secondary Qwen URL must remain http://100.89.42.36:8080/v1.'
 }
+if ($TaichungQwenRole -eq $TaoyuanQwenRole) { throw 'Assistant Qwen roles must be an exact permutation.' }
 if ($QwenModel -notmatch '^[A-Za-z0-9._-]{1,256}$') { throw 'QwenModel is invalid.' }
 
 New-Item -ItemType Directory -Force -Path $paths.Config | Out-Null
@@ -52,6 +55,8 @@ $lines = @(
     "AEVRYND_QWEN_BASE_URL=$QwenBaseUrl",
     "AEVRYND_QWEN_MODEL=$QwenModel",
     "AEVRYND_QWEN_SECONDARY_BASE_URL=$SecondaryQwenBaseUrl"
+    "AEVRYND_ASSISTANT_TAICHUNG_QWEN_ROLE=$TaichungQwenRole"
+    "AEVRYND_ASSISTANT_TAOYUAN_QWEN_ROLE=$TaoyuanQwenRole"
 )
 $temporary = "$($paths.SettingsFile).$([Guid]::NewGuid().ToString('N')).tmp"
 [IO.File]::WriteAllLines($temporary, $lines, [Text.UTF8Encoding]::new($false))

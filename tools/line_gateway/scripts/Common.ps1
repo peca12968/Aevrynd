@@ -184,6 +184,8 @@ function Import-GatewaySettings {
         'AEVRYND_QWEN_BASE_URL',
         'AEVRYND_QWEN_MODEL',
         'AEVRYND_QWEN_SECONDARY_BASE_URL'
+        'AEVRYND_ASSISTANT_TAICHUNG_QWEN_ROLE'
+        'AEVRYND_ASSISTANT_TAOYUAN_QWEN_ROLE'
     ) | ForEach-Object { [void]$allowedNames.Add($_) }
 
     foreach ($line in Get-Content -LiteralPath $Paths.SettingsFile) {

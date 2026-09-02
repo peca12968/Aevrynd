@@ -10,6 +10,7 @@ from urllib import error, parse, request
 
 
 DEFAULT_ALLOWED_BASE_URL = "http://192.168.50.98:8080/v1"
+SECONDARY_ALLOWED_BASE_URL = "http://100.89.42.36:8080/v1"
 
 
 class QwenClientError(RuntimeError):
@@ -22,6 +23,16 @@ class RetryableQwenError(QwenClientError):
 
 class InvalidQwenResponse(QwenClientError):
     retryable = False
+
+
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        # Authorization 不得被 30x 帶往未列入 allowlist 的目的地。
+        return None
+
+
+def _open_without_redirects(api_request: request.Request, *, timeout: float):
+    return request.build_opener(_NoRedirectHandler()).open(api_request, timeout=timeout)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +54,7 @@ def _normalize_base_url(value: str) -> str:
     ):
         raise ValueError("qwen base URL is not allowed")
     port = parsed.port
-    if parsed.hostname != "192.168.50.98" or port != 8080:
+    if (parsed.hostname, port) not in {("192.168.50.98", 8080), ("100.89.42.36", 8080)}:
         raise ValueError("qwen base URL is not allowlisted")
     return f"http://{parsed.hostname}:{port}/v1"
 
@@ -63,6 +74,7 @@ class QwenClient:
         opener: Callable[..., Any] | None = None,
     ) -> None:
         self._base_url = _normalize_base_url(base_url)
+        self._origin = self._base_url[:-3]
         if not api_key or len(api_key) > 4_096:
             raise ValueError("api_key is invalid")
         if not model or len(model) > 256:
@@ -84,7 +96,7 @@ class QwenClient:
         self._max_output_chars = int(max_output_chars)
         self._max_tokens = int(max_tokens)
         self._max_response_bytes = int(max_response_bytes)
-        self._opener = request.urlopen if opener is None else opener
+        self._opener = _open_without_redirects if opener is None else opener
 
     def list_models(self) -> tuple[str, ...]:
         payload = self._request("GET", "/models", None)
@@ -134,8 +146,17 @@ class QwenClient:
             raise InvalidQwenResponse("Qwen response model is invalid")
         return QwenReply(content, returned_model)
 
-    def _request(self, method: str, path: str, payload: dict[str, object] | None) -> dict[str, object]:
-        if path not in {"/models", "/chat/completions"}:
+    def slots_ready(self) -> bool:
+        payload = self._request("GET", "/slots", None)
+        if isinstance(payload, list):
+            return len(payload) == 1
+        return isinstance(payload, dict) and (
+            isinstance(payload.get("slots"), list) and len(payload["slots"]) == 1
+            or isinstance(payload.get("data"), list) and len(payload["data"]) == 1
+        )
+
+    def _request(self, method: str, path: str, payload: dict[str, object] | None) -> Any:
+        if path not in {"/models", "/chat/completions", "/slots"}:
             raise ValueError("Qwen endpoint is not allowed")
         body = None
         if payload is not None:
@@ -147,9 +168,8 @@ class QwenClient:
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
-        api_request = request.Request(
-            self._base_url + path, data=body, headers=headers, method=method
-        )
+        request_url = self._origin + path if path == "/slots" else self._base_url + path
+        api_request = request.Request(request_url, data=body, headers=headers, method=method)
         try:
             with self._opener(api_request, timeout=self._timeout) as response:
                 status = int(response.getcode())
@@ -170,6 +190,25 @@ class QwenClient:
             decoded = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise InvalidQwenResponse("Qwen response is not valid JSON") from exc
+        if path == "/slots" and isinstance(decoded, list):
+            return decoded
         if not isinstance(decoded, dict):
             raise InvalidQwenResponse("Qwen response root must be an object")
         return decoded
+
+
+class QwenClientPool:
+    """Primary-first single-slot pool with bounded secondary failover."""
+
+    def __init__(self, primary: QwenClient, secondary: QwenClient | None = None) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        try:
+            return self._primary.chat(prompt, system_prompt=system_prompt)
+        except RetryableQwenError:
+            if self._secondary is None or not self._secondary.slots_ready():
+                raise
+            # Worker 本身為單執行緒；secondary 每次只接一個失敗轉移請求。
+            return self._secondary.chat(prompt, system_prompt=system_prompt)

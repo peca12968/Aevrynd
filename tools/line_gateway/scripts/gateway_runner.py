@@ -28,7 +28,7 @@ def _run() -> int:
     from tools.line_gateway.host_tasks import HostTasks
     from tools.line_gateway.line_client import LineClient
     from tools.line_gateway.queue_store import QueueStore
-    from tools.line_gateway.qwen_client import QwenClient
+    from tools.line_gateway.qwen_client import QwenClient, QwenClientPool
     from tools.line_gateway.routing import route_event
     from tools.line_gateway.server import create_server
     from tools.line_gateway.worker import Worker
@@ -44,7 +44,18 @@ def _run() -> int:
         model = os.environ.get("AEVRYND_QWEN_MODEL", "").strip()
         if not model:
             raise RuntimeError("Qwen model is not configured")
-        qwen = QwenClient(config.qwen_base_url, config.qwen_api_key, model)
+        primary_qwen = QwenClient(config.qwen_base_url, config.qwen_api_key, model)
+        secondary_qwen = None
+        if config.secondary_qwen_api_key is not None:
+            secondary_qwen = QwenClient(
+                config.secondary_qwen_base_url,
+                config.secondary_qwen_api_key,
+                model,
+            )
+        qwen = QwenClientPool(primary_qwen, secondary_qwen)
+        qwen_by_role = {"primary": primary_qwen}
+        if secondary_qwen is not None:
+            qwen_by_role["secondary"] = secondary_qwen
     handoff = CodexHandoff()
     host_tasks = HostTasks(
         queue,
@@ -52,6 +63,7 @@ def _run() -> int:
             "bind": "127.0.0.1:8787",
             "workerCount": 1,
             "qwenConfigured": qwen is not None,
+            "qwenSecondaryConfigured": config.secondary_qwen_api_key is not None,
         },
     )
     worker = Worker(
@@ -60,6 +72,14 @@ def _run() -> int:
         host_tasks,
         handoff,
         qwen_client=qwen,
+        qwen_clients={
+            "taichung": qwen_by_role.get(config.taichung_qwen_role),
+            "taoyuan": qwen_by_role.get(config.taoyuan_qwen_role),
+        },
+        qwen_auto_order=(
+            "taichung" if config.taichung_qwen_role == "primary" else "taoyuan",
+            "taichung" if config.taichung_qwen_role == "secondary" else "taoyuan",
+        ),
         worker_id="line-worker-1",
     )
 

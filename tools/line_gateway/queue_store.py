@@ -136,7 +136,8 @@ class QueueStore:
                     expires_at REAL NOT NULL,
                     result_text TEXT NOT NULL DEFAULT '',
                     error_code TEXT NOT NULL DEFAULT '',
-                    handoff_hash TEXT NOT NULL DEFAULT ''
+                    handoff_hash TEXT NOT NULL DEFAULT '',
+                    codex_request_prepared INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE INDEX IF NOT EXISTS jobs_claim_idx
@@ -167,6 +168,13 @@ class QueueStore:
                     ON deliveries(status, available_at, created_at);
                 """
             )
+            columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)")
+            }
+            if "codex_request_prepared" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN codex_request_prepared INTEGER NOT NULL DEFAULT 0"
+                )
 
     @staticmethod
     def _stable_delivery_identity(job_id: str) -> tuple[str, str]:
@@ -406,6 +414,37 @@ class QueueStore:
                 (timestamp + lease_seconds, timestamp, job_id, worker_id),
             ).rowcount
         return changed == 1
+
+    def persist_canonical_codex_request(
+        self,
+        job_id: str,
+        request_text: str,
+        partial_result: str,
+        *,
+        expected_lease_owner: str,
+        now: float | None = None,
+    ) -> None:
+        """Persist a validated handoff request before publishing its file."""
+        request_value = _require_text(request_text, "request_text", MAX_REQUEST_CHARS)
+        partial = _require_text(
+            partial_result, "partial_result", MAX_RESULT_CHARS, allow_empty=True
+        )
+        owner = _require_text(
+            expected_lease_owner, "expected_lease_owner", MAX_IDENTIFIER_CHARS
+        )
+        timestamp = time.time() if now is None else float(now)
+        with self._connection() as connection:
+            changed = connection.execute(
+                """
+                UPDATE jobs SET request_text = ?, result_text = ?,
+                       codex_request_prepared = 1, updated_at = ?
+                 WHERE job_id = ? AND status = 'running' AND lease_owner = ?
+                       AND route IN ('taichung', 'taoyuan', 'auto_qwen')
+                """,
+                (request_value, partial, timestamp, job_id, owner),
+            ).rowcount
+        if changed != 1:
+            raise QueueStoreError("Codex request persistence lost its job lease")
 
     def complete(
         self,
@@ -810,7 +849,8 @@ class QueueStore:
             candidates = connection.execute(
                 """
                 SELECT job_id FROM jobs
-                 WHERE status = 'running' AND route IN ('codex', 'all')
+                 WHERE status = 'running'
+                       AND (route IN ('codex', 'all') OR codex_request_prepared = 1)
                        AND lease_until IS NOT NULL AND lease_until <= ?
                        AND expires_at > ?
                  ORDER BY updated_at LIMIT ?

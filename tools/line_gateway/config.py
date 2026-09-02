@@ -30,6 +30,10 @@ _SECRET_TARGETS = {
         "AEVRYND_QWEN_API_KEY",
         "Aevrynd/LineGateway/QwenApiKey",
     ),
+    "secondary_qwen_api_key": (
+        "AEVRYND_QWEN_SECONDARY_API_KEY",
+        "Aevrynd/LineGateway/SecondaryQwenApiKey",
+    ),
 }
 
 
@@ -38,6 +42,7 @@ class GatewayConfig:
     channel_secret: str = field(repr=False)
     channel_access_token: str = field(repr=False)
     qwen_api_key: str | None = field(default=None, repr=False)
+    secondary_qwen_api_key: str | None = field(default=None, repr=False)
     allowed_user_ids: frozenset[str] = field(default_factory=frozenset)
     allowed_group_ids: frozenset[str] = field(default_factory=frozenset)
     bind_host: str = "127.0.0.1"
@@ -46,11 +51,15 @@ class GatewayConfig:
     request_timeout_seconds: float = 5.0
     max_events_per_webhook: int = 100
     qwen_base_url: str = "http://192.168.50.98:8080/v1"
+    secondary_qwen_base_url: str = "http://100.89.42.36:8080/v1"
+    taichung_qwen_role: str = "primary"
+    taoyuan_qwen_role: str = "secondary"
 
     def __post_init__(self) -> None:
         _validate_secret(self.channel_secret, required=True)
         _validate_secret(self.channel_access_token, required=True)
         _validate_secret(self.qwen_api_key, required=False)
+        _validate_secret(self.secondary_qwen_api_key, required=False)
         _validate_identifier_set(self.allowed_user_ids)
         _validate_identifier_set(self.allowed_group_ids)
         if not self.allowed_user_ids or not self.allowed_group_ids:
@@ -70,6 +79,13 @@ class GatewayConfig:
         if not 1 <= self.max_events_per_webhook <= 100:
             raise GatewayConfigError("Event count limit is outside the permitted range.")
         _validate_qwen_base_url(self.qwen_base_url)
+        _validate_qwen_base_url(self.secondary_qwen_base_url)
+        if self.qwen_base_url != "http://192.168.50.98:8080/v1":
+            raise GatewayConfigError("Primary Qwen endpoint role is fixed.")
+        if self.secondary_qwen_base_url != "http://100.89.42.36:8080/v1":
+            raise GatewayConfigError("Secondary Qwen endpoint role is fixed.")
+        if {self.taichung_qwen_role, self.taoyuan_qwen_role} != {"primary", "secondary"}:
+            raise GatewayConfigError("Assistant role mapping must be an exact permutation.")
 
 
 def _validate_secret(value: str | None, *, required: bool) -> None:
@@ -146,6 +162,11 @@ def _validate_qwen_base_url(value: str) -> None:
         or port is None
     ):
         raise GatewayConfigError("Qwen base URL is invalid.")
+    if (parsed.scheme, parsed.hostname, port) not in {
+        ("http", "192.168.50.98", 8080),
+        ("http", "100.89.42.36", 8080),
+    }:
+        raise GatewayConfigError("Qwen base URL is not allowlisted.")
 
 
 def load_config(
@@ -170,6 +191,7 @@ def load_config(
         channel_secret=credentials["channel_secret"],
         channel_access_token=credentials["channel_access_token"],
         qwen_api_key=credentials["qwen_api_key"],
+        secondary_qwen_api_key=credentials["secondary_qwen_api_key"],
         allowed_user_ids=_parse_identifier_set(source.get("AEVRYND_LINE_ALLOWED_USER_IDS")),
         allowed_group_ids=_parse_identifier_set(source.get("AEVRYND_LINE_ALLOWED_GROUP_IDS")),
         bind_host=source.get("AEVRYND_LINE_BIND_HOST", "127.0.0.1").strip(),
@@ -184,4 +206,9 @@ def load_config(
         qwen_base_url=source.get(
             "AEVRYND_QWEN_BASE_URL", "http://192.168.50.98:8080/v1"
         ).strip(),
+        secondary_qwen_base_url=source.get(
+            "AEVRYND_QWEN_SECONDARY_BASE_URL", "http://100.89.42.36:8080/v1"
+        ).strip(),
+        taichung_qwen_role=source.get("AEVRYND_ASSISTANT_TAICHUNG_QWEN_ROLE", "primary").strip(),
+        taoyuan_qwen_role=source.get("AEVRYND_ASSISTANT_TAOYUAN_QWEN_ROLE", "secondary").strip(),
     )

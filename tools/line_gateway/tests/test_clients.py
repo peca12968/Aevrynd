@@ -7,6 +7,7 @@ import json
 import unittest
 import uuid
 from urllib import error
+from tools.line_gateway.config import GatewayConfig, GatewayConfigError
 
 from tools.line_gateway.line_client import (
     LineClient,
@@ -16,8 +17,10 @@ from tools.line_gateway.line_client import (
 from tools.line_gateway.qwen_client import (
     InvalidQwenResponse,
     QwenClient,
+    QwenClientPool,
     QwenClientError,
     RetryableQwenError,
+    _NoRedirectHandler,
 )
 from tools.line_gateway.tests.support import FakeResponse, RecordingOpener
 
@@ -76,6 +79,26 @@ class QwenClientTests(unittest.TestCase):
         for url in hostile_urls:
             with self.subTest(url=url), self.assertRaises(ValueError):
                 QwenClient(url, "fake-api-key", "model")
+        QwenClient("http://100.89.42.36:8080/v1", "fake-api-key", "model")
+        with self.assertRaises(GatewayConfigError):
+            GatewayConfig(
+                channel_secret="test-channel-secret-value",
+                channel_access_token="test-access-token-value",
+                allowed_user_ids=frozenset({"allowed-user"}),
+                allowed_group_ids=frozenset({"allowed-group"}),
+                qwen_base_url="http://100.89.42.36:8080/v1",
+                secondary_qwen_base_url="http://192.168.50.98:8080/v1",
+            )
+        with self.assertRaises(GatewayConfigError):
+            GatewayConfig(
+                channel_secret="test-channel-secret-value",
+                channel_access_token="test-access-token-value",
+                allowed_user_ids=frozenset({"allowed-user"}),
+                allowed_group_ids=frozenset({"allowed-group"}),
+                taichung_qwen_role="primary",
+                taoyuan_qwen_role="primary",
+            )
+        self.assertIsNone(_NoRedirectHandler().redirect_request(None, None, 302, "Found", {}, "http://attacker.invalid"))
 
     def test_chat_uses_fixed_url_model_and_bounded_payload(self) -> None:
         response_body = json.dumps(
@@ -114,6 +137,71 @@ class QwenClientTests(unittest.TestCase):
 
             with self.subTest(status=status), self.assertRaises(expected):
                 self._client(failing).chat("hello")
+
+        primary_calls = 0
+        secondary_calls: list[str] = []
+
+        def primary_failure(*_args, **_kwargs):
+            nonlocal primary_calls
+            primary_calls += 1
+            raise error.HTTPError("http://qwen.invalid", 503, "error", {}, io.BytesIO())
+
+        def secondary_success(outgoing, **_kwargs):
+            secondary_calls.append(outgoing.full_url)
+            if outgoing.full_url.endswith("/slots"):
+                return FakeResponse(200, b"[{}]")
+            return FakeResponse(200, b'{"model":"test-model.gguf","choices":[{"message":{"content":"QWEN_REMOTE_OK"}}]}')
+
+        pool = QwenClientPool(
+            self._client(primary_failure),
+            QwenClient("http://100.89.42.36:8080/v1", "fake-api-key", "test-model.gguf", opener=secondary_success),
+        )
+        self.assertEqual("QWEN_REMOTE_OK", pool.chat("hello").text)
+        self.assertEqual(1, primary_calls)
+        self.assertEqual(
+            ["http://100.89.42.36:8080/slots", "http://100.89.42.36:8080/v1/chat/completions"],
+            secondary_calls,
+        )
+
+        def primary_permanent(*_args, **_kwargs):
+            raise error.HTTPError("http://qwen.invalid", 401, "error", {}, io.BytesIO())
+
+        secondary_called = False
+
+        def forbidden_secondary(*_args, **_kwargs):
+            nonlocal secondary_called
+            secondary_called = True
+            return FakeResponse(200, b"[]")
+
+        with self.assertRaises(QwenClientError):
+            QwenClientPool(self._client(primary_permanent), QwenClient("http://100.89.42.36:8080/v1", "fake-api-key", "test-model.gguf", opener=forbidden_secondary)).chat("hello")
+        self.assertFalse(secondary_called)
+
+        for base_url, path in (
+            ("http://192.168.50.98:8080/v1", "/chat/completions"),
+            ("http://100.89.42.36:8080/v1", "/chat/completions"),
+            ("http://100.89.42.36:8080/v1", "/slots"),
+        ):
+            visited: list[str] = []
+            def redirecting(outgoing, **_kwargs):
+                visited.append(outgoing.full_url)
+                raise error.HTTPError(outgoing.full_url, 302, "redirect", {"Location": "http://attacker.invalid/steal"}, io.BytesIO())
+            client = QwenClient(base_url, "fake-api-key", "test-model.gguf", opener=redirecting)
+            with self.subTest(base_url=base_url, path=path), self.assertRaises(QwenClientError):
+                client.chat("hello") if path == "/chat/completions" else client.slots_ready()
+            self.assertEqual(1, len(visited))
+            self.assertNotIn("attacker.invalid", visited)
+
+        secondary_visits: list[str] = []
+        def redirecting_slot(outgoing, **_kwargs):
+            secondary_visits.append(outgoing.full_url)
+            raise error.HTTPError(outgoing.full_url, 302, "redirect", {"Location": "http://attacker.invalid/steal"}, io.BytesIO())
+        with self.assertRaises(QwenClientError):
+            QwenClientPool(
+                self._client(primary_failure),
+                QwenClient("http://100.89.42.36:8080/v1", "fake-api-key", "test-model.gguf", opener=redirecting_slot),
+            ).chat("hello")
+        self.assertEqual(["http://100.89.42.36:8080/slots"], secondary_visits)
 
     def test_oversized_response_and_input_are_rejected(self) -> None:
         body = b"{" + b"x" * 2048

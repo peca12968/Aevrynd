@@ -1,4 +1,7 @@
-param([string]$InstallRoot = "$env:ProgramData\Aevrynd\LineGateway")
+param(
+    [string]$InstallRoot = "$env:ProgramData\Aevrynd\LineGateway",
+    [switch]$EnableSecondaryQwen
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -65,8 +68,11 @@ function Set-SecureGenericCredential {
     }
 }
 
-# 三個值只在 SecureString 與受保護的 Credential Manager 中短暫存在。
+# 三個必要值與一個可選值只在 SecureString 與受保護的 Credential Manager 中短暫存在。
 Set-SecureGenericCredential -Target 'Aevrynd/LineGateway/ChannelSecret' -Prompt 'LINE Channel Secret'
 Set-SecureGenericCredential -Target 'Aevrynd/LineGateway/ChannelAccessToken' -Prompt 'LINE Channel Access Token'
 Set-SecureGenericCredential -Target 'Aevrynd/LineGateway/QwenApiKey' -Prompt 'Primary Qwen API Key'
+if ($EnableSecondaryQwen) {
+    Set-SecureGenericCredential -Target 'Aevrynd/LineGateway/SecondaryQwenApiKey' -Prompt 'Secondary Qwen API Key'
+}
 Write-Output 'Credentials stored in Windows Credential Manager for the current user.'
