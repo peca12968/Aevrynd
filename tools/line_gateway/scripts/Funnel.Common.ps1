@@ -12,6 +12,21 @@ using System;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 namespace Aevrynd {
+  public sealed class ProcessResult { public int ExitCode; public string Output=""; public string Error=""; public bool TimedOut; public string[] AuthorizationUrls=Array.Empty<string>(); }
+  public static class SafeProcessRunner {
+    static readonly System.Text.RegularExpressions.Regex LoginUrl=new System.Text.RegularExpressions.Regex(@"https://login\.tailscale\.com/a/[A-Za-z0-9_-]{8,256}",System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    public static ProcessResult Run(string path, string[] args, int timeoutMs, bool showAuthorizationHint) {
+      var info=new System.Diagnostics.ProcessStartInfo(path){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
+      foreach(var arg in args) info.ArgumentList.Add(arg);
+      using(var process=new System.Diagnostics.Process()){process.StartInfo=info;var output=new System.Text.StringBuilder();var error=new System.Text.StringBuilder();var gate=new object();var seen=new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);bool oversized=false;
+        Action<string,System.Text.StringBuilder> receive=(line,target)=>{if(line==null)return;lock(gate){if((long)output.Length+error.Length+line.Length+1>1048576){oversized=true;try{process.Kill(true);}catch{}return;}target.AppendLine(line);if(showAuthorizationHint)foreach(System.Text.RegularExpressions.Match m in LoginUrl.Matches(line))if(seen.Add(m.Value))Console.WriteLine("Open this official URL and approve Funnel in Tailscale Access Controls: "+m.Value);}};
+        process.OutputDataReceived+=(s,e)=>receive(e.Data,output);process.ErrorDataReceived+=(s,e)=>receive(e.Data,error);
+        if(!process.Start()) throw new InvalidOperationException("Tailscale CLI did not start.");process.BeginOutputReadLine();process.BeginErrorReadLine();bool exited=process.WaitForExit(timeoutMs);
+        if(!exited){try{process.Kill(true);}catch{}}process.WaitForExit();if(oversized)throw new InvalidOperationException("Tailscale CLI output exceeds policy.");
+        lock(gate){var urls=new string[seen.Count];seen.CopyTo(urls);return new ProcessResult{ExitCode=exited?process.ExitCode:-1,Output=output.ToString(),Error=error.ToString(),TimedOut=!exited,AuthorizationUrls=urls};}
+      }
+    }
+  }
   public static class SafePath {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
@@ -84,13 +99,11 @@ function ConvertFrom-StrictFunnelJson {
 }
 
 function Invoke-TailscaleCli {
-    param([Parameter(Mandatory)][object]$Executable,[Parameter(Mandatory)][string[]]$Arguments)
+    param([Parameter(Mandatory)][object]$Executable,[Parameter(Mandatory)][string[]]$Arguments,[ValidateRange(1,300)][int]$TimeoutSeconds=15,[switch]$ShowAuthorizationHint)
     if($Executable.Stream-is[IO.FileStream]-and-not$Executable.Stream.SafeFileHandle.IsClosed){$path=$Executable.ExecutablePath;if([Aevrynd.SafePath]::FinalPath($Executable.Stream.SafeFileHandle)-cne$path){throw 'Tailscale executable handle identity changed.'}}else{throw 'A live Tailscale executable identity handle is required.'}
-    $output=@(& $path @Arguments 2>&1)
-    $exitCode=$LASTEXITCODE
-    $text=($output|ForEach-Object{[string]$_})-join"`n"
-    if($text.Length-gt1048576){throw 'Tailscale CLI output exceeds policy.'}
-    return [pscustomobject]@{ExitCode=$exitCode;Output=$text}
+    $runPath=$path;$runArguments=$Arguments
+    if($env:AEVRYND_FUNNEL_TEST_MODE-ceq'isolated-fixture'-and$null-ne$Executable.PSObject.Properties['TestScript']){$runPath=(Get-Command pwsh -ErrorAction Stop).Source;$runArguments=@('-NoLogo','-NoProfile','-File',[string]$Executable.TestScript)+$Arguments}
+    return [Aevrynd.SafeProcessRunner]::Run($runPath,$runArguments,$TimeoutSeconds*1000,$ShowAuthorizationHint.IsPresent)
 }
 
 function Get-FixedTailscaleExecutableIdentity {
@@ -230,6 +243,13 @@ function Write-FunnelState {
 function Assert-FunnelIdentityMatchesState {
     param([object]$State,[object]$Executable,[object]$Node)
     if(-not[string]::Equals([IO.Path]::GetFullPath([string]$State.executablePath),$Executable.ExecutablePath,[StringComparison]::OrdinalIgnoreCase)-or[string]$State.executableSha256-cne$Executable.ExecutableSha256-or[string]$State.executableVersion-cne$Executable.ExecutableVersion-or[string]$State.dnsName-cne$Node.DnsName-or[string]$State.nodeId-cne$Node.NodeId-or[string]$State.publicKey-cne$Node.PublicKey-or[string]$State.tailscaleIPv4-cne$Node.TailscaleIPv4){throw 'Current Tailscale executable or node identity does not match Funnel state.'}
+}
+
+function Remove-ExactPendingFunnelState {
+    param([hashtable]$Paths,[Parameter(Mandatory)][string]$LaunchNonce)
+    $pending=Read-FunnelState -Paths $Paths
+    if($null-eq$pending-or$pending.status-cne'pending'-or$pending.launchNonce-cne$LaunchNonce){throw 'Pending Funnel state does not match the activation attempt.'}
+    Remove-Item -LiteralPath $Paths.FunnelStateFile -Force
 }
 
 function Test-FunnelTransportAbsent {

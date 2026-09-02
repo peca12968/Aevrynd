@@ -102,6 +102,8 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Start-Funnel.ps
 
 啟用命令只使用固定參數 `funnel --bg --yes --https=443 --set-path=/webhook http://127.0.0.1:8787`。成功必須再由 `funnel status --json` 精確證明唯一 HTTPS 443、唯一 `/webhook` 與唯一 loopback backend；CLI exit code或顯示網址本身不算成功。停止同樣先驗證 state、執行檔與 node 身分，只移除該精確 tuple，禁止使用會清除其他服務的 `funnel reset`：
 
+首次使用若 Tailscale 要求管理員核准 Funnel，啟動腳本只會即時顯示符合 `https://login.tailscale.com/a/...` 固定官方網域格式的授權網址，其他 CLI 輸出不回顯。請開啟該官方網址，並在 Tailscale Access Controls 核准此節點使用 Funnel。授權等待上限為 120 秒；逾時會終止 CLI、重新讀取 authoritative status，並只在狀態仍為 disabled 且 launch nonce 完全相符時清除 pending state。完成網頁核准後可重新執行相同啟動命令。
+
 ```powershell
 pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Stop-Funnel.ps1
 ```
