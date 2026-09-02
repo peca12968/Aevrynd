@@ -1,6 +1,7 @@
 Texture2D<float4> currentSceneColor : register(t10);
 Texture2D<float4> previousSceneColor : register(t14);
 Texture2D<float2> sceneVelocity : register(t15);
+Texture2D<float> currentSceneDepth : register(t16);
 SamplerState linearClampSampler : register(s0);
 
 cbuffer TemporalComposite : register(b0)
@@ -26,6 +27,19 @@ float TemporalLuminance(float3 color)
     return dot(max(color, 0.0), float3(0.2126, 0.7152, 0.0722));
 }
 
+bool TemporalDepthCompatible(float centerDepth, float sampleDepth)
+{
+    const bool centerSky = centerDepth >= 0.9995;
+    const bool sampleSky = sampleDepth >= 0.9995;
+    if (centerSky != sampleSky)
+        return false;
+    if (centerSky)
+        return true;
+    // 目前引擎使用 clear=1 的透視深度；以離 clear plane 的距離正規化，遠近景都有一致門檻。
+    const float depthScale = max(max(1.0 - centerDepth, 1.0 - sampleDepth), 0.0001);
+    return abs(centerDepth - sampleDepth) <= max(0.00001, depthScale * 0.035);
+}
+
 float4 TemporalResolvePixelMain(TemporalVertexOutput input) : SV_TARGET
 {
     uint width, height;
@@ -37,18 +51,30 @@ float4 TemporalResolvePixelMain(TemporalVertexOutput input) : SV_TARGET
     if (temporalParameters.z < 0.5)
         return float4(center, 1.0);
 
+    const bool depthAware = temporalParameters.z < 1.5;
+    const int2 maximumPixel = int2(width, height) - 1;
+    const int2 centerPixel = clamp(int2(sourceUv * float2(width, height)), int2(0, 0), maximumPixel);
+    const float centerDepth = currentSceneDepth.Load(int3(centerPixel, 0));
+
     const float3 north = currentSceneColor.SampleLevel(linearClampSampler, sourceUv - float2(0.0, texel.y), 0.0).rgb;
     const float3 south = currentSceneColor.SampleLevel(linearClampSampler, sourceUv + float2(0.0, texel.y), 0.0).rgb;
     const float3 west = currentSceneColor.SampleLevel(linearClampSampler, sourceUv - float2(texel.x, 0.0), 0.0).rgb;
     const float3 east = currentSceneColor.SampleLevel(linearClampSampler, sourceUv + float2(texel.x, 0.0), 0.0).rgb;
-    const float3 neighborhoodMinimum = min(center, min(min(north, south), min(west, east)));
-    const float3 neighborhoodMaximum = max(center, max(max(north, south), max(west, east)));
+    float3 neighborhoodMinimum = center;
+    float3 neighborhoodMaximum = center;
+    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(0, -1), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, north); neighborhoodMaximum = max(neighborhoodMaximum, north); }
+    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(0, 1), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, south); neighborhoodMaximum = max(neighborhoodMaximum, south); }
+    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(-1, 0), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, west); neighborhoodMaximum = max(neighborhoodMaximum, west); }
+    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(1, 0), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, east); neighborhoodMaximum = max(neighborhoodMaximum, east); }
     const float2 velocityPixels = sceneVelocity.SampleLevel(linearClampSampler, sourceUv, 0.0);
     const float2 previousUv = sourceUv - velocityPixels * texel + (jitterPixels.zw - jitterPixels.xy) * texel;
     const float inside = all(previousUv >= 0.0) && all(previousUv <= 1.0) ? 1.0 : 0.0;
     float3 history = previousSceneColor.SampleLevel(linearClampSampler, saturate(previousUv), 0.0).rgb;
     history = clamp(history, neighborhoodMinimum, neighborhoodMaximum);
     const float luminanceDelta = abs(TemporalLuminance(center) - TemporalLuminance(history)) / max(TemporalLuminance(center), 0.05);
-    const float confidence = saturate(1.0 - luminanceDelta * 1.5) * inside;
+    const int2 previousPixel = clamp(int2(saturate(previousUv) * float2(width, height)), int2(0, 0), maximumPixel);
+    const float reprojectedDepth = currentSceneDepth.Load(int3(previousPixel, 0));
+    const float depthConfidence = !depthAware || TemporalDepthCompatible(centerDepth, reprojectedDepth) ? 1.0 : 0.0;
+    const float confidence = saturate(1.0 - luminanceDelta * 1.5) * inside * depthConfidence;
     return float4(lerp(center, history, temporalParameters.w * confidence), 1.0);
 }

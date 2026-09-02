@@ -1093,7 +1093,7 @@ void GameplayLabGame::CleanupGameplayHdrCaptureArtifacts(std::size_t index,bool 
 }
 void GameplayLabGame::FailGameplayHdrCapture(Engine& engine,std::size_t index)noexcept{
   if(index<gameplayHdrCaptureStates_.size()){gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Failed;gameplayHdrCaptureReceipts_[index]={};gameplayHdrCaptureReceipts_[index].state=GameplayHdrCaptureState3D::Failed;CleanupGameplayHdrCaptureArtifacts(index,true);}
-  engine.CancelLinearHdrReadback3D();if(captureSequenceToken_)engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;capturePending_=false;gameplayHdrInFlight_=0;
+  engine.CancelLinearHdrReadback3D();if(captureSequenceToken_)engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};capturePresentationLogicalToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=capturePresentationRequestPending_=capturePresentationPending_=false;capturePending_=false;gameplayHdrInFlight_=0;
 }
 bool GameplayLabGame::WriteGameplayHdrCaptureReceipt()const{
   constexpr std::uint64_t MaximumEngineHdrBytes=16ull*1024ull*1024ull;if(captureDirectory_.empty()||gameplayHdrEnginePeakBytes_>MaximumEngineHdrBytes||gameplayHdrMaxInFlight_!=1||gameplayHdrInFlight_)return false;
@@ -1102,6 +1102,15 @@ bool GameplayLabGame::WriteGameplayHdrCaptureReceipt()const{
   const auto destination=captureDirectory_/"gameplay-hdr-capture-receipt.json",temporary=captureDirectory_/"gameplay-hdr-capture-receipt.json.tmp";std::ofstream output(temporary,std::ios::binary|std::ios::trunc);if(!output)return false;output<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabProductionHdr\",\"expectedCaptures\":"<<Names.size()<<",\"engineRawPeakBytes\":"<<gameplayHdrEnginePeakBytes_<<",\"maximumInFlight\":"<<gameplayHdrMaxInFlight_<<",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)output<<',';const auto& receipt=gameplayHdrCaptureReceipts_[index];output<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"path\":\""<<receipt.path.filename().string()<<"\",\"state\":\""<<GameplayHdrStateName3D(receipt.state)<<"\",\"byteCount\":"<<receipt.byteCount<<",\"fileHash\":\""<<GameplayProductionHashHex3D(receipt.fileHash)<<"\",\"stableContentHash\":\""<<GameplayProductionHashHex3D(receipt.stableContentHash)<<"\",\"payloadHash\":\""<<GameplayProductionHashHex3D(receipt.payloadHash)<<"\",\"rootHash\":\""<<GameplayProductionHashHex3D(receipt.rootHash)<<"\",\"frameSerial\":"<<receipt.frameSerial<<",\"sequenceToken\":"<<receipt.sequenceToken<<",\"sequenceIndex\":"<<receipt.sequenceIndex<<",\"verified\":1}";}output<<"]}";output.flush();if(!output){output.close();std::error_code ignored;std::filesystem::remove(temporary,ignored);return false;}output.close();if(!MoveFileExW(temporary.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::error_code ignored;std::filesystem::remove(temporary,ignored);return false;}return true;
 }
 void GameplayLabGame::RequestCapturePhase(Engine& engine){
+  if(capturePresentationRequestPending_){
+    if(!capturePairFrozen_||captureSequenceToken_||!capturePresentationLogicalToken_||captureIndex_>=Names.size())throw std::runtime_error("Gameplay presentation capture was not paired with a completed diagnostic sequence");
+    const auto path=(captureDirectory_/Names[captureIndex_]).lexically_normal();
+    captureRequestedEffectiveNames_[captureIndex_]=path.filename().wstring();captureRequestedEffectivePaths_[captureIndex_]=path;captureCommittedEffectiveNames_[captureIndex_]=path.filename().wstring();captureCommittedEffectivePaths_[captureIndex_]=path;
+    const auto renderer=engine.GetRendererStats();captureSuccess_=renderer.successfulFrameCaptures;captureReject_=renderer.rejectedFrameCaptures;
+    if(!engine.CaptureNextFrame3D(path))throw std::runtime_error("Gameplay production presentation capture request failed");
+    capturePresentationRequestPending_=false;capturePresentationPending_=true;
+    return;
+  }
   if(!capturePhaseRequestPending_)return;
   if(!capturePairFrozen_||!captureSequenceToken_||captureIndex_>=Names.size()||!captureScenePhaseLedger_.BindRequest(captureSequenceToken_,captureIndex_,capturePairMetadata_.sequence.index,capturePairMetadata_)){
     FailGameplayHdrCapture(engine,captureIndex_);
@@ -1114,7 +1123,7 @@ void GameplayLabGame::RequestCapturePhase(Engine& engine){
   }
   std::filesystem::path path;
   if(capturePairMetadata_.sequence.index==0)path=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L"-raw.png");
-  else if(capturePairMetadata_.sequence.index==1){path=(captureDirectory_/Names[captureIndex_]).lexically_normal();captureRequestedEffectiveNames_[captureIndex_]=path.filename().wstring();captureRequestedEffectivePaths_[captureIndex_]=path;}
+  else if(capturePairMetadata_.sequence.index==1)path=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L"-diagnostic.png");
   else if(capturePairMetadata_.sequence.index==2)path=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L"-reference.png");
   else{FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture phase index was unsupported");}
   const auto renderer=engine.GetRendererStats();captureSuccess_=renderer.successfulFrameCaptures;captureReject_=renderer.rejectedFrameCaptures;
@@ -1366,9 +1375,27 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     return;
   // 固定更新可能在下一次 OnRender 前執行多次；已排隊的階段必須等待同幀
   // Scene submission 綁定，禁止誤啟另一個讀回序列。
-  if(capturePhaseRequestPending_)
+  if(capturePhaseRequestPending_||capturePresentationRequestPending_)
     return;
   const auto renderer = engine.GetRendererStats();
+  if(capturePresentationPending_&&(renderer.successfulFrameCaptures>captureSuccess_||renderer.rejectedFrameCaptures>captureReject_)){
+    if(renderer.rejectedFrameCaptures>captureReject_)throw std::runtime_error("Gameplay production presentation capture was rejected");
+    const auto presentationPath=(captureDirectory_/Names[captureIndex_]).lexically_normal();
+    const auto diagnosticPath=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L"-diagnostic.png");
+    std::array<std::byte,32> presentationHash{},diagnosticHash{};
+    const bool filesDistinct=CaptureFileSha256(presentationPath,presentationHash)&&CaptureFileSha256(diagnosticPath,diagnosticHash)&&presentationHash!=diagnosticHash;
+    const auto frameSerial=renderer.lastDirectionalShadowProvenance.frameSerial;
+    const bool aaParity=renderer.multisampleEnabled&&renderer.multisampleCount>1&&renderer.temporalAntiAliasingEnabled&&renderer.temporalHistoryUsed;
+    const bool logicalPair=capturePresentationLogicalToken_&&capturePairMetadata_.cameraHash==captureRequestCameraHash_[captureIndex_]&&capturePairMetadata_.stateHash==captureRequestStateHash_[captureIndex_]&&capturePairMetadata_.sequenceInvariantHash&&frameSerial&&frameSerial!=captureEffectiveRasterProvenance_[captureIndex_].frameSerial;
+    if(!filesDistinct||!aaParity||!logicalPair)throw std::runtime_error("Gameplay presentation capture did not use the independent production AA/TAA raster");
+    capturePresentationFrameSerial_[captureIndex_]=frameSerial;capturePresentationCameraHash_[captureIndex_]=capturePairMetadata_.cameraHash;capturePresentationStateHash_[captureIndex_]=capturePairMetadata_.stateHash;capturePresentationInvariantHash_[captureIndex_]=capturePairMetadata_.sequenceInvariantHash;capturePresentationMsaa_[captureIndex_]=renderer.multisampleEnabled;capturePresentationTaa_[captureIndex_]=renderer.temporalAntiAliasingEnabled;capturePresentationHistoryUsed_[captureIndex_]=renderer.temporalHistoryUsed;capturePresentationPaired_[captureIndex_]=1;
+    if(!captureScenarioClock_.CompleteReadback(captureIndex_,temporalFixtureWarmupFrames_?2:Names.size()))throw std::runtime_error("Gameplay presentation completion was out of order");
+    capturePresentationPending_=false;capturePresentationLogicalToken_={};captureScenePhaseLedger_.Clear();captureReferencePhase_=false;
+    if(captureIndex_==9&&rules_.PaletteOpen()){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette close input failed");}
+    activeCaptureRoute_.Clear();++captureIndex_;capturePairFrozen_=false;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;capturePreparedIndex_.reset();
+    if(captureIndex_==4||captureIndex_==5)captureCrouchTapPending_=true;
+    return;
+  }
   if (capturePending_ && (renderer.successfulFrameCaptures > captureSuccess_ ||
                           renderer.rejectedFrameCaptures > captureReject_)) {
     if (renderer.rejectedFrameCaptures > captureReject_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired framebuffer capture was rejected");}
@@ -1396,15 +1423,10 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       captureSequenceReceipts_[captureIndex_]=sequenceResult.receipt;
       const auto requiredWarmup=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;
       if(!captureTemporalHistoryGeneration_[captureIndex_]||captureTemporalWarmupFrames_[captureIndex_]<requiredWarmup||captureTemporalReseedReasonMask_[captureIndex_]==0||sequenceResult.receipt.phases.empty()||sequenceResult.receipt.phases.front().raster.temporalHistoryReadGeneration!=captureTemporalHistoryGeneration_[captureIndex_]){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay temporal history receipt did not belong to the warmed capture sequence");}
-      if(!captureScenarioClock_.CompleteReadback(captureIndex_,temporalFixtureWarmupFrames_?2:Names.size())){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture scenario completion was out of order");}
-      captureSequenceToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;
-      captureReferencePhase_=false;
-      if(captureIndex_==9&&rules_.PaletteOpen()){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette close input failed");}
-      activeCaptureRoute_.Clear();++captureIndex_;capturePairFrozen_=false;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;capturePreparedIndex_.reset();
-      // 第三人稱黃昏固定展示 C 蹲姿，下一張之前恢復站姿。
-      if (captureIndex_ == 4 || captureIndex_ == 5) {
-        captureCrouchTapPending_=true;
-      }
+      // 診斷序列結束後才擷取玩家實際 presentation；此 raster 不掛 OID/depth，保留正式 MSAA/TAA history。
+      capturePresentationLogicalToken_=captureSequenceToken_;captureSequenceToken_={};captureSequencePhaseCount_=0;capturePhaseRequestPending_=false;captureReferencePhase_=false;capturePresentationRequestPending_=true;
+      capturePending_=false;
+      return;
     }
     capturePending_ = false;
   }
@@ -1413,6 +1435,8 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     const auto atmosphereStats=engine.GetRendererStats();
     std::ofstream out(captureDirectory_/"temporal-fixture-receipt.json",std::ios::trunc);
     out<<std::setprecision(std::numeric_limits<float>::max_digits10);
+    std::ofstream presentationOut(captureDirectory_/"temporal-fixture-presentation-receipt.json",std::ios::trunc);
+    presentationOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayThirdDayPresentationParity\",\"capture\":\"third-day.png\",\"diagnosticCapture\":\"third-day-diagnostic.png\",\"logicalToken\":"<<sequence.token.value<<",\"frameSerial\":"<<capturePresentationFrameSerial_[1]<<",\"diagnosticFrameSerial\":"<<captureEffectiveRasterProvenance_[1].frameSerial<<",\"cameraHash\":"<<capturePresentationCameraHash_[1]<<",\"stateHash\":"<<capturePresentationStateHash_[1]<<",\"invariantHash\":"<<capturePresentationInvariantHash_[1]<<",\"paired\":"<<unsigned(capturePresentationPaired_[1])<<",\"msaaEnabled\":"<<unsigned(capturePresentationMsaa_[1])<<",\"taaEnabled\":"<<unsigned(capturePresentationTaa_[1])<<",\"historyUsed\":"<<unsigned(capturePresentationHistoryUsed_[1])<<",\"warmupFrames\":"<<captureTemporalWarmupFrames_[1]<<"}";presentationOut.close();
     out<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayThirdDayProductionTemporalFixture\",\"capture\":\"third-day.png\",\"warmupFrames\":"<<temporalFixtureWarmupFrames_<<",\"baselineWarmupFrames\":"<<GameplayTemporalCaptureWarmupFrames3D<<",\"baselineContract\":\"typed-third-day-warmup-v1\",\"isolationMutation\":\""<<(temporalFixtureCloudOff_?"cloud-off":"none")<<"\",\"recordedWarmupFrames\":"<<captureTemporalWarmupFrames_[1]<<",\"historyGeneration\":"<<captureTemporalHistoryGeneration_[1]<<",\"sequenceComplete\":"<<unsigned(sequence.Complete())<<",\"phaseCount\":"<<sequence.phases.size()<<",\"atmosphereSequenceDispatches\":"<<atmosphereStats.volumetricAtmosphereSequenceDispatches<<",\"atmosphereSequenceReuses\":"<<atmosphereStats.volumetricAtmosphereSequenceReuses<<",\"atmosphereCompositePasses\":"<<atmosphereStats.volumetricAtmosphereCompositePasses<<",\"atmosphereReuseRejects\":"<<atmosphereStats.volumetricAtmosphereSequenceReuseRejects<<",\"atmosphereLastRejectReason\":"<<unsigned(atmosphereStats.volumetricAtmosphereLastSequenceReuseReject)<<",\"atmosphereFingerprint\":"<<atmosphereStats.volumetricAtmosphereSequenceFingerprint<<",\"temporalSequenceDispatches\":"<<atmosphereStats.temporalSequenceDispatches<<",\"temporalSequenceReuses\":"<<atmosphereStats.temporalSequenceReuses<<",\"temporalReuseRejects\":"<<atmosphereStats.temporalSequenceReuseRejects<<",\"temporalLastRejectReason\":"<<unsigned(atmosphereStats.temporalLastSequenceReuseReject)<<",\"temporalFingerprint\":"<<atmosphereStats.temporalSequenceFingerprint<<",\"phaseProvenance\":[";for(std::size_t phase=0;phase<sequence.phases.size();++phase){if(phase)out<<',';const auto& atmosphere=captureAtmospherePhaseProvenance_[1][phase];const auto& temporal=captureTemporalPhaseProvenance_[1][phase];out<<"{\"phase\":"<<phase<<",\"atmosphere\":{\"fingerprint\":"<<atmosphere.fingerprint<<",\"outputIdentity\":"<<atmosphere.outputIdentity<<",\"fence\":"<<atmosphere.submissionFence<<",\"dispatch\":"<<unsigned(atmosphere.dispatched)<<",\"reuse\":"<<unsigned(atmosphere.reused)<<",\"reject\":"<<unsigned(atmosphere.rejection)<<"},\"temporal\":{\"fingerprint\":"<<temporal.fingerprint<<",\"outputIdentity\":"<<temporal.outputIdentity<<",\"fence\":"<<temporal.submissionFence<<",\"dispatch\":"<<unsigned(temporal.dispatched)<<",\"reuse\":"<<unsigned(temporal.reused)<<",\"reject\":"<<unsigned(temporal.rejection)<<"}}";}out<<"]}";out.close();
     engine.Quit();return;
   }

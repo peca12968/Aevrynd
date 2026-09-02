@@ -1187,6 +1187,7 @@ struct D3D12RendererTestAccess3D {
     static bool SetCloudContributorRouting(D3D12Renderer& renderer,CloudContributorRouting routing);
     static bool SetCloudContributorSkyProxy(D3D12Renderer& renderer,bool enabled);
     static bool SetWorldPixelMutation(D3D12Renderer& renderer,WorldPixelMutation mutation);
+    static bool SetLegacyTemporalDepthRejection(D3D12Renderer& renderer,bool enabled);
     static void SetVolumetricAtmosphereDiagnostics(D3D12Renderer& renderer,bool enabled);
     static bool SetVolumetricAtmosphereMutation(D3D12Renderer& renderer,VolumetricAtmosphereMutation mutation);
     static bool InvalidateActiveSequenceForDeviceTeardown(D3D12Renderer& renderer);
