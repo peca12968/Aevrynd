@@ -41,8 +41,9 @@ $bytes=[byte[]]::new(32);[Security.Cryptography.RandomNumberGenerator]::Fill($by
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$acl=[Security.AccessControl.DirectorySecurity]::new();$acl.SetAccessRuleProtection($true,$false);$rule=[Security.AccessControl.FileSystemAccessRule]::new($identity.User,[Security.AccessControl.FileSystemRights]::FullControl,[Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow);$acl.AddAccessRule($rule)
 $captureRoot=Join-Path $env:LOCALAPPDATA 'Aevrynd\LineGatewayEnrollment';if(-not(Test-Path -LiteralPath $captureRoot)){New-Item -ItemType Directory -Path $captureRoot|Out-Null};Set-Acl -LiteralPath $captureRoot -AclObject $acl
 $capturePath=Join-Path $captureRoot "allowlist-$([Guid]::NewGuid().ToString('N')).json"
-Write-Output "For the next $DurationSeconds seconds, send exactly: [mention this bot] enroll $nonce"
 $listener=[Net.HttpListener]::new();$listener.Prefixes.Add('http://127.0.0.1:8787/');$listener.Start()
+Write-Output 'ENROLLMENT_LISTENER_READY http://127.0.0.1:8787/webhook'
+Write-Output "For the next $DurationSeconds seconds, send exactly: [mention this bot] enroll $nonce"
 try{
     $deadline=[DateTimeOffset]::UtcNow.AddSeconds($DurationSeconds)
     $rejectedRequests=0
@@ -55,6 +56,7 @@ try{
             if($context.Request.HttpMethod-ne'POST'-or$context.Request.Url.AbsolutePath-ne'/webhook'){throw 'Enrollment only accepts POST /webhook.'}
             if($context.Request.ContentLength64-gt65536){throw [IO.InvalidDataException]::new('Webhook body exceeds enrollment policy.')}
             $raw=Read-BoundedWebhookBody -Stream $context.Request.InputStream -DeclaredLength $context.Request.ContentLength64 -MaximumBytes 65536 -EnrollmentDeadlineUtc $deadline -RequestTimeoutMilliseconds 3000
+            if(Test-LineWebhookPreflight -RawBody $raw -Signature ([string]$context.Request.Headers['X-Line-Signature']) -ChannelSecret $channelSecret){$context.Response.StatusCode=200;$context.Response.Close();continue}
             $result=Test-EnrollmentWebhook -RawBody $raw -Signature ([string]$context.Request.Headers['X-Line-Signature']) -ChannelSecret $channelSecret -DeveloperUserId $DeveloperUserId -Nonce $nonce
             [IO.File]::WriteAllText($capturePath,($result|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false));Set-Acl -LiteralPath $capturePath -AclObject $acl
             $context.Response.StatusCode=200;$context.Response.Close();Write-Output "Allowlist IDs captured to protected file: $capturePath";exit 0

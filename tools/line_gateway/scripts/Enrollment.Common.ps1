@@ -65,6 +65,32 @@ function Test-JsonInteger {
     return $null-ne$Value-and$Value-isnot[bool]-and($Value-is[int]-or$Value-is[long])
 }
 
+function Assert-LineWebhookSignature {
+    param([Parameter(Mandatory)][byte[]]$RawBody,[Parameter(Mandatory)][string]$Signature,[Parameter(Mandatory)][string]$ChannelSecret)
+    if($RawBody.Length-lt2-or$RawBody.Length-gt65536){throw 'Webhook body size is outside enrollment policy.'}
+    if($ChannelSecret.Length-lt16){throw 'Channel secret is invalid.'}
+    try{$provided=[Convert]::FromBase64String($Signature)}catch{throw 'LINE signature is malformed.'}
+    $secretBytes=[Text.Encoding]::UTF8.GetBytes($ChannelSecret);$hmac=[Security.Cryptography.HMACSHA256]::new($secretBytes)
+    try{$expected=$hmac.ComputeHash($RawBody)}finally{$hmac.Dispose();[Array]::Clear($secretBytes,0,$secretBytes.Length)}
+    if(-not(Test-FixedTimeBytes $provided $expected)){throw 'LINE signature verification failed.'}
+}
+
+function Test-LineWebhookPreflight {
+    param([Parameter(Mandatory)][byte[]]$RawBody,[Parameter(Mandatory)][string]$Signature,[Parameter(Mandatory)][string]$ChannelSecret)
+    Assert-LineWebhookSignature $RawBody $Signature $ChannelSecret
+    $document=$null
+    try{
+        $options=[Text.Json.JsonDocumentOptions]::new();$options.AllowTrailingCommas=$false;$options.CommentHandling=[Text.Json.JsonCommentHandling]::Disallow;$options.MaxDepth=8
+        $json=[Text.UTF8Encoding]::new($false,$true).GetString($RawBody);$document=[Text.Json.JsonDocument]::Parse($json,$options);$root=$document.RootElement
+        if($root.ValueKind-ne[Text.Json.JsonValueKind]::Object){return $false}
+        $names=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal);foreach($property in $root.EnumerateObject()){if(-not$names.Add($property.Name)){throw 'LINE webhook JSON contains duplicate envelope fields.'}}
+        if($names.Count-ne2-or-not$names.Contains('destination')-or-not$names.Contains('events')){return $false}
+        $destination=$root.GetProperty('destination');$events=$root.GetProperty('events')
+        if($destination.ValueKind-ne[Text.Json.JsonValueKind]::String-or$destination.GetString()-notmatch'^U[0-9a-fA-F]{32}$'){return $false}
+        return $events.ValueKind-eq[Text.Json.JsonValueKind]::Array-and$events.GetArrayLength()-eq0
+    }catch [Management.Automation.MethodInvocationException]{throw 'Webhook JSON is invalid.'}finally{if($null-ne$document){$document.Dispose()}}
+}
+
 function Test-EnrollmentWebhook {
     param(
         [Parameter(Mandatory)][byte[]]$RawBody,
@@ -73,13 +99,7 @@ function Test-EnrollmentWebhook {
         [Parameter(Mandatory)][string]$DeveloperUserId,
         [Parameter(Mandatory)][string]$Nonce
     )
-    if($RawBody.Length-lt2-or$RawBody.Length-gt65536){throw 'Webhook body size is outside enrollment policy.'}
-    if($ChannelSecret.Length-lt16){throw 'Channel secret is invalid.'}
-    try{$provided=[Convert]::FromBase64String($Signature)}catch{throw 'LINE signature is malformed.'}
-    $secretBytes=[Text.Encoding]::UTF8.GetBytes($ChannelSecret)
-    $hmac=[Security.Cryptography.HMACSHA256]::new($secretBytes)
-    try{$expected=$hmac.ComputeHash($RawBody)}finally{$hmac.Dispose();[Array]::Clear($secretBytes,0,$secretBytes.Length)}
-    if(-not(Test-FixedTimeBytes $provided $expected)){throw 'LINE signature verification failed.'}
+    Assert-LineWebhookSignature $RawBody $Signature $ChannelSecret
     try{$document=[Text.Encoding]::UTF8.GetString($RawBody)|ConvertFrom-Json -ErrorAction Stop}catch{throw 'Webhook JSON is invalid.'}
     $events=@($document.events)
     if($events.Count-ne1){throw 'Enrollment requires exactly one webhook event.'}

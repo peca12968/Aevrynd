@@ -89,6 +89,15 @@ function Body([object]$Mention=$script:mention,[string]$User=$script:developer,[
     return [Text.Encoding]::UTF8.GetBytes(($doc|ConvertTo-Json -Depth 8 -Compress))
 }
 
+function PreflightBody([object]$Events=@()){
+    return [Text.Encoding]::UTF8.GetBytes((@{destination=('U'+'9'*32);events=$Events}|ConvertTo-Json -Depth 4 -Compress))
+}
+
+Run 'signed empty-event preflight returns success shape without enrollment data' {$b=PreflightBody;if(-not(Test-LineWebhookPreflight $b (Sign $b $secret) $secret)){throw 'Signed empty-event preflight was not accepted.'}}
+Run 'empty-event preflight rejects bad signature before JSON acceptance' {$b=PreflightBody;Reject $runtimeError 'LINE signature verification failed.' {Test-LineWebhookPreflight $b (Sign $b 'wrong-secret-value') $secret}}
+Run 'non-empty event bypasses preflight and follows enrollment validation' {$b=Body;if(Test-LineWebhookPreflight $b (Sign $b $secret) $secret){throw 'Enrollment event was consumed as a preflight.'};$r=Test-EnrollmentWebhook $b (Sign $b $secret) $secret $developer $nonce;if($r.allowedGroupIds[0]-ne$group){throw 'Non-empty enrollment path did not capture the group.'}}
+Run 'preflight exact envelope rejects hostile empty-event lookalikes' {foreach($json in @('{"destination":"U99999999999999999999999999999999","events":[],"extra":true}','{"destination":true,"events":[]}','{"destination":"U99999999999999999999999999999999","events":{}}')){$b=[Text.Encoding]::UTF8.GetBytes($json);if(Test-LineWebhookPreflight $b (Sign $b $secret) $secret){throw 'Hostile preflight lookalike was accepted.'}};$duplicate=[Text.Encoding]::UTF8.GetBytes('{"destination":"U99999999999999999999999999999999","destination":"U99999999999999999999999999999999","events":[]}');Reject $runtimeError 'LINE webhook JSON contains duplicate envelope fields.' {Test-LineWebhookPreflight $duplicate (Sign $duplicate $secret) $secret}}
+
 Run 'accept signed developer self-mention enrollment' {
     $b=Body
     $r=Test-EnrollmentWebhook $b (Sign $b $secret) $secret $developer $nonce
@@ -181,4 +190,4 @@ Run 'valid request can continue after timed-out rejection' {
 }
 
 if($failed){throw "$failed enrollment tests failed; $passed passed."}
-"Enrollment hostile tests passed ($passed/22)."
+"Enrollment hostile tests passed ($passed/26)."
