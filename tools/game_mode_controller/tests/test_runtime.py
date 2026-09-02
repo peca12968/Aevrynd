@@ -273,6 +273,49 @@ class RuntimeTests(unittest.TestCase):
         result = subprocess.run([powershell, "-NoProfile", "-Command", command], env=environment, capture_output=True, text=True, timeout=15)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_real_ntfs_acl_allows_rx_and_rejects_write_capabilities(self) -> None:
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 is unavailable")
+        fixture = self.root / "acl-fixture"; fixture.mkdir()
+        module = Path(__file__).resolve().parents[1] / "scripts" / "InstallTrust.psm1"
+        environment = dict(os.environ)
+        environment.update({"AEVRYND_ACL_FIXTURE": str(fixture), "AEVRYND_TRUST_MODULE": str(module)})
+        command = (
+            "Import-Module $env:AEVRYND_TRUST_MODULE -Force;"
+            "$me=[Security.Principal.WindowsIdentity]::GetCurrent().User;"
+            "$everyone=[Security.Principal.SecurityIdentifier]::new('S-1-1-0');"
+            "$trusted=@('S-1-5-18','S-1-5-32-544',$me.Value);"
+            "$rights=@([Security.AccessControl.FileSystemRights]::ReadAndExecute,[Security.AccessControl.FileSystemRights]::Write,"
+            "[Security.AccessControl.FileSystemRights]::Modify,[Security.AccessControl.FileSystemRights]::FullControl,"
+            "[Security.AccessControl.FileSystemRights]::Delete,[Security.AccessControl.FileSystemRights]::ChangePermissions);"
+            "$module=Get-Module InstallTrust;"
+            "for($i=0;$i -lt $rights.Count;$i++){"
+            "$acl=[Security.AccessControl.DirectorySecurity]::new();$acl.SetAccessRuleProtection($true,$false);"
+            "$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($me,'FullControl','ContainerInherit, ObjectInherit','None','Allow'))|Out-Null;"
+            "$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($everyone,$rights[$i],'None','None','Allow'))|Out-Null;"
+            "[IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($env:AEVRYND_ACL_FIXTURE),$acl);$diskAcl=Get-Acl -LiteralPath $env:AEVRYND_ACL_FIXTURE;"
+            "$rejected=$false;try{& $module {param($a,$t) Assert-NoUntrustedWriter -Acl $a -TrustedWriterSids $t} $diskAcl $trusted}catch{$rejected=$true};"
+            "if($i -eq 0 -and $rejected){exit 10};if($i -gt 0 -and -not $rejected){exit (10+$i)}}"
+        )
+        result = subprocess.run([powershell, "-NoProfile", "-Command", command], env=environment, capture_output=True, text=True, timeout=20)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+        register = (Path(__file__).resolve().parents[1] / "scripts" / "Register-Startup.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("$generatedMutationMask = 0x000D0156", register)
+        self.assertIn("Import-Module -Name $trustModule", register)
+        self.assertIn("Assert-ClosedDirectoryTrust -Path $path", register)
+        self.assertNotIn("FileSystemRights]::Write -bor", register)
+        mask_command = (
+            "$m=[Security.AccessControl.FileSystemRights]::WriteData -bor [Security.AccessControl.FileSystemRights]::AppendData "
+            "-bor [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor [Security.AccessControl.FileSystemRights]::WriteAttributes "
+            "-bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::Delete "
+            "-bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership;"
+            "if([int64]$m -ne 0x000D0156){exit 12}"
+        )
+        mask_result = subprocess.run([powershell, "-NoProfile", "-Command", mask_command], capture_output=True, text=True, timeout=10)
+        self.assertEqual(0, mask_result.returncode, mask_result.stdout + mask_result.stderr)
+
     def test_bootstrap_snapshots_survive_hostile_manifest_and_module_swap(self) -> None:
         """來源在 snapshot 後被替換時，解析與 stage 仍只能看見已驗證 bytes。"""
         powershell = shutil.which("pwsh")

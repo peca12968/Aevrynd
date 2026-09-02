@@ -41,10 +41,23 @@ function Assert-ClosedDirectoryTrust {
     if ($ownerSid -notin @('S-1-5-18','S-1-5-32-544')) { throw 'Controller trust directory owner is invalid.' }
     $trustedWriters = @('S-1-5-18','S-1-5-32-544')
     if ($null -ne $WritableUserSid) { $trustedWriters += $WritableUserSid.Value }
-    $writeMask = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Modify -bor [Security.AccessControl.FileSystemRights]::FullControl
+    Assert-NoUntrustedWriter -Acl $acl -TrustedWriterSids $trustedWriters
+}
+
+function Assert-NoUntrustedWriter {
+    param([Parameter(Mandatory)][Security.AccessControl.DirectorySecurity]$Acl,[Parameter(Mandatory)][string[]]$TrustedWriterSids)
+    # 不可用 Write/Modify/FullControl 聚合值；這些值含 ReadAndExecute 的共同讀取位元。
+    $writeMask = [Security.AccessControl.FileSystemRights]::WriteData `
+        -bor [Security.AccessControl.FileSystemRights]::AppendData `
+        -bor [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes `
+        -bor [Security.AccessControl.FileSystemRights]::WriteAttributes `
+        -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles `
+        -bor [Security.AccessControl.FileSystemRights]::Delete `
+        -bor [Security.AccessControl.FileSystemRights]::ChangePermissions `
+        -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
     foreach ($rule in $acl.Access) {
         $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
-        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $sid -notin $trustedWriters -and ($rule.FileSystemRights -band $writeMask)) {
+        if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $sid -notin $TrustedWriterSids -and ($rule.FileSystemRights -band $writeMask)) {
             throw 'Controller trust directory has an untrusted writer.'
         }
     }

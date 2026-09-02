@@ -23,7 +23,7 @@ if (-not [string]::Equals($expectedRoot, $resolvedRoot, [StringComparison]::Ordi
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $trustModule = Join-Path $PSScriptRoot 'InstallTrust.psm1'
 $sourceManifest = Join-Path $sourceRoot 'source-manifest.json'
-$expectedSourceManifestSha256 = 'a80c42039786191346b51afab673cb969840c306779aa6a89d667b6e96378b1f'
+$expectedSourceManifestSha256 = 'bbe70cb1681197228e14a6ab9b9f6b275bf0004987501ac157351bfe14f6cb90'
 if (-not (Test-Path -LiteralPath $sourceManifest -PathType Leaf)) { throw 'Closed source manifest is missing.' }
 $sha256 = [Security.Cryptography.SHA256]::Create()
 try {
@@ -78,7 +78,14 @@ if (($stagedItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $
 $verifiedBootstrapAcl = Get-Acl -LiteralPath $bootstrapRoot
 $verifiedBootstrapOwner = ([Security.Principal.NTAccount]$verifiedBootstrapAcl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value
 if ($verifiedBootstrapOwner -notin @('S-1-5-18','S-1-5-32-544')) { throw 'Bootstrap directory owner validation failed.' }
-$writeMask = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Modify -bor [Security.AccessControl.FileSystemRights]::FullControl
+$writeMask = [Security.AccessControl.FileSystemRights]::WriteData `
+    -bor [Security.AccessControl.FileSystemRights]::AppendData `
+    -bor [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes `
+    -bor [Security.AccessControl.FileSystemRights]::WriteAttributes `
+    -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles `
+    -bor [Security.AccessControl.FileSystemRights]::Delete `
+    -bor [Security.AccessControl.FileSystemRights]::ChangePermissions `
+    -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
 foreach ($rule in $verifiedBootstrapAcl.Access) {
     $ruleSid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
     if ($rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and $ruleSid -notin @('S-1-5-18','S-1-5-32-544') -and ($rule.FileSystemRights -band $writeMask)) { throw 'Bootstrap directory has an untrusted writer.' }
