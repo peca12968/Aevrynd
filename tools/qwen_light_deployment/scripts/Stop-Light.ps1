@@ -1,0 +1,4 @@
+Set-StrictMode -Version Latest;$ErrorActionPreference='Stop';. (Join-Path $PSScriptRoot 'Common-Light.ps1');$paths=Get-LightPaths
+if(-not(Test-Path -LiteralPath $paths.StateFile -PathType Leaf)){Write-Output 'Light server state is absent.';exit 0};$state=Get-Content -Raw $paths.StateFile|ConvertFrom-Json;$process=Get-Process -Id ([int]$state.pid) -ErrorAction SilentlyContinue
+if($null-ne$process){if(-not[string]::Equals([IO.Path]::GetFullPath($process.Path),[IO.Path]::GetFullPath($paths.Server),[StringComparison]::OrdinalIgnoreCase)-or[Math]::Abs(($process.StartTime.ToUniversalTime()-[DateTimeOffset]::Parse($state.startedUtc).UtcDateTime).TotalSeconds)-gt2){throw 'Light state PID identity mismatch.'};Stop-Process -Id $process.Id;$process.WaitForExit(10000)|Out-Null}
+Remove-Item -LiteralPath $paths.StateFile -Force;Write-Output 'Light server stopped.'

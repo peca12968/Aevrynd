@@ -1,0 +1,5 @@
+*.zip
+*.partial
+*.gguf
+*.staging/
+state/

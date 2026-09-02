@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "integratedWithLineGateway": false,
+  "nodes": {
+    "main": { "allowedModes": ["light"], "fallback": null },
+    "taichung": { "allowedModes": ["full", "light"], "fallback": "full" },
+    "taoyuan": { "allowedModes": ["full", "light"], "fallback": "full" }
+  },
+  "allowedActions": ["status", "switch"],
+  "transition": ["acquire-node-lock", "stop-current", "confirm-release", "start-target", "health-gate", "chat-gate", "rollback-on-failure", "release-node-lock"]
+}
