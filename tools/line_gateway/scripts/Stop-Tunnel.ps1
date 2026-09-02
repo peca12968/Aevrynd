@@ -4,9 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Common.ps1')
 $paths = Get-GatewayPaths -InstallRoot $InstallRoot
-$controlMutex = [Threading.Mutex]::new($false, 'Local\AevryndLineGatewayTunnelControl')
-$mutexAcquired = $controlMutex.WaitOne(30000)
-if (-not $mutexAcquired) { $controlMutex.Dispose(); throw 'Timed out waiting for tunnel control lock.' }
+$transportLock = Enter-PublicTransportLock
 try {
 $stateReadFailed = $false
 try {
@@ -63,6 +61,5 @@ if (Test-Path -LiteralPath $paths.TunnelStateFile -PathType Leaf) {
 }
 Write-Output "Named tunnel stopped safely: PID=$($process.Id)"
 } finally {
-    if ($mutexAcquired) { $controlMutex.ReleaseMutex() }
-    $controlMutex.Dispose()
+    Exit-PublicTransportLock $transportLock
 }

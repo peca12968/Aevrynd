@@ -6,12 +6,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'Funnel.Common.ps1')
 $paths = Get-GatewayPaths -InstallRoot $InstallRoot
-$controlMutex = [Threading.Mutex]::new($false, 'Local\AevryndLineGatewayTunnelControl')
-$mutexAcquired = $controlMutex.WaitOne(30000)
-if (-not $mutexAcquired) { $controlMutex.Dispose(); throw 'Timed out waiting for tunnel control lock.' }
+$transportLock = Enter-PublicTransportLock
 try {
 $null = Test-InstallationManifest -Paths $paths
+if (Test-Path -LiteralPath $paths.FunnelStateFile) { throw 'Tailscale Funnel state exists; public transports are mutually exclusive.' }
+Test-FunnelTransportAbsent
 $validated = & (Join-Path $PSScriptRoot 'Test-TunnelConfiguration.ps1') `
     -ConfigPath $ConfigPath -InstallRoot $InstallRoot
 $currentConfigHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $validated.ConfigPath).Hash.ToLowerInvariant()
@@ -75,8 +76,7 @@ if ($process.WaitForExit(1500)) {
 }
 Activate-TunnelState -Paths $paths -PendingState $pending -Process $process
 } finally {
-    if ($mutexAcquired) { $controlMutex.ReleaseMutex() }
-    $controlMutex.Dispose()
+    Exit-PublicTransportLock $transportLock
 }
 try {
     $process.WaitForExit()

@@ -11,22 +11,53 @@ function Read-BoundedWebhookBody {
     param(
         [Parameter(Mandatory)][IO.Stream]$Stream,
         [long]$DeclaredLength=-1,
-        [ValidateRange(1,65536)][int]$MaximumBytes=65536
+        [ValidateRange(1,65536)][int]$MaximumBytes=65536,
+        [Parameter(Mandatory)][DateTimeOffset]$EnrollmentDeadlineUtc,
+        [ValidateRange(100,10000)][int]$RequestTimeoutMilliseconds=3000
     )
     if($DeclaredLength-lt-1){throw [IO.InvalidDataException]::new('Webhook Content-Length is invalid.')}
     if($DeclaredLength-gt$MaximumBytes){throw [IO.InvalidDataException]::new('Webhook body exceeds enrollment policy.')}
+    $requestDeadlineUtc=[DateTimeOffset]::UtcNow.AddMilliseconds($RequestTimeoutMilliseconds)
+    $effectiveDeadlineUtc=$(if($requestDeadlineUtc-lt$EnrollmentDeadlineUtc){$requestDeadlineUtc}else{$EnrollmentDeadlineUtc})
     $buffer=[byte[]]::new(8192)
     $memory=[IO.MemoryStream]::new([Math]::Min($(if($DeclaredLength-ge0){[int]$DeclaredLength}else{$MaximumBytes}),$MaximumBytes))
+    $bufferMayBeCleared=$true
     try{
         while($true){
-            $read=$Stream.Read($buffer,0,$buffer.Length)
+            $remainingMilliseconds=[int][Math]::Ceiling(($effectiveDeadlineUtc-[DateTimeOffset]::UtcNow).TotalMilliseconds)
+            if($remainingMilliseconds-le0){
+                if([DateTimeOffset]::UtcNow-ge$EnrollmentDeadlineUtc){throw [TimeoutException]::new('Enrollment deadline expired while reading webhook body.')}
+                throw [TimeoutException]::new('Webhook body read timed out.')
+            }
+            $readCancellation=[Threading.CancellationTokenSource]::new()
+            $readTask=$null
+            try{
+                $readTask=$Stream.ReadAsync($buffer,0,$buffer.Length,$readCancellation.Token)
+                $timeoutTask=[Threading.Tasks.Task]::Delay($remainingMilliseconds)
+                $completed=[Threading.Tasks.Task]::WhenAny([Threading.Tasks.Task[]]@($readTask,$timeoutTask)).GetAwaiter().GetResult()
+                if(-not[object]::ReferenceEquals($completed,$readTask)){
+                    $readCancellation.Cancel()
+                    try{$Stream.Dispose()}catch{}
+                    $bufferMayBeCleared=$readTask.IsCompleted
+                    if([DateTimeOffset]::UtcNow-ge$EnrollmentDeadlineUtc){throw [TimeoutException]::new('Enrollment deadline expired while reading webhook body.')}
+                    throw [TimeoutException]::new('Webhook body read timed out.')
+                }
+                $read=$readTask.GetAwaiter().GetResult()
+            }finally{$readCancellation.Dispose()}
+            if([DateTimeOffset]::UtcNow-ge$effectiveDeadlineUtc){
+                if([DateTimeOffset]::UtcNow-ge$EnrollmentDeadlineUtc){throw [TimeoutException]::new('Enrollment deadline expired while reading webhook body.')}
+                throw [TimeoutException]::new('Webhook body read timed out.')
+            }
             if($read-eq0){break}
             if($memory.Length+$read-gt$MaximumBytes){throw [IO.InvalidDataException]::new('Webhook body exceeds enrollment policy.')}
             $memory.Write($buffer,0,$read)
         }
         if($DeclaredLength-ge0-and$memory.Length-ne$DeclaredLength){throw [IO.InvalidDataException]::new('Webhook body length does not match Content-Length.')}
         return $memory.ToArray()
-    }finally{$memory.Dispose();[Array]::Clear($buffer,0,$buffer.Length)}
+    }finally{
+        $memory.Dispose()
+        if($bufferMayBeCleared){[Array]::Clear($buffer,0,$buffer.Length)}
+    }
 }
 
 function Test-JsonInteger {
@@ -45,8 +76,9 @@ function Test-EnrollmentWebhook {
     if($RawBody.Length-lt2-or$RawBody.Length-gt65536){throw 'Webhook body size is outside enrollment policy.'}
     if($ChannelSecret.Length-lt16){throw 'Channel secret is invalid.'}
     try{$provided=[Convert]::FromBase64String($Signature)}catch{throw 'LINE signature is malformed.'}
-    $hmac=[Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($ChannelSecret))
-    try{$expected=$hmac.ComputeHash($RawBody)}finally{$hmac.Dispose()}
+    $secretBytes=[Text.Encoding]::UTF8.GetBytes($ChannelSecret)
+    $hmac=[Security.Cryptography.HMACSHA256]::new($secretBytes)
+    try{$expected=$hmac.ComputeHash($RawBody)}finally{$hmac.Dispose();[Array]::Clear($secretBytes,0,$secretBytes.Length)}
     if(-not(Test-FixedTimeBytes $provided $expected)){throw 'LINE signature verification failed.'}
     try{$document=[Text.Encoding]::UTF8.GetString($RawBody)|ConvertFrom-Json -ErrorAction Stop}catch{throw 'Webhook JSON is invalid.'}
     $events=@($document.events)

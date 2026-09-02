@@ -27,7 +27,7 @@ function Invoke-Test {
         Write-Output "PASS $Name"
     } catch {
         $script:failed++
-        Write-Output "FAIL $Name"
+        Write-Output "FAIL $Name : $($_.Exception.GetType().FullName) : $($_.Exception.Message)"
     }
 }
 
@@ -198,6 +198,14 @@ try {
         $fixtureState = Join-Path $fixtureRoot 'state'
         New-Item -ItemType Directory -Path $fixtureState -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $fixtureState 'tunnel-state.json'), '{"schemaVersion":1,"status":', [Text.UTF8Encoding]::new($false))
+        function Get-CimInstance {
+            [CmdletBinding()]
+            param([string]$ClassName,[string]$Filter)
+            if ($ClassName -ne 'Win32_Process' -or $Filter -ne "Name = 'cloudflared.exe'") {
+                throw 'Emergency discovery fixture received an unexpected process query.'
+            }
+            return @()
+        }
         $savedProgramData = $env:ProgramData
         try {
             $env:ProgramData = $fixtureProgramData
@@ -212,11 +220,14 @@ try {
     Invoke-Test 'uninstall emergency stops are independent and aggregated' {
         $stopScripts = Join-Path $temporaryRoot 'stop-fixture'
         $marker = Join-Path $temporaryRoot 'tunnel-stop-called.txt'
+        $funnelMarker = Join-Path $temporaryRoot 'funnel-stop-called.txt'
         New-Item -ItemType Directory -Path $stopScripts | Out-Null
         [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Gateway.ps1'), "param([string]`$InstallRoot)`nthrow 'gateway fixture failure'", [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Tunnel.ps1'), "param([string]`$InstallRoot)`n[IO.File]::WriteAllText('$($marker.Replace("'", "''"))','called')", [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Funnel.ps1'), "param([string]`$InstallRoot)`n[IO.File]::WriteAllText('$($funnelMarker.Replace("'", "''"))','called')", [Text.UTF8Encoding]::new($false))
         $failures = @(Invoke-GatewayEmergencyStops -ScriptsRoot $stopScripts -InstallRoot 'fixture')
         if (-not (Test-Path -LiteralPath $marker)) { throw 'Tunnel stop was skipped after gateway stop failed.' }
+        if (-not (Test-Path -LiteralPath $funnelMarker)) { throw 'Funnel stop was skipped after gateway stop failed.' }
         Assert-Equal $failures.Count 1 'aggregated stop failure count'
         Assert-Equal $failures[0] 'gateway' 'aggregated stop component'
     }

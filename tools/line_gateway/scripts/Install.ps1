@@ -8,6 +8,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Common.ps1')
 Assert-Administrator
 $paths = Get-GatewayPaths -InstallRoot $InstallRoot
+$transportLock = Enter-PublicTransportLock
+try {
 $sourcePackage = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
@@ -29,7 +31,8 @@ $scriptFiles = @(
     'Common.ps1', 'Install.ps1', 'Register-Startup.ps1', 'Set-Configuration.ps1',
     'Set-Credentials.ps1', 'Start-Gateway.ps1', 'Start-Tunnel.ps1',
     'Stop-Gateway.ps1', 'Stop-Tunnel.ps1', 'Test-Health.ps1',
-    'Test-TunnelConfiguration.ps1', 'Uninstall.ps1', 'gateway_runner.py'
+    'Test-TunnelConfiguration.ps1', 'Funnel.Common.ps1', 'Start-Funnel.ps1',
+    'Stop-Funnel.ps1', 'Test-FunnelConfiguration.ps1', 'Uninstall.ps1', 'gateway_runner.py'
 )
 foreach ($name in $coreFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $sourcePackage $name) -PathType Leaf)) { throw "Required core file is missing: $name" }
@@ -55,6 +58,7 @@ foreach ($account in @($rootCurrentIdentity, 'NT AUTHORITY\SYSTEM', 'BUILTIN\Adm
 Set-Acl -LiteralPath $paths.Root -AclObject $rootSecurity
 if (Test-Path -LiteralPath $paths.StateFile -PathType Leaf) { throw 'Stop the gateway before installing an update.' }
 if (Test-Path -LiteralPath $paths.TunnelStateFile -PathType Leaf) { throw 'Stop the named tunnel before installing an update.' }
+if (Test-Path -LiteralPath $paths.FunnelStateFile -PathType Leaf) { throw 'Stop Tailscale Funnel before installing an update.' }
 if (@(Get-NetTCPConnection -State Listen -LocalPort 8787 -ErrorAction SilentlyContinue).Count -gt 0) {
     throw 'TCP 8787 is active; stop the gateway before installing an update.'
 }
@@ -180,3 +184,4 @@ foreach ($temporaryRoot in @($stageRoot, $backupRoot)) {
 $null = Test-InstallationManifest -Paths $paths
 Write-Output "LINE gateway installed from a closed, verified file set: release=$releaseId"
 Write-Output 'Next: Set-Configuration.ps1, Set-Credentials.ps1, then Start-Gateway.ps1.'
+} finally { Exit-PublicTransportLock $transportLock }

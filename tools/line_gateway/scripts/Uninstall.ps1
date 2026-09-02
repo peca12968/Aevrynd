@@ -9,8 +9,10 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Common.ps1')
 Assert-Administrator
 $paths = Get-GatewayPaths -InstallRoot $InstallRoot
+$transportLock = Enter-PublicTransportLock
+try {
 
-foreach ($taskName in @('Aevrynd-Line-Gateway', 'Aevrynd-Line-Gateway-Tunnel')) {
+foreach ($taskName in @('Aevrynd-Line-Gateway', 'Aevrynd-Line-Gateway-Tunnel', 'Aevrynd-Line-Gateway-Funnel')) {
     if ($null -ne (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
         Disable-ScheduledTask -TaskName $taskName | Out-Null
     }
@@ -19,7 +21,7 @@ $stopFailures = @(Invoke-GatewayEmergencyStops -ScriptsRoot $PSScriptRoot -Insta
 if ($stopFailures.Count -gt 0) {
     throw "Gateway emergency stop failed; uninstall preserved tasks, credentials, and files. Components: $($stopFailures -join ',')."
 }
-foreach ($taskName in @('Aevrynd-Line-Gateway', 'Aevrynd-Line-Gateway-Tunnel')) {
+foreach ($taskName in @('Aevrynd-Line-Gateway', 'Aevrynd-Line-Gateway-Tunnel', 'Aevrynd-Line-Gateway-Funnel')) {
     if ($null -ne (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
     }
@@ -72,4 +74,7 @@ foreach ($path in @($paths.App, $paths.Scripts, $paths.Manifests, $paths.Config,
 }
 Assert-ExactGatewayPath -Paths $paths -Path $paths.StateFile -AllowedRelativePaths @('state\gateway-state.json')
 if (Test-Path -LiteralPath $paths.StateFile) { Remove-Item -LiteralPath $paths.StateFile -Force }
+Assert-ExactGatewayPath -Paths $paths -Path $paths.FunnelStateFile -AllowedRelativePaths @('state\funnel-state.json')
+if (Test-Path -LiteralPath $paths.FunnelStateFile) { Remove-Item -LiteralPath $paths.FunnelStateFile -Force }
 Write-Output "Programs and credentials removed; data, handoff and logs preserved under $($paths.Root)."
+} finally { Exit-PublicTransportLock $transportLock }

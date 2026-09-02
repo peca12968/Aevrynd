@@ -15,6 +15,32 @@ function Assert-Administrator {
     }
 }
 
+function Enter-PublicTransportLock {
+    param([ValidateRange(1,60000)][int]$TimeoutMilliseconds=30000)
+    $name='Global\AevryndLineGatewayPublicTransportControl'
+    $security=[Security.AccessControl.MutexSecurity]::new()
+    $security.SetAccessRuleProtection($true,$false)
+    $rights=[Security.AccessControl.MutexRights]::FullControl
+    foreach($sid in @(
+        [Security.Principal.WindowsIdentity]::GetCurrent().User,
+        [Security.Principal.SecurityIdentifier]::new([Security.Principal.WellKnownSidType]::LocalSystemSid,$null),
+        [Security.Principal.SecurityIdentifier]::new([Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid,$null)
+    )){$security.AddAccessRule([Security.AccessControl.MutexAccessRule]::new($sid,$rights,[Security.AccessControl.AccessControlType]::Allow))}
+    $created=$false
+    try{$mutex=[Threading.MutexAcl]::Create($false,$name,[ref]$created,$security)}catch{throw "Unable to open the machine-wide public transport lock: $($_.Exception.Message)"}
+    $acquired=$false;$abandoned=$false
+    try{
+        try{$acquired=$mutex.WaitOne($TimeoutMilliseconds)}catch [Threading.AbandonedMutexException]{$acquired=$true;$abandoned=$true}
+        if(-not$acquired){throw 'Timed out waiting for the machine-wide public transport lock.'}
+        return [pscustomobject]@{Mutex=$mutex;Acquired=$true;Abandoned=$abandoned;Name=$name;CreatedNew=$created}
+    }catch{$mutex.Dispose();throw}
+}
+
+function Exit-PublicTransportLock {
+    param([Parameter(Mandatory)][object]$Lock)
+    try{if($Lock.Acquired){$Lock.Mutex.ReleaseMutex()}}finally{$Lock.Mutex.Dispose()}
+}
+
 function Get-GatewayPaths {
     param([string]$InstallRoot = "$env:ProgramData\Aevrynd\LineGateway")
     $root = [IO.Path]::GetFullPath($InstallRoot)
@@ -32,6 +58,7 @@ function Get-GatewayPaths {
         State = Join-Path $root 'state'
         StateFile = Join-Path $root 'state\gateway-state.json'
         TunnelStateFile = Join-Path $root 'state\tunnel-state.json'
+        FunnelStateFile = Join-Path $root 'state\funnel-state.json'
         Manifests = Join-Path $root 'manifests'
         InstallFile = Join-Path $root 'manifests\install.json'
         ManifestFile = Join-Path $root 'manifests\installation-manifest.json'
@@ -289,7 +316,8 @@ function Invoke-GatewayEmergencyStops {
     $failed = [Collections.Generic.List[string]]::new()
     foreach ($component in @(
         @{ Name = 'gateway'; Script = 'Stop-Gateway.ps1' },
-        @{ Name = 'tunnel'; Script = 'Stop-Tunnel.ps1' }
+        @{ Name = 'tunnel'; Script = 'Stop-Tunnel.ps1' },
+        @{ Name = 'funnel'; Script = 'Stop-Funnel.ps1' }
     )) {
         try {
             & (Join-Path $ScriptsRoot $component.Script) -InstallRoot $InstallRoot | Out-Null
