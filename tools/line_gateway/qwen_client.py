@@ -11,6 +11,7 @@ from urllib import error, parse, request
 
 DEFAULT_ALLOWED_BASE_URL = "http://192.168.50.98:8080/v1"
 SECONDARY_ALLOWED_BASE_URL = "http://100.89.42.36:8080/v1"
+NO_THINK_DIRECTIVE = "/no_think\n"
 
 
 class QwenClientError(RuntimeError):
@@ -121,7 +122,8 @@ class QwenClient:
         messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        # Qwen reasoning 模式可能耗盡輸出額度而留下空 content；簡單助理固定停用思考模式。
+        messages.append({"role": "user", "content": NO_THINK_DIRECTIVE + prompt})
         payload = self._request(
             "POST",
             "/chat/completions",
@@ -148,12 +150,22 @@ class QwenClient:
 
     def slots_ready(self) -> bool:
         payload = self._request("GET", "/slots", None)
-        if isinstance(payload, list):
-            return len(payload) == 1
-        return isinstance(payload, dict) and (
-            isinstance(payload.get("slots"), list) and len(payload["slots"]) == 1
-            or isinstance(payload.get("data"), list) and len(payload["data"]) == 1
-        )
+        slots: object = payload
+        if isinstance(payload, dict):
+            has_slots = "slots" in payload
+            has_data = "data" in payload
+            if has_slots == has_data:
+                return False
+            slots = payload["slots" if has_slots else "data"]
+        if not isinstance(slots, list) or not 1 <= len(slots) <= 128:
+            return False
+        if any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("is_processing"), bool)
+            for item in slots
+        ):
+            return False
+        return any(item["is_processing"] is False for item in slots)
 
     def _request(self, method: str, path: str, payload: dict[str, object] | None) -> Any:
         if path not in {"/models", "/chat/completions", "/slots"}:

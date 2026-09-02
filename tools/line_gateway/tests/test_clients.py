@@ -117,6 +117,7 @@ class QwenClientTests(unittest.TestCase):
         payload = json.loads(outgoing.data)
         self.assertEqual("test-model.gguf", payload["model"])
         self.assertEqual(["system", "user"], [item["role"] for item in payload["messages"]])
+        self.assertEqual("/no_think\nhello", payload["messages"][-1]["content"])
 
     def test_hostile_chat_responses_fail_closed(self) -> None:
         cases = (
@@ -125,6 +126,7 @@ class QwenClientTests(unittest.TestCase):
             b'{"choices":[]}',
             b'{"choices":[{"message":{"content":""}}]}',
             b'{"choices":[{"message":{"content":7}}]}',
+            b'{"choices":[{"message":{"content":"","reasoning_content":"internal reasoning"}}]}',
         )
         for body in cases:
             with self.subTest(body=body), self.assertRaises(InvalidQwenResponse):
@@ -149,7 +151,7 @@ class QwenClientTests(unittest.TestCase):
         def secondary_success(outgoing, **_kwargs):
             secondary_calls.append(outgoing.full_url)
             if outgoing.full_url.endswith("/slots"):
-                return FakeResponse(200, b"[{}]")
+                return FakeResponse(200, b'[{"is_processing":false}]')
             return FakeResponse(200, b'{"model":"test-model.gguf","choices":[{"message":{"content":"QWEN_REMOTE_OK"}}]}')
 
         pool = QwenClientPool(
@@ -202,6 +204,24 @@ class QwenClientTests(unittest.TestCase):
                 QwenClient("http://100.89.42.36:8080/v1", "fake-api-key", "test-model.gguf", opener=redirecting_slot),
             ).chat("hello")
         self.assertEqual(["http://100.89.42.36:8080/slots"], secondary_visits)
+
+    def test_slots_accept_multiple_with_idle_and_reject_busy_or_hostile_shapes(self) -> None:
+        def result(body: bytes) -> bool:
+            return self._client(lambda *_args, **_kwargs: FakeResponse(200, body)).slots_ready()
+
+        self.assertTrue(result(b'[{"is_processing":false},{"is_processing":false},{"is_processing":false},{"is_processing":false}]'))
+        self.assertTrue(result(b'{"slots":[{"is_processing":true},{"is_processing":false}]}'))
+        self.assertFalse(result(b'[{"is_processing":true},{"is_processing":true}]'))
+        hostile = (
+            b"[]",
+            b'[{"is_processing":"false"}]',
+            b"[{}]",
+            b'{"slots":[],"data":[{"is_processing":false}]}',
+            json.dumps([{"is_processing": False}] * 129).encode(),
+        )
+        for body in hostile:
+            with self.subTest(body=body):
+                self.assertFalse(result(body))
 
     def test_oversized_response_and_input_are_rejected(self) -> None:
         body = b"{" + b"x" * 2048
