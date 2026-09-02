@@ -167,8 +167,36 @@ cbuffer TerrainDistanceMaterialConstants : register(b5)
     float terrainNormalDetailStrength;
     float terrainFarRoughnessBoost;
     float terrainDistanceMaterialEnabled;
-    float terrainDistanceMaterialReserved;
+    uint terrainDecorrelationPacked;
 };
+float DecodeTerrainDecorrelation(uint shift, float minimumValue, float maximumValue)
+{
+    return lerp(minimumValue, maximumValue, float((terrainDecorrelationPacked >> shift) & 31u) / 31.0);
+}
+bool TerrainDecorrelationEnabled()
+{
+    return (terrainDecorrelationPacked & (1u << 30u)) != 0u;
+}
+float3 TerrainDecorrelatedWorldPosition(float3 worldPosition, float warpScale, float warpStrength)
+{
+    // 只使用連續世界座標；不含格線、相機或時間，因此跨分區及視角移動時不會跳接或游動。
+    const float3 phase = float3(worldPosition.x * 1.731 + worldPosition.z * 0.917,
+                                worldPosition.y * 1.423 + worldPosition.x * 0.611,
+                                worldPosition.z * 1.277 - worldPosition.y * 0.743) * warpScale;
+    const float3 broad = sin(phase + float3(0.0, 1.7, -2.1));
+    const float3 detail = sin(phase.yzx * 2.17 + float3(2.3, -1.1, 0.7));
+    return worldPosition + (broad * 0.72 + detail * 0.28) * warpStrength;
+}
+float3 ApplyTerrainChromaVariation(float3 albedo, float noiseSample, float strength)
+{
+    const float amount = (saturate(noiseSample) * 2.0 - 1.0) * strength;
+    const float3 shifted = max(0.0, albedo * (1.0 + amount * float3(0.92, -0.28, 0.54)));
+    const float3 luminanceWeights = float3(0.2126, 0.7152, 0.0722);
+    const float before = dot(albedo, luminanceWeights);
+    const float after = dot(shifted, luminanceWeights);
+    // 色度擾動後恢復原本線性亮度，避免以提亮地形偽造細節或破壞曝光排序。
+    return before > 0.0 && after > 0.000001 ? shifted * (before / after) : albedo;
+}
 cbuffer VolumetricCloudConstants : register(b6)
 {
     float cloudBaseAltitude;
@@ -1528,12 +1556,27 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float terrainCameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
         float terrainDetailWeight = 1.0;
         float distanceMacroVariation = 1.0;
+        float3 grassSamplePosition = input.worldPosition;
+        float3 soilSamplePosition = input.worldPosition;
+        float3 rockSamplePosition = input.worldPosition;
+        float terrainChromaNoise = 0.5;
+        const bool terrainDecorrelationEnabled = TerrainDecorrelationEnabled();
         // 關閉時維持舊路徑且不計算額外噪聲；純 2D 不進入 terrain branch，因此沒有像素成本。
         [branch] if (terrainDistanceMaterialEnabled > 0.5)
         {
             terrainDetailWeight = 1.0 - smoothstep(terrainDetailFadeStart, terrainDetailFadeEnd, terrainCameraDistance);
             const float distanceMacroNoise = CloudNoise(input.worldPosition.xz * terrainMacroVariationScale);
             distanceMacroVariation = lerp(1.0 - terrainMacroVariationStrength, 1.0 + terrainMacroVariationStrength, distanceMacroNoise);
+            [branch] if (terrainDecorrelationEnabled)
+            {
+                const float warpScale = DecodeTerrainDecorrelation(0u, 0.0001, 0.05);
+                const float warpStrength = DecodeTerrainDecorrelation(5u, 0.0, 8.0);
+                const float3 decorrelatedPosition = TerrainDecorrelatedWorldPosition(input.worldPosition, warpScale, warpStrength);
+                grassSamplePosition = decorrelatedPosition * DecodeTerrainDecorrelation(10u, 0.5, 1.75);
+                soilSamplePosition = decorrelatedPosition * DecodeTerrainDecorrelation(15u, 0.5, 1.75);
+                rockSamplePosition = decorrelatedPosition * DecodeTerrainDecorrelation(20u, 0.5, 1.75);
+                terrainChromaNoise = CloudNoise(input.worldPosition.zx * (terrainMacroVariationScale * 0.73) + float2(19.31, -7.17));
+            }
         }
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
         const float terrainHeight = TerrainBiomeHeight(input.color.a);
@@ -1543,29 +1586,33 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         if (input.textureData.x > 0.5)
         {
             // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
-            const float3 grassColor = Triplanar(baseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
-            const float3 soilColor = Triplanar(soilBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
-            const float3 rockColor = Triplanar(rockBaseColorTexture, input.worldPosition, geometricNormal, input.textureData.y).rgb;
+            const float3 grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
+            const float3 soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
+            const float3 rockColor = Triplanar(rockBaseColorTexture, rockSamplePosition, geometricNormal, input.textureData.y).rgb;
             float4 terrainSurface = 1.0;
             float3 terrainNormal = geometricNormal;
             // 遠距離分支省略六次細節貼圖取樣；近景維持完整表面與法線，轉場以解析度無關權重淡化。
             [branch] if (terrainDetailWeight > 0.001)
             {
                 // surface map 固定為 R=AO、G=roughness、B=metallic；A 不參與材質能量。
-                const float4 grassSurface=Triplanar(roughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
-                const float4 soilSurface=Triplanar(soilRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
-                const float4 rockSurface=Triplanar(rockRoughnessTexture,input.worldPosition,geometricNormal,input.textureData.z);
+                const float4 grassSurface=Triplanar(roughnessTexture,grassSamplePosition,geometricNormal,input.textureData.z);
+                const float4 soilSurface=Triplanar(soilRoughnessTexture,soilSamplePosition,geometricNormal,input.textureData.z);
+                const float4 rockSurface=Triplanar(rockRoughnessTexture,rockSamplePosition,geometricNormal,input.textureData.z);
                 const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
                 terrainSurface=lerp(1.0,sampledSurface,terrainDetailWeight);
-                const float3 grassNormal = TriplanarNormalFrom(normalTexture, input.worldPosition, geometricNormal, input.textureData.z);
-                const float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
-                const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, input.worldPosition, geometricNormal, input.textureData.z);
+                const float3 grassNormal = TriplanarNormalFrom(normalTexture, grassSamplePosition, geometricNormal, input.textureData.z);
+                const float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, soilSamplePosition, geometricNormal, input.textureData.z);
+                const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, rockSamplePosition, geometricNormal, input.textureData.z);
                 const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
                 terrainNormal=normalize(lerp(geometricNormal,sampledNormal,saturate(terrainDetailWeight*terrainNormalDetailStrength)));
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
             const float microVariation=lerp(1.0,lerp(0.94,1.06,microNoise),terrainDetailWeight);
-            baseColor *= (grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight) * microVariation * distanceMacroVariation;
+            float3 terrainAlbedo = grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight;
+            [branch] if (terrainDecorrelationEnabled)
+                terrainAlbedo = ApplyTerrainChromaVariation(terrainAlbedo, terrainChromaNoise,
+                    DecodeTerrainDecorrelation(25u, 0.0, 0.2));
+            baseColor *= terrainAlbedo * microVariation * distanceMacroVariation;
             occlusion*=terrainSurface.r;
             roughness=clamp(roughness*PackedArmRoughness(terrainSurface)*(1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)),0.045,1.0);
             metallic*=terrainSurface.b;
@@ -1574,7 +1621,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         else
         {
             const float3 terrainTint = grassWeight * float3(0.72, 0.91, 0.63) + soilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
-            baseColor *= terrainTint * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
+            const float3 decorrelatedTerrainTint = terrainDecorrelationEnabled
+                ? ApplyTerrainChromaVariation(terrainTint, terrainChromaNoise,
+                    DecodeTerrainDecorrelation(25u, 0.0, 0.2))
+                : terrainTint;
+            baseColor *= decorrelatedTerrainTint * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
             roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74) * (1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)), 0.045, 1.0);
         }
     }
