@@ -751,6 +751,17 @@ struct GameplayCaptureIntegrityDiagnosticSnapshot3D {
             objectId.integrity.actualMode == Aevrynd::DeterminismIntegrityMode3D::SealedCapture;
     }
 };
+
+enum class GameplayHdrCaptureState3D : std::uint8_t { Empty, Armed, SceneBound, BundleRequested, AwaitGpu, Taken, Published, Verified, Failed };
+
+struct GameplayHdrCaptureReceipt3D {
+    GameplayHdrCaptureState3D state{GameplayHdrCaptureState3D::Empty};
+    std::filesystem::path path{};
+    std::array<std::uint8_t,32> fileHash{},stableContentHash{},payloadHash{},rootHash{};
+    std::uint64_t byteCount{},frameSerial{},sequenceToken{};
+    std::uint32_t sequenceIndex{};
+    bool verified{};
+};
 }
 
 std::string CreateGameplayLabRunId();
@@ -761,7 +772,7 @@ public:
     void OnStart(Aevrynd::Engine&)override;void OnUpdate(Aevrynd::Engine&,float)override;void OnRender(Aevrynd::Engine&,float)override;void OnStop(Aevrynd::Engine&)override;
     Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;std::size_t TrimReusableMemory()override;
 private:
-    void BuildWorld(Aevrynd::Engine&);void AddShowcaseEnvironment();void QueueTemporalHistoryReseed(GameplayLab::GameplayTemporalReseedReason3D)noexcept;void ResetProductionCameraCut(GameplayLab::GameplayTemporalReseedReason3D=GameplayLab::GameplayTemporalReseedReason3D::CameraMode)noexcept;void UpdateCamera(Aevrynd::Engine&);void UpdateCapture(Aevrynd::Engine&,bool fixedSimulationStep);void RequestCapturePhase(Aevrynd::Engine&);bool ConsumeObjectIdCapture(Aevrynd::Engine&,std::size_t,bool raw,bool reference);bool WriteCaptureIntegrityDiagnostic(bool fatal=false)const;bool InitializeEnvironmentCollision();bool SyncEnvironmentCollision(Aevrynd::Vec3 observer);void ReleaseEnvironmentGameplayColliders();
+    void BuildWorld(Aevrynd::Engine&);void AddShowcaseEnvironment();void QueueTemporalHistoryReseed(GameplayLab::GameplayTemporalReseedReason3D)noexcept;void ResetProductionCameraCut(GameplayLab::GameplayTemporalReseedReason3D=GameplayLab::GameplayTemporalReseedReason3D::CameraMode)noexcept;void UpdateCamera(Aevrynd::Engine&);void UpdateCapture(Aevrynd::Engine&,bool fixedSimulationStep);void RequestCapturePhase(Aevrynd::Engine&);bool ConsumeObjectIdCapture(Aevrynd::Engine&,std::size_t,bool raw,bool reference);bool WriteCaptureIntegrityDiagnostic(bool fatal=false)const;std::filesystem::path GameplayHdrCapturePath(std::size_t)const;void CleanupGameplayHdrCaptureArtifacts(std::size_t,bool removeFinal)noexcept;void FailGameplayHdrCapture(Aevrynd::Engine&,std::size_t)noexcept;bool WriteGameplayHdrCaptureReceipt()const;bool InitializeEnvironmentCollision();bool SyncEnvironmentCollision(Aevrynd::Vec3 observer);void ReleaseEnvironmentGameplayColliders();
     std::uint32_t temporalFixtureWarmupFrames_{};bool temporalFixtureCloudOff_{};
     GameplayLab::Rules3D rules_{};Aevrynd::CharacterController3D controller_{};Aevrynd::CollisionWorld3D collisions_{};Aevrynd::PhysicsWorld3D physics_{};Aevrynd::SceneECSRegistry3D sceneEcs_{};Aevrynd::Scene3D scene_{};
     GameplayLab::ShowcaseRenderAssetBindings3D showcaseRenderAssets_{};
@@ -797,6 +808,10 @@ private:
     std::array<std::wstring,11> captureRequestedEffectiveNames_{},captureCommittedEffectiveNames_{};
     std::array<std::filesystem::path,11> captureRequestedEffectivePaths_{},captureCommittedEffectivePaths_{};
     Aevrynd::ReadbackCaptureSequenceToken3D captureSequenceToken_{};std::uint32_t captureSequencePhaseCount_{};
+    std::array<GameplayLab::GameplayHdrCaptureState3D,11> gameplayHdrCaptureStates_{};
+    std::array<GameplayLab::GameplayHdrCaptureReceipt3D,11> gameplayHdrCaptureReceipts_{};
+    std::uint64_t gameplayHdrEnginePeakBytes_{};
+    std::uint32_t gameplayHdrInFlight_{},gameplayHdrMaxInFlight_{};
     GameplayLab::GameplayAuthoritativeTrajectoryEvidence3D authoritativeTrajectory_{};
     std::array<std::uint32_t,11> captureContactLeftPixels_{},captureContactRightPixels_{},captureContactGroundSupportPixels_{},captureContactShadowPixels_{};
     std::array<std::uint64_t,11> captureContactFrameSerial_{},captureContactPoseHash_{};

@@ -16,7 +16,8 @@ function Get-GameplaySourceInventoryPaths([string]$SourceRoot) {
     @{ Root = 'engine/native/tests'; Extensions = @('.h', '.hpp', '.cpp', '.ps1') },
     @{ Root = 'games/gameplay_lab/native/include'; Extensions = @('.h', '.hpp', '.cpp') },
     @{ Root = 'games/gameplay_lab/native/src'; Extensions = @('.h', '.hpp', '.cpp') },
-    @{ Root = 'games/gameplay_lab/native/tests'; Extensions = @('.h', '.hpp', '.cpp', '.ps1') }
+    @{ Root = 'games/gameplay_lab/native/tests'; Extensions = @('.h', '.hpp', '.cpp', '.ps1') },
+    @{ Root = 'games/gameplay_lab/native/tools'; Extensions = @('.h', '.hpp', '.cpp') }
   )
   foreach ($scope in $scopes) {
     $scopePath = Join-Path $root $scope.Root

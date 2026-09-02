@@ -1,5 +1,6 @@
 #include "GameplayLabGame.h"
 #include "GameplayOccluderMask3D.h"
+#include "GameplayProductionHdrSidecar3D.h"
 #include <Aevrynd/EnvironmentMeshes3D.h>
 #include <Aevrynd/FrameCapture3D.h>
 #include <Aevrynd/FirstPersonArmsSkinnedMesh3D.h>
@@ -17,7 +18,7 @@
 #include <unordered_set>
 #include <bcrypt.h>
 
-using namespace Aevrynd;using namespace GameplayLab;
+using namespace Aevrynd;using namespace ::GameplayLab;
 namespace {constexpr auto Names=[](){std::array<std::wstring_view,GameplayCaptureExpectations3D.size()> result{};for(std::size_t index=0;index<result.size();++index)result[index]=GameplayCaptureExpectations3D[index].name;return result;}();constexpr Color Cyan{.08f,.9f,.8f,1},Gold{1,.68f,.18f,1};std::string RunId(){GUID g{};if(FAILED(CoCreateGuid(&g)))throw std::runtime_error("Gameplay capture GUID unavailable");return std::format("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",g.Data1,g.Data2,g.Data3,g.Data4[0],g.Data4[1],g.Data4[2],g.Data4[3],g.Data4[4],g.Data4[5],g.Data4[6],g.Data4[7]);}}
 namespace {
 std::ostream& operator<<(std::ostream& out,const RenderResourceIdentity3D& identity){return out<<"{\"generation\":"<<identity.generation<<",\"width\":"<<identity.width<<",\"height\":"<<identity.height<<",\"format\":"<<identity.format<<",\"sampleCount\":"<<identity.sampleCount<<",\"state\":"<<identity.state<<'}';}
@@ -33,6 +34,8 @@ const char* CaptureLightingName(GameplayCaptureLighting3D value){switch(value){c
 const char* CaptureProjectionName(ProjectionMode value){switch(value){case ProjectionMode::Perspective:return "Perspective";case ProjectionMode::Orthographic:return "Orthographic";}return "Invalid";}
 const char* IntegrityModeName(DeterminismIntegrityMode3D value){switch(value){case DeterminismIntegrityMode3D::Runtime:return "Runtime";case DeterminismIntegrityMode3D::SealedCapture:return "SealedCapture";}return "Unknown";}
 const char* IntegrityReasonName(DeterminismIntegrityRejectionReason3D value){switch(value){case DeterminismIntegrityRejectionReason3D::None:return "None";case DeterminismIntegrityRejectionReason3D::UnknownMode:return "UnknownMode";case DeterminismIntegrityRejectionReason3D::MissingResidentMaterial:return "MissingResidentMaterial";case DeterminismIntegrityRejectionReason3D::MissingContentIntegrity:return "MissingContentIntegrity";}return "Unknown";}
+std::string GameplayProductionHashHex3D(const std::array<std::uint8_t,32>& value){constexpr char digits[]="0123456789abcdef";std::string result;result.reserve(64);for(const std::uint8_t byte:value){result.push_back(digits[byte>>4]);result.push_back(digits[byte&15]);}return result;}
+const char* GameplayHdrStateName3D(GameplayHdrCaptureState3D value){switch(value){case GameplayHdrCaptureState3D::Empty:return "Empty";case GameplayHdrCaptureState3D::Armed:return "Armed";case GameplayHdrCaptureState3D::SceneBound:return "SceneBound";case GameplayHdrCaptureState3D::BundleRequested:return "BundleRequested";case GameplayHdrCaptureState3D::AwaitGpu:return "AwaitGpu";case GameplayHdrCaptureState3D::Taken:return "Taken";case GameplayHdrCaptureState3D::Published:return "Published";case GameplayHdrCaptureState3D::Verified:return "Verified";case GameplayHdrCaptureState3D::Failed:return "Failed";}return "Invalid";}
 void WriteIntegrityJson(std::ostream& out,std::uint64_t frameSerial,const DeterminismIntegrityReceipt3D& integrity,const CanonicalDrawFingerprintReceipt3D& fingerprint,const FrameBoundRenderProvenance3D* render=nullptr){out<<",\"determinismFrameSerial\":"<<frameSerial<<",\"determinismIntegrityRequested\":\""<<IntegrityModeName(integrity.requestedMode)<<"\",\"determinismIntegrityActual\":\""<<IntegrityModeName(integrity.actualMode)<<"\",\"determinismIntegrityReason\":\""<<IntegrityReasonName(integrity.rejectionReason)<<"\",\"determinismIntegritySampled\":"<<integrity.sampledTexturedMaterials<<",\"determinismIntegrityVerified\":"<<integrity.verifiedTexturedMaterials<<",\"determinismIntegrityRejected\":"<<integrity.rejectedTexturedMaterials<<",\"determinismIntegrityAcceptedFrame\":"<<(integrity.accepted?1:0)<<",\"canonicalDrawFingerprint\":{\"schemaVersion\":"<<fingerprint.schemaVersion<<",\"topology\":"<<fingerprint.topology<<",\"material\":"<<fingerprint.material<<",\"transform\":"<<fingerprint.transform<<",\"palette\":"<<fingerprint.palette<<",\"identity\":"<<fingerprint.identity<<",\"order\":"<<fingerprint.order<<",\"legacyHash\":"<<fingerprint.legacyHash<<'}';if(render)out<<",\"renderProvenance\":{\"frameSerial\":"<<render->frameSerial<<",\"sceneDrawRevision\":"<<render->sceneDrawRevision<<",\"worldRevision\":"<<render->worldRevision<<",\"submittedMeshInstances\":"<<render->submittedMeshInstances<<",\"submittedSkinnedInstances\":"<<render->submittedSkinnedInstances<<",\"submittedTerrainInstances\":"<<render->submittedTerrainInstances<<",\"submittedWorldVertices\":"<<render->submittedWorldVertices<<",\"submittedWorldIndices\":"<<render->submittedWorldIndices<<'}';}
 GameplayCaptureCamera3D CaptureCamera(CameraMode value){switch(value){case CameraMode::FirstPerson:return GameplayCaptureCamera3D::First;case CameraMode::ThirdPerson:return GameplayCaptureCamera3D::Third;case CameraMode::GodView:return GameplayCaptureCamera3D::God;}return GameplayCaptureCamera3D::First;}
 GameplayCaptureLighting3D CaptureLighting(LightingPhase value){switch(value){case LightingPhase::Day:return GameplayCaptureLighting3D::Day;case LightingPhase::Dusk:return GameplayCaptureLighting3D::Dusk;case LightingPhase::Night:return GameplayCaptureLighting3D::Night;}return GameplayCaptureLighting3D::Day;}
@@ -404,6 +407,8 @@ void GameplayLabGame::OnStart(Engine& engine){
       captureIndex_=1;captureScenarioClock_.scenario=1;
     }
     std::filesystem::create_directories(captureDirectory_);
+    for(std::size_t index=0;index<Names.size();++index)CleanupGameplayHdrCaptureArtifacts(index,true);
+    {std::error_code ignored;std::filesystem::remove(captureDirectory_/"gameplay-hdr-capture-receipt.json",ignored);std::filesystem::remove(captureDirectory_/"gameplay-hdr-capture-receipt.json.tmp",ignored);}
     std::unordered_set<std::uint64_t> femaleUnique(femalePoseHashes_.begin(),femalePoseHashes_.end()),maleUnique(malePoseHashes_.begin(),malePoseHashes_.end());
     if(femaleUnique.size()!=11||maleUnique.size()!=11||std::ranges::any_of(femalePoseHashes_,[](auto value){return value==0;})||std::ranges::any_of(malePoseHashes_,[](auto value){return value==0;}))throw std::runtime_error("Semantic gameplay pose hashes are not unique");
     std::ofstream poseOut(captureDirectory_/"gameplay-pose-receipt.json",std::ios::trunc);
@@ -477,7 +482,7 @@ void GameplayLabGame::OnStop(Engine &engine) {
     showcaseOut<<"],\"normalizedAssets\":"<<productionSubmission.normalizedAssets<<",\"normalizationRejected\":"<<productionSubmission.normalizationRejected<<",\"meshChainsSubmitted\":"<<productionSubmission.meshChainsSubmitted<<",\"meshChainsRejected\":"<<productionSubmission.meshChainsRejected<<",\"releasedDescriptors\":"<<showcaseRelease.descriptorsReleased<<",\"retainedBytesAfterRelease\":"<<showcaseRelease.retainedBytesAfter<<"}";
   }
   // typed LOD證據寫出後立即釋放每景向量容量，避免長時間工具執行保留記憶體。
-  for(auto& samples:captureEnvironmentLodSamples_)std::vector<GameplayLab::ShowcaseLodSample3D>{}.swap(samples);
+  for(auto& samples:captureEnvironmentLodSamples_)std::vector<::GameplayLab::ShowcaseLodSample3D>{}.swap(samples);
   physics_.Clear();
   collisions_.Clear();
   scene_.SetBoxMesh({});
@@ -582,7 +587,7 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const Vec2 cameraViewport{float((std::max)(1u,engine.RenderWidth())),float((std::max)(1u,engine.RenderHeight()))};
       // 每個互動視角使用自己的正式投影；不得繼承前一個God capture的窄FOV。
       CameraProjection cameraProjection{};
-      std::vector<GameplayLab::GameplayOccluderBox3D> buildingOccluders;buildingOccluders.reserve(6);std::uint64_t descriptorLow{};
+      std::vector<::GameplayLab::GameplayOccluderBox3D> buildingOccluders;buildingOccluders.reserve(6);std::uint64_t descriptorLow{};
       for(const auto& descriptor:showcaseEnvironment_.Descriptors()){++descriptorLow;if(descriptor.kind==ShowcaseSceneKind3D::Building)buildingOccluders.push_back({descriptorLow,descriptor.position,descriptor.scale,descriptor.yaw});}
       const SkinnedModel3D& cameraSubjectModel=rules_.Female()?femaleModel_:maleModel_;
       const AnimationPose3D& cameraSubjectPose=rules_.Female()?femalePose_:malePose_;
@@ -595,7 +600,7 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const auto playerCameraAnimation=(rules_.Female()?femaleAnimation_:maleAnimation_).State(),companionCameraAnimation=monsterAnimation_.State();
       MeshBounds3D playerEnvelope=currentVisualBounds;if(cameraBuildCacheValid_&&playerCameraAnimation==cameraBuildCachePlayerAnimation_)playerEnvelope=mergeBounds(cameraBuildCacheVisualBounds_,currentVisualBounds);
       std::array<Vertex3D,8> playerProjectionHull{};for(unsigned corner=0;corner<8;++corner){auto& vertex=playerProjectionHull[corner];vertex.x=playerEnvelope.center.x+(corner&1?playerEnvelope.extents.x:-playerEnvelope.extents.x);vertex.y=playerEnvelope.center.y+(corner&2?playerEnvelope.extents.y:-playerEnvelope.extents.y);vertex.z=playerEnvelope.center.z+(corner&4?playerEnvelope.extents.z:-playerEnvelope.extents.z);}
-      std::array<GameplayLab::GameplayCameraCompositionActor3D,1> compositionActors{};std::array<Vertex3D,8> companionProjectionHull{};std::size_t compositionActorCount{};MeshBounds3D companionBounds{},companionEnvelope{};Vec3 companionPresentation{};
+      std::array<::GameplayLab::GameplayCameraCompositionActor3D,1> compositionActors{};std::array<Vertex3D,8> companionProjectionHull{};std::size_t compositionActorCount{};MeshBounds3D companionBounds{},companionEnvelope{};Vec3 companionPresentation{};
       if(combatSpawned_){
         if(!SkinModelInto(maleModel_,monsterPose_,skinning_,cameraCompanionVisualMesh_)){
           cameraOcclusionPolicy_.Reset();cameraBuildCacheValid_=false;camera_=MakeFirstPersonCamera(feet+Vec3{0,rules_.CharacterHeight()-.12f,0},yaw_,pitch_);break;
@@ -605,18 +610,18 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
         for(unsigned corner=0;corner<8;++corner){auto& vertex=companionProjectionHull[corner];vertex.x=companionEnvelope.center.x+(corner&1?companionEnvelope.extents.x:-companionEnvelope.extents.x);vertex.y=companionEnvelope.center.y+(corner&2?companionEnvelope.extents.y:-companionEnvelope.extents.y);vertex.z=companionEnvelope.center.z+(corner&4?companionEnvelope.extents.z:-companionEnvelope.extents.z);}
         companionBounds=TransformBounds(companionEnvelope,companionTransform);compositionActors[0]={companionBounds.center,companionBounds.extents,companionProjectionHull,CreateTransformMatrix(companionTransform.position,companionTransform.rotation,companionTransform.scale)};compositionActorCount=1;
       }
-      GameplayLab::GameplayCameraProductionQueryAdapters3D cameraQueries{};
-      cameraQueries.environmentSphereSweep=[&](Vec3 center,float radius,Vec3 displacement){GameplayLab::CameraOcclusionSweep3D result{};if(environmentCollisions_){const auto hit=environmentCollisions_->SweepSphere(center,radius,displacement);if(hit)result={std::max(0.f,hit.distance-wallPadding),hit.object.id,hit.object.generation,true};}return result;};
+      ::GameplayLab::GameplayCameraProductionQueryAdapters3D cameraQueries{};
+      cameraQueries.environmentSphereSweep=[&](Vec3 center,float radius,Vec3 displacement){::GameplayLab::CameraOcclusionSweep3D result{};if(environmentCollisions_){const auto hit=environmentCollisions_->SweepSphere(center,radius,displacement);if(hit)result={std::max(0.f,hit.distance-wallPadding),hit.object.id,hit.object.generation,true};}return result;};
       cameraQueries.collisionWorldMaxArm=[&](const Camera3D& desired,Vec3 target){return Length(ConstrainThirdPersonCamera(desired,target,collisions_,.25f).position-target);};
       cameraQueries.heightFieldMaxArm=[&](const Camera3D& desired,Vec3 target){return Length(ConstrainThirdPersonCamera(desired,target,showcaseTerrain_,.25f).position-target);};
-      cameraQueries.roofOrTopBlocked=[&](const Camera3D& desired){GameplayLab::GameplayOccluderMask3D mask{};(void)AnalyzeGameplayOccluderMask3D(desired,buildingOccluders,160,90,mask);return mask.nearPlaneClipped;};
-      GameplayLab::GameplayCameraProductionBuildInput3D cameraBuildInput{};cameraBuildInput.bindVertices=playerProjectionHull;cameraBuildInput.feet=feet;cameraBuildInput.characterYaw=yaw_;cameraBuildInput.projection=cameraProjection;cameraBuildInput.viewport=cameraViewport;cameraBuildInput.desiredArm=desiredArm;cameraBuildInput.sweepRadius=sweepRadius;cameraBuildInput.candidateIdHigh=GameplayCameraCandidateHigh;
+      cameraQueries.roofOrTopBlocked=[&](const Camera3D& desired){::GameplayLab::GameplayOccluderMask3D mask{};(void)AnalyzeGameplayOccluderMask3D(desired,buildingOccluders,160,90,mask);return mask.nearPlaneClipped;};
+      ::GameplayLab::GameplayCameraProductionBuildInput3D cameraBuildInput{};cameraBuildInput.bindVertices=playerProjectionHull;cameraBuildInput.feet=feet;cameraBuildInput.characterYaw=yaw_;cameraBuildInput.projection=cameraProjection;cameraBuildInput.viewport=cameraViewport;cameraBuildInput.desiredArm=desiredArm;cameraBuildInput.sweepRadius=sweepRadius;cameraBuildInput.candidateIdHigh=GameplayCameraCandidateHigh;
       const float minimumSubjectScreenArea=rules_.PaletteOpen()?.08f:.05f;
       cameraBuildInput.minimumSubjectScreenHeight=.52f;cameraBuildInput.minimumSubjectScreenArea=minimumSubjectScreenArea;
       cameraBuildInput.compositionOccluders=buildingOccluders;
-      cameraBuildInput.compositionActors=std::span<const GameplayLab::GameplayCameraCompositionActor3D>{compositionActors.data(),compositionActorCount};
+      cameraBuildInput.compositionActors=std::span<const ::GameplayLab::GameplayCameraCompositionActor3D>{compositionActors.data(),compositionActorCount};
       const MeshBounds3D playerWorldBounds=TransformBounds(playerEnvelope,{feet,{0,yaw_,0},{1,1,1}});
-      const float derivedMultiActorArm=GameplayLab::DeriveGameplayMultiActorCameraArm3D(desiredArm,playerWorldBounds,cameraBuildInput.compositionActors);
+      const float derivedMultiActorArm=::GameplayLab::DeriveGameplayMultiActorCameraArm3D(desiredArm,playerWorldBounds,cameraBuildInput.compositionActors);
       if(!std::isfinite(derivedMultiActorArm)||derivedMultiActorArm<desiredArm)throw std::runtime_error("Gameplay multi-actor camera arm derivation failed closed");
       cameraBuildInput.desiredArm=desiredArm;
       const bool cameraPresentationChanged=cameraBuildCacheValid_&&(rules_.Female()!=cameraBuildCacheFemale_||rules_.Crouched()!=cameraBuildCacheCrouched_);
@@ -624,13 +629,13 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const bool animationChanged=playerCameraAnimation!=cameraBuildCachePlayerAnimation_||(compositionActorCount&&companionCameraAnimation!=cameraBuildCacheCompanionAnimation_);
       const bool envelopeExpanded=!cameraBuildCacheValid_||animationChanged||boundsChanged(playerEnvelope,cameraBuildCacheVisualBounds_)||(compositionActorCount&&boundsChanged(companionEnvelope,cameraBuildCacheCompanionBounds_));
       const bool rebuildCameraCandidates=envelopeExpanded||companionBoundsChanged||Length(feet-cameraBuildCacheFeet_)>.02f||std::abs(yaw_-cameraBuildCacheYaw_)>.002f||cameraViewport.x!=cameraBuildCacheViewport_.x||cameraViewport.y!=cameraBuildCacheViewport_.y||rules_.Female()!=cameraBuildCacheFemale_||rules_.Crouched()!=cameraBuildCacheCrouched_||rules_.PaletteOpen()!=cameraBuildCachePaletteOpen_||minimumSubjectScreenArea!=cameraBuildCacheMinimumSubjectScreenArea_;
-      if(rebuildCameraCandidates){cameraBuildCache_=GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=desiredArm;if(cameraBuildCache_.receipt.valid&&!cameraBuildCache_.receipt.admittedCandidates&&compositionActorCount&&derivedMultiActorArm>desiredArm+.0001f){cameraBuildInput.desiredArm=derivedMultiActorArm;cameraBuildCache_=GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=derivedMultiActorArm;}cameraBuildCacheFeet_=feet;cameraBuildCacheYaw_=yaw_;cameraBuildCacheViewport_=cameraViewport;cameraBuildCacheFemale_=rules_.Female();cameraBuildCacheCrouched_=rules_.Crouched();cameraBuildCachePaletteOpen_=rules_.PaletteOpen();cameraBuildCacheMinimumSubjectScreenArea_=minimumSubjectScreenArea;cameraBuildCacheVisualBounds_=playerEnvelope;cameraBuildCacheCompanionBounds_=companionEnvelope;cameraBuildCacheCompanionPosition_=companionPresentation;cameraBuildCachePlayerAnimation_=playerCameraAnimation;cameraBuildCacheCompanionAnimation_=companionCameraAnimation;cameraBuildCacheHasCompanion_=compositionActorCount!=0;cameraBuildCacheValid_=cameraBuildCache_.receipt.valid;}
+      if(rebuildCameraCandidates){cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=desiredArm;if(cameraBuildCache_.receipt.valid&&!cameraBuildCache_.receipt.admittedCandidates&&compositionActorCount&&derivedMultiActorArm>desiredArm+.0001f){cameraBuildInput.desiredArm=derivedMultiActorArm;cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=derivedMultiActorArm;}cameraBuildCacheFeet_=feet;cameraBuildCacheYaw_=yaw_;cameraBuildCacheViewport_=cameraViewport;cameraBuildCacheFemale_=rules_.Female();cameraBuildCacheCrouched_=rules_.Crouched();cameraBuildCachePaletteOpen_=rules_.PaletteOpen();cameraBuildCacheMinimumSubjectScreenArea_=minimumSubjectScreenArea;cameraBuildCacheVisualBounds_=playerEnvelope;cameraBuildCacheCompanionBounds_=companionEnvelope;cameraBuildCacheCompanionPosition_=companionPresentation;cameraBuildCachePlayerAnimation_=playerCameraAnimation;cameraBuildCacheCompanionAnimation_=companionCameraAnimation;cameraBuildCacheHasCompanion_=compositionActorCount!=0;cameraBuildCacheValid_=cameraBuildCache_.receipt.valid;}
       if(cameraPresentationChanged)cameraOcclusionPolicy_.Reset();
       const auto& cameraBuild=cameraBuildCache_;
       const float cameraSearchArm=cameraBuildCacheDesiredArm_;
       cameraBuilderReceipt_=cameraBuild.receipt;
       if(!cameraBuild.receipt.valid){cameraOcclusionPolicy_.Reset();cameraFadeAlpha_=1.f;cameraPolicyFadeIdentity_={};camera_=MakeFirstPersonCamera(feet+Vec3{0,rules_.CharacterHeight()-.12f,0},yaw_,pitch_);break;}
-      GameplayLab::ProductionCameraOcclusionInput3D policyInput{};policyInput.subject=cameraBuild.subject;policyInput.lens=cameraBuild.lens;policyInput.candidates=cameraBuild.candidates;policyInput.desiredArm=cameraSearchArm;policyInput.deltaTime=simulationDelta_;
+      ::GameplayLab::ProductionCameraOcclusionInput3D policyInput{};policyInput.subject=cameraBuild.subject;policyInput.lens=cameraBuild.lens;policyInput.candidates=cameraBuild.candidates;policyInput.desiredArm=cameraSearchArm;policyInput.deltaTime=simulationDelta_;
       const auto policy=cameraOcclusionPolicy_.StepProduction(policyInput);
       cameraPolicyReceipt_=policy;
       if(!policy.valid){if(!captureDirectory_.empty()){
@@ -645,7 +650,7 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
                  <<" companionBoundsCenter=["<<companionBounds.center.x<<','<<companionBounds.center.y<<','<<companionBounds.center.z<<']'
                  <<" companionBoundsExtents=["<<companionBounds.extents.x<<','<<companionBounds.extents.y<<','<<companionBounds.extents.z<<"]\n"
                  <<"candidates="<<r.candidates<<" admitted="<<r.admittedCandidates<<" safe="<<r.safeCandidates<<" framed="<<r.framedCandidates<<" environment="<<r.rejectedEnvironment<<" world="<<r.rejectedCollisionWorld<<" terrain="<<r.rejectedHeightField<<" roof="<<r.rejectedRoof<<" height="<<r.rejectedHeight<<" width="<<r.rejectedWidth<<" area="<<r.rejectedArea<<" headroom="<<r.rejectedHeadroom<<" feet="<<r.rejectedFeet<<" actorBounds="<<r.rejectedActorBounds<<" actorGap="<<r.rejectedActorGap<<" buildingUnion="<<r.rejectedBuildingUnion<<" buildingPart="<<r.rejectedBuildingPart<<" roofCoverage="<<r.rejectedRoofCoverage<<" subjectOcclusion="<<r.rejectedSubjectOcclusion<<" minimumUnion="<<r.minimumBuildingUnion<<" minimumWall="<<r.minimumWallCoverage<<" minimumRoof="<<r.minimumRoofCoverage<<" minimumSubjectOcclusion="<<r.minimumSubjectOcclusion<<"\n";
-        std::vector<const GameplayLab::ProductionCameraCandidate3D*> pareto;
+        std::vector<const ::GameplayLab::ProductionCameraCandidate3D*> pareto;
         for(const auto& candidate:cameraBuild.candidates){
           const bool dominated=std::ranges::any_of(cameraBuild.candidates,[&](const auto& other){return &other!=&candidate&&other.actorMinimumMargin>=candidate.actorMinimumMargin&&other.actorGapPixels>=candidate.actorGapPixels&&other.subjectScreenHeight>=candidate.subjectScreenHeight&&other.subjectScreenArea>=candidate.subjectScreenArea&&(other.actorMinimumMargin>candidate.actorMinimumMargin||other.actorGapPixels>candidate.actorGapPixels||other.subjectScreenHeight>candidate.subjectScreenHeight||other.subjectScreenArea>candidate.subjectScreenArea);});
           if(!dominated)pareto.push_back(&candidate);
@@ -1079,21 +1084,49 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   scene_.Clear();
 }
 
+std::filesystem::path GameplayLabGame::GameplayHdrCapturePath(std::size_t index)const{
+  if(index>=Names.size()||captureDirectory_.empty())return{};
+  return captureDirectory_/(std::filesystem::path(Names[index]).stem().wstring()+L".production-hdr.aevhdr");
+}
+void GameplayLabGame::CleanupGameplayHdrCaptureArtifacts(std::size_t index,bool removeFinal)noexcept{
+  const auto destination=GameplayHdrCapturePath(index);if(destination.empty())return;std::error_code error;if(removeFinal)std::filesystem::remove(destination,error);error.clear();const std::wstring prefix=destination.filename().wstring()+L".tmp.";for(std::filesystem::directory_iterator iterator(captureDirectory_,error),end;!error&&iterator!=end;iterator.increment(error)){const auto name=iterator->path().filename().wstring();if(name.starts_with(prefix)){std::error_code removeError;std::filesystem::remove(iterator->path(),removeError);}}
+}
+void GameplayLabGame::FailGameplayHdrCapture(Engine& engine,std::size_t index)noexcept{
+  if(index<gameplayHdrCaptureStates_.size()){gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Failed;gameplayHdrCaptureReceipts_[index]={};gameplayHdrCaptureReceipts_[index].state=GameplayHdrCaptureState3D::Failed;CleanupGameplayHdrCaptureArtifacts(index,true);}
+  engine.CancelLinearHdrReadback3D();if(captureSequenceToken_)engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;capturePending_=false;gameplayHdrInFlight_=0;
+}
+bool GameplayLabGame::WriteGameplayHdrCaptureReceipt()const{
+  constexpr std::uint64_t MaximumEngineHdrBytes=16ull*1024ull*1024ull;if(captureDirectory_.empty()||gameplayHdrEnginePeakBytes_>MaximumEngineHdrBytes||gameplayHdrMaxInFlight_!=1||gameplayHdrInFlight_)return false;
+  const auto nonzero=[](const auto& hash){return std::ranges::any_of(hash,[](std::uint8_t value){return value!=0;});};
+  for(std::size_t index=0;index<Names.size();++index){const auto& receipt=gameplayHdrCaptureReceipts_[index];if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::Verified||receipt.state!=GameplayHdrCaptureState3D::Verified||!receipt.verified||receipt.path!=GameplayHdrCapturePath(index)||!receipt.byteCount||!receipt.frameSerial||!receipt.sequenceToken||receipt.sequenceIndex!=1||!nonzero(receipt.fileHash)||!nonzero(receipt.stableContentHash)||!nonzero(receipt.payloadHash)||!nonzero(receipt.rootHash))return false;}
+  const auto destination=captureDirectory_/"gameplay-hdr-capture-receipt.json",temporary=captureDirectory_/"gameplay-hdr-capture-receipt.json.tmp";std::ofstream output(temporary,std::ios::binary|std::ios::trunc);if(!output)return false;output<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabProductionHdr\",\"expectedCaptures\":"<<Names.size()<<",\"engineRawPeakBytes\":"<<gameplayHdrEnginePeakBytes_<<",\"maximumInFlight\":"<<gameplayHdrMaxInFlight_<<",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)output<<',';const auto& receipt=gameplayHdrCaptureReceipts_[index];output<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"path\":\""<<receipt.path.filename().string()<<"\",\"state\":\""<<GameplayHdrStateName3D(receipt.state)<<"\",\"byteCount\":"<<receipt.byteCount<<",\"fileHash\":\""<<GameplayProductionHashHex3D(receipt.fileHash)<<"\",\"stableContentHash\":\""<<GameplayProductionHashHex3D(receipt.stableContentHash)<<"\",\"payloadHash\":\""<<GameplayProductionHashHex3D(receipt.payloadHash)<<"\",\"rootHash\":\""<<GameplayProductionHashHex3D(receipt.rootHash)<<"\",\"frameSerial\":"<<receipt.frameSerial<<",\"sequenceToken\":"<<receipt.sequenceToken<<",\"sequenceIndex\":"<<receipt.sequenceIndex<<",\"verified\":1}";}output<<"]}";output.flush();if(!output){output.close();std::error_code ignored;std::filesystem::remove(temporary,ignored);return false;}output.close();if(!MoveFileExW(temporary.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::error_code ignored;std::filesystem::remove(temporary,ignored);return false;}return true;
+}
 void GameplayLabGame::RequestCapturePhase(Engine& engine){
   if(!capturePhaseRequestPending_)return;
   if(!capturePairFrozen_||!captureSequenceToken_||captureIndex_>=Names.size()||!captureScenePhaseLedger_.BindRequest(captureSequenceToken_,captureIndex_,capturePairMetadata_.sequence.index,capturePairMetadata_)){
-    if(captureSequenceToken_)engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);
-    captureSequenceToken_={};captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;
+    FailGameplayHdrCapture(engine,captureIndex_);
     throw std::runtime_error("Gameplay capture phase could not bind the exact current Scene submission");
+  }
+  const bool effective=capturePairMetadata_.sequence.index==1;
+  if(effective){
+    if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::Armed){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay HDR effective phase was not armed");}
+    gameplayHdrCaptureStates_[captureIndex_]=GameplayHdrCaptureState3D::SceneBound;
   }
   std::filesystem::path path;
   if(capturePairMetadata_.sequence.index==0)path=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L"-raw.png");
   else if(capturePairMetadata_.sequence.index==1){path=(captureDirectory_/Names[captureIndex_]).lexically_normal();captureRequestedEffectiveNames_[captureIndex_]=path.filename().wstring();captureRequestedEffectivePaths_[captureIndex_]=path;}
   else if(capturePairMetadata_.sequence.index==2)path=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L"-reference.png");
-  else{engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;throw std::runtime_error("Gameplay capture phase index was unsupported");}
+  else{FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture phase index was unsupported");}
   const auto renderer=engine.GetRendererStats();captureSuccess_=renderer.successfulFrameCaptures;captureReject_=renderer.rejectedFrameCaptures;
   const bool depthRequested=engine.RequestDepthReadback3D(capturePairMetadata_),objectIdRequested=engine.RequestObjectIdReadback3D(capturePairMetadata_),frameRequested=engine.CaptureNextFrame3D(path);
-  if(!GameplayCapturePhaseRequestsAtomic3D(depthRequested,objectIdRequested,frameRequested)){engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;throw std::runtime_error("Gameplay color/object-ID/depth phase requests were not atomic");}
+  const bool hdrRequested=!effective||engine.RequestLinearHdrReadback3D(capturePairMetadata_);
+  if(!GameplayCapturePhaseRequestsAtomic3D(depthRequested,objectIdRequested,frameRequested)||!hdrRequested){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay color/object-ID/depth/HDR phase requests were not atomic");}
+  if(effective){
+    if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::SceneBound||gameplayHdrInFlight_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay HDR allowed only one effective-phase readback in flight");}
+    gameplayHdrCaptureStates_[captureIndex_]=GameplayHdrCaptureState3D::BundleRequested;
+    gameplayHdrInFlight_=1;gameplayHdrMaxInFlight_=std::max(gameplayHdrMaxInFlight_,gameplayHdrInFlight_);
+    gameplayHdrCaptureStates_[captureIndex_]=GameplayHdrCaptureState3D::AwaitGpu;
+  }
   capturePhaseRequestPending_=false;capturePending_=true;
 }
 
@@ -1169,9 +1202,17 @@ bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
 
 bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bool raw,bool reference){
   if(index>=Names.size())return false;
-  auto capture=engine.TakeObjectIdReadback3D();
-  auto depth=engine.TakeDepthReadback3D();
-  if(!capture||!depth){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=no-paired-readback object="<<bool(capture)<<" depth="<<bool(depth);return false;}
+  const bool effective=!raw&&!reference;
+  std::optional<ProductionReadbackBundle3D> productionBundle;std::optional<ObjectIdCapture3D> objectIdStorage;std::optional<DepthCapture3D> depthStorage;if(effective)productionBundle=engine.TakeProductionReadbackBundle3D();else{objectIdStorage=engine.TakeObjectIdReadback3D();depthStorage=engine.TakeDepthReadback3D();}
+  const ObjectIdCapture3D* capture=effective&&productionBundle?&productionBundle->ObjectId():objectIdStorage?&*objectIdStorage:nullptr;const DepthCapture3D* depth=effective&&productionBundle?&productionBundle->Depth():depthStorage?&*depthStorage:nullptr;const LinearHdrReadback3D* hdr=effective&&productionBundle?&productionBundle->Hdr():nullptr;
+  if(!capture||!depth||(effective&&!hdr)){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=no-paired-readback object="<<bool(capture)<<" depth="<<bool(depth)<<" hdr="<<bool(hdr);return false;}
+  if(effective){
+    constexpr std::uint64_t MaximumEngineHdrBytes=16ull*1024ull*1024ull;
+    if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::AwaitGpu||gameplayHdrInFlight_!=1||!hdr->Complete()||hdr->receipt.requestMetadata!=capture->requestMetadata||hdr->receipt.rasterProvenance!=capture->rasterProvenance||hdr->receipt.determinism!=capture->determinism||hdr->receipt.requestMetadata!=depth->requestMetadata||hdr->receipt.rasterProvenance!=depth->rasterProvenance||hdr->receipt.determinism!=depth->determinism||hdr->receipt.requestMetadata!=capturePairMetadata_||hdr->receipt.requestMetadata.sequence.index!=1||hdr->receipt.requestMetadata.sequence.token!=captureSequenceToken_||hdr->receipt.rawHalfByteCount>MaximumEngineHdrBytes){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=hdr-frame-bound-pair-mismatch state="<<GameplayHdrStateName3D(gameplayHdrCaptureStates_[index])<<" bytes="<<hdr->receipt.rawHalfByteCount;return false;}
+    if(capture->materialBindings.empty()||capture->materialBindings.size()!=capture->tokenMap.size())return false;
+    for(std::size_t bindingIndex=0;bindingIndex<capture->materialBindings.size();++bindingIndex){const auto& binding=capture->materialBindings[bindingIndex];if(!binding.Complete()||binding.order!=bindingIndex||binding.identity!=capture->tokenMap[bindingIndex])return false;}
+    gameplayHdrEnginePeakBytes_=std::max(gameplayHdrEnginePeakBytes_,std::uint64_t(hdr->receipt.rawHalfByteCount));gameplayHdrInFlight_=0;gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Taken;
+  }
   const std::uint32_t diagnosticPhase=capture->requestMetadata.sequence.index;
   if(diagnosticPhase>=captureIntegrityDiagnostics_[index].size())return false;
   captureIntegrityDiagnostics_[index][diagnosticPhase]={index,diagnosticPhase,capture->determinism,depth->determinism,true};
@@ -1307,6 +1348,17 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     if(applied){captureFadedStableHigh_[index]=appliedOcclusionIdentity_.id.high;captureFadedStableLow_[index]=appliedOcclusionIdentity_.id.low;captureFadedGeneration_[index]=appliedOcclusionIdentity_.generation;captureOpacityMatchedStatic_[index]=std::uint32_t(appliedOcclusionUpdate_.matchedStatic);captureOpacityMatchedMultipart_[index]=std::uint32_t(appliedOcclusionUpdate_.matchedMultipart);}
     captureOpacityMissing_[index]=appliedOcclusionUpdate_.missing?1u:0u;captureOpacityGenerationConflict_[index]=appliedOcclusionUpdate_.generationConflicts?1u:0u;captureOcclusionAdjusted_[index]=applied&&captureRawOccluderCoverage_[index]>.08f&&captureOccluderCoverage_[index]<.08f?1u:0u;
   }
+  if(effective){
+    if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::Taken)return false;
+    if(!productionBundle)return false;Aevrynd::GameplayLab::GameplayProductionHdrSidecarValidation3D validation{};auto sealed=Aevrynd::GameplayLab::BuildGameplayProductionHdrSidecar3D(*productionBundle,&validation);if(!sealed||!validation)return false;
+    const auto destination=GameplayHdrCapturePath(index);if(destination.empty()||std::filesystem::exists(destination))return false;
+    Aevrynd::GameplayLab::GameplayProductionHdrSidecarPublishReceipt3D published{};if(!Aevrynd::GameplayLab::PublishGameplayProductionHdrSidecar3D(*sealed,destination,&published))return false;
+    gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Published;
+    std::error_code fileError;const auto fileBytes=std::filesystem::file_size(destination,fileError);const auto nonzero=[](const auto& hash){return std::ranges::any_of(hash,[](std::uint8_t value){return value!=0;});};const auto inspected=Aevrynd::GameplayLab::InspectGameplayProductionHdrSidecarFile3D(destination);
+    if(fileError||!inspected||inspected->schemaVersion!=3||!published.byteCount||fileBytes!=published.byteCount||inspected->byteCount!=published.byteCount||inspected->fileHash!=published.fileHash||inspected->stableContentHash!=published.stableContentHash||inspected->payloadHash!=published.payloadHash||inspected->rootHash!=published.rootHash||published.stableContentHash!=sealed->Sidecar().canonical.stableContentHash||published.payloadHash!=sealed->Sidecar().canonical.payloadHash||published.rootHash!=sealed->Sidecar().canonical.rootHash||!nonzero(published.fileHash)||!nonzero(published.stableContentHash)||!nonzero(published.payloadHash)||!nonzero(published.rootHash)||!Aevrynd::GameplayLab::ValidateGameplayProductionHdrSidecar3D(sealed->Sidecar()))return false;
+    auto& receipt=gameplayHdrCaptureReceipts_[index];receipt={GameplayHdrCaptureState3D::Published,destination,inspected->fileHash,inspected->stableContentHash,inspected->payloadHash,inspected->rootHash,inspected->byteCount,hdr->receipt.rasterProvenance.frameSerial,hdr->receipt.requestMetadata.sequence.token.value,hdr->receipt.requestMetadata.sequence.index,false};
+    sealed.reset();productionBundle.reset();receipt.state=GameplayHdrCaptureState3D::Verified;receipt.verified=true;gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Verified;
+  }
   return true;
 }
 void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
@@ -1319,15 +1371,16 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
   const auto renderer = engine.GetRendererStats();
   if (capturePending_ && (renderer.successfulFrameCaptures > captureSuccess_ ||
                           renderer.rejectedFrameCaptures > captureReject_)) {
-    if (renderer.rejectedFrameCaptures > captureReject_)throw std::runtime_error("Gameplay paired framebuffer capture was rejected");
+    if (renderer.rejectedFrameCaptures > captureReject_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired framebuffer capture was rejected");}
     if (renderer.successfulFrameCaptures > captureSuccess_) {
-      if(!ConsumeObjectIdCapture(engine,captureIndex_,captureRawPhase_,captureReferencePhase_))throw std::runtime_error("Gameplay paired GPU object-ID readback failed closed");
+      if(!ConsumeObjectIdCapture(engine,captureIndex_,captureRawPhase_,captureReferencePhase_)){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired GPU object-ID/depth/HDR readback failed closed");}
       if(captureRawPhase_){
         captureRawPhase_=false;capturePending_=false;
         capturePairMetadata_.sequence.index=1;capturePairMetadata_.drawListRevision=0;
         capturePhaseRequestPending_=true;
         return;
       }
+      if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::Verified){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay effective HDR sidecar was not verified before phase progression");}
       const bool thirdCapture=(captureIndex_<9&&captureIndex_%3==1)||captureIndex_>=9;
       if(!captureReferencePhase_&&thirdCapture){
         captureReferencePhase_=true;capturePending_=false;
@@ -1335,15 +1388,15 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
         capturePhaseRequestPending_=true;
         return;
       }
-      const auto gpuProvenance=engine.ReadbackCaptureSequenceGpuProvenance(captureSequenceToken_);if(gpuProvenance.token!=captureSequenceToken_||gpuProvenance.phases.size()!=captureSequencePhaseCount_)throw std::runtime_error("Gameplay GPU sequence provenance was incomplete");for(const auto& phase:gpuProvenance.phases){if(phase.phaseIndex>=3)throw std::runtime_error("Gameplay GPU sequence provenance phase was invalid");captureAtmospherePhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.atmosphere;captureTemporalPhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.temporalResolve;}
+      const auto gpuProvenance=engine.ReadbackCaptureSequenceGpuProvenance(captureSequenceToken_);if(gpuProvenance.token!=captureSequenceToken_||gpuProvenance.phases.size()!=captureSequencePhaseCount_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay GPU sequence provenance was incomplete");}for(const auto& phase:gpuProvenance.phases){if(phase.phaseIndex>=3){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay GPU sequence provenance phase was invalid");}captureAtmospherePhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.atmosphere;captureTemporalPhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.temporalResolve;}
       const auto sequenceResult=engine.EndReadbackCaptureSequence3D(captureSequenceToken_);
-      if(!sequenceResult||sequenceResult.receipt.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.jitterPolicy!=ReadbackCaptureSequenceJitterPolicy3D::FixedSample||sequenceResult.receipt.descriptor.fixedSampleIndex!=0){throw std::runtime_error("Gameplay paired fixed-sample readback capture sequence failed closed");}
-      for(const auto& phase:sequenceResult.receipt.phases){if(phase.phaseIndex>=captureIntegrityDiagnostics_[captureIndex_].size())throw std::runtime_error("Gameplay frame-bound determinism phase index was invalid");auto& diagnostic=captureIntegrityDiagnostics_[captureIndex_][phase.phaseIndex];if(!diagnostic.recorded||diagnostic.objectId!=phase.determinism||diagnostic.depth!=phase.determinism)throw std::runtime_error("Gameplay frame-bound determinism phase evidence drifted");diagnostic={captureIndex_,phase.phaseIndex,phase.determinism,phase.determinism,true};}
-      const auto& effectiveDeterminism=sequenceResult.receipt.phases[1].determinism;captureDeterminismFrameSerial_[captureIndex_]=effectiveDeterminism.frameSerial;captureDeterminismIntegrity_[captureIndex_]=effectiveDeterminism.integrity;captureCanonicalDrawFingerprint_[captureIndex_]=effectiveDeterminism.canonical;if(!WriteCaptureIntegrityDiagnostic())throw std::runtime_error("Gameplay frame-bound determinism diagnostic publication failed");
+      if(!sequenceResult||sequenceResult.receipt.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.jitterPolicy!=ReadbackCaptureSequenceJitterPolicy3D::FixedSample||sequenceResult.receipt.descriptor.fixedSampleIndex!=0||sequenceResult.receipt.descriptor.requiredLinearHdrPhaseMask!=(1ull<<1)){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired fixed-sample HDR readback capture sequence failed closed");}
+      for(const auto& phase:sequenceResult.receipt.phases){if(phase.phaseIndex>=captureIntegrityDiagnostics_[captureIndex_].size()){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism phase index was invalid");}auto& diagnostic=captureIntegrityDiagnostics_[captureIndex_][phase.phaseIndex];if(!diagnostic.recorded||diagnostic.objectId!=phase.determinism||diagnostic.depth!=phase.determinism){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism phase evidence drifted");}diagnostic={captureIndex_,phase.phaseIndex,phase.determinism,phase.determinism,true};}
+      const auto& effectiveDeterminism=sequenceResult.receipt.phases[1].determinism;captureDeterminismFrameSerial_[captureIndex_]=effectiveDeterminism.frameSerial;captureDeterminismIntegrity_[captureIndex_]=effectiveDeterminism.integrity;captureCanonicalDrawFingerprint_[captureIndex_]=effectiveDeterminism.canonical;if(!WriteCaptureIntegrityDiagnostic()){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism diagnostic publication failed");}
       captureSequenceReceipts_[captureIndex_]=sequenceResult.receipt;
       const auto requiredWarmup=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;
-      if(!captureTemporalHistoryGeneration_[captureIndex_]||captureTemporalWarmupFrames_[captureIndex_]<requiredWarmup||captureTemporalReseedReasonMask_[captureIndex_]==0||sequenceResult.receipt.phases.empty()||sequenceResult.receipt.phases.front().raster.temporalHistoryReadGeneration!=captureTemporalHistoryGeneration_[captureIndex_])throw std::runtime_error("Gameplay temporal history receipt did not belong to the warmed capture sequence");
-      if(!captureScenarioClock_.CompleteReadback(captureIndex_,temporalFixtureWarmupFrames_?2:Names.size()))throw std::runtime_error("Gameplay capture scenario completion was out of order");
+      if(!captureTemporalHistoryGeneration_[captureIndex_]||captureTemporalWarmupFrames_[captureIndex_]<requiredWarmup||captureTemporalReseedReasonMask_[captureIndex_]==0||sequenceResult.receipt.phases.empty()||sequenceResult.receipt.phases.front().raster.temporalHistoryReadGeneration!=captureTemporalHistoryGeneration_[captureIndex_]){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay temporal history receipt did not belong to the warmed capture sequence");}
+      if(!captureScenarioClock_.CompleteReadback(captureIndex_,temporalFixtureWarmupFrames_?2:Names.size())){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture scenario completion was out of order");}
       captureSequenceToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=false;
       captureReferencePhase_=false;
       if(captureIndex_==9&&rules_.PaletteOpen()){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette close input failed");}
@@ -1500,6 +1553,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     std::ofstream drawGroundOut(captureDirectory_/"gameplay-draw-ground-identity-diagnostic-receipt.json",std::ios::trunc);drawGroundOut<<std::setprecision(std::numeric_limits<float>::max_digits10);drawGroundOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabDrawGroundIdentityDiagnostic\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)drawGroundOut<<',';drawGroundOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"sceneToDrawGroundIdentityMatches\":"<<captureDrawGroundIdentityCount_[index]<<",\"acceptedGpuGroundToken\":"<<captureTerrainToken_[index]<<"}";}drawGroundOut<<"]}";
     std::ofstream drawGroundLayerOut(captureDirectory_/"gameplay-draw-ground-layer-diagnostic-receipt.json",std::ios::trunc);drawGroundLayerOut<<std::setprecision(std::numeric_limits<float>::max_digits10);drawGroundLayerOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabDrawGroundLayerDiagnostic\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)drawGroundLayerOut<<',';drawGroundLayerOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"groundOpaque\":"<<captureDrawGroundOpaqueCount_[index]<<",\"groundShadowOnly\":"<<captureDrawGroundShadowOnlyCount_[index]<<"}";}drawGroundLayerOut<<"]}";
     std::ofstream groundDecisionOut(captureDirectory_/"gameplay-ground-visibility-decision-receipt.json",std::ios::trunc);groundDecisionOut<<std::setprecision(std::numeric_limits<float>::max_digits10);groundDecisionOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabGroundVisibilityDecision\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)groundDecisionOut<<',';groundDecisionOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"meshHandle\":"<<captureGroundMeshHandle_[index]<<",\"castsShadow\":"<<captureGroundCastsShadow_[index]<<",\"alphaMode\":"<<captureGroundAlphaMode_[index]<<",\"boundsRadius\":"<<captureGroundBoundsRadius_[index]<<",\"distanceMinusRadius\":"<<captureGroundDistanceMinusRadius_[index]<<",\"frustumAccepted\":"<<captureGroundFrustumAccepted_[index]<<",\"viewDepth\":"<<captureGroundViewDepth_[index]<<",\"projectedRadius\":"<<captureGroundProjectedRadius_[index]<<",\"rendererSubmittedMeshes\":"<<captureRendererSubmittedMeshes_[index]<<",\"rendererSubmittedTerrain\":"<<captureRendererSubmittedTerrain_[index]<<"}";}groundDecisionOut<<"]}";
+    if(!WriteGameplayHdrCaptureReceipt())throw std::runtime_error("Gameplay production HDR aggregate receipt failed closed");
     engine.Quit();
     return;
   }
@@ -1580,7 +1634,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     captureBuilderPaletteOpen_[captureIndex_]=rules_.PaletteOpen()?1u:0u;captureBuilderMinimumSubjectScreenArea_[captureIndex_]=rules_.PaletteOpen()?.08f:.05f;
     captureBuilderPositionX_[captureIndex_]=camera_.position.x;captureBuilderPositionY_[captureIndex_]=camera_.position.y;captureBuilderPositionZ_[captureIndex_]=camera_.position.z;
     if(rules_.Camera()==CameraMode::ThirdPerson){
-      const auto horizon=GameplayLab::EvaluateGameplayThirdPersonGroundHorizon3D(
+      const auto horizon=::GameplayLab::EvaluateGameplayThirdPersonGroundHorizon3D(
           camera_.projection,cameraPolicyReceipt_.pitchRadians,
           cameraBuilderReceipt_.minimumTopCenterRayElevation);
       if(!horizon.accepted)throw std::runtime_error("Gameplay third-person camera violated the analytic ground-horizon gate");
@@ -1601,11 +1655,13 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     GameplayCanonicalCaptureStateInput3D canonicalInput{};canonicalInput.captureIndex=captureIndex_;canonicalInput.entities.assign(rules_.Entities().begin(),rules_.Entities().end());canonicalInput.controllerPosition=controller_.Position();canonicalInput.yaw=yaw_;canonicalInput.pitch=pitch_;canonicalInput.camera=rules_.Camera();canonicalInput.lighting=rules_.Lighting();canonicalInput.paletteCategory=rules_.Category();canonicalInput.female=rules_.Female();canonicalInput.paletteOpen=rules_.PaletteOpen();canonicalInput.grabbedEntity=rules_.Grabbed().value_or(0);canonicalInput.cameraHash=frozenCameraHash;canonicalInput.animationHash=animationState;canonicalInput.physicsHash=physicsState;captureCanonicalState_[captureIndex_]=BuildGameplayCanonicalCaptureState3D(canonicalInput);if(!captureCanonicalState_[captureIndex_].valid)throw std::runtime_error("Gameplay canonical capture state contained a non-finite or invalid entity");for(auto& diagnostic:captureCanonicalState_[captureIndex_].entityDiagnostics){diagnostic.initialSeed=std::ranges::find(initialSeedEntityIds_,diagnostic.stableId)!=initialSeedEntityIds_.end();if(const auto* body=static_cast<const PhysicsWorld3D&>(physics_).GetBody(palette_->Body(diagnostic.stableId))){diagnostic.bodyAvailable=true;diagnostic.bodyPosition=body->settings.transform.position;diagnostic.bodyVelocity=body->velocity;}if(const auto* scene=static_cast<const SceneECSRegistry3D&>(sceneEcs_).Transform(palette_->SceneEntity(diagnostic.stableId))){diagnostic.sceneAvailable=true;diagnostic.scenePosition=scene->value.position;}}const std::uint64_t frozenStateHash=captureCanonicalState_[captureIndex_].canonical;
     std::uint64_t sequenceInvariantHash=14695981039346656037ull;MixCaptureHash(sequenceInvariantHash,frozenCameraHash);MixCaptureHash(sequenceInvariantHash,frozenStateHash);MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenFemalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMonsterPose_));MixCaptureHash(sequenceInvariantHash,showcaseProductionReceipt_.manifestFingerprint);if(!sequenceInvariantHash)sequenceInvariantHash=1;
     activeCaptureRoute_.phase=GameplayActiveCaptureRoutePhase3D::Readback;
-    const auto sequence=engine.BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{captureSequencePhaseCount_,ReadbackCaptureSequenceJitterPolicy3D::FixedSample,0});
-    if(!sequence)throw std::runtime_error("Gameplay readback capture sequence begin failed closed");
-    if(!captureScenarioClock_.BeginReadback(captureIndex_)){engine.CancelReadbackCaptureSequence3D(*sequence);captureScenarioClock_.FailReadback(captureIndex_);throw std::runtime_error("Gameplay capture scenario readback begin was out of order");}
+    if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::Empty){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay HDR capture state was not empty before arm");}
+    const auto sequence=engine.BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{captureSequencePhaseCount_,ReadbackCaptureSequenceJitterPolicy3D::FixedSample,0,1ull<<1});
+    if(!sequence){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay readback capture sequence begin failed closed");}
     captureSequenceToken_=*sequence;
-    if(!captureScenePhaseLedger_.Begin(captureSequenceToken_,captureIndex_,captureSequencePhaseCount_)){engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};captureScenePhaseLedger_.Clear();throw std::runtime_error("Gameplay Scene phase ledger begin failed closed");}
+    if(!captureScenarioClock_.BeginReadback(captureIndex_)){captureScenarioClock_.FailReadback(captureIndex_);FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture scenario readback begin was out of order");}
+    if(!captureScenePhaseLedger_.Begin(captureSequenceToken_,captureIndex_,captureSequencePhaseCount_)){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay Scene phase ledger begin failed closed");}
+    gameplayHdrCaptureStates_[captureIndex_]=GameplayHdrCaptureState3D::Armed;gameplayHdrCaptureReceipts_[captureIndex_]={};gameplayHdrCaptureReceipts_[captureIndex_].state=GameplayHdrCaptureState3D::Armed;
     capturePairMetadata_={0,frozenCameraHash,frozenStateHash,ReadbackEmptyReason3D::None,{captureSequenceToken_,0},sequenceInvariantHash};
     captureRawPhase_=true;captureReferencePhase_=false;capturePairFrozen_=true;capturePending_=false;capturePhaseRequestPending_=true;
   }

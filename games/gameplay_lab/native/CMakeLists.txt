@@ -1,4 +1,10 @@
-add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayFirstPersonViewmodel3D.cpp src/GameplayContactEvidence3D.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/ShowcaseLandEcology3D.cpp src/GameplayObjectPaletteUi3D.cpp src/ShowcaseRenderAssetBindings3D.cpp src/GameplayCameraOcclusionPolicy3D.cpp src/GameplayCameraProductionBuilder3D.cpp src/GameplayOccluderMask3D.cpp tests/ux_replay/GameplayUxReplayWin32.cpp tests/ux_replay/GameplayUxReplayProduction.cpp)
+add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayProductionHdrSidecar3D.cpp src/GameplayFirstPersonViewmodel3D.cpp src/GameplayContactEvidence3D.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/ShowcaseLandEcology3D.cpp src/GameplayObjectPaletteUi3D.cpp src/ShowcaseRenderAssetBindings3D.cpp src/GameplayCameraOcclusionPolicy3D.cpp src/GameplayCameraProductionBuilder3D.cpp src/GameplayOccluderMask3D.cpp tests/ux_replay/GameplayUxReplayWin32.cpp tests/ux_replay/GameplayUxReplayProduction.cpp)
+add_executable(GameplayProductionHdrSidecarValidator3D tools/GameplayProductionHdrSidecarValidator3D.cpp src/GameplayProductionHdrSidecar3D.cpp)
+target_include_directories(GameplayProductionHdrSidecarValidator3D PRIVATE include)
+target_compile_options(GameplayProductionHdrSidecarValidator3D PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(GameplayProductionHdrSidecarValidator3D PRIVATE AevryndEngine bcrypt)
+set_target_properties(GameplayProductionHdrSidecarValidator3D PROPERTIES OUTPUT_NAME "Aevrynd-Gameplay-Hdr-Validator")
+add_dependencies(GameplayLab GameplayProductionHdrSidecarValidator3D)
 # Gameplay 的 build fingerprint 由一份排序、可重算、fail-closed 的完整 source inventory 產生。
 file(GLOB_RECURSE GAMEPLAY_SOURCE_INVENTORY_FILES CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/engine/native/include/*.h"
@@ -22,7 +28,10 @@ file(GLOB_RECURSE GAMEPLAY_SOURCE_INVENTORY_FILES CONFIGURE_DEPENDS RELATIVE "${
   "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tests/*.h"
   "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tests/*.hpp"
   "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tests/*.cpp"
-  "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tests/*.ps1")
+  "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tests/*.ps1"
+  "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tools/*.h"
+  "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tools/*.hpp"
+  "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tools/*.cpp")
 list(APPEND GAMEPLAY_SOURCE_INVENTORY_FILES
   CMakeLists.txt
   engine/native/CMakeLists.txt
@@ -151,6 +160,12 @@ target_include_directories(GameplayProductionInputPaletteTest PRIVATE include)
 target_compile_options(GameplayProductionInputPaletteTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(GameplayProductionInputPaletteTest PRIVATE AevryndEngine)
 add_test(NAME GameplayProductionInputPaletteTest COMMAND GameplayProductionInputPaletteTest)
+add_executable(GameplayProductionHdrSidecar3DTest tests/GameplayProductionHdrSidecar3DSmoke.cpp src/GameplayProductionHdrSidecar3D.cpp)
+target_include_directories(GameplayProductionHdrSidecar3DTest PRIVATE include)
+target_compile_options(GameplayProductionHdrSidecar3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(GameplayProductionHdrSidecar3DTest PRIVATE AEVRYND_INTERNAL_RENDERER_TEST_HOOKS=0)
+target_link_libraries(GameplayProductionHdrSidecar3DTest PRIVATE AevryndEngine)
+add_test(NAME GameplayProductionHdrSidecar3DTest COMMAND GameplayProductionHdrSidecar3DTest)
 add_executable(GameplayLabBenchmark tests/GameplayLabBenchmark.cpp src/GameplayRules3D.cpp)
 target_include_directories(GameplayLabBenchmark PRIVATE include)
 target_compile_options(GameplayLabBenchmark PRIVATE /W4 /permissive- /utf-8)

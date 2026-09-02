@@ -145,6 +145,10 @@ public:
     bool RequestDepthReadback3D(DepthCaptureRequestMetadata3D metadata={}){return renderer_&&renderer_->RequestDepthReadback3D(metadata);}
     bool CancelDepthReadback3D()noexcept{return renderer_&&renderer_->CancelDepthReadback3D();}
     std::optional<DepthCapture3D> TakeDepthReadback3D(){return renderer_?renderer_->TakeDepthReadback3D():std::optional<DepthCapture3D>{};}
+    bool RequestLinearHdrReadback3D(LinearHdrCaptureRequestMetadata3D metadata={});
+    bool CancelLinearHdrReadback3D()noexcept;
+    std::optional<LinearHdrReadback3D> TakeLinearHdrReadback3D();
+    std::optional<ProductionReadbackBundle3D> TakeProductionReadbackBundle3D();
     std::optional<ReadbackCaptureSequenceToken3D> BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D descriptor){return renderer_?renderer_->BeginReadbackCaptureSequence3D(descriptor):std::optional<ReadbackCaptureSequenceToken3D>{};}
     std::optional<ReadbackCaptureSequenceToken3D> BeginReadbackCaptureSequence3D(uint32_t expectedPhaseCount){return BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{expectedPhaseCount});}
     ReadbackCaptureSequenceResult3D EndReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token){return renderer_?renderer_->EndReadbackCaptureSequence3D(token):ReadbackCaptureSequenceResult3D{ReadbackCaptureSequenceStatus3D::DeviceLost,{}};}

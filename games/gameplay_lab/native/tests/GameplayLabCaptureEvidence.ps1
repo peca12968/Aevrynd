@@ -508,6 +508,90 @@ function Get-GameplayCaptureViewExpectations {
   )
 }
 
+function Invoke-GameplayHdrValidator([string]$ValidatorPath,[string]$SidecarPath) {
+  if(-not[IO.Path]::IsPathRooted($ValidatorPath)-or-not(Test-Path -LiteralPath $ValidatorPath -PathType Leaf)){throw 'Gameplay HDR validator must be an existing absolute file'}
+  $validator=[IO.Path]::GetFullPath($ValidatorPath);$sidecar=[IO.Path]::GetFullPath($SidecarPath)
+  # 測試可使用 PowerShell stub；正式 gate 固定傳入相鄰的原生 exe。
+  $launchFile='';$launchArguments=''
+  if([IO.Path]::GetExtension($validator)-ieq'.ps1'){
+    $windowsPowerShell=Join-Path $PSHOME 'powershell.exe';$powerShellCore=Join-Path $PSHOME 'pwsh.exe'
+    if(Test-Path -LiteralPath $windowsPowerShell -PathType Leaf){$launchFile=$windowsPowerShell}elseif(Test-Path -LiteralPath $powerShellCore -PathType Leaf){$launchFile=$powerShellCore}else{$launchFile=(Get-Process -Id $PID).Path}
+    $launchArguments='-NoProfile -ExecutionPolicy Bypass -File "'+$validator+'" "'+$sidecar+'"'
+  }else{$launchFile=$validator;$launchArguments='"'+$sidecar+'"'}
+  if([string]::IsNullOrWhiteSpace($launchFile)){throw "Gameplay HDR validator launch filename was empty: validator=$validator extension=$([IO.Path]::GetExtension($validator))"}
+  $info=[Diagnostics.ProcessStartInfo]::new($launchFile,$launchArguments);$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+  $process=[Diagnostics.Process]::new();$process.StartInfo=$info
+  try{
+    if(-not$process.Start()){throw 'Gameplay HDR validator process did not start'}
+    $stdoutTask=$process.StandardOutput.ReadToEndAsync();$stderrTask=$process.StandardError.ReadToEndAsync()
+    if(-not$process.WaitForExit(30000)){try{$process.Kill()}catch{};throw 'Gameplay HDR validator timed out'}
+    return [pscustomobject]@{exitCode=$process.ExitCode;stdout=$stdoutTask.GetAwaiter().GetResult();stderr=$stderrTask.GetAwaiter().GetResult()}
+  }finally{$process.Dispose()}
+}
+
+function Assert-GameplayHdrValidatorExactEvidence([string]$ValidatorPath,[string]$SidecarPath,$ExpectedEntry,[string]$Context) {
+  if(-not(Test-Path -LiteralPath $SidecarPath -PathType Leaf)){throw "Gameplay HDR validator input was missing: $Context"}
+  $snapshot=Get-GameplayEvidenceFileSnapshot $SidecarPath
+  $validation=Invoke-GameplayHdrValidator $ValidatorPath $SidecarPath
+  if([int]$validation.exitCode-ne0){throw "Gameplay HDR validator rejected sidecar: $Context exit=$($validation.exitCode)"}
+  $lines=@(([string]$validation.stdout-split'\r?\n')|Where-Object{-not[string]::IsNullOrWhiteSpace($_)})
+  if($lines.Count-ne1){throw "Gameplay HDR validator output was not exactly one JSON line: $Context"}
+  $jsonLine=$lines[0].Trim();if(-not$jsonLine.StartsWith('{',[StringComparison]::Ordinal)-or-not$jsonLine.EndsWith('}',[StringComparison]::Ordinal)){throw "Gameplay HDR validator output JSON was not an object: $Context"}
+  try{$validated=$jsonLine|ConvertFrom-Json -ErrorAction Stop}catch{throw "Gameplay HDR validator output JSON was invalid: $Context"}
+  if($validated-is[Array]){throw "Gameplay HDR validator output JSON was not an object: $Context"}
+  foreach($field in @('schemaVersion','byteCount','fileHash','stableContentHash','payloadHash','rootHash')){if($null-eq$validated.PSObject.Properties[$field]){throw "Gameplay HDR validator field missing: $Context/$field"}}
+  if([uint32]$validated.schemaVersion-ne3-or[uint64]$validated.byteCount-ne[uint64]$snapshot.length-or[uint64]$validated.byteCount-ne[uint64]$ExpectedEntry.byteCount){throw "Gameplay HDR validator schema/byte count mismatch: $Context"}
+  foreach($field in @('fileHash','stableContentHash','payloadHash','rootHash')){$hash=[string]$validated.$field;if($hash-notmatch'^[0-9a-f]{64}$'-or$hash-match'^0{64}$'-or$hash-cne[string]$ExpectedEntry.$field){throw "Gameplay HDR validator/expected hash mismatch: $Context/$field"}}
+  if([string]$validated.fileHash-cne$snapshot.sha256){throw "Gameplay HDR validator/file hash mismatch: $Context"}
+  return $validated
+}
+
+function Assert-GameplayHdrCaptureEvidence(
+    [string]$CaptureDirectory, $Receipt, $SequenceReceipt, [string[]]$ExpectedNames,
+    [string]$ValidatorPath, [string]$ExpectedRunId) {
+  if(-not[IO.Path]::IsPathRooted($ValidatorPath)-or-not(Test-Path -LiteralPath $ValidatorPath -PathType Leaf)){throw 'Gameplay HDR validator is missing or is not absolute'}
+  $parsedRunId=[Guid]::Empty
+  if(-not[Guid]::TryParseExact($ExpectedRunId,'D',[ref]$parsedRunId)-or$parsedRunId.ToString('D')-cne$ExpectedRunId-or[string]$Receipt.runId-cne$ExpectedRunId-or[string]$SequenceReceipt.runId-cne$ExpectedRunId){throw 'Gameplay HDR run identifier mismatch'}
+  if([string]$Receipt.source-cne'GameplayLabProductionHdr'-or[uint32]$Receipt.expectedCaptures-ne11-or[uint64]$Receipt.engineRawPeakBytes-lt1-or[uint64]$Receipt.engineRawPeakBytes-gt16MB-or[uint32]$Receipt.maximumInFlight-ne1){throw 'Gameplay HDR production receipt header failed'}
+  $rows=@($Receipt.captures)
+  if($rows.Count-ne11-or$ExpectedNames.Count-ne11-or@($rows.name|Select-Object -Unique).Count-ne11-or@($rows.path|Select-Object -Unique).Count-ne11){throw 'Gameplay HDR sidecar receipt count/uniqueness failed'}
+  $root=[IO.Path]::GetFullPath($CaptureDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+  $result=@()
+  for($index=0;$index-lt11;++$index){
+    $row=$rows[$index];$sequence=@($SequenceReceipt.captures|Where-Object name -CEQ $ExpectedNames[$index])
+    if($row.name-cne$ExpectedNames[$index]-or[string]::IsNullOrWhiteSpace([string]$row.path)-or[IO.Path]::IsPathRooted([string]$row.path)-or[string]$row.path-match'(^|[\/])\.\.([\/]|$)'){throw "Gameplay HDR sidecar order/path failed: index=$index"}
+    $path=[IO.Path]::GetFullPath((Join-Path $CaptureDirectory ([string]$row.path)))
+    if(-not$path.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)-or-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Gameplay HDR sidecar file missing or escaped root: $($row.name)"}
+    if([IO.Path]::GetExtension($path)-ine'.aevhdr'){throw "Gameplay HDR sidecar extension failed: $($row.name)"}
+    $snapshot=Get-GameplayEvidenceFileSnapshot $path
+    foreach($field in @('fileHash','payloadHash','rootHash','stableContentHash')){$hash=[string]$row.$field;if($hash-notmatch'^[0-9a-f]{64}$'-or$hash-match'^0{64}$'){throw "Gameplay HDR sidecar hash invalid: $($row.name)/$field"}}
+    if([uint64]$row.byteCount-ne[uint64]$snapshot.length-or[string]$row.fileHash-cne$snapshot.sha256-or[string]$row.state-cne'Verified'-or$row.verified-ne$true){throw "Gameplay HDR sidecar file/hash/verified failed: $($row.name)"}
+    $null=Assert-GameplayHdrValidatorExactEvidence $ValidatorPath $path $row ([string]$row.name)
+    if($sequence.Count-ne1-or@($sequence[0].phases).Count-lt2){throw "Gameplay HDR sidecar sequence capture missing: $($row.name)"}
+    $phase=$sequence[0].phases[1]
+    if([uint32]$row.sequenceIndex-ne1-or[uint32]$phase.index-ne1-or[uint32]$phase.sequenceIndex-ne1-or[uint64]$row.frameSerial-ne[uint64]$phase.frameSerial-or[uint64]$row.sequenceToken-ne[uint64]$phase.sequenceToken-or[uint64]$row.sequenceToken-ne[uint64]$sequence[0].token){throw "Gameplay HDR sidecar sequence provenance mismatch: $($row.name)"}
+    $result+=[pscustomobject]@{name=[string]$row.name;path=[string]$row.path;byteCount=[uint64]$snapshot.length;fileHash=$snapshot.sha256;payloadHash=[string]$row.payloadHash;rootHash=[string]$row.rootHash;stableContentHash=[string]$row.stableContentHash;frameSerial=[uint64]$row.frameSerial;sequenceToken=[uint64]$row.sequenceToken;sequenceIndex=1}
+  }
+  return $result
+}
+
+# Cross-run evidence excludes frame/fence/resource/history identity, while visual/canonical/material content remains sealed by stableContentHash.
+function Assert-GameplayHdrStableContentDeterminism($Baseline,$Candidate,$ExpectedNames) {
+  $left=@($Baseline)
+  $right=@($Candidate)
+  if($left.Count -ne 11 -or $right.Count -ne 11 -or $ExpectedNames.Count -ne 11){throw 'Gameplay HDR stable content row count failed'}
+  for($index=0;$index -lt 11;$index++){
+    $leftRow=$left[$index]
+    $rightRow=$right[$index]
+    $expectedName=$ExpectedNames[$index]
+    if($leftRow.name -cne $expectedName -or $rightRow.name -cne $expectedName){throw "Three-run HDR stable content name mismatch: $index"}
+    if($leftRow.path -cne $rightRow.path){throw "Three-run HDR stable content path mismatch: $index"}
+    $leftHash=$leftRow.stableContentHash
+    $rightHash=$rightRow.stableContentHash
+    if($leftHash -notmatch '^[0-9a-f]{64}$' -or $rightHash -notmatch '^[0-9a-f]{64}$' -or $leftHash -cne $rightHash){throw "Three-run HDR stable content hash mismatch: $index"}
+  }
+}
+
 function Assert-GameplayRunEvidence(
     $Receipt, $Environment, $Collision, $Palette, $Character, $Camera, $Sequence,
     $Photoreal, $PackageEvidence, [string[]]$ExpectedNames) {
@@ -842,7 +926,7 @@ function Write-GameplayFinalEvidenceReceipt(
   if (@($Runs | ForEach-Object { $_.stateSha256 } | Select-Object -Unique).Count -ne 1) {
     throw 'Final capture determinism run state SHA mismatch'
   }
-  $expectedReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
+  $expectedReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
   foreach($run in $Runs){Assert-GameplayRunArchiveSchema $run $ExpectedNames $expectedReceiptNames}
   $captureEntries = @()
   foreach ($name in $ExpectedNames) {

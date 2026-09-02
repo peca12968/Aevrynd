@@ -1,6 +1,7 @@
 param(
   [ValidateSet('All','Temporal','Receipt')]
-  [string]$Section = 'All'
+  [string]$Section = 'All',
+  [string]$RealHdrValidator = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,6 +42,42 @@ Expect-Failure {Assert-GameplayDeterminismIntegrityEvidence -Receipt $sealed -Ex
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ("aevrynd-gameplay-evidence-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $scratch | Out-Null
 try {
+  if ($Section -ne 'Temporal') {
+    $hdrRoot=Join-Path $scratch 'hdr-evidence';New-Item -ItemType Directory -Force -Path $hdrRoot|Out-Null
+    $stubValidator=Join-Path $hdrRoot 'hdr-validator-stub.ps1'
+    [IO.File]::WriteAllText($stubValidator,@'
+param([string]$SidecarPath)
+if($env:AEVRYND_HDR_STUB_MODE-eq'nonzero'){[Console]::Error.WriteLine('rejected');exit 7}
+if($env:AEVRYND_HDR_STUB_MODE-eq'invalid'){[Console]::Out.WriteLine('not-json');exit 0}
+$bytes=[IO.File]::ReadAllBytes($SidecarPath);$sha=[Security.Cryptography.SHA256]::Create();try{$fileHash=([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
+$digit=[string]((([int]$bytes[0]-1)%9)+1)
+$row=[ordered]@{schemaVersion=3;byteCount=[uint64]$bytes.Length;fileHash=$fileHash;stableContentHash=('d'*63)+$digit;payloadHash=('a'*63)+$digit;rootHash=('b'*63)+$digit}
+switch($env:AEVRYND_HDR_STUB_MODE){'missingSchema'{$null=$row.Remove('schemaVersion')};'missingByteCount'{$null=$row.Remove('byteCount')};'missingFileHash'{$null=$row.Remove('fileHash')};'missingStableContentHash'{$null=$row.Remove('stableContentHash')};'missingPayloadHash'{$null=$row.Remove('payloadHash')};'missingRootHash'{$null=$row.Remove('rootHash')};'zeroFileHash'{$row.fileHash='0'*64};'zeroStableContentHash'{$row.stableContentHash='0'*64};'zeroPayloadHash'{$row.payloadHash='0'*64};'zeroRootHash'{$row.rootHash='0'*64};'schema'{$row.schemaVersion=1};'byteCount'{$row.byteCount++};'fileHash'{$row.fileHash='c'*64};'stableContentHash'{$row.stableContentHash='e'*64};'payloadHash'{$row.payloadHash='e'*64};'rootHash'{$row.rootHash='e'*64}}
+$json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVRYND_HDR_STUB_MODE-eq'multiple'){[Console]::Out.WriteLine($json)}
+'@,[Text.UTF8Encoding]::new($false))
+    $hdrNames=@('first-day.png','third-day.png','god-day.png','first-dusk.png','third-dusk.png','god-dusk.png','first-night.png','third-night.png','god-night.png','palette-building.png','melee-combat.png')
+    $hdrRunId='01234567-89ab-4def-8123-456789abcdef'
+    $hdrRows=@();$hdrSequences=@()
+    for($index=0;$index-lt11;++$index){$relative="capture-$index.aevhdr";$path=Join-Path $hdrRoot $relative;[IO.File]::WriteAllBytes($path,[byte[]]@([byte]($index+1),0x41,0x45,0x56));$snapshot=Get-GameplayEvidenceFileSnapshot $path;$token=[uint64](700+$index);$frame=[uint64](900+$index);$digit=(($index%9)+1);$hdrRows+=[pscustomobject]@{name=$hdrNames[$index];path=$relative;state='Verified';byteCount=$snapshot.length;fileHash=$snapshot.sha256;payloadHash=('a' * 63)+$digit;rootHash=('b' * 63)+$digit;stableContentHash=('d' * 63)+$digit;frameSerial=$frame;sequenceToken=$token;sequenceIndex=1;verified=$true};$hdrSequences+=[pscustomobject]@{name=$hdrNames[$index];token=$token;phases=@([pscustomobject]@{index=0;sequenceIndex=0;sequenceToken=$token;frameSerial=$frame-1},[pscustomobject]@{index=1;sequenceIndex=1;sequenceToken=$token;frameSerial=$frame})}}
+    $hdrReceipt=[pscustomobject]@{runId=$hdrRunId;source='GameplayLabProductionHdr';expectedCaptures=11;engineRawPeakBytes=44;maximumInFlight=1;captures=$hdrRows};$hdrSequence=[pscustomobject]@{runId=$hdrRunId;captures=$hdrSequences}
+    $validated=@(Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hdrSequence $hdrNames $stubValidator $hdrRunId);if($validated.Count-ne11){throw 'HDR evidence positive fixture count failed'}
+    $copiedSidecar=Join-Path $hdrRoot 'copied-run-entry.aevhdr';[IO.File]::Copy((Join-Path $hdrRoot $validated[0].path),$copiedSidecar,$true);$null=Assert-GameplayHdrValidatorExactEvidence $stubValidator $copiedSidecar $validated[0] 'copied run entry'
+    [IO.File]::AppendAllText($copiedSidecar,'x');Expect-Failure {Assert-GameplayHdrValidatorExactEvidence $stubValidator $copiedSidecar $validated[0] 'mutated copied run entry'|Out-Null} 'copied HDR sidecar mutation';Remove-Item -LiteralPath $copiedSidecar -Force
+    $missingPath=Join-Path $hdrRoot $hdrRows[0].path;$savedBytes=[IO.File]::ReadAllBytes($missingPath);Remove-Item -LiteralPath $missingPath -Force;Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR sidecar missing file';[IO.File]::WriteAllBytes($missingPath,$savedBytes)
+    [IO.File]::AppendAllText($missingPath,'x');Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR sidecar changed byte';[IO.File]::WriteAllBytes($missingPath,$savedBytes)
+    Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hdrSequence $hdrNames (Join-Path $hdrRoot 'missing-validator.exe') $hdrRunId|Out-Null} 'HDR validator missing'
+    foreach($mode in @('nonzero','invalid','multiple','missingSchema','missingByteCount','missingFileHash','missingStableContentHash','missingPayloadHash','missingRootHash','zeroFileHash','zeroStableContentHash','zeroPayloadHash','zeroRootHash','schema','byteCount','fileHash','stableContentHash','payloadHash','rootHash')){$env:AEVRYND_HDR_STUB_MODE=$mode;try{Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} "HDR validator hostile $mode"}finally{Remove-Item Env:AEVRYND_HDR_STUB_MODE -ErrorAction SilentlyContinue}}
+    foreach($mutation in @(@('source','SyntheticHdr'),@('runId',[Guid]::NewGuid().ToString('D')),@('expectedCaptures',10),@('engineRawPeakBytes',0),@('engineRawPeakBytes',16777217),@('maximumInFlight',2))){$hostile=$hdrReceipt|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostile.($mutation[0])=$mutation[1];Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hostile $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} "HDR header mutation $($mutation[0])"}
+    $hostileSequence=$hdrSequence|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostileSequence.runId=[Guid]::NewGuid().ToString('D');Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hostileSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR sequence runId mutation'
+    $hostileSequence=$hdrSequence|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostileSequence.captures[0].phases[1].frameSerial++;Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hostileSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR sequence phase mutation'
+    $hostile=$hdrReceipt|ConvertTo-Json -Depth 8|ConvertFrom-Json;$swap=$hostile.captures[0];$hostile.captures[0]=$hostile.captures[1];$hostile.captures[1]=$swap;Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hostile $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR receipt order mutation'
+    $hostile=$hdrReceipt|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostile.captures[1]=$hostile.captures[0];Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hostile $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR receipt duplicate mutation'
+    $hostile=$hdrReceipt|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostile.captures[0].verified=$false;Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hostile $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR receipt verified false'
+    $hostile=$hdrReceipt|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostile.captures[0].state='Published';Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hostile $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR receipt state mutation'
+    $hostile=$hdrReceipt|ConvertTo-Json -Depth 8|ConvertFrom-Json;$hostile.captures[0].fileHash='c'*64;Expect-Failure {Assert-GameplayHdrCaptureEvidence $hdrRoot $hostile $hdrSequence $hdrNames $stubValidator $hdrRunId|Out-Null} 'HDR receipt hash mutation'
+    $baseline=@(Assert-GameplayHdrCaptureEvidence $hdrRoot $hdrReceipt $hdrSequence $hdrNames $stubValidator $hdrRunId);$hostile=@($baseline|ForEach-Object{$_|ConvertTo-Json -Depth 8|ConvertFrom-Json});$hostile[0].stableContentHash=('e'*64);Expect-Failure {Assert-GameplayHdrStableContentDeterminism -Baseline $baseline -Candidate $hostile -ExpectedNames $hdrNames|Out-Null} 'HDR stable content hash cross-run mutation'
+    if(-not[string]::IsNullOrWhiteSpace($RealHdrValidator)){$real=[IO.Path]::GetFullPath($RealHdrValidator);if(-not[IO.Path]::IsPathRooted($RealHdrValidator)-or-not(Test-Path -LiteralPath $real -PathType Leaf)){throw 'Optional real HDR validator path was invalid'};$invalidSidecar=Join-Path $hdrRoot 'arbitrary-four-byte.aevhdr';[IO.File]::WriteAllBytes($invalidSidecar,[byte[]](1,2,3,4));$probe=Invoke-GameplayHdrValidator $real $invalidSidecar;if([int]$probe.exitCode-eq0){throw 'Real HDR validator accepted an arbitrary four-byte sidecar'}}
+  }
   if ($Section -ne 'Receipt') {
   Add-Type -AssemblyName System.Drawing
   $rawBeautyPath=Join-Path $scratch 'ghost-raw-beauty.png';$effectiveBeautyPath=Join-Path $scratch 'ghost-effective-beauty.png';$rawObjectPath=Join-Path $scratch 'ghost-raw-object.png';$effectiveObjectPath=Join-Path $scratch 'ghost-effective-object.png';$rawDepthPath=Join-Path $scratch 'ghost-raw-depth.png';$effectiveDepthPath=Join-Path $scratch 'ghost-effective-depth.png'
@@ -556,7 +593,7 @@ try {
   Expect-Failure { Resolve-GameplayCaptureExecutablePath (Join-Path $evidenceRoot 'nested\..\synthetic.exe') $evidenceRoot | Out-Null } 'executable traversal path'
   $restrictedRoot=Join-Path $evidenceRoot 'restricted';New-Item -ItemType Directory -Force -Path $restrictedRoot|Out-Null
   Expect-Failure { Resolve-GameplayCaptureExecutablePath $executable $restrictedRoot | Out-Null } 'executable cross-root path'
-  $receiptNames = @('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
+  $receiptNames = @('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
   $runDirectory = Join-Path $evidenceRoot 'determinism-runs/run-1'; New-Item -ItemType Directory -Force -Path $runDirectory | Out-Null
   foreach ($name in $receiptNames) { [IO.File]::WriteAllText((Join-Path $runDirectory $name), "receipt-$name") }
   $runArtifacts=@();foreach($artifact in @(Get-GameplayExpectedRunArtifactNames $names)){Copy-Item -LiteralPath (Join-Path $evidenceRoot $artifact) -Destination (Join-Path $runDirectory $artifact);$runArtifacts+=[pscustomobject]@{name=$artifact;sha256=Get-GameplayEvidenceSha256Hex (Join-Path $runDirectory $artifact)}}
@@ -576,6 +613,8 @@ try {
   $run.artifacts=$savedArtifacts
   $savedReceipts=@($run.receipts);$run.receipts=@($savedReceipts|Select-Object -Skip 1)
   Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'missing archived receipt entry'
+  $run.receipts=@($savedReceipts|Where-Object{$_.name-cne'gameplay-hdr-capture-receipt.json'})
+  Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'missing archived HDR receipt entry'
   $run.receipts=@($savedReceipts);$run.receipts[-1]=$run.receipts[0]
   Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'duplicate archived receipt entry'
   $run.receipts=$savedReceipts
