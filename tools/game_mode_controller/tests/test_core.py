@@ -487,7 +487,7 @@ class AcceptanceTests(unittest.TestCase):
                 return FakeHttpResponse(200, {"data": [{"id": "light-model"}]})
             if req.full_url.endswith("/slots"):
                 return FakeHttpResponse(200, [{"id": 0}])
-            return FakeHttpResponse(200, {"choices": [{"message": {"content": "READY"}}]})
+            return FakeHttpResponse(200, {"choices": [{"message": {"content": "QWEN_LIGHT_OK"}}]})
 
         QwenAcceptanceProbe("http://127.0.0.1:8080", "light-model", None, opener=opener).run()
         self.assertEqual(4, len(paths))
@@ -587,7 +587,7 @@ class InstallerTests(unittest.TestCase):
             (directory / "old.txt").write_text(component, encoding="utf-8")
         transaction = InstallTransaction(self.source, self.install, self._entries())
         transaction.install(defer_commit=True)
-        self.assertTrue((self.install / "state" / "install-transaction.json").exists())
+        self.assertTrue((self.install / "transactions" / "install-transaction.json").exists())
         transaction.rollback()
         for component in ("app", "scripts", "manifests"):
             self.assertEqual(component, (self.install / component / "old.txt").read_text(encoding="utf-8"))
@@ -620,7 +620,7 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual([0, 0, 0], [process.wait(timeout=20) for process in processes])
         self.assertEqual(b"new-app", (self.install / "app" / "tools" / "game_mode_controller" / "a.py").read_bytes())
         self.assertEqual(b"new-script", (self.install / "scripts" / "launch.ps1").read_bytes())
-        self.assertFalse((self.install / "state" / "install-transaction.json").exists())
+        self.assertFalse((self.install / "transactions" / "install-transaction.json").exists())
 
 
 if __name__ == "__main__":

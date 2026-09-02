@@ -1,6 +1,6 @@
-# Aevrynd Game Mode Controller — safe core work package
+# Aevrynd Game Mode Controller — main-node deployable stage
 
-This package is the first deployable-design slice for controlling Qwen game mode on exactly three Windows PCs. It is intentionally dependency-free Python plus PowerShell and does **not** install a model, stop a process, open a firewall port, register startup, or contact another PC by itself.
+This package controls Qwen game mode on exactly three Windows PCs. The current deployable stage runs the authenticated loopback hub and agent on `main`, safely adopts the existing lightweight Qwen service, exposes signed tray commands for all three fixed targets, and can register limited `AtLogOn` startup. It does **not** install a model, open a firewall port, or contact another PC until the corresponding remote agent stage is deployed.
 
 ## Fixed topology
 
@@ -28,20 +28,24 @@ When the hub is unreachable, a node keeps its atomic local `game_mode` intent an
 
 - `inventory.py`: immutable node/topology/profile allowlist.
 - `models.py`, `atomic_store.py`, `state_machine.py`: validated local state and boot reconciliation.
-- `process_guard.py`: PID/owner/path/argv/hash identity gate.
+- `process_guard.py`: pinned runtime-manifest loader and PID/owner/path/argv/hash identity gate.
+- `windows_runtime.py`: Win32/CIM process inspector, exact launcher, legacy-light adoption, same-handle termination, and manifest capture.
+- `credential_store.py`: fixed Windows Credential Manager readers for node HMAC and lightweight-Qwen API credentials.
 - `acceptance.py`: bounded local Qwen acceptance suite.
 - `security.py`: request/response signatures and replay ledger.
 - `coordinator.py`, `api.py`: durable hub aggregation, latest-intent command queue, and strict transport-independent API.
 - `line_notifications.py`: safe LINE gateway delivery adapter.
 - `installer_transaction.py`: single-read pinned closed-source manifest verification, install-wide bounded cross-process locking, same-volume staging, post-copy verification, bounded Windows replace retry, atomic component swaps, rollback, deferred post-install commit, and durable crash recovery.
-- `scripts`: installation, desktop launcher, and system-tray UI skeletons.
+- `deployment_transaction.py`: one durable commit decision spanning core components, `node.json`, pinned runtime manifest, and desktop shortcut.
+- `runner.py`: signed loopback HTTP hub, main agent reconciliation loop, and tray CLI.
+- `scripts`: transactional installation, runtime capture, desktop launcher, actionable tray, and startup registration.
 
 ## Tests
 
 From the `Games` repository root, with Python 3.11 or newer:
 
 ```powershell
-python -m unittest -v tools.game_mode_controller.tests.test_core
+& 'C:\Path\To\Python312\python.exe' -B -m unittest -v tools.game_mode_controller.tests.test_core tools.game_mode_controller.tests.test_runtime
 ```
 
 The tests use temporary files and fakes only. They do not change services or networking.
@@ -52,16 +56,47 @@ To inspect the Windows staging plan without changing the machine:
 pwsh -NoProfile -File .\tools\game_mode_controller\scripts\Install.ps1 -NodeId main -WhatIf
 ```
 
-## Deliberately unresolved deployment inputs
+`-WhatIf` returns before privilege, credential, runtime-manifest, filesystem, shortcut, process, or scheduled-task mutation.
+
+## Main deployment sequence
+
+Prerequisites are Python 3.11+, PowerShell 7, the already installed lightweight Qwen service on `127.0.0.1:18080`, its fixed `Aevrynd/QwenLight/ApiKey` credential, and a 32+ character generic credential named `Aevrynd/GameModeController/main`. The existing service should be running while its identity is captured.
+
+```powershell
+$python = 'C:\Users\USER\AppData\Local\Programs\Python\Python312\python.exe'
+$manifest = Join-Path $env:TEMP 'aevrynd-main-runtime.json'
+pwsh -NoProfile -File .\tools\game_mode_controller\scripts\Capture-MainRuntimeManifest.ps1 `
+  -PythonExe $python -OutputPath $manifest `
+  -ModelId 'C:\Users\USER\AppData\Local\AevryndQwenLight\models\Qwen3-4B-Q4_K_M.gguf'
+$manifestSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifest).Hash.ToLowerInvariant()
+pwsh -NoProfile -File .\tools\game_mode_controller\scripts\Install.ps1 `
+  -NodeId main -PythonExe $python -RuntimeManifestPath $manifest `
+  -RuntimeManifestSha256 $manifestSha256 -RegisterStartup -WhatIf
+```
+
+Remove `-WhatIf` only after reviewing the exact target. The installer transaction verifies the closed source manifest, re-verifies the pinned runtime manifest and both large runtime files, stages and atomically swaps the application, stores only manifest metadata (never secrets), and optionally registers one limited current-user logon task. It does not stop Qwen during installation. One durable commit intent covers core, `node.json`, runtime manifest, and shortcut: pre-intent power loss rolls all four back; post-intent power loss completes all four forward. Before creating the leaf, elevated installation resolves the Windows CommonApplicationData known folder, rejects a reparse point at every existing `ProgramData\Aevrynd\GameModeController` ancestor, and rejects an existing `Aevrynd` or controller directory with an untrusted owner or writer. Missing ancestors are created one level at a time and immediately sealed before the next child is created. Installation replaces Aevrynd/root/app/scripts/config/manifests DACLs with SYSTEM/Administrators write plus current-user read/execute; only `state` grants current-user Modify. Startup registration independently rechecks ProgramData, Aevrynd, every executable/config component, owner, DACL, reparse attributes, installed-manifest digest, and launcher digest.
+
+After an authorized real install, launch `Aevrynd Game Mode` from the desktop or start the scheduled task. The tray has an enable action (`game_mode=true`, validated Qwen stop) and a disable action (`game_mode=false`, exact manifest launch plus health/models/single-slot/chat acceptance) for each node. Until remote agents are installed, Taichung and Taoyuan commands remain durable pending intents and their status remains offline.
+
+Read-only or reversible verification after installation:
+
+```powershell
+$root = "$env:ProgramData\Aevrynd\GameModeController"
+$config = Get-Content -Raw -LiteralPath "$root\config\node.json" | ConvertFrom-Json
+$env:PYTHONPATH = "$root\app"
+& $config.pythonExecutable -B -m tools.game_mode_controller.runner status
+Get-ScheduledTask -TaskName 'Aevrynd Game Mode Controller' | Select-Object TaskName,State
+Test-NetConnection 127.0.0.1 -Port 8766
+```
+
+## Remaining remote-node inputs
 
 The following must be collected on each PC before enabling controls or login startup:
 
-1. An installed, approved `llama-server.exe` and chosen light/full GGUF files. This work package performs no download.
-2. Exact SHA-256 hashes, exact argv, expected Windows account, model ID, and confirmed local port for each node's signed runtime manifest. The main profile is always light; the other two are currently fixed full.
-3. A per-node 32+ character random secret stored in Windows Credential Manager. The main hub needs a credential for each node; a remote node only needs its own. Credential target naming and ACL rollout must be agreed before deployment.
-4. A standard-library Windows process inspector/launcher adapter that can authoritatively obtain PID owner and exact argv, then call the existing process guard. Until this exists, the tray deliberately shows status only and disables controls.
-5. The hub HTTP host and outbound polling agent runners, Windows Firewall rules limited to the exact source/interface, and a decision for Taichung connectivity if `192.168.50.98` is not actually on the same routed LAN as `192.168.50.18`. Taichung currently has no confirmed Tailscale route; Taoyuan depends on Tailscale reaching `100.115.174.48`.
-6. The LINE destination ID and the already-secured main Gateway access token. Only the main hub may drain notifications.
-7. Remote installation access. Neither WinRM nor SSH is available on `.98`/`.36`, so the package cannot yet be copied or installed there automatically.
+1. Installed, approved full-profile runtimes and signed runtime manifests on Taichung and Taoyuan. This package performs no download.
+2. A unique 32+ character `Aevrynd/GameModeController/<node>` credential on every node; the main hub additionally needs the two remote credentials before accepting their reports.
+3. Remote authenticated polling runners and source/interface-scoped firewall rules. The current main listener intentionally remains loopback-only, so there is no remote control surface yet.
+4. Confirmed routed connectivity for Taichung and Tailscale reachability for Taoyuan.
+5. Remote installation access. Neither WinRM nor SSH is currently available on `.98`/`.36`.
 
-`Install.ps1` stages the closed core and creates the desktop shortcut only when explicitly run without `-WhatIf`. It intentionally does not register an `AtLogOn` task while the authenticated agent/runtime adapter is absent; this prevents a partially installed controller from claiming that Qwen is managed.
+The main agent never searches for or terminates a process by name. A stop opens one process handle first, verifies PID/liveness/owner/image/argv/executable SHA-256/command digest/model SHA-256 while retaining that handle, and terminates only that same handle. PID reuse or drift degrades the controller and leaves the replacement process running. Qwen, runner, and tray children receive explicit environment allowlists; controller, LINE, OpenAI, and unrelated Qwen secrets are not inherited.

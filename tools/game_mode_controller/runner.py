@@ -1,0 +1,262 @@
+"""Authenticated loopback hub and local main-node agent runner."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import secrets
+import signal
+import threading
+import time
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Callable, Mapping
+from urllib import error, request
+
+from .api import ApiResponse, HubApi
+from .atomic_store import AtomicJsonStore
+from .coordinator import HubCoordinator
+from .credential_store import read_node_secret, read_qwen_api_key
+from .inventory import HUB_PORT, NODES, validate_bind
+from .process_guard import RuntimeManifest, load_runtime_manifest
+from .security import ReplayLedger, RequestAuthenticator, sign_request, verify_response
+from .state_machine import GameModeController
+from .windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest
+
+
+class RunnerError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerConfig:
+    node_id: str
+    runtime_manifest_path: Path
+    runtime_manifest_sha256: str
+    python_executable: Path
+
+
+def load_runner_config(install_root: str | Path, *, allow_test_root: bool = False) -> tuple[RunnerConfig, RuntimeManifest]:
+    root = Path(install_root).resolve()
+    if not allow_test_root:
+        program_data = os.environ.get("ProgramData")
+        if not program_data or os.path.normcase(str(root)) != os.path.normcase(str(Path(program_data, "Aevrynd", "GameModeController").resolve())):
+            raise RunnerError("install root is not allowlisted")
+    path = root / "config" / "node.json"
+    try:
+        raw = path.read_bytes()
+    except OSError as cause:
+        raise RunnerError("node configuration is unavailable") from cause
+    if not 2 <= len(raw) <= 65_536:
+        raise RunnerError("node configuration size is invalid")
+    try:
+        document = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeError, json.JSONDecodeError, ValueError) as cause:
+        raise RunnerError("node configuration is invalid") from cause
+    expected = {"schemaVersion", "nodeId", "runtimeManifest", "runtimeManifestSha256", "pythonExecutable"}
+    if not isinstance(document, dict) or set(document) != expected or document.get("schemaVersion") != 2 or document.get("nodeId") != "main":
+        raise RunnerError("node configuration schema is invalid")
+    manifest_path = (root / "manifests" / str(document["runtimeManifest"])).resolve()
+    manifest_root = (root / "manifests").resolve()
+    if manifest_path.parent != manifest_root or manifest_path.name != "runtime-manifest.json":
+        raise RunnerError("runtime manifest path is not allowlisted")
+    python_executable = Path(str(document["pythonExecutable"])).resolve()
+    if not python_executable.is_absolute() or not python_executable.is_file() or python_executable.name.casefold() not in {"python.exe", "python3.exe"}:
+        raise RunnerError("Python executable is invalid")
+    config = RunnerConfig("main", manifest_path, str(document["runtimeManifestSha256"]), python_executable)
+    manifest = load_runtime_manifest(manifest_path, expected_node_id="main", expected_sha256=config.runtime_manifest_sha256)
+    return config, manifest
+
+
+class SignedHubClient:
+    def __init__(self, node_id: str, secret: str, *, opener: Callable[..., object] | None = None, clock: Callable[[], float] = time.time) -> None:
+        if node_id not in NODES:
+            raise ValueError("node is not allowlisted")
+        self.node_id = node_id
+        self.secret = secret
+        self.clock = clock
+        self._open = opener or request.build_opener(_NoRedirect()).open
+        self.base_url = NODES[node_id].hub_url
+
+    def call(self, method: str, path: str, payload: object | None = None) -> object:
+        body = b"" if payload is None else json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        nonce = secrets.token_urlsafe(24)
+        headers = sign_request(self.secret, self.node_id, method, path, int(self.clock()), nonce, body)
+        headers.update({"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "Aevrynd-GameModeAgent/1"})
+        req = request.Request(self.base_url + path, data=body if method == "POST" else None, headers=headers, method=method)
+        try:
+            with self._open(req, timeout=5) as response:  # type: ignore[attr-defined]
+                raw = response.read(262_145)
+                signature = response.headers.get("X-Aevrynd-Response-Signature")
+                status = int(response.getcode())
+        except (error.URLError, error.HTTPError, TimeoutError, OSError) as cause:
+            raise RunnerError("authenticated hub request failed") from cause
+        if status != 200 or len(raw) > 262_144 or not verify_response(self.secret, self.node_id, nonce, raw, signature):
+            raise RunnerError("authenticated hub response failed validation")
+        try:
+            document = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+        except (UnicodeError, json.JSONDecodeError, ValueError) as cause:
+            raise RunnerError("authenticated hub response is invalid") from cause
+        if not isinstance(document, dict) or set(document) != {"schema_version", "payload"} or document.get("schema_version") != 1:
+            raise RunnerError("authenticated hub response schema is invalid")
+        return document["payload"]
+
+
+class _NoRedirect(request.HTTPRedirectHandler):
+    # 憑證簽章不可跟隨 redirect 離開固定 loopback hub。
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
+def make_hub_server(api: HubApi) -> ThreadingHTTPServer:
+    host, port = validate_bind("hub", "127.0.0.1", HUB_PORT)
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "AevryndGameModeHub/1"
+        sys_version = ""
+
+        def do_GET(self) -> None:
+            self._dispatch("GET")
+
+        def do_POST(self) -> None:
+            self._dispatch("POST")
+
+        def _dispatch(self, method: str) -> None:
+            length_text = self.headers.get("Content-Length", "0")
+            try:
+                length = int(length_text)
+            except ValueError:
+                self.send_error(400)
+                return
+            if length < 0 or length > 262_144:
+                self.send_error(413)
+                return
+            body = self.rfile.read(length)
+            result = api.dispatch(method, self.path, dict(self.headers.items()), body)
+            self.send_response(result.status)
+            for key, value in result.headers.items():
+                self.send_header(key, value)
+            self.send_header("Content-Length", str(len(result.body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(result.body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.daemon_threads = True
+    return server
+
+
+class MainAgent:
+    def __init__(self, controller: GameModeController, client: SignedHubClient, *, interval_seconds: float = 2.0) -> None:
+        self.controller = controller
+        self.client = client
+        self.interval_seconds = interval_seconds
+        self.stop_event = threading.Event()
+
+    def run(self) -> None:
+        state = self.controller.reconcile_boot()
+        while not self.stop_event.is_set():
+            try:
+                self.client.call("POST", "/v1/status", {"state": state.to_dict()})
+                command = self.client.call("GET", "/v1/poll")
+                if isinstance(command, dict):
+                    if set(command) != {"command_id", "actor_node_id", "target_node_id", "game_mode", "created_utc"} or command.get("target_node_id") != "main" or type(command.get("game_mode")) is not bool:
+                        raise RunnerError("hub command schema is invalid")
+                    state = self.controller.set_game_mode(command["game_mode"])
+                    self.client.call("POST", "/v1/ack", {"command_id": command["command_id"], "state": state.to_dict()})
+            except Exception:
+                # 網路或 runtime 錯誤不終止 agent；持久意圖會在下一輪繼續收斂。
+                pass
+            self.stop_event.wait(self.interval_seconds)
+
+
+def serve_main(install_root: str | Path) -> None:
+    _, manifest = load_runner_config(install_root)
+    secret = read_node_secret("main")
+    if secret is None:
+        raise RunnerError("main node credential is unavailable")
+    root = Path(install_root).resolve()
+    coordinator = HubCoordinator(AtomicJsonStore(root / "state" / "hub.json"))
+    authenticator = RequestAuthenticator(read_node_secret, ReplayLedger(root / "state" / "hub-nonces.sqlite3"))
+    api = HubApi(coordinator, authenticator, read_node_secret)
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    adoption_state = None if not local_app_data else Path(local_app_data, "AevryndQwenLight", "state", "light-state.json")
+    lifecycle = WindowsQwenLifecycle(
+        manifest, AtomicJsonStore(root / "state" / "qwen-pid.json"),
+        api_key=read_qwen_api_key(), adoption_state=adoption_state,
+    )
+    controller = GameModeController("main", AtomicJsonStore(root / "state" / "main.json"), lifecycle)
+    client = SignedHubClient("main", secret)
+    server = make_hub_server(api)
+    agent = MainAgent(controller, client)
+    worker = threading.Thread(target=agent.run, name="AevryndMainAgent", daemon=True)
+    worker.start()
+    def request_stop(*_: object) -> None:
+        threading.Thread(target=server.shutdown, name="AevryndHubShutdown", daemon=True).start()
+
+    for signal_name in ("SIGINT", "SIGTERM"):
+        if hasattr(signal, signal_name):
+            signal.signal(getattr(signal, signal_name), request_stop)
+    try:
+        server.serve_forever(poll_interval=0.5)
+    finally:
+        agent.stop_event.set()
+        server.server_close()
+        worker.join(timeout=10)
+
+
+def _client_for_main() -> SignedHubClient:
+    secret = read_node_secret("main")
+    if secret is None:
+        raise RunnerError("main node credential is unavailable")
+    return SignedHubClient("main", secret)
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="aevrynd-game-mode")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    serve = subparsers.add_parser("serve-main")
+    serve.add_argument("--install-root", required=True)
+    subparsers.add_parser("status")
+    change = subparsers.add_parser("set")
+    change.add_argument("--target", choices=tuple(NODES), required=True)
+    change.add_argument("--game-mode", choices=("on", "off"), required=True)
+    capture = subparsers.add_parser("capture-main-manifest")
+    capture.add_argument("--output", required=True)
+    capture.add_argument("--model-id", required=True)
+    arguments = parser.parse_args(argv)
+    try:
+        if arguments.command == "serve-main":
+            serve_main(arguments.install_root)
+            return 0
+        if arguments.command == "capture-main-manifest":
+            print(capture_main_runtime_manifest(arguments.output, arguments.model_id))
+            return 0
+        client = _client_for_main()
+        if arguments.command == "status":
+            value = client.call("GET", "/v1/status")
+        else:
+            value = client.call("POST", "/v1/command", {"target_node_id": arguments.target, "game_mode": arguments.game_mode == "on"})
+        print(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+        return 0
+    except Exception as cause:
+        print(f"error:{type(cause).__name__}")
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

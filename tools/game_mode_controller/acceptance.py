@@ -27,7 +27,7 @@ class ProbeResponse:
 
 class QwenAcceptanceProbe:
     def __init__(self, base_url: str, expected_model: str, api_key: str | None, *, timeout: float = 5.0, opener: Callable[..., Any] | None = None) -> None:
-        if base_url not in {"http://127.0.0.1:8080", "http://127.0.0.1:8081"}:
+        if base_url not in {"http://127.0.0.1:8080", "http://127.0.0.1:8081", "http://127.0.0.1:18080"}:
             raise ValueError("local Qwen probe URL is not allowlisted")
         if not expected_model or len(expected_model) > 512:
             raise ValueError("expected model is invalid")
@@ -54,13 +54,13 @@ class QwenAcceptanceProbe:
             raise AcceptanceError("Qwen single-slot acceptance failed")
         chat = self._call(
             "POST", "/v1/chat/completions",
-            {"model": self.expected_model, "messages": [{"role": "user", "content": "Reply exactly READY"}], "max_tokens": 8, "temperature": 0},
+            {"model": self.expected_model, "messages": [{"role": "user", "content": "Reply with exactly QWEN_LIGHT_OK"}], "max_tokens": 128, "temperature": 0},
         )
         choices = chat.value.get("choices") if isinstance(chat.value, dict) else None
         if chat.status != 200 or not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
             raise AcceptanceError("Qwen chat acceptance failed")
         message = choices[0].get("message")
-        if not isinstance(message, dict) or not isinstance(message.get("content"), str) or not message["content"].strip():
+        if not isinstance(message, dict) or not isinstance(message.get("content"), str) or message["content"].strip() != "QWEN_LIGHT_OK":
             raise AcceptanceError("Qwen chat response is invalid")
 
     def _call(self, method: str, path: str, payload: object | None = None) -> ProbeResponse:

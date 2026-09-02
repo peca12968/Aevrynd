@@ -93,8 +93,8 @@ class InstallTransaction:
         self.install_root = Path(install_root).resolve()
         self.entries = entries
         self.staging_root = self.install_root / "staging"
-        self.journal_store = AtomicJsonStore(self.install_root / "state" / "install-transaction.json", maximum_bytes=262_144)
-        self.install_mutex = AtomicJsonStore(self.install_root / "state" / "install-wide", maximum_bytes=1024, lock_timeout_seconds=5.0)
+        self.journal_store = AtomicJsonStore(self.install_root / "transactions" / "install-transaction.json", maximum_bytes=262_144)
+        self.install_mutex = AtomicJsonStore(self.install_root / "transactions" / "install-wide", maximum_bytes=1024, lock_timeout_seconds=5.0)
 
     def recover(self) -> None:
         with self.install_mutex.exclusive_lock():

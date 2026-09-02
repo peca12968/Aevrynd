@@ -13,6 +13,7 @@ from typing import Mapping, Sequence
 from .inventory import get_node
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_RUNTIME_MANIFEST_MAXIMUM_BYTES = 65_536
 
 
 class ProcessIdentityError(RuntimeError):
@@ -49,6 +50,7 @@ class RuntimeManifest:
     command_sha256: str
     model_path: str
     model_sha256: str
+    model_id: str = ""
 
     def __post_init__(self) -> None:
         spec = get_node(self.node_id)
@@ -60,17 +62,40 @@ class RuntimeManifest:
             raise ValueError("argv executable differs from manifest")
         if not _SHA256.fullmatch(self.executable_sha256) or not _SHA256.fullmatch(self.model_sha256):
             raise ValueError("runtime file hash is invalid")
+        if self.model_id and (len(self.model_id) > 512 or any(character in self.model_id for character in "\r\n\x00")):
+            raise ValueError("runtime model ID is invalid")
         if command_digest(self.argv) != self.command_sha256:
             raise ValueError("runtime command hash is invalid")
         model = canonical_path(self.model_path)
         if not any(canonical_path(argument) == model for argument in self.argv):
             raise ValueError("model path is absent from exact command")
+        if not Path(self.executable_path).is_absolute() or not Path(self.model_path).is_absolute():
+            raise ValueError("runtime paths must be absolute")
+
+    def _validate_network_contract(self) -> None:
+        """Keep the managed main runtime on its one approved loopback endpoint."""
+
+        if self.node_id != "main":
+            return
+        values: dict[str, list[str]] = {}
+        index = 1
+        while index < len(self.argv):
+            argument = self.argv[index]
+            if argument.startswith("--") and index + 1 < len(self.argv):
+                values.setdefault(argument, []).append(self.argv[index + 1])
+                index += 2
+            else:
+                index += 1
+        required = {"--model": self.model_path, "--host": "127.0.0.1", "--port": "18080", "--parallel": "1"}
+        if any(values.get(option) != [expected] for option, expected in required.items()):
+            raise ValueError("main runtime endpoint contract is invalid")
 
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> "RuntimeManifest":
         expected = {
             "node_id", "profile", "owner", "executable_path", "executable_sha256",
             "argv", "command_sha256", "model_path", "model_sha256",
+            "model_id",
         }
         if (
             set(value) != expected
@@ -86,9 +111,14 @@ class RuntimeManifest:
             argv=tuple(value["argv"]),  # type: ignore[arg-type]
             command_sha256=str(value["command_sha256"]), model_path=str(value["model_path"]),
             model_sha256=str(value["model_sha256"]),
+            model_id=str(value["model_id"]),
         )
 
     def verify_files(self) -> None:
+        for value in (self.executable_path, self.model_path):
+            path = Path(value)
+            if path.is_symlink() or not path.is_file():
+                raise ProcessIdentityError("Qwen runtime file is unavailable")
         try:
             executable_hash = file_sha256(self.executable_path)
             model_hash = file_sha256(self.model_path)
@@ -96,6 +126,54 @@ class RuntimeManifest:
             raise ProcessIdentityError("Qwen runtime file is unavailable") from error
         if executable_hash != self.executable_sha256 or model_hash != self.model_sha256:
             raise ProcessIdentityError("Qwen runtime file hash mismatch")
+
+
+def load_runtime_manifest(path: str | Path, *, expected_node_id: str, expected_sha256: str) -> RuntimeManifest:
+    """Load one immutable, pinned manifest read and verify its closed schema and files."""
+
+    supplied_path = Path(path)
+    manifest_path = supplied_path.resolve()
+    if (
+        not manifest_path.is_absolute()
+        or not _SHA256.fullmatch(expected_sha256)
+        or supplied_path.is_symlink()
+    ):
+        raise ProcessIdentityError("runtime manifest identity is invalid")
+    try:
+        raw = manifest_path.read_bytes()
+    except OSError as error:
+        raise ProcessIdentityError("runtime manifest is unavailable") from error
+    if not 2 <= len(raw) <= _RUNTIME_MANIFEST_MAXIMUM_BYTES or hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise ProcessIdentityError("runtime manifest hash mismatch")
+    try:
+        document = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+    except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+        raise ProcessIdentityError("runtime manifest JSON is invalid") from error
+    if not isinstance(document, dict) or set(document) != {"schema_version", "runtime"} or document.get("schema_version") != 1 or not isinstance(document.get("runtime"), dict):
+        raise ProcessIdentityError("runtime manifest schema is invalid")
+    try:
+        manifest = RuntimeManifest.from_dict(document["runtime"])
+    except (TypeError, ValueError) as error:
+        raise ProcessIdentityError("runtime manifest content is invalid") from error
+    if manifest.node_id != expected_node_id:
+        raise ProcessIdentityError("runtime manifest node identity mismatch")
+    if not manifest.model_id:
+        raise ProcessIdentityError("runtime manifest model ID is missing")
+    try:
+        manifest._validate_network_contract()
+    except ValueError as error:
+        raise ProcessIdentityError("runtime manifest endpoint contract is invalid") from error
+    manifest.verify_files()
+    return manifest
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +194,7 @@ def validate_stop_eligibility(*, persisted_pid: int, observed: ObservedProcess, 
         raise ProcessIdentityError("Qwen PID differs from persisted owner record")
     manifest.verify_files()
     checks = (
-        observed.owner == manifest.owner,
+        observed.owner.casefold() == manifest.owner.casefold(),
         canonical_path(observed.executable_path) == canonical_path(manifest.executable_path),
         observed.executable_sha256 == manifest.executable_sha256,
         command_digest(observed.argv) == manifest.command_sha256,
