@@ -28,7 +28,7 @@ public static class AevryndNgrokLauncher {
 '@}
  $arguments=@('http','http://127.0.0.1:8787',"--domain=$($config.Domain)",'--scheme=https','--inspect=false','--log=false')
  $launchNonce=[Guid]::NewGuid().ToString('N');Write-NgrokPendingState $paths $config.Domain $launchIdentity $launchNonce
- $process=[AevryndNgrokLauncher]::Start($exe,$arguments);$started=$process.StartTime.ToUniversalTime().ToString('o');$commandDeadline=[DateTime]::UtcNow.AddSeconds(3);$commandVerified=$false
+ $process=[AevryndNgrokLauncher]::Start($exe,$arguments);$started=ConvertTo-NgrokProcessTimestamp $process.StartTime;$commandDeadline=[DateTime]::UtcNow.AddSeconds(3);$commandVerified=$false
  while([DateTime]::UtcNow-lt$commandDeadline-and-not$process.HasExited){$record=Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)" -ErrorAction SilentlyContinue;if($null-ne$record-and(Test-ExactNgrokCommandLine ([string]$record.CommandLine) $exe $config.Domain)){$commandVerified=$true;break};Start-Sleep -Milliseconds 100}
  if(-not$commandVerified){if(-not$process.HasExited){$process.Kill($true);throw 'Ngrok process command line did not match the fixed launch tuple.'};throw "Ngrok exited before command verification (exit code $($process.ExitCode)); verify MSIX CLI compatibility and credential state."}
  $listenerDeadline=[DateTime]::UtcNow.AddSeconds(5);$listenerVerified=$false

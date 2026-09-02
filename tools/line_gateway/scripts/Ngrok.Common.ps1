@@ -6,6 +6,11 @@ function Test-NgrokDevelopmentDomain {
     return $Value-is[string]-and$Value-ceq$Value.ToLowerInvariant()-and$Value-match'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ngrok-free\.dev$'-and$Value.Length-le253
 }
 
+function ConvertTo-NgrokProcessTimestamp {
+    param([Parameter(Mandatory)][DateTime]$Value)
+    return ([DateTimeOffset]::new($Value.ToUniversalTime())).ToString('o',[Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Assert-NgrokStorePackageIdentity {
     param([object]$Identity)
     # MSIX 內的執行檔可不帶獨立簽章；信任 Store 簽署套件身分並再核對固定雜湊。
@@ -50,7 +55,7 @@ function Assert-NgrokProcessIdentity {
         $record=Get-CimInstance Win32_Process -Filter "ProcessId = $($State.pid)" -ErrorAction Stop
         if($null-eq$record-or-not(Test-ExactNgrokCommandLine ([string]$record.CommandLine) $Executable.Path $State.domain)){throw 'Ngrok process command line is outside the fixed tuple.'}
         $process=Get-Process -Id ([int]$State.pid) -ErrorAction Stop
-        if($process.Path-cne$Executable.Path-or$process.StartTime.ToUniversalTime().ToString('o')-cne$State.startedUtc){throw 'Ngrok process identity changed.'}
+        if($process.Path-cne$Executable.Path-or(ConvertTo-NgrokProcessTimestamp $process.StartTime)-cne$State.startedUtc){throw 'Ngrok process identity changed.'}
         return $process
     }catch{throw}
 }
@@ -79,6 +84,7 @@ function Resolve-NgrokPendingLaunch {
     $records=@(Get-CimInstance Win32_Process -Filter "Name='ngrok.exe'" -ErrorAction SilentlyContinue)
     if($records.Count-gt1){throw 'Pending Ngrok recovery is ambiguous.'}
     if($records.Count-eq1){if($records[0].ExecutablePath-cne$Executable.Path-or-not(Test-ExactNgrokCommandLine ([string]$records[0].CommandLine) $Executable.Path $pending.domain)){throw 'Pending Ngrok process tuple is not exact.'};$process=Get-Process -Id ([int]$records[0].ProcessId) -ErrorAction Stop;if($process.Path-cne$Executable.Path){throw 'Pending Ngrok process path changed.'};$process.Kill($true);$process.WaitForExit()}
+    elseif(Test-Path -LiteralPath $Paths.NgrokStateFile -PathType Leaf){$directory=Open-VerifiedDirectoryHandle $Paths.State;try{Assert-NoReparseAncestors $Paths.NgrokStateFile;$stale=[IO.FileStream]::new($Paths.NgrokStateFile,'Open','Read','None');try{if([Aevrynd.SafePath]::FinalPath($stale.SafeFileHandle)-cne[IO.Path]::GetFullPath($Paths.NgrokStateFile)-or$stale.Length-lt1-or$stale.Length-gt8192){throw 'Stale Ngrok crash state identity or size is invalid.'}}finally{$stale.Dispose()};Remove-Item -LiteralPath $Paths.NgrokStateFile -Force}finally{$directory.Dispose()}}
     Remove-Item -LiteralPath $Paths.NgrokPendingFile -Force
 }
 
