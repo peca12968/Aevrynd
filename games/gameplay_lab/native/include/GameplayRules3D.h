@@ -26,6 +26,7 @@ public:
     void SetLighting(LightingPhase phase);void CycleLighting();
     void SetCharacterFemale(bool female){female_=female;} void SetHeadroom(bool clear){headroomClear_=clear;}
     void SetPaletteCategory(PaletteCategory category){category_=category;}
+    bool ApplyPalettePresentationInput(TickInput input)noexcept;
     void Tick(TickInput input,float dt=1.f/60.f);
     bool Place(Aevrynd::Vec3 position,bool dynamic=false);bool RollbackLastPlacement(std::uint64_t id);bool Delete(std::uint64_t id);bool Undo();bool Redo();
     bool BeginGrab(std::uint64_t id,float distance);void EndGrab();

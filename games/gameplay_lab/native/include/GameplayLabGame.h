@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -33,9 +34,42 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace GameplayLab {
+struct GameplayCanonicalCaptureStateInput3D {
+    std::size_t captureIndex{};std::vector<Entity> entities{};Aevrynd::Vec3 controllerPosition{};float yaw{},pitch{};
+    CameraMode camera{};LightingPhase lighting{};PaletteCategory paletteCategory{};bool female{},paletteOpen{};
+    std::uint64_t grabbedEntity{},cameraHash{},animationHash{},physicsHash{};
+};
+struct GameplayCanonicalCaptureStateReceipt3D {
+    static constexpr std::uint32_t SchemaVersion=2;std::uint32_t schemaVersion{SchemaVersion};
+    struct EntityDiagnostic {std::uint64_t stableId{};PaletteCategory category{};Aevrynd::Vec3 position{};float rotation{};std::array<std::uint32_t,4> rawBits{};bool dynamic{},alive{},initialSeed{},bodyAvailable{},sceneAvailable{};Aevrynd::Vec3 bodyPosition{},bodyVelocity{},scenePosition{};std::uint64_t topologyHash{},transformHash{};};
+    bool valid{};std::vector<EntityDiagnostic> entityDiagnostics{};
+    std::uint64_t entities{},topology{},transform{},controller{},yawPitch{},rules{},camera{},palette{},animation{},physics{},canonical{},legacy{};
+};
+struct CaptureReplayInputSnapshot3D {bool observed{},liveSuppressed{};std::uint64_t tick{},inputBits{},cameraHash{};Aevrynd::Camera3D camera{};Aevrynd::Vec2 normalizedPointer{};Aevrynd::Ray3D ray{};};
+struct GameplayPaletteReplayDiagnostic3D {bool observed{},liveSuppressed{},previewActive{},previewValid{},hitValid{};std::uint64_t tick{},inputBits{},cameraHash{},cameraAuthorityInputHash{},cameraSubjectPoseHash{};float gameplayDelta{},placementPlaneHeight{},gridStep{2.f},footPlacementCameraDistance{};Aevrynd::Vec2 normalizedPointer{};Aevrynd::Vec3 cameraPosition{},cameraTarget{},cameraUp{},rayOrigin{},rayDirection{},projectedHit{},snappedTarget{};Aevrynd::ProjectionMode projectionMode{Aevrynd::ProjectionMode::Perspective};std::array<std::uint32_t,13> cameraRawBits{};std::size_t undoDepth{},redoDepth{};};
+[[nodiscard]] constexpr bool ValidateGameplayFrameBoundRenderPair3D(const Aevrynd::FrameBoundDeterminismEvidence3D& object,const Aevrynd::FrameBoundDeterminismEvidence3D& depth,const Aevrynd::ReadbackRasterProvenance3D& objectRaster,const Aevrynd::ReadbackRasterProvenance3D& depthRaster,const Aevrynd::ObjectIdCaptureRequestMetadata3D& objectRequest,const Aevrynd::ObjectIdCaptureRequestMetadata3D& depthRequest)noexcept{return object.Complete()&&depth.Complete()&&object==depth&&objectRaster==depthRaster&&objectRequest==depthRequest&&object.frameSerial==objectRaster.frameSerial&&object.render.frameSerial==object.frameSerial&&object.render.sceneDrawRevision==objectRequest.drawListRevision;}
+enum class GameplayCaptureEvidenceScope3D:std::uint8_t{Full,ThirdDayTargeted};
+[[nodiscard]] constexpr bool GameplayCaptureScopeExpectsShot3D(GameplayCaptureEvidenceScope3D scope,std::size_t index)noexcept{return scope==GameplayCaptureEvidenceScope3D::Full?index<11:index==1;}
+template<std::size_t N>[[nodiscard]] constexpr bool ValidateGameplayCaptureEvidenceScopeMask3D(GameplayCaptureEvidenceScope3D scope,const std::array<bool,N>& completed)noexcept{for(std::size_t index=0;index<N;++index)if(completed[index]!=GameplayCaptureScopeExpectsShot3D(scope,index))return false;return true;}
+template<std::size_t N>[[nodiscard]] bool ValidateGameplayCaptureEvidenceScope3D(GameplayCaptureEvidenceScope3D scope,const std::array<Aevrynd::ReadbackCaptureSequenceReceipt3D,N>& receipts)noexcept{for(std::size_t index=0;index<N;++index){const bool complete=receipts[index].Complete();if(complete!=GameplayCaptureScopeExpectsShot3D(scope,index))return false;if(complete&&(receipts[index].phases.size()<2||!receipts[index].phases[1].determinism.render.Complete()))return false;}return true;}
+[[nodiscard]] inline std::uint64_t HashGameplayCapturePose3D(const Aevrynd::AnimationPose3D& pose)noexcept{std::uint64_t hash=14695981039346656037ull;const auto mix=[&](std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};mix(pose.globalMatrices.size());for(const auto& matrix:pose.globalMatrices)for(const auto& row:matrix.values)for(float value:row){if(!std::isfinite(value))return 0;mix(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));}return hash;}
+[[nodiscard]] inline std::uint64_t HashGameplayCaptureFootPlacement3D(const Aevrynd::FootPlacementResult3D& value)noexcept{std::uint64_t hash=14695981039346656037ull;const auto mix=[&](std::uint64_t item){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(item>>(byte*8));hash*=1099511628211ull;}};const auto mixFloat=[&](float item){if(!std::isfinite(item))return false;mix(std::bit_cast<std::uint32_t>(item==0.f?0.f:item));return true;};mix(unsigned(value.lod));for(const auto* foot:{&value.left,&value.right}){mix(unsigned(foot->source));mix(foot->userData);for(const Aevrynd::Vec3 vector:{foot->contactWorld,foot->targetWorld,foot->normalWorld})for(float component:{vector.x,vector.y,vector.z})if(!mixFloat(component))return 0;if(!mixFloat(foot->weight))return 0;}if(!mixFloat(value.pelvisOffsetWorld))return 0;mix(value.ikSolves);mix(value.applied?1u:0u);return hash;}
+struct GameplayPresentationPoseSelection3D {const Aevrynd::AnimationPose3D* female{};const Aevrynd::AnimationPose3D* male{};const Aevrynd::AnimationPose3D* monster{};};
+// Presentation/paused staging只能取得const snapshot指標；呼叫次數不可能改變simulation authority。
+[[nodiscard]] constexpr GameplayPresentationPoseSelection3D SelectGameplayPresentationPoses3D(bool frozen,const Aevrynd::AnimationPose3D& female,const Aevrynd::AnimationPose3D& male,const Aevrynd::AnimationPose3D& monster,const Aevrynd::AnimationPose3D& frozenFemale,const Aevrynd::AnimationPose3D& frozenMale,const Aevrynd::AnimationPose3D& frozenMonster)noexcept{return frozen?GameplayPresentationPoseSelection3D{&frozenFemale,&frozenMale,&frozenMonster}:GameplayPresentationPoseSelection3D{&female,&male,&monster};}
+[[nodiscard]] inline GameplayCanonicalCaptureStateReceipt3D BuildGameplayCanonicalCaptureState3D(const GameplayCanonicalCaptureStateInput3D& input)noexcept{
+    constexpr std::uint64_t seed=14695981039346656037ull;const auto mix=[](std::uint64_t& hash,std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};const auto canonicalFloat=[](float value){return value==0.f?0.f:value;};const auto mixFloat=[&](std::uint64_t& hash,float value){mix(hash,std::bit_cast<std::uint32_t>(canonicalFloat(value)));};const auto begin=[&](std::string_view tag){std::uint64_t hash=seed;mix(hash,tag.size());for(const unsigned char value:tag){hash^=value;hash*=1099511628211ull;}return hash;};GameplayCanonicalCaptureStateReceipt3D out{};auto entities=input.entities;std::ranges::sort(entities,{},&Entity::id);
+    const auto finite=[](const Entity& entity){return std::isfinite(entity.position.x)&&std::isfinite(entity.position.y)&&std::isfinite(entity.position.z)&&std::isfinite(entity.rotation);};if(!std::isfinite(input.controllerPosition.x)||!std::isfinite(input.controllerPosition.y)||!std::isfinite(input.controllerPosition.z)||!std::isfinite(input.yaw)||!std::isfinite(input.pitch)||std::ranges::any_of(entities,[&](const Entity& entity){return !entity.id||!finite(entity);}))return out;
+    out.valid=true;out.topology=begin("capture-state/topology/v1");mix(out.topology,entities.size());out.transform=begin("capture-state/transform/v1");mix(out.transform,entities.size());out.entityDiagnostics.reserve(entities.size());for(const auto& entity:entities){GameplayCanonicalCaptureStateReceipt3D::EntityDiagnostic diagnostic{};diagnostic.stableId=entity.id;diagnostic.category=entity.category;diagnostic.position={canonicalFloat(entity.position.x),canonicalFloat(entity.position.y),canonicalFloat(entity.position.z)};diagnostic.rotation=canonicalFloat(entity.rotation);diagnostic.rawBits={std::bit_cast<std::uint32_t>(diagnostic.position.x),std::bit_cast<std::uint32_t>(diagnostic.position.y),std::bit_cast<std::uint32_t>(diagnostic.position.z),std::bit_cast<std::uint32_t>(diagnostic.rotation)};diagnostic.dynamic=entity.dynamic;diagnostic.alive=entity.alive;diagnostic.topologyHash=begin("capture-state/entity-topology/v1");mix(diagnostic.topologyHash,entity.id);mix(diagnostic.topologyHash,unsigned(entity.category));mix(diagnostic.topologyHash,entity.dynamic?1u:0u);mix(diagnostic.topologyHash,entity.alive?1u:0u);diagnostic.transformHash=begin("capture-state/entity-transform/v1");mix(diagnostic.transformHash,entity.id);for(const auto bits:diagnostic.rawBits)mix(diagnostic.transformHash,bits);out.entityDiagnostics.push_back(diagnostic);mix(out.topology,entity.id);mix(out.topology,unsigned(entity.category));mix(out.topology,entity.dynamic?1u:0u);mix(out.topology,entity.alive?1u:0u);mix(out.transform,entity.id);for(const auto bits:diagnostic.rawBits)mix(out.transform,bits);}out.entities=begin("capture-state/entities/v1");mix(out.entities,out.topology);mix(out.entities,out.transform);
+    out.controller=begin("capture-state/controller/v1");mixFloat(out.controller,input.controllerPosition.x);mixFloat(out.controller,input.controllerPosition.y);mixFloat(out.controller,input.controllerPosition.z);out.yawPitch=begin("capture-state/yaw-pitch/v1");mixFloat(out.yawPitch,input.yaw);mixFloat(out.yawPitch,input.pitch);out.rules=begin("capture-state/rules/v1");mix(out.rules,input.captureIndex);mix(out.rules,unsigned(input.camera));mix(out.rules,unsigned(input.lighting));mix(out.rules,input.female?1u:0u);out.camera=begin("capture-state/camera/v1");mix(out.camera,input.cameraHash);out.palette=begin("capture-state/palette/v1");mix(out.palette,unsigned(input.paletteCategory));mix(out.palette,input.paletteOpen?1u:0u);mix(out.palette,input.grabbedEntity);out.animation=begin("capture-state/animation/v1");mix(out.animation,input.animationHash);out.physics=begin("capture-state/physics/v1");mix(out.physics,input.physicsHash);
+    out.canonical=begin("capture-state/final/v1");mix(out.canonical,out.schemaVersion);for(const auto value:{out.entities,out.topology,out.transform,out.controller,out.yawPitch,out.rules,out.camera,out.palette,out.animation,out.physics})mix(out.canonical,value);out.legacy=seed;mix(out.legacy,input.captureIndex);mix(out.legacy,unsigned(input.camera));mix(out.legacy,unsigned(input.lighting));mix(out.legacy,input.female?1u:0u);mix(out.legacy,input.entities.size());for(const auto& entity:input.entities){mix(out.legacy,entity.id);mixFloat(out.legacy,entity.position.x);mixFloat(out.legacy,entity.position.y);mixFloat(out.legacy,entity.position.z);}mixFloat(out.legacy,input.controllerPosition.x);mixFloat(out.legacy,input.controllerPosition.y);mixFloat(out.legacy,input.controllerPosition.z);mixFloat(out.legacy,input.yaw);mixFloat(out.legacy,input.pitch);return out;
+}
+[[nodiscard]] constexpr std::size_t GameplayCottageFacadeExpectedTriangles3D(bool door,bool pairedWindows)noexcept{return pairedWindows?(door?84u:72u):door?60u:48u;}
+[[nodiscard]] inline bool GameplayCottageGlassGapValid3D(float wallOuter,float glassCenter,float glassHalfDepth)noexcept{return std::isfinite(wallOuter)&&std::isfinite(glassCenter)&&std::isfinite(glassHalfDepth)&&glassHalfDepth>0.f&&std::abs(glassCenter-wallOuter)-glassHalfDepth>=.04f;}
 enum class GameplayCaptureCamera3D : std::uint8_t { First, Third, God };
 enum class GameplayCaptureLighting3D : std::uint8_t { Day, Dusk, Night };
 enum class GameplayCaptureLodExpectation3D : std::uint8_t { Stable, Transition };
@@ -360,6 +394,52 @@ template<class CollisionConstraint,class TerrainConstraint>
     return fallback;
 }
 
+struct GameplayAuthoritativeGodCameraInput3D {
+    Aevrynd::Vec3 controllerPosition{};
+    float yaw{},pitch{};
+};
+
+struct GameplayAuthoritativeGodCameraReceipt3D {
+    GameplayGodCameraLayout3D layout{};
+    std::uint64_t inputHash{},cameraHash{},subjectPoseHash{};
+    bool valid{};
+};
+
+[[nodiscard]] inline std::uint64_t HashGameplayAuthoritativeGodCameraInput3D(const GameplayAuthoritativeGodCameraInput3D& input)noexcept{
+    if(!std::isfinite(input.controllerPosition.x)||!std::isfinite(input.controllerPosition.y)||!std::isfinite(input.controllerPosition.z)||!std::isfinite(input.yaw)||!std::isfinite(input.pitch))return 0;
+    std::uint64_t hash=14695981039346656037ull;const auto mix=[&](std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};
+    for(float value:{input.controllerPosition.x,input.controllerPosition.y,input.controllerPosition.z,input.yaw,input.pitch})mix(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));return hash;
+}
+
+// God 視角的權威輸入只能來自固定模擬狀態與穩定排序的碰撞查詢。
+// renderer frame、wall-clock dt、presentation cache 與 process-local handle 都不在輸入契約內。
+template<class CollisionConstraint,class TerrainConstraint>
+[[nodiscard]] inline GameplayAuthoritativeGodCameraReceipt3D BuildGameplayAuthoritativeGodCamera3D(
+    const GameplayAuthoritativeGodCameraInput3D& input,
+    std::span<const ShowcaseSceneDescriptor3D> descriptors,
+    const GameplayGodProductionGeometry3D& geometry,
+    std::span<const Aevrynd::Vertex3D> posedVertices,
+    std::span<const std::uint32_t> posedIndices,
+    CollisionConstraint&& collisionConstraint,TerrainConstraint&& terrainConstraint) noexcept {
+    GameplayAuthoritativeGodCameraReceipt3D result{};
+    if(!std::isfinite(input.controllerPosition.x)||!std::isfinite(input.controllerPosition.y)||
+       !std::isfinite(input.controllerPosition.z)||!std::isfinite(input.yaw)||!std::isfinite(input.pitch))return result;
+    const Aevrynd::Vec3 focus=input.controllerPosition+Aevrynd::Vec3{0,1.1f,0};
+    const Aevrynd::Matrix4 playerWorld=Aevrynd::CreateTransformMatrix(input.controllerPosition,{0,input.yaw,0},{1,1,1});
+    result.layout=SelectGameplayGodCameraLayoutConstrained3D(focus,descriptors,geometry,posedVertices,posedIndices,playerWorld,
+        std::forward<CollisionConstraint>(collisionConstraint),std::forward<TerrainConstraint>(terrainConstraint));
+    const auto mix=[](std::uint64_t& hash,std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};
+    const auto scalar=[&](std::uint64_t& hash,float value){mix(hash,std::bit_cast<std::uint32_t>(value==0.f?0.f:value));};
+    result.inputHash=HashGameplayAuthoritativeGodCameraInput3D(input);
+    result.cameraHash=14695981039346656037ull;
+    const auto& camera=result.layout.camera;
+    for(const auto value:{camera.position,camera.target,camera.up})for(float component:{value.x,value.y,value.z})scalar(result.cameraHash,component);
+    mix(result.cameraHash,unsigned(camera.projection.mode));
+    for(float value:{camera.projection.verticalFieldOfView,camera.projection.orthographicHeight,camera.projection.nearPlane,camera.projection.farPlane})scalar(result.cameraHash,value);
+    result.valid=result.layout.valid&&result.inputHash&&result.cameraHash;
+    return result;
+}
+
 [[nodiscard]] inline GameplayGodCameraLayout3D SelectGameplayGodCameraLayout3D(
     Aevrynd::Vec3 focus,std::span<const ShowcaseSceneDescriptor3D> descriptors,
     const GameplayGodProductionGeometry3D& geometry,std::span<const Aevrynd::Vertex3D> posedVertices,
@@ -387,6 +467,19 @@ template<class CollisionConstraint,class TerrainConstraint>
         if(!collision.OverlapsBox(point,{.48f,.48f,.48f}))return Aevrynd::Vec2{x,y};
     }
     return std::nullopt;
+}
+
+enum class GameplayInteractionCameraSource3D:std::uint8_t{FinalRendered,FrozenAuthoritativeGod,CaptureFirstPerson};
+[[nodiscard]] inline std::uint64_t HashGameplayInteractionCamera3D(const Aevrynd::Camera3D& camera)noexcept{std::uint64_t hash=14695981039346656037ull;const auto mix=[&](std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};for(const auto value:{camera.position,camera.target,camera.up})for(float component:{value.x,value.y,value.z})mix(std::bit_cast<std::uint32_t>(component==0.f?0.f:component));mix(unsigned(camera.projection.mode));for(float value:{camera.projection.verticalFieldOfView,camera.projection.orthographicHeight,camera.projection.nearPlane,camera.projection.farPlane})mix(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));return hash;}
+[[nodiscard]] inline std::uint64_t HashGameplayInteractionRay3D(const Aevrynd::Ray3D& ray)noexcept{std::uint64_t hash=14695981039346656037ull;for(float value:{ray.origin.x,ray.origin.y,ray.origin.z,ray.direction.x,ray.direction.y,ray.direction.z}){for(unsigned byte=0;byte<4;++byte){hash^=std::uint8_t(std::bit_cast<std::uint32_t>(value==0.f?0.f:value)>>(byte*8));hash*=1099511628211ull;}}return hash;}
+struct GameplayInteractionCameraSelection3D {Aevrynd::Camera3D camera{};GameplayInteractionCameraSource3D source{GameplayInteractionCameraSource3D::FinalRendered};std::uint64_t finalRenderedCameraHash{},interactionCameraHash{};};
+// 選擇發生於final camera之後；24-26 replay優先於258-268 fixture，live永遠使用final rendered camera。
+[[nodiscard]] inline GameplayInteractionCameraSelection3D SelectGameplayInteractionCamera3D(const Aevrynd::Camera3D& finalRendered,const Aevrynd::Camera3D* frozenAuthoritativeGod,const Aevrynd::Camera3D& captureFirstPerson,bool capture,std::uint64_t tick)noexcept{
+    GameplayInteractionCameraSelection3D result{};result.finalRenderedCameraHash=HashGameplayInteractionCamera3D(finalRendered);
+    if(capture&&tick>=24&&tick<=26&&frozenAuthoritativeGod){result.camera=*frozenAuthoritativeGod;result.source=GameplayInteractionCameraSource3D::FrozenAuthoritativeGod;}
+    else if(capture&&tick>=258&&tick<=268){result.camera=captureFirstPerson;result.source=GameplayInteractionCameraSource3D::CaptureFirstPerson;}
+    else result.camera=finalRendered;
+    result.interactionCameraHash=HashGameplayInteractionCamera3D(result.camera);return result;
 }
 
 struct GameplayActorScreenSeparation3D {
@@ -453,6 +546,9 @@ struct GameplayCaptureProductionRoute3D {
     LightingPhase lighting{};
     Aevrynd::ProjectionMode projection{Aevrynd::ProjectionMode::Perspective};
 };
+enum class GameplayActiveCaptureRoutePhase3D:std::uint8_t{Inactive,Prepared,Warming,Readback};
+[[nodiscard]] constexpr bool GameplayActiveCaptureRoutePhaseAccepted3D(GameplayActiveCaptureRoutePhase3D phase)noexcept{switch(phase){case GameplayActiveCaptureRoutePhase3D::Prepared:case GameplayActiveCaptureRoutePhase3D::Warming:case GameplayActiveCaptureRoutePhase3D::Readback:return true;case GameplayActiveCaptureRoutePhase3D::Inactive:return false;default:return false;}}
+struct GameplayActiveCaptureRoute3D {std::size_t index{std::numeric_limits<std::size_t>::max()};GameplayCaptureProductionRoute3D route{};GameplayActiveCaptureRoutePhase3D phase{GameplayActiveCaptureRoutePhase3D::Inactive};[[nodiscard]] constexpr bool Active()const noexcept{return GameplayActiveCaptureRoutePhaseAccepted3D(phase);}constexpr void Clear()noexcept{*this={};}};
 
 [[nodiscard]] constexpr GameplayCaptureProductionRoute3D
 BuildGameplayCaptureProductionRoute3D(const GameplayCaptureExpectation3D& expectation) noexcept {
@@ -467,6 +563,7 @@ BuildGameplayCaptureProductionRoute3D(const GameplayCaptureExpectation3D& expect
     const GameplayCaptureProductionRoute3D& route) noexcept {
     return route.projection==(route.camera==CameraMode::GodView?Aevrynd::ProjectionMode::Orthographic:Aevrynd::ProjectionMode::Perspective);
 }
+[[nodiscard]] constexpr bool ValidateGameplayActiveCaptureRoute3D(const GameplayActiveCaptureRoute3D& active,std::size_t slot,const std::optional<std::size_t>& prepared,CameraMode rulesCamera)noexcept{return active.Active()&&prepared&&active.index==slot&&*prepared==active.index&&ValidateGameplayCaptureProductionRoute3D(active.route)&&active.route.camera==rulesCamera;}
 
 [[nodiscard]] inline bool ApplyGameplayCaptureProductionProjection3D(
     Aevrynd::Camera3D& camera,const GameplayCaptureProductionRoute3D& route) noexcept {
@@ -495,17 +592,17 @@ BuildGameplayCaptureProductionRoute3D(const GameplayCaptureExpectation3D& expect
 }
 
 inline constexpr std::array<GameplayCaptureExpectation3D,11> GameplayCaptureExpectations3D{{
-    MakeGameplayCaptureExpectation3D(L"first-day.png",GameplayCaptureCamera3D::First,GameplayCaptureLighting3D::Day,false,GameplayCaptureLodExpectation3D::Stable),
-    MakeGameplayCaptureExpectation3D(L"third-day.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Day,true,GameplayCaptureLodExpectation3D::Stable),
+    MakeGameplayCaptureExpectation3D(L"first-day.png",GameplayCaptureCamera3D::First,GameplayCaptureLighting3D::Day,false,GameplayCaptureLodExpectation3D::Transition),
+    MakeGameplayCaptureExpectation3D(L"third-day.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Day,true,GameplayCaptureLodExpectation3D::Transition),
     MakeGameplayCaptureExpectation3D(L"god-day.png",GameplayCaptureCamera3D::God,GameplayCaptureLighting3D::Day,true,GameplayCaptureLodExpectation3D::Transition),
-    MakeGameplayCaptureExpectation3D(L"first-dusk.png",GameplayCaptureCamera3D::First,GameplayCaptureLighting3D::Dusk,false,GameplayCaptureLodExpectation3D::Stable),
-    MakeGameplayCaptureExpectation3D(L"third-dusk.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Dusk,true,GameplayCaptureLodExpectation3D::Stable),
+    MakeGameplayCaptureExpectation3D(L"first-dusk.png",GameplayCaptureCamera3D::First,GameplayCaptureLighting3D::Dusk,false,GameplayCaptureLodExpectation3D::Transition),
+    MakeGameplayCaptureExpectation3D(L"third-dusk.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Dusk,true,GameplayCaptureLodExpectation3D::Transition),
     MakeGameplayCaptureExpectation3D(L"god-dusk.png",GameplayCaptureCamera3D::God,GameplayCaptureLighting3D::Dusk,true,GameplayCaptureLodExpectation3D::Transition),
-    MakeGameplayCaptureExpectation3D(L"first-night.png",GameplayCaptureCamera3D::First,GameplayCaptureLighting3D::Night,false,GameplayCaptureLodExpectation3D::Stable),
-    MakeGameplayCaptureExpectation3D(L"third-night.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Night,true,GameplayCaptureLodExpectation3D::Stable),
+    MakeGameplayCaptureExpectation3D(L"first-night.png",GameplayCaptureCamera3D::First,GameplayCaptureLighting3D::Night,false,GameplayCaptureLodExpectation3D::Transition),
+    MakeGameplayCaptureExpectation3D(L"third-night.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Night,true,GameplayCaptureLodExpectation3D::Transition),
     MakeGameplayCaptureExpectation3D(L"god-night.png",GameplayCaptureCamera3D::God,GameplayCaptureLighting3D::Night,true,GameplayCaptureLodExpectation3D::Transition),
-    MakeGameplayCaptureExpectation3D(L"palette-building.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Day,true,GameplayCaptureLodExpectation3D::Stable),
-    MakeGameplayCaptureExpectation3D(L"melee-combat.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Dusk,true,GameplayCaptureLodExpectation3D::Stable)
+    MakeGameplayCaptureExpectation3D(L"palette-building.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Day,true,GameplayCaptureLodExpectation3D::Transition),
+    MakeGameplayCaptureExpectation3D(L"melee-combat.png",GameplayCaptureCamera3D::Third,GameplayCaptureLighting3D::Dusk,true,GameplayCaptureLodExpectation3D::Transition)
 }};
 
 [[nodiscard]] constexpr bool ValidateGameplayCaptureExpectationTable3D() noexcept {
@@ -638,6 +735,22 @@ private:
     std::size_t captureIndex_{(std::numeric_limits<std::size_t>::max)()};
     std::uint32_t phaseCount_{};
 };
+
+// GPU 讀回即使 fail-closed，也必須先保留該幀真正的完整性與 canonical 證據。
+// 寫檔接線會在 frame-bound renderer API 定案後使用，避免誤讀下一幀統計。
+struct GameplayCaptureIntegrityDiagnosticSnapshot3D {
+    std::size_t captureIndex{};
+    std::uint32_t phaseIndex{};
+    Aevrynd::FrameBoundDeterminismEvidence3D objectId{};
+    Aevrynd::FrameBoundDeterminismEvidence3D depth{};
+    bool recorded{};
+
+    [[nodiscard]] constexpr bool Complete() const noexcept {
+        return recorded && objectId.Complete() && depth.Complete() && objectId == depth &&
+            objectId.integrity.requestedMode == Aevrynd::DeterminismIntegrityMode3D::SealedCapture &&
+            objectId.integrity.actualMode == Aevrynd::DeterminismIntegrityMode3D::SealedCapture;
+    }
+};
 }
 
 std::string CreateGameplayLabRunId();
@@ -648,23 +761,23 @@ public:
     void OnStart(Aevrynd::Engine&)override;void OnUpdate(Aevrynd::Engine&,float)override;void OnRender(Aevrynd::Engine&,float)override;void OnStop(Aevrynd::Engine&)override;
     Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;std::size_t TrimReusableMemory()override;
 private:
-    void BuildWorld(Aevrynd::Engine&);void AddShowcaseEnvironment();void QueueTemporalHistoryReseed(GameplayLab::GameplayTemporalReseedReason3D)noexcept;void ResetProductionCameraCut(GameplayLab::GameplayTemporalReseedReason3D=GameplayLab::GameplayTemporalReseedReason3D::CameraMode)noexcept;void UpdateCamera(Aevrynd::Engine&);void UpdateCapture(Aevrynd::Engine&);void RequestCapturePhase(Aevrynd::Engine&);bool ConsumeObjectIdCapture(Aevrynd::Engine&,std::size_t,bool raw,bool reference);bool InitializeEnvironmentCollision();bool SyncEnvironmentCollision(Aevrynd::Vec3 observer);void ReleaseEnvironmentGameplayColliders();
+    void BuildWorld(Aevrynd::Engine&);void AddShowcaseEnvironment();void QueueTemporalHistoryReseed(GameplayLab::GameplayTemporalReseedReason3D)noexcept;void ResetProductionCameraCut(GameplayLab::GameplayTemporalReseedReason3D=GameplayLab::GameplayTemporalReseedReason3D::CameraMode)noexcept;void UpdateCamera(Aevrynd::Engine&);void UpdateCapture(Aevrynd::Engine&,bool fixedSimulationStep);void RequestCapturePhase(Aevrynd::Engine&);bool ConsumeObjectIdCapture(Aevrynd::Engine&,std::size_t,bool raw,bool reference);bool WriteCaptureIntegrityDiagnostic(bool fatal=false)const;bool InitializeEnvironmentCollision();bool SyncEnvironmentCollision(Aevrynd::Vec3 observer);void ReleaseEnvironmentGameplayColliders();
     std::uint32_t temporalFixtureWarmupFrames_{};bool temporalFixtureCloudOff_{};
     GameplayLab::Rules3D rules_{};Aevrynd::CharacterController3D controller_{};Aevrynd::CollisionWorld3D collisions_{};Aevrynd::PhysicsWorld3D physics_{};Aevrynd::SceneECSRegistry3D sceneEcs_{};Aevrynd::Scene3D scene_{};
     GameplayLab::ShowcaseRenderAssetBindings3D showcaseRenderAssets_{};
     GameplayLab::ShowcaseProductionRenderReceipt3D showcaseProductionReceipt_{};
-    bool inputFocused_{true},cursorCaptured_{};
+    bool inputFocused_{true},cursorCaptured_{};Aevrynd::Input captureReplayInput_{};std::optional<Aevrynd::Camera3D> captureReplayInteractionCamera_{};std::uint64_t captureReplayInteractionCameraInputHash_{},captureReplayInteractionCameraSubjectPoseHash_{};
     // 僅保留未來除錯剛體的可視化清單；所有可互動物件的擁有權都在 palette_。
     Aevrynd::MeshResource3D boxMesh_{},sphereMesh_{};std::vector<Aevrynd::RigidBodyHandle3D> bodies_{};Aevrynd::Camera3D camera_{};float yaw_{},pitch_{.2f},simulationDelta_{1.f/60.f};
     GameplayLab::GameplayCameraOcclusionPolicy3D cameraOcclusionPolicy_{};
     float cameraOccluderCoverage_{},cameraRawOccluderCoverage_{},thirdPersonOrbitOffset_{},thirdPersonDistance_{3.4f},cameraFadeAlpha_{1.f};std::uint64_t cameraOccluderStableLow_{};Aevrynd::RenderObjectIdentity3D cameraPolicyFadeIdentity_{},appliedOcclusionIdentity_{};Aevrynd::ObjectOcclusionOpacityUpdate3D appliedOcclusionUpdate_{};float appliedOcclusionOpacity_{1.f};bool cameraFadeSettled_{},cameraOcclusionAdjusted_{};
     GameplayLab::GameplayCameraProductionBuildReceipt3D cameraBuilderReceipt_{};GameplayLab::CameraOcclusionPolicyOutput3D cameraPolicyReceipt_{};GameplayLab::ProductionCameraCandidate3D cameraSelectedCandidate_{};Aevrynd::Camera3D cameraBuilderExpected_{};bool cameraBuilderMatrixExact_{};
-    GameplayLab::GameplayCameraProductionBuildOutput3D cameraBuildCache_{};GameplayLab::GameplayGodCameraLayout3D godCameraBuildCache_{};Aevrynd::Vec3 cameraBuildCacheFeet_{},cameraBuildCacheCompanionPosition_{},godCameraBuildCacheFocus_{};Aevrynd::Vec2 cameraBuildCacheViewport_{};float cameraBuildCacheYaw_{},cameraBuildCacheDesiredArm_{4.5f};GameplayLab::AnimationState3D cameraBuildCachePlayerAnimation_{GameplayLab::AnimationState3D::Idle},cameraBuildCacheCompanionAnimation_{GameplayLab::AnimationState3D::Idle};std::uint64_t godCameraSearchCount_{},godCameraCacheHitCount_{};bool cameraBuildCacheValid_{},cameraBuildCacheFemale_{},cameraBuildCacheCrouched_{},godCameraBuildCacheValid_{},godCameraBuildCacheFemale_{};
+    GameplayLab::GameplayCameraProductionBuildOutput3D cameraBuildCache_{};GameplayLab::GameplayGodCameraLayout3D godCameraBuildCache_{};GameplayLab::GameplayAuthoritativeGodCameraReceipt3D godCameraAuthorityReceipt_{};Aevrynd::Vec3 cameraBuildCacheFeet_{},cameraBuildCacheCompanionPosition_{},godCameraBuildCacheFocus_{};Aevrynd::Vec2 cameraBuildCacheViewport_{};float cameraBuildCacheYaw_{},cameraBuildCacheDesiredArm_{4.5f},cameraBuildCacheMinimumSubjectScreenArea_{.05f};GameplayLab::AnimationState3D cameraBuildCachePlayerAnimation_{GameplayLab::AnimationState3D::Idle},cameraBuildCacheCompanionAnimation_{GameplayLab::AnimationState3D::Idle};std::uint64_t godCameraSearchCount_{},godCameraCacheHitCount_{};bool cameraBuildCacheValid_{},cameraBuildCacheFemale_{},cameraBuildCacheCrouched_{},cameraBuildCachePaletteOpen_{},godCameraBuildCacheValid_{},godCameraBuildCacheFemale_{};
     Aevrynd::Mesh3D cameraPoseVisualMesh_{},cameraCompanionVisualMesh_{},godCameraPoseVisualMesh_{};Aevrynd::MeshBounds3D cameraBuildCacheVisualBounds_{},cameraBuildCacheCompanionBounds_{};bool cameraBuildCacheHasCompanion_{},temporalCameraInitialized_{},temporalHistoryCutPending_{};std::uint32_t temporalHistoryPendingReasonMask_{};std::uint64_t temporalSceneIdentityFingerprint_{};
     GameplayLab::GameplayShowcaseEnvironment3D showcaseEnvironment_{};Aevrynd::HeightField3D showcaseTerrain_{};std::unique_ptr<Aevrynd::EnvironmentCollisionStreaming3D> environmentCollisions_{};std::vector<Aevrynd::EnvironmentColliderDescriptor3D> environmentCollisionDescriptors_{};std::vector<Aevrynd::ColliderHandle3D> environmentGameplayColliders_{};Aevrynd::EnvironmentCollisionStreamingReceipt3D environmentCollisionActiveReceipt_{};Aevrynd::MeshResource3D showcaseTerrainMesh_{},showcaseRiverMesh_{},showcaseCottageFrontMesh_{},showcaseCottageBackMesh_{},showcaseCottageSideMesh_{},showcaseCottageRoofMesh_{},showcaseCylinderMesh_{},showcaseConeHighMesh_{},showcaseConeLowMesh_{},showcaseGrassHighMesh_{},showcaseGrassLowMesh_{},showcaseTreeLowMesh_{},showcaseRockLowMesh_{},showcaseQuiverTreeMesh_{},showcaseRock09Mesh_{};Aevrynd::MaterialLibrary3D showcaseMaterialLibrary_{},showcaseModelMaterialLibrary_{};Aevrynd::Material3D showcaseGroundMaterial_{},showcaseWoodMaterial_{},showcaseBarkMaterial_{},showcaseRockMaterial_{},showcaseQuiverTreeMaterial_{},showcaseRock09Material_{};Aevrynd::RendererStats showcaseRendererBaseline_{};std::size_t showcaseSubmittedDescriptors_{};bool showcaseExecutionObserved_{},environmentCollisionReloadStable_{},environmentStableIdEvidence_{},environmentRayEvidence_{},environmentMeleeQueryEvidence_{};
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{},femaleFirstPersonArmsModel_{},maleFirstPersonArmsModel_{};GameplayLab::GameplayFirstPersonArmsEvidence3D femaleFirstPersonArmsEvidence_{},maleFirstPersonArmsEvidence_{};GameplayLab::GameplayCharacterMaterialEvidence3D characterMaterialEvidence_{};std::vector<Aevrynd::SkinnedSubmesh3D> femaleSubmeshes_{},maleSubmeshes_{},femaleFirstPersonArmsSubmeshes_{},maleFirstPersonArmsSubmeshes_{},femaleWeaponSubmeshes_{},maleWeaponSubmeshes_{};std::vector<Aevrynd::Material3D> femaleMaterials_{},maleMaterials_{};std::array<Aevrynd::Material3D,2> femaleWeaponMaterials_{},maleWeaponMaterials_{};Aevrynd::MaterialLibrary3D femaleMaterialLibrary_{},maleMaterialLibrary_{};Aevrynd::SkinnedMeshResource3D femaleMesh_{},maleMesh_{},femaleFirstPersonArmsMesh_{},maleFirstPersonArmsMesh_{},femaleWeaponMesh_{},maleWeaponMesh_{};Aevrynd::AnimationPose3D femalePose_{},malePose_{},captureFrozenFemalePose_{},captureFrozenMalePose_{},captureFrozenMonsterPose_{};Aevrynd::SkinningWorkspace3D skinning_{};bool capturePoseFrozen_{};
     std::unique_ptr<GameplayLab::GameplayCombat3D> combat_{};GameplayLab::GameplayAnimation3D femaleAnimation_{},maleAnimation_{},monsterAnimation_{};Aevrynd::AnimationPose3D monsterPose_{};Aevrynd::FootPlacement3D femaleFootPlacement_{},maleFootPlacement_{};Aevrynd::SkinnedRenderableGroupHistory3D playerHistory_{},monsterHistory_{};Aevrynd::SkinnedRenderableGroupStats3D skinnedGroupStats_{};std::array<std::uint64_t,11> femalePoseHashes_{},malePoseHashes_{};
-    std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};std::unique_ptr<GameplayLab::GameplayObjectPaletteUi3D> paletteUi_{};std::uint64_t paletteUiDrawnFrames_{};bool palettePointerInteraction_{};
+    std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};std::unique_ptr<GameplayLab::GameplayObjectPaletteUi3D> paletteUi_{};std::vector<std::uint64_t> initialSeedEntityIds_{};std::uint64_t paletteUiDrawnFrames_{};bool palettePointerInteraction_{};
     std::uint64_t captureFrozenFootPlacementHash_{};std::array<std::uint64_t,11> captureRawFemalePoseHash_{},captureRawMalePoseHash_{},captureRawMonsterPoseHash_{},captureEffectiveFemalePoseHash_{},captureEffectiveMalePoseHash_{},captureEffectiveMonsterPoseHash_{},captureReferenceFemalePoseHash_{},captureReferenceMalePoseHash_{},captureReferenceMonsterPoseHash_{},captureRawFootPlacementHash_{},captureEffectiveFootPlacementHash_{},captureReferenceFootPlacementHash_{};
     std::array<std::uint32_t,11> captureDrawIdentityCount_{},captureDrawTerrainCount_{},captureDrawTerrainIdentityCount_{},captureDrawGroundIdentityCount_{},captureDrawGroundOpaqueCount_{},captureDrawGroundShadowOnlyCount_{};
     std::array<std::uint32_t,11> captureGroundMeshHandle_{},captureGroundCastsShadow_{},captureGroundAlphaMode_{},captureRendererSubmittedMeshes_{},captureRendererSubmittedTerrain_{};
@@ -693,17 +806,25 @@ private:
     std::array<std::uint8_t,11> captureProjectionMode_{};
     std::array<float,11> captureVerticalFovRadians_{},captureOrthographicHeight_{},captureGodActualTriangleCoverage_{},captureGodBuildingUnion_{},captureGodMaximumBuildingPart_{},captureGodRoofCoverage_{},captureGodRiverCoverage_{};
     std::array<std::uint32_t,11> captureGodVisibleWorldDescriptors_{},captureGodLodTransitions_{},captureGodVisibleBuildingComponents_{},captureGodBuildingEdgeMask_{};
+    std::array<std::uint64_t,11> captureFrameSceneDrawRevision_{},captureFrameWorldRevision_{},captureFrameSubmittedMeshes_{},captureFrameSubmittedSkinned_{},captureFrameSubmittedTerrain_{},captureFrameSubmittedWorldVertices_{},captureFrameSubmittedWorldIndices_{};
     std::array<GameplayLab::ShowcaseCameraVisibility3D,11> captureEnvironmentVisibility_{};
     std::array<std::vector<GameplayLab::ShowcaseLodSample3D>,11> captureEnvironmentLodSamples_{};
     std::vector<GameplayLab::ShowcaseSubmittedLodIdentity3D> showcaseSubmittedLodItems_{};
     std::array<std::vector<GameplayLab::ShowcaseLodRenderRow3D>,11> captureSubmittedLodRows_{},captureActualLodRows_{};
     std::array<GameplayLab::ShowcaseLodContractReceipt3D,11> captureLodContracts_{};
+    std::array<GameplayLab::GameplayCanonicalCaptureStateReceipt3D,11> captureCanonicalState_{};std::array<GameplayLab::GameplayPaletteReplayDiagnostic3D,3> capturePaletteReplayDiagnostics_{};std::uint64_t authorityFootPlacementHash_{};float authorityFootPlacementCameraDistanceInput_{};
+    std::array<Aevrynd::DeterminismIntegrityReceipt3D,11> captureDeterminismIntegrity_{};
+    std::array<Aevrynd::CanonicalDrawFingerprintReceipt3D,11> captureCanonicalDrawFingerprint_{};
+    std::array<std::uint64_t,11> captureDeterminismFrameSerial_{};
+    std::array<std::array<GameplayLab::GameplayCaptureIntegrityDiagnosticSnapshot3D,3>,11> captureIntegrityDiagnostics_{};
     std::array<std::uint32_t,11> captureFirstPersonArmsToken_{},captureFirstPersonArmsPixels_{},captureFirstPersonArmsMinimumX_{},captureFirstPersonArmsMinimumY_{},captureFirstPersonArmsMaximumX_{},captureFirstPersonArmsMaximumY_{},captureFirstPersonWeaponToken_{},captureFirstPersonWeaponPixels_{},captureFirstPersonWeaponMinimumX_{},captureFirstPersonWeaponMinimumY_{},captureFirstPersonWeaponMaximumX_{},captureFirstPersonWeaponMaximumY_{};
     bool captureTemporalWarmupActive_{};std::uint32_t captureTemporalWarmupRemaining_{},captureTemporalWarmupFramesCurrent_{},captureTemporalReseedReasonCurrent_{};
     std::array<float,11> captureBuilderTopCenterRayElevation_{},
-        captureBuilderMinimumTopCenterRayElevation_{};
+        captureBuilderMinimumTopCenterRayElevation_{},
+        captureBuilderMinimumSubjectScreenArea_{};
     std::array<std::uint64_t,11> captureBuilderRejectedHorizon_{};
+    std::array<std::uint8_t,11> captureBuilderPaletteOpen_{};
     std::array<std::array<std::byte,32>,11> captureRawDepthFinalFileSha256_{},captureEffectiveDepthFinalFileSha256_{},captureReferenceDepthFinalFileSha256_{};
     std::array<std::uint64_t,11> captureRawDepthFinalFileBytes_{},captureEffectiveDepthFinalFileBytes_{},captureReferenceDepthFinalFileBytes_{};
-    std::filesystem::path captureDirectory_{};std::optional<Aevrynd::Vec3> captureValidGhost_{},captureInvalidGhost_{};std::optional<std::size_t> capturePreparedIndex_{};std::size_t captureIndex_{};bool capturePending_{},capturePhaseRequestPending_{},captureRawPhase_{},captureReferencePhase_{},capturePairFrozen_{},captureCrouchTapPending_{},combatSpawned_{},crouchFeetInvariant_{true},weaponAttachmentPassed_{},weaponHitWindowEvidence_{},weaponAnimationSyncPassed_{true},firstPersonBodyHidden_{true},captureGrabSeeded_{},sourceFingerprintPassed_{true};Aevrynd::ObjectIdCaptureRequestMetadata3D capturePairMetadata_{};Aevrynd::ColliderHandle3D captureCeiling_{},captureEvidenceCollider_{};float minimumControllerHeight_{1.8f},maximumWeaponPhaseError_{};double nextCapture_{.5};std::uint64_t captureSuccess_{},captureReject_{},femaleGpuDraws_{},maleGpuDraws_{},weaponPbrDraws_{},captureAuthoritativePhysicsSteps_{},weaponTrajectoryHash_{14695981039346656037ull};std::array<std::uint64_t,3> attackTrajectoryHashes_{{14695981039346656037ull,14695981039346656037ull,14695981039346656037ull}};std::array<std::uint32_t,11> captureBodyMaterialSlots_{},captureWeaponMaterialRanges_{},captureObjectIdSubmitted_{},captureOpacityMatchedStatic_{},captureOpacityMatchedMultipart_{},captureReferenceOpacityMatches_{},captureDepthGeneration_{},captureLeftFootGroundGapPixels_{},captureRightFootGroundGapPixels_{},capturePlayerToken_{},captureTerrainToken_{},captureFootRoiDominantToken_{};std::array<float,11> captureWeaponAnchorErrors_{},captureWeaponScreenCoverage_{},captureWeaponMinimumDepth_{},captureWeaponGripX_{},captureWeaponGripY_{},captureWeaponBladeY_{},captureOccluderCoverage_{},captureRawOccluderCoverage_{},capturePolicyFadeOpacity_{},captureFeetGroundError_{},captureRawBuildingUnion_{},captureEffectiveBuildingUnion_{},captureRawMaximumVisibleCoverage_{},captureEffectiveMaximumVisibleCoverage_{},captureCharacterReferenceCoverage_{},captureCharacterEffectiveCoverage_{},captureCharacterVisibility_{},captureCharacterSilhouetteIou_{},captureLeftFootDepthDelta_{},captureRightFootDepthDelta_{},captureFootRoiDepthMin_{},captureFootRoiDepthMax_{},captureBuilderScreenHeight_{},captureBuilderScreenWidth_{},captureBuilderScreenArea_{},captureBuilderHeadroom_{},captureBuilderYaw_{},captureBuilderPitch_{},captureBuilderElevation_{},captureBuilderArm_{},captureBuilderPositionX_{},captureBuilderPositionY_{},captureBuilderPositionZ_{};std::array<std::array<float,6>,11> captureRawBuildingCoverage_{},captureEffectiveBuildingCoverage_{};std::vector<std::uint8_t> captureEffectiveCharacterMask_{};std::array<std::array<std::byte,32>,11> captureRawDepthSha256_{},captureEffectiveDepthSha256_{},captureReferenceDepthSha256_{};std::array<std::uint64_t,11> captureOccluderStableHigh_{},captureOccluderStableLow_{},captureOccluderGeneration_{},captureFadedStableHigh_{},captureFadedStableLow_{},captureFadedGeneration_{},capturePolicyFadeStableHigh_{},capturePolicyFadeStableLow_{},capturePolicyFadeGeneration_{},captureGroundStableLow_{},captureObjectIdGeneration_{},captureObjectIdMaskHash_{},captureRawObjectIdMaskHash_{},captureRawAcceptedExcludingOpacity_{},captureRawAcceptedIncludingOpacity_{},captureRawIdentityOrderHash_{},captureEffectiveAcceptedExcludingOpacity_{},captureEffectiveAcceptedIncludingOpacity_{},captureEffectiveIdentityOrderHash_{},captureReferenceAcceptedExcludingOpacity_{},captureReferenceAcceptedIncludingOpacity_{},captureReferenceIdentityOrderHash_{},captureRequestDrawRevision_{},captureRequestCameraHash_{},captureRequestStateHash_{},captureRawMaximumVisibleStableHigh_{},captureRawMaximumVisibleStableLow_{},captureRawMaximumVisibleGeneration_{},captureEffectiveMaximumVisibleStableHigh_{},captureEffectiveMaximumVisibleStableLow_{},captureEffectiveMaximumVisibleGeneration_{},captureBuilderCandidateLow_{},captureBuilderExpectedCameraHash_{},captureFootRoiDominantHigh_{},captureFootRoiDominantLow_{},captureFootRoiDominantGeneration_{};std::array<std::uint8_t,11> captureWeaponCenterExcluded_{},captureWeaponNearClipClear_{},captureWeaponHudOverlap_{},captureWeaponGripEdgeAnchored_{},captureWeaponBladeAboveGrip_{},captureOcclusionAdjusted_{},captureEffectiveObjectIdSupported_{},captureFeetContactPassed_{},captureObjectIdOpaqueComplete_{},captureObjectIdMaskedComplete_{},captureObjectIdSkinnedComplete_{},captureOpacityMissing_{},captureOpacityGenerationConflict_{},captureCharacterReferenceSupported_{},captureDepthSupported_{},captureGpuFeetContactPassed_{},captureBuilderValid_{},captureBuilderPolicyValid_{},captureBuilderMatrixExact_{},captureBuilderFeetOnScreen_{};std::array<std::string,11> captureFootRoiHistogramJson_{};std::size_t released_{};std::uint64_t trims_{};std::string runId_{},expectedSourceFingerprint_{},actualSourceFingerprint_{AEVRYND_CHARACTER_BUILD_FINGERPRINT};
+    std::filesystem::path captureDirectory_{};std::optional<Aevrynd::Vec3> captureValidGhost_{},captureInvalidGhost_{};std::optional<std::size_t> capturePreparedIndex_{};GameplayLab::GameplayActiveCaptureRoute3D activeCaptureRoute_{};std::size_t captureIndex_{};bool capturePending_{},capturePhaseRequestPending_{},captureRawPhase_{},captureReferencePhase_{},capturePairFrozen_{},captureCrouchTapPending_{},combatSpawned_{},crouchFeetInvariant_{true},weaponAttachmentPassed_{},weaponHitWindowEvidence_{},weaponAnimationSyncPassed_{true},firstPersonBodyHidden_{true},captureGrabSeeded_{},sourceFingerprintPassed_{true};Aevrynd::ObjectIdCaptureRequestMetadata3D capturePairMetadata_{};Aevrynd::ColliderHandle3D captureCeiling_{},captureEvidenceCollider_{};float minimumControllerHeight_{1.8f},maximumWeaponPhaseError_{};double nextCapture_{.5};std::uint64_t captureSuccess_{},captureReject_{},femaleGpuDraws_{},maleGpuDraws_{},weaponPbrDraws_{},captureAuthoritativePhysicsSteps_{},weaponTrajectoryHash_{14695981039346656037ull};std::array<std::uint64_t,3> attackTrajectoryHashes_{{14695981039346656037ull,14695981039346656037ull,14695981039346656037ull}};std::array<std::uint32_t,11> captureBodyMaterialSlots_{},captureWeaponMaterialRanges_{},captureObjectIdSubmitted_{},captureOpacityMatchedStatic_{},captureOpacityMatchedMultipart_{},captureReferenceOpacityMatches_{},captureDepthGeneration_{},captureLeftFootGroundGapPixels_{},captureRightFootGroundGapPixels_{},capturePlayerToken_{},captureTerrainToken_{},captureFootRoiDominantToken_{};std::array<float,11> captureWeaponAnchorErrors_{},captureWeaponScreenCoverage_{},captureWeaponMinimumDepth_{},captureWeaponGripX_{},captureWeaponGripY_{},captureWeaponBladeY_{},captureOccluderCoverage_{},captureRawOccluderCoverage_{},capturePolicyFadeOpacity_{},captureFeetGroundError_{},captureRawBuildingUnion_{},captureEffectiveBuildingUnion_{},captureRawMaximumVisibleCoverage_{},captureEffectiveMaximumVisibleCoverage_{},captureCharacterReferenceCoverage_{},captureCharacterEffectiveCoverage_{},captureCharacterVisibility_{},captureCharacterSilhouetteIou_{},captureLeftFootDepthDelta_{},captureRightFootDepthDelta_{},captureFootRoiDepthMin_{},captureFootRoiDepthMax_{},captureBuilderScreenHeight_{},captureBuilderScreenWidth_{},captureBuilderScreenArea_{},captureBuilderHeadroom_{},captureBuilderYaw_{},captureBuilderPitch_{},captureBuilderElevation_{},captureBuilderArm_{},captureBuilderPositionX_{},captureBuilderPositionY_{},captureBuilderPositionZ_{};std::array<std::array<float,6>,11> captureRawBuildingCoverage_{},captureEffectiveBuildingCoverage_{};std::vector<std::uint8_t> captureEffectiveCharacterMask_{};std::array<std::array<std::byte,32>,11> captureRawDepthSha256_{},captureEffectiveDepthSha256_{},captureReferenceDepthSha256_{};std::array<std::uint64_t,11> captureOccluderStableHigh_{},captureOccluderStableLow_{},captureOccluderGeneration_{},captureFadedStableHigh_{},captureFadedStableLow_{},captureFadedGeneration_{},capturePolicyFadeStableHigh_{},capturePolicyFadeStableLow_{},capturePolicyFadeGeneration_{},captureGroundStableLow_{},captureObjectIdGeneration_{},captureObjectIdMaskHash_{},captureRawObjectIdMaskHash_{},captureRawAcceptedExcludingOpacity_{},captureRawAcceptedIncludingOpacity_{},captureRawIdentityOrderHash_{},captureEffectiveAcceptedExcludingOpacity_{},captureEffectiveAcceptedIncludingOpacity_{},captureEffectiveIdentityOrderHash_{},captureReferenceAcceptedExcludingOpacity_{},captureReferenceAcceptedIncludingOpacity_{},captureReferenceIdentityOrderHash_{},captureRequestDrawRevision_{},captureRequestCameraHash_{},captureRequestStateHash_{},captureRawMaximumVisibleStableHigh_{},captureRawMaximumVisibleStableLow_{},captureRawMaximumVisibleGeneration_{},captureEffectiveMaximumVisibleStableHigh_{},captureEffectiveMaximumVisibleStableLow_{},captureEffectiveMaximumVisibleGeneration_{},captureBuilderCandidateLow_{},captureBuilderExpectedCameraHash_{},captureFootRoiDominantHigh_{},captureFootRoiDominantLow_{},captureFootRoiDominantGeneration_{};std::array<std::uint8_t,11> captureWeaponCenterExcluded_{},captureWeaponNearClipClear_{},captureWeaponHudOverlap_{},captureWeaponGripEdgeAnchored_{},captureWeaponBladeAboveGrip_{},captureOcclusionAdjusted_{},captureEffectiveObjectIdSupported_{},captureFeetContactPassed_{},captureObjectIdOpaqueComplete_{},captureObjectIdMaskedComplete_{},captureObjectIdSkinnedComplete_{},captureOpacityMissing_{},captureOpacityGenerationConflict_{},captureCharacterReferenceSupported_{},captureDepthSupported_{},captureGpuFeetContactPassed_{},captureBuilderValid_{},captureBuilderPolicyValid_{},captureBuilderMatrixExact_{},captureBuilderFeetOnScreen_{};std::array<std::string,11> captureFootRoiHistogramJson_{};std::size_t released_{};std::uint64_t trims_{};std::string runId_{},expectedSourceFingerprint_{},actualSourceFingerprint_{AEVRYND_CHARACTER_BUILD_FINGERPRINT};
 };

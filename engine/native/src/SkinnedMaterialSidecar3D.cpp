@@ -3,11 +3,13 @@
 #include "Aevrynd/Serialization.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <system_error>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace Aevrynd {
@@ -67,12 +69,52 @@ bool ResolveTexturePath(
     return true;
 }
 
+using TextureIntegrityByPath3D = std::unordered_map<std::filesystem::path, MaterialTextureIntegrity3D>;
+
+bool ParseTextureReference(
+    const SerializationObject& parent,
+    std::string_view slot,
+    std::string_view field,
+    const std::filesystem::path& canonicalRoot,
+    std::filesystem::path& path,
+    MaterialTextureIntegrity3D& integrity,
+    TextureIntegrityByPath3D& knownIntegrity,
+    SkinnedMaterialSidecarError3D& error) {
+    SerializationObject reference;
+    std::string relativeText;
+    if (!parent.Read(field, reference) ||
+        !HasOnlyFields(reference, {"path", "expectedBytes", "expectedSha256"}) ||
+        !reference.Read("path", relativeText) ||
+        !reference.Read("expectedBytes", integrity.expectedBytes) ||
+        !reference.Read("expectedSha256", integrity.expectedSha256)) {
+        error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' field '" + std::string(field) + "' must contain only path, expectedBytes, and expectedSha256"};
+        return false;
+    }
+    const bool validSha = integrity.expectedSha256.size() == 64u &&
+        std::ranges::all_of(integrity.expectedSha256, [](unsigned char value) { return std::isxdigit(value) != 0; });
+    if (!integrity.expectedBytes || !validSha) {
+        error = {ErrorCode::InvalidValue, 0u, "Material '" + std::string(slot) + "' field '" + std::string(field) + "' has invalid sealed integrity"};
+        return false;
+    }
+    std::ranges::transform(integrity.expectedSha256, integrity.expectedSha256.begin(),
+        [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    if (!ResolveTexturePath(canonicalRoot, slot, field, relativeText, path, error)) return false;
+    const auto [found, inserted] = knownIntegrity.emplace(path, integrity);
+    if (!inserted && (found->second.expectedBytes != integrity.expectedBytes ||
+                      found->second.expectedSha256 != integrity.expectedSha256)) {
+        error = {ErrorCode::InvalidValue, 0u, "Material '" + std::string(slot) + "' field '" + std::string(field) + "' conflicts with sealed integrity already declared for the same texture path"};
+        return false;
+    }
+    return true;
+}
+
 bool ParseTextureLayer(
     const SerializationObject& object,
     std::string_view slot,
     std::string_view prefix,
     const std::filesystem::path& canonicalRoot,
     MaterialTextureLayerDefinition3D& output,
+    TextureIntegrityByPath3D& knownIntegrity,
     SkinnedMaterialSidecarError3D& error) {
     const bool hasRoughness=object.Contains("roughness"),hasOrm=object.Contains("orm");
     if (!HasOnlyFields(object, {"baseColor", "roughness", "orm", "normal"}) ||
@@ -80,18 +122,11 @@ bool ParseTextureLayer(
         error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' " + std::string(prefix) + " must contain baseColor, normal, and exactly one of roughness or orm"};
         return false;
     }
-    std::string baseColor;
-    std::string roughness;
-    std::string normal;
     const std::string_view surfaceField=hasOrm?"orm":"roughness";
-    if (!object.Read("baseColor", baseColor) || !object.Read(surfaceField, roughness) || !object.Read("normal", normal)) {
-        error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' " + std::string(prefix) + " texture paths must be strings"};
-        return false;
-    }
     output.surfaceEncoding=hasOrm?MaterialSurfaceMapEncoding3D::PackedOrm:MaterialSurfaceMapEncoding3D::RoughnessR;
-    return ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + ".baseColor", baseColor, output.baseColorPath, error) &&
-           ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + "." + std::string(surfaceField), roughness, output.roughnessPath, error) &&
-           ResolveTexturePath(canonicalRoot, slot, std::string(prefix) + ".normal", normal, output.normalPath, error);
+    return ParseTextureReference(object,slot,"baseColor",canonicalRoot,output.baseColorPath,output.integrity[0],knownIntegrity,error) &&
+           ParseTextureReference(object,slot,surfaceField,canonicalRoot,output.roughnessPath,output.integrity[1],knownIntegrity,error) &&
+           ParseTextureReference(object,slot,"normal",canonicalRoot,output.normalPath,output.integrity[2],knownIntegrity,error);
 }
 
 bool ParseTextures(
@@ -100,6 +135,7 @@ bool ParseTextures(
     const std::filesystem::path& canonicalRoot,
     const SkinnedMaterialSidecarLimits3D& limits,
     MaterialTextureSetDefinition3D& output,
+    TextureIntegrityByPath3D& knownIntegrity,
     SkinnedMaterialSidecarError3D& error) {
     const bool hasRoughness=object.Contains("roughness"),hasOrm=object.Contains("orm");
     if (!HasOnlyFields(object, {"baseColor", "roughness", "orm", "normal", "maximumResolution", "layer1", "layer2"}) ||
@@ -107,12 +143,8 @@ bool ParseTextures(
         error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' textures have missing or unknown fields"};
         return false;
     }
-    std::string baseColor;
-    std::string roughness;
-    std::string normal;
     const std::string_view surfaceField=hasOrm?"orm":"roughness";
-    if (!object.Read("baseColor", baseColor) || !object.Read(surfaceField, roughness) || !object.Read("normal", normal) ||
-        !object.Read("maximumResolution", output.maximumResolution)) {
+    if (!object.Read("maximumResolution", output.maximumResolution)) {
         error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' texture fields have invalid types"};
         return false;
     }
@@ -121,9 +153,9 @@ bool ParseTextures(
         return false;
     }
     output.surfaceEncoding=hasOrm?MaterialSurfaceMapEncoding3D::PackedOrm:MaterialSurfaceMapEncoding3D::RoughnessR;
-    if (!ResolveTexturePath(canonicalRoot, slot, "textures.baseColor", baseColor, output.baseColorPath, error) ||
-        !ResolveTexturePath(canonicalRoot, slot, std::string("textures.")+std::string(surfaceField), roughness, output.roughnessPath, error) ||
-        !ResolveTexturePath(canonicalRoot, slot, "textures.normal", normal, output.normalPath, error)) {
+    if (!ParseTextureReference(object,slot,"baseColor",canonicalRoot,output.baseColorPath,output.integrity[0],knownIntegrity,error) ||
+        !ParseTextureReference(object,slot,surfaceField,canonicalRoot,output.roughnessPath,output.integrity[1],knownIntegrity,error) ||
+        !ParseTextureReference(object,slot,"normal",canonicalRoot,output.normalPath,output.integrity[2],knownIntegrity,error)) {
         return false;
     }
     for (std::size_t index = 0; index < output.additionalLayers.size(); ++index) {
@@ -132,7 +164,7 @@ bool ParseTextures(
             continue;
         }
         SerializationObject layer;
-        if (!object.Read(name, layer) || !ParseTextureLayer(layer, slot, name, canonicalRoot, output.additionalLayers[index], error)) {
+        if (!object.Read(name, layer) || !ParseTextureLayer(layer, slot, name, canonicalRoot, output.additionalLayers[index], knownIntegrity, error)) {
             if (!error) error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' " + name + " must be an object"};
             return false;
         }
@@ -209,6 +241,7 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
 
     SkinnedMaterialSidecarResult3D result;
     result.materials.reserve(materialSlotNames.size());
+    TextureIntegrityByPath3D knownIntegrity;
     for (const std::string& slot : materialSlotNames) {
         if (!materials.Contains(slot)) {
             return Failure(ErrorCode::InvalidSchema, "Sidecar is missing AESKIN material slot '" + slot + "'");
@@ -248,7 +281,7 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             return Failure(ErrorCode::InvalidSchema, "Material '" + slot + "' textures must be an object");
         }
         SkinnedMaterialSidecarError3D parseError;
-        if (!ParseTextures(textures, slot, canonicalRoot, limits, material.textures, parseError)) {
+        if (!ParseTextures(textures, slot, canonicalRoot, limits, material.textures, knownIntegrity, parseError)) {
             return Failure(parseError.code, std::move(parseError.message), parseError.offset);
         }
         material.textures.alphaMode=material.material.alphaMode;

@@ -552,7 +552,7 @@ bool VolumetricAtmospherePassD3D12::Record(
 #endif
   constants[19] =
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
-      (std::min)(source.testMutation, 8u);
+      (std::min)(source.testMutation, 9u);
 #else
       0u;
 #endif
@@ -637,6 +637,18 @@ bool VolumetricAtmospherePassD3D12::Record(
   state.stats.appliedCloudShadowStrength = std::bit_cast<float>(constants[70]);
   state.stats.appliedLightShaftShadowStrength = std::bit_cast<float>(constants[71]);
   state.stats.appliedSettingsFingerprint = fingerprint;
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+  state.stats.appliedTestMutation = constants[19];
+  state.stats.appliedFixturePatternHash = constants[19] == 9
+      ? VolumetricAtmosphereUpscaleFixturePatternHash3D(
+            state.stats.outputWidth, state.stats.outputHeight)
+      : 0;
+  state.stats.appliedFixtureWidth = constants[19] == 9 ? state.stats.outputWidth : 0;
+  state.stats.appliedFixtureHeight = constants[19] == 9 ? state.stats.outputHeight : 0;
+  state.stats.appliedResetHistory = source.resetHistory;
+  state.stats.appliedHistoryValid = constants[9] != 0;
+  state.stats.appliedTemporalSampleIndex = constants[23];
+#endif
   std::memcpy(state.constantMapped + std::size_t(frameSlice) * ConstantSliceBytes,
               constants.data(), ConstantSliceBytes);
   commandList->SetComputeRootConstantBufferView(

@@ -17,6 +17,24 @@ enum class VolumetricAtmospherePhase3D : std::uint32_t {
   Night,
 };
 
+#if defined(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS) && AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+// 僅供 internal fixture 驗證 pattern 身分；production ABI 與 shader 路徑完全不含此契約。
+[[nodiscard]] constexpr std::uint64_t VolumetricAtmosphereUpscaleFixturePatternHash3D(
+    std::uint32_t width, std::uint32_t height) noexcept {
+  std::uint64_t hash = 14695981039346656037ull;
+  const auto mix = [&](std::uint32_t value) {
+    for (unsigned byte = 0; byte < 4; ++byte) {
+      hash ^= std::uint8_t(value >> (byte * 8));
+      hash *= 1099511628211ull;
+    }
+  };
+  mix(width); mix(height); mix(0x3ca3d70au); mix(0x3d23d70au);
+  mix(0x3da3d70au); mix(0x3df5c28fu); mix(0x3eb851ecu);
+  mix(0x3e3851ecu); mix(0x3d75c28fu); mix(0x3f1eb852u);
+  return hash;
+}
+#endif
+
 // 64x64 deterministic blue-noise-like tile 將低頻能量推向 Nyquist；shader 再與 R2 時序組合。
 [[nodiscard]] constexpr std::uint8_t
 VolumetricBlueNoiseR8Sample3D(std::uint32_t x, std::uint32_t y) noexcept {
@@ -128,6 +146,13 @@ struct VolumetricAtmospherePassStats3D {
   std::size_t blueNoiseResidentBytes{};
   std::uint64_t temporalTimeJumpResets{};
   std::uint64_t temporalTopologyResets{};
+#if defined(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS) && AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+  std::uint32_t appliedTestMutation{};
+  std::uint64_t appliedFixturePatternHash{};
+  std::uint32_t appliedFixtureWidth{}, appliedFixtureHeight{};
+  bool appliedResetHistory{}, appliedHistoryValid{};
+  std::uint32_t appliedTemporalSampleIndex{};
+#endif
 };
 
 // 以低解析率計算雲層與定向光束；輸出保留為 NON_PIXEL_SHADER_RESOURCE。

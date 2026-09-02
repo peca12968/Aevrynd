@@ -142,6 +142,16 @@ float HeightFogExtinction(float height){return heightFogDensity*exp(clamp(-heigh
 void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
 {
     if(id.x>=outputWidth||id.y>=outputHeight)return;
+#if AEVRYND_VOLUMETRIC_DIAGNOSTICS
+    // 僅供 upscale 負向 gate；固定 Nyquist pattern 不讀場景、時間或 history。
+    if(testMutation==9)
+    {
+        const bool high=((id.x^id.y)&1u)!=0;
+        currentAtmosphere[id.xy]=high?float4(.36,.18,.06,.62):float4(.02,.04,.08,.12);
+        currentSegmentTexture[id.xy]=0;
+        return;
+    }
+#endif
     const float2 uv=(float2(id.xy)+.5)/float2(outputWidth,outputHeight);float3 rayOrigin,ray;
     const bool rayValid=AevryndReconstructWorldRay(uv,inverseViewProjection,cameraPosition,projectionOrthographic!=0,rayOrigin,ray);
     const uint2 depthPixel=min(uint2(viewportOrigin+uv*viewportExtent),uint2(fullWidth-1,fullHeight-1));

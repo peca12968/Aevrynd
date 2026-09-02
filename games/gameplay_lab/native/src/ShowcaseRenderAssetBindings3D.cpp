@@ -121,13 +121,15 @@ std::string_view AssetFor(const ShowcaseSceneDescriptor3D &descriptor) {
     // 水面維持專用 water-optics shader；Ground108 只供河床／河岸層使用。
     return {};
   case ShowcaseSceneKind3D::Tree:
-    return descriptor.meshAsset.find("quiver_tree") != std::string::npos
-               ? "island_tree_01"
-               : "dead_tree_trunk_02";
+    if (descriptor.meshAsset == "poly-haven/island_tree_01/cooked-lod")
+      return "island_tree_01";
+    if (descriptor.meshAsset == "poly-haven/dead_tree_trunk_02/cooked-lod")
+      return "dead_tree_trunk_02";
+    return {};
   case ShowcaseSceneKind3D::Rock:
-    return descriptor.meshAsset.find("rock_09") != std::string::npos
-               ? "boulder_01"
-               : "coastal_cliff_01";
+    if (descriptor.meshAsset == "poly-haven/boulder_01/cooked-lod") return "boulder_01";
+    if (descriptor.meshAsset == "poly-haven/coastal_cliff_01/cooked-lod") return "coastal_cliff_01";
+    return {};
   case ShowcaseSceneKind3D::Building:
     return descriptor.meshAsset.find("roof") != std::string::npos
                ? "RoofingTiles014B"

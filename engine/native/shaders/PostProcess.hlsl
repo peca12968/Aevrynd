@@ -1,4 +1,5 @@
 Texture2D<float4> hdrSceneColor : register(t10);
+Texture2D<float> sceneSemanticDepth : register(t15);
 SamplerState hdrSampler : register(s0);
 cbuffer Composite : register(b0)
 {
@@ -6,6 +7,8 @@ cbuffer Composite : register(b0)
     float4 targetRect;
     float4 antiAliasing;
     float4 bloomParameters;
+    float4 timeOfDayExposure;
+    float4 timeOfDayFilmic;
 };
 
 struct PostProcessVertexOutput
@@ -25,6 +28,26 @@ float3 AcesToneMap(float3 color)
 {
     color = max(color, 0.0) * 1.1;
     return saturate((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14));
+}
+
+float3 ApplyTimeOfDayFilmic(float3 color,float sceneSemantic)
+{
+    if (timeOfDayExposure.w < 0.5)
+        return color;
+    const float luminance = dot(max(color, 0.0), float3(0.2126, 0.7152, 0.0722));
+    // 陰影抬升按原色比例縮放，不加入灰色 ambient，保留材質色相與光照方向。
+    const float lift = timeOfDayExposure.y * exp2(-luminance * 10.0) * timeOfDayExposure.z;
+    const float3 lifted = color * ((luminance + lift) / max(luminance, 0.0005));
+    const float3 filmic=lifted / (1.0 + max(0.0, timeOfDayFilmic.x - 0.5) * luminance * 0.08);
+    // 天空維持legacy能量曲線；陰影抬升與肩部壓縮僅作用於有幾何深度的場景。
+    return lerp(color,filmic,sceneSemantic);
+}
+
+float3 ApplySkyPreservingExposure(float3 color,float exposureEv,float sceneSemantic)
+{
+    if(timeOfDayExposure.w<.5)return color;
+    // HDR天空與高光維持物理能量；曝光只逐步補償低亮度場景，不把天空與bloom一起乘亮。
+    return color*lerp(1.0,exp2(exposureEv),sceneSemantic);
 }
 
 float3 LinearToSrgb(float3 color)
@@ -93,7 +116,9 @@ float4 PostProcessPixelMain(PostProcessVertexOutput input) : SV_TARGET
     const float2 sourceUv = sourcePosition / float2(sourceWidth, sourceHeight);
     const float3 hdrCenter = hdrSceneColor.SampleLevel(hdrSampler, sourceUv, 0.0).rgb;
     // 曝光在色調映射前執行，保留 HDR 高光供泛光擷取。
-    const float3 hdr = (EdgeAdaptiveHdr(sourceUv, hdrCenter)+BloomContribution(sourceUv))*exp2(antiAliasing.w);
+    const float sceneSemantic=1.0-step(.995,sceneSemanticDepth.SampleLevel(hdrSampler,sourceUv,0.0));
+    const float3 exposedScene=ApplySkyPreservingExposure(EdgeAdaptiveHdr(sourceUv,hdrCenter)*exp2(antiAliasing.w),timeOfDayExposure.x,sceneSemantic);
+    const float3 hdr=ApplyTimeOfDayFilmic(exposedScene+BloomContribution(sourceUv),sceneSemantic);
     return float4(LinearToSrgb(AcesToneMap(hdr)), 1.0);
 }
 
@@ -105,7 +130,8 @@ float4 PostProcessLinearExposurePixelMain(PostProcessVertexOutput input) : SV_TA
     const float2 normalizedPosition = saturate((input.position.xy - targetRect.xy) / max(targetRect.zw, 1.0));
     const float2 sourcePosition = sourceRect.xy + normalizedPosition * sourceRect.zw;
     const float2 sourceUv = sourcePosition / float2(sourceWidth, sourceHeight);
-    // 測試專用輸出保留 FP16 線性值，只執行正式曝光運算，不執行 bloom、ACES 或 sRGB。
-    return float4(max(0.0, hdrSceneColor.SampleLevel(hdrSampler, sourceUv, 0.0).rgb) * exp2(antiAliasing.w), 1.0);
+    // 測試專用輸出使用正式非零time-of-day常數與filmic路徑，只略過bloom、ACES及sRGB。
+    const float3 source=max(0.0,hdrSceneColor.SampleLevel(hdrSampler,sourceUv,0.0).rgb)*exp2(antiAliasing.w);
+    return float4(ApplyTimeOfDayFilmic(ApplySkyPreservingExposure(source,timeOfDayExposure.x,1.0),1.0),1.0);
 }
 #endif

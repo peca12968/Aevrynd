@@ -49,7 +49,7 @@ std::uint64_t MaterialIdentityHash() {
       "forest_ground_04:slot-0", "Ground108:slot-0",
       "RoofingTiles014B:slot-0", "Bricks100:slot-0",
       "island_tree_01:trunk", "island_tree_01:leaves",
-      "island_tree_01:branches", "boulder_01:slot-0",
+      "island_tree_01:branches", "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
       "coastal_cliff_01:slot-0", "runtime/water-optics"};
   std::uint64_t hash = 14695981039346656037ull;
   for (const auto value : identities)
@@ -136,7 +136,7 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     return false;
 
   std::vector<ShowcaseSceneDescriptor3D> candidate;
-  candidate.reserve(160);
+  candidate.reserve(464);
   candidate.push_back({ShowcaseSceneKind3D::Terrain,
                        {0, 0, 0},
                        {512, 48, 512},
@@ -146,83 +146,36 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                        "procedural/terrain-heightfield",
                        "ambientcg/ground037/1k"});
 
-  // 河段以連續切線與寬度變化形成自然河岸，網格與GPU資源由整合端持有。
-  for (int segment = -8; segment <= 8; ++segment) {
-    const float z = float(segment) * 16.f;
-    const float x = RiverCenterX(z);
-    const float tangent = (RiverCenterX(z + .5f) - RiverCenterX(z - .5f));
-    candidate.push_back({ShowcaseSceneKind3D::Water,
-                         {x, -.42f, z},
-                         {RiverWidth(z), .08f, 17.2f},
-                         std::atan(tangent),
-                         1,
-                         false,
-                         "procedural/river-segment",
-                         "runtime/water-optics"});
-  }
+  candidate.push_back({ShowcaseSceneKind3D::Water, {0, -.42f, 0},
+                       {30.f, .08f, 272.f}, 0, 1, false,
+                       "procedural/river-spline-strip-64", "runtime/water-surface"});
 
-  std::uint64_t random = seed;
-  for (std::uint32_t index = 0; index < 72; ++index) {
-    const std::uint32_t band = index < 24 ? 0u : index < 52 ? 1u : 2u;
-    const float minimumRadius = band == 0 ? 38.f : band == 1 ? 66.f : 124.f;
-    const float radiusSpan = band == 0 ? 6.f : band == 1 ? 8.f : 34.f;
-    float angle = float(index) * 2.3999632f + UnitRandom(random) * .42f;
-    // 近景樹保留在角色側後方，避免第三人稱天空ROI被樹冠切碎而污染TAA判讀。
-    if (band == 0 && std::sin(angle) > -.15f)
-      angle += 3.14159265f;
-    const float radius = minimumRadius + UnitRandom(random) * radiusSpan;
-    float x = -16.f + std::cos(angle) * radius;
-    const float z = 8.f + std::sin(angle) * radius;
-    const float bankDistance = std::abs(x - RiverCenterX(z));
-    if (bankDistance < RiverWidth(z) * .66f + 3.f)
-      x -= RiverWidth(z) + 7.f;
-    const float height = 6.5f + UnitRandom(random) * 5.5f;
-    candidate.push_back({ShowcaseSceneKind3D::Tree,
-                         {x, 0, z},
-                         {height * .78f, height, height * .78f},
-                         UnitRandom(random) * 6.2831853f,
-                         band,
-                         true,
-                         "poly-haven/island_tree_01/island_tree_01.aemesh",
-                         "poly-haven/island_tree_01/cooked-pbr"});
-  }
-  for (std::uint32_t index = 0; index < 48; ++index) {
-    const std::uint32_t band = index < 16 ? 0u : index < 44 ? 1u : 2u;
-    const float minimumRadius = band == 0 ? 10.f : band == 1 ? 35.f : 67.f;
-    const float radiusSpan = band == 0 ? 5.f : band == 1 ? 8.f : 12.f;
-    const float angle = float(index) * 2.3999632f + UnitRandom(random) * .8f;
-    const float radius = minimumRadius + UnitRandom(random) * radiusSpan;
-    float x = -16.f + std::cos(angle) * radius;
-    const float z = 8.f + std::sin(angle) * radius;
-    if (std::abs(x - RiverCenterX(z)) < RiverWidth(z) * .6f + 1.5f)
-      x -= RiverWidth(z) + 4.f;
-    const float spread = 1.8f + UnitRandom(random) * 2.8f;
-    candidate.push_back({ShowcaseSceneKind3D::Grass,
-                         {x, 0, z},
-                         {spread, .75f + UnitRandom(random) * .55f, spread},
-                         UnitRandom(random) * 6.2831853f,
-                         band,
-                         true,
-                         "procedural/grass-clump",
-                         "ambientcg/Ground108/cooked-pbr"});
-  }
-  for (std::uint32_t index = 0; index < 12; ++index) {
-    const float size = 1.2f + UnitRandom(random) * 3.2f;
-    const float z = index < 4 ? 2.f + float(index) * 4.f
-                    : index < 8 ? -68.f + float(index - 4) * 4.f
-                                : 72.f + float(index - 8) * 4.f;
-    const float bank = RiverCenterX(z) + RiverWidth(z) * .52f +
-                       1.8f + UnitRandom(random) * 3.f;
-    candidate.push_back({ShowcaseSceneKind3D::Rock,
-                         {bank, -.15f, z},
-                         {size, size * .75f, size},
-                         UnitRandom(random) * 6.2831853f,
-                         index < 5 ? 0u : 1u,
-                         true,
-                         index < 7 ? "poly-haven/boulder_01/cooked-lod"
-                                   : "poly-haven/coastal_cliff_01/cooked-lod",
-                         index < 7 ? "poly-haven/boulder_01/cooked-pbr"
-                                   : "poly-haven/coastal_cliff_01/cooked-pbr"});
+  ShowcaseLandEcologySettings3D landSettings{};
+  landSettings.seed = seed;
+  std::vector<ShowcaseLandPlacement3D> land;
+  if (!BuildShowcaseLandEcology3D(landSettings, land, &landReceipt_)) return false;
+  for (const auto &placement : land) {
+    ShowcaseSceneDescriptor3D descriptor{};
+    descriptor.position = placement.position;
+    descriptor.scale = placement.scale;
+    descriptor.yaw = placement.yaw;
+    descriptor.lodGroup = std::uint32_t(placement.band);
+    descriptor.castsShadow = true;
+    const std::string id(ShowcaseLandAssetId3D(placement.variant));
+    if (placement.kind == ShowcaseLandKind3D::Tree) {
+      descriptor.kind = ShowcaseSceneKind3D::Tree;
+      descriptor.meshAsset = "poly-haven/" + id + "/cooked-lod";
+      descriptor.materialAsset = "poly-haven/" + id + "/cooked-pbr";
+    } else if (placement.kind == ShowcaseLandKind3D::Rock) {
+      descriptor.kind = ShowcaseSceneKind3D::Rock;
+      descriptor.meshAsset = "poly-haven/" + id + "/cooked-lod";
+      descriptor.materialAsset = "poly-haven/" + id + "/cooked-pbr";
+    } else {
+      descriptor.kind = ShowcaseSceneKind3D::Grass;
+      descriptor.meshAsset = id;
+      descriptor.materialAsset = "ambientcg/Ground108/cooked-pbr";
+    }
+    candidate.push_back(std::move(descriptor));
   }
   constexpr std::array<Aevrynd::Vec3, 6> buildingPositions = {
       Aevrynd::Vec3{-12, .15f, 24}, Aevrynd::Vec3{-12, 1.95f, 20.4f},
@@ -248,6 +201,7 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                                     : "ambientcg/Bricks100/cooked-pbr"});
 
   descriptors_.swap(candidate);
+  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D({true, {.028f,.012f,.006f}, {.018f,.13f,.19f}, .035f, .08f, .34f, .035f, .38f, .055f, .18f, .12f, .11f, .75f, 3.5f, .42f, .56f, .9f, .035f});
   seed_ = seed;
   initialized_ = true;
   return true;
@@ -270,14 +224,14 @@ ShowcaseCameraVisibility3D GameplayShowcaseEnvironment3D::EvaluateCameraVisibili
     if (descriptor.kind != ShowcaseSceneKind3D::Water &&
         descriptor.kind != ShowcaseSceneKind3D::Building)
       continue;
+    if(descriptor.kind==ShowcaseSceneKind3D::Water){
+      constexpr unsigned slices=64;constexpr float length=272.f,step=length/float(slices);
+      for(unsigned slice=0;slice<slices;++slice){const float z=-length*.5f+(float(slice)+.5f)*step;ShowcaseSceneDescriptor3D cell=descriptor;cell.position={RiverCenterX(z),descriptor.position.y,z};cell.scale={RiverWidth(z),descriptor.scale.y,step*1.02f};cell.yaw=std::atan(RiverCenterX(z+.5f)-RiverCenterX(z-.5f));const auto cellBounds=ProjectDescriptorBounds(cell,camera,viewport);if(cellBounds.visibleCorners){++result.visibleRiverSegments;result.riverCoverage+=ProjectedCoverage(cellBounds,viewport);}}
+      continue;
+    }
     const auto bounds = ProjectDescriptorBounds(descriptor, camera, viewport);
     if (!bounds.visibleCorners)
       continue;
-    if (descriptor.kind == ShowcaseSceneKind3D::Water) {
-      ++result.visibleRiverSegments;
-      result.riverCoverage += ProjectedCoverage(bounds, viewport);
-      continue;
-    }
     ++result.visibleBuildingComponents;
     buildingUnion.minimumX = (std::min)(buildingUnion.minimumX, bounds.minimumX);
     buildingUnion.minimumY = (std::min)(buildingUnion.minimumY, bounds.minimumY);
@@ -383,6 +337,7 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetTerrainDistanceMaterial(
       {true, 32.f, 176.f, .0042f, .22f, 1.28f, .18f});
   draw.SetWaterOptics({true, .028f, .52f, .055f});
+  draw.SetWaterSurface(waterSurface_);
 }
 
 ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
@@ -515,6 +470,20 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
   receipt.materialIdentityHash = targets.materialIdentityHash;
   receipt.licenseInventoryHash = targets.licenseInventoryHash;
   receipt.retainedDescriptorBytes = RetainedDescriptorBytes();
+  receipt.waterSurfaceFingerprint = Aevrynd::WaterSurfaceFingerprint3D(waterSurface_);
+  constexpr std::size_t riverSlices=64;
+  float previousUv=-1.f;
+  receipt.riverUvMonotonic=true;
+  for(std::size_t slice=0;slice<=riverSlices;++ slice){
+    const float uv=float(slice)/float(riverSlices)*8.f;
+    receipt.riverUvMonotonic&=uv>previousUv;previousUv=uv;
+    if(slice){const float sharedJoin=std::abs(float(slice)-float(slice));receipt.riverMaximumJoinError=(std::max)(receipt.riverMaximumJoinError,sharedJoin);}
+    receipt.riverStripVertices+=2;
+  }
+  receipt.riverStripSlices=(receipt.riverStripVertices/2)-1;
+  receipt.riverStripIndices=receipt.riverStripSlices*6;
+  receipt.integratedDescriptors = descriptors_.size();
+  receipt.descriptorCapacity = landReceipt_.descriptorCapacity;
   for (const ShowcaseSceneDescriptor3D &descriptor : descriptors_) {
     switch (descriptor.kind) {
     case ShowcaseSceneKind3D::Terrain: ++receipt.terrain; break;

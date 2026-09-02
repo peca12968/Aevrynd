@@ -75,8 +75,8 @@ int main() {
   const auto repeated = second.Receipt();
   const auto targets = GameplayShowcaseEnvironment3D::Targets();
   if (receipt.worldHash == 0 || receipt.worldHash != repeated.worldHash ||
-      receipt.terrain != 1 || receipt.water != 17 ||
-      receipt.vegetation != 120 || receipt.rocks != 12 ||
+      receipt.terrain != 1 || receipt.water != 1 ||
+      receipt.vegetation != 426 || receipt.rocks != 30 ||
       receipt.buildings != 6 || receipt.trees != targets.treeInstances ||
       receipt.grass != targets.grassInstances ||
       receipt.nearVegetation != targets.nearVegetation ||
@@ -89,6 +89,10 @@ int main() {
       receipt.materialIdentityHash != targets.materialIdentityHash ||
       receipt.licenseInventoryHash == 0 ||
       receipt.licenseInventoryHash != targets.licenseInventoryHash ||
+      receipt.riverStripSlices != 64 || receipt.riverStripVertices != 130 ||
+      receipt.riverStripIndices != 384 || !receipt.riverUvMonotonic ||
+      receipt.riverMaximumJoinError > 0.00001f ||
+      receipt.integratedDescriptors != 464 || receipt.descriptorCapacity != 480 ||
       receipt.retainedDescriptorBytes == 0)
     return 2;
 
@@ -111,7 +115,9 @@ int main() {
       !draw.VolumetricClouds().shadowsEnabled ||
       !draw.DirectionalLightShafts().enabled ||
       !draw.TerrainDistanceMaterial().enabled ||
-      !draw.WaterOptics().screenSpaceRefraction)
+      !draw.WaterOptics().screenSpaceRefraction ||
+      !draw.WaterSurfaceReceipt().rendererApplied ||
+      draw.WaterSurfaceReceipt().fingerprint != receipt.waterSurfaceFingerprint)
     return 3;
 
   const auto day = first.EvaluateLighting(ShowcaseLightingProfile3D::Day);
@@ -260,7 +266,7 @@ int main() {
                                                visibility.visibleBuildingComponents);
     }
     const auto samples = first.EvaluateLodSamples(productionCameras[index].position);
-    if (samples.size() != 132)
+    if (samples.size() != receipt.trees + receipt.grass + receipt.rocks)
       return 10;
     for (const auto &sample : samples) {
       if (!sample.stableLow || !std::isfinite(sample.centerDistance) ||
@@ -396,7 +402,7 @@ int main() {
 
   const auto released = first.Release();
   if (released.worldHashBefore != receipt.worldHash ||
-      released.descriptorsReleased != 156 ||
+      released.descriptorsReleased != receipt.integratedDescriptors ||
       released.retainedBytesBefore == 0 || released.retainedBytesAfter != 0 ||
       first.Initialized() || !first.Descriptors().empty())
     return 7;

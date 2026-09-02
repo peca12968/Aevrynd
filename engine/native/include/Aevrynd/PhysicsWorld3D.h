@@ -10,9 +10,13 @@ namespace Aevrynd {
 enum class RigidBodyType3D : uint8_t {Static,Dynamic,Kinematic};
 struct PhysicsMaterial3D {float friction{.58f},restitution{.08f};};
 struct RigidBodyHandle3D {uint32_t value{};explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const RigidBodyHandle3D&)const=default;};
-struct RigidBodySettings3D {RigidBodyType3D type{RigidBodyType3D::Static};Transform3D transform{};Vec3 colliderExtents{.5f,.5f,.5f};float mass{1.f},gravityScale{1.f};PhysicsMaterial3D material{};uint32_t layer{1},collisionMask{0xffffffffu};bool allowSleep{true};};
+struct RigidBodySettings3D {RigidBodyType3D type{RigidBodyType3D::Static};Transform3D transform{};Vec3 colliderExtents{.5f,.5f,.5f};float mass{1.f},gravityScale{1.f};PhysicsMaterial3D material{};uint32_t layer{1},collisionMask{0xffffffffu};bool allowSleep{true};std::uint64_t stableId{};};
 struct RigidBodyState3D {RigidBodyHandle3D handle{};RigidBodySettings3D settings{};Vec3 velocity{},accumulatedForce{},staticContactNormal{},previousPosition{};float sleepClock{};bool sleeping{};};
 struct PhysicsWorldStats3D {std::size_t bodies{},staticBodies{},dynamicBodies{},kinematicBodies{},sleepingBodies{},broadPhaseObstacles{},broadPhaseDynamicBodies{};uint64_t steps{},substeps{},broadPhaseQueries{},broadPhaseCandidates{},broadPhaseTests{},broadPhaseRejected{},layerRejected{},continuousCollisionTests{},continuousContacts{},broadPhaseBuilds{},broadPhaseReuses{},dynamicPairPasses{},dynamicPairCandidates{},dynamicPairTests{},dynamicPairRejected{},dynamicLayerRejected{},dynamicContinuousCollisionTests{},dynamicContinuousContacts{},dynamicContacts{},contacts{},sleepTransitions{};};
+struct PhysicsQuaternion3D {float x{},y{},z{},w{1};};
+[[nodiscard]] bool CanonicalizePhysicsQuaternion3D(PhysicsQuaternion3D input,PhysicsQuaternion3D& output)noexcept;
+struct PhysicsBodyDeterminismReceipt3D {std::uint64_t stableId{};RigidBodyHandle3D handle{};Vec3 position{};PhysicsQuaternion3D rotation{};Vec3 linearVelocity{};std::uint64_t hash{};};
+struct PhysicsDeterminismReceipt3D {static constexpr std::uint32_t SchemaVersion=1;std::uint32_t schemaVersion{SchemaVersion};bool valid{};std::uint64_t aggregate{};std::vector<PhysicsBodyDeterminismReceipt3D> bodies{};};
 
 class PhysicsWorld3D {
 public:
@@ -29,6 +33,7 @@ public:
     void SetGravity(Vec3 gravity){gravity_=gravity;}
     Vec3 Gravity()const{return gravity_;}
     PhysicsWorldStats3D Stats()const;
+    PhysicsDeterminismReceipt3D CaptureDeterminismReceipt()const;
     ReusableMemoryStats MemoryStats()const;
     std::size_t TrimUnusedMemory();
     bool CanRebaseOrigin(Vec3 delta)const noexcept;

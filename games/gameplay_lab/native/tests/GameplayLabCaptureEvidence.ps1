@@ -15,6 +15,20 @@ function Get-GameplayGodCoverageContract {
   $script:GameplayGodCoverageContract=[pscustomobject]@{coverage=$coverage;width=$width;height=$height;minimumPixels=[uint64][Math]::Ceiling($coverage*$width*$height)}
   return $script:GameplayGodCoverageContract
 }
+
+function Assert-GameplayCameraPolicyReceipt($Receipt,[string]$RunId,[string[]]$ExpectedNames){
+  if($Receipt.runId-cne$RunId-or$Receipt.source-cne'GameplayLabCameraPolicy'-or@($Receipt.captures).Count-ne$ExpectedNames.Count){throw 'Gameplay camera policy receipt identity failed'}
+  $paletteMinimum=[double][single]0.08;$runtimeMinimum=[double][single]0.05
+  for($index=0;$index-lt$ExpectedNames.Count;++$index){$capture=$Receipt.captures[$index];$palette=$ExpectedNames[$index]-ceq'palette-building.png';$minimum=if($palette){$paletteMinimum}else{$runtimeMinimum};if($capture.name-cne$ExpectedNames[$index]-or[uint64]$capture.paletteOpen-ne[uint64]$palette-or[single]$capture.minimumSubjectScreenArea-ne[single]$minimum-or($palette-and[single]$capture.actualSubjectScreenArea-lt[single]$paletteMinimum)){throw "Gameplay camera palette open/close/minimum-area contract failed: $($ExpectedNames[$index])"}}
+}
+
+function Resolve-GameplayCaptureExecutablePath([string]$Executable,[string]$AllowedRoot){
+  if([string]::IsNullOrWhiteSpace($Executable)-or$Executable-match'(^|[\\/])\.\.([\\/]|$)'){throw 'Gameplay capture executable path is empty or contains traversal'}
+  $root=[IO.Path]::GetFullPath($AllowedRoot).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+  try{$resolved=(Resolve-Path -LiteralPath $Executable -ErrorAction Stop).Path}catch{throw 'Gameplay capture executable does not exist'}
+  $full=[IO.Path]::GetFullPath($resolved);if(-not(Test-Path -LiteralPath $full -PathType Leaf)-or[IO.Path]::GetExtension($full)-cne'.exe'-or-not$full.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)-or[IO.Path]::GetPathRoot($full)-cne[IO.Path]::GetPathRoot($root)){throw 'Gameplay capture executable escaped the allowed root or is not an executable file'}
+  return $full
+}
 function Get-GameplayEvidenceBgra32($Bitmap) {
   $converted=[Drawing.Bitmap]::new($Bitmap.Width,$Bitmap.Height,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $graphics=[Drawing.Graphics]::FromImage($converted);$data=$null
@@ -210,6 +224,13 @@ function Get-GameplayEvidenceTextSha256Hex([string]$Text) {
   }
 }
 
+function Get-GameplayCanonicalSingleRawBits($Value) {
+  $single=[single]$Value
+  if([single]::IsNaN($single)-or[single]::IsInfinity($single)){throw 'Gameplay canonical single was not finite'}
+  if($single-eq[single]0){return [uint32]0}
+  return [BitConverter]::ToUInt32([BitConverter]::GetBytes($single),0)
+}
+
 function Get-GameplayGitSealEvidence([string]$SourceRoot) {
   if ([string]::IsNullOrWhiteSpace($SourceRoot) -or -not (Test-Path -LiteralPath $SourceRoot -PathType Container)) {
     throw 'Final evidence Git source root is missing'
@@ -238,6 +259,37 @@ function Get-GameplayGitSealEvidence([string]$SourceRoot) {
   }
 }
 
+function Assert-GameplayFrameBoundRenderProvenance {
+  param(
+    [Parameter(Mandatory=$true)]$Value,
+    [Parameter(Mandatory=$true)][uint64]$ExpectedFrameSerial,
+    [Parameter(Mandatory=$true)][uint64]$ExpectedSceneDrawRevision,
+    [Parameter(Mandatory=$true)][string]$Context
+  )
+  $required=@('frameSerial','sceneDrawRevision','worldRevision','submittedMeshInstances','submittedSkinnedInstances','submittedTerrainInstances','submittedWorldVertices','submittedWorldIndices')
+  if($null-eq$Value){throw "Frame-bound render provenance missing: $Context"}
+  foreach($field in $required){if($null-eq$Value.PSObject.Properties[$field]){throw "Frame-bound render provenance field missing: $Context field=$field"}}
+  $submittedInstances=[uint64]$Value.submittedMeshInstances+[uint64]$Value.submittedSkinnedInstances+[uint64]$Value.submittedTerrainInstances
+  $worldPayloadPresent=[uint64]$Value.submittedWorldVertices-gt0-and[uint64]$Value.submittedWorldIndices-gt0-and[uint64]$Value.worldRevision-gt0
+  $worldPayloadAbsent=[uint64]$Value.submittedWorldVertices-eq0-and[uint64]$Value.submittedWorldIndices-eq0-and[uint64]$Value.worldRevision-eq0
+  if([uint64]$Value.frameSerial-ne$ExpectedFrameSerial-or[uint64]$Value.sceneDrawRevision-ne$ExpectedSceneDrawRevision-or$submittedInstances-lt1-or(-not$worldPayloadPresent-and-not$worldPayloadAbsent)){throw "Frame-bound render provenance gate failed: $Context"}
+  return $true
+}
+
+function Assert-GameplayDeterminismIntegrityEvidence {
+  param(
+    [Parameter(Mandatory=$true)]$Receipt,
+    [Parameter(Mandatory=$true)][ValidateRange(1,1024)][int]$ExpectedCaptures,
+    $SequenceReceipt=@(),
+    $CharacterReceipt=@()
+  )
+  if($null-eq$Receipt-or$Receipt.source-ne'GameplayLabDeterminismIntegrity'){throw 'Determinism integrity sidecar missing'}
+  $captures=@($Receipt.captures);if($captures.Count-ne$ExpectedCaptures){throw 'Determinism integrity capture count mismatch'}
+  $names=@{};foreach($capture in $captures){if([string]::IsNullOrWhiteSpace([string]$capture.name)-or$names.ContainsKey([string]$capture.name)){throw 'Determinism integrity capture name was missing or duplicated'};$names[[string]$capture.name]=$true;$fingerprint=$capture.canonicalDrawFingerprint;if($capture.determinismFrameSerial-lt1-or$capture.determinismIntegrityRequested-ne'SealedCapture'-or$capture.determinismIntegrityActual-ne'SealedCapture'-or$capture.determinismIntegrityReason-ne'None'-or$capture.determinismIntegrityRejected-ne0-or$capture.determinismIntegritySampled-ne$capture.determinismIntegrityVerified-or$capture.determinismIntegritySampled-lt1-or$capture.determinismIntegrityAcceptedFrame-ne1-or$null-eq$fingerprint-or$fingerprint.schemaVersion-ne1-or$fingerprint.topology-eq0-or$fingerprint.material-eq0-or$fingerprint.transform-eq0-or$fingerprint.palette-eq0-or$fingerprint.identity-eq0-or$fingerprint.order-eq0){throw "Determinism integrity sealed capture gate failed: $($capture.name)"};if(@($SequenceReceipt).Count){$sequence=@($SequenceReceipt.captures|Where-Object name -eq $capture.name);if($sequence.Count-ne1-or@($sequence[0].phases).Count-lt2){throw "Frame-bound determinism sequence evidence missing: $($capture.name)"};$phases=@($sequence[0].phases);foreach($phase in $phases){$phaseFingerprint=$phase.canonicalDrawFingerprint;if($phase.determinismFrameSerial-ne$phase.frameSerial-or$phase.determinismIntegrityRequested-ne'SealedCapture'-or$phase.determinismIntegrityActual-ne'SealedCapture'-or$phase.determinismIntegrityReason-ne'None'-or$phase.determinismIntegrityRejected-ne0-or$phase.determinismIntegritySampled-ne$phase.determinismIntegrityVerified-or$phase.determinismIntegritySampled-lt1-or$phase.determinismIntegrityAcceptedFrame-ne1-or$null-eq$phaseFingerprint-or$phaseFingerprint.schemaVersion-ne1-or$phaseFingerprint.topology-eq0-or$phaseFingerprint.material-eq0-or$phaseFingerprint.transform-eq0-or$phaseFingerprint.palette-eq0-or$phaseFingerprint.identity-eq0-or$phaseFingerprint.order-eq0){throw "Frame-bound determinism phase gate failed: $($capture.name) phase=$($phase.index)"};$null = Assert-GameplayFrameBoundRenderProvenance -Value $phase.renderProvenance -ExpectedFrameSerial ([uint64]$phase.frameSerial) -ExpectedSceneDrawRevision ([uint64]$phase.drawListRevision) -Context "$($capture.name) phase=$($phase.index)"};$effective=$phases[1];foreach($field in @('determinismFrameSerial','determinismIntegrityRequested','determinismIntegrityActual','determinismIntegrityReason','determinismIntegritySampled','determinismIntegrityVerified','determinismIntegrityRejected','determinismIntegrityAcceptedFrame')){if($capture.$field-ne$effective.$field){throw "Effective frame-bound integrity drifted: $($capture.name) field=$field"}};if(($capture.canonicalDrawFingerprint|ConvertTo-Json -Compress)-cne($effective.canonicalDrawFingerprint|ConvertTo-Json -Compress)){throw "Effective canonical fingerprint drifted: $($capture.name)"};if(($capture.renderProvenance|ConvertTo-Json -Compress)-cne($effective.renderProvenance|ConvertTo-Json -Compress)){throw "Effective render provenance drifted: $($capture.name)"};if(@($CharacterReceipt).Count){$character=@($CharacterReceipt.captures|Where-Object name -eq $capture.name);if($character.Count-ne1){throw "Character frame-bound integrity missing: $($capture.name)"};foreach($field in @('determinismFrameSerial','determinismIntegrityRequested','determinismIntegrityActual','determinismIntegrityReason','determinismIntegritySampled','determinismIntegrityVerified','determinismIntegrityRejected','determinismIntegrityAcceptedFrame')){if($character[0].$field-ne$effective.$field){throw "Character frame-bound integrity drifted: $($capture.name) field=$field"}};if(($character[0].canonicalDrawFingerprint|ConvertTo-Json -Compress)-cne($effective.canonicalDrawFingerprint|ConvertTo-Json -Compress)){throw "Character canonical fingerprint drifted: $($capture.name)"};if(($character[0].renderProvenance|ConvertTo-Json -Compress)-cne($effective.renderProvenance|ConvertTo-Json -Compress)){throw "Character render provenance drifted: $($capture.name)"}}}}
+  if($ExpectedCaptures-eq11){$expected=@(Get-GameplayCaptureViewExpectations|ForEach-Object name|Sort-Object);$actual=@($captures|ForEach-Object name|Sort-Object);if(@(Compare-Object -CaseSensitive $expected $actual).Count){throw 'Determinism integrity capture names did not match the exact capture set'}}
+  return $true
+}
+
 function Get-GameplayCanonicalStateSha($Receipt,$Environment,$Collision,$Palette,$Character,$Camera,$Sequence,$Photoreal) {
   $copyWithoutRunId={param($value)$result=[ordered]@{};foreach($property in $value.PSObject.Properties){if($property.Name-ne'runId'){$result[$property.Name]=$property.Value}};return $result}
   $receiptFields=@('captures','entities','physicsBodies','authoritativePhysicsTick','authoritativePhysicsSteps','cameraSwitches','jumps','crouches','palettePreviews','paletteCommits','combatSweeps','combatHits','combatKills','monsterHealth','animationState','weaponAnimationSyncPassed','firstPersonBodyHidden','femaleFirstPersonArms','maleFirstPersonArms','femaleCharacterMaterialCount','maleCharacterMaterialCount','characterMaterialCount','characterMaterialLoadFailures','gpuValidationRequested','gpuValidationAvailable','gpuValidationExecuted','debugLayerEnabled','gpuValidationPassed','authoritativeTrajectoryHash','authoritativeAttackTrajectoryHashes','authoritativeTrajectoryCheckpointCount','authoritativeAttackCheckpointCounts')
@@ -246,7 +298,7 @@ function Get-GameplayCanonicalStateSha($Receipt,$Environment,$Collision,$Palette
   $paletteState=&$copyWithoutRunId $Palette;$paletteState.Remove('drawnFrames')
   $sequenceCaptures=@($Sequence.captures)
   $characterCaptures=@($Character.captures);$objectGenerationBase=if($characterCaptures.Count){[int64]$characterCaptures[0].objectIdGeneration}else{0};$depthGenerationBase=if($characterCaptures.Count){[int64]$characterCaptures[0].depthGeneration}else{0};$characterCaptureState=@()
-  for($captureIndex=0;$captureIndex-lt$characterCaptures.Count;++$captureIndex){$capture=$characterCaptures[$captureIndex];$state=[ordered]@{};foreach($property in $capture.PSObject.Properties){if($property.Name-notin@('objectIdGeneration','depthGeneration','contactFrameSerial')){$state[$property.Name]=$property.Value}};$effectivePhase=if($captureIndex-lt$sequenceCaptures.Count-and@($sequenceCaptures[$captureIndex].phases).Count-gt1){$sequenceCaptures[$captureIndex].phases[1]}else{$null};$state.objectIdGenerationDelta=[int64]$capture.objectIdGeneration-$objectGenerationBase;$state.depthGenerationDelta=[int64]$capture.depthGeneration-$depthGenerationBase;$state.objectDepthGenerationDelta=[int64]$capture.depthGeneration-[int64]$capture.objectIdGeneration;$state.contactMatchesEffective=$null-ne$effectivePhase-and$capture.contactFrameSerial-eq$effectivePhase.frameSerial;$characterCaptureState+=$state}
+  for($captureIndex=0;$captureIndex-lt$characterCaptures.Count;++$captureIndex){$capture=$characterCaptures[$captureIndex];$sequencePhases=if($captureIndex-lt$sequenceCaptures.Count){@($sequenceCaptures[$captureIndex].phases)}else{@()};$basePhase=if($sequencePhases.Count){$sequencePhases[0]}else{$null};$effectivePhase=if($sequencePhases.Count-gt1){$sequencePhases[1]}else{$null};$state=[ordered]@{};foreach($property in $capture.PSObject.Properties){if($property.Name-notin@('objectIdGeneration','depthGeneration','contactFrameSerial','determinismFrameSerial','renderProvenance')){$state[$property.Name]=$property.Value}};$render=[ordered]@{};foreach($property in $capture.renderProvenance.PSObject.Properties){if($property.Name-ne'frameSerial'){$render[$property.Name]=$property.Value}};$render.frameSerialDelta=if($null-ne$basePhase){[int64]$capture.renderProvenance.frameSerial-[int64]$basePhase.frameSerial}else{0};$render.matchesEffective=$null-ne$effectivePhase-and$capture.renderProvenance.frameSerial-eq$effectivePhase.frameSerial;$render.afterBase=$null-ne$basePhase-and$capture.renderProvenance.frameSerial-gt$basePhase.frameSerial;$state.renderProvenance=$render;$state.objectIdGenerationDelta=[int64]$capture.objectIdGeneration-$objectGenerationBase;$state.depthGenerationDelta=[int64]$capture.depthGeneration-$depthGenerationBase;$state.objectDepthGenerationDelta=[int64]$capture.depthGeneration-[int64]$capture.objectIdGeneration;$state.contactMatchesEffective=$null-ne$effectivePhase-and$capture.contactFrameSerial-eq$effectivePhase.frameSerial;$state.determinismMatchesEffective=$null-ne$effectivePhase-and$capture.determinismFrameSerial-eq$effectivePhase.frameSerial;$characterCaptureState+=$state}
   $characterState=[ordered]@{};foreach($property in $Character.PSObject.Properties){if($property.Name-notin@('runId','captures')){$characterState[$property.Name]=$property.Value}};$characterState.captures=$characterCaptureState
   $sequenceBaseToken=if($sequenceCaptures.Count){[int64]$sequenceCaptures[0].token}else{0};$sequenceState=@()
   foreach($capture in $sequenceCaptures){$phases=@($capture.phases);$first=if($phases.Count){$phases[0]}else{$null};$phaseState=@();foreach($phase in $phases){$phaseState+=[ordered]@{index=$phase.index;sequenceIndex=$phase.sequenceIndex;tokenMatchesCapture=($phase.sequenceToken-eq$capture.token);drawListRevision=$phase.drawListRevision;cameraHash=$phase.cameraHash;stateHash=$phase.stateHash;invariantHash=$phase.invariantHash;frameDelta=if($first){[int64]$phase.frameSerial-[int64]$first.frameSerial}else{0};viewProjectionHash=$phase.viewProjectionHash;tokenGenerationDelta=if($first){[int64]$phase.tokenGeneration-[int64]$first.tokenGeneration}else{0};historyGenerationDelta=if($first){[int64]$phase.historyGeneration-[int64]$first.historyGeneration}else{0};historyIndexStable=if($first){$phase.historyIndex-eq$first.historyIndex}else{$false};jitterIndex=$phase.jitterIndex;jitterX=$phase.jitterX;jitterY=$phase.jitterY;excludingOpacity=$phase.excludingOpacity;includingOpacity=$phase.includingOpacity;identityOrder=$phase.identityOrder}}
@@ -442,17 +494,17 @@ function Get-GameplayThirdPersonOcclusionPathEvidence($Capture) {
 
 function Get-GameplayCaptureViewExpectations {
   return @(
-    [pscustomobject]@{name='first-day.png';camera='first';lighting='day';requireLodTransition=$false},
-    [pscustomobject]@{name='third-day.png';camera='third';lighting='day';requireLodTransition=$false},
+    [pscustomobject]@{name='first-day.png';camera='first';lighting='day';requireLodTransition=$true},
+    [pscustomobject]@{name='third-day.png';camera='third';lighting='day';requireLodTransition=$true},
     [pscustomobject]@{name='god-day.png';camera='god';lighting='day';requireLodTransition=$true},
-    [pscustomobject]@{name='first-dusk.png';camera='first';lighting='dusk';requireLodTransition=$false},
-    [pscustomobject]@{name='third-dusk.png';camera='third';lighting='dusk';requireLodTransition=$false},
+    [pscustomobject]@{name='first-dusk.png';camera='first';lighting='dusk';requireLodTransition=$true},
+    [pscustomobject]@{name='third-dusk.png';camera='third';lighting='dusk';requireLodTransition=$true},
     [pscustomobject]@{name='god-dusk.png';camera='god';lighting='dusk';requireLodTransition=$true},
-    [pscustomobject]@{name='first-night.png';camera='first';lighting='night';requireLodTransition=$false},
-    [pscustomobject]@{name='third-night.png';camera='third';lighting='night';requireLodTransition=$false},
+    [pscustomobject]@{name='first-night.png';camera='first';lighting='night';requireLodTransition=$true},
+    [pscustomobject]@{name='third-night.png';camera='third';lighting='night';requireLodTransition=$true},
     [pscustomobject]@{name='god-night.png';camera='god';lighting='night';requireLodTransition=$true},
-    [pscustomobject]@{name='palette-building.png';camera='third';lighting='day';requireLodTransition=$false},
-    [pscustomobject]@{name='melee-combat.png';camera='third';lighting='dusk';requireLodTransition=$false}
+    [pscustomobject]@{name='palette-building.png';camera='third';lighting='day';requireLodTransition=$true},
+    [pscustomobject]@{name='melee-combat.png';camera='third';lighting='dusk';requireLodTransition=$true}
   )
 }
 
@@ -486,6 +538,15 @@ function Assert-GameplayRunEvidence(
      [uint64]$Receipt.characterMaterialCount-ne([uint64]$Receipt.femaleCharacterMaterialCount+[uint64]$Receipt.maleCharacterMaterialCount)){
     throw 'Gameplay female/male character material main/typed count mismatch'
   }
+  $paletteReplay=@($Character.paletteReplayDiagnostics)
+  if($paletteReplay.Count-ne3){throw 'Gameplay palette replay diagnostic count mismatch'}
+  $fixedDelta=[single](1.0/60.0);$fixedDeltaBits=[BitConverter]::ToUInt32([BitConverter]::GetBytes($fixedDelta),0)
+  $authorityCameraHash=[uint64]$paletteReplay[0].cameraHash;$authorityInputHash=[uint64]$paletteReplay[0].cameraAuthorityInputHash;$authorityCameraRaw=(@($paletteReplay[0].cameraRawBits)|ConvertTo-Json -Compress)
+  for($replayIndex=0;$replayIndex-lt3;++$replayIndex){$row=$paletteReplay[$replayIndex];$pointer=@($row.normalizedPointer);$origin=@($row.rayOrigin);$direction=@($row.rayDirection);$hit=@($row.projectedHit);$target=@($row.snappedTarget);$cameraRaw=@($row.cameraRawBits);if($row.observed-ne1-or$row.inputSource-cne'FixedTickReplayAuthoritativeGodCamera'-or$row.liveSuppressed-ne1-or$row.deltaSource-cne'CaptureFixed60Hz'-or[single]$row.gameplayDelta-ne$fixedDelta-or[uint32]$row.gameplayDeltaRawBits-ne$fixedDeltaBits-or[uint64]$row.cameraHash-lt1-or[uint64]$row.cameraAuthorityInputHash-lt1-or[uint64]$row.cameraAuthorityInputHash-ne$authorityInputHash-or[uint64]$row.cameraHash-ne$authorityCameraHash-or$cameraRaw.Count-ne13-or($cameraRaw|ConvertTo-Json -Compress)-cne$authorityCameraRaw-or[uint64]$row.cameraProjectionMode-ne1-or$row.cameraProjectionModeName-cne'Orthographic'-or$row.tick-ne24+$replayIndex-or$pointer.Count-ne2-or$origin.Count-ne3-or$direction.Count-ne3-or$hit.Count-ne3-or$target.Count-ne3-or$row.hitValid-notin@(0,1)-or$row.previewActive-notin@(0,1)-or$row.previewValid-notin@(0,1)-or$row.undoDepth-lt18-or$row.redoDepth-lt0-or@($pointer+$origin+$direction+$hit+$target|Where-Object{[single]::IsNaN([single]$_)-or[single]::IsInfinity([single]$_)}).Count-or$pointer[0]-lt0-or$pointer[0]-gt1-or$pointer[1]-lt0-or$pointer[1]-gt1){throw "Gameplay palette replay typed diagnostic failed: tick=$($row.tick)"}}
+  $placement=$paletteReplay[2];$rayOrigin=@($placement.rayOrigin);$rayDirection=@($placement.rayDirection);$projected=@($placement.projectedHit);$snapped=@($placement.snappedTarget)
+  if($placement.hitValid-ne1-or$placement.previewValid-ne1-or$placement.placementRaySource-cne'ScreenPointToRayAuthoritativeGodCamera'-or$placement.placementPlaneSource-cne'WorldYPlane'-or$placement.placementGridSource-cne'ObjectPalette2mGrid'-or[uint32]$placement.gridStepRawBits-ne(Get-GameplayCanonicalSingleRawBits $placement.gridStep)-or[uint32]$placement.placementPlaneHeightRawBits-ne(Get-GameplayCanonicalSingleRawBits $placement.placementPlaneHeight)-or$placement.footPlacementCameraDistanceSource-cne'PreviousFixedCamera'-or[uint32]$placement.footPlacementCameraDistanceRawBits-ne(Get-GameplayCanonicalSingleRawBits $placement.footPlacementCameraDistance)-or[uint64]$placement.cameraSubjectPoseHash-lt1-or[math]::Abs([single]$rayDirection[1])-lt.0001){throw 'Gameplay authoritative God palette ray/plane/grid provenance failed'}
+  $rayT=([single]$placement.placementPlaneHeight-[single]$rayOrigin[1])/[single]$rayDirection[1];$expectedProjected=@(([single]$rayOrigin[0]+[single]$rayDirection[0]*$rayT),([single]$placement.placementPlaneHeight),([single]$rayOrigin[2]+[single]$rayDirection[2]*$rayT));$grid=[single]$placement.gridStep;$expectedSnapped=@(([math]::Round($expectedProjected[0]/$grid,[MidpointRounding]::AwayFromZero)*$grid),([single]$placement.placementPlaneHeight+.5),([math]::Round($expectedProjected[2]/$grid,[MidpointRounding]::AwayFromZero)*$grid))
+  for($axis=0;$axis-lt3;++$axis){if([math]::Abs([single]$projected[$axis]-[single]$expectedProjected[$axis])-gt.00001-or[math]::Abs([single]$snapped[$axis]-[single]$expectedSnapped[$axis])-gt.00001){throw "Gameplay authoritative God palette ray/plane/grid recompute failed: axis=$axis"}}
   Assert-GameplayOrderedCaptureNames $Character.captures $ExpectedNames 'character'
   Assert-GameplayOrderedCaptureNames $Camera.captures $ExpectedNames 'camera'
   Assert-GameplayOrderedCaptureNames $Sequence.captures $ExpectedNames 'sequence'
@@ -528,23 +589,26 @@ function Assert-GameplayRunEvidence(
       $Photoreal.lodDualSubmissions -lt 1 -or $Photoreal.lodBudgetFallbacks -ne 0) {
     throw 'Gameplay typed semantic/shadow/LOD evidence failed'
   }
+  $expectedWorld = [uint64]$Environment.terrainPatches + [uint64]$Environment.waterSegments + [uint64]$Environment.treeInstances + [uint64]$Environment.grassInstances + [uint64]$Environment.rockInstances + [uint64]$Environment.buildingComponents
+  $expectedSolid = [uint64]$Environment.terrainPatches + [uint64]$Environment.treeInstances + [uint64]$Environment.rockInstances + [uint64]$Environment.buildingComponents
+  $expectedNonSolid = [uint64]$Environment.waterSegments + [uint64]$Environment.grassInstances
   if ($Environment.source -ne 'GameplayShowcaseEnvironment3D' -or $Environment.worldHash -eq 0 -or
-      $Environment.descriptors -ne 156 -or $Environment.submittedDescriptors -ne 156 -or
+      $Environment.descriptors -ne $expectedWorld -or $expectedWorld -gt 480 -or $Environment.submittedDescriptors -ne $expectedWorld -or
       $Environment.executionObserved -ne 1 -or @($Environment.counterDeltas).Count -ne 10 -or
       @($Environment.counterDeltas | Where-Object { $_ -le 0 }).Count -ne 0 -or
-      $Environment.releasedDescriptors -ne 156 -or $Environment.retainedBytesAfterRelease -ne 0) {
+      $Environment.releasedDescriptors -ne $expectedWorld -or $Environment.retainedBytesAfterRelease -ne 0) {
     throw 'Gameplay environment typed execution/release evidence failed'
   }
   if ($Collision.source -ne 'EnvironmentCollisionStreaming3D' -or $Collision.stateHash -eq 0 -or
-      $Collision.descriptors -ne 156 -or $Collision.solidDescriptors -ne 91 -or
-      $Collision.nonSolidDescriptors -ne 65 -or $Collision.activePartitions -ne 1 -or
-      $Collision.activeColliders -ne 91 -or $Collision.activePhysicsBodies -ne 91 -or
+      $Collision.descriptors -ne $expectedWorld -or $Collision.solidDescriptors -ne $expectedSolid -or
+      $Collision.nonSolidDescriptors -ne $expectedNonSolid -or $Collision.solidDescriptors + $Collision.nonSolidDescriptors -ne $expectedWorld -or $Collision.activePartitions -ne 1 -or
+      $Collision.activeColliders -ne $expectedSolid -or $Collision.activePhysicsBodies -ne $expectedSolid -or
       $Collision.activations -lt 2 -or $Collision.deactivations -lt 1 -or
       $Collision.failedActivations -ne 0 -or $Collision.rollbacks -ne 0 -or
       $Collision.stableIdEvidence -ne 1 -or $Collision.rayEvidence -ne 1 -or
       $Collision.meleeQueryEvidence -ne 1 -or $Collision.reloadStable -ne 1 -or
-      $Collision.releasedDescriptors -ne 156 -or $Collision.releasedColliders -ne 91 -or
-      $Collision.releasedPhysicsBodies -ne 91 -or $Collision.retainedBytesAfterRelease -ne 0 -or
+      $Collision.releasedDescriptors -ne $expectedWorld -or $Collision.releasedColliders -ne $expectedSolid -or
+      $Collision.releasedPhysicsBodies -ne $expectedSolid -or $Collision.retainedBytesAfterRelease -ne 0 -or
       $Collision.activeCollidersAfterRelease -ne 0 -or $Collision.activePhysicsBodiesAfterRelease -ne 0) {
     throw 'Gameplay collision typed execution/release evidence failed'
   }
@@ -565,8 +629,10 @@ function Assert-GameplayRunEvidence(
     $third = $ExpectedNames[$index] -like 'third-*' -or $ExpectedNames[$index] -in @('palette-building.png', 'melee-combat.png')
     $horizonFields=@('topCenterRayElevation','minimumTopCenterRayElevation','rejectedHorizon')
     foreach($field in $horizonFields){if($null-eq$capture.PSObject.Properties[$field]-or$null-eq$cameraCapture.PSObject.Properties[$field]-or$capture.$field-ne$cameraCapture.$field){throw "Gameplay character/camera analytic horizon provenance mismatch: $($capture.name) $field"};if($capture.$field-isnot[ValueType]-or$capture.$field-is[bool]-or$cameraCapture.$field-isnot[ValueType]-or$cameraCapture.$field-is[bool]){throw "Gameplay analytic horizon field is not numeric: $($capture.name) $field"}}
-    $actualHorizon=[double]$capture.topCenterRayElevation;$minimumHorizon=[double]$capture.minimumTopCenterRayElevation;$rejectedHorizon=[double]$capture.rejectedHorizon
-    if($third){if([double]::IsNaN($actualHorizon)-or[double]::IsInfinity($actualHorizon)-or[double]::IsNaN($minimumHorizon)-or[double]::IsInfinity($minimumHorizon)-or$minimumHorizon-lt.03-or$actualHorizon-lt$minimumHorizon-or[double]::IsNaN($rejectedHorizon)-or[double]::IsInfinity($rejectedHorizon)-or$rejectedHorizon-lt1-or$rejectedHorizon-ne[Math]::Floor($rejectedHorizon)){throw "Gameplay third-person analytic horizon gate failed: $($capture.name) actual=$actualHorizon minimum=$minimumHorizon rejected=$rejectedHorizon"}}
+    foreach($field in @('topCenterRayElevation','minimumTopCenterRayElevation')){$bitsField="${field}RawBits";if($null-eq$capture.PSObject.Properties[$bitsField]-or$null-eq$cameraCapture.PSObject.Properties[$bitsField]-or[uint32]$capture.$bitsField-ne[uint32]$cameraCapture.$bitsField){throw "Gameplay character/camera analytic horizon raw-bit provenance mismatch: $($capture.name) $field"};$value=[single]$capture.$field;$valueBits=[BitConverter]::ToUInt32([BitConverter]::GetBytes($value),0);if([single]::IsNaN($value)-or[single]::IsInfinity($value)-or$valueBits-ne[uint32]$capture.$bitsField){throw "Gameplay analytic horizon text/raw-bit round-trip mismatch: $($capture.name) $field"}}
+    $actualHorizon=[single]$capture.topCenterRayElevation;$minimumHorizon=[single]$capture.minimumTopCenterRayElevation;$rejectedHorizon=[double]$capture.rejectedHorizon
+    $minimumHorizonContract=[double][single]0.03;$minimumHorizonBits=[BitConverter]::ToUInt32([BitConverter]::GetBytes([single]0.03),0)
+    if($third){if([double]::IsNaN($actualHorizon)-or[double]::IsInfinity($actualHorizon)-or[double]::IsNaN($minimumHorizon)-or[double]::IsInfinity($minimumHorizon)-or$minimumHorizon-lt$minimumHorizonContract-or[uint32]$capture.minimumTopCenterRayElevationRawBits-ne$minimumHorizonBits-or$actualHorizon-lt$minimumHorizon-or[double]::IsNaN($rejectedHorizon)-or[double]::IsInfinity($rejectedHorizon)-or$rejectedHorizon-lt1-or$rejectedHorizon-ne[Math]::Floor($rejectedHorizon)){throw "Gameplay third-person analytic horizon gate failed: $($capture.name) actual=$actualHorizon minimum=$minimumHorizon rejected=$rejectedHorizon"}}
     elseif($actualHorizon-ne0-or$minimumHorizon-ne0-or$rejectedHorizon-ne0){throw "Gameplay non-third capture carried analytic horizon evidence: $($capture.name)"}
     if($capture.camera-ne$viewExpectation.camera-or$capture.character-ne$expectedCharacter-or$capture.weaponMaterialRanges-ne2-or
        [double]::IsNaN([double]$capture.weaponAnchorError)-or[double]::IsInfinity([double]$capture.weaponAnchorError)-or$capture.weaponAnchorError-lt0-or$capture.weaponAnchorError-gt.001){throw "Gameplay character material/socket capture gate failed: $($capture.name)"}
@@ -601,6 +667,17 @@ function Assert-GameplayRunEvidence(
         $capture.rawFootPlacementHash -ne $capture.effectiveFootPlacementHash) {
       throw "Gameplay per-view frozen pose evidence failed: $($capture.name)"
     }
+    $entityDiagnostics=@($capture.captureStateEntityDiagnostics)
+    if($capture.captureStateValid-ne1-or$capture.captureStateEntityCount-lt1-or$entityDiagnostics.Count-ne$capture.captureStateEntityCount){throw "Gameplay canonical entity diagnostic count/validity failed: $($capture.name)"}
+    $previousStableId=[uint64]0
+    foreach($entity in $entityDiagnostics){
+      $position=@($entity.position);$positionBits=@($entity.positionRawBits);$bodyPosition=@($entity.bodyPosition);$bodyVelocity=@($entity.bodyVelocity);$scenePosition=@($entity.scenePosition)
+      if([uint64]$entity.stableId-le$previousStableId-or$entity.source-notin@('InitialSeed','PaletteReplay')-or$entity.category-lt0-or$entity.category-gt5-or$entity.dynamic-notin@(0,1)-or$entity.alive-notin@(0,1)-or$position.Count-ne3-or$positionBits.Count-ne3-or$entity.topologyHash-eq0-or$entity.transformHash-eq0-or$entity.rotationRawBits-lt0){throw "Gameplay canonical entity typed identity failed: $($capture.name) id=$($entity.stableId)"}
+      for($component=0;$component-lt3;++$component){$value=[single]$position[$component];$bits=[BitConverter]::ToUInt32([BitConverter]::GetBytes($value),0);if([single]::IsNaN($value)-or[single]::IsInfinity($value)-or$bits-ne[uint32]$positionBits[$component]-or($value-eq0-and$bits-ne0)){throw "Gameplay canonical entity position bits failed: $($capture.name) id=$($entity.stableId) component=$component"}}
+      $rotation=[single]$entity.rotation;$rotationBits=[BitConverter]::ToUInt32([BitConverter]::GetBytes($rotation),0);if([single]::IsNaN($rotation)-or[single]::IsInfinity($rotation)-or$rotationBits-ne[uint32]$entity.rotationRawBits-or($rotation-eq0-and$rotationBits-ne0)){throw "Gameplay canonical entity rotation bits failed: $($capture.name) id=$($entity.stableId)"}
+      foreach($relation in @(@($entity.bodyAvailable,$bodyPosition+$bodyVelocity),@($entity.sceneAvailable,$scenePosition))){$invalidRuntimeValues=@(@($relation[1])|Where-Object{[single]::IsNaN([single]$_)-or[single]::IsInfinity([single]$_)});if($relation[0]-notin@(0,1)-or($relation[0]-eq1-and$invalidRuntimeValues.Count)){throw "Gameplay canonical entity runtime transform diagnostic failed: $($capture.name) id=$($entity.stableId)"}}
+      $previousStableId=[uint64]$entity.stableId
+    }
     $expectedPhases = if ($third) { 3 } else { 2 }
     if ($sequenceCapture.complete -ne 1 -or $sequenceCapture.expectedPhaseCount -ne $expectedPhases -or
         @($sequenceCapture.phases).Count -ne $expectedPhases -or $sequenceCapture.token -eq 0 -or
@@ -632,23 +709,23 @@ function Assert-GameplayRunEvidence(
     }
     $expectedCamera = $viewExpectation.camera
     $expectedLighting = $viewExpectation.lighting
-    $projectionFields=@('projectionMode','verticalFovRadians','orthographicHeight','godActualTriangleCoverage','godVisibleWorldDescriptors','godBuildingUnion','godMaximumBuildingPart','godRoofCoverage')
+    $projectionFields=@('projectionMode','projectionModeValue','verticalFovRadians','orthographicHeight','godActualTriangleCoverage','godVisibleWorldDescriptors','godBuildingUnion','godMaximumBuildingPart','godRoofCoverage')
     foreach($field in $projectionFields){if($null-eq$cameraCapture.PSObject.Properties[$field]-or$null-eq$photorealCapture.PSObject.Properties[$field]-or$cameraCapture.$field-ne$photorealCapture.$field){throw "Gameplay camera/photoreal projection provenance mismatch: $($capture.name) $field"}}
     foreach($field in @('verticalFovRadians','orthographicHeight','godActualTriangleCoverage','godVisibleWorldDescriptors','godBuildingUnion','godMaximumBuildingPart','godRoofCoverage')){if($null-eq$photorealCapture.PSObject.Properties[$field]-or$photorealCapture.$field-isnot[ValueType]-or$photorealCapture.$field-is[bool]){throw "Gameplay projection/composition field is not numeric: $($capture.name) $field"}}
     if($null-eq$cameraCapture.PSObject.Properties['godLodTransitions']-or$cameraCapture.godLodTransitions-isnot[ValueType]-or$cameraCapture.godLodTransitions-is[bool]){throw "Gameplay camera actual God LOD field missing/non-numeric: $($capture.name)"}
     $photorealGodLodFields=@('godPredictedLodTransitions','godActualLodTransitions','godActualLodDualSubmissions','godLodPredictionMatched','godLodContractMissing','godLodContractExtra','godLodContractWrongLevel','godLodContractWrongBlend')
     foreach($field in $photorealGodLodFields){if($null-eq$photorealCapture.PSObject.Properties[$field]-or$photorealCapture.$field-isnot[ValueType]-or$photorealCapture.$field-is[bool]){throw "Gameplay Photoreal typed God LOD field missing/non-numeric: $($capture.name) $field"}}
-    if([uint64]$cameraCapture.godLodTransitions-ne[uint64]$photorealCapture.godActualLodTransitions){throw "Gameplay Camera actual/Photoreal actual God LOD mapping mismatch: $($capture.name)"}
+    if($expectedCamera-eq'god'-and[uint64]$cameraCapture.godLodTransitions-ne[uint64]$photorealCapture.godActualLodTransitions){throw "Gameplay Camera actual/Photoreal actual God LOD mapping mismatch: $($capture.name)"}
     $verticalFov=[double]$photorealCapture.verticalFovRadians;$orthographicHeight=[double]$photorealCapture.orthographicHeight
     if($expectedCamera-eq'god'){
-      if($photorealCapture.projectionMode-cne'Orthographic'-or[double]::IsNaN($orthographicHeight)-or[double]::IsInfinity($orthographicHeight)-or$orthographicHeight-lt4-or$orthographicHeight-gt180){throw "Gameplay production God orthographic projection evidence failed: $($capture.name)"}
-    }elseif($photorealCapture.projectionMode-cne'Perspective'-or[double]::IsNaN($verticalFov)-or[double]::IsInfinity($verticalFov)-or$verticalFov-le.1-or$verticalFov-ge3-or[double]::IsNaN($orthographicHeight)-or[double]::IsInfinity($orthographicHeight)-or$orthographicHeight-ne0){
+      if($photorealCapture.projectionMode-cne'Orthographic'-or[uint64]$photorealCapture.projectionModeValue-ne1-or[double]::IsNaN($orthographicHeight)-or[double]::IsInfinity($orthographicHeight)-or$orthographicHeight-lt4-or$orthographicHeight-gt180){throw "Gameplay production God orthographic projection evidence failed: $($capture.name)"}
+    }elseif($photorealCapture.projectionMode-cne'Perspective'-or[uint64]$photorealCapture.projectionModeValue-ne0-or[double]::IsNaN($verticalFov)-or[double]::IsInfinity($verticalFov)-or$verticalFov-le.1-or$verticalFov-ge3-or[double]::IsNaN($orthographicHeight)-or[double]::IsInfinity($orthographicHeight)-or$orthographicHeight-ne0){
       throw "Gameplay production first/third perspective projection evidence failed: $($capture.name)"
     }
     foreach($field in @('godActualTriangleCoverage','godBuildingUnion','godMaximumBuildingPart','godRoofCoverage')){$number=[double]$photorealCapture.$field;if([double]::IsNaN($number)-or[double]::IsInfinity($number)){throw "Gameplay God composition field is non-finite: $($capture.name) $field"}}
     if($expectedCamera-eq'god'){
       if([double]$photorealCapture.godActualTriangleCoverage-lt$godCoverageContract.coverage-or[uint64]$photorealCapture.godVisibleWorldDescriptors-lt20-or[double]$photorealCapture.godBuildingUnion-lt0-or[double]$photorealCapture.godBuildingUnion-gt.22-or[double]$photorealCapture.godMaximumBuildingPart-lt0-or[double]$photorealCapture.godMaximumBuildingPart-gt.08-or[double]$photorealCapture.godRoofCoverage-lt0-or[double]$photorealCapture.godRoofCoverage-gt.05-or[uint64]$photorealCapture.godActualLodTransitions-lt1-or[uint64]$photorealCapture.godPredictedLodTransitions-lt1-or[uint64]$photorealCapture.godPredictedLodTransitions-ne[uint64]$photorealCapture.godActualLodTransitions-or[uint64]$photorealCapture.godActualLodDualSubmissions-ne[uint64]$photorealCapture.godActualLodTransitions-or[uint64]$photorealCapture.godLodPredictionMatched-ne1-or[uint64]$photorealCapture.godLodContractMissing-ne0-or[uint64]$photorealCapture.godLodContractExtra-ne0-or[uint64]$photorealCapture.godLodContractWrongLevel-ne0-or[uint64]$photorealCapture.godLodContractWrongBlend-ne0){throw "Gameplay God production composition/predicted-actual LOD evidence failed: $($capture.name)"}
-    }elseif([double]$photorealCapture.godActualTriangleCoverage-ne0-or[uint64]$photorealCapture.godVisibleWorldDescriptors-ne0-or[double]$photorealCapture.godBuildingUnion-ne0-or[double]$photorealCapture.godMaximumBuildingPart-ne0-or[double]$photorealCapture.godRoofCoverage-ne0-or[uint64]$cameraCapture.godLodTransitions-ne0-or[uint64]$photorealCapture.godPredictedLodTransitions-ne0-or[uint64]$photorealCapture.godActualLodTransitions-ne0-or[uint64]$photorealCapture.godActualLodDualSubmissions-ne0-or[uint64]$photorealCapture.godLodPredictionMatched-ne1-or[uint64]$photorealCapture.godLodContractMissing-ne0-or[uint64]$photorealCapture.godLodContractExtra-ne0-or[uint64]$photorealCapture.godLodContractWrongLevel-ne0-or[uint64]$photorealCapture.godLodContractWrongBlend-ne0){throw "Gameplay non-God capture carried God composition/LOD evidence: $($capture.name)"}
+    }elseif([double]$photorealCapture.godActualTriangleCoverage-ne0-or[uint64]$photorealCapture.godVisibleWorldDescriptors-ne0-or[double]$photorealCapture.godBuildingUnion-ne0-or[double]$photorealCapture.godMaximumBuildingPart-ne0-or[double]$photorealCapture.godRoofCoverage-ne0-or[uint64]$cameraCapture.godLodTransitions-ne0-or[uint64]$photorealCapture.godPredictedLodTransitions-ne0-or[uint64]$photorealCapture.godActualLodTransitions-ne[uint64]$photorealCapture.lodTransitions-or[uint64]$photorealCapture.godActualLodDualSubmissions-ne[uint64]$photorealCapture.lodDualSubmissions-or[uint64]$photorealCapture.godLodPredictionMatched-ne1-or[uint64]$photorealCapture.godLodContractMissing-ne0-or[uint64]$photorealCapture.godLodContractExtra-ne0-or[uint64]$photorealCapture.godLodContractWrongLevel-ne0-or[uint64]$photorealCapture.godLodContractWrongBlend-ne0){throw "Gameplay non-God capture carried God composition/LOD evidence or mismatched actual LOD counters: $($capture.name)"}
     $expectedRequiredCount = 2
     $expectedForbiddenCount = if ($expectedCamera -eq 'first') { 2 } else { 1 }
     $required = @($photorealCapture.requiredIdentities)
@@ -707,7 +784,11 @@ function Assert-GameplayRunEvidence(
         $capture.rawMonsterPoseHash -ne $capture.referenceMonsterPoseHash -or
         $capture.rawFootPlacementHash -ne $capture.referenceFootPlacementHash -or
         $capture.requestDrawRevision -eq 0 -or $capture.requestCameraHash -eq 0 -or
-        $capture.requestStateHash -eq 0 -or
+        $capture.requestStateHash -eq 0 -or $capture.captureStateSchemaVersion -ne 2 -or
+        $capture.captureStateCanonical -ne $capture.requestStateHash -or $capture.captureStateLegacy -eq 0 -or
+        $capture.captureStateEntities -eq 0 -or $capture.captureStateTopology -eq 0 -or $capture.captureStateTransform -eq 0 -or
+        $capture.captureStateController -eq 0 -or $capture.captureStateYawPitch -eq 0 -or $capture.captureStateRules -eq 0 -or
+        $capture.captureStateCamera -eq 0 -or $capture.captureStatePalette -eq 0 -or $capture.captureStateAnimation -eq 0 -or $capture.captureStatePhysics -eq 0 -or
         $capture.rawAcceptedExcludingOpacity -ne $capture.effectiveAcceptedExcludingOpacity -or
         $capture.rawIdentityOrderHash -ne $capture.effectiveIdentityOrderHash -or
         $capture.referenceAcceptedExcludingOpacity -ne $capture.effectiveAcceptedExcludingOpacity -or
@@ -761,7 +842,7 @@ function Write-GameplayFinalEvidenceReceipt(
   if (@($Runs | ForEach-Object { $_.stateSha256 } | Select-Object -Unique).Count -ne 1) {
     throw 'Final capture determinism run state SHA mismatch'
   }
-  $expectedReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
+  $expectedReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
   foreach($run in $Runs){Assert-GameplayRunArchiveSchema $run $ExpectedNames $expectedReceiptNames}
   $captureEntries = @()
   foreach ($name in $ExpectedNames) {

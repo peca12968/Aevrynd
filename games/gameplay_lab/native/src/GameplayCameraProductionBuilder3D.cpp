@@ -6,6 +6,14 @@
 #include <limits>
 
 namespace GameplayLab {
+
+bool AcceptGameplayCameraSubjectScreenArea3D(
+    float subjectScreenArea, float minimumSubjectScreenArea) noexcept {
+  return std::isfinite(subjectScreenArea) &&
+         std::isfinite(minimumSubjectScreenArea) &&
+         subjectScreenArea >= minimumSubjectScreenArea &&
+         subjectScreenArea <= .20f;
+}
 using namespace Aevrynd;
 
 GameplayCameraGroundHorizonGate3D
@@ -83,6 +91,7 @@ BuildGameplayCameraProductionCandidates3D(
     return output;
   output.receipt.minimumTopCenterRayElevation =
       input.minimumTopCenterRayElevation;
+  output.receipt.minimumSubjectScreenArea = input.minimumSubjectScreenArea;
   for(const auto& occluder:input.compositionOccluders)
     if(!occluder.stableLow||!std::isfinite(occluder.center.x)||!std::isfinite(occluder.center.y)||!std::isfinite(occluder.center.z)||!std::isfinite(occluder.size.x)||!std::isfinite(occluder.size.y)||!std::isfinite(occluder.size.z)||!std::isfinite(occluder.yaw)||occluder.size.x<=0.f||occluder.size.y<=0.f||occluder.size.z<=0.f)
       return output;
@@ -263,7 +272,7 @@ BuildGameplayCameraProductionCandidates3D(
           output.receipt.minimumBuildingUnion=(std::min)(output.receipt.minimumBuildingUnion,candidate.buildingUnionCoverage);output.receipt.minimumWallCoverage=(std::min)(output.receipt.minimumWallCoverage,candidate.maximumWallCoverage);output.receipt.minimumRoofCoverage=(std::min)(output.receipt.minimumRoofCoverage,candidate.roofCoverage);output.receipt.minimumSubjectOcclusion=(std::min)(output.receipt.minimumSubjectOcclusion,candidate.subjectOcclusionCoverage);
           const float environmentArm=candidate.environmentSphereSweep.blocked?candidate.environmentSphereSweep.hitDistance:candidate.springArmDistance;
           const bool environmentSafe=environmentArm>=minimumArm,worldSafe=candidate.collisionWorldMaxArm>=minimumArm,terrainSafe=candidate.heightFieldMaxArm>=minimumArm;
-          const bool heightValid=candidate.subjectScreenHeight>=input.minimumSubjectScreenHeight&&candidate.subjectScreenHeight<=.70f,widthValid=candidate.subjectScreenWidth<=.9f,areaValid=candidate.subjectScreenArea>=input.minimumSubjectScreenArea&&candidate.subjectScreenArea<=.20f,headroomValid=candidate.headroom>=.05f,unionValid=compositionValid&&candidate.buildingUnionCoverage<=.22f,wallValid=compositionValid&&candidate.maximumWallCoverage<=.08f,roofCoverageValid=compositionValid&&candidate.roofCoverage<=.05f,subjectClear=compositionValid&&candidate.subjectOcclusionCoverage<=.005f,actorBoundsValid=candidate.allActorsOnScreen,actorGapValid=candidate.actorGapPixels>=64.f,horizonValid=horizon.accepted;
+          const bool heightValid=candidate.subjectScreenHeight>=input.minimumSubjectScreenHeight&&candidate.subjectScreenHeight<=.70f,widthValid=candidate.subjectScreenWidth<=.9f,areaValid=AcceptGameplayCameraSubjectScreenArea3D(candidate.subjectScreenArea,input.minimumSubjectScreenArea),headroomValid=candidate.headroom>=.05f,unionValid=compositionValid&&candidate.buildingUnionCoverage<=.22f,wallValid=compositionValid&&candidate.maximumWallCoverage<=.08f,roofCoverageValid=compositionValid&&candidate.roofCoverage<=.05f,subjectClear=compositionValid&&candidate.subjectOcclusionCoverage<=.005f,actorBoundsValid=candidate.allActorsOnScreen,actorGapValid=candidate.actorGapPixels>=64.f,horizonValid=horizon.accepted;
           output.receipt.rejectedEnvironment+=environmentSafe?0u:1u;output.receipt.rejectedCollisionWorld+=worldSafe?0u:1u;output.receipt.rejectedHeightField+=terrainSafe?0u:1u;output.receipt.rejectedRoof+=candidate.roofOrTopBlocked?1u:0u;output.receipt.rejectedHeight+=heightValid?0u:1u;output.receipt.rejectedWidth+=widthValid?0u:1u;output.receipt.rejectedArea+=areaValid?0u:1u;output.receipt.rejectedHeadroom+=headroomValid?0u:1u;output.receipt.rejectedFeet+=candidate.feetOnScreen?0u:1u;
           output.receipt.rejectedBuildingUnion+=unionValid?0u:1u;output.receipt.rejectedBuildingPart+=wallValid?0u:1u;output.receipt.rejectedRoofCoverage+=roofCoverageValid?0u:1u;output.receipt.rejectedSubjectOcclusion+=subjectClear?0u:1u;
           output.receipt.rejectedActorBounds+=actorBoundsValid?0u:1u;output.receipt.rejectedActorGap+=actorGapValid?0u:1u;

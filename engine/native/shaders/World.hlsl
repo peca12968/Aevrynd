@@ -152,7 +152,12 @@ cbuffer WaterOpticsConstants : register(b4)
     float waterRefractionDepthScale;
     float waterMaximumUvOffset;
     float waterSceneColorEnabled;
+    uint waterSurfaceEnabled;
+    uint3 waterSurfacePacked0;
+    uint4 waterSurfacePacked1;
 };
+float3 DecodeWaterTriple(uint packed,float3 minimumValue,float3 maximumValue){return lerp(minimumValue,maximumValue,float3(packed&1023u,(packed>>10u)&1023u,(packed>>20u)&1023u)/1023.0);}
+uint WaterSurfacePacked(uint index){if(index==0u)return waterSurfacePacked0.x;if(index==1u)return waterSurfacePacked0.y;if(index==2u)return waterSurfacePacked0.z;if(index==3u)return waterSurfacePacked1.x;if(index==4u)return waterSurfacePacked1.y;if(index==5u)return waterSurfacePacked1.z;return waterSurfacePacked1.w;}
 cbuffer TerrainDistanceMaterialConstants : register(b5)
 {
     float terrainDetailFadeStart;
@@ -1594,6 +1599,25 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     }
     else
     {
+    const float3 waterAbsorption=DecodeWaterTriple(WaterSurfacePacked(0),0.0,4.0);
+    const float3 waterDeepColor=DecodeWaterTriple(WaterSurfacePacked(1),0.0,4.0);
+    const float3 waterReflectanceRoughness=DecodeWaterTriple(WaterSurfacePacked(2),float3(.005,.02,.02),float3(.12,.6,1.0));
+    const float3 waterBroadWave=DecodeWaterTriple(WaterSurfacePacked(3),float3(.001,0.0,-8.0),float3(8.0,.3,8.0));
+    const float3 waterDetailWave=DecodeWaterTriple(WaterSurfacePacked(4),float3(.001,0.0,-16.0),float3(16.0,.2,16.0));
+    const float3 waterFoam=DecodeWaterTriple(WaterSurfacePacked(5),float3(0.0,.001,0.0),float3(4.0,8.0,1.0));
+    const float3 waterAlphaNight=DecodeWaterTriple(WaterSurfacePacked(6),float3(0.0,0.0,.05),float3(1.0,1.0,8.0));
+    // 10-bit欄位各自解碼後再次建立跨欄不變式，避免量化令smoothstep邊界倒置或相等。
+    const float waterReflectance=waterSurfaceEnabled!=0u?waterReflectanceRoughness.x:.0203732;
+    const float waterMinimumRoughness=waterSurfaceEnabled!=0u?waterReflectanceRoughness.y:.045;
+    const float waterMaximumRoughness=waterSurfaceEnabled!=0u?max(waterMinimumRoughness+.001,waterReflectanceRoughness.z):.18;
+    const float waterBroadWaveScale=waterBroadWave.x,waterBroadWaveStrength=waterBroadWave.y,waterBroadWaveSpeed=waterBroadWave.z;
+    const float waterDetailWaveScale=waterDetailWave.x,waterDetailWaveStrength=waterDetailWave.y,waterDetailWaveSpeed=waterDetailWave.z;
+    const float waterFoamStartDepth=waterSurfaceEnabled!=0u?waterFoam.x:.06;
+    const float waterFoamEndDepth=waterSurfaceEnabled!=0u?max(waterFoamStartDepth+.001,waterFoam.y):.72;
+    const float waterFoamStrength=waterSurfaceEnabled!=0u?waterFoam.z:1.0;
+    const float waterShallowAlpha=waterSurfaceEnabled!=0u?waterAlphaNight.x:.34;
+    const float waterDeepAlpha=waterSurfaceEnabled!=0u?max(waterShallowAlpha,waterAlphaNight.y):.91;
+    const float waterMaximumNightRadiance=waterSurfaceEnabled!=0u?waterAlphaNight.z:8.0;
 
     // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
     const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
@@ -1617,21 +1641,30 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 waterDepthValid = 1.0;
                 waterThickness = clamp(measuredThickness, 0.0, 8.0);
                 // 真實河床深度取代人工岸線網格；近岸泡沫在淺水處自然形成並快速破碎。
-                const float shore = 1.0 - smoothstep(0.06, 0.72, waterThickness);
+                const float shore = 1.0 - smoothstep(waterFoamStartDepth, waterFoamEndDepth, waterThickness);
                 const float shoreNoise = lerp(0.62, 1.0, CloudNoise(input.worldPosition.xz * 0.58 + fogEndEnabled.ww * float2(0.035, -0.021)));
                 foamMask = saturate(shore * shoreNoise);
-                waterOutputAlpha = lerp(0.34, 0.91, smoothstep(0.04, 4.5, waterThickness));
+                waterOutputAlpha=lerp(waterShallowAlpha,waterDeepAlpha,smoothstep(waterSurfaceEnabled!=0u?waterFoamStartDepth:.04,4.5,waterThickness));
             }
         }
     }
     [branch] if (waterMask > 0.5)
     {
-        const float2 broadRipple = float2(sin(input.worldPosition.z * 0.38 + input.worldPosition.x * 0.11 + fogEndEnabled.w * 0.72),
-                                          cos(input.worldPosition.x * 0.31 - input.worldPosition.z * 0.16 - fogEndEnabled.w * 0.61));
-        const float2 detailRipple = float2(sin(input.worldPosition.z * 1.73 - input.worldPosition.x * 0.64 + fogEndEnabled.w * 1.91),
-                                           cos(input.worldPosition.x * 1.42 + input.worldPosition.z * 0.57 - fogEndEnabled.w * 1.67));
-        const float2 waterRipple = broadRipple * 0.68 + detailRipple * 0.32;
-        normal = normalize(normal + float3(waterRipple.x, 0.0, waterRipple.y) * lerp(0.085, 0.035, foamMask));
+        if(waterSurfaceEnabled==0u)
+        {
+            // disabled必須逐常數重播b5f9f59，不讓新設定的packed值影響legacy輸出。
+            const float2 broadRipple=float2(sin(input.worldPosition.z*.38+input.worldPosition.x*.11+fogEndEnabled.w*.72),cos(input.worldPosition.x*.31-input.worldPosition.z*.16-fogEndEnabled.w*.61));
+            const float2 detailRipple=float2(sin(input.worldPosition.z*1.73-input.worldPosition.x*.64+fogEndEnabled.w*1.91),cos(input.worldPosition.x*1.42+input.worldPosition.z*.57-fogEndEnabled.w*1.67));
+            const float2 waterRipple=broadRipple*.68+detailRipple*.32;
+            normal=normalize(normal+float3(waterRipple.x,0.0,waterRipple.y)*lerp(.085,.035,foamMask));
+        }
+        else
+        {
+            const float2 broadRipple=float2(sin(input.worldPosition.z*waterBroadWaveScale+input.worldPosition.x*waterBroadWaveScale*.29+fogEndEnabled.w*waterBroadWaveSpeed),cos(input.worldPosition.x*waterBroadWaveScale*.82-input.worldPosition.z*waterBroadWaveScale*.42-fogEndEnabled.w*waterBroadWaveSpeed*.85));
+            const float2 detailRipple=float2(sin(input.worldPosition.z*waterDetailWaveScale-input.worldPosition.x*waterDetailWaveScale*.37+fogEndEnabled.w*waterDetailWaveSpeed),cos(input.worldPosition.x*waterDetailWaveScale*.82+input.worldPosition.z*waterDetailWaveScale*.33-fogEndEnabled.w*waterDetailWaveSpeed*.87));
+            const float2 waterRipple=broadRipple*waterBroadWaveStrength+detailRipple*waterDetailWaveStrength;
+            normal=normalize(normal+float3(waterRipple.x,0.0,waterRipple.y)*lerp(1.0,.45,foamMask));
+        }
     }
 
     float skinCurvature=0.0;
@@ -1713,11 +1746,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     [branch] if (waterMask > 0.5)
     {
         const float waterViewCosine = saturate(dot(normal, viewDirection));
-        const float waterReflectance = 0.0203732;
         const float fresnel = waterReflectance + (1.0 - waterReflectance) * pow(1.0 - waterViewCosine, 5.0);
         const float waterPathLength = min(8.0, waterThickness / max(0.16, waterViewCosine));
-        const float3 waterTransmission = exp(-float3(0.42, 0.16, 0.08) * waterPathLength);
-        const float3 deepWaterColor = lerp(float3(0.012, 0.055, 0.070), baseColor, 0.24);
+        const float3 legacyAbsorption=float3(.42,.16,.08);
+        const float3 legacyDeepColor=float3(.012,.055,.070);
+        const float3 waterTransmission=exp(-(waterSurfaceEnabled!=0u?waterAbsorption:legacyAbsorption)*waterPathLength);
+        const float3 deepWaterColor=lerp(waterSurfaceEnabled!=0u?waterDeepColor:legacyDeepColor,baseColor,.24);
         float3 transmittedScene = shaded;
         [branch] if (waterSceneColorEnabled > 0.5 && waterDepthValid > 0.5)
         {
@@ -1731,12 +1765,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             transmittedScene = opaqueSceneColorTexture.SampleLevel(screenPointClampSampler, refractedUv, 0.0).rgb;
         }
         const float3 absorbedWater = transmittedScene * waterTransmission + deepWaterColor * (1.0 - waterTransmission);
-        const float waterReflectionRoughness = clamp(roughness, 0.045, 0.18);
+        const float waterReflectionRoughness = clamp(roughness, waterMinimumRoughness, waterMaximumRoughness);
         float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
                               * lerp(1.0, 0.55, waterReflectionRoughness);
         const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
         reflectedWater=lerp(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
-        float3 waterComposite = lerp(absorbedWater, reflectedWater, fresnel);
+        // 反射只取得 Fresnel 能量，其餘能量保留給透射，避免日夜切換時雙重增亮。
+        if(waterSurfaceEnabled!=0u)
+            reflectedWater=min(reflectedWater,max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*4.0);
+        float3 waterComposite=waterSurfaceEnabled!=0u
+            ? absorbedWater*(1.0-fresnel)+reflectedWater*fresnel
+            : lerp(absorbedWater,reflectedWater,fresnel);
         [branch] if (foamMask > 0.01)
         {
             // 岸線泡沫使用有界程序破碎圖樣，避免整條河岸成為均勻發光帶。
@@ -1746,7 +1785,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float foamCoverage = smoothstep(0.34, 0.76, foamNoise * 0.72 + foamWave * 0.28);
             const float3 foamColor = baseColor * lerp(0.58, 0.96, foamCoverage)
                                    + EvaluateEnvironmentDiffuse(normal, skyLightDirection) * 0.055;
-            waterComposite = lerp(waterComposite, foamColor, foamMask * lerp(0.42, 0.88, foamCoverage));
+            waterComposite=lerp(waterComposite,foamColor,foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage));
         }
         shaded = waterComposite;
     }

@@ -60,6 +60,7 @@ struct GameplayCameraProductionBuildReceipt3D {
   bool visualBoundsValid{}, projectionValid{}, valid{};
   float minimumBuildingUnion{1.f}, minimumWallCoverage{1.f},
       minimumRoofCoverage{1.f}, minimumSubjectOcclusion{1.f},
+      minimumSubjectScreenArea{.02f},
       minimumTopCenterRayElevation{.03f},
       minimumAcceptedTopCenterRayElevation{};
 };
@@ -85,6 +86,9 @@ struct GameplayCameraProductionBuildOutput3D {
   Aevrynd::Vec3 visualFocus{};
   GameplayCameraProductionBuildReceipt3D receipt{};
 };
+
+[[nodiscard]] bool AcceptGameplayCameraSubjectScreenArea3D(
+    float subjectScreenArea, float minimumSubjectScreenArea) noexcept;
 
 // 多角色構圖的最大dolly距離由正式world bounds union推導；不改變角色位置、
 // FOV或任何screen-space構圖門檻。

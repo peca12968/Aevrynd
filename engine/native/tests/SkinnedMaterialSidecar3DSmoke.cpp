@@ -13,14 +13,13 @@ bool Expect(bool condition, const char* message) {
     if (!condition) std::cerr << message << '\n';
     return condition;
 }
-
 void WriteFile(const std::filesystem::path& path, std::string_view contents = "texture") {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream(path, std::ios::binary).write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
 
 std::string ValidDocument() {
-    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":"skin/base.png","roughness":"skin/rough.png","normal":"skin/normal.png","maximumResolution":2048,"layer1":{"baseColor":"detail/base.png","roughness":"detail/rough.png","normal":"detail/normal.png"}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"baseTextureScale":1.0,"detailTextureScale":4.0,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":"hair/base.png","roughness":"hair/rough.png","normal":"hair/normal.png","maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true},"Eye":{"textures":{"baseColor":"eye/base.png","roughness":"eye/rough.png","normal":"eye/normal.png","maximumResolution":1024},"pbr":{"roughness":0.18,"metallic":0},"textureScale":1.0,"shadingModel":"eye"},"Cloth":{"textures":{"baseColor":"cloth/base.png","roughness":"cloth/rough.png","normal":"cloth/normal.png","maximumResolution":1024},"pbr":{"roughness":0.78,"metallic":0},"textureScale":6.0,"baseTextureScale":1.0,"detailTextureScale":6.0,"shadingModel":"cloth"}}}})";
+    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":{"path":"skin/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"skin/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"skin/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":2048,"layer1":{"baseColor":{"path":"detail/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"detail/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"detail/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"baseTextureScale":1.0,"detailTextureScale":4.0,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":{"path":"hair/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"hair/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"hair/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true},"Eye":{"textures":{"baseColor":{"path":"eye/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"eye/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"eye/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"pbr":{"roughness":0.18,"metallic":0},"textureScale":1.0,"shadingModel":"eye"},"Cloth":{"textures":{"baseColor":{"path":"cloth/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"cloth/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"cloth/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"pbr":{"roughness":0.78,"metallic":0},"textureScale":6.0,"baseTextureScale":1.0,"detailTextureScale":6.0,"shadingModel":"cloth"}}}})";
 }
 
 } // 匿名命名空間
@@ -41,7 +40,9 @@ int main() {
     if (parsed && parsed.materials.size() == 4u) {
         passed &= Expect(parsed.materials[0].name == "Skin" && parsed.materials[1].name == "Hair" && parsed.materials[2].name == "Eye", "AESKIN slot order was not preserved");
         passed &= Expect(parsed.materials[0].textures.maximumResolution == 2048u, "maximumResolution was not applied");
+        passed &= Expect(parsed.materials[0].textures.integrity[0].expectedBytes == 7u && parsed.materials[0].textures.integrity[0].expectedSha256 == std::string(64u, 'a'), "base texture sealed integrity was not propagated");
         passed &= Expect(!parsed.materials[0].textures.additionalLayers[0].baseColorPath.empty(), "additional texture layer was not resolved");
+        passed &= Expect(parsed.materials[0].textures.additionalLayers[0].integrity[2].expectedBytes == 7u, "layer sealed integrity was not propagated");
         passed &= Expect(std::abs(parsed.materials[0].material.textureScale - 1.5f) < 0.0001f, "textureScale was not applied");
         passed &= Expect(std::abs(parsed.materials[0].material.baseTextureScale - 1.0f) < 0.0001f && std::abs(parsed.materials[0].material.detailTextureScale - 4.0f) < 0.0001f, "split UV scales were not applied");
         passed &= Expect(std::abs(parsed.materials[0].material.surface.roughness - 0.46f) < 0.0001f, "PBR override was not applied");
@@ -59,8 +60,8 @@ int main() {
     passed &= Expect(loaded.materials.size() == 4u, "file sidecar did not load");
 
     std::string packedOrm = ValidDocument();
-    const std::size_t ormPosition = packedOrm.find("\"roughness\":\"skin/rough.png\"");
-    packedOrm.replace(ormPosition, std::string("\"roughness\":\"skin/rough.png\"").size(), "\"orm\":\"skin/rough.png\"");
+    const std::size_t ormPosition = packedOrm.find("\"roughness\":{");
+    packedOrm.replace(ormPosition, std::string("\"roughness\"").size(), "\"orm\"");
     const auto ormResult = ParseSkinnedMaterialSidecar3D(packedOrm, slots, root);
     passed &= Expect(ormResult && ormResult.materials[0].textures.surfaceEncoding == MaterialSurfaceMapEncoding3D::PackedOrm,
         "packed ORM surface map was not propagated");
@@ -98,6 +99,31 @@ int main() {
     const std::size_t alphaPosition = invalidAlpha.find("\"alphaCutoff\":0.42");
     invalidAlpha.replace(alphaPosition, std::string("\"alphaCutoff\":0.42").size(), "\"alphaCutoff\":1.2");
     passed &= Expect(!ParseSkinnedMaterialSidecar3D(invalidAlpha, slots, root), "out-of-range alpha cutoff was accepted");
+
+    std::string missingIntegrity = ValidDocument();
+    const std::string integrityBytes = "\"expectedBytes\":7,";
+    missingIntegrity.erase(missingIntegrity.find(integrityBytes), integrityBytes.size());
+    passed &= Expect(!ParseSkinnedMaterialSidecar3D(missingIntegrity, slots, root), "missing sealed byte count was accepted");
+
+    std::string zeroIntegrity = ValidDocument();
+    zeroIntegrity.replace(zeroIntegrity.find("\"expectedBytes\":7"), std::string("\"expectedBytes\":7").size(), "\"expectedBytes\":0");
+    passed &= Expect(!ParseSkinnedMaterialSidecar3D(zeroIntegrity, slots, root), "zero sealed byte count was accepted");
+
+    std::string invalidIntegritySha = ValidDocument();
+    invalidIntegritySha.replace(invalidIntegritySha.find(std::string(64u, 'a')), 64u, std::string(63u, 'a') + "z");
+    passed &= Expect(!ParseSkinnedMaterialSidecar3D(invalidIntegritySha, slots, root), "invalid sealed SHA-256 was accepted");
+
+    std::string unknownIntegrityField = ValidDocument();
+    const std::size_t referenceEnd = unknownIntegrityField.find("\"expectedSha256\":\"") + std::string("\"expectedSha256\":\"").size() + 65u;
+    unknownIntegrityField.insert(referenceEnd, ",\"runtimeHash\":\"forbidden\"");
+    passed &= Expect(!ParseSkinnedMaterialSidecar3D(unknownIntegrityField, slots, root), "unknown sealed integrity field was accepted");
+
+    std::string duplicateIntegrityMismatch = ValidDocument();
+    const std::size_t detailPath = duplicateIntegrityMismatch.find("detail/base.png");
+    duplicateIntegrityMismatch.replace(detailPath, std::string("detail/base.png").size(), "skin/base.png");
+    const std::size_t detailBytes = duplicateIntegrityMismatch.find("\"expectedBytes\":7", detailPath);
+    duplicateIntegrityMismatch.replace(detailBytes, std::string("\"expectedBytes\":7").size(), "\"expectedBytes\":8");
+    passed &= Expect(!ParseSkinnedMaterialSidecar3D(duplicateIntegrityMismatch, slots, root), "duplicate texture path integrity mismatch was accepted");
 
     std::string unknownSlot = ValidDocument();
     const std::size_t hairPosition = unknownSlot.find("\"Hair\"");

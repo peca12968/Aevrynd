@@ -2,6 +2,7 @@
 
 #include <Aevrynd/Camera.h>
 #include <Aevrynd/Renderer.h>
+#include "ShowcaseLandEcology3D.h"
 #include <Aevrynd/Scene3D.h>
 
 #include <array>
@@ -266,12 +267,16 @@ struct ShowcaseEnvironmentReceipt3D {
   std::uint32_t buildingComponentMask{};
   std::uint64_t materialIdentityHash{}, licenseInventoryHash{};
   std::size_t retainedDescriptorBytes{};
+  std::uint64_t waterSurfaceFingerprint{};
+  std::size_t riverStripSlices{}, riverStripVertices{}, riverStripIndices{}, integratedDescriptors{}, descriptorCapacity{};
+  float riverMaximumJoinError{};
+  bool riverUvMonotonic{};
 };
 
 struct ShowcaseSceneTargets3D {
-  std::size_t terrainPatches{1}, waterSegments{17}, treeInstances{72},
-      grassInstances{48}, rockInstances{12}, buildingComponents{6};
-  std::size_t nearVegetation{40}, midVegetation{56}, farVegetation{24};
+  std::size_t terrainPatches{1}, waterSegments{1}, treeInstances{144},
+      grassInstances{282}, rockInstances{30}, buildingComponents{6};
+  std::size_t nearVegetation{156}, midVegetation{184}, farVegetation{86};
   float terrainSpanMeters{512.f}, riverLengthMeters{272.f},
       riverMinimumWidthMeters{9.f}, riverMaximumWidthMeters{15.f},
       minimumRiverSurfaceAreaSquareMeters{2800.f};
@@ -321,6 +326,8 @@ public:
     return descriptors_;
   }
   [[nodiscard]] bool Initialized() const noexcept { return initialized_; }
+  [[nodiscard]] const Aevrynd::WaterSurfaceSettings3D &WaterSurfaceSettings() const noexcept { return waterSurface_; }
+  [[nodiscard]] const ShowcaseLandEcologyReceipt3D &LandReceipt() const noexcept { return landReceipt_; }
 
 private:
   [[nodiscard]] std::uint64_t WorldHash() const;
@@ -328,6 +335,8 @@ private:
 
   std::vector<ShowcaseSceneDescriptor3D> descriptors_;
   std::uint64_t seed_{};
+  Aevrynd::WaterSurfaceSettings3D waterSurface_{};
+  ShowcaseLandEcologyReceipt3D landReceipt_{};
   bool initialized_{};
 };
 

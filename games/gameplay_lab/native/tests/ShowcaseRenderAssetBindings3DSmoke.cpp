@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
   expectedVisible.emplace_back("xanderklinge");
   if (!bindings.Load(world.Descriptors(), catalog, runtime, profile, resolver, cooked,
                      load) ||
-      !load.photorealActive || load.descriptorCount != 156 ||
+      !load.photorealActive || load.descriptorCount != before.integratedDescriptors ||
       !load.collisionStableIdsUnchanged ||
       !std::ranges::equal(bindings.VisibleAssetIds(), expectedVisible) ||
       !bindings.IblHandle() ||
@@ -253,15 +253,19 @@ int main(int argc, char **argv) {
   }
   ShowcaseSceneDescriptor3D semantic{};
   semantic.kind = ShowcaseSceneKind3D::Tree;
-  semantic.meshAsset = "mutation/quiver_tree";
+  semantic.meshAsset = "poly-haven/island_tree_01/cooked-lod";
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "island_tree_01") return 6;
-  semantic.meshAsset = "mutation/dead_tree";
+  semantic.meshAsset = "poly-haven/dead_tree_trunk_02/cooked-lod";
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "dead_tree_trunk_02") return 6;
+  semantic.meshAsset = "mutation/unknown-tree";
+  if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
   semantic.kind = ShowcaseSceneKind3D::Rock;
-  semantic.meshAsset = "mutation/rock_09";
+  semantic.meshAsset = "poly-haven/boulder_01/cooked-lod";
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "boulder_01") return 6;
-  semantic.meshAsset = "mutation/cliff";
+  semantic.meshAsset = "poly-haven/coastal_cliff_01/cooked-lod";
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "coastal_cliff_01") return 6;
+  semantic.meshAsset = "mutation/unknown-rock";
+  if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
   semantic.kind = ShowcaseSceneKind3D::Water;
   if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
   if (world.Receipt().worldHash != before.worldHash ||
@@ -287,13 +291,13 @@ int main(int argc, char **argv) {
         world.Descriptors()[index].kind == ShowcaseSceneKind3D::Water;
     if (!binding || binding->fallback ||
         (water ? (!binding->renderOnly || binding->photorealActive ||
-                  binding->assetId != "runtime/water-optics")
+                  binding->assetId != world.Descriptors()[index].materialAsset)
                : !binding->photorealActive) ||
         binding->lodGroup != world.Descriptors()[index].lodGroup)
-      return 8;
+      {std::cerr<<"binding mismatch index="<<index<<" kind="<<unsigned(world.Descriptors()[index].kind)<<" mesh="<<world.Descriptors()[index].meshAsset<<" actual="<<(binding?binding->assetId:"<null>")<<" fallback="<<(binding?binding->fallback:1)<<" photoreal="<<(binding?binding->photorealActive:0)<<'\n';return 8;}
     const auto expectedAsset = ResolveShowcasePhotorealAssetId3D(world.Descriptors()[index]);
     if (!water && binding->assetId != expectedAsset)
-      return 8;
+      {std::cerr<<"binding asset mismatch index="<<index<<" expected="<<expectedAsset<<" actual="<<binding->assetId<<'\n';return 8;}
     sawCliff |= binding->assetId == "coastal_cliff_01";
     sawRoof |= binding->assetId == "RoofingTiles014B";
     sawWall |= binding->assetId == "Bricks100";
@@ -308,7 +312,7 @@ int main(int argc, char **argv) {
   if (!trim.unloadedAssetIds.empty())
     return 10;
   const auto released = bindings.Release();
-  if (released.bindingsReleased != 157 ||
+  if (released.bindingsReleased != load.resolvedCount ||
       released.assetsUnloaded != expectedVisible.size() ||
       released.retainedBytesAfter || profile.Stats().residentAssets ||
       resolver.RetainedLeaseCount())
@@ -403,7 +407,7 @@ int main(int argc, char **argv) {
       !mutate("Ground108", [](auto &item) { item.sha256.assign(64, '0'); }))
     return 12;
   std::cout << "SHOWCASE_RENDER_ASSET_BINDINGS_CONTROLLED_RESOLVER=PASS "
-               "descriptors=156 assets="
+               "descriptors=" << load.descriptorCount << " assets="
             << expectedVisible.size()
             << " pathRenderOnly=true fallbackAtomic=true hash="
             << load.descriptorFingerprint << '\n';
