@@ -10,6 +10,7 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Funnel.Common.ps1')
 Assert-PowerShellSeven
 $transportLock=Enter-PublicTransportLock
+$listener=$null
 try{
 $paths=Get-GatewayPaths -InstallRoot $InstallRoot
 $namedTunnelActive=$false
@@ -43,11 +44,13 @@ $bytes=[byte[]]::new(32);[Security.Cryptography.RandomNumberGenerator]::Fill($by
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 $captureRoot=Join-Path $env:LOCALAPPDATA 'Aevrynd\LineGatewayEnrollment';if(-not(Test-Path -LiteralPath $captureRoot)){New-Item -ItemType Directory -Path $captureRoot|Out-Null};Set-EnrollmentOwnerOnlyDacl -Path $captureRoot -OwnerSid $identity.User -Directory
 $capturePath=Join-Path $captureRoot "allowlist-$([Guid]::NewGuid().ToString('N')).json"
+$currentPath=Join-Path $captureRoot 'current-enrollment.json';if(Test-Path -LiteralPath $currentPath){throw 'A current enrollment state already exists; refuse ambiguous enrollment ownership.'}
+$deadline=[DateTimeOffset]::UtcNow.AddSeconds($DurationSeconds);$currentDocument=[ordered]@{schemaVersion=1;nonce=$nonce;expiresUtc=$deadline.ToString('o',[Globalization.CultureInfo]::InvariantCulture);pid=$PID};$currentBytes=[Text.UTF8Encoding]::new($false).GetBytes(($currentDocument|ConvertTo-Json -Compress))
+try{$current=[IO.FileStream]::new($currentPath,'CreateNew','Write','None');try{$current.Write($currentBytes,0,$currentBytes.Length);$current.Flush($true)}finally{$current.Dispose()}}finally{[Array]::Clear($currentBytes,0,$currentBytes.Length)};Set-EnrollmentOwnerOnlyDacl -Path $currentPath -OwnerSid $identity.User
+try{
 $listener=[Net.HttpListener]::new();$listener.Prefixes.Add('http://127.0.0.1:8787/');$listener.Start()
 Write-Output 'ENROLLMENT_LISTENER_READY http://127.0.0.1:8787/webhook'
 Write-Output "For the next $DurationSeconds seconds, send exactly: [mention this bot] enroll $nonce"
-try{
-    $deadline=[DateTimeOffset]::UtcNow.AddSeconds($DurationSeconds)
     $rejectedRequests=0
     $maximumRejectedRequests=32
     while([DateTimeOffset]::UtcNow-lt$deadline){
@@ -73,5 +76,5 @@ try{
         }
     }
     throw 'Enrollment window expired without a valid signed event.'
-}finally{$channelSecret=$null;$listener.Stop();$listener.Close()}
+}finally{$channelSecret=$null;if($null-ne$listener){if($listener.IsListening){$listener.Stop()};$listener.Close()};if(Test-Path -LiteralPath $currentPath -PathType Leaf){$item=Get-Item -LiteralPath $currentPath -Force;if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw 'Current enrollment state became a reparse point; refusing unsafe cleanup.'};$owner=(Get-Acl -LiteralPath $currentPath).Owner;$ownerSid=try{([Security.Principal.NTAccount]$owner).Translate([Security.Principal.SecurityIdentifier])}catch{[Security.Principal.SecurityIdentifier]::new($owner)};if($ownerSid.Value-cne$identity.User.Value){throw 'Current enrollment state ownership changed; refusing unsafe cleanup.'};Remove-Item -LiteralPath $currentPath -Force}}
 }finally{Exit-PublicTransportLock $transportLock}
