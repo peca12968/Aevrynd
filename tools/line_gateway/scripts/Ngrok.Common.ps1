@@ -11,6 +11,16 @@ function ConvertTo-NgrokProcessTimestamp {
     return ([DateTimeOffset]::new($Value.ToUniversalTime())).ToString('o',[Globalization.CultureInfo]::InvariantCulture)
 }
 
+function ConvertFrom-NgrokStateTimestamp {
+    param([Parameter(Mandatory)][string]$Value)
+    try{return ConvertFrom-CanonicalFunnelTimestamp $Value 'Ngrok startedUtc'}catch{
+        # 舊版曾以 DateTime roundtrip 寫入 Z；僅接受精確 UTC roundtrip 後單向正規化。
+        $parsed=[DateTime]::MinValue
+        if($Value-notmatch'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$'-or-not[DateTime]::TryParseExact($Value,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind,[ref]$parsed)-or$parsed.Kind-ne[DateTimeKind]::Utc){throw}
+        return [DateTimeOffset]::new($parsed)
+    }
+}
+
 function Assert-NgrokStorePackageIdentity {
     param([object]$Identity)
     # MSIX 內的執行檔可不帶獨立簽章；信任 Store 簽署套件身分並再核對固定雜湊。
@@ -114,7 +124,7 @@ function Read-NgrokState {
     if(-not(Test-NgrokJsonInteger $state.schemaVersion)-or[long]$state.schemaVersion-ne1-or-not(Test-NgrokJsonInteger $state.pid)-or[long]$state.pid-lt1-or[long]$state.pid-gt[int]::MaxValue){throw 'Ngrok state numeric fields are invalid.'}
     foreach($name in @('domain','executablePath','executableSha256','origin','path','startedUtc')){if($state[$name]-isnot[string]-or[string]::IsNullOrWhiteSpace($state[$name])){throw "Ngrok state $name must be a non-empty string."}}
     if(-not(Test-NgrokDevelopmentDomain $state.domain)-or$state.executableSha256-notmatch'^[0-9a-f]{64}$'-or$state.origin-cne'http://127.0.0.1:8787'-or$state.path-cne'/webhook'){throw 'Ngrok state transport or executable identity is invalid.'}
-    $stamp=ConvertFrom-CanonicalFunnelTimestamp $state.startedUtc 'Ngrok startedUtc';if($stamp-gt[DateTimeOffset]::UtcNow.AddMinutes(5)){throw 'Ngrok start time is unreasonable.'}
+    $stamp=ConvertFrom-NgrokStateTimestamp $state.startedUtc;if($stamp-gt[DateTimeOffset]::UtcNow.AddMinutes(5)){throw 'Ngrok start time is unreasonable.'};$state.startedUtc=$stamp.ToString('o',[Globalization.CultureInfo]::InvariantCulture)
     return $state
 }
 
