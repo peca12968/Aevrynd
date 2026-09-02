@@ -309,5 +309,14 @@ function Exit-PublicTransportLock { param([object]`$Lock) }
     if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Recurse -Force }
 }
 
+Invoke-Test 'gateway timestamp writes canonical UTC normalizes exact legacy and rejects variants' {
+    $current=ConvertTo-GatewayProcessTimestamp (Get-Process -Id $PID).StartTime
+    if($current-notmatch'\+00:00$'){throw 'Current process timestamp is not canonical UTC.'}
+    $legacy=[DateTime]::UtcNow.ToString('o',[Globalization.CultureInfo]::InvariantCulture)
+    $normalized=(ConvertFrom-GatewayStateTimestamp $legacy).ToString('o',[Globalization.CultureInfo]::InvariantCulture)
+    if($normalized-notmatch'\+00:00$'){throw 'Exact legacy Z timestamp was not normalized.'}
+    foreach($bad in @($legacy.ToLowerInvariant(),$legacy.Replace('Z','+0000'),'2026-01-01T00:00:00Z')){Assert-Throws {ConvertFrom-GatewayStateTimestamp $bad} 'hostile gateway timestamp'}
+}
+
 Write-Output "Deployment tests: passed=$script:passed failed=$script:failed"
 if ($script:failed -gt 0) { exit 1 }

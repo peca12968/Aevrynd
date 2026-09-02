@@ -256,6 +256,20 @@ function Rotate-GatewayLogs {
     }
 }
 
+function ConvertTo-GatewayProcessTimestamp {
+    param([Parameter(Mandatory)][DateTime]$Value)
+    return ([DateTimeOffset]::new($Value.ToUniversalTime())).ToString('o',[Globalization.CultureInfo]::InvariantCulture)
+}
+
+function ConvertFrom-GatewayStateTimestamp {
+    param([Parameter(Mandatory)][string]$Value)
+    $offset=[DateTimeOffset]::MinValue
+    if([DateTimeOffset]::TryParseExact($Value,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind,[ref]$offset)-and$offset.Offset-eq[TimeSpan]::Zero-and$offset.ToString('o',[Globalization.CultureInfo]::InvariantCulture)-ceq$Value){return $offset}
+    $legacy=[DateTime]::MinValue
+    if($Value-match'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$'-and[DateTime]::TryParseExact($Value,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind,[ref]$legacy)-and$legacy.Kind-eq[DateTimeKind]::Utc){return [DateTimeOffset]::new($legacy)}
+    throw 'Gateway startedUtc must be canonical UTC or the exact legacy UTC format.'
+}
+
 function Read-GatewayState {
     param([hashtable]$Paths)
     if (-not (Test-Path -LiteralPath $Paths.StateFile -PathType Leaf)) { return $null }
@@ -263,6 +277,7 @@ function Read-GatewayState {
     if ($null -eq $state.pid -or $null -eq $state.startedUtc) {
         throw 'Gateway state file is invalid.'
     }
+    $state.startedUtc=(ConvertFrom-GatewayStateTimestamp ([string]$state.startedUtc)).ToString('o',[Globalization.CultureInfo]::InvariantCulture)
     return $state
 }
 
@@ -277,7 +292,7 @@ function Test-GatewayProcess {
     $processDetails = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)" -ErrorAction SilentlyContinue
     if ($null -eq $processDetails -or [string]::IsNullOrWhiteSpace([string]$processDetails.CommandLine)) { return $null }
     if (-not ([string]$processDetails.CommandLine).Contains($Paths.Runner, [StringComparison]::OrdinalIgnoreCase)) { return $null }
-    $expectedStart = [DateTimeOffset]::Parse([string]$State.startedUtc).UtcDateTime
+    $expectedStart = (ConvertFrom-GatewayStateTimestamp ([string]$State.startedUtc)).UtcDateTime
     if ([Math]::Abs(($process.StartTime.ToUniversalTime() - $expectedStart).TotalSeconds) -gt 2) { return $null }
     return $process
 }
@@ -288,7 +303,7 @@ function Write-GatewayState {
     $document = [ordered]@{
         schemaVersion = 1
         pid = $Process.Id
-        startedUtc = $Process.StartTime.ToUniversalTime().ToString('o')
+        startedUtc = ConvertTo-GatewayProcessTimestamp $Process.StartTime
         bindHost = '127.0.0.1'
         port = 8787
     }
