@@ -22,6 +22,16 @@
 
 ## 安裝
 
+首次安裝若尚不知道群組 `groupId`，先執行 `Install.ps1`，完成 named tunnel config，並以已安裝的 `Start-Tunnel.ps1` 啟動 tunnel；此時不要啟動 Gateway。再從 repo 執行一次性 discovery helper。它只在已驗證且正在運作的 named tunnel 後方、Gateway 尚未佔用 `127.0.0.1:8787` 時啟動 30–300 秒；必須同時通過原始 body HMAC、預先輸入的 developer user ID、LINE 官方 self mention 與本機隨機 nonce。成功取得一次 userId/groupId 後立即停止，只寫入目前 Windows 使用者 ACL 保護的暫存 JSON，不保存 raw body、reply token、channel secret 或訊息內容。
+
+```powershell
+pwsh -NoProfile -File .\tools\line_gateway\scripts\Discover-Allowlist.ps1 `
+  -DeveloperUserId 'U<32_HEX_CHARACTERS>' `
+  -DurationSeconds 120
+```
+
+這不是任意群組自助註冊功能；developer user ID 必須先從 LINE Developers Console 安全取得並精確輸入。把輸出的兩個 ID 人工審查後傳給 `Set-Configuration.ps1`，接著執行 `Set-Credentials.ps1`，最後才啟動 Gateway，再安全刪除暫存。完整人工流程見 `D:\Download\Aevrynd\Info\LineGatewayManualSetup.md`。
+
 使用系統管理員 PowerShell 7，在 repository 根目錄執行：
 
 ```powershell
@@ -139,4 +149,5 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Uninstall.ps1 -
 
 ```powershell
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Deployment.Tests.ps1
+pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Enrollment.Tests.ps1
 ```
