@@ -1,8 +1,10 @@
-param([Parameter(Mandatory=$true)][string]$Executable,[switch]$GpuValidation,[switch]$SingleRun,[switch]$OfflineReplay)
+param([Parameter(Mandatory=$true)][string]$Executable,[switch]$GpuValidation,[switch]$SingleRun,[switch]$OfflineReplay,[ValidateRange(0,180)][int]$ProcessTimeoutSeconds=0)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'GameplayLabCaptureEvidence.ps1')
 . (Join-Path $PSScriptRoot 'GameplaySourceInventory.ps1')
 $gateClock=[Diagnostics.Stopwatch]::StartNew()
+$processTimeoutSeconds=if($ProcessTimeoutSeconds-gt0){$ProcessTimeoutSeconds}elseif($GpuValidation){180}else{120}
+$processTimeoutMilliseconds=$processTimeoutSeconds*1000
 function Write-CaptureGateHeartbeat([string]$Phase){Write-Output ("captureGate phase={0} elapsedMs={1}"-f$Phase,$gateClock.ElapsedMilliseconds)}
 function Get-Sha256Hex([string]$Path){$sha=[Security.Cryptography.SHA256]::Create();try{return ([BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($Path))).Replace('-','').ToLowerInvariant())}finally{$sha.Dispose()}}
 function Get-TextSha256([string]$Text){$sha=[Security.Cryptography.SHA256]::Create();try{return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))).Replace('-','').ToLowerInvariant())}finally{$sha.Dispose()}}
@@ -52,7 +54,7 @@ function Save-RunEvidence([int]$Run,$receipt,$environment,$collision,$palette,$c
 if(!$OfflineReplay){
   Write-CaptureGateHeartbeat 'process-start'
   $process=Start-Process -FilePath $Executable -ArgumentList '--capture-demo' -WorkingDirectory (Split-Path -Parent $Executable) -WindowStyle Hidden -PassThru
-  if(-not$process.WaitForExit(120000)){Stop-Process -Id $process.Id -Force;throw 'Gameplay Lab capture timed out'}
+  if(-not$process.WaitForExit($processTimeoutMilliseconds)){Stop-Process -Id $process.Id -Force;throw "Gameplay Lab capture timed out after $processTimeoutSeconds seconds"}
   if($process.ExitCode-ne 0){throw "Gameplay Lab capture failed: $($process.ExitCode)"}
   Write-CaptureGateHeartbeat 'process-complete'
 }else{Write-CaptureGateHeartbeat 'offline-replay'}
@@ -208,7 +210,7 @@ $run1Evidence=Save-RunEvidence 1 $first $environmentReceipt $environmentCollisio
 Write-CaptureGateHeartbeat 'archive-complete'
 if($SingleRun){Assert-GameplayNoFatalMarker $directory;Write-CaptureGateHeartbeat 'diagnostic-complete';Write-Output "captures=11 masks=11 paired=raw-effective singleRun=diagnostic-only accepted=0 fixedTick=$($first.authoritativePhysicsTick) runId=$($first.runId)";exit 0}
 $process=Start-Process -FilePath $Executable -ArgumentList '--capture-demo' -WorkingDirectory (Split-Path -Parent $Executable) -WindowStyle Hidden -PassThru
-if(-not$process.WaitForExit(120000)){Stop-Process -Id $process.Id -Force;throw 'Second deterministic capture timed out'}
+if(-not$process.WaitForExit($processTimeoutMilliseconds)){Stop-Process -Id $process.Id -Force;throw "Second deterministic capture timed out after $processTimeoutSeconds seconds"}
 if($process.ExitCode-ne0){throw "Second deterministic capture failed: $($process.ExitCode)"}
 Assert-GameplayNoFatalMarker $directory
 $second=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-receipt.json')|ConvertFrom-Json
@@ -238,7 +240,7 @@ foreach($field in @('stateHash','descriptors','solidDescriptors','nonSolidDescri
 foreach($field in @('categories','pointerDowns','drags','previews','commits','invalidPlacements','cancels','deterministicHash')){if($paletteUiReceipt.$field-ne$secondPaletteUi.$field){throw "Nondeterministic palette UI telemetry: $field"}}
 if([Math]::Abs([int64]$first.ticks-[int64]$second.ticks)-gt1-or[Math]::Abs([int64]$first.physicsSteps-[int64]$second.physicsSteps)-gt1){throw 'Capture completion varied by more than one presentation frame'}
 $process=Start-Process -FilePath $Executable -ArgumentList '--capture-demo' -WorkingDirectory (Split-Path -Parent $Executable) -WindowStyle Hidden -PassThru
-if(-not$process.WaitForExit(120000)){Stop-Process -Id $process.Id -Force;throw 'Third deterministic capture timed out'}
+if(-not$process.WaitForExit($processTimeoutMilliseconds)){Stop-Process -Id $process.Id -Force;throw "Third deterministic capture timed out after $processTimeoutSeconds seconds"}
 if($process.ExitCode-ne0){throw "Third deterministic capture failed: $($process.ExitCode)"}
 Assert-GameplayNoFatalMarker $directory
 $third=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-receipt.json')|ConvertFrom-Json

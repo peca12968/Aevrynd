@@ -1,4 +1,6 @@
+#include <Aevrynd/Camera.h>
 #include <Aevrynd/CookedRenderManifest3D.h>
+#include <Aevrynd/MeshLoader.h>
 #include <Aevrynd/NativeMaterialDds3D.h>
 #include <Aevrynd/Renderer.h>
 
@@ -31,6 +33,15 @@ struct ProbeResult {
     std::size_t holes{};
     std::size_t semanticOutsideQuad{};
     double coverage{};
+    RendererStats stats{};
+};
+
+struct ActualMeshProbeResult {
+    bool valid{};
+    std::size_t foliagePixels{};
+    std::size_t backgroundPixels{};
+    double coverage{};
+    std::uint64_t viewProjectionHash{};
     RendererStats stats{};
 };
 
@@ -117,6 +128,62 @@ ProbeResult CaptureProbe(D3D12Renderer &renderer, MeshHandle3D mesh,
         result.stats.lastSubmittedFoliageInstances == 1;
     return result;
 }
+
+ActualMeshProbeResult CaptureActualMeshProbe(
+    D3D12Renderer &renderer, MeshHandle3D mesh,
+    MaterialTextureSetHandle3D textures, const Material3D &material,
+    RenderObjectIdentity3D identity, const Camera3D &camera,
+    ObjectIdCaptureRequestMetadata3D metadata) {
+    ActualMeshProbeResult result{};
+    DrawList draw;
+    draw.SetViewProjection(CreateViewProjectionMatrix(
+        camera, float(Width) / float(Height)));
+    draw.SetBackfaceCulling(true);
+    const bool accepted = draw.MeshInstance(
+        mesh, Matrix4::Identity(), material.tint, material.surface,
+        MeshRenderLayer3D::Opaque, textures, material.textureScale,
+        material.useUv, material.materialClass,
+        (std::numeric_limits<float>::quiet_NaN)(), material.castsShadow, 1.f, 0,
+        false, DirectionalShadowAllCascades3D,
+        ShadowCascadeSelection3D::Automatic, Matrix4::Identity(), false,
+        material.normalScale, material.alphaMode, material.alphaCutoff,
+        material.doubleSided, identity);
+    if (!accepted || !renderer.RequestObjectIdReadback3D(metadata))
+        return result;
+    renderer.Render(draw, {0.f, 0.f, 0.f, 1.f});
+    const auto capture = renderer.TakeObjectIdReadback3D();
+    renderer.WaitIdle();
+    result.stats = renderer.GetStats();
+    if (!capture)
+        return result;
+
+    std::size_t foreignSemanticPixels{};
+    for (const std::uint32_t token : capture->pixels) {
+        if (!token) {
+            ++result.backgroundPixels;
+            continue;
+        }
+        const RenderObjectIdentity3D *resolved = capture->Resolve(token);
+        if (resolved && *resolved == identity)
+            ++result.foliagePixels;
+        else
+            ++foreignSemanticPixels;
+    }
+    result.coverage = double(result.foliagePixels) / double(capture->pixels.size());
+    result.viewProjectionHash = capture->rasterProvenance.viewProjectionHash;
+    result.valid =
+        capture->Complete() && capture->maskedStaticComplete &&
+        !capture->rejectedMaskedStatic && capture->tokenMap.size() == 1 &&
+        capture->semanticPixelCount == result.foliagePixels &&
+        !foreignSemanticPixels && result.foliagePixels >= 64 &&
+        result.backgroundPixels && result.coverage < .55 &&
+        result.stats.lastSubmittedMeshInstances == 1 &&
+        result.stats.lastSubmittedTexturedMeshInstances == 1 &&
+        result.stats.lastSubmittedMaskedMeshInstances == 1 &&
+        result.stats.lastSubmittedDoubleSidedMeshInstances == 1 &&
+        result.stats.lastSubmittedFoliageInstances == 1;
+    return result;
+}
 } // 命名空間
 
 int main() {
@@ -188,8 +255,22 @@ int main() {
             CreateQuad(renderer, NearExtent, 0.f, 0.f, 1.f, 1.f);
         const MeshHandle3D farMesh =
             CreateQuad(renderer, FarExtent, 0.f, 0.f, 1.f, 1.f);
-        if (!textures || !atlasMesh || !nearMesh || !farMesh) {
+        const CookedRenderMeshPart3D *leavesPart =
+            manifest.FindMeshPart("island-tree-01:material-1");
+        const MeshLoadResult3D actualLoaded =
+            leavesPart ? LoadAevryndMeshFile(manifest.AssetRoot() /
+                                             leavesPart->lodPaths[2])
+                       : MeshLoadResult3D{};
+        const MeshHandle3D actualMesh =
+            actualLoaded ? renderer.CreateMesh(actualLoaded.mesh.vertices,
+                                               actualLoaded.mesh.indices)
+                         : MeshHandle3D{};
+        if (!textures || !atlasMesh || !nearMesh || !farMesh || !leavesPart ||
+            leavesPart->materialId != "island_tree_01:leaves" ||
+            !actualLoaded || !actualMesh) {
             std::cerr << "foliage GPU resource setup failed\n";
+            if (!actualLoaded.error.empty())
+                std::cerr << "actualMesh=" << actualLoaded.error << '\n';
             result = 4;
         }
 
@@ -239,7 +320,64 @@ int main() {
             result = 5;
         }
 
+        const MeshBounds3D actualBounds = actualLoaded.mesh.Bounds();
+        const float radius = (std::max)(actualBounds.radius, .01f);
+        const float cameraDistance = radius * 3.f + 1.f;
+        CameraProjection orthographic{};
+        orthographic.mode = ProjectionMode::Orthographic;
+        orthographic.orthographicHeight = radius * 2.5f;
+        orthographic.nearPlane = .01f;
+        orthographic.farPlane = cameraDistance * 3.f + radius;
+        const Camera3D godFront{
+            actualBounds.center + Vec3{0.f, cameraDistance, 0.f},
+            actualBounds.center, {0.f, 0.f, 1.f}, orthographic};
+        const Vec3 obliqueDirection = Normalize(Vec3{.65f, 1.f, -.55f});
+        const Camera3D godOblique{
+            actualBounds.center + obliqueDirection * cameraDistance,
+            actualBounds.center, {0.f, 0.f, 1.f}, orthographic};
+        const Camera3D godBack{
+            actualBounds.center - Vec3{0.f, cameraDistance, 0.f},
+            actualBounds.center, {0.f, 0.f, 1.f}, orthographic};
+        const ActualMeshProbeResult actualFront = CaptureActualMeshProbe(
+            renderer, actualMesh, textures, material.material,
+            {{0x41435455414c4c45ull, 0x46524f4e54000000ull}, 4}, godFront,
+            {0xfd01u, 0xfd02u, 0xfd03u});
+        const ActualMeshProbeResult actualOblique = CaptureActualMeshProbe(
+            renderer, actualMesh, textures, material.material,
+            {{0x41435455414c4c45ull, 0x4f424c4951554500ull}, 5}, godOblique,
+            {0xfe01u, 0xfe02u, 0xfe03u});
+        const ActualMeshProbeResult actualBack = CaptureActualMeshProbe(
+            renderer, actualMesh, textures, material.material,
+            {{0x41435455414c4c45ull, 0x4241434b00000000ull}, 6}, godBack,
+            {0xff01u, 0xff02u, 0xff03u});
+        const double frontBackRatio =
+            actualFront.coverage > 0.0
+                ? actualBack.coverage / actualFront.coverage
+                : 0.0;
+        std::cout << "actualVertices=" << actualLoaded.mesh.vertices.size()
+                  << " actualTriangles=" << actualLoaded.mesh.indices.size() / 3
+                  << " radius=" << actualBounds.radius
+                  << " front=" << actualFront.coverage
+                  << " oblique=" << actualOblique.coverage
+                  << " back=" << actualBack.coverage
+                  << " frontBackRatio=" << frontBackRatio
+                  << " actualPixels=" << actualFront.foliagePixels << ','
+                  << actualOblique.foliagePixels << ','
+                  << actualBack.foliagePixels
+                  << " backgrounds=" << actualFront.backgroundPixels << ','
+                  << actualOblique.backgroundPixels << ','
+                  << actualBack.backgroundPixels << '\n';
+        if (!actualFront.valid || !actualOblique.valid || !actualBack.valid ||
+            actualFront.viewProjectionHash == actualOblique.viewProjectionHash ||
+            actualFront.viewProjectionHash == actualBack.viewProjectionHash ||
+            actualOblique.viewProjectionHash == actualBack.viewProjectionHash ||
+            frontBackRatio < .35 || frontBackRatio > 2.85) {
+            std::cerr << "actual cooked foliage mesh GPU oracle failed\n";
+            result = 8;
+        }
+
         renderer.DestroyMaterialTextureSet(textures);
+        renderer.DestroyMesh(actualMesh);
         renderer.DestroyMesh(farMesh);
         renderer.DestroyMesh(nearMesh);
         renderer.DestroyMesh(atlasMesh);
@@ -274,7 +412,7 @@ int main() {
         }
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
-        result = 8;
+        result = 9;
     }
     DestroyWindow(window);
     return result;

@@ -1532,7 +1532,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod0-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
       "bytes": 959120,
-      "sha256": "29d0e23618ee38fbf4c2a04c35da3729a92480bd02f7c8edb0681216399f208e",
+      "sha256": "1154fe8d204bb22155447ae15689146f4bc7d0b46c99942269a0fcf491fe489f",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1566,7 +1566,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod0-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
       "bytes": 38691184,
-      "sha256": "03c466710ff7bdeb1d393aa3f7d7fa561c21fb4489618dc96f1b3ca5cc5b5ab3",
+      "sha256": "8177cde93f9fd9923f2cf08a6a2784bd4ac95c77aae3bf1b9ba4b9ae3eade435",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1600,7 +1600,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod0-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
       "bytes": 16052564,
-      "sha256": "4285a6956d23228491a34a6103b5428b3cb31fea946116513b9883e6842df353",
+      "sha256": "518071fb54b7ac848cf203e64acd1ef2108650483956f63cfac6eab5434a6822",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1634,7 +1634,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod1-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
       "bytes": 493660,
-      "sha256": "0bb0948a5cb7c39d129a8a847ddf8410c71c1429955be5b35c25121d16e93c5d",
+      "sha256": "d188c1fb3756e7614a14bfd909a31934b5598585fc8fcc29e5bd18d60b03e216",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1668,7 +1668,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod1-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
       "bytes": 21375028,
-      "sha256": "29e303ee33a8e821f8a036d2e52197b813f6389d805da704eda4951da755ac40",
+      "sha256": "1773f7705a43da3b3673d0d34c66c2c4fefc47952970cb84665a774d6a54f871",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1702,7 +1702,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod1-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
       "bytes": 8328656,
-      "sha256": "34aceb1f5aa93d40a38a094f95417f96d225c46998fc3f1979927e16ca8822ba",
+      "sha256": "c346382c0cabe2618da9a699f412f0012d6dc6105489dbe91f273c49cddcd316",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1736,7 +1736,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
       "bytes": 159612,
-      "sha256": "10b59da1599762139a5c63ab3025db16f34bef5771996e1f5fbd45c2e79c26de",
+      "sha256": "b964d1f7b16fb3602ff038ae111c79d0bfc029185896e95da97cc1acb4f59145",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1770,7 +1770,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod2-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
       "bytes": 8568172,
-      "sha256": "0995d6a672e9ef67c68f8888c4884d4838f236ec2129e86edc450116b3c255e6",
+      "sha256": "0e96ddea6fd88c7c9e1e6b43352503affcd6ba97ace0d2abbf37b48429d1a9a6",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
@@ -1804,7 +1804,7 @@
     {
       "path": "meshes/island-tree-01/island-tree-01-lod2-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
       "bytes": 2709952,
-      "sha256": "3a742cba3547d3fde552308d6b0b47142adb22cbbecfeb2462c262aa7a95fb06",
+      "sha256": "5d32528c7604d041a0730755ddf765b111f82b43847c5f4aed0fe386e99d6188",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {

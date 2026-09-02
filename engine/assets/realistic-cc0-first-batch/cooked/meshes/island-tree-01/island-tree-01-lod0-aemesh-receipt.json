@@ -8,7 +8,7 @@
   "outputs": [
     {
       "file": "island-tree-01-lod0-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
-      "sha256": "29d0e23618ee38fbf4c2a04c35da3729a92480bd02f7c8edb0681216399f208e",
+      "sha256": "1154fe8d204bb22155447ae15689146f4bc7d0b46c99942269a0fcf491fe489f",
       "bytes": 959120,
       "nodeIndex": 0,
       "nodePath": [
@@ -35,11 +35,31 @@
       ],
       "windingReversed": true,
       "hasNormals": true,
-      "hasUv": true
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.00401020562,
+          0.00492024422
+        ],
+        "rotation": 0.0,
+        "scale": [
+          15.8655949,
+          15.8607807
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.00401020562,
+        0.00492024422
+      ],
+      "effectiveUvMaximum": [
+        0.9953829242512657,
+        0.99599214422
+      ]
     },
     {
       "file": "island-tree-01-lod0-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
-      "sha256": "03c466710ff7bdeb1d393aa3f7d7fa561c21fb4489618dc96f1b3ca5cc5b5ab3",
+      "sha256": "8177cde93f9fd9923f2cf08a6a2784bd4ac95c77aae3bf1b9ba4b9ae3eade435",
       "bytes": 38691184,
       "nodeIndex": 0,
       "nodePath": [
@@ -66,11 +86,31 @@
       ],
       "windingReversed": true,
       "hasNormals": true,
-      "hasUv": true
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.00835582614,
+          0.0127112269
+        ],
+        "rotation": 0.0,
+        "scale": [
+          12.9939985,
+          15.5219173
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.00835582614,
+        0.0127112269
+      ],
+      "effectiveUvMaximum": [
+        0.8202948489140901,
+        0.9826090119537881
+      ]
     },
     {
       "file": "island-tree-01-lod0-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
-      "sha256": "4285a6956d23228491a34a6103b5428b3cb31fea946116513b9883e6842df353",
+      "sha256": "518071fb54b7ac848cf203e64acd1ef2108650483956f63cfac6eab5434a6822",
       "bytes": 16052564,
       "nodeIndex": 0,
       "nodePath": [
@@ -97,14 +137,34 @@
       ],
       "windingReversed": true,
       "hasNormals": true,
-      "hasUv": true
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.000921401079,
+          -2.39982986
+        ],
+        "rotation": 0.0,
+        "scale": [
+          50.6303101,
+          54.39394
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.000921401079,
+        -2.39982986
+      ],
+      "effectiveUvMaximum": [
+        3.164591498881701,
+        0.9990132665735865
+      ]
     }
   ],
   "outputCount": 3,
   "materialPrimitiveBijection": true,
   "totalBytes": 55702868,
   "totalTriangles": 1599403,
-  "peakWorkingSetBytes": 1443921920,
+  "peakWorkingSetBytes": 1430941696,
   "peakWorkingSetScope": "converter-process-no-children",
   "peakLimitBytes": 2147483648,
   "memoryGate": true

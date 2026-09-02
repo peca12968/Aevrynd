@@ -21,12 +21,18 @@ valid = {"schemaVersion": 1, "binding": "runtime-sidecar", "outputResolution": 1
 parsed = MODULE.parse_sidecar(valid)
 assert parsed[0]["name"] == "slot-0" and parsed[0]["alphaCutoff"] == 0.5
 assert parsed[0]["doubleSided"] is False and parsed[0]["materialClass"] == "surface"
+assert MODULE.parse_sidecar({key: value for key, value in valid.items() if key != "binding"})[0]["name"] == "slot-0"
 
 separate = {"schemaVersion": 1, "binding": "runtime-sidecar", "outputResolution": 1024, "expectedMipCount": 11, "materials": [
     {"name": "ground", "baseColor": "textures/base.jpg", "normalGl": "textures/normal.jpg",
      "ambientOcclusion": "textures/ao.jpg", "roughness": "textures/rough.jpg", "metallicScalar": 0.0}]}
 separate_parsed = MODULE.parse_sidecar(separate)
 assert separate_parsed[0]["arm"] is None and separate_parsed[0]["metallicScalar"] == 0.0
+alias_sidecar = {"schemaVersion": 1, "outputResolution": 512, "expectedMipCount": 10, "materials": [
+    {"name": "Alias_Material", "slot": MODULE.UINT64_MAX, "baseColor": "a",
+     "normal": "b", "arm": "c"}]}
+alias_parsed = MODULE.parse_sidecar(alias_sidecar)
+assert alias_parsed[0]["name"] == "alias_material" and alias_parsed[0]["normal"] == "b" and alias_parsed[0]["arm"] == "c"
 
 # 中文註解：顏色貼圖必須有 -srgb，法線與 ORM 是 data map，絕不允許 gamma 轉換。
 texconv = Path("texconv.exe")
@@ -58,7 +64,15 @@ with patch.dict(MODULE.CHANNEL_COOK_CONTRACT, {"arm": {"format": "BC7_UNORM_SRGB
         raise AssertionError("data map accepted an sRGB cook contract")
 
 for mutation in (
+    [],
+    {"schemaVersion": True, "outputResolution": 1024, "expectedMipCount": 11, "materials": valid["materials"]},
+    {"schemaVersion": 1.0, "outputResolution": 1024, "expectedMipCount": 11, "materials": valid["materials"]},
     {"schemaVersion": 2, "outputResolution": 1024, "expectedMipCount": 11, "materials": valid["materials"]},
+    {"schemaVersion": 1, "binding": None, "outputResolution": 1024, "expectedMipCount": 11, "materials": valid["materials"]},
+    {"schemaVersion": 1, "outputResolution": True, "expectedMipCount": 11, "materials": valid["materials"]},
+    {"schemaVersion": 1, "outputResolution": 1024.0, "expectedMipCount": 11, "materials": valid["materials"]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": True, "materials": valid["materials"]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11.0, "materials": valid["materials"]},
     {"schemaVersion": 1, "binding": "embedded", "outputResolution": 1024, "expectedMipCount": 11, "materials": valid["materials"]},
     {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b"}]},
     {"schemaVersion": 1, "normalConvention": "DirectX", "outputResolution": 1024, "expectedMipCount": 11, "materials": valid["materials"]},
@@ -68,6 +82,36 @@ for mutation in (
                                           "ambientOcclusion": "c", "roughness": "d", "metallicScalar": -0.1}]},
     {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
                                           "packedArm": "c", "ambientOcclusion": "d", "roughness": "e", "metallicScalar": 0.0}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "packedArm": "c", "ambientOcclusion": "d"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "packedArm": "c", "roughness": "d"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "packedArm": "c", "metallicScalar": 0.0}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "packedArm": 7, "arm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "packedArm": False, "ambientOcclusion": "c", "roughness": "d", "metallicScalar": 0.0}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": 7,
+                                          "normal": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": 7, "slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": "x" * 129, "slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": "bad.name", "slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [
+        {"name": "Leaves", "slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c"},
+        {"name": "leaves", "slot": 1, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": "valid", "slot": True, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": "valid", "slot": -1, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": "valid", "slot": MODULE.UINT64_MAX + 1, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"name": "valid", "slot": 0.0, "baseColor": "a", "normalGl": "b", "packedArm": "c"}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "ambientOcclusion": "c", "roughness": "d", "metallicScalar": float("nan")}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "ambientOcclusion": "c", "roughness": "d", "metallicScalar": float("inf")}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "ambientOcclusion": "c", "roughness": "d", "metallicScalar": 1.01}]},
+    {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b",
+                                          "ambientOcclusion": "c", "roughness": "d", "metallicScalar": True}]},
     {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c", "alphaMode": "mask"}]},
     {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c", "alphaMode": "mask", "alphaSource": "black-key", "alphaCutoff": 0.4, "alphaBlackKeyThreshold": 0.05, "alphaDilationPixels": 4}]},
     {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{"slot": 0, "baseColor": "a", "normalGl": "b", "packedArm": "c", "alphaMode": "mask", "alphaSource": "black-key", "alphaCutoff": 0.5, "alphaBlackKeyThreshold": 0.0, "alphaDilationPixels": 4}]},

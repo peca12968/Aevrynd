@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <set>
@@ -23,7 +24,10 @@ enum class JsonType : std::uint8_t { Null, Boolean, Number, String, Array, Objec
 struct JsonValue {
     JsonType type{JsonType::Null};
     bool boolean{};
-    std::uint64_t number{};
+    double number{};
+    std::string numberLexeme;
+    std::uint64_t unsignedInteger{};
+    bool isUnsignedInteger{};
     std::string string;
     std::vector<JsonValue> array;
     std::vector<std::pair<std::string, JsonValue>> object;
@@ -80,11 +84,32 @@ private:
         if (text_.substr(position_, 4) == "true") { position_ += 4; output.type = JsonType::Boolean; output.boolean = true; return true; }
         if (text_.substr(position_, 5) == "false") { position_ += 5; output.type = JsonType::Boolean; return true; }
         if (text_.substr(position_, 4) == "null") { position_ += 4; return true; }
-        if (text_[position_] >= '0' && text_[position_] <= '9') {
+        if (text_[position_] == '-' || (text_[position_] >= '0' && text_[position_] <= '9')) {
             const std::size_t start = position_;
-            while (position_ < text_.size() && text_[position_] >= '0' && text_[position_] <= '9') ++position_;
+            if (text_[position_] == '-') ++position_;
+            if (position_ >= text_.size() || text_[position_] < '0' || text_[position_] > '9') return false;
+            if (text_[position_] == '0') ++position_;
+            else while (position_ < text_.size() && text_[position_] >= '0' && text_[position_] <= '9') ++position_;
+            if (position_ < text_.size() && text_[position_] == '.') {
+                ++position_;
+                const std::size_t fraction = position_;
+                while (position_ < text_.size() && text_[position_] >= '0' && text_[position_] <= '9') ++position_;
+                if (position_ == fraction) return false;
+            }
+            if (position_ < text_.size() && (text_[position_] == 'e' || text_[position_] == 'E')) {
+                ++position_;
+                if (position_ < text_.size() && (text_[position_] == '+' || text_[position_] == '-')) ++position_;
+                const std::size_t exponent = position_;
+                while (position_ < text_.size() && text_[position_] >= '0' && text_[position_] <= '9') ++position_;
+                if (position_ == exponent) return false;
+            }
+            output.numberLexeme.assign(text_.substr(start, position_ - start));
             auto converted = std::from_chars(text_.data() + start, text_.data() + position_, output.number);
-            if (converted.ec != std::errc{} || converted.ptr != text_.data() + position_) return false;
+            if (converted.ec != std::errc{} || converted.ptr != text_.data() + position_ || !std::isfinite(output.number)) return false;
+            if (output.numberLexeme.find_first_of("-.eE") == std::string::npos) {
+                const auto integer = std::from_chars(output.numberLexeme.data(), output.numberLexeme.data() + output.numberLexeme.size(), output.unsignedInteger);
+                output.isUnsignedInteger = integer.ec == std::errc{} && integer.ptr == output.numberLexeme.data() + output.numberLexeme.size();
+            }
             output.type = JsonType::Number; return true;
         }
         if (text_[position_] == '[') {
@@ -122,6 +147,9 @@ const JsonValue* Field(const JsonValue& object, std::string_view name) {
 }
 bool StringField(const JsonValue& object, std::string_view name, std::string& output) {
     const JsonValue* value = Field(object, name); if (!value || value->type != JsonType::String) return false; output = value->string; return true;
+}
+bool BooleanField(const JsonValue& object, std::string_view name, bool& output) {
+    const JsonValue* value = Field(object, name); if (!value || value->type != JsonType::Boolean) return false; output = value->boolean; return true;
 }
 
 std::string Lower(std::string value) { std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }); return value; }
@@ -203,20 +231,71 @@ bool PhotorealMaterialImport3D::BuildPlan(const PhotorealRuntimeManifest3D& runt
     const std::string_view sidecarJson(reinterpret_cast<const char*>(sidecarBytes.data()), sidecarBytes.size());
     JsonValue root; if (!JsonParser(sidecarJson).Parse(root, error) || root.type != JsonType::Object) return false;
     const JsonValue* schema = Field(root, "schemaVersion"); const JsonValue* materials = Field(root, "materials");
-    if (!schema || schema->type != JsonType::Number || schema->number != 1 || !materials || materials->type != JsonType::Array || materials->array.empty() || materials->array.size() > limits.maximumMaterials) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material sidecar schema is invalid"); return false; }
+    const JsonValue* outputResolution = Field(root, "outputResolution"); const JsonValue* expectedMipCount = Field(root, "expectedMipCount");
+    if (!schema || schema->type != JsonType::Number || !schema->isUnsignedInteger || schema->unsignedInteger != 1 ||
+        !materials || materials->type != JsonType::Array || materials->array.empty() || materials->array.size() > limits.maximumMaterials ||
+        !outputResolution || outputResolution->type != JsonType::Number || !outputResolution->isUnsignedInteger ||
+        (outputResolution->unsignedInteger != 512 && outputResolution->unsignedInteger != 1024 && outputResolution->unsignedInteger != 2048 && outputResolution->unsignedInteger != 4096) ||
+        !expectedMipCount || expectedMipCount->type != JsonType::Number || !expectedMipCount->isUnsignedInteger) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material sidecar schema is invalid"); return false; }
+    std::uint64_t mipCount = 1; for (std::uint64_t size = outputResolution->unsignedInteger; size > 1; size >>= 1) ++mipCount;
+    if (expectedMipCount->unsignedInteger != mipCount) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material output resolution or mip contract is invalid"); return false; }
     std::string binding; if (Field(root, "binding") && (!StringField(root, "binding", binding) || binding != "runtime-sidecar")) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material binding is not runtime-sidecar"); return false; }
     std::string convention = "OpenGL"; if (Field(root, "normalConvention") && !StringField(root, "normalConvention", convention)) return false; if (convention != "OpenGL") { SetError(error, PhotorealMaterialImportErrorCode3D::NormalConventionUnsupported, 0, "Only OpenGL source normals can be converted"); return false; }
     PhotorealMaterialImportPlan3D temporary; temporary.assetId = std::string(assetId); temporary.verifiedSourceBytes = sidecarBytes.size(); std::set<std::string> names;
     for (std::size_t index = 0; index < materials->array.size(); ++index) {
         const JsonValue& value = materials->array[index]; if (value.type != JsonType::Object) return false; std::string name, base, normal, arm, ambientOcclusion, roughness;
-        if (!StringField(value, "name", name)) { const JsonValue* slot = Field(value, "slot"); if (!slot || slot->type != JsonType::Number) return false; name = "slot-" + std::to_string(slot->number); }
-        const bool packed = StringField(value, "packedArm", arm) || StringField(value, "arm", arm);
+        const JsonValue* slot = Field(value, "slot");
+        if (slot && (slot->type != JsonType::Number || !slot->isUnsignedInteger)) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material slot is invalid"); return false; }
+        if (StringField(value, "name", name)) {
+            if (!ValidName(name)) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material name is invalid"); return false; }
+            name = Lower(name);
+        } else {
+            if (Field(value, "name")) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material name is invalid"); return false; }
+            name = "slot-" + std::to_string(slot ? slot->unsignedInteger : index);
+        }
+        const bool hasNormalGl = Field(value, "normalGl");
+        const bool hasPackedArm = Field(value, "packedArm");
+        const bool hasPackedFields = hasPackedArm || Field(value, "arm");
+        const bool normalValid = hasNormalGl ? StringField(value, "normalGl", normal) : StringField(value, "normal", normal);
+        const bool packed = (hasPackedArm ? StringField(value, "packedArm", arm) : StringField(value, "arm", arm)) && !arm.empty();
         const JsonValue* metallic = Field(value, "metallicScalar");
         const bool separate = StringField(value, "ambientOcclusion", ambientOcclusion) && StringField(value, "roughness", roughness) &&
-                              metallic && metallic->type == JsonType::Number && metallic->number <= 1;
+                              metallic && metallic->type == JsonType::Number && std::isfinite(metallic->number) && metallic->number >= 0.0 && metallic->number <= 1.0;
+        const bool hasSeparateFields = Field(value, "ambientOcclusion") || Field(value, "roughness") || metallic;
+        static const std::unordered_set<std::string> allowedKeys{"name", "slot", "baseColor", "normalGl", "normal", "packedArm", "arm", "ambientOcclusion", "roughness", "metallicScalar", "alphaMode", "alphaCutoff", "doubleSided", "materialClass", "alphaSource", "alphaBlackKeyThreshold", "alphaDilationPixels"};
+        if (std::any_of(value.object.begin(), value.object.end(), [](const auto& field) { return !allowedKeys.contains(field.first); })) { SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material contains an unknown field"); return false; }
         if (!ValidName(name) || !names.insert(Lower(name)).second || !StringField(value, "baseColor", base) ||
-            !(StringField(value, "normalGl", normal) || StringField(value, "normal", normal)) || packed == separate) {
+            !normalValid || (hasPackedFields && !packed) || (hasSeparateFields && (!separate || packed)) || packed == separate) {
             SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material channels are incomplete, ambiguous, or duplicated"); return false;
+        }
+        {
+            std::string alphaMode = "opaque", alphaSource, materialClass = "surface"; bool doubleSided{};
+            if ((Field(value, "alphaMode") && !StringField(value, "alphaMode", alphaMode)) ||
+                (Field(value, "materialClass") && !StringField(value, "materialClass", materialClass)) ||
+                (Field(value, "doubleSided") && !BooleanField(value, "doubleSided", doubleSided))) {
+                SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Material alpha type contract is invalid"); return false;
+            }
+            const JsonValue* blackKeyThreshold = Field(value, "alphaBlackKeyThreshold");
+            const JsonValue* alphaCutoff = Field(value, "alphaCutoff");
+            const JsonValue* dilationPixels = Field(value, "alphaDilationPixels");
+            if ((alphaCutoff && (alphaCutoff->type != JsonType::Number || alphaCutoff->number != 0.5)) ||
+                (materialClass != "surface" && materialClass != "foliage")) {
+                SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Masked foliage alpha semantics are incomplete or invalid"); return false;
+            }
+            if (alphaMode == "mask") {
+                if (!alphaCutoff || !StringField(value, "alphaSource", alphaSource) ||
+                    (alphaSource != "embedded" && alphaSource != "black-key") ||
+                    !dilationPixels || dilationPixels->type != JsonType::Number || !dilationPixels->isUnsignedInteger || dilationPixels->unsignedInteger > 32 ||
+                    (alphaSource == "embedded" && blackKeyThreshold) ||
+                    (alphaSource == "black-key" && (!blackKeyThreshold || blackKeyThreshold->type != JsonType::Number || blackKeyThreshold->number <= 0.0 || blackKeyThreshold->number > 0.25))) {
+                    SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "MASK alpha source, cutoff, threshold, or dilation contract is invalid"); return false;
+                }
+            } else if (alphaMode != "opaque" || Field(value, "alphaSource") || blackKeyThreshold || dilationPixels) {
+                SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Opaque material contains MASK-only alpha semantics"); return false;
+            }
+            if (materialClass == "foliage" && (alphaMode != "mask" || !doubleSided)) {
+                SetError(error, PhotorealMaterialImportErrorCode3D::InvalidSchema, 0, "Foliage must be a double-sided MASK material"); return false;
+            }
         }
         if (separate) arm = ambientOcclusion;
         const auto armOperation = separate ? PhotorealTextureBakeOperation3D::PackAmbientOcclusionRoughnessMetallicScalar : PhotorealTextureBakeOperation3D::PreservePackedArm;

@@ -18,6 +18,7 @@ from PIL import Image
 
 DIRECTXTEX_SHA256 = "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
 PEAK_WORKING_SET_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
+UINT64_MAX = (1 << 64) - 1
 CHANNEL_COOK_CONTRACT = {
     "base": {"format": "BC7_UNORM_SRGB", "formatId": 99, "sourceColorSpace": "sRGB"},
     "normal": {"format": "BC5_UNORM", "formatId": 83, "sourceColorSpace": "linear"},
@@ -177,15 +178,20 @@ def dilate_mask_rgb(image: Image.Image, radius: int, alpha_cutoff: float) -> Ima
 
 
 def parse_sidecar(sidecar: dict) -> list[dict]:
-    if sidecar.get("schemaVersion") != 1 or not isinstance(sidecar.get("materials"), list) or not sidecar["materials"]:
+    if not isinstance(sidecar, dict):
         raise ValueError("Material sidecar schema is invalid")
-    if sidecar.get("binding") not in (None, "runtime-sidecar"):
+    schema_version = sidecar.get("schemaVersion")
+    if (isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version != 1 or
+            not isinstance(sidecar.get("materials"), list) or not sidecar["materials"]):
+        raise ValueError("Material sidecar schema is invalid")
+    if "binding" in sidecar and sidecar["binding"] != "runtime-sidecar":
         raise ValueError("Material sidecar binding is invalid")
     convention = sidecar.get("normalConvention", "OpenGL")
     if convention != "OpenGL":
         raise ValueError("Only OpenGL source normals are accepted for explicit DirectX conversion")
-    if (not isinstance(sidecar.get("outputResolution"), int) or sidecar["outputResolution"] not in (512, 1024, 2048, 4096) or
-            not isinstance(sidecar.get("expectedMipCount"), int) or
+    if (isinstance(sidecar.get("outputResolution"), bool) or not isinstance(sidecar.get("outputResolution"), int) or
+            sidecar["outputResolution"] not in (512, 1024, 2048, 4096) or
+            isinstance(sidecar.get("expectedMipCount"), bool) or not isinstance(sidecar.get("expectedMipCount"), int) or
             sidecar["expectedMipCount"] != int(math.log2(sidecar["outputResolution"])) + 1):
         raise ValueError("Material output resolution tier or mip contract is invalid")
     parsed = []
@@ -193,24 +199,34 @@ def parse_sidecar(sidecar: dict) -> list[dict]:
     for index, material in enumerate(sidecar["materials"]):
         if not isinstance(material, dict):
             raise ValueError("Material sidecar entry is invalid")
-        name = material.get("name", f"slot-{material.get('slot', index)}")
-        if not isinstance(name, str) or not name or name in names or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for character in name):
+        slot = material.get("slot", index)
+        if ("slot" in material and (isinstance(slot, bool) or not isinstance(slot, int) or
+                                    slot < 0 or slot > UINT64_MAX)):
+            raise ValueError("Material slot is invalid")
+        name = material.get("name", f"slot-{slot}")
+        if (not isinstance(name, str) or not name or len(name) > 128 or
+                any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for character in name)):
+            raise ValueError("Material slot name is invalid or duplicated")
+        name = name.lower()
+        if name in names:
             raise ValueError("Material slot name is invalid or duplicated")
         names.add(name)
         base = material.get("baseColor")
-        normal = material.get("normalGl", material.get("normal"))
-        arm = material.get("packedArm", material.get("arm"))
+        normal = material.get("normalGl") if "normalGl" in material else material.get("normal")
+        arm = material.get("packedArm") if "packedArm" in material else material.get("arm")
         ambient_occlusion = material.get("ambientOcclusion")
         roughness = material.get("roughness")
         metallic_scalar = material.get("metallicScalar")
         if not all(isinstance(value, str) and value for value in (base, normal)):
             raise ValueError("baseColor and normalGL are mandatory")
         packed = isinstance(arm, str) and bool(arm)
+        has_packed = "packedArm" in material or "arm" in material
+        has_separate = any(field in material for field in ("ambientOcclusion", "roughness", "metallicScalar"))
         separate = (isinstance(ambient_occlusion, str) and bool(ambient_occlusion) and
                     isinstance(roughness, str) and bool(roughness) and
                     isinstance(metallic_scalar, (int, float)) and not isinstance(metallic_scalar, bool) and
                     math.isfinite(float(metallic_scalar)) and 0.0 <= float(metallic_scalar) <= 1.0)
-        if packed == separate:
+        if (has_packed and not packed) or (packed and has_separate) or (has_separate and not separate) or packed == separate:
             raise ValueError("exactly one packed ARM or AO/roughness/metallicScalar source contract is mandatory")
         alpha_mode = material.get("alphaMode", "opaque")
         if alpha_mode not in ("opaque", "mask"):
@@ -240,7 +256,7 @@ def parse_sidecar(sidecar: dict) -> list[dict]:
             raise ValueError("Foliage must be a double-sided MASK material")
         if any(key not in allowed for key in material):
             raise ValueError("Material sidecar entry contains an unknown field")
-        parsed.append({"name": name.lower(), "base": base, "normal": normal, "arm": arm if packed else None,
+        parsed.append({"name": name, "base": base, "normal": normal, "arm": arm if packed else None,
                        "ambientOcclusion": ambient_occlusion if separate else None,
                        "roughness": roughness if separate else None,
                        "metallicScalar": float(metallic_scalar) if separate else None,
