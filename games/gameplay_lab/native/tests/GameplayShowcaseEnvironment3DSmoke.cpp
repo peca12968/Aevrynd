@@ -116,7 +116,7 @@ int main() {
       !draw.DirectionalLightShafts().enabled ||
       !draw.TerrainDistanceMaterial().enabled ||
       !draw.WaterOptics().screenSpaceRefraction ||
-      !draw.WaterSurfaceReceipt().rendererApplied ||
+      !draw.WaterSurfaceReceipt().enabledRequested ||
       draw.WaterSurfaceReceipt().fingerprint != receipt.waterSurfaceFingerprint)
     return 3;
 

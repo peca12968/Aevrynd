@@ -1670,10 +1670,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float waterDeepAlpha=waterSurfaceEnabled!=0u?max(waterShallowAlpha,waterAlphaNight.y):.91;
     const float waterMaximumNightRadiance=waterSurfaceEnabled!=0u?waterAlphaNight.z:8.0;
 
-    // 材質類別明確決定水面；法線門檻僅避免垂直側面產生水平水波。
-    const float waterMask = input.materialClass == 1 ? step(0.35, normal.y) : 0.0;
+    // 水材質的所有片段都必須遵守其管線合成契約；朝上門檻只限制水平水波與岸泡。
+    const float waterMaterialMask = input.materialClass == 1 ? 1.0 : 0.0;
+    const float waterMask = waterMaterialMask * step(0.35, normal.y);
+    const float waterCompositeMask = max(waterMask, waterMaterialMask * float(waterSurfaceEnabled != 0u));
     float foamMask = waterMask * smoothstep(0.30, 0.50, roughness);
     float waterThickness = 1.6;
+    float opticalPathLength = 1.6;
+    float shoreDepth = 1.6;
     float waterDepthValid = 0.0;
     float waterOutputAlpha = input.color.a;
     const float2 waterScreenUv = input.position.xy * colorPipeline.zw;
@@ -1691,11 +1695,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             {
                 waterDepthValid = 1.0;
                 waterThickness = clamp(measuredThickness, 0.0, 8.0);
-                // 真實河床深度取代人工岸線網格；近岸泡沫在淺水處自然形成並快速破碎。
-                const float shore = 1.0 - smoothstep(waterFoamStartDepth, waterFoamEndDepth, waterThickness);
+                opticalPathLength = waterThickness;
+                shoreDepth = waterSurfaceEnabled != 0u
+                    ? clamp(max(0.0, input.worldPosition.y - bottomWorldPosition.y), 0.0, 8.0)
+                    : waterThickness;
+                // 新路徑用垂直岸深避免斜視放大，導數寬度讓岸線跨解析度保持連續；停用時維持舊公式。
+                // 深度斷層不可把導數放大成整片泡沫，只保留窄帶像素抗鋸齒。
+                const float shoreDerivativeMaximum = max(0.002, min(0.08, (waterFoamEndDepth - waterFoamStartDepth) * 0.25));
+                const float shoreDerivative = clamp(fwidth(shoreDepth) * 1.5, 0.002, shoreDerivativeMaximum);
+                const float shore = waterSurfaceEnabled != 0u
+                    ? 1.0 - smoothstep(waterFoamStartDepth - shoreDerivative, waterFoamEndDepth + shoreDerivative, shoreDepth)
+                    : 1.0 - smoothstep(waterFoamStartDepth, waterFoamEndDepth, waterThickness);
                 const float shoreNoise = lerp(0.62, 1.0, CloudNoise(input.worldPosition.xz * 0.58 + fogEndEnabled.ww * float2(0.035, -0.021)));
                 foamMask = saturate(shore * shoreNoise);
-                waterOutputAlpha=lerp(waterShallowAlpha,waterDeepAlpha,smoothstep(waterSurfaceEnabled!=0u?waterFoamStartDepth:.04,4.5,waterThickness));
+                waterOutputAlpha=lerp(waterShallowAlpha,waterDeepAlpha,smoothstep(waterSurfaceEnabled!=0u?waterFoamStartDepth:.04,4.5,waterSurfaceEnabled!=0u?shoreDepth:waterThickness));
             }
         }
     }
@@ -1794,21 +1807,23 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     baseColor,roughness);
     }
 
-    [branch] if (waterMask > 0.5)
+    [branch] if (waterCompositeMask > 0.5)
     {
         const float waterViewCosine = saturate(dot(normal, viewDirection));
         const float fresnel = waterReflectance + (1.0 - waterReflectance) * pow(1.0 - waterViewCosine, 5.0);
-        const float waterPathLength = min(8.0, waterThickness / max(0.16, waterViewCosine));
+        const float waterPathLength = waterSurfaceEnabled != 0u
+            ? min(8.0, opticalPathLength)
+            : min(8.0, waterThickness / max(0.16, waterViewCosine));
         const float3 legacyAbsorption=float3(.42,.16,.08);
         const float3 legacyDeepColor=float3(.012,.055,.070);
         const float3 waterTransmission=exp(-(waterSurfaceEnabled!=0u?waterAbsorption:legacyAbsorption)*waterPathLength);
         const float3 deepWaterColor=lerp(waterSurfaceEnabled!=0u?waterDeepColor:legacyDeepColor,baseColor,.24);
         float3 transmittedScene = shaded;
-        [branch] if (waterSceneColorEnabled > 0.5 && waterDepthValid > 0.5)
+        [branch] if (waterSceneColorEnabled > 0.5 && (waterDepthValid > 0.5 || waterSurfaceEnabled != 0u))
         {
             // 折射位移受水深與最大 UV 偏移雙重限制，避免岸邊越界及遠景拉伸。
-            const float refractionScale = min(waterMaximumUvOffset,
-                waterRefractionStrength * saturate(waterThickness * waterRefractionDepthScale));
+            const float refractionScale = waterDepthValid > 0.5 ? min(waterMaximumUvOffset,
+                waterRefractionStrength * saturate(opticalPathLength * waterRefractionDepthScale)) : 0.0;
             const float2 viewportMinimum = worldViewport.xy + colorPipeline.zw * 1.5;
             const float2 viewportMaximum = worldViewport.xy + worldViewport.zw - colorPipeline.zw * 1.5;
             const float2 refractedUv = clamp(waterScreenUv + normal.xz * refractionScale,
@@ -1827,6 +1842,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float3 waterComposite=waterSurfaceEnabled!=0u
             ? absorbedWater*(1.0-fresnel)+reflectedWater*fresnel
             : lerp(absorbedWater,reflectedWater,fresnel);
+        // 水體側壁仍屬透明體積邊界；保留背景透射，避免掠射 Fresnel 將箱型水網格變成不透明鏡牆。
+        const float waterLocalContribution = lerp(0.35, 1.0, waterMask);
+        const float3 sideTransmittedScene = waterSceneColorEnabled > 0.5
+            ? opaqueSceneColorTexture.SampleLevel(screenPointClampSampler, waterScreenUv, 0.0).rgb
+            : transmittedScene;
+        waterComposite = waterSurfaceEnabled != 0u ? lerp(sideTransmittedScene, waterComposite, waterLocalContribution) : waterComposite;
         [branch] if (foamMask > 0.01)
         {
             // 岸線泡沫使用有界程序破碎圖樣，避免整條河岸成為均勻發光帶。
@@ -1882,6 +1903,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     }
     // 世界著色器只輸出未曝光線性 HDR；曝光、ACES 與 sRGB 由全畫面後處理統一執行。
     float outputAlpha = input.materialClass == 3 ? 1.0 : lerp(input.color.a, waterOutputAlpha, waterMask * waterDepthValid);
+    if(screenSpaceReflectionReserved.x > 0.5 && waterMaterialMask > 0.5)
+        outputAlpha = 1.0;
     if(alphaToCoverage && input.alphaMasked != 0)
         outputAlpha = MaskedAlphaToCoverage(materialAlpha, input.alphaCutoff);
     // 光柱只由全螢幕 VolumetricAtmosphere pass 依 scene depth 合成；在每個表面再次積分會形成垂直白柱並雙重加色。
