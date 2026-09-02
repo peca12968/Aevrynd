@@ -17,9 +17,11 @@ from tools.game_mode_controller.acceptance import QwenAcceptanceProbe
 from tools.game_mode_controller.atomic_store import AtomicJsonStore
 from tools.game_mode_controller.coordinator import HubCoordinator
 from tools.game_mode_controller.deployment_transaction import DeploymentTransaction
+from tools.game_mode_controller.models import GameModeState, QwenState
 from tools.game_mode_controller.process_guard import ObservedProcess, ProcessIdentityError, command_digest, file_sha256, load_runtime_manifest
 from tools.game_mode_controller.runner import MainAgent, SignedHubClient, load_runner_config, make_hub_server
 from tools.game_mode_controller.security import ReplayLedger, RequestAuthenticator
+from tools.game_mode_controller.state_machine import GameModeController
 from tools.game_mode_controller.windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest, minimal_runtime_environment
 
 SECRET = "runtime-test-secret-value-123456789012345"
@@ -251,6 +253,43 @@ class RuntimeTests(unittest.TestCase):
             return Response({"choices": [{"message": {"content": "QWEN_LIGHT_OK"}}]})
 
         QwenAcceptanceProbe("http://127.0.0.1:18080", loaded.model_id, None, opener=opener).run()
+
+    def test_degraded_agent_retries_with_backoff_but_never_during_game_mode(self) -> None:
+        class TransientLifecycle:
+            def __init__(self) -> None:
+                self.running = False; self.starts = 0; self.stops = 0; self.accepts = 0
+            def is_running(self) -> bool: return self.running
+            def start_validated(self, profile: str) -> None:
+                self.starts += 1; self.running = True
+            def stop_validated(self) -> None:
+                self.stops += 1; self.running = False
+            def accept(self) -> None:
+                self.accepts += 1
+                if self.accepts == 1: raise RuntimeError("transient busy")
+
+        now = [0.0]
+        lifecycle = TransientLifecycle()
+        controller = GameModeController("main", AtomicJsonStore(self.root / "retry-state.json"), lifecycle)
+        agent = MainAgent(controller, object(), interval_seconds=1, retry_initial_seconds=5,
+                          retry_max_seconds=20, monotonic=lambda: now[0])  # type: ignore[arg-type]
+        state = controller.reconcile_boot()
+        self.assertEqual(QwenState.DEGRADED, state.qwen_state)
+        self.assertEqual((1, 1), (lifecycle.starts, lifecycle.accepts))
+        state = agent.retry_degraded(state)  # schedules, but does not busy-loop
+        for timestamp in (1.0, 2.0, 4.99):
+            now[0] = timestamp; state = agent.retry_degraded(state)
+        self.assertEqual((1, 1), (lifecycle.starts, lifecycle.accepts))
+        now[0] = 5.0; state = agent.retry_degraded(state)
+        self.assertEqual(QwenState.RUNNING, state.qwen_state)
+        self.assertEqual((1, 2), (lifecycle.starts, lifecycle.accepts))
+
+        game_state = GameModeState("main", True, QwenState.DEGRADED, "light", 1,
+                                   "2026-09-03T00:00:00Z", "reconcile_failed")
+        lifecycle.running = True
+        before = (lifecycle.starts, lifecycle.stops, lifecycle.accepts)
+        now[0] = 100.0
+        self.assertIs(game_state, agent.retry_degraded(game_state))
+        self.assertEqual(before, (lifecycle.starts, lifecycle.stops, lifecycle.accepts))
 
     def test_signed_loopback_client_rejects_unsigned_and_accepts_signed_status(self) -> None:
         import socket

@@ -20,6 +20,7 @@ from .atomic_store import AtomicJsonStore
 from .coordinator import HubCoordinator
 from .credential_store import read_node_secret, read_qwen_api_key
 from .inventory import HUB_PORT, NODES, validate_bind
+from .models import GameModeState, QwenState
 from .process_guard import RuntimeManifest, load_runtime_manifest
 from .security import ReplayLedger, RequestAuthenticator, sign_request, verify_response
 from .state_machine import GameModeController
@@ -152,15 +153,47 @@ def make_hub_server(api: HubApi) -> ThreadingHTTPServer:
 
 
 class MainAgent:
-    def __init__(self, controller: GameModeController, client: SignedHubClient, *, interval_seconds: float = 2.0) -> None:
+    def __init__(self, controller: GameModeController, client: SignedHubClient, *, interval_seconds: float = 2.0,
+                 retry_initial_seconds: float = 5.0, retry_max_seconds: float = 60.0,
+                 monotonic: Callable[[], float] = time.monotonic) -> None:
+        if interval_seconds <= 0 or retry_initial_seconds < interval_seconds or retry_max_seconds < retry_initial_seconds:
+            raise ValueError("agent retry intervals are invalid")
         self.controller = controller
         self.client = client
         self.interval_seconds = interval_seconds
+        self.retry_initial_seconds = retry_initial_seconds
+        self.retry_max_seconds = retry_max_seconds
+        self.monotonic = monotonic
+        self._next_retry: float | None = None
+        self._retry_delay = retry_initial_seconds
         self.stop_event = threading.Event()
+
+    def retry_degraded(self, state: GameModeState) -> GameModeState:
+        """Retry a persisted non-game degraded state with bounded exponential backoff."""
+
+        if state.game_mode or state.qwen_state is not QwenState.DEGRADED:
+            self._next_retry = None
+            self._retry_delay = self.retry_initial_seconds
+            return state
+        now = self.monotonic()
+        if self._next_retry is None:
+            self._next_retry = now + self._retry_delay
+            return state
+        if now < self._next_retry:
+            return state
+        state = self.controller.reconcile_boot()
+        if state.game_mode or state.qwen_state is not QwenState.DEGRADED:
+            self._next_retry = None
+            self._retry_delay = self.retry_initial_seconds
+        else:
+            self._retry_delay = min(self._retry_delay * 2.0, self.retry_max_seconds)
+            self._next_retry = now + self._retry_delay
+        return state
 
     def run(self) -> None:
         state = self.controller.reconcile_boot()
         while not self.stop_event.is_set():
+            state = self.retry_degraded(state)
             try:
                 self.client.call("POST", "/v1/status", {"state": state.to_dict()})
                 command = self.client.call("GET", "/v1/poll")
