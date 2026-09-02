@@ -42,8 +42,7 @@ class LineClientTests(unittest.TestCase):
         )
         self.assertTrue(response.duplicate)
 
-    def test_client_exposes_only_durable_push_delivery(self) -> None:
-        # Gateway 不保留 replyToken，因此 client 不提供同步 reply 捷徑。
+    def test_client_exposes_only_retryable_durable_push(self) -> None:
         self.assertFalse(hasattr(LineClient("fake-token"), "reply"))
 
     def test_4xx_is_permanent_and_5xx_is_retryable(self) -> None:

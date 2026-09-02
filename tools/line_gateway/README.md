@@ -1,5 +1,10 @@
 # Aevrynd LINE Gateway
 
+已授權訊息會在同一筆 SQLite 交易中建立工作與路由專屬的接收通知。Webhook
+callback 不呼叫 LINE，僅完成本機耐久寫入後快速回覆 HTTP 200；獨立 drainer 使用固定
+retry key 推送通知，成功或 LINE 409 收斂後才允許該工作開始生成。`replyToken` 不使用、
+也不寫入磁碟。
+
 此部署層在 Windows 上執行單一 LINE 工作程序，接收 LINE webhook、呼叫內網 Qwen，並透過 `%ProgramData%\Aevrynd\LineGateway\handoff` 與 Codex 交換工作。HTTP server 固定只監聽 `127.0.0.1:8787`，不得直接公開 TCP 8787。公開 transport 可選免費 Tailscale Funnel 或 Cloudflare named tunnel，但只能啟用其中一種。
 
 ## 安全邊界

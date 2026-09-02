@@ -7,7 +7,7 @@ import hashlib
 import threading
 import uuid
 from contextlib import contextmanager
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Iterator
 
 from .codex_handoff import CodexHandoff, CodexHandoffError
@@ -20,6 +20,16 @@ from .routing import Route, RouteDecision
 
 HELP_TEXT = "可用指令：提及官方帳號後輸入問題；以「台中：」或「桃園：」指定助理。另有 @主機、@Codex、@全部。"
 ACK_TEXT = "已排入處理佇列。"
+INGRESS_NOTICES = {
+    Route.TAICHUNG: "[台中 Qwen]\n已接收，正在產生回覆…",
+    Route.TAOYUAN: "[桃園 Qwen]\n已接收，正在產生回覆…",
+    Route.AUTO_QWEN: "[Qwen 助理]\n已接收，正在產生回覆…",
+    Route.QWEN: "[Qwen 助理]\n已接收，正在產生回覆…",
+    Route.CODEX: "[Codex]\n已接收，正在處理…",
+    Route.HOST: "[主機]\n已接收，正在查詢…",
+    Route.ALL: "[全部助理]\n已接收，正在處理…",
+    Route.HELP: "已接收，正在準備使用說明…",
+}
 MAX_LINE_TEXT_CHARS = 5_000
 # QwenClient 強制 timeout 不超過 300 秒；保留 60 秒給狀態寫回與本機工作。
 WORK_LEASE_SECONDS = 360
@@ -49,7 +59,6 @@ class Worker:
         qwen_clients: Mapping[str, QwenClient | QwenClientGate] | None = None,
         qwen_auto_order: tuple[str, ...] = (Route.TAICHUNG.value, Route.TAOYUAN.value),
         worker_id: str | None = None,
-        acknowledgement: Callable[[str, str], None] | None = None,
         work_lease_seconds: int = WORK_LEASE_SECONDS,
         lease_heartbeat_seconds: float | None = None,
     ) -> None:
@@ -61,7 +70,6 @@ class Worker:
         self._qwen_clients = dict(qwen_clients or {})
         self._qwen_auto_order = qwen_auto_order
         self._worker_id = worker_id or f"line-worker-{uuid.uuid4()}"
-        self._acknowledgement = acknowledgement
         if not 1 <= work_lease_seconds <= 3_600:
             raise ValueError("work_lease_seconds is outside the allowed range")
         heartbeat = min(10.0, work_lease_seconds / 3.0) if lease_heartbeat_seconds is None else float(lease_heartbeat_seconds)
@@ -106,18 +114,11 @@ class Worker:
                 source_id=destination_id,
                 requester_id=requester_id,
                 request_text=request_text,
+                reception_notice=INGRESS_NOTICES.get(decision.route, ACK_TEXT),
             )
         except (QueueStoreError, OSError):
             return False
 
-        # replyToken 僅在此同步 callback 的 process memory 中使用，絕不進 SQLite。
-        reply_token = event.get("replyToken")
-        if queued.inserted and self._acknowledgement is not None and isinstance(reply_token, str):
-            try:
-                self._acknowledgement(reply_token, ACK_TEXT)
-            except Exception:
-                # webhook 已耐久入列；ack 失敗不能造成 LINE redelivery 重複工作。
-                pass
         return True
 
     def process_once(self) -> bool:
@@ -146,7 +147,18 @@ class Worker:
         return True
 
     def drain_once(self) -> bool:
-        """Own Codex reconciliation and LINE result delivery in one dedicated lane."""
+        """Compatibility helper; production uses two physically separate drainers."""
+        return self.drain_notification_once() or self.drain_side_effect_once()
+
+    def drain_notification_once(self) -> bool:
+        """Drain only reception notifications; never execute Qwen or Codex work."""
+        notification = self._queue_store.claim_reception_notification(self._worker_id)
+        if notification is not None:
+            self._deliver_reception_notification(notification)
+        return notification is not None
+
+    def drain_side_effect_once(self) -> bool:
+        """Own Codex reconciliation and final LINE delivery, excluding reception notices."""
         did_work = self._reconcile_codex()
         did_work = self._poll_codex() or did_work
         delivery = self._queue_store.claim_delivery(self._worker_id)
@@ -243,7 +255,6 @@ class Worker:
                     with client.session(owner_check=self._raise_if_heartbeat_lost):
                         if not client.slots_ready():
                             continue
-                        self._notify_assistant_progress(job, route)
                         self._run_named_assistant_locked(job, route, client, route)
                 else:
                     if not client.slots_ready():
@@ -265,8 +276,6 @@ class Worker:
                 self._finish(job, self._assistant_unavailable_text(assistant_route))
                 return
             raise QwenClientError("Named assistant is not configured")
-        # 提示先於任何可能阻塞的 Qwen slot/chat，讓每筆訊息都有獨立即時回饋。
-        self._notify_assistant_progress(job, assistant_route)
         if isinstance(client, QwenClientGate):
             with client.session(owner_check=self._raise_if_heartbeat_lost):
                 self._run_named_assistant_locked(job, assistant_route, client, selected_route)
@@ -349,48 +358,6 @@ class Worker:
         label = "台中" if assistant_route == Route.TAICHUNG.value else "桃園"
         alternative = "桃園" if label == "台中" else "台中"
         return f"[{label} Qwen]\n目前未連線，請改用{alternative}或稍後再試。"
-
-    def _notify_assistant_progress(self, job: ClaimedJob, assistant_route: str) -> None:
-        progress = self._queue_store.prepare_assistant_progress(
-            job.job_id,
-            assistant_route,
-            expected_lease_owner=self._worker_id,
-        )
-        if progress.status == "completed":
-            return
-        if progress.status == "dead_letter":
-            raise LineClientError("Assistant progress notification was permanently rejected")
-        try:
-            self._renew_or_raise(job)
-            self._line_client.push(
-                progress.destination_id, progress.message_text, progress.retry_key
-            )
-            self._renew_or_raise(job)
-        except LineClientError as exc:
-            self._queue_store.finish_assistant_progress(
-                job.job_id,
-                assistant_route,
-                expected_lease_owner=self._worker_id,
-                success=False,
-                permanent=not exc.retryable,
-                error_code="line_rejected" if not exc.retryable else "line_retry",
-            )
-            raise
-        except Exception as exc:
-            self._queue_store.finish_assistant_progress(
-                job.job_id,
-                assistant_route,
-                expected_lease_owner=self._worker_id,
-                success=False,
-                error_code="line_internal",
-            )
-            raise LineClientError("Assistant progress notification failed") from exc
-        self._queue_store.finish_assistant_progress(
-            job.job_id,
-            assistant_route,
-            expected_lease_owner=self._worker_id,
-            success=True,
-        )
 
     @staticmethod
     def _parse_assistant_decision(raw: str) -> dict[str, object]:
@@ -633,6 +600,27 @@ class Worker:
             self._queue_store.finish_delivery(
                 delivery_id, expected_lease_owner=self._worker_id, success=True
             )
+
+    def _deliver_reception_notification(self, notification) -> None:
+        try:
+            self._line_client.push(
+                notification.destination_id, notification.message_text, notification.retry_key
+            )
+        except LineClientError as exc:
+            self._queue_store.finish_reception_notification(
+                notification.notification_id, expected_lease_owner=self._worker_id,
+                success=False, permanent=not exc.retryable,
+            )
+            return
+        except Exception:
+            self._queue_store.finish_reception_notification(
+                notification.notification_id, expected_lease_owner=self._worker_id,
+                success=False,
+            )
+            return
+        self._queue_store.finish_reception_notification(
+            notification.notification_id, expected_lease_owner=self._worker_id, success=True
+        )
 
     @staticmethod
     def _format_json(label: str, value: Mapping[str, object]) -> str:

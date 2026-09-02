@@ -623,7 +623,6 @@ class QueueStoreTests(unittest.TestCase):
             _Unused(),
             _Unused(),
             qwen_client=None,
-            acknowledgement=lambda token, _message: self.assertEqual(reply_token, token),
         )
         decision = RouteDecision(Route.QWEN, True, "@Qwen task", "task", "explicit-prefix")
         event = {
@@ -645,6 +644,41 @@ class QueueStoreTests(unittest.TestCase):
             candidate = Path(str(self.db_path) + suffix)
             if candidate.exists():
                 self.assertNotIn(reply_token.encode(), candidate.read_bytes())
+
+    def test_reception_notification_atomically_gates_job_until_completed(self) -> None:
+        queued = self.store.enqueue(
+            webhook_event_id="abandoned-callback", route="auto_qwen",
+            source_id="group", requester_id="user", request_text="hello",
+            reception_notice="[Qwen 助理]\n已接收，正在產生回覆…", now=100,
+        )
+        self.assertIsNone(self.store.claim_next_for_lane("early", "auto", now=100))
+        notice = self.store.claim_reception_notification("notifier", now=100)
+        self.assertEqual(queued.job_id, notice.job_id)
+        self.assertEqual(36, len(notice.retry_key))
+        self.store.finish_reception_notification(
+            notice.notification_id, expected_lease_owner="notifier", success=True, now=100
+        )
+        claimed = self.store.claim_next_for_lane("recovery", "auto", now=100)
+        self.assertEqual(queued.job_id, claimed.job_id)
+
+    def test_permanent_reception_failure_dead_letters_job_without_generation(self) -> None:
+        queued = self.store.enqueue(
+            webhook_event_id="reception-rejected", route="taichung",
+            source_id="group", requester_id="user", request_text="hello",
+            reception_notice="notice", now=100,
+        )
+        notice = self.store.claim_reception_notification("notifier", now=100)
+        self.assertEqual(
+            "dead_letter",
+            self.store.finish_reception_notification(
+                notice.notification_id, expected_lease_owner="notifier",
+                success=False, permanent=True, now=100,
+            ),
+        )
+        status = self.store.status(queued.job_id)
+        self.assertEqual("dead_letter", status["status"])
+        self.assertEqual("reception_notification_failed", status["error_code"])
+        self.assertIsNone(self.store.claim_next_for_lane("lane", "taichung", now=101))
 
 
 if __name__ == "__main__":

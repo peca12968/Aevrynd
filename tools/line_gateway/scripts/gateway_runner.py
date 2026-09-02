@@ -13,7 +13,7 @@ from typing import Callable
 
 
 LANE_NAMES = ("taichung", "taoyuan", "auto", "control")
-RUNTIME_WORKER_COUNT = len(LANE_NAMES) + 1
+RUNTIME_WORKER_COUNT = len(LANE_NAMES) + 2
 
 
 class RuntimeHealth:
@@ -52,7 +52,7 @@ def _serve_runtime(
     runtime_health: RuntimeHealth | None = None,
     shutdown_timeout: float = 5.0,
 ) -> None:
-    """Run isolated work lanes and one side-effect drainer until stopped or unhealthy."""
+    """Run isolated lanes plus physically separate notification and side-effect drainers."""
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     lane_threads: list[threading.Thread] = []
@@ -77,27 +77,62 @@ def _serve_runtime(
         thread = threading.Thread(target=run_lane, args=(lane_name,), daemon=True)
         thread.start()
         lane_threads.append(thread)
+    notification_drainer = worker_factory("notification-drainer")
+
+    def run_notifications() -> None:
+        if runtime_health is not None:
+            runtime_health.enter("notification-drainer")
+        try:
+            while not stopped.is_set():
+                try:
+                    worked = notification_drainer.drain_notification_once()
+                except (OSError, sqlite3.Error):
+                    worked = False
+                stopped.wait(0.02 if worked else 0.1)
+        finally:
+            if runtime_health is not None:
+                runtime_health.leave("notification-drainer")
+
+    notification_thread = threading.Thread(target=run_notifications, daemon=True)
+    notification_thread.start()
     drainer = worker_factory("drainer")
-    if runtime_health is not None:
-        runtime_health.enter("drainer")
+
+    def run_side_effects() -> None:
+        if runtime_health is not None:
+            runtime_health.enter("drainer")
+        try:
+            while not stopped.is_set():
+                try:
+                    worked = drainer.drain_side_effect_once()
+                except (OSError, sqlite3.Error):
+                    worked = False
+                stopped.wait(0.05 if worked else 0.25)
+        finally:
+            if runtime_health is not None:
+                runtime_health.leave("drainer")
+
+    side_effect_thread = threading.Thread(target=run_side_effects, daemon=True)
+    side_effect_thread.start()
     try:
         while not stopped.is_set():
             if not server_thread.is_alive():
                 raise RuntimeError("gateway HTTP server stopped")
             if any(not thread.is_alive() for thread in lane_threads):
                 raise RuntimeError("a gateway work lane stopped")
-            did_work = drainer.drain_once()
-            stopped.wait(0.05 if did_work else 0.25)
+            if not notification_thread.is_alive():
+                raise RuntimeError("gateway notification drainer stopped")
+            if not side_effect_thread.is_alive():
+                raise RuntimeError("gateway side-effect drainer stopped")
+            stopped.wait(0.05)
     finally:
-        if runtime_health is not None:
-            runtime_health.leave("drainer")
         stopped.set()
         server.shutdown()
         server.server_close()
-        server_thread.join(timeout=shutdown_timeout)
-        for thread in lane_threads:
-            thread.join(timeout=shutdown_timeout)
-        if server_thread.is_alive() or any(thread.is_alive() for thread in lane_threads):
+        runtime_threads = [server_thread, *lane_threads, notification_thread, side_effect_thread]
+        deadline = time.monotonic() + shutdown_timeout
+        for thread in runtime_threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        if any(thread.is_alive() for thread in runtime_threads):
             raise RuntimeError("gateway runtime did not stop cleanly")
 
 

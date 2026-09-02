@@ -26,6 +26,8 @@ _DELIVERY_ID_NAMESPACE = uuid.UUID("9af706cf-508c-4e82-bdb7-e631aa70a79e")
 _RETRY_KEY_NAMESPACE = uuid.UUID("86a90880-ca2e-47cc-9dac-c7eb9d302811")
 _PROGRESS_ID_NAMESPACE = uuid.UUID("c84740e5-f7ac-4b29-99c3-81400801128e")
 _PROGRESS_RETRY_NAMESPACE = uuid.UUID("26ad047e-44cd-41ee-a92a-48ab964b11af")
+_RECEPTION_ID_NAMESPACE = uuid.UUID("d9512daf-8fab-4d85-b046-2ab6dba7088a")
+_RECEPTION_RETRY_NAMESPACE = uuid.UUID("57c14ecf-7ec4-4bbf-90cd-ea328b401b28")
 
 
 class QueueStoreError(RuntimeError):
@@ -56,6 +58,18 @@ class ClaimedJob:
 @dataclass(frozen=True, slots=True)
 class ClaimedDelivery:
     delivery_id: str
+    job_id: str
+    destination_id: str
+    message_text: str
+    retry_key: str
+    attempt_count: int
+    max_attempts: int
+    expires_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimedNotification:
+    notification_id: str
     job_id: str
     destination_id: str
     message_text: str
@@ -179,6 +193,26 @@ class QueueStore:
 
                 CREATE INDEX IF NOT EXISTS deliveries_claim_idx
                     ON deliveries(status, available_at, created_at);
+
+                CREATE TABLE IF NOT EXISTS reception_notifications (
+                    notification_id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(job_id),
+                    destination_id TEXT NOT NULL,
+                    message_text TEXT NOT NULL,
+                    retry_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL CHECK(status IN ('queued','running','completed','dead_letter')),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    max_attempts INTEGER NOT NULL,
+                    available_at REAL NOT NULL,
+                    lease_until REAL,
+                    lease_owner TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    error_code TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS reception_notifications_claim_idx
+                    ON reception_notifications(status, available_at, created_at);
 
                 CREATE TABLE IF NOT EXISTS assistant_progress (
                     delivery_id TEXT PRIMARY KEY,
@@ -371,6 +405,7 @@ class QueueStore:
         ttl_seconds: int = 3_600,
         max_attempts: int = 5,
         now: float | None = None,
+        reception_notice: str = "",
     ) -> EnqueueResult:
         event_id = _require_text(webhook_event_id, "webhook_event_id", MAX_IDENTIFIER_CHARS)
         route_value = _require_text(route, "route", MAX_ROUTE_CHARS)
@@ -379,6 +414,7 @@ class QueueStore:
             requester_id, "requester_id", MAX_IDENTIFIER_CHARS, allow_empty=True
         )
         request = _require_text(request_text, "request_text", MAX_REQUEST_CHARS)
+        notice = _require_text(reception_notice, "reception_notice", 5_000, allow_empty=True)
         if ttl_seconds < 1 or ttl_seconds > 604_800:
             raise QueueStoreError("ttl_seconds is outside the allowed range")
         if max_attempts < 1 or max_attempts > 20:
@@ -420,6 +456,17 @@ class QueueStore:
                     timestamp + ttl_seconds,
                 ),
             )
+            if notice:
+                identity = f"{job_id}/{route_value}"
+                notification_id = str(uuid.uuid5(_RECEPTION_ID_NAMESPACE, identity))
+                retry_key = str(uuid.uuid5(_RECEPTION_RETRY_NAMESPACE, identity))
+                connection.execute(
+                    "INSERT INTO reception_notifications(notification_id, job_id, destination_id, "
+                    "message_text, retry_key, status, max_attempts, available_at, created_at, updated_at, expires_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'queued', 8, ?, ?, ?, ?)",
+                    (notification_id, job_id, source, notice, retry_key, timestamp,
+                     timestamp, timestamp, timestamp + ttl_seconds),
+                )
             connection.commit()
         return EnqueueResult(job_id, True)
 
@@ -518,6 +565,10 @@ class QueueStore:
                 SELECT * FROM jobs
                  WHERE status = 'queued' AND available_at <= ? AND expires_at > ?
                        AND attempt_count < max_attempts
+                       AND NOT EXISTS (
+                           SELECT 1 FROM reception_notifications n
+                            WHERE n.job_id = jobs.job_id AND n.status != 'completed'
+                       )
                        {lane_clause}
                  ORDER BY created_at, job_id
                  LIMIT 1
@@ -533,6 +584,10 @@ class QueueStore:
                    SET status = 'running', attempt_count = attempt_count + 1,
                        lease_until = ?, lease_owner = ?, updated_at = ?
                  WHERE job_id = ? AND status = 'queued'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM reception_notifications n
+                        WHERE n.job_id = jobs.job_id AND n.status != 'completed'
+                   )
                 """,
                 (timestamp + lease_seconds, owner, timestamp, row["job_id"]),
             ).rowcount
@@ -1240,6 +1295,92 @@ class QueueStore:
             connection.commit()
         return status
 
+
+    def claim_reception_notification(
+        self, worker_id: str, *, lease_seconds: int = 60, now: float | None = None
+    ) -> ClaimedNotification | None:
+        owner = _require_text(worker_id, "worker_id", MAX_IDENTIFIER_CHARS)
+        timestamp = time.time() if now is None else float(now)
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "UPDATE reception_notifications SET status = CASE WHEN attempt_count >= max_attempts "
+                "OR expires_at <= ? THEN 'dead_letter' ELSE 'queued' END, available_at = ?, "
+                "lease_until = NULL, lease_owner = '', updated_at = ? WHERE status = 'running' "
+                "AND lease_until IS NOT NULL AND lease_until <= ?",
+                (timestamp, timestamp, timestamp, timestamp),
+            )
+            connection.execute(
+                "UPDATE reception_notifications SET status = 'dead_letter', updated_at = ? "
+                "WHERE status = 'queued' AND expires_at <= ?", (timestamp, timestamp),
+            )
+            connection.execute(
+                "UPDATE jobs SET status = 'dead_letter', error_code = 'reception_notification_failed', "
+                "updated_at = ? WHERE status = 'queued' AND job_id IN "
+                "(SELECT job_id FROM reception_notifications WHERE status = 'dead_letter')",
+                (timestamp,),
+            )
+            row = connection.execute(
+                "SELECT * FROM reception_notifications WHERE status = 'queued' "
+                "AND available_at <= ? AND expires_at > ? AND attempt_count < max_attempts "
+                "ORDER BY created_at, notification_id LIMIT 1",
+                (timestamp, timestamp),
+            ).fetchone()
+            if row is None:
+                connection.commit()
+                return None
+            changed = connection.execute(
+                "UPDATE reception_notifications SET status = 'running', attempt_count = attempt_count + 1, "
+                "lease_until = ?, lease_owner = ?, updated_at = ? WHERE notification_id = ? AND status = 'queued'",
+                (timestamp + lease_seconds, owner, timestamp, row["notification_id"]),
+            ).rowcount
+            if changed != 1:
+                connection.rollback()
+                return None
+            claimed = connection.execute(
+                "SELECT * FROM reception_notifications WHERE notification_id = ?",
+                (row["notification_id"],),
+            ).fetchone()
+            connection.commit()
+        return ClaimedNotification(
+            notification_id=str(claimed["notification_id"]), job_id=str(claimed["job_id"]),
+            destination_id=str(claimed["destination_id"]), message_text=str(claimed["message_text"]),
+            retry_key=str(claimed["retry_key"]), attempt_count=int(claimed["attempt_count"]),
+            max_attempts=int(claimed["max_attempts"]), expires_at=float(claimed["expires_at"]),
+        )
+
+    def finish_reception_notification(
+        self, notification_id: str, *, expected_lease_owner: str, success: bool,
+        permanent: bool = False, retry_delay_seconds: int = 5, now: float | None = None,
+    ) -> str:
+        owner = _require_text(expected_lease_owner, "expected_lease_owner", MAX_IDENTIFIER_CHARS)
+        timestamp = time.time() if now is None else float(now)
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM reception_notifications WHERE notification_id = ? "
+                "AND status = 'running' AND lease_owner = ?", (notification_id, owner),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise QueueStoreError("reception notification is not running")
+            terminal = (permanent or int(row["attempt_count"]) >= int(row["max_attempts"])
+                        or float(row["expires_at"]) <= timestamp + retry_delay_seconds)
+            status = "completed" if success else ("dead_letter" if terminal else "queued")
+            connection.execute(
+                "UPDATE reception_notifications SET status = ?, available_at = ?, lease_until = NULL, "
+                "lease_owner = '', updated_at = ? WHERE notification_id = ? AND lease_owner = ?",
+                (status, timestamp if status != "queued" else timestamp + retry_delay_seconds,
+                 timestamp, notification_id, owner),
+            )
+            if status == "dead_letter":
+                connection.execute(
+                    "UPDATE jobs SET status = 'dead_letter', error_code = 'reception_notification_failed', "
+                    "updated_at = ? WHERE job_id = ? AND status = 'queued'",
+                    (timestamp, row["job_id"]),
+                )
+            connection.commit()
+        return status
 
     def claim_delivery(
         self, worker_id: str, *, lease_seconds: int = 60, now: float | None = None

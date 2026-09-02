@@ -24,7 +24,7 @@ from tools.line_gateway.host_tasks import HostTasks
 from tools.line_gateway.line_client import RetryableLineError
 from tools.line_gateway.qwen_client import QwenClientError, QwenClientGate, QwenReply, RetryableQwenError
 from tools.line_gateway.queue_store import QueueStore
-from tools.line_gateway.routing import Route, route_event
+from tools.line_gateway.routing import Route, RouteDecision, route_event
 from tools.line_gateway.server import create_server
 from tools.line_gateway.signature import compute_signature
 from tools.line_gateway.worker import ASSISTANT_SYSTEM_PROMPTS, Worker
@@ -191,6 +191,16 @@ class LifecycleWorker:
         self.calls.append((self.role, "drain"))
         return False
 
+    def drain_notification_once(self) -> bool:
+        self.calls.append((self.role, "notification"))
+        if self.fail:
+            raise RuntimeError("injected notification death")
+        return False
+
+    def drain_side_effect_once(self) -> bool:
+        self.calls.append((self.role, "drain"))
+        return False
+
 
 def _write_response(handoff: CodexHandoff, job_id: str, digest: str, result: str) -> None:
     path = handoff.root / "responses" / f"{job_id}.json"
@@ -331,16 +341,32 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             self.store, self.line, HostTasks(self.store), self.handoff,
             qwen_client=qwen, qwen_clients={"taichung": qwen}, worker_id="progress-worker",
         )
-        queued = self.store.enqueue(
-            webhook_event_id="progress-order", route=Route.TAICHUNG.value,
-            source_id="group", requester_id="user", request_text="hello",
-        )
-        self.assertTrue(worker.process_once())
+        event = {"webhookEventId": "progress-order", "replyToken": "memory-token",
+                 "source": {"type": "group", "groupId": "group", "userId": "user"}}
+        decision = RouteDecision(Route.TAICHUNG, True, "hello", "hello", "test")
+        self.assertTrue(worker.accept_event(event, decision))
+        self.assertFalse(worker.process_lane_once("taichung"))
+        self.assertTrue(worker.drain_once())
+        self.assertEqual("[台中 Qwen]\n已接收，正在產生回覆…", self.line.pushes[0][1])
+        self.assertTrue(worker.process_lane_once("taichung"))
         self.assertEqual(1, len(qwen.asserted_progress))
-        self.assertEqual("[台中 Qwen]\n已接收，正在產生回覆…", qwen.asserted_progress[0][1])
-        self.assertEqual(2, len(self.line.pushes))
-        self.assertNotEqual(self.line.pushes[0][2], self.line.pushes[1][2])
-        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_callback_never_calls_line_and_notification_gates_lane(self) -> None:
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=self.qwen, qwen_clients={"taichung": self.qwen},
+            worker_id="callback-gate",
+        )
+        event = {"webhookEventId": "callback-gate", "replyToken": "memory-token",
+                 "source": {"type": "group", "groupId": "group", "userId": "user"}}
+        decision = RouteDecision(Route.TAICHUNG, True, "hello", "hello", "test")
+        started = time.monotonic()
+        self.assertTrue(worker.accept_event(event, decision))
+        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertEqual([], self.line.pushes)
+        self.assertIsNone(self.store.claim_next_for_lane("racer", "taichung"))
+        notice = self.store.claim_reception_notification("notifier")
+        self.assertIsNotNone(notice)
 
     def test_distinct_city_lanes_reach_chat_concurrently_with_deterministic_barrier(self) -> None:
         barrier = threading.Barrier(2)
@@ -370,10 +396,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         for thread in threads:
             thread.join(timeout=3)
         self.assertTrue(all(not thread.is_alive() for thread in threads))
-        self.assertEqual(2, len(self.line.pushes))
-        self.assertEqual({"taichung", "taoyuan"}, {
-            "taichung" if "台中" in item[1] else "taoyuan" for item in self.line.pushes
-        })
+        self.assertEqual(0, len(self.line.pushes))
 
     def test_shared_physical_qwen_gate_serializes_same_node_and_progress_precedes_wait(self) -> None:
         physical = HeldQwenClient()
@@ -393,10 +416,8 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         threads[0].start()
         self.assertTrue(physical.entered.wait(timeout=1))
         threads[1].start()
-        deadline = time.monotonic() + 1
-        while len(self.line.pushes) < 2 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        self.assertEqual(2, len(self.line.pushes))
+        time.sleep(0.05)
+        self.assertEqual(0, len(self.line.pushes))
         self.assertEqual(1, physical.maximum_active)
         physical.release.set()
         for thread in threads:
@@ -436,7 +457,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         deadline = time.monotonic() + 1
         while len(self.line.pushes) < 2 and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertEqual(2, len(self.line.pushes))
+        self.assertEqual(0, len(self.line.pushes))
         self.assertEqual(1, physical.maximum_active)
         physical.release.set()
         auto_thread.join(timeout=3)
@@ -616,7 +637,163 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual(0, runtime_health.snapshot()["workerCount"])
         self.assertTrue(all(action != "drain" for role, action in calls if role != "drainer"))
         self.assertTrue(all(not action.startswith("lane:") for role, action in calls if role == "drainer"))
-        self.assertEqual(len(LANE_NAMES) + 1, RUNTIME_WORKER_COUNT)
+        self.assertTrue(all(action != "notification" for role, action in calls if role != "notification-drainer"))
+        self.assertEqual(len(LANE_NAMES) + 2, RUNTIME_WORKER_COUNT)
+
+    def test_runner_notification_drainer_death_fails_fast(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        calls: list[tuple[str, str]] = []
+
+        def factory(role: str) -> LifecycleWorker:
+            return LifecycleWorker(role, calls, fail=role == "notification-drainer")
+
+        with mock.patch.object(threading, "excepthook", lambda _args: None):
+            with self.assertRaisesRegex(RuntimeError, "notification drainer stopped"):
+                _serve_runtime(server, stopped, factory)
+        self.assertTrue(server.closed)
+
+    def test_blocked_reconcile_does_not_block_next_reception_notification(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        reconcile_entered = threading.Event()
+        notification_sent = threading.Event()
+        release = threading.Event()
+        calls: list[tuple[str, str]] = []
+
+        class BlockingReconcileWorker(LifecycleWorker):
+            def drain_side_effect_once(self) -> bool:
+                reconcile_entered.set()
+                release.wait(timeout=3)
+                return False
+
+            def drain_notification_once(self) -> bool:
+                if not reconcile_entered.wait(timeout=1):
+                    raise AssertionError("notification ran before reconcile barrier")
+                notification_sent.set()
+                return False
+
+        failures: list[BaseException] = []
+        thread = threading.Thread(
+            target=lambda: self._capture_runtime_failure(
+                failures, server, stopped,
+                lambda role: BlockingReconcileWorker(role, calls),
+            )
+        )
+        thread.start()
+        self.assertTrue(reconcile_entered.wait(timeout=1))
+        self.assertTrue(notification_sent.wait(timeout=1))
+        release.set(); stopped.set(); thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual([], failures)
+
+    @staticmethod
+    def _capture_runtime_failure(failures, server, stopped, factory, shutdown_timeout=5.0) -> None:
+        try:
+            _serve_runtime(server, stopped, factory, shutdown_timeout=shutdown_timeout)
+        except BaseException as exc:
+            failures.append(exc)
+
+    def test_runner_rejects_noncooperative_notification_shutdown(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        entered = threading.Event()
+        release = threading.Event()
+        calls: list[tuple[str, str]] = []
+        failures: list[BaseException] = []
+
+        class BlockedNotificationWorker(LifecycleWorker):
+            def drain_notification_once(self) -> bool:
+                if self.role == "notification-drainer":
+                    entered.set(); release.wait(timeout=3)
+                return False
+
+        thread = threading.Thread(
+            target=lambda: self._capture_runtime_failure(
+                failures, server, stopped,
+                lambda role: BlockedNotificationWorker(role, calls),
+                0.2,
+            )
+        )
+        thread.start(); self.assertTrue(entered.wait(timeout=1)); stopped.set()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(1, len(failures))
+        self.assertIn("did not stop cleanly", str(failures[0]))
+        release.set()
+
+    def test_notification_death_is_detected_while_side_effect_is_blocked(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        side_entered = threading.Event()
+        release = threading.Event()
+        calls: list[tuple[str, str]] = []
+        failures: list[BaseException] = []
+
+        class CombinedFailureWorker(LifecycleWorker):
+            def drain_side_effect_once(self) -> bool:
+                side_entered.set(); release.wait(timeout=1)
+                return False
+
+            def drain_notification_once(self) -> bool:
+                if not side_entered.wait(timeout=1):
+                    raise AssertionError("side-effect barrier was not reached")
+                release.set()
+                raise RuntimeError("notification died")
+
+        with mock.patch.object(threading, "excepthook", lambda _args: None):
+            self._capture_runtime_failure(
+                failures, server, stopped,
+                lambda role: CombinedFailureWorker(role, calls), 1.0,
+            )
+        self.assertEqual(1, len(failures))
+        self.assertIn("notification drainer stopped", str(failures[0]))
+        self.assertTrue(server.closed)
+
+    def test_runner_side_effect_drainer_death_fails_fast(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        calls: list[tuple[str, str]] = []
+
+        class DeadSideEffectWorker(LifecycleWorker):
+            def drain_side_effect_once(self) -> bool:
+                raise RuntimeError("side-effect died")
+
+        with mock.patch.object(threading, "excepthook", lambda _args: None):
+            with self.assertRaisesRegex(RuntimeError, "side-effect drainer stopped"):
+                _serve_runtime(
+                    server, stopped,
+                    lambda role: DeadSideEffectWorker(role, calls),
+                    shutdown_timeout=0.5,
+                )
+        self.assertTrue(server.closed)
+
+    def test_stop_while_side_effect_blocked_enters_shutdown_and_times_out(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        entered = threading.Event()
+        release = threading.Event()
+        calls: list[tuple[str, str]] = []
+        failures: list[BaseException] = []
+
+        class BlockedSideEffectWorker(LifecycleWorker):
+            def drain_side_effect_once(self) -> bool:
+                entered.set(); release.wait(timeout=3)
+                return False
+
+        thread = threading.Thread(
+            target=lambda: self._capture_runtime_failure(
+                failures, server, stopped,
+                lambda role: BlockedSideEffectWorker(role, calls), 0.2,
+            )
+        )
+        thread.start(); self.assertTrue(entered.wait(timeout=1)); stopped.set()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(server.closed)
+        self.assertEqual(1, len(failures))
+        self.assertIn("did not stop cleanly", str(failures[0]))
+        release.set()
 
     def test_runner_lane_death_fails_fast_and_shuts_down(self) -> None:
         server = LifecycleServer()
@@ -686,16 +863,14 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             self.store, self.line, HostTasks(self.store, health_provider=lambda: {}), self.handoff,
             qwen_client=None, qwen_clients={"taichung": qwen}, worker_id="redelivery",
         )
-        first = self.store.enqueue(
-            webhook_event_id="same-redelivery", route="taichung", source_id="group",
-            requester_id="user", request_text="status",
-        )
-        duplicate = self.store.enqueue(
-            webhook_event_id="same-redelivery", route="taichung", source_id="group",
-            requester_id="user", request_text="status",
-        )
-        self.assertFalse(duplicate.inserted)
-        self.assertEqual(first.job_id, duplicate.job_id)
+        event = {"webhookEventId": "same-redelivery", "replyToken": "token-1",
+                 "source": {"type": "group", "groupId": "group", "userId": "user"}}
+        decision = RouteDecision(Route.TAICHUNG, True, "status", "status", "test")
+        self.assertTrue(worker.accept_event(event, decision))
+        event["replyToken"] = "token-2"
+        self.assertTrue(worker.accept_event(event, decision))
+        self.assertTrue(worker.drain_once())
+        self.assertEqual(1, len(self.line.pushes))
         self.assertTrue(worker.process_lane_once("taichung"))
         self.assertEqual(1, len(self.line.pushes))
         self.assertFalse(worker.process_lane_once("taichung"))
@@ -798,25 +973,27 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertNotEqual("completed", self.store.status(queued.job_id)["status"])
         self.assertFalse(any("目前未連線" in message for _, message, _ in self.line.pushes))
 
-    def test_progress_retry_failure_does_not_start_chat_or_duplicate_identity(self) -> None:
+    def test_retryable_reception_notification_blocks_chat_and_keeps_identity(self) -> None:
         line = RetryOnceLineClient()
         qwen = FakeQwenClient('{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}')
         worker = Worker(
             self.store, line, HostTasks(self.store), self.handoff,
             qwen_client=qwen, qwen_clients={"taichung": qwen}, worker_id="progress-retry",
         )
-        queued = self.store.enqueue(
-            webhook_event_id="progress-retry", route=Route.TAICHUNG.value,
-            source_id="group", requester_id="user", request_text="hello", now=100,
-        )
-        job = self.store.claim_next("progress-retry", now=100)
-        worker._dispatch(job)
+        event = {"webhookEventId": "progress-retry", "replyToken": "token",
+                 "source": {"type": "group", "groupId": "group", "userId": "user"}}
+        decision = RouteDecision(Route.TAICHUNG, True, "hello", "hello", "test")
+        self.assertTrue(worker.accept_event(event, decision))
+        self.assertTrue(worker.drain_once())
+        self.assertFalse(worker.process_lane_once("taichung"))
         self.assertEqual([], qwen.prompts)
         with self.store._connection() as connection:
             row = connection.execute(
-                "SELECT retry_key, status FROM assistant_progress WHERE job_id = ?", (queued.job_id,)
+                "SELECT n.retry_key, n.status FROM reception_notifications n JOIN jobs j ON j.job_id=n.job_id "
+                "WHERE j.webhook_event_id = ?",
+                ("progress-retry",)
             ).fetchone()
-        self.assertEqual("pending", row["status"])
+        self.assertEqual("queued", row["status"])
         self.assertEqual(36, len(row["retry_key"]))
 
     def test_user_text_cannot_forge_assistant_protocol(self) -> None:
@@ -855,14 +1032,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             self.assertTrue(worker.process_once())
         self.assertEqual(["hello"], failing.prompts)
         self.assertEqual(["hello"], successful.prompts)
-        self.assertEqual(
-            [
-                "[台中 Qwen]\n已接收，正在產生回覆…",
-                "[桃園 Qwen]\n已接收，正在產生回覆…",
-            ],
-            [message for _, message, _ in self.line.pushes[:2]],
-        )
-        self.assertNotEqual(self.line.pushes[0][2], self.line.pushes[1][2])
+        self.assertEqual(["[桃園]\nfallback"], [message for _, message, _ in self.line.pushes])
         self.assertEqual("completed", self.store.status(job.job_id)["status"])
 
     def test_auto_chat_permanent_or_double_retryable_failure_is_bounded(self) -> None:
@@ -940,7 +1110,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             qwen_client=taichung, qwen_clients={"taichung": taichung, "taoyuan": taoyuan}, worker_id="mention-worker",
         )
         self.assertTrue(worker.accept_event(event, decision))
-        worker.process_once(); worker.process_once()
+        worker.drain_once(); worker.process_lane_once("taoyuan"); worker.drain_once()
         self.assertEqual(2, len(self.line.pushes))
         self.assertEqual("[桃園 Qwen]\n已接收，正在產生回覆…", self.line.pushes[0][1])
         self.assertIn("自動回覆成功", self.line.pushes[1][1])
@@ -1068,10 +1238,12 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             thread.join(timeout=5)
 
         self.assertEqual(1, self.store.counts()["queued"])
-        self.assertTrue(self.worker.process_once())
+        self.assertTrue(self.worker.drain_once())
+        self.assertTrue(self.worker.process_lane_once("control"))
+        self.assertTrue(self.worker.drain_once())
         self.assertEqual(["test end to end"], self.qwen.prompts)
-        self.assertEqual(1, len(self.line.pushes))
-        self.assertIn("Qwen result", self.line.pushes[0][1])
+        self.assertEqual(2, len(self.line.pushes))
+        self.assertIn("Qwen result", self.line.pushes[1][1])
 
     def test_webhook_does_not_wait_for_slow_line_reply(self) -> None:
         slow_line = SlowReplyLineClient()
@@ -1109,7 +1281,10 @@ class WorkerAndEndToEndTests(unittest.TestCase):
                 },
                 "message": {"type": "text", "text": "@Qwen test"},
             }
-            body = json.dumps({"events": [event]}, separators=(",", ":")).encode()
+            second_event = json.loads(json.dumps(event))
+            second_event["webhookEventId"] = "event-no-sync-reply-2"
+            second_event["replyToken"] = "another-ephemeral-token"
+            body = json.dumps({"events": [event, second_event]}, separators=(",", ":")).encode()
             started = time.monotonic()
             connection = http.client.HTTPConnection(
                 "127.0.0.1", config.port, timeout=5
@@ -1129,6 +1304,9 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             connection.close()
             self.assertLess(time.monotonic() - started, 0.5)
             self.assertEqual(0, slow_line.reply_calls)
+            with self.store._connection() as database:
+                self.assertEqual(2, database.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+                self.assertEqual(2, database.execute("SELECT COUNT(*) FROM reception_notifications").fetchone()[0])
         finally:
             server.shutdown()
             server.server_close()
