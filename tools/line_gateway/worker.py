@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 import hashlib
+import threading
 import uuid
+from contextlib import contextmanager
 from collections.abc import Callable, Mapping
+from typing import Iterator
 
 from .codex_handoff import CodexHandoff, CodexHandoffError
 from .host_tasks import HostTaskError, HostTasks
 from .line_client import LineClient, LineClientError
 from .queue_store import ClaimedJob, QueueStore, QueueStoreError
-from .qwen_client import QwenClient, QwenClientError, RetryableQwenError
+from .qwen_client import QwenClient, QwenClientError, QwenClientGate, RetryableQwenError
 from .routing import Route, RouteDecision
 
 
@@ -30,6 +33,10 @@ class _LeaseLost(RuntimeError):
     pass
 
 
+class _HeartbeatFailure(RuntimeError):
+    pass
+
+
 class Worker:
     def __init__(
         self,
@@ -39,10 +46,12 @@ class Worker:
         codex_handoff: CodexHandoff,
         *,
         qwen_client: QwenClient | None,
-        qwen_clients: Mapping[str, QwenClient] | None = None,
+        qwen_clients: Mapping[str, QwenClient | QwenClientGate] | None = None,
         qwen_auto_order: tuple[str, ...] = (Route.TAICHUNG.value, Route.TAOYUAN.value),
         worker_id: str | None = None,
         acknowledgement: Callable[[str, str], None] | None = None,
+        work_lease_seconds: int = WORK_LEASE_SECONDS,
+        lease_heartbeat_seconds: float | None = None,
     ) -> None:
         self._queue_store = queue_store
         self._line_client = line_client
@@ -53,6 +62,15 @@ class Worker:
         self._qwen_auto_order = qwen_auto_order
         self._worker_id = worker_id or f"line-worker-{uuid.uuid4()}"
         self._acknowledgement = acknowledgement
+        if not 1 <= work_lease_seconds <= 3_600:
+            raise ValueError("work_lease_seconds is outside the allowed range")
+        heartbeat = min(10.0, work_lease_seconds / 3.0) if lease_heartbeat_seconds is None else float(lease_heartbeat_seconds)
+        if heartbeat <= 0 or heartbeat >= work_lease_seconds:
+            raise ValueError("lease_heartbeat_seconds is outside the allowed range")
+        self._work_lease_seconds = int(work_lease_seconds)
+        self._lease_heartbeat_seconds = heartbeat
+        self._active_lease_lost: threading.Event | None = None
+        self._active_heartbeat_idle: threading.Event | None = None
 
     def accept_event(self, event: Mapping[str, object], decision: RouteDecision) -> bool:
         """Queue an authorized routed event without persisting its raw payload or reply token."""
@@ -106,7 +124,7 @@ class Worker:
         did_work = self._reconcile_codex()
         did_work = self._poll_codex() or did_work
         job = self._queue_store.claim_next(
-            self._worker_id, lease_seconds=WORK_LEASE_SECONDS
+            self._worker_id, lease_seconds=self._work_lease_seconds
         )
         if job is not None:
             self._dispatch(job)
@@ -117,7 +135,39 @@ class Worker:
             did_work = True
         return did_work
 
+    def process_lane_once(self, lane: str) -> bool:
+        """Process exactly one lane-owned job without draining shared side effects."""
+        job = self._queue_store.claim_next_for_lane(
+            self._worker_id, lane, lease_seconds=self._work_lease_seconds
+        )
+        if job is None:
+            return False
+        self._dispatch(job)
+        return True
+
+    def drain_once(self) -> bool:
+        """Own Codex reconciliation and LINE result delivery in one dedicated lane."""
+        did_work = self._reconcile_codex()
+        did_work = self._poll_codex() or did_work
+        delivery = self._queue_store.claim_delivery(self._worker_id)
+        if delivery is not None:
+            self._deliver(
+                delivery.delivery_id,
+                delivery.destination_id,
+                delivery.message_text,
+                delivery.retry_key,
+            )
+            did_work = True
+        return did_work
+
     def _dispatch(self, job: ClaimedJob) -> None:
+        try:
+            with self._lease_heartbeat(job):
+                self._dispatch_owned(job)
+        except _LeaseLost:
+            return
+
+    def _dispatch_owned(self, job: ClaimedJob) -> None:
         try:
             if job.route == Route.HELP.value:
                 self._finish(job, HELP_TEXT)
@@ -140,6 +190,9 @@ class Worker:
         except _LeaseLost:
             # 租約已被其他 worker 接手；舊 owner 不得改寫其結果。
             return
+        except _HeartbeatFailure:
+            # heartbeat 卡死代表 owner 狀態不可證明，必須讓 lane 與 Gateway fail-fast。
+            raise
         except (QwenClientError, LineClientError) as exc:
             delay = min(60, 2 ** min(job.attempt_count, 6)) if getattr(exc, "retryable", False) else None
             self._fail_running(job, "upstream_error", retry_delay_seconds=delay)
@@ -185,9 +238,17 @@ class Worker:
             if client is None:
                 continue
             try:
-                if not client.slots_ready():
-                    continue
-                self._run_named_assistant(job, selected_route=route)
+                if isinstance(client, QwenClientGate):
+                    # auto 的選點與 chat 共用同一實體節點鎖，slot 不會在兩步之間被搶走。
+                    with client.session(owner_check=self._raise_if_heartbeat_lost):
+                        if not client.slots_ready():
+                            continue
+                        self._notify_assistant_progress(job, route)
+                        self._run_named_assistant_locked(job, route, client, route)
+                else:
+                    if not client.slots_ready():
+                        continue
+                    self._run_named_assistant(job, selected_route=route)
                 return
             except RetryableQwenError as exc:
                 # 同一工作僅依穩定順序各嘗試一次，永久拒絕不得跨節點。
@@ -204,6 +265,21 @@ class Worker:
                 self._finish(job, self._assistant_unavailable_text(assistant_route))
                 return
             raise QwenClientError("Named assistant is not configured")
+        # 提示先於任何可能阻塞的 Qwen slot/chat，讓每筆訊息都有獨立即時回饋。
+        self._notify_assistant_progress(job, assistant_route)
+        if isinstance(client, QwenClientGate):
+            with client.session(owner_check=self._raise_if_heartbeat_lost):
+                self._run_named_assistant_locked(job, assistant_route, client, selected_route)
+            return
+        self._run_named_assistant_locked(job, assistant_route, client, selected_route)
+
+    def _run_named_assistant_locked(
+        self,
+        job: ClaimedJob,
+        assistant_route: str,
+        client: QwenClient | QwenClientGate,
+        selected_route: str | None,
+    ) -> None:
         if selected_route is None:
             try:
                 ready = client.slots_ready()
@@ -218,7 +294,6 @@ class Worker:
             if not ready:
                 self._finish(job, self._assistant_unavailable_text(assistant_route))
                 return
-        self._notify_assistant_progress(job, assistant_route)
         system = ASSISTANT_SYSTEM_PROMPTS[assistant_route] + (
             ' Schema: {"schemaVersion":1,"action":"answer|codex","answer":"",'
             '"requestKind":"none|complex|image|file","attachments":[]}. '
@@ -260,6 +335,7 @@ class Worker:
             separators=(",", ":"),
         )
         partial_result = f"[{label}]\n已轉交 Codex；附件僅建立耐久需求清單，尚未提供下載。"
+        self._renew_or_raise(job)
         self._queue_store.persist_canonical_codex_request(
             job.job_id,
             handoff_request,
@@ -285,9 +361,11 @@ class Worker:
         if progress.status == "dead_letter":
             raise LineClientError("Assistant progress notification was permanently rejected")
         try:
+            self._renew_or_raise(job)
             self._line_client.push(
                 progress.destination_id, progress.message_text, progress.retry_key
             )
+            self._renew_or_raise(job)
         except LineClientError as exc:
             self._queue_store.finish_assistant_progress(
                 job.job_id,
@@ -360,24 +438,25 @@ class Worker:
     def _reconcile_codex(self) -> bool:
         did_work = False
         for job in self._queue_store.claim_reconcilable_codex(
-            self._worker_id, lease_seconds=WORK_LEASE_SECONDS
+            self._worker_id, lease_seconds=self._work_lease_seconds
         ):
             try:
-                self._renew_or_raise(job)
-                handoff = self._codex_handoff.submit(job.job_id, job.request_text)
-                self._renew_or_raise(job)
-                partial = (
-                    self._compose_all_partial(job.request_text)
-                    if job.route == Route.ALL.value
-                    else job.result_text
-                )
-                self._renew_or_raise(job)
-                self._queue_store.mark_awaiting_codex(
-                    job.job_id,
-                    handoff.request_hash,
-                    partial,
-                    worker_id=self._worker_id,
-                )
+                with self._lease_heartbeat(job):
+                    self._renew_or_raise(job)
+                    handoff = self._codex_handoff.submit(job.job_id, job.request_text)
+                    self._renew_or_raise(job)
+                    partial = (
+                        self._compose_all_partial(job.request_text)
+                        if job.route == Route.ALL.value
+                        else job.result_text
+                    )
+                    self._renew_or_raise(job)
+                    self._queue_store.mark_awaiting_codex(
+                        job.job_id,
+                        handoff.request_hash,
+                        partial,
+                        worker_id=self._worker_id,
+                    )
             except _LeaseLost:
                 pass
             except (QwenClientError, LineClientError) as exc:
@@ -435,15 +514,81 @@ class Worker:
         )
 
     def _renew_or_raise(self, job: ClaimedJob) -> None:
+        self._raise_if_heartbeat_lost()
+        if self._active_heartbeat_idle is not None:
+            wait_limit = max(
+                0.1,
+                min(self._lease_heartbeat_seconds * 2.0, self._work_lease_seconds / 3.0),
+            )
+            if not self._active_heartbeat_idle.wait(timeout=wait_limit):
+                raise _HeartbeatFailure("job lease heartbeat is blocked")
+            self._raise_if_heartbeat_lost()
         if not self._queue_store.renew_lease(
-            job.job_id, self._worker_id, lease_seconds=WORK_LEASE_SECONDS
+            job.job_id, self._worker_id, lease_seconds=self._work_lease_seconds
         ):
             raise _LeaseLost("job lease ownership changed")
+
+    def _raise_if_heartbeat_lost(self) -> None:
+        if self._active_lease_lost is not None and self._active_lease_lost.is_set():
+            raise _LeaseLost("job lease heartbeat failed")
+
+    @contextmanager
+    def _lease_heartbeat(self, job: ClaimedJob) -> Iterator[None]:
+        """Keep a running owner lease alive across lock waits and bounded upstream I/O."""
+        stopped = threading.Event()
+        lost = threading.Event()
+        idle = threading.Event()
+        idle.set()
+
+        def pulse() -> None:
+            while not stopped.wait(self._lease_heartbeat_seconds):
+                idle.clear()
+                try:
+                    renewed = self._queue_store.renew_lease(
+                        job.job_id,
+                        self._worker_id,
+                        lease_seconds=self._work_lease_seconds,
+                    )
+                except Exception:
+                    lost.set()
+                    return
+                finally:
+                    idle.set()
+                if not renewed:
+                    lost.set()
+                    return
+
+        if self._active_lease_lost is not None:
+            raise RuntimeError("worker cannot own concurrent heartbeat scopes")
+        self._active_lease_lost = lost
+        self._active_heartbeat_idle = idle
+        thread = threading.Thread(
+            target=pulse, daemon=True, name=f"lease-heartbeat-{self._worker_id}"
+        )
+        thread.start()
+        body_failed = False
+        try:
+            if lost.is_set():
+                raise _LeaseLost("job lease ownership changed")
+            yield
+        except BaseException:
+            body_failed = True
+            raise
+        finally:
+            stopped.set()
+            thread.join(timeout=max(1.0, self._lease_heartbeat_seconds * 2.0))
+            if thread.is_alive():
+                raise _HeartbeatFailure("job lease heartbeat did not stop")
+            self._active_lease_lost = None
+            self._active_heartbeat_idle = None
+        if lost.is_set() and not body_failed:
+            raise _LeaseLost("job lease heartbeat failed")
 
     def _fail_running(
         self, job: ClaimedJob, error_code: str, *, retry_delay_seconds: int | None
     ) -> None:
         try:
+            self._renew_or_raise(job)
             self._queue_store.fail_running_with_delivery(
                 job.job_id,
                 error_code,
@@ -455,6 +600,7 @@ class Worker:
 
     def _dead_letter_running(self, job: ClaimedJob, error_code: str) -> None:
         try:
+            self._renew_or_raise(job)
             self._queue_store.dead_letter_with_delivery(
                 job.job_id,
                 error_code,

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import socket
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 from urllib import error, parse, request
 
 
@@ -209,10 +211,41 @@ class QwenClient:
         return decoded
 
 
+class QwenClientGate:
+    """Serialize every operation targeting one physical single-slot Qwen server."""
+
+    def __init__(self, client: QwenClient) -> None:
+        self._client = client
+        self._lock = threading.RLock()
+
+    @contextmanager
+    def session(
+        self, *, owner_check: Callable[[], None] | None = None
+    ) -> Iterator["QwenClientGate"]:
+        # 同一節點的 slots 檢查與 chat 必須保持原子，避免兩條 lane 同時占用單槽。
+        while not self._lock.acquire(timeout=0.1):
+            if owner_check is not None:
+                owner_check()
+        try:
+            if owner_check is not None:
+                owner_check()
+            yield self
+        finally:
+            self._lock.release()
+
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        with self._lock:
+            return self._client.chat(prompt, system_prompt=system_prompt)
+
+    def slots_ready(self) -> bool:
+        with self._lock:
+            return self._client.slots_ready()
+
+
 class QwenClientPool:
     """Primary-first single-slot pool with bounded secondary failover."""
 
-    def __init__(self, primary: QwenClient, secondary: QwenClient | None = None) -> None:
+    def __init__(self, primary: QwenClientGate, secondary: QwenClientGate | None = None) -> None:
         self._primary = primary
         self._secondary = secondary
 
@@ -220,7 +253,13 @@ class QwenClientPool:
         try:
             return self._primary.chat(prompt, system_prompt=system_prompt)
         except RetryableQwenError:
-            if self._secondary is None or not self._secondary.slots_ready():
+            if self._secondary is None:
                 raise
-            # Worker 本身為單執行緒；secondary 每次只接一個失敗轉移請求。
+            if isinstance(self._secondary, QwenClientGate):
+                with self._secondary.session():
+                    if not self._secondary.slots_ready():
+                        raise
+                    return self._secondary.chat(prompt, system_prompt=system_prompt)
+            if not self._secondary.slots_ready():
+                raise
             return self._secondary.chat(prompt, system_prompt=system_prompt)

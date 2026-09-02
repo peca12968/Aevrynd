@@ -15,6 +15,7 @@ from .signature import verify_signature
 
 
 EventSink = Callable[[Mapping[str, object]], bool]
+HealthProvider = Callable[[], Mapping[str, object]]
 
 
 class _DuplicateJsonKey(ValueError):
@@ -43,9 +44,11 @@ class GatewayHttpServer(ThreadingHTTPServer):
         server_address: tuple[str, int],
         config: GatewayConfig,
         event_sink: EventSink,
+        health_provider: HealthProvider | None = None,
     ) -> None:
         self.gateway_config = config
         self.event_sink = event_sink
+        self.health_provider = health_provider
         super().__init__(server_address, GatewayRequestHandler)
 
     def handle_error(self, _request: object, _client_address: object) -> None:
@@ -99,7 +102,19 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
         if self.path != "/health":
             self._write_json(HTTPStatus.NOT_FOUND, {"status": "not-found"})
             return
-        self._write_json(HTTPStatus.OK, {"status": "ok"})
+        health = {"status": "ok"}
+        if self.server.health_provider is not None:
+            try:
+                supplied = self.server.health_provider()
+            except Exception:
+                self._write_json(HTTPStatus.SERVICE_UNAVAILABLE, {"status": "degraded"})
+                return
+            if not isinstance(supplied, Mapping):
+                self._write_json(HTTPStatus.SERVICE_UNAVAILABLE, {"status": "degraded"})
+                return
+            health.update(supplied)
+        status = HTTPStatus.OK if health.get("status") == "ok" else HTTPStatus.SERVICE_UNAVAILABLE
+        self._write_json(status, health)
 
     def do_POST(self) -> None:
         # 早期拒絕不會讀完整 body；關閉連線可防止殘留 bytes 被解析成下一個 request。
@@ -238,9 +253,15 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
         self._write_json(HTTPStatus.OK, {"status": "accepted"})
 
 
-def create_server(config: GatewayConfig, event_sink: EventSink) -> GatewayHttpServer:
+def create_server(
+    config: GatewayConfig,
+    event_sink: EventSink,
+    health_provider: HealthProvider | None = None,
+) -> GatewayHttpServer:
     """Create a loopback-only server; caller controls its worker and lifetime."""
 
     if not callable(event_sink):
         raise TypeError("event_sink must be callable")
-    return GatewayHttpServer((config.bind_host, config.port), config, event_sink)
+    return GatewayHttpServer(
+        (config.bind_host, config.port), config, event_sink, health_provider
+    )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import json
 import socket
+import sqlite3
 import tempfile
 import threading
 import time
@@ -21,12 +22,19 @@ from tools.line_gateway.codex_handoff import (
 from tools.line_gateway.config import GatewayConfig
 from tools.line_gateway.host_tasks import HostTasks
 from tools.line_gateway.line_client import RetryableLineError
-from tools.line_gateway.qwen_client import QwenClientError, QwenReply, RetryableQwenError
+from tools.line_gateway.qwen_client import QwenClientError, QwenClientGate, QwenReply, RetryableQwenError
 from tools.line_gateway.queue_store import QueueStore
 from tools.line_gateway.routing import Route, route_event
 from tools.line_gateway.server import create_server
 from tools.line_gateway.signature import compute_signature
 from tools.line_gateway.worker import ASSISTANT_SYSTEM_PROMPTS, Worker
+from tools.line_gateway.scripts.gateway_runner import (
+    LANE_NAMES,
+    RUNTIME_WORKER_COUNT,
+    RuntimeHealth,
+    _request_stop,
+    _serve_runtime,
+)
 
 
 class FakeLineClient:
@@ -100,6 +108,88 @@ class FailingSlotsClient(FakeQwenClient):
 
     def slots_ready(self) -> bool:
         raise self.failure
+
+
+class BarrierQwenClient(FakeQwenClient):
+    def __init__(self, barrier: threading.Barrier) -> None:
+        super().__init__('{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}')
+        self.barrier = barrier
+
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        self.barrier.wait(timeout=2)
+        return super().chat(prompt, system_prompt=system_prompt)
+
+
+class HeldQwenClient(FakeQwenClient):
+    def __init__(self) -> None:
+        super().__init__('{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}')
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self.active = 0
+        self.maximum_active = 0
+        self.guard = threading.Lock()
+
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        with self.guard:
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+            self.entered.set()
+        self.release.wait(timeout=2)
+        try:
+            return super().chat(prompt, system_prompt=system_prompt)
+        finally:
+            with self.guard:
+                self.active -= 1
+
+
+class BlockingHandoff:
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def submit(self, _job_id: str, _request: str):
+        self.entered.set()
+        self.release.wait(timeout=3)
+        return type("Handoff", (), {"request_hash": "a" * 64})()
+
+
+class LifecycleServer:
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.stopped = threading.Event()
+        self.closed = False
+
+    def serve_forever(self) -> None:
+        self.started.set()
+        self.stopped.wait(timeout=3)
+
+    def shutdown(self) -> None:
+        self.stopped.set()
+
+    def server_close(self) -> None:
+        self.closed = True
+
+
+class DeadLifecycleServer(LifecycleServer):
+    def serve_forever(self) -> None:
+        self.started.set()
+
+
+class LifecycleWorker:
+    def __init__(self, role: str, calls: list[tuple[str, str]], *, fail: bool = False) -> None:
+        self.role = role
+        self.calls = calls
+        self.fail = fail
+
+    def process_lane_once(self, lane: str) -> bool:
+        self.calls.append((self.role, f"lane:{lane}"))
+        if self.fail:
+            raise RuntimeError("injected lane death")
+        return False
+
+    def drain_once(self) -> bool:
+        self.calls.append((self.role, "drain"))
+        return False
 
 
 def _write_response(handoff: CodexHandoff, job_id: str, digest: str, result: str) -> None:
@@ -251,6 +341,366 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual(2, len(self.line.pushes))
         self.assertNotEqual(self.line.pushes[0][2], self.line.pushes[1][2])
         self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_distinct_city_lanes_reach_chat_concurrently_with_deterministic_barrier(self) -> None:
+        barrier = threading.Barrier(2)
+        taichung = BarrierQwenClient(barrier)
+        taoyuan = BarrierQwenClient(barrier)
+        options = {
+            "qwen_client": None,
+            "qwen_clients": {"taichung": taichung, "taoyuan": taoyuan},
+        }
+        for event_id, route in (("parallel-tc", "taichung"), ("parallel-ty", "taoyuan")):
+            self.store.enqueue(
+                webhook_event_id=event_id, route=route, source_id="group",
+                requester_id="user", request_text="status",
+            )
+        workers = [
+            Worker(self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+                   self.handoff, worker_id="lane-tc", **options),
+            Worker(self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+                   self.handoff, worker_id="lane-ty", **options),
+        ]
+        threads = [
+            threading.Thread(target=workers[0].process_lane_once, args=("taichung",)),
+            threading.Thread(target=workers[1].process_lane_once, args=("taoyuan",)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(2, len(self.line.pushes))
+        self.assertEqual({"taichung", "taoyuan"}, {
+            "taichung" if "台中" in item[1] else "taoyuan" for item in self.line.pushes
+        })
+
+    def test_shared_physical_qwen_gate_serializes_same_node_and_progress_precedes_wait(self) -> None:
+        physical = HeldQwenClient()
+        gate = QwenClientGate(physical)
+        for index in range(2):
+            self.store.enqueue(
+                webhook_event_id=f"serial-{index}", route="taichung", source_id="group",
+                requester_id="user", request_text=f"status-{index}",
+            )
+        workers = [
+            Worker(self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+                   self.handoff, qwen_client=None, qwen_clients={"taichung": gate},
+                   worker_id=f"serial-{index}")
+            for index in range(2)
+        ]
+        threads = [threading.Thread(target=worker.process_lane_once, args=("taichung",)) for worker in workers]
+        threads[0].start()
+        self.assertTrue(physical.entered.wait(timeout=1))
+        threads[1].start()
+        deadline = time.monotonic() + 1
+        while len(self.line.pushes) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(2, len(self.line.pushes))
+        self.assertEqual(1, physical.maximum_active)
+        physical.release.set()
+        for thread in threads:
+            thread.join(timeout=3)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(1, physical.maximum_active)
+
+    def test_auto_lane_holds_selected_node_gate_across_slot_and_chat(self) -> None:
+        physical = HeldQwenClient()
+        gate = QwenClientGate(physical)
+        self.store.enqueue(
+            webhook_event_id="auto-gate", route="auto_qwen", source_id="group",
+            requester_id="user", request_text="auto",
+        )
+        self.store.enqueue(
+            webhook_event_id="named-gate", route="taichung", source_id="group",
+            requester_id="user", request_text="named",
+        )
+        options = {
+            "qwen_client": None,
+            "qwen_clients": {"taichung": gate},
+            "qwen_auto_order": ("taichung",),
+        }
+        automatic = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+            self.handoff, worker_id="auto-gate", **options,
+        )
+        named = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+            self.handoff, worker_id="named-gate", **options,
+        )
+        auto_thread = threading.Thread(target=automatic.process_lane_once, args=("auto",))
+        named_thread = threading.Thread(target=named.process_lane_once, args=("taichung",))
+        auto_thread.start()
+        self.assertTrue(physical.entered.wait(timeout=1))
+        named_thread.start()
+        deadline = time.monotonic() + 1
+        while len(self.line.pushes) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(2, len(self.line.pushes))
+        self.assertEqual(1, physical.maximum_active)
+        physical.release.set()
+        auto_thread.join(timeout=3)
+        named_thread.join(timeout=3)
+        self.assertFalse(auto_thread.is_alive())
+        self.assertFalse(named_thread.is_alive())
+        self.assertEqual(1, physical.maximum_active)
+
+    def test_short_lease_heartbeat_prevents_reclaim_during_qwen_http(self) -> None:
+        physical = HeldQwenClient()
+        gate = QwenClientGate(physical)
+        queued = self.store.enqueue(
+            webhook_event_id="heartbeat-qwen", route="taichung", source_id="group",
+            requester_id="user", request_text="slow",
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+            self.handoff, qwen_client=None, qwen_clients={"taichung": gate},
+            worker_id="heartbeat-owner", work_lease_seconds=1,
+            lease_heartbeat_seconds=0.1,
+        )
+        thread = threading.Thread(target=worker.process_lane_once, args=("taichung",))
+        thread.start()
+        self.assertTrue(physical.entered.wait(timeout=1))
+        time.sleep(1.2)
+        self.assertIsNone(
+            self.store.claim_next_for_lane("reclaimer", "taichung", lease_seconds=1)
+        )
+        physical.release.set()
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_short_lease_heartbeat_covers_first_codex_submit(self) -> None:
+        handoff = BlockingHandoff()
+        queued = self.store.enqueue(
+            webhook_event_id="heartbeat-codex", route="codex", source_id="group",
+            requester_id="user", request_text="slow submit",
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+            handoff, qwen_client=None, worker_id="codex-heartbeat",
+            work_lease_seconds=1, lease_heartbeat_seconds=0.1,
+        )
+        thread = threading.Thread(target=worker.process_lane_once, args=("control",))
+        thread.start()
+        self.assertTrue(handoff.entered.wait(timeout=1))
+        time.sleep(1.2)
+        self.assertIsNone(
+            self.store.claim_next_for_lane("codex-reclaimer", "control", lease_seconds=1)
+        )
+        handoff.release.set()
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual("awaiting_codex", self.store.status(queued.job_id)["status"])
+
+    def test_heartbeat_thread_exception_fails_closed_without_terminal_overwrite(self) -> None:
+        physical = HeldQwenClient()
+        gate = QwenClientGate(physical)
+        queued = self.store.enqueue(
+            webhook_event_id="heartbeat-exception", route="taichung", source_id="group",
+            requester_id="user", request_text="slow",
+        )
+        heartbeat_failed = threading.Event()
+        original_renew = self.store.renew_lease
+
+        def renew(*args, **kwargs):
+            if threading.current_thread().name.startswith("lease-heartbeat-"):
+                heartbeat_failed.set()
+                raise sqlite3.OperationalError("injected heartbeat failure")
+            return original_renew(*args, **kwargs)
+
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+            self.handoff, qwen_client=None, qwen_clients={"taichung": gate},
+            worker_id="heartbeat-failure", work_lease_seconds=1,
+            lease_heartbeat_seconds=0.1,
+        )
+        with mock.patch.object(self.store, "renew_lease", side_effect=renew):
+            thread = threading.Thread(target=worker.process_lane_once, args=("taichung",))
+            thread.start()
+            self.assertTrue(physical.entered.wait(timeout=1))
+            self.assertTrue(heartbeat_failed.wait(timeout=1))
+            physical.release.set()
+            thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual("running", self.store.status(queued.job_id)["status"])
+        self.assertIsNone(self.store.claim_delivery("heartbeat-failure-delivery"))
+
+    def test_blocked_heartbeat_renew_is_fatal_and_worker_scope_stays_poisoned(self) -> None:
+        physical = HeldQwenClient()
+        gate = QwenClientGate(physical)
+        queued = self.store.enqueue(
+            webhook_event_id="heartbeat-blocked", route="taichung", source_id="group",
+            requester_id="user", request_text="slow",
+        )
+        renew_entered = threading.Event()
+        renew_release = threading.Event()
+        renew_finished = threading.Event()
+        original_renew = self.store.renew_lease
+
+        def renew(*args, **kwargs):
+            if threading.current_thread().name.startswith("lease-heartbeat-"):
+                renew_entered.set()
+                renew_release.wait(timeout=3)
+                try:
+                    return original_renew(*args, **kwargs)
+                finally:
+                    renew_finished.set()
+            return original_renew(*args, **kwargs)
+
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}),
+            self.handoff, qwen_client=None, qwen_clients={"taichung": gate},
+            worker_id="heartbeat-blocked", work_lease_seconds=1,
+            lease_heartbeat_seconds=0.1,
+        )
+        failures: list[BaseException] = []
+
+        def run() -> None:
+            try:
+                worker.process_lane_once("taichung")
+            except BaseException as exc:
+                failures.append(exc)
+
+        with mock.patch.object(self.store, "renew_lease", side_effect=renew):
+            thread = threading.Thread(target=run)
+            thread.start()
+            self.assertTrue(physical.entered.wait(timeout=1))
+            self.assertTrue(renew_entered.wait(timeout=1))
+            physical.release.set()
+            thread.join(timeout=2)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(1, len(failures))
+            self.assertIn("heartbeat", str(failures[0]))
+            self.assertEqual("running", self.store.status(queued.job_id)["status"])
+            self.assertIsNone(self.store.claim_delivery("blocked-heartbeat-delivery"))
+            with self.assertRaisesRegex(RuntimeError, "concurrent heartbeat scopes"):
+                with worker._lease_heartbeat(type("Job", (), {"job_id": queued.job_id})()):
+                    pass
+            renew_release.set()
+            self.assertTrue(renew_finished.wait(timeout=1))
+
+    def test_runner_stop_closes_server_and_keeps_drainer_exclusive(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        runtime_health = RuntimeHealth()
+        calls: list[tuple[str, str]] = []
+        errors: list[BaseException] = []
+
+        def run() -> None:
+            try:
+                _serve_runtime(
+                    server, stopped, lambda role: LifecycleWorker(role, calls), runtime_health
+                )
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        self.assertTrue(server.started.wait(timeout=1))
+        deadline = time.monotonic() + 1
+        while not any(call[1] == "drain" for call in calls) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(
+            {
+                "status": "ok", "workerCount": RUNTIME_WORKER_COUNT,
+                "expectedWorkerCount": RUNTIME_WORKER_COUNT, "workersHealthy": True,
+            },
+            runtime_health.snapshot(),
+        )
+        _request_stop(stopped, 2, None)
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual([], errors)
+        self.assertTrue(server.closed)
+        self.assertEqual(0, runtime_health.snapshot()["workerCount"])
+        self.assertTrue(all(action != "drain" for role, action in calls if role != "drainer"))
+        self.assertTrue(all(not action.startswith("lane:") for role, action in calls if role == "drainer"))
+        self.assertEqual(len(LANE_NAMES) + 1, RUNTIME_WORKER_COUNT)
+
+    def test_runner_lane_death_fails_fast_and_shuts_down(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        runtime_health = RuntimeHealth()
+        calls: list[tuple[str, str]] = []
+
+        def factory(role: str) -> LifecycleWorker:
+            return LifecycleWorker(role, calls, fail=role == "taichung")
+
+        with mock.patch.object(threading, "excepthook", lambda _args: None):
+            with self.assertRaisesRegex(RuntimeError, "work lane stopped"):
+                _serve_runtime(server, stopped, factory, runtime_health)
+        self.assertTrue(stopped.is_set())
+        self.assertTrue(server.closed)
+        self.assertFalse(runtime_health.snapshot()["workersHealthy"])
+
+    def test_runner_detects_http_server_death_and_fails_closed(self) -> None:
+        server = DeadLifecycleServer()
+        stopped = threading.Event()
+        calls: list[tuple[str, str]] = []
+        with self.assertRaisesRegex(RuntimeError, "HTTP server stopped"):
+            _serve_runtime(
+                server, stopped, lambda role: LifecycleWorker(role, calls),
+                shutdown_timeout=0.2,
+            )
+        self.assertTrue(stopped.is_set())
+        self.assertTrue(server.closed)
+
+    def test_runner_rejects_noncooperative_lane_shutdown(self) -> None:
+        server = LifecycleServer()
+        stopped = threading.Event()
+        entered = threading.Event()
+        release = threading.Event()
+        calls: list[tuple[str, str]] = []
+        failures: list[BaseException] = []
+
+        class NonCooperativeWorker(LifecycleWorker):
+            def process_lane_once(self, lane: str) -> bool:
+                if self.role == "taichung":
+                    entered.set()
+                    release.wait(timeout=3)
+                return super().process_lane_once(lane)
+
+        def run() -> None:
+            try:
+                _serve_runtime(
+                    server, stopped, lambda role: NonCooperativeWorker(role, calls),
+                    shutdown_timeout=0.2,
+                )
+            except BaseException as exc:
+                failures.append(exc)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        self.assertTrue(entered.wait(timeout=1))
+        stopped.set()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(1, len(failures))
+        self.assertIn("did not stop cleanly", str(failures[0]))
+        release.set()
+
+    def test_redelivery_does_not_duplicate_route_progress_and_lane_never_drains_result(self) -> None:
+        qwen = FakeQwenClient('{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}')
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {}), self.handoff,
+            qwen_client=None, qwen_clients={"taichung": qwen}, worker_id="redelivery",
+        )
+        first = self.store.enqueue(
+            webhook_event_id="same-redelivery", route="taichung", source_id="group",
+            requester_id="user", request_text="status",
+        )
+        duplicate = self.store.enqueue(
+            webhook_event_id="same-redelivery", route="taichung", source_id="group",
+            requester_id="user", request_text="status",
+        )
+        self.assertFalse(duplicate.inserted)
+        self.assertEqual(first.job_id, duplicate.job_id)
+        self.assertTrue(worker.process_lane_once("taichung"))
+        self.assertEqual(1, len(self.line.pushes))
+        self.assertFalse(worker.process_lane_once("taichung"))
+        self.assertEqual(1, len(self.line.pushes))
+        self.assertIsNotNone(self.store.claim_delivery("dedicated-drainer"))
 
     def test_explicit_city_unconfigured_or_permanently_unreachable_returns_safe_offline_text(self) -> None:
         for suffix, clients in (

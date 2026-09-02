@@ -20,6 +20,7 @@ MAX_REQUEST_CHARS = 16_384
 MAX_RESULT_CHARS = 32_768
 MAX_IDENTIFIER_CHARS = 256
 MAX_ROUTE_CHARS = 32
+JOB_LANES = frozenset({"taichung", "taoyuan", "auto", "control"})
 FAILURE_DELIVERY_TEXT = "工作處理失敗，請稍後查詢工作狀態。"
 _DELIVERY_ID_NAMESPACE = uuid.UUID("9af706cf-508c-4e82-bdb7-e631aa70a79e")
 _RETRY_KEY_NAMESPACE = uuid.UUID("86a90880-ca2e-47cc-9dac-c7eb9d302811")
@@ -472,6 +473,32 @@ class QueueStore:
     def claim_next(
         self, worker_id: str, *, lease_seconds: int = 60, now: float | None = None
     ) -> ClaimedJob | None:
+        return self._claim_next(worker_id, lane=None, lease_seconds=lease_seconds, now=now)
+
+    def claim_next_for_lane(
+        self,
+        worker_id: str,
+        lane: str,
+        *,
+        lease_seconds: int = 60,
+        now: float | None = None,
+    ) -> ClaimedJob | None:
+        """Atomically claim only work owned by one execution lane."""
+        lane_value = _require_text(lane, "lane", MAX_ROUTE_CHARS)
+        if lane_value not in JOB_LANES:
+            raise QueueStoreError("lane is not supported")
+        return self._claim_next(
+            worker_id, lane=lane_value, lease_seconds=lease_seconds, now=now
+        )
+
+    def _claim_next(
+        self,
+        worker_id: str,
+        *,
+        lane: str | None,
+        lease_seconds: int,
+        now: float | None,
+    ) -> ClaimedJob | None:
         owner = _require_text(worker_id, "worker_id", MAX_IDENTIFIER_CHARS)
         if lease_seconds < 1 or lease_seconds > 3_600:
             raise QueueStoreError("lease_seconds is outside the allowed range")
@@ -479,11 +506,19 @@ class QueueStore:
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._recover_expired_jobs(connection, timestamp)
+            lane_clause = {
+                None: "",
+                "taichung": "AND route = 'taichung'",
+                "taoyuan": "AND route = 'taoyuan'",
+                "auto": "AND route = 'auto_qwen'",
+                "control": "AND route NOT IN ('taichung','taoyuan','auto_qwen')",
+            }[lane]
             row = connection.execute(
-                """
+                f"""
                 SELECT * FROM jobs
                  WHERE status = 'queued' AND available_at <= ? AND expires_at > ?
                        AND attempt_count < max_attempts
+                       {lane_clause}
                  ORDER BY created_at, job_id
                  LIMIT 1
                 """,

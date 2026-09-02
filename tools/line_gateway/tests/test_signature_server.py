@@ -99,6 +99,33 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual([], self.events)
 
+    def test_runtime_health_provider_controls_status_and_worker_count(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=5)
+        state = {"status": "degraded", "workerCount": 3, "expectedWorkerCount": 5}
+        self.port = _free_port()
+        self.server = create_server(
+            _config(port=self.port), self._sink, lambda: dict(state)
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/health")
+        response = connection.getresponse()
+        self.assertEqual(503, response.status)
+        self.assertEqual(3, json.loads(response.read())["workerCount"])
+        connection.close()
+
+        state.update(status="ok", workerCount=5, workersHealthy=True)
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/health")
+        response = connection.getresponse()
+        self.assertEqual(200, response.status)
+        self.assertTrue(json.loads(response.read())["workersHealthy"])
+        connection.close()
+
     def test_signature_is_checked_before_json_and_body_mutation_fails(self) -> None:
         valid = b'{"events":[]}'
         mutated = b'{ "events": [] }'

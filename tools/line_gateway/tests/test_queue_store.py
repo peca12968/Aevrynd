@@ -35,6 +35,18 @@ class _LeaseStealingQwen:
         return SimpleNamespace(text="stale worker-a result")
 
 
+class _ShortLeaseStealingQwen:
+    def __init__(self, store: QueueStore) -> None:
+        self.store = store
+        self.reclaimed = None
+
+    def chat(self, _prompt: str):
+        self.reclaimed = self.store.claim_next(
+            "short-owner-b", lease_seconds=1, now=time.time() + 2
+        )
+        return SimpleNamespace(text="stale short-owner-a result")
+
+
 class QueueStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -124,6 +136,53 @@ class QueueStoreTests(unittest.TestCase):
         self.assertEqual(1, len({result.job_id for result in results}))
         self.assertEqual(1, self.store.counts()["queued"])
 
+    def test_route_lane_claims_are_atomic_isolated_and_reclaim_expired_lease(self) -> None:
+        taichung = self.store.enqueue(
+            webhook_event_id="lane-taichung", route="taichung", source_id="destination-1",
+            requester_id="requester-1", request_text="first", now=100,
+        )
+        taoyuan = self.store.enqueue(
+            webhook_event_id="lane-taoyuan", route="taoyuan", source_id="destination-1",
+            requester_id="requester-1", request_text="second", now=100,
+        )
+        first = self.store.claim_next_for_lane(
+            "taichung-a", "taichung", lease_seconds=1, now=100
+        )
+        self.assertEqual(taichung.job_id, first.job_id)
+        self.assertIsNone(
+            self.store.claim_next_for_lane("taichung-b", "taichung", now=100)
+        )
+        other = self.store.claim_next_for_lane("taoyuan-a", "taoyuan", now=100)
+        self.assertEqual(taoyuan.job_id, other.job_id)
+        reclaimed = self.store.claim_next_for_lane("taichung-b", "taichung", now=102)
+        self.assertEqual(taichung.job_id, reclaimed.job_id)
+        self.assertEqual(2, reclaimed.attempt_count)
+
+    def test_control_and_auto_lanes_do_not_steal_named_city_jobs(self) -> None:
+        named = self.store.enqueue(
+            webhook_event_id="lane-named", route="taichung", source_id="destination-1",
+            requester_id="requester-1", request_text="named", now=100,
+        )
+        automatic = self.store.enqueue(
+            webhook_event_id="lane-auto", route="auto_qwen", source_id="destination-1",
+            requester_id="requester-1", request_text="auto", now=100,
+        )
+        control = self.store.enqueue(
+            webhook_event_id="lane-control", route="help", source_id="destination-1",
+            requester_id="requester-1", request_text="help", now=100,
+        )
+        self.assertEqual(
+            automatic.job_id,
+            self.store.claim_next_for_lane("auto", "auto", now=100).job_id,
+        )
+        self.assertEqual(
+            control.job_id,
+            self.store.claim_next_for_lane("control", "control", now=100).job_id,
+        )
+        self.assertEqual(
+            named.job_id,
+            self.store.claim_next_for_lane("named", "taichung", now=100).job_id,
+        )
     def test_assistant_progress_is_stable_and_cannot_regress_after_completion(self) -> None:
         queued = self.store.enqueue(
             webhook_event_id="progress-store", route="taichung", source_id="destination-1",
@@ -515,6 +574,25 @@ class QueueStoreTests(unittest.TestCase):
         )
         delivery = self.store.claim_delivery("delivery-worker")
         self.assertEqual("authoritative worker-b result", delivery.message_text)
+
+    def test_short_lease_owner_loss_stops_stale_worker_without_overwrite(self) -> None:
+        queued = self._enqueue(event_id="short-owner-loss")
+        qwen = _ShortLeaseStealingQwen(self.store)
+        worker = Worker(
+            self.store, _Unused(), _Unused(), _Unused(), qwen_client=qwen,
+            worker_id="short-owner-a", work_lease_seconds=1,
+            lease_heartbeat_seconds=0.1,
+        )
+        self.assertTrue(worker.process_once())
+        self.assertIsNotNone(qwen.reclaimed)
+        self.assertIsNone(self.store.claim_delivery("delivery-before-owner-b"))
+        self.store.complete_with_delivery(
+            queued.job_id,
+            "authoritative short-owner-b result",
+            expected_lease_owner="short-owner-b",
+        )
+        delivery = self.store.claim_delivery("delivery-after-owner-b")
+        self.assertEqual("authoritative short-owner-b result", delivery.message_text)
 
     def test_reclaimed_delivery_rejects_old_owner_late_success(self) -> None:
         self._assert_reclaimed_delivery_rejects_old_owner(

@@ -12,5 +12,8 @@ if ($listeners.Count -ne 1 -or $listeners[0].LocalAddress -ne '127.0.0.1' -or $l
     throw 'Gateway listener is not restricted to loopback.'
 }
 $response = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:8787/health' -TimeoutSec 5
-if ($response.status -ne 'ok') { throw 'Gateway health response is invalid.' }
-Write-Output "Gateway health passed: PID=$($process.Id) listener=127.0.0.1:8787 worker=1"
+if ($response.status -ne 'ok' -or $response.workersHealthy -ne $true -or
+    [int]$response.workerCount -ne [int]$response.expectedWorkerCount) {
+    throw 'Gateway health response is invalid.'
+}
+Write-Output "Gateway health passed: PID=$($process.Id) listener=127.0.0.1:8787 workers=$($response.workerCount)"

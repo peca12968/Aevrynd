@@ -48,7 +48,7 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 
 `Set-Credentials.ps1` 會以隱密輸入依序要求三個值，不會顯示或寫入檔案。請勿把已在聊天或文件中曝光的舊密鑰再次使用。
 
-主要 Qwen 預設為 `http://192.168.50.98:8080/v1`。`http://100.89.42.36:8080/v1` 已加入固定 allowlist 作為第二節點；主要節點只有發生可重試錯誤時，Gateway 才會先以各自憑證檢查 secondary `/slots`，通過後轉移單一請求。單一 worker 不會平行送出多個 secondary 請求，永久授權／輸入錯誤也不會觸發故障轉移。
+主要 Qwen 預設為 `http://192.168.50.98:8080/v1`。`http://100.89.42.36:8080/v1` 已加入固定 allowlist 作為第二節點；主要節點只有發生可重試錯誤時，Gateway 才會先以各自憑證檢查 secondary `/slots`，通過後轉移單一請求。Gateway 以台中、桃園、auto、control 四條工作 lane 加上一條獨立 drainer 執行；兩個城市可並行接收工作，但同一實體 Qwen 節點由共享鎖維持單槽，永久授權／輸入錯誤也不會觸發故障轉移。每個執行中的 job 以 owner-bound heartbeat 延長租約；等待鎖、Qwen HTTP 或 Codex submit 期間若續租失敗，舊 owner 會停止且不能覆寫新 owner。LINE 結果投遞與 Codex reconciliation 只由 drainer 執行，避免工作 lane 重複副作用。
 
 單節點安裝執行 `Set-Credentials.ps1` 只寫入三個必要憑證；要啟用第二節點時才加上 `-EnableSecondaryQwen`。未加此 switch 不會讀取空白輸入，也不會覆寫既有 secondary credential。primary 與 secondary 角色固定，不能只交換 URL 來改變助理位置映射。
 
