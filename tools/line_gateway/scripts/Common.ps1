@@ -59,6 +59,9 @@ function Get-GatewayPaths {
         StateFile = Join-Path $root 'state\gateway-state.json'
         TunnelStateFile = Join-Path $root 'state\tunnel-state.json'
         FunnelStateFile = Join-Path $root 'state\funnel-state.json'
+        NgrokStateFile = Join-Path $root 'state\ngrok-state.json'
+        NgrokPendingFile = Join-Path $root 'state\ngrok-pending.json'
+        NgrokDomainFile = Join-Path $root 'config\ngrok-domain.json'
         Manifests = Join-Path $root 'manifests'
         InstallFile = Join-Path $root 'manifests\install.json'
         ManifestFile = Join-Path $root 'manifests\installation-manifest.json'
@@ -98,12 +101,13 @@ function Test-InstallationManifest {
         -not (Test-Path -LiteralPath $Paths.ManifestHashFile -PathType Leaf)) {
         throw 'Installation manifest is missing.'
     }
-    $expectedManifestHash = (Get-Content -Raw -LiteralPath $Paths.ManifestHashFile).Trim().ToLowerInvariant()
-    $actualManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Paths.ManifestFile).Hash.ToLowerInvariant()
+    $hashBytes=[IO.File]::ReadAllBytes($Paths.ManifestHashFile);$manifestBytes=[IO.File]::ReadAllBytes($Paths.ManifestFile)
+    try{$expectedManifestHash=[Text.UTF8Encoding]::new($false,$true).GetString($hashBytes).Trim().ToLowerInvariant();$sha=[Security.Cryptography.SHA256]::Create();try{$actualManifestHash=([Convert]::ToHexString($sha.ComputeHash($manifestBytes))).ToLowerInvariant()}finally{$sha.Dispose()}
     if ($expectedManifestHash -notmatch '^[0-9a-f]{64}$' -or $actualManifestHash -cne $expectedManifestHash) {
         throw 'Installation manifest hash validation failed.'
     }
-    $manifest = Get-Content -Raw -LiteralPath $Paths.ManifestFile | ConvertFrom-Json
+    $manifest = ([Text.UTF8Encoding]::new($false,$true).GetString($manifestBytes)) | ConvertFrom-Json
+    }finally{[Array]::Clear($hashBytes,0,$hashBytes.Length);[Array]::Clear($manifestBytes,0,$manifestBytes.Length)}
     if ($manifest.schemaVersion -ne 1 -or @($manifest.files).Count -lt 1) {
         throw 'Installation manifest is invalid.'
     }
@@ -318,6 +322,7 @@ function Invoke-GatewayEmergencyStops {
         @{ Name = 'gateway'; Script = 'Stop-Gateway.ps1' },
         @{ Name = 'tunnel'; Script = 'Stop-Tunnel.ps1' },
         @{ Name = 'funnel'; Script = 'Stop-Funnel.ps1' }
+        @{ Name = 'ngrok'; Script = 'Stop-Ngrok.ps1' }
     )) {
         try {
             & (Join-Path $ScriptsRoot $component.Script) -InstallRoot $InstallRoot | Out-Null

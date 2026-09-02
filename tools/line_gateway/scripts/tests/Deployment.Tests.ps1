@@ -221,13 +221,16 @@ try {
         $stopScripts = Join-Path $temporaryRoot 'stop-fixture'
         $marker = Join-Path $temporaryRoot 'tunnel-stop-called.txt'
         $funnelMarker = Join-Path $temporaryRoot 'funnel-stop-called.txt'
+        $ngrokMarker = Join-Path $temporaryRoot 'ngrok-stop-called.txt'
         New-Item -ItemType Directory -Path $stopScripts | Out-Null
         [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Gateway.ps1'), "param([string]`$InstallRoot)`nthrow 'gateway fixture failure'", [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Tunnel.ps1'), "param([string]`$InstallRoot)`n[IO.File]::WriteAllText('$($marker.Replace("'", "''"))','called')", [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Funnel.ps1'), "param([string]`$InstallRoot)`n[IO.File]::WriteAllText('$($funnelMarker.Replace("'", "''"))','called')", [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText((Join-Path $stopScripts 'Stop-Ngrok.ps1'), "param([string]`$InstallRoot)`n[IO.File]::WriteAllText('$($ngrokMarker.Replace("'", "''"))','called')", [Text.UTF8Encoding]::new($false))
         $failures = @(Invoke-GatewayEmergencyStops -ScriptsRoot $stopScripts -InstallRoot 'fixture')
         if (-not (Test-Path -LiteralPath $marker)) { throw 'Tunnel stop was skipped after gateway stop failed.' }
         if (-not (Test-Path -LiteralPath $funnelMarker)) { throw 'Funnel stop was skipped after gateway stop failed.' }
+        if (-not (Test-Path -LiteralPath $ngrokMarker)) { throw 'Ngrok stop was skipped after gateway stop failed.' }
         Assert-Equal $failures.Count 1 'aggregated stop failure count'
         Assert-Equal $failures[0] 'gateway' 'aggregated stop component'
     }
@@ -253,6 +256,49 @@ try {
             $stopIndex -gt $manifestIndex -or $manifestIndex -gt $removeIndex) {
             throw 'Uninstall ordering is unsafe.'
         }
+    }
+
+    Invoke-Test 'startup transport transitions remove the conflicting task' {
+        $fixtureRoot = Join-Path $temporaryRoot 'startup-transition'
+        $fixtureScripts = Join-Path $fixtureRoot 'scripts'
+        New-Item -ItemType Directory -Path $fixtureScripts | Out-Null
+        Copy-Item -LiteralPath (Join-Path $scriptsRoot 'Register-Startup.ps1') -Destination $fixtureScripts
+        [IO.File]::WriteAllText((Join-Path $fixtureScripts 'Start-Gateway.ps1'), '', [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText((Join-Path $fixtureScripts 'Test-TunnelConfiguration.ps1'),
+            "param([string]`$ConfigPath)`n[pscustomobject]@{ConfigPath=`$ConfigPath}", [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText((Join-Path $fixtureScripts 'Test-NgrokConfiguration.ps1'),
+            "param([string]`$InstallRoot)`n[pscustomobject]@{Mode='active'}", [Text.UTF8Encoding]::new($false))
+        $escapedRoot = $fixtureRoot.Replace("'", "''")
+        $escapedScripts = $fixtureScripts.Replace("'", "''")
+        [IO.File]::WriteAllText((Join-Path $fixtureScripts 'Common.ps1'), @"
+function Assert-Administrator {}
+function Get-GatewayPaths { param([string]`$InstallRoot) return @{Root='$escapedRoot';Scripts='$escapedScripts'} }
+function Enter-PublicTransportLock { return [pscustomobject]@{Acquired=`$true} }
+function Exit-PublicTransportLock { param([object]`$Lock) }
+"@, [Text.UTF8Encoding]::new($false))
+
+        $scheduled = @{
+            'Aevrynd-Line-Gateway-Tunnel' = [pscustomobject]@{Kind='old-tunnel'}
+            'Aevrynd-Line-Gateway-Ngrok' = [pscustomobject]@{Kind='old-ngrok'}
+        }
+        function Get-ScheduledTask { param([string]$TaskName,[object]$ErrorAction) return $scheduled[$TaskName] }
+        function Unregister-ScheduledTask { param([string]$TaskName,[switch]$Confirm) [void]$scheduled.Remove($TaskName) }
+        function Register-ScheduledTask { param([string]$TaskName,[object]$InputObject,[switch]$Force) $scheduled[$TaskName]=$InputObject }
+        function New-ScheduledTaskTrigger { param([switch]$AtLogOn,[string]$User) return [pscustomobject]@{Kind='trigger'} }
+        function New-ScheduledTaskPrincipal { param([string]$UserId,[string]$LogonType,[string]$RunLevel) return [pscustomobject]@{Kind='principal'} }
+        function New-ScheduledTaskSettingsSet { param([string]$MultipleInstances,[int]$RestartCount,[TimeSpan]$RestartInterval,[TimeSpan]$ExecutionTimeLimit,[switch]$StartWhenAvailable,[switch]$AllowStartIfOnBatteries,[switch]$DontStopIfGoingOnBatteries) return [pscustomobject]@{Kind='settings'} }
+        function New-ScheduledTaskAction { param([string]$Execute,[string]$Argument,[string]$WorkingDirectory) return [pscustomobject]@{Kind='action';Argument=$Argument} }
+        function New-ScheduledTask { param([object]$Action,[object]$Trigger,[object]$Principal,[object]$Settings) return [pscustomobject]@{Kind='task';Action=$Action} }
+
+        & (Join-Path $fixtureScripts 'Register-Startup.ps1') -InstallRoot $fixtureRoot -PublicTransport Cloudflare -CloudflaredConfigPath (Join-Path $fixtureRoot 'cloudflared\config.yml') | Out-Null
+        if ($scheduled.ContainsKey('Aevrynd-Line-Gateway-Ngrok') -or -not $scheduled.ContainsKey('Aevrynd-Line-Gateway-Tunnel')) {
+            throw 'Cloudflare transition retained the conflicting ngrok startup task.'
+        }
+        & (Join-Path $fixtureScripts 'Register-Startup.ps1') -InstallRoot $fixtureRoot -PublicTransport Ngrok | Out-Null
+        if ($scheduled.ContainsKey('Aevrynd-Line-Gateway-Tunnel') -or -not $scheduled.ContainsKey('Aevrynd-Line-Gateway-Ngrok')) {
+            throw 'Ngrok transition retained the conflicting Cloudflare startup task.'
+        }
+        if (-not $scheduled.ContainsKey('Aevrynd-Line-Gateway')) { throw 'Transport transition omitted the gateway startup task.' }
     }
 } finally {
     $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

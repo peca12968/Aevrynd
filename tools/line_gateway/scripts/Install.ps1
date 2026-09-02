@@ -32,7 +32,11 @@ $scriptFiles = @(
     'Set-Credentials.ps1', 'Start-Gateway.ps1', 'Start-Tunnel.ps1',
     'Stop-Gateway.ps1', 'Stop-Tunnel.ps1', 'Test-Health.ps1',
     'Test-TunnelConfiguration.ps1', 'Funnel.Common.ps1', 'Start-Funnel.ps1',
-    'Stop-Funnel.ps1', 'Test-FunnelConfiguration.ps1', 'Uninstall.ps1', 'gateway_runner.py'
+    'Stop-Funnel.ps1', 'Test-FunnelConfiguration.ps1', 'Uninstall.ps1', 'gateway_runner.py',
+    'Bootstrap.ps1',
+    'Ngrok.Common.ps1', 'Set-NgrokConfiguration.ps1', 'Set-NgrokCredential.ps1',
+    'Start-Ngrok.ps1', 'Stop-Ngrok.ps1', 'Test-NgrokConfiguration.ps1',
+    'Remove-NgrokPlaintextCredential.ps1', 'ngrok-package-identity.json'
 )
 foreach ($name in $coreFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $sourcePackage $name) -PathType Leaf)) { throw "Required core file is missing: $name" }
@@ -44,21 +48,31 @@ foreach ($name in $scriptFiles) {
 New-Item -ItemType Directory -Force -Path $paths.Root,$paths.Config,$paths.Data,$paths.Logs,$paths.State,
     (Join-Path $paths.Root 'handoff'),(Join-Path $paths.Root 'cloudflared'),(Join-Path $paths.Root 'staging') | Out-Null
 
-# Runtime 根目錄拒絕其他本機帳號；排程帳號、SYSTEM 與 Administrators 才可存取。
+# 根目錄不可給排程帳號 DELETE_CHILD；否則可繞過 scripts/manifests 的唯讀 ACL。
 $rootSecurity = [Security.AccessControl.DirectorySecurity]::new()
 $rootSecurity.SetAccessRuleProtection($true, $false)
 $rootInheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
 $rootPropagation = [Security.AccessControl.PropagationFlags]::None
 $rootCurrentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-foreach ($account in @($rootCurrentIdentity, 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
+$rootSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+    $rootCurrentIdentity, [Security.AccessControl.FileSystemRights]'ReadAndExecute, Synchronize',
+    [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None,
+    [Security.AccessControl.AccessControlType]::Allow))
+foreach ($account in @('NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
     $rootSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
         $account, [Security.AccessControl.FileSystemRights]::FullControl,
         $rootInheritance, $rootPropagation, [Security.AccessControl.AccessControlType]::Allow))
 }
 Set-Acl -LiteralPath $paths.Root -AclObject $rootSecurity
+
+# 只有明確列出的資料目錄可由登入使用者寫入；每個目錄都切斷父層繼承。
+$mutableSecurity=[Security.AccessControl.DirectorySecurity]::new();$mutableSecurity.SetAccessRuleProtection($true,$false)
+foreach($account in @($rootCurrentIdentity,'NT AUTHORITY\SYSTEM','BUILTIN\Administrators')){$mutableSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($account,[Security.AccessControl.FileSystemRights]::FullControl,$rootInheritance,$rootPropagation,[Security.AccessControl.AccessControlType]::Allow))}
+foreach($directory in @($paths.Config,$paths.Data,$paths.Logs,$paths.State,(Join-Path $paths.Root 'handoff'),(Join-Path $paths.Root 'cloudflared'),(Join-Path $paths.Root 'staging'))){Set-Acl -LiteralPath $directory -AclObject $mutableSecurity}
 if (Test-Path -LiteralPath $paths.StateFile -PathType Leaf) { throw 'Stop the gateway before installing an update.' }
 if (Test-Path -LiteralPath $paths.TunnelStateFile -PathType Leaf) { throw 'Stop the named tunnel before installing an update.' }
 if (Test-Path -LiteralPath $paths.FunnelStateFile -PathType Leaf) { throw 'Stop Tailscale Funnel before installing an update.' }
+if (Test-Path -LiteralPath $paths.NgrokStateFile -PathType Leaf) { throw 'Stop ngrok before installing an update.' }
 if (@(Get-NetTCPConnection -State Listen -LocalPort 8787 -ErrorAction SilentlyContinue).Count -gt 0) {
     throw 'TCP 8787 is active; stop the gateway before installing an update.'
 }

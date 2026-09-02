@@ -32,7 +32,9 @@ if($null-eq$funnelState){
         $funnelActive=$true
     }else{throw 'Funnel state exists while authoritative status is disabled.'}
 }
-if($namedTunnelActive-eq$funnelActive){throw 'Enrollment requires exactly one verified public transport: Cloudflare named tunnel or Tailscale Funnel.'}
+$ngrokActive=$false
+if(Test-Path -LiteralPath $paths.NgrokStateFile){$ngrok=& (Join-Path $PSScriptRoot 'Test-NgrokConfiguration.ps1') -InstallRoot $InstallRoot;if($ngrok.Mode-ne'active'){throw 'Ngrok state exists but its endpoint cannot be verified.'};$ngrokActive=$true}elseif(@(Get-CimInstance Win32_Process -Filter "Name='ngrok.exe'" -ErrorAction SilentlyContinue).Count-ne0){throw 'An unmanaged ngrok process prevents transport selection.'}
+if(@(@($namedTunnelActive,$funnelActive,$ngrokActive)|Where-Object{$_}).Count-ne1){throw 'Enrollment requires exactly one verified public transport: Cloudflare, Tailscale Funnel, or ngrok.'}
 if(Test-NetConnection 127.0.0.1 -Port 8787 -InformationLevel Quiet -WarningAction SilentlyContinue){throw 'Port 8787 is already in use; stop Gateway before one-shot enrollment.'}
 $secret=Read-Host 'Current LINE Channel Secret' -AsSecureString
 $pointer=[Runtime.InteropServices.Marshal]::SecureStringToCoTaskMemUnicode($secret)

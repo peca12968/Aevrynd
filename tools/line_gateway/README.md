@@ -25,7 +25,7 @@
 
 ## 安裝
 
-首次安裝若尚不知道群組 `groupId`，先執行 `Install.ps1`，選擇並啟動 Tailscale Funnel 或 Cloudflare named tunnel其中一種；此時不要啟動 Gateway。再從 repo 執行一次性 discovery helper。它只在所選 transport 的身分與 authoritative state 驗證通過，且另一種 transport 已證明停用、Gateway 尚未佔用 `127.0.0.1:8787` 時啟動 30–300 秒。每個 request 的 body 最多讀取 3 秒，並且不能超過整個登錄期限；慢速 body 回覆 408 後繼續，拒絕請求累積到 32 筆時會安全終止本次登錄，必須以新 nonce 重開。有效事件必須同時通過原始 body HMAC、預先輸入的 developer user ID、LINE 官方 self mention 與本機隨機 nonce。成功取得一次 userId/groupId 後立即停止，只寫入目前 Windows 使用者 ACL 保護的暫存 JSON，不保存 raw body、reply token、channel secret 或訊息內容。
+首次安裝若尚不知道群組 `groupId`，先執行 `Install.ps1`，選擇並啟動 Tailscale Funnel、Cloudflare named tunnel 或 ngrok 其中一種；此時不要啟動 Gateway。再從 repo 執行一次性 discovery helper。它只在所選 transport 的身分與 authoritative state 驗證通過，且另外兩種 transport 已證明停用、Gateway 尚未佔用 `127.0.0.1:8787` 時啟動 30–300 秒。每個 request 的 body 最多讀取 3 秒，並且不能超過整個登錄期限；慢速 body 回覆 408 後繼續，拒絕請求累積到 32 筆時會安全終止本次登錄，必須以新 nonce 重開。有效事件必須同時通過原始 body HMAC、預先輸入的 developer user ID、LINE 官方 self mention 與本機隨機 nonce。成功取得一次 userId/groupId 後立即停止，只寫入目前 Windows 使用者 ACL 保護的暫存 JSON，不保存 raw body、reply token、channel secret 或訊息內容。
 
 ```powershell
 pwsh -NoProfile -File .\tools\line_gateway\scripts\Discover-Allowlist.ps1 `
@@ -129,6 +129,50 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Stop-Tunnel.ps1
 
 LINE Developers Console 的 webhook URL 使用 `https://<hostname>/webhook`。不要填 IP、HTTP 或 `:8787`。
 
+## ngrok 免費固定 dev domain
+
+本機使用 Microsoft Store 簽署的 `ngrok.ngrok` 3.39.9 MSIX。固定 PackageFullName、Publisher、PublisherId、Store signature kind、實體執行檔路徑及 SHA-256 記錄於 `scripts/ngrok-package-identity.json`；啟動前必須全部吻合。曾由 winget 3.3.1 內建 updater 產生的檔案已被 Defender 隔離，禁止還原、排除或沿用。
+
+公開端只固定轉送到 `http://127.0.0.1:8787`，並停用 ngrok inspection 與訊息記錄。Gateway 原點只接受精確 `/webhook`，其他路徑 fail closed；啟動程序會先驗證本機非 webhook 路徑不是 2xx，再用 ngrok authoritative local API 驗證唯一 HTTPS domain 與 origin tuple，最後驗證公開非 webhook 路徑不是 2xx。成功判定不信任 CLI stdout。
+
+ngrok Free plan 只提供帳號自動配發的一個固定 `*.ngrok-free.dev` dev domain，不能自選、猜測或使用 wildcard。此帳號目前提供的非機密 domain 是 `sample-cupid-overdrawn.ngrok-free.dev`。Authtoken 不得貼到聊天、命令列或設定檔；先前曾貼入聊天並由 ngrok 寫入使用者 `ngrok.yml` 的 token 必須在 Dashboard 撤銷並重新簽發，禁止沿用。
+
+更新安裝後，以系統管理員 PowerShell 7 設定非機密 domain：
+
+```powershell
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-NgrokConfiguration.ps1 `
+  -Domain 'sample-cupid-overdrawn.ngrok-free.dev'
+```
+
+接著在本機以隱密輸入保存 authtoken：
+
+```powershell
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-NgrokCredential.ps1
+```
+
+Domain 設定採封閉 JSON：只接受 lowercase 的單一 `ngrok-free.dev` hostname，拒絕 URL、wildcard、其他 suffix、額外欄位、錯誤 scalar type及重複 key。Authtoken 只保存於目前帳號的 Windows Credential Manager 項目 `Aevrynd/LineGateway/NgrokAuthtoken`。
+
+若舊 token 曾由 `ngrok config add-authtoken` 寫入明文 YAML，先在 Dashboard 完成撤銷與輪替，再執行：
+
+```powershell
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Remove-NgrokPlaintextCredential.ps1 -ConfirmRotated
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-NgrokCredential.ps1
+```
+
+不採用 Google Apps Script 作為 webhook transport：Apps Script `doPost(e)` 的官方事件物件不提供任意 HTTP request headers，無法取得 LINE 必須驗證的 `x-line-signature`；`ContentService` 回應還會重新導向一次性 `googleusercontent.com` URL。兩者都不符合原始 body HMAC 與固定 webhook host 的安全契約。
+
+輪替 token、清除舊明文檔並完成安裝後，可執行：
+
+```powershell
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Start-Ngrok.ps1
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Test-NgrokConfiguration.ps1
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Register-Startup.ps1 -PublicTransport Ngrok
+```
+
+首次以 ngrok 取得 allowlist 時，完整順序必須是：安裝、設定 domain、以隱密輸入保存 ngrok authtoken、啟動並驗證 ngrok，然後才啟動 `Discover-Allowlist.ps1`。`Start-Ngrok.ps1` 執行後而 `127.0.0.1:8787` 尚無 listener 的期間，公開 endpoint 回覆 502 是預期狀態；此時不要在 LINE Developers Console 按 Verify。必須等 discovery helper 顯示 `ENROLLMENT_LISTENER_READY` 與本次 nonce 後，才按 Verify 並從指定 developer 帳號在目標群組傳送包含官方 self mention 的 `enroll <nonce>`。capture 完成且 helper 已停止後，才依人工審查的 IDs 執行 `Set-Configuration.ps1`、`Set-Credentials.ps1`、`Start-Gateway.ps1`、`Test-Health.ps1`，最後才執行 `Register-Startup.ps1 -PublicTransport Ngrok`。不要在 discovery listener 與 Gateway 之間造成 8787 listener 重疊。
+
+常駐使用相同 Windows 帳號的 `AtLogOn` scheduled task：啟動腳本讀 Credential Manager，只在子程序環境暫時提供 `NGROK_AUTHTOKEN`。不得使用讓 SYSTEM 無法讀取使用者 credential 的 Windows service，也不得把 token 寫入 ngrok YAML、程序參數或 log。Cloudflare named tunnel 仍保留相容，但 Cloudflare、Tailscale Funnel、ngrok 三者只能啟用一個。
+
 ## 登入後自動啟動
 
 Credential Manager 是使用者範圍，因此排程使用相同帳號的 `AtLogOn` trigger，而不是 SYSTEM。這可避免把密鑰降級成明文檔案。
@@ -179,4 +223,5 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Uninstall.ps1 -
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Deployment.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Enrollment.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Funnel.Tests.ps1
+pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Ngrok.Tests.ps1
 ```
