@@ -11,6 +11,7 @@ import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.game_mode_controller.api import HubApi
 from tools.game_mode_controller.acceptance import QwenAcceptanceProbe
@@ -185,6 +186,14 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(ProcessIdentityError):
             WindowsQwenLifecycle(manifest, pid_store, inspector=hostile, probe=FakeProbe()).stop_validated()
         self.assertNotIn("terminate_opened", hostile.events)
+
+    @unittest.skipUnless(os.name == "nt", "Windows CIM path contract")
+    def test_process_inspector_cim_reader_does_not_depend_on_path(self) -> None:
+        from tools.game_mode_controller.windows_runtime import WindowsProcessInspector
+
+        with patch.dict(os.environ, {"PATH": ""}, clear=False):
+            command_line = WindowsProcessInspector._read_command_line(os.getpid())
+        self.assertTrue(command_line)
 
     def test_existing_light_state_is_adopted_only_after_full_manifest_gate(self) -> None:
         path, digest = self._write_manifest()

@@ -7,7 +7,6 @@ import ctypes
 import hashlib
 import json
 import os
-import shutil
 import socket
 import subprocess
 import time
@@ -107,14 +106,22 @@ class WindowsProcessInspector:
 
     @staticmethod
     def _read_command_line(pid: int) -> str:
-        powershell = shutil.which("powershell.exe")
-        if not powershell:
+        # 排程 runner 採最小環境且刻意不繼承 PATH；固定由 Windows 目錄解析系統 CIM host。
+        kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
+        kernel32.GetWindowsDirectoryW.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+        kernel32.GetWindowsDirectoryW.restype = wintypes.UINT
+        windows_directory = ctypes.create_unicode_buffer(32_768)
+        length = kernel32.GetWindowsDirectoryW(windows_directory, len(windows_directory))
+        if length == 0 or length >= len(windows_directory):
+            raise ProcessIdentityError("Windows CIM process reader is unavailable")
+        powershell = Path(windows_directory.value, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+        if powershell.is_symlink() or not powershell.is_file():
             raise ProcessIdentityError("Windows CIM process reader is unavailable")
         script = f"$p=Get-CimInstance Win32_Process -Filter 'ProcessId = {pid}' -ErrorAction Stop;if($null -eq $p){{exit 3}};$p.CommandLine|ConvertTo-Json -Compress"
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
         try:
             result = subprocess.run(
-                [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                [str(powershell), "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
                 capture_output=True, text=True, timeout=5, check=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
