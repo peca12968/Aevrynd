@@ -318,5 +318,10 @@ Invoke-Test 'gateway timestamp writes canonical UTC normalizes exact legacy and 
     foreach($bad in @($legacy.ToLowerInvariant(),$legacy.Replace('Z','+0000'),'2026-01-01T00:00:00Z')){Assert-Throws {ConvertFrom-GatewayStateTimestamp $bad} 'hostile gateway timestamp'}
 }
 
+Invoke-Test 'gateway state preserves and normalizes fixed legacy timestamp text' {
+    $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) "aevrynd-gateway-state-$([Guid]::NewGuid().ToString('N'))";New-Item -ItemType Directory $fixtureRoot|Out-Null;$fixture=@{StateFile=(Join-Path $fixtureRoot 'gateway-state.json')}
+    try{[IO.File]::WriteAllText($fixture.StateFile,'{"schemaVersion":1,"pid":154244,"startedUtc":"2026-09-02T18:04:49.6200313Z","bindHost":"127.0.0.1","port":8787}');$state=Read-GatewayState $fixture;if($state.startedUtc-cne'2026-09-02T18:04:49.6200313+00:00'){throw "Fixed legacy timestamp normalized incorrectly: $($state.startedUtc)"}}finally{Remove-Item $fixtureRoot -Recurse -Force}
+}
+
 Write-Output "Deployment tests: passed=$script:passed failed=$script:failed"
 if ($script:failed -gt 0) { exit 1 }

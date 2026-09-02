@@ -273,7 +273,8 @@ function ConvertFrom-GatewayStateTimestamp {
 function Read-GatewayState {
     param([hashtable]$Paths)
     if (-not (Test-Path -LiteralPath $Paths.StateFile -PathType Leaf)) { return $null }
-    $state = Get-Content -Raw -LiteralPath $Paths.StateFile | ConvertFrom-Json
+    # 保留 JSON timestamp 原始字串；否則 PowerShell 7 會先轉 DateTime 並丟失 Z/+00:00 形態。
+    $state = Get-Content -Raw -LiteralPath $Paths.StateFile | ConvertFrom-Json -DateKind String
     if ($null -eq $state.pid -or $null -eq $state.startedUtc) {
         throw 'Gateway state file is invalid.'
     }
