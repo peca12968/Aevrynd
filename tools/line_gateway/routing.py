@@ -118,10 +118,9 @@ def _route_self_mention(text: str, mention: object) -> RouteDecision | None:
         if not command.startswith(selector):
             continue
         tail = command[len(selector) :]
-        if not tail or (not tail[0].isspace() and tail[0] not in {":", "："}):
-            continue
         command = tail.lstrip(" \t\r\n:：")
-        if not command or command.startswith("台中 ") or command.startswith("台中：") or command.startswith("桃園 ") or command.startswith("桃園："):
+        # 城市選擇器只接受精確中文名稱；尾端分隔符可省略，但不可串接另一城市造成歧義。
+        if command.startswith("台中") or command.startswith("桃園"):
             return _ignored("assistant-selector-invalid", text)
         selected = route
         break

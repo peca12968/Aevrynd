@@ -111,6 +111,7 @@ class QwenClientTests(unittest.TestCase):
         reply = self._client(opener).chat("hello", system_prompt="safe system")
         self.assertEqual("QWEN_OK", reply.text)
         outgoing = opener.requests[0]
+        self.assertEqual([120.0], opener.timeouts)
         self.assertEqual(
             "http://192.168.50.98:8080/v1/chat/completions", outgoing.full_url
         )

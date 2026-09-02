@@ -23,6 +23,8 @@ MAX_ROUTE_CHARS = 32
 FAILURE_DELIVERY_TEXT = "工作處理失敗，請稍後查詢工作狀態。"
 _DELIVERY_ID_NAMESPACE = uuid.UUID("9af706cf-508c-4e82-bdb7-e631aa70a79e")
 _RETRY_KEY_NAMESPACE = uuid.UUID("86a90880-ca2e-47cc-9dac-c7eb9d302811")
+_PROGRESS_ID_NAMESPACE = uuid.UUID("c84740e5-f7ac-4b29-99c3-81400801128e")
+_PROGRESS_RETRY_NAMESPACE = uuid.UUID("26ad047e-44cd-41ee-a92a-48ab964b11af")
 
 
 class QueueStoreError(RuntimeError):
@@ -60,6 +62,16 @@ class ClaimedDelivery:
     attempt_count: int
     max_attempts: int
     expires_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantProgress:
+    delivery_id: str
+    route: str
+    destination_id: str
+    message_text: str
+    retry_key: str
+    status: str
 
 
 def _require_text(value: object, name: str, maximum: int, *, allow_empty: bool = False) -> str:
@@ -166,15 +178,112 @@ class QueueStore:
 
                 CREATE INDEX IF NOT EXISTS deliveries_claim_idx
                     ON deliveries(status, available_at, created_at);
+
+                CREATE TABLE IF NOT EXISTS assistant_progress (
+                    delivery_id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                    route TEXT NOT NULL CHECK(route IN ('taichung','taoyuan')),
+                    destination_id TEXT NOT NULL,
+                    message_text TEXT NOT NULL,
+                    retry_key TEXT NOT NULL UNIQUE,
+                    identity_version INTEGER NOT NULL CHECK(identity_version IN (1,2)),
+                    status TEXT NOT NULL CHECK(status IN ('pending','completed','dead_letter')),
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    error_code TEXT NOT NULL DEFAULT '',
+                    UNIQUE(job_id, route)
+                );
                 """
             )
-            columns = {
-                str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)")
-            }
-            if "codex_request_prepared" not in columns:
-                connection.execute(
-                    "ALTER TABLE jobs ADD COLUMN codex_request_prepared INTEGER NOT NULL DEFAULT 0"
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                columns = {
+                    str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)")
+                }
+                if "codex_request_prepared" not in columns:
+                    connection.execute(
+                        "ALTER TABLE jobs ADD COLUMN codex_request_prepared INTEGER NOT NULL DEFAULT 0"
+                    )
+                progress_columns = connection.execute(
+                    "PRAGMA table_info(assistant_progress)"
+                ).fetchall()
+                is_legacy = any(
+                    str(row[1]) == "job_id" and int(row[5]) == 1 for row in progress_columns
                 )
+                residual = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assistant_progress_legacy'"
+                ).fetchone() is not None
+                if is_legacy:
+                    if residual:
+                        raise QueueStoreError("ambiguous assistant progress migration state")
+                    connection.execute(
+                        "ALTER TABLE assistant_progress RENAME TO assistant_progress_legacy"
+                    )
+                    self._migration_checkpoint("renamed")
+                    connection.execute(
+                        """
+                        CREATE TABLE assistant_progress (
+                            delivery_id TEXT PRIMARY KEY,
+                            job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                            route TEXT NOT NULL CHECK(route IN ('taichung','taoyuan')),
+                            destination_id TEXT NOT NULL,
+                            message_text TEXT NOT NULL,
+                            retry_key TEXT NOT NULL UNIQUE,
+                            identity_version INTEGER NOT NULL CHECK(identity_version IN (1,2)),
+                            status TEXT NOT NULL CHECK(status IN ('pending','completed','dead_letter')),
+                            created_at REAL NOT NULL,
+                            updated_at REAL NOT NULL,
+                            error_code TEXT NOT NULL DEFAULT '',
+                            UNIQUE(job_id, route)
+                        )
+                        """
+                    )
+                    residual = True
+                if residual:
+                    legacy_rows = connection.execute(
+                        "SELECT delivery_id, job_id, route, destination_id, message_text, retry_key, status, created_at, updated_at, error_code FROM assistant_progress_legacy"
+                    ).fetchall()
+                    for row in legacy_rows:
+                        legacy_delivery, legacy_retry = self._stable_progress_identity(
+                            str(row["job_id"]), identity_version=1
+                        )
+                        if str(row["delivery_id"]) != legacy_delivery or str(row["retry_key"]) != legacy_retry:
+                            raise QueueStoreError("legacy assistant progress identity is invalid")
+                        values = tuple(row[name] for name in (
+                            "delivery_id", "job_id", "route", "destination_id", "message_text",
+                            "retry_key", "status", "created_at", "updated_at", "error_code",
+                        ))
+                        connection.execute(
+                            """
+                            INSERT OR IGNORE INTO assistant_progress(
+                                delivery_id, job_id, route, destination_id, message_text, retry_key,
+                                identity_version, status, created_at, updated_at, error_code
+                            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                            """,
+                            values,
+                        )
+                        copied = connection.execute(
+                            "SELECT delivery_id, job_id, route, destination_id, message_text, retry_key, status, created_at, updated_at, error_code FROM assistant_progress WHERE job_id = ? AND route = ?",
+                            (row["job_id"], row["route"]),
+                        ).fetchone()
+                        if copied is None or tuple(copied) != values:
+                            raise QueueStoreError("assistant progress migration identity conflict")
+                    self._migration_checkpoint("copied")
+                    connection.execute("DROP TABLE assistant_progress_legacy")
+                current_columns = {
+                    str(row[1]) for row in connection.execute("PRAGMA table_info(assistant_progress)")
+                }
+                if "identity_version" not in current_columns:
+                    connection.execute(
+                        "ALTER TABLE assistant_progress ADD COLUMN identity_version INTEGER NOT NULL DEFAULT 2 CHECK(identity_version IN (1,2))"
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
+    def _migration_checkpoint(self, _stage: str) -> None:
+        """Test seam for proving that schema migration rolls back atomically."""
 
     @staticmethod
     def _stable_delivery_identity(job_id: str) -> tuple[str, str]:
@@ -182,6 +291,22 @@ class QueueStore:
         return (
             str(uuid.uuid5(_DELIVERY_ID_NAMESPACE, canonical)),
             str(uuid.uuid5(_RETRY_KEY_NAMESPACE, canonical)),
+        )
+
+    @staticmethod
+    def _stable_progress_identity(
+        job_id: str, route: str = "", *, identity_version: int
+    ) -> tuple[str, str]:
+        canonical = _canonical_uuid(job_id, "job_id")
+        if identity_version == 1:
+            identity = canonical
+        elif identity_version == 2 and route in {"taichung", "taoyuan"}:
+            identity = f"{canonical}/{route}"
+        else:
+            raise QueueStoreError("assistant progress identity version is invalid")
+        return (
+            str(uuid.uuid5(_PROGRESS_ID_NAMESPACE, identity)),
+            str(uuid.uuid5(_PROGRESS_RETRY_NAMESPACE, identity)),
         )
 
     def _insert_delivery_in_transaction(
@@ -968,6 +1093,118 @@ class QueueStore:
             )
             connection.commit()
         return delivery_id
+
+    def prepare_assistant_progress(
+        self,
+        job_id: str,
+        route: str,
+        *,
+        expected_lease_owner: str,
+        now: float | None = None,
+    ) -> AssistantProgress:
+        canonical_job = _canonical_uuid(job_id, "job_id")
+        route_value = _require_text(route, "route", MAX_ROUTE_CHARS)
+        if route_value not in {"taichung", "taoyuan"}:
+            raise QueueStoreError("assistant progress route is invalid")
+        owner = _require_text(expected_lease_owner, "expected_lease_owner", MAX_IDENTIFIER_CHARS)
+        timestamp = time.time() if now is None else float(now)
+        delivery_id, retry_key = self._stable_progress_identity(
+            canonical_job, route_value, identity_version=2
+        )
+        label = "台中" if route_value == "taichung" else "桃園"
+        message = f"[{label} Qwen]\n已接收，正在產生回覆…"
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            job = connection.execute(
+                "SELECT source_id FROM jobs WHERE job_id = ? AND status = 'running' AND lease_owner = ?",
+                (canonical_job, owner),
+            ).fetchone()
+            if job is None:
+                connection.rollback()
+                raise QueueStoreError("job is not owned for assistant progress")
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO assistant_progress(
+                    job_id, delivery_id, route, destination_id, message_text,
+                    retry_key, identity_version, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 2, 'pending', ?, ?)
+                """,
+                (canonical_job, delivery_id, route_value, str(job["source_id"]), message,
+                 retry_key, timestamp, timestamp),
+            )
+            row = connection.execute(
+                "SELECT * FROM assistant_progress WHERE job_id = ? AND route = ?",
+                (canonical_job, route_value),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise QueueStoreError("assistant progress insert was not persisted")
+            version = int(row["identity_version"])
+            expected_delivery, expected_retry = self._stable_progress_identity(
+                canonical_job, route_value, identity_version=version
+            )
+            if (
+                str(row["delivery_id"]) != expected_delivery
+                or str(row["destination_id"]) != str(job["source_id"])
+                or str(row["retry_key"]) != expected_retry
+            ):
+                connection.rollback()
+                raise QueueStoreError("assistant progress identity does not match the job")
+            connection.commit()
+        return AssistantProgress(
+            delivery_id=str(row["delivery_id"]),
+            route=str(row["route"]),
+            destination_id=str(row["destination_id"]),
+            message_text=str(row["message_text"]),
+            retry_key=str(row["retry_key"]),
+            status=str(row["status"]),
+        )
+
+    def finish_assistant_progress(
+        self,
+        job_id: str,
+        route: str,
+        *,
+        expected_lease_owner: str,
+        success: bool,
+        permanent: bool = False,
+        error_code: str = "",
+        now: float | None = None,
+    ) -> str:
+        canonical_job = _canonical_uuid(job_id, "job_id")
+        route_value = _require_text(route, "route", MAX_ROUTE_CHARS)
+        if route_value not in {"taichung", "taoyuan"}:
+            raise QueueStoreError("assistant progress route is invalid")
+        owner = _require_text(expected_lease_owner, "expected_lease_owner", MAX_IDENTIFIER_CHARS)
+        code = _require_text(error_code, "error_code", 128, allow_empty=True)
+        timestamp = time.time() if now is None else float(now)
+        status = "completed" if success else ("dead_letter" if permanent else "pending")
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            owned = connection.execute(
+                "SELECT 1 FROM jobs WHERE job_id = ? AND status = 'running' AND lease_owner = ?",
+                (canonical_job, owner),
+            ).fetchone()
+            if owned is None:
+                connection.rollback()
+                raise QueueStoreError("job lease owner changed before progress completion")
+            row = connection.execute(
+                "SELECT status FROM assistant_progress WHERE job_id = ? AND route = ?",
+                (canonical_job, route_value),
+            ).fetchone()
+            if row is None or str(row["status"]) not in {"pending", "completed"}:
+                connection.rollback()
+                raise QueueStoreError("assistant progress is not pending")
+            if str(row["status"]) == "completed" and not success:
+                connection.rollback()
+                raise QueueStoreError("completed assistant progress cannot regress")
+            connection.execute(
+                "UPDATE assistant_progress SET status = ?, error_code = ?, updated_at = ? WHERE job_id = ? AND route = ?",
+                (status, code, timestamp, canonical_job, route_value),
+            )
+            connection.commit()
+        return status
+
 
     def claim_delivery(
         self, worker_id: str, *, lease_seconds: int = 60, now: float | None = None

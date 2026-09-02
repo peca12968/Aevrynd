@@ -67,7 +67,7 @@ class QwenClient:
         api_key: str,
         model: str,
         *,
-        timeout: float = 45.0,
+        timeout: float = 120.0,
         max_input_chars: int = 16_384,
         max_output_chars: int = 16_384,
         max_tokens: int = 1_024,

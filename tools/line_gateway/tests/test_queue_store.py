@@ -7,9 +7,11 @@ from contextlib import closing
 import sqlite3
 import tempfile
 import time
+import uuid
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.line_gateway.queue_store import FAILURE_DELIVERY_TEXT, QueueStore, QueueStoreError
 from tools.line_gateway.routing import Route, RouteDecision
@@ -51,6 +53,33 @@ class QueueStoreTests(unittest.TestCase):
             request_text="test request",
             **kwargs,
         )
+
+    def _replace_with_legacy_progress(self, job_id: str) -> tuple[str, str]:
+        delivery_id, retry_key = QueueStore._stable_progress_identity(
+            job_id, identity_version=1
+        )
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            connection.execute("DROP TABLE assistant_progress")
+            connection.execute(
+                """
+                CREATE TABLE assistant_progress (
+                    job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
+                    delivery_id TEXT NOT NULL UNIQUE,
+                    route TEXT NOT NULL CHECK(route IN ('taichung','taoyuan')),
+                    destination_id TEXT NOT NULL, message_text TEXT NOT NULL,
+                    retry_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL CHECK(status IN ('pending','completed','dead_letter')),
+                    created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                    error_code TEXT NOT NULL DEFAULT ''
+                ) WITHOUT ROWID
+                """
+            )
+            connection.execute(
+                "INSERT INTO assistant_progress VALUES (?, ?, 'taichung', 'destination-1', ?, ?, 'pending', 100, 100, '')",
+                (job_id, delivery_id, "[台中 Qwen]\n已接收，正在產生回覆…", retry_key),
+            )
+            connection.commit()
+        return delivery_id, retry_key
 
     def _assert_reclaimed_delivery_rejects_old_owner(
         self, event_id: str, **late_finish: object
@@ -94,6 +123,85 @@ class QueueStoreTests(unittest.TestCase):
         self.assertEqual(1, sum(result.inserted for result in results))
         self.assertEqual(1, len({result.job_id for result in results}))
         self.assertEqual(1, self.store.counts()["queued"])
+
+    def test_assistant_progress_is_stable_and_cannot_regress_after_completion(self) -> None:
+        queued = self.store.enqueue(
+            webhook_event_id="progress-store", route="taichung", source_id="destination-1",
+            requester_id="requester-1", request_text="hello", now=100,
+        )
+        self.store.claim_next("worker-a", now=100)
+        first = self.store.prepare_assistant_progress(
+            queued.job_id, "taichung", expected_lease_owner="worker-a", now=100,
+        )
+        second = self.store.prepare_assistant_progress(
+            queued.job_id, "taoyuan", expected_lease_owner="worker-a", now=100,
+        )
+        self.assertNotEqual(first.delivery_id, second.delivery_id)
+        self.assertEqual("[台中 Qwen]\n已接收，正在產生回覆…", first.message_text)
+        self.assertEqual("[桃園 Qwen]\n已接收，正在產生回覆…", second.message_text)
+        self.assertEqual(
+            "completed",
+            self.store.finish_assistant_progress(
+                queued.job_id, "taichung", expected_lease_owner="worker-a", success=True, now=100,
+            ),
+        )
+        completed = self.store.prepare_assistant_progress(
+            queued.job_id, "taichung", expected_lease_owner="worker-a", now=100,
+        )
+        self.assertEqual("completed", completed.status)
+        with self.assertRaises(QueueStoreError):
+            self.store.finish_assistant_progress(
+                queued.job_id, "taichung", expected_lease_owner="worker-a", success=False, now=100,
+            )
+
+    def test_legacy_progress_migration_is_atomic_preserves_identity_and_concurrent(self) -> None:
+        queued = self._enqueue(event_id="legacy-progress", now=100)
+        delivery_id, retry_key = self._replace_with_legacy_progress(queued.job_id)
+        with mock.patch.object(
+            QueueStore, "_migration_checkpoint",
+            side_effect=lambda stage: (_ for _ in ()).throw(RuntimeError("injected")) if stage == "copied" else None,
+        ):
+            with self.assertRaises(RuntimeError):
+                QueueStore(self.db_path)
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            columns = connection.execute("PRAGMA table_info(assistant_progress)").fetchall()
+            self.assertTrue(any(row[1] == "job_id" and row[5] == 1 for row in columns))
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'assistant_progress_legacy'"
+            ).fetchone())
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            stores = list(executor.map(lambda _: QueueStore(self.db_path), range(6)))
+        self.assertEqual(6, len(stores))
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            row = connection.execute(
+                "SELECT delivery_id, retry_key FROM assistant_progress WHERE job_id = ? AND route = 'taichung'",
+                (queued.job_id,),
+            ).fetchone()
+            self.assertEqual((delivery_id, retry_key), row)
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'assistant_progress_legacy'"
+            ).fetchone())
+        claimed = stores[0].claim_next("legacy-worker", now=100)
+        self.assertEqual(queued.job_id, claimed.job_id)
+        progress = stores[0].prepare_assistant_progress(
+            queued.job_id, "taichung", expected_lease_owner="legacy-worker", now=100,
+        )
+        self.assertEqual((delivery_id, retry_key), (progress.delivery_id, progress.retry_key))
+        stores[0].finish_assistant_progress(
+            queued.job_id, "taichung", expected_lease_owner="legacy-worker", success=True, now=100,
+        )
+
+    def test_legacy_progress_migration_rejects_tampered_identity(self) -> None:
+        queued = self._enqueue(event_id="legacy-tampered", now=100)
+        self._replace_with_legacy_progress(queued.job_id)
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            connection.execute(
+                "UPDATE assistant_progress SET retry_key = ? WHERE job_id = ?",
+                (str(uuid.uuid4()), queued.job_id),
+            )
+            connection.commit()
+        with self.assertRaisesRegex(QueueStoreError, "legacy assistant progress identity is invalid"):
+            QueueStore(self.db_path)
 
     def test_concurrent_claim_has_single_owner(self) -> None:
         self._enqueue()

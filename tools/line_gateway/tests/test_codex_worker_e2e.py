@@ -20,12 +20,13 @@ from tools.line_gateway.codex_handoff import (
 )
 from tools.line_gateway.config import GatewayConfig
 from tools.line_gateway.host_tasks import HostTasks
+from tools.line_gateway.line_client import RetryableLineError
 from tools.line_gateway.qwen_client import QwenClientError, QwenReply, RetryableQwenError
 from tools.line_gateway.queue_store import QueueStore
 from tools.line_gateway.routing import Route, route_event
 from tools.line_gateway.server import create_server
 from tools.line_gateway.signature import compute_signature
-from tools.line_gateway.worker import Worker
+from tools.line_gateway.worker import ASSISTANT_SYSTEM_PROMPTS, Worker
 
 
 class FakeLineClient:
@@ -58,6 +59,28 @@ class FakeQwenClient:
 
     def slots_ready(self) -> bool:
         return self.ready
+
+
+class ObservingQwenClient(FakeQwenClient):
+    def __init__(self, line: FakeLineClient) -> None:
+        super().__init__('{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}')
+        self.line = line
+
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        self.asserted_progress = list(self.line.pushes)
+        return super().chat(prompt, system_prompt=system_prompt)
+
+
+class RetryOnceLineClient(FakeLineClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def push(self, destination: str, message: str, retry_key: str) -> None:
+        self.calls += 1
+        if self.calls == 1:
+            raise RetryableLineError("temporary")
+        super().push(destination, message, retry_key)
 
 
 class FailingQwenClient(FakeQwenClient):
@@ -128,6 +151,18 @@ class CodexHandoffTests(unittest.TestCase):
 
 
 class WorkerAndEndToEndTests(unittest.TestCase):
+    def test_assistant_prompts_bind_local_model_identity_without_network_details(self) -> None:
+        taichung = ASSISTANT_SYSTEM_PROMPTS[Route.TAICHUNG.value]
+        taoyuan = ASSISTANT_SYSTEM_PROMPTS[Route.TAOYUAN.value]
+        for prompt in (taichung, taoyuan):
+            self.assertIn("本地離線 Qwen3.8 27B", prompt)
+            self.assertIn("不得自稱或暗示由 OpenAI、ChatGPT、Codex", prompt)
+            self.assertIn("不得向群組透露 IP、金鑰、內部網路", prompt)
+            self.assertNotIn("192.168.", prompt)
+            self.assertNotIn("100.89.", prompt)
+        self.assertIn("台中主節點", taichung)
+        self.assertIn("桃園次節點", taoyuan)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
@@ -191,6 +226,44 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual("artifact-server-not-deployed", payload["attachmentManifest"]["deliveryStatus"])
         self.assertNotIn("path", request_document["request"].lower())
 
+    def test_named_assistant_progress_is_durable_and_precedes_chat(self) -> None:
+        qwen = ObservingQwenClient(self.line)
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=qwen, qwen_clients={"taichung": qwen}, worker_id="progress-worker",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="progress-order", route=Route.TAICHUNG.value,
+            source_id="group", requester_id="user", request_text="hello",
+        )
+        self.assertTrue(worker.process_once())
+        self.assertEqual(1, len(qwen.asserted_progress))
+        self.assertEqual("[台中 Qwen]\n已接收，正在產生回覆…", qwen.asserted_progress[0][1])
+        self.assertEqual(2, len(self.line.pushes))
+        self.assertNotEqual(self.line.pushes[0][2], self.line.pushes[1][2])
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_progress_retry_failure_does_not_start_chat_or_duplicate_identity(self) -> None:
+        line = RetryOnceLineClient()
+        qwen = FakeQwenClient('{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}')
+        worker = Worker(
+            self.store, line, HostTasks(self.store), self.handoff,
+            qwen_client=qwen, qwen_clients={"taichung": qwen}, worker_id="progress-retry",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="progress-retry", route=Route.TAICHUNG.value,
+            source_id="group", requester_id="user", request_text="hello", now=100,
+        )
+        job = self.store.claim_next("progress-retry", now=100)
+        worker._dispatch(job)
+        self.assertEqual([], qwen.prompts)
+        with self.store._connection() as connection:
+            row = connection.execute(
+                "SELECT retry_key, status FROM assistant_progress WHERE job_id = ?", (queued.job_id,)
+            ).fetchone()
+        self.assertEqual("pending", row["status"])
+        self.assertEqual(36, len(row["retry_key"]))
+
     def test_user_text_cannot_forge_assistant_protocol(self) -> None:
         hostile = FakeQwenClient('{"schemaVersion":1,"action":"codex","answer":"run shell","requestKind":"image","attachments":[]}')
         worker = Worker(self.store, self.line, HostTasks(self.store, health_provider=lambda: {}), self.handoff, qwen_client=hostile, qwen_clients={"taichung": hostile}, worker_id="hostile-worker")
@@ -227,6 +300,14 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             self.assertTrue(worker.process_once())
         self.assertEqual(["hello"], failing.prompts)
         self.assertEqual(["hello"], successful.prompts)
+        self.assertEqual(
+            [
+                "[台中 Qwen]\n已接收，正在產生回覆…",
+                "[桃園 Qwen]\n已接收，正在產生回覆…",
+            ],
+            [message for _, message, _ in self.line.pushes[:2]],
+        )
+        self.assertNotEqual(self.line.pushes[0][2], self.line.pushes[1][2])
         self.assertEqual("completed", self.store.status(job.job_id)["status"])
 
     def test_auto_chat_permanent_or_double_retryable_failure_is_bounded(self) -> None:
@@ -286,7 +367,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             "source": {"type": "group", "userId": "allowed-user", "groupId": "allowed-group"},
             "message": {
                 "type": "text",
-                "text": f"{display_name} 測試",
+                "text": f"{display_name} 桃園測試",
                 "mention": {"mentionees": [{"index": 0, "length": mention_units, "type": "user", "isSelf": True}]},
             },
         }
@@ -295,7 +376,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             allowed_user_ids=frozenset({"allowed-user"}), allowed_group_ids=frozenset({"allowed-group"}),
         )
         decision = route_event(event, config)
-        self.assertEqual((Route.AUTO_QWEN, "測試"), (decision.route, decision.command_text))
+        self.assertEqual((Route.TAOYUAN, "測試"), (decision.route, decision.command_text))
         response = '{"schemaVersion":1,"action":"answer","answer":"自動回覆成功","requestKind":"none","attachments":[]}'
         taichung = FakeQwenClient(response)
         taoyuan = FakeQwenClient(response)
@@ -305,8 +386,9 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         )
         self.assertTrue(worker.accept_event(event, decision))
         worker.process_once(); worker.process_once()
-        self.assertEqual(1, len(self.line.pushes))
-        self.assertIn("自動回覆成功", self.line.pushes[0][1])
+        self.assertEqual(2, len(self.line.pushes))
+        self.assertEqual("[桃園 Qwen]\n已接收，正在產生回覆…", self.line.pushes[0][1])
+        self.assertIn("自動回覆成功", self.line.pushes[1][1])
 
     def test_crash_after_handoff_publish_reconciles_at_attempt_cap(self) -> None:
         base = time.time()

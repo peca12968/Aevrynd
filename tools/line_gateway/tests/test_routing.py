@@ -77,10 +77,26 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual((Route.TAICHUNG, "請回答"), (taichung.route, taichung.command_text))
         taoyuan = route_event(mentioned("@Bot 桃園 問題"), _config())
         self.assertEqual((Route.TAOYUAN, "問題"), (taoyuan.route, taoyuan.command_text))
-        self.assertEqual(Route.AUTO_QWEN, route_event(mentioned("@Bot 台中桃園"), _config()).route)
-        for text in ("@Bot 台中：桃園：問題", "@Bot 桃園："):
+        compact_taoyuan = route_event(mentioned("@Bot 桃園測試"), _config())
+        self.assertEqual((Route.TAOYUAN, "測試"), (compact_taoyuan.route, compact_taoyuan.command_text))
+        compact_taichung = route_event(mentioned("@Bot 台中現在幾點"), _config())
+        self.assertEqual((Route.TAICHUNG, "現在幾點"), (compact_taichung.route, compact_taichung.command_text))
+        city_only = route_event(mentioned("@Bot 桃園："), _config())
+        self.assertEqual((Route.TAOYUAN, ""), (city_only.route, city_only.command_text))
+        for text in ("@Bot 台中桃園", "@Bot 台中：桃園：問題"):
             with self.subTest(text=text):
                 self.assertEqual(Route.IGNORE, route_event(mentioned(text), _config()).route)
+
+        for text in (
+            "@Bot 請桃園回答",
+            "@Bot x台中測試",
+            "@Bot 桃圜測試",
+            "@Bot 臺中測試",
+            "@Bot Ｔ桃園測試",
+        ):
+            with self.subTest(text=text):
+                decision = route_event(mentioned(text), _config())
+                self.assertEqual(Route.AUTO_QWEN, decision.route)
 
     def test_self_mention_rejects_forgery_and_malformed_ranges(self) -> None:
         plain = _event("@Official hello")
