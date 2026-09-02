@@ -13,7 +13,7 @@ namespace {
 constexpr auto FixtureSha =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 constexpr auto ProductionManifestSha =
-    "20a4f80009c7d48b33cd7825f262a089f1fd0608532a5cf6fc04c5473f01ab7d";
+    "aa0c0d28b7f6dea8235a89c7593083efe5ec3197d748cc85834cec93d2f46ceb";
 
 bool WriteFixture(const std::filesystem::path &root, std::string_view path) {
     const auto absolute = root / path;
@@ -40,7 +40,7 @@ std::string FixtureJson() {
         + "{\"path\":\"ibl/specular.dds\",\"bytes\":3,\"sha256\":\"" + FixtureSha + "\"},"
         + "{\"path\":\"ibl/irradiance.dds\",\"bytes\":3,\"sha256\":\"" + FixtureSha + "\"},"
         + "{\"path\":\"ibl/brdf.dds\",\"bytes\":3,\"sha256\":\"" + FixtureSha + "\"}],"
-        + "\"materials\":[{\"id\":\"fixture:slot-0\",\"assetId\":\"fixture\",\"slot\":\"slot-0\",\"baseColorPath\":\"materials/base.dds\",\"surfacePath\":\"materials/surface.dds\",\"normalPath\":\"materials/normal.dds\",\"surfaceEncoding\":\"packed-orm\"}],"
+        + "\"materials\":[{\"id\":\"fixture:slot-0\",\"assetId\":\"fixture\",\"slot\":\"slot-0\",\"baseColorPath\":\"materials/base.dds\",\"surfacePath\":\"materials/surface.dds\",\"normalPath\":\"materials/normal.dds\",\"surfaceEncoding\":\"packed-orm\",\"alphaMode\":\"mask\",\"alphaCutoff\":0.37,\"doubleSided\":true,\"materialClass\":\"foliage\"}],"
         + "\"meshParts\":[{\"id\":\"fixture:part-0\",\"assetId\":\"fixture\",\"materialId\":\"fixture:slot-0\",\"lodPaths\":[\"meshes/lod0.aemesh\",\"meshes/lod1.aemesh\",\"meshes/lod2.aemesh\"]}],"
         + "\"ibl\":{\"specularPath\":\"ibl/specular.dds\",\"irradiancePath\":\"ibl/irradiance.dds\",\"brdfLutPath\":\"ibl/brdf.dds\",\"futureRotation\":0}}";
 }
@@ -122,6 +122,40 @@ int main() {
                          manifest.FindMeshPart("fixture:part-0") &&
                          manifest.FindFile("ibl/brdf.dds"),
                      "typed manifest lookup failed");
+    const auto *fixtureMaterial = manifest.FindMaterial("fixture:slot-0");
+    const auto fixtureDefinition = fixtureMaterial
+                                       ? fixtureMaterial->Definition()
+                                       : MaterialAssetDefinition3D{};
+    passed &= Expect(
+        fixtureMaterial &&
+            fixtureMaterial->alphaMode == MaterialAlphaMode3D::Mask &&
+            fixtureMaterial->alphaCutoff == .37f &&
+            fixtureMaterial->doubleSided &&
+            fixtureMaterial->materialClass == MaterialClass3D::Foliage &&
+            fixtureDefinition.textures.alphaMode == MaterialAlphaMode3D::Mask &&
+            fixtureDefinition.textures.alphaCutoff == .37f &&
+            fixtureDefinition.material.alphaMode == MaterialAlphaMode3D::Mask &&
+            fixtureDefinition.material.alphaCutoff == .37f &&
+            fixtureDefinition.material.doubleSided &&
+            fixtureDefinition.material.materialClass == MaterialClass3D::Foliage,
+        "material rendering semantics were not propagated");
+    auto legacy = valid;
+    ReplaceOnce(legacy,
+                ",\"alphaMode\":\"mask\",\"alphaCutoff\":0.37,\"doubleSided\":true,\"materialClass\":\"foliage\"",
+                "");
+    CookedRenderManifest3D legacyManifest;
+    passed &= Expect(legacyManifest.LoadJson(legacy, root, &error),
+                     "legacy material defaults were rejected");
+    const auto *legacyMaterial =
+        legacyManifest.FindMaterial("fixture:slot-0");
+    passed &= Expect(
+        legacyMaterial &&
+            legacyMaterial->alphaMode == MaterialAlphaMode3D::Opaque &&
+            legacyMaterial->alphaCutoff == .5f &&
+            !legacyMaterial->doubleSided &&
+            legacyMaterial->materialClass == MaterialClass3D::Surface,
+        "legacy material defaults changed");
+    legacyManifest.Clear();
     const auto acceptedFingerprint = manifest.Stats().fingerprint;
 
     CookedRenderManifest3D receiptMutation;
@@ -172,6 +206,57 @@ int main() {
                      "invalid file-backed manifest replaced validated evidence");
 
     auto hostile = valid;
+    ReplaceOnce(hostile, "\"alphaCutoff\":0.37", "\"alphaCutoff\":1.01");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "out-of-range alpha cutoff was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"alphaCutoff\":0.37", "\"alphaCutoff\":1e999");
+    passed &= Expect(!manifest.LoadJson(hostile, root, &error),
+                     "non-finite alpha cutoff was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"alphaCutoff\":0.37", "\"alphaCutoff\":-0.01");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "negative alpha cutoff was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"alphaCutoff\":0.37",
+                "\"alphaCutoff\":\"0.37\"");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "non-numeric alpha cutoff was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"doubleSided\":true",
+                "\"doubleSided\":\"true\"");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "non-boolean double-sided flag was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"materialClass\":\"foliage\"",
+                "\"materialClass\":\"terrain\"");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "unsupported material class was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"alphaMode\":\"mask\"",
+                "\"alphaMode\":\"opaque\"");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "opaque foliage material was accepted");
+    hostile = valid;
+    ReplaceOnce(hostile, "\"doubleSided\":true",
+                "\"doubleSided\":false");
+    passed &= Expect(
+        !manifest.LoadJson(hostile, root, &error) &&
+            error.code == CookedRenderManifestErrorCode3D::InvalidSchema,
+        "single-sided foliage material was accepted");
+    hostile = valid;
     ReplaceOnce(hostile, "\"schemaVersion\":1", "\"schemaVersion\":2");
     passed &= Expect(!manifest.LoadJson(hostile, root, &error) &&
                          error.code == CookedRenderManifestErrorCode3D::InvalidSchema &&
@@ -300,8 +385,15 @@ int main() {
     passed &= Expect(leaves &&
                          leavesDefinition.textures.alphaMode ==
                              MaterialAlphaMode3D::Mask &&
+                         leavesDefinition.textures.alphaCutoff > 0.f &&
+                         leavesDefinition.textures.alphaCutoff <= 1.f &&
                          leavesDefinition.material.alphaMode ==
                              MaterialAlphaMode3D::Mask &&
+                         leavesDefinition.material.alphaCutoff ==
+                             leavesDefinition.textures.alphaCutoff &&
+                         leavesDefinition.material.doubleSided &&
+                         leavesDefinition.material.materialClass ==
+                             MaterialClass3D::Foliage &&
                          leavesDefinition.textures.integrity[0].expectedBytes > 0 &&
                          leavesDefinition.textures.integrity[0]
                                  .expectedSha256.size() == 64,

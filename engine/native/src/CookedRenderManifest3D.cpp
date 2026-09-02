@@ -10,6 +10,7 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <cmath>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -26,6 +27,7 @@ struct JsonValue {
     JsonType type{JsonType::Null};
     bool boolean{};
     std::uint64_t number{};
+    double floatingNumber{};
     bool unsignedInteger{};
     std::string string;
     std::vector<JsonValue> array;
@@ -174,6 +176,13 @@ private:
                     return false;
             }
             output.type = JsonType::Number;
+            const auto floatingConverted = std::from_chars(
+                text_.data() + start, text_.data() + position_,
+                output.floatingNumber, std::chars_format::general);
+            if (floatingConverted.ec != std::errc{} ||
+                floatingConverted.ptr != text_.data() + position_ ||
+                !std::isfinite(output.floatingNumber))
+                return false;
             if (!negative && !fractional && !exponent) {
                 const auto converted = std::from_chars(
                     text_.data() + start, text_.data() + position_,
@@ -555,12 +564,16 @@ MaterialAssetDefinition3D CookedRenderMaterial3D::Definition(
     result.textures.maximumResolution = maximumResolution;
     result.textures.surfaceEncoding = surfaceEncoding;
     result.textures.alphaMode = alphaMode;
+    result.textures.alphaCutoff = alphaCutoff;
     result.textures.integrity[0] = {baseColorBytes, baseColorSha256};
     result.textures.integrity[1] = {surfaceBytes, surfaceSha256};
     result.textures.integrity[2] = {normalBytes, normalSha256};
     result.material.useUv = true;
     result.material.textureScale = 1.f;
     result.material.alphaMode = alphaMode;
+    result.material.alphaCutoff = alphaCutoff;
+    result.material.doubleSided = doubleSided;
+    result.material.materialClass = materialClass;
     return result;
 }
 
@@ -714,6 +727,7 @@ bool CookedRenderManifest3D::LoadJson(
         CookedRenderMaterial3D item;
         std::string encoding;
         std::string alphaMode = "opaque";
+        std::string materialClass = "surface";
         if (value.type != JsonType::Object || !StringField(value, "id", item.id) ||
             !StringField(value, "assetId", item.assetId) ||
             !StringField(value, "slot", item.slot) ||
@@ -741,6 +755,34 @@ bool CookedRenderManifest3D::LoadJson(
             }
             alphaMode = alpha->string;
         }
+        if (const JsonValue *cutoff = Field(value, "alphaCutoff")) {
+            if (cutoff->type != JsonType::Number ||
+                !std::isfinite(cutoff->floatingNumber) ||
+                cutoff->floatingNumber < 0.0 || cutoff->floatingNumber > 1.0) {
+                SetError(error, CookedRenderManifestErrorCode3D::InvalidSchema,
+                         0, "Cooked render material alpha cutoff is invalid");
+                return false;
+            }
+            item.alphaCutoff = static_cast<float>(cutoff->floatingNumber);
+        }
+        if (const JsonValue *sided = Field(value, "doubleSided")) {
+            if (sided->type != JsonType::Boolean) {
+                SetError(error, CookedRenderManifestErrorCode3D::InvalidSchema,
+                         0, "Cooked render material double-sided flag is invalid");
+                return false;
+            }
+            item.doubleSided = sided->boolean;
+        }
+        if (const JsonValue *category = Field(value, "materialClass")) {
+            if (category->type != JsonType::String ||
+                (category->string != "surface" &&
+                 category->string != "foliage")) {
+                SetError(error, CookedRenderManifestErrorCode3D::InvalidSchema,
+                         0, "Cooked render material class is invalid");
+                return false;
+            }
+            materialClass = category->string;
+        }
         if (!materialIds.insert(item.id).second) {
             SetError(error, CookedRenderManifestErrorCode3D::DuplicateEntry, 0,
                      "Duplicate cooked render material id");
@@ -751,6 +793,16 @@ bool CookedRenderManifest3D::LoadJson(
                                    : MaterialSurfaceMapEncoding3D::RoughnessR;
         item.alphaMode = alphaMode == "mask" ? MaterialAlphaMode3D::Mask
                                               : MaterialAlphaMode3D::Opaque;
+        item.materialClass = materialClass == "foliage"
+                                 ? MaterialClass3D::Foliage
+                                 : MaterialClass3D::Surface;
+        if (item.materialClass == MaterialClass3D::Foliage &&
+            (item.alphaMode != MaterialAlphaMode3D::Mask ||
+             !item.doubleSided)) {
+            SetError(error, CookedRenderManifestErrorCode3D::InvalidSchema, 0,
+                     "Foliage material must be masked and double-sided");
+            return false;
+        }
         if (!addReference(item.baseColorPath) ||
             !addReference(item.surfacePath) ||
             !addReference(item.normalPath))
@@ -885,6 +937,12 @@ bool CookedRenderManifest3D::LoadJson(
         HashBytes(fingerprint, &material.surfaceEncoding,
                   sizeof(material.surfaceEncoding));
         HashBytes(fingerprint, &material.alphaMode, sizeof(material.alphaMode));
+        HashBytes(fingerprint, &material.alphaCutoff,
+                  sizeof(material.alphaCutoff));
+        HashBytes(fingerprint, &material.doubleSided,
+                  sizeof(material.doubleSided));
+        HashBytes(fingerprint, &material.materialClass,
+                  sizeof(material.materialClass));
     }
     for (const auto &part : candidate.meshParts_) {
         HashString(fingerprint, part.id);

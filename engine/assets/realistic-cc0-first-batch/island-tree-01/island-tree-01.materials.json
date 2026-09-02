@@ -23,7 +23,13 @@
       "baseColor": "textures/island_tree_01_leaves_diff_1k.jpg",
       "normal": "textures/island_tree_01_leaves_nor_gl_1k.jpg",
       "arm": "textures/island_tree_01_leaves_arm_1k.jpg",
-      "alphaMode": "mask"
+      "alphaMode": "mask",
+      "alphaSource": "black-key",
+      "alphaBlackKeyThreshold": 0.062745098,
+      "alphaCutoff": 0.5,
+      "alphaDilationPixels": 8,
+      "doubleSided": true,
+      "materialClass": "foliage"
     }
   ]
 }

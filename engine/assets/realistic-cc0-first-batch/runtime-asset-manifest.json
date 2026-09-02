@@ -7,7 +7,7 @@
   "memoryGateDetail": "Windows Job Object peak memory plus sampled process-tree working set; conservative maximum under 2 GiB.",
   "catalogId": "gameplay-ultra-realistic-cc0",
   "downloadBudgetBytes": 1073741824,
-  "runtimeBytes": 177787439.0,
+  "runtimeBytes": 177787637.0,
   "assets": [
     {
       "commercialUse": true,
@@ -353,8 +353,8 @@
           "path": "island-tree-01/island-tree-01.materials.json",
           "width": 0,
           "height": 0,
-          "bytes": 883,
-          "sha256": "94324773f125c7b10b04a71f8e7f23ac221c2bb352e954cc3f73e2993b97924e"
+          "bytes": 1081,
+          "sha256": "ddae875bb2d58bef739de4df26847db9de1f12042663215f69943e262efe6762"
         },
         {
           "path": "island-tree-01/textures/island_tree_01_arm_1k.jpg",

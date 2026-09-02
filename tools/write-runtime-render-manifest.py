@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import pathlib
 import stat
@@ -174,6 +175,9 @@ def build_manifest(asset_root: pathlib.Path, cooked_root: pathlib.Path):
                 "normalPath": paths["normal"],
                 "surfaceEncoding": "packed-orm",
                 "alphaMode": material["alphaMode"],
+                "alphaCutoff": material.get("alphaCutoff", 0.5),
+                "doubleSided": material.get("doubleSided", False),
+                "materialClass": material.get("materialClass", "surface"),
             }
             if asset["assetId"] in STANDALONE_ROLES:
                 material_entry["standaloneRole"] = STANDALONE_ROLES[asset["assetId"]]
@@ -365,6 +369,18 @@ def validate_manifest(manifest, cooked_root: pathlib.Path, verify_disk=True):
             raise ManifestError("material asset or slot binding failed")
         if material.get("surfaceEncoding") != "packed-orm":
             raise ManifestError("unsupported surface encoding")
+        if material.get("alphaMode", "opaque") not in ("opaque", "mask"):
+            raise ManifestError("unsupported material alpha mode")
+        alpha_cutoff = material.get("alphaCutoff", 0.5)
+        if type(alpha_cutoff) not in (int, float) or not 0.0 <= alpha_cutoff <= 1.0 or not math.isfinite(float(alpha_cutoff)):
+            raise ManifestError("invalid material alpha cutoff")
+        if type(material.get("doubleSided", False)) is not bool:
+            raise ManifestError("invalid material double-sided flag")
+        material_class = material.get("materialClass", "surface")
+        if material_class not in ("surface", "foliage"):
+            raise ManifestError("unsupported material class")
+        if material_class == "foliage" and (material.get("alphaMode", "opaque") != "mask" or material.get("doubleSided", False) is not True):
+            raise ManifestError("foliage material must be masked and double-sided")
         references.extend([material.get("baseColorPath"), material.get("surfacePath"), material.get("normalPath")])
     for part in manifest["meshParts"]:
         if part.get("materialId") not in material_ids or len(part.get("lodPaths", [])) != 3:

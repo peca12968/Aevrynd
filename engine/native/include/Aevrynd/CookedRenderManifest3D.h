@@ -69,6 +69,9 @@ struct CookedRenderMaterial3D {
     MaterialSurfaceMapEncoding3D surfaceEncoding{
         MaterialSurfaceMapEncoding3D::PackedOrm};
     MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};
+    float alphaCutoff{.5f};
+    bool doubleSided{};
+    MaterialClass3D materialClass{MaterialClass3D::Surface};
 
     [[nodiscard]] MaterialAssetDefinition3D Definition(
         std::uint32_t maximumResolution = 4096) const;

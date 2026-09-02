@@ -90,7 +90,8 @@ def dds_header(path: Path) -> dict[str, int]:
     return {"height": values[2], "width": values[3], "mips": values[6], "format": dx10[0], "dimension": dx10[1], "array": dx10[3]}
 
 
-def texconv_command(texconv: Path, source: Path, output: Path, channel: str) -> list[str]:
+def texconv_command(texconv: Path, source: Path, output: Path, channel: str,
+                    alpha_mode: str = "opaque", alpha_cutoff: float = 0.5) -> list[str]:
     contract = CHANNEL_COOK_CONTRACT.get(channel)
     if contract is None:
         raise ValueError(f"Unknown material cook channel: {channel}")
@@ -98,17 +99,23 @@ def texconv_command(texconv: Path, source: Path, output: Path, channel: str) -> 
     source_is_srgb = contract["sourceColorSpace"] == "sRGB"
     if format_is_srgb != source_is_srgb or source_is_srgb != (channel == "base"):
         raise ValueError(f"Material color-space contract is inconsistent: {channel}")
+    if alpha_mode not in ("opaque", "mask") or not isinstance(alpha_cutoff, (int, float)) or isinstance(alpha_cutoff, bool) or not math.isfinite(float(alpha_cutoff)) or not 0.0 < float(alpha_cutoff) < 1.0:
+        raise ValueError("Material alpha cook contract is invalid")
     command = [str(texconv), "-nologo", "-y", "-dx10", "-m", "0", "-f", contract["format"]]
     # 中文註解：只有顏色貼圖宣告 sRGB 輸入；data map 一律保持 linear，避免二次 gamma。
     if source_is_srgb:
         command.append("-srgb")
+    if channel == "base" and alpha_mode == "mask":
+        # 中文註解：分離過濾 alpha 並保存 alpha-test 覆蓋率，避免葉片在遠距 mip 變薄或消失。
+        command.extend(["-sepalpha", "--keep-coverage", f"{float(alpha_cutoff):g}"])
     command.extend(["-o", str(output.parent), str(source)])
     return command
 
 
-def run_texconv(texconv: Path, source: Path, output: Path, channel: str) -> int:
+def run_texconv(texconv: Path, source: Path, output: Path, channel: str,
+                alpha_mode: str = "opaque", alpha_cutoff: float = 0.5) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
-    completed = subprocess.Popen(texconv_command(texconv, source, output, channel),
+    completed = subprocess.Popen(texconv_command(texconv, source, output, channel, alpha_mode, alpha_cutoff),
                                  text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = completed.communicate(timeout=300)
     tool_peak = peak_working_set_handle(int(completed._handle)) if os.name == "nt" else 0
@@ -118,6 +125,55 @@ def run_texconv(texconv: Path, source: Path, output: Path, channel: str) -> int:
     if generated != output:
         generated.replace(output)
     return tool_peak
+
+
+def black_key_alpha(image: Image.Image, threshold: float) -> Image.Image:
+    if not isinstance(threshold, (int, float)) or isinstance(threshold, bool) or not math.isfinite(float(threshold)) or not 0.0 < float(threshold) <= 0.25:
+        raise ValueError("Black-key threshold is invalid")
+    pixels = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
+    key = max(1, round(float(threshold) * 255.0))
+    maximum = pixels[..., :3].max(axis=2)
+    # 中文註解：黑底 JPEG 沒有可信的連續 alpha，明確二值化可避免把黑色預乘邊緣當成可見葉片。
+    pixels[..., 3] = np.where(maximum > key, 255, 0).astype(np.uint8)
+    return Image.fromarray(pixels, "RGBA")
+
+
+def validate_mask_alpha(image: Image.Image, alpha_cutoff: float) -> None:
+    if not isinstance(alpha_cutoff, (int, float)) or isinstance(alpha_cutoff, bool) or not math.isfinite(float(alpha_cutoff)) or not 0.0 < float(alpha_cutoff) < 1.0:
+        raise ValueError("Mask alpha cutoff is invalid")
+    alpha = np.asarray(image.convert("RGBA"), dtype=np.uint8)[..., 3]
+    cutoff = round(float(alpha_cutoff) * 255.0)
+    low, high = int(alpha.min()), int(alpha.max())
+    # 中文註解：MASK 必須在 cutoff 兩側都有樣本；常數、全透明或全不透明 alpha 一律拒絕。
+    if not low < cutoff <= high:
+        raise ValueError("MASK alpha does not cross its cutoff")
+
+
+def dilate_mask_rgb(image: Image.Image, radius: int, alpha_cutoff: float) -> Image.Image:
+    if not isinstance(radius, int) or isinstance(radius, bool) or radius < 0 or radius > 32:
+        raise ValueError("Mask RGB dilation radius is invalid")
+    if not isinstance(alpha_cutoff, (int, float)) or isinstance(alpha_cutoff, bool) or not math.isfinite(float(alpha_cutoff)) or not 0.0 < float(alpha_cutoff) < 1.0:
+        raise ValueError("Mask alpha cutoff is invalid")
+    pixels = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
+    known = pixels[..., 3] >= round(float(alpha_cutoff) * 255.0)
+    for _ in range(radius):
+        sums = np.zeros((*known.shape, 3), dtype=np.uint32)
+        counts = np.zeros(known.shape, dtype=np.uint8)
+        for y_offset, x_offset in ((-1, -1), (-1, 0), (-1, 1), (0, -1),
+                                   (0, 1), (1, -1), (1, 0), (1, 1)):
+            source_y = slice(max(0, -y_offset), known.shape[0] - max(0, y_offset))
+            source_x = slice(max(0, -x_offset), known.shape[1] - max(0, x_offset))
+            target_y = slice(max(0, y_offset), known.shape[0] - max(0, -y_offset))
+            target_x = slice(max(0, x_offset), known.shape[1] - max(0, -x_offset))
+            mask = known[source_y, source_x]
+            sums[target_y, target_x] += pixels[source_y, source_x, :3] * mask[..., None]
+            counts[target_y, target_x] += mask.astype(np.uint8)
+        targets = ~known & (counts > 0)
+        if not np.any(targets):
+            break
+        pixels[targets, :3] = (sums[targets] // counts[targets, None]).astype(np.uint8)
+        known[targets] = True
+    return Image.fromarray(pixels, "RGBA")
 
 
 def parse_sidecar(sidecar: dict) -> list[dict]:
@@ -156,11 +212,42 @@ def parse_sidecar(sidecar: dict) -> list[dict]:
                     math.isfinite(float(metallic_scalar)) and 0.0 <= float(metallic_scalar) <= 1.0)
         if packed == separate:
             raise ValueError("exactly one packed ARM or AO/roughness/metallicScalar source contract is mandatory")
+        alpha_mode = material.get("alphaMode", "opaque")
+        if alpha_mode not in ("opaque", "mask"):
+            raise ValueError("Material alpha mode is invalid")
+        allowed = {"name", "slot", "baseColor", "normalGl", "normal", "packedArm", "arm",
+                   "ambientOcclusion", "roughness", "metallicScalar", "alphaMode", "alphaCutoff",
+                   "doubleSided", "materialClass"}
+        alpha_source, alpha_threshold, dilation = None, None, 0
+        alpha_cutoff = material.get("alphaCutoff", 0.5)
+        double_sided = material.get("doubleSided", False)
+        material_class = material.get("materialClass", "surface")
+        if not isinstance(alpha_cutoff, (int, float)) or isinstance(alpha_cutoff, bool) or not math.isfinite(float(alpha_cutoff)) or float(alpha_cutoff) != 0.5 or not isinstance(double_sided, bool) or material_class not in ("surface", "foliage"):
+            raise ValueError("Material cutoff, sidedness, or class contract is invalid")
+        if alpha_mode == "mask":
+            allowed.update({"alphaSource", "alphaBlackKeyThreshold", "alphaDilationPixels"})
+            alpha_source = material.get("alphaSource")
+            dilation = material.get("alphaDilationPixels")
+            if "alphaCutoff" not in material or alpha_source not in ("embedded", "black-key") or not isinstance(dilation, int) or isinstance(dilation, bool) or dilation < 0 or dilation > 32:
+                raise ValueError("MASK alpha source, cutoff, or dilation contract is invalid")
+            alpha_threshold = material.get("alphaBlackKeyThreshold")
+            if alpha_source == "black-key":
+                if not isinstance(alpha_threshold, (int, float)) or isinstance(alpha_threshold, bool) or not math.isfinite(float(alpha_threshold)) or not 0.0 < float(alpha_threshold) <= 0.25:
+                    raise ValueError("MASK black-key threshold is invalid")
+            elif "alphaBlackKeyThreshold" in material:
+                raise ValueError("Embedded alpha must not declare a black-key threshold")
+        if material_class == "foliage" and (alpha_mode != "mask" or not double_sided):
+            raise ValueError("Foliage must be a double-sided MASK material")
+        if any(key not in allowed for key in material):
+            raise ValueError("Material sidecar entry contains an unknown field")
         parsed.append({"name": name.lower(), "base": base, "normal": normal, "arm": arm if packed else None,
                        "ambientOcclusion": ambient_occlusion if separate else None,
                        "roughness": roughness if separate else None,
                        "metallicScalar": float(metallic_scalar) if separate else None,
-                       "alphaMode": material.get("alphaMode", "opaque")})
+                       "alphaMode": alpha_mode, "alphaSource": alpha_source,
+                       "alphaCutoff": float(alpha_cutoff), "alphaBlackKeyThreshold": alpha_threshold,
+                       "alphaDilationPixels": dilation, "doubleSided": double_sided,
+                       "materialClass": material_class})
     return parsed
 
 
@@ -215,6 +302,13 @@ def cook(args: argparse.Namespace) -> dict:
                 dimensions = {image.size for image in images.values()}
                 if len(dimensions) != 1 or next(iter(dimensions))[0] > 4096 or next(iter(dimensions))[1] > 4096:
                     raise ValueError(f"Material channel dimensions do not match: {name}/{material['name']}")
+                if material["alphaMode"] == "mask":
+                    if material["alphaSource"] == "black-key":
+                        images["base"] = black_key_alpha(images["base"], material["alphaBlackKeyThreshold"])
+                    elif images["base"].getextrema()[3] == (255, 255):
+                        raise ValueError(f"Embedded MASK base color has no alpha variation: {name}/{material['name']}")
+                    validate_mask_alpha(images["base"], material["alphaCutoff"])
+                    images["base"] = dilate_mask_rgb(images["base"], material["alphaDilationPixels"], material["alphaCutoff"])
                 normal = np.asarray(images["normal"], dtype=np.uint8).copy()
                 normal[..., 1] = 255 - normal[..., 1]
                 if int(normal[..., :3].max()) == 0 or float(normal[..., 2].mean()) < 64.0:
@@ -236,7 +330,8 @@ def cook(args: argparse.Namespace) -> dict:
                     image.save(png, format="PNG", compress_level=1)
                     destination = output / name / f"{material['name']}-{channel}.dds"
                     contract = CHANNEL_COOK_CONTRACT[channel]
-                    tool_peak = max(tool_peak, run_texconv(texconv, png, destination, channel))
+                    tool_peak = max(tool_peak, run_texconv(texconv, png, destination, channel,
+                                                          material["alphaMode"], material["alphaCutoff"]))
                     header = dds_header(destination)
                     if (header["format"] != contract["formatId"] or header["mips"] != expected_mips or
                             max(header["width"], header["height"]) != output_resolution or header["dimension"] != 3):
@@ -245,6 +340,9 @@ def cook(args: argparse.Namespace) -> dict:
                                             "sourceColorSpace": contract["sourceColorSpace"],
                                             "bytes": destination.stat().st_size, "sha256": sha256(destination), **header})
                 asset_outputs.append({"slot": material["name"], "alphaMode": material["alphaMode"],
+                                      "alphaSource": material["alphaSource"], "alphaCutoff": material["alphaCutoff"],
+                                      "alphaDilationPixels": material["alphaDilationPixels"],
+                                      "doubleSided": material["doubleSided"], "materialClass": material["materialClass"],
                                       "normalConversion": "OpenGL green inverted to DirectX", "surfacePacking": packing,
                                       "sources": {channel: {"path": path.relative_to(root).as_posix(), "sha256": sha256(path)} for channel, path in source_paths.items()},
                                       "outputs": material_output})

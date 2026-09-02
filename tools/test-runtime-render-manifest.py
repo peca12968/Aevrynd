@@ -36,8 +36,26 @@ def main():
         second = module.build_manifest(asset_root, cooked_root)
         first_bytes = module.json_bytes(first)
         second_bytes = module.json_bytes(second)
-        if first_bytes != second_bytes or first_bytes != module.json_bytes(authoritative):
+        if first_bytes != second_bytes:
             raise AssertionError("A/B manifests are not byte-identical")
+        module.validate_manifest(first, cooked_root)
+        semantic_fields = ("alphaMode", "alphaCutoff", "doubleSided", "materialClass")
+        if any(set(semantic_fields) - set(material) for material in authoritative["materials"]):
+            raise AssertionError("authoritative material rendering semantics are incomplete")
+        if first_bytes != module.json_bytes(authoritative):
+            raise AssertionError("generated manifest differs from the authoritative semantic manifest")
+        legacy = copy.deepcopy(authoritative)
+        for material in legacy["materials"]:
+            for field in semantic_fields:
+                material.pop(field)
+        # 中文註解：獨立 legacy fixture 改變 manifest 長度，重算自我描述封包收據。
+        for _ in range(8):
+            manifest_bytes = len(module.json_bytes(legacy))
+            if legacy["package"]["manifestBytes"] == manifest_bytes:
+                break
+            legacy["package"]["manifestBytes"] = manifest_bytes
+            legacy["package"]["packageBytes"] = legacy["package"]["payloadBytes"] + manifest_bytes
+        module.validate_manifest(legacy, cooked_root)
         (temporary / "a.json").write_bytes(first_bytes)
         (temporary / "b.json").write_bytes(second_bytes)
 
@@ -55,6 +73,14 @@ def main():
         changed = copy.deepcopy(authoritative); changed["files"][dds_index]["mips"] += 1; cases.append(("mips", changed))
         changed = copy.deepcopy(authoritative); changed["files"][dds_index]["dimensions"]["width"] += 1; cases.append(("dimensions", changed))
         changed = copy.deepcopy(authoritative); changed["files"].pop(); cases.append(("file-count", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"][0]["alphaCutoff"] = -0.01; cases.append(("alpha-cutoff-low", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"][0]["alphaCutoff"] = 1.01; cases.append(("alpha-cutoff-high", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"][0]["alphaCutoff"] = float("inf"); cases.append(("alpha-cutoff-non-finite", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"][0]["doubleSided"] = "false"; cases.append(("double-sided-type", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"][0]["materialClass"] = "terrain"; cases.append(("material-class", changed))
+        foliage_index = next(index for index, material in enumerate(authoritative["materials"]) if material["materialClass"] == "foliage")
+        changed = copy.deepcopy(authoritative); changed["materials"][foliage_index]["alphaMode"] = "opaque"; cases.append(("opaque-foliage", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"][foliage_index]["doubleSided"] = False; cases.append(("single-sided-foliage", changed))
         for label, manifest in cases:
             require_failure(module, manifest, cooked_root, label)
 
@@ -92,7 +118,7 @@ def main():
             else:
                 raise AssertionError("reparse point was accepted")
 
-    print("runtime-render-manifest-tests=pass; deterministic=3-way; hostile=12")
+    print("runtime-render-manifest-tests=pass; deterministic=3-way; hostile=19; legacy=pass")
 
 
 if __name__ == "__main__":

@@ -752,7 +752,7 @@
     {
       "path": "materials/island-tree-01/branches-base.dds",
       "bytes": 1398276,
-      "sha256": "6373a1b967113facb26bc5cc3f6e15183b8968b8c8304067b5a911f59fb051d2",
+      "sha256": "75e25268369704a561432df6f3368734e8b5648fdce184a0a4c2c5863317145b",
       "format": "BC7_UNORM_SRGB",
       "mips": 11,
       "dimensions": {
@@ -851,7 +851,7 @@
     {
       "path": "materials/island-tree-01/leaves-base.dds",
       "bytes": 1398276,
-      "sha256": "03d33629af39476d1d1b8a6a9cecc7d63f7c4417e96e17a514478aa8378a9214",
+      "sha256": "453e779d4ca573aa150af26c8289dcad89bfb1bbdd45547fdbb6948f2f17073f",
       "format": "BC7_UNORM_SRGB",
       "mips": 11,
       "dimensions": {
@@ -950,7 +950,7 @@
     {
       "path": "materials/island-tree-01/trunk-base.dds",
       "bytes": 1398276,
-      "sha256": "977054e93d60b7a79e3d43745912b0b1ee44abf56bbfdb7bd6a5a5a4ddc4e9bf",
+      "sha256": "aa3708b589c5f80dddb98022eea49fbb71eb157b9ea7c32a02b3f0111e03c98d",
       "format": "BC7_UNORM_SRGB",
       "mips": 11,
       "dimensions": {
@@ -1846,6 +1846,9 @@
       "normalPath": "materials/bricks100/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
       "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface",
       "standaloneRole": "wall"
     },
     {
@@ -1857,6 +1860,9 @@
       "normalPath": "materials/ground108/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
       "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface",
       "standaloneRole": "ground"
     },
     {
@@ -1868,6 +1874,9 @@
       "normalPath": "materials/roofing-tiles014-b/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
       "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface",
       "standaloneRole": "roof"
     },
     {
@@ -1878,7 +1887,10 @@
       "surfacePath": "materials/boulder-01/slot-0-arm.dds",
       "normalPath": "materials/boulder-01/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
-      "alphaMode": "opaque"
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
     },
     {
       "id": "coastal_cliff_01:slot-0",
@@ -1888,7 +1900,10 @@
       "surfacePath": "materials/coastal-cliff-01/slot-0-arm.dds",
       "normalPath": "materials/coastal-cliff-01/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
-      "alphaMode": "opaque"
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
     },
     {
       "id": "dead_tree_trunk_02:slot-0",
@@ -1898,7 +1913,10 @@
       "surfacePath": "materials/dead-tree-trunk-02/slot-0-arm.dds",
       "normalPath": "materials/dead-tree-trunk-02/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
-      "alphaMode": "opaque"
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
     },
     {
       "id": "forest_ground_04:slot-0",
@@ -1909,6 +1927,9 @@
       "normalPath": "materials/forest-ground-04/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
       "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface",
       "standaloneRole": "terrain"
     },
     {
@@ -1919,7 +1940,10 @@
       "surfacePath": "materials/island-tree-01/branches-arm.dds",
       "normalPath": "materials/island-tree-01/branches-normal.dds",
       "surfaceEncoding": "packed-orm",
-      "alphaMode": "opaque"
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
     },
     {
       "id": "island_tree_01:leaves",
@@ -1929,7 +1953,10 @@
       "surfacePath": "materials/island-tree-01/leaves-arm.dds",
       "normalPath": "materials/island-tree-01/leaves-normal.dds",
       "surfaceEncoding": "packed-orm",
-      "alphaMode": "mask"
+      "alphaMode": "mask",
+      "alphaCutoff": 0.5,
+      "doubleSided": true,
+      "materialClass": "foliage"
     },
     {
       "id": "island_tree_01:trunk",
@@ -1939,7 +1966,10 @@
       "surfacePath": "materials/island-tree-01/trunk-arm.dds",
       "normalPath": "materials/island-tree-01/trunk-normal.dds",
       "surfaceEncoding": "packed-orm",
-      "alphaMode": "opaque"
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
     },
     {
       "id": "stony_dirt_path:slot-0",
@@ -1950,6 +1980,9 @@
       "normalPath": "materials/stony-dirt-path/slot-0-normal.dds",
       "surfaceEncoding": "packed-orm",
       "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface",
       "standaloneRole": "path"
     }
   ],
@@ -2174,9 +2207,9 @@
     "payloadFileCount": 54,
     "payloadBytes": 185635732,
     "manifestPath": "runtime-render-manifest.json",
-    "manifestBytes": 72236,
+    "manifestBytes": 73203,
     "packageFileCount": 55,
-    "packageBytes": 185707968,
+    "packageBytes": 185708935,
     "manifestHashPolicy": "external-envelope",
     "excludedClasses": [
       "GLB",

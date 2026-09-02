@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "pass",
-  "runtimeManifestSha256": "20a4f80009c7d48b33cd7825f262a089f1fd0608532a5cf6fc04c5473f01ab7d",
+  "runtimeManifestSha256": "57ff7ec7c1c2800b2292624e076d73d4eabae039b1f67a2b9ec60a1017e96f67",
   "quality": "Ultra",
   "mipPolicy": "complete-chain",
   "tool": {
@@ -309,6 +309,11 @@
         {
           "slot": "trunk",
           "alphaMode": "opaque",
+          "alphaSource": null,
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 0,
+          "doubleSided": false,
+          "materialClass": "surface",
           "normalConversion": "OpenGL green inverted to DirectX",
           "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
           "sources": {
@@ -329,8 +334,9 @@
             {
               "channel": "base",
               "path": "island-tree-01/trunk-base.dds",
+              "sourceColorSpace": "sRGB",
               "bytes": 1398276,
-              "sha256": "977054e93d60b7a79e3d43745912b0b1ee44abf56bbfdb7bd6a5a5a4ddc4e9bf",
+              "sha256": "aa3708b589c5f80dddb98022eea49fbb71eb157b9ea7c32a02b3f0111e03c98d",
               "height": 1024,
               "width": 1024,
               "mips": 11,
@@ -341,6 +347,7 @@
             {
               "channel": "normal",
               "path": "island-tree-01/trunk-normal.dds",
+              "sourceColorSpace": "linear",
               "bytes": 1398276,
               "sha256": "24eba3fcb9e8d59b088e9cf312bdf25b32445562ce466262aa1d7834cd17bb7a",
               "height": 1024,
@@ -353,6 +360,7 @@
             {
               "channel": "arm",
               "path": "island-tree-01/trunk-arm.dds",
+              "sourceColorSpace": "linear",
               "bytes": 1398276,
               "sha256": "638e6710501bb04d9626294b182246f7e651970b6ef2f791efb941e2fad9aaa4",
               "height": 1024,
@@ -367,6 +375,11 @@
         {
           "slot": "branches",
           "alphaMode": "opaque",
+          "alphaSource": null,
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 0,
+          "doubleSided": false,
+          "materialClass": "surface",
           "normalConversion": "OpenGL green inverted to DirectX",
           "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
           "sources": {
@@ -387,8 +400,9 @@
             {
               "channel": "base",
               "path": "island-tree-01/branches-base.dds",
+              "sourceColorSpace": "sRGB",
               "bytes": 1398276,
-              "sha256": "6373a1b967113facb26bc5cc3f6e15183b8968b8c8304067b5a911f59fb051d2",
+              "sha256": "75e25268369704a561432df6f3368734e8b5648fdce184a0a4c2c5863317145b",
               "height": 1024,
               "width": 1024,
               "mips": 11,
@@ -399,6 +413,7 @@
             {
               "channel": "normal",
               "path": "island-tree-01/branches-normal.dds",
+              "sourceColorSpace": "linear",
               "bytes": 1398276,
               "sha256": "1aa3118c6fba3891c31fb2e5c961edd463e2a65084f611158dea4adc3e39dbbb",
               "height": 1024,
@@ -411,6 +426,7 @@
             {
               "channel": "arm",
               "path": "island-tree-01/branches-arm.dds",
+              "sourceColorSpace": "linear",
               "bytes": 1398276,
               "sha256": "92e5ae39785dbcefc885588deaafd35a1b45d7e5e47f222320b85cb9ce810f05",
               "height": 1024,
@@ -425,6 +441,11 @@
         {
           "slot": "leaves",
           "alphaMode": "mask",
+          "alphaSource": "black-key",
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 8,
+          "doubleSided": true,
+          "materialClass": "foliage",
           "normalConversion": "OpenGL green inverted to DirectX",
           "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
           "sources": {
@@ -445,8 +466,9 @@
             {
               "channel": "base",
               "path": "island-tree-01/leaves-base.dds",
+              "sourceColorSpace": "sRGB",
               "bytes": 1398276,
-              "sha256": "03d33629af39476d1d1b8a6a9cecc7d63f7c4417e96e17a514478aa8378a9214",
+              "sha256": "453e779d4ca573aa150af26c8289dcad89bfb1bbdd45547fdbb6948f2f17073f",
               "height": 1024,
               "width": 1024,
               "mips": 11,
@@ -457,6 +479,7 @@
             {
               "channel": "normal",
               "path": "island-tree-01/leaves-normal.dds",
+              "sourceColorSpace": "linear",
               "bytes": 1398276,
               "sha256": "cc43d9a2635a0f8a6a750e41cc9857600a16d39fe9edc2d7f2403d39790595ee",
               "height": 1024,
@@ -469,6 +492,7 @@
             {
               "channel": "arm",
               "path": "island-tree-01/leaves-arm.dds",
+              "sourceColorSpace": "linear",
               "bytes": 1398276,
               "sha256": "792095487b7b49038da96ca9cb9e417a52b29f98eb109d953ef4eedcb82e9013",
               "height": 1024,
