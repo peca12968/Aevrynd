@@ -560,7 +560,7 @@ struct RendererStats {
     size_t volumetricAtmosphereResidentBytes{};
     uint64_t volumetricAtmosphereConfiguredFrames{},volumetricAtmosphereDispatches{},volumetricAtmosphereCompositePasses{},volumetricAtmosphereThreadGroups{},volumetricAtmosphereResourceCreates{},volumetricAtmosphereResourceReleases{},volumetricAtmosphereTemporalAcceptedPixels{},volumetricAtmosphereTemporalRejectedPixels{},volumetricAtmosphereTemporalInvalidPixels{},volumetricAtmosphereTemporalDiagnosticFrames{},lastVolumetricAtmosphereGpuNanoseconds{},volumetricAtmosphereAppliedFingerprint{};
     uint64_t volumetricAtmosphereSequenceDispatches{},volumetricAtmosphereSequenceReuses{},volumetricAtmosphereSequenceReuseRejects{},volumetricAtmosphereSequenceFingerprint{},volumetricAtmosphereSequenceOutputIdentity{},volumetricAtmosphereSequenceFence{};AtmosphereSequenceReuseReject3D volumetricAtmosphereLastSequenceReuseReject{AtmosphereSequenceReuseReject3D::None};bool volumetricAtmosphereSequenceReused{};
-    uint64_t temporalSequenceDispatches{},temporalSequenceReuses{},temporalSequenceReuseRejects{},temporalSequenceFingerprint{},temporalSequenceOutputIdentity{},temporalSequenceFence{};AtmosphereSequenceReuseReject3D temporalLastSequenceReuseReject{AtmosphereSequenceReuseReject3D::None};bool temporalSequenceReused{};
+    uint64_t temporalSequenceDispatches{},temporalSequenceReuses{},temporalSequenceReuseRejects{},temporalSequenceFingerprint{},temporalSequenceOutputIdentity{},temporalSequenceFence{};uint32_t temporalHistoryResourceFormat{},temporalSequenceOutputFormat{};AtmosphereSequenceReuseReject3D temporalLastSequenceReuseReject{AtmosphereSequenceReuseReject3D::None};bool temporalSequenceReused{};
     unsigned volumetricAtmosphereAppliedCloudSamples{},volumetricAtmosphereAppliedShaftSamples{},volumetricAtmosphereAppliedShadowSamples{};float volumetricAtmosphereAppliedCloudMaximumDistance{},volumetricAtmosphereAppliedShaftMaximumDistance{},volumetricAtmosphereAppliedCloudShadowStrength{},volumetricAtmosphereAppliedShaftShadowStrength{};size_t volumetricAtmosphereBlueNoiseBytes{};
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
     uint32_t volumetricAtmosphereAppliedTestMutation{};uint64_t volumetricAtmosphereAppliedFixturePatternHash{};unsigned volumetricAtmosphereAppliedFixtureWidth{},volumetricAtmosphereAppliedFixtureHeight{};bool volumetricAtmosphereAppliedResetHistory{},volumetricAtmosphereAppliedHistoryValid{};uint32_t volumetricAtmosphereAppliedTemporalSampleIndex{};
@@ -569,11 +569,13 @@ struct RendererStats {
     bool skinSubsurfaceEnabled{};size_t skinSubsurfaceResidentBytes{};uint64_t skinSubsurfaceConfiguredFrames{};
     bool postProcessAntiAliasingEnabled{};
     uint64_t postProcessAntiAliasingPasses{},postProcessAntiAliasingTextureSamples{};
-    bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
+    bool temporalAntiAliasingEnabled{},temporalColorHistoryValid{},temporalDepthHistoryValid{},temporalJitterEnabled{},temporalHistoryUsed{};
     Vec2 currentTemporalJitterPixels{},previousTemporalJitterPixels{};
     unsigned temporalJitterSequenceIndex{};
     size_t temporalHistoryResidentBytes{};
     uint64_t temporalHistoryAllocations{},temporalHistoryReleases{},temporalResolvePasses{},temporalJitteredFrames{},temporalJitterResets{};
+    size_t temporalDepthHistoryResidentBytes{};
+    uint64_t temporalDepthHistoryAllocations{},temporalDepthHistoryReleases{},temporalDepthHistoryCopies{};
     bool multisampleSupported{},multisampleEnabled{};
     unsigned multisampleCount{1},multisampleQuality{};
     unsigned directionalShadowResolution{},directionalShadowCascadeCapacity{};
@@ -1188,6 +1190,7 @@ struct D3D12RendererTestAccess3D {
     static bool SetCloudContributorSkyProxy(D3D12Renderer& renderer,bool enabled);
     static bool SetWorldPixelMutation(D3D12Renderer& renderer,WorldPixelMutation mutation);
     static bool SetLegacyTemporalDepthRejection(D3D12Renderer& renderer,bool enabled);
+    static bool SetLegacyTemporalFarSkyClassification(D3D12Renderer& renderer,bool enabled);
     static void SetVolumetricAtmosphereDiagnostics(D3D12Renderer& renderer,bool enabled);
     static bool SetVolumetricAtmosphereMutation(D3D12Renderer& renderer,VolumetricAtmosphereMutation mutation);
     static bool InvalidateActiveSequenceForDeviceTeardown(D3D12Renderer& renderer);

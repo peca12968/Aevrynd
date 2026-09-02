@@ -2,6 +2,7 @@ Texture2D<float4> currentSceneColor : register(t10);
 Texture2D<float4> previousSceneColor : register(t14);
 Texture2D<float2> sceneVelocity : register(t15);
 Texture2D<float> currentSceneDepth : register(t16);
+Texture2D<float> previousSceneDepth : register(t17);
 SamplerState linearClampSampler : register(s0);
 
 cbuffer TemporalComposite : register(b0)
@@ -27,10 +28,12 @@ float TemporalLuminance(float3 color)
     return dot(max(color, 0.0), float3(0.2126, 0.7152, 0.0722));
 }
 
-bool TemporalDepthCompatible(float centerDepth, float sampleDepth)
+bool TemporalDepthCompatible(float centerDepth, float sampleDepth, bool legacyLooseSky)
 {
-    const bool centerSky = centerDepth >= 0.9995;
-    const bool sampleSky = sampleDepth >= 0.9995;
+    // 深度以 Load 讀取 D32，standard-Z 的 clear 值才是天空；任何小於 1 的值皆為幾何。
+    const float skyThreshold = legacyLooseSky ? 0.9995 : 1.0;
+    const bool centerSky = centerDepth >= skyThreshold;
+    const bool sampleSky = sampleDepth >= skyThreshold;
     if (centerSky != sampleSky)
         return false;
     if (centerSky)
@@ -51,7 +54,8 @@ float4 TemporalResolvePixelMain(TemporalVertexOutput input) : SV_TARGET
     if (temporalParameters.z < 0.5)
         return float4(center, 1.0);
 
-    const bool depthAware = temporalParameters.z < 1.5;
+    const bool legacyCurrentDepth = temporalParameters.z >= 1.5 && temporalParameters.z < 2.5;
+    const bool legacyLooseSky = temporalParameters.z >= 2.5;
     const int2 maximumPixel = int2(width, height) - 1;
     const int2 centerPixel = clamp(int2(sourceUv * float2(width, height)), int2(0, 0), maximumPixel);
     const float centerDepth = currentSceneDepth.Load(int3(centerPixel, 0));
@@ -62,10 +66,10 @@ float4 TemporalResolvePixelMain(TemporalVertexOutput input) : SV_TARGET
     const float3 east = currentSceneColor.SampleLevel(linearClampSampler, sourceUv + float2(texel.x, 0.0), 0.0).rgb;
     float3 neighborhoodMinimum = center;
     float3 neighborhoodMaximum = center;
-    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(0, -1), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, north); neighborhoodMaximum = max(neighborhoodMaximum, north); }
-    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(0, 1), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, south); neighborhoodMaximum = max(neighborhoodMaximum, south); }
-    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(-1, 0), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, west); neighborhoodMaximum = max(neighborhoodMaximum, west); }
-    if (!depthAware || TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(1, 0), int2(0, 0), maximumPixel), 0)))) { neighborhoodMinimum = min(neighborhoodMinimum, east); neighborhoodMaximum = max(neighborhoodMaximum, east); }
+    if (TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(0, -1), int2(0, 0), maximumPixel), 0)), legacyLooseSky)) { neighborhoodMinimum = min(neighborhoodMinimum, north); neighborhoodMaximum = max(neighborhoodMaximum, north); }
+    if (TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(0, 1), int2(0, 0), maximumPixel), 0)), legacyLooseSky)) { neighborhoodMinimum = min(neighborhoodMinimum, south); neighborhoodMaximum = max(neighborhoodMaximum, south); }
+    if (TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(-1, 0), int2(0, 0), maximumPixel), 0)), legacyLooseSky)) { neighborhoodMinimum = min(neighborhoodMinimum, west); neighborhoodMaximum = max(neighborhoodMaximum, west); }
+    if (TemporalDepthCompatible(centerDepth, currentSceneDepth.Load(int3(clamp(centerPixel + int2(1, 0), int2(0, 0), maximumPixel), 0)), legacyLooseSky)) { neighborhoodMinimum = min(neighborhoodMinimum, east); neighborhoodMaximum = max(neighborhoodMaximum, east); }
     const float2 velocityPixels = sceneVelocity.SampleLevel(linearClampSampler, sourceUv, 0.0);
     const float2 previousUv = sourceUv - velocityPixels * texel + (jitterPixels.zw - jitterPixels.xy) * texel;
     const float inside = all(previousUv >= 0.0) && all(previousUv <= 1.0) ? 1.0 : 0.0;
@@ -73,8 +77,9 @@ float4 TemporalResolvePixelMain(TemporalVertexOutput input) : SV_TARGET
     history = clamp(history, neighborhoodMinimum, neighborhoodMaximum);
     const float luminanceDelta = abs(TemporalLuminance(center) - TemporalLuminance(history)) / max(TemporalLuminance(center), 0.05);
     const int2 previousPixel = clamp(int2(saturate(previousUv) * float2(width, height)), int2(0, 0), maximumPixel);
-    const float reprojectedDepth = currentSceneDepth.Load(int3(previousPixel, 0));
-    const float depthConfidence = !depthAware || TemporalDepthCompatible(centerDepth, reprojectedDepth) ? 1.0 : 0.0;
+    // 生產路徑必須比較前幀深度；負向控制保留舊版錯誤的當幀重投影深度。
+    const float reprojectedDepth = legacyCurrentDepth ? currentSceneDepth.Load(int3(previousPixel, 0)) : previousSceneDepth.Load(int3(previousPixel, 0));
+    const float depthConfidence = TemporalDepthCompatible(centerDepth, reprojectedDepth, legacyLooseSky) ? 1.0 : 0.0;
     const float confidence = saturate(1.0 - luminanceDelta * 1.5) * inside * depthConfidence;
     return float4(lerp(center, history, temporalParameters.w * confidence), 1.0);
 }
