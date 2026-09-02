@@ -36,8 +36,9 @@ function Get-NgrokExecutableIdentity {
 function Test-ExactNgrokCommandLine {
     param([string]$CommandLine,[string]$ExecutablePath,[string]$Domain)
     if([string]::IsNullOrWhiteSpace($CommandLine)-or-not(Test-NgrokDevelopmentDomain $Domain)){return $false}
-    $exe=[regex]::Escape([IO.Path]::GetFullPath($ExecutablePath));$escapedDomain=[regex]::Escape($Domain)
-    $pattern='(?i)^\s*"?'+$exe+'"?\s+http\s+"?http://127\.0\.0\.1:8787"?\s+--domain='+$escapedDomain+'\s+--scheme=https\s+--inspect=false\s+--log=false\s+--web-addr=127\.0\.0\.1:4040\s*$'
+    function Exact-Token([string]$Value){$escaped=[regex]::Escape($Value);return '(?:"'+$escaped+'"|'+$escaped+')'}
+    $tokens=@([IO.Path]::GetFullPath($ExecutablePath),'http','http://127.0.0.1:8787',"--domain=$Domain",'--scheme=https','--inspect=false','--log=false')|ForEach-Object{Exact-Token $_}
+    $pattern='(?i)^\s*'+($tokens-join'\s+')+'\s*$'
     return $CommandLine-match$pattern
 }
 
