@@ -17,7 +17,71 @@ from typing import Callable
 
 from .acceptance import QwenAcceptanceProbe
 from .atomic_store import AtomicJsonStore
-from .process_guard import ObservedProcess, ProcessIdentityError, RuntimeManifest, canonical_path, command_digest, file_sha256, validate_stop_eligibility
+from .process_guard import ObservedProcess, ProcessIdentityError, RuntimeManifest, command_digest, file_sha256, validate_stop_eligibility
+
+
+class _ByHandleFileInformation(ctypes.Structure):
+    _fields_ = [
+        ("file_attributes", wintypes.DWORD), ("creation_time", wintypes.FILETIME),
+        ("last_access_time", wintypes.FILETIME), ("last_write_time", wintypes.FILETIME),
+        ("volume_serial_number", wintypes.DWORD), ("file_size_high", wintypes.DWORD),
+        ("file_size_low", wintypes.DWORD), ("number_of_links", wintypes.DWORD),
+        ("file_index_high", wintypes.DWORD), ("file_index_low", wintypes.DWORD),
+    ]
+
+
+@contextmanager
+def _held_file_pair(left: str | Path, right: str | Path):  # type: ignore[no-untyped-def]
+    """Hold both files read-only while proving identity and hashing their handles."""
+
+    if os.name != "nt":
+        with Path(left).open("rb") as left_stream, Path(right).open("rb") as right_stream:
+            left_stat, right_stat = os.fstat(left_stream.fileno()), os.fstat(right_stream.fileno())
+            if (left_stat.st_dev, left_stat.st_ino) != (right_stat.st_dev, right_stat.st_ino):
+                raise ProcessIdentityError("runtime opened file identity mismatch")
+            left_raw, right_raw = left_stream.read(), right_stream.read()
+            if left_raw != right_raw:
+                raise ProcessIdentityError("runtime opened file content mismatch")
+            yield len(left_raw), hashlib.sha256(left_raw).hexdigest()
+        return
+    kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.GetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ByHandleFileInformation)]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.ReadFile.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
+    kernel32.ReadFile.restype = wintypes.BOOL
+    handles = [kernel32.CreateFileW(str(path), 0x80000000, 0x00000001, None, 3, 0, None) for path in (left, right)]
+    if any(handle == wintypes.HANDLE(-1).value for handle in handles):
+        for handle in handles:
+            if handle != wintypes.HANDLE(-1).value:
+                kernel32.CloseHandle(handle)
+        raise ProcessIdentityError("runtime file identity is unavailable")
+    try:
+        identities, digests, sizes = [], [], []
+        for handle in handles:
+            information = _ByHandleFileInformation()
+            if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(information)):
+                raise ProcessIdentityError("runtime file identity is unavailable")
+            identities.append((int(information.volume_serial_number), (int(information.file_index_high) << 32) | int(information.file_index_low)))
+            digest, size = hashlib.sha256(), 0
+            buffer = ctypes.create_string_buffer(1024 * 1024)
+            while True:
+                read = wintypes.DWORD()
+                if not kernel32.ReadFile(handle, buffer, len(buffer), ctypes.byref(read), None):
+                    raise ProcessIdentityError("runtime file hash is unavailable")
+                if read.value == 0:
+                    break
+                digest.update(buffer.raw[:read.value]); size += read.value
+            digests.append(digest.hexdigest()); sizes.append(size)
+        if identities[0] != identities[1] or digests[0] != digests[1] or sizes[0] != sizes[1]:
+            raise ProcessIdentityError("runtime opened file identity mismatch")
+        yield sizes[0], digests[0]
+    finally:
+        for handle in handles:
+            kernel32.CloseHandle(handle)
 
 
 class WindowsProcessInspector:
@@ -212,15 +276,16 @@ class WindowsQwenLifecycle:
         if len(model_indices) != 1:
             raise ProcessIdentityError("legacy Qwen model argument is invalid")
         normalized[model_indices[0]] = self.manifest.model_path
-        self.manifest.verify_files()
-        if (
-            observed.pid != pid
-            or observed.owner.casefold() != self.manifest.owner.casefold()
-            or canonical_path(observed.executable_path) != canonical_path(self.manifest.executable_path)
-            or observed.executable_sha256 != self.manifest.executable_sha256
-            or tuple(normalized) != self.manifest.argv
-        ):
-            raise ProcessIdentityError("legacy Qwen process identity validation failed")
+        with _held_file_pair(observed.executable_path, self.manifest.executable_path) as (_, executable_hash), \
+             _held_file_pair(observed.argv[model_indices[0]], self.manifest.model_path) as (_, model_hash):
+            if (
+                observed.pid != pid
+                or observed.owner.casefold() != self.manifest.owner.casefold()
+                or executable_hash != self.manifest.executable_sha256
+                or model_hash != self.manifest.model_sha256
+                or tuple(normalized) != self.manifest.argv
+            ):
+                raise ProcessIdentityError("legacy Qwen process identity validation failed")
 
     def is_running(self) -> bool:
         pid = self._pid()
@@ -357,41 +422,52 @@ def capture_main_runtime_manifest(output_path: str | Path, model_id: str, *, sta
     if type(pid) is not int or pid <= 0:
         raise ProcessIdentityError("legacy Qwen PID is invalid")
     observed = (inspector or WindowsProcessInspector()).inspect(pid)
+    if not observed.argv:
+        raise ProcessIdentityError("runtime capture executable identity is inconsistent")
     model_arguments = [observed.argv[index + 1] for index, value in enumerate(observed.argv[:-1]) if value == "--model"]
     if len(model_arguments) != 1:
         raise ProcessIdentityError("managed Qwen model argument is invalid")
     observed_root = Path(observed.executable_path).resolve().parent.parent
     physical_model = (observed_root / "models" / Path(model_arguments[0]).name).resolve()
-    model_path = physical_model if physical_model.is_file() else Path(model_arguments[0]).resolve()
+    scheduled_root = Path(os.path.normpath(observed.argv[0])).parent.parent
+    scheduled_model = Path(os.path.normpath(model_arguments[0]))
+    expected_scheduled_model = scheduled_root / "models" / scheduled_model.name
+    if (
+        os.path.normcase(os.path.normpath(scheduled_model)) != os.path.normcase(os.path.normpath(expected_scheduled_model))
+        or not physical_model.is_file()
+    ):
+        raise ProcessIdentityError("runtime capture model identity is inconsistent")
+    model_path = scheduled_model
     normalized_argv = list(observed.argv)
-    normalized_argv[0] = observed.executable_path
-    normalized_argv[normalized_argv.index("--model") + 1] = str(model_path)
-    manifest = RuntimeManifest(
-        "main", "light", observed.owner, observed.executable_path, observed.executable_sha256,
-        tuple(normalized_argv), command_digest(normalized_argv), str(model_path), file_sha256(model_path), model_id,
-    )
-    manifest._validate_network_contract()
-    manifest.verify_files()
-    if state.get("modelSha256") != manifest.model_sha256:
-        raise ProcessIdentityError("legacy Qwen state does not match the live runtime")
-    supplied_output = Path(output_path)
-    output = supplied_output.resolve()
-    if output.suffix.casefold() != ".json" or supplied_output.is_symlink() or not output.parent.is_dir():
-        raise ProcessIdentityError("runtime manifest output path is invalid")
-    document = {
-        "schema_version": 1,
-        "runtime": {
-            "node_id": manifest.node_id, "profile": manifest.profile, "owner": manifest.owner,
-            "executable_path": manifest.executable_path, "executable_sha256": manifest.executable_sha256,
-            "argv": list(manifest.argv), "command_sha256": manifest.command_sha256,
-            "model_path": manifest.model_path, "model_sha256": manifest.model_sha256,
-            "model_id": manifest.model_id,
-        },
-    }
-    raw = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    try:
-        with output.open("xb") as stream:
-            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
-    except OSError as error:
-        raise ProcessIdentityError("runtime manifest output could not be created") from error
-    return hashlib.sha256(raw).hexdigest()
+    normalized_argv[0] = os.path.normpath(observed.argv[0])
+    normalized_argv[normalized_argv.index("--model") + 1] = os.path.normpath(str(model_path))
+    with _held_file_pair(observed.executable_path, observed.argv[0]) as (_, executable_hash), \
+         _held_file_pair(physical_model, scheduled_model) as (_, model_hash):
+        manifest = RuntimeManifest(
+            "main", "light", observed.owner, normalized_argv[0], executable_hash,
+            tuple(normalized_argv), command_digest(normalized_argv), str(model_path), model_hash, model_id,
+        )
+        manifest._validate_network_contract()
+        if state.get("modelSha256") != manifest.model_sha256:
+            raise ProcessIdentityError("legacy Qwen state does not match the live runtime")
+        supplied_output = Path(output_path)
+        output = supplied_output.resolve()
+        if output.suffix.casefold() != ".json" or supplied_output.is_symlink() or not output.parent.is_dir():
+            raise ProcessIdentityError("runtime manifest output path is invalid")
+        document = {
+            "schema_version": 1,
+            "runtime": {
+                "node_id": manifest.node_id, "profile": manifest.profile, "owner": manifest.owner,
+                "executable_path": manifest.executable_path, "executable_sha256": manifest.executable_sha256,
+                "argv": list(manifest.argv), "command_sha256": manifest.command_sha256,
+                "model_path": manifest.model_path, "model_sha256": manifest.model_sha256,
+                "model_id": manifest.model_id,
+            },
+        }
+        raw = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        try:
+            with output.open("xb") as stream:
+                stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        except OSError as error:
+            raise ProcessIdentityError("runtime manifest output could not be created") from error
+        return hashlib.sha256(raw).hexdigest()

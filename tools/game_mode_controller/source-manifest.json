@@ -88,14 +88,14 @@
     {
       "source": "state_machine.py",
       "destination": "app/tools/game_mode_controller/state_machine.py",
-      "size": 3690,
-      "sha256": "2a774a794da81d97c48cf161ecce0a410c491193424d276be93425edf15b4dad"
+      "size": 3861,
+      "sha256": "a9c00ab04b44b4ed550dbabedaaf05bceabf3d3c6813b362394271d0d470ce0b"
     },
     {
       "source": "windows_runtime.py",
       "destination": "app/tools/game_mode_controller/windows_runtime.py",
-      "size": 21926,
-      "sha256": "e25fadd3482e2475d9d84aeca21394a9c9bab73be670058f0fc3ca1db1efd8c8"
+      "size": 26651,
+      "sha256": "c4a45a31b3342cd5c51306092be1dd1ab30791f6241ff76c5b7dece120b15142"
     },
     {
       "source": "scripts/Capture-MainRuntimeManifest.ps1",

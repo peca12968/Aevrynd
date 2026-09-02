@@ -54,12 +54,15 @@ class GameModeController:
         return self._reconcile(self.load_or_initialize())
 
     def _reconcile(self, state: GameModeState) -> GameModeState:
+        stage = "inspect"
         try:
             if state.game_mode:
                 if self.lifecycle.is_running():
                     interim = replace(state, qwen_state=QwenState.STOPPING, updated_utc=self.clock())
                     self._write(interim)
+                    stage = "stop"
                     self.lifecycle.stop_validated()
+                stage = "verify_stop"
                 if self.lifecycle.is_running():
                     raise RuntimeError("Qwen remained running after validated stop")
                 final = replace(state, qwen_state=QwenState.STOPPED, updated_utc=self.clock(), detail_code="game_mode")
@@ -67,12 +70,14 @@ class GameModeController:
                 if not self.lifecycle.is_running():
                     interim = replace(state, qwen_state=QwenState.STARTING, updated_utc=self.clock())
                     self._write(interim)
+                    stage = "start"
                     self.lifecycle.start_validated(self.spec.qwen_profile)
+                stage = "accept"
                 self.lifecycle.accept()
                 final = replace(state, qwen_state=QwenState.RUNNING, updated_utc=self.clock(), detail_code="accepted")
         except Exception:
-            # 不洩漏程序、路徑或憑證細節；gameMode 意圖保留供下次開機收斂。
-            final = replace(state, qwen_state=QwenState.DEGRADED, updated_utc=self.clock(), detail_code="reconcile_failed")
+            # 僅保存封閉階段代碼，不洩漏例外、程序、路徑或憑證內容。
+            final = replace(state, qwen_state=QwenState.DEGRADED, updated_utc=self.clock(), detail_code=f"reconcile_{stage}_failed")
         self._write(final)
         return final
 

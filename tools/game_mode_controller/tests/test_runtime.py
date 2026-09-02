@@ -195,6 +195,20 @@ class RuntimeTests(unittest.TestCase):
             command_line = WindowsProcessInspector._read_command_line(os.getpid())
         self.assertTrue(command_line)
 
+    @unittest.skipUnless(os.name == "nt", "Windows held-file replacement contract")
+    def test_held_file_identity_hash_blocks_replacement_until_release(self) -> None:
+        from tools.game_mode_controller.windows_runtime import _held_file_pair
+
+        original = self.root / "held.bin"; alias = self.root / "held-alias.bin"; replacement = self.root / "replacement.bin"
+        original.write_bytes(b"trusted-bytes"); os.link(original, alias); replacement.write_bytes(b"hostile-bytes")
+        with _held_file_pair(original, alias) as (size, digest):
+            self.assertEqual(len(b"trusted-bytes"), size)
+            self.assertEqual(hashlib.sha256(b"trusted-bytes").hexdigest(), digest)
+            with self.assertRaises(PermissionError):
+                os.replace(replacement, alias)
+        os.replace(replacement, alias)
+        self.assertEqual(b"hostile-bytes", alias.read_bytes())
+
     def test_existing_light_state_is_adopted_only_after_full_manifest_gate(self) -> None:
         path, digest = self._write_manifest()
         manifest = load_runtime_manifest(path, expected_node_id="main", expected_sha256=digest)
@@ -211,27 +225,38 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsNone(lifecycle.pid_store.read())
 
     def test_capture_existing_runtime_emits_reloadable_pinned_manifest(self) -> None:
+        runtime_root = self.root / "capture-runtime"
+        executable = runtime_root / "runtime" / "llama-server.exe"
+        model = runtime_root / "models" / "Qwen3-4B-Q4_K_M.gguf"
+        executable.parent.mkdir(parents=True); model.parent.mkdir(parents=True)
+        executable.write_bytes(b"runtime"); model.write_bytes(b"model")
+        argv = (str(executable), "--model", str(model), "--host", "127.0.0.1", "--port", "18080", "--parallel", "1")
         legacy = self.root / "light-state.json"
         legacy.write_text(json.dumps({
             "schemaVersion": 1, "pid": 7712, "startedUtc": "2026-09-03T00:00:00Z",
-            "executablePath": str(self.executable), "modelSha256": file_sha256(self.model),
+            "executablePath": str(executable), "modelSha256": file_sha256(model),
             "host": "127.0.0.1", "port": 18080, "context": 2048, "parallel": 1,
             "threads": 4, "gpuLayers": 0,
         }), encoding="utf-8")
-        observed = ObservedProcess(7712, "DOMAIN\\User", str(self.executable), self.argv, file_sha256(self.executable))
+        observed = ObservedProcess(7712, "DOMAIN\\User", str(executable), argv, file_sha256(executable))
         output = self.root / "captured.json"
         digest = capture_main_runtime_manifest(output, "Qwen3-4B-Q4_K_M.gguf", state_path=legacy, inspector=FakeInspector(observed))
         loaded = load_runtime_manifest(output, expected_node_id="main", expected_sha256=digest)
         self.assertEqual(observed.argv, loaded.argv)
 
-    def test_msix_physical_model_path_preserves_exact_api_model_id_for_acceptance(self) -> None:
+    def test_msix_capture_uses_file_identity_for_mixed_path_view(self) -> None:
         package = self.root / "msix-physical"
+        scheduled = self.root / "scheduled-view"
         executable = package / "bin" / "llama-server.exe"
         physical_model = package / "models" / "Qwen3-4B-Q4_K_M.gguf"
+        scheduled_executable = scheduled / "bin" / "llama-server.exe"
+        scheduled_model = scheduled / "models" / "Qwen3-4B-Q4_K_M.gguf"
         executable.parent.mkdir(parents=True); physical_model.parent.mkdir(parents=True)
+        scheduled_executable.parent.mkdir(parents=True); scheduled_model.parent.mkdir(parents=True)
         executable.write_bytes(b"runtime"); physical_model.write_bytes(b"model")
-        api_model_id = r"C:\Users\USER\AppData\Local\AevryndQwenLight\models\Qwen3-4B-Q4_K_M.gguf"
-        argv = (str(executable), "--model", api_model_id, "--host", "127.0.0.1", "--port", "18080", "--parallel", "1")
+        os.link(executable, scheduled_executable); os.link(physical_model, scheduled_model)
+        api_model_id = str(scheduled_model)
+        argv = (str(scheduled_executable), "--model", api_model_id, "--host", "127.0.0.1", "--port", "18080", "--parallel", "1")
         legacy = self.root / "msix-state.json"
         legacy.write_text(json.dumps({
             "schemaVersion": 1, "pid": 7712, "startedUtc": "2026-09-03T00:00:00Z",
@@ -243,9 +268,29 @@ class RuntimeTests(unittest.TestCase):
         output = self.root / "msix-captured.json"
         digest = capture_main_runtime_manifest(output, api_model_id, state_path=legacy, inspector=FakeInspector(observed))
         loaded = load_runtime_manifest(output, expected_node_id="main", expected_sha256=digest)
-        self.assertEqual(str(physical_model.resolve()), loaded.model_path)
-        self.assertEqual(str(physical_model.resolve()), loaded.argv[loaded.argv.index("--model") + 1])
+        self.assertEqual(str(scheduled_model), loaded.model_path)
+        self.assertEqual(str(scheduled_executable), loaded.executable_path)
         self.assertEqual(api_model_id, loaded.model_id)
+        lifecycle = WindowsQwenLifecycle(loaded, AtomicJsonStore(self.root / "mixed-pid.json"),
+                                         inspector=FakeInspector(observed), probe=FakeProbe(), adoption_state=legacy)
+        self.assertTrue(lifecycle.is_running())
+
+        spoof_executable = self.root / "spoof" / "bin" / "llama-server.exe"
+        spoof_executable.parent.mkdir(parents=True); spoof_executable.write_bytes(executable.read_bytes())
+        spoof_argv = (str(spoof_executable), *argv[1:])
+        spoof = ObservedProcess(7712, "DOMAIN\\User", str(executable), spoof_argv, file_sha256(executable))
+        with self.assertRaisesRegex(ProcessIdentityError, "identity"):
+            capture_main_runtime_manifest(self.root / "spoof.json", api_model_id, state_path=legacy, inspector=FakeInspector(spoof))
+
+        model_spoof_root = self.root / "model-spoof"
+        model_spoof_executable = model_spoof_root / "bin" / "llama-server.exe"
+        model_spoof = model_spoof_root / "models" / physical_model.name
+        model_spoof_executable.parent.mkdir(parents=True); model_spoof.parent.mkdir(parents=True)
+        os.link(executable, model_spoof_executable); model_spoof.write_bytes(physical_model.read_bytes())
+        model_spoof_argv = (str(model_spoof_executable), "--model", str(model_spoof), *argv[3:])
+        observed_model_spoof = ObservedProcess(7712, "DOMAIN\\User", str(executable), model_spoof_argv, file_sha256(executable))
+        with self.assertRaisesRegex(ProcessIdentityError, "identity"):
+            capture_main_runtime_manifest(self.root / "model-spoof.json", str(model_spoof), state_path=legacy, inspector=FakeInspector(observed_model_spoof))
 
         class Response:
             def __init__(self, value: object) -> None: self.value = value
@@ -283,6 +328,7 @@ class RuntimeTests(unittest.TestCase):
                           retry_max_seconds=20, monotonic=lambda: now[0])  # type: ignore[arg-type]
         state = controller.reconcile_boot()
         self.assertEqual(QwenState.DEGRADED, state.qwen_state)
+        self.assertEqual("reconcile_accept_failed", state.detail_code)
         self.assertEqual((1, 1), (lifecycle.starts, lifecycle.accepts))
         state = agent.retry_degraded(state)  # schedules, but does not busy-loop
         for timestamp in (1.0, 2.0, 4.99):
@@ -299,6 +345,14 @@ class RuntimeTests(unittest.TestCase):
         now[0] = 100.0
         self.assertIs(game_state, agent.retry_degraded(game_state))
         self.assertEqual(before, (lifecycle.starts, lifecycle.stops, lifecycle.accepts))
+
+        class InspectFailure(TransientLifecycle):
+            def is_running(self) -> bool: raise RuntimeError("hidden diagnostic")
+
+        inspect_controller = GameModeController("main", AtomicJsonStore(self.root / "inspect-stage.json"), InspectFailure())
+        inspect_state = inspect_controller.reconcile_boot()
+        self.assertEqual("reconcile_inspect_failed", inspect_state.detail_code)
+        self.assertNotIn("hidden", inspect_state.detail_code)
 
     def test_signed_loopback_client_rejects_unsigned_and_accepts_signed_status(self) -> None:
         import socket

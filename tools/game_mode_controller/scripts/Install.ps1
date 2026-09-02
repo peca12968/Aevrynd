@@ -23,7 +23,7 @@ if (-not [string]::Equals($expectedRoot, $resolvedRoot, [StringComparison]::Ordi
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $trustModule = Join-Path $PSScriptRoot 'InstallTrust.psm1'
 $sourceManifest = Join-Path $sourceRoot 'source-manifest.json'
-$expectedSourceManifestSha256 = 'b55403120ccba2b982f016957917e8370402c0a2dcdb5eabaceb5d28e19e5557'
+$expectedSourceManifestSha256 = 'fc1ed1613e1c8d40f96049294049193f5717ed0b41bf3964f635b0fc8ab74dc6'
 if (-not (Test-Path -LiteralPath $sourceManifest -PathType Leaf)) { throw 'Closed source manifest is missing.' }
 $sha256 = [Security.Cryptography.SHA256]::Create()
 try {
