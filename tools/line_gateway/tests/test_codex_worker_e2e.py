@@ -30,6 +30,7 @@ from tools.line_gateway.signature import compute_signature
 from tools.line_gateway.worker import ASSISTANT_SYSTEM_PROMPTS, Worker
 from tools.line_gateway.scripts.gateway_runner import (
     LANE_NAMES,
+    NOTIFICATION_DRAINER_COUNT,
     RUNTIME_WORKER_COUNT,
     RuntimeHealth,
     _request_stop,
@@ -637,8 +638,8 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual(0, runtime_health.snapshot()["workerCount"])
         self.assertTrue(all(action != "drain" for role, action in calls if role != "drainer"))
         self.assertTrue(all(not action.startswith("lane:") for role, action in calls if role == "drainer"))
-        self.assertTrue(all(action != "notification" for role, action in calls if role != "notification-drainer"))
-        self.assertEqual(len(LANE_NAMES) + 2, RUNTIME_WORKER_COUNT)
+        self.assertTrue(all(action != "notification" for role, action in calls if not role.startswith("notification-drainer")))
+        self.assertEqual(len(LANE_NAMES) + NOTIFICATION_DRAINER_COUNT + 1, RUNTIME_WORKER_COUNT)
 
     def test_runner_notification_drainer_death_fails_fast(self) -> None:
         server = LifecycleServer()
@@ -1311,6 +1312,76 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
+
+    def test_slow_taoyuan_notice_does_not_block_rapid_taichung_notice(self) -> None:
+        first_entered = threading.Event()
+        release_first = threading.Event()
+        second_sent = threading.Event()
+        pushes: list[tuple[str, str, str]] = []
+        push_lock = threading.Lock()
+
+        class BlockingFirstNoticeLineClient(FakeLineClient):
+            def push(self, destination: str, message: str, retry_key: str) -> None:
+                if message.startswith("[桃園 Qwen]"):
+                    first_entered.set()
+                    release_first.wait(timeout=3)
+                with push_lock:
+                    pushes.append((destination, message, retry_key))
+                if message.startswith("[台中 Qwen]"):
+                    second_sent.set()
+
+        line = BlockingFirstNoticeLineClient()
+        worker = Worker(
+            self.store, line,
+            HostTasks(self.store, health_provider=lambda: {"test": True}),
+            self.handoff, qwen_client=self.qwen, worker_id="rapid-ingress",
+        )
+        config = GatewayConfig(
+            channel_secret="test-channel-secret-value",
+            channel_access_token="test-access-token-value",
+            allowed_user_ids=frozenset({"user-allowed"}),
+            allowed_group_ids=frozenset({"group-allowed"}),
+        )
+
+        def event(event_id: str, city: str) -> dict[str, object]:
+            return {
+                "webhookEventId": event_id,
+                "deliveryContext": {"isRedelivery": False},
+                "replyToken": f"ephemeral-{event_id}",
+                "source": {"type": "group", "userId": "user-allowed", "groupId": "group-allowed"},
+                "message": {
+                    "type": "text", "text": f"@Bot {city}狀態",
+                    "mention": {"mentionees": [{"index": 0, "length": 4, "type": "user", "isSelf": True}]},
+                },
+            }
+
+        taoyuan = event("rapid-taoyuan", "桃園")
+        taichung = event("rapid-taichung", "台中")
+        self.assertTrue(worker.accept_event(taoyuan, route_event(taoyuan, config)))
+        first = threading.Thread(
+            target=lambda: Worker(
+                self.store, line, HostTasks(self.store), self.handoff,
+                qwen_client=self.qwen, worker_id="notice-1",
+            ).drain_notification_once()
+        )
+        first.start()
+        self.assertTrue(first_entered.wait(timeout=1))
+        self.assertTrue(worker.accept_event(taichung, route_event(taichung, config)))
+        second = threading.Thread(
+            target=lambda: Worker(
+                self.store, line, HostTasks(self.store), self.handoff,
+                qwen_client=self.qwen, worker_id="notice-2",
+            ).drain_notification_once()
+        )
+        second.start()
+        self.assertTrue(second_sent.wait(timeout=1))
+        release_first.set()
+        first.join(timeout=2); second.join(timeout=2)
+        self.assertFalse(first.is_alive()); self.assertFalse(second.is_alive())
+        self.assertEqual(2, len(pushes))
+        self.assertEqual({"[桃園 Qwen]\n已接收，正在產生回覆…", "[台中 Qwen]\n已接收，正在產生回覆…"},
+                         {message for _, message, _ in pushes})
+        self.assertEqual(2, len({retry_key for _, _, retry_key in pushes}))
 
     @staticmethod
     def _free_port() -> int:

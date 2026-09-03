@@ -13,7 +13,8 @@ from typing import Callable
 
 
 LANE_NAMES = ("taichung", "taoyuan", "auto", "control")
-RUNTIME_WORKER_COUNT = len(LANE_NAMES) + 2
+NOTIFICATION_DRAINER_COUNT = 4
+RUNTIME_WORKER_COUNT = len(LANE_NAMES) + NOTIFICATION_DRAINER_COUNT + 1
 
 
 class RuntimeHealth:
@@ -77,11 +78,12 @@ def _serve_runtime(
         thread = threading.Thread(target=run_lane, args=(lane_name,), daemon=True)
         thread.start()
         lane_threads.append(thread)
-    notification_drainer = worker_factory("notification-drainer")
+    notification_threads: list[threading.Thread] = []
 
-    def run_notifications() -> None:
+    def run_notifications(role: str) -> None:
+        notification_drainer = worker_factory(role)
         if runtime_health is not None:
-            runtime_health.enter("notification-drainer")
+            runtime_health.enter(role)
         try:
             while not stopped.is_set():
                 try:
@@ -91,10 +93,13 @@ def _serve_runtime(
                 stopped.wait(0.02 if worked else 0.1)
         finally:
             if runtime_health is not None:
-                runtime_health.leave("notification-drainer")
+                runtime_health.leave(role)
 
-    notification_thread = threading.Thread(target=run_notifications, daemon=True)
-    notification_thread.start()
+    for index in range(NOTIFICATION_DRAINER_COUNT):
+        role = "notification-drainer" if index == 0 else f"notification-drainer-{index}"
+        thread = threading.Thread(target=run_notifications, args=(role,), daemon=True)
+        thread.start()
+        notification_threads.append(thread)
     drainer = worker_factory("drainer")
 
     def run_side_effects() -> None:
@@ -119,7 +124,7 @@ def _serve_runtime(
                 raise RuntimeError("gateway HTTP server stopped")
             if any(not thread.is_alive() for thread in lane_threads):
                 raise RuntimeError("a gateway work lane stopped")
-            if not notification_thread.is_alive():
+            if any(not thread.is_alive() for thread in notification_threads):
                 raise RuntimeError("gateway notification drainer stopped")
             if not side_effect_thread.is_alive():
                 raise RuntimeError("gateway side-effect drainer stopped")
@@ -128,7 +133,7 @@ def _serve_runtime(
         stopped.set()
         server.shutdown()
         server.server_close()
-        runtime_threads = [server_thread, *lane_threads, notification_thread, side_effect_thread]
+        runtime_threads = [server_thread, *lane_threads, *notification_threads, side_effect_thread]
         deadline = time.monotonic() + shutdown_timeout
         for thread in runtime_threads:
             thread.join(timeout=max(0.0, deadline - time.monotonic()))
