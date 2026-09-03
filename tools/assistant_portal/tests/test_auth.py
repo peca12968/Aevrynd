@@ -7,10 +7,12 @@ import os
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +30,24 @@ class Clock:
         return self.value
 
 
+class PersistentDiagnosticTests(unittest.TestCase):
+    def test_readiness_is_persistent_bounded_and_non_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "smtp.json"
+            journal = server_module.SmtpReadinessJournal(str(path))
+            journal.write(ready=True, safe_code="ready", successes=3, failures=1)
+            self.assertEqual({"ready": True, "status": "ready"}, server_module.SmtpReadinessJournal(str(path)).public())
+            content = path.read_text(encoding="utf-8")
+            self.assertNotIn(server_module.ALLOWED_EMAIL, content)
+            self.assertLessEqual(len(content), 1024)
+
+    def test_corrupt_diagnostic_fails_closed_without_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "smtp.json"
+            path.write_text("secret-content", encoding="utf-8")
+            self.assertEqual({"ready": False, "status": "unknown"}, server_module.SmtpReadinessJournal(str(path)).public())
+
+
 class RecordingAdapter:
     is_preview = False
     def __init__(self, delay: float = 0) -> None:
@@ -43,6 +63,22 @@ class FailingAdapter(RecordingAdapter):
     def send_otp(self, email: str, otp: str) -> None:
         del email, otp
         raise RuntimeError("simulated delivery failure")
+
+
+class UnknownEmailReadinessTests(unittest.TestCase):
+    def test_unknown_email_does_not_change_persistent_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "smtp.json"
+            diagnostic = server_module.SmtpReadinessJournal(str(path))
+            diagnostic.write(ready=False, safe_code="smtp_timeout", failures=1)
+            before = path.read_bytes()
+            auth = server_module.AuthManager(RecordingAdapter(), diagnostic=diagnostic)
+            auth.request_otp("unknown@example.com", "192.0.2.1")
+            deadline = time.monotonic() + 1
+            while auth._pending and time.monotonic() < deadline:
+                time.sleep(0.01)
+            auth.close()
+            self.assertEqual(before, path.read_bytes())
 
 
 class AuthManagerTests(unittest.TestCase):
@@ -118,6 +154,21 @@ class AuthManagerTests(unittest.TestCase):
         self.assertLessEqual(len(self.auth._account_requests), 1)
         self.assertLessEqual(len(self.auth._ip_requests), 1)
 
+    def test_csrf_capacity_never_evicts_a_live_token(self) -> None:
+        first = self.auth.issue_csrf("10.10.0.1")
+        self.assertIsNotNone(first)
+        for index in range(1, server_module.MAX_CSRF_TOKENS):
+            token = self.auth.issue_csrf(f"10.10.{index // 29}.{index % 29 + 1}")
+            self.assertIsNotNone(token)
+        self.assertIsNone(self.auth.issue_csrf("10.20.0.1"))
+        self.assertTrue(self.auth.validate_csrf(first or "", first or ""))
+
+    def test_csrf_ip_limit_is_independent_from_global_limit(self) -> None:
+        for _ in range(server_module.CSRF_IP_RATE_LIMIT):
+            self.assertIsNotNone(self.auth.issue_csrf("10.30.0.1"))
+        self.assertIsNone(self.auth.issue_csrf("10.30.0.1"))
+        self.assertIsNotNone(self.auth.issue_csrf("10.30.0.2"))
+
     def test_session_store_is_bounded_and_expired_entries_are_collected(self) -> None:
         for index in range(server_module.MAX_SESSIONS + 25):
             self.auth._sessions[index.to_bytes(32, "little")] = self.clock.value + 10
@@ -130,6 +181,36 @@ class AuthManagerTests(unittest.TestCase):
     def test_dev_otp_display_rejects_real_adapter(self) -> None:
         with self.assertRaises(RuntimeError):
             server_module.AuthManager(RecordingAdapter(), dev_show_otp=True)
+
+    def test_gmail_smtp_adapter_requires_exact_allowlisted_identity(self) -> None:
+        base = {
+            "AEVRYND_SMTP_HOST": "smtp.gmail.com",
+            "AEVRYND_SMTP_PORT": "465",
+            "AEVRYND_SMTP_PASSWORD": "not-a-real-app-password",
+        }
+        with mock.patch.dict(os.environ, {**base, "AEVRYND_SMTP_USERNAME": "other@gmail.com", "AEVRYND_SMTP_SENDER": "other@gmail.com"}, clear=False):
+            with self.assertRaises(RuntimeError):
+                server_module.SmtpEmailAdapter()
+        with mock.patch.dict(os.environ, {**base, "AEVRYND_SMTP_USERNAME": server_module.ALLOWED_EMAIL, "AEVRYND_SMTP_SENDER": "other@gmail.com"}, clear=False):
+            with self.assertRaises(RuntimeError):
+                server_module.SmtpEmailAdapter()
+        with mock.patch.dict(os.environ, {**base, "AEVRYND_SMTP_USERNAME": server_module.ALLOWED_EMAIL, "AEVRYND_SMTP_SENDER": server_module.ALLOWED_EMAIL}, clear=False):
+            self.assertFalse(server_module.SmtpEmailAdapter().is_preview)
+
+    def test_smtp_preflight_logs_in_without_sending_mail(self) -> None:
+        environment = {
+            "AEVRYND_SMTP_HOST": "smtp.gmail.com",
+            "AEVRYND_SMTP_PORT": "465",
+            "AEVRYND_SMTP_USERNAME": server_module.ALLOWED_EMAIL,
+            "AEVRYND_SMTP_SENDER": server_module.ALLOWED_EMAIL,
+            "AEVRYND_SMTP_PASSWORD": "not-a-real-app-password",
+        }
+        client = mock.MagicMock()
+        client.__enter__.return_value = client
+        with mock.patch.dict(os.environ, environment, clear=False), mock.patch.object(server_module.smtplib, "SMTP_SSL", return_value=client):
+            server_module.SmtpEmailAdapter().preflight()
+        client.login.assert_called_once_with(server_module.ALLOWED_EMAIL, "not-a-real-app-password")
+        client.send_message.assert_not_called()
 
     def test_slow_adapter_does_not_hold_global_lock_and_concurrent_send_is_reserved(self) -> None:
         adapter = RecordingAdapter(delay=0.2)
@@ -149,6 +230,15 @@ class AuthManagerTests(unittest.TestCase):
         self.assertEqual(1, len(adapter.sent))
         self.assertIsNone(duplicate[0])
         self.assertEqual(1, len(result))
+        auth.close()
+
+    def test_delivery_health_exposes_only_bounded_safe_codes(self) -> None:
+        auth = server_module.AuthManager(FailingAdapter(), clock=self.clock)
+        auth.request_otp(server_module.ALLOWED_EMAIL, "10.0.0.5")
+        deadline = time.monotonic() + 1
+        while auth.delivery_health()["failures"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual({"successes": 0, "failures": 1, "last_safe_code": "delivery_internal_error"}, auth.delivery_health())
         auth.close()
 
 
@@ -183,6 +273,9 @@ class HttpAuthTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as captured:
                 urllib.request.urlopen(self.base + path)
             self.assertEqual(401, captured.exception.code)
+        health = json.load(urllib.request.urlopen(self.base + "/api/health/email"))
+        self.assertEqual({"ready": False, "status": "unknown"}, health)
+        self.assertEqual({"ready", "status"}, set(health))
 
     def test_static_allowlist_blocks_source_tests_dotfiles_and_traversal(self) -> None:
         self.assertEqual(200, urllib.request.urlopen(self.base + "/styles.css").status)
@@ -254,15 +347,18 @@ class ProductionStartupTests(unittest.TestCase):
     def test_production_session_cookie_is_secure_and_no_otp_is_returned(self) -> None:
         adapter = RecordingAdapter()
         auth = server_module.AuthManager(adapter)
-        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("127.0.0.1",)))
+        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("127.0.0.1",)), instance_nonce="a" * 32)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"
         try:
-            csrf_response = urllib.request.urlopen(urllib.request.Request(base + "/api/auth/csrf", headers={"Host": "portal.example.com"}))
+            csrf_response = urllib.request.urlopen(urllib.request.Request(base + "/api/auth/csrf", headers={"Host": "portal.example.com", "X-Forwarded-For": "203.0.113.10"}))
             csrf = json.load(csrf_response)["csrf_token"]
             csrf_cookie = csrf_response.headers["Set-Cookie"]
             self.assertIn("Secure", csrf_cookie)
+            self.assertEqual("max-age=31536000; includeSubDomains", csrf_response.headers["Strict-Transport-Security"])
+            landing = urllib.request.urlopen(urllib.request.Request(base + "/", headers={"Host": "portal.example.com"})).read().decode()
+            self.assertIn('<meta name="aevrynd-instance" content="' + "a" * 32 + '">', landing)
             request = urllib.request.Request(base + "/api/auth/request-otp", data=json.dumps({"email": server_module.ALLOWED_EMAIL}).encode(), headers={"Host": "portal.example.com", "Origin": "https://portal.example.com", "X-Forwarded-For": "203.0.113.10", "Content-Type": "application/json", "Cookie": csrf_cookie, "X-CSRF-Token": csrf})
             payload = json.load(urllib.request.urlopen(request))
             self.assertNotIn("preview_code", payload)
@@ -277,6 +373,9 @@ class ProductionStartupTests(unittest.TestCase):
             response = urllib.request.urlopen(verify)
             self.assertTrue(json.load(response)["authenticated"])
             self.assertIn("Secure", response.headers["Set-Cookie"])
+            session_cookie = response.headers["Set-Cookie"].split(";", 1)[0]
+            status = urllib.request.urlopen(urllib.request.Request(base + "/api/private/status", headers={"Host": "portal.example.com", "Cookie": session_cookie}))
+            self.assertEqual({"successes", "failures", "last_safe_code"}, set(json.load(status)["email_delivery"]))
         finally:
             server.shutdown()
             server.server_close()
@@ -284,12 +383,12 @@ class ProductionStartupTests(unittest.TestCase):
 
     def test_delivery_failure_does_not_change_generic_http_response(self) -> None:
         auth = server_module.AuthManager(FailingAdapter())
-        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("127.0.0.1",)))
+        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("127.0.0.1",)), instance_nonce="b" * 32)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"
         try:
-            csrf_response = urllib.request.urlopen(urllib.request.Request(base + "/api/auth/csrf", headers={"Host": "portal.example.com"}))
+            csrf_response = urllib.request.urlopen(urllib.request.Request(base + "/api/auth/csrf", headers={"Host": "portal.example.com", "X-Forwarded-For": "203.0.113.10"}))
             csrf = json.load(csrf_response)["csrf_token"]
             cookie = csrf_response.headers["Set-Cookie"]
             def request(email: str) -> tuple[int, dict[str, object]]:
@@ -309,12 +408,12 @@ class ProductionStartupTests(unittest.TestCase):
 
     def test_trusted_proxy_requires_one_strict_forwarding_value(self) -> None:
         auth = server_module.AuthManager(server_module.PreviewEmailAdapter())
-        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("127.0.0.1",)))
+        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("127.0.0.1",)), instance_nonce="c" * 32)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"
         try:
-            csrf_response = urllib.request.urlopen(urllib.request.Request(base + "/api/auth/csrf", headers={"Host": "portal.example.com"}))
+            csrf_response = urllib.request.urlopen(urllib.request.Request(base + "/api/auth/csrf", headers={"Host": "portal.example.com", "X-Forwarded-For": "203.0.113.10"}))
             csrf = json.load(csrf_response)["csrf_token"]
             cookie = csrf_response.headers["Set-Cookie"]
             base_headers = {"Host": "portal.example.com", "Origin": "https://portal.example.com", "Content-Type": "application/json", "Cookie": cookie, "X-CSRF-Token": csrf}
@@ -339,7 +438,7 @@ class ProductionStartupTests(unittest.TestCase):
 
     def test_untrusted_source_cannot_spoof_forwarded_ip(self) -> None:
         auth = server_module.AuthManager(server_module.PreviewEmailAdapter())
-        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("203.0.113.200",)))
+        server = server_module.PortalServer(("127.0.0.1", 0), ROOT, auth, True, public_host="portal.example.com", trusted_proxy_sources=frozenset(("203.0.113.200",)), instance_nonce="d" * 32)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"

@@ -42,6 +42,8 @@ VERIFY_IP_RATE_LIMIT = 30
 MAX_OTP_RECORDS = 64
 MAX_PENDING_REQUESTS = 64
 MAX_CSRF_TOKENS = 256
+CSRF_IP_RATE_LIMIT = 30
+CSRF_GLOBAL_RATE_LIMIT = 256
 MAX_SESSIONS = 64
 MAX_RATE_KEYS = 256
 MAX_DELIVERY_QUEUE = 32
@@ -49,11 +51,54 @@ GENERIC_REQUEST_MESSAGE = "若此信箱已獲核准，系統將寄送登入驗�
 GENERIC_VERIFY_MESSAGE = "驗證失敗或驗證碼已失效。"
 PUBLIC_ASSETS = frozenset(("/styles.css", "/auth_adapter.js", "/auth_login.js"))
 PRIVATE_ASSETS = frozenset(("/app.js",))
+SAFE_DELIVERY_CODES = frozenset(("not_attempted", "ready", "delivered", "smtp_auth_failed", "smtp_tls_failed", "smtp_timeout", "smtp_delivery_failed", "delivery_internal_error"))
+
+
+class SmtpReadinessJournal:
+    """只持久化固定狀態與計數，不保存帳號、收件者、OTP 或例外文字。"""
+    def __init__(self, path: str = "") -> None:
+        self.path = Path(path) if path else None
+        self._lock = threading.Lock()
+
+    def write(self, *, ready: bool, safe_code: str, successes: int = 0, failures: int = 0) -> None:
+        if self.path is None:
+            return
+        code = safe_code if safe_code in SAFE_DELIVERY_CODES else "delivery_internal_error"
+        value = {"schema_version": 1, "ready": bool(ready), "safe_code": code, "successes": max(0, min(int(successes), 2**63 - 1)), "failures": max(0, min(int(failures), 2**63 - 1))}
+        payload = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        temporary = self.path.with_name(f"{self.path.name}.{secrets.token_hex(8)}.tmp")
+        with self._lock:
+            try:
+                temporary.write_bytes(payload)
+                os.replace(temporary, self.path)
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    temporary.unlink()
+
+    def public(self) -> dict[str, object]:
+        if self.path is None:
+            return {"ready": False, "status": "unknown"}
+        try:
+            raw = self.path.read_bytes()
+            if not 2 <= len(raw) <= 1024:
+                raise ValueError
+            value = json.loads(raw)
+            ready = value.get("ready") is True and value.get("safe_code") in ("ready", "delivered")
+            return {"ready": ready, "status": "ready" if ready else "degraded"}
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return {"ready": False, "status": "unknown"}
 
 
 class EmailAdapter(Protocol):
     is_preview: bool
     def send_otp(self, email: str, otp: str) -> None: ...
+
+
+class SafeDeliveryError(RuntimeError):
+    """只攜帶固定安全代碼，避免 SMTP 細節或帳密進入狀態。"""
+    def __init__(self, safe_code: str) -> None:
+        super().__init__(safe_code)
+        self.safe_code = safe_code
 
 
 class PreviewEmailAdapter:
@@ -64,7 +109,7 @@ class PreviewEmailAdapter:
 
 
 class SmtpEmailAdapter:
-    """以 SMTP SSL 寄送 OTP；密鑰僅從伺服器環境載入。"""
+    """以 SMTP SSL 寄送 OTP；密鑰僅從啟動程序的受保護環境載入。"""
     is_preview = False
     def __init__(self) -> None:
         self.host = os.environ.get("AEVRYND_SMTP_HOST", "")
@@ -74,12 +119,39 @@ class SmtpEmailAdapter:
         self.sender = os.environ.get("AEVRYND_SMTP_SENDER", self.username)
         if not all((self.host, self.username, self.password, self.sender)):
             raise RuntimeError("SMTP adapter configuration is incomplete.")
+        if self.host == "smtp.gmail.com" and self.username != ALLOWED_EMAIL:
+            raise RuntimeError("Gmail SMTP account must match the portal allowlist.")
+        if self.sender != self.username:
+            raise RuntimeError("SMTP sender must match the authenticated account.")
 
     def send_otp(self, email: str, otp: str) -> None:
         message = email_message(self.sender, email, otp)
-        with smtplib.SMTP_SSL(self.host, self.port, context=ssl.create_default_context(), timeout=15) as client:
-            client.login(self.username, self.password)
-            client.send_message(message)
+        try:
+            with smtplib.SMTP_SSL(self.host, self.port, context=ssl.create_default_context(), timeout=15) as client:
+                client.login(self.username, self.password)
+                client.send_message(message)
+        except smtplib.SMTPAuthenticationError as error:
+            raise SafeDeliveryError("smtp_auth_failed") from error
+        except (ssl.SSLError, ssl.CertificateError) as error:
+            raise SafeDeliveryError("smtp_tls_failed") from error
+        except TimeoutError as error:
+            raise SafeDeliveryError("smtp_timeout") from error
+        except (OSError, smtplib.SMTPException) as error:
+            raise SafeDeliveryError("smtp_delivery_failed") from error
+
+    def preflight(self) -> None:
+        """建立 TLS 並登入，但絕不寄送郵件。"""
+        try:
+            with smtplib.SMTP_SSL(self.host, self.port, context=ssl.create_default_context(), timeout=15) as client:
+                client.login(self.username, self.password)
+        except smtplib.SMTPAuthenticationError as error:
+            raise SafeDeliveryError("smtp_auth_failed") from error
+        except (ssl.SSLError, ssl.CertificateError) as error:
+            raise SafeDeliveryError("smtp_tls_failed") from error
+        except TimeoutError as error:
+            raise SafeDeliveryError("smtp_timeout") from error
+        except (OSError, smtplib.SMTPException) as error:
+            raise SafeDeliveryError("smtp_delivery_failed") from error
 
 
 class ResendEmailAdapter:
@@ -136,7 +208,7 @@ class DeliveryJob:
 
 class AuthManager:
     """管理 bounded、具 TTL 的驗證狀態，且不保存明文 OTP。"""
-    def __init__(self, adapter: EmailAdapter, *, dev_show_otp: bool = False, clock=time.monotonic) -> None:
+    def __init__(self, adapter: EmailAdapter, *, dev_show_otp: bool = False, clock=time.monotonic, diagnostic: SmtpReadinessJournal | None = None) -> None:
         if dev_show_otp and not adapter.is_preview:
             raise RuntimeError("OTP display is only available with the preview adapter.")
         self.adapter = adapter
@@ -150,7 +222,13 @@ class AuthManager:
         self._verify_accounts: dict[str, deque[float]] = defaultdict(deque)
         self._verify_ips: dict[str, deque[float]] = defaultdict(deque)
         self._csrf_tokens: dict[str, float] = {}
+        self._csrf_ips: dict[str, deque[float]] = defaultdict(deque)
+        self._csrf_global: deque[float] = deque()
         self._sessions: dict[bytes, float] = {}
+        self._delivery_successes = 0
+        self._delivery_failures = 0
+        self._last_delivery_code = "not_attempted"
+        self._diagnostic = diagnostic or SmtpReadinessJournal()
         self._lock = threading.RLock()
         self._delivery_queue: queue.Queue[DeliveryJob | None] | None = None
         self._delivery_thread: threading.Thread | None = None
@@ -182,7 +260,9 @@ class AuthManager:
         self._cooldowns = {key: value for key, value in self._cooldowns.items() if value > now}
         self._csrf_tokens = {key: value for key, value in self._csrf_tokens.items() if value > now}
         self._sessions = {key: value for key, value in self._sessions.items() if value > now}
-        for mapping in (self._account_requests, self._ip_requests, self._verify_accounts, self._verify_ips):
+        while self._csrf_global and self._csrf_global[0] <= now - RATE_WINDOW_SECONDS:
+            self._csrf_global.popleft()
+        for mapping in (self._account_requests, self._ip_requests, self._verify_accounts, self._verify_ips, self._csrf_ips):
             for key in list(mapping):
                 history = mapping[key]
                 while history and history[0] <= now - RATE_WINDOW_SECONDS:
@@ -190,7 +270,7 @@ class AuthManager:
                 if not history:
                     del mapping[key]
             self._trim_map(mapping, MAX_RATE_KEYS)
-        for mapping, capacity in ((self._otp_records, MAX_OTP_RECORDS), (self._pending, MAX_PENDING_REQUESTS), (self._csrf_tokens, MAX_CSRF_TOKENS), (self._sessions, MAX_SESSIONS)):
+        for mapping, capacity in ((self._otp_records, MAX_OTP_RECORDS), (self._pending, MAX_PENDING_REQUESTS), (self._sessions, MAX_SESSIONS)):
             self._trim_map(mapping, capacity)
 
     @staticmethod
@@ -201,13 +281,19 @@ class AuthManager:
         history.append(now)
         return False
 
-    def issue_csrf(self) -> str:
+    def issue_csrf(self, client_ip: str = "127.0.0.1") -> str | None:
         token = secrets.token_urlsafe(32)
         with self._lock:
             now = self.clock()
             self._clean_locked(now)
+            if len(self._csrf_tokens) >= MAX_CSRF_TOKENS or len(self._csrf_global) >= CSRF_GLOBAL_RATE_LIMIT:
+                return None
+            if client_ip not in self._csrf_ips and len(self._csrf_ips) >= MAX_RATE_KEYS:
+                return None
+            if self._limited(self._csrf_ips, client_ip, CSRF_IP_RATE_LIMIT, now):
+                return None
+            self._csrf_global.append(now)
             self._csrf_tokens[token] = now + CSRF_TTL_SECONDS
-            self._trim_map(self._csrf_tokens, MAX_CSRF_TOKENS)
         return token
 
     def validate_csrf(self, cookie_token: str, header_token: str) -> bool:
@@ -261,12 +347,18 @@ class AuthManager:
             try:
                 if job.allowed:
                     self.adapter.send_otp(job.email, job.otp)
+            except SafeDeliveryError as error:
+                succeeded = False
+                safe_code = error.safe_code
             except Exception:
                 succeeded = False
-            self._finish_delivery(job, succeeded)
+                safe_code = "delivery_internal_error"
+            else:
+                safe_code = "delivered"
+            self._finish_delivery(job, succeeded, safe_code)
             self._delivery_queue.task_done()
 
-    def _finish_delivery(self, job: DeliveryJob, succeeded: bool) -> None:
+    def _finish_delivery(self, job: DeliveryJob, succeeded: bool, safe_code: str = "delivered") -> None:
         with self._lock:
             current = self._pending.get(job.email)
             if not current or current.reservation_id != job.reservation_id:
@@ -275,8 +367,18 @@ class AuthManager:
             if job.allowed and succeeded:
                 self._otp_records[job.email] = job.record
                 self._trim_map(self._otp_records, MAX_OTP_RECORDS)
+                self._delivery_successes = min(self._delivery_successes + 1, 2**63 - 1)
+                self._last_delivery_code = "delivered"
             elif not succeeded:
                 self._cooldowns.pop(job.email, None)
+                self._delivery_failures = min(self._delivery_failures + 1, 2**63 - 1)
+                self._last_delivery_code = safe_code
+            if job.allowed:
+                self._diagnostic.write(ready=succeeded, safe_code=self._last_delivery_code, successes=self._delivery_successes, failures=self._delivery_failures)
+
+    def delivery_health(self) -> dict[str, object]:
+        with self._lock:
+            return {"successes": self._delivery_successes, "failures": self._delivery_failures, "last_safe_code": self._last_delivery_code}
 
     def close(self) -> None:
         if self._delivery_queue is None or self._delivery_thread is None:
@@ -330,14 +432,17 @@ class AuthManager:
 class PortalServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
-    def __init__(self, address: tuple[str, int], root: Path, auth: AuthManager, production: bool, *, public_host: str = "", trusted_proxy_sources: frozenset[str] = frozenset()) -> None:
+    def __init__(self, address: tuple[str, int], root: Path, auth: AuthManager, production: bool, *, public_host: str = "", trusted_proxy_sources: frozenset[str] = frozenset(), instance_nonce: str = "") -> None:
         self.portal_root = root
         self.auth = auth
         self.production = production
         self.public_host = public_host.lower()
         self.trusted_proxy_sources = trusted_proxy_sources
+        self.instance_nonce = instance_nonce
         super().__init__(address, PortalHandler)
         if production:
+            if not re.fullmatch(r"[0-9a-f]{32}", instance_nonce):
+                raise RuntimeError("Production instance nonce is invalid.")
             self.allowed_hosts = frozenset((self.public_host,))
             self.allowed_origins = frozenset((f"https://{self.public_host}",))
         else:
@@ -372,8 +477,19 @@ class PortalHandler(http.server.BaseHTTPRequestHandler):
             if self._require_session():
                 self._send_asset(path)
         elif path == "/api/auth/csrf":
-            token = self.server.auth.issue_csrf()
+            client_ip = self._client_ip()
+            if client_ip is None:
+                return
+            token = self.server.auth.issue_csrf(client_ip)
+            if token is None:
+                self._send_json(429, {"message": "Too many requests."})
+                return
             self._send_json(200, {"csrf_token": token}, [self._cookie("aevrynd_csrf", token, http_only=False)])
+        elif path == "/api/private/status":
+            if self._require_session():
+                self._send_json(200, {"email_delivery": self.server.auth.delivery_health()})
+        elif path == "/api/health/email":
+            self._send_json(200, self.server.auth._diagnostic.public())
         elif path.startswith("/api/"):
             if self._require_session():
                 self._send_json(404, {"message": "Not found."})
@@ -481,6 +597,8 @@ class PortalHandler(http.server.BaseHTTPRequestHandler):
         else:
             source = remove_marked(source, "控制台")
             source = remove_marked(source, "控制台腳本")
+        if self.server.production:
+            source = source.replace("<head>", f'<head><meta name="aevrynd-instance" content="{self.server.instance_nonce}">', 1)
         return source.encode("utf-8")
 
     def _send_asset(self, path: str) -> None:
@@ -545,6 +663,8 @@ class PortalHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.send_header("Cache-Control", "no-store")
+        if self.server.production:
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
     def _send_html(self, content: bytes) -> None:
         self.send_response(200)
@@ -584,6 +704,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--public-host", default="", help="Exact public hostname accepted in production")
     parser.add_argument("--trusted-proxy-source", action="append", default=[], help="Exact proxy source IP allowed to supply one Forwarded or X-Forwarded-For value")
     parser.add_argument("--dev-show-otp", action="store_true", help="Expose OTP only for the allowlisted account in loopback preview")
+    parser.add_argument("--smtp-preflight", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -600,6 +721,18 @@ def main() -> int:
     if not 1024 <= args.port <= 65535:
         raise SystemExit("Port must be between 1024 and 65535.")
     adapter = create_email_adapter()
+    diagnostic = SmtpReadinessJournal(os.environ.get("AEVRYND_SMTP_DIAGNOSTIC_PATH", ""))
+    if args.smtp_preflight:
+        if not isinstance(adapter, SmtpEmailAdapter):
+            raise SystemExit("SMTP preflight requires the SMTP adapter.")
+        try:
+            adapter.preflight()
+        except SafeDeliveryError as error:
+            diagnostic.write(ready=False, safe_code=error.safe_code, failures=1)
+            raise SystemExit(f"SMTP_PREFLIGHT_FAILED:{error.safe_code}") from error
+        diagnostic.write(ready=True, safe_code="ready")
+        print("SMTP_PREFLIGHT_OK")
+        return 0
     if args.production and adapter.is_preview:
         raise SystemExit("Production requires a configured SMTP or Resend adapter.")
     if args.production and args.dev_show_otp:
@@ -611,8 +744,8 @@ def main() -> int:
     except ValueError as error:
         raise SystemExit("Trusted proxy sources must be exact IP addresses.") from error
     root = Path(__file__).resolve().parent
-    auth = AuthManager(adapter, dev_show_otp=args.dev_show_otp)
-    with PortalServer((args.host, args.port), root, auth, args.production, public_host=args.public_host, trusted_proxy_sources=trusted_proxies) as server:
+    auth = AuthManager(adapter, dev_show_otp=args.dev_show_otp, diagnostic=diagnostic)
+    with PortalServer((args.host, args.port), root, auth, args.production, public_host=args.public_host, trusted_proxy_sources=trusted_proxies, instance_nonce=os.environ.get("AEVRYND_INSTANCE_NONCE", "")) as server:
         print(f"Aevrynd Assistant Portal: http://{args.host}:{args.port}")
         with contextlib.suppress(KeyboardInterrupt):
             server.serve_forever()

@@ -44,3 +44,29 @@ python -m unittest discover -s D:\Download\Aevrynd\Games\tools\assistant_portal\
 驗證層已用 adapter 契約隔離，正式版本可換成 Firebase Auth、自有 SMTP 或 Resend；電話 OTP 與 Email Magic Link 只保留為未啟用的備選。SMTP／Resend 密鑰必須透過伺服器環境變數載入，部署工具也可由 Windows Credential Manager 注入環境，禁止提交到 Git。`--production` 禁止 Preview adapter 與 OTP 顯示，缺少真實寄信 adapter、精確 `--public-host` 或至少一個 `--trusted-proxy-source` 都會拒絕啟動。
 
 伺服器端會隔離登入頁與控制中心；未驗證 session 無法取得 `/portal`、`app.js` 或私有 API。靜態檔案採固定白名單，拒絕原始碼、測試、README、dotfile 與 traversal。Production session cookie 使用 `Secure`、`HttpOnly`、`SameSite=Strict` 與 8 小時 `Max-Age`，並提供 Host／Origin／CSRF 三層檢查及登出失效。production 寄信採 bounded 非同步佇列與 reservation/commit，不讓 SMTP 延遲影響通用 HTTP 回應時間。只有精確設定的 proxy source 能提供單一、嚴格解析的 `Forwarded` 或 `X-Forwarded-For`；其他來源的轉送標頭不受信任。account 與 IP 各自限流，所有 OTP、reservation、rate、CSRF 與 session store 皆具 TTL 與容量上限。
+
+## 固定 ngrok 網域正式部署
+
+正式部署固定使用 `https://sample-cupid-overdrawn.ngrok-free.dev/`，將 ngrok 僅轉送到 `127.0.0.1:8792`。production 強制真實 Gmail SMTP adapter、精確 Host／Origin、Secure Cookie，且完全禁止 `--dev-show-otp`。唯一帳號與寄件帳號都是 `slime12968@gmail.com`。
+
+先以系統管理員 PowerShell 7 安裝封閉且逐檔雜湊的部署檔案；這一步不會停止或切換目前的 LINE 服務：
+
+```powershell
+pwsh -NoProfile -File "D:\Download\Aevrynd\Games\tools\assistant_portal\scripts\Install.ps1"
+```
+
+安裝後執行啟用器；只有尚未存在時，才會分別以隱藏提示要求 Gmail App Password 與 ngrok API key。既存的 Gmail credential 會安全沿用，不會要求重輸。兩者都只存入目前 Windows 使用者的 Credential Manager，秘密不進入命令列、檔案、manifest 或 log。ngrok API key 只用管理 API 唯讀確認固定網域授權，預檢不建立 tunnel、也不切換公開網址。
+
+```powershell
+pwsh -NoProfile -File "C:\ProgramData\Aevrynd\AssistantPortal\scripts\Activate.ps1"
+```
+
+切換任一步驟失敗會依 durable baseline 自動回復原 LINE 與本機 Preview 狀態；程序崩潰後重跑也會先完成舊交易 rollback，不會以 state file 是否存在代替程序、listener 與 local API truth。日後需要明確放棄 Portal 並回復舊 LINE gateway 時執行：
+
+```powershell
+pwsh -NoProfile -File "C:\ProgramData\Aevrynd\AssistantPortal\scripts\Restore-LineGateway.ps1"
+```
+
+Credential Manager 屬於使用者範圍，因此 SMTP 預檢及 production Python/ngrok 固定由登入使用者的 `Limited` 工作執行。獨立的 `Highest` broker 只讀 durable journal 並停止或恢復原本可能已提升權限的 LINE 服務；它不執行 AppData Python 或載入其模組。登入後若發現未完成交易，broker 會先復原 LINE，再讓延遲啟動的 Portal 工作決定是否執行。明確 Restore 成功後會停用 Portal 自動啟動。部署腳本不提供公開 Preview OTP 或假登入模式。
+
+未登入可讀取 `/api/health/email`，但只會看到 `ready/status`；完整安全代碼與 bounded 計數只供登入後的私有狀態 API。診斷狀態可跨程序重啟保存，且永不包含信箱、OTP、密碼或例外文字。
