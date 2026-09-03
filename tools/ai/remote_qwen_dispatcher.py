@@ -29,6 +29,7 @@ from tools.line_gateway.qwen_client import (  # noqa: E402
     InvalidQwenResponse,
     QwenClient,
     QwenClientError,
+    QwenReply,
     RetryableQwenError,
 )
 
@@ -38,7 +39,7 @@ MAX_EVIDENCE_BYTES = 8_192
 MAX_RESULT_BYTES = 16_384
 MAX_ATTEMPTS = 3
 LEASE_SECONDS = 180
-DEFAULT_DEADLINE_SECONDS = 45.0
+DEFAULT_DEADLINE_SECONDS = 60.0
 MAX_DEADLINE_SECONDS = 60.0
 NODE_LABELS = ("taichung", "taoyuan")
 _CREDENTIAL_TARGETS = {
@@ -49,13 +50,35 @@ _BASE_URLS = {
     "taichung": DEFAULT_ALLOWED_BASE_URL,
     "taoyuan": SECONDARY_ALLOWED_BASE_URL,
 }
-_RESULT_KEYS = frozenset(
-    {"schemaVersion", "taskId", "taskType", "answer", "items", "confidence", "needsCodex"}
-)
+_MODEL_RESULT_KEYS = frozenset({"answer", "items", "confidence", "needsCodex"})
+_RESULT_KEYS = _MODEL_RESULT_KEYS | {"schemaVersion", "taskId", "taskType"}
+_MODEL_JSON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "answer": {"type": "string", "minLength": 1, "maxLength": 1200},
+        "items": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {"type": "string", "minLength": 1, "maxLength": 400},
+        },
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "needsCodex": {"type": "boolean"},
+    },
+    "required": ["answer", "items", "confidence", "needsCodex"],
+}
 
 
 class DispatcherError(RuntimeError):
     """A secret-safe dispatcher failure."""
+
+
+class NodeBusyError(RetryableQwenError):
+    """The fixed single inference slot is currently occupied."""
+
+
+class StructuredOutputTruncated(InvalidQwenResponse):
+    """The server stopped at the output-token boundary."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,9 +247,7 @@ def _system_prompt(task: ClaimedTask) -> str:
     return (
         "You are a read-only Aevrynd assistant. Use only the supplied evidence. "
         "Never request or claim file access, shell execution, Git operations, network access, "
-        "or repository changes. Return one JSON object only with exactly these keys: "
-        "schemaVersion, taskId, taskType, answer, items, confidence, needsCodex. "
-        "schemaVersion must be 1; taskId and taskType must exactly match the request; "
+        "or repository changes. Return one JSON object only. "
         "answer is a concise string; items is an array of at most 12 concise strings; "
         "confidence is from 0 to 1; needsCodex is a boolean."
     )
@@ -234,10 +255,10 @@ def _system_prompt(task: ClaimedTask) -> str:
 
 def _user_prompt(task: ClaimedTask) -> str:
     instructions = {
-        "summary": "Summarize the evidence without adding facts.",
-        "classification": "Classify the evidence and explain the label briefly.",
-        "test-template": "Draft a non-executable test-case template; do not write code or commands.",
-        "inventory": "Inventory only the systems or facts explicitly present in the evidence.",
+        "summary": "Summarize without adding facts. answer <= 240 characters; at most 3 items, each <= 80 characters.",
+        "classification": "Classify with one label in answer <= 32 characters; at most 2 short evidence items.",
+        "test-template": "Draft a non-executable test template. answer <= 120 characters; at most 6 items, each <= 80 characters.",
+        "inventory": "Inventory only explicit facts. answer <= 80 characters; at most 8 items, each <= 60 characters.",
     }
     return (
         f"taskId: {task.task_id}\ntaskType: {task.task_type}\n"
@@ -260,10 +281,8 @@ def validate_result(text: str, task: ClaimedTask) -> dict[str, object]:
         result = json.loads(stripped)
     except json.JSONDecodeError as error:
         raise InvalidQwenResponse("Qwen task result is not JSON") from error
-    if not isinstance(result, dict) or frozenset(result) != _RESULT_KEYS:
+    if not isinstance(result, dict) or frozenset(result) != _MODEL_RESULT_KEYS:
         raise InvalidQwenResponse("Qwen task result schema is invalid")
-    if result["schemaVersion"] != 1 or result["taskId"] != task.task_id or result["taskType"] != task.task_type:
-        raise InvalidQwenResponse("Qwen task result identity is invalid")
     answer = result["answer"]
     items = result["items"]
     confidence = result["confidence"]
@@ -277,10 +296,57 @@ def validate_result(text: str, task: ClaimedTask) -> dict[str, object]:
         raise InvalidQwenResponse("Qwen task confidence is invalid")
     if not isinstance(result["needsCodex"], bool):
         raise InvalidQwenResponse("Qwen task escalation flag is invalid")
-    return result
+    # 工作身分由可信任主機補入，不讓模型偽造 receipt 欄位。
+    return {
+        "schemaVersion": 1,
+        "taskId": task.task_id,
+        "taskType": task.task_type,
+        **result,
+    }
 
 
 ClientFactory = Callable[[str, float], QwenClient]
+
+
+class StructuredTaskQwenClient(QwenClient):
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        if not prompt or not isinstance(prompt, str):
+            raise ValueError("prompt is outside the allowed range")
+        payload = self._request(
+            "POST",
+            "/chat/completions",
+            {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": 160,
+                "temperature": 0.1,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "aevrynd_read_only_task",
+                        "strict": True,
+                        "schema": _MODEL_JSON_SCHEMA,
+                    },
+                },
+            },
+        )
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or len(choices) != 1:
+            raise InvalidQwenResponse("Qwen structured response choice count is invalid")
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            raise InvalidQwenResponse("Qwen structured response choice is invalid")
+        if choice.get("finish_reason") == "length":
+            raise StructuredOutputTruncated("Qwen structured response reached its token limit")
+        message = choice.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content or len(content.encode("utf-8")) > MAX_RESULT_BYTES:
+            raise InvalidQwenResponse("Qwen structured response content is invalid")
+        return QwenReply(content, self._model)
 
 
 def default_client_factory(node: str, operation_budget: float) -> QwenClient:
@@ -295,14 +361,18 @@ def default_client_factory(node: str, operation_budget: float) -> QwenClient:
         raise DispatcherError("A Qwen credential could not be read.") from error
     if api_key is None:
         raise DispatcherError("A Qwen credential is unavailable.")
-    # 模型探測最多使用三秒，把大部分總時限保留給實際推論。
-    probe_timeout = min(3.0, operation_budget / 3.0)
+    # 模型與 slot 探測各自最多使用兩秒，把大部分總時限保留給實際推論。
+    probe_timeout = min(2.0, operation_budget / 4.0)
     probe = QwenClient(_BASE_URLS[node], api_key, "probe", timeout=probe_timeout, max_tokens=64)
     models = probe.list_models()
     if not models:
         raise DispatcherError("A Qwen node reported no model.")
-    inference_timeout = max(1.0, operation_budget - probe_timeout)
-    return QwenClient(_BASE_URLS[node], api_key, models[0], timeout=inference_timeout, max_tokens=64)
+    if not probe.slots_ready():
+        raise NodeBusyError("Qwen node is busy")
+    inference_timeout = max(1.0, operation_budget - probe_timeout * 2.0)
+    return StructuredTaskQwenClient(
+        _BASE_URLS[node], api_key, models[0], timeout=inference_timeout, max_tokens=160
+    )
 
 
 def run_one(
@@ -320,6 +390,10 @@ def run_one(
     task, node_order = claimed
     deadline = clock() + deadline_seconds
     retryable_failure = False
+    busy_failure = False
+    schema_failure = False
+    truncated_failure = False
+    configuration_failure = False
     try:
         for index, node in enumerate(node_order):
             remaining = deadline - clock()
@@ -327,17 +401,29 @@ def run_one(
                 retryable_failure = True
                 break
             # 第一節點最多取得三十秒，確保第二節點仍有快速 failover 時間。
-            operation_budget = min(30.0 if index == 0 else remaining, remaining)
+            operation_budget = min(58.0 if index == 0 else remaining, remaining)
             try:
                 client = client_factory(node, operation_budget)
                 reply = client.chat(_user_prompt(task), system_prompt=_system_prompt(task))
                 result = validate_result(reply.text, task)
                 store.complete(task.task_id, node, result)
                 return {"ok": True, "status": "completed", "taskId": task.task_id, "node": node}
+            except NodeBusyError:
+                retryable_failure = True
+                busy_failure = True
+                continue
             except RetryableQwenError:
                 retryable_failure = True
                 continue
-            except (InvalidQwenResponse, QwenClientError, DispatcherError, ValueError):
+            except StructuredOutputTruncated:
+                schema_failure = True
+                truncated_failure = True
+                continue
+            except InvalidQwenResponse:
+                schema_failure = True
+                continue
+            except (QwenClientError, DispatcherError, ValueError):
+                configuration_failure = True
                 continue
     except KeyboardInterrupt:
         # 使用者中斷時立即歸還工作，不等待 lease 自然逾時。
@@ -346,9 +432,19 @@ def run_one(
     except BaseException:
         store.fail(task.task_id, "DispatcherInterrupted", retry=True)
         raise
-    store.fail(task.task_id, "RemoteNodesUnavailable", retry=retryable_failure)
+    if busy_failure and not schema_failure and not configuration_failure:
+        error_code = "RemoteNodesBusy"
+    elif truncated_failure:
+        error_code = "RemoteOutputTruncated"
+    elif schema_failure:
+        error_code = "RemoteSchemaInvalid"
+    elif retryable_failure:
+        error_code = "RemoteTimeoutOrUnavailable"
+    else:
+        error_code = "RemoteConfigurationRejected"
+    store.fail(task.task_id, error_code, retry=retryable_failure)
     state = store.status(task.task_id)
-    return {"ok": False, "status": state["status"], "taskId": task.task_id, "errorCode": "RemoteNodesUnavailable"}
+    return {"ok": False, "status": state["status"], "taskId": task.task_id, "errorCode": error_code}
 
 
 def _emit(payload: dict[str, object]) -> None:

@@ -11,12 +11,16 @@ from tools.ai.remote_qwen_dispatcher import (
     MAX_EVIDENCE_BYTES,
     ClaimedTask,
     DispatcherError,
+    NodeBusyError,
+    StructuredOutputTruncated,
+    StructuredTaskQwenClient,
     TaskStore,
     build_parser,
     run_one,
     validate_result,
 )
-from tools.line_gateway.qwen_client import QwenReply, RetryableQwenError
+from tools.line_gateway.qwen_client import DEFAULT_ALLOWED_BASE_URL, QwenReply, RetryableQwenError
+from tools.line_gateway.tests.support import FakeResponse, RecordingOpener
 
 
 class FakeClient:
@@ -33,9 +37,6 @@ class FakeClient:
         if self.retry:
             raise RetryableQwenError("temporary")
         payload = {
-            "schemaVersion": 1,
-            "taskId": self.task.task_id,
-            "taskType": self.task.task_type,
             "answer": "bounded result",
             "items": ["one"],
             "confidence": 0.8,
@@ -47,6 +48,11 @@ class FakeClient:
     def assert_read_only(prompt: str) -> None:
         assert "read-only" in prompt
         assert "Git operations" in prompt
+
+
+class InvalidClient:
+    def chat(self, _prompt: str, *, system_prompt: str = "") -> QwenReply:
+        return QwenReply('{"unexpected":true}', "test-model")
 
 
 class DispatcherTests(unittest.TestCase):
@@ -91,23 +97,19 @@ class DispatcherTests(unittest.TestCase):
     def test_valid_result_must_match_task_identity(self) -> None:
         task = ClaimedTask("10000000-0000-0000-0000-000000000001", "summary", "x", 1)
         payload = {
-            "schemaVersion": 1,
-            "taskId": task.task_id,
-            "taskType": "summary",
             "answer": "ok",
             "items": [],
             "confidence": 1,
             "needsCodex": False,
         }
         self.assertEqual("ok", validate_result(json.dumps(payload), task)["answer"])
-        payload["taskId"] = "wrong"
+        payload["taskId"] = "model-must-not-supply-identity"
         with self.assertRaises(Exception):
             validate_result(json.dumps(payload), task)
 
     def test_unknown_result_property_is_rejected(self) -> None:
         task = ClaimedTask("10000000-0000-0000-0000-000000000001", "summary", "x", 1)
         payload = {
-            "schemaVersion": 1, "taskId": task.task_id, "taskType": "summary",
             "answer": "ok", "items": [], "confidence": 1, "needsCodex": False,
             "command": "git status",
         }
@@ -136,6 +138,39 @@ class DispatcherTests(unittest.TestCase):
         self.assertFalse(receipt["ok"])
         self.assertEqual("queued", self.store.status(task_id)["status"])
 
+    def test_failure_receipts_distinguish_busy_timeout_and_schema(self) -> None:
+        cases = (
+            ("busy", lambda _node, _budget: (_ for _ in ()).throw(NodeBusyError("busy")), "RemoteNodesBusy"),
+            ("timeout", lambda _node, _budget: (_ for _ in ()).throw(RetryableQwenError("timeout")), "RemoteTimeoutOrUnavailable"),
+            ("schema", lambda _node, _budget: InvalidClient(), "RemoteSchemaInvalid"),
+        )
+        for name, factory, expected in cases:
+            with self.subTest(name=name):
+                task_id = self.store.submit("classification", "evidence")
+                receipt = run_one(self.store, factory)
+                self.assertEqual(expected, receipt["errorCode"])
+
+    def test_structured_client_detects_token_truncation_and_sends_schema(self) -> None:
+        opener = RecordingOpener(
+            lambda _request: FakeResponse(
+                200,
+                b'{"choices":[{"finish_reason":"length","message":{"content":"{"}}]}',
+            )
+        )
+        client = StructuredTaskQwenClient(
+            DEFAULT_ALLOWED_BASE_URL,
+            "x" * 16,
+            "test-model",
+            timeout=5,
+            max_tokens=160,
+            opener=opener,
+        )
+        with self.assertRaises(StructuredOutputTruncated):
+            client.chat("evidence", system_prompt="read-only")
+        payload = json.loads(opener.requests[0].data.decode("utf-8"))
+        self.assertFalse(payload["chat_template_kwargs"]["enable_thinking"])
+        self.assertEqual("json_schema", payload["response_format"]["type"])
+        self.assertEqual(160, payload["max_tokens"])
     def test_keyboard_interrupt_immediately_requeues(self) -> None:
         task_id = self.store.submit("summary", "evidence")
 
@@ -158,11 +193,11 @@ class DispatcherTests(unittest.TestCase):
             budgets.append(budget)
             return FakeClient(task, retry=True)
 
-        ticks = iter((0.0, 0.0, 30.0))
-        run_one(self.store, factory, deadline_seconds=45, clock=lambda: next(ticks))
+        ticks = iter((0.0, 0.0, 58.0))
+        run_one(self.store, factory, deadline_seconds=60, clock=lambda: next(ticks))
         self.assertEqual(2, len(budgets))
-        self.assertLessEqual(budgets[0], 30)
-        self.assertLessEqual(sum(budgets), 45)
+        self.assertLessEqual(budgets[0], 58)
+        self.assertLessEqual(sum(budgets), 60)
 
     def test_deadline_exhaustion_requeues_without_second_node(self) -> None:
         task_id = self.store.submit("summary", "evidence")
