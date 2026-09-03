@@ -59,8 +59,21 @@ $notify.ContextMenuStrip = $menu
 
 $timer = [Windows.Forms.Timer]::new()
 $timer.Interval = 3000
-$timer.Add_Tick({
+$pollInProgress = $false
+$retryMilliseconds = 3000
+function Test-ControllerListener {
+    $client = [Net.Sockets.TcpClient]::new()
     try {
+        $connect = $client.ConnectAsync('127.0.0.1',8766)
+        return $connect.Wait(250) -and $client.Connected
+    } catch { return $false }
+    finally { $client.Dispose() }
+}
+$timer.Add_Tick({
+    if ($pollInProgress) { return }
+    $pollInProgress = $true
+    try {
+        if (-not (Test-ControllerListener)) { throw 'Controller listener is unavailable.' }
         $snapshot = (Invoke-Controller @('status')) | ConvertFrom-Json
         foreach ($nodeId in $labels.Keys) {
             $entry = $snapshot.$nodeId
@@ -69,8 +82,14 @@ $timer.Add_Tick({
                 $statusItems[$nodeId].Text = "$($labels[$nodeId]): gameMode $($entry.state.game_mode), Qwen $($entry.state.qwen_state), $connection"
             }
         }
+        $retryMilliseconds = 3000
     } catch {
         foreach ($nodeId in $labels.Keys) { $statusItems[$nodeId].Text = "$($labels[$nodeId]): controller unavailable" }
+        # listener 不可用時不啟動 Python，並有界退避到60秒。
+        $retryMilliseconds = [Math]::Min(60000,[Math]::Max(3000,$retryMilliseconds * 2))
+    } finally {
+        $timer.Interval = $retryMilliseconds
+        $pollInProgress = $false
     }
 })
 $timer.Start()

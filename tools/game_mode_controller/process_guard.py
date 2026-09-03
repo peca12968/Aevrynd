@@ -115,17 +115,30 @@ class RuntimeManifest:
         )
 
     def verify_files(self) -> None:
-        for value in (self.executable_path, self.model_path):
+        paths = (("executable", self.executable_path, self.executable_sha256), ("model", self.model_path, self.model_sha256))
+        for label, value, _ in paths:
             path = Path(value)
-            if path.is_symlink() or not path.is_file():
-                raise ProcessIdentityError("Qwen runtime file is unavailable")
-        try:
-            executable_hash = file_sha256(self.executable_path)
-            model_hash = file_sha256(self.model_path)
-        except OSError as error:
-            raise ProcessIdentityError("Qwen runtime file is unavailable") from error
-        if executable_hash != self.executable_sha256 or model_hash != self.model_sha256:
-            raise ProcessIdentityError("Qwen runtime file hash mismatch")
+            try:
+                if path.is_symlink() or not path.is_file():
+                    raise ProcessIdentityError(f"Qwen runtime {label} stat unavailable")
+            except OSError as error:
+                raise ProcessIdentityError(f"Qwen runtime {label} stat unavailable") from error
+        for label, value, expected_hash in paths:
+            digest = hashlib.sha256()
+            try:
+                stream = Path(value).open("rb")
+            except OSError as error:
+                raise ProcessIdentityError(f"Qwen runtime {label} hash open unavailable") from error
+            try:
+                try:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                except OSError as error:
+                    raise ProcessIdentityError(f"Qwen runtime {label} hash read unavailable") from error
+            finally:
+                stream.close()
+            if digest.hexdigest() != expected_hash:
+                raise ProcessIdentityError(f"Qwen runtime {label} hash mismatch")
 
 
 def load_runtime_manifest(path: str | Path, *, expected_node_id: str, expected_sha256: str) -> RuntimeManifest:

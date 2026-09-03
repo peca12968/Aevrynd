@@ -54,11 +54,34 @@ if ($launcherEntry.Count -ne 1 -or (Get-FileHash -Algorithm SHA256 -LiteralPath 
 $configuration = Get-Content -Raw -LiteralPath $configurationPath | ConvertFrom-Json
 if ($configuration.schemaVersion -ne 2 -or $configuration.nodeId -cne 'main') { throw 'Only the deployed main runner can register startup.' }
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Administrator privileges are required to replace legacy startup.' }
 $taskName = 'Aevrynd Game Mode Controller'
-$pwsh = (Get-Command pwsh.exe -ErrorAction Stop).Source
-$action = New-ScheduledTaskAction -Execute $pwsh -Argument "-NoProfile -WindowStyle Hidden -File `"$launcher`" -InstallRoot `"$root`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
-$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Days 3650) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-if ($PSCmdlet.ShouldProcess($taskName, "register limited AtLogOn controller for $($identity.Name)")) {
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User $identity.Name -RunLevel Limited -Force | Out-Null
+$pwsh = [IO.Path]::GetFullPath('C:\Program Files\PowerShell\7\pwsh.exe')
+$pwshItem = Get-Item -LiteralPath $pwsh -Force -ErrorAction Stop
+if ($pwshItem.PSIsContainer -or ($pwshItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Stable PowerShell 7 executable is unavailable.' }
+$startupRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::Startup)
+if ([string]::IsNullOrWhiteSpace($startupRoot)) { throw 'Per-user Startup folder is unavailable.' }
+$startupItem = Get-Item -LiteralPath $startupRoot -Force -ErrorAction Stop
+if (-not $startupItem.PSIsContainer -or ($startupItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Per-user Startup folder is invalid.' }
+$startupShortcut = Join-Path $startupRoot 'Aevrynd Game Mode Controller.lnk'
+$stagedShortcut = Join-Path $startupRoot ('.Aevrynd-GameMode-' + [Guid]::NewGuid().ToString('N') + '.lnk')
+if ($PSCmdlet.ShouldProcess($startupShortcut, 'atomically register Explorer Startup controller and remove legacy scheduled task')) {
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($stagedShortcut)
+        $shortcut.TargetPath = $pwsh
+        $shortcut.Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$launcher`" -InstallRoot `"$root`""
+        $shortcut.WorkingDirectory = $root
+        $shortcut.IconLocation = "$pwsh,0"
+        $shortcut.WindowStyle = 7
+        $shortcut.Description = 'Aevrynd supervised game mode controller startup'
+        $shortcut.Save()
+        if (-not (Test-Path -LiteralPath $stagedShortcut -PathType Leaf)) { throw 'Staged Startup shortcut is unavailable.' }
+        [IO.File]::Move($stagedShortcut,$startupShortcut,$true)
+        $legacyTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        if ($null -ne $legacyTask) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop }
+    } finally {
+        if (Test-Path -LiteralPath $stagedShortcut -PathType Leaf) { Remove-Item -LiteralPath $stagedShortcut -Force }
+    }
 }

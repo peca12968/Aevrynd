@@ -21,7 +21,7 @@ from .coordinator import HubCoordinator
 from .credential_store import read_node_secret, read_qwen_api_key
 from .inventory import HUB_PORT, NODES, validate_bind
 from .models import GameModeState, QwenState
-from .process_guard import RuntimeManifest, load_runtime_manifest
+from .process_guard import ProcessIdentityError, RuntimeManifest, load_runtime_manifest
 from .security import ReplayLedger, RequestAuthenticator, sign_request, verify_response
 from .state_machine import GameModeController
 from .windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest
@@ -111,7 +111,10 @@ class _NoRedirect(request.HTTPRedirectHandler):
         return None
 
 
-def make_hub_server(api: HubApi) -> ThreadingHTTPServer:
+def make_hub_server(
+    api: HubApi, *, server_factory: Callable[..., ThreadingHTTPServer] = ThreadingHTTPServer,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> ThreadingHTTPServer:
     host, port = validate_bind("hub", "127.0.0.1", HUB_PORT)
 
     class Handler(BaseHTTPRequestHandler):
@@ -147,7 +150,19 @@ def make_hub_server(api: HubApi) -> ThreadingHTTPServer:
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    # 安裝切換剛結束時舊 listener 可能仍在釋放 socket；只對 address-in-use 做有限重試。
+    server = None
+    for attempt in range(33):
+        try:
+            server = server_factory((host, port), Handler)
+            break
+        except OSError as cause:
+            address_in_use = getattr(cause, "winerror", None) == 10048 or cause.errno in {98, 10048}
+            if not address_in_use or attempt == 32:
+                raise
+            sleeper(0.25)
+    if server is None:
+        raise AssertionError("unreachable")
     server.daemon_threads = True
     return server
 
@@ -208,8 +223,46 @@ class MainAgent:
             self.stop_event.wait(self.interval_seconds)
 
 
+def load_startup_runtime(
+    install_root: str | Path, *, loader: Callable[..., tuple[RunnerConfig, RuntimeManifest]] = load_runner_config,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> tuple[RunnerConfig, RuntimeManifest]:
+    """Repeat the complete fail-closed file identity gate across a short task-start race."""
+
+    for attempt in range(21):
+        try:
+            return loader(install_root)
+        except ProcessIdentityError as cause:
+            if attempt == 20:
+                safe_stages = {
+                    "runtime manifest identity is invalid": "manifest_identity",
+                    "runtime manifest is unavailable": "manifest_unavailable",
+                    "runtime manifest hash mismatch": "manifest_hash",
+                    "runtime manifest JSON is invalid": "manifest_schema",
+                    "runtime manifest schema is invalid": "manifest_schema",
+                    "runtime manifest content is invalid": "manifest_schema",
+                    "runtime manifest node identity mismatch": "manifest_schema",
+                    "runtime manifest model ID is missing": "manifest_schema",
+                    "runtime manifest endpoint contract is invalid": "manifest_schema",
+                    "Qwen runtime file is unavailable": "runtime_file_unavailable",
+                    "Qwen runtime file hash mismatch": "runtime_file_hash",
+                    "Qwen runtime executable stat unavailable": "executable_stat",
+                    "Qwen runtime model stat unavailable": "model_stat",
+                    "Qwen runtime executable hash open unavailable": "executable_hash_open",
+                    "Qwen runtime model hash open unavailable": "model_hash_open",
+                    "Qwen runtime executable hash read unavailable": "executable_hash_read",
+                    "Qwen runtime model hash read unavailable": "model_hash_read",
+                    "Qwen runtime executable hash mismatch": "executable_hash_mismatch",
+                    "Qwen runtime model hash mismatch": "model_hash_mismatch",
+                }
+                stage = safe_stages.get(str(cause), "identity_unknown")
+                raise RunnerError(f"startup-runtime-identity-{stage}") from cause
+            sleeper(0.5)
+    raise AssertionError("unreachable")
+
+
 def serve_main(install_root: str | Path) -> None:
-    _, manifest = load_runner_config(install_root)
+    _, manifest = load_startup_runtime(install_root)
     secret = read_node_secret("main")
     if secret is None:
         raise RunnerError("main node credential is unavailable")
@@ -287,7 +340,14 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
         return 0
     except Exception as cause:
-        print(f"error:{type(cause).__name__}")
+        candidate = str(cause)
+        safe_stage = candidate if isinstance(cause, RunnerError) and candidate.startswith("startup-runtime-identity-") and candidate.removeprefix("startup-runtime-identity-") in {
+            "manifest_identity", "manifest_unavailable", "manifest_hash", "manifest_schema",
+            "runtime_file_unavailable", "runtime_file_hash", "identity_unknown",
+            "executable_stat", "model_stat", "executable_hash_open", "model_hash_open",
+            "executable_hash_read", "model_hash_read", "executable_hash_mismatch", "model_hash_mismatch",
+        } else type(cause).__name__
+        print(f"error:{safe_stage}")
         return 2
 
 

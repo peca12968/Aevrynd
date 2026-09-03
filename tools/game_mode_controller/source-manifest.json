@@ -70,14 +70,14 @@
     {
       "source": "process_guard.py",
       "destination": "app/tools/game_mode_controller/process_guard.py",
-      "size": 8782,
-      "sha256": "07a3d90e489f02a85f9e4b28a8e60a75f3446ef44f5fcc1645d364cb828a0293"
+      "size": 9419,
+      "sha256": "f74838dc5054063739602fc9a1db7cd28af6a1aef5884b8d525619584529788c"
     },
     {
       "source": "runner.py",
       "destination": "app/tools/game_mode_controller/runner.py",
-      "size": 13814,
-      "sha256": "6a9e530c884b4a8cc913a87e21e866f95bdf052b51e7eca6c7a0bd01eb9a851e"
+      "size": 17378,
+      "sha256": "7d30458fac905887e725fa6f610a48bef7950682467cf53f3c9f3e16e7470375"
     },
     {
       "source": "security.py",
@@ -106,8 +106,8 @@
     {
       "source": "scripts/GameModeTray.ps1",
       "destination": "scripts/GameModeTray.ps1",
-      "size": 3976,
-      "sha256": "46d46151fae71ec0b026a7f8a654f70bf66e72a58c7c6e5a594a0e5dfafb8006"
+      "size": 4748,
+      "sha256": "a0b886c617c725b3fd4172483f71b648375e9f49509dee7d28dbe61101845aa4"
     },
     {
       "source": "scripts/InstallTrust.psm1",
@@ -118,14 +118,14 @@
     {
       "source": "scripts/Launch-GameModeController.ps1",
       "destination": "scripts/Launch-GameModeController.ps1",
-      "size": 2566,
-      "sha256": "6701eadce1f62f71ffa0151d1529da33f6e51205ad89ebee9b900705a17cd7b4"
+      "size": 5784,
+      "sha256": "9163fc2b89dc9d3d608812a5553ab42cf88f2841123b82ae7d9d4ece46328d4b"
     },
     {
       "source": "scripts/Register-Startup.ps1",
       "destination": "scripts/Register-Startup.ps1",
-      "size": 5809,
-      "sha256": "4acf477e91d3173cf7aea8483ba571a50a95a18fbaae727dd17e0da53c7e3ccb"
+      "size": 7427,
+      "sha256": "3a84d0a5d082208dbe11a5a449ec1abeea7ac4b2517af1340966effc6ae7d61a"
     }
   ]
 }

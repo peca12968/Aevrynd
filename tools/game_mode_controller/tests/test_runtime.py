@@ -20,7 +20,7 @@ from tools.game_mode_controller.coordinator import HubCoordinator
 from tools.game_mode_controller.deployment_transaction import DeploymentTransaction
 from tools.game_mode_controller.models import GameModeState, QwenState
 from tools.game_mode_controller.process_guard import ObservedProcess, ProcessIdentityError, command_digest, file_sha256, load_runtime_manifest
-from tools.game_mode_controller.runner import MainAgent, SignedHubClient, load_runner_config, make_hub_server
+from tools.game_mode_controller.runner import MainAgent, RunnerConfig, RunnerError, SignedHubClient, load_runner_config, load_startup_runtime, make_hub_server
 from tools.game_mode_controller.security import ReplayLedger, RequestAuthenticator
 from tools.game_mode_controller.state_machine import GameModeController
 from tools.game_mode_controller.windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest, minimal_runtime_environment
@@ -57,6 +57,63 @@ class FakeProbe:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_scheduled_start_repeats_full_identity_gate_without_weakening_it(self) -> None:
+        attempts: list[int] = []
+        delays: list[float] = []
+        expected = (object(), object())
+
+        def transient_loader(_root: object) -> tuple[object, object]:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise ProcessIdentityError("task-context file identity unavailable")
+            return expected
+
+        actual = load_startup_runtime("fixed", loader=transient_loader, sleeper=delays.append)  # type: ignore[arg-type]
+        self.assertIs(expected, actual)
+        self.assertEqual([0.5, 0.5], delays)
+
+        classifications = {
+            "runtime manifest hash mismatch": "manifest_hash",
+            "Qwen runtime file is unavailable": "runtime_file_unavailable",
+            "Qwen runtime executable stat unavailable": "executable_stat",
+            "Qwen runtime model hash open unavailable": "model_hash_open",
+            "Qwen runtime executable hash read unavailable": "executable_hash_read",
+            "hostile path C:\\secret": "identity_unknown",
+        }
+        for raw, expected_stage in classifications.items():
+            with self.subTest(raw=raw), self.assertRaisesRegex(RunnerError, f"startup-runtime-identity-{expected_stage}"):
+                load_startup_runtime(
+                    "fixed", loader=lambda _, message=raw: (_ for _ in ()).throw(ProcessIdentityError(message)),
+                    sleeper=lambda _: None,
+                )
+
+    def test_hub_bind_retries_only_transient_address_in_use(self) -> None:
+        attempts: list[int] = []
+        delays: list[float] = []
+
+        class FakeServer:
+            daemon_threads = False
+
+        def transient_factory(*_args: object) -> FakeServer:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise OSError(10048, "address in use")
+            return FakeServer()
+
+        server = make_hub_server(object(), server_factory=transient_factory, sleeper=delays.append)  # type: ignore[arg-type]
+        self.assertIsInstance(server, FakeServer)
+        self.assertEqual(3, len(attempts))
+        self.assertEqual([0.25, 0.25], delays)
+        self.assertTrue(server.daemon_threads)
+
+        permanent_attempts: list[int] = []
+        def permanent_factory(*_args: object) -> FakeServer:
+            permanent_attempts.append(1)
+            raise OSError(13, "denied")
+        with self.assertRaises(OSError):
+            make_hub_server(object(), server_factory=permanent_factory, sleeper=lambda _: None)  # type: ignore[arg-type]
+        self.assertEqual(1, len(permanent_attempts))
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
@@ -395,7 +452,6 @@ class RuntimeTests(unittest.TestCase):
         startup = (package / "scripts" / "Register-Startup.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("Enable game mode (stop Qwen)", tray)
         self.assertIn("tools.game_mode_controller.runner", tray)
-        self.assertIn("-RunLevel Limited", startup)
         self.assertIn("ReparsePoint", startup)
         self.assertIn("Scheduled launcher hash validation failed", startup)
         installer = (package / "scripts" / "Install.ps1").read_text(encoding="utf-8-sig")
@@ -404,6 +460,37 @@ class RuntimeTests(unittest.TestCase):
         launcher = (package / "scripts" / "Launch-GameModeController.ps1").read_text(encoding="utf-8-sig")
         self.assertEqual(2, launcher.count(".Environment.Clear()"))
         self.assertNotIn("AEVRYND_GAME_MODE_SECRET", launcher)
+        self.assertIn("$hub.WaitForExit()", launcher)
+        self.assertIn("exit $exitCode", launcher)
+        self.assertIn("RedirectStandardOutput = $true", launcher)
+        self.assertIn("SetAccessRuleProtection($true,$false)", installer)
+        self.assertNotIn("[void][Diagnostics.Process]::Start($startInfo)", launcher)
+        self.assertIn("AevryndGameModeControllerSupervisor", launcher)
+        self.assertIn("Test-ControllerListener", tray)
+        self.assertIn("$pollInProgress", tray)
+        self.assertIn("[Math]::Min(60000", tray)
+        listener_gate = tray.index("Test-ControllerListener")
+        status_spawn = tray.index("Invoke-Controller @('status')")
+        self.assertLess(listener_gate, status_spawn)
+        self.assertIn("Launch-GameModeController.ps1", installer)
+        self.assertIn("$shortcut.WindowStyle = 7", installer)
+        self.assertIn("$shortcut.IconLocation", installer)
+        for durable_entrypoint in (installer, startup, launcher):
+            self.assertIn("C:\\Program Files\\PowerShell\\7\\pwsh.exe", durable_entrypoint)
+            self.assertIn("Stable PowerShell 7 executable is unavailable.", durable_entrypoint)
+            self.assertNotIn("Get-Command pwsh.exe", durable_entrypoint)
+        self.assertIn("$shortcut.TargetPath = $pwsh", installer)
+        self.assertIn("[Environment+SpecialFolder]::Startup", startup)
+        self.assertIn("[IO.File]::Move($stagedShortcut,$startupShortcut,$true)", startup)
+        self.assertIn("Unregister-ScheduledTask", startup)
+        self.assertNotIn("Register-ScheduledTask", startup)
+        self.assertIn("state\\logs", installer)
+        self.assertIn("hub.stdout.log", installer)
+        self.assertIn("hub.stderr.log", installer)
+        self.assertIn("[Security.AccessControl.FileSystemRights]::Modify", installer)
+        self.assertIn("Controller log has an untrusted writer.", launcher)
+        self.assertIn("[IO.FileMode]::Append", launcher)
+        self.assertNotIn("FileSystemAclExtensions]::SetAccessControl", launcher)
 
     def test_real_ancestor_junction_fixture_is_rejected_by_shared_trust_helper(self) -> None:
         powershell = shutil.which("pwsh")

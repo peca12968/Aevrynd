@@ -23,7 +23,7 @@ if (-not [string]::Equals($expectedRoot, $resolvedRoot, [StringComparison]::Ordi
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $trustModule = Join-Path $PSScriptRoot 'InstallTrust.psm1'
 $sourceManifest = Join-Path $sourceRoot 'source-manifest.json'
-$expectedSourceManifestSha256 = 'fc1ed1613e1c8d40f96049294049193f5717ed0b41bf3964f635b0fc8ab74dc6'
+$expectedSourceManifestSha256 = '701e6f637b810c832eaa443ab86bb08b432fe272f6d462ecccd19dcba070646a'
 if (-not (Test-Path -LiteralPath $sourceManifest -PathType Leaf)) { throw 'Closed source manifest is missing.' }
 $sha256 = [Security.Cryptography.SHA256]::Create()
 try {
@@ -113,6 +113,29 @@ if (-not (Test-Path -LiteralPath $RuntimeManifestPath -PathType Leaf)) { throw '
 New-Item -ItemType Directory -Force -Path $resolvedRoot,(Join-Path $resolvedRoot 'state'),(Join-Path $resolvedRoot 'transactions') | Out-Null
 Set-ClosedDirectoryTrust -Path (Join-Path $resolvedRoot 'state') -CurrentUserSid $identity.User -AllowCurrentUserWrite
 Set-ClosedDirectoryTrust -Path (Join-Path $resolvedRoot 'transactions') -CurrentUserSid $identity.User
+$logRoot = Join-Path $resolvedRoot 'state\logs'
+New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+Set-ClosedDirectoryTrust -Path $logRoot -CurrentUserSid $identity.User -AllowCurrentUserWrite
+foreach ($logName in @('hub.stdout.log','hub.stderr.log')) {
+    $logPath = Join-Path $logRoot $logName
+    if (Test-Path -LiteralPath $logPath) {
+        $logItem = Get-Item -LiteralPath $logPath -Force -ErrorAction Stop
+        if ($logItem.PSIsContainer -or ($logItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Existing controller log is invalid.' }
+    } else {
+        $logStream = [IO.FileStream]::new($logPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $logStream.Dispose()
+    }
+    $logAcl = [Security.AccessControl.FileSecurity]::new()
+    $logAcl.SetAccessRuleProtection($true,$false)
+    $administratorsSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $logAcl.SetOwner($administratorsSid)
+    foreach ($entry in @(
+        @([Security.Principal.SecurityIdentifier]::new('S-1-5-18'),[Security.AccessControl.FileSystemRights]::FullControl),
+        @($administratorsSid,[Security.AccessControl.FileSystemRights]::FullControl),
+        @($identity.User,[Security.AccessControl.FileSystemRights]::Modify)
+    )) { [void]$logAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($entry[0],$entry[1],[Security.AccessControl.AccessControlType]::Allow)) }
+    [IO.FileSystemAclExtensions]::SetAccessControl([IO.FileInfo]::new($logPath),$logAcl)
+}
 $desktop = [Environment]::GetFolderPath('Desktop')
 $shortcutPath = Join-Path $desktop 'Aevrynd Game Mode.lnk'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $sourceRoot '..\..'))
@@ -141,11 +164,16 @@ $nodeConfig = [ordered]@{ schemaVersion = 2; nodeId = $NodeId; runtimeManifest =
 [IO.File]::WriteAllText($stagedConfig, ($nodeConfig | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
 $stagedShortcut = Join-Path $postStage 'Aevrynd Game Mode.lnk'
 $launcher = Join-Path $resolvedRoot 'scripts\Launch-GameModeController.ps1'
+$pwsh = [IO.Path]::GetFullPath('C:\Program Files\PowerShell\7\pwsh.exe')
+$pwshItem = Get-Item -LiteralPath $pwsh -Force -ErrorAction Stop
+if ($pwshItem.PSIsContainer -or ($pwshItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Stable PowerShell 7 executable is unavailable.' }
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($stagedShortcut)
-$shortcut.TargetPath = (Get-Command pwsh.exe -ErrorAction Stop).Source
-$shortcut.Arguments = "-NoProfile -STA -WindowStyle Hidden -File `"$launcher`""
+$shortcut.TargetPath = $pwsh
+$shortcut.Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -File `"$launcher`" -InstallRoot `"$resolvedRoot`""
 $shortcut.WorkingDirectory = $resolvedRoot
+$shortcut.IconLocation = "$($shortcut.TargetPath),0"
+$shortcut.WindowStyle = 7
 $shortcut.Description = 'Aevrynd three-node game mode controller'
 $shortcut.Save()
 if (-not (Test-Path -LiteralPath $stagedShortcut -PathType Leaf)) { throw 'Staged desktop shortcut validation failed.' }
@@ -172,7 +200,7 @@ try {
 Write-Output "Transactionally installed the authenticated controller and pinned runtime for $NodeId."
 if ($RegisterStartup) {
     & (Join-Path $resolvedRoot 'scripts\Register-Startup.ps1') -InstallRoot $resolvedRoot
-    Write-Output 'Registered limited AtLogOn startup.'
+    Write-Output 'Registered per-user Explorer Startup controller and removed the legacy scheduled task.'
 } else {
     Write-Output 'Startup was not registered; run Register-Startup.ps1 or reinstall with -RegisterStartup.'
 }
