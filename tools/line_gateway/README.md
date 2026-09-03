@@ -226,6 +226,22 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Uninstall.ps1 -
 
 移除流程先停用專用自啟排程，再安全停止 gateway 與唯一公開 transport。即使安裝 manifest 已損壞，也不會阻止緊急停止；manifest gate 只控制後續檔案刪除。任何程序或 Funnel state 身分模糊都會在刪除檔案前停止流程。
 
+## 一次授權的安全自動部署
+
+自動部署排程只需建立一次。請從 repository root 開啟系統管理員 PowerShell 7 執行：
+
+```powershell
+pwsh -NoProfile -File .\tools\line_gateway\scripts\Install-AutomaticDeployment.ps1
+```
+
+之後一般權限 Codex 或使用者可執行下列命令。觸發器只能啟動固定的 highest-privilege 排程，不能傳入命令、路徑或安裝參數；它最多等待三分鐘並只回傳不含機密與內部路徑的結果。
+
+```powershell
+pwsh -NoProfile -File .\tools\line_gateway\scripts\Trigger-AutomaticDeployment.ps1
+```
+
+runner 只接受固定 GitHub origin 的 `main` commit，而且本機 `HEAD` 必須等於遠端 commit、`tools/line_gateway` 不得有未提交或 staged 變更。它從遠端 commit 匯出封閉來源到 ProgramData staging，再依序停止、呼叫既有 closed-manifest `Install.ps1`、啟動及健康檢查。失敗時只備份及恢復已驗證的 `app`、`scripts`、`manifests`；不複製或修改設定、Credential Manager、queue database、handoff 與 logs。
+
 ## 部署測試
 
 不修改系統設定的 parser、封閉 manifest 與 hostile tunnel fixture 測試：
@@ -235,4 +251,5 @@ pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Deployment.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Enrollment.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Funnel.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Ngrok.Tests.ps1
+pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\AutomaticDeployment.Tests.ps1
 ```

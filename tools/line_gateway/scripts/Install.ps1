@@ -36,7 +36,9 @@ $scriptFiles = @(
     'Bootstrap.ps1', 'Enrollment.Common.ps1', 'Discover-Allowlist.ps1',
     'Ngrok.Common.ps1', 'Set-NgrokConfiguration.ps1', 'Set-NgrokCredential.ps1',
     'Start-Ngrok.ps1', 'Stop-Ngrok.ps1', 'Test-NgrokConfiguration.ps1',
-    'Remove-NgrokPlaintextCredential.ps1', 'ngrok-package-identity.json'
+    'Remove-NgrokPlaintextCredential.ps1', 'ngrok-package-identity.json',
+    'Install-AutomaticDeployment.ps1', 'Invoke-AutomaticDeployment.ps1',
+    'Trigger-AutomaticDeployment.ps1'
 )
 foreach ($name in $coreFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $sourcePackage $name) -PathType Leaf)) { throw "Required core file is missing: $name" }
