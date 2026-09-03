@@ -90,6 +90,68 @@ function Assert-ExactGatewayPath {
     throw 'Filesystem target is outside the exact gateway path allowlist.'
 }
 
+function Remove-KnownGatewayPythonCache {
+    param(
+        [Parameter(Mandatory)][hashtable]$Paths,
+        [Parameter(Mandatory)][string[]]$AllowedModuleNames,
+        [Parameter(Mandatory)][string]$PythonCacheTag
+    )
+    if ($PythonCacheTag -notmatch '^cpython-[0-9]{2,3}$') {
+        throw 'Python cache tag is invalid.'
+    }
+    $package = [IO.Path]::GetFullPath((Join-Path $Paths.App 'tools\line_gateway'))
+    $cache = [IO.Path]::GetFullPath((Join-Path $package '__pycache__'))
+    $expected = [IO.Path]::GetFullPath((Join-Path $Paths.Root 'app\tools\line_gateway\__pycache__'))
+    if (-not [string]::Equals($cache, $expected, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Python cache target is outside the exact gateway package path.'
+    }
+    foreach ($directory in @($Paths.App, (Join-Path $Paths.App 'tools'), $package)) {
+        if (-not (Test-Path -LiteralPath $directory)) { continue }
+        if (-not (Test-Path -LiteralPath $directory -PathType Container) -or
+            ((Get-Item -LiteralPath $directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Python cache parent must be a real directory.'
+        }
+    }
+    if (-not (Test-Path -LiteralPath $cache)) { return $false }
+    if (-not (Test-Path -LiteralPath $cache -PathType Container)) {
+        throw 'Python cache target is not a directory.'
+    }
+    $cacheItem = Get-Item -LiteralPath $cache -Force
+    if (($cacheItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Python cache directory must not be a link or reparse point.'
+    }
+
+    $allowedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($moduleName in $AllowedModuleNames) {
+        if ($moduleName -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+            throw 'Python cache module allowlist contains an invalid name.'
+        }
+        if (-not $allowedFiles.Add("$moduleName.$PythonCacheTag.pyc")) {
+            throw 'Python cache module allowlist contains a duplicate name.'
+        }
+    }
+    $entries = @(Get-ChildItem -LiteralPath $cache -Force)
+    if ($entries.Count -gt $allowedFiles.Count) {
+        throw 'Python cache contains more entries than the cleanup allowlist.'
+    }
+    foreach ($entry in $entries) {
+        if ($entry.PSIsContainer -or
+            ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            -not $allowedFiles.Contains($entry.Name) -or
+            $entry.Length -lt 1 -or $entry.Length -gt 1MB) {
+            throw 'Python cache contains an unknown or unsafe entry.'
+        }
+        if (-not [string]::Equals($entry.DirectoryName, $cache, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Python cache entry escaped its exact directory.'
+        }
+    }
+
+    # 全部項目先通過封閉白名單，再逐檔刪除；禁止遞迴清除或萬用字元。
+    foreach ($entry in $entries) { Remove-Item -LiteralPath $entry.FullName -Force }
+    Remove-Item -LiteralPath $cache -Force
+    return $true
+}
+
 function Get-InstalledPython {
     param([hashtable]$Paths)
     if (-not (Test-Path -LiteralPath $Paths.InstallFile -PathType Leaf)) {

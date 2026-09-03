@@ -111,6 +111,66 @@ try {
         Assert-Throws { Test-InstallationManifest -Paths $fixturePaths | Out-Null } 'injected Python package'
     }
 
+    Invoke-Test 'known Python cache cleanup removes only the closed module set' {
+        $root = Join-Path $temporaryRoot 'known-cache-fixture'
+        $app = Join-Path $root 'app'
+        $cache = Join-Path $app 'tools\line_gateway\__pycache__'
+        New-Item -ItemType Directory -Path $cache -Force | Out-Null
+        $modules = @('__init__', 'config', 'routing')
+        foreach ($module in $modules) {
+            [IO.File]::WriteAllBytes((Join-Path $cache "$module.cpython-312.pyc"), [byte[]](1,2,3))
+        }
+        $removed = Remove-KnownGatewayPythonCache -Paths @{Root=$root;App=$app} -AllowedModuleNames $modules -PythonCacheTag 'cpython-312'
+        if (-not $removed -or (Test-Path -LiteralPath $cache)) {
+            throw 'Known Python cache was not removed exactly.'
+        }
+    }
+
+    Invoke-Test 'hostile Python cache rejects unknown entries without partial deletion' {
+        $root = Join-Path $temporaryRoot 'hostile-cache-fixture'
+        $app = Join-Path $root 'app'
+        $cache = Join-Path $app 'tools\line_gateway\__pycache__'
+        New-Item -ItemType Directory -Path $cache -Force | Out-Null
+        $known = Join-Path $cache 'config.cpython-312.pyc'
+        $unknown = Join-Path $cache 'payload.cpython-312.pyc'
+        [IO.File]::WriteAllBytes($known, [byte[]](1,2,3))
+        [IO.File]::WriteAllBytes($unknown, [byte[]](4,5,6))
+        Assert-Throws {
+            Remove-KnownGatewayPythonCache -Paths @{Root=$root;App=$app} -AllowedModuleNames @('config') -PythonCacheTag 'cpython-312'
+        } 'unknown Python cache entry'
+        if (-not (Test-Path -LiteralPath $known -PathType Leaf) -or -not (Test-Path -LiteralPath $unknown -PathType Leaf)) {
+            throw 'Hostile cache validation partially deleted files before failing closed.'
+        }
+    }
+
+    Invoke-Test 'hostile Python cache rejects nested directories without deletion' {
+        $root = Join-Path $temporaryRoot 'nested-cache-fixture'
+        $app = Join-Path $root 'app'
+        $cache = Join-Path $app 'tools\line_gateway\__pycache__'
+        New-Item -ItemType Directory -Path (Join-Path $cache 'nested') -Force | Out-Null
+        Assert-Throws {
+            Remove-KnownGatewayPythonCache -Paths @{Root=$root;App=$app} -AllowedModuleNames @('config') -PythonCacheTag 'cpython-312'
+        } 'nested Python cache entry'
+        if (-not (Test-Path -LiteralPath (Join-Path $cache 'nested') -PathType Container)) {
+            throw 'Hostile cache directory was deleted before validation completed.'
+        }
+    }
+
+    Invoke-Test 'gateway launch disables bytecode before application imports' {
+        $start = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'Start-Gateway.ps1')
+        $runner = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'gateway_runner.py')
+        if (([regex]::Matches($start, "PYTHONDONTWRITEBYTECODE = '1'")).Count -lt 2 -or
+            -not $start.Contains('& $python -B -c $probe') -or
+            -not $start.Contains("-ArgumentList @('-B', `$paths.Runner)")) {
+            throw 'Gateway probe and runtime do not both enforce bytecode suppression.'
+        }
+        $guardIndex = $runner.IndexOf('sys.dont_write_bytecode = True', [StringComparison]::Ordinal)
+        $importIndex = $runner.IndexOf('from tools.line_gateway.codex_handoff import CodexHandoff', [StringComparison]::Ordinal)
+        if ($guardIndex -lt 0 -or $importIndex -lt 0 -or $guardIndex -gt $importIndex) {
+            throw 'Runner bytecode guard does not precede application imports.'
+        }
+    }
+
     Invoke-Test 'closed manifest rejects content replacement' {
         $root = Join-Path $temporaryRoot 'tamper-fixture'
         $app = Join-Path $root 'app'

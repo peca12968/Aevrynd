@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+# 即使外層啟動參數被改動，sealed runtime 也不得產生未列入 manifest 的 bytecode。
+sys.dont_write_bytecode = True
 
 LANE_NAMES = ("taichung", "taoyuan", "auto", "auto-secondary", "control")
 NOTIFICATION_DRAINER_COUNT = 4

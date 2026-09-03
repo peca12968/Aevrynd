@@ -23,23 +23,34 @@ if (-not (Test-Path -LiteralPath $paths.Runner -PathType Leaf)) { throw 'Gateway
 # 先由正式 loader 驗證 allowlist 與 Credential Manager，輸出只允許固定字串。
 $probe = 'from tools.line_gateway.config import load_config; load_config(); print("configuration_ok")'
 $previousPythonPath = $env:PYTHONPATH
+$previousDontWriteBytecode = $env:PYTHONDONTWRITEBYTECODE
 try {
     $env:PYTHONPATH = $paths.App
-    $probeOutput = & $python -c $probe 2>$null
+    $env:PYTHONDONTWRITEBYTECODE = '1'
+    $probeOutput = & $python -B -c $probe 2>$null
     if ($LASTEXITCODE -ne 0 -or $probeOutput -ne 'configuration_ok') {
         throw 'Gateway configuration or credentials failed validation.'
     }
 } finally {
     if ($null -eq $previousPythonPath) { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
     else { $env:PYTHONPATH = $previousPythonPath }
+    if ($null -eq $previousDontWriteBytecode) { Remove-Item Env:PYTHONDONTWRITEBYTECODE -ErrorAction SilentlyContinue }
+    else { $env:PYTHONDONTWRITEBYTECODE = $previousDontWriteBytecode }
 }
 
 Rotate-GatewayLogs -Paths $paths
 $stdout = Join-Path $paths.Logs 'gateway.stdout.log'
 $stderr = Join-Path $paths.Logs 'gateway.stderr.log'
-$process = Start-Process -FilePath $python -ArgumentList @($paths.Runner) `
-    -WorkingDirectory $paths.Root -WindowStyle Hidden `
-    -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+$previousDontWriteBytecode = $env:PYTHONDONTWRITEBYTECODE
+try {
+    $env:PYTHONDONTWRITEBYTECODE = '1'
+    $process = Start-Process -FilePath $python -ArgumentList @('-B', $paths.Runner) `
+        -WorkingDirectory $paths.Root -WindowStyle Hidden `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+} finally {
+    if ($null -eq $previousDontWriteBytecode) { Remove-Item Env:PYTHONDONTWRITEBYTECODE -ErrorAction SilentlyContinue }
+    else { $env:PYTHONDONTWRITEBYTECODE = $previousDontWriteBytecode }
+}
 try { $process.PriorityClass = [Diagnostics.ProcessPriorityClass]::BelowNormal } catch { }
 Write-GatewayState -Paths $paths -Process $process
 

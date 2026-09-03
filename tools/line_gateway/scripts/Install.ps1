@@ -77,6 +77,11 @@ if (@(Get-NetTCPConnection -State Listen -LocalPort 8787 -ErrorAction SilentlyCo
     throw 'TCP 8787 is active; stop the gateway before installing an update.'
 }
 
+# 舊版 runtime 可能留下 bytecode；僅在服務停止後清除精確版本及模組白名單。
+$pythonCacheTag = 'cpython-' + $versionText.Replace('.', '')
+$pythonModuleNames = @($coreFiles | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) })
+$null = Remove-KnownGatewayPythonCache -Paths $paths -AllowedModuleNames $pythonModuleNames -PythonCacheTag $pythonCacheTag
+
 $releaseId = [Guid]::NewGuid().ToString('N')
 $stageRoot = Join-Path $paths.Root "staging\$releaseId"
 $stageApp = Join-Path $stageRoot 'app'
@@ -101,7 +106,7 @@ $stageInstallFile = Join-Path $stageManifests 'install.json'
 # 使用 AST 驗證但不產生 __pycache__，避免未列出的可載入檔案進入 runtime。
 $pythonFiles = @((Get-ChildItem -LiteralPath $stagePackage -File -Filter '*.py').FullName) + @(Join-Path $stageScripts 'gateway_runner.py')
 $astProbe = 'import ast,pathlib,sys; [ast.parse(pathlib.Path(p).read_text(encoding="utf-8"), filename=p) for p in sys.argv[1:]]'
-& $PythonExe -c $astProbe @pythonFiles
+& $PythonExe -B -c $astProbe @pythonFiles
 if ($LASTEXITCODE -ne 0) { throw 'Installed Python source validation failed.' }
 
 $manifestFiles = @(
