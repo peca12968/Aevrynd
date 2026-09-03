@@ -39,6 +39,19 @@ bool GpuValidationRequested() {
          value[0] == '1';
 }
 
+bool ExpectedModeMatches() {
+  char value[16]{};
+  const DWORD length = GetEnvironmentVariableA(
+      "AEVRYND_EXPECT_GPU_VALIDATION_MODE", value,
+      static_cast<DWORD>(sizeof(value)));
+  if (!length)
+    return true;
+  const bool expectsGbv = std::strcmp(value, "gbv") == 0;
+  const bool expectsNormal = std::strcmp(value, "normal") == 0;
+  return (expectsGbv || expectsNormal) &&
+         expectsGbv == GpuValidationRequested();
+}
+
 ComPtr<IDXGIAdapter1> SelectHardwareAdapter() {
   ComPtr<IDXGIFactory6> factory;
   if (FAILED(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG,
@@ -59,11 +72,13 @@ ComPtr<IDXGIAdapter1> SelectHardwareAdapter() {
   }
 }
 
-D3D12_RESOURCE_DESC TextureDescription(D3D12_RESOURCE_FLAGS flags) {
+D3D12_RESOURCE_DESC TextureDescription(D3D12_RESOURCE_FLAGS flags,
+                                       UINT width = Width,
+                                       UINT height = Height) {
   D3D12_RESOURCE_DESC result{};
   result.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-  result.Width = Width;
-  result.Height = Height;
+  result.Width = width;
+  result.Height = height;
   result.DepthOrArraySize = 1;
   result.MipLevels = 1;
   result.Format = DXGI_FORMAT_R32G32_FLOAT;
@@ -120,7 +135,8 @@ struct Fixture {
 
   void Initialize(const std::array<std::array<float, 2>, Width * Height> &current,
                   const std::array<std::array<float, 2>, Width * Height> &previous,
-                  const std::array<std::array<float, 2>, Width * Height> &motion) {
+                  std::span<const std::array<float, 2>> motion,
+                  UINT motionWidth = Width, UINT motionHeight = Height) {
     ComPtr<ID3D12Debug> debug;
     Require(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)),
             "D3D12 debug layer unavailable");
@@ -202,12 +218,15 @@ struct Fixture {
 
     const std::array<const void *, 3> source{current.data(), previous.data(),
                                              motion.data()};
-    const auto textureDescription = TextureDescription(D3D12_RESOURCE_FLAG_NONE);
+    const std::array<UINT, 3> sourceWidths{Width, Width, motionWidth};
+    const std::array<UINT, 3> sourceHeights{Height, Height, motionHeight};
     D3D12_HEAP_PROPERTIES defaultHeap{};
     defaultHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
     D3D12_HEAP_PROPERTIES uploadHeap{};
     uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
     for (UINT index = 0; index < inputs.size(); ++index) {
+      const auto textureDescription = TextureDescription(
+          D3D12_RESOURCE_FLAG_NONE, sourceWidths[index], sourceHeights[index]);
       Require(device->CreateCommittedResource(
                   &defaultHeap, D3D12_HEAP_FLAG_NONE, &textureDescription,
                   D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
@@ -228,11 +247,11 @@ struct Fixture {
       Require(uploads[index]->Map(0, nullptr,
                                   reinterpret_cast<void **>(&mapped)),
               "Upload map failed");
-      for (UINT y = 0; y < Height; ++y)
+      for (UINT y = 0; y < sourceHeights[index]; ++y)
         std::memcpy(mapped + footprint.Offset + y * footprint.Footprint.RowPitch,
                     static_cast<const std::byte *>(source[index]) +
-                        y * Width * PixelBytes,
-                    Width * PixelBytes);
+                        y * sourceWidths[index] * PixelBytes,
+                    sourceWidths[index] * PixelBytes);
       uploads[index]->Unmap(0, nullptr);
       D3D12_TEXTURE_COPY_LOCATION destination{inputs[index].Get(),
                                                D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};
@@ -372,6 +391,10 @@ bool Near(float value, float expected) {
 
 int main() {
   try {
+    if (!ExpectedModeMatches()) {
+      std::cerr << "Contact shadow temporal D3D12 mode contract mismatch\n";
+      return 6;
+    }
     const std::array<std::array<float, 2>, Width * Height> current{{
         {{.2f, .5f}}, {{.3f, .2f}}, {{.4f, .2f}}, {{.5f, .2f}},
         {{.6f, .7f}}, {{.7f, .3f}},
@@ -406,14 +429,17 @@ int main() {
     constants.inverseOutputWidth = 1.f / Width;
     constants.inverseOutputHeight = 1.f / Height;
     const auto production = fixture.Dispatch(constants);
-    if (!Near(production[0][0], .65f) || !Near(production[0][1], .5f) ||
+    if (!Near(production[0][0], .2f) || !Near(production[0][1], .5f) ||
         !Near(production[1][0], .3f) || !Near(production[2][0], .4f) ||
-        !Near(production[3][0], .5f) || !Near(production[4][0], .3f) ||
+        !Near(production[3][0], .5f) || !Near(production[4][0], .6f) ||
         !Near(production[5][0], .7f) || !Near(production[6][0], 1.f) ||
         !Near(production[7][0], .9f) || !Near(production[8][0], 1.f) ||
         !Near(production[9][0], 1.f) || !Near(production[10][0], .25f) ||
         !Near(production[11][0], .35f)) {
       std::cerr << "Temporal production result mismatch\n";
+      for (std::size_t index = 0; index < production.size(); ++index)
+        std::cerr << index << '=' << production[index][0] << ','
+                  << production[index][1] << '\n';
       return 2;
     }
     constants.cameraCut = 1;
@@ -436,13 +462,59 @@ int main() {
         std::cerr << "Resize rejection mismatch\n";
         return 4;
       }
+
+    std::array<std::array<float, 2>, Width * Height> coordinateCurrent{};
+    std::array<std::array<float, 2>, Width * Height> coordinatePrevious{};
+    std::array<std::array<float, 2>, Width * 2 * Height * 2> fullMotion{};
+    for (UINT y = 0; y < Height; ++y)
+      for (UINT x = 0; x < Width; ++x) {
+        coordinateCurrent[y * Width + x] = {float(x) * .2f, .5f};
+        coordinatePrevious[y * Width + x] = {float(x) * .2f, .5f};
+      }
+    // Only full-resolution pixel centers contain +2 px velocity. Sampling the
+    // top-left texel, failing to halve velocity, or using the opposite sign
+    // each produces a distinct result at half-resolution pixel (2, 1).
+    for (UINT y = 0; y < Height; ++y)
+      for (UINT x = 0; x < Width; ++x)
+        fullMotion[(y * 2 + 1) * (Width * 2) + x * 2 + 1] = {2.f, 0.f};
+    Fixture coordinateFixture;
+    coordinateFixture.Initialize(coordinateCurrent, coordinatePrevious,
+                                 fullMotion, Width * 2, Height * 2);
+    ContactShadowTemporalConstants3D coordinateConstants{};
+    coordinateConstants.historyWeight = .5f;
+    coordinateConstants.depthThreshold = .02f;
+    coordinateConstants.motionThresholdPixels = 4.f;
+    coordinateConstants.historyValid = 1;
+    coordinateConstants.outputWidth = Width;
+    coordinateConstants.outputHeight = Height;
+    coordinateConstants.inverseOutputWidth = 1.f / Width;
+    coordinateConstants.inverseOutputHeight = 1.f / Height;
+    const auto coordinate = coordinateFixture.Dispatch(coordinateConstants);
+    constexpr std::size_t Probe = Width + 2;
+    if (!Near(coordinate[Probe][0], .3f) ||
+        !Near(coordinate[Probe][1], .5f)) {
+      std::cerr << "Full-to-half coordinate reprojection mismatch: got "
+                << coordinate[Probe][0] << ", expected 0.3\n";
+      return 7;
+    }
+    coordinateConstants.currentJitterPixels={4.f,0.f};
+    coordinateConstants.previousJitterPixels={2.f,0.f};
+    const auto jitterCoordinate=coordinateFixture.Dispatch(coordinateConstants);
+    if(!Near(jitterCoordinate[Probe][0],.4f)){
+      std::cerr<<"Jitter coordinate reprojection mismatch: got "
+               <<jitterCoordinate[Probe][0]<<", expected 0.4\n";
+      return 8;
+    }
     const auto severe = fixture.SevereMessages();
-    if (severe)
+    const auto coordinateSevere = coordinateFixture.SevereMessages();
+    if (severe || coordinateSevere)
       return 5;
     std::cout << "ContactShadowTemporalD3D12 mode="
               << (GpuValidationRequested() ? "gbv" : "normal")
-              << " dispatches=3 pixels=" << Width * Height
-              << " warningsOrErrors=" << severe << '\n';
+              << " dispatches=4 pixels=" << Width * Height
+              << " coordinateProbe=" << coordinate[Probe][0]
+              << " jitterCoordinateProbe=" << jitterCoordinate[Probe][0]
+              << " warningsOrErrors=" << severe + coordinateSevere << '\n';
     return 0;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

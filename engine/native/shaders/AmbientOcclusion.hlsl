@@ -268,19 +268,21 @@ float3 ReconstructViewNormal(float2 uv, float3 centerPosition)
     return all(isfinite(normal)) ? normal : float3(0.0, 0.0, -1.0);
 }
 
-float2 AmbientOcclusionPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
+struct AmbientOcclusionOutput { float2 occlusion : SV_TARGET0; float2 contactDepth : SV_TARGET1; };
+AmbientOcclusionOutput AmbientOcclusionTemporalPixelMain(AmbientOcclusionVertexOutput input)
 {
+    AmbientOcclusionOutput output;output.occlusion=1.0;output.contactDepth=float2(1.0,1.0);
     const float2 uv = saturate(input.uv);
     const float2 viewportUv = ViewportUv(uv);
     if (any(viewportUv < 0.0) || any(viewportUv > 1.0))
-        return 1.0;
+        return output;
     const float depth = sceneDepth.SampleLevel(pointClampSampler, uv, 0.0);
     if (depth >= 0.999999)
-        return 1.0;
+        return output;
 
     const float3 centerPosition = ReconstructViewPosition(uv, depth);
     if (!all(isfinite(centerPosition)))
-        return 1.0;
+        return output;
 
     const float radius = max(occlusionParameters.x, 1e-4);
     const float bias = max(occlusionParameters.y, 0.0);
@@ -323,8 +325,12 @@ float2 AmbientOcclusionPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
     const float normalizedOcclusion = weightSum > 1e-5 ? occlusion / weightSum : 0.0;
     const float ambientVisibility=pow(saturate(1.0-normalizedOcclusion*intensity),power);
     float contactVisibility=1.0;const uint contactSteps=min(24u,(uint)contactShadowParameters.x);
-    if(contactSteps>0u){const float maximumDistance=contactShadowParameters.y,thickness=contactShadowParameters.z,strength=contactShadowParameters.w;const float3 rayDirection=-normalize(lightDirectionAmbient.xyz);[loop]for(uint stepIndex=1u;stepIndex<=24u;++stepIndex){if(stepIndex>contactSteps)break;const float travel=maximumDistance*(float(stepIndex)/float(contactSteps));const float3 rayPosition=centerPosition+normal*thickness+rayDirection*travel;const float4 rayClip=mul(viewProjection,float4(rayPosition,1.0));if(rayClip.w<=1e-5)break;const float2 rayUv=rayClip.xy/rayClip.w*float2(.5,-.5)+.5;const float2 rayViewport=ViewportUv(rayUv);if(any(rayViewport<0.0)||any(rayViewport>1.0))break;const float sampledDepth=sceneDepth.SampleLevel(pointClampSampler,rayUv,0.0);if(sampledDepth>=.999999)continue;const float3 sampledPosition=ReconstructViewPosition(rayUv,sampledDepth);const float rayCameraDepth=length(rayPosition-cameraFogStart.xyz),sampleCameraDepth=length(sampledPosition-cameraFogStart.xyz);if(sampleCameraDepth+thickness<rayCameraDepth){contactVisibility=1.0-strength*(1.0-float(stepIndex-1u)/float(contactSteps));break;}}}
-    return float2(ambientVisibility,saturate(contactVisibility));
+    if(contactSteps>0u){const float maximumDistance=contactShadowParameters.y,thickness=contactShadowParameters.z,strength=contactShadowParameters.w;const float3 rayDirection=-normalize(lightDirectionAmbient.xyz);const float2 contactPixel=floor(uv/resolutionParameters.zw);const float spatialPhase=frac(dot(contactPixel,float2(0.754877666,0.569840296)));const float rayPhase=frac(spatialPhase+filterParameters.z);[loop]for(uint stepIndex=1u;stepIndex<=24u;++stepIndex){if(stepIndex>contactSteps)break;const float travel=maximumDistance*((float(stepIndex)-0.5+rayPhase)/float(contactSteps));const float3 rayPosition=centerPosition+normal*thickness+rayDirection*travel;const float4 rayClip=mul(viewProjection,float4(rayPosition,1.0));if(rayClip.w<=1e-5)break;const float2 rayUv=rayClip.xy/rayClip.w*float2(.5,-.5)+.5;const float2 rayViewport=ViewportUv(rayUv);if(any(rayViewport<0.0)||any(rayViewport>1.0))break;const float sampledDepth=sceneDepth.SampleLevel(pointClampSampler,rayUv,0.0);if(sampledDepth>=.999999)continue;const float rayDeviceDepth=rayClip.z/rayClip.w;if(sampledDepth+max(1e-5,thickness*1e-4)<rayDeviceDepth){contactVisibility=1.0-strength*(1.0-float(stepIndex-1u)/float(contactSteps));break;}}}
+    output.occlusion=float2(ambientVisibility,saturate(contactVisibility));output.contactDepth=float2(saturate(contactVisibility),cameraDistance);return output;
+}
+float2 AmbientOcclusionPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET0
+{
+    return AmbientOcclusionTemporalPixelMain(input).occlusion;
 }
 
 float2 AmbientOcclusionBilateralBlurPixelMain(AmbientOcclusionVertexOutput input) : SV_TARGET
@@ -336,7 +342,7 @@ float2 AmbientOcclusionBilateralBlurPixelMain(AmbientOcclusionVertexOutput input
 
     static const float weights[3] = { 0.33421, 0.14650, 0.03645 };
     const float depthSharpness = max(filterParameters.x, 0.0);
-    float2 result = ambientOcclusion.SampleLevel(pointClampSampler, uv, 0.0) * weights[0];
+    float2 centerOcclusion=ambientOcclusion.SampleLevel(pointClampSampler,uv,0.0);if(filterParameters.y>0.5)centerOcclusion.y=baseColorTexture.SampleLevel(pointClampSampler,uv,0.0).x;float2 result = centerOcclusion * weights[0];
     float weightSum = weights[0];
     [unroll] for (uint axis = 0; axis < 2; ++axis)
     {
@@ -348,7 +354,7 @@ float2 AmbientOcclusionBilateralBlurPixelMain(AmbientOcclusionVertexOutput input
                 const float2 sampleUv = saturate(uv + direction * float(sign * int(offset)));
                 const float sampleDepth = ViewDepth(sampleUv);
                 const float bilateralWeight = weights[offset] * exp2(-abs(sampleDepth - centerDepth) * depthSharpness);
-                result += ambientOcclusion.SampleLevel(pointClampSampler, sampleUv, 0.0) * bilateralWeight;
+                float2 sampleOcclusion=ambientOcclusion.SampleLevel(pointClampSampler,sampleUv,0.0);if(filterParameters.y>0.5)sampleOcclusion.y=baseColorTexture.SampleLevel(pointClampSampler,sampleUv,0.0).x;result += sampleOcclusion * bilateralWeight;
                 weightSum += bilateralWeight;
             }
         }

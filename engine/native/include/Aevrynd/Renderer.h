@@ -271,8 +271,8 @@ DirectionalShadowCascadeFit3D FitDirectionalShadowCascades3D(const Matrix4& view
 struct ContactShadowSettings3D {bool enabled{true};uint32_t maximumSteps{12};float maximumDistance{1.5f},thickness{.04f},strength{.8f};friend constexpr bool operator==(const ContactShadowSettings3D&,const ContactShadowSettings3D&)=default;};
 inline ContactShadowSettings3D NormalizeContactShadowSettings3D(ContactShadowSettings3D value){value.maximumSteps=(std::clamp)(value.maximumSteps,1u,24u);value.maximumDistance=Clamp(std::isfinite(value.maximumDistance)?value.maximumDistance:1.5f,.05f,5.f);value.thickness=Clamp(std::isfinite(value.thickness)?value.thickness:.04f,.001f,.25f);value.strength=Clamp(std::isfinite(value.strength)?value.strength:.8f,0.f,1.f);return value;}
 enum class ContactShadowTemporalReset3D:uint32_t {None=0,CameraCut=1,Resize=2,Quality=4,HistoryInvalid=8,ReprojectionInvalid=16,DepthRejected=32,MotionRejected=64,Disabled=128};
-struct ContactShadowTemporalConstants3D {float historyWeight{.85f},depthThreshold{.01f},motionThresholdPixels{24.f},padding{};uint32_t historyValid{},cameraCut{},resized{},qualityChanged{},outputWidth{},outputHeight{};float inverseOutputWidth{},inverseOutputHeight{};};
-static_assert(sizeof(ContactShadowTemporalConstants3D)==48);
+struct ContactShadowTemporalConstants3D {float historyWeight{.85f},depthThreshold{.1f},motionThresholdPixels{24.f},padding{};uint32_t historyValid{},cameraCut{},resized{},qualityChanged{},outputWidth{},outputHeight{};float inverseOutputWidth{},inverseOutputHeight{};Vec2 currentJitterPixels{},previousJitterPixels{};};
+static_assert(sizeof(ContactShadowTemporalConstants3D)==64);
 struct ContactShadowTemporalSample3D {float currentVisibility{1.f},historyVisibility{1.f},currentDepth{1.f},historyDepth{1.f},motionPixels{};bool reprojectionValid{true};};
 struct ContactShadowTemporalResult3D {float visibility{1.f};ContactShadowTemporalReset3D rejection{ContactShadowTemporalReset3D::None};bool historyAccepted{};};
 [[nodiscard]] inline ContactShadowTemporalResult3D EvaluateContactShadowTemporal3D(ContactShadowTemporalSample3D sample,ContactShadowTemporalConstants3D constants,bool enabled=true)noexcept{
@@ -672,6 +672,8 @@ struct RendererStats {
     std::array<uint32_t,MaximumDirectionalShadowCascades3D> lastDirectionalShadowCascadeInvalidationReasons{};
     DirectionalShadowFrameProvenance3D lastDirectionalShadowProvenance{};
     bool contactShadowsEnabled{},contactShadowTemporalFiltering{};uint32_t contactShadowMaximumSteps{};float contactShadowMaximumDistance{},contactShadowThickness{},contactShadowStrength{};uint64_t contactShadowFrames{},contactShadowFallbackFrames{},contactShadowEvaluationPasses{};
+    uint64_t contactShadowTemporalDispatches{},contactShadowTemporalHistoryEligibleFrames{},contactShadowTemporalHistoryIneligibleFrames{},contactShadowTemporalHistoryResets{};
+    size_t contactShadowTemporalResidentBytes{};uint64_t contactShadowTemporalAllocations{},contactShadowTemporalReleases{};
     float directionalShadowTransitionWidth{6.f};
     size_t directionalShadowBasePcfSamples{12};
     size_t directionalShadowTransitionPcfSamples{24};
@@ -1194,6 +1196,8 @@ struct D3D12RendererTestAccess3D {
     static void SetFixedProbeClearMismatch(D3D12Renderer& renderer,bool enabled);
     static void RecreateDirectionalShadowResources(D3D12Renderer& renderer);
     struct LinearHdrCapture3D {unsigned width{},height{},rowPitch{};std::vector<Vec4> pixels{};std::array<std::byte,32> pixelSha256{};float exposureEv{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&rowPitch>=width*8&&pixels.size()==size_t(width)*height&&std::isfinite(exposureEv);}};
+    enum class ContactShadowCaptureStage3D { Current, History, Raw, Bilateral };
+    struct ContactShadowCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&pixels.size()==size_t(width)*height;}};
     enum class BaseSkyMutation { Production, LegacyBlue, LegacyClipMatrix, SignedNegativeW, LegacyAbsW, HemisphereFlip };
     enum class CloudContributorRouting { Production, InlineOnly, PhysicalOnly, FullDouble };
     enum class WorldPixelMutation { Production, LegacyArmAlpha, TerrainHeightDisabled };
@@ -1203,6 +1207,9 @@ struct D3D12RendererTestAccess3D {
     static std::optional<LinearHdrCapture3D> CaptureLinearHdr(D3D12Renderer& renderer,float exposureEv);
     static std::optional<LinearHdrCapture3D> CaptureToneMapped(D3D12Renderer& renderer,float exposureEv);
     static std::optional<LinearHdrCapture3D> CapturePostProcessDiagnostic(D3D12Renderer& renderer,float exposureEv,bool toneMapped);
+    static std::optional<ContactShadowCapture3D> CaptureContactShadow(D3D12Renderer& renderer,ContactShadowCaptureStage3D stage);
+    static bool InvalidateContactShadowTemporalHistory(D3D12Renderer& renderer);
+    static bool SetContactShadowTemporalForcedOff(D3D12Renderer& renderer,bool forcedOff);
     static bool SetBaseSkyMutation(D3D12Renderer& renderer,BaseSkyMutation mutation);
     static bool SetCloudContributorRouting(D3D12Renderer& renderer,CloudContributorRouting routing);
     static bool SetCloudContributorSkyProxy(D3D12Renderer& renderer,bool enabled);
