@@ -21,7 +21,7 @@ $oldPager = $null
 
 function Write-SafeResult {
     param([Parameter(Mandatory)][ValidateSet('running','succeeded','failed','rolled_back','rollback_failed')][string]$Status,
-          [Parameter(Mandatory)][ValidateSet('none','source_rejected','bootstrap_required','busy','drain_failed','stop_failed','install_failed','start_failed','health_failed','rollback_failed')][string]$Code,
+          [Parameter(Mandatory)][ValidateSet('none','source_rejected','bootstrap_required','busy','drain_failed','ngrok_stop_failed','stop_failed','install_failed','start_failed','ngrok_start_failed','health_failed','public_health_failed','rollback_failed')][string]$Code,
           [string]$Release = '')
     $document = [ordered]@{
         schemaVersion = 1
@@ -122,7 +122,8 @@ function Remove-FixedScratch {
 }
 
 function Restore-VerifiedRelease {
-    param([Parameter(Mandatory)][string]$BackupRoot)
+    param([Parameter(Mandatory)][string]$BackupRoot,[Parameter(Mandatory)][bool]$RestartNgrok)
+    try { & (Join-Path $liveRoot 'scripts\Stop-Ngrok.ps1') -InstallRoot $liveRoot | Out-Null } catch { }
     try { & (Join-Path $liveRoot 'scripts\Stop-Gateway.ps1') -InstallRoot $liveRoot | Out-Null } catch { }
     foreach ($name in @('app','scripts','manifests')) {
         $destination = Join-Path $liveRoot $name
@@ -135,7 +136,9 @@ function Restore-VerifiedRelease {
     $paths = Get-GatewayPaths -InstallRoot $liveRoot
     $null = Test-InstallationManifest -Paths $paths
     & (Join-Path $liveRoot 'scripts\Start-Gateway.ps1') -InstallRoot $liveRoot | Out-Null
+    if ($RestartNgrok) { & (Join-Path $liveRoot 'scripts\Start-Ngrok.ps1') -InstallRoot $liveRoot | Out-Null }
     & (Join-Path $liveRoot 'scripts\Test-Health.ps1') -InstallRoot $liveRoot | Out-Null
+    if ($RestartNgrok) { $null = & (Join-Path $liveRoot 'scripts\Test-NgrokConfiguration.ps1') -InstallRoot $liveRoot }
 }
 
 $mutex = $null
@@ -239,35 +242,79 @@ try {
     $null = Test-InstallationManifest -Paths $backupPaths
     $hasRollback = $true
 
+    # 只在部署前 authoritative ngrok state 與程序均通過驗證時，於成功或 rollback 後恢復公開入口。
+    $ngrokWasActive = $false
+    if (Test-Path -LiteralPath $currentPaths.NgrokStateFile -PathType Leaf) {
+        try {
+            $ngrokStatus = & (Join-Path $liveRoot 'scripts\Test-NgrokConfiguration.ps1') -InstallRoot $liveRoot
+            if ($ngrokStatus.Mode -ne 'active') { throw 'ngrok_not_active' }
+            $ngrokWasActive = $true
+        } catch {
+            Write-SafeResult -Status failed -Code ngrok_stop_failed -Release $release
+            exit 11
+        }
+    }
+
     if ($null -ne $installedPython) {
         try { Wait-GatewayQueueDrain -PythonExe $installedPython } catch { Write-SafeResult -Status failed -Code drain_failed -Release $release; exit 9 }
     }
-    try { & (Join-Path $liveRoot 'scripts\Stop-Gateway.ps1') -InstallRoot $liveRoot | Out-Null } catch { Write-SafeResult -Status failed -Code stop_failed -Release $release; exit 3 }
+    if ($ngrokWasActive) {
+        try { & (Join-Path $liveRoot 'scripts\Stop-Ngrok.ps1') -InstallRoot $liveRoot | Out-Null }
+        catch { Write-SafeResult -Status failed -Code ngrok_stop_failed -Release $release; exit 11 }
+    }
+    try { & (Join-Path $liveRoot 'scripts\Stop-Gateway.ps1') -InstallRoot $liveRoot | Out-Null }
+    catch {
+        try {
+            try { & (Join-Path $liveRoot 'scripts\Test-Health.ps1') -InstallRoot $liveRoot | Out-Null }
+            catch { & (Join-Path $liveRoot 'scripts\Start-Gateway.ps1') -InstallRoot $liveRoot | Out-Null; & (Join-Path $liveRoot 'scripts\Test-Health.ps1') -InstallRoot $liveRoot | Out-Null }
+            if ($ngrokWasActive) { & (Join-Path $liveRoot 'scripts\Start-Ngrok.ps1') -InstallRoot $liveRoot | Out-Null; $null = & (Join-Path $liveRoot 'scripts\Test-NgrokConfiguration.ps1') -InstallRoot $liveRoot }
+        } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 }
+        Write-SafeResult -Status failed -Code stop_failed -Release $release; exit 3
+    }
     if ($null -ne $installedPython) {
         try { $null = Invoke-QueueDeploymentControl -Mode recover -PythonExe $installedPython }
         catch {
             # Gateway 已停止時若無法歸還租約，不繼續切換版本；先恢復原服務，工作仍可由既有 lease expiry 接手。
-            try { & (Join-Path $liveRoot 'scripts\Start-Gateway.ps1') -InstallRoot $liveRoot | Out-Null } catch { }
+            try {
+                & (Join-Path $liveRoot 'scripts\Start-Gateway.ps1') -InstallRoot $liveRoot | Out-Null
+                if ($ngrokWasActive) { & (Join-Path $liveRoot 'scripts\Start-Ngrok.ps1') -InstallRoot $liveRoot | Out-Null }
+                & (Join-Path $liveRoot 'scripts\Test-Health.ps1') -InstallRoot $liveRoot | Out-Null
+                if ($ngrokWasActive) { $null = & (Join-Path $liveRoot 'scripts\Test-NgrokConfiguration.ps1') -InstallRoot $liveRoot }
+            } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 }
             Write-SafeResult -Status failed -Code drain_failed -Release $release
             exit 9
         }
     }
     try { & $installScript -InstallRoot $liveRoot -PythonExe $installedPython | Out-Null } catch {
         if ($hasRollback) {
-            try { Restore-VerifiedRelease -BackupRoot $backup; Write-SafeResult -Status rolled_back -Code install_failed -Release $release; exit 4 }
+            try { Restore-VerifiedRelease -BackupRoot $backup -RestartNgrok $ngrokWasActive; Write-SafeResult -Status rolled_back -Code install_failed -Release $release; exit 4 }
             catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 }
         }
         Write-SafeResult -Status failed -Code install_failed -Release $release; exit 4
     }
     try { & (Join-Path $liveRoot 'scripts\Start-Gateway.ps1') -InstallRoot $liveRoot | Out-Null }
     catch {
-        if ($hasRollback) { try { Restore-VerifiedRelease -BackupRoot $backup; Write-SafeResult -Status rolled_back -Code start_failed -Release $release; exit 6 } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 } }
+        if ($hasRollback) { try { Restore-VerifiedRelease -BackupRoot $backup -RestartNgrok $ngrokWasActive; Write-SafeResult -Status rolled_back -Code start_failed -Release $release; exit 6 } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 } }
         Write-SafeResult -Status failed -Code start_failed -Release $release; exit 6
+    }
+    if ($ngrokWasActive) {
+        try { & (Join-Path $liveRoot 'scripts\Start-Ngrok.ps1') -InstallRoot $liveRoot | Out-Null }
+        catch {
+            if ($hasRollback) { try { Restore-VerifiedRelease -BackupRoot $backup -RestartNgrok $true; Write-SafeResult -Status rolled_back -Code ngrok_start_failed -Release $release; exit 12 } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 } }
+            Write-SafeResult -Status failed -Code ngrok_start_failed -Release $release; exit 12
+        }
     }
     try { & (Join-Path $liveRoot 'scripts\Test-Health.ps1') -InstallRoot $liveRoot | Out-Null }
     catch {
-        if ($hasRollback) { try { Restore-VerifiedRelease -BackupRoot $backup; Write-SafeResult -Status rolled_back -Code health_failed -Release $release; exit 7 } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 } }
+        if ($hasRollback) { try { Restore-VerifiedRelease -BackupRoot $backup -RestartNgrok $ngrokWasActive; Write-SafeResult -Status rolled_back -Code health_failed -Release $release; exit 7 } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 } }
         Write-SafeResult -Status failed -Code health_failed -Release $release; exit 7
+    }
+    if ($ngrokWasActive) {
+        try { $null = & (Join-Path $liveRoot 'scripts\Test-NgrokConfiguration.ps1') -InstallRoot $liveRoot }
+        catch {
+            if ($hasRollback) { try { Restore-VerifiedRelease -BackupRoot $backup -RestartNgrok $true; Write-SafeResult -Status rolled_back -Code public_health_failed -Release $release; exit 13 } catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 } }
+            Write-SafeResult -Status failed -Code public_health_failed -Release $release; exit 13
+        }
     }
     Write-SafeResult -Status succeeded -Code none -Release $release
 } catch {

@@ -138,6 +138,44 @@ Invoke-Test 'result publication is atomic and queue recovery brackets stop and i
     if($drain-lt0-or$stop-lt0-or$recover-lt0-or$install-lt0-or$drain-gt$stop-or$stop-gt$recover-or$recover-gt$install){throw 'Drain/recovery transaction ordering changed.'}
 }
 
+Invoke-Test 'active ngrok participates in the exact deployment transaction order' {
+    Assert-ContainsAll $runner @('ngrok_stop_failed','ngrok_start_failed','public_health_failed','$ngrokWasActive = $true')
+    $drain=$runner.LastIndexOf('Wait-GatewayQueueDrain -PythonExe',[StringComparison]::Ordinal)
+    $stopNgrok=$runner.IndexOf("scripts\Stop-Ngrok.ps1') -InstallRoot `$liveRoot | Out-Null",$drain,[StringComparison]::Ordinal)
+    $stopGateway=$runner.IndexOf("scripts\Stop-Gateway.ps1') -InstallRoot `$liveRoot | Out-Null",$stopNgrok,[StringComparison]::Ordinal)
+    $recover=$runner.IndexOf('Invoke-QueueDeploymentControl -Mode recover',$stopGateway,[StringComparison]::Ordinal)
+    $install=$runner.IndexOf('& $installScript -InstallRoot $liveRoot -PythonExe $installedPython',$recover,[StringComparison]::Ordinal)
+    $startGateway=$runner.IndexOf("scripts\Start-Gateway.ps1') -InstallRoot `$liveRoot | Out-Null",$install,[StringComparison]::Ordinal)
+    $startNgrok=$runner.IndexOf("scripts\Start-Ngrok.ps1') -InstallRoot `$liveRoot | Out-Null",$startGateway,[StringComparison]::Ordinal)
+    $localHealth=$runner.IndexOf("scripts\Test-Health.ps1') -InstallRoot `$liveRoot | Out-Null",$startNgrok,[StringComparison]::Ordinal)
+    $publicHealth=$runner.IndexOf("scripts\Test-NgrokConfiguration.ps1') -InstallRoot `$liveRoot",$localHealth,[StringComparison]::Ordinal)
+    $ordered=@($drain,$stopNgrok,$stopGateway,$recover,$install,$startGateway,$startNgrok,$localHealth,$publicHealth)
+    if($ordered.Where({$_-lt0}).Count-or(($ordered|Sort-Object)-join ',')-cne($ordered-join ',')){throw "Ngrok deployment order changed: $($ordered -join ',')"}
+}
+
+Invoke-Test 'rollback restores gateway and only previously active ngrok' {
+    $begin=$runner.IndexOf('function Restore-VerifiedRelease',[StringComparison]::Ordinal)
+    $end=$runner.IndexOf("`n`$mutex = `$null",$begin,[StringComparison]::Ordinal)
+    if($begin-lt0-or$end-lt0){throw 'Rollback function bounds are missing.'}
+    $rollback=$runner.Substring($begin,$end-$begin)
+    Assert-ContainsAll $rollback @(
+        '[Parameter(Mandatory)][bool]$RestartNgrok',
+        "scripts\Stop-Ngrok.ps1",
+        "scripts\Stop-Gateway.ps1",
+        "if (`$RestartNgrok) { & (Join-Path `$liveRoot 'scripts\Start-Ngrok.ps1')",
+        "scripts\Test-Health.ps1",
+        "scripts\Test-NgrokConfiguration.ps1"
+    )
+    $stopNgrok=$rollback.IndexOf('Stop-Ngrok.ps1',[StringComparison]::Ordinal)
+    $stopGateway=$rollback.IndexOf('Stop-Gateway.ps1',[StringComparison]::Ordinal)
+    $startGateway=$rollback.IndexOf('Start-Gateway.ps1',[StringComparison]::Ordinal)
+    $startNgrok=$rollback.IndexOf('Start-Ngrok.ps1',[StringComparison]::Ordinal)
+    $localHealth=$rollback.IndexOf('Test-Health.ps1',[StringComparison]::Ordinal)
+    $publicHealth=$rollback.IndexOf('Test-NgrokConfiguration.ps1',[StringComparison]::Ordinal)
+    if($stopNgrok-gt$stopGateway-or$stopGateway-gt$startGateway-or$startGateway-gt$startNgrok-or$startNgrok-gt$localHealth-or$localHealth-gt$publicHealth){throw 'Rollback transport ordering changed.'}
+    foreach($call in [regex]::Matches($runner,'Restore-VerifiedRelease\s+-BackupRoot[^;\r\n]*')){if(-not$call.Value.Contains('-RestartNgrok $ngrokWasActive')-and-not$call.Value.Contains('-RestartNgrok $true')){throw 'Rollback omitted prior ngrok state.'}}
+}
+
 Invoke-Test 'mock interrupted work is requeued without consuming an attempt' {
     $rows=@(
         [ordered]@{status='running';attempt_count=2;error_code='upstream_error'},
