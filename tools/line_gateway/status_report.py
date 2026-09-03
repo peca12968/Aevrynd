@@ -10,6 +10,8 @@ import subprocess
 import time
 import uuid
 import re
+import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -21,7 +23,8 @@ class StatusReport:
 
     _NON_PUBLIC_STATUS_TEXT = re.compile(
         r"(?:[A-Za-z]:[\\/]|\\\\|https?://|(?:\d{1,3}\.){3}\d{1,3}|"
-        r"api[_ -]?key|access[_ -]?token|authorization|bearer|channel[_ -]?secret)",
+        r"(?:api|access|refresh|channel|client)[_ -]?(?:key|token|secret)|"
+        r"authorization|bearer|password|private[_ -]?key|webhook|secret)",
         re.IGNORECASE,
     )
 
@@ -29,6 +32,10 @@ class StatusReport:
         ("main", "主電腦", "127.0.0.1", 18080),
         ("taichung", "台中", "192.168.50.98", 8080),
         ("taoyuan", "桃園", "100.89.42.36", 8080),
+    )
+    _GAME_MODE_COMMAND = re.compile(
+        r"^(?:(?P<action>開啟|關閉)(?P<node>主電腦|主機|台中|桃園)|"
+        r"(?P<node_first>主電腦|主機|台中|桃園)(?P<action_second>開啟|關閉))遊戲模式$"
     )
 
     def __init__(
@@ -40,6 +47,9 @@ class StatusReport:
         dispatcher_database: str | Path | None = None,
         node_slot_probes: Mapping[str, Callable[[], bool]] | None = None,
         probe_timeout: float = 0.35,
+        controller_timeout: float = 45.0,
+        process_runner: Callable[..., object] = subprocess.run,
+        codex_status_path: str | Path | None = None,
     ) -> None:
         self._queue_store = queue_store
         self._repository_root = Path(repository_root).resolve()
@@ -57,6 +67,76 @@ class StatusReport:
             else Path(dispatcher_database).resolve()
         )
         self._node_slot_probes = dict(node_slot_probes or {})
+        self._controller_timeout = max(5.0, min(float(controller_timeout), 60.0))
+        self._process_runner = process_runner
+        self._codex_status_path = (
+            program_data / "Aevrynd" / "Codex" / "status.json"
+            if codex_status_path is None
+            else Path(codex_status_path).resolve()
+        )
+
+    def change_game_mode(self, command_text: str) -> str:
+        """執行固定節點與布林意圖；不接受任意參數或 shell 字串。"""
+
+        normalized = "".join(command_text.strip().split())
+        match = self._GAME_MODE_COMMAND.fullmatch(normalized)
+        if match is None:
+            raise ValueError("game mode command is outside the fixed grammar")
+        action = match.group("action") or match.group("action_second")
+        label = match.group("node") or match.group("node_first")
+        node_id = {"主電腦": "main", "主機": "main", "台中": "taichung", "桃園": "taoyuan"}[label]
+        enabled = action == "開啟"
+        self._invoke_controller(node_id, enabled)
+        state = "開啟" if enabled else "關閉"
+        # command API 是持久意圖；遠端離線時保留待執行，不能誤稱已完成。
+        return f"[遊戲模式]\n已安全送出：{label}遊戲模式{state}。\n" + self.render("三台狀態")
+
+    def _invoke_controller(self, node_id: str, enabled: bool) -> None:
+        root = self._controller_root
+        config_path = root / "config" / "node.json"
+        module_path = root / "app" / "tools" / "game_mode_controller" / "runner.py"
+        try:
+            raw = config_path.read_bytes()
+            if not 2 <= len(raw) <= 8192:
+                raise ValueError("controller config size is invalid")
+            document = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError("game mode controller is unavailable") from exc
+        if (
+            not isinstance(document, Mapping)
+            or set(document) != {"schemaVersion", "nodeId", "runtimeManifest", "runtimeManifestSha256", "pythonExecutable"}
+            or document.get("schemaVersion") != 2
+            or document.get("nodeId") != "main"
+            or document.get("runtimeManifest") != "runtime-manifest.json"
+            or not isinstance(document.get("runtimeManifestSha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", document["runtimeManifestSha256"]) is None
+            or not isinstance(document.get("pythonExecutable"), str)
+            or not 1 <= len(document["pythonExecutable"]) <= 1024
+        ):
+            raise ValueError("game mode controller configuration is invalid")
+        python = Path(document["pythonExecutable"])
+        if not python.is_absolute():
+            raise ValueError("game mode controller runtime is unavailable")
+        python = python.resolve()
+        if python.name.casefold() not in {"python.exe", "python3.exe"} or not python.is_file() or not module_path.is_file():
+            raise ValueError("game mode controller runtime is unavailable")
+        environment = {
+            key: value for key in ("SystemRoot", "WINDIR", "TEMP", "TMP", "ProgramData")
+            if (value := os.environ.get(key))
+        }
+        environment["PYTHONPATH"] = str(root / "app")
+        try:
+            completed = self._process_runner(
+                (str(python), "-B", "-m", "tools.game_mode_controller.runner", "set", "--target", node_id,
+                 "--game-mode", "on" if enabled else "off"),
+                cwd=str(root), env=environment, shell=False, check=False, capture_output=True,
+                text=True, timeout=self._controller_timeout,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("game mode controller command failed") from exc
+        if getattr(completed, "returncode", 1) != 0:
+            raise ValueError("game mode controller command failed")
 
     def render(
         self,
@@ -65,9 +145,14 @@ class StatusReport:
         current_job_id: str | None = None,
         scope_hint: str | None = None,
     ) -> str:
-        if scope_hint is not None and scope_hint not in {"taichung", "taoyuan", "main", "all", "project", "all_project"}:
+        if scope_hint is not None and scope_hint not in {"taichung", "taoyuan", "main", "codex", "all", "project", "all_project"}:
             raise ValueError("scope_hint is outside the fixed status scope")
         scope = self._status_scope(command_text) if scope_hint is None else scope_hint
+        if scope == "codex":
+            live = self._codex_live_status()
+            if live:
+                return live
+            return self._render_project(self._repository(), self._queue_counts(current_job_id))
         if scope == "project":
             return self._render_project(self._repository(), self._queue_counts(current_job_id))
         requested_ids = {
@@ -121,7 +206,9 @@ class StatusReport:
             return "all"
         if "整體" in normalized:
             return "all_project"
-        if any(subject in normalized for subject in ("主電腦", "主機", "Codex", "codex")):
+        if "codex" in lowered:
+            return "codex"
+        if any(subject in normalized for subject in ("主電腦", "主機")):
             return "main"
         return "all_project"
 
@@ -140,6 +227,56 @@ class StatusReport:
         lines.extend(f"  {item}" for item in ledger_items)
         lines.append("- Codex 即時執行內容：Gateway 無法直接讀取 Codex 桌面工作階段；以上只列 Git、狀態帳與持久佇列的可驗證資料。")
         return "\n".join(lines)
+
+    def _codex_live_status(self) -> str:
+        """Read a bounded, explicitly published Codex status; never inspect desktop state."""
+
+        try:
+            raw = self._codex_status_path.read_bytes()
+            if not 2 <= len(raw) <= 8192:
+                return ""
+            document = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return ""
+        required = {"schemaVersion", "status", "task", "phase", "progress", "updatedUtc", "ttl"}
+        if not isinstance(document, Mapping) or set(document) != required or document.get("schemaVersion") != 1:
+            return ""
+        status = document.get("status")
+        task, phase = document.get("task"), document.get("phase")
+        progress, ttl = document.get("progress"), document.get("ttl")
+        if status not in {"idle", "working", "blocked", "completed"}:
+            return ""
+        if not isinstance(task, str) or not isinstance(phase, str):
+            return ""
+        safe_task = self._public_status_text(task, 160)
+        safe_phase = self._public_status_text(phase, 120)
+        if not safe_task or not safe_phase or safe_task != task.strip() or safe_phase != phase.strip():
+            return ""
+        if isinstance(progress, bool) or not isinstance(progress, int) or not 0 <= progress <= 100:
+            return ""
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or not 1 <= ttl <= 3600:
+            return ""
+        updated = document.get("updatedUtc")
+        if (
+            not isinstance(updated, str)
+            or re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", updated) is None
+        ):
+            return ""
+        try:
+            timestamp = datetime.fromisoformat(updated[:-1] + "+00:00")
+        except ValueError:
+            return ""
+        age = datetime.now(timezone.utc).timestamp() - timestamp.timestamp()
+        if age < -30 or age > ttl:
+            return ""
+        labels = {"idle": "閒置", "working": "進行中", "blocked": "受阻", "completed": "已完成"}
+        return (
+            "[Codex 即時進度]\n"
+            f"- 狀態：{labels[status]}（{progress}%）\n"
+            f"- 任務：{safe_task}\n"
+            f"- 階段：{safe_phase}\n"
+            f"- 更新：{updated}"
+        )
 
     def render_job(self, job_id: str) -> str:
         job = self._queue_store.status(job_id)
@@ -286,7 +423,11 @@ class StatusReport:
     @classmethod
     def _public_status_text(cls, value: str, limit: int) -> str:
         text = value.replace("\r", " ").replace("\n", " ").strip()
-        if not text or cls._NON_PUBLIC_STATUS_TEXT.search(text):
+        if (
+            not text
+            or any(unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in text)
+            or cls._NON_PUBLIC_STATUS_TEXT.search(text)
+        ):
             return ""
         return text[:limit]
 

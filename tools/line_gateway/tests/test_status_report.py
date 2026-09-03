@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import subprocess
 import tempfile
 import time
 import unittest
 import uuid
+from types import SimpleNamespace
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
+from datetime import datetime, timezone, timedelta
 
 from tools.line_gateway.codex_handoff import CodexHandoff
 from tools.line_gateway.host_tasks import HostTasks
@@ -149,6 +153,98 @@ class StatusReportTests(unittest.TestCase):
         self.assertIn("目前未偵測到進行中工作", rendered)
         self.assertNotIn("桃園：", rendered)
 
+    def test_game_mode_invokes_only_fixed_hidden_controller_arguments(self) -> None:
+        root = Path(self.temporary.name) / "controller"
+        python = root / "python.exe"
+        runner = root / "app" / "tools" / "game_mode_controller" / "runner.py"
+        (root / "config").mkdir(parents=True)
+        runner.parent.mkdir(parents=True)
+        python.write_bytes(b"test")
+        runner.write_text("# test", encoding="utf-8")
+        (root / "config" / "node.json").write_text(json.dumps({
+            "schemaVersion": 2, "nodeId": "main", "runtimeManifest": "runtime-manifest.json",
+            "runtimeManifestSha256": "0" * 64, "pythonExecutable": str(python),
+        }), encoding="utf-8")
+        calls = []
+
+        def run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+        status = StatusReport(
+            self.store, repository_root=self.temporary.name, controller_root=root,
+            process_runner=run, probe_timeout=0.01,
+        )
+        with patch.object(StatusReport, "_tcp_reachable", return_value=False):
+            rendered = status.change_game_mode("開啟台中遊戲模式")
+        command = calls[0][0][0]
+        self.assertEqual(
+            (str(python), "-B", "-m", "tools.game_mode_controller.runner", "set", "--target", "taichung", "--game-mode", "on"),
+            command,
+        )
+        self.assertFalse(calls[0][1]["shell"])
+        self.assertEqual(45.0, calls[0][1]["timeout"])
+        self.assertEqual(getattr(__import__("subprocess"), "CREATE_NO_WINDOW", 0), calls[0][1]["creationflags"])
+        self.assertEqual(
+            {key for key in ("SystemRoot", "WINDIR", "TEMP", "TMP", "ProgramData") if os.environ.get(key)}
+            | {"PYTHONPATH"},
+            set(calls[0][1]["env"]),
+        )
+        self.assertNotIn("USERPROFILE", calls[0][1]["env"])
+        self.assertNotIn("LOCALAPPDATA", calls[0][1]["env"])
+        self.assertIn("已安全送出", rendered)
+        self.assertIn("[三台即時狀態]", rendered)
+
+    def test_game_mode_rejects_free_form_and_controller_failure(self) -> None:
+        status = StatusReport(self.store, repository_root=self.temporary.name, controller_root=self.temporary.name)
+        with self.assertRaises(ValueError):
+            status.change_game_mode("幫我隨便開遊戲模式")
+
+    def test_game_mode_controller_absent_malformed_and_timeout_are_bounded(self) -> None:
+        root = Path(self.temporary.name) / "controller-bounded"
+        calls = []
+        status = StatusReport(
+            self.store, repository_root=self.temporary.name, controller_root=root,
+            process_runner=lambda *args, **kwargs: calls.append((args, kwargs)), controller_timeout=5,
+        )
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            status.change_game_mode("開啟桃園遊戲模式")
+        self.assertEqual([], calls)
+
+        config = root / "config" / "node.json"
+        config.parent.mkdir(parents=True)
+        config.write_bytes(b"{" + b"x" * 8192 + b"}")
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            status.change_game_mode("開啟桃園遊戲模式")
+        self.assertEqual([], calls)
+
+        python = root / "python.exe"
+        runner = root / "app" / "tools" / "game_mode_controller" / "runner.py"
+        runner.parent.mkdir(parents=True)
+        python.write_bytes(b"test")
+        runner.write_text("# test", encoding="utf-8")
+        config.write_text(json.dumps({
+            "schemaVersion": 2, "nodeId": "main", "runtimeManifest": "../outside.json",
+            "runtimeManifestSha256": "0" * 64, "pythonExecutable": str(python),
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "configuration is invalid"):
+            status.change_game_mode("開啟桃園遊戲模式")
+        self.assertEqual([], calls)
+
+        config.write_text(json.dumps({
+            "schemaVersion": 2, "nodeId": "main", "runtimeManifest": "runtime-manifest.json",
+            "runtimeManifestSha256": "0" * 64, "pythonExecutable": str(python),
+        }), encoding="utf-8")
+        timeout_status = StatusReport(
+            self.store, repository_root=self.temporary.name, controller_root=root,
+            process_runner=lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired(args[0], 5)),
+            controller_timeout=5,
+        )
+        started = time.monotonic()
+        with self.assertRaisesRegex(ValueError, "command failed"):
+            timeout_status.change_game_mode("開啟桃園遊戲模式")
+        self.assertLess(time.monotonic() - started, 1.0)
+
     def test_user_status_phrases_keep_city_project_and_overall_scopes_separate(self) -> None:
         status = StatusReport(
             self.store,
@@ -232,6 +328,54 @@ class StatusReportTests(unittest.TestCase):
         self.assertNotIn("api key", rendered.casefold())
         self.assertNotRegex(rendered, r"[A-Za-z]:[\\/]")
         self.assertLess(max(map(len, rendered.splitlines())), 230)
+
+    def test_codex_status_uses_only_fresh_valid_published_contract(self) -> None:
+        root = Path(self.temporary.name)
+        live = root / "status.json"
+        live.write_text(json.dumps({
+            "schemaVersion": 1, "status": "working", "task": "LINE authority 收斂",
+            "phase": "執行測試", "progress": 72,
+            "updatedUtc": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "ttl": 300,
+        }), encoding="utf-8")
+        status = StatusReport(self.store, repository_root=root, controller_root=root,
+                              codex_status_path=live, probe_timeout=.01)
+        rendered = status.render("codex目前進度")
+        self.assertIn("[Codex 即時進度]", rendered)
+        self.assertIn("LINE authority 收斂", rendered)
+        self.assertNotIn("[三台即時狀態]", rendered)
+        self.assertNotIn("台中：", rendered)
+        self.assertNotIn("桃園：", rendered)
+
+    def test_codex_status_expired_invalid_or_sensitive_falls_back_to_git(self) -> None:
+        root = Path(self.temporary.name)
+        live = root / "status.json"
+        base = {
+            "schemaVersion": 1, "status": "working", "task": "safe task",
+            "phase": "safe phase", "progress": 10, "ttl": 10,
+            "updatedUtc": (datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat().replace("+00:00", "Z"),
+        }
+        status = StatusReport(self.store, repository_root=root, controller_root=root,
+                              codex_status_path=live, probe_timeout=.01)
+        fresh = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        for document in (base, {**base, "updatedUtc": "bad"},
+                         {**base, "updatedUtc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                          "task": r"C:\secret\token.txt"},
+                         {**base, "updatedUtc": fresh, "task": "client secret rotation"},
+                         {**base, "updatedUtc": fresh, "phase": "safe\u202eexe"},
+                         {**base, "updatedUtc": fresh, "phase": "safe\tphase"},
+                         {**base, "updatedUtc": fresh, "unexpected": True},
+                         {**base, "updatedUtc": "2026-09-03T00:00:00+00:00"},
+                         {**base, "updatedUtc": (datetime.now(timezone.utc) + timedelta(seconds=31)).isoformat().replace("+00:00", "Z")}):
+            with self.subTest(document=document):
+                live.write_text(json.dumps(document), encoding="utf-8")
+                rendered = status.render("Codex進度")
+                self.assertIn("[Aevrynd 開發進度]", rendered)
+                self.assertNotIn("[三台即時狀態]", rendered)
+                self.assertNotIn("secret", rendered.casefold())
+
+        live.write_bytes(b"{" + b"x" * 8192 + b"}")
+        self.assertIn("[Aevrynd 開發進度]", status.render("Codex進度"))
 
 
 if __name__ == "__main__":

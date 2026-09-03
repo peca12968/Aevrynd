@@ -176,6 +176,26 @@ def _run() -> int:
 
     queue = QueueStore(root / "data" / "queue.sqlite3")
     line = LineClient(config.channel_access_token)
+    controller_notification_drain = None
+    controller_app = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "Aevrynd" / "GameModeController" / "app"
+    if controller_app.is_dir() and len(config.allowed_group_ids) == 1:
+        # controller outbox 與 Gateway 共用既有 LINE credential；不複製 secret 到另一個設定檔。
+        sys.path.insert(0, str(controller_app))
+        try:
+            from tools.game_mode_controller.atomic_store import AtomicJsonStore
+            from tools.game_mode_controller.coordinator import HubCoordinator
+            from tools.game_mode_controller.line_notifications import LineNotificationDrainer, NoRedirectLineClient
+
+            controller_root = controller_app.parent
+            controller_coordinator = HubCoordinator(AtomicJsonStore(controller_root / "state" / "hub.json"))
+            controller_notification_drain = LineNotificationDrainer(
+                controller_coordinator,
+                NoRedirectLineClient(config.channel_access_token),
+                next(iter(config.allowed_group_ids)),
+            ).drain_one
+        except (ImportError, OSError, ValueError):
+            # controller 是獨立可選元件；不可因尚未安裝而中止 LINE Gateway。
+            controller_notification_drain = None
     qwen = None
     local_router = None
     qwen_by_role: dict[str, object] = {}
@@ -270,7 +290,9 @@ def _run() -> int:
     def worker_factory(lane: str) -> Worker:
         return Worker(
             queue, line, host_tasks, handoff,
-            worker_id=f"line-{lane}-worker", **worker_options
+            worker_id=f"line-{lane}-worker",
+            controller_notification_drain=controller_notification_drain if lane == "drainer" else None,
+            **worker_options
         )
     print("gateway_started", flush=True)
     stopped_cleanly = False

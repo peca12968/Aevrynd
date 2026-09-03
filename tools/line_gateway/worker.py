@@ -9,7 +9,7 @@ import uuid
 import re
 from contextlib import contextmanager
 from collections.abc import Mapping
-from typing import Iterator
+from typing import Callable, Iterator
 
 from .codex_handoff import CodexHandoff, CodexHandoffError
 from .host_tasks import HostTaskError, HostTasks
@@ -36,6 +36,7 @@ INGRESS_NOTICES = {
     Route.CODEX: "[Codex]\n已接收，正在處理…\n工作 ID：{job_id}",
     Route.ARTIFACT: "[檔案工作]\n已建立持久工作，等待主電腦 Codex 接手。\n工作 ID：{job_id}\n可傳送「工作狀態 <ID>」查詢。",
     Route.STATUS: "[狀態]\n已接收，正在讀取即時資料…",
+    Route.GAME_MODE: "[遊戲模式]\n已接收，正在安全切換…",
     Route.HOST: "[主機]\n已接收，正在查詢…",
     Route.ALL: "[全部助理]\n已接收，正在處理…",
     Route.HELP: "已接收，正在準備使用說明…",
@@ -81,6 +82,7 @@ class Worker:
         work_lease_seconds: int = WORK_LEASE_SECONDS,
         lease_heartbeat_seconds: float | None = None,
         status_report: StatusReport | None = None,
+        controller_notification_drain: Callable[[], bool] | None = None,
     ) -> None:
         self._queue_store = queue_store
         self._line_client = line_client
@@ -108,6 +110,7 @@ class Worker:
         self._active_lease_lost: threading.Event | None = None
         self._active_heartbeat_idle: threading.Event | None = None
         self._status_report = status_report or StatusReport(queue_store)
+        self._controller_notification_drain = controller_notification_drain
 
     def accept_event(self, event: Mapping[str, object], decision: RouteDecision) -> bool:
         """Queue an authorized routed event without persisting its raw payload or reply token."""
@@ -199,6 +202,12 @@ class Worker:
                 delivery.retry_key,
             )
             did_work = True
+        if self._controller_notification_drain is not None:
+            try:
+                did_work = self._controller_notification_drain() or did_work
+            except LineClientError:
+                # LINE 暫時失敗時保留 controller outbox，下一輪使用同一 retry key。
+                pass
         return did_work
 
     def _dispatch(self, job: ClaimedJob) -> None:
@@ -232,6 +241,8 @@ class Worker:
                 self._start_codex(job, partial_result=self._compose_all_partial(job.request_text))
             elif job.route == Route.STATUS.value:
                 self._finish(job, self._run_status(job.request_text, current_job_id=job.job_id))
+            elif job.route == Route.GAME_MODE.value:
+                self._finish(job, self._status_report.change_game_mode(job.request_text))
             elif job.route == Route.ARTIFACT.value:
                 self._start_artifact(job)
             else:

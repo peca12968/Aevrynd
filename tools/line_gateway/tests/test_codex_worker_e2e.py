@@ -305,6 +305,98 @@ class WorkerAndEndToEndTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
+    def test_controller_notifications_are_owned_only_by_side_effect_drainer(self) -> None:
+        calls = []
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=self.qwen, worker_id="controller-outbox",
+            controller_notification_drain=lambda: calls.append("drain") is None,
+        )
+        self.assertFalse(worker.drain_notification_once())
+        self.assertTrue(worker.drain_side_effect_once())
+        self.assertEqual(["drain"], calls)
+
+    def test_controller_notification_retry_stays_with_side_effect_owner(self) -> None:
+        attempts = []
+
+        def drain_controller() -> bool:
+            attempts.append("same-notification")
+            if len(attempts) == 1:
+                raise RetryableLineError("temporary")
+            return True
+
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=self.qwen, worker_id="controller-retry",
+            controller_notification_drain=drain_controller,
+        )
+        self.assertFalse(worker.drain_side_effect_once())
+        self.assertTrue(worker.drain_side_effect_once())
+        self.assertEqual(["same-notification", "same-notification"], attempts)
+
+    def test_controller_outbox_retry_reuses_one_line_retry_key_then_closes(self) -> None:
+        from datetime import datetime
+        from urllib import error as urlerror
+
+        from tools.game_mode_controller.atomic_store import AtomicJsonStore
+        from tools.game_mode_controller.coordinator import HubCoordinator
+        from tools.game_mode_controller.line_notifications import LineNotificationDrainer, NoRedirectLineClient
+        from tools.game_mode_controller.models import GameModeState, QwenState
+
+        now = "2026-09-03T06:00:00Z"
+        coordinator = HubCoordinator(AtomicJsonStore(Path(self.temporary.name) / "controller-hub.json"), clock=lambda: now)
+        coordinator.report("main", GameModeState("main", False, QwenState.RUNNING, "light", 1, now, "accepted"))
+        retry_keys = []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            @staticmethod
+            def getcode() -> int:
+                return 200
+
+            @staticmethod
+            def read(limit: int) -> bytes:
+                return b"{}"
+
+        def opener(request, timeout):
+            retry_keys.append(request.headers["X-line-retry-key"])
+            if len(retry_keys) == 1:
+                raise urlerror.URLError("temporary")
+            return Response()
+
+        client = NoRedirectLineClient(
+            "t" * 80, opener=opener, api_root="http://127.0.0.1:1/push", allow_test_root=True,
+        )
+        timestamp = datetime.fromisoformat(now.replace("Z", "+00:00")).timestamp()
+        drainer = LineNotificationDrainer(coordinator, client, "group", clock=lambda: timestamp)
+        with self.assertRaises(RetryableLineError):
+            drainer.drain_one()
+        self.assertEqual(1, len(coordinator.pending_notifications()))
+        self.assertTrue(drainer.drain_one())
+        self.assertEqual([], list(coordinator.pending_notifications()))
+        self.assertEqual(2, len(retry_keys))
+        self.assertEqual(retry_keys[0], retry_keys[1])
+
+    def test_game_mode_job_bypasses_qwen_and_uses_controller_bridge(self) -> None:
+        report = mock.Mock()
+        report.change_game_mode.return_value = "[遊戲模式]\n已安全送出"
+        queued = self.store.enqueue(
+            webhook_event_id="game-mode-fixed", route=Route.GAME_MODE.value,
+            source_id="group", requester_id="user", request_text="開啟台中遊戲模式",
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, status_report=report, worker_id="game-mode-worker",
+        )
+        self.assertTrue(worker.process_lane_once("control"))
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+        report.change_game_mode.assert_called_once_with("開啟台中遊戲模式")
+
     def test_all_route_aggregates_and_waits_for_codex(self) -> None:
         queued = self.store.enqueue(
             webhook_event_id="event-all",

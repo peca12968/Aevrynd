@@ -156,6 +156,40 @@ class RoutingTests(unittest.TestCase):
         for command in ("幫我做一份ppt", "產生 PDF 檔案", "建立word文件"):
             with self.subTest(command=command):
                 self.assertEqual(Route.ARTIFACT, route_event(mentioned(command), _config()).route)
+        for command in (
+            "給我最新的ppt綜合報告", "給我最新PDF報告", "給我最新的docx文件",
+            "給我最新word文件", "給我最新圖片報告", "給我最新PPTX簡報",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(Route.ARTIFACT, route_event(mentioned(command), _config()).route)
+        for command in (
+            "最新ppt報告的格式是什麼", "我在討論最新PDF報告", "給我說明ppt報告怎麼做",
+            "最新圖片模型消息", "給我最新進度報告", "給我最新的ppt綜合報告再重開機",
+            "給我最新PDF報告並幫我做其他事", "請給我最新的ppt綜合報告",
+        ):
+            with self.subTest(command=command):
+                self.assertNotEqual(Route.ARTIFACT, route_event(mentioned(command), _config()).route)
+
+    def test_game_mode_requires_the_exact_fixed_command_grammar(self) -> None:
+        def mentioned(command: str) -> dict:
+            event = _event("@Bot " + command)
+            event["message"]["mention"] = {
+                "mentionees": [{"index": 0, "length": 4, "type": "user", "isSelf": True}]
+            }
+            return event
+
+        for command in (
+            "開啟主電腦遊戲模式", "主機關閉遊戲模式", "開啟台中遊戲模式", "桃園關閉遊戲模式",
+        ):
+            with self.subTest(command=command):
+                decision = route_event(mentioned(command), _config())
+                self.assertEqual(Route.GAME_MODE, decision.route)
+                self.assertEqual("".join(command.split()), decision.command_text)
+        for command in (
+            "切換台中遊戲模式", "開啟全部遊戲模式", "台中遊戲模式狀態", "請開啟台中遊戲模式", "開啟台中遊戲模式再重開機",
+        ):
+            with self.subTest(command=command):
+                self.assertNotEqual(Route.GAME_MODE, route_event(mentioned(command), _config()).route)
 
     def test_self_mention_rejects_forgery_and_malformed_ranges(self) -> None:
         plain = _event("@Official hello")

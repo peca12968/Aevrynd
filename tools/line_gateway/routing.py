@@ -20,6 +20,7 @@ class Route(str, Enum):
     ALL = "all"
     HELP = "help"
     STATUS = "status"
+    GAME_MODE = "game_mode"
     ARTIFACT = "artifact"
     IGNORE = "ignore"
 
@@ -52,6 +53,8 @@ _STATUS_COMMANDS = frozenset(
         "主電腦進度",
         "Codex進度",
         "codex進度",
+        "Codex目前進度",
+        "codex目前進度",
         "開發進度",
         "現在進度",
         "目前進度",
@@ -103,8 +106,17 @@ _STATUS_PREDICATES = frozenset(
         "有工作進度",
     }
 )
-_ARTIFACT_MARKERS = ("ppt", "pptx", "word", "docx", "pdf", "簡報", "文件", "檔案")
+_ARTIFACT_MARKERS = ("ppt", "pptx", "word", "docx", "pdf", "簡報", "文件", "圖片", "檔案")
 _ARTIFACT_ACTIONS = ("產生", "生成", "建立", "製作", "做一份", "做個", "幫我做", "輸出")
+_ARTIFACT_REQUEST = re.compile(
+    r"^給我最新(?:的)?(?:pptx?|word|docx|pdf|圖片)(?:綜合)?(?:報告|簡報|文件)$",
+    re.IGNORECASE,
+)
+
+_GAME_MODE_COMMAND = re.compile(
+    r"^(?:(?P<action>開啟|關閉)(?P<node>主電腦|主機|台中|桃園)|"
+    r"(?P<node_first>主電腦|主機|台中|桃園)(?P<action_second>開啟|關閉))遊戲模式$"
+)
 
 
 def _is_bounded_status_command(normalized: str, default_route: Route) -> bool:
@@ -146,6 +158,9 @@ def _is_bounded_status_command(normalized: str, default_route: Route) -> bool:
 
 def _classify_command(command: str, default_route: Route) -> tuple[Route, str, str]:
     normalized = "".join(command.strip().split())
+    # 只有完整固定語句能改變遊戲模式；一般問答與狀態問題不能觸發副作用。
+    if _GAME_MODE_COMMAND.fullmatch(normalized):
+        return Route.GAME_MODE, normalized, "deterministic-game-mode"
     if (
         _is_bounded_status_command(normalized, default_route)
         or normalized in {"主電腦Codex進度", "主電腦codex進度"}
@@ -154,6 +169,11 @@ def _classify_command(command: str, default_route: Route) -> tuple[Route, str, s
     if re.fullmatch(r"(?:工作|任務)(?:狀態)?[：:\s]+[0-9a-fA-F-]{36}", command.strip()):
         return Route.STATUS, command.strip(), "deterministic-job-status"
     lowered = command.casefold()
+    if _ARTIFACT_REQUEST.fullmatch(normalized):
+        return Route.ARTIFACT, command.strip(), "deterministic-artifact"
+    # 「給我最新…」是 LINE 快捷指令，拼接任何額外文字都不可退回寬鬆產物路由。
+    if normalized.startswith("給我最新"):
+        return default_route, command, ""
     if any(marker in lowered for marker in _ARTIFACT_MARKERS) and any(
         action in command for action in _ARTIFACT_ACTIONS
     ):

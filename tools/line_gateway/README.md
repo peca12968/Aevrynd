@@ -59,6 +59,21 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 
 第二節點的 API key 閘門不得以未授權 `GET /v1/models` 必須回傳 401 作判定；llama.cpp 可將 models 保持公開並回傳 200。安全驗收應使用未授權 `POST /v1/chat/completions` 或 `GET /slots`，結果必須為 401 或 403；另外必須在遠端主機獨立確認 Windows Firewall 的 TCP 8080 inbound rule 只允許 Gateway Tailscale IPv4 `100.115.174.48`。API 授權與來源 IP 防火牆是兩個不同 gate，缺少任一項都不可啟用第二節點派工。
 
+## LINE 遊戲模式控制
+
+已授權的 LINE 使用者可用下列封閉語句控制固定節點；這些指令不經 Qwen 分類，也不接受附加文字或任意命令：
+
+```text
+開啟主電腦遊戲模式
+關閉主電腦遊戲模式
+開啟台中遊戲模式
+關閉台中遊戲模式
+開啟桃園遊戲模式
+關閉桃園遊戲模式
+```
+
+Gateway 以無視窗子程序呼叫 ProgramData 中已安裝的 Game Mode Controller。回覆會附三台即時狀態；遠端節點離線時，切換只會成為持久待執行意圖，不會誤報已完成。若 controller 已安裝且 LINE 只設定一個允許群組，Gateway 的單一副作用 drainer 也會投遞 controller 的 Qwen 啟停通知，並沿用原 notification UUID 作為 LINE retry key。
+
 ## LINE 內的台中與桃園助理
 
 - 群組：使用 LINE 的真正 mention 功能提及官方帳號後直接輸入問題。Gateway 只接受 webhook `mention.mentionees[]` 中 `type=user` 且 `isSelf=true` 的項目，並依官方 UTF-16 `index`／`length` 移除顯示名稱；單靠文字偽造 `@官方帳號` 不會通過。
@@ -253,3 +268,18 @@ pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Funnel.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\Ngrok.Tests.ps1
 pwsh -NoProfile -File .\tools\line_gateway\scripts\tests\AutomaticDeployment.Tests.ps1
 ```
+# Codex live status publication
+
+The gateway never inspects the Codex desktop session. An active Codex agent may
+explicitly publish a bounded status document with:
+
+```powershell
+pwsh -NoProfile -File tools/line_gateway/scripts/Set-CodexStatus.ps1 `
+  -Status working -Task "LINE authority" -Phase "tests" -Progress 80 -Ttl 300
+```
+
+The script atomically replaces the fixed
+`%ProgramData%\Aevrynd\Codex\status.json` document. It rejects paths, URLs,
+credential markers, multiline text, unknown states, and out-of-range values.
+The gateway accepts schema version 1 only and falls back to Git, the project
+ledger, and the durable queue when the document is invalid or expired.
