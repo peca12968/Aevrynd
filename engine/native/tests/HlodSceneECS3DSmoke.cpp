@@ -1,0 +1,30 @@
+#include <Aevrynd/SceneECS3D.h>
+#include <array>
+#include <iostream>
+#include <utility>
+
+using namespace Aevrynd;
+
+namespace {
+SceneEntityDefinition3D Definition(MeshResource3D mesh,Vec3 position,bool visible=true){SceneMeshRenderable3D renderable;renderable.nearMesh=mesh;renderable.visible=visible;return{SceneTransformComponent3D{Transform3D{position,{},{1,1,1}}},renderable,{}};}
+bool Visibility(const SceneECSRegistry3D& registry,const SceneHlodEntityBatch3D& batch,std::size_t index,bool expected){const auto* value=registry.Renderable(batch.entities[index]);return value&&value->visible==expected;}
+bool Same(Vec3 a,Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;}
+}
+
+int main(){
+ const MeshResource3D mesh{{7},{{},1.f,{1,1,1}},24,36,{}};const HlodClusterId3D id{0x484c4f44,17};const std::array sources{Definition(mesh,{1,2,3},false),Definition(mesh,{4,5,6},false)};const auto proxy=Definition(mesh,{7,8,9},true);
+ SceneECSRegistry3D registry;SceneHlodEntityBatch3D batch;if(!registry.CreateHlodBatchAtomic3D(id,9,sources,proxy,batch)||!batch||batch.sourceCount!=2||batch.entities.size()!=3||!Visibility(registry,batch,0,true)||!Visibility(registry,batch,1,true)||!Visibility(registry,batch,2,false)){std::cerr<<"Atomic source/proxy publication failed\n";return 1;}
+ ScenePointLightComponent3D light;light.light.radius=8;light.light.intensity=1;if(registry.Destroy(batch.entities[0])||registry.DestroyBatchAtomic(batch.entities)||registry.SetTransform(batch.entities[0],*sources[0].transform)||registry.SetRenderable(batch.entities[0],*sources[0].renderable)||registry.SetPointLight(batch.entities[0],light)||registry.RemoveTransform(batch.entities[0])||registry.RemoveRenderable(batch.entities[0])||registry.RemovePointLight(batch.entities[0])||registry.Transform(batch.entities[0])||registry.Renderable(batch.entities[0])||registry.PointLight(batch.entities[0])||!registry.Alive(batch.entities[0])||!registry.Alive(batch.entities[1])||!registry.Alive(batch.entities[2])){std::cerr<<"Generic API bypassed HLOD batch ownership\n";return 2;}
+ const auto& readOnlyRegistry=std::as_const(registry);const auto originalId=batch.clusterId;const auto originalGeneration=batch.clusterGeneration;const auto before0=readOnlyRegistry.Transform(batch.entities[0])->value.position,before2=readOnlyRegistry.Transform(batch.entities[2])->value.position;if(!registry.CanRebaseOrigin({10,0,-2})){return 3;}registry.RebaseOrigin({10,0,-2});if(batch.clusterId!=originalId||batch.clusterGeneration!=originalGeneration||!Same(readOnlyRegistry.Transform(batch.entities[0])->value.position,before0-Vec3{10,0,-2})||!Same(readOnlyRegistry.Transform(batch.entities[2])->value.position,before2-Vec3{10,0,-2})){std::cerr<<"Rebase polluted global HLOD identity\n";return 3;}
+ SceneHlodEntityBatch3D forged=batch;forged.clusterGeneration++;if(registry.HideHlodBatchAtomic3D(forged)||!Visibility(registry,batch,0,true)||!Visibility(registry,batch,1,true)||Visibility(registry,batch,2,true)){std::cerr<<"Cluster generation was not separate/fail-atomic\n";return 3;}
+ forged=batch;forged.entities[1]=forged.entities[0];if(registry.HideHlodBatchAtomic3D(forged)||!Visibility(registry,batch,0,true)||!Visibility(registry,batch,1,true)){std::cerr<<"Duplicate hide mutated the batch\n";return 4;}
+ forged=batch;forged.entities[1].generation++;if(registry.HideHlodBatchAtomic3D(forged)||!Visibility(registry,batch,0,true)||!Visibility(registry,batch,1,true)){std::cerr<<"Stale hide mutated the batch\n";return 5;}
+ if(!registry.HideHlodBatchAtomic3D(batch)||Visibility(registry,batch,0,true)||Visibility(registry,batch,1,true)||Visibility(registry,batch,2,true)){std::cerr<<"Atomic hide failed\n";return 6;}
+ forged=batch;forged.entities[1]=forged.entities[0];if(registry.DestroyHlodBatchAtomic3D(forged)||!registry.Alive(batch.entities[0])||!registry.Alive(batch.entities[1])||!registry.Alive(batch.entities[2])){std::cerr<<"Duplicate destroy partially destroyed the batch\n";return 7;}
+ forged=batch;forged.entities[1].generation++;if(registry.DestroyHlodBatchAtomic3D(forged)||!registry.Alive(batch.entities[0])||!registry.Alive(batch.entities[1])||!registry.Alive(batch.entities[2])){std::cerr<<"Stale destroy partially destroyed the batch\n";return 8;}
+ if(!registry.DestroyHlodBatchAtomic3D(batch)||registry.Alive(batch.entities[0])||registry.Alive(batch.entities[1])||registry.Alive(batch.entities[2])){std::cerr<<"Atomic destroy failed\n";return 9;}
+ const SceneEntity3D reused=registry.Create();if(!reused||reused.index!=batch.entities.back().index||reused.generation==batch.entities.back().generation||registry.Alive(batch.entities.back())||registry.HideHlodBatchAtomic3D(batch)||registry.DestroyHlodBatchAtomic3D(batch)||!registry.Alive(reused)){std::cerr<<"HLOD Scene generation ABA guard failed\n";return 9;}if(!registry.Destroy(reused)){return 9;}
+ const auto baseline=registry.MemoryStats();SceneHlodEntityBatch3D nonempty;nonempty.clusterId=id;if(registry.CreateHlodBatchAtomic3D(id,10,sources,proxy,nonempty)){std::cerr<<"Nonempty output accepted\n";return 10;}SceneHlodEntityBatch3D disabled;if(registry.CreateHlodBatchAtomic3D(id,10,{},proxy,disabled)||disabled||registry.MemoryStats().retainedCapacityBytes!=baseline.retainedCapacityBytes){std::cerr<<"Disabled/no-cluster path mutated registry\n";return 11;}
+ auto invalidSources=sources;invalidSources[1].renderable->nearMesh={};SceneHlodEntityBatch3D invalid;if(registry.CreateHlodBatchAtomic3D(id,10,invalidSources,proxy,invalid)||invalid){std::cerr<<"Invalid Nth definition partially created\n";return 12;}Scene3D scene;DrawList draw;if(registry.Collect(scene,draw).aliveEntities){std::cerr<<"Failed create published entities\n";return 13;}
+ return 0;
+}

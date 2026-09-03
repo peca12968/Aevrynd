@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Hlod3D.h"
 #include "MaterialLibrary3D.h"
 #include "MeshLoader.h"
 #include "SceneECS3D.h"
@@ -62,6 +63,21 @@ struct PreparedStaticMeshAsset3D {
     explicit operator bool()const{return !definition.name.empty()&&levelCount&&assetKey;}
 };
 
+inline constexpr std::size_t MaximumHlodProxyLogicalNameBytes3D=160;
+struct PreparedHlodProxyAsset3D {
+    StableObjectId3D worldId{};
+    GlobalChunkCoordinate3D chunk{};
+    HlodClusterId3D clusterId{};
+    std::uint64_t clusterGeneration{};
+    std::string logicalName{};
+    PreparedStaticMeshAsset3D prepared{};
+    std::size_t reservedPhysicalBytes{};
+    explicit operator bool()const noexcept{return bool(worldId)&&bool(clusterId)&&clusterGeneration&&!logicalName.empty()&&bool(prepared)&&reservedPhysicalBytes!=SIZE_MAX&&canonicalIdentity_;}
+private:
+    std::uint64_t canonicalIdentity_{};
+    friend class StaticMeshAssetLibrary3D;
+};
+
 struct StaticMeshAssetLibraryLifetime3D {
     std::uint64_t ownerIdentity{};
     std::atomic<std::uint64_t> generation{1};
@@ -87,6 +103,30 @@ private:
     std::uint64_t ownerIdentity_{},generation_{};
 };
 
+struct HlodProxyLease3D {
+    HlodProxyLease3D()=default;
+    HlodProxyLease3D(const HlodProxyLease3D&)=delete;
+    HlodProxyLease3D& operator=(const HlodProxyLease3D&)=delete;
+    HlodProxyLease3D(HlodProxyLease3D&& other)noexcept{Swap(other);}
+    HlodProxyLease3D& operator=(HlodProxyLease3D&& other)noexcept{if(this!=&other)Swap(other);return*this;}
+    StableObjectId3D worldId{};
+    GlobalChunkCoordinate3D chunk{};
+    HlodClusterId3D clusterId{};
+    std::uint64_t clusterGeneration{};
+    std::string logicalName{};
+    StaticMeshRenderableLease3D renderable{};
+    std::size_t actualPhysicalBytes{};
+    // renderable 已在 alias unload 前釋放；即使 unload 暫時失敗，lease 仍須保持可重試。
+    [[nodiscard]] bool Valid()const noexcept{return bool(worldId)&&bool(clusterId)&&clusterGeneration&&!logicalName.empty()&&canonicalIdentity_&&owner_&&ownerIdentity_==owner_->ownerIdentity&&ownerGeneration_==owner_->generation.load(std::memory_order_acquire)&&owner_->active.load(std::memory_order_acquire);}
+    explicit operator bool()const noexcept{return Valid();}
+    void Reset()noexcept{worldId={};chunk={};clusterId={};clusterGeneration=0;logicalName.clear();renderable.Reset();actualPhysicalBytes=0;owner_.reset();ownerIdentity_=ownerGeneration_=canonicalIdentity_=0;}
+private:
+    void Swap(HlodProxyLease3D& other)noexcept{using std::swap;swap(worldId,other.worldId);swap(chunk,other.chunk);swap(clusterId,other.clusterId);swap(clusterGeneration,other.clusterGeneration);swap(logicalName,other.logicalName);swap(renderable,other.renderable);swap(actualPhysicalBytes,other.actualPhysicalBytes);swap(owner_,other.owner_);swap(ownerIdentity_,other.ownerIdentity_);swap(ownerGeneration_,other.ownerGeneration_);swap(canonicalIdentity_,other.canonicalIdentity_);}
+    friend class StaticMeshAssetLibrary3D;
+    std::shared_ptr<const StaticMeshAssetLibraryLifetime3D> owner_{};
+    std::uint64_t ownerIdentity_{},ownerGeneration_{},canonicalIdentity_{};
+};
+
 class StaticMeshAssetLibrary3D {
 public:
     StaticMeshAssetLibrary3D()=default;
@@ -96,6 +136,13 @@ public:
     [[nodiscard]] std::optional<PreparedStaticMeshAsset3D> PrepareCpu(StaticMeshAssetDefinition3D definition)const;
     bool AcquirePrepared(PreparedStaticMeshAsset3D prepared);
     [[nodiscard]] bool ContainsPreparedPhysical(const PreparedStaticMeshAsset3D& prepared)const;
+    [[nodiscard]] std::optional<PreparedHlodProxyAsset3D> PrepareHlodProxyCpu3D(
+        StableObjectId3D worldId,GlobalChunkCoordinate3D chunk,HlodClusterId3D clusterId,
+        std::uint64_t clusterGeneration,StaticMeshAssetDefinition3D definition)const;
+    [[nodiscard]] std::size_t EstimatePreparedPhysicalAllocationBytes3D(const PreparedStaticMeshAsset3D& prepared)const;
+    bool AcquireHlodProxyAtomic3D(PreparedHlodProxyAsset3D prepared,HlodProxyLease3D& output);
+    bool ReleaseHlodProxyAlias3D(HlodProxyLease3D& lease);
+    void SetHlodProxyFailureCheckpointForTesting(int checkpoint)noexcept{hlodProxyFailureCheckpoint_=checkpoint;}
     bool Load(StaticMeshAssetDefinition3D definition);
     bool LoadAll(std::span<const StaticMeshAssetDefinition3D> definitions);
     bool Unload(std::string_view name);
@@ -132,6 +179,7 @@ private:
     std::optional<SceneMeshRenderable3D> CreateRenderable(std::string_view name,std::uint32_t layer,bool visible)const;
     void CollectDeadInstances();
     void DestroyPhysical(PhysicalAssetRecord& asset);
+    bool AdvanceHlodProxyFailureCheckpoint()noexcept;
     Engine* engine_{};
     SceneECSRegistry3D* registry_{};
     std::filesystem::path assetRoot_{};
@@ -151,6 +199,7 @@ private:
     mutable std::uint64_t operationTicket_{},stateGeneration_{1};
     mutable std::size_t shutdownRequests_{};
     mutable bool operationActive_{};
+    int hlodProxyFailureCheckpoint_{-1};
 };
 
 }

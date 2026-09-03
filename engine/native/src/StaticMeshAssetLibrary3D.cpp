@@ -1,6 +1,7 @@
 #include <Aevrynd/StaticMeshAssetLibrary3D.h>
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <cmath>
 #include <cwctype>
 #include <limits>
@@ -273,6 +274,128 @@ std::string CanonicalKey(const StaticMeshAssetDefinition3D &value,
   return out.str();
 }
 
+bool CheckedAdd(std::size_t left, std::size_t right, std::size_t &output) {
+  if (right > (std::numeric_limits<std::size_t>::max)() - left)
+    return false;
+  output = left + right;
+  return true;
+}
+bool CheckedMultiply(std::size_t left, std::size_t right,
+                     std::size_t &output) {
+  if (left && right > (std::numeric_limits<std::size_t>::max)() / left)
+    return false;
+  output = left * right;
+  return true;
+}
+void AppendHex64(std::string &output, std::uint64_t value) {
+  char digits[16]{};
+  auto converted = std::to_chars(std::begin(digits), std::end(digits), value, 16);
+  const std::size_t count = std::size_t(converted.ptr - digits);
+  output.append(16 - count, '0');
+  output.append(digits, count);
+}
+template <class Integer> void AppendDecimal(std::string &output, Integer value) {
+  char digits[32]{};
+  const auto converted = std::to_chars(std::begin(digits), std::end(digits), value);
+  output.append(digits, std::size_t(converted.ptr - digits));
+}
+std::optional<std::string> HlodProxyLogicalName(
+    StableObjectId3D worldId, GlobalChunkCoordinate3D chunk,
+    HlodClusterId3D clusterId, std::uint64_t generation) {
+  if (!worldId || !clusterId || !generation)
+    return std::nullopt;
+  try {
+    std::string result;
+    result.reserve(MaximumHlodProxyLogicalNameBytes3D);
+    result = "hlod/";
+    AppendHex64(result, worldId.high);
+    result.push_back('-');
+    AppendHex64(result, worldId.low);
+    result.push_back('/');
+    AppendDecimal(result, chunk.x);
+    result.push_back('-');
+    AppendDecimal(result, chunk.y);
+    result.push_back('-');
+    AppendDecimal(result, chunk.z);
+    result.push_back('/');
+    AppendHex64(result, clusterId.high);
+    result.push_back('-');
+    AppendHex64(result, clusterId.low);
+    result += "/g";
+    AppendDecimal(result, generation);
+    if (result.size() > MaximumHlodProxyLogicalNameBytes3D)
+      return std::nullopt;
+    return result;
+  } catch (const std::bad_alloc &) {
+    return std::nullopt;
+  }
+}
+std::uint64_t HlodPreparedIdentity(StableObjectId3D worldId,GlobalChunkCoordinate3D chunk,HlodClusterId3D clusterId,std::uint64_t generation,std::string_view name){
+  std::uint64_t hash=1469598103934665603ull;const auto scalar=[&](std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=(value>>(byte*8))&255u;hash*=1099511628211ull;}};scalar(worldId.high);scalar(worldId.low);scalar(static_cast<std::uint64_t>(chunk.x));scalar(static_cast<std::uint64_t>(chunk.y));scalar(static_cast<std::uint64_t>(chunk.z));scalar(clusterId.high);scalar(clusterId.low);scalar(generation);for(unsigned char value:name){hash^=value;hash*=1099511628211ull;}return hash?hash:1;
+}
+bool ValidHlodProxyLogicalName(std::string_view value,
+                               HlodClusterId3D clusterId,
+                               std::uint64_t generation) {
+  if (!clusterId || !generation || value.empty() ||
+      value.size() > MaximumHlodProxyLogicalNameBytes3D ||
+      !value.starts_with("hlod/"))
+    return false;
+  const auto lastSlash = value.rfind('/');
+  if (lastSlash == std::string_view::npos || lastSlash + 2 >= value.size() ||
+      value[lastSlash + 1] != 'g')
+    return false;
+  std::uint64_t parsedGeneration{};
+  const auto generationText = value.substr(lastSlash + 2);
+  const auto generationResult = std::from_chars(
+      generationText.data(), generationText.data() + generationText.size(),
+      parsedGeneration);
+  if (generationResult.ec != std::errc{} ||
+      generationResult.ptr != generationText.data() + generationText.size() ||
+      parsedGeneration != generation ||
+      (generationText.size() > 1 && generationText.front() == '0'))
+    return false;
+  std::string expectedCluster;
+  try {
+    expectedCluster.reserve(33);
+    AppendHex64(expectedCluster, clusterId.high);
+    expectedCluster.push_back('-');
+    AppendHex64(expectedCluster, clusterId.low);
+  } catch (const std::bad_alloc &) {
+    return false;
+  }
+  const auto clusterSlash = value.rfind('/', lastSlash - 1);
+  if (clusterSlash == std::string_view::npos ||
+      value.substr(clusterSlash + 1, lastSlash - clusterSlash - 1) !=
+          expectedCluster)
+    return false;
+  const auto chunkSlash = value.rfind('/', clusterSlash - 1);
+  if (chunkSlash == std::string_view::npos || chunkSlash <= 5)
+    return false;
+  const auto world = value.substr(5, chunkSlash - 5);
+  if (world.size() != 33 || world[16] != '-')
+    return false;
+  for (std::size_t index = 0; index < world.size(); ++index)
+    if (index != 16 && !((world[index] >= '0' && world[index] <= '9') ||
+                         (world[index] >= 'a' && world[index] <= 'f')))
+      return false;
+  const auto chunk = value.substr(chunkSlash + 1, clusterSlash - chunkSlash - 1);
+  std::size_t begin{};
+  for (unsigned component = 0; component < 3; ++component) {
+    std::size_t end = component == 2 ? chunk.size() : chunk.find('-', begin + (begin < chunk.size() && chunk[begin] == '-' ? 1 : 0));
+    if (end == std::string_view::npos || end <= begin)
+      return false;
+    const auto text = chunk.substr(begin, end - begin);
+    std::int64_t parsed{};
+    const auto converted = std::from_chars(text.data(), text.data() + text.size(), parsed);
+    if (converted.ec != std::errc{} || converted.ptr != text.data() + text.size() ||
+        (text.size() > 1 && text.front() == '0') ||
+        (text.size() > 2 && text[0] == '-' && text[1] == '0'))
+      return false;
+    begin = end + 1;
+  }
+  return begin == chunk.size() + 1;
+}
+
 } // namespace
 
 StaticMeshAssetLibrary3D::OperationGuard::OperationGuard(
@@ -489,6 +612,188 @@ std::optional<PreparedStaticMeshAsset3D> StaticMeshAssetLibrary3D::PrepareCpu(
   result.assetKey.canonical =
       CanonicalKey(result.definition, result.assetKey.contentIdentity);
   return result;
+}
+
+std::size_t StaticMeshAssetLibrary3D::EstimatePreparedPhysicalAllocationBytes3D(
+    const PreparedStaticMeshAsset3D &prepared) const {
+  OperationGuard operation{*this};
+  if (!operation || !engine_ || !prepared ||
+      prepared.levelCount > prepared.cpuMeshes.size())
+    return SIZE_MAX;
+  std::size_t total{};
+  for (std::uint32_t level = 0; level < prepared.levelCount; ++level) {
+    const auto &mesh = prepared.cpuMeshes[level];
+    std::size_t vertexBytes{}, indexBytes{};
+    if (!mesh.Valid() ||
+        !CheckedMultiply(mesh.vertices.size(), sizeof(Vertex3D), vertexBytes) ||
+        !CheckedMultiply(mesh.indices.size(), sizeof(std::uint32_t), indexBytes) ||
+        vertexBytes > (std::numeric_limits<std::size_t>::max)() -
+                          (alignof(std::uint32_t) - 1))
+      return SIZE_MAX;
+    const std::size_t indexOffset =
+        (vertexBytes + alignof(std::uint32_t) - 1) &
+        ~(alignof(std::uint32_t) - 1);
+    std::size_t meshBytes{};
+    if (!CheckedAdd(indexOffset, indexBytes, meshBytes) ||
+        !CheckedAdd(total, meshBytes, total))
+      return SIZE_MAX;
+  }
+  const auto textureBytes = engine_->EstimateMaterialTextureSetAllocationBytes3D(
+      prepared.definition.material.textures);
+  return textureBytes && CheckedAdd(total, *textureBytes, total) ? total
+                                                                 : SIZE_MAX;
+}
+
+std::optional<PreparedHlodProxyAsset3D>
+StaticMeshAssetLibrary3D::PrepareHlodProxyCpu3D(
+    StableObjectId3D worldId, GlobalChunkCoordinate3D chunk,
+    HlodClusterId3D clusterId, std::uint64_t clusterGeneration,
+    StaticMeshAssetDefinition3D definition) const {
+  OperationGuard operation{*this};
+  if (!operation)
+    return std::nullopt;
+  auto logicalName =
+      HlodProxyLogicalName(worldId, chunk, clusterId, clusterGeneration);
+  if (!logicalName)
+    return std::nullopt;
+  definition.name = *logicalName;
+  if (definition.material.name.empty())
+    definition.material.name = "__hlod-proxy-material";
+  auto prepared = PrepareCpu(std::move(definition));
+  if (!prepared || prepared->definition.name != *logicalName)
+    return std::nullopt;
+  const std::size_t estimate = EstimatePreparedPhysicalAllocationBytes3D(*prepared);
+  if (estimate == SIZE_MAX)
+    return std::nullopt;
+  const std::size_t reserved = ContainsPreparedPhysical(*prepared) ? 0 : estimate;
+  PreparedHlodProxyAsset3D result{};result.worldId=worldId;result.chunk=chunk;result.clusterId=clusterId;result.clusterGeneration=clusterGeneration;result.logicalName=std::move(*logicalName);result.prepared=std::move(*prepared);result.reservedPhysicalBytes=reserved;result.canonicalIdentity_=HlodPreparedIdentity(result.worldId,result.chunk,result.clusterId,result.clusterGeneration,result.logicalName);return result;
+}
+
+bool StaticMeshAssetLibrary3D::AdvanceHlodProxyFailureCheckpoint() noexcept {
+  if (hlodProxyFailureCheckpoint_ < 0)
+    return false;
+  if (!hlodProxyFailureCheckpoint_) {
+    hlodProxyFailureCheckpoint_ = -1;
+    return true;
+  }
+  --hlodProxyFailureCheckpoint_;
+  return false;
+}
+
+bool StaticMeshAssetLibrary3D::AcquireHlodProxyAtomic3D(
+    PreparedHlodProxyAsset3D prepared, HlodProxyLease3D &output) {
+  OperationGuard operation{*this};
+  if (!operation || !engine_ || !registry_ || output.worldId || output.clusterId ||
+      output.clusterGeneration || !output.logicalName.empty() ||
+      output.renderable.Valid() || output.actualPhysicalBytes || output.owner_ ||
+      !prepared ||
+      !ValidHlodProxyLogicalName(prepared.logicalName, prepared.clusterId,
+                                 prepared.clusterGeneration) ||
+      prepared.prepared.definition.name != prepared.logicalName ||
+      prepared.prepared.assetKey.contentIdentity == 0)
+    return false;
+  const auto expectedName=HlodProxyLogicalName(prepared.worldId,prepared.chunk,prepared.clusterId,prepared.clusterGeneration);
+  if(!expectedName||*expectedName!=prepared.logicalName||prepared.canonicalIdentity_!=HlodPreparedIdentity(prepared.worldId,prepared.chunk,prepared.clusterId,prepared.clusterGeneration,prepared.logicalName))return false;
+  if(!prepared.prepared.levelCount||prepared.prepared.levelCount>prepared.prepared.cpuMeshes.size())return false;
+  const auto preparedMeshes=std::span<const Mesh3D>{prepared.prepared.cpuMeshes.data(),prepared.prepared.levelCount};const std::uint64_t contentIdentity=MeshContentIdentity(preparedMeshes);
+  if(contentIdentity!=prepared.prepared.assetKey.contentIdentity||CanonicalKey(prepared.prepared.definition,contentIdentity)!=prepared.prepared.assetKey.canonical)return false;
+  const std::size_t estimate =
+      EstimatePreparedPhysicalAllocationBytes3D(prepared.prepared);
+  if (estimate == SIZE_MAX ||
+      (prepared.reservedPhysicalBytes != 0 &&
+       prepared.reservedPhysicalBytes != estimate))
+    return false;
+  const bool physicalExisted = ContainsPreparedPhysical(prepared.prepared);
+  if (!physicalExisted && prepared.reservedPhysicalBytes != estimate)
+    return false;
+  if (const auto existing = entries_.find(prepared.logicalName);
+      existing != entries_.end()) {
+    if (existing->second.assetKey != prepared.prepared.assetKey.canonical)
+      ++stats_.nameConflicts;
+    return false;
+  }
+  try {
+    if (AdvanceHlodProxyFailureCheckpoint())
+      throw std::bad_alloc{};
+    entries_.reserve(entries_.size() + 1);
+    physicalAssets_.reserve(physicalAssets_.size() + (physicalExisted ? 0 : 1));
+    if (AdvanceHlodProxyFailureCheckpoint())
+      throw std::bad_alloc{};
+  } catch (...) {
+    return false;
+  }
+  const RendererStats before = engine_->GetRendererStats();
+  bool aliasCreated{};
+  HlodProxyLease3D result{};
+  try {
+    if (!AcquirePrepared(std::move(prepared.prepared)))
+      return false;
+    aliasCreated = true;
+    if (AdvanceHlodProxyFailureCheckpoint())
+      throw std::bad_alloc{};
+    auto renderable = ResolveRenderable(prepared.logicalName, 1, false);
+    if (!renderable || !renderable->Valid() ||
+        renderable->OwnerIdentity() != ownerState_->ownerIdentity ||
+        renderable->Generation() !=
+            ownerState_->generation.load(std::memory_order_acquire))
+      throw std::runtime_error("HLOD proxy renderable lease validation failed");
+    if (AdvanceHlodProxyFailureCheckpoint())
+      throw std::bad_alloc{};
+    const RendererStats after = engine_->GetRendererStats();
+    if (after.residentMeshBytes < before.residentMeshBytes ||
+        after.residentTextureAllocationBytes <
+            before.residentTextureAllocationBytes)
+      throw std::runtime_error("HLOD proxy resident byte counters regressed");
+    const std::size_t meshDelta =
+        after.residentMeshBytes - before.residentMeshBytes;
+    const std::size_t textureDelta = after.residentTextureAllocationBytes -
+                                     before.residentTextureAllocationBytes;
+    std::size_t actual{};
+    if (!CheckedAdd(meshDelta, textureDelta, actual) ||
+        actual > prepared.reservedPhysicalBytes)
+      throw std::overflow_error("HLOD proxy physical delta exceeded reservation");
+    result.worldId = prepared.worldId;
+    result.chunk = prepared.chunk;
+    result.clusterId = prepared.clusterId;
+    result.clusterGeneration = prepared.clusterGeneration;
+    result.logicalName = prepared.logicalName;
+    result.renderable = std::move(*renderable);
+    result.actualPhysicalBytes = actual;
+    result.owner_ = ownerState_;
+    result.ownerIdentity_ = ownerState_->ownerIdentity;
+    result.ownerGeneration_ =
+        ownerState_->generation.load(std::memory_order_acquire);
+    result.canonicalIdentity_=HlodPreparedIdentity(result.worldId,result.chunk,result.clusterId,result.clusterGeneration,result.logicalName);
+    if (AdvanceHlodProxyFailureCheckpoint())
+      throw std::bad_alloc{};
+    output = std::move(result);
+    return true;
+  } catch (...) {
+    result.renderable.Reset();
+    if (aliasCreated)
+      (void)Unload(prepared.logicalName);
+    return false;
+  }
+}
+
+bool StaticMeshAssetLibrary3D::ReleaseHlodProxyAlias3D(
+    HlodProxyLease3D &lease) {
+  OperationGuard operation{*this};
+  if (!operation || !lease || lease.owner_.get() != ownerState_.get() ||
+      lease.ownerIdentity_ != ownerState_->ownerIdentity ||
+      lease.ownerGeneration_ !=
+          ownerState_->generation.load(std::memory_order_acquire) ||
+      !ownerState_->active.load(std::memory_order_acquire) ||
+      !ValidHlodProxyLogicalName(lease.logicalName, lease.clusterId,
+                                 lease.clusterGeneration))
+    return false;
+  const auto expectedName=HlodProxyLogicalName(lease.worldId,lease.chunk,lease.clusterId,lease.clusterGeneration);
+  if(!expectedName||*expectedName!=lease.logicalName||lease.canonicalIdentity_!=HlodPreparedIdentity(lease.worldId,lease.chunk,lease.clusterId,lease.clusterGeneration,lease.logicalName))return false;
+  lease.renderable.Reset();
+  if (!Unload(lease.logicalName))
+    return false;
+  lease.Reset();
+  return true;
 }
 
 bool StaticMeshAssetLibrary3D::AcquirePrepared(

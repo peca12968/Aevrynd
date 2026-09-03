@@ -566,6 +566,18 @@ target_compile_definitions(AevryndStaticMeshAssetLibrary3DTest PRIVATE AEVRYND_S
 target_link_libraries(AevryndStaticMeshAssetLibrary3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndStaticMeshAssetLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndStaticMeshAssetLibrary3DTest>'")
 
+add_executable(AevryndHlodStaticMeshAssetLibrary3DTest tests/HlodStaticMeshAssetLibrary3DSmoke.cpp)
+target_compile_options(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndHlodStaticMeshAssetLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndHlodStaticMeshAssetLibrary3DTest>'")
+add_test(NAME AevryndHlodStaticMeshAssetLibrary3DGpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; & '$<TARGET_FILE:AevryndHlodStaticMeshAssetLibrary3DTest>'")
+
+add_executable(AevryndHlodSceneECS3DTest tests/HlodSceneECS3DSmoke.cpp)
+target_compile_options(AevryndHlodSceneECS3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndHlodSceneECS3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndHlodSceneECS3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndHlodSceneECS3DTest>'")
+
 add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAudioTest PRIVATE AevryndEngine)

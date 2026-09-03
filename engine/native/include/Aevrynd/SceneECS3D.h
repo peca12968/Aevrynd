@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Hlod3D.h"
 #include "Scene3D.h"
 #include <cstdint>
 #include <limits>
@@ -43,6 +44,15 @@ struct SceneEntityDefinition3D {
     std::optional<ScenePointLightComponent3D> pointLight;
 };
 
+struct SceneHlodEntityBatch3D {
+    HlodClusterId3D clusterId{};
+    std::uint64_t clusterGeneration{};
+    std::uint32_t sourceCount{};
+    std::vector<SceneEntity3D> entities{};
+    [[nodiscard]] explicit operator bool()const noexcept{return bool(clusterId)&&clusterGeneration&&sourceCount&&entities.size()==std::size_t(sourceCount)+1;}
+    [[nodiscard]] SceneEntity3D Proxy()const noexcept{return bool(*this)?entities.back():SceneEntity3D{};}
+};
+
 struct SceneECSCollectionStats3D {
     std::size_t aliveEntities{}, transformComponents{}, renderableComponents{}, pointLightComponents{};
     std::size_t renderableCandidates{}, submittedRenderables{}, submittedLodRenderables{}, submittedPointLights{};
@@ -57,6 +67,9 @@ public:
     bool CreateBatchAtomic(std::span<const SceneEntityDefinition3D> definitions,std::vector<SceneEntity3D>& entities);
     // 先驗證整批 handle，再一次移除，供分區 owner 原子下架。
     bool DestroyBatchAtomic(std::span<const SceneEntity3D> entities);
+    bool CreateHlodBatchAtomic3D(HlodClusterId3D clusterId,std::uint64_t clusterGeneration,std::span<const SceneEntityDefinition3D> sources,const SceneEntityDefinition3D& proxy,SceneHlodEntityBatch3D& output);
+    bool HideHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch);
+    bool DestroyHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch);
     bool CanRebaseOrigin(Vec3 delta)const noexcept;
     void RebaseOrigin(Vec3 delta)noexcept;
     bool Destroy(SceneEntity3D entity);
@@ -91,9 +104,15 @@ private:
         std::optional<SceneTransformComponent3D> transform;
         std::optional<SceneMeshRenderable3D> renderable;
         std::optional<ScenePointLightComponent3D> pointLight;
+        HlodClusterId3D hlodClusterId{};
+        std::uint64_t hlodClusterGeneration{};
+        std::uint32_t hlodOrdinal{};
+        bool hlodProxy{};
     };
     Slot* Find(SceneEntity3D entity);
     const Slot* Find(SceneEntity3D entity) const;
+    bool DestroyInternal(SceneEntity3D entity,bool allowHlodOwner);
+    bool ValidateHlodBatch(const SceneHlodEntityBatch3D& batch)const noexcept;
     std::vector<Slot> slots_;
     std::vector<std::uint32_t> freeSlots_;
     mutable std::vector<std::uint32_t> renderableBatch_;
