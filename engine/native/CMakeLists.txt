@@ -27,6 +27,7 @@ add_library(AevryndEngine STATIC
   src/EnvironmentMeshes3D.cpp
   src/FrameCapture3D.cpp
   src/HeightField3D.cpp
+  src/Hlod3D.cpp
   src/Memory.cpp
   src/MaterialLibrary3D.cpp
   src/NativeMaterialDds3D.cpp
@@ -411,6 +412,10 @@ add_executable(AevryndVisibilityBvh3DTest tests/VisibilityBvh3DSmoke.cpp)
 target_compile_options(AevryndVisibilityBvh3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndVisibilityBvh3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndVisibilityBvh3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndVisibilityBvh3DTest>'")
+add_executable(AevryndHlod3DTest tests/Hlod3DSmoke.cpp)
+target_compile_options(AevryndHlod3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndHlod3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndHlod3DTest COMMAND AevryndHlod3DTest)
 add_executable(AevryndVegetation3DTest tests/Vegetation3DSmoke.cpp)
 target_compile_options(AevryndVegetation3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndVegetation3DTest PRIVATE AevryndEngine)
