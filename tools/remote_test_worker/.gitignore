@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+readiness*.json
+artifacts/*
+!artifacts/Aevrynd-Remote-Test-Worker-Phase1-reviewed.zip
