@@ -113,6 +113,7 @@ Fixture MakeFixture(StaticMeshAssetLibrary3D &library,
 class Game final : public IGame {
 public:
   void OnStart(Engine &engine) override {
+    baseline_ = engine.GetRendererStats();
     TerrainVegetationChunkSettings3D settings{};
     settings.chunkSize = 16;
     settings.terrainCells = 4;
@@ -127,7 +128,6 @@ public:
       engine.Quit();
       return;
     }
-    baseline_ = engine.GetRendererStats();
     target_ = std::make_unique<TerrainVegetationWorldChunkActivationTarget3D>(
         engine, scene_, vegetation_, &library_, nullptr, settings);
     fixture_ = MakeFixture(library_, settings);
@@ -184,9 +184,15 @@ public:
       if (!Validation(stats) || stats.residentMeshBytes != baseline_.residentMeshBytes ||
           stats.residentTextureAllocationBytes !=
               baseline_.residentTextureAllocationBytes ||
-          stats.pendingGpuReleaseBytes)
+          stats.pendingGpuReleaseBytes) {
+        std::cerr << "real baseline mesh=" << stats.residentMeshBytes << '/'
+                  << baseline_.residentMeshBytes << " texture="
+                  << stats.residentTextureAllocationBytes << '/'
+                  << baseline_.residentTextureAllocationBytes << " pending="
+                  << stats.pendingGpuReleaseBytes << " validation="
+                  << Validation(stats) << " polls=" << polls_ << '\n';
         Fail("Real receipt D3D12/GBV resource baseline failed");
-      else
+      } else
         std::cout << "realRetirementReceipt=passed polls=" << polls_
                   << " globalWaitBeforeReceipt=0 validation=passed\n";
       engine.Quit();

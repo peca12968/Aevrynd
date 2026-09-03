@@ -42,6 +42,9 @@ bool SceneECSRegistry3D::HideHlodBatchAtomic3D(const SceneHlodEntityBatch3D& bat
     // 驗證全部完成後才改變 visibility，失敗路徑不會留下半批隱藏。
     for(const SceneEntity3D entity:batch.entities)Find(entity)->renderable->visible=false;return true;
 }
+bool SceneECSRegistry3D::CanSetHlodVisibility3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)const noexcept{return static_cast<std::uint8_t>(mode)<=static_cast<std::uint8_t>(HlodSelectionMode3D::Proxy)&&ValidateHlodBatch(batch);}
+bool SceneECSRegistry3D::MatchesHlodVisibility3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)const noexcept{if(!CanSetHlodVisibility3D(batch,mode))return false;const bool sources=mode!=HlodSelectionMode3D::Proxy,proxy=mode!=HlodSelectionMode3D::Source;for(std::size_t index=0;index<batch.entities.size();++index){const Slot* slot=Find(batch.entities[index]);if(slot->renderable->visible!=(index==batch.sourceCount?proxy:sources))return false;}return true;}
+bool SceneECSRegistry3D::SetHlodVisibilityAtomic3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)noexcept{if(!CanSetHlodVisibility3D(batch,mode))return false;const bool sources=mode!=HlodSelectionMode3D::Proxy,proxy=mode!=HlodSelectionMode3D::Source;for(std::size_t index=0;index<batch.entities.size();++index)Find(batch.entities[index])->renderable->visible=index==batch.sourceCount?proxy:sources;return true;}
 bool SceneECSRegistry3D::DestroyHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch){
     if(!ValidateHlodBatch(batch))return false;std::size_t reusable{};for(const SceneEntity3D entity:batch.entities)if(entity.generation!=(std::numeric_limits<std::uint32_t>::max)())++reusable;if(reusable>freeSlots_.max_size()-freeSlots_.size())return false;try{freeSlots_.reserve(freeSlots_.size()+reusable);}catch(const std::bad_alloc&){return false;}for(const SceneEntity3D entity:batch.entities)if(!DestroyInternal(entity,true))std::terminate();return true;
 }

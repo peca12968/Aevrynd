@@ -89,6 +89,13 @@ struct TerrainVegetationHlodCluster3D {HlodClusterId3D id{};std::uint64_t genera
 struct TerrainVegetationChunkPayload3D::HlodManifest final {HlodManifest(const HlodManifest&)=delete;HlodManifest& operator=(const HlodManifest&)=delete;std::span<const TerrainVegetationHlodCluster3D> Clusters()const noexcept{return clusters_;}std::uint64_t ContentHash()const noexcept{return contentHash_;}std::uint64_t HlodDataHash()const noexcept{return hlodDataHash_;}private:friend std::shared_ptr<const HlodManifest> BuildTerrainVegetationHlodManifest3D(std::span<const TerrainVegetationHlodCluster3D>,const HlodData3D&);HlodManifest()=default;std::vector<TerrainVegetationHlodCluster3D> clusters_{};std::uint64_t contentHash_{},hlodDataHash_{};};
 std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> BuildTerrainVegetationHlodManifest3D(std::span<const TerrainVegetationHlodCluster3D> clusters,const HlodData3D& data);
 struct HlodIntegrationStats3D {std::size_t inputClusters{},attachedClusters{},sourceOnlyFallbacks{},incompatibleFallbacks{},budgetFallbacks{},staleGenerationRejects{},overlapRejects{},rollbackCount{},residentSourceEntities{},residentProxyEntities{},retiringClusters{},metadataSizeBytes{},metadataCapacityBytes{},aliasBytes{},proxyReservedBytes{},proxyActualResidentBytes{},retiringProxyBytes{},sharedProxyDedupHits{},pendingRetirementReceipts{},lastReleasedBytes{};std::uint64_t trimCount{};};
+struct HlodRuntimeSelectionSettings3D {HlodQualitySettings3D quality{};std::size_t maximumVisibilityTransitionsPerFrame{64};float cameraTeleportDistance{128.f};};
+struct HlodRuntimeFrameStats3D {std::uint64_t frameId{},lastAppliedActivation{};std::size_t evaluatedClusters{},requestedTransitions{},appliedTransitions{},deferredTransitions{},sourceClusters{},transitionClusters{},proxyClusters{};bool cameraHistoryReset{},frozen{};};
+struct HlodFrozenFrameToken3D {
+  std::uint64_t frameId{}, activationIdentity{}, worldEpoch{}, selectionGeneration{};
+  [[nodiscard]] explicit operator bool()const noexcept{return frameId&&activationIdentity&&worldEpoch&&selectionGeneration;}
+  constexpr bool operator==(const HlodFrozenFrameToken3D&)const=default;
+};
 struct ComposedTerrainVegetationChunk3D {
   TerrainVegetationChunkPayload3D payload{};
   std::vector<PersistentBuilding3D> buildings{};
@@ -177,6 +184,10 @@ public:
   }
   std::size_t PendingRetirements() const noexcept;
   HlodIntegrationStats3D HlodStats() const noexcept;
+  bool SelectHlodFrame3D(std::uint64_t frameId,HlodSelectionView3D view,const HlodRuntimeSelectionSettings3D& settings)noexcept;
+  std::optional<HlodFrozenFrameToken3D> FreezeHlodFrame3D(std::uint64_t frameId)noexcept;
+  std::optional<SceneECSCollectionStats3D> CollectFrozenHlodFrame3D(HlodFrozenFrameToken3D token,Scene3D& scene,DrawList& draw,std::uint32_t visibilityMask=0xffffffffu)const;
+  HlodRuntimeFrameStats3D HlodRuntimeStats()const noexcept{return hlodRuntimeStats_;}
   // 邊界樣本只寫入 canonical owner；所有目前常駐的共用邊界網格會在同一提交中更新。
   bool ApplyTerrainHeightEditAtomic(
       WorldPartition3D &partition, GlobalChunkCoordinate3D chunk,
@@ -208,8 +219,8 @@ private:
     std::size_t references{}, physicalBytes{};
   };
   struct Record {
-    struct HlodClusterAttachment {HlodClusterId3D id{};std::uint64_t generation{};HlodProxyLease3D proxy{};std::vector<StaticMeshRenderableLease3D> sources{};SceneHlodEntityBatch3D entities{};std::size_t reservedBytes{},actualBytes{},aliasBytes{};bool sceneDestroyed{},sourcesReset{},aliasReleased{};};
-    struct HlodAttachment {std::shared_ptr<const HlodData3D> data{};std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> manifest{};std::vector<HlodClusterAttachment> clusters{};};
+    struct HlodClusterAttachment {HlodClusterId3D id{};std::uint64_t generation{};HlodProxyLease3D proxy{};std::vector<StaticMeshRenderableLease3D> sources{};SceneHlodEntityBatch3D entities{};std::size_t reservedBytes{},actualBytes{},aliasBytes{},dataIndex{};HlodSelectionMode3D visibleMode{HlodSelectionMode3D::Source},pendingMode{HlodSelectionMode3D::Source};bool sceneDestroyed{},sourcesReset{},aliasReleased{};};
+    struct HlodAttachment {std::shared_ptr<const HlodData3D> data{};std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> manifest{};std::unique_ptr<HlodReferenceSelector3D> selector{};std::vector<HlodClusterAttachment> clusters{};std::size_t transitionCursor{};};
     WorldChunkRequest3D request{};
     MeshResource3D terrain{};
     MaterialTextureSetHandle3D terrainTextures{};
@@ -230,6 +241,7 @@ private:
   bool HasSharedProxyBorrower(
       const Record::HlodClusterAttachment &cluster) const noexcept;
   bool ReleaseHlod(Record& record);
+  void InvalidateFrozenHlodFrame3D(bool activationMutation=false)noexcept;
   Engine &engine_;
   SceneECSRegistry3D &scene_;
   ChunkedVegetationWorld3D &vegetation_;
@@ -244,6 +256,11 @@ private:
   WorldOrigin3D origin_{};
   WorldOrigin3D preparedOrigin_{};
   mutable HlodIntegrationStats3D hlodStats_{};
+  HlodRuntimeFrameStats3D hlodRuntimeStats_{};
+  Vec3 lastHlodCameraPosition_{};
+  HlodFrozenFrameToken3D frozenHlodToken_{};
+  std::uint64_t hlodActivationIdentity_{1},hlodWorldEpoch_{1},hlodSelectionGeneration_{1},nextTransitionActivation_{1};
+  bool hasLastHlodCameraPosition_{},hlodFrameFrozen_{},hlodTokenExhausted_{};
   EngineGpuRetirementReceiptSource3D engineRetirementSource_;
   IGpuRetirementReceiptSource3D *retirementSource_{};
 };

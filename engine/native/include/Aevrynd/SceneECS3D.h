@@ -69,6 +69,9 @@ public:
     bool DestroyBatchAtomic(std::span<const SceneEntity3D> entities);
     bool CreateHlodBatchAtomic3D(HlodClusterId3D clusterId,std::uint64_t clusterGeneration,std::span<const SceneEntityDefinition3D> sources,const SceneEntityDefinition3D& proxy,SceneHlodEntityBatch3D& output);
     bool HideHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch);
+    bool CanSetHlodVisibility3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)const noexcept;
+    bool SetHlodVisibilityAtomic3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)noexcept;
+    bool MatchesHlodVisibility3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)const noexcept;
     bool DestroyHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch);
     bool CanRebaseOrigin(Vec3 delta)const noexcept;
     void RebaseOrigin(Vec3 delta)noexcept;

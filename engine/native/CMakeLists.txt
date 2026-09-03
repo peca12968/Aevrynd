@@ -582,14 +582,15 @@ add_executable(AevryndWorldPartitionHlodD3D12Test WIN32 tests/WorldPartitionHlod
 target_compile_options(AevryndWorldPartitionHlodD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
 target_compile_definitions(AevryndWorldPartitionHlodD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndWorldPartitionHlodD3D12Test PRIVATE AevryndEngine)
-add_test(NAME AevryndWorldPartitionHlodD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>'")
-add_test(NAME AevryndWorldPartitionHlodD3D12GpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; & '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>'")
+add_test(NAME AevryndWorldPartitionHlodD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; $p=Start-Process -FilePath '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>' -Wait -PassThru; exit $p.ExitCode")
+add_test(NAME AevryndWorldPartitionHlodD3D12GpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; $p=Start-Process -FilePath '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>' -Wait -PassThru; exit $p.ExitCode")
 
 add_executable(AevryndWorldPartitionHlodAdapterFakeTest WIN32 tests/WorldPartitionHlodD3D12Smoke.cpp)
 target_compile_options(AevryndWorldPartitionHlodAdapterFakeTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_compile_definitions(AevryndWorldPartitionHlodAdapterFakeTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
 target_link_libraries(AevryndWorldPartitionHlodAdapterFakeTest PRIVATE AevryndEngine)
-add_test(NAME AevryndWorldPartitionHlodAdapterFakeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndWorldPartitionHlodAdapterFakeTest>'")
+add_test(NAME AevryndWorldPartitionHlodAdapterFakeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; $p=Start-Process -FilePath '$<TARGET_FILE:AevryndWorldPartitionHlodAdapterFakeTest>' -Wait -PassThru; exit $p.ExitCode")
+add_test(NAME AevryndWorldPartitionHlodAdapterFakeGpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; $p=Start-Process -FilePath '$<TARGET_FILE:AevryndWorldPartitionHlodAdapterFakeTest>' -Wait -PassThru; exit $p.ExitCode")
 
 add_executable(AevryndHlodWorldPartitionReceiptTest tests/HlodWorldPartitionReceiptSmoke.cpp)
 target_compile_options(AevryndHlodWorldPartitionReceiptTest PRIVATE /W4 /WX /permissive- /utf-8)
