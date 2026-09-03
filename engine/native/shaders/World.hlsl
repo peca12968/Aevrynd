@@ -8,8 +8,8 @@ cbuffer Scene : register(b0)
     float4 fogColor;
     float4 cameraFogStart;
     float4 fogEndEnabled;
-    float4 pointPositionRadius[3];
-    float4 pointColorIntensity[3];
+    float4 forwardPlusParameters;
+    float4 forwardPlusReserved[5];
     float4 colorPipeline;
     row_major float4x4 inverseViewProjection;
     float4 worldViewport;
@@ -32,6 +32,17 @@ cbuffer Scene : register(b0)
     float4 phaseSunDisk;
     float4 environmentObjectFill;
 };
+
+struct PointLightGpu3D
+{
+    float3 position;
+    float radius;
+    float3 color;
+    float intensity;
+};
+StructuredBuffer<PointLightGpu3D> forwardPlusPointLights : register(t20);
+StructuredBuffer<uint4> forwardPlusTileGrid : register(t21);
+StructuredBuffer<uint> forwardPlusTileIndices : register(t22);
 
 float3 ApplyVelocityWind(float3 position,float packedWeight,uint materialClass,float time)
 {
@@ -524,6 +535,7 @@ struct WorldPixelInput
     nointerpolation uint2 occlusionSeeds : TEXCOORD17;
     float3 occlusionCoordinate : TEXCOORD18;
     nointerpolation uint objectToken : OBJECTID;
+    nointerpolation uint alphaMode : TEXCOORD19;
 };
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; nointerpolation float lodCoverage : TEXCOORD4; nointerpolation uint lodSeed : TEXCOORD5; nointerpolation uint lodInvert : TEXCOORD6; };
@@ -644,6 +656,7 @@ WorldPixelInput WorldVertexMain(WorldVertexInput input)
     output.characterShadingModel = 0;
     output.alphaCutoff = 0.5;
     output.alphaMasked = 0;
+    output.alphaMode = 0;
     output.normalScale = 1.0;
     output.occlusionOpacity = 1.0;
     output.occlusionCoordinate = input.position;
@@ -679,7 +692,8 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.characterShadingModel = 0;
     // normal matrix 其餘兩列的 w 承載 MASK 參數，維持既有 instance stride。
     output.alphaCutoff = saturate(input.normalRow1.w);
-    output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
+    output.alphaMode = (uint)round(input.normalRow2.w);
+    output.alphaMasked = output.alphaMode == 1u ? 1u : 0u;
     // normal matrix 第一列的 w 原本未使用，直接承載逐材質強度而不擴充 instance stride。
     output.normalScale = input.normalRow0.w;
     output.occlusionOpacity=input.occlusionOpacity;
@@ -733,7 +747,8 @@ WorldPixelInput SkinnedVertexMain(SkinnedVertexInput input)
         : float4(0.0, 0.0, 0.0, 0.0);
     output.characterShadingModel = (input.textureData >> 13) & 7;
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
-    output.alphaMasked=(input.skinPaletteBase>>20)&1u;
+    output.alphaMode=(uint)round(input.normalRow2.w);
+    output.alphaMasked=output.alphaMode==1u?1u:0u;
     // 10 位元二補數 Q5 定點數可在不擴充實例資料的情況下保存 glTF normalTexture.scale。
     const uint encodedNormalScale=(input.skinPaletteBase>>22)&1023u;
     const int signedNormalScale=encodedNormalScale>=512u?int(encodedNormalScale)-1024:int(encodedNormalScale);
@@ -1782,28 +1797,42 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         shaded += baseColor * lightColorIntensity.rgb * lightColorIntensity.w * (foliageWrappedDiffuse * 0.22 + foliageTransmission * 0.48) * foliageShadow*cloudShadow;
     }
 
-    [unroll]
-    for (uint pointIndex = 0; pointIndex < 3; ++pointIndex)
+    // 透明與水面保守遍歷全部 canonical lights；不透明 tile 溢位時也回退全部燈，絕不截斷。
+    const uint canonicalPointLightCount=(uint)fogEndEnabled.z;
+    uint pointLightStart=0u;
+    uint pointLightIterationCount=canonicalPointLightCount;
+    bool useForwardPlusTile=forwardPlusParameters.x>0.5&&waterMaterialMask<0.5&&input.alphaMode!=2u;
+    if(useForwardPlusTile)
     {
-        if (pointIndex >= (uint)fogEndEnabled.z)
-            break;
-        const float3 delta = pointPositionRadius[pointIndex].xyz - input.worldPosition;
+        const uint2 localPixel=uint2(max(input.position.xy-forwardPlusParameters.zw,0.0));
+        const uint2 tile=localPixel/16u;
+        const uint tileIndex=tile.y*(uint)forwardPlusParameters.y+tile.x;
+        const uint4 entry=forwardPlusTileGrid[tileIndex];
+        pointLightStart=entry.x;
+        pointLightIterationCount=entry.z!=0u?canonicalPointLightCount:entry.y;
+    }
+    [loop]
+    for (uint pointIteration = 0; pointIteration < pointLightIterationCount; ++pointIteration)
+    {
+        const uint pointIndex=useForwardPlusTile&&pointLightIterationCount!=canonicalPointLightCount?forwardPlusTileIndices[pointLightStart+pointIteration]:pointIteration;
+        const PointLightGpu3D pointLight=forwardPlusPointLights[pointIndex];
+        const float3 delta = pointLight.position - input.worldPosition;
         const float distanceSquared = max(0.0001, dot(delta, delta));
         const float lightDistance = sqrt(distanceSquared);
-        const float attenuation = PointLightAttenuation(distanceSquared, pointPositionRadius[pointIndex].w);
+        const float attenuation = PointLightAttenuation(distanceSquared, pointLight.radius);
         const float3 localDirection = delta / lightDistance;
-        const float3 pointRadiance = pointColorIntensity[pointIndex].rgb * pointColorIntensity[pointIndex].w * attenuation;
+        const float3 pointRadiance = pointLight.color * pointLight.intensity * attenuation;
         shaded += eyeMask > 0.5
                 ? EvaluateEyeLight(normal, geometricNormal, viewDirection, localDirection, pointRadiance, baseColor, roughness)
                 : EvaluatePbrLight(normal, viewDirection, localDirection, pointRadiance, baseColor, roughness, metallic);
         if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
-                    pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
+                    pointLight.color*pointLight.intensity*attenuation,
                     baseColor,roughness,skinCurvature);
         if(hairMask>0.5)shaded+=EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,localDirection,
-                    pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
+                    pointLight.color*pointLight.intensity*attenuation,
                     baseColor,roughness);
         if(clothMask>0.5)shaded+=EvaluateClothSupplement(normal,viewDirection,localDirection,
-                    pointColorIntensity[pointIndex].rgb*pointColorIntensity[pointIndex].w*attenuation,
+                    pointLight.color*pointLight.intensity*attenuation,
                     baseColor,roughness);
     }
 

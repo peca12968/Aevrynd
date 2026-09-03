@@ -401,6 +401,26 @@ inline float BloomSoftThreshold3D(float luminance,const BloomSettings3D& source=
 inline float DirectionalShadowReceiverBias3D(float normalLightCosine,float slopeScale=.0015f,float minimumBias=.00035f,float maximumBias=.006f){if(!std::isfinite(normalLightCosine)||!std::isfinite(slopeScale)||!std::isfinite(minimumBias)||!std::isfinite(maximumBias))return(std::max)(0.f,minimumBias);const float cosine=Clamp(normalLightCosine,0.f,1.f),slope=std::sqrt((std::max)(0.f,1.f-cosine*cosine))/(std::max)(.2f,cosine);return Clamp((std::max)(0.f,minimumBias)+(std::max)(0.f,slopeScale)*slope,(std::max)(0.f,minimumBias),(std::max)(minimumBias,maximumBias));}
 inline Vec3 TerrainLayerWeights3D(float slope,float normalizedHeight,float macroNoise){if(!std::isfinite(slope)||!std::isfinite(normalizedHeight)||!std::isfinite(macroNoise))return{1,0,0};slope=Clamp(slope,0.f,1.f);normalizedHeight=Clamp(normalizedHeight,0.f,1.f);macroNoise=Clamp(macroNoise,0.f,1.f);const auto smooth=[](float edge0,float edge1,float value){value=Clamp((value-edge0)/(edge1-edge0),0.f,1.f);return value*value*(3.f-2.f*value);};const float rock=smooth(.38f,.78f,slope+(std::max)(0.f,normalizedHeight-.62f)*.35f),soil=(1.f-rock)*smooth(.18f,.62f,slope+(1.f-macroNoise)*.18f);return{(std::max)(0.f,1.f-rock-soil),soil,rock};}
 struct PointLight3D {Vec3 position{};float radius{8.f};Color color{1.f,.72f,.38f,1.f};float intensity{1.f};};
+inline constexpr std::size_t MaximumForwardPlusPointLights3D=256;
+inline constexpr std::size_t TypicalForwardPlusPointLights3D=64;
+inline constexpr std::uint32_t ForwardPlusTileSize3D=16;
+inline constexpr std::uint32_t MaximumForwardPlusLightsPerTile3D=64;
+struct PointLightGpu3D {Vec3 position{};float radius{};Vec3 color{};float intensity{};};
+static_assert(sizeof(PointLightGpu3D)==32);
+struct ForwardPlusTileGridEntry3D {std::uint32_t offset{};std::uint32_t count{};std::uint32_t overflow{};std::uint32_t reserved{};};
+static_assert(sizeof(ForwardPlusTileGridEntry3D)==16);
+[[nodiscard]] constexpr std::uint32_t ForwardPlusTileCount3D(std::uint32_t extent)noexcept{return(extent+ForwardPlusTileSize3D-1u)/ForwardPlusTileSize3D;}
+[[nodiscard]] constexpr std::size_t ForwardPlusIndexCapacity3D(std::uint32_t width,std::uint32_t height)noexcept{return std::size_t(ForwardPlusTileCount3D(width))*ForwardPlusTileCount3D(height)*MaximumForwardPlusLightsPerTile3D;}
+struct CanonicalPointLights3D {std::array<PointLightGpu3D,MaximumForwardPlusPointLights3D> lights{};std::uint32_t count{};std::uint32_t rejected{};std::uint64_t fingerprint{1469598103934665603ull};};
+[[nodiscard]] inline bool ValidPointLight3D(const PointLight3D& light)noexcept{return std::isfinite(light.position.x)&&std::isfinite(light.position.y)&&std::isfinite(light.position.z)&&std::isfinite(light.radius)&&light.radius>0.f&&std::isfinite(light.color.r)&&std::isfinite(light.color.g)&&std::isfinite(light.color.b)&&std::isfinite(light.color.a)&&std::isfinite(light.intensity)&&light.intensity>0.f;}
+[[nodiscard]] inline bool PointLightCanonicalLess3D(const PointLight3D& a,const PointLight3D& b)noexcept{const auto ordered=[](float value){const std::uint32_t bits=std::bit_cast<std::uint32_t>(value);return bits&0x80000000u?~bits:bits^0x80000000u;};const float av[]{a.position.x,a.position.y,a.position.z,a.radius,a.color.r,a.color.g,a.color.b,a.intensity},bv[]{b.position.x,b.position.y,b.position.z,b.radius,b.color.r,b.color.g,b.color.b,b.intensity};for(std::size_t index=0;index<8;++index){const auto ak=ordered(av[index]),bk=ordered(bv[index]);if(ak!=bk)return ak<bk;}return false;}
+[[nodiscard]] inline CanonicalPointLights3D CanonicalizePointLights3D(std::span<const PointLight3D> source){
+    CanonicalPointLights3D result{};std::vector<PointLightGpu3D> valid;valid.reserve(source.size());for(const auto& light:source){if(!ValidPointLight3D(light)){++result.rejected;continue;}valid.push_back({{light.position.x,light.position.y,light.position.z},light.radius,{light.color.r,light.color.g,light.color.b},light.intensity});}
+    const auto orderedFloat=[](float value){const std::uint32_t bits=std::bit_cast<std::uint32_t>(value);return bits&0x80000000u?~bits:bits^0x80000000u;};
+    const auto less=[&](const PointLightGpu3D& a,const PointLightGpu3D& b){const float av[]={a.position.x,a.position.y,a.position.z,a.radius,a.color.x,a.color.y,a.color.z,a.intensity},bv[]={b.position.x,b.position.y,b.position.z,b.radius,b.color.x,b.color.y,b.color.z,b.intensity};for(std::size_t i=0;i<8;++i){const auto ak=orderedFloat(av[i]),bk=orderedFloat(bv[i]);if(ak!=bk)return ak<bk;}return false;};
+    std::sort(valid.begin(),valid.end(),less);result.count=std::uint32_t((std::min)(valid.size(),MaximumForwardPlusPointLights3D));result.rejected+=std::uint32_t(valid.size()-result.count);std::copy_n(valid.begin(),result.count,result.lights.begin());
+    for(std::uint32_t index=0;index<result.count;++index)for(const std::byte value:std::as_bytes(std::span{&result.lights[index],std::size_t{1}}))result.fingerprint=(result.fingerprint^std::to_integer<std::uint8_t>(value))*1099511628211ull;result.fingerprint=(result.fingerprint^result.count)*1099511628211ull;return result;
+}
 inline float PointLightInfluence(const PointLight3D& light,Vec3 reference){const Vec3 delta=light.position-reference;return light.intensity*light.radius*light.radius/(1.f+Dot(delta,delta));}
 template<std::size_t Capacity>struct PointLightSelection3D {std::array<PointLight3D,Capacity> lights{};std::array<float,Capacity> influences{};std::size_t count{},candidates{};};
 template<std::size_t Capacity>PointLightSelection3D<Capacity> SelectInfluentialPointLights(std::span<const PointLight3D> lights,Vec3 reference){
@@ -674,6 +694,7 @@ struct RendererStats {
     bool contactShadowsEnabled{},contactShadowTemporalFiltering{};uint32_t contactShadowMaximumSteps{};float contactShadowMaximumDistance{},contactShadowThickness{},contactShadowStrength{};uint64_t contactShadowFrames{},contactShadowFallbackFrames{},contactShadowEvaluationPasses{};
     uint64_t contactShadowTemporalDispatches{},contactShadowTemporalHistoryEligibleFrames{},contactShadowTemporalHistoryIneligibleFrames{},contactShadowTemporalHistoryResets{};
     size_t contactShadowTemporalResidentBytes{};uint64_t contactShadowTemporalAllocations{},contactShadowTemporalReleases{};
+    bool forwardPlusEnabled{};uint32_t forwardPlusLightCount{},forwardPlusTileCountX{},forwardPlusTileCountY{};uint64_t forwardPlusDispatches{},forwardPlusAllocations{},forwardPlusReleases{},forwardPlusFingerprint{};size_t forwardPlusResidentBytes{};
     float directionalShadowTransitionWidth{6.f};
     size_t directionalShadowBasePcfSamples{12};
     size_t directionalShadowTransitionPcfSamples{24};
@@ -937,7 +958,7 @@ public:
     const DirectionalLight3D& DirectionalLight()const{return light_;}
     void SetDirectionalShadowMapEnabled(bool enabled){directionalShadowMapEnabled_=enabled;}
     bool DirectionalShadowMapEnabled()const{return directionalShadowMapEnabled_;}
-    void AddPointLight(PointLight3D light){light.radius=(std::max)(.001f,light.radius);light.intensity=(std::max)(0.f,light.intensity);if(light.intensity>0.f)pointLights_.push_back(light);}
+    void AddPointLight(PointLight3D light){if(!ValidPointLight3D(light))return;if(pointLights_.size()<MaximumForwardPlusPointLights3D){pointLights_.push_back(light);return;}const auto worst=std::max_element(pointLights_.begin(),pointLights_.end(),PointLightCanonicalLess3D);if(worst!=pointLights_.end()&&PointLightCanonicalLess3D(light,*worst))*worst=light;}
     const std::vector<PointLight3D>& PointLights()const{return pointLights_;}
     void SetAtmosphere(Atmosphere3D atmosphere){atmosphere_=NormalizeAtmosphere3D(atmosphere);}
     const Atmosphere3D& Atmosphere()const{return atmosphere_;}
@@ -1082,7 +1103,7 @@ public:
     static constexpr size_t MaxWorldIndices=480000;
     static constexpr size_t MaxMeshInstances=MaximumMeshInstancesPerFrame3D;
     static constexpr uint64_t InstanceGroupRetentionFrames=300;
-    static constexpr size_t MaxPointLights=3;
+    static constexpr size_t MaxPointLights=MaximumForwardPlusPointLights3D;
     static constexpr size_t MaxMaterialTextureSets=64;
     static constexpr size_t InitialFrameVertices=DrawList::InitialVertexCapacity;
     static constexpr size_t InitialFrameWorldVertices=DrawList::InitialVertexCapacity;
@@ -1170,6 +1191,8 @@ public:
     void ToggleDLSS();
     void SetQualitySettings(RendererQualitySettings3D settings);
     RendererQualitySettings3D QualitySettings()const;
+    void SetForwardPlusPointLightsEnabled(bool enabled);
+    bool ForwardPlusPointLightsEnabled()const;
     bool ApplyDevelopmentUltraResourceProfile(unsigned shadowResolution,unsigned shadowCascadeCount,float volumetricResolutionScale);
     [[nodiscard]] DevelopmentUltraRendererBaseline3D CaptureDevelopmentUltraResourceBaseline()const;
     bool RestoreDevelopmentUltraResourceBaseline(const DevelopmentUltraRendererBaseline3D& baseline);
