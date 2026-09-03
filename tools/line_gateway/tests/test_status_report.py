@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
+import time
 import unittest
+import uuid
+from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.line_gateway.codex_handoff import CodexHandoff
 from tools.line_gateway.host_tasks import HostTasks
@@ -82,6 +87,67 @@ class StatusReportTests(unittest.TestCase):
         payload = json.loads(document["request"])
         self.assertEqual("line-artifact-request", payload["source"])
         self.assertFalse(payload["delivery"]["lineAttachmentSupported"])
+
+    def test_city_status_uses_safe_authoritative_activity_without_prompts(self) -> None:
+        root = Path(self.temporary.name)
+        dispatcher = root / "dispatcher.sqlite3"
+        secret_prompt = "PRIVATE_PROMPT_MUST_NOT_APPEAR"
+        with closing(sqlite3.connect(dispatcher)) as connection:
+            connection.execute(
+                "CREATE TABLE tasks(task_id TEXT,task_type TEXT,evidence TEXT,status TEXT,"
+                "assigned_node TEXT,updated_at REAL)"
+            )
+            processing_id = str(uuid.uuid4())
+            completed_id = str(uuid.uuid4())
+            connection.execute(
+                "INSERT INTO tasks VALUES(?,?,?,?,?,?)",
+                (processing_id, "classification", secret_prompt, "processing", "taoyuan", time.time()),
+            )
+            connection.execute(
+                "INSERT INTO tasks VALUES(?,?,?,?,?,?)",
+                (completed_id, "summary", secret_prompt, "completed", "taoyuan", time.time() - 1),
+            )
+            connection.commit()
+        line_job = self.store.enqueue(
+            webhook_event_id="taoyuan-authoritative-status",
+            route=Route.TAOYUAN.value,
+            source_id="group",
+            requester_id="user",
+            request_text=secret_prompt,
+        )
+        status = StatusReport(
+            self.store,
+            repository_root=root,
+            controller_root=root,
+            dispatcher_database=dispatcher,
+            node_slot_probes={"taoyuan": lambda: False, "taichung": lambda: True},
+            probe_timeout=0.01,
+        )
+        with patch.object(StatusReport, "_tcp_reachable", return_value=True):
+            rendered = status.render("桃園電腦工作進度")
+        self.assertIn("[指定電腦即時狀態]", rendered)
+        self.assertIn("桃園：Qwen 可達／忙碌", rendered)
+        self.assertNotIn("台中：", rendered)
+        self.assertIn(f"LINE taoyuan #{line_job.job_id[:8]}", rendered)
+        self.assertIn(f"唯讀派工 classification #{processing_id[:8]}", rendered)
+        self.assertIn(f"最近完成：唯讀派工 summary #{completed_id[:8]}", rendered)
+        self.assertNotIn(secret_prompt, rendered)
+        self.assertNotRegex(rendered, r"(?:\d{1,3}\.){3}\d{1,3}")
+
+    def test_no_activity_is_explicit_and_idle_probe_is_reported(self) -> None:
+        status = StatusReport(
+            self.store,
+            repository_root=self.temporary.name,
+            controller_root=self.temporary.name,
+            dispatcher_database=Path(self.temporary.name) / "missing.sqlite3",
+            node_slot_probes={"taichung": lambda: True},
+            probe_timeout=0.01,
+        )
+        with patch.object(StatusReport, "_tcp_reachable", return_value=True):
+            rendered = status.render("台中正在做什麼")
+        self.assertIn("台中：Qwen 可達／閒置", rendered)
+        self.assertIn("目前未偵測到進行中工作", rendered)
+        self.assertNotIn("桃園：", rendered)
 
 
 if __name__ == "__main__":

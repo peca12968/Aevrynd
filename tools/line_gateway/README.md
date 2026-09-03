@@ -67,7 +67,7 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 - 自動分配：以 job ID 的穩定 SHA-256 決定首選，讓同一 job 重試與重啟後不漂移，且大量工作近似平均分配；首選必須通過 authenticated single-slot gate，否則才選另一台。
 - `@台中` 預設固定 `.98`，`@桃園` 預設固定 `.36`。非機密設定可交換兩個助理的 primary／secondary role，但兩個實際 endpoint 的 primary／secondary 角色及 allowlist 不可交換。
 - `@主機` 保留只讀主機操作；`@Codex` 直接建立耐久 Codex handoff；`@全部` 固定收集主機、primary-first Qwen 與 Codex 三段結果，不等同對兩個城市助理各問一次。
-- `狀態`、`三台狀態`、`台中狀態`、`桃園狀態`、`主電腦進度`、`Codex進度` 與 `開發進度` 使用 Gateway 快速路徑，不呼叫模型；只回傳 Qwen 可達性、遊戲模式持久狀態、Git HEAD／dirty 數及佇列計數。Gateway 無法直接證明 Codex 桌面工作階段內容時會明確標示，不由 Qwen 猜測。
+- `狀態`、`三台狀態`、`台中狀態`、`桃園狀態`、`台中／桃園電腦工作進度`、`台中／桃園正在做什麼`、`三台電腦工作進度`、`主電腦進度`、`Codex進度` 與 `開發進度` 使用 Gateway 快速路徑，不呼叫模型；只回傳 Qwen 可達與忙閒狀態、遊戲模式持久狀態、安全工作類型與短 ID、Git HEAD／dirty 數及佇列計數。報表不包含 prompt、evidence、IP 或金鑰；Gateway 無法直接證明 Codex 桌面工作階段內容時會明確標示，不由 Qwen 猜測。
 - 明確的 PPT/PPTX、Word/DOCX 或 PDF 製作要求會建立持久工作 ID，並寫入 Codex handoff inbox。以 `工作狀態 <UUID>` 查詢；目前沒有自動 Codex consumer 與安全 artifact server，因此工作只會如實顯示等待接手，不宣稱已完成或已回傳附件。
 
 一般問題由指定 Qwen 直接回答。Qwen 若判定為複雜工作、圖片或檔案需求，只能輸出 exact schema 的 JSON 決策；Gateway 不採用模型提供的命令、路徑或任意 handoff request，而是以原始使用者問題、固定 assistant identity 及受限 attachment manifest 建立耐久 Codex handoff，因此 webhook 不會同步等待 Codex。

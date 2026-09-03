@@ -162,6 +162,7 @@ def _run() -> int:
     from tools.line_gateway.qwen_client import QwenClient, QwenClientGate, QwenClientPool
     from tools.line_gateway.routing import route_event
     from tools.line_gateway.server import create_server
+    from tools.line_gateway.status_report import StatusReport
     from tools.line_gateway.worker import Worker
 
     config = load_config()
@@ -172,6 +173,7 @@ def _run() -> int:
     line = LineClient(config.channel_access_token)
     qwen = None
     qwen_by_role: dict[str, object] = {}
+    status_probe_by_role: dict[str, object] = {}
     if config.qwen_api_key is not None:
         model = os.environ.get("AEVRYND_QWEN_MODEL", "").strip()
         if not model:
@@ -179,6 +181,9 @@ def _run() -> int:
         primary_qwen = QwenClientGate(
             QwenClient(config.qwen_base_url, config.qwen_api_key, model)
         )
+        status_probe_by_role["primary"] = QwenClient(
+            config.qwen_base_url, config.qwen_api_key, model, timeout=0.35, max_tokens=1
+        ).slots_ready
         secondary_qwen = None
         if config.secondary_qwen_api_key is not None:
             secondary_qwen = QwenClientGate(
@@ -188,6 +193,13 @@ def _run() -> int:
                     model,
                 )
             )
+            status_probe_by_role["secondary"] = QwenClient(
+                config.secondary_qwen_base_url,
+                config.secondary_qwen_api_key,
+                model,
+                timeout=0.35,
+                max_tokens=1,
+            ).slots_ready
         qwen = QwenClientPool(primary_qwen, secondary_qwen)
         qwen_by_role = {"primary": primary_qwen}
         if secondary_qwen is not None:
@@ -203,6 +215,13 @@ def _run() -> int:
             **runtime_health.snapshot(),
         },
     )
+    status_report = StatusReport(
+        queue,
+        node_slot_probes={
+            "taichung": status_probe_by_role.get(config.taichung_qwen_role),
+            "taoyuan": status_probe_by_role.get(config.taoyuan_qwen_role),
+        },
+    )
     worker_options = {
         "qwen_client": qwen,
         "qwen_clients": {
@@ -213,6 +232,7 @@ def _run() -> int:
             "taichung" if config.taichung_qwen_role == "primary" else "taoyuan",
             "taichung" if config.taichung_qwen_role == "secondary" else "taoyuan",
         ),
+        "status_report": status_report,
     }
     ingress_worker = Worker(
         queue, line, host_tasks, handoff, worker_id="line-ingress", **worker_options

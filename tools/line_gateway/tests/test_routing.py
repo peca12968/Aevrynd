@@ -114,9 +114,21 @@ class RoutingTests(unittest.TestCase):
             "台中狀態",
             "現階段是否可以透過LINE得知主電腦進度",
             "現在主電腦Codex開發進度如何",
+            "桃園電腦工作進度",
+            "台中電腦工作進度",
+            "桃園工作進度",
+            "台中工作進度",
+            "桃園正在做什麼",
+            "台中正在做什麼",
+            "三台電腦工作進度",
         ):
             with self.subTest(command=command):
                 self.assertEqual(Route.STATUS, route_event(mentioned(command), _config()).route)
+        for text, city in (("@桃園 工作進度", "桃園"), ("@台中 電腦工作進度", "台中")):
+            with self.subTest(text=text):
+                decision = route_event(_event(text), _config())
+                self.assertEqual(Route.STATUS, decision.route)
+                self.assertTrue(decision.command_text.startswith(city))
         for command in ("幫我做一份ppt", "產生 PDF 檔案", "建立word文件"):
             with self.subTest(command=command):
                 self.assertEqual(Route.ARTIFACT, route_event(mentioned(command), _config()).route)

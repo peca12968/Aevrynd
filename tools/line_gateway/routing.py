@@ -55,6 +55,13 @@ _STATUS_COMMANDS = frozenset(
         "現在進度",
         "目前進度",
         "目前開發進度",
+        "台中電腦工作進度",
+        "桃園電腦工作進度",
+        "台中工作進度",
+        "桃園工作進度",
+        "台中正在做什麼",
+        "桃園正在做什麼",
+        "三台電腦工作進度",
     }
 )
 _ARTIFACT_MARKERS = ("ppt", "pptx", "word", "docx", "pdf", "簡報", "文件", "檔案")
@@ -63,8 +70,10 @@ _ARTIFACT_ACTIONS = ("產生", "生成", "建立", "製作", "做一份", "做�
 
 def _classify_command(command: str, default_route: Route) -> tuple[Route, str, str]:
     normalized = "".join(command.strip().split())
+    city_status_tail = normalized in {"電腦工作進度", "工作進度", "正在做什麼"}
     if (
         normalized in _STATUS_COMMANDS
+        or (default_route in {Route.TAICHUNG, Route.TAOYUAN} and city_status_tail)
         or normalized.endswith("電腦狀態")
         or normalized in {"台中狀態", "桃園狀態", "主電腦Codex進度"}
         or any(
@@ -122,6 +131,10 @@ def _route_text(text: str, *, source_type: str) -> RouteDecision:
             continue
         command_text = stripped[len(prefix) :].lstrip()
         selected, command_text, reason = _classify_command(command_text, route)
+        if selected is Route.STATUS and route in {Route.TAICHUNG, Route.TAOYUAN}:
+            city = "台中" if route is Route.TAICHUNG else "桃園"
+            if not command_text.startswith(city):
+                command_text = city + command_text
         return RouteDecision(selected, True, text, command_text, reason or "explicit-prefix")
     if source_type == "user":
         selected, command_text, reason = _classify_command(stripped, Route.AUTO_QWEN)
