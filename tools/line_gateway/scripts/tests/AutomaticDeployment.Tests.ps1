@@ -14,6 +14,7 @@ function Assert-ContainsAll { param([string]$Text,[string[]]$Values) foreach($va
 $installer = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'Install-AutomaticDeployment.ps1')
 $runner = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'Invoke-AutomaticDeployment.ps1')
 $trigger = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'Trigger-AutomaticDeployment.ps1')
+$gatewayInstaller = Get-Content -Raw -LiteralPath (Join-Path $scriptsRoot 'Install.ps1')
 
 Invoke-Test 'task action is fixed and has no caller supplied command arguments' {
     Assert-ContainsAll $installer @('RunLevel Highest','Invoke-AutomaticDeployment.ps1','Register-ScheduledTask','MultipleInstances IgnoreNew')
@@ -23,6 +24,18 @@ Invoke-Test 'task action is fixed and has no caller supplied command arguments' 
         '$arguments = ''-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\ProgramData\Aevrynd\LineGatewayAutomaticDeployment\Invoke-AutomaticDeployment.ps1"''',
         'New-ScheduledTaskAction -Execute $pwsh -Argument $arguments'
     )
+}
+
+Invoke-Test 'verified install refreshes only the fixed protected runner' {
+    Assert-ContainsAll $gatewayInstaller @(
+        "`$automaticDeploymentRoot = 'C:\ProgramData\Aevrynd\LineGatewayAutomaticDeployment'",
+        "`$trustedRunner = Join-Path `$paths.Scripts 'Invoke-AutomaticDeployment.ps1'",
+        '[IO.File]::Move($temporaryRunner, $fixedRunner, $true)',
+        'Automatic deployment runner refresh verification failed.'
+    )
+    $manifest=$gatewayInstaller.LastIndexOf('Test-InstallationManifest -Paths $paths',[StringComparison]::Ordinal)
+    $refresh=$gatewayInstaller.IndexOf('[IO.File]::Move($temporaryRunner',$manifest,[StringComparison]::Ordinal)
+    if($manifest-lt0-or$refresh-lt0-or$manifest-gt$refresh){throw 'Protected runner refresh occurs before closed manifest validation.'}
 }
 
 Invoke-Test 'runner fixes trust roots and rejects untrusted source forms' {
@@ -42,7 +55,7 @@ Invoke-Test 'transaction order and bounded rollback are explicit' {
     $health = $runner.IndexOf("scripts\Test-Health.ps1",$start,[StringComparison]::Ordinal)
     if ($stop -lt 0 -or $install -lt 0 -or $start -lt 0 -or $health -lt 0 -or $stop -gt $install -or $install -gt $start -or $start -gt $health) { throw 'Deployment lifecycle ordering changed.' }
     Assert-ContainsAll $runner @('Restore-VerifiedRelease','Test-InstallationManifest','rolled_back','rollback_failed',"@('app','scripts','manifests')")
-    foreach($forbidden in @('config\gateway.env','queue.sqlite3','config\credentials','handoff\requests','logs\')){if($runner.Contains($forbidden,[StringComparison]::OrdinalIgnoreCase)){throw "Rollback touches forbidden data marker: $forbidden"}}
+    foreach($forbidden in @('config\gateway.env','config\credentials','handoff\requests','logs\')){if($runner.Contains($forbidden,[StringComparison]::OrdinalIgnoreCase)){throw "Rollback touches forbidden data marker: $forbidden"}}
 }
 
 Invoke-Test 'cross process lock and secret safe result schema are fixed' {
@@ -51,7 +64,8 @@ Invoke-Test 'cross process lock and secret safe result schema are fixed' {
 }
 
 Invoke-Test 'non-admin trigger only starts task and uses bounded polling' {
-    Assert-ContainsAll $trigger @('Start-ScheduledTask','TimeoutSeconds = 180','ValidateRange(10,600)','result.json','Start-Sleep -Milliseconds 500')
+    Assert-ContainsAll $trigger @('Start-ScheduledTask','TimeoutSeconds = 300','ValidateRange(10,600)','result.json','Start-Sleep -Milliseconds 500','Get-ScheduledTaskInfo','LastRunTime','LastTaskResult','[DateTimeOffset]$result.startedUtc','Protected deployment runner is outdated','Get-FileHash -Algorithm SHA256')
+    if($trigger.Contains('ParseExact([string]$result.startedUtc',[StringComparison]::Ordinal)){throw 'Trigger retains the localized DateTime parsing bug.'}
     foreach($forbidden in @('Register-ScheduledTask','Install.ps1','Invoke-Expression','Start-Process')){if($trigger.Contains($forbidden,[StringComparison]::OrdinalIgnoreCase)){throw "Trigger contains privileged or arbitrary execution marker: $forbidden"}}
 }
 
@@ -61,6 +75,63 @@ Invoke-Test 'deployment never waits on a persistent gateway process tree' {
     }
     if($runner -match 'Start-Gateway\.ps1''\)\s+-InstallRoot\s+\$liveRoot\s+-Wait') { throw 'Runner waits on the persistent gateway child.' }
     Assert-ContainsAll $trigger @('Start-ScheduledTask','result.json')
+}
+
+Invoke-Test 'result publication is atomic and queue recovery brackets stop and install' {
+    Assert-ContainsAll $runner @('[IO.File]::Move($temporary, $resultFile, $true)','Wait-GatewayQueueDrain','Invoke-QueueDeploymentControl','attempt_count=MAX(0,attempt_count-1)')
+    $drain=$runner.LastIndexOf('Wait-GatewayQueueDrain -PythonExe',[StringComparison]::Ordinal)
+    $stop=$runner.IndexOf("scripts\Stop-Gateway.ps1",$drain,[StringComparison]::Ordinal)
+    $recover=$runner.IndexOf('Invoke-QueueDeploymentControl -Mode recover',$stop,[StringComparison]::Ordinal)
+    $install=$runner.IndexOf('& $installScript',$recover,[StringComparison]::Ordinal)
+    if($drain-lt0-or$stop-lt0-or$recover-lt0-or$install-lt0-or$drain-gt$stop-or$stop-gt$recover-or$recover-gt$install){throw 'Drain/recovery transaction ordering changed.'}
+}
+
+Invoke-Test 'mock interrupted work is requeued without consuming an attempt' {
+    $rows=@(
+        [ordered]@{status='running';attempt_count=2;error_code='upstream_error'},
+        [ordered]@{status='completed';attempt_count=1;error_code=''}
+    )
+    foreach($row in $rows){if($row.status-eq'running'){$row.status='queued';$row.attempt_count=[Math]::Max(0,$row.attempt_count-1);$row.error_code=''}}
+    if($rows[0].status-ne'queued'-or$rows[0].attempt_count-ne1-or$rows[0].error_code){throw 'Interrupted mock work was not safely recovered.'}
+    if($rows[1].status-ne'completed'-or$rows[1].attempt_count-ne1){throw 'Terminal mock work was modified.'}
+}
+
+Invoke-Test 'SQLite mock recovery is transactional and preserves terminal rows' {
+    $python=$null
+    $liveMetadata='C:\ProgramData\Aevrynd\LineGateway\manifests\install.json'
+    if(Test-Path -LiteralPath $liveMetadata -PathType Leaf){
+        try{$candidate=[string]((Get-Content -Raw -LiteralPath $liveMetadata|ConvertFrom-Json).pythonExe);if(Test-Path -LiteralPath $candidate -PathType Leaf){$python=$candidate}}catch{}
+    }
+    if($null-eq$python){
+        $candidate=(Get-Command python.exe -ErrorAction Stop).Source
+        if(Test-Path -LiteralPath $candidate -PathType Leaf){$python=$candidate}
+    }
+    if($null-eq$python){throw 'A real Python executable is required for the SQLite fixture.'}
+    $database=Join-Path ([IO.Path]::GetTempPath()) ('aevrynd-deploy-queue-'+[Guid]::NewGuid().ToString('N')+'.sqlite3')
+    $fixturePath=[IO.Path]::ChangeExtension($database,'.py')
+    $fixture=@'
+import sqlite3,sys,time
+p=sys.argv[1]; c=sqlite3.connect(p)
+for table in ("jobs","deliveries","reception_notifications"):
+ c.execute(f"CREATE TABLE {table}(status TEXT,attempt_count INTEGER,available_at REAL,lease_until REAL,lease_owner TEXT,updated_at REAL,error_code TEXT)")
+ c.execute(f"INSERT INTO {table} VALUES('running',2,0,99,'owner',0,'old')")
+ c.execute(f"INSERT INTO {table} VALUES('completed',1,0,NULL,'',0,'')")
+c.commit(); now=time.time(); c.execute("BEGIN IMMEDIATE")
+c.execute("UPDATE jobs SET status='queued', attempt_count=MAX(0,attempt_count-1), available_at=?, lease_until=NULL, lease_owner='', updated_at=?, error_code='' WHERE status='running'",(now+1,now))
+for table in ("deliveries","reception_notifications"): c.execute(f"UPDATE {table} SET status='queued', attempt_count=MAX(0,attempt_count-1), available_at=?, lease_until=NULL, lease_owner='', updated_at=?, error_code='' WHERE status='running'",(now+1,now))
+c.commit()
+for table in ("jobs","deliveries","reception_notifications"): print(table,*c.execute(f"SELECT status,attempt_count,error_code FROM {table} ORDER BY rowid").fetchall())
+c.close()
+'@
+    try {
+        [IO.File]::WriteAllText($fixturePath,$fixture,[Text.UTF8Encoding]::new($false))
+        $output=@(& $python -B $fixturePath $database)
+        if($LASTEXITCODE-ne0-or$output.Count-ne3){throw "SQLite mock did not execute: exit=$LASTEXITCODE count=$($output.Count) output=$($output -join ' | ')"}
+        foreach($line in $output){if($line-notmatch "\('queued', 1, ''\).*\('completed', 1, ''\)"){throw "Unexpected recovery rows: $line"}}
+    } finally {
+        if(Test-Path -LiteralPath $database){Remove-Item -LiteralPath $database -Force}
+        if(Test-Path -LiteralPath $fixturePath){Remove-Item -LiteralPath $fixturePath -Force}
+    }
 }
 
 # mock 狀態機：不呼叫部署腳本、不建立排程，驗證成功與 rollback 結果對外收斂。

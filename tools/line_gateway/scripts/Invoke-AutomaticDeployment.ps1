@@ -19,7 +19,7 @@ $oldPager = $null
 
 function Write-SafeResult {
     param([Parameter(Mandatory)][ValidateSet('running','succeeded','failed','rolled_back','rollback_failed')][string]$Status,
-          [Parameter(Mandatory)][ValidateSet('none','source_rejected','busy','stop_failed','install_failed','start_failed','health_failed','rollback_failed')][string]$Code,
+          [Parameter(Mandatory)][ValidateSet('none','source_rejected','busy','drain_failed','stop_failed','install_failed','start_failed','health_failed','rollback_failed')][string]$Code,
           [string]$Release = '')
     $document = [ordered]@{
         schemaVersion = 1
@@ -31,7 +31,55 @@ function Write-SafeResult {
     }
     $temporary = Join-Path $statusRoot ('.result-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     [IO.File]::WriteAllText($temporary, ($document | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
-    Move-Item -LiteralPath $temporary -Destination $resultFile -Force
+    # 同磁碟 overwrite move，讀取端只會看到完整舊檔或完整新檔。
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        try { [IO.File]::Move($temporary, $resultFile, $true); return }
+        catch [IO.IOException] { if ($attempt -eq 19) { throw }; Start-Sleep -Milliseconds 50 }
+    }
+}
+
+function Invoke-QueueDeploymentControl {
+    param([Parameter(Mandatory)][ValidateSet('count','recover')][string]$Mode,
+          [Parameter(Mandatory)][string]$PythonExe)
+    $database = 'C:\ProgramData\Aevrynd\LineGateway\data\queue.sqlite3'
+    $program = @'
+import sqlite3,sys,time
+mode=sys.argv[1]
+database=sys.argv[2]
+connection=sqlite3.connect(database,timeout=5.0)
+try:
+    if mode == "count":
+        total=0
+        for table in ("jobs","deliveries","reception_notifications"):
+            total += int(connection.execute(f"SELECT COUNT(*) FROM {table} WHERE status='running'").fetchone()[0])
+        print(total)
+    elif mode == "recover":
+        now=time.time()
+        connection.execute("BEGIN IMMEDIATE")
+        changed=0
+        changed += connection.execute("UPDATE jobs SET status='queued', attempt_count=MAX(0,attempt_count-1), available_at=?, lease_until=NULL, lease_owner='', updated_at=?, error_code='' WHERE status='running'",(now+1.0,now)).rowcount
+        for table in ("deliveries","reception_notifications"):
+            changed += connection.execute(f"UPDATE {table} SET status='queued', attempt_count=MAX(0,attempt_count-1), available_at=?, lease_until=NULL, lease_owner='', updated_at=?, error_code='' WHERE status='running'",(now+1.0,now)).rowcount
+        connection.commit()
+        print(changed)
+    else:
+        raise RuntimeError("invalid mode")
+finally:
+    connection.close()
+'@
+    $output = & $PythonExe -B -c $program $Mode $database 2>$null
+    if ($LASTEXITCODE -ne 0 -or @($output).Count -ne 1 -or [string]$output -notmatch '^\d+$') { throw 'queue_control_failed' }
+    return [int]$output
+}
+
+function Wait-GatewayQueueDrain {
+    param([Parameter(Mandatory)][string]$PythonExe,[ValidateRange(1,180)][int]$TimeoutSeconds=120)
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        if ((Invoke-QueueDeploymentControl -Mode count -PythonExe $PythonExe) -eq 0) { return }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    # 超時不把正常工作標成失敗；停止後會在 gateway 尚未重啟時立即安全歸還租約。
 }
 
 function Assert-FixedSafePath {
@@ -73,11 +121,12 @@ function Restore-VerifiedRelease {
     & (Join-Path $liveRoot 'scripts\Test-Health.ps1') -InstallRoot $liveRoot | Out-Null
 }
 
-New-Item -ItemType Directory -Force -Path $statusRoot | Out-Null
-Write-SafeResult -Status running -Code none
-$mutex = [Threading.Mutex]::new($false, 'Global\AevryndLineGatewayAutomaticDeployment')
+$mutex = $null
 $acquired = $false
 try {
+    New-Item -ItemType Directory -Force -Path $statusRoot | Out-Null
+    Write-SafeResult -Status running -Code none
+    $mutex = [Threading.Mutex]::new($false, 'Global\AevryndLineGatewayAutomaticDeployment')
     try { $acquired = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $acquired = $true }
     if (-not $acquired) { Write-SafeResult -Status failed -Code busy; exit 2 }
 
@@ -133,10 +182,12 @@ try {
 
     $backup = Join-Path $scratchRoot 'rollback'
     $hasRollback = $false
+    $installedPython = $null
     if (Test-Path -LiteralPath (Join-Path $liveRoot 'manifests\installation-manifest.json') -PathType Leaf) {
         . (Join-Path $liveRoot 'scripts\Common.ps1')
         $currentPaths = Get-GatewayPaths -InstallRoot $liveRoot
         $null = Test-InstallationManifest -Paths $currentPaths
+        $installedPython = Get-InstalledPython -Paths $currentPaths
         foreach ($name in @('app','scripts','manifests')) {
             foreach ($item in Get-ChildItem -LiteralPath (Join-Path $liveRoot $name) -Recurse -Force) {
                 if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
@@ -154,7 +205,19 @@ try {
         $hasRollback = $true
     }
 
+    if ($null -ne $installedPython) {
+        try { Wait-GatewayQueueDrain -PythonExe $installedPython } catch { Write-SafeResult -Status failed -Code drain_failed -Release $release; exit 9 }
+    }
     try { & (Join-Path $liveRoot 'scripts\Stop-Gateway.ps1') -InstallRoot $liveRoot | Out-Null } catch { Write-SafeResult -Status failed -Code stop_failed -Release $release; exit 3 }
+    if ($null -ne $installedPython) {
+        try { $null = Invoke-QueueDeploymentControl -Mode recover -PythonExe $installedPython }
+        catch {
+            # Gateway 已停止時若無法歸還租約，不繼續切換版本；先恢復原服務，工作仍可由既有 lease expiry 接手。
+            try { & (Join-Path $liveRoot 'scripts\Start-Gateway.ps1') -InstallRoot $liveRoot | Out-Null } catch { }
+            Write-SafeResult -Status failed -Code drain_failed -Release $release
+            exit 9
+        }
+    }
     try { & $installScript -InstallRoot $liveRoot | Out-Null } catch {
         if ($hasRollback) {
             try { Restore-VerifiedRelease -BackupRoot $backup; Write-SafeResult -Status rolled_back -Code install_failed -Release $release; exit 4 }
@@ -174,13 +237,13 @@ try {
     }
     Write-SafeResult -Status succeeded -Code none -Release $release
 } catch {
-    Write-SafeResult -Status failed -Code source_rejected -Release $release
+    try { Write-SafeResult -Status failed -Code source_rejected -Release $release } catch { }
     exit 8
 } finally {
     try { Remove-FixedScratch } catch { }
     if ($null -eq $oldNoSystem) { Remove-Item Env:GIT_CONFIG_NOSYSTEM -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_NOSYSTEM = $oldNoSystem }
     if ($null -eq $oldGlobal) { Remove-Item Env:GIT_CONFIG_GLOBAL -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_GLOBAL = $oldGlobal }
     if ($null -eq $oldPager) { Remove-Item Env:GIT_PAGER -ErrorAction SilentlyContinue } else { $env:GIT_PAGER = $oldPager }
-    if ($acquired) { $mutex.ReleaseMutex() }
-    $mutex.Dispose()
+    if ($acquired -and $null -ne $mutex) { $mutex.ReleaseMutex() }
+    if ($null -ne $mutex) { $mutex.Dispose() }
 }

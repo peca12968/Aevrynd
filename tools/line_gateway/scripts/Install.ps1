@@ -203,6 +203,32 @@ foreach ($temporaryRoot in @($stageRoot, $backupRoot)) {
 }
 
 $null = Test-InstallationManifest -Paths $paths
+
+# 若一次性自動部署排程已安裝，僅從剛通過 closed manifest 的 live scripts 刷新固定 runner。
+# 目前執行中的舊 runner 已載入記憶體，覆寫檔案不會等待或終止常駐 Gateway process tree。
+$automaticDeploymentRoot = 'C:\ProgramData\Aevrynd\LineGatewayAutomaticDeployment'
+if (Test-Path -LiteralPath $automaticDeploymentRoot -PathType Container) {
+    $automaticDeploymentRoot = [IO.Path]::GetFullPath($automaticDeploymentRoot).TrimEnd('\')
+    if (-not [string]::Equals($automaticDeploymentRoot, 'C:\ProgramData\Aevrynd\LineGatewayAutomaticDeployment', [StringComparison]::OrdinalIgnoreCase) -or
+        ((Get-Item -LiteralPath $automaticDeploymentRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Automatic deployment runner root is unsafe.'
+    }
+    $trustedRunner = Join-Path $paths.Scripts 'Invoke-AutomaticDeployment.ps1'
+    $fixedRunner = Join-Path $automaticDeploymentRoot 'Invoke-AutomaticDeployment.ps1'
+    if (Test-Path -LiteralPath $fixedRunner) {
+        if (-not (Test-Path -LiteralPath $fixedRunner -PathType Leaf) -or
+            ((Get-Item -LiteralPath $fixedRunner -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Existing automatic deployment runner target is unsafe.'
+        }
+    }
+    $temporaryRunner = Join-Path $automaticDeploymentRoot ('.runner-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::Copy($trustedRunner, $temporaryRunner, $false)
+    [IO.File]::Move($temporaryRunner, $fixedRunner, $true)
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $trustedRunner).Hash -cne
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $fixedRunner).Hash) {
+        throw 'Automatic deployment runner refresh verification failed.'
+    }
+}
 Write-Output "LINE gateway installed from a closed, verified file set: release=$releaseId"
 Write-Output 'Next: Set-Configuration.ps1, Set-Credentials.ps1, then Start-Gateway.ps1.'
 } finally { Exit-PublicTransportLock $transportLock }
