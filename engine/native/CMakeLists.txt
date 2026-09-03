@@ -1091,3 +1091,30 @@ add_executable(AevryndTerrainObjectIdD3D12Test tests/TerrainObjectIdD3D12Smoke.c
 target_compile_options(AevryndTerrainObjectIdD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(AevryndTerrainObjectIdD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndTerrainObjectIdD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTerrainObjectIdD3D12Test>'")
+
+# 遠端 release gate 僅包含可在無 GPU、無桌面互動下穩定執行的 CPU 測試。
+set_tests_properties(
+  AevryndHlod3DTest
+  AevryndHlodSceneECS3DTest
+  AevryndHlodWorldPartitionReceiptTest
+  AevryndScene3DTest
+  AevryndScene3DBvhTest
+  AevryndWorldOrigin3DTest
+  AevryndMeshRaycastBvhTest
+  AevryndCollisionWorldTest
+  AevryndPhysicsWorld3DTest
+  AevryndNavigation3DTest
+  AevryndHeightField3DTest
+  AevryndWorldPartition3DFakeSourceTest
+  AevryndWorldPartitionDeltaGateFakeTest
+  PROPERTIES LABELS "release-gates")
+
+# D3D12 與 GBV 另列為選配 gate，不得混入遠端 CPU 預設。
+set_tests_properties(
+  AevryndHlodStaticMeshAssetLibrary3DTest
+  AevryndHlodStaticMeshAssetLibrary3DGpuValidationTest
+  AevryndWorldPartitionHlodD3D12Test
+  AevryndWorldPartitionHlodD3D12GpuValidationTest
+  AevryndWorldPartitionHlodAdapterFakeTest
+  AevryndWorldPartitionHlodAdapterFakeGpuValidationTest
+  PROPERTIES LABELS "gpu-release-gates")

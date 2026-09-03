@@ -1,0 +1,55 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-release-gates",
+      "displayName": "Windows Release Gates (VS2022 x64)",
+      "description": "Fixed non-interactive CPU release-gate configuration for restricted remote workers.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/out/build/windows-release-gates",
+      "cacheVariables": {
+        "AEVRYND_ENABLE_STREAMLINE": "OFF",
+        "AEVRYND_ENABLE_STREAMLINE_RUNTIME": "OFF",
+        "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "OFF",
+        "AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-release-gates",
+      "configurePreset": "windows-release-gates",
+      "configuration": "RelWithDebInfo",
+      "jobs": 2
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-release-gates",
+      "configurePreset": "windows-release-gates",
+      "configuration": "RelWithDebInfo",
+      "filter": {
+        "include": {
+          "label": "^release-gates$"
+        }
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
