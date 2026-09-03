@@ -58,7 +58,7 @@ class StatusReportTests(unittest.TestCase):
         self.assertEqual("completed", result["status"])
         delivery = self.store.claim_delivery("status-delivery")
         self.assertIn("[三台即時狀態]", delivery.message_text)
-        self.assertIn("Gateway 無法直接讀取 Codex", delivery.message_text)
+        self.assertNotIn("[Aevrynd 開發進度]", delivery.message_text)
 
     def test_artifact_request_has_durable_id_and_handoff(self) -> None:
         queued = self.store.enqueue(
@@ -125,7 +125,7 @@ class StatusReportTests(unittest.TestCase):
         )
         with patch.object(StatusReport, "_tcp_reachable", return_value=True):
             rendered = status.render("桃園電腦工作進度")
-        self.assertIn("[指定電腦即時狀態]", rendered)
+        self.assertIn("[桃園即時狀態]", rendered)
         self.assertIn("桃園：Qwen 可達／忙碌", rendered)
         self.assertNotIn("台中：", rendered)
         self.assertIn(f"LINE taoyuan #{line_job.job_id[:8]}", rendered)
@@ -148,6 +148,81 @@ class StatusReportTests(unittest.TestCase):
         self.assertIn("台中：Qwen 可達／閒置", rendered)
         self.assertIn("目前未偵測到進行中工作", rendered)
         self.assertNotIn("桃園：", rendered)
+
+    def test_user_status_phrases_keep_city_project_and_overall_scopes_separate(self) -> None:
+        status = StatusReport(
+            self.store,
+            repository_root=self.temporary.name,
+            controller_root=self.temporary.name,
+            dispatcher_database=Path(self.temporary.name) / "missing.sqlite3",
+            probe_timeout=0.01,
+        )
+        with patch.object(StatusReport, "_tcp_reachable", return_value=True):
+            city = status.render("桃園有工作進度嗎")
+            project = status.render("Aevrynd開發進度")
+            overall = status.render("目前整體工作進度")
+        self.assertIn("[桃園即時狀態]", city)
+        self.assertIn("桃園：", city)
+        self.assertNotIn("主電腦：", city)
+        self.assertNotIn("台中：", city)
+        self.assertEqual(1, project.count("[Aevrynd 開發進度]"))
+        self.assertNotIn("[三台即時狀態]", project)
+        self.assertNotIn("主電腦：", project)
+        self.assertIn("[三台即時狀態]", overall)
+        self.assertIn("[Aevrynd 開發進度]", overall)
+
+    def test_current_status_job_is_not_reported_as_node_work_or_queue_work(self) -> None:
+        queued = self.store.enqueue(
+            webhook_event_id="current-status-query",
+            route=Route.TAOYUAN.value,
+            source_id="group",
+            requester_id="user",
+            request_text="桃園有工作進度嗎",
+        )
+        claimed = self.store.claim_next_for_lane("status-owner", "taoyuan")
+        self.assertIsNotNone(claimed)
+        status = StatusReport(
+            self.store,
+            repository_root=self.temporary.name,
+            controller_root=self.temporary.name,
+            dispatcher_database=Path(self.temporary.name) / "missing.sqlite3",
+            probe_timeout=0.01,
+        )
+        with patch.object(StatusReport, "_tcp_reachable", return_value=True):
+            rendered = status.render("桃園有工作進度嗎", current_job_id=queued.job_id)
+            overall = status.render("目前整體工作進度", current_job_id=queued.job_id)
+        self.assertNotIn(f"#{queued.job_id[:8]}", rendered)
+        self.assertIn("LINE 工作：等待 0、處理中 0", overall)
+
+    def test_project_ledger_summary_is_bounded_and_rejects_sensitive_lines(self) -> None:
+        root = Path(self.temporary.name)
+        games = root / "Games"
+        info = root / "Info"
+        games.mkdir()
+        info.mkdir()
+        (info / "TASK_STATE.md").write_text(
+            "> 最後核對：2026-09-03（Asia/Taipei）\n\n"
+            "## 正在工作\n\n"
+            "- 安全摘要。\n"
+            "- 機密位於 C:\\\\secret\\\\token.txt。\n"
+            "- API key: must-not-appear。\n"
+            "- " + ("長" * 400) + "\n\n"
+            "## 下一步\n",
+            encoding="utf-8",
+        )
+        status = StatusReport(
+            self.store,
+            repository_root=games,
+            controller_root=root,
+            dispatcher_database=root / "missing.sqlite3",
+            probe_timeout=0.01,
+        )
+        rendered = status.render("Aevrynd開發進度")
+        self.assertIn("安全摘要", rendered)
+        self.assertNotIn("secret", rendered.casefold())
+        self.assertNotIn("api key", rendered.casefold())
+        self.assertNotRegex(rendered, r"[A-Za-z]:[\\/]")
+        self.assertLess(max(map(len, rendered.splitlines())), 230)
 
 
 if __name__ == "__main__":

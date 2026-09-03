@@ -127,6 +127,10 @@ class RoutingTests(unittest.TestCase):
             "回報台中電腦任務",
             "查詢主機工作狀態",
             "請回報Codex開發進度",
+            "桃園有工作進度嗎",
+            "Aevrynd開發進度",
+            "遊戲引擎開發進度",
+            "目前整體工作進度",
         ):
             with self.subTest(command=command):
                 self.assertEqual(Route.STATUS, route_event(mentioned(command), _config()).route)
@@ -142,6 +146,8 @@ class RoutingTests(unittest.TestCase):
             "全部遊戲任務怎麼做",
             "請說明主機是什麼",
             "回報三台電腦正在做什麼以及明天天氣",
+            "桃園天氣有工作進度嗎",
+            "Aevrynd官網開發進度如何",
         ):
             with self.subTest(command=command):
                 self.assertNotEqual(Route.STATUS, route_event(mentioned(command), _config()).route)

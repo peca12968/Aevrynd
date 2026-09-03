@@ -56,6 +56,11 @@ _STATUS_COMMANDS = frozenset(
         "現在進度",
         "目前進度",
         "目前開發進度",
+        "目前整體工作進度",
+        "Aevrynd開發進度",
+        "aevrynd開發進度",
+        "遊戲引擎開發進度",
+        "專案開發進度",
         "台中電腦工作進度",
         "桃園電腦工作進度",
         "台中工作進度",
@@ -68,7 +73,7 @@ _STATUS_COMMANDS = frozenset(
     }
 )
 _STATUS_LEADING_WORDS = ("請回報", "請查詢", "請查看", "回報", "查詢", "查看")
-_STATUS_TRAILING_WORDS = ("如何", "呢", "？", "?")
+_STATUS_TRAILING_WORDS = ("如何", "呢", "嗎", "？", "?")
 _STATUS_SUBJECTS = {
     "三台": ("", "電腦", "主機"),
     "全部": ("", "電腦", "主機"),
@@ -78,6 +83,10 @@ _STATUS_SUBJECTS = {
     "主機": ("",),
     "Codex": ("",),
     "codex": ("",),
+    "Aevrynd": ("",),
+    "aevrynd": ("",),
+    "遊戲引擎": ("",),
+    "專案": ("",),
 }
 _STATUS_PREDICATES = frozenset(
     {
@@ -91,6 +100,7 @@ _STATUS_PREDICATES = frozenset(
         "正在做什麼",
         "正在執行什麼",
         "開發進度",
+        "有工作進度",
     }
 )
 _ARTIFACT_MARKERS = ("ppt", "pptx", "word", "docx", "pdf", "簡報", "文件", "檔案")

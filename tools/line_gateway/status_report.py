@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import time
 import uuid
+import re
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -17,6 +18,12 @@ from .queue_store import QueueStore
 
 class StatusReport:
     """Read fixed local state and bounded reachability probes without model inference."""
+
+    _NON_PUBLIC_STATUS_TEXT = re.compile(
+        r"(?:[A-Za-z]:[\\/]|\\\\|https?://|(?:\d{1,3}\.){3}\d{1,3}|"
+        r"api[_ -]?key|access[_ -]?token|authorization|bearer|channel[_ -]?secret)",
+        re.IGNORECASE,
+    )
 
     _NODES = (
         ("main", "主電腦", "127.0.0.1", 18080),
@@ -51,17 +58,21 @@ class StatusReport:
         )
         self._node_slot_probes = dict(node_slot_probes or {})
 
-    def render(self, command_text: str = "") -> str:
-        snapshot = self.snapshot()
-        requested = command_text.strip()
-        requested_ids = {"main", "taichung", "taoyuan"}
-        if requested.startswith("台中"):
-            requested_ids = {"taichung"}
-        elif requested.startswith("桃園"):
-            requested_ids = {"taoyuan"}
-        elif requested.startswith("主電腦") or requested.casefold().startswith("codex"):
-            requested_ids = {"main"}
-        title = "[三台即時狀態]" if len(requested_ids) == 3 else "[指定電腦即時狀態]"
+    def render(self, command_text: str = "", *, current_job_id: str | None = None) -> str:
+        scope = self._status_scope(command_text)
+        if scope == "project":
+            return self._render_project(self._repository(), self._queue_counts(current_job_id))
+        requested_ids = {
+            "taichung": {"taichung"},
+            "taoyuan": {"taoyuan"},
+            "main": {"main"},
+        }.get(scope, {"main", "taichung", "taoyuan"})
+        snapshot = self.snapshot(node_ids=requested_ids, exclude_job_id=current_job_id)
+        title = {
+            "taichung": "[台中即時狀態]",
+            "taoyuan": "[桃園即時狀態]",
+            "main": "[主電腦即時狀態]",
+        }.get(scope, "[三台即時狀態]")
         lines = [title]
         for node in snapshot["nodes"]:
             if node["id"] not in requested_ids:
@@ -75,18 +86,51 @@ class StatusReport:
                 lines.append("  目前未偵測到進行中工作")
             if activity["recent"]:
                 lines.append(f"  最近完成：{activity['recent']}")
-        repository = snapshot["repository"]
-        if "main" in requested_ids:
-            lines.extend(
-                (
-                    "",
-                    "[主電腦開發進度]",
-                    f"- 版本：{repository['head']} {repository['subject']}",
-                    f"- 工作樹：{'有 ' + str(repository['dirtyCount']) + ' 項未提交變更' if repository['dirty'] else '乾淨'}",
-                    f"- LINE 工作：等待 {snapshot['queue']['pending']}、處理中 {snapshot['queue']['running']}、等待 Codex {snapshot['queue']['awaitingCodex']}",
-                    "- Codex 即時執行內容：Gateway 無法直接讀取 Codex 桌面工作階段；以上為 Git 與持久佇列的可驗證狀態。",
-                )
-            )
+        if scope in {"main", "all_project"}:
+            lines.extend(("", self._render_project(snapshot["repository"], snapshot["queue"])))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _status_scope(command_text: str) -> str:
+        """以封閉詞彙決定報表範圍，不把城市或專案問題擴張成三台報表。"""
+
+        normalized = "".join(command_text.strip().split())
+        normalized = re.sub(r"[？?。！!]+$", "", normalized)
+        for prefix in ("請回報", "請查詢", "請查看", "回報", "查詢", "查看"):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix) :]
+                break
+        if normalized.endswith("嗎"):
+            normalized = normalized[:-1]
+        lowered = normalized.casefold()
+        if any(subject.casefold() in lowered for subject in ("aevrynd", "遊戲引擎", "專案")):
+            return "project"
+        if "桃園" in normalized and "台中" not in normalized:
+            return "taoyuan"
+        if "台中" in normalized and "桃園" not in normalized:
+            return "taichung"
+        if any(subject in normalized for subject in ("三台", "全部")):
+            return "all"
+        if "整體" in normalized:
+            return "all_project"
+        if any(subject in normalized for subject in ("主電腦", "主機", "Codex", "codex")):
+            return "main"
+        return "all_project"
+
+    def _render_project(self, repository: Mapping[str, object], queue: Mapping[str, object]) -> str:
+        engine = self._engine_commit()
+        ledger_stamp, ledger_items = self._task_state_summary()
+        lines = [
+            "[Aevrynd 開發進度]",
+            f"- 版本：{repository['head']} {repository['subject']}",
+            f"- 工作樹：{'有 ' + str(repository['dirtyCount']) + ' 項未提交變更' if repository['dirty'] else '乾淨'}",
+            f"- 最近引擎提交：{engine}",
+            f"- LINE 工作：等待 {queue['pending']}、處理中 {queue['running']}、等待 Codex {queue['awaitingCodex']}",
+        ]
+        if ledger_stamp:
+            lines.append(f"- 狀態帳核對：{ledger_stamp}")
+        lines.extend(f"  {item}" for item in ledger_items)
+        lines.append("- Codex 即時執行內容：Gateway 無法直接讀取 Codex 桌面工作階段；以上只列 Git、狀態帳與持久佇列的可驗證資料。")
         return "\n".join(lines)
 
     def render_job(self, job_id: str) -> str:
@@ -109,13 +153,27 @@ class StatusReport:
             f"更新：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(job['updated_at'])))}"
         )
 
-    def snapshot(self) -> dict[str, object]:
+    def snapshot(
+        self,
+        *,
+        node_ids: set[str] | None = None,
+        exclude_job_id: str | None = None,
+    ) -> dict[str, object]:
         state = self._controller_state()
         nodes: list[dict[str, object]] = []
         now = time.time()
+        selected_ids = {"main", "taichung", "taoyuan"} if node_ids is None else set(node_ids)
+        if not selected_ids or not selected_ids.issubset({"main", "taichung", "taoyuan"}):
+            raise ValueError("node_ids is outside the fixed node set")
         recent_jobs = self._queue_store.recent(50)
-        activity = {node_id: self._activity(node_id, recent_jobs) for node_id, _label, _host, _port in self._NODES}
+        activity = {
+            node_id: self._activity(node_id, recent_jobs, exclude_job_id)
+            for node_id, _label, _host, _port in self._NODES
+            if node_id in selected_ids
+        }
         for node_id, label, host, port in self._NODES:
+            if node_id not in selected_ids:
+                continue
             saved = state.get(node_id, {})
             age = saved.get("ageSeconds")
             freshness = "即時" if isinstance(age, float) and age <= 15 else "過期" if isinstance(age, float) else "無資料"
@@ -140,17 +198,26 @@ class StatusReport:
                     "stateFreshness": freshness,
                 }
             )
-        counts = self._queue_store.counts()
+        queue = self._queue_counts(exclude_job_id)
         return {
             "capturedAt": int(now),
             "nodes": nodes,
             "activity": activity,
             "repository": self._repository(),
-            "queue": {
-                "pending": int(counts.get("queued", 0)),
-                "running": int(counts.get("running", 0)),
-                "awaitingCodex": int(counts.get("awaiting_codex", 0)),
-            },
+            "queue": queue,
+        }
+
+    def _queue_counts(self, exclude_job_id: str | None) -> dict[str, int]:
+        counts = self._queue_store.counts()
+        if exclude_job_id:
+            excluded = self._queue_store.status(exclude_job_id)
+            if excluded is not None and excluded.get("status") in {"queued", "running", "awaiting_codex"}:
+                key = str(excluded["status"])
+                counts[key] = max(0, int(counts.get(key, 0)) - 1)
+        return {
+            "pending": int(counts.get("queued", 0)),
+            "running": int(counts.get("running", 0)),
+            "awaitingCodex": int(counts.get("awaiting_codex", 0)),
         }
 
     @staticmethod
@@ -165,7 +232,12 @@ class StatusReport:
         text = str(value)
         return text if text in {"summary", "classification", "test-template", "inventory"} else "unknown"
 
-    def _activity(self, node_id: str, recent_jobs: list[dict[str, object]]) -> dict[str, object]:
+    def _activity(
+        self,
+        node_id: str,
+        recent_jobs: list[dict[str, object]],
+        exclude_job_id: str | None,
+    ) -> dict[str, object]:
         route_sets = {
             "main": {"codex", "artifact", "host", "all"},
             "taichung": {"taichung"},
@@ -175,7 +247,9 @@ class StatusReport:
         current = [
             f"LINE {job['route']} #{self._short_id(job['job_id'])}"
             for job in recent_jobs
-            if job.get("route") in routes and job.get("status") in {"queued", "running", "awaiting_codex"}
+            if job.get("job_id") != exclude_job_id
+            and job.get("route") in routes
+            and job.get("status") in {"queued", "running", "awaiting_codex"}
         ][:3]
         completed = next(
             (
@@ -190,6 +264,45 @@ class StatusReport:
         if dispatcher["recent"]:
             completed = dispatcher["recent"]
         return {"current": current[:4], "recent": completed}
+
+    def _engine_commit(self) -> str:
+        value = self._git("log", "-1", "--format=%h%x09%s", "--", "engine")
+        if not value:
+            return "無可驗證引擎提交"
+        commit, separator, subject = value.partition("\t")
+        public_subject = self._public_status_text(subject, 150)
+        if not separator or not public_subject:
+            return f"{commit[:16]}（提交說明已隱藏）"
+        return f"{commit[:16]} {public_subject}"
+
+    @classmethod
+    def _public_status_text(cls, value: str, limit: int) -> str:
+        text = value.replace("\r", " ").replace("\n", " ").strip()
+        if not text or cls._NON_PUBLIC_STATUS_TEXT.search(text):
+            return ""
+        return text[:limit]
+
+    def _task_state_summary(self) -> tuple[str, list[str]]:
+        path = self._repository_root.parent / "Info" / "TASK_STATE.md"
+        try:
+            raw = path.read_bytes()
+            if not 1 <= len(raw) <= 262_144:
+                return "", []
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeError):
+            return "", []
+        stamp_match = re.search(r"^> 最後核對：([^\r\n]{1,80})", text, re.MULTILINE)
+        section_match = re.search(r"^## 正在工作\s*$([\s\S]*?)(?=^## |\Z)", text, re.MULTILINE)
+        items: list[str] = []
+        if section_match:
+            for line in section_match.group(1).splitlines():
+                if line.startswith("- "):
+                    public_line = self._public_status_text(line, 220)
+                    if public_line:
+                        items.append(public_line)
+                if len(items) == 2:
+                    break
+        return (stamp_match.group(1).strip() if stamp_match else "", items)
 
     def _dispatcher_activity(self, node_id: str) -> dict[str, object]:
         if node_id not in {"taichung", "taoyuan"} or not self._dispatcher_database.is_file():
@@ -282,12 +395,13 @@ class StatusReport:
 
     def _repository(self) -> dict[str, object]:
         head = self._git("rev-parse", "--short=8", "HEAD") or "不可用"
-        subject = self._git("log", "-1", "--format=%s") or "無可驗證提交說明"
+        raw_subject = self._git("log", "-1", "--format=%s")
+        subject = self._public_status_text(raw_subject, 160) or "提交說明不可公開或無法驗證"
         status = self._git("status", "--short", "--untracked-files=no")
         dirty_count = len(status.splitlines()) if status else 0
         return {
             "head": head[:16],
-            "subject": subject[:160].replace("\r", " ").replace("\n", " "),
+            "subject": subject,
             "dirty": dirty_count > 0,
             "dirtyCount": dirty_count,
         }

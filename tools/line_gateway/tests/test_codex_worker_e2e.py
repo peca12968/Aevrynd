@@ -363,7 +363,9 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         )
         self.assertTrue(status_worker.process_lane_once("taichung"))
         self.assertEqual("completed", self.store.status(status_job.job_id)["status"])
-        status_report.render.assert_called_once_with("幫我看所有節點目前忙什麼")
+        status_report.render.assert_called_once_with(
+            "幫我看所有節點目前忙什麼", current_job_id=status_job.job_id
+        )
         self.assertTrue(status_worker.drain_side_effect_once())
         self.assertEqual("[三台即時狀態]\n權威資料", self.line.pushes[-1][1])
 
@@ -502,12 +504,14 @@ class WorkerAndEndToEndTests(unittest.TestCase):
             qwen_client=None, router_client=router, qwen_clients={"taichung": remote},
             status_report=status_report, worker_id="local-router-status",
         )
-        self.store.enqueue(
+        queued = self.store.enqueue(
             webhook_event_id="local-router-status", route=Route.AUTO_QWEN.value,
             source_id="group", requester_id="user", request_text="大家目前忙什麼",
         )
         self.assertTrue(worker.process_lane_once("auto"))
-        status_report.render.assert_called_once_with("大家目前忙什麼")
+        status_report.render.assert_called_once_with(
+            "大家目前忙什麼", current_job_id=queued.job_id
+        )
         self.assertEqual([], remote.prompts)
 
     def test_local_router_artifact_preserves_image_kind_in_durable_handoff(self) -> None:
