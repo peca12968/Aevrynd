@@ -39,4 +39,3 @@ RECEIPT_STATUSES = frozenset(
 CLASSIFICATIONS = frozenset(
     {"clean", "test_failure", "build_failure", "timeout", "infrastructure_error", "unknown"}
 )
-

@@ -37,4 +37,3 @@ def verify_receipt(envelope: dict[str, Any], expected_job: dict[str, Any], key: 
     checked = validate_receipt(payload, expected_job["payload"])
     ledger.claim("receipt", checked["nonce"])
     return checked
-
