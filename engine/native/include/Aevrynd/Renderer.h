@@ -130,6 +130,18 @@ struct SkinnedSubmissionReceipt3D {uint64_t submissionNonce{};uint32_t drawGener
 enum class SkinnedSubmissionResult3D:uint8_t {Unknown,Accepted,Rejected,Expired};
 struct MaterialTextureSetHandle3D {uint32_t value{};uint64_t semanticIdentity{};constexpr MaterialTextureSetHandle3D()=default;constexpr MaterialTextureSetHandle3D(uint32_t handle,uint64_t semantic=0):value(handle),semanticIdentity(semantic){}explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D& other)const{return value==other.value;}};
 struct GpuUploadReceipt3D {uint64_t deviceEpoch{},fenceValue{};explicit constexpr operator bool()const{return deviceEpoch!=0&&fenceValue!=0;}constexpr bool operator==(const GpuUploadReceipt3D&)const=default;};
+class GpuRetirementReceipt3D {
+public:
+    constexpr GpuRetirementReceipt3D()=default;
+    [[nodiscard]] explicit constexpr operator bool()const noexcept{return deviceEpoch_!=0&&fenceValue_!=0;}
+    [[nodiscard]] constexpr uint64_t DeviceEpoch()const noexcept{return deviceEpoch_;}
+    [[nodiscard]] constexpr uint64_t FenceValue()const noexcept{return fenceValue_;}
+    friend constexpr bool operator==(const GpuRetirementReceipt3D&,const GpuRetirementReceipt3D&)=default;
+private:
+    constexpr GpuRetirementReceipt3D(uint64_t deviceEpoch,uint64_t fenceValue)noexcept:deviceEpoch_(deviceEpoch),fenceValue_(fenceValue){}
+    uint64_t deviceEpoch_{},fenceValue_{};
+    friend class D3D12Renderer;
+};
 struct AssetLeaseState3D {std::uint64_t identity{};};
 using AssetLease3D=std::shared_ptr<const AssetLeaseState3D>;
 enum class MaterialSurfaceMapEncoding3D:uint8_t {RoughnessR,PackedOrm};
@@ -1160,6 +1172,10 @@ public:
     [[nodiscard]] std::optional<size_t> EstimateMaterialTextureSetAllocationBytes3D(const MaterialTextureSetDefinition3D& definition)const;
     GpuUploadReceipt3D SubmitPendingUploads3D();
     [[nodiscard]] bool IsUploadComplete(GpuUploadReceipt3D receipt)const;
+    // 呼叫端必須與其他 renderer mutation 串行；成功只排入 fence signal，不等待 GPU。
+    [[nodiscard]] GpuRetirementReceipt3D CaptureRetirementFence3D();
+    // 初始化完成後可跨執行緒輪詢，但 renderer 必須存活且不可同時 teardown/reinitialize。
+    [[nodiscard]] bool IsRetirementComplete3D(GpuRetirementReceipt3D receipt)const;
     void DestroyMaterialTextureSet(MaterialTextureSetHandle3D textures);
     void SetMaterialTextureMemoryBudget(size_t bytes);
     void SetMaterialDerivedDataCacheDirectory(std::filesystem::path directory);

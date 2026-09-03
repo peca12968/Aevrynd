@@ -537,6 +537,17 @@ target_compile_definitions(AevryndGpuUploadReceipt3DTest PRIVATE AEVRYND_SOURCE_
 target_link_libraries(AevryndGpuUploadReceipt3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndGpuUploadReceipt3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndGpuUploadReceipt3DTest>'")
 
+add_executable(AevryndGpuRetirementReceipt3DTest tests/GpuRetirementReceipt3DSmoke.cpp)
+target_compile_options(AevryndGpuRetirementReceipt3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndGpuRetirementReceipt3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndGpuRetirementReceipt3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndGpuRetirementReceipt3DTest>'")
+
+add_executable(AevryndGpuRetirementReceiptD3D12Test tests/GpuRetirementReceiptD3D12Smoke.cpp)
+target_compile_options(AevryndGpuRetirementReceiptD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndGpuRetirementReceiptD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndGpuRetirementReceiptD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndGpuRetirementReceiptD3D12Test>'")
+add_test(NAME AevryndGpuRetirementReceiptD3D12GpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; & '$<TARGET_FILE:AevryndGpuRetirementReceiptD3D12Test>'")
+
 add_executable(AevryndMaterialLibrary3DTest tests/MaterialLibrary3DSmoke.cpp)
 target_compile_options(AevryndMaterialLibrary3DTest PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(AevryndMaterialLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
