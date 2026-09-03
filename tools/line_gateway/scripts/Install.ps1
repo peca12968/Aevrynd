@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0 -or [version]$versionText -lt [version]'3.11') { throw '
 $coreFiles = @(
     '__init__.py', 'codex_handoff.py', 'config.py', 'credential_store.py',
     'host_tasks.py', 'line_client.py', 'queue_store.py', 'qwen_client.py',
-    'routing.py', 'server.py', 'signature.py', 'worker.py'
+    'routing.py', 'server.py', 'signature.py', 'status_report.py', 'worker.py'
 )
 $scriptFiles = @(
     'Common.ps1', 'Install.ps1', 'Register-Startup.ps1', 'Set-Configuration.ps1',

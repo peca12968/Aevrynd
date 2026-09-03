@@ -220,12 +220,21 @@ class QwenClientGate:
 
     @contextmanager
     def session(
-        self, *, owner_check: Callable[[], None] | None = None
+        self,
+        *,
+        owner_check: Callable[[], None] | None = None,
+        acquire_timeout: float | None = None,
     ) -> Iterator["QwenClientGate"]:
         # 同一節點的 slots 檢查與 chat 必須保持原子，避免兩條 lane 同時占用單槽。
-        while not self._lock.acquire(timeout=0.1):
-            if owner_check is not None:
-                owner_check()
+        if acquire_timeout is not None:
+            if acquire_timeout <= 0 or acquire_timeout > 1:
+                raise ValueError("acquire_timeout is outside the allowed range")
+            if not self._lock.acquire(timeout=acquire_timeout):
+                raise RetryableQwenError("Qwen node is already assigned")
+        else:
+            while not self._lock.acquire(timeout=0.1):
+                if owner_check is not None:
+                    owner_check()
         try:
             if owner_check is not None:
                 owner_check()

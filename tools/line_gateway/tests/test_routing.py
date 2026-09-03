@@ -98,6 +98,29 @@ class RoutingTests(unittest.TestCase):
                 decision = route_event(mentioned(text), _config())
                 self.assertEqual(Route.AUTO_QWEN, decision.route)
 
+    def test_status_and_artifact_requests_bypass_qwen(self) -> None:
+        def mentioned(command: str) -> dict:
+            event = _event("@Bot " + command)
+            event["message"]["mention"] = {
+                "mentionees": [{"index": 0, "length": 4, "type": "user", "isSelf": True}]
+            }
+            return event
+
+        for command in (
+            "三台狀態",
+            "主電腦進度",
+            "Codex進度",
+            "桃園狀態",
+            "台中狀態",
+            "現階段是否可以透過LINE得知主電腦進度",
+            "現在主電腦Codex開發進度如何",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(Route.STATUS, route_event(mentioned(command), _config()).route)
+        for command in ("幫我做一份ppt", "產生 PDF 檔案", "建立word文件"):
+            with self.subTest(command=command):
+                self.assertEqual(Route.ARTIFACT, route_event(mentioned(command), _config()).route)
+
     def test_self_mention_rejects_forgery_and_malformed_ranges(self) -> None:
         plain = _event("@Official hello")
         self.assertEqual(Route.IGNORE, route_event(plain, _config()).route)

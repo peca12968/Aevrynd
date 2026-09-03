@@ -53,7 +53,7 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 
 `Set-Credentials.ps1` 會以隱密輸入依序要求三個值，不會顯示或寫入檔案。請勿把已在聊天或文件中曝光的舊密鑰再次使用。
 
-主要 Qwen 預設為 `http://192.168.50.98:8080/v1`。`http://100.89.42.36:8080/v1` 已加入固定 allowlist 作為第二節點；主要節點只有發生可重試錯誤時，Gateway 才會先以各自憑證檢查 secondary `/slots`，通過後轉移單一請求。Gateway 以台中、桃園、auto、control 四條工作 lane 加上一條獨立 drainer 執行；兩個城市可並行接收工作，但同一實體 Qwen 節點由共享鎖維持單槽，永久授權／輸入錯誤也不會觸發故障轉移。每個執行中的 job 以 owner-bound heartbeat 延長租約；等待鎖、Qwen HTTP 或 Codex submit 期間若續租失敗，舊 owner 會停止且不能覆寫新 owner。LINE 結果投遞與 Codex reconciliation 只由 drainer 執行，避免工作 lane 重複副作用。
+主要 Qwen 預設為 `http://192.168.50.98:8080/v1`。`http://100.89.42.36:8080/v1` 已加入固定 allowlist 作為第二節點；主要節點只有發生可重試錯誤時，Gateway 才會先以各自憑證檢查 secondary `/slots`，通過後轉移單一請求。Gateway 以台中、桃園、兩條 auto 與 control 五條工作 lane 加上四條接收通知 drainer 及一條副作用 drainer 執行；兩條 auto lane 可同時使用兩個 Qwen 單槽，若首選節點已被占用會快速嘗試另一節點。同一實體 Qwen 節點仍由共享鎖維持單槽，永久授權／輸入錯誤也不會觸發故障轉移。每個執行中的 job 以 owner-bound heartbeat 延長租約；等待鎖、Qwen HTTP 或 Codex submit 期間若續租失敗，舊 owner 會停止且不能覆寫新 owner。LINE 結果投遞與 Codex reconciliation 只由副作用 drainer 執行，避免工作 lane 重複副作用。
 
 單節點安裝執行 `Set-Credentials.ps1` 只寫入三個必要憑證；要啟用第二節點時才加上 `-EnableSecondaryQwen`。未加此 switch 不會讀取空白輸入，也不會覆寫既有 secondary credential。primary 與 secondary 角色固定，不能只交換 URL 來改變助理位置映射。
 
@@ -67,6 +67,8 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 - 自動分配：以 job ID 的穩定 SHA-256 決定首選，讓同一 job 重試與重啟後不漂移，且大量工作近似平均分配；首選必須通過 authenticated single-slot gate，否則才選另一台。
 - `@台中` 預設固定 `.98`，`@桃園` 預設固定 `.36`。非機密設定可交換兩個助理的 primary／secondary role，但兩個實際 endpoint 的 primary／secondary 角色及 allowlist 不可交換。
 - `@主機` 保留只讀主機操作；`@Codex` 直接建立耐久 Codex handoff；`@全部` 固定收集主機、primary-first Qwen 與 Codex 三段結果，不等同對兩個城市助理各問一次。
+- `狀態`、`三台狀態`、`台中狀態`、`桃園狀態`、`主電腦進度`、`Codex進度` 與 `開發進度` 使用 Gateway 快速路徑，不呼叫模型；只回傳 Qwen 可達性、遊戲模式持久狀態、Git HEAD／dirty 數及佇列計數。Gateway 無法直接證明 Codex 桌面工作階段內容時會明確標示，不由 Qwen 猜測。
+- 明確的 PPT/PPTX、Word/DOCX 或 PDF 製作要求會建立持久工作 ID，並寫入 Codex handoff inbox。以 `工作狀態 <UUID>` 查詢；目前沒有自動 Codex consumer 與安全 artifact server，因此工作只會如實顯示等待接手，不宣稱已完成或已回傳附件。
 
 一般問題由指定 Qwen 直接回答。Qwen 若判定為複雜工作、圖片或檔案需求，只能輸出 exact schema 的 JSON 決策；Gateway 不採用模型提供的命令、路徑或任意 handoff request，而是以原始使用者問題、固定 assistant identity 及受限 attachment manifest 建立耐久 Codex handoff，因此 webhook 不會同步等待 Codex。
 
@@ -78,6 +80,10 @@ pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Set-Credentials
 [群組 mention 官方帳號] 請整理今天的待辦
 [群組 mention 官方帳號] 台中：請分析這段錯誤
 [群組 mention 官方帳號] 桃園 請產生場景概念圖需求
+[群組 mention 官方帳號] 三台狀態
+[群組 mention 官方帳號] 主電腦 Codex 開發進度
+[群組 mention 官方帳號] 幫我做一份開發歷史 PPT
+[群組 mention 官方帳號] 工作狀態 00000000-0000-0000-0000-000000000000
 @Codex 請進行完整程式碼審查
 @全部 回報服務與專案狀態
 ```

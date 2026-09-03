@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 from typing import Mapping
 
 from .config import GatewayConfig
@@ -18,6 +19,8 @@ class Route(str, Enum):
     CODEX = "codex"
     ALL = "all"
     HELP = "help"
+    STATUS = "status"
+    ARTIFACT = "artifact"
     IGNORE = "ignore"
 
 
@@ -38,6 +41,54 @@ _PREFIXES = (
     ("@Codex", Route.CODEX),
     ("@全部", Route.ALL),
 )
+
+_STATUS_COMMANDS = frozenset(
+    {
+        "狀態",
+        "三台狀態",
+        "主機狀態",
+        "主電腦狀態",
+        "主電腦進度",
+        "Codex進度",
+        "codex進度",
+        "開發進度",
+        "現在進度",
+        "目前進度",
+        "目前開發進度",
+    }
+)
+_ARTIFACT_MARKERS = ("ppt", "pptx", "word", "docx", "pdf", "簡報", "文件", "檔案")
+_ARTIFACT_ACTIONS = ("產生", "生成", "建立", "製作", "做一份", "做個", "幫我做", "輸出")
+
+
+def _classify_command(command: str, default_route: Route) -> tuple[Route, str, str]:
+    normalized = "".join(command.strip().split())
+    if (
+        normalized in _STATUS_COMMANDS
+        or normalized.endswith("電腦狀態")
+        or normalized in {"台中狀態", "桃園狀態", "主電腦Codex進度"}
+        or any(
+            marker in normalized
+            for marker in (
+                "主電腦進度",
+                "主電腦Codex進度",
+                "主電腦codex進度",
+                "主電腦Codex開發進度",
+                "主電腦codex開發進度",
+                "Codex開發進度",
+                "codex開發進度",
+            )
+        )
+    ):
+        return Route.STATUS, command.strip(), "deterministic-status"
+    if re.fullmatch(r"(?:工作|任務)(?:狀態)?[：:\s]+[0-9a-fA-F-]{36}", command.strip()):
+        return Route.STATUS, command.strip(), "deterministic-job-status"
+    lowered = command.casefold()
+    if any(marker in lowered for marker in _ARTIFACT_MARKERS) and any(
+        action in command for action in _ARTIFACT_ACTIONS
+    ):
+        return Route.ARTIFACT, command.strip(), "deterministic-artifact"
+    return default_route, command, ""
 
 
 def _ignored(reason: str, original_text: str = "") -> RouteDecision:
@@ -70,9 +121,11 @@ def _route_text(text: str, *, source_type: str) -> RouteDecision:
         if len(stripped) != len(prefix) and not stripped[len(prefix)].isspace():
             continue
         command_text = stripped[len(prefix) :].lstrip()
-        return RouteDecision(route, True, text, command_text, "explicit-prefix")
+        selected, command_text, reason = _classify_command(command_text, route)
+        return RouteDecision(selected, True, text, command_text, reason or "explicit-prefix")
     if source_type == "user":
-        return RouteDecision(Route.AUTO_QWEN, True, text, stripped, "direct-message-auto")
+        selected, command_text, reason = _classify_command(stripped, Route.AUTO_QWEN)
+        return RouteDecision(selected, True, text, command_text, reason or "direct-message-auto")
     return RouteDecision(Route.IGNORE, True, text, "", "group-prefix-required")
 
 
@@ -114,6 +167,7 @@ def _route_self_mention(text: str, mention: object) -> RouteDecision | None:
     if not command:
         return _ignored("assistant-question-required", text)
     selected = Route.AUTO_QWEN
+    original_command = command
     for selector, route in (("台中", Route.TAICHUNG), ("桃園", Route.TAOYUAN)):
         if not command.startswith(selector):
             continue
@@ -124,7 +178,9 @@ def _route_self_mention(text: str, mention: object) -> RouteDecision | None:
             return _ignored("assistant-selector-invalid", text)
         selected = route
         break
-    return RouteDecision(selected, True, text, command, "self-mention")
+    status_candidate = original_command if selected in {Route.TAICHUNG, Route.TAOYUAN} else command
+    classified, classified_text, reason = _classify_command(status_candidate, selected)
+    return RouteDecision(classified, True, text, classified_text if reason else command, reason or "self-mention")
 
 
 def route_event(event: Mapping[str, object], config: GatewayConfig) -> RouteDecision:

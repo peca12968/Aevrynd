@@ -1,0 +1,88 @@
+"""Evidence-backed fast status and persistent artifact request tests."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from tools.line_gateway.codex_handoff import CodexHandoff
+from tools.line_gateway.host_tasks import HostTasks
+from tools.line_gateway.queue_store import QueueStore
+from tools.line_gateway.routing import Route
+from tools.line_gateway.status_report import StatusReport
+from tools.line_gateway.tests.test_codex_worker_e2e import FakeLineClient, FakeQwenClient
+from tools.line_gateway.worker import Worker
+
+
+class StatusReportTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        root = Path(self.temporary.name)
+        self.store = QueueStore(root / "queue.sqlite3")
+        self.handoff = CodexHandoff(root / "handoff", allow_test_root=True)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def test_status_finishes_without_calling_qwen(self) -> None:
+        class NoQwen(FakeQwenClient):
+            def chat(self, *_args, **_kwargs):
+                raise AssertionError("status must not call Qwen")
+
+        queued = self.store.enqueue(
+            webhook_event_id="status-fast",
+            route=Route.STATUS.value,
+            source_id="group",
+            requester_id="user",
+            request_text="三台狀態",
+        )
+        status = StatusReport(self.store, repository_root=self.temporary.name, controller_root=self.temporary.name, probe_timeout=0.01)
+        worker = Worker(
+            self.store,
+            FakeLineClient(),
+            HostTasks(self.store),
+            self.handoff,
+            qwen_client=NoQwen("unused"),
+            status_report=status,
+            worker_id="status-worker",
+        )
+        self.assertTrue(worker.process_lane_once("control"))
+        result = self.store.status(queued.job_id)
+        self.assertEqual("completed", result["status"])
+        delivery = self.store.claim_delivery("status-delivery")
+        self.assertIn("[三台即時狀態]", delivery.message_text)
+        self.assertIn("Gateway 無法直接讀取 Codex", delivery.message_text)
+
+    def test_artifact_request_has_durable_id_and_handoff(self) -> None:
+        queued = self.store.enqueue(
+            webhook_event_id="artifact-job",
+            route=Route.ARTIFACT.value,
+            source_id="group",
+            requester_id="user",
+            request_text="幫我做一份開發歷史 PPT",
+            reception_notice="工作 ID：{job_id}",
+        )
+        notice = self.store.claim_reception_notification("notice", now=__import__("time").time())
+        self.assertIn(queued.job_id, notice.message_text)
+        self.store.finish_reception_notification(notice.notification_id, expected_lease_owner="notice", success=True)
+        worker = Worker(
+            self.store,
+            FakeLineClient(),
+            HostTasks(self.store),
+            self.handoff,
+            qwen_client=FakeQwenClient("unused"),
+            worker_id="artifact-worker",
+        )
+        self.assertTrue(worker.process_lane_once("control"))
+        self.assertEqual("awaiting_codex", self.store.status(queued.job_id)["status"])
+        request_path = self.handoff.root / "requests" / f"{queued.job_id}.json"
+        document = json.loads(request_path.read_text(encoding="utf-8"))
+        payload = json.loads(document["request"])
+        self.assertEqual("line-artifact-request", payload["source"])
+        self.assertFalse(payload["delivery"]["lineAttachmentSupported"])
+
+
+if __name__ == "__main__":
+    unittest.main()

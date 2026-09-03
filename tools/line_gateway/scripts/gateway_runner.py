@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 
-LANE_NAMES = ("taichung", "taoyuan", "auto", "control")
+LANE_NAMES = ("taichung", "taoyuan", "auto", "auto-secondary", "control")
 NOTIFICATION_DRAINER_COUNT = 4
 RUNTIME_WORKER_COUNT = len(LANE_NAMES) + NOTIFICATION_DRAINER_COUNT + 1
 

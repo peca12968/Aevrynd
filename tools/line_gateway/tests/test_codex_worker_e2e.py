@@ -1350,7 +1350,7 @@ class WorkerAndEndToEndTests(unittest.TestCase):
                 "replyToken": f"ephemeral-{event_id}",
                 "source": {"type": "group", "userId": "user-allowed", "groupId": "group-allowed"},
                 "message": {
-                    "type": "text", "text": f"@Bot {city}狀態",
+                    "type": "text", "text": f"@Bot {city}測試",
                     "mention": {"mentionees": [{"index": 0, "length": 4, "type": "user", "isSelf": True}]},
                 },
             }

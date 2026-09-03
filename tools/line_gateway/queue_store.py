@@ -20,7 +20,7 @@ MAX_REQUEST_CHARS = 16_384
 MAX_RESULT_CHARS = 32_768
 MAX_IDENTIFIER_CHARS = 256
 MAX_ROUTE_CHARS = 32
-JOB_LANES = frozenset({"taichung", "taoyuan", "auto", "control"})
+JOB_LANES = frozenset({"taichung", "taoyuan", "auto", "auto-secondary", "control"})
 FAILURE_DELIVERY_TEXT = "工作處理失敗，請稍後查詢工作狀態。"
 _DELIVERY_ID_NAMESPACE = uuid.UUID("9af706cf-508c-4e82-bdb7-e631aa70a79e")
 _RETRY_KEY_NAMESPACE = uuid.UUID("86a90880-ca2e-47cc-9dac-c7eb9d302811")
@@ -414,13 +414,15 @@ class QueueStore:
             requester_id, "requester_id", MAX_IDENTIFIER_CHARS, allow_empty=True
         )
         request = _require_text(request_text, "request_text", MAX_REQUEST_CHARS)
-        notice = _require_text(reception_notice, "reception_notice", 5_000, allow_empty=True)
+        notice_template = _require_text(reception_notice, "reception_notice", 5_000, allow_empty=True)
         if ttl_seconds < 1 or ttl_seconds > 604_800:
             raise QueueStoreError("ttl_seconds is outside the allowed range")
         if max_attempts < 1 or max_attempts > 20:
             raise QueueStoreError("max_attempts is outside the allowed range")
         timestamp = time.time() if now is None else float(now)
         job_id = str(uuid.uuid4())
+        notice = notice_template.replace("{job_id}", job_id)
+        _require_text(notice, "reception_notice", 5_000, allow_empty=True)
 
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -558,6 +560,7 @@ class QueueStore:
                 "taichung": "AND route = 'taichung'",
                 "taoyuan": "AND route = 'taoyuan'",
                 "auto": "AND route = 'auto_qwen'",
+                "auto-secondary": "AND route = 'auto_qwen'",
                 "control": "AND route NOT IN ('taichung','taoyuan','auto_qwen')",
             }[lane]
             row = connection.execute(
@@ -654,7 +657,7 @@ class QueueStore:
                 UPDATE jobs SET request_text = ?, result_text = ?,
                        codex_request_prepared = 1, updated_at = ?
                  WHERE job_id = ? AND status = 'running' AND lease_owner = ?
-                       AND route IN ('taichung', 'taoyuan', 'auto_qwen')
+                        AND route IN ('taichung', 'taoyuan', 'auto_qwen', 'artifact')
                 """,
                 (request_value, partial, timestamp, job_id, owner),
             ).rowcount

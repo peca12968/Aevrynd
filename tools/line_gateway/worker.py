@@ -6,6 +6,7 @@ import json
 import hashlib
 import threading
 import uuid
+import re
 from contextlib import contextmanager
 from collections.abc import Mapping
 from typing import Iterator
@@ -16,6 +17,7 @@ from .line_client import LineClient, LineClientError
 from .queue_store import ClaimedJob, QueueStore, QueueStoreError
 from .qwen_client import QwenClient, QwenClientError, QwenClientGate, RetryableQwenError
 from .routing import Route, RouteDecision
+from .status_report import StatusReport
 
 
 HELP_TEXT = "可用指令：提及官方帳號後輸入問題；以「台中：」或「桃園：」指定助理。另有 @主機、@Codex、@全部。"
@@ -25,7 +27,9 @@ INGRESS_NOTICES = {
     Route.TAOYUAN: "[桃園 Qwen]\n已接收，正在產生回覆…",
     Route.AUTO_QWEN: "[Qwen 助理]\n已接收，正在產生回覆…",
     Route.QWEN: "[Qwen 助理]\n已接收，正在產生回覆…",
-    Route.CODEX: "[Codex]\n已接收，正在處理…",
+    Route.CODEX: "[Codex]\n已接收，正在處理…\n工作 ID：{job_id}",
+    Route.ARTIFACT: "[檔案工作]\n已建立持久工作，等待主電腦 Codex 接手。\n工作 ID：{job_id}\n可傳送「工作狀態 <ID>」查詢。",
+    Route.STATUS: "[狀態]\n已接收，正在讀取即時資料…",
     Route.HOST: "[主機]\n已接收，正在查詢…",
     Route.ALL: "[全部助理]\n已接收，正在處理…",
     Route.HELP: "已接收，正在準備使用說明…",
@@ -61,6 +65,7 @@ class Worker:
         worker_id: str | None = None,
         work_lease_seconds: int = WORK_LEASE_SECONDS,
         lease_heartbeat_seconds: float | None = None,
+        status_report: StatusReport | None = None,
     ) -> None:
         self._queue_store = queue_store
         self._line_client = line_client
@@ -79,6 +84,7 @@ class Worker:
         self._lease_heartbeat_seconds = heartbeat
         self._active_lease_lost: threading.Event | None = None
         self._active_heartbeat_idle: threading.Event | None = None
+        self._status_report = status_report or StatusReport(queue_store)
 
     def accept_event(self, event: Mapping[str, object], decision: RouteDecision) -> bool:
         """Queue an authorized routed event without persisting its raw payload or reply token."""
@@ -197,6 +203,10 @@ class Worker:
             elif job.route == Route.ALL.value:
                 # @全部先收集可立即完成的只讀主機狀態與 Qwen，再等待 Codex 回覆。
                 self._start_codex(job, partial_result=self._compose_all_partial(job.request_text))
+            elif job.route == Route.STATUS.value:
+                self._finish(job, self._run_status(job.request_text))
+            elif job.route == Route.ARTIFACT.value:
+                self._start_artifact(job)
             else:
                 self._dead_letter_running(job, "unsupported_route")
         except _LeaseLost:
@@ -221,6 +231,44 @@ class Worker:
         if self._qwen_client is None:
             raise QwenClientError("Qwen is not configured")
         return "[Qwen]\n" + self._qwen_client.chat(prompt).text
+
+    def _run_status(self, request_text: str) -> str:
+        match = re.fullmatch(
+            r"(?:工作|任務)(?:狀態)?[：:\s]+([0-9a-fA-F-]{36})", request_text.strip()
+        )
+        if match is not None:
+            try:
+                job_id = str(uuid.UUID(match.group(1)))
+            except ValueError:
+                return "[工作狀態]\n工作 ID 格式錯誤。"
+            return self._status_report.render_job(job_id)
+        return self._status_report.render(request_text)
+
+    def _start_artifact(self, job: ClaimedJob) -> None:
+        request = json.dumps(
+            {
+                "schemaVersion": 1,
+                "source": "line-artifact-request",
+                "requestKind": "file",
+                "request": job.request_text,
+                "delivery": {
+                    "mode": "local-inbox-outbox",
+                    "lineAttachmentSupported": False,
+                    "status": "awaiting-codex-worker",
+                },
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        partial = "已建立持久檔案工作；LINE 不支援直接傳送一般 PPTX/DOCX/PDF，完成後需提供安全下載連結。"
+        self._queue_store.persist_canonical_codex_request(
+            job.job_id,
+            request,
+            partial,
+            expected_lease_owner=self._worker_id,
+        )
+        self._start_codex(job, partial_result=partial, request_text=request)
 
     def _select_healthy_assistant(self, job_id: str) -> str:
         last_error: QwenClientError | None = None
@@ -252,7 +300,9 @@ class Worker:
             try:
                 if isinstance(client, QwenClientGate):
                     # auto 的選點與 chat 共用同一實體節點鎖，slot 不會在兩步之間被搶走。
-                    with client.session(owner_check=self._raise_if_heartbeat_lost):
+                    with client.session(
+                        owner_check=self._raise_if_heartbeat_lost, acquire_timeout=0.05
+                    ):
                         if not client.slots_ready():
                             continue
                         self._run_named_assistant_locked(job, route, client, route)
