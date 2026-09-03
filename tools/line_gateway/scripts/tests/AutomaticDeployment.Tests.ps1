@@ -38,6 +38,29 @@ Invoke-Test 'verified install refreshes only the fixed protected runner' {
     if($manifest-lt0-or$refresh-lt0-or$manifest-gt$refresh){throw 'Protected runner refresh occurs before closed manifest validation.'}
 }
 
+Invoke-Test 'automatic update passes only verified installed Python and refuses bootstrap' {
+    Assert-ContainsAll $runner @(
+        '$installedPython = Get-InstalledPython -Paths $currentPaths',
+        '& $installScript -InstallRoot $liveRoot -PythonExe $installedPython',
+        'Write-SafeResult -Status failed -Code bootstrap_required',
+        "scripts\Common.ps1"
+    )
+    if($runner -match '(?m)^param\s*\(' -or $runner.Contains('Get-Command python',[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Automatic runner accepts external Python input or resolves it from PATH.'
+    }
+    $manifestGate=$runner.IndexOf('$null = Test-InstallationManifest -Paths $currentPaths',[StringComparison]::Ordinal)
+    $pythonRead=$runner.IndexOf('$installedPython = Get-InstalledPython -Paths $currentPaths',[StringComparison]::Ordinal)
+    $installCall=$runner.IndexOf('& $installScript -InstallRoot $liveRoot -PythonExe $installedPython',[StringComparison]::Ordinal)
+    if($manifestGate-lt0-or$pythonRead-lt0-or$installCall-lt0-or$manifestGate-gt$pythonRead-or$pythonRead-gt$installCall){throw 'Verified Python selection ordering changed.'}
+    if(([regex]::Matches($runner,[regex]::Escape('& $installScript -InstallRoot $liveRoot -PythonExe $installedPython'))).Count-ne1){throw 'Install must have one exact verified-Python invocation.'}
+}
+
+Invoke-Test 'closed install list contains the full automatic deployment closure' {
+    foreach($name in @('Install.ps1','Install-AutomaticDeployment.ps1','Invoke-AutomaticDeployment.ps1','Trigger-AutomaticDeployment.ps1')) {
+        if(-not$gatewayInstaller.Contains("'$name'",[StringComparison]::Ordinal)){throw "Closed script list is missing $name"}
+    }
+}
+
 Invoke-Test 'runner fixes trust roots and rejects untrusted source forms' {
     Assert-ContainsAll $runner @(
         "`$repositoryRoot = 'D:\Download\Aevrynd\Games'",

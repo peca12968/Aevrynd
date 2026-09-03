@@ -21,7 +21,7 @@ $oldPager = $null
 
 function Write-SafeResult {
     param([Parameter(Mandatory)][ValidateSet('running','succeeded','failed','rolled_back','rollback_failed')][string]$Status,
-          [Parameter(Mandatory)][ValidateSet('none','source_rejected','busy','drain_failed','stop_failed','install_failed','start_failed','health_failed','rollback_failed')][string]$Code,
+          [Parameter(Mandatory)][ValidateSet('none','source_rejected','bootstrap_required','busy','drain_failed','stop_failed','install_failed','start_failed','health_failed','rollback_failed')][string]$Code,
           [string]$Release = '')
     $document = [ordered]@{
         schemaVersion = 1
@@ -213,27 +213,31 @@ try {
     $backup = Join-Path $scratchRoot 'rollback'
     $hasRollback = $false
     $installedPython = $null
-    if (Test-Path -LiteralPath (Join-Path $liveRoot 'manifests\installation-manifest.json') -PathType Leaf) {
-        . (Join-Path $liveRoot 'scripts\Common.ps1')
-        $currentPaths = Get-GatewayPaths -InstallRoot $liveRoot
-        $null = Test-InstallationManifest -Paths $currentPaths
-        $installedPython = Get-InstalledPython -Paths $currentPaths
-        foreach ($name in @('app','scripts','manifests')) {
-            foreach ($item in Get-ChildItem -LiteralPath (Join-Path $liveRoot $name) -Recurse -Force) {
-                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
-            }
-        }
-        New-Item -ItemType Directory -Path $backup | Out-Null
-        foreach ($name in @('app','scripts','manifests')) { Copy-Item -LiteralPath (Join-Path $liveRoot $name) -Destination $backup -Recurse }
-        $backupPaths = @{
-            Root=$backup; App=(Join-Path $backup 'app'); Scripts=(Join-Path $backup 'scripts');
-            Manifests=(Join-Path $backup 'manifests'); InstallFile=(Join-Path $backup 'manifests\install.json');
-            ManifestFile=(Join-Path $backup 'manifests\installation-manifest.json');
-            ManifestHashFile=(Join-Path $backup 'manifests\installation-manifest.sha256')
-        }
-        $null = Test-InstallationManifest -Paths $backupPaths
-        $hasRollback = $true
+    if (-not (Test-Path -LiteralPath (Join-Path $liveRoot 'manifests\installation-manifest.json') -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $liveRoot 'scripts\Common.ps1') -PathType Leaf)) {
+        Write-SafeResult -Status failed -Code bootstrap_required -Release $release
+        exit 10
     }
+    . (Join-Path $liveRoot 'scripts\Common.ps1')
+    $currentPaths = Get-GatewayPaths -InstallRoot $liveRoot
+    $null = Test-InstallationManifest -Paths $currentPaths
+    # Python 路徑只取自已通過 closed manifest 的既有 install metadata；排程 PATH 與 caller 都不能指定。
+    $installedPython = Get-InstalledPython -Paths $currentPaths
+    foreach ($name in @('app','scripts','manifests')) {
+        foreach ($item in Get-ChildItem -LiteralPath (Join-Path $liveRoot $name) -Recurse -Force) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
+        }
+    }
+    New-Item -ItemType Directory -Path $backup | Out-Null
+    foreach ($name in @('app','scripts','manifests')) { Copy-Item -LiteralPath (Join-Path $liveRoot $name) -Destination $backup -Recurse }
+    $backupPaths = @{
+        Root=$backup; App=(Join-Path $backup 'app'); Scripts=(Join-Path $backup 'scripts');
+        Manifests=(Join-Path $backup 'manifests'); InstallFile=(Join-Path $backup 'manifests\install.json');
+        ManifestFile=(Join-Path $backup 'manifests\installation-manifest.json');
+        ManifestHashFile=(Join-Path $backup 'manifests\installation-manifest.sha256')
+    }
+    $null = Test-InstallationManifest -Paths $backupPaths
+    $hasRollback = $true
 
     if ($null -ne $installedPython) {
         try { Wait-GatewayQueueDrain -PythonExe $installedPython } catch { Write-SafeResult -Status failed -Code drain_failed -Release $release; exit 9 }
@@ -248,7 +252,7 @@ try {
             exit 9
         }
     }
-    try { & $installScript -InstallRoot $liveRoot | Out-Null } catch {
+    try { & $installScript -InstallRoot $liveRoot -PythonExe $installedPython | Out-Null } catch {
         if ($hasRollback) {
             try { Restore-VerifiedRelease -BackupRoot $backup; Write-SafeResult -Status rolled_back -Code install_failed -Release $release; exit 4 }
             catch { Write-SafeResult -Status rollback_failed -Code rollback_failed -Release $release; exit 5 }
