@@ -12,6 +12,7 @@ import unittest
 from tools.line_gateway.config import GatewayConfig
 from tools.line_gateway.server import create_server
 from tools.line_gateway.signature import compute_signature, verify_signature
+from tools.line_gateway.routing import Route, route_event
 
 
 SECRET = "test-channel-secret-value"
@@ -240,6 +241,23 @@ class ServerTests(unittest.TestCase):
         status, _ = self._post(body, signature=compute_signature(body, SECRET))
         self.assertEqual(200, status)
         self.assertEqual([event], self.events)
+
+    def test_signed_natural_status_phrase_routes_without_model(self) -> None:
+        text = "@Bot 回報三台電腦正在做什麼"
+        event = {
+            "webhookEventId": "signed-natural-status",
+            "deliveryContext": {"isRedelivery": False},
+            "source": {"type": "group", "userId": "user-allowed", "groupId": "group-allowed"},
+            "message": {
+                "type": "text",
+                "text": text,
+                "mention": {"mentionees": [{"index": 0, "length": 4, "type": "user", "isSelf": True}]},
+            },
+        }
+        body = json.dumps({"events": [event]}, ensure_ascii=False, separators=(",", ":")).encode()
+        status, _ = self._post(body, signature=compute_signature(body, SECRET))
+        self.assertEqual(200, status)
+        self.assertEqual(Route.STATUS, route_event(self.events[0], _config(port=self.port)).route)
 
 
 if __name__ == "__main__":

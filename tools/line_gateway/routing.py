@@ -62,32 +62,76 @@ _STATUS_COMMANDS = frozenset(
         "台中正在做什麼",
         "桃園正在做什麼",
         "三台電腦工作進度",
+        "現階段是否可以透過LINE得知主電腦進度",
+        "現在主電腦Codex開發進度如何",
+    }
+)
+_STATUS_LEADING_WORDS = ("請回報", "請查詢", "請查看", "回報", "查詢", "查看")
+_STATUS_TRAILING_WORDS = ("如何", "呢", "？", "?")
+_STATUS_SUBJECTS = {
+    "三台": ("", "電腦", "主機"),
+    "全部": ("", "電腦", "主機"),
+    "台中": ("", "電腦", "主機"),
+    "桃園": ("", "電腦", "主機"),
+    "主電腦": ("",),
+    "主機": ("",),
+    "Codex": ("",),
+    "codex": ("",),
+}
+_STATUS_PREDICATES = frozenset(
+    {
+        "狀態",
+        "進度",
+        "工作進度",
+        "工作狀態",
+        "任務",
+        "任務進度",
+        "任務狀態",
+        "正在做什麼",
+        "正在執行什麼",
+        "開發進度",
     }
 )
 _ARTIFACT_MARKERS = ("ppt", "pptx", "word", "docx", "pdf", "簡報", "文件", "檔案")
 _ARTIFACT_ACTIONS = ("產生", "生成", "建立", "製作", "做一份", "做個", "幫我做", "輸出")
 
 
+def _is_bounded_status_command(normalized: str, default_route: Route) -> bool:
+    """只接受有限詞彙與固定語序，避免一般問答誤判成狀態查詢。"""
+
+    if not normalized or len(normalized) > 64:
+        return False
+    if normalized in _STATUS_COMMANDS:
+        return True
+    candidate = normalized
+    for word in _STATUS_LEADING_WORDS:
+        if candidate.startswith(word):
+            candidate = candidate[len(word) :]
+            break
+    for word in _STATUS_TRAILING_WORDS:
+        if candidate.endswith(word):
+            candidate = candidate[: -len(word)]
+            break
+    if default_route in {Route.TAICHUNG, Route.TAOYUAN} and candidate in _STATUS_PREDICATES | {
+        "電腦工作進度",
+        "主機工作進度",
+        "電腦狀態",
+        "主機狀態",
+    }:
+        return True
+    for subject, machine_words in _STATUS_SUBJECTS.items():
+        if not candidate.startswith(subject):
+            continue
+        tail = candidate[len(subject) :]
+        return any(tail == machine + predicate for machine in machine_words for predicate in _STATUS_PREDICATES)
+    return False
+
+
 def _classify_command(command: str, default_route: Route) -> tuple[Route, str, str]:
     normalized = "".join(command.strip().split())
-    city_status_tail = normalized in {"電腦工作進度", "工作進度", "正在做什麼"}
     if (
-        normalized in _STATUS_COMMANDS
-        or (default_route in {Route.TAICHUNG, Route.TAOYUAN} and city_status_tail)
-        or normalized.endswith("電腦狀態")
-        or normalized in {"台中狀態", "桃園狀態", "主電腦Codex進度"}
-        or any(
-            marker in normalized
-            for marker in (
-                "主電腦進度",
-                "主電腦Codex進度",
-                "主電腦codex進度",
-                "主電腦Codex開發進度",
-                "主電腦codex開發進度",
-                "Codex開發進度",
-                "codex開發進度",
-            )
-        )
+        _is_bounded_status_command(normalized, default_route)
+        or normalized in {"主電腦Codex進度", "主電腦codex進度"}
     ):
         return Route.STATUS, command.strip(), "deterministic-status"
     if re.fullmatch(r"(?:工作|任務)(?:狀態)?[：:\s]+[0-9a-fA-F-]{36}", command.strip()):

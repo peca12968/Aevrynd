@@ -336,6 +336,52 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual("artifact-server-not-deployed", payload["attachmentManifest"]["deliveryStatus"])
         self.assertNotIn("path", request_document["request"].lower())
 
+    def test_edge_combines_intent_with_answer_and_routes_authoritative_work(self) -> None:
+        status_qwen = FakeQwenClient('{"schemaVersion":1,"action":"status","answer":"","requestKind":"status","attachments":[]}')
+        status_report = mock.Mock()
+        status_report.render.return_value = "[三台即時狀態]\n權威資料"
+        status_worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, qwen_clients={"taichung": status_qwen},
+            status_report=status_report, worker_id="edge-status-worker",
+        )
+        status_job = self.store.enqueue(
+            webhook_event_id="edge-status", route=Route.TAICHUNG.value,
+            source_id="group", requester_id="user", request_text="幫我看所有節點目前忙什麼",
+        )
+        self.assertTrue(status_worker.process_lane_once("taichung"))
+        self.assertEqual("completed", self.store.status(status_job.job_id)["status"])
+        status_report.render.assert_called_once_with("幫我看所有節點目前忙什麼")
+        self.assertTrue(status_worker.drain_side_effect_once())
+        self.assertEqual("[三台即時狀態]\n權威資料", self.line.pushes[-1][1])
+
+        artifact_qwen = FakeQwenClient('{"schemaVersion":1,"action":"artifact","answer":"","requestKind":"file","attachments":[{"kind":"file","status":"requested"}]}')
+        artifact_worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, qwen_clients={"taoyuan": artifact_qwen},
+            worker_id="edge-artifact-worker",
+        )
+        artifact_job = self.store.enqueue(
+            webhook_event_id="edge-artifact", route=Route.TAOYUAN.value,
+            source_id="group", requester_id="user", request_text="整理結果並輸出一份可下載報告",
+        )
+        self.assertTrue(artifact_worker.process_lane_once("taoyuan"))
+        self.assertEqual("awaiting_codex", self.store.status(artifact_job.job_id)["status"])
+
+    def test_edge_intent_schema_fails_closed(self) -> None:
+        valid = (
+            '{"schemaVersion":1,"action":"status","answer":"",'
+            '"requestKind":"status","attachments":[]}'
+        )
+        self.assertEqual("status", Worker._parse_assistant_decision(valid)["action"])
+        for invalid in (
+            '{"schemaVersion":1,"action":"status","answer":"猜測","requestKind":"status","attachments":[]}',
+            '{"schemaVersion":1,"action":"artifact","answer":"","requestKind":"file","attachments":[]}',
+            '{"schemaVersion":1,"action":"status","answer":"","requestKind":"complex","attachments":[]}',
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(QwenClientError):
+                Worker._parse_assistant_decision(invalid)
+
     def test_named_assistant_progress_is_durable_and_precedes_chat(self) -> None:
         qwen = ObservingQwenClient(self.line)
         worker = Worker(
