@@ -1,5 +1,6 @@
 #include <Aevrynd/WorldPartitionTerrainVegetationAdapter3D.h>
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -7,6 +8,7 @@
 namespace Aevrynd {
 namespace {
 constexpr std::size_t GpuResourceAlignment = 64u * 1024u;
+constexpr std::size_t MaximumHlodProxyBytesPerCluster=4u*1024u*1024u,MaximumHlodProxyBytes=256u*1024u*1024u;
 bool Add(std::size_t &value, std::size_t amount) {
   if (value > SIZE_MAX - amount)
     return false;
@@ -17,6 +19,61 @@ bool Multiply(std::size_t left, std::size_t right, std::size_t &result) {
   if (left && right > SIZE_MAX / left)
     return false;
   result = left * right;
+  return true;
+}
+bool AddStringCapacity(std::size_t &bytes, const std::string &value) {
+  std::size_t amount{};
+  return Multiply(value.capacity(), sizeof(char), amount) && Add(bytes, amount);
+}
+bool AddPathCapacity(std::size_t &bytes, const std::filesystem::path &value) {
+  std::size_t amount{};
+  return Multiply(value.native().capacity(),
+                  sizeof(std::filesystem::path::value_type), amount) &&
+         Add(bytes, amount);
+}
+bool AddTextureDefinitionCapacity(
+    std::size_t &bytes, const MaterialTextureSetDefinition3D &value) {
+  if (!AddPathCapacity(bytes, value.baseColorPath) ||
+      !AddPathCapacity(bytes, value.roughnessPath) ||
+      !AddPathCapacity(bytes, value.normalPath))
+    return false;
+  for (const auto &integrity : value.integrity)
+    if (!AddStringCapacity(bytes, integrity.expectedSha256))
+      return false;
+  for (const auto &layer : value.additionalLayers) {
+    if (!AddPathCapacity(bytes, layer.baseColorPath) ||
+        !AddPathCapacity(bytes, layer.roughnessPath) ||
+        !AddPathCapacity(bytes, layer.normalPath))
+      return false;
+    for (const auto &integrity : layer.integrity)
+      if (!AddStringCapacity(bytes, integrity.expectedSha256))
+        return false;
+  }
+  return true;
+}
+bool AddPreparedProxyCapacity(std::size_t &bytes,
+                              const PreparedHlodProxyAsset3D &value) {
+  if (!AddStringCapacity(bytes, value.logicalName) ||
+      !AddStringCapacity(bytes, value.prepared.definition.name) ||
+      !AddPathCapacity(bytes, value.prepared.definition.meshPath) ||
+      !AddStringCapacity(bytes, value.prepared.definition.material.name) ||
+      !AddTextureDefinitionCapacity(bytes,
+                                    value.prepared.definition.material.textures) ||
+      !AddStringCapacity(bytes, value.prepared.assetKey.canonical))
+    return false;
+  for (const auto &lod : value.prepared.definition.importedLods)
+    if (!AddPathCapacity(bytes, lod.meshPath))
+      return false;
+  for (std::uint32_t index = 0; index < value.prepared.levelCount; ++index) {
+    std::size_t amount{};
+    if (!Multiply(value.prepared.cpuMeshes[index].vertices.capacity(),
+                  sizeof(Vertex3D), amount) ||
+        !Add(bytes, amount) ||
+        !Multiply(value.prepared.cpuMeshes[index].indices.capacity(),
+                  sizeof(std::uint32_t), amount) ||
+        !Add(bytes, amount))
+      return false;
+  }
   return true;
 }
 std::size_t MeshCpuBytes(const Mesh3D &mesh) {
@@ -43,7 +100,8 @@ bool ValidSettings(const TerrainVegetationChunkSettings3D &value) {
   return std::isfinite(value.chunkSize) && value.chunkSize > 0 &&
          std::isfinite(value.terrainAmplitude) && value.terrainAmplitude >= 0 &&
          value.terrainCells > 0 && value.terrainCells <= 2048 &&
-         value.vegetationPerChunk <= MaximumMeshInstancesPerFrame3D;
+         value.vegetationPerChunk <= MaximumMeshInstancesPerFrame3D &&
+         value.maximumHlodProxyBytes <= MaximumHlodProxyBytes;
 }
 bool FailCheckpoint(int &checkpoint) {
   if (checkpoint < 0)
@@ -67,6 +125,135 @@ Payload(const WorldChunkPayload3D &value) {
   return static_cast<const TerrainVegetationChunkPayload3D *>(value.data.get());
 }
 } // namespace
+
+std::size_t TerrainVegetationWorldChunkActivationTarget3D::PreparationBytes(
+    WorldChunkRequest3D, const WorldChunkPayload3D &value) const {
+  std::size_t bytes = value.cpuBytes;
+  const auto *payload = Payload(value);
+  if (!payload || !payload->hlodManifest)
+    return bytes;
+  std::size_t amount{};
+  if (!Multiply(payload->hlodManifest->Clusters().size(),
+                sizeof(TerrainVegetationHlodCluster3D), amount) ||
+      !Add(bytes, amount))
+    return SIZE_MAX;
+  for (const auto &cluster : payload->hlodManifest->Clusters()) {
+    if (!Multiply(cluster.sources.capacity(),
+                  sizeof(TerrainVegetationHlodSource3D), amount) ||
+        !Add(bytes, amount))
+      return SIZE_MAX;
+    if (!AddPreparedProxyCapacity(bytes, cluster.proxy))
+      return SIZE_MAX;
+    for (const auto &source : cluster.sources)
+      if (!Add(bytes, source.logicalName.capacity()))
+        return SIZE_MAX;
+  }
+  return bytes;
+}
+
+std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest>
+BuildTerrainVegetationHlodManifest3D(
+    std::span<const TerrainVegetationHlodCluster3D> clusters,
+    const HlodData3D &data) {
+  try {
+    if (clusters.size() != data.Clusters().size() || clusters.empty() ||
+        !data.ContentHash())
+      return {};
+    auto result = std::shared_ptr<TerrainVegetationChunkPayload3D::HlodManifest>(
+        new TerrainVegetationChunkPayload3D::HlodManifest);
+    result->clusters_.reserve(clusters.size());
+    std::uint64_t hash = 1469598103934665603ull;
+    const auto byte = [&](std::uint8_t value) {
+      hash ^= value;
+      hash *= 1099511628211ull;
+    };
+    const auto scalar = [&](std::uint64_t value) {
+      for (unsigned index = 0; index < 8; ++index)
+        byte(static_cast<std::uint8_t>(value >> (index * 8)));
+    };
+    const auto text = [&](std::string_view value) {
+      scalar(value.size());
+      for (const unsigned char character : value)
+        byte(character);
+    };
+    const auto floating = [&](float value) {
+      if (value == 0.f)
+        value = 0.f;
+      scalar(std::bit_cast<std::uint32_t>(value));
+    };
+    const auto vector = [&](Vec3 value) {
+      floating(value.x);
+      floating(value.y);
+      floating(value.z);
+    };
+    scalar(data.ContentHash());
+    StableObjectId3D worldId{};
+    for (std::size_t index = 0; index < clusters.size(); ++index) {
+      const auto &value = clusters[index];
+      const auto &asset = data.Clusters()[index];
+      const auto &instance = data.Instances()[index];
+      const auto expectedSources = data.Sources(index);
+      if (value.id != asset.id || value.generation != asset.generation ||
+          !ValidatePreparedHlodProxyDescriptor3D(value.proxy) ||
+          value.proxy.clusterId != value.id ||
+          value.proxy.clusterGeneration != value.generation ||
+          value.proxy.chunk != instance.globalChunk ||
+          value.sources.size() != expectedSources.size())
+        return {};
+      if (!index)
+        worldId = value.proxy.worldId;
+      else if (value.proxy.worldId != worldId)
+        return {};
+      scalar(value.id.high);
+      scalar(value.id.low);
+      scalar(value.generation);
+      scalar(value.proxy.worldId.high);
+      scalar(value.proxy.worldId.low);
+      scalar(static_cast<std::uint64_t>(value.proxy.chunk.x));
+      scalar(static_cast<std::uint64_t>(value.proxy.chunk.y));
+      scalar(static_cast<std::uint64_t>(value.proxy.chunk.z));
+      text(value.proxy.logicalName);
+      scalar(value.proxy.prepared.assetKey.contentIdentity);
+      text(value.proxy.prepared.assetKey.canonical);
+      scalar(value.proxy.reservedPhysicalBytes);
+      for (std::size_t source = 0; source < value.sources.size(); ++source) {
+        const auto &item = value.sources[source];
+        if (item.reference != expectedSources[source] || !item.generation ||
+            item.logicalName.empty() ||
+            item.logicalName.size() > MaximumHlodProxyLogicalNameBytes3D ||
+            item.logicalName.find("..") != std::string::npos ||
+            item.logicalName.find_first_of("/\\\r\n\t") !=
+                std::string::npos ||
+            !std::isfinite(item.position.offset.x) ||
+            !std::isfinite(item.position.offset.y) ||
+            !std::isfinite(item.position.offset.z) ||
+            !std::isfinite(item.rotation.x) ||
+            !std::isfinite(item.rotation.y) ||
+            !std::isfinite(item.rotation.z) ||
+            !std::isfinite(item.scale.x) || !std::isfinite(item.scale.y) ||
+            !std::isfinite(item.scale.z) || item.scale.x == 0 ||
+            item.scale.y == 0 || item.scale.z == 0)
+          return {};
+        scalar(item.reference.globalObjectId.high);
+        scalar(item.reference.globalObjectId.low);
+        scalar(item.generation);
+        text(item.logicalName);
+        scalar(static_cast<std::uint64_t>(item.position.chunk.x));
+        scalar(static_cast<std::uint64_t>(item.position.chunk.y));
+        scalar(static_cast<std::uint64_t>(item.position.chunk.z));
+        vector(item.position.offset);
+        vector(item.rotation);
+        vector(item.scale);
+      }
+      result->clusters_.push_back(value);
+    }
+    result->hlodDataHash_ = data.ContentHash();
+    result->contentHash_ = hash ? hash : 1;
+    return result;
+  } catch (...) {
+    return {};
+  }
+}
 
 GlobalChunkCoordinate3D
 CanonicalTerrainSampleOwner3D(GlobalChunkCoordinate3D chunk, std::uint32_t x,
@@ -312,15 +499,29 @@ TerrainVegetationWorldChunkActivationTarget3D::
         ChunkedVegetationWorld3D &vegetation,
         TerrainVegetationChunkSettings3D settings)
     : TerrainVegetationWorldChunkActivationTarget3D(
-          engine, scene, vegetation, nullptr, std::move(settings)) {}
+          engine, scene, vegetation, nullptr, nullptr, std::move(settings)) {}
 TerrainVegetationWorldChunkActivationTarget3D::
     TerrainVegetationWorldChunkActivationTarget3D(
         Engine &engine, SceneECSRegistry3D &scene,
         ChunkedVegetationWorld3D &vegetation, PhysicsWorld3D *physics,
         TerrainVegetationChunkSettings3D settings)
+    : TerrainVegetationWorldChunkActivationTarget3D(engine,scene,vegetation,nullptr,physics,std::move(settings)){}
+TerrainVegetationWorldChunkActivationTarget3D::TerrainVegetationWorldChunkActivationTarget3D(Engine& engine,SceneECSRegistry3D& scene,ChunkedVegetationWorld3D& vegetation,StaticMeshAssetLibrary3D* assets,PhysicsWorld3D* physics,TerrainVegetationChunkSettings3D settings)
     : engine_(engine), scene_(scene), vegetation_(vegetation),
-      physics_(physics), settings_(std::move(settings)),
-      ownerThread_(std::this_thread::get_id()) {}
+      physics_(physics), assets_(assets), settings_(std::move(settings)),
+      ownerThread_(std::this_thread::get_id()), engineRetirementSource_(engine),
+      retirementSource_(&engineRetirementSource_) {}
+TerrainVegetationWorldChunkActivationTarget3D::
+    TerrainVegetationWorldChunkActivationTarget3D(
+        Engine &engine, SceneECSRegistry3D &scene,
+        ChunkedVegetationWorld3D &vegetation,
+        StaticMeshAssetLibrary3D *assets, PhysicsWorld3D *physics,
+        IGpuRetirementReceiptSource3D &retirementSource,
+        TerrainVegetationChunkSettings3D settings)
+    : engine_(engine), scene_(scene), vegetation_(vegetation), physics_(physics),
+      assets_(assets), settings_(std::move(settings)),
+      ownerThread_(std::this_thread::get_id()), engineRetirementSource_(engine),
+      retirementSource_(&retirementSource) {}
 bool TerrainVegetationWorldChunkActivationTarget3D::SetWorldOriginSnapshot3D(
     WorldOrigin3D origin) noexcept {
   if (!OnOwnerThread() || !origin.generation ||
@@ -346,12 +547,21 @@ void TerrainVegetationWorldChunkActivationTarget3D::CommitWorldOriginRebase3D(
 }
 TerrainVegetationWorldChunkActivationTarget3D::
     ~TerrainVegetationWorldChunkActivationTarget3D() {
-  for (auto &[id, record] : records_) {
-    (void)id;
-    ReleaseRecord(record);
+  engine_.WaitRendererIdle3D();
+  while (!records_.empty()) {
+    const auto before = records_.size();
+    for (auto iterator = records_.begin(); iterator != records_.end();) {
+      if (!ReleaseHlod(iterator->second)) {
+        ++iterator;
+        continue;
+      }
+      ReleaseRecord(iterator->second);
+      iterator = records_.erase(iterator);
+    }
+    if (records_.size() == before)
+      std::terminate();
   }
   engine_.WaitRendererIdle3D();
-  records_.clear();
 }
 std::size_t
 TerrainVegetationWorldChunkActivationTarget3D::PhysicalAllocationBytes(
@@ -386,6 +596,36 @@ TerrainVegetationWorldChunkActivationTarget3D::PhysicalAllocationBytes(
     const auto estimate = engine_.EstimateMaterialTextureSetAllocationBytes3D(
         settings_.terrainTextures);
     if (!estimate || !Add(bytes, *estimate))
+      return SIZE_MAX;
+  }
+  if (assets_ && (payload->hlod || payload->hlodManifest)) {
+    if (!payload->hlod || !payload->hlodManifest ||
+        !payload->hlodManifest->ContentHash() ||
+        payload->hlodManifest->HlodDataHash() !=
+            payload->hlod->ContentHash() ||
+        payload->hlodManifest->Clusters().size() !=
+            payload->hlod->Clusters().size())
+      return SIZE_MAX;
+    std::size_t hlodBytes{};
+    for (std::size_t index = 0;
+         index < payload->hlodManifest->Clusters().size(); ++index) {
+      const auto &cluster = payload->hlodManifest->Clusters()[index];
+      const auto &asset = payload->hlod->Clusters()[index];
+      const auto &instance = payload->hlod->Instances()[index];
+      if (cluster.id != asset.id || cluster.generation != asset.generation ||
+          cluster.proxy.worldId != settings_.worldId ||
+          cluster.proxy.chunk != instance.globalChunk ||
+          instance.globalChunk != payload->globalChunk)
+        return SIZE_MAX;
+      if (asset.compatibility != HlodCompatibility3D::OpaqueCompatible)
+        continue;
+      const auto reservation = cluster.proxy.reservedPhysicalBytes;
+      if (reservation > MaximumHlodProxyBytesPerCluster ||
+          reservation > settings_.maximumHlodProxyBytes - hlodBytes)
+        continue;
+      hlodBytes += reservation;
+    }
+    if (!Add(bytes, hlodBytes))
       return SIZE_MAX;
   }
   return bytes;
@@ -554,12 +794,34 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
                                                       request.coordinate.z} ||
       !next_ || next_ == (std::numeric_limits<std::uint64_t>::max)())
     return {};
+  if (assets_ && (payload->hlod || payload->hlodManifest)) {
+    if (!payload->hlod || !payload->hlodManifest ||
+        !payload->hlodManifest->ContentHash() ||
+        payload->hlodManifest->HlodDataHash() !=
+            payload->hlod->ContentHash() ||
+        payload->hlodManifest->Clusters().size() !=
+            payload->hlod->Clusters().size())
+      return {};
+    for (std::size_t index = 0;
+         index < payload->hlodManifest->Clusters().size(); ++index) {
+      const auto &manifest = payload->hlodManifest->Clusters()[index];
+      const auto &asset = payload->hlod->Clusters()[index];
+      const auto &instance = payload->hlod->Instances()[index];
+      if (manifest.id != asset.id ||
+          manifest.generation != asset.generation ||
+          manifest.proxy.worldId != settings_.worldId ||
+          manifest.proxy.chunk != instance.globalChunk ||
+          instance.globalChunk != payload->globalChunk)
+        return {};
+    }
+  }
   Vec3 chunkOrigin{};
   if (!ToLocalPosition3D({payload->globalChunk, {}}, origin_, chunkOrigin,
                          settings_.chunkSize))
     return {};
   Record record{};
   record.request = request;
+  const HlodIntegrationStats3D hlodStatsBefore=hlodStats_;
   std::size_t sharedBytes{};
   bool sharedAcquired{};
   try {
@@ -583,10 +845,10 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
       throw std::runtime_error("injected");
     std::vector<SceneEntityDefinition3D> definitions(composed.buildings.size() +
                                                      1);
-    auto &definition = definitions.front();
-    definition.transform = SceneTransformComponent3D{};
-    definition.transform->value.position = chunkOrigin;
-    definition.renderable =
+    auto &terrainDefinition = definitions.front();
+    terrainDefinition.transform = SceneTransformComponent3D{};
+    terrainDefinition.transform->value.position = chunkOrigin;
+    terrainDefinition.renderable =
         SceneMeshRenderable3D{{},
                               record.terrain,
                               {},
@@ -663,17 +925,140 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
       throw std::runtime_error("vegetation publish failed");
     if (FailCheckpoint(failureCheckpoint_))
       throw std::runtime_error("injected");
+    if (assets_ && payload->hlod && payload->hlodManifest) {
+      if (payload->hlodManifest->HlodDataHash() != payload->hlod->ContentHash())
+        throw std::runtime_error("HLOD manifest mismatch");
+      record.hlod.emplace();
+      auto &attachment = *record.hlod;
+      attachment.data = payload->hlod;
+      attachment.manifest = payload->hlodManifest;
+      attachment.clusters.reserve(payload->hlodManifest->Clusters().size());
+      hlodStats_.inputClusters += payload->hlodManifest->Clusters().size();
+      std::size_t admittedReservation{};
+      for (std::size_t clusterIndex = 0;
+           clusterIndex < payload->hlodManifest->Clusters().size();
+           ++clusterIndex) {
+        const auto &manifest = payload->hlodManifest->Clusters()[clusterIndex];
+        const auto &asset = payload->hlod->Clusters()[clusterIndex];
+        const bool sourceOnly =
+            asset.compatibility != HlodCompatibility3D::OpaqueCompatible;
+        if (sourceOnly) {
+          ++hlodStats_.incompatibleFallbacks;
+          ++hlodStats_.sourceOnlyFallbacks;
+          continue;
+        }
+        if (manifest.proxy.reservedPhysicalBytes >
+                MaximumHlodProxyBytesPerCluster ||
+            manifest.proxy.reservedPhysicalBytes >
+                settings_.maximumHlodProxyBytes - admittedReservation) {
+          ++hlodStats_.budgetFallbacks;
+          ++hlodStats_.sourceOnlyFallbacks;
+          continue;
+        }
+        Record::HlodClusterAttachment cluster{};
+        cluster.id = manifest.id;
+        cluster.generation = manifest.generation;
+        cluster.reservedBytes = manifest.proxy.reservedPhysicalBytes;
+        cluster.sources.reserve(manifest.sources.size());
+        std::vector<SceneEntityDefinition3D> sourceDefinitions;
+        sourceDefinitions.reserve(manifest.sources.size());
+        bool sourcesValid = true;
+        for (const auto &source : manifest.sources) {
+          auto lease = assets_->ResolveRenderable(source.logicalName, 1, true);
+          Vec3 position{};
+          if (!lease || !lease->Valid() ||
+              !ToLocalPosition3D(source.position, origin_, position,
+                                 settings_.chunkSize)) {
+            sourcesValid = false;
+            break;
+          }
+          SceneEntityDefinition3D definition{};
+          definition.transform = SceneTransformComponent3D{
+              Transform3D{position, source.rotation, source.scale}};
+          definition.renderable = lease->Renderable();
+          sourceDefinitions.push_back(std::move(definition));
+          cluster.sources.push_back(std::move(*lease));
+        }
+        if (!sourcesValid) {
+          ++hlodStats_.staleGenerationRejects;
+          ++hlodStats_.sourceOnlyFallbacks;
+          continue;
+        }
+        if (!assets_->AcquireHlodProxyAtomic3D(manifest.proxy, cluster.proxy)) {
+          ++hlodStats_.sourceOnlyFallbacks;
+          continue;
+        }
+        const auto rollbackCluster = [&]() noexcept {
+          if (cluster.entities)
+            (void)scene_.DestroyHlodBatchAtomic3D(cluster.entities);
+          for (auto &source : cluster.sources)
+            source.Reset();
+          if (cluster.proxy)
+            (void)assets_->ReleaseHlodProxyAlias3D(cluster.proxy);
+        };
+        if (FailCheckpoint(failureCheckpoint_)) {
+          rollbackCluster();
+          throw std::runtime_error("injected HLOD acquire rollback");
+        }
+        cluster.actualBytes = cluster.proxy.actualPhysicalBytes;
+        cluster.aliasBytes = cluster.proxy.logicalName.capacity();
+        if (cluster.actualBytes > cluster.reservedBytes) {
+          rollbackCluster();
+          throw std::runtime_error("HLOD proxy reservation exceeded");
+        }
+        admittedReservation += cluster.reservedBytes;
+        const auto &instance = payload->hlod->Instances()[clusterIndex];
+        Vec3 proxyPosition{};
+        if (!ToLocalPosition3D(
+                {instance.globalChunk, instance.chunkLocalPosition}, origin_,
+                proxyPosition, settings_.chunkSize)) {
+          rollbackCluster();
+          throw std::runtime_error("HLOD proxy transform invalid");
+        }
+        SceneEntityDefinition3D proxyDefinition{};
+        proxyDefinition.transform = SceneTransformComponent3D{
+            Transform3D{proxyPosition, instance.rotation, instance.scale}};
+        proxyDefinition.renderable = cluster.proxy.renderable.Renderable();
+        if (!scene_.CreateHlodBatchAtomic3D(cluster.id, cluster.generation,
+                                            sourceDefinitions, proxyDefinition,
+                                            cluster.entities)) {
+          rollbackCluster();
+          throw std::runtime_error("HLOD Scene publish failed");
+        }
+        if (FailCheckpoint(failureCheckpoint_)) {
+          rollbackCluster();
+          throw std::runtime_error("injected HLOD publish rollback");
+        }
+        if (!cluster.actualBytes)
+          ++hlodStats_.sharedProxyDedupHits;
+        hlodStats_.proxyReservedBytes += cluster.reservedBytes;
+        hlodStats_.proxyActualResidentBytes += cluster.actualBytes;
+        hlodStats_.aliasBytes += cluster.aliasBytes;
+        hlodStats_.residentSourceEntities += cluster.sources.size();
+        ++hlodStats_.residentProxyEntities;
+        ++hlodStats_.attachedClusters;
+        attachment.clusters.push_back(std::move(cluster));
+      }
+      if (attachment.clusters.empty())
+        record.hlod.reset();
+    }
     record.receipt = engine_.SubmitPendingUploads3D();
     record.heightField = payload->heightField;
     const auto after = engine_.GetRendererStats();
-    record.physicalBytes =
-        sharedBytes + Delta(after.residentMeshBytes, before.residentMeshBytes) +
-        Delta(after.residentTextureAllocationBytes,
-              before.residentTextureAllocationBytes);
-    const auto id = next_++;
-    records_.emplace(id, std::move(record));
-    return {id, records_.at(id).physicalBytes};
+    record.physicalBytes = sharedBytes;
+    if (!Add(record.physicalBytes,
+             Delta(after.residentMeshBytes, before.residentMeshBytes)) ||
+        !Add(record.physicalBytes,
+             Delta(after.residentTextureAllocationBytes,
+                   before.residentTextureAllocationBytes)))
+      throw std::overflow_error("activation physical byte overflow");
+    const auto id = next_;
+    const auto [inserted,created]=records_.emplace(id, std::move(record));
+    if(!created)throw std::runtime_error("activation record publish failed");
+    ++next_;
+    return {id, inserted->second.physicalBytes};
   } catch (...) {
+    if(record.hlod)for(auto iterator=record.hlod->clusters.rbegin();iterator!=record.hlod->clusters.rend();++iterator){scene_.DestroyHlodBatchAtomic3D(iterator->entities);for(auto& source:iterator->sources)source.Reset();assets_->ReleaseHlodProxyAlias3D(iterator->proxy);}
     if (record.vegetation)
       vegetation_.DetachChunk(record.vegetation);
     for (const auto body : record.buildingBodies)
@@ -697,6 +1082,7 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
         engine_.DestroyMaterialTextureSet3D(shared_.buildingTextures);
       shared_ = {};
     }
+    hlodStats_=hlodStatsBefore;++hlodStats_.rollbackCount;
     return {};
   }
 }
@@ -737,6 +1123,59 @@ void TerrainVegetationWorldChunkActivationTarget3D::ReleaseRecord(
   }
   record.released = true;
 }
+bool TerrainVegetationWorldChunkActivationTarget3D::HasSharedProxyBorrower(
+    const Record::HlodClusterAttachment &cluster) const noexcept {
+  const auto owner = cluster.proxy.renderable.Renderable().assetLease.get();
+  if (!owner)
+    return false;
+  for (const auto &[id, record] : records_) {
+    (void)id;
+    if (!record.hlod)
+      continue;
+    for (const auto &candidate : record.hlod->clusters) {
+      if (&candidate != &cluster && !candidate.aliasReleased &&
+          candidate.proxy.renderable.Renderable().assetLease.get() == owner)
+        return true;
+    }
+  }
+  return false;
+}
+
+bool TerrainVegetationWorldChunkActivationTarget3D::ReleaseHlod(Record &record) {
+  if (!record.hlod)
+    return true;
+  for (auto iterator = record.hlod->clusters.rbegin();
+       iterator != record.hlod->clusters.rend(); ++iterator) {
+    if (!iterator->sceneDestroyed) {
+      if (!scene_.DestroyHlodBatchAtomic3D(iterator->entities))
+        return false;
+      iterator->sceneDestroyed = true;
+      hlodStats_.residentSourceEntities -= iterator->entities.sourceCount;
+      --hlodStats_.residentProxyEntities;
+      --hlodStats_.attachedClusters;
+    }
+    if (!iterator->sourcesReset) {
+      for (auto &source : iterator->sources)
+        source.Reset();
+      iterator->sourcesReset = true;
+    }
+    // 實際物理 delta 的擁有者必須保留退休費用，直到零 delta 的共享 alias 離開。
+    // 否則 WorldPartition 會在物理資產仍常駐時提早釋放唯一的 GPU budget charge。
+    if (!iterator->aliasReleased && iterator->actualBytes &&
+        HasSharedProxyBorrower(*iterator))
+      return false;
+    if (!iterator->aliasReleased) {
+      if (!assets_ || !assets_->ReleaseHlodProxyAlias3D(iterator->proxy))
+        return false;
+      iterator->aliasReleased = true;
+      hlodStats_.proxyReservedBytes -= iterator->reservedBytes;
+      hlodStats_.proxyActualResidentBytes -= iterator->actualBytes;
+      hlodStats_.aliasBytes -= iterator->aliasBytes;
+    }
+  }
+  record.hlod.reset();
+  return true;
+}
 void TerrainVegetationWorldChunkActivationTarget3D::Rollback(
     WorldChunkActivation3D activation) {
   if (!OnOwnerThread())
@@ -744,6 +1183,7 @@ void TerrainVegetationWorldChunkActivationTarget3D::Rollback(
   const auto found = records_.find(activation.value);
   if (found == records_.end())
     return;
+  ReleaseHlod(found->second);
   ReleaseRecord(found->second);
   records_.erase(found);
 }
@@ -755,9 +1195,36 @@ TerrainVegetationWorldChunkActivationTarget3D::BeginRetire(
   const auto found = records_.find(activation.value);
   if (found == records_.end())
     return {};
-  ReleaseRecord(found->second);
+  if(found->second.retiring)return activation;
   found->second.retiring = true;
+  if (found->second.hlod && !HideHlodForRetirement(found->second))
+    return activation;
+  ReleaseRecord(found->second);
   return activation;
+}
+
+bool TerrainVegetationWorldChunkActivationTarget3D::HideHlodForRetirement(
+    Record &record) {
+  if (!record.hlod || record.hlodHidden)
+    return true;
+    // Scene HLOD 擁有者記錄不可繞過批次 API 修改；第一次可見性寫入前先驗證整批，
+    // 避免多叢集退役只隱藏前段後便中止。
+    const auto& clusters=record.hlod->clusters;
+    for(std::size_t clusterIndex=0;clusterIndex<clusters.size();++clusterIndex)
+      for(std::size_t entityIndex=0;entityIndex<clusters[clusterIndex].entities.entities.size();++entityIndex){
+        const auto entity=clusters[clusterIndex].entities.entities[entityIndex];
+        if(!scene_.Alive(entity)||!scene_.Renderable(entity))return{};
+        for(std::size_t previousCluster=0;previousCluster<=clusterIndex;++previousCluster){
+          const auto limit=previousCluster==clusterIndex?entityIndex:clusters[previousCluster].entities.entities.size();
+          for(std::size_t previousEntity=0;previousEntity<limit;++previousEntity)
+            if(clusters[previousCluster].entities.entities[previousEntity]==entity)return{};
+        }
+      }
+    // 收據先涵蓋目前所有已提交影格；取得失敗時不可先改變可見性。
+    if(!record.retirementGate.Begin(*retirementSource_))return false;
+    for(const auto& cluster:clusters)if(!scene_.HideHlodBatchAtomic3D(cluster.entities))std::terminate();
+    record.hlodHidden=true;hlodStats_.retiringClusters+=clusters.size();hlodStats_.pendingRetirementReceipts++;for(const auto& cluster:clusters)hlodStats_.retiringProxyBytes+=cluster.actualBytes;
+    return true;
 }
 bool TerrainVegetationWorldChunkActivationTarget3D::IsRetirementComplete(
     WorldChunkActivation3D retirement) const {
@@ -766,9 +1233,20 @@ bool TerrainVegetationWorldChunkActivationTarget3D::IsRetirementComplete(
   const auto found = records_.find(retirement.value);
   if (found == records_.end())
     return true;
-  if (!found->second.retiring ||
+  if (!found->second.retiring)
+    return false;
+  if (found->second.hlod && !found->second.hlodHidden) {
+    auto &mutableRecord = const_cast<Record &>(found->second);
+    auto *self = const_cast<TerrainVegetationWorldChunkActivationTarget3D *>(this);
+    if (!self->HideHlodForRetirement(mutableRecord))
+      return false;
+    self->ReleaseRecord(mutableRecord);
+  }
+  if (!found->second.hlod &&
       engine_.GetRendererStats().pendingGpuReleaseBytes)
     return false;
+  if(found->second.hlod&&!found->second.retirementGate.Complete(*retirementSource_))return false;
+  if(found->second.hlod){const auto count=found->second.hlod->clusters.size();std::size_t retiringBytes{};for(const auto& cluster:found->second.hlod->clusters)retiringBytes+=cluster.actualBytes;if(!const_cast<TerrainVegetationWorldChunkActivationTarget3D*>(this)->ReleaseHlod(found->second))return false;hlodStats_.retiringClusters-=count;hlodStats_.retiringProxyBytes-=retiringBytes;--hlodStats_.pendingRetirementReceipts;}
   records_.erase(found);
   return true;
 }
@@ -776,21 +1254,110 @@ void TerrainVegetationWorldChunkActivationTarget3D::WaitIdle() {
   if (!OnOwnerThread())
     return;
   engine_.WaitRendererIdle3D();
-  for (auto it = records_.begin(); it != records_.end();)
-    if (it->second.retiring) {
+  bool progress{};
+  do {
+    progress = false;
+    for (auto it = records_.begin(); it != records_.end();) {
+      if (!it->second.retiring) {
+        ++it;
+        continue;
+      }
+      std::size_t count{}, bytes{};
+      if (it->second.hlod) {
+        if (!it->second.hlodHidden &&
+            !HideHlodForRetirement(it->second)) {
+          ++it;
+          continue;
+        }
+        count = it->second.hlod->clusters.size();
+        for (const auto &cluster : it->second.hlod->clusters)
+          bytes += cluster.actualBytes;
+        if (!ReleaseHlod(it->second)) {
+          ++it;
+          continue;
+        }
+        hlodStats_.retiringClusters -= count;
+        hlodStats_.retiringProxyBytes -= bytes;
+        if (hlodStats_.pendingRetirementReceipts)
+          --hlodStats_.pendingRetirementReceipts;
+      }
       ReleaseRecord(it->second);
       it = records_.erase(it);
-    } else
-      ++it;
+      progress = true;
+    }
+  } while (progress);
+  engine_.WaitRendererIdle3D();
 }
 std::size_t TerrainVegetationWorldChunkActivationTarget3D::TrimUnusedMemory() {
   if (!OnOwnerThread())
     return 0;
-  const auto a = records_.bucket_count();
+  const auto before = HlodStats().metadataCapacityBytes;
+  for (auto &[id, record] : records_) {
+    (void)id;
+    if (!record.hlod)
+      continue;
+    for (auto &cluster : record.hlod->clusters) {
+      cluster.sources.shrink_to_fit();
+      cluster.entities.entities.shrink_to_fit();
+    }
+    record.hlod->clusters.shrink_to_fit();
+  }
   records_.rehash(records_.size());
-  return a > records_.bucket_count()
-             ? (a - records_.bucket_count()) * sizeof(void *)
-             : 0;
+  const auto after = HlodStats().metadataCapacityBytes;
+  hlodStats_.lastReleasedBytes = before > after ? before - after : 0;
+  ++hlodStats_.trimCount;
+  return hlodStats_.lastReleasedBytes;
+}
+HlodIntegrationStats3D
+TerrainVegetationWorldChunkActivationTarget3D::HlodStats() const noexcept {
+  HlodIntegrationStats3D result = hlodStats_;
+  result.metadataSizeBytes = 0;
+  result.metadataCapacityBytes = 0;
+  std::size_t amount{};
+  if (!Multiply(records_.size(), sizeof(Record), amount) ||
+      !Add(result.metadataSizeBytes, amount) ||
+      !Multiply(records_.bucket_count(), sizeof(void *), amount) ||
+      !Add(result.metadataCapacityBytes, amount)) {
+    result.metadataSizeBytes = SIZE_MAX;
+    result.metadataCapacityBytes = SIZE_MAX;
+    return result;
+  }
+  for (const auto &[id, record] : records_) {
+    (void)id;
+    if (!record.hlod)
+      continue;
+    if (!Add(result.metadataSizeBytes, sizeof(Record::HlodAttachment)) ||
+        !Multiply(record.hlod->clusters.size(),
+                  sizeof(Record::HlodClusterAttachment), amount) ||
+        !Add(result.metadataSizeBytes, amount) ||
+        !Add(result.metadataCapacityBytes, sizeof(Record::HlodAttachment)) ||
+        !Multiply(record.hlod->clusters.capacity(),
+                  sizeof(Record::HlodClusterAttachment), amount) ||
+        !Add(result.metadataCapacityBytes, amount)) {
+      result.metadataSizeBytes = SIZE_MAX;
+      result.metadataCapacityBytes = SIZE_MAX;
+      return result;
+    }
+    for (const auto &cluster : record.hlod->clusters) {
+      if (!Multiply(cluster.sources.size(),
+                    sizeof(StaticMeshRenderableLease3D), amount) ||
+          !Add(result.metadataSizeBytes, amount) ||
+          !Multiply(cluster.entities.entities.size(), sizeof(SceneEntity3D),
+                    amount) ||
+          !Add(result.metadataSizeBytes, amount) ||
+          !Multiply(cluster.sources.capacity(),
+                    sizeof(StaticMeshRenderableLease3D), amount) ||
+          !Add(result.metadataCapacityBytes, amount) ||
+          !Multiply(cluster.entities.entities.capacity(),
+                    sizeof(SceneEntity3D), amount) ||
+          !Add(result.metadataCapacityBytes, amount)) {
+        result.metadataSizeBytes = SIZE_MAX;
+        result.metadataCapacityBytes = SIZE_MAX;
+        return result;
+      }
+    }
+  }
+  return result;
 }
 std::size_t TerrainVegetationWorldChunkActivationTarget3D::PendingRetirements()
     const noexcept {

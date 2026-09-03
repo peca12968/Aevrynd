@@ -3,6 +3,7 @@
 #include "HeightField3D.h"
 #include "PhysicsWorld3D.h"
 #include "SceneECS3D.h"
+#include "StaticMeshAssetLibrary3D.h"
 #include "Vegetation3D.h"
 #include "WorldPartition3D.h"
 #include <condition_variable>
@@ -13,6 +14,49 @@
 #include <unordered_map>
 
 namespace Aevrynd {
+// 來源的生命週期必須涵蓋 activation target，且只能由 target owner thread 呼叫。
+class IGpuRetirementReceiptSource3D {
+public:
+  virtual ~IGpuRetirementReceiptSource3D() = default;
+  virtual GpuRetirementReceipt3D CaptureGraphicsRetirementReceipt3D() = 0;
+  virtual bool IsGraphicsRetirementComplete3D(
+      GpuRetirementReceipt3D receipt) const = 0;
+protected:
+  static constexpr GpuRetirementReceipt3D MakeReceipt(
+      std::uint64_t deviceEpoch, std::uint64_t fenceValue) noexcept {
+    return GpuRetirementReceipt3D(deviceEpoch, fenceValue);
+  }
+};
+class EngineGpuRetirementReceiptSource3D final
+    : public IGpuRetirementReceiptSource3D {
+public:
+  explicit EngineGpuRetirementReceiptSource3D(Engine &engine) noexcept
+      : engine_(engine) {}
+  GpuRetirementReceipt3D CaptureGraphicsRetirementReceipt3D() override {
+    return engine_.CaptureRetirementFence3D();
+  }
+  bool IsGraphicsRetirementComplete3D(
+      GpuRetirementReceipt3D receipt) const override {
+    return engine_.IsRetirementComplete3D(receipt);
+  }
+private:
+  Engine &engine_;
+};
+class HlodRetirementGate3D final {
+public:
+  bool Begin(IGpuRetirementReceiptSource3D &source) {
+    if (receipt_)
+      return true;
+    receipt_ = source.CaptureGraphicsRetirementReceipt3D();
+    return bool(receipt_);
+  }
+  bool Complete(const IGpuRetirementReceiptSource3D &source) const {
+    return receipt_ && source.IsGraphicsRetirementComplete3D(receipt_);
+  }
+  GpuRetirementReceipt3D Receipt() const noexcept { return receipt_; }
+private:
+  GpuRetirementReceipt3D receipt_{};
+};
 struct TerrainVegetationChunkSettings3D {
   float chunkSize{32.f};
   unsigned terrainCells{16};
@@ -25,6 +69,7 @@ struct TerrainVegetationChunkSettings3D {
   std::uint64_t buildingAssetId{1};
   Mesh3D buildingMesh{Mesh3D::CreateUnitBox()};
   MaterialTextureSetDefinition3D buildingTextures{};
+  std::size_t maximumHlodProxyBytes{256u * 1024u * 1024u};
 };
 
 struct TerrainVegetationChunkPayload3D {
@@ -35,7 +80,15 @@ struct TerrainVegetationChunkPayload3D {
   std::vector<StableObjectId3D> vegetationIds{};
   WorldChunkBaseRevision3D baseRevision{};
   std::size_t cpuBytes{}, conservativeGpuBytes{};
+  std::shared_ptr<const HlodData3D> hlod{};
+  struct HlodManifest;
+  std::shared_ptr<const HlodManifest> hlodManifest{};
 };
+struct TerrainVegetationHlodSource3D {HlodSourceReference3D reference{};std::uint64_t generation{};std::string logicalName{};GlobalPosition3D position{};Vec3 rotation{},scale{1,1,1};};
+struct TerrainVegetationHlodCluster3D {HlodClusterId3D id{};std::uint64_t generation{};PreparedHlodProxyAsset3D proxy{};std::vector<TerrainVegetationHlodSource3D> sources{};};
+struct TerrainVegetationChunkPayload3D::HlodManifest final {HlodManifest(const HlodManifest&)=delete;HlodManifest& operator=(const HlodManifest&)=delete;std::span<const TerrainVegetationHlodCluster3D> Clusters()const noexcept{return clusters_;}std::uint64_t ContentHash()const noexcept{return contentHash_;}std::uint64_t HlodDataHash()const noexcept{return hlodDataHash_;}private:friend std::shared_ptr<const HlodManifest> BuildTerrainVegetationHlodManifest3D(std::span<const TerrainVegetationHlodCluster3D>,const HlodData3D&);HlodManifest()=default;std::vector<TerrainVegetationHlodCluster3D> clusters_{};std::uint64_t contentHash_{},hlodDataHash_{};};
+std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> BuildTerrainVegetationHlodManifest3D(std::span<const TerrainVegetationHlodCluster3D> clusters,const HlodData3D& data);
+struct HlodIntegrationStats3D {std::size_t inputClusters{},attachedClusters{},sourceOnlyFallbacks{},incompatibleFallbacks{},budgetFallbacks{},staleGenerationRejects{},overlapRejects{},rollbackCount{},residentSourceEntities{},residentProxyEntities{},retiringClusters{},metadataSizeBytes{},metadataCapacityBytes{},aliasBytes{},proxyReservedBytes{},proxyActualResidentBytes{},retiringProxyBytes{},sharedProxyDedupHits{},pendingRetirementReceipts{},lastReleasedBytes{};std::uint64_t trimCount{};};
 struct ComposedTerrainVegetationChunk3D {
   TerrainVegetationChunkPayload3D payload{};
   std::vector<PersistentBuilding3D> buildings{};
@@ -87,12 +140,15 @@ public:
       Engine &engine, SceneECSRegistry3D &scene,
       ChunkedVegetationWorld3D &vegetation, PhysicsWorld3D *physics,
       TerrainVegetationChunkSettings3D settings = {});
+  TerrainVegetationWorldChunkActivationTarget3D(Engine& engine,SceneECSRegistry3D& scene,ChunkedVegetationWorld3D& vegetation,StaticMeshAssetLibrary3D* assets,PhysicsWorld3D* physics,TerrainVegetationChunkSettings3D settings={});
+  TerrainVegetationWorldChunkActivationTarget3D(
+      Engine &engine, SceneECSRegistry3D &scene,
+      ChunkedVegetationWorld3D &vegetation, StaticMeshAssetLibrary3D *assets,
+      PhysicsWorld3D *physics, IGpuRetirementReceiptSource3D &retirementSource,
+      TerrainVegetationChunkSettings3D settings = {});
   ~TerrainVegetationWorldChunkActivationTarget3D() override;
-  std::size_t
-  PreparationBytes(WorldChunkRequest3D,
-                   const WorldChunkPayload3D &payload) const override {
-    return payload.cpuBytes;
-  }
+  std::size_t PreparationBytes(WorldChunkRequest3D,
+                               const WorldChunkPayload3D &payload) const override;
   std::size_t
   PhysicalAllocationBytes(WorldChunkRequest3D,
                           const WorldChunkPayload3D &payload) const override;
@@ -120,6 +176,7 @@ public:
     failureCheckpoint_ = value;
   }
   std::size_t PendingRetirements() const noexcept;
+  HlodIntegrationStats3D HlodStats() const noexcept;
   // 邊界樣本只寫入 canonical owner；所有目前常駐的共用邊界網格會在同一提交中更新。
   bool ApplyTerrainHeightEditAtomic(
       WorldPartition3D &partition, GlobalChunkCoordinate3D chunk,
@@ -151,6 +208,8 @@ private:
     std::size_t references{}, physicalBytes{};
   };
   struct Record {
+    struct HlodClusterAttachment {HlodClusterId3D id{};std::uint64_t generation{};HlodProxyLease3D proxy{};std::vector<StaticMeshRenderableLease3D> sources{};SceneHlodEntityBatch3D entities{};std::size_t reservedBytes{},actualBytes{},aliasBytes{};bool sceneDestroyed{},sourcesReset{},aliasReleased{};};
+    struct HlodAttachment {std::shared_ptr<const HlodData3D> data{};std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> manifest{};std::vector<HlodClusterAttachment> clusters{};};
     WorldChunkRequest3D request{};
     MeshResource3D terrain{};
     MaterialTextureSetHandle3D terrainTextures{};
@@ -159,16 +218,23 @@ private:
     VegetationChunkHandle3D vegetation{};
     HeightField3D heightField{};
     GpuUploadReceipt3D receipt{};
+    HlodRetirementGate3D retirementGate{};
+    std::optional<HlodAttachment> hlod{};
     std::size_t physicalBytes{};
-    bool retiring{}, released{};
+    bool retiring{}, released{},hlodHidden{};
   };
   bool EnsureShared(const TerrainVegetationChunkPayload3D &payload,
                     bool needsBuilding, std::size_t &physicalBytes);
   void ReleaseRecord(Record &record);
+  bool HideHlodForRetirement(Record &record);
+  bool HasSharedProxyBorrower(
+      const Record::HlodClusterAttachment &cluster) const noexcept;
+  bool ReleaseHlod(Record& record);
   Engine &engine_;
   SceneECSRegistry3D &scene_;
   ChunkedVegetationWorld3D &vegetation_;
   PhysicsWorld3D *physics_{};
+  StaticMeshAssetLibrary3D* assets_{};
   TerrainVegetationChunkSettings3D settings_{};
   SharedVegetation shared_{};
   mutable std::unordered_map<std::uint64_t, Record> records_{};
@@ -177,5 +243,8 @@ private:
   int failureCheckpoint_{-1};
   WorldOrigin3D origin_{};
   WorldOrigin3D preparedOrigin_{};
+  mutable HlodIntegrationStats3D hlodStats_{};
+  EngineGpuRetirementReceiptSource3D engineRetirementSource_;
+  IGpuRetirementReceiptSource3D *retirementSource_{};
 };
 } // namespace Aevrynd

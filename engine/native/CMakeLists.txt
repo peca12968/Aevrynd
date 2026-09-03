@@ -578,6 +578,24 @@ target_compile_options(AevryndHlodSceneECS3DTest PRIVATE /W4 /WX /permissive- /u
 target_link_libraries(AevryndHlodSceneECS3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndHlodSceneECS3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndHlodSceneECS3DTest>'")
 
+add_executable(AevryndWorldPartitionHlodD3D12Test WIN32 tests/WorldPartitionHlodRealD3D12Smoke.cpp)
+target_compile_options(AevryndWorldPartitionHlodD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndWorldPartitionHlodD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndWorldPartitionHlodD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartitionHlodD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>'")
+add_test(NAME AevryndWorldPartitionHlodD3D12GpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; & '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>'")
+
+add_executable(AevryndWorldPartitionHlodAdapterFakeTest WIN32 tests/WorldPartitionHlodD3D12Smoke.cpp)
+target_compile_options(AevryndWorldPartitionHlodAdapterFakeTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndWorldPartitionHlodAdapterFakeTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndWorldPartitionHlodAdapterFakeTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWorldPartitionHlodAdapterFakeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndWorldPartitionHlodAdapterFakeTest>'")
+
+add_executable(AevryndHlodWorldPartitionReceiptTest tests/HlodWorldPartitionReceiptSmoke.cpp)
+target_compile_options(AevryndHlodWorldPartitionReceiptTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndHlodWorldPartitionReceiptTest PRIVATE AevryndEngine)
+add_test(NAME AevryndHlodWorldPartitionReceiptTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndHlodWorldPartitionReceiptTest>'")
+
 add_executable(AevryndAudioTest tests/AudioSmoke.cpp)
 target_compile_options(AevryndAudioTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndAudioTest PRIVATE AevryndEngine)

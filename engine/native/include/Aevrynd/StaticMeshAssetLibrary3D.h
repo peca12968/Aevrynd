@@ -76,7 +76,11 @@ struct PreparedHlodProxyAsset3D {
 private:
     std::uint64_t canonicalIdentity_{};
     friend class StaticMeshAssetLibrary3D;
+    friend bool ValidatePreparedHlodProxyDescriptor3D(
+        const PreparedHlodProxyAsset3D&) noexcept;
 };
+[[nodiscard]] bool ValidatePreparedHlodProxyDescriptor3D(
+    const PreparedHlodProxyAsset3D& value) noexcept;
 
 struct StaticMeshAssetLibraryLifetime3D {
     std::uint64_t ownerIdentity{};

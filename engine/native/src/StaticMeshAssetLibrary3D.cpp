@@ -669,6 +669,31 @@ StaticMeshAssetLibrary3D::PrepareHlodProxyCpu3D(
   PreparedHlodProxyAsset3D result{};result.worldId=worldId;result.chunk=chunk;result.clusterId=clusterId;result.clusterGeneration=clusterGeneration;result.logicalName=std::move(*logicalName);result.prepared=std::move(*prepared);result.reservedPhysicalBytes=reserved;result.canonicalIdentity_=HlodPreparedIdentity(result.worldId,result.chunk,result.clusterId,result.clusterGeneration,result.logicalName);return result;
 }
 
+bool ValidatePreparedHlodProxyDescriptor3D(
+    const PreparedHlodProxyAsset3D &value) noexcept {
+  try {
+    if (!value || value.prepared.definition.name != value.logicalName ||
+        value.prepared.levelCount == 0 ||
+        value.prepared.levelCount > value.prepared.cpuMeshes.size())
+      return false;
+    const auto expectedName = HlodProxyLogicalName(
+        value.worldId, value.chunk, value.clusterId, value.clusterGeneration);
+    if (!expectedName || *expectedName != value.logicalName ||
+        value.canonicalIdentity_ !=
+            HlodPreparedIdentity(value.worldId, value.chunk, value.clusterId,
+                                 value.clusterGeneration, value.logicalName))
+      return false;
+    const auto meshes = std::span<const Mesh3D>{value.prepared.cpuMeshes.data(),
+                                                value.prepared.levelCount};
+    const auto contentIdentity = MeshContentIdentity(meshes);
+    return contentIdentity == value.prepared.assetKey.contentIdentity &&
+           CanonicalKey(value.prepared.definition, contentIdentity) ==
+               value.prepared.assetKey.canonical;
+  } catch (...) {
+    return false;
+  }
+}
+
 bool StaticMeshAssetLibrary3D::AdvanceHlodProxyFailureCheckpoint() noexcept {
   if (hlodProxyFailureCheckpoint_ < 0)
     return false;

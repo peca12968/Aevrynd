@@ -23,6 +23,7 @@
 #include "VolumetricAtmospherePassD3D12.h"
 
 namespace Aevrynd {
+class IGpuRetirementReceiptSource3D;
 struct Vertex { float x,y; uint32_t color; };
 class Geometry2D {
 public:
@@ -141,6 +142,7 @@ private:
     constexpr GpuRetirementReceipt3D(uint64_t deviceEpoch,uint64_t fenceValue)noexcept:deviceEpoch_(deviceEpoch),fenceValue_(fenceValue){}
     uint64_t deviceEpoch_{},fenceValue_{};
     friend class D3D12Renderer;
+    friend class IGpuRetirementReceiptSource3D;
 };
 struct AssetLeaseState3D {std::uint64_t identity{};};
 using AssetLease3D=std::shared_ptr<const AssetLeaseState3D>;
