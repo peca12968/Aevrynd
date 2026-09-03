@@ -3,6 +3,67 @@ param(
     [string]$PythonExe = ''
 )
 
+function Set-CodexStatusProvision {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][Security.Principal.SecurityIdentifier]$PublisherSid
+    )
+    $fullRoot = [IO.Path]::GetFullPath($Root)
+    $parent = [IO.Directory]::GetParent($fullRoot)
+    if ($null -eq $parent -or -not $parent.Exists -or
+        (($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        throw 'Codex status parent is unavailable or unsafe.'
+    }
+    [IO.Directory]::CreateDirectory($fullRoot) | Out-Null
+    $directory = [IO.DirectoryInfo]::new($fullRoot)
+    if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Codex status directory cannot be a reparse point.'
+    }
+    $systemSid = [Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+    $administratorsSid = [Security.Principal.SecurityIdentifier]::new(
+        [Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $inheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $none = [Security.AccessControl.PropagationFlags]::None
+    $allow = [Security.AccessControl.AccessControlType]::Allow
+    $directoryAcl = [Security.AccessControl.DirectorySecurity]::new()
+    $directoryAcl.SetAccessRuleProtection($true, $false)
+    $directoryAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $PublisherSid, [Security.AccessControl.FileSystemRights]::Modify, $inheritance, $none, $allow))
+    foreach ($sid in @($systemSid, $administratorsSid)) {
+        $directoryAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $sid, [Security.AccessControl.FileSystemRights]::FullControl, $inheritance, $none, $allow))
+    }
+    [IO.FileSystemAclExtensions]::SetAccessControl($directory, $directoryAcl)
+
+    $target = Join-Path $fullRoot 'status.json'
+    if ([IO.Directory]::Exists($target)) { throw 'Codex status target is not a file.' }
+    if ([IO.File]::Exists($target)) {
+        $existingFile = [IO.FileInfo]::new($target)
+        if (($existingFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Codex status file cannot be a reparse point.'
+        }
+        # status 是短效 publisher 資料；重建名稱可避免沿用既有 hard-link 身分。
+        [IO.File]::Delete($target)
+    }
+    $stream = [IO.FileStream]::new($target, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    $stream.Dispose()
+    $file = [IO.FileInfo]::new($target)
+    if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'Codex status file cannot be a reparse point.'
+    }
+    $fileAcl = [Security.AccessControl.FileSecurity]::new()
+    $fileAcl.SetAccessRuleProtection($true, $false)
+    $fileAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $PublisherSid, [Security.AccessControl.FileSystemRights]::Modify, $allow))
+    foreach ($sid in @($systemSid, $administratorsSid)) {
+        $fileAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $sid, [Security.AccessControl.FileSystemRights]::FullControl, $allow))
+    }
+    [IO.FileSystemAclExtensions]::SetAccessControl($file, $fileAcl)
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -56,6 +117,12 @@ $rootSecurity.SetAccessRuleProtection($true, $false)
 $rootInheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
 $rootPropagation = [Security.AccessControl.PropagationFlags]::None
 $rootCurrentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$rootCurrentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+if ($rootCurrentSid.IsWellKnown([Security.Principal.WellKnownSidType]::LocalSystemSid) -or
+    $rootCurrentSid.IsWellKnown([Security.Principal.WellKnownSidType]::LocalServiceSid) -or
+    $rootCurrentSid.IsWellKnown([Security.Principal.WellKnownSidType]::NetworkServiceSid)) {
+    throw 'Install must run elevated in the interactive publisher user session.'
+}
 $rootSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
     $rootCurrentIdentity, [Security.AccessControl.FileSystemRights]'ReadAndExecute, Synchronize',
     [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None,
@@ -78,7 +145,6 @@ if (Test-Path -LiteralPath $paths.NgrokStateFile -PathType Leaf) { throw 'Stop n
 if (@(Get-NetTCPConnection -State Listen -LocalPort 8787 -ErrorAction SilentlyContinue).Count -gt 0) {
     throw 'TCP 8787 is active; stop the gateway before installing an update.'
 }
-
 # 舊版 runtime 可能留下 bytecode；僅在服務停止後清除精確版本及模組白名單。
 $pythonCacheTag = 'cpython-' + $versionText.Replace('.', '')
 $pythonModuleNames = @($coreFiles | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) })
@@ -229,6 +295,8 @@ if (Test-Path -LiteralPath $automaticDeploymentRoot -PathType Container) {
         throw 'Automatic deployment runner refresh verification failed.'
     }
 }
+$codexStatusRoot = Join-Path ([IO.Path]::GetFullPath($env:ProgramData)) 'Aevrynd\Codex'
+Set-CodexStatusProvision -Root $codexStatusRoot -PublisherSid $rootCurrentSid
 Write-Output "LINE gateway installed from a closed, verified file set: release=$releaseId"
 Write-Output 'Next: Set-Configuration.ps1, Set-Credentials.ps1, then Start-Gateway.ps1.'
 } finally { Exit-PublicTransportLock $transportLock }

@@ -32,7 +32,9 @@ $programData = [IO.Path]::GetFullPath($env:ProgramData)
 $aevryndRoot = Join-Path $programData 'Aevrynd'
 $root = Join-Path $env:ProgramData 'Aevrynd\Codex'
 $target = Join-Path $root 'status.json'
-New-Item -ItemType Directory -Path $aevryndRoot,$root -Force | Out-Null
+if (-not [IO.Directory]::Exists($root)) {
+    throw 'Codex status publisher is not provisioned; run LineGateway Install.ps1 as administrator.'
+}
 foreach ($path in @($aevryndRoot,$root)) {
     if (((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         throw 'Codex status directory cannot be a reparse point.'
@@ -45,20 +47,20 @@ if (Test-Path -LiteralPath $target) {
     }
     if ($existing.PSIsContainer) { throw 'Codex status target is not a file.' }
 }
-$inheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-$directoryInfo = [IO.DirectoryInfo]::new($root)
-$directorySecurity = [IO.FileSystemAclExtensions]::GetAccessControl(
-    $directoryInfo, [Security.AccessControl.AccessControlSections]::Access)
-$directorySecurity.SetAccessRuleProtection($true, $false)
-$existingRules = $directorySecurity.GetAccessRules($true, $true, [Security.Principal.NTAccount])
-foreach ($rule in @($existingRules)) { $directorySecurity.RemoveAccessRuleSpecific($rule) }
-$identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-foreach ($account in @($identity, 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
-    $directorySecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
-        $account, [Security.AccessControl.FileSystemRights]::FullControl, $inheritance,
-        [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow))
+$currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+$systemSid = [Security.Principal.SecurityIdentifier]::new(
+    [Security.Principal.WellKnownSidType]::LocalSystemSid, $null)
+$administratorsSid = [Security.Principal.SecurityIdentifier]::new(
+    [Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+$allowedOwners = @($currentSid.Value, $systemSid.Value, $administratorsSid.Value)
+$ownedItems = @([IO.DirectoryInfo]::new($root))
+if ([IO.File]::Exists($target)) { $ownedItems += [IO.FileInfo]::new($target) }
+foreach ($item in $ownedItems) {
+    $ownerAcl = [IO.FileSystemAclExtensions]::GetAccessControl(
+        $item, [Security.AccessControl.AccessControlSections]::Owner)
+    $ownerSid = $ownerAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if ($ownerSid -notin $allowedOwners) { throw 'Codex status owner is not trusted.' }
 }
-[IO.FileSystemAclExtensions]::SetAccessControl($directoryInfo, $directorySecurity)
 $document = [ordered]@{
     schemaVersion = 1
     status = $Status
