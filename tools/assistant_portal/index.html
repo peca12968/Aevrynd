@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090f1d">
+  <meta name="description" content="Aevrynd 三機 AI 助理入口預覽">
+  <title>Aevrynd Assistant Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#auth-screen">跳到主要內容</a>
+  <div class="background-grid" aria-hidden="true"></div>
+  <!-- 登入開始 -->
+  <main class="auth-screen" id="auth-screen" aria-labelledby="auth-title" tabindex="-1">
+    <div class="auth-brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span><strong>AEVRYND</strong><small>ASSISTANT NETWORK</small></span>
+    </div>
+    <div class="auth-layout">
+      <div class="auth-story">
+        <p class="section-eyebrow">ONE PORTAL · THREE COMPUTE NODES</p>
+        <h1>讓每一個需求，<br><span>找到最適合的<span class="mobile-break"><br></span>智慧節點。</span></h1>
+        <p>透過單一安全入口協調主電腦、台中與桃園助理，追蹤開發工作、測試結果與檔案產出。</p>
+        <div class="auth-node-map" aria-label="三台節點概念圖">
+          <span class="node main-node"><i>M</i><b>主電腦</b><small>協調與複雜工作</small></span>
+          <span class="node"><i>中</i><b>台中</b><small>分析與建置驗證</small></span>
+          <span class="node"><i>桃</i><b>桃園</b><small>測試與結果整理</small></span>
+        </div>
+      </div>
+      <div class="auth-card">
+        <span class="preview-badge">PREVIEW · NO EMAIL SENT</span>
+        <p class="section-eyebrow">SECURE ACCESS</p>
+        <h2 id="auth-title">登入助理控制中心</h2>
+        <p class="auth-subtitle">使用核准的管理信箱取得 8 位英數一次性驗證碼。</p>
+        <div class="auth-methods" aria-label="登入方式">
+          <button type="button" aria-pressed="true">Email OTP</button>
+          <button type="button" disabled title="尚未啟用">Email Magic Link <small>預留</small></button>
+          <button type="button" disabled title="尚未啟用">電話 OTP <small>未啟用</small></button>
+        </div>
+        <form id="auth-form">
+          <label for="email-input">Email</label>
+          <div class="email-field"><span aria-hidden="true">@</span><input id="email-input" name="email" type="email" autocomplete="email" placeholder="name@example.com" required></div>
+          <p class="auth-help">請輸入核准的管理信箱。系統回應不會透露其他信箱是否存在。</p>
+          <button class="auth-submit" id="request-otp" type="button"><span>請求 8 位驗證碼</span><span aria-hidden="true">→</span></button>
+          <div id="otp-stage" hidden>
+            <label for="otp-input">8 位英數驗證碼</label>
+            <div class="email-field otp-field"><span aria-hidden="true">#</span><input id="otp-input" name="otp" inputmode="text" autocomplete="one-time-code" minlength="8" maxlength="8" pattern="[A-Z2-9]{8}" placeholder="XXXXXXXX"></div>
+            <p class="auth-help">驗證碼 10 分鐘內有效、只能使用一次；連續錯誤 5 次會立即作廢。</p>
+            <button class="auth-submit" type="submit"><span id="auth-submit-label">驗證並登入</span><span aria-hidden="true">→</span></button>
+          </div>
+          <div class="auth-result" id="auth-result" role="status" hidden>
+            <span aria-hidden="true">i</span><p><strong id="auth-result-title">Preview 模式</strong><small id="auth-result-detail">這個原型不會寄送 Email。</small></p>
+          </div>
+        </form>
+        <p class="auth-privacy">正式版本可接 Firebase Auth、自有 SMTP 或 Resend adapter。密鑰只由伺服器環境或 Windows Credential Manager 載入。</p>
+      </div>
+    </div>
+  </main>
+  <!-- 登入結束 -->
+  <!-- 控制台開始 -->
+  <div class="app-shell" id="portal-shell" hidden>
+    <aside class="sidebar" aria-label="主要導覽">
+      <a class="brand" href="#" aria-label="Aevrynd 助理入口首頁">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>AEVRYND</strong><small>ASSISTANT NETWORK</small></span>
+      </a>
+
+      <nav class="primary-nav" aria-label="功能導覽">
+        <button class="nav-item active" type="button" data-view="chat" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">⌁</span><span>助理對話</span>
+        </button>
+        <button class="nav-item" type="button" data-view="tasks">
+          <span class="nav-icon" aria-hidden="true">◇</span><span>任務中心</span><span class="nav-count">3</span>
+        </button>
+        <button class="nav-item" type="button" data-view="files">
+          <span class="nav-icon" aria-hidden="true">▱</span><span>檔案工作區</span>
+        </button>
+      </nav>
+
+      <section class="network-summary" aria-labelledby="network-title">
+        <div class="section-eyebrow" id="network-title">NETWORK</div>
+        <div class="network-row"><span class="signal preview-dot"></span><span>3 個節點</span><strong>Preview</strong></div>
+        <div class="network-row"><span class="signal muted"></span><span>資料更新</span><strong>模擬</strong></div>
+      </section>
+
+      <button class="game-mode-button" type="button" id="game-mode-button" aria-pressed="false">
+        <span class="game-mode-icon" aria-hidden="true">⌘</span>
+        <span><strong>遊戲模式</strong><small>開啟控制面板</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+      <button class="profile" type="button" id="logout-button">
+        <span class="avatar">AX</span>
+        <span><strong>管理者</strong><small>登出安全工作階段</small></span>
+      </button>
+    </aside>
+
+    <main id="main-content" tabindex="-1">
+      <header class="topbar">
+        <div>
+          <p class="section-eyebrow">CONTROL CENTER / <span id="view-label">CHAT</span></p>
+          <h1 id="page-title">AI 助理控制中心</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="preview-badge">PREVIEW DATA</span>
+          <button class="icon-button" type="button" aria-label="通知"><span aria-hidden="true">◌</span><i></i></button>
+        </div>
+      </header>
+
+      <section class="status-grid" aria-label="三台電腦預覽狀態">
+        <article class="host-card primary">
+          <div class="host-head"><span class="host-symbol">M</span><span><small>PRIMARY</small><strong>主電腦</strong></span><span class="status-pill preview">預覽</span></div>
+          <dl><div><dt>服務狀態</dt><dd>示範待命</dd></div><div><dt>目前負載</dt><dd>—</dd></div></dl>
+          <div class="meter"><i style="--value: 48%"></i></div>
+          <p>Codex 協調與複雜任務入口</p>
+        </article>
+        <article class="host-card taichung">
+          <div class="host-head"><span class="host-symbol">中</span><span><small>QWEN NODE</small><strong>台中助理</strong></span><span class="status-pill preview">預覽</span></div>
+          <dl><div><dt>服務狀態</dt><dd>示範待命</dd></div><div><dt>目前負載</dt><dd>—</dd></div></dl>
+          <div class="meter"><i style="--value: 34%"></i></div>
+          <p>技術分析與建置驗證節點</p>
+        </article>
+        <article class="host-card taoyuan">
+          <div class="host-head"><span class="host-symbol">桃</span><span><small>QWEN NODE</small><strong>桃園助理</strong></span><span class="status-pill preview">預覽</span></div>
+          <dl><div><dt>服務狀態</dt><dd>示範待命</dd></div><div><dt>目前負載</dt><dd>—</dd></div></dl>
+          <div class="meter"><i style="--value: 27%"></i></div>
+          <p>測試執行與結果整理節點</p>
+        </article>
+      </section>
+
+      <section class="workspace view-panel active" id="chat-view" aria-labelledby="chat-heading">
+        <div class="chat-panel">
+          <div class="panel-heading">
+            <div><p class="section-eyebrow">CONVERSATION</p><h2 id="chat-heading">新對話</h2></div>
+            <button class="text-button" type="button" id="clear-chat">清除</button>
+          </div>
+          <div class="routing-strip">
+            <span>回應助理</span>
+            <div class="segmented" role="radiogroup" aria-label="選擇回應助理">
+              <label><input type="radio" name="assistant" value="auto" checked><span>自動分流</span></label>
+              <label><input type="radio" name="assistant" value="taichung"><span>台中</span></label>
+              <label><input type="radio" name="assistant" value="taoyuan"><span>桃園</span></label>
+              <label><input type="radio" name="assistant" value="main"><span>主電腦</span></label>
+            </div>
+          </div>
+          <div class="messages" id="messages" aria-live="polite">
+            <article class="message assistant">
+              <span class="message-avatar">A</span>
+              <div><div class="message-meta"><strong>Aevrynd Assistant</strong><span>剛剛</span><span class="status-pill preview">Preview</span></div>
+                <p>您好，我會依照工作類型選擇合適的節點。您可以詢問引擎進度、建立任務、整理測試結果，或指定台中與桃園助理。</p>
+                <div class="suggestions">
+                  <button type="button">回報 Aevrynd 開發進度</button><button type="button">檢查三台電腦狀態</button><button type="button">建立測試任務</button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <form class="composer" id="chat-form">
+            <label class="sr-only" for="message-input">輸入訊息</label>
+            <textarea id="message-input" rows="1" placeholder="輸入訊息或工作指令…" maxlength="2000"></textarea>
+            <div class="composer-foot"><span><kbd>Shift</kbd> + <kbd>Enter</kbd> 換行</span><button class="send-button" type="submit">傳送 <span aria-hidden="true">↗</span></button></div>
+          </form>
+        </div>
+
+        <aside class="activity-panel" aria-label="工作進度摘要">
+          <div class="panel-heading"><div><p class="section-eyebrow">LIVE WORK</p><h2>工作進度</h2></div><span class="status-pill preview">預覽資料</span></div>
+          <article class="progress-card feature">
+            <div><span class="task-icon">3D</span><span><strong>HLOD 世界渲染</strong><small>引擎開發</small></span><b>68%</b></div>
+            <div class="progress"><i style="--value: 68%"></i></div>
+            <p>以下內容僅供介面預覽，尚未連接即時資料來源。</p>
+          </article>
+          <div class="task-list">
+            <article><span class="task-state running"></span><div><strong>材質與陰影驗證</strong><small>台中節點 · Preview</small></div><span>進行中</span></article>
+            <article><span class="task-state waiting"></span><div><strong>遠端測試報告</strong><small>桃園節點 · Preview</small></div><span>等待</span></article>
+            <article><span class="task-state done"></span><div><strong>網站介面原型</strong><small>主電腦 · Preview</small></div><span>完成</span></article>
+          </div>
+          <button class="wide-button" type="button" data-open-view="tasks">查看所有任務 <span>→</span></button>
+        </aside>
+      </section>
+
+      <section class="view-panel simple-view" id="tasks-view" aria-labelledby="tasks-heading">
+        <div class="panel-heading"><div><p class="section-eyebrow">TASK CENTER</p><h2 id="tasks-heading">任務中心</h2></div><button class="primary-button" type="button">＋ 建立任務</button></div>
+        <div class="empty-preview"><span>◇</span><h3>任務資料尚未連線</h3><p>正式版本會在這裡顯示三台節點的工作佇列、負責節點、階段與結果。此畫面目前為 Preview。</p></div>
+      </section>
+
+      <section class="view-panel simple-view" id="files-view" aria-labelledby="files-heading">
+        <div class="panel-heading"><div><p class="section-eyebrow">FILE WORKSPACE</p><h2 id="files-heading">檔案工作區</h2></div><button class="primary-button" type="button">＋ 新增檔案工作</button></div>
+        <div class="file-grid"><article><span class="file-icon">P</span><div><strong>簡報產製</strong><p>PPTX 報告、圖表與演示素材</p></div></article><article><span class="file-icon">D</span><div><strong>文件整理</strong><p>DOCX、PDF 與技術說明</p></div></article><article><span class="file-icon">A</span><div><strong>資產工作</strong><p>圖片、模型與引擎測試產物</p></div></article></div>
+        <p class="preview-notice">Preview：尚未連接上傳、下載與工作佇列。</p>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="game-mode-dialog" aria-labelledby="game-mode-title">
+    <form method="dialog">
+      <div class="dialog-head"><div><p class="section-eyebrow">RESOURCE CONTROL</p><h2 id="game-mode-title">三機遊戲模式</h2></div><button class="icon-button" value="cancel" aria-label="關閉">×</button></div>
+      <p class="dialog-intro">切換後將釋放所選節點的 AI 資源。此原型只展示控制介面，不會變更任何電腦狀態。</p>
+      <div class="mode-list">
+        <label><span class="host-symbol">M</span><span><strong>主電腦</strong><small>Preview · 未連線</small></span><input type="checkbox" disabled><i></i></label>
+        <label><span class="host-symbol">中</span><span><strong>台中</strong><small>Preview · 未連線</small></span><input type="checkbox" disabled><i></i></label>
+        <label><span class="host-symbol">桃</span><span><strong>桃園</strong><small>Preview · 未連線</small></span><input type="checkbox" disabled><i></i></label>
+      </div>
+      <button class="wide-button" value="cancel">完成</button>
+    </form>
+  </dialog>
+  <!-- 控制台結束 -->
+  <!-- 登入腳本開始 -->
+  <script src="auth_adapter.js" defer></script>
+  <script src="auth_login.js" defer></script>
+  <!-- 登入腳本結束 -->
+  <!-- 控制台腳本開始 -->
+  <script src="app.js" defer></script>
+  <!-- 控制台腳本結束 -->
+</body>
+</html>
