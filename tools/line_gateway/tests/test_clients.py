@@ -20,6 +20,8 @@ from tools.line_gateway.qwen_client import (
     QwenClientPool,
     QwenClientError,
     RetryableQwenError,
+    StructuredAssistantQwenClient,
+    StructuredRouterQwenClient,
     _NoRedirectHandler,
 )
 from tools.line_gateway.tests.support import FakeResponse, RecordingOpener
@@ -79,6 +81,7 @@ class QwenClientTests(unittest.TestCase):
             with self.subTest(url=url), self.assertRaises(ValueError):
                 QwenClient(url, "fake-api-key", "model")
         QwenClient("http://100.89.42.36:8080/v1", "fake-api-key", "model")
+        QwenClient("http://127.0.0.1:18080/v1", "fake-api-key", "model")
         with self.assertRaises(GatewayConfigError):
             GatewayConfig(
                 channel_secret="test-channel-secret-value",
@@ -96,6 +99,14 @@ class QwenClientTests(unittest.TestCase):
                 allowed_group_ids=frozenset({"allowed-group"}),
                 taichung_qwen_role="primary",
                 taoyuan_qwen_role="primary",
+            )
+        with self.assertRaises(GatewayConfigError):
+            GatewayConfig(
+                channel_secret="test-channel-secret-value",
+                channel_access_token="test-access-token-value",
+                allowed_user_ids=frozenset({"allowed-user"}),
+                allowed_group_ids=frozenset({"allowed-group"}),
+                local_qwen_base_url="http://127.0.0.1:18081/v1",
             )
         self.assertIsNone(_NoRedirectHandler().redirect_request(None, None, 302, "Found", {}, "http://attacker.invalid"))
 
@@ -118,6 +129,58 @@ class QwenClientTests(unittest.TestCase):
         self.assertEqual("test-model.gguf", payload["model"])
         self.assertEqual(["system", "user"], [item["role"] for item in payload["messages"]])
         self.assertEqual("/no_think\nhello", payload["messages"][-1]["content"])
+
+    def test_structured_assistant_uses_one_strict_non_thinking_generation(self) -> None:
+        content = json.dumps(
+            {"schemaVersion": 1, "action": "answer", "answer": "完成", "requestKind": "none", "attachments": []},
+            ensure_ascii=False,
+        )
+        response_body = json.dumps(
+            {"model": "returned-model", "choices": [{"finish_reason": "stop", "message": {"content": content}}]},
+            ensure_ascii=False,
+        ).encode()
+        opener = RecordingOpener(lambda _request: FakeResponse(200, response_body))
+        client = StructuredAssistantQwenClient(
+            "http://192.168.50.98:8080/v1", "fake-api-key", "test-model.gguf", opener=opener,
+        )
+        self.assertEqual(content, client.chat("hello", system_prompt="safe system").text)
+        self.assertEqual(1, len(opener.requests))
+        payload = json.loads(opener.requests[0].data)
+        self.assertEqual({"enable_thinking": False}, payload["chat_template_kwargs"])
+        self.assertEqual("json_schema", payload["response_format"]["type"])
+        schema = payload["response_format"]["json_schema"]
+        self.assertTrue(schema["strict"])
+        self.assertFalse(schema["schema"]["additionalProperties"])
+        self.assertEqual(512, payload["max_tokens"])
+
+    def test_structured_assistant_rejects_truncated_generation(self) -> None:
+        body = json.dumps(
+            {"choices": [{"finish_reason": "length", "message": {"content": "{}"}}]}
+        ).encode()
+        client = StructuredAssistantQwenClient(
+            "http://192.168.50.98:8080/v1", "fake-api-key", "test-model.gguf",
+            opener=lambda *_args, **_kwargs: FakeResponse(200, body),
+        )
+        with self.assertRaisesRegex(InvalidQwenResponse, "token limit"):
+            client.chat("hello")
+
+    def test_local_router_schema_allows_only_fixed_route_actions(self) -> None:
+        content = '{"schemaVersion":1,"action":"taichung","answer":"","requestKind":"complex","attachments":[]}'
+        body = json.dumps(
+            {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
+        ).encode()
+        opener = RecordingOpener(lambda _request: FakeResponse(200, body))
+        client = StructuredRouterQwenClient(
+            "http://127.0.0.1:18080/v1", "fake-api-key", "local-model.gguf", opener=opener,
+        )
+        self.assertEqual(content, client.chat("route").text)
+        schema = json.loads(opener.requests[0].data)["response_format"]["json_schema"]
+        self.assertEqual("aevrynd_line_router", schema["name"])
+        self.assertEqual(
+            ["answer", "taichung", "taoyuan", "status", "artifact", "codex"],
+            schema["schema"]["properties"]["action"]["enum"],
+        )
+        self.assertEqual(256, json.loads(opener.requests[0].data)["max_tokens"])
 
     def test_hostile_chat_responses_fail_closed(self) -> None:
         cases = (
@@ -220,8 +283,8 @@ class QwenClientTests(unittest.TestCase):
             json.dumps([{"is_processing": False}] * 129).encode(),
         )
         for body in hostile:
-            with self.subTest(body=body):
-                self.assertFalse(result(body))
+            with self.subTest(body=body), self.assertRaises(InvalidQwenResponse):
+                result(body)
 
     def test_oversized_response_and_input_are_rejected(self) -> None:
         body = b"{" + b"x" * 2048

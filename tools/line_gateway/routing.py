@@ -35,7 +35,8 @@ class RouteDecision:
 
 _PREFIXES = (
     ("@主機", Route.HOST),
-    ("@Qwen", Route.QWEN),
+    # @Qwen 是自動邊緣助理別名，不得繞過台中／桃園的一次式分類與回答。
+    ("@Qwen", Route.AUTO_QWEN),
     ("@台中", Route.TAICHUNG),
     ("@桃園", Route.TAOYUAN),
     ("@Codex", Route.CODEX),

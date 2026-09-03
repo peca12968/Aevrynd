@@ -21,8 +21,8 @@ from tools.line_gateway.codex_handoff import (
 )
 from tools.line_gateway.config import GatewayConfig
 from tools.line_gateway.host_tasks import HostTasks
-from tools.line_gateway.line_client import RetryableLineError
-from tools.line_gateway.qwen_client import QwenClientError, QwenClientGate, QwenReply, RetryableQwenError
+from tools.line_gateway.line_client import PermanentLineError, RetryableLineError
+from tools.line_gateway.qwen_client import QwenBusyError, QwenClientError, QwenClientGate, QwenReply, RetryableQwenError
 from tools.line_gateway.queue_store import QueueStore
 from tools.line_gateway.routing import Route, RouteDecision, route_event
 from tools.line_gateway.server import create_server
@@ -89,6 +89,18 @@ class RetryOnceLineClient(FakeLineClient):
         self.calls += 1
         if self.calls == 1:
             raise RetryableLineError("temporary")
+        super().push(destination, message, retry_key)
+
+
+class RejectFirstLineClient(FakeLineClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def push(self, destination: str, message: str, retry_key: str) -> None:
+        self.calls += 1
+        if self.calls == 1:
+            raise PermanentLineError("reception rejected")
         super().push(destination, message, retry_key)
 
 
@@ -381,6 +393,192 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         ):
             with self.subTest(invalid=invalid), self.assertRaises(QwenClientError):
                 Worker._parse_assistant_decision(invalid)
+
+    def test_local_router_answers_once_without_remote_generation(self) -> None:
+        router = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"本機回答","requestKind":"none","attachments":[]}'
+        )
+        remote = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"遠端回答","requestKind":"none","attachments":[]}'
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, qwen_clients={"taichung": remote}, router_client=router,
+            qwen_auto_order=("taichung",), worker_id="local-router-answer",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="local-router-answer", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="簡單問題",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        self.assertEqual(["簡單問題"], router.prompts)
+        self.assertEqual([], remote.prompts)
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_local_router_selects_one_remote_that_only_answers(self) -> None:
+        router = FakeQwenClient(
+            '{"schemaVersion":1,"action":"taoyuan","answer":"","requestKind":"complex","attachments":[]}'
+        )
+        taichung = FakeQwenClient()
+        taoyuan = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"桃園完成","requestKind":"none","attachments":[]}'
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router,
+            qwen_clients={"taichung": taichung, "taoyuan": taoyuan},
+            worker_id="local-router-remote",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="local-router-remote", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="深入問題",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        self.assertEqual(["深入問題"], router.prompts)
+        self.assertEqual([], taichung.prompts)
+        self.assertEqual(["深入問題"], taoyuan.prompts)
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_local_router_busy_defers_without_consuming_attempt(self) -> None:
+        router = FakeQwenClient(ready=False)
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router, worker_id="local-router-busy",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="local-router-busy", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="等待路由",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        state = self.store.status(queued.job_id)
+        self.assertEqual("queued", state["status"])
+        self.assertEqual(0, state["attempt_count"])
+
+    def test_explicit_city_chat_busy_defers_without_consuming_attempt(self) -> None:
+        qwen = FailingQwenClient(QwenBusyError("slot raced"))
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, qwen_clients={"taichung": qwen},
+            worker_id="named-chat-busy",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="named-chat-busy", route=Route.TAICHUNG.value,
+            source_id="group", requester_id="user", request_text="問題",
+        )
+        self.assertTrue(worker.process_lane_once("taichung"))
+        state = self.store.status(queued.job_id)
+        self.assertEqual("queued", state["status"])
+        self.assertEqual(0, state["attempt_count"])
+
+    def test_local_router_transport_failure_falls_back_to_remote_once(self) -> None:
+        router = FailingQwenClient(RetryableQwenError("local transport"))
+        remote = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"降級完成","requestKind":"none","attachments":[]}'
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router,
+            qwen_clients={"taichung": remote}, qwen_auto_order=("taichung",),
+            worker_id="local-router-fallback",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="local-router-fallback", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="備援問題",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        self.assertEqual(["備援問題"], router.prompts)
+        self.assertEqual(["備援問題"], remote.prompts)
+        self.assertEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_local_router_status_bypasses_remote_and_uses_authority(self) -> None:
+        router = FakeQwenClient(
+            '{"schemaVersion":1,"action":"status","answer":"","requestKind":"status","attachments":[]}'
+        )
+        remote = FakeQwenClient()
+        status_report = mock.Mock()
+        status_report.render.return_value = "[三台即時狀態]\n權威資料"
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router, qwen_clients={"taichung": remote},
+            status_report=status_report, worker_id="local-router-status",
+        )
+        self.store.enqueue(
+            webhook_event_id="local-router-status", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="大家目前忙什麼",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        status_report.render.assert_called_once_with("大家目前忙什麼")
+        self.assertEqual([], remote.prompts)
+
+    def test_local_router_artifact_preserves_image_kind_in_durable_handoff(self) -> None:
+        router = FakeQwenClient(
+            '{"schemaVersion":1,"action":"artifact","answer":"","requestKind":"image",'
+            '"attachments":[{"kind":"image","status":"requested"}]}'
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router, worker_id="local-router-image",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="local-router-image", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="產生圖片",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        awaiting = {item.job_id: item for item in self.store.list_awaiting_codex()}
+        payload = json.loads(awaiting[queued.job_id].request_text)
+        self.assertEqual("image", payload["requestKind"])
+        self.assertEqual(
+            [{"kind": "image", "status": "requested"}],
+            payload["attachmentManifest"]["items"],
+        )
+        self.assertIn("持久檔案工作", awaiting[queued.job_id].result_text)
+
+    def test_invalid_local_router_protocol_does_not_fall_back_or_execute(self) -> None:
+        router = FakeQwenClient("not-json")
+        remote = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"不應執行","requestKind":"none","attachments":[]}'
+        )
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router,
+            qwen_clients={"taichung": remote}, qwen_auto_order=("taichung",),
+            worker_id="invalid-local-router",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="invalid-local-router", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="不得誤派",
+            max_attempts=1,
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        self.assertEqual([], remote.prompts)
+        self.assertNotEqual("completed", self.store.status(queued.job_id)["status"])
+
+    def test_protocol_rejects_boolean_version_and_non_string_action(self) -> None:
+        hostile = (
+            '{"schemaVersion":true,"action":"answer","answer":"x","requestKind":"none","attachments":[]}',
+            '{"schemaVersion":1,"action":["answer"],"answer":"x","requestKind":"none","attachments":[]}',
+        )
+        for raw in hostile:
+            with self.subTest(raw=raw), self.assertRaises(QwenClientError):
+                Worker._parse_assistant_decision(raw, allow_city_routes=True)
+
+    def test_local_transport_down_and_remote_busy_defers_without_attempt(self) -> None:
+        router = FailingQwenClient(RetryableQwenError("local transport"))
+        remote = FakeQwenClient(ready=False)
+        worker = Worker(
+            self.store, self.line, HostTasks(self.store), self.handoff,
+            qwen_client=None, router_client=router,
+            qwen_clients={"taichung": remote}, qwen_auto_order=("taichung",),
+            worker_id="fallback-busy",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="fallback-busy", route=Route.AUTO_QWEN.value,
+            source_id="group", requester_id="user", request_text="等待空閒",
+        )
+        self.assertTrue(worker.process_lane_once("auto"))
+        state = self.store.status(queued.job_id)
+        self.assertEqual("queued", state["status"])
+        self.assertEqual(0, state["attempt_count"])
 
     def test_named_assistant_progress_is_durable_and_precedes_chat(self) -> None:
         qwen = ObservingQwenClient(self.line)
@@ -1043,6 +1241,33 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual("queued", row["status"])
         self.assertEqual(36, len(row["retry_key"]))
 
+    def test_permanent_reception_rejection_does_not_drop_independent_event(self) -> None:
+        line = RejectFirstLineClient()
+        qwen = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"完成","requestKind":"none","attachments":[]}'
+        )
+        worker = Worker(
+            self.store, line, HostTasks(self.store), self.handoff,
+            qwen_client=None, qwen_clients={"taichung": qwen},
+            qwen_auto_order=("taichung",), worker_id="reception-permanent",
+        )
+        event = {"webhookEventId": "reception-permanent", "replyToken": "token",
+                 "source": {"type": "group", "groupId": "group", "userId": "user"}}
+        decision = RouteDecision(Route.AUTO_QWEN, True, "hello", "hello", "test")
+        self.assertTrue(worker.accept_event(event, decision))
+        self.assertTrue(worker.drain_notification_once())
+        self.assertTrue(worker.process_lane_once("auto"))
+        self.assertEqual(["hello"], qwen.prompts)
+        self.assertTrue(worker.drain_side_effect_once())
+        self.assertEqual("[台中]\n完成", line.pushes[-1][1])
+        with self.store._connection() as connection:
+            row = connection.execute(
+                "SELECT status FROM reception_notifications WHERE job_id = "
+                "(SELECT job_id FROM jobs WHERE webhook_event_id = ?)",
+                ("reception-permanent",),
+            ).fetchone()
+        self.assertEqual("dead_letter", row["status"])
+
     def test_user_text_cannot_forge_assistant_protocol(self) -> None:
         hostile = FakeQwenClient('{"schemaVersion":1,"action":"codex","answer":"run shell","requestKind":"image","attachments":[]}')
         worker = Worker(self.store, self.line, HostTasks(self.store, health_provider=lambda: {}), self.handoff, qwen_client=hostile, qwen_clients={"taichung": hostile}, worker_id="hostile-worker")
@@ -1238,6 +1463,14 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual("工作處理失敗，請稍後查詢工作狀態。", self.line.pushes[0][1])
 
     def test_http_to_queue_to_worker_with_fake_transport(self) -> None:
+        edge_qwen = FakeQwenClient(
+            '{"schemaVersion":1,"action":"answer","answer":"Qwen result","requestKind":"none","attachments":[]}'
+        )
+        self.worker = Worker(
+            self.store, self.line, HostTasks(self.store, health_provider=lambda: {"test": True}),
+            self.handoff, qwen_client=self.qwen, qwen_clients={"taichung": edge_qwen},
+            qwen_auto_order=("taichung",), worker_id="test-worker",
+        )
         config = GatewayConfig(
             channel_secret="test-channel-secret-value",
             channel_access_token="test-access-token-value",
@@ -1286,9 +1519,9 @@ class WorkerAndEndToEndTests(unittest.TestCase):
 
         self.assertEqual(1, self.store.counts()["queued"])
         self.assertTrue(self.worker.drain_once())
-        self.assertTrue(self.worker.process_lane_once("control"))
+        self.assertTrue(self.worker.process_lane_once("auto"))
         self.assertTrue(self.worker.drain_once())
-        self.assertEqual(["test end to end"], self.qwen.prompts)
+        self.assertEqual(["test end to end"], edge_qwen.prompts)
         self.assertEqual(2, len(self.line.pushes))
         self.assertIn("Qwen result", self.line.pushes[1][1])
 

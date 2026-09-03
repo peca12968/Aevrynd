@@ -34,6 +34,10 @@ _SECRET_TARGETS = {
         "AEVRYND_QWEN_SECONDARY_API_KEY",
         "Aevrynd/LineGateway/SecondaryQwenApiKey",
     ),
+    "local_qwen_api_key": (
+        "AEVRYND_QWEN_LOCAL_API_KEY",
+        "Aevrynd/QwenLight/ApiKey",
+    ),
 }
 
 
@@ -43,6 +47,7 @@ class GatewayConfig:
     channel_access_token: str = field(repr=False)
     qwen_api_key: str | None = field(default=None, repr=False)
     secondary_qwen_api_key: str | None = field(default=None, repr=False)
+    local_qwen_api_key: str | None = field(default=None, repr=False)
     allowed_user_ids: frozenset[str] = field(default_factory=frozenset)
     allowed_group_ids: frozenset[str] = field(default_factory=frozenset)
     bind_host: str = "127.0.0.1"
@@ -52,6 +57,8 @@ class GatewayConfig:
     max_events_per_webhook: int = 100
     qwen_base_url: str = "http://192.168.50.98:8080/v1"
     secondary_qwen_base_url: str = "http://100.89.42.36:8080/v1"
+    local_qwen_base_url: str = "http://127.0.0.1:18080/v1"
+    local_qwen_model: str = "Qwen3-4B-Q4_K_M.gguf"
     taichung_qwen_role: str = "primary"
     taoyuan_qwen_role: str = "secondary"
 
@@ -60,6 +67,7 @@ class GatewayConfig:
         _validate_secret(self.channel_access_token, required=True)
         _validate_secret(self.qwen_api_key, required=False)
         _validate_secret(self.secondary_qwen_api_key, required=False)
+        _validate_secret(self.local_qwen_api_key, required=False)
         _validate_identifier_set(self.allowed_user_ids)
         _validate_identifier_set(self.allowed_group_ids)
         if not self.allowed_user_ids or not self.allowed_group_ids:
@@ -80,10 +88,15 @@ class GatewayConfig:
             raise GatewayConfigError("Event count limit is outside the permitted range.")
         _validate_qwen_base_url(self.qwen_base_url)
         _validate_qwen_base_url(self.secondary_qwen_base_url)
+        _validate_qwen_base_url(self.local_qwen_base_url)
         if self.qwen_base_url != "http://192.168.50.98:8080/v1":
             raise GatewayConfigError("Primary Qwen endpoint role is fixed.")
         if self.secondary_qwen_base_url != "http://100.89.42.36:8080/v1":
             raise GatewayConfigError("Secondary Qwen endpoint role is fixed.")
+        if self.local_qwen_base_url != "http://127.0.0.1:18080/v1":
+            raise GatewayConfigError("Local Qwen router endpoint is fixed.")
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,256}", self.local_qwen_model):
+            raise GatewayConfigError("Local Qwen model identifier is invalid.")
         if {self.taichung_qwen_role, self.taoyuan_qwen_role} != {"primary", "secondary"}:
             raise GatewayConfigError("Assistant role mapping must be an exact permutation.")
 
@@ -165,6 +178,7 @@ def _validate_qwen_base_url(value: str) -> None:
     if (parsed.scheme, parsed.hostname, port) not in {
         ("http", "192.168.50.98", 8080),
         ("http", "100.89.42.36", 8080),
+        ("http", "127.0.0.1", 18080),
     }:
         raise GatewayConfigError("Qwen base URL is not allowlisted.")
 
@@ -192,6 +206,7 @@ def load_config(
         channel_access_token=credentials["channel_access_token"],
         qwen_api_key=credentials["qwen_api_key"],
         secondary_qwen_api_key=credentials["secondary_qwen_api_key"],
+        local_qwen_api_key=credentials["local_qwen_api_key"],
         allowed_user_ids=_parse_identifier_set(source.get("AEVRYND_LINE_ALLOWED_USER_IDS")),
         allowed_group_ids=_parse_identifier_set(source.get("AEVRYND_LINE_ALLOWED_GROUP_IDS")),
         bind_host=source.get("AEVRYND_LINE_BIND_HOST", "127.0.0.1").strip(),
@@ -208,6 +223,12 @@ def load_config(
         ).strip(),
         secondary_qwen_base_url=source.get(
             "AEVRYND_QWEN_SECONDARY_BASE_URL", "http://100.89.42.36:8080/v1"
+        ).strip(),
+        local_qwen_base_url=source.get(
+            "AEVRYND_QWEN_LOCAL_BASE_URL", "http://127.0.0.1:18080/v1"
+        ).strip(),
+        local_qwen_model=source.get(
+            "AEVRYND_QWEN_LOCAL_MODEL", "Qwen3-4B-Q4_K_M.gguf"
         ).strip(),
         taichung_qwen_role=source.get("AEVRYND_ASSISTANT_TAICHUNG_QWEN_ROLE", "primary").strip(),
         taoyuan_qwen_role=source.get("AEVRYND_ASSISTANT_TAOYUAN_QWEN_ROLE", "secondary").strip(),

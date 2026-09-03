@@ -13,7 +13,42 @@ from urllib import error, parse, request
 
 DEFAULT_ALLOWED_BASE_URL = "http://192.168.50.98:8080/v1"
 SECONDARY_ALLOWED_BASE_URL = "http://100.89.42.36:8080/v1"
+LOCAL_ROUTER_ALLOWED_BASE_URL = "http://127.0.0.1:18080/v1"
 NO_THINK_DIRECTIVE = "/no_think\n"
+ASSISTANT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schemaVersion", "action", "answer", "requestKind", "attachments"],
+    "properties": {
+        "schemaVersion": {"type": "integer", "const": 1},
+        "action": {"enum": ["answer", "status", "artifact", "codex"]},
+        "answer": {"type": "string", "maxLength": 5_000},
+        "requestKind": {"enum": ["none", "status", "complex", "image", "file"]},
+        "attachments": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["kind", "status"],
+                "properties": {
+                    "kind": {"enum": ["image", "file"]},
+                    "status": {"const": "requested"},
+                },
+            },
+        },
+    },
+}
+ROUTER_RESPONSE_SCHEMA = {
+    **ASSISTANT_RESPONSE_SCHEMA,
+    "properties": {
+        **ASSISTANT_RESPONSE_SCHEMA["properties"],
+        "action": {
+            "enum": ["answer", "taichung", "taoyuan", "status", "artifact", "codex"]
+        },
+        "answer": {"type": "string", "maxLength": 600},
+    },
+}
 
 
 class QwenClientError(RuntimeError):
@@ -22,6 +57,10 @@ class QwenClientError(RuntimeError):
 
 class RetryableQwenError(QwenClientError):
     retryable = True
+
+
+class QwenBusyError(RetryableQwenError):
+    """節點仍在線但沒有可立即使用的推論槽。"""
 
 
 class InvalidQwenResponse(QwenClientError):
@@ -57,7 +96,11 @@ def _normalize_base_url(value: str) -> str:
     ):
         raise ValueError("qwen base URL is not allowed")
     port = parsed.port
-    if (parsed.hostname, port) not in {("192.168.50.98", 8080), ("100.89.42.36", 8080)}:
+    if (parsed.hostname, port) not in {
+        ("192.168.50.98", 8080),
+        ("100.89.42.36", 8080),
+        ("127.0.0.1", 18080),
+    }:
         raise ValueError("qwen base URL is not allowlisted")
     return f"http://{parsed.hostname}:{port}/v1"
 
@@ -157,16 +200,16 @@ class QwenClient:
             has_slots = "slots" in payload
             has_data = "data" in payload
             if has_slots == has_data:
-                return False
+                raise InvalidQwenResponse("Qwen slots response is ambiguous")
             slots = payload["slots" if has_slots else "data"]
         if not isinstance(slots, list) or not 1 <= len(slots) <= 128:
-            return False
+            raise InvalidQwenResponse("Qwen slots response has an invalid count")
         if any(
             not isinstance(item, dict)
             or not isinstance(item.get("is_processing"), bool)
             for item in slots
         ):
-            return False
+            raise InvalidQwenResponse("Qwen slots response has an invalid shape")
         return any(item["is_processing"] is False for item in slots)
 
     def _request(self, method: str, path: str, payload: dict[str, object] | None) -> Any:
@@ -190,7 +233,9 @@ class QwenClient:
                 raw = response.read(self._max_response_bytes + 1)
         except error.HTTPError as exc:
             status = int(exc.code)
-            if 500 <= status < 600 or status in {408, 429}:
+            if status == 429:
+                raise QwenBusyError("Qwen service has no available slot") from exc
+            if 500 <= status < 600 or status == 408:
                 raise RetryableQwenError(f"Qwen service returned HTTP {status}") from exc
             raise QwenClientError(f"Qwen request was rejected with HTTP {status}") from exc
         except (error.URLError, TimeoutError, socket.timeout, OSError) as exc:
@@ -209,6 +254,66 @@ class QwenClient:
         if not isinstance(decoded, dict):
             raise InvalidQwenResponse("Qwen response root must be an object")
         return decoded
+
+
+class StructuredAssistantQwenClient(QwenClient):
+    """單次產生結構化意圖與答案，避免再呼叫一次分類模型。"""
+
+    _schema_name = "aevrynd_line_assistant"
+    _response_schema = ASSISTANT_RESPONSE_SCHEMA
+    _token_limit = 512
+
+    def chat(self, prompt: str, *, system_prompt: str = "") -> QwenReply:
+        if not isinstance(prompt, str) or not prompt or len(prompt) > self._max_input_chars:
+            raise ValueError("prompt is outside the allowed range")
+        if not isinstance(system_prompt, str) or len(system_prompt) > self._max_input_chars:
+            raise ValueError("system_prompt is outside the allowed range")
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": NO_THINK_DIRECTIVE + prompt})
+        payload = self._request(
+            "POST",
+            "/chat/completions",
+            {
+                "model": self._model,
+                "messages": messages,
+                "max_tokens": min(self._max_tokens, self._token_limit),
+                "temperature": 0.1,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": self._schema_name,
+                        "strict": True,
+                        "schema": self._response_schema,
+                    },
+                },
+            },
+        )
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or len(choices) != 1:
+            raise InvalidQwenResponse("Qwen response must contain exactly one choice")
+        choice = choices[0]
+        if not isinstance(choice, dict) or not isinstance(choice.get("message"), dict):
+            raise InvalidQwenResponse("Qwen response choice is invalid")
+        if choice.get("finish_reason") == "length":
+            raise InvalidQwenResponse("Qwen structured response reached its token limit")
+        content = choice["message"].get("content")
+        if not isinstance(content, str) or not content or len(content) > self._max_output_chars:
+            raise InvalidQwenResponse("Qwen response content is invalid or oversized")
+        returned_model = payload.get("model", self._model)
+        if not isinstance(returned_model, str) or len(returned_model) > 256:
+            raise InvalidQwenResponse("Qwen response model is invalid")
+        return QwenReply(content, returned_model)
+
+
+class StructuredRouterQwenClient(StructuredAssistantQwenClient):
+    """主電腦輕量模型只產生一次可信任路由決策或簡短答案。"""
+
+    _schema_name = "aevrynd_line_router"
+    _response_schema = ROUTER_RESPONSE_SCHEMA
+    _token_limit = 256
 
 
 class QwenClientGate:
@@ -230,7 +335,7 @@ class QwenClientGate:
             if acquire_timeout <= 0 or acquire_timeout > 1:
                 raise ValueError("acquire_timeout is outside the allowed range")
             if not self._lock.acquire(timeout=acquire_timeout):
-                raise RetryableQwenError("Qwen node is already assigned")
+                raise QwenBusyError("Qwen node is already assigned")
         else:
             while not self._lock.acquire(timeout=0.1):
                 if owner_check is not None:

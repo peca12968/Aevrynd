@@ -39,6 +39,15 @@ try {
         foreach ($required in @('Assert-Administrator','InstallFile','Read-Host','AsSecureString','CredWriteW','Aevrynd/LineGateway/SecondaryQwenApiKey','ZeroFreeCoTaskMemUnicode','1280')) { if (-not $content.Contains($required)) { throw "secondary credential setter lacks $required" } }
         if ($content -match '(?i)param\([^)]*(ApiKey|Secret|Token)' -or $content -match '(?i)(Set-Content|WriteAllText|WriteAllBytes).*secure') { throw 'secondary credential setter exposes plaintext input or persistence' }
     }
+    Invoke-Test 'local light router is fixed to loopback and credential manager' {
+        $configuration = Get-Content -Raw (Join-Path $scriptsRoot 'Set-Configuration.ps1')
+        foreach ($required in @('http://127.0.0.1:18080/v1','Qwen3-4B-Q4_K_M.gguf','AEVRYND_QWEN_LOCAL_BASE_URL','AEVRYND_QWEN_LOCAL_MODEL')) {
+            if (-not $configuration.Contains($required)) { throw "local router configuration lacks $required" }
+        }
+        if ($configuration -match '(?i)param\([^)]*(LocalQwenApiKey|LocalSecret)') { throw 'local router exposes a plaintext key parameter' }
+        $pythonConfig = Get-Content -Raw (Join-Path $scriptsRoot '..\config.py')
+        if (-not $pythonConfig.Contains('Aevrynd/QwenLight/ApiKey')) { throw 'local router does not use the existing credential target' }
+    }
     $credentialPath = Join-Path $temporaryRoot '11111111-1111-1111-1111-111111111111.json'
     [IO.File]::WriteAllText($credentialPath, '{}', [Text.UTF8Encoding]::new($false))
     $validLines = @(

@@ -161,7 +161,10 @@ def _run() -> int:
     from tools.line_gateway.host_tasks import HostTasks
     from tools.line_gateway.line_client import LineClient
     from tools.line_gateway.queue_store import QueueStore
-    from tools.line_gateway.qwen_client import QwenClient, QwenClientGate, QwenClientPool
+    from tools.line_gateway.qwen_client import (
+        QwenClient, QwenClientGate, QwenClientPool, StructuredAssistantQwenClient,
+        StructuredRouterQwenClient,
+    )
     from tools.line_gateway.routing import route_event
     from tools.line_gateway.server import create_server
     from tools.line_gateway.status_report import StatusReport
@@ -174,6 +177,7 @@ def _run() -> int:
     queue = QueueStore(root / "data" / "queue.sqlite3")
     line = LineClient(config.channel_access_token)
     qwen = None
+    local_router = None
     qwen_by_role: dict[str, object] = {}
     status_probe_by_role: dict[str, object] = {}
     if config.qwen_api_key is not None:
@@ -181,7 +185,7 @@ def _run() -> int:
         if not model:
             raise RuntimeError("Qwen model is not configured")
         primary_qwen = QwenClientGate(
-            QwenClient(config.qwen_base_url, config.qwen_api_key, model)
+            StructuredAssistantQwenClient(config.qwen_base_url, config.qwen_api_key, model)
         )
         status_probe_by_role["primary"] = QwenClient(
             config.qwen_base_url, config.qwen_api_key, model, timeout=0.35, max_tokens=1
@@ -189,7 +193,7 @@ def _run() -> int:
         secondary_qwen = None
         if config.secondary_qwen_api_key is not None:
             secondary_qwen = QwenClientGate(
-                QwenClient(
+                StructuredAssistantQwenClient(
                     config.secondary_qwen_base_url,
                     config.secondary_qwen_api_key,
                     model,
@@ -206,6 +210,16 @@ def _run() -> int:
         qwen_by_role = {"primary": primary_qwen}
         if secondary_qwen is not None:
             qwen_by_role["secondary"] = secondary_qwen
+    if config.local_qwen_api_key is not None:
+        local_router = QwenClientGate(
+            StructuredRouterQwenClient(
+                config.local_qwen_base_url,
+                config.local_qwen_api_key,
+                config.local_qwen_model,
+                timeout=30.0,
+                max_tokens=512,
+            )
+        )
     handoff = CodexHandoff()
     runtime_health = RuntimeHealth()
     host_tasks = HostTasks(
@@ -214,6 +228,7 @@ def _run() -> int:
             "bind": "127.0.0.1:8787",
             "qwenConfigured": qwen is not None,
             "qwenSecondaryConfigured": config.secondary_qwen_api_key is not None,
+            "qwenLocalRouterConfigured": local_router is not None,
             **runtime_health.snapshot(),
         },
     )
@@ -226,6 +241,7 @@ def _run() -> int:
     )
     worker_options = {
         "qwen_client": qwen,
+        "router_client": local_router,
         "qwen_clients": {
             "taichung": qwen_by_role.get(config.taichung_qwen_role),
             "taoyuan": qwen_by_role.get(config.taoyuan_qwen_role),

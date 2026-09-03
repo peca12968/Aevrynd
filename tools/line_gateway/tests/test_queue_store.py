@@ -661,7 +661,7 @@ class QueueStoreTests(unittest.TestCase):
         claimed = self.store.claim_next_for_lane("recovery", "auto", now=100)
         self.assertEqual(queued.job_id, claimed.job_id)
 
-    def test_permanent_reception_failure_dead_letters_job_without_generation(self) -> None:
+    def test_permanent_reception_failure_does_not_drop_durable_job(self) -> None:
         queued = self.store.enqueue(
             webhook_event_id="reception-rejected", route="taichung",
             source_id="group", requester_id="user", request_text="hello",
@@ -676,9 +676,28 @@ class QueueStoreTests(unittest.TestCase):
             ),
         )
         status = self.store.status(queued.job_id)
-        self.assertEqual("dead_letter", status["status"])
-        self.assertEqual("reception_notification_failed", status["error_code"])
-        self.assertIsNone(self.store.claim_next_for_lane("lane", "taichung", now=101))
+        self.assertEqual("queued", status["status"])
+        self.assertEqual("", status["error_code"])
+        claimed = self.store.claim_next_for_lane("lane", "taichung", now=101)
+        self.assertEqual(queued.job_id, claimed.job_id)
+
+    def test_busy_defer_preserves_attempt_budget_and_owner_cas(self) -> None:
+        queued = self.store.enqueue(
+            webhook_event_id="busy-defer", route="auto_qwen", source_id="destination-1",
+            requester_id="requester-1", request_text="hello", now=100,
+        )
+        claimed = self.store.claim_next_for_lane("worker-a", "auto", now=100)
+        self.assertEqual(1, claimed.attempt_count)
+        with self.assertRaises(QueueStoreError):
+            self.store.defer_running_without_attempt(
+                queued.job_id, expected_lease_owner="worker-b", now=100,
+            )
+        self.store.defer_running_without_attempt(
+            queued.job_id, expected_lease_owner="worker-a", delay_seconds=1, now=100,
+        )
+        self.assertIsNone(self.store.claim_next_for_lane("worker-b", "auto", now=100.5))
+        reclaimed = self.store.claim_next_for_lane("worker-b", "auto", now=101)
+        self.assertEqual(1, reclaimed.attempt_count)
 
 
 if __name__ == "__main__":

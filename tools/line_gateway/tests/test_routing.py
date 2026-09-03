@@ -32,7 +32,7 @@ class RoutingTests(unittest.TestCase):
     def test_exact_group_tags_route_and_strip_command(self) -> None:
         cases = {
             "@主機 health": Route.HOST,
-            "@Qwen hello": Route.QWEN,
+            "@Qwen hello": Route.AUTO_QWEN,
             "@台中 hello": Route.TAICHUNG,
             "@桃園 hello": Route.TAOYUAN,
             "@Codex task": Route.CODEX,

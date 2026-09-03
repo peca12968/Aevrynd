@@ -4,6 +4,8 @@ param(
     [string]$QwenBaseUrl = 'http://192.168.50.98:8080/v1',
     [string]$QwenModel = 'Qwen3.8-27B-UD-Q4_K_M.gguf',
     [string]$SecondaryQwenBaseUrl = 'http://100.89.42.36:8080/v1',
+    [string]$LocalQwenBaseUrl = 'http://127.0.0.1:18080/v1',
+    [string]$LocalQwenModel = 'Qwen3-4B-Q4_K_M.gguf',
     [ValidateSet('primary','secondary')][string]$TaichungQwenRole = 'primary',
     [ValidateSet('primary','secondary')][string]$TaoyuanQwenRole = 'secondary',
     [string]$InstallRoot = "$env:ProgramData\Aevrynd\LineGateway"
@@ -39,6 +41,8 @@ if ($QwenBaseUrl -ne 'http://192.168.50.98:8080/v1') {
 if ($SecondaryQwenBaseUrl -ne 'http://100.89.42.36:8080/v1') {
     throw 'The reserved secondary Qwen URL must remain http://100.89.42.36:8080/v1.'
 }
+if ($LocalQwenBaseUrl -ne 'http://127.0.0.1:18080/v1') { throw 'The local Qwen router URL is fixed.' }
+if ($LocalQwenModel -notmatch '^[A-Za-z0-9._-]{1,256}$') { throw 'LocalQwenModel is invalid.' }
 if ($TaichungQwenRole -eq $TaoyuanQwenRole) { throw 'Assistant Qwen roles must be an exact permutation.' }
 if ($QwenModel -notmatch '^[A-Za-z0-9._-]{1,256}$') { throw 'QwenModel is invalid.' }
 
@@ -55,6 +59,8 @@ $lines = @(
     "AEVRYND_QWEN_BASE_URL=$QwenBaseUrl",
     "AEVRYND_QWEN_MODEL=$QwenModel",
     "AEVRYND_QWEN_SECONDARY_BASE_URL=$SecondaryQwenBaseUrl"
+    "AEVRYND_QWEN_LOCAL_BASE_URL=$LocalQwenBaseUrl"
+    "AEVRYND_QWEN_LOCAL_MODEL=$LocalQwenModel"
     "AEVRYND_ASSISTANT_TAICHUNG_QWEN_ROLE=$TaichungQwenRole"
     "AEVRYND_ASSISTANT_TAOYUAN_QWEN_ROLE=$TaoyuanQwenRole"
 )

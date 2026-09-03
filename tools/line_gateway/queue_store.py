@@ -570,7 +570,8 @@ class QueueStore:
                        AND attempt_count < max_attempts
                        AND NOT EXISTS (
                            SELECT 1 FROM reception_notifications n
-                            WHERE n.job_id = jobs.job_id AND n.status != 'completed'
+                            WHERE n.job_id = jobs.job_id
+                              AND n.status NOT IN ('completed','dead_letter')
                        )
                        {lane_clause}
                  ORDER BY created_at, job_id
@@ -589,7 +590,8 @@ class QueueStore:
                  WHERE job_id = ? AND status = 'queued'
                    AND NOT EXISTS (
                        SELECT 1 FROM reception_notifications n
-                        WHERE n.job_id = jobs.job_id AND n.status != 'completed'
+                        WHERE n.job_id = jobs.job_id
+                          AND n.status NOT IN ('completed','dead_letter')
                    )
                 """,
                 (timestamp + lease_seconds, owner, timestamp, row["job_id"]),
@@ -632,6 +634,37 @@ class QueueStore:
                 (timestamp + lease_seconds, timestamp, job_id, worker_id),
             ).rowcount
         return changed == 1
+
+    def defer_running_without_attempt(
+        self,
+        job_id: str,
+        *,
+        expected_lease_owner: str,
+        delay_seconds: float = 1.0,
+        now: float | None = None,
+    ) -> None:
+        """節點忙碌時歸還工作，不把等待誤算成一次失敗嘗試。"""
+
+        canonical_job = _canonical_uuid(job_id, "job_id")
+        owner = _require_text(
+            expected_lease_owner, "expected_lease_owner", MAX_IDENTIFIER_CHARS
+        )
+        if delay_seconds < 0.1 or delay_seconds > 30:
+            raise QueueStoreError("delay_seconds is outside the allowed range")
+        timestamp = time.time() if now is None else float(now)
+        with self._connection() as connection:
+            changed = connection.execute(
+                """
+                UPDATE jobs
+                   SET status = 'queued', attempt_count = MAX(0, attempt_count - 1),
+                       available_at = ?, lease_until = NULL, lease_owner = '',
+                       updated_at = ?, error_code = ''
+                 WHERE job_id = ? AND status = 'running' AND lease_owner = ?
+                """,
+                (timestamp + delay_seconds, timestamp, canonical_job, owner),
+            ).rowcount
+        if changed != 1:
+            raise QueueStoreError("job lease owner changed before defer")
 
     def persist_canonical_codex_request(
         self,
@@ -1317,12 +1350,6 @@ class QueueStore:
                 "UPDATE reception_notifications SET status = 'dead_letter', updated_at = ? "
                 "WHERE status = 'queued' AND expires_at <= ?", (timestamp, timestamp),
             )
-            connection.execute(
-                "UPDATE jobs SET status = 'dead_letter', error_code = 'reception_notification_failed', "
-                "updated_at = ? WHERE status = 'queued' AND job_id IN "
-                "(SELECT job_id FROM reception_notifications WHERE status = 'dead_letter')",
-                (timestamp,),
-            )
             row = connection.execute(
                 "SELECT * FROM reception_notifications WHERE status = 'queued' "
                 "AND available_at <= ? AND expires_at > ? AND attempt_count < max_attempts "
@@ -1376,12 +1403,6 @@ class QueueStore:
                 (status, timestamp if status != "queued" else timestamp + retry_delay_seconds,
                  timestamp, notification_id, owner),
             )
-            if status == "dead_letter":
-                connection.execute(
-                    "UPDATE jobs SET status = 'dead_letter', error_code = 'reception_notification_failed', "
-                    "updated_at = ? WHERE job_id = ? AND status = 'queued'",
-                    (timestamp, row["job_id"]),
-                )
             connection.commit()
         return status
 
