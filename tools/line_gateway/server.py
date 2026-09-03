@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import socket
 import time
+import re
 from collections.abc import Callable, Mapping
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,6 +13,7 @@ from typing import Any
 
 from .config import GatewayConfig
 from .signature import verify_signature
+from .artifact_store import MIN_TTL_SECONDS, ArtifactNotFound, ArtifactStore
 
 
 EventSink = Callable[[Mapping[str, object]], bool]
@@ -45,10 +47,12 @@ class GatewayHttpServer(ThreadingHTTPServer):
         config: GatewayConfig,
         event_sink: EventSink,
         health_provider: HealthProvider | None = None,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
         self.gateway_config = config
         self.event_sink = event_sink
         self.health_provider = health_provider
+        self.artifact_store = artifact_store
         super().__init__(server_address, GatewayRequestHandler)
 
     def handle_error(self, _request: object, _client_address: object) -> None:
@@ -99,6 +103,9 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         # 一律關閉 HTTP/1.1 連線，避免帶 body 的 GET 或 pipeline 造成 request desync。
         self.close_connection = True
+        if self.path.startswith("/artifacts/"):
+            self._handle_artifact()
+            return
         if self.path != "/health":
             self._write_json(HTTPStatus.NOT_FOUND, {"status": "not-found"})
             return
@@ -115,6 +122,81 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
             health.update(supplied)
         status = HTTPStatus.OK if health.get("status") == "ok" else HTTPStatus.SERVICE_UNAVAILABLE
         self._write_json(status, health)
+
+    def _handle_artifact(self) -> None:
+        # raw path 必須完全符合；拒絕 query、fragment、percent encoding、traversal 與 Range。
+        match = re.fullmatch(r"/artifacts/([A-Za-z0-9_-]{43})(/download)?", self.path)
+        if match is None or self.headers.get_all("Range") or self.headers.get_all("Transfer-Encoding"):
+            self._write_json(HTTPStatus.BAD_REQUEST, {"status": "invalid-request"})
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if lengths and (len(lengths) != 1 or lengths[0] != "0"):
+            self._write_json(HTTPStatus.BAD_REQUEST, {"status": "invalid-request"})
+            return
+        store = self.server.artifact_store
+        if store is None:
+            self._write_json(HTTPStatus.NOT_FOUND, {"status": "not-found"})
+            return
+        try:
+            if match.group(2) is None:
+                metadata = store.inspect(match.group(1))
+                body = (
+                    "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
+                    "<title>Aevrynd secure download</title><h1>檔案已準備完成</h1>"
+                    f"<p>大小：{metadata.size} bytes</p>"
+                    f"<p><a rel='nofollow noreferrer' href='/artifacts/{match.group(1)}/download'>下載檔案</a></p>"
+                    "<p>此連結有期限與下載次數限制。</p>"
+                ).encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "private, no-store, max-age=0")
+                self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'none'; img-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Robots-Tag", "noindex, nofollow, noarchive")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            artifact = store.prepare_download(match.group(1))
+        except ArtifactNotFound:
+            self._write_json(HTTPStatus.NOT_FOUND, {"status": "not-found"})
+            return
+        except Exception:
+            self._write_json(HTTPStatus.SERVICE_UNAVAILABLE, {"status": "unavailable"})
+            return
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", artifact.content_type)
+            self.send_header("Content-Length", str(len(artifact.body)))
+            self.send_header("Content-Disposition", f'attachment; filename="{artifact.download_name}"')
+            self.send_header("Cache-Control", "private, no-store, max-age=0")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            # 單次 socket write 最長必須短於 artifact 的最小 TTL。
+            self.connection.settimeout(min(self.server.gateway_config.request_timeout_seconds,
+                                           float(MIN_TTL_SECONDS - 1)))
+            self.wfile.write(artifact.body)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            try:
+                store.release_download(artifact.reservation_id)
+            except Exception:
+                # DB 短暫失敗時 reservation 仍會由固定 TTL 回收，不會永久扣額度。
+                pass
+            return
+        for attempt in range(3):
+            try:
+                store.finalize_download(artifact.reservation_id)
+                return
+            except Exception:
+                if attempt < 2:
+                    time.sleep(0.05 * (attempt + 1))
+        # 已成功 flush 時絕不可釋放；占位持續到 artifact 到期，防止突破下載上限。
 
     def do_POST(self) -> None:
         # 早期拒絕不會讀完整 body；關閉連線可防止殘留 bytes 被解析成下一個 request。
@@ -257,11 +339,12 @@ def create_server(
     config: GatewayConfig,
     event_sink: EventSink,
     health_provider: HealthProvider | None = None,
+    artifact_store: ArtifactStore | None = None,
 ) -> GatewayHttpServer:
     """Create a loopback-only server; caller controls its worker and lifetime."""
 
     if not callable(event_sink):
         raise TypeError("event_sink must be callable")
     return GatewayHttpServer(
-        (config.bind_host, config.port), config, event_sink, health_provider
+        (config.bind_host, config.port), config, event_sink, health_provider, artifact_store
     )

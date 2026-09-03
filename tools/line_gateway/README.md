@@ -83,11 +83,18 @@ Gateway 以無視窗子程序呼叫 ProgramData 中已安裝的 Game Mode Contro
 - `@台中` 預設固定 `.98`，`@桃園` 預設固定 `.36`。非機密設定可交換兩個助理的 primary／secondary role，但兩個實際 endpoint 的 primary／secondary 角色及 allowlist 不可交換。
 - `@主機` 保留只讀主機操作；`@Codex` 直接建立耐久 Codex handoff；`@全部` 固定收集主機、primary-first Qwen 與 Codex 三段結果，不等同對兩個城市助理各問一次。
 - `狀態`、`三台狀態`、`台中狀態`、`桃園狀態`、`台中／桃園電腦工作進度`、`台中／桃園正在做什麼`、`三台電腦工作進度`、`主電腦進度`、`Codex進度` 與 `開發進度` 使用 Gateway 快速路徑，不呼叫模型；只回傳 Qwen 可達與忙閒狀態、遊戲模式持久狀態、安全工作類型與短 ID、Git HEAD／dirty 數及佇列計數。報表不包含 prompt、evidence、IP 或金鑰；Gateway 無法直接證明 Codex 桌面工作階段內容時會明確標示，不由 Qwen 猜測。
-- 明確的 PPT/PPTX、Word/DOCX 或 PDF 製作要求會建立持久工作 ID，並寫入 Codex handoff inbox。以 `工作狀態 <UUID>` 查詢；目前沒有自動 Codex consumer 與安全 artifact server，因此工作只會如實顯示等待接手，不宣稱已完成或已回傳附件。
+- 明確的 PPT/PPTX、Word/DOCX 或 PDF 製作要求會建立持久工作 ID，並寫入 Codex handoff inbox。以 `工作狀態 <UUID>` 查詢；Codex consumer 仍需明確接手產檔與發布，Gateway 只在收到通過 schema/hash 驗證的完成回覆後傳送限時下載連結。
 
 一般問題由指定 Qwen 直接回答。Qwen 若判定為複雜工作、圖片或檔案需求，只能輸出 exact schema 的 JSON 決策；Gateway 不採用模型提供的命令、路徑或任意 handoff request，而是以原始使用者問題、固定 assistant identity 及受限 attachment manifest 建立耐久 Codex handoff，因此 webhook 不會同步等待 Codex。
 
-目前尚未部署安全 artifact server。attachment manifest 只會記錄 `image`／`file` 的 requested 狀態，回覆會明確顯示尚未提供下載，不暴露本機路徑，也不宣稱 LINE 已收到附件。後續圖片須使用公開 HTTPS（TLS 1.2+）的 original／preview URL，原圖限 JPEG／PNG 10 MB、preview 1 MB；一般檔案不假設可直接用 LINE message 傳送，應以安全限時下載連結的文字或 Flex message 回傳。
+Gateway 可在既有 tunnel 網域提供 `/artifacts/<token>` 安全 landing page；LINE preview 或掃描器讀取此頁不扣額度，使用者明確點擊後才由固定的 `/artifacts/<token>/download` 下載。一般檔案仍不直接作為 LINE message 附件，而是以文字傳送安全下載連結。publisher 只把白名單格式複製到 `%ProgramData%\Aevrynd\LineGateway\artifacts\files`；資料庫只保存 token 的 SHA-256。每個 token 可設定 60–86400 秒與 1–5 次下載，預設一小時且三次。全域最多 128 筆、256 MiB；啟動及每次發布前會清理已到期或額度耗盡項目與孤兒檔案。兩個 GET route 都拒絕 Range、多餘 query、body、非固定 token、路徑穿越與 reparse point；真正下載在短交易外讀檔驗證大小及 SHA-256，再以短 CAS 交易扣除額度。
+
+```powershell
+pwsh -NoProfile -File C:\ProgramData\Aevrynd\LineGateway\scripts\Publish-Artifact.ps1 `
+  -SourceFile C:\path\report.pptx -TtlSeconds 3600 -MaxDownloads 1
+```
+
+將輸出的 `relativeUrl` 接到已驗證的 Gateway 公開 HTTPS origin，並把完整 URL 寫入 Codex handoff response 的文字 `result`；不得回傳本機路徑或 token metadata。
 
 範例：
 

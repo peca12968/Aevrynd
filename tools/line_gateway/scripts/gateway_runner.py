@@ -157,6 +157,7 @@ def _run() -> int:
     sys.path.insert(0, str(root / "app"))
 
     from tools.line_gateway.codex_handoff import CodexHandoff
+    from tools.line_gateway.artifact_store import ArtifactStore
     from tools.line_gateway.config import load_config
     from tools.line_gateway.host_tasks import HostTasks
     from tools.line_gateway.line_client import LineClient
@@ -279,7 +280,9 @@ def _run() -> int:
     def accept_event(event: dict[str, object]) -> bool:
         return ingress_worker.accept_event(event, route_event(event, config))
 
-    server = create_server(config, accept_event, runtime_health.snapshot)
+    # 僅 Gateway process 啟動且尚未 listen 時，可回收上一個已停止 process 的下載占位。
+    artifact_store = ArtifactStore(root / "artifacts", recover_startup_reservations=True)
+    server = create_server(config, accept_event, runtime_health.snapshot, artifact_store)
     stopped = threading.Event()
 
     request_stop = lambda signum, frame: _request_stop(stopped, signum, frame)

@@ -84,7 +84,7 @@ $versionText = (& $PythonExe -c 'import sys; print(f"{sys.version_info.major}.{s
 if ($LASTEXITCODE -ne 0 -or [version]$versionText -lt [version]'3.11') { throw 'Python 3.11 or newer is required.' }
 
 $coreFiles = @(
-    '__init__.py', 'codex_handoff.py', 'config.py', 'credential_store.py',
+    '__init__.py', 'artifact_store.py', 'codex_handoff.py', 'config.py', 'credential_store.py',
     'host_tasks.py', 'line_client.py', 'queue_store.py', 'qwen_client.py',
     'routing.py', 'server.py', 'signature.py', 'status_report.py', 'worker.py'
 )
@@ -99,7 +99,7 @@ $scriptFiles = @(
     'Start-Ngrok.ps1', 'Stop-Ngrok.ps1', 'Test-NgrokConfiguration.ps1',
     'Remove-NgrokPlaintextCredential.ps1', 'ngrok-package-identity.json',
     'Install-AutomaticDeployment.ps1', 'Invoke-AutomaticDeployment.ps1',
-    'Trigger-AutomaticDeployment.ps1', 'Set-CodexStatus.ps1'
+    'Trigger-AutomaticDeployment.ps1', 'Set-CodexStatus.ps1', 'Publish-Artifact.ps1'
 )
 foreach ($name in $coreFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $sourcePackage $name) -PathType Leaf)) { throw "Required core file is missing: $name" }
@@ -109,7 +109,8 @@ foreach ($name in $scriptFiles) {
 }
 
 New-Item -ItemType Directory -Force -Path $paths.Root,$paths.Config,$paths.Data,$paths.Logs,$paths.State,
-    (Join-Path $paths.Root 'handoff'),(Join-Path $paths.Root 'cloudflared'),(Join-Path $paths.Root 'staging') | Out-Null
+    (Join-Path $paths.Root 'handoff'),(Join-Path $paths.Root 'cloudflared'),(Join-Path $paths.Root 'staging'),
+    (Join-Path $paths.Root 'artifacts'),(Join-Path $paths.Root 'artifacts\files') | Out-Null
 
 # 根目錄不可給排程帳號 DELETE_CHILD；否則可繞過 scripts/manifests 的唯讀 ACL。
 $rootSecurity = [Security.AccessControl.DirectorySecurity]::new()
@@ -137,7 +138,7 @@ Set-Acl -LiteralPath $paths.Root -AclObject $rootSecurity
 # 只有明確列出的資料目錄可由登入使用者寫入；每個目錄都切斷父層繼承。
 $mutableSecurity=[Security.AccessControl.DirectorySecurity]::new();$mutableSecurity.SetAccessRuleProtection($true,$false)
 foreach($account in @($rootCurrentIdentity,'NT AUTHORITY\SYSTEM','BUILTIN\Administrators')){$mutableSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($account,[Security.AccessControl.FileSystemRights]::FullControl,$rootInheritance,$rootPropagation,[Security.AccessControl.AccessControlType]::Allow))}
-foreach($directory in @($paths.Config,$paths.Data,$paths.Logs,$paths.State,(Join-Path $paths.Root 'handoff'),(Join-Path $paths.Root 'cloudflared'),(Join-Path $paths.Root 'staging'))){Set-Acl -LiteralPath $directory -AclObject $mutableSecurity}
+foreach($directory in @($paths.Config,$paths.Data,$paths.Logs,$paths.State,(Join-Path $paths.Root 'handoff'),(Join-Path $paths.Root 'cloudflared'),(Join-Path $paths.Root 'staging'),(Join-Path $paths.Root 'artifacts'))){Set-Acl -LiteralPath $directory -AclObject $mutableSecurity}
 if (Test-Path -LiteralPath $paths.StateFile -PathType Leaf) { throw 'Stop the gateway before installing an update.' }
 if (Test-Path -LiteralPath $paths.TunnelStateFile -PathType Leaf) { throw 'Stop the named tunnel before installing an update.' }
 if (Test-Path -LiteralPath $paths.FunnelStateFile -PathType Leaf) { throw 'Stop Tailscale Funnel before installing an update.' }

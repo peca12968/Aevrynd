@@ -23,6 +23,7 @@ class DeploymentBytecodeTests(unittest.TestCase):
             package.mkdir(parents=True)
             for name in (
                 "__init__.py",
+                "artifact_store.py",
                 "config.py",
                 "credential_store.py",
                 "routing.py",
