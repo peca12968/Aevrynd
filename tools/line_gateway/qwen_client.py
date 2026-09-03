@@ -177,6 +177,7 @@ class QwenClient:
                 "messages": messages,
                 "max_tokens": self._max_tokens,
                 "temperature": 0.2,
+                "chat_template_kwargs": {"enable_thinking": False},
             },
         )
         choices = payload.get("choices")
@@ -185,6 +186,8 @@ class QwenClient:
         choice = choices[0]
         if not isinstance(choice, dict) or not isinstance(choice.get("message"), dict):
             raise InvalidQwenResponse("Qwen response choice is invalid")
+        if choice.get("finish_reason") == "length":
+            raise InvalidQwenResponse("Qwen response reached its token limit")
         content = choice["message"].get("content")
         if not isinstance(content, str) or not content or len(content) > self._max_output_chars:
             raise InvalidQwenResponse("Qwen response content is invalid or oversized")
