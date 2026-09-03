@@ -66,6 +66,9 @@ class RuntimeManifest:
             raise ValueError("runtime model ID is invalid")
         if command_digest(self.argv) != self.command_sha256:
             raise ValueError("runtime command hash is invalid")
+        forbidden_options = {"--api-key", "--token", "--password", "--secret"}
+        if any(argument.casefold() in forbidden_options or any(argument.casefold().startswith(option + "=") for option in forbidden_options) for argument in self.argv):
+            raise ValueError("runtime command contains a forbidden credential argument")
         model = canonical_path(self.model_path)
         if not any(canonical_path(argument) == model for argument in self.argv):
             raise ValueError("model path is absent from exact command")
@@ -73,10 +76,7 @@ class RuntimeManifest:
             raise ValueError("runtime paths must be absolute")
 
     def _validate_network_contract(self) -> None:
-        """Keep the managed main runtime on its one approved loopback endpoint."""
-
-        if self.node_id != "main":
-            return
+        """Keep each managed runtime on its fixed endpoint contract."""
         values: dict[str, list[str]] = {}
         index = 1
         while index < len(self.argv):
@@ -86,9 +86,11 @@ class RuntimeManifest:
                 index += 2
             else:
                 index += 1
-        required = {"--model": self.model_path, "--host": "127.0.0.1", "--port": "18080", "--parallel": "1"}
-        if any(values.get(option) != [expected] for option, expected in required.items()):
-            raise ValueError("main runtime endpoint contract is invalid")
+        expected_port = "18080" if self.node_id == "main" else "8080"
+        allowed_hosts = {"127.0.0.1"} if self.node_id == "main" else set(get_node(self.node_id).addresses)
+        required = {"--model": self.model_path, "--port": expected_port, "--parallel": "1"}
+        if any(values.get(option) != [expected] for option, expected in required.items()) or len(values.get("--host", [])) != 1 or values["--host"][0] not in allowed_hosts:
+            raise ValueError("runtime endpoint contract is invalid")
 
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> "RuntimeManifest":

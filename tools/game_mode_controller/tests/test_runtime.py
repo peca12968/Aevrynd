@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
@@ -19,11 +20,11 @@ from tools.game_mode_controller.atomic_store import AtomicJsonStore
 from tools.game_mode_controller.coordinator import HubCoordinator
 from tools.game_mode_controller.deployment_transaction import DeploymentTransaction
 from tools.game_mode_controller.models import GameModeState, QwenState
-from tools.game_mode_controller.process_guard import ObservedProcess, ProcessIdentityError, command_digest, file_sha256, load_runtime_manifest
+from tools.game_mode_controller.process_guard import ObservedProcess, ProcessIdentityError, RuntimeManifest, command_digest, file_sha256, load_runtime_manifest
 from tools.game_mode_controller.runner import MainAgent, RunnerConfig, RunnerError, SignedHubClient, load_runner_config, load_startup_runtime, make_hub_server
 from tools.game_mode_controller.security import ReplayLedger, RequestAuthenticator
 from tools.game_mode_controller.state_machine import GameModeController
-from tools.game_mode_controller.windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest, minimal_runtime_environment
+from tools.game_mode_controller.windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest, capture_remote_runtime_manifest, minimal_runtime_environment
 
 SECRET = "runtime-test-secret-value-123456789012345"
 
@@ -45,6 +46,13 @@ class FakeProcess:
         self.terminated = False
 
     def terminate(self) -> None:
+        self.terminated = True
+
+    def wait(self, timeout: float) -> int:
+        del timeout
+        return 0
+
+    def kill(self) -> None:
         self.terminated = True
 
 
@@ -104,7 +112,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsInstance(server, FakeServer)
         self.assertEqual(3, len(attempts))
         self.assertEqual([0.25, 0.25], delays)
-        self.assertTrue(server.daemon_threads)
+        self.assertFalse(server.daemon_threads)
+        self.assertTrue(server.block_on_close)
 
         permanent_attempts: list[int] = []
         def permanent_factory(*_args: object) -> FakeServer:
@@ -301,6 +310,30 @@ class RuntimeTests(unittest.TestCase):
         loaded = load_runtime_manifest(output, expected_node_id="main", expected_sha256=digest)
         self.assertEqual(observed.argv, loaded.argv)
 
+    def test_remote_capture_requires_fixed_endpoint_and_never_accepts_credential_argv(self) -> None:
+        executable = self.root / "remote" / "llama-server.exe"
+        model = self.root / "remote" / "model.gguf"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"remote-runtime"); model.write_bytes(b"remote-model")
+        argv = (str(executable), "--model", str(model), "--host", "192.168.50.98", "--port", "8080", "--parallel", "1")
+        observed = ObservedProcess(8808, "DOMAIN\\User", str(executable), argv, file_sha256(executable))
+        output = self.root / "taichung-runtime.json"
+        digest = capture_remote_runtime_manifest(output, "taichung", "remote-model", 8808, inspector=FakeInspector(observed))
+        loaded = load_runtime_manifest(output, expected_node_id="taichung", expected_sha256=digest)
+        self.assertEqual("full", loaded.profile)
+        self.assertEqual(argv, loaded.argv)
+
+        wildcard = (*argv[:5], "0.0.0.0", *argv[6:])
+        with self.assertRaisesRegex(ValueError, "endpoint"):
+            RuntimeManifest("taichung", "full", observed.owner, str(executable), file_sha256(executable), wildcard, command_digest(wildcard), str(model), file_sha256(model), "remote-model")._validate_network_contract()
+
+        wrong_port = (*argv[:-3], "18080", *argv[-2:])
+        with self.assertRaises(ValueError):
+            RuntimeManifest("taichung", "full", observed.owner, str(executable), file_sha256(executable), wrong_port, command_digest(wrong_port), str(model), file_sha256(model), "remote-model")._validate_network_contract()
+        secret_argv = (*argv, "--api-key", "must-not-be-persisted")
+        with self.assertRaisesRegex(ValueError, "credential"):
+            RuntimeManifest("taichung", "full", observed.owner, str(executable), file_sha256(executable), secret_argv, command_digest(secret_argv), str(model), file_sha256(model), "remote-model")
+
     def test_msix_capture_uses_file_identity_for_mixed_path_view(self) -> None:
         package = self.root / "msix-physical"
         scheduled = self.root / "scheduled-view"
@@ -412,28 +445,37 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("hidden", inspect_state.detail_code)
 
     def test_signed_loopback_client_rejects_unsigned_and_accepts_signed_status(self) -> None:
-        import socket
-        guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-                guard.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-            guard.bind(("127.0.0.1", 8766))
-        except OSError as error:
-            guard.close()
-            self.skipTest(f"fixed hub port already owned by a live controller: {error}")
-        guard.close()
+        from http.server import ThreadingHTTPServer
+
         coordinator = HubCoordinator(AtomicJsonStore(self.root / "hub.json"))
         api = HubApi(coordinator, RequestAuthenticator(lambda _: SECRET, ReplayLedger(self.root / "nonce.sqlite3")), lambda _: SECRET)
-        try:
-            server = make_hub_server(api)
-        except OSError as error:
-            self.skipTest(f"fixed hub port unavailable: {error}")
+        server = make_hub_server(
+            api, server_factory=lambda _address, handler: ThreadingHTTPServer(("127.0.0.1", 0), handler),
+        )
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
             client = SignedHubClient("main", SECRET)
+            client.base_url = f"http://127.0.0.1:{server.server_port}"
             result = client.call("GET", "/v1/status")
             self.assertEqual({"main", "taichung", "taoyuan"}, set(result))
+            import socket
+
+            def raw_status(request_bytes: bytes) -> bytes:
+                with socket.create_connection(("127.0.0.1", server.server_port), timeout=2) as stream:
+                    stream.sendall(request_bytes)
+                    stream.shutdown(socket.SHUT_WR)
+                    return stream.recv(512)
+
+            duplicate = (
+                b"POST /v1/status HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n"
+                b"X-Aevrynd-Node: main\r\nX-Aevrynd-Node: taichung\r\n\r\n{}"
+            )
+            self.assertIn(b" 400 ", raw_status(duplicate).split(b"\r\n", 1)[0])
+            short = b"POST /v1/status HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 5\r\n\r\n{}"
+            self.assertIn(b" 400 ", raw_status(short).split(b"\r\n", 1)[0])
+            chunked = b"POST /v1/status HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+            self.assertIn(b" 400 ", raw_status(chunked).split(b"\r\n", 1)[0])
         finally:
             server.shutdown(); server.server_close(); worker.join(timeout=5)
 
@@ -496,6 +538,86 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("Controller log has an untrusted writer.", launcher)
         self.assertIn("[IO.FileMode]::Append", launcher)
         self.assertNotIn("FileSystemAclExtensions]::SetAccessControl", launcher)
+        self.assertIn("$supervisorMutex.ReleaseMutex()", launcher)
+        self.assertLess(launcher.index("try {", launcher.index("AevryndGameModeControllerSupervisor")), launcher.index("[Diagnostics.ProcessStartInfo]::new($python)"))
+
+        runner = (package / "runner.py").read_text(encoding="utf-8")
+        self.assertIn("self.connection.settimeout(5.0)", runner)
+        self.assertIn('self.headers.get_all("Transfer-Encoding")', runner)
+        self.assertIn("server.block_on_close = True", runner)
+        self.assertIn("controller runtime threads did not stop", runner)
+
+    def test_remote_scripts_are_bounded_hidden_and_fail_closed_before_install(self) -> None:
+        package = Path(__file__).resolve().parents[1]
+        scripts = package / "scripts"
+        collector = (scripts / "Collect-Readiness.ps1").read_text(encoding="utf-8-sig")
+        remote_install = (scripts / "Install-RemoteGameMode.ps1").read_text(encoding="utf-8-sig")
+        installer = (scripts / "Install.ps1").read_text(encoding="utf-8-sig")
+        launcher = (scripts / "Launch-GameModeController.ps1").read_text(encoding="utf-8-sig")
+        firewall = (scripts / "Register-HubFirewall.ps1").read_text(encoding="utf-8-sig")
+        builder = (package / "Build-RemoteInstallerPackage.ps1").read_text(encoding="utf-8-sig")
+
+        self.assertIn("Get-NetTCPConnection -State Listen -LocalPort 8080", collector)
+        self.assertIn("capture-remote-manifest", collector)
+        self.assertIn("OutputDirectory parent is unsafe", collector)
+        self.assertNotIn("Get-Credential", collector)
+        for marker in ("Readiness summary is invalid", "Readiness manifest identity changed", "Required remote controller credentials are unavailable"):
+            self.assertIn(marker, remote_install)
+        self.assertIn("Text.Json.JsonDocument", remote_install)
+        self.assertIn("WaitForExit(10000)", remote_install)
+        self.assertIn("$credentialCheck.Environment.Clear()", remote_install)
+        identity_gate = installer.index("Captured remote Qwen process no longer matches")
+        component_prepare = installer.index("deployment_transaction prepare")
+        self.assertLess(identity_gate, component_prepare)
+        self.assertIn("serve-agent", launcher)
+        self.assertIn("if ($configuration.nodeId -ceq 'main')", launcher)
+        self.assertIn("CreateNoWindow = $true", launcher)
+        for address in ("192.168.50.18", "100.115.174.48", "192.168.50.98", "100.89.42.36"):
+            self.assertIn(address, firewall)
+        self.assertIn("-LocalPort 8766", firewall)
+        self.assertIn("Aevrynd Game Mode Hub Taichung", firewall)
+        self.assertIn("Aevrynd Game Mode Hub Taoyuan", firewall)
+        self.assertIn("-LocalAddress $contract.Local -RemoteAddress $contract.Remote", firewall)
+        self.assertIn("-EdgeTraversalPolicy Block", firewall)
+        self.assertNotIn("Read-Host", builder)
+        self.assertNotIn("CredWrite", builder)
+        self.assertNotIn("Copy-Item -LiteralPath $packageRoot -Destination", builder)
+        self.assertIn("$packageFiles = @(", builder)
+        self.assertIn("package-manifest.json", builder)
+        self.assertIn("package-manifest.sha256", builder)
+        self.assertNotIn("tests/test_runtime.py", builder)
+
+    def test_remote_package_is_closed_and_every_payload_hash_matches(self) -> None:
+        powershell = shutil.which("pwsh")
+        if not powershell:
+            self.skipTest("PowerShell 7 is unavailable")
+        package = Path(__file__).resolve().parents[1]
+        output = self.root / "v6-reviewed.zip"
+        result = subprocess.run(
+            [powershell, "-NoProfile", "-File", str(package / "Build-RemoteInstallerPackage.ps1"),
+             "-OutputPath", str(output)],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        with zipfile.ZipFile(output) as archive:
+            prefix = "tools/game_mode_controller/"
+            names = set(archive.namelist())
+            manifest_name = prefix + "package-manifest.json"
+            digest_name = prefix + "package-manifest.sha256"
+            self.assertIn(manifest_name, names)
+            self.assertIn(digest_name, names)
+            manifest_raw = archive.read(manifest_name)
+            self.assertEqual(hashlib.sha256(manifest_raw).hexdigest(), archive.read(digest_name).decode("ascii"))
+            document = json.loads(manifest_raw)
+            self.assertEqual({"schemaVersion", "files"}, set(document))
+            self.assertEqual(1, document["schemaVersion"])
+            listed = {prefix + item["path"] for item in document["files"]}
+            self.assertEqual(names, listed | {manifest_name, digest_name})
+            self.assertFalse(any("/tests/" in name or "__pycache__" in name for name in names))
+            for item in document["files"]:
+                raw = archive.read(prefix + item["path"])
+                self.assertEqual(item["size"], len(raw))
+                self.assertEqual(item["sha256"], hashlib.sha256(raw).hexdigest())
 
     def test_real_ancestor_junction_fixture_is_rejected_by_shared_trust_helper(self) -> None:
         powershell = shutil.which("pwsh")

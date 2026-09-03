@@ -6,7 +6,7 @@ $root = [IO.Path]::GetFullPath($InstallRoot)
 $expected = [IO.Path]::GetFullPath("$env:ProgramData\Aevrynd\GameModeController")
 if (-not [string]::Equals($root.TrimEnd('\'), $expected.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) { throw 'InstallRoot is not allowlisted.' }
 $configuration = Get-Content -Raw -LiteralPath (Join-Path $root 'config\node.json') | ConvertFrom-Json
-if ($configuration.schemaVersion -ne 2 -or $configuration.nodeId -cne 'main') { throw 'Node configuration is invalid.' }
+if ($configuration.schemaVersion -ne 2 -or $configuration.nodeId -notin @('main','taichung','taoyuan')) { throw 'Node configuration is invalid.' }
 $python = [IO.Path]::GetFullPath([string]$configuration.pythonExecutable)
 $tray = Join-Path $root 'scripts\GameModeTray.ps1'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf) -or -not (Test-Path -LiteralPath $tray -PathType Leaf)) { throw 'Controller runtime is unavailable.' }
@@ -15,6 +15,7 @@ $createdSupervisor = $false
 $supervisorMutex = [Threading.Mutex]::new($true,'Local\AevryndGameModeControllerSupervisor',[ref]$createdSupervisor)
 if (-not $createdSupervisor) { $supervisorMutex.Dispose(); return }
 
+try {
 $startInfo = [Diagnostics.ProcessStartInfo]::new($python)
 $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
@@ -27,7 +28,8 @@ foreach ($name in $minimalEnvironment) { $value = [Environment]::GetEnvironmentV
 $startInfo.Environment.Clear()
 foreach ($name in $capturedEnvironment.Keys) { $startInfo.Environment[$name] = $capturedEnvironment[$name] }
 $startInfo.ArgumentList.Add('-B'); $startInfo.ArgumentList.Add('-m'); $startInfo.ArgumentList.Add('tools.game_mode_controller.runner')
-$startInfo.ArgumentList.Add('serve-main'); $startInfo.ArgumentList.Add('--install-root'); $startInfo.ArgumentList.Add($root)
+$runnerMode = if ($configuration.nodeId -ceq 'main') { 'serve-main' } else { 'serve-agent' }
+$startInfo.ArgumentList.Add($runnerMode); $startInfo.ArgumentList.Add('--install-root'); $startInfo.ArgumentList.Add($root)
 $startInfo.Environment['PYTHONPATH'] = (Join-Path $root 'app')
 $stateRoot = Join-Path $root 'state'
 $stateItem = Get-Item -LiteralPath $stateRoot -Force -ErrorAction Stop
@@ -67,7 +69,8 @@ try {
     $stdoutCopy = $hub.StandardOutput.BaseStream.CopyToAsync($stdout)
     $stderrCopy = $hub.StandardError.BaseStream.CopyToAsync($stderr)
 
-    # tray 保持獨立單例；既有 mutex 會拒絕第二份。
+    # tray 只在主機顯示；遠端節點保持完全無視窗 agent。
+    if ($configuration.nodeId -ceq 'main') {
     $pwsh = [IO.Path]::GetFullPath('C:\Program Files\PowerShell\7\pwsh.exe')
     $pwshItem = Get-Item -LiteralPath $pwsh -Force -ErrorAction Stop
     if ($pwshItem.PSIsContainer -or ($pwshItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Stable PowerShell 7 executable is unavailable.' }
@@ -77,6 +80,7 @@ try {
     foreach ($name in $capturedEnvironment.Keys) { $trayInfo.Environment[$name] = $capturedEnvironment[$name] }
     foreach ($argument in @('-NoProfile','-STA','-WindowStyle','Hidden','-File',$tray,'-InstallRoot',$root)) { $trayInfo.ArgumentList.Add($argument) }
     [void][Diagnostics.Process]::Start($trayInfo)
+    }
 
     $hub.WaitForExit()
     $stdoutCopy.GetAwaiter().GetResult()
@@ -86,6 +90,8 @@ try {
     if ($null -ne $hub) { $hub.Dispose() }
     $stdout.Dispose()
     $stderr.Dispose()
+}
+} finally {
     $supervisorMutex.ReleaseMutex()
     $supervisorMutex.Dispose()
 }

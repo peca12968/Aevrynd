@@ -24,7 +24,7 @@ from .models import GameModeState, QwenState
 from .process_guard import ProcessIdentityError, RuntimeManifest, load_runtime_manifest
 from .security import ReplayLedger, RequestAuthenticator, sign_request, verify_response
 from .state_machine import GameModeController
-from .windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest
+from .windows_runtime import WindowsQwenLifecycle, capture_main_runtime_manifest, capture_remote_runtime_manifest
 
 
 class RunnerError(RuntimeError):
@@ -57,7 +57,8 @@ def load_runner_config(install_root: str | Path, *, allow_test_root: bool = Fals
     except (UnicodeError, json.JSONDecodeError, ValueError) as cause:
         raise RunnerError("node configuration is invalid") from cause
     expected = {"schemaVersion", "nodeId", "runtimeManifest", "runtimeManifestSha256", "pythonExecutable"}
-    if not isinstance(document, dict) or set(document) != expected or document.get("schemaVersion") != 2 or document.get("nodeId") != "main":
+    node_id = document.get("nodeId") if isinstance(document, dict) else None
+    if not isinstance(document, dict) or set(document) != expected or document.get("schemaVersion") != 2 or node_id not in NODES:
         raise RunnerError("node configuration schema is invalid")
     manifest_path = (root / "manifests" / str(document["runtimeManifest"])).resolve()
     manifest_root = (root / "manifests").resolve()
@@ -66,8 +67,8 @@ def load_runner_config(install_root: str | Path, *, allow_test_root: bool = Fals
     python_executable = Path(str(document["pythonExecutable"])).resolve()
     if not python_executable.is_absolute() or not python_executable.is_file() or python_executable.name.casefold() not in {"python.exe", "python3.exe"}:
         raise RunnerError("Python executable is invalid")
-    config = RunnerConfig("main", manifest_path, str(document["runtimeManifestSha256"]), python_executable)
-    manifest = load_runtime_manifest(manifest_path, expected_node_id="main", expected_sha256=config.runtime_manifest_sha256)
+    config = RunnerConfig(str(node_id), manifest_path, str(document["runtimeManifestSha256"]), python_executable)
+    manifest = load_runtime_manifest(manifest_path, expected_node_id=config.node_id, expected_sha256=config.runtime_manifest_sha256)
     return config, manifest
 
 
@@ -113,13 +114,17 @@ class _NoRedirect(request.HTTPRedirectHandler):
 
 def make_hub_server(
     api: HubApi, *, server_factory: Callable[..., ThreadingHTTPServer] = ThreadingHTTPServer,
-    sleeper: Callable[[float], None] = time.sleep,
+    sleeper: Callable[[float], None] = time.sleep, host: str = "127.0.0.1",
 ) -> ThreadingHTTPServer:
-    host, port = validate_bind("hub", "127.0.0.1", HUB_PORT)
+    host, port = validate_bind("hub", host, HUB_PORT)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "AevryndGameModeHub/1"
         sys_version = ""
+
+        def setup(self) -> None:
+            super().setup()
+            self.connection.settimeout(5.0)
 
         def do_GET(self) -> None:
             self._dispatch("GET")
@@ -128,6 +133,15 @@ def make_hub_server(
             self._dispatch("POST")
 
         def _dispatch(self, method: str) -> None:
+            if self.headers.get_all("Transfer-Encoding") or any(
+                len(self.headers.get_all(name) or []) > 1
+                for name in (
+                    "Content-Length", "X-Aevrynd-Node", "X-Aevrynd-Timestamp",
+                    "X-Aevrynd-Nonce", "X-Aevrynd-Signature",
+                )
+            ):
+                self.send_error(400)
+                return
             length_text = self.headers.get("Content-Length", "0")
             try:
                 length = int(length_text)
@@ -138,6 +152,9 @@ def make_hub_server(
                 self.send_error(413)
                 return
             body = self.rfile.read(length)
+            if len(body) != length:
+                self.send_error(400)
+                return
             result = api.dispatch(method, self.path, dict(self.headers.items()), body)
             self.send_response(result.status)
             for key, value in result.headers.items():
@@ -163,7 +180,8 @@ def make_hub_server(
             sleeper(0.25)
     if server is None:
         raise AssertionError("unreachable")
-    server.daemon_threads = True
+    server.daemon_threads = False
+    server.block_on_close = True
     return server
 
 
@@ -213,7 +231,7 @@ class MainAgent:
                 self.client.call("POST", "/v1/status", {"state": state.to_dict()})
                 command = self.client.call("GET", "/v1/poll")
                 if isinstance(command, dict):
-                    if set(command) != {"command_id", "actor_node_id", "target_node_id", "game_mode", "created_utc"} or command.get("target_node_id") != "main" or type(command.get("game_mode")) is not bool:
+                    if set(command) != {"command_id", "actor_node_id", "target_node_id", "game_mode", "created_utc"} or command.get("target_node_id") != self.controller.spec.node_id or type(command.get("game_mode")) is not bool:
                         raise RunnerError("hub command schema is invalid")
                     state = self.controller.set_game_mode(command["game_mode"])
                     self.client.call("POST", "/v1/ack", {"command_id": command["command_id"], "state": state.to_dict()})
@@ -262,7 +280,9 @@ def load_startup_runtime(
 
 
 def serve_main(install_root: str | Path) -> None:
-    _, manifest = load_startup_runtime(install_root)
+    config, manifest = load_startup_runtime(install_root)
+    if config.node_id != "main":
+        raise RunnerError("main runner requires the main node")
     secret = read_node_secret("main")
     if secret is None:
         raise RunnerError("main node credential is unavailable")
@@ -274,26 +294,102 @@ def serve_main(install_root: str | Path) -> None:
     adoption_state = None if not local_app_data else Path(local_app_data, "AevryndQwenLight", "state", "light-state.json")
     lifecycle = WindowsQwenLifecycle(
         manifest, AtomicJsonStore(root / "state" / "qwen-pid.json"),
-        api_key=read_qwen_api_key(), adoption_state=adoption_state,
+        api_key=read_qwen_api_key("main"), adoption_state=adoption_state,
     )
     controller = GameModeController("main", AtomicJsonStore(root / "state" / "main.json"), lifecycle)
     client = SignedHubClient("main", secret)
-    server = make_hub_server(api)
+    server = make_hub_server(api, host="127.0.0.1")
+    external_servers: list[ThreadingHTTPServer] = []
+    external_lock = threading.Lock()
+    external_stop = threading.Event()
+    external_failures: list[str] = []
     agent = MainAgent(controller, client)
-    worker = threading.Thread(target=agent.run, name="AevryndMainAgent", daemon=True)
+    worker = threading.Thread(target=agent.run, name="AevryndMainAgent")
     worker.start()
+    def run_external_listener(host: str) -> None:
+        # LAN/Tailscale 介面在登入時可能尚未就緒；loopback hub 不可因此退出。
+        while not external_stop.is_set():
+            try:
+                item = make_hub_server(api, host=host)
+            except OSError as cause:
+                address_unavailable = getattr(cause, "winerror", None) == 10049 or cause.errno in {99, 10049}
+                if address_unavailable:
+                    external_stop.wait(5)
+                    continue
+                with external_lock:
+                    external_failures.append("external-listener-bind-failed")
+                external_stop.set()
+                return
+            if external_stop.is_set():
+                item.server_close()
+                return
+            with external_lock:
+                external_servers.append(item)
+            try:
+                item.serve_forever(poll_interval=0.5)
+            finally:
+                item.server_close()
+            if not external_stop.is_set():
+                with external_lock:
+                    external_failures.append("external-listener-stopped")
+                external_stop.set()
+            return
+
+    listeners = [threading.Thread(target=run_external_listener, args=(host,), name=f"AevryndHub-{index}") for index, host in enumerate(NODES["main"].addresses[1:], 1)]
+    for listener in listeners:
+        listener.start()
+    main_listener = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.5}, name="AevryndHub-Loopback")
+    main_listener.start()
     def request_stop(*_: object) -> None:
-        threading.Thread(target=server.shutdown, name="AevryndHubShutdown", daemon=True).start()
+        external_stop.set()
 
     for signal_name in ("SIGINT", "SIGTERM"):
         if hasattr(signal, signal_name):
             signal.signal(getattr(signal, signal_name), request_stop)
     try:
-        server.serve_forever(poll_interval=0.5)
+        while not external_stop.wait(0.1):
+            with external_lock:
+                if external_failures:
+                    raise RunnerError(external_failures[0])
+            if not main_listener.is_alive() or not worker.is_alive():
+                raise RunnerError("controller runtime thread stopped")
+        with external_lock:
+            if external_failures:
+                raise RunnerError(external_failures[0])
     finally:
         agent.stop_event.set()
-        server.server_close()
+        external_stop.set()
+        server.shutdown(); server.server_close()
+        with external_lock:
+            active_external = list(external_servers)
+        for item in active_external:
+            item.shutdown(); item.server_close()
+        for listener in listeners:
+            listener.join(timeout=10)
         worker.join(timeout=10)
+        main_listener.join(timeout=10)
+        if any(listener.is_alive() for listener in listeners) or worker.is_alive() or main_listener.is_alive():
+            raise RunnerError("controller runtime threads did not stop")
+
+
+def serve_agent(install_root: str | Path) -> None:
+    config, manifest = load_startup_runtime(install_root)
+    if config.node_id not in {"taichung", "taoyuan"}:
+        raise RunnerError("remote runner requires a remote node")
+    secret = read_node_secret(config.node_id)
+    if secret is None:
+        raise RunnerError("remote node credential is unavailable")
+    root = Path(install_root).resolve()
+    lifecycle = WindowsQwenLifecycle(
+        manifest, AtomicJsonStore(root / "state" / "qwen-pid.json"),
+        api_key=read_qwen_api_key(config.node_id),
+    )
+    controller = GameModeController(config.node_id, AtomicJsonStore(root / "state" / f"{config.node_id}.json"), lifecycle)
+    agent = MainAgent(controller, SignedHubClient(config.node_id, secret))
+    for signal_name in ("SIGINT", "SIGTERM"):
+        if hasattr(signal, signal_name):
+            signal.signal(getattr(signal, signal_name), lambda *_: agent.stop_event.set())
+    agent.run()
 
 
 def _client_for_main() -> SignedHubClient:
@@ -317,6 +413,8 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     serve = subparsers.add_parser("serve-main")
     serve.add_argument("--install-root", required=True)
+    remote = subparsers.add_parser("serve-agent")
+    remote.add_argument("--install-root", required=True)
     subparsers.add_parser("status")
     change = subparsers.add_parser("set")
     change.add_argument("--target", choices=tuple(NODES), required=True)
@@ -324,13 +422,24 @@ def main(argv: list[str] | None = None) -> int:
     capture = subparsers.add_parser("capture-main-manifest")
     capture.add_argument("--output", required=True)
     capture.add_argument("--model-id", required=True)
+    remote_capture = subparsers.add_parser("capture-remote-manifest")
+    remote_capture.add_argument("--output", required=True)
+    remote_capture.add_argument("--node", choices=("taichung", "taoyuan"), required=True)
+    remote_capture.add_argument("--model-id", required=True)
+    remote_capture.add_argument("--pid", required=True, type=int)
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "serve-main":
             serve_main(arguments.install_root)
             return 0
+        if arguments.command == "serve-agent":
+            serve_agent(arguments.install_root)
+            return 0
         if arguments.command == "capture-main-manifest":
             print(capture_main_runtime_manifest(arguments.output, arguments.model_id))
+            return 0
+        if arguments.command == "capture-remote-manifest":
+            print(capture_remote_runtime_manifest(arguments.output, arguments.node, arguments.model_id, arguments.pid))
             return 0
         client = _client_for_main()
         if arguments.command == "status":

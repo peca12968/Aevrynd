@@ -34,8 +34,8 @@
     {
       "source": "credential_store.py",
       "destination": "app/tools/game_mode_controller/credential_store.py",
-      "size": 3457,
-      "sha256": "d11168a64703bd3950ed53d4f3c47e836ce9f1796c491984a20d77efdcafadf1"
+      "size": 3719,
+      "sha256": "9679aab66a431c0e3521bb97e14acef24b29cf5eecc98c433ad6a34e7e54d719"
     },
     {
       "source": "deployment_transaction.py",
@@ -70,14 +70,14 @@
     {
       "source": "process_guard.py",
       "destination": "app/tools/game_mode_controller/process_guard.py",
-      "size": 9419,
-      "sha256": "f74838dc5054063739602fc9a1db7cd28af6a1aef5884b8d525619584529788c"
+      "size": 9927,
+      "sha256": "051cd14fbe3784b264153062b37dd90e819af140b3022363c64f143887b92997"
     },
     {
       "source": "runner.py",
       "destination": "app/tools/game_mode_controller/runner.py",
-      "size": 17378,
-      "sha256": "7d30458fac905887e725fa6f610a48bef7950682467cf53f3c9f3e16e7470375"
+      "size": 22571,
+      "sha256": "3e0a5af9f7ecc7c88bea1005f1ea1cfacfbf1b3031dc404513476fd7f6cbfc57"
     },
     {
       "source": "security.py",
@@ -94,8 +94,8 @@
     {
       "source": "windows_runtime.py",
       "destination": "app/tools/game_mode_controller/windows_runtime.py",
-      "size": 26651,
-      "sha256": "c4a45a31b3342cd5c51306092be1dd1ab30791f6241ff76c5b7dece120b15142"
+      "size": 29742,
+      "sha256": "db70bfd343dd82764555245bba96bbcce449640bffa023f67e9ba01da1d9065f"
     },
     {
       "source": "scripts/Capture-MainRuntimeManifest.ps1",
@@ -106,8 +106,8 @@
     {
       "source": "scripts/GameModeTray.ps1",
       "destination": "scripts/GameModeTray.ps1",
-      "size": 5862,
-      "sha256": "98d1012fc050c535bcc9883c6dcc1da5071b867924b7c85f5275651c91f66700"
+      "size": 6000,
+      "sha256": "1720ec3743b28323d7d28107c4ac83d47866b743e141ee1ce30a67fda85c16e8"
     },
     {
       "source": "scripts/InstallTrust.psm1",
@@ -118,14 +118,14 @@
     {
       "source": "scripts/Launch-GameModeController.ps1",
       "destination": "scripts/Launch-GameModeController.ps1",
-      "size": 5784,
-      "sha256": "9163fc2b89dc9d3d608812a5553ab42cf88f2841123b82ae7d9d4ece46328d4b"
+      "size": 5981,
+      "sha256": "d729e09dca28e47eefc608f6db9d10451ac86a6e275e5cb54d9daba663f790d6"
     },
     {
       "source": "scripts/Register-Startup.ps1",
       "destination": "scripts/Register-Startup.ps1",
-      "size": 7427,
-      "sha256": "3a84d0a5d082208dbe11a5a449ec1abeea7ac4b2517af1340966effc6ae7d61a"
+      "size": 7441,
+      "sha256": "ea35596b4f6dd3af5ce1eaf286b1659e6069a3d10f36a9f44054f8826cf60265"
     }
   ]
 }

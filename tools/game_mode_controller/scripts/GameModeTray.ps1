@@ -17,6 +17,8 @@ $appRoot = Join-Path $root 'app'
 $createdNew = $false
 $mutex = [Threading.Mutex]::new($true, 'Local\AevryndGameModeTray', [ref]$createdNew)
 if (-not $createdNew) { return }
+$notify = $null; $menu = $null; $timer = $null
+try {
 $notify = [Windows.Forms.NotifyIcon]::new()
 $notify.Icon = [Drawing.SystemIcons]::Application
 $notify.Text = 'Aevrynd Game Mode'
@@ -117,5 +119,10 @@ $timer.Add_Tick({
     }
 })
 $timer.Start()
-try { [Windows.Forms.Application]::Run() }
-finally { $timer.Dispose(); $notify.Visible = $false; $notify.Dispose(); $menu.Dispose(); $mutex.ReleaseMutex(); $mutex.Dispose() }
+[Windows.Forms.Application]::Run()
+} finally {
+    if ($null -ne $timer) { $timer.Dispose() }
+    if ($null -ne $notify) { $notify.Visible = $false; $notify.Dispose() }
+    if ($null -ne $menu) { $menu.Dispose() }
+    $mutex.ReleaseMutex(); $mutex.Dispose()
+}

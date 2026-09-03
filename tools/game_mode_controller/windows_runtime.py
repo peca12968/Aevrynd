@@ -17,7 +17,8 @@ from typing import Callable
 
 from .acceptance import QwenAcceptanceProbe
 from .atomic_store import AtomicJsonStore
-from .process_guard import ObservedProcess, ProcessIdentityError, RuntimeManifest, command_digest, file_sha256, validate_stop_eligibility
+from .inventory import get_node
+from .process_guard import ObservedProcess, ProcessIdentityError, RuntimeManifest, canonical_path, command_digest, file_sha256, validate_stop_eligibility
 
 
 class _ByHandleFileInformation(ctypes.Structure):
@@ -231,8 +232,13 @@ class WindowsQwenLifecycle:
         if adoption_state is not None and Path(adoption_state).is_symlink():
             raise ProcessIdentityError("legacy Qwen state path is invalid")
         self.adoption_state = Path(adoption_state).resolve() if adoption_state is not None else None
-        self.port_in_use = port_in_use or _qwen_port_in_use
-        self.probe = probe or QwenAcceptanceProbe("http://127.0.0.1:18080", manifest.model_id, api_key, timeout=10)
+        port = 18080 if manifest.node_id == "main" else 8080
+        host_values = [manifest.argv[index + 1] for index, value in enumerate(manifest.argv[:-1]) if value == "--host"]
+        if len(host_values) != 1:
+            raise ProcessIdentityError("runtime host is invalid")
+        host = host_values[0]
+        self.port_in_use = port_in_use or (lambda: _qwen_port_in_use(host, port))
+        self.probe = probe or QwenAcceptanceProbe(f"http://{host}:{port}", manifest.model_id, api_key, timeout=10)
 
     def _pid(self) -> int | None:
         value = self.pid_store.read()
@@ -331,6 +337,11 @@ class WindowsQwenLifecycle:
         except Exception:
             try:
                 process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=10)
             finally:
                 raise
 
@@ -360,9 +371,9 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _qwen_port_in_use() -> bool:
+def _qwen_port_in_use(host: str = "127.0.0.1", port: int = 18080) -> bool:
     try:
-        with socket.create_connection(("127.0.0.1", 18080), timeout=0.2):
+        with socket.create_connection((host, port), timeout=0.2):
             return True
     except (ConnectionRefusedError, TimeoutError, socket.timeout, OSError):
         return False
@@ -471,3 +482,39 @@ def capture_main_runtime_manifest(output_path: str | Path, model_id: str, *, sta
         except OSError as error:
             raise ProcessIdentityError("runtime manifest output could not be created") from error
         return hashlib.sha256(raw).hexdigest()
+
+
+def capture_remote_runtime_manifest(output_path: str | Path, node_id: str, model_id: str, pid: int, *, inspector: WindowsProcessInspector | None = None) -> str:
+    """Capture one already-running remote Qwen process without accepting a shell command."""
+
+    if node_id not in {"taichung", "taoyuan"} or type(pid) is not int or pid <= 0:
+        raise ProcessIdentityError("remote runtime identity is invalid")
+    if not isinstance(model_id, str) or not model_id or len(model_id) > 512 or any(character in model_id for character in "\r\n\x00"):
+        raise ProcessIdentityError("Qwen API model ID is invalid")
+    observed = (inspector or WindowsProcessInspector()).inspect(pid)
+    if not observed.argv or canonical_path(observed.argv[0]) != canonical_path(observed.executable_path):
+        raise ProcessIdentityError("remote runtime executable identity is inconsistent")
+    model_indices = [index + 1 for index, value in enumerate(observed.argv[:-1]) if value == "--model"]
+    if len(model_indices) != 1:
+        raise ProcessIdentityError("managed Qwen model argument is invalid")
+    model_path = Path(observed.argv[model_indices[0]]).resolve()
+    manifest = RuntimeManifest(
+        node_id, get_node(node_id).qwen_profile, observed.owner, str(Path(observed.executable_path).resolve()),
+        file_sha256(observed.executable_path), tuple(observed.argv), command_digest(observed.argv),
+        str(model_path), file_sha256(model_path), model_id,
+    )
+    manifest._validate_network_contract()
+    manifest.verify_files()
+    output = Path(output_path)
+    if output.suffix.casefold() != ".json" or output.is_symlink() or not output.resolve().parent.is_dir() or output.exists():
+        raise ProcessIdentityError("runtime manifest output path is invalid")
+    document = {"schema_version": 1, "runtime": {
+        "node_id": manifest.node_id, "profile": manifest.profile, "owner": manifest.owner,
+        "executable_path": manifest.executable_path, "executable_sha256": manifest.executable_sha256,
+        "argv": list(manifest.argv), "command_sha256": manifest.command_sha256,
+        "model_path": manifest.model_path, "model_sha256": manifest.model_sha256, "model_id": manifest.model_id,
+    }}
+    raw = json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    with output.resolve().open("xb") as stream:
+        stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    return hashlib.sha256(raw).hexdigest()

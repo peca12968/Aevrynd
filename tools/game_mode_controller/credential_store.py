@@ -42,15 +42,18 @@ def read_node_secret(node_id: str) -> str | None:
     return _read_credential(credential_target(node_id))
 
 
-def read_qwen_api_key() -> str | None:
-    """Read the fixed lightweight-Qwen API credential used by the main runtime."""
+def read_qwen_api_key(node_id: str = "main") -> str | None:
+    """Read the fixed per-node Qwen API credential without accepting a target name."""
 
-    environment_value = os.environ.get("AEVRYND_QWEN_LIGHT_API_KEY")
+    get_node(node_id)
+    environment_name = "AEVRYND_QWEN_LIGHT_API_KEY" if node_id == "main" else f"AEVRYND_GAME_MODE_QWEN_API_KEY_{node_id.upper()}"
+    environment_value = os.environ.get(environment_name)
     if environment_value is not None:
         return _validate_secret(environment_value.strip())
     if os.name != "nt":
         return None
-    return _read_credential("Aevrynd/QwenLight/ApiKey")
+    target = "Aevrynd/QwenLight/ApiKey" if node_id == "main" else f"Aevrynd/GameModeController/{node_id}/QwenApiKey"
+    return _read_credential(target)
 
 
 def _read_credential(target: str) -> str | None:

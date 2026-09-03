@@ -8,6 +8,8 @@ param(
     [string]$RuntimeManifestPath = '',
     [ValidatePattern('^[0-9a-f]{64}$')]
     [string]$RuntimeManifestSha256 = '',
+    [ValidateRange(0,2147483647)]
+    [int]$InitialManagedPid = 0,
     [switch]$RegisterStartup
 )
 
@@ -23,7 +25,7 @@ if (-not [string]::Equals($expectedRoot, $resolvedRoot, [StringComparison]::Ordi
 $sourceRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $trustModule = Join-Path $PSScriptRoot 'InstallTrust.psm1'
 $sourceManifest = Join-Path $sourceRoot 'source-manifest.json'
-$expectedSourceManifestSha256 = '09ab0b537e216546e4c83ab553a0f5d3443d759f53d4bfb43b2238aad4838b56'
+$expectedSourceManifestSha256 = 'c528b0434de180756a61048f4df96b593d5eb0975549121851d4edb346dc178e'
 if (-not (Test-Path -LiteralPath $sourceManifest -PathType Leaf)) { throw 'Closed source manifest is missing.' }
 $sha256 = [Security.Cryptography.SHA256]::Create()
 try {
@@ -42,7 +44,7 @@ finally { $sha256.Dispose() }
 if ($trustEntry.Count -ne 1 -or $trustModuleBytes.LongLength -ne [int64]$trustEntry[0].size -or $trustModuleHash -cne [string]$trustEntry[0].sha256) { throw 'Install trust helper validation failed.' }
 
 if (-not $PSCmdlet.ShouldProcess($resolvedRoot, "transactionally install Game Mode Controller for node $NodeId")) { return }
-if ($NodeId -cne 'main') { throw 'This deployable phase installs only the main node.' }
+if ($NodeId -ne 'main' -and $InitialManagedPid -le 0) { throw 'Remote installation requires the captured managed PID.' }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -144,8 +146,14 @@ try {
     $env:PYTHONPATH = $repositoryRoot
     & $PythonExe -B -m tools.game_mode_controller.deployment_transaction recover $sourceRoot $resolvedRoot $expectedSourceManifestSha256 $shortcutPath
     if ($LASTEXITCODE -ne 0) { throw 'Previous deployment recovery failed.' }
-    & $PythonExe -B -c "from tools.game_mode_controller.process_guard import load_runtime_manifest; import sys; load_runtime_manifest(sys.argv[1], expected_node_id='main', expected_sha256=sys.argv[2])" $RuntimeManifestPath $RuntimeManifestSha256
+    & $PythonExe -B -c "from tools.game_mode_controller.process_guard import load_runtime_manifest; import sys; load_runtime_manifest(sys.argv[1], expected_node_id=sys.argv[3], expected_sha256=sys.argv[2])" $RuntimeManifestPath $RuntimeManifestSha256 $NodeId
     if ($LASTEXITCODE -ne 0) { throw 'Pinned runtime manifest validation failed.' }
+    if ($NodeId -ne 'main') {
+        # core swap 前先持有並核對同一 PID 的 owner/path/argv/hash；不符合就完全不安裝。
+        $pidState = Join-Path $resolvedRoot 'state\qwen-pid.json'
+        & $PythonExe -B -c "import sys; from tools.game_mode_controller.atomic_store import AtomicJsonStore; from tools.game_mode_controller.process_guard import load_runtime_manifest,validate_stop_eligibility; from tools.game_mode_controller.windows_runtime import WindowsProcessInspector; m=load_runtime_manifest(sys.argv[1],expected_node_id=sys.argv[3],expected_sha256=sys.argv[2]); p=int(sys.argv[4]); validate_stop_eligibility(persisted_pid=p,observed=WindowsProcessInspector().inspect(p),manifest=m); AtomicJsonStore(sys.argv[5]).write({'schema_version':1,'pid':p})" $RuntimeManifestPath $RuntimeManifestSha256 $NodeId $InitialManagedPid $pidState
+        if ($LASTEXITCODE -ne 0) { throw 'Captured remote Qwen process no longer matches the pinned runtime.' }
+    }
 } finally {
     if ($null -eq $previousPythonPath) { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue } else { $env:PYTHONPATH = $previousPythonPath }
 }

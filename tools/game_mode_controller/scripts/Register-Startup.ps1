@@ -52,7 +52,7 @@ foreach ($path in @($aevryndRoot,$root,(Join-Path $root 'app'),$scriptsRoot,(Joi
 $launcherEntry = @($installedManifest.files | Where-Object path -ceq 'scripts/Launch-GameModeController.ps1')
 if ($launcherEntry.Count -ne 1 -or (Get-FileHash -Algorithm SHA256 -LiteralPath $launcher).Hash.ToLowerInvariant() -cne [string]$launcherEntry[0].sha256) { throw 'Scheduled launcher hash validation failed.' }
 $configuration = Get-Content -Raw -LiteralPath $configurationPath | ConvertFrom-Json
-if ($configuration.schemaVersion -ne 2 -or $configuration.nodeId -cne 'main') { throw 'Only the deployed main runner can register startup.' }
+if ($configuration.schemaVersion -ne 2 -or $configuration.nodeId -notin @('main','taichung','taoyuan')) { throw 'Deployed node configuration is invalid.' }
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Administrator privileges are required to replace legacy startup.' }
