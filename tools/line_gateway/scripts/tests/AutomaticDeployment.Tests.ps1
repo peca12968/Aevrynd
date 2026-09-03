@@ -48,6 +48,35 @@ Invoke-Test 'runner fixes trust roots and rejects untrusted source forms' {
     )
 }
 
+Invoke-Test 'private origin uses only fixed signed credential helpers and suppresses remote stderr' {
+    Assert-ContainsAll $runner @(
+        "`$gcmExe = 'C:\Program Files\Git\mingw64\bin\git-credential-manager.exe'",
+        "`$githubCliExe = 'C:\Program Files\GitHub CLI\gh.exe'",
+        "-SignerPattern '(?i)O=Microsoft Corporation'",
+        '-SignerPattern ''(?i)O="?GitHub, Inc\."?''',
+        "'-c','credential.helper='",
+        "'-c','credential.interactive=never'",
+        '!"C:/Program Files/Git/mingw64/bin/git-credential-manager.exe"',
+        '!"C:/Program Files/GitHub CLI/gh.exe" auth git-credential',
+        '-C $deploymentRoot ls-remote $expectedOrigin $expectedBranch 2>$null',
+        'init --bare $trustedGitDirectory 2>$null',
+        '--git-dir=$trustedGitDirectory fetch --no-tags $expectedOrigin $release 2>$null',
+        '--git-dir=$trustedGitDirectory archive --format=zip --output=$archive FETCH_HEAD'
+    )
+    if($runner -match '(?i)(Write-(Output|Host|Warning|Error)|Out-File|Tee-Object).*\$(candidateLines|remoteLines)' -or $runner.Contains('2>&1')) {
+        throw 'Private-origin output or stderr could be disclosed.'
+    }
+
+    # 模擬 private origin：GCM 無此 credential 回 128，固定且已驗簽的 GitHub CLI helper 成功。
+    $attempts=@(
+        [pscustomobject]@{helper='gcm';exitCode=128;lines=@()},
+        [pscustomobject]@{helper='github-cli';exitCode=0;lines=@('0123456789abcdef0123456789abcdef01234567 refs/heads/main')}
+    )
+    $selected=$null
+    foreach($attempt in $attempts){if($attempt.exitCode-eq0-and$attempt.lines.Count-eq1-and$attempt.lines[0]-match '^[0-9a-f]{40}\s+refs/heads/main$'){$selected=$attempt.helper;break}}
+    if($selected-cne'github-cli'){throw 'Private-origin fallback did not select the only successful fixed helper.'}
+}
+
 Invoke-Test 'transaction order and bounded rollback are explicit' {
     $stop = $runner.IndexOf("scripts\Stop-Gateway.ps1",[StringComparison]::Ordinal)
     $install = $runner.IndexOf('& $installScript',[StringComparison]::Ordinal)

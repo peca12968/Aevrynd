@@ -11,6 +11,8 @@ $scratchRoot = 'C:\ProgramData\Aevrynd\LineGatewayAutomaticDeployment\staging'
 $expectedOrigin = 'https://github.com/peca12968/Aevrynd.git'
 $expectedBranch = 'refs/heads/main'
 $gitExe = 'C:\Program Files\Git\cmd\git.exe'
+$gcmExe = 'C:\Program Files\Git\mingw64\bin\git-credential-manager.exe'
+$githubCliExe = 'C:\Program Files\GitHub CLI\gh.exe'
 $startedUtc = [DateTimeOffset]::UtcNow
 $release = ''
 $oldNoSystem = $null
@@ -98,6 +100,21 @@ function Assert-FixedSafePath {
     }
 }
 
+function Assert-TrustedProgramFile {
+    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][string]$Expected,[Parameter(Mandatory)][string]$SignerPattern)
+    if (-not [string]::Equals([IO.Path]::GetFullPath($Path), $Expected, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $Path -PathType Leaf) -or $Path.Length -gt 220 -or
+        ((Get-Item -LiteralPath $Path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
+    $cursor = [IO.Path]::GetDirectoryName($Path)
+    while ($cursor.Length -ge 'C:\Program Files'.Length) {
+        if (((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
+        if ([string]::Equals($cursor, 'C:\Program Files', [StringComparison]::OrdinalIgnoreCase)) { break }
+        $cursor = [IO.Path]::GetDirectoryName($cursor)
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch $SignerPattern) { throw 'source_rejected' }
+}
+
 function Remove-FixedScratch {
     if (-not (Test-Path -LiteralPath $scratchRoot)) { return }
     Assert-FixedSafePath -Path $scratchRoot -Expected 'C:\ProgramData\Aevrynd\LineGatewayAutomaticDeployment\staging'
@@ -136,15 +153,9 @@ try {
     $gitDirectory = Join-Path $repositoryRoot '.git'
     if (-not (Test-Path -LiteralPath $gitDirectory -PathType Container) -or
         ((Get-Item -LiteralPath $gitDirectory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
-    if (-not (Test-Path -LiteralPath $gitExe -PathType Leaf) -or $gitExe.Length -gt 220) { throw 'source_rejected' }
-    $gitCursor = [IO.Path]::GetDirectoryName($gitExe)
-    while ($gitCursor.Length -ge 'C:\Program Files'.Length) {
-        if (((Get-Item -LiteralPath $gitCursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'source_rejected' }
-        if ([string]::Equals($gitCursor, 'C:\Program Files', [StringComparison]::OrdinalIgnoreCase)) { break }
-        $gitCursor = [IO.Path]::GetDirectoryName($gitCursor)
-    }
-    $gitSignature = Get-AuthenticodeSignature -LiteralPath $gitExe
-    if ($gitSignature.Status -ne 'Valid' -or $gitSignature.SignerCertificate.Subject -notmatch '(?i)O=Johannes Schindelin') { throw 'source_rejected' }
+    Assert-TrustedProgramFile -Path $gitExe -Expected 'C:\Program Files\Git\cmd\git.exe' -SignerPattern '(?i)O=Johannes Schindelin'
+    Assert-TrustedProgramFile -Path $gcmExe -Expected 'C:\Program Files\Git\mingw64\bin\git-credential-manager.exe' -SignerPattern '(?i)O=Microsoft Corporation'
+    Assert-TrustedProgramFile -Path $githubCliExe -Expected 'C:\Program Files\GitHub CLI\gh.exe' -SignerPattern '(?i)O="?GitHub, Inc\."?'
 
     # 只接受遠端 main 的 authoritative commit；本機工作樹與 origin 設定都不是信任來源。
     $oldNoSystem = $env:GIT_CONFIG_NOSYSTEM
@@ -153,9 +164,25 @@ try {
     $env:GIT_CONFIG_NOSYSTEM = '1'
     $env:GIT_CONFIG_GLOBAL = 'NUL'
     $env:GIT_PAGER = 'cat'
-    $gitSafety = @('-c','protocol.file.allow=never','-c','core.fsmonitor=false','-c','credential.helper=','-c','core.hooksPath=NUL')
-    $remoteLines = @(& $gitExe @gitSafety -C $repositoryRoot ls-remote $expectedOrigin $expectedBranch 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $remoteLines.Count -ne 1 -or $remoteLines[0] -notmatch '^([0-9a-f]{40})\s+refs/heads/main$') { throw 'source_rejected' }
+    $gitBaseSafety = @('-c','protocol.file.allow=never','-c','core.fsmonitor=false','-c','credential.helper=','-c','credential.interactive=never','-c','core.hooksPath=NUL')
+    # 優先使用 Microsoft 簽章 GCM；若此帳號的 private-origin credential 不在 GCM，才選固定 GitHub CLI helper。
+    $helperCandidates = @(
+        '!"C:/Program Files/Git/mingw64/bin/git-credential-manager.exe"',
+        '!"C:/Program Files/GitHub CLI/gh.exe" auth git-credential'
+    )
+    $gitSafety = $null
+    $remoteLines = @()
+    foreach ($helper in $helperCandidates) {
+        $candidateSafety = @($gitBaseSafety + @('-c', "credential.helper=$helper"))
+        # 網路查詢在受保護且不含 .git 的 ProgramData 根目錄執行，不讀使用者可寫的 local Git config。
+        $candidateLines = @(& $gitExe @candidateSafety -C $deploymentRoot ls-remote $expectedOrigin $expectedBranch 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $candidateLines.Count -eq 1 -and $candidateLines[0] -match '^([0-9a-f]{40})\s+refs/heads/main$') {
+            $gitSafety = $candidateSafety
+            $remoteLines = $candidateLines
+            break
+        }
+    }
+    if ($null -eq $gitSafety -or $remoteLines.Count -ne 1 -or $remoteLines[0] -notmatch '^([0-9a-f]{40})\s+refs/heads/main$') { throw 'source_rejected' }
     $release = $Matches[1]
     $head = (& $gitExe @gitSafety -C $repositoryRoot rev-parse HEAD 2>$null).Trim()
     if ($LASTEXITCODE -ne 0 -or $head -cne $release) { throw 'source_rejected' }
@@ -166,10 +193,13 @@ try {
 
     Remove-FixedScratch
     New-Item -ItemType Directory -Path $scratchRoot | Out-Null
+    $trustedGitDirectory = Join-Path $scratchRoot 'source.git'
+    & $gitExe @gitSafety init --bare $trustedGitDirectory 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $trustedGitDirectory -PathType Container)) { throw 'source_rejected' }
     $archive = Join-Path $scratchRoot 'source.zip'
-    & $gitExe @gitSafety -C $repositoryRoot fetch --no-tags $expectedOrigin $release 2>$null
+    & $gitExe @gitSafety --git-dir=$trustedGitDirectory fetch --no-tags $expectedOrigin $release 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'source_rejected' }
-    & $gitExe @gitSafety -C $repositoryRoot archive --format=zip --output=$archive $release tools/line_gateway
+    & $gitExe @gitSafety --git-dir=$trustedGitDirectory archive --format=zip --output=$archive FETCH_HEAD tools/line_gateway
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'source_rejected' }
     $source = Join-Path $scratchRoot 'source'
     Expand-Archive -LiteralPath $archive -DestinationPath $source
