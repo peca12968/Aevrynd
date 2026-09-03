@@ -106,8 +106,8 @@
     {
       "source": "scripts/GameModeTray.ps1",
       "destination": "scripts/GameModeTray.ps1",
-      "size": 4748,
-      "sha256": "a0b886c617c725b3fd4172483f71b648375e9f49509dee7d28dbe61101845aa4"
+      "size": 5862,
+      "sha256": "98d1012fc050c535bcc9883c6dcc1da5071b867924b7c85f5275651c91f66700"
     },
     {
       "source": "scripts/InstallTrust.psm1",

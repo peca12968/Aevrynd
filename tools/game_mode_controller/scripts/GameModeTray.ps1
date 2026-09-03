@@ -32,14 +32,38 @@ foreach ($nodeId in $labels.Keys) {
 [void]$menu.Items.Add('-')
 
 function Invoke-Controller([string[]]$Arguments) {
-    $previous = $env:PYTHONPATH
+    $startInfo = [Diagnostics.ProcessStartInfo]::new($python)
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.WorkingDirectory = $root
+    $startInfo.Environment.Clear()
+    foreach ($name in @('SystemRoot','WINDIR','TEMP','TMP','USERPROFILE','LOCALAPPDATA','ProgramData')) {
+        $value = [Environment]::GetEnvironmentVariable($name)
+        if (-not [string]::IsNullOrEmpty($value)) { $startInfo.Environment[$name] = $value }
+    }
+    $startInfo.Environment['PYTHONPATH'] = $appRoot
+    foreach ($argument in @('-B','-m','tools.game_mode_controller.runner') + $Arguments) {
+        [void]$startInfo.ArgumentList.Add($argument)
+    }
+    $process = $null
     try {
-        $env:PYTHONPATH = $appRoot
-        $output = & $python -B -m tools.game_mode_controller.runner @Arguments 2>$null
-        if ($LASTEXITCODE -ne 0) { throw 'Controller command failed.' }
-        return ($output -join "`n")
+        $process = [Diagnostics.Process]::Start($startInfo)
+        if ($null -eq $process) { throw 'Controller command failed.' }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(5000)) {
+            $process.Kill($true)
+            $process.WaitForExit()
+            throw 'Controller command timed out.'
+        }
+        $output = $stdoutTask.GetAwaiter().GetResult()
+        [void]$stderrTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) { throw 'Controller command failed.' }
+        return $output.TrimEnd("`r", "`n")
     } finally {
-        if ($null -eq $previous) { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue } else { $env:PYTHONPATH = $previous }
+        if ($null -ne $process) { $process.Dispose() }
     }
 }
 
