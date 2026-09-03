@@ -19,7 +19,7 @@ namespace Aevrynd {
 struct Triangle3D {Vec3 a{},b{},c{};Color color{};};
 struct Line3D {Vec3 a{},b{};float width{1.f};Color color{};};
 struct Box3D {Transform3D transform{};Material3D material{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f};};
-struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};AssetLease3D assetLease{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f};};
+struct MeshObject3D {MeshResource3D mesh{};Transform3D transform{};Material3D material{};AssetLease3D assetLease{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f},lodCoverage{1.f};std::uint8_t lodSeed{};bool lodInvert{};};
 enum class MeshLodDistanceMetric3D : std::uint8_t {Center,BoundsSurface};
 struct MeshLodPolicy3D {float switchDistance{40.f},transitionWidth{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};};
 struct MeshLodSelection3D {float nearCoverage{1.f},farCoverage{};bool submitNear{true},submitFar{};};
@@ -64,7 +64,7 @@ public:
     void Line(Vec3 a,Vec3 b,float width,Color color){lines_.push_back({a,b,width,color});}
     VisibilityEntityKey3D Box(Vec3 center,Vec3 size,Color color){return MaterialBox(center,size,Material3D{color});}
     VisibilityEntityKey3D MaterialBox(Vec3 center,Vec3 size,Material3D material,RenderObjectIdentity3D identity={},float occlusionOpacity=1.f){const Transform3D transform{center,{},size};if(!ValidVisibilityBounds(TransformSphereBounds(UnitBoxBounds(),transform))||!ValidOcclusionOpacity3D(occlusionOpacity)||(occlusionOpacity<1.f&&!identity)||(identity.id&&!identity.generation))return 0;const auto key=NextVisibilityKey(),index=boxes_.size();if(!key)return 0;boxes_.push_back({transform,material,identity,occlusionOpacity});try{boxKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Box,index});}catch(...){if(boxKeys_.size()>index)boxKeys_.pop_back();boxes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
-    VisibilityEntityKey3D Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={},AssetLease3D assetLease={},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f){if(!mesh||!ValidVisibilityBounds(TransformSphereBounds(mesh.bounds,transform))||!ValidOcclusionOpacity3D(occlusionOpacity)||(occlusionOpacity<1.f&&!identity)||(identity.id&&!identity.generation))return 0;const auto key=NextVisibilityKey(),index=meshes_.size();if(!key)return 0;meshes_.push_back({mesh,transform,material,std::move(assetLease),identity,occlusionOpacity});try{meshKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Mesh,index});}catch(...){if(meshKeys_.size()>index)meshKeys_.pop_back();meshes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
+    VisibilityEntityKey3D Mesh(const MeshResource3D& mesh,Transform3D transform,Material3D material={},AssetLease3D assetLease={},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f,float lodCoverage=1.f,std::uint8_t lodSeed=0,bool lodInvert=false){if(!mesh||!ValidVisibilityBounds(TransformSphereBounds(mesh.bounds,transform))||!ValidOcclusionOpacity3D(occlusionOpacity)||(occlusionOpacity<1.f&&!identity)||(identity.id&&!identity.generation)||!std::isfinite(lodCoverage)||lodCoverage<0.f||lodCoverage>1.f||lodSeed>7)return 0;const auto key=NextVisibilityKey(),index=meshes_.size();if(!key)return 0;meshes_.push_back({mesh,transform,material,std::move(assetLease),identity,occlusionOpacity,lodCoverage,lodSeed,lodInvert});try{meshKeys_.push_back(key);visibilityLocations_.emplace(key,VisibilityLocation{VisibilityKind::Mesh,index});}catch(...){if(meshKeys_.size()>index)meshKeys_.pop_back();meshes_.pop_back();throw;}visibilityDirty_=true;InvalidateRaycastIndex();return key;}
     bool UpdateTransform(VisibilityEntityKey3D key,Transform3D transform){const auto found=visibilityLocations_.find(key);if(found==visibilityLocations_.end())return false;MeshBounds3D bounds{};switch(found->second.kind){case VisibilityKind::Box:bounds=TransformSphereBounds(UnitBoxBounds(),transform);break;case VisibilityKind::Mesh:bounds=TransformSphereBounds(meshes_[found->second.index].mesh.bounds,transform);break;case VisibilityKind::Lod:bounds=TransformSphereBounds(lodMeshes_[found->second.index].bounds,transform);break;}if(!ValidVisibilityBounds(bounds))return false;if(!visibilityDirty_&&!visibilityIndex_.Update(key,bounds))return false;switch(found->second.kind){case VisibilityKind::Box:boxes_[found->second.index].transform=transform;break;case VisibilityKind::Mesh:meshes_[found->second.index].transform=transform;break;case VisibilityKind::Lod:lodMeshes_[found->second.index].transform=transform;break;}visibilityNeedsRefit_|=!visibilityDirty_;InvalidateRaycastIndex();return true;}
     bool UpdateMeshTransform(VisibilityEntityKey3D key,Transform3D transform){const auto found=visibilityLocations_.find(key);return found!=visibilityLocations_.end()&&found->second.kind==VisibilityKind::Mesh&&UpdateTransform(key,transform);}
     bool Remove(VisibilityEntityKey3D key){const auto found=visibilityLocations_.find(key);if(found==visibilityLocations_.end())return false;const VisibilityLocation location=found->second;const auto swapRemove=[&](auto& values,auto& keys){const std::size_t last=values.size()-1;if(location.index!=last){values[location.index]=std::move(values[last]);keys[location.index]=keys[last];visibilityLocations_[keys[location.index]].index=location.index;}values.pop_back();keys.pop_back();};switch(location.kind){case VisibilityKind::Box:swapRemove(boxes_,boxKeys_);break;case VisibilityKind::Mesh:swapRemove(meshes_,meshKeys_);break;case VisibilityKind::Lod:swapRemove(lodMeshes_,lodMeshKeys_);break;}visibilityLocations_.erase(found);visibilityDirty_=true;visibilityNeedsRefit_=false;InvalidateRaycastIndex();return true;}
@@ -262,7 +262,7 @@ public:
                                     const MeshBounds3D *fallbackBounds,
                                     const Transform3D &transform,
                                     Material3D material,
-                                    AssetLease3D assetLease = {},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f) {
+                                    AssetLease3D assetLease = {},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f,float lodCoverage=1.f,std::uint8_t lodSeed=0,bool lodInvert=false) {
         const MeshBounds3D localBounds =
                                resource ? resource.bounds : *fallbackBounds,
                            worldBounds =
@@ -275,8 +275,8 @@ public:
                   options.shadows.maximumDistance;
           if (material.castsShadow && !withinShadowDistance)
             ++stats.shadowDistanceRejected;
-          submit(resource, fallback, fallbackBounds, transform, material, 1.f,
-                 0, withinShadowDistance, true, false,
+          submit(resource, fallback, fallbackBounds, transform, material, lodCoverage,
+                 lodSeed, withinShadowDistance, true, lodInvert,
                  MeshRenderLayer3D::Opaque, std::move(assetLease),identity,occlusionOpacity);
           return;
         }
@@ -287,13 +287,13 @@ public:
           ++stats.shadowOnlyBudgetDropped;
           return;
         }
-        submit(resource, fallback, fallbackBounds, transform, material, 1.f, 0,
-               true, true, false, MeshRenderLayer3D::ShadowOnly,
+        submit(resource, fallback, fallbackBounds, transform, material, lodCoverage, lodSeed,
+               true, true, lodInvert, MeshRenderLayer3D::ShadowOnly,
                std::move(assetLease),identity,occlusionOpacity);
       };
       const auto submitVisibilityObject = [&](std::size_t objectIndex) {
         if(objectIndex<boxes_.size()){const Box3D& box=boxes_[objectIndex];submitObject(boxMesh_,&fallbackBox,&UnitBoxBounds(),box.transform,box.material,{},box.identity,box.occlusionOpacity);return;}
-        objectIndex-=boxes_.size();if(objectIndex<meshes_.size()){const MeshObject3D& mesh=meshes_[objectIndex];submitObject(mesh.mesh,mesh.mesh.cpuMesh.get(),nullptr,mesh.transform,mesh.material,mesh.assetLease,mesh.identity,mesh.occlusionOpacity);return;}
+        objectIndex-=boxes_.size();if(objectIndex<meshes_.size()){const MeshObject3D& mesh=meshes_[objectIndex];submitObject(mesh.mesh,mesh.mesh.cpuMesh.get(),nullptr,mesh.transform,mesh.material,mesh.assetLease,mesh.identity,mesh.occlusionOpacity,mesh.lodCoverage,mesh.lodSeed,mesh.lodInvert);return;}
         const std::size_t lodIndex=objectIndex-meshes_.size();if(lodIndex>=lodMeshes_.size())return;
         const MeshLodObject3D &lod = lodMeshes_[lodIndex];
         ++stats.lodMeshInstances;

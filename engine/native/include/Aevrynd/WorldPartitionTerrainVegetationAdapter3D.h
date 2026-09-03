@@ -84,11 +84,11 @@ struct TerrainVegetationChunkPayload3D {
   struct HlodManifest;
   std::shared_ptr<const HlodManifest> hlodManifest{};
 };
-struct TerrainVegetationHlodSource3D {HlodSourceReference3D reference{};std::uint64_t generation{};std::string logicalName{};GlobalPosition3D position{};Vec3 rotation{},scale{1,1,1};};
+struct TerrainVegetationHlodSource3D {HlodSourceReference3D reference{};std::uint64_t generation{};std::string logicalName{};GlobalPosition3D position{};Vec3 rotation{},scale{1,1,1};std::uint64_t meshHandle{},materialHandle{};std::uint32_t meshGeneration{},materialGeneration{};std::uint64_t resourceFingerprint{};HlodShadowSemantic3D shadow{};};
 struct TerrainVegetationHlodCluster3D {HlodClusterId3D id{};std::uint64_t generation{};PreparedHlodProxyAsset3D proxy{};std::vector<TerrainVegetationHlodSource3D> sources{};};
 struct TerrainVegetationChunkPayload3D::HlodManifest final {HlodManifest(const HlodManifest&)=delete;HlodManifest& operator=(const HlodManifest&)=delete;std::span<const TerrainVegetationHlodCluster3D> Clusters()const noexcept{return clusters_;}std::uint64_t ContentHash()const noexcept{return contentHash_;}std::uint64_t HlodDataHash()const noexcept{return hlodDataHash_;}private:friend std::shared_ptr<const HlodManifest> BuildTerrainVegetationHlodManifest3D(std::span<const TerrainVegetationHlodCluster3D>,const HlodData3D&);HlodManifest()=default;std::vector<TerrainVegetationHlodCluster3D> clusters_{};std::uint64_t contentHash_{},hlodDataHash_{};};
 std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> BuildTerrainVegetationHlodManifest3D(std::span<const TerrainVegetationHlodCluster3D> clusters,const HlodData3D& data);
-struct HlodIntegrationStats3D {std::size_t inputClusters{},attachedClusters{},sourceOnlyFallbacks{},incompatibleFallbacks{},budgetFallbacks{},staleGenerationRejects{},overlapRejects{},rollbackCount{},residentSourceEntities{},residentProxyEntities{},retiringClusters{},metadataSizeBytes{},metadataCapacityBytes{},aliasBytes{},proxyReservedBytes{},proxyActualResidentBytes{},retiringProxyBytes{},sharedProxyDedupHits{},pendingRetirementReceipts{},lastReleasedBytes{};std::uint64_t trimCount{};};
+struct HlodIntegrationStats3D {std::size_t inputClusters{},attachedClusters{},sourceOnlyFallbacks{},incompatibleFallbacks{},shadowContractRejects{},resourceContractRejects{},budgetFallbacks{},staleGenerationRejects{},overlapRejects{},rollbackCount{},residentSourceEntities{},residentProxyEntities{},retiringClusters{},metadataSizeBytes{},metadataCapacityBytes{},aliasBytes{},proxyReservedBytes{},proxyActualResidentBytes{},retiringProxyBytes{},sharedProxyDedupHits{},pendingRetirementReceipts{},lastReleasedBytes{};std::uint64_t trimCount{};};
 struct HlodRuntimeSelectionSettings3D {HlodQualitySettings3D quality{};std::size_t maximumVisibilityTransitionsPerFrame{64};float cameraTeleportDistance{128.f};};
 struct HlodRuntimeFrameStats3D {std::uint64_t frameId{},lastAppliedActivation{};std::size_t evaluatedClusters{},requestedTransitions{},appliedTransitions{},deferredTransitions{},sourceClusters{},transitionClusters{},proxyClusters{};bool cameraHistoryReset{},frozen{};};
 struct HlodFrozenFrameToken3D {
@@ -185,6 +185,9 @@ public:
   std::size_t PendingRetirements() const noexcept;
   HlodIntegrationStats3D HlodStats() const noexcept;
   bool SelectHlodFrame3D(std::uint64_t frameId,HlodSelectionView3D view,const HlodRuntimeSelectionSettings3D& settings)noexcept;
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+  void SetHlodSelectionGenerationForTesting(std::uint64_t value)noexcept{hlodSelectionGeneration_=value;}
+#endif
   std::optional<HlodFrozenFrameToken3D> FreezeHlodFrame3D(std::uint64_t frameId)noexcept;
   std::optional<SceneECSCollectionStats3D> CollectFrozenHlodFrame3D(HlodFrozenFrameToken3D token,Scene3D& scene,DrawList& draw,std::uint32_t visibilityMask=0xffffffffu)const;
   HlodRuntimeFrameStats3D HlodRuntimeStats()const noexcept{return hlodRuntimeStats_;}
@@ -219,7 +222,7 @@ private:
     std::size_t references{}, physicalBytes{};
   };
   struct Record {
-    struct HlodClusterAttachment {HlodClusterId3D id{};std::uint64_t generation{};HlodProxyLease3D proxy{};std::vector<StaticMeshRenderableLease3D> sources{};SceneHlodEntityBatch3D entities{};std::size_t reservedBytes{},actualBytes{},aliasBytes{},dataIndex{};HlodSelectionMode3D visibleMode{HlodSelectionMode3D::Source},pendingMode{HlodSelectionMode3D::Source};bool sceneDestroyed{},sourcesReset{},aliasReleased{};};
+    struct HlodClusterAttachment {HlodClusterId3D id{};std::uint64_t generation{};HlodProxyLease3D proxy{};std::vector<StaticMeshRenderableLease3D> sources{};SceneHlodEntityBatch3D entities{};std::size_t reservedBytes{},actualBytes{},aliasBytes{},dataIndex{};HlodSelection3D activeSelection{},pendingSelection{};bool sceneDestroyed{},sourcesReset{},aliasReleased{};};
     struct HlodAttachment {std::shared_ptr<const HlodData3D> data{};std::shared_ptr<const TerrainVegetationChunkPayload3D::HlodManifest> manifest{};std::unique_ptr<HlodReferenceSelector3D> selector{};std::vector<HlodClusterAttachment> clusters{};std::size_t transitionCursor{};};
     WorldChunkRequest3D request{};
     MeshResource3D terrain{};

@@ -45,7 +45,8 @@ struct RadialLight2D {Vec2 center{},radius{32,16};Color color{1,1,1,.25f};float 
 struct Vertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};};
 struct SkinnedVertex3D {float x,y,z;uint32_t normal;uint32_t color;float u{},v{};uint32_t tangent{};std::array<uint16_t,4> joints{},weights{};};
 struct MeshHandle3D {uint32_t value{};uint64_t contentPrimary{},contentSecondary{};uint32_t vertexCount{},indexCount{};constexpr MeshHandle3D()=default;constexpr MeshHandle3D(uint32_t handle,uint64_t primary=0,uint64_t secondary=0,uint32_t vertices=0,uint32_t indices=0):value(handle),contentPrimary(primary),contentSecondary(secondary),vertexCount(vertices),indexCount(indices){}explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MeshHandle3D& other)const{return value==other.value;}};
-struct RenderObjectIdentity3D {StableObjectId3D id{};uint64_t generation{};explicit constexpr operator bool()const{return static_cast<bool>(id)&&generation!=0;}constexpr bool operator==(const RenderObjectIdentity3D&)const=default;};
+struct RenderObjectIdentity3D {StableObjectId3D id{};uint64_t generation{};StableObjectId3D hlodClusterId{};bool sharedLodDither{},hlodProxy{};explicit constexpr operator bool()const{return static_cast<bool>(id)&&generation!=0;}constexpr bool operator==(const RenderObjectIdentity3D& other)const{return id==other.id&&generation==other.generation;}};
+static_assert(RenderObjectIdentity3D{{1,2},3,{4,5},true,true}==RenderObjectIdentity3D{{1,2},3,{6,7},false,false});
 struct ObjectOcclusionOpacityUpdate3D {size_t matchedStatic{},matchedSkinned{},matchedMultipart{},generationConflicts{};bool missing{true};[[nodiscard]] explicit constexpr operator bool()const noexcept{return !missing&&!generationConflicts&&(matchedStatic||matchedSkinned);}};
 [[nodiscard]] inline bool ValidOcclusionOpacity3D(float opacity)noexcept{return std::isfinite(opacity)&&opacity>=0.f&&opacity<=1.f;}
 struct OcclusionDitherSeeds3D {uint32_t first{},second{};friend constexpr bool operator==(const OcclusionDitherSeeds3D&,const OcclusionDitherSeeds3D&)=default;};
@@ -158,7 +159,7 @@ constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surfa
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
 enum class CharacterShadingModel3D:uint8_t {Default,Skin,Hair,Eye,Cloth};
 static constexpr std::size_t MaximumMeshInstancesPerFrame3D=65536;
-static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D,MeshInstanceLodCoverageShift3D=4u,MeshInstanceLodCoverageMask3D=255u<<MeshInstanceLodCoverageShift3D,MeshInstanceLodInvertBit3D=1u<<12,MeshInstanceLodSeedShift3D=13u,MeshInstanceLodSeedMask3D=7u<<MeshInstanceLodSeedShift3D;
+static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D,MeshInstanceLodCoverageShift3D=4u,MeshInstanceLodCoverageMask3D=255u<<MeshInstanceLodCoverageShift3D,MeshInstanceLodInvertBit3D=1u<<12,MeshInstanceLodSeedShift3D=13u,MeshInstanceLodSeedMask3D=7u<<MeshInstanceLodSeedShift3D,MeshInstanceHlodSharedSeedBit3D=1u<<31;
 constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return value==MaterialClass3D::Water||value==MaterialClass3D::Foliage||value==MaterialClass3D::Terrain?value:MaterialClass3D::Surface;}
 constexpr uint32_t PackMeshInstanceFlags3D(bool hasTextures,bool usesUv,MaterialClass3D materialClass){return(hasTextures?MeshInstanceHasTexturesBit3D:0u)|(hasTextures&&usesUv?MeshInstanceUsesUvBit3D:0u)|(uint32_t(NormalizeMaterialClass3D(materialClass))<<MeshInstanceMaterialClassShift3D);}
 constexpr MaterialClass3D UnpackMeshInstanceMaterialClass3D(uint32_t value){return NormalizeMaterialClass3D(MaterialClass3D((value&MeshInstanceMaterialClassMask3D)>>MeshInstanceMaterialClassShift3D));}
@@ -565,6 +566,7 @@ struct RendererStats {
     size_t lastGpuInstanceSubmissionBuckets{},lastGpuInstanceSubmissionCommands{},lastGpuInstanceSubmissionCalls{},lastGpuInstanceSubmissionBindingSets{},gpuInstanceCommandTemplateBytes{};
     uint64_t lastGpuInstanceSubmissionCpuNanoseconds{};
     bool lastStaticMeshSubmissionWarmHit{},lastStaticMeshSubmissionCpuRebuild{},lastStaticMeshSubmissionCacheEligible{};size_t lastStaticMeshSubmissionCopiedBytes{},lastStaticMeshSubmissionInstanceCopiedBytes{},lastStaticMeshSubmissionGroupCopiedBytes{},lastStaticMeshSubmissionCommandCopiedBytes{},lastStaticMeshSubmissionPreparationIterations{};
+    struct HlodCapacityReceipt3D {size_t consideredClusters{},acceptedClusters{},sourceFallbackClusters{},proxyFallbackClusters{},rejectedClusters{},droppedInstances{};uint64_t decisionHash{1469598103934665603ull};friend constexpr bool operator==(const HlodCapacityReceipt3D&,const HlodCapacityReceipt3D&)=default;} lastHlodCapacityReceipt{};
     uint64_t lastRenderPreparationCpuNanoseconds{},lastRenderCommandRecordingCpuNanoseconds{},lastRenderQueueExecuteCpuNanoseconds{},lastRenderFenceWaitCpuNanoseconds{},lastRenderPresentCpuNanoseconds{},lastRenderThreadCpuCycles{},performanceTelemetryMutationAllocations{};bool lastRenderThreadCpuQuerySucceeded{};
     std::vector<uint32_t> lastGpuInstanceCullingGroupVisible{};
     std::vector<uint64_t> lastGpuInstanceCullingGroupIdentityHashes{};
@@ -572,6 +574,12 @@ struct RendererStats {
     size_t gpuInstanceCullingValidationReadbackBytes{};
     uint64_t gpuInstanceCullingDispatches{},gpuInstanceIndirectDraws{},gpuInstanceDirectFallbackDraws{};
     bool lastHzbOcclusionActive{};size_t hzbOcclusionResidentBytes{},lastHzbOccluderDraws{},lastHzbOccluderTriangles{},lastHzbCandidatesTested{},lastHzbOccluded{};uint64_t hzbDepthPrepasses{},hzbBuildDispatches{},lastHzbPrepassGpuNanoseconds{},lastHzbBuildGpuNanoseconds{},lastHzbCullGpuNanoseconds{},lastHzbColorGpuNanoseconds{};
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+    struct HlodHzbIdentityReceipt3D {
+        uint64_t submissionRevision{},readbackSerial{};size_t tested{},totalVisible{},hzbOccluded{};bool hzbActive{},complete{};
+        std::vector<RenderObjectIdentity3D> candidates{},visible{};
+    } lastHlodHzbIdentityReceipt{};
+#endif
     uint64_t lastHzbSelectionCpuNanoseconds{},lastHzbPrepassRecordingCpuNanoseconds{},lastHzbBuildRecordingCpuNanoseconds{},lastHzbCullRecordingCpuNanoseconds{};
     uint64_t qualitySwitches{},qualitySwitchFlushes{},qualityResourceReleases{};
     bool linearWorldBlending{};
@@ -1239,6 +1247,7 @@ struct D3D12RendererTestAccess3D {
     struct LinearHdrCapture3D {unsigned width{},height{},rowPitch{};std::vector<Vec4> pixels{};std::array<std::byte,32> pixelSha256{};float exposureEv{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&rowPitch>=width*8&&pixels.size()==size_t(width)*height&&std::isfinite(exposureEv);}};
     enum class ContactShadowCaptureStage3D { Current, History, Raw, Bilateral };
     struct ContactShadowCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&pixels.size()==size_t(width)*height;}};
+    struct DirectionalShadowCapture3D {unsigned width{},height{},rowPitch{},cascade{};std::vector<float> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&rowPitch>=width*sizeof(float)&&pixels.size()==size_t(width)*height;}};
     enum class BaseSkyMutation { Production, LegacyBlue, LegacyClipMatrix, SignedNegativeW, LegacyAbsW, HemisphereFlip };
     enum class CloudContributorRouting { Production, InlineOnly, PhysicalOnly, FullDouble };
     enum class WorldPixelMutation { Production, LegacyArmAlpha, TerrainHeightDisabled };
@@ -1249,6 +1258,7 @@ struct D3D12RendererTestAccess3D {
     static std::optional<LinearHdrCapture3D> CaptureToneMapped(D3D12Renderer& renderer,float exposureEv);
     static std::optional<LinearHdrCapture3D> CapturePostProcessDiagnostic(D3D12Renderer& renderer,float exposureEv,bool toneMapped);
     static std::optional<ContactShadowCapture3D> CaptureContactShadow(D3D12Renderer& renderer,ContactShadowCaptureStage3D stage);
+    static std::optional<DirectionalShadowCapture3D> CaptureDirectionalShadow(D3D12Renderer& renderer,unsigned cascade);
     static bool InvalidateContactShadowTemporalHistory(D3D12Renderer& renderer);
     static bool SetContactShadowTemporalForcedOff(D3D12Renderer& renderer,bool forcedOff);
     static bool SetBaseSkyMutation(D3D12Renderer& renderer,BaseSkyMutation mutation);

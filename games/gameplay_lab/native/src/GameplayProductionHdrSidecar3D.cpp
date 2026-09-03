@@ -175,6 +175,7 @@ GameplayProductionHdrSidecarValidation3D ValidateGameplayProductionHdrSidecar3D(
 std::optional<GameplayProductionHdrSidecarBuildResult3D> BuildGameplayProductionHdrSidecar3D(const ProductionReadbackBundle3D& bundle,GameplayProductionHdrSidecarValidation3D* error){
     const auto reject=[&](GameplayProductionHdrSidecarError3D code,const char* field)->std::optional<GameplayProductionHdrSidecarBuildResult3D>{if(error)*error=Fail(code,field);return{};};
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+    (void)bundle;
     return reject(GameplayProductionHdrSidecarError3D::Hooks,"AEVRYND_INTERNAL_RENDERER_TEST_HOOKS");
 #else
     if(!bundle.Complete())return reject(GameplayProductionHdrSidecarError3D::Source,"bundle");const auto& hdr=bundle.Hdr();const auto& objectId=bundle.ObjectId();const auto& depth=bundle.Depth();const auto& descriptor=bundle.SequenceDescriptor();if(descriptor.jitterPolicy!=ReadbackCaptureSequenceJitterPolicy3D::FixedSample||hdr.receipt.requestMetadata.sequence.index>=64||(descriptor.requiredLinearHdrPhaseMask&(uint64_t{1}<<hdr.receipt.requestMetadata.sequence.index))==0)return reject(GameplayProductionHdrSidecarError3D::Sequence,"bundle.sequence");

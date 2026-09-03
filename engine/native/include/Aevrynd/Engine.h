@@ -19,6 +19,9 @@
 
 namespace Aevrynd {
 struct EngineDevelopmentUltraTestAccess3D;
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+struct EngineRendererTestAccess3D;
+#endif
 #ifndef AEVRYND_ENGINE_VERSION
 #define AEVRYND_ENGINE_VERSION "development"
 #endif
@@ -132,6 +135,8 @@ public:
     size_t TrimUnusedMemory();
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
+    void SetGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){renderer_->SetGpuInstanceCullingSettings(settings);}
+    void SetHzbOcclusionSettings3D(HzbOcclusionSettings3D settings){renderer_->SetHzbOcclusionSettings3D(settings);}
     GpuUploadReceipt3D SubmitPendingUploads3D(){return renderer_->SubmitPendingUploads3D();}
     bool IsUploadComplete3D(GpuUploadReceipt3D receipt)const{return renderer_->IsUploadComplete(receipt);}
     GpuRetirementReceipt3D CaptureRetirementFence3D(){return renderer_?renderer_->CaptureRetirementFence3D():GpuRetirementReceipt3D{};}
@@ -162,6 +167,9 @@ public:
     bool RebaseReflectionProbeCaptures3D(Vec3 localDelta,uint64_t originGeneration){return renderer_&&renderer_->RebaseReflectionProbeCaptures3D(localDelta,originGeneration);}
 private:
     friend struct EngineDevelopmentUltraTestAccess3D;
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+    friend struct EngineRendererTestAccess3D;
+#endif
     void RefreshDevelopmentUltraGpuTruth();
     bool ExitDevelopmentUltraToLastKnownGood();
     bool RestoreDevelopmentUltraRendererBaseline(bool trim);
@@ -183,6 +191,22 @@ private:
 struct EngineDevelopmentUltraTestAccess3D {
     enum class Failure : std::uint8_t {None,RendererApply,PostApplyPending};
     static void ForceFailure(Engine& engine,Failure failure){engine.developmentUltraTestFailure_=static_cast<std::uint8_t>(failure);}
+};
+#endif
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+struct EngineRendererTestAccess3D {
+    static bool Render(Engine& engine, const DrawList& draw) {
+        if (!engine.renderer_) return false;
+        engine.renderer_->Render(draw, {.02f, .03f, .04f, 1.f});
+        engine.renderer_->WaitIdle();
+        return true;
+    }
+    static std::optional<D3D12RendererTestAccess3D::DirectionalShadowCapture3D> CaptureDirectionalShadow(
+        Engine& engine, unsigned cascade) {
+        engine.WaitRendererIdle3D();
+        return engine.renderer_ ? D3D12RendererTestAccess3D::CaptureDirectionalShadow(*engine.renderer_, cascade)
+                                : std::nullopt;
+    }
 };
 #endif
 }

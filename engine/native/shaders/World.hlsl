@@ -51,6 +51,8 @@ float3 ApplyVelocityWind(float3 position,float packedWeight,uint materialClass,f
     const float detail=sin(time*3.1-position.x*0.19+position.z*0.67);
     return position+float3(primary+detail*0.35,abs(detail)*0.08,detail*0.55)*weight*0.13;
 }
+// HLOD source/proxy 必須共用完整的像素雜湊輸入；一般 LOD 仍混入物件 transform seed。
+uint StaticLodSeed(uint textureData,uint objectSeed){return((textureData>>13)&7u)^(((textureData&0x80000000u)!=0u)?0u:objectSeed);}
 
 struct MotionInstanceInput
 {
@@ -115,7 +117,7 @@ MotionVertexOutput VelocityInstancedVertexMain(MotionInstanceInput input)
     output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
     output.lodInvert = (input.textureData >> 12) & 1u;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
-    output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
+    output.lodSeed = StaticLodSeed(input.textureData, objectSeed);
     return output;
 }
 
@@ -328,7 +330,7 @@ MotionMaterialVertexOutput VelocityMaskedInstancedVertexMain(MotionMaterialInsta
     output.lodCoverage=float((input.textureData>>4)&255u)/255.0;
     output.lodInvert=(input.textureData>>12)&1u;
     const uint objectSeed=asuint(input.transformRow0.w)*73856093u^asuint(input.transformRow1.w)*19349663u^asuint(input.transformRow2.w)*83492791u;
-    output.lodSeed=((input.textureData>>13)&7u)^objectSeed;
+    output.lodSeed=StaticLodSeed(input.textureData,objectSeed);
     return output;
 }
 
@@ -572,14 +574,14 @@ ShadowVertexOutput ShadowPackedInstancedVertexMain(ShadowPackedInstancedVertexIn
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (textureData >> 2) & 3u);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
-    output.uv = input.uv * max(0.001, float((textureData >> 16) & 65535) * (16.0 / 65535.0));
+    output.uv = input.uv * max(0.001, float((textureData >> 16) & 32767) * (16.0 / 32767.0));
     output.alphaCutoff = saturate(input.shadowData.x);
     output.alphaMasked = input.shadowData.y > 0.5 ? 1u : 0u;
     output.alpha = input.color.a * input.shadowData.z;
     output.lodCoverage = float((textureData >> 4) & 255u) / 255.0;
     output.lodInvert = (textureData >> 12) & 1u;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
-    output.lodSeed = ((textureData >> 13) & 7u) ^ objectSeed;
+    output.lodSeed = StaticLodSeed(textureData, objectSeed);
     return output;
 }
 
@@ -590,12 +592,12 @@ ShadowVertexOutput ShadowInstancedVertexMain(InstancedVertexInput input)
     worldPosition.xyz = ApplyWind(worldPosition.xyz, input.normal.w, (input.textureData >> 2) & 3u);
     ShadowVertexOutput output = (ShadowVertexOutput)0;
     output.position = mul(lightViewProjection[shadowCascadeIndex], worldPosition);
-    output.uv = input.uv * max(0.001, float((input.textureData >> 16) & 65535) * (16.0 / 65535.0));
+    output.uv = input.uv * max(0.001, float((input.textureData >> 16) & 32767) * (16.0 / 32767.0));
     output.alphaCutoff = saturate(input.normalRow1.w); output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     output.alpha = input.color.a * input.tint.a; output.lodCoverage = float((input.textureData >> 4) & 255u) / 255.0;
     output.lodInvert = (input.textureData >> 12) & 1u;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
-    output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
+    output.lodSeed = StaticLodSeed(input.textureData, objectSeed);
     return output;
 }
 
@@ -679,7 +681,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.worldPosition = worldPosition.xyz;
     output.normal = float4(normalize(worldNormal), input.normal.w < 0.0 ? 0.0 : 1.0);
     output.material = input.material;
-    const float textureScale=max(0.001,float((input.textureData>>16)&65535)*(16.0/65535.0));
+    const float textureScale=max(0.001,float((input.textureData>>16)&32767)*(16.0/32767.0));
     output.textureData = float4(input.textureData & 1,textureScale,textureScale,(input.textureData >> 1) & 1);
     output.uv = input.uv;
     output.materialClass = (input.textureData >> 2) & 3;
@@ -687,7 +689,7 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.lodInvert = (input.textureData >> 12) & 1;
     // 物件平移量擴充有限的封裝 seed，讓密集植被不會同步顯示相同的螢幕孔點。
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
-    output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
+    output.lodSeed = StaticLodSeed(input.textureData, objectSeed);
     output.tangent = 0.0;
     output.characterShadingModel = 0;
     // normal matrix 其餘兩列的 w 承載 MASK 參數，維持既有 instance stride。

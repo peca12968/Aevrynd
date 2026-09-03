@@ -1094,6 +1094,8 @@ StaticMeshAssetLibrary3D::ResolveRenderable(std::string_view name,
   result.owner_ = ownerState_;
   result.ownerIdentity_ = ownerState_->ownerIdentity;
   result.generation_ = ownerState_->generation.load(std::memory_order_acquire);
+  result.renderable_.resourceOwnerIdentity = result.ownerIdentity_;
+  result.renderable_.resourceGeneration = result.generation_;
   return result.Valid()
              ? std::optional<StaticMeshRenderableLease3D>{std::move(result)}
              : std::nullopt;

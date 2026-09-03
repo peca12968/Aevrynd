@@ -27,7 +27,12 @@ struct SceneMeshRenderable3D {
     Material3D nearMaterial{};
     Material3D farMaterial{};
     std::uint32_t layer{1};
+    RenderObjectIdentity3D identity{};
+    std::uint64_t resourceOwnerIdentity{},resourceGeneration{};
     bool visible{true};
+    float lodCoverage{1.f};
+    std::uint8_t lodSeed{};
+    bool lodInvert{};
     std::array<MeshLodLevel3D,MaximumMeshLodLevels3D> lodLevels{};
     std::uint32_t lodLevelCount{};
 };
@@ -43,6 +48,9 @@ struct SceneEntityDefinition3D {
     std::optional<SceneMeshRenderable3D> renderable;
     std::optional<ScenePointLightComponent3D> pointLight;
 };
+std::optional<HlodShadowSemantic3D> HlodShadowSemanticFromMaterial3D(const Material3D& material)noexcept;
+std::optional<HlodShadowSemantic3D> HlodShadowSemanticFromRenderable3D(const SceneMeshRenderable3D& renderable)noexcept;
+bool HlodSourceResourceContractMatchesRenderable3D(const HlodSourceResourceContract3D&,const SceneMeshRenderable3D&)noexcept;
 
 struct SceneHlodEntityBatch3D {
     HlodClusterId3D clusterId{};
@@ -67,11 +75,14 @@ public:
     bool CreateBatchAtomic(std::span<const SceneEntityDefinition3D> definitions,std::vector<SceneEntity3D>& entities);
     // 先驗證整批 handle，再一次移除，供分區 owner 原子下架。
     bool DestroyBatchAtomic(std::span<const SceneEntity3D> entities);
-    bool CreateHlodBatchAtomic3D(HlodClusterId3D clusterId,std::uint64_t clusterGeneration,std::span<const SceneEntityDefinition3D> sources,const SceneEntityDefinition3D& proxy,SceneHlodEntityBatch3D& output);
+    bool CreateHlodBatchAtomic3D(HlodClusterId3D clusterId,std::uint64_t clusterGeneration,std::span<const SceneEntityDefinition3D> sources,const SceneEntityDefinition3D& proxy,std::span<const HlodSourceResourceContract3D> sourceContracts,HlodShadowSemantic3D proxyShadow,const HlodShadowContract3D& shadowContract,SceneHlodEntityBatch3D& output);
     bool HideHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch);
     bool CanSetHlodVisibility3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)const noexcept;
     bool SetHlodVisibilityAtomic3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)noexcept;
     bool MatchesHlodVisibility3D(const SceneHlodEntityBatch3D& batch,HlodSelectionMode3D mode)const noexcept;
+    bool CanSetHlodSelection3D(const SceneHlodEntityBatch3D& batch,const HlodSelection3D& selection)const noexcept;
+    bool SetHlodSelectionAtomic3D(const SceneHlodEntityBatch3D& batch,const HlodSelection3D& selection)noexcept;
+    bool MatchesHlodSelection3D(const SceneHlodEntityBatch3D& batch,const HlodSelection3D& selection)const noexcept;
     bool DestroyHlodBatchAtomic3D(const SceneHlodEntityBatch3D& batch);
     bool CanRebaseOrigin(Vec3 delta)const noexcept;
     void RebaseOrigin(Vec3 delta)noexcept;
@@ -111,6 +122,9 @@ private:
         std::uint64_t hlodClusterGeneration{};
         std::uint32_t hlodOrdinal{};
         bool hlodProxy{};
+        HlodShadowSemantic3D hlodShadowSemantic{};
+        HlodSourceResourceContract3D hlodSourceResourceContract{};
+        std::uint8_t hlodSharedRasterSeed{};
     };
     Slot* Find(SceneEntity3D entity);
     const Slot* Find(SceneEntity3D entity) const;

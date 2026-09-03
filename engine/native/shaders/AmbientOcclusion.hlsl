@@ -36,6 +36,8 @@ cbuffer AmbientOcclusionConstants : register(b1)
     float4 viewportParameters;
     float4 contactShadowParameters;
 };
+// AO 深度通道必須沿用主著色器的 HLOD 共用 seed，否則會產生遮蔽孔洞。
+uint StaticLodSeed(uint textureData,uint objectSeed){return((textureData>>13)&7u)^(((textureData&0x80000000u)!=0u)?0u:objectSeed);}
 
 struct WorldVertexInput
 {
@@ -159,8 +161,8 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
     output.lodInvert = (input.textureData >> 12) & 1;
     // 平移量必須採用與主著色器相同的雜湊，深度與色彩通道才會保留相同孔點。
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
-    output.lodSeed = ((input.textureData >> 13) & 7) ^ objectSeed;
-    output.uv=input.uv*max(0.001,float((input.textureData>>16)&65535u)*(16.0/65535.0));
+    output.lodSeed = StaticLodSeed(input.textureData, objectSeed);
+    output.uv=input.uv*max(0.001,float((input.textureData>>16)&32767u)*(16.0/32767.0));
     output.alphaCutoff = saturate(input.normalRow1.w);
     output.alphaMasked = input.normalRow2.w > 0.5 ? 1u : 0u;
     output.alpha = input.color.a * input.tint.a;

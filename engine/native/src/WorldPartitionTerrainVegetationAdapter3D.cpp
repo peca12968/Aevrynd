@@ -211,12 +211,14 @@ BuildTerrainVegetationHlodManifest3D(
       const auto &asset = data.Clusters()[index];
       const auto &instance = data.Instances()[index];
       const auto expectedSources = data.Sources(index);
+      const auto expectedContracts = data.SourceResourceContracts(index);
       if (value.id != asset.id || value.generation != asset.generation ||
           !ValidatePreparedHlodProxyDescriptor3D(value.proxy) ||
           value.proxy.clusterId != value.id ||
           value.proxy.clusterGeneration != value.generation ||
           value.proxy.chunk != instance.globalChunk ||
-          value.sources.size() != expectedSources.size())
+          value.sources.size() != expectedSources.size() ||
+          value.sources.size() != expectedContracts.size())
         return {};
       if (!index)
         worldId = value.proxy.worldId;
@@ -234,9 +236,13 @@ BuildTerrainVegetationHlodManifest3D(
       scalar(value.proxy.prepared.assetKey.contentIdentity);
       text(value.proxy.prepared.assetKey.canonical);
       scalar(value.proxy.reservedPhysicalBytes);
+      TerrainVegetationHlodCluster3D ownedValue = value;
       for (std::size_t source = 0; source < value.sources.size(); ++source) {
         const auto &item = value.sources[source];
+        const auto &expected = expectedContracts[source];
         if (item.reference != expectedSources[source] || !item.generation ||
+            item.reference != expected.reference ||
+            item.generation != expected.generation ||
             item.logicalName.empty() ||
             item.logicalName.size() > MaximumHlodProxyLogicalNameBytes3D ||
             item.logicalName.find("..") != std::string::npos ||
@@ -252,10 +258,34 @@ BuildTerrainVegetationHlodManifest3D(
             !std::isfinite(item.scale.z) || item.scale.x == 0 ||
             item.scale.y == 0 || item.scale.z == 0)
           return {};
+        const bool suppliedResourceContract = item.meshHandle || item.materialHandle ||
+            item.meshGeneration || item.materialGeneration ||
+            item.resourceFingerprint;
+        if (suppliedResourceContract &&
+            (item.meshHandle != expected.meshHandle ||
+             item.materialHandle != expected.materialHandle ||
+             item.meshGeneration != expected.meshGeneration ||
+             item.materialGeneration != expected.materialGeneration ||
+             item.resourceFingerprint != expected.resourceFingerprint ||
+             CanonicalHlodShadowSemantic3D(item.shadow) != expected.shadow))
+          return {};
+        auto &ownedSource = ownedValue.sources[source];
+        ownedSource.meshHandle = expected.meshHandle;
+        ownedSource.materialHandle = expected.materialHandle;
+        ownedSource.meshGeneration = expected.meshGeneration;
+        ownedSource.materialGeneration = expected.materialGeneration;
+        ownedSource.resourceFingerprint = expected.resourceFingerprint;
+        ownedSource.shadow = expected.shadow;
         scalar(item.reference.globalObjectId.high);
         scalar(item.reference.globalObjectId.low);
         scalar(item.generation);
         text(item.logicalName);
+        scalar(expected.meshHandle);
+        scalar(expected.materialHandle);
+        scalar(expected.meshGeneration);
+        scalar(expected.materialGeneration);
+        scalar(expected.resourceFingerprint);
+        scalar(HlodShadowSemanticFingerprint3D(expected.shadow));
         scalar(static_cast<std::uint64_t>(item.position.chunk.x));
         scalar(static_cast<std::uint64_t>(item.position.chunk.y));
         scalar(static_cast<std::uint64_t>(item.position.chunk.z));
@@ -263,7 +293,7 @@ BuildTerrainVegetationHlodManifest3D(
         vector(item.rotation);
         vector(item.scale);
       }
-      result->clusters_.push_back(value);
+      result->clusters_.push_back(std::move(ownedValue));
     }
     result->hlodDataHash_ = data.ContentHash();
     result->contentHash_ = hash ? hash : 1;
@@ -963,10 +993,14 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
            ++clusterIndex) {
         const auto &manifest = payload->hlodManifest->Clusters()[clusterIndex];
         const auto &asset = payload->hlod->Clusters()[clusterIndex];
+        const auto &shadowContract = payload->hlod->ShadowContracts()[clusterIndex];
         const bool sourceOnly =
-            asset.compatibility != HlodCompatibility3D::OpaqueCompatible;
+            asset.compatibility != HlodCompatibility3D::OpaqueCompatible ||
+            !shadowContract.sourceProxyCompatible;
         if (sourceOnly) {
           ++hlodStats_.incompatibleFallbacks;
+          if (!shadowContract.sourceProxyCompatible)
+            ++hlodStats_.shadowContractRejects;
           ++hlodStats_.sourceOnlyFallbacks;
           continue;
         }
@@ -987,7 +1021,35 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
         std::vector<SceneEntityDefinition3D> sourceDefinitions;
         sourceDefinitions.reserve(manifest.sources.size());
         bool sourcesValid = true;
+        bool shadowSemanticMismatch = false;
+        bool sourceResourceMismatch = false;
+        const auto expectedReferences = payload->hlod->Sources(clusterIndex);
+        const auto expectedShadowSemantics =
+            payload->hlod->SourceShadowSemantics(clusterIndex);
+        const auto expectedResourceContracts =
+            payload->hlod->SourceResourceContracts(clusterIndex);
+        if (expectedReferences.size() != manifest.sources.size() ||
+            expectedShadowSemantics.size() != manifest.sources.size() ||
+            expectedResourceContracts.size() != manifest.sources.size()) {
+          ++hlodStats_.resourceContractRejects;
+          ++hlodStats_.sourceOnlyFallbacks;
+          continue;
+        }
         for (const auto &source : manifest.sources) {
+          const auto sourceIndex = sourceDefinitions.size();
+          const auto &expectedResource = expectedResourceContracts[sourceIndex];
+          if (source.reference != expectedResource.reference ||
+              source.generation != expectedResource.generation ||
+              source.meshHandle != expectedResource.meshHandle ||
+              source.materialHandle != expectedResource.materialHandle ||
+              source.meshGeneration != expectedResource.meshGeneration ||
+              source.materialGeneration != expectedResource.materialGeneration ||
+              source.resourceFingerprint != expectedResource.resourceFingerprint ||
+              source.shadow != expectedResource.shadow) {
+            sourcesValid = false;
+            sourceResourceMismatch = true;
+            break;
+          }
           auto lease = assets_->ResolveRenderable(source.logicalName, 1, true);
           Vec3 position{};
           if (!lease || !lease->Valid() ||
@@ -996,15 +1058,35 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
             sourcesValid = false;
             break;
           }
+          if (!HlodSourceResourceContractMatchesRenderable3D(
+                  expectedResource, lease->Renderable())) {
+            sourcesValid = false;
+            sourceResourceMismatch = true;
+            break;
+          }
           SceneEntityDefinition3D definition{};
           definition.transform = SceneTransformComponent3D{
               Transform3D{position, source.rotation, source.scale}};
           definition.renderable = lease->Renderable();
+          definition.renderable->identity =
+              {source.reference.globalObjectId, source.generation};
+          const auto actualShadow = HlodShadowSemanticFromRenderable3D(*definition.renderable);
+          if (sourceIndex >= expectedShadowSemantics.size() || !actualShadow ||
+              *actualShadow != expectedShadowSemantics[sourceIndex]) {
+            sourcesValid = false;
+            shadowSemanticMismatch = true;
+            break;
+          }
           sourceDefinitions.push_back(std::move(definition));
           cluster.sources.push_back(std::move(*lease));
         }
         if (!sourcesValid) {
-          ++hlodStats_.staleGenerationRejects;
+          if (shadowSemanticMismatch)
+            ++hlodStats_.shadowContractRejects;
+          else if (sourceResourceMismatch)
+            ++hlodStats_.resourceContractRejects;
+          else
+            ++hlodStats_.staleGenerationRejects;
           ++hlodStats_.sourceOnlyFallbacks;
           continue;
         }
@@ -1043,12 +1125,30 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
         proxyDefinition.transform = SceneTransformComponent3D{
             Transform3D{proxyPosition, instance.rotation, instance.scale}};
         proxyDefinition.renderable = cluster.proxy.renderable.Renderable();
+        proxyDefinition.renderable->identity = {
+            HlodProxyRenderObjectId3D(cluster.id), cluster.generation};
+        const auto actualProxyShadow =
+            HlodShadowSemanticFromRenderable3D(*proxyDefinition.renderable);
+        if (!actualProxyShadow ||
+            *actualProxyShadow != shadowContract.proxy) {
+          ++hlodStats_.shadowContractRejects;
+          ++hlodStats_.sourceOnlyFallbacks;
+          rollbackCluster();
+          continue;
+        }
         if (!scene_.CreateHlodBatchAtomic3D(cluster.id, cluster.generation,
                                             sourceDefinitions, proxyDefinition,
+                                            expectedResourceContracts,
+                                            payload->hlod->Resources()[clusterIndex]
+                                                .proxyShadow,
+                                            shadowContract,
                                             cluster.entities)) {
           rollbackCluster();
           throw std::runtime_error("HLOD Scene publish failed");
         }
+        cluster.activeSelection.clusterId = cluster.id;
+        cluster.activeSelection.proxyInvert = true;
+        cluster.pendingSelection = cluster.activeSelection;
         // Scene 已取得自己的 leases；在任何 publish 後 rollback checkpoint 前先
         // 釋放暫存 definitions，否則 proxyDefinition 仍是 borrower，alias Unload
         // 會失敗並把 proxy/GPU resource 洩漏在失敗路徑。
@@ -1248,8 +1348,8 @@ bool TerrainVegetationWorldChunkActivationTarget3D::HideHlodForRetirement(
     // 避免多叢集退役只隱藏前段後便中止。
     const auto& clusters=record.hlod->clusters;
     for(std::size_t clusterIndex=0;clusterIndex<clusters.size();++clusterIndex){
-      if(!scene_.CanSetHlodVisibility3D(clusters[clusterIndex].entities,
-                                        clusters[clusterIndex].visibleMode))
+      if(!scene_.CanSetHlodSelection3D(clusters[clusterIndex].entities,
+                                       clusters[clusterIndex].activeSelection))
         return false;
       for(std::size_t entityIndex=0;entityIndex<clusters[clusterIndex].entities.entities.size();++entityIndex){
         const auto entity=clusters[clusterIndex].entities.entities[entityIndex];
@@ -1355,7 +1455,7 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
     return std::isfinite(value.x) && std::isfinite(value.y) &&
            std::isfinite(value.z);
   };
-  if (!OnOwnerThread() || hlodTokenExhausted_ || !frameId || frameId <= hlodRuntimeStats_.frameId ||
+  if (!OnOwnerThread() || hlodTokenExhausted_ || hlodSelectionGeneration_ == (std::numeric_limits<std::uint64_t>::max)() || !frameId || frameId <= hlodRuntimeStats_.frameId ||
       !std::isfinite(settings.cameraTeleportDistance) ||
       settings.cameraTeleportDistance <= 0.f || !finite(view.camera.position))
     return false;
@@ -1383,8 +1483,8 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
     for (const auto &cluster : attachment.clusters)
       if (cluster.dataIndex >= attachment.data->Clusters().size() ||
           attachment.data->Clusters()[cluster.dataIndex].id != cluster.id ||
-          !scene_.CanSetHlodVisibility3D(cluster.entities,
-                                         cluster.visibleMode))
+          !scene_.MatchesHlodSelection3D(cluster.entities,
+                                         cluster.activeSelection))
         return false;
   }
 
@@ -1402,11 +1502,16 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
     for (auto &cluster : attachment.clusters) {
       if (selected[cluster.dataIndex].clusterId != cluster.id)
         std::terminate();
-      cluster.pendingMode = cluster.proxy.Valid()
-                                ? selected[cluster.dataIndex].mode
-                                : HlodSelectionMode3D::Source;
+      cluster.pendingSelection = selected[cluster.dataIndex];
+      if (!cluster.proxy.Valid()) {
+        cluster.pendingSelection.mode = HlodSelectionMode3D::Source;
+        cluster.pendingSelection.sourceCoverage = 1.f;
+        cluster.pendingSelection.proxyCoverage = 0.f;
+        cluster.pendingSelection.sourceCoverage8 = 255;
+        cluster.pendingSelection.proxyCoverage8 = 0;
+      }
       ++next.evaluatedClusters;
-      if (cluster.pendingMode != cluster.visibleMode)
+      if (cluster.pendingSelection.mode != cluster.activeSelection.mode)
         ++next.requestedTransitions;
     }
   }
@@ -1418,9 +1523,25 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
     if (record.retiring || !record.hlod)
       continue;
     for (const auto &cluster : record.hlod->clusters)
-      if (!scene_.CanSetHlodVisibility3D(cluster.entities,
-                                         cluster.pendingMode))
+      if (!scene_.CanSetHlodSelection3D(cluster.entities,
+                                        cluster.pendingSelection))
         return false;
+  }
+
+  // 已啟用模式內的 raster coverage 更新不是可見模式切換，不能消耗公平性
+  // 預算，也不能因為預算耗盡而停滯。
+  for (auto &[id, record] : records_) {
+    (void)id;
+    if (record.retiring || !record.hlod)
+      continue;
+    for (auto &cluster : record.hlod->clusters) {
+      if (cluster.pendingSelection.mode != cluster.activeSelection.mode)
+        continue;
+      if (!scene_.SetHlodSelectionAtomic3D(cluster.entities,
+                                           cluster.pendingSelection))
+        std::terminate();
+      cluster.activeSelection = cluster.pendingSelection;
+    }
   }
 
   std::size_t remaining = settings.maximumVisibilityTransitionsPerFrame;
@@ -1443,14 +1564,14 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
               : 0;
       for (std::size_t offset = 0; offset < count; ++offset) {
         auto &cluster = attachment.clusters[(firstCluster + offset) % count];
-        if (cluster.pendingMode == cluster.visibleMode)
+        if (cluster.pendingSelection.mode == cluster.activeSelection.mode)
           continue;
         if (!remaining)
           continue;
-        if (!scene_.SetHlodVisibilityAtomic3D(cluster.entities,
-                                             cluster.pendingMode))
+        if (!scene_.SetHlodSelectionAtomic3D(cluster.entities,
+                                            cluster.pendingSelection))
           std::terminate();
-        cluster.visibleMode = cluster.pendingMode;
+        cluster.activeSelection = cluster.pendingSelection;
         --remaining;
         ++next.appliedTransitions;
         next.lastAppliedActivation = recordId;
@@ -1473,11 +1594,11 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
         !found->second.hlod)
       continue;
     for (auto &cluster : found->second.hlod->clusters) {
-      if (cluster.pendingMode != cluster.visibleMode) {
-        cluster.pendingMode = cluster.visibleMode;
+      if (cluster.pendingSelection.mode != cluster.activeSelection.mode) {
+        cluster.pendingSelection = cluster.activeSelection;
         ++next.deferredTransitions;
       }
-      switch (cluster.visibleMode) {
+      switch (cluster.activeSelection.mode) {
       case HlodSelectionMode3D::Source: ++next.sourceClusters; break;
       case HlodSelectionMode3D::Transition: ++next.transitionClusters; break;
       case HlodSelectionMode3D::Proxy: ++next.proxyClusters; break;
@@ -1487,11 +1608,6 @@ bool TerrainVegetationWorldChunkActivationTarget3D::SelectHlodFrame3D(
   lastHlodCameraPosition_ = view.camera.position;
   hasLastHlodCameraPosition_ = true;
   InvalidateFrozenHlodFrame3D();
-  if (hlodSelectionGeneration_ ==
-      (std::numeric_limits<std::uint64_t>::max)()) {
-    hlodTokenExhausted_ = true;
-    return false;
-  }
   ++hlodSelectionGeneration_;
   hlodRuntimeStats_ = next;
   return true;
@@ -1508,8 +1624,8 @@ TerrainVegetationWorldChunkActivationTarget3D::FreezeHlodFrame3D(
     if (record.retiring || !record.hlod)
       continue;
     for (const auto &cluster : record.hlod->clusters)
-      if (!scene_.MatchesHlodVisibility3D(cluster.entities,
-                                         cluster.visibleMode))
+      if (!scene_.MatchesHlodSelection3D(cluster.entities,
+                                        cluster.activeSelection))
         return std::nullopt;
   }
   frozenHlodToken_ = {frameId, hlodActivationIdentity_, hlodWorldEpoch_,
@@ -1534,8 +1650,8 @@ TerrainVegetationWorldChunkActivationTarget3D::CollectFrozenHlodFrame3D(
     if (record.retiring || !record.hlod)
       continue;
     for (const auto &cluster : record.hlod->clusters)
-      if (!scene_.MatchesHlodVisibility3D(cluster.entities,
-                                         cluster.visibleMode))
+      if (!scene_.MatchesHlodSelection3D(cluster.entities,
+                                        cluster.activeSelection))
         return std::nullopt;
   }
   return scene_.Collect(scene, draw, visibilityMask);
