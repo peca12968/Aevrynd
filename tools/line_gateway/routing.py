@@ -130,6 +130,12 @@ def _is_bounded_status_command(normalized: str, default_route: Route) -> bool:
         "主機狀態",
     }:
         return True
+    if re.fullmatch(
+        r"(?:台中|桃園)(?:電腦|主機)?(?:目前|現在)?的?"
+        r"(?:工作|任務|進度|狀態|工作進度|任務進度|工作狀態|任務狀態|正在做什麼|正在執行什麼|有工作進度)",
+        candidate,
+    ):
+        return True
     for subject, machine_words in _STATUS_SUBJECTS.items():
         if not candidate.startswith(subject):
             continue

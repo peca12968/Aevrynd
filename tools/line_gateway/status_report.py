@@ -58,8 +58,16 @@ class StatusReport:
         )
         self._node_slot_probes = dict(node_slot_probes or {})
 
-    def render(self, command_text: str = "", *, current_job_id: str | None = None) -> str:
-        scope = self._status_scope(command_text)
+    def render(
+        self,
+        command_text: str = "",
+        *,
+        current_job_id: str | None = None,
+        scope_hint: str | None = None,
+    ) -> str:
+        if scope_hint is not None and scope_hint not in {"taichung", "taoyuan", "main", "all", "project", "all_project"}:
+            raise ValueError("scope_hint is outside the fixed status scope")
+        scope = self._status_scope(command_text) if scope_hint is None else scope_hint
         if scope == "project":
             return self._render_project(self._repository(), self._queue_counts(current_job_id))
         requested_ids = {

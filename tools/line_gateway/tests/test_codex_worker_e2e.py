@@ -27,6 +27,7 @@ from tools.line_gateway.queue_store import QueueStore
 from tools.line_gateway.routing import Route, RouteDecision, route_event
 from tools.line_gateway.server import create_server
 from tools.line_gateway.signature import compute_signature
+from tools.line_gateway.status_report import StatusReport
 from tools.line_gateway.worker import ASSISTANT_SYSTEM_PROMPTS, Worker
 from tools.line_gateway.scripts.gateway_runner import (
     LANE_NAMES,
@@ -348,10 +349,82 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertEqual("artifact-server-not-deployed", payload["attachmentManifest"]["deliveryStatus"])
         self.assertNotIn("path", request_document["request"].lower())
 
+    def test_exact_city_work_phrases_bypass_qwen_and_keep_city_scope(self) -> None:
+        class NoQwen(FakeQwenClient):
+            def chat(self, *_args, **_kwargs):
+                raise AssertionError("bounded city status must bypass Qwen")
+
+        for index, (request_text, expected, forbidden) in enumerate(
+            (
+                ("桃園電腦目前的工作？", "[桃園即時狀態]", "台中："),
+                ("台中電腦目前的工作？", "[台中即時狀態]", "桃園："),
+            )
+        ):
+            store = QueueStore(Path(self.temporary.name) / f"city-{index}.sqlite3")
+            report = StatusReport(
+                store,
+                repository_root=self.temporary.name,
+                controller_root=self.temporary.name,
+                probe_timeout=0.01,
+            )
+            worker = Worker(
+                store,
+                self.line,
+                HostTasks(store),
+                self.handoff,
+                qwen_client=NoQwen("unused"),
+                status_report=report,
+                worker_id=f"city-status-{index}",
+            )
+            queued = store.enqueue(
+                webhook_event_id=f"city-status-{index}",
+                route=Route.STATUS.value,
+                source_id="group",
+                requester_id="user",
+                request_text=request_text,
+            )
+            with mock.patch.object(StatusReport, "_tcp_reachable", return_value=True):
+                self.assertTrue(worker.process_lane_once("control"))
+            self.assertEqual("completed", store.status(queued.job_id)["status"])
+            delivery = store.claim_delivery(f"city-delivery-{index}")
+            self.assertIn(expected, delivery.message_text)
+            self.assertNotIn(forbidden, delivery.message_text)
+            self.assertNotIn(f"#{queued.job_id[:8]}", delivery.message_text)
+
+    def test_named_city_qwen_status_decision_preserves_selected_city(self) -> None:
+        qwen = FakeQwenClient(
+            '{"schemaVersion":1,"action":"status","answer":"","requestKind":"status","attachments":[]}'
+        )
+        report = mock.Mock()
+        report.render.return_value = "[台中即時狀態]\n權威資料"
+        worker = Worker(
+            self.store,
+            self.line,
+            HostTasks(self.store),
+            self.handoff,
+            qwen_client=None,
+            qwen_clients={"taichung": qwen},
+            status_report=report,
+            worker_id="named-city-status",
+        )
+        queued = self.store.enqueue(
+            webhook_event_id="named-city-status",
+            route=Route.TAICHUNG.value,
+            source_id="group",
+            requester_id="user",
+            request_text="目前有在工作嗎",
+        )
+        self.assertTrue(worker.process_lane_once("taichung"))
+        report.render.assert_called_once_with(
+            "目前有在工作嗎",
+            current_job_id=queued.job_id,
+            scope_hint="taichung",
+        )
+
     def test_edge_combines_intent_with_answer_and_routes_authoritative_work(self) -> None:
         status_qwen = FakeQwenClient('{"schemaVersion":1,"action":"status","answer":"","requestKind":"status","attachments":[]}')
         status_report = mock.Mock()
-        status_report.render.return_value = "[三台即時狀態]\n權威資料"
+        status_report.render.return_value = "[台中即時狀態]\n權威資料"
         status_worker = Worker(
             self.store, self.line, HostTasks(self.store), self.handoff,
             qwen_client=None, qwen_clients={"taichung": status_qwen},
@@ -364,10 +437,12 @@ class WorkerAndEndToEndTests(unittest.TestCase):
         self.assertTrue(status_worker.process_lane_once("taichung"))
         self.assertEqual("completed", self.store.status(status_job.job_id)["status"])
         status_report.render.assert_called_once_with(
-            "幫我看所有節點目前忙什麼", current_job_id=status_job.job_id
+            "幫我看所有節點目前忙什麼",
+            current_job_id=status_job.job_id,
+            scope_hint="taichung",
         )
         self.assertTrue(status_worker.drain_side_effect_once())
-        self.assertEqual("[三台即時狀態]\n權威資料", self.line.pushes[-1][1])
+        self.assertEqual("[台中即時狀態]\n權威資料", self.line.pushes[-1][1])
 
         artifact_qwen = FakeQwenClient('{"schemaVersion":1,"action":"artifact","answer":"","requestKind":"file","attachments":[{"kind":"file","status":"requested"}]}')
         artifact_worker = Worker(

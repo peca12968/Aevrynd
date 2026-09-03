@@ -131,6 +131,8 @@ class RoutingTests(unittest.TestCase):
             "Aevrynd開發進度",
             "遊戲引擎開發進度",
             "目前整體工作進度",
+            "桃園電腦目前的工作？",
+            "台中電腦目前的工作？",
         ):
             with self.subTest(command=command):
                 self.assertEqual(Route.STATUS, route_event(mentioned(command), _config()).route)

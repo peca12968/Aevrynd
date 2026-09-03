@@ -267,7 +267,13 @@ class Worker:
             return "[Qwen]\n" + str(decision["answer"])
         return "[Qwen]\n需要由主電腦持久工作接續處理。"
 
-    def _run_status(self, request_text: str, *, current_job_id: str | None = None) -> str:
+    def _run_status(
+        self,
+        request_text: str,
+        *,
+        current_job_id: str | None = None,
+        scope_hint: str | None = None,
+    ) -> str:
         match = re.fullmatch(
             r"(?:工作|任務)(?:狀態)?[：:\s]+([0-9a-fA-F-]{36})", request_text.strip()
         )
@@ -277,7 +283,9 @@ class Worker:
             except ValueError:
                 return "[工作狀態]\n工作 ID 格式錯誤。"
             return self._status_report.render_job(job_id)
-        return self._status_report.render(request_text, current_job_id=current_job_id)
+        if scope_hint is None:
+            return self._status_report.render(request_text, current_job_id=current_job_id)
+        return self._status_report.render(request_text, current_job_id=current_job_id, scope_hint=scope_hint)
 
     def _start_artifact(self, job: ClaimedJob) -> None:
         request = json.dumps(
@@ -512,7 +520,18 @@ class Worker:
             self._finish(job, f"[{label}]\n{decision['answer']}")
             return
         if decision["action"] == "status":
-            self._finish(job, self._run_status(job.request_text, current_job_id=job.job_id))
+            self._finish(
+                job,
+                self._run_status(
+                    job.request_text,
+                    current_job_id=job.job_id,
+                    scope_hint=(
+                        assistant_route
+                        if job.route in {Route.TAICHUNG.value, Route.TAOYUAN.value}
+                        else None
+                    ),
+                ),
+            )
             return
         if decision["action"] == "artifact":
             self._start_artifact(job)
