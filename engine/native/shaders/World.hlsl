@@ -1982,6 +1982,84 @@ float4 WorldMaskedPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFront
     return EvaluateWorldPixel(input, isFrontFace, true);
 }
 
+float BloomSemanticDeviceDepth(WorldPixelInput input)
+{
+    // FP16 的 1.0 專屬天空；幾何深度限制在前一個可表示值，避免遠景被誤判為天空。
+    const bool sky = 1.0 - saturate(input.normal.w) > 0.5;
+    return sky ? 1.0 : min(saturate(input.position.z), 0.99951171875);
+}
+
+float4 WorldBloomSemanticPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
+{
+    float4 output = EvaluateWorldPixel(input, isFrontFace, false);
+    output.a = BloomSemanticDeviceDepth(input);
+    return output;
+}
+
+float4 WorldBloomSemanticMasked1xPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
+{
+    // 1x MASK 必須走硬裁切；SV_Coverage 僅屬於 MSAA 路徑。
+    float4 output = EvaluateWorldPixel(input, isFrontFace, false);
+    output.a = BloomSemanticDeviceDepth(input);
+    return output;
+}
+
+float4 WorldBloomSemanticNonMaskedMutationPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
+{
+    // 僅供負向 oracle 模擬舊錯誤：一般 semantic PSO 不承擔 MASK 契約。
+    input.alphaMasked = 0u;
+    float4 output = EvaluateWorldPixel(input, isFrontFace, false);
+    output.a = BloomSemanticDeviceDepth(input);
+    return output;
+}
+
+struct WorldBloomSemanticTransparentOutput
+{
+    float4 color : SV_TARGET0;
+    float4 blend : SV_TARGET1;
+};
+
+WorldBloomSemanticTransparentOutput WorldBloomSemanticTransparentPixelMain(
+    WorldPixelInput input, bool isFrontFace : SV_IsFrontFace)
+{
+    const float4 evaluated = EvaluateWorldPixel(input, isFrontFace, false);
+    // 完全透明片段不得覆寫既有語意；非零透明度仍由 renderer 的排序決定最近可見表面。
+    clip(evaluated.a - 0.0000152587890625);
+    WorldBloomSemanticTransparentOutput output;
+    output.color = float4(evaluated.rgb, BloomSemanticDeviceDepth(input));
+    // 第二來源只承載舊透明度；PSO 以 SRC1_ALPHA 做 RGB 混合，Target0 alpha 才能保留語意深度。
+    output.blend = evaluated.aaaa;
+    return output;
+}
+
+uint BloomSemanticCoverageMask4(float opacity, uint2 pixel)
+{
+    const uint coveredSamples = (uint)round(saturate(opacity) * 4.0);
+    const uint rotation = (pixel.x ^ (pixel.y * 3u)) & 3u;
+    if (coveredSamples == 0u) return 0u;
+    if (coveredSamples == 1u) return 1u << rotation;
+    if (coveredSamples == 2u) return (rotation & 1u) != 0u ? 0xau : 0x5u;
+    if (coveredSamples == 3u) return 0xfu ^ (1u << rotation);
+    return 0xfu;
+}
+
+struct WorldBloomSemanticMaskedOutput
+{
+    float4 color : SV_TARGET0;
+    uint coverage : SV_Coverage;
+};
+
+WorldBloomSemanticMaskedOutput WorldBloomSemanticMaskedPixelMain(
+    WorldPixelInput input, bool isFrontFace : SV_IsFrontFace)
+{
+    const float4 evaluated = EvaluateWorldPixel(input, isFrontFace, true);
+    WorldBloomSemanticMaskedOutput output;
+    output.color = float4(evaluated.rgb, BloomSemanticDeviceDepth(input));
+    // 正式管線固定為 4x MSAA；顯式 coverage 取代硬體 A2C，讓 Target0 alpha 可承載深度。
+    output.coverage = BloomSemanticCoverageMask4(evaluated.a, uint2(input.position.xy));
+    return output;
+}
+
 uint ObjectIdPixelMain(WorldPixelInput input) : SV_TARGET
 {
     // ID pass 重用正式 LOD 點陣裁切；surface 四個 UNORM bytes 在此承載無損 frame token。

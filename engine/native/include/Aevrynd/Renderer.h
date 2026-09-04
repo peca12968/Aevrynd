@@ -410,8 +410,9 @@ inline float BeerLambertTransmittance3D(float extinction,float distance){if(!std
 inline float EnergyConservingSingleScattering3D(float scattering,float extinction,float distance){if(!std::isfinite(scattering)||!std::isfinite(extinction)||!std::isfinite(distance)||scattering<=0.f||extinction<=0.f||distance<=0.f)return 0.f;scattering=(std::min)(scattering,extinction);return scattering/extinction*(1.f-BeerLambertTransmittance3D(extinction,distance));}
 inline Vec3 VolumetricCloudShadowSamplePosition3D(Vec3 worldPosition,Vec3 sunDirection,const VolumetricCloudSettings3D& source={}){const auto settings=NormalizeVolumetricCloudSettings3D(source);if(!settings.enabled||!settings.shadowsEnabled||settings.shadowStrength<=0.f||!std::isfinite(worldPosition.x)||!std::isfinite(worldPosition.y)||!std::isfinite(worldPosition.z)||!std::isfinite(sunDirection.x)||!std::isfinite(sunDirection.y)||!std::isfinite(sunDirection.z)||sunDirection.y<=.02f)return worldPosition;const float targetHeight=settings.baseAltitude+settings.thickness*.5f,distance=(targetHeight-worldPosition.y)/sunDirection.y;if(!std::isfinite(distance)||distance<=0.f)return worldPosition;return worldPosition+sunDirection*distance;}
 inline float VolumetricCloudShadowTransmittance3D(float baseNoise,float erosionNoise,const VolumetricCloudSettings3D& source={}){const auto settings=NormalizeVolumetricCloudSettings3D(source);if(!settings.enabled||!settings.shadowsEnabled||settings.shadowStrength<=0.f)return 1.f;const float density=VolumetricCloudDensity3D(baseNoise,erosionNoise,.5f,settings);return 1.f-settings.shadowStrength+settings.shadowStrength*VolumetricCloudTransmittance3D(density*1.35f);}
-struct BloomSettings3D {bool enabled{true};float threshold{1.f},softKnee{.5f},intensity{.12f},radiusPixels{2.5f};};
-inline BloomSettings3D NormalizeBloomSettings3D(BloomSettings3D settings){settings.threshold=Clamp(std::isfinite(settings.threshold)?settings.threshold:1.f,0.f,32.f);settings.softKnee=Clamp(std::isfinite(settings.softKnee)?settings.softKnee:.5f,0.f,1.f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:.12f,0.f,4.f);settings.radiusPixels=Clamp(std::isfinite(settings.radiusPixels)?settings.radiusPixels:2.5f,.5f,16.f);return settings;}
+struct BloomSettings3D {bool enabled{true};float threshold{1.f},softKnee{.5f},intensity{.12f},radiusPixels{2.5f};bool depthAware{true};float depthThreshold{.02f},depthSoftness{.02f};};
+inline BloomSettings3D NormalizeBloomSettings3D(BloomSettings3D settings){settings.threshold=Clamp(std::isfinite(settings.threshold)?settings.threshold:1.f,0.f,32.f);settings.softKnee=Clamp(std::isfinite(settings.softKnee)?settings.softKnee:.5f,0.f,1.f);settings.intensity=Clamp(std::isfinite(settings.intensity)?settings.intensity:.12f,0.f,4.f);settings.radiusPixels=Clamp(std::isfinite(settings.radiusPixels)?settings.radiusPixels:2.5f,.5f,16.f);settings.depthThreshold=Clamp(std::isfinite(settings.depthThreshold)?settings.depthThreshold:.02f,0.f,1.f);settings.depthSoftness=Clamp(std::isfinite(settings.depthSoftness)?settings.depthSoftness:.02f,0.f,1.f);return settings;}
+inline float BloomDepthSemanticWeight3D(float centerDepth,float sampleDepth,float localDepthDerivative,const BloomSettings3D& source={},bool centerValid=true,bool sampleValid=true){const BloomSettings3D settings=NormalizeBloomSettings3D(source);if(!settings.depthAware||!centerValid||!sampleValid||!std::isfinite(centerDepth)||!std::isfinite(sampleDepth)||!std::isfinite(localDepthDerivative)||centerDepth<0.f||centerDepth>1.f||sampleDepth<0.f||sampleDepth>1.f)return 1.f;const bool centerSky=centerDepth==1.f,sampleSky=sampleDepth==1.f;if(centerSky!=sampleSky)return 0.f;if(centerSky)return 1.f;const float scale=(std::max)(1.f-(std::min)(centerDepth,sampleDepth),1e-4f),relativeDifference=std::abs(sampleDepth-centerDepth)/scale,derivative=std::abs(localDepthDerivative)/scale,edge=settings.depthThreshold+derivative*settings.radiusPixels,width=(std::max)(settings.depthSoftness,1e-5f);if(relativeDifference<=edge)return 1.f;if(relativeDifference>=edge+width)return 0.f;const float t=(relativeDifference-edge)/width;return 1.f-t*t*(3.f-2.f*t);}
 inline float BloomSoftThreshold3D(float luminance,const BloomSettings3D& source={}){const BloomSettings3D settings=NormalizeBloomSettings3D(source);if(!settings.enabled||!std::isfinite(luminance))return 0.f;const float knee=(std::max)(settings.threshold*settings.softKnee,.0001f),soft=Clamp((luminance-settings.threshold+knee)/(2.f*knee),0.f,1.f);return(std::max)(luminance-settings.threshold,0.f)+soft*soft*knee;}
 inline float DirectionalShadowReceiverBias3D(float normalLightCosine,float slopeScale=.0015f,float minimumBias=.00035f,float maximumBias=.006f){if(!std::isfinite(normalLightCosine)||!std::isfinite(slopeScale)||!std::isfinite(minimumBias)||!std::isfinite(maximumBias))return(std::max)(0.f,minimumBias);const float cosine=Clamp(normalLightCosine,0.f,1.f),slope=std::sqrt((std::max)(0.f,1.f-cosine*cosine))/(std::max)(.2f,cosine);return Clamp((std::max)(0.f,minimumBias)+(std::max)(0.f,slopeScale)*slope,(std::max)(0.f,minimumBias),(std::max)(minimumBias,maximumBias));}
 inline Vec3 TerrainLayerWeights3D(float slope,float normalizedHeight,float macroNoise){if(!std::isfinite(slope)||!std::isfinite(normalizedHeight)||!std::isfinite(macroNoise))return{1,0,0};slope=Clamp(slope,0.f,1.f);normalizedHeight=Clamp(normalizedHeight,0.f,1.f);macroNoise=Clamp(macroNoise,0.f,1.f);const auto smooth=[](float edge0,float edge1,float value){value=Clamp((value-edge0)/(edge1-edge0),0.f,1.f);return value*value*(3.f-2.f*value);};const float rock=smooth(.38f,.78f,slope+(std::max)(0.f,normalizedHeight-.62f)*.35f),soil=(1.f-rock)*smooth(.18f,.62f,slope+(1.f-macroNoise)*.18f);return{(std::max)(0.f,1.f-rock-soil),soil,rock};}
@@ -549,6 +550,9 @@ inline constexpr uint32_t EnhancedWorldRootSrvDwords3D=2;
 inline constexpr uint32_t EnhancedWorldRootConstantDwords3D=2+4+12+8+8+4+4+12;
 inline constexpr uint32_t EnhancedWorldRootDwords3D=EnhancedWorldRootDescriptorTableDwords3D+EnhancedWorldRootSrvDwords3D+EnhancedWorldRootConstantDwords3D;
 static_assert(EnhancedWorldRootDwords3D==64,"Enhanced world root signature must remain at the D3D12 64 DWORD limit");
+enum class BloomSemanticSource3D : uint8_t { Unavailable, NativeDepth, HdrAlphaCarrier, TemporalDepthHistory, DlssUnavailable };
+struct BloomSemanticCapability3D {bool hdrAlphaShaders{},opaquePipelines{},transparentDualSourcePipeline{},maskedPipeline{},maskedMsaaPipeline{},atmospherePipeline{},postProcessPipeline{};[[nodiscard]] constexpr bool Complete()const noexcept{return hdrAlphaShaders&&opaquePipelines&&transparentDualSourcePipeline&&maskedPipeline&&maskedMsaaPipeline&&atmospherePipeline&&postProcessPipeline;}};
+struct BloomSemanticReceipt3D {BloomSemanticSource3D requested{BloomSemanticSource3D::Unavailable},actual{BloomSemanticSource3D::Unavailable};BloomSemanticCapability3D capability{};bool requestedDepthAware{},available{},failOpen{},dualSourceBlendAvailable{},transparentOrderingPreserved{},nativeDepthTransitioned{},currentTemporalDepthHistory{},carrierProduced{},postProcessCarrierPipeline{};uint32_t transparentLayerCount{};uint64_t transparentOrderHash{};bool transparentCarrierPipeline{},atmosphereCarrierPipeline{};};
 struct RendererStats {
     unsigned outputWidth{},outputHeight{};
     CanvasViewport canvasViewport{};
@@ -567,7 +571,9 @@ struct RendererStats {
     uint64_t lastGpuInstanceSubmissionCpuNanoseconds{};
     bool lastStaticMeshSubmissionWarmHit{},lastStaticMeshSubmissionCpuRebuild{},lastStaticMeshSubmissionCacheEligible{};size_t lastStaticMeshSubmissionCopiedBytes{},lastStaticMeshSubmissionInstanceCopiedBytes{},lastStaticMeshSubmissionGroupCopiedBytes{},lastStaticMeshSubmissionCommandCopiedBytes{},lastStaticMeshSubmissionPreparationIterations{};
     struct HlodCapacityReceipt3D {size_t consideredClusters{},acceptedClusters{},sourceFallbackClusters{},proxyFallbackClusters{},rejectedClusters{},droppedInstances{};uint64_t decisionHash{1469598103934665603ull};friend constexpr bool operator==(const HlodCapacityReceipt3D&,const HlodCapacityReceipt3D&)=default;} lastHlodCapacityReceipt{};
-    uint64_t lastRenderPreparationCpuNanoseconds{},lastRenderCommandRecordingCpuNanoseconds{},lastRenderQueueExecuteCpuNanoseconds{},lastRenderFenceWaitCpuNanoseconds{},lastRenderPresentCpuNanoseconds{},lastRenderThreadCpuCycles{},performanceTelemetryMutationAllocations{};bool lastRenderThreadCpuQuerySucceeded{};
+    uint64_t lastRenderPreparationCpuNanoseconds{},lastRenderCommandRecordingCpuNanoseconds{},lastRenderCommandRecordingCpuCycles{},lastRenderQueueExecuteCpuNanoseconds{},lastRenderFenceWaitCpuNanoseconds{},lastRenderPresentCpuNanoseconds{},lastRenderThreadCpuCycles{},performanceTelemetryMutationAllocations{};bool lastRenderThreadCpuQuerySucceeded{};
+    // 僅量測最終 Bloom 合成區段，包含語意深度狀態轉換與統計更新。
+    uint64_t lastBloomPostProcessCpuCycles{},lastBloomPostProcessCpuNanoseconds{};
     std::vector<uint32_t> lastGpuInstanceCullingGroupVisible{};
     std::vector<uint64_t> lastGpuInstanceCullingGroupIdentityHashes{};
     std::vector<std::vector<uint64_t>> lastGpuInstanceCullingGroupIdentities{};
@@ -611,7 +617,8 @@ struct RendererStats {
     uint64_t waterOpaqueSceneColorAllocations{},waterOpaqueSceneColorReleases{},waterOpaqueSceneColorCopies{},screenSpaceWaterRefractionPasses{};
     bool screenSpaceReflectionsEnabled{};unsigned screenSpaceReflectionSampleCount{};size_t screenSpaceReflectionResidentBytes{};uint64_t screenSpaceReflectionPasses{},screenSpaceReflectionRaySteps{};
     uint64_t hdrPostProcessPasses{};
-    bool bloomEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
+    bool bloomEnabled{},bloomDepthAwareEnabled{};uint64_t bloomPasses{},bloomTextureSamples{};size_t bloomResidentBytes{};
+    BloomSemanticCapability3D bloomSemanticCapability{};BloomSemanticReceipt3D bloomSemanticReceipt{};
     bool volumetricCloudsEnabled{},volumetricCloudShadowsEnabled{};unsigned volumetricCloudSampleCount{};size_t volumetricCloudResidentBytes{},volumetricCloudShadowResidentBytes{};uint64_t volumetricCloudConfiguredFrames{},volumetricCloudShadowConfiguredFrames{};
     bool volumetricAtmosphereConfigured{},volumetricAtmosphereDispatched{},volumetricAtmosphereDiagnosticsAvailable{},volumetricAtmosphereDiagnosticsEnabled{},volumetricAtmosphereMutationAvailable{};
     VolumetricAtmospherePhase3D volumetricAtmospherePhase{VolumetricAtmospherePhase3D::Day};
@@ -875,6 +882,10 @@ struct RendererStats {
     uint64_t totalValidationWaitNanoseconds{};
     uint64_t peakValidationWaitNanoseconds{};
     uint64_t gpuTimingSamples{};
+    // 此收據於 timestamp serial 簽發時一次寫入，讓遙測可驗證提交槽位與實際 Bloom 模式屬於同一幀。
+    struct SubmissionTelemetryReceipt3D {uint64_t serial{};uint32_t frameSlot{};bool bloomEnabled{},bloomDepthAwareEnabled{};friend constexpr bool operator==(const SubmissionTelemetryReceipt3D&,const SubmissionTelemetryReceipt3D&)=default;} lastSubmissionTelemetryReceipt{};
+    // 完成收據保留原始 GPU timestamp，避免 benchmark 只能反推已換算的奈秒。
+    struct CompletedGpuTimingReceipt3D {uint64_t serial{},beginTick{},endTick{},frequency{},nanoseconds{},bloomResourceIdentity{};[[nodiscard]] bool Complete()const noexcept{return serial&&endTick>=beginTick&&frequency&&nanoseconds&&bloomResourceIdentity;}} lastCompletedGpuTimingReceipt{};
     uint64_t completedGpuFrameSerial{};
     uint64_t lastGpuFrameNanoseconds{};
     uint64_t totalGpuFrameNanoseconds{};
@@ -1240,6 +1251,25 @@ private:
 };
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
 struct D3D12RendererTestAccess3D {
+    enum class BloomCpuWindowOrder3D : uint8_t { Abba, Baab };
+    enum class BloomSemanticMutation3D : uint8_t { Production, ForceUnavailable, ForceNonMaskedPipeline };
+    struct BloomCpuBlockReceipt3D {
+        bool depthAwareRequested{},depthAwareEffective{},semanticDepthRequired{},terminalDepthWrite{},queryThreadCyclesValid{},resetSucceeded{},closeSucceeded{},bundleAvailable{},bundlePsoMatched{},previousModeValid{},previousDepthAware{},modeChanged{};
+        uint16_t startProcessorGroup{},endProcessorGroup{};
+        uint8_t startLogicalProcessor{},endLogicalProcessor{};
+        uint32_t rawCommandRecordings{},resourceBarrierApiCalls{},resourceBarrierRecords{},depthTransitionRecords{},timedQueryCount{};
+        uint64_t firstCommandRecordingCycles{},firstCommandRecordingNanoseconds{},steadyCommandRecordingCycles{},steadyCommandRecordingNanoseconds{},commandRecordingCycles{},commandRecordingNanoseconds{},planCycles{},prepareCycles{},closeCycles{},recorderFingerprint{},bundleFingerprint{};
+    };
+    struct BloomCpuWindowReceipt3D {
+        BloomCpuWindowOrder3D order{BloomCpuWindowOrder3D::Abba};
+        std::vector<BloomCpuBlockReceipt3D> blocks{};
+        uint64_t submissionSerialBefore{},submissionSerialAfter{},fenceValueBefore{},fenceValueAfter{},scheduleHash{};
+        uint32_t blockSize{},blockCount{},supercycleCount{},baseSupercycleCount{},complementSupercycleCount{},totalCommandRecordings{},legacyCommandRecordings{},awareCommandRecordings{},modeTransitionCount{},sameModeCount{},legacyToAwareTransitions{},awareToLegacyTransitions{};
+        bool directCommandLists{},sameProductionRecorder{},noSubmission{},microBlockInterleaved{},qtcBalanced{},processorStable{};
+        [[nodiscard]] bool Complete()const noexcept{return directCommandLists&&sameProductionRecorder&&noSubmission&&submissionSerialBefore==submissionSerialAfter&&fenceValueBefore==fenceValueAfter;}
+    };
+    static std::optional<BloomCpuWindowReceipt3D> MeasureBloomPostProcessCpuWindow(D3D12Renderer& renderer,BloomCpuWindowOrder3D order,uint32_t rawCommandRecordings);
+    static bool SetBloomSemanticMutation(D3D12Renderer& renderer,BloomSemanticMutation3D mutation);
     static void SetSkinnedAllocatorState(D3D12Renderer& renderer,uint32_t nextHandle,uint64_t nextIdentity);
     static void SetEnvironmentResourceFailureCheckpoint(D3D12Renderer& renderer,int checkpoint);
     static void SetFixedProbeClearMismatch(D3D12Renderer& renderer,bool enabled);
@@ -1248,6 +1278,7 @@ struct D3D12RendererTestAccess3D {
     enum class ContactShadowCaptureStage3D { Current, History, Raw, Bilateral };
     struct ContactShadowCapture3D {unsigned width{},height{};std::vector<Vec2> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&pixels.size()==size_t(width)*height;}};
     struct DirectionalShadowCapture3D {unsigned width{},height{},rowPitch{},cascade{};std::vector<float> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&rowPitch>=width*sizeof(float)&&pixels.size()==size_t(width)*height;}};
+    struct SemanticDepthCapture3D {unsigned width{},height{},rowPitch{};std::vector<float> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&rowPitch>=width*sizeof(float)&&pixels.size()==size_t(width)*height;}};
     enum class BaseSkyMutation { Production, LegacyBlue, LegacyClipMatrix, SignedNegativeW, LegacyAbsW, HemisphereFlip };
     enum class CloudContributorRouting { Production, InlineOnly, PhysicalOnly, FullDouble };
     enum class WorldPixelMutation { Production, LegacyArmAlpha, TerrainHeightDisabled };
@@ -1259,6 +1290,7 @@ struct D3D12RendererTestAccess3D {
     static std::optional<LinearHdrCapture3D> CapturePostProcessDiagnostic(D3D12Renderer& renderer,float exposureEv,bool toneMapped);
     static std::optional<ContactShadowCapture3D> CaptureContactShadow(D3D12Renderer& renderer,ContactShadowCaptureStage3D stage);
     static std::optional<DirectionalShadowCapture3D> CaptureDirectionalShadow(D3D12Renderer& renderer,unsigned cascade);
+    static std::optional<SemanticDepthCapture3D> CaptureSemanticDepth(D3D12Renderer& renderer);
     static bool InvalidateContactShadowTemporalHistory(D3D12Renderer& renderer);
     static bool SetContactShadowTemporalForcedOff(D3D12Renderer& renderer,bool forcedOff);
     static bool SetBaseSkyMutation(D3D12Renderer& renderer,BaseSkyMutation mutation);

@@ -108,6 +108,12 @@ float4 VolumetricAtmosphereCompositePixelMain(FullscreenVertex input) : SV_Targe
     return float4(max(0.0,atmosphere.rgb)*depthWeight,alpha);
 }
 
+float4 VolumetricAtmosphereCompositeBloomSemanticPixelMain(FullscreenVertex input) : SV_Target
+{
+    // A-only PSO 仍需此 alpha 供 RGB 的 INV_SRC_ALPHA；alpha channel 本身由 ZERO/ONE 保留目的語意。
+    return VolumetricAtmosphereCompositePixelMain(input);
+}
+
 // 僅供負向回歸測試執行舊 nearest upscale；深度排除與 production 完全相同。
 float4 VolumetricAtmosphereCompositeNearestPixelMain(FullscreenVertex input) : SV_Target
 {
