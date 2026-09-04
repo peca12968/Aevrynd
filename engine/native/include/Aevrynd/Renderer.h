@@ -19,6 +19,7 @@
 #include "Math.h"
 #include "Viewport.h"
 #include "EnvironmentIbl3D.h"
+#include "Hlod3D.h"
 #include "StableId3D.h"
 #include "VolumetricAtmospherePassD3D12.h"
 
@@ -504,6 +505,12 @@ struct RendererQualitySettings3D {bool directionalShadows{true},ambientOcclusion
 enum class GpuInstanceSubmissionMode3D:uint8_t {Aggregate,MultiGroup};
 struct GpuInstanceCullingSettings3D {bool enabled{};float maximumDistance{};GpuInstanceSubmissionMode3D submissionMode{GpuInstanceSubmissionMode3D::MultiGroup};friend constexpr bool operator==(const GpuInstanceCullingSettings3D&,const GpuInstanceCullingSettings3D&)=default;};
 inline GpuInstanceCullingSettings3D NormalizeGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){settings.maximumDistance=std::isfinite(settings.maximumDistance)&&settings.maximumDistance>0.f?settings.maximumDistance:0.f;return settings;}
+struct GpuHlodSelectionResult3D {
+    std::uint64_t requestSerial{},dataContentHash{},residentProxyBytes{};
+    std::vector<HlodSelection3D> selections{};
+    std::vector<std::uint8_t> stableModes{};
+    bool gpuExecuted{},complete{},sceneEcsDrawListIntegrated{};
+};
 enum class HzbOcclusionQuality3D:uint8_t {Off,Conservative,Aggressive};
 struct HzbOcclusionSettings3D {HzbOcclusionQuality3D quality{HzbOcclusionQuality3D::Conservative};uint32_t minimumCandidates{2048},maximumOccluderDraws{256},maximumOccluderTriangles{200000};float minimumOccluderPixels{64.f},depthBias{.0005f};friend constexpr bool operator==(const HzbOcclusionSettings3D&,const HzbOcclusionSettings3D&)=default;};
 inline HzbOcclusionSettings3D NormalizeHzbOcclusionSettings3D(HzbOcclusionSettings3D settings){settings.minimumCandidates=(std::clamp)(settings.minimumCandidates,1024u,1u<<24);settings.maximumOccluderDraws=(std::clamp)(settings.maximumOccluderDraws,1u,4096u);settings.maximumOccluderTriangles=(std::clamp)(settings.maximumOccluderTriangles,1u,1u<<26);settings.minimumOccluderPixels=Clamp(std::isfinite(settings.minimumOccluderPixels)?settings.minimumOccluderPixels:64.f,1.f,4096.f);settings.depthBias=Clamp(std::isfinite(settings.depthBias)?settings.depthBias:.0005f,0.f,.05f);return settings;}
@@ -579,6 +586,7 @@ struct RendererStats {
     std::vector<std::vector<uint64_t>> lastGpuInstanceCullingGroupIdentities{};
     size_t gpuInstanceCullingValidationReadbackBytes{};
     uint64_t gpuInstanceCullingDispatches{},gpuInstanceIndirectDraws{},gpuInstanceDirectFallbackDraws{};
+    uint64_t gpuHlodSelectionRequests{},gpuHlodSelectionDispatches{},gpuHlodSelectionCompletions{};size_t gpuHlodSelectionCandidateCount{},gpuHlodSelectionResidentBytes{};bool gpuHlodSelectionPending{};
     bool lastHzbOcclusionActive{};size_t hzbOcclusionResidentBytes{},lastHzbOccluderDraws{},lastHzbOccluderTriangles{},lastHzbCandidatesTested{},lastHzbOccluded{};uint64_t hzbDepthPrepasses{},hzbBuildDispatches{},lastHzbPrepassGpuNanoseconds{},lastHzbBuildGpuNanoseconds{},lastHzbCullGpuNanoseconds{},lastHzbColorGpuNanoseconds{};
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
     struct HlodHzbIdentityReceipt3D {
@@ -1237,6 +1245,9 @@ public:
     void SetGpuInstanceCullingSettings(GpuInstanceCullingSettings3D settings);
     GpuInstanceCullingSettings3D GpuInstanceCullingSettings()const;
     bool RequestGpuInstanceCullingValidationReadback3D();
+    // 此非同步 seam 僅計算 HLOD 決策；呼叫端仍須明確把結果套用到 SceneECS 與 DrawList。
+    bool RequestGpuHlodSelection3D(const HlodData3D& data,const HlodSelectionView3D& view,const HlodQualitySettings3D& settings,std::span<const std::uint8_t> stableModes={});
+    std::optional<GpuHlodSelectionResult3D> TakeGpuHlodSelection3D();
     void SetHzbOcclusionSettings3D(HzbOcclusionSettings3D settings);
     HzbOcclusionSettings3D HzbOcclusionSettings()const;
     RendererStats GetStats()const;
