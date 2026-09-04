@@ -18,6 +18,27 @@ class SceneECSRegistry3D;
 
 namespace GameplayLab {
 
+enum class GameplaySceneEcsSubmissionOwner3D : std::uint8_t {
+  None,
+  HlodWorldRuntime
+};
+
+struct GameplayHlodSceneEcsOwnershipReceipt3D {
+  static constexpr std::uint32_t SchemaVersion = 1;
+  std::uint32_t schemaVersion{SchemaVersion};
+  GameplaySceneEcsSubmissionOwner3D owner{
+      GameplaySceneEcsSubmissionOwner3D::None};
+  std::uint64_t frameRequests{}, acceptedSubmissions{},
+      rejectedDuplicateFrames{}, submittedFrame{};
+  bool independentRegistry{};
+
+  [[nodiscard]] constexpr bool Complete() const noexcept {
+    return schemaVersion == SchemaVersion && independentRegistry &&
+        owner == GameplaySceneEcsSubmissionOwner3D::HlodWorldRuntime &&
+        acceptedSubmissions && submittedFrame;
+  }
+};
+
 // Gameplay 環境來源必須位於一般物件 identity domain；最高位只保留給 HLOD proxy。
 inline constexpr std::uint64_t GameplayEnvironmentIdentityDomain3D =
     0x2ec047454e560001ull;
@@ -50,6 +71,7 @@ struct GameplayHlodWorldRuntimeReceipt3D {
   Aevrynd::HlodIntegrationStats3D integration{};
   Aevrynd::HlodRuntimeFrameStats3D frame{};
   Aevrynd::SceneECSCollectionStats3D collection{};
+  GameplayHlodSceneEcsOwnershipReceipt3D ownership{};
   std::uint64_t frozenFrame{};
   bool worldPartitionResident{}, selected{}, frozen{}, collected{};
   // 第一階段刻意記錄尚未達成的範圍，避免把代表性低階模型誤報成正式聚合 proxy。
@@ -59,6 +81,7 @@ struct GameplayHlodWorldRuntimeReceipt3D {
   [[nodiscard]] constexpr bool SeamComplete() const noexcept {
     return build.Complete() && worldPartitionResident && selected && frozen &&
         collected && frozenFrame == frame.frameId && frame.frozen &&
+        ownership.Complete() && ownership.submittedFrame == frozenFrame &&
         integration.attachedClusters == build.clusters &&
         collection.submittedRenderables != 0;
   }
@@ -74,7 +97,6 @@ public:
   GameplayHlodWorldRuntime3D &operator=(const GameplayHlodWorldRuntime3D &) = delete;
 
   bool Initialize(Aevrynd::Engine &engine,
-                  Aevrynd::SceneECSRegistry3D &registry,
                   ShowcaseRenderAssetBindings3D &assets,
                   std::span<const ShowcaseSceneDescriptor3D> descriptors,
                   Aevrynd::StableObjectId3D worldId);

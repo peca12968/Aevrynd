@@ -124,7 +124,9 @@ int main() {
       "HlodData3D", "HlodReferenceSelector3D",
       "TerrainVegetationWorldChunkActivationTarget3D", "WorldPartition3D",
       "CreateHlodBatchAtomic3D", "SelectHlodFrame3D", "FreezeHlodFrame3D",
-      "CollectFrozenHlodFrame3D"};
+      "CollectFrozenHlodFrame3D",
+      "GameplayHlodSceneEcsOwnershipReceipt3D", "independentRegistry",
+      "rejectedDuplicateFrames"};
   std::array<std::size_t, RequiredProductionSeams.size()> seamCounts{};
   std::vector<std::byte> canonicalSource;
   for (const auto &source : productionSources) {
@@ -154,7 +156,11 @@ int main() {
                          seamReference("WorldPartition3D") > 0 &&
                          seamReference("SelectHlodFrame3D") > 0 &&
                          seamReference("FreezeHlodFrame3D") > 0 &&
-                         seamReference("CollectFrozenHlodFrame3D") > 0;
+                         seamReference("CollectFrozenHlodFrame3D") > 0 &&
+                         seamReference(
+                             "GameplayHlodSceneEcsOwnershipReceipt3D") > 0 &&
+                         seamReference("independentRegistry") > 0 &&
+                         seamReference("rejectedDuplicateFrames") > 0;
   if (!seamReady) {
     std::cerr << "Required gameplay HLOD seam predicate is not satisfied\n";
     return 7;
@@ -175,6 +181,8 @@ int main() {
          << (seamReady ? 1 : 0) << ","
             "\"syntheticSubstitution\":0,\"performanceMeasured\":0,"
             "\"productionHlodSceneChain\":0,\"fullDescriptorCoverage\":0,"
+            "\"independentHlodSceneEcsRegistry\":1,"
+            "\"exclusiveHlodFrameSubmission\":1,"
          << "\"productionSourceFiles\":" << productionSources.size()
          << ",\"productionSourceSha256\":\"" << Hex(sourceDigest) << "\","
          << "\"worldHash\":" << receipt.worldHash
@@ -192,7 +200,8 @@ int main() {
            << "\",\"references\":" << seamCounts[index] << '}';
   }
   output << "],\"blocker\":\"Production gameplay HLOD seam is ready for "
-            "rocks, but OnRender ownership, all descriptor kinds, aggregate "
+            "rocks with isolated SceneECS ownership, but OnRender integration, "
+            "all descriptor kinds, aggregate "
             "proxy and performance measurement remain incomplete.\"}";
   output.flush();
   if (!output)

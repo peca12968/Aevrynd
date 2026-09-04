@@ -1,6 +1,7 @@
 #include "GameplayHlodWorldRuntime3D.h"
 
 #include <Aevrynd/Engine.h>
+#include <Aevrynd/SceneECS3D.h>
 #include <Aevrynd/WorldPartition3D.h>
 
 #include <deque>
@@ -52,7 +53,9 @@ private:
 
 struct GameplayHlodWorldRuntime3D::State {
   Aevrynd::Engine *engine{};
-  Aevrynd::SceneECSRegistry3D *registry{};
+  // HLOD source/proxy 不可與 palette 共用 registry；否則正式 OnRender 同時
+  // 收集一般 SceneECS 與 frozen HLOD 時，rock 會被提交兩次。
+  Aevrynd::SceneECSRegistry3D registry{};
   std::shared_ptr<Aevrynd::TerrainVegetationChunkPayload3D> payload{};
   std::unique_ptr<SingleGameplayHlodChunkSource3D> source{};
   Aevrynd::ChunkedVegetationWorld3D vegetation{};
@@ -65,15 +68,16 @@ GameplayHlodWorldRuntime3D::GameplayHlodWorldRuntime3D() = default;
 GameplayHlodWorldRuntime3D::~GameplayHlodWorldRuntime3D() { Shutdown(); }
 
 bool GameplayHlodWorldRuntime3D::Initialize(
-    Aevrynd::Engine &engine, Aevrynd::SceneECSRegistry3D &registry,
-    ShowcaseRenderAssetBindings3D &assets,
+    Aevrynd::Engine &engine, ShowcaseRenderAssetBindings3D &assets,
     std::span<const ShowcaseSceneDescriptor3D> descriptors,
     Aevrynd::StableObjectId3D worldId) {
   if (state_ || !assets.ProductionActive())
     return false;
   auto state = std::make_unique<State>();
   state->engine = &engine;
-  state->registry = &registry;
+  state->receipt.ownership.owner =
+      GameplaySceneEcsSubmissionOwner3D::HlodWorldRuntime;
+  state->receipt.ownership.independentRegistry = true;
   if (!assets.BuildProductionHlodChunk3D(descriptors, worldId, {},
                                           state->payload,
                                           state->receipt.build))
@@ -99,7 +103,7 @@ bool GameplayHlodWorldRuntime3D::Initialize(
   targetSettings.worldId = worldId;
   state->target =
       std::make_unique<Aevrynd::TerrainVegetationWorldChunkActivationTarget3D>(
-          engine, registry, state->vegetation, library, nullptr,
+          engine, state->registry, state->vegetation, library, nullptr,
           targetSettings);
   Aevrynd::WorldPartitionSettings3D partitionSettings{};
   partitionSettings.spatial = {512.f, 0, 0, 1, 1, 0x4a17u};
@@ -121,6 +125,14 @@ bool GameplayHlodWorldRuntime3D::CollectFrame(
     Aevrynd::DrawList &draw) {
   if (!state_ || !frameId)
     return false;
+  auto &ownership = state_->receipt.ownership;
+  ++ownership.frameRequests;
+  // 一個 HLOD frame 只有 runtime 可以追加一次；重播或倒退 frame 必須在
+  // Scene3D/DrawList 被修改前拒絕，避免同一批 rock 形成雙重 submission。
+  if (ownership.submittedFrame && frameId <= ownership.submittedFrame) {
+    ++ownership.rejectedDuplicateFrames;
+    return false;
+  }
   state_->partition->Update({});
   state_->source->WaitIdle();
   state_->partition->Update({});
@@ -147,6 +159,8 @@ bool GameplayHlodWorldRuntime3D::CollectFrame(
     return false;
   state_->receipt.collection = *collection;
   state_->receipt.frozenFrame = token->frameId;
+  ++ownership.acceptedSubmissions;
+  ownership.submittedFrame = token->frameId;
   state_->receipt.integration = state_->target->HlodStats();
   state_->receipt.frame = state_->target->HlodRuntimeStats();
   state_->receipt.aggregateProxyBuilt = state_->receipt.build.aggregateProxyBuilt;

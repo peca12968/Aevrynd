@@ -9,12 +9,16 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <set>
+#include <tuple>
 
 using namespace Aevrynd;
 using namespace GameplayLab;
 
 namespace {
 int Result{};
+constexpr StableObjectId3D HostPaletteIdentity3D{
+    0x50414c4554544533ull, 1};
 
 bool Validation(const RendererStats &stats) {
   wchar_t expected[8]{};
@@ -50,12 +54,28 @@ public:
         "engine/assets/realistic-cc0-first-batch/cooked/runtime-render-manifest.json";
     if (!assets_.LoadProduction(engine, registry_, manifest,
                                 environment_.Descriptors(), load_) ||
-        !runtime_.Initialize(engine, registry_, assets_,
+        !runtime_.Initialize(engine, assets_,
                              environment_.Descriptors(),
                              GameplayHlodWorldIdentity3D)) {
       Fail("Gameplay production HLOD runtime initialization failed", engine);
       return;
     }
+    paletteMesh_ = engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());
+    SceneMeshRenderable3D paletteRenderable{};
+    paletteRenderable.nearMesh = paletteMesh_;
+    paletteRenderable.nearMaterial.tint = {.2f, .8f, .9f, 1.f};
+    paletteRenderable.identity = {HostPaletteIdentity3D, 1};
+    const SceneEntityDefinition3D paletteDefinition{
+        SceneTransformComponent3D{{{0, 2, -8}, {}, {1, 1, 1}}},
+        paletteRenderable, {}};
+    std::vector<SceneEntity3D> created;
+    if (!paletteMesh_ ||
+        !registry_.CreateBatchAtomic(std::span(&paletteDefinition, 1), created) ||
+        created.size() != 1) {
+      Fail("Host palette SceneECS fixture initialization failed", engine);
+      return;
+    }
+    paletteEntity_ = created.front();
   }
 
   void OnUpdate(Engine &, float) override {}
@@ -70,6 +90,12 @@ public:
     auto &draw = engine.Draw();
     draw.Clear();
     scene_.Clear();
+    const auto hostCollection = registry_.Collect(scene_, draw);
+    if (hostCollection.aliveEntities != 1 ||
+        hostCollection.submittedRenderables != 1) {
+      Fail("Host palette SceneECS ownership collection failed", engine);
+      return;
+    }
     const Camera3D camera = stage_ == 0
         ? Camera3D{{0, 80, -300}, {0, 0, 0}, {0, 1, 0},
                    {ProjectionMode::Perspective, 1.0471976f, 0, .1f, 10000.f}}
@@ -83,6 +109,38 @@ public:
     if (!runtime_.CollectFrame(nextFrame_, camera, {640, 360}, scene_, draw))
       return;
     const auto runtimeReceipt = runtime_.Receipt();
+    const auto hostCollectionAfterHlod = registry_.Stats();
+    if (!runtimeReceipt.ownership.independentRegistry ||
+        runtimeReceipt.ownership.owner !=
+            GameplaySceneEcsSubmissionOwner3D::HlodWorldRuntime ||
+        hostCollectionAfterHlod.collectionPasses !=
+            hostCollection.collectionPasses ||
+        hostCollectionAfterHlod.aliveEntities != hostCollection.aliveEntities ||
+        hostCollectionAfterHlod.submittedRenderables !=
+            hostCollection.submittedRenderables ||
+        runtimeReceipt.collection.aliveEntities <
+            runtimeReceipt.integration.residentSourceEntities +
+                runtimeReceipt.integration.residentProxyEntities ||
+        scene_.MeshCount() <= hostCollection.submittedRenderables) {
+      std::cerr << "ownership independent="
+                << runtimeReceipt.ownership.independentRegistry
+                << " owner=" << unsigned(runtimeReceipt.ownership.owner)
+                << " hostAlive=" << hostCollection.aliveEntities
+                << " hostSubmitted=" << hostCollection.submittedRenderables
+                << " hlodAlive=" << runtimeReceipt.collection.aliveEntities
+                << " sources="
+                << runtimeReceipt.integration.residentSourceEntities
+                << " proxies="
+                << runtimeReceipt.integration.residentProxyEntities
+                << " hlodSubmitted="
+                << runtimeReceipt.collection.submittedRenderables
+                << " sceneMeshes=" << scene_.MeshCount()
+                << " hostPassBefore=" << hostCollection.collectionPasses
+                << " hostPassAfter="
+                << hostCollectionAfterHlod.collectionPasses << '\n';
+      Fail("HLOD and host SceneECS ownership was not isolated", engine);
+      return;
+    }
     Scene3DSubmissionOptions options{};
     options.frustumCulling = false;
     const auto submission = scene_.Submit(draw, camera, {640, 360}, options);
@@ -90,10 +148,45 @@ public:
       Fail("Gameplay production HLOD frozen Scene submission failed", engine);
       return;
     }
+    std::set<std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>>
+        submittedIdentities;
+    std::size_t hostPaletteRows{};
+    for (const auto &instance : draw.meshInstances) {
+      const auto identity = instance.identity;
+      if (!identity)
+        continue;
+      const auto key =
+          std::tuple{identity.id.high, identity.id.low, identity.generation};
+      if (!submittedIdentities.insert(key).second) {
+        Fail("SceneECS ownership emitted a duplicate render identity", engine);
+        return;
+      }
+      hostPaletteRows += identity.id == HostPaletteIdentity3D ? 1u : 0u;
+    }
+    if (hostPaletteRows != 1) {
+      Fail("Host palette submission did not retain unique ownership", engine);
+      return;
+    }
     if (stage_ == 0) {
-      near_ = runtimeReceipt;
+      Scene3D duplicateScene;
+      DrawList duplicateDraw;
+      if (runtime_.CollectFrame(nextFrame_, camera, {640, 360}, duplicateScene,
+                                duplicateDraw) ||
+          duplicateScene.MeshCount() || !duplicateDraw.meshInstances.empty()) {
+        Fail("Duplicate HLOD frame changed submission output", engine);
+        return;
+      }
+      near_ = runtime_.Receipt();
+      if (near_.ownership.rejectedDuplicateFrames != 1 ||
+          near_.ownership.acceptedSubmissions != 1 ||
+          near_.ownership.submittedFrame != nextFrame_) {
+        Fail("Duplicate HLOD frame ownership receipt failed", engine);
+        return;
+      }
       const bool identityDomainSeparated = std::ranges::all_of(
           draw.meshInstances, [](const auto &instance) {
+            if (instance.identity.id == HostPaletteIdentity3D)
+              return true;
             return instance.identity.id.high & HlodProxyIdentityDomainBit3D
                 ? instance.identity.id.high != GameplayEnvironmentIdentityDomain3D
                 : GameplayEnvironmentIdentityContract3D(instance.identity.id);
@@ -131,6 +224,8 @@ public:
       sourceCoverageBySeed.fill(-1.f);
       proxyCoverageBySeed.fill(-1.f);
       for (const auto &instance : draw.meshInstances) {
+        if (instance.identity.id == HostPaletteIdentity3D)
+          continue;
         if (instance.lodCoverage <= 0.f || instance.lodCoverage >= 1.f)
           continue;
         const auto seed = static_cast<std::size_t>(instance.lodSeed & 7u);
@@ -190,6 +285,8 @@ public:
     far_ = runtimeReceipt;
     const bool proxyIdentityDomain = std::ranges::all_of(
         draw.meshInstances, [](const auto &instance) {
+          if (instance.identity.id == HostPaletteIdentity3D)
+            return true;
           return instance.identity.id &&
               (instance.identity.id.high & HlodProxyIdentityDomainBit3D) &&
               instance.identity.id.high != GameplayEnvironmentIdentityDomain3D;
@@ -225,6 +322,12 @@ public:
     engine.Draw().Clear();
     scene_.Clear();
     runtime_.Shutdown();
+    if (paletteEntity_)
+      registry_.Destroy(paletteEntity_);
+    paletteEntity_ = {};
+    if (paletteMesh_)
+      engine.DestroyMesh3D(paletteMesh_.handle);
+    paletteMesh_ = {};
     const auto release = assets_.ReleaseProduction(engine, scene_);
     engine.WaitRendererIdle3D();
     const auto after = engine.GetRendererStats();
@@ -280,6 +383,13 @@ private:
         << (transitionCoverageComplement_ ? 1 : 0)
         << ",\"farSubmittedRenderables\":"
         << far_.collection.submittedRenderables
+        << ",\"sceneEcsRegistryIndependent\":1,"
+           "\"submissionOwner\":\"HlodWorldRuntime\","
+           "\"acceptedHlodSubmissions\":"
+        << far_.ownership.acceptedSubmissions
+        << ",\"duplicateFrameRejections\":"
+        << far_.ownership.rejectedDuplicateFrames
+        << ",\"hostPaletteRows\":1,\"identityCollisions\":0"
         << ",\"representativeLowLodProxy\":1,\"aggregateProxyBuilt\":0,"
            "\"gameplayLabOnRenderConnected\":0,"
            "\"gameplayIdentityDomainMigrated\":1,"
@@ -298,6 +408,8 @@ private:
   }
 
   SceneECSRegistry3D registry_{};
+  SceneEntity3D paletteEntity_{};
+  MeshResource3D paletteMesh_{};
   Scene3D scene_{};
   GameplayShowcaseEnvironment3D environment_{};
   ShowcaseRenderAssetBindings3D assets_{};
