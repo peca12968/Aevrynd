@@ -143,9 +143,20 @@ int main() {
   }
   const auto totalSeams =
       std::accumulate(seamCounts.begin(), seamCounts.end(), std::size_t{});
-  if (totalSeams) {
-    std::cerr << "Readiness audit is stale: production HLOD seams now exist; "
-                 "replace NO-GO evidence with the real workload gate\n";
+  // seam 存在只代表已具備接線基礎；OnRender、全類型資產與效能閘門仍須另外驗證。
+  const auto seamReference = [&](std::string_view name) {
+    const std::size_t index = static_cast<std::size_t>(
+        std::ranges::find(RequiredProductionSeams, name) -
+        RequiredProductionSeams.begin());
+    return index < seamCounts.size() ? seamCounts[index] : 0u;
+  };
+  const bool seamReady = seamReference("HlodData3D") > 0 &&
+                         seamReference("WorldPartition3D") > 0 &&
+                         seamReference("SelectHlodFrame3D") > 0 &&
+                         seamReference("FreezeHlodFrame3D") > 0 &&
+                         seamReference("CollectFrozenHlodFrame3D") > 0;
+  if (!seamReady) {
+    std::cerr << "Required gameplay HLOD seam predicate is not satisfied\n";
     return 7;
   }
 
@@ -160,8 +171,10 @@ int main() {
   if (!output)
     return 9;
   output << "{\"source\":\"GameplayHlodWorldWorkloadReadinessAudit\","
-            "\"status\":\"NO-GO\",\"syntheticSubstitution\":0,"
-            "\"performanceMeasured\":0,\"productionHlodSceneChain\":0,"
+            "\"status\":\"NO-GO\",\"seamReady\":"
+         << (seamReady ? 1 : 0) << ","
+            "\"syntheticSubstitution\":0,\"performanceMeasured\":0,"
+            "\"productionHlodSceneChain\":0,\"fullDescriptorCoverage\":0,"
          << "\"productionSourceFiles\":" << productionSources.size()
          << ",\"productionSourceSha256\":\"" << Hex(sourceDigest) << "\","
          << "\"worldHash\":" << receipt.worldHash
@@ -178,9 +191,9 @@ int main() {
     output << "{\"name\":\"" << RequiredProductionSeams[index]
            << "\",\"references\":" << seamCounts[index] << '}';
   }
-  output << "],\"blocker\":\"Production gameplay owns a real world and camera "
-            "route but does not connect that workload to HLOD data, selection, "
-            "SceneECS activation, frozen collection, or rendering.\"}";
+  output << "],\"blocker\":\"Production gameplay HLOD seam is ready for "
+            "rocks, but OnRender ownership, all descriptor kinds, aggregate "
+            "proxy and performance measurement remain incomplete.\"}";
   output.flush();
   if (!output)
     return 10;
@@ -189,6 +202,7 @@ int main() {
             << expectedDescriptors << " captureSlots=" << captureSlots
             << " productionSources=" << productionSources.size()
             << " productionHlodSeams=" << totalSeams
+            << " seamReady=" << (seamReady ? 1 : 0)
             << " performanceMeasured=0 syntheticSubstitution=0\n";
   return 0;
 }

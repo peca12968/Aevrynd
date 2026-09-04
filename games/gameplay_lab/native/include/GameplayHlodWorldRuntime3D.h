@@ -3,6 +3,7 @@
 #include "ShowcaseRenderAssetBindings3D.h"
 
 #include <Aevrynd/Camera.h>
+#include <Aevrynd/Hlod3D.h>
 #include <Aevrynd/Scene3D.h>
 
 #include <cstdint>
@@ -16,6 +17,32 @@ class SceneECSRegistry3D;
 }
 
 namespace GameplayLab {
+
+// Gameplay 環境來源必須位於一般物件 identity domain；最高位只保留給 HLOD proxy。
+inline constexpr std::uint64_t GameplayEnvironmentIdentityDomain3D =
+    0x2ec047454e560001ull;
+inline constexpr Aevrynd::StableObjectId3D GameplayHlodWorldIdentity3D{
+    GameplayEnvironmentIdentityDomain3D, 0x484c4f44574f524cull};
+
+[[nodiscard]] constexpr bool GameplayEnvironmentIdentityContract3D(
+    Aevrynd::StableObjectId3D id) noexcept {
+  return id && id.high == GameplayEnvironmentIdentityDomain3D &&
+      !(id.high & Aevrynd::HlodProxyIdentityDomainBit3D);
+}
+
+[[nodiscard]] constexpr Aevrynd::StableObjectId3D
+GameplayEnvironmentObjectIdentity3D(std::uint64_t descriptorOrdinal) noexcept {
+  return descriptorOrdinal
+      ? Aevrynd::StableObjectId3D{GameplayEnvironmentIdentityDomain3D,
+                                  descriptorOrdinal}
+      : Aevrynd::StableObjectId3D{};
+}
+
+static_assert(GameplayEnvironmentIdentityContract3D(
+    GameplayEnvironmentObjectIdentity3D(1)));
+static_assert(Aevrynd::HlodProxyRenderObjectId3D(
+                  GameplayEnvironmentObjectIdentity3D(1)) !=
+              GameplayEnvironmentObjectIdentity3D(1));
 
 struct GameplayHlodWorldRuntimeReceipt3D {
   ShowcaseProductionHlodBuildReceipt3D build{};

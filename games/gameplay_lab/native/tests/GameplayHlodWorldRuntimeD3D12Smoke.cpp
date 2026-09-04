@@ -39,7 +39,10 @@ public:
   void OnStart(Engine &engine) override {
     baseline_ = engine.GetRendererStats();
     if (!environment_.Initialize(0x4a17u) ||
-        environment_.Descriptors().size() != 464) {
+        environment_.Descriptors().size() != 464 ||
+        !GameplayEnvironmentIdentityContract3D(
+            GameplayEnvironmentObjectIdentity3D(1)) ||
+        (GameplayHlodWorldIdentity3D.high & HlodProxyIdentityDomainBit3D)) {
       Fail("Gameplay production descriptor initialization failed", engine);
       return;
     }
@@ -49,7 +52,7 @@ public:
                                 environment_.Descriptors(), load_) ||
         !runtime_.Initialize(engine, registry_, assets_,
                              environment_.Descriptors(),
-                             {0x2ec047454e560001ull, 0x484c4f44574f524cull})) {
+                             GameplayHlodWorldIdentity3D)) {
       Fail("Gameplay production HLOD runtime initialization failed", engine);
       return;
     }
@@ -89,13 +92,20 @@ public:
     }
     if (stage_ == 0) {
       near_ = runtimeReceipt;
+      const bool identityDomainSeparated = std::ranges::all_of(
+          draw.meshInstances, [](const auto &instance) {
+            return instance.identity.id.high & HlodProxyIdentityDomainBit3D
+                ? instance.identity.id.high != GameplayEnvironmentIdentityDomain3D
+                : GameplayEnvironmentIdentityContract3D(instance.identity.id);
+          });
       if (near_.build.inputDescriptors != 464 ||
           near_.build.eligibleRockDescriptors != 30 ||
           near_.build.sourceInstances != 30 || near_.build.clusters != 6 ||
           near_.integration.residentSourceEntities != 30 ||
           near_.integration.residentProxyEntities != 6 ||
           !near_.frame.sourceClusters || near_.frame.transitionClusters ||
-          near_.frame.sourceClusters + near_.frame.proxyClusters != 6) {
+          near_.frame.sourceClusters + near_.frame.proxyClusters != 6 ||
+          !identityDomainSeparated) {
         std::cerr << "near descriptors=" << near_.build.inputDescriptors
                   << " rocks=" << near_.build.eligibleRockDescriptors
                   << " sources=" << near_.build.sourceInstances
@@ -125,12 +135,16 @@ public:
           continue;
         const auto seed = static_cast<std::size_t>(instance.lodSeed & 7u);
         if (instance.identity.id.high & HlodProxyIdentityDomainBit3D) {
+          transitionIdentitySeparated_ = transitionIdentitySeparated_ &&
+              instance.identity.id.high != GameplayEnvironmentIdentityDomain3D;
           ++transitionProxyRows_;
           ++proxyRowsBySeed[seed];
           proxyCoverageBySeed[seed] = instance.lodCoverage;
           transitionProxyInvert_ =
               transitionProxyInvert_ && ((instance.lodSeed & 8u) != 0);
         } else {
+          transitionIdentitySeparated_ = transitionIdentitySeparated_ &&
+              GameplayEnvironmentIdentityContract3D(instance.identity.id);
           ++transitionSourceRows_;
           ++sourceRowsBySeed[seed];
           sourceCoverageBySeed[seed] = instance.lodCoverage;
@@ -162,7 +176,7 @@ public:
           transitionProxyRows_ != transition_.frame.transitionClusters ||
           transitionSourceRows_ != transition_.frame.transitionClusters * 5 ||
           !transitionProxyInvert_ || transitionSourceInvert_ ||
-          !transitionCoverageComplement_ ||
+          !transitionCoverageComplement_ || !transitionIdentitySeparated_ ||
           transition_.collection.submittedRenderables >=
               near_.collection.submittedRenderables) {
         Fail("Gameplay production HLOD transition coverage contract failed",
@@ -174,11 +188,18 @@ public:
       return;
     }
     far_ = runtimeReceipt;
+    const bool proxyIdentityDomain = std::ranges::all_of(
+        draw.meshInstances, [](const auto &instance) {
+          return instance.identity.id &&
+              (instance.identity.id.high & HlodProxyIdentityDomainBit3D) &&
+              instance.identity.id.high != GameplayEnvironmentIdentityDomain3D;
+        });
     if (far_.frame.proxyClusters != 6 || far_.frame.sourceClusters ||
         far_.frame.transitionClusters ||
         far_.frame.appliedTransitions != transition_.frame.transitionClusters ||
         far_.collection.submittedRenderables >=
-            transition_.collection.submittedRenderables) {
+            transition_.collection.submittedRenderables ||
+        !proxyIdentityDomain) {
       std::cerr << "far sourceMode=" << far_.frame.sourceClusters
                 << " transitionMode=" << far_.frame.transitionClusters
                 << " proxyMode=" << far_.frame.proxyClusters
@@ -261,7 +282,8 @@ private:
         << far_.collection.submittedRenderables
         << ",\"representativeLowLodProxy\":1,\"aggregateProxyBuilt\":0,"
            "\"gameplayLabOnRenderConnected\":0,"
-           "\"gameplayIdentityDomainMigrated\":0,"
+           "\"gameplayIdentityDomainMigrated\":1,"
+           "\"sourceProxyIdentitySeparated\":1,"
            "\"allDescriptorKindsCovered\":0,\"gpuValidationRequested\":"
         << (stats.gpuValidationRequested ? 1 : 0)
         << ",\"gpuValidationAvailable\":"
@@ -272,7 +294,7 @@ private:
         << (stats.gpuValidationPassed ? 1 : 0)
         << ",\"debugErrors\":" << stats.debugErrorCount
         << ",\"debugWarnings\":" << stats.debugWarningCount
-        << ",\"remaining\":\"Connect GameplayLabGame OnRender, migrate EnvironmentPartitionId away from the reserved proxy bit, build offline aggregate proxies, and cover masked trees, grass, terrain, water, and buildings.\"}";
+        << ",\"remaining\":\"Connect GameplayLabGame OnRender without duplicate SceneECS ownership, build offline aggregate proxies, and cover masked trees, grass, terrain, water, and buildings.\"}";
   }
 
   SceneECSRegistry3D registry_{};
@@ -287,7 +309,8 @@ private:
   unsigned attempts_{}, stage_{};
   std::size_t transitionSourceRows_{}, transitionProxyRows_{};
   bool transitionProxyInvert_{true}, transitionSourceInvert_{},
-      transitionSharedThreshold_{}, transitionCoverageComplement_{};
+      transitionSharedThreshold_{}, transitionCoverageComplement_{},
+      transitionIdentitySeparated_{true};
   bool complete_{};
 };
 } // 命名空間

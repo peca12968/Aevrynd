@@ -4,6 +4,7 @@
 #include "GameplayAnimation3D.h"
 #include "GameplayCombat3D.h"
 #include "GameplayShowcaseEnvironment3D.h"
+#include "GameplayHlodWorldRuntime3D.h"
 #include "ShowcaseRenderAssetBindings3D.h"
 #include "GameplayObjectPaletteUi3D.h"
 #include "GameplayCameraOcclusionPolicy3D.h"
@@ -513,7 +514,7 @@ struct GameplayCaptureExpectation3D {
     GameplayCaptureLodExpectation3D lodExpectation{GameplayCaptureLodExpectation3D::Stable};
 };
 
-inline constexpr std::uint64_t GameplayCaptureEnvironmentIdentityHigh3D=0xaec047454e560001ull;
+inline constexpr std::uint64_t GameplayCaptureEnvironmentIdentityHigh3D=GameplayEnvironmentIdentityDomain3D;
 inline constexpr std::uint64_t GameplayCaptureCharacterIdentityHigh3D=0xaec0474348415201ull;
 inline constexpr Aevrynd::RenderObjectIdentity3D GameplayCapturePlayerIdentity3D{{GameplayCaptureCharacterIdentityHigh3D,1},1};
 inline constexpr Aevrynd::RenderObjectIdentity3D GameplayCaptureFirstPersonArmsIdentity3D{{GameplayCaptureCharacterIdentityHigh3D,3},1};

@@ -22,7 +22,7 @@ using namespace Aevrynd;using namespace ::GameplayLab;
 namespace {constexpr auto Names=[](){std::array<std::wstring_view,GameplayCaptureExpectations3D.size()> result{};for(std::size_t index=0;index<result.size();++index)result[index]=GameplayCaptureExpectations3D[index].name;return result;}();constexpr Color Cyan{.08f,.9f,.8f,1},Gold{1,.68f,.18f,1};std::string RunId(){GUID g{};if(FAILED(CoCreateGuid(&g)))throw std::runtime_error("Gameplay capture GUID unavailable");return std::format("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",g.Data1,g.Data2,g.Data3,g.Data4[0],g.Data4[1],g.Data4[2],g.Data4[3],g.Data4[4],g.Data4[5],g.Data4[6],g.Data4[7]);}}
 namespace {
 std::ostream& operator<<(std::ostream& out,const RenderResourceIdentity3D& identity){return out<<"{\"generation\":"<<identity.generation<<",\"width\":"<<identity.width<<",\"height\":"<<identity.height<<",\"format\":"<<identity.format<<",\"sampleCount\":"<<identity.sampleCount<<",\"state\":"<<identity.state<<'}';}
-constexpr std::uint64_t EnvironmentPartitionId=0xaec047454e560001ull;
+constexpr std::uint64_t EnvironmentPartitionId=GameplayEnvironmentIdentityDomain3D;
 constexpr std::uint64_t GameplayCharacterIdentityHigh=0xaec0474348415201ull;
 constexpr std::uint64_t GameplayWorldIdentityHigh=0xaec047574f524c01ull;
 constexpr std::uint64_t GameplayPlacedIdentityHigh=0xaec047504c414301ull;
