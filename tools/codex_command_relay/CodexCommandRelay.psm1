@@ -115,12 +115,22 @@ function Get-RelayCommand {
     [pscustomobject]@{ CommentId=[uint64]$Comment.id; CommandId=$commandId; Target=$target; Body=$body;OwnedFiles=@($owned) }
 }
 
+function ConvertFrom-GitHubCommentPages {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Raw)
+    $json=(@($Raw)-join"`n").Trim()
+    if(-not$json-or$json[0]-cne'['-or$json[$json.Length-1]-cne']'){throw 'GitHub comments response was not a complete JSON document'}
+    try{$document=$json|ConvertFrom-Json}catch{throw 'GitHub comments response was invalid JSON'}
+    $comments=[Collections.Generic.List[object]]::new()
+    foreach($page in @($document)){if($page-isnot[Array]){throw 'GitHub comments response page was invalid'};foreach($comment in @($page)){if($null-eq$comment-or$comment-is[string]-or$comment-is[Array]){throw 'GitHub comments response page was invalid'};$comments.Add($comment)}}
+    return @($comments)
+}
+
 function Get-DefaultComments {
     param([string]$Repository,[uint32]$Issue,[string]$Since)
-    $template='{{json .}}{{"\n"}}'
-    $raw = & gh api --method GET ("repos/{0}/issues/{1}/comments" -f $Repository,$Issue) -f since=$Since -f per_page=100 --paginate --template $template 2>$null
+    # --slurp 只把逐頁原生 JSON 陣列包成一個外層陣列，不依賴不同 gh 版本的 Go template 函式集合。
+    $raw = & gh api --method GET ("repos/{0}/issues/{1}/comments" -f $Repository,$Issue) -f since=$Since -f per_page=100 --paginate --slurp 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'GitHub comments API failed' }
-    $comments=[Collections.Generic.List[object]]::new();foreach($line in @($raw)){if([string]::IsNullOrWhiteSpace($line)){continue};foreach($comment in @(ConvertFrom-Json $line)){$comments.Add($comment)}};return @($comments)
+    return @(ConvertFrom-GitHubCommentPages @($raw))
 }
 
 function Send-DefaultAck {

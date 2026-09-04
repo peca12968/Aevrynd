@@ -39,6 +39,18 @@ $boundary={param($phase,$workspace)[pscustomobject]@{head='a'*40;status=@();work
 $compare={param($before,$after,$owned)[pscustomobject]@{passed=$true;violations=@()}}
 $script:Roots=[Collections.Generic.List[string]]::new()
 try{
+    $relayModule=Get-Module CodexCommandRelay
+    $pagedBody=(New-Body PAGED).Replace("TASK: inspect the owned fixture","TASK: first line`nsecond line")
+    $pageOne=(New-Comment 101 $pagedBody)|ConvertTo-Json -Depth 6 -Compress
+    $pageTwo=(New-Comment 102 (New-Body PAGE-TWO))|ConvertTo-Json -Depth 6 -Compress
+    $pagedJson="[[$pageOne],[$pageTwo]]"
+    $paged=@(&$relayModule {param($raw) ConvertFrom-GitHubCommentPages $raw} @($pagedJson.Substring(0,[Math]::Floor($pagedJson.Length/2)),$pagedJson.Substring([Math]::Floor($pagedJson.Length/2))))
+    Assert-True ($paged.Count-eq2-and[uint64]$paged[0].id-eq101-and$paged[0].body-ceq$pagedBody-and[uint64]$paged[1].id-eq102) 'Native JSON pagination lost a page or multiline command body'
+    Assert-Throws {&$relayModule {param($raw) ConvertFrom-GitHubCommentPages $raw} @('<html>gateway failure</html>')} 'Non-JSON GitHub response was accepted'
+    Assert-Throws {&$relayModule {param($raw) ConvertFrom-GitHubCommentPages $raw} @($pagedJson.Substring(0,$pagedJson.Length-3))} 'Truncated GitHub response was accepted'
+    $relaySource=Get-Content -LiteralPath (Join-Path $relayRoot 'CodexCommandRelay.psm1') -Raw
+    Assert-True ($relaySource-match'--paginate --slurp'-and$relaySource-notmatch'--template') 'GitHub polling still depends on a Go template'
+
     foreach($body in @("[MAIN_COMMAND]`nTARGET: TAICHUNG`nCOMMAND_ID: X`nOWNED_FILES: a.txt`nTASK: x","[MAIN_COMMAND]`nTARGET: TAICHUNG`nCOMMAND_ID: X`nOWNED_FILES: a.txt`nTASK: x`n[/MAIN_COMMAND]`ntrailing","[MAIN_COMMAND]`n[MAIN_COMMAND]`nTARGET: TAICHUNG`nCOMMAND_ID: X`nOWNED_FILES: a.txt`nTASK: x`n[/MAIN_COMMAND]`n[/MAIN_COMMAND]")){Assert-True ($null-eq(Get-RelayCommand (New-Comment 1 $body) TAICHUNG)) 'Malformed envelope was accepted'}
     $lfCommand=Get-RelayCommand (New-Comment 1 (New-Body LF)) TAICHUNG;$crlfCommand=Get-RelayCommand (New-Comment 2 ((New-Body CRLF).Replace("`n","`r`n"))) TAICHUNG
     Assert-True ($null-ne$lfCommand-and$lfCommand.CommandId-ceq'LF'-and$null-ne$crlfCommand-and$crlfCommand.CommandId-ceq'CRLF') "LF or CRLF command envelope was rejected lf=$($lfCommand.CommandId) crlf=$($crlfCommand.CommandId)"
