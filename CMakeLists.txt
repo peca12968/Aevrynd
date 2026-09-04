@@ -50,7 +50,8 @@ endif()
 if(WIN32)
   add_test(NAME AevryndStreamlineRuntimePackageGateTest COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
     "${CMAKE_SOURCE_DIR}/tools/ci/test-streamline-runtime-package.ps1" -SourceRoot "${CMAKE_SOURCE_DIR}" -Generator "${CMAKE_GENERATOR}")
-  set_tests_properties(AevryndStreamlineRuntimePackageGateTest PROPERTIES TIMEOUT 180)
+  # Fresh fixture 會逐一重建所有缺件矩陣；依 234.303 秒實測保留有界裕度。
+  set_tests_properties(AevryndStreamlineRuntimePackageGateTest PROPERTIES TIMEOUT 360)
   add_test(NAME AevryndStreamlineRuntimeOffOutputTest COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
     "${CMAKE_SOURCE_DIR}/tools/ci/test-streamline-runtime-off-output.ps1"
     -EngineLab "$<TARGET_FILE:EngineLab>" -FrontierWorld "$<TARGET_FILE:FrontierWorld>"

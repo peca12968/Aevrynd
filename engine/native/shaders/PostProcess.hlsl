@@ -88,12 +88,10 @@ bool LoadBloomSemanticDepth(float2 uv,out float depth)
     return depth==depth&&depth>=0.0&&depth<=1.0;
 }
 
-float BloomDepthSemanticWeight(float2 sampleUv,float centerDepth,float localDepthDerivative)
+float BloomDepthSemanticWeightFromDepth(float sampleDepth,bool sampleDepthValid,float centerDepth,float localDepthDerivative)
 {
     // 無效座標或深度採 fail-open，避免未定義取樣造成黑邊或遺失合法 bloom。
-    float sampleDepth;
-    // BloomContribution 僅在中心深度驗證後呼叫此輔助函式。
-    if(!LoadBloomSemanticDepth(sampleUv,sampleDepth))
+    if(!sampleDepthValid)
         return 1.0;
     const bool centerSky=centerDepth==1.0;
     const bool sampleSky=sampleDepth==1.0;
@@ -110,6 +108,13 @@ float BloomDepthSemanticWeight(float2 sampleUv,float centerDepth,float localDept
     return 1.0-normalized*normalized*(3.0-2.0*normalized);
 }
 
+float BloomDepthSemanticWeight(float2 sampleUv,float centerDepth,float localDepthDerivative)
+{
+    float sampleDepth;
+    const bool sampleDepthValid=LoadBloomSemanticDepth(sampleUv,sampleDepth);
+    return BloomDepthSemanticWeightFromDepth(sampleDepth,sampleDepthValid,centerDepth,localDepthDerivative);
+}
+
 float3 BloomContribution(float2 uv,bool centerDepthValid,float centerDepth)
 {
     if (bloomParameters.w <= 0.0001)
@@ -122,12 +127,19 @@ float3 BloomContribution(float2 uv,bool centerDepthValid,float centerDepth)
     [unroll] for (uint index=0; index<8; ++index)
     {
         const float2 sampleUv=uv+offsets[index]*texel;
-        const float3 sampleColor=hdrSceneColor.SampleLevel(hdrSampler,sampleUv,0).rgb;
+        const float4 sampleValue=hdrSceneColor.SampleLevel(hdrSampler,sampleUv,0);
+        const float3 sampleColor=sampleValue.rgb;
         const float luminance=dot(max(sampleColor,0.0),float3(0.2126,0.7152,0.0722));
         const float knee=max(bloomParameters.x*bloomParameters.y,0.0001);
         const float soft=saturate((luminance-bloomParameters.x+knee)/(2.0*knee));
         const float excess=max(luminance-bloomParameters.x,0.0)+soft*soft*knee;
+#if defined(AEVRYND_BLOOM_SEMANTIC_HDR_ALPHA)
+        // Carrier alpha 與 RGB 已由同一次過濾取樣取得，避免每個 tap 再讀同一張 HDR texture。
+        const bool sampleDepthValid=sampleValue.a==sampleValue.a&&sampleValue.a>=0.0&&sampleValue.a<=1.0;
+        const float semanticWeight=depthAware&&centerDepthValid?BloomDepthSemanticWeightFromDepth(sampleValue.a,sampleDepthValid,centerDepth,localDepthDerivative):1.0;
+#else
         const float semanticWeight=depthAware&&centerDepthValid?BloomDepthSemanticWeight(sampleUv,centerDepth,localDepthDerivative):1.0;
+#endif
         sum+=sampleColor*(excess/max(luminance,0.0001))*semanticWeight;
     }
     return sum*(bloomParameters.w/8.0);
@@ -165,14 +177,22 @@ float4 PostProcessPixelMain(PostProcessVertexOutput input) : SV_TARGET
     const float2 normalizedPosition = saturate((input.position.xy - targetRect.xy) / max(targetRect.zw, 1.0));
     const float2 sourcePosition = sourceRect.xy + normalizedPosition * sourceRect.zw;
     const float2 sourceUv = sourcePosition / float2(sourceWidth, sourceHeight);
-    const float3 hdrCenter = hdrSceneColor.SampleLevel(hdrSampler, sourceUv, 0.0).rgb;
+    const float4 hdrCenterSample = hdrSceneColor.SampleLevel(hdrSampler, sourceUv, 0.0);
+    const float3 hdrCenter = hdrCenterSample.rgb;
     // 曝光在色調映射前執行，保留 HDR 高光供泛光擷取。
     float semanticDepth=1.0;
     bool semanticDepthValid=false;
     const bool semanticDepthRequired=timeOfDayExposure.w>=0.5||timeOfDayFilmic.y>0.5;
     // 僅在 time-of-day 或深度感知 bloom 真正需要時讀取；中心深度同時供兩者共用。
     [branch] if(semanticDepthRequired)
+#if defined(AEVRYND_BLOOM_SEMANTIC_HDR_ALPHA)
+    {
+        semanticDepth=hdrCenterSample.a;
+        semanticDepthValid=semanticDepth==semanticDepth&&semanticDepth>=0.0&&semanticDepth<=1.0;
+    }
+#else
         semanticDepthValid=LoadBloomSemanticDepth(sourceUv,semanticDepth);
+#endif
     const float sceneSemantic=semanticDepthValid&&semanticDepth<1.0?1.0:0.0;
     const float3 exposedScene=ApplySkyPreservingExposure(EdgeAdaptiveHdr(sourceUv,hdrCenter)*exp2(antiAliasing.w),timeOfDayExposure.x,sceneSemantic);
     const float3 hdr=ApplyTimeOfDayFilmic(exposedScene+BloomContribution(sourceUv,semanticDepthValid,semanticDepth),sceneSemantic);

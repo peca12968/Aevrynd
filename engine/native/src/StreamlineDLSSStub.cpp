@@ -10,9 +10,11 @@ bool StreamlineDLSS::Resize(uint32_t outputWidth,uint32_t outputHeight){outputWi
 void StreamlineDLSS::Shutdown(){ReleaseResources();framework_=false;supported_=false;enabled_=false;api_=nullptr;}
 void StreamlineDLSS::BeginScene(ID3D12GraphicsCommandList*,const float[4]){}
 bool StreamlineDLSS::Evaluate(ID3D12GraphicsCommandList*){return false;}
+StreamlineSemanticReplayReceipt StreamlineDLSS::BeginSemanticReplay(ID3D12GraphicsCommandList*){semanticReplayReceipt_={};return semanticReplayReceipt_;}
+void StreamlineDLSS::FinishSemanticReplay(ID3D12GraphicsCommandList*){semanticReplayActive_=false;}
 void StreamlineDLSS::FinishComposite(ID3D12GraphicsCommandList*){}
 bool StreamlineDLSS::ValidateOutput(){return true;}
 void StreamlineDLSS::Toggle(){}
 bool StreamlineDLSS::CreateResources(uint32_t,uint32_t){return false;}
-void StreamlineDLSS::ReleaseResources(){input_.Reset();output_.Reset();motion_.Reset();depth_.Reset();validationReadback_.Reset();rtvHeap_.Reset();dsvHeap_.Reset();device_.Reset();residentBytes_=0;}
+void StreamlineDLSS::ReleaseResources(){input_.Reset();output_.Reset();motion_.Reset();depth_.Reset();validationReadback_.Reset();rtvHeap_.Reset();dsvHeap_.Reset();device_.Reset();validationFrames_=blackFrames_=0;residentBytes_=0;}
 }
