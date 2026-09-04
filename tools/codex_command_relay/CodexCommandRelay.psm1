@@ -1,7 +1,8 @@
 ﻿Set-StrictMode -Version Latest
 
-$script:RelaySchemaVersion = 1
+$script:RelaySchemaVersion = 2
 $script:MaximumOperations = 100
+$script:MaximumClaimedIds = 4096
 $script:MaximumCommandBytes = 32768
 $script:MaximumStateBytes = 1048576
 $script:EpochCursor = '1970-01-01T00:00:00.0000000+00:00'
@@ -57,6 +58,25 @@ function Assert-RelayFileAcl {
     return $full
 }
 
+function Assert-RelayTrustedTool {
+    param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)][ValidateSet('gh.exe','git.exe')][string]$Name)
+    $full=Assert-RelayPathSafe $Path
+    if([IO.Path]::GetFileName($full)-cne$Name-or-not(Test-Path -LiteralPath $full -PathType Leaf)){throw "Trusted $Name was not found"}
+    $null=Assert-RelayFileAcl $full
+    $signature=Get-AuthenticodeSignature -LiteralPath $full
+    $programRoots=@($env:ProgramFiles,${env:ProgramFiles(x86)})|Where-Object{$_}|ForEach-Object{[IO.Path]::GetFullPath($_).TrimEnd('\')+'\'}
+    $underProgramFiles=@($programRoots|Where-Object{$full.StartsWith($_,[StringComparison]::OrdinalIgnoreCase)}).Count-gt0
+    if($signature.Status-ne[Management.Automation.SignatureStatus]::Valid-and-not$underProgramFiles){throw "$Name is neither validly signed nor installed under Program Files"}
+    return $full
+}
+
+function Resolve-RelayTrustedTool {
+    param([Parameter(Mandatory)][ValidateSet('gh.exe','git.exe')][string]$Name)
+    $candidates=if($Name-ceq'gh.exe'){@((Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe'),(Join-Path $env:ProgramFiles 'GitHub CLI\bin\gh.exe'))}else{@((Join-Path $env:ProgramFiles 'Git\cmd\git.exe'),(Join-Path $env:ProgramFiles 'Git\bin\git.exe'))}
+    foreach($candidate in $candidates){if($candidate-and(Test-Path -LiteralPath $candidate -PathType Leaf)){return Assert-RelayTrustedTool $candidate $Name}}
+    throw "Trusted $Name was not found under Program Files"
+}
+
 function Write-RelayJsonAtomic {
     param([Parameter(Mandatory)][string]$Path,[Parameter(Mandatory)]$Value,[switch]$VerifyAcl)
     $directory = Split-Path -Parent $Path
@@ -105,6 +125,7 @@ function Get-RelayCommand {
     if ($targetMatches.Count -ne 1 -or $idMatches.Count -ne 1-or$ownedMatches.Count-ne1) { return $null }
     $target = $targetMatches[0].Groups[1].Value
     if ($target -cne 'ALL' -and $target -cne $Node) { return $null }
+    # COMMAND_ID 是 publisher 提供的 replay nonce；durable state 永久拒絕同值重放。
     $commandId = $idMatches[0].Groups[1].Value
     $headerEnd = $targetMatches[0].Index + $targetMatches[0].Length
     $idEnd = $idMatches[0].Index + $idMatches[0].Length
@@ -126,16 +147,18 @@ function ConvertFrom-GitHubCommentPages {
 }
 
 function Get-DefaultComments {
-    param([string]$Repository,[uint32]$Issue,[string]$Since)
+    param([string]$Repository,[uint32]$Issue,[string]$Since,[string]$GitHubCliPath)
     # --slurp 只把逐頁原生 JSON 陣列包成一個外層陣列，不依賴不同 gh 版本的 Go template 函式集合。
-    $raw = & gh api --method GET ("repos/{0}/issues/{1}/comments" -f $Repository,$Issue) -f since=$Since -f per_page=100 --paginate --slurp 2>$null
+    $gh=Assert-RelayTrustedTool $GitHubCliPath 'gh.exe'
+    $raw = & $gh api --method GET ("repos/{0}/issues/{1}/comments" -f $Repository,$Issue) -f since=$Since -f per_page=100 --paginate --slurp 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'GitHub comments API failed' }
     return @(ConvertFrom-GitHubCommentPages @($raw))
 }
 
 function Send-DefaultAck {
-    param([string]$Repository,[uint32]$Issue,[string]$Body)
-    $null = & gh api ("repos/{0}/issues/{1}/comments" -f $Repository,$Issue) -f body=$Body 2>$null
+    param([string]$Repository,[uint32]$Issue,[string]$Body,[string]$GitHubCliPath)
+    $gh=Assert-RelayTrustedTool $GitHubCliPath 'gh.exe'
+    $null = & $gh api ("repos/{0}/issues/{1}/comments" -f $Repository,$Issue) -f body=$Body 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'GitHub ACK API failed' }
 }
 
@@ -214,14 +237,15 @@ function Get-RelayPorcelainPaths {
 }
 
 function Get-GitBoundarySnapshot {
-    param([string]$Workspace)
+    param([string]$Workspace,[string]$GitPath)
     $root=Assert-RelayPathSafe $Workspace
-    $head=(& git -C $root rev-parse HEAD 2>$null)-join'';if($LASTEXITCODE-ne0-or$head-notmatch'^[0-9a-fA-F]{40,64}$'){throw 'Git HEAD audit failed'}
-    $status=@(& git -C $root status --porcelain=v1 --untracked-files=all 2>$null);if($LASTEXITCODE-ne0){throw 'Git worktree audit failed'}
-    $gitPath=(& git -C $root rev-parse --absolute-git-dir 2>$null)-join'';if($LASTEXITCODE-ne0){throw 'Git metadata audit failed'};$gitPath=Assert-RelayPathSafe $gitPath
+    $git=Assert-RelayTrustedTool $GitPath 'git.exe'
+    $head=(&$git -C $root rev-parse HEAD 2>$null)-join'';if($LASTEXITCODE-ne0-or$head-notmatch'^[0-9a-fA-F]{40,64}$'){throw 'Git HEAD audit failed'}
+    $status=@(&$git -C $root status --porcelain=v1 --untracked-files=all 2>$null);if($LASTEXITCODE-ne0){throw 'Git worktree audit failed'}
+    $gitMetadataPath=(&$git -C $root rev-parse --absolute-git-dir 2>$null)-join'';if($LASTEXITCODE-ne0){throw 'Git metadata audit failed'};$gitMetadataPath=Assert-RelayPathSafe $gitMetadataPath
     # hooks、objects、logs、info 等整個 metadata tree 都屬於禁止變更面。
-    $metadata=[Collections.Generic.List[object]]::new();$pending=[Collections.Generic.Queue[string]]::new();$pending.Enqueue($gitPath)
-    while($pending.Count){$directory=$pending.Dequeue();$null=Assert-RelayPathSafe $directory;foreach($item in @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop)){$null=Assert-RelayPathSafe $item.FullName;if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw 'Git metadata contains a reparse point'};if($item.PSIsContainer){$pending.Enqueue($item.FullName)}else{$metadata.Add([pscustomobject]@{path=$item.FullName.Substring($gitPath.Length).TrimStart('\').Replace('\','/');sha256=Get-RelayFileHash $item.FullName})}}}
+    $metadata=[Collections.Generic.List[object]]::new();$pending=[Collections.Generic.Queue[string]]::new();$pending.Enqueue($gitMetadataPath)
+    while($pending.Count){$directory=$pending.Dequeue();$null=Assert-RelayPathSafe $directory;foreach($item in @(Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop)){$null=Assert-RelayPathSafe $item.FullName;if(($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne0){throw 'Git metadata contains a reparse point'};if($item.PSIsContainer){$pending.Enqueue($item.FullName)}else{$metadata.Add([pscustomobject]@{path=$item.FullName.Substring($gitMetadataPath.Length).TrimStart('\').Replace('\','/');sha256=Get-RelayFileHash $item.FullName})}}}
     $metadata=@($metadata|Sort-Object path)
     $details=[Collections.Generic.List[object]]::new();foreach($row in $status){foreach($path in @(Get-RelayPorcelainPaths $row)){$full=[IO.Path]::GetFullPath((Join-Path $root $path));if(-not$full.StartsWith(($root.TrimEnd('\')+'\'),[StringComparison]::OrdinalIgnoreCase)){throw 'Git status returned an out-of-root path'};$hash=if(Test-Path -LiteralPath $full -PathType Leaf){Get-RelayFileHash $full}else{''};$details.Add([pscustomobject]@{path=$path;status=$row.Substring(0,2);sha256=$hash})}}
     return [pscustomobject]@{head=$head.ToLowerInvariant();status=@($status);worktree=@($details);metadata=@($metadata)}
@@ -244,7 +268,7 @@ function Compare-GitBoundarySnapshot {
     return [pscustomobject]@{passed=$violations.Count-eq0;violations=@($violations)}
 }
 
-function New-InitialRelayState([string]$Node) { [pscustomobject]@{ schemaVersion=$script:RelaySchemaVersion; node=$Node; cursor=[uint64]0; cursorCreatedAt=$script:EpochCursor; operations=@() } }
+function New-InitialRelayState([string]$Node) { [pscustomobject]@{ schemaVersion=$script:RelaySchemaVersion; node=$Node; cursor=[uint64]0; cursorCreatedAt=$script:EpochCursor; claimedIds=@(); operations=@() } }
 
 function Test-RelayUtcTimestamp {
     param($Value)
@@ -255,18 +279,21 @@ function Test-RelayUtcTimestamp {
 function Assert-RelayState {
     param($State,[string]$Node)
     if($null-eq$State){throw 'Relay state schema or permanent node binding is invalid'}
-    $names=@($State.PSObject.Properties.Name|Sort-Object)
-    if(($names-join',')-cne'cursor,cursorCreatedAt,node,operations,schemaVersion'){throw 'Relay state schema or permanent node binding is invalid'}
-    if([int]$State.schemaVersion-ne1-or[string]$State.node-cne$Node-or$State.cursorCreatedAt-isnot[string]-or@($State.operations).Count-gt$script:MaximumOperations){throw 'Relay state schema or permanent node binding is invalid'}
+    $names=@($State.PSObject.Properties.Name|Sort-Object);$legacy=([int]$State.schemaVersion-eq1-and($names-join',')-ceq'cursor,cursorCreatedAt,node,operations,schemaVersion')
+    if(-not$legacy-and(([int]$State.schemaVersion-ne$script:RelaySchemaVersion)-or($names-join',')-cne'claimedIds,cursor,cursorCreatedAt,node,operations,schemaVersion')){throw 'Relay state schema or permanent node binding is invalid'}
+    if([string]$State.node-cne$Node-or$State.cursorCreatedAt-isnot[string]-or@($State.operations).Count-gt$script:MaximumOperations){throw 'Relay state schema or permanent node binding is invalid'}
     try{$null=[uint64]$State.cursor}catch{throw 'Relay state cursor is invalid'}
     try{$null=[DateTimeOffset]::ParseExact([string]$State.cursorCreatedAt,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)}catch{throw 'Relay state cursor timestamp is invalid'}
     $ids=@{};foreach($item in @($State.operations)){
         $propertyNames=@($item.PSObject.Properties.Name|Sort-Object)
-        if(($propertyNames-join',')-cne'ackAttempted,ackSucceeded,commandId,commentId,exitCode,finishedAt,node,outputPath,startedAt,state,summary,target'){throw 'Relay state operation schema is invalid'}
+        $legacyOperation=($propertyNames-join',')-ceq'ackAttempted,ackSucceeded,commandId,commentId,exitCode,finishedAt,node,outputPath,startedAt,state,summary,target'
+        if(-not$legacyOperation-and($propertyNames-join',')-cne'ackAttempted,ackSucceeded,commandId,commentId,exitCode,finishedAt,node,outputPath,receiptAttempted,receiptSucceeded,startedAt,state,summary,target'){throw 'Relay state operation schema is invalid'}
         if($item.commandId-isnot[string]-or$item.commandId-notmatch'^[A-Z0-9][A-Z0-9._-]{0,127}$'-or$ids.ContainsKey($item.commandId)-or$item.node-isnot[string]-or$item.node-cne$Node-or$item.target-isnot[string]-or$item.target-notin@($Node,'ALL')-or$item.state-isnot[string]-or$item.state-notin@('running','completed','failed')){throw 'Relay state operation identity is invalid'}
         if($item.commentId-is[bool]-or$item.commentId-is[string]){throw 'Relay state comment id is invalid'};try{$commentId=[uint64]$item.commentId;if($commentId-eq0-or[decimal]$commentId-ne[decimal]$item.commentId){throw 'invalid'}}catch{throw 'Relay state comment id is invalid'}
         if(-not(Test-RelayUtcTimestamp $item.startedAt)){throw 'Relay state start timestamp is invalid'}
         if($item.ackAttempted-isnot[bool]-or$item.ackSucceeded-isnot[bool]-or($item.ackSucceeded-and-not$item.ackAttempted)){throw 'Relay state ACK flags are invalid'}
+        if($legacyOperation){$item|Add-Member -NotePropertyName receiptAttempted -NotePropertyValue ($item.state-cne'running');$item|Add-Member -NotePropertyName receiptSucceeded -NotePropertyValue ($item.state-cne'running')}
+        if($item.receiptAttempted-isnot[bool]-or$item.receiptSucceeded-isnot[bool]-or($item.receiptSucceeded-and-not$item.receiptAttempted)){throw 'Relay state receipt flags are invalid'}
         if($item.summary-isnot[string]-or$item.summary-notmatch'^[\x20-\x7E]{1,240}$'){throw 'Relay state summary is invalid'}
         if($null-ne$item.outputPath-and($item.outputPath-isnot[string]-or$item.outputPath.Length-gt1024-or$item.outputPath-notmatch'^[^\x00-\x1F]+$'-or-not[IO.Path]::IsPathRooted($item.outputPath))){throw 'Relay state output path is invalid'}
         if($item.state-ceq'running'){
@@ -278,6 +305,10 @@ function Assert-RelayState {
         }
         $ids[$item.commandId]=$true
     }
+    if($legacy){$State|Add-Member -NotePropertyName claimedIds -NotePropertyValue @($ids.Keys);$State.schemaVersion=$script:RelaySchemaVersion}
+    if(@($State.claimedIds).Count-gt$script:MaximumClaimedIds){throw 'Relay claimed nonce capacity is exceeded'}
+    $claims=@{};foreach($id in @($State.claimedIds)){if($id-isnot[string]-or$id-notmatch'^[A-Z0-9][A-Z0-9._-]{0,127}$'-or$claims.ContainsKey($id)){throw 'Relay claimed nonce ledger is invalid'};$claims[$id]=$true}
+    foreach($id in $ids.Keys){if(-not$claims.ContainsKey($id)){throw 'Relay operation is missing its durable nonce claim'}}
     return $State
 }
 
@@ -314,9 +345,17 @@ function ConvertTo-RelaySafeSummary {
     $safe=[regex]::Replace([string]$Value,'[^\x20-\x7E]','?');if($safe.Length-gt240){$safe=$safe.Substring(0,240)};if(-not$safe){$safe='Relay result unavailable'};return $safe
 }
 
+function New-RelayTerminalReceiptBody {
+    param($Operation,[string]$Node,[bool]$RequireSecureAcl=$true)
+    $hash=if($Operation.outputPath){Get-RelayFileHash ([string]$Operation.outputPath)}else{''}
+    $boundary='unavailable'
+    if($Operation.outputPath){$boundaryPath=([string]$Operation.outputPath)-replace'\.log\z','-boundary.json';if(Test-Path -LiteralPath $boundaryPath -PathType Leaf){try{$boundaryValue=Read-RelayJsonStrict $boundaryPath $null 'boundary' -VerifyAcl:$RequireSecureAcl;$boundary=if([bool]$boundaryValue.passed){'passed'}else{'failed'}}catch{$boundary='invalid'}}}
+    return "[NODE_RECEIPT]`nNODE: $Node`nSTATUS: $(([string]$Operation.state).ToUpperInvariant())`nCOMMAND_ID: $($Operation.commandId)`nEXIT_CODE: $($Operation.exitCode)`nBOUNDARY: $boundary`nOUTPUT_SHA256: $hash`nSUMMARY: $(ConvertTo-RelaySafeSummary $Operation.summary)`n[/NODE_RECEIPT]"
+}
+
 function Get-RelayNewComments {
-    param($State,[string]$Repository,[uint32]$Issue,[scriptblock]$GetComments)
-    try{$cursorTime=[DateTimeOffset]::ParseExact([string]$State.cursorCreatedAt,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind);$source=@($(if($GetComments){&$GetComments $Repository $Issue $State.cursorCreatedAt}else{Get-DefaultComments $Repository $Issue $State.cursorCreatedAt}))}catch{throw 'GitHub comments API failed'}
+    param($State,[string]$Repository,[uint32]$Issue,[string]$GitHubCliPath,[scriptblock]$GetComments)
+    try{$cursorTime=[DateTimeOffset]::ParseExact([string]$State.cursorCreatedAt,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind);$source=@($(if($GetComments){&$GetComments $Repository $Issue $State.cursorCreatedAt}else{Get-DefaultComments $Repository $Issue $State.cursorCreatedAt $GitHubCliPath}))}catch{throw 'GitHub comments API failed'}
     $rows=[Collections.Generic.List[object]]::new()
     foreach($comment in $source){try{$id=[uint64]$comment.id;$created=[DateTimeOffset]::Parse([string]$comment.created_at,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)}catch{throw 'GitHub comments response was invalid'};if($created-gt$cursorTime-or($created-eq$cursorTime-and$id-gt[uint64]$State.cursor)){$comment|Add-Member -NotePropertyName _relayCreated -NotePropertyValue $created -Force;$rows.Add($comment)}}
     return @($rows|Sort-Object @{Expression={$_._relayCreated}},@{Expression={[uint64]$_.id}})
@@ -330,8 +369,9 @@ function Invoke-CodexCommandRelay {
         [string]$StateRoot='C:\ProgramData\Aevrynd\Codex',
         [string]$AuditRoot='C:\AevryndAudit\codex-relay',
         [string]$Workspace='C:\Aevrynd\Games',
+        [string]$GitHubCliPath,[string]$GitPath,
         [switch]$BaselineOnly,[switch]$WhatIf,[bool]$RequireSecureAcl=$true,
-        [scriptblock]$GetComments,[scriptblock]$SendAck,[scriptblock]$ResolveCodex,[scriptblock]$CheckLogin,[scriptblock]$RunCodex,[scriptblock]$InspectCodexPlan,[scriptblock]$CaptureBoundary,[scriptblock]$CompareBoundary
+        [scriptblock]$GetComments,[scriptblock]$SendAck,[scriptblock]$ResolveCodex,[scriptblock]$CheckLogin,[scriptblock]$RunCodex,[scriptblock]$InspectCodexPlan,[scriptblock]$CaptureBoundary,[scriptblock]$CompareBoundary,[scriptblock]$PollOutcome
     )
     $StateRoot=Assert-RelayPathSafe $StateRoot;$AuditRoot=Assert-RelayPathSafe $AuditRoot
     $statePath = Join-Path $StateRoot 'relay-state.json'
@@ -342,8 +382,8 @@ function Invoke-CodexCommandRelay {
     if($WhatIf){
         $state=Assert-RelayState (Read-RelayJsonStrict $statePath (New-InitialRelayState $Node) 'state' -VerifyAcl:$RequireSecureAcl) $Node
         $null=Read-PublisherHistory $historyPath -VerifyAcl:$RequireSecureAcl
-        try{$comments=@(Get-RelayNewComments $state $Repository $Issue $GetComments)}catch{return}
-        $known=@{};foreach($item in @($state.operations)){$known[[string]$item.commandId]=$true};$command=$null
+        try{$comments=@(Get-RelayNewComments $state $Repository $Issue $GitHubCliPath $GetComments);if($PollOutcome){&$PollOutcome $true}}catch{if($PollOutcome){&$PollOutcome $false};return}
+        $known=@{};foreach($id in @($state.claimedIds)){$known[[string]$id]=$true};$command=$null
         foreach($comment in $comments){$candidate=Get-RelayCommand $comment $Node;if($candidate-and-not$known.ContainsKey($candidate.CommandId)){$command=$candidate;break}}
         if(-not$command){return}
         $safeId=ConvertTo-RelaySafeFileId $command.CommandId;$outputPath=Join-Path (Join-Path $AuditRoot $Node.ToLowerInvariant()) ("{0}-{1}.log"-f$command.CommentId,$safeId)
@@ -365,15 +405,31 @@ function Invoke-CodexCommandRelay {
         if(Test-Path -LiteralPath $statusPath -PathType Leaf){$null=Read-RelayJsonStrict $statusPath $null 'status' -VerifyAcl:$RequireSecureAcl}
         $operations = [Collections.Generic.List[object]]::new()
         foreach ($item in @($state.operations)) { $operations.Add($item) }
-        try { $comments = @(Get-RelayNewComments $state $Repository $Issue $GetComments) }
-        catch { if ($BaselineOnly) { throw }; return }
+        # 上次程序若在 claim 後中止，絕不重跑；先封存 exit 92 並只重試控制面 receipt。
+        $recovered=$false;$recoveryNow=[DateTimeOffset]::UtcNow.ToString('o')
+        foreach($item in $operations){
+            if($item.state-ceq'running'){
+                $outputDirectory=Join-Path $AuditRoot $Node.ToLowerInvariant();if(-not(Test-Path -LiteralPath $outputDirectory -PathType Container)){New-Item -ItemType Directory -Path $outputDirectory -Force|Out-Null};if($RequireSecureAcl){Assert-RelayDirectoryAcl $outputDirectory}
+                $recoveryPath=Join-Path $outputDirectory ("{0}-{1}-recovery.log"-f$item.commentId,(ConvertTo-RelaySafeFileId $item.commandId));if(-not(Test-Path -LiteralPath $recoveryPath -PathType Leaf)){[IO.File]::WriteAllText($recoveryPath,'Relay recovered an interrupted durable claim; Codex will not be restarted.',[Text.UTF8Encoding]::new($false))}
+                if($RequireSecureAcl){$null=Assert-RelayFileAcl $recoveryPath};$item.outputPath=$recoveryPath;$item.state='failed';$item.exitCode=92;$item.finishedAt=$recoveryNow;$item.summary='Interrupted claim recovered without restarting Codex';$recovered=$true
+                $events=[Collections.Generic.List[object]]::new();foreach($event in @($publisherHistory.events)){$events.Add($event)};$events.Add([pscustomobject][ordered]@{name=(New-RelayTaskName $Node $item.commandId);type='codex-command-relay';startedAt=$item.startedAt;updatedAt=$recoveryNow;endedAt=$recoveryNow;status='failed';evidenceSummary=$item.summary});while($events.Count-gt$script:MaximumOperations){$events.RemoveAt(0)};$publisherHistory=[pscustomobject][ordered]@{schemaVersion=1;events=@($events)}
+            }
+        }
+        if($recovered){$state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl;Write-RelayJsonAtomic $historyPath $publisherHistory -VerifyAcl:$RequireSecureAcl;if(Test-Path -LiteralPath $statusPath -PathType Leaf){Remove-Item -LiteralPath $statusPath -Force}}
+        # ACK/terminal receipt 可在下輪重試，但 durable claim 的 Codex 永遠不再啟動。
+        foreach($item in $operations){
+            if(-not$item.ackSucceeded){$item.ackAttempted=$true;$ack="[NODE_ACK]`nNODE: $Node`nSTATUS: RUNNING`nCOMMAND_ID: $($item.commandId)";try{if($SendAck){&$SendAck $Repository $Issue $ack}else{Send-DefaultAck $Repository $Issue $ack $GitHubCliPath};$item.ackSucceeded=$true}catch{};$state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl}
+            if($item.state-cne'running'-and-not$item.receiptSucceeded){$item.receiptAttempted=$true;$receipt=New-RelayTerminalReceiptBody $item $Node $RequireSecureAcl;try{if($SendAck){&$SendAck $Repository $Issue $receipt}else{Send-DefaultAck $Repository $Issue $receipt $GitHubCliPath};$item.receiptSucceeded=$true}catch{};$state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl}
+        }
+        try { $comments = @(Get-RelayNewComments $state $Repository $Issue $GitHubCliPath $GetComments);if($PollOutcome){&$PollOutcome $true} }
+        catch { if($PollOutcome){&$PollOutcome $false};if ($BaselineOnly) { throw }; return }
         $maximumComment=if(@($comments).Count){@($comments)[-1]}else{$null}
         if ($BaselineOnly) {
             if($maximumComment){$state.cursor=[uint64]$maximumComment.id;$state.cursorCreatedAt=$maximumComment._relayCreated.ToString('o')};$state.operations=@($operations)
             Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
             return
         }
-        $known = @{}; foreach ($item in $operations) { $known[[string]$item.commandId]=$true }
+        $known = @{}; foreach ($id in @($state.claimedIds)) { $known[[string]$id]=$true }
         $commands = [Collections.Generic.List[object]]::new()
         foreach ($comment in $comments) {
             $command = Get-RelayCommand $comment $Node
@@ -383,10 +439,12 @@ function Invoke-CodexCommandRelay {
         # 每輪只 claim 最舊的一筆合法命令，避免程序崩潰時較新的未執行命令被游標跨過。
         $selectedComment=if($commands.Count){$comments|Where-Object{[uint64]$_.id-eq[uint64]$commands[0].CommentId}|Select-Object -First 1}else{$maximumComment}
         if($selectedComment){$state.cursor=[uint64]$selectedComment.id;$state.cursorCreatedAt=$selectedComment._relayCreated.ToString('o')}
-        if ($commands.Count -eq 0) { $state.operations=@($operations | Select-Object -Last $script:MaximumOperations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl;return }
+        if ($commands.Count -eq 0) {if($null-eq$selectedComment){return};$state.operations=@($operations | Select-Object -Last $script:MaximumOperations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl;return }
         foreach ($command in $commands) {
             $now=[DateTimeOffset]::UtcNow.ToString('o')
-            $operation=[pscustomobject][ordered]@{commandId=$command.CommandId;commentId=$command.CommentId;node=$Node;target=$command.Target;state='running';startedAt=$now;finishedAt=$null;exitCode=$null;ackAttempted=$false;ackSucceeded=$false;outputPath=$null;summary='Command claimed before execution'}
+            if(@($state.claimedIds).Count-ge$script:MaximumClaimedIds){throw 'Relay claimed nonce ledger is full'}
+            $state.claimedIds=@($state.claimedIds)+@($command.CommandId)
+            $operation=[pscustomobject][ordered]@{commandId=$command.CommandId;commentId=$command.CommentId;node=$Node;target=$command.Target;state='running';startedAt=$now;finishedAt=$null;exitCode=$null;ackAttempted=$false;ackSucceeded=$false;receiptAttempted=$false;receiptSucceeded=$false;outputPath=$null;summary='Command claimed before execution'}
             $operations.Add($operation)
             while ($operations.Count -gt $script:MaximumOperations) { $operations.RemoveAt(0) }
             $state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
@@ -395,7 +453,7 @@ function Invoke-CodexCommandRelay {
             $ack="[NODE_ACK]`nNODE: $Node`nSTATUS: RUNNING`nCOMMAND_ID: $($command.CommandId)"
             $operation.ackAttempted=$true
             $state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
-            try { if ($SendAck) { & $SendAck $Repository $Issue $ack } else { Send-DefaultAck $Repository $Issue $ack };$operation.ackSucceeded=$true } catch {$operation.summary='ACK failed before Codex execution'}
+            try { if ($SendAck) { & $SendAck $Repository $Issue $ack } else { Send-DefaultAck $Repository $Issue $ack $GitHubCliPath };$operation.ackSucceeded=$true } catch {$operation.summary='ACK failed before Codex execution'}
             $state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
             $outputDirectory=Join-Path $AuditRoot $Node.ToLowerInvariant();New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null;if($RequireSecureAcl){Assert-RelayDirectoryAcl $outputDirectory}
             $safeId=ConvertTo-RelaySafeFileId $command.CommandId;$outputPath=Join-Path $outputDirectory ("{0}-{1}.log" -f $command.CommentId,$safeId);$boundaryPath=Join-Path $outputDirectory ("{0}-{1}-boundary.json"-f$command.CommentId,$safeId);$operation.outputPath=$outputPath
@@ -403,18 +461,18 @@ function Invoke-CodexCommandRelay {
             $arguments=@('exec','--ephemeral','-m','gpt-5.6-luna','-c','model_reasoning_effort="medium"','-s','workspace-write','--approve-for-me','-C',$Workspace)
             $prompt=New-RelayPrompt $command $Node
             $exitCode=0;$beforeBoundary=$null;$afterBoundary=$null;$boundaryResult=$null
-            try {
+            if(-not$operation.ackSucceeded){$exitCode=93;$operation.state='failed';$operation.summary='RUNNING ACK failed; Codex was not started';[IO.File]::WriteAllText($outputPath,$operation.summary,[Text.UTF8Encoding]::new($false));if($RequireSecureAcl){$null=Assert-RelayFileAcl $outputPath}}else{try {
                 $null=Assert-RelayPathSafe $outputPath
                 if(Test-Path -LiteralPath $outputPath){if($RequireSecureAcl){$null=Assert-RelayFileAcl $outputPath};throw 'Output log collision detected'}
-                $beforeBoundary=if($CaptureBoundary){&$CaptureBoundary 'before' $Workspace}else{Get-GitBoundarySnapshot $Workspace}
+                $beforeBoundary=if($CaptureBoundary){&$CaptureBoundary 'before' $Workspace}else{Get-GitBoundarySnapshot $Workspace $GitPath}
                 $codexPath = if ($ResolveCodex) { & $ResolveCodex } else { Resolve-DesktopCodex }
                 if ($CheckLogin) { & $CheckLogin $codexPath } else { Test-CodexLogin $codexPath }
                 $exitCode = if ($RunCodex) { & $RunCodex $codexPath $arguments $prompt $outputPath } else { Invoke-DefaultCodex $codexPath $arguments $prompt $outputPath }
                 if ($null -eq $exitCode) { $exitCode=0 }
-            } catch { $exitCode=1;$operation.state='failed';$operation.summary='Relay execution failed' }
+            } catch { $exitCode=1;$operation.state='failed';$operation.summary='Relay execution failed' }}
             if($beforeBoundary){
                 try{
-                    $afterBoundary=if($CaptureBoundary){&$CaptureBoundary 'after' $Workspace}else{Get-GitBoundarySnapshot $Workspace}
+                    $afterBoundary=if($CaptureBoundary){&$CaptureBoundary 'after' $Workspace}else{Get-GitBoundarySnapshot $Workspace $GitPath}
                     $boundaryResult=if($CompareBoundary){&$CompareBoundary $beforeBoundary $afterBoundary $command.OwnedFiles}else{Compare-GitBoundarySnapshot $beforeBoundary $afterBoundary $command.OwnedFiles}
                     if($null-eq$boundaryResult-or$null-eq$boundaryResult.passed){throw 'Boundary comparer returned an invalid result'}
                     Write-RelayJsonAtomic $boundaryPath ([ordered]@{schemaVersion=1;commandId=$command.CommandId;node=$Node;passed=[bool]$boundaryResult.passed;violations=@($boundaryResult.violations);beforeHead=[string]$beforeBoundary.head;afterHead=[string]$afterBoundary.head}) -VerifyAcl:$RequireSecureAcl
@@ -424,6 +482,9 @@ function Invoke-CodexCommandRelay {
             if($operation.state-ceq'running'){$operation.state=if([int]$exitCode-eq0){'completed'}else{'failed'};$operation.summary=if([int]$exitCode-eq0){if($operation.ackSucceeded){'Codex completed'}else{'ACK failed; Codex completed'}}else{if($operation.ackSucceeded){'Codex failed'}else{'ACK failed; Codex failed'}}}
             $operation.summary=ConvertTo-RelaySafeSummary $operation.summary
             $operation.exitCode=[int]$exitCode;$operation.finishedAt=[DateTimeOffset]::UtcNow.ToString('o')
+            $state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
+            $operation.receiptAttempted=$true;$terminalReceipt=New-RelayTerminalReceiptBody $operation $Node $RequireSecureAcl;$state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
+            try{if($SendAck){&$SendAck $Repository $Issue $terminalReceipt}else{Send-DefaultAck $Repository $Issue $terminalReceipt $GitHubCliPath};$operation.receiptSucceeded=$true}catch{$operation.summary=ConvertTo-RelaySafeSummary ($operation.summary+'; terminal receipt failed')}
             $state.operations=@($operations);Write-RelayJsonAtomic $statePath $state -VerifyAcl:$RequireSecureAcl
             $events=[Collections.Generic.List[object]]::new();foreach($event in @($publisherHistory.events)){$events.Add($event)}
             $publisherStatus=if($operation.state -ceq 'completed'){'completed'}else{'failed'}
@@ -435,4 +496,104 @@ function Invoke-CodexCommandRelay {
     } finally { if ($lock) {$lock.Dispose()} }
 }
 
-Export-ModuleMember -Function Invoke-CodexCommandRelay,Get-RelayCommand,Write-RelayJsonAtomic,Assert-RelayPathSafe,Protect-RelayDirectoryAcl,Assert-RelayDirectoryAcl,Assert-RelayFileAcl,Compare-GitBoundarySnapshot
+function Test-RelayServiceStopRequested {
+    param([string]$Path,[string]$Node,[bool]$RequireSecureAcl)
+    if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){return $false}
+    $request=Read-RelayJsonStrict $Path $null 'stop request' -VerifyAcl:$RequireSecureAcl
+    if($null-eq$request-or(@($request.PSObject.Properties.Name|Sort-Object)-join',')-cne'node,requestedAtUtc,schemaVersion'-or[int]$request.schemaVersion-ne1-or[string]$request.node-cne$Node-or-not(Test-RelayUtcTimestamp $request.requestedAtUtc)){throw 'Relay stop request is invalid'}
+    return $true
+}
+
+function Wait-RelayServiceDelay {
+    param([double]$Seconds,[string]$StopPath,[string]$Node,[bool]$RequireSecureAcl)
+    $deadline=[DateTimeOffset]::UtcNow.AddSeconds($Seconds)
+    while([DateTimeOffset]::UtcNow-lt$deadline){
+        if(Test-RelayServiceStopRequested $StopPath $Node $RequireSecureAcl){return $true}
+        $remaining=($deadline-[DateTimeOffset]::UtcNow).TotalMilliseconds
+        Start-Sleep -Milliseconds ([int][Math]::Max(1,[Math]::Min(500,$remaining)))
+    }
+    return (Test-RelayServiceStopRequested $StopPath $Node $RequireSecureAcl)
+}
+
+function Publish-RelayServiceReadiness {
+    param([string]$StateRoot,[string]$Node,[bool]$RequireSecureAcl)
+    $requestPath=Join-Path $StateRoot 'daemon-readiness-request.json';$receiptPath=Join-Path $StateRoot 'daemon-readiness.json'
+    if(-not(Test-Path -LiteralPath $requestPath -PathType Leaf)){return}
+    $request=Read-RelayJsonStrict $requestPath $null 'readiness request' -VerifyAcl:$RequireSecureAcl
+    if($null-eq$request-or(@($request.PSObject.Properties.Name|Sort-Object)-join',')-cne'installNonce,node,requestedAtUtc,schemaVersion'-or[int]$request.schemaVersion-ne1-or[string]$request.node-cne$Node-or[string]$request.installNonce-notmatch'^[A-Za-z0-9_-]{43}$'-or-not(Test-RelayUtcTimestamp $request.requestedAtUtc)){throw 'Relay readiness request is invalid'}
+    $requested=[DateTimeOffset]::ParseExact([string]$request.requestedAtUtc,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)
+    # 安裝器異常終止留下的舊 request 不得讓日後登入時 daemon 永久退出。
+    if($requested-lt[DateTimeOffset]::UtcNow.AddMinutes(-10)){return}
+    if($requested-gt[DateTimeOffset]::UtcNow.AddMinutes(1)){throw 'Relay readiness request is from the future'}
+    Write-RelayJsonAtomic $receiptPath ([ordered]@{schemaVersion=1;node=$Node;installNonce=[string]$request.installNonce;processId=[int]$PID;startedAtUtc=[DateTimeOffset]::UtcNow.ToString('o')}) -VerifyAcl:$RequireSecureAcl
+}
+
+function Test-RelayInstallGateClosed {
+    param([string]$StateRoot,[string]$Node,[bool]$RequireSecureAcl)
+    $path=Join-Path $StateRoot 'daemon-readiness-request.json';if(-not(Test-Path -LiteralPath $path -PathType Leaf)){return $false}
+    $request=Read-RelayJsonStrict $path $null 'readiness request' -VerifyAcl:$RequireSecureAcl
+    if($null-eq$request-or(@($request.PSObject.Properties.Name|Sort-Object)-join',')-cne'installNonce,node,requestedAtUtc,schemaVersion'-or[int]$request.schemaVersion-ne1-or[string]$request.node-cne$Node-or[string]$request.installNonce-notmatch'^[A-Za-z0-9_-]{43}$'-or-not(Test-RelayUtcTimestamp $request.requestedAtUtc)){throw 'Relay readiness request is invalid'}
+    $requested=[DateTimeOffset]::ParseExact([string]$request.requestedAtUtc,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)
+    return $requested-ge[DateTimeOffset]::UtcNow.AddMinutes(-10)-and$requested-le[DateTimeOffset]::UtcNow.AddMinutes(1)
+}
+
+function Test-RelayServiceReadinessReceipt {
+    param([string]$Path,[string]$Node,[string]$InstallNonce,[DateTimeOffset]$RequestedAtUtc,[bool]$RequireSecureAcl=$true,[switch]$RequireLiveProcess)
+    if(-not(Test-Path -LiteralPath $Path -PathType Leaf)){return $false}
+    $value=Read-RelayJsonStrict $Path $null 'readiness receipt' -VerifyAcl:$RequireSecureAcl
+    if((@($value.PSObject.Properties.Name|Sort-Object)-join',')-cne'installNonce,node,processId,schemaVersion,startedAtUtc'-or[int]$value.schemaVersion-ne1-or[string]$value.node-cne$Node-or[string]$value.installNonce-cne$InstallNonce){throw 'Relay readiness receipt identity is invalid'}
+    try{$started=[DateTimeOffset]::ParseExact([string]$value.startedAtUtc,'o',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind);$pidValue=[int]$value.processId}catch{throw 'Relay readiness receipt fields are invalid'}
+    if($started-lt$RequestedAtUtc-or$started-gt[DateTimeOffset]::UtcNow.AddMinutes(1)-or$pidValue-le0-or($RequireLiveProcess-and$null-eq(Get-Process -Id $pidValue -ErrorAction SilentlyContinue))){throw 'Relay readiness receipt is stale or its process is not alive'}
+    return $true
+}
+
+function Start-CodexCommandRelayService {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidatePattern('^[A-Z][A-Z0-9_-]{0,31}$')][string]$Node,
+        [string]$Repository='peca12968/Aevrynd',[uint32]$Issue=1,
+        [string]$StateRoot='C:\ProgramData\Aevrynd\Codex',[string]$AuditRoot='C:\AevryndAudit\codex-relay',[string]$Workspace='C:\Aevrynd\Games',
+        [string]$GitHubCliPath,[string]$GitPath,
+        [ValidateRange(1,3600)][uint32]$PollIntervalSeconds=20,[ValidateRange(1,3600)][uint32]$MaximumBackoffSeconds=300,
+        [bool]$RequireSecureAcl=$true,[uint32]$MaximumPolls=0,
+        [scriptblock]$GetComments,[scriptblock]$SendAck,[scriptblock]$ResolveCodex,[scriptblock]$CheckLogin,[scriptblock]$RunCodex,[scriptblock]$CaptureBoundary,[scriptblock]$CompareBoundary,
+        [scriptblock]$GetJitter,[scriptblock]$WaitForDelay
+    )
+    $StateRoot=Assert-RelayPathSafe $StateRoot;$AuditRoot=Assert-RelayPathSafe $AuditRoot
+    if($RequireSecureAcl){Assert-RelayDirectoryAcl $StateRoot;Assert-RelayDirectoryAcl $AuditRoot}else{New-Item -ItemType Directory -Path $StateRoot -Force|Out-Null}
+    $serviceLockPath=Join-Path $StateRoot 'relay-service.lock';$stopPath=Join-Path $StateRoot 'relay-stop.json'
+    if(Test-Path -LiteralPath $serviceLockPath -PathType Leaf){if($RequireSecureAcl){$null=Assert-RelayFileAcl $serviceLockPath}}
+    $serviceLock=$null
+    try{$serviceLock=[IO.File]::Open($serviceLockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}catch [IO.IOException]{return}
+    try{
+        if($RequireSecureAcl){$null=Assert-RelayFileAcl $serviceLockPath}
+        # readiness 只能在所有 trust boundary 與 durable state 均已成功初始化後發布。
+        $statePath=Join-Path $StateRoot 'relay-state.json';$historyPath=Join-Path $StateRoot 'operations-history.json';$statusPath=Join-Path $StateRoot 'status.json'
+        $null=Assert-RelayState (Read-RelayJsonStrict $statePath (New-InitialRelayState $Node) 'state' -VerifyAcl:$RequireSecureAcl) $Node
+        $null=Read-PublisherHistory $historyPath -VerifyAcl:$RequireSecureAcl
+        if(Test-Path -LiteralPath $statusPath -PathType Leaf){$null=Read-RelayJsonStrict $statusPath $null 'status' -VerifyAcl:$RequireSecureAcl}
+        Publish-RelayServiceReadiness $StateRoot $Node $RequireSecureAcl
+        $failures=0;$polls=[uint32]0
+        while($true){
+            if(Test-RelayServiceStopRequested $stopPath $Node $RequireSecureAcl){break}
+            # installer 保留 readiness request 期間只維持 ready，不讀取/claim；event rollback 不會與 daemon 重複執行。
+            if(Test-RelayInstallGateClosed $StateRoot $Node $RequireSecureAcl){if(Wait-RelayServiceDelay 0.25 $stopPath $Node $RequireSecureAcl){break};continue}
+            $outcome=[pscustomobject]@{Succeeded=$false}
+            Invoke-CodexCommandRelay -Node $Node -Repository $Repository -Issue $Issue -StateRoot $StateRoot -AuditRoot $AuditRoot -Workspace $Workspace -GitHubCliPath $GitHubCliPath -GitPath $GitPath -RequireSecureAcl:$RequireSecureAcl -GetComments $GetComments -SendAck $SendAck -ResolveCodex $ResolveCodex -CheckLogin $CheckLogin -RunCodex $RunCodex -CaptureBoundary $CaptureBoundary -CompareBoundary $CompareBoundary -PollOutcome {param($ok)$outcome.Succeeded=[bool]$ok}
+            $polls++
+            if($outcome.Succeeded){$failures=0}else{$failures=[Math]::Min(30,$failures+1)}
+            if($MaximumPolls-ne0-and$polls-ge$MaximumPolls){break}
+            $base=if($failures-eq0){[double]$PollIntervalSeconds}else{[Math]::Min([double]$MaximumBackoffSeconds,[double]$PollIntervalSeconds*[Math]::Pow(2,$failures-1))}
+            $jitter=if($GetJitter){[double](& $GetJitter)}else{[double](Get-Random -Minimum 0 -Maximum 10001)/10000.0}
+            if($jitter-lt0-or$jitter-gt1){throw 'Relay jitter source returned an invalid value'}
+            $delay=$base*(0.9+(0.2*$jitter))
+            $stop=if($WaitForDelay){[bool](&$WaitForDelay $delay $stopPath)}else{Wait-RelayServiceDelay $delay $stopPath $Node $RequireSecureAcl}
+            if($stop){break}
+        }
+    }finally{
+        if($serviceLock){$serviceLock.Dispose()}
+        if(Test-Path -LiteralPath $stopPath -PathType Leaf){if($RequireSecureAcl){$null=Assert-RelayFileAcl $stopPath};Remove-Item -LiteralPath $stopPath -Force}
+    }
+}
+
+Export-ModuleMember -Function Invoke-CodexCommandRelay,Start-CodexCommandRelayService,Test-RelayServiceReadinessReceipt,Get-RelayCommand,Write-RelayJsonAtomic,Assert-RelayPathSafe,Protect-RelayDirectoryAcl,Assert-RelayDirectoryAcl,Assert-RelayFileAcl,Compare-GitBoundarySnapshot

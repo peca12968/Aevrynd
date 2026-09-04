@@ -1,45 +1,54 @@
-[CmdletBinding(SupportsShouldProcess)]
+﻿[CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)][ValidateSet('TAICHUNG','TAOYUAN')][string]$Node,
     [string]$Repository='peca12968/Aevrynd',[uint32]$Issue=1,
-    [string]$InstallRoot='C:\ProgramData\Aevrynd\Codex\relay',
-    [string]$StateRoot='C:\ProgramData\Aevrynd\Codex',
-    [string]$AuditRoot='C:\AevryndAudit\codex-relay',
-    [string]$Workspace='C:\Aevrynd\Games',[switch]$Force
+    [string]$InstallRoot='C:\ProgramData\Aevrynd\Codex\relay',[string]$StateRoot='C:\ProgramData\Aevrynd\Codex',
+    [string]$AuditRoot='C:\AevryndAudit\codex-relay',[string]$Workspace='C:\Aevrynd\Games',[switch]$Force
 )
 $ErrorActionPreference='Stop'
-$sourceModule=Join-Path $PSScriptRoot 'CodexCommandRelay.psm1';$sourceInvoker=Join-Path $PSScriptRoot 'Invoke-CodexCommandRelay.ps1'
-Import-Module $sourceModule -Force
+function New-InstallNonce {$bytes=New-Object byte[] 32;$rng=[Security.Cryptography.RandomNumberGenerator]::Create();try{$rng.GetBytes($bytes)}finally{$rng.Dispose()};[Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')}
+function New-FileSnapshot([string]$Path){if(Test-Path -LiteralPath $Path -PathType Leaf){[pscustomobject]@{path=$Path;exists=$true;bytes=[IO.File]::ReadAllBytes($Path);sddl=(Get-Acl -LiteralPath $Path).Sddl}}else{[pscustomobject]@{path=$Path;exists=$false;bytes=$null;sddl=$null}}}
+function Restore-FileSnapshot($Snapshot){if($Snapshot.exists){$parent=Split-Path -Parent $Snapshot.path;if(-not(Test-Path -LiteralPath $parent -PathType Container)){New-Item -ItemType Directory -Path $parent -Force|Out-Null};[IO.File]::WriteAllBytes($Snapshot.path,$Snapshot.bytes);$acl=New-Object Security.AccessControl.FileSecurity;$acl.SetSecurityDescriptorSddlForm($Snapshot.sddl);Set-Acl -LiteralPath $Snapshot.path -AclObject $acl}elseif(Test-Path -LiteralPath $Snapshot.path -PathType Leaf){Remove-Item -LiteralPath $Snapshot.path -Force}}
+function Wait-TaskStopped([string]$Name,[string]$Path,[int]$TimeoutMilliseconds=10000){$deadline=[DateTimeOffset]::UtcNow.AddMilliseconds($TimeoutMilliseconds);do{$value=Get-ScheduledTask -TaskName $Name -TaskPath $Path -ErrorAction SilentlyContinue;if($null-eq$value-or[string]$value.State-cne'Running'){return};Start-Sleep -Milliseconds 100}while([DateTimeOffset]::UtcNow-lt$deadline);throw "Scheduled task did not stop: $Path$Name"}
+$sourceModule=Join-Path $PSScriptRoot 'CodexCommandRelay.psm1';$sourceInvoker=Join-Path $PSScriptRoot 'Invoke-CodexCommandRelay.ps1';Import-Module $sourceModule -Force
 $InstallRoot=Assert-RelayPathSafe $InstallRoot;$StateRoot=Assert-RelayPathSafe $StateRoot;$AuditRoot=Assert-RelayPathSafe $AuditRoot;$Workspace=Assert-RelayPathSafe $Workspace
-if(-not$env:SystemRoot){throw 'Windows system root is unavailable'}
-$windowsPowerShell=Assert-RelayPathSafe (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')
-if(-not(Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)){throw 'Trusted Windows PowerShell executable was not found'}
-$taskName="Aevrynd-CodexCommandRelay-$Node";$taskPath='\Aevrynd\';$description="Aevrynd Codex command relay owner=$Node schema=1"
-$installedModule=Join-Path $InstallRoot 'CodexCommandRelay.psm1';$installedInvoker=Join-Path $InstallRoot 'Invoke-CodexCommandRelay.ps1'
-$argument="-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$installedInvoker`" -Node $Node -Repository `"$Repository`" -Issue $Issue -StateRoot `"$StateRoot`" -AuditRoot `"$AuditRoot`" -Workspace `"$Workspace`""
-
-# 同名工作只有在所有權指紋完整相符時才能更新；-Force 不得繞過。
+if(-not$env:SystemRoot){throw 'Windows system root is unavailable'};$windowsPowerShell=Assert-RelayPathSafe (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe');if(-not(Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)){throw 'Trusted Windows PowerShell executable was not found'}
+$gitHubCliPath=&(Get-Module CodexCommandRelay){Resolve-RelayTrustedTool 'gh.exe'};$gitPath=&(Get-Module CodexCommandRelay){Resolve-RelayTrustedTool 'git.exe'}
+$taskName="Aevrynd-CodexCommandRelay-$Node";$taskPath='\Aevrynd\';$description="Aevrynd Codex command relay owner=$Node schema=2";$installedModule=Join-Path $InstallRoot 'CodexCommandRelay.psm1';$installedInvoker=Join-Path $InstallRoot 'Invoke-CodexCommandRelay.ps1';$installManifest=Join-Path $InstallRoot 'install.json'
+$argument="-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$installedInvoker`" -Node $Node -Repository `"$Repository`" -Issue $Issue -StateRoot `"$StateRoot`" -AuditRoot `"$AuditRoot`" -Workspace `"$Workspace`" -GitHubCliPath `"$gitHubCliPath`" -GitPath `"$gitPath`" -Service"
+$legacyDescription="Aevrynd Codex command relay owner=$Node schema=1";$legacyArgument="-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$installedInvoker`" -Node $Node -Repository `"$Repository`" -Issue $Issue -StateRoot `"$StateRoot`" -AuditRoot `"$AuditRoot`" -Workspace `"$Workspace`"";$currentUser=[Security.Principal.WindowsIdentity]::GetCurrent().Name
+# 只接受本 relay 現行或舊版完整指紋，-Force 不得繞過。
 $existing=Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue
-if($existing){
-    $actions=@($existing.Actions);$currentUser=[Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $existingExecute=if($actions.Count-eq1){[IO.Path]::GetFullPath([string]$actions[0].Execute)}else{''}
-    if($existing.Description-cne$description-or$actions.Count-ne1-or-not$existingExecute.Equals($windowsPowerShell,[StringComparison]::OrdinalIgnoreCase)-or[string]$actions[0].Arguments-cne$argument-or[string]$existing.Principal.UserId-cne$currentUser){throw 'Scheduled task exists but is not fully owned by this relay'}
+if($existing){$actions=@($existing.Actions);$execute=if($actions.Count-eq1){[IO.Path]::GetFullPath([string]$actions[0].Execute)}else{''};$known=$actions.Count-eq1-and(($existing.Description-ceq$description-and[string]$actions[0].Arguments-ceq$argument)-or($existing.Description-ceq$legacyDescription-and[string]$actions[0].Arguments-ceq$legacyArgument));if(-not$known-or-not$execute.Equals($windowsPowerShell,[StringComparison]::OrdinalIgnoreCase)-or[string]$existing.Principal.UserId-cne$currentUser){throw 'Scheduled task exists but is not fully owned by this relay'}}
+# 不要求重輸 secret：由 exact-owned event action 反查 ACL-protected manifest。
+$eventNode=$Node.ToLowerInvariant();$eventName="Aevrynd-CodexEventRelay-$eventNode";$eventDescription="Aevrynd Codex event relay owner=$eventNode schema=1";$eventTask=Get-ScheduledTask -TaskName $eventName -TaskPath $taskPath -ErrorAction SilentlyContinue
+if($eventTask){
+    $eventActions=@($eventTask.Actions);$eventExecute=if($eventActions.Count-eq1){[IO.Path]::GetFullPath([string]$eventActions[0].Execute)}else{''};$match=if($eventActions.Count-eq1){[regex]::Match([string]$eventActions[0].Arguments,'(?:^| )-File "(?<path>[^"]+\bInvoke-CodexEventRelay\.ps1)"(?: |$)')}else{$null}
+    if($eventActions.Count-ne1-or$eventTask.Description-cne$eventDescription-or-not$eventExecute.Equals($windowsPowerShell,[StringComparison]::OrdinalIgnoreCase)-or[string]$eventTask.Principal.UserId-cne$currentUser-or$null-eq$match-or-not$match.Success){throw 'Event relay task exists but is not exact-owned'}
+    $eventInvoker=Assert-RelayPathSafe $match.Groups['path'].Value;$eventManifest=Assert-RelayPathSafe (Join-Path (Split-Path -Parent $eventInvoker) 'install.json');$manifest=&(Get-Module CodexCommandRelay){param($p)Read-RelayJsonStrict $p $null 'event install manifest' -VerifyAcl} $eventManifest
+    if($null-eq$manifest-or[int]$manifest.schemaVersion-ne1-or[string]$manifest.node-cne$eventNode-or[string]$manifest.arguments-cne[string]$eventActions[0].Arguments-or-not([IO.Path]::GetFullPath([string]$manifest.powerShellPath).Equals($windowsPowerShell,[StringComparison]::OrdinalIgnoreCase))){throw 'Event relay ownership manifest is invalid'}
 }
-
-if ($PSCmdlet.ShouldProcess("$taskPath$taskName",'Secure directories, baseline cursor, and install one-minute poll task')) {
-    foreach($path in @($InstallRoot,$StateRoot,$AuditRoot)){Protect-RelayDirectoryAcl $path;Assert-RelayDirectoryAcl $path}
-    Copy-Item -LiteralPath $sourceModule -Destination $installedModule -Force
-    Copy-Item -LiteralPath $sourceInvoker -Destination $installedInvoker -Force
-    try {
-        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $installedInvoker -Node $Node -Repository $Repository -Issue $Issue -StateRoot $StateRoot -AuditRoot $AuditRoot -Workspace $Workspace -BaselineOnly
-        if ($LASTEXITCODE -ne 0) { throw 'Relay baseline failed; scheduled task was not installed' }
-    } catch {
-        foreach($path in @($installedModule,$installedInvoker)){if(Test-Path -LiteralPath $path -PathType Leaf){Remove-Item -LiteralPath $path -Force}}
-        throw
+if($PSCmdlet.ShouldProcess("$taskPath$taskName",'Transactionally install hidden AtLogOn GitHub daemon and cut over exact-owned event relay')){
+    $requestPath=Join-Path $StateRoot 'daemon-readiness-request.json';$receiptPath=Join-Path $StateRoot 'daemon-readiness.json';$stopPath=Join-Path $StateRoot 'relay-stop.json';$statePath=Join-Path $StateRoot 'relay-state.json';$pollLockPath=Join-Path $StateRoot 'relay.lock';$serviceLockPath=Join-Path $StateRoot 'relay-service.lock'
+    $snapshots=@($installedModule,$installedInvoker,$installManifest,$requestPath,$receiptPath,$stopPath,$statePath,$pollLockPath,$serviceLockPath)|ForEach-Object{New-FileSnapshot $_};$existingXml=if($existing){Export-ScheduledTask -TaskName $taskName -TaskPath $taskPath}else{$null};$existingWasRunning=$existing-and[string]$existing.State-ceq'Running';$eventXml=if($eventTask){Export-ScheduledTask -TaskName $eventName -TaskPath $taskPath}else{$null};$eventWasRunning=$eventTask-and[string]$eventTask.State-ceq'Running'
+    try{
+        if($existingWasRunning){Stop-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction Stop;Wait-TaskStopped $taskName $taskPath};if($existing){Disable-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction Stop|Out-Null}
+        # 先停止 exact-owned event transport，保留 XML/running rollback；新 daemon 尚未啟動，因此沒有 overlap。
+        if($eventWasRunning){Stop-ScheduledTask -TaskName $eventName -TaskPath $taskPath -ErrorAction Stop;Wait-TaskStopped $eventName $taskPath};if($eventTask){Disable-ScheduledTask -TaskName $eventName -TaskPath $taskPath -ErrorAction Stop|Out-Null}
+        foreach($path in @($InstallRoot,$StateRoot,$AuditRoot)){Protect-RelayDirectoryAcl $path;Assert-RelayDirectoryAcl $path};Copy-Item -LiteralPath $sourceModule -Destination $installedModule -Force;Copy-Item -LiteralPath $sourceInvoker -Destination $installedInvoker -Force;$null=Assert-RelayFileAcl $installedModule;$null=Assert-RelayFileAcl $installedInvoker
+        Write-RelayJsonAtomic $installManifest ([ordered]@{schemaVersion=1;node=$Node;repository=$Repository;issue=$Issue;workspace=$Workspace;stateRoot=$StateRoot;auditRoot=$AuditRoot;powerShellPath=$windowsPowerShell;gitHubCliPath=$gitHubCliPath;gitPath=$gitPath;arguments=$argument}) -VerifyAcl
+        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $installedInvoker -Node $Node -Repository $Repository -Issue $Issue -StateRoot $StateRoot -AuditRoot $AuditRoot -Workspace $Workspace -GitHubCliPath $gitHubCliPath -GitPath $gitPath -BaselineOnly;if($LASTEXITCODE-ne0){throw 'Relay baseline failed'}
+        if(Test-Path -LiteralPath $stopPath -PathType Leaf){$null=Assert-RelayFileAcl $stopPath;Remove-Item -LiteralPath $stopPath -Force};$installNonce=New-InstallNonce;$requestedAt=[DateTimeOffset]::UtcNow;Write-RelayJsonAtomic $requestPath ([ordered]@{schemaVersion=1;node=$Node;installNonce=$installNonce;requestedAtUtc=$requestedAt.ToString('o')}) -VerifyAcl;if(Test-Path -LiteralPath $receiptPath -PathType Leaf){Remove-Item -LiteralPath $receiptPath -Force}
+        $action=New-ScheduledTaskAction -Execute $windowsPowerShell -Argument $argument;$trigger=New-ScheduledTaskTrigger -AtLogOn -User $currentUser;$principal=New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited;$settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
+        Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $description -Force|Out-Null;Start-ScheduledTask -TaskName $taskName -TaskPath $taskPath
+        $deadline=[DateTimeOffset]::UtcNow.AddSeconds(20);$dwell=$null;$ready=$false
+        while([DateTimeOffset]::UtcNow-lt$deadline){$current=Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath;if(Test-RelayServiceReadinessReceipt -Path $receiptPath -Node $Node -InstallNonce $installNonce -RequestedAtUtc $requestedAt -RequireSecureAcl:$true -RequireLiveProcess){if([string]$current.State-cne'Running'){throw 'GitHub relay stopped after readiness'};if($null-eq$dwell){$dwell=[DateTimeOffset]::UtcNow};if(([DateTimeOffset]::UtcNow-$dwell).TotalMilliseconds-ge1500){$ready=$true;break}};Start-Sleep -Milliseconds 100};if(-not$ready){throw 'GitHub relay did not become ready and remain Running'}
+        if($eventTask){Unregister-ScheduledTask -TaskName $eventName -TaskPath $taskPath -Confirm:$false -ErrorAction Stop};Remove-Item -LiteralPath $requestPath -Force
+    }catch{
+        $failure=$_;$rollback=[Collections.Generic.List[string]]::new();try{Stop-ScheduledTask -TaskName $taskName -TaskPath $taskPath -ErrorAction SilentlyContinue;Wait-TaskStopped $taskName $taskPath}catch{$rollback.Add($_.Exception.Message)};try{Unregister-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Confirm:$false -ErrorAction SilentlyContinue}catch{$rollback.Add($_.Exception.Message)}
+        foreach($snapshot in $snapshots){try{Restore-FileSnapshot $snapshot}catch{$rollback.Add($_.Exception.Message)}}
+        try{if($existingXml){Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Xml $existingXml -Force|Out-Null;if($existingWasRunning){Start-ScheduledTask -TaskName $taskName -TaskPath $taskPath}}}catch{$rollback.Add($_.Exception.Message)}
+        try{if($eventXml){Unregister-ScheduledTask -TaskName $eventName -TaskPath $taskPath -Confirm:$false -ErrorAction SilentlyContinue;Register-ScheduledTask -TaskName $eventName -TaskPath $taskPath -Xml $eventXml -Force|Out-Null;if($eventWasRunning){Start-ScheduledTask -TaskName $eventName -TaskPath $taskPath}}}catch{$rollback.Add($_.Exception.Message)}
+        if($rollback.Count){throw "Install failed: $($failure.Exception.Message); rollback failed: $($rollback -join '; ')"};throw $failure
     }
-    $action=New-ScheduledTaskAction -Execute $windowsPowerShell -Argument $argument
-    $trigger=New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddMinutes(1)) -RepetitionInterval ([TimeSpan]::FromMinutes(1)) -RepetitionDuration ([TimeSpan]::FromDays(3650))
-    $principal=New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-    $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::FromMinutes(55)) -StartWhenAvailable
-    Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $description -Force | Out-Null
 }
