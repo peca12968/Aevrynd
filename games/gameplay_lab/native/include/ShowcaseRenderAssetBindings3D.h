@@ -4,6 +4,7 @@
 
 #include <Aevrynd/Mesh3D.h>
 #include <Aevrynd/PhotorealAssetProfile3D.h>
+#include <Aevrynd/WorldPartitionTerrainVegetationAdapter3D.h>
 
 #include <array>
 #include <cstddef>
@@ -182,6 +183,21 @@ struct ShowcaseProductionSubmissionStats3D {
   std::size_t meshChainsRejected{};
 };
 
+struct ShowcaseProductionHlodBuildReceipt3D {
+  std::uint64_t descriptorFingerprint{}, hlodDataHash{}, hlodManifestHash{};
+  std::size_t inputDescriptors{}, eligibleRockDescriptors{}, sourceInstances{},
+      clusters{}, excludedTerrain{}, excludedWater{}, excludedTrees{},
+      excludedGrass{}, excludedBuildings{};
+  bool usedProductionAssetLeases{}, representativeLowLodProxy{},
+      aggregateProxyBuilt{};
+
+  [[nodiscard]] constexpr bool Complete() const noexcept {
+    return descriptorFingerprint && hlodDataHash && hlodManifestHash &&
+        inputDescriptors && eligibleRockDescriptors == sourceInstances &&
+        clusters && usedProductionAssetLeases && representativeLowLodProxy;
+  }
+};
+
 struct ShowcaseAssetBounds3D {
   Aevrynd::Vec3 minimum{};
   Aevrynd::Vec3 maximum{};
@@ -247,6 +263,16 @@ public:
   [[nodiscard]] ShowcaseProductionSubmissionStats3D
   ProductionSubmissionStats() const noexcept;
   void ResetProductionSubmissionStats() noexcept;
+  // 由正式 cooked 資產租約建立 Gameplay 世界的第一條 HLOD 分區資料；目前只納入
+  // opaque rock，其他語意在有相容 proxy 前維持既有提交路徑。
+  bool BuildProductionHlodChunk3D(
+      std::span<const ShowcaseSceneDescriptor3D> descriptors,
+      Aevrynd::StableObjectId3D worldId,
+      Aevrynd::GlobalChunkCoordinate3D chunk,
+      std::shared_ptr<Aevrynd::TerrainVegetationChunkPayload3D> &payload,
+      ShowcaseProductionHlodBuildReceipt3D &receipt) const;
+  [[nodiscard]] Aevrynd::StaticMeshAssetLibrary3D *
+  ProductionMeshLibrary3D() noexcept;
   ShowcaseProductionReleaseReceipt3D
   ReleaseProduction(Aevrynd::Engine &engine, Aevrynd::Scene3D &scene);
 

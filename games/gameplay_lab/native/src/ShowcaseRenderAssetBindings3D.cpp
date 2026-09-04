@@ -757,6 +757,268 @@ void ShowcaseRenderAssetBindings3D::ResetProductionSubmissionStats() noexcept {
     production_->submissionStats = {};
 }
 
+bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
+    std::span<const ShowcaseSceneDescriptor3D> descriptors,
+    Aevrynd::StableObjectId3D worldId,
+    Aevrynd::GlobalChunkCoordinate3D chunk,
+    std::shared_ptr<Aevrynd::TerrainVegetationChunkPayload3D> &payload,
+    ShowcaseProductionHlodBuildReceipt3D &receipt) const {
+  receipt = {};
+  payload.reset();
+  if (!production_ || !production_->active || !worldId || descriptors.empty())
+    return false;
+
+  struct SourceCandidate {
+    std::size_t descriptorIndex{}, leaseIndex{};
+    std::string assetId;
+    Aevrynd::Transform3D transform{};
+  };
+  std::vector<SourceCandidate> candidates;
+  receipt.inputDescriptors = descriptors.size();
+  receipt.descriptorFingerprint = DescriptorFingerprint(descriptors);
+  try {
+    candidates.reserve(descriptors.size());
+    for (std::size_t index = 0; index < descriptors.size(); ++index) {
+      const auto &descriptor = descriptors[index];
+      switch (descriptor.kind) {
+      case ShowcaseSceneKind3D::Terrain: ++receipt.excludedTerrain; continue;
+      case ShowcaseSceneKind3D::Water: ++receipt.excludedWater; continue;
+      case ShowcaseSceneKind3D::Tree: ++receipt.excludedTrees; continue;
+      case ShowcaseSceneKind3D::Grass: ++receipt.excludedGrass; continue;
+      case ShowcaseSceneKind3D::Building: ++receipt.excludedBuildings; continue;
+      case ShowcaseSceneKind3D::Rock: break;
+      }
+      const std::string assetId(ResolveShowcasePhotorealAssetId3D(descriptor));
+      const auto leases = production_->assetLeases.find(assetId);
+      const auto bounds = production_->assetBounds.find(assetId);
+      if (assetId.empty() || leases == production_->assetLeases.end() ||
+          leases->second.size() != 1 || bounds == production_->assetBounds.end() ||
+          !bounds->second.valid)
+        return false;
+      Aevrynd::Transform3D normalized{};
+      if (!NormalizeShowcaseAssetTransform3D(
+              bounds->second.bounds,
+              {descriptor.position, {0, descriptor.yaw, 0}, descriptor.scale},
+              normalized))
+        return false;
+      candidates.push_back({index, leases->second.front(), assetId, normalized});
+    }
+  } catch (...) {
+    return false;
+  }
+  if (candidates.size() < 2)
+    return false;
+  std::ranges::sort(candidates, [](const auto &left, const auto &right) {
+    return left.assetId != right.assetId ? left.assetId < right.assetId
+                                         : left.descriptorIndex < right.descriptorIndex;
+  });
+
+  constexpr std::size_t SourcesPerCluster = 5;
+  std::vector<std::vector<Aevrynd::HlodSourceBuildInput3D>> sourceGroups;
+  std::vector<Aevrynd::HlodClusterBuildInput3D> builds;
+  std::vector<Aevrynd::TerrainVegetationHlodCluster3D> manifests;
+  try {
+    sourceGroups.reserve((candidates.size() + SourcesPerCluster - 1) /
+                         SourcesPerCluster);
+    builds.reserve(sourceGroups.capacity());
+    manifests.reserve(sourceGroups.capacity());
+  } catch (...) {
+    return false;
+  }
+
+  std::size_t begin{};
+  std::uint64_t clusterOrdinal{1};
+  while (begin < candidates.size()) {
+    std::size_t assetEnd = begin + 1;
+    while (assetEnd < candidates.size() &&
+           candidates[assetEnd].assetId == candidates[begin].assetId)
+      ++assetEnd;
+    for (std::size_t groupBegin = begin; groupBegin < assetEnd;) {
+      const std::size_t remaining = assetEnd - groupBegin;
+      std::size_t count = (std::min)(SourcesPerCluster, remaining);
+      // 預先縮短當前群組，避免下一組只剩一個無合併價值的來源。
+      if (remaining > SourcesPerCluster &&
+          remaining - SourcesPerCluster == 1)
+        --count;
+      if (count < 2)
+        return false;
+
+      const auto leaseIndex = candidates[groupBegin].leaseIndex;
+      if (leaseIndex >= production_->leases.size() ||
+          leaseIndex >= production_->manifest.MeshParts().size())
+        return false;
+      const auto &lease = production_->leases[leaseIndex];
+      const auto &part = production_->manifest.MeshParts()[leaseIndex];
+      const auto *material = production_->manifest.FindMaterial(part.materialId);
+      if (!lease || !material || part.lodPaths[2].empty() ||
+          lease.Generation() > (std::numeric_limits<std::uint32_t>::max)())
+        return false;
+      const auto &renderable = lease.Renderable();
+      if (renderable.lodLevelCount != 3)
+        return false;
+      const auto &sourceMesh = renderable.lodLevels[0].mesh;
+      const auto &sourceMaterial = renderable.lodLevels[0].material.textures
+                                       ? renderable.lodLevels[0].material
+                                       : renderable.nearMaterial;
+      const auto sourceShadow =
+          Aevrynd::HlodShadowSemanticFromRenderable3D(renderable);
+      if (!sourceMesh || !sourceMaterial.textures || !sourceShadow)
+        return false;
+
+      Aevrynd::Vec3 clusterCenter{};
+      for (std::size_t offset = 0; offset < count; ++offset)
+        clusterCenter = clusterCenter + candidates[groupBegin + offset].transform.position;
+      clusterCenter = clusterCenter * (1.f / float(count));
+      const std::uint64_t clusterHigh =
+          (worldId.high ^ 0x484c4f445f524f43ull) &
+          ~Aevrynd::HlodProxyIdentityDomainBit3D;
+      const Aevrynd::HlodClusterId3D clusterId{
+          clusterHigh ? clusterHigh : 0x484c4f44524f434bull, clusterOrdinal++};
+
+      Aevrynd::StaticMeshAssetDefinition3D proxyDefinition{};
+      proxyDefinition.meshPath = part.lodPaths[2];
+      proxyDefinition.material = material->Definition();
+      proxyDefinition.generateLods = false;
+      proxyDefinition.cpuRetention = Aevrynd::MeshLodCpuRetention3D::None;
+      auto proxy = production_->meshes.PrepareHlodProxyCpu3D(
+          worldId, chunk, clusterId, 1, std::move(proxyDefinition));
+      if (!proxy)
+        return false;
+
+      std::vector<Aevrynd::HlodSourceBuildInput3D> sources;
+      Aevrynd::TerrainVegetationHlodCluster3D manifest{};
+      try {
+        sources.reserve(count);
+        manifest.sources.reserve(count);
+      } catch (...) {
+        return false;
+      }
+      manifest.id = clusterId;
+      manifest.generation = 1;
+      manifest.proxy = std::move(*proxy);
+      float clusterRadius{};
+      std::uint32_t sourceTriangles{};
+      for (std::size_t offset = 0; offset < count; ++offset) {
+        const auto &candidate = candidates[groupBegin + offset];
+        if (candidate.leaseIndex != leaseIndex)
+          return false;
+        Aevrynd::HlodSourceBuildInput3D source{};
+        source.reference.globalObjectId = {
+            worldId.high & ~Aevrynd::HlodProxyIdentityDomainBit3D,
+            candidate.descriptorIndex + 1};
+        if (!source.reference.globalObjectId.high)
+          source.reference.globalObjectId.high = 0x47414d45504c4159ull;
+        source.generation = 1;
+        source.meshHandle = sourceMesh.handle.value;
+        source.materialHandle = sourceMaterial.textures.value;
+        source.meshGeneration = static_cast<std::uint32_t>(lease.Generation());
+        source.materialGeneration = source.meshGeneration;
+        source.localBoundsCenter = sourceMesh.bounds.center;
+        source.localBoundsExtents = sourceMesh.bounds.extents;
+        source.position = candidate.transform.position - clusterCenter;
+        source.rotation = candidate.transform.rotation;
+        source.scale = candidate.transform.scale;
+        source.shadow = *sourceShadow;
+        source.meshContentPrimary = sourceMesh.handle.contentPrimary;
+        source.meshContentSecondary = sourceMesh.handle.contentSecondary;
+        source.materialSemanticIdentity = sourceMaterial.textures.semanticIdentity;
+        source.resourceOwnerIdentity = renderable.resourceOwnerIdentity;
+        const auto transform = Aevrynd::CreateTransformMatrix(
+            source.position, source.rotation, source.scale);
+        for (unsigned corner = 0; corner < 8; ++corner) {
+          const Aevrynd::Vec3 local = source.localBoundsCenter + Aevrynd::Vec3{
+              source.localBoundsExtents.x * (corner & 1 ? 1.f : -1.f),
+              source.localBoundsExtents.y * (corner & 2 ? 1.f : -1.f),
+              source.localBoundsExtents.z * (corner & 4 ? 1.f : -1.f)};
+          clusterRadius = (std::max)(
+              clusterRadius, Aevrynd::Length(Aevrynd::TransformPoint(transform, local)));
+        }
+        const auto triangleCount = sourceMesh.indexCount / 3;
+        if (triangleCount > (std::numeric_limits<std::uint32_t>::max)())
+          return false;
+        const auto triangles = static_cast<std::uint32_t>(triangleCount);
+        if (triangles > (std::numeric_limits<std::uint32_t>::max)() -
+                            sourceTriangles)
+          return false;
+        sourceTriangles += triangles;
+        manifest.sources.push_back(
+            {source.reference, source.generation, part.id,
+             {chunk, candidate.transform.position}, candidate.transform.rotation,
+             candidate.transform.scale});
+        sources.push_back(source);
+      }
+      clusterRadius = (std::max)(clusterRadius, .001f);
+      const auto proxyTriangles =
+          std::uint32_t(manifest.proxy.prepared.cpuMeshes[0].indices.size() / 3);
+      if (!proxyTriangles || sourceTriangles < proxyTriangles)
+        return false;
+      const auto &proxyRenderable = manifest.proxy.prepared;
+      const auto proxyShadow = Aevrynd::CanonicalHlodShadowSemantic3D(*sourceShadow);
+      Aevrynd::HlodClusterBuildInput3D build{};
+      build.asset = {clusterId, 1, {}, clusterRadius,
+                     (std::max)(1.f, clusterRadius * .05f), .8f, 1.2f,
+                     static_cast<std::uint32_t>(sources.size()),
+                     Aevrynd::HlodCompatibility3D::OpaqueCompatible};
+      build.resource = {
+          proxyRenderable.assetKey.contentIdentity, sourceMaterial.textures.value,
+          manifest.proxy.reservedPhysicalBytes, 1, 1, sourceTriangles,
+          proxyTriangles, proxyShadow};
+      build.instance = {clusterId, chunk, clusterCenter,
+                        candidates[groupBegin].transform.scale,
+                        candidates[groupBegin].transform.rotation};
+      sourceGroups.push_back(std::move(sources));
+      build.sources = sourceGroups.back();
+      builds.push_back(build);
+      manifests.push_back(std::move(manifest));
+      groupBegin += count;
+    }
+    begin = assetEnd;
+  }
+  if (builds.empty())
+    return false;
+  auto data = Aevrynd::BuildHlodData3D(builds);
+  if (!data)
+    return false;
+  auto manifest = Aevrynd::BuildTerrainVegetationHlodManifest3D(manifests, *data);
+  if (!manifest)
+    return false;
+  auto result = std::make_shared<Aevrynd::TerrainVegetationChunkPayload3D>();
+  result->globalChunk = chunk;
+  result->heightField = Aevrynd::HeightField3D({{}, 2, 2, 1.f});
+  result->heightField.Fill(0.f);
+  result->terrain = result->heightField.CreateMesh();
+  if (!result->terrain.Valid())
+    return false;
+  result->hlod = std::move(data);
+  result->hlodManifest = std::move(manifest);
+  result->cpuBytes = result->terrain.vertices.size() * sizeof(Aevrynd::Vertex3D) +
+                     result->terrain.indices.size() * sizeof(std::uint32_t);
+  for (const auto &cluster : manifests)
+    for (std::uint32_t level = 0; level < cluster.proxy.prepared.levelCount; ++level)
+      result->cpuBytes += cluster.proxy.prepared.cpuMeshes[level].vertices.size() *
+                              sizeof(Aevrynd::Vertex3D) +
+                          cluster.proxy.prepared.cpuMeshes[level].indices.size() *
+                              sizeof(std::uint32_t);
+  result->conservativeGpuBytes = result->cpuBytes;
+  receipt.eligibleRockDescriptors = candidates.size();
+  receipt.sourceInstances = candidates.size();
+  receipt.clusters = builds.size();
+  receipt.hlodDataHash = result->hlod->ContentHash();
+  receipt.hlodManifestHash = result->hlodManifest->ContentHash();
+  receipt.usedProductionAssetLeases = true;
+  receipt.representativeLowLodProxy = true;
+  receipt.aggregateProxyBuilt = false;
+  if (!receipt.Complete())
+    return false;
+  payload = std::move(result);
+  return true;
+}
+
+Aevrynd::StaticMeshAssetLibrary3D *
+ShowcaseRenderAssetBindings3D::ProductionMeshLibrary3D() noexcept {
+  return production_ && production_->active ? &production_->meshes : nullptr;
+}
+
 bool NormalizeShowcaseAssetTransform3D(
     const ShowcaseAssetBounds3D &sourceBounds,
     const Aevrynd::Transform3D &targetBounds,
