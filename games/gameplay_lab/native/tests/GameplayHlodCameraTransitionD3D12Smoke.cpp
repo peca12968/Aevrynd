@@ -251,6 +251,11 @@ int main() {
       throw std::runtime_error("Gameplay production camera fixture failed");
     }
     const auto firstPerson = MakeFirstPersonCamera({0, .9f, -4.5f}, 0, 0);
+    const auto isometric = MakeIsometricCamera({0, .9f, 0}, 8.f, 4.f);
+    if (isometric.projection.mode != ProjectionMode::Orthographic) {
+      result = 7;
+      throw std::runtime_error("Gameplay isometric camera was not orthographic");
+    }
 
     D3D12Renderer renderer;
     renderer.Initialize(window, Width, Height, Width, Height, false);
@@ -262,8 +267,8 @@ int main() {
     }
 
     std::uint64_t revision = 0x504958454c000000ull;
-    std::array<std::array<std::optional<Capture>, 3>, 2> captures{};
-    const std::array cameras{firstPerson, *thirdPerson};
+    std::array<std::array<std::optional<Capture>, 3>, 3> captures{};
+    const std::array cameras{firstPerson, *thirdPerson, isometric};
     for (std::size_t camera = 0; camera < cameras.size(); ++camera) {
       captures[camera][0] =
           CaptureRaster(renderer, mesh, cameras[camera], RasterMode::Source,
@@ -287,12 +292,26 @@ int main() {
       const auto &third = *captures[1][0];
       const auto &firstTransition = *captures[0][1];
       const auto &thirdTransition = *captures[1][1];
+      const auto &isometricSource = *captures[2][0];
+      const auto &isometricTransition = *captures[2][1];
       const bool cameraChanged =
           first.hdr.rawHalfBytes != third.hdr.rawHalfBytes &&
-          first.objectId.pixels != third.objectId.pixels;
+          first.objectId.pixels != third.objectId.pixels &&
+          isometricSource.hdr.rawHalfBytes != first.hdr.rawHalfBytes &&
+          isometricSource.hdr.rawHalfBytes != third.hdr.rawHalfBytes &&
+          isometricSource.objectId.pixels != first.objectId.pixels &&
+          isometricSource.objectId.pixels != third.objectId.pixels;
       const bool cameraChangedOidHash =
           first.objectIdPayloadSha256 != third.objectIdPayloadSha256 &&
           firstTransition.objectIdPayloadSha256 !=
+              thirdTransition.objectIdPayloadSha256 &&
+          isometricSource.objectIdPayloadSha256 !=
+              first.objectIdPayloadSha256 &&
+          isometricSource.objectIdPayloadSha256 !=
+              third.objectIdPayloadSha256 &&
+          isometricTransition.objectIdPayloadSha256 !=
+              firstTransition.objectIdPayloadSha256 &&
+          isometricTransition.objectIdPayloadSha256 !=
               thirdTransition.objectIdPayloadSha256;
       if (!cameraChanged || !cameraChangedOidHash)
         result = 5;
@@ -305,7 +324,8 @@ int main() {
                    "\"oracle\":\"RealD3D12ComplementaryTransitionRaster\","
                    "\"scope\":\"DrawListHlodRasterWithGameplayCameraEndpoints\","
                    "\"completeProductionHlodSelectionSceneEcsChain\":0,"
-                   "\"cameraEndpoints\":2,\"rasterModesPerCamera\":3,"
+                   "\"cameraEndpoints\":3,\"rasterModesPerCamera\":3,"
+                   "\"isometricOrthographic\":1,"
                    "\"oidPayloadSchema\":\"aevrynd-oid-payload-v1\","
                    "\"complementaryCoverage8\":64,\"firstPixels\":"
                 << first.sourcePixels << ",\"thirdPixels\":"
@@ -316,10 +336,31 @@ int main() {
                 << ",\"thirdTransitionSourcePixels\":"
                 << thirdTransition.sourcePixels
                 << ",\"thirdTransitionProxyPixels\":"
-                << thirdTransition.proxyPixels << ",\"firstHdrSha256\":\""
+                << thirdTransition.proxyPixels
+                << ",\"isometricPixels\":"
+                << isometricSource.sourcePixels
+                << ",\"isometricTransitionSourcePixels\":"
+                << isometricTransition.sourcePixels
+                << ",\"isometricTransitionProxyPixels\":"
+                << isometricTransition.proxyPixels
+                << ",\"firstSourceHdrSha256\":\""
                 << Hex(first.hdr.receipt.rawHalfSha256)
-                << "\",\"thirdHdrSha256\":\""
+                << "\",\"firstTransitionHdrSha256\":\""
+                << Hex(firstTransition.hdr.receipt.rawHalfSha256)
+                << "\",\"firstProxyHardHdrSha256\":\""
+                << Hex(captures[0][2]->hdr.receipt.rawHalfSha256)
+                << "\",\"thirdSourceHdrSha256\":\""
                 << Hex(third.hdr.receipt.rawHalfSha256)
+                << "\",\"thirdTransitionHdrSha256\":\""
+                << Hex(thirdTransition.hdr.receipt.rawHalfSha256)
+                << "\",\"thirdProxyHardHdrSha256\":\""
+                << Hex(captures[1][2]->hdr.receipt.rawHalfSha256)
+                << "\",\"isometricSourceHdrSha256\":\""
+                << Hex(isometricSource.hdr.receipt.rawHalfSha256)
+                << "\",\"isometricTransitionHdrSha256\":\""
+                << Hex(isometricTransition.hdr.receipt.rawHalfSha256)
+                << "\",\"isometricProxyHardHdrSha256\":\""
+                << Hex(captures[2][2]->hdr.receipt.rawHalfSha256)
                 << "\",\"firstSourceHardOidPayloadSha256\":\""
                 << Hex(first.objectIdPayloadSha256)
                 << "\",\"firstTransitionOidPayloadSha256\":\""
@@ -332,6 +373,12 @@ int main() {
                 << Hex(thirdTransition.objectIdPayloadSha256)
                 << "\",\"thirdProxyHardOidPayloadSha256\":\""
                 << Hex(captures[1][2]->objectIdPayloadSha256)
+                << "\",\"isometricSourceHardOidPayloadSha256\":\""
+                << Hex(isometricSource.objectIdPayloadSha256)
+                << "\",\"isometricTransitionOidPayloadSha256\":\""
+                << Hex(isometricTransition.objectIdPayloadSha256)
+                << "\",\"isometricProxyHardOidPayloadSha256\":\""
+                << Hex(captures[2][2]->objectIdPayloadSha256)
                 << "\",\"transitionExact\":1,\"cameraChanged\":1,"
                    "\"cameraChangedOidHash\":1}";
         receipt.close();
@@ -342,7 +389,7 @@ int main() {
           std::cout << "realD3D12ComplementaryTransitionRaster=passed "
                        "scope=draw-list-raster-with-gameplay-camera-endpoints "
                        "completeProductionHlodSelectionSceneEcsChain=0 "
-                       "cameraEndpoints=2 rasterModes=3 receipt="
+                       "cameraEndpoints=3 rasterModes=3 receipt="
                     << receiptPath.string() << '\n';
       }
     }
