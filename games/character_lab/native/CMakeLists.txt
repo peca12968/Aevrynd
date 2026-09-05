@@ -20,6 +20,20 @@ foreach(CHARACTER_ASSET realistic-female realistic-male)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin"
       "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin")
+  if(CHARACTER_ASSET STREQUAL "realistic-female")
+    add_custom_command(TARGET CharacterLab POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/realistic-female/source"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/realistic-female/realistic-female.provenance.json"
+        "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/realistic-female/realistic-female.provenance.json"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/realistic-female/source/realistic-female.gltf"
+        "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/realistic-female/source/realistic-female.gltf"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/realistic-female/source/realistic-female.bin"
+        "$<TARGET_FILE_DIR:CharacterLab>/assets/model-packs/realistic-female/source/realistic-female.bin")
+  endif()
 endforeach()
 add_custom_command(TARGET CharacterLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory

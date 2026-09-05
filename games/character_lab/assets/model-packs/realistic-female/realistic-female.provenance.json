@@ -1,0 +1,90 @@
+{
+  "schema": "aevrynd.character-asset-provenance",
+  "version": 1,
+  "assetId": "realistic-female",
+  "canonicalRuntimePath": "assets/model-packs/realistic-female/realistic-female.aeskin",
+  "generator": {
+    "id": "tools/blender/create-realistic-female-character.py",
+    "version": "blender-5.2-script-v1",
+    "options": [
+      "GLTF_SEPARATE",
+      "use_selection=true",
+      "export_animations=true",
+      "export_skins=true",
+      "export_tangents=true",
+      "export_yup=true",
+      "export_apply=false"
+    ]
+  },
+  "converter": {
+    "id": "tools/convert-gltf-to-aeskin-v2.ps1",
+    "version": "aeskin-v2",
+    "options": [
+      "Scale=1",
+      "MaximumVertices=1000000",
+      "MaximumIndices=3000000",
+      "MaximumJoints=256",
+      "MaximumPrimitives=1024",
+      "MaximumAnimations=128"
+    ]
+  },
+  "artifacts": [
+    {
+      "identity": "realistic-female-source-gltf",
+      "role": "source-gltf",
+      "path": "source/realistic-female.gltf",
+      "bytes": 49561,
+      "sha256": "d6ff69349e71b26ff0e4e70326684ee3acd2e6f79e31b87b854b5f78036156a6"
+    },
+    {
+      "identity": "realistic-female-source-bin",
+      "role": "source-bin",
+      "path": "source/realistic-female.bin",
+      "bytes": 1822420,
+      "sha256": "b34843b7f9156debb3676f87daaa397610ee13678df0e7cfa714fd3e37cf73dc"
+    },
+    {
+      "identity": "realistic-female-cooked-aeskin",
+      "role": "cooked-aeskin",
+      "path": "realistic-female.aeskin",
+      "bytes": 1384226,
+      "sha256": "b6f2e5ecc6280043b5caa2e5b8ea476865c2ace06b9972e8aae94bd79ba98002"
+    }
+  ],
+  "skeleton": {
+    "identity": "F2FemaleRig",
+    "jointCount": 24
+  },
+  "materials": [
+    "SkinWarmPBR",
+    "LipsRosePBR",
+    "EyeScleraPBR",
+    "IrisHazelPBR",
+    "HairChestnutPBR",
+    "DressEmeraldPBR",
+    "DressTrimPBR",
+    "BootLeatherPBR",
+    "AccessoryGoldPBR"
+  ],
+  "lods": [
+    {
+      "identity": "lod0",
+      "level": 0,
+      "source": "cooked-aeskin"
+    }
+  ],
+  "animations": [
+    {
+      "identity": "IdleBreathing",
+      "source": "authored",
+      "clip": "IdleBreathing"
+    }
+  ],
+  "runtimeFallbacks": [
+    {
+      "identity": "procedural-locomotion",
+      "kind": "runtime-procedural",
+      "authored": false
+    }
+  ]
+}
