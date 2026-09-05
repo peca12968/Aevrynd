@@ -373,6 +373,8 @@ public:
       if (near_.build.inputDescriptors != 464 ||
           near_.build.eligibleRockDescriptors != 30 ||
           near_.build.sourceInstances != 30 || near_.build.clusters != 6 ||
+          !near_.aggregateProxyBuilt || !near_.allDescriptorKindsCovered ||
+          near_.build.representativeLowLodProxy ||
           near_.integration.residentSourceEntities != 30 ||
           near_.integration.residentProxyEntities != 6 ||
           !near_.frame.sourceClusters || near_.frame.transitionClusters ||
@@ -977,11 +979,16 @@ private:
         << ",\"stagingCopyBytesEstimate\":"
         << hostileStagingCopyBytesEstimate_
         << ",\"hostPaletteRows\":1,\"identityCollisions\":0"
-        << ",\"representativeLowLodProxy\":1,\"aggregateProxyBuilt\":0,"
-           "\"gameplayLabOnRenderConnected\":0,"
+        << ",\"representativeLowLodProxy\":"
+        << (far_.build.representativeLowLodProxy ? 1 : 0)
+        << ",\"aggregateProxyBuilt\":"
+        << (far_.aggregateProxyBuilt ? 1 : 0)
+        << ",\"gameplayLabOnRenderConnected\":0,"
            "\"gameplayIdentityDomainMigrated\":1,"
            "\"sourceProxyIdentitySeparated\":1,"
-           "\"allDescriptorKindsCovered\":0,\"gpuValidationRequested\":"
+           "\"allDescriptorKindsCovered\":"
+        << (far_.allDescriptorKindsCovered ? 1 : 0)
+        << ",\"gpuValidationRequested\":"
         << (stats.gpuValidationRequested ? 1 : 0)
         << ",\"gpuValidationAvailable\":"
         << (stats.gpuValidationAvailable ? 1 : 0)
@@ -1056,7 +1063,7 @@ private:
         << ",\"meshesReleased\":" << release.meshesReleased
         << ",\"materialsReleased\":" << release.materialsReleased
         << ",\"complete\":" << (cleanupComplete ? 1 : 0) << "}"
-        << ",\"remaining\":\"Connect GameplayLabGame OnRender without duplicate SceneECS ownership, build offline aggregate proxies, and cover masked trees, grass, terrain, water, and buildings.\"}";
+        << ",\"remaining\":\"Connect GameplayLabGame OnRender without duplicate SceneECS ownership, then validate GPU-side selection, gameplay transition pixels, and raw CPU/GPU performance gates.\"}";
   }
 
   SceneECSRegistry3D registry_{};

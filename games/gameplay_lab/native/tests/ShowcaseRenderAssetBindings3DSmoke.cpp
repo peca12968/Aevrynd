@@ -4,12 +4,18 @@
 #include <Aevrynd/CookedRenderManifest3D.h>
 #include <Aevrynd/PhotorealAssetProfile3D.h>
 
+#include <Windows.h>
+#include <winioctl.h>
+
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <utility>
 
 using namespace GameplayLab;
 
@@ -81,6 +87,218 @@ bool VerifyUnionBoundsNormalization() {
   return !NormalizeShowcaseAssetTransform3D(unionBounds, invalidTarget, first);
 }
 
+std::uint64_t MeshIdentity(const Aevrynd::Mesh3D &mesh) {
+  std::uint64_t hash = 1469598103934665603ull;
+  const auto add = [&hash](const void *data, std::size_t bytes) {
+    const auto *values = static_cast<const std::uint8_t *>(data);
+    for (std::size_t index{}; index < bytes; ++index) {
+      hash ^= values[index];
+      hash *= 1099511628211ull;
+    }
+  };
+  add(mesh.vertices.data(), mesh.vertices.size() * sizeof(Aevrynd::Vertex3D));
+  add(mesh.indices.data(), mesh.indices.size() * sizeof(std::uint32_t));
+  return hash ? hash : 1;
+}
+
+std::wstring AggregateCacheFileName(
+    const std::array<std::uint8_t, 32> &digest) {
+  constexpr wchar_t hex[] = L"0123456789abcdef";
+  std::wstring name = L"proxy-";
+  for (const auto byte : digest) {
+    name.push_back(hex[byte >> 4]);
+    name.push_back(hex[byte & 15]);
+  }
+  return name + L".aemesh";
+}
+
+bool CreateJunction(const std::filesystem::path &link,
+                    const std::filesystem::path &target) {
+  struct MountPointBuffer {
+    DWORD tag{};
+    WORD dataLength{}, reserved{};
+    WORD substituteOffset{}, substituteLength{}, printOffset{}, printLength{};
+    std::array<wchar_t, 1024> paths{};
+  } buffer{};
+  std::error_code error;
+  if (!std::filesystem::create_directory(link, error) || error)
+    return false;
+  const auto absolute = std::filesystem::absolute(target, error).wstring();
+  const std::wstring substitute = L"\\??\\" + absolute;
+  if (error || substitute.size() + absolute.size() + 2 > buffer.paths.size())
+    return false;
+  buffer.tag = IO_REPARSE_TAG_MOUNT_POINT;
+  buffer.substituteLength = WORD(substitute.size() * sizeof(wchar_t));
+  buffer.printOffset = WORD(buffer.substituteLength + sizeof(wchar_t));
+  buffer.printLength = WORD(absolute.size() * sizeof(wchar_t));
+  buffer.dataLength = WORD(8 + buffer.printOffset + buffer.printLength +
+                           sizeof(wchar_t));
+  std::memcpy(buffer.paths.data(), substitute.data(), buffer.substituteLength);
+  std::memcpy(reinterpret_cast<std::byte *>(buffer.paths.data()) +
+                  buffer.printOffset,
+              absolute.data(), buffer.printLength);
+  const HANDLE handle = CreateFileW(
+      link.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE |
+          FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (handle == INVALID_HANDLE_VALUE)
+    return false;
+  DWORD returned{};
+  const bool success = DeviceIoControl(
+      handle, FSCTL_SET_REPARSE_POINT, &buffer, 8 + buffer.dataLength, nullptr,
+      0, &returned, nullptr) != FALSE;
+  CloseHandle(handle);
+  return success;
+}
+
+bool VerifyAggregateCacheHostility(const Aevrynd::Mesh3D &mesh,
+                                   const ShowcaseAggregateProxyReceipt3D &receipt) {
+  std::error_code error;
+  const auto base = std::filesystem::temp_directory_path() /
+      (L"aevrynd-hlod-cache-hostile-" + std::to_wstring(GetCurrentProcessId()) +
+       L"-" + std::to_wstring(GetTickCount64()));
+  const auto normal = base / L"normal";
+  const auto junctionRoot = base / L"junction-root";
+  const auto junctionTarget = base / L"junction-target";
+  const auto hardlinkRoot = base / L"hardlink-root";
+  const auto external = base / L"external.aemesh";
+  std::filesystem::create_directories(normal, error);
+  if (error || !ExerciseShowcaseAggregateProxyCache3DForTesting(
+                   normal, mesh, receipt)) {
+    std::cerr << "Aggregate cache normal transaction failed: " << error.message() << '\n';
+    std::filesystem::remove_all(base, error);
+    return false;
+  }
+  const auto normalCache = normal / L".aevrynd-runtime-cache" /
+                           L"hlod-aggregate-proxy";
+  std::size_t normalEntries{};
+  for (std::filesystem::directory_iterator iterator(normalCache, error), end;
+       !error && iterator != end; ++iterator) {
+    ++normalEntries;
+    if (!iterator->is_regular_file(error) ||
+        iterator->path().extension() != L".aemesh")
+      error = std::make_error_code(std::errc::invalid_argument);
+  }
+  if (normalEntries != 1 || error) {
+    std::cerr << "Aggregate cache unique-temp cleanup failed: "
+              << error.message() << '\n';
+    std::filesystem::remove_all(base, error);
+    return false;
+  }
+
+  std::filesystem::create_directories(junctionRoot, error);
+  std::filesystem::create_directories(junctionTarget, error);
+  if (error || !CreateJunction(junctionRoot / L".aevrynd-runtime-cache",
+                               junctionTarget) ||
+      ExerciseShowcaseAggregateProxyCache3DForTesting(junctionRoot, mesh,
+                                                       receipt)) {
+    std::cerr << "Aggregate cache junction rejection failed: " << GetLastError() << '\n';
+    std::filesystem::remove_all(base, error);
+    return false;
+  }
+
+  const auto hardlinkCache = hardlinkRoot / L".aevrynd-runtime-cache" /
+                             L"hlod-aggregate-proxy";
+  std::filesystem::create_directories(hardlinkCache, error);
+  {
+    std::ofstream output(external, std::ios::binary);
+    output << "hostile external payload";
+  }
+  const auto cacheFile = hardlinkCache /
+      AggregateCacheFileName(receipt.aggregateContentDigest);
+  if (error || !CreateHardLinkW(cacheFile.c_str(), external.c_str(), nullptr) ||
+      ExerciseShowcaseAggregateProxyCache3DForTesting(hardlinkRoot, mesh,
+                                                       receipt) ||
+      !std::filesystem::exists(external)) {
+    std::cerr << "Aggregate cache hard-link rejection failed: " << GetLastError() << '\n';
+    std::filesystem::remove_all(base, error);
+    return false;
+  }
+  std::filesystem::remove_all(base, error);
+  return !error;
+}
+
+bool VerifyHlodDescriptorAndAggregatePolicy() {
+  constexpr std::array kinds{
+      ShowcaseSceneKind3D::Terrain, ShowcaseSceneKind3D::Water,
+      ShowcaseSceneKind3D::Tree, ShowcaseSceneKind3D::Grass,
+      ShowcaseSceneKind3D::Rock, ShowcaseSceneKind3D::Building};
+  constexpr std::array policies{
+      ShowcaseHlodDescriptorPolicy3D::DedicatedTerrain,
+      ShowcaseHlodDescriptorPolicy3D::DedicatedWater,
+      ShowcaseHlodDescriptorPolicy3D::DedicatedVegetation,
+      ShowcaseHlodDescriptorPolicy3D::DedicatedVegetation,
+      ShowcaseHlodDescriptorPolicy3D::AggregateOpaque,
+      ShowcaseHlodDescriptorPolicy3D::DedicatedBuilding};
+  for (std::size_t index{}; index < kinds.size(); ++index)
+    if (ResolveShowcaseHlodDescriptorPolicy3D(kinds[index]) != policies[index])
+      return false;
+  if (ResolveShowcaseHlodDescriptorPolicy3D(
+          static_cast<ShowcaseSceneKind3D>(0xff)) !=
+      ShowcaseHlodDescriptorPolicy3D::FailClosed)
+    return false;
+
+  const auto sourceMesh = Aevrynd::Mesh3D::CreateUnitBox();
+  const auto meshIdentity = MeshIdentity(sourceMesh);
+  std::array<ShowcaseAggregateProxySource3D, 2> sources{{
+      {&sourceMesh, {{-2, 0, 0}, {}, {1, 1, 1}}, {7, 1}, 3,
+       meshIdentity, 41, 51},
+      {&sourceMesh, {{2, 0, 0}, {}, {1, 1, 1}}, {7, 2}, 3,
+       meshIdentity, 41, 51}}};
+  Aevrynd::Mesh3D aggregate, rebuilt;
+  ShowcaseAggregateProxyReceipt3D receipt{}, rebuiltReceipt{};
+  if (!BuildShowcaseAggregateProxyMesh3D(sources, aggregate, receipt) ||
+      !receipt.Complete() || receipt.sourceInstances != 2 ||
+      receipt.sourceVertices != sourceMesh.vertices.size() * 2 ||
+      receipt.sourceTriangles != sourceMesh.indices.size() * 2 / 3 ||
+      receipt.aggregateTriangles >= receipt.sourceTriangles ||
+      !ValidateShowcaseAggregateProxyMesh3D(aggregate, receipt))
+    return false;
+  std::array reversed{sources[1], sources[0]};
+  if (!BuildShowcaseAggregateProxyMesh3D(reversed, rebuilt, rebuiltReceipt) ||
+      rebuiltReceipt.aggregateContentIdentity != receipt.aggregateContentIdentity ||
+      rebuiltReceipt.sourceContractIdentity != receipt.sourceContractIdentity ||
+      rebuiltReceipt.aggregateContentDigest != receipt.aggregateContentDigest ||
+      !VerifyAggregateCacheHostility(aggregate, receipt))
+    return false;
+
+  auto tamperedMesh = aggregate;
+  tamperedMesh.vertices.front().x += 1.f;
+  if (ValidateShowcaseAggregateProxyMesh3D(tamperedMesh, receipt))
+    return false;
+  auto forgedReceipt = receipt;
+  forgedReceipt.aggregateContentDigest.front() ^= 1;
+  if (ValidateShowcaseAggregateProxyMesh3D(aggregate, forgedReceipt))
+    return false;
+  forgedReceipt = receipt;
+  forgedReceipt.aggregateVertices = (std::numeric_limits<std::size_t>::max)();
+  if (ValidateShowcaseAggregateProxyMesh3D(aggregate, forgedReceipt))
+    return false;
+  forgedReceipt = receipt;
+  forgedReceipt.immutableIdentityValidated = false;
+  if (ValidateShowcaseAggregateProxyMesh3D(aggregate, forgedReceipt))
+    return false;
+  auto invalid = sources;
+  invalid[1].meshContentIdentity ^= 1;
+  if (BuildShowcaseAggregateProxyMesh3D(invalid, rebuilt, rebuiltReceipt))
+    return false;
+  invalid = sources;
+  invalid[1].mesh = nullptr;
+  if (BuildShowcaseAggregateProxyMesh3D(invalid, rebuilt, rebuiltReceipt))
+    return false;
+  invalid = sources;
+  ++invalid[1].materialIdentity;
+  if (BuildShowcaseAggregateProxyMesh3D(invalid, rebuilt, rebuiltReceipt))
+    return false;
+  invalid = sources;
+  invalid[1].objectId = invalid[0].objectId;
+  if (BuildShowcaseAggregateProxyMesh3D(invalid, rebuilt, rebuiltReceipt))
+    return false;
+  invalid = sources;
+  invalid[1].transform.scale.z = 0.f;
+  return !BuildShowcaseAggregateProxyMesh3D(invalid, rebuilt, rebuiltReceipt);
+}
+
 class ControlledResolver final : public ShowcaseCookedResourceResolver3D {
 public:
   explicit ControlledResolver(
@@ -134,6 +352,8 @@ int main(int argc, char **argv) {
     return 13;
   if (!VerifyUnionBoundsNormalization())
     return 12;
+  if (!VerifyHlodDescriptorAndAggregatePolicy())
+    return 14;
   GameplayShowcaseEnvironment3D world;
   if (!world.Initialize())
     return 2;

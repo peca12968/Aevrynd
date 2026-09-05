@@ -4,9 +4,19 @@
 #include <Aevrynd/EnvironmentIbl3D.h>
 #include <Aevrynd/StaticMeshAssetLibrary3D.h>
 
+#include <Windows.h>
+#include <bcrypt.h>
+#include <winternl.h>
+
 #include <algorithm>
 #include <bit>
+#include <atomic>
+#include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <limits>
+#include <mutex>
+#include <sstream>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -282,6 +292,609 @@ bool LeaseMatches(const ShowcaseCookedResourceRequest3D &request,
 }
 
 } // namespace
+
+ShowcaseHlodDescriptorPolicy3D
+ResolveShowcaseHlodDescriptorPolicy3D(ShowcaseSceneKind3D kind) noexcept {
+  switch (kind) {
+  case ShowcaseSceneKind3D::Rock:
+    return ShowcaseHlodDescriptorPolicy3D::AggregateOpaque;
+  case ShowcaseSceneKind3D::Terrain:
+    return ShowcaseHlodDescriptorPolicy3D::DedicatedTerrain;
+  case ShowcaseSceneKind3D::Water:
+    return ShowcaseHlodDescriptorPolicy3D::DedicatedWater;
+  case ShowcaseSceneKind3D::Tree:
+  case ShowcaseSceneKind3D::Grass:
+    return ShowcaseHlodDescriptorPolicy3D::DedicatedVegetation;
+  case ShowcaseSceneKind3D::Building:
+    return ShowcaseHlodDescriptorPolicy3D::DedicatedBuilding;
+  }
+  return ShowcaseHlodDescriptorPolicy3D::FailClosed;
+}
+
+namespace {
+void HashShowcaseAggregateBytes(std::uint64_t &hash, const void *data,
+                                std::size_t bytes) noexcept {
+  const auto *items = static_cast<const std::uint8_t *>(data);
+  for (std::size_t index{}; index < bytes; ++index) {
+    hash ^= items[index];
+    hash *= 1099511628211ull;
+  }
+}
+
+std::uint64_t ShowcaseAggregateMeshIdentity(const Aevrynd::Mesh3D &mesh) noexcept {
+  std::uint64_t hash = 1469598103934665603ull;
+  HashShowcaseAggregateBytes(hash, mesh.vertices.data(),
+                             mesh.vertices.size() * sizeof(Aevrynd::Vertex3D));
+  HashShowcaseAggregateBytes(hash, mesh.indices.data(),
+                             mesh.indices.size() * sizeof(std::uint32_t));
+  return hash ? hash : 1;
+}
+
+constexpr std::uint64_t MaximumAggregateCacheBytes = 512ull * 1024ull * 1024ull;
+
+bool CheckedAggregateByteSize(const Aevrynd::Mesh3D &mesh,
+                              std::uint64_t &vertexBytes,
+                              std::uint64_t &indexBytes,
+                              std::uint64_t &fileBytes) noexcept {
+  constexpr std::uint64_t headerBytes = sizeof(std::uint32_t) * 4;
+  if (!mesh.Valid() || mesh.vertices.size() >
+          (std::numeric_limits<std::uint32_t>::max)() ||
+      mesh.indices.size() > (std::numeric_limits<std::uint32_t>::max)())
+    return false;
+  vertexBytes = std::uint64_t(mesh.vertices.size()) * sizeof(Aevrynd::Vertex3D);
+  indexBytes = std::uint64_t(mesh.indices.size()) * sizeof(std::uint32_t);
+  if (vertexBytes > MaximumAggregateCacheBytes - headerBytes ||
+      indexBytes > MaximumAggregateCacheBytes - headerBytes - vertexBytes)
+    return false;
+  fileBytes = headerBytes + vertexBytes + indexBytes;
+  return true;
+}
+
+std::array<std::uint8_t, 32>
+AggregateDigest(const Aevrynd::Mesh3D &mesh) noexcept {
+  std::array<std::uint8_t, 32> digest{};
+  std::uint64_t vertexBytes{}, indexBytes{}, fileBytes{};
+  if (!CheckedAggregateByteSize(mesh, vertexBytes, indexBytes, fileBytes))
+    return digest;
+  BCRYPT_ALG_HANDLE algorithm{};
+  BCRYPT_HASH_HANDLE hash{};
+  if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr,
+                                  0) < 0)
+    return digest;
+  const auto close = [&] {
+    if (hash)
+      BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+  };
+  if (BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) < 0) {
+    close();
+    return digest;
+  }
+  const std::array<std::uint64_t, 2> counts{mesh.vertices.size(),
+                                           mesh.indices.size()};
+  const auto add = [&](const void *bytes, std::uint64_t count) {
+    const auto *cursor = static_cast<const std::uint8_t *>(bytes);
+    while (count) {
+      const auto part = static_cast<ULONG>((std::min)(
+          count, std::uint64_t{(std::numeric_limits<ULONG>::max)()}));
+      if (BCryptHashData(hash, const_cast<PUCHAR>(cursor), part, 0) < 0)
+        return false;
+      cursor += part;
+      count -= part;
+    }
+    return true;
+  };
+  const bool success = add(counts.data(), sizeof(counts)) &&
+      add(mesh.vertices.data(), vertexBytes) &&
+      add(mesh.indices.data(), indexBytes) &&
+      BCryptFinishHash(hash, digest.data(), ULONG(digest.size()), 0) >= 0;
+  close();
+  if (!success)
+    digest = {};
+  return digest;
+}
+
+class WinHandle final {
+public:
+  WinHandle() = default;
+  explicit WinHandle(HANDLE value) noexcept : value_(value) {}
+  ~WinHandle() { Reset(); }
+  WinHandle(const WinHandle &) = delete;
+  WinHandle &operator=(const WinHandle &) = delete;
+  WinHandle(WinHandle &&other) noexcept : value_(other.Release()) {}
+  WinHandle &operator=(WinHandle &&other) noexcept {
+    if (this != &other) {
+      Reset();
+      value_ = other.Release();
+    }
+    return *this;
+  }
+  [[nodiscard]] HANDLE Get() const noexcept { return value_; }
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return value_ && value_ != INVALID_HANDLE_VALUE;
+  }
+  HANDLE Release() noexcept {
+    const auto value = value_;
+    value_ = nullptr;
+    return value;
+  }
+  void Reset(HANDLE value = nullptr) noexcept {
+    if (*this)
+      CloseHandle(value_);
+    value_ = value;
+  }
+private:
+  HANDLE value_{};
+};
+
+using NtCreateFilePointer = NTSTATUS(NTAPI *)(
+    PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, PLARGE_INTEGER,
+    ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
+using NtSetInformationFilePointer = NTSTATUS(NTAPI *)(
+    HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, FILE_INFORMATION_CLASS);
+
+NtCreateFilePointer ResolveNtCreateFile() noexcept {
+  const auto module = GetModuleHandleW(L"ntdll.dll");
+  return module ? reinterpret_cast<NtCreateFilePointer>(
+                      GetProcAddress(module, "NtCreateFile"))
+                : nullptr;
+}
+
+NtSetInformationFilePointer ResolveNtSetInformationFile() noexcept {
+  const auto module = GetModuleHandleW(L"ntdll.dll");
+  return module ? reinterpret_cast<NtSetInformationFilePointer>(
+                      GetProcAddress(module, "NtSetInformationFile"))
+                : nullptr;
+}
+
+bool IsUnlinkedRegularFile(HANDLE handle) noexcept {
+  FILE_ATTRIBUTE_TAG_INFO tag{};
+  BY_HANDLE_FILE_INFORMATION information{};
+  return GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &tag,
+                                      sizeof(tag)) &&
+      !(tag.FileAttributes & (FILE_ATTRIBUTE_DIRECTORY |
+                              FILE_ATTRIBUTE_REPARSE_POINT)) &&
+      GetFileInformationByHandle(handle, &information) &&
+      information.nNumberOfLinks == 1;
+}
+
+bool IsPlainDirectory(HANDLE handle) noexcept {
+  FILE_ATTRIBUTE_TAG_INFO tag{};
+  return GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &tag,
+                                      sizeof(tag)) &&
+      (tag.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+      !(tag.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+}
+
+WinHandle OpenRelative(HANDLE parent, std::wstring_view name,
+                       ACCESS_MASK access, ULONG disposition, ULONG options,
+                       NTSTATUS &status,
+                       ULONG shareAccess = FILE_SHARE_READ |
+                                           FILE_SHARE_WRITE) noexcept {
+  status = static_cast<NTSTATUS>(0xc0000001L);
+  const auto ntCreateFile = ResolveNtCreateFile();
+  if (!ntCreateFile || name.empty() || name.size() > 32767)
+    return {};
+  UNICODE_STRING unicode{};
+  unicode.Buffer = const_cast<PWSTR>(name.data());
+  unicode.Length = static_cast<USHORT>(name.size() * sizeof(wchar_t));
+  unicode.MaximumLength = unicode.Length;
+  OBJECT_ATTRIBUTES attributes{};
+  InitializeObjectAttributes(&attributes, &unicode, OBJ_CASE_INSENSITIVE,
+                             parent, nullptr);
+  IO_STATUS_BLOCK io{};
+  HANDLE handle{};
+  status = ntCreateFile(&handle, access, &attributes, &io, nullptr,
+                        FILE_ATTRIBUTE_NORMAL,
+                        shareAccess, disposition,
+                        options | FILE_OPEN_REPARSE_POINT |
+                            FILE_SYNCHRONOUS_IO_NONALERT,
+                        nullptr, 0);
+  return status >= 0 ? WinHandle(handle) : WinHandle{};
+}
+
+bool WriteAll(HANDLE handle, const void *data, std::uint64_t bytes) noexcept {
+  const auto *cursor = static_cast<const std::uint8_t *>(data);
+  while (bytes) {
+    const DWORD request = static_cast<DWORD>((std::min)(
+        bytes, std::uint64_t{(std::numeric_limits<DWORD>::max)()}));
+    DWORD written{};
+    if (!WriteFile(handle, cursor, request, &written, nullptr) ||
+        written != request)
+      return false;
+    cursor += request;
+    bytes -= request;
+  }
+  return true;
+}
+
+bool ReadAll(HANDLE handle, void *data, std::uint64_t bytes) noexcept {
+  auto *cursor = static_cast<std::uint8_t *>(data);
+  while (bytes) {
+    const DWORD request = static_cast<DWORD>((std::min)(
+        bytes, std::uint64_t{(std::numeric_limits<DWORD>::max)()}));
+    DWORD read{};
+    if (!ReadFile(handle, cursor, request, &read, nullptr) || read != request)
+      return false;
+    cursor += request;
+    bytes -= request;
+  }
+  return true;
+}
+
+bool VerifyPinnedMesh(HANDLE handle,
+                      const std::array<std::uint8_t, 32> &expected) noexcept {
+  struct Header { std::uint32_t magic{}, version{}, vertices{}, indices{}; };
+  LARGE_INTEGER zero{};
+  if (!SetFilePointerEx(handle, zero, nullptr, FILE_BEGIN))
+    return false;
+  Header header{};
+  if (!ReadAll(handle, &header, sizeof(header)) || header.magic != 0x334d4541u ||
+      header.version != 1 || !header.vertices || !header.indices ||
+      header.indices % 3)
+    return false;
+  Aevrynd::Mesh3D mesh;
+  try {
+    mesh.vertices.resize(header.vertices);
+    mesh.indices.resize(header.indices);
+  } catch (...) {
+    return false;
+  }
+  std::uint64_t vertexBytes{}, indexBytes{}, fileBytes{};
+  if (!CheckedAggregateByteSize(mesh, vertexBytes, indexBytes, fileBytes))
+    return false;
+  LARGE_INTEGER actual{};
+  if (!GetFileSizeEx(handle, &actual) || actual.QuadPart < 0 ||
+      std::uint64_t(actual.QuadPart) != fileBytes ||
+      !ReadAll(handle, mesh.vertices.data(), vertexBytes) ||
+      !ReadAll(handle, mesh.indices.data(), indexBytes) || !mesh.Valid())
+    return false;
+  return AggregateDigest(mesh) == expected;
+}
+
+std::wstring DigestName(const std::array<std::uint8_t, 32> &digest) {
+  constexpr wchar_t hex[] = L"0123456789abcdef";
+  std::wstring result = L"proxy-";
+  result.reserve(6 + digest.size() * 2 + 7);
+  for (const auto byte : digest) {
+    result.push_back(hex[byte >> 4]);
+    result.push_back(hex[byte & 15]);
+  }
+  result += L".aemesh";
+  return result;
+}
+
+class PinnedAggregateCacheFile final {
+public:
+  ~PinnedAggregateCacheFile() { Remove(); }
+  [[nodiscard]] const std::filesystem::path &Path() const noexcept {
+    return path_;
+  }
+  bool Open(const std::filesystem::path &assetRoot,
+            const Aevrynd::Mesh3D &mesh,
+            const std::array<std::uint8_t, 32> &digest) noexcept {
+    Remove();
+    try {
+      if (assetRoot.empty() || digest == std::array<std::uint8_t, 32>{})
+        return false;
+      root_.Reset(CreateFileW(assetRoot.c_str(),
+          FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
+              FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+          FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+          FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+      if (!root_ || !IsPlainDirectory(root_.Get()))
+        return false;
+      NTSTATUS status{};
+      cacheParent_ = OpenRelative(root_.Get(), L".aevrynd-runtime-cache",
+          FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
+              FILE_TRAVERSE | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE,
+          FILE_OPEN_IF, FILE_DIRECTORY_FILE, status);
+      if (!cacheParent_ || !IsPlainDirectory(cacheParent_.Get()))
+        return false;
+      cacheDirectory_ = OpenRelative(cacheParent_.Get(), L"hlod-aggregate-proxy",
+          FILE_LIST_DIRECTORY | FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY |
+              FILE_TRAVERSE | FILE_READ_ATTRIBUTES | DELETE | SYNCHRONIZE,
+          FILE_OPEN_IF, FILE_DIRECTORY_FILE, status);
+      if (!cacheDirectory_ || !IsPlainDirectory(cacheDirectory_.Get()))
+        return false;
+      const auto finalName = DigestName(digest);
+      file_ = OpenRelative(cacheDirectory_.Get(), finalName,
+          FILE_GENERIC_READ | SYNCHRONIZE, FILE_OPEN,
+          FILE_NON_DIRECTORY_FILE, status, FILE_SHARE_READ);
+      if (file_) {
+        if (!IsUnlinkedRegularFile(file_.Get()) ||
+            !VerifyPinnedMesh(file_.Get(), digest))
+          return false;
+      } else {
+        constexpr NTSTATUS NameNotFound = static_cast<NTSTATUS>(0xc0000034L);
+        if (status != NameNotFound)
+          return false;
+        std::array<std::uint8_t, 16> nonce{};
+        static std::atomic<std::uint64_t> sequence{};
+        if (BCryptGenRandom(nullptr, nonce.data(), ULONG(nonce.size()),
+                            BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0)
+          return false;
+        std::wostringstream temporaryName;
+        temporaryName << L".tmp-" << GetCurrentProcessId() << L'-'
+                      << sequence.fetch_add(1, std::memory_order_relaxed);
+        for (const auto byte : nonce)
+          temporaryName << std::hex << std::setw(2) << std::setfill(L'0')
+                        << unsigned(byte);
+        file_ = OpenRelative(cacheDirectory_.Get(), temporaryName.str(),
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE | SYNCHRONIZE,
+            FILE_CREATE, FILE_NON_DIRECTORY_FILE, status, FILE_SHARE_READ);
+        if (!file_ || !IsUnlinkedRegularFile(file_.Get()))
+          return false;
+        deleteOnClose_ = true;
+        struct Header { std::uint32_t magic{}, version{}, vertices{}, indices{}; };
+        std::uint64_t vertexBytes{}, indexBytes{}, fileBytes{};
+        if (!CheckedAggregateByteSize(mesh, vertexBytes, indexBytes, fileBytes))
+          return false;
+        const Header header{0x334d4541u, 1u,
+                            static_cast<std::uint32_t>(mesh.vertices.size()),
+                            static_cast<std::uint32_t>(mesh.indices.size())};
+        if (!WriteAll(file_.Get(), &header, sizeof(header)) ||
+            !WriteAll(file_.Get(), mesh.vertices.data(), vertexBytes) ||
+            !WriteAll(file_.Get(), mesh.indices.data(), indexBytes) ||
+            !FlushFileBuffers(file_.Get()) ||
+            !VerifyPinnedMesh(file_.Get(), digest))
+          return false;
+        const auto renameBytes = finalName.size() * sizeof(wchar_t);
+        std::vector<std::byte> storage(offsetof(FILE_RENAME_INFO, FileName) +
+                                       renameBytes);
+        auto *rename = reinterpret_cast<FILE_RENAME_INFO *>(storage.data());
+        rename->ReplaceIfExists = TRUE;
+        rename->RootDirectory = cacheDirectory_.Get();
+        rename->FileNameLength = static_cast<DWORD>(renameBytes);
+        std::memcpy(rename->FileName, finalName.data(), renameBytes);
+        IO_STATUS_BLOCK renameIo{};
+        const auto ntSetInformationFile = ResolveNtSetInformationFile();
+        const auto renameStatus = ntSetInformationFile
+            ? ntSetInformationFile(file_.Get(), &renameIo, rename,
+                                   ULONG(storage.size()),
+                                   static_cast<FILE_INFORMATION_CLASS>(10))
+            : static_cast<NTSTATUS>(0xc0000001L);
+        if (renameStatus < 0 ||
+            !IsUnlinkedRegularFile(file_.Get()) ||
+            !VerifyPinnedMesh(file_.Get(), digest))
+          return false;
+        // Rename 需要 DELETE 權限；完成後立即丟棄該 handle，再以唯讀且拒絕
+        // write/delete sharing 的相對開啟重新 pin，供正式 loader 消費。
+        file_.Reset();
+        deleteOnClose_ = false;
+        file_ = OpenRelative(cacheDirectory_.Get(), finalName,
+            FILE_GENERIC_READ | SYNCHRONIZE, FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE, status, FILE_SHARE_READ);
+        if (!file_ || !IsUnlinkedRegularFile(file_.Get()) ||
+            !VerifyPinnedMesh(file_.Get(), digest))
+          return false;
+      }
+      path_ = assetRoot / L".aevrynd-runtime-cache" /
+              L"hlod-aggregate-proxy" / finalName;
+      return true;
+    } catch (...) {
+      Remove();
+      return false;
+    }
+  }
+  void Remove() noexcept {
+    if (file_ && deleteOnClose_) {
+      FILE_DISPOSITION_INFO disposition{TRUE};
+      SetFileInformationByHandle(file_.Get(), FileDispositionInfo,
+                                 &disposition, sizeof(disposition));
+    }
+    file_.Reset();
+    cacheDirectory_.Reset();
+    cacheParent_.Reset();
+    root_.Reset();
+    path_.clear();
+    deleteOnClose_ = false;
+  }
+private:
+  WinHandle root_, cacheParent_, cacheDirectory_, file_;
+  std::filesystem::path path_;
+  bool deleteOnClose_{};
+};
+
+std::optional<Aevrynd::PreparedHlodProxyAsset3D>
+PrepareShowcaseAggregateProxy3D(
+    const Aevrynd::StaticMeshAssetLibrary3D &library,
+    Aevrynd::StableObjectId3D worldId,
+    Aevrynd::GlobalChunkCoordinate3D chunk,
+    Aevrynd::HlodClusterId3D clusterId,
+    Aevrynd::StaticMeshAssetDefinition3D definition,
+    const Aevrynd::Mesh3D &aggregate,
+    std::uint64_t expectedContentIdentity,
+    const std::array<std::uint8_t, 32> &expectedDigest) noexcept {
+  static std::mutex cacheMutex;
+  std::scoped_lock lock(cacheMutex);
+  try {
+    if (!aggregate.Valid() || !expectedContentIdentity ||
+        expectedDigest == std::array<std::uint8_t, 32>{} ||
+        AggregateDigest(aggregate) != expectedDigest)
+      return std::nullopt;
+    PinnedAggregateCacheFile cache;
+    if (!cache.Open(library.AssetRoot(), aggregate, expectedDigest))
+      return std::nullopt;
+    definition.meshPath = cache.Path();
+    definition.generateLods = false;
+    definition.cpuRetention = Aevrynd::MeshLodCpuRetention3D::None;
+    auto prepared = library.PrepareHlodProxyCpu3D(
+        worldId, chunk, clusterId, 1, std::move(definition));
+    if (!prepared || !Aevrynd::ValidatePreparedHlodProxyDescriptor3D(*prepared) ||
+        prepared->prepared.assetKey.contentIdentity != expectedContentIdentity ||
+        AggregateDigest(prepared->prepared.cpuMeshes[0]) != expectedDigest)
+      return std::nullopt;
+    return prepared;
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+} // namespace
+
+std::array<std::uint8_t, 32>
+ShowcaseAggregateProxyContentDigest3D(const Aevrynd::Mesh3D &mesh) noexcept {
+  return AggregateDigest(mesh);
+}
+
+bool ExerciseShowcaseAggregateProxyCache3DForTesting(
+    const std::filesystem::path &assetRoot, const Aevrynd::Mesh3D &mesh,
+    const ShowcaseAggregateProxyReceipt3D &receipt) noexcept {
+  if (!ValidateShowcaseAggregateProxyMesh3D(mesh, receipt))
+    return false;
+  PinnedAggregateCacheFile cache;
+  if (!cache.Open(assetRoot, mesh, receipt.aggregateContentDigest))
+    return false;
+  WinHandle hostileWrite(CreateFileW(
+      cache.Path().c_str(), GENERIC_WRITE | DELETE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+  if (hostileWrite || DeleteFileW(cache.Path().c_str()))
+    return false;
+  return true;
+}
+
+bool ValidateShowcaseAggregateProxyMesh3D(
+    const Aevrynd::Mesh3D &mesh,
+    const ShowcaseAggregateProxyReceipt3D &receipt) noexcept {
+  const auto digest = AggregateDigest(mesh);
+  return mesh.Valid() && receipt.Complete() && receipt.sourceInstances >= 2 &&
+      receipt.aggregateVertices == mesh.vertices.size() &&
+      receipt.aggregateTriangles == mesh.indices.size() / 3 &&
+      receipt.sourceVertices >= receipt.aggregateVertices &&
+      receipt.sourceTriangles > receipt.aggregateTriangles &&
+      receipt.aggregateTriangles < receipt.sourceTriangles &&
+      receipt.sourceContractIdentity && receipt.aggregateContentIdentity &&
+      ShowcaseAggregateMeshIdentity(mesh) == receipt.aggregateContentIdentity &&
+      digest != std::array<std::uint8_t, 32>{} &&
+      digest == receipt.aggregateContentDigest && receipt.materialCompatible &&
+      receipt.immutableIdentityValidated;
+}
+
+bool BuildShowcaseAggregateProxyMesh3D(
+    std::span<const ShowcaseAggregateProxySource3D> sources,
+    Aevrynd::Mesh3D &mesh,
+    ShowcaseAggregateProxyReceipt3D &receipt) noexcept {
+  mesh = {};
+  receipt = {};
+  if (sources.size() < 2)
+    return false;
+  try {
+    std::vector<const ShowcaseAggregateProxySource3D *> ordered;
+    ordered.reserve(sources.size());
+    for (const auto &source : sources) {
+      const auto finite = [](Aevrynd::Vec3 value) noexcept {
+        return std::isfinite(value.x) && std::isfinite(value.y) &&
+            std::isfinite(value.z);
+      };
+      if (!source.mesh || !source.mesh->Valid() || !source.objectId ||
+          !source.generation || !source.meshContentIdentity ||
+          !source.materialIdentity || !source.resourceOwnerIdentity ||
+          source.meshContentIdentity !=
+              ShowcaseAggregateMeshIdentity(*source.mesh) ||
+          !finite(source.transform.position) ||
+          !finite(source.transform.rotation) || !finite(source.transform.scale) ||
+          source.transform.scale.x <= 0.f || source.transform.scale.y <= 0.f ||
+          source.transform.scale.z <= 0.f)
+        return false;
+      ordered.push_back(&source);
+    }
+    std::ranges::sort(ordered, [](const auto *left, const auto *right) {
+      return left->objectId != right->objectId
+                 ? left->objectId < right->objectId
+                 : left->generation < right->generation;
+    });
+    for (std::size_t index = 1; index < ordered.size(); ++index)
+      if (ordered[index - 1]->objectId == ordered[index]->objectId)
+        return false;
+
+    const auto materialIdentity = ordered.front()->materialIdentity;
+    std::size_t vertices{}, indices{};
+    for (const auto *source : ordered) {
+      if (source->materialIdentity != materialIdentity ||
+          source->mesh->vertices.size() >
+              (std::numeric_limits<std::uint32_t>::max)() - vertices ||
+          source->mesh->vertices.size() >
+              (std::numeric_limits<std::size_t>::max)() - vertices ||
+          source->mesh->indices.size() >
+              (std::numeric_limits<std::size_t>::max)() - indices)
+        return false;
+      vertices += source->mesh->vertices.size();
+      indices += source->mesh->indices.size();
+    }
+    constexpr std::size_t MaximumTrianglesPerSource = 6000;
+    if (sources.size() >
+        (std::numeric_limits<std::uint32_t>::max)() /
+            (MaximumTrianglesPerSource * 3))
+      return false;
+    const auto maximumAggregateTriangles =
+        sources.size() * MaximumTrianglesPerSource;
+    mesh.vertices.reserve(maximumAggregateTriangles * 3);
+    mesh.indices.reserve(maximumAggregateTriangles * 3);
+    std::uint64_t contract = 1469598103934665603ull;
+    for (const auto *source : ordered) {
+      HashShowcaseAggregateBytes(contract, &source->objectId,
+                                 sizeof(source->objectId));
+      HashShowcaseAggregateBytes(contract, &source->generation,
+                                 sizeof(source->generation));
+      HashShowcaseAggregateBytes(contract, &source->meshContentIdentity,
+                                 sizeof(source->meshContentIdentity));
+      HashShowcaseAggregateBytes(contract, &source->materialIdentity,
+                                 sizeof(source->materialIdentity));
+      HashShowcaseAggregateBytes(contract, &source->resourceOwnerIdentity,
+                                 sizeof(source->resourceOwnerIdentity));
+      const auto matrix = source->transform.Matrix();
+      const auto normalMatrix = Aevrynd::CreateNormalMatrix(matrix);
+      const auto sourceTriangles = source->mesh->indices.size() / 3;
+      if (sourceTriangles < 2)
+        return false;
+      const auto selectedTriangles = (std::min)(
+          MaximumTrianglesPerSource, (std::max)(std::size_t{1},
+                                                sourceTriangles / 2));
+      for (std::size_t selected{}; selected < selectedTriangles; ++selected) {
+        const auto triangle = selected * sourceTriangles / selectedTriangles;
+        const auto base = static_cast<std::uint32_t>(mesh.vertices.size());
+        for (std::size_t corner{}; corner < 3; ++corner) {
+          const auto &input = source->mesh->vertices[
+              source->mesh->indices[triangle * 3 + corner]];
+          const auto position = Aevrynd::TransformPoint(
+              matrix, {input.x, input.y, input.z});
+          const auto packed = Aevrynd::UnpackNormalSnorm8(input.normal);
+          const auto normal = Aevrynd::TransformNormal(
+              normalMatrix, {packed.x, packed.y, packed.z});
+          if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+              !std::isfinite(position.z) || Aevrynd::Length(normal) < .0001f)
+            return false;
+          mesh.vertices.push_back(
+              {position.x, position.y, position.z,
+               Aevrynd::PackNormalSnorm8(normal, packed.w), input.color,
+               input.u, input.v});
+        }
+        mesh.indices.insert(mesh.indices.end(), {base, base + 1, base + 2});
+      }
+    }
+    receipt.sourceContractIdentity = contract ? contract : 1;
+    receipt.aggregateContentIdentity = ShowcaseAggregateMeshIdentity(mesh);
+    receipt.aggregateContentDigest = AggregateDigest(mesh);
+    receipt.sourceInstances = ordered.size();
+    receipt.sourceVertices = vertices;
+    receipt.sourceTriangles = indices / 3;
+    receipt.aggregateVertices = mesh.vertices.size();
+    receipt.aggregateTriangles = mesh.indices.size() / 3;
+    receipt.materialCompatible = true;
+    receipt.immutableIdentityValidated = true;
+    if (!ValidateShowcaseAggregateProxyMesh3D(mesh, receipt)) {
+      mesh = {};
+      receipt = {};
+      return false;
+    }
+    return receipt.Complete();
+  } catch (...) {
+    mesh = {};
+    receipt = {};
+    return false;
+  }
+}
 
 std::string_view ResolveShowcasePhotorealAssetId3D(
     const ShowcaseSceneDescriptor3D &descriptor) noexcept {
@@ -847,24 +1460,57 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
   std::vector<SourceCandidate> candidates;
   receipt.inputDescriptors = descriptors.size();
   receipt.descriptorFingerprint = DescriptorFingerprint(descriptors);
+  constexpr std::array DescriptorKinds{
+      ShowcaseSceneKind3D::Terrain, ShowcaseSceneKind3D::Water,
+      ShowcaseSceneKind3D::Tree, ShowcaseSceneKind3D::Grass,
+      ShowcaseSceneKind3D::Rock, ShowcaseSceneKind3D::Building};
+  receipt.descriptorPolicyHash = 1469598103934665603ull;
+  for (const auto kind : DescriptorKinds) {
+    const auto policy = ResolveShowcaseHlodDescriptorPolicy3D(kind);
+    if (policy == ShowcaseHlodDescriptorPolicy3D::FailClosed)
+      return false;
+    const auto kindValue = static_cast<std::uint8_t>(kind);
+    const auto policyValue = static_cast<std::uint8_t>(policy);
+    receipt.coveredDescriptorKindMask |= std::uint8_t(1u << kindValue);
+    HashShowcaseAggregateBytes(receipt.descriptorPolicyHash, &kindValue,
+                               sizeof(kindValue));
+    HashShowcaseAggregateBytes(receipt.descriptorPolicyHash, &policyValue,
+                               sizeof(policyValue));
+  }
+  receipt.allDescriptorKindsCovered = receipt.coveredDescriptorKindMask == 0x3fu;
   try {
     candidates.reserve(descriptors.size());
     for (std::size_t index = 0; index < descriptors.size(); ++index) {
       const auto &descriptor = descriptors[index];
-      switch (descriptor.kind) {
-      case ShowcaseSceneKind3D::Terrain: ++receipt.excludedTerrain; continue;
-      case ShowcaseSceneKind3D::Water: ++receipt.excludedWater; continue;
-      case ShowcaseSceneKind3D::Tree: ++receipt.excludedTrees; continue;
-      case ShowcaseSceneKind3D::Grass: ++receipt.excludedGrass; continue;
-      case ShowcaseSceneKind3D::Building: ++receipt.excludedBuildings; continue;
-      case ShowcaseSceneKind3D::Rock: break;
+      switch (ResolveShowcaseHlodDescriptorPolicy3D(descriptor.kind)) {
+      case ShowcaseHlodDescriptorPolicy3D::DedicatedTerrain:
+        ++receipt.excludedTerrain;
+        continue;
+      case ShowcaseHlodDescriptorPolicy3D::DedicatedWater:
+        ++receipt.excludedWater;
+        continue;
+      case ShowcaseHlodDescriptorPolicy3D::DedicatedVegetation:
+        if (descriptor.kind == ShowcaseSceneKind3D::Tree)
+          ++receipt.excludedTrees;
+        else
+          ++receipt.excludedGrass;
+        continue;
+      case ShowcaseHlodDescriptorPolicy3D::DedicatedBuilding:
+        ++receipt.excludedBuildings;
+        continue;
+      case ShowcaseHlodDescriptorPolicy3D::AggregateOpaque:
+        break;
+      case ShowcaseHlodDescriptorPolicy3D::FailClosed:
+        return false;
       }
       const std::string assetId(ResolveShowcasePhotorealAssetId3D(descriptor));
+      const std::string expectedMaterial =
+          "poly-haven/" + assetId + "/cooked-pbr";
       const auto leases = production_->assetLeases.find(assetId);
       const auto bounds = production_->assetBounds.find(assetId);
       if (assetId.empty() || leases == production_->assetLeases.end() ||
           leases->second.size() != 1 || bounds == production_->assetBounds.end() ||
-          !bounds->second.valid)
+          !bounds->second.valid || descriptor.materialAsset != expectedMaterial)
         return false;
       Aevrynd::Transform3D normalized{};
       if (!NormalizeShowcaseAssetTransform3D(
@@ -899,6 +1545,10 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
 
   std::size_t begin{};
   std::uint64_t clusterOrdinal{1};
+  std::uint64_t aggregateContentIdentity{1469598103934665603ull};
+  std::uint64_t aggregateResourceContractIdentity{1469598103934665603ull};
+  std::size_t aggregateVertices{}, aggregateTriangles{};
+  bool aggregateIdentitiesValidated{true};
   while (begin < candidates.size()) {
     std::size_t assetEnd = begin + 1;
     while (assetEnd < candidates.size() &&
@@ -951,22 +1601,26 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
       proxyDefinition.material = material->Definition();
       proxyDefinition.generateLods = false;
       proxyDefinition.cpuRetention = Aevrynd::MeshLodCpuRetention3D::None;
-      auto proxy = production_->meshes.PrepareHlodProxyCpu3D(
-          worldId, chunk, clusterId, 1, std::move(proxyDefinition));
-      if (!proxy)
+      auto representative = production_->meshes.PrepareHlodProxyCpu3D(
+          worldId, chunk, clusterId, 1, proxyDefinition);
+      if (!representative ||
+          !Aevrynd::ValidatePreparedHlodProxyDescriptor3D(*representative) ||
+          representative->prepared.levelCount != 1 ||
+          !representative->prepared.cpuMeshes[0].Valid())
         return false;
 
       std::vector<Aevrynd::HlodSourceBuildInput3D> sources;
+      std::vector<ShowcaseAggregateProxySource3D> aggregateSources;
       Aevrynd::TerrainVegetationHlodCluster3D manifest{};
       try {
         sources.reserve(count);
+        aggregateSources.reserve(count);
         manifest.sources.reserve(count);
       } catch (...) {
         return false;
       }
       manifest.id = clusterId;
       manifest.generation = 1;
-      manifest.proxy = std::move(*proxy);
       float clusterRadius{};
       std::uint32_t sourceTriangles{};
       for (std::size_t offset = 0; offset < count; ++offset) {
@@ -994,6 +1648,12 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
         source.meshContentSecondary = sourceMesh.handle.contentSecondary;
         source.materialSemanticIdentity = sourceMaterial.textures.semanticIdentity;
         source.resourceOwnerIdentity = renderable.resourceOwnerIdentity;
+        aggregateSources.push_back(
+            {&representative->prepared.cpuMeshes[0],
+             {source.position, source.rotation, source.scale},
+             source.reference.globalObjectId, source.generation,
+             representative->prepared.assetKey.contentIdentity,
+             source.materialSemanticIdentity, source.resourceOwnerIdentity});
         const auto transform = Aevrynd::CreateTransformMatrix(
             source.position, source.rotation, source.scale);
         for (unsigned corner = 0; corner < 8; ++corner) {
@@ -1018,6 +1678,39 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
              candidate.transform.scale});
         sources.push_back(source);
       }
+      Aevrynd::Mesh3D aggregateMesh;
+      ShowcaseAggregateProxyReceipt3D aggregateReceipt{};
+      if (!BuildShowcaseAggregateProxyMesh3D(aggregateSources, aggregateMesh,
+                                             aggregateReceipt) ||
+          !ValidateShowcaseAggregateProxyMesh3D(aggregateMesh,
+                                                aggregateReceipt))
+        return false;
+      auto proxy = PrepareShowcaseAggregateProxy3D(
+          production_->meshes, worldId, chunk, clusterId, proxyDefinition,
+          aggregateMesh, aggregateReceipt.aggregateContentIdentity,
+          aggregateReceipt.aggregateContentDigest);
+      if (!proxy ||
+          !Aevrynd::ValidatePreparedHlodProxyDescriptor3D(*proxy) ||
+          proxy->prepared.assetKey.contentIdentity !=
+              aggregateReceipt.aggregateContentIdentity)
+        return false;
+      aggregateIdentitiesValidated = aggregateIdentitiesValidated &&
+          aggregateReceipt.immutableIdentityValidated;
+      HashShowcaseAggregateBytes(aggregateContentIdentity,
+                                 &aggregateReceipt.aggregateContentIdentity,
+                                 sizeof(aggregateReceipt.aggregateContentIdentity));
+      HashShowcaseAggregateBytes(
+          aggregateResourceContractIdentity,
+          &aggregateReceipt.sourceContractIdentity,
+          sizeof(aggregateReceipt.sourceContractIdentity));
+      if (aggregateReceipt.aggregateVertices >
+              (std::numeric_limits<std::size_t>::max)() - aggregateVertices ||
+          aggregateReceipt.aggregateTriangles >
+              (std::numeric_limits<std::size_t>::max)() - aggregateTriangles)
+        return false;
+      aggregateVertices += aggregateReceipt.aggregateVertices;
+      aggregateTriangles += aggregateReceipt.aggregateTriangles;
+      manifest.proxy = std::move(*proxy);
       clusterRadius = (std::max)(clusterRadius, .001f);
       const auto proxyTriangles =
           std::uint32_t(manifest.proxy.prepared.cpuMeshes[0].indices.size() / 3);
@@ -1073,6 +1766,23 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
   auto manifest = Aevrynd::BuildTerrainVegetationHlodManifest3D(manifests, *data);
   if (!manifest)
     return false;
+  bool resourceContractsValidated =
+      data->Resources().size() == manifests.size() &&
+      manifest->Clusters().size() == manifests.size();
+  for (std::size_t index{}; resourceContractsValidated &&
+       index < manifests.size(); ++index) {
+    const auto contracts = data->SourceResourceContracts(index);
+    resourceContractsValidated =
+        contracts.size() == manifests[index].sources.size() &&
+        data->Resources()[index].proxyMeshHandle ==
+            manifests[index].proxy.prepared.assetKey.contentIdentity &&
+        Aevrynd::ValidatePreparedHlodProxyDescriptor3D(
+            manifests[index].proxy) &&
+        std::ranges::all_of(
+            contracts, Aevrynd::ValidHlodSourceResourceContract3D);
+  }
+  if (!resourceContractsValidated)
+    return false;
   auto result = std::make_shared<Aevrynd::TerrainVegetationChunkPayload3D>();
   result->globalChunk = chunk;
   result->heightField = Aevrynd::HeightField3D({{}, 2, 2, 1.f});
@@ -1082,23 +1792,46 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
     return false;
   result->hlod = std::move(data);
   result->hlodManifest = std::move(manifest);
-  result->cpuBytes = result->terrain.vertices.size() * sizeof(Aevrynd::Vertex3D) +
-                     result->terrain.indices.size() * sizeof(std::uint32_t);
+  std::uint64_t retainedCpuBytes{};
+  const auto addRetainedBytes = [&](std::size_t count,
+                                    std::size_t stride) noexcept {
+    constexpr auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+    if (!stride || count > maximum / stride)
+      return false;
+    const auto bytes = std::uint64_t(count) * std::uint64_t(stride);
+    if (bytes > maximum - retainedCpuBytes)
+      return false;
+    retainedCpuBytes += bytes;
+    return true;
+  };
+  const auto addMeshRetainedBytes = [&](const Aevrynd::Mesh3D &mesh) noexcept {
+    return addRetainedBytes(mesh.vertices.size(), sizeof(Aevrynd::Vertex3D)) &&
+        addRetainedBytes(mesh.indices.size(), sizeof(std::uint32_t));
+  };
+  if (!addMeshRetainedBytes(result->terrain))
+    return false;
   for (const auto &cluster : manifests)
     for (std::uint32_t level = 0; level < cluster.proxy.prepared.levelCount; ++level)
-      result->cpuBytes += cluster.proxy.prepared.cpuMeshes[level].vertices.size() *
-                              sizeof(Aevrynd::Vertex3D) +
-                          cluster.proxy.prepared.cpuMeshes[level].indices.size() *
-                              sizeof(std::uint32_t);
+      if (!addMeshRetainedBytes(cluster.proxy.prepared.cpuMeshes[level]))
+        return false;
+  result->cpuBytes = retainedCpuBytes;
   result->conservativeGpuBytes = result->cpuBytes;
   receipt.eligibleRockDescriptors = candidates.size();
   receipt.sourceInstances = candidates.size();
   receipt.clusters = builds.size();
   receipt.hlodDataHash = result->hlod->ContentHash();
   receipt.hlodManifestHash = result->hlodManifest->ContentHash();
+  receipt.aggregateProxyContentIdentity =
+      aggregateContentIdentity ? aggregateContentIdentity : 1;
+  receipt.aggregateResourceContractIdentity =
+      aggregateResourceContractIdentity ? aggregateResourceContractIdentity : 1;
+  receipt.aggregateProxyVertices = aggregateVertices;
+  receipt.aggregateProxyTriangles = aggregateTriangles;
   receipt.usedProductionAssetLeases = true;
-  receipt.representativeLowLodProxy = true;
-  receipt.aggregateProxyBuilt = false;
+  receipt.representativeLowLodProxy = false;
+  receipt.aggregateProxyBuilt = aggregateVertices && aggregateTriangles;
+  receipt.aggregateResourceContractsValidated = resourceContractsValidated;
+  receipt.aggregateIdentityValidated = aggregateIdentitiesValidated;
   if (!receipt.Complete())
     return false;
   payload = std::move(result);

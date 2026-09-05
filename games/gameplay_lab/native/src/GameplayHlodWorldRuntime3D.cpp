@@ -297,7 +297,7 @@ GameplayHlodWorldReadiness3D GameplayHlodWorldRuntime3D::CollectFrame(
   next.frame = state_->target->HlodRuntimeStats();
   next.aggregateProxyBuilt = next.build.aggregateProxyBuilt;
   next.gameplayLabOnRenderConnected = false;
-  next.allDescriptorKindsCovered = false;
+  next.allDescriptorKindsCovered = next.build.allDescriptorKindsCovered;
   next.frameInvariantPassed = next.frozenFrame == frameId &&
       next.frame.frameId == frameId && next.frame.frozen;
   next.identityInvariantPassed = ownership.Complete();

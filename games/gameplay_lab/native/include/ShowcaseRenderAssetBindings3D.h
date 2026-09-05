@@ -188,18 +188,81 @@ struct ShowcaseProductionSubmissionStats3D {
   std::size_t meshChainsRejected{};
 };
 
+enum class ShowcaseHlodDescriptorPolicy3D : std::uint8_t {
+  AggregateOpaque,
+  DedicatedTerrain,
+  DedicatedWater,
+  DedicatedVegetation,
+  DedicatedBuilding,
+  FailClosed
+};
+
+[[nodiscard]] ShowcaseHlodDescriptorPolicy3D
+ResolveShowcaseHlodDescriptorPolicy3D(ShowcaseSceneKind3D kind) noexcept;
+
+struct ShowcaseAggregateProxySource3D {
+  const Aevrynd::Mesh3D *mesh{};
+  Aevrynd::Transform3D transform{};
+  Aevrynd::StableObjectId3D objectId{};
+  std::uint64_t generation{}, meshContentIdentity{}, materialIdentity{},
+      resourceOwnerIdentity{};
+};
+
+struct ShowcaseAggregateProxyReceipt3D {
+  std::uint64_t sourceContractIdentity{}, aggregateContentIdentity{};
+  std::array<std::uint8_t, 32> aggregateContentDigest{};
+  std::size_t sourceInstances{}, sourceVertices{}, sourceTriangles{},
+      aggregateVertices{}, aggregateTriangles{};
+  bool materialCompatible{}, immutableIdentityValidated{};
+
+  [[nodiscard]] constexpr bool Complete() const noexcept {
+    return sourceContractIdentity && aggregateContentIdentity &&
+        aggregateContentDigest != std::array<std::uint8_t, 32>{} &&
+        sourceInstances >= 2 && aggregateVertices &&
+        sourceVertices && aggregateTriangles &&
+        aggregateTriangles < sourceTriangles && materialCompatible &&
+        immutableIdentityValidated;
+  }
+};
+
+[[nodiscard]] std::array<std::uint8_t, 32>
+ShowcaseAggregateProxyContentDigest3D(const Aevrynd::Mesh3D &mesh) noexcept;
+
+[[nodiscard]] bool BuildShowcaseAggregateProxyMesh3D(
+    std::span<const ShowcaseAggregateProxySource3D> sources,
+    Aevrynd::Mesh3D &mesh,
+    ShowcaseAggregateProxyReceipt3D &receipt) noexcept;
+[[nodiscard]] bool ValidateShowcaseAggregateProxyMesh3D(
+    const Aevrynd::Mesh3D &mesh,
+    const ShowcaseAggregateProxyReceipt3D &receipt) noexcept;
+
+// 僅供敵意測試走過與正式路徑相同的 pinned cache transaction；不載入 GPU。
+[[nodiscard]] bool ExerciseShowcaseAggregateProxyCache3DForTesting(
+    const std::filesystem::path &assetRoot, const Aevrynd::Mesh3D &mesh,
+    const ShowcaseAggregateProxyReceipt3D &receipt) noexcept;
+
 struct ShowcaseProductionHlodBuildReceipt3D {
-  std::uint64_t descriptorFingerprint{}, hlodDataHash{}, hlodManifestHash{};
+  std::uint64_t descriptorFingerprint{}, descriptorPolicyHash{},
+      hlodDataHash{}, hlodManifestHash{}, aggregateProxyContentIdentity{},
+      aggregateResourceContractIdentity{};
   std::size_t inputDescriptors{}, eligibleRockDescriptors{}, sourceInstances{},
       clusters{}, excludedTerrain{}, excludedWater{}, excludedTrees{},
-      excludedGrass{}, excludedBuildings{};
+      excludedGrass{}, excludedBuildings{}, aggregateProxyVertices{},
+      aggregateProxyTriangles{};
+  std::uint8_t coveredDescriptorKindMask{};
   bool usedProductionAssetLeases{}, representativeLowLodProxy{},
-      aggregateProxyBuilt{};
+      aggregateProxyBuilt{}, aggregateResourceContractsValidated{},
+      aggregateIdentityValidated{}, allDescriptorKindsCovered{};
 
   [[nodiscard]] constexpr bool Complete() const noexcept {
     return descriptorFingerprint && hlodDataHash && hlodManifestHash &&
         inputDescriptors && eligibleRockDescriptors == sourceInstances &&
-        clusters && usedProductionAssetLeases && representativeLowLodProxy;
+        clusters && aggregateProxyContentIdentity &&
+        aggregateResourceContractIdentity && aggregateProxyVertices &&
+        aggregateProxyTriangles && usedProductionAssetLeases &&
+        !representativeLowLodProxy && aggregateProxyBuilt &&
+        aggregateResourceContractsValidated && aggregateIdentityValidated &&
+        allDescriptorKindsCovered && coveredDescriptorKindMask == 0x3fu;
   }
 };
 
