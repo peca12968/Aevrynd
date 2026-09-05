@@ -1,5 +1,7 @@
 #include <Aevrynd/WorldPartitionTerrainVegetationAdapter3D.h>
 
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 
 using namespace Aevrynd;
@@ -29,6 +31,51 @@ bool Validation(const RendererStats &stats) {
            stats.gpuValidationPassed && !stats.debugErrorCount &&
            !stats.debugWarningCount;
   return false;
+}
+
+const char *JsonBool(bool value) { return value ? "true" : "false"; }
+
+bool WriteReceipt(const RendererStats &baseline, const RendererStats &stats) {
+  std::ofstream output(
+      std::filesystem::path{AEVRYND_WORLD_PARTITION_HLOD_RESOURCE_RECEIPT},
+      std::ios::trunc);
+  output << "{\n  \"schema\": 1,\n  \"test\": "
+            "\"WorldPartitionHlodRealD3D12\",\n  \"validation\": {\n"
+         << "    \"requested\": " << JsonBool(stats.gpuValidationRequested)
+         << ",\n    \"available\": " << JsonBool(stats.gpuValidationAvailable)
+         << ",\n    \"executed\": " << JsonBool(stats.gpuValidationExecuted)
+         << ",\n    \"passed\": " << JsonBool(stats.gpuValidationPassed)
+         << ",\n    \"debugLayer\": " << JsonBool(stats.debugLayerEnabled)
+         << ",\n    \"errors\": " << stats.debugErrorCount
+         << ",\n    \"warnings\": " << stats.debugWarningCount << "\n  },\n"
+         << "  \"gpuHlod\": {\n    \"requests\": "
+         << stats.gpuHlodSelectionRequests << ",\n    \"dispatches\": "
+         << stats.gpuHlodSelectionDispatches << ",\n    \"completions\": "
+         << stats.gpuHlodSelectionCompletions << ",\n    \"pending\": "
+         << JsonBool(stats.gpuHlodSelectionPending) << "\n  },\n"
+         << "  \"resources\": {\n    \"baseline\": {\"residentMeshBytes\": "
+         << baseline.residentMeshBytes << ", \"residentMeshResources\": "
+         << baseline.residentMeshResources
+         << ", \"residentTextureAllocationBytes\": "
+         << baseline.residentTextureAllocationBytes
+         << ", \"residentMaterialTextureSets\": "
+         << baseline.residentMaterialTextureSets
+         << ", \"residentMaterialTextureReferences\": "
+         << baseline.residentMaterialTextureReferences
+         << ", \"pendingGpuReleaseBytes\": " << baseline.pendingGpuReleaseBytes
+         << "},\n    \"postCleanup\": {\"residentMeshBytes\": "
+         << stats.residentMeshBytes << ", \"residentMeshResources\": "
+         << stats.residentMeshResources
+         << ", \"residentTextureAllocationBytes\": "
+         << stats.residentTextureAllocationBytes
+         << ", \"residentMaterialTextureSets\": "
+         << stats.residentMaterialTextureSets
+         << ", \"residentMaterialTextureReferences\": "
+         << stats.residentMaterialTextureReferences
+         << ", \"pendingGpuReleaseBytes\": " << stats.pendingGpuReleaseBytes
+         << "},\n    \"returnedToBaseline\": true\n  },\n"
+            "  \"unavailableFields\": []\n}\n";
+  return bool(output);
 }
 
 MaterialAssetDefinition3D Material() {
@@ -182,8 +229,13 @@ public:
     if (cleanupComplete_ && validationFrames_++ > 0) {
       const auto stats = engine.GetRendererStats();
       if (!Validation(stats) || stats.residentMeshBytes != baseline_.residentMeshBytes ||
+          stats.residentMeshResources != baseline_.residentMeshResources ||
           stats.residentTextureAllocationBytes !=
               baseline_.residentTextureAllocationBytes ||
+          stats.residentMaterialTextureSets !=
+              baseline_.residentMaterialTextureSets ||
+          stats.residentMaterialTextureReferences !=
+              baseline_.residentMaterialTextureReferences ||
           stats.pendingGpuReleaseBytes) {
         std::cerr << "real baseline mesh=" << stats.residentMeshBytes << '/'
                   << baseline_.residentMeshBytes << " texture="
@@ -192,6 +244,8 @@ public:
                   << stats.pendingGpuReleaseBytes << " validation="
                   << Validation(stats) << " polls=" << polls_ << '\n';
         Fail("Real receipt D3D12/GBV resource baseline failed");
+      } else if (!WriteReceipt(baseline_, stats)) {
+        Fail("Real deterministic receipt write failed");
       } else
         std::cout << "realRetirementReceipt=passed polls=" << polls_
                   << " globalWaitBeforeReceipt=0 validation=passed\n";

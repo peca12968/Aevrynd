@@ -576,7 +576,7 @@ add_test(NAME AevryndStaticMeshAssetLibrary3DTest COMMAND powershell.exe -NoProf
 
 add_executable(AevryndHlodStaticMeshAssetLibrary3DTest tests/HlodStaticMeshAssetLibrary3DSmoke.cpp)
 target_compile_options(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE /W4 /WX /permissive- /utf-8)
-target_compile_definitions(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_definitions(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}" AEVRYND_HLOD_STATIC_RESOURCE_RECEIPT=L"${CMAKE_CURRENT_BINARY_DIR}/hlod-static-mesh-asset-library-resource-receipt.json")
 target_link_libraries(AevryndHlodStaticMeshAssetLibrary3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndHlodStaticMeshAssetLibrary3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; & '$<TARGET_FILE:AevryndHlodStaticMeshAssetLibrary3DTest>'")
 add_test(NAME AevryndHlodStaticMeshAssetLibrary3DGpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; & '$<TARGET_FILE:AevryndHlodStaticMeshAssetLibrary3DTest>'")
@@ -588,14 +588,14 @@ add_test(NAME AevryndHlodSceneECS3DTest COMMAND powershell.exe -NoProfile -Execu
 
 add_executable(AevryndWorldPartitionHlodD3D12Test WIN32 tests/WorldPartitionHlodRealD3D12Smoke.cpp)
 target_compile_options(AevryndWorldPartitionHlodD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
-target_compile_definitions(AevryndWorldPartitionHlodD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_compile_definitions(AevryndWorldPartitionHlodD3D12Test PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}" AEVRYND_WORLD_PARTITION_HLOD_RESOURCE_RECEIPT=L"${CMAKE_CURRENT_BINARY_DIR}/world-partition-hlod-resource-receipt.json")
 target_link_libraries(AevryndWorldPartitionHlodD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndWorldPartitionHlodD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='normal'; $p=Start-Process -FilePath '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>' -Wait -PassThru; exit $p.ExitCode")
 add_test(NAME AevryndWorldPartitionHlodD3D12GpuValidationTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$env:AEVRYND_GPU_VALIDATION='1'; $env:AEVRYND_EXPECT_GPU_VALIDATION_MODE='gbv'; $p=Start-Process -FilePath '$<TARGET_FILE:AevryndWorldPartitionHlodD3D12Test>' -Wait -PassThru; exit $p.ExitCode")
 
 add_executable(AevryndGpuHlodSelectionD3D12Test tests/GpuHlodSelectionD3D12Smoke.cpp)
 target_compile_options(AevryndGpuHlodSelectionD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
-target_compile_definitions(AevryndGpuHlodSelectionD3D12Test PRIVATE _CRT_SECURE_NO_WARNINGS)
+target_compile_definitions(AevryndGpuHlodSelectionD3D12Test PRIVATE _CRT_SECURE_NO_WARNINGS AEVRYND_GPU_HLOD_SELECTION_RESOURCE_RECEIPT=L"${CMAKE_CURRENT_BINARY_DIR}/gpu-hlod-selection-resource-receipt.json")
 target_link_libraries(AevryndGpuHlodSelectionD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndGpuHlodSelectionD3D12Test COMMAND ${CMAKE_COMMAND} -E env AEVRYND_EXPECT_GPU_VALIDATION_MODE=normal "$<TARGET_FILE:AevryndGpuHlodSelectionD3D12Test>")
 add_test(NAME AevryndGpuHlodSelectionD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 AEVRYND_EXPECT_GPU_VALIDATION_MODE=gbv "$<TARGET_FILE:AevryndGpuHlodSelectionD3D12Test>")
