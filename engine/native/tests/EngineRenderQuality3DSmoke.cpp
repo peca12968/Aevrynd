@@ -14,6 +14,12 @@ int main() {
   if (stagedEngine.RequestedRenderQuality() != RenderQuality3D::Ultra ||
       stagedEngine.RenderQuality() != RenderQuality3D::High ||
       !stagedReceipt.requestActive || stagedReceipt.rendererApplied ||
+      stagedReceipt.phase != DevelopmentUltraTransitionPhase3D::Admission ||
+      stagedReceipt.firstFalseReason !=
+          DevelopmentUltraFirstFalseReason3D::None ||
+      stagedReceipt.applyAttempted || stagedReceipt.applySucceeded ||
+      stagedReceipt.postApplyPassed || stagedReceipt.rollbackAttempted ||
+      stagedReceipt.rollbackSucceeded ||
       stagedReceipt.transitionPolicyApplied ||
       stagedReceipt.reason != DevelopmentUltraAdmissionReason3D::RuntimeApplicationNotIntegrated ||
       stagedStats.submittedFrames || stagedStats.directionalShadowMapBytes ||
@@ -37,6 +43,12 @@ int main() {
       receipt.reason != DevelopmentUltraAdmissionReason3D::
                             RuntimeApplicationNotIntegrated ||
       !receipt.requestActive || receipt.rendererApplied || receipt.transitionPolicyApplied ||
+      receipt.phase != DevelopmentUltraTransitionPhase3D::RendererApply ||
+      receipt.firstFalseReason !=
+          DevelopmentUltraFirstFalseReason3D::RendererApplyFailed ||
+      !receipt.applyAttempted || receipt.applySucceeded ||
+      receipt.postApplyPassed || !receipt.rollbackAttempted ||
+      receipt.rollbackSucceeded ||
       !receipt.noOp || receipt.epoch == 0) {
     return 2;
   }
@@ -54,6 +66,10 @@ int main() {
       RenderQualityName3D(unknown) != "UNKNOWN" ||
       engine.DevelopmentUltraReceipt().reason !=
           DevelopmentUltraAdmissionReason3D::InvalidProfile ||
+      engine.DevelopmentUltraReceipt().phase !=
+          DevelopmentUltraTransitionPhase3D::Admission ||
+      engine.DevelopmentUltraReceipt().firstFalseReason !=
+          DevelopmentUltraFirstFalseReason3D::AdmissionDenied ||
       engine.DevelopmentUltraReceipt().requestActive ||
       engine.DevelopmentUltraReceipt().rendererApplied) {
     return 4;

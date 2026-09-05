@@ -426,6 +426,7 @@ DevelopmentUltraReceipt3D StageDevelopmentUltraReceipt3D(
   result.epoch = epoch;
   result.gpuTruth.epoch = epoch;
   result.downgradeCount = downgradeCount;
+  result.phase = DevelopmentUltraTransitionPhase3D::Admission;
   result.requestActive = true;
   result.noOp = true;
   result.rendererApplied = false;
@@ -439,9 +440,30 @@ DevelopmentUltraReceipt3D StageDevelopmentUltraReceipt3D(
                       : admission.admitted
                             ? DevelopmentUltraAdmissionReason3D::
                                   RuntimeApplicationNotIntegrated
-                            : admission.reason;
+                             : admission.reason;
+  if (!admissionConsistent || !admission.admitted) {
+    result.firstFalseReason =
+        admissionConsistent &&
+                admission.reason ==
+                    DevelopmentUltraAdmissionReason3D::PendingGpuReleases
+            ? DevelopmentUltraFirstFalseReason3D::
+                  PendingGpuReleasesBeforeApply
+            : DevelopmentUltraFirstFalseReason3D::AdmissionDenied;
+  }
   // 此階段只封閉 profile 與 DXGI admission；未接 renderer 前不得冒稱套用。
   return result;
+}
+
+void RecordDevelopmentUltraFirstFalse3D(
+    DevelopmentUltraReceipt3D &receipt,
+    DevelopmentUltraTransitionPhase3D phase,
+    DevelopmentUltraFirstFalseReason3D reason) noexcept {
+  if (reason == DevelopmentUltraFirstFalseReason3D::None ||
+      receipt.firstFalseReason != DevelopmentUltraFirstFalseReason3D::None) {
+    return;
+  }
+  receipt.phase = phase;
+  receipt.firstFalseReason = reason;
 }
 
 std::uint64_t NextDevelopmentUltraEpoch3D(std::uint64_t current) noexcept {

@@ -84,6 +84,24 @@ struct EngineMemoryStats {
     uint64_t trimCount{};
     uint64_t automaticTrimCount{};
 };
+enum class DevelopmentUltraTerminalOutcome3D : std::uint8_t {
+    InProgress,
+    Committed,
+    RolledBack,
+    RollbackFailed,
+};
+enum class DevelopmentUltraTerminalReason3D : std::uint8_t {
+    None,
+    CommitSucceeded,
+    RollbackSucceeded,
+    RendererRestoreFailed,
+    PendingGpuReleasesAfterRollback,
+};
+struct DevelopmentUltraTerminalState3D {
+    DevelopmentUltraTerminalOutcome3D outcome{DevelopmentUltraTerminalOutcome3D::InProgress};
+    DevelopmentUltraTerminalReason3D reason{DevelopmentUltraTerminalReason3D::None};
+    std::uint64_t epoch{};
+};
 class Engine {
 public:
     explicit Engine(EngineConfig config={}); ~Engine();
@@ -98,6 +116,7 @@ public:
     RenderQuality3D RequestedRenderQuality()const{return requestedRenderQuality_;}
     const DevelopmentUltraReceipt3D& DevelopmentUltraReceipt()const{return developmentUltraReceipt_;}
     const DevelopmentUltraGpuTruthSnapshot3D& DevelopmentUltraGpuTruth()const{return developmentUltraReceipt_.gpuTruth;}
+    const DevelopmentUltraTerminalState3D& DevelopmentUltraTerminalState()const{return developmentUltraTerminalState_;}
     void SetRenderQuality(RenderQuality3D quality);
     float Time()const{return time_;}
     void Quit(){running_=false;}
@@ -177,7 +196,7 @@ private:
     bool RestoreDevelopmentUltraRendererBaseline(bool trim);
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
-    EngineConfig config_; RenderQuality3D requestedRenderQuality_{RenderQuality3D::High}; DevelopmentUltraReceipt3D developmentUltraReceipt_{}; DevelopmentUltraQuality3D stagedDevelopmentUltraProfile_{}; DevelopmentUltraGpuTruthSequence3D developmentUltraGpuTruth_{}; DevelopmentUltraRendererBaseline3D lastKnownGoodRendererBaseline_{}; DirectionalShadowCascadeSettings3D lastKnownGoodShadowCascades_{}; std::uint64_t renderQualityEpoch_{}; std::uint8_t developmentUltraTestFailure_{}; bool developmentUltraTestFrameBudgetFailure_{},developmentUltraStaged_{},developmentUltraApplied_{}; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
+    EngineConfig config_; RenderQuality3D requestedRenderQuality_{RenderQuality3D::High}; DevelopmentUltraReceipt3D developmentUltraReceipt_{}; DevelopmentUltraTerminalState3D developmentUltraTerminalState_{}; DevelopmentUltraQuality3D stagedDevelopmentUltraProfile_{}; DevelopmentUltraGpuTruthSequence3D developmentUltraGpuTruth_{}; DevelopmentUltraRendererBaseline3D lastKnownGoodRendererBaseline_{}; DirectionalShadowCascadeSettings3D lastKnownGoodShadowCascades_{}; std::uint64_t renderQualityEpoch_{}; std::uint8_t developmentUltraTestFailure_{},developmentUltraTestGpuTruthFailure_{}; bool developmentUltraTestFrameBudgetFailure_{},developmentUltraTestRollbackFailure_{},developmentUltraStaged_{},developmentUltraApplied_{}; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
     std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
     struct EnvironmentLightingBinding3D {
@@ -191,9 +210,12 @@ private:
 };
 #if defined(AEVRYND_ENGINE_TEST_ACCESS)
 struct EngineDevelopmentUltraTestAccess3D {
-    enum class Failure : std::uint8_t {None,RendererApply,PostApplyPending,Admission};
+    enum class Failure : std::uint8_t {None,RendererApply,PostApplyPending,Admission,PreApplyPending};
+    enum class GpuTruthFailure : std::uint8_t {None,AdapterIdentity,Validation,FrameBudget,Serial};
     static void ForceFailure(Engine& engine,Failure failure){engine.developmentUltraTestFailure_=static_cast<std::uint8_t>(failure);}
+    static void ForceGpuTruthFailure(Engine& engine,GpuTruthFailure failure){engine.developmentUltraTestGpuTruthFailure_=static_cast<std::uint8_t>(failure);}
     static void ForceNextFrameBudgetFailure(Engine& engine){engine.developmentUltraTestFrameBudgetFailure_=true;}
+    static void ForceNextRollbackFailure(Engine& engine){engine.developmentUltraTestRollbackFailure_=true;}
 };
 #endif
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS

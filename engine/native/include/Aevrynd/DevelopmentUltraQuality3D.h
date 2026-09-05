@@ -41,6 +41,28 @@ enum class DevelopmentUltraAction3D : std::uint8_t {
   EmergencyLower,
 };
 
+enum class DevelopmentUltraTransitionPhase3D : std::uint8_t {
+  Admission,
+  RendererApply,
+  PostApply,
+  GpuTruth,
+  Committed,
+};
+
+enum class DevelopmentUltraFirstFalseReason3D : std::uint8_t {
+  None,
+  AdmissionDenied,
+  PendingGpuReleasesBeforeApply,
+  RendererApplyFailed,
+  PostApplyPendingGpuReleases,
+  ResourceValidationFailed,
+  AdapterIdentityFailed,
+  TelemetryValidationFailed,
+  GpuValidationFailed,
+  FrameBudgetFailed,
+  GpuSerialNotFresh,
+};
+
 struct DevelopmentUltraResolutionSettings3D {
   std::uint32_t width{};
   std::uint32_t height{};
@@ -201,8 +223,17 @@ struct DevelopmentUltraReceipt3D {
   std::uint64_t actualFingerprint{};
   std::uint64_t epoch{};
   std::uint64_t downgradeCount{};
+  DevelopmentUltraTransitionPhase3D phase{
+      DevelopmentUltraTransitionPhase3D::Admission};
+  DevelopmentUltraFirstFalseReason3D firstFalseReason{
+      DevelopmentUltraFirstFalseReason3D::None};
   bool requestActive{};
   bool noOp{};
+  bool applyAttempted{};
+  bool applySucceeded{};
+  bool postApplyPassed{};
+  bool rollbackAttempted{};
+  bool rollbackSucceeded{};
   bool rendererApplied{};
   bool transitionPolicyApplied{};
   bool shadowResourcesApplied{};
@@ -243,6 +274,10 @@ QueryPrimaryDxgiVideoMemoryTelemetry3D(std::uint64_t queryEpoch = 0) noexcept;
     const DevelopmentUltraQuality3D &profile,
     const DevelopmentUltraAdmission3D &admission, std::uint64_t epoch,
     std::uint64_t downgradeCount = 0) noexcept;
+void RecordDevelopmentUltraFirstFalse3D(
+    DevelopmentUltraReceipt3D &receipt,
+    DevelopmentUltraTransitionPhase3D phase,
+    DevelopmentUltraFirstFalseReason3D reason) noexcept;
 [[nodiscard]] std::uint64_t NextDevelopmentUltraEpoch3D(
     std::uint64_t current) noexcept;
 [[nodiscard]] std::uint64_t AddDevelopmentUltraDowngradeCount3D(

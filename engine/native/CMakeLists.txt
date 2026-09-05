@@ -92,11 +92,40 @@ add_executable(AevryndDevelopmentUltraEngineRuntimeTest tests/DevelopmentUltraEn
 target_compile_options(AevryndDevelopmentUltraEngineRuntimeTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_compile_definitions(AevryndDevelopmentUltraEngineRuntimeTest PRIVATE AEVRYND_ENGINE_TEST_ACCESS=1)
 target_link_libraries(AevryndDevelopmentUltraEngineRuntimeTest PRIVATE AevryndEngine)
-add_test(NAME AevryndDevelopmentUltraEngineRuntimeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
-add_test(NAME AevryndDevelopmentUltraEngineRuntimeGpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
-add_test(NAME AevryndDevelopmentUltraEngineApplyRollbackTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_ULTRA_FAILURE=apply powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
-add_test(NAME AevryndDevelopmentUltraEnginePendingRollbackTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_ULTRA_FAILURE=pending powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
-add_test(NAME AevryndDevelopmentUltraEnginePendingRollbackGpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_ULTRA_FAILURE=pending AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+set(AEVRYND_DEVELOPMENT_ULTRA_RUNTIME_SCENARIOS
+  "Success="
+  "AdmissionDenied=admission"
+  "PreApplyPending=prepending"
+  "RendererApplyFailure=apply"
+  "PostApplyFailure=pending"
+  "AdapterIdentityFailure=adapter"
+  "GpuValidationFailure=validation"
+  "FrameBudgetFailure=frame-budget"
+  "GpuSerialFailure=serial"
+)
+foreach(AEVRYND_ULTRA_SCENARIO IN LISTS AEVRYND_DEVELOPMENT_ULTRA_RUNTIME_SCENARIOS)
+  string(REPLACE "=" ";" AEVRYND_ULTRA_SCENARIO_FIELDS "${AEVRYND_ULTRA_SCENARIO}")
+  list(GET AEVRYND_ULTRA_SCENARIO_FIELDS 0 AEVRYND_ULTRA_SCENARIO_NAME)
+  list(LENGTH AEVRYND_ULTRA_SCENARIO_FIELDS AEVRYND_ULTRA_SCENARIO_FIELD_COUNT)
+  if(AEVRYND_ULTRA_SCENARIO_NAME STREQUAL "Success")
+    set(AEVRYND_ULTRA_FAILURE_ENV "--unset=AEVRYND_ULTRA_FAILURE")
+  elseif(AEVRYND_ULTRA_SCENARIO_FIELD_COUNT GREATER 1)
+    list(GET AEVRYND_ULTRA_SCENARIO_FIELDS 1 AEVRYND_ULTRA_SCENARIO_VALUE)
+    set(AEVRYND_ULTRA_FAILURE_ENV "AEVRYND_ULTRA_FAILURE=${AEVRYND_ULTRA_SCENARIO_VALUE}")
+  else()
+    set(AEVRYND_ULTRA_FAILURE_ENV "--unset=AEVRYND_ULTRA_FAILURE")
+  endif()
+  add_test(NAME AevryndDevelopmentUltraEngine${AEVRYND_ULTRA_SCENARIO_NAME}NormalTest
+    COMMAND ${CMAKE_COMMAND} -E env --unset=AEVRYND_GPU_VALIDATION ${AEVRYND_ULTRA_FAILURE_ENV}
+      powershell.exe -NoProfile -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1"
+      -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+  add_test(NAME AevryndDevelopmentUltraEngine${AEVRYND_ULTRA_SCENARIO_NAME}GpuValidationTest
+    COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 ${AEVRYND_ULTRA_FAILURE_ENV}
+      powershell.exe -NoProfile -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1"
+      -Executable "$<TARGET_FILE:AevryndDevelopmentUltraEngineRuntimeTest>")
+endforeach()
 
 add_executable(AevryndEngineRenderQuality3DTest tests/EngineRenderQuality3DSmoke.cpp)
 target_compile_options(AevryndEngineRenderQuality3DTest PRIVATE /W4 /WX /permissive- /utf-8)
