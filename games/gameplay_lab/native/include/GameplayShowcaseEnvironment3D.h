@@ -266,11 +266,15 @@ struct ShowcaseEnvironmentReceipt3D {
       riverMaximumWidthMeters{}, riverSurfaceAreaSquareMeters{};
   std::uint32_t buildingComponentMask{};
   std::uint64_t materialIdentityHash{}, licenseInventoryHash{};
+  std::uint64_t landFingerprint{}, terrainZoneFingerprint{};
   std::size_t retainedDescriptorBytes{};
   std::uint64_t waterSurfaceFingerprint{};
   std::size_t riverStripSlices{}, riverStripVertices{}, riverStripIndices{}, integratedDescriptors{}, descriptorCapacity{};
   float riverMaximumJoinError{};
-  bool riverUvMonotonic{};
+  std::size_t terrainMaterialLayers{}, riverbankProps{}, occupiedHabitatCells{},
+      densestHabitatCell{};
+  bool riverUvMonotonic{}, terrainZonesExact{}, riverbankLayered{},
+      propFootprintsNonOverlapping{};
 };
 
 struct ShowcaseSceneTargets3D {
@@ -281,6 +285,8 @@ struct ShowcaseSceneTargets3D {
       riverMinimumWidthMeters{9.f}, riverMaximumWidthMeters{15.f},
       minimumRiverSurfaceAreaSquareMeters{2800.f};
   std::uint32_t requiredBuildingComponentMask{0x3fu};
+  std::size_t requiredTerrainMaterialLayers{3}, minimumRiverbankProps{120},
+      minimumDensestHabitatCell{8};
   std::uint64_t materialIdentityHash{}, licenseInventoryHash{};
 };
 

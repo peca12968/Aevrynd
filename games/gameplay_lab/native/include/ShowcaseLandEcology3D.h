@@ -13,6 +13,12 @@ namespace GameplayLab {
 
 enum class ShowcaseLandKind3D : std::uint8_t { Tree, Grass, Rock };
 enum class ShowcaseLandBand3D : std::uint8_t { Near, Mid, Far };
+enum class ShowcaseLandZone3D : std::uint8_t {
+  Grove,
+  Meadow,
+  Riverbank,
+  Upland
+};
 enum class ShowcaseLandVariant3D : std::uint8_t {
   IslandTree,
   DeadTreeTrunk,
@@ -45,6 +51,7 @@ struct ShowcaseLandPlacement3D {
   Aevrynd::Vec3 scale{1, 1, 1};
   float yaw{};
   std::uint64_t stableKey{};
+  ShowcaseLandZone3D zone{};
 };
 
 struct ShowcaseLandEcologySettings3D {
@@ -61,17 +68,27 @@ struct ShowcaseLandEcologySettings3D {
   std::uint32_t fixedNonLandDescriptors{8};
   std::uint32_t maximumIntegratedDescriptors{480};
   std::uint32_t candidateTrials{128};
+  float riverbankRockMaximumClearance{9.f};
+  float riverbankGrassMaximumClearance{7.f};
+  float habitatCellSize{32.f};
+  std::uint32_t minimumDensestHabitatCell{8};
 };
 
 struct ShowcaseLandEcologyReceipt3D {
   std::uint64_t seed{}, fingerprint{};
   std::array<std::uint32_t, 3> trees{}, grass{}, rocks{};
   std::array<std::uint32_t, 7> variants{};
+  std::array<std::uint32_t, 4> zones{};
   std::uint32_t placements{}, integratedDescriptors{}, descriptorCapacity{480}, rejectedCandidates{}, attemptedCandidates{};
+  std::uint32_t riverbankRocks{}, riverbankGrass{}, occupiedHabitatCells{},
+      densestHabitatCell{};
   std::uint32_t failureKind{3}, failureBand{3}, failureItem{};
-  float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{};
+  float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{},
+      minimumPropEdgeSpacing{}, minimumRiverbankRockClearance{},
+      maximumRiverbankRockClearance{}, maximumRiverbankGrassClearance{};
   bool terrainBoundsExact{}, bandsExact{}, riverExcluded{}, spawnExcluded{}, cottageExcluded{};
-  bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{};
+  bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{},
+      zonesExact{}, riverbankLayered{}, densityExact{};
   bool deterministicBudget{};
   [[nodiscard]] bool Complete() const noexcept;
 };

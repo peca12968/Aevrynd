@@ -66,9 +66,9 @@ bool ValidateLightingRoutes(
 } // namespace
 
 int main() {
-  GameplayShowcaseEnvironment3D first, second;
+  GameplayShowcaseEnvironment3D first, second, differentSeed;
   if (first.Initialize(0) || !first.Initialize(0x4a17u) ||
-      !second.Initialize(0x4a17u))
+      !second.Initialize(0x4a17u) || !differentSeed.Initialize(0x4a18u))
     return 1;
 
   const auto receipt = first.Receipt();
@@ -93,8 +93,27 @@ int main() {
       receipt.riverStripIndices != 384 || !receipt.riverUvMonotonic ||
       receipt.riverMaximumJoinError > 0.00001f ||
       receipt.integratedDescriptors != 464 || receipt.descriptorCapacity != 480 ||
-      receipt.retainedDescriptorBytes == 0)
+      receipt.retainedDescriptorBytes == 0 || !receipt.landFingerprint ||
+      !receipt.terrainZoneFingerprint ||
+      receipt.terrainZoneFingerprint != repeated.terrainZoneFingerprint ||
+      receipt.terrainZoneFingerprint ==
+          differentSeed.Receipt().terrainZoneFingerprint ||
+      receipt.terrainMaterialLayers != targets.requiredTerrainMaterialLayers ||
+      receipt.riverbankProps < targets.minimumRiverbankProps ||
+      receipt.densestHabitatCell < targets.minimumDensestHabitatCell ||
+      !receipt.terrainZonesExact || !receipt.riverbankLayered ||
+      !receipt.propFootprintsNonOverlapping)
     return 2;
+  std::array<std::size_t, 3> terrainLayers{};
+  for (const auto &descriptor : first.Descriptors()) {
+    if (descriptor.materialAsset.find("forest_ground_04") != std::string::npos)
+      ++terrainLayers[0];
+    else if (descriptor.materialAsset.find("Ground108") != std::string::npos)
+      ++terrainLayers[1];
+    else if (descriptor.materialAsset.find("stony_dirt_path") != std::string::npos)
+      ++terrainLayers[2];
+  }
+  if (terrainLayers != std::array<std::size_t, 3>{1, 188, 94}) return 32;
 
   DrawList draw{DrawListCapacityProfile::Minimal2D};
   first.ApplyHighProfile(draw);
@@ -416,5 +435,9 @@ int main() {
             << " minRiver=" << minimumRiverSegments << '/'
             << minimumRiverCoverage << " minBuilding="
             << minimumBuildingComponents << '/' << minimumBuildingCoverage
+            << " terrainLayers=" << receipt.terrainMaterialLayers
+            << " riverbankProps=" << receipt.riverbankProps
+            << " habitat=" << receipt.occupiedHabitatCells << '/'
+            << receipt.densestHabitatCell
             << '\n';
 }

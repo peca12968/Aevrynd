@@ -123,11 +123,16 @@ struct ShowcaseResolvedRenderBinding3D {
 struct ShowcaseRenderAssetLoadReceipt3D {
   std::uint64_t sequence{};
   std::uint64_t descriptorFingerprint{};
+  std::uint64_t assetIdentityFingerprint{};
   std::size_t descriptorCount{};
   std::size_t resolvedCount{};
   std::size_t fallbackCount{};
   std::size_t admittedAssets{};
+  std::array<std::size_t, 3> terrainLayerDescriptors{};
+  std::uint32_t requiredAssetIdentityMask{};
   bool collisionStableIdsUnchanged{};
+  bool assetIdentitiesExact{};
+  bool descriptorOrderDeterministic{};
   bool photorealActive{};
   bool loaded{};
 };
@@ -221,6 +226,8 @@ struct ShowcaseProductionSubmittedLodChain3D {
     std::span<const Aevrynd::MeshBounds3D> lodBounds) noexcept;
 [[nodiscard]] std::string_view ResolveShowcasePhotorealAssetId3D(
     const ShowcaseSceneDescriptor3D &descriptor) noexcept;
+[[nodiscard]] std::uint64_t ShowcaseAssetIdentityFingerprint3D(
+    std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept;
 
 class ShowcaseRenderAssetBindings3D {
 public:

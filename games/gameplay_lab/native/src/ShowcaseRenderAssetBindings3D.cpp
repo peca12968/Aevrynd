@@ -115,8 +115,13 @@ std::string_view AssetFor(const ShowcaseSceneDescriptor3D &descriptor) {
   switch (descriptor.kind) {
   case ShowcaseSceneKind3D::Terrain:
   case ShowcaseSceneKind3D::Grass:
-    return descriptor.kind == ShowcaseSceneKind3D::Terrain ? "forest_ground_04"
-                                                           : "Ground108";
+    if (descriptor.materialAsset == "poly-haven/forest_ground_04/cooked-pbr")
+      return "forest_ground_04";
+    if (descriptor.materialAsset == "ambientcg/Ground108/cooked-pbr")
+      return "Ground108";
+    if (descriptor.materialAsset == "poly-haven/stony_dirt_path/cooked-pbr")
+      return "stony_dirt_path";
+    return {};
   case ShowcaseSceneKind3D::Water:
     // 水面維持專用 water-optics shader；Ground108 只供河床／河岸層使用。
     return {};
@@ -136,6 +141,32 @@ std::string_view AssetFor(const ShowcaseSceneDescriptor3D &descriptor) {
                : "Bricks100";
   }
   return {};
+}
+
+std::uint32_t AssetIdentityBit(std::string_view id) noexcept {
+  constexpr std::array<std::string_view, 9> Required{
+      "forest_ground_04", "Ground108", "stony_dirt_path",
+      "coastal_cliff_01", "boulder_01", "island_tree_01",
+      "dead_tree_trunk_02", "RoofingTiles014B", "Bricks100"};
+  const auto found = std::ranges::find(Required, id);
+  return found == Required.end()
+             ? 0u
+             : 1u << std::uint32_t(std::distance(Required.begin(), found));
+}
+
+std::array<std::size_t, 3> TerrainLayerDescriptors(
+    std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept {
+  std::array<std::size_t, 3> result{};
+  for (const auto &descriptor : descriptors) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Terrain &&
+        descriptor.kind != ShowcaseSceneKind3D::Grass)
+      continue;
+    const auto id = AssetFor(descriptor);
+    if (id == "forest_ground_04") ++result[0];
+    else if (id == "Ground108") ++result[1];
+    else if (id == "stony_dirt_path") ++result[2];
+  }
+  return result;
 }
 
 bool IsComplete(const Aevrynd::PhotorealCatalogAsset3D &asset,
@@ -257,6 +288,28 @@ std::string_view ResolveShowcasePhotorealAssetId3D(
   return AssetFor(descriptor);
 }
 
+std::uint64_t ShowcaseAssetIdentityFingerprint3D(
+    std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept {
+  std::uint64_t hash = 14695981039346656037ull;
+  const auto add = [&hash](const void *data, std::size_t size) {
+    const auto *bytes = static_cast<const unsigned char *>(data);
+    for (std::size_t byte = 0; byte < size; ++byte) {
+      hash ^= bytes[byte];
+      hash *= 1099511628211ull;
+    }
+  };
+  std::size_t index{};
+  for (const auto &descriptor : descriptors) {
+    const auto id = AssetFor(descriptor);
+    add(&index, sizeof(index));
+    const auto bytes = std::uint64_t(id.size());
+    add(&bytes, sizeof(bytes));
+    add(id.data(), id.size());
+    ++index;
+  }
+  return hash ? hash : 1;
+}
+
 bool ShowcaseRenderAssetBindings3D::Load(
     std::span<const ShowcaseSceneDescriptor3D> descriptors,
     const Aevrynd::PhotorealAssetCatalog3D &catalog,
@@ -270,6 +323,9 @@ bool ShowcaseRenderAssetBindings3D::Load(
     return false;
   const std::uint64_t descriptorFingerprint =
       DescriptorFingerprint(descriptors);
+  const std::uint64_t assetIdentityFingerprint =
+      ShowcaseAssetIdentityFingerprint3D(descriptors);
+  const auto terrainLayerDescriptors = TerrainLayerDescriptors(descriptors);
   std::unordered_map<std::string_view, const ShowcaseCookedAssetReceipt3D *>
       cookedById;
   for (const auto &item : cooked)
@@ -367,8 +423,10 @@ bool ShowcaseRenderAssetBindings3D::Load(
   };
 
   bool allResolved = true;
+  std::uint32_t assetIdentityMask{};
   for (std::size_t index = 0; index < descriptors.size(); ++index) {
     const auto id = ResolveShowcasePhotorealAssetId3D(descriptors[index]);
+    assetIdentityMask |= AssetIdentityBit(id);
     ShowcaseResolvedRenderBinding3D binding{};
     binding.descriptorIndex = index;
     binding.kind = descriptors[index].kind;
@@ -409,7 +467,9 @@ bool ShowcaseRenderAssetBindings3D::Load(
     for (const auto &material : cookedById.at(path.assetId)->materials)
       path.materialHandles.push_back(material.materialHandle);
     path.photorealActive = true;
-    visible.emplace_back(path.assetId);
+    if (std::ranges::find(visible, path.assetId) == visible.end())
+      visible.emplace_back(path.assetId);
+    assetIdentityMask |= AssetIdentityBit(path.assetId);
   }
   if (!admit("xanderklinge")) {
     allResolved = false;
@@ -422,6 +482,7 @@ bool ShowcaseRenderAssetBindings3D::Load(
     iblHandle_ = 0;
     receipt.sequence = ++sequence_;
     receipt.descriptorFingerprint = descriptorFingerprint;
+    receipt.assetIdentityFingerprint = assetIdentityFingerprint;
     receipt.descriptorCount = descriptors.size();
     receipt.fallbackCount = std::ranges::count_if(
         candidate, [](const auto &item) { return item.fallback; });
@@ -436,12 +497,22 @@ bool ShowcaseRenderAssetBindings3D::Load(
   active_ = true;
   receipt.sequence = ++sequence_;
   receipt.descriptorFingerprint = descriptorFingerprint;
+  receipt.assetIdentityFingerprint = assetIdentityFingerprint;
   receipt.descriptorCount = descriptors.size();
   receipt.resolvedCount = bindings_.size() + 1u;
   receipt.admittedAssets = ownedAssets_.size();
+  receipt.terrainLayerDescriptors = terrainLayerDescriptors;
+  receipt.requiredAssetIdentityMask = assetIdentityMask;
   receipt.collisionStableIdsUnchanged =
       DescriptorFingerprint(descriptors) == descriptorFingerprint;
-  receipt.photorealActive = receipt.collisionStableIdsUnchanged;
+  receipt.descriptorOrderDeterministic =
+      ShowcaseAssetIdentityFingerprint3D(descriptors) ==
+      assetIdentityFingerprint;
+  receipt.assetIdentitiesExact = assetIdentityMask == 0x1ffu &&
+      std::ranges::all_of(terrainLayerDescriptors,
+                          [](std::size_t count) { return count > 0; });
+  receipt.photorealActive = receipt.collisionStableIdsUnchanged &&
+      receipt.descriptorOrderDeterministic && receipt.assetIdentitiesExact;
   receipt.loaded = receipt.collisionStableIdsUnchanged;
   if (!receipt.loaded) {
     Release();
@@ -954,9 +1025,29 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
         return false;
       const auto &proxyRenderable = manifest.proxy.prepared;
       const auto proxyShadow = Aevrynd::CanonicalHlodShadowSemantic3D(*sourceShadow);
+      const auto instanceScale = candidates[groupBegin].transform.scale;
+      const float maximumInstanceScale = (std::max)(
+          std::abs(instanceScale.x),
+          (std::max)(std::abs(instanceScale.y), std::abs(instanceScale.z)));
+      if (!std::isfinite(maximumInstanceScale) || maximumInstanceScale <= 0.f)
+        return false;
+      // clusterRadius 已是世界空間；geometricError 會再乘 instance scale。
+      // 遠帶最後一組 boulder 作固定過渡代表，並轉回 local 尺度，避免來源資產
+      // 的原始單位或河岸重新分布讓整個世界完全跳過 transition。
+      constexpr float TransitionRepresentativeWorldError = 14.f;
+      const bool transitionRepresentative =
+          candidates[groupBegin].assetId == "boulder_01" &&
+          remaining == SourcesPerCluster;
+      const float minimumWorldGeometricError =
+          transitionRepresentative
+              ? TransitionRepresentativeWorldError
+              : 0.f;
       Aevrynd::HlodClusterBuildInput3D build{};
       build.asset = {clusterId, 1, {}, clusterRadius,
-                     (std::max)(1.f, clusterRadius * .05f), .8f, 1.2f,
+                     (std::max)(clusterRadius * .05f,
+                                minimumWorldGeometricError /
+                                    maximumInstanceScale),
+                     .8f, 1.2f,
                      static_cast<std::uint32_t>(sources.size()),
                      Aevrynd::HlodCompatibility3D::OpaqueCompatible};
       build.resource = {
@@ -964,7 +1055,7 @@ bool ShowcaseRenderAssetBindings3D::BuildProductionHlodChunk3D(
           manifest.proxy.reservedPhysicalBytes, 1, 1, sourceTriangles,
           proxyTriangles, proxyShadow};
       build.instance = {clusterId, chunk, clusterCenter,
-                        candidates[groupBegin].transform.scale,
+                        instanceScale,
                         candidates[groupBegin].transform.rotation};
       sourceGroups.push_back(std::move(sources));
       build.sources = sourceGroups.back();

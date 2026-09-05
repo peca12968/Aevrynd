@@ -50,7 +50,8 @@ std::uint64_t MaterialIdentityHash() {
       "RoofingTiles014B:slot-0", "Bricks100:slot-0",
       "island_tree_01:trunk", "island_tree_01:leaves",
       "island_tree_01:branches", "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
-      "coastal_cliff_01:slot-0", "runtime/water-optics"};
+      "coastal_cliff_01:slot-0", "stony_dirt_path:slot-0",
+      "runtime/water-optics"};
   std::uint64_t hash = 14695981039346656037ull;
   for (const auto value : identities)
     HashText(hash, value);
@@ -144,7 +145,7 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                        0,
                        true,
                        "procedural/terrain-heightfield",
-                       "ambientcg/ground037/1k"});
+                       "poly-haven/forest_ground_04/cooked-pbr"});
 
   candidate.push_back({ShowcaseSceneKind3D::Water, {0, -.42f, 0},
                        {30.f, .08f, 272.f}, 0, 1, false,
@@ -173,7 +174,12 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     } else {
       descriptor.kind = ShowcaseSceneKind3D::Grass;
       descriptor.meshAsset = id;
-      descriptor.materialAsset = "ambientcg/Ground108/cooked-pbr";
+      descriptor.materialAsset =
+          placement.zone == ShowcaseLandZone3D::Riverbank
+              ? "poly-haven/stony_dirt_path/cooked-pbr"
+              : placement.zone == ShowcaseLandZone3D::Grove
+                    ? "poly-haven/forest_ground_04/cooked-pbr"
+                    : "ambientcg/Ground108/cooked-pbr";
     }
     candidate.push_back(std::move(descriptor));
   }
@@ -469,6 +475,12 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
   receipt.riverMaximumWidthMeters = targets.riverMaximumWidthMeters;
   receipt.materialIdentityHash = targets.materialIdentityHash;
   receipt.licenseInventoryHash = targets.licenseInventoryHash;
+  receipt.landFingerprint = landReceipt_.fingerprint;
+  receipt.riverbankProps = landReceipt_.riverbankRocks + landReceipt_.riverbankGrass;
+  receipt.occupiedHabitatCells = landReceipt_.occupiedHabitatCells;
+  receipt.densestHabitatCell = landReceipt_.densestHabitatCell;
+  receipt.riverbankLayered = landReceipt_.riverbankLayered;
+  receipt.propFootprintsNonOverlapping = landReceipt_.footprintSpacingExact;
   receipt.retainedDescriptorBytes = RetainedDescriptorBytes();
   receipt.waterSurfaceFingerprint = Aevrynd::WaterSurfaceFingerprint3D(waterSurface_);
   constexpr std::size_t riverSlices=64;
@@ -484,7 +496,21 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
   receipt.riverStripIndices=receipt.riverStripSlices*6;
   receipt.integratedDescriptors = descriptors_.size();
   receipt.descriptorCapacity = landReceipt_.descriptorCapacity;
+  std::array<bool, 3> terrainLayers{};
+  std::uint64_t zoneHash = 14695981039346656037ull;
   for (const ShowcaseSceneDescriptor3D &descriptor : descriptors_) {
+    if (descriptor.materialAsset.find("forest_ground_04") != std::string::npos)
+      terrainLayers[0] = true;
+    else if (descriptor.materialAsset.find("Ground108") != std::string::npos)
+      terrainLayers[1] = true;
+    else if (descriptor.materialAsset.find("stony_dirt_path") != std::string::npos)
+      terrainLayers[2] = true;
+    if (descriptor.kind == ShowcaseSceneKind3D::Terrain ||
+        descriptor.kind == ShowcaseSceneKind3D::Grass) {
+      HashText(zoneHash, descriptor.materialAsset);
+      HashFloat(zoneHash, descriptor.position.x);
+      HashFloat(zoneHash, descriptor.position.z);
+    }
     switch (descriptor.kind) {
     case ShowcaseSceneKind3D::Terrain: ++receipt.terrain; break;
     case ShowcaseSceneKind3D::Water:
@@ -517,6 +543,10 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
       break;
     }
   }
+  receipt.terrainMaterialLayers = std::ranges::count(terrainLayers, true);
+  receipt.terrainZoneFingerprint = zoneHash ? zoneHash : 1;
+  receipt.terrainZonesExact = receipt.terrainMaterialLayers ==
+      targets.requiredTerrainMaterialLayers;
   return receipt;
 }
 

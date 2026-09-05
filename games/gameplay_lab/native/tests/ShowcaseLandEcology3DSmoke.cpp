@@ -12,6 +12,7 @@ bool Exact(const ShowcaseLandPlacement3D &left,
            const ShowcaseLandPlacement3D &right) {
   return left.kind == right.kind && left.band == right.band &&
       left.variant == right.variant && left.stableKey == right.stableKey &&
+      left.zone == right.zone &&
       std::bit_cast<std::uint32_t>(left.position.x) == std::bit_cast<std::uint32_t>(right.position.x) &&
       std::bit_cast<std::uint32_t>(left.position.z) == std::bit_cast<std::uint32_t>(right.position.z) &&
       std::bit_cast<std::uint32_t>(left.scale.x) == std::bit_cast<std::uint32_t>(right.scale.x) &&
@@ -25,11 +26,16 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
   return left.seed == right.seed && left.fingerprint == right.fingerprint &&
       left.trees == right.trees && left.grass == right.grass &&
       left.rocks == right.rocks && left.variants == right.variants &&
+      left.zones == right.zones &&
       left.placements == right.placements &&
       left.integratedDescriptors == right.integratedDescriptors &&
       left.descriptorCapacity == right.descriptorCapacity &&
       left.rejectedCandidates == right.rejectedCandidates &&
       left.attemptedCandidates == right.attemptedCandidates &&
+      left.riverbankRocks == right.riverbankRocks &&
+      left.riverbankGrass == right.riverbankGrass &&
+      left.occupiedHabitatCells == right.occupiedHabitatCells &&
+      left.densestHabitatCell == right.densestHabitatCell &&
       left.failureKind == right.failureKind &&
       left.failureBand == right.failureBand &&
       left.failureItem == right.failureItem &&
@@ -39,6 +45,14 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
           std::bit_cast<std::uint32_t>(right.minimumGrassSpacing) &&
       std::bit_cast<std::uint32_t>(left.minimumRockSpacing) ==
           std::bit_cast<std::uint32_t>(right.minimumRockSpacing) &&
+      std::bit_cast<std::uint32_t>(left.minimumPropEdgeSpacing) ==
+          std::bit_cast<std::uint32_t>(right.minimumPropEdgeSpacing) &&
+      std::bit_cast<std::uint32_t>(left.minimumRiverbankRockClearance) ==
+          std::bit_cast<std::uint32_t>(right.minimumRiverbankRockClearance) &&
+      std::bit_cast<std::uint32_t>(left.maximumRiverbankRockClearance) ==
+          std::bit_cast<std::uint32_t>(right.maximumRiverbankRockClearance) &&
+      std::bit_cast<std::uint32_t>(left.maximumRiverbankGrassClearance) ==
+          std::bit_cast<std::uint32_t>(right.maximumRiverbankGrassClearance) &&
       left.terrainBoundsExact == right.terrainBoundsExact &&
       left.bandsExact == right.bandsExact &&
       left.riverExcluded == right.riverExcluded &&
@@ -47,6 +61,9 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.stableKeysExact == right.stableKeysExact &&
       left.transformsExact == right.transformsExact &&
       left.footprintSpacingExact == right.footprintSpacingExact &&
+      left.zonesExact == right.zonesExact &&
+      left.riverbankLayered == right.riverbankLayered &&
+      left.densityExact == right.densityExact &&
       left.deterministicBudget == right.deterministicBudget;
 }
 }
@@ -105,7 +122,16 @@ int main() {
       !receipt.terrainBoundsExact || !receipt.bandsExact || !receipt.riverExcluded ||
       !receipt.spawnExcluded || !receipt.cottageExcluded ||
       !receipt.stableKeysExact || !receipt.transformsExact) return 2;
-  if (!receipt.footprintSpacingExact) return 12;
+  if (!receipt.footprintSpacingExact || !receipt.zonesExact ||
+      !receipt.riverbankLayered || !receipt.densityExact ||
+      receipt.riverbankRocks != 30 || receipt.riverbankGrass != 94 ||
+      receipt.minimumPropEdgeSpacing < .12f ||
+      receipt.maximumRiverbankRockClearance >
+          settings.riverbankRockMaximumClearance ||
+      receipt.maximumRiverbankGrassClearance >
+          settings.riverbankGrassMaximumClearance ||
+      receipt.densestHabitatCell < settings.minimumDensestHabitatCell)
+    return 12;
   if(!receipt.attemptedCandidates||receipt.attemptedCandidates>32000u||medianBuildMicros>3000){std::cerr<<"land performance attempts="<<receipt.attemptedCandidates<<" medianElapsedUs="<<medianBuildMicros<<" samples=";for(const auto value:buildMicros)std::cerr<<value<<',';std::cerr<<'\n';return 15;}
 
   for (const auto variant : {ShowcaseLandVariant3D::IslandTree,
@@ -133,6 +159,11 @@ int main() {
   rock->position=tree->position;
   if(ValidateShowcaseLandEcology3D(settings,mutated))return 14;
   mutated = first;
+  const auto grass=std::ranges::find_if(mutated,[](const auto& item){return item.kind==ShowcaseLandKind3D::Grass;});
+  const auto overlapRock=std::ranges::find_if(mutated,[](const auto& item){return item.kind==ShowcaseLandKind3D::Rock;});
+  grass->position=overlapRock->position;
+  if(ValidateShowcaseLandEcology3D(settings,mutated))return 16;
+  mutated = first;
   mutated[1].stableKey = mutated[0].stableKey;
   if (ValidateShowcaseLandEcology3D(settings, mutated)) return 6;
   mutated = first;
@@ -145,6 +176,12 @@ int main() {
     if (item.kind == ShowcaseLandKind3D::Grass)
       item.band = ShowcaseLandBand3D::Near;
   if (ValidateShowcaseLandEcology3D(settings, mutated)) return 8;
+  mutated = first;
+  mutated.front().zone = ShowcaseLandZone3D::Meadow;
+  if (ValidateShowcaseLandEcology3D(settings, mutated)) return 17;
+  auto impossibleDensity = settings;
+  impossibleDensity.minimumDensestHabitatCell = 457;
+  if (ValidateShowcaseLandEcology3D(impossibleDensity, first)) return 18;
   mutated = first;
   mutated[2].yaw += .125f;
   ShowcaseLandEcologyReceipt3D fingerprintMutation{};
@@ -163,6 +200,13 @@ int main() {
             << " spacing=" << receipt.minimumTreeSpacing << '/'
             << receipt.minimumGrassSpacing << '/'
             << receipt.minimumRockSpacing
+            << " propEdge=" << receipt.minimumPropEdgeSpacing
+            << " bank=" << receipt.riverbankRocks << '/'
+            << receipt.riverbankGrass << '@'
+            << receipt.maximumRiverbankRockClearance << '/'
+            << receipt.maximumRiverbankGrassClearance
+            << " habitat=" << receipt.occupiedHabitatCells << '/'
+            << receipt.densestHabitatCell
             << " medianUs=" << medianBuildMicros << '\n';
   return 0;
 }

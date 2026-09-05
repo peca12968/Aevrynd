@@ -228,12 +228,21 @@ int main(int argc, char **argv) {
     if (!id.empty() && std::ranges::find(expectedVisible, id) == expectedVisible.end())
       expectedVisible.emplace_back(id);
   }
-  expectedVisible.emplace_back("stony_dirt_path");
+  if (std::ranges::find(expectedVisible, "stony_dirt_path") ==
+      expectedVisible.end())
+    expectedVisible.emplace_back("stony_dirt_path");
   expectedVisible.emplace_back("xanderklinge");
   if (!bindings.Load(world.Descriptors(), catalog, runtime, profile, resolver, cooked,
                      load) ||
       !load.photorealActive || load.descriptorCount != before.integratedDescriptors ||
       !load.collisionStableIdsUnchanged ||
+      !load.assetIdentityFingerprint || !load.assetIdentitiesExact ||
+      !load.descriptorOrderDeterministic ||
+      load.requiredAssetIdentityMask != 0x1ffu ||
+      load.terrainLayerDescriptors !=
+          std::array<std::size_t, 3>{1, 188, 94} ||
+      load.assetIdentityFingerprint !=
+          ShowcaseAssetIdentityFingerprint3D(world.Descriptors()) ||
       !std::ranges::equal(bindings.VisibleAssetIds(), expectedVisible) ||
       !bindings.IblHandle() ||
       resolver.RetainedLeaseCount() <= 0) {
@@ -268,6 +277,25 @@ int main(int argc, char **argv) {
   if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
   semantic.kind = ShowcaseSceneKind3D::Water;
   if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
+  semantic.kind = ShowcaseSceneKind3D::Grass;
+  semantic.materialAsset = "poly-haven/stony_dirt_path/cooked-pbr";
+  if (ResolveShowcasePhotorealAssetId3D(semantic) != "stony_dirt_path") return 6;
+  semantic.materialAsset = "ambientcg/Ground108/cooked-pbr";
+  if (ResolveShowcasePhotorealAssetId3D(semantic) != "Ground108") return 6;
+  semantic.materialAsset = "mutation/unknown-ground";
+  if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
+  auto reorderedDescriptors = descriptorSnapshot;
+  const auto differentIdentity = std::ranges::find_if(
+      reorderedDescriptors.begin() + 1, reorderedDescriptors.end(),
+      [&](const auto &item) {
+        return ResolveShowcasePhotorealAssetId3D(item) !=
+               ResolveShowcasePhotorealAssetId3D(reorderedDescriptors.front());
+      });
+  if (differentIdentity == reorderedDescriptors.end()) return 14;
+  std::iter_swap(reorderedDescriptors.begin(), differentIdentity);
+  if (ShowcaseAssetIdentityFingerprint3D(descriptorSnapshot) ==
+      ShowcaseAssetIdentityFingerprint3D(reorderedDescriptors))
+    return 14;
   if (world.Receipt().worldHash != before.worldHash ||
       world.Receipt().retainedDescriptorBytes != before.retainedDescriptorBytes)
     return 7;
@@ -410,6 +438,10 @@ int main(int argc, char **argv) {
                "descriptors=" << load.descriptorCount << " assets="
             << expectedVisible.size()
             << " pathRenderOnly=true fallbackAtomic=true hash="
-            << load.descriptorFingerprint << '\n';
+            << load.descriptorFingerprint << " identity="
+            << load.assetIdentityFingerprint << " layers="
+            << load.terrainLayerDescriptors[0] << '/'
+            << load.terrainLayerDescriptors[1] << '/'
+            << load.terrainLayerDescriptors[2] << '\n';
   return 0;
 }

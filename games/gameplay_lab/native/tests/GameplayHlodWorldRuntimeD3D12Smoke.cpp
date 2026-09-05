@@ -4,7 +4,9 @@
 #include <Aevrynd/Engine.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -19,6 +21,30 @@ namespace {
 int Result{};
 constexpr StableObjectId3D HostPaletteIdentity3D{
     0x50414c4554544533ull, 1};
+
+constexpr auto FrameNegativeDecision = EvaluateGameplayHlodWorldContract3D(
+    {1, 1, true, true});
+constexpr auto IdentityNegativeDecision = EvaluateGameplayHlodWorldContract3D(
+    {1, 0, false, true});
+constexpr auto DataNegativeDecision = EvaluateGameplayHlodWorldContract3D(
+    {1, 0, true, false});
+constexpr auto RetryLimitDecision = EvaluateGameplayHlodWorldRetry3D(8, 8);
+static_assert(FrameNegativeDecision.readiness ==
+                  GameplayHlodWorldReadiness3D::Fatal &&
+              FrameNegativeDecision.reason ==
+                  GameplayHlodWorldTerminalReason3D::FrameInvariantViolation);
+static_assert(IdentityNegativeDecision.readiness ==
+                  GameplayHlodWorldReadiness3D::Fatal &&
+              IdentityNegativeDecision.reason ==
+                  GameplayHlodWorldTerminalReason3D::IdentityInvariantViolation);
+static_assert(DataNegativeDecision.readiness ==
+                  GameplayHlodWorldReadiness3D::Fatal &&
+              DataNegativeDecision.reason ==
+                  GameplayHlodWorldTerminalReason3D::DataInvariantViolation);
+static_assert(RetryLimitDecision.readiness ==
+                  GameplayHlodWorldReadiness3D::Fatal &&
+              RetryLimitDecision.reason ==
+                  GameplayHlodWorldTerminalReason3D::RetryLimitExceeded);
 
 bool Validation(const RendererStats &stats) {
   wchar_t expected[8]{};
@@ -37,6 +63,157 @@ bool Validation(const RendererStats &stats) {
         !stats.debugWarningCount;
   return false;
 }
+
+void MixBytes(std::uint64_t &hash, const void *data, std::size_t size) {
+  const auto *bytes = static_cast<const std::uint8_t *>(data);
+  for (std::size_t index{}; index < size; ++index) {
+    hash ^= bytes[index];
+    hash *= 1099511628211ull;
+  }
+}
+
+template <class Value>
+void MixValue(std::uint64_t &hash, const Value &value) {
+  static_assert(std::is_trivially_copyable_v<Value>);
+  MixBytes(hash, &value, sizeof(value));
+}
+
+template <class Value>
+void MixValues(std::uint64_t &hash, std::span<const Value> values) {
+  if (!values.empty())
+    MixBytes(hash, values.data(), values.size_bytes());
+}
+
+std::uint64_t DrawFingerprint(const DrawList &draw) {
+  std::uint64_t hash{14695981039346656037ull};
+  const auto mixMatrix = [&](const Matrix4 &matrix) {
+    for (const auto &row : matrix.values)
+      for (const float value : row)
+        MixValue(hash, value);
+  };
+  const auto mixIdentity = [&](const RenderObjectIdentity3D &identity) {
+    MixValue(hash, identity.id.high);
+    MixValue(hash, identity.id.low);
+    MixValue(hash, identity.generation);
+    MixValue(hash, identity.hlodClusterId.high);
+    MixValue(hash, identity.hlodClusterId.low);
+    MixValue(hash, identity.sharedLodDither);
+    MixValue(hash, identity.hlodProxy);
+  };
+  const auto vertices2D = draw.vertices.size();
+  const auto skinned = draw.skinnedMeshInstances.size();
+  const auto joints = draw.skinPaletteJoints.size();
+  MixValue(hash, vertices2D);
+  MixValue(hash, skinned);
+  MixValue(hash, joints);
+  for (const auto &vertex : draw.worldVertices) {
+    MixValue(hash, vertex.x);
+    MixValue(hash, vertex.y);
+    MixValue(hash, vertex.z);
+    MixValue(hash, vertex.normal);
+    MixValue(hash, vertex.color);
+    MixValue(hash, vertex.u);
+    MixValue(hash, vertex.v);
+  }
+  MixValues(hash, std::span{draw.worldIndices});
+  for (const auto &instance : draw.meshInstances) {
+    MixValue(hash, instance.mesh.value);
+    MixValue(hash, instance.mesh.contentPrimary);
+    MixValue(hash, instance.mesh.contentSecondary);
+    MixValue(hash, instance.mesh.vertexCount);
+    MixValue(hash, instance.mesh.indexCount);
+    mixMatrix(instance.transform);
+    mixMatrix(instance.normalTransform);
+    MixValue(hash, instance.tint);
+    MixValue(hash, instance.surface);
+    MixValue(hash, instance.layer);
+    MixValue(hash, instance.textures.value);
+    MixValue(hash, instance.textures.semanticIdentity);
+    MixValue(hash, instance.textureScale);
+    MixValue(hash, instance.normalScale);
+    MixValue(hash, instance.useUv);
+    MixValue(hash, instance.materialClass);
+    MixValue(hash, instance.cameraDepth);
+    MixValue(hash, instance.castsShadow);
+    MixValue(hash, instance.lodCoverage);
+    MixValue(hash, instance.lodSeed);
+    MixValue(hash, instance.shadowCascadeMask);
+    MixValue(hash, instance.shadowCascadeSelection);
+    mixMatrix(instance.previousTransform);
+    MixValue(hash, instance.motionValid);
+    MixValue(hash, instance.alphaMode);
+    MixValue(hash, instance.alphaCutoff);
+    MixValue(hash, instance.doubleSided);
+    mixIdentity(instance.identity);
+    MixValue(hash, instance.occlusionOpacity);
+  }
+  for (const auto &light : draw.PointLights()) {
+    MixValue(hash, light.position.x);
+    MixValue(hash, light.position.y);
+    MixValue(hash, light.position.z);
+    MixValue(hash, light.radius);
+    MixValue(hash, light.color.r);
+    MixValue(hash, light.color.g);
+    MixValue(hash, light.color.b);
+    MixValue(hash, light.color.a);
+    MixValue(hash, light.intensity);
+  }
+  mixMatrix(draw.ViewProjection());
+  const auto &directional = draw.DirectionalLight();
+  MixValue(hash, directional.direction.x);
+  MixValue(hash, directional.direction.y);
+  MixValue(hash, directional.direction.z);
+  MixValue(hash, directional.ambient);
+  MixValue(hash, directional.color.r);
+  MixValue(hash, directional.color.g);
+  MixValue(hash, directional.color.b);
+  MixValue(hash, directional.color.a);
+  MixValue(hash, directional.intensity);
+  const auto leaseCount = draw.AssetLeaseCount();
+  const auto originGeneration = draw.OriginGeneration3D();
+  MixValue(hash, leaseCount);
+  MixValue(hash, originGeneration);
+  return hash;
+}
+
+std::uint64_t SceneFingerprint(const Scene3D &scene) {
+  Scene3D copy = scene;
+  DrawList draw;
+  const Camera3D camera{{0, 3, -12}, {0, 0, 0}, {0, 1, 0},
+                        {ProjectionMode::Perspective, 1.0471976f, 0, .1f,
+                         1000.f}};
+  const auto stats = copy.Submit(draw, camera, {640, 360},
+                                 {.frustumCulling = false});
+  std::uint64_t hash = DrawFingerprint(draw);
+  MixValue(hash, stats.inputTriangles);
+  MixValue(hash, stats.inputLines);
+  MixValue(hash, stats.meshInstances);
+  MixValue(hash, stats.visibleMeshInstances);
+  MixValue(hash, stats.drawListRevision);
+  MixValue(hash, stats.acceptedIdentityOrderFingerprint);
+  const auto triangles = scene.TriangleCount();
+  const auto lines = scene.LineCount();
+  const auto meshes = scene.MeshCount();
+  MixValue(hash, triangles);
+  MixValue(hash, lines);
+  MixValue(hash, meshes);
+  return hash;
+}
+
+struct HostOutputFingerprint {
+  std::uint64_t scene{}, draw{};
+  [[nodiscard]] bool operator==(const HostOutputFingerprint &) const = default;
+};
+
+HostOutputFingerprint HostFingerprint(const Scene3D &scene,
+                                      const DrawList &draw) {
+  return {SceneFingerprint(scene), DrawFingerprint(draw)};
+}
+
+struct RuntimeNegativeEvidence {
+  GameplayHlodWorldRuntimeReceipt3D receipt{};
+  bool failClosed{};
+};
 
 class Game final : public IGame {
 public:
@@ -106,8 +283,18 @@ public:
             : Camera3D{{0, 400, -5000}, {0, 0, 0}, {0, 1, 0},
                        {ProjectionMode::Orthographic, 1.0471976f, 100000.f,
                         .1f, 10000.f}};
-    if (!runtime_.CollectFrame(nextFrame_, camera, {640, 360}, scene_, draw))
+    const auto readiness =
+        runtime_.CollectFrame(nextFrame_, camera, {640, 360}, scene_, draw);
+    if (readiness == GameplayHlodWorldReadiness3D::RetryableNotReady) {
+      if (stage_ != 0) {
+        Fail("Gameplay HLOD became retryable after reaching Ready", engine);
+      }
       return;
+    }
+    if (readiness == GameplayHlodWorldReadiness3D::Fatal) {
+      Fail("Gameplay HLOD runtime returned Fatal", engine);
+      return;
+    }
     const auto runtimeReceipt = runtime_.Receipt();
     const auto hostCollectionAfterHlod = registry_.Stats();
     if (!runtimeReceipt.ownership.independentRegistry ||
@@ -168,19 +355,11 @@ public:
       return;
     }
     if (stage_ == 0) {
-      Scene3D duplicateScene;
-      DrawList duplicateDraw;
-      if (runtime_.CollectFrame(nextFrame_, camera, {640, 360}, duplicateScene,
-                                duplicateDraw) ||
-          duplicateScene.MeshCount() || !duplicateDraw.meshInstances.empty()) {
-        Fail("Duplicate HLOD frame changed submission output", engine);
-        return;
-      }
       near_ = runtime_.Receipt();
-      if (near_.ownership.rejectedDuplicateFrames != 1 ||
+      if (near_.ownership.rejectedDuplicateFrames != 0 ||
           near_.ownership.acceptedSubmissions != 1 ||
           near_.ownership.submittedFrame != nextFrame_) {
-        Fail("Duplicate HLOD frame ownership receipt failed", engine);
+        Fail("Initial HLOD frame ownership receipt failed", engine);
         return;
       }
       const bool identityDomainSeparated = std::ranges::all_of(
@@ -310,10 +489,38 @@ public:
     engine.WaitRendererIdle3D();
     const auto validation = engine.GetRendererStats();
     if (!Validation(validation)) {
+      std::cerr << "gpuValidation requested="
+                << validation.gpuValidationRequested
+                << " available=" << validation.gpuValidationAvailable
+                << " executed=" << validation.gpuValidationExecuted
+                << " debugLayer=" << validation.debugLayerEnabled
+                << " passed=" << validation.gpuValidationPassed
+                << " errors=" << validation.debugErrorCount
+                << " warnings=" << validation.debugWarningCount << '\n';
       Fail("Gameplay production HLOD GPU validation contract failed", engine);
       return;
     }
-    WriteReceipt(validation);
+    validation_ = validation;
+    if (!RunHostileReview(engine, camera)) {
+      Fail("Gameplay HLOD hostile runtime review failed", engine);
+      return;
+    }
+    Scene3D duplicateScene;
+    DrawList duplicateDraw;
+    const auto duplicate = runtime_.CollectFrame(
+        nextFrame_, camera, {640, 360}, duplicateScene, duplicateDraw);
+    frameNegative_ = runtime_.Receipt();
+    frameNegativeFailClosed_ =
+        duplicate == GameplayHlodWorldReadiness3D::Fatal &&
+        frameNegative_.readiness == GameplayHlodWorldReadiness3D::Fatal &&
+        frameNegative_.terminalReason ==
+            GameplayHlodWorldTerminalReason3D::FrameInvariantViolation &&
+        frameNegative_.ownership.rejectedDuplicateFrames == 1 &&
+        !duplicateScene.MeshCount() && duplicateDraw.meshInstances.empty();
+    if (!frameNegativeFailClosed_) {
+      Fail("Duplicate HLOD frame was not Fatal and fail-closed", engine);
+      return;
+    }
     complete_ = true;
     engine.Quit();
   }
@@ -331,15 +538,317 @@ public:
     const auto release = assets_.ReleaseProduction(engine, scene_);
     engine.WaitRendererIdle3D();
     const auto after = engine.GetRendererStats();
-    if (complete_ && (!release.rendererBaselineRestored ||
-                      after.residentMeshes != baseline_.residentMeshes ||
-                      after.residentMaterialTextureSets !=
-                          baseline_.residentMaterialTextureSets ||
-                      after.pendingGpuReleaseBytes))
-      Result = 2;
+    if (complete_) {
+      cleanupComplete_ = release.rendererBaselineRestored &&
+          after.residentMeshes == baseline_.residentMeshes &&
+          after.residentMaterialTextureSets ==
+              baseline_.residentMaterialTextureSets &&
+          !after.pendingGpuReleaseBytes;
+      WriteReceipt(validation_, release, after, cleanupComplete_);
+      if (!cleanupComplete_)
+        Result = 2;
+    }
   }
 
 private:
+  bool SeedHostOutputs(Scene3D &scene, DrawList &draw) const {
+    const auto lease =
+        std::make_shared<AssetLeaseState3D>(AssetLeaseState3D{0x7a11ce55ull});
+    const RenderObjectIdentity3D identity{{0x484f53544f555450ull,
+                                           0x555453454e54494eull},
+                                          7};
+    if (!scene.Mesh(paletteMesh_, {{3, 2, 1}, {}, {1, 1, 1}}, {}, lease,
+                    identity) ||
+        !draw.MeshInstance(paletteMesh_.handle,
+                           CreateTranslationMatrix({-3, 1, 2}),
+                           {.31f, .47f, .83f, 1.f}, {},
+                           MeshRenderLayer3D::Opaque, {}, .25f, false,
+                           MaterialClass3D::Surface,
+                           std::numeric_limits<float>::quiet_NaN(), true, 1.f,
+                           3, false, DirectionalShadowAllCascades3D,
+                           ShadowCascadeSelection3D::Automatic,
+                           Matrix4::Identity(), false, 1.f,
+                           MaterialAlphaMode3D::Opaque, .5f, false, identity))
+      return false;
+    scene.Triangle({-1, 0, 0}, {0, 1, 0}, {1, 0, 0}, {.2f, .3f, .4f, 1.f});
+    scene.Line({-2, 0, 0}, {2, 0, 0}, .25f, {.9f, .1f, .2f, 1.f});
+    draw.WorldTriangle({-1, -1, 0}, {0, 1, 0}, {1, -1, 0},
+                       {.7f, .4f, .2f, 1.f});
+    draw.SetDirectionalLight({{.2f, -1.f, .4f}, .37f,
+                              {.8f, .9f, 1.f, 1.f}, 1.25f});
+    draw.AddPointLight({{3, 4, 5}, 9.f, {.3f, .8f, .6f, 1.f}, 2.f});
+    draw.SetOriginGeneration3D(19);
+    draw.RetainAssetLease(lease);
+    return true;
+  }
+
+  GameplayHlodWorldReadiness3D TimedCollect(
+      GameplayHlodWorldRuntime3D &runtime, std::uint64_t frame,
+      const Camera3D &camera, Scene3D &scene, DrawList &draw) {
+    const auto begin = std::chrono::steady_clock::now();
+    const auto result = runtime.CollectFrame(frame, camera, {640, 360}, scene,
+                                             draw);
+    const auto elapsed = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - begin).count());
+    hostileMaxCollectWallNanoseconds_ =
+        (std::max)(hostileMaxCollectWallNanoseconds_, elapsed);
+    if (elapsed > HostileCollectWallLimitNanoseconds)
+      hostileWallLimitPassed_ = false;
+    return result;
+  }
+
+  bool InitializeHostile(GameplayHlodWorldRuntime3D &runtime,
+                         Engine &engine,
+                         GameplayHlodWorldRuntimeOptions3D options,
+                         std::uint64_t worldOrdinal) {
+    return runtime.Initialize(
+        engine, assets_, environment_.Descriptors(),
+        {GameplayEnvironmentIdentityDomain3D, worldOrdinal}, options);
+  }
+
+  bool RunHostileReview(Engine &engine, const Camera3D &camera) {
+    constexpr auto retry = GameplayHlodWorldReadiness3D::RetryableNotReady;
+    constexpr auto ready = GameplayHlodWorldReadiness3D::Ready;
+    constexpr auto fatal = GameplayHlodWorldReadiness3D::Fatal;
+    bool passed = true;
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      Scene3D scene;
+      DrawList draw;
+      const bool seeded = SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+      runtimeUnavailableNegative_.receipt = runtime.Receipt();
+      runtimeUnavailableNegative_.failClosed = seeded && result == fatal &&
+          runtimeUnavailableNegative_.receipt.readiness == fatal &&
+          runtimeUnavailableNegative_.receipt.terminalReason ==
+              GameplayHlodWorldTerminalReason3D::RuntimeUnavailable &&
+          HostFingerprint(scene, draw) == before;
+      passed = passed && runtimeUnavailableNegative_.failClosed;
+      if (!runtimeUnavailableNegative_.failClosed)
+        std::cerr << "hostile case runtime-unavailable failed\n";
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.prewarmUpdates = 3;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x101) &&
+          SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      const auto result = passed ? TimedCollect(runtime, 1, camera, scene, draw)
+                                 : fatal;
+      const auto receipt = runtime.Receipt();
+      firstReadyReceipt_ = receipt;
+      firstReadyPassed_ = result == ready && receipt.SeamComplete() &&
+          !receipt.firstFrameRetryObserved && !receipt.firstFrameRetryCount &&
+          !receipt.sourceWaitIdleCalls && !(HostFingerprint(scene, draw) == before);
+      passed = passed && firstReadyPassed_;
+      if (!firstReadyPassed_)
+        std::cerr << "hostile first-ready result=" << unsigned(result)
+                  << " resident=" << receipt.partition.resident
+                  << " pending=" << receipt.partitionPending
+                  << " retries=" << receipt.firstFrameRetryCount
+                  << " lifecycle=" << receipt.lifecycleInvariantPassed
+                  << " seam=" << receipt.SeamComplete() << '\n';
+      hostileStagingCopyNanoseconds_ = receipt.stagingCopyNanoseconds;
+      hostileStagingCopyBytesEstimate_ = receipt.stagingCopyBytesEstimate;
+      if (!passed)
+        std::cerr << "hostile case first-ready failed\n";
+      runtime.Shutdown();
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.sourceCompletionDelayPolls = 100;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x102) &&
+          SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      for (std::uint32_t attempt = 1; passed && attempt <= 8; ++attempt) {
+        const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+        passed = result == (attempt < 8 ? retry : fatal) &&
+            HostFingerprint(scene, draw) == before;
+      }
+      const auto latched = runtime.Receipt();
+      const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+      const auto afterLatch = runtime.Receipt();
+      retryLimitNegative_.receipt = latched;
+      retryLimitNegative_.failClosed = latched.readiness == fatal &&
+          latched.firstFrameRetryCount == 8 &&
+          latched.terminalReason ==
+              GameplayHlodWorldTerminalReason3D::RetryLimitExceeded &&
+          latched.attemptRetryCounted && !latched.sourceWaitIdleCalls &&
+          result == fatal &&
+          afterLatch.firstFrameRetryCount == latched.firstFrameRetryCount &&
+          afterLatch.ownership.frameRequests == latched.ownership.frameRequests &&
+          afterLatch.ownership.rejectedDuplicateFrames ==
+              latched.ownership.rejectedDuplicateFrames &&
+          HostFingerprint(scene, draw) == before;
+      passed = passed && retryLimitNegative_.failClosed;
+      if (!retryLimitNegative_.failClosed)
+        std::cerr << "hostile case retry-limit failed\n";
+      runtime.Shutdown();
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.sourceCompletionDelayPolls = 5;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x103) &&
+          SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      for (std::uint32_t attempt = 1; passed && attempt <= 8; ++attempt) {
+        const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+        passed = result == (attempt < 8 ? retry : ready) &&
+            (attempt == 8 ? !(HostFingerprint(scene, draw) == before)
+                          : HostFingerprint(scene, draw) == before);
+      }
+      const auto receipt = runtime.Receipt();
+      completeBeforeLimitReceipt_ = receipt;
+      completeBeforeLimitPassed_ = receipt.readiness == ready &&
+          receipt.firstFrameRetryCount == 7 &&
+          receipt.SeamComplete() && !receipt.sourceWaitIdleCalls;
+      passed = passed && completeBeforeLimitPassed_;
+      if (!completeBeforeLimitPassed_)
+        std::cerr << "hostile case complete-before-limit failed\n";
+      runtime.Shutdown();
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.prewarmUpdates = 3;
+      Scene3D committedScene;
+      DrawList committedDraw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x104) &&
+          TimedCollect(runtime, 1, camera, committedScene, committedDraw) == ready;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+      const auto receipt = runtime.Receipt();
+      passed = passed && result == fatal &&
+          receipt.terminalReason ==
+              GameplayHlodWorldTerminalReason3D::FrameInvariantViolation &&
+          receipt.ownership.rejectedDuplicateFrames == 1 &&
+          HostFingerprint(scene, draw) == before;
+      if (!passed)
+        std::cerr << "hostile case duplicate failed\n";
+      runtime.Shutdown();
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.prewarmUpdates = 3;
+      options.failureFrame = 1;
+      options.failureInjection =
+          GameplayHlodWorldFailureInjection3D::IdentityInvariant;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x105) &&
+          SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+      const auto receipt = runtime.Receipt();
+      identityNegative_.receipt = receipt;
+      identityNegative_.failClosed = result == fatal &&
+          receipt.readiness == fatal &&
+          receipt.terminalReason ==
+              GameplayHlodWorldTerminalReason3D::IdentityInvariantViolation &&
+          !receipt.selected && !receipt.frozen && !receipt.collected &&
+          HostFingerprint(scene, draw) == before;
+      passed = passed && identityNegative_.failClosed;
+      if (!identityNegative_.failClosed)
+        std::cerr << "hostile case identity failed\n";
+      runtime.Shutdown();
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.prewarmUpdates = 3;
+      options.failureFrame = 2;
+      options.failureInjection =
+          GameplayHlodWorldFailureInjection3D::DataInvariant;
+      Scene3D firstScene;
+      DrawList firstDraw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x106) &&
+          TimedCollect(runtime, 1, camera, firstScene, firstDraw) == ready;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      const auto result = TimedCollect(runtime, 2, camera, scene, draw);
+      const auto receipt = runtime.Receipt();
+      dataNegative_.receipt = receipt;
+      dataNegative_.failClosed = result == fatal && receipt.readiness == fatal &&
+          receipt.attemptFrame == 2 &&
+          receipt.terminalReason ==
+              GameplayHlodWorldTerminalReason3D::DataInvariantViolation &&
+          !receipt.selected && !receipt.frozen && !receipt.collected &&
+          !receipt.frameInvariantPassed && !receipt.identityInvariantPassed &&
+          !receipt.dataInvariantPassed && HostFingerprint(scene, draw) == before;
+      passed = passed && dataNegative_.failClosed;
+      if (!dataNegative_.failClosed)
+        std::cerr << "hostile case next-frame-data failed\n";
+      runtime.Shutdown();
+    }
+
+    {
+      GameplayHlodWorldRuntime3D runtime;
+      GameplayHlodWorldRuntimeOptions3D options{};
+      options.prewarmUpdates = 3;
+      options.failureFrame = 1;
+      options.failureInjection =
+          GameplayHlodWorldFailureInjection3D::LateDataInvariant;
+      Scene3D scene;
+      DrawList draw;
+      passed = passed && InitializeHostile(runtime, engine, options, 0x107) &&
+          SeedHostOutputs(scene, draw);
+      const auto before = HostFingerprint(scene, draw);
+      const auto result = TimedCollect(runtime, 1, camera, scene, draw);
+      const auto receipt = runtime.Receipt();
+      lateDataNegative_.receipt = receipt;
+      lateDataNegative_.failClosed = result == fatal &&
+          receipt.readiness == fatal && receipt.selected && receipt.frozen &&
+          receipt.collected && !receipt.dataInvariantPassed &&
+          receipt.transactionalStagingWip && receipt.stagingCopyNanoseconds &&
+          HostFingerprint(scene, draw) == before;
+      passed = passed && lateDataNegative_.failClosed;
+      hostileStagingCopyNanoseconds_ =
+          (std::max)(hostileStagingCopyNanoseconds_,
+                     receipt.stagingCopyNanoseconds);
+      hostileStagingCopyBytesEstimate_ =
+          (std::max)(hostileStagingCopyBytesEstimate_,
+                     receipt.stagingCopyBytesEstimate);
+      if (!lateDataNegative_.failClosed)
+        std::cerr << "hostile case late-data failed result=" << unsigned(result)
+                  << " selected=" << receipt.selected
+                  << " frozen=" << receipt.frozen
+                  << " collected=" << receipt.collected
+                  << " data=" << receipt.dataInvariantPassed
+                  << " staging=" << receipt.transactionalStagingWip
+                  << " copyNs=" << receipt.stagingCopyNanoseconds
+                  << " unchanged=" << (HostFingerprint(scene, draw) == before)
+                  << '\n';
+      runtime.Shutdown();
+    }
+
+    hostileReviewPassed_ = passed && hostileWallLimitPassed_;
+    return hostileReviewPassed_;
+  }
+
   void Fail(const char *message, Engine &engine) {
     if (!Result) {
       std::cerr << message << '\n';
@@ -348,15 +857,50 @@ private:
     engine.Quit();
   }
 
-  void WriteReceipt(const RendererStats &stats) const {
+  void WriteReceipt(const RendererStats &stats,
+                    const ShowcaseProductionReleaseReceipt3D &release,
+                    const RendererStats &after,
+                    bool cleanupComplete) const {
     std::ofstream out(AEVRYND_GAMEPLAY_HLOD_RUNTIME_RECEIPT,
                       std::ios::binary | std::ios::trunc);
     if (!out) {
       Result = 3;
       return;
     }
+    const bool sceneEcsActivated = far_.ownership.Complete() &&
+        far_.collection.aliveEntities && far_.collection.submittedRenderables;
+    const bool selectFreezeCollect =
+        far_.selected && far_.frozen && far_.collected;
+    const bool transactionalStagingWip = far_.transactionalStagingWip &&
+        lateDataNegative_.receipt.transactionalStagingWip;
+    const bool callerOutputsBitExact =
+        runtimeUnavailableNegative_.failClosed && frameNegativeFailClosed_ &&
+        identityNegative_.failClosed && dataNegative_.failClosed &&
+        lateDataNegative_.failClosed && retryLimitNegative_.failClosed;
+    const auto collectWaitIdleCalls = far_.sourceWaitIdleCalls +
+        runtimeUnavailableNegative_.receipt.sourceWaitIdleCalls +
+        retryLimitNegative_.receipt.sourceWaitIdleCalls +
+        identityNegative_.receipt.sourceWaitIdleCalls +
+        dataNegative_.receipt.sourceWaitIdleCalls +
+        lateDataNegative_.receipt.sourceWaitIdleCalls;
     out << "{\"source\":\"GameplayHlodWorldRuntime3D\","
-           "\"status\":\"SEAM-GO\",\"syntheticSubstitution\":0,"
+           "\"status\":\"NO-GO\",\"coreSemantics\":\"GO\",\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(far_.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(far_.terminalReason)
+        << "\",\"firstFrameRetryCount\":" << far_.firstFrameRetryCount
+        << ",\"firstFrameRetryLimit\":" << far_.firstFrameRetryLimit
+        << ",\"firstFrameRetryObserved\":"
+        << (far_.firstFrameRetryObserved ? 1 : 0)
+        << ",\"firstFrameRetryReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(far_.lastRetryReason) << "\""
+        << ",\"frameInvariantPassed\":"
+        << (far_.frameInvariantPassed ? 1 : 0)
+        << ",\"identityInvariantPassed\":"
+        << (far_.identityInvariantPassed ? 1 : 0)
+        << ",\"dataInvariantPassed\":"
+        << (far_.dataInvariantPassed ? 1 : 0)
+        << ",\"syntheticSubstitution\":0,"
            "\"performanceMeasured\":0,\"inputDescriptors\":"
         << near_.build.inputDescriptors
         << ",\"eligibleRockDescriptors\":" << near_.build.eligibleRockDescriptors
@@ -369,8 +913,11 @@ private:
         << ",\"sourceInstances\":" << near_.build.sourceInstances
         << ",\"hlodDataHash\":" << near_.build.hlodDataHash
         << ",\"hlodManifestHash\":" << near_.build.hlodManifestHash
-        << ",\"worldPartitionResident\":1,\"sceneEcsActivated\":1,"
-           "\"selectFreezeCollect\":1,\"nearSourceClusters\":"
+        << ",\"worldPartitionResident\":"
+        << (far_.worldPartitionResident ? 1 : 0)
+        << ",\"sceneEcsActivated\":" << (sceneEcsActivated ? 1 : 0)
+        << ",\"selectFreezeCollect\":" << (selectFreezeCollect ? 1 : 0)
+        << ",\"nearSourceClusters\":"
         << near_.frame.sourceClusters << ",\"farProxyClusters\":"
         << far_.frame.proxyClusters << ",\"nearSubmittedRenderables\":"
         << near_.collection.submittedRenderables
@@ -383,12 +930,52 @@ private:
         << (transitionCoverageComplement_ ? 1 : 0)
         << ",\"farSubmittedRenderables\":"
         << far_.collection.submittedRenderables
-        << ",\"sceneEcsRegistryIndependent\":1,"
-           "\"submissionOwner\":\"HlodWorldRuntime\","
+        << ",\"sceneEcsRegistryIndependent\":"
+        << (far_.ownership.independentRegistry ? 1 : 0)
+        << ",\"submissionOwner\":\""
+        << GameplaySceneEcsSubmissionOwnerName3D(far_.ownership.owner)
+        << "\","
            "\"acceptedHlodSubmissions\":"
         << far_.ownership.acceptedSubmissions
         << ",\"duplicateFrameRejections\":"
-        << far_.ownership.rejectedDuplicateFrames
+        << frameNegative_.ownership.rejectedDuplicateFrames
+        << ",\"worldPartitionRequests\":" << far_.partitionRequests
+        << ",\"worldPartitionDispatches\":" << far_.partitionDispatches
+        << ",\"worldPartitionCompletions\":" << far_.partitionCompletions
+         << ",\"worldPartitionPending\":"
+         << (far_.partitionPending ? 1 : 0)
+        << ",\"worldPartitionLifecycleInvariant\":"
+        << (far_.lifecycleInvariantPassed ? 1 : 0)
+        << ",\"hostileReviewPassed\":" << (hostileReviewPassed_ ? 1 : 0)
+        << ",\"hostileFirstCall\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(firstReadyReceipt_.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               firstReadyReceipt_.terminalReason)
+        << "\",\"retryCount\":" << firstReadyReceipt_.firstFrameRetryCount
+        << ",\"passed\":" << (firstReadyPassed_ ? 1 : 0) << "}"
+        << ",\"completedBeforeRetryLimit\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(
+               completeBeforeLimitReceipt_.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               completeBeforeLimitReceipt_.terminalReason)
+        << "\",\"retryCount\":"
+        << completeBeforeLimitReceipt_.firstFrameRetryCount
+        << ",\"passed\":" << (completeBeforeLimitPassed_ ? 1 : 0) << "}"
+        << ",\"callerOutputsBitExact\":"
+        << (callerOutputsBitExact ? 1 : 0)
+        << ",\"collectWaitIdleCalls\":" << collectWaitIdleCalls
+        << ",\"hostileMaxCollectWallNanoseconds\":"
+        << hostileMaxCollectWallNanoseconds_
+        << ",\"hostileCollectWallLimitNanoseconds\":"
+        << HostileCollectWallLimitNanoseconds
+        << ",\"transactionalStagingWip\":"
+        << (transactionalStagingWip ? 1 : 0)
+        << ",\"stagingCopyNanoseconds\":"
+        << hostileStagingCopyNanoseconds_
+        << ",\"stagingCopyBytesEstimate\":"
+        << hostileStagingCopyBytesEstimate_
         << ",\"hostPaletteRows\":1,\"identityCollisions\":0"
         << ",\"representativeLowLodProxy\":1,\"aggregateProxyBuilt\":0,"
            "\"gameplayLabOnRenderConnected\":0,"
@@ -404,6 +991,71 @@ private:
         << (stats.gpuValidationPassed ? 1 : 0)
         << ",\"debugErrors\":" << stats.debugErrorCount
         << ",\"debugWarnings\":" << stats.debugWarningCount
+        << ",\"gpuHlodSelectionRequests\":"
+        << stats.gpuHlodSelectionRequests
+        << ",\"gpuHlodSelectionDispatches\":"
+        << stats.gpuHlodSelectionDispatches
+        << ",\"gpuHlodSelectionCompletions\":"
+        << stats.gpuHlodSelectionCompletions
+        << ",\"gpuHlodSelectionPending\":"
+        << (stats.gpuHlodSelectionPending ? 1 : 0)
+        << ",\"negativeCases\":{\"runtimeUnavailable\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(
+               runtimeUnavailableNegative_.receipt.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               runtimeUnavailableNegative_.receipt.terminalReason)
+        << "\",\"failClosed\":"
+        << (runtimeUnavailableNegative_.failClosed ? 1 : 0)
+        << "},\"frame\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(frameNegative_.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               frameNegative_.terminalReason)
+        << "\",\"failClosed\":" << (frameNegativeFailClosed_ ? 1 : 0)
+        << "},\"identity\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(
+               identityNegative_.receipt.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               identityNegative_.receipt.terminalReason)
+        << "\",\"failClosed\":"
+        << (identityNegative_.failClosed ? 1 : 0)
+        << "},\"data\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(dataNegative_.receipt.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               dataNegative_.receipt.terminalReason)
+        << "\",\"failClosed\":" << (dataNegative_.failClosed ? 1 : 0)
+        << "},\"lateData\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(
+               lateDataNegative_.receipt.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               lateDataNegative_.receipt.terminalReason)
+        << "\",\"failClosed\":" << (lateDataNegative_.failClosed ? 1 : 0)
+        << "},\"retryLimit\":{\"readiness\":\""
+        << GameplayHlodWorldReadinessName3D(
+               retryLimitNegative_.receipt.readiness)
+        << "\",\"terminalReason\":\""
+        << GameplayHlodWorldTerminalReasonName3D(
+               retryLimitNegative_.receipt.terminalReason)
+        << "\",\"failClosed\":"
+        << (retryLimitNegative_.failClosed ? 1 : 0)
+        << "}},\"postCleanup\":{"
+           "\"rendererBaselineRestored\":"
+        << (release.rendererBaselineRestored ? 1 : 0)
+        << ",\"baselineMeshes\":" << baseline_.residentMeshes
+        << ",\"residentMeshes\":" << after.residentMeshes
+        << ",\"baselineMaterialTextureSets\":"
+        << baseline_.residentMaterialTextureSets
+        << ",\"residentMaterialTextureSets\":"
+        << after.residentMaterialTextureSets
+        << ",\"pendingGpuReleaseBytes\":" << after.pendingGpuReleaseBytes
+        << ",\"leasesReleased\":" << release.leasesReleased
+        << ",\"meshesReleased\":" << release.meshesReleased
+        << ",\"materialsReleased\":" << release.materialsReleased
+        << ",\"complete\":" << (cleanupComplete ? 1 : 0) << "}"
         << ",\"remaining\":\"Connect GameplayLabGame OnRender without duplicate SceneECS ownership, build offline aggregate proxies, and cover masked trees, grass, terrain, water, and buildings.\"}";
   }
 
@@ -415,15 +1067,25 @@ private:
   ShowcaseRenderAssetBindings3D assets_{};
   ShowcaseProductionRenderReceipt3D load_{};
   GameplayHlodWorldRuntime3D runtime_{};
-  GameplayHlodWorldRuntimeReceipt3D near_{}, transition_{}, far_{};
-  RendererStats baseline_{};
+  GameplayHlodWorldRuntimeReceipt3D near_{}, transition_{}, far_{},
+      frameNegative_{}, firstReadyReceipt_{}, completeBeforeLimitReceipt_{};
+  RuntimeNegativeEvidence runtimeUnavailableNegative_{},
+      retryLimitNegative_{}, identityNegative_{}, dataNegative_{},
+      lateDataNegative_{};
+  RendererStats baseline_{}, validation_{};
   std::uint64_t nextFrame_{1};
   unsigned attempts_{}, stage_{};
   std::size_t transitionSourceRows_{}, transitionProxyRows_{};
   bool transitionProxyInvert_{true}, transitionSourceInvert_{},
       transitionSharedThreshold_{}, transitionCoverageComplement_{},
       transitionIdentitySeparated_{true};
-  bool complete_{};
+  static constexpr std::uint64_t HostileCollectWallLimitNanoseconds =
+      100000000ull;
+  std::uint64_t hostileMaxCollectWallNanoseconds_{},
+      hostileStagingCopyNanoseconds_{}, hostileStagingCopyBytesEstimate_{};
+  bool hostileWallLimitPassed_{true}, hostileReviewPassed_{},
+      frameNegativeFailClosed_{}, firstReadyPassed_{},
+      completeBeforeLimitPassed_{}, complete_{}, cleanupComplete_{};
 };
 } // 命名空間
 
