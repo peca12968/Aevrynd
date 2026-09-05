@@ -4,6 +4,7 @@
 #include <Aevrynd/CharacterPresentation3D.h>
 #include <Aevrynd/FootPlacement3D.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -33,6 +34,11 @@ AnimationState3D StateForAttack(Attack3D attack) {
     return attack == Attack3D::Attack1 ? AnimationState3D::Attack1
         : attack == Attack3D::Attack2 ? AnimationState3D::Attack2
         : AnimationState3D::Attack3;
+}
+
+Vec3 JointPoint(const AnimationPose3D& pose, const HumanoidSkeletonMap3D& rig,
+                HumanoidJoint3D joint) {
+    return TransformPoint(pose.globalMatrices[rig.Joint(joint)], {});
 }
 }
 
@@ -95,6 +101,102 @@ int main() {
     FootPlacementResult3D noGroundResult{};
     if (!noGroundPlacement.Evaluate(loaded.asset.model.skeleton,animation.Rig(),noGroundFrame,pose,&noGroundResult) || noGroundResult.applied) return 10;
 
+    GameplayErgonomicMotionMetrics3D measuredMaximum{};
+    const std::array<AnimationState3D,7> ergonomicStates{
+        AnimationState3D::Idle,AnimationState3D::Walk,AnimationState3D::Run,
+        AnimationState3D::Crouch,AnimationState3D::Attack1,
+        AnimationState3D::Attack2,AnimationState3D::Attack3};
+    for (AnimationState3D state : ergonomicStates) {
+        animation.SetState(state,true);
+        AnimationPose3D previous;
+        float previousPhase{};
+        for (int frame=0;frame<=72;++frame) {
+            const float dt=animation.Duration()/72.f;
+            animation.Tick(frame?dt:0.f);
+            if(!animation.EvaluateInto(pose)) return 13;
+            const float phase=animation.NormalizedPhase();
+            const auto metrics=MeasureGameplayErgonomicMotion3D(
+                state,loaded.asset.model.skeleton,animation.Rig(),pose,
+                frame?&previous:nullptr,dt,phase,previousPhase);
+            if(!metrics.finite) {
+                std::cerr<<"Ergonomic receipt rejected production pose state="<<int(state)
+                         <<" frame="<<frame<<'\n';
+                return 14;
+            }
+            measuredMaximum.maximumFootSlip=(std::max)(measuredMaximum.maximumFootSlip,metrics.maximumFootSlip);
+            measuredMaximum.centerOfMassSupportError=(std::max)(measuredMaximum.centerOfMassSupportError,metrics.centerOfMassSupportError);
+            measuredMaximum.maximumJointAngleRadians=(std::max)(measuredMaximum.maximumJointAngleRadians,metrics.maximumJointAngleRadians);
+            measuredMaximum.maximumJointAngularVelocity=(std::max)(measuredMaximum.maximumJointAngularVelocity,metrics.maximumJointAngularVelocity);
+            measuredMaximum.weaponGripError=(std::max)(measuredMaximum.weaponGripError,metrics.weaponGripError);
+            measuredMaximum.penetrationDepth=(std::max)(measuredMaximum.penetrationDepth,metrics.penetrationDepth);
+            measuredMaximum.phaseContinuityError=(std::max)(measuredMaximum.phaseContinuityError,metrics.phaseContinuityError);
+            previous=pose;previousPhase=phase;
+        }
+    }
+
+    animation.SetState(AnimationState3D::Attack1,true);
+    animation.Tick(animation.Duration()*.52f);
+    if(!animation.EvaluateInto(pose)) return 15;
+    const auto productionAttack=MeasureGameplayErgonomicMotion3D(
+        AnimationState3D::Attack1,loaded.asset.model.skeleton,animation.Rig(),pose);
+    const auto& skeleton=loaded.asset.model.skeleton;
+    const auto& rig=animation.Rig();
+    const float characterHeight=(std::max)(Length(JointPoint(pose,rig,HumanoidJoint3D::Head)-
+        (JointPoint(pose,rig,HumanoidJoint3D::LeftFoot)+JointPoint(pose,rig,HumanoidJoint3D::RightFoot))*.5f),.001f);
+    if(measuredMaximum.maximumFootSlip>.04f||measuredMaximum.centerOfMassSupportError>.04f||
+       measuredMaximum.maximumJointAngleRadians>2.7f||measuredMaximum.maximumJointAngularVelocity>75.f||
+       measuredMaximum.weaponGripError>.12f||measuredMaximum.penetrationDepth>.02f||
+       measuredMaximum.phaseContinuityError>.22f){
+        std::cerr<<"Ergonomic production gate failed"
+                 <<" foot="<<measuredMaximum.maximumFootSlip
+                 <<" support="<<measuredMaximum.centerOfMassSupportError
+                 <<" angle="<<measuredMaximum.maximumJointAngleRadians
+                 <<" angularVelocity="<<measuredMaximum.maximumJointAngularVelocity
+                 <<" grip="<<measuredMaximum.weaponGripError
+                 <<" penetration="<<measuredMaximum.penetrationDepth
+                 <<" continuity="<<measuredMaximum.phaseContinuityError<<'\n';
+        return 17;
+    }
+    AnimationPose3D hostile=pose;
+    hostile.localTransforms[rig.Joint(HumanoidJoint3D::LeftFoot)].translation.x+=characterHeight;
+    BuildAnimationPoseGlobalMatrices3D(skeleton,hostile);
+    const auto footSlipHostile=MeasureGameplayErgonomicMotion3D(
+        AnimationState3D::Attack1,skeleton,rig,hostile,&pose,.01f,.53f,.52f);
+    hostile=pose;hostile.globalMatrices[rig.Joint(HumanoidJoint3D::Hips)]=
+        CreateTranslationMatrix({characterHeight,0,0})*hostile.globalMatrices[rig.Joint(HumanoidJoint3D::Hips)];
+    const auto supportHostile=MeasureGameplayErgonomicMotion3D(AnimationState3D::Attack1,skeleton,rig,hostile);
+    hostile=pose;hostile.localTransforms[rig.Joint(HumanoidJoint3D::LeftLowerArm)].usesQuaternion=false;
+    hostile.localTransforms[rig.Joint(HumanoidJoint3D::LeftLowerArm)].rotation={3.f,0,0};
+    BuildAnimationPoseGlobalMatrices3D(skeleton,hostile);
+    const auto angleHostile=MeasureGameplayErgonomicMotion3D(
+        AnimationState3D::Attack1,skeleton,rig,hostile,&pose,.01f,.53f,.52f);
+    hostile=pose;hostile.localTransforms[rig.Joint(HumanoidJoint3D::LeftHand)].translation.x+=characterHeight;
+    BuildAnimationPoseGlobalMatrices3D(skeleton,hostile);
+    const auto gripHostile=MeasureGameplayErgonomicMotion3D(AnimationState3D::Attack1,skeleton,rig,hostile);
+    hostile=pose;hostile.globalMatrices[rig.Joint(HumanoidJoint3D::LeftHand)]=hostile.globalMatrices[rig.Joint(HumanoidJoint3D::Spine)];
+    const auto penetrationHostile=MeasureGameplayErgonomicMotion3D(AnimationState3D::Attack1,skeleton,rig,hostile);
+    hostile=pose;hostile.localTransforms[rig.Joint(HumanoidJoint3D::RightUpperArm)].translation.z+=characterHeight;
+    BuildAnimationPoseGlobalMatrices3D(skeleton,hostile);
+    const auto continuityHostile=MeasureGameplayErgonomicMotion3D(
+        AnimationState3D::Attack1,skeleton,rig,hostile,&pose,.01f,.90f,.52f);
+    hostile=pose;hostile.localTransforms[0].translation.x=(std::numeric_limits<float>::quiet_NaN)();
+    const auto nonFiniteHostile=MeasureGameplayErgonomicMotion3D(AnimationState3D::Attack1,skeleton,rig,hostile);
+    if(footSlipHostile.maximumFootSlip<.5f||supportHostile.centerOfMassSupportError<.4f||
+       angleHostile.maximumJointAngleRadians<2.5f||angleHostile.maximumJointAngularVelocity<100.f||
+       gripHostile.weaponGripError<.4f||penetrationHostile.penetrationDepth<.09f||
+       continuityHostile.phaseContinuityError<.4f||nonFiniteHostile.finite||!productionAttack.finite){
+        std::cerr<<"Ergonomic hostile gate failed"
+                 <<" foot="<<footSlipHostile.maximumFootSlip
+                 <<" support="<<supportHostile.centerOfMassSupportError
+                 <<" angle="<<angleHostile.maximumJointAngleRadians
+                 <<" angularVelocity="<<angleHostile.maximumJointAngularVelocity
+                 <<" grip="<<gripHostile.weaponGripError
+                 <<" penetration="<<penetrationHostile.penetrationDepth
+                 <<" continuity="<<continuityHostile.phaseContinuityError
+                 <<" finite="<<nonFiniteHostile.finite<<'\n';
+        return 16;
+    }
+
     CollisionWorld3D collision;
     PhysicsWorld3D physics;
     GameplayCombat3D combat(collision, physics);
@@ -145,5 +247,12 @@ int main() {
     if(!obstacle||reachCombat.Stats().hits!=1||std::abs(reachCombat.Monster().health-70.f)>.001f||Length(reachCombat.Monster().position-Vec3{GameplayMonsterStopDistance3D,0,0})>.001f||!reachCollision.Get(obstacle))return 11;
     std::cout << "combatHits=3 kills=1 animationStates=11 joints="
               << productionJointCount << " trajectories=3 phaseError="
-              << maximumPhaseError << '\n';
+              << maximumPhaseError
+              << " ergonomicFootSlip="<<measuredMaximum.maximumFootSlip
+              << " ergonomicSupport="<<measuredMaximum.centerOfMassSupportError
+              << " ergonomicAngle="<<measuredMaximum.maximumJointAngleRadians
+              << " ergonomicAngularVelocity="<<measuredMaximum.maximumJointAngularVelocity
+              << " ergonomicGrip="<<measuredMaximum.weaponGripError
+              << " ergonomicPenetration="<<measuredMaximum.penetrationDepth
+              << " ergonomicContinuity="<<measuredMaximum.phaseContinuityError<<'\n';
 }
