@@ -140,8 +140,9 @@ void TerrainVegetationWorldChunkActivationTarget3D::InvalidateFrozenHlodFrame3D(
     ++value;
   };
   advance(hlodWorldEpoch_);
-  if (activationMutation)
+  if (activationMutation) {
     advance(hlodActivationIdentity_);
+  }
 }
 
 std::size_t TerrainVegetationWorldChunkActivationTarget3D::PreparationBytes(
@@ -1628,8 +1629,12 @@ TerrainVegetationWorldChunkActivationTarget3D::FreezeHlodFrame3D(
                                         cluster.activeSelection))
         return std::nullopt;
   }
+  const auto rendererEpoch = engine_.GetRendererRuntimeEpoch3D();
+  if (!rendererEpoch)
+    return std::nullopt;
   frozenHlodToken_ = {frameId, hlodActivationIdentity_, hlodWorldEpoch_,
-                      hlodSelectionGeneration_};
+                      hlodSelectionGeneration_, rendererEpoch.deviceEpoch,
+                      rendererEpoch.resizeEpoch};
   hlodFrameFrozen_ = true;
   hlodRuntimeStats_.frozen = true;
   return frozenHlodToken_;
@@ -1639,11 +1644,16 @@ std::optional<SceneECSCollectionStats3D>
 TerrainVegetationWorldChunkActivationTarget3D::CollectFrozenHlodFrame3D(
     HlodFrozenFrameToken3D token, Scene3D &scene, DrawList &draw,
     std::uint32_t visibilityMask) const {
-  if (!OnOwnerThread() || hlodTokenExhausted_ || !hlodFrameFrozen_ || !token ||
+  if (!OnOwnerThread())
+    return std::nullopt;
+  const auto rendererEpoch = engine_.GetRendererRuntimeEpoch3D();
+  if (hlodTokenExhausted_ || !hlodFrameFrozen_ || !token ||
       token != frozenHlodToken_ || token.frameId != hlodRuntimeStats_.frameId ||
       token.activationIdentity != hlodActivationIdentity_ ||
       token.worldEpoch != hlodWorldEpoch_ ||
-      token.selectionGeneration != hlodSelectionGeneration_)
+      token.selectionGeneration != hlodSelectionGeneration_ || !rendererEpoch ||
+      token.deviceEpoch != rendererEpoch.deviceEpoch ||
+      token.resizeEpoch != rendererEpoch.resizeEpoch)
     return std::nullopt;
   for (const auto &[id, record] : records_) {
     (void)id;

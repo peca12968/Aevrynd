@@ -92,8 +92,8 @@ struct HlodIntegrationStats3D {std::size_t inputClusters{},attachedClusters{},so
 struct HlodRuntimeSelectionSettings3D {HlodQualitySettings3D quality{};std::size_t maximumVisibilityTransitionsPerFrame{64};float cameraTeleportDistance{128.f};};
 struct HlodRuntimeFrameStats3D {std::uint64_t frameId{},lastAppliedActivation{};std::size_t evaluatedClusters{},requestedTransitions{},appliedTransitions{},deferredTransitions{},sourceClusters{},transitionClusters{},proxyClusters{};bool cameraHistoryReset{},frozen{};};
 struct HlodFrozenFrameToken3D {
-  std::uint64_t frameId{}, activationIdentity{}, worldEpoch{}, selectionGeneration{};
-  [[nodiscard]] explicit operator bool()const noexcept{return frameId&&activationIdentity&&worldEpoch&&selectionGeneration;}
+  std::uint64_t frameId{}, activationIdentity{}, worldEpoch{}, selectionGeneration{}, deviceEpoch{}, resizeEpoch{};
+  [[nodiscard]] explicit operator bool()const noexcept{return frameId&&activationIdentity&&worldEpoch&&selectionGeneration&&deviceEpoch&&resizeEpoch;}
   constexpr bool operator==(const HlodFrozenFrameToken3D&)const=default;
 };
 struct ComposedTerrainVegetationChunk3D {

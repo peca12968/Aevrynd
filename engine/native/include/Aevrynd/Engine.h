@@ -135,6 +135,7 @@ public:
     size_t TrimUnusedMemory();
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
+    [[nodiscard]] RendererRuntimeEpoch3D GetRendererRuntimeEpoch3D()const noexcept{return renderer_?renderer_->RuntimeEpoch3D():RendererRuntimeEpoch3D{};}
     void SetGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){renderer_->SetGpuInstanceCullingSettings(settings);}
     void SetHzbOcclusionSettings3D(HzbOcclusionSettings3D settings){renderer_->SetHzbOcclusionSettings3D(settings);}
     GpuUploadReceipt3D SubmitPendingUploads3D(){return renderer_->SubmitPendingUploads3D();}

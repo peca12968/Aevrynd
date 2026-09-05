@@ -133,6 +133,7 @@ struct SkinnedSubmissionReceipt3D {uint64_t submissionNonce{};uint32_t drawGener
 enum class SkinnedSubmissionResult3D:uint8_t {Unknown,Accepted,Rejected,Expired};
 struct MaterialTextureSetHandle3D {uint32_t value{};uint64_t semanticIdentity{};constexpr MaterialTextureSetHandle3D()=default;constexpr MaterialTextureSetHandle3D(uint32_t handle,uint64_t semantic=0):value(handle),semanticIdentity(semantic){}explicit constexpr operator bool()const{return value!=0;}constexpr bool operator==(const MaterialTextureSetHandle3D& other)const{return value==other.value;}};
 struct GpuUploadReceipt3D {uint64_t deviceEpoch{},fenceValue{};explicit constexpr operator bool()const{return deviceEpoch!=0&&fenceValue!=0;}constexpr bool operator==(const GpuUploadReceipt3D&)const=default;};
+struct RendererRuntimeEpoch3D {uint64_t deviceEpoch{},resizeEpoch{};[[nodiscard]] explicit constexpr operator bool()const noexcept{return deviceEpoch&&resizeEpoch;}constexpr bool operator==(const RendererRuntimeEpoch3D&)const=default;};
 class GpuRetirementReceipt3D {
 public:
     constexpr GpuRetirementReceipt3D()=default;
@@ -1251,6 +1252,7 @@ public:
     void SetHzbOcclusionSettings3D(HzbOcclusionSettings3D settings);
     HzbOcclusionSettings3D HzbOcclusionSettings()const;
     RendererStats GetStats()const;
+    [[nodiscard]] RendererRuntimeEpoch3D RuntimeEpoch3D()const noexcept;
     SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const;
     unsigned RenderWidth() const;
     unsigned RenderHeight() const;
