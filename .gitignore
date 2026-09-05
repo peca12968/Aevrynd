@@ -34,6 +34,7 @@
 
 # Runtime logs and temporary files
 /artifacts/
+**/.aevrynd-runtime-cache/
 *.log
 *.tmp
 *.bak
