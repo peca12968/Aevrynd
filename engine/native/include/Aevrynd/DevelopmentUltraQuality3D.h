@@ -150,6 +150,40 @@ struct DevelopmentUltraGpuTruthSequence3D {
   std::uint32_t stableFrames{};
 };
 
+// 每次 GPU truth 採樣只保留同一 epoch 的最新完整快照；預設值一律為
+// fail-closed，讓尚未採樣、rollback 與品質切換不會沿用舊的成功證據。
+struct DevelopmentUltraGpuTruthSnapshot3D {
+  std::uint64_t epoch{};
+  std::uint64_t observationIndex{};
+  std::uint64_t submittedFrameSerial{};
+  std::uint64_t completedFrameSerial{};
+  std::uint64_t timingSampleSerial{};
+  std::uint64_t lastGpuFrameNanoseconds{};
+  std::uint64_t telemetryAgeNanoseconds{};
+  std::uint64_t dedicatedVideoMemoryBytes{};
+  std::uint64_t currentVideoMemoryUsageBytes{};
+  std::uint32_t rendererAdapterLuidLow{};
+  std::int32_t rendererAdapterLuidHigh{};
+  std::uint32_t telemetryAdapterLuidLow{};
+  std::int32_t telemetryAdapterLuidHigh{};
+  std::size_t hardVramBudgetBytes{};
+  std::size_t pendingGpuReleaseBytes{};
+  std::uint64_t debugErrorCount{};
+  std::uint64_t debugWarningCount{};
+  std::uint32_t stableFrames{};
+  std::uint32_t requiredStableFrames{};
+  bool observed{};
+  bool resourcesTrue{};
+  bool telemetryTrue{};
+  bool rendererAdapterIdentityValid{};
+  bool adapterIdentityTrue{};
+  bool validationTrue{};
+  bool frameBudgetTrue{};
+  bool fresh{};
+  bool framePassed{};
+  bool committed{};
+};
+
 struct DevelopmentUltraHysteresis3D {
   std::uint32_t consecutiveUnderBudgetWindows{};
   std::uint32_t consecutiveOverBudgetWindows{};
@@ -179,6 +213,7 @@ struct DevelopmentUltraReceipt3D {
   bool vegetationDensityApplied{};
   bool textureBudgetApplied{};
   bool meshBudgetApplied{};
+  DevelopmentUltraGpuTruthSnapshot3D gpuTruth{};
 };
 
 [[nodiscard]] DevelopmentUltraQuality3D MakeDevelopmentUltraQuality3D(
@@ -212,6 +247,10 @@ QueryPrimaryDxgiVideoMemoryTelemetry3D(std::uint64_t queryEpoch = 0) noexcept;
     std::uint64_t current) noexcept;
 [[nodiscard]] std::uint64_t AddDevelopmentUltraDowngradeCount3D(
     std::uint64_t current, std::uint64_t amount = 1) noexcept;
+[[nodiscard]] bool DevelopmentUltraAdapterIdentityMatches3D(
+    bool rendererAdapterLuidValid, std::uint32_t rendererAdapterLuidLow,
+    std::int32_t rendererAdapterLuidHigh,
+    const DxgiVideoMemoryTelemetry3D &telemetry) noexcept;
 void RecordDevelopmentUltraAction3D(DevelopmentUltraReceipt3D &receipt,
                                     DevelopmentUltraAction3D action) noexcept;
 [[nodiscard]] bool AdvanceDevelopmentUltraGpuTruthSequence3D(
@@ -219,7 +258,7 @@ void RecordDevelopmentUltraAction3D(DevelopmentUltraReceipt3D &receipt,
     std::uint64_t submittedFrameSerial,
     std::uint64_t completedFrameSerial,
     std::uint64_t timingSampleSerial, bool framePassed,
-    std::uint32_t requiredStableFrames) noexcept;
+    std::uint32_t requiredStableFrames, bool *freshOut = nullptr) noexcept;
 [[nodiscard]] bool DevelopmentUltraPostApplyGate3D(
     bool rendererApplySucceeded,
     std::size_t pendingGpuReleaseBytes) noexcept;

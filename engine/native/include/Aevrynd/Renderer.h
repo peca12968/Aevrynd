@@ -563,6 +563,9 @@ struct BloomSemanticCapability3D {bool hdrAlphaShaders{},opaquePipelines{},trans
 struct BloomSemanticReceipt3D {BloomSemanticSource3D requested{BloomSemanticSource3D::Unavailable},actual{BloomSemanticSource3D::Unavailable};BloomSemanticCapability3D capability{};bool requestedDepthAware{},available{},failOpen{},dualSourceBlendAvailable{},transparentOrderingPreserved{},nativeDepthTransitioned{},currentTemporalDepthHistory{},carrierProduced{},postProcessCarrierPipeline{};uint32_t transparentLayerCount{};uint64_t transparentOrderHash{};bool transparentCarrierPipeline{},atmosphereCarrierPipeline{};uint32_t semanticRenderWidth{},semanticRenderHeight{},semanticOutputWidth{},semanticOutputHeight{},semanticFrameIndex{};uint64_t semanticResourceGeneration{},semanticResizeGeneration{};bool dlssReplayCurrentFrame{},dlssReplaySampleable{},dlssReplayTransitioned{};};
 struct RendererStats {
     unsigned outputWidth{},outputHeight{};
+    uint32_t adapterLuidLow{};
+    int32_t adapterLuidHigh{};
+    bool adapterLuidValid{};
     CanvasViewport canvasViewport{};
     uint64_t resizeCount{};
     bool gpuValidationRequested{},gpuValidationAvailable{},gpuValidationExecuted{},gpuValidationPassed{},debugLayerEnabled{};

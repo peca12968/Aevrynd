@@ -424,6 +424,7 @@ DevelopmentUltraReceipt3D StageDevelopmentUltraReceipt3D(
   result.actualFingerprint = 1469598103934665603ull;
   HashValue(result.actualFingerprint, result.actual);
   result.epoch = epoch;
+  result.gpuTruth.epoch = epoch;
   result.downgradeCount = downgradeCount;
   result.requestActive = true;
   result.noOp = true;
@@ -455,6 +456,16 @@ std::uint64_t AddDevelopmentUltraDowngradeCount3D(
              : current + amount;
 }
 
+bool DevelopmentUltraAdapterIdentityMatches3D(
+    bool rendererAdapterLuidValid, std::uint32_t rendererAdapterLuidLow,
+    std::int32_t rendererAdapterLuidHigh,
+    const DxgiVideoMemoryTelemetry3D &telemetry) noexcept {
+  // renderer 未提供 identity 或 telemetry 未找到 adapter 時一律 fail-closed。
+  return rendererAdapterLuidValid && telemetry.adapterFound &&
+         rendererAdapterLuidLow == telemetry.adapterLuidLow &&
+         rendererAdapterLuidHigh == telemetry.adapterLuidHigh;
+}
+
 void RecordDevelopmentUltraAction3D(DevelopmentUltraReceipt3D &receipt,
                                     DevelopmentUltraAction3D action) noexcept {
   if (!KnownAction(action)) {
@@ -469,6 +480,8 @@ void RecordDevelopmentUltraAction3D(DevelopmentUltraReceipt3D &receipt,
     receipt.vegetationDensityApplied = false;
     receipt.textureBudgetApplied = false;
     receipt.meshBudgetApplied = false;
+    receipt.gpuTruth = {};
+    receipt.gpuTruth.epoch = receipt.epoch;
     receipt.noOp = true;
     return;
   }
@@ -484,17 +497,28 @@ bool AdvanceDevelopmentUltraGpuTruthSequence3D(
     std::uint64_t submittedFrameSerial,
     std::uint64_t completedFrameSerial,
     std::uint64_t timingSampleSerial, bool framePassed,
-    std::uint32_t requiredStableFrames) noexcept {
-  const bool fresh = submittedFrameSerial > sequence.lastSubmittedFrameSerial &&
+    std::uint32_t requiredStableFrames, bool *freshOut) noexcept {
+  const bool possible = completedFrameSerial <= submittedFrameSerial &&
+                        timingSampleSerial <= submittedFrameSerial;
+  const bool fresh = possible &&
+                     submittedFrameSerial > sequence.lastSubmittedFrameSerial &&
                      completedFrameSerial > sequence.lastCompletedFrameSerial &&
                      timingSampleSerial > sequence.lastTimingSampleSerial;
+  if (freshOut)
+    *freshOut = fresh;
+  // 每個 observation 都消耗已看見的序號；失敗 sample 不得在下一幀重用。
+  if(possible){
+    sequence.lastSubmittedFrameSerial =
+        (std::max)(sequence.lastSubmittedFrameSerial, submittedFrameSerial);
+    sequence.lastCompletedFrameSerial =
+        (std::max)(sequence.lastCompletedFrameSerial, completedFrameSerial);
+    sequence.lastTimingSampleSerial =
+        (std::max)(sequence.lastTimingSampleSerial, timingSampleSerial);
+  }
   if (!framePassed || !fresh || !requiredStableFrames) {
     sequence.stableFrames = 0;
     return false;
   }
-  sequence.lastSubmittedFrameSerial = submittedFrameSerial;
-  sequence.lastCompletedFrameSerial = completedFrameSerial;
-  sequence.lastTimingSampleSerial = timingSampleSerial;
   if (sequence.stableFrames < requiredStableFrames)
     ++sequence.stableFrames;
   return sequence.stableFrames >= requiredStableFrames;

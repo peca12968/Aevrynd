@@ -80,6 +80,20 @@ int main() {
   auto unknownTier = fullHd;
   unknownTier.tier = static_cast<DevelopmentUltraResolutionTier3D>(255);
   auto telemetry = MockTelemetry();
+  if(!DevelopmentUltraAdapterIdentityMatches3D(true,telemetry.adapterLuidLow,
+                                               telemetry.adapterLuidHigh,telemetry)||
+     DevelopmentUltraAdapterIdentityMatches3D(false,telemetry.adapterLuidLow,
+                                              telemetry.adapterLuidHigh,telemetry)||
+     DevelopmentUltraAdapterIdentityMatches3D(true,telemetry.adapterLuidLow+1,
+                                              telemetry.adapterLuidHigh,telemetry)){
+    return 30;
+  }
+  auto identityUnavailable=telemetry;identityUnavailable.adapterFound=false;
+  if(DevelopmentUltraAdapterIdentityMatches3D(true,telemetry.adapterLuidLow,
+                                              telemetry.adapterLuidHigh,
+                                              identityUnavailable)){
+    return 31;
+  }
   const DevelopmentUltraAdmissionInput3D valid{
       512ull * 1024ull * 1024ull, 1024ull * 1024ull * 1024ull, 0};
   const auto admitted =
@@ -197,7 +211,13 @@ int main() {
       !receipt.requestActive || receipt.rendererApplied || receipt.transitionPolicyApplied || !receipt.noOp || receipt.epoch != 42 ||
       receipt.downgradeCount != 3 ||
       receipt.actualFingerprint == 0 ||
-      receipt.requestedFingerprint != receipt.normalizedFingerprint) {
+      receipt.requestedFingerprint != receipt.normalizedFingerprint ||
+      receipt.gpuTruth.epoch != 42 || receipt.gpuTruth.observed ||
+      receipt.gpuTruth.resourcesTrue || receipt.gpuTruth.telemetryTrue ||
+      receipt.gpuTruth.rendererAdapterIdentityValid ||
+      receipt.gpuTruth.adapterIdentityTrue ||
+      receipt.gpuTruth.validationTrue || receipt.gpuTruth.frameBudgetTrue ||
+      receipt.gpuTruth.fresh || receipt.gpuTruth.stableFrames) {
     return 11;
   }
   DevelopmentUltraAdmission3D unknownAdmission{};
@@ -230,31 +250,79 @@ int main() {
       (std::numeric_limits<std::uint64_t>::max)()) {
     return 22;
   }
+  saturatedReceipt.gpuTruth.observed = true;
+  saturatedReceipt.gpuTruth.resourcesTrue = true;
+  saturatedReceipt.gpuTruth.committed = true;
+  saturatedReceipt.gpuTruth.stableFrames = 3;
   RecordDevelopmentUltraAction3D(
       saturatedReceipt, static_cast<DevelopmentUltraAction3D>(255));
   if (saturatedReceipt.reason !=
           DevelopmentUltraAdmissionReason3D::InvalidProfile ||
       saturatedReceipt.rendererApplied ||
-      saturatedReceipt.transitionPolicyApplied || !saturatedReceipt.noOp) {
+      saturatedReceipt.transitionPolicyApplied || !saturatedReceipt.noOp ||
+      saturatedReceipt.gpuTruth.epoch != saturatedReceipt.epoch ||
+      saturatedReceipt.gpuTruth.observed ||
+      saturatedReceipt.gpuTruth.resourcesTrue ||
+      saturatedReceipt.gpuTruth.committed ||
+      saturatedReceipt.gpuTruth.stableFrames) {
     return 23;
   }
   DevelopmentUltraGpuTruthSequence3D sequence{};
-  if (AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 1, 1, 1, true, 3) ||
-      sequence.stableFrames != 1 ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 2, 1, 2, true, 3) ||
-      sequence.stableFrames != 0 ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 2, 2, 2, true, 3) ||
-      sequence.stableFrames != 1 ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 3, 3, 2, true, 3) ||
-      sequence.stableFrames != 0 ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 3, 3, 3, true, 3) ||
-      sequence.stableFrames != 1 ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 4, 4, 4, false, 3) ||
-      sequence.stableFrames != 0 ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 4, 4, 4, true, 3) ||
-      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 5, 5, 5, true, 3) ||
-      !AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 6, 6, 6, true, 3)) {
+  bool fresh=true;
+  // 首幀只有提交，尚無完成 timestamp，必須留下 fail-closed 的 first false。
+  if (AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 1, 0, 0, false, 3,
+                                                 &fresh) ||
+      fresh || sequence.stableFrames != 0 ||
+      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 2, 1, 1, true, 3,
+                                                 &fresh) ||
+      !fresh || sequence.stableFrames != 1 ||
+      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 3, 2, 2, true, 3,
+                                                 &fresh) ||
+      !fresh || sequence.stableFrames != 2 ||
+      !AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 4, 3, 3, true, 3,
+                                                  &fresh) ||
+      !fresh || sequence.stableFrames != 3) {
     return 24;
+  }
+  // 間歇性失敗與重複序號都必須清掉連續三幀證據。
+  if (AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 5, 4, 4, false, 3,
+                                                &fresh) ||
+      !fresh || sequence.stableFrames != 0 ||
+      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 5, 4, 4, true, 3,
+                                                &fresh) ||
+      fresh || sequence.stableFrames != 0 ||
+      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 6, 5, 5, true, 3) ||
+      AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 7, 6, 6, true, 3) ||
+      !AdvanceDevelopmentUltraGpuTruthSequence3D(sequence, 8, 7, 7, true, 3)) {
+    return 26;
+  }
+  // 新 epoch 以舊 epoch 的 submitted 上界為 baseline，不接受延遲 publish 的舊 sample。
+  DevelopmentUltraGpuTruthSequence3D epochSequence{100,100,80,0};
+  if(AdvanceDevelopmentUltraGpuTruthSequence3D(epochSequence,101,100,81,true,3,
+                                               &fresh)||fresh||
+     AdvanceDevelopmentUltraGpuTruthSequence3D(epochSequence,102,101,82,true,3,
+                                               &fresh)||!fresh||
+     epochSequence.stableFrames!=1){
+    return 28;
+  }
+  DevelopmentUltraGpuTruthSequence3D impossibleSequence{};
+  if(AdvanceDevelopmentUltraGpuTruthSequence3D(impossibleSequence,9,10,1,true,3,
+                                               &fresh)||fresh||
+     impossibleSequence.stableFrames||impossibleSequence.lastSubmittedFrameSerial||
+     impossibleSequence.lastCompletedFrameSerial||
+     impossibleSequence.lastTimingSampleSerial||
+     AdvanceDevelopmentUltraGpuTruthSequence3D(impossibleSequence,9,1,10,true,3,
+                                               &fresh)||fresh||
+     impossibleSequence.stableFrames||
+     AdvanceDevelopmentUltraGpuTruthSequence3D(impossibleSequence,1,1,1,true,3,
+                                               &fresh)||!fresh||
+     impossibleSequence.stableFrames!=1){
+    return 29;
+  }
+  const auto nextEpochReceipt=StageDevelopmentUltraReceipt3D(fullHd,admitted,43);
+  if(nextEpochReceipt.gpuTruth.epoch!=43||nextEpochReceipt.gpuTruth.observed||
+     nextEpochReceipt.gpuTruth.committed||nextEpochReceipt.gpuTruth.stableFrames){
+    return 27;
   }
   if (!DevelopmentUltraPostApplyGate3D(true, 0) ||
       DevelopmentUltraPostApplyGate3D(true, 1) ||
