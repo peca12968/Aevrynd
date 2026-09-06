@@ -1,5 +1,29 @@
 $ErrorActionPreference = 'Stop'
 
+function ConvertFrom-GameplayObjectIdentityContractProbeOutput([object[]]$Output,[int]$ExitCode) {
+  if($ExitCode-ne0-or$Output.Count-ne1){throw 'Gameplay Object-ID compiler contract probe failed or emitted trailing output'}
+  $line=[string]$Output[0];if([string]::IsNullOrWhiteSpace($line)-or$line.Contains("`r")-or$line.Contains("`n")){throw 'Gameplay Object-ID compiler contract probe output was not one strict line'}
+  try{$receipt=$line|ConvertFrom-Json -ErrorAction Stop}catch{throw 'Gameplay Object-ID compiler contract probe JSON was invalid'}
+  $expected=@('schemaVersion','source','environmentHigh','terrainLow','generation','hlodProxyBit','proxyHigh','contractPassed');$actual=@($receipt.PSObject.Properties.Name)
+  if($actual.Count-ne$expected.Count-or@($expected|Where-Object{$_-cnotin$actual}).Count-ne0){throw 'Gameplay Object-ID compiler contract probe schema fields were invalid'}
+  if($receipt.schemaVersion.GetType().Name-cnotin@('Int32','Int64')-or$receipt.terrainLow.GetType().Name-cnotin@('Int32','Int64')-or$receipt.generation.GetType().Name-cnotin@('Int32','Int64')-or$receipt.contractPassed.GetType().Name-cnotin@('Int32','Int64')-or$receipt.source-isnot[string]-or$receipt.environmentHigh-isnot[string]-or$receipt.hlodProxyBit-isnot[string]-or$receipt.proxyHigh-isnot[string]){throw 'Gameplay Object-ID compiler contract probe field types were invalid'}
+  if($receipt.schemaVersion-ne1-or$receipt.source-cne'GameplayObjectIdentityContractProbe'-or$receipt.terrainLow-ne1-or$receipt.generation-ne1-or$receipt.contractPassed-ne1-or$receipt.environmentHigh-notmatch'^[1-9][0-9]{0,19}$'-or$receipt.hlodProxyBit-notmatch'^[1-9][0-9]{0,19}$'-or$receipt.proxyHigh-notmatch'^[1-9][0-9]{0,19}$'){throw 'Gameplay Object-ID compiler contract probe identity was invalid'}
+  try{$environmentHigh=[uint64]::Parse($receipt.environmentHigh,[Globalization.CultureInfo]::InvariantCulture);$hlodProxyBit=[uint64]::Parse($receipt.hlodProxyBit,[Globalization.CultureInfo]::InvariantCulture);$proxyHigh=[uint64]::Parse($receipt.proxyHigh,[Globalization.CultureInfo]::InvariantCulture)}catch{throw 'Gameplay Object-ID compiler contract probe uint64 fields were invalid'}
+  if($hlodProxyBit-ne([uint64]1-shl63)-or$environmentHigh-eq0-or($environmentHigh-band$hlodProxyBit)-ne0-or$proxyHigh-ne($environmentHigh-bor$hlodProxyBit)){throw 'Gameplay Object-ID compiler contract probe relationship was invalid'}
+  return [pscustomobject]@{environmentHigh=$environmentHigh;terrainLow=[uint64]$receipt.terrainLow;generation=[uint64]$receipt.generation;hlodProxyBit=$hlodProxyBit;proxyHigh=$proxyHigh}
+}
+
+function Get-GameplayObjectIdentityContract([string]$ProbePath='') {
+  $cached=Get-Variable -Name GameplayObjectIdentityContract -Scope Script -ErrorAction SilentlyContinue
+  if($cached){return $cached.Value}
+  if([string]::IsNullOrWhiteSpace($ProbePath)){throw 'Gameplay Object-ID compiler contract probe path was not initialized'}
+  try{$full=(Resolve-Path -LiteralPath $ProbePath -ErrorAction Stop).Path}catch{throw 'Gameplay Object-ID compiler contract probe executable was missing'}
+  if(-not(Test-Path -LiteralPath $full -PathType Leaf)-or[IO.Path]::GetExtension($full)-cne'.exe'-or[IO.Path]::GetFileName($full)-cne'Aevrynd-Gameplay-Object-Identity-Contract.exe'){throw 'Gameplay Object-ID compiler contract probe path was invalid'}
+  $output=@(& $full 2>&1);$exitCode=$LASTEXITCODE
+  $script:GameplayObjectIdentityContract=ConvertFrom-GameplayObjectIdentityContractProbeOutput $output $exitCode
+  return $script:GameplayObjectIdentityContract
+}
+
 function Get-GameplayGodCoverageContract {
   $cached=Get-Variable -Name GameplayGodCoverageContract -Scope Script -ErrorAction SilentlyContinue
   if($cached){return $cached.Value}
@@ -849,7 +873,7 @@ function Assert-GameplayRunEvidence(
          [string]$forbidden[0].high-ne'12592142912428528129'-or$forbidden[0].low-ne3-or$forbidden[0].generation-ne2-or[string]$forbidden[1].high-ne'12592142912428528129'-or$forbidden[1].low-ne4-or$forbidden[1].generation-ne2){throw "Gameplay first-person arms/weapon semantic identity evidence failed: $($capture.name)"}
       $viewmodelMatch=@($viewmodels|Where-Object{$_.name-ceq$capture.name})
       if($viewmodelMatch.Count-ne1-or[uint64]$viewmodelMatch[0].armsPixels-ne[uint64]$required[0].nonzeroPixels-or[uint64]$viewmodelMatch[0].weaponPixels-ne[uint64]$required[1].nonzeroPixels){throw "Gameplay first-person viewmodel/readback semantic-pixel cross-check failed: $($capture.name)"}
-    }elseif([string]$required[0].high-ne'12592142912428528129'-or$required[0].low-ne1-or[string]$required[1].high-ne'12592142921120481281'-or$required[1].low-ne1-or[string]$forbidden[0].high-ne'12592142912428528129'-or$forbidden[0].low-ne1-or$forbidden[0].generation-ne2){throw "Gameplay world character/terrain semantic identity evidence failed: $($capture.name)"}
+    }elseif([string]$required[0].high-ne'12592142912428528129'-or$required[0].low-ne1-or[uint64]$required[1].high-ne[uint64](Get-GameplayObjectIdentityContract).environmentHigh-or$required[1].low-ne1-or([uint64]$required[1].high-band[uint64](Get-GameplayObjectIdentityContract).hlodProxyBit)-ne0-or[string]$forbidden[0].high-ne'12592142912428528129'-or$forbidden[0].low-ne1-or$forbidden[0].generation-ne2){throw "Gameplay world character/terrain semantic identity evidence failed: $($capture.name)"}
     if($expectedCamera-eq'god'-and([uint64]$required[0].nonzeroPixels-lt$godCoverageContract.minimumPixels-or[double]$required[0].coverage-lt$godCoverageContract.coverage)){throw "Gameplay God primary semantic triangle coverage evidence failed: $($capture.name)"}
     if ($third -and ($capture.characterReferenceSupported -ne 1 -or
         $capture.referenceDepthSha256 -notmatch '^[0-9a-f]{64}$' -or

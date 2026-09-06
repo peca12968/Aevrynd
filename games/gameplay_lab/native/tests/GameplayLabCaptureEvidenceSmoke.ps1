@@ -1,7 +1,8 @@
 param(
   [ValidateSet('All','Temporal','Receipt')]
   [string]$Section = 'All',
-  [string]$RealHdrValidator = ''
+  [string]$RealHdrValidator = '',
+  [Parameter(Mandatory=$true)][string]$IdentityContractProbe
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,15 @@ function Expect-Failure([scriptblock]$Action, [string]$Name) {
     if ($_.Exception.Message -eq "Negative unexpectedly passed: $Name") { throw }
   }
 }
+
+$identityContract=Get-GameplayObjectIdentityContract $IdentityContractProbe
+if(($identityContract.environmentHigh-band$identityContract.hlodProxyBit)-ne0-or$identityContract.proxyHigh-eq$identityContract.environmentHigh){throw 'Gameplay terrain identity compiler contract did not reserve the HLOD proxy bit'}
+$validProbeRow=[ordered]@{schemaVersion=1;source='GameplayObjectIdentityContractProbe';environmentHigh=[string]$identityContract.environmentHigh;terrainLow=1;generation=1;hlodProxyBit=[string]$identityContract.hlodProxyBit;proxyHigh=[string]$identityContract.proxyHigh;contractPassed=1};$validProbeJson=$validProbeRow|ConvertTo-Json -Compress
+$stubContract=ConvertFrom-GameplayObjectIdentityContractProbeOutput @($validProbeJson) 0;if($stubContract.environmentHigh-ne$identityContract.environmentHigh-or$stubContract.proxyHigh-ne$identityContract.proxyHigh){throw 'Gameplay Object-ID true probe/stub contract mismatch'}
+Expect-Failure {ConvertFrom-GameplayObjectIdentityContractProbeOutput @($validProbeJson) 7|Out-Null} 'compiler probe nonzero exit'
+Expect-Failure {ConvertFrom-GameplayObjectIdentityContractProbeOutput @($validProbeJson,$validProbeJson) 0|Out-Null} 'compiler probe trailing output'
+$hostileProbeRows=@();foreach($change in @(@('schemaVersion',2),@('schemaVersion','1'),@('environmentHigh',[uint64]$identityContract.environmentHigh),@('hlodProxyBit',[string]([uint64]1-shl62)),@('proxyHigh',[string]([uint64]$identityContract.proxyHigh-1)))){$row=[ordered]@{};foreach($key in $validProbeRow.Keys){$row[$key]=$validProbeRow[$key]};$row[$change[0]]=$change[1];$hostileProbeRows+=,$row};$extraRow=[ordered]@{};foreach($key in $validProbeRow.Keys){$extraRow[$key]=$validProbeRow[$key]};$extraRow.extra=0;$hostileProbeRows+=,$extraRow
+foreach($mutation in $hostileProbeRows){$mutationJson=$mutation|ConvertTo-Json -Compress;Expect-Failure {ConvertFrom-GameplayObjectIdentityContractProbeOutput @($mutationJson) 0|Out-Null} 'compiler probe hostile schema/type/value'}
 
 if((Get-GameplayCanonicalSingleRawBits ([BitConverter]::ToSingle([byte[]](0,0,0,128),0)))-ne0){throw 'Canonical negative zero raw bits were not normalized'}
 Expect-Failure {Get-GameplayCanonicalSingleRawBits ([single]::NaN)} 'non-finite canonical single'
@@ -353,7 +363,7 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   $photorealCaptures = @()
   $viewExpectations=@(Get-GameplayCaptureViewExpectations);$godCoverageContract=Get-GameplayGodCoverageContract
   for ($captureIndex = 0; $captureIndex -lt $names.Count; ++$captureIndex) {
-    if($viewExpectations[$captureIndex].camera-eq'first'){$viewmodel=@($firstPersonViewmodels|Where-Object{$_.name-eq$names[$captureIndex]})[0];$required=@([pscustomobject]@{high='12592142912428528129';low=3;generation=1;nonzeroPixels=$viewmodel.armsPixels;coverage=.1},[pscustomobject]@{high='12592142912428528129';low=4;generation=1;nonzeroPixels=$viewmodel.weaponPixels;coverage=.2});$forbidden=@([pscustomobject]@{high='12592142912428528129';low=3;generation=2},[pscustomobject]@{high='12592142912428528129';low=4;generation=2})}else{$god=$viewExpectations[$captureIndex].camera-eq'god';$required=@([pscustomobject]@{high='12592142912428528129';low=1;generation=1;nonzeroPixels=if($god){$godCoverageContract.minimumPixels}else{100};coverage=if($god){$godCoverageContract.coverage}else{.1}},[pscustomobject]@{high='12592142921120481281';low=1;generation=1;nonzeroPixels=200;coverage=.2});$forbidden=@([pscustomobject]@{high='12592142912428528129';low=1;generation=2})}
+    if($viewExpectations[$captureIndex].camera-eq'first'){$viewmodel=@($firstPersonViewmodels|Where-Object{$_.name-eq$names[$captureIndex]})[0];$required=@([pscustomobject]@{high='12592142912428528129';low=3;generation=1;nonzeroPixels=$viewmodel.armsPixels;coverage=.1},[pscustomobject]@{high='12592142912428528129';low=4;generation=1;nonzeroPixels=$viewmodel.weaponPixels;coverage=.2});$forbidden=@([pscustomobject]@{high='12592142912428528129';low=3;generation=2},[pscustomobject]@{high='12592142912428528129';low=4;generation=2})}else{$god=$viewExpectations[$captureIndex].camera-eq'god';$required=@([pscustomobject]@{high='12592142912428528129';low=1;generation=1;nonzeroPixels=if($god){$godCoverageContract.minimumPixels}else{100};coverage=if($god){$godCoverageContract.coverage}else{.1}},[pscustomobject]@{high=[string]$identityContract.environmentHigh;low=1;generation=1;nonzeroPixels=200;coverage=.2});$forbidden=@([pscustomobject]@{high='12592142912428528129';low=1;generation=2})}
     $god=$viewExpectations[$captureIndex].camera-eq'god';$lodTransition=if($viewExpectations[$captureIndex].requireLodTransition){1}else{0};$capturePath=[IO.Path]::GetFullPath((Join-Path $scratch $names[$captureIndex]));$photorealCaptures += [pscustomobject]@{ name=$names[$captureIndex];requestedName=$names[$captureIndex];committedName=$names[$captureIndex];requestedPath=$capturePath;committedPath=$capturePath;camera=$viewExpectations[$captureIndex].camera;lighting=$viewExpectations[$captureIndex].lighting;projectionMode=if($god){'Orthographic'}else{'Perspective'};projectionModeValue=if($god){1}else{0};verticalFovRadians=.85;orthographicHeight=if($god){26}else{0};godActualTriangleCoverage=if($god){$godCoverageContract.coverage}else{0};godVisibleWorldDescriptors=if($god){20}else{0};godBuildingUnion=if($god){.1}else{0};godMaximumBuildingPart=if($god){.05}else{0};godRoofCoverage=if($god){.02}else{0};godPredictedLodTransitions=if($god){1}else{0};godActualLodTransitions=if($god){1}else{0};godActualLodDualSubmissions=if($god){1}else{0};godLodPredictionMatched=1;godLodContractMissing=0;godLodContractExtra=0;godLodContractWrongLevel=0;godLodContractWrongBlend=0;requiredIdentityCount=$required.Count;requiredMatched=$required.Count;forbiddenIdentityCount=$forbidden.Count;forbiddenMatched=0;generationConflicts=0;semanticPass=1;effectiveFrameSerial=2;semanticFrameSerial=2;sceneSubmissionSerial=1;sceneDrawRevision=1;sceneIdentityOrderFingerprint=1;shadowFrameSerial=2;shadowResourceGeneration=1;shadowCasters=1;shadowDrawCalls=1;shadowCascadeDrawCalls=1;shadowCascadeRendered=1;shadowCascadeReused=0;shadowActiveCascades=1;shadowCascadeFingerprints=@(1,0,0,0);shadowPass=1;lodFrameSerial=2;lodInstances=1;lodTransitions=$lodTransition;lodDualSubmissions=$lodTransition;lodBudgetFallbacks=0;lodPass=1;requiredIdentities=$required;forbiddenIdentities=$forbidden }
   }
   $photoreal = [pscustomobject]@{ runId=$runId; source='GameplayPhotorealTyped'; expectedCaptures=11; actualCaptureIndex=11; completedCaptures=11; uniqueCaptureNames=11; manifestSha256=$package.manifestSha256; payloadFiles=54; validatedPayloadFiles=54; profileAssets=10; materials=11; validatedMaterials=11; meshParts=6; validatedMeshParts=6; validatedReferencedFiles=54; objectIdSupported=1; objectIdRequested=1; objectIdPass=1; semanticPass=1; depthCaptureSupported=1; depthPass=1; shadowPass=1; lodPass=1; shadowCasters=11; shadowDrawCalls=11; shadowCascadeDrawCalls=11; lodInstances=11; lodTransitions=3; lodDualSubmissions=3; lodBudgetFallbacks=0; captures=$photorealCaptures }
@@ -572,6 +582,9 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   $photoreal.captures[0].generationConflicts = 1
   Expect-Failure { Assert-GameplayRunEvidence $receipt $environment $collision $palette $character $camera $sequence $photoreal $package $names } 'generation conflict'
   $photoreal.captures[0].generationConflicts = 0
+  $savedTerrainIdentity=$photoreal.captures[2].requiredIdentities[1].high;$photoreal.captures[2].requiredIdentities[1].high=[string]$identityContract.proxyHigh
+  Expect-Failure { Assert-GameplayRunEvidence $receipt $environment $collision $palette $character $camera $sequence $photoreal $package $names } 'terrain identity illegally used the HLOD proxy domain'
+  $photoreal.captures[2].requiredIdentities[1].high=$savedTerrainIdentity
   $photoreal.captures[0].sceneSubmissionSerial = 0
   Expect-Failure { Assert-GameplayRunEvidence $receipt $environment $collision $palette $character $camera $sequence $photoreal $package $names } 'missing Scene submission provenance'
   $photoreal.captures[0].sceneSubmissionSerial = 1

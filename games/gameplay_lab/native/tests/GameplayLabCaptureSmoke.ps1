@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Executable,[switch]$GpuValidation,[switch]$SingleRun,[switch]$OfflineReplay,[ValidateRange(0,180)][int]$ProcessTimeoutSeconds=0)
+param([Parameter(Mandatory=$true)][string]$Executable,[Parameter(Mandatory=$true)][string]$IdentityContractProbe,[switch]$GpuValidation,[switch]$SingleRun,[switch]$OfflineReplay,[ValidateRange(0,180)][int]$ProcessTimeoutSeconds=0)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'GameplayLabCaptureEvidence.ps1')
 . (Join-Path $PSScriptRoot 'GameplaySourceInventory.ps1')
@@ -24,6 +24,7 @@ function Get-CaptureStateSha($receipt,$environment,$collision,$palette,$characte
 function Get-GameplayCanonicalEntityMismatch($LeftCharacter,$RightCharacter){for($captureIndex=0;$captureIndex-lt@($LeftCharacter.captures).Count;++$captureIndex){$leftCapture=$LeftCharacter.captures[$captureIndex];$rightCapture=$RightCharacter.captures[$captureIndex];$leftEntities=@($leftCapture.captureStateEntityDiagnostics);$rightEntities=@($rightCapture.captureStateEntityDiagnostics);if($leftEntities.Count-ne$rightEntities.Count){return "capture=$($leftCapture.name) entityCount=$($leftEntities.Count)/$($rightEntities.Count)"};for($entityIndex=0;$entityIndex-lt$leftEntities.Count;++$entityIndex){$left=$leftEntities[$entityIndex];$right=$rightEntities[$entityIndex];foreach($field in @('stableId','source','category','dynamic','alive','topologyHash','transformHash','positionRawBits','rotationRawBits')){if(($left.$field|ConvertTo-Json -Compress)-cne($right.$field|ConvertTo-Json -Compress)){return "capture=$($leftCapture.name) stableId=$($left.stableId) field=$field left=$(($left.$field|ConvertTo-Json -Compress)) right=$(($right.$field|ConvertTo-Json -Compress))"}}}}return 'no typed entity mismatch'}
 $sourceRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $Executable=Resolve-GameplayCaptureExecutablePath $Executable $sourceRoot
+$null=Get-GameplayObjectIdentityContract $IdentityContractProbe
 $validatorPath=[IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $Executable) 'Aevrynd-Gameplay-Hdr-Validator.exe'))
 if(-not(Test-Path -LiteralPath $validatorPath -PathType Leaf)){throw "Production HDR validator is missing beside executable: $validatorPath"}
 $directory=[IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $Executable) $(if($GpuValidation){'gameplay-captures-gbv'}else{'gameplay-captures-normal'})))
