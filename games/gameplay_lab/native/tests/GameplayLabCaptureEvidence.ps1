@@ -945,7 +945,7 @@ function Write-GameplayFinalEvidenceReceipt(
   }
   $gitSeal = Get-GameplayGitSealEvidence $SourceRoot
   $runEvidence = @($Runs | ForEach-Object {
-    [ordered]@{ run = $_.run; runId = $_.runId; stateSha256 = $_.stateSha256; packageSnapshotEpochSha256 = $_.packageSnapshotEpochSha256; fatalAbsent = $_.fatalAbsent; temporalGhostEvidence = $_.temporalGhostEvidence; artifacts = $_.artifacts; receipts = $_.receipts }
+    [ordered]@{ run = $_.run; runId = $_.runId; stateSha256 = $_.stateSha256; packageSnapshotEpochSha256 = $_.packageSnapshotEpochSha256; fatalAbsent = $_.fatalAbsent; temporalGhostEvidence = $_.temporalGhostEvidence; artifacts = @($_.artifacts); receipts = @($_.receipts) }
   })
   $payload = [ordered]@{
     runId = $Telemetry.runId

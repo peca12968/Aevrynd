@@ -595,11 +595,11 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   Expect-Failure { Resolve-GameplayCaptureExecutablePath (Join-Path $evidenceRoot 'nested\..\synthetic.exe') $evidenceRoot | Out-Null } 'executable traversal path'
   $restrictedRoot=Join-Path $evidenceRoot 'restricted';New-Item -ItemType Directory -Force -Path $restrictedRoot|Out-Null
   Expect-Failure { Resolve-GameplayCaptureExecutablePath $executable $restrictedRoot | Out-Null } 'executable cross-root path'
-  $receiptNames = @('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
+  $receiptNames = @('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-presentation-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
   $runDirectory = Join-Path $evidenceRoot 'determinism-runs/run-1'; New-Item -ItemType Directory -Force -Path $runDirectory | Out-Null
   foreach ($name in $receiptNames) { [IO.File]::WriteAllText((Join-Path $runDirectory $name), "receipt-$name") }
   $runArtifacts=@();foreach($artifact in @(Get-GameplayExpectedRunArtifactNames $names)){Copy-Item -LiteralPath (Join-Path $evidenceRoot $artifact) -Destination (Join-Path $runDirectory $artifact);$runArtifacts+=[pscustomobject]@{name=$artifact;sha256=Get-GameplayEvidenceSha256Hex (Join-Path $runDirectory $artifact)}}
-  $run = [pscustomobject]@{ run=1; runId=$runId; stateSha256=('c' * 64); packageSnapshotEpochSha256=$package.snapshotEpochSha256; fatalAbsent=1; artifacts=$runArtifacts; receipts=Get-GameplayRunReceiptEvidence $runDirectory $receiptNames }
+  $run = [pscustomobject]@{ run=1; runId=$runId; stateSha256=('c' * 64); packageSnapshotEpochSha256=$package.snapshotEpochSha256; fatalAbsent=1; artifacts=@($runArtifacts); receipts=@(Get-GameplayRunReceiptEvidence $runDirectory $receiptNames) }
   $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
   [IO.File]::WriteAllText((Join-Path $evidenceRoot 'gameplay-fatal-error.txt'), 'synthetic fatal')
   Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'SingleRun fatal marker before final receipt'
@@ -615,8 +615,12 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   $run.artifacts=$savedArtifacts
   $savedReceipts=@($run.receipts);$run.receipts=@($savedReceipts|Select-Object -Skip 1)
   Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'missing archived receipt entry'
+  $run.receipts=@($savedReceipts|Where-Object{$_.name-cne'gameplay-presentation-receipt.json'})
+  Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'missing archived presentation receipt entry'
   $run.receipts=@($savedReceipts|Where-Object{$_.name-cne'gameplay-hdr-capture-receipt.json'})
   Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'missing archived HDR receipt entry'
+  $run.receipts=$savedReceipts[0]
+  Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'single archived receipt scalar'
   $run.receipts=@($savedReceipts);$run.receipts[-1]=$run.receipts[0]
   Expect-Failure { Write-GameplayFinalEvidenceReceipt $evidenceRoot $executable $sourceRoot $package $receipt @($run) $names 1.0 'synthetic-fingerprint' | Out-Null } 'duplicate archived receipt entry'
   $run.receipts=$savedReceipts
