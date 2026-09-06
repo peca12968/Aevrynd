@@ -42,10 +42,11 @@ Vec3 JointPoint(const AnimationPose3D& pose, const HumanoidSkeletonMap3D& rig,
 }
 }
 
-int main() {
+int main(int argumentCount,char** arguments) {
     const auto source = std::filesystem::path{AEVRYND_SOURCE_DIR};
-    const auto loaded = LoadSkinnedModelAssetFileDetailed(
-        source / "games/character_lab/assets/model-packs/realistic-female/realistic-female.aeskin");
+    const auto assetPath=argumentCount>1?std::filesystem::path{arguments[1]}:
+        source / "games/character_lab/assets/model-packs/realistic-female/realistic-female.aeskin";
+    const auto loaded = LoadSkinnedModelAssetFileDetailed(assetPath);
     GameplayAnimation3D animation;
     std::string error;
     if (!loaded || !animation.Initialize(loaded.asset, &error)) {
@@ -100,6 +101,33 @@ int main() {
     noGroundFrame.cameraDistance=1.f;
     FootPlacementResult3D noGroundResult{};
     if (!noGroundPlacement.Evaluate(loaded.asset.model.skeleton,animation.Rig(),noGroundFrame,pose,&noGroundResult) || noGroundResult.applied) return 10;
+
+    // 非 restart 的 locomotion 切換必須保留腿、軀幹與擺臂共用相位；明確 restart 才從接觸相位開始。
+    animation.SetState(AnimationState3D::Idle,true);
+    animation.Tick(animation.Duration()*.37f);
+    const float idlePhase=animation.NormalizedPhase();
+    if(!animation.EvaluateInto(pose))return 18;
+    const std::uint64_t idlePoseHash=HashPose(pose);
+    animation.SetState(AnimationState3D::Walk);
+    if(std::abs(animation.NormalizedPhase()-idlePhase)>1e-6f||!animation.EvaluateInto(pose)||HashPose(pose)==idlePoseHash){
+        std::cerr<<"Idle-to-walk gait phase split phase="<<animation.NormalizedPhase()<<" expected="<<idlePhase<<'\n';
+        return 18;
+    }
+    if(argumentCount>1&&!animation.HasDetailedGripPose()){
+        std::cerr<<"Detailed grip retrofit was not activated\n";
+        return 21;
+    }
+    animation.Tick(animation.Duration()*.11f);
+    if(!animation.EvaluateInto(pose))return 19;
+    const float walkPhase=animation.NormalizedPhase();
+    const std::uint64_t walkPoseHash=HashPose(pose);
+    animation.SetState(AnimationState3D::Run);
+    if(std::abs(animation.NormalizedPhase()-walkPhase)>1e-6f||!animation.EvaluateInto(pose)||HashPose(pose)==walkPoseHash){
+        std::cerr<<"Walk-to-run gait phase split phase="<<animation.NormalizedPhase()<<" expected="<<walkPhase<<'\n';
+        return 19;
+    }
+    animation.SetState(AnimationState3D::Idle,true);
+    if(std::abs(animation.NormalizedPhase())>1e-6f)return 20;
 
     GameplayErgonomicMotionMetrics3D measuredMaximum{};
     const std::array<AnimationState3D,7> ergonomicStates{

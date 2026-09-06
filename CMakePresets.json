@@ -7,6 +7,24 @@
   },
   "configurePresets": [
     {
+      "name": "windows-gameplay-visual-gates",
+      "inherits": "windows-release-gates",
+      "displayName": "Windows Gameplay Production Visual Gates (VS2022 x64)",
+      "description": "Production Gameplay capture with diagnostic hooks disabled; requires an interactive GPU session.",
+      "cacheVariables": {
+        "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "OFF"
+      }
+    },
+    {
+      "name": "windows-visual-gates",
+      "inherits": "windows-release-gates",
+      "displayName": "Windows Visual Gates (VS2022 x64)",
+      "description": "Fixed GPU capture and foliage regression; requires an interactive GPU session.",
+      "cacheVariables": {
+        "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "ON"
+      }
+    },
+    {
       "name": "windows-release-gates",
       "displayName": "Windows Release Gates (VS2022 x64)",
       "description": "Fixed non-interactive CPU release-gate configuration for restricted remote workers.",
@@ -15,7 +33,7 @@
         "value": "x64",
         "strategy": "set"
       },
-      "binaryDir": "${sourceDir}/out/build/windows-release-gates",
+      "binaryDir": "${sourceDir}/b",
       "cacheVariables": {
         "AEVRYND_ENABLE_STREAMLINE": "OFF",
         "AEVRYND_ENABLE_STREAMLINE_RUNTIME": "OFF",
@@ -26,6 +44,20 @@
   ],
   "buildPresets": [
     {
+      "name": "windows-gameplay-visual-gates",
+      "configurePreset": "windows-gameplay-visual-gates",
+      "configuration": "Release",
+      "targets": ["GameplayLab", "GameplayObjectIdentityContractProbe"],
+      "jobs": 2
+    },
+    {
+      "name": "windows-visual-gates",
+      "configurePreset": "windows-visual-gates",
+      "configuration": "Release",
+      "targets": ["GameplayLab", "GameplayObjectIdentityContractProbe", "AevryndAtmosphereFoliageCoverageD3D12VisualTest"],
+      "jobs": 2
+    },
+    {
       "name": "windows-release-gates",
       "configurePreset": "windows-release-gates",
       "configuration": "RelWithDebInfo",
@@ -33,6 +65,22 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "windows-gameplay-visual-gates",
+      "configurePreset": "windows-gameplay-visual-gates",
+      "configuration": "Release",
+      "filter": {"include": {"name": "^(GameplayLabCaptureSmoke|GameplayLabGpuValidationCaptureSmoke)$"}},
+      "execution": {"jobs": 1, "noTestsAction": "error", "stopOnFailure": false},
+      "output": {"outputOnFailure": true}
+    },
+    {
+      "name": "windows-visual-gates",
+      "configurePreset": "windows-visual-gates",
+      "configuration": "Release",
+      "filter": {"include": {"label": "^visual-gates$"}},
+      "execution": {"jobs": 1, "noTestsAction": "error", "stopOnFailure": false},
+      "output": {"outputOnFailure": true}
+    },
     {
       "name": "windows-release-gates",
       "configurePreset": "windows-release-gates",

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <set>
@@ -25,15 +26,90 @@ std::uint64_t HashPose(const AnimationPose3D& pose) {
     return hash;
 }
 
+bool CheckEquipmentAttachment(const SkinnedModelAssetData& character,
+                              const HumanoidSkeletonMap3D& rig,
+                              const FallbackHumanoidAnimationSet3D& clips) {
+    AnimationPose3D bindPose;
+    for(const auto& joint:character.model.skeleton.joints)bindPose.localTransforms.push_back(joint.bindTransform);
+    BuildAnimationPoseGlobalMatrices3D(character.model.skeleton,bindPose);
+    const std::size_t handIndex=rig.Joint(HumanoidJoint3D::RightHand);
+    const Matrix4 bindHand=bindPose.globalMatrices[handIndex];
+    const Vec3 bindOrigin=TransformPoint(bindHand,{});
+    // 真實男女骨架皆具有旋轉；此負案例必須分辨舊的「只加關節位置」錯誤。
+    if(Length(TransformPoint(bindHand,{0,.105f,.02f})-(bindOrigin+Vec3{0,.105f,.02f}))<=.0001f)return false;
+    SkinningWorkspace3D workspace;
+    for(const auto shape:{CharacterEquipmentShape3D::Sword,CharacterEquipmentShape3D::Axe}){
+        CharacterEquipmentAsset3D equipment;
+        if(!CreateCharacterEquipmentAsset3D(character,rig,shape,equipment))return false;
+        if(shape==CharacterEquipmentShape3D::Sword){
+            if(!ValidateCharacterSwordGeometry3D(equipment))return false;
+            auto emptyTopology=equipment;
+            std::fill(emptyTopology.model.bindMesh.indices.begin(),emptyTopology.model.bindMesh.indices.end(),0u);
+            if(ValidateCharacterSwordGeometry3D(emptyTopology))return false;
+            auto degenerateTriangle=equipment;
+            degenerateTriangle.model.bindMesh.indices[1]=degenerateTriangle.model.bindMesh.indices[0];
+            if(ValidateCharacterSwordGeometry3D(degenerateTriangle))return false;
+            auto reversedWinding=equipment;
+            std::swap(reversedWinding.model.bindMesh.indices[0],reversedWinding.model.bindMesh.indices[1]);
+            if(ValidateCharacterSwordGeometry3D(reversedWinding))return false;
+            auto collapsedShoulder=equipment;
+            collapsedShoulder.model.bindMesh.vertices[4]=collapsedShoulder.model.bindMesh.vertices[5];
+            if(ValidateCharacterSwordGeometry3D(collapsedShoulder))return false;
+            auto reversed=equipment;
+            const Vec3 inward=TransformPoint(bindHand,{0,.08f,.02f});
+            for(const auto index:reversed.swordGeometry.tipVertexIndices){auto& vertex=reversed.model.bindMesh.vertices[index];vertex.x=inward.x;vertex.y=inward.y;vertex.z=inward.z;}
+            if(ValidateCharacterSwordGeometry3D(reversed))return false;
+            auto invalidContract=equipment;invalidContract.swordGeometry.bladeTip.y=.65f;
+            if(ValidateCharacterSwordGeometry3D(invalidContract))return false;
+        }else if(equipment.swordGeometry.available||ValidateCharacterSwordGeometry3D(equipment))return false;
+        const Vec3 localGrip=shape==CharacterEquipmentShape3D::Sword?Vec3{0,.105f,.02f}:Vec3{0,-.18f,.02f};
+        std::set<std::uint32_t> gripIndices;
+        for(const auto& range:equipment.submeshes)if(range.materialSlot==1)
+            for(std::size_t offset=range.firstIndex;offset<std::size_t(range.firstIndex)+range.indexCount;++offset)
+                gripIndices.insert(equipment.model.bindMesh.indices[offset]);
+        if(gripIndices.size()!=(shape==CharacterEquipmentShape3D::Sword?34u:24u))return false;
+        for(const auto& clip:clips.clips)for(float phase:{0.f,.47f,.91f}){
+            AnimationPose3D equipmentPose;Mesh3D skinned;
+            SampleAnimationClipInto(character.model.skeleton,clip,clip.duration*phase,equipmentPose);
+            if(!SkinModelInto(equipment.model,equipmentPose,workspace,skinned))return false;
+            Vec3 center{};
+            for(const auto index:gripIndices){const auto& vertex=skinned.vertices[index];center=center+Vec3{vertex.x,vertex.y,vertex.z};}
+            center=center*(1.f/static_cast<float>(gripIndices.size()));
+            for(const Matrix4& world:{Matrix4::Identity(),CreateTransformMatrix({2,3,4},{.2f,-.4f,.1f},{1.2f,.8f,1.1f})}){
+                const Vec3 actual=TransformPoint(world,center);
+                const Vec3 expected=TransformPoint(world*equipmentPose.globalMatrices[handIndex],localGrip);
+                const float error=Length(actual-expected);
+                if(!std::isfinite(error)||error>.0001f){std::cerr<<"Equipment hand-local grip failed shape="<<unsigned(shape)<<" phase="<<phase<<" errorMeters="<<error<<'\n';return false;}
+                if(shape==CharacterEquipmentShape3D::Sword){
+                    const auto& geometry=equipment.swordGeometry;
+                    const Matrix4 posedHand=world*equipmentPose.globalMatrices[handIndex];
+                    const Vec3 expectedTip=TransformPoint(posedHand,geometry.bladeTip);
+                    const Vec3 expectedBase=TransformPoint(posedHand,geometry.bladeBase);
+                    for(const auto index:geometry.tipVertexIndices){
+                        const auto& vertex=skinned.vertices[index];const Vec3 actualTip=TransformPoint(world,{vertex.x,vertex.y,vertex.z});
+                        const float tipError=Length(actualTip-expectedTip);
+                        if(!std::isfinite(tipError)||tipError>.0001f||Dot(actualTip-expectedBase,expectedBase-actual)<=0.f)return false;
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
 bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVertices,
-                    std::uint64_t expectedIndices) {
+                    std::uint64_t expectedIndices, std::size_t expectedJointCount) {
     const auto loaded = LoadSkinnedModelAssetFileDetailed(path);
-    constexpr std::size_t ExpectedJointCount = 24;
     if (!loaded || loaded.asset.model.bindMesh.vertices.size() != expectedVertices ||
         loaded.asset.model.bindMesh.indices.size() != expectedIndices ||
-        loaded.asset.model.skeleton.joints.size() != ExpectedJointCount || loaded.asset.submeshes.size() != 9 ||
+        loaded.asset.model.skeleton.joints.size() != expectedJointCount || loaded.asset.submeshes.size() != 9 ||
         loaded.asset.materialSlotNames.size() != 9) {
-        std::cerr << "F2/M2 production asset contract failed: " << path << '\n';
+        std::cerr << "F2/M2 production asset contract failed: " << path
+                  << " vertices=" << (loaded ? loaded.asset.model.bindMesh.vertices.size() : 0)
+                  << " indices=" << (loaded ? loaded.asset.model.bindMesh.indices.size() : 0)
+                  << " joints=" << (loaded ? loaded.asset.model.skeleton.joints.size() : 0)
+                  << " submeshes=" << (loaded ? loaded.asset.submeshes.size() : 0)
+                  << " materials=" << (loaded ? loaded.asset.materialSlotNames.size() : 0) << '\n';
         return false;
     }
     HumanoidSkeletonMap3D rig;
@@ -48,7 +124,7 @@ bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVer
     AnimationPose3D pose;
     for (const AnimationClip3D& clip : fallback.clips) {
         SampleAnimationClipInto(loaded.asset.model.skeleton, clip, clip.duration * .47f, pose);
-        if (pose.globalMatrices.size() != ExpectedJointCount) return false;
+        if (pose.globalMatrices.size() != expectedJointCount) return false;
         hashes.insert(HashPose(pose));
     }
     if (hashes.size() != fallback.clips.size()) {
@@ -65,6 +141,7 @@ bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVer
     std::uint32_t covered{};
     for (const SkinnedSubmesh3D& range : sword.submeshes) covered += range.indexCount;
     if (covered != sword.model.bindMesh.indices.size()) return false;
+    if(!CheckEquipmentAttachment(loaded.asset,rig,fallback))return false;
     Matrix4 socket = CreateScaleMatrix({7, 7, 7});
     if (!CharacterSocketTransform3D(loaded.asset.model.skeleton, rig,
                                     HumanoidJoint3D::RightHand, pose,
@@ -114,7 +191,7 @@ int main() {
         return 1;
     }
     if (!CheckCharacter(assets / "model-packs" / "realistic-female" / "realistic-female.aeskin",
-                        20174, 102180) ||
+                        20174, 102180, 39) ||
         !CheckCharacter(assets / "model-packs" / "realistic-male" / "realistic-male.aeskin",
-                        20066, 101688)) return 2;
+                        20066, 101688, 39)) return 2;
 }

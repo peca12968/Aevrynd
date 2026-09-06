@@ -1,3 +1,4 @@
 # 封存的 photoreal JSON 以位元組與 SHA 驗證，必須維持 LF，避免 Windows checkout 改寫內容。
 engine/assets/realistic-cc0-first-batch/cooked/*.json text eol=lf
 engine/assets/realistic-cc0-first-batch/cooked/**/*.json text eol=lf
+games/character_lab/assets/model-packs/*/*.provenance.json text eol=lf

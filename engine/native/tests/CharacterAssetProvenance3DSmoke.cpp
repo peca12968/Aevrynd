@@ -201,7 +201,7 @@ int main() {
     bool passed = true;
     const std::string valid = Read(manifest);
     const CharacterAssetProvenanceTrustAnchor3D canonicalAnchor{
-        2236u, "38e714b085b9ec87a91e9f300b85f1a4a009d07a99184de12359d385ae0c21ef"};
+        2353u, "0bc845ee76105cf25e6438670de94795ccff669b3e1f86bc9775ca43c8c9184e"};
 
     const bool canonicalValidated = ValidateCharacterAssetProvenance3D(
         expectedRuntimeRoot, manifest, canonicalAnchor, receipt, &error);
@@ -213,23 +213,24 @@ int main() {
     passed &= Expect(receipt.passed && receipt.assetId == "realistic-female" &&
                          receipt.canonicalRuntimePath ==
                              "assets/model-packs/realistic-female/realistic-female.aeskin" &&
-                         receipt.generatorId == "tools/blender/create-realistic-female-character.py" &&
+                         receipt.generatorId == "tools/blender/create-cc0-f2-m2-characters.py" &&
                          receipt.converterId == "tools/convert-gltf-to-aeskin-v2.ps1" &&
-                         receipt.skeletonIdentity == "F2FemaleRig" && receipt.jointCount == 24u &&
+                         receipt.skeletonIdentity == "F2FemaleRig" && receipt.jointCount == 39u &&
                          receipt.materials.size() == 9u && receipt.lods.size() == 1u &&
-                         receipt.authoredAnimations.size() == 1u &&
+                         receipt.authoredAnimations.size() == 2u &&
                          receipt.authoredAnimations.front() == "IdleBreathing" &&
+                         receipt.authoredAnimations.back() == "GripPrototype" &&
                          receipt.runtimeFallbacks.size() == 1u &&
                          receipt.runtimeFallbacks.front() == "procedural-locomotion" &&
                          receipt.artifacts.size() == 3u && receipt.manifestBytes > 0u &&
-                         receipt.manifestBytes == 2236u &&
+                         receipt.manifestBytes == 2353u &&
                          receipt.manifestSha256 ==
-                             "38e714b085b9ec87a91e9f300b85f1a4a009d07a99184de12359d385ae0c21ef" &&
-                         receipt.immutableCookedAeskin.size() == 1384226u,
+                             "0bc845ee76105cf25e6438670de94795ccff669b3e1f86bc9775ca43c8c9184e" &&
+                         receipt.immutableCookedAeskin.size() == 1480232u,
                      "canonical provenance receipt is incomplete or dishonest");
-    passed &= Expect(valid.size() == 2236u && !valid.empty() && valid.back() == '\n' &&
+    passed &= Expect(valid.size() == 2353u && !valid.empty() && valid.back() == '\n' &&
                          valid.find('\r') == std::string::npos,
-                     "canonical manifest is not the exact LF-only 2236-byte document");
+                     "canonical manifest is not the exact LF-only 2353-byte document");
     const CharacterAssetProvenanceReceipt3D baseline = receipt;
 
     const auto temporary = std::filesystem::temp_directory_path() /
@@ -288,15 +289,15 @@ int main() {
            "duplicate identity was accepted or erased last-good receipt");
 
     hostile = valid;
-    passed &= Expect(ReplaceOne(hostile, "\"bytes\": 49561", "\"bytes\": 49562"),
+    passed &= Expect(ReplaceOne(hostile, "\"bytes\": 106478", "\"bytes\": 106479"),
                      "size fixture creation failed");
     Reject(hostile, CharacterAssetProvenanceErrorCode3D::IntegrityMismatch,
            "artifact size mismatch was accepted or erased last-good receipt");
 
     hostile = valid;
     passed &= Expect(ReplaceOne(hostile,
-        "d6ff69349e71b26ff0e4e70326684ee3acd2e6f79e31b87b854b5f78036156a6",
-        "06ff69349e71b26ff0e4e70326684ee3acd2e6f79e31b87b854b5f78036156a6"),
+        "c7fb36382f6460e38613e501015250473b15b960022c64a335178c1a565c95ed",
+        "07fb36382f6460e38613e501015250473b15b960022c64a335178c1a565c95ed"),
         "hash fixture creation failed");
     Reject(hostile, CharacterAssetProvenanceErrorCode3D::IntegrityMismatch,
            "artifact SHA-256 mismatch was accepted or erased last-good receipt");
@@ -326,7 +327,7 @@ int main() {
            "manifest clip absent from sealed GLTF/AESKIN was accepted or erased last-good receipt");
 
     hostile = valid;
-    passed &= Expect(ReplaceOne(hostile, "\"jointCount\": 24", "\"jointCount\": 25"),
+    passed &= Expect(ReplaceOne(hostile, "\"jointCount\": 39", "\"jointCount\": 40"),
                      "skeleton joint-count mismatch fixture creation failed");
     Reject(hostile, CharacterAssetProvenanceErrorCode3D::IntegrityMismatch,
            "manifest skeleton count absent from sealed AESKIN was accepted or erased last-good receipt");
@@ -384,10 +385,10 @@ int main() {
     hostile = valid;
     passed &= Expect(ReplaceOne(hostile, "\"path\": \"source/realistic-female.bin\"",
                                 "\"path\": \"source/duplicate-gltf\"") &&
-                         ReplaceOne(hostile, "\"bytes\": 1822420", "\"bytes\": 49561") &&
+                         ReplaceOne(hostile, "\"bytes\": 1944160", "\"bytes\": 106478") &&
                          ReplaceOne(hostile,
-                                    "b34843b7f9156debb3676f87daaa397610ee13678df0e7cfa714fd3e37cf73dc",
-                                    "d6ff69349e71b26ff0e4e70326684ee3acd2e6f79e31b87b854b5f78036156a6"),
+                                    "dc4defdacdd1904c4117cbc615fe48c6a357974f2c7507f17aa87700fb64a970",
+                                    "c7fb36382f6460e38613e501015250473b15b960022c64a335178c1a565c95ed"),
                      "physical duplicate fixture creation failed");
     Reject(hostile, CharacterAssetProvenanceErrorCode3D::DuplicateIdentity,
            "two artifact paths to one physical file were accepted or erased last-good receipt");
@@ -441,7 +442,7 @@ int main() {
     const std::string tamperedBinSha = Sha256(tamperedSourceBin);
     passed &= Expect(!tamperedBinSha.empty() && ReplaceOne(
                          hostile,
-                         "b34843b7f9156debb3676f87daaa397610ee13678df0e7cfa714fd3e37cf73dc",
+                         "dc4defdacdd1904c4117cbc615fe48c6a357974f2c7507f17aa87700fb64a970",
                          tamperedBinSha),
                      "coherent artifact replacement fixture creation failed");
     Write(testManifest, hostile);

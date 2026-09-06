@@ -19,7 +19,22 @@ function Get-GameplayObjectIdentityContract([string]$ProbePath='') {
   if([string]::IsNullOrWhiteSpace($ProbePath)){throw 'Gameplay Object-ID compiler contract probe path was not initialized'}
   try{$full=(Resolve-Path -LiteralPath $ProbePath -ErrorAction Stop).Path}catch{throw 'Gameplay Object-ID compiler contract probe executable was missing'}
   if(-not(Test-Path -LiteralPath $full -PathType Leaf)-or[IO.Path]::GetExtension($full)-cne'.exe'-or[IO.Path]::GetFileName($full)-cne'Aevrynd-Gameplay-Object-Identity-Contract.exe'){throw 'Gameplay Object-ID compiler contract probe path was invalid'}
-  $output=@(& $full 2>&1);$exitCode=$LASTEXITCODE
+  # 使用該次程序的退出碼，不依賴呼叫端是否曾建立原生命令的自動變數。 (native exit).
+  $startInfo=[Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName=$full;$startInfo.UseShellExecute=$false;$startInfo.CreateNoWindow=$true
+  $startInfo.RedirectStandardOutput=$true;$startInfo.RedirectStandardError=$true
+  $process=[Diagnostics.Process]::new();$process.StartInfo=$startInfo
+  try {
+    if(-not$process.Start()){throw 'Gameplay Object-ID compiler contract probe did not start'}
+    $stdoutTask=$process.StandardOutput.ReadToEndAsync();$stderrTask=$process.StandardError.ReadToEndAsync()
+    if(-not$process.WaitForExit(10000)){$process.Kill();$process.WaitForExit();throw 'Gameplay Object-ID compiler contract probe timed out'}
+    $exitCode=$process.ExitCode
+    $stdout=$stdoutTask.GetAwaiter().GetResult();$stderr=$stderrTask.GetAwaiter().GetResult()
+    if(-not[string]::IsNullOrEmpty($stderr)){throw "Gameplay Object-ID compiler contract probe emitted stderr: exit=$exitCode"}
+    # 保留額外空行，讓既有單行契約拒絕尾隨輸出。 (strict output).
+    $output=@([regex]::Split($stdout,'\r\n|\n|\r'))
+    if($output.Count-gt1-and$output[-1]-ceq''){$output=@($output[0..($output.Count-2)])}
+  } finally {$process.Dispose()}
   $script:GameplayObjectIdentityContract=ConvertFrom-GameplayObjectIdentityContractProbeOutput $output $exitCode
   return $script:GameplayObjectIdentityContract
 }
@@ -796,7 +811,9 @@ function Assert-GameplayRunEvidence(
        [string]$weaponIdentity[0]-ne'12592142912428528129'-or[uint64]$weaponIdentity[1]-ne4-or[uint64]$weaponIdentity[2]-ne1-or
        [uint64]$viewmodel.armsToken-lt1-or[uint64]$viewmodel.weaponToken-lt1-or[uint64]$viewmodel.armsToken-eq[uint64]$viewmodel.weaponToken-or
        [uint64]$viewmodel.armsPixels-lt1-or[uint64]$viewmodel.weaponPixels-lt1-or$armsBounds.Count-ne4-or$weaponBounds.Count-ne4){throw "Gameplay first-person viewmodel identity/token evidence failed: $($viewmodel.name)"}
-    foreach($bounds in @($armsBounds,$weaponBounds)){if([uint64]$bounds[0]-lt16-or[uint64]$bounds[1]-lt32-or[uint64]$bounds[2]-gt1264-or[uint64]$bounds[3]-gt704-or[uint64]$bounds[0]-ge[uint64]$bounds[2]-or[uint64]$bounds[1]-ge[uint64]$bounds[3]){throw "Gameplay first-person viewmodel screen-margin evidence failed: $($viewmodel.name)"}}
+    # 手臂的肩部切口必須藏在右／下畫面外；武器本體則必須維持四邊完整安全距離。
+    if([uint64]$armsBounds[0]-lt640-or[uint64]$armsBounds[1]-lt66-or[uint64]$armsBounds[2]-gt1279-or[uint64]$armsBounds[3]-gt719-or[uint64]$armsBounds[0]-ge[uint64]$armsBounds[2]-or[uint64]$armsBounds[1]-ge[uint64]$armsBounds[3]){throw "Gameplay first-person arms edge-entry evidence failed: $($viewmodel.name)"}
+    if([uint64]$weaponBounds[0]-lt16-or[uint64]$weaponBounds[1]-lt32-or[uint64]$weaponBounds[2]-gt1264-or[uint64]$weaponBounds[3]-gt704-or[uint64]$weaponBounds[0]-ge[uint64]$weaponBounds[2]-or[uint64]$weaponBounds[1]-ge[uint64]$weaponBounds[3]){throw "Gameplay first-person weapon screen-margin evidence failed: $($viewmodel.name)"}
   }
   if ($Receipt.captures -ne $ExpectedNames.Count -or $Photoreal.expectedCaptures -ne $ExpectedNames.Count -or
       $Photoreal.actualCaptureIndex -ne $ExpectedNames.Count -or

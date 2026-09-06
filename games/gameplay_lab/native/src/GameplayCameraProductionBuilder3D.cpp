@@ -83,6 +83,10 @@ BuildGameplayCameraProductionCandidates3D(
       !std::isfinite(input.sweepRadius) || input.sweepRadius <= 0.f ||
       !std::isfinite(input.minimumSubjectScreenHeight) || input.minimumSubjectScreenHeight<.35f || input.minimumSubjectScreenHeight>.70f ||
       !std::isfinite(input.minimumSubjectScreenArea) || input.minimumSubjectScreenArea<.02f || input.minimumSubjectScreenArea>.20f ||
+      !std::isfinite(input.maximumBuildingUnionCoverage) || input.maximumBuildingUnionCoverage<0.f || input.maximumBuildingUnionCoverage>1.f ||
+      !std::isfinite(input.maximumBuildingPartCoverage) || input.maximumBuildingPartCoverage<0.f || input.maximumBuildingPartCoverage>1.f ||
+      !std::isfinite(input.maximumRoofCoverage) || input.maximumRoofCoverage<0.f || input.maximumRoofCoverage>1.f ||
+      !std::isfinite(input.maximumSubjectOcclusion) || input.maximumSubjectOcclusion<0.f || input.maximumSubjectOcclusion>1.f ||
       !std::isfinite(input.minimumTopCenterRayElevation) || input.minimumTopCenterRayElevation<.03f || input.minimumTopCenterRayElevation>.25f ||
       !std::isfinite(input.viewport.x) || !std::isfinite(input.viewport.y) ||
       input.viewport.x <= 0.f || input.viewport.y <= 0.f ||
@@ -145,7 +149,13 @@ BuildGameplayCameraProductionCandidates3D(
   if (!interval.valid)
     return output;
 
-  constexpr std::array<float, 15> yawOffsets{0.f,-.25f,.25f,-.35f,.35f,-.45f,.45f,-.55f,.55f,-.8f,.8f,-1.05f,1.05f,-1.57079633f,1.57079633f};
+  constexpr std::array<float, 15> runtimeYawOffsets{0.f,-.25f,.25f,-.35f,.35f,-.45f,.45f,-.55f,.55f,-.8f,.8f,-1.05f,1.05f,-1.57079633f,1.57079633f};
+  // 零建築展示只補一個經正式 gate 驗出的正面角度；一般遊玩不支付額外候選成本，
+  // 避免鏡頭求解時間改變固定擷取的 frame pacing。
+  constexpr std::array<float, 16> cleanShowcaseYawOffsets{0.f,-.25f,.25f,-.35f,.35f,-.45f,.45f,-.55f,.55f,-.8f,.8f,-1.05f,1.05f,-1.57079633f,1.57079633f,2.6f};
+  const std::span<const float> yawOffsets=input.maximumBuildingUnionCoverage==0.f
+      ?std::span<const float>{cleanShowcaseYawOffsets}
+      :std::span<const float>{runtimeYawOffsets};
   constexpr std::array<float, 4> pitches{.12f,.28f,.44f,.60f};
   constexpr std::array<float, 4> elevations{0.f,.45f,.9f,1.35f};
   // 中距候選保留1%的主體可讀性餘量；數量與所有碰撞/構圖gate不變。
@@ -272,7 +282,7 @@ BuildGameplayCameraProductionCandidates3D(
           output.receipt.minimumBuildingUnion=(std::min)(output.receipt.minimumBuildingUnion,candidate.buildingUnionCoverage);output.receipt.minimumWallCoverage=(std::min)(output.receipt.minimumWallCoverage,candidate.maximumWallCoverage);output.receipt.minimumRoofCoverage=(std::min)(output.receipt.minimumRoofCoverage,candidate.roofCoverage);output.receipt.minimumSubjectOcclusion=(std::min)(output.receipt.minimumSubjectOcclusion,candidate.subjectOcclusionCoverage);
           const float environmentArm=candidate.environmentSphereSweep.blocked?candidate.environmentSphereSweep.hitDistance:candidate.springArmDistance;
           const bool environmentSafe=environmentArm>=minimumArm,worldSafe=candidate.collisionWorldMaxArm>=minimumArm,terrainSafe=candidate.heightFieldMaxArm>=minimumArm;
-          const bool heightValid=candidate.subjectScreenHeight>=input.minimumSubjectScreenHeight&&candidate.subjectScreenHeight<=.70f,widthValid=candidate.subjectScreenWidth<=.9f,areaValid=AcceptGameplayCameraSubjectScreenArea3D(candidate.subjectScreenArea,input.minimumSubjectScreenArea),headroomValid=candidate.headroom>=.05f,unionValid=compositionValid&&candidate.buildingUnionCoverage<=.22f,wallValid=compositionValid&&candidate.maximumWallCoverage<=.08f,roofCoverageValid=compositionValid&&candidate.roofCoverage<=.05f,subjectClear=compositionValid&&candidate.subjectOcclusionCoverage<=.005f,actorBoundsValid=candidate.allActorsOnScreen,actorGapValid=candidate.actorGapPixels>=64.f,horizonValid=horizon.accepted;
+          const bool heightValid=candidate.subjectScreenHeight>=input.minimumSubjectScreenHeight&&candidate.subjectScreenHeight<=.70f,widthValid=candidate.subjectScreenWidth<=.9f,areaValid=AcceptGameplayCameraSubjectScreenArea3D(candidate.subjectScreenArea,input.minimumSubjectScreenArea),headroomValid=candidate.headroom>=.05f,unionValid=compositionValid&&candidate.buildingUnionCoverage<=input.maximumBuildingUnionCoverage,wallValid=compositionValid&&candidate.maximumWallCoverage<=input.maximumBuildingPartCoverage,roofCoverageValid=compositionValid&&candidate.roofCoverage<=input.maximumRoofCoverage,subjectClear=compositionValid&&candidate.subjectOcclusionCoverage<=input.maximumSubjectOcclusion,actorBoundsValid=candidate.allActorsOnScreen,actorGapValid=candidate.actorGapPixels>=64.f,horizonValid=horizon.accepted;
           output.receipt.rejectedEnvironment+=environmentSafe?0u:1u;output.receipt.rejectedCollisionWorld+=worldSafe?0u:1u;output.receipt.rejectedHeightField+=terrainSafe?0u:1u;output.receipt.rejectedRoof+=candidate.roofOrTopBlocked?1u:0u;output.receipt.rejectedHeight+=heightValid?0u:1u;output.receipt.rejectedWidth+=widthValid?0u:1u;output.receipt.rejectedArea+=areaValid?0u:1u;output.receipt.rejectedHeadroom+=headroomValid?0u:1u;output.receipt.rejectedFeet+=candidate.feetOnScreen?0u:1u;
           output.receipt.rejectedBuildingUnion+=unionValid?0u:1u;output.receipt.rejectedBuildingPart+=wallValid?0u:1u;output.receipt.rejectedRoofCoverage+=roofCoverageValid?0u:1u;output.receipt.rejectedSubjectOcclusion+=subjectClear?0u:1u;
           output.receipt.rejectedActorBounds+=actorBoundsValid?0u:1u;output.receipt.rejectedActorGap+=actorGapValid?0u:1u;

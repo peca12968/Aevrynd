@@ -2,10 +2,14 @@ import math
 import json
 import struct
 import sys
+import heapq
+import hashlib
 from pathlib import Path
 
 import bpy
 from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
+from mathutils.geometry import intersect_ray_tri
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aevrynd_garment_pipeline import create_upper_garment_shell
@@ -519,7 +523,641 @@ def export_character(bundle: Path, destination: Path, female: bool) -> None:
         raise RuntimeError("CC0 character geometry budget validation failed.")
 
 
+def inspect_hand_branches(body: bpy.types.Object, female: bool, side: str, source_vertex_limit: int | None = None) -> dict:
+    # 以原始邊連通與腕部測地距離辨識分支；不從包圍盒或自動權重猜指頭。
+    sign = 1.0 if side == "Left" else -1.0
+    vertices = [v.co.copy() for v in body.data.vertices]
+    top = 1.02 if female else 1.16
+    selected = {i for i, p in enumerate(vertices)
+                if (source_vertex_limit is None or i < source_vertex_limit)
+                and p.x * sign > (.32 if female else .39) and (.6 if female else .7) < p.z < top}
+    adjacency = {i: [] for i in selected}
+    for edge in body.data.edges:
+        a, b = edge.vertices
+        if a in selected and b in selected:
+            length = (vertices[a] - vertices[b]).length
+            adjacency[a].append((b, length)); adjacency[b].append((a, length))
+
+    def distances(seeds: list[int]) -> dict[int, float]:
+        result = {i: math.inf for i in selected}
+        queue = []
+        for i in seeds:
+            result[i] = 0.0; heapq.heappush(queue, (0.0, i))
+        while queue:
+            value, i = heapq.heappop(queue)
+            if value != result[i]:
+                continue
+            for j, length in adjacency[i]:
+                if value + length < result[j]:
+                    result[j] = value + length; heapq.heappush(queue, (value + length, j))
+        return result
+
+    distance = distances([i for i in selected if vertices[i].z > top - .015])
+    if not selected or any(not math.isfinite(d) for d in distance.values()):
+        raise RuntimeError("Hand topology is disconnected from the wrist seed.")
+    parent, peak, events, winner_merge = {}, {}, [], {}
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]; i = parent[i]
+        return i
+
+    for i in sorted(distance, key=lambda k: (distance[k], k), reverse=True):
+        parent[i] = i; peak[i] = i
+        roots = {find(j) for j, _ in adjacency[i] if j in parent}
+        for r in sorted(roots, key=lambda k: (distance[peak[k]], k), reverse=True):
+            a, b = find(i), find(r)
+            if a == b:
+                continue
+            if distance[peak[a]] < distance[peak[b]]:
+                a, b = b, a
+            prominence = distance[peak[b]] - distance[i]
+            if prominence > .025:
+                events.append({"tipIndex": peak[b], "length": prominence})
+                winner_merge.setdefault(peak[a], distance[peak[a]] - distance[i])
+            parent[b] = a
+    roots = {find(i) for i in parent}
+    if len(roots) != 1:
+        raise RuntimeError("Hand branch analysis did not produce one palm component.")
+    dominant = peak[next(iter(roots))]
+    if dominant not in winner_merge:
+        raise RuntimeError("Hand dominant branch has no independently observed saddle.")
+    events.append({"tipIndex": dominant, "length": winner_merge[dominant]})
+    if len(events) != 5:
+        raise RuntimeError(f"Expected five significant hand branches, observed {len(events)}.")
+    thumb = min(events, key=lambda e: abs(vertices[e["tipIndex"]].x))
+    ordered = sorted((e for e in events if e is not thumb), key=lambda e: vertices[e["tipIndex"]].y)
+    if min(abs(vertices[e["tipIndex"]].x) for e in ordered) - abs(vertices[thumb["tipIndex"]].x) < .025:
+        raise RuntimeError("Thumb opposition cannot be identified from the source topology.")
+    entries = dict(zip(("Thumb", "Index", "Middle", "Ring", "Little"), [thumb] + ordered))
+    all_distances = {name: distances([entry["tipIndex"]]) for name, entry in entries.items()}
+    for name, entry in entries.items():
+        # 每指區域止於觀測到的分支鞍點，交界不憑最近骨頭自動擴散到其他指。
+        local = all_distances[name]
+        domain_length = entry["length"] * (1.5 if name == "Thumb" else 1.2)
+        domain = [i for i in selected if local[i] <= domain_length
+                  and name == min(entries, key=lambda other: all_distances[other][i])]
+        if len(domain) < 24:
+            raise RuntimeError(f"Insufficient source vertices for {side}{name}.")
+        centers = []
+        parts = ("Metacarpal", "Proximal", "Distal") if name == "Thumb" else ("Proximal", "Intermediate", "Distal")
+        for fraction in ((1.45, .95, .48, .04) if name == "Thumb" else (.95, .64, .33, .04)):
+            target = entry["length"] * fraction
+            nearest = sorted(domain, key=lambda i: abs(local[i] - target))[:8]
+            centers.append(sum((vertices[i] for i in nearest), Vector()) / len(nearest))
+        if any((b-a).length < .008 for a, b in zip(centers, centers[1:])):
+            raise RuntimeError(f"Degenerate source-derived finger chain: {side}{name}; lengths={[ (b-a).length for a,b in zip(centers,centers[1:])]}; prominence={entry['length']}.")
+        entry.update({"sourceVertices": domain, "domainLength": domain_length, "parts": parts, "centers": [list(p) for p in centers],
+                      "distances": {i: local[i] for i in domain}})
+    return {"side": side, "branches": entries, "sourceHandVertices": sorted(selected)}
+
+
+def triangle_shaft_clearance(points: list[Vector], center: Vector, axis: Vector,
+                             radius: float = .02, half_length: float = .08) -> float:
+    # 將三角形裁入有限柄的兩端平面，再對投影凸多邊形精確最小化徑向距離。
+    # 頂點、邊內點與面內點都納入，不能以三個頂點未穿透代替整片面未穿透。
+    polygon = [point-center for point in points]
+    for sign in (1.0, -1.0):
+        clipped = []
+        for a,b in zip(polygon,polygon[1:]+polygon[:1]):
+            fa = half_length-sign*a.dot(axis); fb = half_length-sign*b.dot(axis)
+            if fa >= 0:
+                clipped.append(a)
+            if (fa < 0) != (fb < 0):
+                clipped.append(a+(b-a)*(fa/(fa-fb)))
+        polygon = clipped
+        if not polygon:
+            return math.inf
+    radial = [point-axis*point.dot(axis) for point in polygon]
+    minimum = math.inf
+    for a,b in zip(radial,radial[1:]+radial[:1]):
+        edge = b-a
+        parameter = min(1.0,max(0.0,-a.dot(edge)/edge.length_squared)) if edge.length_squared > 1e-20 else 0.0
+        minimum = min(minimum,(a+edge*parameter).length)
+    area = sum(axis.dot(a.cross(b)) for a,b in zip(radial,radial[1:]+radial[:1]))
+    if abs(area) > 1e-12:
+        signs = [axis.dot((b-a).cross(-a)) for a,b in zip(radial,radial[1:]+radial[:1])]
+        if min(signs) >= -1e-12 or max(signs) <= 1e-12:
+            minimum = 0.0
+    return minimum-radius
+
+
+def pose_hand_grip_prototype(body: bpy.types.Object, rig: bpy.types.Object, hands: list[dict]) -> None:
+    # 柄軸由四指根排列決定；這是資產原型，不假稱符合舊版沿手指方向的武器 socket。
+    rig.animation_data_create(); rig.animation_data.action = bpy.data.actions.new("GripPrototype")
+    body.data.calc_loop_triangles()
+    source_triangles = [tuple(t.vertices) for t in body.data.loop_triangles]
+    for hand in hands:
+        if hand["side"] != "Right":
+            hand["scope"] = "OUT_OF_SCOPE_NON_GRIPPING_BIND_POSE"
+            continue
+        hand["scope"] = "RIGHT_HAND_SWORD_GRIP"
+        branches = hand["branches"]
+        roots = [Vector(branches[d]["centers"][0]) for d in ("Index", "Middle", "Ring", "Little")]
+        center = sum(roots, Vector()) / 4
+        axis = (roots[-1]-roots[0]).normalized()
+        along = sum((Vector(branches[d]["centers"][-1])-Vector(branches[d]["centers"][0])
+                     for d in ("Index", "Middle", "Ring", "Little")), Vector()).normalized()
+        normal = axis.cross(along).normalized()
+        thumb_offset = Vector(branches["Thumb"]["centers"][0])-center
+        if normal.dot(thumb_offset) < 0:
+            normal.negate()
+        palm_center = center.copy()
+        mcp_vertices = {i for digit, entry in branches.items() if digit != "Thumb"
+                        for i in entry["sourceVertices"] if entry["distances"][i] >= entry["length"]*.8}
+        for placement_step in range(23):
+            center = palm_center + normal*(.028+placement_step*.001) + along*.012
+            minimum_mcp = min(((body.data.vertices[i].co-center)-axis*(body.data.vertices[i].co-center).dot(axis)).length
+                              for i in mcp_vertices)
+            if minimum_mcp >= .021:
+                break
+        if minimum_mcp < .021:
+            raise RuntimeError("No handle placement clears the source MCP skin within the bounded palm offset.")
+        hand["handle"] = {"center": list(center), "axis": list(axis), "radius": .02,
+                          "length": .16, "matchesLegacySwordSocket": False,
+                          "sourceMcpClearance": minimum_mcp-.02, "palmNormalOffset": .028+placement_step*.001}
+        for digit, entry in branches.items():
+            bones = [rig.pose.bones[hand["side"]+digit+part] for part in entry["parts"]]
+            original_basis = [bone.matrix_basis.copy() for bone in bones]
+            for bone in bones:
+                bone.rotation_mode = "QUATERNION"; bone.keyframe_insert(data_path="rotation_quaternion", frame=1)
+            best = None
+            digit_vertices = set(entry["sourceVertices"])
+            digit_triangles = [tri for tri in source_triangles if any(i in digit_vertices for i in tri)]
+            # 用實際蒙皮厚度限制接觸；搜尋的是關節方向的解，不修改半徑、骨長或頂點位置。
+            for step in range(193):
+                requested_radius = .018 + step*.00025
+                for bone, basis in zip(bones, original_basis):
+                    bone.matrix_basis = basis
+                bpy.context.view_layer.update()
+                if digit == "Thumb":
+                    root = bones[0].head.copy(); offset = root-center; axial = axis*offset.dot(axis)
+                    radial = offset-axial; target = center+axial+radial.normalized()*requested_radius
+                    # 三段 CCD 納入掌骨對掌旋轉，所有關節位置只由父骨旋轉決定。
+                    for iteration in range(32):
+                        for bone in reversed(bones):
+                            head = bone.head.copy(); current = bones[-1].tail-head; desired = target-head
+                            if min(current.length, desired.length) < 1e-6:
+                                continue
+                            delta = current.rotation_difference(desired)
+                            if delta.angle > .25:
+                                delta = delta.slerp(type(delta)(), 1-.25/delta.angle)
+                            bone.matrix = Matrix.Translation(head) @ (delta @ bone.matrix.to_quaternion()).to_matrix().to_4x4()
+                            bpy.context.view_layer.update()
+                        if (bones[-1].tail-target).length < .0001:
+                            break
+                else:
+                    for bone in bones:
+                        head = bone.head.copy(); radial = head-center-axis*(head-center).dot(axis)
+                        radius = radial.length
+                        if radius < .005:
+                            raise RuntimeError("Finger joint starts at the cylinder axis.")
+                        tangent = axis.cross(radial).normalized()
+                        forward = Vector(entry["centers"][-1])-Vector(entry["centers"][0])
+                        if tangent.dot(forward) < 0:
+                            tangent.negate()
+                        half_angle = min(.75, bone.length/(2*radius))
+                        next_radial = radial.normalized()*math.cos(2*half_angle)+tangent*math.sin(2*half_angle)
+                        target = center+axis*(head-center).dot(axis)+next_radial*requested_radius
+                        rotation = bone.matrix.to_quaternion()
+                        delta = (rotation @ Vector((0,1,0))).rotation_difference((target-head).normalized())
+                        bone.matrix = Matrix.Translation(head) @ (delta @ rotation).to_matrix().to_4x4()
+                        bpy.context.view_layer.update()
+                evaluated = body.evaluated_get(bpy.context.evaluated_depsgraph_get()); mesh = evaluated.to_mesh()
+                try:
+                    minimum = .02+min(triangle_shaft_clearance([mesh.vertices[i].co for i in tri],center,axis)
+                                      for tri in digit_triangles)
+                finally:
+                    evaluated.to_mesh_clear()
+                score = abs(minimum-.0205) + (1.0 if minimum < .02 else 0.0)
+                if best is None or score < best[0]:
+                    best = (score, [b.matrix_basis.copy() for b in bones], minimum, requested_radius)
+                if .02 <= minimum <= .021:
+                    break
+            for bone, basis in zip(bones, best[1]):
+                bone.matrix_basis = basis
+            bpy.context.view_layer.update()
+            entry["contactSolver"] = {"iterations": step+1, "requestedCenterlineRadius": best[3],
+                                      "minimumSurfaceRadius": best[2], "passed": .02 <= best[2] <= .021}
+            for bone in bones:
+                bone.keyframe_insert(data_path="rotation_quaternion", frame=31)
+    bpy.context.scene.frame_set(31)
+    bpy.context.scene.frame_start = 1; bpy.context.scene.frame_end = 31
+    for layer in rig.animation_data.action.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                for curve in bag.fcurves:
+                    for keyframe in curve.keyframe_points:
+                        keyframe.interpolation = "LINEAR"
+    bpy.context.view_layer.update()
+    evaluated = body.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+    try:
+        mesh.calc_loop_triangles()
+        for hand in hands:
+            if hand["side"] != "Right":
+                continue
+            center = Vector(hand["handle"]["center"]); axis = Vector(hand["handle"]["axis"])
+            domain = set(hand["sourceHandVertices"])
+            for digit, entry in hand["branches"].items():
+                distances = []
+                finite_distances = []
+                for i in entry["sourceVertices"]:
+                    offset = mesh.vertices[i].co-center
+                    radial_distance = (offset-axis*offset.dot(axis)).length
+                    distances.append(radial_distance)
+                    radial_gap, cap_gap = radial_distance-.02, abs(offset.dot(axis))-.08
+                    finite_distances.append(math.hypot(max(radial_gap,0),max(cap_gap,0))+min(max(radial_gap,cap_gap),0))
+                entry["gripRadialDistance"] = {"minimum": min(distances), "maximum": max(distances),
+                                               "minimumSourceVertex": entry["sourceVertices"][distances.index(min(distances))],
+                                               "insideCylinderVertices": sum(d < .02 for d in distances),
+                                               "maximumPenetration": max(0.0, .02-min(distances)),
+                                               "minimumSurfaceGap": max(0.0, min(distances)-.02)}
+                entry["finiteHandleVertexContact"] = {"minimumSignedDistance": min(finite_distances),
+                                                       "insideVertices": sum(d<0 for d in finite_distances),
+                                                       "passed": 0 <= min(finite_distances) <= .001,
+                                                       "triangleSurfaceVerified": False}
+                digit_vertices = set(entry["sourceVertices"])
+                digit_triangles = [tri for tri in source_triangles if any(i in digit_vertices for i in tri)]
+                clearance = min(triangle_shaft_clearance([mesh.vertices[i].co for i in tri],center,axis) for tri in digit_triangles)
+                entry["continuousShaftContact"] = {"minimumClearance": clearance,
+                                                   "trianglesChecked": len(digit_triangles),
+                                                   "passed": math.isfinite(clearance) and 0 <= clearance <= .001}
+                bones = [rig.pose.bones[hand["side"]+digit+part] for part in entry["parts"]]
+                points = [bone.head.copy() for bone in bones]+[bones[-1].tail.copy()]
+                radial = [(p-center)-axis*(p-center).dot(axis) for p in points]
+                forward = Vector(entry["centers"][-1])-Vector(entry["centers"][0])
+                direction = 1 if axis.cross(radial[0]).dot(forward) >= 0 else -1
+                increments = [direction*math.atan2(axis.dot(a.cross(b)), a.dot(b)) for a,b in zip(radial,radial[1:])]
+                alignments = [direction*axis.cross(a).normalized().dot((q-p).normalized())
+                              for a,p,q in zip(radial,points,points[1:])]
+                entry["wrapEvidence"] = {"jointArcDegrees": [math.degrees(a) for a in increments],
+                                         "totalArcDegrees": math.degrees(sum(increments)),
+                                         "tangentAlignments": alignments,
+                                         "passed": digit != "Thumb" and min(increments) > 0 and sum(increments) >= math.pi/2 and min(alignments) > .2,
+                                         "tipRadialDirection": list(radial[-1].normalized())}
+            thumb_radial = Vector(hand["branches"]["Thumb"]["wrapEvidence"]["tipRadialDirection"])
+            finger_radial = sum((Vector(e["wrapEvidence"]["tipRadialDirection"]) for digit,e in hand["branches"].items() if digit != "Thumb"), Vector()).normalized()
+            opposition = thumb_radial.dot(finger_radial)
+            hand["branches"]["Thumb"]["wrapEvidence"]["oppositionDot"] = opposition
+            hand["branches"]["Thumb"]["wrapEvidence"]["passed"] = opposition < -.2
+            triangles = [tuple(t.vertices) for t in mesh.loop_triangles if all(i in domain for i in t.vertices)]
+            clearances = [triangle_shaft_clearance([mesh.vertices[i].co for i in tri],center,axis) for tri in triangles]
+            hand["continuousShaftContact"] = {"minimumClearance": min(clearances),
+                                              "trianglesChecked": len(triangles),
+                                              "penetratingTriangles": sum(d < 0 for d in clearances),
+                                              "passed": min(clearances) >= 0 and all(e["continuousShaftContact"]["passed"] for e in hand["branches"].values())}
+            hand["degenerateTriangles"] = sum((mesh.vertices[b].co-mesh.vertices[a].co).cross(
+                                               mesh.vertices[c].co-mesh.vertices[a].co).length < 1e-10
+                                              for a,b,c in triangles)
+            tree = BVHTree.FromPolygons([v.co for v in mesh.vertices], triangles, all_triangles=True)
+            candidates = [(a,b) for a,b in tree.overlap(tree) if a < b and not set(triangles[a]) & set(triangles[b])]
+            intersections = 0; unresolved = 0
+            for first, second in candidates:
+                a = [mesh.vertices[i].co for i in triangles[first]]; b = [mesh.vertices[i].co for i in triangles[second]]
+                normal_a = (a[1]-a[0]).cross(a[2]-a[0]); normal_b = (b[1]-b[0]).cross(b[2]-b[0])
+                if min(normal_a.length, normal_b.length) < 1e-10:
+                    unresolved += 1; continue
+                if abs(normal_a.normalized().dot(normal_b.normalized())) > .999999:
+                    unresolved += 1; continue
+                hit = False
+                for source, target in ((a,b),(b,a)):
+                    for p,q in zip(source,source[1:]+source[:1]):
+                        result = intersect_ray_tri(*target, q-p, p, True)
+                        if result is not None and 1e-6 < (result-p).dot(q-p)/(q-p).length_squared < 1-1e-6:
+                            hit = True
+                intersections += int(hit)
+            hand["selfIntersectionCandidates"] = len(candidates)
+            hand["selfIntersectionTrianglesChecked"] = len(triangles)
+            hand["selfIntersections"] = intersections; hand["selfIntersectionUnresolvedPairs"] = unresolved
+            hand["selfIntersectionVerified"] = unresolved == 0
+            hand["gripContactPassed"] = all(.02 <= e["gripRadialDistance"]["minimum"] <= .021
+                                            for e in hand["branches"].values())
+            hand["wrapPassed"] = all(e["wrapEvidence"]["passed"] for e in hand["branches"].values())
+            hand["finiteHandleContactPassed"] = all(e["finiteHandleVertexContact"]["passed"] for e in hand["branches"].values())
+    finally:
+        evaluated.to_mesh_clear()
+
+
+def preview_hand_grip(body: bpy.types.Object, hands: list[dict], destination: Path, sex: str) -> None:
+    hand = next(h for h in hands if h["side"] == "Right")
+    center = Vector(hand["handle"]["center"])
+    bpy.context.view_layer.update()
+    evaluated = body.evaluated_get(bpy.context.evaluated_depsgraph_get()); mesh = evaluated.to_mesh()
+    try:
+        vertices = [v.co.copy() for v in mesh.vertices]
+        # 只裁掉遠端前臂以便檢查原型，不影響實際姿勢或任何引擎擷取。
+        faces = [list(p.vertices) for p in mesh.polygons if all((vertices[i]-center).length < .22 for i in p.vertices)]
+        preview_mesh = bpy.data.meshes.new("GripPreview"); preview_mesh.from_pydata(vertices, [], faces); preview_mesh.update()
+    finally:
+        evaluated.to_mesh_clear()
+    preview = bpy.data.objects.new("GripPreview", preview_mesh); bpy.context.collection.objects.link(preview); body.hide_render = True
+    preview_mesh.materials.append(create_material("GripPreviewSkin", (.55,.35,.22,1), .65))
+    for p in preview_mesh.polygons:
+        p.use_smooth = True
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=.02, depth=.16, location=center)
+    cylinder = bpy.context.object; cylinder.name = "GripReferenceCylinder"
+    cylinder.rotation_euler = Vector((0,0,1)).rotation_difference(Vector(hand["handle"]["axis"])).to_euler()
+    cylinder.data.materials.append(create_material("GripReference", (.06,.12,.20,1), .6))
+    lamp = bpy.data.lights.new("GripPreviewLight", "AREA"); lamp.energy = 150; lamp.size = .8
+    light = bpy.data.objects.new("GripPreviewLight", lamp); bpy.context.collection.objects.link(light)
+    light.location = center+Vector((-.5,-.5,.5)); light.rotation_euler = (center-light.location).to_track_quat('-Z','Y').to_euler()
+    cam = bpy.data.cameras.new("GripPreviewCamera"); camera = bpy.data.objects.new("GripPreviewCamera", cam); bpy.context.collection.objects.link(camera)
+    cam.type = "ORTHO"; cam.ortho_scale = .32
+    scene = bpy.context.scene; scene.camera = camera; scene.render.engine = "CYCLES"; scene.cycles.device = "CPU"; scene.cycles.samples = 16
+    scene.render.resolution_x = 640; scene.render.resolution_y = 640; scene.render.resolution_percentage = 100
+    for name, offset in (("front", (0,-1,0)), ("right", (-1,0,0))):
+        camera.location = center+Vector(offset); camera.rotation_euler = (center-camera.location).to_track_quat('-Z','Y').to_euler()
+        scene.render.filepath = str(destination / (sex+"-grip-"+name+".png")); bpy.ops.render.render(write_still=True)
+    bpy.data.objects.remove(preview, do_unlink=True); body.hide_render = False
+
+
+def hand_rig_prototype(bundle: Path, destination: Path) -> bool:
+    # 原型只允許指定 bld 子目錄；不會覆寫正式模型或使用者 Blender 檔案。
+    allowed = Path(r"D:\Download\Aevrynd\bld\hand-rig-prototype-20260907").resolve()
+    destination = destination.resolve()
+    if destination != allowed and allowed not in destination.parents:
+        raise RuntimeError("Hand prototype output must stay inside its dedicated bld directory.")
+    destination.mkdir(parents=True, exist_ok=True)
+    test_axis = Vector((0,0,1)); test_center = Vector()
+    # 負例：三頂點皆在柱外，但三角形內部跨越圓柱，必須判為穿透。
+    if triangle_shaft_clearance([Vector((.03,0,0)),Vector((-.015,.026,0)),Vector((-.015,-.026,0))],test_center,test_axis) >= 0:
+        raise RuntimeError("Continuous triangle/cylinder interior rejection self-test failed.")
+    if triangle_shaft_clearance([Vector((.021,-.01,0)),Vector((.021,.01,0)),Vector((.021,0,.03))],test_center,test_axis) < 0:
+        raise RuntimeError("Continuous triangle/cylinder clear face self-test failed.")
+    if not math.isinf(triangle_shaft_clearance([Vector((0,0,.09)),Vector((.01,0,.09)),Vector((0,.01,.09))],test_center,test_axis)):
+        raise RuntimeError("Finite cylinder end-plane clipping self-test failed.")
+    all_accepted = True
+    for female in (True, False):
+        clear_scene()
+        body = load_base_objects(bundle, female)[0]
+        normalize_and_shape([body], female, 1.78 if female else 2.04)
+        original = [tuple(v.co) for v in body.data.vertices]
+        report = {"schemaVersion": 1, "units": "meters", "sex": "female" if female else "male",
+                  "accepted": False, "sourceGeometryUnchanged": False, "hands": []}
+        report_path = destination / (report["sex"] + "-grip-report.json")
+        try:
+            hands = [inspect_hand_branches(body, female, side) for side in ("Left", "Right")]
+            rig = create_rig(female)
+            bpy.context.view_layer.objects.active = rig; rig.select_set(True)
+            bpy.ops.object.mode_set(mode="EDIT")
+            for hand in hands:
+                side = hand["side"]
+                rig.data.edit_bones[side + "Fingers"].use_deform = True
+                for digit, entry in hand["branches"].items():
+                    points = [Vector(p) for p in entry["centers"]]
+                    previous = rig.data.edit_bones[side + "Fingers"]
+                    for index, (head, tail) in enumerate(zip(points, points[1:])):
+                        bone = rig.data.edit_bones.new(f"{side}{digit}{entry['parts'][index]}")
+                        bone.head = head; bone.tail = tail; bone.parent = previous
+                        bone.use_deform = False
+                        bone.use_connect = index > 0; bone.align_roll(Vector((0, 1, 0)))
+                        previous = bone
+            bpy.ops.object.mode_set(mode="OBJECT")
+            bind_to_rig(body, [], rig)
+            # 新指骨僅綁定已驗證來源分支；保留腕與掌原有蒙皮，不允許自動權重跨指污染。
+            digit_names = [f"{hand['side']}{digit}{part}" for hand in hands
+                           for digit, entry in hand["branches"].items() for part in entry["parts"]]
+            for name in digit_names:
+                rig.data.bones[name].use_deform = True
+                group = body.vertex_groups.get(name) or body.vertex_groups.new(name=name)
+                group.remove(range(len(body.data.vertices)))
+            for hand in hands:
+                for digit, entry in hand["branches"].items():
+                    names = [hand["side"] + digit + part for part in entry["parts"]]
+                    for vertex in entry["sourceVertices"]:
+                        fraction = min(1.0, max(0.0, entry["distances"][vertex] / (entry["domainLength"] if digit == "Thumb" else entry["length"])))
+                        coordinate = min(float(len(names)-1), max(0.0, (1-fraction) * len(names)-.5))
+                        lower = int(coordinate); upper = min(len(names)-1, lower+1); blend = coordinate-lower
+                        root_fraction = entry["distances"][vertex]/entry["domainLength"]
+                        root_blend = min(1.0, max(0.0, (1-root_fraction)/.2))
+                        for group in body.vertex_groups:
+                            group.remove([vertex])
+                        body.vertex_groups[names[lower]].add([vertex], (1-blend)*root_blend, "REPLACE")
+                        if upper != lower and blend > 0:
+                            body.vertex_groups[names[upper]].add([vertex], blend*root_blend, "REPLACE")
+                        if root_blend < 1:
+                            body.vertex_groups[hand["side"]+"Hand"].add([vertex], 1-root_blend, "REPLACE")
+                    entry["jointAxes"] = []
+                    entry["weights"] = []
+                    for name in names:
+                        bone = rig.data.bones[name]
+                        entry["jointAxes"].append({"name": name, "head": list(bone.head_local), "tail": list(bone.tail_local),
+                                                  "bendAxis": list(bone.matrix_local.to_3x3().col[0])})
+                        group = body.vertex_groups[name]
+                        values = [next((g.weight for g in v.groups if g.group == group.index), 0.0) for v in body.data.vertices]
+                        dominant = sum(value > 0 and value >= max((g.weight for g in body.data.vertices[i].groups), default=0)
+                                       for i, value in enumerate(values))
+                        entry["weights"].append({"name": name, "nonzero": sum(v > 0 for v in values), "dominant": dominant})
+                        if not dominant:
+                            raise RuntimeError("Finger joint has no dominant source vertices: " + name)
+            report["hands"] = hands
+            # 驗證前先套用引擎四權重與16-bit量化，避免匯出時截斷改變已驗證的蒙皮表面。
+            report["nonHandStaticRootFallbackVertices"] = []
+            all_hand_vertices = set(i for hand in hands for i in hand["sourceHandVertices"])
+            for vertex in body.data.vertices:
+                influences = sorted(((g.group,g.weight) for g in vertex.groups if g.weight>0),
+                                    key=lambda item:(-item[1],item[0]))[:4]
+                total = sum(weight for _,weight in influences)
+                if total <= 0:
+                    if vertex.index in all_hand_vertices:
+                        raise RuntimeError("Prototype hand vertex has no skin influences: "+str(vertex.index))
+                    # 非本輪手部的原始靜態點只綁Root保留bind位置，不宣稱全身蒙皮已驗證。
+                    influences = [(body.vertex_groups["Root"].index,1.0)]; total = 1.0
+                    report["nonHandStaticRootFallbackVertices"].append(vertex.index)
+                quantized = [math.floor(weight/total*65535) for _,weight in influences]
+                quantized[0] += 65535-sum(quantized)
+                for group_index in [g.group for g in vertex.groups]:
+                    body.vertex_groups[group_index].remove([vertex.index])
+                for (group,_),weight in zip(influences,quantized):
+                    if weight:
+                        body.vertex_groups[group].add([vertex.index],weight/65535,"REPLACE")
+            report["maximumSkinInfluences"] = max(len(v.groups) for v in body.data.vertices)
+            report["skinWeightQuantization"] = 65535
+            report["sourceGeometryUnchanged"] = original == [tuple(v.co) for v in body.data.vertices]
+            report["boneCount"] = len(rig.data.bones)
+            # 先保留可審查的分指骨架；握柄與碰撞尚未通過前不得當正式可用資產。
+            pose_hand_grip_prototype(body, rig, hands)
+            preview_hand_grip(body, hands, destination, report["sex"])
+            report["contactLimits"] = {"cylinderRadius": .02, "maximumPenetration": 0.0, "maximumSurfaceGap": .001}
+            report["contactBasis"] = "Continuous source-triangle surface clipped to finite cylinder, not vertex-only contact"
+            report["sampledAnimationFrame"] = 31
+            report["remainingFailures"] = []
+            for hand in hands:
+                if hand["side"] != "Right":
+                    continue
+                if not hand["wrapPassed"]:
+                    report["remainingFailures"].append(hand["side"]+": finger wrap or thumb opposition failed")
+                if not hand["continuousShaftContact"]["passed"]:
+                    report["remainingFailures"].append(hand["side"]+": continuous triangle/finite-cylinder contact failed")
+                if hand["selfIntersections"] or not hand["selfIntersectionVerified"]:
+                    report["remainingFailures"].append(hand["side"]+": hand self-intersection failed or unresolved")
+                if hand["degenerateTriangles"]:
+                    report["remainingFailures"].append(hand["side"]+": degenerate hand triangles")
+            if not report["sourceGeometryUnchanged"]:
+                report["remainingFailures"].append("Source positions changed")
+            report["accepted"] = not report["remainingFailures"]
+            report["status"] = "RIGHT_HAND_PROTOTYPE_GATES_PASSED" if report["accepted"] else "NO_GO_GRIP_CONTACT"
+            report["firstDivergence"] = next(iter(report["remainingFailures"]), None)
+            bpy.ops.wm.save_as_mainfile(filepath=str(destination / (report["sex"] + "-hand-rig-prototype.blend")))
+            if report["accepted"]:
+                add_point_colors(body)
+                if not body.data.materials:
+                    body.data.materials.append(create_material("PrototypeSkin",(.55,.35,.22,1),.65))
+                bpy.ops.object.select_all(action="DESELECT"); body.select_set(True); rig.select_set(True)
+                bpy.context.view_layer.objects.active = rig
+                path = destination/(report["sex"]+"-hand-rig-prototype.gltf")
+                bpy.ops.export_scene.gltf(filepath=str(path),export_format="GLTF_SEPARATE",use_selection=True,
+                                          export_animations=True,export_skins=True,export_tangents=True,export_yup=True,
+                                          export_materials="EXPORT",export_cameras=False,export_lights=False,
+                                          export_force_sampling=True,export_frame_range=True,
+                                          export_optimize_animation_size=False,
+                                          export_sampling_interpolation_fallback="LINEAR")
+                canonicalize_gltf_binary(path)
+        except Exception as error:
+            report["status"] = "NO_GO"; report["firstDivergence"] = str(error)
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print("HAND_RIG_PROTOTYPE", report["sex"], report["status"], flush=True)
+        all_accepted = all_accepted and report["accepted"]
+    return all_accepted
+
+
+def retrofit_hand_readonly(source: Path, destination: Path, female: bool, output_stem: str | None = None) -> bool:
+    # 只讀使用者來源，所有派生資料只進獨立bld；此路徑禁止任何save_as_mainfile。
+    sex = "female" if female else "male"
+    authorized = Path(rf"D:\Download\Aevrynd\Games\games\character_lab\assets\model-packs\realistic-{sex}\source\realistic-{sex}.blend").resolve()
+    allowed = Path(r"D:\Download\Aevrynd\bld\hand-rig-prototype-20260907").resolve()
+    source = source.resolve(); destination = destination.resolve()
+    if source != authorized or (destination != allowed and allowed not in destination.parents):
+        raise RuntimeError("Readonly retrofit source/output is outside the authorized paths.")
+    source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    expected_hash = ("27bfe2f1f0bd0291bd00696c4b44521f37e7d247e867c043a46baa30ed743d35" if female else
+                     "f8534f97cd21aab6ca56d3f020afc5f20e0f368dd463a8878e87a33d68bb46d6")
+    if source_hash != expected_hash:
+        raise RuntimeError(f"Readonly {sex} source differs from the inspected source identity.")
+    destination.mkdir(parents=True,exist_ok=True)
+    output_stem = output_stem or (sex+"-retrofit")
+    if not output_stem.replace("-", "").isalnum():
+        raise RuntimeError("Readonly retrofit output stem is unsafe.")
+    report = {"schemaVersion":1,"sourceSha256":source_hash,"accepted":False,"scope":sex+"-right-hand-retrofit",
+              "leftHand":"OUT_OF_SCOPE_UNMODIFIED","sourceSaved":False}
+    try:
+        bpy.ops.wm.open_mainfile(filepath=str(source))
+        body = bpy.data.objects.get("RealisticFemaleCharacter" if female else "RealisticMaleCharacter")
+        rig = bpy.data.objects.get("F2FemaleRig" if female else "M2MaleRig")
+        if body is None or rig is None or body.type != "MESH" or rig.type != "ARMATURE" or body.parent != rig:
+            raise RuntimeError("Readonly source character/rig structure is unsupported.")
+        positions = [tuple(v.co) for v in body.data.vertices]
+        materials = [m.name for m in body.data.materials]
+        polygon_materials = [p.material_index for p in body.data.polygons]
+        actions = [a.name for a in bpy.data.actions]
+        original_bones = {b.name:(tuple(b.head_local),tuple(b.tail_local),b.parent.name if b.parent else None) for b in rig.data.bones}
+        if len(materials) != 9 or len(original_bones) != 24 or "GripPrototype" in actions:
+            raise RuntimeError("Readonly source has unexpected material, rig, or animation identity.")
+        bundle = Path(r"D:\Download\Aevrynd\AssetCache\BlenderHumanBaseMeshes\v1.4.1\human-base-meshes-bundle-v1.4.1\human_base_meshes_bundle.blend")
+        base = load_base_objects(bundle,female)[0]; normalize_and_shape([base],female,1.78 if female else 2.04)
+        base_count = len(base.data.vertices)
+        if positions[:base_count] != [tuple(v.co) for v in base.data.vertices]:
+            raise RuntimeError("CC0 base vertex prefix does not exactly map to the readonly character.")
+        base_edges = {tuple(sorted(e.vertices)) for e in base.data.edges}
+        source_edges = {tuple(sorted(e.vertices)) for e in body.data.edges if all(i<base_count for i in e.vertices)}
+        if base_edges != source_edges:
+            raise RuntimeError("Readonly base topology differs from the inspected CC0 prefix.")
+        bpy.data.objects.remove(base,do_unlink=True)
+        hand = inspect_hand_branches(body,female,"Right",base_count)
+        rig.animation_data.action = None
+        for pose in rig.pose.bones:
+            pose.matrix_basis = Matrix.Identity(4)
+        bpy.context.view_layer.objects.active=rig; rig.select_set(True); bpy.ops.object.mode_set(mode="EDIT")
+        for digit,entry in hand["branches"].items():
+            points=[Vector(p) for p in entry["centers"]]; previous=rig.data.edit_bones["RightFingers"]
+            for index,(head,tail) in enumerate(zip(points,points[1:])):
+                bone=rig.data.edit_bones.new("Right"+digit+entry["parts"][index]); bone.head=head; bone.tail=tail; bone.parent=previous
+                bone.use_connect=index>0; bone.align_roll(Vector((0,1,0))); previous=bone
+        bpy.ops.object.mode_set(mode="OBJECT")
+        for digit,entry in hand["branches"].items():
+            names=["Right"+digit+part for part in entry["parts"]]
+            for name in names:
+                if body.vertex_groups.get(name):
+                    raise RuntimeError("Readonly source already contains corrective vertex group: "+name)
+                body.vertex_groups.new(name=name)
+            for i in entry["sourceVertices"]:
+                fraction=min(1.0,max(0.0,entry["distances"][i]/(entry["domainLength"] if digit=="Thumb" else entry["length"])))
+                coordinate=min(float(len(names)-1),max(0.0,(1-fraction)*len(names)-.5)); lower=int(coordinate); upper=min(len(names)-1,lower+1); blend=coordinate-lower
+                root_blend=min(1.0,max(0.0,(1-entry["distances"][i]/entry["domainLength"])/.2))
+                for group_index in [g.group for g in body.data.vertices[i].groups]:body.vertex_groups[group_index].remove([i])
+                body.vertex_groups[names[lower]].add([i],(1-blend)*root_blend,"REPLACE")
+                if upper!=lower and blend>0:body.vertex_groups[names[upper]].add([i],blend*root_blend,"REPLACE")
+                if root_blend<1:body.vertex_groups["RightHand"].add([i],1-root_blend,"REPLACE")
+        for vertex in body.data.vertices:
+            influences=sorted(((g.group,g.weight) for g in vertex.groups if g.weight>0),key=lambda a:(-a[1],a[0]))[:4]
+            total=sum(w for _,w in influences)
+            if total<=0:raise RuntimeError("Readonly source contains an unweighted vertex.")
+            weights=[math.floor(w/total*65535) for _,w in influences];weights[0]+=65535-sum(weights)
+            for group_index in [g.group for g in vertex.groups]:body.vertex_groups[group_index].remove([vertex.index])
+            for (index,_),weight in zip(influences,weights):
+                if weight:body.vertex_groups[index].add([vertex.index],weight/65535,"REPLACE")
+        maximum_skin_influences=max(len([g for g in vertex.groups if g.weight>0]) for vertex in body.data.vertices)
+        skin_weights_normalized=all(abs(sum(g.weight for g in vertex.groups if g.weight>0)-1.0)<=1e-6
+                                    for vertex in body.data.vertices)
+        if maximum_skin_influences>4 or not skin_weights_normalized:
+            raise RuntimeError("Readonly retrofit violates the four-influence normalized skin contract.")
+        for digit,entry in hand["branches"].items():
+            entry["weights"]=[]
+            for part in entry["parts"]:
+                name="Right"+digit+part; group=body.vertex_groups[name]
+                weighted=[v for v in body.data.vertices if any(g.group==group.index and g.weight>0 for g in v.groups)]
+                dominant=sum(any(g.group==group.index and g.weight>=max(w.weight for w in v.groups) for g in v.groups) for v in weighted)
+                entry["weights"].append({"name":name,"nonzero":len(weighted),"dominant":dominant})
+                if not dominant:raise RuntimeError("Retrofit joint has no dominant vertices: "+name)
+        pose_hand_grip_prototype(body,rig,[hand]); preview_hand_grip(body,[hand],destination,output_stem)
+        report.update({"hands":[hand],"materialNames":materials,"sourceVertexCount":len(positions),"baseVertexPrefix":base_count,
+                       "sourceEdgeCount":len(body.data.edges),"sourcePolygonCount":len(body.data.polygons),
+                       "existingBoneCount":len(original_bones),"addedBoneCount":len(rig.data.bones)-len(original_bones),
+                       "boneCount":len(rig.data.bones),"boneNames":[b.name for b in rig.data.bones],
+                       "maximumSkinInfluences":maximum_skin_influences,"skinWeightsNormalized":skin_weights_normalized,
+                       "skinWeightQuantization":65535,
+                       "sourcePositionsUnchanged":positions==[tuple(v.co) for v in body.data.vertices],
+                       "materialsUnchanged":materials==[m.name for m in body.data.materials] and polygon_materials==[p.material_index for p in body.data.polygons],
+                       "existingBonesUnchanged":all(original_bones[n]==(tuple(rig.data.bones[n].head_local),tuple(rig.data.bones[n].tail_local),rig.data.bones[n].parent.name if rig.data.bones[n].parent else None) for n in original_bones),
+                       "existingActions":actions,"allActions":[a.name for a in bpy.data.actions]})
+        report["accepted"]=report["sourcePositionsUnchanged"] and report["materialsUnchanged"] and report["existingBonesUnchanged"] and all(name in report["allActions"] for name in actions) and hand["continuousShaftContact"]["passed"] and hand["wrapPassed"] and hand["selfIntersectionVerified"] and not hand["selfIntersections"] and not hand["degenerateTriangles"]
+        report["status"]="READONLY_RETROFIT_PROTOTYPE_PASSED" if report["accepted"] else "NO_GO_RETROFIT_GATE"
+        if report["accepted"]:
+            bpy.ops.object.select_all(action="DESELECT");body.select_set(True);rig.select_set(True);bpy.context.view_layer.objects.active=rig
+            path=destination/(output_stem+".gltf")
+            bpy.ops.export_scene.gltf(filepath=str(path),export_format="GLTF_SEPARATE",use_selection=True,export_animations=True,
+                                      export_skins=True,export_tangents=True,export_yup=True,export_materials="EXPORT",export_cameras=False,export_lights=False,
+                                      export_force_sampling=True,export_frame_range=False,export_optimize_animation_size=False,export_sampling_interpolation_fallback="LINEAR")
+            canonicalize_gltf_binary(path)
+            document=json.loads(path.read_text()); report["exportMaterialCount"]=len(document.get("materials",[]));report["exportAnimationNames"]=[a.get("name") for a in document.get("animations",[])]
+            if report["exportMaterialCount"]!=9 or not all(name in report["exportAnimationNames"] for name in actions):
+                raise RuntimeError("Readonly retrofit export lost materials or existing animation clips.")
+    except Exception as error:
+        report["accepted"]=False;report["status"]="NO_GO";report["firstDivergence"]=str(error)
+    report["sourceHashUnchanged"]=hashlib.sha256(source.read_bytes()).hexdigest()==source_hash
+    report["accepted"]=report["accepted"] and report["sourceHashUnchanged"]
+    (destination/(sex+"-retrofit-report.json")).write_text(json.dumps(report,indent=2),encoding="utf-8")
+    print("READONLY_RETROFIT",report["status"],flush=True)
+    return report["accepted"]
+
+
 def main() -> None:
+    values = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    if values and values[0] == "--readonly-female-retrofit":
+        if len(values) not in {3,4}:raise RuntimeError("Expected readonly female blend, dedicated bld output, and optional output stem.")
+        if not retrofit_hand_readonly(Path(values[1]),Path(values[2]),True,values[3] if len(values)==4 else None):sys.exit(2)
+        return
+    if values and values[0] == "--readonly-male-retrofit":
+        if len(values) not in {3,4}:raise RuntimeError("Expected readonly male blend, dedicated bld output, and optional output stem.")
+        if not retrofit_hand_readonly(Path(values[1]),Path(values[2]),False,values[3] if len(values)==4 else None):sys.exit(2)
+        return
+    if values and values[0] == "--hand-rig-prototype":
+        if len(values) != 3:
+            raise RuntimeError("Expected prototype flag, CC0 bundle, and dedicated bld output directory.")
+        if not hand_rig_prototype(Path(values[1]).resolve(), Path(values[2]).resolve()):
+            sys.exit(2)
+        return
     bundle, female_output, male_output = arguments()
     export_character(bundle, female_output, True)
     export_character(bundle, male_output, False)

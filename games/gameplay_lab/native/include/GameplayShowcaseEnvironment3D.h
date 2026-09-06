@@ -200,20 +200,47 @@ BuildShowcaseActualLodRows3D(
   actual.reserve(expected.size());
   for (const auto &wanted : expected) {
     std::size_t nearIndex = instances.size(), farIndex = instances.size();
-    for (std::size_t index = 0; index < instances.size(); ++index) {
-      if (used[index]) continue;
-      const auto &instance = instances[index];
-      if (instance.layer != Aevrynd::MeshRenderLayer3D::Opaque ||
-          instance.identity.id.high != identityHigh ||
-          instance.identity.id.low != wanted.identity.stableLow ||
-          instance.identity.generation != wanted.identity.generation ||
-          (instance.lodSeed & 7u) != wanted.lodSeed)
+    std::size_t mismatchedNear = instances.size(), mismatchedFar = instances.size();
+    // 同一物件的多個子網格只有三位元 dither seed，seed 碰撞是合法情況。
+    // 近、遠 draw 由相同的實際 coverage 共同產生，因此先配對互補 draw，
+    // 不可把同 seed、coverage=1 的非過渡子網格誤認成遠端 draw。
+    for (std::size_t candidateNear = 0; candidateNear < instances.size(); ++candidateNear) {
+      if (used[candidateNear]) continue;
+      const auto &nearInstance = instances[candidateNear];
+      if (nearInstance.layer != Aevrynd::MeshRenderLayer3D::Opaque ||
+          nearInstance.identity.id.high != identityHigh ||
+          nearInstance.identity.id.low != wanted.identity.stableLow ||
+          nearInstance.identity.generation != wanted.identity.generation ||
+          (nearInstance.lodSeed & 15u) != (wanted.lodSeed | 8u) ||
+          !std::isfinite(nearInstance.lodCoverage) || nearInstance.lodCoverage <= 0.f ||
+          nearInstance.lodCoverage >= 1.f)
         continue;
-      if (instance.lodSeed & 8u) {
-        if (nearIndex == instances.size()) nearIndex = index;
-      } else if (farIndex == instances.size()) {
-        farIndex = index;
+      for (std::size_t candidateFar = 0; candidateFar < instances.size(); ++candidateFar) {
+        if (used[candidateFar]) continue;
+        const auto &farInstance = instances[candidateFar];
+        if (farInstance.layer != Aevrynd::MeshRenderLayer3D::Opaque ||
+            farInstance.identity != nearInstance.identity ||
+            (farInstance.lodSeed & 15u) != wanted.lodSeed ||
+            !std::isfinite(farInstance.lodCoverage) || farInstance.lodCoverage <= 0.f ||
+            farInstance.lodCoverage >= 1.f)
+          continue;
+        if (mismatchedNear == instances.size()) {
+          mismatchedNear = candidateNear;
+          mismatchedFar = candidateFar;
+        }
+        if (std::abs(farInstance.lodCoverage - nearInstance.lodCoverage) > .00001f)
+          continue;
+        nearIndex = candidateNear;
+        farIndex = candidateFar;
+        break;
       }
+      if (farIndex != instances.size()) break;
+    }
+    // 沒有精確互補 pair 時仍保留一筆實際錯配，讓 hostile gate 回報 wrongBlend；
+    // coverage=1 的非過渡 draw 不可成為此 fallback。
+    if (nearIndex == instances.size()) {
+      nearIndex = mismatchedNear;
+      farIndex = mismatchedFar;
     }
     if (nearIndex == instances.size() || farIndex == instances.size()) continue;
     used[nearIndex] = used[farIndex] = true;

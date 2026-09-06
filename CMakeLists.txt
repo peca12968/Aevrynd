@@ -65,9 +65,18 @@ add_subdirectory(games/frontier_world/native)
 add_subdirectory(games/gameplay_lab/native)
 
 # 受限遠端 worker 只允許建置這個既有固定 target；在 gate preset 下，
-# 將它擴充為 13 個無互動 CPU gate 的聚合建置入口。
+# 將它擴充為原有 13 個 gate 與角色／動畫回歸的無互動 CPU 聚合建置入口。
 if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
   add_dependencies(AevryndStreamlinePackageFixture
+    AevryndFootPlacement3DTest
+    AevryndSkinnedMaterialSidecar3DTest
+    GameplayLabRulesTest
+    GameplayLabCombatAnimationTest
+    GameplayCameraProductionIntegrationTest
+    AevryndCharacterPresentation3DTest
+    AevryndFirstPersonArmsSkinnedMesh3DTest
+    GameplayFirstPersonPoseTest
+    GameplayClipSegmentVisibilityTest
     AevryndHlod3DTest
     AevryndHlodSceneECS3DTest
     AevryndHlodWorldPartitionReceiptTest

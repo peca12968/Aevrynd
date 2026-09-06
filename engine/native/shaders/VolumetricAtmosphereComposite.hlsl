@@ -89,29 +89,25 @@ float4 SampleDepthAwareAtmosphere(float2 localUv,float centerDepthWeight)
     return atmosphereTexture.Load(int3(fallback,0));
 }
 
-float4 VolumetricAtmosphereCompositePixelMain(FullscreenVertex input) : SV_Target
+float4 CompositeAtmosphere(FullscreenVertex input)
 {
     const uint2 pixel=min(uint2(input.position.xy),uint2(outputExtent)-1);
     const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
-    float depthWeight=SceneAtmosphereWeight(pixel,localUv);
+    const float depthWeight=SceneAtmosphereWeight(pixel,localUv);
     const float4 atmosphere=SampleDepthAwareAtmosphere(localUv,depthWeight);
-    // MSAA HDR 邊界使用單樣本深度時，保守檢查鄰近點可避免 resolve 後在近景輪廓形成亮邊。
-    [unroll] for(int offsetY=-1;offsetY<=1;++offsetY)
-    [unroll] for(int offsetX=-1;offsetX<=1;++offsetX)
-    {
-        const int2 neighborInt=clamp(int2(pixel)+int2(offsetX,offsetY),int2(viewportOrigin),int2(viewportOrigin+viewportExtent-1.0));
-        const uint2 neighbor=uint2(neighborInt);
-        const float2 neighborUv=saturate((float2(neighbor)+.5-viewportOrigin)/max(viewportExtent,1.0));
-        depthWeight=min(depthWeight,SceneAtmosphereWeight(neighbor,neighborUv));
-    }
     const float alpha=saturate(atmosphere.a*depthWeight);
     return float4(max(0.0,atmosphere.rgb)*depthWeight,alpha);
+}
+
+float4 VolumetricAtmosphereCompositePixelMain(FullscreenVertex input) : SV_Target
+{
+    return CompositeAtmosphere(input);
 }
 
 float4 VolumetricAtmosphereCompositeBloomSemanticPixelMain(FullscreenVertex input) : SV_Target
 {
     // A-only PSO 仍需此 alpha 供 RGB 的 INV_SRC_ALPHA；alpha channel 本身由 ZERO/ONE 保留目的語意。
-    return VolumetricAtmosphereCompositePixelMain(input);
+    return CompositeAtmosphere(input);
 }
 
 // 僅供負向回歸測試執行舊 nearest upscale；深度排除與 production 完全相同。
@@ -123,15 +119,7 @@ float4 VolumetricAtmosphereCompositeNearestPixelMain(FullscreenVertex input) : S
     const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
     const uint2 atmospherePixel=min(uint2(localUv*float2(atmosphereWidth,atmosphereHeight)),uint2(atmosphereWidth-1,atmosphereHeight-1));
     const float4 atmosphere=atmosphereTexture.Load(int3(atmospherePixel,0));
-    float depthWeight=SceneAtmosphereWeight(pixel,localUv);
-    [unroll] for(int offsetY=-1;offsetY<=1;++offsetY)
-    [unroll] for(int offsetX=-1;offsetX<=1;++offsetX)
-    {
-        const int2 neighborInt=clamp(int2(pixel)+int2(offsetX,offsetY),int2(viewportOrigin),int2(viewportOrigin+viewportExtent-1.0));
-        const uint2 neighbor=uint2(neighborInt);
-        const float2 neighborUv=saturate((float2(neighbor)+.5-viewportOrigin)/max(viewportExtent,1.0));
-        depthWeight=min(depthWeight,SceneAtmosphereWeight(neighbor,neighborUv));
-    }
+    const float depthWeight=SceneAtmosphereWeight(pixel,localUv);
     return float4(max(0.0,atmosphere.rgb)*depthWeight,saturate(atmosphere.a*depthWeight));
 }
 

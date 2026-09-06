@@ -40,9 +40,14 @@ struct SkinnedMaterialSidecarLimits3D {
 
 struct SkinnedMaterialSidecarResult3D {
     std::vector<MaterialAssetDefinition3D> materials;
+    std::vector<bool> pbrOverrides;
+    std::vector<bool> normalScaleOverrides;
     SkinnedMaterialSidecarError3D error;
 
     explicit operator bool() const { return !error; }
+
+    // 只有未明確提供 sidecar pbr 的材質才沿用來源 PBR；結構不一致時完全不修改。
+    bool PreserveSourcePbr(std::span<const Material3D> sourceMaterials) noexcept;
 };
 
 // 解析工作只建立定義；呼叫端可在全部成功後再交給 MaterialLibrary3D，避免部分載入。

@@ -173,8 +173,10 @@ bool ParseTextures(
 }
 
 bool ParsePbr(const SerializationObject& object, std::string_view slot, Material3D& output, SkinnedMaterialSidecarError3D& error) {
-    if (!HasOnlyFields(object, {"tint", "alpha", "roughness", "metallic", "emissive", "occlusion"})) {
-        error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' pbr contains an unknown field"};
+    if (!HasOnlyFields(object, {"tint", "alpha", "roughness", "metallic", "emissive", "occlusion"}) ||
+        !object.Contains("tint") || !object.Contains("alpha") || !object.Contains("roughness") ||
+        !object.Contains("metallic") || !object.Contains("emissive") || !object.Contains("occlusion")) {
+        error = {ErrorCode::InvalidSchema, 0u, "Material '" + std::string(slot) + "' pbr must contain exactly tint, alpha, roughness, metallic, emissive, and occlusion"};
         return false;
     }
     Vec3 tint{output.tint.r, output.tint.g, output.tint.b};
@@ -196,6 +198,25 @@ bool ParsePbr(const SerializationObject& object, std::string_view slot, Material
 }
 
 } // 匿名命名空間
+
+bool SkinnedMaterialSidecarResult3D::PreserveSourcePbr(
+    std::span<const Material3D> sourceMaterials) noexcept {
+    if (error || materials.size() != sourceMaterials.size() || pbrOverrides.size() != materials.size() ||
+        normalScaleOverrides.size() != materials.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < materials.size(); ++index) {
+        // 法線強度與 PBR 顏色覆寫彼此獨立；未指定時必須保留模型原始細節強度。
+        if (!normalScaleOverrides[index]) {
+            materials[index].material.normalScale = sourceMaterials[index].normalScale;
+        }
+        if (!pbrOverrides[index]) {
+            materials[index].material.tint = sourceMaterials[index].tint;
+            materials[index].material.surface = sourceMaterials[index].surface;
+        }
+    }
+    return true;
+}
 
 SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
     std::string_view document,
@@ -241,6 +262,8 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
 
     SkinnedMaterialSidecarResult3D result;
     result.materials.reserve(materialSlotNames.size());
+    result.pbrOverrides.reserve(materialSlotNames.size());
+    result.normalScaleOverrides.reserve(materialSlotNames.size());
     TextureIntegrityByPath3D knownIntegrity;
     for (const std::string& slot : materialSlotNames) {
         if (!materials.Contains(slot)) {
@@ -286,7 +309,8 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
         }
         material.textures.alphaMode=material.material.alphaMode;
         material.textures.alphaCutoff=material.material.alphaCutoff;
-        if (definition.Contains("pbr")) {
+        const bool hasPbrOverride = definition.Contains("pbr");
+        if (hasPbrOverride) {
             SerializationObject pbr;
             if (!definition.Read("pbr", pbr) || !ParsePbr(pbr, slot, material.material, parseError)) {
                 if (!parseError) parseError = {ErrorCode::InvalidSchema, 0u, "Material '" + slot + "' pbr must be an object"};
@@ -294,6 +318,8 @@ SkinnedMaterialSidecarResult3D ParseSkinnedMaterialSidecar3D(
             }
         }
         result.materials.push_back(std::move(material));
+        result.pbrOverrides.push_back(hasPbrOverride);
+        result.normalScaleOverrides.push_back(definition.Contains("normalScale"));
     }
     return result;
 }

@@ -19,7 +19,7 @@ void WriteFile(const std::filesystem::path& path, std::string_view contents = "t
 }
 
 std::string ValidDocument() {
-    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":{"path":"skin/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"skin/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"skin/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":2048,"layer1":{"baseColor":{"path":"detail/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"detail/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"detail/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"baseTextureScale":1.0,"detailTextureScale":4.0,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":{"path":"hair/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"hair/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"hair/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"pbr":{"roughness":0.7,"metallic":0},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true},"Eye":{"textures":{"baseColor":{"path":"eye/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"eye/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"eye/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"pbr":{"roughness":0.18,"metallic":0},"textureScale":1.0,"shadingModel":"eye"},"Cloth":{"textures":{"baseColor":{"path":"cloth/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"cloth/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"cloth/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"pbr":{"roughness":0.78,"metallic":0},"textureScale":6.0,"baseTextureScale":1.0,"detailTextureScale":6.0,"shadingModel":"cloth"}}}})";
+    return R"({"format":"aevrynd.serialization","version":1,"root":{"materials":{"Skin":{"textures":{"baseColor":{"path":"skin/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"skin/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"skin/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":2048,"layer1":{"baseColor":{"path":"detail/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"detail/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"detail/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},"pbr":{"tint":[0.82,0.61,0.52],"alpha":1,"roughness":0.46,"metallic":0.02,"emissive":0,"occlusion":0.95},"textureScale":1.5,"baseTextureScale":1.0,"detailTextureScale":4.0,"useUv":true,"castsShadow":true,"shadingModel":"skin"},"Hair":{"textures":{"baseColor":{"path":"hair/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"hair/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"hair/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"textureScale":0.75,"shadingModel":"hair","alphaMode":"mask","alphaCutoff":0.42,"doubleSided":true},"Eye":{"textures":{"baseColor":{"path":"eye/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"eye/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"eye/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"textureScale":1.0,"shadingModel":"eye"},"Cloth":{"textures":{"baseColor":{"path":"cloth/base.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"roughness":{"path":"cloth/rough.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"normal":{"path":"cloth/normal.png","expectedBytes":7,"expectedSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"maximumResolution":1024},"textureScale":6.0,"baseTextureScale":1.0,"detailTextureScale":6.0,"shadingModel":"cloth"}}}})";
 }
 
 } // 匿名命名空間
@@ -35,9 +35,12 @@ int main() {
     const std::array<std::string, 4> slots{"Skin", "Hair", "Eye", "Cloth"};
     bool passed = true;
 
-    const auto parsed = ParseSkinnedMaterialSidecar3D(ValidDocument(), slots, root);
+    auto parsed = ParseSkinnedMaterialSidecar3D(ValidDocument(), slots, root);
     passed &= Expect(parsed && parsed.materials.size() == 4u, "valid sidecar did not parse");
     if (parsed && parsed.materials.size() == 4u) {
+        passed &= Expect(parsed.pbrOverrides.size() == 4u && parsed.pbrOverrides[0] &&
+            !parsed.pbrOverrides[1] && !parsed.pbrOverrides[2] && !parsed.pbrOverrides[3],
+            "explicit PBR override presence was not preserved");
         passed &= Expect(parsed.materials[0].name == "Skin" && parsed.materials[1].name == "Hair" && parsed.materials[2].name == "Eye", "AESKIN slot order was not preserved");
         passed &= Expect(parsed.materials[0].textures.maximumResolution == 2048u, "maximumResolution was not applied");
         passed &= Expect(parsed.materials[0].textures.integrity[0].expectedBytes == 7u && parsed.materials[0].textures.integrity[0].expectedSha256 == std::string(64u, 'a'), "base texture sealed integrity was not propagated");
@@ -51,6 +54,84 @@ int main() {
         passed &= Expect(parsed.materials[3].material.shadingModel == CharacterShadingModel3D::Cloth, "cloth shading model was not applied");
         passed &= Expect(parsed.materials[1].material.alphaMode == MaterialAlphaMode3D::Mask && parsed.materials[1].textures.alphaMode == MaterialAlphaMode3D::Mask && std::abs(parsed.materials[1].material.alphaCutoff-.42f)<.0001f && parsed.materials[1].material.doubleSided, "masked material fields were not propagated");
         passed &= Expect(parsed.materials[0].textures.baseColorPath.is_absolute(), "resolved texture path is not absolute");
+
+        std::array<Material3D, 4> sourceMaterials{};
+        sourceMaterials[0].tint = {.11f, .12f, .13f, .14f};
+        sourceMaterials[0].surface = {.15f, .16f, .17f, .18f};
+        sourceMaterials[1].tint = {.21f, .22f, .23f, .24f};
+        sourceMaterials[1].surface = {.25f, .26f, .27f, .28f};
+        sourceMaterials[0].normalScale = .35f;
+        sourceMaterials[1].normalScale = .65f;
+        passed &= Expect(parsed.PreserveSourcePbr(sourceMaterials), "valid source PBR merge failed");
+        passed &= Expect(parsed.materials[0].material.normalScale == .35f &&
+            parsed.materials[1].material.normalScale == .65f,
+            "omitted normal strength did not preserve source independently of PBR override");
+
+        std::string explicitNormalDocument = ValidDocument();
+        const auto normalInsert = explicitNormalDocument.find("\"textureScale\":");
+        explicitNormalDocument.insert(normalInsert, "\"normalScale\":0.75,");
+        auto explicitNormal = ParseSkinnedMaterialSidecar3D(explicitNormalDocument, slots, root);
+        passed &= Expect(explicitNormal && explicitNormal.PreserveSourcePbr(sourceMaterials) &&
+            explicitNormal.materials[0].material.normalScale == .75f &&
+            explicitNormal.materials[1].material.normalScale == .65f,
+            "explicit normal strength did not override only its own slot");
+        std::string hairNormalDocument = ValidDocument();
+        const auto hairSlot = hairNormalDocument.find("\"Hair\":{");
+        hairNormalDocument.insert(hairSlot + std::string("\"Hair\":{").size(), "\"normalScale\":0.85,");
+        auto hairNormal = ParseSkinnedMaterialSidecar3D(hairNormalDocument, slots, root);
+        passed &= Expect(hairNormal && hairNormal.PreserveSourcePbr(sourceMaterials) &&
+            hairNormal.materials[1].material.normalScale == .85f &&
+            hairNormal.materials[1].material.tint.r == sourceMaterials[1].tint.r,
+            "normal override without PBR override did not preserve source tint");
+
+        // 故意破壞任一向量長度；即使來源全部不同，也不得先改掉任何材質欄位。
+        for (unsigned mismatch = 0; mismatch < 3; ++mismatch) {
+            auto invalid = ParseSkinnedMaterialSidecar3D(ValidDocument(), slots, root);
+            if (!invalid || invalid.materials.size() != sourceMaterials.size()) { passed = false; continue; }
+            const auto before = invalid.materials;
+            if (mismatch == 0) invalid.normalScaleOverrides.pop_back();
+            if (mismatch == 1) invalid.pbrOverrides.pop_back();
+            const auto count = mismatch == 2 ? sourceMaterials.size() - 1 : sourceMaterials.size();
+            passed &= Expect(!invalid.PreserveSourcePbr(std::span<const Material3D>(sourceMaterials.data(), count)),
+                "malformed merge metadata was accepted");
+            for (std::size_t slot = 0; slot < before.size(); ++slot) {
+                const auto& actual = invalid.materials[slot].material;
+                const auto& original = before[slot].material;
+                passed &= Expect(actual.normalScale == original.normalScale &&
+                    actual.tint.r == original.tint.r && actual.tint.g == original.tint.g &&
+                    actual.tint.b == original.tint.b && actual.tint.a == original.tint.a &&
+                    actual.surface.roughness == original.surface.roughness &&
+                    actual.surface.metallic == original.surface.metallic &&
+                    actual.surface.emissive == original.surface.emissive &&
+                    actual.surface.occlusion == original.surface.occlusion,
+                    "rejected merge partially changed a material");
+            }
+        }
+        passed &= Expect(std::abs(parsed.materials[0].material.tint.r - .82f) < .0001f &&
+            std::abs(parsed.materials[0].material.tint.g - .61f) < .0001f &&
+            std::abs(parsed.materials[0].material.tint.b - .52f) < .0001f &&
+            std::abs(parsed.materials[0].material.tint.a - 1.f) < .0001f &&
+            std::abs(parsed.materials[0].material.surface.roughness - .46f) < .0001f &&
+            std::abs(parsed.materials[0].material.surface.metallic - .02f) < .0001f &&
+            std::abs(parsed.materials[0].material.surface.emissive) < .0001f &&
+            std::abs(parsed.materials[0].material.surface.occlusion - .95f) < .0001f,
+            "explicit sidecar PBR did not override source PBR");
+        passed &= Expect(std::abs(parsed.materials[1].material.tint.r - .21f) < .0001f &&
+            std::abs(parsed.materials[1].material.tint.g - .22f) < .0001f &&
+            std::abs(parsed.materials[1].material.tint.b - .23f) < .0001f &&
+            std::abs(parsed.materials[1].material.tint.a - .24f) < .0001f &&
+            std::abs(parsed.materials[1].material.surface.roughness - .25f) < .0001f &&
+            std::abs(parsed.materials[1].material.surface.metallic - .26f) < .0001f &&
+            std::abs(parsed.materials[1].material.surface.emissive - .27f) < .0001f &&
+            std::abs(parsed.materials[1].material.surface.occlusion - .28f) < .0001f,
+            "source PBR was not preserved when the sidecar omitted pbr");
+
+        const Color beforeTint = parsed.materials[0].material.tint;
+        const Surface3D beforeSurface = parsed.materials[0].material.surface;
+        passed &= Expect(!parsed.PreserveSourcePbr(std::span<const Material3D>(sourceMaterials.data(), 3u)) &&
+            parsed.materials[0].material.tint.r == beforeTint.r &&
+            parsed.materials[0].material.surface.roughness == beforeSurface.roughness,
+            "source PBR merge did not fail closed on a slot-count mismatch");
     }
 
     const std::filesystem::path sidecar = root / "character.materials.json";
@@ -84,6 +165,22 @@ int main() {
     const std::size_t pbrPosition = invalidPbr.find("\"roughness\":0.46");
     invalidPbr.replace(pbrPosition, std::string("\"roughness\":0.46").size(), "\"roughness\":1.5");
     passed &= Expect(!ParseSkinnedMaterialSidecar3D(invalidPbr, slots, root), "out-of-range PBR value was accepted");
+
+    for (const std::string requiredField : {
+             std::string("\"tint\":[0.82,0.61,0.52],"),
+             std::string("\"alpha\":1,"),
+             std::string("\"roughness\":0.46,"),
+             std::string("\"metallic\":0.02,"),
+             std::string("\"emissive\":0,"),
+             std::string(",\"occlusion\":0.95")}) {
+        std::string incompletePbr = ValidDocument();
+        incompletePbr.erase(incompletePbr.find(requiredField), requiredField.size());
+        const auto incompletePbrResult = ParseSkinnedMaterialSidecar3D(incompletePbr, slots, root);
+        passed &= Expect(!incompletePbrResult && incompletePbrResult.materials.empty() &&
+            incompletePbrResult.pbrOverrides.empty() &&
+            incompletePbrResult.error.code == SkinnedMaterialSidecarErrorCode3D::InvalidSchema,
+            "incomplete explicit PBR override was not an atomic schema failure");
+    }
 
     std::string invalidShadingModel = ValidDocument();
     const std::size_t shadingModelPosition = invalidShadingModel.find("\"shadingModel\":\"hair\"");

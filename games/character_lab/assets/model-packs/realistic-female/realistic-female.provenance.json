@@ -4,8 +4,8 @@
   "assetId": "realistic-female",
   "canonicalRuntimePath": "assets/model-packs/realistic-female/realistic-female.aeskin",
   "generator": {
-    "id": "tools/blender/create-realistic-female-character.py",
-    "version": "blender-5.2-script-v1",
+    "id": "tools/blender/create-cc0-f2-m2-characters.py",
+    "version": "blender-5.2-readonly-hand-retrofit-v1",
     "options": [
       "GLTF_SEPARATE",
       "use_selection=true",
@@ -33,27 +33,27 @@
       "identity": "realistic-female-source-gltf",
       "role": "source-gltf",
       "path": "source/realistic-female.gltf",
-      "bytes": 49561,
-      "sha256": "d6ff69349e71b26ff0e4e70326684ee3acd2e6f79e31b87b854b5f78036156a6"
+      "bytes": 106478,
+      "sha256": "c7fb36382f6460e38613e501015250473b15b960022c64a335178c1a565c95ed"
     },
     {
       "identity": "realistic-female-source-bin",
       "role": "source-bin",
       "path": "source/realistic-female.bin",
-      "bytes": 1822420,
-      "sha256": "b34843b7f9156debb3676f87daaa397610ee13678df0e7cfa714fd3e37cf73dc"
+      "bytes": 1944160,
+      "sha256": "dc4defdacdd1904c4117cbc615fe48c6a357974f2c7507f17aa87700fb64a970"
     },
     {
       "identity": "realistic-female-cooked-aeskin",
       "role": "cooked-aeskin",
       "path": "realistic-female.aeskin",
-      "bytes": 1384226,
-      "sha256": "b6f2e5ecc6280043b5caa2e5b8ea476865c2ace06b9972e8aae94bd79ba98002"
+      "bytes": 1480232,
+      "sha256": "1554edd3215f2dd697288b1189b24a2247637a61d594ac60b4589ff45f082c07"
     }
   ],
   "skeleton": {
     "identity": "F2FemaleRig",
-    "jointCount": 24
+    "jointCount": 39
   },
   "materials": [
     "SkinWarmPBR",
@@ -78,6 +78,11 @@
       "identity": "IdleBreathing",
       "source": "authored",
       "clip": "IdleBreathing"
+    },
+    {
+      "identity": "GripPrototype",
+      "source": "authored",
+      "clip": "GripPrototype"
     }
   ],
   "runtimeFallbacks": [

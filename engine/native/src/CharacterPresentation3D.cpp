@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 #include <utility>
 
 namespace Aevrynd {
@@ -85,14 +86,14 @@ AnimationTrack3D Track(const Skeleton3D& skeleton, std::size_t joint, float dura
     return track;
 }
 
-Vec3 BindJointPosition(const Skeleton3D& skeleton, std::size_t joint) {
+Matrix4 BindJointTransform(const Skeleton3D& skeleton, std::size_t joint) {
     std::vector<Matrix4> globals(skeleton.joints.size());
     for (std::size_t index = 0; index < skeleton.joints.size(); ++index) {
         const Matrix4 local = skeleton.joints[index].bindTransform.Matrix();
         const int parent = skeleton.joints[index].parent;
         globals[index] = parent < 0 ? local : globals[std::size_t(parent)] * local;
     }
-    return TransformPoint(globals[joint], {});
+    return globals[joint];
 }
 
 struct AppendedRange {
@@ -100,8 +101,9 @@ struct AppendedRange {
 };
 
 AppendedRange AppendSkinnedPart(SkinnedModel3D& model, const Mesh3D& source, Vec3 position,
-    Vec3 scale, std::uint16_t joint, Color color, std::uint32_t slot) {
-    const Matrix4 transform = CreateTransformMatrix(position, {}, scale);
+    Vec3 scale, std::uint16_t joint, Color color, std::uint32_t slot,
+    const Matrix4& attachment = Matrix4::Identity(), Vec3 rotation = {}) {
+    const Matrix4 transform = attachment * CreateTransformMatrix(position, rotation, scale);
     const Matrix4 normalTransform = CreateNormalMatrix(transform);
     const std::uint32_t vertexBase = std::uint32_t(model.bindMesh.vertices.size());
     const std::uint32_t firstIndex = std::uint32_t(model.bindMesh.indices.size());
@@ -131,6 +133,44 @@ void AppendRange(std::vector<SkinnedSubmesh3D>& output, AppendedRange range) {
     }
 }
 
+Mesh3D CreateSwordBladeMesh() {
+    Mesh3D mesh;
+    // 菱形截面形成中央稜線；肩部先微幅展寬，再沿長刃逐段收尖。
+    constexpr std::array<std::array<Vec3, 4>, 4> Stations{{
+        {{{-.035f, .08f, .02f}, {0.f, .08f, .032f}, {.035f, .08f, .02f}, {0.f, .08f, .008f}}},
+        {{{-.042f, .035f, .02f}, {0.f, .035f, .033f}, {.042f, .035f, .02f}, {0.f, .035f, .007f}}},
+        {{{-.027f, -.34f, .02f}, {0.f, -.34f, .029f}, {.027f, -.34f, .02f}, {0.f, -.34f, .011f}}},
+        {{{-.011f, -.44f, .02f}, {0.f, -.44f, .026f}, {.011f, -.44f, .02f}, {0.f, -.44f, .014f}}}}};
+    constexpr std::array<Vec3, 4> RidgeNormals{{
+        Vec3{-.92f, .08f, 0.f}, Vec3{0.f, .08f, .92f},
+        Vec3{.92f, .08f, 0.f}, Vec3{0.f, .08f, -.92f}}};
+    mesh.vertices.reserve(17);
+    mesh.indices.reserve(90);
+    for (const auto& station : Stations) {
+        for (std::size_t side = 0; side < station.size(); ++side) {
+            const Vec3 point = station[side];
+            mesh.vertices.push_back({point.x, point.y, point.z,
+                PackNormalSnorm8(Normalize(RidgeNormals[side])), 0xffffffffu});
+        }
+    }
+    mesh.vertices.push_back({0.f, -.48f, .02f, PackNormalSnorm8({0.f, -1.f, 0.f}), 0xffffffffu});
+    mesh.indices.insert(mesh.indices.end(), {0, 1, 2, 0, 2, 3});
+    for (std::uint32_t station = 0; station < 3; ++station) {
+        const std::uint32_t upper = station * 4, lower = upper + 4;
+        for (std::uint32_t side = 0; side < 4; ++side) {
+            const std::uint32_t next = (side + 1) % 4;
+            mesh.indices.insert(mesh.indices.end(), {
+                upper + side, lower + side, lower + next,
+                upper + side, lower + next, upper + next});
+        }
+    }
+    for (std::uint32_t side = 0; side < 4; ++side) {
+        const std::uint32_t next = (side + 1) % 4;
+        mesh.indices.insert(mesh.indices.end(), {12 + side, 16, 12 + next});
+    }
+    return mesh;
+}
+
 } // 匿名命名空間
 
 bool LoadCharacterMaterialBindings3D(Engine& engine, MaterialLibrary3D& library,
@@ -143,27 +183,18 @@ bool LoadCharacterMaterialBindings3D(Engine& engine, MaterialLibrary3D& library,
         SetError(error, "Character material arguments are invalid");
         return false;
     }
-    const SkinnedMaterialSidecarResult3D parsed =
+    SkinnedMaterialSidecarResult3D parsed =
         LoadSkinnedMaterialSidecarFile3D(sidecarPath, asset.materialSlotNames, materialRoot);
     if (!parsed) {
         SetError(error, "Character material sidecar failed: " + parsed.error.message);
         return false;
     }
-    std::vector<MaterialAssetDefinition3D> definitions = parsed.materials;
     const std::vector<Material3D> source = SourceCharacterMaterials(asset);
-    for (std::size_t index = 0; index < definitions.size(); ++index) {
-        const Material3D sidecar = definitions[index].material;
-        definitions[index].material = source[index];
-        definitions[index].material.textureScale = sidecar.textureScale;
-        definitions[index].material.baseTextureScale = sidecar.baseTextureScale;
-        definitions[index].material.detailTextureScale = sidecar.detailTextureScale;
-        definitions[index].material.useUv = sidecar.useUv;
-        definitions[index].material.castsShadow = sidecar.castsShadow;
-        definitions[index].material.shadingModel = sidecar.shadingModel;
-        definitions[index].material.alphaMode = sidecar.alphaMode;
-        definitions[index].material.alphaCutoff = sidecar.alphaCutoff;
-        definitions[index].material.doubleSided = sidecar.doubleSided;
+    if (!parsed.PreserveSourcePbr(source)) {
+        SetError(error, "Character material PBR override state is invalid");
+        return false;
     }
+    std::vector<MaterialAssetDefinition3D> definitions = std::move(parsed.materials);
     if (!library.Initialize(engine, materialRoot) || !library.LoadAll(definitions)) {
         library.Shutdown();
         SetError(error, "Character PBR texture batch loading failed");
@@ -331,6 +362,78 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
     return true;
 }
 
+bool ValidateCharacterSwordGeometry3D(const CharacterEquipmentAsset3D& equipment) noexcept {
+    const auto& model=equipment.model;const auto& contract=equipment.swordGeometry;
+    const CharacterSwordGeometry3D canonical{};
+    const auto same=[](Vec3 a,Vec3 b){const float error=Length(a-b);return std::isfinite(error)&&error<=.0001f;};
+    constexpr std::uint32_t BladeVertexCount=17,BoxVertexCount=24,Cylinder12VertexCount=26,GripVertexCount=34;
+    constexpr std::uint32_t BladeIndexCount=90,BoxIndexCount=36,Cylinder12IndexCount=144,GripIndexCount=192;
+    constexpr std::uint32_t MetalVertexCount=BladeVertexCount+BoxVertexCount*3+Cylinder12VertexCount*2;
+    constexpr std::uint32_t MetalIndexCount=BladeIndexCount+BoxIndexCount*3+Cylinder12IndexCount*2;
+    constexpr std::uint32_t TotalVertexCount=MetalVertexCount+GripVertexCount;
+    constexpr std::uint32_t TotalIndexCount=MetalIndexCount+GripIndexCount;
+    if(!contract.available||!model.Valid()||model.bindMesh.vertices.size()!=TotalVertexCount||model.bindMesh.indices.size()!=TotalIndexCount||
+       equipment.submeshes.size()!=2||contract.tipVertexIndices!=canonical.tipVertexIndices||
+       !same(contract.grip,canonical.grip)||!same(contract.handleBladeEnd,canonical.handleBladeEnd)||
+       !same(contract.handlePommelEnd,canonical.handlePommelEnd)||!same(contract.bladeBase,canonical.bladeBase)||!same(contract.bladeTip,canonical.bladeTip))return false;
+    const auto& metal=equipment.submeshes[0];const auto& handle=equipment.submeshes[1];
+    if(metal.firstIndex!=0||metal.indexCount!=MetalIndexCount||metal.materialSlot!=0||
+       handle.firstIndex!=MetalIndexCount||handle.indexCount!=GripIndexCount||handle.materialSlot!=1)return false;
+    // 依正式 primitive 的索引契約逐項核對，不能讓有效 landmark 掩蓋空三角形或反向繞序。
+    std::size_t topologyCursor{};
+    const auto matchIndices=[&](std::initializer_list<std::uint32_t> expected){
+        for(const auto index:expected)if(model.bindMesh.indices[topologyCursor++]!=index)return false;
+        return true;
+    };
+    if(!matchIndices({0,1,2,0,2,3}))return false;
+    for(std::uint32_t station=0;station<3;++station){
+        const auto upper=station*4u,lower=upper+4u;
+        for(std::uint32_t side=0;side<4;++side){
+            const auto next=(side+1u)%4u;
+            if(!matchIndices({upper+side,lower+side,lower+next,upper+side,lower+next,upper+next}))return false;
+        }
+    }
+    for(std::uint32_t side=0;side<4;++side){const auto next=(side+1u)%4u;if(!matchIndices({12u+side,16u,12u+next}))return false;}
+    std::uint32_t vertexBase=BladeVertexCount;
+    for(std::uint32_t box=0;box<3;++box){for(std::uint32_t face=0;face<6;++face){
+        const auto base=vertexBase+face*4u;
+        if(!matchIndices({base,base+2,base+1,base,base+3,base+2}))return false;
+    }vertexBase+=BoxVertexCount;}
+    const auto matchCylinder=[&](std::uint32_t sides){
+        const auto bottom=vertexBase+sides*2u,top=bottom+1u;
+        for(std::uint32_t side=0;side<sides;++side){const auto next=(side+1u)%sides,a=vertexBase+side*2u,b=a+1u,c=vertexBase+next*2u,d=c+1u;
+            if(!matchIndices({a,b,c,c,b,d,b,top,d,a,c,bottom}))return false;}
+        vertexBase+=sides*2u+2u;return true;
+    };
+    if(!matchCylinder(12)||!matchCylinder(12)||!matchCylinder(16))return false;
+    if(topologyCursor!=model.bindMesh.indices.size())return false;
+    const auto handIndex=model.influences[0].joints[0];
+    if(handIndex>=model.inverseBindMatrices.size())return false;
+    for(std::size_t index=0;index<model.bindMesh.vertices.size();++index){
+        const auto& influence=model.influences[index];
+        if(influence.joints[0]!=handIndex||influence.weights[0]!=65535||influence.weights[1]||influence.weights[2]||influence.weights[3])return false;
+        const auto normal=UnpackNormalSnorm8(model.bindMesh.vertices[index].normal);
+        const float magnitude=normal.x*normal.x+normal.y*normal.y+normal.z*normal.z;
+        if(!std::isfinite(magnitude)||magnitude<.5f)return false;
+    }
+    const auto local=[&](std::size_t index){const auto& vertex=model.bindMesh.vertices[index];return TransformPoint(model.inverseBindMatrices[handIndex],{vertex.x,vertex.y,vertex.z});};
+    constexpr std::array<std::array<Vec3,4>,4> BladeStations{{
+        {{{-.035f,.08f,.02f},{0,.08f,.032f},{.035f,.08f,.02f},{0,.08f,.008f}}},
+        {{{-.042f,.035f,.02f},{0,.035f,.033f},{.042f,.035f,.02f},{0,.035f,.007f}}},
+        {{{-.027f,-.34f,.02f},{0,-.34f,.029f},{.027f,-.34f,.02f},{0,-.34f,.011f}}},
+        {{{-.011f,-.44f,.02f},{0,-.44f,.026f},{.011f,-.44f,.02f},{0,-.44f,.014f}}}}};
+    for(std::size_t station=0;station<BladeStations.size();++station)for(std::size_t side=0;side<4;++side)
+        if(!same(local(station*4+side),BladeStations[station][side]))return false;
+    for(const auto index:contract.tipVertexIndices)if(!same(local(index),contract.bladeTip))return false;
+    Vec3 base{},grip{};
+    for(std::size_t index=0;index<4;++index)base=base+local(index);
+    constexpr std::size_t GripVertexBase=MetalVertexCount;
+    for(std::size_t index=GripVertexBase;index<TotalVertexCount;++index)grip=grip+local(index);
+    return same(base*.25f,contract.bladeBase)&&same(grip*(1.f/GripVertexCount),contract.grip)&&
+           same(local(GripVertexBase+32),contract.handleBladeEnd)&&same(local(GripVertexBase+33),contract.handlePommelEnd)&&
+           Dot(contract.bladeTip-contract.bladeBase,contract.bladeBase-contract.grip)>0.f;
+}
+
 bool CreateCharacterEquipmentAsset3D(const SkinnedModelAssetData& character,
     const HumanoidSkeletonMap3D& rig, CharacterEquipmentShape3D shape,
     CharacterEquipmentAsset3D& output, std::string* error) {
@@ -346,25 +449,38 @@ bool CreateCharacterEquipmentAsset3D(const SkinnedModelAssetData& character,
     const std::size_t joint = shape == CharacterEquipmentShape3D::Shoulder
         ? rig.Joint(HumanoidJoint3D::RightUpperArm)
         : rig.Joint(HumanoidJoint3D::RightHand);
-    const Vec3 anchor = BindJointPosition(character.model.skeleton, joint);
+    const Matrix4 bindAttachment = BindJointTransform(character.model.skeleton, joint);
+    const Vec3 anchor = TransformPoint(bindAttachment, {});
     const Mesh3D box = Mesh3D::CreateUnitBox();
     if (shape == CharacterEquipmentShape3D::Shoulder) {
         const Mesh3D dome = Mesh3D::CreateUnitSphere(16, 10);
         AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, dome, anchor + Vec3{.08f,.02f,0}, {.24f,.13f,.25f}, std::uint16_t(joint), {.32f,.36f,.42f,1}, 0));
         AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, anchor + Vec3{.16f,-.08f,0}, {.10f,.08f,.20f}, std::uint16_t(joint), {.14f,.17f,.21f,1}, 0));
     } else if (shape == CharacterEquipmentShape3D::Sword) {
-        const Mesh3D blade = Mesh3D::CreateUnitPyramid();
-        const Mesh3D grip = Mesh3D::CreateUnitCylinder(12);
-        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, blade, anchor + Vec3{0,-.20f,.02f}, {.085f,.56f,.038f}, std::uint16_t(joint), {.68f,.73f,.78f,1}, 0));
-        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, anchor + Vec3{0,.055f,.02f}, {.13f,.022f,.04f}, std::uint16_t(joint), {.34f,.2f,.07f,1}, 0));
-        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, grip, anchor + Vec3{0,.105f,.02f}, {.05f,.12f,.05f}, std::uint16_t(joint), {.18f,.09f,.035f,1}, 1));
+        const Mesh3D blade = CreateSwordBladeMesh();
+        const Mesh3D grip = Mesh3D::CreateUnitCylinder(16);
+        const Mesh3D ornament = Mesh3D::CreateUnitCylinder(12);
+        // 握把與刀身偏移皆為手部局部座標；先轉回 bind 模型空間，再交由同一骨架蒙皮。
+        // 刀身已是公尺制菱形截面；護手向外微彎，金屬環與配重球補足可信輪廓。
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, blade, {}, {1,1,1}, std::uint16_t(joint), {.72f,.79f,.86f,1}, 0, bindAttachment));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, {0,.061f,.02f}, {.06f,.022f,.038f}, std::uint16_t(joint), {.42f,.25f,.08f,1}, 0, bindAttachment));
+        // 每側 quillon 實長 7.5 公分並朝刀身彎折；總長 21 公分，但水平投影僅約 10 公分。
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, {-.03971f,.02478f,.02f}, {.075f,.018f,.028f}, std::uint16_t(joint), {.36f,.20f,.06f,1}, 0, bindAttachment, {0,0,1.30899694f}));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, {.03971f,.02478f,.02f}, {.075f,.018f,.028f}, std::uint16_t(joint), {.36f,.20f,.06f,1}, 0, bindAttachment, {0,0,-1.30899694f}));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, ornament, {0,.045f,.02f}, {.042f,.014f,.042f}, std::uint16_t(joint), {.58f,.63f,.68f,1}, 0, bindAttachment));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, ornament, {0,.165f,.02f}, {.024f,.014f,.024f}, std::uint16_t(joint), {.4f,.23f,.07f,1}, 0, bindAttachment));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, grip, {0,.105f,.02f}, {.042f,.12f,.042f}, std::uint16_t(joint), {.12f,.048f,.018f,1}, 1, bindAttachment));
     } else {
-        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, anchor + Vec3{0,-.18f,.02f}, {.035f,.38f,.035f}, std::uint16_t(joint), {.26f,.14f,.055f,1}, 1));
-        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, anchor + Vec3{.07f,-.47f,.02f}, {.18f,.12f,.05f}, std::uint16_t(joint), {.42f,.46f,.5f,1}, 0));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, {0,-.18f,.02f}, {.035f,.38f,.035f}, std::uint16_t(joint), {.26f,.14f,.055f,1}, 1, bindAttachment));
+        AppendRange(candidate.submeshes, AppendSkinnedPart(candidate.model, box, {.07f,-.47f,.02f}, {.18f,.12f,.05f}, std::uint16_t(joint), {.42f,.46f,.5f,1}, 0, bindAttachment));
     }
     if (!candidate.model.Valid() || candidate.submeshes.empty()) {
         SetError(error, "Generated character equipment is invalid");
         return false;
+    }
+    if(shape==CharacterEquipmentShape3D::Sword){
+        candidate.swordGeometry.available=true;
+        if(!ValidateCharacterSwordGeometry3D(candidate)){SetError(error,"Generated sword geometry contract failed");return false;}
     }
     output = std::move(candidate);
     return true;

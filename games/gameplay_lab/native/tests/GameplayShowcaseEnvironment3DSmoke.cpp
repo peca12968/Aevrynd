@@ -399,6 +399,14 @@ int main() {
   if (!CompareShowcaseLodRenderRows3D(exactRows, actualMissingSeedRows).missing ||
       !CompareShowcaseLodRenderRows3D(exactRows, actualWrongBlendRows).wrongBlend)
     return 19;
+  std::vector<MeshInstance3D> collidingDraws(submittedDraws.begin(), submittedDraws.end());
+  auto collidingFar = submittedDraws[1];
+  collidingFar.lodCoverage = 1.f;
+  collidingDraws.insert(collidingDraws.begin() + 1, collidingFar);
+  const auto actualCollidingRows = BuildShowcaseActualLodRows3D(
+      exactRows, collidingDraws, 0xabcdu);
+  if (!CompareShowcaseLodRenderRows3D(exactRows, actualCollidingRows).Exact())
+    return 20;
 
   RendererStats before{}, after{};
   for (std::size_t index = 0; index < 4; ++index)

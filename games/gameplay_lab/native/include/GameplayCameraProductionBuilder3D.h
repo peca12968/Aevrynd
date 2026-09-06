@@ -39,6 +39,10 @@ struct GameplayCameraProductionBuildInput3D {
   float sweepRadius{.35f};
   float minimumSubjectScreenHeight{.35f};
   float minimumSubjectScreenArea{.02f};
+  float maximumBuildingUnionCoverage{.22f};
+  float maximumBuildingPartCoverage{.08f};
+  float maximumRoofCoverage{.05f};
+  float maximumSubjectOcclusion{.005f};
   float minimumTopCenterRayElevation{.03f};
   std::uint64_t candidateIdHigh{};
   std::span<const GameplayOccluderBox3D> compositionOccluders{};

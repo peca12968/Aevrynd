@@ -122,6 +122,14 @@
           },
           "maximumResolution": 1024
         },
+        "pbr": {
+          "tint": [0.16, 0.09, 0.055],
+          "alpha": 1.0,
+          "roughness": 0.42,
+          "metallic": 0.0,
+          "emissive": 0.0,
+          "occlusion": 0.94
+        },
         "textureScale": 2.0,
         "baseTextureScale": 1.0,
         "detailTextureScale": 2.0,
@@ -151,6 +159,14 @@
           },
           "maximumResolution": 1024
         },
+        "pbr": {
+          "tint": [0.12, 0.32, 0.22],
+          "alpha": 1.0,
+          "roughness": 0.74,
+          "metallic": 0.0,
+          "emissive": 0.0,
+          "occlusion": 1.0
+        },
         "textureScale": 6.0,
         "baseTextureScale": 1.0,
         "detailTextureScale": 6.0,
@@ -176,6 +192,14 @@
             "expectedSha256": "3ab8082981b9446da4196e9b5c0fb9cc77818a2de55976d4eb0e6667d213f9bf"
           },
           "maximumResolution": 1024
+        },
+        "pbr": {
+          "tint": [0.38, 0.20, 0.075],
+          "alpha": 1.0,
+          "roughness": 0.56,
+          "metallic": 0.0,
+          "emissive": 0.0,
+          "occlusion": 1.0
         },
         "textureScale": 7.0,
         "baseTextureScale": 1.0,

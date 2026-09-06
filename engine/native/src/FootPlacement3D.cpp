@@ -93,6 +93,11 @@ bool FootPlacement3D::Evaluate(const Skeleton3D& skeleton,const HumanoidSkeleton
     for(std::size_t i=0;i<jointCount_;++i){pose.localTransforms[i]=scratchPose_.localTransforms[i];pose.globalMatrices[i]=scratchPose_.globalMatrices[i];}left_=states[0];right_=states[1];pelvisOffsetWorld_=pelvis;if(output)*output=result;return true;
 }
 void FootPlacement3D::Reset()noexcept{left_={};right_={};pelvisOffsetWorld_=0;}
-std::size_t FootPlacement3D::TrimUnusedMemory(){const std::size_t before=MemoryStats().retainedCapacityBytes;AnimationPose3D empty;scratchPose_.localTransforms.swap(empty.localTransforms);scratchPose_.globalMatrices.swap(empty.globalMatrices);jointCount_=0;compatibility_={};Reset();lastReleasedBytes_=before;++trimCount_;return before;}
+std::size_t FootPlacement3D::TrimUnusedMemory(){
+    // 已 Prepare 的 scratch 是即時求值狀態，MemoryStats 也刻意將它標為不可回收；
+    // 全域記憶體壓力 trim 不可因此悄悄解除有效 placement instance 的配置。
+    if(jointCount_)return 0;
+    const std::size_t before=MemoryStats().retainedCapacityBytes;AnimationPose3D empty;scratchPose_.localTransforms.swap(empty.localTransforms);scratchPose_.globalMatrices.swap(empty.globalMatrices);compatibility_={};Reset();lastReleasedBytes_=before;++trimCount_;return before;
+}
 ReusableMemoryStats FootPlacement3D::MemoryStats()const noexcept{const std::size_t bytes=scratchPose_.localTransforms.capacity()*sizeof(JointTransform3D)+scratchPose_.globalMatrices.capacity()*sizeof(Matrix4);return{bytes,jointCount_?0:bytes,lastReleasedBytes_,trimCount_};}
 }

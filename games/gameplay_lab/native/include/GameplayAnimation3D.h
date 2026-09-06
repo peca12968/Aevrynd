@@ -41,10 +41,11 @@ public:
     [[nodiscard]] float NormalizedPhase()const;
     [[nodiscard]] float Duration()const;
     [[nodiscard]] const Aevrynd::HumanoidSkeletonMap3D& Rig()const{return rig_;}
+    [[nodiscard]] bool HasDetailedGripPose()const{return detailedGripAvailable_;}
     [[nodiscard]] Aevrynd::ReusableMemoryStats MemoryStats()const{return graph_.MemoryStats();}
     std::size_t TrimUnusedMemory(){return graph_.TrimUnusedMemory();}
 private:
     const Aevrynd::AnimationClip3D& Clip(AnimationState3D state)const;
-    Aevrynd::Skeleton3D skeleton_{};Aevrynd::SkeletonCompatibilityId3D compatibility_{};Aevrynd::HumanoidSkeletonMap3D rig_{};Aevrynd::FallbackHumanoidAnimationSet3D clips_{};Aevrynd::AnimationGraph3D graph_{};AnimationState3D state_{AnimationState3D::Idle};float time_{};bool initialized_{};
+    Aevrynd::Skeleton3D skeleton_{};Aevrynd::SkeletonCompatibilityId3D compatibility_{};Aevrynd::HumanoidSkeletonMap3D rig_{};Aevrynd::FallbackHumanoidAnimationSet3D clips_{};Aevrynd::AnimationClip3D detailedGripClip_{};Aevrynd::AnimationPose3D detailedGripScratch_{};Aevrynd::AnimationGraph3D graph_{};AnimationState3D state_{AnimationState3D::Idle};float time_{};bool initialized_{},detailedGripAvailable_{};
 };
 }

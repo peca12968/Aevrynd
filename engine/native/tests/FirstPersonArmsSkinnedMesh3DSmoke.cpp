@@ -78,9 +78,99 @@ bool CheckAsset(const std::filesystem::path& path) {
         derived.model.skeleton.joints.size() != loaded.asset.model.skeleton.joints.size() ||
         !SameMatrices(derived.model.inverseBindMatrices, loaded.asset.model.inverseBindMatrices) ||
         derived.model.skeletonCompatibilityId != loaded.asset.model.skeletonCompatibilityId ||
-        derived.sourceVertexIndices.size() != derived.model.bindMesh.vertices.size()) {
+        derived.sourceVertexIndices.size() != derived.model.bindMesh.vertices.size() ||
+        derived.retainedTriangleProvenance.size()!=derived.stats.retainedTriangles) {
         std::cerr << "derived contract status=" << static_cast<unsigned>(derived.status) << '\n';
         return false;
+    }
+
+    // 使用正式骨架的兩個封閉四面體，明確區分萃取切口、原始缺口與 UV 接縫。
+    SkinnedModelAssetData fixture=loaded.asset;
+    const auto prototype=fixture.model.bindMesh.vertices.front();
+    fixture.model.bindMesh.vertices.clear();fixture.model.bindMesh.indices.clear();
+    fixture.model.influences.clear();fixture.model.tangents.clear();
+    const auto appendFixtureVertex=[&](Vec3 position,std::uint16_t joint){
+        auto vertex=prototype;vertex.x=position.x;vertex.y=position.y;vertex.z=position.z;
+        fixture.model.bindMesh.vertices.push_back(vertex);SkinInfluences3D skin{};skin.joints[0]=joint;skin.weights[0]=65535;
+        fixture.model.influences.push_back(skin);
+    };
+    for(unsigned side=0;side<2;++side){
+        const float x=static_cast<float>(side)*3.f;
+        const auto joint=side?derived.rightArmJoints.front():derived.leftArmJoints.front();
+        appendFixtureVertex({x,0,0},joint);appendFixtureVertex({x+1,0,0},joint);appendFixtureVertex({x,1,0},joint);appendFixtureVertex({x,0,1},0);
+        for(const auto index:std::array<std::uint32_t,12>{0,2,1,0,1,3,1,2,3,2,0,3})fixture.model.bindMesh.indices.push_back(index+side*4);
+    }
+    fixture.submeshes={{0,24,0,0}};
+    const auto closed=BuildFirstPersonArmsSkinnedMesh3D(fixture);
+    if(!closed||!closed.cutTopology.Available()||!closed.cutTopology.BoundaryInventoryAvailable()||!closed.cutTopology.surfaceManifold||closed.cutTopology.edges.size()!=6||closed.cutTopology.sourceBoundaryEdges||closed.retainedTriangleProvenance.size()!=2)return false;
+    for(const auto& edge:closed.cutTopology.edges){
+        if(edge.retainedSourceFirstIndex%12||edge.rejectedSourceFirstIndex%12==0)return false;
+        for(std::size_t corner=0;corner<2;++corner)if(closed.sourceVertexIndices[edge.compactVertices[corner]]!=edge.sourceVertices[corner])return false;
+    }
+    auto corrupted=closed;corrupted.retainedTriangleProvenance.front().sourceFirstIndex=3;
+    if(BuildFirstPersonArmsCutTopology3D(fixture,corrupted).status!=FirstPersonArmsCutStatus3D::InvalidProvenance)return false;
+    corrupted=closed;corrupted.retainedTriangleProvenance.front().side=FirstPersonArmSide3D::Right;
+    if(BuildFirstPersonArmsCutTopology3D(fixture,corrupted).status!=FirstPersonArmsCutStatus3D::InvalidProvenance)return false;
+    corrupted=closed;std::swap(corrupted.leftArmJoints,corrupted.rightArmJoints);
+    if(BuildFirstPersonArmsCutTopology3D(fixture,corrupted).status!=FirstPersonArmsCutStatus3D::InvalidProvenance)return false;
+    // 各變造仍是有效模型，必須因來源身分不一致而拒絕，不靠通用 Valid 偶然攔截。
+    const auto rejectsModelMutation=[&](auto mutate){
+        auto changed=closed;mutate(changed.model);
+        if(!changed.model.Valid())return false;
+        const auto topology=BuildFirstPersonArmsCutTopology3D(fixture,changed);
+        return topology.status==FirstPersonArmsCutStatus3D::InvalidProvenance&&!topology.BoundaryInventoryAvailable();
+    };
+    const auto armJoint=closed.leftArmJoints.front();
+    if(!rejectsModelMutation([](auto& model){model.skeletonCompatibilityId.value^=1ull;})||
+       !rejectsModelMutation([&](auto& model){model.inverseBindMatrices[armJoint][0][3]+=1.f;})||
+       !rejectsModelMutation([&](auto& model){model.skeleton.joints[armJoint].parent=-1;})||
+       !rejectsModelMutation([&](auto& model){model.skeleton.joints[armJoint].bindTransform.translation.x+=.01f;})||
+       !rejectsModelMutation([&](auto& model){model.skeleton.joints[armJoint].bindTransform.rotation.y+=.01f;})||
+       !rejectsModelMutation([&](auto& model){model.skeleton.joints[armJoint].bindTransform.scale.z+=.01f;})||
+       !rejectsModelMutation([&](auto& model){auto& transform=model.skeleton.joints[armJoint].bindTransform;transform.usesQuaternion=!transform.usesQuaternion;})||
+       !rejectsModelMutation([&](auto& model){auto& transform=model.skeleton.joints[armJoint].bindTransform;transform.quaternion.x+=.01f;}))return false;
+    corrupted=closed;corrupted.model.bindMesh.indices.erase(corrupted.model.bindMesh.indices.begin(),corrupted.model.bindMesh.indices.begin()+3);
+    corrupted.retainedTriangleProvenance.erase(corrupted.retainedTriangleProvenance.begin());
+    if(BuildFirstPersonArmsCutTopology3D(fixture,corrupted).BoundaryInventoryAvailable())return false;
+    auto seam=fixture;
+    for(std::uint32_t index=0;index<2;++index){auto vertex=seam.model.bindMesh.vertices[index];vertex.u+=.25f;seam.model.bindMesh.vertices.push_back(vertex);seam.model.influences.push_back(seam.model.influences[index]);}
+    seam.model.bindMesh.indices[3]=8;seam.model.bindMesh.indices[4]=9;
+    const auto joined=BuildFirstPersonArmsSkinnedMesh3D(seam);
+    if(!joined||!joined.cutTopology.Available()||joined.cutTopology.edges.size()!=6||joined.cutTopology.seamPairs!=3)return false;
+    seam.model.influences[8].joints[0]=0;
+    const auto mismatched=BuildFirstPersonArmsSkinnedMesh3D(seam);
+    if(!mismatched||mismatched.cutTopology.Available()||mismatched.cutTopology.BoundaryInventoryAvailable()||!mismatched.cutTopology.influenceMismatchEdges)return false;
+    auto open=fixture;open.model.bindMesh.indices.erase(open.model.bindMesh.indices.begin()+9,open.model.bindMesh.indices.begin()+12);open.submeshes[0].indexCount-=3;
+    const auto sourceHole=BuildFirstPersonArmsSkinnedMesh3D(open);
+    if(!sourceHole||!sourceHole.cutTopology.sourceBoundaryEdges||sourceHole.cutTopology.Available()||
+       !sourceHole.cutTopology.BoundaryInventoryAvailable()||sourceHole.cutTopology.retainedBoundaries.empty()||sourceHole.cutTopology.combinedOpenVertices)return false;
+    auto nonmanifold=fixture;nonmanifold.model.bindMesh.indices.insert(nonmanifold.model.bindMesh.indices.end(),{0,2,1});nonmanifold.submeshes[0].indexCount+=3;
+    const auto multiple=BuildFirstPersonArmsSkinnedMesh3D(nonmanifold);
+    if(!multiple||multiple.cutTopology.Available()||multiple.cutTopology.BoundaryInventoryAvailable()||!multiple.cutTopology.ambiguousEdges)return false;
+    auto degenerate=fixture;degenerate.model.bindMesh.indices[3]=degenerate.model.bindMesh.indices[4];
+    const auto collapsed=BuildFirstPersonArmsSkinnedMesh3D(degenerate);
+    if(!collapsed||collapsed.cutTopology.Available()||!collapsed.cutTopology.degenerateTriangles)return false;
+
+    if(!derived.cutTopology.BoundaryInventoryAvailable()||derived.cutTopology.surfaceManifold||derived.cutTopology.Available()||
+       derived.cutTopology.retainedBoundaries.size()!=derived.cutTopology.retainedSourceBoundaryEdges||
+       derived.cutTopology.retainedSameDirectionSeams.empty()||derived.cutTopology.combinedOpenVertices||derived.cutTopology.relevantAmbiguousEdges)return false;
+    const auto verifyBoundary=[&](const FirstPersonArmsBoundaryEdge3D& edge){
+        if(std::size_t(edge.sourceFirstIndex)+3>loaded.asset.model.bindMesh.indices.size())return false;
+        for(std::size_t corner=0;corner<2;++corner){
+            if(edge.compactVertices[corner]>=derived.sourceVertexIndices.size()||derived.sourceVertexIndices[edge.compactVertices[corner]]!=edge.sourceVertices[corner])return false;
+            const auto begin=loaded.asset.model.bindMesh.indices.begin()+edge.sourceFirstIndex;
+            if(std::find(begin,begin+3,edge.sourceVertices[corner])==begin+3)return false;
+        }
+        return true;
+    };
+    for(const auto& edge:derived.cutTopology.retainedBoundaries)if(!verifyBoundary(edge))return false;
+    for(const auto& seamPair:derived.cutTopology.retainedSameDirectionSeams){
+        if(!verifyBoundary(seamPair.edges[0])||!verifyBoundary(seamPair.edges[1])||seamPair.edges[0].side!=seamPair.edges[1].side)return false;
+        for(std::size_t corner=0;corner<2;++corner){
+            const auto& a=loaded.asset.model.bindMesh.vertices[seamPair.edges[0].sourceVertices[corner]];
+            const auto& b=loaded.asset.model.bindMesh.vertices[seamPair.edges[1].sourceVertices[corner]];
+            if(a.x!=b.x||a.y!=b.y||a.z!=b.z)return false;
+        }
     }
 
     std::uint32_t rangeCursor{};
@@ -131,6 +221,8 @@ bool CheckAsset(const std::filesystem::path& path) {
             original[corner] = derived.sourceVertexIndices[compact];
         }
         if ((!left && !right) || forbiddenSourceTriangles.contains(Canonical(original))) return false;
+        const auto& provenance=derived.retainedTriangleProvenance[offset/3];
+        for(std::size_t corner=0;corner<3;++corner)if(sourceIndices[provenance.sourceFirstIndex+corner]!=original[corner])return false;
     }
 
     SkinnedModelAssetData missing = loaded.asset;
@@ -146,6 +238,12 @@ bool CheckAsset(const std::filesystem::path& path) {
               << " left=" << derived.stats.leftArmTriangles
               << " right=" << derived.stats.rightArmTriangles
               << " vertices=" << derived.model.bindMesh.vertices.size() << '\n';
+    std::cout<<"ARMS_CUT_TOPOLOGY status="<<static_cast<unsigned>(derived.cutTopology.status)<<" edges="<<derived.cutTopology.edges.size()
+        <<" sourceBoundary="<<derived.cutTopology.sourceBoundaryEdges<<" ambiguous="<<derived.cutTopology.ambiguousEdges
+        <<" influenceMismatch="<<derived.cutTopology.influenceMismatchEdges<<" openCutVertices="<<derived.cutTopology.openCutVertices
+        <<" retainedBoundary="<<derived.cutTopology.retainedBoundaries.size()<<" retainedSameDirectionSeams="<<derived.cutTopology.retainedSameDirectionSeams.size()
+        <<" combinedOpen="<<derived.cutTopology.combinedOpenVertices<<" inventoryAvailable="<<derived.cutTopology.BoundaryInventoryAvailable()
+        <<" surfaceManifold="<<derived.cutTopology.surfaceManifold<<'\n';
     return true;
 }
 }

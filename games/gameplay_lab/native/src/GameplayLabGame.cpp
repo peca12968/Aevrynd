@@ -361,9 +361,25 @@ void GameplayLabGame::OnStart(Engine& engine){
   if(!CreateCharacterEquipmentAsset3D(female.asset,femaleAnimation_.Rig(),CharacterEquipmentShape3D::Sword,femaleWeapon,&error)||
      !CreateCharacterEquipmentAsset3D(male.asset,maleAnimation_.Rig(),CharacterEquipmentShape3D::Sword,maleWeapon,&error))
     throw std::runtime_error(error);
+  if(!ValidateCharacterSwordGeometry3D(femaleWeapon)||!ValidateCharacterSwordGeometry3D(maleWeapon))
+    throw std::runtime_error("Gameplay sword geometry contract is unavailable");
+  femaleSwordGeometry_=femaleWeapon.swordGeometry;maleSwordGeometry_=maleWeapon.swordGeometry;
+  femaleWeaponProjection_=BuildGameplayFirstPersonWeaponProjectionGeometry3D(femaleWeapon);
+  maleWeaponProjection_=BuildGameplayFirstPersonWeaponProjectionGeometry3D(maleWeapon);
+  if(!femaleWeaponProjection_.Valid()||!maleWeaponProjection_.Valid())
+    throw std::runtime_error("Gameplay actual weapon projection geometry is invalid");
   femaleWeaponSubmeshes_=femaleWeapon.submeshes;maleWeaponSubmeshes_=maleWeapon.submeshes;
   femaleWeaponMaterials_={femaleMaterials_[8],femaleMaterials_[7]};
   maleWeaponMaterials_={maleMaterials_[8],maleMaterials_[7]};
+  const auto configureSwordSteel=[](Material3D& material){
+    // 武器刀身使用中性高金屬表面；角色飾品的金色貼圖不可污染鋼刃。
+    material.tint={.72f,.79f,.86f,1.f};
+    material.surface.roughness=.22f;material.surface.metallic=.94f;
+    material.surface.emissive=0.f;material.surface.occlusion=1.f;
+    material.textures={};material.useUv=false;material.shadingModel=CharacterShadingModel3D::Default;
+  };
+  configureSwordSteel(femaleWeaponMaterials_[0]);
+  configureSwordSteel(maleWeaponMaterials_[0]);
   femaleSubmeshes_=female.asset.submeshes;maleSubmeshes_=male.asset.submeshes;
   femaleFirstPersonArmsSubmeshes_=std::move(femaleFirstPersonArms.submeshes);
   maleFirstPersonArmsSubmeshes_=std::move(maleFirstPersonArms.submeshes);
@@ -422,8 +438,15 @@ void GameplayLabGame::OnStart(Engine& engine){
     jointOut<<maleAnimation_.Rig().Joint(HumanoidJoint3D::RightHand)<<" RightHand";
     for(auto name:Names){std::error_code ec;std::filesystem::remove(captureDirectory_/name,ec);}
   }
+  UpdateCamera(engine);
+  PublishFirstPersonPose(0.f);
 }
 void GameplayLabGame::OnStop(Engine &engine) {
+  // Engine 的例外清理可能再次呼叫 OnStop；失敗清理完成後不可重複拋出。
+  if(!projectionFailureReason_.empty()&&projectionFailureStopFinished_)return;
+  // 失敗保全不輸出任何看似成功的停止階段 receipt；資源釋放流程仍照常執行。
+  if(!projectionFailureReason_.empty())captureDirectory_.clear();
+  firstPersonPose_={};captureFrozenFirstPersonPose_={};firstPersonPoseWorkspace_={};
   activeCaptureRoute_.Clear();
   if(cursorCaptured_){ReleaseCapture();ClipCursor(nullptr);ShowCursor(TRUE);cursorCaptured_=false;}
   palette_->EndGrab();
@@ -546,6 +569,8 @@ void GameplayLabGame::OnStop(Engine &engine) {
   maleFirstPersonArmsMesh_ = {};
   femaleWeaponMesh_ = {};
   maleWeaponMesh_ = {};
+  femaleSwordGeometry_={};maleSwordGeometry_={};
+  femaleWeaponProjection_={};maleWeaponProjection_={};
   femaleModel_ = {};
   maleModel_ = {};
   femaleFirstPersonArmsModel_={};maleFirstPersonArmsModel_={};
@@ -562,6 +587,12 @@ void GameplayLabGame::OnStop(Engine &engine) {
     std::ofstream releaseOut(captureDirectory_/"gameplay-character-release-receipt.json",std::ios::trunc);
     releaseOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
     releaseOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayLabCharacterRelease\",\"sourceFingerprint\":\"{}\",\"residentSkinnedMeshes\":{},\"residentSkinnedMeshBytes\":{},\"residentMaterialTextureSets\":{},\"residentMaterialTextureReferences\":{},\"skinnedMeshReleases\":{},\"engineTrimCount\":{},\"gameTrimCount\":{},\"gameRetainedBytes\":{},\"gameReclaimableBytes\":{}}}",runId_,actualSourceFingerprint_,renderer.residentSkinnedMeshes,renderer.residentSkinnedMeshBytes,renderer.residentMaterialTextureSets,renderer.residentMaterialTextureReferences,renderer.skinnedMeshReleases,memory.trimCount,memory.game.trimCount,memory.game.retainedCapacityBytes,memory.game.reclaimableCapacityBytes);
+  }
+  if(!projectionFailureReason_.empty()){
+    // 即使 WM_QUIT 越過下一幀 callback，已鎖存的失敗仍必須以非零結束。
+    projectionFailureStopFinished_=true;
+    FinishProjectionFailure(engine);
+    throw std::runtime_error(projectionFailureReason_);
   }
 }
 void GameplayLabGame::QueueTemporalHistoryReseed(GameplayTemporalReseedReason3D reason)noexcept{
@@ -618,6 +649,11 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       ::GameplayLab::GameplayCameraProductionBuildInput3D cameraBuildInput{};cameraBuildInput.bindVertices=playerProjectionHull;cameraBuildInput.feet=feet;cameraBuildInput.characterYaw=yaw_;cameraBuildInput.projection=cameraProjection;cameraBuildInput.viewport=cameraViewport;cameraBuildInput.desiredArm=desiredArm;cameraBuildInput.sweepRadius=sweepRadius;cameraBuildInput.candidateIdHigh=GameplayCameraCandidateHigh;
       const float minimumSubjectScreenArea=rules_.PaletteOpen()?.08f:.05f;
       cameraBuildInput.minimumSubjectScreenHeight=.52f;cameraBuildInput.minimumSubjectScreenArea=minimumSubjectScreenArea;
+      // 物件面板展示必須保留完整角色輪廓與乾淨背景；一般遊玩仍容許少量建築入鏡並交由淡出策略處理。
+      cameraBuildInput.maximumBuildingUnionCoverage=rules_.PaletteOpen()?0.f:.22f;
+      cameraBuildInput.maximumBuildingPartCoverage=rules_.PaletteOpen()?0.f:.08f;
+      cameraBuildInput.maximumRoofCoverage=rules_.PaletteOpen()?0.f:.05f;
+      cameraBuildInput.maximumSubjectOcclusion=rules_.PaletteOpen()?0.f:.005f;
       cameraBuildInput.compositionOccluders=buildingOccluders;
       cameraBuildInput.compositionActors=std::span<const ::GameplayLab::GameplayCameraCompositionActor3D>{compositionActors.data(),compositionActorCount};
       const MeshBounds3D playerWorldBounds=TransformBounds(playerEnvelope,{feet,{0,yaw_,0},{1,1,1}});
@@ -731,7 +767,74 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
   if(hadTemporalCamera&&GameplayTemporalViewDiscontinuity3D(previousCamera,camera_))QueueTemporalHistoryReseed(GameplayTemporalReseedReason3D::ViewProjection);
   temporalCameraInitialized_=true;
 }
+void GameplayLabGame::PreserveProjectionFailure(Engine& engine,std::string reason) {
+  projectionFailureReason_=std::move(reason);
+  const auto fail=[&](){throw std::runtime_error(projectionFailureReason_);};
+  if(projectionFailurePending_||captureDirectory_.empty()||!captureSequenceToken_||
+     !capturePairFrozen_||runId_.empty()||!std::ranges::all_of(runId_,[](unsigned char c){return std::isalnum(c)||c=='-';}))fail();
+  const auto directory=std::filesystem::weakly_canonical(captureDirectory_);
+  const auto attributes=GetFileAttributesW(directory.c_str());
+  if(attributes==INVALID_FILE_ATTRIBUTES||(attributes&FILE_ATTRIBUTE_REPARSE_POINT)||!(attributes&FILE_ATTRIBUTE_DIRECTORY))fail();
+  projectionFailureImage_=directory/("diagnostic-projection-failed-"+runId_+".png");
+  if(projectionFailureImage_.parent_path()!=directory||std::filesystem::exists(projectionFailureImage_))fail();
+  std::ofstream fatal(directory/"gameplay-fatal-error.txt",std::ios::trunc);
+  fatal<<projectionFailureReason_<<"\ndiagnosticOnly=1 accepted=0\n";fatal.flush();if(!fatal)fail();
+  // 原正式影像請求必須取消成功，才能改為唯一的失敗診斷影像。
+  if(!engine.CancelReadbackCaptureSequence3D(captureSequenceToken_))fail();
+  captureSequenceToken_={};capturePhaseRequestPending_=false;capturePresentationRequestPending_=false;
+  const auto stats=engine.GetRendererStats();projectionFailureCaptureCount_=stats.successfulFrameCaptures;
+  projectionFailureRejectedCount_=stats.rejectedFrameCaptures;
+  if(!engine.CaptureNextFrame3D(projectionFailureImage_))fail();
+  projectionFailurePending_=true;
+}
+void GameplayLabGame::FinishProjectionFailure(Engine& engine) {
+  if(!projectionFailurePending_)return;
+  projectionFailurePending_=false;
+  // 下一次 callback 一律結束，不等待更多幀，也不執行正常擷取狀態機。
+  std::string evidence="diagnostic image unavailable";
+  try{
+    const auto stats=engine.GetRendererStats();
+    const auto attributes=GetFileAttributesW(projectionFailureImage_.c_str());
+    std::array<std::byte,32> sha{};
+    if(attributes!=INVALID_FILE_ATTRIBUTES&&!(attributes&(FILE_ATTRIBUTE_REPARSE_POINT|FILE_ATTRIBUTE_DIRECTORY))){
+      const auto bytes=std::filesystem::file_size(projectionFailureImage_);
+      std::array<unsigned char,8> signature{};std::ifstream image(projectionFailureImage_,std::ios::binary);
+      image.read(reinterpret_cast<char*>(signature.data()),static_cast<std::streamsize>(signature.size()));
+      const bool png=image&&signature==std::array<unsigned char,8>{137,80,78,71,13,10,26,10};
+      if(bytes>=8&&bytes<=32ull*1024ull*1024ull&&png&&CaptureFileSha256(projectionFailureImage_,sha))
+        evidence=std::format("diagnosticOnly=1 accepted=0 image={} bytes={} sha256={} successfulCaptureAdvanced={} rejectedCaptureAdvanced={}",
+          projectionFailureImage_.filename().string(),bytes,CaptureShaHex(sha),stats.successfulFrameCaptures>projectionFailureCaptureCount_,stats.rejectedFrameCaptures>projectionFailureRejectedCount_);
+    }
+    std::ofstream marker(projectionFailureImage_.parent_path()/"gameplay-projection-failure-diagnostic.txt",std::ios::trunc);
+    marker<<projectionFailureReason_<<'\n'<<evidence<<'\n';
+  }catch(...){evidence="diagnostic verification failed; accepted=0";}
+  throw std::runtime_error(projectionFailureReason_+"; "+evidence);
+}
+void GameplayLabGame::PublishFirstPersonPose(float simulationDelta) {
+  if(!std::isfinite(simulationDelta)||simulationDelta<0.f)throw std::runtime_error("First-person publication delta was invalid");
+  if(rules_.Camera()!=CameraMode::FirstPerson){firstPersonPose_.active=false;return;}
+  const bool female=rules_.Female();
+  const auto& animation=female?femaleAnimation_:maleAnimation_;
+  const auto& source=female?femalePose_:malePose_;
+  const bool entering=!firstPersonPose_.active||firstPersonPose_.female!=female;
+  const float blend=entering?0.f:(std::min)(1.f,firstPersonPose_.enterBlend+simulationDelta/.2f);
+  GameplayFirstPersonPoseInput3D input{};
+  input.character=female?&femaleModel_:&maleModel_;input.rig=&animation.Rig();input.sourcePose=&source;
+  input.sword=female?&femaleSwordGeometry_:&maleSwordGeometry_;input.camera=camera_;
+  input.state=animation.State();input.phase=animation.NormalizedPhase();input.enterBlend=blend;
+  if(EvaluateGameplayFirstPersonPose3D(input,firstPersonPoseWorkspace_,firstPersonPose_.output)!=GameplayFirstPersonPoseStatus3D::Ready)
+    throw std::runtime_error("First-person fixed-step natural pose publication failed");
+  firstPersonPose_.state=input.state;firstPersonPose_.phase=input.phase;firstPersonPose_.enterBlend=blend;
+  firstPersonPose_.tick=rules_.GetStats().ticks;firstPersonPose_.sourcePoseHash=HashPose(source);
+  firstPersonPose_.cameraHash=CaptureCameraHash(camera_);firstPersonPose_.female=female;firstPersonPose_.active=true;
+  auto& hash=firstPersonPose_.hash;hash=CaptureStateSeed;
+  MixCaptureHash(hash,HashPose(firstPersonPose_.output.pose));MixCaptureHash(hash,firstPersonPose_.sourcePoseHash);
+  MixCaptureHash(hash,firstPersonPose_.cameraHash);MixCaptureHash(hash,firstPersonPose_.tick);MixCaptureHash(hash,unsigned(input.state));
+  MixCaptureHash(hash,female?1u:0u);MixCaptureFloat(hash,input.phase);MixCaptureFloat(hash,blend);
+  for(const auto& row:firstPersonPose_.output.modelToWorld.values)for(float value:row)MixCaptureFloat(hash,value);
+}
 void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
+  FinishProjectionFailure(engine);
   const float gameplayDelta=captureDirectory_.empty()?dt:1.f/60.f;
   simulationDelta_=GameplayPresentationDelta3D(gameplayDelta);
   if(!captureDirectory_.empty()&&!captureScenarioClock_.AdvancesSimulation()){
@@ -751,6 +854,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   }
   inputFocused_=focused;
   const bool inputActive=focused||!captureDirectory_.empty();
+  if(inputActive&&in.Pressed(VK_F1))diagnosticsVisible_=!diagnosticsVisible_;
   if (in.Pressed(VK_ESCAPE)){
     if(rules_.PaletteOpen()||paletteUi_->Active()||palette_->Preview().active){
       paletteUi_->Cancel();palette_->Cancel();palettePointerInteraction_=false;
@@ -873,10 +977,13 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     const auto& trajectoryModel=rules_.Female()?femaleModel_:maleModel_;
     AnimationPose3D trajectoryPose{};
     Matrix4 handSocket{};
+    Vec3 trajectoryTip{};
+    const auto& trajectorySword=rules_.Female()?femaleSwordGeometry_:maleSwordGeometry_;
     const Matrix4 trajectoryWorld=CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1});
     if(!trajectoryAnimation.EvaluateInto(trajectoryPose)||
        !CharacterSocketTransform3D(trajectoryModel.skeleton,trajectoryAnimation.Rig(),HumanoidJoint3D::RightHand,trajectoryPose,trajectoryWorld,handSocket)||
-       !authoritativeTrajectory_.Record(rules_.GetStats().ticks,combat_->CurrentAttack(),combat_->InHitWindow(),combat_->NormalizedAttackPhase(),controller_.Position(),TransformPoint(handSocket,{}),TransformPoint(handSocket,{0,-.72f,0})))
+       !ResolveGameplaySwordTipWorld3D(trajectorySword,handSocket,trajectoryTip)||
+       !authoritativeTrajectory_.Record(rules_.GetStats().ticks,combat_->CurrentAttack(),combat_->InHitWindow(),combat_->NormalizedAttackPhase(),controller_.Position(),TransformPoint(handSocket,{}),trajectoryTip))
       throw std::runtime_error("Gameplay authoritative attack trajectory checkpoint failed");
   }
   monsterAnimation_.SetState(combat_->Monster().alive
@@ -921,6 +1028,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   }
   // Final camera必須消費本tick完成足部貼地後的pose；foot cameraDistance明確來自前一tick camera。
   UpdateCamera(engine);
+  PublishFirstPersonPose(gameplayDelta);
   if(!captureDirectory_.empty()&&gameplayTick==24){
     if(activeCaptureRoute_.Active()||rules_.Camera()!=CameraMode::GodView||camera_.projection.mode!=ProjectionMode::Orthographic||!godCameraAuthorityReceipt_.valid||CaptureCameraHash(camera_)!=godCameraAuthorityReceipt_.cameraHash)throw std::runtime_error("Gameplay prelude God camera/projection authority closure failed");
     captureReplayInteractionCamera_=camera_;captureReplayInteractionCameraInputHash_=godCameraAuthorityReceipt_.inputHash;captureReplayInteractionCameraSubjectPoseHash_=godCameraAuthorityReceipt_.subjectPoseHash;
@@ -1049,20 +1157,23 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   draw.SetExposureCompensation(lightingState.exposureEv);
   const auto grabbed = palette_->Grabbed();
   const auto grabbedCategory = palette_->GrabbedCategory();
-  draw.Quad({1025, 575}, {490, 122}, {.008f, .018f, .022f, .9f});
-  draw.Text({790, 528}, "[G HOLD] GRAB / RELEASE", 1.1f, Cyan);
-  draw.Text({790, 554},
-            std::format("ACTIVE {}  ID {}  CLASS {}", grabbed ? 1 : 0,
-                        grabbed.value_or(0),
-                        unsigned(grabbedCategory.value_or(rules_.Category()))),
-            1.05f, grabbed ? Gold : Cyan);
-  draw.Text(
-      {790, 580},
-      std::format(
-          "HOLD {:.2f}  ERROR {:.3f}",
-          grabbed ? Length(palette_->GrabTarget() - camera_.position) : 0.f,
-          palette_->GrabError()),
-      1.05f, Gold);
+  const auto interactionHudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen());
+  if(interactionHudPolicy.interactionDiagnostics){
+    draw.Quad({1025, 575}, {490, 122}, {.008f, .018f, .022f, .9f});
+    draw.Text({790, 528}, "[G HOLD] GRAB / RELEASE", 1.1f, Cyan);
+    draw.Text({790, 554},
+              std::format("ACTIVE {}  ID {}  CLASS {}", grabbed ? 1 : 0,
+                          grabbed.value_or(0),
+                          unsigned(grabbedCategory.value_or(rules_.Category()))),
+              1.05f, grabbed ? Gold : Cyan);
+    draw.Text(
+        {790, 580},
+        std::format(
+            "HOLD {:.2f}  ERROR {:.3f}",
+            grabbed ? Length(palette_->GrabTarget() - camera_.position) : 0.f,
+            palette_->GrabError()),
+        1.05f, Gold);
+  }
   const auto sceneStats=scene_.Submit(draw, camera_, {1280, 720},
                 {true, true, {true, .02f, .2f, 80, 256}, {150, .1f}});
   if(captureIndex_<Names.size()){
@@ -1154,7 +1265,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     const Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
     switch(descriptor.kind){
     case ShowcaseSceneKind3D::Terrain:
-      if(const auto* source=showcaseRenderAssets_.ProductionMaterial("forest_ground_04")){auto material=*source;material.tint={1,1,1,1};material.normalScale=1.18f;material.textureScale=.18f;const auto before=scene_.MeshCount();const Transform3D terrainTransform{descriptor.position,{0,descriptor.yaw,0},{1,1,1}};scene_.Mesh(showcaseTerrainMesh_,terrainTransform,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
+      if(const auto* source=showcaseRenderAssets_.ProductionMaterial("forest_ground_04")){auto material=*source;material.tint={1,1,1,1};material.normalScale=1.18f;material.textureScale=1.f;const auto before=scene_.MeshCount();const Transform3D terrainTransform{descriptor.position,{0,descriptor.yaw,0},{1,1,1}};scene_.Mesh(showcaseTerrainMesh_,terrainTransform,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
     case ShowcaseSceneKind3D::Water:
       {const auto before=scene_.MeshCount();scene_.Mesh(showcaseRiverMesh_,transform,waterMaterial(showcaseEnvironment_.WaterSurfaceSettings()),{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
     case ShowcaseSceneKind3D::Tree:
@@ -1331,10 +1442,13 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     captureEffectiveDepthSha256_[index]=depth->pixelSha256;captureEffectiveDepthFinalFileSha256_[index]=depthPublication.finalFileSha256;captureEffectiveDepthFinalFileBytes_[index]=depthPublication.finalFileBytes;captureDepthGeneration_[index]=std::uint32_t(depth->generation);captureDepthSupported_[index]=1;captureEffectiveBuildingCoverage_[index]=buildingCoverage;captureEffectiveBuildingUnion_[index]=buildingUnion;captureEffectiveMaximumVisibleCoverage_[index]=maximumVisibleCoverage;captureEffectiveMaximumVisibleStableHigh_[index]=maximumVisibleIdentity.id.high;captureEffectiveMaximumVisibleStableLow_[index]=maximumVisibleIdentity.id.low;captureEffectiveMaximumVisibleGeneration_[index]=maximumVisibleIdentity.generation;
     captureEffectiveCharacterMask_.assign(capture->pixels.size(),0);if(playerToken)for(std::size_t pixel=0;pixel<capture->pixels.size();++pixel)captureEffectiveCharacterMask_[pixel]=isPlayerPixel(capture->pixels[pixel])?1u:0u;
     if(expectation.camera==GameplayCaptureCamera3D::First){
-      const auto measure=[&](std::uint32_t token,std::uint32_t& pixelCount,std::uint32_t& minimumX,std::uint32_t& minimumY,std::uint32_t& maximumX,std::uint32_t& maximumY){minimumX=capture->width;minimumY=capture->height;maximumX=maximumY=pixelCount=0;for(unsigned y=0;y<capture->height;++y)for(unsigned x=0;x<capture->width;++x)if(capture->pixels[std::size_t(y)*capture->width+x]==token){++pixelCount;minimumX=std::min(minimumX,x);minimumY=std::min(minimumY,y);maximumX=std::max(maximumX,x);maximumY=std::max(maximumY,y);}return pixelCount&&minimumX>=16&&minimumY>=32&&maximumX+16<capture->width&&maximumY+16<capture->height;};
+      const auto measure=[&](std::uint32_t token,std::uint32_t& pixelCount,std::uint32_t& minimumX,std::uint32_t& minimumY,std::uint32_t& maximumX,std::uint32_t& maximumY){minimumX=capture->width;minimumY=capture->height;maximumX=maximumY=pixelCount=0;for(unsigned y=0;y<capture->height;++y)for(unsigned x=0;x<capture->width;++x)if(capture->pixels[std::size_t(y)*capture->width+x]==token){++pixelCount;minimumX=std::min(minimumX,x);minimumY=std::min(minimumY,y);maximumX=std::max(maximumX,x);maximumY=std::max(maximumY,y);}return pixelCount!=0;};
       captureFirstPersonArmsToken_[index]=firstPersonArmsToken;captureFirstPersonWeaponToken_[index]=weaponToken;
-      const bool armsComplete=measure(firstPersonArmsToken,captureFirstPersonArmsPixels_[index],captureFirstPersonArmsMinimumX_[index],captureFirstPersonArmsMinimumY_[index],captureFirstPersonArmsMaximumX_[index],captureFirstPersonArmsMaximumY_[index]);
-      const bool weaponComplete=measure(weaponToken,captureFirstPersonWeaponPixels_[index],captureFirstPersonWeaponMinimumX_[index],captureFirstPersonWeaponMinimumY_[index],captureFirstPersonWeaponMaximumX_[index],captureFirstPersonWeaponMaximumY_[index]);
+      const bool armsMeasured=measure(firstPersonArmsToken,captureFirstPersonArmsPixels_[index],captureFirstPersonArmsMinimumX_[index],captureFirstPersonArmsMinimumY_[index],captureFirstPersonArmsMaximumX_[index],captureFirstPersonArmsMaximumY_[index]);
+      const bool weaponMeasured=measure(weaponToken,captureFirstPersonWeaponPixels_[index],captureFirstPersonWeaponMinimumX_[index],captureFirstPersonWeaponMinimumY_[index],captureFirstPersonWeaponMaximumX_[index],captureFirstPersonWeaponMaximumY_[index]);
+      // 肩部切口必須留在畫面外，因此手臂可從右緣進入；武器仍要求四邊完整安全距離。
+      const bool armsComplete=armsMeasured&&captureFirstPersonArmsMinimumX_[index]>=capture->width/2&&captureFirstPersonArmsMinimumY_[index]>=66;
+      const bool weaponComplete=weaponMeasured&&captureFirstPersonWeaponMinimumX_[index]>=16&&captureFirstPersonWeaponMinimumY_[index]>=32&&captureFirstPersonWeaponMaximumX_[index]+16<capture->width&&captureFirstPersonWeaponMaximumY_[index]+16<capture->height;
       if(!armsComplete||!weaponComplete){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=first-person-child-bounds arms="<<firstPersonArmsToken<<":"<<captureFirstPersonArmsPixels_[index]<<":"<<captureFirstPersonArmsMinimumX_[index]<<","<<captureFirstPersonArmsMinimumY_[index]<<","<<captureFirstPersonArmsMaximumX_[index]<<","<<captureFirstPersonArmsMaximumY_[index]<<" weapon="<<weaponToken<<":"<<captureFirstPersonWeaponPixels_[index]<<":"<<captureFirstPersonWeaponMinimumX_[index]<<","<<captureFirstPersonWeaponMinimumY_[index]<<","<<captureFirstPersonWeaponMaximumX_[index]<<","<<captureFirstPersonWeaponMaximumY_[index];return false;}
     }
     if(playerToken&&expectation.camera==GameplayCaptureCamera3D::Third){
@@ -1635,7 +1749,9 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       // 凍結決策只發生於 fixed simulation 呼叫，來源是本 tick 已完成的權威 pose/foot。
       captureFrozenFemalePose_=femalePose_;captureFrozenMalePose_=malePose_;captureFrozenMonsterPose_=monsterPose_;
       captureFrozenFootPlacementHash_=authorityFootPlacementHash_;capturePoseFrozen_=true;
-      ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);UpdateCamera(engine);return;
+      ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);UpdateCamera(engine);
+      // 與即時模式共用發布流程；重設相機不推進動畫或進場時間。
+      PublishFirstPersonPose(0.f);captureFrozenFirstPersonPose_=firstPersonPose_;return;
     }
     if(rules_.Camera()==CameraMode::ThirdPerson&&cameraPolicyFadeIdentity_&&!cameraFadeSettled_)return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&!GameplayCameraSelectionSettled3D(cameraPolicyReceipt_,cameraSelectedCandidate_))return;
@@ -1680,8 +1796,9 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     captureTemporalWarmupFrames_[captureIndex_]=captureTemporalWarmupFramesCurrent_;captureTemporalReseedReasonMask_[captureIndex_]=captureTemporalReseedReasonCurrent_;
     if(captureTemporalWarmupFrames_[captureIndex_]<GameplayTemporalCaptureWarmupFrames3D||!(captureTemporalReseedReasonMask_[captureIndex_]&GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D::CaptureShot)))throw std::runtime_error("Gameplay temporal capture warm-up evidence was incomplete");
     const std::uint64_t frozenCameraHash=CaptureCameraHash(camera_);std::uint64_t animationState=CaptureStateSeed;MixCaptureHash(animationState,HashPose(captureFrozenFemalePose_));MixCaptureHash(animationState,HashPose(captureFrozenMalePose_));MixCaptureHash(animationState,HashPose(captureFrozenMonsterPose_));std::uint64_t physicsState=CaptureStateSeed;MixCaptureHash(physicsState,captureAuthoritativePhysicsSteps_);MixCaptureHash(physicsState,captureFrozenFootPlacementHash_);
+    if(rules_.Camera()==CameraMode::FirstPerson)MixCaptureHash(animationState,captureFrozenFirstPersonPose_.hash);
     GameplayCanonicalCaptureStateInput3D canonicalInput{};canonicalInput.captureIndex=captureIndex_;canonicalInput.entities.assign(rules_.Entities().begin(),rules_.Entities().end());canonicalInput.controllerPosition=controller_.Position();canonicalInput.yaw=yaw_;canonicalInput.pitch=pitch_;canonicalInput.camera=rules_.Camera();canonicalInput.lighting=rules_.Lighting();canonicalInput.paletteCategory=rules_.Category();canonicalInput.female=rules_.Female();canonicalInput.paletteOpen=rules_.PaletteOpen();canonicalInput.grabbedEntity=rules_.Grabbed().value_or(0);canonicalInput.cameraHash=frozenCameraHash;canonicalInput.animationHash=animationState;canonicalInput.physicsHash=physicsState;captureCanonicalState_[captureIndex_]=BuildGameplayCanonicalCaptureState3D(canonicalInput);if(!captureCanonicalState_[captureIndex_].valid)throw std::runtime_error("Gameplay canonical capture state contained a non-finite or invalid entity");for(auto& diagnostic:captureCanonicalState_[captureIndex_].entityDiagnostics){diagnostic.initialSeed=std::ranges::find(initialSeedEntityIds_,diagnostic.stableId)!=initialSeedEntityIds_.end();if(const auto* body=static_cast<const PhysicsWorld3D&>(physics_).GetBody(palette_->Body(diagnostic.stableId))){diagnostic.bodyAvailable=true;diagnostic.bodyPosition=body->settings.transform.position;diagnostic.bodyVelocity=body->velocity;}if(const auto* scene=static_cast<const SceneECSRegistry3D&>(sceneEcs_).Transform(palette_->SceneEntity(diagnostic.stableId))){diagnostic.sceneAvailable=true;diagnostic.scenePosition=scene->value.position;}}const std::uint64_t frozenStateHash=captureCanonicalState_[captureIndex_].canonical;
-    std::uint64_t sequenceInvariantHash=14695981039346656037ull;MixCaptureHash(sequenceInvariantHash,frozenCameraHash);MixCaptureHash(sequenceInvariantHash,frozenStateHash);MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenFemalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMonsterPose_));MixCaptureHash(sequenceInvariantHash,showcaseProductionReceipt_.manifestFingerprint);if(!sequenceInvariantHash)sequenceInvariantHash=1;
+    std::uint64_t sequenceInvariantHash=14695981039346656037ull;MixCaptureHash(sequenceInvariantHash,frozenCameraHash);MixCaptureHash(sequenceInvariantHash,frozenStateHash);MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenFemalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMonsterPose_));MixCaptureHash(sequenceInvariantHash,showcaseProductionReceipt_.manifestFingerprint);if(rules_.Camera()==CameraMode::FirstPerson)MixCaptureHash(sequenceInvariantHash,captureFrozenFirstPersonPose_.hash);if(!sequenceInvariantHash)sequenceInvariantHash=1;
     activeCaptureRoute_.phase=GameplayActiveCaptureRoutePhase3D::Readback;
     if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::Empty){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay HDR capture state was not empty before arm");}
     const auto sequence=engine.BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{captureSequencePhaseCount_,ReadbackCaptureSequenceJitterPolicy3D::FixedSample,0,1ull<<1});
@@ -1695,6 +1812,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
   }
 }
 void GameplayLabGame::OnRender(Engine& engine,float){
+  FinishProjectionFailure(engine);
   const auto integrityMode=capturePairFrozen_?DeterminismIntegrityMode3D::SealedCapture:DeterminismIntegrityMode3D::Runtime;if(!engine.Draw().SetDeterminismIntegrityMode3D(integrityMode))throw std::runtime_error("Gameplay typed determinism integrity mode was rejected");
   if(playerHistory_.HasPendingSubmission())playerHistory_.ResolveSubmitted(engine);
   if(monsterHistory_.HasPendingSubmission())monsterHistory_.ResolveSubmitted(engine);
@@ -1721,9 +1839,14 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   const auto& bodyMaterials=rules_.Female()?femaleMaterials_:maleMaterials_;
   const auto& weaponSubmeshes=rules_.Female()?femaleWeaponSubmeshes_:maleWeaponSubmeshes_;
   const auto& weaponMaterials=rules_.Female()?femaleWeaponMaterials_:maleWeaponMaterials_;
-  const auto palette=AddSkinPaletteFromPose(draw,activeModel,activePose,skinning_);
   Matrix4 weaponWorld=playerWorld,armsWorld=playerWorld;
   const bool firstPerson=rules_.Camera()==CameraMode::FirstPerson;
+  const auto& naturalPose=useFrozenPose?captureFrozenFirstPersonPose_:firstPersonPose_;
+  if(firstPerson&&(!naturalPose.active||!naturalPose.output.valid||naturalPose.female!=rules_.Female()||
+     naturalPose.sourcePoseHash!=HashPose(activePose)||naturalPose.cameraHash!=CaptureCameraHash(camera_)))
+    throw std::runtime_error("First-person presentation snapshot did not match selected source/camera");
+  const auto& renderPose=firstPerson?naturalPose.output.pose:activePose;
+  const auto palette=AddSkinPaletteFromPose(draw,activeModel,renderPose,skinning_);
   if(rules_.Camera()==CameraMode::FirstPerson){
     Vec3 forward=Normalize(camera_.target-camera_.position),right=Normalize(Cross(camera_.up,forward)),up=Normalize(Cross(forward,right));
     if(Length(forward)<.001f||Length(right)<.001f||Length(up)<.001f)throw std::runtime_error("First-person weapon camera basis failed");
@@ -1732,10 +1855,9 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     cameraWorld[0][1]=up.x;cameraWorld[1][1]=up.y;cameraWorld[2][1]=up.z;
     cameraWorld[0][2]=forward.x;cameraWorld[1][2]=forward.y;cameraWorld[2][2]=forward.z;
     cameraWorld[0][3]=camera_.position.x;cameraWorld[1][3]=camera_.position.y;cameraWorld[2][3]=camera_.position.z;
-    // Viewmodel 使用獨立 camera-space 比例與方向，不依賴世界角色手部 socket。
-    Matrix4 modelHandSocket{};if(!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,activePose,Matrix4::Identity(),modelHandSocket))throw std::runtime_error("Viewmodel semantic grip socket failed");
+    // 固定步已完成肩部定位與手臂 IK；雙臂與武器共用同一姿勢及公尺尺度。
     const auto viewmodelLayout=GameplayFirstPersonViewmodelLayout(rules_.Female()?GameplayViewmodelSex3D::Female:GameplayViewmodelSex3D::Male);
-    if(!ComposeGameplayFirstPersonWeaponWorld3D(camera_,modelHandSocket,viewmodelLayout,false,weaponWorld)||!ComposeGameplayFirstPersonWeaponWorld3D(camera_,modelHandSocket,viewmodelLayout,true,armsWorld))throw std::runtime_error("Viewmodel grip composition failed");
+    weaponWorld=naturalPose.output.modelToWorld;armsWorld=weaponWorld;
     // 只在相機附近加入短半徑補光，避免黃昏與夜間的雙臂失去輪廓。
     draw.AddPointLight({TransformPoint(cameraWorld,{.28f,.10f,.58f}),1.35f,{1.f,.88f,.72f,1.f},viewmodelLayout.keyIntensity});
     draw.AddPointLight({TransformPoint(cameraWorld,{-.22f,.02f,.76f}),1.10f,{.58f,.72f,1.f,1.f},viewmodelLayout.fillIntensity});
@@ -1758,11 +1880,13 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     if(rules_.Camera()!=CameraMode::FirstPerson){if(rules_.Female())++femaleGpuDraws_;else ++maleGpuDraws_;}
   }
   Matrix4 socketWorld{},bodySocketWorld{};
-  if(!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,activePose,weaponWorld,socketWorld)||
+  if(!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,renderPose,weaponWorld,socketWorld)||
      (!firstPerson&&!CharacterSocketTransform3D(activeModel.skeleton,activeRig,HumanoidJoint3D::RightHand,activePose,playerWorld,bodySocketWorld)))
     throw std::runtime_error("Gameplay semantic weapon socket failed");
   const Vec3 handAnchor=TransformPoint(socketWorld,{});
-  const Vec3 weaponTip=TransformPoint(socketWorld,{0,-.72f,0});
+  Vec3 weaponTip{};
+  if(!ResolveGameplaySwordTipWorld3D(rules_.Female()?femaleSwordGeometry_:maleSwordGeometry_,socketWorld,weaponTip))
+    throw std::runtime_error("Gameplay rendered sword tip contract is unavailable");
   const float thirdPersonAnchorError=firstPerson?0.f:Length(handAnchor-TransformPoint(bodySocketWorld,{}));
   weaponAttachmentPassed_=std::isfinite(handAnchor.x)&&std::isfinite(handAnchor.y)&&std::isfinite(handAnchor.z)&&thirdPersonAnchorError<=.001f;
   if(GameplayCaptureProjectionRecordingActive3D(capturePairFrozen_,captureIndex_,Names.size())){
@@ -1800,12 +1924,15 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     captureGroundStableLow_[captureIndex_]=groundHit?groundHit.object.id.low:0;
     captureFeetContactPassed_[captureIndex_]=controller_.Grounded()&&captureFeetGroundError_[captureIndex_]<=.03f&&captureGroundStableLow_[captureIndex_]==1?1u:0u;
     if(firstPerson){
-      const auto projection=EvaluateGameplayFirstPersonViewmodelProjection3D(camera_,socketWorld,GameplayFirstPersonViewmodelLayout(rules_.Female()?GameplayViewmodelSex3D::Female:GameplayViewmodelSex3D::Male));
+      SkinningWorkspace3D armsEvidenceWorkspace;Mesh3D posedArmsEvidence;
+      const auto& armsEvidenceModel=rules_.Female()?femaleFirstPersonArmsModel_:maleFirstPersonArmsModel_;
+      if(!SkinModelInto(armsEvidenceModel,renderPose,armsEvidenceWorkspace,posedArmsEvidence))throw std::runtime_error("First-person arms projection skinning failed");
+      const auto projection=EvaluateGameplayFirstPersonViewmodelProjection3D(camera_,socketWorld,GameplayFirstPersonViewmodelLayout(rules_.Female()?GameplayViewmodelSex3D::Female:GameplayViewmodelSex3D::Male),rules_.Female()?femaleWeaponProjection_:maleWeaponProjection_,posedArmsEvidence.vertices,armsWorld);
       captureWeaponScreenCoverage_[captureIndex_]=projection.weaponCoverage;captureWeaponMinimumDepth_[captureIndex_]=projection.minimumDepth;
       captureWeaponCenterExcluded_[captureIndex_]=projection.centerExcluded;captureWeaponNearClipClear_[captureIndex_]=projection.nearClipClear;captureWeaponHudOverlap_[captureIndex_]=!projection.hudClear;
       captureWeaponGripX_[captureIndex_]=projection.gripX;captureWeaponGripY_[captureIndex_]=projection.gripY;captureWeaponBladeY_[captureIndex_]=projection.bladeY;
       captureWeaponGripEdgeAnchored_[captureIndex_]=projection.gripEdgeAnchored;captureWeaponBladeAboveGrip_[captureIndex_]=projection.bladeAboveGrip;
-      if(!projection.Complete())throw std::runtime_error(std::format("First-person viewmodel projection failed: coverage={} grip=({}, {}) blade={} weapon=({}, {})-({}, {}) arms=({}, {})-({}, {})",projection.weaponCoverage,projection.gripX,projection.gripY,projection.bladeY,projection.weaponMinimumX,projection.weaponMinimumY,projection.weaponMaximumX,projection.weaponMaximumY,projection.armsMinimumX,projection.armsMinimumY,projection.armsMaximumX,projection.armsMaximumY));
+      if(!projection.Complete())PreserveProjectionFailure(engine,std::format("First-person viewmodel projection failed: coverage={} grip=({}, {}) blade={} weapon=({}, {})-({}, {}) arms=({}, {})-({}, {})",projection.weaponCoverage,projection.gripX,projection.gripY,projection.bladeY,projection.weaponMinimumX,projection.weaponMinimumY,projection.weaponMaximumX,projection.weaponMaximumY,projection.armsMinimumX,projection.armsMinimumY,projection.armsMaximumX,projection.armsMaximumY));
     }
   }
   if(combatSpawned_){
@@ -1817,19 +1944,25 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     const std::size_t monsterDrawBegin=draw.skinnedMeshInstances.size();
     if(monsterHistory_.Submit(draw,monsterPalette,std::span<const SkinnedRenderablePart3D>{&monsterPart,1},false,&skinnedGroupStats_))for(std::size_t index=monsterDrawBegin;index<draw.skinnedMeshInstances.size();++index)draw.skinnedMeshInstances[index].identity={{GameplayCharacterIdentityHigh,2},1};
   }
-  draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});
-  draw.Text({18,14},"GAMEPLAY LAB  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);
-  draw.Quad({190,585},{360,230},{.008f,.018f,.022f,.9f});
-  draw.Text({22,486},"OBJECT PALETTE",1.7f,Gold);
   const auto stats=rules_.GetStats();
-  draw.Text({22,658},std::format("ENT {}/{}  UNDO {} REDO {}",stats.entities,Rules3D::MaximumEntities,stats.undoDepth,stats.redoDepth),1.f,Gold);
-  draw.Text({22,680},"DRAG/LMB PLACE  RMB/ESC CANCEL",.94f,Cyan);
-  draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
-  for(std::size_t index=0;index<GameplayObjectPaletteUi3D::Categories.size();++index){
-    const auto bounds=paletteUi_->ItemBounds(index);const bool selected=rules_.Category()==GameplayObjectPaletteUi3D::Categories[index];
-    draw.Quad({bounds.x+bounds.width*.5f,bounds.y+bounds.height*.5f},{bounds.width,bounds.height},selected?Color{.14f,.34f,.3f,.94f}:Color{.025f,.055f,.065f,.9f});
-    draw.Text({bounds.x+9,bounds.y+4},std::format("[{}] {}",index+4,GameplayObjectPaletteUi3D::Labels[index]),1.05f,selected?Gold:Cyan);
+  const auto hudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen());
+  if(!hudPolicy.instructions)draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
+  if(hudPolicy.instructions){
+    draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});
+    draw.Text({18,14},"[F1] HIDE HELP  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);
   }
-  ++paletteUiDrawnFrames_;
+  if(hudPolicy.palette){
+    draw.Quad({190,585},{360,230},{.008f,.018f,.022f,.9f});
+    draw.Text({22,486},"OBJECT PALETTE",1.7f,Gold);
+    draw.Text({22,658},std::format("ENT {}/{}  UNDO {} REDO {}",stats.entities,Rules3D::MaximumEntities,stats.undoDepth,stats.redoDepth),1.f,Gold);
+    draw.Text({22,680},"DRAG/LMB PLACE  RMB/ESC CANCEL",.94f,Cyan);
+    for(std::size_t index=0;index<GameplayObjectPaletteUi3D::Categories.size();++index){
+      const auto bounds=paletteUi_->ItemBounds(index);const bool selected=rules_.Category()==GameplayObjectPaletteUi3D::Categories[index];
+      draw.Quad({bounds.x+bounds.width*.5f,bounds.y+bounds.height*.5f},{bounds.width,bounds.height},selected?Color{.14f,.34f,.3f,.94f}:Color{.025f,.055f,.065f,.9f});
+      draw.Text({bounds.x+9,bounds.y+4},std::format("[{}] {}",index+4,GameplayObjectPaletteUi3D::Labels[index]),1.05f,selected?Gold:Cyan);
+    }
+    ++paletteUiDrawnFrames_;
+  }
+  if(hudPolicy.combatStatus)draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
   if(captureTemporalWarmupActive_&&captureTemporalWarmupRemaining_){--captureTemporalWarmupRemaining_;++captureTemporalWarmupFramesCurrent_;}
 }

@@ -10,6 +10,7 @@
 #include "GameplayCameraOcclusionPolicy3D.h"
 #include "GameplayCameraProductionBuilder3D.h"
 #include "GameplayFirstPersonViewmodel3D.h"
+#include "GameplayFirstPersonPose3D.h"
 #include "ObjectPaletteAdapter3D.h"
 #include <Aevrynd/CharacterController3D.h>
 #include <Aevrynd/Engine.h>
@@ -33,6 +34,31 @@
 #include <limits>
 #include <optional>
 #include <span>
+
+namespace GameplayLab {
+// geometry 只接受初始化時已由正式裝備頂點驗證的契約；失敗保留呼叫端輸出。
+inline bool ResolveGameplaySwordTipWorld3D(const Aevrynd::CharacterSwordGeometry3D& geometry,
+    const Aevrynd::Matrix4& handWorld,Aevrynd::Vec3& output) noexcept {
+    if(!geometry.available)return false;
+    for(const auto& row:handWorld.values)for(float value:row)if(!std::isfinite(value))return false;
+    const auto tip=Aevrynd::TransformPoint(handWorld,geometry.bladeTip);
+    if(!std::isfinite(tip.x)||!std::isfinite(tip.y)||!std::isfinite(tip.z))return false;
+    output=tip;return true;
+}
+
+struct GameplayHudPresentationPolicy3D {
+    bool instructions{};
+    bool palette{};
+    bool combatStatus{};
+    bool interactionDiagnostics{};
+};
+
+constexpr GameplayHudPresentationPolicy3D BuildGameplayHudPresentationPolicy3D(
+    bool diagnosticsVisible, bool paletteOpen) noexcept {
+    // 遊玩與擷取共用預設精簡模式；使用者可主動展開診斷，palette 仍依操作狀態顯示。
+    return {diagnosticsVisible, paletteOpen, diagnosticsVisible, diagnosticsVisible};
+}
+}
 #include <string>
 #include <string_view>
 #include <utility>
@@ -768,11 +794,29 @@ struct GameplayHdrCaptureReceipt3D {
 std::string CreateGameplayLabRunId();
 
 class GameplayLabGame final:public Aevrynd::IGame {
+    bool diagnosticsVisible_{};
 public:
     explicit GameplayLabGame(std::filesystem::path captureDirectory={},std::uint32_t temporalFixtureWarmupFrames=0,bool temporalFixtureCloudOff=false):combat_(std::make_unique<GameplayLab::GameplayCombat3D>(collisions_,physics_)),palette_(std::make_unique<GameplayLab::ObjectPaletteAdapter3D>(rules_,collisions_,physics_,sceneEcs_)),paletteUi_(std::make_unique<GameplayLab::GameplayObjectPaletteUi3D>(*palette_)),captureDirectory_(std::move(captureDirectory)),runId_(CreateGameplayLabRunId()),temporalFixtureWarmupFrames_(temporalFixtureWarmupFrames),temporalFixtureCloudOff_(temporalFixtureCloudOff){}
     void OnStart(Aevrynd::Engine&)override;void OnUpdate(Aevrynd::Engine&,float)override;void OnRender(Aevrynd::Engine&,float)override;void OnStop(Aevrynd::Engine&)override;
     Aevrynd::ReusableMemoryStats GetReusableMemoryStats()const override;std::size_t TrimReusableMemory()override;
 private:
+    void PreserveProjectionFailure(Aevrynd::Engine&,std::string reason);
+    void FinishProjectionFailure(Aevrynd::Engine&);
+    std::string projectionFailureReason_{};
+    std::filesystem::path projectionFailureImage_{};
+    std::uint64_t projectionFailureCaptureCount_{},projectionFailureRejectedCount_{};
+    bool projectionFailurePending_{};
+    bool projectionFailureStopFinished_{};
+    void PublishFirstPersonPose(float simulationDelta);
+    struct FirstPersonPosePublication {
+        GameplayLab::GameplayFirstPersonPoseOutput3D output{};
+        GameplayLab::AnimationState3D state{GameplayLab::AnimationState3D::Idle};
+        float phase{},enterBlend{};
+        std::uint64_t tick{},sourcePoseHash{},cameraHash{},hash{};
+        bool female{},active{};
+    };
+    GameplayLab::GameplayFirstPersonPoseWorkspace3D firstPersonPoseWorkspace_{};
+    FirstPersonPosePublication firstPersonPose_{},captureFrozenFirstPersonPose_{};
     void BuildWorld(Aevrynd::Engine&);void AddShowcaseEnvironment();void QueueTemporalHistoryReseed(GameplayLab::GameplayTemporalReseedReason3D)noexcept;void ResetProductionCameraCut(GameplayLab::GameplayTemporalReseedReason3D=GameplayLab::GameplayTemporalReseedReason3D::CameraMode)noexcept;void UpdateCamera(Aevrynd::Engine&);void UpdateCapture(Aevrynd::Engine&,bool fixedSimulationStep);void RequestCapturePhase(Aevrynd::Engine&);bool ConsumeObjectIdCapture(Aevrynd::Engine&,std::size_t,bool raw,bool reference);bool WriteCaptureIntegrityDiagnostic(bool fatal=false)const;std::filesystem::path GameplayHdrCapturePath(std::size_t)const;void CleanupGameplayHdrCaptureArtifacts(std::size_t,bool removeFinal)noexcept;void FailGameplayHdrCapture(Aevrynd::Engine&,std::size_t)noexcept;bool WriteGameplayHdrCaptureReceipt()const;bool InitializeEnvironmentCollision();bool SyncEnvironmentCollision(Aevrynd::Vec3 observer);void ReleaseEnvironmentGameplayColliders();
     std::uint32_t temporalFixtureWarmupFrames_{};bool temporalFixtureCloudOff_{};
     GameplayLab::Rules3D rules_{};Aevrynd::CharacterController3D controller_{};Aevrynd::CollisionWorld3D collisions_{};Aevrynd::PhysicsWorld3D physics_{};Aevrynd::SceneECSRegistry3D sceneEcs_{};Aevrynd::Scene3D scene_{};
@@ -814,6 +858,8 @@ private:
     std::uint64_t gameplayHdrEnginePeakBytes_{};
     std::uint32_t gameplayHdrInFlight_{},gameplayHdrMaxInFlight_{};
     GameplayLab::GameplayAuthoritativeTrajectoryEvidence3D authoritativeTrajectory_{};
+    Aevrynd::CharacterSwordGeometry3D femaleSwordGeometry_{},maleSwordGeometry_{};
+    GameplayLab::GameplayFirstPersonWeaponProjectionGeometry3D femaleWeaponProjection_{},maleWeaponProjection_{};
     std::array<std::uint32_t,11> captureContactLeftPixels_{},captureContactRightPixels_{},captureContactGroundSupportPixels_{},captureContactShadowPixels_{};
     std::array<std::uint64_t,11> captureContactFrameSerial_{},captureContactPoseHash_{};
     std::array<std::array<std::byte,32>,11> captureContactArtifactSha256_{};

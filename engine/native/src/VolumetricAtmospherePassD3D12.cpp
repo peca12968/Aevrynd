@@ -706,6 +706,8 @@ void VolumetricAtmospherePassD3D12::InvalidateHistory() noexcept {
   if (impl_->stats.historyValid)
     ++impl_->stats.historyResets;
   impl_->stats.historyValid = false;
+  // 歷程失效後從固定輸出槽重新開始，避免擷取結果受先前呈現幀數的奇偶性影響。
+  impl_->writeIndex = 0;
   impl_->previousTimeValid = false;
 }
 
