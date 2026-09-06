@@ -46,12 +46,137 @@ function Assert-GameplayCameraPolicyReceipt($Receipt,[string]$RunId,[string[]]$E
   for($index=0;$index-lt$ExpectedNames.Count;++$index){$capture=$Receipt.captures[$index];$palette=$ExpectedNames[$index]-ceq'palette-building.png';$minimum=if($palette){$paletteMinimum}else{$runtimeMinimum};if($capture.name-cne$ExpectedNames[$index]-or[uint64]$capture.paletteOpen-ne[uint64]$palette-or[single]$capture.minimumSubjectScreenArea-ne[single]$minimum-or($palette-and[single]$capture.actualSubjectScreenArea-lt[single]$paletteMinimum)){throw "Gameplay camera palette open/close/minimum-area contract failed: $($ExpectedNames[$index])"}}
 }
 
+if(-not('AevryndGameplayWindowsPath' -as [type])){
+  Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+public sealed class AevryndGameplayPinnedPath : IDisposable
+{
+    public SafeFileHandle Handle { get; private set; }
+    public uint Attributes { get; private set; }
+    public uint NumberOfLinks { get; private set; }
+
+    internal AevryndGameplayPinnedPath(SafeFileHandle handle, uint attributes, uint numberOfLinks)
+    {
+        Handle = handle;
+        Attributes = attributes;
+        NumberOfLinks = numberOfLinks;
+    }
+
+    public void Dispose()
+    {
+        if (Handle != null) Handle.Dispose();
+    }
+}
+
+public static class AevryndGameplayWindowsPath
+{
+    private const uint FileShareRead = 0x00000001;
+    private const uint FileShareWrite = 0x00000002;
+    private const uint OpenExisting = 3;
+    private const uint FileAttributeDirectory = 0x00000010;
+    private const uint FileAttributeReparsePoint = 0x00000400;
+    private const uint FileFlagOpenReparsePoint = 0x00200000;
+    private const uint FileFlagBackupSemantics = 0x02000000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFileW(string fileName, uint desiredAccess, uint shareMode,
+        IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle handle, out ByHandleFileInformation information);
+
+    public static AevryndGameplayPinnedPath Open(string path, bool directory)
+    {
+        uint flags = FileFlagOpenReparsePoint | (directory ? FileFlagBackupSemantics : 0u);
+        uint sharing = FileShareRead | (directory ? FileShareWrite : 0u);
+        SafeFileHandle handle = CreateFileW(path, 0u, sharing, IntPtr.Zero, OpenExisting, flags, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            int error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "Could not pin capture provenance path");
+        }
+        ByHandleFileInformation information;
+        if (!GetFileInformationByHandle(handle, out information))
+        {
+            int error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw new Win32Exception(error, "Could not query capture provenance path");
+        }
+        bool isDirectory = (information.FileAttributes & FileAttributeDirectory) != 0u;
+        if (isDirectory != directory)
+        {
+            handle.Dispose();
+            throw new InvalidOperationException("Capture provenance path type changed during validation");
+        }
+        return new AevryndGameplayPinnedPath(handle, information.FileAttributes, information.NumberOfLinks);
+    }
+
+    public static bool IsReparsePoint(AevryndGameplayPinnedPath path)
+    {
+        return (path.Attributes & FileAttributeReparsePoint) != 0u;
+    }
+}
+'@
+}
+
+function Close-GameplayCapturePathPins {
+  $existing=Get-Variable -Name GameplayCapturePathPins -Scope Script -ErrorAction SilentlyContinue
+  if($existing){foreach($pin in @($existing.Value)){if($null-ne$pin){$pin.Dispose()}};Remove-Variable -Name GameplayCapturePathPins -Scope Script -ErrorAction SilentlyContinue}
+}
+
 function Resolve-GameplayCaptureExecutablePath([string]$Executable,[string]$AllowedRoot){
   if([string]::IsNullOrWhiteSpace($Executable)-or$Executable-match'(^|[\\/])\.\.([\\/]|$)'){throw 'Gameplay capture executable path is empty or contains traversal'}
-  $root=[IO.Path]::GetFullPath($AllowedRoot).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+  if([string]::IsNullOrWhiteSpace($AllowedRoot)-or$AllowedRoot-match'(^|[\\/])\.\.([\\/]|$)'){throw 'Gameplay capture source root is empty or contains traversal'}
+  try{$sourceRoot=(Resolve-Path -LiteralPath $AllowedRoot -ErrorAction Stop).Path}catch{throw 'Gameplay capture source root does not exist'}
+  if(-not(Test-Path -LiteralPath $sourceRoot -PathType Container)){throw 'Gameplay capture source root is not a directory'}
+  $sourceRoot=[IO.Path]::GetFullPath($sourceRoot).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
   try{$resolved=(Resolve-Path -LiteralPath $Executable -ErrorAction Stop).Path}catch{throw 'Gameplay capture executable does not exist'}
-  $full=[IO.Path]::GetFullPath($resolved);if(-not(Test-Path -LiteralPath $full -PathType Leaf)-or[IO.Path]::GetExtension($full)-cne'.exe'-or-not$full.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)-or[IO.Path]::GetPathRoot($full)-cne[IO.Path]::GetPathRoot($root)){throw 'Gameplay capture executable escaped the allowed root or is not an executable file'}
-  return $full
+  $full=[IO.Path]::GetFullPath($resolved);$releaseRoot=Split-Path -Parent $full;$binRoot=Split-Path -Parent $releaseRoot;$buildRoot=Split-Path -Parent $binRoot
+  $expected=[IO.Path]::GetFullPath((Join-Path $buildRoot 'bin\Release\Aevrynd-Gameplay-Lab.exe'));$cachePath=Join-Path $buildRoot 'CMakeCache.txt'
+  if(-not(Test-Path -LiteralPath $full -PathType Leaf)-or[IO.Path]::GetExtension($full)-cne'.exe'-or-not[string]::Equals($full,$expected,[StringComparison]::OrdinalIgnoreCase)-or-not(Test-Path -LiteralPath $cachePath -PathType Leaf)-or-not[string]::Equals([IO.Path]::GetPathRoot($buildRoot),[IO.Path]::GetPathRoot($full),[StringComparison]::OrdinalIgnoreCase)){throw 'Gameplay capture executable was not the exact fresh build bin/Release target'}
+  $pins=[Collections.Generic.List[IDisposable]]::new()
+  try{
+    $directories=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($leaf in @($sourceRoot,$buildRoot,$binRoot,$releaseRoot)){
+      $current=[IO.Path]::GetFullPath($leaf).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar);$volumeRoot=[IO.Path]::GetPathRoot($current).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
+      while(-not[string]::IsNullOrWhiteSpace($current)-and-not[string]::Equals($current,$volumeRoot,[StringComparison]::OrdinalIgnoreCase)){
+        $null=$directories.Add($current);$parent=[IO.Path]::GetDirectoryName($current);if([string]::IsNullOrWhiteSpace($parent)-or[string]::Equals($parent,$current,[StringComparison]::OrdinalIgnoreCase)){break};$current=$parent.TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)
+      }
+    }
+    foreach($directory in $directories){$pin=[AevryndGameplayWindowsPath]::Open($directory,$true);$pins.Add($pin);if([AevryndGameplayWindowsPath]::IsReparsePoint($pin)){throw "Gameplay capture provenance directory was a reparse point: $directory"}}
+    $executablePin=[AevryndGameplayWindowsPath]::Open($full,$false);$pins.Add($executablePin);if([AevryndGameplayWindowsPath]::IsReparsePoint($executablePin)-or$executablePin.NumberOfLinks-ne1){throw 'Gameplay capture executable was a reparse point or hardlink'}
+    $cachePin=[AevryndGameplayWindowsPath]::Open($cachePath,$false);$pins.Add($cachePin);if([AevryndGameplayWindowsPath]::IsReparsePoint($cachePin)-or$cachePin.NumberOfLinks-ne1){throw 'Gameplay capture CMake cache was a reparse point or hardlink'}
+    try{$cache=[IO.File]::ReadAllText($cachePath)}catch{throw 'Gameplay capture build root CMake cache was unreadable'}
+    $sourceIdentityDeclarations=[regex]::Matches($cache,'(?mi)^[ \t]*CMAKE_HOME_DIRECTORY[^\r\n]*\r?$')
+    $sourceIdentityMatches=[regex]::Matches($cache,'(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=([^\r\n]+)\r?$')
+    if($sourceIdentityDeclarations.Count-ne1-or$sourceIdentityMatches.Count-ne1){throw 'Gameplay capture build root must declare exactly one well-formed CMake source identity'}
+    $declaredSourceText=$sourceIdentityMatches[0].Groups[1].Value.Trim();if([string]::IsNullOrWhiteSpace($declaredSourceText)-or$declaredSourceText-match'(^|[\\/])\.\.([\\/]|$)'){throw 'Gameplay capture build root declared an invalid CMake source identity'}
+    try{$declaredSource=[IO.Path]::GetFullPath($declaredSourceText).TrimEnd([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)}catch{throw 'Gameplay capture build root declared an invalid CMake source identity'}
+    if(-not[string]::Equals($declaredSource,$sourceRoot,[StringComparison]::OrdinalIgnoreCase)){throw 'Gameplay capture build root belonged to a different source tree'}
+    Close-GameplayCapturePathPins;$script:GameplayCapturePathPins=@($pins);$pins=$null
+    return $full
+  } finally {if($null-ne$pins){foreach($pin in $pins){if($null-ne$pin){$pin.Dispose()}}}}
 }
 function Get-GameplayEvidenceBgra32($Bitmap) {
   $converted=[Drawing.Bitmap]::new($Bitmap.Width,$Bitmap.Height,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
