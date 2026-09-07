@@ -235,9 +235,16 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
         clip.duration = 1.f;
         clip.looping = true;
     }
-    if (!asset.clips.empty() && asset.clips.front().clip.Valid(asset.model.skeleton)) {
-        clips[std::size_t(FallbackHumanoidClip3D::Idle)] = asset.clips.front().clip;
-        clips[std::size_t(FallbackHumanoidClip3D::Idle)].looping = true;
+    // 依待機語意選取來源，不讓握持原型或檔案排列決定待機姿勢。
+    for (const std::string_view name : {"IdleBreathing", "Idle"}) {
+        const auto found = std::ranges::find_if(asset.clips, [&](const auto& source) {
+            return source.name == name && source.clip.Valid(asset.model.skeleton);
+        });
+        if (found != asset.clips.end()) {
+            clips[std::size_t(FallbackHumanoidClip3D::Idle)] = found->clip;
+            clips[std::size_t(FallbackHumanoidClip3D::Idle)].looping = true;
+            break;
+        }
     }
     const Skeleton3D& skeleton = asset.model.skeleton;
     const auto joint = [&](HumanoidJoint3D semantic) { return rig.Joint(semantic); };
@@ -258,17 +265,21 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
     const auto appendOptional = [&](AnimationClip3D& clip, std::size_t optionalJoint,
                                     std::initializer_list<std::pair<float, Vec3>> rotations,
                                     std::initializer_list<std::pair<float, Vec3>> translations = {}) {
-        if (optionalJoint < skeleton.joints.size())
+        if (optionalJoint < skeleton.joints.size() &&
+            std::ranges::none_of(clip.tracks, [&](const auto& track) {
+                return track.joint == optionalJoint;
+            }))
             clip.tracks.push_back(Track(skeleton, optionalJoint, clip.duration,
                                         rotations, translations));
     };
     AnimationClip3D& idle = clips[std::size_t(FallbackHumanoidClip3D::Idle)];
-    idle.tracks.push_back(Track(skeleton, head, idle.duration,
-        {{0.f,{0,-.018f,0}}, {.5f,{.012f,.018f,0}}, {1.f,{0,-.018f,0}}}));
-    idle.tracks.push_back(Track(skeleton, leftHand, idle.duration,
-        {{0.f,{.02f,0,-.08f}}, {.5f,{.035f,0,-.10f}}, {1.f,{.02f,0,-.08f}}}));
-    idle.tracks.push_back(Track(skeleton, rightHand, idle.duration,
-        {{0.f,{.02f,0,.08f}}, {.5f,{.035f,0,.10f}}, {1.f,{.02f,0,.08f}}}));
+    // 僅補上缺少的關節；保留來源軌跡並避免同關節重複軌跡。
+    appendOptional(idle, head,
+        {{0.f,{0,-.018f,0}}, {.5f,{.012f,.018f,0}}, {1.f,{0,-.018f,0}}});
+    appendOptional(idle, leftHand,
+        {{0.f,{.02f,0,-.08f}}, {.5f,{.035f,0,-.10f}}, {1.f,{.02f,0,-.08f}}});
+    appendOptional(idle, rightHand,
+        {{0.f,{.02f,0,.08f}}, {.5f,{.035f,0,.10f}}, {1.f,{.02f,0,.08f}}});
     appendOptional(idle, leftFingers, {{0.f,{.16f,0,-.05f}}, {.5f,{.24f,0,-.08f}}, {1.f,{.16f,0,-.05f}}});
     appendOptional(idle, rightFingers, {{0.f,{.16f,0,.05f}}, {.5f,{.24f,0,.08f}}, {1.f,{.16f,0,.05f}}});
     const auto gait = [&](FallbackHumanoidClip3D id, float duration, float hipAmount, float kneeAmount) {
