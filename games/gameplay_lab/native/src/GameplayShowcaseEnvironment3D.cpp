@@ -358,7 +358,7 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
              {.19f, .14f, .23f, 1}, {.3f, .19f, .25f, .68f}, .02f, 68400.f};
   } else {
     state = {profile, {{-.25f, -.62f, -.74f}, .055f, {.42f, .55f, 1, 1}, .42f},
-             {.035f, .065f, .13f, 1}, {.1f, .16f, .28f, .7f}, .28f, 79200.f};
+             {.035f, .065f, .13f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
   }
   return state;
 }

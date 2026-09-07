@@ -132,12 +132,6 @@ void ApplyReplayInput(Input &input, std::uint64_t tick) {
   case 4:
     tap('2');
     break;
-  case 6:
-    tap('3');
-    break;
-  case 8:
-    tap('V');
-    break;
   case 10:
     input.SetKey('W', true);
     break;
@@ -174,6 +168,10 @@ void ApplyReplayInput(Input &input, std::uint64_t tick) {
   case 26:
     tap('R');
     input.SetMouseButton(false);
+    break;
+  case 27:
+    // palette 指標回放已保留 tick 24 的 God authority；後續 transition 不再重跑昂貴全域搜尋。
+    tap('1');
     break;
   case 28:
     input.SetRightMouseButton(true);
@@ -296,6 +294,7 @@ void GameplayLabGame::OnStart(Engine& engine){
   auto terrainMesh=showcaseTerrain_.CreateMesh({{1,1,1,1},{1,1,1,1},{1,1,1,1},.7f,{1,1,1,1},-.65f,2.2f,0x4a17u,.0042f,0.f,.32f,{1,1,1,1},{1,1,1,1},{1,1,1,1},.34f,.7f,.11f,.7f,.1f});
   // 高度場頂點提供真實世界平鋪UV，避免所有頂點取樣同一個淺色texel形成除錯條紋。
   for(auto& vertex:terrainMesh.vertices){vertex.u=vertex.x*.085f;vertex.v=vertex.z*.085f;}
+  PrepareShowcaseSurfaceTerrainMesh3D(terrainMesh);
   showcaseTerrainMesh_=engine.CreateMeshResource3D(terrainMesh);
   if(!showcaseCylinderMesh_||!showcaseConeHighMesh_||!showcaseConeLowMesh_||!showcaseGrassHighMesh_||!showcaseGrassLowMesh_||!showcaseTreeLowMesh_||!showcaseRockLowMesh_||!showcaseRiverMesh_||!showcaseCottageFrontMesh_||!showcaseCottageBackMesh_||!showcaseCottageSideMesh_||!showcaseCottageRoofMesh_||!showcaseTerrainMesh_)throw std::runtime_error("Gameplay showcase procedural GPU upload failed");
   const auto assetRoot=engine.ExecutableDirectory()/"assets";
@@ -466,7 +465,7 @@ void GameplayLabGame::OnStop(Engine &engine) {
     const auto ui=paletteUi_->Receipt();
     std::ofstream uiOut(captureDirectory_/"gameplay-palette-ui-receipt.json",std::ios::trunc);
     uiOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
-    uiOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayObjectPaletteUi3D\",\"categories\":6,\"drawnFrames\":{},\"pointerDowns\":{},\"drags\":{},\"previews\":{},\"commits\":{},\"invalidPlacements\":{},\"cancels\":{},\"deterministicHash\":{}}}",runId_,paletteUiDrawnFrames_,ui.pointerDowns,ui.drags,ui.previews,ui.commits,ui.invalidPlacements,ui.cancels,ui.deterministicHash);
+    uiOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayObjectPaletteUi3D\",\"categories\":6,\"drawnFrames\":{},\"cleanHudPresentationFrames\":{},\"pointerDowns\":{},\"drags\":{},\"previews\":{},\"commits\":{},\"invalidPlacements\":{},\"cancels\":{},\"deterministicHash\":{}}}",runId_,paletteUiDrawnFrames_,captureCleanHudFrames_,ui.pointerDowns,ui.drags,ui.previews,ui.commits,ui.invalidPlacements,ui.cancels,ui.deterministicHash);
   }
   palette_->Clear();
   const auto environmentCollisionBeforeRelease=environmentCollisionActiveReceipt_;
@@ -713,10 +712,8 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       if(!SkinModelInto(godSubjectModel,godSubjectPose,skinning_,godCameraPoseVisualMesh_)||!godCameraPoseVisualMesh_.Valid())throw std::runtime_error("Gameplay god camera posed mesh unavailable");
       const Matrix4 godPlayerWorld=CreateTransformMatrix(feet,{0,yaw_,0},{1,1,1});
       const GameplayGodProductionGeometry3D godGeometry{showcaseGrassHighMesh_.bounds,showcaseRiverMesh_.bounds,boxMesh_.bounds,showcaseCottageFrontMesh_.bounds,showcaseCottageBackMesh_.bounds,showcaseCottageSideMesh_.bounds,showcaseCottageRoofMesh_.bounds};
-      // 正式構圖掃描包含約九萬個候選與完整世界描述投影。靜止時重算不會
-      // 改變結果，只會拖慢固定模擬；保留最近一次通過全部 gate 的 layout，
-      // 玩家移動超過保守距離才重新驗證，門檻內相機與焦點同步平移。
-      constexpr float layoutRebuildDistance=.25f;
+      // translated layout 仍須重跑完整世界／碰撞／地形閉包；通過後即可重新定錨，
+      // 距離或角色性別本身不得迫使相同內容再次執行昂貴全域搜尋。
       const auto resolveGodCamera=[&](const GameplayGodCameraLayout3D& candidate){
         return ResolveGameplayGodCameraLayout3D(focus,candidate,showcaseEnvironment_.Descriptors(),godGeometry,
           godCameraPoseVisualMesh_.vertices,godCameraPoseVisualMesh_.indices,godPlayerWorld,
@@ -728,7 +725,7 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       translated.camera.position=translated.camera.position+translation;
       translated.camera.target=translated.camera.target+translation;
       auto validated=godCameraBuildCacheValid_?resolveGodCamera(translated):GameplayGodCameraLayout3D{};
-      if(!godCameraBuildCacheValid_||godCameraBuildCacheFemale_!=rules_.Female()||Length(translation)>layoutRebuildDistance||!validated.valid){
+      if(!godCameraBuildCacheValid_||!validated.valid){
         godCameraAuthorityReceipt_=BuildGameplayAuthoritativeGodCamera3D({feet,yaw_,pitch_},showcaseEnvironment_.Descriptors(),godGeometry,godCameraPoseVisualMesh_.vertices,godCameraPoseVisualMesh_.indices,
           [&](Camera3D camera){return ConstrainThirdPersonCamera(camera,focus,collisions_,.25f);},
           [&](Camera3D camera){return ConstrainThirdPersonCamera(camera,focus,showcaseTerrain_,.25f);});
@@ -747,6 +744,9 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
         validated=resolveGodCamera(godCameraBuildCache_);
         if(!validated.valid)throw std::runtime_error("Gameplay god camera failed selected-candidate deterministic closure");
       }else{
+        godCameraBuildCache_=validated;
+        godCameraBuildCacheFocus_=focus;
+        godCameraBuildCacheFemale_=rules_.Female();
         ++godCameraCacheHitCount_;
       }
       camera_=validated.camera;
@@ -1157,7 +1157,8 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   draw.SetExposureCompensation(lightingState.exposureEv);
   const auto grabbed = palette_->Grabbed();
   const auto grabbedCategory = palette_->GrabbedCategory();
-  const auto interactionHudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen());
+  const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationRequestPending_||capturePresentationPending_);
+  const auto interactionHudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen(),cleanCapturePresentation);
   if(interactionHudPolicy.interactionDiagnostics){
     draw.Quad({1025, 575}, {490, 122}, {.008f, .018f, .022f, .9f});
     draw.Text({790, 528}, "[G HOLD] GRAB / RELEASE", 1.1f, Cyan);
@@ -1744,7 +1745,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       capturePreparedIndex_=captureIndex_;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;captureTemporalWarmupRemaining_=0;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=0;
       if(captureIndex_>=GameplayCaptureExpectations3D.size())throw std::runtime_error("Gameplay active capture route index was out of range");
       activeCaptureRoute_={captureIndex_,BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[captureIndex_]),GameplayActiveCaptureRoutePhase3D::Prepared};
-      godCameraBuildCacheValid_=false;
+      // 跨時段保留同一組已驗證的上帝視角構圖；後續 UpdateCamera 仍會依目前角色位置、碰撞、地形與 LOD 重新驗證。
       ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);UpdateCamera(engine);
       // 凍結決策只發生於 fixed simulation 呼叫，來源是本 tick 已完成的權威 pose/foot。
       captureFrozenFemalePose_=femalePose_;captureFrozenMalePose_=malePose_;captureFrozenMonsterPose_=monsterPose_;
@@ -1945,7 +1946,9 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     if(monsterHistory_.Submit(draw,monsterPalette,std::span<const SkinnedRenderablePart3D>{&monsterPart,1},false,&skinnedGroupStats_))for(std::size_t index=monsterDrawBegin;index<draw.skinnedMeshInstances.size();++index)draw.skinnedMeshInstances[index].identity={{GameplayCharacterIdentityHigh,2},1};
   }
   const auto stats=rules_.GetStats();
-  const auto hudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen());
+  const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationRequestPending_||capturePresentationPending_);
+  const auto hudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen(),cleanCapturePresentation);
+  if(cleanCapturePresentation)++captureCleanHudFrames_;
   if(!hudPolicy.instructions)draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
   if(hudPolicy.instructions){
     draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});

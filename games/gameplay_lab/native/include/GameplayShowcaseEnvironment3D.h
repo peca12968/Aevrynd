@@ -32,6 +32,12 @@ ShowcaseGrassLodPolicy3D() noexcept {
   return {22.f, 5.f, Aevrynd::MeshLodDistanceMetric3D::BoundsSurface};
 }
 
+// 單層 Surface 地表不會解碼 biome 高度；只固定頂點不透明度，避免高度 alpha
+// 被一般 world blend 當成透明度，同時保留幾何、材質色與世界平鋪座標。
+inline void PrepareShowcaseSurfaceTerrainMesh3D(Aevrynd::Mesh3D &mesh) noexcept {
+  for (auto &vertex : mesh.vertices) vertex.color |= 0xff000000u;
+}
+
 struct ShowcaseSceneDescriptor3D {
   ShowcaseSceneKind3D kind{};
   Aevrynd::Vec3 position{};

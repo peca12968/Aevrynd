@@ -54,10 +54,17 @@ struct GameplayHudPresentationPolicy3D {
 };
 
 constexpr GameplayHudPresentationPolicy3D BuildGameplayHudPresentationPolicy3D(
-    bool diagnosticsVisible, bool paletteOpen) noexcept {
+    bool diagnosticsVisible, bool paletteOpen,
+    bool cleanCapturePresentation = false) noexcept {
+    if (cleanCapturePresentation) return {};
     // 遊玩與擷取共用預設精簡模式；使用者可主動展開診斷，palette 仍依操作狀態顯示。
     return {diagnosticsVisible, paletteOpen, diagnosticsVisible, diagnosticsVisible};
 }
+static_assert([] {
+    constexpr auto clean = BuildGameplayHudPresentationPolicy3D(true, true, true);
+    return !clean.instructions && !clean.palette && !clean.combatStatus &&
+           !clean.interactionDiagnostics;
+}());
 }
 #include <string>
 #include <string_view>
@@ -833,7 +840,7 @@ private:
     GameplayLab::GameplayShowcaseEnvironment3D showcaseEnvironment_{};Aevrynd::HeightField3D showcaseTerrain_{};std::unique_ptr<Aevrynd::EnvironmentCollisionStreaming3D> environmentCollisions_{};std::vector<Aevrynd::EnvironmentColliderDescriptor3D> environmentCollisionDescriptors_{};std::vector<Aevrynd::ColliderHandle3D> environmentGameplayColliders_{};Aevrynd::EnvironmentCollisionStreamingReceipt3D environmentCollisionActiveReceipt_{};Aevrynd::MeshResource3D showcaseTerrainMesh_{},showcaseRiverMesh_{},showcaseCottageFrontMesh_{},showcaseCottageBackMesh_{},showcaseCottageSideMesh_{},showcaseCottageRoofMesh_{},showcaseCylinderMesh_{},showcaseConeHighMesh_{},showcaseConeLowMesh_{},showcaseGrassHighMesh_{},showcaseGrassLowMesh_{},showcaseTreeLowMesh_{},showcaseRockLowMesh_{},showcaseQuiverTreeMesh_{},showcaseRock09Mesh_{};Aevrynd::MaterialLibrary3D showcaseMaterialLibrary_{},showcaseModelMaterialLibrary_{};Aevrynd::Material3D showcaseGroundMaterial_{},showcaseWoodMaterial_{},showcaseBarkMaterial_{},showcaseRockMaterial_{},showcaseQuiverTreeMaterial_{},showcaseRock09Material_{};Aevrynd::RendererStats showcaseRendererBaseline_{};std::size_t showcaseSubmittedDescriptors_{};bool showcaseExecutionObserved_{},environmentCollisionReloadStable_{},environmentStableIdEvidence_{},environmentRayEvidence_{},environmentMeleeQueryEvidence_{};
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{},femaleFirstPersonArmsModel_{},maleFirstPersonArmsModel_{};GameplayLab::GameplayFirstPersonArmsEvidence3D femaleFirstPersonArmsEvidence_{},maleFirstPersonArmsEvidence_{};GameplayLab::GameplayCharacterMaterialEvidence3D characterMaterialEvidence_{};std::vector<Aevrynd::SkinnedSubmesh3D> femaleSubmeshes_{},maleSubmeshes_{},femaleFirstPersonArmsSubmeshes_{},maleFirstPersonArmsSubmeshes_{},femaleWeaponSubmeshes_{},maleWeaponSubmeshes_{};std::vector<Aevrynd::Material3D> femaleMaterials_{},maleMaterials_{};std::array<Aevrynd::Material3D,2> femaleWeaponMaterials_{},maleWeaponMaterials_{};Aevrynd::MaterialLibrary3D femaleMaterialLibrary_{},maleMaterialLibrary_{};Aevrynd::SkinnedMeshResource3D femaleMesh_{},maleMesh_{},femaleFirstPersonArmsMesh_{},maleFirstPersonArmsMesh_{},femaleWeaponMesh_{},maleWeaponMesh_{};Aevrynd::AnimationPose3D femalePose_{},malePose_{},captureFrozenFemalePose_{},captureFrozenMalePose_{},captureFrozenMonsterPose_{};Aevrynd::SkinningWorkspace3D skinning_{};bool capturePoseFrozen_{};
     std::unique_ptr<GameplayLab::GameplayCombat3D> combat_{};GameplayLab::GameplayAnimation3D femaleAnimation_{},maleAnimation_{},monsterAnimation_{};Aevrynd::AnimationPose3D monsterPose_{};Aevrynd::FootPlacement3D femaleFootPlacement_{},maleFootPlacement_{};Aevrynd::SkinnedRenderableGroupHistory3D playerHistory_{},monsterHistory_{};Aevrynd::SkinnedRenderableGroupStats3D skinnedGroupStats_{};std::array<std::uint64_t,11> femalePoseHashes_{},malePoseHashes_{};
-    std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};std::unique_ptr<GameplayLab::GameplayObjectPaletteUi3D> paletteUi_{};std::vector<std::uint64_t> initialSeedEntityIds_{};std::uint64_t paletteUiDrawnFrames_{};bool palettePointerInteraction_{};
+    std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};std::unique_ptr<GameplayLab::GameplayObjectPaletteUi3D> paletteUi_{};std::vector<std::uint64_t> initialSeedEntityIds_{};std::uint64_t paletteUiDrawnFrames_{},captureCleanHudFrames_{};bool palettePointerInteraction_{};
     std::uint64_t captureFrozenFootPlacementHash_{};std::array<std::uint64_t,11> captureRawFemalePoseHash_{},captureRawMalePoseHash_{},captureRawMonsterPoseHash_{},captureEffectiveFemalePoseHash_{},captureEffectiveMalePoseHash_{},captureEffectiveMonsterPoseHash_{},captureReferenceFemalePoseHash_{},captureReferenceMalePoseHash_{},captureReferenceMonsterPoseHash_{},captureRawFootPlacementHash_{},captureEffectiveFootPlacementHash_{},captureReferenceFootPlacementHash_{};
     std::array<std::uint32_t,11> captureDrawIdentityCount_{},captureDrawTerrainCount_{},captureDrawTerrainIdentityCount_{},captureDrawGroundIdentityCount_{},captureDrawGroundOpaqueCount_{},captureDrawGroundShadowOnlyCount_{};
     std::array<std::uint32_t,11> captureGroundMeshHandle_{},captureGroundCastsShadow_{},captureGroundAlphaMode_{},captureRendererSubmittedMeshes_{},captureRendererSubmittedTerrain_{};

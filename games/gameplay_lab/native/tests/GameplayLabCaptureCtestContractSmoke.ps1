@@ -128,15 +128,17 @@ foreach($name in $testNames){
         if($tokens[0]-cne$name-or$tokens[1]-cne'PROPERTIES'-or(($tokens.Count-2)%2)-ne0){throw "$name property contract changed"}
         $propertyKeys=@()
         $timeoutValue=$null
+        $labelsValue=$null
         for($position=2;$position-lt$tokens.Count;$position+=2){
             $key=$tokens[$position]
-            if($key-cnotin@('TIMEOUT','_BACKTRACE_TRIPLES')){throw "$name contains an unexpected property"}
+            if($key-cnotin@('LABELS','TIMEOUT','_BACKTRACE_TRIPLES')){throw "$name contains an unexpected property"}
             if($key-cin$propertyKeys){throw "$name property $key is duplicated"}
             $propertyKeys+=$key
             if($key-ceq'TIMEOUT'){$timeoutValue=$tokens[$position+1]}
+            elseif($key-ceq'LABELS'){$labelsValue=$tokens[$position+1]}
         }
         $expectedTimeout=if($name-ceq'GameplayLabCaptureSmoke'){'300'}else{'240'}
-        if($null-eq$timeoutValue-or$timeoutValue-cne$expectedTimeout){throw "$name overall timeout contract changed"}
+        if($null-eq$timeoutValue-or$timeoutValue-cne$expectedTimeout-or$labelsValue-cne'visual-gates'){throw "$name overall timeout/label contract changed"}
     }
     $observedConfigurations=@($seenConfigurations[$name].Keys|Sort-Object)
     $expectedConfigurations=@($configurations|Sort-Object)

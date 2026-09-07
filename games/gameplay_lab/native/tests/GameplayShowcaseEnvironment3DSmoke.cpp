@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 
 using namespace Aevrynd;
@@ -66,6 +68,55 @@ bool ValidateLightingRoutes(
 } // namespace
 
 int main() {
+  Mesh3D surfaceTerrain{};
+  surfaceTerrain.vertices = {
+      {-4.f, 1.f, 6.f, 0x01020304u, 0x00112233u, -.34f, .51f},
+      {2.f, -3.f, -8.f, 0x11223344u, 0x80445566u, .17f, -.68f},
+      {7.f, 2.f, 10.f, 0x55667788u, 0xff778899u, .595f, .85f}};
+  surfaceTerrain.indices = {0, 2, 1, 1, 2, 0};
+  const auto beforeTerrainVertices = surfaceTerrain.vertices;
+  const auto beforeTerrainIndices = surfaceTerrain.indices;
+  const auto invariantHash = [](const Mesh3D &mesh) {
+    std::uint64_t hash = 14695981039346656037ull;
+    const auto mix = [&](std::uint64_t value) {
+      hash ^= value;
+      hash *= 1099511628211ull;
+    };
+    mix(mesh.vertices.size());
+    mix(mesh.indices.size());
+    for (const auto &vertex : mesh.vertices) {
+      mix(std::bit_cast<std::uint32_t>(vertex.x));
+      mix(std::bit_cast<std::uint32_t>(vertex.y));
+      mix(std::bit_cast<std::uint32_t>(vertex.z));
+      mix(vertex.normal);
+      mix(vertex.color & 0x00ffffffu);
+      mix(std::bit_cast<std::uint32_t>(vertex.u));
+      mix(std::bit_cast<std::uint32_t>(vertex.v));
+    }
+    for (const auto index : mesh.indices) mix(index);
+    return hash;
+  };
+  const auto beforeTerrainHash = invariantHash(surfaceTerrain);
+  const RenderObjectIdentity3D terrainIdentity{{0x4a17u, 1u}, 1u,
+                                                {0x4a17u, 0x100u}, true, false};
+  const auto beforeTerrainIdentity = terrainIdentity;
+  PrepareShowcaseSurfaceTerrainMesh3D(surfaceTerrain);
+  if (surfaceTerrain.vertices.size() != beforeTerrainVertices.size() ||
+      surfaceTerrain.indices != beforeTerrainIndices ||
+      invariantHash(surfaceTerrain) != beforeTerrainHash ||
+      terrainIdentity != beforeTerrainIdentity)
+    return 33;
+  for (std::size_t index = 0; index < surfaceTerrain.vertices.size(); ++index) {
+    const auto &before = beforeTerrainVertices[index];
+    const auto &after = surfaceTerrain.vertices[index];
+    if (after.x != before.x || after.y != before.y || after.z != before.z ||
+        after.normal != before.normal ||
+        (after.color & 0x00ffffffu) != (before.color & 0x00ffffffu) ||
+        (after.color >> 24) != 0xffu || after.u != before.u ||
+        after.v != before.v)
+      return 34;
+  }
+
   GameplayShowcaseEnvironment3D first, second, differentSeed;
   if (first.Initialize(0) || !first.Initialize(0x4a17u) ||
       !second.Initialize(0x4a17u) || !differentSeed.Initialize(0x4a18u))
