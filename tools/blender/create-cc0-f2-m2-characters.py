@@ -405,8 +405,74 @@ def create_hair_cards(materials: list[bpy.types.Material], female: bool) -> list
                           (root[1] + tip[1]) * .5,
                           (root[2] + tip[2]) * .5 + .010)
                 cards.append(hair_card(f"M2ShortHair.{len(cards):02d}", (root, middle, tip),
-                                       .014 + (column % 3) * .0015, -1, hair_material))
+                                       .014 + (column % 3) * .0015, len(cards), hair_material))
     return cards
+
+
+def remap_male_hair_card_uvs(body: bpy.types.Object) -> dict:
+    """將 M2 髮片移出不透明頭皮區，同時維持唯讀來源不變。"""
+    hair_slot = next((index for index, material in enumerate(body.data.materials)
+                      if material and material.name == "DarkBrownHairPBR"), None)
+    uv_layer = body.data.uv_layers.active
+    if hair_slot is None or uv_layer is None:
+        raise RuntimeError("M2 hair material or UV layer is unavailable.")
+
+    hair_polygons = {polygon.index for polygon in body.data.polygons
+                     if polygon.material_index == hair_slot}
+    by_vertex: dict[int, list[int]] = {}
+    for polygon_index in hair_polygons:
+        for vertex_index in body.data.polygons[polygon_index].vertices:
+            by_vertex.setdefault(vertex_index, []).append(polygon_index)
+
+    components: list[list[int]] = []
+    remaining = set(hair_polygons)
+    while remaining:
+        seed = min(remaining); remaining.remove(seed); component = []; pending = [seed]
+        while pending:
+            polygon_index = pending.pop(); component.append(polygon_index)
+            for vertex_index in body.data.polygons[polygon_index].vertices:
+                for neighbour in by_vertex[vertex_index]:
+                    if neighbour in remaining:
+                        remaining.remove(neighbour); pending.append(neighbour)
+        components.append(sorted(component))
+
+    cards = []
+    for component in components:
+        vertices = {vertex_index for polygon_index in component
+                    for vertex_index in body.data.polygons[polygon_index].vertices}
+        if len(component) == 2 and len(vertices) == 6 and all(
+                len(body.data.polygons[index].vertices) == 4 for index in component):
+            cards.append((min(vertices), component))
+    cards.sort(key=lambda value: value[0])
+    if len(cards) != 60:
+        raise RuntimeError(f"Expected 60 M2 hair-card islands, observed {len(cards)}.")
+
+    tile_usage = set()
+    card_polygons = {polygon_index for _, component in cards for polygon_index in component}
+    card_loops = 0
+    for card_index, (_, component) in enumerate(cards):
+        tile = card_index % 6; tile_usage.add(tile)
+        tile_min = .25 + tile * .125
+        for polygon_index in component:
+            for loop_index in body.data.polygons[polygon_index].loop_indices:
+                source_u = uv_layer.data[loop_index].uv.x
+                local_u = .125 if source_u >= .0625 else 0.0
+                uv_layer.data[loop_index].uv.x = tile_min + local_u
+                card_loops += 1
+
+    card_uvs = [uv_layer.data[loop_index].uv.x for polygon_index in card_polygons
+                for loop_index in body.data.polygons[polygon_index].loop_indices]
+    if tile_usage != set(range(6)) or not card_uvs or min(card_uvs) < .25 or max(card_uvs) > 1.0:
+        raise RuntimeError("M2 hair-card strand atlas remap failed.")
+    scalp_band_loops = sum(
+        uv_layer.data[loop_index].uv.x <= .1250001
+        for polygon_index in hair_polygons - card_polygons
+        for loop_index in body.data.polygons[polygon_index].loop_indices)
+    if scalp_band_loops == 0:
+        raise RuntimeError("M2 opaque scalp band was lost during hair-card remap.")
+    return {"cardIslands": len(cards), "cardLoops": card_loops,
+            "strandTiles": sorted(tile_usage), "minimumCardU": min(card_uvs),
+            "maximumCardU": max(card_uvs), "scalpBandLoops": scalp_band_loops}
 
 
 def create_face_features(eyes: list[bpy.types.Object], materials: list[bpy.types.Material], female: bool) -> list[bpy.types.Object]:
@@ -1050,6 +1116,7 @@ def retrofit_hand_readonly(source: Path, destination: Path, female: bool, output
         positions = [tuple(v.co) for v in body.data.vertices]
         materials = [m.name for m in body.data.materials]
         polygon_materials = [p.material_index for p in body.data.polygons]
+        hair_uv_remap = remap_male_hair_card_uvs(body) if not female else None
         actions = [a.name for a in bpy.data.actions]
         original_bones = {b.name:(tuple(b.head_local),tuple(b.tail_local),b.parent.name if b.parent else None) for b in rig.data.bones}
         if len(materials) != 9 or len(original_bones) != 24 or "GripPrototype" in actions:
@@ -1115,8 +1182,9 @@ def retrofit_hand_readonly(source: Path, destination: Path, female: bool, output
                        "sourceEdgeCount":len(body.data.edges),"sourcePolygonCount":len(body.data.polygons),
                        "existingBoneCount":len(original_bones),"addedBoneCount":len(rig.data.bones)-len(original_bones),
                        "boneCount":len(rig.data.bones),"boneNames":[b.name for b in rig.data.bones],
-                       "maximumSkinInfluences":maximum_skin_influences,"skinWeightsNormalized":skin_weights_normalized,
-                       "skinWeightQuantization":65535,
+                        "maximumSkinInfluences":maximum_skin_influences,"skinWeightsNormalized":skin_weights_normalized,
+                        "skinWeightQuantization":65535,
+                        "hairUvRemap":hair_uv_remap,
                        "sourcePositionsUnchanged":positions==[tuple(v.co) for v in body.data.vertices],
                        "materialsUnchanged":materials==[m.name for m in body.data.materials] and polygon_materials==[p.material_index for p in body.data.polygons],
                        "existingBonesUnchanged":all(original_bones[n]==(tuple(rig.data.bones[n].head_local),tuple(rig.data.bones[n].tail_local),rig.data.bones[n].parent.name if rig.data.bones[n].parent else None) for n in original_bones),

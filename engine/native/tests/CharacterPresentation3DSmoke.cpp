@@ -98,7 +98,8 @@ bool CheckEquipmentAttachment(const SkinnedModelAssetData& character,
 }
 
 bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVertices,
-                    std::uint64_t expectedIndices, std::size_t expectedJointCount) {
+                    std::uint64_t expectedIndices, std::size_t expectedJointCount,
+                    bool requireMaleHairAtlas = false) {
     const auto loaded = LoadSkinnedModelAssetFileDetailed(path);
     if (!loaded || loaded.asset.model.bindMesh.vertices.size() != expectedVertices ||
         loaded.asset.model.bindMesh.indices.size() != expectedIndices ||
@@ -111,6 +112,36 @@ bool CheckCharacter(const std::filesystem::path& path, std::uint64_t expectedVer
                   << " submeshes=" << (loaded ? loaded.asset.submeshes.size() : 0)
                   << " materials=" << (loaded ? loaded.asset.materialSlotNames.size() : 0) << '\n';
         return false;
+    }
+    if (requireMaleHairAtlas) {
+        const auto hairName = std::ranges::find(loaded.asset.materialSlotNames,
+                                               std::string{"DarkBrownHairPBR"});
+        if (hairName == loaded.asset.materialSlotNames.end()) return false;
+        const std::uint32_t hairSlot = std::uint32_t(hairName - loaded.asset.materialSlotNames.begin());
+        std::set<std::uint32_t> hairVertices;
+        for (const auto& range : loaded.asset.submeshes) if (range.materialSlot == hairSlot)
+            for (std::size_t offset = range.firstIndex;
+                 offset < std::size_t(range.firstIndex) + range.indexCount; ++offset)
+                hairVertices.insert(loaded.asset.model.bindMesh.indices[offset]);
+        std::set<unsigned> strandTiles;
+        std::size_t scalpBandVertices{}, strandVertices{};
+        float maximumStrandU{};
+        for (const std::uint32_t index : hairVertices) {
+            const float u = loaded.asset.model.bindMesh.vertices[index].u;
+            if (u <= .12501f) ++scalpBandVertices;
+            if (u >= .24999f && u <= 1.00001f) {
+                ++strandVertices;
+                maximumStrandU = (std::max)(maximumStrandU, u);
+                strandTiles.insert((std::min)(5u, unsigned((u - .25f) / .125f)));
+            }
+        }
+        if (!scalpBandVertices || strandVertices < 300 || strandTiles.size() != 6 ||
+            maximumStrandU < .99999f) {
+            std::cerr << "M2 hair atlas contract failed: scalp=" << scalpBandVertices
+                      << " strands=" << strandVertices << " tiles=" << strandTiles.size()
+                      << " maxU=" << maximumStrandU << '\n';
+            return false;
+        }
     }
     HumanoidSkeletonMap3D rig;
     FallbackHumanoidAnimationSet3D fallback;
@@ -193,5 +224,5 @@ int main() {
     if (!CheckCharacter(assets / "model-packs" / "realistic-female" / "realistic-female.aeskin",
                         20174, 102180, 39) ||
         !CheckCharacter(assets / "model-packs" / "realistic-male" / "realistic-male.aeskin",
-                        20066, 101688, 39)) return 2;
+                        20066, 101688, 39, true)) return 2;
 }

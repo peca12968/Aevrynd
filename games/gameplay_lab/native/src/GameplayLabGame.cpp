@@ -483,13 +483,21 @@ void GameplayLabGame::OnStop(Engine &engine) {
   const auto showcaseRendererAfter=engine.GetRendererStats();
   const auto showcaseExecution=showcaseEnvironment_.ExecutionReceipt(showcaseRendererBaseline_,showcaseRendererAfter);
   showcaseExecutionObserved_=showcaseExecution.executed;
+  std::uint32_t heroGroundCover{},heroGroundCoverQuadrantMask{};
+  for(const auto& descriptor:showcaseEnvironment_.Descriptors()){
+    if(descriptor.kind!=ShowcaseSceneKind3D::Grass)continue;
+    const Vec3 delta=descriptor.position-Vec3{-16,0,8};
+    if(delta.x*delta.x+delta.z*delta.z>22.f*22.f)continue;
+    ++heroGroundCover;
+    heroGroundCoverQuadrantMask|=1u<<((delta.z>=0?2u:0u)+(delta.x>=0?1u:0u));
+  }
   const auto showcaseReceipt=showcaseEnvironment_.Receipt();
   const auto showcaseRelease=showcaseEnvironment_.Release();
   if(!captureDirectory_.empty()){
     const auto productionSubmission=showcaseRenderAssets_.ProductionSubmissionStats();
     std::ofstream showcaseOut(captureDirectory_/"gameplay-environment-receipt.json",std::ios::trunc);
     showcaseOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
-    showcaseOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayShowcaseEnvironment3D\",\"worldHash\":"<<showcaseReceipt.worldHash<<",\"descriptors\":"<<(showcaseReceipt.terrain+showcaseReceipt.water+showcaseReceipt.vegetation+showcaseReceipt.rocks+showcaseReceipt.buildings)<<",\"submittedDescriptors\":"<<showcaseSubmittedDescriptors_<<",\"terrainPatches\":"<<showcaseReceipt.terrain<<",\"terrainSpanMeters\":"<<showcaseReceipt.terrainSpanMeters<<",\"waterSegments\":"<<showcaseReceipt.water<<",\"riverLengthMeters\":"<<showcaseReceipt.riverLengthMeters<<",\"riverSurfaceAreaSquareMeters\":"<<showcaseReceipt.riverSurfaceAreaSquareMeters<<",\"treeInstances\":"<<showcaseReceipt.trees<<",\"grassInstances\":"<<showcaseReceipt.grass<<",\"nearVegetation\":"<<showcaseReceipt.nearVegetation<<",\"midVegetation\":"<<showcaseReceipt.midVegetation<<",\"farVegetation\":"<<showcaseReceipt.farVegetation<<",\"rockInstances\":"<<showcaseReceipt.rocks<<",\"buildingComponents\":"<<showcaseReceipt.buildings<<",\"buildingComponentMask\":"<<showcaseReceipt.buildingComponentMask<<",\"materialIdentityHash\":"<<showcaseReceipt.materialIdentityHash<<",\"licenseInventoryHash\":"<<showcaseReceipt.licenseInventoryHash<<",\"executionObserved\":"<<(showcaseExecution.executed?1:0)<<",\"counterDeltas\":[";
+    showcaseOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayShowcaseEnvironment3D\",\"worldHash\":"<<showcaseReceipt.worldHash<<",\"descriptors\":"<<(showcaseReceipt.terrain+showcaseReceipt.water+showcaseReceipt.vegetation+showcaseReceipt.rocks+showcaseReceipt.buildings)<<",\"submittedDescriptors\":"<<showcaseSubmittedDescriptors_<<",\"terrainPatches\":"<<showcaseReceipt.terrain<<",\"terrainSpanMeters\":"<<showcaseReceipt.terrainSpanMeters<<",\"waterSegments\":"<<showcaseReceipt.water<<",\"riverLengthMeters\":"<<showcaseReceipt.riverLengthMeters<<",\"riverSurfaceAreaSquareMeters\":"<<showcaseReceipt.riverSurfaceAreaSquareMeters<<",\"treeInstances\":"<<showcaseReceipt.trees<<",\"grassInstances\":"<<showcaseReceipt.grass<<",\"nearVegetation\":"<<showcaseReceipt.nearVegetation<<",\"midVegetation\":"<<showcaseReceipt.midVegetation<<",\"farVegetation\":"<<showcaseReceipt.farVegetation<<",\"heroGroundCover\":"<<heroGroundCover<<",\"heroGroundCoverQuadrantMask\":"<<heroGroundCoverQuadrantMask<<",\"rockInstances\":"<<showcaseReceipt.rocks<<",\"buildingComponents\":"<<showcaseReceipt.buildings<<",\"buildingComponentMask\":"<<showcaseReceipt.buildingComponentMask<<",\"materialIdentityHash\":"<<showcaseReceipt.materialIdentityHash<<",\"licenseInventoryHash\":"<<showcaseReceipt.licenseInventoryHash<<",\"executionObserved\":"<<(showcaseExecution.executed?1:0)<<",\"counterDeltas\":[";
     for(std::size_t index=0;index<showcaseExecution.deltas.size();++index){if(index)showcaseOut<<',';showcaseOut<<showcaseExecution.deltas[index];}
     showcaseOut<<"],\"cameraTargets\":[";
     for(std::size_t index=0;index<Names.size();++index){
@@ -1278,11 +1286,30 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     case ShowcaseSceneKind3D::Building:
       {const bool roof=descriptor.meshAsset.find("roof")!=std::string::npos;const auto* source=showcaseRenderAssets_.ProductionMaterial(roof?"RoofingTiles014B":"Bricks100");if(!source)break;auto material=*source;material.normalScale=roof?1.15f:1.f;material.textureScale=roof?.38f:.3f;const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
-       auto glass=material;glass.textures={};glass.tint={.055f,.12f,.16f,1};glass.surface={.12f,.02f,.68f,1};glass.textureScale=1;glass.normalScale=0;
-       auto doorMaterial=material;doorMaterial.tint={.27f,.12f,.055f,1};doorMaterial.surface={.58f,.0f,.03f,1};
-       if(descriptor.meshAsset.find("front")!=std::string::npos){scene_.Mesh(boxMesh_,{{-12,1.35f,20.17f},{0,0,0},{1.45f,2.1f,.12f}},doorMaterial,{},renderIdentity);for(float x:{-14.1f,-9.9f})scene_.Mesh(boxMesh_,{{x,1.95f,20.17f},{0,0,0},{1.35f,1.15f,.1f}},glass,{},renderIdentity);}
+       auto glass=material;glass.textures={};glass.tint={.035f,.075f,.095f,1};glass.surface={.26f,.04f,.025f,1};glass.textureScale=1;glass.normalScale=0;
+       // 裝飾件沿用所屬建築的正式材質貼圖識別，避免同一物件跨材質群組造成不穩定排序。
+       auto wood=material;wood.tint={.46f,.27f,.13f,1};wood.surface.roughness=.62f;wood.surface.metallic=0;wood.surface.emissive=.006f;wood.textureScale=.16f;
+       auto doorMaterial=wood;doorMaterial.tint={.36f,.17f,.07f,1};
+       if(descriptor.meshAsset.find("front")!=std::string::npos){
+         scene_.Mesh(boxMesh_,{{-12,1.35f,20.17f},{0,0,0},{1.45f,2.1f,.12f}},doorMaterial,{},renderIdentity);
+         // 門窗框、窗台與前階共享原建築identity，增加輪廓細節但不改變descriptor或碰撞代理。
+         for(float x:{-14.1f,-9.9f}){
+           scene_.Mesh(boxMesh_,{{x,1.95f,20.17f},{0,0,0},{1.35f,1.15f,.1f}},glass,{},renderIdentity);
+           for(float side:{-.76f,.76f})scene_.Mesh(boxMesh_,{{x+side,1.95f,20.08f},{0,0,0},{.12f,1.48f,.16f}},wood,{},renderIdentity);
+           for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{x,y,20.08f},{0,0,0},{1.64f,.12f,.16f}},wood,{},renderIdentity);
+           scene_.Mesh(boxMesh_,{{x,1.88f,20.05f},{0,0,0},{.1f,1.25f,.18f}},wood,{},renderIdentity);
+         }
+         for(float side:{-.82f,.82f})scene_.Mesh(boxMesh_,{{-12+side,1.42f,20.06f},{0,0,0},{.14f,2.45f,.18f}},wood,{},renderIdentity);
+         scene_.Mesh(boxMesh_,{{-12,2.69f,20.06f},{0,0,0},{1.78f,.14f,.18f}},wood,{},renderIdentity);
+         scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
+       }
        else if(descriptor.meshAsset.find("back")!=std::string::npos)for(float x:{-14.1f,-9.9f})scene_.Mesh(boxMesh_,{{x,1.95f,27.83f},{0,0,0},{1.35f,1.15f,.1f}},glass,{},renderIdentity);
        else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos){const float x=descriptor.meshAsset.find("left")!=std::string::npos?-16.18f:-7.82f;scene_.Mesh(boxMesh_,{{x,1.95f,24},{0,0,0},{.1f,1.15f,1.45f}},glass,{},renderIdentity);}
+       else if(roof){
+         scene_.Mesh(boxMesh_,{{-14.45f,4.72f,25.3f},{0,0,0},{.72f,2.15f,.72f}},material,{},renderIdentity);
+         scene_.Mesh(boxMesh_,{{-14.45f,5.84f,25.3f},{0,0,0},{.94f,.16f,.94f}},material,{},renderIdentity);
+         for(float z:{19.78f,28.22f})scene_.Mesh(boxMesh_,{{-12,3.48f,z},{0,0,0},{9.25f,.18f,.24f}},wood,{},renderIdentity);
+       }
        submitted=scene_.MeshCount()>before;}break;
     }
     if(submitted){
@@ -1754,6 +1781,8 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       // 與即時模式共用發布流程；重設相機不推進動畫或進場時間。
       PublishFirstPersonPose(0.f);captureFrozenFirstPersonPose_=firstPersonPose_;return;
     }
+    // 除錯層可能讓固定更新快於實際呈現；物件面板必須完成十一個可見畫面後才能開始讀回。
+    if(captureIndex_==9&&paletteUiDrawnFrames_<Names.size())return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&cameraPolicyFadeIdentity_&&!cameraFadeSettled_)return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&!GameplayCameraSelectionSettled3D(cameraPolicyReceipt_,cameraSelectedCandidate_))return;
     if(!captureTemporalWarmupActive_){activeCaptureRoute_.phase=GameplayActiveCaptureRoutePhase3D::Warming;captureTemporalWarmupActive_=true;captureTemporalWarmupRemaining_=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D::CaptureShot);QueueTemporalHistoryReseed(GameplayTemporalReseedReason3D::CaptureShot);return;}

@@ -81,14 +81,14 @@ struct ShowcaseLandEcologyReceipt3D {
   std::array<std::uint32_t, 4> zones{};
   std::uint32_t placements{}, integratedDescriptors{}, descriptorCapacity{480}, rejectedCandidates{}, attemptedCandidates{};
   std::uint32_t riverbankRocks{}, riverbankGrass{}, occupiedHabitatCells{},
-      densestHabitatCell{};
+      densestHabitatCell{}, heroGroundCover{}, heroGroundCoverQuadrantMask{};
   std::uint32_t failureKind{3}, failureBand{3}, failureItem{};
   float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{},
       minimumPropEdgeSpacing{}, minimumRiverbankRockClearance{},
       maximumRiverbankRockClearance{}, maximumRiverbankGrassClearance{};
   bool terrainBoundsExact{}, bandsExact{}, riverExcluded{}, spawnExcluded{}, cottageExcluded{};
   bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{},
-      zonesExact{}, riverbankLayered{}, densityExact{};
+      zonesExact{}, riverbankLayered{}, densityExact{}, heroGroundCoverExact{};
   bool deterministicBudget{};
   [[nodiscard]] bool Complete() const noexcept;
 };

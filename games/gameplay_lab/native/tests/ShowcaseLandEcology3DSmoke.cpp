@@ -36,6 +36,8 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.riverbankGrass == right.riverbankGrass &&
       left.occupiedHabitatCells == right.occupiedHabitatCells &&
       left.densestHabitatCell == right.densestHabitatCell &&
+      left.heroGroundCover == right.heroGroundCover &&
+      left.heroGroundCoverQuadrantMask == right.heroGroundCoverQuadrantMask &&
       left.failureKind == right.failureKind &&
       left.failureBand == right.failureBand &&
       left.failureItem == right.failureItem &&
@@ -64,6 +66,7 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.zonesExact == right.zonesExact &&
       left.riverbankLayered == right.riverbankLayered &&
       left.densityExact == right.densityExact &&
+      left.heroGroundCoverExact == right.heroGroundCoverExact &&
       left.deterministicBudget == right.deterministicBudget;
 }
 }
@@ -74,6 +77,11 @@ int main() {
   ShowcaseLandEcologyReceipt3D receipt{};
   // 中文：暖機只填滿程式碼與配置器快取，不列入三毫秒正式門檻。
   const bool warmupBuilt=BuildShowcaseLandEcology3D(settings, first, &receipt);
+  if (!warmupBuilt && first.size() == 456) {
+    const bool diagnosticValid =
+        ValidateShowcaseLandEcology3D(settings, first, &receipt);
+    (void)diagnosticValid;
+  }
   if (!warmupBuilt || !receipt.Complete()) {
     std::cerr<<"land warmup gate built="<<warmupBuilt
              <<" count="<<first.size()<<" complete="<<receipt.Complete()
@@ -81,6 +89,12 @@ int main() {
              <<" failure="<<receipt.failureKind<<'/'<<receipt.failureBand<<'/'<<receipt.failureItem
              <<" attempts="<<receipt.attemptedCandidates
              <<" rejected="<<receipt.rejectedCandidates
+             <<" hero="<<receipt.heroGroundCover<<"/0x"<<std::hex
+             <<receipt.heroGroundCoverQuadrantMask<<std::dec
+             <<" density="<<receipt.densityExact
+             <<" bands="<<receipt.bandsExact
+             <<" spawn="<<receipt.spawnExcluded
+             <<" cottage="<<receipt.cottageExcluded
              <<" fingerprint="<<receipt.fingerprint<<'\n';
     return 1;
   }
@@ -125,6 +139,9 @@ int main() {
   if (!receipt.footprintSpacingExact || !receipt.zonesExact ||
       !receipt.riverbankLayered || !receipt.densityExact ||
       receipt.riverbankRocks != 30 || receipt.riverbankGrass != 94 ||
+      receipt.heroGroundCover < 28 ||
+      receipt.heroGroundCoverQuadrantMask != 0x0fu ||
+      !receipt.heroGroundCoverExact ||
       receipt.minimumPropEdgeSpacing < .12f ||
       receipt.maximumRiverbankRockClearance >
           settings.riverbankRockMaximumClearance ||
@@ -207,6 +224,8 @@ int main() {
             << receipt.maximumRiverbankGrassClearance
             << " habitat=" << receipt.occupiedHabitatCells << '/'
             << receipt.densestHabitatCell
+            << " hero=" << receipt.heroGroundCover << "/0x" << std::hex
+            << receipt.heroGroundCoverQuadrantMask << std::dec
             << " medianUs=" << medianBuildMicros << '\n';
   return 0;
 }

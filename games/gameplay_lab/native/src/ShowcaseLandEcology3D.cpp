@@ -14,6 +14,30 @@ constexpr std::array<float, 3> BandMaximum{48.f, 112.f, 230.f};
 constexpr std::array<float, 3> RequiredSpacing{4.5f, .9f, 2.4f};
 constexpr float MinimumPropEdgeSpacing = .12f;
 constexpr std::uint32_t HabitatGridSide = 16;
+constexpr float HeroGroundCoverRadius = 22.f;
+constexpr std::uint32_t HeroGroundCoverOrdinals = 48;
+constexpr std::uint32_t MinimumHeroGroundCover = 28;
+
+float BandMinimumFor(ShowcaseLandKind3D kind, std::uint32_t band) noexcept {
+  // 草叢不參與實體碰撞；近景地被可進入玩家安全圈外緣，樹與岩石仍維持原本的實體淨空。
+  return kind == ShowcaseLandKind3D::Grass && band == 0 ? 4.f
+                                                        : BandMinimum[band];
+}
+
+float SpawnExclusionRadius(const ShowcaseLandEcologySettings3D &settings,
+                           ShowcaseLandKind3D kind) noexcept {
+  return kind == ShowcaseLandKind3D::Grass ? 3.f
+                                            : settings.spawnExclusionRadius;
+}
+
+Aevrynd::Vec3 CottageExclusionHalfExtent(
+    const ShowcaseLandEcologySettings3D &settings,
+    ShowcaseLandKind3D kind) noexcept {
+  // 地被只避開房屋實際基座與一公尺維修帶；實體物件仍使用完整遊戲安全框。
+  return kind == ShowcaseLandKind3D::Grass
+             ? Aevrynd::Vec3{5.2f, 0.f, 4.8f}
+             : settings.cottageExclusionHalfExtent;
+}
 
 std::uint64_t NextRandom(std::uint64_t &state) noexcept {
   state ^= state >> 12;
@@ -64,13 +88,14 @@ bool InExclusion(const ShowcaseLandEcologySettings3D &settings,
   const float limit = settings.terrainHalfSpan - settings.terrainMargin;
   if (std::abs(point.x) + footprint > limit ||
       std::abs(point.z) + footprint > limit) return true;
+  const float spawnExclusion = SpawnExclusionRadius(settings, kind);
   if (DistanceSquared(point, settings.spawnCenter) <
-      (settings.spawnExclusionRadius + footprint) *
-          (settings.spawnExclusionRadius + footprint)) return true;
+      (spawnExclusion + footprint) * (spawnExclusion + footprint)) return true;
+  const auto cottageExclusion = CottageExclusionHalfExtent(settings, kind);
   if (std::abs(point.x - settings.cottageCenter.x) <
-          settings.cottageExclusionHalfExtent.x + footprint &&
+          cottageExclusion.x + footprint &&
       std::abs(point.z - settings.cottageCenter.z) <
-          settings.cottageExclusionHalfExtent.z + footprint) return true;
+          cottageExclusion.z + footprint) return true;
   return std::abs(point.x - RiverCenterX(point.z)) <
          RiverWidth(point.z) * .5f + RiverClearance(kind) + footprint;
 }
@@ -175,7 +200,9 @@ bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
       minimumRockSpacing >= RequiredSpacing[2] && terrainBoundsExact &&
       bandsExact && riverExcluded && spawnExcluded && cottageExcluded &&
       stableKeysExact && transformsExact && footprintSpacingExact && zonesExact &&
-      riverbankLayered && densityExact && riverbankRocks == 30 &&
+      riverbankLayered && densityExact && heroGroundCoverExact &&
+      heroGroundCover >= MinimumHeroGroundCover &&
+      heroGroundCoverQuadrantMask == 0x0fu && riverbankRocks == 30 &&
       riverbankGrass == 94 &&
       minimumPropEdgeSpacing >= MinimumPropEdgeSpacing && deterministicBudget;
 }
@@ -204,7 +231,7 @@ bool BuildShowcaseLandEcology3D(
   std::array<std::array<float,32>,3> smallRadii{};
   for(std::uint32_t band=0;band<3;++band){
     for(std::uint32_t trial=0;trial<128;++trial){const float u=(float(trial)+.5f)/128.f;treeRadii[band][trial]=rockRadii[band][trial]=std::sqrt(BandMinimum[band]*BandMinimum[band]+u*(BandMaximum[band]*BandMaximum[band]-BandMinimum[band]*BandMinimum[band]));}
-    for(std::uint32_t trial=0;trial<32;++trial){const float u=(float(trial)+.5f)/32.f;smallRadii[band][trial]=std::sqrt(BandMinimum[band]*BandMinimum[band]+u*(BandMaximum[band]*BandMaximum[band]-BandMinimum[band]*BandMinimum[band]));}
+    for(std::uint32_t trial=0;trial<32;++trial){const float u=(float(trial)+.5f)/32.f;const float minimum=BandMinimumFor(ShowcaseLandKind3D::Grass,band);smallRadii[band][trial]=std::sqrt(minimum*minimum+u*(BandMaximum[band]*BandMaximum[band]-minimum*minimum));}
   }
   const auto addKind = [&](ShowcaseLandKind3D kind,
                            const std::array<std::uint32_t, 3> &counts) {
@@ -218,8 +245,13 @@ bool BuildShowcaseLandEcology3D(
         Aevrynd::Vec3 best{};
         float bestDistance = -1.f;
         bool found{};
+        const bool heroGroundCover = kind == ShowcaseLandKind3D::Grass &&
+                                     band == 0 &&
+                                     item < HeroGroundCoverOrdinals;
         const std::uint32_t boundedTrials =
-            kind == ShowcaseLandKind3D::Grass
+            heroGroundCover
+                ? settings.candidateTrials
+                : kind == ShowcaseLandKind3D::Grass
                 ? settings.candidateTrials / 4u
                 : kind == ShowcaseLandKind3D::Rock
                       ? settings.candidateTrials / 2u
@@ -246,7 +278,7 @@ bool BuildShowcaseLandEcology3D(
           radialDirectionZ = radialDirectionX * .675490294f +
                              radialDirectionZ * -.737368878f;
           radialDirectionX = nextRadialX;
-          if (kind != ShowcaseLandKind3D::Rock &&
+          if (!heroGroundCover && kind != ShowcaseLandKind3D::Rock &&
               zone != ShowcaseLandZone3D::Riverbank) {
             // 六個可辨識群落保留視線廊道；每個群落內仍用低差異序列找無重疊位置。
             const float offset = (communityFraction - .5f) *
@@ -261,8 +293,21 @@ bool BuildShowcaseLandEcology3D(
           communityFraction += .618033989f;
           if (communityFraction >= 1.f) communityFraction -= 1.f;
           const std::uint32_t treeRadiusIndex = trial * 4u / 3u;
-          const float radius=kind==ShowcaseLandKind3D::Tree?treeRadii[band][treeRadiusIndex]:
-              kind==ShowcaseLandKind3D::Rock?rockRadii[band][trial*2u]:smallRadii[band][trial];
+          float radius{};
+          if (heroGroundCover) {
+            // 固定前四十八株近景地被在英雄區內找位置；其餘配置仍覆蓋完整近景環帶。
+            const float u = (float(trial) + .5f) / float(boundedTrials);
+            const float minimum = BandMinimumFor(kind, band);
+            radius = std::sqrt(minimum * minimum +
+                u * (HeroGroundCoverRadius * HeroGroundCoverRadius -
+                     minimum * minimum));
+          } else if (kind == ShowcaseLandKind3D::Tree) {
+            radius = treeRadii[band][treeRadiusIndex];
+          } else if (kind == ShowcaseLandKind3D::Rock) {
+            radius = rockRadii[band][trial * 2u];
+          } else {
+            radius = smallRadii[band][trial];
+          }
           Aevrynd::Vec3 candidate{settings.spawnCenter.x + directionX * radius,
                                   0,
                                   settings.spawnCenter.z + directionZ * radius};
@@ -403,7 +448,7 @@ bool ValidateShowcaseLandEcology3D(
                                  std::abs(placement.position.z) + footprint <= limit;
     const float bandRadius = std::sqrt(DistanceSquared(placement.position,
                                                         settings.spawnCenter));
-    result.bandsExact &= bandRadius >= BandMinimum[band] &&
+    result.bandsExact &= bandRadius >= BandMinimumFor(placement.kind, band) &&
                          bandRadius <= BandMaximum[band];
     result.riverExcluded &= std::abs(placement.position.x - RiverCenterX(placement.position.z)) >=
         RiverWidth(placement.position.z) * .5f + RiverClearance(placement.kind) + footprint;
@@ -433,13 +478,22 @@ bool ValidateShowcaseLandEcology3D(
         int((placement.position.z + settings.terrainHalfSpan) /
             settings.habitatCellSize), 0, int(HabitatGridSide) - 1);
     ++habitatCells[std::size_t(habitatZ * int(HabitatGridSide) + habitatX)];
+    const float spawnExclusion = SpawnExclusionRadius(settings, placement.kind);
     result.spawnExcluded &= DistanceSquared(placement.position, settings.spawnCenter) >=
-        (settings.spawnExclusionRadius + footprint) *
-            (settings.spawnExclusionRadius + footprint);
+        (spawnExclusion + footprint) * (spawnExclusion + footprint);
+    const auto cottageExclusion = CottageExclusionHalfExtent(settings, placement.kind);
     result.cottageExcluded &= std::abs(placement.position.x - settings.cottageCenter.x) >=
-        settings.cottageExclusionHalfExtent.x + footprint ||
+        cottageExclusion.x + footprint ||
         std::abs(placement.position.z - settings.cottageCenter.z) >=
-        settings.cottageExclusionHalfExtent.z + footprint;
+        cottageExclusion.z + footprint;
+    if (placement.kind == ShowcaseLandKind3D::Grass &&
+        bandRadius <= HeroGroundCoverRadius) {
+      ++result.heroGroundCover;
+      const bool right = placement.position.x >= settings.spawnCenter.x;
+      const bool lower = placement.position.z >= settings.spawnCenter.z;
+      result.heroGroundCoverQuadrantMask |=
+          1u << ((lower ? 2u : 0u) + (right ? 1u : 0u));
+    }
     Mix(hash, &kind, sizeof(kind)); Mix(hash, &band, sizeof(band));
     Mix(hash, &variant, sizeof(variant));
     Mix(hash, &zone, sizeof(zone));
@@ -504,8 +558,11 @@ bool ValidateShowcaseLandEcology3D(
     result.occupiedHabitatCells += count ? 1u : 0u;
     result.densestHabitatCell = (std::max)(result.densestHabitatCell, count);
   }
+  result.heroGroundCoverExact = result.heroGroundCover >= MinimumHeroGroundCover &&
+                                result.heroGroundCoverQuadrantMask == 0x0fu;
   result.densityExact = result.occupiedHabitatCells >= 12 &&
-      result.densestHabitatCell >= settings.minimumDensestHabitatCell;
+      result.densestHabitatCell >= settings.minimumDensestHabitatCell &&
+      result.heroGroundCoverExact;
   result.minimumTreeSpacing = std::sqrt(minimumKindDistanceSquared[0]);
   result.minimumGrassSpacing = std::sqrt(minimumKindDistanceSquared[1]);
   result.minimumRockSpacing = std::sqrt(minimumKindDistanceSquared[2]);

@@ -166,6 +166,24 @@ int main() {
   }
   if (terrainLayers != std::array<std::size_t, 3>{1, 188, 94}) return 32;
 
+  constexpr Vec3 heroCenter{-16.f, 0.f, 8.f};
+  constexpr float heroRadius = 22.f;
+  std::uint32_t heroGroundCover = 0;
+  std::uint32_t heroGroundCoverQuadrantMask = 0;
+  for (const auto &descriptor : first.Descriptors()) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Grass) continue;
+    const Vec3 delta = descriptor.position - heroCenter;
+    if (delta.x * delta.x + delta.z * delta.z > heroRadius * heroRadius)
+      continue;
+    ++heroGroundCover;
+    const std::uint32_t quadrant =
+        (delta.z >= 0.f ? 2u : 0u) + (delta.x >= 0.f ? 1u : 0u);
+    heroGroundCoverQuadrantMask |= 1u << quadrant;
+  }
+  // 英雄聚落周圍必須有四象限皆可見的非碰撞地被，避免固定鏡頭再次退化成空地。
+  if (heroGroundCover < 28 || heroGroundCoverQuadrantMask != 0x0fu)
+    return 35;
+
   DrawList draw{DrawListCapacityProfile::Minimal2D};
   first.ApplyHighProfile(draw);
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Day, {1, 2, 3});
