@@ -208,7 +208,7 @@ bool SubmitCharacter(DrawList& draw, const CharacterFixture& character,
             material.materialClass, material.castsShadow, DirectionalShadowAllCascades3D,
             range.firstIndex, range.indexCount, material.shadingModel, material.alphaMode,
             material.alphaCutoff, material.doubleSided, {}, Matrix4::Identity(), false,
-            material.baseTextureScale, material.detailTextureScale, material.normalScale,
+            material.normalScale, material.baseTextureScale, material.detailTextureScale,
             0, SlotIdentity(characterIndex, range.materialSlot))) return false;
     }
     return true;
@@ -486,17 +486,23 @@ int main() {
             auto swapCapture=CaptureGpu(renderer,swapDraw,output/(character.name+"-negative-material-swap.png"));
             if(!swapCapture||ValidateMaterialReference(*swapCapture,*front,characterIndex)){result=14;break;}
 
-            // 真 GPU 負向：將 hair 改成 opaque，hair silhouette 像素必須增加。
+            // 真 GPU 負向：以同一張正式髮絲貼圖的診斷 UV 重複放大 MASK 邊界訊號，再改為 OPAQUE；
+            // 正式 studio 畫面仍使用資產原值，這裡只驗證 GPU alpha 分支不可被忽略。
             const std::size_t hairSlot=MaterialSlot(character,{"Hair"});if(hairSlot==SIZE_MAX){result=15;break;}
+            auto maskedProbe=character.materials;maskedProbe[hairSlot].baseTextureScale=2.f;
+            DrawList maskedProbeDraw;maskedProbeDraw.SetViewProjection(CreateViewProjectionMatrix(studioFrontCamera,1.f));maskedProbeDraw.SetBackfaceCulling(true);
+            if(!SubmitCharacter(maskedProbeDraw,character,idle,characterIndex,maskedProbe)){result=15;break;}
+            auto maskedProbeCapture=CaptureGpu(renderer,maskedProbeDraw,output/(character.name+"-negative-masked-hair.png"));
+            if(!maskedProbeCapture){result=15;break;}
             auto opaque=character.materials;auto opaqueDefinition=character.textureDefinitions[hairSlot];
             opaqueDefinition.alphaMode=MaterialAlphaMode3D::Opaque;opaqueDefinition.alphaCutoff=.5f;
             const auto opaqueTexture=renderer.CreateMaterialTextureSet(opaqueDefinition);
-            if(!opaqueTexture){result=15;break;}opaque[hairSlot].textures=opaqueTexture;opaque[hairSlot].alphaMode=MaterialAlphaMode3D::Opaque;
+            if(!opaqueTexture){result=15;break;}opaque[hairSlot].textures=opaqueTexture;opaque[hairSlot].alphaMode=MaterialAlphaMode3D::Opaque;opaque[hairSlot].baseTextureScale=2.f;
             DrawList opaqueDraw;opaqueDraw.SetViewProjection(CreateViewProjectionMatrix(studioFrontCamera,1.f));opaqueDraw.SetBackfaceCulling(true);
             if(!SubmitCharacter(opaqueDraw,character,idle,characterIndex,opaque)){result=15;break;}
             auto opaqueCapture=CaptureGpu(renderer,opaqueDraw,output/(character.name+"-negative-opaque-hair.png"));
             const auto hairIdentity=SlotIdentity(characterIndex,hairSlot);
-            const std::size_t maskedHair=PixelsFor(front->oid,hairIdentity),opaqueHair=opaqueCapture?PixelsFor(opaqueCapture->oid,hairIdentity):0;
+            const std::size_t maskedHair=PixelsFor(maskedProbeCapture->oid,hairIdentity),opaqueHair=opaqueCapture?PixelsFor(opaqueCapture->oid,hairIdentity):0;
             renderer.DestroyMaterialTextureSet(opaqueTexture);renderer.WaitIdle();
             if(!opaqueCapture||!maskedHair||opaqueHair<=maskedHair||opaqueHair-maskedHair<20){std::cerr<<character.name
                 <<" opaque hair negative failed masked="<<maskedHair<<" opaque="<<opaqueHair

@@ -18,6 +18,7 @@ add_library(AevryndEngine STATIC
   src/CharacterController3D.cpp
   src/CharacterAssetProvenance3D.cpp
   src/CharacterPresentation3D.cpp
+  src/CharacterShapeAsset3D.cpp
   src/DevelopmentUltraQuality3D.cpp
   src/CollisionWorld3D.cpp
   src/CookedRenderManifest3D.cpp
@@ -70,6 +71,30 @@ add_library(AevryndEngine STATIC
   src/VolumetricAtmospherePassD3D12.cpp
 )
 target_sources(AevryndEngine PRIVATE include/Aevrynd/PhotorealAssetProfile3D.h)
+
+add_executable(AevryndCharacterShape3DTest tests/CharacterShape3DSmoke.cpp)
+target_compile_features(AevryndCharacterShape3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndCharacterShape3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_include_directories(AevryndCharacterShape3DTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+add_test(NAME AevryndCharacterShape3DTest COMMAND AevryndCharacterShape3DTest)
+
+# 正式資產測試需明確傳入 ACMS 與 AESKIN，缺少夾具時不可假通過。
+add_executable(AevryndCharacterShapeAsset3DTest tests/CharacterShapeAsset3DSmoke.cpp)
+target_compile_features(AevryndCharacterShapeAsset3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndCharacterShapeAsset3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndCharacterShapeAsset3DTest PRIVATE AevryndEngine)
+
+add_executable(AevryndCharacterShapePreviewD3D12 tests/CharacterShapePreviewD3D12.cpp)
+target_compile_features(AevryndCharacterShapePreviewD3D12 PRIVATE cxx_std_20)
+target_compile_options(AevryndCharacterShapePreviewD3D12 PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndCharacterShapePreviewD3D12 PRIVATE AevryndEngine)
+
+# 驗證角色預覽器不得繞過骨架與材質語意而退回靜態網格送件。
+add_executable(AevryndCharacterShapePreviewSubmissionTest tests/CharacterShapePreviewSubmissionSmoke.cpp)
+target_compile_features(AevryndCharacterShapePreviewSubmissionTest PRIVATE cxx_std_20)
+target_compile_options(AevryndCharacterShapePreviewSubmissionTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndCharacterShapePreviewSubmissionTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterShapePreviewSubmissionTest COMMAND AevryndCharacterShapePreviewSubmissionTest)
 
 add_executable(AevryndDevelopmentUltraQuality3DTest tests/DevelopmentUltraQuality3DSmoke.cpp)
 target_compile_options(AevryndDevelopmentUltraQuality3DTest PRIVATE /W4 /WX /permissive- /utf-8)
@@ -936,6 +961,8 @@ target_compile_definitions(AevryndCharacterVisualQualityD3D12Test PRIVATE AEVRYN
 target_link_libraries(AevryndCharacterVisualQualityD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndCharacterVisualQualityD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterVisualQualityD3D12Test>'")
 add_test(NAME AevryndCharacterVisualQualityD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterVisualQualityD3D12Test>'")
+# 兩種模式共用同一組角色測試輸出；序列化避免平行 CTest 互相刪除或覆寫證據。
+set_tests_properties(AevryndCharacterVisualQualityD3D12Test AevryndCharacterVisualQualityD3D12GpuValidationTest PROPERTIES RUN_SERIAL TRUE)
 
 add_executable(AevryndScreenSpaceReflection3DTest tests/ScreenSpaceReflection3DSmoke.cpp)
 target_compile_options(AevryndScreenSpaceReflection3DTest PRIVATE /W4 /permissive- /utf-8)
