@@ -135,13 +135,13 @@ bool ValidateGrassPalette(const std::array<Color, 3> &candidate,
 }
 
 bool ReadableForestWater(const WaterSurfaceSettings3D &value) {
-  return value.minimumRoughness >= .045f && value.minimumRoughness <= .08f &&
-         value.maximumRoughness >= .14f && value.maximumRoughness <= .18f &&
-         value.broadWaveScale >= .05f && value.broadWaveStrength >= .07f &&
-         value.broadWaveStrength <= .10f && value.detailWaveScale >= .70f &&
-         value.detailWaveScale <= 1.f && value.detailWaveStrength >= .035f &&
-         value.detailWaveStrength <= .045f &&
-         value.broadWaveStrength > value.detailWaveStrength * 2.f &&
+  return value.minimumRoughness >= .035f && value.minimumRoughness <= .06f &&
+         value.maximumRoughness >= .12f && value.maximumRoughness <= .16f &&
+         value.broadWaveScale >= .12f && value.broadWaveScale <= .16f &&
+         value.broadWaveStrength >= .18f && value.broadWaveStrength <= .22f &&
+         value.detailWaveScale >= .85f && value.detailWaveScale <= 1.f &&
+         value.detailWaveStrength >= .10f && value.detailWaveStrength <= .13f &&
+         value.broadWaveStrength > value.detailWaveStrength * 1.5f &&
          value.shallowAlpha >= .62f && value.shallowAlpha <= .72f &&
          value.deepAlpha >= .86f && value.deepAlpha <= .92f &&
          value.deepAlpha - value.shallowAlpha >= .18f &&
@@ -540,6 +540,44 @@ int main() {
       land.trees[0] + land.grass[0] + land.rocks[0] != 252 ||
       land.trees[1] + land.grass[1] + land.rocks[1] != 152 ||
       land.trees[2] + land.grass[2] + land.rocks[2] != 52) return 55;
+  // 所有陸地 placement 必須由同一份最終高度場取得基部高度；非陸地
+  // descriptor 保持原位置，重複套用亦必須位元穩定。
+  GameplayShowcaseEnvironment3D grounded;
+  if (!grounded.Initialize()) return 87;
+  Aevrynd::HeightField3D groundingTerrain({{-256.f,0.f,-256.f},129,129,4.f});
+  groundingTerrain.Fill(3.25f);
+  std::vector<float> nonLandY;
+  for (const auto &descriptor : grounded.Descriptors())
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree &&
+        descriptor.kind != ShowcaseSceneKind3D::Grass &&
+        descriptor.kind != ShowcaseSceneKind3D::Rock)
+      nonLandY.push_back(descriptor.position.y);
+  ShowcaseTerrainGroundingReceipt3D grounding{};
+  if (!grounded.GroundLandDescriptors(groundingTerrain, &grounding) ||
+      !grounding.Complete() || grounding.eligibleDescriptors != 456 ||
+      grounding.groundedDescriptors != 456 || grounding.maximumHeightError > .0001f)
+    return 88;
+  std::size_t nonLandIndex{};
+  for (const auto &descriptor : grounded.Descriptors()) {
+    const bool landDescriptor = descriptor.kind == ShowcaseSceneKind3D::Tree ||
+        descriptor.kind == ShowcaseSceneKind3D::Grass ||
+        descriptor.kind == ShowcaseSceneKind3D::Rock;
+    if (landDescriptor) {
+      if (std::abs(descriptor.position.y - 3.25f) > .0001f) return 89;
+    } else if (descriptor.position.y != nonLandY[nonLandIndex++]) return 90;
+  }
+  const auto groundedWorldHash = grounded.Receipt().worldHash;
+  const auto groundedReceipt = grounded.Receipt();
+  if (!groundedReceipt.terrainGroundingApplied ||
+      groundedReceipt.terrainGroundingEligible != 456 ||
+      groundedReceipt.terrainGroundedDescriptors != 456 ||
+      groundedReceipt.terrainGroundingMaximumError > .0001f)
+    return 92;
+  ShowcaseTerrainGroundingReceipt3D repeatedGrounding{};
+  if (!grounded.GroundLandDescriptors(groundingTerrain, &repeatedGrounding) ||
+      !repeatedGrounding.Complete() ||
+      grounded.Receipt().worldHash != groundedWorldHash)
+    return 91;
   if (receipt.worldHash == 0 || receipt.worldHash != repeated.worldHash ||
       receipt.terrain != 1 || receipt.water != 1 ||
       receipt.vegetation != 426 || receipt.rocks != 30 ||

@@ -592,6 +592,10 @@ void GameplayLabGame::OnStart(Engine& engine){
       showcaseTerrain_.SetHeight(x,z,showcaseTerrain_.Height(x,z)+disturbance.heightDelta);
   }
   showcaseTerrain_.RecalculateRange();
+  ShowcaseTerrainGroundingReceipt3D terrainGrounding{};
+  if(!showcaseEnvironment_.GroundLandDescriptors(showcaseTerrain_,&terrainGrounding)||
+     terrainGrounding.groundedDescriptors!=showcaseEnvironment_.LandReceipt().placements)
+    throw std::runtime_error("Gameplay showcase land descriptors could not be grounded to the final terrain");
   showcaseRiverMesh_=engine.CreateMeshResource3D(CreateRiverHeroCellMesh3D(showcaseTerrain_));
   // 真實三層 PBR 貼圖提供細節；頂點 RGB 只加入由實際樹冠與河道決定的
   // 林下／濕地色調，alpha 仍原封不動保存高度供 biome 權重使用。
@@ -857,7 +861,7 @@ void GameplayLabGame::OnStop(Engine &engine) {
       for(const auto& sample:captureEnvironmentLodSamples_[index])if(sample.transitioning){if(!firstTransition)showcaseOut<<',';firstTransition=false;showcaseOut<<"{\"stableLow\":"<<sample.stableLow<<",\"kind\":"<<unsigned(sample.kind)<<",\"centerDistance\":"<<sample.centerDistance<<",\"boundsRadius\":"<<sample.boundsRadius<<",\"surfaceDistance\":"<<sample.surfaceDistance<<",\"switchDistance\":"<<sample.switchDistance<<",\"transitionWidth\":"<<sample.transitionWidth<<",\"nearLevel\":"<<sample.nearLevel<<",\"farLevel\":"<<sample.farLevel<<",\"nearCoverage\":"<<sample.nearCoverage<<",\"farCoverage\":"<<sample.farCoverage<<'}';}
       showcaseOut<<"]}";
     }
-    showcaseOut<<"],\"normalizedAssets\":"<<productionSubmission.normalizedAssets<<",\"normalizationRejected\":"<<productionSubmission.normalizationRejected<<",\"meshChainsSubmitted\":"<<productionSubmission.meshChainsSubmitted<<",\"meshChainsRejected\":"<<productionSubmission.meshChainsRejected<<",\"releasedDescriptors\":"<<showcaseRelease.descriptorsReleased<<",\"retainedBytesAfterRelease\":"<<showcaseRelease.retainedBytesAfter<<"}";
+    showcaseOut<<"],\"terrainGroundingEligible\":"<<showcaseReceipt.terrainGroundingEligible<<",\"terrainGroundedDescriptors\":"<<showcaseReceipt.terrainGroundedDescriptors<<",\"terrainGroundingMaximumError\":"<<showcaseReceipt.terrainGroundingMaximumError<<",\"terrainGroundingApplied\":"<<(showcaseReceipt.terrainGroundingApplied?1:0)<<",\"normalizedAssets\":"<<productionSubmission.normalizedAssets<<",\"normalizationRejected\":"<<productionSubmission.normalizationRejected<<",\"meshChainsSubmitted\":"<<productionSubmission.meshChainsSubmitted<<",\"meshChainsRejected\":"<<productionSubmission.meshChainsRejected<<",\"releasedDescriptors\":"<<showcaseRelease.descriptorsReleased<<",\"retainedBytesAfterRelease\":"<<showcaseRelease.retainedBytesAfter<<"}";
   }
   // typed LOD證據寫出後立即釋放每景向量容量，避免長時間工具執行保留記憶體。
   for(auto& samples:captureEnvironmentLodSamples_)std::vector<::GameplayLab::ShowcaseLodSample3D>{}.swap(samples);

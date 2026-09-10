@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Aevrynd/Camera.h>
+#include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/Renderer.h>
 #include "ShowcaseLandEcology3D.h"
 #include <Aevrynd/Scene3D.h>
@@ -514,8 +515,10 @@ struct ShowcaseEnvironmentReceipt3D {
   float riverMaximumJoinError{};
   std::size_t terrainMaterialLayers{}, riverbankProps{}, occupiedHabitatCells{},
       densestHabitatCell{};
+  std::size_t terrainGroundingEligible{}, terrainGroundedDescriptors{};
+  float terrainGroundingMaximumError{};
   bool riverUvMonotonic{}, terrainZonesExact{}, riverbankLayered{},
-      propFootprintsNonOverlapping{};
+      propFootprintsNonOverlapping{}, terrainGroundingApplied{};
 };
 
 struct ShowcaseSceneTargets3D {
@@ -538,6 +541,17 @@ struct ShowcaseExecutionReceipt3D {
   bool executed{};
 };
 
+struct ShowcaseTerrainGroundingReceipt3D {
+  std::size_t eligibleDescriptors{}, groundedDescriptors{};
+  float maximumHeightError{};
+  bool applied{}, allInsideTerrain{};
+  [[nodiscard]] bool Complete() const noexcept {
+    return applied && allInsideTerrain && eligibleDescriptors != 0 &&
+           groundedDescriptors == eligibleDescriptors &&
+           maximumHeightError <= .0001f;
+  }
+};
+
 struct ShowcaseReleaseReceipt3D {
   std::uint64_t worldHashBefore{};
   std::uint64_t worldHashAfter{};
@@ -557,6 +571,9 @@ public:
   [[nodiscard]] ShowcaseLightingState3D
   EvaluateLighting(ShowcaseLightingProfile3D profile) const;
   [[nodiscard]] ShowcaseEnvironmentReceipt3D Receipt() const;
+  [[nodiscard]] bool GroundLandDescriptors(
+      const Aevrynd::HeightField3D &terrain,
+      ShowcaseTerrainGroundingReceipt3D *receipt = nullptr);
   [[nodiscard]] static ShowcaseSceneTargets3D Targets() noexcept;
   [[nodiscard]] ShowcaseCameraVisibility3D
   EvaluateCameraVisibility(const Aevrynd::Camera3D &camera,
@@ -586,6 +603,7 @@ private:
   std::uint64_t seed_{};
   Aevrynd::WaterSurfaceSettings3D waterSurface_{};
   ShowcaseLandEcologyReceipt3D landReceipt_{};
+  ShowcaseTerrainGroundingReceipt3D groundingReceipt_{};
   bool initialized_{};
 };
 

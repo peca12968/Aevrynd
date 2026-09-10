@@ -1958,10 +1958,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         else
         {
             const float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, float2(0.28, 0.96));
+            const float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, float2(-0.89, 0.46));
             const float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.8, -0.6));
+            const float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, float2(0.17, 0.985));
             const float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
+            const float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31);
             const float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);
-            const float2 heightGradient = broadWave.yz * broadBandLimit + detailWave.yz * detailBandLimit;
+            const float crossDetailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 0.71);
+            // 四組各含四個非共線分量的解析高度場分散主要方向。每組偏導
+            // 與高度共用相位，遠景亦各自依像素世界足跡衰減；不採跨程序
+            // 可能落在不同半精度邊界的格點雜訊梯度。
+            const float2 heightGradient = broadWave.yz * broadBandLimit * 0.75
+                                        + crossWave.yz * crossBandLimit
+                                        + detailWave.yz * detailBandLimit * 0.18
+                                        + crossDetailWave.yz * crossDetailBandLimit * 0.50;
             normal = normalize(normal + float3(-heightGradient.x, 0.0, -heightGradient.y) * lerp(1.0, .45, foamMask));
         }
     }
@@ -2106,6 +2116,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float waterReflectionRoughness = clamp(roughness, waterMinimumRoughness, waterMaximumRoughness);
         float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
                               * lerp(1.0, 0.55, waterReflectionRoughness);
+        // 透明水面會以不透明場景取代先前的 shaded 值，因此基礎
+        // directionalLighting 內的太陽高光不能沿用。以金屬路徑的零漫射
+        // GGX 明確重建水的 F0 高光；EvaluatePbrLight 已計算 Fresnel，後續
+        // 不可再乘一次 water fresnel。
+        const float3 waterDirectionalSpecular = directionalVisibility * EvaluatePbrLight(
+            normal, viewDirection, lightDirection,
+            lightColorIntensity.rgb * lightColorIntensity.w,
+            waterReflectance.xxx, waterReflectionRoughness, 1.0);
         const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
         reflectedWater=WaterReflectionFallback3D(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
         // 反射只取得 Fresnel 能量，其餘能量保留給透射，避免日夜切換時雙重增亮。
@@ -2114,6 +2132,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float3 waterComposite=waterSurfaceEnabled!=0u
             ? absorbedWater*(1.0-fresnel)+reflectedWater*fresnel
             : lerp(absorbedWater,reflectedWater,fresnel);
+        if(waterSurfaceEnabled!=0u)waterComposite+=waterDirectionalSpecular;
         aerialOwnedSceneContribution *= waterTransmission * (1.0 - fresnel);
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 6
         waterDiagnosticAbsorbed = absorbedWater * (1.0 - fresnel);

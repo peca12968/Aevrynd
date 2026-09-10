@@ -36,7 +36,8 @@ int main(){
  const auto shaderPath=std::filesystem::path(__FILE__).parent_path().parent_path()/"shaders"/"World.hlsl";
  std::ifstream shaderFile(shaderPath);const std::string shader{std::istreambuf_iterator<char>{shaderFile},std::istreambuf_iterator<char>{}};
  const auto count=[&](const std::string& token){unsigned n=0;size_t p=0;while((p=shader.find(token,p))!=std::string::npos){++n;p+=token.size();}return n;};
- if(count("WaterAnalyticWave3D(")!=3||count("WaterWavePixelBandLimit3D(")!=3||count("WaterLitScatter3D(")!=2||count("WaterReflectionFallback3D(")!=2||shader.find("broadWave.yz * broadBandLimit + detailWave.yz * detailBandLimit")==std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader analytic/band-limit/scatter/fallback contract failed\n";return 12;}
+ const auto analyticCount=count("WaterAnalyticWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
+ if(analyticCount!=5||bandLimitCount!=5||scatterCount!=2||fallbackCount!=2||shader.find("crossDetailWave.yz * crossDetailBandLimit * 0.50")==std::string::npos||shader.find("waterComposite+=waterDirectionalSpecular") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader multi-direction analytic/direct-specular/band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<bandLimitCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
  // 雲、地表與水體共用的格點亂數必須只由整數位元運算產生；舊浮點雜湊曾造成跨次 HDR 位元漂移。
  if(count("uint CloudLatticeHash(int2 coordinate, uint seed)")!=1||
     shader.find("uint seed = 0xcb1ab31fu")==std::string::npos||

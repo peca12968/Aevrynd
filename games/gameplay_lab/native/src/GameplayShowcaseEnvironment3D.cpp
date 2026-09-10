@@ -270,11 +270,12 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
   // 青色帶。降低深水藍綠散射並收斂通道差距，讓水色主要來自天空、
   // 河床與岸邊樹木的反射，同時保留淺灘可讀性。
   // 實際水面內 0.25m 採樣的深度 p1=.0476m、p5=.2710m；泡沫只保留最淺岸帶。
-  // 四個非共線解析波同時保留林間緩流的寬波與細碎波紋。較低的最大粗糙度
-  // 讓斜視反射保持可讀，而較高頻、受限振幅的細節波只增加真實法線變化，
-  // 不以螢幕空間亮度雜訊偽造水面細節。
-  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D({true, {.42f,.25f,.19f}, {.018f,.035f,.038f}, .028f, .06f, .16f, .055f, .082f, .12f, .80f, .040f, .28f, .03f, .14f, .26f, .68f, .90f, .020f});
+  // 寬波提升到約 7.1m 波長，配合八個非共線解析分量，讓第三人稱與 God 鏡位
+  // 都看得到可解釋的法線與反射變化，不再是平面或規則百葉條紋。細波仍由
+  // 像素世界足跡 band-limit，不以螢幕亮度雜訊製造假細節。
+  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D({true, {.42f,.25f,.19f}, {.018f,.035f,.038f}, .035f, .045f, .14f, .14f, .20f, .12f, .92f, .12f, .28f, .03f, .14f, .26f, .68f, .90f, .020f});
   seed_ = seed;
+  groundingReceipt_ = {};
   initialized_ = true;
   return true;
 }
@@ -598,6 +599,10 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
   receipt.densestHabitatCell = landReceipt_.densestHabitatCell;
   receipt.riverbankLayered = landReceipt_.riverbankLayered;
   receipt.propFootprintsNonOverlapping = landReceipt_.footprintSpacingExact;
+  receipt.terrainGroundingEligible = groundingReceipt_.eligibleDescriptors;
+  receipt.terrainGroundedDescriptors = groundingReceipt_.groundedDescriptors;
+  receipt.terrainGroundingMaximumError = groundingReceipt_.maximumHeightError;
+  receipt.terrainGroundingApplied = groundingReceipt_.Complete();
   receipt.retainedDescriptorBytes = RetainedDescriptorBytes();
   receipt.waterSurfaceFingerprint = Aevrynd::WaterSurfaceFingerprint3D(waterSurface_);
   constexpr std::size_t riverSlices=64;
@@ -667,6 +672,52 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
   return receipt;
 }
 
+bool GameplayShowcaseEnvironment3D::GroundLandDescriptors(
+    const Aevrynd::HeightField3D &terrain,
+    ShowcaseTerrainGroundingReceipt3D *receipt) {
+  ShowcaseTerrainGroundingReceipt3D result{};
+  std::vector<float> heights;
+  heights.reserve(descriptors_.size());
+  for (const auto &descriptor : descriptors_) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree &&
+        descriptor.kind != ShowcaseSceneKind3D::Grass &&
+        descriptor.kind != ShowcaseSceneKind3D::Rock)
+      continue;
+    ++result.eligibleDescriptors;
+    if (!terrain.Contains(descriptor.position.x, descriptor.position.z)) {
+      if (receipt) *receipt = result;
+      groundingReceipt_ = result;
+      return false;
+    }
+    const float height = terrain.SampleHeight(descriptor.position.x,
+                                              descriptor.position.z);
+    if (!std::isfinite(height)) {
+      if (receipt) *receipt = result;
+      groundingReceipt_ = result;
+      return false;
+    }
+    heights.push_back(height);
+  }
+  result.allInsideTerrain = result.eligibleDescriptors == heights.size();
+  std::size_t heightIndex{};
+  for (auto &descriptor : descriptors_) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree &&
+        descriptor.kind != ShowcaseSceneKind3D::Grass &&
+        descriptor.kind != ShowcaseSceneKind3D::Rock)
+      continue;
+    descriptor.position.y = heights[heightIndex++];
+    result.maximumHeightError = (std::max)(
+        result.maximumHeightError,
+        std::abs(descriptor.position.y - terrain.SampleHeight(
+            descriptor.position.x, descriptor.position.z)));
+    ++result.groundedDescriptors;
+  }
+  result.applied = result.groundedDescriptors == result.eligibleDescriptors;
+  groundingReceipt_ = result;
+  if (receipt) *receipt = result;
+  return result.Complete();
+}
+
 ShowcaseExecutionReceipt3D GameplayShowcaseEnvironment3D::ExecutionReceipt(
     const Aevrynd::RendererStats &before,
     const Aevrynd::RendererStats &after) const {
@@ -706,6 +757,7 @@ ShowcaseReleaseReceipt3D GameplayShowcaseEnvironment3D::Release() {
   receipt.retainedBytesBefore = RetainedDescriptorBytes();
   std::vector<ShowcaseSceneDescriptor3D>{}.swap(descriptors_);
   seed_ = 0;
+  groundingReceipt_ = {};
   initialized_ = false;
   receipt.worldHashAfter = WorldHash();
   receipt.retainedBytesAfter = RetainedDescriptorBytes();
