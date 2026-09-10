@@ -1,4 +1,4 @@
-add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayProductionHdrSidecar3D.cpp src/GameplayFirstPersonViewmodel3D.cpp src/GameplayContactEvidence3D.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/ShowcaseLandEcology3D.cpp src/GameplayObjectPaletteUi3D.cpp src/ShowcaseRenderAssetBindings3D.cpp src/GameplayHlodWorldRuntime3D.cpp src/GameplayCameraOcclusionPolicy3D.cpp src/GameplayCameraProductionBuilder3D.cpp src/GameplayOccluderMask3D.cpp tests/ux_replay/GameplayUxReplayWin32.cpp tests/ux_replay/GameplayUxReplayProduction.cpp)
+add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayProductionHdrSidecar3D.cpp src/GameplayFirstPersonViewmodel3D.cpp src/GameplayContactEvidence3D.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/ShowcaseLandEcology3D.cpp src/GameplayForestGroundCoverMesh3D.cpp src/GameplayObjectPaletteUi3D.cpp src/ShowcaseRenderAssetBindings3D.cpp src/GameplayHlodWorldRuntime3D.cpp src/GameplayCameraOcclusionPolicy3D.cpp src/GameplayCameraProductionBuilder3D.cpp src/GameplayOccluderMask3D.cpp tests/ux_replay/GameplayUxReplayWin32.cpp tests/ux_replay/GameplayUxReplayProduction.cpp)
 add_custom_target(GameplayForestTerrainBindingTest
   COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayForestTerrainBindingSmoke.ps1" -SourceRoot "${CMAKE_SOURCE_DIR}" -AssetRoot "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/assets"
   VERBATIM)
@@ -7,6 +7,11 @@ target_include_directories(GameplayGrassCommunityMesh3DTest PRIVATE include)
 target_compile_options(GameplayGrassCommunityMesh3DTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(GameplayGrassCommunityMesh3DTest PRIVATE AevryndEngine)
 add_test(NAME GameplayGrassCommunityMesh3DSmoke COMMAND GameplayGrassCommunityMesh3DTest)
+add_executable(GameplayForestGroundCoverMesh3DTest tests/GameplayForestGroundCoverMesh3DSmoke.cpp src/GameplayForestGroundCoverMesh3D.cpp)
+target_include_directories(GameplayForestGroundCoverMesh3DTest PRIVATE include)
+target_compile_options(GameplayForestGroundCoverMesh3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(GameplayForestGroundCoverMesh3DTest PRIVATE AevryndEngine)
+add_test(NAME GameplayForestGroundCoverMesh3DSmoke COMMAND GameplayForestGroundCoverMesh3DTest)
 add_executable(GameplayBuildingIdentities3DTest tests/GameplayBuildingIdentities3DSmoke.cpp)
 target_include_directories(GameplayBuildingIdentities3DTest PRIVATE include "${CMAKE_SOURCE_DIR}/engine/native/include")
 target_compile_options(GameplayBuildingIdentities3DTest PRIVATE /W4 /WX /permissive- /utf-8)

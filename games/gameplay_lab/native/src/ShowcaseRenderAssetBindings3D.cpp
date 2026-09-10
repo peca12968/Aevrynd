@@ -1362,6 +1362,16 @@ const Aevrynd::Material3D *ShowcaseRenderAssetBindings3D::ProductionMaterial(
   return nullptr;
 }
 
+const Aevrynd::Material3D *ShowcaseRenderAssetBindings3D::ProductionMaterialById(
+    std::string_view materialId) const noexcept {
+  if (!production_ || !production_->active || materialId.empty())
+    return nullptr;
+  for (const auto &material : production_->manifest.Materials())
+    if (material.id == materialId)
+      return production_->materials.Find(material.id);
+  return nullptr;
+}
+
 bool ShowcaseRenderAssetBindings3D::SubmitProductionMesh(
     Aevrynd::Scene3D &scene, std::string_view assetId,
     const Aevrynd::Transform3D &transform,

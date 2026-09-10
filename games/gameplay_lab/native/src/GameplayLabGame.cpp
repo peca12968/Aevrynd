@@ -1,5 +1,6 @@
 #include "GameplayLabGame.h"
 #include "GameplayGrassCommunityMesh3D.h"
+#include "GameplayForestGroundCoverMesh3D.h"
 #include "GameplayCandidate7Package3D.h"
 #include "GameplayBuildingIdentities3D.h"
 #include "GameplayOccluderMask3D.h"
@@ -542,6 +543,10 @@ void GameplayLabGame::OnStart(Engine& engine){
   auto grassHigh=CreateGameplayGrassCommunityMesh3D(15,4),grassLow=CreateGameplayGrassCommunityMesh3D(10,2);
   showcaseGrassHighMesh_=engine.CreateMeshResource3D(grassHigh);
   showcaseGrassLowMesh_=engine.CreateMeshResource3D(grassLow);
+  showcaseFernHighMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::Fern,GameplayForestGroundCoverDetail3D::Near,0x4a17u));
+  showcaseFernLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::Fern,GameplayForestGroundCoverDetail3D::Far,0x4a17u));
+  showcaseShrubHighMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::LowShrub,GameplayForestGroundCoverDetail3D::Near,0x7c31u));
+  showcaseShrubLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::LowShrub,GameplayForestGroundCoverDetail3D::Far,0x7c31u));
   showcaseTreeLowMesh_=engine.CreateMeshResource3D(CreateTreeLodMesh3D());
   showcaseRockLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(7,4));
   showcaseCottageFrontMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(true,true));
@@ -605,7 +610,7 @@ void GameplayLabGame::OnStart(Engine& engine){
   if(!PrepareShowcaseSurfaceTerrainMesh3D(terrainMesh))
     throw std::runtime_error("Gameplay showcase terrain apron construction failed");
   showcaseTerrainMesh_=engine.CreateMeshResource3D(terrainMesh);
-  if(!showcaseCylinderMesh_||!showcaseConeHighMesh_||!showcaseConeLowMesh_||!showcaseGrassHighMesh_||!showcaseGrassLowMesh_||!showcaseTreeLowMesh_||!showcaseRockLowMesh_||!showcaseRiverMesh_||!showcaseCottageFrontMesh_||!showcaseCottageBackMesh_||!showcaseCottageSideMesh_||!showcaseCottageRoofMesh_||!showcaseTerrainMesh_)throw std::runtime_error("Gameplay showcase procedural GPU upload failed");
+  if(!showcaseCylinderMesh_||!showcaseConeHighMesh_||!showcaseConeLowMesh_||!showcaseGrassHighMesh_||!showcaseGrassLowMesh_||!showcaseFernHighMesh_||!showcaseFernLowMesh_||!showcaseShrubHighMesh_||!showcaseShrubLowMesh_||!showcaseTreeLowMesh_||!showcaseRockLowMesh_||!showcaseRiverMesh_||!showcaseCottageFrontMesh_||!showcaseCottageBackMesh_||!showcaseCottageSideMesh_||!showcaseCottageRoofMesh_||!showcaseTerrainMesh_)throw std::runtime_error("Gameplay showcase procedural GPU upload failed");
   const auto assetRoot=engine.ExecutableDirectory()/"assets";
   engine.SetMaterialTextureMemoryBudget(128*1024*1024);
   showcaseMaterialLibrary_.Initialize(engine,assetRoot/"environment-material-packs");
@@ -922,7 +927,7 @@ void GameplayLabGame::OnStop(Engine &engine) {
   }
   engine.DestroyMesh3D(boxMesh_.handle);
   engine.DestroyMesh3D(sphereMesh_.handle);
-  for(auto* mesh:{&showcaseTerrainMesh_,&showcaseRiverMesh_,&showcaseCottageFrontMesh_,&showcaseCottageBackMesh_,&showcaseCottageSideMesh_,&showcaseCottageRoofMesh_,&showcaseCylinderMesh_,&showcaseConeHighMesh_,&showcaseConeLowMesh_,&showcaseGrassHighMesh_,&showcaseGrassLowMesh_,&showcaseTreeLowMesh_,&showcaseRockLowMesh_,&showcaseQuiverTreeMesh_,&showcaseRock09Mesh_}){engine.DestroyMesh3D(mesh->handle);*mesh={};}
+  for(auto* mesh:{&showcaseTerrainMesh_,&showcaseRiverMesh_,&showcaseCottageFrontMesh_,&showcaseCottageBackMesh_,&showcaseCottageSideMesh_,&showcaseCottageRoofMesh_,&showcaseCylinderMesh_,&showcaseConeHighMesh_,&showcaseConeLowMesh_,&showcaseGrassHighMesh_,&showcaseGrassLowMesh_,&showcaseFernHighMesh_,&showcaseFernLowMesh_,&showcaseShrubHighMesh_,&showcaseShrubLowMesh_,&showcaseTreeLowMesh_,&showcaseRockLowMesh_,&showcaseQuiverTreeMesh_,&showcaseRock09Mesh_}){engine.DestroyMesh3D(mesh->handle);*mesh={};}
   showcaseModelMaterialLibrary_.Shutdown();showcaseMaterialLibrary_.Shutdown();
   femaleMesh_ = {};
   maleMesh_ = {};
@@ -1647,6 +1652,18 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     bool submitted=false;
     std::vector<ShowcaseProductionSubmittedLodChain3D> productionChains;
     const Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
+    const MeshResource3D* grassHigh=&showcaseGrassHighMesh_;
+    const MeshResource3D* grassLow=&showcaseGrassLowMesh_;
+    const Aevrynd::Material3D* groundCoverSource{};
+    if(descriptor.kind==ShowcaseSceneKind3D::Grass){
+      if(descriptor.meshAsset.find("grass-fan")!=std::string::npos){
+        grassHigh=&showcaseFernHighMesh_;grassLow=&showcaseFernLowMesh_;
+        groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("island_tree_01:leaves");
+      }else if(descriptor.meshAsset.find("grass-tuft")!=std::string::npos){
+        grassHigh=&showcaseShrubHighMesh_;grassLow=&showcaseShrubLowMesh_;
+        groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("tree_small_02:leaves");
+      }
+    }
     switch(descriptor.kind){
     case ShowcaseSceneKind3D::Terrain:
       if(showcaseGroundMaterial_.textures){auto material=showcaseGroundMaterial_;material.tint=ShowcaseForestTerrainTint3D();material.materialClass=MaterialClass3D::Terrain;material.normalScale=1.18f;material.textureScale=ShowcaseForestTerrainTextureScale3D();const auto before=scene_.MeshCount();const Transform3D terrainTransform{descriptor.position,{0,descriptor.yaw,0},{1,1,1}};scene_.Mesh(showcaseTerrainMesh_,terrainTransform,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
@@ -1655,7 +1672,8 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     case ShowcaseSceneKind3D::Tree:
       {const std::string_view asset=ResolveShowcasePhotorealAssetId3D(descriptor);if(!asset.empty())submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,asset,transform,renderIdentity,lodObjectIndex,&productionChains);}break;
     case ShowcaseSceneKind3D::Grass:
-      if(const auto* source=showcaseRenderAssets_.ProductionMaterial(ShowcaseForestGrassMaterialAsset3D(descriptor.materialAsset))){const auto material=ShowcaseForestGrassMaterial3D(*source,descriptor.materialAsset,descriptor.castsShadow);const auto before=scene_.MeshCount();scene_.MeshLod(showcaseGrassHighMesh_,showcaseGrassLowMesh_,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
+      {const auto* source=groundCoverSource?groundCoverSource:showcaseRenderAssets_.ProductionMaterial(ShowcaseForestGrassMaterialAsset3D(descriptor.materialAsset));
+       if(source){const auto material=groundCoverSource?PrepareGameplayForestGroundCoverMaterial3D(*source,descriptor.castsShadow):ShowcaseForestGrassMaterial3D(*source,descriptor.materialAsset,descriptor.castsShadow);const auto before=scene_.MeshCount();scene_.MeshLod(*grassHigh,*grassLow,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}}break;
     case ShowcaseSceneKind3D::Rock:
       submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,descriptor.meshAsset.find("boulder_01")!=std::string::npos?"boulder_01":"coastal_cliff_01",transform,renderIdentity,lodObjectIndex,&productionChains);break;
     case ShowcaseSceneKind3D::Building:
@@ -1700,13 +1718,13 @@ void GameplayLabGame::AddShowcaseEnvironment(){
       lodObjectIndex+=std::uint32_t(productionChains.size());
       if(descriptor.kind==ShowcaseSceneKind3D::Grass){
         const Vec3 minimum{
-          (std::min)(showcaseGrassHighMesh_.bounds.center.x-showcaseGrassHighMesh_.bounds.extents.x,showcaseGrassLowMesh_.bounds.center.x-showcaseGrassLowMesh_.bounds.extents.x),
-          (std::min)(showcaseGrassHighMesh_.bounds.center.y-showcaseGrassHighMesh_.bounds.extents.y,showcaseGrassLowMesh_.bounds.center.y-showcaseGrassLowMesh_.bounds.extents.y),
-          (std::min)(showcaseGrassHighMesh_.bounds.center.z-showcaseGrassHighMesh_.bounds.extents.z,showcaseGrassLowMesh_.bounds.center.z-showcaseGrassLowMesh_.bounds.extents.z)};
+          (std::min)(grassHigh->bounds.center.x-grassHigh->bounds.extents.x,grassLow->bounds.center.x-grassLow->bounds.extents.x),
+          (std::min)(grassHigh->bounds.center.y-grassHigh->bounds.extents.y,grassLow->bounds.center.y-grassLow->bounds.extents.y),
+          (std::min)(grassHigh->bounds.center.z-grassHigh->bounds.extents.z,grassLow->bounds.center.z-grassLow->bounds.extents.z)};
         const Vec3 maximum{
-          (std::max)(showcaseGrassHighMesh_.bounds.center.x+showcaseGrassHighMesh_.bounds.extents.x,showcaseGrassLowMesh_.bounds.center.x+showcaseGrassLowMesh_.bounds.extents.x),
-          (std::max)(showcaseGrassHighMesh_.bounds.center.y+showcaseGrassHighMesh_.bounds.extents.y,showcaseGrassLowMesh_.bounds.center.y+showcaseGrassLowMesh_.bounds.extents.y),
-          (std::max)(showcaseGrassHighMesh_.bounds.center.z+showcaseGrassHighMesh_.bounds.extents.z,showcaseGrassLowMesh_.bounds.center.z+showcaseGrassLowMesh_.bounds.extents.z)};
+          (std::max)(grassHigh->bounds.center.x+grassHigh->bounds.extents.x,grassLow->bounds.center.x+grassLow->bounds.extents.x),
+          (std::max)(grassHigh->bounds.center.y+grassHigh->bounds.extents.y,grassLow->bounds.center.y+grassLow->bounds.extents.y),
+          (std::max)(grassHigh->bounds.center.z+grassHigh->bounds.extents.z,grassLow->bounds.center.z+grassLow->bounds.extents.z)};
         MeshBounds3D localBounds{(minimum+maximum)*.5f,Length((maximum-minimum)*.5f),(maximum-minimum)*.5f};
         const auto bounds=TransformSphereBounds(localBounds,transform);
         const auto policy=ShowcaseGrassLodPolicy3D();

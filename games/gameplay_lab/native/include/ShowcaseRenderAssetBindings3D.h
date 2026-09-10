@@ -323,6 +323,8 @@ public:
                       ShowcaseProductionRenderReceipt3D &receipt);
   [[nodiscard]] const Aevrynd::Material3D *
   ProductionMaterial(std::string_view assetId) const noexcept;
+  [[nodiscard]] const Aevrynd::Material3D *
+  ProductionMaterialById(std::string_view materialId) const noexcept;
   bool SubmitProductionMesh(Aevrynd::Scene3D &scene,
                             std::string_view assetId,
                             const Aevrynd::Transform3D &transform,

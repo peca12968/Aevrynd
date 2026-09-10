@@ -56,10 +56,25 @@ precise float ValueNoise3D(float3 coordinate,uint seed)
     return result;
 }
 
+void DeterministicSinCos(float angle,out precise float sine,out precise float cosine)
+{
+    // Shader-model transcendental implementations are allowed to use vendor
+    // approximations.  A fixed range reduction and polynomial keeps cloud
+    // lattice rotation bit-stable for repeated evidence captures on one GPU.
+    precise const float halfPi=1.5707963267948966;
+    const int quadrant=int(floor(angle/halfPi+.5));
+    precise const float x=angle-float(quadrant)*halfPi,x2=x*x;
+    precise const float sinReduced=x*(1.0+x2*(-.1666666666666667+x2*(.008333333333333333+x2*(-.0001984126984126984+x2*.0000027557319223985893))));
+    precise const float cosReduced=1.0+x2*(-.5+x2*(.041666666666666664+x2*(-.001388888888888889+x2*(.0000248015873015873+x2*-.0000002755731922398589))));
+    const uint normalized=uint(quadrant)&3u;
+    sine=normalized==0u?sinReduced:(normalized==1u?cosReduced:(normalized==2u?-sinReduced:-cosReduced));
+    cosine=normalized==0u?cosReduced:(normalized==1u?-sinReduced:(normalized==2u?-cosReduced:sinReduced));
+}
+
 precise float3 RotateNoise(float3 value,float angle,uint octave)
 {
     precise const float a=angle+float(octave)*1.04719755;
-    precise const float c=cos(a),s=sin(a);
+    precise float c,s;DeterministicSinCos(a,s,c);
     precise const float3 y=float3(c*value.x-s*value.z,value.y,s*value.x+c*value.z);
     precise const float3 result=float3(y.x,c*y.y-s*y.z,s*y.y+c*y.z);
     return result;

@@ -180,7 +180,9 @@ Aevrynd::Vec3 Scale(ShowcaseLandKind3D kind,
   const float width = .45f + a * .75f;
   const float height = variant == ShowcaseLandVariant3D::GrassBlade
                            ? .16f + b * .28f
-                           : .09f + b * .22f;
+                           : variant == ShowcaseLandVariant3D::GrassFan
+                                 ? .34f + b * .10f
+                                 : .31f + b * .09f;
   if (variant == ShowcaseLandVariant3D::GrassBlade) return {width * .55f, height, width};
   if (variant == ShowcaseLandVariant3D::GrassFan) return {width * 1.25f, height * .82f, width * .7f};
   return {width, height * 1.08f, width};
