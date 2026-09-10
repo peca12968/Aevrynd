@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(Aevrynd VERSION 2.86.0 LANGUAGES CXX)
 enable_testing()
+option(AEVRYND_WATER_COMPONENT_DIAGNOSTICS "Build isolated water component capture diagnostics" OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

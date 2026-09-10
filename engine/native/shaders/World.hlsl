@@ -190,6 +190,10 @@ bool TerrainDecorrelationEnabled()
 {
     return (terrainDecorrelationPacked & (1u << 30u)) != 0u;
 }
+bool TerrainMesoPartitionEnabled()
+{
+    return (terrainDecorrelationPacked & (1u << 31u)) != 0u;
+}
 float3 TerrainDecorrelatedWorldPosition(float3 worldPosition, float warpScale, float warpStrength)
 {
     // 只使用連續世界座標；不含格線、相機或時間，因此跨分區及視角移動時不會跳接或游動。
@@ -923,21 +927,56 @@ float3 EvaluateEnvironmentSpecular(float3 worldPosition,float3 reflectionDirecti
          * environmentSpecularScaleIntensity.rgb * environmentSpecularScaleIntensity.a;
 }
 
-float CloudHash(float2 coordinate)
+uint CloudLatticeHash(int2 coordinate, uint seed)
 {
-    coordinate = frac(coordinate * float2(123.34, 456.21));
-    coordinate += dot(coordinate, coordinate + 45.32);
-    return frac(coordinate.x * coordinate.y);
+    uint value = asuint(coordinate.x) * 0x8da6b343u
+               ^ asuint(coordinate.y) * 0xd8163841u
+               ^ seed;
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+float CloudHash(int2 coordinate, uint seed = 0xcb1ab31fu)
+{
+    // 取最高 24 位，避免浮點乘加次序或 FMA 差異改變格點亂數。
+    return float(CloudLatticeHash(coordinate, seed) >> 8u) * (1.0 / 16777216.0);
 }
 
 float CloudNoise(float2 coordinate)
 {
-    const float2 cell = floor(coordinate);
+    const int2 cell = int2(floor(coordinate));
     const float2 fraction = frac(coordinate);
     const float2 smoothFraction = fraction * fraction * (3.0 - 2.0 * fraction);
-    const float lower = lerp(CloudHash(cell), CloudHash(cell + float2(1.0, 0.0)), smoothFraction.x);
-    const float upper = lerp(CloudHash(cell + float2(0.0, 1.0)), CloudHash(cell + 1.0), smoothFraction.x);
+    const float lower = lerp(CloudHash(cell), CloudHash(cell + int2(1, 0)), smoothFraction.x);
+    const float upper = lerp(CloudHash(cell + int2(0, 1)), CloudHash(cell + int2(1, 1)), smoothFraction.x);
     return lerp(lower, upper, smoothFraction.y);
+}
+
+float TerrainMesoPartitionSignal(float2 worldPosition, float broadNoise)
+{
+    // 兩個旋轉、非整比尺度的平滑值雜訊形成連續中尺度群落。單一尺度會在
+    // 32--256px 的地表觀察距離留下可辨識週期；第二尺度打散該週期，但仍只
+    // 依賴世界座標，沒有相機、時間或未平滑的格線雜湊。
+    const float2 rotated = float2(worldPosition.x * 0.8 - worldPosition.y * 0.6,
+                                  worldPosition.x * 0.6 + worldPosition.y * 0.8);
+    const float middle = CloudNoise(worldPosition * 0.14 + float2(1.0, 0.7));
+    const float secondary = CloudNoise(rotated * 0.38 + float2(13.7, -5.9));
+    const float combined = middle * 0.62 + secondary * 0.30 + broadNoise * 0.08;
+    // 混合兩個頻帶會自然收窄統計範圍；以固定世界空間對比恢復濕／乾群落
+    // 的原有可讀差異，避免夜景被平均成同一種粗糙度與亮度。
+    return saturate(0.5 + (combined - 0.5) * 1.45);
+}
+
+float WaterFoamCoverage3D(float2 worldXZ, float time)
+{
+    // 固定兩次連續值雜訊，採不同旋轉與非整比尺度，避免單格網沿河面重複。
+    const float2 first = float2(worldXZ.x * 0.8 - worldXZ.y * 0.6, worldXZ.x * 0.6 + worldXZ.y * 0.8) * 1.17 + float2(time * 0.07, -time * 0.04);
+    const float2 second = float2(worldXZ.x * 0.384615 - worldXZ.y * 0.923077, worldXZ.x * 0.923077 + worldXZ.y * 0.384615) * 2.03 + float2(17.3 - time * 0.031, 9.7 + time * 0.053);
+    return smoothstep(0.30, 0.72, CloudNoise(first) * 0.58 + CloudNoise(second) * 0.42);
 }
 
 float CloudFbm(float2 coordinate)
@@ -1010,7 +1049,7 @@ float3 ApplyVolumetricClouds(float3 atmosphere,float3 rayDirection,float3 sunDir
     const float exit=max(entry,(cloudBaseAltitude+cloudThickness-cameraFogStart.y)/rayDirection.y);
     const int samples=clamp((int)cloudSampleCount,4,16);
     const float stepLength=(exit-entry)/float(samples);
-    const float jitter=CloudHash(floor(pixelPosition)+float2(17.0,43.0));
+    const float jitter=CloudHash(int2(floor(pixelPosition))+int2(17,43));
     const float horizonFade=smoothstep(0.02,0.14,rayDirection.y);
     float transmittance=1.0;
     float3 scattering=0.0;
@@ -1040,7 +1079,7 @@ float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPo
     const float receiverCosine = saturate(dot(normal, lightDirection));
     const float receiverSlope = sqrt(max(0.0, 1.0 - receiverCosine * receiverCosine)) / max(0.2, receiverCosine);
     const float bias = min(0.006, shadowParameters.z + shadowParameters.y * receiverSlope);
-    const uint rotationIndex = min(3u, (uint)(CloudHash(floor(worldPosition.xz * 2.0) * 0.173 + float(cascadeIndex) * 19.19) * 4.0));
+    const uint rotationIndex = min(3u, (uint)(CloudHash(int2(floor(worldPosition.xz * 2.0)), 0xc2b2ae35u ^ (cascadeIndex * 0x9e3779b9u)) * 4.0));
     const float swapAxes = float(rotationIndex & 1u);
     const float2 rotationSigns = float2((rotationIndex == 1u || rotationIndex == 2u) ? -1.0 : 1.0, rotationIndex >= 2u ? -1.0 : 1.0);
     static const float2 poisson[12] = {
@@ -1308,6 +1347,30 @@ float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirecti
     return (diffuseWeight * baseColor * (1.0 / 3.14159265) + specular) * radiance * normalLight;
 }
 
+float FoliagePhysicalTransmission(float normalLight,float viewLight)
+{
+    const float backLight=saturate(-normalLight);
+    const float physicalForwardScatter=saturate(-viewLight);
+    return backLight*backLight*(0.45+0.55*physicalForwardScatter);
+}
+
+float FoliageLowSunFactor(float sunElevation)
+{
+    return 1.0-smoothstep(0.55,0.85,saturate(sunElevation));
+}
+
+float FoliageForwardScatterSuppressionBlend(float normalLight,float viewLight,float sunElevation)
+{
+    return smoothstep(0.25,1.0,-normalLight)*smoothstep(0.35,1.0,viewLight)*FoliageLowSunFactor(sunElevation);
+}
+
+float3 FoliageNeutralizedTransmissionColor(float3 color,float suppressionBlend)
+{
+    color=max(color,0.0);
+    const float luminance=dot(color,float3(0.2126,0.7152,0.0722));
+    return lerp(color,luminance.xxx,0.08*saturate(suppressionBlend));
+}
+
 float CorneaFresnel(float cosine)
 {
     // 人眼角膜折射率約 1.376，對空氣的法線入射反射率約為 2.5%。
@@ -1458,6 +1521,55 @@ float3 ReconstructWorldPosition(float2 screenUv, float depth)
     return worldPosition.xyz / max(abs(worldPosition.w), 0.000001);
 }
 
+float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float amplitude, float speed, float2 direction)
+{
+    // 四個非整比、不同方向的解析波共同形成水面；高度與偏導使用完全相同
+    // 的相位，因此法線仍是實際高度場的導數，而不是後製擾動。單一正弦波
+    // 會在斜視河面形成規則百葉條紋，不能代表自然風浪。
+    const float waveNumber = max(waveScale, 0.001) * 6.28318530718;
+    const float boundedAmplitude = clamp(amplitude, 0.0, 0.3);
+    const float2 perpendicular = float2(-direction.y, direction.x);
+    const float2 direction1 = direction * 0.62 + perpendicular * 0.78;
+    const float2 direction2 = direction * 0.28 - perpendicular * 0.96;
+    const float2 direction3 = direction * -0.71 + perpendicular * 0.70;
+    const float waveNumber0 = waveNumber * 0.73;
+    const float waveNumber1 = waveNumber;
+    const float waveNumber2 = waveNumber * 1.37;
+    const float waveNumber3 = waveNumber * 1.91;
+    const float phase0 = waveNumber0 * dot(direction, worldXZ) - speed * 0.83 * time;
+    const float phase1 = waveNumber1 * dot(direction1, worldXZ) - speed * time + 1.7;
+    const float phase2 = waveNumber2 * dot(direction2, worldXZ) - speed * 1.19 * time + 4.1;
+    const float phase3 = waveNumber3 * dot(direction3, worldXZ) - speed * 1.43 * time + 2.4;
+    const float componentAmplitude = boundedAmplitude * 0.25;
+    const float slope0 = componentAmplitude * waveNumber0 * cos(phase0);
+    const float slope1 = componentAmplitude * waveNumber1 * cos(phase1);
+    const float slope2 = componentAmplitude * waveNumber2 * cos(phase2);
+    const float slope3 = componentAmplitude * waveNumber3 * cos(phase3);
+    const float height = componentAmplitude * (sin(phase0) + sin(phase1) + sin(phase2) + sin(phase3));
+    const float2 gradient = direction * slope0 + direction1 * slope1 + direction2 * slope2 + direction3 * slope3;
+    return float3(height, gradient.x, gradient.y);
+}
+
+float WaterWavePixelBandLimit3D(float worldFootprint, float waveScale)
+{
+    // 以實際世界座標像素足跡做解析式 band-limit。每週期少於約 16px 時
+    // 逐步衰減，少於約 4.5px 時完全移除，避免斜視水面把波峰變成規則閃爍條帶。
+    const float cyclesPerPixel = max(0.0, waveScale) * worldFootprint;
+    return 1.0 - smoothstep(0.06, 0.22, cyclesPerPixel);
+}
+
+float3 WaterLitScatter3D(float3 deepColor, float3 surfaceColor, float3 illuminance)
+{
+    // 混合散射反照率後乘入射光；黑暗時不可殘留固定青色。
+    return (deepColor * 0.76 + surfaceColor * 0.24) * illuminance;
+}
+
+float3 WaterReflectionFallback3D(float3 environmentRadiance, float3 screenRadiance, float confidence)
+{
+    // SSR miss 與離屏保留環境反射；有效命中依可信度平滑取代。
+    return lerp(environmentRadiance, screenRadiance, clamp(confidence, 0.0, 1.0));
+}
+
 float4 EvaluateWaterScreenSpaceReflection(float3 worldPosition,float3 normal,float3 viewDirection,float roughness)
 {
     if(screenSpaceReflectionIntensity<=0.0||screenSpaceReflectionSceneAvailable<0.5||roughness>=screenSpaceReflectionMaximumRoughness)return float4(0.0,0.0,0.0,0.0);
@@ -1517,6 +1629,24 @@ void ClipWorldLod(WorldPixelInput input)
     }
 }
 
+float3 WaterSurfaceViewDirection(float3 worldPosition, float3 cameraPosition, float4x4 cameraMatrix)
+{
+    // 正交投影的深度列提供固定視軸；不以有限相機位置製造隨像素改變的 Fresnel。
+    // 裸 identity 僅是低階繪圖／測試的 clip-space 約定，沒有可推回的相機姿態；
+    // 此時沿用顯式 camera position，避免把任意 XY 平面誤判成 100% 掠射反射。
+    const bool identityClip = abs(cameraMatrix[0][0] - 1.0) + abs(cameraMatrix[1][1] - 1.0)
+                            + abs(cameraMatrix[2][2] - 1.0) + abs(cameraMatrix[3][3] - 1.0)
+                            + abs(cameraMatrix[0][1]) + abs(cameraMatrix[0][2]) + abs(cameraMatrix[0][3])
+                            + abs(cameraMatrix[1][0]) + abs(cameraMatrix[1][2]) + abs(cameraMatrix[1][3])
+                            + abs(cameraMatrix[2][0]) + abs(cameraMatrix[2][1]) + abs(cameraMatrix[2][3])
+                            + abs(cameraMatrix[3][0]) + abs(cameraMatrix[3][1]) + abs(cameraMatrix[3][2]) < 0.00001;
+    if (identityClip) return normalize(cameraPosition - worldPosition);
+    const bool orthographic = abs(cameraMatrix[3][0]) + abs(cameraMatrix[3][1]) + abs(cameraMatrix[3][2]) < 0.00001
+                           && abs(cameraMatrix[3][3] - 1.0) < 0.00001;
+    if (orthographic) return normalize(float3(-cameraMatrix[2][0], -cameraMatrix[2][1], -cameraMatrix[2][2]));
+    return normalize(cameraPosition - worldPosition);
+}
+
 float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToCoverage)
 {
     ClipWorldLod(input);
@@ -1569,7 +1699,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     [branch] if (terrainMask > 0.5)
     {
         const float macroNoise = CloudNoise(input.worldPosition.xz * 0.021);
-        const float microNoise = CloudHash(floor(input.worldPosition.xz * 3.2));
+        const float microNoise = CloudHash(int2(floor(input.worldPosition.xz * 3.2)));
         const float terrainCameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
         float terrainDetailWeight = 1.0;
         float distanceMacroVariation = 1.0;
@@ -1598,8 +1728,21 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
         const float terrainHeight = TerrainBiomeHeight(input.color.a);
         const float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
-        const float soilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
-        const float grassWeight = max(0.0, 1.0 - rockWeight - soilWeight);
+        const float originalSoilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
+        const float originalGrassWeight = max(0.0, 1.0 - rockWeight - originalSoilWeight);
+        float soilWeight = originalSoilWeight;
+        float grassWeight = originalGrassWeight;
+        float terrainMesoSignal = 0.5;
+        [branch] if (terrainDistanceMaterialEnabled > 0.5 && TerrainMesoPartitionEnabled())
+        {
+            // 岩石仍完全由坡度／高度決定；只在剩餘權重內重新分配草地與土壤。
+            const float nonRockWeight = max(0.0, 1.0 - rockWeight);
+            const float originalSoilFraction = nonRockWeight > 0.000001 ? saturate(soilWeight / nonRockWeight) : 0.0;
+            terrainMesoSignal = TerrainMesoPartitionSignal(input.worldPosition.xz, macroNoise);
+            const float targetSoilFraction = smoothstep(0.43, 0.70, 1.0 - terrainMesoSignal);
+            soilWeight = nonRockWeight * lerp(originalSoilFraction, targetSoilFraction, 0.62);
+            grassWeight = nonRockWeight - soilWeight;
+        }
         if (input.textureData.x > 0.5)
         {
             // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
@@ -1625,7 +1768,22 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
             const float microVariation=lerp(1.0,lerp(0.94,1.06,microNoise),terrainDetailWeight);
+            const float3 originalTerrainAlbedo = grassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * rockWeight;
             float3 terrainAlbedo = grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight;
+            [branch] if (TerrainMesoPartitionEnabled())
+            {
+                // 真實材質權重可改變，但先守住原本曝光，再以克制的色相區分苔蘚與落葉土。
+                // 舊色偏會在日景把地面推成螢光綠／橘；新的色偏保留群落辨識，同時更接近林下漫射色。
+                const float3 biomeTint = grassWeight * float3(0.88, 1.05, 0.78) + soilWeight * float3(1.16, 0.91, 0.72) + rockWeight;
+                terrainAlbedo *= biomeTint;
+                const float originalLuma = dot(originalTerrainAlbedo, float3(0.2126, 0.7152, 0.0722));
+                const float partitionLuma = dot(terrainAlbedo, float3(0.2126, 0.7152, 0.0722));
+                if (originalLuma > 0.0 && partitionLuma > 0.000001)
+                    terrainAlbedo *= originalLuma / partitionLuma;
+                // 中尺度亮度變化代表樹冠遮蔽、苔蘚與落葉堆積；範圍仍有界且不依賴相機或時間。
+                // 讓遠景在細節貼圖淡出後仍保有可讀層次，避免大片同亮度地表形成規律重複。
+                terrainAlbedo *= lerp(0.84, 1.16, terrainMesoSignal);
+            }
             [branch] if (terrainDecorrelationEnabled)
                 terrainAlbedo = ApplyTerrainChromaVariation(terrainAlbedo, terrainChromaNoise,
                     DecodeTerrainDecorrelation(25u, 0.0, 0.2));
@@ -1637,7 +1795,16 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
-            const float3 terrainTint = grassWeight * float3(0.72, 0.91, 0.63) + soilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
+            const float3 originalTerrainTint = originalGrassWeight * float3(0.72, 0.91, 0.63) + originalSoilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
+            float3 terrainTint = grassWeight * float3(0.76, 0.92, 0.64) + soilWeight * float3(0.90, 0.70, 0.50) + rockWeight * float3(0.76, 0.78, 0.80);
+            [branch] if (TerrainMesoPartitionEnabled())
+            {
+                const float originalLuma = dot(originalTerrainTint, float3(0.2126, 0.7152, 0.0722));
+                const float partitionLuma = dot(terrainTint, float3(0.2126, 0.7152, 0.0722));
+                if (originalLuma > 0.0 && partitionLuma > 0.000001)
+                    terrainTint *= originalLuma / partitionLuma;
+                terrainTint *= lerp(0.84, 1.16, terrainMesoSignal);
+            }
             const float3 decorrelatedTerrainTint = terrainDecorrelationEnabled
                 ? ApplyTerrainChromaVariation(terrainTint, terrainChromaNoise,
                     DecodeTerrainDecorrelation(25u, 0.0, 0.2))
@@ -1653,6 +1820,18 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float skyMask = 1.0 - saturate(input.normal.w);
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
     const float3 skyLightDirection = -normalize(lightDirectionAmbient.xyz);
+    // 水波 band-limit 不依賴 quad helper lane。以目前裝置深度明確重建相鄰像素的
+    // 世界位置，讓三角形邊界、裁切與不同程序的 wave 配置仍得到相同像素足跡。
+    const float2 waterPixelUv = input.position.xy * colorPipeline.zw;
+    const float2 waterViewportMaximum = worldViewport.xy + worldViewport.zw;
+    const float3 waterWorldCenter = ReconstructWorldPosition(waterPixelUv, input.position.z);
+    const float3 waterWorldNeighbourX = ReconstructWorldPosition(
+        min(waterPixelUv + float2(colorPipeline.z, 0.0), waterViewportMaximum), input.position.z);
+    const float3 waterWorldNeighbourY = ReconstructWorldPosition(
+        min(waterPixelUv + float2(0.0, colorPipeline.w), waterViewportMaximum), input.position.z);
+    const float waterWorldFootprint = max(
+        length(waterWorldNeighbourX.xz - waterWorldCenter.xz),
+        length(waterWorldNeighbourY.xz - waterWorldCenter.xz));
     float4 evaluatedOutput=float4(0.0,0.0,0.0,0.0);
     if (skyMask > 0.5)
     {
@@ -1673,7 +1852,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float3 waterBroadWave=DecodeWaterTriple(WaterSurfacePacked(3),float3(.001,0.0,-8.0),float3(8.0,.3,8.0));
     const float3 waterDetailWave=DecodeWaterTriple(WaterSurfacePacked(4),float3(.001,0.0,-16.0),float3(16.0,.2,16.0));
     const float3 waterFoam=DecodeWaterTriple(WaterSurfacePacked(5),float3(0.0,.001,0.0),float3(4.0,8.0,1.0));
-    const float3 waterAlphaNight=DecodeWaterTriple(WaterSurfacePacked(6),float3(0.0,0.0,.05),float3(1.0,1.0,8.0));
+    const float3 waterAlphaNight=DecodeWaterTriple(WaterSurfacePacked(6),float3(0.0,0.0,.005),float3(1.0,1.0,8.0));
     // 10-bit欄位各自解碼後再次建立跨欄不變式，避免量化令smoothstep邊界倒置或相等。
     const float waterReflectance=waterSurfaceEnabled!=0u?waterReflectanceRoughness.x:.0203732;
     const float waterMinimumRoughness=waterSurfaceEnabled!=0u?waterReflectanceRoughness.y:.045;
@@ -1696,6 +1875,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     float opticalPathLength = 1.6;
     float shoreDepth = 1.6;
     float waterDepthValid = 0.0;
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 10
+    // 因果診斷：保存雜訊之前的岸泡與導數，不更動正式計算。
+    float waterDiagnosticShore = 0.0;
+    float waterDiagnosticDerivative = 0.0;
+    // D 必須在岸泡分支外估算，避免把分支遮罩誤判為雜訊不連續。
+    const float2 diagnosticFoamFlow = input.worldPosition.xz * 0.42 + float2(fogEndEnabled.w * 0.07, -fogEndEnabled.w * 0.04);
+    const float diagnosticFoamWave = 0.5 + 0.5 * sin(input.worldPosition.z * 1.35 + input.worldPosition.x * 0.31 + fogEndEnabled.w * 1.8);
+    const float waterDiagnosticFoamCoverage = smoothstep(0.34, 0.76, CloudNoise(diagnosticFoamFlow) * 0.72 + diagnosticFoamWave * 0.28);
+#endif
     float waterOutputAlpha = input.color.a;
     const float2 waterScreenUv = input.position.xy * colorPipeline.zw;
     [branch] if (waterMask > 0.5 && worldViewport.z > 0.0 && worldViewport.w > 0.0)
@@ -1719,11 +1907,39 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 // 新路徑用垂直岸深避免斜視放大，導數寬度讓岸線跨解析度保持連續；停用時維持舊公式。
                 // 深度斷層不可把導數放大成整片泡沫，只保留窄帶像素抗鋸齒。
                 const float shoreDerivativeMaximum = max(0.002, min(0.08, (waterFoamEndDepth - waterFoamStartDepth) * 0.25));
-                const float shoreDerivative = clamp(fwidth(shoreDepth) * 1.5, 0.002, shoreDerivativeMaximum);
+                // Use explicit neighbouring depth samples instead of fwidth inside the
+                // depth-valid branch. Invalid neighbours fall back to the current shore
+                // depth, keeping silhouettes deterministic without widening foam.
+                const float2 neighbourUvX = min(screenUv + float2(colorPipeline.z, 0.0), viewportMaximum);
+                const float2 neighbourUvY = min(screenUv + float2(0.0, colorPipeline.w), viewportMaximum);
+                const float neighbourOpaqueDepthX = sceneDepthTexture.SampleLevel(screenPointClampSampler, neighbourUvX, 0.0);
+                const float neighbourOpaqueDepthY = sceneDepthTexture.SampleLevel(screenPointClampSampler, neighbourUvY, 0.0);
+                float neighbourShoreDepthX = shoreDepth;
+                float neighbourShoreDepthY = shoreDepth;
+                if (neighbourOpaqueDepthX > 0.0 && neighbourOpaqueDepthX < 0.999999)
+                {
+                    const float3 neighbourBottomX = ReconstructWorldPosition(neighbourUvX, neighbourOpaqueDepthX);
+                    const float neighbourThicknessX = distance(neighbourBottomX, input.worldPosition);
+                    if (neighbourThicknessX >= 0.0 && neighbourThicknessX < 100000.0)
+                        neighbourShoreDepthX = clamp(max(0.0, input.worldPosition.y - neighbourBottomX.y), 0.0, 8.0);
+                }
+                if (neighbourOpaqueDepthY > 0.0 && neighbourOpaqueDepthY < 0.999999)
+                {
+                    const float3 neighbourBottomY = ReconstructWorldPosition(neighbourUvY, neighbourOpaqueDepthY);
+                    const float neighbourThicknessY = distance(neighbourBottomY, input.worldPosition);
+                    if (neighbourThicknessY >= 0.0 && neighbourThicknessY < 100000.0)
+                        neighbourShoreDepthY = clamp(max(0.0, input.worldPosition.y - neighbourBottomY.y), 0.0, 8.0);
+                }
+                const float shoreFiniteDifference = max(abs(neighbourShoreDepthX - shoreDepth), abs(neighbourShoreDepthY - shoreDepth));
+                const float shoreDerivative = clamp(shoreFiniteDifference * 1.5, 0.002, shoreDerivativeMaximum);
                 const float shore = waterSurfaceEnabled != 0u
                     ? 1.0 - smoothstep(waterFoamStartDepth - shoreDerivative, waterFoamEndDepth + shoreDerivative, shoreDepth)
                     : 1.0 - smoothstep(waterFoamStartDepth, waterFoamEndDepth, waterThickness);
                 const float shoreNoise = lerp(0.62, 1.0, CloudNoise(input.worldPosition.xz * 0.58 + fogEndEnabled.ww * float2(0.035, -0.021)));
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 10
+                waterDiagnosticShore = shore;
+                waterDiagnosticDerivative = shoreDerivative / max(0.002, shoreDerivativeMaximum);
+#endif
                 foamMask = saturate(shore * shoreNoise);
                 waterOutputAlpha=lerp(waterShallowAlpha,waterDeepAlpha,smoothstep(waterSurfaceEnabled!=0u?waterFoamStartDepth:.04,4.5,waterSurfaceEnabled!=0u?shoreDepth:waterThickness));
             }
@@ -1741,10 +1957,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
-            const float2 broadRipple=float2(sin(input.worldPosition.z*waterBroadWaveScale+input.worldPosition.x*waterBroadWaveScale*.29+fogEndEnabled.w*waterBroadWaveSpeed),cos(input.worldPosition.x*waterBroadWaveScale*.82-input.worldPosition.z*waterBroadWaveScale*.42-fogEndEnabled.w*waterBroadWaveSpeed*.85));
-            const float2 detailRipple=float2(sin(input.worldPosition.z*waterDetailWaveScale-input.worldPosition.x*waterDetailWaveScale*.37+fogEndEnabled.w*waterDetailWaveSpeed),cos(input.worldPosition.x*waterDetailWaveScale*.82+input.worldPosition.z*waterDetailWaveScale*.33-fogEndEnabled.w*waterDetailWaveSpeed*.87));
-            const float2 waterRipple=broadRipple*waterBroadWaveStrength+detailRipple*waterDetailWaveStrength;
-            normal=normalize(normal+float3(waterRipple.x,0.0,waterRipple.y)*lerp(1.0,.45,foamMask));
+            const float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, float2(0.28, 0.96));
+            const float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.8, -0.6));
+            const float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
+            const float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);
+            const float2 heightGradient = broadWave.yz * broadBandLimit + detailWave.yz * detailBandLimit;
+            normal = normalize(normal + float3(-heightGradient.x, 0.0, -heightGradient.y) * lerp(1.0, .45, foamMask));
         }
     }
 
@@ -1752,7 +1970,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     // 材質法線完成後才估算螢幕空間曲率；Skin 為 nointerpolation 旗標，分支在三角形內一致。
     [branch] if(skinMask>0.5&&skinSubsurfaceStrength>0.0)skinCurvature=length(ddx(normal))+length(ddy(normal));
     const float3 lightDirection = -normalize(lightDirectionAmbient.xyz);
-    const float3 viewDirection = normalize(cameraFogStart.xyz - input.worldPosition);
+    const float3 viewDirection = waterMaterialMask > 0.5
+        ? WaterSurfaceViewDirection(input.worldPosition, cameraFogStart.xyz, viewProjection)
+        : normalize(cameraFogStart.xyz - input.worldPosition);
     roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
     // SSAO 僅調制間接環境光，避免把太陽、點光、自發光與水面反射一起壓暗。
     const float2 screenOcclusion = colorPipeline.y > 0.5 && waterMask < 0.5
@@ -1795,8 +2015,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float foliageBackLight = saturate(dot(-normal, lightDirection));
         const float foliageForwardScatter = saturate(dot(viewDirection, lightDirection));
         const float foliageTransmission = foliageBackLight * foliageBackLight * (0.45 + 0.55 * foliageForwardScatter);
+        const float foliagePhysicalTransmission = FoliagePhysicalTransmission(dot(normal, lightDirection), dot(viewDirection, lightDirection));
+        const float foliageSuppressionBlend = FoliageForwardScatterSuppressionBlend(dot(normal, lightDirection), dot(viewDirection, lightDirection), lightDirection.y);
+        const float foliageTransmissionTerm = lerp(foliageTransmission, min(foliageTransmission, foliagePhysicalTransmission), foliageSuppressionBlend) * 0.48;
+        const float3 foliageTransmissionColor = FoliageNeutralizedTransmissionColor(baseColor, foliageSuppressionBlend);
         const float foliageShadow = CascadedDirectionalShadow(input, normal, lightDirection);
-        shaded += baseColor * lightColorIntensity.rgb * lightColorIntensity.w * (foliageWrappedDiffuse * 0.22 + foliageTransmission * 0.48) * foliageShadow*cloudShadow;
+        shaded += lightColorIntensity.rgb * lightColorIntensity.w * (baseColor * foliageWrappedDiffuse * 0.22 + foliageTransmissionColor * foliageTransmissionTerm) * foliageShadow*cloudShadow;
     }
 
     // 透明與水面保守遍歷全部 canonical lights；不透明 tile 溢位時也回退全部燈，絕不截斷。
@@ -1839,6 +2063,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     }
 
     float3 aerialOwnedSceneContribution = 0.0;
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 6
+    // 分量暫存僅存在於診斷變體，不改正式水體數學。
+    float3 waterDiagnosticAbsorbed = 0.0;
+    float3 waterDiagnosticReflected = 0.0;
+    float3 waterDiagnosticTransmission = 0.0;
+    float waterDiagnosticFoam = 0.0;
+#endif
     [branch] if (waterCompositeMask > 0.5)
     {
         const float waterViewCosine = saturate(dot(normal, viewDirection));
@@ -1849,7 +2080,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float3 legacyAbsorption=float3(.42,.16,.08);
         const float3 legacyDeepColor=float3(.012,.055,.070);
         const float3 waterTransmission=exp(-(waterSurfaceEnabled!=0u?waterAbsorption:legacyAbsorption)*waterPathLength);
-        const float3 deepWaterColor=lerp(waterSurfaceEnabled!=0u?waterDeepColor:legacyDeepColor,baseColor,.24);
+        // 深水色是懸浮微粒的散射，不是自發光。用天空漫射與可見直射光
+        // 驅動體積源項，夜間不再維持與白天相同的青色亮度。
+        const float3 waterVolumeIlluminance = max(float3(0.0,0.0,0.0),
+            EvaluateEnvironmentDiffuse(normal, skyLightDirection)
+            + lightColorIntensity.rgb * lightColorIntensity.w
+              * saturate(dot(normal, lightDirection)) * directionalVisibility);
+        const float3 deepWaterColor = waterSurfaceEnabled != 0u
+            ? WaterLitScatter3D(waterDeepColor, baseColor, waterVolumeIlluminance)
+            : lerp(legacyDeepColor, baseColor, .24);
         float3 transmittedScene = shaded;
         [branch] if (waterSceneColorEnabled > 0.5 && (waterDepthValid > 0.5 || waterSurfaceEnabled != 0u))
         {
@@ -1868,7 +2107,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
                               * lerp(1.0, 0.55, waterReflectionRoughness);
         const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
-        reflectedWater=lerp(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
+        reflectedWater=WaterReflectionFallback3D(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
         // 反射只取得 Fresnel 能量，其餘能量保留給透射，避免日夜切換時雙重增亮。
         if(waterSurfaceEnabled!=0u)
             reflectedWater=min(reflectedWater,max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*4.0);
@@ -1876,6 +2115,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             ? absorbedWater*(1.0-fresnel)+reflectedWater*fresnel
             : lerp(absorbedWater,reflectedWater,fresnel);
         aerialOwnedSceneContribution *= waterTransmission * (1.0 - fresnel);
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 6
+        waterDiagnosticAbsorbed = absorbedWater * (1.0 - fresnel);
+        waterDiagnosticReflected = reflectedWater * fresnel;
+        waterDiagnosticTransmission = waterTransmission;
+#endif
         // 水體側壁仍屬透明體積邊界；保留背景透射，避免掠射 Fresnel 將箱型水網格變成不透明鏡牆。
         const float waterLocalContribution = lerp(0.35, 1.0, waterMask);
         const float3 sideTransmittedScene = waterSceneColorEnabled > 0.5
@@ -1892,10 +2136,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float2 foamFlow = input.worldPosition.xz * 0.42 + float2(fogEndEnabled.w * 0.07, -fogEndEnabled.w * 0.04);
             const float foamNoise = CloudNoise(foamFlow);
             const float foamWave = 0.5 + 0.5 * sin(input.worldPosition.z * 1.35 + input.worldPosition.x * 0.31 + fogEndEnabled.w * 1.8);
-            const float foamCoverage = smoothstep(0.34, 0.76, foamNoise * 0.72 + foamWave * 0.28);
+            const float foamCoverage = waterSurfaceEnabled != 0u
+                ? WaterFoamCoverage3D(input.worldPosition.xz, fogEndEnabled.w)
+                : smoothstep(0.34, 0.76, foamNoise * 0.72 + foamWave * 0.28);
             const float3 foamColor = baseColor * lerp(0.58, 0.96, foamCoverage)
                                    + EvaluateEnvironmentDiffuse(normal, skyLightDirection) * 0.055;
             const float foamBlend=foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage);
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 6
+            waterDiagnosticFoam = foamBlend;
+#endif
             waterComposite=lerp(waterComposite,foamColor,foamBlend);
             aerialOwnedSceneContribution *= 1.0 - foamBlend;
         }
@@ -1960,6 +2209,22 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     aerialOutput = aerialTransmittance.xxx;
 #elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 5
     aerialOutput = aerialInscattering;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 6
+    aerialOutput = waterDiagnosticAbsorbed;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 7
+    aerialOutput = waterDiagnosticReflected;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 8
+    aerialOutput = waterDiagnosticTransmission;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 9
+    aerialOutput = waterDiagnosticFoam.xxx;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 10
+    aerialOutput = waterDepthValid.xxx;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 11
+    aerialOutput = waterDiagnosticShore.xxx;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 12
+    aerialOutput = waterDiagnosticDerivative.xxx;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 13
+    aerialOutput = waterDiagnosticFoamCoverage.xxx;
 #else
     [branch] if(screenSpaceReflectionReserved.x > 0.5 && waterMaterialMask > 0.5)
     {

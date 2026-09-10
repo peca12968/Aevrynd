@@ -65,9 +65,310 @@ bool ValidateLightingRoutes(
   }
   return true;
 }
+
+float Rec709(const Color &value) {
+  return .2126f * value.r + .7152f * value.g + .0722f * value.b;
+}
+
+float Chroma(const Color &value) {
+  return (std::max)({value.r, value.g, value.b}) -
+         (std::min)({value.r, value.g, value.b});
+}
+
+bool TreeDescriptorDistributionContract(
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
+  std::array<unsigned, 3> islandByBand{}, smallByBand{}, deadByBand{};
+  unsigned resolvedTrees{};
+  for (const auto &descriptor : descriptors) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree || descriptor.lodGroup >= 3)
+      continue;
+    auto *counts = descriptor.meshAsset == "poly-haven/island_tree_01/cooked-lod"
+                       ? &islandByBand
+                   : descriptor.meshAsset == "poly-haven/tree_small_02/cooked-lod"
+                       ? &smallByBand
+                   : descriptor.meshAsset == "poly-haven/dead_tree_trunk_02/cooked-lod"
+                       ? &deadByBand
+                       : nullptr;
+    if (!counts)
+      return false;
+    ++resolvedTrees;
+    ++(*counts)[descriptor.lodGroup];
+  }
+  return resolvedTrees == 240 &&
+         islandByBand == std::array<unsigned, 3>{83, 59, 18} &&
+         smallByBand == std::array<unsigned, 3>{31, 22, 7} &&
+         deadByBand == std::array<unsigned, 3>{10, 7, 3};
+}
+
+template <std::size_t Size>
+std::uint64_t InventoryHash(const std::array<std::string_view, Size> &values) {
+  std::uint64_t hash = 14695981039346656037ull;
+  for (const auto value : values)
+    for (const char character : value) {
+      hash ^= static_cast<unsigned char>(character);
+      hash *= 1099511628211ull;
+    }
+  return hash;
+}
+
+bool ValidateGrassPalette(const std::array<Color, 3> &candidate,
+                          const std::array<Color, 3> &baseline) {
+  for (std::size_t index = 0; index < candidate.size(); ++index) {
+    const float chromaRatio = Chroma(candidate[index]) / Chroma(baseline[index]);
+    if (chromaRatio < .85f || chromaRatio > .9f ||
+        std::abs(Rec709(candidate[index]) - Rec709(baseline[index])) > 2e-6f ||
+        candidate[index].g <= candidate[index].r ||
+        candidate[index].g <= candidate[index].b || Chroma(candidate[index]) < .2f)
+      return false;
+  }
+  if (!(Rec709(candidate[0]) < Rec709(candidate[1]) &&
+        Rec709(candidate[1]) < Rec709(candidate[2])))
+    return false;
+  for (std::size_t left = 0; left < candidate.size(); ++left)
+    for (std::size_t right = left + 1; right < candidate.size(); ++right) {
+      const float dr = candidate[left].r - candidate[right].r;
+      const float dg = candidate[left].g - candidate[right].g;
+      const float db = candidate[left].b - candidate[right].b;
+      if (dr * dr + dg * dg + db * db < .001f) return false;
+    }
+  return true;
+}
+
+bool ReadableForestWater(const WaterSurfaceSettings3D &value) {
+  return value.minimumRoughness >= .045f && value.minimumRoughness <= .08f &&
+         value.maximumRoughness >= .14f && value.maximumRoughness <= .18f &&
+         value.broadWaveScale >= .05f && value.broadWaveStrength >= .07f &&
+         value.broadWaveStrength <= .10f && value.detailWaveScale >= .70f &&
+         value.detailWaveScale <= 1.f && value.detailWaveStrength >= .035f &&
+         value.detailWaveStrength <= .045f &&
+         value.broadWaveStrength > value.detailWaveStrength * 2.f &&
+         value.shallowAlpha >= .62f && value.shallowAlpha <= .72f &&
+         value.deepAlpha >= .86f && value.deepAlpha <= .92f &&
+         value.deepAlpha - value.shallowAlpha >= .18f &&
+         value.maximumNightRadiance >= .018f;
+}
+
+bool DuskVegetationReadable(const ShowcaseLightingState3D &value) {
+  const float sunLuminance = .2126f * value.sun.color.r +
+                             .7152f * value.sun.color.g +
+                             .0722f * value.sun.color.b;
+  return value.profile == ShowcaseLightingProfile3D::Dusk &&
+         value.sun.ambient >= .18f && value.sun.ambient < .24f &&
+         value.exposureEv >= .07f && value.exposureEv <= .09f &&
+         value.sun.ambient * sunLuminance >= .13f;
+}
+
+bool NightForestReadable(const ShowcaseLightingState3D &state,
+                         const EnvironmentLightingBlendSettings3D &environment,
+                         const PhaseRadianceProfile3D &radiance) {
+  const float skyLuminance = .2126f * state.sky.r + .7152f * state.sky.g +
+                             .0722f * state.sky.b;
+  return state.profile == ShowcaseLightingProfile3D::Night &&
+         state.exposureEv <= -.10f && state.sun.ambient >= .108f &&
+         state.sun.ambient <= .11f && state.sun.color.b > state.sun.color.g &&
+         state.sun.color.g > state.sun.color.r && skyLuminance >= .08f &&
+         environment.diffuseIntensity >= .325f &&
+         environment.diffuseIntensity <= .34f &&
+         environment.iblDiffuseWeight >= .14f &&
+         environment.iblDiffuseWeight <= .20f &&
+         environment.objectFillIntensity >= .57f &&
+         environment.objectFillIntensity <= .60f &&
+         radiance.skyIntensity >= .22f && radiance.skyIntensity <= .28f &&
+         radiance.analyticDiffuseIntensity >= .22f &&
+         radiance.analyticDiffuseIntensity <= .28f &&
+         radiance.groundBounce.z > radiance.groundBounce.x;
+}
+
+bool NightCabinHighlightsBalanced(const std::vector<PointLight3D> &dusk,
+                                  const std::vector<PointLight3D> &night) {
+  if (dusk.size() != 3 || night.size() != dusk.size())
+    return false;
+  float duskIntensity = 0.f, nightIntensity = 0.f;
+  for (std::size_t index = 0; index < dusk.size(); ++index) {
+    if (night[index].position.x != dusk[index].position.x ||
+        night[index].position.y != dusk[index].position.y ||
+        night[index].position.z != dusk[index].position.z ||
+        night[index].radius != dusk[index].radius ||
+        night[index].color.r != dusk[index].color.r ||
+        night[index].color.g != dusk[index].color.g ||
+        night[index].color.b != dusk[index].color.b)
+      return false;
+    duskIntensity += dusk[index].intensity;
+    nightIntensity += night[index].intensity;
+  }
+  return nightIntensity >= duskIntensity * 2.1f &&
+         nightIntensity <= duskIntensity * 2.4f;
+}
+
+bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
+                            const ShowcaseLightingState3D &night) {
+  const float totalNightEv = night.exposureEv + tone.nightExposureEv;
+  return tone.enabled && tone.dayExposureEv == .2f &&
+         tone.duskExposureEv == .6f && tone.nightExposureEv >= 1.50f &&
+         tone.nightExposureEv <= 1.52f && totalNightEv >= 1.35f &&
+         totalNightEv <= 1.37f && tone.shadowLift >= .028f &&
+         tone.shadowLift <= .034f && tone.toeStrength >= .30f &&
+         tone.toeStrength <= .36f && tone.shoulderStrength >= 1.08f &&
+         tone.shoulderStrength <= 1.18f;
+}
 } // namespace
 
 int main() {
+  constexpr auto terrainTint = ShowcaseForestTerrainTint3D();
+  if (terrainTint.g < terrainTint.r + .1f ||
+      terrainTint.g < terrainTint.b || terrainTint.r > .72f ||
+      terrainTint.a != 1.f)
+    return 63;
+  const std::array<ShowcaseSceneDescriptor3D, 1> ecologyTrees{{
+      {ShowcaseSceneKind3D::Tree, {0, 0, 0}, {12, 10, 10}}}};
+  const auto canopyCenter =
+      SampleShowcaseTerrainEcologyTint3D({0, 0, 0}, ecologyTrees);
+  const auto canopyFar =
+      SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, ecologyTrees);
+  const auto wetBank =
+      SampleShowcaseTerrainEcologyTint3D({4, 0, 0}, {});
+  const auto dryGround =
+      SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, {});
+  const auto invalidEcology = SampleShowcaseTerrainEcologyTint3D(
+      {(std::numeric_limits<float>::quiet_NaN)(), 0, 0}, ecologyTrees);
+  if (canopyCenter.canopy < .99f || canopyFar.canopy != 0.f ||
+      Rec709(canopyCenter.tint) >= Rec709(canopyFar.tint) ||
+      wetBank.riverMoisture < .9f || dryGround.riverMoisture != 0.f ||
+      Rec709(wetBank.tint) >= Rec709(dryGround.tint) ||
+      invalidEcology.tint.r != 1.f || invalidEcology.tint.g != 1.f ||
+      invalidEcology.tint.b != 1.f || invalidEcology.tint.a != 1.f ||
+      invalidEcology.canopy != 0.f || invalidEcology.riverMoisture != 0.f)
+    return 77;
+  const ShowcaseSceneDescriptor3D fallenLog{
+      ShowcaseSceneKind3D::Tree, {40, 0, 40}, {8, 6, 7}, .4f, 0, true,
+      "poly-haven/dead_tree_trunk_02/cooked-lod",
+      "poly-haven/dead_tree_trunk_02/cooked-pbr"};
+  const std::array<ShowcaseSceneDescriptor3D, 1> fallenLogs{fallenLog};
+  const auto logPoint = [&](float localX, float localZ) {
+    const float cosine = std::cos(fallenLog.yaw);
+    const float sine = std::sin(fallenLog.yaw);
+    return Vec3{fallenLog.position.x + cosine * localX - sine * localZ, 0,
+                fallenLog.position.z + sine * localX + cosine * localZ};
+  };
+  const auto disturbanceCenter = SampleShowcaseTerrainDisturbance3D(
+      fallenLog.position, fallenLogs);
+  const auto disturbanceRim = SampleShowcaseTerrainDisturbance3D(
+      logPoint(4.4f * .72f, 0), fallenLogs);
+  const auto disturbanceEdge = SampleShowcaseTerrainDisturbance3D(
+      logPoint(4.4f, 0), fallenLogs);
+  const auto disturbanceRepeated = SampleShowcaseTerrainDisturbance3D(
+      fallenLog.position, fallenLogs);
+  auto farLog = fallenLog;
+  farLog.lodGroup = 1;
+  const std::array<ShowcaseSceneDescriptor3D, 1> farLogs{farLog};
+  auto protectedLog = fallenLog;
+  protectedLog.position = {-16, 0, 8};
+  const std::array<ShowcaseSceneDescriptor3D, 1> protectedLogs{protectedLog};
+  const auto protectedDisturbance = SampleShowcaseTerrainDisturbance3D(
+      protectedLog.position, protectedLogs);
+  const auto farBandDisturbance = SampleShowcaseTerrainDisturbance3D(
+      farLog.position, farLogs);
+  const auto invalidDisturbance = SampleShowcaseTerrainDisturbance3D(
+      {(std::numeric_limits<float>::quiet_NaN)(), 0, 0}, fallenLogs);
+  if (disturbanceCenter.weight < .99f ||
+      disturbanceCenter.heightDelta < -.0551f ||
+      disturbanceCenter.heightDelta > -.0549f ||
+      disturbanceCenter.tint.r < .699f || disturbanceCenter.tint.r > .701f ||
+      disturbanceCenter.tint.g < .619f || disturbanceCenter.tint.g > .621f ||
+      disturbanceCenter.tint.b < .479f || disturbanceCenter.tint.b > .481f ||
+      disturbanceRim.heightDelta <= 0.f || disturbanceRim.heightDelta > .025f ||
+      disturbanceEdge.weight != 0.f || disturbanceEdge.heightDelta != 0.f ||
+      disturbanceCenter.weight != disturbanceRepeated.weight ||
+      disturbanceCenter.heightDelta != disturbanceRepeated.heightDelta ||
+      protectedDisturbance.weight != 0.f || farBandDisturbance.weight != 0.f ||
+      invalidDisturbance.weight != 0.f || invalidDisturbance.heightDelta != 0.f)
+    return 84;
+  auto wrongAsset = fallenLog;
+  wrongAsset.meshAsset = "poly-haven/island_tree_01/cooked-lod";
+  auto invalidScale = fallenLog;
+  invalidScale.scale.x = (std::numeric_limits<float>::infinity)();
+  const std::array<ShowcaseSceneDescriptor3D, 2> rejectedLogs{
+      wrongAsset, invalidScale};
+  const auto rejectedDisturbance = SampleShowcaseTerrainDisturbance3D(
+      fallenLog.position, rejectedLogs);
+  if (rejectedDisturbance.weight != 0.f ||
+      rejectedDisturbance.tint.r != 1.f || rejectedDisturbance.tint.g != 1.f ||
+      rejectedDisturbance.tint.b != 1.f || rejectedDisturbance.tint.a != 1.f)
+    return 85;
+  static_assert(ShowcaseForestTerrainTextureScale3D() >= .45f &&
+                ShowcaseForestTerrainTextureScale3D() <= .55f);
+  constexpr auto bankGrass =
+      ShowcaseForestGrassTint3D("poly-haven/stony_dirt_path/cooked-pbr");
+  constexpr auto groveGrass =
+      ShowcaseForestGrassTint3D("poly-haven/forest_ground_04/cooked-pbr");
+  constexpr auto meadowGrass =
+      ShowcaseForestGrassTint3D("ambientcg/Ground108/cooked-pbr");
+  const std::array<Color, 3> grassPalette{bankGrass, groveGrass, meadowGrass};
+  const std::array<Color, 3> originalGrassPalette{
+      Color{.29f, .43f, .18f, 1.f}, Color{.26f, .46f, .17f, 1.f},
+      Color{.36f, .58f, .22f, 1.f}};
+  if (!ValidateGrassPalette(grassPalette, originalGrassPalette)) return 68;
+  auto grayGrassPalette = grassPalette;
+  for (auto &value : grayGrassPalette)
+    value.r = value.g = value.b = Rec709(value);
+  auto brightGrassPalette = grassPalette;
+  for (auto &value : brightGrassPalette) {
+    value.r += .03f;
+    value.g += .03f;
+    value.b += .03f;
+  }
+  auto mergedGrassPalette = grassPalette;
+  mergedGrassPalette[1] = mergedGrassPalette[0];
+  if (ValidateGrassPalette(originalGrassPalette, originalGrassPalette) ||
+      ValidateGrassPalette(grayGrassPalette, originalGrassPalette) ||
+      ValidateGrassPalette(brightGrassPalette, originalGrassPalette) ||
+      ValidateGrassPalette(mergedGrassPalette, originalGrassPalette))
+    return 69;
+  std::cout << "grassTintYChroma=";
+  for (std::size_t index = 0; index < grassPalette.size(); ++index) {
+    if (index) std::cout << ',';
+    std::cout << Rec709(grassPalette[index]) << '/'
+              << Chroma(grassPalette[index]) << '/'
+              << Chroma(grassPalette[index]) / Chroma(originalGrassPalette[index]);
+  }
+  std::cout << " hostilePalette=REJECTED\n";
+  static_assert(ShowcaseForestGrassMaterialAsset3D(
+                    "poly-haven/stony_dirt_path/cooked-pbr") ==
+                    "stony_dirt_path" &&
+                ShowcaseForestGrassMaterialAsset3D(
+                    "poly-haven/forest_ground_04/cooked-pbr") ==
+                    "forest_ground_04" &&
+                ShowcaseForestGrassMaterialAsset3D(
+                    "ambientcg/Ground108/cooked-pbr") == "Ground108" &&
+                ShowcaseForestGrassMaterialAsset3D("invalid").empty());
+  Material3D texturedGrass{};
+  texturedGrass.textures = MaterialTextureSetHandle3D{17};
+  texturedGrass.useUv = true;
+  texturedGrass.castsShadow = true;
+  const auto runtimeGrass = ShowcaseForestGrassMaterial3D(
+      texturedGrass, "poly-haven/forest_ground_04/cooked-pbr", false);
+  if (runtimeGrass.textures || runtimeGrass.useUv || runtimeGrass.castsShadow ||
+      runtimeGrass.materialClass != MaterialClass3D::Foliage ||
+      !runtimeGrass.doubleSided || runtimeGrass.surface.metallic != 0.f ||
+      runtimeGrass.surface.emissive != 0.f ||
+      runtimeGrass.surface.roughness < .88f)
+    return 67;
+  Camera3D clippedGod{{0,10,-15},{0,1,0},{0,1,0},{}};
+  clippedGod.projection.mode=ProjectionMode::Orthographic;
+  clippedGod.projection.orthographicHeight=36.f;
+  Camera3D coveredGod{{0,32,-30},{0,0,0},{0,1,0},{}};
+  coveredGod.projection.mode=ProjectionMode::Orthographic;
+  coveredGod.projection.orthographicHeight=28.f;
+  if(GameplayGodTerrainFrameCovered3D(clippedGod)||
+     !GameplayGodTerrainFrameCovered3D(coveredGod))return 65;
+  constexpr auto treeLod = ShowcaseTreeLodPolicies3D();
+  constexpr auto opaqueLod = ShowcaseOpaqueLodPolicies3D();
+  if (treeLod[0].switchDistance != 8.f ||
+      treeLod[1].switchDistance != 20.f ||
+      treeLod[0].transitionWidth != 2.f ||
+      treeLod[1].transitionWidth != 4.f ||
+      treeLod[1].switchDistance >= opaqueLod[1].switchDistance)
+    return 62;
   Mesh3D surfaceTerrain{};
   surfaceTerrain.vertices = {
       {-4.f, 1.f, 6.f, 0x01020304u, 0x00112233u, -.34f, .51f},
@@ -97,11 +398,41 @@ int main() {
     return hash;
   };
   const auto beforeTerrainHash = invariantHash(surfaceTerrain);
+  // 外環幾何 gate：原格點完全保留、索引共用、全部新面在遊戲區之外。
+  Mesh3D apron;
+  for(unsigned z=0;z<129;++z)for(unsigned x=0;x<129;++x){
+    const float px=-256.f+float(x)*4.f,pz=-256.f+float(z)*4.f;
+    apron.vertices.push_back({px,.01f*px+.02f*pz,pz,PackNormalSnorm8(Normalize(Vec3{-.01f,1,-.02f})),0xff778899u,px*.085f,pz*.085f});
+  }
+  const auto originalApron=apron;
+  auto repeatedApron=apron;
+  if(!AppendShowcaseTerrainApron3D(apron)||!AppendShowcaseTerrainApron3D(repeatedApron)||
+      apron.vertices.size()!=129u*129u+2560u||apron.indices.size()!=15360u||
+      invariantHash(apron)!=invariantHash(repeatedApron))return 40;
+  for(unsigned i=0;i<129u*129u;++i){const auto& a=apron.vertices[i];const auto& b=originalApron.vertices[i];
+    if(a.x!=b.x||a.y!=b.y||a.z!=b.z||a.normal!=b.normal||a.color!=b.color||a.u!=b.u||a.v!=b.v)return 41;
+  }
+  for(std::size_t i=0;i<apron.indices.size();i+=3){
+    const auto& a=apron.vertices[apron.indices[i]];const auto& b=apron.vertices[apron.indices[i+1]];const auto& c=apron.vertices[apron.indices[i+2]];
+    const float normalY=(b.z-a.z)*(c.x-a.x)-(b.x-a.x)*(c.z-a.z);
+    if(!(normalY>0)||!(std::abs((a.x+b.x+c.x)/3.f)>=256.f||std::abs((a.z+b.z+c.z)/3.f)>=256.f))return 42;
+  }
+  if(AppendShowcaseTerrainApron3D(apron))return 43;
+  for(std::size_t i=129u*129u;i<apron.vertices.size();++i){const auto& v=apron.vertices[i];
+    if(!std::isfinite(v.y)||v.normal!=originalApron.vertices[0].normal||v.color!=0xff778899u||
+        v.u!=v.x*.085f||v.v!=v.z*.085f||std::abs(v.x)>1024.f||std::abs(v.z)>1024.f)return 44;
+  }
+  // 正式河岸細分後會多出內部頂點；只要原世界邊界完整，外環仍必須建立。
+  auto refinedApron=originalApron;
+  refinedApron.vertices.push_back({.5f,.25f,.5f,PackNormalSnorm8({0,1,0}),0xff334455u,.1f,.2f});
+  if(!AppendShowcaseTerrainApron3D(refinedApron)||
+      refinedApron.vertices.size()!=129u*129u+1u+2560u||
+      refinedApron.indices.size()!=15360u)return 64;
   const RenderObjectIdentity3D terrainIdentity{{0x4a17u, 1u}, 1u,
                                                 {0x4a17u, 0x100u}, true, false};
   const auto beforeTerrainIdentity = terrainIdentity;
-  PrepareShowcaseSurfaceTerrainMesh3D(surfaceTerrain);
-  if (surfaceTerrain.vertices.size() != beforeTerrainVertices.size() ||
+  if (PrepareShowcaseSurfaceTerrainMesh3D(surfaceTerrain) ||
+      surfaceTerrain.vertices.size() != beforeTerrainVertices.size() ||
       surfaceTerrain.indices != beforeTerrainIndices ||
       invariantHash(surfaceTerrain) != beforeTerrainHash ||
       terrainIdentity != beforeTerrainIdentity)
@@ -110,21 +441,105 @@ int main() {
     const auto &before = beforeTerrainVertices[index];
     const auto &after = surfaceTerrain.vertices[index];
     if (after.x != before.x || after.y != before.y || after.z != before.z ||
-        after.normal != before.normal ||
-        (after.color & 0x00ffffffu) != (before.color & 0x00ffffffu) ||
-        (after.color >> 24) != 0xffu || after.u != before.u ||
+        after.normal != before.normal || after.color != before.color ||
+        after.u != before.u ||
         after.v != before.v)
       return 34;
   }
 
   GameplayShowcaseEnvironment3D first, second, differentSeed;
-  if (first.Initialize(0) || !first.Initialize(0x4a17u) ||
-      !second.Initialize(0x4a17u) || !differentSeed.Initialize(0x4a18u))
+  const bool invalidSeedAccepted = first.Initialize(0);
+  const bool firstBuilt = first.Initialize(0x4a17u);
+  const bool secondBuilt = second.Initialize(0x4a17u);
+  const bool differentBuilt = differentSeed.Initialize(0x4a18u);
+  if (invalidSeedAccepted || !firstBuilt || !secondBuilt || !differentBuilt) {
+    const auto &failedLand = firstBuilt ? differentSeed.LandReceipt() : first.LandReceipt();
+    std::cerr << "environment initialization invalid=" << invalidSeedAccepted
+              << " first=" << firstBuilt << " repeated=" << secondBuilt
+              << " different=" << differentBuilt << " land=" << failedLand.placements
+              << " failure=" << failedLand.failureKind << '/' << failedLand.failureBand << '/' << failedLand.failureItem
+              << " attempts=" << failedLand.attemptedCandidates << '\n';
     return 1;
-
+  }
+  if (!TreeDescriptorDistributionContract(first.Descriptors()))
+    return 78;
+  auto collapsedTreeDescriptors = first.Descriptors();
+  for (auto &descriptor : collapsedTreeDescriptors)
+    if (descriptor.meshAsset == "poly-haven/tree_small_02/cooked-lod") {
+      descriptor.meshAsset = "poly-haven/island_tree_01/cooked-lod";
+      descriptor.materialAsset = "poly-haven/island_tree_01/cooked-pbr";
+    }
+  if (TreeDescriptorDistributionContract(collapsedTreeDescriptors))
+    return 79;
+  auto unresolvedTreeDescriptors = first.Descriptors();
+  const auto treeToBreak = std::ranges::find_if(
+      unresolvedTreeDescriptors, [](const auto &descriptor) {
+        return descriptor.meshAsset == "poly-haven/tree_small_02/cooked-lod";
+      });
+  if (treeToBreak == unresolvedTreeDescriptors.end())
+    return 82;
+  treeToBreak->meshAsset = "poly-haven/tree_small_03/cooked-lod";
+  if (TreeDescriptorDistributionContract(unresolvedTreeDescriptors))
+    return 83;
   const auto receipt = first.Receipt();
   const auto repeated = second.Receipt();
   const auto targets = GameplayShowcaseEnvironment3D::Targets();
+  constexpr std::array<std::string_view, 15> materialIdentities{
+      "forest_ground_04:slot-0", "Ground108:slot-0",
+      "RoofingTiles014B:slot-0", "Bricks100:slot-0",
+      "island_tree_01:trunk", "island_tree_01:leaves",
+      "island_tree_01:branches", "tree_small_02:trunk",
+      "tree_small_02:leaves", "tree_small_02:branches",
+      "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
+      "coastal_cliff_01:slot-0", "stony_dirt_path:slot-0",
+      "runtime/water-optics"};
+  constexpr std::array<std::string_view, 11> licensedAssets{
+      "Bricks100|ambientcg|CC0-1.0|commercial",
+      "Ground108|ambientcg|CC0-1.0|commercial",
+      "RoofingTiles014B|ambientcg|CC0-1.0|commercial",
+      "boulder_01|poly-haven|CC0-1.0|commercial",
+      "coastal_cliff_01|poly-haven|CC0-1.0|commercial",
+      "dead_tree_trunk_02|poly-haven|CC0-1.0|commercial",
+      "forest_ground_04|poly-haven|CC0-1.0|commercial",
+      "island_tree_01|poly-haven|CC0-1.0|commercial",
+      "stony_dirt_path|poly-haven|CC0-1.0|commercial",
+      "tree_small_02|poly-haven|CC0-1.0|commercial",
+      "xanderklinge|poly-haven|CC0-1.0|commercial"};
+  if (targets.materialIdentityHash != InventoryHash(materialIdentities) ||
+      targets.licenseInventoryHash != InventoryHash(licensedAssets))
+    return 80;
+  auto missingTreeIdentity = materialIdentities;
+  missingTreeIdentity[7] = "island_tree_01:trunk";
+  auto missingTreeLicense = licensedAssets;
+  missingTreeLicense[9] = "island_tree_01|poly-haven|CC0-1.0|commercial";
+  if (targets.materialIdentityHash == InventoryHash(missingTreeIdentity) ||
+      targets.licenseInventoryHash == InventoryHash(missingTreeLicense))
+    return 81;
+  // 精確負載不能只與可同時退回舊值的 Targets 比較，否則舊荒地統計會假通過。
+  const auto healthyForestLoad = [](const ShowcaseEnvironmentReceipt3D &value) {
+    return value.trees == 240 && value.grass == 186 && value.rocks == 30 &&
+        value.vegetation == 426 && value.nearVegetation == 240 &&
+        value.midVegetation == 140 && value.farVegetation == 46 &&
+        value.riverbankProps == 92;
+  };
+  if (!healthyForestLoad(receipt)) return 52;
+  auto legacyLoad = receipt;
+  legacyLoad.trees = 144;
+  legacyLoad.grass = 282;
+  legacyLoad.nearVegetation = 156;
+  legacyLoad.midVegetation = 184;
+  legacyLoad.farVegetation = 86;
+  if (healthyForestLoad(legacyLoad)) return 53;
+  auto rocksAsVegetation = receipt;
+  rocksAsVegetation.nearVegetation = 180;
+  rocksAsVegetation.midVegetation = 196;
+  rocksAsVegetation.farVegetation = 80;
+  if (healthyForestLoad(rocksAsVegetation)) return 54;
+  const auto land = first.LandReceipt();
+  if (!land.Complete() || land.placements != 456 ||
+      land.trees[0] + land.grass[0] + land.rocks[0] != 252 ||
+      land.trees[1] + land.grass[1] + land.rocks[1] != 152 ||
+      land.trees[2] + land.grass[2] + land.rocks[2] != 52) return 55;
   if (receipt.worldHash == 0 || receipt.worldHash != repeated.worldHash ||
       receipt.terrain != 1 || receipt.water != 1 ||
       receipt.vegetation != 426 || receipt.rocks != 30 ||
@@ -153,10 +568,31 @@ int main() {
       receipt.riverbankProps < targets.minimumRiverbankProps ||
       receipt.densestHabitatCell < targets.minimumDensestHabitatCell ||
       !receipt.terrainZonesExact || !receipt.riverbankLayered ||
-      !receipt.propFootprintsNonOverlapping)
+      !receipt.propFootprintsNonOverlapping) {
+    std::cerr << "environment receipt gate world=" << receipt.worldHash << '/'
+              << repeated.worldHash << " vegetation=" << receipt.vegetation
+              << " bands=" << receipt.nearVegetation << '/'
+              << receipt.midVegetation << '/' << receipt.farVegetation
+              << " targetBands=" << targets.nearVegetation << '/'
+              << targets.midVegetation << '/' << targets.farVegetation
+              << " descriptors=" << receipt.integratedDescriptors << '/'
+              << receipt.descriptorCapacity << " habitat="
+              << receipt.densestHabitatCell << '/'
+              << targets.minimumDensestHabitatCell << " riverbank="
+              << receipt.riverbankProps << '/' << targets.minimumRiverbankProps
+              << " terrainZones=" << receipt.terrainZonesExact
+              << " riverLayer=" << receipt.riverbankLayered
+              << " footprints=" << receipt.propFootprintsNonOverlapping << '\n';
     return 2;
+  }
   std::array<std::size_t, 3> terrainLayers{};
+  std::size_t grassDescriptors = 0;
+  std::size_t shadowCastingGrassDescriptors = 0;
   for (const auto &descriptor : first.Descriptors()) {
+    if (descriptor.kind == ShowcaseSceneKind3D::Grass) {
+      ++grassDescriptors;
+      shadowCastingGrassDescriptors += descriptor.castsShadow ? 1u : 0u;
+    }
     if (descriptor.materialAsset.find("forest_ground_04") != std::string::npos)
       ++terrainLayers[0];
     else if (descriptor.materialAsset.find("Ground108") != std::string::npos)
@@ -164,7 +600,9 @@ int main() {
     else if (descriptor.materialAsset.find("stony_dirt_path") != std::string::npos)
       ++terrainLayers[2];
   }
-  if (terrainLayers != std::array<std::size_t, 3>{1, 188, 94}) return 32;
+  if (terrainLayers != std::array<std::size_t, 3>{1, 124, 62} ||
+      grassDescriptors != 186 || shadowCastingGrassDescriptors != 0)
+    return 32;
 
   constexpr Vec3 heroCenter{-16.f, 0.f, 8.f};
   constexpr float heroRadius = 22.f;
@@ -189,6 +627,7 @@ int main() {
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Day, {1, 2, 3});
   const auto dayAtmosphere = draw.Atmosphere();
   const auto dayEnvironmentBlend = draw.EnvironmentLightingBlend();
+  const auto dayToneCurve = draw.TimeOfDayExposure();
   const auto daySubmittedSun = draw.DirectionalLight();
   const auto dayRadianceFingerprint = draw.PhaseRadianceProfile().phaseFingerprint;
   const auto dayRadiance = draw.PhaseRadianceProfile();
@@ -203,17 +642,52 @@ int main() {
       !draw.VolumetricClouds().shadowsEnabled ||
       !draw.DirectionalLightShafts().enabled ||
       !draw.TerrainDistanceMaterial().enabled ||
+      !draw.TerrainDistanceMaterial().mesoPartitionEnabled ||
       !draw.WaterOptics().screenSpaceRefraction ||
       !draw.WaterSurfaceReceipt().enabledRequested ||
       draw.WaterSurfaceReceipt().fingerprint != receipt.waterSurfaceFingerprint)
     return 3;
 
+  // 低仰角英雄鏡頭不得再次使用會形成水平煙牆的低空、高覆蓋雲層。
+  const auto &heroClouds = draw.VolumetricClouds();
+  if (heroClouds.baseAltitude < 1800.f || heroClouds.coverage > .45f ||
+      heroClouds.density > .65f || heroClouds.erosion < .50f ||
+      heroClouds.shadowStrength > .40f || heroClouds.maximumDistance < 6000.f)
+    return 38;
+
+  // 岸泡深度依實際河床最淺百分位設定；不得再次把整條河當作泡沫。
+  if(draw.WaterSurface().foamStartDepth > .06f ||
+     draw.WaterSurface().foamEndDepth-draw.WaterSurface().foamStartDepth > .14f ||
+     draw.WaterSurface().foamStrength <= 0.f ||
+     draw.WaterSurface().foamStrength > .30f)
+    return 37;
+  // 林地河水不可再由高飽和青色固定源項主宰；仍維持自然水體的紅光
+  // 吸收排序，但限制通道差距與深水散射的藍綠偏移。
+  const auto &forestWater = draw.WaterSurface();
+  if (!(forestWater.absorption.x > forestWater.absorption.y &&
+        forestWater.absorption.y > forestWater.absorption.z) ||
+      forestWater.absorption.x > forestWater.absorption.z * 2.5f ||
+      forestWater.deepColor.y > forestWater.deepColor.x + .022f ||
+      forestWater.deepColor.z > forestWater.deepColor.x + .025f)
+    return 66;
+  const auto oldFlatWater = NormalizeWaterSurfaceSettings3D(
+      {true, {.42f,.25f,.19f}, {.012f,.028f,.030f}, .025f, .09f, .28f,
+       .035f, .38f, .055f, .18f, .12f, .11f, .03f, .14f, .26f, .78f,
+       .95f, .012f});
+  if (!ReadableForestWater(forestWater) || ReadableForestWater(oldFlatWater))
+    return 70;
+
   const auto day = first.EvaluateLighting(ShowcaseLightingProfile3D::Day);
   const auto dusk = first.EvaluateLighting(ShowcaseLightingProfile3D::Dusk);
   const auto night = first.EvaluateLighting(ShowcaseLightingProfile3D::Night);
+  auto deadBlackDusk = dusk;
+  deadBlackDusk.sun.ambient = .16f;
+  if (!DuskVegetationReadable(dusk) || DuskVegetationReadable(deadBlackDusk))
+    return 71;
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Dusk, {1, 2, 3});
   const auto duskAtmosphere = draw.Atmosphere();
   const auto duskEnvironmentBlend = draw.EnvironmentLightingBlend();
+  const auto duskToneCurve = draw.TimeOfDayExposure();
   const auto duskSubmittedSun = draw.DirectionalLight();
   const auto duskRadianceFingerprint = draw.PhaseRadianceProfile().phaseFingerprint;
   const auto duskRadiance = draw.PhaseRadianceProfile();
@@ -222,11 +696,73 @@ int main() {
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Night, {1, 2, 3});
   const auto nightAtmosphere = draw.Atmosphere();
   const auto nightEnvironmentBlend = draw.EnvironmentLightingBlend();
+  const auto nightToneCurve = draw.TimeOfDayExposure();
   const auto nightSubmittedSun = draw.DirectionalLight();
   const auto nightRadianceFingerprint = draw.PhaseRadianceProfile().phaseFingerprint;
   const auto nightRadiance = draw.PhaseRadianceProfile();
   if (draw.VolumetricAtmospherePhase() != VolumetricAtmospherePhase3D::Night)
     return 22;
+  const TimeOfDayExposureSettings3D defaultToneCurve{};
+  auto unboundedNightToneCurve = nightToneCurve;
+  unboundedNightToneCurve.nightExposureEv = 2.f;
+  auto previousBrightNightToneCurve = nightToneCurve;
+  previousBrightNightToneCurve.nightExposureEv = 1.65f;
+  auto crushedNightToneCurve = nightToneCurve;
+  crushedNightToneCurve.shadowLift = .08f;
+  if (dayToneCurve != defaultToneCurve || duskToneCurve != defaultToneCurve ||
+      !NightToneCurveBalanced(nightToneCurve, night) ||
+      NightToneCurveBalanced(defaultToneCurve, night) ||
+      NightToneCurveBalanced(unboundedNightToneCurve, night) ||
+      NightToneCurveBalanced(previousBrightNightToneCurve, night) ||
+      NightToneCurveBalanced(crushedNightToneCurve, night))
+    return 76;
+  DrawList duskLocalLights{DrawListCapacityProfile::Minimal2D};
+  DrawList nightLocalLights{DrawListCapacityProfile::Minimal2D};
+  first.ApplyLighting(duskLocalLights, ShowcaseLightingProfile3D::Dusk,
+                      {1, 2, 3});
+  first.ApplyLighting(nightLocalLights, ShowcaseLightingProfile3D::Night,
+                      {1, 2, 3});
+  if (!NightCabinHighlightsBalanced(duskLocalLights.PointLights(),
+                                    nightLocalLights.PointLights()))
+    return 73;
+  auto previousWeakNightLights = nightLocalLights.PointLights();
+  for (auto &light : previousWeakNightLights)
+    light.intensity *= .28f / 1.25f;
+  if (NightCabinHighlightsBalanced(duskLocalLights.PointLights(),
+                                   previousWeakNightLights))
+    return 74;
+  auto excessiveNightLights = nightLocalLights.PointLights();
+  for (auto &light : excessiveNightLights)
+    light.intensity *= 1.6f / 1.25f;
+  if (NightCabinHighlightsBalanced(duskLocalLights.PointLights(),
+                                   excessiveNightLights))
+    return 75;
+  const EnvironmentLightingBlendSettings3D deadBlackNightEnvironment{
+      {.72f,.78f,1.f},.26f,{1.f,1.f,1.f},.23f,.88f,.12f,.82f,.18f,
+      {.72f,.78f,1.f},.52f,0x4e494748545f4942ull};
+  const PhaseRadianceProfile3D deadBlackNightRadiance{
+      {.008f,.014f,.032f},.19f,{.035f,.045f,.07f},.29f,
+      {.006f,.008f,.012f},.00935f,{.72f,.78f,1.f},.16f,
+      {.55f,.66f,1.f},1.2f,0x4e49474854534b31ull};
+  auto fakeExposureNight = night;
+  fakeExposureNight.exposureEv = .05f;
+  auto previousMoonNight = night;
+  previousMoonNight.sun.ambient = .105f;
+  auto previousDarkNightEnvironment = nightEnvironmentBlend;
+  previousDarkNightEnvironment.diffuseIntensity = .32f;
+  auto previousDimObjectFill = nightEnvironmentBlend;
+  previousDimObjectFill.objectFillIntensity = .56f;
+  if (!NightForestReadable(night, nightEnvironmentBlend, nightRadiance) ||
+      NightForestReadable(night, deadBlackNightEnvironment,
+                          deadBlackNightRadiance) ||
+      NightForestReadable(previousMoonNight, nightEnvironmentBlend,
+                          nightRadiance) ||
+      NightForestReadable(night, previousDarkNightEnvironment,
+                          nightRadiance) ||
+      NightForestReadable(night, previousDimObjectFill, nightRadiance) ||
+      NightForestReadable(fakeExposureNight, nightEnvironmentBlend,
+                          nightRadiance))
+    return 72;
   if (!dayAtmosphere.aerialPerspective.enabled ||
       dayAtmosphere.aerialPerspective.nearDistance < 32.f ||
       duskAtmosphere.aerialPerspective.skyRadiance.r <=
@@ -244,6 +780,11 @@ int main() {
           duskEnvironmentBlend.phaseFingerprint ||
       duskEnvironmentBlend.phaseFingerprint ==
           nightEnvironmentBlend.phaseFingerprint ||
+      dayRadiance.horizonExponent < 2.4f ||
+      duskRadiance.horizonExponent < 2.f ||
+      nightRadiance.horizonExponent < 1.6f ||
+      !(dayRadiance.horizonExponent > duskRadiance.horizonExponent &&
+        duskRadiance.horizonExponent > nightRadiance.horizonExponent) ||
       dayEnvironmentBlend.iblDiffuseWeight <=
           duskEnvironmentBlend.iblDiffuseWeight ||
       duskEnvironmentBlend.iblDiffuseWeight <=
@@ -293,7 +834,8 @@ int main() {
   };
   const float dayLuma = luminanceTarget(day), duskLuma = luminanceTarget(dusk),
               nightLuma = luminanceTarget(night);
-  if (!(dayLuma > duskLuma && duskLuma > nightLuma && nightLuma >= .075f))
+  if (!(dayLuma > duskLuma * 1.05f && duskLuma > nightLuma * 1.05f &&
+        nightLuma >= .075f))
     return 8;
 
   constexpr CameraProjection productionPerspective{
@@ -504,10 +1046,22 @@ int main() {
     return 7;
 
   std::cout << "worldHash=" << receipt.worldHash
+            << " trees=" << receipt.trees << " grass=" << receipt.grass
+            << " vegetationBands=" << receipt.nearVegetation << '/' << receipt.midVegetation << '/' << receipt.farVegetation
+            << " landPlacements=" << land.placements
             << " descriptors=" << released.descriptorsReleased
             << " releasedBytes=" << released.retainedBytesBefore
             << " dayLuma=" << dayLuma << " duskLuma=" << duskLuma
             << " nightLuma=" << nightLuma
+            << " duskAmbient=" << dusk.sun.ambient
+            << " waterRoughness=" << forestWater.minimumRoughness << '/'
+            << forestWater.maximumRoughness
+            << " waterWaves=" << forestWater.broadWaveScale << '/'
+            << forestWater.broadWaveStrength << '/'
+            << forestWater.detailWaveScale << '/'
+            << forestWater.detailWaveStrength
+            << " waterAlpha=" << forestWater.shallowAlpha << '/'
+            << forestWater.deepAlpha
             << " lodTransitions=" << transitionTargets
             << " minRiver=" << minimumRiverSegments << '/'
             << minimumRiverCoverage << " minBuilding="

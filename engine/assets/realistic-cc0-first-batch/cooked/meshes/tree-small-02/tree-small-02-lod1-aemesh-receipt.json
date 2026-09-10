@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "tree-small-02",
+  "lod": 1,
+  "sourceFile": "tree-small-02-lod1.glb",
+  "sourceSha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928",
+  "outputs": [
+    {
+      "file": "tree-small-02-lod1-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh",
+      "sha256": "67575e73b02c9ea28f556477a519935cedbb48cb850d444f2dabf179af2d1fe9",
+      "bytes": 400332,
+      "nodeIndex": 0,
+      "nodePath": [
+        1,
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "tree-small-02-branches",
+      "vertices": 10052,
+      "indices": 29715,
+      "triangles": 9905,
+      "boundsMinimumGltf": [
+        -1.076655168684,
+        1.673405262808,
+        -1.2255716411400002
+      ],
+      "boundsMaximumGltf": [
+        1.393027059128,
+        4.369171450896,
+        2.737432685912
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 1,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.400000095
+        ],
+        "rotation": 0.0,
+        "scale": [
+          48.010994,
+          9.60219669
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.0,
+        0.400000095
+      ],
+      "effectiveUvMaximum": [
+        3.0000003117418172,
+        1.0000000255035477
+      ]
+    },
+    {
+      "file": "tree-small-02-lod1-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh",
+      "sha256": "5701f5ae51a4e2b324d820fba16ce32c7bdbcc8bc5b5af584238bfa950fdd7c7",
+      "bytes": 10241152,
+      "nodeIndex": 0,
+      "nodePath": [
+        1,
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 1,
+      "materialIndex": 1,
+      "materialName": "tree-small-02-leaves",
+      "vertices": 266418,
+      "indices": 695358,
+      "triangles": 231786,
+      "boundsMinimumGltf": [
+        -1.30830085,
+        1.459835174872,
+        -1.3799094
+      ],
+      "boundsMaximumGltf": [
+        1.6046505447,
+        4.531851791316,
+        2.897888337916
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0287122726
+        ],
+        "rotation": 0.0,
+        "scale": [
+          15.6390409,
+          15.5441608
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.07063639439078355,
+        0.0287122726
+      ],
+      "effectiveUvMaximum": [
+        0.9772163345616846,
+        0.982685183832166
+      ]
+    },
+    {
+      "file": "tree-small-02-lod1-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh",
+      "sha256": "2cc4b6f336b67d835e49a6a5db35ecef523fafd61569fb2c8c18723b72f53102",
+      "bytes": 107540,
+      "nodeIndex": 0,
+      "nodePath": [
+        1,
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 2,
+      "materialIndex": 2,
+      "materialName": "tree-small-02-trunk",
+      "vertices": 2386,
+      "indices": 10179,
+      "triangles": 3393,
+      "boundsMinimumGltf": [
+        -0.762974102028,
+        -0.0240319986,
+        -0.3910353990880001
+      ],
+      "boundsMaximumGltf": [
+        0.9294576104439998,
+        3.664501395128,
+        1.9231967256559999
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.00722706318
+        ],
+        "rotation": 0.0,
+        "scale": [
+          15.9407368,
+          15.8880033
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.003891840830090791,
+        0.00722706318
+      ],
+      "effectiveUvMaximum": [
+        0.9960680124513619,
+        0.9961210200076493
+      ]
+    }
+  ],
+  "outputCount": 3,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 10749024,
+  "totalTriangles": 245084,
+  "peakWorkingSetBytes": 392040448,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

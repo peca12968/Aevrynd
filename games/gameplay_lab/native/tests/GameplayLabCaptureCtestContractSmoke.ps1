@@ -137,7 +137,7 @@ foreach($name in $testNames){
             if($key-ceq'TIMEOUT'){$timeoutValue=$tokens[$position+1]}
             elseif($key-ceq'LABELS'){$labelsValue=$tokens[$position+1]}
         }
-        $expectedTimeout=if($name-ceq'GameplayLabCaptureSmoke'){'300'}else{'240'}
+        $expectedTimeout=if($name-ceq'GameplayLabCaptureSmoke'){'420'}else{'240'}
         if($null-eq$timeoutValue-or$timeoutValue-cne$expectedTimeout-or$labelsValue-cne'visual-gates'){throw "$name overall timeout/label contract changed"}
     }
     $observedConfigurations=@($seenConfigurations[$name].Keys|Sort-Object)

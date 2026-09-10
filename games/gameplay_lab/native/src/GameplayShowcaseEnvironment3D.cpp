@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 namespace GameplayLab {
@@ -49,7 +50,9 @@ std::uint64_t MaterialIdentityHash() {
       "forest_ground_04:slot-0", "Ground108:slot-0",
       "RoofingTiles014B:slot-0", "Bricks100:slot-0",
       "island_tree_01:trunk", "island_tree_01:leaves",
-      "island_tree_01:branches", "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
+      "island_tree_01:branches", "tree_small_02:trunk",
+      "tree_small_02:leaves", "tree_small_02:branches",
+      "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
       "coastal_cliff_01:slot-0", "stony_dirt_path:slot-0",
       "runtime/water-optics"};
   std::uint64_t hash = 14695981039346656037ull;
@@ -59,7 +62,7 @@ std::uint64_t MaterialIdentityHash() {
 }
 
 std::uint64_t LicenseInventoryHash() {
-  // 清單與經CookedRenderManifest3D驗證的10項CC0資產保持同序。
+  // 清單與經 CookedRenderManifest3D 驗證的 CC0 資產保持同序。
   constexpr std::array assets = {
       "Bricks100|ambientcg|CC0-1.0|commercial",
       "Ground108|ambientcg|CC0-1.0|commercial",
@@ -70,6 +73,7 @@ std::uint64_t LicenseInventoryHash() {
       "forest_ground_04|poly-haven|CC0-1.0|commercial",
       "island_tree_01|poly-haven|CC0-1.0|commercial",
       "stony_dirt_path|poly-haven|CC0-1.0|commercial",
+      "tree_small_02|poly-haven|CC0-1.0|commercial",
       "xanderklinge|poly-haven|CC0-1.0|commercial"};
   std::uint64_t hash = 14695981039346656037ull;
   for (const auto value : assets)
@@ -132,6 +136,56 @@ float ProjectedCoverage(const ProjectedBounds3D &bounds, Aevrynd::Vec2 viewport)
 
 } // namespace
 
+bool AppendShowcaseTerrainApron3D(Aevrynd::Mesh3D &mesh) {
+  constexpr unsigned perimeter=512;
+  if(mesh.vertices.empty())return false;
+  // 正式河岸網格在建立外環前已把中央區域細分成 1m 並插入 fan 中心，
+  // 因此不能再以 vertices.size()==129^2 判斷。只接受完整、唯一的 4m
+  // 世界邊界，且拒絕任何已含外場頂點的輸入，避免重複附加。
+  std::unordered_map<std::uint64_t,unsigned> boundaryLookup;
+  boundaryLookup.reserve(perimeter);
+  const auto key=[](int x,int z){return (std::uint64_t(std::uint32_t(x+256))<<32)|std::uint32_t(z+256);};
+  for(unsigned index=0;index<mesh.vertices.size();++index){
+    const auto& v=mesh.vertices[index];
+    if(!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.z)||
+       std::abs(v.x)>256.f||std::abs(v.z)>256.f)return false;
+    const int x=int(std::lround(v.x)),z=int(std::lround(v.z));
+    if(v.x!=float(x)||v.z!=float(z)||(x+256)%4||(z+256)%4)continue;
+    if(std::abs(x)!=256&&std::abs(z)!=256)continue;
+    if(!boundaryLookup.emplace(key(x,z),index).second)return false;
+  }
+  std::array<unsigned,perimeter> boundary{};unsigned count=0;
+  const auto appendBoundary=[&](int x,int z){const auto found=boundaryLookup.find(key(x,z));if(found==boundaryLookup.end())return false;boundary[count++]=found->second;return true;};
+  for(int x=-256;x<256;x+=4)if(!appendBoundary(x,-256))return false;
+  for(int z=-256;z<256;z+=4)if(!appendBoundary(256,z))return false;
+  for(int x=256;x>-256;x-=4)if(!appendBoundary(x,256))return false;
+  for(int z=256;z>-256;z-=4)if(!appendBoundary(-256,z))return false;
+  if(count!=perimeter)return false;
+  mesh.vertices.reserve(mesh.vertices.size()+5*perimeter);mesh.indices.reserve(mesh.indices.size()+5*perimeter*6);
+  auto inner=boundary;
+  // 共用原邊界索引，外環僅向世界外延伸；河流位於 |z|<=142，不會被新面覆蓋。
+  // 最外圈延伸至約一公里，讓 God 固定鏡頭的底角仍由地表覆蓋；這只增加
+  // 512 個低頻邊界頂點，不複製內場植被、碰撞或高細節地形。
+  for(float distance:{8.f,24.f,64.f,256.f,768.f}){
+    std::array<unsigned,perimeter> outer{};
+    for(unsigned i=0;i<perimeter;++i){
+      const auto& source=mesh.vertices[boundary[i]];
+      auto v=source;
+      const float dx=source.x/256.f*distance,dz=source.z/256.f*distance;
+      const auto n=Aevrynd::UnpackNormalSnorm8(source.normal);
+      const float slope=std::abs(n.y)>.2f?-(n.x*dx+n.z*dz)/n.y:0.f;
+      v.x+=dx;v.z+=dz;v.y+=slope/(1.f+distance/32.f);
+      v.u=v.x*.085f;v.v=v.z*.085f;
+      outer[i]=unsigned(mesh.vertices.size());mesh.vertices.push_back(v);
+    }
+    for(unsigned i=0;i<perimeter;++i){const unsigned j=(i+1)%perimeter;
+      mesh.indices.insert(mesh.indices.end(),{inner[i],inner[j],outer[j],inner[i],outer[j],outer[i]});
+    }
+    inner=outer;
+  }
+  return true;
+}
+
 bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
   if (!seed)
     return false;
@@ -161,7 +215,10 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     descriptor.scale = placement.scale;
     descriptor.yaw = placement.yaw;
     descriptor.lodGroup = std::uint32_t(placement.band);
-    descriptor.castsShadow = true;
+    // 186 個矮草群落仍接收地形、環境與角色陰影，但不再各自重畫到四層
+    // 4096 陰影圖。樹木、岩石與建築維持正式動態投影，避免 Ultra 的
+    // 透明草葉 overdraw 吞掉 60 FPS 預算而幾乎沒有可辨識的畫面收益。
+    descriptor.castsShadow = placement.kind != ShowcaseLandKind3D::Grass;
     const std::string id(ShowcaseLandAssetId3D(placement.variant));
     if (placement.kind == ShowcaseLandKind3D::Tree) {
       descriptor.kind = ShowcaseSceneKind3D::Tree;
@@ -195,7 +252,9 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     candidate.push_back({ShowcaseSceneKind3D::Building,
                          buildingPositions[index],
                          index == 0 ? Aevrynd::Vec3{8.4f, .3f, 7.6f}
-                                    : index == 5 ? Aevrynd::Vec3{9.2f, 2.2f, 8.4f}
+                                    // 屋頂只保留結構所需的簷口：覆蓋四面牆但不以過大的
+                                    // 外廓主宰 God composition。牆寬 8.4、前後外緣 7.48。
+                                    : index == 5 ? Aevrynd::Vec3{8.5f, 1.6f, 7.6f}
                                                  : (index == 1 || index == 2)
                                                        ? Aevrynd::Vec3{8.4f, 3.3f, .28f}
                                                        : Aevrynd::Vec3{7.2f, 3.3f, .28f},
@@ -207,7 +266,14 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                                     : "ambientcg/Bricks100/cooked-pbr"});
 
   descriptors_.swap(candidate);
-  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D({true, {.028f,.012f,.006f}, {.018f,.13f,.19f}, .035f, .08f, .34f, .035f, .38f, .055f, .18f, .12f, .11f, .75f, 3.5f, .42f, .56f, .9f, .035f});
+  // 林地河水仍需吸收紅光，但紅、藍吸收差距不能大到讓水面成為自發光
+  // 青色帶。降低深水藍綠散射並收斂通道差距，讓水色主要來自天空、
+  // 河床與岸邊樹木的反射，同時保留淺灘可讀性。
+  // 實際水面內 0.25m 採樣的深度 p1=.0476m、p5=.2710m；泡沫只保留最淺岸帶。
+  // 四個非共線解析波同時保留林間緩流的寬波與細碎波紋。較低的最大粗糙度
+  // 讓斜視反射保持可讀，而較高頻、受限振幅的細節波只增加真實法線變化，
+  // 不以螢幕空間亮度雜訊偽造水面細節。
+  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D({true, {.42f,.25f,.19f}, {.018f,.035f,.038f}, .028f, .06f, .16f, .055f, .082f, .12f, .80f, .040f, .28f, .03f, .14f, .26f, .68f, .90f, .020f});
   seed_ = seed;
   initialized_ = true;
   return true;
@@ -281,13 +347,9 @@ GameplayShowcaseEnvironment3D::EvaluateLodSamples(
         descriptor.kind == ShowcaseSceneKind3D::Grass
             ? std::array<Aevrynd::MeshLodPolicy3D, 3>{
                   ShowcaseGrassLodPolicy3D(), {}, {}}
-            : std::array<Aevrynd::MeshLodPolicy3D, 3>{
-                  Aevrynd::MeshLodPolicy3D{18.f, 3.f,
-                      Aevrynd::MeshLodDistanceMetric3D::BoundsSurface},
-                  Aevrynd::MeshLodPolicy3D{48.f, 6.f,
-                      Aevrynd::MeshLodDistanceMetric3D::BoundsSurface},
-                  Aevrynd::MeshLodPolicy3D{96.f, 10.f,
-                      Aevrynd::MeshLodDistanceMetric3D::BoundsSurface}};
+            : descriptor.kind == ShowcaseSceneKind3D::Tree
+                ? ShowcaseTreeLodPolicies3D()
+                : ShowcaseOpaqueLodPolicies3D();
     const std::size_t policyCount = descriptor.kind == ShowcaseSceneKind3D::Grass ? 1 : 3;
     bool selected{};
     for (std::size_t level = 0; level < policyCount; ++level) {
@@ -337,11 +399,26 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetAmbientOcclusion({true, 1.25f, .025f, 1.32f});
   draw.SetScreenSpaceReflections({true, .82f, 42.f, .7f, .32f, 16});
   draw.SetBloom({true, 1.18f, .38f, .085f, 2.2f});
-  draw.SetVolumetricClouds(
-      {true, 1100.f, 1700.f, .48f, 1.08f, .28f, 14.f, 16, true, .7f});
+  // 英雄鏡頭仰角低，舊的低空高覆蓋雲層會把投影壓成一條貫穿畫面的
+  // 灰色水平煙牆。保留真正的體積雲與雲影，但提高雲底、降低覆蓋與密度，
+  // 並加強侵蝕，讓天空由分散雲團建立深度而不是由均勻長帶切割。
+  Aevrynd::VolumetricCloudSettings3D clouds{};
+  clouds.baseAltitude = 2100.f;
+  clouds.thickness = 1700.f;
+  clouds.coverage = .38f;
+  clouds.density = .56f;
+  clouds.erosion = .58f;
+  clouds.windSpeed = 9.f;
+  clouds.sampleCount = 16;
+  clouds.shadowsEnabled = true;
+  clouds.shadowStrength = .32f;
+  clouds.maximumDistance = 9000.f;
+  draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
-  draw.SetTerrainDistanceMaterial(
-      {true, 32.f, 176.f, .0042f, .22f, 1.28f, .18f});
+  Aevrynd::TerrainDistanceMaterialSettings3D terrainMaterial{
+      true, 32.f, 176.f, .0042f, .22f, 1.28f, .18f};
+  terrainMaterial.mesoPartitionEnabled = true;
+  draw.SetTerrainDistanceMaterial(terrainMaterial);
   draw.SetWaterOptics({true, .028f, .52f, .055f});
   draw.SetWaterSurface(waterSurface_);
 }
@@ -354,11 +431,13 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
     state = {profile, {{.34f, -.91f, .23f}, .24f, {1, .96f, .88f, 1}, 1.42f},
              {.24f, .42f, .67f, 1}, {.32f, .43f, .55f, .62f}, -.12f, 46800.f};
   } else if (profile == ShowcaseLightingProfile3D::Dusk) {
-    state = {profile, {{-.74f, -.42f, .18f}, .16f, {1, .66f, .38f, 1}, .94f},
-             {.19f, .14f, .23f, 1}, {.3f, .19f, .25f, .68f}, .02f, 68400.f};
+    state = {profile, {{-.74f, -.42f, .18f}, .19f, {1, .66f, .38f, 1}, .94f},
+             {.19f, .14f, .23f, 1}, {.3f, .19f, .25f, .68f}, .08f, 68400.f};
   } else {
-    state = {profile, {{-.25f, -.62f, -.74f}, .055f, {.42f, .55f, 1, 1}, .42f},
-             {.035f, .065f, .13f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
+    // 月光保留冷色辨識，但夜間亮度由局部光源與反射建立層次，不能用
+    // 全畫面藍色增益把水面與地表抬得比黃昏更亮。
+    state = {profile, {{-.25f, -.62f, -.74f}, .11f, {.42f, .55f, 1, 1}, .42f},
+             {.05f, .085f, .155f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
   }
   return state;
 }
@@ -368,8 +447,28 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     Aevrynd::Vec3 cameraPosition) const {
   const ShowcaseLightingState3D state = EvaluateLighting(profile);
   draw.SetDirectionalLight(state.sun);
+  // 小屋是英雄場景的視覺錨點。以實際局部光源建立黃昏／夜間層次，
+  // 不用提高全畫面曝光來把天空、河面與陰影一起洗亮。
+  if (profile != ShowcaseLightingProfile3D::Day) {
+    const float night = profile == ShowcaseLightingProfile3D::Night ? 1.25f : .55f;
+    draw.AddPointLight({{-12.f, 2.15f, 19.65f}, 11.f,
+                        {1.f, .57f, .25f, 1.f}, 4.2f * night});
+    draw.AddPointLight({{-14.55f, 2.25f, 19.75f}, 7.5f,
+                        {1.f, .72f, .38f, 1.f}, 2.35f * night});
+    draw.AddPointLight({{-9.45f, 2.25f, 19.75f}, 7.5f,
+                        {1.f, .72f, .38f, 1.f}, 2.35f * night});
+  }
+  const float heightFogDensity =
+      profile == ShowcaseLightingProfile3D::Day
+          ? .0002f
+          : profile == ShowcaseLightingProfile3D::Dusk ? .0012f : .0018f;
+  const float heightFogMaximumOpacity =
+      profile == ShowcaseLightingProfile3D::Day
+          ? .08f
+          : profile == ShowcaseLightingProfile3D::Dusk ? .38f : .55f;
   Aevrynd::Atmosphere3D atmosphere{state.fog, cameraPosition, 54, 230, true,
-                                   .0035f, .09f, -2.f, .76f};
+                                   heightFogDensity, .09f, -2.f,
+                                   heightFogMaximumOpacity};
   // 表面 aerial perspective 與體積霧分開配置；近場保留材質色，遠景才依物理消光融入天空。
   if (profile == ShowcaseLightingProfile3D::Day) {
     atmosphere.aerialPerspective = {true, .00175f, .00110f, .018f, -2.f,
@@ -385,6 +484,12 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
                                     {.012f, .022f, .043f, 1.f}, .018f};
   }
   draw.SetAtmosphere(atmosphere);
+  auto shafts = draw.DirectionalLightShafts();
+  shafts.intensity = profile == ShowcaseLightingProfile3D::Day
+                         ? .06f
+                         : profile == ShowcaseLightingProfile3D::Dusk ? .34f
+                                                                      : .12f;
+  draw.SetDirectionalLightShafts(shafts);
   draw.SetVolumetricAtmospherePhase(
       profile == ShowcaseLightingProfile3D::Day
           ? Aevrynd::VolumetricAtmospherePhase3D::Day
@@ -392,9 +497,9 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
                 ? Aevrynd::VolumetricAtmospherePhase3D::Dusk
                 : Aevrynd::VolumetricAtmospherePhase3D::Night);
   Aevrynd::PhaseRadianceProfile3D radiance{};
-  if(profile==ShowcaseLightingProfile3D::Day)radiance={{.105f,.16f,.23f},1.f,{.46f,.49f,.48f},.42f,{.13f,.12f,.095f},.00935f,{.94f,.96f,.93f},.68f,{1.f,.88f,.68f},9.f,0x4441595f534b5931ull};
-  else if(profile==ShowcaseLightingProfile3D::Dusk)radiance={{.045f,.055f,.09f},.72f,{.44f,.25f,.16f},.34f,{.08f,.045f,.035f},.00935f,{1.f,.82f,.68f},.46f,{1.f,.48f,.22f},7.f,0x4455534b534b5931ull};
-  else radiance={{.008f,.014f,.032f},.34f,{.035f,.045f,.07f},.55f,{.006f,.008f,.012f},.00935f,{.72f,.78f,1.f},.30f,{.55f,.66f,1.f},1.2f,0x4e49474854534b31ull};
+  if(profile==ShowcaseLightingProfile3D::Day)radiance={{.08f,.20f,.46f},.88f,{.28f,.46f,.68f},2.6f,{.13f,.12f,.095f},.00935f,{.94f,.96f,.93f},.68f,{1.f,.88f,.68f},9.f,0x4441595f534b5932ull};
+  else if(profile==ShowcaseLightingProfile3D::Dusk)radiance={{.045f,.055f,.09f},.72f,{.44f,.25f,.16f},2.2f,{.08f,.045f,.035f},.00935f,{1.f,.82f,.68f},.46f,{1.f,.48f,.22f},7.f,0x4455534b534b5932ull};
+  else radiance={{.012f,.022f,.048f},.24f,{.045f,.06f,.095f},1.8f,{.010f,.014f,.020f},.00935f,{.72f,.78f,1.f},.24f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};
   draw.SetPhaseRadianceProfile(radiance);
   // 固定日間 HDRI 只提供穩定的高頻環境細節；黃昏與夜間提高物理天空比例，避免把日間色彩當作地圖染色。
   Aevrynd::EnvironmentLightingBlendSettings3D environmentBlend{};
@@ -422,17 +527,29 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     environmentBlend.phaseFingerprint = 0x4455534b5f49424cull;
   } else {
     environmentBlend.diffuseRgbScale = {.72f,.78f,1.f};
-    environmentBlend.diffuseIntensity = .48f;
-    environmentBlend.specularIntensity = .42f;
-    environmentBlend.analyticDiffuseWeight = .88f;
-    environmentBlend.iblDiffuseWeight = .12f;
-    environmentBlend.analyticSpecularWeight = .82f;
-    environmentBlend.iblSpecularWeight = .18f;
+    environmentBlend.diffuseIntensity = .33f;
+    environmentBlend.specularIntensity = .26f;
+    environmentBlend.analyticDiffuseWeight = .84f;
+    environmentBlend.iblDiffuseWeight = .16f;
+    environmentBlend.analyticSpecularWeight = .78f;
+    environmentBlend.iblSpecularWeight = .22f;
     environmentBlend.objectFillRadiance = {.72f,.78f,1.f};
-    environmentBlend.objectFillIntensity = .63f;
+    // 月光仍低於黃昏，但角色暗部需要保留臉、手與服裝輪廓，避免正式夜景
+    // 只剩剪影。這是物件補光，不抬高天空、水面或全畫面曝光。
+    environmentBlend.objectFillIntensity = .58f;
     environmentBlend.phaseFingerprint = 0x4e494748545f4942ull;
   }
   draw.SetEnvironmentLightingBlend(environmentBlend);
+  Aevrynd::TimeOfDayExposureSettings3D timeOfDayExposure{};
+  if (profile == ShowcaseLightingProfile3D::Night) {
+    // 夜間不沿用預設 +2 EV：壓住月光與小屋高光，同時只在 tone curve
+    // 暗部提供有限 lift，讓林地輪廓可讀而不抬高整個畫面。
+  timeOfDayExposure.nightExposureEv = 1.50f;
+    timeOfDayExposure.shadowLift = .03f;
+    timeOfDayExposure.toeStrength = .33f;
+    timeOfDayExposure.shoulderStrength = 1.12f;
+  }
+  draw.SetTimeOfDayExposure(timeOfDayExposure);
   draw.SetExposureCompensation(state.exposureEv);
   draw.SetEnvironmentTime(state.environmentTime);
 }

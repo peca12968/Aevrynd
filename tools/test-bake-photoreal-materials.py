@@ -156,9 +156,17 @@ keyed = MODULE.black_key_alpha(Image.fromarray(fixture_pixels, "RGBA"), 16 / 255
 keyed_pixels = np.asarray(keyed)
 assert keyed_pixels[0, 0, 3] == 0 and keyed_pixels[2, 2, 3] == 255
 MODULE.validate_mask_alpha(keyed, 0.5)
+coverage = MODULE.mask_coverage(keyed, 0.5)
+assert coverage == {"cutoffByte": 128, "visiblePixels": 1, "totalPixels": 25,
+                    "fraction": 0.04, "minimum": 0, "maximum": 255}
 dilated = np.asarray(MODULE.dilate_mask_rgb(keyed, 1, 0.5))
 assert dilated[2, 1, :3].tolist() == [80, 110, 30] and dilated[2, 1, 3] == 0
 assert np.array_equal(dilated[..., 3], keyed_pixels[..., 3])
+assert MODULE.mask_coverage(Image.fromarray(dilated, "RGBA"), 0.5) == coverage
+
+channel_fixture = np.array([[[0, 64, 255, 255], [255, 192, 0, 255]]], dtype=np.uint8)
+green_stats = MODULE.channel_stats(channel_fixture, 1)
+assert green_stats["minimum"] == 64 and green_stats["maximum"] == 192 and green_stats["mean"] == 128.0
 
 for invalid_alpha in (0, 128, 255):
     invalid_pixels = np.zeros((4, 4, 4), dtype=np.uint8)

@@ -19,6 +19,15 @@ def require_failure(module, manifest, cooked_root, label):
     raise AssertionError(f"hostile case was accepted: {label}")
 
 
+def require_source_failure(module, asset_root, provenance, gltfpack, label):
+    try:
+        module.validate_tree_small_02_source_chain(
+            asset_root, provenance=provenance, gltfpack=gltfpack)
+    except (module.ManifestError, KeyError, TypeError, ValueError):
+        return
+    raise AssertionError(f"hostile source-chain case was accepted: {label}")
+
+
 def main():
     tools_root = pathlib.Path(__file__).resolve().parent
     repo_root = tools_root.parent
@@ -39,6 +48,20 @@ def main():
         if first_bytes != second_bytes:
             raise AssertionError("A/B manifests are not byte-identical")
         module.validate_manifest(first, cooked_root)
+        source_root = asset_root / "tree-small-02"
+        provenance = module.load_json(source_root / "tree-small-02-provenance-receipt.json")
+        gltfpack = module.load_json(source_root / "gltfpack-runtime-receipt.json")
+        source_cases = []
+        changed = copy.deepcopy(provenance); changed["validation"]["officialMd5AndBytesMatchAll"] = False; source_cases.append(("provenance-official-audit", changed, gltfpack))
+        changed = copy.deepcopy(provenance); changed["files"][0]["bytes"] += 1; source_cases.append(("provenance-source-bytes", changed, gltfpack))
+        changed = copy.deepcopy(gltfpack); changed["source"]["path"] = "D:/escape/tree_small_02_1k.gltf"; source_cases.append(("gltfpack-absolute-source", provenance, changed))
+        changed = copy.deepcopy(gltfpack); changed["source"]["provenanceReceiptBytes"] -= 1; source_cases.append(("gltfpack-provenance-bytes", provenance, changed))
+        changed = copy.deepcopy(gltfpack); changed["source"]["provenanceReceiptSha256"] = "0" * 64; source_cases.append(("gltfpack-provenance-hash", provenance, changed))
+        changed = copy.deepcopy(gltfpack); changed["source"]["dependencies"][0]["path"] = "../tree_small_02.bin"; source_cases.append(("gltfpack-bin-traversal", provenance, changed))
+        changed = copy.deepcopy(gltfpack); changed["source"]["dependencies"][0]["sha256"] = "0" * 64; source_cases.append(("gltfpack-bin-hash", provenance, changed))
+        changed = copy.deepcopy(gltfpack); changed["levels"][0]["sha256"] = "0" * 64; source_cases.append(("gltfpack-output-hash", provenance, changed))
+        for label, provenance_case, gltfpack_case in source_cases:
+            require_source_failure(module, asset_root, provenance_case, gltfpack_case, label)
         semantic_fields = ("alphaMode", "alphaCutoff", "doubleSided", "materialClass")
         if any(set(semantic_fields) - set(material) for material in authoritative["materials"]):
             raise AssertionError("authoritative material rendering semantics are incomplete")
@@ -73,6 +96,11 @@ def main():
         changed = copy.deepcopy(authoritative); changed["files"][dds_index]["mips"] += 1; cases.append(("mips", changed))
         changed = copy.deepcopy(authoritative); changed["files"][dds_index]["dimensions"]["width"] += 1; cases.append(("dimensions", changed))
         changed = copy.deepcopy(authoritative); changed["files"].pop(); cases.append(("file-count", changed))
+        changed = copy.deepcopy(authoritative); changed["exactAssetSet"]["count"] -= 1; cases.append(("exact-asset-count", changed))
+        changed = copy.deepcopy(authoritative); changed["assets"].pop(); cases.append(("asset-metadata-count", changed))
+        changed = copy.deepcopy(authoritative); changed["materials"].pop(); cases.append(("production-material-count", changed))
+        changed = copy.deepcopy(authoritative); changed["meshParts"].pop(); cases.append(("production-mesh-part-count", changed))
+        changed = copy.deepcopy(authoritative); changed["package"]["packageFileCount"] -= 1; cases.append(("package-derived-count", changed))
         changed = copy.deepcopy(authoritative); changed["materials"][0]["alphaCutoff"] = -0.01; cases.append(("alpha-cutoff-low", changed))
         changed = copy.deepcopy(authoritative); changed["materials"][0]["alphaCutoff"] = 1.01; cases.append(("alpha-cutoff-high", changed))
         changed = copy.deepcopy(authoritative); changed["materials"][0]["alphaCutoff"] = float("inf"); cases.append(("alpha-cutoff-non-finite", changed))
@@ -118,7 +146,7 @@ def main():
             else:
                 raise AssertionError("reparse point was accepted")
 
-    print("runtime-render-manifest-tests=pass; deterministic=3-way; hostile=19; legacy=pass")
+    print("runtime-render-manifest-tests=pass; deterministic=3-way; manifest-hostile=24; source-chain-hostile=8; legacy=pass")
 
 
 if __name__ == "__main__":

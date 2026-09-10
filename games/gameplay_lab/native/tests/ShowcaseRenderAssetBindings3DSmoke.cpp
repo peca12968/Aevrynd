@@ -374,8 +374,8 @@ int main(int argc, char **argv) {
   constexpr std::array ids = {
       "forest_ground_04", "Ground108",          "coastal_cliff_01",
       "boulder_01",       "island_tree_01",     "dead_tree_trunk_02",
-      "RoofingTiles014B", "Bricks100",          "stony_dirt_path",
-      "xanderklinge"};
+      "tree_small_02",    "RoofingTiles014B",   "Bricks100",
+      "stony_dirt_path",  "xanderklinge"};
   std::vector<ShowcaseCookedAssetReceipt3D> cooked;
   std::uint64_t handle = 100;
   for (const auto *id : ids) {
@@ -392,7 +392,10 @@ int main(int argc, char **argv) {
     item.materialSidecarBound = true;
     const auto *asset = catalog.Find(id);
     if (asset->kind == Aevrynd::PhotorealAssetKind3D::MeshPbr) {
-      const std::size_t parts = std::string_view(id) == "island_tree_01" ? 3u : 1u;
+      const std::size_t parts = std::string_view(id) == "island_tree_01" ||
+                                        std::string_view(id) == "tree_small_02"
+                                    ? 3u
+                                    : 1u;
       for (std::size_t part = 0; part < parts; ++part)
         item.materials.push_back(
             {handle++, static_cast<std::uint32_t>(part),
@@ -458,9 +461,9 @@ int main(int argc, char **argv) {
       !load.collisionStableIdsUnchanged ||
       !load.assetIdentityFingerprint || !load.assetIdentitiesExact ||
       !load.descriptorOrderDeterministic ||
-      load.requiredAssetIdentityMask != 0x1ffu ||
+      load.requiredAssetIdentityMask != 0x3ffu ||
       load.terrainLayerDescriptors !=
-          std::array<std::size_t, 3>{1, 188, 94} ||
+          std::array<std::size_t, 3>{1, 124, 62} ||
       load.assetIdentityFingerprint !=
           ShowcaseAssetIdentityFingerprint3D(world.Descriptors()) ||
       !std::ranges::equal(bindings.VisibleAssetIds(), expectedVisible) ||
@@ -484,6 +487,8 @@ int main(int argc, char **argv) {
   semantic.kind = ShowcaseSceneKind3D::Tree;
   semantic.meshAsset = "poly-haven/island_tree_01/cooked-lod";
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "island_tree_01") return 6;
+  semantic.meshAsset = "poly-haven/tree_small_02/cooked-lod";
+  if (ResolveShowcasePhotorealAssetId3D(semantic) != "tree_small_02") return 6;
   semantic.meshAsset = "poly-haven/dead_tree_trunk_02/cooked-lod";
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "dead_tree_trunk_02") return 6;
   semantic.meshAsset = "mutation/unknown-tree";

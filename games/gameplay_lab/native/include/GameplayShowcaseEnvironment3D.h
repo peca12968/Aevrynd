@@ -11,7 +11,9 @@
 #include <cstdint>
 #include <cmath>
 #include <limits>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace GameplayLab {
@@ -26,16 +28,94 @@ enum class ShowcaseSceneKind3D : std::uint8_t {
   Building
 };
 
+// 日光下的 moss/soil 貼圖會經 IBL 與直射光再次增亮；保持綠色通道優勢並
+// 壓低總反射率，避免林地在正式曝光下變成黃白色草原。
+[[nodiscard]] inline constexpr Aevrynd::Color
+ShowcaseForestTerrainTint3D() noexcept {
+  return {.68f, .82f, .62f, 1.f};
+}
+
+// 三層地表使用同一套世界座標貼圖；較低頻率保留近景 PBR 細節，同時
+// 延長重複週期，避免 God 鏡頭把短週期紋理壓成規則斜向刷痕。
+[[nodiscard]] inline constexpr float
+ShowcaseForestTerrainTextureScale3D() noexcept {
+  return .5f;
+}
+
+// placement 已依河岸、林地與草地選出不同生態材質，但舊提交路徑把三者
+// 全部覆寫成同一個暗綠色，遠景因而只剩黑色短線。保留共用 PBR 紋理，
+// 以受限色調恢復可辨識的林下分區。
+[[nodiscard]] inline constexpr Aevrynd::Color
+ShowcaseForestGrassTint3D(std::string_view materialAsset) noexcept {
+  if (materialAsset.find("stony_dirt_path") != std::string_view::npos)
+    return {.30106232f, .42426232f, .20426232f, 1.f};
+  if (materialAsset.find("forest_ground_04") != std::string_view::npos)
+    return {.27638504f, .45238504f, .19718504f, 1.f};
+  return {.37766832f, .57126832f, .25446832f, 1.f};
+}
+
+[[nodiscard]] inline constexpr std::string_view
+ShowcaseForestGrassMaterialAsset3D(std::string_view materialAsset) noexcept {
+  if (materialAsset.find("stony_dirt_path") != std::string_view::npos)
+    return "stony_dirt_path";
+  if (materialAsset.find("forest_ground_04") != std::string_view::npos)
+    return "forest_ground_04";
+  if (materialAsset.find("Ground108") != std::string_view::npos)
+    return "Ground108";
+  return {};
+}
+
+[[nodiscard]] inline Aevrynd::Material3D ShowcaseForestGrassMaterial3D(
+    Aevrynd::Material3D material, std::string_view materialAsset,
+    bool castsShadow) noexcept {
+  material.materialClass = Aevrynd::MaterialClass3D::Foliage;
+  material.tint = ShowcaseForestGrassTint3D(materialAsset);
+  material.surface.roughness = .9f;
+  material.surface.metallic = 0.f;
+  material.surface.emissive = 0.f;
+  // 程序葉片已有逐頂點色、法線與風權重；地面用碎石／泥土貼圖不能再
+  // 投影到細葉上，否則縮至遠景時會形成高反差黑針。
+  material.textures = {};
+  material.useUv = false;
+  material.normalScale = .72f;
+  material.doubleSided = true;
+  material.castsShadow = castsShadow;
+  return material;
+}
+
 // 選擇器與場景提交共用同一份正式草地LOD政策，避免距離與混合寬度漂移。
 [[nodiscard]] inline constexpr Aevrynd::MeshLodPolicy3D
 ShowcaseGrassLodPolicy3D() noexcept {
   return {22.f, 5.f, Aevrynd::MeshLodDistanceMetric3D::BoundsSurface};
 }
 
-// 單層 Surface 地表不會解碼 biome 高度；只固定頂點不透明度，避免高度 alpha
-// 被一般 world blend 當成透明度，同時保留幾何、材質色與世界平鋪座標。
-inline void PrepareShowcaseSurfaceTerrainMesh3D(Aevrynd::Mesh3D &mesh) noexcept {
-  for (auto &vertex : mesh.vertices) vertex.color |= 0xff000000u;
+// 正式闊葉樹的來源 LOD2 仍保留完整樹冠輪廓，但三角形已比 LOD0 少約
+// 六倍。密林不能沿用岩石的 18/48m 切換，否則近景環帶會同時提交大量
+// 百萬級 masked 葉片。只縮短幾何細節距離，不改 placement、樹冠尺度、
+// 陰影語意或物件 identity。
+[[nodiscard]] inline constexpr std::array<Aevrynd::MeshLodPolicy3D, 3>
+ShowcaseTreeLodPolicies3D() noexcept {
+  using Metric = Aevrynd::MeshLodDistanceMetric3D;
+  return {Aevrynd::MeshLodPolicy3D{8.f, 2.f, Metric::BoundsSurface},
+          Aevrynd::MeshLodPolicy3D{20.f, 4.f, Metric::BoundsSurface},
+          Aevrynd::MeshLodPolicy3D{64.f, 8.f, Metric::BoundsSurface}};
+}
+
+[[nodiscard]] inline constexpr std::array<Aevrynd::MeshLodPolicy3D, 3>
+ShowcaseOpaqueLodPolicies3D() noexcept {
+  using Metric = Aevrynd::MeshLodDistanceMetric3D;
+  return {Aevrynd::MeshLodPolicy3D{18.f, 3.f, Metric::BoundsSurface},
+          Aevrynd::MeshLodPolicy3D{48.f, 6.f, Metric::BoundsSurface},
+          Aevrynd::MeshLodPolicy3D{96.f, 10.f, Metric::BoundsSurface}};
+}
+
+// 正式 Terrain shader 以頂點 alpha 解碼正規化高度，進而混合林地、土壤與
+// 岩層；Terrain 輸出本身固定不透明，因此不得把 alpha 改成 1。舊提交路徑
+// 在此覆寫 alpha，會令整片地表都被判成最高高度的岩層。
+// 僅正式 129x129 地表可接外環；不改原始頂點／碰撞高度場或 biome 權重。
+bool AppendShowcaseTerrainApron3D(Aevrynd::Mesh3D &mesh);
+[[nodiscard]] inline bool PrepareShowcaseSurfaceTerrainMesh3D(Aevrynd::Mesh3D &mesh) {
+  return AppendShowcaseTerrainApron3D(mesh);
 }
 
 struct ShowcaseSceneDescriptor3D {
@@ -48,6 +128,134 @@ struct ShowcaseSceneDescriptor3D {
   std::string meshAsset;
   std::string materialAsset;
 };
+
+struct ShowcaseTerrainEcologyTint3D {
+  Aevrynd::Color tint{1, 1, 1, 1};
+  float canopy{}, riverMoisture{};
+};
+
+struct ShowcaseTerrainDisturbance3D {
+  Aevrynd::Color tint{1, 1, 1, 1};
+  float heightDelta{}, weight{};
+};
+
+// 林下落葉與河岸濕土必須由場景中的實際樹冠、河道位置決定；不以相機或
+// 畫面空間噪聲製造假細節。輸出只調 RGB，呼叫端保留高度場原有 alpha。
+[[nodiscard]] inline ShowcaseTerrainEcologyTint3D
+SampleShowcaseTerrainEcologyTint3D(
+    Aevrynd::Vec3 worldPosition,
+    std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept {
+  ShowcaseTerrainEcologyTint3D result{};
+  if (!std::isfinite(worldPosition.x) || !std::isfinite(worldPosition.z))
+    return result;
+  const auto smooth = [](float value) {
+    value = Aevrynd::Clamp(value, 0.f, 1.f);
+    return value * value * (3.f - 2.f * value);
+  };
+  for (const auto &descriptor : descriptors) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree ||
+        !std::isfinite(descriptor.position.x) ||
+        !std::isfinite(descriptor.position.z) ||
+        !std::isfinite(descriptor.scale.x) ||
+        !std::isfinite(descriptor.scale.z))
+      continue;
+    const float dx = worldPosition.x - descriptor.position.x;
+    const float dz = worldPosition.z - descriptor.position.z;
+    const float crownRadius = (std::max)(
+        2.5f, (std::max)(std::abs(descriptor.scale.x),
+                         std::abs(descriptor.scale.z)) * .62f);
+    const float normalized =
+        1.f - std::sqrt(dx * dx + dz * dz) / (crownRadius * 1.4f);
+    result.canopy = (std::max)(result.canopy, smooth(normalized));
+  }
+  const float riverCenter = -4.f + std::sin(worldPosition.z * .035f) * 5.f +
+                            std::sin(worldPosition.z * .011f) * 2.f;
+  const float riverWidth =
+      12.f + std::sin(worldPosition.z * .057f + .7f) * 2.6f;
+  const float bankClearance =
+      std::abs(worldPosition.x - riverCenter) - riverWidth * .5f;
+  result.riverMoisture = 1.f - smooth((bankClearance - 1.5f) / 14.f);
+  result.tint = {
+      1.f - result.canopy * .14f - result.riverMoisture * .08f,
+      1.f - result.canopy * .08f - result.riverMoisture * .10f,
+      1.f - result.canopy * .18f - result.riverMoisture * .05f, 1.f};
+  return result;
+}
+
+// 倒木會壓低表土並在外緣推起一圈鬆土；腐殖與落葉的範圍取自實際倒木
+// descriptor、尺度與朝向，而不是相機、畫面座標或時間雜訊。出生點、屋舍與
+// 河床維持原碰撞／水面契約。只使用 near band，避免遠景被同一效果鋪滿。
+[[nodiscard]] inline ShowcaseTerrainDisturbance3D
+SampleShowcaseTerrainDisturbance3D(
+    Aevrynd::Vec3 worldPosition,
+    std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept {
+  ShowcaseTerrainDisturbance3D result{};
+  if (!std::isfinite(worldPosition.x) || !std::isfinite(worldPosition.z))
+    return result;
+  const auto distanceSquared = [](Aevrynd::Vec3 a, Aevrynd::Vec3 b) {
+    const float x = a.x - b.x, z = a.z - b.z;
+    return x * x + z * z;
+  };
+  if (distanceSquared(worldPosition, {-16.f, 0.f, 8.f}) <= 64.f ||
+      distanceSquared(worldPosition, {-12.f, 0.f, 24.f}) <= 51.84f)
+    return result;
+  const float riverCenter = -4.f + std::sin(worldPosition.z * .035f) * 5.f +
+                            std::sin(worldPosition.z * .011f) * 2.f;
+  const float riverWidth =
+      12.f + std::sin(worldPosition.z * .057f + .7f) * 2.6f;
+  if (std::abs(worldPosition.x - riverCenter) <= riverWidth * .5f + 1.f)
+    return result;
+  const auto smooth = [](float value) {
+    value = Aevrynd::Clamp(value, 0.f, 1.f);
+    return value * value * (3.f - 2.f * value);
+  };
+  float closestRadius = 1.f;
+  for (const auto &descriptor : descriptors) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree || descriptor.lodGroup != 0 ||
+        descriptor.meshAsset.find("dead_tree_trunk_02") == std::string::npos ||
+        !std::isfinite(descriptor.position.x) ||
+        !std::isfinite(descriptor.position.z) ||
+        !std::isfinite(descriptor.scale.x) ||
+        !std::isfinite(descriptor.scale.z) || !std::isfinite(descriptor.yaw))
+      continue;
+    const float halfLength =
+        Aevrynd::Clamp(std::abs(descriptor.scale.x) * .55f, 3.f, 5.f);
+    const float halfWidth =
+        Aevrynd::Clamp(std::abs(descriptor.scale.z) * .22f, 1.4f, 2.4f);
+    const float dx = worldPosition.x - descriptor.position.x;
+    const float dz = worldPosition.z - descriptor.position.z;
+    const float cosine = std::cos(descriptor.yaw);
+    const float sine = std::sin(descriptor.yaw);
+    const float localX = cosine * dx + sine * dz;
+    const float localZ = -sine * dx + cosine * dz;
+    const auto ellipseRadiusSquared = [](float x, float z, float xRadius,
+                                         float zRadius) {
+      const float nx = x / xRadius, nz = z / zRadius;
+      return nx * nx + nz * nz;
+    };
+    const float primary = ellipseRadiusSquared(
+        localX, localZ, halfLength, halfWidth);
+    const float secondary = ellipseRadiusSquared(
+        localX - halfLength * .28f, localZ + halfWidth * .12f,
+        halfLength * .68f, halfWidth * .82f);
+    const float weight = (std::max)(smooth(1.f - primary),
+                                    smooth(1.f - secondary) * .6f);
+    if (weight <= result.weight) continue;
+    result.weight = weight;
+    closestRadius = (std::min)(primary, secondary);
+  }
+  if (result.weight <= 0.f) return result;
+  const float radius = std::sqrt((std::max)(0.f, closestRadius));
+  const float innerEdge = smooth((radius - .55f) / .17f);
+  const float outerEdge = smooth((1.f - radius) / .17f);
+  const float rim = innerEdge * outerEdge;
+  result.heightDelta = Aevrynd::Clamp(-.055f * result.weight + .05f * rim,
+                                       -.055f, .025f);
+  result.tint = {1.f - result.weight * .30f,
+                 1.f - result.weight * .38f,
+                 1.f - result.weight * .52f, 1.f};
+  return result;
+}
 
 struct ShowcaseLightingState3D {
   ShowcaseLightingProfile3D profile{};
@@ -311,14 +519,16 @@ struct ShowcaseEnvironmentReceipt3D {
 };
 
 struct ShowcaseSceneTargets3D {
-  std::size_t terrainPatches{1}, waterSegments{1}, treeInstances{144},
-      grassInstances{282}, rockInstances{30}, buildingComponents{6};
-  std::size_t nearVegetation{156}, midVegetation{184}, farVegetation{86};
+  std::size_t terrainPatches{1}, waterSegments{1}, treeInstances{240},
+      grassInstances{186}, rockInstances{30}, buildingComponents{6};
+  // 植被僅含樹與草；含岩石的陸地分帶另為 180／196／80。
+  std::size_t nearVegetation{240}, midVegetation{140}, farVegetation{46};
   float terrainSpanMeters{512.f}, riverLengthMeters{272.f},
       riverMinimumWidthMeters{9.f}, riverMaximumWidthMeters{15.f},
       minimumRiverSurfaceAreaSquareMeters{2800.f};
   std::uint32_t requiredBuildingComponentMask{0x3fu};
-  std::size_t requiredTerrainMaterialLayers{3}, minimumRiverbankProps{120},
+  // 六十二株河岸草加三十岩石；此為固定配置總數，不是放寬河岸淨空。
+  std::size_t requiredTerrainMaterialLayers{3}, minimumRiverbankProps{92},
       minimumDensestHabitatCell{8};
   std::uint64_t materialIdentityHash{}, licenseInventoryHash{};
 };

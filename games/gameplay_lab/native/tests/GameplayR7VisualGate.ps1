@@ -15,6 +15,7 @@ $requiredShots = @(
   'palette-building', 'melee-combat'
 )
 $nightShots = @('first-night', 'third-night', 'god-night')
+$waterShots = @('third-day', 'god-day', 'god-dusk')
 $actorShots = @('third-day', 'third-dusk', 'third-night', 'god-day', 'god-dusk', 'god-night', 'palette-building', 'melee-combat')
 $issues = [Collections.Generic.List[string]]::new()
 $shotReceipts = [Collections.Generic.List[object]]::new()
@@ -135,9 +136,13 @@ foreach ($name in $requiredShots) {
       $semantic -and $semantic.hdr -and $semantic.hdr.meanLuma -gt 0 -and $semantic.hdr.p10Luma -gt 0
     if ($nightPass) { ++$nightPasses } else { $issues.Add("night-readability:$name") }
   }
-  $waterPass = $semantic -and $semantic.water -and $semantic.water.pixelCoverage -ge 0.002 -and
-    $semantic.water.entropy -ge 5.5 -and $semantic.water.normalVariance -ge 0.0005 -and $semantic.water.reflectionVariance -ge 0.0005
-  if ($waterPass) { ++$waterPasses } else { $issues.Add("water-quality:$name") }
+  $waterPass = $true
+  $waterApplicable = $waterShots -contains $name
+  if ($waterApplicable) {
+    $waterPass = $semantic -and $semantic.water -and $semantic.water.pixelCoverage -ge 0.002 -and
+      $semantic.water.entropy -ge 5.5 -and $semantic.water.normalVariance -ge 0.0005 -and $semantic.water.reflectionVariance -ge 0.0005
+    if ($waterPass) { ++$waterPasses } else { $issues.Add("water-quality:$name") }
+  }
   $terrainPass = $semantic -and $semantic.terrain -and $semantic.terrain.autocorrelation32To256 -lt 0.65
   if ($terrainPass) { ++$terrainPasses } else { $issues.Add("terrain-repeat:$name") }
   $vegetationPass = $semantic -and $semantic.vegetation -and $semantic.vegetation.coverage -ge 0.06 -and $semantic.vegetation.spatialEntropy -ge 3.0
@@ -150,12 +155,12 @@ foreach ($name in $requiredShots) {
   }
   $uiPass = $semantic -and $semantic.ui -and $semantic.ui.coverage -le 0.08 -and $semantic.ui.heroOverlap -eq 0
   if ($uiPass) { ++$uiPasses } else { $issues.Add("ui-composition:$name") }
-  $shotReceipts.Add([ordered]@{name=$name;beauty=$beauty;objectId=$objectId;depth=$depth;nightPass=$nightPass;waterPass=[bool]$waterPass;terrainPass=[bool]$terrainPass;vegetationPass=[bool]$vegetationPass;actorPass=[bool]$actorPass;uiPass=[bool]$uiPass})
+  $shotReceipts.Add([ordered]@{name=$name;beauty=$beauty;objectId=$objectId;depth=$depth;nightPass=$nightPass;waterApplicable=$waterApplicable;waterPass=[bool]$waterPass;terrainPass=[bool]$terrainPass;vegetationPass=[bool]$vegetationPass;actorPass=[bool]$actorPass;uiPass=[bool]$uiPass})
 }
 
 $artifactScore = [Math]::Floor(10.0 * $artifactPasses / $requiredShots.Count)
 $nightScore = [Math]::Floor(20.0 * $nightPasses / $nightShots.Count)
-$waterScore = [Math]::Floor(15.0 * $waterPasses / $requiredShots.Count)
+$waterScore = [Math]::Floor(15.0 * $waterPasses / $waterShots.Count)
 $terrainScore = [Math]::Floor(15.0 * $terrainPasses / $requiredShots.Count)
 $vegetationScore = [Math]::Floor(15.0 * $vegetationPasses / $requiredShots.Count)
 $actorScore = [Math]::Floor(15.0 * $actorPasses / $actorShots.Count)

@@ -3,7 +3,7 @@
   "manifestType": "aevrynd-runtime-render-package",
   "exactAssetSet": {
     "id": "gameplay-ultra-realistic-cc0",
-    "count": 10,
+    "count": 11,
     "assetIds": [
       "Bricks100",
       "Ground108",
@@ -14,6 +14,7 @@
       "forest_ground_04",
       "island_tree_01",
       "stony_dirt_path",
+      "tree_small_02",
       "xanderklinge"
     ]
   },
@@ -1224,6 +1225,303 @@
       "commercialUse": true
     },
     {
+      "path": "materials/tree-small-02/branches-arm.dds",
+      "bytes": 1398276,
+      "sha256": "1c54a88ec7a17c55528a99319378283d61b4800002ab4e63ca0fe30ebb1249ea",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_diff_1k.jpg",
+            "sha256": "a71b768e330c0c6cca097e30314f6b4e842ef724a1370f6aab14b4434eec64cb"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_nor_gl_1k.jpg",
+            "sha256": "a2efae9e7fede259601188cd5cb7e561fc502bd87e04d862a9532b2d8e647a62"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_arm_1k.jpg",
+            "sha256": "8968b46d76c67da09ebbf4eed04b8123c9e0ddf5b55d123968b35b32aa76d27a"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/branches-base.dds",
+      "bytes": 1398276,
+      "sha256": "cf4f6fcc9329e66f05b7b2e86d20a38b2d0e8e054013cf3e0431a4cbc1e17d0a",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_diff_1k.jpg",
+            "sha256": "a71b768e330c0c6cca097e30314f6b4e842ef724a1370f6aab14b4434eec64cb"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_nor_gl_1k.jpg",
+            "sha256": "a2efae9e7fede259601188cd5cb7e561fc502bd87e04d862a9532b2d8e647a62"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_arm_1k.jpg",
+            "sha256": "8968b46d76c67da09ebbf4eed04b8123c9e0ddf5b55d123968b35b32aa76d27a"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/branches-normal.dds",
+      "bytes": 1398276,
+      "sha256": "ea8a046e64ce7eacce435e64f31fc45501624fd131c7e6c8492bfd9de9fb1beb",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_diff_1k.jpg",
+            "sha256": "a71b768e330c0c6cca097e30314f6b4e842ef724a1370f6aab14b4434eec64cb"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_nor_gl_1k.jpg",
+            "sha256": "a2efae9e7fede259601188cd5cb7e561fc502bd87e04d862a9532b2d8e647a62"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_branch_arm_1k.jpg",
+            "sha256": "8968b46d76c67da09ebbf4eed04b8123c9e0ddf5b55d123968b35b32aa76d27a"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/leaves-arm.dds",
+      "bytes": 1398276,
+      "sha256": "c8a6a8747023a64ed506ad62b8e5c0ae16bf14e0353d5e67f8d2511967aaf2ed",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_diff_1k.jpg",
+            "sha256": "261e7d7a5ac7d2e16ea8823ff8510be8f3f615999724232994039ad2885e5c36"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_nor_gl_1k.jpg",
+            "sha256": "8c72e04fb23e16ae1df79c01385a638473d1dd4dede3d51e83d70153c129f09b"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_arm_1k.jpg",
+            "sha256": "71f81374daf5a8f3e6eb2c694264a1769fdb0bea508178e4105618eecea83c3e"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/leaves-base.dds",
+      "bytes": 1398276,
+      "sha256": "88fce8dc2f1815c421a0c7c4d9cc7d9cacb4024f6c51e8fc928a5e938b7996a9",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_diff_1k.jpg",
+            "sha256": "261e7d7a5ac7d2e16ea8823ff8510be8f3f615999724232994039ad2885e5c36"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_nor_gl_1k.jpg",
+            "sha256": "8c72e04fb23e16ae1df79c01385a638473d1dd4dede3d51e83d70153c129f09b"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_arm_1k.jpg",
+            "sha256": "71f81374daf5a8f3e6eb2c694264a1769fdb0bea508178e4105618eecea83c3e"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/leaves-normal.dds",
+      "bytes": 1398276,
+      "sha256": "320d6df57bf075dbd701acab52740a623f0c86d298bd3048f3986d1988bb0cd9",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_diff_1k.jpg",
+            "sha256": "261e7d7a5ac7d2e16ea8823ff8510be8f3f615999724232994039ad2885e5c36"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_nor_gl_1k.jpg",
+            "sha256": "8c72e04fb23e16ae1df79c01385a638473d1dd4dede3d51e83d70153c129f09b"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_leaves_arm_1k.jpg",
+            "sha256": "71f81374daf5a8f3e6eb2c694264a1769fdb0bea508178e4105618eecea83c3e"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/trunk-arm.dds",
+      "bytes": 1398276,
+      "sha256": "716c128da96feb1f3ad4ea041ecd9d5c167115a7aa0671f517ebaefbc9963b7d",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_diff_1k.jpg",
+            "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_nor_gl_1k.jpg",
+            "sha256": "9c83be074c950ea1b94c732c0c0291b53b9ba357f932d378bafe3ca3b4418871"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_arm_1k.jpg",
+            "sha256": "891c5a1bb124292984b01558e9f2b0302d27d2fa3ccf9dfc6c34f9ea4ca24e6c"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/trunk-base.dds",
+      "bytes": 1398276,
+      "sha256": "513d07ece694d03e3c095c4148d7da4649ffdf6db54826cf1bf1754a368b1453",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_diff_1k.jpg",
+            "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_nor_gl_1k.jpg",
+            "sha256": "9c83be074c950ea1b94c732c0c0291b53b9ba357f932d378bafe3ca3b4418871"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_arm_1k.jpg",
+            "sha256": "891c5a1bb124292984b01558e9f2b0302d27d2fa3ccf9dfc6c34f9ea4ca24e6c"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/tree-small-02/trunk-normal.dds",
+      "bytes": 1398276,
+      "sha256": "099e981864b1e90b2c0500b0bcb0a92fcdc38ee196f00f7161905dc9bf762712",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/textures/tree_small_02_diff_1k.jpg",
+            "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_nor_gl_1k.jpg",
+            "sha256": "9c83be074c950ea1b94c732c0c0291b53b9ba357f932d378bafe3ca3b4418871"
+          },
+          {
+            "path": "tree-small-02/textures/tree_small_02_arm_1k.jpg",
+            "sha256": "891c5a1bb124292984b01558e9f2b0302d27d2fa3ccf9dfc6c34f9ea4ca24e6c"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
       "path": "meshes/boulder-01/boulder-01-lod0-node0-mesh0-primitive0-material0-boulder-01.aemesh",
       "bytes": 3071924,
       "sha256": "1005cca1811d45922b9daddcb1c6c6e155e09f569df8efe5de093468b11c25d6",
@@ -1834,6 +2132,312 @@
       },
       "license": "CC0-1.0",
       "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod0-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh",
+      "bytes": 1079312,
+      "sha256": "c620525628e5c8467eaec0a1b7d230b6ecf36c2702a483258c85e9bcfd9f36b4",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 24349,
+        "indices": 99381,
+        "triangles": 33127,
+        "boundsMinimum": [
+          -1.094972082738,
+          1.6250244043939999,
+          -1.26409176595
+        ],
+        "boundsMaximum": [
+          1.418524748744,
+          4.392457565093999,
+          2.792770553846
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod0.glb",
+            "sha256": "14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod0-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh",
+      "bytes": 27725624,
+      "sha256": "50b27f41c183d16d4075985c37ac7711b2ac7f61875fe0f7844caa68dfa3b65a",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 699325,
+        "indices": 2036127,
+        "triangles": 678709,
+        "boundsMinimum": [
+          -1.30830085,
+          1.45842214678,
+          -1.38229871
+        ],
+        "boundsMaximum": [
+          1.607655859224,
+          4.532637094038,
+          2.9095868279659998
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod0.glb",
+            "sha256": "14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod0-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh",
+      "bytes": 291600,
+      "sha256": "96c2758f7901b4fc07ec7d29bd56034b607a83efab1c62c1f873171ba52a1383",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 6170,
+        "indices": 29706,
+        "triangles": 9902,
+        "boundsMinimum": [
+          -0.765383309328,
+          -0.0240319986,
+          -0.39102918389600005
+        ],
+        "boundsMaximum": [
+          0.9303996033139998,
+          3.6645809237319997,
+          1.9230455796239998
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod0.glb",
+            "sha256": "14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod1-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh",
+      "bytes": 400332,
+      "sha256": "67575e73b02c9ea28f556477a519935cedbb48cb850d444f2dabf179af2d1fe9",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 10052,
+        "indices": 29715,
+        "triangles": 9905,
+        "boundsMinimum": [
+          -1.076655168684,
+          1.673405262808,
+          -1.2255716411400002
+        ],
+        "boundsMaximum": [
+          1.393027059128,
+          4.369171450896,
+          2.737432685912
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod1.glb",
+            "sha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod1-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh",
+      "bytes": 10241152,
+      "sha256": "5701f5ae51a4e2b324d820fba16ce32c7bdbcc8bc5b5af584238bfa950fdd7c7",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 266418,
+        "indices": 695358,
+        "triangles": 231786,
+        "boundsMinimum": [
+          -1.30830085,
+          1.459835174872,
+          -1.3799094
+        ],
+        "boundsMaximum": [
+          1.6046505447,
+          4.531851791316,
+          2.897888337916
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod1.glb",
+            "sha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod1-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh",
+      "bytes": 107540,
+      "sha256": "2cc4b6f336b67d835e49a6a5db35ecef523fafd61569fb2c8c18723b72f53102",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 2386,
+        "indices": 10179,
+        "triangles": 3393,
+        "boundsMinimum": [
+          -0.762974102028,
+          -0.0240319986,
+          -0.3910353990880001
+        ],
+        "boundsMaximum": [
+          0.9294576104439998,
+          3.664501395128,
+          1.9231967256559999
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod1.glb",
+            "sha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh",
+      "bytes": 163400,
+      "sha256": "4182c1d2d3e726f5c77dd84adf59ea5d4e022d49b1f211b34b488dbc165b68cc",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 4306,
+        "indices": 10704,
+        "triangles": 3568,
+        "boundsMinimum": [
+          -1.033289001689,
+          1.675786459019,
+          -1.211453438248
+        ],
+        "boundsMaximum": [
+          1.358196291116,
+          4.316274921603,
+          2.6843219069899997
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod2.glb",
+            "sha256": "7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh",
+      "bytes": 3704316,
+      "sha256": "c46eca29c84d6ea9db320444d01ed4f16403a2a7f50729178e70c7886b28bc5b",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 99050,
+        "indices": 232725,
+        "triangles": 77575,
+        "boundsMinimum": [
+          -1.30338943,
+          1.495349379469,
+          -1.36024463
+        ],
+        "boundsMaximum": [
+          1.5974836181499998,
+          4.525581933881,
+          2.860872649442
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod2.glb",
+            "sha256": "7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh",
+      "bytes": 57760,
+      "sha256": "1c765173ebc17a3be167c35ef1b8df8329fb4cf98f468f4da13fd42533b677fd",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 1329,
+        "indices": 5133,
+        "triangles": 1711,
+        "boundsMinimum": [
+          -0.763188573378,
+          -0.0222652573,
+          -0.39115871506300004
+        ],
+        "boundsMaximum": [
+          0.9293112328009998,
+          3.664480671167,
+          1.923155026796
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/tree_small_02",
+        "inputs": [
+          {
+            "path": "tree-small-02/tree-small-02-lod2.glb",
+            "sha256": "7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
     }
   ],
   "materials": [
@@ -1984,6 +2588,45 @@
       "doubleSided": false,
       "materialClass": "surface",
       "standaloneRole": "path"
+    },
+    {
+      "id": "tree_small_02:branches",
+      "assetId": "tree_small_02",
+      "slot": "branches",
+      "baseColorPath": "materials/tree-small-02/branches-base.dds",
+      "surfacePath": "materials/tree-small-02/branches-arm.dds",
+      "normalPath": "materials/tree-small-02/branches-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
+    },
+    {
+      "id": "tree_small_02:leaves",
+      "assetId": "tree_small_02",
+      "slot": "leaves",
+      "baseColorPath": "materials/tree-small-02/leaves-base.dds",
+      "surfacePath": "materials/tree-small-02/leaves-arm.dds",
+      "normalPath": "materials/tree-small-02/leaves-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "mask",
+      "alphaCutoff": 0.5,
+      "doubleSided": true,
+      "materialClass": "foliage"
+    },
+    {
+      "id": "tree_small_02:trunk",
+      "assetId": "tree_small_02",
+      "slot": "trunk",
+      "baseColorPath": "materials/tree-small-02/trunk-base.dds",
+      "surfacePath": "materials/tree-small-02/trunk-arm.dds",
+      "normalPath": "materials/tree-small-02/trunk-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
     }
   ],
   "meshParts": [
@@ -2045,6 +2688,36 @@
         "meshes/island-tree-01/island-tree-01-lod0-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
         "meshes/island-tree-01/island-tree-01-lod1-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh",
         "meshes/island-tree-01/island-tree-01-lod2-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh"
+      ]
+    },
+    {
+      "id": "tree-small-02:material-0",
+      "assetId": "tree_small_02",
+      "materialId": "tree_small_02:branches",
+      "lodPaths": [
+        "meshes/tree-small-02/tree-small-02-lod0-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh",
+        "meshes/tree-small-02/tree-small-02-lod1-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh",
+        "meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-primitive0-material0-tree-small-02-branches.aemesh"
+      ]
+    },
+    {
+      "id": "tree-small-02:material-1",
+      "assetId": "tree_small_02",
+      "materialId": "tree_small_02:leaves",
+      "lodPaths": [
+        "meshes/tree-small-02/tree-small-02-lod0-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh",
+        "meshes/tree-small-02/tree-small-02-lod1-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh",
+        "meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-primitive1-material1-tree-small-02-leaves.aemesh"
+      ]
+    },
+    {
+      "id": "tree-small-02:material-2",
+      "assetId": "tree_small_02",
+      "materialId": "tree_small_02:trunk",
+      "lodPaths": [
+        "meshes/tree-small-02/tree-small-02-lod0-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh",
+        "meshes/tree-small-02/tree-small-02-lod1-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh",
+        "meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-primitive2-material2-tree-small-02-trunk.aemesh"
       ]
     }
   ],
@@ -2193,6 +2866,25 @@
       ]
     },
     {
+      "id": "tree_small_02",
+      "name": "tree-small-02",
+      "kind": "mesh-pbr",
+      "provider": "poly-haven",
+      "officialPage": "https://polyhaven.com/a/tree_small_02",
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materialIds": [
+        "tree_small_02:branches",
+        "tree_small_02:leaves",
+        "tree_small_02:trunk"
+      ],
+      "meshPartIds": [
+        "tree-small-02:material-0",
+        "tree-small-02:material-1",
+        "tree-small-02:material-2"
+      ]
+    },
+    {
       "id": "xanderklinge",
       "name": "xanderklinge",
       "kind": "hdri",
@@ -2204,12 +2896,12 @@
     }
   ],
   "package": {
-    "payloadFileCount": 54,
-    "payloadBytes": 185635732,
+    "payloadFileCount": 72,
+    "payloadBytes": 241991252,
     "manifestPath": "runtime-render-manifest.json",
-    "manifestBytes": 73203,
-    "packageFileCount": 55,
-    "packageBytes": 185708935,
+    "manifestBytes": 95960,
+    "packageFileCount": 73,
+    "packageBytes": 242087212,
     "manifestHashPolicy": "external-envelope",
     "excludedClasses": [
       "GLB",

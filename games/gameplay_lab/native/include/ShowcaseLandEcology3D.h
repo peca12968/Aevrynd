@@ -21,6 +21,7 @@ enum class ShowcaseLandZone3D : std::uint8_t {
 };
 enum class ShowcaseLandVariant3D : std::uint8_t {
   IslandTree,
+  TreeSmall02,
   DeadTreeTrunk,
   Boulder,
   CoastalCliff,
@@ -33,6 +34,7 @@ enum class ShowcaseLandVariant3D : std::uint8_t {
     ShowcaseLandVariant3D variant) noexcept {
   switch (variant) {
   case ShowcaseLandVariant3D::IslandTree: return "island_tree_01";
+  case ShowcaseLandVariant3D::TreeSmall02: return "tree_small_02";
   case ShowcaseLandVariant3D::DeadTreeTrunk: return "dead_tree_trunk_02";
   case ShowcaseLandVariant3D::Boulder: return "boulder_01";
   case ShowcaseLandVariant3D::CoastalCliff: return "coastal_cliff_01";
@@ -56,8 +58,10 @@ struct ShowcaseLandPlacement3D {
 
 struct ShowcaseLandEcologySettings3D {
   std::uint64_t seed{0x4a17u};
-  std::array<std::uint32_t, 3> trees{48, 64, 32};
-  std::array<std::uint32_t, 3> grass{108, 120, 54};
+  // 固定四百五十六項預算；近景非河岸草集中英雄區，每生境四株一群。
+  // 中遠景樹以四株群落優先找安全點，不再用全域最大淨空將森林攤成果園。
+  std::array<std::uint32_t, 3> trees{124, 88, 28};
+  std::array<std::uint32_t, 3> grass{116, 52, 18};
   std::array<std::uint32_t, 3> rocks{12, 12, 6};
   float terrainHalfSpan{256.f};
   float terrainMargin{8.f};
@@ -72,24 +76,29 @@ struct ShowcaseLandEcologySettings3D {
   float riverbankGrassMaximumClearance{7.f};
   float habitatCellSize{32.f};
   std::uint32_t minimumDensestHabitatCell{8};
+  // 關閉僅供逐位元差分驗證；剪枝不改候選或最終配置，故不混入配置指紋。
+  bool exactCandidatePruning{true};
 };
 
 struct ShowcaseLandEcologyReceipt3D {
   std::uint64_t seed{}, fingerprint{};
   std::array<std::uint32_t, 3> trees{}, grass{}, rocks{};
-  std::array<std::uint32_t, 7> variants{};
+  std::array<std::uint32_t, 8> variants{};
   std::array<std::uint32_t, 4> zones{};
   std::uint32_t placements{}, integratedDescriptors{}, descriptorCapacity{480}, rejectedCandidates{}, attemptedCandidates{};
   std::uint32_t riverbankRocks{}, riverbankGrass{}, occupiedHabitatCells{},
-      densestHabitatCell{}, heroGroundCover{}, heroGroundCoverQuadrantMask{};
+      densestHabitatCell{}, heroGroundCover{}, heroGroundCoverQuadrantMask{},
+      understoryGroundCover{}, understoryGroundCoverBandMask{};
   std::uint32_t failureKind{3}, failureBand{3}, failureItem{};
   float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{},
       minimumPropEdgeSpacing{}, minimumRiverbankRockClearance{},
       maximumRiverbankRockClearance{}, maximumRiverbankGrassClearance{};
   bool terrainBoundsExact{}, bandsExact{}, riverExcluded{}, spawnExcluded{}, cottageExcluded{};
   bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{},
-      zonesExact{}, riverbankLayered{}, densityExact{}, heroGroundCoverExact{};
+      zonesExact{}, riverbankLayered{}, densityExact{}, heroGroundCoverExact{},
+      understoryGroundCoverExact{};
   bool deterministicBudget{};
+  bool walkingLaneClear{}, vegetationScaleBounded{};
   [[nodiscard]] bool Complete() const noexcept;
 };
 

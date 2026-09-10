@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 
 using namespace GameplayLab;
@@ -14,6 +15,7 @@ bool Exact(const ShowcaseLandPlacement3D &left,
       left.variant == right.variant && left.stableKey == right.stableKey &&
       left.zone == right.zone &&
       std::bit_cast<std::uint32_t>(left.position.x) == std::bit_cast<std::uint32_t>(right.position.x) &&
+      std::bit_cast<std::uint32_t>(left.position.y) == std::bit_cast<std::uint32_t>(right.position.y) &&
       std::bit_cast<std::uint32_t>(left.position.z) == std::bit_cast<std::uint32_t>(right.position.z) &&
       std::bit_cast<std::uint32_t>(left.scale.x) == std::bit_cast<std::uint32_t>(right.scale.x) &&
       std::bit_cast<std::uint32_t>(left.scale.y) == std::bit_cast<std::uint32_t>(right.scale.y) &&
@@ -38,6 +40,9 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.densestHabitatCell == right.densestHabitatCell &&
       left.heroGroundCover == right.heroGroundCover &&
       left.heroGroundCoverQuadrantMask == right.heroGroundCoverQuadrantMask &&
+      left.understoryGroundCover == right.understoryGroundCover &&
+      left.understoryGroundCoverBandMask ==
+          right.understoryGroundCoverBandMask &&
       left.failureKind == right.failureKind &&
       left.failureBand == right.failureBand &&
       left.failureItem == right.failureItem &&
@@ -67,8 +72,42 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.riverbankLayered == right.riverbankLayered &&
       left.densityExact == right.densityExact &&
       left.heroGroundCoverExact == right.heroGroundCoverExact &&
-      left.deterministicBudget == right.deterministicBudget;
+      left.understoryGroundCoverExact == right.understoryGroundCoverExact &&
+      left.deterministicBudget == right.deterministicBudget &&
+      left.walkingLaneClear == right.walkingLaneClear &&
+      left.vegetationScaleBounded == right.vegetationScaleBounded;
 }
+
+bool IsLivingTreeVariant(ShowcaseLandVariant3D variant) {
+  return variant == ShowcaseLandVariant3D::IslandTree ||
+         variant == ShowcaseLandVariant3D::TreeSmall02;
+}
+
+bool TreeVariantDistributionContract(
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  std::array<unsigned, 3> islandByBand{}, smallByBand{}, deadByBand{};
+  unsigned island{}, small{}, dead{};
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Tree)
+      continue;
+    const auto band = std::size_t(placement.band);
+    if (placement.variant == ShowcaseLandVariant3D::IslandTree) {
+      ++island;
+      ++islandByBand[band];
+    } else if (placement.variant == ShowcaseLandVariant3D::TreeSmall02) {
+      ++small;
+      ++smallByBand[band];
+    } else if (placement.variant == ShowcaseLandVariant3D::DeadTreeTrunk) {
+      ++dead;
+      ++deadByBand[band];
+    }
+  }
+  return island == 160 && small == 60 && dead == 20 &&
+         islandByBand == std::array<unsigned, 3>{83, 59, 18} &&
+         smallByBand == std::array<unsigned, 3>{31, 22, 7} &&
+         deadByBand == std::array<unsigned, 3>{10, 7, 3};
+}
+
 }
 
 int main() {
@@ -98,7 +137,173 @@ int main() {
              <<" fingerprint="<<receipt.fingerprint<<'\n';
     return 1;
   }
-
+  if (!TreeVariantDistributionContract(first))
+    return 35;
+  auto concentratedDeadwood = first;
+  for (auto &placement : concentratedDeadwood)
+    if (placement.kind == ShowcaseLandKind3D::Tree)
+      placement.variant = ShowcaseLandVariant3D::IslandTree;
+  unsigned hostileDeadwood{};
+  for (auto &placement : concentratedDeadwood)
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.band == ShowcaseLandBand3D::Near && hostileDeadwood < 20) {
+      placement.variant = ShowcaseLandVariant3D::DeadTreeTrunk;
+      ++hostileDeadwood;
+    }
+  if (hostileDeadwood != 20 ||
+      TreeVariantDistributionContract(concentratedDeadwood))
+    return 36;
+  auto collapsedLivingSpecies = first;
+  for (auto &placement : collapsedLivingSpecies)
+    if (placement.variant == ShowcaseLandVariant3D::TreeSmall02)
+      placement.variant = ShowcaseLandVariant3D::IslandTree;
+  if (TreeVariantDistributionContract(collapsedLivingSpecies))
+    return 37;
+  // 中景活樹至少六成具有八公尺內同帶鄰樹；量測樹幹群聚，不冒充葉片像素覆蓋。
+  // 八公尺保留既有 4.5 公尺根部淨空，且不把總樹數當作森林密度證據。
+  const auto treeCommunityGate=[](const auto& values,ShowcaseLandBand3D band,unsigned minimumLiving){
+    unsigned living{}, connected{};
+    for(const auto& p:values)if(p.kind==ShowcaseLandKind3D::Tree&&
+        p.band==band&&IsLivingTreeVariant(p.variant)){
+      ++living;
+      for(const auto& q:values)if(q.stableKey!=p.stableKey&&
+          q.kind==ShowcaseLandKind3D::Tree&&q.band==p.band&&
+          IsLivingTreeVariant(q.variant)){
+        const float x=p.position.x-q.position.x,z=p.position.z-q.position.z;
+        if(x*x+z*z<=64.f){++connected;break;}
+      }
+    }
+    std::cout<<"TREE_COMMUNITY band="<<unsigned(band)<<" living="<<living<<" neighborWithin8m="<<connected<<'\n';
+    return living>=minimumLiving&&connected*5u>=living*3u;
+  };
+  if(!treeCommunityGate(first,ShowcaseLandBand3D::Near,112)||
+     !treeCommunityGate(first,ShowcaseLandBand3D::Mid,78))return 32;
+  auto orchard=first;
+  unsigned orchardIndex{};
+  for(auto& p:orchard)if(p.kind==ShowcaseLandKind3D::Tree){
+    p.position={float(orchardIndex%16u)*16.f,0,float(orchardIndex/16u)*16.f};
+    ++orchardIndex;
+  }
+  if(treeCommunityGate(orchard,ShowcaseLandBand3D::Near,112)||
+     treeCommunityGate(orchard,ShowcaseLandBand3D::Mid,78))return 33;
+  // 固定玩家周圍 80 公尺的俯視冠層代理。這不是葉片像素覆蓋，而是以正式
+  // placement 的冠幅 scale 計算可重現的世界空間聯集，專門攔截「樹很多，
+  // 但都分散到鏡頭外」的果園式配置。
+  const auto canopyCoverage=[](const auto& values){
+    constexpr float radius=80.f,step=.5f;
+    unsigned eligible{},covered{};
+    for(int z=-160;z<160;++z)for(int x=-160;x<160;++x){
+      const float worldX=-16.f+(float(x)+.5f)*step;
+      const float worldZ=8.f+(float(z)+.5f)*step;
+      const float dx=worldX+16.f,dz=worldZ-8.f;
+      if(dx*dx+dz*dz>radius*radius)continue;
+      ++eligible;
+      for(const auto& p:values)if(p.kind==ShowcaseLandKind3D::Tree&&
+          IsLivingTreeVariant(p.variant)){
+        const float rx=p.scale.x*.5f,rz=p.scale.z*.5f;
+        const float u=(worldX-p.position.x)/rx,v=(worldZ-p.position.z)/rz;
+        if(u*u+v*v<=1.f){++covered;break;}
+      }
+    }
+    const float fraction=eligible?float(covered)/float(eligible):0.f;
+    std::cout<<"CANOPY_ROI80 proxyFraction="<<fraction
+             <<" coveredM2="<<float(covered)*step*step<<'\n';
+    return fraction;
+  };
+  const float canopyFraction=canopyCoverage(first);
+  if(canopyFraction<.27f)return 34;
+  // 固定世界空間 ROI，以未旋轉 scale 橢圓作可重現覆蓋代理；不是像素或不透明葉面積。
+  const auto coverageGate=[&](const auto& first){
+  unsigned covered{}, closePairs{},heroCount{};
+  for (int z=-88;z<88;++z) for(int x=-88;x<88;++x) {
+    const float dx=(float(x)+.5f)*.25f,dz=(float(z)+.5f)*.25f;
+    if(dx*dx+dz*dz>22.f*22.f)continue;
+    for(const auto& p:first)if(p.kind==ShowcaseLandKind3D::Grass){
+      const float u=(settings.spawnCenter.x+dx-p.position.x)/(p.scale.x*.5f);
+      const float v=(settings.spawnCenter.z+dz-p.position.z)/(p.scale.z*.5f);
+      if(u*u+v*v<=1.f){++covered;break;}
+    }
+  }
+  for(std::size_t i=0;i<first.size();++i)if(first[i].kind==ShowcaseLandKind3D::Grass){
+    const auto p=first[i].position;const float dx=p.x-settings.spawnCenter.x,dz=p.z-settings.spawnCenter.z;
+    if(dx*dx+dz*dz>484.f)continue;
+    ++heroCount;
+    float nearest=1e9f;
+    for(std::size_t j=0;j<first.size();++j)if(i!=j&&first[j].kind==ShowcaseLandKind3D::Grass){
+      const float x=p.x-first[j].position.x,z=p.z-first[j].position.z;nearest=(std::min)(nearest,x*x+z*z);
+    }
+    closePairs+=nearest<=2.5f*2.5f?1u:0u;
+  }
+  std::cout<<"HERO_ROI unrotatedEllipseProxyM2="<<covered*.0625f<<" nearbyWithin2_5m="<<closePairs<<" count="<<heroCount<<'\n';
+  return covered*.0625f>=24.f&&closePairs>=24&&heroCount>=60;
+  };
+  if(!coverageGate(first))return 27;
+  auto noCover=first;
+  std::erase_if(noCover,[](const auto& p){return p.kind==ShowcaseLandKind3D::Grass;});
+  if(coverageGate(noCover))return 28;
+  // 同生境群落中心必須分離；子叢必須受自己的中心約束，不能只以總叢數宣稱群落。
+  const auto communityGate=[](const auto& values){
+    std::array<Aevrynd::Vec3,3> centers{};
+    std::array<std::vector<Aevrynd::Vec3>,3> previousCenters;
+    std::array<std::vector<Aevrynd::Vec3>,3> ribbonChildren;
+    unsigned item{},children{},ribbons{},ribbonLike{};float withinSum{},withinMax{},betweenMin=1e9f,ribbonSpanSum{},ribbonWidthMax{};
+    for(const auto& p:values)if(p.kind==ShowcaseLandKind3D::Grass&&p.band==ShowcaseLandBand3D::Near){
+      const auto type=item%3u;
+      if(p.zone!=ShowcaseLandZone3D::Riverbank){
+        if(item%12u<3u){
+          for(const auto q:previousCenters[type]){
+            const float x=p.position.x-q.x,z=p.position.z-q.z;
+            betweenMin=(std::min)(betweenMin,std::sqrt(x*x+z*z));
+          }
+          previousCenters[type].push_back(p.position);centers[type]=p.position;ribbonChildren[type].clear();
+        }else{
+          const float x=p.position.x-centers[type].x,z=p.position.z-centers[type].z;
+          const float distance=std::sqrt(x*x+z*z);
+          withinSum+=distance;withinMax=(std::max)(withinMax,distance);++children;
+          ribbonChildren[type].push_back(p.position);
+          if(ribbonChildren[type].size()==3){
+            std::array<Aevrynd::Vec3,4> points{{centers[type],ribbonChildren[type][0],ribbonChildren[type][1],ribbonChildren[type][2]}};
+            float spanSquared{};std::size_t first{},last{};
+            for(std::size_t a=0;a<points.size();++a)for(std::size_t b=a+1;b<points.size();++b){
+              const float px=points[b].x-points[a].x,pz=points[b].z-points[a].z,d2=px*px+pz*pz;
+              if(d2>spanSquared){spanSquared=d2;first=a;last=b;}
+            }
+            const float span=std::sqrt(spanSquared),axisX=(points[last].x-points[first].x)/span,axisZ=(points[last].z-points[first].z)/span;
+            float width{};for(const auto point:points){const float px=point.x-points[first].x,pz=point.z-points[first].z;width=(std::max)(width,std::abs(px*axisZ-pz*axisX));}
+            ++ribbons;ribbonSpanSum+=span;ribbonWidthMax=(std::max)(ribbonWidthMax,width);
+            ribbonLike+=span>=3.25f&&width<=1.55f?1u:0u;
+          }
+        }
+      }
+      ++item;
+    }
+    const float mean=children?withinSum/float(children):1e9f;
+    std::cout<<"GRASS_COMMUNITY meanWithin="<<mean<<" maxWithin="<<withinMax<<" minBetween="<<betweenMin
+             <<" ribbons="<<ribbonLike<<'/'<<ribbons<<" meanSpan="<<(ribbons?ribbonSpanSum/float(ribbons):0.f)
+             <<" maxWidth="<<ribbonWidthMax<<'\n';
+    return children==57&&withinMax<=7.1f&&mean<=3.5f&&betweenMin>=4.f&&betweenMin>=mean*1.5f&&
+        ribbons==18&&ribbonLike>=14;
+  };
+  if(!communityGate(first))return 29;
+  auto scattered=first;
+  unsigned scatterOrdinal{};
+  for(auto& p:scattered)if(p.kind==ShowcaseLandKind3D::Grass&&p.band==ShowcaseLandBand3D::Near){
+    if(scatterOrdinal%12u>=3u)p.position.x+=20.f;
+    ++scatterOrdinal;
+  }
+  if(communityGate(scattered))return 30;
+  auto concentric=first;
+  std::array<Aevrynd::Vec3,3> concentricCenters{};unsigned concentricItem{};
+  for(auto& p:concentric)if(p.kind==ShowcaseLandKind3D::Grass&&p.band==ShowcaseLandBand3D::Near){
+    const auto type=concentricItem%3u;
+    if(p.zone!=ShowcaseLandZone3D::Riverbank){
+      if(concentricItem%12u<3u)concentricCenters[type]=p.position;
+      else{const float angle=float((concentricItem%12u)/3u-1u)*2.094395102f;p.position={concentricCenters[type].x+std::cos(angle)*2.5f,0,concentricCenters[type].z+std::sin(angle)*2.5f};}
+    }
+    ++concentricItem;
+  }
+  // 半徑與平均群聚距離都合理的同心三角草島，仍必須被弧帶形狀 gate 拒絕。
+  if(communityGate(concentric))return 31;
   constexpr std::size_t TimedBuildCount=5;
   std::array<long long,TimedBuildCount> buildMicros{};
   for(std::size_t run=0;run<TimedBuildCount;++run){
@@ -127,21 +332,61 @@ int main() {
   }
   const auto sortedBuildMicros=[](auto values){std::ranges::sort(values);return values;}(buildMicros);
   const auto medianBuildMicros=sortedBuildMicros[TimedBuildCount/2];
+  // 第二個正式環境 seed 也必須完整且逐位元可重現，不能只挑可成功的單一分布。
+  auto alternateSettings = settings;
+  alternateSettings.seed = 0x4a18u;
+  std::vector<ShowcaseLandPlacement3D> alternate, alternateRepeated;
+  ShowcaseLandEcologyReceipt3D alternateReceipt{}, alternateRepeatedReceipt{};
+  if (!BuildShowcaseLandEcology3D(alternateSettings, alternate, &alternateReceipt) ||
+      !BuildShowcaseLandEcology3D(alternateSettings, alternateRepeated, &alternateRepeatedReceipt) ||
+      !ExactReceipt(alternateReceipt, alternateRepeatedReceipt) ||
+      alternate.size() != alternateRepeated.size() ||
+      !std::equal(alternate.begin(), alternate.end(), alternateRepeated.begin(), Exact) ||
+      alternateReceipt.fingerprint == receipt.fingerprint) {
+    std::cerr << "land alternate seed gate count=" << alternateReceipt.placements
+              << " failure=" << alternateReceipt.failureKind << '/' << alternateReceipt.failureBand << '/' << alternateReceipt.failureItem << '\n';
+    return 22;
+  }
+  // 兩個 seed 均與完整鄰格掃描參考路徑比較配置欄位、指紋及全部 receipt，非只比總數。
+  if(!coverageGate(alternate)||!communityGate(alternate)||
+     !treeCommunityGate(alternate,ShowcaseLandBand3D::Near,112)||
+     !treeCommunityGate(alternate,ShowcaseLandBand3D::Mid,78)||
+     canopyCoverage(alternate)<.27f)return 31;
+  for (const auto seed : {settings.seed, alternateSettings.seed}) {
+    auto referenceSettings = settings;
+    referenceSettings.seed = seed;
+    referenceSettings.exactCandidatePruning = false;
+    std::vector<ShowcaseLandPlacement3D> reference;
+    ShowcaseLandEcologyReceipt3D referenceReceipt{};
+    const auto &expected = seed == settings.seed ? first : alternate;
+    const auto &expectedReceipt = seed == settings.seed ? receipt : alternateReceipt;
+    if (!BuildShowcaseLandEcology3D(referenceSettings, reference, &referenceReceipt) ||
+        !ExactReceipt(referenceReceipt, expectedReceipt) || reference.size() != expected.size() ||
+        !std::equal(reference.begin(), reference.end(), expected.begin(), Exact)) {
+      std::cerr << "land pruning reference mismatch seed=" << seed
+                << " fingerprint=" << expectedReceipt.fingerprint << '/' << referenceReceipt.fingerprint << '\n';
+      return 23;
+    }
+  }
 
   if (receipt.placements != 456 || receipt.integratedDescriptors != 464 ||
       receipt.descriptorCapacity != 480 ||
-      receipt.trees != std::array<std::uint32_t, 3>{48, 64, 32} ||
-      receipt.grass != std::array<std::uint32_t, 3>{108, 120, 54} ||
+      receipt.trees != std::array<std::uint32_t, 3>{124, 88, 28} ||
+      receipt.grass != std::array<std::uint32_t, 3>{116, 52, 18} ||
       receipt.rocks != std::array<std::uint32_t, 3>{12, 12, 6} ||
+      receipt.variants != std::array<std::uint32_t, 8>{160, 60, 20, 20, 10, 62, 62, 62} ||
       !receipt.terrainBoundsExact || !receipt.bandsExact || !receipt.riverExcluded ||
       !receipt.spawnExcluded || !receipt.cottageExcluded ||
       !receipt.stableKeysExact || !receipt.transformsExact) return 2;
   if (!receipt.footprintSpacingExact || !receipt.zonesExact ||
       !receipt.riverbankLayered || !receipt.densityExact ||
-      receipt.riverbankRocks != 30 || receipt.riverbankGrass != 94 ||
+      receipt.riverbankRocks != 30 || receipt.riverbankGrass != 62 ||
       receipt.heroGroundCover < 28 ||
       receipt.heroGroundCoverQuadrantMask != 0x0fu ||
       !receipt.heroGroundCoverExact ||
+      receipt.understoryGroundCover < 80 ||
+      receipt.understoryGroundCoverBandMask != 0x07u ||
+      !receipt.understoryGroundCoverExact ||
       receipt.minimumPropEdgeSpacing < .12f ||
       receipt.maximumRiverbankRockClearance >
           settings.riverbankRockMaximumClearance ||
@@ -150,8 +395,29 @@ int main() {
       receipt.densestHabitatCell < settings.minimumDensestHabitatCell)
     return 12;
   if(!receipt.attemptedCandidates||receipt.attemptedCandidates>32000u||medianBuildMicros>3000){std::cerr<<"land performance attempts="<<receipt.attemptedCandidates<<" medianElapsedUs="<<medianBuildMicros<<" samples=";for(const auto value:buildMicros)std::cerr<<value<<',';std::cerr<<'\n';return 15;}
+  // 子叢找到安全點即停止；候選數可減少，但不能超過原本二萬四千次上限。
+  if (receipt.attemptedCandidates > 24000u ||
+      receipt.zones != std::array<std::uint32_t, 4>{240, 62, 92, 62}) return 19;
+
+  std::array<unsigned,3> canopyLayers{};
+  for(const auto& item:first)if(IsLivingTreeVariant(item.variant))
+    ++canopyLayers[item.scale.y<6.f?0:item.scale.y<11.f?1:2];
+  if(!receipt.walkingLaneClear||!receipt.vegetationScaleBounded||
+      std::ranges::any_of(canopyLayers,[](unsigned count){return count<30;}))return 24;
+  auto oversized=first;
+  const auto oversizedGrass=std::ranges::find_if(oversized,[](const auto& item){return item.kind==ShowcaseLandKind3D::Grass;});
+  oversizedGrass->scale.y=2.f;
+  ShowcaseLandEcologyReceipt3D oversizedReceipt{};
+  if(ValidateShowcaseLandEcology3D(settings,oversized,&oversizedReceipt)||oversizedReceipt.vegetationScaleBounded)return 25;
+  auto blockedLane=first;
+  const auto laneGrass=std::ranges::find_if(blockedLane,[](const auto& item){return item.kind==ShowcaseLandKind3D::Grass;});
+  laneGrass->position={settings.spawnCenter.x+(settings.cottageCenter.x-settings.spawnCenter.x)*.5f,0,
+      settings.spawnCenter.z+(settings.cottageCenter.z-5.f-settings.spawnCenter.z)*.5f};
+  ShowcaseLandEcologyReceipt3D laneReceipt{};
+  if(ValidateShowcaseLandEcology3D(settings,blockedLane,&laneReceipt)||laneReceipt.walkingLaneClear)return 26;
 
   for (const auto variant : {ShowcaseLandVariant3D::IslandTree,
+                             ShowcaseLandVariant3D::TreeSmall02,
                              ShowcaseLandVariant3D::DeadTreeTrunk,
                              ShowcaseLandVariant3D::Boulder,
                              ShowcaseLandVariant3D::CoastalCliff,
@@ -188,6 +454,14 @@ int main() {
     if (item.kind == ShowcaseLandKind3D::Tree)
       item.variant = ShowcaseLandVariant3D::IslandTree;
   if (ValidateShowcaseLandEcology3D(settings, mutated)) return 7;
+  // 林相亦須拒絕倒退為大量枯木，不能只確認「兩種樹都存在」。
+  mutated = first;
+  const auto livingTree = std::ranges::find_if(mutated, [](const auto &item) {
+    return item.variant == ShowcaseLandVariant3D::IslandTree;
+  });
+  if (livingTree == mutated.end()) return 20;
+  livingTree->variant = ShowcaseLandVariant3D::DeadTreeTrunk;
+  if (ValidateShowcaseLandEcology3D(settings, mutated)) return 21;
   mutated = first;
   for (auto &item : mutated)
     if (item.kind == ShowcaseLandKind3D::Grass)
@@ -213,7 +487,12 @@ int main() {
 
   std::cout << "SHOWCASE_LAND_ECOLOGY=PASS fingerprint=" << receipt.fingerprint
             << " placements=" << receipt.placements
+            << " attempts=" << receipt.attemptedCandidates
             << " integrated=" << receipt.integratedDescriptors
+            << " trees=" << receipt.trees[0] << '/' << receipt.trees[1] << '/' << receipt.trees[2]
+            << " liveTrees=" << receipt.variants[0] << '/' << receipt.variants[1]
+            << " dead=" << receipt.variants[2]
+            << " grass=" << receipt.grass[0] << '/' << receipt.grass[1] << '/' << receipt.grass[2]
             << " spacing=" << receipt.minimumTreeSpacing << '/'
             << receipt.minimumGrassSpacing << '/'
             << receipt.minimumRockSpacing
@@ -226,6 +505,10 @@ int main() {
             << receipt.densestHabitatCell
             << " hero=" << receipt.heroGroundCover << "/0x" << std::hex
             << receipt.heroGroundCoverQuadrantMask << std::dec
-            << " medianUs=" << medianBuildMicros << '\n';
+            << " understory=" << receipt.understoryGroundCover << "/0x"
+            << std::hex << receipt.understoryGroundCoverBandMask << std::dec
+            << " pruningReferenceSeeds=2 medianUs=" << medianBuildMicros << " samples=";
+  for (const auto value : buildMicros) std::cout << value << ',';
+  std::cout << '\n';
   return 0;
 }

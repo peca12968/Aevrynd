@@ -27,5 +27,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int showComma
       captures=std::filesystem::path(std::wstring_view(path.data(),n)).parent_path()/std::format(L"temporal-fixture-third-day-warmup-{}-{}{}",temporalFixtureWarmup,gpuValidation?L"gbv":L"normal",temporalFixtureCloudOff?L"-cloud-off":L"");
     }
     const auto fatal=[&](const char* value){if(captures.empty())return;std::filesystem::create_directories(captures);std::ofstream output(captures/"gameplay-fatal-error.txt",std::ios::trunc);output<<value<<'\n';output.flush();};
-    try{Aevrynd::Engine engine({L"Aevrynd Gameplay Lab",1280,720,1.f/60.f,true,false});return engine.Run(std::make_unique<GameplayLabGame>(captures,temporalFixtureWarmup,temporalFixtureCloudOff),instance,showCommand);}catch(const std::exception& error){fatal(error.what());return 70;}catch(...){fatal("unknown exception");return 71;}
+    try{
+        Aevrynd::EngineConfig config{L"Aevrynd Gameplay Lab",1280,720,1.f/60.f,true,false};
+        // Formal capture owns a deterministic multi-frame MSAA/TAA sequence.  Automatic
+        // pressure trimming happens after Render and can otherwise release those live
+        // resources before the game consumes the completed-frame receipt on the next tick.
+        config.enableAutomaticMemoryTrim=captures.empty();
+        Aevrynd::Engine engine(config);
+        return engine.Run(std::make_unique<GameplayLabGame>(captures,temporalFixtureWarmup,temporalFixtureCloudOff),instance,showCommand);
+    }catch(const std::exception& error){fatal(error.what());return 70;}catch(...){fatal("unknown exception");return 71;}
 }

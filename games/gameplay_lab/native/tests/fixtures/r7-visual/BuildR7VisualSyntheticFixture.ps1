@@ -12,6 +12,7 @@ $shots = @(
   'god-day', 'god-dusk', 'god-night',
   'palette-building', 'melee-combat'
 )
+$waterShots = @('third-day', 'god-day', 'god-dusk')
 
 function Write-PatternPng([string]$Path, [string]$Kind, [int]$ShotIndex) {
   $width = 1280
@@ -61,7 +62,11 @@ for ($index = 0; $index -lt $shots.Count; ++$index) {
   $rows += [ordered]@{
     name = $name
     hdr = [ordered]@{meanLuma=1.25;p10Luma=0.18}
-    water = [ordered]@{pixelCoverage=0.08;entropy=6.2;normalVariance=0.004;reflectionVariance=0.008}
+    water = if ($waterShots -contains $name) {
+      [ordered]@{pixelCoverage=0.08;entropy=6.2;normalVariance=0.004;reflectionVariance=0.008}
+    } else {
+      [ordered]@{pixelCoverage=0.0;entropy=0.0;normalVariance=0.0;reflectionVariance=0.0}
+    }
     terrain = [ordered]@{autocorrelation32To256=0.28}
     vegetation = [ordered]@{coverage=0.18;spatialEntropy=4.2}
     actor = [ordered]@{coverage=0.035}

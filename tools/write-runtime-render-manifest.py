@@ -29,6 +29,17 @@ MESH_MATERIALS = {
     ("island-tree-01", 0): "island_tree_01:trunk",
     ("island-tree-01", 1): "island_tree_01:leaves",
     ("island-tree-01", 2): "island_tree_01:branches",
+    ("tree-small-02", 0): "tree_small_02:branches",
+    ("tree-small-02", 1): "tree_small_02:leaves",
+    ("tree-small-02", 2): "tree_small_02:trunk",
+}
+PRODUCTION_PROFILE = {
+    "assets": 11,
+    "materials": 14,
+    "meshParts": 9,
+    "meshLodLevels": 27,
+    "payloadFiles": 72,
+    "packageFiles": 73,
 }
 STANDALONE_ROLES = {
     "forest_ground_04": "terrain",
@@ -87,6 +98,109 @@ def checked_disk_path(root: pathlib.Path, relative: str) -> pathlib.Path:
     return current
 
 
+def validate_receipted_file(root: pathlib.Path, entry, label: str) -> pathlib.Path:
+    if not isinstance(entry, dict):
+        raise ManifestError(f"{label} receipt entry is not an object")
+    relative = entry.get("path")
+    disk = checked_disk_path(root, relative)
+    expected_bytes = entry.get("bytes")
+    expected_sha = entry.get("sha256")
+    if (type(expected_bytes) is not int or expected_bytes <= 0 or
+            not isinstance(expected_sha, str) or len(expected_sha) != 64 or
+            any(value not in "0123456789abcdef" for value in expected_sha)):
+        raise ManifestError(f"{label} receipt identity is malformed")
+    if (not disk.is_file() or disk.stat().st_size != expected_bytes or
+            sha256(disk) != expected_sha):
+        raise ManifestError(f"{label} receipt identity mismatch: {relative}")
+    return disk
+
+
+def validate_tree_small_02_source_chain(asset_root: pathlib.Path, runtime=None,
+                                        provenance=None, gltfpack=None):
+    tree_root = asset_root / "tree-small-02"
+    provenance_path = checked_disk_path(tree_root, "tree-small-02-provenance-receipt.json")
+    gltfpack_path = checked_disk_path(tree_root, "gltfpack-runtime-receipt.json")
+    provenance = provenance if provenance is not None else load_json(provenance_path)
+    gltfpack = gltfpack if gltfpack is not None else load_json(gltfpack_path)
+    if (provenance.get("schemaVersion") != 1 or
+            provenance.get("receiptType") != "aevrynd-authoritative-asset-provenance" or
+            provenance.get("assetId") != "tree_small_02" or
+            provenance.get("provider") != "Poly Haven" or
+            provenance.get("officialPage") != "https://polyhaven.com/a/tree_small_02" or
+            provenance.get("license") != "CC0-1.0" or
+            provenance.get("commercialUse") is not True):
+        raise ManifestError("tree_small_02 authoritative provenance contract failed")
+    provenance_files = provenance.get("files", [])
+    validation = provenance.get("validation", {})
+    provenance_paths = [item.get("path") for item in provenance_files if isinstance(item, dict)]
+    if (validation.get("actualFileCount") != 11 or len(provenance_files) != 11 or
+            len(set(provenance_paths)) != 11 or
+            validation.get("officialMd5AndBytesMatchAll") is not True or
+            validation.get("localSha256RecordedAll") is not True):
+        raise ManifestError("tree_small_02 provenance exact-file validation failed")
+    provenance_map = {}
+    for item in provenance_files:
+        validate_receipted_file(tree_root, item, "tree_small_02 official source")
+        provenance_map[item["path"]] = item
+    for required in ("tree_small_02_1k.gltf", "tree_small_02.bin"):
+        if required not in provenance_map:
+            raise ManifestError(f"tree_small_02 provenance source missing: {required}")
+
+    if (gltfpack.get("schemaVersion") != 2 or
+            gltfpack.get("receiptType") != "aevrynd-deterministic-gltfpack-runtime-lods" or
+            gltfpack.get("assetId") != "tree_small_02"):
+        raise ManifestError("tree_small_02 gltfpack receipt contract failed")
+    source = gltfpack.get("source", {})
+    source_entry = {key: source.get(key) for key in ("path", "bytes", "sha256")}
+    validate_receipted_file(tree_root, source_entry, "tree_small_02 gltfpack source")
+    if source_entry != {key: provenance_map["tree_small_02_1k.gltf"][key]
+                        for key in ("path", "bytes", "sha256")}:
+        raise ManifestError("tree_small_02 gltfpack source differs from provenance")
+    if (source.get("provenanceReceipt") != provenance_path.name or
+            source.get("provenanceReceiptBytes") != provenance_path.stat().st_size or
+            source.get("provenanceReceiptSha256") != sha256(provenance_path)):
+        raise ManifestError("tree_small_02 gltfpack provenance binding failed")
+    dependencies = source.get("dependencies", [])
+    if len(dependencies) != 1:
+        raise ManifestError("tree_small_02 gltfpack dependency set failed")
+    validate_receipted_file(tree_root, dependencies[0], "tree_small_02 gltfpack dependency")
+    if dependencies[0] != {key: provenance_map["tree_small_02.bin"][key]
+                           for key in ("path", "bytes", "sha256")}:
+        raise ManifestError("tree_small_02 gltfpack BIN differs from provenance")
+
+    contracts = gltfpack.get("contracts", {})
+    if (contracts.get("namedNodeRetention") is not True or
+            contracts.get("sourceVertexAttributeRetention") is not True or
+            contracts.get("materialCount") != 3 or contracts.get("textureCount") != 9 or
+            contracts.get("meshCount") != 1 or contracts.get("drawCount") != 3 or
+            contracts.get("outputHashesReproducedExactly") is not True or
+            contracts.get("memoryGate") != "pass"):
+        raise ManifestError("tree_small_02 gltfpack production contracts failed")
+    runtime = runtime if runtime is not None else load_json(asset_root / "runtime-asset-manifest.json")
+    runtime_asset = next((item for item in runtime.get("assets", [])
+                          if item.get("id") == "tree_small_02"), None)
+    if runtime_asset is None:
+        raise ManifestError("tree_small_02 is absent from runtime asset manifest")
+    runtime_files = {item.get("path"): item for item in runtime_asset.get("files", [])}
+    levels = gltfpack.get("levels", [])
+    expected_ratios = (0.35, 0.12, 0.04)
+    if len(levels) != 3:
+        raise ManifestError("tree_small_02 gltfpack LOD set failed")
+    for index, level in enumerate(levels):
+        output = level.get("output")
+        expected_path = f"tree-small-02/{output}" if isinstance(output, str) else ""
+        runtime_entry = runtime_files.get(expected_path)
+        output_entry = {"path": output, "bytes": level.get("bytes"),
+                        "sha256": level.get("sha256")}
+        validate_receipted_file(tree_root, output_entry, "tree_small_02 gltfpack output")
+        if (level.get("level") != index or level.get("ratio") != expected_ratios[index] or
+                level.get("exitCode") != 0 or not runtime_entry or
+                any(runtime_entry.get(key) != output_entry[key]
+                    for key in ("bytes", "sha256"))):
+            raise ManifestError("tree_small_02 gltfpack LOD/runtime binding failed")
+    return True
+
+
 def source_metadata(asset, inputs):
     return {
         "provider": asset["source"],
@@ -131,8 +245,9 @@ def parse_dds(path: pathlib.Path):
 
 def build_manifest(asset_root: pathlib.Path, cooked_root: pathlib.Path):
     runtime = load_json(asset_root / "runtime-asset-manifest.json")
+    validate_tree_small_02_source_chain(asset_root, runtime)
     runtime_assets = {item["id"]: item for item in runtime["assets"]}
-    materials_receipt = load_json(cooked_root / "materials" / "material-bake-receipt.json")
+    material_receipts = [load_json(path) for path in sorted((cooked_root / "materials").rglob("material-bake-receipt.json"))]
     ibl_receipt = load_json(cooked_root / "ibl" / "ibl-bake-receipt.json")
     mesh_receipts = [load_json(path) for path in sorted((cooked_root / "meshes").rglob("*-aemesh-receipt.json"))]
 
@@ -142,7 +257,8 @@ def build_manifest(asset_root: pathlib.Path, cooked_root: pathlib.Path):
     material_ids = defaultdict(list)
     mesh_part_ids = defaultdict(list)
 
-    for asset in materials_receipt["assets"]:
+    for materials_receipt in material_receipts:
+      for asset in materials_receipt["assets"]:
         provenance = runtime_assets[asset["assetId"]]
         for material in asset["materials"]:
             material_id = f"{asset['assetId']}:{material['slot']}"
@@ -280,7 +396,7 @@ def build_manifest(asset_root: pathlib.Path, cooked_root: pathlib.Path):
     manifest = {
         "schemaVersion": 1,
         "manifestType": "aevrynd-runtime-render-package",
-        "exactAssetSet": {"id": runtime["catalogId"], "count": 10, "assetIds": sorted(runtime_assets)},
+        "exactAssetSet": {"id": runtime["catalogId"], "count": len(runtime_assets), "assetIds": sorted(runtime_assets)},
         "licensePolicy": {"required": "CC0-1.0", "commercialUse": True, "provenanceEmbedded": True},
         "files": files,
         "materials": materials,
@@ -319,11 +435,14 @@ def validate_manifest(manifest, cooked_root: pathlib.Path, verify_disk=True):
     if manifest.get("schemaVersion") != 1 or manifest.get("manifestType") != "aevrynd-runtime-render-package":
         raise ManifestError("unsupported manifest schema")
     exact = manifest.get("exactAssetSet", {})
-    if exact.get("count") != 10 or len(exact.get("assetIds", [])) != 10 or len(set(exact["assetIds"])) != 10:
-        raise ManifestError("exact10 contract failed")
+    if verify_disk:
+        validate_tree_small_02_source_chain(cooked_root.parent)
+    exact_ids = exact.get("assetIds", [])
+    if (type(exact.get("count")) is not int or exact["count"] <= 0 or
+            len(exact_ids) != exact["count"] or len(set(exact_ids)) != exact["count"] or
+            exact_ids != sorted(exact_ids)):
+        raise ManifestError("exact asset-set contract failed")
     files = manifest.get("files", [])
-    if len(files) != 54:
-        raise ManifestError("runtime payload must contain exactly 54 files")
     paths = [item.get("path") for item in files]
     if len(set(paths)) != len(paths):
         raise ManifestError("duplicate runtime file path")
@@ -359,10 +478,12 @@ def validate_manifest(manifest, cooked_root: pathlib.Path, verify_disk=True):
     material_ids = [item.get("id") for item in manifest.get("materials", [])]
     part_ids = [item.get("id") for item in manifest.get("meshParts", [])]
     asset_ids = [item.get("id") for item in manifest.get("assets", [])]
-    if len(material_ids) != 11 or len(set(material_ids)) != 11 or len(part_ids) != 6 or len(set(part_ids)) != 6 or len(asset_ids) != 10 or len(set(asset_ids)) != 10:
+    if (not material_ids or len(set(material_ids)) != len(material_ids) or
+            not part_ids or len(set(part_ids)) != len(part_ids) or
+            len(asset_ids) != exact["count"] or len(set(asset_ids)) != exact["count"]):
         raise ManifestError("material, mesh part, or asset identity contract failed")
     if set(asset_ids) != set(exact["assetIds"]):
-        raise ManifestError("asset metadata differs from exact10")
+        raise ManifestError("asset metadata differs from exact asset set")
     references = []
     for material in manifest["materials"]:
         if material.get("assetId") not in exact["assetIds"] or not material.get("slot") or material.get("id") != f"{material['assetId']}:{material['slot']}":
@@ -386,6 +507,7 @@ def validate_manifest(manifest, cooked_root: pathlib.Path, verify_disk=True):
         if part.get("materialId") not in material_ids or len(part.get("lodPaths", [])) != 3:
             raise ManifestError("mesh material or LOD binding failed")
         references.extend(part["lodPaths"])
+    mesh_lod_levels = sum(len(part["lodPaths"]) for part in manifest["meshParts"])
     ibl = manifest.get("ibl", {})
     references.extend([ibl.get("specularPath"), ibl.get("irradiancePath"), ibl.get("brdfLutPath")])
     if ibl.get("rotationRadiansMilli") != 0:
@@ -399,8 +521,19 @@ def validate_manifest(manifest, cooked_root: pathlib.Path, verify_disk=True):
     package = manifest.get("package", {})
     payload_bytes = sum(item["bytes"] for item in files)
     encoded_length = len(json_bytes(manifest))
-    if package.get("payloadFileCount") != 54 or package.get("payloadBytes") != payload_bytes or package.get("manifestPath") != "runtime-render-manifest.json" or package.get("manifestBytes") != encoded_length or package.get("packageFileCount") != 55 or package.get("packageBytes") != payload_bytes + encoded_length or package.get("manifestHashPolicy") != "external-envelope":
+    if package.get("payloadFileCount") != len(files) or package.get("payloadBytes") != payload_bytes or package.get("manifestPath") != "runtime-render-manifest.json" or package.get("manifestBytes") != encoded_length or package.get("packageFileCount") != len(files) + 1 or package.get("packageBytes") != payload_bytes + encoded_length or package.get("manifestHashPolicy") != "external-envelope":
         raise ManifestError("package exact-set accounting failed")
+    if exact.get("id") == "gameplay-ultra-realistic-cc0":
+        actual_profile = {
+            "assets": exact["count"],
+            "materials": len(material_ids),
+            "meshParts": len(part_ids),
+            "meshLodLevels": mesh_lod_levels,
+            "payloadFiles": len(files),
+            "packageFiles": package.get("packageFileCount"),
+        }
+        if actual_profile != PRODUCTION_PROFILE:
+            raise ManifestError(f"production profile contract failed: {actual_profile}")
     if verify_disk:
         actual = {path.relative_to(cooked_root).as_posix() for path in (cooked_root / "meshes").rglob("*.aemesh")}
         actual |= {path.relative_to(cooked_root).as_posix() for folder in ("materials", "ibl") for path in (cooked_root / folder).rglob("*.dds")}
@@ -426,7 +559,7 @@ def main(argv=None):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(json_bytes(manifest))
     validate_manifest(manifest, cooked_root)
-    print(json.dumps({"status": "pass", "path": str(output), "files": 54, "bytes": output.stat().st_size, "sha256": sha256(output), "packageBytes": manifest["package"]["packageBytes"]}, separators=(",", ":")))
+    print(json.dumps({"status": "pass", "path": str(output), "files": len(manifest["files"]), "bytes": output.stat().st_size, "sha256": sha256(output), "packageBytes": manifest["package"]["packageBytes"]}, separators=(",", ":")))
     return 0
 
 

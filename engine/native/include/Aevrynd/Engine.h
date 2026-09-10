@@ -22,6 +22,9 @@ struct EngineDevelopmentUltraTestAccess3D;
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
 struct EngineRendererTestAccess3D;
 #endif
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+struct EngineAtmosphereDiagnosticAccess3D;
+#endif
 #ifndef AEVRYND_ENGINE_VERSION
 #define AEVRYND_ENGINE_VERSION "development"
 #endif
@@ -156,6 +159,7 @@ public:
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
     [[nodiscard]] RendererRuntimeEpoch3D GetRendererRuntimeEpoch3D()const noexcept{return renderer_?renderer_->RuntimeEpoch3D():RendererRuntimeEpoch3D{};}
+    [[nodiscard]] unsigned CurrentBufferedFrameIndex3D()const noexcept{return renderer_?renderer_->CurrentBufferedFrameIndex3D():0;}
     void SetGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){renderer_->SetGpuInstanceCullingSettings(settings);}
     void SetHzbOcclusionSettings3D(HzbOcclusionSettings3D settings){renderer_->SetHzbOcclusionSettings3D(settings);}
     GpuUploadReceipt3D SubmitPendingUploads3D(){return renderer_->SubmitPendingUploads3D();}
@@ -190,6 +194,12 @@ private:
     friend struct EngineDevelopmentUltraTestAccess3D;
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
     friend struct EngineRendererTestAccess3D;
+#endif
+#if AEVRYND_SHADOW_MAP_DIAGNOSTICS
+    friend struct EngineShadowDiagnosticAccess3D;
+#endif
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+    friend struct EngineAtmosphereDiagnosticAccess3D;
 #endif
     void RefreshDevelopmentUltraGpuTruth();
     bool ExitDevelopmentUltraToLastKnownGood();
@@ -230,6 +240,41 @@ struct EngineRendererTestAccess3D {
         Engine& engine, unsigned cascade) {
         engine.WaitRendererIdle3D();
         return engine.renderer_ ? D3D12RendererTestAccess3D::CaptureDirectionalShadow(*engine.renderer_, cascade)
+                                : std::nullopt;
+    }
+};
+#endif
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+struct EngineAtmosphereDiagnosticAccess3D {
+    static bool SetPreAtmosphereHdrCapture(Engine& engine,bool enabled) {
+        return engine.renderer_ && D3D12RendererAtmosphereDiagnosticAccess3D::SetPreAtmosphereHdrCapture(*engine.renderer_,enabled);
+    }
+    static bool SetPostAtmosphereHdrCapture(Engine& engine,bool enabled) {
+        return engine.renderer_ && D3D12RendererAtmosphereDiagnosticAccess3D::SetPostAtmosphereHdrCapture(*engine.renderer_,enabled);
+    }
+    static bool SetPostTransparentHdrCapture(Engine& engine,bool enabled) {
+        return engine.renderer_ && D3D12RendererAtmosphereDiagnosticAccess3D::SetPostTransparentHdrCapture(*engine.renderer_,enabled);
+    }
+    static bool SetSkipWaterTransparentDraw(Engine& engine,bool enabled) {
+        return engine.renderer_ && D3D12RendererAtmosphereDiagnosticAccess3D::SetSkipWaterTransparentDraw(*engine.renderer_,enabled);
+    }
+    static bool SetSkipAllTransparentDraw(Engine& engine,bool enabled) {
+        return engine.renderer_ && D3D12RendererAtmosphereDiagnosticAccess3D::SetSkipAllTransparentDraw(*engine.renderer_,enabled);
+    }
+    static std::optional<D3D12RendererAtmosphereDiagnosticAccess3D::Capture3D> CaptureVolumetricAtmosphereOutput(
+        Engine& engine) {
+        engine.WaitRendererIdle3D();
+        return engine.renderer_ ? D3D12RendererAtmosphereDiagnosticAccess3D::CaptureVolumetricAtmosphereOutput(*engine.renderer_)
+                                : std::nullopt;
+    }
+};
+#endif
+#if AEVRYND_SHADOW_MAP_DIAGNOSTICS
+struct EngineShadowDiagnosticAccess3D {
+    static std::optional<D3D12RendererShadowDiagnosticAccess3D::Capture3D> CaptureDirectionalShadow(
+        Engine& engine,unsigned cascade) {
+        engine.WaitRendererIdle3D();
+        return engine.renderer_ ? D3D12RendererShadowDiagnosticAccess3D::CaptureDirectionalShadow(*engine.renderer_,cascade)
                                 : std::nullopt;
     }
 };

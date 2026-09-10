@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "assetName": "tree-small-02",
+  "resolutionPolicy": "1k-runtime",
+  "normalConvention": "OpenGL",
+  "outputResolution": 1024,
+  "expectedMipCount": 11,
+  "materials": [
+    {
+      "name": "branches",
+      "baseColor": "textures/tree_small_02_branch_diff_1k.jpg",
+      "normal": "textures/tree_small_02_branch_nor_gl_1k.jpg",
+      "arm": "textures/tree_small_02_branch_arm_1k.jpg"
+    },
+    {
+      "name": "leaves",
+      "baseColor": "textures/tree_small_02_leaves_diff_1k.jpg",
+      "normal": "textures/tree_small_02_leaves_nor_gl_1k.jpg",
+      "arm": "textures/tree_small_02_leaves_arm_1k.jpg",
+      "alphaMode": "mask",
+      "alphaSource": "black-key",
+      "alphaBlackKeyThreshold": 0.062745098,
+      "alphaCutoff": 0.5,
+      "alphaDilationPixels": 8,
+      "doubleSided": true,
+      "materialClass": "foliage"
+    },
+    {
+      "name": "trunk",
+      "baseColor": "textures/tree_small_02_diff_1k.jpg",
+      "normal": "textures/tree_small_02_nor_gl_1k.jpg",
+      "arm": "textures/tree_small_02_arm_1k.jpg"
+    }
+  ]
+}

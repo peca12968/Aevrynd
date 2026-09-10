@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 2,
+  "receiptType": "aevrynd-deterministic-gltfpack-runtime-lods",
+  "assetId": "tree_small_02",
+  "source": {
+    "path": "tree_small_02_1k.gltf",
+    "bytes": 9075,
+    "sha256": "3062a709614c05b80fdc1e56583998bc3cb1027b0d52f956c8ecfb882ff8ca6d",
+    "provenanceReceipt": "tree-small-02-provenance-receipt.json",
+    "provenanceReceiptBytes": 5166,
+    "provenanceReceiptSha256": "98916eb214099a7e6ffe8dd319d291693d02be293b1da012f6c5edb1a9348cf4",
+    "dependencies": [
+      {
+        "path": "tree_small_02.bin",
+        "bytes": 95102324,
+        "sha256": "8da6c3c389ad8748286d1b7488cd827f75ebdad9d8f59ef7dfb0916df5edc634"
+      }
+    ]
+  },
+  "tool": {
+    "name": "gltfpack",
+    "version": "1.2",
+    "upstreamCommit": "9d9890c73011d75920af614485296d1e03e95448",
+    "upstreamArchiveSha256": "e40f71b809cdf3361b9a4def85fd44534e8733ce29d4b943c145b76859e4c2b4",
+    "executablePath": "D:/Download/Aevrynd/ToolCache/meshoptimizer-1.2-build/Release/gltfpack.exe",
+    "executableBytes": 428032,
+    "executableSha256": "1517a5e6fd3af9fc8a07b57e9bc018d882fec1058e77120777db9c79d938288b",
+    "license": "MIT"
+  },
+  "commandTemplate": "gltfpack.exe -i <official-1k-gltf> -o <lod-output.glb> -si <ratio> -kn -kv -r <report.json>",
+  "contracts": {
+    "namedNodeRetention": true,
+    "sourceVertexAttributeRetention": true,
+    "materialCount": 3,
+    "textureCount": 9,
+    "nodeCount": 2,
+    "meshCount": 1,
+    "drawCount": 3,
+    "outputHashesReproducedExactly": true,
+    "peakLimitBytes": 2147483648,
+    "memoryGate": "pass"
+  },
+  "levels": [
+    {
+      "level": 0,
+      "ratio": 0.35,
+      "commandArguments": ["-si", "0.35", "-kn", "-kv"],
+      "output": "tree-small-02-lod0.glb",
+      "bytes": 28868108,
+      "sha256": "14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14",
+      "report": "tree-small-02-lod0-report.json",
+      "reportSha256": "0f9c3146b5b27f643bbee9583bb9173159b3258cb3f4d4027389b9016af478ce",
+      "triangles": 721738,
+      "peakWorkingSetBytes": 630267904,
+      "memorySamples": 29,
+      "exitCode": 0
+    },
+    {
+      "level": 1,
+      "ratio": 0.12,
+      "commandArguments": ["-si", "0.12", "-kn", "-kv"],
+      "output": "tree-small-02-lod1.glb",
+      "bytes": 14306876,
+      "sha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928",
+      "report": "tree-small-02-lod1-report.json",
+      "reportSha256": "e56408dc00ae4bbb5dfccd57ff32bd4931a06af7ce870f522492b861f938a4ee",
+      "triangles": 245084,
+      "peakWorkingSetBytes": 630317056,
+      "memorySamples": 28,
+      "exitCode": 0
+    },
+    {
+      "level": 2,
+      "ratio": 0.04,
+      "commandArguments": ["-si", "0.04", "-kn", "-kv"],
+      "output": "tree-small-02-lod2.glb",
+      "bytes": 8924792,
+      "sha256": "7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11",
+      "report": "tree-small-02-lod2-report.json",
+      "reportSha256": "1464b3eaaec5aec24abdfbbda2a5bcf8f7f658af96f0c90dde03ee39ecdf913e",
+      "triangles": 82854,
+      "peakWorkingSetBytes": 630292480,
+      "memorySamples": 40,
+      "exitCode": 0
+    }
+  ],
+  "observedAtTaipei": "2026-09-09T14:54:00+08:00"
+}

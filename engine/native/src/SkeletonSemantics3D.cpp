@@ -8,20 +8,21 @@ namespace Aevrynd { namespace {
 using AliasList=std::span<const std::string_view>;
 constexpr std::array<std::string_view,1> RootNames{"root"};
 constexpr std::array<std::string_view,2> HipsNames{"hips","pelvis"};
-constexpr std::array<std::string_view,2> SpineNames{"spine","spine1"};
+// MPFB Game Engine rig 明確別名；只映射第一節脊椎，不以字首猜測 spine_02/03。
+constexpr std::array<std::string_view,3> SpineNames{"spine","spine1","spine01"};
 constexpr std::array<std::string_view,1> HeadNames{"head"};
-constexpr std::array<std::string_view,2> LeftUpperLegNames{"leftupperleg","leftupleg"};
-constexpr std::array<std::string_view,2> LeftLowerLegNames{"leftlowerleg","leftleg"};
-constexpr std::array<std::string_view,2> LeftFootNames{"leftfoot","leftankle"};
-constexpr std::array<std::string_view,2> RightUpperLegNames{"rightupperleg","rightupleg"};
-constexpr std::array<std::string_view,2> RightLowerLegNames{"rightlowerleg","rightleg"};
-constexpr std::array<std::string_view,2> RightFootNames{"rightfoot","rightankle"};
-constexpr std::array<std::string_view,2> LeftUpperArmNames{"leftupperarm","leftarm"};
-constexpr std::array<std::string_view,2> LeftLowerArmNames{"leftlowerarm","leftforearm"};
-constexpr std::array<std::string_view,2> LeftHandNames{"lefthand","leftwrist"};
-constexpr std::array<std::string_view,2> RightUpperArmNames{"rightupperarm","rightarm"};
-constexpr std::array<std::string_view,2> RightLowerArmNames{"rightlowerarm","rightforearm"};
-constexpr std::array<std::string_view,2> RightHandNames{"righthand","rightwrist"};
+constexpr std::array<std::string_view,3> LeftUpperLegNames{"leftupperleg","leftupleg","thighl"};
+constexpr std::array<std::string_view,3> LeftLowerLegNames{"leftlowerleg","leftleg","calfl"};
+constexpr std::array<std::string_view,3> LeftFootNames{"leftfoot","leftankle","footl"};
+constexpr std::array<std::string_view,3> RightUpperLegNames{"rightupperleg","rightupleg","thighr"};
+constexpr std::array<std::string_view,3> RightLowerLegNames{"rightlowerleg","rightleg","calfr"};
+constexpr std::array<std::string_view,3> RightFootNames{"rightfoot","rightankle","footr"};
+constexpr std::array<std::string_view,3> LeftUpperArmNames{"leftupperarm","leftarm","upperarml"};
+constexpr std::array<std::string_view,3> LeftLowerArmNames{"leftlowerarm","leftforearm","lowerarml"};
+constexpr std::array<std::string_view,3> LeftHandNames{"lefthand","leftwrist","handl"};
+constexpr std::array<std::string_view,3> RightUpperArmNames{"rightupperarm","rightarm","upperarmr"};
+constexpr std::array<std::string_view,3> RightLowerArmNames{"rightlowerarm","rightforearm","lowerarmr"};
+constexpr std::array<std::string_view,3> RightHandNames{"righthand","rightwrist","handr"};
 const std::array<AliasList,std::size_t(HumanoidJoint3D::Count)> Aliases{
     RootNames,HipsNames,SpineNames,HeadNames,LeftUpperLegNames,LeftLowerLegNames,LeftFootNames,
     RightUpperLegNames,RightLowerLegNames,RightFootNames,LeftUpperArmNames,LeftLowerArmNames,

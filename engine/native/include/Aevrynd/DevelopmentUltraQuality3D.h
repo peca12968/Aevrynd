@@ -172,6 +172,21 @@ struct DevelopmentUltraGpuTruthSequence3D {
   std::uint32_t stableFrames{};
 };
 
+enum class DevelopmentUltraGpuTimingProvenance3D : std::uint8_t {
+  Unavailable,
+  Production,
+  GpuValidationInstrumented,
+};
+
+struct DevelopmentUltraFrameTimingGate3D {
+  DevelopmentUltraGpuTimingProvenance3D provenance{
+      DevelopmentUltraGpuTimingProvenance3D::Unavailable};
+  bool timingRecorded{};
+  bool serialAligned{};
+  bool productionBudgetApplied{};
+  bool accepted{};
+};
+
 // 每次 GPU truth 採樣只保留同一 epoch 的最新完整快照；預設值一律為
 // fail-closed，讓尚未採樣、rollback 與品質切換不會沿用舊的成功證據。
 struct DevelopmentUltraGpuTruthSnapshot3D {
@@ -194,12 +209,17 @@ struct DevelopmentUltraGpuTruthSnapshot3D {
   std::uint64_t debugWarningCount{};
   std::uint32_t stableFrames{};
   std::uint32_t requiredStableFrames{};
+  DevelopmentUltraGpuTimingProvenance3D timingProvenance{
+      DevelopmentUltraGpuTimingProvenance3D::Unavailable};
   bool observed{};
   bool resourcesTrue{};
   bool telemetryTrue{};
   bool rendererAdapterIdentityValid{};
   bool adapterIdentityTrue{};
   bool validationTrue{};
+  bool timingRecorded{};
+  bool timingSerialAligned{};
+  bool productionFrameBudgetApplied{};
   bool frameBudgetTrue{};
   bool fresh{};
   bool framePassed{};
@@ -297,5 +317,18 @@ void RecordDevelopmentUltraAction3D(DevelopmentUltraReceipt3D &receipt,
 [[nodiscard]] bool DevelopmentUltraPostApplyGate3D(
     bool rendererApplySucceeded,
     std::size_t pendingGpuReleaseBytes) noexcept;
+[[nodiscard]] DevelopmentUltraFrameTimingGate3D
+EvaluateDevelopmentUltraFrameTiming3D(
+    std::uint64_t lastGpuFrameNanoseconds,
+    std::uint64_t timingSampleCount,
+    std::uint64_t completedFrameSerial,
+    std::uint64_t completedTimingSerial,
+    std::uint64_t completedTimingNanoseconds,
+    bool gpuValidationRequested,
+    bool gpuValidationAvailable,
+    bool gpuValidationExecuted,
+    bool gpuValidationPassed,
+    std::uint64_t debugErrorCount,
+    std::uint64_t debugWarningCount) noexcept;
 
 } // namespace Aevrynd

@@ -138,6 +138,8 @@ std::string_view AssetFor(const ShowcaseSceneDescriptor3D &descriptor) {
   case ShowcaseSceneKind3D::Tree:
     if (descriptor.meshAsset == "poly-haven/island_tree_01/cooked-lod")
       return "island_tree_01";
+    if (descriptor.meshAsset == "poly-haven/tree_small_02/cooked-lod")
+      return "tree_small_02";
     if (descriptor.meshAsset == "poly-haven/dead_tree_trunk_02/cooked-lod")
       return "dead_tree_trunk_02";
     return {};
@@ -154,10 +156,10 @@ std::string_view AssetFor(const ShowcaseSceneDescriptor3D &descriptor) {
 }
 
 std::uint32_t AssetIdentityBit(std::string_view id) noexcept {
-  constexpr std::array<std::string_view, 9> Required{
+  constexpr std::array<std::string_view, 10> Required{
       "forest_ground_04", "Ground108", "stony_dirt_path",
       "coastal_cliff_01", "boulder_01", "island_tree_01",
-      "dead_tree_trunk_02", "RoofingTiles014B", "Bricks100"};
+      "dead_tree_trunk_02", "tree_small_02", "RoofingTiles014B", "Bricks100"};
   const auto found = std::ranges::find(Required, id);
   return found == Required.end()
              ? 0u
@@ -218,7 +220,8 @@ bool IsComplete(const Aevrynd::PhotorealCatalogAsset3D &asset,
         !documentPaths.insert(document.relativePath).second)
       return false;
   if (asset.kind == Aevrynd::PhotorealAssetKind3D::MeshPbr) {
-    const std::size_t expectedParts = asset.id == "island_tree_01" ? 3u : 1u;
+    const std::size_t expectedParts =
+        asset.id == "island_tree_01" || asset.id == "tree_small_02" ? 3u : 1u;
     if (runtime.lodLevels != 3 || !cooked.materialSidecarBound ||
         !std::ranges::all_of(cooked.meshLodHandles,
                             [](std::uint64_t value) { return value != 0; }))
@@ -1121,7 +1124,7 @@ bool ShowcaseRenderAssetBindings3D::Load(
   receipt.descriptorOrderDeterministic =
       ShowcaseAssetIdentityFingerprint3D(descriptors) ==
       assetIdentityFingerprint;
-  receipt.assetIdentitiesExact = assetIdentityMask == 0x1ffu &&
+  receipt.assetIdentitiesExact = assetIdentityMask == 0x3ffu &&
       std::ranges::all_of(terrainLayerDescriptors,
                           [](std::size_t count) { return count > 0; });
   receipt.photorealActive = receipt.collisionStableIdsUnchanged &&
@@ -1200,9 +1203,9 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   engine.SetMaterialTextureMemoryBudget(512ull * 1024ull * 1024ull);
   Aevrynd::CookedRenderManifestError3D error{};
   if (!state->manifest.LoadFile(manifestPath, &error) ||
-      state->manifest.Stats().files != 54 ||
-      state->manifest.Materials().size() != 11 ||
-      state->manifest.MeshParts().size() != 6 ||
+      state->manifest.Stats().files != 72 ||
+      state->manifest.Materials().size() != 14 ||
+      state->manifest.MeshParts().size() != 9 ||
       state->manifest.Stats().manifestSha256.size() != 64 ||
       state->manifest.Stats().validatedFiles !=
           state->manifest.Stats().files ||
@@ -1249,8 +1252,18 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     definition.importedLodCount = 2;
     definition.importedLods[0].meshPath = part.lodPaths[1];
     definition.importedLods[1].meshPath = part.lodPaths[2];
-    definition.lodSwitchDistances = {18.f, 48.f, 96.f};
-    definition.lodTransitionWidths = {3.f, 6.f, 10.f};
+    const auto lodPolicies =
+        part.assetId == "island_tree_01" ||
+                part.assetId == "tree_small_02" ||
+                part.assetId == "dead_tree_trunk_02"
+            ? ShowcaseTreeLodPolicies3D()
+            : ShowcaseOpaqueLodPolicies3D();
+    for (std::size_t level = 0; level < lodPolicies.size(); ++level) {
+      definition.lodSwitchDistances[level] =
+          lodPolicies[level].switchDistance;
+      definition.lodTransitionWidths[level] =
+          lodPolicies[level].transitionWidth;
+    }
     definition.cpuRetention = Aevrynd::MeshLodCpuRetention3D::None;
     meshDefinitions.push_back(std::move(definition));
   }
@@ -1300,13 +1313,13 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   engine.WaitRendererIdle3D();
   const auto resident = engine.GetRendererStats();
   if (!engine.IsUploadComplete3D(upload) ||
-      resident.residentMeshes != state->baseline.residentMeshes + 18 ||
+      resident.residentMeshes != state->baseline.residentMeshes + 27 ||
       resident.residentMeshReferences !=
-          state->baseline.residentMeshReferences + 18 ||
+          state->baseline.residentMeshReferences + 27 ||
       resident.residentMaterialTextureSets !=
-          state->baseline.residentMaterialTextureSets + 11 ||
+          state->baseline.residentMaterialTextureSets + 14 ||
       resident.residentMaterialTextureReferences !=
-          state->baseline.residentMaterialTextureReferences + 17 ||
+          state->baseline.residentMaterialTextureReferences + 23 ||
       resident.residentEnvironmentLightingSets !=
           state->baseline.residentEnvironmentLightingSets + 1 ||
       resident.totalMaterialTextureDecodedBytes !=
@@ -1327,7 +1340,7 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   if (!AssignShowcaseProductionManifestEvidence3D(state->manifest.Stats(),
                                                   receipt))
     return false;
-  receipt.profileAssets = 10;
+  receipt.profileAssets = 11;
   receipt.meshLodLevels = receipt.meshParts * 3;
   receipt.iblFiles = 3;
   receipt.uploadComplete = true;

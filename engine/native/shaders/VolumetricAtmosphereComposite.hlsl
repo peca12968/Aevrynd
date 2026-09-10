@@ -1,5 +1,10 @@
 Texture2D<float4> atmosphereTexture : register(t0);
 Texture2D<float> sceneDepthTexture : register(t1);
+#if AEVRYND_ATMOSPHERE_MSAA
+Texture2DMS<float4,4> sceneColorTexture : register(t2);
+#else
+Texture2D<float4> sceneColorTexture : register(t2);
+#endif
 cbuffer CompositeConstants : register(b0)
 {
     row_major float4x4 inverseViewProjection;
@@ -99,15 +104,34 @@ float4 CompositeAtmosphere(FullscreenVertex input)
     return float4(max(0.0,atmosphere.rgb)*depthWeight,alpha);
 }
 
-float4 VolumetricAtmosphereCompositePixelMain(FullscreenVertex input) : SV_Target
+float4 CompositeSceneColor(uint2 pixel,uint sampleIndex,bool preserveSemanticAlpha)
 {
-    return CompositeAtmosphere(input);
+#if AEVRYND_ATMOSPHERE_MSAA
+    const float4 scene=sceneColorTexture.Load(pixel,sampleIndex);
+#else
+    const float4 scene=sceneColorTexture.Load(int3(pixel,0));
+#endif
+    const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
+    const float depthWeight=SceneAtmosphereWeight(pixel,localUv);
+    const float4 atmosphere=SampleDepthAwareAtmosphere(localUv,depthWeight);
+    const precise float alpha=saturate(atmosphere.a*depthWeight);
+    const precise float inverseAlpha=1.0-alpha;
+    const precise float3 atmosphereRgb=max(0.0,atmosphere.rgb)*depthWeight;
+    const precise float3 rgb=atmosphereRgb+scene.rgb*inverseAlpha;
+    const precise float outputAlpha=preserveSemanticAlpha?scene.a:alpha+scene.a*inverseAlpha;
+    return float4(rgb,outputAlpha);
 }
 
-float4 VolumetricAtmosphereCompositeBloomSemanticPixelMain(FullscreenVertex input) : SV_Target
+float4 VolumetricAtmosphereCompositePixelMain(FullscreenVertex input,uint sampleIndex : SV_SampleIndex) : SV_Target
 {
-    // A-only PSO 仍需此 alpha 供 RGB 的 INV_SRC_ALPHA；alpha channel 本身由 ZERO/ONE 保留目的語意。
-    return CompositeAtmosphere(input);
+    const uint2 pixel=min(uint2(input.position.xy),uint2(outputExtent)-1);
+    return CompositeSceneColor(pixel,sampleIndex,false);
+}
+
+float4 VolumetricAtmosphereCompositeBloomSemanticPixelMain(FullscreenVertex input,uint sampleIndex : SV_SampleIndex) : SV_Target
+{
+    const uint2 pixel=min(uint2(input.position.xy),uint2(outputExtent)-1);
+    return CompositeSceneColor(pixel,sampleIndex,true);
 }
 
 // 僅供負向回歸測試執行舊 nearest upscale；深度排除與 production 完全相同。

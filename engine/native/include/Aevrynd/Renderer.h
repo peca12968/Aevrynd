@@ -338,7 +338,7 @@ inline WaterSurfaceSettings3D NormalizeWaterSurfaceSettings3D(WaterSurfaceSettin
     s.broadWaveScale=finite(s.broadWaveScale,.38f,.001f,8.f);s.broadWaveStrength=finite(s.broadWaveStrength,.058f,0.f,.3f);s.broadWaveSpeed=finite(s.broadWaveSpeed,.72f,-8.f,8.f);
     s.detailWaveScale=finite(s.detailWaveScale,1.73f,.001f,16.f);s.detailWaveStrength=finite(s.detailWaveStrength,.027f,0.f,.2f);s.detailWaveSpeed=finite(s.detailWaveSpeed,1.91f,-16.f,16.f);
     s.foamStartDepth=finite(s.foamStartDepth,.06f,0.f,4.f);s.foamEndDepth=finite(s.foamEndDepth,.72f,s.foamStartDepth+.001f,8.f);s.foamStrength=finite(s.foamStrength,.88f,0.f,1.f);
-    s.shallowAlpha=finite(s.shallowAlpha,.34f,0.f,1.f);s.deepAlpha=finite(s.deepAlpha,.91f,s.shallowAlpha,1.f);s.maximumNightRadiance=finite(s.maximumNightRadiance,1.25f,.05f,8.f);return s;
+    s.shallowAlpha=finite(s.shallowAlpha,.34f,0.f,1.f);s.deepAlpha=finite(s.deepAlpha,.91f,s.shallowAlpha,1.f);s.maximumNightRadiance=finite(s.maximumNightRadiance,1.25f,.005f,8.f);return s;
 }
 inline uint64_t WaterSurfaceFingerprint3D(const WaterSurfaceSettings3D& source){const auto s=NormalizeWaterSurfaceSettings3D(source);uint64_t hash=14695981039346656037ull;const auto mix=[&](uint32_t value){for(int i=0;i<4;++i){hash^=(value>>(i*8))&255u;hash*=1099511628211ull;}};mix(s.enabled?1u:0u);for(float value:{s.absorption.x,s.absorption.y,s.absorption.z,s.deepColor.x,s.deepColor.y,s.deepColor.z,s.reflectance,s.minimumRoughness,s.maximumRoughness,s.broadWaveScale,s.broadWaveStrength,s.broadWaveSpeed,s.detailWaveScale,s.detailWaveStrength,s.detailWaveSpeed,s.foamStartDepth,s.foamEndDepth,s.foamStrength,s.shallowAlpha,s.deepAlpha,s.maximumNightRadiance})mix(std::bit_cast<uint32_t>(value));return hash;}
 struct WaterSurfaceReceipt3D {WaterSurfaceSettings3D normalizedSettings{};uint64_t fingerprint{};bool normalized{},enabledRequested{},singleCompositeRequested{};};
@@ -362,16 +362,19 @@ struct TerrainDistanceMaterialSettings3D {
     float detailFadeStart{48.f},detailFadeEnd{192.f},macroVariationScale{.0065f},macroVariationStrength{.14f},normalDetailStrength{1.f},farRoughnessBoost{.12f};
     bool decorrelationEnabled{true};
     float warpScale{.012f},warpStrength{2.4f},grassLayerScale{.92f},soilLayerScale{1.21f},rockLayerScale{.68f},chromaVariationStrength{.075f};
+    bool mesoPartitionEnabled{false};
     friend constexpr bool operator==(const TerrainDistanceMaterialSettings3D&,const TerrainDistanceMaterialSettings3D&)=default;
 };
 inline TerrainDistanceMaterialSettings3D NormalizeTerrainDistanceMaterialSettings3D(TerrainDistanceMaterialSettings3D settings){settings.detailFadeStart=Clamp(std::isfinite(settings.detailFadeStart)?settings.detailFadeStart:48.f,0.f,100000.f);settings.detailFadeEnd=Clamp(std::isfinite(settings.detailFadeEnd)?settings.detailFadeEnd:192.f,settings.detailFadeStart+.01f,100001.f);settings.macroVariationScale=Clamp(std::isfinite(settings.macroVariationScale)?settings.macroVariationScale:.0065f,.00001f,4.f);settings.macroVariationStrength=Clamp(std::isfinite(settings.macroVariationStrength)?settings.macroVariationStrength:.14f,0.f,.5f);settings.normalDetailStrength=Clamp(std::isfinite(settings.normalDetailStrength)?settings.normalDetailStrength:1.f,0.f,2.f);settings.farRoughnessBoost=Clamp(std::isfinite(settings.farRoughnessBoost)?settings.farRoughnessBoost:.12f,0.f,.5f);settings.warpScale=Clamp(std::isfinite(settings.warpScale)?settings.warpScale:.012f,.0001f,.05f);settings.warpStrength=Clamp(std::isfinite(settings.warpStrength)?settings.warpStrength:2.4f,0.f,8.f);settings.grassLayerScale=Clamp(std::isfinite(settings.grassLayerScale)?settings.grassLayerScale:.92f,.5f,1.75f);settings.soilLayerScale=Clamp(std::isfinite(settings.soilLayerScale)?settings.soilLayerScale:1.21f,.5f,1.75f);settings.rockLayerScale=Clamp(std::isfinite(settings.rockLayerScale)?settings.rockLayerScale:.68f,.5f,1.75f);settings.chromaVariationStrength=Clamp(std::isfinite(settings.chromaVariationStrength)?settings.chromaVariationStrength:.075f,0.f,.2f);return settings;}
 inline std::uint32_t PackTerrainDecorrelationSettings3D(const TerrainDistanceMaterialSettings3D& source={}){
-    const auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);if(!settings.enabled||!settings.decorrelationEnabled)return 0;
+    const auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);if(!settings.enabled)return 0;
     const auto encode=[](float value,float minimum,float maximum){return std::uint32_t(std::lround(Clamp((value-minimum)/(maximum-minimum),0.f,1.f)*31.f));};
-    return encode(settings.warpScale,.0001f,.05f)|(encode(settings.warpStrength,0.f,8.f)<<5)|(encode(settings.grassLayerScale,.5f,1.75f)<<10)|(encode(settings.soilLayerScale,.5f,1.75f)<<15)|(encode(settings.rockLayerScale,.5f,1.75f)<<20)|(encode(settings.chromaVariationStrength,0.f,.2f)<<25)|(1u<<30);
+    std::uint32_t packed=settings.mesoPartitionEnabled?(1u<<31):0u;
+    if(settings.decorrelationEnabled)packed|=encode(settings.warpScale,.0001f,.05f)|(encode(settings.warpStrength,0.f,8.f)<<5)|(encode(settings.grassLayerScale,.5f,1.75f)<<10)|(encode(settings.soilLayerScale,.5f,1.75f)<<15)|(encode(settings.rockLayerScale,.5f,1.75f)<<20)|(encode(settings.chromaVariationStrength,0.f,.2f)<<25)|(1u<<30);
+    return packed;
 }
 inline TerrainDistanceMaterialSettings3D EffectiveTerrainDecorrelationSettings3D(const TerrainDistanceMaterialSettings3D& source={}){
-    auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);const std::uint32_t packed=PackTerrainDecorrelationSettings3D(settings);if(!packed){settings.decorrelationEnabled=false;return settings;}const auto decode=[&](unsigned shift,float minimum,float maximum){return minimum+(maximum-minimum)*(float((packed>>shift)&31u)/31.f);};settings.warpScale=decode(0,.0001f,.05f);settings.warpStrength=decode(5,0.f,8.f);settings.grassLayerScale=decode(10,.5f,1.75f);settings.soilLayerScale=decode(15,.5f,1.75f);settings.rockLayerScale=decode(20,.5f,1.75f);settings.chromaVariationStrength=decode(25,0.f,.2f);return settings;
+    auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);const std::uint32_t packed=PackTerrainDecorrelationSettings3D(settings);settings.decorrelationEnabled=(packed&(1u<<30))!=0;settings.mesoPartitionEnabled=(packed&(1u<<31))!=0;if(!settings.decorrelationEnabled)return settings;const auto decode=[&](unsigned shift,float minimum,float maximum){return minimum+(maximum-minimum)*(float((packed>>shift)&31u)/31.f);};settings.warpScale=decode(0,.0001f,.05f);settings.warpStrength=decode(5,0.f,8.f);settings.grassLayerScale=decode(10,.5f,1.75f);settings.soilLayerScale=decode(15,.5f,1.75f);settings.rockLayerScale=decode(20,.5f,1.75f);settings.chromaVariationStrength=decode(25,0.f,.2f);return settings;
 }
 inline std::uint64_t FingerprintTerrainDistanceMaterialSettings3D(const TerrainDistanceMaterialSettings3D& source={}){
     const auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);std::uint64_t hash=1469598103934665603ull;const auto mix=[&](std::uint32_t value){for(unsigned byte=0;byte<4;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};mix(settings.enabled?1u:0u);if(settings.enabled){for(float value:{settings.detailFadeStart,settings.detailFadeEnd,settings.macroVariationScale,settings.macroVariationStrength,settings.normalDetailStrength,settings.farRoughnessBoost})mix(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));mix(PackTerrainDecorrelationSettings3D(settings));}return hash;
@@ -383,6 +386,9 @@ inline Vec3 TerrainDecorrelatedWorldPosition3D(Vec3 worldPosition,const TerrainD
 }
 inline Vec3 TerrainLayerSamplePosition3D(Vec3 worldPosition,std::uint32_t layer,const TerrainDistanceMaterialSettings3D& source={}){const auto settings=EffectiveTerrainDecorrelationSettings3D(source);const Vec3 warped=TerrainDecorrelatedWorldPosition3D(worldPosition,settings);const float scale=layer==0?settings.grassLayerScale:layer==1?settings.soilLayerScale:settings.rockLayerScale;return settings.enabled&&settings.decorrelationEnabled?warped*scale:worldPosition;}
 inline Vec3 TerrainChromaVariation3D(Vec3 albedo,float noiseSample,const TerrainDistanceMaterialSettings3D& source={}){const auto settings=EffectiveTerrainDecorrelationSettings3D(source);if(!settings.enabled||!settings.decorrelationEnabled||settings.chromaVariationStrength<=0.f||!std::isfinite(albedo.x)||!std::isfinite(albedo.y)||!std::isfinite(albedo.z)||!std::isfinite(noiseSample))return albedo;const float amount=(Clamp(noiseSample,0.f,1.f)*2.f-1.f)*settings.chromaVariationStrength;const Vec3 shifted{(std::max)(0.f,albedo.x*(1.f+amount*.92f)),(std::max)(0.f,albedo.y*(1.f-amount*.28f)),(std::max)(0.f,albedo.z*(1.f+amount*.54f))};const auto luma=[](Vec3 value){return value.x*.2126f+value.y*.7152f+value.z*.0722f;};const float before=luma(albedo),after=luma(shifted);return before>0.f&&after>1e-6f?shifted*(before/after):albedo;}
+struct TerrainBiomeWeights3D {float grass{},soil{},rock{};friend constexpr bool operator==(const TerrainBiomeWeights3D&,const TerrainBiomeWeights3D&)=default;};
+inline float TerrainMesoPartitionSignal3D(Vec2 worldPosition){if(!std::isfinite(worldPosition.x)||!std::isfinite(worldPosition.y))return .5f;const auto fraction=[](float value){return value-std::floor(value);};const auto hash=[&](Vec2 coordinate){coordinate={fraction(coordinate.x*123.34f),fraction(coordinate.y*456.21f)};const float value=coordinate.x*(coordinate.x+45.32f)+coordinate.y*(coordinate.y+45.32f);coordinate={coordinate.x+value,coordinate.y+value};return fraction(coordinate.x*coordinate.y);};const auto noise=[&](Vec2 coordinate){const Vec2 cell{std::floor(coordinate.x),std::floor(coordinate.y)},part{fraction(coordinate.x),fraction(coordinate.y)},smooth{part.x*part.x*(3.f-2.f*part.x),part.y*part.y*(3.f-2.f*part.y)};const float lower=hash(cell)+(hash({cell.x+1,cell.y})-hash(cell))*smooth.x,upper=hash({cell.x,cell.y+1})+(hash({cell.x+1,cell.y+1})-hash({cell.x,cell.y+1}))*smooth.x;return lower+(upper-lower)*smooth.y;};const Vec2 rotated{worldPosition.x*.8f-worldPosition.y*.6f,worldPosition.x*.6f+worldPosition.y*.8f};const float middle=noise(worldPosition*.14f+Vec2{1.f,.7f}),secondary=noise(rotated*.38f+Vec2{13.7f,-5.9f}),broad=noise(worldPosition*.021f),combined=middle*.62f+secondary*.30f+broad*.08f;return Clamp(.5f+(combined-.5f)*1.45f,0.f,1.f);}
+inline TerrainBiomeWeights3D ApplyTerrainMesoPartition3D(TerrainBiomeWeights3D source,Vec2 worldPosition,const TerrainDistanceMaterialSettings3D& settings={}){if(!settings.enabled||!settings.mesoPartitionEnabled)return source;if(!std::isfinite(source.grass)||!std::isfinite(source.soil)||!std::isfinite(source.rock))return{};const float rock=Clamp(source.rock,0.f,1.f),nonRock=1.f-rock;if(nonRock==0.f)return{0,0,rock};const float originalSoil=Clamp(source.soil/nonRock,0.f,1.f),signal=TerrainMesoPartitionSignal3D(worldPosition),inverse=1.f-signal,t=Clamp((inverse-.43f)/(.70f-.43f),0.f,1.f),targetSoil=t*t*(3.f-2.f*t),soilFraction=originalSoil+(targetSoil-originalSoil)*.62f,soil=nonRock*soilFraction;return{nonRock-soil,soil,rock};}
 inline float TerrainDetailWeight3D(float cameraDistance,const TerrainDistanceMaterialSettings3D& source={}){const TerrainDistanceMaterialSettings3D settings=NormalizeTerrainDistanceMaterialSettings3D(source);if(!settings.enabled)return 1.f;if(!std::isfinite(cameraDistance))return 0.f;const float value=Clamp((cameraDistance-settings.detailFadeStart)/(settings.detailFadeEnd-settings.detailFadeStart),0.f,1.f);return 1.f-value*value*(3.f-2.f*value);}
 inline unsigned TerrainMaterialTextureSamples3D(float cameraDistance,bool hasTextures=true,const TerrainDistanceMaterialSettings3D& source={}){if(!hasTextures)return 0;return TerrainDetailWeight3D(cameraDistance,source)>.001f?9u:3u;}
 inline float TerrainMacroVariation3D(Vec2 worldPosition,const TerrainDistanceMaterialSettings3D& source={}){const TerrainDistanceMaterialSettings3D settings=NormalizeTerrainDistanceMaterialSettings3D(source);if(!settings.enabled||settings.macroVariationStrength<=0||!std::isfinite(worldPosition.x)||!std::isfinite(worldPosition.y))return 1.f;const float value=std::sin(worldPosition.x*settings.macroVariationScale*1.731f+worldPosition.y*settings.macroVariationScale*.917f)*.5f+.5f;return 1.f-settings.macroVariationStrength+2.f*settings.macroVariationStrength*value;}
@@ -393,6 +399,11 @@ struct TerrainSurfaceShaderRoute3D {TerrainSurfaceProjection3D projection{Terrai
 inline constexpr TerrainSurfaceShaderRoute3D TerrainSurfaceShaderRoute{};
 inline float FoliageWrapDiffuse3D(float normalLightCosine,float wrap=.35f){if(!std::isfinite(normalLightCosine)||!std::isfinite(wrap))return 0.f;wrap=Clamp(wrap,0.f,1.f);return Clamp((normalLightCosine+wrap)/(1.f+wrap),0.f,1.f);}
 inline float FoliageTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
+inline float FoliagePhysicalTransmission3D(float normalLightCosine,float viewLightCosine){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine))return 0.f;const float backLight=Clamp(-normalLightCosine,0.f,1.f),forwardScatter=Clamp(-viewLightCosine,0.f,1.f);return Clamp(backLight*backLight*(.45f+.55f*forwardScatter),0.f,1.f);}
+inline float FoliageLowSunFactor3D(float sunElevation){if(!std::isfinite(sunElevation))return 0.f;const float t=Clamp((Clamp(sunElevation,0.f,1.f)-.55f)/.3f,0.f,1.f);return 1.f-t*t*(3.f-2.f*t);}
+inline float FoliageForwardScatterSuppressionBlend3D(float normalLightCosine,float viewLightCosine,float sunElevation){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine)||!std::isfinite(sunElevation))return 0.f;const auto smooth=[](float edge0,float edge1,float value){const float t=Clamp((value-edge0)/(edge1-edge0),0.f,1.f);return t*t*(3.f-2.f*t);};return smooth(.25f,1.f,-normalLightCosine)*smooth(.35f,1.f,viewLightCosine)*FoliageLowSunFactor3D(sunElevation);}
+inline float FoliageSuppressedTransmissionTerm3D(float normalLightCosine,float viewLightCosine,float sunElevation){if(!std::isfinite(normalLightCosine)||!std::isfinite(viewLightCosine)||!std::isfinite(sunElevation))return 0.f;const float legacy=FoliageTransmission3D(normalLightCosine,viewLightCosine),physical=FoliagePhysicalTransmission3D(normalLightCosine,viewLightCosine),target=(std::min)(legacy,physical),blend=FoliageForwardScatterSuppressionBlend3D(normalLightCosine,viewLightCosine,sunElevation);return (legacy+(target-legacy)*blend)*.48f;}
+inline Vec3 FoliageNeutralizedTransmissionColor3D(Vec3 color,float suppressionBlend){if(!std::isfinite(color.x)||!std::isfinite(color.y)||!std::isfinite(color.z)||!std::isfinite(suppressionBlend))return {};color={(std::max)(0.f,color.x),(std::max)(0.f,color.y),(std::max)(0.f,color.z)};const float luminance=color.x*.2126f+color.y*.7152f+color.z*.0722f,weight=.08f*Clamp(suppressionBlend,0.f,1.f);return color+(Vec3{luminance,luminance,luminance}-color)*weight;}
 struct SkinSubsurfaceSettings3D {bool enabled{true};float strength{.62f},wrap{.3f},curvatureScale{1.35f},transmission{.18f};friend constexpr bool operator==(const SkinSubsurfaceSettings3D&,const SkinSubsurfaceSettings3D&)=default;};
 inline SkinSubsurfaceSettings3D NormalizeSkinSubsurfaceSettings3D(SkinSubsurfaceSettings3D settings){settings.strength=Clamp(std::isfinite(settings.strength)?settings.strength:.62f,0.f,2.f);settings.wrap=Clamp(std::isfinite(settings.wrap)?settings.wrap:.3f,.02f,.75f);settings.curvatureScale=Clamp(std::isfinite(settings.curvatureScale)?settings.curvatureScale:1.35f,0.f,8.f);settings.transmission=Clamp(std::isfinite(settings.transmission)?settings.transmission:.18f,0.f,1.f);return settings;}
 inline Vec3 EvaluateSkinSubsurfaceDiffusion3D(float normalLightCosine,float viewAgainstLightCosine,float curvature,const SkinSubsurfaceSettings3D& source={}){
@@ -899,6 +910,25 @@ struct RendererStats {
     // 完成收據保留原始 GPU timestamp，避免 benchmark 只能反推已換算的奈秒。
     struct CompletedGpuTimingReceipt3D {uint64_t serial{},beginTick{},endTick{},frequency{},nanoseconds{},bloomResourceIdentity{};[[nodiscard]] bool Complete()const noexcept{return serial&&endTick>=beginTick&&frequency&&nanoseconds&&bloomResourceIdentity;}} lastCompletedGpuTimingReceipt{};
     uint64_t completedGpuFrameSerial{};
+    // 分段計時只隨同一完成幀發佈；沒有執行的 pass 不沿用上一幀數值。
+    struct CompletedGpuPassTimingReceipt3D {
+        uint64_t serial{}, beginTick{}, endTick{}, frequency{}, nanoseconds{};
+        bool recorded{}, valid{};
+        [[nodiscard]] static CompletedGpuPassTimingReceipt3D FromCompleted(
+            uint64_t serial, uint64_t totalBegin, uint64_t totalEnd,
+            uint64_t begin, uint64_t end, uint64_t frequency, bool recorded) noexcept {
+            CompletedGpuPassTimingReceipt3D result{serial, begin, end, frequency, 0, recorded, false};
+            if (!serial || !frequency || totalEnd < totalBegin || begin < totalBegin || end < begin || end > totalEnd) return result;
+            result.valid = true;
+            if (recorded) {
+                const long double value = static_cast<long double>(end - begin) * 1000000000.0L / frequency;
+                if (value >= static_cast<long double>((std::numeric_limits<uint64_t>::max)())) { result.valid = false; return result; }
+                result.nanoseconds = static_cast<uint64_t>(value);
+            }
+            return result;
+        }
+    };
+    CompletedGpuPassTimingReceipt3D lastShadowRenderingGpuTiming{}, lastProductionCaptureCopyGpuTiming{};
     uint64_t lastGpuFrameNanoseconds{};
     uint64_t totalGpuFrameNanoseconds{};
     uint64_t peakGpuFrameNanoseconds{};
@@ -1256,6 +1286,7 @@ public:
     HzbOcclusionSettings3D HzbOcclusionSettings()const;
     RendererStats GetStats()const;
     [[nodiscard]] RendererRuntimeEpoch3D RuntimeEpoch3D()const noexcept;
+    [[nodiscard]] unsigned CurrentBufferedFrameIndex3D()const noexcept;
     SkinnedSubmissionResult3D QuerySkinnedSubmission(SkinnedSubmissionReceipt3D receipt)const;
     unsigned RenderWidth() const;
     unsigned RenderHeight() const;
@@ -1263,8 +1294,31 @@ private:
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
     friend struct D3D12RendererTestAccess3D;
 #endif
+#if AEVRYND_SHADOW_MAP_DIAGNOSTICS
+    friend struct D3D12RendererShadowDiagnosticAccess3D;
+#endif
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+    friend struct D3D12RendererAtmosphereDiagnosticAccess3D;
+#endif
     struct Impl; std::unique_ptr<Impl> impl_;
 };
+#if AEVRYND_SHADOW_MAP_DIAGNOSTICS
+struct D3D12RendererShadowDiagnosticAccess3D {
+    struct Capture3D {unsigned width{},height{},rowPitch{},cascade{};std::vector<float> pixels{};[[nodiscard]] bool Complete()const noexcept{return width&&height&&rowPitch>=width*sizeof(float)&&pixels.size()==size_t(width)*height;}};
+    static std::optional<Capture3D> CaptureDirectionalShadow(D3D12Renderer& renderer,unsigned cascade);
+};
+#endif
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+struct D3D12RendererAtmosphereDiagnosticAccess3D {
+    struct Capture3D {RenderResourceIdentity3D identity{};unsigned sourceRowPitch{};std::vector<std::byte> rgba16f{};std::array<std::byte,32> pixelSha256{};[[nodiscard]] bool Complete()const noexcept{return identity.Complete()&&identity.sampleCount==1&&sourceRowPitch>=identity.width*8&&rgba16f.size()==size_t(identity.width)*identity.height*8;}};
+    static std::optional<Capture3D> CaptureVolumetricAtmosphereOutput(D3D12Renderer& renderer);
+    static bool SetPreAtmosphereHdrCapture(D3D12Renderer& renderer,bool enabled);
+    static bool SetPostAtmosphereHdrCapture(D3D12Renderer& renderer,bool enabled);
+    static bool SetPostTransparentHdrCapture(D3D12Renderer& renderer,bool enabled);
+    static bool SetSkipWaterTransparentDraw(D3D12Renderer& renderer,bool enabled);
+    static bool SetSkipAllTransparentDraw(D3D12Renderer& renderer,bool enabled);
+};
+#endif
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
 struct D3D12RendererTestAccess3D {
     enum class BloomCpuWindowOrder3D : uint8_t { Abba, Baab };

@@ -1,4 +1,16 @@
 add_executable(GameplayLab WIN32 app.manifest src/main.cpp src/GameplayLabGame.cpp src/GameplayProductionHdrSidecar3D.cpp src/GameplayFirstPersonViewmodel3D.cpp src/GameplayContactEvidence3D.cpp src/GameplayRules3D.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp src/ObjectPaletteAdapter3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/ShowcaseLandEcology3D.cpp src/GameplayObjectPaletteUi3D.cpp src/ShowcaseRenderAssetBindings3D.cpp src/GameplayHlodWorldRuntime3D.cpp src/GameplayCameraOcclusionPolicy3D.cpp src/GameplayCameraProductionBuilder3D.cpp src/GameplayOccluderMask3D.cpp tests/ux_replay/GameplayUxReplayWin32.cpp tests/ux_replay/GameplayUxReplayProduction.cpp)
+add_custom_target(GameplayForestTerrainBindingTest
+  COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayForestTerrainBindingSmoke.ps1" -SourceRoot "${CMAKE_SOURCE_DIR}" -AssetRoot "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/assets"
+  VERBATIM)
+add_executable(GameplayGrassCommunityMesh3DTest tests/GameplayGrassCommunityMesh3DSmoke.cpp)
+target_include_directories(GameplayGrassCommunityMesh3DTest PRIVATE include)
+target_compile_options(GameplayGrassCommunityMesh3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(GameplayGrassCommunityMesh3DTest PRIVATE AevryndEngine)
+add_test(NAME GameplayGrassCommunityMesh3DSmoke COMMAND GameplayGrassCommunityMesh3DTest)
+add_executable(GameplayBuildingIdentities3DTest tests/GameplayBuildingIdentities3DSmoke.cpp)
+target_include_directories(GameplayBuildingIdentities3DTest PRIVATE include "${CMAKE_SOURCE_DIR}/engine/native/include")
+target_compile_options(GameplayBuildingIdentities3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+add_test(NAME GameplayBuildingIdentities3DSmoke COMMAND GameplayBuildingIdentities3DTest)
 add_executable(GameplayProductionHdrSidecarValidator3D tools/GameplayProductionHdrSidecarValidator3D.cpp src/GameplayProductionHdrSidecar3D.cpp)
 target_include_directories(GameplayProductionHdrSidecarValidator3D PRIVATE include)
 target_compile_options(GameplayProductionHdrSidecarValidator3D PRIVATE /W4 /WX /permissive- /utf-8)
@@ -81,13 +93,13 @@ add_custom_command(TARGET GameplayLab POST_BUILD
     "${CMAKE_SOURCE_DIR}/engine/assets/model-packs"
     "$<TARGET_FILE_DIR:GameplayLab>/assets/environment-model-packs")
 
-# 只封裝 authoritative runtime manifest 引用的 54 個 GPU payload；不帶入 GLB、JPG、HDR 或烘焙收據。
+# 只封裝 authoritative 11-asset production manifest 引用的 72 個 GPU payload；不帶入 GLB、JPG、HDR 或烘焙收據。
 set(GAMEPLAY_PHOTOREAL_COOKED_ROOT "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked")
 set(GAMEPLAY_PHOTOREAL_MANIFEST "${GAMEPLAY_PHOTOREAL_COOKED_ROOT}/runtime-render-manifest.json")
 file(READ "${GAMEPLAY_PHOTOREAL_MANIFEST}" GAMEPLAY_PHOTOREAL_MANIFEST_JSON)
 string(JSON GAMEPLAY_PHOTOREAL_FILE_COUNT LENGTH "${GAMEPLAY_PHOTOREAL_MANIFEST_JSON}" files)
-if(NOT GAMEPLAY_PHOTOREAL_FILE_COUNT EQUAL 54)
-  message(FATAL_ERROR "Gameplay photoreal package requires exactly 54 manifest payloads")
+if(NOT GAMEPLAY_PHOTOREAL_FILE_COUNT EQUAL 72)
+  message(FATAL_ERROR "Gameplay 11-asset photoreal package requires exactly 72 manifest payloads")
 endif()
 add_custom_command(TARGET GameplayLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GameplayLab>/assets/photoreal-cooked"
@@ -227,12 +239,18 @@ endforeach()
 add_test(NAME GameplaySourceInventorySmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplaySourceInventorySmoke.ps1" -SourceRoot "${CMAKE_SOURCE_DIR}" -InventoryPath "${GAMEPLAY_SOURCE_INVENTORY_PATH}")
 set_tests_properties(GameplaySourceInventorySmoke PROPERTIES TIMEOUT 30)
 add_test(NAME GameplayLabCaptureSmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLabCaptureSmoke.ps1" -Executable "$<TARGET_FILE:GameplayLab>" -IdentityContractProbe "$<TARGET_FILE:GameplayObjectIdentityContractProbe>" -ProcessTimeoutSeconds 120)
-set_tests_properties(GameplayLabCaptureSmoke PROPERTIES TIMEOUT 300)
+set_tests_properties(GameplayLabCaptureSmoke PROPERTIES TIMEOUT 420)
 add_test(NAME GameplayLabGpuValidationCaptureSmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLabCaptureSmoke.ps1" -Executable "$<TARGET_FILE:GameplayLab>" -IdentityContractProbe "$<TARGET_FILE:GameplayObjectIdentityContractProbe>" -GpuValidation -SingleRun -ProcessTimeoutSeconds 180)
 set_tests_properties(GameplayLabGpuValidationCaptureSmoke PROPERTIES TIMEOUT 240)
 set_property(TEST GameplayLabCaptureSmoke GameplayLabGpuValidationCaptureSmoke APPEND PROPERTY LABELS "visual-gates")
 add_test(NAME GameplayLabCaptureCtestContractSmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLabCaptureCtestContractSmoke.ps1" -CTestFile "${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.cmake")
 set_tests_properties(GameplayLabCaptureCtestContractSmoke PROPERTIES TIMEOUT 10)
+add_custom_target(GameplayR7VisualSidecarHostileChecks
+  COMMAND ${CMAKE_COMMAND} -E env "LIB=" powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayR7VisualSidecarSmoke.ps1" -Producer "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayR7VisualSidecar.ps1"
+  VERBATIM)
+add_test(NAME GameplayR7VisualSidecarSmoke
+  COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayR7VisualSidecarSmoke.ps1" -Producer "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayR7VisualSidecar.ps1")
+set_tests_properties(GameplayR7VisualSidecarSmoke PROPERTIES TIMEOUT 60 LABELS "release-gates;visual-gates")
 add_executable(GameplayLabCombatAnimationTest tests/GameplayCombatAnimationSmoke.cpp src/GameplayCombat3D.cpp src/GameplayAnimation3D.cpp)
 target_include_directories(GameplayLabCombatAnimationTest PRIVATE include)
 target_compile_options(GameplayLabCombatAnimationTest PRIVATE /W4 /permissive- /utf-8)

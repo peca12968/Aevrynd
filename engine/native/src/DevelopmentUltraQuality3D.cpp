@@ -552,4 +552,42 @@ bool DevelopmentUltraPostApplyGate3D(
   return rendererApplySucceeded && pendingGpuReleaseBytes == 0;
 }
 
+DevelopmentUltraFrameTimingGate3D EvaluateDevelopmentUltraFrameTiming3D(
+    std::uint64_t lastGpuFrameNanoseconds,
+    std::uint64_t timingSampleCount,
+    std::uint64_t completedFrameSerial,
+    std::uint64_t completedTimingSerial,
+    std::uint64_t completedTimingNanoseconds,
+    bool gpuValidationRequested,
+    bool gpuValidationAvailable,
+    bool gpuValidationExecuted,
+    bool gpuValidationPassed,
+    std::uint64_t debugErrorCount,
+    std::uint64_t debugWarningCount) noexcept {
+  DevelopmentUltraFrameTimingGate3D result{};
+  result.timingRecorded = timingSampleCount && lastGpuFrameNanoseconds &&
+                          completedTimingNanoseconds == lastGpuFrameNanoseconds;
+  result.serialAligned = completedFrameSerial &&
+                         completedTimingSerial == completedFrameSerial;
+  if (!result.timingRecorded || !result.serialAligned)
+    return result;
+
+  if (gpuValidationRequested) {
+    // GBV changes command scheduling and timestamp cost. It proves execution and
+    // debug cleanliness, but it is not production performance evidence.
+    if (!gpuValidationAvailable || !gpuValidationExecuted ||
+        !gpuValidationPassed || debugErrorCount || debugWarningCount)
+      return result;
+    result.provenance =
+        DevelopmentUltraGpuTimingProvenance3D::GpuValidationInstrumented;
+    result.accepted = true;
+    return result;
+  }
+
+  result.provenance = DevelopmentUltraGpuTimingProvenance3D::Production;
+  result.productionBudgetApplied = true;
+  result.accepted = lastGpuFrameNanoseconds <= 16'667'000ull;
+  return result;
+}
+
 } // namespace Aevrynd

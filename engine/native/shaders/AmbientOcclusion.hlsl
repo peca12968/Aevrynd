@@ -123,6 +123,7 @@ struct DepthVertexOutput
     nointerpolation float occlusionOpacity : TEXCOORD7;
     nointerpolation uint2 occlusionSeeds : TEXCOORD8;
     float3 occlusionCoordinate : TEXCOORD9;
+    nointerpolation uint objectToken : OBJECTID;
 };
 
 float3 ApplyDepthWind(float3 position, float packedWeight, uint materialClass)
@@ -146,7 +147,7 @@ DepthVertexOutput DepthWorldVertexMain(WorldVertexInput input)
     return output;
 }
 
-DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
+DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input, uint objectToken : OBJECTID)
 {
     const float4 localPosition = float4(input.position, 1.0);
     float4 worldPosition = float4(dot(input.transformRow0, localPosition),
@@ -169,10 +170,11 @@ DepthVertexOutput DepthInstancedVertexMain(InstancedVertexInput input)
     output.occlusionOpacity=input.occlusionOpacity;
     output.occlusionSeeds=input.occlusionSeeds;
     output.occlusionCoordinate=input.position;
+    output.objectToken=objectToken;
     return output;
 }
 
-DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input)
+DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input, uint objectToken : OBJECTID)
 {
     float3 skinnedPosition;
     float3 skinnedNormal;
@@ -197,6 +199,7 @@ DepthVertexOutput DepthSkinnedVertexMain(SkinnedVertexInput input)
     output.occlusionOpacity=input.occlusionOpacity;
     output.occlusionSeeds=input.occlusionSeeds;
     output.occlusionCoordinate=skinnedPosition;
+    output.objectToken=objectToken;
     return output;
 }
 
@@ -215,6 +218,14 @@ void DepthPixelMain(DepthVertexOutput input)
         clip(signedCoverage);
     }
     ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
+}
+
+uint DepthObjectIdPixelMain(DepthVertexOutput input) : SV_TARGET
+{
+    // 與 AO/TAA 深度預通道共用完全相同的頂點輸出與裁切規則；物件識別
+    // 因此不再以另一套 skinned vertex bytecode 重算輪廓深度。
+    DepthPixelMain(input);
+    return input.objectToken;
 }
 
 struct AmbientOcclusionVertexOutput

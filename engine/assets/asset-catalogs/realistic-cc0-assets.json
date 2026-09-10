@@ -363,6 +363,18 @@
       "lodAtlas": "Spline road/riverbank decal; blend edges with Ground108."
     },
     {
+      "id": "tree_small_02",
+      "source": "poly-haven",
+      "category": "tree-live",
+      "kind": "mesh-pbr",
+      "officialPage": "https://polyhaven.com/a/tree_small_02",
+      "formats": ["blend", "gltf", "usd", "fbx", "zip"],
+      "preferred": {"resolution": "1k", "format": "gltf", "estimatedBytes": 100974143},
+      "firstBatch": true,
+      "replaces": ["procedural/tree-low"],
+      "lodAtlas": "Three material-preserving mesh LODs at 35%, 12%, and 4%; masked double-sided foliage remains independently bound."
+    },
+    {
       "id": "xanderklinge",
       "source": "poly-haven",
       "category": "lighting-hdri",

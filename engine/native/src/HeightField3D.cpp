@@ -22,7 +22,13 @@ bool HeightField3D::SetHeight(unsigned x,unsigned z,float height){if(x>=settings
 float HeightField3D::Height(unsigned x,unsigned z)const{x=(std::min)(x,settings_.width-1);z=(std::min)(z,settings_.depth-1);return heights_[Index(x,z)];}
 Vec3 HeightField3D::SamplePosition(unsigned x,unsigned z)const{return{settings_.origin.x+float(x)*settings_.cellSize,Height(x,z),settings_.origin.z+float(z)*settings_.cellSize};}
 bool HeightField3D::Contains(float x,float z)const{return x>=settings_.origin.x&&z>=settings_.origin.z&&x<=settings_.origin.x+float(settings_.width-1)*settings_.cellSize&&z<=settings_.origin.z+float(settings_.depth-1)*settings_.cellSize;}
-float HeightField3D::SampleHeight(float x,float z)const{const float localX=Clamp((x-settings_.origin.x)/settings_.cellSize,0.f,float(settings_.width-1)),localZ=Clamp((z-settings_.origin.z)/settings_.cellSize,0.f,float(settings_.depth-1));const unsigned x0=unsigned(std::floor(localX)),z0=unsigned(std::floor(localZ)),x1=(std::min)(x0+1,settings_.width-1),z1=(std::min)(z0+1,settings_.depth-1);const float amountX=localX-float(x0),amountZ=localZ-float(z0);return Lerp(Lerp(Height(x0,z0),Height(x1,z0),amountX),Lerp(Height(x0,z1),Height(x1,z1),amountX),amountZ);}
+float HeightField3D::SampleHeight(float x,float z)const{
+    const float localX=Clamp((x-settings_.origin.x)/settings_.cellSize,0.f,float(settings_.width-1)),localZ=Clamp((z-settings_.origin.z)/settings_.cellSize,0.f,float(settings_.depth-1));
+    const unsigned x0=unsigned(std::floor(localX)),z0=unsigned(std::floor(localZ)),x1=(std::min)(x0+1,settings_.width-1),z1=(std::min)(z0+1,settings_.depth-1);
+    const float u=localX-float(x0),v=localZ-float(z0),a=Height(x0,z0),b=Height(x1,z0),c=Height(x0,z1),d=Height(x1,z1);
+    // 與 CreateMesh 的 a/c/b、b/c/d 共用對角線，碰撞查詢不得使用不同的雙線性曲面。
+    return u+v<=1.f?a+(b-a)*u+(c-a)*v:d+(c-d)*(1.f-u)+(b-d)*(1.f-v);
+}
 Vec3 HeightField3D::SampleNormal(float x,float z)const{const float step=settings_.cellSize,left=SampleHeight(x-step,z),right=SampleHeight(x+step,z),back=SampleHeight(x,z-step),front=SampleHeight(x,z+step);return Normalize({left-right,step*2.f,back-front});}
 void HeightField3D::RefreshRange(){if(heights_.empty()){minimumHeight_=maximumHeight_=0;return;}const auto [minimum,maximum]=std::minmax_element(heights_.begin(),heights_.end());minimumHeight_=*minimum;maximumHeight_=*maximum;}
 

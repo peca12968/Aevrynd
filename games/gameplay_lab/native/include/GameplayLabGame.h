@@ -11,6 +11,7 @@
 #include "GameplayCameraProductionBuilder3D.h"
 #include "GameplayFirstPersonViewmodel3D.h"
 #include "GameplayFirstPersonPose3D.h"
+#include "Candidate7PresentationScale3D.h"
 #include "ObjectPaletteAdapter3D.h"
 #include <Aevrynd/CharacterController3D.h>
 #include <Aevrynd/Engine.h>
@@ -60,10 +61,16 @@ constexpr GameplayHudPresentationPolicy3D BuildGameplayHudPresentationPolicy3D(
     // 遊玩與擷取共用預設精簡模式；使用者可主動展開診斷，palette 仍依操作狀態顯示。
     return {diagnosticsVisible, paletteOpen, diagnosticsVisible, diagnosticsVisible};
 }
+constexpr bool GameplayHudShowsCompactInstructions3D(
+    const GameplayHudPresentationPolicy3D &policy,
+    bool cleanCapturePresentation = false) noexcept {
+    return !cleanCapturePresentation && !policy.instructions;
+}
 static_assert([] {
     constexpr auto clean = BuildGameplayHudPresentationPolicy3D(true, true, true);
     return !clean.instructions && !clean.palette && !clean.combatStatus &&
-           !clean.interactionDiagnostics;
+           !clean.interactionDiagnostics &&
+           !GameplayHudShowsCompactInstructions3D(clean, true);
 }());
 }
 #include <string>
@@ -122,6 +129,7 @@ inline constexpr std::uint32_t GameplayTemporalCaptureWarmupFrames3D=3;
            std::abs(previous.projection.orthographicHeight-current.projection.orthographicHeight)>.5f;
 }
 [[nodiscard]] constexpr bool GameplayTemporalCaptureReady3D(bool active,bool poseFrozen,std::uint32_t remaining)noexcept{return active&&poseFrozen&&!remaining;}
+[[nodiscard]] constexpr bool GameplayCaptureWarmupMayBegin3D(bool preparedSceneSubmitted)noexcept{return preparedSceneSubmitted;}
 [[nodiscard]] constexpr bool GameplayUseFrozenPose3D(bool poseFrozen,bool temporalFixture,bool pairFrozen,bool warmupActive,bool readyToStage)noexcept{return poseFrozen&&(temporalFixture||pairFrozen||warmupActive||readyToStage);}
 [[nodiscard]] constexpr bool GameplayGodCameraRequiresCaptureLayout3D(bool readyToStage,GameplayCaptureCamera3D expected)noexcept{return readyToStage&&expected==GameplayCaptureCamera3D::God;}
 [[nodiscard]] constexpr std::uint64_t GameplayTemporalWarmupScheduleTick3D(std::uint64_t frozenTick)noexcept{return frozenTick;}
@@ -173,6 +181,61 @@ struct GameplayGpuContactArtifact3D {
     }
 };
 
+// Weapon swings and attack poses can extend the upper-body silhouette far to one
+// side.  Derive the left/right split from the bottom foot band instead of the
+// full actor bounds so an outstretched arm cannot move both feet into one half.
+struct GameplayGpuFootBand3D {
+    unsigned beginY{},minimumX{},maximumX{},leftMaximumX{},rightMinimumX{};
+    [[nodiscard]] constexpr bool Complete()const noexcept {
+        return minimumX<=leftMaximumX&&leftMaximumX<rightMinimumX&&rightMinimumX<=maximumX;
+    }
+};
+
+[[nodiscard]] constexpr GameplayGpuFootBand3D SelectGameplayGpuFootBand3D(
+    unsigned width,unsigned height,std::span<const std::uint32_t> objectIds,
+    std::uint32_t playerToken) noexcept {
+    GameplayGpuFootBand3D result{};
+    if(!width||!height||!playerToken||objectIds.size()!=std::size_t(width)*height)return result;
+    unsigned minimumY=height,maximumY{},actorMinimumX=width,actorMaximumX{};bool found{};
+    for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x){
+        if(objectIds[std::size_t(y)*width+x]!=playerToken)continue;
+        found=true;minimumY=std::min(minimumY,y);maximumY=std::max(maximumY,y);
+        actorMinimumX=std::min(actorMinimumX,x);actorMaximumX=std::max(actorMaximumX,x);
+    }
+    if(!found)return result;
+    constexpr unsigned FootBandHeight=24;
+    const unsigned span=maximumY-minimumY+1;
+    result.beginY=maximumY-(std::min)(FootBandHeight,span)+1;
+    result.minimumX=width;result.maximumX=0;
+    unsigned previousX{},largestGap{},leftMaximum{},rightMinimum{};bool previous{};
+    for(unsigned x=actorMinimumX;x<=actorMaximumX;++x){
+        bool occupied{};for(unsigned y=result.beginY;y<=maximumY&&!occupied;++y)
+            occupied=objectIds[std::size_t(y)*width+x]==playerToken;
+        if(!occupied)continue;
+        result.minimumX=std::min(result.minimumX,x);result.maximumX=std::max(result.maximumX,x);
+        if(previous&&x>previousX+1&&x-previousX-1>largestGap){largestGap=x-previousX-1;leftMaximum=previousX;rightMinimum=x;}
+        previousX=x;previous=true;
+    }
+    const unsigned middle=(result.minimumX+result.maximumX)/2;
+    if(result.minimumX>result.maximumX||largestGap<2||middle<=leftMaximum||middle>=rightMinimum)return {};
+    result.leftMaximumX=leftMaximum;result.rightMinimumX=rightMinimum;return result;
+}
+
+[[nodiscard]] constexpr bool GameplayGpuFootBandRegression3D() noexcept {
+    std::array<std::uint32_t,32*32> ids{};
+    // Hostile upper-body extent: the legacy full-bounds midpoint lies left of
+    // both feet.  The bottom-band midpoint must still separate them.
+    for(unsigned x=1;x<=12;++x)ids[3*32+x]=1;
+    for(unsigned y=24;y<=30;++y)for(unsigned x=18;x<=20;++x)ids[y*32+x]=1;
+    for(unsigned y=23;y<=29;++y)for(unsigned x=26;x<=28;++x)ids[y*32+x]=1;
+    const auto split=SelectGameplayGpuFootBand3D(32,32,ids,1);
+    if(!split.Complete()||split.beginY!=7||split.leftMaximumX!=20||split.rightMinimumX!=26)return false;
+    std::array<std::uint32_t,32*32> single{};
+    for(unsigned y=24;y<=30;++y)for(unsigned x=18;x<=24;++x)single[y*32+x]=1;
+    return !SelectGameplayGpuFootBand3D(32,32,single,1).Complete();
+}
+static_assert(GameplayGpuFootBandRegression3D());
+
 [[nodiscard]] GameplayGpuContactArtifact3D BuildGameplayGpuContactArtifact3D(
     unsigned width,unsigned height,std::span<const std::uint32_t> objectIds,
     std::span<const float> depth,std::uint32_t playerToken,std::uint32_t terrainToken,
@@ -190,6 +253,46 @@ struct GameplayGpuContactArtifact3D {
     // 正式AI停止距離已保留雙角色輪廓間隔；生死狀態都使用同一世界座標，避免
     // 死亡展示額外拉遠迫使相機縮小主角。
     return monster;
+}
+
+// 角色資產的正面朝向模型空間 -Z。展示敵人必須朝向玩家，而不是使用固定
+// yaw 讓走路動畫在不同玩家方向下變成側向滑行。
+[[nodiscard]] inline float GameplayShowcaseMonsterFacingYaw3D(
+    Aevrynd::Vec3 monster,Aevrynd::Vec3 player) noexcept {
+    const Aevrynd::Vec3 towardPlayer=player-monster;
+    if(!std::isfinite(towardPlayer.x)||!std::isfinite(towardPlayer.z)||
+       towardPlayer.x*towardPlayer.x+towardPlayer.z*towardPlayer.z<1e-8f)
+        return 0.f;
+    return std::atan2(-towardPlayer.x,-towardPlayer.z);
+}
+
+[[nodiscard]] inline Aevrynd::Transform3D GameplayShowcaseMonsterTransform3D(
+    Aevrynd::Vec3 monster,Aevrynd::Vec3 player) noexcept {
+    return {monster,{0,GameplayShowcaseMonsterFacingYaw3D(monster,player),0},
+            {.98f,.98f,.98f}};
+}
+
+struct GameplayShowcaseMonsterStage3D {
+    float uniformScale{.98f};
+    float playerRightOffset{};
+};
+
+// God capture 需要同時讓玩家與伴隨角色在遠距正交鏡頭中保持可辨識；此策略只
+// 改變錄影展示，不改動戰鬥座標、碰撞、AI 停止距離或一般遊玩比例。
+[[nodiscard]] constexpr GameplayShowcaseMonsterStage3D
+GameplayShowcaseMonsterStage3DForCapture(bool godCapture) noexcept {
+    return godCapture?GameplayShowcaseMonsterStage3D{1.45f,.25f}:
+                      GameplayShowcaseMonsterStage3D{};
+}
+
+[[nodiscard]] inline Aevrynd::Transform3D GameplayShowcaseMonsterTransform3D(
+    Aevrynd::Vec3 monster,Aevrynd::Vec3 player,float playerYaw,
+    bool godCapture) noexcept {
+    const auto stage=GameplayShowcaseMonsterStage3DForCapture(godCapture);
+    const Aevrynd::Vec3 playerRight{std::cos(playerYaw),0,-std::sin(playerYaw)};
+    const Aevrynd::Vec3 position=monster+playerRight*stage.playerRightOffset;
+    return {position,{0,GameplayShowcaseMonsterFacingYaw3D(position,player),0},
+            {stage.uniformScale,stage.uniformScale,stage.uniformScale}};
 }
 
 struct GameplayGodCameraLayout3D {
@@ -315,6 +418,43 @@ inline constexpr std::uint32_t GameplayGodMinimumPlayerPixelsFloor3D=
     std::uint32_t(GameplayGodMinimumPlayerPixelCountExact3D);
 inline constexpr std::uint32_t GameplayGodMinimumPlayerPixels3D=GameplayGodMinimumPlayerPixelsFloor3D+
     (float(GameplayGodMinimumPlayerPixelsFloor3D)<GameplayGodMinimumPlayerPixelCountExact3D?1u:0u);
+// 320x180 的投影聯集不是深度/材質裁切後 OID；已觀察 384 等效像素只剩 326。
+// 候選預留 25%（462 像素，粗 raster 實際至少 464），正式 .0004/369 gate 不變。
+inline constexpr std::uint32_t GameplayGodCandidatePlayerPixels3D=
+    (GameplayGodMinimumPlayerPixels3D*5u+3u)/4u;
+inline constexpr float GameplayGodCandidatePlayerCoverage3D=
+    float(GameplayGodCandidatePlayerPixels3D)/float(GameplayCaptureViewportWidth3D*GameplayCaptureViewportHeight3D);
+[[nodiscard]] inline bool GameplayGodCandidatePlayerCoveragePass3D(float coverage) noexcept {
+    return std::isfinite(coverage)&&coverage>=GameplayGodCandidatePlayerCoverage3D&&coverage<=1.f;
+}
+
+inline constexpr float GameplayGodMinimumCornerRayOriginHeight3D=1.5f;
+// Bricks100 的 1K 法線在 God 鏡頭縮小後仍保留完整幅度，黃昏掠射光會把
+// 個別 mortar texel 放大成散布牆面的黑孔。0.35 保留近景磚縫起伏，並由
+// 固定 God day/dusk/night readback 證明不再產生可見椒鹽黑點。
+inline constexpr float GameplayCottageWallNormalScale3D=.35f;
+inline constexpr bool GameplayCottageMaterialUsesUv3D(bool roof) noexcept { return roof; }
+// 正交 God 鏡頭的下方角落若從接近地表的位置開始，局部起伏會落在
+// near plane 後方，即使 y=0 平面射線可命中仍會露出 clear color。
+// 保留 1.5m 的可見地表起伏裕量；正式截圖仍須由 depth/OID gate 證明全幅覆蓋。
+[[nodiscard]] inline bool GameplayGodTerrainFrameCovered3D(
+    const Aevrynd::Camera3D& camera) noexcept {
+    if(camera.projection.mode!=Aevrynd::ProjectionMode::Orthographic)return false;
+    constexpr Aevrynd::Vec2 viewport{float(GameplayCaptureViewportWidth3D),
+                                     float(GameplayCaptureViewportHeight3D)};
+    constexpr std::array<Aevrynd::Vec2,4> corners{{{.5f,.5f},{viewport.x-.5f,.5f},
+                                                   {.5f,viewport.y-.5f},{viewport.x-.5f,viewport.y-.5f}}};
+    for(const auto point:corners){
+        const auto ray=Aevrynd::ScreenPointToRay(camera,viewport,point);
+        if(!std::isfinite(ray.origin.y)||!std::isfinite(ray.direction.y)||ray.direction.y>=-.001f)return false;
+        if(ray.origin.y<GameplayGodMinimumCornerRayOriginHeight3D+camera.projection.nearPlane)return false;
+        const float t=-ray.origin.y/ray.direction.y;
+        if(!std::isfinite(t)||t<0.f||t>camera.projection.farPlane)return false;
+        const auto hit=ray.origin+ray.direction*t;
+        if(std::abs(hit.x)>1000.f||std::abs(hit.z)>1000.f)return false;
+    }
+    return true;
+}
 
 struct GameplayCaptureProjectionEvidence3D {
     Aevrynd::ProjectionMode projectionMode{Aevrynd::ProjectionMode::Perspective};
@@ -354,7 +494,7 @@ struct GameplayCaptureProjectionEvidence3D {
     if(!visible)return result;
     result.playerCoverage=RasterGameplayPosedMeshCoverage3D(camera,posedVertices,posedIndices,playerWorld);
     const auto world=EvaluateGameplayGodWorldEvidence3D(camera,descriptors,geometry);result.visibleWorldDescriptors=world.visibleWorldDescriptors;result.lodTransitions=world.lodTransitions;result.buildingUnion=world.buildingCoverage;result.maximumBuildingPart=world.maximumBuildingPart;result.roofCoverage=world.roofCoverage;result.riverCoverage=world.riverCoverage;result.visibleBuildingComponents=world.visibleBuildingComponents;result.buildingEdgeMask=world.buildingEdgeMask;result.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;result.productionLodExact=true;
-    result.valid=result.playerCoverage>=GameplayGodMinimumPlayerCoverage3D&&result.lodTransitions&&world.buildingValid&&result.riverCoverage>=.002f&&result.buildingUnion>=.002f&&result.buildingUnion<=.22f&&result.visibleBuildingComponents==6&&!result.buildingEdgeMask&&result.maximumBuildingPart<=.08f&&result.roofCoverage<=.05f&&result.visibleWorldDescriptors>=20;
+    result.valid=GameplayGodCandidatePlayerCoveragePass3D(result.playerCoverage)&&GameplayGodTerrainFrameCovered3D(camera)&&result.lodTransitions&&world.buildingValid&&result.riverCoverage>=.002f&&result.buildingUnion>=.002f&&result.buildingUnion<=.22f&&result.visibleBuildingComponents==6&&!result.buildingEdgeMask&&result.maximumBuildingPart<=.08f&&result.roofCoverage<=.05f&&result.visibleWorldDescriptors>=20;
     return result;
 }
 
@@ -418,10 +558,11 @@ template<class CollisionConstraint,class TerrainConstraint>
         GameplayGodCameraLayout3D preliminary{};preliminary.camera=camera;preliminary.distance=distance;preliminary.azimuth=azimuth;preliminary.elevation=elevation;preliminary.playerCoverage=coverage;preliminary.valid=true;
         const std::size_t directionIndex=std::size_t(elevationIndex)*8+azimuthIndex,fovBucket=(std::min)(std::size_t(heightStep/4),fovBuckets-1),distanceBucket=(std::min)(std::size_t(step/17),distanceBuckets-1),slot=directionIndex*preliminaryPerDirection+fovBucket*distanceBuckets+distanceBucket;if(!preliminaryCandidates[slot].valid||preliminaryCandidates[slot].playerCoverage<coverage)preliminaryCandidates[slot]=preliminary;
     }
-    for(std::size_t preliminaryIndex=0;preliminaryIndex<preliminaryCandidates.size();++preliminaryIndex){const auto& preliminary=preliminaryCandidates[preliminaryIndex];if(!preliminary.valid)continue;const auto cheap=EvaluateGameplayGodCoarseEvidence3D(preliminary.camera,descriptors,geometry);if(!cheap.lodTransitions){++rejectedLod;continue;}if(cheap.visibleWorldDescriptors<20){++rejectedWorld;continue;}if(!cheap.riverVisible||cheap.visibleBuildingComponents<6){++rejectedBuilding;continue;}const auto world=EvaluateGameplayGodWorldEvidence3D(preliminary.camera,descriptors,geometry);const bool hardWorld=world.buildingValid&&world.riverCoverage>=.002f&&world.buildingCoverage>=.002f&&world.buildingCoverage<=.22f&&world.visibleBuildingComponents==6&&!world.buildingEdgeMask&&world.maximumBuildingPart<=.08f&&world.roofCoverage<=.05f&&world.visibleWorldDescriptors>=20&&world.lodTransitions;if(!hardWorld){++rejectedBuilding;continue;}auto coarse=preliminary;coarse.buildingUnion=world.buildingCoverage;coarse.maximumBuildingPart=world.maximumBuildingPart;coarse.roofCoverage=world.roofCoverage;coarse.lodTransitions=world.lodTransitions;coarse.visibleWorldDescriptors=world.visibleWorldDescriptors;coarse.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;coarse.riverCoverage=world.riverCoverage;coarse.visibleBuildingComponents=world.visibleBuildingComponents;coarse.buildingEdgeMask=world.buildingEdgeMask;coarse.productionLodExact=true;const float penalty=(std::max)(0.f,GameplayGodMinimumPlayerCoverage3D-coarse.playerCoverage)*1000.f;if(penalty<fallbackPenalty){fallbackPenalty=penalty;fallback=coarse;}const std::size_t directionIndex=preliminaryIndex/preliminaryPerDirection,begin=directionIndex*candidatesPerDirection;auto& count=coarseCounts[directionIndex];if(count<candidatesPerDirection){coarseCandidates[begin+count++]=coarse;++coarseCandidateCount;}else{auto first=coarseCandidates.begin()+std::ptrdiff_t(begin),last=first+std::ptrdiff_t(candidatesPerDirection);auto minimum=std::ranges::min_element(std::ranges::subrange(first,last),{},&GameplayGodCameraLayout3D::playerCoverage);if(minimum!=last&&minimum->playerCoverage<coarse.playerCoverage)*minimum=coarse;}}
-    const auto coarseFallback=fallback;best={};fallback={};std::uint32_t rejectedActualCoverage{},rasterCandidates{};float maximumActualCoverage{};for(const auto& stored:coarseCandidates){if(!stored.valid)continue;++rasterCandidates;auto candidate=ResolveGameplayGodCameraLayout3D(focus,stored,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}constexpr float preferredAzimuth=5.49778714f;const auto angularDistance=[](float left,float right){return std::abs(std::atan2(std::sin(left-right),std::cos(left-right)));};const float preference=angularDistance(candidate.azimuth,preferredAzimuth),bestPreference=angularDistance(best.azimuth,preferredAzimuth);if(!best.valid||candidate.lodTransitions>best.lodTransitions||(candidate.lodTransitions==best.lodTransitions&&candidate.playerCoverage>best.playerCoverage+.00001f)||(candidate.lodTransitions==best.lodTransitions&&std::abs(candidate.playerCoverage-best.playerCoverage)<=.00001f&&preference<bestPreference))best=candidate;}
+    for(std::size_t preliminaryIndex=0;preliminaryIndex<preliminaryCandidates.size();++preliminaryIndex){const auto& preliminary=preliminaryCandidates[preliminaryIndex];if(!preliminary.valid)continue;const auto cheap=EvaluateGameplayGodCoarseEvidence3D(preliminary.camera,descriptors,geometry);if(!cheap.lodTransitions){++rejectedLod;continue;}if(cheap.visibleWorldDescriptors<20){++rejectedWorld;continue;}if(!cheap.riverVisible||cheap.visibleBuildingComponents<6){++rejectedBuilding;continue;}const auto world=EvaluateGameplayGodWorldEvidence3D(preliminary.camera,descriptors,geometry);const bool hardWorld=GameplayGodTerrainFrameCovered3D(preliminary.camera)&&world.buildingValid&&world.riverCoverage>=.002f&&world.buildingCoverage>=.002f&&world.buildingCoverage<=.22f&&world.visibleBuildingComponents==6&&!world.buildingEdgeMask&&world.maximumBuildingPart<=.08f&&world.roofCoverage<=.05f&&world.visibleWorldDescriptors>=20&&world.lodTransitions;if(!hardWorld){++rejectedBuilding;continue;}auto coarse=preliminary;coarse.buildingUnion=world.buildingCoverage;coarse.maximumBuildingPart=world.maximumBuildingPart;coarse.roofCoverage=world.roofCoverage;coarse.lodTransitions=world.lodTransitions;coarse.visibleWorldDescriptors=world.visibleWorldDescriptors;coarse.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;coarse.riverCoverage=world.riverCoverage;coarse.visibleBuildingComponents=world.visibleBuildingComponents;coarse.buildingEdgeMask=world.buildingEdgeMask;coarse.productionLodExact=true;const float penalty=(std::max)(0.f,GameplayGodMinimumPlayerCoverage3D-coarse.playerCoverage)*1000.f;if(penalty<fallbackPenalty){fallbackPenalty=penalty;fallback=coarse;}const std::size_t directionIndex=preliminaryIndex/preliminaryPerDirection,begin=directionIndex*candidatesPerDirection;auto& count=coarseCounts[directionIndex];if(count<candidatesPerDirection){coarseCandidates[begin+count++]=coarse;++coarseCandidateCount;}else{auto first=coarseCandidates.begin()+std::ptrdiff_t(begin),last=first+std::ptrdiff_t(candidatesPerDirection);auto minimum=std::ranges::min_element(std::ranges::subrange(first,last),{},&GameplayGodCameraLayout3D::playerCoverage);if(minimum!=last&&minimum->playerCoverage<coarse.playerCoverage)*minimum=coarse;}}
+    std::array<GameplayGodCameraLayout3D,directionCount> refinementBases{};const auto coarseFallback=fallback;best={};fallback={};std::uint32_t rejectedActualCoverage{},rasterCandidates{};float maximumActualCoverage{};for(const auto& stored:coarseCandidates){if(!stored.valid)continue;++rasterCandidates;auto candidate=ResolveGameplayGodCameraLayout3D(focus,stored,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);const auto directionIndex=std::size_t(&stored-coarseCandidates.data())/candidatesPerDirection;if(candidate.playerCoverage>refinementBases[directionIndex].playerCoverage)refinementBases[directionIndex]=candidate;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}constexpr float preferredAzimuth=5.49778714f;const auto angularDistance=[](float left,float right){return std::abs(std::atan2(std::sin(left-right),std::cos(left-right)));};const float preference=angularDistance(candidate.azimuth,preferredAzimuth),bestPreference=angularDistance(best.azimuth,preferredAzimuth);if(!best.valid||candidate.lodTransitions>best.lodTransitions||(candidate.lodTransitions==best.lodTransitions&&candidate.playerCoverage>best.playerCoverage+.00001f)||(candidate.lodTransitions==best.lodTransitions&&std::abs(candidate.playerCoverage-best.playerCoverage)<=.00001f&&preference<bestPreference))best=candidate;}
     // 正交投影不可用距離調整角色尺寸；微縮高度時同步搜尋小幅平移，並重跑全部world hard gates避免裁切建築。
-    if(!best.valid&&fallback.playerCoverage>0.f){const auto refinementBase=fallback;for(unsigned refinement=1;refinement<=24&&!best.valid;++refinement)for(unsigned panStep=0;panStep<=8&&!best.valid;++panStep)for(unsigned axis=0;axis<(panStep?2u:1u)&&!best.valid;++axis)for(const float sign:{-1.f,1.f}){if(!panStep&&sign>0)continue;auto refined=refinementBase;refined.valid=true;refined.camera.projection.orthographicHeight=refinementBase.camera.projection.orthographicHeight-float(refinement)*.125f;if(refined.camera.projection.orthographicHeight<4.f)continue;const float pan=sign*float(panStep)*.25f;const Aevrynd::Vec3 offset=axis?Aevrynd::Vec3{0,0,pan}:Aevrynd::Vec3{pan,0,0};refined.camera.position=refined.camera.position+offset;refined.camera.target=refined.camera.target+offset;auto candidate=ResolveGameplayGodCameraLayout3D(focus,refined,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);++rasterCandidates;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}best=candidate;break;}}
+    // 裕量不能靠放寬 world gate；保留八個不同視向的最佳 raster 候選作有界局部重驗。
+    if(!best.valid&&fallback.playerCoverage>0.f){std::ranges::sort(refinementBases,[](const auto& a,const auto& b){return a.playerCoverage>b.playerCoverage;});for(std::size_t baseIndex=0;baseIndex<8&&!best.valid;++baseIndex){const auto refinementBase=refinementBases[baseIndex];if(refinementBase.playerCoverage<=0.f)continue;for(unsigned refinement=1;refinement<=24&&!best.valid;++refinement)for(unsigned panStep=0;panStep<=8&&!best.valid;++panStep)for(unsigned axis=0;axis<(panStep?2u:1u)&&!best.valid;++axis)for(const float sign:{-1.f,1.f}){if(!panStep&&sign>0)continue;auto refined=refinementBase;refined.valid=true;refined.camera.projection.orthographicHeight=refinementBase.camera.projection.orthographicHeight-float(refinement)*.125f;if(refined.camera.projection.orthographicHeight<4.f)continue;const float pan=sign*float(panStep)*.25f;const Aevrynd::Vec3 offset=axis?Aevrynd::Vec3{0,0,pan}:Aevrynd::Vec3{pan,0,0};refined.camera.position=refined.camera.position+offset;refined.camera.target=refined.camera.target+offset;auto candidate=ResolveGameplayGodCameraLayout3D(focus,refined,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);++rasterCandidates;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}best=candidate;break;}}}
     const auto stampDiagnostics=[&](GameplayGodCameraLayout3D& value){value.maximumActualTriangleCoverage=maximumActualCoverage;value.evaluatedCandidates=evaluatedCandidates;value.coarseCandidates=std::uint32_t(coarseCandidateCount);value.rasterCandidates=rasterCandidates;value.rejectedActualCoverage=rejectedActualCoverage;value.rejectedLod=rejectedLod;value.rejectedWorld=rejectedWorld;value.rejectedBuilding=rejectedBuilding;};
     if(best.valid){stampDiagnostics(best);return best;}
     if(!rasterCandidates)fallback=coarseFallback;fallback.valid=false;stampDiagnostics(fallback);
@@ -454,12 +595,14 @@ template<class CollisionConstraint,class TerrainConstraint>
     const GameplayGodProductionGeometry3D& geometry,
     std::span<const Aevrynd::Vertex3D> posedVertices,
     std::span<const std::uint32_t> posedIndices,
-    CollisionConstraint&& collisionConstraint,TerrainConstraint&& terrainConstraint) noexcept {
+    CollisionConstraint&& collisionConstraint,TerrainConstraint&& terrainConstraint,
+    const Aevrynd::Matrix4* presentationWorld=nullptr) noexcept {
     GameplayAuthoritativeGodCameraReceipt3D result{};
     if(!std::isfinite(input.controllerPosition.x)||!std::isfinite(input.controllerPosition.y)||
        !std::isfinite(input.controllerPosition.z)||!std::isfinite(input.yaw)||!std::isfinite(input.pitch))return result;
     const Aevrynd::Vec3 focus=input.controllerPosition+Aevrynd::Vec3{0,1.1f,0};
-    const Aevrynd::Matrix4 playerWorld=Aevrynd::CreateTransformMatrix(input.controllerPosition,{0,input.yaw,0},{1,1,1});
+    const Aevrynd::Matrix4 legacyWorld=Aevrynd::CreateTransformMatrix(input.controllerPosition,{0,input.yaw,0},{1,1,1});
+    const Aevrynd::Matrix4& playerWorld=presentationWorld?*presentationWorld:legacyWorld;
     result.layout=SelectGameplayGodCameraLayoutConstrained3D(focus,descriptors,geometry,posedVertices,posedIndices,playerWorld,
         std::forward<CollisionConstraint>(collisionConstraint),std::forward<TerrainConstraint>(terrainConstraint));
     const auto mix=[](std::uint64_t& hash,std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};
@@ -826,6 +969,7 @@ private:
     FirstPersonPosePublication firstPersonPose_{},captureFrozenFirstPersonPose_{};
     void BuildWorld(Aevrynd::Engine&);void AddShowcaseEnvironment();void QueueTemporalHistoryReseed(GameplayLab::GameplayTemporalReseedReason3D)noexcept;void ResetProductionCameraCut(GameplayLab::GameplayTemporalReseedReason3D=GameplayLab::GameplayTemporalReseedReason3D::CameraMode)noexcept;void UpdateCamera(Aevrynd::Engine&);void UpdateCapture(Aevrynd::Engine&,bool fixedSimulationStep);void RequestCapturePhase(Aevrynd::Engine&);bool ConsumeObjectIdCapture(Aevrynd::Engine&,std::size_t,bool raw,bool reference);bool WriteCaptureIntegrityDiagnostic(bool fatal=false)const;std::filesystem::path GameplayHdrCapturePath(std::size_t)const;void CleanupGameplayHdrCaptureArtifacts(std::size_t,bool removeFinal)noexcept;void FailGameplayHdrCapture(Aevrynd::Engine&,std::size_t)noexcept;bool WriteGameplayHdrCaptureReceipt()const;bool InitializeEnvironmentCollision();bool SyncEnvironmentCollision(Aevrynd::Vec3 observer);void ReleaseEnvironmentGameplayColliders();
     std::uint32_t temporalFixtureWarmupFrames_{};bool temporalFixtureCloudOff_{};
+    std::uint8_t captureLightingIsolation_{};bool captureShadowMapDiagnostic_{},captureRawHdrDiagnostic_{},captureAtmosphereOutputDiagnostic_{};
     GameplayLab::Rules3D rules_{};Aevrynd::CharacterController3D controller_{};Aevrynd::CollisionWorld3D collisions_{};Aevrynd::PhysicsWorld3D physics_{};Aevrynd::SceneECSRegistry3D sceneEcs_{};Aevrynd::Scene3D scene_{};
     GameplayLab::ShowcaseRenderAssetBindings3D showcaseRenderAssets_{};
     GameplayLab::ShowcaseProductionRenderReceipt3D showcaseProductionReceipt_{};
@@ -838,6 +982,13 @@ private:
     GameplayLab::GameplayCameraProductionBuildOutput3D cameraBuildCache_{};GameplayLab::GameplayGodCameraLayout3D godCameraBuildCache_{};GameplayLab::GameplayAuthoritativeGodCameraReceipt3D godCameraAuthorityReceipt_{};Aevrynd::Vec3 cameraBuildCacheFeet_{},cameraBuildCacheCompanionPosition_{},godCameraBuildCacheFocus_{};Aevrynd::Vec2 cameraBuildCacheViewport_{};float cameraBuildCacheYaw_{},cameraBuildCacheDesiredArm_{4.5f},cameraBuildCacheMinimumSubjectScreenArea_{.05f};GameplayLab::AnimationState3D cameraBuildCachePlayerAnimation_{GameplayLab::AnimationState3D::Idle},cameraBuildCacheCompanionAnimation_{GameplayLab::AnimationState3D::Idle};std::uint64_t godCameraSearchCount_{},godCameraCacheHitCount_{};bool cameraBuildCacheValid_{},cameraBuildCacheFemale_{},cameraBuildCacheCrouched_{},cameraBuildCachePaletteOpen_{},godCameraBuildCacheValid_{},godCameraBuildCacheFemale_{};
     Aevrynd::Mesh3D cameraPoseVisualMesh_{},cameraCompanionVisualMesh_{},godCameraPoseVisualMesh_{};Aevrynd::MeshBounds3D cameraBuildCacheVisualBounds_{},cameraBuildCacheCompanionBounds_{};bool cameraBuildCacheHasCompanion_{},temporalCameraInitialized_{},temporalHistoryCutPending_{};std::uint32_t temporalHistoryPendingReasonMask_{};std::uint64_t temporalSceneIdentityFingerprint_{};
     GameplayLab::GameplayShowcaseEnvironment3D showcaseEnvironment_{};Aevrynd::HeightField3D showcaseTerrain_{};std::unique_ptr<Aevrynd::EnvironmentCollisionStreaming3D> environmentCollisions_{};std::vector<Aevrynd::EnvironmentColliderDescriptor3D> environmentCollisionDescriptors_{};std::vector<Aevrynd::ColliderHandle3D> environmentGameplayColliders_{};Aevrynd::EnvironmentCollisionStreamingReceipt3D environmentCollisionActiveReceipt_{};Aevrynd::MeshResource3D showcaseTerrainMesh_{},showcaseRiverMesh_{},showcaseCottageFrontMesh_{},showcaseCottageBackMesh_{},showcaseCottageSideMesh_{},showcaseCottageRoofMesh_{},showcaseCylinderMesh_{},showcaseConeHighMesh_{},showcaseConeLowMesh_{},showcaseGrassHighMesh_{},showcaseGrassLowMesh_{},showcaseTreeLowMesh_{},showcaseRockLowMesh_{},showcaseQuiverTreeMesh_{},showcaseRock09Mesh_{};Aevrynd::MaterialLibrary3D showcaseMaterialLibrary_{},showcaseModelMaterialLibrary_{};Aevrynd::Material3D showcaseGroundMaterial_{},showcaseWoodMaterial_{},showcaseBarkMaterial_{},showcaseRockMaterial_{},showcaseQuiverTreeMaterial_{},showcaseRock09Material_{};Aevrynd::RendererStats showcaseRendererBaseline_{};std::size_t showcaseSubmittedDescriptors_{};bool showcaseExecutionObserved_{},environmentCollisionReloadStable_{},environmentStableIdEvidence_{},environmentRayEvidence_{},environmentMeleeQueryEvidence_{};
+    bool candidate7Active_{};
+    GameplayLab::CharacterPresentationScale3D candidate7PresentationScale_{};
+    std::array<Aevrynd::SkinnedModel3D,3> candidate7AttachmentModels_{};
+    std::array<Aevrynd::SkinnedMeshResource3D,3> candidate7AttachmentMeshes_{};
+    std::array<std::vector<Aevrynd::SkinnedSubmesh3D>,3> candidate7AttachmentSubmeshes_{};
+    std::array<std::vector<Aevrynd::Material3D>,4> candidate7Materials_{};
+    std::array<Aevrynd::MaterialLibrary3D,4> candidate7MaterialLibraries_{};
     Aevrynd::SkinnedModel3D femaleModel_{},maleModel_{},femaleFirstPersonArmsModel_{},maleFirstPersonArmsModel_{};GameplayLab::GameplayFirstPersonArmsEvidence3D femaleFirstPersonArmsEvidence_{},maleFirstPersonArmsEvidence_{};GameplayLab::GameplayCharacterMaterialEvidence3D characterMaterialEvidence_{};std::vector<Aevrynd::SkinnedSubmesh3D> femaleSubmeshes_{},maleSubmeshes_{},femaleFirstPersonArmsSubmeshes_{},maleFirstPersonArmsSubmeshes_{},femaleWeaponSubmeshes_{},maleWeaponSubmeshes_{};std::vector<Aevrynd::Material3D> femaleMaterials_{},maleMaterials_{};std::array<Aevrynd::Material3D,2> femaleWeaponMaterials_{},maleWeaponMaterials_{};Aevrynd::MaterialLibrary3D femaleMaterialLibrary_{},maleMaterialLibrary_{};Aevrynd::SkinnedMeshResource3D femaleMesh_{},maleMesh_{},femaleFirstPersonArmsMesh_{},maleFirstPersonArmsMesh_{},femaleWeaponMesh_{},maleWeaponMesh_{};Aevrynd::AnimationPose3D femalePose_{},malePose_{},captureFrozenFemalePose_{},captureFrozenMalePose_{},captureFrozenMonsterPose_{};Aevrynd::SkinningWorkspace3D skinning_{};bool capturePoseFrozen_{};
     std::unique_ptr<GameplayLab::GameplayCombat3D> combat_{};GameplayLab::GameplayAnimation3D femaleAnimation_{},maleAnimation_{},monsterAnimation_{};Aevrynd::AnimationPose3D monsterPose_{};Aevrynd::FootPlacement3D femaleFootPlacement_{},maleFootPlacement_{};Aevrynd::SkinnedRenderableGroupHistory3D playerHistory_{},monsterHistory_{};Aevrynd::SkinnedRenderableGroupStats3D skinnedGroupStats_{};std::array<std::uint64_t,11> femalePoseHashes_{},malePoseHashes_{};
     std::unique_ptr<GameplayLab::ObjectPaletteAdapter3D> palette_{};std::unique_ptr<GameplayLab::GameplayObjectPaletteUi3D> paletteUi_{};std::vector<std::uint64_t> initialSeedEntityIds_{};std::uint64_t paletteUiDrawnFrames_{},captureCleanHudFrames_{};bool palettePointerInteraction_{};
@@ -887,17 +1038,21 @@ private:
     std::array<std::uint64_t,11> captureDeterminismFrameSerial_{};
     std::array<std::array<GameplayLab::GameplayCaptureIntegrityDiagnosticSnapshot3D,3>,11> captureIntegrityDiagnostics_{};
     std::array<std::uint32_t,11> captureFirstPersonArmsToken_{},captureFirstPersonArmsPixels_{},captureFirstPersonArmsMinimumX_{},captureFirstPersonArmsMinimumY_{},captureFirstPersonArmsMaximumX_{},captureFirstPersonArmsMaximumY_{},captureFirstPersonWeaponToken_{},captureFirstPersonWeaponPixels_{},captureFirstPersonWeaponMinimumX_{},captureFirstPersonWeaponMinimumY_{},captureFirstPersonWeaponMaximumX_{},captureFirstPersonWeaponMaximumY_{};
-    bool captureTemporalWarmupActive_{};std::uint32_t captureTemporalWarmupRemaining_{},captureTemporalWarmupFramesCurrent_{},captureTemporalReseedReasonCurrent_{};
+    bool captureTemporalWarmupActive_{},capturePreparedSceneSubmitted_{};std::uint32_t captureTemporalWarmupRemaining_{},captureTemporalWarmupFramesCurrent_{},captureTemporalReseedReasonCurrent_{};
     std::array<float,11> captureBuilderTopCenterRayElevation_{},
         captureBuilderMinimumTopCenterRayElevation_{},
         captureBuilderMinimumSubjectScreenArea_{};
     std::array<std::uint64_t,11> captureBuilderRejectedHorizon_{};
     std::array<std::uint8_t,11> captureBuilderPaletteOpen_{};
     std::array<std::array<std::byte,32>,11> captureRawDepthFinalFileSha256_{},captureEffectiveDepthFinalFileSha256_{},captureReferenceDepthFinalFileSha256_{};
+    std::array<std::array<std::byte,32>,11> captureRawTokenMetadataSha256_{},captureEffectiveTokenMetadataSha256_{};
     std::array<std::uint64_t,11> captureRawDepthFinalFileBytes_{},captureEffectiveDepthFinalFileBytes_{},captureReferenceDepthFinalFileBytes_{};
     bool capturePresentationRequestPending_{},capturePresentationPending_{};
     Aevrynd::ReadbackCaptureSequenceToken3D capturePresentationLogicalToken_{};
     std::array<std::uint64_t,11> capturePresentationFrameSerial_{},capturePresentationCameraHash_{},capturePresentationStateHash_{},capturePresentationInvariantHash_{};
     std::array<std::uint8_t,11> capturePresentationMsaa_{},capturePresentationTaa_{},capturePresentationHistoryUsed_{},capturePresentationPaired_{};
+    std::uint64_t captureUltraSettleLastSubmittedFrame_{};
+    std::uint32_t captureUltraSettleFrames_{};
+    std::string captureReadbackFailure_{};
     std::filesystem::path captureDirectory_{};std::optional<Aevrynd::Vec3> captureValidGhost_{},captureInvalidGhost_{};std::optional<std::size_t> capturePreparedIndex_{};GameplayLab::GameplayActiveCaptureRoute3D activeCaptureRoute_{};std::size_t captureIndex_{};bool capturePending_{},capturePhaseRequestPending_{},captureRawPhase_{},captureReferencePhase_{},capturePairFrozen_{},captureCrouchTapPending_{},combatSpawned_{},crouchFeetInvariant_{true},weaponAttachmentPassed_{},weaponHitWindowEvidence_{},weaponAnimationSyncPassed_{true},firstPersonBodyHidden_{true},captureGrabSeeded_{},sourceFingerprintPassed_{true};Aevrynd::ObjectIdCaptureRequestMetadata3D capturePairMetadata_{};Aevrynd::ColliderHandle3D captureCeiling_{},captureEvidenceCollider_{};float minimumControllerHeight_{1.8f},maximumWeaponPhaseError_{};double nextCapture_{.5};std::uint64_t captureSuccess_{},captureReject_{},femaleGpuDraws_{},maleGpuDraws_{},weaponPbrDraws_{},captureAuthoritativePhysicsSteps_{},weaponTrajectoryHash_{14695981039346656037ull};std::array<std::uint64_t,3> attackTrajectoryHashes_{{14695981039346656037ull,14695981039346656037ull,14695981039346656037ull}};std::array<std::uint32_t,11> captureBodyMaterialSlots_{},captureWeaponMaterialRanges_{},captureObjectIdSubmitted_{},captureOpacityMatchedStatic_{},captureOpacityMatchedMultipart_{},captureReferenceOpacityMatches_{},captureDepthGeneration_{},captureLeftFootGroundGapPixels_{},captureRightFootGroundGapPixels_{},capturePlayerToken_{},captureTerrainToken_{},captureFootRoiDominantToken_{};std::array<float,11> captureWeaponAnchorErrors_{},captureWeaponScreenCoverage_{},captureWeaponMinimumDepth_{},captureWeaponGripX_{},captureWeaponGripY_{},captureWeaponBladeY_{},captureOccluderCoverage_{},captureRawOccluderCoverage_{},capturePolicyFadeOpacity_{},captureFeetGroundError_{},captureRawBuildingUnion_{},captureEffectiveBuildingUnion_{},captureRawMaximumVisibleCoverage_{},captureEffectiveMaximumVisibleCoverage_{},captureCharacterReferenceCoverage_{},captureCharacterEffectiveCoverage_{},captureCharacterVisibility_{},captureCharacterSilhouetteIou_{},captureLeftFootDepthDelta_{},captureRightFootDepthDelta_{},captureFootRoiDepthMin_{},captureFootRoiDepthMax_{},captureBuilderScreenHeight_{},captureBuilderScreenWidth_{},captureBuilderScreenArea_{},captureBuilderHeadroom_{},captureBuilderYaw_{},captureBuilderPitch_{},captureBuilderElevation_{},captureBuilderArm_{},captureBuilderPositionX_{},captureBuilderPositionY_{},captureBuilderPositionZ_{};std::array<std::array<float,6>,11> captureRawBuildingCoverage_{},captureEffectiveBuildingCoverage_{};std::vector<std::uint8_t> captureEffectiveCharacterMask_{};std::array<std::array<std::byte,32>,11> captureRawDepthSha256_{},captureEffectiveDepthSha256_{},captureReferenceDepthSha256_{};std::array<std::uint64_t,11> captureOccluderStableHigh_{},captureOccluderStableLow_{},captureOccluderGeneration_{},captureFadedStableHigh_{},captureFadedStableLow_{},captureFadedGeneration_{},capturePolicyFadeStableHigh_{},capturePolicyFadeStableLow_{},capturePolicyFadeGeneration_{},captureGroundStableLow_{},captureObjectIdGeneration_{},captureObjectIdMaskHash_{},captureRawObjectIdMaskHash_{},captureRawAcceptedExcludingOpacity_{},captureRawAcceptedIncludingOpacity_{},captureRawIdentityOrderHash_{},captureEffectiveAcceptedExcludingOpacity_{},captureEffectiveAcceptedIncludingOpacity_{},captureEffectiveIdentityOrderHash_{},captureReferenceAcceptedExcludingOpacity_{},captureReferenceAcceptedIncludingOpacity_{},captureReferenceIdentityOrderHash_{},captureRequestDrawRevision_{},captureRequestCameraHash_{},captureRequestStateHash_{},captureRawMaximumVisibleStableHigh_{},captureRawMaximumVisibleStableLow_{},captureRawMaximumVisibleGeneration_{},captureEffectiveMaximumVisibleStableHigh_{},captureEffectiveMaximumVisibleStableLow_{},captureEffectiveMaximumVisibleGeneration_{},captureBuilderCandidateLow_{},captureBuilderExpectedCameraHash_{},captureFootRoiDominantHigh_{},captureFootRoiDominantLow_{},captureFootRoiDominantGeneration_{};std::array<std::uint8_t,11> captureWeaponCenterExcluded_{},captureWeaponNearClipClear_{},captureWeaponHudOverlap_{},captureWeaponGripEdgeAnchored_{},captureWeaponBladeAboveGrip_{},captureOcclusionAdjusted_{},captureEffectiveObjectIdSupported_{},captureFeetContactPassed_{},captureObjectIdOpaqueComplete_{},captureObjectIdMaskedComplete_{},captureObjectIdSkinnedComplete_{},captureOpacityMissing_{},captureOpacityGenerationConflict_{},captureCharacterReferenceSupported_{},captureDepthSupported_{},captureGpuFeetContactPassed_{},captureBuilderValid_{},captureBuilderPolicyValid_{},captureBuilderMatrixExact_{},captureBuilderFeetOnScreen_{};std::array<std::string,11> captureFootRoiHistogramJson_{};std::size_t released_{};std::uint64_t trims_{};std::string runId_{},expectedSourceFingerprint_{},actualSourceFingerprint_{AEVRYND_CHARACTER_BUILD_FINGERPRINT};
 };

@@ -1,5 +1,37 @@
 $ErrorActionPreference = 'Stop'
 
+function Assert-GameplayReadbackGpuProvenance($Capture) {
+  $phases=@($Capture.phases)
+  if($phases.Count-lt2){throw "Readback GPU provenance phase count failed: $($Capture.name)"}
+  foreach($passName in @('atmosphere','temporalResolve')){
+    $baseline=$null
+    for($phaseIndex=0;$phaseIndex-lt$phases.Count;++$phaseIndex){
+      $gpu=$phases[$phaseIndex].gpuProvenance
+      if($null-eq$gpu-or$null-eq$gpu.PSObject.Properties[$passName]){throw "Readback GPU provenance missing: $($Capture.name) phase=$phaseIndex pass=$passName"}
+      $pass=$gpu.$passName
+      $identity=$pass.outputIdentity
+      if($pass.complete-ne1-or$pass.fingerprint-eq0-or$pass.submissionFence-eq0-or$pass.historyGeneration-eq0-or
+         $pass.outputWidth-eq0-or$pass.outputHeight-eq0-or$pass.rejection-ne0-or$null-eq$identity-or
+         $identity.generation-eq0-or$identity.width-eq0-or$identity.height-eq0-or$identity.format-eq0-or$identity.sampleCount-eq0-or
+         $pass.outputWidth-ne$identity.width-or$pass.outputHeight-ne$identity.height){
+        throw "Readback GPU provenance completeness failed: $($Capture.name) phase=$phaseIndex pass=$passName"
+      }
+      if($phaseIndex-eq0){
+        if($pass.dispatched-ne1-or$pass.reused-ne0){throw "Readback GPU phase-zero dispatch failed: $($Capture.name) pass=$passName"}
+        $baseline=$pass
+      } else {
+        if($pass.dispatched-ne0-or$pass.reused-ne1){throw "Readback GPU phase reuse failed: $($Capture.name) phase=$phaseIndex pass=$passName"}
+        foreach($field in @('fingerprint','resourceCreates','resourceReleases','submissionFence','historyGeneration','outputWidth','outputHeight','historyIndex')){
+          if($pass.$field-ne$baseline.$field){throw "Readback GPU locked provenance failed: $($Capture.name) phase=$phaseIndex pass=$passName field=$field"}
+        }
+        foreach($field in @('generation','width','height','format','sampleCount','state')){
+          if($pass.outputIdentity.$field-ne$baseline.outputIdentity.$field){throw "Readback GPU output identity drifted: $($Capture.name) phase=$phaseIndex pass=$passName field=$field"}
+        }
+      }
+    }
+  }
+}
+
 function ConvertFrom-GameplayObjectIdentityContractProbeOutput([object[]]$Output,[int]$ExitCode) {
   if($ExitCode-ne0-or$Output.Count-ne1){throw 'Gameplay Object-ID compiler contract probe failed or emitted trailing output'}
   $line=[string]$Output[0];if([string]::IsNullOrWhiteSpace($line)-or$line.Contains("`r")-or$line.Contains("`n")){throw 'Gameplay Object-ID compiler contract probe output was not one strict line'}
@@ -202,6 +234,74 @@ function Get-GameplayEvidenceBgra32($Bitmap) {
   } finally {if($data){$converted.UnlockBits($data)};$graphics.Dispose();$converted.Dispose()}
 }
 
+function Assert-GameplayUltraDiagnosticSchema($Value) {
+  $numbers=@('epoch','downgradeCount','requested','actual','reason','phase','firstFalseReason','gpu_epoch','gpu_observationIndex','gpu_submittedFrameSerial','gpu_completedFrameSerial','gpu_timingSampleSerial','gpu_lastGpuFrameNanoseconds','gpu_telemetryAgeNanoseconds','gpu_dedicatedVideoMemoryBytes','gpu_currentVideoMemoryUsageBytes','gpu_rendererAdapterLuidLow','gpu_rendererAdapterLuidHigh','gpu_telemetryAdapterLuidLow','gpu_telemetryAdapterLuidHigh','gpu_hardVramBudgetBytes','gpu_pendingGpuReleaseBytes','gpu_debugErrorCount','gpu_debugWarningCount','gpu_stableFrames','gpu_requiredStableFrames','gpu_timingProvenance','terminalOutcome','terminalReason','terminalEpoch');$booleans=@('requestActive','noOp','applyAttempted','applySucceeded','postApplyPassed','rollbackAttempted','rollbackSucceeded','rendererApplied','transitionPolicyApplied','shadowResourcesApplied','volumetricResolutionApplied','cloudSamplesApplied','cloudShadowSamplesApplied','lightShaftSamplesApplied','vegetationDensityApplied','textureBudgetApplied','meshBudgetApplied','gpu_observed','gpu_resourcesTrue','gpu_telemetryTrue','gpu_rendererAdapterIdentityValid','gpu_adapterIdentityTrue','gpu_validationTrue','gpu_timingRecorded','gpu_timingSerialAligned','gpu_productionFrameBudgetApplied','gpu_frameBudgetTrue','gpu_fresh','gpu_framePassed','gpu_committed');$strings=@('requestedFingerprint','normalizedFingerprint','actualFingerprint')
+  $numbers+=@('renderer_completedFrameSerial','renderer_totalNanoseconds','renderer_scalarSerial','renderer_lastVolumetricAtmosphereGpuNanoseconds','renderer_lastHzbPrepassGpuNanoseconds','renderer_lastHzbBuildGpuNanoseconds','renderer_lastHzbCullGpuNanoseconds','renderer_lastHzbColorGpuNanoseconds','renderer_shadow_serial','renderer_shadow_beginTick','renderer_shadow_endTick','renderer_shadow_frequency','renderer_shadow_nanoseconds','renderer_captureCopy_serial','renderer_captureCopy_beginTick','renderer_captureCopy_endTick','renderer_captureCopy_frequency','renderer_captureCopy_nanoseconds');$booleans+=@('renderer_scalarAlignedValid','renderer_shadow_recorded','renderer_shadow_valid','renderer_shadow_alignedValid','renderer_captureCopy_recorded','renderer_captureCopy_valid','renderer_captureCopy_alignedValid')
+  $expected=@('schemaVersion')+$numbers+$booleans+$strings
+  if($null-eq$Value-or@($Value.PSObject.Properties).Count-ne$expected.Count-or$Value.schemaVersion-ne2){throw 'Ultra diagnostic schema missing or invalid'}
+  foreach($name in $expected){if($null-eq$Value.PSObject.Properties[$name]){throw "Ultra diagnostic field missing: $name"}}
+  foreach($name in $numbers){$v=$Value.$name;if($v-is[string]-or$v-is[bool]-or$null-eq$v){throw "Ultra diagnostic integer type invalid: $name"};try{$n=[decimal]$v}catch{throw "Ultra diagnostic integer invalid: $name"};if($n-ne[decimal]::Truncate($n)-or$n-gt[decimal][uint64]::MaxValue-or($n-lt0-and$name-notin@('gpu_rendererAdapterLuidHigh','gpu_telemetryAdapterLuidHigh'))){throw "Ultra diagnostic integer range invalid: $name"}}
+  foreach($name in $booleans){if($Value.$name-isnot[bool]){throw "Ultra diagnostic boolean invalid: $name"}}
+  foreach($name in $strings){if($Value.$name-isnot[string]-or$Value.$name-notmatch'^(0|[1-9][0-9]{0,19})$'){throw "Ultra diagnostic uint64 text invalid: $name"};$null=[uint64]::Parse($Value.$name)}
+  if($Value.gpu_timingProvenance-lt0-or$Value.gpu_timingProvenance-gt2){throw 'Ultra timing provenance invalid'}
+  if($Value.gpu_timingRecorded-ne($Value.gpu_lastGpuFrameNanoseconds-gt0-and$Value.renderer_totalNanoseconds-eq$Value.gpu_lastGpuFrameNanoseconds)){throw 'Ultra timing recorded evidence mismatch'}
+  if($Value.gpu_timingSerialAligned-ne($Value.gpu_completedFrameSerial-gt0-and$Value.renderer_scalarSerial-eq$Value.gpu_completedFrameSerial)){throw 'Ultra timing snapshot serial alignment mismatch'}
+  if($Value.gpu_productionFrameBudgetApplied-ne($Value.gpu_timingProvenance-eq1)){throw 'Ultra production timing provenance mismatch'}
+  if($Value.gpu_timingProvenance-eq2-and$Value.gpu_productionFrameBudgetApplied){throw 'GBV timing cannot be production performance evidence'}
+  $completed=$Value.renderer_completedFrameSerial
+  if($Value.renderer_scalarAlignedValid-ne($completed-gt0-and$Value.renderer_scalarSerial-eq$completed)){throw 'Ultra scalar timing serial alignment mismatch'}
+  foreach($prefix in @('renderer_shadow','renderer_captureCopy')){
+    $serial=$Value."${prefix}_serial";$valid=$Value."${prefix}_valid";$recorded=$Value."${prefix}_recorded";$ns=$Value."${prefix}_nanoseconds"
+    if($Value."${prefix}_alignedValid"-ne($valid-and$serial-eq$completed)){throw 'Ultra pass timing serial alignment mismatch'}
+    if($valid-and($serial-eq0-or$Value."${prefix}_frequency"-eq0-or$Value."${prefix}_endTick"-lt$Value."${prefix}_beginTick"-or(-not$recorded-and$ns-ne0))){throw 'Ultra raw pass timing validity contradiction'}
+  }
+  return $true
+}
+
+function Get-GameplayTemporalTokenCompatibility($Raw,$Effective) {
+  if($null-eq$Raw-or$null-eq$Effective){return $null-eq$Raw-and$null-eq$Effective}
+  return $Raw.class-ceq'static'-and$Effective.class-ceq'static'-and-not$Raw.opacityAffected-and-not$Effective.opacityAffected-and$Raw.high-ceq$Effective.high-and$Raw.low-ceq$Effective.low-and$Raw.generation-ceq$Effective.generation
+}
+
+function Read-GameplayTemporalTokenPair([string]$Directory,[string]$Stem,[int]$Width,[int]$Height) {
+  $character=Get-Content -Raw -LiteralPath (Join-Path $Directory 'gameplay-character-capture-receipt.json')|ConvertFrom-Json
+  $sequence=Get-Content -Raw -LiteralPath (Join-Path $Directory 'gameplay-readback-sequence-receipt.json')|ConvertFrom-Json
+  $c=@($character.captures|Where-Object name -CEQ "$Stem.png");$s=@($sequence.captures|Where-Object name -CEQ "$Stem.png")
+  if($c.Count-ne1-or$s.Count-ne1-or$character.runId-cne$sequence.runId-or$s[0].complete-ne1){throw 'Temporal token receipt identity mismatch'}
+  $planes=@();$tables=@();$metadataHashes=@();$planeHashes=@();$keys=[Collections.Generic.Dictionary[string,int]]::new();$nextKey=1
+  for($phase=0;$phase-lt2;++$phase){
+    $suffix=if($phase-eq0){'-raw'}else{''};$name="$Stem$suffix-tokens.json";$snapshot=Get-GameplayEvidenceFileSnapshot (Join-Path $Directory $name)
+    $sha=if($phase-eq0){$c[0].rawTokenMetadataSha256}else{$c[0].effectiveTokenMetadataSha256}
+    if($sha-notmatch'^[0-9a-f]{64}$'-or$snapshot.sha256-cne$sha){throw 'Temporal token metadata SHA mismatch'}
+    $m=[Text.Encoding]::UTF8.GetString($snapshot.bytes)|ConvertFrom-Json;$provenance=$s[0].phases[$phase]
+    if($m.source-cne'GameplayLosslessTokens'-or$m.version-ne1-or$m.runId-cne$character.runId-or$m.width-ne$Width-or$m.height-ne$Height-or$m.phase-ne$phase-or$m.frameSerial-cne[string]$provenance.frameSerial-or$m.tokenGeneration-cne[string]$provenance.tokenGeneration-or$m.plane-cne"$Stem$suffix-tokens.bin"){throw 'Temporal token frame/size/name provenance mismatch'}
+    $plane=Get-GameplayEvidenceFileSnapshot (Join-Path $Directory $m.plane)
+    if($plane.sha256-cne$m.planeSha256-or$plane.length-ne([int64]$Width*$Height*4)){throw 'Temporal token plane size/SHA mismatch'}
+    $metadataHashes+=$snapshot.sha256;$planeHashes+=$plane.sha256
+    $table=[int[]]::new(@($m.identities).Count+1);$seen=[Collections.Generic.HashSet[string]]::new();$token=0
+    foreach($identity in $m.identities){
+      ++$token
+      foreach($field in @('high','low','generation')){if($identity.$field-isnot[string]-or$identity.$field-notmatch'^[1-9][0-9]{0,19}$'){throw 'Temporal token identity encoding invalid'}; $null=[uint64]::Parse($identity.$field)}
+      if($identity.class-cnotin@('static','dynamic')-or$identity.opacityAffected-isnot[bool]){throw 'Temporal token class invalid'}
+      $key="$($identity.high)/$($identity.low)/$($identity.generation)";if(-not$seen.Add($key)){throw 'Temporal token duplicate identity'}
+      if(-not$keys.ContainsKey($key)){$keys.Add($key,$nextKey);++$nextKey}
+      $table[$token]=if(Get-GameplayTemporalTokenCompatibility $identity $identity){$keys[$key]}else{-1}
+    }
+    $tokens=[uint32[]]::new($Width*$Height);[Buffer]::BlockCopy([byte[]]$plane.bytes,0,$tokens,0,$plane.bytes.Length)
+    $planes+=,$tokens;$tables+=,$table
+  }
+  $compatible=[bool[]]::new($Width*$Height);$identityKeys=[int[]]::new($Width*$Height)
+  for($i=0;$i-lt$compatible.Length;++$i){$a=$planes[0][$i];$b=$planes[1][$i];if($a-ge$tables[0].Length-or$b-ge$tables[1].Length){throw 'Temporal pixel token out of range'};$ka=$tables[0][$a];$kb=$tables[1][$b];$compatible[$i]=$ka-ge0-and$ka-eq$kb;$identityKeys[$i]=$ka}
+  return [pscustomobject]@{compatible=$compatible;keys=$identityKeys;metadataSha256=$metadataHashes;planeSha256=$planeHashes}
+}
+
+function Get-GameplayTemporalTokenStableMetadataSha([string]$Path) {
+  $snapshot=Get-GameplayEvidenceFileSnapshot $Path;$m=[Text.Encoding]::UTF8.GetString($snapshot.bytes)|ConvertFrom-Json
+  # 僅排除每輪時間身份；完整物件身份、分類、opacity 與平面雜湊仍逐輪一致。 (canonical).
+  $stable=[ordered]@{source=$m.source;version=$m.version;width=$m.width;height=$m.height;phase=$m.phase;plane=$m.plane;planeSha256=$m.planeSha256;identities=$m.identities}
+  return Get-GameplayEvidenceTextSha256Hex ($stable|ConvertTo-Json -Depth 8 -Compress)
+}
+
 function Get-GameplayTemporalGhostEvidence(
   [string]$RawBeautyPath,[string]$EffectiveBeautyPath,
   [string]$RawObjectIdPath,[string]$EffectiveObjectIdPath,
@@ -220,24 +320,28 @@ function Get-GameplayTemporalGhostEvidence(
     }
     foreach($key in $paths.Keys){$stream=[IO.MemoryStream]::new([byte[]]$snapshots[$key].bytes,$false);$streams+=$stream;$bitmaps+=[Drawing.Bitmap]::FromStream($stream)}
     $rawBeauty,$effectiveBeauty,$rawObjectId,$effectiveObjectId,$rawDepth,$effectiveDepth=$bitmaps
+    $tokenPair=$null
+    if($ExpectedSha256){$stem=[IO.Path]::GetFileName($RawObjectIdPath)-replace '-raw-object-id.png$','';$tokenPair=Read-GameplayTemporalTokenPair ([IO.Path]::GetDirectoryName($RawObjectIdPath)) $stem $rawBeauty.Width $rawBeauty.Height}
     foreach($bitmap in $bitmaps){if($bitmap.Width-ne$rawBeauty.Width-or$bitmap.Height-ne$rawBeauty.Height){throw 'Temporal ghost artifact dimensions did not match'}}
     if($X-lt0-or$Y-lt0-or$Width-lt16-or$Height-lt16-or$X+$Width-gt$rawBeauty.Width-or$Y+$Height-gt$rawBeauty.Height){throw 'Temporal ghost world-only bounds were invalid'}
 
-    # 固定8x4網格覆蓋完整world bounds；OID空白只表示沒有world dynamic物件。 (full-frame coverage).
+    # 正式擷取以無損身份判斷靜態背景；未附 provenance 的舊合成測試只接受空白 OID。 (full-frame coverage).
     $rawBeautyBytes=Get-GameplayEvidenceBgra32 $rawBeauty;$effectiveBeautyBytes=Get-GameplayEvidenceBgra32 $effectiveBeauty;$rawOidBytes=Get-GameplayEvidenceBgra32 $rawObjectId;$effectiveOidBytes=Get-GameplayEvidenceBgra32 $effectiveObjectId;$imageWidth=$rawBeauty.Width
     $pixelCount=$Width*$Height;$differenceMap=[byte[]]::new($pixelCount);$eligibleMap=[bool[]]::new($pixelCount);$ringMap=[bool[]]::new($pixelCount);$histogram=[int[]]::new(256);$ringHistogram=[int[]]::new(256);$tileColumns=8;$tileRows=4;$tileCount=$tileColumns*$tileRows;$tilePixels=[int[]]::new($tileCount);$tileStablePixels=[int[]]::new($tileCount);$tileEnergy=[int64[]]::new($tileCount);$tileDifferenceSum=[int64[]]::new($tileCount);$tileDifferenceSquaredSum=[int64[]]::new($tileCount);$tileHistogram=[int[]]::new($tileCount*256);$tileSignedSum=[int64[]]::new($tileCount*3);$tileSignedHistogram=[int[]]::new($tileCount*3*511)
     [int64]$absoluteChannelEnergy=0;[int64]$ringChannelEnergy=0;$eligible=0;$stablePixels=0;$ringPixels=0;$excluded=0;$maximumDifference=0;$ringMaximum=0
     for($row=0;$row-lt$Height;++$row){for($column=0;$column-lt$Width;++$column){
-      $px=$X+$column;$py=$Y+$row;$oidOffset=($py*$imageWidth+$px)*4;$rawEmpty=$rawOidBytes[$oidOffset]-le8-and$rawOidBytes[$oidOffset+1]-le8-and$rawOidBytes[$oidOffset+2]-le8;$effectiveEmpty=$effectiveOidBytes[$oidOffset]-le8-and$effectiveOidBytes[$oidOffset+1]-le8-and$effectiveOidBytes[$oidOffset+2]-le8;if(-not($rawEmpty-and$effectiveEmpty)){++$excluded;continue};++$eligible
+      $px=$X+$column;$py=$Y+$row;$oidOffset=($py*$imageWidth+$px)*4;$rawEmpty=$rawOidBytes[$oidOffset]-le8-and$rawOidBytes[$oidOffset+1]-le8-and$rawOidBytes[$oidOffset+2]-le8;$effectiveEmpty=$effectiveOidBytes[$oidOffset]-le8-and$effectiveOidBytes[$oidOffset+1]-le8-and$effectiveOidBytes[$oidOffset+2]-le8
+      if($tokenPair){$rawEmpty=$effectiveEmpty=$tokenPair.compatible[$py*$imageWidth+$px]}
+      if(-not($rawEmpty-and$effectiveEmpty)){++$excluded;continue};++$eligible
       # 直接索引已鎖定的 BGRA 緩衝，避免每個像素呼叫 PowerShell scriptblock。 (hot evidence loop).
-      $adjacentObject=$false;for($oy=-1;$oy-le1-and-not$adjacentObject;++$oy){for($ox=-1;$ox-le1;++$ox){$sx=$px+$ox;$sy=$py+$oy;if($sx-lt$X-or$sy-lt$Y-or$sx-ge$X+$Width-or$sy-ge$Y+$Height-or$sx-lt0-or$sy-lt0-or$sx-ge$imageWidth-or$sy-ge$rawBeauty.Height){continue};$neighborOidOffset=($sy*$imageWidth+$sx)*4;$rawNeighborEmpty=$rawOidBytes[$neighborOidOffset]-le8-and$rawOidBytes[$neighborOidOffset+1]-le8-and$rawOidBytes[$neighborOidOffset+2]-le8;$effectiveNeighborEmpty=$effectiveOidBytes[$neighborOidOffset]-le8-and$effectiveOidBytes[$neighborOidOffset+1]-le8-and$effectiveOidBytes[$neighborOidOffset+2]-le8;if(-not($rawNeighborEmpty-and$effectiveNeighborEmpty)){$adjacentObject=$true;break}}}
+      $adjacentObject=$false;for($oy=-1;$oy-le1-and-not$adjacentObject;++$oy){for($ox=-1;$ox-le1;++$ox){$sx=$px+$ox;$sy=$py+$oy;if($sx-lt$X-or$sy-lt$Y-or$sx-ge$X+$Width-or$sy-ge$Y+$Height-or$sx-lt0-or$sy-lt0-or$sx-ge$imageWidth-or$sy-ge$rawBeauty.Height){continue};$neighborOidOffset=($sy*$imageWidth+$sx)*4;$rawNeighborEmpty=$rawOidBytes[$neighborOidOffset]-le8-and$rawOidBytes[$neighborOidOffset+1]-le8-and$rawOidBytes[$neighborOidOffset+2]-le8;$effectiveNeighborEmpty=$effectiveOidBytes[$neighborOidOffset]-le8-and$effectiveOidBytes[$neighborOidOffset+1]-le8-and$effectiveOidBytes[$neighborOidOffset+2]-le8;if($tokenPair){$rawNeighborEmpty=$effectiveNeighborEmpty=$tokenPair.compatible[$sy*$imageWidth+$sx]};if(-not($rawNeighborEmpty-and$effectiveNeighborEmpty)){$adjacentObject=$true;break}}}
       $rawOffset=($py*$imageWidth+$px)*4;$effectiveOffset=$rawOffset;$difference=0;$channelDifference=0
       if(-not$adjacentObject){
         ++$stablePixels;for($channel=0;$channel-lt3;++$channel){$delta=[Math]::Abs([int]$rawBeautyBytes[$rawOffset+$channel]-[int]$effectiveBeautyBytes[$effectiveOffset+$channel]);$channelDifference+=$delta;$difference=[Math]::Max($difference,$delta)};$absoluteChannelEnergy+=$channelDifference;++$histogram[$difference]
       }else{
         # 物件鄰接ring使用雙向3x3最佳匹配，允許一像素合法運動但仍會抓到單向trail。 (object-adjacent ring).
         ++$ringPixels;$ringMap[$row*$Width+$column]=$true;$forward=255;$backward=255
-        for($oy=-1;$oy-le1;++$oy){for($ox=-1;$ox-le1;++$ox){$sx=$px+$ox;$sy=$py+$oy;if($sx-lt$X-or$sy-lt$Y-or$sx-ge$X+$Width-or$sy-ge$Y+$Height-or$sx-lt0-or$sy-lt0-or$sx-ge$imageWidth-or$sy-ge$rawBeauty.Height){continue};$neighbor=($sy*$imageWidth+$sx)*4;$rawNeighborEmpty=$rawOidBytes[$neighbor]-le8-and$rawOidBytes[$neighbor+1]-le8-and$rawOidBytes[$neighbor+2]-le8;$effectiveNeighborEmpty=$effectiveOidBytes[$neighbor]-le8-and$effectiveOidBytes[$neighbor+1]-le8-and$effectiveOidBytes[$neighbor+2]-le8;if(-not($rawNeighborEmpty-and$effectiveNeighborEmpty)){continue};$fd=0;$bd=0;for($channel=0;$channel-lt3;++$channel){$fd=[Math]::Max($fd,[Math]::Abs([int]$rawBeautyBytes[$rawOffset+$channel]-[int]$effectiveBeautyBytes[$neighbor+$channel]));$bd=[Math]::Max($bd,[Math]::Abs([int]$effectiveBeautyBytes[$effectiveOffset+$channel]-[int]$rawBeautyBytes[$neighbor+$channel]))};$forward=[Math]::Min($forward,$fd);$backward=[Math]::Min($backward,$bd)}}
+        for($oy=-1;$oy-le1;++$oy){for($ox=-1;$ox-le1;++$ox){$sx=$px+$ox;$sy=$py+$oy;if($sx-lt$X-or$sy-lt$Y-or$sx-ge$X+$Width-or$sy-ge$Y+$Height-or$sx-lt0-or$sy-lt0-or$sx-ge$imageWidth-or$sy-ge$rawBeauty.Height){continue};$neighbor=($sy*$imageWidth+$sx)*4;$rawNeighborEmpty=$rawOidBytes[$neighbor]-le8-and$rawOidBytes[$neighbor+1]-le8-and$rawOidBytes[$neighbor+2]-le8;$effectiveNeighborEmpty=$effectiveOidBytes[$neighbor]-le8-and$effectiveOidBytes[$neighbor+1]-le8-and$effectiveOidBytes[$neighbor+2]-le8;if($tokenPair){$rawNeighborEmpty=$effectiveNeighborEmpty=($tokenPair.compatible[$sy*$imageWidth+$sx]-and$tokenPair.keys[$sy*$imageWidth+$sx]-eq$tokenPair.keys[$py*$imageWidth+$px])};if(-not($rawNeighborEmpty-and$effectiveNeighborEmpty)){continue};$fd=0;$bd=0;for($channel=0;$channel-lt3;++$channel){$fd=[Math]::Max($fd,[Math]::Abs([int]$rawBeautyBytes[$rawOffset+$channel]-[int]$effectiveBeautyBytes[$neighbor+$channel]));$bd=[Math]::Max($bd,[Math]::Abs([int]$effectiveBeautyBytes[$effectiveOffset+$channel]-[int]$rawBeautyBytes[$neighbor+$channel]))};$forward=[Math]::Min($forward,$fd);$backward=[Math]::Min($backward,$bd)}}
         $difference=[Math]::Max($forward,$backward);$channelDifference=3*$difference;$ringChannelEnergy+=$channelDifference;++$ringHistogram[$difference];$ringMaximum=[Math]::Max($ringMaximum,$difference)
       }
       $mapIndex=$row*$Width+$column;$eligibleMap[$mapIndex]=$true;$differenceMap[$mapIndex]=[byte]$difference;$maximumDifference=[Math]::Max($maximumDifference,$difference);$tileX=[Math]::Min($tileColumns-1,[int][Math]::Floor($column*$tileColumns/[double]$Width));$tileY=[Math]::Min($tileRows-1,[int][Math]::Floor($row*$tileRows/[double]$Height));$tile=$tileY*$tileColumns+$tileX;++$tilePixels[$tile]
@@ -280,11 +384,14 @@ function Get-GameplayTemporalGhostEvidence(
     $tilePass=@($tiles|Where-Object { $_.pass -ne 1 }).Count -eq 0;$pass=$stablePass-and$ringPass-and$tilePass
     $artifactSha=[ordered]@{};$artifactName=[ordered]@{};foreach($key in $paths.Keys){$artifactSha[$key]=$snapshots[$key].sha256;$artifactName[$key]=[IO.Path]::GetFileName($paths[$key])}
     $coverageText="$X,$Y,$Width,$Height|$eligible,$stablePixels,$ringPixels,$excluded|"+(@($tiles|ForEach-Object{"$($_.index):$($_.eligiblePixels)"})-join',')
-    return [pscustomobject]@{pass=if($pass){1}else{0};contract='raw-effective-full-frame-v3';stablePass=if($stablePass){1}else{0};ringPass=if($ringPass){1}else{0};tilePass=if($tilePass){1}else{0};boundsX=$X;boundsY=$Y;boundsWidth=$Width;boundsHeight=$Height;eligiblePixels=$eligible;coveredPixels=$stablePixels+$ringPixels;excludedPixels=$excluded;stableEmptyPixels=$stablePixels;objectAdjacentRingPixels=$ringPixels;eligibleTiles=$eligibleTiles;tileColumns=$tileColumns;tileRows=$tileRows;meanAbsoluteChannelDifference=$meanAbs;p99MaximumChannelDifference=$p99;maximumChannelDifference=$maximumDifference;ringMeanAbsoluteChannelDifference=$ringMean;ringP99MaximumChannelDifference=$ringP99;ringMaximumChannelDifference=$ringMaximum;stableLevels=$stableLevels;ringLevels=$ringLevels;worstTileMeanAbsoluteChannelDifference=$worstTileMean;worstTileP99MaximumChannelDifference=$worstTileP99;worstTileMaximumChannelDifference=$worstTileMaximum;worstTileSignedBias=$worstTileSignedBias;worstTileMedianBias=$worstTileMedianBias;worstTileCoherence=$worstTileCoherence;tiles=$tiles;meanThreshold=1.25;ringMeanThreshold=2.0;p99Threshold=4;ringP99Threshold=8;tileMinimumStablePixels=$tileMinimumStablePixels;tileFallbackCoveragePixels=$tileFallbackCoveragePixels;tileMeanThreshold=$tileMeanThreshold;tileP99Threshold=$tileP99Threshold;tileSignedBiasThreshold=$tileSignedBiasThreshold;tileMedianBiasThreshold=$tileMedianBiasThreshold;tileCoherenceThreshold=$tileCoherenceThreshold;artifactName=[pscustomobject]$artifactName;artifactSha256=[pscustomobject]$artifactSha;coverageSha256=Get-GameplayEvidenceTextSha256Hex $coverageText}
+    return [pscustomobject]@{pass=if($pass){1}else{0};contract='raw-effective-full-frame-v3';losslessIdentityVerified=($null-ne$tokenPair);tokenMetadataSha256=@($tokenPair.metadataSha256);tokenPlaneSha256=@($tokenPair.planeSha256);stablePass=if($stablePass){1}else{0};ringPass=if($ringPass){1}else{0};tilePass=if($tilePass){1}else{0};boundsX=$X;boundsY=$Y;boundsWidth=$Width;boundsHeight=$Height;eligiblePixels=$eligible;coveredPixels=$stablePixels+$ringPixels;excludedPixels=$excluded;stableEmptyPixels=$stablePixels;objectAdjacentRingPixels=$ringPixels;eligibleTiles=$eligibleTiles;tileColumns=$tileColumns;tileRows=$tileRows;meanAbsoluteChannelDifference=$meanAbs;p99MaximumChannelDifference=$p99;maximumChannelDifference=$maximumDifference;ringMeanAbsoluteChannelDifference=$ringMean;ringP99MaximumChannelDifference=$ringP99;ringMaximumChannelDifference=$ringMaximum;stableLevels=$stableLevels;ringLevels=$ringLevels;worstTileMeanAbsoluteChannelDifference=$worstTileMean;worstTileP99MaximumChannelDifference=$worstTileP99;worstTileMaximumChannelDifference=$worstTileMaximum;worstTileSignedBias=$worstTileSignedBias;worstTileMedianBias=$worstTileMedianBias;worstTileCoherence=$worstTileCoherence;tiles=$tiles;meanThreshold=1.25;ringMeanThreshold=2.0;p99Threshold=4;ringP99Threshold=8;tileMinimumStablePixels=$tileMinimumStablePixels;tileFallbackCoveragePixels=$tileFallbackCoveragePixels;tileMeanThreshold=$tileMeanThreshold;tileP99Threshold=$tileP99Threshold;tileSignedBiasThreshold=$tileSignedBiasThreshold;tileMedianBiasThreshold=$tileMedianBiasThreshold;tileCoherenceThreshold=$tileCoherenceThreshold;artifactName=[pscustomobject]$artifactName;artifactSha256=[pscustomobject]$artifactSha;coverageSha256=Get-GameplayEvidenceTextSha256Hex $coverageText}
   } finally {foreach($bitmap in $bitmaps){if($bitmap){$bitmap.Dispose()}};foreach($stream in $streams){if($stream){$stream.Dispose()}}}
 }
 
 function Assert-GameplayTemporalGhostPairProvenance([string]$CaptureName,$CharacterCapture,$PhotorealCapture,$SequenceCapture,$Evidence,$ArtifactCapture) {
+  if($CharacterCapture.PSObject.Properties.Name-contains'rawTokenMetadataSha256'){
+    if(-not$Evidence.losslessIdentityVerified-or@($Evidence.tokenMetadataSha256).Count-ne2-or$Evidence.tokenMetadataSha256[0]-cne$CharacterCapture.rawTokenMetadataSha256-or$Evidence.tokenMetadataSha256[1]-cne$CharacterCapture.effectiveTokenMetadataSha256){throw 'Temporal lossless identity evidence provenance mismatch'}
+  }
   if($CharacterCapture.name-ne$CaptureName-or$PhotorealCapture.name-ne$CaptureName-or$SequenceCapture.name-ne$CaptureName-or$SequenceCapture.complete-ne1-or@($SequenceCapture.phases).Count-lt2-or$Evidence.contract-ne'raw-effective-full-frame-v3'){throw "Temporal ghost pair identity failed: $CaptureName"}
   $raw=@($SequenceCapture.phases)[0];$effective=@($SequenceCapture.phases)[1]
   if($raw.index-ne0-or$effective.index-ne1-or$raw.frameSerial-lt1-or$effective.frameSerial-ne$raw.frameSerial+1-or$effective.tokenGeneration-ne$raw.tokenGeneration+1-or$raw.viewProjectionHash-eq0-or$raw.viewProjectionHash-ne$effective.viewProjectionHash-or$raw.cameraHash-ne$effective.cameraHash-or$raw.invariantHash-ne$effective.invariantHash-or$raw.jitterIndex-ne$effective.jitterIndex-or$raw.jitterX-ne$effective.jitterX-or$raw.jitterY-ne$effective.jitterY-or$raw.historyGeneration-ne$effective.historyGeneration-or$raw.historyIndex-ne$effective.historyIndex){throw "Temporal ghost raw/effective frame/VP/history provenance mismatch: $CaptureName"}
@@ -331,14 +438,29 @@ function Assert-GameplayDepthFileReceipts([string]$Directory,$CharacterReceipt) 
   return $true
 }
 
+function Get-GameplayKindDerivedBuildingStableLows($Receipt) {
+  if($Receipt.buildingIdentitySource-cne'GameplayShowcaseEnvironment3D.Descriptors'-or$Receipt.buildingIdentityDomain-cne'3368770884265705473'-or$Receipt.buildingIdentityGeneration-ne1){throw 'Building descriptor identity provenance failed'}
+  $kinds=@($Receipt.descriptorKinds)
+  if($kinds.Count-lt6-or$kinds.Count-gt480){throw 'Building descriptor capacity failed'}
+  $result=@()
+  for($index=0;$index-lt$kinds.Count;++$index){
+    $kind=$kinds[$index]
+    if($kind-is[string]-or$kind-is[bool]-or$null-eq$kind-or[double]$kind-ne[math]::Truncate([double]$kind)-or$kind-lt0-or$kind-gt5){throw 'Building descriptor kind invalid'}
+    if($kind-eq5){$result+=([uint64]$index+1)}
+  }
+  if($result.Count-ne6-or@($result|Select-Object -Unique).Count-ne6){throw 'Building descriptor set incomplete or duplicated'}
+  return $result
+}
+
 function Assert-GameplayReferenceOpacityEvidence($ReferenceReceipt,$CharacterReceipt,$SequenceReceipt=$null) {
+  $buildingStableLows=@(Get-GameplayKindDerivedBuildingStableLows $ReferenceReceipt)
   if($ReferenceReceipt.runId-ne$CharacterReceipt.runId-or$ReferenceReceipt.source-ne'GameplayLabReferenceOpacity'-or@($ReferenceReceipt.captures).Count-ne11){throw 'Gameplay reference opacity receipt identity failed'}
   foreach($characterCapture in $CharacterReceipt.captures){
     $evidence=@($ReferenceReceipt.captures|Where-Object name -eq $characterCapture.name);if($evidence.Count-ne1){throw "Reference opacity capture identity missing: $($characterCapture.name)"};$evidence=$evidence[0]
     foreach($field in @('referencePhase','overrideMode','removalThreshold','requestedReferenceCount','matchedReferenceCount','removedReferenceCount','removedCoverage','effectiveBuildingUnion','effectiveFrameSerial','referenceFrameSerial','effectiveSequenceIndex','referenceSequenceIndex','effectiveIncludingOpacity','referenceIncludingOpacity','effectiveExcludingOpacity','referenceExcludingOpacity','effectiveIdentityOrder','referenceIdentityOrder','parts')){if($null-eq$evidence.PSObject.Properties[$field]){throw "Reference opacity typed field missing: $($characterCapture.name)/$field"}}
     if([math]::Abs([double]$evidence.removalThreshold-.08)-gt.0000001){throw "Reference opacity removal threshold drifted: $($characterCapture.name)"}
     if(@($evidence.parts).Count-ne6){throw "Reference opacity per-ID receipt count failed: $($characterCapture.name)"}
-    for($partIndex=0;$partIndex-lt6;++$partIndex){$part=$evidence.parts[$partIndex];foreach($field in @('stableLow','requested','matched','missing','generationConflict','appliedOpacity')){if($null-eq$part.PSObject.Properties[$field]){throw "Reference opacity per-ID field missing: $($characterCapture.name)/$partIndex/$field"}};if($part.stableLow-ne151+$partIndex){throw "Reference opacity per-ID order drifted: $($characterCapture.name)/$partIndex"}}
+    for($partIndex=0;$partIndex-lt6;++$partIndex){$part=$evidence.parts[$partIndex];foreach($field in @('stableLow','requested','matched','missing','generationConflict','appliedOpacity')){if($null-eq$part.PSObject.Properties[$field]){throw "Reference opacity per-ID field missing: $($characterCapture.name)/$partIndex/$field"}};if($part.stableLow-ne$buildingStableLows[$partIndex]){throw "Reference opacity per-ID order drifted: $($characterCapture.name)/$partIndex"}}
     if($characterCapture.camera-ne'third'){if($evidence.referencePhase-ne0-or$evidence.overrideMode-ne'NoOverride'-or$evidence.requestedReferenceCount-ne0-or$evidence.matchedReferenceCount-ne0-or$evidence.removedReferenceCount-ne0-or[math]::Abs([double]$evidence.removedCoverage)-gt.000001-or@($evidence.parts|Where-Object{$_.requested-ne0-or$_.matched-ne0-or$_.missing-ne0-or$_.generationConflict-ne0-or$null-ne$_.appliedOpacity}).Count){throw "Non-reference capture declared opacity removal: $($characterCapture.name)"};continue}
     if($evidence.referencePhase-ne1-or[math]::Abs([double]$evidence.effectiveBuildingUnion-[double]$characterCapture.effectiveBuildingUnion)-gt.000001-or$evidence.effectiveExcludingOpacity-ne$evidence.referenceExcludingOpacity-or$evidence.effectiveIdentityOrder-ne$evidence.referenceIdentityOrder){throw "Reference opacity phase contract failed: $($characterCapture.name)"}
     $removed=$evidence.removedReferenceCount-gt0;$fingerprintChanged=$evidence.referenceIncludingOpacity-ne$evidence.effectiveIncludingOpacity
@@ -464,7 +586,7 @@ function Get-GameplayCanonicalStateSha($Receipt,$Environment,$Collision,$Palette
   $paletteState=&$copyWithoutRunId $Palette;$paletteState.Remove('drawnFrames')
   $sequenceCaptures=@($Sequence.captures)
   $characterCaptures=@($Character.captures);$objectGenerationBase=if($characterCaptures.Count){[int64]$characterCaptures[0].objectIdGeneration}else{0};$depthGenerationBase=if($characterCaptures.Count){[int64]$characterCaptures[0].depthGeneration}else{0};$characterCaptureState=@()
-  for($captureIndex=0;$captureIndex-lt$characterCaptures.Count;++$captureIndex){$capture=$characterCaptures[$captureIndex];$sequencePhases=if($captureIndex-lt$sequenceCaptures.Count){@($sequenceCaptures[$captureIndex].phases)}else{@()};$basePhase=if($sequencePhases.Count){$sequencePhases[0]}else{$null};$effectivePhase=if($sequencePhases.Count-gt1){$sequencePhases[1]}else{$null};$state=[ordered]@{};foreach($property in $capture.PSObject.Properties){if($property.Name-notin@('objectIdGeneration','depthGeneration','contactFrameSerial','determinismFrameSerial','renderProvenance')){$state[$property.Name]=$property.Value}};$render=[ordered]@{};foreach($property in $capture.renderProvenance.PSObject.Properties){if($property.Name-ne'frameSerial'){$render[$property.Name]=$property.Value}};$render.frameSerialDelta=if($null-ne$basePhase){[int64]$capture.renderProvenance.frameSerial-[int64]$basePhase.frameSerial}else{0};$render.matchesEffective=$null-ne$effectivePhase-and$capture.renderProvenance.frameSerial-eq$effectivePhase.frameSerial;$render.afterBase=$null-ne$basePhase-and$capture.renderProvenance.frameSerial-gt$basePhase.frameSerial;$state.renderProvenance=$render;$state.objectIdGenerationDelta=[int64]$capture.objectIdGeneration-$objectGenerationBase;$state.depthGenerationDelta=[int64]$capture.depthGeneration-$depthGenerationBase;$state.objectDepthGenerationDelta=[int64]$capture.depthGeneration-[int64]$capture.objectIdGeneration;$state.contactMatchesEffective=$null-ne$effectivePhase-and$capture.contactFrameSerial-eq$effectivePhase.frameSerial;$state.determinismMatchesEffective=$null-ne$effectivePhase-and$capture.determinismFrameSerial-eq$effectivePhase.frameSerial;$characterCaptureState+=$state}
+  for($captureIndex=0;$captureIndex-lt$characterCaptures.Count;++$captureIndex){$capture=$characterCaptures[$captureIndex];$sequencePhases=if($captureIndex-lt$sequenceCaptures.Count){@($sequenceCaptures[$captureIndex].phases)}else{@()};$basePhase=if($sequencePhases.Count){$sequencePhases[0]}else{$null};$effectivePhase=if($sequencePhases.Count-gt1){$sequencePhases[1]}else{$null};$state=[ordered]@{};foreach($property in $capture.PSObject.Properties){if($property.Name-notin@('rawTokenMetadataSha256','effectiveTokenMetadataSha256','objectIdGeneration','depthGeneration','contactFrameSerial','determinismFrameSerial','renderProvenance')){$state[$property.Name]=$property.Value}};$render=[ordered]@{};foreach($property in $capture.renderProvenance.PSObject.Properties){if($property.Name-ne'frameSerial'){$render[$property.Name]=$property.Value}};$render.frameSerialDelta=if($null-ne$basePhase){[int64]$capture.renderProvenance.frameSerial-[int64]$basePhase.frameSerial}else{0};$render.matchesEffective=$null-ne$effectivePhase-and$capture.renderProvenance.frameSerial-eq$effectivePhase.frameSerial;$render.afterBase=$null-ne$basePhase-and$capture.renderProvenance.frameSerial-gt$basePhase.frameSerial;$state.renderProvenance=$render;$state.objectIdGenerationDelta=[int64]$capture.objectIdGeneration-$objectGenerationBase;$state.depthGenerationDelta=[int64]$capture.depthGeneration-$depthGenerationBase;$state.objectDepthGenerationDelta=[int64]$capture.depthGeneration-[int64]$capture.objectIdGeneration;$state.contactMatchesEffective=$null-ne$effectivePhase-and$capture.contactFrameSerial-eq$effectivePhase.frameSerial;$state.determinismMatchesEffective=$null-ne$effectivePhase-and$capture.determinismFrameSerial-eq$effectivePhase.frameSerial;$characterCaptureState+=$state}
   $characterState=[ordered]@{};foreach($property in $Character.PSObject.Properties){if($property.Name-notin@('runId','captures')){$characterState[$property.Name]=$property.Value}};$characterState.captures=$characterCaptureState
   $sequenceBaseToken=if($sequenceCaptures.Count){[int64]$sequenceCaptures[0].token}else{0};$sequenceState=@()
   foreach($capture in $sequenceCaptures){$phases=@($capture.phases);$first=if($phases.Count){$phases[0]}else{$null};$phaseState=@();foreach($phase in $phases){$phaseState+=[ordered]@{index=$phase.index;sequenceIndex=$phase.sequenceIndex;tokenMatchesCapture=($phase.sequenceToken-eq$capture.token);drawListRevision=$phase.drawListRevision;cameraHash=$phase.cameraHash;stateHash=$phase.stateHash;invariantHash=$phase.invariantHash;frameDelta=if($first){[int64]$phase.frameSerial-[int64]$first.frameSerial}else{0};viewProjectionHash=$phase.viewProjectionHash;tokenGenerationDelta=if($first){[int64]$phase.tokenGeneration-[int64]$first.tokenGeneration}else{0};historyGenerationDelta=if($first){[int64]$phase.historyGeneration-[int64]$first.historyGeneration}else{0};historyIndexStable=if($first){$phase.historyIndex-eq$first.historyIndex}else{$false};jitterIndex=$phase.jitterIndex;jitterX=$phase.jitterX;jitterY=$phase.jitterY;excludingOpacity=$phase.excludingOpacity;includingOpacity=$phase.includingOpacity;identityOrder=$phase.identityOrder}}
@@ -491,10 +613,10 @@ function Get-GameplayPhotorealPackageEvidence([string]$ManifestPath) {
   }
 
   if ($manifest.schemaVersion -ne 1 -or $manifest.manifestType -ne 'aevrynd-runtime-render-package' -or
-      $manifest.exactAssetSet.count -ne 10 -or @($manifest.exactAssetSet.assetIds).Count -ne 10 -or
-      @($manifest.assets).Count -ne 10 -or @($manifest.files).Count -ne 54 -or
-      @($manifest.materials).Count -ne 11 -or @($manifest.meshParts).Count -ne 6 -or
-      $manifest.package.payloadFileCount -ne 54 -or $manifest.package.packageFileCount -ne 55 -or
+      $manifest.exactAssetSet.count -ne 11 -or @($manifest.exactAssetSet.assetIds).Count -ne 11 -or
+      @($manifest.assets).Count -ne 11 -or @($manifest.files).Count -ne 72 -or
+      @($manifest.materials).Count -ne 14 -or @($manifest.meshParts).Count -ne 9 -or
+      $manifest.package.payloadFileCount -ne 72 -or $manifest.package.packageFileCount -ne 73 -or
       $manifest.package.manifestPath -ne 'runtime-render-manifest.json' -or
       $manifest.package.manifestHashPolicy -ne 'external-envelope') {
     throw 'Photoreal manifest exact schema/count gate failed'
@@ -552,7 +674,7 @@ function Get-GameplayPhotorealPackageEvidence([string]$ManifestPath) {
       throw "Photoreal IBL reference is missing or duplicated: $value"
     }
   }
-  if ($referenced.Count -ne 54) { throw 'Photoreal referenced payload count is not exactly 54' }
+  if ($referenced.Count -ne 72) { throw 'Photoreal referenced payload count is not exactly 72' }
   foreach ($value in $declared) {
     if (-not $referenced.Contains($value)) { throw "Photoreal payload is not schema-referenced: $value" }
   }
@@ -562,24 +684,24 @@ function Get-GameplayPhotorealPackageEvidence([string]$ManifestPath) {
     $relative = $file.FullName.Substring($rootPrefix.Length).Replace('\', '/')
     if (-not $actual.Add($relative)) { throw "Photoreal package has duplicate normalized path: $relative" }
   }
-  if ($actual.Count -ne 55 -or -not $actual.Contains('runtime-render-manifest.json')) {
-    throw 'Photoreal staging package is not the exact clean 55-file set'
+  if ($actual.Count -ne 73 -or -not $actual.Contains('runtime-render-manifest.json')) {
+    throw 'Photoreal staging package is not the exact clean 73-file set'
   }
   foreach ($value in $declared) {
     if (-not $actual.Contains($value)) { throw "Photoreal staged payload is missing: $value" }
   }
 
   $payloadSha256 = Get-GameplayEvidenceTextSha256Hex ($payloadSnapshotLines -join "`n")
-  $snapshotEpochSha256 = Get-GameplayEvidenceTextSha256Hex "manifest=$($manifestSnapshot.sha256):$($manifestBytes.LongLength)|payload=$payloadSha256|files=55|bytes=$($payloadBytes + $manifestBytes.LongLength)"
+  $snapshotEpochSha256 = Get-GameplayEvidenceTextSha256Hex "manifest=$($manifestSnapshot.sha256):$($manifestBytes.LongLength)|payload=$payloadSha256|files=73|bytes=$($payloadBytes + $manifestBytes.LongLength)"
   return [pscustomobject]@{
     manifestPath = $resolvedManifest
     manifestSha256 = $manifestSnapshot.sha256
     manifestBytes = $manifestBytes.LongLength
-    payloadFiles = 54
-    materials = 11
-    meshParts = 6
-    referencedFiles = 54
-    packageFiles = 55
+    payloadFiles = 72
+    materials = 14
+    meshParts = 9
+    referencedFiles = 72
+    packageFiles = 73
     payloadBytes = $payloadBytes
     packageBytes = $payloadBytes + $manifestBytes.LongLength
     payloadSha256 = $payloadSha256
@@ -605,7 +727,7 @@ function Get-GameplayExpectedRunArtifactNames([string[]]$ExpectedNames) {
   $result = @()
   foreach ($name in $ExpectedNames) {
     $stem = [IO.Path]::GetFileNameWithoutExtension($name)
-    $result += @($name, "$stem-object-id.png", "$stem-raw.png", "$stem-raw-object-id.png", "$stem-depth.png", "$stem-raw-depth.png")
+    $result += @($name, "$stem-object-id.png", "$stem-raw.png", "$stem-raw-object-id.png", "$stem-depth.png", "$stem-raw-depth.png", "$stem-tokens.bin", "$stem-tokens.json", "$stem-raw-tokens.bin", "$stem-raw-tokens.json")
     if ($name -like 'third-*' -or $name -in @('palette-building.png','melee-combat.png')) {
       $result += @("$stem-reference.png", "$stem-reference-object-id.png", "$stem-reference-depth.png", "$stem-contact.png", "$stem-reference-contact.png")
     }
@@ -616,11 +738,26 @@ function Get-GameplayExpectedRunArtifactNames([string[]]$ExpectedNames) {
 function Assert-GameplayRunArchiveSchema($Run, [string[]]$ExpectedNames, [string[]]$ExpectedReceiptNames) {
   if ($Run.fatalAbsent -ne 1) { throw "Run archive did not seal fatal-marker absence: run=$($Run.run)" }
   $artifacts = @($Run.artifacts); $expectedArtifacts = @(Get-GameplayExpectedRunArtifactNames $ExpectedNames)
+  $optionalArtifacts = @()
+  foreach ($name in $ExpectedNames) {
+    $stem = [IO.Path]::GetFileNameWithoutExtension($name)
+    $optionalArtifacts += @("$stem-atmosphere-rgba16f.bin", "$stem-atmosphere-output.json")
+  }
+  $allowedArtifacts = @($expectedArtifacts + $optionalArtifacts)
   $artifactNames = @($artifacts | ForEach-Object { [string]$_.name })
-  if ($artifacts.Count -ne $expectedArtifacts.Count -or @($artifactNames | Select-Object -Unique).Count -ne $expectedArtifacts.Count) { throw "Run archive artifact count/unique-name mismatch: run=$($Run.run)" }
+  if (@($artifactNames | Select-Object -Unique).Count -ne $artifacts.Count) { throw "Run archive artifact unique-name mismatch: run=$($Run.run)" }
+  foreach ($artifact in $artifacts) {
+    if ([string]$artifact.name -cnotin $allowedArtifacts -or [string]$artifact.sha256 -notmatch '^[0-9a-f]{64}$') { throw "Run archive contains an invalid or unexpected artifact: run=$($Run.run) name=$($artifact.name)" }
+  }
   foreach ($name in $expectedArtifacts) {
     $entry = @($artifacts | Where-Object { $_.name -ceq $name })
     if ($entry.Count -ne 1 -or $entry[0].sha256 -notmatch '^[0-9a-f]{64}$') { throw "Run archive missing or duplicate artifact: run=$($Run.run) name=$name" }
+  }
+  foreach ($name in $ExpectedNames) {
+    $stem = [IO.Path]::GetFileNameWithoutExtension($name)
+    $payload = @($artifacts | Where-Object { $_.name -ceq "$stem-atmosphere-rgba16f.bin" })
+    $receipt = @($artifacts | Where-Object { $_.name -ceq "$stem-atmosphere-output.json" })
+    if ($payload.Count -ne $receipt.Count -or $payload.Count -gt 1) { throw "Run archive atmosphere diagnostic pair mismatch: run=$($Run.run) name=$name" }
   }
   $receipts = @($Run.receipts); $receiptNames = @($receipts | ForEach-Object { [string]$_.name })
   if ($receipts.Count -ne $ExpectedReceiptNames.Count -or @($receiptNames | Select-Object -Unique).Count -ne $ExpectedReceiptNames.Count) { throw "Run archive receipt count/unique-name mismatch: run=$($Run.run)" }
@@ -823,11 +960,11 @@ function Assert-GameplayRunEvidence(
   }
   if ($Photoreal.source -ne 'GameplayPhotorealTyped' -or
       $Photoreal.manifestSha256 -ne $PackageEvidence.manifestSha256 -or
-      $Photoreal.payloadFiles -ne 54 -or $Photoreal.validatedPayloadFiles -ne 54 -or
-      $Photoreal.profileAssets -ne 10 -or
-      $Photoreal.materials -ne 11 -or $Photoreal.validatedMaterials -ne 11 -or
-      $Photoreal.meshParts -ne 6 -or $Photoreal.validatedMeshParts -ne 6 -or
-      $Photoreal.validatedReferencedFiles -ne 54) {
+      $Photoreal.payloadFiles -ne 72 -or $Photoreal.validatedPayloadFiles -ne 72 -or
+      $Photoreal.profileAssets -ne 11 -or
+      $Photoreal.materials -ne 14 -or $Photoreal.validatedMaterials -ne 14 -or
+      $Photoreal.meshParts -ne 9 -or $Photoreal.validatedMeshParts -ne 9 -or
+      $Photoreal.validatedReferencedFiles -ne 72) {
     throw 'Gameplay typed manifest SHA/exact-count package cross-check failed'
   }
   if ($Photoreal.objectIdSupported -ne 1 -or $Photoreal.objectIdRequested -ne 1 -or
@@ -875,7 +1012,7 @@ function Assert-GameplayRunEvidence(
     $sequenceCapture = @($Sequence.captures)[$index]
     $photorealCapture = @($Photoreal.captures)[$index]
     $viewExpectation=$viewExpectations[$index]
-    $expectedCharacter=if($index-lt5){'female-f2'}else{'male-m2'}
+    $expectedCharacter=if($index-lt5-or$index-eq10){'female-f2'}else{'male-m2'}
     $expectedArms=if($expectedCharacter-eq'female-f2'){$Character.femaleFirstPersonArms}else{$Character.maleFirstPersonArms}
     $first=$viewExpectation.camera-eq'first'
     $third = $ExpectedNames[$index] -like 'third-*' -or $ExpectedNames[$index] -in @('palette-building.png', 'melee-combat.png')
@@ -893,7 +1030,7 @@ function Assert-GameplayRunEvidence(
       if([uint64]$capture.bodyMaterialSlots-ne[uint64]$expectedArms.firstPersonArmSubmeshCount){throw "Gameplay first-person arms material range mismatch: $($capture.name)"}
     }else{
       foreach($field in $armFields){if([uint64]$capture.$field-ne0){throw "Gameplay non-first capture carried first-person arms evidence: $($capture.name) $field"}}
-      $expectedMaterialCount=if($expectedCharacter-eq'female-f2'){$Character.femaleCharacterMaterialCount}else{$Character.maleCharacterMaterialCount}
+      $expectedMaterialCount=if($expectedCharacter-eq'female-f2'){if($null-ne$Character.femaleBodyMaterialSlotCount){$Character.femaleBodyMaterialSlotCount}else{$Character.femaleCharacterMaterialCount}}else{if($null-ne$Character.maleBodyMaterialSlotCount){$Character.maleBodyMaterialSlotCount}else{$Character.maleCharacterMaterialCount}}
       if([uint64]$expectedMaterialCount-lt1-or[uint64]$capture.bodyMaterialSlots-ne[uint64]$expectedMaterialCount){throw "Gameplay non-first character material range mismatch: $($capture.name)"}
     }
     if ($capture.objectIdOpaqueComplete -ne 1 -or $capture.objectIdMaskedComplete -ne 1 -or
@@ -936,6 +1073,7 @@ function Assert-GameplayRunEvidence(
         $sequenceCapture.jitterPolicy -ne 1 -or $sequenceCapture.fixedSampleIndex -ne 0) {
       throw "Gameplay sequence completeness evidence failed: $($capture.name)"
     }
+    Assert-GameplayReadbackGpuProvenance $sequenceCapture
     $firstPhase = @($sequenceCapture.phases)[0]
     for ($phaseIndex = 0; $phaseIndex -lt $expectedPhases; ++$phaseIndex) {
       $phase = @($sequenceCapture.phases)[$phaseIndex]
@@ -976,7 +1114,10 @@ function Assert-GameplayRunEvidence(
     }
     foreach($field in @('godActualTriangleCoverage','godBuildingUnion','godMaximumBuildingPart','godRoofCoverage')){$number=[double]$photorealCapture.$field;if([double]::IsNaN($number)-or[double]::IsInfinity($number)){throw "Gameplay God composition field is non-finite: $($capture.name) $field"}}
     if($expectedCamera-eq'god'){
-      if([double]$photorealCapture.godActualTriangleCoverage-lt$godCoverageContract.coverage-or[uint64]$photorealCapture.godVisibleWorldDescriptors-lt20-or[double]$photorealCapture.godBuildingUnion-lt0-or[double]$photorealCapture.godBuildingUnion-gt.22-or[double]$photorealCapture.godMaximumBuildingPart-lt0-or[double]$photorealCapture.godMaximumBuildingPart-gt.08-or[double]$photorealCapture.godRoofCoverage-lt0-or[double]$photorealCapture.godRoofCoverage-gt.05-or[uint64]$photorealCapture.godActualLodTransitions-lt1-or[uint64]$photorealCapture.godPredictedLodTransitions-lt1-or[uint64]$photorealCapture.godPredictedLodTransitions-ne[uint64]$photorealCapture.godActualLodTransitions-or[uint64]$photorealCapture.godActualLodDualSubmissions-ne[uint64]$photorealCapture.godActualLodTransitions-or[uint64]$photorealCapture.godLodPredictionMatched-ne1-or[uint64]$photorealCapture.godLodContractMissing-ne0-or[uint64]$photorealCapture.godLodContractExtra-ne0-or[uint64]$photorealCapture.godLodContractWrongLevel-ne0-or[uint64]$photorealCapture.godLodContractWrongBlend-ne0){throw "Gameplay God production composition/predicted-actual LOD evidence failed: $($capture.name)"}
+      # These values originate as float telemetry.  Keep the authored composition
+      # limits exact while tolerating only float-to-double representation noise.
+      $godCompositionEpsilon=1e-6
+      if([double]$photorealCapture.godActualTriangleCoverage-lt$godCoverageContract.coverage-or[uint64]$photorealCapture.godVisibleWorldDescriptors-lt20-or[double]$photorealCapture.godBuildingUnion-lt0-or[double]$photorealCapture.godBuildingUnion-gt(.22+$godCompositionEpsilon)-or[double]$photorealCapture.godMaximumBuildingPart-lt0-or[double]$photorealCapture.godMaximumBuildingPart-gt(.08+$godCompositionEpsilon)-or[double]$photorealCapture.godRoofCoverage-lt0-or[double]$photorealCapture.godRoofCoverage-gt(.05+$godCompositionEpsilon)-or[uint64]$photorealCapture.godActualLodTransitions-lt1-or[uint64]$photorealCapture.godPredictedLodTransitions-lt1-or[uint64]$photorealCapture.godPredictedLodTransitions-ne[uint64]$photorealCapture.godActualLodTransitions-or[uint64]$photorealCapture.godActualLodDualSubmissions-ne[uint64]$photorealCapture.godActualLodTransitions-or[uint64]$photorealCapture.godLodPredictionMatched-ne1-or[uint64]$photorealCapture.godLodContractMissing-ne0-or[uint64]$photorealCapture.godLodContractExtra-ne0-or[uint64]$photorealCapture.godLodContractWrongLevel-ne0-or[uint64]$photorealCapture.godLodContractWrongBlend-ne0){throw "Gameplay God production composition/predicted-actual LOD evidence failed: $($capture.name)"}
     }elseif([double]$photorealCapture.godActualTriangleCoverage-ne0-or[uint64]$photorealCapture.godVisibleWorldDescriptors-ne0-or[double]$photorealCapture.godBuildingUnion-ne0-or[double]$photorealCapture.godMaximumBuildingPart-ne0-or[double]$photorealCapture.godRoofCoverage-ne0-or[uint64]$cameraCapture.godLodTransitions-ne0-or[uint64]$photorealCapture.godPredictedLodTransitions-ne0-or[uint64]$photorealCapture.godActualLodTransitions-ne[uint64]$photorealCapture.lodTransitions-or[uint64]$photorealCapture.godActualLodDualSubmissions-ne[uint64]$photorealCapture.lodDualSubmissions-or[uint64]$photorealCapture.godLodPredictionMatched-ne1-or[uint64]$photorealCapture.godLodContractMissing-ne0-or[uint64]$photorealCapture.godLodContractExtra-ne0-or[uint64]$photorealCapture.godLodContractWrongLevel-ne0-or[uint64]$photorealCapture.godLodContractWrongBlend-ne0){throw "Gameplay non-God capture carried God composition/LOD evidence or mismatched actual LOD counters: $($capture.name)"}
     $expectedRequiredCount = 2
     $expectedForbiddenCount = if ($expectedCamera -eq 'first') { 2 } else { 1 }
@@ -1099,7 +1240,7 @@ function Write-GameplayFinalEvidenceReceipt(
   $captureEntries = @()
   foreach ($name in $ExpectedNames) {
     $stem = [IO.Path]::GetFileNameWithoutExtension($name)
-    $artifacts = @($name, "$stem-object-id.png", "$stem-raw.png", "$stem-raw-object-id.png", "$stem-depth.png", "$stem-raw-depth.png")
+    $artifacts = @($name, "$stem-object-id.png", "$stem-raw.png", "$stem-raw-object-id.png", "$stem-depth.png", "$stem-raw-depth.png", "$stem-tokens.bin", "$stem-tokens.json", "$stem-raw-tokens.bin", "$stem-raw-tokens.json")
     if ($name -like 'third-*' -or $name -in @('palette-building.png', 'melee-combat.png')) {
       $artifacts += @("$stem-reference.png", "$stem-reference-object-id.png", "$stem-reference-depth.png", "$stem-contact.png", "$stem-reference-contact.png")
     }

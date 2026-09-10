@@ -1,4 +1,7 @@
 #include "GameplayLabGame.h"
+#include "GameplayGrassCommunityMesh3D.h"
+#include "GameplayCandidate7Package3D.h"
+#include "GameplayBuildingIdentities3D.h"
 #include "GameplayOccluderMask3D.h"
 #include "GameplayProductionHdrSidecar3D.h"
 #include <Aevrynd/EnvironmentMeshes3D.h>
@@ -14,6 +17,7 @@
 #include <numeric>
 #include <objbase.h>
 #include <ranges>
+#include <sstream>
 #include <tuple>
 #include <unordered_set>
 #include <bcrypt.h>
@@ -21,7 +25,42 @@
 using namespace Aevrynd;using namespace ::GameplayLab;
 namespace {constexpr auto Names=[](){std::array<std::wstring_view,GameplayCaptureExpectations3D.size()> result{};for(std::size_t index=0;index<result.size();++index)result[index]=GameplayCaptureExpectations3D[index].name;return result;}();constexpr Color Cyan{.08f,.9f,.8f,1},Gold{1,.68f,.18f,1};std::string RunId(){GUID g{};if(FAILED(CoCreateGuid(&g)))throw std::runtime_error("Gameplay capture GUID unavailable");return std::format("{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",g.Data1,g.Data2,g.Data3,g.Data4[0],g.Data4[1],g.Data4[2],g.Data4[3],g.Data4[4],g.Data4[5],g.Data4[6],g.Data4[7]);}}
 namespace {
+Matrix4 GameplayPlayerWorld3D(bool candidate7,bool female,
+    const CharacterPresentationScale3D& presentation,Vec3 feet,float yaw){
+  Matrix4 world{};
+  if(candidate7&&female){
+    if(!BuildCharacterPresentationWorld3D(presentation,feet,yaw,world))
+      throw std::runtime_error("Candidate7 presentation world contract failed");
+    return world;
+  }
+  return CreateTransformMatrix(feet,{0,yaw,0},{1,1,1});
+}
+Matrix4 GameplayPlayerWorldInverse3D(bool candidate7,bool female,
+    const CharacterPresentationScale3D& presentation,Vec3 feet,float yaw){
+  Matrix4 inverse{};
+  if(candidate7&&female){
+    if(!BuildCharacterPresentationWorldInverse3D(presentation,feet,yaw,inverse))
+      throw std::runtime_error("Candidate7 presentation inverse contract failed");
+    return inverse;
+  }
+  return CreateRotationMatrix({0,-yaw,0})*CreateTranslationMatrix(feet*-1.f);
+}
 std::ostream& operator<<(std::ostream& out,const RenderResourceIdentity3D& identity){return out<<"{\"generation\":"<<identity.generation<<",\"width\":"<<identity.width<<",\"height\":"<<identity.height<<",\"format\":"<<identity.format<<",\"sampleCount\":"<<identity.sampleCount<<",\"state\":"<<identity.state<<'}';}
+void WriteAtmosphereReadbackProvenanceJson(std::ostream& out,const AtmosphereReadbackProvenance3D& provenance){
+  out<<"{\"fingerprint\":"<<provenance.fingerprint
+     <<",\"resourceCreates\":"<<provenance.resourceCreates
+     <<",\"resourceReleases\":"<<provenance.resourceReleases
+     <<",\"outputIdentity\":"<<provenance.outputIdentity
+     <<",\"submissionFence\":"<<provenance.submissionFence
+     <<",\"historyGeneration\":"<<provenance.historyGeneration
+     <<",\"outputWidth\":"<<provenance.outputWidth
+     <<",\"outputHeight\":"<<provenance.outputHeight
+     <<",\"historyIndex\":"<<provenance.historyIndex
+     <<",\"rejection\":"<<unsigned(provenance.rejection)
+     <<",\"dispatched\":"<<unsigned(provenance.dispatched)
+     <<",\"reused\":"<<unsigned(provenance.reused)
+     <<",\"complete\":"<<unsigned(provenance.Complete())<<'}';
+}
 constexpr std::uint64_t EnvironmentPartitionId=GameplayEnvironmentIdentityDomain3D;
 constexpr std::uint64_t GameplayCharacterIdentityHigh=0xaec0474348415201ull;
 constexpr std::uint64_t GameplayWorldIdentityHigh=0xaec047574f524c01ull;
@@ -40,11 +79,109 @@ void WriteIntegrityJson(std::ostream& out,std::uint64_t frameSerial,const Determ
 GameplayCaptureCamera3D CaptureCamera(CameraMode value){switch(value){case CameraMode::FirstPerson:return GameplayCaptureCamera3D::First;case CameraMode::ThirdPerson:return GameplayCaptureCamera3D::Third;case CameraMode::GodView:return GameplayCaptureCamera3D::God;}return GameplayCaptureCamera3D::First;}
 GameplayCaptureLighting3D CaptureLighting(LightingPhase value){switch(value){case LightingPhase::Day:return GameplayCaptureLighting3D::Day;case LightingPhase::Dusk:return GameplayCaptureLighting3D::Dusk;case LightingPhase::Night:return GameplayCaptureLighting3D::Night;}return GameplayCaptureLighting3D::Day;}
 void MixCaptureHash(std::uint64_t& hash,std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}}
+// COMPARE_COLLISION_CPU_BEGIN
+bool CompareCaptureCollisionClear(const Aevrynd::CollisionWorld3D& world,Aevrynd::Vec3 camera,
+    Aevrynd::Vec3 center,Aevrynd::Vec3 extents,bool terrainClear){
+  // Controller 是查詢體，不會註冊自身 collider；保留世界障礙與貼地容差檢查。
+  return terrainClear&&!world.OverlapsBox(camera,{.1f,.1f,.1f})&&
+      !world.OverlapsBox(center,extents-Aevrynd::Vec3{.001f,.001f,.001f});
+}
+// COMPARE_COLLISION_CPU_END
 void MixCaptureFloat(std::uint64_t& hash,float value){MixCaptureHash(hash,std::bit_cast<std::uint32_t>(value));}
 std::uint64_t CaptureCameraHash(const Camera3D& camera){std::uint64_t hash=14695981039346656037ull;for(const Vec3 value:{camera.position,camera.target,camera.up}){MixCaptureFloat(hash,value.x);MixCaptureFloat(hash,value.y);MixCaptureFloat(hash,value.z);}MixCaptureHash(hash,unsigned(camera.projection.mode));MixCaptureFloat(hash,camera.projection.verticalFieldOfView);MixCaptureFloat(hash,camera.projection.orthographicHeight);MixCaptureFloat(hash,camera.projection.nearPlane);MixCaptureFloat(hash,camera.projection.farPlane);return hash;}
 constexpr std::uint64_t CaptureStateSeed=14695981039346656037ull;
 void MixCaptureTag(std::uint64_t& hash,std::string_view tag){MixCaptureHash(hash,tag.size());for(const unsigned char value:tag){hash^=value;hash*=1099511628211ull;}}
 std::string CaptureShaHex(const std::array<std::byte,32>& bytes){std::string result;result.reserve(64);for(const auto value:bytes)result+=std::format("{:02x}",std::to_integer<unsigned>(value));return result;}
+std::string GameplayUltraDiagnosticJson(const Engine& engine){
+  const auto& receipt=engine.DevelopmentUltraReceipt();const auto& gpu=receipt.gpuTruth;const auto& terminal=engine.DevelopmentUltraTerminalState();
+  // 只記錄原始狀態，不依診斷結果改變品質或 transition。 (diagnostic only).
+  std::ostringstream out;out<<std::boolalpha<<"{\"schemaVersion\":2";
+  const auto field=[&](const char* name,auto value){out<<",\""<<name<<"\":"<<value;};
+  field("epoch",receipt.epoch);
+  field("downgradeCount",receipt.downgradeCount);
+  field("requested",unsigned(receipt.requested));
+  field("actual",unsigned(receipt.actual));
+  field("reason",unsigned(receipt.reason));
+  field("phase",unsigned(receipt.phase));
+  field("firstFalseReason",unsigned(receipt.firstFalseReason));
+  field("requestActive",receipt.requestActive);
+  field("noOp",receipt.noOp);
+  field("applyAttempted",receipt.applyAttempted);
+  field("applySucceeded",receipt.applySucceeded);
+  field("postApplyPassed",receipt.postApplyPassed);
+  field("rollbackAttempted",receipt.rollbackAttempted);
+  field("rollbackSucceeded",receipt.rollbackSucceeded);
+  field("rendererApplied",receipt.rendererApplied);
+  field("transitionPolicyApplied",receipt.transitionPolicyApplied);
+  field("shadowResourcesApplied",receipt.shadowResourcesApplied);
+  field("volumetricResolutionApplied",receipt.volumetricResolutionApplied);
+  field("cloudSamplesApplied",receipt.cloudSamplesApplied);
+  field("cloudShadowSamplesApplied",receipt.cloudShadowSamplesApplied);
+  field("lightShaftSamplesApplied",receipt.lightShaftSamplesApplied);
+  field("vegetationDensityApplied",receipt.vegetationDensityApplied);
+  field("textureBudgetApplied",receipt.textureBudgetApplied);
+  field("meshBudgetApplied",receipt.meshBudgetApplied);
+  out<<",\"requestedFingerprint\":\""<<receipt.requestedFingerprint<<"\"";
+  out<<",\"normalizedFingerprint\":\""<<receipt.normalizedFingerprint<<"\"";
+  out<<",\"actualFingerprint\":\""<<receipt.actualFingerprint<<"\"";
+  field("gpu_epoch",gpu.epoch);
+  field("gpu_observationIndex",gpu.observationIndex);
+  field("gpu_submittedFrameSerial",gpu.submittedFrameSerial);
+  field("gpu_completedFrameSerial",gpu.completedFrameSerial);
+  field("gpu_timingSampleSerial",gpu.timingSampleSerial);
+  field("gpu_lastGpuFrameNanoseconds",gpu.lastGpuFrameNanoseconds);
+  field("gpu_telemetryAgeNanoseconds",gpu.telemetryAgeNanoseconds);
+  field("gpu_dedicatedVideoMemoryBytes",gpu.dedicatedVideoMemoryBytes);
+  field("gpu_currentVideoMemoryUsageBytes",gpu.currentVideoMemoryUsageBytes);
+  field("gpu_rendererAdapterLuidLow",gpu.rendererAdapterLuidLow);
+  field("gpu_rendererAdapterLuidHigh",gpu.rendererAdapterLuidHigh);
+  field("gpu_telemetryAdapterLuidLow",gpu.telemetryAdapterLuidLow);
+  field("gpu_telemetryAdapterLuidHigh",gpu.telemetryAdapterLuidHigh);
+  field("gpu_hardVramBudgetBytes",gpu.hardVramBudgetBytes);
+  field("gpu_pendingGpuReleaseBytes",gpu.pendingGpuReleaseBytes);
+  field("gpu_debugErrorCount",gpu.debugErrorCount);
+  field("gpu_debugWarningCount",gpu.debugWarningCount);
+  field("gpu_stableFrames",gpu.stableFrames);
+  field("gpu_requiredStableFrames",gpu.requiredStableFrames);
+  field("gpu_observed",gpu.observed);
+  field("gpu_resourcesTrue",gpu.resourcesTrue);
+  field("gpu_telemetryTrue",gpu.telemetryTrue);
+  field("gpu_rendererAdapterIdentityValid",gpu.rendererAdapterIdentityValid);
+  field("gpu_adapterIdentityTrue",gpu.adapterIdentityTrue);
+  field("gpu_validationTrue",gpu.validationTrue);
+  field("gpu_timingProvenance",unsigned(gpu.timingProvenance));
+  field("gpu_timingRecorded",gpu.timingRecorded);
+  field("gpu_timingSerialAligned",gpu.timingSerialAligned);
+  field("gpu_productionFrameBudgetApplied",gpu.productionFrameBudgetApplied);
+  field("gpu_frameBudgetTrue",gpu.frameBudgetTrue);
+  field("gpu_fresh",gpu.fresh);
+  field("gpu_framePassed",gpu.framePassed);
+  field("gpu_committed",gpu.committed);
+  field("terminalOutcome",unsigned(terminal.outcome));field("terminalReason",unsigned(terminal.reason));field("terminalEpoch",terminal.epoch);
+  const auto stats=engine.GetRendererStats();
+  field("renderer_completedFrameSerial",stats.completedGpuFrameSerial);
+  field("renderer_totalNanoseconds",stats.lastGpuFrameNanoseconds);
+  field("renderer_scalarSerial",stats.lastCompletedGpuTimingReceipt.serial);
+  field("renderer_scalarAlignedValid",stats.completedGpuFrameSerial!=0&&stats.lastCompletedGpuTimingReceipt.serial==stats.completedGpuFrameSerial);
+  field("renderer_lastVolumetricAtmosphereGpuNanoseconds",stats.lastVolumetricAtmosphereGpuNanoseconds);
+  field("renderer_lastHzbPrepassGpuNanoseconds",stats.lastHzbPrepassGpuNanoseconds);
+  field("renderer_lastHzbBuildGpuNanoseconds",stats.lastHzbBuildGpuNanoseconds);
+  field("renderer_lastHzbCullGpuNanoseconds",stats.lastHzbCullGpuNanoseconds);
+  field("renderer_lastHzbColorGpuNanoseconds",stats.lastHzbColorGpuNanoseconds);
+  // 原始 pass validity 與完成幀對齊分開輸出；不將剩餘時間歸因於任何 pass。 (alignment).
+  const auto pass=[&](const char* prefix,const RendererStats::CompletedGpuPassTimingReceipt3D& timing){
+    field((std::string(prefix)+"_serial").c_str(),timing.serial);
+    field((std::string(prefix)+"_beginTick").c_str(),timing.beginTick);
+    field((std::string(prefix)+"_endTick").c_str(),timing.endTick);
+    field((std::string(prefix)+"_frequency").c_str(),timing.frequency);
+    field((std::string(prefix)+"_nanoseconds").c_str(),timing.nanoseconds);
+    field((std::string(prefix)+"_recorded").c_str(),timing.recorded);
+    field((std::string(prefix)+"_valid").c_str(),timing.valid);
+    field((std::string(prefix)+"_alignedValid").c_str(),timing.valid&&timing.serial==stats.completedGpuFrameSerial);
+  };
+  pass("renderer_shadow",stats.lastShadowRenderingGpuTiming);pass("renderer_captureCopy",stats.lastProductionCaptureCopyGpuTiming);
+  out<<'}';return out.str();
+}
 bool CaptureFileSha256(const std::filesystem::path& path,std::array<std::byte,32>& result){
   BCRYPT_ALG_HANDLE algorithm{};BCRYPT_HASH_HANDLE hash{};if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)return false;
   const auto close=[&]{if(hash)BCryptDestroyHash(hash);BCryptCloseAlgorithmProvider(algorithm,0);};if(BCryptCreateHash(algorithm,&hash,nullptr,0,nullptr,0,0)<0){close();return false;}
@@ -56,7 +193,7 @@ bool EncodeDepthCapture(const std::filesystem::path& path,const DepthCapture3D& 
 EnvironmentColliderSemantic3D EnvironmentSemantic(ShowcaseSceneKind3D kind){switch(kind){case ShowcaseSceneKind3D::Terrain:return EnvironmentColliderSemantic3D::Terrain;case ShowcaseSceneKind3D::Water:return EnvironmentColliderSemantic3D::Water;case ShowcaseSceneKind3D::Tree:return EnvironmentColliderSemantic3D::Tree;case ShowcaseSceneKind3D::Grass:return EnvironmentColliderSemantic3D::Grass;case ShowcaseSceneKind3D::Rock:return EnvironmentColliderSemantic3D::Rock;case ShowcaseSceneKind3D::Building:return EnvironmentColliderSemantic3D::Building;}return EnvironmentColliderSemantic3D::Decoration;}
 EnvironmentColliderDescriptor3D EnvironmentProxy(const ShowcaseSceneDescriptor3D& source,std::size_t index){EnvironmentColliderDescriptor3D result{};result.id={EnvironmentPartitionId,index+1};result.semantic=EnvironmentSemantic(source.kind);result.yaw=source.yaw;result.layer=1;result.collisionMask=CollisionLayerAll3D;result.userData=EnvironmentMirrorUserData|result.id.low;switch(source.kind){
   case ShowcaseSceneKind3D::Terrain:result.center={source.position.x,-.5f,source.position.z};result.extents={(std::max)(1.f,source.scale.x*.5f),.5f,(std::max)(1.f,source.scale.z*.5f)};break;
-  case ShowcaseSceneKind3D::Tree:{const float radius=Clamp(source.scale.x*.18f,.24f,.82f),halfHeight=(std::max)(1.f,source.scale.y*.45f);result.center=source.position+Vec3{0,halfHeight,0};result.extents={radius,halfHeight,radius};break;}
+  case ShowcaseSceneKind3D::Tree:{const float radius=Clamp(source.scale.y*.11f,.24f,.82f),halfHeight=(std::max)(1.f,source.scale.y*.45f);result.center=source.position+Vec3{0,halfHeight,0};result.extents={radius,halfHeight,radius};break;}
   case ShowcaseSceneKind3D::Rock:result.extents={(std::max)(.35f,source.scale.x*.5f),(std::max)(.3f,source.scale.y*.48f),(std::max)(.35f,source.scale.z*.5f)};result.center=source.position+Vec3{0,result.extents.y,0};break;
   case ShowcaseSceneKind3D::Building:result.center=source.position;result.extents={(std::max)(.1f,source.scale.x*.5f),(std::max)(.1f,source.scale.y*.5f),(std::max)(.1f,source.scale.z*.5f)};break;
   case ShowcaseSceneKind3D::Water:
@@ -83,20 +220,80 @@ void AppendShowcaseBox(Mesh3D& mesh,Vec3 minimum,Vec3 maximum){
   const Vec3 e{minimum.x,minimum.y,maximum.z},f{maximum.x,minimum.y,maximum.z},g{maximum.x,maximum.y,maximum.z},h{minimum.x,maximum.y,maximum.z};
   AppendShowcaseQuad(mesh,a,b,c,d);AppendShowcaseQuad(mesh,f,e,h,g);AppendShowcaseQuad(mesh,e,a,d,h);AppendShowcaseQuad(mesh,b,f,g,c);AppendShowcaseQuad(mesh,d,c,g,h);AppendShowcaseQuad(mesh,e,f,b,a);
 }
-Mesh3D CreateRiverHeroCellMesh3D(){
-  Mesh3D mesh;constexpr unsigned slices=64;mesh.vertices.reserve((slices+1)*2);mesh.indices.reserve(slices*6);
-  const std::uint32_t normal=PackNormalSnorm8({0,1,0}),color=PackColorRgba8({1,1,1,1});
-  for(unsigned slice=0;slice<=slices;++slice){
-    const float along=float(slice)/float(slices),localZ=along-.5f,worldZ=localZ*272.f;
-    const float center=(-4.f+std::sin(worldZ*.035f)*5.f+std::sin(worldZ*.011f)*2.f)/30.f;
-    const float halfWidth=(12.f+std::sin(worldZ*.057f+.7f)*2.6f)/60.f;
-    mesh.vertices.push_back({center-halfWidth,0,localZ,normal,color,0,along*8.f});
-    mesh.vertices.push_back({center+halfWidth,0,localZ,normal,color,1,along*8.f});
+void CarveShowcaseRiverShore3D(HeightField3D& terrain){
+  // 碰撞保持單一高度場；以原三角面重採樣，遠區不重新生成噪聲或改變幾何。
+  if(terrain.Settings().cellSize==4.f){
+    const auto coarse=terrain;const auto s=coarse.Settings();
+    terrain.Configure({s.origin,(s.width-1)*4+1,(s.depth-1)*4+1,1.f});
+    for(unsigned z=0;z<terrain.Settings().depth;++z)for(unsigned x=0;x<terrain.Settings().width;++x){
+      const unsigned ix=(std::min)(x/4,s.width-2),iz=(std::min)(z/4,s.depth-2);
+      const float u=float(x-ix*4)/4.f,v=float(z-iz*4)/4.f;
+      const float a=coarse.Height(ix,iz),b=coarse.Height(ix+1,iz),c=coarse.Height(ix,iz+1),d=coarse.Height(ix+1,iz+1);
+      terrain.SetHeight(x,z,u+v<=1?a+(b-a)*u+(c-a)*v:d+(c-d)*(1-u)+(b-d)*(1-v));
+    }
   }
-  for(unsigned slice=0;slice<slices;++ slice){const std::uint32_t base=slice*2;mesh.indices.insert(mesh.indices.end(),{base,base+2,base+1,base+1,base+2,base+3});}
-  bool uvMonotonic=true,sharedJoins=true;
-  for(unsigned slice=1;slice<=slices;++slice){uvMonotonic&=mesh.vertices[slice*2].v>mesh.vertices[(slice-1)*2].v;const std::uint32_t base=(slice-1)*2,index=(slice-1)*6;sharedJoins&=mesh.indices[index+1]==base+2&&mesh.indices[index+4]==base+2&&mesh.indices[index+2]==base+1&&mesh.indices[index+3]==base+1;}
-  if(mesh.vertices.size()!=130||mesh.indices.size()!=384||!uvMonotonic||!sharedJoins)throw std::runtime_error("River spline strip topology contract failed");
+  // 岸脊至少一個地形 cell 寬，讓天然低窪不會穿過河道局部邊界形成截斷水面。
+  const auto settings=terrain.Settings();
+  for(unsigned z=0;z<settings.depth;++z)for(unsigned x=0;x<settings.width;++x){
+    const Vec3 p=terrain.SamplePosition(x,z);const float center=-4.f+std::sin(p.z*.035f)*5.f+std::sin(p.z*.011f)*2.f;
+    const float width=12.f+std::sin(p.z*.057f+.7f)*2.6f;
+    const float inward=(std::min)(width*.5f+7.f-std::abs(p.x-center),136.f-std::abs(p.z));
+    if(inward<=-4.f)continue;
+    const float bedBlend=Clamp((inward-4.f)/4.f,0.f,1.f),bedWeight=bedBlend*bedBlend*(3.f-2.f*bedBlend);
+    const float target=.15f+(-2.4f-.15f)*bedWeight;
+    const float outerBlend=Clamp((inward+4.f)/4.f,0.f,1.f),weight=outerBlend*outerBlend*(3.f-2.f*outerBlend);
+    terrain.SetHeight(x,z,terrain.Height(x,z)*(1.f-weight)+target*weight);
+  }
+  // 保留既有出生與屋前平整區，不增加玩家碰撞或改變通行分類。
+  terrain.FlattenCircle({-16,0,8},8,0,8);
+  terrain.FlattenCircle({-12,0,24},7.2f,0,4.5f);
+  terrain.RecalculateRange();
+}
+Mesh3D CreateShowcaseRiverRefinedTerrainMesh3D(const HeightField3D& terrain,HeightFieldMeshSettings3D settings={}){
+  // 只有河道包圍區使用一米面；交界的粗三角形補共享邊點，禁止 T 接縫。
+  if(terrain.Settings().cellSize!=1.f)throw std::runtime_error("Refined terrain requires 1m samples");
+  const auto dense=terrain.CreateMesh(settings);const unsigned width=terrain.Settings().width;
+  Mesh3D result;std::unordered_map<unsigned,unsigned> shared;
+  const auto vertex=[&](unsigned x,unsigned z){const unsigned key=z*width+x;auto found=shared.find(key);if(found!=shared.end())return found->second;const unsigned id=unsigned(result.vertices.size());result.vertices.push_back(dense.vertices[key]);shared.emplace(key,id);return id;};
+  const auto fine=[&](int x,int z){const float wx=terrain.Settings().origin.x+float(x),wz=terrain.Settings().origin.z+float(z);return wx>=-40&&wx<40&&wz>=-148&&wz<148;};
+  const auto triangle=[&](unsigned a,unsigned b,unsigned c){result.indices.insert(result.indices.end(),{a,b,c});};
+  for(unsigned z=0;z+4<terrain.Settings().depth;z+=4)for(unsigned x=0;x+4<width;x+=4){
+    if(fine(int(x),int(z))){for(unsigned j=0;j<4;++j)for(unsigned i=0;i<4;++i){const auto a=vertex(x+i,z+j),b=vertex(x+i+1,z+j),c=vertex(x+i,z+j+1),d=vertex(x+i+1,z+j+1);triangle(a,c,b);triangle(b,c,d);}continue;}
+    const bool left=fine(int(x)-4,int(z)),right=fine(int(x)+4,int(z)),top=fine(int(x),int(z)-4),bottom=fine(int(x),int(z)+4);
+    if(!left&&!right&&!top&&!bottom){const auto a=vertex(x,z),b=vertex(x+4,z),c=vertex(x,z+4),d=vertex(x+4,z+4);triangle(a,c,b);triangle(b,c,d);continue;}
+    const auto fan=[&](std::vector<unsigned> ring){
+      auto center=result.vertices[ring[0]];center.x=center.y=center.z=0;center.u=center.v=0;
+      for(unsigned id:ring){const auto&v=result.vertices[id];center.x+=v.x/float(ring.size());center.y+=v.y/float(ring.size());center.z+=v.z/float(ring.size());center.u+=v.u/float(ring.size());center.v+=v.v/float(ring.size());}
+      center.normal=PackNormalSnorm8(terrain.SampleNormal(center.x,center.z));
+      const unsigned mid=unsigned(result.vertices.size());result.vertices.push_back(center);for(std::size_t i=0;i<ring.size();++i)triangle(mid,ring[i],ring[(i+1)%ring.size()]);
+    };
+    std::vector<unsigned> first{vertex(x,z)};if(left)for(unsigned j=1;j<4;++j)first.push_back(vertex(x,z+j));first.push_back(vertex(x,z+4));first.push_back(vertex(x+4,z));if(top)for(unsigned j=1;j<4;++j)first.push_back(vertex(x+4-j,z));fan(first);
+    std::vector<unsigned> second{vertex(x+4,z),vertex(x,z+4)};if(bottom)for(unsigned j=1;j<4;++j)second.push_back(vertex(x+j,z+4));second.push_back(vertex(x+4,z+4));if(right)for(unsigned j=1;j<4;++j)second.push_back(vertex(x+4,z+4-j));fan(second);
+  }
+  return result;
+}
+Mesh3D CreateRiverHeroCellMesh3D(const HeightField3D& terrain){
+  // 水面取自實際地形三角形的等高線；共享索引避免獨立透明 cell 重疊。
+  Mesh3D mesh;const auto ground=terrain.CreateMesh();constexpr float waterY=-.42f;
+  std::unordered_map<std::uint64_t,std::uint32_t> shared;
+  const auto add=[&](Vec3 p){
+    const auto qx=std::int32_t(std::llround(double(p.x)*10000.0)),qz=std::int32_t(std::llround(double(p.z)*10000.0));
+    const std::uint64_t key=(std::uint64_t(std::uint32_t(qx))<<32)|std::uint32_t(qz);
+    const auto found=shared.find(key);if(found!=shared.end())return found->second;
+    const auto index=std::uint32_t(mesh.vertices.size());shared.emplace(key,index);
+    mesh.vertices.push_back({p.x/30.f,0,p.z/272.f,PackNormalSnorm8({0,1,0}),PackColorRgba8({1,1,1,1}),p.x/30.f,(p.z/272.f+.5f)*8.f});return index;
+  };
+  for(std::size_t i=0;i<ground.indices.size();i+=3){
+    std::vector<Vec3> input;for(unsigned j=0;j<3;++j){const auto&v=ground.vertices[ground.indices[i+j]];input.push_back({v.x,v.y,v.z});}
+    const Vec3 center=(input[0]+input[1]+input[2])*(1.f/3.f);
+    const float riverCenter=-4.f+std::sin(center.z*.035f)*5.f+std::sin(center.z*.011f)*2.f;
+    const float width=12.f+std::sin(center.z*.057f+.7f)*2.6f;
+    if(std::abs(center.z)>134.f||std::abs(center.x-riverCenter)>width*.5f+5.f)continue;
+    std::vector<Vec3> wet;
+    for(unsigned j=0;j<3;++j){const Vec3 a=input[j],b=input[(j+1)%3];const bool inA=a.y<=waterY,inB=b.y<=waterY;if(inA)wet.push_back(a);if(inA!=inB){const float t=(waterY-a.y)/(b.y-a.y);wet.push_back(a+(b-a)*t);}}
+    for(std::size_t j=1;j+1<wet.size();++j){const auto a=add(wet[0]),b=add(wet[j]),c=add(wet[j+1]);const auto&pa=mesh.vertices[a];const auto&pb=mesh.vertices[b];const auto&pc=mesh.vertices[c];const float area=(pb.x-pa.x)*(pc.z-pa.z)-(pb.z-pa.z)*(pc.x-pa.x);if(a!=b&&b!=c&&a!=c&&std::abs(area)>1e-12f)mesh.indices.insert(mesh.indices.end(),{a,b,c});}
+  }
+  if(mesh.indices.empty())throw std::runtime_error("River terrain contour is empty");
   return mesh;
 }
 Mesh3D CreateCottageFacadeMesh3D(bool door,bool pairedWindows){
@@ -117,6 +314,13 @@ Mesh3D CreateCottageRoofMesh3D(){
 }
 std::string CreateGameplayLabRunId(){return RunId();}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){return HashGameplayCapturePose3D(pose);}std::uint64_t HashFootPlacement(const FootPlacementResult3D& value){return HashGameplayCaptureFootPlacement3D(value);}}
+namespace {
+bool GameplayGodPoseAuthorityPass3D(bool activeRoute,bool warmup,bool pairFrozen,bool ready,bool poseFrozen,bool receiptValid,bool layoutValid,std::uint64_t subjectHash,std::uint64_t activeHash) noexcept {
+  // 非正式 prelude 可等待有效構圖；正式 capture 不接受缺失權威，有效權威一律精確對應姿勢。
+  const bool formal=activeRoute||warmup||pairFrozen||ready||poseFrozen;
+  return receiptValid?(layoutValid&&subjectHash&&subjectHash==activeHash):!formal;
+}
+}
 namespace {Matrix4 InverseAffineViewmodelSocket(const Matrix4& source){const double a=source[0][0],b=source[0][1],c=source[0][2],d=source[1][0],e=source[1][1],f=source[1][2],g=source[2][0],h=source[2][1],i=source[2][2],det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(!std::isfinite(det)||std::abs(det)<1e-12)throw std::runtime_error("Viewmodel grip socket is singular");Matrix4 inverse=Matrix4::Identity();inverse[0][0]=float((e*i-f*h)/det);inverse[0][1]=float((c*h-b*i)/det);inverse[0][2]=float((b*f-c*e)/det);inverse[1][0]=float((f*g-d*i)/det);inverse[1][1]=float((a*i-c*g)/det);inverse[1][2]=float((c*d-a*f)/det);inverse[2][0]=float((d*h-e*g)/det);inverse[2][1]=float((b*g-a*h)/det);inverse[2][2]=float((a*e-b*d)/det);const float tx=source[0][3],ty=source[1][3],tz=source[2][3];inverse[0][3]=-(inverse[0][0]*tx+inverse[0][1]*ty+inverse[0][2]*tz);inverse[1][3]=-(inverse[1][0]*tx+inverse[1][1]*ty+inverse[1][2]*tz);inverse[2][3]=-(inverse[2][0]*tx+inverse[2][1]*ty+inverse[2][2]*tz);return inverse;}}
 namespace {void ApplyCombatFinishInput(Input& input,std::uint64_t tick){if(tick==132||tick==166||(tick>=200&&tick<=440&&tick%40==0)){input.SetMouseButton(true);input.SetMouseButton(false);}}}
 namespace {
@@ -253,12 +457,77 @@ void GameplayLabGame::ReleaseEnvironmentGameplayColliders(){for(const auto handl
 bool GameplayLabGame::SyncEnvironmentCollision(Vec3 observer){if(!environmentCollisions_||!environmentCollisions_->UpdateObserver(observer))return false;const bool active=environmentCollisions_->IsPartitionActive(EnvironmentPartitionId);if(!active){ReleaseEnvironmentGameplayColliders();return true;}if(!environmentGameplayColliders_.empty())return true;std::vector<ColliderHandle3D> created;try{created.reserve(environmentCollisionActiveReceipt_.solidDescriptors?environmentCollisionActiveReceipt_.solidDescriptors:91);for(const auto& descriptor:environmentCollisionDescriptors_){if(!EnvironmentSolid(descriptor.semantic))continue;const auto handle=collisions_.CreateBox({RotatedEnvironmentProxy(descriptor),descriptor.layer,descriptor.collisionMask,descriptor.userData,false});if(!handle)throw std::runtime_error("Gameplay environment mirror collider creation failed");created.push_back(handle);}}catch(...){for(const auto handle:created)collisions_.Destroy(handle);return false;}environmentGameplayColliders_=std::move(created);return true;}
 bool GameplayLabGame::InitializeEnvironmentCollision(){const auto world=showcaseEnvironment_.Receipt();const std::size_t total=world.terrain+world.water+world.trees+world.grass+world.rocks+world.buildings,solid=world.terrain+world.trees+world.rocks+world.buildings,nonSolid=world.water+world.grass;if(total!=showcaseEnvironment_.Descriptors().size()||total>world.descriptorCapacity||solid+nonSolid!=total)return false;environmentCollisionDescriptors_.clear();environmentCollisionDescriptors_.reserve(total);std::size_t index{};for(const auto& descriptor:showcaseEnvironment_.Descriptors())environmentCollisionDescriptors_.push_back(EnvironmentProxy(descriptor,index++));environmentCollisions_=std::make_unique<EnvironmentCollisionStreaming3D>(physics_,EnvironmentCollisionStreamingSettings3D{2,world.descriptorCapacity,solid,1.2f,{.78f,.02f}});if(!environmentCollisions_->RegisterPartition({EnvironmentPartitionId,{0,0,0},320},environmentCollisionDescriptors_))return false;const auto registered=environmentCollisions_->Receipt();if(registered.registeredDescriptors!=total||registered.solidDescriptors!=solid||registered.nonSolidDescriptors!=nonSolid)return false;if(!environmentCollisions_->UpdateObserver(controller_.Position()))return false;const auto firstActive=environmentCollisions_->Receipt();const auto terrainHit=environmentCollisions_->Raycast(MakeRay3D({0,4,0},{0,-1,0}),12);environmentRayEvidence_=terrainHit&&terrainHit.object.id==StableObjectId3D{EnvironmentPartitionId,1};const auto tree=std::ranges::find_if(environmentCollisionDescriptors_,[](const auto& value){return value.semantic==EnvironmentColliderSemantic3D::Tree;});if(tree==environmentCollisionDescriptors_.end())return false;const auto treeObjects=environmentCollisions_->QueryBox(tree->center,tree->extents+Vec3{.01f,.01f,.01f});environmentStableIdEvidence_=std::ranges::any_of(treeObjects,[&](const auto& value){return value.id==tree->id;});const auto rock=std::ranges::find_if(environmentCollisionDescriptors_,[](const auto& value){return value.semantic==EnvironmentColliderSemantic3D::Rock;});if(rock==environmentCollisionDescriptors_.end())return false;const auto meleeObjects=environmentCollisions_->QueryBox(rock->center,rock->extents+Vec3{.25f,.25f,.25f});environmentMeleeQueryEvidence_=std::ranges::any_of(meleeObjects,[&](const auto& value){return value.id==rock->id;});if(!environmentCollisions_->UpdateObserver({10000,10000,10000})||environmentCollisions_->IsPartitionActive(EnvironmentPartitionId))return false;if(!SyncEnvironmentCollision(controller_.Position()))return false;environmentCollisionActiveReceipt_=environmentCollisions_->Receipt();environmentCollisionReloadStable_=firstActive.stateHash==environmentCollisionActiveReceipt_.stateHash;return environmentCollisionReloadStable_&&environmentStableIdEvidence_&&environmentRayEvidence_&&environmentMeleeQueryEvidence_&&environmentGameplayColliders_.size()==solid;}
 void GameplayLabGame::OnStart(Engine& engine){
+  if(!captureDirectory_.empty()){
+    std::array<char,32> isolation{};const DWORD isolationLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_CAPTURE_LIGHTING_ISOLATION",isolation.data(),DWORD(isolation.size()));
+    if(isolationLength>=isolation.size())throw std::runtime_error("Gameplay capture lighting isolation environment was too long");
+    const std::string_view selected(isolation.data(),isolationLength);
+    if(selected=="shadows-off")captureLightingIsolation_=1;
+    else if(selected=="ao-off")captureLightingIsolation_=2;
+    else if(selected=="shadows-ao-off")captureLightingIsolation_=3;
+    else if(selected=="ibl-off")captureLightingIsolation_=4;
+    else if(!selected.empty())throw std::runtime_error("Gameplay capture lighting isolation environment was invalid");
+    std::array<char,8> rawHdrDiagnostic{};const DWORD rawHdrDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_CAPTURE_RAW_HDR_DIAGNOSTIC",rawHdrDiagnostic.data(),DWORD(rawHdrDiagnostic.size()));
+    if(rawHdrDiagnosticLength){if(rawHdrDiagnosticLength>=rawHdrDiagnostic.size()||std::string_view(rawHdrDiagnostic.data(),rawHdrDiagnosticLength)!="1")throw std::runtime_error("Gameplay raw HDR diagnostic environment was invalid");captureRawHdrDiagnostic_=true;}
+    std::array<char,8> atmosphereOutputDiagnostic{};const DWORD atmosphereOutputDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_ATMOSPHERE_OUTPUT_DIAGNOSTIC",atmosphereOutputDiagnostic.data(),DWORD(atmosphereOutputDiagnostic.size()));
+    if(atmosphereOutputDiagnosticLength){if(atmosphereOutputDiagnosticLength>=atmosphereOutputDiagnostic.size()||std::string_view(atmosphereOutputDiagnostic.data(),atmosphereOutputDiagnosticLength)!="1")throw std::runtime_error("Gameplay atmosphere output diagnostic environment was invalid");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      captureAtmosphereOutputDiagnostic_=true;
+#else
+      throw std::runtime_error("Gameplay atmosphere output diagnostic requires renderer test hooks");
+#endif
+    }
+    std::array<char,8> preAtmosphereHdrDiagnostic{};const DWORD preAtmosphereHdrDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_PRE_ATMOSPHERE_HDR_DIAGNOSTIC",preAtmosphereHdrDiagnostic.data(),DWORD(preAtmosphereHdrDiagnostic.size()));
+    if(preAtmosphereHdrDiagnosticLength){if(preAtmosphereHdrDiagnosticLength>=preAtmosphereHdrDiagnostic.size()||std::string_view(preAtmosphereHdrDiagnostic.data(),preAtmosphereHdrDiagnosticLength)!="1")throw std::runtime_error("Gameplay pre-atmosphere HDR diagnostic environment was invalid");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      if(!EngineAtmosphereDiagnosticAccess3D::SetPreAtmosphereHdrCapture(engine,true))throw std::runtime_error("Gameplay pre-atmosphere HDR diagnostic could not be enabled");
+#else
+      throw std::runtime_error("Gameplay pre-atmosphere HDR diagnostic requires atmosphere diagnostics");
+#endif
+    }
+    std::array<char,8> postAtmosphereHdrDiagnostic{};const DWORD postAtmosphereHdrDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_POST_ATMOSPHERE_HDR_DIAGNOSTIC",postAtmosphereHdrDiagnostic.data(),DWORD(postAtmosphereHdrDiagnostic.size()));
+    if(postAtmosphereHdrDiagnosticLength){if(postAtmosphereHdrDiagnosticLength>=postAtmosphereHdrDiagnostic.size()||std::string_view(postAtmosphereHdrDiagnostic.data(),postAtmosphereHdrDiagnosticLength)!="1")throw std::runtime_error("Gameplay post-atmosphere HDR diagnostic environment was invalid");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      if(!EngineAtmosphereDiagnosticAccess3D::SetPostAtmosphereHdrCapture(engine,true))throw std::runtime_error("Gameplay post-atmosphere HDR diagnostic could not be enabled");
+#else
+      throw std::runtime_error("Gameplay post-atmosphere HDR diagnostic requires atmosphere diagnostics");
+#endif
+    }
+    std::array<char,8> postTransparentHdrDiagnostic{};const DWORD postTransparentHdrDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_POST_TRANSPARENT_HDR_DIAGNOSTIC",postTransparentHdrDiagnostic.data(),DWORD(postTransparentHdrDiagnostic.size()));
+    if(postTransparentHdrDiagnosticLength){if(postTransparentHdrDiagnosticLength>=postTransparentHdrDiagnostic.size()||std::string_view(postTransparentHdrDiagnostic.data(),postTransparentHdrDiagnosticLength)!="1")throw std::runtime_error("Gameplay post-transparent HDR diagnostic environment was invalid");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      if(!EngineAtmosphereDiagnosticAccess3D::SetPostTransparentHdrCapture(engine,true))throw std::runtime_error("Gameplay post-transparent HDR diagnostic could not be enabled");
+#else
+      throw std::runtime_error("Gameplay post-transparent HDR diagnostic requires atmosphere diagnostics");
+#endif
+    }
+    std::array<char,8> skipWaterDiagnostic{};const DWORD skipWaterDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_SKIP_WATER_DIAGNOSTIC",skipWaterDiagnostic.data(),DWORD(skipWaterDiagnostic.size()));
+    if(skipWaterDiagnosticLength){if(skipWaterDiagnosticLength>=skipWaterDiagnostic.size()||std::string_view(skipWaterDiagnostic.data(),skipWaterDiagnosticLength)!="1")throw std::runtime_error("Gameplay skip-water diagnostic environment was invalid");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      if(!EngineAtmosphereDiagnosticAccess3D::SetSkipWaterTransparentDraw(engine,true))throw std::runtime_error("Gameplay skip-water diagnostic could not be enabled");
+#else
+      throw std::runtime_error("Gameplay skip-water diagnostic requires atmosphere diagnostics");
+#endif
+    }
+    std::array<char,8> skipTransparentDiagnostic{};const DWORD skipTransparentDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_SKIP_TRANSPARENT_DIAGNOSTIC",skipTransparentDiagnostic.data(),DWORD(skipTransparentDiagnostic.size()));
+    if(skipTransparentDiagnosticLength){if(skipTransparentDiagnosticLength>=skipTransparentDiagnostic.size()||std::string_view(skipTransparentDiagnostic.data(),skipTransparentDiagnosticLength)!="1")throw std::runtime_error("Gameplay skip-transparent diagnostic environment was invalid");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      if(!EngineAtmosphereDiagnosticAccess3D::SetSkipAllTransparentDraw(engine,true))throw std::runtime_error("Gameplay skip-transparent diagnostic could not be enabled");
+#else
+      throw std::runtime_error("Gameplay skip-transparent diagnostic requires atmosphere diagnostics");
+#endif
+    }
+#if AEVRYND_SHADOW_MAP_DIAGNOSTICS
+    std::array<char,8> shadowDiagnostic{};const DWORD shadowDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_CAPTURE_SHADOW_EVIDENCE",shadowDiagnostic.data(),DWORD(shadowDiagnostic.size()));
+    if(shadowDiagnosticLength){if(shadowDiagnosticLength>=shadowDiagnostic.size()||std::string_view(shadowDiagnostic.data(),shadowDiagnosticLength)!="1")throw std::runtime_error("Gameplay capture shadow evidence environment was invalid");captureShadowMapDiagnostic_=true;}
+#endif
+  }
   engine.SetRenderQuality(RenderQuality3D::Ultra);
   std::array<char,128> expectedFingerprint{};
   const DWORD expectedLength=GetEnvironmentVariableA("AEVRYND_EXPECTED_CHARACTER_FINGERPRINT",expectedFingerprint.data(),DWORD(expectedFingerprint.size()));
   if(expectedLength&&expectedLength<expectedFingerprint.size())expectedSourceFingerprint_.assign(expectedFingerprint.data(),expectedLength);
   sourceFingerprintPassed_=expectedSourceFingerprint_.empty()||expectedSourceFingerprint_==actualSourceFingerprint_;
-  if(!sourceFingerprintPassed_)throw std::runtime_error("Gameplay character build fingerprint mismatch");
+  if(!sourceFingerprintPassed_)throw std::runtime_error(std::format(
+    "Gameplay character build fingerprint mismatch: expected={} actual={}",expectedSourceFingerprint_,actualSourceFingerprint_));
   std::array<char,32768> phasePath{};const DWORD phaseLength=GetEnvironmentVariableA("AEVRYND_FATAL_DIAGNOSTIC_PATH",phasePath.data(),DWORD(phasePath.size()));if(phaseLength&&phaseLength<phasePath.size()){std::ofstream phase(std::filesystem::path(std::string(phasePath.data(),phaseLength)),std::ios::app);phase<<"BuildFingerprint:"<<actualSourceFingerprint_<<'\n';phase.flush();}
   rules_.Reset();PrepareGameplayCaptureStaging3D(rules_,!captureDirectory_.empty());controller_.Reset({-16,0,8});
   boxMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitBox());
@@ -267,11 +536,14 @@ void GameplayLabGame::OnStart(Engine& engine){
   showcaseCylinderMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCylinder(14));
   showcaseConeHighMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(16));
   showcaseConeLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(7));
-  showcaseGrassHighMesh_=engine.CreateMeshResource3D(CreateGrassClumpMesh3D(11,3));
-  showcaseGrassLowMesh_=engine.CreateMeshResource3D(CreateGrassClumpMesh3D(4,2));
+  // 每個既有 placement 共用一片林下群落網格，不改 descriptor、身份或碰撞。
+  // 高細節增加葉片與彎曲段數，遠景也保留六葉輪廓；群落 bounds、葉高與風權重
+  // 仍由相同生成器約束，避免只把少量硬片放大成不自然的巨草。
+  auto grassHigh=CreateGameplayGrassCommunityMesh3D(15,4),grassLow=CreateGameplayGrassCommunityMesh3D(10,2);
+  showcaseGrassHighMesh_=engine.CreateMeshResource3D(grassHigh);
+  showcaseGrassLowMesh_=engine.CreateMeshResource3D(grassLow);
   showcaseTreeLowMesh_=engine.CreateMeshResource3D(CreateTreeLodMesh3D());
   showcaseRockLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(7,4));
-  showcaseRiverMesh_=engine.CreateMeshResource3D(CreateRiverHeroCellMesh3D());
   showcaseCottageFrontMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(true,true));
   showcaseCottageBackMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(false,true));
   showcaseCottageSideMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(false,false));
@@ -280,31 +552,73 @@ void GameplayLabGame::OnStart(Engine& engine){
   if(!showcaseTerrain_.GenerateUltra(0x4a17u,{10.5f,.0105f,.56f,.22f,24.f,.34f,7,3,.68f,.16f}))throw std::runtime_error("Gameplay showcase terrain generation failed");
   showcaseTerrain_.FlattenCircle({-16,0,8},8,0,8);
   showcaseTerrain_.FlattenCircle({-12,0,24},7.2f,0,4.5f);
+  CarveShowcaseRiverShore3D(showcaseTerrain_);
+  // 只在既有 near-band 倒木附近留下壓痕與鬆土；先縮成十個實際 descriptor，
+  // 再限制高度場取樣的 bounding boxes，避免把地表初始化變成全場景乘積掃描。
+  std::vector<ShowcaseSceneDescriptor3D> terrainDisturbanceAnchors;
+  for(const auto& descriptor:showcaseEnvironment_.Descriptors())
+    if(descriptor.kind==ShowcaseSceneKind3D::Tree&&descriptor.lodGroup==0&&
+       descriptor.meshAsset.find("dead_tree_trunk_02")!=std::string::npos)
+      terrainDisturbanceAnchors.push_back(descriptor);
   const auto terrainSettings=showcaseTerrain_.Settings();
+  std::vector<std::uint8_t> disturbedSamples(
+      std::size_t(terrainSettings.width)*terrainSettings.depth);
+  for(const auto& anchor:terrainDisturbanceAnchors){
+    constexpr float maximumFootprintRadius=6.f;
+    const auto sampleIndex=[&](float coordinate,float origin,unsigned limit){
+      return unsigned(Clamp(std::floor((coordinate-origin)/terrainSettings.cellSize),
+                            0.f,float(limit-1)));
+    };
+    const unsigned minimumX=sampleIndex(anchor.position.x-maximumFootprintRadius,
+                                         terrainSettings.origin.x,terrainSettings.width);
+    const unsigned maximumX=sampleIndex(anchor.position.x+maximumFootprintRadius+
+                                         terrainSettings.cellSize,
+                                         terrainSettings.origin.x,terrainSettings.width);
+    const unsigned minimumZ=sampleIndex(anchor.position.z-maximumFootprintRadius,
+                                         terrainSettings.origin.z,terrainSettings.depth);
+    const unsigned maximumZ=sampleIndex(anchor.position.z+maximumFootprintRadius+
+                                         terrainSettings.cellSize,
+                                         terrainSettings.origin.z,terrainSettings.depth);
+    for(unsigned z=minimumZ;z<=maximumZ;++z)
+      for(unsigned x=minimumX;x<=maximumX;++x)
+        disturbedSamples[std::size_t(z)*terrainSettings.width+x]=1;
+  }
   for(unsigned z=0;z<terrainSettings.depth;++z)for(unsigned x=0;x<terrainSettings.width;++x){
-    const Vec3 sample=showcaseTerrain_.SamplePosition(x,z);if(std::abs(sample.z)>142.f)continue;
-    const float center=-4.f+std::sin(sample.z*.035f)*5.f+std::sin(sample.z*.011f)*2.f;
-    const float width=12.f+std::sin(sample.z*.057f+.7f)*2.6f;
-    const float distance=std::abs(sample.x-center),outer=width*.5f+7.f;if(distance>=outer)continue;
-    const float blend=Clamp((distance-width*.42f)/(outer-width*.42f),0.f,1.f);const float current=showcaseTerrain_.Height(x,z),carved=-2.4f+(current+2.4f)*blend*blend*(3.f-2.f*blend);
-    showcaseTerrain_.SetHeight(x,z,(std::min)(current,carved));
+    if(!disturbedSamples[std::size_t(z)*terrainSettings.width+x])continue;
+    const auto position=showcaseTerrain_.SamplePosition(x,z);
+    const auto disturbance=SampleShowcaseTerrainDisturbance3D(
+        position,terrainDisturbanceAnchors);
+    if(disturbance.weight>0.f)
+      showcaseTerrain_.SetHeight(x,z,showcaseTerrain_.Height(x,z)+disturbance.heightDelta);
   }
   showcaseTerrain_.RecalculateRange();
-  // 真實三層 PBR 貼圖自行提供 albedo；頂點 RGB 保持中性，只以 alpha 保存高度供 biome 權重使用。
-  auto terrainMesh=showcaseTerrain_.CreateMesh({{1,1,1,1},{1,1,1,1},{1,1,1,1},.7f,{1,1,1,1},-.65f,2.2f,0x4a17u,.0042f,0.f,.32f,{1,1,1,1},{1,1,1,1},{1,1,1,1},.34f,.7f,.11f,.7f,.1f});
+  showcaseRiverMesh_=engine.CreateMeshResource3D(CreateRiverHeroCellMesh3D(showcaseTerrain_));
+  // 真實三層 PBR 貼圖提供細節；頂點 RGB 只加入由實際樹冠與河道決定的
+  // 林下／濕地色調，alpha 仍原封不動保存高度供 biome 權重使用。
+  auto terrainMesh=CreateShowcaseRiverRefinedTerrainMesh3D(showcaseTerrain_,{{1,1,1,1},{1,1,1,1},{1,1,1,1},.7f,{1,1,1,1},-.65f,2.2f,0x4a17u,.0042f,0.f,.32f,{1,1,1,1},{1,1,1,1},{1,1,1,1},.34f,.7f,.11f,.7f,.1f});
   // 高度場頂點提供真實世界平鋪UV，避免所有頂點取樣同一個淺色texel形成除錯條紋。
-  for(auto& vertex:terrainMesh.vertices){vertex.u=vertex.x*.085f;vertex.v=vertex.z*.085f;}
-  PrepareShowcaseSurfaceTerrainMesh3D(terrainMesh);
+  for(auto& vertex:terrainMesh.vertices){const auto source=UnpackColorRgba8(vertex.color);const auto ecology=SampleShowcaseTerrainEcologyTint3D({vertex.x,vertex.y,vertex.z},showcaseEnvironment_.Descriptors());const auto disturbance=SampleShowcaseTerrainDisturbance3D({vertex.x,vertex.y,vertex.z},terrainDisturbanceAnchors);vertex.color=PackColorRgba8({ecology.tint.r*disturbance.tint.r,ecology.tint.g*disturbance.tint.g,ecology.tint.b*disturbance.tint.b,source.a});vertex.u=vertex.x*.085f;vertex.v=vertex.z*.085f;}
+  if(!PrepareShowcaseSurfaceTerrainMesh3D(terrainMesh))
+    throw std::runtime_error("Gameplay showcase terrain apron construction failed");
   showcaseTerrainMesh_=engine.CreateMeshResource3D(terrainMesh);
   if(!showcaseCylinderMesh_||!showcaseConeHighMesh_||!showcaseConeLowMesh_||!showcaseGrassHighMesh_||!showcaseGrassLowMesh_||!showcaseTreeLowMesh_||!showcaseRockLowMesh_||!showcaseRiverMesh_||!showcaseCottageFrontMesh_||!showcaseCottageBackMesh_||!showcaseCottageSideMesh_||!showcaseCottageRoofMesh_||!showcaseTerrainMesh_)throw std::runtime_error("Gameplay showcase procedural GPU upload failed");
   const auto assetRoot=engine.ExecutableDirectory()/"assets";
   engine.SetMaterialTextureMemoryBudget(128*1024*1024);
   showcaseMaterialLibrary_.Initialize(engine,assetRoot/"environment-material-packs");
-  const std::array<MaterialAssetDefinition3D,4> showcaseMaterials={
+  std::array<MaterialAssetDefinition3D,4> showcaseMaterials={
     MaterialAssetDefinition3D{"ground",{"ambientcg/ground037/1k/Ground037_1K-JPG_Color.jpg","ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg",1024,"ambientcg/ground037/1k/Ground037_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.78f,0,0,.9f},false,{},.085f}},
     MaterialAssetDefinition3D{"wood",{"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg","ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",1024,"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.48f,0,0,1},true,{},.48f}},
     MaterialAssetDefinition3D{"bark",{"poly-haven/bark_brown_02/1k/base-color.jpg","poly-haven/bark_brown_02/1k/roughness.jpg",1024,"poly-haven/bark_brown_02/1k/normal-dx.jpg"},{{1,1,1,1},{.82f,0,0,.92f},true,{},1.f}},
     MaterialAssetDefinition3D{"rock",{"poly-haven/aerial_ground_rock/1k/base-color.jpg","poly-haven/aerial_ground_rock/1k/roughness.jpg",1024,"poly-haven/aerial_ground_rock/1k/normal-dx.jpg"},{{1,1,1,1},{.76f,0,0,1},true,{},.5f}}};
+  auto& terrain=showcaseMaterials[0];
+  // 森林層使用封存 2K DDS；三層共用上限，不沿用基底 JPG 的 1K 限制。
+  terrain.textures.maximumResolution=2048;
+  terrain.material.materialClass=MaterialClass3D::Terrain;
+  terrain.textures.integrity={MaterialTextureIntegrity3D{2187764,"d92bec8a35b9cb16ec79b421ca0f572a7400286eae109beafa266629ef49a6cf"},MaterialTextureIntegrity3D{694944,"3786b088e981aae562f06b6477972d379cffd09a5cc542ab42f9ffd94f9bcb0e"},MaterialTextureIntegrity3D{2474498,"0e2d613d117d9231aa0aa61f39b19755f891b4ed1d1599a004cb018a8224e039"}};
+  // 保留三層 sampler；森林地表直接引用封存 DDS，不把 packed ORM 當單通道 roughness。
+  const auto forestLayerRoot=assetRoot/"photoreal-cooked/materials/forest-ground-04";
+  terrain.textures.additionalLayers[0]={forestLayerRoot/"slot-0-base.dds",forestLayerRoot/"slot-0-arm.dds",forestLayerRoot/"slot-0-normal.dds",MaterialSurfaceMapEncoding3D::PackedOrm,{MaterialTextureIntegrity3D{5592580,"00850c7c033be2bcb2818c0ab3db91a62c8353eba746daede3c0de373c3e32b4"},MaterialTextureIntegrity3D{5592580,"3427bf0a83e0c33326a207f700305620402fd0fb6c532240f204bcebefeabcc4"},MaterialTextureIntegrity3D{5592580,"56e687b2a208f2eaaf9b0e3670530f0a36e5e88d6e74b26090633daaa4e9db93"}}};
+  terrain.textures.additionalLayers[1]={"poly-haven/rock_surface/1k/base-color.jpg","poly-haven/rock_surface/1k/roughness.jpg","poly-haven/rock_surface/1k/normal-dx.jpg",MaterialSurfaceMapEncoding3D::RoughnessR,{MaterialTextureIntegrity3D{886291,"07edda2bbe4715b01aae2e4bac9f21f204cf4aae37b4733ef01de33281e5e60e"},MaterialTextureIntegrity3D{642680,"ca710d895b01cf323bf00f53194c43504a39d2c964fbfc343c4f45c7d41b10dc"},MaterialTextureIntegrity3D{1161843,"1e1aa5b06f74d22734318cd93ecf49ffe7095c4b2307c5c9b3a4550207c6b1b7"}}};
   if(!showcaseMaterialLibrary_.LoadAll(showcaseMaterials))throw std::runtime_error("Gameplay showcase CC0 PBR material loading failed");
   if(const auto* value=showcaseMaterialLibrary_.Find("ground"))showcaseGroundMaterial_=*value;
   if(const auto* value=showcaseMaterialLibrary_.Find("wood"))showcaseWoodMaterial_=*value;
@@ -329,12 +643,15 @@ void GameplayLabGame::OnStart(Engine& engine){
   if(!showcaseRenderAssets_.LoadProduction(engine,sceneEcs_,cookedManifest,
       showcaseEnvironment_.Descriptors(),showcaseProductionReceipt_)||
      !showcaseProductionReceipt_.photorealActive||
-     showcaseProductionReceipt_.payloadFiles!=54||
-     showcaseProductionReceipt_.profileAssets!=10||
-     showcaseProductionReceipt_.materialSets!=11||
-     showcaseProductionReceipt_.meshLodLevels!=18||
+     showcaseProductionReceipt_.payloadFiles!=72||
+     showcaseProductionReceipt_.profileAssets!=11||
+     showcaseProductionReceipt_.materialSets!=14||
+     showcaseProductionReceipt_.meshParts!=9||
+     showcaseProductionReceipt_.meshLodLevels!=27||
      showcaseProductionReceipt_.iblFiles!=3)
-    throw std::runtime_error("Gameplay photoreal cooked exact-set activation failed");
+     throw std::runtime_error("Gameplay photoreal cooked exact-set activation failed");
+  if((captureLightingIsolation_&4u)&&!engine.ClearEnvironmentLighting3D())
+    throw std::runtime_error("Gameplay capture IBL isolation failed");
   const auto modelRoot=assetRoot/"model-packs";
   const auto materialRoot=assetRoot/"material-packs"/"original";
   auto female=LoadSkinnedModelAssetFileDetailed(modelRoot/"realistic-female"/"realistic-female.aeskin");
@@ -346,9 +663,30 @@ void GameplayLabGame::OnStart(Engine& engine){
     throw std::runtime_error(error);
   characterMaterialEvidence_=BuildGameplayCharacterMaterialEvidence3D(femaleMaterials_.size(),maleMaterials_.size());
   if(!characterMaterialEvidence_.Complete()||femaleMaterials_.size()!=9||maleMaterials_.size()!=9)throw std::runtime_error("Gameplay character material count mismatch");
+  // 明確 opt-in 專用資產路徑；上方 F2/M2 九材質 gate 及武器材質仍保持原契約。
+  std::array<wchar_t,32768> candidateRoot{};
+  const DWORD candidateRootLength=GetEnvironmentVariableW(L"AEVRYND_CANDIDATE7_ROOT",candidateRoot.data(),DWORD(candidateRoot.size()));
+  if(candidateRootLength){
+    if(candidateRootLength>=candidateRoot.size())throw std::runtime_error("Candidate7 root path too long");
+    auto package=LoadCandidate7Package3D(std::filesystem::path(candidateRoot.data()),[](const auto& file,std::string_view expected){std::array<std::byte,32> hash{};return CaptureFileSha256(file,hash)&&CaptureShaHex(hash)==expected;});
+    std::array<CharacterBindBounds3D,4> candidateBounds{};
+    for(std::size_t i=0;i<package.components.size();++i)
+      if(!MeasureCharacterBindBounds3D(package.components[i].asset.model.bindMesh.vertices,candidateBounds[i]))
+        throw std::runtime_error("Candidate7 component bind bounds contract failed");
+    if(!BuildCandidate7PresentationScale3D(candidateBounds,1.8f,candidate7PresentationScale_))
+      throw std::runtime_error("Candidate7 shared presentation scale contract failed");
+    for(std::size_t i=0;i<package.components.size();++i){
+      auto& part=package.components[i];auto& library=candidate7MaterialLibraries_[i];
+      if(!library.Initialize(engine,part.materialRoot)||!library.LoadAll(part.sidecar.materials))throw std::runtime_error("Candidate7 material GPU load failed");
+      for(const auto& name:part.asset.materialSlotNames){const auto* material=library.Find(name);if(!material)throw std::runtime_error("Candidate7 material slot missing");candidate7Materials_[i].push_back(*material);}
+      if(i){candidate7AttachmentModels_[i-1]=std::move(part.asset.model);candidate7AttachmentSubmeshes_[i-1]=std::move(part.asset.submeshes);candidate7AttachmentMeshes_[i-1]=engine.CreateSkinnedMeshResource3D(candidate7AttachmentModels_[i-1]);if(!candidate7AttachmentMeshes_[i-1])throw std::runtime_error("Candidate7 attachment upload failed");}
+    }
+    female.asset=std::move(package.components[0].asset);candidate7Active_=true;
+    if(!captureDirectory_.empty()){std::filesystem::create_directories(captureDirectory_);std::ofstream evidence(captureDirectory_/"candidate7-package-receipt.txt");evidence<<"CANDIDATE7=1\nSOURCE=body59-candidate7+upper94+lower17+hair92\nCOMPONENTS=4\nMATERIALS=6,6,2,4\nJOINTS=53\nLEGACY_NINE_MATERIAL_GATE=UNCHANGED\nPOSE_AND_VISUAL_APPROVAL=NOT_CLAIMED\n";evidence.flush();if(!evidence)throw std::runtime_error("Candidate7 receipt write failed");}
+  }
   if(!femaleAnimation_.Initialize(female.asset,&error)||!maleAnimation_.Initialize(male.asset,&error)||!monsterAnimation_.Initialize(male.asset,&error))
     throw std::runtime_error(error);
-  auto femaleFirstPersonArms=BuildFirstPersonArmsSkinnedMesh3D(female.asset);
+  auto femaleFirstPersonArms=candidate7Active_?BuildCandidate7Arms3D(female.asset):BuildFirstPersonArmsSkinnedMesh3D(female.asset);
   auto maleFirstPersonArms=BuildFirstPersonArmsSkinnedMesh3D(male.asset);
   if(!femaleFirstPersonArms||!maleFirstPersonArms)
     throw std::runtime_error("Gameplay first-person arms derivation failed");
@@ -392,6 +730,14 @@ void GameplayLabGame::OnStart(Engine& engine){
   femaleWeaponMesh_=engine.CreateSkinnedMeshResource3D(femaleWeapon.model);
   maleWeaponMesh_=engine.CreateSkinnedMeshResource3D(maleWeapon.model);
   if(!femaleMesh_||!maleMesh_||!femaleFirstPersonArmsMesh_||!maleFirstPersonArmsMesh_||!femaleWeaponMesh_||!maleWeaponMesh_)throw std::runtime_error("Gameplay character GPU resource creation failed");
+  if(candidate7Active_){
+    auto candidateFootProfile=BuildCandidate7FootProfile3D(femaleModel_,candidate7AttachmentModels_[1],femaleAnimation_.Rig());
+    for(auto& foot:candidateFootProfile.feet)foot.soleOffset*=candidate7PresentationScale_.uniformScale;
+    if(!femaleFootPlacement_.Configure(candidateFootProfile))
+      throw std::runtime_error("Candidate7 foot placement configuration failed");
+  }
+  if(!maleFootPlacement_.Configure(BuildSkinnedAssetFootProfile3D(maleModel_,maleModel_,maleAnimation_.Rig())))
+    throw std::runtime_error("Male asset-derived foot placement configuration failed");
   if(!femaleFootPlacement_.Prepare(femaleModel_.skeleton,femaleAnimation_.Rig(),femaleModel_.skeletonCompatibilityId)||
      !maleFootPlacement_.Prepare(maleModel_.skeleton,maleAnimation_.Rig(),maleModel_.skeletonCompatibilityId))
     throw std::runtime_error("Gameplay foot placement preparation failed");
@@ -399,6 +745,7 @@ void GameplayLabGame::OnStart(Engine& engine){
     femaleAnimation_.SetState(AnimationState3D(state),true);femaleAnimation_.Tick(.173f);
     maleAnimation_.SetState(AnimationState3D(state),true);maleAnimation_.Tick(.173f);
     if(!femaleAnimation_.EvaluateInto(femalePose_)||!maleAnimation_.EvaluateInto(malePose_))throw std::runtime_error("Fallback animation evaluation failed");
+    if(candidate7Active_)ApplyCandidate7ArmRest3D(femaleModel_,femaleAnimation_.Rig(),femalePose_);
     femalePoseHashes_[state]=HashPose(femalePose_);malePoseHashes_[state]=HashPose(malePose_);
   }
   femaleAnimation_.SetState(AnimationState3D::Idle,true);maleAnimation_.SetState(AnimationState3D::Idle,true);monsterAnimation_.SetState(AnimationState3D::Idle,true);
@@ -406,6 +753,7 @@ void GameplayLabGame::OnStart(Engine& engine){
   // 帶入首個 God camera search，也不可等待首個 OnRender 才修正。
   if(!femaleAnimation_.EvaluateInto(femalePose_)||!maleAnimation_.EvaluateInto(malePose_)||
      !monsterAnimation_.EvaluateInto(monsterPose_))throw std::runtime_error("Gameplay authoritative idle pose initialization failed");
+  if(candidate7Active_)ApplyCandidate7ArmRest3D(femaleModel_,femaleAnimation_.Rig(),femalePose_);
   scene_.SetBoxMesh(boxMesh_);
   scene_.Reserve({0,64,256,512,256});
   paletteUi_->SetLayout({18,502,344,150},4);
@@ -521,6 +869,8 @@ void GameplayLabGame::OnStop(Engine &engine) {
   playerHistory_.Invalidate();
   monsterHistory_.Invalidate();
   femaleMaterialLibrary_.Shutdown();
+  for(auto& library:candidate7MaterialLibraries_)library.Shutdown();
+  for(auto& mesh:candidate7AttachmentMeshes_)engine.DestroySkinnedMesh3D(mesh.handle);
   maleMaterialLibrary_.Shutdown();
   engine.DestroySkinnedMesh3D(femaleMesh_.handle);
   engine.DestroySkinnedMesh3D(maleMesh_.handle);
@@ -632,7 +982,9 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       if(!SkinModelInto(cameraSubjectModel,cameraSubjectPose,skinning_,cameraPoseVisualMesh_)){
         cameraOcclusionPolicy_.Reset();cameraBuildCacheValid_=false;camera_=MakeFirstPersonCamera(feet+Vec3{0,rules_.CharacterHeight()-.12f,0},yaw_,pitch_);break;
       }
-      const MeshBounds3D currentVisualBounds=cameraPoseVisualMesh_.Bounds();
+      MeshBounds3D currentVisualBounds=cameraPoseVisualMesh_.Bounds();
+      if(candidate7Active_&&rules_.Female())currentVisualBounds=TransformBounds(currentVisualBounds,
+        {{0,candidate7PresentationScale_.modelOriginWorldYOffset,0},{},candidate7PresentationScale_.ScaleVector()});
       const auto mergeBounds=[](MeshBounds3D left,MeshBounds3D right){const Vec3 minimum{(std::min)(left.center.x-left.extents.x,right.center.x-right.extents.x),(std::min)(left.center.y-left.extents.y,right.center.y-right.extents.y),(std::min)(left.center.z-left.extents.z,right.center.z-right.extents.z)},maximum{(std::max)(left.center.x+left.extents.x,right.center.x+right.extents.x),(std::max)(left.center.y+left.extents.y,right.center.y+right.extents.y),(std::max)(left.center.z+left.extents.z,right.center.z+right.extents.z)},center=(minimum+maximum)*.5f,extents=(maximum-minimum)*.5f;return MeshBounds3D{center,Length(extents),extents};};
       const auto boundsChanged=[](MeshBounds3D left,MeshBounds3D right){return Length(left.center-right.center)>.0001f||Length(left.extents-right.extents)>.0001f;};
       const auto playerCameraAnimation=(rules_.Female()?femaleAnimation_:maleAnimation_).State(),companionCameraAnimation=monsterAnimation_.State();
@@ -644,7 +996,7 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
           cameraOcclusionPolicy_.Reset();cameraBuildCacheValid_=false;camera_=MakeFirstPersonCamera(feet+Vec3{0,rules_.CharacterHeight()-.12f,0},yaw_,pitch_);break;
         }
         companionPresentation=GameplayShowcaseMonsterPresentationPosition3D(combat_->Monster().position,yaw_,combat_->Monster().alive);
-        const Transform3D companionTransform{companionPresentation,{0,-.8f,0},{1.08f,1.08f,1.08f}};companionEnvelope=cameraCompanionVisualMesh_.Bounds();if(cameraBuildCacheValid_&&cameraBuildCacheHasCompanion_&&companionCameraAnimation==cameraBuildCacheCompanionAnimation_)companionEnvelope=mergeBounds(cameraBuildCacheCompanionBounds_,companionEnvelope);
+        const Transform3D companionTransform=GameplayShowcaseMonsterTransform3D(companionPresentation,feet);companionEnvelope=cameraCompanionVisualMesh_.Bounds();if(cameraBuildCacheValid_&&cameraBuildCacheHasCompanion_&&companionCameraAnimation==cameraBuildCacheCompanionAnimation_)companionEnvelope=mergeBounds(cameraBuildCacheCompanionBounds_,companionEnvelope);
         for(unsigned corner=0;corner<8;++corner){auto& vertex=companionProjectionHull[corner];vertex.x=companionEnvelope.center.x+(corner&1?companionEnvelope.extents.x:-companionEnvelope.extents.x);vertex.y=companionEnvelope.center.y+(corner&2?companionEnvelope.extents.y:-companionEnvelope.extents.y);vertex.z=companionEnvelope.center.z+(corner&4?companionEnvelope.extents.z:-companionEnvelope.extents.z);}
         companionBounds=TransformBounds(companionEnvelope,companionTransform);compositionActors[0]={companionBounds.center,companionBounds.extents,companionProjectionHull,CreateTransformMatrix(companionTransform.position,companionTransform.rotation,companionTransform.scale)};compositionActorCount=1;
       }
@@ -716,9 +1068,12 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
     cameraOcclusionPolicy_.Reset();
     {
       const SkinnedModel3D& godSubjectModel=rules_.Female()?femaleModel_:maleModel_;
-      const AnimationPose3D& godSubjectPose=rules_.Female()?femalePose_:malePose_;
+      // 與 OnRender 共用凍結條件及姿勢選擇，暖機的即時動畫不得漂移相機權威證據。
+      const bool useFrozenPose=GameplayUseFrozenPose3D(capturePoseFrozen_,temporalFixtureWarmupFrames_!=0,capturePairFrozen_,captureTemporalWarmupActive_,captureScenarioClock_.ReadyToStage());
+      const auto presentationPoses=SelectGameplayPresentationPoses3D(useFrozenPose,femalePose_,malePose_,monsterPose_,captureFrozenFemalePose_,captureFrozenMalePose_,captureFrozenMonsterPose_);
+      const AnimationPose3D& godSubjectPose=rules_.Female()?*presentationPoses.female:*presentationPoses.male;
       if(!SkinModelInto(godSubjectModel,godSubjectPose,skinning_,godCameraPoseVisualMesh_)||!godCameraPoseVisualMesh_.Valid())throw std::runtime_error("Gameplay god camera posed mesh unavailable");
-      const Matrix4 godPlayerWorld=CreateTransformMatrix(feet,{0,yaw_,0},{1,1,1});
+      const Matrix4 godPlayerWorld=GameplayPlayerWorld3D(candidate7Active_,rules_.Female(),candidate7PresentationScale_,feet,yaw_);
       const GameplayGodProductionGeometry3D godGeometry{showcaseGrassHighMesh_.bounds,showcaseRiverMesh_.bounds,boxMesh_.bounds,showcaseCottageFrontMesh_.bounds,showcaseCottageBackMesh_.bounds,showcaseCottageSideMesh_.bounds,showcaseCottageRoofMesh_.bounds};
       // translated layout 仍須重跑完整世界／碰撞／地形閉包；通過後即可重新定錨，
       // 距離或角色性別本身不得迫使相同內容再次執行昂貴全域搜尋。
@@ -736,12 +1091,12 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       if(!godCameraBuildCacheValid_||!validated.valid){
         godCameraAuthorityReceipt_=BuildGameplayAuthoritativeGodCamera3D({feet,yaw_,pitch_},showcaseEnvironment_.Descriptors(),godGeometry,godCameraPoseVisualMesh_.vertices,godCameraPoseVisualMesh_.indices,
           [&](Camera3D camera){return ConstrainThirdPersonCamera(camera,focus,collisions_,.25f);},
-          [&](Camera3D camera){return ConstrainThirdPersonCamera(camera,focus,showcaseTerrain_,.25f);});
+          [&](Camera3D camera){return ConstrainThirdPersonCamera(camera,focus,showcaseTerrain_,.25f);},&godPlayerWorld);
         const auto& selectedGodCamera=godCameraAuthorityReceipt_.layout;
         godCameraBuildCache_=selectedGodCamera;
         if(!godCameraBuildCache_.valid){
           const auto expected=captureIndex_<GameplayCaptureExpectations3D.size()?GameplayCaptureExpectations3D[captureIndex_].camera:GameplayCaptureCamera3D::First;
-          if(GameplayGodCameraRequiresCaptureLayout3D(captureScenarioClock_.ReadyToStage(),expected)||!selectedGodCamera.rasterCandidates||selectedGodCamera.playerCoverage<=0.f)throw std::runtime_error(std::format("Gameplay god camera found no collision-safe visible production LOD transition layout: capture={} sex={} animation={} poseHash={} focus=[{},{},{}] feet=[{},{},{}] yaw={} evaluated={} coarse={} raster={} maxActualCoverage={} candidateDistance={} candidateAzimuth={} candidateElevation={} candidateFov={} candidateRiver={} candidateBuilding={} candidateEdge={} candidateLod={} rejectActual={} rejectLod={} rejectWorld={} rejectBuilding={}",captureIndex_<Names.size()?std::filesystem::path(Names[captureIndex_]).string():"out-of-range",rules_.Female()?"female":"male",unsigned((rules_.Female()?femaleAnimation_:maleAnimation_).State()),HashPose(godSubjectPose),focus.x,focus.y,focus.z,feet.x,feet.y,feet.z,yaw_,selectedGodCamera.evaluatedCandidates,selectedGodCamera.coarseCandidates,selectedGodCamera.rasterCandidates,selectedGodCamera.maximumActualTriangleCoverage,selectedGodCamera.distance,selectedGodCamera.azimuth,selectedGodCamera.elevation,selectedGodCamera.camera.projection.verticalFieldOfView,selectedGodCamera.riverCoverage,selectedGodCamera.buildingUnion,selectedGodCamera.buildingEdgeMask,selectedGodCamera.lodTransitions,selectedGodCamera.rejectedActualCoverage,selectedGodCamera.rejectedLod,selectedGodCamera.rejectedWorld,selectedGodCamera.rejectedBuilding));
+          if(GameplayGodCameraRequiresCaptureLayout3D(captureScenarioClock_.ReadyToStage(),expected)||!selectedGodCamera.rasterCandidates||selectedGodCamera.playerCoverage<=0.f)throw std::runtime_error(std::format("Gameplay god camera found no collision-safe visible production LOD transition layout: capture={} sex={} animation={} poseHash={} focus=[{},{},{}] feet=[{},{},{}] yaw={} evaluated={} coarse={} raster={} maxActualCoverage={} candidateCoverage={} candidateDistance={} candidateAzimuth={} candidateElevation={} candidateOrthoHeight={} candidateRiver={} candidateBuilding={} candidateMaximumBuildingPart={} candidateRoofCoverage={} candidateBuildingComponents={} candidateWorldDescriptors={} candidateEdge={} candidateLod={} rejectActual={} rejectLod={} rejectWorld={} rejectBuilding={}",captureIndex_<Names.size()?std::filesystem::path(Names[captureIndex_]).string():"out-of-range",rules_.Female()?"female":"male",unsigned((rules_.Female()?femaleAnimation_:maleAnimation_).State()),HashPose(godSubjectPose),focus.x,focus.y,focus.z,feet.x,feet.y,feet.z,yaw_,selectedGodCamera.evaluatedCandidates,selectedGodCamera.coarseCandidates,selectedGodCamera.rasterCandidates,selectedGodCamera.maximumActualTriangleCoverage,selectedGodCamera.playerCoverage,selectedGodCamera.distance,selectedGodCamera.azimuth,selectedGodCamera.elevation,selectedGodCamera.camera.projection.orthographicHeight,selectedGodCamera.riverCoverage,selectedGodCamera.buildingUnion,selectedGodCamera.maximumBuildingPart,selectedGodCamera.roofCoverage,selectedGodCamera.visibleBuildingComponents,selectedGodCamera.visibleWorldDescriptors,selectedGodCamera.buildingEdgeMask,selectedGodCamera.lodTransitions,selectedGodCamera.rejectedActualCoverage,selectedGodCamera.rejectedLod,selectedGodCamera.rejectedWorld,selectedGodCamera.rejectedBuilding));
           // 預 capture 操作回放可使用已經過碰撞/地形約束的最佳視角；不得冒充正式 God 構圖證據。
           camera_=selectedGodCamera.camera;godCameraBuildCacheValid_=false;break;
         }
@@ -830,6 +1185,7 @@ void GameplayLabGame::PublishFirstPersonPose(float simulationDelta) {
   input.character=female?&femaleModel_:&maleModel_;input.rig=&animation.Rig();input.sourcePose=&source;
   input.sword=female?&femaleSwordGeometry_:&maleSwordGeometry_;input.camera=camera_;
   input.state=animation.State();input.phase=animation.NormalizedPhase();input.enterBlend=blend;
+  if(candidate7Active_&&female){input.shoulderCenter=Candidate7ShoulderCenter3D;input.readyGrip=Candidate7ReadyGrip3D;}
   if(EvaluateGameplayFirstPersonPose3D(input,firstPersonPoseWorkspace_,firstPersonPose_.output)!=GameplayFirstPersonPoseStatus3D::Ready)
     throw std::runtime_error("First-person fixed-step natural pose publication failed");
   firstPersonPose_.state=input.state;firstPersonPose_.phase=input.phase;firstPersonPose_.enterBlend=blend;
@@ -987,7 +1343,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     Matrix4 handSocket{};
     Vec3 trajectoryTip{};
     const auto& trajectorySword=rules_.Female()?femaleSwordGeometry_:maleSwordGeometry_;
-    const Matrix4 trajectoryWorld=CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1});
+    const Matrix4 trajectoryWorld=GameplayPlayerWorld3D(candidate7Active_,rules_.Female(),candidate7PresentationScale_,controller_.Position(),yaw_);
     if(!trajectoryAnimation.EvaluateInto(trajectoryPose)||
        !CharacterSocketTransform3D(trajectoryModel.skeleton,trajectoryAnimation.Rig(),HumanoidJoint3D::RightHand,trajectoryPose,trajectoryWorld,handSocket)||
        !ResolveGameplaySwordTipWorld3D(trajectorySword,handSocket,trajectoryTip)||
@@ -1001,6 +1357,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   // Camera search 與 renderer 共用同一份 fixed-tick pose。呈現幀不得成為 pose 的作者。
   if(!femaleAnimation_.EvaluateInto(femalePose_)||!maleAnimation_.EvaluateInto(malePose_)||
      !monsterAnimation_.EvaluateInto(monsterPose_))throw std::runtime_error("Gameplay authoritative fixed-tick pose evaluation failed");
+  if(candidate7Active_)ApplyCandidate7ArmRest3D(femaleModel_,femaleAnimation_.Rig(),femalePose_);
   if(combat_->CurrentAttack()!=Attack3D::None&&
      (captureDirectory_.empty()||captureIndex_!=4)){
     const float error=std::abs(femaleAnimation_.NormalizedPhase()-combat_->NormalizedAttackPhase());
@@ -1015,11 +1372,11 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   // 固定模擬順序：動畫狀態/Tick -> pose Evaluate -> physics/sync -> 足部貼地。
   // Render 與 GPU readback 等待路徑只能讀取這份權威姿勢，不得重新求值。
   {
-    const Matrix4 playerWorld=CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1});
+    const Matrix4 playerWorld=GameplayPlayerWorld3D(candidate7Active_,rules_.Female(),candidate7PresentationScale_,controller_.Position(),yaw_);
     FootPlacementFrame3D footFrame{};
     footFrame.collisionWorld=&collisions_;
     footFrame.modelToWorld=playerWorld;
-    footFrame.worldToModel=CreateRotationMatrix({0,-yaw_,0})*CreateTranslationMatrix(controller_.Position()*-1.f);
+    footFrame.worldToModel=GameplayPlayerWorldInverse3D(candidate7Active_,rules_.Female(),candidate7PresentationScale_,controller_.Position(),yaw_);
     footFrame.deltaTime=gameplayDelta;
     authorityFootPlacementCameraDistanceInput_=Length(camera_.position-controller_.Position());
     footFrame.cameraDistance=authorityFootPlacementCameraDistanceInput_;
@@ -1038,7 +1395,10 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   UpdateCamera(engine);
   PublishFirstPersonPose(gameplayDelta);
   if(!captureDirectory_.empty()&&gameplayTick==24){
-    if(activeCaptureRoute_.Active()||rules_.Camera()!=CameraMode::GodView||camera_.projection.mode!=ProjectionMode::Orthographic||!godCameraAuthorityReceipt_.valid||CaptureCameraHash(camera_)!=godCameraAuthorityReceipt_.cameraHash)throw std::runtime_error("Gameplay prelude God camera/projection authority closure failed");
+    const auto cameraHash=CaptureCameraHash(camera_);
+    if(activeCaptureRoute_.Active()||rules_.Camera()!=CameraMode::GodView||camera_.projection.mode!=ProjectionMode::Orthographic||!godCameraAuthorityReceipt_.valid||cameraHash!=godCameraAuthorityReceipt_.cameraHash)
+      throw std::runtime_error(std::format("Gameplay prelude God camera/projection authority closure failed: activeRoute={} camera={} projection={} receiptValid={} layoutValid={} cameraHash={} receiptCameraHash={} subjectPoseHash={} playerCoverage={} rasterCandidates={}",
+        activeCaptureRoute_.Active(),unsigned(rules_.Camera()),unsigned(camera_.projection.mode),godCameraAuthorityReceipt_.valid,godCameraAuthorityReceipt_.layout.valid,cameraHash,godCameraAuthorityReceipt_.cameraHash,godCameraAuthorityReceipt_.subjectPoseHash,godCameraAuthorityReceipt_.layout.playerCoverage,godCameraAuthorityReceipt_.layout.rasterCandidates));
     captureReplayInteractionCamera_=camera_;captureReplayInteractionCameraInputHash_=godCameraAuthorityReceipt_.inputHash;captureReplayInteractionCameraSubjectPoseHash_=godCameraAuthorityReceipt_.subjectPoseHash;
   }
   // Interaction camera/ray只可在final rendered camera完成後建立。優先權：frozen God replay、
@@ -1097,9 +1457,13 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   scene_.Clear();
   scene_.SetBoxMesh(boxMesh_);
   AddShowcaseEnvironment();
-  scene_.MaterialBox({0, 1.5f, -12}, {8, 3, 1.2f},
-                     {{.24f, .13f, .08f, 1}, {.48f, 0, 0, 1}, false},
-                     {{GameplayWorldIdentityHigh, 1}, 1});
+  // 物件面板的牆、堆疊剛體與預覽方塊是互動驗證道具，不是森林內容。
+  // 正式環境／戰鬥擷取只保留其權威物理狀態，避免測試幾何污染展示畫面。
+  const bool showPaletteFixtures = captureDirectory_.empty() || captureIndex_ == 9;
+  if (showPaletteFixtures)
+    scene_.MaterialBox({0, 1.5f, -12}, {8, 3, 1.2f},
+                       {{.24f, .13f, .08f, 1}, {.48f, 0, 0, 1}, false},
+                       {{GameplayWorldIdentityHigh, 1}, 1});
   std::uint64_t worldBodyIndex{};
   for (auto handle : bodies_) {
     if (const auto *b = physics_.GetBody(handle))
@@ -1109,15 +1473,18 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
                          {{GameplayWorldIdentityHigh, 2 + worldBodyIndex}, 1});
     ++worldBodyIndex;
   }
-  for (const auto &placed : rules_.Entities())
-    if (const auto *body = physics_.GetBody(palette_->Body(placed.id)))
-      scene_.MaterialBox(
-          body->settings.transform.position, body->settings.colliderExtents * 2,
-          {{placed.id <= 18 ? .18f : .8f, placed.id <= 18 ? .28f : .42f,
-            placed.id <= 18 ? .38f : .12f, 1},
-           {.32f, .08f, 0, 1},
-           false},
-          {{GameplayPlacedIdentityHigh, placed.id}, 1});
+  if (showPaletteFixtures) {
+    for (const auto &placed : rules_.Entities()) {
+      if (const auto *body = physics_.GetBody(palette_->Body(placed.id)))
+        scene_.MaterialBox(
+            body->settings.transform.position, body->settings.colliderExtents * 2,
+            {{placed.id <= 18 ? .18f : .8f, placed.id <= 18 ? .28f : .42f,
+              placed.id <= 18 ? .38f : .12f, 1},
+             {.32f, .08f, 0, 1},
+             false},
+            {{GameplayPlacedIdentityHigh, placed.id}, 1});
+    }
+  }
   const auto preview = palette_->Preview();
   if (preview.active)
     scene_.MaterialBox(
@@ -1126,7 +1493,7 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
          {.7f, 0, 0, .5f},
          false},
         {{GameplayPreviewIdentityHigh, 1}, 1});
-  if (captureIndex_ >= 9) {
+  if (captureIndex_ == 9) {
     if (const auto valid = captureValidGhost_)
       scene_.MaterialBox(*valid, {.9f, .9f, .9f},
                          {{.02f, 1.f, .05f, 1.f}, {.1f, 0, 0, 1.f}, false},
@@ -1149,8 +1516,9 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
     // 超過門檻才逐一移除六個建築 ID，避免「寫回 1」製造假的 fingerprint 差異。
     const auto referencePlan=GameplayReferenceBuildingOverridePlan(captureEffectiveBuildingUnion_[captureIndex_]);
     const float referenceBuildingOpacity=referencePlan.opacity;
-    if(referencePlan.Removes())for(std::uint64_t stableLow=151;stableLow<=156;++stableLow){const std::size_t part=std::size_t(stableLow-151);captureReferenceRequestedById_[captureIndex_][part]=1;captureReferenceAppliedOpacityById_[captureIndex_][part]=referenceBuildingOpacity;
-      const auto update=scene_.SetObjectOcclusionOpacity({{EnvironmentPartitionId,stableLow},1},referenceBuildingOpacity);
+    const auto buildingIdentities=BuildGameplayBuildingIdentities3D(showcaseEnvironment_.Descriptors(),EnvironmentPartitionId);
+    if(referencePlan.Removes())for(std::size_t part=0;part<buildingIdentities.size();++part){captureReferenceRequestedById_[captureIndex_][part]=1;captureReferenceAppliedOpacityById_[captureIndex_][part]=referenceBuildingOpacity;
+      const auto update=scene_.SetObjectOcclusionOpacity(buildingIdentities[part],referenceBuildingOpacity);
       captureReferenceMatchedById_[captureIndex_][part]=std::uint8_t(update.matchedStatic+update.matchedMultipart+update.matchedSkinned);captureReferenceMissingById_[captureIndex_][part]=update.missing?1u:0u;captureReferenceConflictById_[captureIndex_][part]=update.generationConflicts?1u:0u;
       if(!update||update.generationConflicts||update.missing)throw std::runtime_error("Gameplay character reference visibility override failed closed");
       matched+=std::uint32_t(update.matchedStatic+update.matchedMultipart+update.matchedSkinned);
@@ -1160,7 +1528,7 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   DrawList &draw = engine.Draw();
   const auto showcaseLighting=rules_.Lighting()==LightingPhase::Day?ShowcaseLightingProfile3D::Day:rules_.Lighting()==LightingPhase::Dusk?ShowcaseLightingProfile3D::Dusk:ShowcaseLightingProfile3D::Night;
   const auto lightingState=showcaseEnvironment_.EvaluateLighting(showcaseLighting);
-  engine.SetClearColor(lightingState.sky);showcaseEnvironment_.ApplyHighProfile(draw);if(temporalFixtureCloudOff_){auto clouds=draw.VolumetricClouds();clouds.enabled=false;draw.SetVolumetricClouds(clouds);}if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra)draw.SetDirectionalShadowCascades({4,4096,.1f,220.f,.70f,.10f});showcaseEnvironment_.ApplyLighting(draw,showcaseLighting,camera_.position);
+  engine.SetClearColor(lightingState.sky);showcaseEnvironment_.ApplyHighProfile(draw);if(temporalFixtureCloudOff_){auto clouds=draw.VolumetricClouds();clouds.enabled=false;draw.SetVolumetricClouds(clouds);}if(captureLightingIsolation_&1u)draw.SetDirectionalShadowMapEnabled(false);if(captureLightingIsolation_&2u){auto ambientOcclusion=draw.AmbientOcclusion();ambientOcclusion.enabled=false;draw.SetAmbientOcclusion(ambientOcclusion);}if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra)draw.SetDirectionalShadowCascades({4,4096,.1f,220.f,.70f,.10f});showcaseEnvironment_.ApplyLighting(draw,showcaseLighting,camera_.position);
   // 曝光直接使用場景型別狀態，避免兩份時段策略發生漂移。
   draw.SetExposureCompensation(lightingState.exposureEv);
   const auto grabbed = palette_->Grabbed();
@@ -1185,6 +1553,8 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   }
   const auto sceneStats=scene_.Submit(draw, camera_, {1280, 720},
                 {true, true, {true, .02f, .2f, 80, 256}, {150, .1f}});
+  if(capturePreparedIndex_&&*capturePreparedIndex_==captureIndex_)
+    capturePreparedSceneSubmitted_=true;
   if(captureIndex_<Names.size()){
     // 收據當前正式相機的英雄場景可視性與LOD混合，不反向修改相機或角色。
     captureEnvironmentVisibility_[captureIndex_]=showcaseEnvironment_.EvaluateCameraVisibility(camera_,{1280,720});
@@ -1248,7 +1618,8 @@ void GameplayLabGame::RequestCapturePhase(Engine& engine){
   else{FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture phase index was unsupported");}
   const auto renderer=engine.GetRendererStats();captureSuccess_=renderer.successfulFrameCaptures;captureReject_=renderer.rejectedFrameCaptures;
   const bool depthRequested=engine.RequestDepthReadback3D(capturePairMetadata_),objectIdRequested=engine.RequestObjectIdReadback3D(capturePairMetadata_),frameRequested=engine.CaptureNextFrame3D(path);
-  const bool hdrRequested=!effective||engine.RequestLinearHdrReadback3D(capturePairMetadata_);
+  const bool hdrRequired=effective||(captureRawHdrDiagnostic_&&capturePairMetadata_.sequence.index==0);
+  const bool hdrRequested=!hdrRequired||engine.RequestLinearHdrReadback3D(capturePairMetadata_);
   if(!GameplayCapturePhaseRequestsAtomic3D(depthRequested,objectIdRequested,frameRequested)||!hdrRequested){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay color/object-ID/depth/HDR phase requests were not atomic");}
   if(effective){
     if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::SceneBound||gameplayHdrInFlight_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay HDR allowed only one effective-phase readback in flight");}
@@ -1274,17 +1645,21 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     const Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
     switch(descriptor.kind){
     case ShowcaseSceneKind3D::Terrain:
-      if(const auto* source=showcaseRenderAssets_.ProductionMaterial("forest_ground_04")){auto material=*source;material.tint={1,1,1,1};material.normalScale=1.18f;material.textureScale=1.f;const auto before=scene_.MeshCount();const Transform3D terrainTransform{descriptor.position,{0,descriptor.yaw,0},{1,1,1}};scene_.Mesh(showcaseTerrainMesh_,terrainTransform,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
+      if(showcaseGroundMaterial_.textures){auto material=showcaseGroundMaterial_;material.tint=ShowcaseForestTerrainTint3D();material.materialClass=MaterialClass3D::Terrain;material.normalScale=1.18f;material.textureScale=ShowcaseForestTerrainTextureScale3D();const auto before=scene_.MeshCount();const Transform3D terrainTransform{descriptor.position,{0,descriptor.yaw,0},{1,1,1}};scene_.Mesh(showcaseTerrainMesh_,terrainTransform,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
     case ShowcaseSceneKind3D::Water:
       {const auto before=scene_.MeshCount();scene_.Mesh(showcaseRiverMesh_,transform,waterMaterial(showcaseEnvironment_.WaterSurfaceSettings()),{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
     case ShowcaseSceneKind3D::Tree:
-      {std::string_view asset;if(descriptor.meshAsset=="poly-haven/island_tree_01/cooked-lod")asset="island_tree_01";else if(descriptor.meshAsset=="poly-haven/dead_tree_trunk_02/cooked-lod")asset="dead_tree_trunk_02";if(!asset.empty())submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,asset,transform,renderIdentity,lodObjectIndex,&productionChains);}break;
+      {const std::string_view asset=ResolveShowcasePhotorealAssetId3D(descriptor);if(!asset.empty())submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,asset,transform,renderIdentity,lodObjectIndex,&productionChains);}break;
     case ShowcaseSceneKind3D::Grass:
-      if(const auto* source=showcaseRenderAssets_.ProductionMaterial("Ground108")){auto material=*source;material.materialClass=MaterialClass3D::Foliage;material.tint={.23f,.39f,.15f,1};material.surface.roughness=.88f;material.surface.metallic=0;material.surface.emissive=0;material.normalScale=.72f;material.doubleSided=true;const auto before=scene_.MeshCount();scene_.MeshLod(showcaseGrassHighMesh_,showcaseGrassLowMesh_,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
+      if(const auto* source=showcaseRenderAssets_.ProductionMaterial(ShowcaseForestGrassMaterialAsset3D(descriptor.materialAsset))){const auto material=ShowcaseForestGrassMaterial3D(*source,descriptor.materialAsset,descriptor.castsShadow);const auto before=scene_.MeshCount();scene_.MeshLod(showcaseGrassHighMesh_,showcaseGrassLowMesh_,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
     case ShowcaseSceneKind3D::Rock:
       submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,descriptor.meshAsset.find("boulder_01")!=std::string::npos?"boulder_01":"coastal_cliff_01",transform,renderIdentity,lodObjectIndex,&productionChains);break;
     case ShowcaseSceneKind3D::Building:
-      {const bool roof=descriptor.meshAsset.find("roof")!=std::string::npos;const auto* source=showcaseRenderAssets_.ProductionMaterial(roof?"RoofingTiles014B":"Bricks100");if(!source)break;auto material=*source;material.normalScale=roof?1.15f:1.f;material.textureScale=roof?.38f:.3f;const auto before=scene_.MeshCount();
+      {const bool roof=descriptor.meshAsset.find("roof")!=std::string::npos;const auto* source=showcaseRenderAssets_.ProductionMaterial(roof?"RoofingTiles014B":"Bricks100");if(!source)break;auto material=*source;material.normalScale=roof?1.15f:GameplayCottageWallNormalScale3D;material.textureScale=roof?.38f:.3f;
+       // 每個 facade box 都有自己的 0..1 UV；直接使用會令磚紋在門窗分段處
+       // 重新起算並改變磚塊尺寸。牆面改由既有世界空間三向投影連續取樣，
+       // 屋瓦仍保留沿坡面建好的 UV，避免以單一映射策略犧牲另一種材質。
+       material.useUv=GameplayCottageMaterialUsesUv3D(roof);const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
        auto glass=material;glass.textures={};glass.tint={.035f,.075f,.095f,1};glass.surface={.26f,.04f,.025f,1};glass.textureScale=1;glass.normalScale=0;
        // 裝飾件沿用所屬建築的正式材質貼圖識別，避免同一物件跨材質群組造成不穩定排序。
@@ -1349,22 +1724,24 @@ bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
 }
 
 bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bool raw,bool reference){
-  if(index>=Names.size())return false;
-  const bool effective=!raw&&!reference;
-  std::optional<ProductionReadbackBundle3D> productionBundle;std::optional<ObjectIdCapture3D> objectIdStorage;std::optional<DepthCapture3D> depthStorage;if(effective)productionBundle=engine.TakeProductionReadbackBundle3D();else{objectIdStorage=engine.TakeObjectIdReadback3D();depthStorage=engine.TakeDepthReadback3D();}
-  const ObjectIdCapture3D* capture=effective&&productionBundle?&productionBundle->ObjectId():objectIdStorage?&*objectIdStorage:nullptr;const DepthCapture3D* depth=effective&&productionBundle?&productionBundle->Depth():depthStorage?&*depthStorage:nullptr;const LinearHdrReadback3D* hdr=effective&&productionBundle?&productionBundle->Hdr():nullptr;
-  if(!capture||!depth||(effective&&!hdr)){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=no-paired-readback object="<<bool(capture)<<" depth="<<bool(depth)<<" hdr="<<bool(hdr);return false;}
+  captureReadbackFailure_="unclassified-readback-failure";
+  const auto failReadback=[&](std::string reason){captureReadbackFailure_=std::move(reason);std::ofstream output(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc);output<<"index="<<index<<" raw="<<raw<<" reference="<<reference<<" reason="<<captureReadbackFailure_;output.flush();return false;};
+  if(index>=Names.size())return failReadback("capture-index-out-of-range");
+  const bool effective=!raw&&!reference,rawHdrDiagnostic=raw&&captureRawHdrDiagnostic_,bundled=effective||rawHdrDiagnostic;
+  std::optional<ProductionReadbackBundle3D> productionBundle;std::optional<ObjectIdCapture3D> objectIdStorage;std::optional<DepthCapture3D> depthStorage;if(bundled)productionBundle=engine.TakeProductionReadbackBundle3D();else{objectIdStorage=engine.TakeObjectIdReadback3D();depthStorage=engine.TakeDepthReadback3D();}
+  const ObjectIdCapture3D* capture=bundled&&productionBundle?&productionBundle->ObjectId():objectIdStorage?&*objectIdStorage:nullptr;const DepthCapture3D* depth=bundled&&productionBundle?&productionBundle->Depth():depthStorage?&*depthStorage:nullptr;const LinearHdrReadback3D* hdr=bundled&&productionBundle?&productionBundle->Hdr():nullptr;
+  if(!capture||!depth||(bundled&&!hdr)){return failReadback("no-paired-readback object="+std::to_string(bool(capture))+" depth="+std::to_string(bool(depth))+" hdr="+std::to_string(bool(hdr)));}
   if(effective){
     constexpr std::uint64_t MaximumEngineHdrBytes=16ull*1024ull*1024ull;
     if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::AwaitGpu||gameplayHdrInFlight_!=1||!hdr->Complete()||hdr->receipt.requestMetadata!=capture->requestMetadata||hdr->receipt.rasterProvenance!=capture->rasterProvenance||hdr->receipt.determinism!=capture->determinism||hdr->receipt.requestMetadata!=depth->requestMetadata||hdr->receipt.rasterProvenance!=depth->rasterProvenance||hdr->receipt.determinism!=depth->determinism||hdr->receipt.requestMetadata!=capturePairMetadata_||hdr->receipt.requestMetadata.sequence.index!=1||hdr->receipt.requestMetadata.sequence.token!=captureSequenceToken_||hdr->receipt.rawHalfByteCount>MaximumEngineHdrBytes){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=hdr-frame-bound-pair-mismatch state="<<GameplayHdrStateName3D(gameplayHdrCaptureStates_[index])<<" bytes="<<hdr->receipt.rawHalfByteCount;return false;}
-    if(capture->materialBindings.empty()||capture->materialBindings.size()!=capture->tokenMap.size())return false;
-    for(std::size_t bindingIndex=0;bindingIndex<capture->materialBindings.size();++bindingIndex){const auto& binding=capture->materialBindings[bindingIndex];if(!binding.Complete()||binding.order!=bindingIndex||binding.identity!=capture->tokenMap[bindingIndex])return false;}
+    if(capture->materialBindings.empty()||capture->materialBindings.size()!=capture->tokenMap.size())return failReadback("material-binding-count-mismatch");
+    for(std::size_t bindingIndex=0;bindingIndex<capture->materialBindings.size();++bindingIndex){const auto& binding=capture->materialBindings[bindingIndex];if(!binding.Complete()||binding.order!=bindingIndex||binding.identity!=capture->tokenMap[bindingIndex])return failReadback("material-binding-identity-mismatch");}
     gameplayHdrEnginePeakBytes_=std::max(gameplayHdrEnginePeakBytes_,std::uint64_t(hdr->receipt.rawHalfByteCount));gameplayHdrInFlight_=0;gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Taken;
   }
   const std::uint32_t diagnosticPhase=capture->requestMetadata.sequence.index;
-  if(diagnosticPhase>=captureIntegrityDiagnostics_[index].size())return false;
+  if(diagnosticPhase>=captureIntegrityDiagnostics_[index].size())return failReadback("diagnostic-phase-out-of-range");
   captureIntegrityDiagnostics_[index][diagnosticPhase]={index,diagnosticPhase,capture->determinism,depth->determinism,true};
-  if(!WriteCaptureIntegrityDiagnostic())return false;
+  if(!WriteCaptureIntegrityDiagnostic())return failReadback("integrity-diagnostic-publication-failed");
   if(!capture->Complete()||!depth->Complete()||depth->width!=capture->width||depth->height!=capture->height||!ValidateGameplayFrameBoundRenderPair3D(capture->determinism,depth->determinism,capture->rasterProvenance,depth->rasterProvenance,capture->requestMetadata,depth->requestMetadata)){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=typed-readback-pair-mismatch objectComplete="<<capture->Complete()<<" depthComplete="<<depth->Complete()<<" objectFrame="<<capture->rasterProvenance.frameSerial<<" depthFrame="<<depth->rasterProvenance.frameSerial<<" determinismExact="<<(depth->determinism==capture->determinism)<<" renderExact="<<(depth->determinism.render==capture->determinism.render);WriteCaptureIntegrityDiagnostic(true);return false;}
   const auto& render=capture->determinism.render;if(!render.Complete()||render.frameSerial!=capture->rasterProvenance.frameSerial||render.sceneDrawRevision!=capture->requestMetadata.drawListRevision){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=frame-bound-render-provenance frame="<<render.frameSerial<<":"<<capture->rasterProvenance.frameSerial<<" sceneRevision="<<render.sceneDrawRevision<<":"<<capture->requestMetadata.drawListRevision;WriteCaptureIntegrityDiagnostic(true);return false;}captureFrameSceneDrawRevision_[index]=render.sceneDrawRevision;captureFrameWorldRevision_[index]=render.worldRevision;captureFrameSubmittedMeshes_[index]=render.submittedMeshInstances;captureFrameSubmittedSkinned_[index]=render.submittedSkinnedInstances;captureFrameSubmittedTerrain_[index]=render.submittedTerrainInstances;captureFrameSubmittedWorldVertices_[index]=render.submittedWorldVertices;captureFrameSubmittedWorldIndices_[index]=render.submittedWorldIndices;captureRendererSubmittedMeshes_[index]=std::uint32_t(std::min<std::size_t>(render.submittedMeshInstances,(std::numeric_limits<std::uint32_t>::max)()));captureRendererSubmittedTerrain_[index]=std::uint32_t(std::min<std::size_t>(render.submittedTerrainInstances,(std::numeric_limits<std::uint32_t>::max)()));
   const auto* phaseSceneStats=captureScenePhaseLedger_.Resolve(capture->requestMetadata.sequence.token,index,capture->requestMetadata.sequence.index);
@@ -1377,16 +1754,39 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
   std::uint64_t hash=14695981039346656037ull;
   const auto mix=[&](std::uint64_t value){for(unsigned byte=0;byte<8;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};
   for(const auto& identity:capture->tokenMap){mix(identity.id.high);mix(identity.id.low);mix(identity.generation);}
-  for(const auto token:capture->pixels){if(token>capture->tokenMap.size())return false;++counts[token];mix(token);}
+  for(const auto token:capture->pixels){if(token>capture->tokenMap.size())return failReadback("pixel-token-out-of-range");++counts[token];mix(token);}
+  if(!reference){
+    // 無損 token 平面與完整身份側車共同綁定本次 readback；未知或水面保守視為動態。
+    const auto stem=std::filesystem::path(Names[index]).stem().string()+(raw?"-raw":"");
+    const auto planePath=captureDirectory_/(stem+"-tokens.bin");
+    std::ofstream plane(planePath,std::ios::binary|std::ios::trunc);
+    for(const auto token:capture->pixels)for(unsigned byte=0;byte<4;++byte)plane.put(char((token>>(byte*8))&255));
+    plane.flush();if(!plane)return false;plane.close();
+    std::array<std::byte,32> planeSha{};if(!CaptureFileSha256(planePath,planeSha))return false;
+    const auto metadataPath=captureDirectory_/(stem+"-tokens.json");
+    std::ofstream metadata(metadataPath,std::ios::binary|std::ios::trunc);
+    metadata<<"{\"source\":\"GameplayLosslessTokens\",\"version\":1,\"runId\":\""<<runId_<<"\",\"width\":"<<capture->width<<",\"height\":"<<capture->height<<",\"frameSerial\":\""<<capture->rasterProvenance.frameSerial<<"\",\"tokenGeneration\":\""<<capture->rasterProvenance.tokenGeneration<<"\",\"phase\":"<<(raw?0:1)<<",\"plane\":\""<<planePath.filename().string()<<"\",\"planeSha256\":\""<<CaptureShaHex(planeSha)<<"\",\"identities\":[";
+    const auto descriptors=showcaseEnvironment_.Descriptors();
+    for(std::size_t token=0;token<capture->tokenMap.size();++token){
+      const auto identity=capture->tokenMap[token];
+      const bool knownStatic=identity.id.high==EnvironmentPartitionId&&identity.generation==1&&identity.id.low>=1&&identity.id.low<=descriptors.size()&&descriptors[std::size_t(identity.id.low-1)].kind!=ShowcaseSceneKind3D::Water;
+      if(token)metadata<<',';
+      metadata<<"{\"high\":\""<<identity.id.high<<"\",\"low\":\""<<identity.id.low<<"\",\"generation\":\""<<identity.generation<<"\",\"class\":\""<<(knownStatic?"static":"dynamic")<<"\",\"opacityAffected\":"<<(identity==cameraPolicyFadeIdentity_?"true":"false")<<'}';
+    }
+    metadata<<"]}";metadata.flush();if(!metadata)return false;metadata.close();
+    if(!CaptureFileSha256(metadataPath,raw?captureRawTokenMetadataSha256_[index]:captureEffectiveTokenMetadataSha256_[index]))return false;
+  }
+  const auto buildingIdentities=BuildGameplayBuildingIdentities3D(showcaseEnvironment_.Descriptors(),EnvironmentPartitionId);
   std::array<float,6> buildingCoverage{};
   float buildingUnion{};
   std::uint32_t maximumVisibleToken{};
   for(std::uint32_t token=1;token<=capture->tokenMap.size();++token){
     const auto& identity=capture->tokenMap[token-1];
     if(!maximumVisibleToken||counts[token]>counts[maximumVisibleToken])maximumVisibleToken=token;
-    if(identity.id.high==EnvironmentPartitionId&&identity.id.low>=151&&identity.id.low<=156){
+    const auto part=GameplayBuildingPart3D(buildingIdentities,identity);
+    if(part<buildingIdentities.size()){
       const float coverage=float(counts[token])/float(capture->pixels.size());
-      buildingCoverage[std::size_t(identity.id.low-151)]+=coverage;
+      buildingCoverage[part]+=coverage;
       buildingUnion+=coverage;
     }
   }
@@ -1401,19 +1801,29 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     if(identity==GameplayCaptureWeaponIdentity3D)weaponToken=token;
     if(identity==RenderObjectIdentity3D{{EnvironmentPartitionId,1},1})terrainToken=token;
     if(reference){if(identity==RenderObjectIdentity3D{{GameplayCharacterIdentityHigh,1},1})dominantToken=token;}
-    else if(raw){if(identity.id.high!=EnvironmentPartitionId||identity.id.low<151||identity.id.low>156)continue;if(!dominantToken||counts[token]>counts[dominantToken])dominantToken=token;}
+    else if(raw){if(GameplayBuildingPart3D(buildingIdentities,identity)==buildingIdentities.size())continue;if(!dominantToken||counts[token]>counts[dominantToken])dominantToken=token;}
     else if(identity==RenderObjectIdentity3D{{captureOccluderStableHigh_[index],captureOccluderStableLow_[index]},captureOccluderGeneration_[index]})dominantToken=token;
   }
   const auto isPlayerPixel=[&](std::uint32_t token){return token&&token<=capture->tokenMap.size()&&capture->tokenMap[token-1]==RenderObjectIdentity3D{{GameplayCharacterIdentityHigh,1},1};};
+  const auto buildGpuContact=[&](std::uint64_t poseHash){
+    const auto footBand=SelectGameplayGpuFootBand3D(capture->width,capture->height,capture->pixels,playerToken);
+    if(!footBand.Complete())return GameplayGpuContactArtifact3D{};
+    auto contactIds=capture->pixels;
+    for(unsigned y=0;y<footBand.beginY;++y)for(unsigned x=0;x<capture->width;++x){
+      const auto pixel=std::size_t(y)*capture->width+x;
+      if(contactIds[pixel]==playerToken)contactIds[pixel]=0;
+    }
+    return BuildGameplayGpuContactArtifact3D(capture->width,capture->height,contactIds,depth->pixels,playerToken,terrainToken,capture->rasterProvenance,poseHash);
+  };
   if(!raw){capturePlayerToken_[index]=playerToken;captureTerrainToken_[index]=terrainToken;}
   std::vector<std::uint8_t> mask(capture->pixels.size()*4);
   for(std::size_t pixel=0;pixel<capture->pixels.size();++pixel){const auto token=capture->pixels[pixel];if(!token)continue;const auto& identity=capture->tokenMap[token-1];std::uint64_t color=StableObjectIdScalarHash3D(identity.id)^identity.generation;mask[pixel*4+0]=std::uint8_t(48+(color&191));mask[pixel*4+1]=std::uint8_t(48+((color>>8)&191));mask[pixel*4+2]=std::uint8_t(48+((color>>16)&191));mask[pixel*4+3]=255;if(token==dominantToken)mask[pixel*4+0]=mask[pixel*4+1]=mask[pixel*4+2]=255;}
   const auto stem=std::filesystem::path(Names[index]).stem().wstring();
   const auto maskName=stem+(reference?L"-reference-object-id.png":raw?L"-raw-object-id.png":L"-object-id.png");
   const auto depthName=stem+(reference?L"-reference-depth.png":raw?L"-raw-depth.png":L"-depth.png");
-  if(!EncodeFrameCapturePng3D(captureDirectory_/maskName,capture->width,capture->height,std::size_t(capture->width)*4,mask))return false;
+  if(!EncodeFrameCapturePng3D(captureDirectory_/maskName,capture->width,capture->height,std::size_t(capture->width)*4,mask))return failReadback("object-id-png-publication-failed");
   PublishedFrameCapture3D depthPublication{};const auto depthPath=captureDirectory_/depthName;
-  if(!EncodeDepthCapture(depthPath,*depth,depthPublication)||!ValidatePublishedFrameCapture3D(depthPath,depthPublication))return false;
+  if(!EncodeDepthCapture(depthPath,*depth,depthPublication)||!ValidatePublishedFrameCapture3D(depthPath,depthPublication))return failReadback("depth-png-publication-failed");
   if(!capture->Complete()){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" raw="<<raw<<" reason=incomplete opaque="<<capture->opaqueStaticComplete<<" masked="<<capture->maskedStaticComplete<<" skinned="<<capture->skinnedComplete<<" submittedOpaque="<<capture->submittedOpaqueStatic<<" submittedSkinned="<<capture->submittedSkinned<<" rejectedMissing="<<capture->rejectedMissingIdentity<<" rejectedMasked="<<capture->rejectedMaskedStatic<<" rejectedSkinned="<<capture->rejectedSkinned<<" generationConflicts="<<capture->rejectedGenerationConflict;return false;}
   if(reference){
     const auto& effectiveProvenance=captureEffectiveRasterProvenance_[index];
@@ -1434,8 +1844,8 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     std::vector<std::uint8_t> contactMask(mask.size(),0);
     const auto evaluateFoot=[&](unsigned beginX,unsigned endX,std::uint32_t& gap,float& depthDelta){unsigned footX{},footY{};bool footFound{};for(unsigned y=minimumY;y<=maximumY;++y)for(unsigned x=beginX;x<=endX;++x)if(isPlayerPixel(capture->pixels[std::size_t(y)*capture->width+x])&&(!footFound||y>footY)){footX=x;footY=y;footFound=true;}gap=std::numeric_limits<std::uint32_t>::max();depthDelta=1.f;if(!footFound)return false;unsigned groundX{},groundY{};for(unsigned y=footY+1;y<std::min(capture->height,footY+13);++y){const unsigned scanBegin=footX>4?footX-4:0,scanEnd=std::min(capture->width-1,footX+4);for(unsigned x=scanBegin;x<=scanEnd;++x)if(terrainPixel(capture->pixels[std::size_t(y)*capture->width+x])){gap=y-footY-1;groundX=x;groundY=y;break;}if(gap!=std::numeric_limits<std::uint32_t>::max())break;}if(gap==std::numeric_limits<std::uint32_t>::max())return false;depthDelta=depth->pixels[std::size_t(groundY)*capture->width+groundX]-depth->pixels[std::size_t(footY)*capture->width+footX];for(const auto [x,y,color]:{std::tuple{footX,footY,std::array<std::uint8_t,3>{255,32,32}},std::tuple{groundX,groundY,std::array<std::uint8_t,3>{32,255,32}}}){const auto offset=(std::size_t(y)*capture->width+x)*4;contactMask[offset]=color[0];contactMask[offset+1]=color[1];contactMask[offset+2]=color[2];contactMask[offset+3]=255;}return gap<=3&&depthDelta>=-0.0001f&&depthDelta<=.02f;};
     std::uint32_t referenceLeftGap{},referenceRightGap{};float referenceLeftDepth{},referenceRightDepth{};const unsigned middle=(minimumX+maximumX)/2;(void)evaluateFoot(minimumX,middle,referenceLeftGap,referenceLeftDepth);(void)evaluateFoot(std::min(maximumX,middle+1),maximumX,referenceRightGap,referenceRightDepth);
-    const auto referenceContact=BuildGameplayGpuContactArtifact3D(capture->width,capture->height,capture->pixels,depth->pixels,playerToken,terrainToken,capture->rasterProvenance,captureReferenceFootPlacementHash_[index]);
-    if(!referenceContact.Complete(capture->width,capture->height)||!EncodeFrameCapturePng3D(captureDirectory_/(stem+L"-reference-contact.png"),capture->width,capture->height,std::size_t(capture->width)*4,referenceContact.rgba))return false;
+    const auto referenceContact=buildGpuContact(captureReferenceFootPlacementHash_[index]);
+    if(!referenceContact.Complete(capture->width,capture->height)||!EncodeFrameCapturePng3D(captureDirectory_/(stem+L"-reference-contact.png"),capture->width,capture->height,std::size_t(capture->width)*4,referenceContact.rgba))return failReadback("reference-gpu-contact-artifact-failed");
     captureCharacterReferenceCoverage_[index]=float(referencePixels)/float(capture->pixels.size());captureCharacterEffectiveCoverage_[index]=float(effectivePixels)/float(capture->pixels.size());captureCharacterVisibility_[index]=float(intersectionPixels)/float(referencePixels);captureCharacterSilhouetteIou_[index]=float(intersectionPixels)/float(unionPixels);captureCharacterReferenceSupported_[index]=1;captureReferenceAcceptedExcludingOpacity_[index]=capture->acceptedDrawFingerprintExcludingOpacity;captureReferenceAcceptedIncludingOpacity_[index]=capture->acceptedDrawFingerprintIncludingOpacity;captureReferenceIdentityOrderHash_[index]=capture->acceptedIdentityOrderHash;captureReferenceDepthSha256_[index]=depth->pixelSha256;captureReferenceDepthFinalFileSha256_[index]=depthPublication.finalFileSha256;captureReferenceDepthFinalFileBytes_[index]=depthPublication.finalFileBytes;captureDepthGeneration_[index]=std::uint32_t(depth->generation);captureDepthSupported_[index]=1;captureEffectiveCharacterMask_.clear();
     // reference只移除建築；若effective沒有任何建築像素，輪廓差異來自跨幀光柵而非遮擋。
   }else if(raw){
@@ -1458,6 +1868,23 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     captureShadowProvenance_[index]=capture->directionalShadow;captureShadowCasters_[index]=std::uint32_t(capture->directionalShadow.casters);captureShadowDrawCalls_[index]=std::uint32_t(capture->directionalShadow.drawCalls);captureShadowCascadeDrawCalls_[index]=std::uint32_t(capture->directionalShadow.cascadeDrawCalls);
     captureShadowCascadeRendered_[index]=std::uint32_t(std::accumulate(capture->directionalShadow.rendered.begin(),capture->directionalShadow.rendered.end(),std::uint64_t{}));captureShadowCascadeReused_[index]=std::uint32_t(std::accumulate(capture->directionalShadow.reused.begin(),capture->directionalShadow.reused.end(),std::uint64_t{}));captureShadowActiveCascades_[index]=capture->directionalShadow.activeCascades;captureShadowFrameSerial_[index]=capture->directionalShadow.frameSerial;
     captureShadowEvidencePassed_[index]=EvaluateGameplayCaptureShadowEvidence3D(capture->directionalShadow,capture->rasterProvenance)?1u:0u;
+#if AEVRYND_SHADOW_MAP_DIAGNOSTICS
+    if(captureShadowMapDiagnostic_&&index==8){
+      const auto shadowStem=std::filesystem::path(Names[index]).stem().wstring();const auto receiptPath=captureDirectory_/(shadowStem+L"-shadow-map-evidence.json");const auto receiptTemporary=receiptPath.wstring()+L".tmp";
+      std::ofstream shadowReceipt(std::filesystem::path(receiptTemporary),std::ios::binary|std::ios::trunc);if(!shadowReceipt)return failReadback("shadow-map-receipt-open-failed");
+      shadowReceipt<<"{\"source\":\"GameplayDirectionalShadowMapEvidence\",\"version\":1,\"runId\":\""<<runId_<<"\",\"capture\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"frameSerial\":"<<capture->directionalShadow.frameSerial<<",\"activeCascades\":"<<capture->directionalShadow.activeCascades<<",\"cascades\":[";
+      for(unsigned cascade=0;cascade<capture->directionalShadow.activeCascades;++cascade){
+        const auto shadow=EngineShadowDiagnosticAccess3D::CaptureDirectionalShadow(engine,cascade);if(!shadow||!shadow->Complete())return failReadback("shadow-map-capture-incomplete cascade="+std::to_string(cascade));
+        const auto destination=captureDirectory_/(shadowStem+L"-shadow-cascade-"+std::to_wstring(cascade)+L".f32");const auto temporary=destination.wstring()+L".tmp";
+        std::ofstream pixels(std::filesystem::path(temporary),std::ios::binary|std::ios::trunc);pixels.write(reinterpret_cast<const char*>(shadow->pixels.data()),std::streamsize(shadow->pixels.size()*sizeof(float)));pixels.flush();if(!pixels){pixels.close();std::filesystem::remove(temporary);return failReadback("shadow-map-pixel-publication-failed cascade="+std::to_string(cascade));}pixels.close();
+        if(!MoveFileExW(temporary.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::filesystem::remove(temporary);return failReadback("shadow-map-pixel-commit-failed cascade="+std::to_string(cascade));}
+        std::array<std::byte,32> shadowHash{};if(!CaptureFileSha256(destination,shadowHash))return failReadback("shadow-map-pixel-hash-failed cascade="+std::to_string(cascade));if(cascade)shadowReceipt<<',';
+        shadowReceipt<<"{\"cascade\":"<<cascade<<",\"width\":"<<shadow->width<<",\"height\":"<<shadow->height<<",\"rowPitch\":"<<shadow->rowPitch<<",\"file\":\""<<destination.filename().string()<<"\",\"bytes\":"<<shadow->pixels.size()*sizeof(float)<<",\"sha256\":\""<<CaptureShaHex(shadowHash)<<"\"}";
+      }
+      shadowReceipt<<"]}";shadowReceipt.flush();if(!shadowReceipt){shadowReceipt.close();std::filesystem::remove(receiptTemporary);return failReadback("shadow-map-receipt-publication-failed");}shadowReceipt.close();
+      if(!MoveFileExW(receiptTemporary.c_str(),receiptPath.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::filesystem::remove(receiptTemporary);return failReadback("shadow-map-receipt-commit-failed");}
+    }
+#endif
     captureLodFrameSerial_[index]=capture->rasterProvenance.frameSerial;
     const bool predictedLodExact=expectation.camera!=GameplayCaptureCamera3D::God||(captureLodContracts_[index].Exact()&&captureGodLodTransitions_[index]>0&&captureLodTransitions_[index]==captureGodLodTransitions_[index]&&captureLodDualSubmissions_[index]==captureGodLodTransitions_[index]);
     captureLodPredictionMatched_[index]=predictedLodExact?1u:0u;
@@ -1483,32 +1910,37 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
       const auto separation=EvaluateGameplayActorScreenSeparation3D(capture->width,capture->height,capture->pixels,playerToken,companionToken);
       capturePlayerPixels_[index]=separation.playerPixels;captureCompanionPixels_[index]=separation.companionPixels;captureActorGapPixels_[index]=separation.gapPixels;captureActorSeparationPassed_[index]=separation.complete&&separation.safe?1u:0u;
       if(!captureActorSeparationPassed_[index]){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason=actor-silhouette-separation playerPixels="<<separation.playerPixels<<" companionPixels="<<separation.companionPixels<<" gap="<<separation.gapPixels<<" required="<<std::uint32_t(std::ceil(float(capture->width)*.05f));return false;}
-      unsigned minimumX=capture->width,maximumX{},minimumY=capture->height,maximumY{};for(unsigned y=0;y<capture->height;++y)for(unsigned x=0;x<capture->width;++x)if(isPlayerPixel(capture->pixels[std::size_t(y)*capture->width+x])){minimumX=std::min(minimumX,x);maximumX=std::max(maximumX,x);minimumY=std::min(minimumY,y);maximumY=std::max(maximumY,y);}if(minimumX>maximumX||minimumY>maximumY)return false;
-      const auto terrainPixel=[&](std::uint32_t token){const auto* identity=capture->Resolve(token);return identity&&identity->id==StableObjectId3D{EnvironmentPartitionId,1};};std::vector<std::uint8_t> contactMask(mask.size(),0);
-      const auto evaluateEffectiveFoot=[&](unsigned beginX,unsigned endX,std::uint32_t& gap,float& depthDelta){unsigned footX{},footY{};bool found{};for(unsigned y=minimumY;y<=maximumY;++y)for(unsigned x=beginX;x<=endX;++x)if(isPlayerPixel(capture->pixels[std::size_t(y)*capture->width+x])&&(!found||y>footY)){footX=x;footY=y;found=true;}gap=std::numeric_limits<std::uint32_t>::max();depthDelta=1.f;if(!found)return false;unsigned groundX{},groundY{};for(unsigned y=footY+1;y<std::min(capture->height,footY+13);++y){for(unsigned x=footX>4?footX-4:0;x<=std::min(capture->width-1,footX+4);++x)if(terrainPixel(capture->pixels[std::size_t(y)*capture->width+x])){gap=y-footY-1;groundX=x;groundY=y;break;}if(gap!=std::numeric_limits<std::uint32_t>::max())break;}if(gap==std::numeric_limits<std::uint32_t>::max())return false;depthDelta=depth->pixels[std::size_t(groundY)*capture->width+groundX]-depth->pixels[std::size_t(footY)*capture->width+footX];for(const auto [x,y,color]:{std::tuple{footX,footY,std::array<std::uint8_t,3>{255,32,32}},std::tuple{groundX,groundY,std::array<std::uint8_t,3>{32,255,32}}}){const auto offset=(std::size_t(y)*capture->width+x)*4;contactMask[offset]=color[0];contactMask[offset+1]=color[1];contactMask[offset+2]=color[2];contactMask[offset+3]=255;}return gap<=3&&depthDelta>=-.0001f&&depthDelta<=.02f;};
-      const unsigned middle=(minimumX+maximumX)/2;const bool left=evaluateEffectiveFoot(minimumX,middle,captureLeftFootGroundGapPixels_[index],captureLeftFootDepthDelta_[index]),right=evaluateEffectiveFoot(std::min(maximumX,middle+1),maximumX,captureRightFootGroundGapPixels_[index],captureRightFootDepthDelta_[index]);
-      const auto contact=BuildGameplayGpuContactArtifact3D(capture->width,capture->height,capture->pixels,depth->pixels,playerToken,terrainToken,capture->rasterProvenance,captureEffectiveFootPlacementHash_[index]);
-      captureGpuFeetContactPassed_[index]=left&&right&&contact.Complete(capture->width,capture->height)?1u:0u;if(!captureGpuFeetContactPassed_[index])return false;
+      unsigned minimumX=capture->width,maximumX{},minimumY=capture->height,maximumY{};for(unsigned y=0;y<capture->height;++y)for(unsigned x=0;x<capture->width;++x)if(isPlayerPixel(capture->pixels[std::size_t(y)*capture->width+x])){minimumX=std::min(minimumX,x);maximumX=std::max(maximumX,x);minimumY=std::min(minimumY,y);maximumY=std::max(maximumY,y);}if(minimumX>maximumX||minimumY>maximumY)return failReadback("player-screen-bounds-empty");
+      const auto contact=buildGpuContact(captureEffectiveFootPlacementHash_[index]);
+      captureGpuFeetContactPassed_[index]=contact.Complete(capture->width,capture->height)?1u:0u;
+      if(!captureGpuFeetContactPassed_[index])return failReadback("gpu-feet-contact bottom-band-split=0");
       captureLeftFootGroundGapPixels_[index]=contact.leftGapPixels;captureRightFootGroundGapPixels_[index]=contact.rightGapPixels;captureLeftFootDepthDelta_[index]=contact.leftDepthDelta;captureRightFootDepthDelta_[index]=contact.rightDepthDelta;
       captureContactLeftPixels_[index]=contact.leftFootPixels;captureContactRightPixels_[index]=contact.rightFootPixels;captureContactGroundSupportPixels_[index]=contact.groundSupportPixels;captureContactShadowPixels_[index]=contact.contactShadowPixels;captureContactFrameSerial_[index]=contact.frameSerial;captureContactPoseHash_[index]=contact.poseHash;
-      const auto contactPath=captureDirectory_/(stem+L"-contact.png");if(!EncodeFrameCapturePng3D(contactPath,capture->width,capture->height,std::size_t(capture->width)*4,contact.rgba)||!CaptureFileSha256(contactPath,captureContactArtifactSha256_[index]))return false;
+      const auto contactPath=captureDirectory_/(stem+L"-contact.png");if(!EncodeFrameCapturePng3D(contactPath,capture->width,capture->height,std::size_t(capture->width)*4,contact.rgba)||!CaptureFileSha256(contactPath,captureContactArtifactSha256_[index]))return failReadback("gpu-contact-artifact-publication-failed");
     }
     captureEffectiveAcceptedExcludingOpacity_[index]=capture->acceptedDrawFingerprintExcludingOpacity;captureEffectiveAcceptedIncludingOpacity_[index]=capture->acceptedDrawFingerprintIncludingOpacity;captureEffectiveIdentityOrderHash_[index]=capture->acceptedIdentityOrderHash;captureOccluderCoverage_[index]=dominantToken?float(counts[dominantToken])/float(capture->pixels.size()):0.f;captureEffectiveObjectIdSupported_[index]=1;captureObjectIdGeneration_[index]=capture->generation;captureObjectIdMaskHash_[index]=hash;captureObjectIdSubmitted_[index]=std::uint32_t(capture->submittedOpaqueStatic);captureObjectIdOpaqueComplete_[index]=capture->opaqueStaticComplete?1u:0u;captureObjectIdMaskedComplete_[index]=capture->maskedStaticComplete?1u:0u;captureObjectIdSkinnedComplete_[index]=capture->skinnedComplete?1u:0u;
     const bool applied=appliedOcclusionIdentity_==RenderObjectIdentity3D{{captureOccluderStableHigh_[index],captureOccluderStableLow_[index]},captureOccluderGeneration_[index]}&&appliedOcclusionOpacity_<1.f&&appliedOcclusionUpdate_&&!appliedOcclusionUpdate_.generationConflicts&&!appliedOcclusionUpdate_.missing;
-    if(applied&&captureRawAcceptedIncludingOpacity_[index]==capture->acceptedDrawFingerprintIncludingOpacity)return false;
+    if(applied&&captureRawAcceptedIncludingOpacity_[index]==capture->acceptedDrawFingerprintIncludingOpacity)return failReadback("occlusion-opacity-fingerprint-unchanged");
     if(applied){captureFadedStableHigh_[index]=appliedOcclusionIdentity_.id.high;captureFadedStableLow_[index]=appliedOcclusionIdentity_.id.low;captureFadedGeneration_[index]=appliedOcclusionIdentity_.generation;captureOpacityMatchedStatic_[index]=std::uint32_t(appliedOcclusionUpdate_.matchedStatic);captureOpacityMatchedMultipart_[index]=std::uint32_t(appliedOcclusionUpdate_.matchedMultipart);}
     captureOpacityMissing_[index]=appliedOcclusionUpdate_.missing?1u:0u;captureOpacityGenerationConflict_[index]=appliedOcclusionUpdate_.generationConflicts?1u:0u;captureOcclusionAdjusted_[index]=applied&&captureRawOccluderCoverage_[index]>.08f&&captureOccluderCoverage_[index]<.08f?1u:0u;
   }
   if(effective){
-    if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::Taken)return false;
-    if(!productionBundle)return false;Aevrynd::GameplayLab::GameplayProductionHdrSidecarValidation3D validation{};auto sealed=Aevrynd::GameplayLab::BuildGameplayProductionHdrSidecar3D(*productionBundle,&validation);if(!sealed||!validation)return false;
-    const auto destination=GameplayHdrCapturePath(index);if(destination.empty()||std::filesystem::exists(destination))return false;
-    Aevrynd::GameplayLab::GameplayProductionHdrSidecarPublishReceipt3D published{};if(!Aevrynd::GameplayLab::PublishGameplayProductionHdrSidecar3D(*sealed,destination,&published))return false;
+    const auto failHdr=[&](const char* reason){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason="<<reason<<" state="<<GameplayHdrStateName3D(gameplayHdrCaptureStates_[index]);return false;};
+    if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::Taken)return failHdr("hdr-state-not-taken");
+    if(!productionBundle)return failHdr("production-bundle-missing");Aevrynd::GameplayLab::GameplayProductionHdrSidecarValidation3D validation{};auto sealed=Aevrynd::GameplayLab::BuildGameplayProductionHdrSidecar3D(*productionBundle,&validation);if(!sealed||!validation)return failHdr("hdr-sidecar-seal-invalid");
+    const auto destination=GameplayHdrCapturePath(index);if(destination.empty())return failHdr("hdr-destination-empty");if(std::filesystem::exists(destination))return failHdr("hdr-destination-already-exists");
+    Aevrynd::GameplayLab::GameplayProductionHdrSidecarPublishReceipt3D published{};if(!Aevrynd::GameplayLab::PublishGameplayProductionHdrSidecar3D(*sealed,destination,&published))return failHdr("hdr-sidecar-publish-failed");
     gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Published;
     std::error_code fileError;const auto fileBytes=std::filesystem::file_size(destination,fileError);const auto nonzero=[](const auto& hash){return std::ranges::any_of(hash,[](std::uint8_t value){return value!=0;});};const auto inspected=Aevrynd::GameplayLab::InspectGameplayProductionHdrSidecarFile3D(destination);
-    if(fileError||!inspected||inspected->schemaVersion!=3||!published.byteCount||fileBytes!=published.byteCount||inspected->byteCount!=published.byteCount||inspected->fileHash!=published.fileHash||inspected->stableContentHash!=published.stableContentHash||inspected->payloadHash!=published.payloadHash||inspected->rootHash!=published.rootHash||published.stableContentHash!=sealed->Sidecar().canonical.stableContentHash||published.payloadHash!=sealed->Sidecar().canonical.payloadHash||published.rootHash!=sealed->Sidecar().canonical.rootHash||!nonzero(published.fileHash)||!nonzero(published.stableContentHash)||!nonzero(published.payloadHash)||!nonzero(published.rootHash)||!Aevrynd::GameplayLab::ValidateGameplayProductionHdrSidecar3D(sealed->Sidecar()))return false;
+    if(fileError||!inspected||inspected->schemaVersion!=3||!published.byteCount||fileBytes!=published.byteCount||inspected->byteCount!=published.byteCount||inspected->fileHash!=published.fileHash||inspected->stableContentHash!=published.stableContentHash||inspected->payloadHash!=published.payloadHash||inspected->rootHash!=published.rootHash||published.stableContentHash!=sealed->Sidecar().canonical.stableContentHash||published.payloadHash!=sealed->Sidecar().canonical.payloadHash||published.rootHash!=sealed->Sidecar().canonical.rootHash||!nonzero(published.fileHash)||!nonzero(published.stableContentHash)||!nonzero(published.payloadHash)||!nonzero(published.rootHash)||!Aevrynd::GameplayLab::ValidateGameplayProductionHdrSidecar3D(sealed->Sidecar()))return failHdr("hdr-sidecar-post-publish-validation-failed");
     auto& receipt=gameplayHdrCaptureReceipts_[index];receipt={GameplayHdrCaptureState3D::Published,destination,inspected->fileHash,inspected->stableContentHash,inspected->payloadHash,inspected->rootHash,inspected->byteCount,hdr->receipt.rasterProvenance.frameSerial,hdr->receipt.requestMetadata.sequence.token.value,hdr->receipt.requestMetadata.sequence.index,false};
     sealed.reset();productionBundle.reset();receipt.state=GameplayHdrCaptureState3D::Verified;receipt.verified=true;gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Verified;
+  }
+  if(rawHdrDiagnostic){
+    if(!productionBundle||!hdr||hdr->receipt.requestMetadata.sequence.index!=0)return failReadback("raw-hdr-diagnostic-bundle-missing");
+    Aevrynd::GameplayLab::GameplayProductionHdrSidecarValidation3D validation{};auto sealed=Aevrynd::GameplayLab::BuildGameplayProductionHdrSidecar3D(*productionBundle,&validation);if(!sealed||!validation)return failReadback("raw-hdr-diagnostic-seal-invalid");
+    const auto destination=captureDirectory_/(std::filesystem::path(Names[index]).stem().wstring()+L"-raw.production-hdr.aevhdr");if(std::filesystem::exists(destination))return failReadback("raw-hdr-diagnostic-destination-exists");
+    Aevrynd::GameplayLab::GameplayProductionHdrSidecarPublishReceipt3D published{};if(!Aevrynd::GameplayLab::PublishGameplayProductionHdrSidecar3D(*sealed,destination,&published)||!published.byteCount)return failReadback("raw-hdr-diagnostic-publish-failed");
   }
   return true;
 }
@@ -1529,7 +1961,14 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     const auto frameSerial=renderer.lastDirectionalShadowProvenance.frameSerial;
     const bool aaParity=renderer.multisampleEnabled&&renderer.multisampleCount>1&&renderer.temporalAntiAliasingEnabled&&renderer.temporalHistoryUsed;
     const bool logicalPair=capturePresentationLogicalToken_&&capturePairMetadata_.cameraHash==captureRequestCameraHash_[captureIndex_]&&capturePairMetadata_.stateHash==captureRequestStateHash_[captureIndex_]&&capturePairMetadata_.sequenceInvariantHash&&frameSerial&&frameSerial!=captureEffectiveRasterProvenance_[captureIndex_].frameSerial;
-    if(!filesDistinct||!aaParity||!logicalPair)throw std::runtime_error("Gameplay presentation capture did not use the independent production AA/TAA raster");
+    if(!filesDistinct||!aaParity||!logicalPair)throw std::runtime_error(
+      "Gameplay presentation capture did not use the independent production AA/TAA raster: capture="+
+      std::to_string(captureIndex_)+" filesDistinct="+std::to_string(filesDistinct)+
+      " aaParity="+std::to_string(aaParity)+" logicalPair="+std::to_string(logicalPair)+
+      " msaa="+std::to_string(renderer.multisampleEnabled)+" samples="+std::to_string(renderer.multisampleCount)+
+      " taa="+std::to_string(renderer.temporalAntiAliasingEnabled)+" history="+std::to_string(renderer.temporalHistoryUsed)+
+      " frameSerial="+std::to_string(frameSerial)+" effectiveFrameSerial="+
+      std::to_string(captureEffectiveRasterProvenance_[captureIndex_].frameSerial));
     capturePresentationFrameSerial_[captureIndex_]=frameSerial;capturePresentationCameraHash_[captureIndex_]=capturePairMetadata_.cameraHash;capturePresentationStateHash_[captureIndex_]=capturePairMetadata_.stateHash;capturePresentationInvariantHash_[captureIndex_]=capturePairMetadata_.sequenceInvariantHash;capturePresentationMsaa_[captureIndex_]=renderer.multisampleEnabled;capturePresentationTaa_[captureIndex_]=renderer.temporalAntiAliasingEnabled;capturePresentationHistoryUsed_[captureIndex_]=renderer.temporalHistoryUsed;capturePresentationPaired_[captureIndex_]=1;
     if(!captureScenarioClock_.CompleteReadback(captureIndex_,temporalFixtureWarmupFrames_?2:Names.size()))throw std::runtime_error("Gameplay presentation completion was out of order");
     capturePresentationPending_=false;capturePresentationLogicalToken_={};captureScenePhaseLedger_.Clear();captureReferencePhase_=false;
@@ -1542,7 +1981,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
                           renderer.rejectedFrameCaptures > captureReject_)) {
     if (renderer.rejectedFrameCaptures > captureReject_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired framebuffer capture was rejected");}
     if (renderer.successfulFrameCaptures > captureSuccess_) {
-      if(!ConsumeObjectIdCapture(engine,captureIndex_,captureRawPhase_,captureReferencePhase_)){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired GPU object-ID/depth/HDR readback failed closed");}
+      if(!ConsumeObjectIdCapture(engine,captureIndex_,captureRawPhase_,captureReferencePhase_)){const auto reason=captureReadbackFailure_;FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired GPU object-ID/depth/HDR readback failed closed: index="+std::to_string(captureIndex_)+" raw="+std::to_string(captureRawPhase_)+" reference="+std::to_string(captureReferencePhase_)+" reason="+reason);}
       if(captureRawPhase_){
         captureRawPhase_=false;capturePending_=false;
         capturePairMetadata_.sequence.index=1;capturePairMetadata_.drawListRevision=0;
@@ -1559,10 +1998,18 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       }
       const auto gpuProvenance=engine.ReadbackCaptureSequenceGpuProvenance(captureSequenceToken_);if(gpuProvenance.token!=captureSequenceToken_||gpuProvenance.phases.size()!=captureSequencePhaseCount_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay GPU sequence provenance was incomplete");}for(const auto& phase:gpuProvenance.phases){if(phase.phaseIndex>=3){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay GPU sequence provenance phase was invalid");}captureAtmospherePhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.atmosphere;captureTemporalPhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.temporalResolve;}
       const auto sequenceResult=engine.EndReadbackCaptureSequence3D(captureSequenceToken_);
-      if(!sequenceResult||sequenceResult.receipt.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.jitterPolicy!=ReadbackCaptureSequenceJitterPolicy3D::FixedSample||sequenceResult.receipt.descriptor.fixedSampleIndex!=0||sequenceResult.receipt.descriptor.requiredLinearHdrPhaseMask!=(1ull<<1)){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired fixed-sample HDR readback capture sequence failed closed");}
+      const std::uint64_t expectedHdrMask=captureRawHdrDiagnostic_?((1ull<<0)|(1ull<<1)):(1ull<<1);
+      if(!sequenceResult||sequenceResult.receipt.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.jitterPolicy!=ReadbackCaptureSequenceJitterPolicy3D::FixedSample||sequenceResult.receipt.descriptor.fixedSampleIndex!=0||sequenceResult.receipt.descriptor.requiredLinearHdrPhaseMask!=expectedHdrMask){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired fixed-sample HDR readback capture sequence failed closed");}
       for(const auto& phase:sequenceResult.receipt.phases){if(phase.phaseIndex>=captureIntegrityDiagnostics_[captureIndex_].size()){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism phase index was invalid");}auto& diagnostic=captureIntegrityDiagnostics_[captureIndex_][phase.phaseIndex];if(!diagnostic.recorded||diagnostic.objectId!=phase.determinism||diagnostic.depth!=phase.determinism){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism phase evidence drifted");}diagnostic={captureIndex_,phase.phaseIndex,phase.determinism,phase.determinism,true};}
       const auto& effectiveDeterminism=sequenceResult.receipt.phases[1].determinism;captureDeterminismFrameSerial_[captureIndex_]=effectiveDeterminism.frameSerial;captureDeterminismIntegrity_[captureIndex_]=effectiveDeterminism.integrity;captureCanonicalDrawFingerprint_[captureIndex_]=effectiveDeterminism.canonical;if(!WriteCaptureIntegrityDiagnostic()){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism diagnostic publication failed");}
       captureSequenceReceipts_[captureIndex_]=sequenceResult.receipt;
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+      if(captureAtmosphereOutputDiagnostic_){
+        const auto atmosphere=EngineAtmosphereDiagnosticAccess3D::CaptureVolumetricAtmosphereOutput(engine);if(!atmosphere||!atmosphere->Complete()){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay atmosphere output diagnostic readback failed closed");}
+        const auto stem=std::filesystem::path(Names[captureIndex_]).stem().string();const auto payloadPath=captureDirectory_/(stem+"-atmosphere-rgba16f.bin");std::ofstream payload(payloadPath,std::ios::binary|std::ios::trunc);payload.write(reinterpret_cast<const char*>(atmosphere->rgba16f.data()),std::streamsize(atmosphere->rgba16f.size()));payload.flush();if(!payload){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay atmosphere output diagnostic payload publication failed");}payload.close();
+        const auto receiptPath=captureDirectory_/(stem+"-atmosphere-output.json");std::ofstream receipt(receiptPath,std::ios::binary|std::ios::trunc);receipt<<"{\"schemaVersion\":1,\"source\":\"GameplayLabAtmosphereOutputDiagnostic\",\"runId\":\""<<runId_<<"\",\"name\":\""<<std::filesystem::path(Names[captureIndex_]).string()<<"\",\"sequenceToken\":"<<captureSequenceToken_.value<<",\"semanticSourcePhase\":0,\"capturedAfterPhase\":"<<(captureSequencePhaseCount_-1)<<",\"width\":"<<atmosphere->identity.width<<",\"height\":"<<atmosphere->identity.height<<",\"format\":\"R16G16B16A16_FLOAT\",\"sourceRowPitch\":"<<atmosphere->sourceRowPitch<<",\"rowBytes\":"<<atmosphere->identity.width*8<<",\"payloadBytes\":"<<atmosphere->rgba16f.size()<<",\"payloadPath\":\""<<payloadPath.filename().string()<<"\",\"payloadSha256\":\""<<CaptureShaHex(atmosphere->pixelSha256)<<"\",\"resourceIdentity\":"<<atmosphere->identity<<"}";receipt.flush();if(!receipt){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay atmosphere output diagnostic receipt publication failed");}
+      }
+#endif
       const auto requiredWarmup=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;
       if(!captureTemporalHistoryGeneration_[captureIndex_]||captureTemporalWarmupFrames_[captureIndex_]<requiredWarmup||captureTemporalReseedReasonMask_[captureIndex_]==0||sequenceResult.receipt.phases.empty()||sequenceResult.receipt.phases.front().raster.temporalHistoryReadGeneration!=captureTemporalHistoryGeneration_[captureIndex_]){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay temporal history receipt did not belong to the warmed capture sequence");}
       // 診斷序列結束後才擷取玩家實際 presentation；此 raster 不掛 OID/depth，保留正式 MSAA/TAA history。
@@ -1583,14 +2030,32 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     engine.Quit();return;
   }
   if (captureIndex_ == Names.size()) {
+    // GPU validation can make early frames miss the Ultra frame budget while
+    // pipelines and validation bookkeeping warm up. Keep rendering the completed
+    // scene until the existing three-consecutive-frame admission gate commits.
+    if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra&&engine.RenderQuality()!=RenderQuality3D::Ultra){
+      const auto qualityStats=engine.GetRendererStats();
+      if(qualityStats.submittedFrames!=captureUltraSettleLastSubmittedFrame_){captureUltraSettleLastSubmittedFrame_=qualityStats.submittedFrames;++captureUltraSettleFrames_;}
+      if(captureUltraSettleFrames_>120)throw std::runtime_error(std::format(
+        "Gameplay Ultra quality did not commit after capture settle: frames={} gpuNs={} shadowNs={} shadowRecorded={} shadowValid={} captureCopyNs={} captureCopyRecorded={} captureCopyValid={} atmosphereNs={} hzbPrepassNs={} hzbBuildNs={} hzbCullNs={} hzbColorNs={} errors={} warnings={}",
+        captureUltraSettleFrames_,qualityStats.lastGpuFrameNanoseconds,
+        qualityStats.lastShadowRenderingGpuTiming.nanoseconds,qualityStats.lastShadowRenderingGpuTiming.recorded,qualityStats.lastShadowRenderingGpuTiming.valid,
+        qualityStats.lastProductionCaptureCopyGpuTiming.nanoseconds,qualityStats.lastProductionCaptureCopyGpuTiming.recorded,qualityStats.lastProductionCaptureCopyGpuTiming.valid,
+        qualityStats.lastVolumetricAtmosphereGpuNanoseconds,qualityStats.lastHzbPrepassGpuNanoseconds,qualityStats.lastHzbBuildGpuNanoseconds,
+        qualityStats.lastHzbCullGpuNanoseconds,qualityStats.lastHzbColorGpuNanoseconds,qualityStats.debugErrorCount,qualityStats.debugWarningCount));
+      return;
+    }
     std::ofstream presentationOut(captureDirectory_/"gameplay-presentation-receipt.json",std::ios::trunc);
     presentationOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabProductionPresentation\",\"captures\":[";
     for(std::size_t index=0;index<Names.size();++index){if(index)presentationOut<<',';presentationOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"frameSerial\":"<<capturePresentationFrameSerial_[index]<<",\"diagnosticFrameSerial\":"<<captureEffectiveRasterProvenance_[index].frameSerial<<",\"cameraHash\":"<<capturePresentationCameraHash_[index]<<",\"stateHash\":"<<capturePresentationStateHash_[index]<<",\"invariantHash\":"<<capturePresentationInvariantHash_[index]<<",\"paired\":"<<unsigned(capturePresentationPaired_[index])<<",\"msaaEnabled\":"<<unsigned(capturePresentationMsaa_[index])<<",\"taaEnabled\":"<<unsigned(capturePresentationTaa_[index])<<",\"historyUsed\":"<<unsigned(capturePresentationHistoryUsed_[index])<<",\"warmupFrames\":"<<captureTemporalWarmupFrames_[index]<<"}";}
     presentationOut<<"]}";presentationOut.close();
     std::ofstream temporalOut(captureDirectory_/"gameplay-temporal-history-receipt.json",std::ios::trunc);temporalOut<<std::setprecision(std::numeric_limits<float>::max_digits10);temporalOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabTemporalHistory\",\"minimumWarmupFrames\":"<<GameplayTemporalCaptureWarmupFrames3D<<",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)temporalOut<<',';temporalOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"historyReseedReasonMask\":"<<captureTemporalReseedReasonMask_[index]<<",\"historyWarmupFrames\":"<<captureTemporalWarmupFrames_[index]<<",\"historyGeneration\":"<<captureTemporalHistoryGeneration_[index]<<"}";}temporalOut<<"]}";temporalOut.close();
-    std::ofstream referenceOpacityOut(captureDirectory_/"gameplay-reference-opacity-receipt.json",std::ios::trunc);referenceOpacityOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabReferenceOpacity\",\"captures\":[";
+    std::ofstream referenceOpacityOut(captureDirectory_/"gameplay-reference-opacity-receipt.json",std::ios::trunc);referenceOpacityOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabReferenceOpacity\",\"buildingIdentitySource\":\"GameplayShowcaseEnvironment3D.Descriptors\",\"buildingIdentityDomain\":\""<<EnvironmentPartitionId<<"\",\"buildingIdentityGeneration\":1,\"descriptorKinds\":[";
+    for(std::size_t descriptor=0;descriptor<showcaseEnvironment_.Descriptors().size();++descriptor){if(descriptor)referenceOpacityOut<<',';referenceOpacityOut<<unsigned(showcaseEnvironment_.Descriptors()[descriptor].kind);}
+    referenceOpacityOut<<"],\"captures\":[";
     referenceOpacityOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
-    for(std::size_t index=0;index<Names.size();++index){if(index)referenceOpacityOut<<',';const bool third=(index<9&&index%3==1)||index>=9;referenceOpacityOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"referencePhase\":"<<unsigned(third)<<",\"overrideMode\":\""<<(captureReferenceOverrideMode_[index]?"RemoveAll":"NoOverride")<<"\",\"removalThreshold\":"<<captureReferenceRemovalThreshold_[index]<<",\"requestedReferenceCount\":"<<captureReferenceRequestedCount_[index]<<",\"matchedReferenceCount\":"<<captureReferenceOpacityMatches_[index]<<",\"removedReferenceCount\":"<<captureReferenceRemovedCount_[index]<<",\"removedCoverage\":"<<captureReferenceRemovedCoverage_[index]<<",\"effectiveBuildingUnion\":"<<captureEffectiveBuildingUnion_[index]<<",\"effectiveFrameSerial\":"<<captureEffectiveRasterProvenance_[index].frameSerial<<",\"referenceFrameSerial\":"<<captureReferenceRasterProvenance_[index].frameSerial<<",\"effectiveSequenceIndex\":1,\"referenceSequenceIndex\":2,\"effectiveIncludingOpacity\":"<<captureEffectiveAcceptedIncludingOpacity_[index]<<",\"referenceIncludingOpacity\":"<<captureReferenceAcceptedIncludingOpacity_[index]<<",\"effectiveExcludingOpacity\":"<<captureEffectiveAcceptedExcludingOpacity_[index]<<",\"referenceExcludingOpacity\":"<<captureReferenceAcceptedExcludingOpacity_[index]<<",\"effectiveIdentityOrder\":"<<captureEffectiveIdentityOrderHash_[index]<<",\"referenceIdentityOrder\":"<<captureReferenceIdentityOrderHash_[index]<<",\"parts\":[";for(std::size_t part=0;part<6;++part){if(part)referenceOpacityOut<<',';referenceOpacityOut<<"{\"stableLow\":"<<(151+part)<<",\"requested\":"<<unsigned(captureReferenceRequestedById_[index][part])<<",\"matched\":"<<unsigned(captureReferenceMatchedById_[index][part])<<",\"missing\":"<<unsigned(captureReferenceMissingById_[index][part])<<",\"generationConflict\":"<<unsigned(captureReferenceConflictById_[index][part])<<",\"appliedOpacity\":";if(captureReferenceRequestedById_[index][part])referenceOpacityOut<<captureReferenceAppliedOpacityById_[index][part];else referenceOpacityOut<<"null";referenceOpacityOut<<'}';}referenceOpacityOut<<"]}";}
+    const auto buildingIdentities=BuildGameplayBuildingIdentities3D(showcaseEnvironment_.Descriptors(),EnvironmentPartitionId);
+    for(std::size_t index=0;index<Names.size();++index){if(index)referenceOpacityOut<<',';const bool third=(index<9&&index%3==1)||index>=9;referenceOpacityOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"referencePhase\":"<<unsigned(third)<<",\"overrideMode\":\""<<(captureReferenceOverrideMode_[index]?"RemoveAll":"NoOverride")<<"\",\"removalThreshold\":"<<captureReferenceRemovalThreshold_[index]<<",\"requestedReferenceCount\":"<<captureReferenceRequestedCount_[index]<<",\"matchedReferenceCount\":"<<captureReferenceOpacityMatches_[index]<<",\"removedReferenceCount\":"<<captureReferenceRemovedCount_[index]<<",\"removedCoverage\":"<<captureReferenceRemovedCoverage_[index]<<",\"effectiveBuildingUnion\":"<<captureEffectiveBuildingUnion_[index]<<",\"effectiveFrameSerial\":"<<captureEffectiveRasterProvenance_[index].frameSerial<<",\"referenceFrameSerial\":"<<captureReferenceRasterProvenance_[index].frameSerial<<",\"effectiveSequenceIndex\":1,\"referenceSequenceIndex\":2,\"effectiveIncludingOpacity\":"<<captureEffectiveAcceptedIncludingOpacity_[index]<<",\"referenceIncludingOpacity\":"<<captureReferenceAcceptedIncludingOpacity_[index]<<",\"effectiveExcludingOpacity\":"<<captureEffectiveAcceptedExcludingOpacity_[index]<<",\"referenceExcludingOpacity\":"<<captureReferenceAcceptedExcludingOpacity_[index]<<",\"effectiveIdentityOrder\":"<<captureEffectiveIdentityOrderHash_[index]<<",\"referenceIdentityOrder\":"<<captureReferenceIdentityOrderHash_[index]<<",\"parts\":[";for(std::size_t part=0;part<6;++part){if(part)referenceOpacityOut<<',';referenceOpacityOut<<"{\"stableLow\":"<<buildingIdentities[part].id.low<<",\"requested\":"<<unsigned(captureReferenceRequestedById_[index][part])<<",\"matched\":"<<unsigned(captureReferenceMatchedById_[index][part])<<",\"missing\":"<<unsigned(captureReferenceMissingById_[index][part])<<",\"generationConflict\":"<<unsigned(captureReferenceConflictById_[index][part])<<",\"appliedOpacity\":";if(captureReferenceRequestedById_[index][part])referenceOpacityOut<<captureReferenceAppliedOpacityById_[index][part];else referenceOpacityOut<<"null";referenceOpacityOut<<'}';}referenceOpacityOut<<"]}";}
     referenceOpacityOut<<"]}";referenceOpacityOut.close();
     if(!authoritativeTrajectory_.checkpointCount||std::ranges::any_of(authoritativeTrajectory_.perAttackCheckpointCount,[](std::uint32_t count){return count==0;}))
       throw std::runtime_error("Gameplay authoritative trajectory evidence was incomplete");
@@ -1645,7 +2110,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
         "\"shadow\":1}},{{\"phase\":\"dusk\",\"sun\":[-0.65,-0.34,0.28],"
         "\"intensity\":1.2,\"exposure\":0.9,\"fogDensity\":0.014,\"shadow\":1}}"
         ",{{\"phase\":\"night\",\"sun\":[0.25,-0.72,-0.34],\"intensity\":0.48,"
-        "\"exposure\":0.72,\"fogDensity\":0.022,\"shadow\":1}}]}}",
+        "\"exposure\":0.72,\"fogDensity\":0.022,\"shadow\":1}}],\"developmentUltraDiagnostic\":{}}}",
         runId_,RenderQualityName3D(engine.RequestedRenderQuality()),RenderQualityName3D(engine.RenderQuality()),engine.DevelopmentUltraReceipt().rendererApplied?1:0,engine.DevelopmentUltraReceipt().transitionPolicyApplied?1:0, actualSourceFingerprint_,sourceFingerprintPassed_?1:0,captureIndex_,s.ticks, captureAuthoritativePhysicsSteps_, s.entities,
         p.bodies, p.steps, s.cameraSwitches,
         controller_.Stats().jumps, s.crouches, palette.previews,
@@ -1675,14 +2140,14 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
         r.gpuValidationRequested ? 1 : 0,
         r.gpuValidationAvailable ? 1 : 0, r.gpuValidationExecuted ? 1 : 0,
         r.debugLayerEnabled ? 1 : 0, r.gpuValidationPassed ? 1 : 0,
-        r.debugErrorCount, r.debugWarningCount);
+        r.debugErrorCount, r.debugWarningCount,GameplayUltraDiagnosticJson(engine));
     std::ofstream captureOut(captureDirectory_ / "gameplay-character-capture-receipt.json", std::ios::trunc);captureOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
-    captureOut << "{\"runId\":\"" << runId_ << "\",\"source\":\"GameplayLabCharacterPresentation\",\"requestedRenderQuality\":\""<<RenderQualityName3D(engine.RequestedRenderQuality())<<"\",\"actualRenderQuality\":\""<<RenderQualityName3D(engine.RenderQuality())<<"\",\"developmentUltraRendererApplied\":"<<(engine.DevelopmentUltraReceipt().rendererApplied?1:0)<<",\"developmentUltraTransitionApplied\":"<<(engine.DevelopmentUltraReceipt().transitionPolicyApplied?1:0)<<",\"sourceFingerprint\":\""<<actualSourceFingerprint_<<"\",\"femaleCharacterMaterialCount\":"<<characterMaterialEvidence_.femaleCharacterMaterialCount<<",\"maleCharacterMaterialCount\":"<<characterMaterialEvidence_.maleCharacterMaterialCount<<",\"characterMaterialCount\":"<<characterMaterialEvidence_.characterMaterialCount<<","
+    captureOut << "{\"runId\":\"" << runId_ << "\",\"source\":\"GameplayLabCharacterPresentation\",\"requestedRenderQuality\":\""<<RenderQualityName3D(engine.RequestedRenderQuality())<<"\",\"actualRenderQuality\":\""<<RenderQualityName3D(engine.RenderQuality())<<"\",\"developmentUltraRendererApplied\":"<<(engine.DevelopmentUltraReceipt().rendererApplied?1:0)<<",\"developmentUltraTransitionApplied\":"<<(engine.DevelopmentUltraReceipt().transitionPolicyApplied?1:0)<<",\"sourceFingerprint\":\""<<actualSourceFingerprint_<<"\",\"femaleCharacterMaterialCount\":"<<characterMaterialEvidence_.femaleCharacterMaterialCount<<",\"maleCharacterMaterialCount\":"<<characterMaterialEvidence_.maleCharacterMaterialCount<<",\"characterMaterialCount\":"<<characterMaterialEvidence_.characterMaterialCount<<",\"femaleBodyMaterialSlotCount\":"<<(candidate7Active_?candidate7Materials_[0].size():characterMaterialEvidence_.femaleCharacterMaterialCount)<<",\"maleBodyMaterialSlotCount\":"<<characterMaterialEvidence_.maleCharacterMaterialCount<<","
       "\"femaleFirstPersonArms\":{\"firstPersonArmSubmeshCount\":"<<femaleFirstPersonArmsEvidence_.submeshCount<<",\"firstPersonArmTriangleCount\":"<<femaleFirstPersonArmsEvidence_.retainedTriangles<<",\"firstPersonLeftArmTriangleCount\":"<<femaleFirstPersonArmsEvidence_.leftArmTriangles<<",\"firstPersonRightArmTriangleCount\":"<<femaleFirstPersonArmsEvidence_.rightArmTriangles<<"},"
       "\"maleFirstPersonArms\":{\"firstPersonArmSubmeshCount\":"<<maleFirstPersonArmsEvidence_.submeshCount<<",\"firstPersonArmTriangleCount\":"<<maleFirstPersonArmsEvidence_.retainedTriangles<<",\"firstPersonLeftArmTriangleCount\":"<<maleFirstPersonArmsEvidence_.leftArmTriangles<<",\"firstPersonRightArmTriangleCount\":"<<maleFirstPersonArmsEvidence_.rightArmTriangles<<"},\"paletteReplayDiagnostics\":[";for(std::size_t replayIndex=0;replayIndex<capturePaletteReplayDiagnostics_.size();++replayIndex){if(replayIndex)captureOut<<',';const auto& replay=capturePaletteReplayDiagnostics_[replayIndex];captureOut<<"{\"observed\":"<<(replay.observed?1:0)<<",\"inputSource\":\"FixedTickReplayAuthoritativeGodCamera\",\"liveSuppressed\":"<<(replay.liveSuppressed?1:0)<<",\"inputBits\":"<<replay.inputBits<<",\"deltaSource\":\"CaptureFixed60Hz\",\"gameplayDelta\":"<<replay.gameplayDelta<<",\"gameplayDeltaRawBits\":"<<std::bit_cast<std::uint32_t>(replay.gameplayDelta)<<",\"cameraHash\":"<<replay.cameraHash<<",\"cameraAuthorityInputHash\":"<<replay.cameraAuthorityInputHash<<",\"cameraSubjectPoseHash\":"<<replay.cameraSubjectPoseHash<<",\"cameraProjectionMode\":"<<unsigned(replay.projectionMode)<<",\"cameraProjectionModeName\":\""<<CaptureProjectionName(replay.projectionMode)<<"\",\"cameraRawBits\":[";for(std::size_t bitIndex=0;bitIndex<replay.cameraRawBits.size();++bitIndex){if(bitIndex)captureOut<<',';captureOut<<replay.cameraRawBits[bitIndex];}captureOut<<"],\"placementRaySource\":\"ScreenPointToRayAuthoritativeGodCamera\",\"placementPlaneSource\":\"WorldYPlane\",\"placementGridSource\":\"ObjectPalette2mGrid\",\"placementPlaneHeight\":"<<replay.placementPlaneHeight<<",\"placementPlaneHeightRawBits\":"<<std::bit_cast<std::uint32_t>(replay.placementPlaneHeight)<<",\"gridStep\":"<<replay.gridStep<<",\"gridStepRawBits\":"<<std::bit_cast<std::uint32_t>(replay.gridStep)<<",\"footPlacementCameraDistanceSource\":\"PreviousFixedCamera\",\"footPlacementCameraDistance\":"<<replay.footPlacementCameraDistance<<",\"footPlacementCameraDistanceRawBits\":"<<std::bit_cast<std::uint32_t>(replay.footPlacementCameraDistance)<<",\"tick\":"<<replay.tick<<",\"normalizedPointer\":["<<replay.normalizedPointer.x<<','<<replay.normalizedPointer.y<<"],\"rayOrigin\":["<<replay.rayOrigin.x<<','<<replay.rayOrigin.y<<','<<replay.rayOrigin.z<<"],\"rayDirection\":["<<replay.rayDirection.x<<','<<replay.rayDirection.y<<','<<replay.rayDirection.z<<"],\"hitValid\":"<<(replay.hitValid?1:0)<<",\"projectedHit\":["<<replay.projectedHit.x<<','<<replay.projectedHit.y<<','<<replay.projectedHit.z<<"],\"previewActive\":"<<(replay.previewActive?1:0)<<",\"previewValid\":"<<(replay.previewValid?1:0)<<",\"snappedTarget\":["<<replay.snappedTarget.x<<','<<replay.snappedTarget.y<<','<<replay.snappedTarget.z<<"],\"undoDepth\":"<<replay.undoDepth<<",\"redoDepth\":"<<replay.redoDepth<<'}';}captureOut<<"],\"captures\":[";
     for(std::size_t index=0;index<Names.size();++index){
       if(index)captureOut<<",";
-      const bool female=index<5;
+      const bool female=index<5||index==10;
       const char* camera=index<9?(index%3==0?"first":index%3==1?"third":"god"):"third";
       const bool thirdCamera=std::string_view(camera)=="third";
       if((thirdCamera&&(!std::isfinite(captureBuilderTopCenterRayElevation_[index])||
@@ -1699,12 +2164,18 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       const std::uint32_t firstPersonArmTriangleCount=firstCamera?firstPersonArms.retainedTriangles:0;
       const std::uint32_t firstPersonLeftArmTriangleCount=firstCamera?firstPersonArms.leftArmTriangles:0;
       const std::uint32_t firstPersonRightArmTriangleCount=firstCamera?firstPersonArms.rightArmTriangles:0;
+      const auto expectedThirdPersonSlots=female&&candidate7Active_?candidate7Materials_[0].size():std::size_t(female?characterMaterialEvidence_.femaleCharacterMaterialCount:characterMaterialEvidence_.maleCharacterMaterialCount);
       if((firstCamera&&captureBodyMaterialSlots_[index]!=firstPersonArmSubmeshCount)||
-         (!firstCamera&&captureBodyMaterialSlots_[index]!=(female?characterMaterialEvidence_.femaleCharacterMaterialCount:characterMaterialEvidence_.maleCharacterMaterialCount))||
+         (!firstCamera&&captureBodyMaterialSlots_[index]!=expectedThirdPersonSlots)||
          (!firstCamera&&(firstPersonArmSubmeshCount||firstPersonArmTriangleCount||firstPersonLeftArmTriangleCount||firstPersonRightArmTriangleCount)))
-        throw std::runtime_error("Gameplay first-person arms capture evidence mismatch");
+        throw std::runtime_error(std::format(
+          "Gameplay first-person arms capture evidence mismatch: index={} camera={} female={} actualBodySlots={} expectedFirstPersonSlots={} expectedThirdPersonSlots={} armTriangles={}/{}/{}",
+          index,camera,female?1:0,captureBodyMaterialSlots_[index],firstPersonArmSubmeshCount,
+          expectedThirdPersonSlots,
+          firstPersonArmTriangleCount,firstPersonLeftArmTriangleCount,firstPersonRightArmTriangleCount));
       captureOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"character\":\""<<(female?"female-f2":"male-m2")<<"\",\"camera\":\""<<camera<<"\",\"cameraPath\":\"production-shared\",\"crouch\":"<<(index==4?1:0)<<",\"attack\":"<<(index==10?1:0)<<",\"bodyMaterialSlots\":"<<captureBodyMaterialSlots_[index]<<",\"firstPersonArmSubmeshCount\":"<<firstPersonArmSubmeshCount<<",\"firstPersonArmTriangleCount\":"<<firstPersonArmTriangleCount<<",\"firstPersonLeftArmTriangleCount\":"<<firstPersonLeftArmTriangleCount<<",\"firstPersonRightArmTriangleCount\":"<<firstPersonRightArmTriangleCount<<",\"weaponMaterialRanges\":"<<captureWeaponMaterialRanges_[index]<<",\"weaponAnchorError\":"<<captureWeaponAnchorErrors_[index]<<",\"weaponScreenCoverage\":"<<captureWeaponScreenCoverage_[index]<<",\"weaponMinimumDepth\":"<<captureWeaponMinimumDepth_[index]<<",\"weaponCenterExcluded\":"<<unsigned(captureWeaponCenterExcluded_[index])<<",\"weaponNearClipClear\":"<<unsigned(captureWeaponNearClipClear_[index])<<",\"weaponHudOverlap\":"<<unsigned(captureWeaponHudOverlap_[index])<<",\"weaponGripX\":"<<captureWeaponGripX_[index]<<",\"weaponGripY\":"<<captureWeaponGripY_[index]<<",\"weaponBladeY\":"<<captureWeaponBladeY_[index]<<",\"gripEdgeAnchored\":"<<unsigned(captureWeaponGripEdgeAnchored_[index])<<",\"bladeAboveGrip\":"<<unsigned(captureWeaponBladeAboveGrip_[index])<<",\"objectIdGeneration\":"<<captureObjectIdGeneration_[index]<<",\"objectIdMaskHash\":"<<captureObjectIdMaskHash_[index]<<",\"objectIdMask\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-object-id.png\",\"objectIdSubmittedOpaque\":"<<captureObjectIdSubmitted_[index]<<",\"objectIdOpaqueComplete\":"<<unsigned(captureObjectIdOpaqueComplete_[index])<<",\"objectIdMaskedComplete\":"<<unsigned(captureObjectIdMaskedComplete_[index])<<",\"objectIdSkinnedComplete\":"<<unsigned(captureObjectIdSkinnedComplete_[index])<<",\"occluderStableHigh\":"<<captureOccluderStableHigh_[index]<<",\"occluderStableLow\":"<<captureOccluderStableLow_[index]<<",\"occluderGeneration\":"<<captureOccluderGeneration_[index]<<",\"rawOccluderCoverage\":"<<captureRawOccluderCoverage_[index]<<",\"effectiveObjectIdSupported\":"<<unsigned(captureEffectiveObjectIdSupported_[index])<<",\"occluderCoverage\":";
       if(captureEffectiveObjectIdSupported_[index])captureOut<<captureOccluderCoverage_[index];else captureOut<<"null";
+      captureOut<<",\"rawTokenMetadataSha256\":\""<<CaptureShaHex(captureRawTokenMetadataSha256_[index])<<"\",\"effectiveTokenMetadataSha256\":\""<<CaptureShaHex(captureEffectiveTokenMetadataSha256_[index])<<"\"";
       captureOut<<",\"rawColor\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-raw.png\",\"rawObjectIdMask\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-raw-object-id.png\",\"rawObjectIdMaskHash\":"<<captureRawObjectIdMaskHash_[index]<<",\"requestDrawRevision\":"<<captureRequestDrawRevision_[index]<<",\"requestCameraHash\":"<<captureRequestCameraHash_[index]<<",\"requestStateHash\":"<<captureRequestStateHash_[index]<<",\"rawAcceptedExcludingOpacity\":"<<captureRawAcceptedExcludingOpacity_[index]<<",\"effectiveAcceptedExcludingOpacity\":"<<captureEffectiveAcceptedExcludingOpacity_[index]<<",\"rawAcceptedIncludingOpacity\":"<<captureRawAcceptedIncludingOpacity_[index]<<",\"effectiveAcceptedIncludingOpacity\":"<<captureEffectiveAcceptedIncludingOpacity_[index]<<",\"rawIdentityOrderHash\":"<<captureRawIdentityOrderHash_[index]<<",\"effectiveIdentityOrderHash\":"<<captureEffectiveIdentityOrderHash_[index]<<",\"fadedStableHigh\":"<<captureFadedStableHigh_[index]<<",\"fadedStableLow\":"<<captureFadedStableLow_[index]<<",\"fadedGeneration\":"<<captureFadedGeneration_[index]<<",\"policyFadeStableHigh\":"<<capturePolicyFadeStableHigh_[index]<<",\"policyFadeStableLow\":"<<capturePolicyFadeStableLow_[index]<<",\"policyFadeGeneration\":"<<capturePolicyFadeGeneration_[index]<<",\"policyFadeOpacity\":"<<capturePolicyFadeOpacity_[index]<<",\"opacityMatchedStatic\":"<<captureOpacityMatchedStatic_[index]<<",\"opacityMatchedMultipart\":"<<captureOpacityMatchedMultipart_[index]<<",\"opacityMissing\":"<<unsigned(captureOpacityMissing_[index])<<",\"opacityGenerationConflict\":"<<unsigned(captureOpacityGenerationConflict_[index])<<",\"occlusionAdjusted\":"<<unsigned(captureOcclusionAdjusted_[index])<<",\"depthCaptureSupported\":"<<unsigned(captureDepthSupported_[index])<<",\"depthGatePass\":"<<unsigned(captureDepthSupported_[index]&&(!thirdCamera||captureGpuFeetContactPassed_[index]))<<",\"rawDepth\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-raw-depth.png\",\"effectiveDepth\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-depth.png\",\"referenceDepth\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-reference-depth.png\",\"rawDepthSha256\":\""<<CaptureShaHex(captureRawDepthSha256_[index])<<"\",\"effectiveDepthSha256\":\""<<CaptureShaHex(captureEffectiveDepthSha256_[index])<<"\",\"referenceDepthSha256\":\""<<CaptureShaHex(captureReferenceDepthSha256_[index])<<"\",\"rawDepthPixelSha256\":\""<<CaptureShaHex(captureRawDepthSha256_[index])<<"\",\"effectiveDepthPixelSha256\":\""<<CaptureShaHex(captureEffectiveDepthSha256_[index])<<"\",\"referenceDepthPixelSha256\":\""<<CaptureShaHex(captureReferenceDepthSha256_[index])<<"\",\"rawDepthFinalFileSha256\":\""<<CaptureShaHex(captureRawDepthFinalFileSha256_[index])<<"\",\"effectiveDepthFinalFileSha256\":\""<<CaptureShaHex(captureEffectiveDepthFinalFileSha256_[index])<<"\",\"referenceDepthFinalFileSha256\":\""<<CaptureShaHex(captureReferenceDepthFinalFileSha256_[index])<<"\",\"rawDepthFinalFileBytes\":"<<captureRawDepthFinalFileBytes_[index]<<",\"effectiveDepthFinalFileBytes\":"<<captureEffectiveDepthFinalFileBytes_[index]<<",\"referenceDepthFinalFileBytes\":"<<captureReferenceDepthFinalFileBytes_[index]<<",\"depthGeneration\":"<<captureDepthGeneration_[index]<<",\"gpuContactMask\":\""<<std::filesystem::path(Names[index]).stem().string()<<"-contact.png\",\"leftFootGroundGapPixels\":"<<captureLeftFootGroundGapPixels_[index]<<",\"rightFootGroundGapPixels\":"<<captureRightFootGroundGapPixels_[index]<<",\"leftFootDepthDelta\":"<<captureLeftFootDepthDelta_[index]<<",\"rightFootDepthDelta\":"<<captureRightFootDepthDelta_[index]<<",\"gpuFeetContactPassed\":"<<unsigned(captureGpuFeetContactPassed_[index])<<",\"groundStableLow\":"<<captureGroundStableLow_[index]<<",\"groundSemantic\":\"terrain\",\"feetGroundError\":"<<captureFeetGroundError_[index]<<",\"feetContactPassed\":"<<unsigned(captureFeetContactPassed_[index]);
       const auto& canonicalState=captureCanonicalState_[index];captureOut<<",\"captureStateSchemaVersion\":"<<canonicalState.schemaVersion<<",\"captureStateValid\":"<<(canonicalState.valid?1:0)<<",\"captureStateEntityCount\":"<<canonicalState.entityDiagnostics.size()<<",\"captureStateCanonical\":"<<canonicalState.canonical<<",\"captureStateLegacy\":"<<canonicalState.legacy<<",\"captureStateEntities\":"<<canonicalState.entities<<",\"captureStateTopology\":"<<canonicalState.topology<<",\"captureStateTransform\":"<<canonicalState.transform<<",\"captureStateController\":"<<canonicalState.controller<<",\"captureStateYawPitch\":"<<canonicalState.yawPitch<<",\"captureStateRules\":"<<canonicalState.rules<<",\"captureStateCamera\":"<<canonicalState.camera<<",\"captureStatePalette\":"<<canonicalState.palette<<",\"captureStateAnimation\":"<<canonicalState.animation<<",\"captureStatePhysics\":"<<canonicalState.physics<<",\"captureStateEntityDiagnostics\":[";for(std::size_t entityIndex=0;entityIndex<canonicalState.entityDiagnostics.size();++entityIndex){if(entityIndex)captureOut<<',';const auto& entity=canonicalState.entityDiagnostics[entityIndex];captureOut<<"{\"stableId\":"<<entity.stableId<<",\"source\":\""<<(entity.initialSeed?"InitialSeed":"PaletteReplay")<<"\",\"category\":"<<unsigned(entity.category)<<",\"dynamic\":"<<(entity.dynamic?1:0)<<",\"alive\":"<<(entity.alive?1:0)<<",\"position\":["<<entity.position.x<<','<<entity.position.y<<','<<entity.position.z<<"],\"positionRawBits\":["<<entity.rawBits[0]<<','<<entity.rawBits[1]<<','<<entity.rawBits[2]<<"],\"rotation\":"<<entity.rotation<<",\"rotationRawBits\":"<<entity.rawBits[3]<<",\"topologyHash\":"<<entity.topologyHash<<",\"transformHash\":"<<entity.transformHash<<",\"bodyAvailable\":"<<(entity.bodyAvailable?1:0)<<",\"bodyPosition\":["<<entity.bodyPosition.x<<','<<entity.bodyPosition.y<<','<<entity.bodyPosition.z<<"],\"bodyVelocity\":["<<entity.bodyVelocity.x<<','<<entity.bodyVelocity.y<<','<<entity.bodyVelocity.z<<"],\"sceneAvailable\":"<<(entity.sceneAvailable?1:0)<<",\"scenePosition\":["<<entity.scenePosition.x<<','<<entity.scenePosition.y<<','<<entity.scenePosition.z<<"]}";}captureOut<<']';const auto& frameRender=captureSequenceReceipts_[index].phases[1].determinism.render;WriteIntegrityJson(captureOut,captureDeterminismFrameSerial_[index],captureDeterminismIntegrity_[index],captureCanonicalDrawFingerprint_[index],&frameRender);
       captureOut<<",\"contactArtifactSha256\":\""<<CaptureShaHex(captureContactArtifactSha256_[index])<<"\",\"contactLeftFootPixels\":"<<captureContactLeftPixels_[index]<<",\"contactRightFootPixels\":"<<captureContactRightPixels_[index]<<",\"contactGroundSupportPixels\":"<<captureContactGroundSupportPixels_[index]<<",\"contactShadowPixels\":"<<captureContactShadowPixels_[index]<<",\"contactFrameSerial\":"<<captureContactFrameSerial_[index]<<",\"contactPoseHash\":"<<captureContactPoseHash_[index];
@@ -1718,7 +2189,49 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     std::ofstream diagnosticOut(captureDirectory_/"gameplay-camera-depth-diagnostic-receipt.json",std::ios::trunc);diagnosticOut<<std::setprecision(std::numeric_limits<float>::max_digits10);diagnosticOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabCameraDepthDiagnostic\",\"captures\":[";
     for(std::size_t index=0;index<Names.size();++index){if(index)diagnosticOut<<',';diagnosticOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"builderValid\":"<<unsigned(captureBuilderValid_[index])<<",\"policyValid\":"<<unsigned(captureBuilderPolicyValid_[index])<<",\"matrixExact\":"<<unsigned(captureBuilderMatrixExact_[index])<<",\"candidateLow\":"<<captureBuilderCandidateLow_[index]<<",\"screenHeight\":"<<captureBuilderScreenHeight_[index]<<",\"screenWidth\":"<<captureBuilderScreenWidth_[index]<<",\"screenArea\":"<<captureBuilderScreenArea_[index]<<",\"headroom\":"<<captureBuilderHeadroom_[index]<<",\"feetOnScreen\":"<<unsigned(captureBuilderFeetOnScreen_[index])<<",\"yaw\":"<<captureBuilderYaw_[index]<<",\"pitch\":"<<captureBuilderPitch_[index]<<",\"elevation\":"<<captureBuilderElevation_[index]<<",\"arm\":"<<captureBuilderArm_[index]<<",\"cameraPosition\":["<<captureBuilderPositionX_[index]<<','<<captureBuilderPositionY_[index]<<','<<captureBuilderPositionZ_[index]<<"],\"expectedCameraHash\":"<<captureBuilderExpectedCameraHash_[index]<<",\"actualCameraHash\":"<<captureRequestCameraHash_[index]<<",\"playerToken\":"<<capturePlayerToken_[index]<<",\"terrainToken\":"<<captureTerrainToken_[index]<<",\"roiDominantToken\":"<<captureFootRoiDominantToken_[index]<<",\"roiDominantIdentity\":["<<captureFootRoiDominantHigh_[index]<<','<<captureFootRoiDominantLow_[index]<<','<<captureFootRoiDominantGeneration_[index]<<"],\"roiDepthMin\":"<<captureFootRoiDepthMin_[index]<<",\"roiDepthMax\":"<<captureFootRoiDepthMax_[index]<<",\"roiHistogram\":"<<(captureFootRoiHistogramJson_[index].empty()?"[]":captureFootRoiHistogramJson_[index])<<"}";}diagnosticOut<<"]}";
     diagnosticOut.close();std::ofstream correctedDiagnosticOut(captureDirectory_/"gameplay-camera-depth-diagnostic-receipt.json",std::ios::trunc);correctedDiagnosticOut<<std::setprecision(std::numeric_limits<float>::max_digits10);correctedDiagnosticOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabCameraDepthDiagnostic\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)correctedDiagnosticOut<<',';correctedDiagnosticOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"projectionMode\":\""<<CaptureProjectionName(ProjectionMode(captureProjectionMode_[index]))<<"\",\"projectionModeValue\":"<<unsigned(captureProjectionMode_[index])<<",\"verticalFovRadians\":"<<captureVerticalFovRadians_[index]<<",\"orthographicHeight\":"<<captureOrthographicHeight_[index]<<",\"godActualTriangleCoverage\":"<<captureGodActualTriangleCoverage_[index]<<",\"godVisibleWorldDescriptors\":"<<captureGodVisibleWorldDescriptors_[index]<<",\"godBuildingUnion\":"<<captureGodBuildingUnion_[index]<<",\"godMaximumBuildingPart\":"<<captureGodMaximumBuildingPart_[index]<<",\"godRoofCoverage\":"<<captureGodRoofCoverage_[index]<<",\"godLodTransitions\":"<<captureGodLodTransitions_[index]<<",\"builderValid\":"<<unsigned(captureBuilderValid_[index])<<",\"policyValid\":"<<unsigned(captureBuilderPolicyValid_[index])<<",\"matrixExact\":"<<unsigned(captureBuilderMatrixExact_[index])<<",\"candidateLow\":"<<captureBuilderCandidateLow_[index]<<",\"screenHeight\":"<<captureBuilderScreenHeight_[index]<<",\"screenWidth\":"<<captureBuilderScreenWidth_[index]<<",\"screenArea\":"<<captureBuilderScreenArea_[index]<<",\"headroom\":"<<captureBuilderHeadroom_[index]<<",\"feetOnScreen\":"<<unsigned(captureBuilderFeetOnScreen_[index])<<",\"yaw\":"<<captureBuilderYaw_[index]<<",\"pitch\":"<<captureBuilderPitch_[index]<<",\"topCenterRayElevation\":"<<captureBuilderTopCenterRayElevation_[index]<<",\"topCenterRayElevationRawBits\":"<<std::bit_cast<std::uint32_t>(captureBuilderTopCenterRayElevation_[index])<<",\"minimumTopCenterRayElevation\":"<<captureBuilderMinimumTopCenterRayElevation_[index]<<",\"minimumTopCenterRayElevationRawBits\":"<<std::bit_cast<std::uint32_t>(captureBuilderMinimumTopCenterRayElevation_[index])<<",\"rejectedHorizon\":"<<captureBuilderRejectedHorizon_[index]<<",\"elevation\":"<<captureBuilderElevation_[index]<<",\"arm\":"<<captureBuilderArm_[index]<<",\"cameraPosition\":["<<captureBuilderPositionX_[index]<<','<<captureBuilderPositionY_[index]<<','<<captureBuilderPositionZ_[index]<<"],\"expectedCameraHash\":"<<captureBuilderExpectedCameraHash_[index]<<",\"actualCameraHash\":"<<captureRequestCameraHash_[index]<<",\"playerToken\":"<<capturePlayerToken_[index]<<",\"terrainToken\":"<<captureTerrainToken_[index]<<",\"roiDominantToken\":"<<captureFootRoiDominantToken_[index]<<",\"roiDominantIdentity\":["<<captureFootRoiDominantHigh_[index]<<','<<captureFootRoiDominantLow_[index]<<','<<captureFootRoiDominantGeneration_[index]<<"],\"roiDepthMin\":"<<captureFootRoiDepthMin_[index]<<",\"roiDepthMax\":"<<captureFootRoiDepthMax_[index]<<",\"roiHistogram\":"<<(captureFootRoiHistogramJson_[index].empty()?"[]":captureFootRoiHistogramJson_[index])<<'}';}correctedDiagnosticOut<<"]}";
-    std::ofstream sequenceOut(captureDirectory_/"gameplay-readback-sequence-receipt.json",std::ios::trunc);sequenceOut<<std::setprecision(std::numeric_limits<float>::max_digits10);sequenceOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabReadbackSequence\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)sequenceOut<<',';const auto& receipt=captureSequenceReceipts_[index];sequenceOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"token\":"<<receipt.token.value<<",\"expectedPhaseCount\":"<<receipt.expectedPhaseCount<<",\"jitterPolicy\":"<<unsigned(receipt.descriptor.jitterPolicy)<<",\"fixedSampleIndex\":"<<receipt.descriptor.fixedSampleIndex<<",\"complete\":"<<unsigned(receipt.Complete())<<",\"phases\":[";for(std::size_t phaseIndex=0;phaseIndex<receipt.phases.size();++phaseIndex){if(phaseIndex)sequenceOut<<',';const auto& phase=receipt.phases[phaseIndex];sequenceOut<<"{\"index\":"<<phase.phaseIndex<<",\"sequenceToken\":"<<phase.metadata.sequence.token.value<<",\"sequenceIndex\":"<<phase.metadata.sequence.index<<",\"drawListRevision\":"<<phase.metadata.drawListRevision<<",\"cameraHash\":"<<phase.metadata.cameraHash<<",\"stateHash\":"<<phase.metadata.stateHash<<",\"invariantHash\":"<<phase.metadata.sequenceInvariantHash<<",\"frameSerial\":"<<phase.raster.frameSerial<<",\"viewProjectionHash\":"<<phase.raster.viewProjectionHash<<",\"tokenGeneration\":"<<phase.raster.tokenGeneration<<",\"historyGeneration\":"<<phase.raster.temporalHistoryReadGeneration<<",\"historyIndex\":"<<phase.raster.temporalHistoryReadIndex<<",\"jitterIndex\":"<<phase.raster.jitterIndex<<",\"jitterX\":"<<phase.raster.jitterPixels.x<<",\"jitterY\":"<<phase.raster.jitterPixels.y<<",\"excludingOpacity\":"<<phase.drawFingerprintExcludingOpacity<<",\"includingOpacity\":"<<phase.drawFingerprintIncludingOpacity<<",\"identityOrder\":"<<phase.identityOrderHash;WriteIntegrityJson(sequenceOut,phase.determinism.frameSerial,phase.determinism.integrity,phase.determinism.canonical,&phase.determinism.render);sequenceOut<<"}";}sequenceOut<<"]}";}sequenceOut<<"]}";
+    std::ofstream sequenceOut(captureDirectory_/"gameplay-readback-sequence-receipt.json",std::ios::trunc);
+    sequenceOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
+    sequenceOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabReadbackSequence\",\"captures\":[";
+    for(std::size_t index=0;index<Names.size();++index){
+      if(index)sequenceOut<<',';
+      const auto& receipt=captureSequenceReceipts_[index];
+      sequenceOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()
+                 <<"\",\"token\":"<<receipt.token.value
+                 <<",\"expectedPhaseCount\":"<<receipt.expectedPhaseCount
+                 <<",\"jitterPolicy\":"<<unsigned(receipt.descriptor.jitterPolicy)
+                 <<",\"fixedSampleIndex\":"<<receipt.descriptor.fixedSampleIndex
+                 <<",\"complete\":"<<unsigned(receipt.Complete())<<",\"phases\":[";
+      for(std::size_t phaseIndex=0;phaseIndex<receipt.phases.size();++phaseIndex){
+        if(phaseIndex)sequenceOut<<',';
+        const auto& phase=receipt.phases[phaseIndex];
+        sequenceOut<<"{\"index\":"<<phase.phaseIndex
+                   <<",\"sequenceToken\":"<<phase.metadata.sequence.token.value
+                   <<",\"sequenceIndex\":"<<phase.metadata.sequence.index
+                   <<",\"drawListRevision\":"<<phase.metadata.drawListRevision
+                   <<",\"cameraHash\":"<<phase.metadata.cameraHash
+                   <<",\"stateHash\":"<<phase.metadata.stateHash
+                   <<",\"invariantHash\":"<<phase.metadata.sequenceInvariantHash
+                   <<",\"frameSerial\":"<<phase.raster.frameSerial
+                   <<",\"viewProjectionHash\":"<<phase.raster.viewProjectionHash
+                   <<",\"tokenGeneration\":"<<phase.raster.tokenGeneration
+                   <<",\"historyGeneration\":"<<phase.raster.temporalHistoryReadGeneration
+                   <<",\"historyIndex\":"<<phase.raster.temporalHistoryReadIndex
+                   <<",\"jitterIndex\":"<<phase.raster.jitterIndex
+                   <<",\"jitterX\":"<<phase.raster.jitterPixels.x
+                   <<",\"jitterY\":"<<phase.raster.jitterPixels.y
+                   <<",\"excludingOpacity\":"<<phase.drawFingerprintExcludingOpacity
+                   <<",\"includingOpacity\":"<<phase.drawFingerprintIncludingOpacity
+                   <<",\"identityOrder\":"<<phase.identityOrderHash;
+        WriteIntegrityJson(sequenceOut,phase.determinism.frameSerial,phase.determinism.integrity,phase.determinism.canonical,&phase.determinism.render);
+        sequenceOut<<",\"gpuProvenance\":{\"atmosphere\":";
+        WriteAtmosphereReadbackProvenanceJson(sequenceOut,captureAtmospherePhaseProvenance_[index][phaseIndex]);
+        sequenceOut<<",\"temporalResolve\":";
+        WriteAtmosphereReadbackProvenanceJson(sequenceOut,captureTemporalPhaseProvenance_[index][phaseIndex]);
+        sequenceOut<<"}}";
+      }
+      sequenceOut<<"]}";
+    }
+    sequenceOut<<"]}";
     std::ofstream drawIdentityOut(captureDirectory_/"gameplay-draw-identity-diagnostic-receipt.json",std::ios::trunc);drawIdentityOut<<std::setprecision(std::numeric_limits<float>::max_digits10);drawIdentityOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabDrawIdentityDiagnostic\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)drawIdentityOut<<',';drawIdentityOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"drawIdentities\":"<<captureDrawIdentityCount_[index]<<",\"drawTerrainInstances\":"<<captureDrawTerrainCount_[index]<<",\"drawTerrainIdentityMatches\":"<<captureDrawTerrainIdentityCount_[index]<<",\"acceptedTerrainToken\":"<<captureTerrainToken_[index]<<"}";}drawIdentityOut<<"]}";
     std::ofstream drawGroundOut(captureDirectory_/"gameplay-draw-ground-identity-diagnostic-receipt.json",std::ios::trunc);drawGroundOut<<std::setprecision(std::numeric_limits<float>::max_digits10);drawGroundOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabDrawGroundIdentityDiagnostic\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)drawGroundOut<<',';drawGroundOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"sceneToDrawGroundIdentityMatches\":"<<captureDrawGroundIdentityCount_[index]<<",\"acceptedGpuGroundToken\":"<<captureTerrainToken_[index]<<"}";}drawGroundOut<<"]}";
     std::ofstream drawGroundLayerOut(captureDirectory_/"gameplay-draw-ground-layer-diagnostic-receipt.json",std::ios::trunc);drawGroundLayerOut<<std::setprecision(std::numeric_limits<float>::max_digits10);drawGroundLayerOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabDrawGroundLayerDiagnostic\",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)drawGroundLayerOut<<',';drawGroundLayerOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"groundOpaque\":"<<captureDrawGroundOpaqueCount_[index]<<",\"groundShadowOnly\":"<<captureDrawGroundShadowOnlyCount_[index]<<"}";}drawGroundLayerOut<<"]}";
@@ -1765,11 +2278,15 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       rules_.SetLighting(route.lighting);
       rules_.SetCamera(route.camera);
     } else {
+      // Palette retains the male material-authoring case; the combat showcase must
+      // explicitly select the current Candidate7 female hero instead of inheriting
+      // the preceding male night shot through mutable presentation state.
+      rules_.SetCharacterFemale(captureIndex_ == 10);
       rules_.SetCamera(CameraMode::ThirdPerson);
       rules_.SetLighting(captureIndex_ == 9 ? LightingPhase::Day
                                             : LightingPhase::Dusk);
     }
-      capturePreparedIndex_=captureIndex_;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;captureTemporalWarmupRemaining_=0;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=0;
+      capturePreparedIndex_=captureIndex_;capturePreparedSceneSubmitted_=false;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;captureTemporalWarmupRemaining_=0;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=0;
       if(captureIndex_>=GameplayCaptureExpectations3D.size())throw std::runtime_error("Gameplay active capture route index was out of range");
       activeCaptureRoute_={captureIndex_,BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[captureIndex_]),GameplayActiveCaptureRoutePhase3D::Prepared};
       // 跨時段保留同一組已驗證的上帝視角構圖；後續 UpdateCamera 仍會依目前角色位置、碰撞、地形與 LOD 重新驗證。
@@ -1785,6 +2302,10 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     if(captureIndex_==9&&paletteUiDrawnFrames_<Names.size())return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&cameraPolicyFadeIdentity_&&!cameraFadeSettled_)return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&!GameplayCameraSelectionSettled3D(cameraPolicyReceipt_,cameraSelectedCandidate_))return;
+    // 場景切換後必須先完成一次正式 submission，再開始固定暖機。
+    // 否則 Update/Render 排程次序會決定 DrawIdentity 重設落在暖機之前或期間，
+    // 使相同 capture 出現不同的 HDR 起始狀態。
+    if(!GameplayCaptureWarmupMayBegin3D(capturePreparedSceneSubmitted_))return;
     if(!captureTemporalWarmupActive_){activeCaptureRoute_.phase=GameplayActiveCaptureRoutePhase3D::Warming;captureTemporalWarmupActive_=true;captureTemporalWarmupRemaining_=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D::CaptureShot);QueueTemporalHistoryReseed(GameplayTemporalReseedReason3D::CaptureShot);return;}
     if(!GameplayTemporalCaptureReady3D(captureTemporalWarmupActive_,capturePoseFrozen_,captureTemporalWarmupRemaining_))return;
     captureTemporalWarmupActive_=false;
@@ -1829,9 +2350,35 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     if(rules_.Camera()==CameraMode::FirstPerson)MixCaptureHash(animationState,captureFrozenFirstPersonPose_.hash);
     GameplayCanonicalCaptureStateInput3D canonicalInput{};canonicalInput.captureIndex=captureIndex_;canonicalInput.entities.assign(rules_.Entities().begin(),rules_.Entities().end());canonicalInput.controllerPosition=controller_.Position();canonicalInput.yaw=yaw_;canonicalInput.pitch=pitch_;canonicalInput.camera=rules_.Camera();canonicalInput.lighting=rules_.Lighting();canonicalInput.paletteCategory=rules_.Category();canonicalInput.female=rules_.Female();canonicalInput.paletteOpen=rules_.PaletteOpen();canonicalInput.grabbedEntity=rules_.Grabbed().value_or(0);canonicalInput.cameraHash=frozenCameraHash;canonicalInput.animationHash=animationState;canonicalInput.physicsHash=physicsState;captureCanonicalState_[captureIndex_]=BuildGameplayCanonicalCaptureState3D(canonicalInput);if(!captureCanonicalState_[captureIndex_].valid)throw std::runtime_error("Gameplay canonical capture state contained a non-finite or invalid entity");for(auto& diagnostic:captureCanonicalState_[captureIndex_].entityDiagnostics){diagnostic.initialSeed=std::ranges::find(initialSeedEntityIds_,diagnostic.stableId)!=initialSeedEntityIds_.end();if(const auto* body=static_cast<const PhysicsWorld3D&>(physics_).GetBody(palette_->Body(diagnostic.stableId))){diagnostic.bodyAvailable=true;diagnostic.bodyPosition=body->settings.transform.position;diagnostic.bodyVelocity=body->velocity;}if(const auto* scene=static_cast<const SceneECSRegistry3D&>(sceneEcs_).Transform(palette_->SceneEntity(diagnostic.stableId))){diagnostic.sceneAvailable=true;diagnostic.scenePosition=scene->value.position;}}const std::uint64_t frozenStateHash=captureCanonicalState_[captureIndex_].canonical;
     std::uint64_t sequenceInvariantHash=14695981039346656037ull;MixCaptureHash(sequenceInvariantHash,frozenCameraHash);MixCaptureHash(sequenceInvariantHash,frozenStateHash);MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenFemalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMalePose_));MixCaptureHash(sequenceInvariantHash,HashPose(captureFrozenMonsterPose_));MixCaptureHash(sequenceInvariantHash,showcaseProductionReceipt_.manifestFingerprint);if(rules_.Camera()==CameraMode::FirstPerson)MixCaptureHash(sequenceInvariantHash,captureFrozenFirstPersonPose_.hash);if(!sequenceInvariantHash)sequenceInvariantHash=1;
+    // 物件識別會與呈現色彩共用每幀的動態／透明幾何。固定正式序列由槽位 0
+    // 開始，確保 raw/effective/HDR 三個 phase 在跨程序重跑時仍落在相同的
+    // 0/1/2 upload slice；等待期間只呈現已凍結姿態，不建立半套 sequence。
+    if(engine.CurrentBufferedFrameIndex3D()!=0)return;
     activeCaptureRoute_.phase=GameplayActiveCaptureRoutePhase3D::Readback;
+    // 第一階段只記錄可比性契約，不載入或重播舊姿態；正式讀回與品質 gate 完全保留。
+    {
+      const auto destination=captureDirectory_/(std::filesystem::path(Names[captureIndex_]).stem().wstring()+L".compare-v1.json");
+      std::ofstream compare(destination,std::ios::trunc);
+      if(!compare)throw std::runtime_error("Comparison contract open failed");
+      const auto bits=[](float value){return std::bit_cast<std::uint32_t>(value);};
+      const auto vectorBits=[&](Vec3 value){compare<<bits(value.x)<<','<<bits(value.y)<<','<<bits(value.z);};
+      const bool cameraClear=CompareCaptureCollisionClear(collisions_,camera_.position,controller_.Center(),controller_.Extents(),
+          !showcaseTerrain_.Contains(camera_.position.x,camera_.position.z)||camera_.position.y>showcaseTerrain_.SampleHeight(camera_.position.x,camera_.position.z)+.1f);
+      compare<<"{\"schemaVersion\":1,\"replaySupported\":false,\"shot\":\""<<std::filesystem::path(Names[captureIndex_]).string()<<"\",\"collisionClear\":"<<(cameraClear?"true":"false")
+             <<",\"cameraRawBits\":[";vectorBits(camera_.position);compare<<',';vectorBits(camera_.target);compare<<',';vectorBits(camera_.up);
+      compare<<','<<unsigned(camera_.projection.mode)<<','<<bits(camera_.projection.verticalFieldOfView)<<','<<bits(camera_.projection.orthographicHeight)<<','<<bits(camera_.projection.nearPlane)<<','<<bits(camera_.projection.farPlane)<<"]";
+      const auto matrixBits=[&](const Matrix4& matrix){bool first=true;for(const auto& row:matrix.values)for(float value:row){if(!first)compare<<',';first=false;compare<<bits(value);}};
+      compare<<",\"actorRawBits\":[";matrixBits(GameplayPlayerWorld3D(candidate7Active_,rules_.Female(),candidate7PresentationScale_,controller_.Position(),yaw_));compare<<','<<rules_.Female()<<"]";
+      compare<<",\"clipPhaseRaw\":["<<unsigned(femaleAnimation_.State())<<','<<bits(femaleAnimation_.NormalizedPhase())<<','<<unsigned(maleAnimation_.State())<<','<<bits(maleAnimation_.NormalizedPhase())<<','<<unsigned(monsterAnimation_.State())<<','<<bits(monsterAnimation_.NormalizedPhase())<<"]";
+      compare<<",\"frozenPoseHashes\":[\""<<HashPose(captureFrozenFemalePose_)<<"\",\""<<HashPose(captureFrozenMalePose_)<<"\",\""<<HashPose(captureFrozenMonsterPose_)<<"\"]"
+             <<",\"footPlacementHash\":\""<<captureFrozenFootPlacementHash_<<"\",\"controllerHash\":\""<<controller_.StateHash()<<"\"";
+      compare<<",\"companionRawBits\":[";{const auto position=GameplayShowcaseMonsterPresentationPosition3D(combat_->Monster().position,yaw_,combat_->Monster().alive);const bool godCaptureStage=!captureDirectory_.empty()&&rules_.Camera()==CameraMode::GodView;const auto transform=GameplayShowcaseMonsterTransform3D(position,controller_.Position(),yaw_,godCaptureStage);matrixBits(CreateTransformMatrix(transform.position,transform.rotation,transform.scale));}compare<<','<<combat_->Monster().alive<<"]";
+      compare<<",\"viewmodelHash\":\""<<(rules_.Camera()==CameraMode::FirstPerson?captureFrozenFirstPersonPose_.hash:0)<<"\",\"exposureRawBits\":"<<bits(showcaseEnvironment_.EvaluateLighting(ShowcaseLightingProfile3D(unsigned(rules_.Lighting()))).exposureEv)<<"}";
+      compare.flush();if(!compare)throw std::runtime_error("Comparison contract write failed");
+    }
     if(gameplayHdrCaptureStates_[captureIndex_]!=GameplayHdrCaptureState3D::Empty){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay HDR capture state was not empty before arm");}
-    const auto sequence=engine.BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{captureSequencePhaseCount_,ReadbackCaptureSequenceJitterPolicy3D::FixedSample,0,1ull<<1});
+    const std::uint64_t hdrPhaseMask=captureRawHdrDiagnostic_?((1ull<<0)|(1ull<<1)):(1ull<<1);
+    const auto sequence=engine.BeginReadbackCaptureSequence3D(ReadbackCaptureSequenceDescriptor3D{captureSequencePhaseCount_,ReadbackCaptureSequenceJitterPolicy3D::FixedSample,0,hdrPhaseMask});
     if(!sequence){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay readback capture sequence begin failed closed");}
     captureSequenceToken_=*sequence;
     if(!captureScenarioClock_.BeginReadback(captureIndex_)){captureScenarioClock_.FailReadback(captureIndex_);FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay capture scenario readback begin was out of order");}
@@ -1847,6 +2394,7 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   if(playerHistory_.HasPendingSubmission())playerHistory_.ResolveSubmitted(engine);
   if(monsterHistory_.HasPendingSubmission())monsterHistory_.ResolveSubmitted(engine);
   BuildWorld(engine);
+  const bool frozenBeforeCaptureRequest=GameplayUseFrozenPose3D(capturePoseFrozen_,temporalFixtureWarmupFrames_!=0,capturePairFrozen_,captureTemporalWarmupActive_,captureScenarioClock_.ReadyToStage());
   RequestCapturePhase(engine);
   // Render 只選擇 fixed simulation 已發布的 authority/frozen snapshot；不得回寫或重新求值。
   const bool useFrozenPose=GameplayUseFrozenPose3D(capturePoseFrozen_,temporalFixtureWarmupFrames_!=0,capturePairFrozen_,captureTemporalWarmupActive_,captureScenarioClock_.ReadyToStage());
@@ -1854,19 +2402,36 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   const AnimationPose3D& presentationFemalePose=*presentationPoses.female;
   const AnimationPose3D& presentationMalePose=*presentationPoses.male;
   const AnimationPose3D& presentationMonsterPose=*presentationPoses.monster;
-  const Matrix4 playerWorld=CreateTransformMatrix(controller_.Position(),{0,yaw_,0},{1,1,1});
+  const Matrix4 playerWorld=GameplayPlayerWorld3D(candidate7Active_,rules_.Female(),candidate7PresentationScale_,controller_.Position(),yaw_);
   const AnimationPose3D& activePose=rules_.Female()?presentationFemalePose:presentationMalePose;
   const SkinnedModel3D& activeModel=rules_.Female()?femaleModel_:maleModel_;
   const HumanoidSkeletonMap3D& activeRig=rules_.Female()?femaleAnimation_.Rig():maleAnimation_.Rig();
-  if(rules_.Camera()==CameraMode::GodView&&godCameraAuthorityReceipt_.subjectPoseHash!=HashPose(activePose))
+  if(rules_.Camera()==CameraMode::GodView&&!GameplayGodPoseAuthorityPass3D(activeCaptureRoute_.Active(),captureTemporalWarmupActive_,capturePairFrozen_,captureScenarioClock_.ReadyToStage(),capturePoseFrozen_,godCameraAuthorityReceipt_.valid,godCameraAuthorityReceipt_.layout.valid,godCameraAuthorityReceipt_.subjectPoseHash,HashPose(activePose))){
+    // 固定檔名僅寫 capture 目錄；診斷失敗仍保留原本 fail-closed，不補算或竄改權威。
+    if(!captureDirectory_.empty()){
+      std::ofstream diagnostic(captureDirectory_/"god-pose-authority-mismatch.json",std::ios::binary|std::ios::trunc);
+      diagnostic<<"{\"receiptSubjectHash\":\""<<godCameraAuthorityReceipt_.subjectPoseHash<<"\",\"activePoseHash\":\""<<HashPose(activePose)
+        <<"\",\"liveFemaleHash\":\""<<HashPose(femalePose_)<<"\",\"liveMaleHash\":\""<<HashPose(malePose_)
+        <<"\",\"frozenFemaleHash\":\""<<HashPose(captureFrozenFemalePose_)<<"\",\"frozenMaleHash\":\""<<HashPose(captureFrozenMalePose_)
+        <<"\",\"receiptCameraHash\":\""<<godCameraAuthorityReceipt_.cameraHash<<"\",\"renderCameraHash\":\""<<CaptureCameraHash(camera_)
+        <<"\",\"receiptValid\":"<<godCameraAuthorityReceipt_.valid<<",\"layoutValid\":"<<godCameraAuthorityReceipt_.layout.valid
+        <<",\"female\":"<<rules_.Female()<<",\"tick\":"<<rules_.GetStats().ticks<<",\"captureIndex\":"<<captureIndex_
+        <<",\"activeRoute\":"<<activeCaptureRoute_.Active()<<",\"poseFrozen\":"<<capturePoseFrozen_<<",\"fixtureWarmupFrames\":"<<temporalFixtureWarmupFrames_
+        <<",\"pairFrozen\":"<<capturePairFrozen_<<",\"warmupActive\":"<<captureTemporalWarmupActive_
+        <<",\"readyToStage\":"<<captureScenarioClock_.ReadyToStage()<<",\"advancesSimulation\":"<<captureScenarioClock_.AdvancesSimulation()
+        <<",\"useFrozenPose\":"<<useFrozenPose<<",\"frozenBeforeCaptureRequest\":"<<frozenBeforeCaptureRequest<<",\"phaseRequestPending\":"<<capturePhaseRequestPending_
+        <<",\"presentationRequestPending\":"<<capturePresentationRequestPending_<<",\"capturePending\":"<<capturePending_<<"}";
+      diagnostic.flush();
+    }
     throw std::runtime_error("Gameplay God camera subject pose did not match render authority pose");
+  }
   DrawList& draw=engine.Draw();
   const auto bodyMesh=rules_.Female()?femaleMesh_.handle:maleMesh_.handle;
   const auto firstPersonArmsMesh=rules_.Female()?femaleFirstPersonArmsMesh_.handle:maleFirstPersonArmsMesh_.handle;
   const auto weaponMesh=rules_.Female()?femaleWeaponMesh_.handle:maleWeaponMesh_.handle;
   const auto& bodySubmeshes=rules_.Female()?femaleSubmeshes_:maleSubmeshes_;
   const auto& firstPersonArmsSubmeshes=rules_.Female()?femaleFirstPersonArmsSubmeshes_:maleFirstPersonArmsSubmeshes_;
-  const auto& bodyMaterials=rules_.Female()?femaleMaterials_:maleMaterials_;
+  const auto& bodyMaterials=rules_.Female()?(candidate7Active_?candidate7Materials_[0]:femaleMaterials_):maleMaterials_;
   const auto& weaponSubmeshes=rules_.Female()?femaleWeaponSubmeshes_:maleWeaponSubmeshes_;
   const auto& weaponMaterials=rules_.Female()?femaleWeaponMaterials_:maleWeaponMaterials_;
   Matrix4 weaponWorld=playerWorld,armsWorld=playerWorld;
@@ -1892,7 +2457,7 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     draw.AddPointLight({TransformPoint(cameraWorld,{.28f,.10f,.58f}),1.35f,{1.f,.88f,.72f,1.f},viewmodelLayout.keyIntensity});
     draw.AddPointLight({TransformPoint(cameraWorld,{-.22f,.02f,.76f}),1.10f,{.58f,.72f,1.f,1.f},viewmodelLayout.fillIntensity});
   }
-  std::array<SkinnedRenderablePart3D,3> playerParts{};
+  std::array<SkinnedRenderablePart3D,6> playerParts{};
   std::size_t playerPartCount=0;
   if(rules_.Camera()!=CameraMode::FirstPerson)
     playerParts[playerPartCount++]={bodyMesh,playerWorld,Matrix4::Identity(),std::uint32_t(activeModel.bindMesh.indices.size()),bodySubmeshes,bodyMaterials,{1}};
@@ -1902,6 +2467,8 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     playerParts[playerPartCount++]={firstPersonArmsMesh,armsWorld,Matrix4::Identity(),std::uint32_t(rules_.Female()?femaleFirstPersonArmsMesh_.indexCount:maleFirstPersonArmsMesh_.indexCount),firstPersonArmsSubmeshes,bodyMaterials,{3}};
   }
   playerParts[playerPartCount++]={weaponMesh,weaponWorld,Matrix4::Identity(),std::uint32_t(rules_.Female()?femaleWeaponMesh_.indexCount:maleWeaponMesh_.indexCount),weaponSubmeshes,weaponMaterials,{2}};
+  if(candidate7Active_&&rules_.Female()&&!firstPerson)for(std::size_t i=0;i<3;++i)
+    playerParts[playerPartCount++]={candidate7AttachmentMeshes_[i].handle,playerWorld,Matrix4::Identity(),std::uint32_t(candidate7AttachmentModels_[i].bindMesh.indices.size()),candidate7AttachmentSubmeshes_[i],candidate7Materials_[i+1],{std::uint64_t(4+i)}};
   firstPersonBodyHidden_=firstPersonBodyHidden_&&(!firstPerson||playerPartCount==2);
   const std::size_t playerDrawBegin=draw.skinnedMeshInstances.size();
   if(palette&&playerHistory_.Submit(draw,palette,std::span<const SkinnedRenderablePart3D>{playerParts.data(),playerPartCount},false,&skinnedGroupStats_)){
@@ -1969,7 +2536,10 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     const auto monsterPalette=AddSkinPaletteFromPose(draw,maleModel_,presentationMonsterPose,skinning_);
     const Vec3 monsterPresentation=GameplayShowcaseMonsterPresentationPosition3D(
         combat_->Monster().position,yaw_,combat_->Monster().alive);
-    const Matrix4 monsterWorld=CreateTransformMatrix(monsterPresentation,{0,-.8f,0},{1.08f,1.08f,1.08f});
+    const bool godCaptureStage=!captureDirectory_.empty()&&rules_.Camera()==CameraMode::GodView;
+    const auto monsterTransform=GameplayShowcaseMonsterTransform3D(
+        monsterPresentation,controller_.Position(),yaw_,godCaptureStage);
+    const Matrix4 monsterWorld=CreateTransformMatrix(monsterTransform.position,monsterTransform.rotation,monsterTransform.scale);
     const SkinnedRenderablePart3D monsterPart{maleMesh_.handle,monsterWorld,Matrix4::Identity(),std::uint32_t(maleModel_.bindMesh.indices.size()),maleSubmeshes_,maleMaterials_,{11}};
     const std::size_t monsterDrawBegin=draw.skinnedMeshInstances.size();
     if(monsterHistory_.Submit(draw,monsterPalette,std::span<const SkinnedRenderablePart3D>{&monsterPart,1},false,&skinnedGroupStats_))for(std::size_t index=monsterDrawBegin;index<draw.skinnedMeshInstances.size();++index)draw.skinnedMeshInstances[index].identity={{GameplayCharacterIdentityHigh,2},1};
@@ -1978,7 +2548,8 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationRequestPending_||capturePresentationPending_);
   const auto hudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen(),cleanCapturePresentation);
   if(cleanCapturePresentation)++captureCleanHudFrames_;
-  if(!hudPolicy.instructions)draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
+  if(GameplayHudShowsCompactInstructions3D(hudPolicy,cleanCapturePresentation))
+    draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
   if(hudPolicy.instructions){
     draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});
     draw.Text({18,14},"[F1] HIDE HELP  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);

@@ -56,6 +56,14 @@ struct WalkMetrics {
     std::size_t distinctGpuMasks{}, leftGroundContacts{}, rightGroundContacts{}, contactPhaseSeparation{};
 };
 
+struct DeathArticulationMetrics {
+    float torso{};
+    std::array<float,4> limbs{};
+    std::array<float,4> distal{};
+    std::size_t activeLimbs{},activeDistal{};
+    bool valid{};
+};
+
 bool DecodePng(const std::filesystem::path& path, Image& output) {
     ComPtr<IWICImagingFactory> factory;
     ComPtr<IWICBitmapDecoder> decoder;
@@ -260,6 +268,53 @@ float QuaternionDistance(Quaternion3D a, Quaternion3D b) {
     return 1.f-std::abs(a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w);
 }
 
+Quaternion3D LocalRotation(const JointTransform3D& transform) {
+    return NormalizeQuaternion3D(transform.usesQuaternion ? transform.quaternion
+                                                          : QuaternionFromEuler3D(transform.rotation));
+}
+
+float AngularDistanceRadians(const JointTransform3D& left, const JointTransform3D& right) {
+    const Quaternion3D a=LocalRotation(left),b=LocalRotation(right);
+    const float dot=std::clamp(std::abs(a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w),0.f,1.f);
+    return 2.f*std::acos(dot);
+}
+
+DeathArticulationMetrics MeasureDeathArticulation(
+    const CharacterFixture& character,const std::array<AnimationPose3D,4>& poses) {
+    DeathArticulationMetrics result{};
+    for(const auto& pose:poses)
+        if(pose.localTransforms.size()!=character.asset.model.skeleton.joints.size())return result;
+    const auto maximumDelta=[&](HumanoidJoint3D semantic){
+        const std::size_t joint=character.rig.Joint(semantic);float maximum{};
+        if(joint>=poses[0].localTransforms.size())return std::numeric_limits<float>::quiet_NaN();
+        for(std::size_t phase=1;phase<poses.size();++phase)
+            maximum=(std::max)(maximum,AngularDistanceRadians(
+                poses[0].localTransforms[joint],poses[phase].localTransforms[joint]));
+        return maximum;
+    };
+    result.torso=(std::max)(maximumDelta(HumanoidJoint3D::Spine),maximumDelta(HumanoidJoint3D::Head));
+    constexpr std::array<std::array<HumanoidJoint3D,3>,4> LimbGroups{{
+        {{HumanoidJoint3D::LeftUpperArm,HumanoidJoint3D::LeftLowerArm,HumanoidJoint3D::LeftHand}},
+        {{HumanoidJoint3D::RightUpperArm,HumanoidJoint3D::RightLowerArm,HumanoidJoint3D::RightHand}},
+        {{HumanoidJoint3D::LeftUpperLeg,HumanoidJoint3D::LeftLowerLeg,HumanoidJoint3D::LeftFoot}},
+        {{HumanoidJoint3D::RightUpperLeg,HumanoidJoint3D::RightLowerLeg,HumanoidJoint3D::RightFoot}}
+    }};
+    constexpr std::array<HumanoidJoint3D,4> DistalJoints{{
+        HumanoidJoint3D::LeftLowerArm,HumanoidJoint3D::RightLowerArm,
+        HumanoidJoint3D::LeftLowerLeg,HumanoidJoint3D::RightLowerLeg
+    }};
+    for(std::size_t region=0;region<LimbGroups.size();++region){
+        for(const auto joint:LimbGroups[region])result.limbs[region]=(std::max)(result.limbs[region],maximumDelta(joint));
+        result.activeLimbs+=result.limbs[region]>=.10f;
+        result.distal[region]=maximumDelta(DistalJoints[region]);
+        result.activeDistal+=result.distal[region]>=.08f;
+    }
+    result.valid=std::isfinite(result.torso)&&
+        std::ranges::all_of(result.limbs,[](float value){return std::isfinite(value);})&&
+        std::ranges::all_of(result.distal,[](float value){return std::isfinite(value);});
+    return result;
+}
+
 bool ValidateStudio(const Capture& capture, std::size_t characterIndex,
                     const CharacterFixture& character, bool requireFrontCoverage) {
     std::size_t actor{};
@@ -461,6 +516,48 @@ int main() {
                 <<" toes="<<walk.leftToeRange<<'/'<<walk.rightToeRange<<" fingers="<<walk.leftFingerAngularRange<<'/'<<walk.rightFingerAngularRange
                 <<" contacts="<<walk.leftGroundContacts<<'/'<<walk.rightGroundContacts<<" separation="<<walk.contactPhaseSeparation
                 <<" gpuMasks="<<walk.distinctGpuMasks<<'\n';result=8;break;}
+
+            // 正式 Gameplay 的 melee-combat 停在 Attack3 約 0.218 phase。以相同真實
+            // F2/M2 蒙皮另存四個戰鬥階段，避免只有 walk/idle 畫面為綠、攻擊時手臂
+            // 穿入軀幹或消失卻只能等完整 11-shot 才被肉眼發現。
+            const AnimationClip3D& attack3=character.animations.clips[std::size_t(FallbackHumanoidClip3D::Attack3)];
+            constexpr std::array<float,4> attackPhases{{0.f,.21818182f,.55f,.82f}};
+            for(std::size_t attackIndex=0;attackIndex<attackPhases.size();++attackIndex){
+                AnimationPose3D attackPose;SampleAnimationClipInto(character.asset.model.skeleton,attack3,attack3.duration*attackPhases[attackIndex],attackPose);
+                DrawList draw;draw.SetViewProjection(CreateViewProjectionMatrix(frontCamera,1.f));draw.SetBackfaceCulling(true);
+                draw.SetDirectionalLight({{-.55f,-.72f,-.42f},.2f,{1,.9f,.82f,1},3.2f});
+                if(!SubmitCharacter(draw,character,attackPose,characterIndex,character.materials)){result=22;break;}
+                auto capture=CaptureGpu(renderer,draw,output/(character.name+"-attack3-"+std::to_string(attackIndex)+".png"));
+                if(!capture||!ValidateFrontJointOracle(*capture,character,attackPose,frontCamera)){result=23;break;}
+            }
+            if(result)break;
+
+            // 死亡姿勢是 Gameplay 戰鬥鏡頭的正式可見內容；保存起始、失衡、
+            // 接地與靜止四階段，讓單腳直立、肢體交叉或突然消失可被直接比較。
+            const AnimationClip3D& death=character.animations.clips[std::size_t(FallbackHumanoidClip3D::Death)];
+            constexpr std::array<float,4> deathPhases{{0.f,.45f,.75f,1.f}};
+            std::array<AnimationPose3D,4> deathPoses;
+            for(std::size_t deathIndex=0;deathIndex<deathPhases.size();++deathIndex){
+                auto& deathPose=deathPoses[deathIndex];SampleAnimationClipInto(character.asset.model.skeleton,death,death.duration*deathPhases[deathIndex],deathPose);
+                DrawList draw;draw.SetViewProjection(CreateViewProjectionMatrix(frontCamera,1.f));draw.SetBackfaceCulling(true);
+                draw.SetDirectionalLight({{-.55f,-.72f,-.42f},.2f,{1,.9f,.82f,1},3.2f});
+                if(!SubmitCharacter(draw,character,deathPose,characterIndex,character.materials)){result=24;break;}
+                auto capture=CaptureGpu(renderer,draw,output/(character.name+"-death-"+std::to_string(deathIndex)+".png"));
+                if(!capture||!ValidateStudio(*capture,characterIndex,character,false)){result=25;break;}
+            }
+            if(result)break;
+            const auto deathArticulation=MeasureDeathArticulation(character,deathPoses);
+            if(!deathArticulation.valid||deathArticulation.torso<.10f||
+               deathArticulation.activeLimbs<3||deathArticulation.activeDistal<2){
+                std::cerr<<character.name<<" death articulation gate failed torso="<<deathArticulation.torso
+                    <<" limbs="<<deathArticulation.limbs[0]<<'/'<<deathArticulation.limbs[1]<<'/'
+                    <<deathArticulation.limbs[2]<<'/'<<deathArticulation.limbs[3]
+                    <<" activeLimbs="<<deathArticulation.activeLimbs
+                    <<" distal="<<deathArticulation.distal[0]<<'/'<<deathArticulation.distal[1]<<'/'
+                    <<deathArticulation.distal[2]<<'/'<<deathArticulation.distal[3]
+                    <<" activeDistal="<<deathArticulation.activeDistal<<'\n';
+                result=26;break;
+            }
 
             // 真 GPU 負向：凍結全部關節與手指後，動作檢查必須關閉放行。
             std::array<AnimationPose3D,8> frozenPoses;std::array<Capture,8> frozenCaptures;

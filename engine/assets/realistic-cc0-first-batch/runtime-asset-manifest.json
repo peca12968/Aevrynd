@@ -1,13 +1,13 @@
 {
-  "assetCount": 10,
+  "assetCount": 11,
   "schemaVersion": 1,
-  "downloadedInputBytes": 139386834,
+  "downloadedInputBytes": 240360977,
   "memoryGate": "pass",
   "memoryGateMethod": "gltfpack-process-tree",
   "memoryGateDetail": "Windows Job Object peak memory plus sampled process-tree working set; conservative maximum under 2 GiB.",
   "catalogId": "gameplay-ultra-realistic-cc0",
   "downloadBudgetBytes": 1073741824,
-  "runtimeBytes": 177787637.0,
+  "runtimeBytes": 235751222.0,
   "assets": [
     {
       "commercialUse": true,
@@ -796,6 +796,40 @@
       "kind": "pbr-material",
       "archive": null,
       "officialPage": "https://polyhaven.com/a/stony_dirt_path"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {"path":"tree-small-02/tree-small-02-lod0.glb","width":0,"height":0,"bytes":28868108,"sha256":"14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14"},
+        {"path":"tree-small-02/tree-small-02-lod1.glb","width":0,"height":0,"bytes":14306876,"sha256":"10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928"},
+        {"path":"tree-small-02/tree-small-02-lod2.glb","width":0,"height":0,"bytes":8924792,"sha256":"7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11"},
+        {"path":"tree-small-02/tree-small-02.materials.json","width":0,"height":0,"bytes":1065,"sha256":"2ef55ff1c896a60424e5c475887a9b4346f2c6dd401808a9d8a1ea42a85afb6e"},
+        {"path":"tree-small-02/textures/tree_small_02_arm_1k.jpg","bytes":708242,"sha256":"891c5a1bb124292984b01558e9f2b0302d27d2fa3ccf9dfc6c34f9ea4ca24e6c","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_branch_arm_1k.jpg","bytes":375732,"sha256":"8968b46d76c67da09ebbf4eed04b8123c9e0ddf5b55d123968b35b32aa76d27a","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_branch_diff_1k.jpg","bytes":449977,"sha256":"a71b768e330c0c6cca097e30314f6b4e842ef724a1370f6aab14b4434eec64cb","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_branch_nor_gl_1k.jpg","bytes":581596,"sha256":"a2efae9e7fede259601188cd5cb7e561fc502bd87e04d862a9532b2d8e647a62","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_diff_1k.jpg","bytes":863246,"sha256":"4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_leaves_arm_1k.jpg","bytes":633698,"sha256":"71f81374daf5a8f3e6eb2c694264a1769fdb0bea508178e4105618eecea83c3e","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_leaves_diff_1k.jpg","bytes":340003,"sha256":"261e7d7a5ac7d2e16ea8823ff8510be8f3f615999724232994039ad2885e5c36","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_leaves_nor_gl_1k.jpg","bytes":681604,"sha256":"8c72e04fb23e16ae1df79c01385a638473d1dd4dede3d51e83d70153c129f09b","width":1024,"height":1024},
+        {"path":"tree-small-02/textures/tree_small_02_nor_gl_1k.jpg","bytes":1228646,"sha256":"9c83be074c950ea1b94c732c0c0291b53b9ba357f932d378bafe3ca3b4418871","width":1024,"height":1024}
+      ],
+      "id": "tree_small_02",
+      "lodLevels": [
+        {"level":0,"requestedRatio":0.35,"vertices":729844,"triangles":721738,"file":"tree-small-02-lod0.glb","bytes":28868108,"sha256":"14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14","boundsMinimum":[-1.30830085,-0.0240319986,-1.38229871],"boundsMaximum":[1.607655859224,4.532637094038,2.909586827966],"materialSlots":3,"hasNormals":true,"hasUv":true,"visualNonEmpty":true},
+        {"level":1,"requestedRatio":0.12,"vertices":278856,"triangles":245084,"file":"tree-small-02-lod1.glb","bytes":14306876,"sha256":"10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928","boundsMinimum":[-1.30830085,-0.0240319986,-1.3799094],"boundsMaximum":[1.6046505447,4.531851791316,2.897888337916],"materialSlots":3,"hasNormals":true,"hasUv":true,"visualNonEmpty":true},
+        {"level":2,"requestedRatio":0.04,"vertices":104685,"triangles":82854,"file":"tree-small-02-lod2.glb","bytes":8924792,"sha256":"7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11","boundsMinimum":[-1.30338943,-0.0222652573,-1.36024463],"boundsMaximum":[1.59748361815,4.525581933881,2.860872649442],"materialSlots":3,"hasNormals":true,"hasUv":true,"visualNonEmpty":true}
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": 5862744,
+      "assetName": "tree-small-02",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/tree_small_02"
     },
     {
       "commercialUse": true,

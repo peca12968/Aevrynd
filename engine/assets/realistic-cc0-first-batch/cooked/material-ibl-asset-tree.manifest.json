@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "fileCount": 38,
-  "totalBytes": 56865662,
+  "fileCount": 48,
+  "totalBytes": 69460838,
   "files": [
     {
       "path": "ibl/environment-brdf.dds",
@@ -20,8 +20,8 @@
     },
     {
       "path": "ibl/ibl-bake-receipt.json",
-      "bytes": 1872,
-      "sha256": "173ae2ffcee789bd285f980207f5119b073702c1fddc92e3871f1929161f0bf2"
+      "bytes": 1809,
+      "sha256": "5560d43870bc211c1ff039a7329a4e356205f8491979cbabdee69b4eb9b875c8"
     },
     {
       "path": "materials/boulder-01/slot-0-arm.dds",
@@ -160,8 +160,8 @@
     },
     {
       "path": "materials/material-bake-receipt.json",
-      "bytes": 29326,
-      "sha256": "0257e21013ace6511fbca3c7faa64926f0cd792ee95b666e7b103df80ff6dcca"
+      "bytes": 28532,
+      "sha256": "6c5ffd862ed4d7c5d422a51e187f6404eecf9f7e5aa9bda79fbc93cc4cdf4760"
     },
     {
       "path": "materials/roofing-tiles014-b/slot-0-arm.dds",
@@ -192,6 +192,56 @@
       "path": "materials/stony-dirt-path/slot-0-normal.dds",
       "bytes": 1398276,
       "sha256": "1c5a312de5e4c6a7ede14ef6d8f4ea51d7319bd70a3c725085296cda316635e0"
+    },
+    {
+      "path": "materials/tree-small-02/branches-arm.dds",
+      "bytes": 1398276,
+      "sha256": "1c54a88ec7a17c55528a99319378283d61b4800002ab4e63ca0fe30ebb1249ea"
+    },
+    {
+      "path": "materials/tree-small-02/branches-base.dds",
+      "bytes": 1398276,
+      "sha256": "cf4f6fcc9329e66f05b7b2e86d20a38b2d0e8e054013cf3e0431a4cbc1e17d0a"
+    },
+    {
+      "path": "materials/tree-small-02/branches-normal.dds",
+      "bytes": 1398276,
+      "sha256": "ea8a046e64ce7eacce435e64f31fc45501624fd131c7e6c8492bfd9de9fb1beb"
+    },
+    {
+      "path": "materials/tree-small-02/leaves-arm.dds",
+      "bytes": 1398276,
+      "sha256": "c8a6a8747023a64ed506ad62b8e5c0ae16bf14e0353d5e67f8d2511967aaf2ed"
+    },
+    {
+      "path": "materials/tree-small-02/leaves-base.dds",
+      "bytes": 1398276,
+      "sha256": "88fce8dc2f1815c421a0c7c4d9cc7d9cacb4024f6c51e8fc928a5e938b7996a9"
+    },
+    {
+      "path": "materials/tree-small-02/leaves-normal.dds",
+      "bytes": 1398276,
+      "sha256": "320d6df57bf075dbd701acab52740a623f0c86d298bd3048f3986d1988bb0cd9"
+    },
+    {
+      "path": "materials/tree-small-02/material-bake-receipt.json",
+      "bytes": 11549,
+      "sha256": "1dc69509623f58c82f465e260fa8efe21318cf32245cf68e27bc4208e833e974"
+    },
+    {
+      "path": "materials/tree-small-02/trunk-arm.dds",
+      "bytes": 1398276,
+      "sha256": "716c128da96feb1f3ad4ea041ecd9d5c167115a7aa0671f517ebaefbc9963b7d"
+    },
+    {
+      "path": "materials/tree-small-02/trunk-base.dds",
+      "bytes": 1398276,
+      "sha256": "513d07ece694d03e3c095c4148d7da4649ffdf6db54826cf1bf1754a368b1453"
+    },
+    {
+      "path": "materials/tree-small-02/trunk-normal.dds",
+      "bytes": 1398276,
+      "sha256": "099e981864b1e90b2c0500b0bcb0a92fcdc38ee196f00f7161905dc9bf762712"
     }
   ]
 }

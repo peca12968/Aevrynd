@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -13,7 +14,7 @@ namespace {
 constexpr auto FixtureSha =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 constexpr auto ProductionManifestSha =
-    "3aabe78ae0b6b003148ed7568f40abe11970f3052a04653e57b0f244a0c42bad";
+    "f837cb2dfd24e9e43e6a8396853d3c07ca9a8d93710995f9f6cb72afdea5466f";
 
 bool WriteFixture(const std::filesystem::path &root, std::string_view path) {
     const auto absolute = root / path;
@@ -368,16 +369,16 @@ int main() {
     passed &= Expect(production.LoadFile(productionPath, &error),
                      error.message.empty() ? "production manifest was rejected"
                                            : error.message.c_str());
-    passed &= Expect(production.Stats().files == 54 &&
-                         production.Stats().materials == 11 &&
-                         production.Stats().meshParts == 6 &&
-                         production.Stats().referencedFiles == 54 &&
+    passed &= Expect(production.Stats().files == 72 &&
+                         production.Stats().materials == 14 &&
+                         production.Stats().meshParts == 9 &&
+                         production.Stats().referencedFiles == 72 &&
                          production.Stats().manifestSha256 ==
                              ProductionManifestSha &&
-                         production.Stats().validatedFiles == 54 &&
-                         production.Stats().validatedMaterials == 11 &&
-                         production.Stats().validatedMeshParts == 6 &&
-                         production.Stats().validatedReferencedFiles == 54,
+                         production.Stats().validatedFiles == 72 &&
+                         production.Stats().validatedMaterials == 14 &&
+                         production.Stats().validatedMeshParts == 9 &&
+                         production.Stats().validatedReferencedFiles == 72,
                      "production exact-set counts changed");
     const auto *leaves = production.FindMaterial("island_tree_01:leaves");
     const auto leavesDefinition =
@@ -398,9 +399,22 @@ int main() {
                          leavesDefinition.textures.integrity[0]
                                  .expectedSha256.size() == 64,
                      "production masked foliage semantics were lost");
+    const auto *smallLeaves = production.FindMaterial("tree_small_02:leaves");
+    const auto smallTreeParts = std::ranges::count_if(
+        production.MeshParts(), [](const auto &part) {
+            return part.assetId == "tree_small_02" && part.lodPaths.size() == 3;
+        });
+    passed &= Expect(smallLeaves &&
+                         smallLeaves->Definition().textures.alphaMode ==
+                             MaterialAlphaMode3D::Mask &&
+                         smallLeaves->Definition().material.doubleSided &&
+                         smallLeaves->Definition().material.materialClass ==
+                             MaterialClass3D::Foliage &&
+                         smallTreeParts == 3,
+                     "tree_small_02 three-slot/three-LOD binding was lost");
 
     std::filesystem::remove_all(root, filesystemError);
     if (passed)
-        std::cout << "synthetic=9 production=54 materials=11 meshParts=6 exactSet=passed\n";
+        std::cout << "synthetic=9 production=72 materials=14 meshParts=9 exactSet=passed\n";
     return passed ? 0 : 1;
 }

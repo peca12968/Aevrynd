@@ -329,6 +329,27 @@ int main() {
       DevelopmentUltraPostApplyGate3D(false, 0)) {
     return 25;
   }
+  const auto productionUnder = EvaluateDevelopmentUltraFrameTiming3D(
+      16'000'000, 4, 4, 4, 16'000'000, false, false, false, false, 0, 0);
+  const auto productionOver = EvaluateDevelopmentUltraFrameTiming3D(
+      41'000'000, 4, 4, 4, 41'000'000, false, false, false, false, 0, 0);
+  const auto gbvOver = EvaluateDevelopmentUltraFrameTiming3D(
+      41'000'000, 4, 4, 4, 41'000'000, true, true, true, true, 0, 0);
+  const auto fakeGbv = EvaluateDevelopmentUltraFrameTiming3D(
+      41'000'000, 4, 4, 4, 41'000'000, true, false, false, false, 0, 0);
+  const auto dirtyGbv = EvaluateDevelopmentUltraFrameTiming3D(
+      41'000'000, 4, 4, 4, 41'000'000, true, true, true, true, 1, 0);
+  const auto staleSerial = EvaluateDevelopmentUltraFrameTiming3D(
+      10'000'000, 4, 4, 3, 10'000'000, false, false, false, false, 0, 0);
+  if (!productionUnder.accepted || !productionUnder.productionBudgetApplied ||
+      productionUnder.provenance != DevelopmentUltraGpuTimingProvenance3D::Production ||
+      productionOver.accepted || !productionOver.productionBudgetApplied ||
+      !gbvOver.accepted || gbvOver.productionBudgetApplied ||
+      gbvOver.provenance != DevelopmentUltraGpuTimingProvenance3D::GpuValidationInstrumented ||
+      fakeGbv.accepted || dirtyGbv.accepted || staleSerial.accepted ||
+      staleSerial.serialAligned) {
+    return 30;
+  }
   std::cout << "developmentUltraFingerprint="
             << FingerprintDevelopmentUltraQuality3D(fullHd)
             << " hardVramBytes=" << admitted.hardVramBudgetBytes

@@ -150,6 +150,23 @@ def validate_mask_alpha(image: Image.Image, alpha_cutoff: float) -> None:
         raise ValueError("MASK alpha does not cross its cutoff")
 
 
+def mask_coverage(image: Image.Image, alpha_cutoff: float) -> dict[str, int | float]:
+    """Return receipt-safe alpha-test coverage without estimating compressed mips."""
+    alpha = np.asarray(image.convert("RGBA"), dtype=np.uint8)[..., 3]
+    cutoff = round(float(alpha_cutoff) * 255.0)
+    visible = int(np.count_nonzero(alpha >= cutoff))
+    total = int(alpha.size)
+    return {"cutoffByte": cutoff, "visiblePixels": visible, "totalPixels": total,
+            "fraction": visible / total if total else 0.0,
+            "minimum": int(alpha.min()), "maximum": int(alpha.max())}
+
+
+def channel_stats(pixels: np.ndarray, channel: int) -> dict[str, int | float]:
+    values = pixels[..., channel].astype(np.uint8, copy=False)
+    return {"minimum": int(values.min()), "maximum": int(values.max()),
+            "mean": float(values.mean())}
+
+
 def dilate_mask_rgb(image: Image.Image, radius: int, alpha_cutoff: float) -> Image.Image:
     if not isinstance(radius, int) or isinstance(radius, bool) or radius < 0 or radius > 32:
         raise ValueError("Mask RGB dilation radius is invalid")
@@ -318,20 +335,47 @@ def cook(args: argparse.Namespace) -> dict:
                 dimensions = {image.size for image in images.values()}
                 if len(dimensions) != 1 or next(iter(dimensions))[0] > 4096 or next(iter(dimensions))[1] > 4096:
                     raise ValueError(f"Material channel dimensions do not match: {name}/{material['name']}")
+                mask_receipt = None
                 if material["alphaMode"] == "mask":
                     if material["alphaSource"] == "black-key":
                         images["base"] = black_key_alpha(images["base"], material["alphaBlackKeyThreshold"])
                     elif images["base"].getextrema()[3] == (255, 255):
                         raise ValueError(f"Embedded MASK base color has no alpha variation: {name}/{material['name']}")
                     validate_mask_alpha(images["base"], material["alphaCutoff"])
+                    source_coverage = mask_coverage(images["base"], material["alphaCutoff"])
                     images["base"] = dilate_mask_rgb(images["base"], material["alphaDilationPixels"], material["alphaCutoff"])
-                normal = np.asarray(images["normal"], dtype=np.uint8).copy()
+                    prepared_coverage = mask_coverage(images["base"], material["alphaCutoff"])
+                    if source_coverage != prepared_coverage:
+                        raise ValueError("RGB dilation changed MASK alpha coverage")
+                    mask_receipt = {"source": source_coverage, "prepared": prepared_coverage,
+                                    "mipPolicy": "DirectXTex --keep-coverage",
+                                    "mipCoverageCutoff": material["alphaCutoff"]}
+                normal_source = np.asarray(images["normal"], dtype=np.uint8)
+                normal = normal_source.copy()
                 normal[..., 1] = 255 - normal[..., 1]
                 if int(normal[..., :3].max()) == 0 or float(normal[..., 2].mean()) < 64.0:
                     raise ValueError("Normal map is black or has an invalid Z channel")
+                inversion_error = int(np.max(np.abs(
+                    normal[..., 1].astype(np.int16) -
+                    (255 - normal_source[..., 1].astype(np.int16)))))
+                if inversion_error:
+                    raise ValueError("Normal green-channel inversion is not exact")
+                normal_receipt = {"sourceGreen": channel_stats(normal_source, 1),
+                                  "preparedGreen": channel_stats(normal, 1),
+                                  "maximumInversionError": inversion_error}
                 if material["arm"]:
                     arm_image = images["arm"]
                     packing = "ARM preserved as AO/Roughness/Metallic"
+                    arm_source = np.asarray(images["arm"], dtype=np.uint8)
+                    arm_prepared = np.asarray(arm_image, dtype=np.uint8)
+                    arm_error = int(np.max(np.abs(arm_source.astype(np.int16) -
+                                                      arm_prepared.astype(np.int16))))
+                    if arm_error:
+                        raise ValueError("Packed ARM channels changed before cooking")
+                    arm_receipt = {"maximumPreservationError": arm_error,
+                                   "ao": channel_stats(arm_source, 0),
+                                   "roughness": channel_stats(arm_source, 1),
+                                   "metallic": channel_stats(arm_source, 2)}
                 else:
                     ao = np.asarray(images["ambientOcclusion"].convert("L"), dtype=np.uint8)
                     roughness = np.asarray(images["roughness"].convert("L"), dtype=np.uint8)
@@ -339,6 +383,10 @@ def cook(args: argparse.Namespace) -> dict:
                     alpha = np.full_like(ao, 255)
                     arm_image = Image.fromarray(np.stack((ao, roughness, metallic, alpha), axis=-1), "RGBA")
                     packing = f"AO/Roughness packed with explicit non-metallic scalar {material['metallicScalar']:g}"
+                    arm_receipt = {"maximumPreservationError": 0,
+                                   "ao": channel_stats(np.asarray(arm_image), 0),
+                                   "roughness": channel_stats(np.asarray(arm_image), 1),
+                                   "metallic": channel_stats(np.asarray(arm_image), 2)}
                 prepared = {"base": images["base"], "normal": Image.fromarray(normal, "RGBA"), "arm": arm_image}
                 material_output = []
                 for channel, image in prepared.items():
@@ -360,6 +408,8 @@ def cook(args: argparse.Namespace) -> dict:
                                       "alphaDilationPixels": material["alphaDilationPixels"],
                                       "doubleSided": material["doubleSided"], "materialClass": material["materialClass"],
                                       "normalConversion": "OpenGL green inverted to DirectX", "surfacePacking": packing,
+                                      "maskCoverage": mask_receipt, "normalChannelAudit": normal_receipt,
+                                      "surfaceChannelAudit": arm_receipt,
                                       "sources": {channel: {"path": path.relative_to(root).as_posix(), "sha256": sha256(path)} for channel, path in source_paths.items()},
                                       "outputs": material_output})
         receipts.append({"assetName": name, "assetId": asset.get("id"), "officialPage": asset.get("officialPage"),
@@ -375,6 +425,7 @@ def cook(args: argparse.Namespace) -> dict:
     result = {"schemaVersion": 1, "status": "pass", "runtimeManifestSha256": sha256(manifest_path),
               "quality": "Ultra", "mipPolicy": "complete-chain", "tool": {"name": "DirectXTex texconv", "tag": "may2026", "commit": "4feb3e1", "sha256": sha256(texconv)},
               "memoryGate": "pass", "peakWorkingSetLimitBytes": PEAK_WORKING_SET_LIMIT_BYTES,
+              "peakWorkingSetBytes": measured_peak,
               "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
               "assets": receipts}
     output.mkdir(parents=True, exist_ok=True)

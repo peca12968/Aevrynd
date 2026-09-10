@@ -67,7 +67,10 @@ function Write-SidecarMutation([string]$Name, [scriptblock]$Mutation) {
   return $path
 }
 
-$water = Write-SidecarMutation 'water-low-entropy' { param($s) $s.shots[0].water.entropy = 1.0 }
+$water = Write-SidecarMutation 'water-low-entropy' {
+  param($s)
+  ($s.shots | Where-Object name -eq 'third-day').water.entropy = 1.0
+}
 $null = Invoke-Gate 'water-low-entropy' $fixtureA $water $false
 $terrain = Write-SidecarMutation 'terrain-correlated' { param($s) $s.shots[1].terrain.autocorrelation32To256 = 0.99 }
 $null = Invoke-Gate 'terrain-correlated' $fixtureA $terrain $false

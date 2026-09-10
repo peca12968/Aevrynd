@@ -43,30 +43,40 @@ uint HashLattice(int3 coordinate,uint seed)
     return value;
 }
 
-float ValueNoise3D(float3 coordinate,uint seed)
+precise float ValueNoise3D(float3 coordinate,uint seed)
 {
-    const int3 cell=int3(floor(coordinate));const float3 local=frac(coordinate);
-    const float3 blend=local*local*(3.0-2.0*local);float samples[8];
+    const int3 cell=int3(floor(coordinate));precise const float3 local=frac(coordinate);
+    precise const float3 blend=local*local*(3.0-2.0*local);precise float samples[8];
     [unroll] for(uint z=0;z<2;++z)[unroll] for(uint y=0;y<2;++y)[unroll] for(uint x=0;x<2;++x)
         samples[x+y*2+z*4]=float(HashLattice(cell+int3(x,y,z),seed)&0x00ffffffu)/16777215.0;
-    const float x00=lerp(samples[0],samples[1],blend.x),x10=lerp(samples[2],samples[3],blend.x);
-    const float x01=lerp(samples[4],samples[5],blend.x),x11=lerp(samples[6],samples[7],blend.x);
-    return lerp(lerp(x00,x10,blend.y),lerp(x01,x11,blend.y),blend.z);
+    precise const float x00=lerp(samples[0],samples[1],blend.x),x10=lerp(samples[2],samples[3],blend.x);
+    precise const float x01=lerp(samples[4],samples[5],blend.x),x11=lerp(samples[6],samples[7],blend.x);
+    precise const float y0=lerp(x00,x10,blend.y),y1=lerp(x01,x11,blend.y);
+    precise const float result=lerp(y0,y1,blend.z);
+    return result;
 }
 
-float3 RotateNoise(float3 value,float angle,uint octave)
+precise float3 RotateNoise(float3 value,float angle,uint octave)
 {
-    const float a=angle+float(octave)*1.04719755,c=cos(a),s=sin(a);
-    const float3 y=float3(c*value.x-s*value.z,value.y,s*value.x+c*value.z);
-    return float3(y.x,c*y.y-s*y.z,s*y.y+c*y.z);
+    precise const float a=angle+float(octave)*1.04719755;
+    precise const float c=cos(a),s=sin(a);
+    precise const float3 y=float3(c*value.x-s*value.z,value.y,s*value.x+c*value.z);
+    precise const float3 result=float3(y.x,c*y.y-s*y.z,s*y.y+c*y.z);
+    return result;
 }
 
-float Fbm3D(float3 coordinate,uint seed,float rotation,uint octaves)
+precise float Fbm3D(float3 coordinate,uint seed,float rotation,uint octaves)
 {
-    float value=0,weight=0,amplitude=.55;
+    precise float value=0,weight=0,amplitude=.55;
     [loop] for(uint octave=0;octave<octaves;++octave)
-    {value+=ValueNoise3D(RotateNoise(coordinate,rotation,octave),seed+octave*0x9e3779b9u)*amplitude;weight+=amplitude;coordinate=coordinate*2.03+float3(17.1,31.7,11.9);amplitude*=.48;}
-    return value/max(weight,1e-5);
+    {
+        precise const float3 sampleCoordinate=RotateNoise(coordinate,rotation,octave);
+        precise const float sampleValue=ValueNoise3D(sampleCoordinate,seed+octave*0x9e3779b9u);
+        value+=sampleValue*amplitude;weight+=amplitude;
+        coordinate=coordinate*2.03+float3(17.1,31.7,11.9);amplitude*=.48;
+    }
+    precise const float result=value/max(weight,1e-5);
+    return result;
 }
 
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
@@ -92,51 +102,70 @@ float LegacyMiePhase(float cosine,float anisotropy)
 }
 #endif
 
-float CloudField(float3 worldPosition)
+precise float CloudLayout(float3 advected)
 {
-    const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
-    float base=Fbm3D(advected*.00125,cloudBaseNoiseSeed,cloudBaseNoiseRotation,4);
-    float detail=Fbm3D(advected*.0047+29.3,cloudDetailNoiseSeed,cloudDetailNoiseRotation,3);
+    // 低頻世界空間配置先決定哪裡有雲，再由 3D 噪聲雕刻局部形狀。
+    // 若只沿整段視線積分局部噪聲，地面鏡頭幾乎必然撞到密度，天空會退化成整片灰幕。
+    precise const float3 layoutCoordinate=float3(advected.x*.00022,0.0,advected.z*.00022);
+    precise const float3 rotated=RotateNoise(layoutCoordinate,cloudBaseNoiseRotation*.37,0);
+    precise const float result=ValueNoise3D(rotated,cloudBaseNoiseSeed^0xa511e9b3u);
+    return result;
+}
+
+precise float CloudField(float3 worldPosition)
+{
+    precise const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
+    precise float base=Fbm3D(advected*.00125,cloudBaseNoiseSeed,cloudBaseNoiseRotation,4);
+    precise float detail=Fbm3D(advected*.0047+29.3,cloudDetailNoiseSeed,cloudDetailNoiseRotation,3);
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
     if(testMutation==3){base=LegacyPlanarCloudNoise(advected);detail=LegacyPlanarCloudNoise(advected*2.31+31.7);}
 #endif
-    const float h=saturate((worldPosition.y-cloudBaseAltitude)/max(1.0,cloudThickness));
-    const float profile=smoothstep(0.0,.16,h)*smoothstep(0.0,.28,1.0-h);
-    const float threshold=cloudCoverage+cloudErosion*(detail-.5);
-    return smoothstep(threshold,threshold+.18,base)*profile*cloudDensity;
+    precise const float h=saturate((worldPosition.y-cloudBaseAltitude)/max(1.0,cloudThickness));
+    precise const float profile=smoothstep(0.0,.16,h)*smoothstep(0.0,.28,1.0-h);
+    precise const float layout=smoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
+    precise const float threshold=.38+cloudErosion*(detail-.5);
+    precise const float result=layout*smoothstep(threshold,threshold+.18,base)*profile*cloudDensity;
+    return result;
 }
 
-float HenyeyGreenstein(float cosine,float anisotropy)
+precise float HenyeyGreenstein(float cosine,float anisotropy)
 {
-    const float g=clamp(anisotropy,-.8,.85),g2=g*g;
-    return (1.0-g2)/(12.5663706144*pow(max(1e-6,1.0+g2-2.0*g*clamp(cosine,-1.0,1.0)),1.5));
+    precise const float g=clamp(anisotropy,-.8,.85),g2=g*g;
+    precise const float denominator=max(1e-6,1.0+g2-2.0*g*clamp(cosine,-1.0,1.0));
+    precise const float result=(1.0-g2)/(12.5663706144*pow(denominator,1.5));
+    return result;
 }
 
-float CloudShadowField(float3 worldPosition)
+precise float CloudShadowField(float3 worldPosition)
 {
-    const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
-    const float base=ValueNoise3D(RotateNoise(advected*.00125,cloudBaseNoiseRotation,0),cloudBaseNoiseSeed);
-    const float h=saturate((worldPosition.y-cloudBaseAltitude)/max(1.0,cloudThickness));
-    const float profile=smoothstep(0.0,.16,h)*smoothstep(0.0,.28,1.0-h);
-    return smoothstep(cloudCoverage,cloudCoverage+.22,base)*profile*cloudDensity;
+    precise const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
+    precise const float3 rotated=RotateNoise(advected*.00125,cloudBaseNoiseRotation,0);
+    precise const float base=ValueNoise3D(rotated,cloudBaseNoiseSeed);
+    precise const float h=saturate((worldPosition.y-cloudBaseAltitude)/max(1.0,cloudThickness));
+    precise const float profile=smoothstep(0.0,.16,h)*smoothstep(0.0,.28,1.0-h);
+    precise const float layout=smoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
+    precise const float result=layout*smoothstep(.38,.60,base)*profile*cloudDensity;
+    return result;
 }
 
-float BlueR2Jitter(uint2 pixel,uint frameIndex)
+precise float BlueR2Jitter(uint2 pixel,uint frameIndex)
 {
     const uint byteIndex=(pixel.x&63u)+((pixel.y&63u)<<6),packed=blueNoiseBytes.Load(byteIndex&~3u);
-    const float blue=float((packed>>((byteIndex&3u)*8u))&255u)/256.0;
-    return frac(blue+float(frameIndex)*.7548776662466927+float(pixel.x)*.5698402909980532+float(pixel.y)*.4384471871911697);
+    precise const float blue=float((packed>>((byteIndex&3u)*8u))&255u)/256.0;
+    precise const float result=frac(blue+float(frameIndex)*.7548776662466927+float(pixel.x)*.5698402909980532+float(pixel.y)*.4384471871911697);
+    return result;
 }
 
-float CloudSunTransmittance(float3 p,float3 sun,uint shadowSamples)
+precise float CloudSunTransmittance(float3 p,float3 sun,uint shadowSamples)
 {
     if(cloudShadowsEnabled==0||cloudShadowStrength<=0.0)return 1.0;
-    const uint count=clamp(shadowSamples,1u,8u);const float stepLength=max(8.0,cloudThickness/(float(count)*3.0));float depth=0;
+    const uint count=clamp(shadowSamples,1u,8u);precise const float stepLength=max(8.0,cloudThickness/(float(count)*3.0));precise float depth=0;
     [loop] for(uint index=0;index<count;++index)depth+=CloudShadowField(p+sun*stepLength*(float(index)+.5))*.00135*stepLength;
-    return lerp(1.0,exp(-min(depth,80.0)),saturate(cloudShadowStrength));
+    precise const float result=lerp(1.0,exp(-min(depth,80.0)),saturate(cloudShadowStrength));
+    return result;
 }
 
-float HeightFogExtinction(float height){return heightFogDensity*exp(clamp(-heightFogFalloff*(height-heightFogBaseHeight),-20.0,20.0));}
+precise float HeightFogExtinction(float height){precise const float result=heightFogDensity*exp(clamp(-heightFogFalloff*(height-heightFogBaseHeight),-20.0,20.0));return result;}
 
 [numthreads(8,8,1)]
 void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
@@ -152,7 +181,7 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
         return;
     }
 #endif
-    const float2 uv=(float2(id.xy)+.5)/float2(outputWidth,outputHeight);float3 rayOrigin,ray;
+    precise const float2 uv=(float2(id.xy)+.5)/float2(outputWidth,outputHeight);precise float3 rayOrigin,ray;
     const bool rayValid=AevryndReconstructWorldRay(uv,inverseViewProjection,cameraPosition,projectionOrthographic!=0,rayOrigin,ray);
     const uint2 depthPixel=min(uint2(viewportOrigin+uv*viewportExtent),uint2(fullWidth-1,fullHeight-1));
     const float hardwareDepth=sceneDepthValid!=0?sceneDepthTexture.Load(int3(depthPixel,0)):1.0;float3 surfaceWorld;
@@ -172,22 +201,22 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
     const bool diagnosticRepresentative=temporalDiagnosticsEnabled!=0&&(id.x&7)==0&&(id.y&7)==0;
     if(!segmentValid&&diagnosticRepresentative)InterlockedAdd(temporalCounters[2],1);
 #endif
-    const float3 sun=normalize(sunDirection);const float phaseValue=HenyeyGreenstein(dot(ray,sun),lightShaftAnisotropy);const float jitter=BlueR2Jitter(id.xy,temporalSampleIndex);
-    const float phaseSunScale=phase==0?1.0:(phase==1?.58:.08),phaseAmbientScale=phase==0?1.0:(phase==1?.62:.14);
-    float cloudT=1.0;float3 cloudL=0;float integratedCloudOpticalDepth=0;
+    precise const float3 sun=normalize(sunDirection);precise const float phaseValue=HenyeyGreenstein(dot(ray,sun),lightShaftAnisotropy);precise const float jitter=BlueR2Jitter(id.xy,temporalSampleIndex);
+    precise const float phaseSunScale=phase==0?1.0:(phase==1?.58:.08),phaseAmbientScale=phase==0?1.0:(phase==1?.62:.14);
+    precise float cloudT=1.0;precise float3 cloudL=0;precise float integratedCloudOpticalDepth=0;
     if(cloudValid)
     {
-        const uint count=clamp(cloudSampleCount,4u,32u);const float segmentLength=cloudEnd-cloudStart,physicalStep=segmentLength/float(count);
+        const uint count=clamp(cloudSampleCount,4u,32u);precise const float segmentLength=cloudEnd-cloudStart,physicalStep=segmentLength/float(count);
         [loop] for(uint index=0;index<count;++index)
         {
-            const float distance=cloudStart+physicalStep*(float(index)+jitter);const float3 p=rayOrigin+ray*distance;const float density=CloudField(p)*grazing*pathFade;
-            const float sigmaT=density*.00135,sigmaS=sigmaT*.88;
-            float opticalDepth=sigmaT*physicalStep;
+            precise const float distance=cloudStart+physicalStep*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float density=CloudField(p)*grazing*pathFade;
+            precise const float sigmaT=density*.00135,sigmaS=sigmaT*.88;
+            precise float opticalDepth=sigmaT*physicalStep;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
             if(testMutation==6)opticalDepth=density*.105*segmentLength/max(1.0,cloudThickness);
 #endif
-            const float stepT=exp(-min(opticalDepth,80.0));const float scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
-            const float sunT=CloudSunTransmittance(p,sun,cloudShadowSampleCount);float3 incident=ambientRadiance*phaseAmbientScale+sunRadiance*sunRadianceIntensity*phaseSunScale*sunT*phaseValue;
+            precise const float stepT=exp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
+            precise const float sunT=CloudSunTransmittance(p,sun,cloudShadowSampleCount);precise float3 incident=ambientRadiance*phaseAmbientScale+sunRadiance*sunRadianceIntensity*phaseSunScale*sunT*phaseValue;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
             // 中文：只歸零夜間雲層入射光，保留消光累積以驗證 opacity 路徑沒有被旁路。
             if(testMutation==8)incident=0.0;
@@ -195,23 +224,23 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
             cloudL+=cloudT*scatter*incident;cloudT*=stepT;integratedCloudOpticalDepth+=opticalDepth;
         }
     }
-    float fogT=1.0;float3 shaftL=0;
+    precise float fogT=1.0;precise float3 shaftL=0;
     if(shaftValid)
     {
-        const uint count=clamp(lightShaftSampleCount,2u,16u);const float stepLength=shaftEnd/float(count);
+        const uint count=clamp(lightShaftSampleCount,2u,16u);precise const float stepLength=shaftEnd/float(count);
         [loop] for(uint index=0;index<count;++index)
         {
-            const float distance=stepLength*(float(index)+jitter);const float3 p=rayOrigin+ray*distance;const float sigmaT=HeightFogExtinction(p.y),sigmaS=sigmaT*.9;
-            const float stepT=exp(-min(sigmaT*stepLength,80.0)),scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
-            const float cloudToSun=CloudSunTransmittance(p,sun,cloudShadowSampleCount),visibility=lerp(1.0,cloudToSun,saturate(lightShaftShadowStrength));
+            precise const float distance=stepLength*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float sigmaT=HeightFogExtinction(p.y),sigmaS=sigmaT*.9;
+            precise const float stepT=exp(-min(sigmaT*stepLength,80.0)),scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
+            precise const float cloudToSun=CloudSunTransmittance(p,sun,cloudShadowSampleCount),visibility=lerp(1.0,cloudToSun,saturate(lightShaftShadowStrength));
             shaftL+=fogT*scatter*sunRadiance*sunRadianceIntensity*phaseSunScale*visibility*phaseValue*lightShaftIntensity;fogT*=stepT;
         }
-        const float rawOpacity=1.0-fogT,limitedOpacity=min(rawOpacity,saturate(heightFogMaximumOpacity));
+        precise const float rawOpacity=1.0-fogT,limitedOpacity=min(rawOpacity,saturate(heightFogMaximumOpacity));
         if(rawOpacity>1e-7)shaftL*=limitedOpacity/rawOpacity;
         fogT=1.0-limitedOpacity;
     }
-    const float3 conservativeColor=shaftL+fogT*cloudL;const float conservativeAlpha=saturate(1.0-fogT*cloudT);
-    float3 color=conservativeColor;float alpha=conservativeAlpha;
+    precise const float3 conservativeColor=shaftL+fogT*cloudL;precise const float conservativeAlpha=saturate(1.0-fogT*cloudT);
+    precise float3 color=conservativeColor;precise float alpha=conservativeAlpha;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
     if(testMutation==5){const float alignment=saturate(dot(ray,sun)*.5+.5),horizon=saturate(ray.y*3.5+.62),legacyShaft=LegacyMiePhase(dot(ray,sun),lightShaftAnisotropy)*lightShaftIntensity*(1.0-exp(-integratedCloudOpticalDepth*.42))*horizon;color=cloudL+float3(1.0,.78,.52)*legacyShaft*alignment*phaseSunScale;alpha=saturate(1.0-cloudT+legacyShaft*.2);}
 #endif

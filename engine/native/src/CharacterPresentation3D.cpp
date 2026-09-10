@@ -286,27 +286,34 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
         AnimationClip3D& clip = clips[std::size_t(id)];
         clip.duration = duration;
         clip.looping = true;
+        const float trailingHip = hipAmount * .72f;
+        const float supportKnee = kneeAmount * .22f;
+        const float passingKnee = kneeAmount * .64f;
+        const float swingKnee = kneeAmount;
+        const float ankleLift = id == FallbackHumanoidClip3D::Run ? .28f : .18f;
         clip.tracks = {
-            Track(skeleton, leftUpperLeg, duration, {{0.f,{hipAmount,0,0}}, {.5f,{-hipAmount,0,0}}, {1.f,{hipAmount,0,0}}}),
-            Track(skeleton, rightUpperLeg, duration, {{0.f,{-hipAmount,0,0}}, {.5f,{hipAmount,0,0}}, {1.f,{-hipAmount,0,0}}}),
-            Track(skeleton, leftLowerLeg, duration, {{0.f,{kneeAmount,0,0}}, {.5f,{0,0,0}}, {1.f,{kneeAmount,0,0}}}),
-            Track(skeleton, rightLowerLeg, duration, {{0.f,{0,0,0}}, {.5f,{kneeAmount,0,0}}, {1.f,{0,0,0}}}),
+            // 接觸、承重、後推、擺回四階段。舊三點曲線會在正式擷取幀把
+            // 大腿鎖在兩個極值，造成跨步過寬與腳掌突然抬高。
+            Track(skeleton, leftUpperLeg, duration, {{0.f,{hipAmount,0,0}}, {.25f,{0,0,0}}, {.5f,{-trailingHip,0,0}}, {.75f,{0,0,0}}, {1.f,{hipAmount,0,0}}}),
+            Track(skeleton, rightUpperLeg, duration, {{0.f,{-trailingHip,0,0}}, {.25f,{0,0,0}}, {.5f,{hipAmount,0,0}}, {.75f,{0,0,0}}, {1.f,{-trailingHip,0,0}}}),
+            Track(skeleton, leftLowerLeg, duration, {{0.f,{supportKnee,0,0}}, {.25f,{supportKnee,0,0}}, {.5f,{swingKnee,0,0}}, {.75f,{passingKnee,0,0}}, {1.f,{supportKnee,0,0}}}),
+            Track(skeleton, rightLowerLeg, duration, {{0.f,{swingKnee,0,0}}, {.25f,{passingKnee,0,0}}, {.5f,{supportKnee,0,0}}, {.75f,{supportKnee,0,0}}, {1.f,{swingKnee,0,0}}}),
             Track(skeleton, leftUpperArm, duration, {{0.f,{-hipAmount*.7f,0,0}}, {.5f,{hipAmount*.7f,0,0}}, {1.f,{-hipAmount*.7f,0,0}}}),
             Track(skeleton, rightUpperArm, duration, {{0.f,{hipAmount*.7f,0,0}}, {.5f,{-hipAmount*.7f,0,0}}, {1.f,{hipAmount*.7f,0,0}}}),
             Track(skeleton, hips, duration, {{0.f,{0,-.035f,0}}, {.25f,{0,.025f,0}}, {.5f,{0,-.035f,0}}, {.75f,{0,.025f,0}}, {1.f,{0,-.035f,0}}},
                   {{0.f,{-.022f,-.007f,0}}, {.25f,{0,.009f,0}}, {.5f,{.022f,-.007f,0}}, {.75f,{0,.009f,0}}, {1.f,{-.022f,-.007f,0}}}),
-            Track(skeleton, leftFoot, duration, {{0.f,{-.18f,0,0}}, {.25f,{.32f,0,0}}, {.5f,{.08f,0,0}}, {1.f,{-.18f,0,0}}}),
-            Track(skeleton, rightFoot, duration, {{0.f,{.08f,0,0}}, {.5f,{-.18f,0,0}}, {.75f,{.32f,0,0}}, {1.f,{.08f,0,0}}}),
+            Track(skeleton, leftFoot, duration, {{0.f,{-.10f,0,0}}, {.25f,{ankleLift,0,0}}, {.5f,{.06f,0,0}}, {.75f,{-.04f,0,0}}, {1.f,{-.10f,0,0}}}),
+            Track(skeleton, rightFoot, duration, {{0.f,{.06f,0,0}}, {.25f,{-.04f,0,0}}, {.5f,{-.10f,0,0}}, {.75f,{ankleLift,0,0}}, {1.f,{.06f,0,0}}}),
             Track(skeleton, leftHand, duration, {{0.f,{.08f,0,-.10f}}, {.5f,{.18f,0,-.16f}}, {1.f,{.08f,0,-.10f}}}),
             Track(skeleton, rightHand, duration, {{0.f,{.18f,0,.16f}}, {.5f,{.08f,0,.10f}}, {1.f,{.18f,0,.16f}}}),
             Track(skeleton, head, duration, {{0.f,{0,-.035f,0}}, {.5f,{0,.035f,0}}, {1.f,{0,-.035f,0}}})};
         appendOptional(clip, leftFingers, {{0.f,{.20f,0,-.06f}}, {.5f,{.34f,0,-.10f}}, {1.f,{.20f,0,-.06f}}});
         appendOptional(clip, rightFingers, {{0.f,{.34f,0,.10f}}, {.5f,{.20f,0,.06f}}, {1.f,{.34f,0,.10f}}});
-        appendOptional(clip, leftToe, {{0.f,{-.20f,0,0}}, {.25f,{.38f,0,0}}, {.5f,{0,0,0}}, {1.f,{-.20f,0,0}}});
-        appendOptional(clip, rightToe, {{0.f,{0,0,0}}, {.5f,{-.20f,0,0}}, {.75f,{.38f,0,0}}, {1.f,{0,0,0}}});
+        appendOptional(clip, leftToe, {{0.f,{-.12f,0,0}}, {.25f,{ankleLift*.8f,0,0}}, {.5f,{0,0,0}}, {.75f,{-.05f,0,0}}, {1.f,{-.12f,0,0}}});
+        appendOptional(clip, rightToe, {{0.f,{0,0,0}}, {.25f,{-.05f,0,0}}, {.5f,{-.12f,0,0}}, {.75f,{ankleLift*.8f,0,0}}, {1.f,{0,0,0}}});
     };
-    gait(FallbackHumanoidClip3D::Walk, .86f, .34f, .44f);
-    gait(FallbackHumanoidClip3D::Run, .58f, .58f, .72f);
+    gait(FallbackHumanoidClip3D::Walk, .86f, .24f, .36f);
+    gait(FallbackHumanoidClip3D::Run, .58f, .48f, .64f);
 
     AnimationClip3D& crouch = clips[std::size_t(FallbackHumanoidClip3D::Crouch)];
     crouch.duration = .7f; crouch.looping = true;
@@ -346,7 +353,12 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
         const float side = left ? -1.f : 1.f;
         clip.tracks = {
             Track(skeleton, spine, clip.duration, {{0.f,{0,-yaw*.3f,0}}, {.22f,{0,yaw,0}}, {.55f,{0,-yaw*.55f,0}}, {1.f,{0,0,0}}}),
-            Track(skeleton, upper, clip.duration, {{0.f,{-.25f,0,side*.22f}}, {.22f,{-1.15f,side*.25f,side*-.35f}}, {.55f,{-1.55f,side*reach,side*-.52f}}, {1.f,{-.22f,0,0}}}),
+            // Keep the striking shoulder in front of the torso.  The previous positive
+            // yaw followed the torso twist and placed the whole arm behind the ribcage
+            // at the authoritative hit-window sample, then snapped it into a lateral
+            // T-pose.  A shorter forward arc remains readable from front and gameplay
+            // three-quarter cameras without changing attack timing.
+            Track(skeleton, upper, clip.duration, {{0.f,{-.25f,0,side*.18f}}, {.22f,{-.55f,side*-.15f,side*.9f}}, {.55f,{-1.05f,side*-reach,side*.48f}}, {1.f,{-.22f,0,0}}}),
             Track(skeleton, lower, clip.duration, {{0.f,{-.25f,0,0}}, {.22f,{-.72f,0,0}}, {.55f,{-.25f,0,0}}, {1.f,{0,0,0}}}),
             Track(skeleton, hand, clip.duration, {{0.f,{0,0,0}}, {.22f,{-.18f,side*.18f,0}}, {.55f,{.2f,side*-.12f,0}}, {1.f,{0,0,0}}})};
         appendOptional(clip, left ? leftFingers : rightFingers,
@@ -354,14 +366,34 @@ bool CreateFallbackHumanoidAnimationSet3D(const SkinnedModelAssetData& asset,
     };
     attack(FallbackHumanoidClip3D::Attack1, false, .35f, .25f);
     attack(FallbackHumanoidClip3D::Attack2, true, -.42f, .32f);
-    attack(FallbackHumanoidClip3D::Attack3, false, 1.05f, .55f);
+    attack(FallbackHumanoidClip3D::Attack3, false, .48f, .35f);
 
     AnimationClip3D& hit = clips[std::size_t(FallbackHumanoidClip3D::Hit)];
     hit.duration = .45f; hit.looping = false;
     hit.tracks = {Track(skeleton, spine, hit.duration, {{0.f,{0,0,0}}, {.25f,{-.5f,0,0}}, {1.f,{0,0,0}}})};
     AnimationClip3D& death = clips[std::size_t(FallbackHumanoidClip3D::Death)];
     death.duration = 1.f; death.looping = false;
-    death.tracks = {Track(skeleton, hips, death.duration, {{0.f,{0,0,0}}, {.7f,{0,0,1.45f}}, {1.f,{0,0,1.5f}}}, {{0.f,{0,0,0}}, {.7f,{0,-.65f,0}}, {1.f,{0,-.72f,0}}})};
+    // 先屈肢再側倒，避免只有骨盆旋轉而四肢保持僵直的木板姿態。
+    // Track 使用 bind 後局部增量；此處採小幅不對稱收束，不假稱世界地面 IK。
+    death.tracks = {Track(skeleton, hips, death.duration,
+        {{0.f,{0,0,0}}, {.2f,{.04f,0,.18f}}, {.55f,{.07f,0,1.02f}}, {.85f,{.05f,0,1.48f}}, {1.f,{.05f,0,1.5f}}},
+        {{0.f,{0,0,0}}, {.2f,{0,-.10f,0}}, {.55f,{0,-.43f,0}}, {.85f,{0,-.70f,0}}, {1.f,{0,-.72f,0}}})};
+    const auto deathLimb = [&](std::size_t index, Vec3 settled) {
+        death.tracks.push_back(Track(skeleton,index,death.duration,
+            {{0.f,{0,0,0}}, {.2f,settled*.25f}, {.55f,settled*.85f}, {.85f,settled}, {1.f,settled}}));
+    };
+    deathLimb(spine,{.12f,.03f,-.06f});
+    deathLimb(joint(HumanoidJoint3D::Head),{.06f,-.04f,.04f});
+    deathLimb(leftUpperArm,{-.32f,-.12f,-.20f});
+    deathLimb(rightUpperArm,{-.42f,.10f,.16f});
+    deathLimb(leftLowerArm,{-.82f,0,0});
+    deathLimb(rightLowerArm,{-1.08f,0,0});
+    deathLimb(leftUpperLeg,{-.36f,0,-.06f});
+    deathLimb(rightUpperLeg,{-.62f,0,.08f});
+    deathLimb(leftLowerLeg,{.72f,0,0});
+    deathLimb(rightLowerLeg,{1.12f,0,0});
+    deathLimb(leftFoot,{-.08f,0,0});
+    deathLimb(rightFoot,{-.12f,0,0});
 
     for (const AnimationClip3D& clip : clips) {
         if (!clip.Valid(skeleton)) {
