@@ -130,9 +130,21 @@ struct ShowcaseSceneDescriptor3D {
   std::string materialAsset;
 };
 
+enum class ShowcaseTerrainBiome3D : std::uint8_t {
+  Neutral,
+  CottagePath,
+  CanopyLeafLitter,
+  RiverWetSoil
+};
+
 struct ShowcaseTerrainEcologyTint3D {
   Aevrynd::Color tint{1, 1, 1, 1};
   float canopy{}, riverMoisture{};
+  // A terrain vertex belongs to at most one authored biome. Keeping the
+  // weights explicit makes the rule testable while canopy/riverMoisture remain
+  // backward-compatible aliases for the two original ecology signals.
+  float cottagePath{}, leafLitter{}, riverWetSoil{};
+  ShowcaseTerrainBiome3D biome{ShowcaseTerrainBiome3D::Neutral};
 };
 
 struct ShowcaseTerrainDisturbance3D {
@@ -140,8 +152,10 @@ struct ShowcaseTerrainDisturbance3D {
   float heightDelta{}, weight{};
 };
 
-// 林下落葉與河岸濕土必須由場景中的實際樹冠、河道位置決定；不以相機或
-// 畫面空間噪聲製造假細節。輸出只調 RGB，呼叫端保留高度場原有 alpha。
+// 屋前步道由出生點至門廊的固定世界幾何定義；林下落葉與河岸濕土則由
+// 場景中的實際樹冠、河道位置決定。不以相機或畫面空間噪聲製造假細節。
+// 三種候選取唯一最高權重，因此材質訊號互斥且全部維持於 [0,1]。輸出只
+// 調 RGB，呼叫端保留高度場原有 alpha，也不新增 descriptor 或 draw call。
 [[nodiscard]] inline ShowcaseTerrainEcologyTint3D
 SampleShowcaseTerrainEcologyTint3D(
     Aevrynd::Vec3 worldPosition,
@@ -153,6 +167,35 @@ SampleShowcaseTerrainEcologyTint3D(
     value = Aevrynd::Clamp(value, 0.f, 1.f);
     return value * value * (3.f - 2.f * value);
   };
+  const auto segmentDistance = [](Aevrynd::Vec3 point, Aevrynd::Vec3 start,
+                                  Aevrynd::Vec3 end) {
+    const float vx = end.x - start.x, vz = end.z - start.z;
+    const float wx = point.x - start.x, wz = point.z - start.z;
+    const float lengthSquared = vx * vx + vz * vz;
+    const float t = lengthSquared > 0.f
+                        ? Aevrynd::Clamp((wx * vx + wz * vz) / lengthSquared,
+                                         0.f, 1.f)
+                        : 0.f;
+    const float dx = point.x - (start.x + vx * t);
+    const float dz = point.z - (start.z + vz * t);
+    return std::sqrt(dx * dx + dz * dz);
+  };
+  const auto authoredEdgeNoise = [](Aevrynd::Vec3 point) {
+    // Stable world-space harmonics break up biome borders without adding a
+    // texture lookup, descriptor, camera dependency, or temporal shimmer.
+    return std::sin(point.x * .47f + point.z * .19f) * .18f +
+           std::sin(point.x * .13f - point.z * .41f + 1.7f) * .11f;
+  };
+  // A shallow bend avoids the artificial ruler-straight strip between spawn
+  // and the front porch while preserving a deterministic, bounded footprint.
+  const float pathDistance = (std::min)(
+      segmentDistance(worldPosition, {-16.f, 0.f, 8.f}, {-14.f, 0.f, 14.f}),
+      segmentDistance(worldPosition, {-14.f, 0.f, 14.f},
+                      {-12.f, 0.f, 19.8f}));
+  const float pathEdge = pathDistance + authoredEdgeNoise(worldPosition);
+  const float pathCandidate = 1.f - smooth((pathEdge - .42f) / .72f);
+
+  float canopyCandidate{};
   for (const auto &descriptor : descriptors) {
     if (descriptor.kind != ShowcaseSceneKind3D::Tree ||
         !std::isfinite(descriptor.position.x) ||
@@ -167,7 +210,7 @@ SampleShowcaseTerrainEcologyTint3D(
                          std::abs(descriptor.scale.z)) * .62f);
     const float normalized =
         1.f - std::sqrt(dx * dx + dz * dz) / (crownRadius * 1.4f);
-    result.canopy = (std::max)(result.canopy, smooth(normalized));
+    canopyCandidate = (std::max)(canopyCandidate, smooth(normalized));
   }
   const float riverCenter = -4.f + std::sin(worldPosition.z * .035f) * 5.f +
                             std::sin(worldPosition.z * .011f) * 2.f;
@@ -175,11 +218,35 @@ SampleShowcaseTerrainEcologyTint3D(
       12.f + std::sin(worldPosition.z * .057f + .7f) * 2.6f;
   const float bankClearance =
       std::abs(worldPosition.x - riverCenter) - riverWidth * .5f;
-  result.riverMoisture = 1.f - smooth((bankClearance - 1.5f) / 14.f);
-  result.tint = {
-      1.f - result.canopy * .14f - result.riverMoisture * .08f,
-      1.f - result.canopy * .08f - result.riverMoisture * .10f,
-      1.f - result.canopy * .18f - result.riverMoisture * .05f, 1.f};
+  const float irregularBankClearance =
+      bankClearance + authoredEdgeNoise({worldPosition.z, 0, worldPosition.x}) *
+                          1.8f;
+  const float wetSoilCandidate =
+      1.f - smooth((std::max)(0.f, irregularBankClearance) / 3.8f);
+
+  float weight{};
+  Aevrynd::Color authoredTint{1, 1, 1, 1};
+  // The saturated bank core remains wet soil even below a crown; outside that
+  // core, the numerically strongest authored signal wins. This preserves a
+  // continuous path edge without allowing a shoreline tree to erase the bank.
+  if (wetSoilCandidate >= .60f ||
+      (wetSoilCandidate >= pathCandidate &&
+       wetSoilCandidate >= canopyCandidate && wetSoilCandidate > 0.f)) {
+    result.biome = ShowcaseTerrainBiome3D::RiverWetSoil;
+    result.riverWetSoil = result.riverMoisture = weight = wetSoilCandidate;
+    authoredTint = {.68f, .72f, .67f, 1.f};
+  } else if (pathCandidate >= canopyCandidate && pathCandidate > 0.f) {
+    result.biome = ShowcaseTerrainBiome3D::CottagePath;
+    result.cottagePath = weight = pathCandidate;
+    authoredTint = {.84f, .77f, .64f, 1.f};
+  } else if (canopyCandidate > 0.f) {
+    result.biome = ShowcaseTerrainBiome3D::CanopyLeafLitter;
+    result.leafLitter = result.canopy = weight = canopyCandidate;
+    authoredTint = {.70f, .77f, .60f, 1.f};
+  }
+  result.tint = {1.f + (authoredTint.r - 1.f) * weight,
+                 1.f + (authoredTint.g - 1.f) * weight,
+                 1.f + (authoredTint.b - 1.f) * weight, 1.f};
   return result;
 }
 

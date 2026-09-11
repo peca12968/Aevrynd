@@ -118,7 +118,11 @@ enum class GameplayTemporalReseedReason3D : std::uint32_t {
     None=0, CameraMode=1u<<0, Character=1u<<1, PoseState=1u<<2,
     ViewProjection=1u<<3, DrawIdentity=1u<<4, CaptureShot=1u<<5
 };
-inline constexpr std::uint32_t GameplayTemporalCaptureWarmupFrames3D=3;
+// Five sealed frames are required before a production capture. Three frames
+// left a one-LSB dependency on the variable startup history in the first shot;
+// the extra two frames preserve the strict bit-exact HDR contract instead of
+// weakening the cross-process determinism gate.
+inline constexpr std::uint32_t GameplayTemporalCaptureWarmupFrames3D=5;
 [[nodiscard]] constexpr std::uint32_t GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D reason)noexcept{return std::uint32_t(reason);}
 [[nodiscard]] inline bool GameplayTemporalViewDiscontinuity3D(const Aevrynd::Camera3D& previous,const Aevrynd::Camera3D& current)noexcept{
     if(previous.projection.mode!=current.projection.mode)return true;

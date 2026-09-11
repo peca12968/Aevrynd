@@ -328,9 +328,31 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
     $third = $names[$captureIndex] -like 'third-*' -or $names[$captureIndex] -in @('palette-building.png','melee-combat.png')
     $phaseCount = if ($third) { 3 } else { 2 }
     $token = $captureIndex + 1
+    $atmosphereFingerprint = [uint64](1001 + $captureIndex)
+    $atmosphereFence = [uint64](2001 + $captureIndex)
+    $atmosphereHistory = [uint64](3001 + $captureIndex)
+    $temporalFingerprint = [uint64](4001 + $captureIndex)
+    $temporalFence = [uint64](5001 + $captureIndex)
+    $temporalHistory = [uint64](6001 + $captureIndex)
     $phases = @()
     for ($phaseIndex = 0; $phaseIndex -lt $phaseCount; ++$phaseIndex) {
-      $phases += [pscustomobject]@{ index=$phaseIndex;sequenceIndex=$phaseIndex;sequenceToken=$token;drawListRevision=1;cameraHash=1;stateHash=1;invariantHash=1;frameSerial=($phaseIndex+1);viewProjectionHash=1;tokenGeneration=($phaseIndex+1);historyGeneration=1;historyIndex=0;jitterIndex=0;jitterX=0.0;jitterY=0.0;excludingOpacity=1;includingOpacity=1;identityOrder=1 }
+      $dispatched = [uint32][int]($phaseIndex -eq 0)
+      $reused = [uint32][int]($phaseIndex -ne 0)
+      $gpuProvenance = [pscustomobject]@{
+        atmosphere = [pscustomobject]@{
+          fingerprint=$atmosphereFingerprint;resourceCreates=[uint64]5;resourceReleases=[uint64]0
+          outputIdentity=[pscustomobject]@{generation=[uint64]5;width=[uint32]960;height=[uint32]540;format=[uint32]10;sampleCount=[uint32]1;state=[uint32]128}
+          submissionFence=$atmosphereFence;historyGeneration=$atmosphereHistory;outputWidth=[uint32]960;outputHeight=[uint32]540;historyIndex=[uint32]0
+          rejection=[uint32]0;dispatched=$dispatched;reused=$reused;complete=[uint32]1
+        }
+        temporalResolve = [pscustomobject]@{
+          fingerprint=$temporalFingerprint;resourceCreates=[uint64]2;resourceReleases=[uint64]0
+          outputIdentity=[pscustomobject]@{generation=[uint64]7;width=[uint32]1280;height=[uint32]720;format=[uint32]26;sampleCount=[uint32]1;state=[uint32]128}
+          submissionFence=$temporalFence;historyGeneration=$temporalHistory;outputWidth=[uint32]1280;outputHeight=[uint32]720;historyIndex=[uint32]1
+          rejection=[uint32]0;dispatched=$dispatched;reused=$reused;complete=[uint32]1
+        }
+      }
+      $phases += [pscustomobject]@{ index=$phaseIndex;sequenceIndex=$phaseIndex;sequenceToken=$token;drawListRevision=1;cameraHash=1;stateHash=1;invariantHash=1;frameSerial=($phaseIndex+1);viewProjectionHash=1;tokenGeneration=($phaseIndex+1);historyGeneration=1;historyIndex=0;jitterIndex=0;jitterX=0.0;jitterY=0.0;excludingOpacity=1;includingOpacity=1;identityOrder=1;gpuProvenance=$gpuProvenance }
     }
     $sequenceCaptures += [pscustomobject]@{name=$names[$captureIndex];complete=1;expectedPhaseCount=$phaseCount;token=$token;jitterPolicy=1;fixedSampleIndex=0;phases=$phases}
   }

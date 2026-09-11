@@ -220,25 +220,79 @@ int main() {
       terrainTint.a != 1.f)
     return 63;
   const std::array<ShowcaseSceneDescriptor3D, 1> ecologyTrees{{
-      {ShowcaseSceneKind3D::Tree, {0, 0, 0}, {12, 10, 10}}}};
+      {ShowcaseSceneKind3D::Tree, {40, 0, 40}, {12, 10, 10}}}};
   const auto canopyCenter =
-      SampleShowcaseTerrainEcologyTint3D({0, 0, 0}, ecologyTrees);
+      SampleShowcaseTerrainEcologyTint3D({40, 0, 40}, ecologyTrees);
   const auto canopyFar =
       SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, ecologyTrees);
+  const auto cottagePath =
+      SampleShowcaseTerrainEcologyTint3D({-14, 0, 14}, ecologyTrees);
+  const auto cottagePathRepeated =
+      SampleShowcaseTerrainEcologyTint3D({-14, 0, 14}, ecologyTrees);
   const auto wetBank =
       SampleShowcaseTerrainEcologyTint3D({4, 0, 0}, {});
+  const std::array<ShowcaseSceneDescriptor3D, 1> overlappingTree{{
+      {ShowcaseSceneKind3D::Tree, {4, 0, 0}, {12, 10, 10}}}};
+  const auto overlappingBank =
+      SampleShowcaseTerrainEcologyTint3D({4, 0, 0}, overlappingTree);
   const auto dryGround =
       SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, {});
   const auto invalidEcology = SampleShowcaseTerrainEcologyTint3D(
       {(std::numeric_limits<float>::quiet_NaN)(), 0, 0}, ecologyTrees);
-  if (canopyCenter.canopy < .99f || canopyFar.canopy != 0.f ||
+  const auto mutuallyExclusiveAndBounded = [](const auto &sample) {
+    const std::array weights{sample.cottagePath, sample.leafLitter,
+                             sample.riverWetSoil};
+    unsigned active{};
+    for (const float weight : weights) {
+      if (!std::isfinite(weight) || weight < 0.f || weight > 1.f)
+        return false;
+      active += weight > 0.f;
+    }
+    return active <= 1;
+  };
+  if (canopyCenter.canopy < .99f || canopyCenter.leafLitter < .99f ||
+      canopyCenter.biome != ShowcaseTerrainBiome3D::CanopyLeafLitter ||
+      canopyFar.canopy != 0.f ||
       Rec709(canopyCenter.tint) >= Rec709(canopyFar.tint) ||
-      wetBank.riverMoisture < .9f || dryGround.riverMoisture != 0.f ||
+      cottagePath.cottagePath < .99f ||
+      cottagePath.biome != ShowcaseTerrainBiome3D::CottagePath ||
+      cottagePath.tint.r != cottagePathRepeated.tint.r ||
+      cottagePath.tint.g != cottagePathRepeated.tint.g ||
+      cottagePath.tint.b != cottagePathRepeated.tint.b ||
+      cottagePath.cottagePath != cottagePathRepeated.cottagePath ||
+      wetBank.riverMoisture < .6f || wetBank.riverWetSoil < .6f ||
+      wetBank.biome != ShowcaseTerrainBiome3D::RiverWetSoil ||
+      overlappingBank.biome != ShowcaseTerrainBiome3D::RiverWetSoil ||
+      overlappingBank.riverWetSoil < .6f || overlappingBank.leafLitter != 0.f ||
+      dryGround.riverMoisture != 0.f ||
+      dryGround.biome != ShowcaseTerrainBiome3D::Neutral ||
       Rec709(wetBank.tint) >= Rec709(dryGround.tint) ||
+      !mutuallyExclusiveAndBounded(canopyCenter) ||
+      !mutuallyExclusiveAndBounded(cottagePath) ||
+      !mutuallyExclusiveAndBounded(wetBank) ||
+      !mutuallyExclusiveAndBounded(overlappingBank) ||
+      !mutuallyExclusiveAndBounded(dryGround) ||
       invalidEcology.tint.r != 1.f || invalidEcology.tint.g != 1.f ||
       invalidEcology.tint.b != 1.f || invalidEcology.tint.a != 1.f ||
-      invalidEcology.canopy != 0.f || invalidEcology.riverMoisture != 0.f)
+      invalidEcology.canopy != 0.f || invalidEcology.riverMoisture != 0.f ||
+      invalidEcology.cottagePath != 0.f || invalidEcology.leafLitter != 0.f ||
+      invalidEcology.riverWetSoil != 0.f ||
+      invalidEcology.biome != ShowcaseTerrainBiome3D::Neutral) {
+    std::cerr << "terrain ecology divergence canopy=" << canopyCenter.canopy
+              << '/' << canopyCenter.leafLitter << '/'
+              << unsigned(canopyCenter.biome) << " path="
+              << cottagePath.cottagePath << '/' << unsigned(cottagePath.biome)
+              << " wet=" << wetBank.riverMoisture << '/'
+              << wetBank.riverWetSoil << '/' << unsigned(wetBank.biome)
+              << " overlap=" << overlappingBank.cottagePath << '/'
+              << overlappingBank.leafLitter << '/'
+              << overlappingBank.riverWetSoil << '/'
+              << unsigned(overlappingBank.biome) << " dry="
+              << dryGround.cottagePath << '/' << dryGround.leafLitter << '/'
+              << dryGround.riverWetSoil << '/' << unsigned(dryGround.biome)
+              << '\n';
     return 77;
+  }
   const ShowcaseSceneDescriptor3D fallenLog{
       ShowcaseSceneKind3D::Tree, {40, 0, 40}, {8, 6, 7}, .4f, 0, true,
       "poly-haven/dead_tree_trunk_02/cooked-lod",
@@ -714,7 +768,6 @@ int main() {
        .95f, .012f});
   if (!ReadableForestWater(forestWater) || ReadableForestWater(oldFlatWater))
     return 70;
-
   const auto day = first.EvaluateLighting(ShowcaseLightingProfile3D::Day);
   const auto dusk = first.EvaluateLighting(ShowcaseLightingProfile3D::Dusk);
   const auto night = first.EvaluateLighting(ShowcaseLightingProfile3D::Night);

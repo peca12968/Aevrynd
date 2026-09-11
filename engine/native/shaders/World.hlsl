@@ -1677,6 +1677,9 @@ float4 EvaluateWaterScreenSpaceReflection(float3 worldPosition,float3 normal,flo
     const float3 rayOrigin=worldPosition+normal*.035;
     const float minimumDistance=min(.18,screenSpaceReflectionMaximumDistance*.02);
     const float2 viewportMaximum=worldViewport.xy+worldViewport.zw;
+    float previousRayDistance=0.0;
+    float previousDepthGap=0.0;
+    bool previousValid=false;
     [loop] for(uint stepIndex=0;stepIndex<16u;++stepIndex)
     {
         if(stepIndex>=(uint)screenSpaceReflectionSampleCount)break;
@@ -1694,15 +1697,57 @@ float4 EvaluateWaterScreenSpaceReflection(float3 worldPosition,float3 normal,flo
         const float rayCameraDistance=distance(cameraFogStart.xyz,rayPosition);
         const float sceneCameraDistance=distance(cameraFogStart.xyz,sampledWorldPosition);
         const float depthGap=rayCameraDistance-sceneCameraDistance;
-        if(depthGap>=0.0&&depthGap<=screenSpaceReflectionThickness)
+        float2 hitUv=screenUv;
+        float hitDepthGap=depthGap;
+        // Quadratic SSR steps become several metres apart near the end of the
+        // ray. Once the ray crosses from in front of scene depth to behind it,
+        // refine that real bracket before applying the original thickness
+        // test; otherwise valid cottage/tree reflections are skipped by a
+        // large overshoot. The fixed iteration count remains deterministic.
+        if(depthGap>=0.0&&previousValid&&previousDepthGap<0.0)
         {
-            const float2 edgeDistance=min(viewportUv,1.0-viewportUv);
+            float lowerDistance=previousRayDistance;
+            float upperDistance=rayDistance;
+            [unroll] for(uint refinement=0u;refinement<3u;++refinement)
+            {
+                const float midpointDistance=(lowerDistance+upperDistance)*.5;
+                const float3 midpointPosition=rayOrigin+reflectionDirection*midpointDistance;
+                const float4 midpointClip=mul(viewProjection,float4(midpointPosition,1.0));
+                if(midpointClip.w<=0.000001)break;
+                const float2 midpointViewportUv=midpointClip.xy/midpointClip.w*float2(.5,-.5)+.5;
+                const float2 midpointUv=worldViewport.xy+midpointViewportUv*worldViewport.zw;
+                if(any(midpointUv<=worldViewport.xy)||any(midpointUv>=viewportMaximum))break;
+                const float midpointDepth=sceneDepthTexture.SampleLevel(screenPointClampSampler,midpointUv,0.0);
+                if(midpointDepth<=0.0||midpointDepth>=.999999)
+                {
+                    lowerDistance=midpointDistance;
+                    continue;
+                }
+                const float3 midpointWorldPosition=ReconstructWorldPosition(midpointUv,midpointDepth);
+                const float midpointGap=distance(cameraFogStart.xyz,midpointPosition)-distance(cameraFogStart.xyz,midpointWorldPosition);
+                if(midpointGap>=0.0)
+                {
+                    upperDistance=midpointDistance;
+                    hitUv=midpointUv;
+                    hitDepthGap=midpointGap;
+                }
+                else
+                {
+                    lowerDistance=midpointDistance;
+                }
+            }
+        }
+        if(hitDepthGap>=0.0&&hitDepthGap<=screenSpaceReflectionThickness)
+        {
+            const float2 hitViewportUv=(hitUv-worldViewport.xy)/worldViewport.zw;
+            const float2 edgeDistance=min(hitViewportUv,1.0-hitViewportUv);
             const float edgeFade=saturate(min(edgeDistance.x,edgeDistance.y)*12.0);
             const float roughnessFade=1.0-saturate(roughness/screenSpaceReflectionMaximumRoughness);
-            const float hitConfidence=(1.0-depthGap/screenSpaceReflectionThickness)*edgeFade*roughnessFade*screenSpaceReflectionIntensity;
+            const float hitConfidence=(1.0-hitDepthGap/screenSpaceReflectionThickness)*edgeFade*roughnessFade*screenSpaceReflectionIntensity;
             // SSR 僅補上畫面內可見幾何；低信心與 miss 由既有 IBL 無縫接手。
-            return float4(opaqueSceneColorTexture.SampleLevel(screenPointClampSampler,screenUv,0.0).rgb,saturate(hitConfidence));
+            return float4(opaqueSceneColorTexture.SampleLevel(screenPointClampSampler,hitUv,0.0).rgb,saturate(hitConfidence));
         }
+        if(depthGap<0.0){previousRayDistance=rayDistance;previousDepthGap=depthGap;previousValid=true;}
     }
     return float4(0.0,0.0,0.0,0.0);
 }
@@ -2081,6 +2126,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             heightGradient = heightGradient + crossWave.yz * crossBandLimit;
             heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.18;
             heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.50;
+            // Material3D already carries the authored normal amplitude. The water path
+            // previously ignored it, so distant river pixels used only half of the
+            // intended analytic slope and collapsed into a flat translucent sheet.
+            // Scale the real height derivative after per-band filtering; this keeps
+            // sub-pixel waves suppressed and does not introduce screen-space noise.
+            const precise float waterNormalScale = clamp(input.normalScale, 0.0, 2.25);
+            heightGradient = heightGradient * waterNormalScale;
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
             waterDiagnosticHeightGradient = heightGradient;
 #endif

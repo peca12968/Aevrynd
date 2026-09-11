@@ -609,7 +609,7 @@ void GameplayLabGame::OnStart(Engine& engine){
   // 林下／濕地色調，alpha 仍原封不動保存高度供 biome 權重使用。
   auto terrainMesh=CreateShowcaseRiverRefinedTerrainMesh3D(showcaseTerrain_,{{1,1,1,1},{1,1,1,1},{1,1,1,1},.7f,{1,1,1,1},-.65f,2.2f,0x4a17u,.0042f,0.f,.32f,{1,1,1,1},{1,1,1,1},{1,1,1,1},.34f,.7f,.11f,.7f,.1f});
   // 高度場頂點提供真實世界平鋪UV，避免所有頂點取樣同一個淺色texel形成除錯條紋。
-  for(auto& vertex:terrainMesh.vertices){const auto source=UnpackColorRgba8(vertex.color);const auto ecology=SampleShowcaseTerrainEcologyTint3D({vertex.x,vertex.y,vertex.z},showcaseEnvironment_.Descriptors());const auto disturbance=SampleShowcaseTerrainDisturbance3D({vertex.x,vertex.y,vertex.z},terrainDisturbanceAnchors);vertex.color=PackColorRgba8({ecology.tint.r*disturbance.tint.r,ecology.tint.g*disturbance.tint.g,ecology.tint.b*disturbance.tint.b,source.a});vertex.u=vertex.x*.085f;vertex.v=vertex.z*.085f;}
+  for(auto& vertex:terrainMesh.vertices){const auto source=UnpackColorRgba8(vertex.color);const auto ecology=SampleShowcaseTerrainEcologyTint3D({vertex.x,vertex.y,vertex.z},showcaseEnvironment_.Descriptors());const auto disturbance=SampleShowcaseTerrainDisturbance3D({vertex.x,vertex.y,vertex.z},terrainDisturbanceAnchors);vertex.color=PackColorRgba8({source.r*ecology.tint.r*disturbance.tint.r,source.g*ecology.tint.g*disturbance.tint.g,source.b*ecology.tint.b*disturbance.tint.b,source.a});vertex.u=vertex.x*.085f;vertex.v=vertex.z*.085f;}
   if(!PrepareShowcaseSurfaceTerrainMesh3D(terrainMesh))
     throw std::runtime_error("Gameplay showcase terrain apron construction failed");
   showcaseTerrainMesh_=engine.CreateMeshResource3D(terrainMesh);
