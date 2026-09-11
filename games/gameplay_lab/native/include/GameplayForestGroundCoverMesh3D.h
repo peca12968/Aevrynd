@@ -35,6 +35,16 @@ struct GameplayForestGroundCoverLodSet3D {
   Aevrynd::Mesh3D farMesh;
 };
 
+// Fern, shrub and leaf-moss vertices are authored in metres.  Ecology placement
+// keeps the useful horizontal footprint variation that was originally designed
+// for unit grass cards, but its Y component must not shrink metre-authored
+// plants a second time.
+[[nodiscard]] constexpr Aevrynd::Vec3
+GameplayForestGroundCoverWorldScale3D(Aevrynd::Vec3 ecologyScale) noexcept {
+  ecologyScale.y = 1.f;
+  return ecologyScale;
+}
+
 [[nodiscard]] constexpr GameplayForestGroundCoverAlphaCardContract3D
 GameplayForestGroundCoverAlphaCardContract() noexcept {
   return {};

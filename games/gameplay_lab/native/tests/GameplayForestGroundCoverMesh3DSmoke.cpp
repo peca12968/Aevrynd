@@ -64,6 +64,12 @@ bool CommunityUvContract(const Mesh3D& mesh) {
 } // namespace
 
 int main() {
+  constexpr Vec3 ecologyScale{.42f, .31f, .78f};
+  constexpr auto metreAuthoredScale =
+      GameplayForestGroundCoverWorldScale3D(ecologyScale);
+  static_assert(metreAuthoredScale.x == ecologyScale.x &&
+                metreAuthoredScale.y == 1.f &&
+                metreAuthoredScale.z == ecologyScale.z);
   constexpr auto contract = GameplayForestGroundCoverAlphaCardContract();
   static_assert(contract.alphaMode == MaterialAlphaMode3D::Mask);
   static_assert(contract.alphaCutoff == .45f);
@@ -150,6 +156,25 @@ int main() {
       return 5;
     }
     previousCommunityTriangles = triangles;
+  }
+
+  const auto fern = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::Fern,
+      GameplayForestGroundCoverDetail3D::Near, 0x4a17u);
+  const auto shrub = CreateGameplayForestGroundCoverCommunityMesh3D(
+      GameplayForestGroundCoverDetail3D::Near, 0x7c31u);
+  const auto fernBounds = fern.Bounds();
+  const auto shrubBounds = shrub.Bounds();
+  const float fernWorldHeight = fernBounds.extents.y * 2.f * metreAuthoredScale.y;
+  const float shrubWorldHeight = shrubBounds.extents.y * 2.f * metreAuthoredScale.y;
+  if (fernWorldHeight < .50f || fernWorldHeight > 1.f ||
+      shrubWorldHeight < .50f || shrubWorldHeight > 1.f ||
+      fernWorldHeight <= fernBounds.extents.y * 2.f * ecologyScale.y * 3.f ||
+      shrubWorldHeight <= shrubBounds.extents.y * 2.f * ecologyScale.y * 3.f ||
+      fernBounds.center.y - fernBounds.extents.y < -1e-6f ||
+      shrubBounds.center.y - shrubBounds.extents.y < -1e-6f) {
+    std::cerr << "FOREST_GROUND_COVER_WORLD_SCALE=FAIL\n";
+    return 7;
   }
 
   std::cout << "GAMEPLAY_FOREST_GROUND_COVER_MESH=PASS\n";

@@ -39,6 +39,13 @@
 #include "WorldWaterShorePixelShader.h"
 #include "WorldWaterShoreDerivativePixelShader.h"
 #include "WorldWaterFoamCoveragePixelShader.h"
+#include "WorldWaterEnvironmentReflectionPixelShader.h"
+#include "WorldWaterScreenSpaceReflectionPixelShader.h"
+#include "WorldWaterNormalPixelShader.h"
+#include "WorldWaterWorldPositionPixelShader.h"
+#include "WorldWaterGeometricNormalPixelShader.h"
+#include "WorldWaterWaveGradientPixelShader.h"
+#include "WorldWaterWaveBlendPixelShader.h"
 #endif
 #include "WorldMaskedPixelShader.h"
 #include "ObjectIdPixelShader.h"
@@ -667,7 +674,7 @@ struct D3D12Renderer::Impl{
  D3D12RendererTestAccess3D::WorldPixelMutation worldPixelMutation{D3D12RendererTestAccess3D::WorldPixelMutation::Production};
 #endif
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS || AEVRYND_WATER_COMPONENT_DIAGNOSTICS
- std::array<ComPtr<ID3D12PipelineState>,13> waterAerialDiagnosticPipelines{},msaaWaterAerialDiagnosticPipelines{};
+ std::array<ComPtr<ID3D12PipelineState>,20> waterAerialDiagnosticPipelines{},msaaWaterAerialDiagnosticPipelines{};
  unsigned waterAerialOwnershipMutation{};
  uint32_t waterAerialDiagnosticOrdinal{0xffffffffu};
 #endif
@@ -1073,7 +1080,7 @@ struct WaterAerialEnvironmentSelection {unsigned mutation{};bool valid{true};};
 WaterAerialEnvironmentSelection ParseWaterAerialDiagnosticEnvironment(std::wstring_view value,bool enabled=true){
  if(!enabled||value.empty())return {};
  if(value.size()==1&&value[0]>=L'1'&&value[0]<=L'9')return {unsigned(value[0]-L'0'),true};
- if(value.size()==1&&value[0]>=L'A'&&value[0]<=L'D')return {unsigned(value[0]-L'A')+10u,true};
+ if(value.size()==1&&value[0]>=L'A'&&value[0]<=L'K')return {unsigned(value[0]-L'A')+10u,true};
  return {0,false};
 }
 }
@@ -1256,7 +1263,7 @@ D3D12_DESCRIPTOR_HEAP_DESC textureHeap{};textureHeap.NumDescriptors=UINT(TotalTe
  // 水體 shader 已完成背景、透射與反射合成，專用管線不可再次套用透明 alpha。
  auto instancedWater=instancedTransparent;instancedWater.PS={WaterPixelShader,sizeof(WaterPixelShader)};instancedWater.BlendState.RenderTarget[0].BlendEnable=FALSE;Check(d.device->CreateGraphicsPipelineState(&instancedWater,IID_PPV_ARGS(&d.instancedWaterPipeline)),"Water single-composite pipeline failed");
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS || AEVRYND_WATER_COMPONENT_DIAGNOSTICS
- const std::array<D3D12_SHADER_BYTECODE,13> waterAerialDiagnostics{{
+ const std::array<D3D12_SHADER_BYTECODE,20> waterAerialDiagnostics{{
   {WorldWaterAerialLegacyPixelShader,sizeof(WorldWaterAerialLegacyPixelShader)},
   {WorldWaterAerialSnapshotPixelShader,sizeof(WorldWaterAerialSnapshotPixelShader)},
   {WorldWaterAerialLocalPixelShader,sizeof(WorldWaterAerialLocalPixelShader)},
@@ -1269,7 +1276,14 @@ D3D12_DESCRIPTOR_HEAP_DESC textureHeap{};textureHeap.NumDescriptors=UINT(TotalTe
   {WorldWaterDepthValidPixelShader,sizeof(WorldWaterDepthValidPixelShader)},
   {WorldWaterShorePixelShader,sizeof(WorldWaterShorePixelShader)},
   {WorldWaterShoreDerivativePixelShader,sizeof(WorldWaterShoreDerivativePixelShader)},
-  {WorldWaterFoamCoveragePixelShader,sizeof(WorldWaterFoamCoveragePixelShader)}}};
+  {WorldWaterFoamCoveragePixelShader,sizeof(WorldWaterFoamCoveragePixelShader)},
+  {WorldWaterEnvironmentReflectionPixelShader,sizeof(WorldWaterEnvironmentReflectionPixelShader)},
+  {WorldWaterScreenSpaceReflectionPixelShader,sizeof(WorldWaterScreenSpaceReflectionPixelShader)},
+  {WorldWaterNormalPixelShader,sizeof(WorldWaterNormalPixelShader)},
+  {WorldWaterWorldPositionPixelShader,sizeof(WorldWaterWorldPositionPixelShader)},
+  {WorldWaterGeometricNormalPixelShader,sizeof(WorldWaterGeometricNormalPixelShader)},
+  {WorldWaterWaveGradientPixelShader,sizeof(WorldWaterWaveGradientPixelShader)},
+  {WorldWaterWaveBlendPixelShader,sizeof(WorldWaterWaveBlendPixelShader)}}};
  for(size_t index=0;index<waterAerialDiagnostics.size();++index){auto diagnostic=instancedWater;diagnostic.PS=waterAerialDiagnostics[index];Check(d.device->CreateGraphicsPipelineState(&diagnostic,IID_PPV_ARGS(&d.waterAerialDiagnosticPipelines[index])),"Water aerial diagnostic pipeline failed");}
  if(d.stats.multisampleSupported)for(size_t index=0;index<waterAerialDiagnostics.size();++index){auto diagnostic=instancedWater;diagnostic.PS=waterAerialDiagnostics[index];diagnostic.SampleDesc={4,d.stats.multisampleQuality};Check(d.device->CreateGraphicsPipelineState(&diagnostic,IID_PPV_ARGS(&d.msaaWaterAerialDiagnosticPipelines[index])),"MSAA water aerial diagnostic pipeline failed");}
 #endif
@@ -2298,7 +2312,12 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
   scene.values[36]=forwardPlusActive?1.f:0.f;scene.values[37]=float(ForwardPlusTileCount3D(unsigned(worldCanvas.width)));scene.values[38]=worldCanvas.x;scene.values[39]=worldCanvas.y;
   if(inverseViewProjectionValid)memcpy(scene.values.data()+64,&inverseViewProjection.values[0][0],sizeof(float)*16);
   scene.values[80]=worldCanvas.x/float(rw);scene.values[81]=worldCanvas.y/float(rh);scene.values[82]=inverseViewProjectionValid?worldCanvas.width/float(rw):0.f;scene.values[83]=inverseViewProjectionValid?worldCanvas.height/float(rh):0.f;
-  memcpy(scene.values.data()+84,&d.previousViewProjection.values[0][0],sizeof(float)*16);scene.values[100]=d.temporalHistoryValid?1.f:0.f;scene.values[101]=float(rw)*.5f;scene.values[102]=float(rh)*.5f;scene.values[103]=d.previousEnvironmentTime;
+  // A sealed sequence phase zero is a self-contained semantic frame.  Its
+  // motion/atmosphere inputs must not inherit whichever presentation frame
+  // happened to precede it; otherwise CPU/GPU scheduling changes the captured
+  // pixels even though the current camera, scene and fixed sample are identical.
+  const Matrix4& capturePreviousViewProjection=sequencePhaseZero?dl.ViewProjection():d.previousViewProjection;
+  memcpy(scene.values.data()+84,&capturePreviousViewProjection.values[0][0],sizeof(float)*16);scene.values[100]=sequencePhaseZero?0.f:(d.temporalHistoryValid?1.f:0.f);scene.values[101]=float(rw)*.5f;scene.values[102]=float(rh)*.5f;scene.values[103]=sequencePhaseZero?dl.EnvironmentTime():d.previousEnvironmentTime;
   memcpy(scene.values.data()+104,&dl.ViewProjection().values[0][0],sizeof(float)*16);scene.values[120]=currentTemporalJitterPixels.x;scene.values[121]=currentTemporalJitterPixels.y;scene.values[122]=d.previousTemporalJitterPixels.x;scene.values[123]=d.previousTemporalJitterPixels.y;
   scene.values[124]=sceneAtmosphere.enabled?sceneAtmosphere.heightFogDensity:0.f;scene.values[125]=sceneAtmosphere.heightFogFalloff;scene.values[126]=sceneAtmosphere.heightFogBaseHeight;scene.values[127]=sceneAtmosphere.heightFogMaximumOpacity;
   const auto& aerial=sceneAtmosphere.aerialPerspective;
@@ -3366,7 +3385,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
    const float atmosphereScale=d.volumetricAtmosphereResolutionScale;if(!d.volumetricAtmospherePass.Stats().outputWidth&&!d.volumetricAtmospherePass.Initialize(d.device.Get(),std::as_bytes(std::span{VolumetricAtmosphereComputeShader}),d.width,d.height,atmosphereScale))throw std::runtime_error("Volumetric atmosphere pass initialization failed");
    const unsigned expectedAtmosphereWidth=(std::max)(1u,unsigned(std::ceil(float(d.width)*atmosphereScale))),expectedAtmosphereHeight=(std::max)(1u,unsigned(std::ceil(float(d.height)*atmosphereScale)));if((d.volumetricAtmospherePass.Stats().outputWidth!=expectedAtmosphereWidth||d.volumetricAtmospherePass.Stats().outputHeight!=expectedAtmosphereHeight)&&!d.volumetricAtmospherePass.Resize(d.width,d.height,atmosphereScale))throw std::runtime_error("Volumetric atmosphere pass resize failed");
    const auto orthographicProjection=[](const Matrix4& matrix){return std::abs(matrix[3][0])+std::abs(matrix[3][1])+std::abs(matrix[3][2])<.00001f&&std::abs(matrix[3][3]-1.f)<.00001f;};
-   VolumetricAtmospherePassSettings3D atmosphereSettings{};atmosphereSettings.enabled=true;atmosphereSettings.phase=dl.VolumetricAtmospherePhase();atmosphereSettings.resolutionScale=.5f;atmosphereSettings.timeSeconds=dl.EnvironmentTime();atmosphereSettings.cloudCoverage=d.activeVolumetricClouds.coverage;atmosphereSettings.cloudDensity=d.stats.volumetricCloudsEnabled?d.activeVolumetricClouds.density:0.f;atmosphereSettings.cloudErosion=d.activeVolumetricClouds.erosion;atmosphereSettings.cloudWindSpeed=d.activeVolumetricClouds.windSpeed;atmosphereSettings.lightShaftIntensity=d.stats.directionalLightShaftsEnabled?d.activeDirectionalLightShafts.intensity:0.f;atmosphereSettings.lightShaftAnisotropy=d.activeDirectionalLightShafts.anisotropy;atmosphereSettings.sunDirectionX=-sceneLight.direction.x;atmosphereSettings.sunDirectionY=-sceneLight.direction.y;atmosphereSettings.sunDirectionZ=-sceneLight.direction.z;memcpy(atmosphereSettings.inverseViewProjection,&inverseViewProjection.values[0][0],sizeof(atmosphereSettings.inverseViewProjection));memcpy(atmosphereSettings.previousViewProjection,&d.previousViewProjection.values[0][0],sizeof(atmosphereSettings.previousViewProjection));atmosphereSettings.cameraPositionX=sceneAtmosphere.cameraPosition.x;atmosphereSettings.cameraPositionY=sceneAtmosphere.cameraPosition.y;atmosphereSettings.cameraPositionZ=sceneAtmosphere.cameraPosition.z;atmosphereSettings.viewportOriginX=worldCanvas.x;atmosphereSettings.viewportOriginY=worldCanvas.y;atmosphereSettings.viewportWidth=worldCanvas.width;atmosphereSettings.viewportHeight=worldCanvas.height;atmosphereSettings.cloudBaseAltitude=d.activeVolumetricClouds.baseAltitude;atmosphereSettings.cloudThickness=d.activeVolumetricClouds.thickness;atmosphereSettings.projectionOrthographic=orthographicProjection(dl.ViewProjection());atmosphereSettings.previousProjectionOrthographic=orthographicProjection(d.previousViewProjection);atmosphereSettings.frameSlice=d.frame;atmosphereSettings.temporalSampleIndex=uint32_t(d.stats.volumetricAtmosphereConfiguredFrames&7u);atmosphereSettings.resetHistory=dl.CameraCut3D();
+   VolumetricAtmospherePassSettings3D atmosphereSettings{};atmosphereSettings.enabled=true;atmosphereSettings.phase=dl.VolumetricAtmospherePhase();atmosphereSettings.resolutionScale=.5f;atmosphereSettings.timeSeconds=dl.EnvironmentTime();atmosphereSettings.cloudCoverage=d.activeVolumetricClouds.coverage;atmosphereSettings.cloudDensity=d.stats.volumetricCloudsEnabled?d.activeVolumetricClouds.density:0.f;atmosphereSettings.cloudErosion=d.activeVolumetricClouds.erosion;atmosphereSettings.cloudWindSpeed=d.activeVolumetricClouds.windSpeed;atmosphereSettings.lightShaftIntensity=d.stats.directionalLightShaftsEnabled?d.activeDirectionalLightShafts.intensity:0.f;atmosphereSettings.lightShaftAnisotropy=d.activeDirectionalLightShafts.anisotropy;atmosphereSettings.sunDirectionX=-sceneLight.direction.x;atmosphereSettings.sunDirectionY=-sceneLight.direction.y;atmosphereSettings.sunDirectionZ=-sceneLight.direction.z;memcpy(atmosphereSettings.inverseViewProjection,&inverseViewProjection.values[0][0],sizeof(atmosphereSettings.inverseViewProjection));memcpy(atmosphereSettings.previousViewProjection,&capturePreviousViewProjection.values[0][0],sizeof(atmosphereSettings.previousViewProjection));atmosphereSettings.cameraPositionX=sceneAtmosphere.cameraPosition.x;atmosphereSettings.cameraPositionY=sceneAtmosphere.cameraPosition.y;atmosphereSettings.cameraPositionZ=sceneAtmosphere.cameraPosition.z;atmosphereSettings.viewportOriginX=worldCanvas.x;atmosphereSettings.viewportOriginY=worldCanvas.y;atmosphereSettings.viewportWidth=worldCanvas.width;atmosphereSettings.viewportHeight=worldCanvas.height;atmosphereSettings.cloudBaseAltitude=d.activeVolumetricClouds.baseAltitude;atmosphereSettings.cloudThickness=d.activeVolumetricClouds.thickness;atmosphereSettings.projectionOrthographic=orthographicProjection(dl.ViewProjection());atmosphereSettings.previousProjectionOrthographic=orthographicProjection(capturePreviousViewProjection);atmosphereSettings.frameSlice=d.frame;atmosphereSettings.temporalSampleIndex=uint32_t(d.stats.volumetricAtmosphereConfiguredFrames&7u);atmosphereSettings.resetHistory=dl.CameraCut3D();
    atmosphereSettings.temporalSampleIndex=uint32_t(d.stats.volumetricAtmosphereConfiguredFrames&7u);atmosphereSettings.useExternalTemporalSampleIndex=false;if(sequencePhaseFrame&&d.readbackSequence&&d.readbackSequence->nextPhase==0){/* 固定 capture phase 0 的大氣取樣並切斷先前 presentation history，讓獨立執行不受排程影響。 */atmosphereSettings.temporalSampleIndex=d.readbackSequence->lockedJitterIndex&7u;atmosphereSettings.useExternalTemporalSampleIndex=true;atmosphereSettings.resetHistory=true;}atmosphereSettings.cloudSampleCount=d.activeVolumetricClouds.sampleCount;atmosphereSettings.cloudMaximumDistance=d.activeVolumetricClouds.maximumDistance;atmosphereSettings.cloudBaseNoiseSeed=d.activeVolumetricClouds.baseNoiseSeed;atmosphereSettings.cloudDetailNoiseSeed=d.activeVolumetricClouds.detailNoiseSeed;atmosphereSettings.cloudBaseNoiseRotation=d.activeVolumetricClouds.baseNoiseRotation;atmosphereSettings.cloudDetailNoiseRotation=d.activeVolumetricClouds.detailNoiseRotation;atmosphereSettings.cloudShadowsEnabled=d.stats.volumetricCloudShadowsEnabled;atmosphereSettings.cloudShadowStrength=d.activeVolumetricClouds.shadowStrength;atmosphereSettings.cloudShadowSampleCount=(std::clamp)(d.activeVolumetricClouds.sampleCount/4u,1u,8u);atmosphereSettings.lightShaftSampleCount=d.activeDirectionalLightShafts.sampleCount;atmosphereSettings.lightShaftMaximumDistance=d.activeDirectionalLightShafts.maximumDistance;atmosphereSettings.lightShaftShadowStrength=d.activeDirectionalLightShafts.shadowStrength;atmosphereSettings.heightFogDensity=sceneAtmosphere.heightFogDensity;atmosphereSettings.heightFogFalloff=sceneAtmosphere.heightFogFalloff;atmosphereSettings.heightFogBaseHeight=sceneAtmosphere.heightFogBaseHeight;atmosphereSettings.heightFogMaximumOpacity=sceneAtmosphere.heightFogMaximumOpacity;atmosphereSettings.sunRadianceR=sceneLight.color.r;atmosphereSettings.sunRadianceG=sceneLight.color.g;atmosphereSettings.sunRadianceB=sceneLight.color.b;atmosphereSettings.sunRadianceIntensity=sceneLight.intensity;const auto atmospherePhase=dl.VolumetricAtmospherePhase();atmosphereSettings.ambientRadianceR=atmospherePhase==VolumetricAtmospherePhase3D::Day?.12f:(atmospherePhase==VolumetricAtmospherePhase3D::Dusk?.07f:.012f);atmosphereSettings.ambientRadianceG=atmospherePhase==VolumetricAtmospherePhase3D::Day?.17f:(atmospherePhase==VolumetricAtmospherePhase3D::Dusk?.055f:.02f);atmosphereSettings.ambientRadianceB=atmospherePhase==VolumetricAtmospherePhase3D::Day?.24f:(atmospherePhase==VolumetricAtmospherePhase3D::Dusk?.07f:.04f);
     // 體積散射與表面 skylight 取自同一 phase radiance，避免另一套固定偏藍常數。
    atmosphereSettings.ambientRadianceR=phaseRadiance.analyticDiffuse.x*phaseRadiance.analyticDiffuseIntensity*.18f;atmosphereSettings.ambientRadianceG=phaseRadiance.analyticDiffuse.y*phaseRadiance.analyticDiffuseIntensity*.18f;atmosphereSettings.ambientRadianceB=phaseRadiance.analyticDiffuse.z*phaseRadiance.analyticDiffuseIntensity*.18f;

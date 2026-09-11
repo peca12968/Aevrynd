@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Executable,[Parameter(Mandatory=$true)][string]$IdentityContractProbe,[switch]$GpuValidation,[switch]$SingleRun,[switch]$OfflineReplay,[ValidateRange(0,180)][int]$ProcessTimeoutSeconds=0)
+param([Parameter(Mandatory=$true)][string]$Executable,[Parameter(Mandatory=$true)][string]$IdentityContractProbe,[switch]$GpuValidation,[switch]$SingleRun,[switch]$OfflineReplay,[ValidateRange(0,300)][int]$ProcessTimeoutSeconds=0)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'GameplayLabCaptureEvidence.ps1')
 . (Join-Path $PSScriptRoot 'GameplaySourceInventory.ps1')

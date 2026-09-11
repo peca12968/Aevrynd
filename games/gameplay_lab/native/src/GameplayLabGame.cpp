@@ -545,8 +545,11 @@ void GameplayLabGame::OnStart(Engine& engine){
   showcaseGrassLowMesh_=engine.CreateMeshResource3D(grassLow);
   showcaseFernHighMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::Fern,GameplayForestGroundCoverDetail3D::Near,0x4a17u));
   showcaseFernLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::Fern,GameplayForestGroundCoverDetail3D::Far,0x4a17u));
-  showcaseShrubHighMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::LowShrub,GameplayForestGroundCoverDetail3D::Near,0x7c31u));
-  showcaseShrubLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverMesh3D(GameplayForestGroundCoverSpecies3D::LowShrub,GameplayForestGroundCoverDetail3D::Far,0x7c31u));
+  // Upland placements use one shared community mesh: shrub volume, fern fronds
+  // and low leaf/moss cards.  This adds a real understory layer without adding
+  // descriptors, draw calls or collision objects.
+  showcaseShrubHighMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverCommunityMesh3D(GameplayForestGroundCoverDetail3D::Near,0x7c31u));
+  showcaseShrubLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverCommunityMesh3D(GameplayForestGroundCoverDetail3D::Far,0x7c31u));
   showcaseTreeLowMesh_=engine.CreateMeshResource3D(CreateTreeLodMesh3D());
   showcaseRockLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(7,4));
   showcaseCottageFrontMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(true,true));
@@ -1651,7 +1654,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     const RenderObjectIdentity3D renderIdentity{{EnvironmentPartitionId,stableLow},1};
     bool submitted=false;
     std::vector<ShowcaseProductionSubmittedLodChain3D> productionChains;
-    const Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
+    Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
     const MeshResource3D* grassHigh=&showcaseGrassHighMesh_;
     const MeshResource3D* grassLow=&showcaseGrassLowMesh_;
     const Aevrynd::Material3D* groundCoverSource{};
@@ -1663,6 +1666,8 @@ void GameplayLabGame::AddShowcaseEnvironment(){
         grassHigh=&showcaseShrubHighMesh_;grassLow=&showcaseShrubLowMesh_;
         groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("tree_small_02:leaves");
       }
+      if(groundCoverSource)
+        transform.scale=GameplayForestGroundCoverWorldScale3D(transform.scale);
     }
     switch(descriptor.kind){
     case ShowcaseSceneKind3D::Terrain:

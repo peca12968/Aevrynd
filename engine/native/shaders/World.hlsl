@@ -1521,32 +1521,130 @@ float3 ReconstructWorldPosition(float2 screenUv, float depth)
     return worldPosition.xyz / max(abs(worldPosition.w), 0.000001);
 }
 
+float3 WaterReconstructWorldPositionDeterministic3D(float2 screenUv, float depth)
+{
+    const precise float2 viewportUv = (screenUv - worldViewport.xy) / max(worldViewport.zw, float2(0.000001, 0.000001));
+    const precise float4 clipPosition = float4(viewportUv * float2(2.0, -2.0) + float2(-1.0, 1.0), depth, 1.0);
+    precise float4 worldPosition;
+    worldPosition.x = inverseViewProjection[0][0] * clipPosition.x;
+    worldPosition.x = worldPosition.x + inverseViewProjection[0][1] * clipPosition.y;
+    worldPosition.x = worldPosition.x + inverseViewProjection[0][2] * clipPosition.z;
+    worldPosition.x = worldPosition.x + inverseViewProjection[0][3] * clipPosition.w;
+    worldPosition.y = inverseViewProjection[1][0] * clipPosition.x;
+    worldPosition.y = worldPosition.y + inverseViewProjection[1][1] * clipPosition.y;
+    worldPosition.y = worldPosition.y + inverseViewProjection[1][2] * clipPosition.z;
+    worldPosition.y = worldPosition.y + inverseViewProjection[1][3] * clipPosition.w;
+    worldPosition.z = inverseViewProjection[2][0] * clipPosition.x;
+    worldPosition.z = worldPosition.z + inverseViewProjection[2][1] * clipPosition.y;
+    worldPosition.z = worldPosition.z + inverseViewProjection[2][2] * clipPosition.z;
+    worldPosition.z = worldPosition.z + inverseViewProjection[2][3] * clipPosition.w;
+    worldPosition.w = inverseViewProjection[3][0] * clipPosition.x;
+    worldPosition.w = worldPosition.w + inverseViewProjection[3][1] * clipPosition.y;
+    worldPosition.w = worldPosition.w + inverseViewProjection[3][2] * clipPosition.z;
+    worldPosition.w = worldPosition.w + inverseViewProjection[3][3] * clipPosition.w;
+    const precise float inverseW = 1.0 / max(abs(worldPosition.w), 0.000001);
+    return worldPosition.xyz * inverseW;
+}
+
+float2 WaterDeterministicSinCos3D(float phase)
+{
+    // Shader intrinsic sin/cos is not required to return bit-identical results across
+    // independently created pipelines. Reduce to [-pi/2, pi/2] and evaluate both
+    // values with one explicitly ordered polynomial so wave height and derivative
+    // cannot disagree about the phase.
+    const precise float twoPi = 6.2831853071795864769;
+    const precise float inverseTwoPi = 0.15915494309189533577;
+    const precise float halfPi = 1.5707963267948966192;
+    const precise float pi = 3.1415926535897932385;
+    precise float reduced = phase - floor(phase * inverseTwoPi + 0.5) * twoPi;
+    precise float cosineSign = 1.0;
+    if (reduced > halfPi)
+    {
+        reduced = pi - reduced;
+        cosineSign = -1.0;
+    }
+    else if (reduced < -halfPi)
+    {
+        reduced = -pi - reduced;
+        cosineSign = -1.0;
+    }
+    const precise float squared = reduced * reduced;
+    precise float sinePolynomial = -0.0000000250521083854417;
+    sinePolynomial = 0.0000027557319223985893 + squared * sinePolynomial;
+    sinePolynomial = -0.00019841269841269841 + squared * sinePolynomial;
+    sinePolynomial = 0.0083333333333333332 + squared * sinePolynomial;
+    sinePolynomial = -0.16666666666666667 + squared * sinePolynomial;
+    const precise float sine = reduced * (1.0 + squared * sinePolynomial);
+    precise float cosinePolynomial = 0.0000000240876750700286;
+    cosinePolynomial = -0.0000027557319223985891 + squared * cosinePolynomial;
+    cosinePolynomial = 0.00019841269841269841 + squared * cosinePolynomial;
+    cosinePolynomial = -0.0083333333333333332 + squared * cosinePolynomial;
+    cosinePolynomial = 0.16666666666666667 + squared * cosinePolynomial;
+    cosinePolynomial = -0.5 + squared * cosinePolynomial;
+    const precise float cosine = cosineSign * (1.0 + squared * cosinePolynomial);
+    return float2(sine, cosine);
+}
+
+float3 WaterDeterministicNormalize3D(float3 value)
+{
+    precise float lengthSquared = value.x * value.x;
+    lengthSquared = lengthSquared + value.y * value.y;
+    lengthSquared = lengthSquared + value.z * value.z;
+    const precise float inverseLength = 1.0 / sqrt(max(lengthSquared, 0.00000001));
+    return value * inverseLength;
+}
+
 float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float amplitude, float speed, float2 direction)
 {
     // 四個非整比、不同方向的解析波共同形成水面；高度與偏導使用完全相同
     // 的相位，因此法線仍是實際高度場的導數，而不是後製擾動。單一正弦波
     // 會在斜視河面形成規則百葉條紋，不能代表自然風浪。
-    const float waveNumber = max(waveScale, 0.001) * 6.28318530718;
-    const float boundedAmplitude = clamp(amplitude, 0.0, 0.3);
-    const float2 perpendicular = float2(-direction.y, direction.x);
-    const float2 direction1 = direction * 0.62 + perpendicular * 0.78;
-    const float2 direction2 = direction * 0.28 - perpendicular * 0.96;
-    const float2 direction3 = direction * -0.71 + perpendicular * 0.70;
-    const float waveNumber0 = waveNumber * 0.73;
-    const float waveNumber1 = waveNumber;
-    const float waveNumber2 = waveNumber * 1.37;
-    const float waveNumber3 = waveNumber * 1.91;
-    const float phase0 = waveNumber0 * dot(direction, worldXZ) - speed * 0.83 * time;
-    const float phase1 = waveNumber1 * dot(direction1, worldXZ) - speed * time + 1.7;
-    const float phase2 = waveNumber2 * dot(direction2, worldXZ) - speed * 1.19 * time + 4.1;
-    const float phase3 = waveNumber3 * dot(direction3, worldXZ) - speed * 1.43 * time + 2.4;
-    const float componentAmplitude = boundedAmplitude * 0.25;
-    const float slope0 = componentAmplitude * waveNumber0 * cos(phase0);
-    const float slope1 = componentAmplitude * waveNumber1 * cos(phase1);
-    const float slope2 = componentAmplitude * waveNumber2 * cos(phase2);
-    const float slope3 = componentAmplitude * waveNumber3 * cos(phase3);
-    const float height = componentAmplitude * (sin(phase0) + sin(phase1) + sin(phase2) + sin(phase3));
-    const float2 gradient = direction * slope0 + direction1 * slope1 + direction2 * slope2 + direction3 * slope3;
+    const precise float waveNumber = max(waveScale, 0.001) * 6.28318530718;
+    const precise float boundedAmplitude = clamp(amplitude, 0.0, 0.3);
+    const precise float2 perpendicular = float2(-direction.y, direction.x);
+    const precise float2 direction1 = direction * 0.62 + perpendicular * 0.78;
+    const precise float2 direction2 = direction * 0.28 - perpendicular * 0.96;
+    const precise float2 direction3 = direction * -0.71 + perpendicular * 0.70;
+    const precise float waveNumber0 = waveNumber * 0.73;
+    const precise float waveNumber1 = waveNumber;
+    const precise float waveNumber2 = waveNumber * 1.37;
+    const precise float waveNumber3 = waveNumber * 1.91;
+    precise float projected0 = direction.x * worldXZ.x;
+    projected0 = projected0 + direction.y * worldXZ.y;
+    precise float projected1 = direction1.x * worldXZ.x;
+    projected1 = projected1 + direction1.y * worldXZ.y;
+    precise float projected2 = direction2.x * worldXZ.x;
+    projected2 = projected2 + direction2.y * worldXZ.y;
+    precise float projected3 = direction3.x * worldXZ.x;
+    projected3 = projected3 + direction3.y * worldXZ.y;
+    precise float phase0 = waveNumber0 * projected0;
+    phase0 = phase0 - (speed * 0.83) * time;
+    precise float phase1 = waveNumber1 * projected1;
+    phase1 = phase1 - speed * time;
+    phase1 = phase1 + 1.7;
+    precise float phase2 = waveNumber2 * projected2;
+    phase2 = phase2 - (speed * 1.19) * time;
+    phase2 = phase2 + 4.1;
+    precise float phase3 = waveNumber3 * projected3;
+    phase3 = phase3 - (speed * 1.43) * time;
+    phase3 = phase3 + 2.4;
+    const precise float2 wave0 = WaterDeterministicSinCos3D(phase0);
+    const precise float2 wave1 = WaterDeterministicSinCos3D(phase1);
+    const precise float2 wave2 = WaterDeterministicSinCos3D(phase2);
+    const precise float2 wave3 = WaterDeterministicSinCos3D(phase3);
+    const precise float componentAmplitude = boundedAmplitude * 0.25;
+    const precise float slope0 = componentAmplitude * waveNumber0 * wave0.y;
+    const precise float slope1 = componentAmplitude * waveNumber1 * wave1.y;
+    const precise float slope2 = componentAmplitude * waveNumber2 * wave2.y;
+    const precise float slope3 = componentAmplitude * waveNumber3 * wave3.y;
+    precise float heightSum = wave0.x + wave1.x;
+    heightSum = heightSum + wave2.x;
+    heightSum = heightSum + wave3.x;
+    const precise float height = componentAmplitude * heightSum;
+    precise float2 gradient = direction * slope0;
+    gradient = gradient + direction1 * slope1;
+    gradient = gradient + direction2 * slope2;
+    gradient = gradient + direction3 * slope3;
     return float3(height, gradient.x, gradient.y);
 }
 
@@ -1554,8 +1652,10 @@ float WaterWavePixelBandLimit3D(float worldFootprint, float waveScale)
 {
     // 以實際世界座標像素足跡做解析式 band-limit。每週期少於約 16px 時
     // 逐步衰減，少於約 4.5px 時完全移除，避免斜視水面把波峰變成規則閃爍條帶。
-    const float cyclesPerPixel = max(0.0, waveScale) * worldFootprint;
-    return 1.0 - smoothstep(0.06, 0.22, cyclesPerPixel);
+    const precise float cyclesPerPixel = max(0.0, waveScale) * worldFootprint;
+    const precise float blend = saturate((cyclesPerPixel - 0.06) / 0.16);
+    const precise float smoothed = blend * blend * (3.0 - 2.0 * blend);
+    return 1.0 - smoothed;
 }
 
 float3 WaterLitScatter3D(float3 deepColor, float3 surfaceColor, float3 illuminance)
@@ -1650,7 +1750,9 @@ float3 WaterSurfaceViewDirection(float3 worldPosition, float3 cameraPosition, fl
 float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToCoverage)
 {
     ClipWorldLod(input);
-    const float3 geometricNormal = normalize(input.normal.xyz);
+    const float3 geometricNormal = input.materialClass == 1
+        ? WaterDeterministicNormalize3D(input.normal.xyz)
+        : normalize(input.normal.xyz);
     float3 normal = geometricNormal;
     float roughness = clamp(input.material.x, 0.045, 1.0);
     const float skinMask = input.characterShadingModel == 1 ? 1.0 : 0.0;
@@ -1824,14 +1926,18 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     // 世界位置，讓三角形邊界、裁切與不同程序的 wave 配置仍得到相同像素足跡。
     const float2 waterPixelUv = input.position.xy * colorPipeline.zw;
     const float2 waterViewportMaximum = worldViewport.xy + worldViewport.zw;
-    const float3 waterWorldCenter = ReconstructWorldPosition(waterPixelUv, input.position.z);
-    const float3 waterWorldNeighbourX = ReconstructWorldPosition(
+    const precise float3 waterWorldCenter = WaterReconstructWorldPositionDeterministic3D(waterPixelUv, input.position.z);
+    const precise float3 waterWorldNeighbourX = WaterReconstructWorldPositionDeterministic3D(
         min(waterPixelUv + float2(colorPipeline.z, 0.0), waterViewportMaximum), input.position.z);
-    const float3 waterWorldNeighbourY = ReconstructWorldPosition(
+    const precise float3 waterWorldNeighbourY = WaterReconstructWorldPositionDeterministic3D(
         min(waterPixelUv + float2(0.0, colorPipeline.w), waterViewportMaximum), input.position.z);
-    const float waterWorldFootprint = max(
-        length(waterWorldNeighbourX.xz - waterWorldCenter.xz),
-        length(waterWorldNeighbourY.xz - waterWorldCenter.xz));
+    const precise float2 waterWorldDeltaX = waterWorldNeighbourX.xz - waterWorldCenter.xz;
+    const precise float2 waterWorldDeltaY = waterWorldNeighbourY.xz - waterWorldCenter.xz;
+    precise float waterWorldLengthSquaredX = waterWorldDeltaX.x * waterWorldDeltaX.x;
+    waterWorldLengthSquaredX = waterWorldLengthSquaredX + waterWorldDeltaX.y * waterWorldDeltaX.y;
+    precise float waterWorldLengthSquaredY = waterWorldDeltaY.x * waterWorldDeltaY.x;
+    waterWorldLengthSquaredY = waterWorldLengthSquaredY + waterWorldDeltaY.y * waterWorldDeltaY.y;
+    const precise float waterWorldFootprint = max(sqrt(waterWorldLengthSquaredX), sqrt(waterWorldLengthSquaredY));
     float4 evaluatedOutput=float4(0.0,0.0,0.0,0.0);
     if (skyMask > 0.5)
     {
@@ -1868,6 +1974,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
 
     // 水材質的所有片段都必須遵守其管線合成契約；朝上門檻只限制水平水波與岸泡。
     const float waterMaterialMask = input.materialClass == 1 ? 1.0 : 0.0;
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
+    float2 waterDiagnosticHeightGradient = 0.0;
+#endif
     const float waterMask = waterMaterialMask * step(0.35, normal.y);
     const float waterCompositeMask = max(waterMask, waterMaterialMask * float(waterSurfaceEnabled != 0u));
     float foamMask = waterMask * smoothstep(0.30, 0.50, roughness);
@@ -1957,22 +2066,29 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
-            const float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, float2(0.28, 0.96));
-            const float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, float2(-0.89, 0.46));
-            const float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.8, -0.6));
-            const float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, float2(0.17, 0.985));
-            const float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
-            const float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31);
-            const float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);
-            const float crossDetailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 0.71);
+            const precise float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, float2(0.28, 0.96));
+            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, float2(-0.89, 0.46));
+            const precise float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.8, -0.6));
+            const precise float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, float2(0.17, 0.985));
+            const precise float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
+            const precise float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31);
+            const precise float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);
+            const precise float crossDetailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 0.71);
             // 四組各含四個非共線分量的解析高度場分散主要方向。每組偏導
             // 與高度共用相位，遠景亦各自依像素世界足跡衰減；不採跨程序
             // 可能落在不同半精度邊界的格點雜訊梯度。
-            const float2 heightGradient = broadWave.yz * broadBandLimit * 0.75
-                                        + crossWave.yz * crossBandLimit
-                                        + detailWave.yz * detailBandLimit * 0.18
-                                        + crossDetailWave.yz * crossDetailBandLimit * 0.50;
-            normal = normalize(normal + float3(-heightGradient.x, 0.0, -heightGradient.y) * lerp(1.0, .45, foamMask));
+            precise float2 heightGradient = broadWave.yz * broadBandLimit * 0.75;
+            heightGradient = heightGradient + crossWave.yz * crossBandLimit;
+            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.18;
+            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.50;
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
+            waterDiagnosticHeightGradient = heightGradient;
+#endif
+            const precise float waveBlend = 1.0 + (0.45 - 1.0) * foamMask;
+            precise float3 perturbedNormal = normal;
+            perturbedNormal.x = perturbedNormal.x - heightGradient.x * waveBlend;
+            perturbedNormal.z = perturbedNormal.z - heightGradient.y * waveBlend;
+            normal = WaterDeterministicNormalize3D(perturbedNormal);
         }
     }
 
@@ -2079,11 +2195,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     float3 waterDiagnosticReflected = 0.0;
     float3 waterDiagnosticTransmission = 0.0;
     float waterDiagnosticFoam = 0.0;
+    float3 waterDiagnosticEnvironmentReflection = 0.0;
+    float4 waterDiagnosticScreenSpaceReflection = 0.0;
 #endif
     [branch] if (waterCompositeMask > 0.5)
     {
-        const float waterViewCosine = saturate(dot(normal, viewDirection));
-        const float fresnel = waterReflectance + (1.0 - waterReflectance) * pow(1.0 - waterViewCosine, 5.0);
+        const precise float waterViewCosine = saturate(dot(normal, viewDirection));
+        // 固定 Schlick Fresnel 的乘法順序。pow(x, 5) 可由驅動程式改寫成
+        // 不同的近似序列，極小差異會在反射與半精度 HDR 封存時跨越位元邊界。
+        const precise float fresnelBase = 1.0 - waterViewCosine;
+        const precise float fresnelBaseSquared = fresnelBase * fresnelBase;
+        const precise float fresnelBaseFourth = fresnelBaseSquared * fresnelBaseSquared;
+        const precise float fresnelBaseFifth = fresnelBaseFourth * fresnelBase;
+        precise float fresnel = (1.0 - waterReflectance) * fresnelBaseFifth;
+        fresnel = waterReflectance + fresnel;
         const float waterPathLength = waterSurfaceEnabled != 0u
             ? min(8.0, opticalPathLength)
             : min(8.0, waterThickness / max(0.16, waterViewCosine));
@@ -2125,6 +2250,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             lightColorIntensity.rgb * lightColorIntensity.w,
             waterReflectance.xxx, waterReflectionRoughness, 1.0);
         const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
+#if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 14
+        waterDiagnosticEnvironmentReflection = reflectedWater * fresnel;
+        waterDiagnosticScreenSpaceReflection = screenSpaceReflection;
+#endif
         reflectedWater=WaterReflectionFallback3D(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
         // 反射只取得 Fresnel 能量，其餘能量保留給透射，避免日夜切換時雙重增亮。
         if(waterSurfaceEnabled!=0u)
@@ -2244,6 +2373,21 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     aerialOutput = waterDiagnosticDerivative.xxx;
 #elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 13
     aerialOutput = waterDiagnosticFoamCoverage.xxx;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 14
+    aerialOutput = waterDiagnosticEnvironmentReflection;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 15
+    aerialOutput = waterDiagnosticScreenSpaceReflection.rgb * waterDiagnosticScreenSpaceReflection.a;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 16
+    aerialOutput = normal * 0.5 + 0.5;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 17
+    // 保留插值後世界座標的小數資訊；若此輸出漂移，分歧發生於波浪與光照之前。
+    aerialOutput = frac(abs(input.worldPosition) * float3(0.03125, 0.0625, 0.03125));
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 18
+    aerialOutput = geometricNormal * 0.5 + 0.5;
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
+    aerialOutput = float3(waterDiagnosticHeightGradient * 0.25 + 0.5, 0.5);
+#elif AEVRYND_WATER_AERIAL_DIAGNOSTIC == 20
+    aerialOutput = foamMask.xxx;
 #else
     [branch] if(screenSpaceReflectionReserved.x > 0.5 && waterMaterialMask > 0.5)
     {
