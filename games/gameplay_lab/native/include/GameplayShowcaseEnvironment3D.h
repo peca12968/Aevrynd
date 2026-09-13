@@ -33,7 +33,9 @@ enum class ShowcaseSceneKind3D : std::uint8_t {
 // 壓低總反射率，避免林地在正式曝光下變成黃白色草原。
 [[nodiscard]] inline constexpr Aevrynd::Color
 ShowcaseForestTerrainTint3D() noexcept {
-  return {.68f, .82f, .62f, 1.f};
+  // 以低反射率苔蘚綠取代偏黃的亮草坪色：在不改曝光、燈光或材質
+  // 取樣的前提下，保留綠色優勢，同時讓土壤、落葉與濕岸分區可讀。
+  return {.61f, .72f, .53f, 1.f};
 }
 
 // 三層地表使用同一套世界座標貼圖；較低頻率保留近景 PBR 細節，同時

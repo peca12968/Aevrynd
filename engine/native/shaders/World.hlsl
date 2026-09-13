@@ -971,6 +971,38 @@ float TerrainMesoPartitionSignal(float2 worldPosition, float broadNoise)
     return saturate(0.5 + (combined - 0.5) * 1.45);
 }
 
+float3 TerrainGrassSecondarySamplePosition(float3 primaryPosition)
+{
+    // 第二域同時旋轉、非整比縮放及平移。只替換單一域的固定旋轉仍保留原本
+    // 的貼圖週期；保留主域再與此域混合，才會破壞可見的重複對齊。
+    const float cosine = 0.829037573;
+    const float sine = 0.559192903;
+    const float scale = 1.173;
+    const float3 rotated = float3(primaryPosition.x * cosine - primaryPosition.z * sine,
+                                  primaryPosition.y,
+                                  primaryPosition.x * sine + primaryPosition.z * cosine);
+    return rotated * scale + float3(31.73, -11.29, 47.91);
+}
+
+float TerrainGrassDualDomainBlend(float2 worldPosition)
+{
+    // 僅使用連續、低頻世界座標值雜訊；沒有相機、時間或格線跳接。
+    const float2 blendPosition = worldPosition * 0.19 + float2(37.11, -19.73);
+    const float signal = TerrainMesoPartitionSignal(blendPosition, CloudNoise(blendPosition * 0.021));
+    const float smoothSignal = signal * signal * (3.0 - 2.0 * signal);
+    return lerp(0.28, 0.62, smoothSignal);
+}
+
+float3 BlendTerrainGrassAlbedo(float3 primary, float3 secondary, float blend)
+{
+    const float3 luminanceWeights = float3(0.2126, 0.7152, 0.0722);
+    const float clampedBlend = saturate(blend);
+    const float3 mixed = lerp(primary, secondary, clampedBlend);
+    const float targetLuma = lerp(dot(primary, luminanceWeights), dot(secondary, luminanceWeights), clampedBlend);
+    const float mixedLuma = dot(mixed, luminanceWeights);
+    return targetLuma > 0.0 && mixedLuma > 0.000001 ? mixed * (targetLuma / mixedLuma) : mixed;
+}
+
 float WaterFoamCoverage3D(float2 worldXZ, float time)
 {
     // 固定兩次連續值雜訊，採不同旋轉與非整比尺度，避免單格網沿河面重複。
@@ -1893,7 +1925,16 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         if (input.textureData.x > 0.5)
         {
             // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
-            const float3 grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
+            float3 grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
+            // 額外取樣僅在 grass 確實主導時發生；smoothstep 從零淡入，避免群落
+            // 邊界跳接。ARM 與 normal 仍維持單域，因此既有表面能量及細節門檻不變。
+            [branch] if (terrainDecorrelationEnabled && TerrainMesoPartitionEnabled() && grassWeight > 0.45)
+            {
+                const float3 secondaryGrassColor = Triplanar(baseColorTexture, TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.y).rgb;
+                const float grassDominance = smoothstep(0.45, 0.72, grassWeight);
+                grassColor = BlendTerrainGrassAlbedo(grassColor, secondaryGrassColor,
+                    TerrainGrassDualDomainBlend(input.worldPosition.xz) * grassDominance);
+            }
             const float3 soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
             const float3 rockColor = Triplanar(rockBaseColorTexture, rockSamplePosition, geometricNormal, input.textureData.y).rgb;
             float4 terrainSurface = 1.0;

@@ -464,10 +464,20 @@ public:
       return;
     }
     far_ = runtimeReceipt;
+    const auto residentTerrainRows = std::ranges::count_if(
+        draw.meshInstances, [](const auto &instance) {
+          return instance.materialClass == MaterialClass3D::Terrain &&
+              GameplayEnvironmentIdentityContract3D(instance.identity.id);
+        });
     const bool proxyIdentityDomain = std::ranges::all_of(
         draw.meshInstances, [](const auto &instance) {
           if (instance.identity.id == HostPaletteIdentity3D)
             return true;
+          // Terrain is partition-owned and remains resident at every HLOD
+          // distance.  Only the clustered authored sources transition to the
+          // proxy identity domain.
+          if (instance.materialClass == MaterialClass3D::Terrain)
+            return GameplayEnvironmentIdentityContract3D(instance.identity.id);
           return instance.identity.id &&
               (instance.identity.id.high & HlodProxyIdentityDomainBit3D) &&
               instance.identity.id.high != GameplayEnvironmentIdentityDomain3D;
@@ -477,6 +487,7 @@ public:
         far_.frame.appliedTransitions != transition_.frame.transitionClusters ||
         far_.collection.submittedRenderables >=
             transition_.collection.submittedRenderables ||
+        residentTerrainRows != 1 ||
         !proxyIdentityDomain) {
       std::cerr << "far sourceMode=" << far_.frame.sourceClusters
                 << " transitionMode=" << far_.frame.transitionClusters

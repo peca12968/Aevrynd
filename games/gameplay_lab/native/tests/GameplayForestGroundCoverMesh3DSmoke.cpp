@@ -61,6 +61,40 @@ bool CommunityUvContract(const Mesh3D& mesh) {
   return minimumU && maximumU;
 }
 
+bool LowShrubTierContract(const Mesh3D& mesh) {
+  if (mesh.vertices.size() < 12 || mesh.vertices.size() % 4 != 0)
+    return false;
+  std::array<unsigned, 3> counts{};
+  std::array<float, 3> radiusSums{}, widthSums{};
+  for (std::size_t base = 0; base < mesh.vertices.size(); base += 4) {
+    const auto& rootA = mesh.vertices[base];
+    const auto& rootB = mesh.vertices[base + 1];
+    const auto& topA = mesh.vertices[base + 2];
+    const auto& topB = mesh.vertices[base + 3];
+    if (std::abs(rootA.y) > 1e-6f || std::abs(rootB.y) > 1e-6f ||
+        std::abs(topA.y - topB.y) > 1e-6f)
+      return false;
+    const float topY = (topA.y + topB.y) * .5f;
+    const unsigned tier = topY < .52f ? 0u : topY < .70f ? 1u : 2u;
+    const float centerX = (topA.x + topB.x) * .5f;
+    const float centerZ = (topA.z + topB.z) * .5f;
+    const float width = Length(Vec3{topA.x - topB.x, topA.y - topB.y,
+                                    topA.z - topB.z});
+    if (topY < .37f || topY > .85f || width <= 0.f)
+      return false;
+    ++counts[tier];
+    radiusSums[tier] += std::sqrt(centerX * centerX + centerZ * centerZ);
+    widthSums[tier] += width;
+  }
+  if (!counts[0] || !counts[1] || !counts[2]) return false;
+  const float outerRadius = radiusSums[0] / float(counts[0]);
+  const float crownRadius = radiusSums[2] / float(counts[2]);
+  const float outerWidth = widthSums[0] / float(counts[0]);
+  const float crownWidth = widthSums[2] / float(counts[2]);
+  return outerRadius >= crownRadius + .08f &&
+         outerWidth >= crownWidth + .12f;
+}
+
 } // namespace
 
 int main() {
@@ -93,16 +127,21 @@ int main() {
       GameplayForestGroundCoverDetail3D::Near,
       GameplayForestGroundCoverDetail3D::Mid,
       GameplayForestGroundCoverDetail3D::Far};
+  constexpr std::array<std::size_t, 3> expectedLowShrubTriangles{{20, 12, 6}};
 
   for (const auto item : species) {
     std::size_t previousTriangles = (std::numeric_limits<std::size_t>::max)();
-    for (const auto detail : details) {
+    for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
+      const auto detail = details[detailIndex];
       const auto mesh = CreateGameplayForestGroundCoverMesh3D(item, detail, 0x51a7c3u);
       const auto repeated = CreateGameplayForestGroundCoverMesh3D(item, detail, 0x51a7c3u);
       const std::size_t triangles = mesh.indices.size() / 3;
       if (!mesh.Valid() || !Exact(mesh, repeated) ||
           triangles > GameplayForestGroundCoverTriangleBudget(detail) ||
-          triangles >= previousTriangles || !VertexContract(mesh, item)) {
+          triangles >= previousTriangles || !VertexContract(mesh, item) ||
+          (item == GameplayForestGroundCoverSpecies3D::LowShrub &&
+           (triangles != expectedLowShrubTriangles[detailIndex] ||
+            !LowShrubTierContract(mesh)))) {
         std::cerr << "FOREST_GROUND_COVER_SPECIES_CONTRACT=FAIL\n";
         return 1;
       }
@@ -141,7 +180,9 @@ int main() {
 
   std::size_t previousCommunityTriangles =
       (std::numeric_limits<std::size_t>::max)();
-  for (const auto detail : details) {
+  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{64, 38, 20}};
+  for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
+    const auto detail = details[detailIndex];
     const auto community =
         CreateGameplayForestGroundCoverCommunityMesh3D(detail, 0xf04e57u);
     const auto repeated =
@@ -150,12 +191,25 @@ int main() {
     if (!community.Valid() || !Exact(community, repeated) ||
         !CommunityUvContract(community) ||
         triangles > GameplayForestGroundCoverCommunityTriangleBudget(detail) ||
+        triangles != expectedCommunityTriangles[detailIndex] ||
         triangles >= previousCommunityTriangles ||
         community.Bounds().extents.x < .3f || community.Bounds().extents.z < .3f) {
       std::cerr << "FOREST_GROUND_COVER_COMMUNITY_CONTRACT=FAIL\n";
       return 5;
     }
     previousCommunityTriangles = triangles;
+  }
+
+  auto flattenedShrub = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::LowShrub,
+      GameplayForestGroundCoverDetail3D::Near, 0x51a7c3u);
+  for (std::size_t base = 0; base < flattenedShrub.vertices.size(); base += 4) {
+    flattenedShrub.vertices[base + 2].y = .61f;
+    flattenedShrub.vertices[base + 3].y = .61f;
+  }
+  if (LowShrubTierContract(flattenedShrub)) {
+    std::cerr << "LOW_SHRUB_FLATTENED_HOSTILE=FAIL\n";
+    return 8;
   }
 
   const auto fern = CreateGameplayForestGroundCoverMesh3D(

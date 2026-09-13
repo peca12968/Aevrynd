@@ -497,7 +497,8 @@ private:
            !partition_->Stats().loadingDelta;
   }
 
-  std::array<MeshHandle3D, 2> TerrainHandles(std::size_t &visible) {
+  std::array<MeshHandle3D, 2> TerrainHandles(std::size_t &visible,
+                                             bool diagnostics = false) {
     Scene3D scene;
     DrawList draw(DrawListCapacityProfile::Minimal2D);
     scene_.Collect(scene, draw);
@@ -507,14 +508,29 @@ private:
     const auto submitted = scene.Submit(draw, camera, {320, 180}, options);
     visible = submitted.visibleMeshInstances;
     std::array<MeshHandle3D, 2> handles{};
+    std::size_t terrainInstances{};
     for (const auto &instance : draw.meshInstances) {
       if (instance.materialClass != MaterialClass3D::Terrain)
         continue;
+      if (!instance.identity)
+        continue;
+      ++terrainInstances;
       const auto index = instance.transform[0][3] < settings_.chunkSize * .5f
                              ? std::size_t{0}
                              : std::size_t{1};
       handles[index] = instance.mesh;
+      if (diagnostics)
+        std::cerr << "visible-before terrain[" << terrainInstances - 1
+                  << "] x=" << instance.transform[0][3]
+                  << " handle=" << instance.mesh.value << '\n';
     }
+    if (diagnostics)
+      std::cerr << "visible-before diagnostics handle0=" << handles[0].value
+                << " handle1=" << handles[1].value << " visible=" << visible
+                << " drawInstances=" << draw.meshInstances.size()
+                << " terrainInstances=" << terrainInstances
+                << " visibilityCandidates=" << submitted.visibilityCandidates
+                << '\n';
     return handles;
   }
 
@@ -530,7 +546,7 @@ private:
     if (!ownerBeforeHeight || !neighborBeforeHeight)
       return rejected("query-before");
     std::size_t visibleBefore{}, visibleAfter{}, visibleRejected{};
-    const auto handlesBefore = TerrainHandles(visibleBefore);
+    const auto handlesBefore = TerrainHandles(visibleBefore, true);
     const auto referencesBefore = engine.GetRendererStats().residentMeshReferences;
     if (!handlesBefore[0] || !handlesBefore[1] || visibleBefore < 3)
       return rejected("visible-before");
@@ -610,6 +626,7 @@ private:
     if (partition_->Stats().deltaLoads != 8 ||
         sceneStats.aliveEntities != 3 ||
         sceneStats.renderableComponents != 3 ||
+        sceneStats.submittedRenderables != 3 || sceneStats.invalidComponents ||
         vegetation_.Stats().chunks != 2 ||
         vegetation_.Stats().instances != settings_.vegetationPerChunk * 2 - 1 ||
         physics_.Stats().bodies != 1 || physics_.Stats().staticBodies != 1 ||
@@ -624,6 +641,8 @@ private:
                 << partition_->Stats().deltaLoads
                 << " entities=" << sceneStats.aliveEntities
                 << " renderables=" << sceneStats.renderableComponents
+                << " submitted=" << sceneStats.submittedRenderables
+                << " invalid=" << sceneStats.invalidComponents
                 << " chunks=" << vegetation_.Stats().chunks
                 << " vegetation=" << vegetation_.Stats().instances
                 << " bodies=" << physics_.Stats().bodies

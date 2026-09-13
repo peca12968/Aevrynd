@@ -217,6 +217,7 @@ int main() {
   constexpr auto terrainTint = ShowcaseForestTerrainTint3D();
   if (terrainTint.g < terrainTint.r + .1f ||
       terrainTint.g < terrainTint.b || terrainTint.r > .72f ||
+      Rec709(terrainTint) < .62f || Rec709(terrainTint) > .69f ||
       terrainTint.a != 1.f)
     return 63;
   const std::array<ShowcaseSceneDescriptor3D, 1> ecologyTrees{{

@@ -902,23 +902,39 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
     auto &terrainDefinition = definitions.front();
     terrainDefinition.transform = SceneTransformComponent3D{};
     terrainDefinition.transform->value.position = chunkOrigin;
-    terrainDefinition.renderable =
-        SceneMeshRenderable3D{{},
-                              record.terrain,
-                              {},
-                              40,
-                              0,
-                              MeshLodDistanceMetric3D::Center,
-                              Material3D{{1, 1, 1, 1},
-                                         {},
-                                         true,
-                                         record.terrainTextures,
-                                         .25f,
-                                         true,
-                                         MaterialClass3D::Terrain},
-                              {},
-                              1,
-                              true};
+    terrainDefinition.renderable.emplace();
+    auto &terrainRenderable = *terrainDefinition.renderable;
+    terrainRenderable.nearMesh = record.terrain;
+    terrainRenderable.lodSwitchDistance = 40;
+    terrainRenderable.lodDistanceMetric = MeshLodDistanceMetric3D::Center;
+    terrainRenderable.nearMaterial = Material3D{{1, 1, 1, 1},
+                                                 {},
+                                                 true,
+                                                 record.terrainTextures,
+                                                 .25f,
+                                                 true,
+                                                 MaterialClass3D::Terrain};
+    terrainRenderable.layer = 1;
+    auto terrainIdentity = DeriveStableObjectId3D(
+        settings_.worldId, payload->globalChunk,
+        payload->baseRevision.contentRevision, 1, 0);
+    // The high scalar is the caller-owned world/domain namespace.  Keep it
+    // intact so terrain participates in the same object-ID contract as the
+    // authored environment, while the derived low scalar remains unique per
+    // chunk and revision.  The proxy bit is reserved for HLOD aliases.
+    if (settings_.worldId.high)
+      terrainIdentity.high =
+          settings_.worldId.high & ~HlodProxyIdentityDomainBit3D;
+    if (!terrainIdentity.high)
+      terrainIdentity.high = 1;
+    if (!terrainIdentity.low)
+      terrainIdentity.low = 1;
+    terrainRenderable.identity = {
+        terrainIdentity,
+        payload->baseRevision.contentRevision
+            ? payload->baseRevision.contentRevision
+            : 1};
+    terrainRenderable.visible = true;
     for (std::size_t index = 0; index < composed.buildings.size(); ++index) {
       const auto &building = composed.buildings[index];
       if (building.assetId != settings_.buildingAssetId ||
@@ -932,17 +948,17 @@ WorldChunkActivation3D TerrainVegetationWorldChunkActivationTarget3D::
       buildingDefinition.transform = SceneTransformComponent3D{};
       buildingDefinition.transform->value = {position, building.rotation,
                                              building.scale};
-      buildingDefinition.renderable = SceneMeshRenderable3D{
-          shared_.lease,
-          shared_.buildingMesh,
-          {},
-          80,
-          0,
-          MeshLodDistanceMetric3D::Center,
-          Material3D{{1, 1, 1, 1}, {}, true, shared_.buildingTextures, .25f},
-          {},
-          1,
-          true};
+      buildingDefinition.renderable.emplace();
+      auto &buildingRenderable = *buildingDefinition.renderable;
+      buildingRenderable.assetLease = shared_.lease;
+      buildingRenderable.nearMesh = shared_.buildingMesh;
+      buildingRenderable.lodSwitchDistance = 80;
+      buildingRenderable.lodDistanceMetric = MeshLodDistanceMetric3D::Center;
+      buildingRenderable.nearMaterial =
+          Material3D{{1, 1, 1, 1}, {}, true, shared_.buildingTextures, .25f};
+      buildingRenderable.layer = 1;
+      buildingRenderable.identity = {building.id, 1};
+      buildingRenderable.visible = true;
     }
     if (!scene_.CreateBatchAtomic(definitions, record.entities))
       throw std::runtime_error("terrain and building publish failed");

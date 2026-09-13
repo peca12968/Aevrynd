@@ -118,22 +118,38 @@ Mesh3D CreateLowShrub(GameplayForestGroundCoverDetail3D detail,
   mesh.vertices.reserve(std::size_t(count) * 4);
   mesh.indices.reserve(std::size_t(count) * 6);
   for (unsigned item = 0; item < count; ++item) {
+    // One placement must read as a low forest shrub rather than a wall of
+    // equally tall cards.  Every LOD retains one deterministic card from each
+    // of the outer skirt, middle foliage and crown tiers; only the authored
+    // vertex positions change, so triangle count, draw count and texture work
+    // remain identical to the original community mesh.
+    const unsigned tier = item % 3u;
     const float phase = Pi * (float(item) / float(count) +
                               UnitNoise(seed, item, 41u) * .13f);
-    const float radius = .12f + UnitNoise(seed, item, 43u) * .18f;
-    const float width = .42f + UnitNoise(seed, item, 47u) * .30f;
-    const float height = .58f + UnitNoise(seed, item, 53u) * .36f;
+    constexpr std::array<float, 3> RadiusBase{{.26f, .14f, .05f}};
+    constexpr std::array<float, 3> RadiusVariation{{.10f, .08f, .07f}};
+    constexpr std::array<float, 3> WidthBase{{.55f, .44f, .30f}};
+    constexpr std::array<float, 3> WidthVariation{{.15f, .12f, .10f}};
+    constexpr std::array<float, 3> HeightBase{{.38f, .54f, .72f}};
+    constexpr std::array<float, 3> HeightVariation{{.10f, .11f, .12f}};
+    const float radius = RadiusBase[tier] +
+                         UnitNoise(seed, item, 43u) * RadiusVariation[tier];
+    const float width = WidthBase[tier] +
+                        UnitNoise(seed, item, 47u) * WidthVariation[tier];
+    const float height = HeightBase[tier] +
+                         UnitNoise(seed, item, 53u) * HeightVariation[tier];
     const Vec3 facing{std::sin(phase), 0, std::cos(phase)};
     const Vec3 side{facing.z, 0, -facing.x};
     const float radialPhase = 2.f * Pi * UnitNoise(seed, item, 59u);
-    const Vec3 center{std::cos(radialPhase) * radius, height * .5f,
-                      std::sin(radialPhase) * radius};
-    const Vec3 halfSide = side * (width * .5f);
+    const Vec3 radial{std::cos(radialPhase), 0,
+                      std::sin(radialPhase)};
+    const Vec3 root = radial * (radius * .42f);
+    const Vec3 top = radial * radius + Vec3{0, height, 0};
+    const Vec3 rootHalfSide = side * (width * .16f);
+    const Vec3 topHalfSide = side * (width * .5f);
     AppendCard(mesh,
-               {center - halfSide - Vec3{0, height * .5f, 0},
-                center + halfSide - Vec3{0, height * .5f, 0},
-                center + halfSide + Vec3{0, height * .5f, 0},
-                center - halfSide + Vec3{0, height * .5f, 0}},
+               {root - rootHalfSide, root + rootHalfSide,
+                top + topHalfSide, top - topHalfSide},
                SpeciesColor(GameplayForestGroundCoverSpecies3D::LowShrub,
                             UnitNoise(seed, item, 61u)),
                true);
