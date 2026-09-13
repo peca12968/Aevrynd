@@ -48,5 +48,20 @@ int main(){
  const auto cloudLatticeHash=[](int32_t x,int32_t y){uint32_t value=static_cast<uint32_t>(x)*0x8da6b343u^static_cast<uint32_t>(y)*0xd8163841u^0xcb1ab31fu;value^=value>>16u;value*=0x7feb352du;value^=value>>15u;value*=0x846ca68bu;value^=value>>16u;return value>>8u;};
  const std::array<std::array<int32_t,3>,8> cloudGolden{{{{0,0,7178068}},{{1,0,4053091}},{{0,1,2916818}},{{-1,0,13612103}},{{0,-1,4346319}},{{-17,43,11618627}},{{12345,-6789,1674007}},{{1048576,-1048576,4925535}}}};
  for(const auto& sample:cloudGolden){if(cloudLatticeHash(sample[0],sample[1])!=static_cast<uint32_t>(sample[2])){std::cerr<<"Deterministic cloud/water lattice hash golden failed\n";return 14;}}
+ // 四個尺度錨點與每組內部方向都必須留在主流向半球。舊版的
+ // (-.89,.46)、(.8,-.6) 及 direction*-0.71 會令此 hostile gate 失敗。
+ const auto dot=[](std::array<float,2> a,std::array<float,2> b){return a[0]*b[0]+a[1]*b[1];};
+ const std::array<float,2> primary{.28f,.96f};
+ const std::array<std::array<float,2>,3> scaleAnchors{{{{-.38f,.925f}},{{.61f,.792f}},{{-.18f,.984f}}}};
+ const std::array<std::array<float,2>,3> intraDirections{{{{.939692621f,.342020143f}},{{.819152044f,-.573576436f}},{{.681998360f,.731353702f}}}};
+ for(const auto& anchor:scaleAnchors)if(dot(primary,anchor)<.75f){std::cerr<<"Water cross-scale flow coherence failed\n";return 15;}
+ for(const auto& direction:intraDirections)if(direction[0]<.65f){std::cerr<<"Water intra-wave reverse-flow rejection failed\n";return 16;}
+ if(shader.find("direction * 0.939692621 + perpendicular * 0.342020143")==std::string::npos||
+    shader.find("direction * 0.819152044 - perpendicular * 0.573576436")==std::string::npos||
+    shader.find("direction * 0.681998360 + perpendicular * 0.731353702")==std::string::npos||
+    shader.find("float2(-0.38, 0.925)")==std::string::npos||
+    shader.find("float2(0.61, 0.792)")==std::string::npos||
+    shader.find("float2(-0.18, 0.984)")==std::string::npos||
+    shader.find("direction * -0.71 + perpendicular * 0.70")!=std::string::npos){std::cerr<<"Water production flow-direction binding failed\n";return 17;}
  std::cout<<"waterOffset="<<offset.x<<','<<offset.y<<" maximumUvOffset="<<draw.WaterOptics().maximumUvOffset<<'\n';
 }

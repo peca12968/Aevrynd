@@ -1634,9 +1634,11 @@ float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float am
     const precise float waveNumber = max(waveScale, 0.001) * 6.28318530718;
     const precise float boundedAmplitude = clamp(amplitude, 0.0, 0.3);
     const precise float2 perpendicular = float2(-direction.y, direction.x);
-    const precise float2 direction1 = direction * 0.62 + perpendicular * 0.78;
-    const precise float2 direction2 = direction * 0.28 - perpendicular * 0.96;
-    const precise float2 direction3 = direction * -0.71 + perpendicular * 0.70;
+    // 林間河流的波峰需要有橫向變化，但不能把近垂直與反向分量等權
+    // 疊成規則方格。三個次方向都保留正向流速，只在主流向兩側展開。
+    const precise float2 direction1 = direction * 0.939692621 + perpendicular * 0.342020143;
+    const precise float2 direction2 = direction * 0.819152044 - perpendicular * 0.573576436;
+    const precise float2 direction3 = direction * 0.681998360 + perpendicular * 0.731353702;
     const precise float waveNumber0 = waveNumber * 0.73;
     const precise float waveNumber1 = waveNumber;
     const precise float waveNumber2 = waveNumber * 1.37;
@@ -2152,10 +2154,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
+            // 四個尺度錨點共享順流半球；波長與能量完全不變，只移除會在
+            // God 視角形成棋盤交點的對向干涉。
             const precise float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, float2(0.28, 0.96));
-            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, float2(-0.89, 0.46));
-            const precise float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.8, -0.6));
-            const precise float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, float2(0.17, 0.985));
+            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, float2(-0.38, 0.925));
+            const precise float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.61, 0.792));
+            const precise float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, float2(-0.18, 0.984));
             const precise float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
             const precise float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31);
             const precise float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);

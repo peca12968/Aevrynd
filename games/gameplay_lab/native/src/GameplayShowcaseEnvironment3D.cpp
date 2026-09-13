@@ -221,6 +221,11 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     descriptor.castsShadow = placement.kind != ShowcaseLandKind3D::Grass;
     const std::string id(ShowcaseLandAssetId3D(placement.variant));
     if (placement.kind == ShowcaseLandKind3D::Tree) {
+      const auto form = ShowcaseTreeFormVariation(placement);
+      descriptor.scale = {descriptor.scale.x * form.scaleMultiplier.x,
+                          descriptor.scale.y * form.scaleMultiplier.y,
+                          descriptor.scale.z * form.scaleMultiplier.z};
+      descriptor.yaw += form.yawOffset;
       descriptor.kind = ShowcaseSceneKind3D::Tree;
       descriptor.meshAsset = "poly-haven/" + id + "/cooked-lod";
       descriptor.materialAsset = "poly-haven/" + id + "/cooked-pbr";

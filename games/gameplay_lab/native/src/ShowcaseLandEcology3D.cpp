@@ -291,10 +291,18 @@ bool BuildShowcaseLandEcology3D(
         Aevrynd::Vec3 best{};
         float bestDistance = -1.f;
         bool found{};
+        const bool heroWetland = kind == ShowcaseLandKind3D::Grass &&
+                                 band == 0 &&
+                                 zone == ShowcaseLandZone3D::Riverbank &&
+                                 item < 18u;
         const bool heroGroundCover = kind == ShowcaseLandKind3D::Grass &&
                                      band == 0 &&
-                                     (zone != ShowcaseLandZone3D::Riverbank || item < 12u) &&
-                                     item < HeroGroundCoverOrdinals;
+                                     (heroWetland ||
+                                      (zone != ShowcaseLandZone3D::Riverbank &&
+                                       item < HeroGroundCoverOrdinals));
+        const bool pathShoulderCommunity =
+            kind == ShowcaseLandKind3D::Grass && band == 0 &&
+            zone != ShowcaseLandZone3D::Riverbank && item < 24u;
         const std::uint32_t boundedTrials =
             heroGroundCover
                 ? settings.candidateTrials
@@ -346,7 +354,7 @@ bool BuildShowcaseLandEcology3D(
           const std::uint32_t treeRadiusIndex = (trial * 8u / 3u + ordinal * 37u) % 128u;
           float radius{};
           if (heroGroundCover) {
-            // 英雄區保留全部近景非河岸群落及第一個河岸群；其餘河岸維持完整環帶。
+            // 英雄區保留全部近景非河岸群落及前六株河岸地被；其餘河岸維持完整環帶。
             const float u = (float(trial) + .5f) / float(boundedTrials);
             const float minimum = BandMinimumFor(kind, band);
             radius = std::sqrt(minimum * minimum +
@@ -362,12 +370,45 @@ bool BuildShowcaseLandEcology3D(
           Aevrynd::Vec3 candidate{settings.spawnCenter.x + directionX * radius,
                                   0,
                                   settings.spawnCenter.z + directionZ * radius};
+          // 前兩組非河岸母叢沿屋前步道兩肩交錯配置。中心離中線至少三公尺，
+          // 後續仍通過帶足跡的 1.4m 半寬 gate，因此保留完整 2.8m 步行帶。
+          if (pathShoulderCommunity && item % 12u < 3u) {
+            const Aevrynd::Vec3 laneEnd{settings.cottageCenter.x, 0,
+                                        settings.cottageCenter.z - 5.f};
+            const float laneX = laneEnd.x - settings.spawnCenter.x;
+            const float laneZ = laneEnd.z - settings.spawnCenter.z;
+            const float inverseLaneLength =
+                1.f / std::sqrt(laneX * laneX + laneZ * laneZ);
+            const float tangentX = laneX * inverseLaneLength;
+            const float tangentZ = laneZ * inverseLaneLength;
+            const float normalX = -tangentZ;
+            const float normalZ = tangentX;
+            const std::uint32_t communityIndex = item / 12u;
+            const std::uint32_t grassType = item % 3u;
+            const float laneT = .18f + float(communityIndex) * .25f +
+                                (grassType == 2u ? .055f : 0.f);
+            const float side = ((communityIndex + grassType) & 1u) ? -1.f : 1.f;
+            const float shoulderOffset =
+                3.05f + .35f * float((communityIndex + grassType) % 3u);
+            const float alongJitter = (communityFraction - .5f) * 1.2f;
+            const float outwardJitter =
+                (float(trial) / float((std::max)(1u, boundedTrials - 1u)) -
+                 .5f) * .65f;
+            candidate = {
+                settings.spawnCenter.x + laneX * laneT +
+                    tangentX * alongJitter + normalX * side *
+                    (shoulderOffset + outwardJitter),
+                0,
+                settings.spawnCenter.z + laneZ * laneT +
+                    tangentZ * alongJitter + normalZ * side *
+                    (shoulderOffset + outwardJitter)};
+          }
           // 每個非河岸地被母叢直接取同距離帶活樹作錨點；子叢沿用母叢，
           // 形成可見的林下島狀覆蓋。Near 僅選英雄 ROI 內側樹，維持角色安全圈。
           const bool understoryCenter =
               kind == ShowcaseLandKind3D::Grass &&
               zone != ShowcaseLandZone3D::Riverbank && item % 12u < 3u &&
-              !heroGroundCover && !livingTreeAnchors[band].empty();
+              !pathShoulderCommunity && !livingTreeAnchors[band].empty();
           if (understoryCenter) {
             const auto &anchors = livingTreeAnchors[band];
             std::size_t anchorIndex =
@@ -405,7 +446,27 @@ bool BuildShowcaseLandEcology3D(
             // 的母叢中心或增加 descriptor。
             constexpr std::array<float,3> along{{-2.25f,1.65f,3.45f}};
             constexpr std::array<float,3> bow{{.52f,.28f,1.08f}};
-            if(trial<boundedTrials*3u/4u){
+            if(pathShoulderCommunity&&trial<boundedTrials*3u/4u){
+              const Aevrynd::Vec3 laneEnd{settings.cottageCenter.x, 0,
+                                          settings.cottageCenter.z - 5.f};
+              const float laneX=laneEnd.x-settings.spawnCenter.x;
+              const float laneZ=laneEnd.z-settings.spawnCenter.z;
+              const float inverseLaneLength=1.f/std::sqrt(laneX*laneX+laneZ*laneZ);
+              const float tangentX=laneX*inverseLaneLength;
+              const float tangentZ=laneZ*inverseLaneLength;
+              const float normalX=-tangentZ,normalZ=tangentX;
+              const float cross=laneX*(center.z-settings.spawnCenter.z)-
+                                laneZ*(center.x-settings.spawnCenter.x);
+              const float side=cross>=0.f?1.f:-1.f;
+              constexpr std::array<float,3> pathAlong{{-1.45f,.95f,2.2f}};
+              constexpr std::array<float,3> pathBow{{-.18f,.32f,.68f}};
+              const std::uint32_t childIndex=(item%12u)/3u-1u;
+              const float jitter=(communityFraction-.5f)*.35f;
+              candidate={center.x+tangentX*(pathAlong[childIndex]+jitter)+
+                                   normalX*side*(pathBow[childIndex]+std::abs(jitter)*.2f),0,
+                         center.z+tangentZ*(pathAlong[childIndex]+jitter)+
+                                   normalZ*side*(pathBow[childIndex]+std::abs(jitter)*.2f)};
+            }else if(trial<boundedTrials*3u/4u){
               const std::uint32_t childIndex=(item%12u)/3u-1u;
               const std::uint32_t communityIndex=item/12u;
               const float shape=std::fmod(float(communityIndex+1u)*.618033989f+

@@ -100,6 +100,67 @@ bool TreeDescriptorDistributionContract(
          deadByBand == std::array<unsigned, 3>{10, 7, 3};
 }
 
+bool TreeFormVariationContract(
+    const std::vector<ShowcaseLandPlacement3D> &placements,
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
+  if (descriptors.size() != placements.size() + 8u) return false;
+  std::array<std::array<float, 2>, 3> heightRange{{
+      {{(std::numeric_limits<float>::max)(), 0.f}},
+      {{(std::numeric_limits<float>::max)(), 0.f}},
+      {{(std::numeric_limits<float>::max)(), 0.f}}}};
+  std::array<bool, 3> sawVariant{};
+  std::array<bool, 3> sawBand{};
+  std::array<bool, 32> silhouetteBuckets{};
+  unsigned trees{};
+  for (std::size_t index = 0; index < placements.size(); ++index) {
+    const auto &placement = placements[index];
+    if (placement.kind != ShowcaseLandKind3D::Tree) continue;
+    const auto form = ShowcaseTreeFormVariation(placement);
+    const auto repeated = ShowcaseTreeFormVariation(placement);
+    const auto &descriptor = descriptors[index + 2u];
+    if (form.scaleMultiplier.x != repeated.scaleMultiplier.x ||
+        form.scaleMultiplier.y != repeated.scaleMultiplier.y ||
+        form.scaleMultiplier.z != repeated.scaleMultiplier.z ||
+        form.yawOffset != repeated.yawOffset ||
+        form.scaleMultiplier.x < .58f || form.scaleMultiplier.x > 1.f ||
+        form.scaleMultiplier.z < .51f || form.scaleMultiplier.z > 1.f ||
+        form.scaleMultiplier.y < .70f || form.scaleMultiplier.y > 1.1f ||
+        std::abs(form.yawOffset) > .211f ||
+        descriptor.position.x != placement.position.x ||
+        descriptor.position.y != placement.position.y ||
+        descriptor.position.z != placement.position.z ||
+        descriptor.scale.x != placement.scale.x * form.scaleMultiplier.x ||
+        descriptor.scale.y != placement.scale.y * form.scaleMultiplier.y ||
+        descriptor.scale.z != placement.scale.z * form.scaleMultiplier.z ||
+        descriptor.yaw != placement.yaw + form.yawOffset)
+      return false;
+    const auto variant = placement.variant == ShowcaseLandVariant3D::IslandTree
+                             ? 0u
+                         : placement.variant == ShowcaseLandVariant3D::TreeSmall02
+                             ? 1u
+                         : placement.variant == ShowcaseLandVariant3D::DeadTreeTrunk
+                             ? 2u
+                             : 3u;
+    if (variant >= sawVariant.size()) return false;
+    const auto band = std::uint32_t(placement.band);
+    if (band >= sawBand.size()) return false;
+    sawVariant[variant] = true;
+    sawBand[band] = true;
+    heightRange[band][0] = (std::min)(heightRange[band][0], form.scaleMultiplier.y);
+    heightRange[band][1] = (std::max)(heightRange[band][1], form.scaleMultiplier.y);
+    const auto bucket = (std::min)(31u, std::uint32_t(
+        form.scaleMultiplier.x * 19.f + form.scaleMultiplier.y * 11.f));
+    silhouetteBuckets[bucket] = true;
+    ++trees;
+  }
+  const auto distinct = std::ranges::count(silhouetteBuckets, true);
+  return trees == 240 && std::ranges::all_of(sawVariant, [](bool v) { return v; }) &&
+         std::ranges::all_of(sawBand, [](bool v) { return v; }) && distinct >= 8 &&
+         heightRange[0][1] - heightRange[0][0] >= .20f &&
+         heightRange[1][1] - heightRange[1][0] >= .18f &&
+         heightRange[2][1] < heightRange[0][1];
+}
+
 template <std::size_t Size>
 std::uint64_t InventoryHash(const std::array<std::string_view, Size> &values) {
   std::uint64_t hash = 14695981039346656037ull;
@@ -116,7 +177,8 @@ bool ValidateGrassPalette(const std::array<Color, 3> &candidate,
   for (std::size_t index = 0; index < candidate.size(); ++index) {
     const float chromaRatio = Chroma(candidate[index]) / Chroma(baseline[index]);
     if (chromaRatio < .85f || chromaRatio > .9f ||
-        std::abs(Rec709(candidate[index]) - Rec709(baseline[index])) > 2e-6f ||
+        Rec709(candidate[index]) - Rec709(baseline[index]) < .018f ||
+        Rec709(candidate[index]) - Rec709(baseline[index]) > .032f ||
         candidate[index].g <= candidate[index].r ||
         candidate[index].g <= candidate[index].b || Chroma(candidate[index]) < .2f)
       return false;
@@ -230,6 +292,8 @@ int main() {
       SampleShowcaseTerrainEcologyTint3D({-14, 0, 14}, ecologyTrees);
   const auto cottagePathRepeated =
       SampleShowcaseTerrainEcologyTint3D({-14, 0, 14}, ecologyTrees);
+  const auto cottagePathFourMetreGrid =
+      SampleShowcaseTerrainEcologyTint3D({-16, 0, 12}, ecologyTrees);
   const auto wetBank =
       SampleShowcaseTerrainEcologyTint3D({4, 0, 0}, {});
   const std::array<ShowcaseSceneDescriptor3D, 1> overlappingTree{{
@@ -257,6 +321,8 @@ int main() {
       Rec709(canopyCenter.tint) >= Rec709(canopyFar.tint) ||
       cottagePath.cottagePath < .99f ||
       cottagePath.biome != ShowcaseTerrainBiome3D::CottagePath ||
+      cottagePathFourMetreGrid.cottagePath < .20f ||
+      cottagePathFourMetreGrid.biome != ShowcaseTerrainBiome3D::CottagePath ||
       cottagePath.tint.r != cottagePathRepeated.tint.r ||
       cottagePath.tint.g != cottagePathRepeated.tint.g ||
       cottagePath.tint.b != cottagePathRepeated.tint.b ||
@@ -268,6 +334,9 @@ int main() {
       dryGround.riverMoisture != 0.f ||
       dryGround.biome != ShowcaseTerrainBiome3D::Neutral ||
       Rec709(wetBank.tint) >= Rec709(dryGround.tint) ||
+      Chroma(cottagePath.tint) <= Chroma(canopyCenter.tint) ||
+      canopyCenter.tint.g <= canopyCenter.tint.r ||
+      wetBank.tint.b <= wetBank.tint.r ||
       !mutuallyExclusiveAndBounded(canopyCenter) ||
       !mutuallyExclusiveAndBounded(cottagePath) ||
       !mutuallyExclusiveAndBounded(wetBank) ||
@@ -518,6 +587,10 @@ int main() {
   }
   if (!TreeDescriptorDistributionContract(first.Descriptors()))
     return 78;
+  std::vector<ShowcaseLandPlacement3D> treePlacements;
+  if (!BuildShowcaseLandEcology3D({}, treePlacements) ||
+      !TreeFormVariationContract(treePlacements, first.Descriptors()))
+    return 84;
   auto collapsedTreeDescriptors = first.Descriptors();
   for (auto &descriptor : collapsedTreeDescriptors)
     if (descriptor.meshAsset == "poly-haven/tree_small_02/cooked-lod") {

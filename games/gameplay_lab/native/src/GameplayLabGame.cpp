@@ -2321,6 +2321,10 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       // 凍結決策只發生於 fixed simulation 呼叫，來源是本 tick 已完成的權威 pose/foot。
       captureFrozenFemalePose_=femalePose_;captureFrozenMalePose_=malePose_;captureFrozenMonsterPose_=monsterPose_;
       captureFrozenFootPlacementHash_=authorityFootPlacementHash_;capturePoseFrozen_=true;
+      // 首張正式暖機之前沒有受控 capture 前史，不得繼承最後一個即時呈現幀的
+      // palette/transform；該幀取決於 Update/Render 排程，會把不同 previous pose 帶入
+      // velocity/temporal history。後續鏡頭保留前一個受控 capture 建立的正式前史。
+      if(captureIndex_==0){playerHistory_.Invalidate();monsterHistory_.Invalidate();}
       ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);UpdateCamera(engine);
       // 與即時模式共用發布流程；重設相機不推進動畫或進場時間。
       PublishFirstPersonPose(0.f);captureFrozenFirstPersonPose_=firstPersonPose_;return;

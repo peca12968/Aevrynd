@@ -108,6 +108,115 @@ bool TreeVariantDistributionContract(
          deadByBand == std::array<unsigned, 3>{10, 7, 3};
 }
 
+struct HeroClearingDressingMetrics {
+  unsigned pathShoulders{};
+  unsigned pathSideMask{};
+  unsigned pathLongitudinalMask{};
+  unsigned rootIslandCover{};
+  unsigned rootIslandAnchors{};
+  unsigned wetlandCover{};
+  unsigned wetlandClearanceMask{};
+  unsigned wetlandLongitudinalMask{};
+};
+
+float TestRiverCenterX(float z) {
+  return -4.f + std::sin(z * .035f) * 5.f + std::sin(z * .011f) * 2.f;
+}
+
+float TestRiverWidth(float z) {
+  return 12.f + std::sin(z * .057f + .7f) * 2.6f;
+}
+
+bool IsPathShoulder(const ShowcaseLandEcologySettings3D &settings,
+                    const ShowcaseLandPlacement3D &placement,
+                    unsigned *side = nullptr, unsigned *longitudinal = nullptr) {
+  if (placement.kind != ShowcaseLandKind3D::Grass ||
+      placement.zone == ShowcaseLandZone3D::Riverbank)
+    return false;
+  const Aevrynd::Vec3 end{settings.cottageCenter.x, 0,
+                          settings.cottageCenter.z - 5.f};
+  const float vx = end.x - settings.spawnCenter.x;
+  const float vz = end.z - settings.spawnCenter.z;
+  const float lengthSquared = vx * vx + vz * vz;
+  const float px = placement.position.x - settings.spawnCenter.x;
+  const float pz = placement.position.z - settings.spawnCenter.z;
+  const float t = (px * vx + pz * vz) / lengthSquared;
+  if (t < .08f || t > .88f)
+    return false;
+  const float cross = vx * pz - vz * px;
+  const float perpendicular = std::abs(cross) / std::sqrt(lengthSquared);
+  if (perpendicular < 1.65f || perpendicular > 5.5f)
+    return false;
+  if (side)
+    *side = cross >= 0.f ? 1u : 0u;
+  if (longitudinal)
+    *longitudinal = (std::min)(3u, unsigned(t * 4.f));
+  return true;
+}
+
+HeroClearingDressingMetrics HeroClearingDressingContract(
+    const ShowcaseLandEcologySettings3D &settings,
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  HeroClearingDressingMetrics metrics{};
+  std::vector<bool> rootAnchorUsed(placements.size());
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Grass ||
+        placement.band != ShowcaseLandBand3D::Near)
+      continue;
+    const float heroX = placement.position.x - settings.spawnCenter.x;
+    const float heroZ = placement.position.z - settings.spawnCenter.z;
+    if (heroX * heroX + heroZ * heroZ > 22.f * 22.f)
+      continue;
+    if (placement.zone == ShowcaseLandZone3D::Riverbank) {
+      ++metrics.wetlandCover;
+      const float clearance =
+          std::abs(placement.position.x - TestRiverCenterX(placement.position.z)) -
+          TestRiverWidth(placement.position.z) * .5f;
+      metrics.wetlandClearanceMask |=
+          1u << (std::min)(2u, unsigned((std::max)(0.f, clearance - 2.f)));
+      const float wetlandT = (std::clamp)(
+          (placement.position.z - (settings.spawnCenter.z - 14.f)) / 32.f,
+          0.f, .999f);
+      metrics.wetlandLongitudinalMask |= 1u << unsigned(wetlandT * 4.f);
+      continue;
+    }
+    unsigned side{}, longitudinal{};
+    if (IsPathShoulder(settings, placement, &side, &longitudinal)) {
+      ++metrics.pathShoulders;
+      metrics.pathSideMask |= 1u << side;
+      metrics.pathLongitudinalMask |= 1u << longitudinal;
+      continue;
+    }
+    for (std::size_t index = 0; index < placements.size(); ++index) {
+      const auto &tree = placements[index];
+      if (tree.kind != ShowcaseLandKind3D::Tree ||
+          tree.band != ShowcaseLandBand3D::Near ||
+          !IsLivingTreeVariant(tree.variant))
+        continue;
+      const float x = tree.position.x - placement.position.x;
+      const float z = tree.position.z - placement.position.z;
+      if (x * x + z * z > 7.5f * 7.5f)
+        continue;
+      ++metrics.rootIslandCover;
+      if (!rootAnchorUsed[index]) {
+        rootAnchorUsed[index] = true;
+        ++metrics.rootIslandAnchors;
+      }
+      break;
+    }
+  }
+  return metrics;
+}
+
+bool HeroClearingDressingExact(const HeroClearingDressingMetrics &metrics) {
+  return metrics.pathShoulders >= 12 && metrics.pathSideMask == 0x3u &&
+      std::popcount(metrics.pathLongitudinalMask) >= 3 &&
+      metrics.rootIslandCover >= 18 && metrics.rootIslandAnchors >= 3 &&
+      metrics.wetlandCover >= 12 &&
+      std::popcount(metrics.wetlandClearanceMask) >= 2 &&
+      std::popcount(metrics.wetlandLongitudinalMask) >= 3;
+}
+
 }
 
 int main() {
@@ -241,6 +350,42 @@ int main() {
   auto noCover=first;
   std::erase_if(noCover,[](const auto& p){return p.kind==ShowcaseLandKind3D::Grass;});
   if(coverageGate(noCover))return 28;
+  const auto dressing = HeroClearingDressingContract(settings, first);
+  std::cout << "HERO_DRESSING path=" << dressing.pathShoulders
+            << "/sides=" << dressing.pathSideMask
+            << "/longitudinal=" << std::popcount(dressing.pathLongitudinalMask)
+            << " roots=" << dressing.rootIslandCover
+            << "/anchors=" << dressing.rootIslandAnchors
+            << " wetland=" << dressing.wetlandCover
+            << "/clearance=" << std::popcount(dressing.wetlandClearanceMask)
+            << "/longitudinal="
+            << std::popcount(dressing.wetlandLongitudinalMask) << '\n';
+  if (!HeroClearingDressingExact(dressing))
+    return 38;
+  auto noPathShoulders = first;
+  for (auto &placement : noPathShoulders)
+    if (IsPathShoulder(settings, placement))
+      placement.position = {200.f, 0, 200.f};
+  if (HeroClearingDressingExact(
+          HeroClearingDressingContract(settings, noPathShoulders)))
+    return 39;
+  auto noRootIslands = first;
+  for (auto &placement : noRootIslands)
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.band == ShowcaseLandBand3D::Near &&
+        IsLivingTreeVariant(placement.variant))
+      placement.position = {200.f, 0, 200.f};
+  if (HeroClearingDressingExact(
+          HeroClearingDressingContract(settings, noRootIslands)))
+    return 40;
+  auto noWetland = first;
+  for (auto &placement : noWetland)
+    if (placement.kind == ShowcaseLandKind3D::Grass &&
+        placement.zone == ShowcaseLandZone3D::Riverbank)
+      placement.position = {200.f, 0, 200.f};
+  if (HeroClearingDressingExact(
+          HeroClearingDressingContract(settings, noWetland)))
+    return 41;
   // 同生境群落中心必須分離；子叢必須受自己的中心約束，不能只以總叢數宣稱群落。
   const auto communityGate=[](const auto& values){
     std::array<Aevrynd::Vec3,3> centers{};

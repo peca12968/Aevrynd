@@ -29,6 +29,38 @@ enum class ShowcaseSceneKind3D : std::uint8_t {
   Building
 };
 
+struct ShowcaseTreeFormVariation3D {
+  Aevrynd::Vec3 scaleMultiplier{1.f, 1.f, 1.f};
+  float yawOffset{};
+};
+
+// 同一棵來源樹仍維持原 material、descriptor、collision 與 HLOD identity；
+// 只由 placement 的永久 stableKey、距離帶與既有樹種選出有限輪廓變化。
+// 水平尺度只縮不放，避免新增樹冠／碰撞重疊；林緣的 Far 樹略矮，讓
+// 主冠層、次冠層、幼樹與枯立木形成可辨識的高度節奏而不增加 draw。
+[[nodiscard]] inline ShowcaseTreeFormVariation3D
+ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
+  if (placement.kind != ShowcaseLandKind3D::Tree || !placement.stableKey)
+    return {};
+  const float u = float((placement.stableKey >> 16u) & 0xffffu) / 65535.f;
+  const float v = float((placement.stableKey >> 40u) & 0xffffu) / 65535.f;
+  const float bandHeight = placement.band == ShowcaseLandBand3D::Far
+                               ? .86f
+                           : placement.band == ShowcaseLandBand3D::Mid
+                               ? .94f
+                               : 1.f;
+  const bool dead = placement.variant == ShowcaseLandVariant3D::DeadTreeTrunk;
+  const bool sapling = placement.variant == ShowcaseLandVariant3D::TreeSmall02;
+  const float canopy = dead ? .58f + .16f * u
+                       : sapling ? .72f + .18f * u
+                                 : .82f + .18f * u;
+  const float height = bandHeight *
+      (dead ? .82f + .24f * v : sapling ? .88f + .18f * v
+                                        : .94f + .16f * v);
+  const float depth = canopy * (.88f + .12f * v);
+  return {{canopy, height, depth}, (u - .5f) * .42f};
+}
+
 // 日光下的 moss/soil 貼圖會經 IBL 與直射光再次增亮；保持綠色通道優勢並
 // 壓低總反射率，避免林地在正式曝光下變成黃白色草原。
 [[nodiscard]] inline constexpr Aevrynd::Color
@@ -51,10 +83,10 @@ ShowcaseForestTerrainTextureScale3D() noexcept {
 [[nodiscard]] inline constexpr Aevrynd::Color
 ShowcaseForestGrassTint3D(std::string_view materialAsset) noexcept {
   if (materialAsset.find("stony_dirt_path") != std::string_view::npos)
-    return {.30106232f, .42426232f, .20426232f, 1.f};
+    return {.32606232f, .44926232f, .22926232f, 1.f};
   if (materialAsset.find("forest_ground_04") != std::string_view::npos)
-    return {.27638504f, .45238504f, .19718504f, 1.f};
-  return {.37766832f, .57126832f, .25446832f, 1.f};
+    return {.30138504f, .47738504f, .22218504f, 1.f};
+  return {.40266832f, .59626832f, .27946832f, 1.f};
 }
 
 [[nodiscard]] inline constexpr std::string_view
@@ -195,7 +227,10 @@ SampleShowcaseTerrainEcologyTint3D(
       segmentDistance(worldPosition, {-14.f, 0.f, 14.f},
                       {-12.f, 0.f, 19.8f}));
   const float pathEdge = pathDistance + authoredEdgeNoise(worldPosition);
-  const float pathCandidate = 1.f - smooth((pathEdge - .42f) / .72f);
+  // 129x129 / 512m terrain is sampled every four metres. A 1.1m-wide signal
+  // can disappear between vertices; retain a narrow full-strength centre but
+  // extend the smooth shoulder to 2.6m so adjacent vertices carry the path.
+  const float pathCandidate = 1.f - smooth((pathEdge - .55f) / 2.05f);
 
   float canopyCandidate{};
   for (const auto &descriptor : descriptors) {
@@ -236,15 +271,15 @@ SampleShowcaseTerrainEcologyTint3D(
        wetSoilCandidate >= canopyCandidate && wetSoilCandidate > 0.f)) {
     result.biome = ShowcaseTerrainBiome3D::RiverWetSoil;
     result.riverWetSoil = result.riverMoisture = weight = wetSoilCandidate;
-    authoredTint = {.68f, .72f, .67f, 1.f};
+    authoredTint = {.62f, .70f, .66f, 1.f};
   } else if (pathCandidate >= canopyCandidate && pathCandidate > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CottagePath;
     result.cottagePath = weight = pathCandidate;
-    authoredTint = {.84f, .77f, .64f, 1.f};
+    authoredTint = {.88f, .75f, .56f, 1.f};
   } else if (canopyCandidate > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CanopyLeafLitter;
     result.leafLitter = result.canopy = weight = canopyCandidate;
-    authoredTint = {.70f, .77f, .60f, 1.f};
+    authoredTint = {.64f, .72f, .50f, 1.f};
   }
   result.tint = {1.f + (authoredTint.r - 1.f) * weight,
                  1.f + (authoredTint.g - 1.f) * weight,
