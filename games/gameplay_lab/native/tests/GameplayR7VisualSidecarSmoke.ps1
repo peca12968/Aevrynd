@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $shots=@('first-day','first-dusk','first-night','third-day','third-dusk','third-night','god-day','god-dusk','god-night','palette-building','melee-combat')
 $runId='11111111-2222-4333-8444-555555555555'
 $fingerprint=('ab'*32)
-$w=64;$h=36
+$w=384;$h=320
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('aevrynd-r7-sidecar-smoke-'+[guid]::NewGuid().ToString('N'))
 $root=Join-Path $temp 'capture';$null=New-Item -ItemType Directory -Path $root
 
@@ -21,18 +21,44 @@ function Sign-Review($Review){
   $r=$Review.rubric;$payload="1|HumanDirectorSameCameraReview|$($Review.reviewer)|$($Review.reviewerOrganization)|$($Review.reviewId)|$($Review.reviewedUtc)|$($Review.directorReferenceScore)|$($r.composition),$($r.lighting),$($r.materials),$($r.worldDensity),$($r.characters),$($r.presentation)|$($Review.evidenceSha256)"
   $s=[Security.Cryptography.SHA256]::Create();try{$Review.signature=([BitConverter]::ToString($s.ComputeHash([Text.Encoding]::UTF8.GetBytes($payload)))).Replace('-','').ToLowerInvariant()}finally{$s.Dispose()}
 }
+function Write-TestBeauty([string]$Path,[string]$Kind){
+  $bitmap=[Drawing.Bitmap]::new($w,$h,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  try{
+    $rectangle=[Drawing.Rectangle]::new(0,0,$w,$h);$data=$bitmap.LockBits($rectangle,[Drawing.Imaging.ImageLockMode]::WriteOnly,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try{
+      $bytes=[byte[]]::new($data.Stride*$h)
+      for($y=0;$y-lt$h;$y++){for($x=0;$x-lt$w;$x++){
+        $nx=(2.0*$x/($w-1))-1.0;$ny=(2.0*$y/($h-1))-1.0
+        if($Kind-eq'slope'){$value=45.0+0.22*$x+0.16*$y}
+        else{
+          $illumination=72.0+36.0*($nx*$nx+$ny*$ny)
+          if($Kind-eq'radial'-or$Kind-eq'radial-affine'){$value=$illumination}
+          else{
+            $period=if($Kind-like'tile32*'){32}else{64};$lx=$x%$period;$ly=$y%$period
+            $texture=(($lx*37+$ly*53+$lx*$ly*7)%61)-30;$value=$illumination+$texture
+          }
+        }
+        if($Kind-like'*-affine'){$value=18.0+0.72*$value}
+        $channel=[byte][Math]::Max(0,[Math]::Min(255,[Math]::Round($value)))
+        $offset=$y*$data.Stride+$x*4;$bytes[$offset]=$channel;$bytes[$offset+1]=$channel;$bytes[$offset+2]=$channel;$bytes[$offset+3]=255
+      }}
+      [Runtime.InteropServices.Marshal]::Copy($bytes,0,$data.Scan0,$bytes.Length)
+    }finally{$bitmap.UnlockBits($data)}
+    $bitmap.Save($Path,[Drawing.Imaging.ImageFormat]::Png)
+  }finally{$bitmap.Dispose()}
+}
 
 try{
   Add-Type -AssemblyName System.Drawing
-  $prototype=Join-Path $temp 'beauty.png';$bitmap=[Drawing.Bitmap]::new($w,$h)
-  try{for($y=0;$y-lt$h;$y++){for($x=0;$x-lt$w;$x++){$bitmap.SetPixel($x,$y,[Drawing.Color]::FromArgb(255,(40+$x*2)%256,(70+$y*3)%256,(30+$x+$y)%256))}};$bitmap.Save($prototype,[Drawing.Imaging.ImageFormat]::Png)}finally{$bitmap.Dispose()}
+  $prototype=Join-Path $temp 'beauty.png';Write-TestBeauty $prototype 'slope'
   $tokens=[byte[]]::new($w*$h*4);for($i=0;$i-lt$w*$h;$i++){[BitConverter]::GetBytes([uint32](1+($i%4))).CopyTo($tokens,$i*4)}
   $tokenPrototype=Join-Path $temp 'tokens.bin';[IO.File]::WriteAllBytes($tokenPrototype,$tokens)
   $raw=[byte[]]::new($w*$h*8);for($i=0;$i-lt$w*$h;$i++){for($c=0;$c-lt4;$c++){[BitConverter]::GetBytes([uint16]0x3c00).CopyTo($raw,$i*8+$c*2)}}
   $hdrPrototype=Join-Path $temp 'capture.aevhdr';$stream=[IO.File]::Create($hdrPrototype);try{$prefix=[Text.Encoding]::ASCII.GetBytes('AEVHDR-SMOKE');$stream.Write($prefix,0,$prefix.Length);$count=[BitConverter]::GetBytes([uint64]$raw.Length);$stream.Write($count,0,8);$stream.Write($raw,0,$raw.Length)}finally{$stream.Dispose()}
   $hdrRows=@();$captureRows=@()
-  foreach($name in $shots){
-    Copy-Item -LiteralPath $prototype -Destination (Join-Path $root "$name.png")
+  for($shotIndex=0;$shotIndex-lt$shots.Count;$shotIndex++){
+    $name=$shots[$shotIndex];$kind=@('slope','radial','tile32','tile64','tile32-affine','radial-affine','slope','slope','slope','slope','slope')[$shotIndex]
+    Write-TestBeauty (Join-Path $root "$name.png") $kind
     Copy-Item -LiteralPath $prototype -Destination (Join-Path $root "$name-object-id.png")
     Copy-Item -LiteralPath $prototype -Destination (Join-Path $root "$name-depth.png")
     Copy-Item -LiteralPath $tokenPrototype -Destination (Join-Path $root "$name-tokens.bin")
@@ -63,6 +89,13 @@ try{
   $output=Join-Path $root 'r7-visual-sidecar.test.json';$positive=Invoke-Producer @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',$output)
   if($positive.Code-ne0){throw "positive producer failed: $($positive.Text)"};$made=Get-Content -Raw -LiteralPath $output|ConvertFrom-Json
   if(@($made.shots).Count-ne11-or[int]$made.directorReferenceScore-ne34-or[string]$made.runId-ne$runId-or[string]$made.sourceFingerprint-ne$fingerprint){throw 'positive binding mismatch'}
+  if([int]$made.evaluatorVersion-ne2-or[string]$made.algorithms.terrainAutocorrelation-ne'beauty-luma-token-masked-box33-detrended-periodic-peak-lags-32-to-256-v2'){throw 'terrain analyzer provenance mismatch'}
+  $byName=@{};foreach($shot in @($made.shots)){$byName[[string]$shot.name]=$shot}
+  $slope=[double]$byName['first-day'].terrain.autocorrelation32To256;$radial=[double]$byName['first-dusk'].terrain.autocorrelation32To256
+  $tile32=[double]$byName['first-night'].terrain.autocorrelation32To256;$tile64=[double]$byName['third-day'].terrain.autocorrelation32To256;$tile32Affine=[double]$byName['third-dusk'].terrain.autocorrelation32To256
+  if($slope-ge0.65-or$radial-ge0.65){throw "smooth lighting false positive: slope=$slope radial=$radial"}
+  if($tile32-lt0.65-or$tile64-lt0.65){throw "tiled terrain escaped gate: tile32=$tile32 tile64=$tile64"}
+  if($tile32Affine-lt0.65-or[Math]::Abs($tile32-$tile32Affine)-gt0.03){throw "affine luma instability: base=$tile32 affine=$tile32Affine"}
 
   $marker=Join-Path $root 'fixture-manifest.json';[IO.File]::WriteAllText($marker,'{}');Must-Fail 'synthetic fixture' @('-PrintEvidenceDigestOnly') 'synthetic fixture is forbidden';Remove-Item -LiteralPath $marker
   $gameplayPath=Join-Path $root 'gameplay-receipt.json';$savedGameplay=Get-Content -Raw -LiteralPath $gameplayPath
@@ -86,7 +119,7 @@ try{
   $review.rubric.composition=7;$review.rubric.total=34;$review.directorReferenceScore=34;$review.signature='';Write-Json $reviewPath $review;Must-Fail 'unsigned review' @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',$output) 'review signature mismatch'
   Sign-Review $review;Write-Json $reviewPath $review
   Must-Fail 'output escape' @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',(Join-Path $temp 'escaped.test.json')) 'path escaped capture root'
-  Write-Output "GameplayR7VisualSidecarSmoke=PASS evidence=$digest"
+  Write-Output "GameplayR7VisualSidecarSmoke=PASS evidence=$digest slope=$slope radial=$radial tile32=$tile32 tile64=$tile64 tile32Affine=$tile32Affine"
 }finally{
   if((Test-Path -LiteralPath $temp)-and( [IO.Path]::GetFullPath($temp).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()),[StringComparison]::OrdinalIgnoreCase))){Remove-Item -LiteralPath $temp -Recurse -Force}
 }

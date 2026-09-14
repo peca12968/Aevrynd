@@ -3,9 +3,15 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
+#include <string>
 
 using namespace Aevrynd;
 
@@ -53,6 +59,72 @@ double BlueNoiseLowFrequencyRatio() {
       low += average * average;
     }
   return low / total;
+}
+
+bool ProductionPhaseUsesDeterministicFixedPower() {
+  const auto shaderPath = std::filesystem::path{__FILE__}.parent_path()
+                              .parent_path() / "shaders" /
+                          "VolumetricAtmosphere.hlsl";
+  std::ifstream input(shaderPath, std::ios::binary);
+  if (!input)
+    return false;
+  const std::string shader{std::istreambuf_iterator<char>{input}, {}};
+  const auto begin = shader.find("precise float HenyeyGreenstein(");
+  const auto end = begin == std::string::npos
+                       ? std::string::npos
+                       : shader.find("precise float CloudShadowField(", begin);
+  if (begin == std::string::npos || end == std::string::npos)
+    return false;
+  const std::string phase = shader.substr(begin, end - begin);
+  return phase.find("pow(") == std::string::npos &&
+         phase.find("denominator*denominator*") != std::string::npos &&
+         phase.find("AevryndDeterministicInverseSqrt(denominator)") !=
+             std::string::npos;
+}
+
+bool ProductionSlabUsesDeterministicReciprocal() {
+  const auto shaderPath = std::filesystem::path{__FILE__}.parent_path()
+                              .parent_path() / "shaders" /
+                          "VolumetricAtmosphere.hlsl";
+  std::ifstream input(shaderPath, std::ios::binary);
+  if (!input)
+    return false;
+  const std::string shader{std::istreambuf_iterator<char>{input}, {}};
+  return shader.find("rcp(") == std::string::npos &&
+         shader.find("precise float DeterministicReciprocal(float value)") !=
+             std::string::npos &&
+         shader.find("0x7ef311c3u-asuint(magnitude)") != std::string::npos &&
+         shader.find("DeterministicReciprocal(ray.y)") != std::string::npos;
+}
+
+float DeterministicInverseSqrtContract(float value) {
+  const float input = (std::max)(value, 1e-20f);
+  float estimate = std::bit_cast<float>(
+      0x5f375a86u - (std::bit_cast<std::uint32_t>(input) >> 1u));
+  const float halfInput = .5f * input;
+  for (unsigned iteration = 0; iteration < 4; ++iteration)
+    estimate = estimate * (1.5f - halfInput * estimate * estimate);
+  return estimate;
+}
+
+float DeterministicPhaseContract(float cosine, float anisotropy) {
+  const float g = std::clamp(anisotropy, -.8f, .85f), g2 = g * g;
+  const float denominator =
+      (std::max)(1e-6f, 1.f + g2 - 2.f * g * std::clamp(cosine, -1.f, 1.f));
+  const float denominatorPower = denominator * denominator *
+                                 DeterministicInverseSqrtContract(denominator);
+  return (1.f - g2) / (12.5663706144f * denominatorPower);
+}
+
+float DeterministicReciprocalContract(float value) {
+  if (!std::isfinite(value) || std::abs(value) < 1e-20f)
+    return 0.f;
+  const float magnitude = std::abs(value);
+  float estimate = std::bit_cast<float>(
+      0x7ef311c3u - std::bit_cast<std::uint32_t>(magnitude));
+  for (unsigned iteration = 0; iteration < 4; ++iteration)
+    estimate = estimate * (2.f - magnitude * estimate);
+  return value < 0.f ? -estimate : estimate;
 }
 } // namespace
 
@@ -177,9 +249,64 @@ int main() {
       fogL > 1.f - fogT + 1e-6f)
     return 12;
 
+  // 生產 HG 的固定 3/2 次方不得退回 vendor-dependent pow(log/exp) 路徑；
+  // 上方相位積分同時守住替換後的正規化與物理行為。
+  if (!ProductionPhaseUsesDeterministicFixedPower())
+    return 13;
+
+  // 四次固定 Newton 疊代必須在完整 production 參數域內維持原 HG 精度。
+  double maximumPhaseRelativeError{};
+  for (const float anisotropy : {-.8f, -.4f, 0.f, .4f, .85f})
+    for (unsigned sample = 0; sample <= 512; ++sample) {
+      const float cosine = -1.f + 2.f * float(sample) / 512.f;
+      const float g2 = anisotropy * anisotropy;
+      const float denominator =
+          1.f + g2 - 2.f * anisotropy * cosine;
+      const float reference =
+          (1.f - g2) / (12.5663706144f * std::pow(denominator, 1.5f));
+      const float deterministic =
+          DeterministicPhaseContract(cosine, anisotropy);
+      const double relativeError = std::abs(double(deterministic - reference)) /
+                                   (std::max)(double(reference), 1e-12);
+      maximumPhaseRelativeError =
+          (std::max)(maximumPhaseRelativeError, relativeError);
+    }
+  if (!std::isfinite(maximumPhaseRelativeError) ||
+      maximumPhaseRelativeError > 5e-6)
+    return 14;
+
+  if (!ProductionSlabUsesDeterministicReciprocal())
+    return 15;
+
+  double maximumReciprocalRelativeError{};
+  for (unsigned sample = 0; sample <= 65536; ++sample) {
+    const float magnitude =
+        1e-6f + (1.f - 1e-6f) * float(sample) / 65536.f;
+    for (const float value : {-magnitude, magnitude}) {
+      const float reference = 1.f / value;
+      const float deterministic = DeterministicReciprocalContract(value);
+      const double relativeError = std::abs(double(deterministic - reference)) /
+                                   std::abs(double(reference));
+      maximumReciprocalRelativeError =
+          (std::max)(maximumReciprocalRelativeError, relativeError);
+    }
+  }
+  if (!std::isfinite(maximumReciprocalRelativeError) ||
+      maximumReciprocalRelativeError > 5e-6 ||
+      DeterministicReciprocalContract(0.f) != 0.f ||
+      DeterministicReciprocalContract(
+          std::numeric_limits<float>::infinity()) != 0.f ||
+      DeterministicReciprocalContract(
+          std::numeric_limits<float>::quiet_NaN()) != 0.f)
+    return 16;
+
   std::cout << "VolumetricAtmospherePhysical PASS analyticError=" << analyticError
             << " convergence8v16=" << convergence << " phase=" << backward
             << '/' << isotropic << '/' << forward << " capped=" << capped
             << " lowFrequencyRatio=" << lowFrequencyRatio
+            << " deterministicPhaseMaxRelativeError="
+            << maximumPhaseRelativeError
+            << " deterministicReciprocalMaxRelativeError="
+            << maximumReciprocalRelativeError
             << '\n';
 }

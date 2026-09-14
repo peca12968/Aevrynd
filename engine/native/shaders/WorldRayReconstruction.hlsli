@@ -1,6 +1,29 @@
 #ifndef AEVRYND_WORLD_RAY_RECONSTRUCTION_HLSLI
 #define AEVRYND_WORLD_RAY_RECONSTRUCTION_HLSLI
 
+#if defined(AEVRYND_WORLD_RAY_DETERMINISTIC_NORMALIZE)
+precise float AevryndDeterministicInverseSqrt(float value)
+{
+    // Shader-model rsq/normalize 可使用實作相依的近似。固定 IEEE-754
+    // 初始值與四次 Newton 疊代，讓證據擷取不因 wave 排程漂移 1 ULP。
+    precise const float inputValue=max(value,1e-20);
+    precise float estimate=asfloat(0x5f375a86u-(asuint(inputValue)>>1u));
+    precise const float halfInput=.5*inputValue;
+    estimate=estimate*(1.5-halfInput*estimate*estimate);
+    estimate=estimate*(1.5-halfInput*estimate*estimate);
+    estimate=estimate*(1.5-halfInput*estimate*estimate);
+    estimate=estimate*(1.5-halfInput*estimate*estimate);
+    return estimate;
+}
+
+precise float3 AevryndDeterministicNormalize(float3 value)
+{
+    precise const float inverseLength=AevryndDeterministicInverseSqrt(dot(value,value));
+    precise const float3 result=value*inverseLength;
+    return result;
+}
+#endif
+
 float2 AevryndViewportUvToNdc(float2 viewportUv)
 {
     return float2(viewportUv.x * 2.0 - 1.0, 1.0 - viewportUv.y * 2.0);
@@ -43,7 +66,11 @@ bool AevryndReconstructWorldRay(float2 viewportUv,
     const bool farValid = AevryndReconstructWorldPosition(
         viewportUv, 1.0, inverseViewProjection, farWorld);
     rayOrigin = orthographic ? nearWorld : cameraPosition;
+#if defined(AEVRYND_WORLD_RAY_DETERMINISTIC_NORMALIZE)
+    rayDirection = AevryndDeterministicNormalize(farWorld - rayOrigin);
+#else
     rayDirection = normalize(farWorld - rayOrigin);
+#endif
 #if defined(AEVRYND_WORLD_RAY_HEMISPHERE_FLIP)
     rayDirection.y = -rayDirection.y;
 #endif

@@ -818,6 +818,23 @@ float TerrainBiomeHeight(float vertexAlpha)
 #endif
 }
 
+float3 DecodeAuthoredTerrainBiomeWeights(float2 encoded)
+{
+    // Terrain 的 signed UV 契約：+U=步道、-U=河岸濕土、+V=林下落葉。
+    // 非有限值直接 fail closed 成 neutral；其餘輸入夾限並在惡意總和超過一
+    // 時正規化。正式 authored vertex 互斥，光柵插值則可形成連續雙區過渡。
+    if (encoded.x != encoded.x || encoded.y != encoded.y ||
+        abs(encoded.x) > 65504.0 || abs(encoded.y) > 65504.0)
+        return 0.0;
+    float3 weights = saturate(float3(max(encoded.x, 0.0),
+                                     max(encoded.y, 0.0),
+                                     max(-encoded.x, 0.0)));
+    const float total = weights.x + weights.y + weights.z;
+    if (total > 1.0)
+        weights /= total;
+    return weights;
+}
+
 float RayleighPhase(float cosine)
 {
     return 3.0 * (1.0 + cosine * cosine) / (16.0 * 3.14159265);
@@ -1908,7 +1925,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
         const float terrainHeight = TerrainBiomeHeight(input.color.a);
-        const float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
+        float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
         const float originalSoilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
         const float originalGrassWeight = max(0.0, 1.0 - rockWeight - originalSoilWeight);
         float soilWeight = originalSoilWeight;
@@ -1923,6 +1940,38 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float targetSoilFraction = smoothstep(0.43, 0.70, 1.0 - terrainMesoSignal);
             soilWeight = nonRockWeight * lerp(originalSoilFraction, targetSoilFraction, 0.62);
             grassWeight = nonRockWeight - soilWeight;
+        }
+        float authoredWetSoilWeight = 0.0;
+        // useUv 是既有 generic bit；再要求 Renderer.h 宣告、可精確表示的
+        // -15.5 marker，避免任何歷史 Terrain UV 或一般負 normalScale 誤啟用。
+        [branch] if (input.textureData.w > 0.5 && input.normalScale == -15.5)
+        {
+            const float3 authoredBiomeWeights = DecodeAuthoredTerrainBiomeWeights(input.uv);
+            const float authoredBiomeWeight = authoredBiomeWeights.x + authoredBiomeWeights.y + authoredBiomeWeights.z;
+            // neutral 必須完全繞過重配，讓 useUv 開啟但 UV=(0,0) 時逐位元沿用
+            // 原 procedural slope/height/noise 路徑。
+            [branch] if (authoredBiomeWeight > 0.0)
+            {
+                // path 壓實 soil 並保留少量 gravel/rock；leaf litter 以森林層
+                // 為主；wet soil 使用土壤層。三者共用既有三套 PBR sample。
+                const float3 pathTarget = float3(0.04, 0.78, 0.18);
+                const float3 leafTarget = float3(0.86, 0.14, 0.0);
+                const float3 wetSoilTarget = float3(0.04, 0.96, 0.0);
+                const float3 authoredLayerTarget =
+                    (authoredBiomeWeights.x * pathTarget +
+                     authoredBiomeWeights.y * leafTarget +
+                     authoredBiomeWeights.z * wetSoilTarget) /
+                    authoredBiomeWeight;
+                float3 materialWeights = saturate(lerp(
+                    float3(grassWeight, soilWeight, rockWeight),
+                    authoredLayerTarget, saturate(authoredBiomeWeight)));
+                materialWeights /= max(0.000001,
+                    materialWeights.x + materialWeights.y + materialWeights.z);
+                grassWeight = materialWeights.x;
+                soilWeight = materialWeights.y;
+                rockWeight = materialWeights.z;
+                authoredWetSoilWeight = authoredBiomeWeights.z;
+            }
         }
         if (input.textureData.x > 0.5)
         {
@@ -2001,6 +2050,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 : terrainTint;
             baseColor *= decorrelatedTerrainTint * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
             roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74) * (1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)), 0.045, 1.0);
+        }
+        [branch] if (authoredWetSoilWeight > 0.0)
+        {
+            // 濕土只做受限的能量與微表面調整，不增加 sample，也不冒充積水。
+            baseColor *= lerp(1.0, 0.88, authoredWetSoilWeight);
+            roughness = clamp(roughness * lerp(1.0, 0.82, authoredWetSoilWeight),
+                              0.045, 1.0);
         }
     }
 
@@ -2169,8 +2225,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 可能落在不同半精度邊界的格點雜訊梯度。
             precise float2 heightGradient = broadWave.yz * broadBandLimit * 0.75;
             heightGradient = heightGradient + crossWave.yz * crossBandLimit;
-            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.18;
-            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.50;
+            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.36;
+            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.90;
             // Material3D already carries the authored normal amplitude. The water path
             // previously ignored it, so distant river pixels used only half of the
             // intended analytic slope and collapsed into a flat translucent sheet.

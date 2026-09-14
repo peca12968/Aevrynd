@@ -443,7 +443,7 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
     // 月光保留冷色辨識，但夜間亮度由局部光源與反射建立層次，不能用
     // 全畫面藍色增益把水面與地表抬得比黃昏更亮。
     state = {profile, {{-.25f, -.62f, -.74f}, .11f, {.42f, .55f, 1, 1}, .42f},
-             {.05f, .085f, .155f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
+             {.06f, .10f, .18f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
   }
   return state;
 }
@@ -505,7 +505,7 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   Aevrynd::PhaseRadianceProfile3D radiance{};
   if(profile==ShowcaseLightingProfile3D::Day)radiance={{.08f,.20f,.46f},.88f,{.28f,.46f,.68f},2.6f,{.13f,.12f,.095f},.00935f,{.94f,.96f,.93f},.68f,{1.f,.88f,.68f},9.f,0x4441595f534b5932ull};
   else if(profile==ShowcaseLightingProfile3D::Dusk)radiance={{.045f,.055f,.09f},.72f,{.44f,.25f,.16f},2.2f,{.08f,.045f,.035f},.00935f,{1.f,.82f,.68f},.46f,{1.f,.48f,.22f},7.f,0x4455534b534b5932ull};
-  else radiance={{.012f,.022f,.048f},.24f,{.045f,.06f,.095f},1.8f,{.010f,.014f,.020f},.00935f,{.72f,.78f,1.f},.24f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};
+  else radiance={{.016f,.030f,.066f},.28f,{.052f,.070f,.110f},1.8f,{.012f,.018f,.028f},.00935f,{.72f,.78f,1.f},.28f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};
   draw.SetPhaseRadianceProfile(radiance);
   // 固定日間 HDRI 只提供穩定的高頻環境細節；黃昏與夜間提高物理天空比例，避免把日間色彩當作地圖染色。
   Aevrynd::EnvironmentLightingBlendSettings3D environmentBlend{};
@@ -550,8 +550,11 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   if (profile == ShowcaseLightingProfile3D::Night) {
     // 夜間不沿用預設 +2 EV：壓住月光與小屋高光，同時只在 tone curve
     // 暗部提供有限 lift，讓林地輪廓可讀而不抬高整個畫面。
-  timeOfDayExposure.nightExposureEv = 1.50f;
-    timeOfDayExposure.shadowLift = .03f;
+    timeOfDayExposure.nightExposureEv = 1.50f;
+    // first-person 鏡頭的近場樹幹與林床仍在有效黑階下被壓成
+    // 剪影。只稍微抬高有幾何深度的 toe；PostProcess 的 sceneSemantic
+    // 使天空、水面與 bloom 不會被全螢幕提亮。
+    timeOfDayExposure.shadowLift = .04f;
     timeOfDayExposure.toeStrength = .33f;
     timeOfDayExposure.shoulderStrength = 1.12f;
   }

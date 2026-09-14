@@ -160,6 +160,10 @@ struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
 enum class CharacterShadingModel3D:uint8_t {Default,Skin,Hair,Eye,Cloth};
+// Terrain 的 normal detail 不讀逐 instance normalScale；保留一個可精確表示的
+// 負值作 authored-biome UV 契約 sentinel。其他值（包括一般負 scale）都不得
+// 啟用該路徑，以維持既有 Terrain/useUv 呼叫相容。
+inline constexpr float TerrainAuthoredBiomeNormalScaleMarker3D=-15.5f;
 static constexpr std::size_t MaximumMeshInstancesPerFrame3D=65536;
 static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D,MeshInstanceLodCoverageShift3D=4u,MeshInstanceLodCoverageMask3D=255u<<MeshInstanceLodCoverageShift3D,MeshInstanceLodInvertBit3D=1u<<12,MeshInstanceLodSeedShift3D=13u,MeshInstanceLodSeedMask3D=7u<<MeshInstanceLodSeedShift3D,MeshInstanceHlodSharedSeedBit3D=1u<<31;
 constexpr MaterialClass3D NormalizeMaterialClass3D(MaterialClass3D value){return value==MaterialClass3D::Water||value==MaterialClass3D::Foliage||value==MaterialClass3D::Terrain?value:MaterialClass3D::Surface;}
@@ -1319,6 +1323,7 @@ struct D3D12RendererShadowDiagnosticAccess3D {
 struct D3D12RendererAtmosphereDiagnosticAccess3D {
     struct Capture3D {RenderResourceIdentity3D identity{};unsigned sourceRowPitch{};std::vector<std::byte> rgba16f{};std::array<std::byte,32> pixelSha256{};[[nodiscard]] bool Complete()const noexcept{return identity.Complete()&&identity.sampleCount==1&&sourceRowPitch>=identity.width*8&&rgba16f.size()==size_t(identity.width)*identity.height*8;}};
     static std::optional<Capture3D> CaptureVolumetricAtmosphereOutput(D3D12Renderer& renderer);
+    static std::optional<Capture3D> CaptureAtmosphereSceneSnapshot(D3D12Renderer& renderer);
     static bool SetPreAtmosphereHdrCapture(D3D12Renderer& renderer,bool enabled);
     static bool SetPostAtmosphereHdrCapture(D3D12Renderer& renderer,bool enabled);
     static bool SetPostTransparentHdrCapture(D3D12Renderer& renderer,bool enabled);

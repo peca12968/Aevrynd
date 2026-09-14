@@ -1,5 +1,7 @@
 Texture2D<float4> atmosphereTexture : register(t0);
 Texture2D<float> sceneDepthTexture : register(t1);
+#define AEVRYND_WORLD_RAY_DETERMINISTIC_NORMALIZE 1
+#include "WorldRayReconstruction.hlsli"
 #if AEVRYND_ATMOSPHERE_MSAA
 Texture2DMS<float4,4> sceneColorTexture : register(t2);
 #else
@@ -22,6 +24,20 @@ cbuffer CompositeConstants : register(b0)
 float3 CompositeCameraPosition()
 {
     return float3(cameraPositionXY,cameraPositionZ);
+}
+
+precise float CompositeDeterministicReciprocal(float value)
+{
+    precise const float magnitude=abs(value);
+    const uint magnitudeBits=asuint(magnitude);
+    if(magnitudeBits>=0x7f800000u||magnitudeBits<asuint(1e-20))return 0.0;
+    precise float estimate=asfloat(0x7ef311c3u-magnitudeBits);
+    estimate=estimate*(2.0-magnitude*estimate);
+    estimate=estimate*(2.0-magnitude*estimate);
+    estimate=estimate*(2.0-magnitude*estimate);
+    estimate=estimate*(2.0-magnitude*estimate);
+    precise const float result=value<0.0?-estimate:estimate;
+    return result;
 }
 
 struct FullscreenVertex
@@ -52,10 +68,10 @@ float SceneAtmosphereWeight(uint2 pixel,float2 localUv)
     nearWorld.xyz/=nearWorld.w;
     surfaceWorld.xyz/=surfaceWorld.w;
     const float3 rayOrigin=projectionOrthographic!=0?nearWorld.xyz:CompositeCameraPosition();
-    const float3 ray=normalize(surfaceWorld.xyz-rayOrigin);
+    precise const float3 ray=AevryndDeterministicNormalize(surfaceWorld.xyz-rayOrigin);
     if(abs(ray.y)<=1e-6)
         return 0.0;
-    const float inverseRayY=rcp(ray.y);
+    precise const float inverseRayY=CompositeDeterministicReciprocal(ray.y);
     const float slab0=(cloudBaseAltitude-rayOrigin.y)*inverseRayY;
     const float slab1=(cloudBaseAltitude+cloudThickness-rayOrigin.y)*inverseRayY;
     const float layerEntry=max(0.0,min(slab0,slab1));
@@ -68,28 +84,33 @@ float4 SampleDepthAwareAtmosphere(float2 localUv,float centerDepthWeight)
 {
     uint atmosphereWidth,atmosphereHeight;
     atmosphereTexture.GetDimensions(atmosphereWidth,atmosphereHeight);
-    const float2 atmosphereExtent=float2(atmosphereWidth,atmosphereHeight);
-    const float2 texel=localUv*atmosphereExtent-.5;
+    const precise float2 atmosphereExtent=float2(atmosphereWidth,atmosphereHeight);
+    const precise float2 texel=localUv*atmosphereExtent-.5;
     const int2 base=int2(floor(texel));
-    const float2 fraction=frac(texel);
-    float4 accumulated=0;
-    float accumulatedWeight=0;
+    const precise float2 fraction=frac(texel);
+    precise float4 accumulated=0;
+    precise float accumulatedWeight=0;
     [unroll] for(int offsetY=0;offsetY<2;++offsetY)
     [unroll] for(int offsetX=0;offsetX<2;++offsetX)
     {
         const int2 candidate=clamp(base+int2(offsetX,offsetY),int2(0,0),int2(atmosphereWidth-1,atmosphereHeight-1));
-        const float2 candidateUv=(float2(candidate)+.5)/atmosphereExtent;
+        const precise float2 candidateUv=(float2(candidate)+.5)/atmosphereExtent;
         const uint2 candidatePixel=min(uint2(viewportOrigin+candidateUv*viewportExtent),uint2(outputExtent)-1);
-        const float candidateDepthWeight=SceneAtmosphereWeight(candidatePixel,candidateUv);
-        const float2 axisWeight=offsetX==0?float2(1.0-fraction.x,0):float2(fraction.x,0);
-        const float spatialWeight=axisWeight.x*(offsetY==0?1.0-fraction.y:fraction.y);
+        const precise float candidateDepthWeight=SceneAtmosphereWeight(candidatePixel,candidateUv);
+        const precise float2 axisWeight=offsetX==0?float2(1.0-fraction.x,0):float2(fraction.x,0);
+        const precise float spatialWeight=axisWeight.x*(offsetY==0?1.0-fraction.y:fraction.y);
         // 只在同一深度分類內做雙線性混合，避免半解析雲層跨越近景輪廓。
-        const float bilateralWeight=spatialWeight*(abs(candidateDepthWeight-centerDepthWeight)<.5?1.0:0.0);
-        accumulated+=atmosphereTexture.Load(int3(candidate,0))*bilateralWeight;
-        accumulatedWeight+=bilateralWeight;
+        const precise float bilateralWeight=spatialWeight*(abs(candidateDepthWeight-centerDepthWeight)<.5?1.0:0.0);
+        const precise float4 atmosphereSample=atmosphereTexture.Load(int3(candidate,0));
+        accumulated=accumulated+atmosphereSample*bilateralWeight;
+        accumulatedWeight=accumulatedWeight+bilateralWeight;
     }
     if(accumulatedWeight>1e-6)
-        return accumulated/accumulatedWeight;
+    {
+        const precise float inverseAccumulatedWeight=CompositeDeterministicReciprocal(accumulatedWeight);
+        const precise float4 resolvedAtmosphere=accumulated*inverseAccumulatedWeight;
+        return resolvedAtmosphere;
+    }
     const uint2 fallback=min(uint2(localUv*atmosphereExtent),uint2(atmosphereWidth-1,atmosphereHeight-1));
     return atmosphereTexture.Load(int3(fallback,0));
 }

@@ -181,6 +181,105 @@ struct ShowcaseTerrainEcologyTint3D {
   ShowcaseTerrainBiome3D biome{ShowcaseTerrainBiome3D::Neutral};
 };
 
+struct ShowcaseTerrainBiomeWeights3D {
+  float cottagePath{}, leafLitter{}, riverWetSoil{};
+  friend constexpr bool
+  operator==(const ShowcaseTerrainBiomeWeights3D &,
+             const ShowcaseTerrainBiomeWeights3D &) = default;
+};
+
+// Terrain 的三層貼圖使用 world-space triplanar，正式地表原本的 UV 因而未被
+// 取樣。以 signed U 區分互斥的步道／濕土、V 保存落葉權重；(0,0) 明確代表
+// neutral。先夾限再正規化，惡意或插值輸入也不會令總權重超過一。
+[[nodiscard]] inline ShowcaseTerrainBiomeWeights3D
+NormalizeShowcaseTerrainBiomeWeights3D(
+    ShowcaseTerrainBiomeWeights3D value) noexcept {
+  const auto finiteWeight = [](float weight) {
+    return std::isfinite(weight) ? Aevrynd::Clamp(weight, 0.f, 1.f) : 0.f;
+  };
+  value.cottagePath = finiteWeight(value.cottagePath);
+  value.leafLitter = finiteWeight(value.leafLitter);
+  value.riverWetSoil = finiteWeight(value.riverWetSoil);
+  const float total =
+      value.cottagePath + value.leafLitter + value.riverWetSoil;
+  if (total > 1.f) {
+    const float inverse = 1.f / total;
+    value.cottagePath *= inverse;
+    value.leafLitter *= inverse;
+    value.riverWetSoil *= inverse;
+  }
+  return value;
+}
+
+[[nodiscard]] inline Aevrynd::Vec2 EncodeShowcaseTerrainBiomeUv3D(
+    ShowcaseTerrainBiomeWeights3D value) noexcept {
+  if (!std::isfinite(value.cottagePath) ||
+      !std::isfinite(value.leafLitter) ||
+      !std::isfinite(value.riverWetSoil))
+    return {};
+  value = NormalizeShowcaseTerrainBiomeWeights3D(value);
+  // signed U 無法同時無損表達 path 與 wet。正式採樣本來互斥；任何違反
+  // 契約的輸入整體 fail-neutral，禁止以相減掩蓋衝突資料。
+  if (value.cottagePath > 0.f && value.riverWetSoil > 0.f)
+    return {};
+  return {value.cottagePath - value.riverWetSoil, value.leafLitter};
+}
+
+[[nodiscard]] inline Aevrynd::Vec2 EncodeShowcaseTerrainBiomeUv3D(
+    const ShowcaseTerrainEcologyTint3D &value) noexcept {
+  return EncodeShowcaseTerrainBiomeUv3D(
+      ShowcaseTerrainBiomeWeights3D{value.cottagePath, value.leafLitter,
+                                    value.riverWetSoil});
+}
+
+[[nodiscard]] inline ShowcaseTerrainBiomeWeights3D
+DecodeShowcaseTerrainBiomeUv3D(Aevrynd::Vec2 encoded) noexcept {
+  if (!std::isfinite(encoded.x) || !std::isfinite(encoded.y))
+    return {};
+  return NormalizeShowcaseTerrainBiomeWeights3D(
+      {(std::max)(0.f, encoded.x), (std::max)(0.f, encoded.y),
+       (std::max)(0.f, -encoded.x)});
+}
+
+// signed U 的 path/wet 不能在同一三角形內跨號插值。兩者邊界剛好落在
+// refined terrain cell 時，保留該三角形較強的 authored 訊號，較弱一側
+// 退回明確 neutral。第一階段只讀 immutable 原始 U 並建立 zero mask，第二
+// 階段才一次清零；因此共享頂點的 collateral neutralization 不受 triangle
+// 順序影響。操作不改 ecology 門檻，也不把訊號擴張到原本沒有的頂點。
+inline void ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(
+    Aevrynd::Mesh3D &mesh) {
+  if (mesh.indices.size() % 3)
+    return;
+  constexpr float activeEpsilon = 1e-6f;
+  std::vector<std::uint8_t> zeroMask(mesh.vertices.size());
+  for (std::size_t offset = 0; offset < mesh.indices.size(); offset += 3) {
+    float minimumU = 1.f, maximumU = -1.f;
+    bool valid = true;
+    for (unsigned corner = 0; corner < 3; ++corner) {
+      const std::size_t index = mesh.indices[offset + corner];
+      if (index >= mesh.vertices.size()) {
+        valid = false;
+        break;
+      }
+      minimumU = (std::min)(minimumU, mesh.vertices[index].u);
+      maximumU = (std::max)(maximumU, mesh.vertices[index].u);
+    }
+    if (!valid || minimumU >= -activeEpsilon || maximumU <= activeEpsilon)
+      continue;
+    const bool preservePath = maximumU >= -minimumU;
+    for (unsigned corner = 0; corner < 3; ++corner) {
+      const std::size_t index = mesh.indices[offset + corner];
+      const float u = mesh.vertices[index].u;
+      if ((preservePath && u < -activeEpsilon) ||
+          (!preservePath && u > activeEpsilon))
+        zeroMask[index] = 1;
+    }
+  }
+  for (std::size_t index = 0; index < mesh.vertices.size(); ++index)
+    if (zeroMask[index])
+      mesh.vertices[index].u = 0.f;
+}
+
 struct ShowcaseTerrainDisturbance3D {
   Aevrynd::Color tint{1, 1, 1, 1};
   float heightDelta{}, weight{};
@@ -188,8 +287,9 @@ struct ShowcaseTerrainDisturbance3D {
 
 // 屋前步道由出生點至門廊的固定世界幾何定義；林下落葉與河岸濕土則由
 // 場景中的實際樹冠、河道位置決定。不以相機或畫面空間噪聲製造假細節。
-// 三種候選取唯一最高權重，因此材質訊號互斥且全部維持於 [0,1]。輸出只
-// 調 RGB，呼叫端保留高度場原有 alpha，也不新增 descriptor 或 draw call。
+// 三種候選取唯一最高權重，因此材質訊號互斥且全部維持於 [0,1]。呼叫端
+// 會將權重寫入 Terrain 專用 UV，並保留高度場原有 alpha；不新增 descriptor
+// 或 draw call。
 [[nodiscard]] inline ShowcaseTerrainEcologyTint3D
 SampleShowcaseTerrainEcologyTint3D(
     Aevrynd::Vec3 worldPosition,
@@ -285,6 +385,96 @@ SampleShowcaseTerrainEcologyTint3D(
                  1.f + (authoredTint.g - 1.f) * weight,
                  1.f + (authoredTint.b - 1.f) * weight, 1.f};
   return result;
+}
+
+// 必須在外環建立後呼叫，確保正式網格的每個頂點都有明確 biome 資料。
+// 外環不延伸遊戲區內的 authored biome；它只負責 God 鏡頭的遠景覆蓋。
+inline void ApplyShowcaseTerrainBiomeUv3D(
+    Aevrynd::Mesh3D &mesh, std::size_t authoredVertexCount,
+    std::span<const ShowcaseSceneDescriptor3D> descriptors) {
+  authoredVertexCount = (std::min)(authoredVertexCount, mesh.vertices.size());
+  for (std::size_t index = 0; index < mesh.vertices.size(); ++index) {
+    auto &vertex = mesh.vertices[index];
+    const auto encoded = index >= authoredVertexCount
+                             ? Aevrynd::Vec2{}
+                             : EncodeShowcaseTerrainBiomeUv3D(
+                                   SampleShowcaseTerrainEcologyTint3D(
+                                       {vertex.x, vertex.y, vertex.z},
+                                       descriptors));
+    vertex.u = encoded.x;
+    vertex.v = encoded.y;
+  }
+  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(mesh);
+}
+
+enum class ShowcaseTerrainBiomeUvFailure3D : std::uint8_t {
+  None,
+  InvalidMeshShape,
+  InvalidVertexEncoding,
+  InvalidWeightSum,
+  NonNeutralApron,
+  IndexOutOfRange,
+  CrossSignedTriangle
+};
+
+struct ShowcaseTerrainBiomeUvValidation3D {
+  ShowcaseTerrainBiomeUvFailure3D failure{
+      ShowcaseTerrainBiomeUvFailure3D::None};
+  std::size_t elementIndex{};
+  float minimumU{}, maximumU{};
+};
+
+[[nodiscard]] inline bool ValidateShowcaseTerrainBiomeUv3D(
+    const Aevrynd::Mesh3D &mesh, std::size_t authoredVertexCount,
+    ShowcaseTerrainBiomeUvValidation3D *validation = nullptr) noexcept {
+  if (validation)
+    *validation = {};
+  const auto reject = [&](ShowcaseTerrainBiomeUvFailure3D failure,
+                          std::size_t elementIndex, float minimumU = 0.f,
+                          float maximumU = 0.f) {
+    if (validation)
+      *validation = {failure, elementIndex, minimumU, maximumU};
+    return false;
+  };
+  if (authoredVertexCount > mesh.vertices.size() || mesh.indices.size() % 3)
+    return reject(ShowcaseTerrainBiomeUvFailure3D::InvalidMeshShape, 0);
+  for (std::size_t index = 0; index < mesh.vertices.size(); ++index) {
+    const auto &vertex = mesh.vertices[index];
+    if (!std::isfinite(vertex.u) || !std::isfinite(vertex.v) ||
+        vertex.u < -1.f || vertex.u > 1.f || vertex.v < 0.f ||
+        vertex.v > 1.f)
+      return reject(ShowcaseTerrainBiomeUvFailure3D::InvalidVertexEncoding,
+                    index, vertex.u, vertex.v);
+    const auto decoded =
+        DecodeShowcaseTerrainBiomeUv3D({vertex.u, vertex.v});
+    const float total = decoded.cottagePath + decoded.leafLitter +
+                        decoded.riverWetSoil;
+    if (!std::isfinite(total) || total > 1.f + 1e-6f ||
+        total < 0.f)
+      return reject(ShowcaseTerrainBiomeUvFailure3D::InvalidWeightSum, index,
+                    total, total);
+    if (index >= authoredVertexCount && (vertex.u != 0.f || vertex.v != 0.f))
+      return reject(ShowcaseTerrainBiomeUvFailure3D::NonNeutralApron, index,
+                    vertex.u, vertex.v);
+  }
+  // signed U 的正負兩側不可落在同一三角形，否則 path/wet 會在插值中央
+  // 相消為假 neutral seam。兩區本來互斥且空間分離；此 gate 將其鎖定。
+  constexpr float activeEpsilon = 1e-6f;
+  for (std::size_t offset = 0; offset < mesh.indices.size(); offset += 3) {
+    float minimumU = 1.f, maximumU = -1.f;
+    for (unsigned corner = 0; corner < 3; ++corner) {
+      const std::size_t index = mesh.indices[offset + corner];
+      if (index >= mesh.vertices.size())
+        return reject(ShowcaseTerrainBiomeUvFailure3D::IndexOutOfRange,
+                      offset / 3, float(index), float(mesh.vertices.size()));
+      minimumU = (std::min)(minimumU, mesh.vertices[index].u);
+      maximumU = (std::max)(maximumU, mesh.vertices[index].u);
+    }
+    if (minimumU < -activeEpsilon && maximumU > activeEpsilon)
+      return reject(ShowcaseTerrainBiomeUvFailure3D::CrossSignedTriangle,
+                    offset / 3, minimumU, maximumU);
+  }
+  return true;
 }
 
 // 倒木會壓低表土並在外緣推起一圈鬆土；腐殖與落葉的範圍取自實際倒木

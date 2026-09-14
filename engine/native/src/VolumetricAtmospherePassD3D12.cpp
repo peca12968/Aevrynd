@@ -489,6 +489,11 @@ bool VolumetricAtmospherePassD3D12::Record(
     sunY = .82f;
     sunZ = -.44f;
   }
+  const float normalizedSunLengthSquared = sunX * sunX + sunY * sunY + sunZ * sunZ;
+  const float inverseSunLength = 1.f / std::sqrt(normalizedSunLengthSquared);
+  sunX *= inverseSunLength;
+  sunY *= inverseSunLength;
+  sunZ *= inverseSunLength;
   D3D12_RESOURCE_BARRIER toWrite[2]{};
   for (auto &barrier : toWrite) {
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;

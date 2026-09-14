@@ -9,9 +9,16 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <utility>
 
 using namespace Aevrynd;
 using namespace GameplayLab;
+
+static_assert(!noexcept(ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(
+    std::declval<Mesh3D &>())));
+static_assert(!noexcept(ApplyShowcaseTerrainBiomeUv3D(
+    std::declval<Mesh3D &>(), std::size_t{},
+    std::span<const ShowcaseSceneDescriptor3D>{})));
 
 namespace {
 struct LightingRouteEvidence3D {
@@ -268,8 +275,8 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
   return tone.enabled && tone.dayExposureEv == .2f &&
          tone.duskExposureEv == .6f && tone.nightExposureEv >= 1.50f &&
          tone.nightExposureEv <= 1.52f && totalNightEv >= 1.35f &&
-         totalNightEv <= 1.37f && tone.shadowLift >= .028f &&
-         tone.shadowLift <= .034f && tone.toeStrength >= .30f &&
+         totalNightEv <= 1.37f && tone.shadowLift >= .038f &&
+         tone.shadowLift <= .042f && tone.toeStrength >= .30f &&
          tone.toeStrength <= .36f && tone.shoulderStrength >= 1.08f &&
          tone.shoulderStrength <= 1.18f;
 }
@@ -362,6 +369,49 @@ int main() {
               << dryGround.riverWetSoil << '/' << unsigned(dryGround.biome)
               << '\n';
     return 77;
+  }
+  const auto nearWeight = [](float left, float right) {
+    return std::abs(left - right) <= 1e-6f;
+  };
+  const auto encodedPath = EncodeShowcaseTerrainBiomeUv3D(cottagePath);
+  const auto encodedLeaf = EncodeShowcaseTerrainBiomeUv3D(canopyCenter);
+  const auto encodedWet = EncodeShowcaseTerrainBiomeUv3D(wetBank);
+  const auto decodedPath = DecodeShowcaseTerrainBiomeUv3D(encodedPath);
+  const auto decodedLeaf = DecodeShowcaseTerrainBiomeUv3D(encodedLeaf);
+  const auto decodedWet = DecodeShowcaseTerrainBiomeUv3D(encodedWet);
+  const auto decodedNeutral = DecodeShowcaseTerrainBiomeUv3D({0, 0});
+  const auto hostileWeights =
+      NormalizeShowcaseTerrainBiomeWeights3D({2.f, 0.f, .5f});
+  const auto nonFiniteEncoding = EncodeShowcaseTerrainBiomeUv3D(
+      ShowcaseTerrainBiomeWeights3D{
+          .5f, (std::numeric_limits<float>::quiet_NaN)(), 0.f});
+  const auto conflictingEncoding =
+      EncodeShowcaseTerrainBiomeUv3D(
+          ShowcaseTerrainBiomeWeights3D{.5f, 0.f, .2f});
+  const auto hostileUv = DecodeShowcaseTerrainBiomeUv3D({2.f, 2.f});
+  const auto invalidUv = DecodeShowcaseTerrainBiomeUv3D(
+      {(std::numeric_limits<float>::quiet_NaN)(), 1.f});
+  if (!(encodedPath.x > 0.f && encodedPath.y == 0.f) ||
+      !(encodedWet.x < 0.f && encodedWet.y == 0.f) ||
+      !(encodedLeaf.x == 0.f && encodedLeaf.y > 0.f) ||
+      !nearWeight(decodedPath.cottagePath, cottagePath.cottagePath) ||
+      !nearWeight(decodedLeaf.leafLitter, canopyCenter.leafLitter) ||
+      !nearWeight(decodedWet.riverWetSoil, wetBank.riverWetSoil) ||
+      decodedPath.leafLitter != 0.f || decodedPath.riverWetSoil != 0.f ||
+      decodedLeaf.cottagePath != 0.f || decodedLeaf.riverWetSoil != 0.f ||
+      decodedWet.cottagePath != 0.f || decodedWet.leafLitter != 0.f ||
+      decodedNeutral != ShowcaseTerrainBiomeWeights3D{} ||
+      !nearWeight(hostileWeights.cottagePath, 2.f / 3.f) ||
+      hostileWeights.leafLitter != 0.f ||
+      !nearWeight(hostileWeights.riverWetSoil, 1.f / 3.f) ||
+      nonFiniteEncoding.x != 0.f || nonFiniteEncoding.y != 0.f ||
+      conflictingEncoding.x != 0.f || conflictingEncoding.y != 0.f ||
+      !nearWeight(hostileUv.cottagePath + hostileUv.leafLitter +
+                      hostileUv.riverWetSoil,
+                  1.f) ||
+      invalidUv != ShowcaseTerrainBiomeWeights3D{}) {
+    std::cerr << "terrain biome UV encoding divergence\n";
+    return 78;
   }
   const ShowcaseSceneDescriptor3D fallenLog{
       ShowcaseSceneKind3D::Tree, {40, 0, 40}, {8, 6, 7}, .4f, 0, true,
@@ -546,6 +596,99 @@ int main() {
     if(!std::isfinite(v.y)||v.normal!=originalApron.vertices[0].normal||v.color!=0xff778899u||
         v.u!=v.x*.085f||v.v!=v.z*.085f||std::abs(v.x)>1024.f||std::abs(v.z)>1024.f)return 44;
   }
+  auto encodedApron = apron;
+  ApplyShowcaseTerrainBiomeUv3D(encodedApron, 129u * 129u, ecologyTrees);
+  if (!ValidateShowcaseTerrainBiomeUv3D(encodedApron, 129u * 129u))
+    return 79;
+  bool foundPath{}, foundLeaf{}, foundWet{}, foundNeutral{};
+  for (std::size_t i = 0; i < encodedApron.vertices.size(); ++i) {
+    const auto &before = apron.vertices[i];
+    const auto &after = encodedApron.vertices[i];
+    if (after.x != before.x || after.y != before.y || after.z != before.z ||
+        after.normal != before.normal || after.color != before.color)
+      return 79;
+    const auto decoded = DecodeShowcaseTerrainBiomeUv3D({after.u, after.v});
+    if (i >= 129u * 129u) {
+      if (after.u != 0.f || after.v != 0.f ||
+          decoded != ShowcaseTerrainBiomeWeights3D{})
+        return 80;
+      continue;
+    }
+    foundPath |= decoded.cottagePath > .2f;
+    foundLeaf |= decoded.leafLitter > .99f;
+    foundWet |= decoded.riverWetSoil > .6f;
+    foundNeutral |= decoded == ShowcaseTerrainBiomeWeights3D{};
+  }
+  if (!foundPath || !foundLeaf || !foundWet || !foundNeutral)
+    return 81;
+  Mesh3D crossSignTriangle{};
+  crossSignTriangle.vertices = {
+      {0, 0, 0, 0, 0, .8f, 0}, {1, 0, 0, 0, 0, -.7f, 0},
+      {0, 0, 1, 0, 0, 0, 0}};
+  crossSignTriangle.indices = {0, 1, 2};
+  ShowcaseTerrainBiomeUvValidation3D crossSignFailure{};
+  if (ValidateShowcaseTerrainBiomeUv3D(crossSignTriangle,
+                                        crossSignTriangle.vertices.size(),
+                                        &crossSignFailure) ||
+      crossSignFailure.failure !=
+          ShowcaseTerrainBiomeUvFailure3D::CrossSignedTriangle ||
+      crossSignFailure.elementIndex != 0 ||
+      crossSignFailure.minimumU != -.7f ||
+      crossSignFailure.maximumU != .8f)
+    return 82;
+  auto resolvedCrossSignTriangle = crossSignTriangle;
+  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(resolvedCrossSignTriangle);
+  if (!ValidateShowcaseTerrainBiomeUv3D(
+          resolvedCrossSignTriangle,
+          resolvedCrossSignTriangle.vertices.size()) ||
+      resolvedCrossSignTriangle.vertices[0].u != .8f ||
+      resolvedCrossSignTriangle.vertices[1].u != 0.f)
+    return 83;
+  Mesh3D sharedConflictForward{};
+  sharedConflictForward.vertices = {
+      {0, 0, 0, 0, 0, .8f, .1f},
+      {1, 0, 0, 0, 0, -.7f, .2f},
+      {2, 0, 0, 0, 0, .6f, .3f},
+      {1, 0, 1, 0, 0, 0.f, .4f},
+      {1, 0, 2, 0, 0, -.5f, .5f},
+      {2, 0, 2, 0, 0, -.2f, .6f}};
+  sharedConflictForward.indices = {0, 1, 3, 1, 2, 3, 1, 4, 5};
+  auto sharedConflictReverse = sharedConflictForward;
+  sharedConflictReverse.indices = {1, 4, 5, 1, 2, 3, 0, 1, 3};
+  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(sharedConflictForward);
+  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(sharedConflictReverse);
+  const auto exactVertices = [](const Mesh3D &left, const Mesh3D &right) {
+    if (left.vertices.size() != right.vertices.size())
+      return false;
+    for (std::size_t index = 0; index < left.vertices.size(); ++index) {
+      const auto &a = left.vertices[index];
+      const auto &b = right.vertices[index];
+      if (a.x != b.x || a.y != b.y || a.z != b.z ||
+          a.normal != b.normal || a.color != b.color || a.u != b.u ||
+          a.v != b.v)
+        return false;
+    }
+    return true;
+  };
+  if (!ValidateShowcaseTerrainBiomeUv3D(
+          sharedConflictForward, sharedConflictForward.vertices.size()) ||
+      !ValidateShowcaseTerrainBiomeUv3D(
+          sharedConflictReverse, sharedConflictReverse.vertices.size()) ||
+      !exactVertices(sharedConflictForward, sharedConflictReverse) ||
+      sharedConflictForward.vertices[0].u != .8f ||
+      sharedConflictForward.vertices[1].u != 0.f ||
+      sharedConflictForward.vertices[2].u != 0.f ||
+      sharedConflictForward.vertices[4].u != -.5f ||
+      sharedConflictForward.vertices[5].u != -.2f)
+    return 84;
+  auto tieConflict = crossSignTriangle;
+  tieConflict.vertices[0].u = .5f;
+  tieConflict.vertices[1].u = -.5f;
+  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(tieConflict);
+  if (!ValidateShowcaseTerrainBiomeUv3D(tieConflict,
+                                         tieConflict.vertices.size()) ||
+      tieConflict.vertices[0].u != .5f || tieConflict.vertices[1].u != 0.f)
+    return 85;
   // 正式河岸細分後會多出內部頂點；只要原世界邊界完整，外環仍必須建立。
   auto refinedApron=originalApron;
   refinedApron.vertices.push_back({.5f,.25f,.5f,PackNormalSnorm8({0,1,0}),0xff334455u,.1f,.2f});

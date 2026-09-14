@@ -265,6 +265,12 @@ struct EngineAtmosphereDiagnosticAccess3D {
         Engine& engine) {
         engine.WaitRendererIdle3D();
         return engine.renderer_ ? D3D12RendererAtmosphereDiagnosticAccess3D::CaptureVolumetricAtmosphereOutput(*engine.renderer_)
+                                 : std::nullopt;
+    }
+    static std::optional<D3D12RendererAtmosphereDiagnosticAccess3D::Capture3D> CaptureAtmosphereSceneSnapshot(
+        Engine& engine) {
+        engine.WaitRendererIdle3D();
+        return engine.renderer_ ? D3D12RendererAtmosphereDiagnosticAccess3D::CaptureAtmosphereSceneSnapshot(*engine.renderer_)
                                 : std::nullopt;
     }
 };

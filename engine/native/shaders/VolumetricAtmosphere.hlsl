@@ -4,6 +4,7 @@ Texture2D<float2> previousSegmentTexture : register(t2);
 ByteAddressBuffer blueNoiseBytes : register(t3);
 RWTexture2D<float4> currentAtmosphere : register(u0);
 RWTexture2D<float2> currentSegmentTexture : register(u1);
+#define AEVRYND_WORLD_RAY_DETERMINISTIC_NORMALIZE 1
 #include "WorldRayReconstruction.hlsli"
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
 RWStructuredBuffer<uint> temporalCounters : register(u2);
@@ -69,6 +70,36 @@ void DeterministicSinCos(float angle,out precise float sine,out precise float co
     const uint normalized=uint(quadrant)&3u;
     sine=normalized==0u?sinReduced:(normalized==1u?cosReduced:(normalized==2u?-sinReduced:-cosReduced));
     cosine=normalized==0u?cosReduced:(normalized==1u?-sinReduced:(normalized==2u?-cosReduced:sinReduced));
+}
+
+precise float DeterministicExp(float exponentValue)
+{
+    // 所有 production 呼叫都落在 [-80,20]。固定 ln(2) 範圍縮減、
+    // 七階多項式與 IEEE-754 指數位組裝，避免 vendor exp 特殊函式的
+    // 次正規值在相同輸入下偶發漂移 1 ULP。
+    precise const float x=clamp(exponentValue,-80.0,20.0);
+    precise const float scaled=x*1.4426950408889634;
+    const int binaryExponent=int(floor(scaled+.5));
+    precise const float reduced=x-float(binaryExponent)*.6931471805599453;
+    precise const float polynomial=1.0+reduced*(1.0+reduced*(.5+reduced*(.16666666666666667+reduced*(.041666666666666664+reduced*(.008333333333333333+reduced*(.001388888888888889+reduced*.0001984126984126984))))));
+    const float binaryScale=asfloat(uint(binaryExponent+127)<<23);
+    precise const float result=polynomial*binaryScale;
+    return result;
+}
+
+precise float DeterministicReciprocal(float value)
+{
+    // Production slab 僅接受有限且遠離零的 ray.y。固定 IEEE-754 初始值
+    // 與四次 Newton 疊代取代 vendor-dependent rcp；符號最後獨立還原。
+    if(!isfinite(value)||abs(value)<1e-20)return 0.0;
+    precise const float magnitude=abs(value);
+    precise float estimate=asfloat(0x7ef311c3u-asuint(magnitude));
+    estimate=estimate*(2.0-magnitude*estimate);
+    estimate=estimate*(2.0-magnitude*estimate);
+    estimate=estimate*(2.0-magnitude*estimate);
+    estimate=estimate*(2.0-magnitude*estimate);
+    precise const float result=value<0.0?-estimate:estimate;
+    return result;
 }
 
 precise float3 RotateNoise(float3 value,float angle,uint octave)
@@ -147,7 +178,10 @@ precise float HenyeyGreenstein(float cosine,float anisotropy)
 {
     precise const float g=clamp(anisotropy,-.8,.85),g2=g*g;
     precise const float denominator=max(1e-6,1.0+g2-2.0*g*clamp(cosine,-1.0,1.0));
-    precise const float result=(1.0-g2)/(12.5663706144*pow(denominator,1.5));
+    // 1.5 是固定指數；x*x*固定反平方根與 x*sqrt(x) 等價，並避開
+    // vendor-dependent pow / log / exp 特殊函式路徑。
+    precise const float denominatorPower=denominator*denominator*AevryndDeterministicInverseSqrt(denominator);
+    precise const float result=(1.0-g2)/(12.5663706144*denominatorPower);
     return result;
 }
 
@@ -176,11 +210,11 @@ precise float CloudSunTransmittance(float3 p,float3 sun,uint shadowSamples)
     if(cloudShadowsEnabled==0||cloudShadowStrength<=0.0)return 1.0;
     const uint count=clamp(shadowSamples,1u,8u);precise const float stepLength=max(8.0,cloudThickness/(float(count)*3.0));precise float depth=0;
     [loop] for(uint index=0;index<count;++index)depth+=CloudShadowField(p+sun*stepLength*(float(index)+.5))*.00135*stepLength;
-    precise const float result=lerp(1.0,exp(-min(depth,80.0)),saturate(cloudShadowStrength));
+    precise const float result=lerp(1.0,DeterministicExp(-min(depth,80.0)),saturate(cloudShadowStrength));
     return result;
 }
 
-precise float HeightFogExtinction(float height){precise const float result=heightFogDensity*exp(clamp(-heightFogFalloff*(height-heightFogBaseHeight),-20.0,20.0));return result;}
+precise float HeightFogExtinction(float height){precise const float result=heightFogDensity*DeterministicExp(clamp(-heightFogFalloff*(height-heightFogBaseHeight),-20.0,20.0));return result;}
 
 [numthreads(8,8,1)]
 void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
@@ -202,7 +236,8 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
     const float hardwareDepth=sceneDepthValid!=0?sceneDepthTexture.Load(int3(depthPixel,0)):1.0;float3 surfaceWorld;
     const bool surfaceValid=hardwareDepth<.999999&&AevryndReconstructWorldPosition(uv,hardwareDepth,inverseViewProjection,surfaceWorld);
     const float sceneDistance=surfaceValid?max(0.0,dot(surfaceWorld-rayOrigin,ray)):1e30;
-    const float inverseRayY=abs(ray.y)>1e-6?rcp(ray.y):0.0,slab0=(cloudBaseAltitude-rayOrigin.y)*inverseRayY,slab1=(cloudBaseAltitude+cloudThickness-rayOrigin.y)*inverseRayY;
+    precise const float inverseRayY=abs(ray.y)>1e-6?DeterministicReciprocal(ray.y):0.0;
+    precise const float slab0=(cloudBaseAltitude-rayOrigin.y)*inverseRayY,slab1=(cloudBaseAltitude+cloudThickness-rayOrigin.y)*inverseRayY;
     const float layerEntry=min(slab0,slab1),layerExit=max(slab0,slab1);
     float pathCap=cloudMaximumDistance,pathFade=smoothstep(0.0,clamp(cloudThickness*.12,32.0,256.0),cloudMaximumDistance-max(0.0,layerEntry));
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
@@ -216,7 +251,8 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
     const bool diagnosticRepresentative=temporalDiagnosticsEnabled!=0&&(id.x&7)==0&&(id.y&7)==0;
     if(!segmentValid&&diagnosticRepresentative)InterlockedAdd(temporalCounters[2],1);
 #endif
-    precise const float3 sun=normalize(sunDirection);precise const float phaseValue=HenyeyGreenstein(dot(ray,sun),lightShaftAnisotropy);precise const float jitter=BlueR2Jitter(id.xy,temporalSampleIndex);
+    // CPU 端已用目前 constants 的精確位元正規化，避免 shader-model normalize/rsq。
+    precise const float3 sun=sunDirection;precise const float phaseValue=HenyeyGreenstein(dot(ray,sun),lightShaftAnisotropy);precise const float jitter=BlueR2Jitter(id.xy,temporalSampleIndex);
     precise const float phaseSunScale=phase==0?1.0:(phase==1?.58:.08),phaseAmbientScale=phase==0?1.0:(phase==1?.62:.14);
     precise float cloudT=1.0;precise float3 cloudL=0;precise float integratedCloudOpticalDepth=0;
     if(cloudValid)
@@ -230,7 +266,7 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
             if(testMutation==6)opticalDepth=density*.105*segmentLength/max(1.0,cloudThickness);
 #endif
-            precise const float stepT=exp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
+            precise const float stepT=DeterministicExp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
             precise const float sunT=CloudSunTransmittance(p,sun,cloudShadowSampleCount);precise float3 incident=ambientRadiance*phaseAmbientScale+sunRadiance*sunRadianceIntensity*phaseSunScale*sunT*phaseValue;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
             // 中文：只歸零夜間雲層入射光，保留消光累積以驗證 opacity 路徑沒有被旁路。
@@ -246,7 +282,7 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
         [loop] for(uint index=0;index<count;++index)
         {
             precise const float distance=stepLength*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float sigmaT=HeightFogExtinction(p.y),sigmaS=sigmaT*.9;
-            precise const float stepT=exp(-min(sigmaT*stepLength,80.0)),scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
+            precise const float stepT=DeterministicExp(-min(sigmaT*stepLength,80.0)),scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
             precise const float cloudToSun=CloudSunTransmittance(p,sun,cloudShadowSampleCount),visibility=lerp(1.0,cloudToSun,saturate(lightShaftShadowStrength));
             shaftL+=fogT*scatter*sunRadiance*sunRadianceIntensity*phaseSunScale*visibility*phaseValue*lightShaftIntensity;fogT*=stepT;
         }
