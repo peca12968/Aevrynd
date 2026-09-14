@@ -234,12 +234,17 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
       descriptor.meshAsset = "poly-haven/" + id + "/cooked-lod";
       descriptor.materialAsset = "poly-haven/" + id + "/cooked-pbr";
     } else {
+      const auto form = ShowcaseUnderstoryFormVariation(placement);
+      descriptor.scale = {descriptor.scale.x * form.scaleMultiplier.x,
+                          descriptor.scale.y * form.scaleMultiplier.y,
+                          descriptor.scale.z * form.scaleMultiplier.z};
+      descriptor.yaw += form.yawOffset;
       descriptor.kind = ShowcaseSceneKind3D::Grass;
       descriptor.meshAsset = id;
       descriptor.materialAsset =
           placement.zone == ShowcaseLandZone3D::Riverbank
               ? "poly-haven/stony_dirt_path/cooked-pbr"
-              : placement.zone == ShowcaseLandZone3D::Grove
+              : placement.zone == ShowcaseLandZone3D::Upland
                     ? "poly-haven/forest_ground_04/cooked-pbr"
                     : "ambientcg/Ground108/cooked-pbr";
     }
@@ -547,7 +552,11 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   }
   draw.SetEnvironmentLightingBlend(environmentBlend);
   Aevrynd::TimeOfDayExposureSettings3D timeOfDayExposure{};
-  if (profile == ShowcaseLightingProfile3D::Night) {
+  if (profile == ShowcaseLightingProfile3D::Dusk) {
+    // 森林地被改用正確的深色材質後，黃昏中間調需要少量補償，才能維持
+    // 日／昏／夜的清楚亮度階層；只調整黃昏相位，避免抬亮夜景。
+    timeOfDayExposure.duskExposureEv = .66f;
+  } else if (profile == ShowcaseLightingProfile3D::Night) {
     // 夜間不沿用預設 +2 EV：壓住月光與小屋高光，同時只在 tone curve
     // 暗部提供有限 lift，讓林地輪廓可讀而不抬高整個畫面。
     timeOfDayExposure.nightExposureEv = 1.50f;

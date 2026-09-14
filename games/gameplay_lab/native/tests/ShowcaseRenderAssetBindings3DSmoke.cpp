@@ -463,7 +463,7 @@ int main(int argc, char **argv) {
       !load.descriptorOrderDeterministic ||
       load.requiredAssetIdentityMask != 0x3ffu ||
       load.terrainLayerDescriptors !=
-          std::array<std::size_t, 3>{1, 124, 62} ||
+          std::array<std::size_t, 3>{63, 62, 62} ||
       load.assetIdentityFingerprint !=
           ShowcaseAssetIdentityFingerprint3D(world.Descriptors()) ||
       !std::ranges::equal(bindings.VisibleAssetIds(), expectedVisible) ||

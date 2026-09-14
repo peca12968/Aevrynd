@@ -168,6 +168,67 @@ bool TreeFormVariationContract(
          heightRange[2][1] < heightRange[0][1];
 }
 
+bool UnderstoryFormVariationContract(
+    const std::vector<ShowcaseLandPlacement3D> &placements,
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
+  if (descriptors.size() != placements.size() + 8u) return false;
+  std::array<unsigned, 3> counts{};
+  std::array<float, 3> horizontalCoverageSums{};
+  std::array<bool, 3> bands{};
+  for (std::size_t index = 0; index < placements.size(); ++index) {
+    const auto &placement = placements[index];
+    if (placement.kind != ShowcaseLandKind3D::Grass) continue;
+    const auto form = ShowcaseUnderstoryFormVariation(placement);
+    const auto repeated = ShowcaseUnderstoryFormVariation(placement);
+    const auto &descriptor = descriptors[index + 2u];
+    if (form.scaleMultiplier.x != repeated.scaleMultiplier.x ||
+        form.scaleMultiplier.y != repeated.scaleMultiplier.y ||
+        form.scaleMultiplier.z != repeated.scaleMultiplier.z ||
+        form.yawOffset != repeated.yawOffset ||
+        form.scaleMultiplier.x <= 0.f || form.scaleMultiplier.x > 1.34f ||
+        form.scaleMultiplier.z <= 0.f || form.scaleMultiplier.z > 1.34f ||
+        form.scaleMultiplier.y < .70f || form.scaleMultiplier.y > 1.62f ||
+        descriptor.position.x != placement.position.x ||
+        descriptor.position.y != placement.position.y ||
+        descriptor.position.z != placement.position.z ||
+        descriptor.scale.x != placement.scale.x * form.scaleMultiplier.x ||
+        descriptor.scale.y != placement.scale.y * form.scaleMultiplier.y ||
+        descriptor.scale.z != placement.scale.z * form.scaleMultiplier.z ||
+        descriptor.yaw != placement.yaw + form.yawOffset)
+      return false;
+    const auto band = std::uint32_t(placement.band);
+    if (band >= bands.size()) return false;
+    bands[band] = true;
+    std::size_t zone{};
+    if (placement.zone == ShowcaseLandZone3D::Riverbank) {
+      zone = 0;
+      const float z = placement.position.z;
+      const float tangentYaw = std::atan2(
+          1.f, .175f * std::cos(z * .035f) + .022f * std::cos(z * .011f));
+      if (std::abs(std::remainder(descriptor.yaw - tangentYaw,
+                                  6.2831853071795864769f)) > .121f)
+        return false;
+    } else if (placement.zone == ShowcaseLandZone3D::Meadow) {
+      zone = 1;
+    } else if (placement.zone == ShowcaseLandZone3D::Upland) {
+      zone = 2;
+    } else {
+      return false;
+    }
+    ++counts[zone];
+    horizontalCoverageSums[zone] +=
+        form.scaleMultiplier.x * form.scaleMultiplier.z;
+  }
+  if (counts != std::array<unsigned, 3>{62, 62, 62} ||
+      !std::ranges::all_of(bands, [](bool value) { return value; }))
+    return false;
+  const float riverCoverage = horizontalCoverageSums[0] / float(counts[0]);
+  const float meadowCoverage = horizontalCoverageSums[1] / float(counts[1]);
+  const float uplandCoverage = horizontalCoverageSums[2] / float(counts[2]);
+  return riverCoverage >= .86f && meadowCoverage >= 1.f &&
+         uplandCoverage > meadowCoverage;
+}
+
 template <std::size_t Size>
 std::uint64_t InventoryHash(const std::array<std::string_view, Size> &values) {
   std::uint64_t hash = 14695981039346656037ull;
@@ -732,7 +793,8 @@ int main() {
     return 78;
   std::vector<ShowcaseLandPlacement3D> treePlacements;
   if (!BuildShowcaseLandEcology3D({}, treePlacements) ||
-      !TreeFormVariationContract(treePlacements, first.Descriptors()))
+      !TreeFormVariationContract(treePlacements, first.Descriptors()) ||
+      !UnderstoryFormVariationContract(treePlacements, first.Descriptors()))
     return 84;
   auto collapsedTreeDescriptors = first.Descriptors();
   for (auto &descriptor : collapsedTreeDescriptors)
@@ -897,10 +959,24 @@ int main() {
   std::array<std::size_t, 3> terrainLayers{};
   std::size_t grassDescriptors = 0;
   std::size_t shadowCastingGrassDescriptors = 0;
+  bool grassBiomeMaterialsExact = true;
   for (const auto &descriptor : first.Descriptors()) {
     if (descriptor.kind == ShowcaseSceneKind3D::Grass) {
       ++grassDescriptors;
       shadowCastingGrassDescriptors += descriptor.castsShadow ? 1u : 0u;
+      if (descriptor.meshAsset == "procedural/grass-blade")
+        grassBiomeMaterialsExact &=
+            descriptor.materialAsset.find("stony_dirt_path") !=
+            std::string::npos;
+      else if (descriptor.meshAsset == "procedural/grass-fan")
+        grassBiomeMaterialsExact &=
+            descriptor.materialAsset.find("Ground108") != std::string::npos;
+      else if (descriptor.meshAsset == "procedural/grass-tuft")
+        grassBiomeMaterialsExact &=
+            descriptor.materialAsset.find("forest_ground_04") !=
+            std::string::npos;
+      else
+        grassBiomeMaterialsExact = false;
     }
     if (descriptor.materialAsset.find("forest_ground_04") != std::string::npos)
       ++terrainLayers[0];
@@ -909,8 +985,9 @@ int main() {
     else if (descriptor.materialAsset.find("stony_dirt_path") != std::string::npos)
       ++terrainLayers[2];
   }
-  if (terrainLayers != std::array<std::size_t, 3>{1, 124, 62} ||
-      grassDescriptors != 186 || shadowCastingGrassDescriptors != 0)
+  if (terrainLayers != std::array<std::size_t, 3>{63, 62, 62} ||
+      grassDescriptors != 186 || shadowCastingGrassDescriptors != 0 ||
+      !grassBiomeMaterialsExact)
     return 32;
 
   constexpr Vec3 heroCenter{-16.f, 0.f, 8.f};
@@ -1011,13 +1088,16 @@ int main() {
   if (draw.VolumetricAtmospherePhase() != VolumetricAtmospherePhase3D::Night)
     return 22;
   const TimeOfDayExposureSettings3D defaultToneCurve{};
+  auto expectedDuskToneCurve = defaultToneCurve;
+  expectedDuskToneCurve.duskExposureEv = .66f;
   auto unboundedNightToneCurve = nightToneCurve;
   unboundedNightToneCurve.nightExposureEv = 2.f;
   auto previousBrightNightToneCurve = nightToneCurve;
   previousBrightNightToneCurve.nightExposureEv = 1.65f;
   auto crushedNightToneCurve = nightToneCurve;
   crushedNightToneCurve.shadowLift = .08f;
-  if (dayToneCurve != defaultToneCurve || duskToneCurve != defaultToneCurve ||
+  if (dayToneCurve != defaultToneCurve ||
+      duskToneCurve != expectedDuskToneCurve ||
       !NightToneCurveBalanced(nightToneCurve, night) ||
       NightToneCurveBalanced(defaultToneCurve, night) ||
       NightToneCurveBalanced(unboundedNightToneCurve, night) ||

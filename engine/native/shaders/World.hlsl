@@ -1020,6 +1020,17 @@ float3 BlendTerrainGrassAlbedo(float3 primary, float3 secondary, float blend)
     return targetLuma > 0.0 && mixedLuma > 0.000001 ? mixed * (targetLuma / mixedLuma) : mixed;
 }
 
+float TerrainWetShoreBlend(float authoredWeight, float breakupSignal)
+{
+    // signed authored UV 決定河岸範圍；世界空間連續雜訊只破碎過渡帶。
+    // 乘上 4*w*(1-w) 令純乾地／純濕土端點仍精確為 0/1，不會讓濕土
+    // 穿越美術指定的邊界，也不依賴相機、畫面像素或時間。
+    const float weight = saturate(authoredWeight);
+    const float edge = saturate(weight + (saturate(breakupSignal) - 0.5) * 0.24
+                                      * (4.0 * weight * (1.0 - weight)));
+    return edge * edge * (3.0 - 2.0 * edge);
+}
+
 float WaterFoamCoverage3D(float2 worldXZ, float time)
 {
     // 固定兩次連續值雜訊，採不同旋轉與非整比尺度，避免單格網沿河面重複。
@@ -1643,7 +1654,7 @@ float3 WaterDeterministicNormalize3D(float3 value)
     return value * inverseLength;
 }
 
-float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float amplitude, float speed, float2 direction)
+float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float amplitude, float speed, float2 direction, float phaseOffset)
 {
     // 四個非整比、不同方向的解析波共同形成水面；高度與偏導使用完全相同
     // 的相位，因此法線仍是實際高度場的導數，而不是後製擾動。單一正弦波
@@ -1651,11 +1662,11 @@ float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float am
     const precise float waveNumber = max(waveScale, 0.001) * 6.28318530718;
     const precise float boundedAmplitude = clamp(amplitude, 0.0, 0.3);
     const precise float2 perpendicular = float2(-direction.y, direction.x);
-    // 林間河流的波峰需要有橫向變化，但不能把近垂直與反向分量等權
-    // 疊成規則方格。三個次方向都保留正向流速，只在主流向兩側展開。
-    const precise float2 direction1 = direction * 0.939692621 + perpendicular * 0.342020143;
-    const precise float2 direction2 = direction * 0.819152044 - perpendicular * 0.573576436;
-    const precise float2 direction3 = direction * 0.681998360 + perpendicular * 0.731353702;
+    // 以河流 tangent 為主要能量軸，僅加入受限橫向分量；舊版 ±35~47 度
+    // 的等權展開會讓四組頻譜交會成規律菱形高光。
+    const precise float2 direction1 = direction * 0.978147601 + perpendicular * 0.207911691;
+    const precise float2 direction2 = direction * 0.945518576 - perpendicular * 0.325568154;
+    const precise float2 direction3 = direction * 0.874619707 + perpendicular * 0.484809620;
     const precise float waveNumber0 = waveNumber * 0.73;
     const precise float waveNumber1 = waveNumber;
     const precise float waveNumber2 = waveNumber * 1.37;
@@ -1670,28 +1681,30 @@ float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float am
     projected3 = projected3 + direction3.y * worldXZ.y;
     precise float phase0 = waveNumber0 * projected0;
     phase0 = phase0 - (speed * 0.83) * time;
+    phase0 = phase0 + phaseOffset;
     precise float phase1 = waveNumber1 * projected1;
     phase1 = phase1 - speed * time;
-    phase1 = phase1 + 1.7;
+    phase1 = phase1 + 1.7 + phaseOffset * 1.37;
     precise float phase2 = waveNumber2 * projected2;
     phase2 = phase2 - (speed * 1.19) * time;
-    phase2 = phase2 + 4.1;
+    phase2 = phase2 + 4.1 + phaseOffset * 0.73;
     precise float phase3 = waveNumber3 * projected3;
     phase3 = phase3 - (speed * 1.43) * time;
-    phase3 = phase3 + 2.4;
+    phase3 = phase3 + 2.4 + phaseOffset * 1.91;
     const precise float2 wave0 = WaterDeterministicSinCos3D(phase0);
     const precise float2 wave1 = WaterDeterministicSinCos3D(phase1);
     const precise float2 wave2 = WaterDeterministicSinCos3D(phase2);
     const precise float2 wave3 = WaterDeterministicSinCos3D(phase3);
-    const precise float componentAmplitude = boundedAmplitude * 0.25;
-    const precise float slope0 = componentAmplitude * waveNumber0 * wave0.y;
-    const precise float slope1 = componentAmplitude * waveNumber1 * wave1.y;
-    const precise float slope2 = componentAmplitude * waveNumber2 * wave2.y;
-    const precise float slope3 = componentAmplitude * waveNumber3 * wave3.y;
-    precise float heightSum = wave0.x + wave1.x;
-    heightSum = heightSum + wave2.x;
-    heightSum = heightSum + wave3.x;
-    const precise float height = componentAmplitude * heightSum;
+    // 非等權能譜讓順流長波承擔主要形狀，高頻只提供細碎法線；總權重為 1，
+    // 高度仍嚴格受 amplitude 上限約束。
+    const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);
+    const precise float slope0 = boundedAmplitude * componentWeights.x * waveNumber0 * wave0.y;
+    const precise float slope1 = boundedAmplitude * componentWeights.y * waveNumber1 * wave1.y;
+    const precise float slope2 = boundedAmplitude * componentWeights.z * waveNumber2 * wave2.y;
+    const precise float slope3 = boundedAmplitude * componentWeights.w * waveNumber3 * wave3.y;
+    precise float height = wave0.x * componentWeights.x + wave1.x * componentWeights.y;
+    height = height + wave2.x * componentWeights.z + wave3.x * componentWeights.w;
+    height = boundedAmplitude * height;
     precise float2 gradient = direction * slope0;
     gradient = gradient + direction1 * slope1;
     gradient = gradient + direction2 * slope2;
@@ -1897,7 +1910,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     [branch] if (terrainMask > 0.5)
     {
         const float macroNoise = CloudNoise(input.worldPosition.xz * 0.021);
-        const float microNoise = CloudHash(int2(floor(input.worldPosition.xz * 3.2)));
+        // 連續值雜訊取代整格跳變的 hash；維持確定性，同時避免近地表出現
+        // 約 31cm 的方格色塊。
+        const float microNoise = CloudNoise(input.worldPosition.xz * 3.2);
         const float terrainCameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
         float terrainDetailWeight = 1.0;
         float distanceMacroVariation = 1.0;
@@ -1952,39 +1967,51 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 原 procedural slope/height/noise 路徑。
             [branch] if (authoredBiomeWeight > 0.0)
             {
+                const float2 wetBreakupCoordinate = float2(
+                    input.worldPosition.x * 0.8 - input.worldPosition.z * 0.6,
+                    input.worldPosition.x * 0.6 + input.worldPosition.z * 0.8);
+                const float wetBreakup = CloudNoise(input.worldPosition.xz * 0.31 + float2(7.1, -3.7)) * 0.65
+                                       + CloudNoise(wetBreakupCoordinate * 0.83 + float2(-11.3, 5.9)) * 0.35;
+                authoredWetSoilWeight = TerrainWetShoreBlend(authoredBiomeWeights.z, wetBreakup);
+                const float3 shapedAuthoredBiomeWeights = float3(
+                    authoredBiomeWeights.x, authoredBiomeWeights.y, authoredWetSoilWeight);
+                const float shapedAuthoredBiomeWeight = shapedAuthoredBiomeWeights.x
+                                                      + shapedAuthoredBiomeWeights.y
+                                                      + shapedAuthoredBiomeWeights.z;
                 // path 壓實 soil 並保留少量 gravel/rock；leaf litter 以森林層
                 // 為主；wet soil 使用土壤層。三者共用既有三套 PBR sample。
                 const float3 pathTarget = float3(0.04, 0.78, 0.18);
                 const float3 leafTarget = float3(0.86, 0.14, 0.0);
                 const float3 wetSoilTarget = float3(0.04, 0.96, 0.0);
                 const float3 authoredLayerTarget =
-                    (authoredBiomeWeights.x * pathTarget +
-                     authoredBiomeWeights.y * leafTarget +
-                     authoredBiomeWeights.z * wetSoilTarget) /
-                    authoredBiomeWeight;
+                    (shapedAuthoredBiomeWeights.x * pathTarget +
+                     shapedAuthoredBiomeWeights.y * leafTarget +
+                     shapedAuthoredBiomeWeights.z * wetSoilTarget) /
+                    max(0.000001, shapedAuthoredBiomeWeight);
                 float3 materialWeights = saturate(lerp(
                     float3(grassWeight, soilWeight, rockWeight),
-                    authoredLayerTarget, saturate(authoredBiomeWeight)));
+                    authoredLayerTarget, saturate(shapedAuthoredBiomeWeight)));
                 materialWeights /= max(0.000001,
                     materialWeights.x + materialWeights.y + materialWeights.z);
                 grassWeight = materialWeights.x;
                 soilWeight = materialWeights.y;
                 rockWeight = materialWeights.z;
-                authoredWetSoilWeight = authoredBiomeWeights.z;
             }
         }
         if (input.textureData.x > 0.5)
         {
             // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
             float3 grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
+            float grassDualDomainBlend = 0.0;
             // 額外取樣僅在 grass 確實主導時發生；smoothstep 從零淡入，避免群落
-            // 邊界跳接。ARM 與 normal 仍維持單域，因此既有表面能量及細節門檻不變。
+            // 邊界跳接。同一權重稍後也套到 ARM 與 normal，避免顏色、粗糙度和
+            // 凹凸彼此滑動而形成塑膠般的平面。
             [branch] if (terrainDecorrelationEnabled && TerrainMesoPartitionEnabled() && grassWeight > 0.45)
             {
                 const float3 secondaryGrassColor = Triplanar(baseColorTexture, TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.y).rgb;
                 const float grassDominance = smoothstep(0.45, 0.72, grassWeight);
-                grassColor = BlendTerrainGrassAlbedo(grassColor, secondaryGrassColor,
-                    TerrainGrassDualDomainBlend(input.worldPosition.xz) * grassDominance);
+                grassDualDomainBlend = TerrainGrassDualDomainBlend(input.worldPosition.xz) * grassDominance;
+                grassColor = BlendTerrainGrassAlbedo(grassColor, secondaryGrassColor, grassDualDomainBlend);
             }
             const float3 soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
             const float3 rockColor = Triplanar(rockBaseColorTexture, rockSamplePosition, geometricNormal, input.textureData.y).rgb;
@@ -1994,19 +2021,31 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             [branch] if (terrainDetailWeight > 0.001)
             {
                 // surface map 固定為 R=AO、G=roughness、B=metallic；A 不參與材質能量。
-                const float4 grassSurface=Triplanar(roughnessTexture,grassSamplePosition,geometricNormal,input.textureData.z);
+                float4 grassSurface=Triplanar(roughnessTexture,grassSamplePosition,geometricNormal,input.textureData.z);
                 const float4 soilSurface=Triplanar(soilRoughnessTexture,soilSamplePosition,geometricNormal,input.textureData.z);
                 const float4 rockSurface=Triplanar(rockRoughnessTexture,rockSamplePosition,geometricNormal,input.textureData.z);
+                [branch] if (grassDualDomainBlend > 0.0)
+                {
+                    const float4 secondaryGrassSurface = Triplanar(roughnessTexture,
+                        TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
+                    grassSurface = lerp(grassSurface, secondaryGrassSurface, grassDualDomainBlend);
+                }
                 const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
                 terrainSurface=lerp(1.0,sampledSurface,terrainDetailWeight);
-                const float3 grassNormal = TriplanarNormalFrom(normalTexture, grassSamplePosition, geometricNormal, input.textureData.z);
+                float3 grassNormal = TriplanarNormalFrom(normalTexture, grassSamplePosition, geometricNormal, input.textureData.z);
                 const float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, soilSamplePosition, geometricNormal, input.textureData.z);
                 const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, rockSamplePosition, geometricNormal, input.textureData.z);
+                [branch] if (grassDualDomainBlend > 0.0)
+                {
+                    const float3 secondaryGrassNormal = TriplanarNormalFrom(normalTexture,
+                        TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
+                    grassNormal = normalize(lerp(grassNormal, secondaryGrassNormal, grassDualDomainBlend));
+                }
                 const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
                 terrainNormal=normalize(lerp(geometricNormal,sampledNormal,saturate(terrainDetailWeight*terrainNormalDetailStrength)));
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
-            const float microVariation=lerp(1.0,lerp(0.94,1.06,microNoise),terrainDetailWeight);
+            const float microVariation=lerp(1.0,lerp(0.92,1.08,microNoise),terrainDetailWeight);
             const float3 originalTerrainAlbedo = grassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * rockWeight;
             float3 terrainAlbedo = grassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight;
             [branch] if (TerrainMesoPartitionEnabled())
@@ -2048,7 +2087,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 ? ApplyTerrainChromaVariation(terrainTint, terrainChromaNoise,
                     DecodeTerrainDecorrelation(25u, 0.0, 0.2))
                 : terrainTint;
-            baseColor *= decorrelatedTerrainTint * lerp(0.94, 1.06, microNoise) * distanceMacroVariation;
+            baseColor *= decorrelatedTerrainTint * lerp(0.92, 1.08, microNoise) * distanceMacroVariation;
             roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74) * (1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)), 0.045, 1.0);
         }
         [branch] if (authoredWetSoilWeight > 0.0)
@@ -2210,12 +2249,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
-            // 四個尺度錨點共享順流半球；波長與能量完全不變，只移除會在
-            // God 視角形成棋盤交點的對向干涉。
-            const precise float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, float2(0.28, 0.96));
-            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, float2(-0.38, 0.925));
-            const precise float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, float2(0.61, 0.792));
-            const precise float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, float2(-0.18, 0.984));
+            // 場景河道的主軸約為 +Z；以固定正交 frame 組合順流／橫向波，
+            // 每一頻譜使用不同相位原點，避免四組重播相同相位格。
+            const precise float2 riverTangent = float2(0.28, 0.96);
+            const precise float2 riverAcross = float2(-0.96, 0.28);
+            const precise float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, riverTangent, 0.31);
+            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, riverTangent * 0.923879533 + riverAcross * 0.382683432, 2.03);
+            const precise float3 detailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, riverTangent * 0.965925826 - riverAcross * 0.258819045, 4.79);
+            const precise float3 crossDetailWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, riverTangent * 0.866025404 + riverAcross * 0.5, 7.31);
             const precise float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
             const precise float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31);
             const precise float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);
@@ -2223,16 +2264,16 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 四組各含四個非共線分量的解析高度場分散主要方向。每組偏導
             // 與高度共用相位，遠景亦各自依像素世界足跡衰減；不採跨程序
             // 可能落在不同半精度邊界的格點雜訊梯度。
-            precise float2 heightGradient = broadWave.yz * broadBandLimit * 0.75;
-            heightGradient = heightGradient + crossWave.yz * crossBandLimit;
-            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.36;
-            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.90;
+            precise float2 heightGradient = broadWave.yz * broadBandLimit * 0.62;
+            heightGradient = heightGradient + crossWave.yz * crossBandLimit * 0.24;
+            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.16;
+            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.08;
             // Material3D already carries the authored normal amplitude. The water path
             // previously ignored it, so distant river pixels used only half of the
             // intended analytic slope and collapsed into a flat translucent sheet.
             // Scale the real height derivative after per-band filtering; this keeps
             // sub-pixel waves suppressed and does not introduce screen-space noise.
-            const precise float waterNormalScale = clamp(input.normalScale, 0.0, 2.25);
+            const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);
             heightGradient = heightGradient * waterNormalScale;
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
             waterDiagnosticHeightGradient = heightGradient;

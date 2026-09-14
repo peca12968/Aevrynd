@@ -34,6 +34,11 @@ struct ShowcaseTreeFormVariation3D {
   float yawOffset{};
 };
 
+struct ShowcaseUnderstoryFormVariation3D {
+  Aevrynd::Vec3 scaleMultiplier{1.f, 1.f, 1.f};
+  float yawOffset{};
+};
+
 // 同一棵來源樹仍維持原 material、descriptor、collision 與 HLOD identity；
 // 只由 placement 的永久 stableKey、距離帶與既有樹種選出有限輪廓變化。
 // 水平尺度只縮不放，避免新增樹冠／碰撞重疊；林緣的 Far 樹略矮，讓
@@ -59,6 +64,50 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
                                         : .94f + .16f * v);
   const float depth = canopy * (.88f + .12f * v);
   return {{canopy, height, depth}, (u - .5f) * .42f};
+}
+
+// 固定 186 個地被 descriptor 不增量；只以既有 stableKey、生境與距離帶
+// 形成三種可讀輪廓。河岸葉片較高且順著河道切線排列，草甸維持開闊扇形，
+// 林下叢則形成樹根周圍的連續中低層。草是明確 non-solid，placement 仍是
+// 碰撞／步行淨空權威；Near/Mid 葉片僅允許受限外伸（<=1.34），不改 HLOD
+// identity、descriptor/draw budget 或任何實體碰撞代理。
+[[nodiscard]] inline ShowcaseUnderstoryFormVariation3D
+ShowcaseUnderstoryFormVariation(
+    const ShowcaseLandPlacement3D &placement) noexcept {
+  if (placement.kind != ShowcaseLandKind3D::Grass || !placement.stableKey)
+    return {};
+  const float u = float((placement.stableKey >> 8u) & 0xffffu) / 65535.f;
+  const float v = float((placement.stableKey >> 32u) & 0xffffu) / 65535.f;
+  const float bandHeight = placement.band == ShowcaseLandBand3D::Far
+                               ? .92f
+                           : placement.band == ShowcaseLandBand3D::Mid
+                               ? .97f
+                               : 1.f;
+  const float bandCoverage = placement.band == ShowcaseLandBand3D::Near
+                                 ? 1.12f
+                             : placement.band == ShowcaseLandBand3D::Mid
+                                 ? 1.07f
+                                 : 1.f;
+  if (placement.zone == ShowcaseLandZone3D::Riverbank) {
+    const float z = placement.position.z;
+    const float riverDerivative =
+        .175f * std::cos(z * .035f) + .022f * std::cos(z * .011f);
+    const float tangentYaw = std::atan2(1.f, riverDerivative);
+    const float targetYaw = tangentYaw + (u - .5f) * .24f;
+    return {{.78f + .12f * u, bandHeight * (1.28f + .34f * v),
+             bandCoverage * (1.02f + .14f * v)},
+            std::remainder(targetYaw - placement.yaw,
+                           6.2831853071795864769f)};
+  }
+  if (placement.zone == ShowcaseLandZone3D::Meadow)
+    return {{bandCoverage * (.98f + .16f * u), 1.f,
+             bandCoverage * (.90f + .16f * v)},
+            (u - .5f) * .64f};
+  // Upland 是樹根周圍的正式林下生境；蕨／灌木網格以公尺建模，正式
+  // submission 會維持 Y=1，這裡只調整葉冠的水平群落覆蓋。
+  return {{bandCoverage * (1.02f + .16f * u), 1.f,
+           bandCoverage * (1.02f + .16f * v)},
+          (u - .5f) * .76f};
 }
 
 // 日光下的 moss/soil 貼圖會經 IBL 與直射光再次增亮；保持綠色通道優勢並
