@@ -39,6 +39,20 @@ struct ShowcaseUnderstoryFormVariation3D {
   float yawOffset{};
 };
 
+// 活樹模型根部帶有來源資產的亮色切面；只在 render transform 將它埋入
+// 地表少許。枯木保留既有落地姿態，未知資產也採保守的零位移策略。
+[[nodiscard]] inline float ShowcaseTreeBurialOffset3D(
+    std::string_view assetId, float scaleY) noexcept {
+  if (assetId.find("dead_tree_trunk_02") != std::string_view::npos)
+    return 0.f;
+  const bool liveTree =
+      assetId.find("island_tree_01") != std::string_view::npos ||
+      assetId.find("tree_small_02") != std::string_view::npos;
+  if (!liveTree) return 0.f;
+  if (!std::isfinite(scaleY)) return 0.f;
+  return std::clamp(scaleY * .012f, .10f, .20f);
+}
+
 // 同一棵來源樹仍維持原 material、descriptor、collision 與 HLOD identity；
 // 只由 placement 的永久 stableKey、距離帶與既有樹種選出有限輪廓變化。
 // 近中景成熟林冠可在不改樹幹碰撞與 placement spacing 的前提下彼此搭接；

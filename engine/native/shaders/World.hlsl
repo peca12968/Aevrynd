@@ -2102,6 +2102,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float authoredPathWeight = 0.0;
         float authoredLeafLitterWeight = 0.0;
         float authoredWetSoilWeight = 0.0;
+        float showcaseTerrainAuthoredBiomeCalibration = 0.0;
         const bool showcaseTerrainProductionBinding =
             input.textureData.w > 0.5 && input.normalScale == -15.5;
         // useUv 是既有 generic bit；再要求 Renderer.h 宣告、可精確表示的
@@ -2127,6 +2128,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 const float shapedAuthoredBiomeWeight = shapedAuthoredBiomeWeights.x
                                                       + shapedAuthoredBiomeWeights.y
                                                       + shapedAuthoredBiomeWeights.z;
+                showcaseTerrainAuthoredBiomeCalibration = sqrt(saturate(shapedAuthoredBiomeWeight));
                 // 實際綁定順序固定為 forest / Ground108 / stony path。
                 // path 因此主導第三層；leaf litter 以森林層為主；wet soil
                 // 使用 Ground108。三者仍共用既有 9/3 次 PBR sample。
@@ -2148,29 +2150,70 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 rockWeight = materialWeights.z;
             }
         }
+        // Keep one secondary material domain per pixel.  The showcase path and
+        // wet bank are authored as rock- and soil-dominant layers, so the old
+        // grass-only route left the two hero transitions visibly tiled.  A
+        // narrow zero-secondary handoff band prevents a hard domain switch at
+        // authored edges, while detail weight removes the extra samples at the
+        // far-material cutoff.
+        uint terrainSecondaryDomainLayer = 3u;
+        float terrainSecondaryDomainBlend = 0.0;
+        [branch] if (terrainDecorrelationEnabled && TerrainMesoPartitionEnabled())
+        {
+            const float authoredSecondaryWeight = max(authoredPathWeight, authoredWetSoilWeight);
+            const float authoredSecondaryActivation = smoothstep(0.20, 0.55, authoredSecondaryWeight);
+            const float grassSecondaryActivation = smoothstep(0.45, 0.72, grassWeight)
+                                                   * (1.0 - smoothstep(0.05, 0.20, authoredSecondaryWeight));
+            float selectedActivation = grassSecondaryActivation;
+            const float authoredSecondaryDominance = authoredPathWeight - authoredWetSoilWeight;
+            if (authoredSecondaryDominance > 0.04 && authoredSecondaryActivation > 0.0)
+            {
+                terrainSecondaryDomainLayer = 2u;
+                selectedActivation = authoredSecondaryActivation;
+            }
+            else if (authoredSecondaryDominance < -0.04 && authoredSecondaryActivation > 0.0)
+            {
+                terrainSecondaryDomainLayer = 1u;
+                selectedActivation = authoredSecondaryActivation;
+            }
+            else if (grassSecondaryActivation > 0.0)
+                terrainSecondaryDomainLayer = 0u;
+            terrainSecondaryDomainBlend = TerrainGrassDualDomainBlend(input.worldPosition.xz)
+                                        * selectedActivation * terrainDetailWeight;
+        }
         if (input.textureData.x > 0.5)
         {
             // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
             float3 grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
-            float grassDualDomainBlend = 0.0;
-            // 額外取樣僅在 grass 確實主導時發生；smoothstep 從零淡入，避免群落
-            // 邊界跳接。同一權重稍後也套到 ARM 與 normal，避免顏色、粗糙度和
-            // 凹凸彼此滑動而形成塑膠般的平面。
-            [branch] if (terrainDecorrelationEnabled && TerrainMesoPartitionEnabled() && grassWeight > 0.45)
+            float3 soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
+            float3 rockColor = Triplanar(rockBaseColorTexture, rockSamplePosition, geometricNormal, input.textureData.y).rgb;
+            // The selected secondary domain is reused by base color, ARM and
+            // normal.  This keeps the existing worst case rather than stacking
+            // grass, path and wet-bank secondary samples in the same pixel.
+            [branch] if (terrainSecondaryDomainBlend > 0.001)
             {
-                const float3 secondaryGrassColor = Triplanar(baseColorTexture, TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.y).rgb;
-                const float grassDominance = smoothstep(0.45, 0.72, grassWeight);
-                grassDualDomainBlend = TerrainGrassDualDomainBlend(input.worldPosition.xz) * grassDominance;
-                grassColor = BlendTerrainGrassAlbedo(grassColor, secondaryGrassColor, grassDualDomainBlend);
+                if (terrainSecondaryDomainLayer == 0u)
+                {
+                    const float3 secondaryGrassColor = Triplanar(baseColorTexture, TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.y).rgb;
+                    grassColor = BlendTerrainGrassAlbedo(grassColor, secondaryGrassColor, terrainSecondaryDomainBlend);
+                }
+                else if (terrainSecondaryDomainLayer == 1u)
+                {
+                    const float3 secondarySoilColor = Triplanar(soilBaseColorTexture, TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.y).rgb;
+                    soilColor = BlendTerrainGrassAlbedo(soilColor, secondarySoilColor, terrainSecondaryDomainBlend);
+                }
+                else if (terrainSecondaryDomainLayer == 2u)
+                {
+                    const float3 secondaryRockColor = Triplanar(rockBaseColorTexture, TerrainGrassSecondarySamplePosition(rockSamplePosition), geometricNormal, input.textureData.y).rgb;
+                    rockColor = BlendTerrainGrassAlbedo(rockColor, secondaryRockColor, terrainSecondaryDomainBlend);
+                }
             }
             // forest_ground_04 保留可讀的線性反照率，但不再把綠色通道推到
             // 大片撞上 .82 上限。三通道接近等能量，讓苔蘚色主要來自真實
             // 貼圖與 authored biome，而不是以高增益製造螢光草坪。
             const float3 terrainGrassReflectanceNormalization =
-                showcaseTerrainProductionBinding ? float3(1.72, 1.58, 1.68) : 1.0.xxx;
+                lerp(1.0.xxx, float3(1.72, 1.58, 1.68), showcaseTerrainAuthoredBiomeCalibration);
             const float3 calibratedGrassColor = grassColor * terrainGrassReflectanceNormalization;
-            const float3 soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
-            const float3 rockColor = Triplanar(rockBaseColorTexture, rockSamplePosition, geometricNormal, input.textureData.y).rgb;
             float4 terrainSurface = 1.0;
             float3 terrainNormal = geometricNormal;
             // 遠距離分支省略六次細節貼圖取樣；近景維持完整表面與法線，轉場以解析度無關權重淡化。
@@ -2178,31 +2221,62 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             {
                 // surface map 固定為 R=AO、G=roughness、B=metallic；A 不參與材質能量。
                 float4 grassSurface=Triplanar(roughnessTexture,grassSamplePosition,geometricNormal,input.textureData.z);
-                const float4 soilSurface=Triplanar(soilRoughnessTexture,soilSamplePosition,geometricNormal,input.textureData.z);
-                const float4 rockSurface=Triplanar(rockRoughnessTexture,rockSamplePosition,geometricNormal,input.textureData.z);
-                [branch] if (grassDualDomainBlend > 0.0)
+                float4 soilSurface=Triplanar(soilRoughnessTexture,soilSamplePosition,geometricNormal,input.textureData.z);
+                float4 rockSurface=Triplanar(rockRoughnessTexture,rockSamplePosition,geometricNormal,input.textureData.z);
+                [branch] if (terrainSecondaryDomainBlend > 0.001)
                 {
-                    const float4 secondaryGrassSurface = Triplanar(roughnessTexture,
-                        TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
-                    grassSurface = lerp(grassSurface, secondaryGrassSurface, grassDualDomainBlend);
+                    if (terrainSecondaryDomainLayer == 0u)
+                    {
+                        const float4 secondaryGrassSurface = Triplanar(roughnessTexture,
+                            TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
+                        grassSurface = lerp(grassSurface, secondaryGrassSurface, terrainSecondaryDomainBlend);
+                    }
+                    else if (terrainSecondaryDomainLayer == 1u)
+                    {
+                        const float4 secondarySoilSurface = Triplanar(soilRoughnessTexture,
+                            TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.z);
+                        soilSurface = lerp(soilSurface, secondarySoilSurface, terrainSecondaryDomainBlend);
+                    }
+                    else if (terrainSecondaryDomainLayer == 2u)
+                    {
+                        const float4 secondaryRockSurface = Triplanar(rockRoughnessTexture,
+                            TerrainGrassSecondarySamplePosition(rockSamplePosition), geometricNormal, input.textureData.z);
+                        rockSurface = lerp(rockSurface, secondaryRockSurface, terrainSecondaryDomainBlend);
+                    }
                 }
                 // forest_ground_04 的 packed roughness 平均值為 .9128；Showcase
                 // terrain 的基礎 roughness 尚會乘 .78。只將 forest layer 固定
                 // 收斂到 packed mean .78（最終約 .6084），保留 AO、metallic
                 // 以及 Ground108/path 的原始表面資料。界限避免極端 texel 形成
                 // 鏡面閃點或重新退化為沒有微表面層次的平坦地表。
-                if (showcaseTerrainProductionBinding)
-                    grassSurface.g = clamp(grassSurface.g * 0.854514, 0.55, 0.96);
+                const float calibratedGrassRoughness = clamp(grassSurface.g * 0.854514, 0.55, 0.96);
+                grassSurface.g = lerp(grassSurface.g, calibratedGrassRoughness,
+                                      showcaseTerrainAuthoredBiomeCalibration);
                 const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
                 terrainSurface=lerp(1.0,sampledSurface,terrainDetailWeight);
                 float3 grassNormal = TriplanarNormalFrom(normalTexture, grassSamplePosition, geometricNormal, input.textureData.z);
-                const float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, soilSamplePosition, geometricNormal, input.textureData.z);
-                const float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, rockSamplePosition, geometricNormal, input.textureData.z);
-                [branch] if (grassDualDomainBlend > 0.0)
+                float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, soilSamplePosition, geometricNormal, input.textureData.z);
+                float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, rockSamplePosition, geometricNormal, input.textureData.z);
+                [branch] if (terrainSecondaryDomainBlend > 0.001)
                 {
-                    const float3 secondaryGrassNormal = TriplanarNormalFrom(normalTexture,
-                        TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
-                    grassNormal = normalize(lerp(grassNormal, secondaryGrassNormal, grassDualDomainBlend));
+                    if (terrainSecondaryDomainLayer == 0u)
+                    {
+                        const float3 secondaryGrassNormal = TriplanarNormalFrom(normalTexture,
+                            TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
+                        grassNormal = normalize(lerp(grassNormal, secondaryGrassNormal, terrainSecondaryDomainBlend));
+                    }
+                    else if (terrainSecondaryDomainLayer == 1u)
+                    {
+                        const float3 secondarySoilNormal = TriplanarNormalFrom(soilNormalTexture,
+                            TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.z);
+                        soilNormal = normalize(lerp(soilNormal, secondarySoilNormal, terrainSecondaryDomainBlend));
+                    }
+                    else if (terrainSecondaryDomainLayer == 2u)
+                    {
+                        const float3 secondaryRockNormal = TriplanarNormalFrom(rockNormalTexture,
+                            TerrainGrassSecondarySamplePosition(rockSamplePosition), geometricNormal, input.textureData.z);
+                        rockNormal = normalize(lerp(rockNormal, secondaryRockNormal, terrainSecondaryDomainBlend));
+                    }
                 }
                 const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
                 terrainNormal=normalize(lerp(geometricNormal,sampledNormal,saturate(terrainDetailWeight*terrainNormalDetailStrength)));
@@ -2231,7 +2305,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 最終只做小幅冷色域平衡，抵銷日光下的黃綠偏移；不依賴時間、
             // 光源或相機，也不覆蓋各 layer 的真實反照率。
             const float3 terrainProductionSpectralTrim =
-                showcaseTerrainProductionBinding ? float3(0.94, 0.96, 1.04) : 1.0.xxx;
+                lerp(1.0.xxx, float3(0.94, 0.96, 1.04), showcaseTerrainAuthoredBiomeCalibration);
             // 最終介電質輸出仍保留 .82 上限。
             baseColor = min(baseColor * terrainAlbedo * terrainProductionSpectralTrim * microVariation *
                             distanceMacroVariation, 0.82.xxx);

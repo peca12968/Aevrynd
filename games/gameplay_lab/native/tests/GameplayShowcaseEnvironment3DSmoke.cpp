@@ -477,6 +477,28 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  const float minimumTreeBurial =
+      ShowcaseTreeBurialOffset3D("island_tree_01", 1.f);
+  const float scaledTreeBurial =
+      ShowcaseTreeBurialOffset3D("island_tree_01", 10.f);
+  const float maximumTreeBurial =
+      ShowcaseTreeBurialOffset3D("tree_small_02", 30.f);
+  const float invalidScaleBurial = ShowcaseTreeBurialOffset3D(
+      "tree_small_02", std::numeric_limits<float>::quiet_NaN());
+  const float deadTreeBurial =
+      ShowcaseTreeBurialOffset3D("dead_tree_trunk_02", 30.f);
+  if (!std::isfinite(minimumTreeBurial) ||
+      !std::isfinite(scaledTreeBurial) ||
+      !std::isfinite(maximumTreeBurial) ||
+      !std::isfinite(invalidScaleBurial) || minimumTreeBurial != .10f ||
+      maximumTreeBurial != .20f || invalidScaleBurial != 0.f ||
+      minimumTreeBurial > scaledTreeBurial ||
+      scaledTreeBurial > maximumTreeBurial ||
+      std::abs(scaledTreeBurial - .12f) > 1e-6f ||
+      deadTreeBurial != 0.f ||
+      ShowcaseTreeBurialOffset3D("unknown_tree", 30.f) != 0.f)
+    return 100;
+
   const auto materialFixture=[](char seed){
     CookedRenderMaterial3D material{};
     material.baseColorBytes=material.surfaceBytes=material.normalBytes=128u;

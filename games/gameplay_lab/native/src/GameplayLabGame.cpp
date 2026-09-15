@@ -1720,7 +1720,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     case ShowcaseSceneKind3D::Water:
       {const auto before=scene_.MeshCount();scene_.Mesh(showcaseRiverMesh_,transform,waterMaterial(showcaseEnvironment_.WaterSurfaceSettings()),{},renderIdentity);submitted=scene_.MeshCount()==before+1;}break;
     case ShowcaseSceneKind3D::Tree:
-      {const std::string_view asset=ResolveShowcasePhotorealAssetId3D(descriptor);if(!asset.empty())submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,asset,transform,renderIdentity,lodObjectIndex,&productionChains);}break;
+      {const std::string_view asset=ResolveShowcasePhotorealAssetId3D(descriptor);if(!asset.empty()){transform.position.y-=ShowcaseTreeBurialOffset3D(asset,transform.scale.y);submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,asset,transform,renderIdentity,lodObjectIndex,&productionChains);}}break;
     case ShowcaseSceneKind3D::Grass:
       {const auto* source=groundCoverSource?groundCoverSource:showcaseRenderAssets_.ProductionMaterial(ShowcaseForestGrassMaterialAsset3D(descriptor.materialAsset));
        if(source){const auto material=groundCoverSource?PrepareGameplayForestGroundCoverMaterial3D(*source,groundCoverVariant,descriptor.castsShadow):ShowcaseForestGrassMaterial3D(*source,descriptor.materialAsset,descriptor.castsShadow);const auto before=scene_.MeshCount();scene_.MeshLod(*grassHigh,*grassLow,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}}break;
