@@ -238,7 +238,7 @@ add_test(NAME GameplayLabCaptureEvidenceTemporalSmoke COMMAND powershell -NoProf
 add_test(NAME GameplayLabCaptureEvidenceReceiptSmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLabCaptureEvidenceSmoke.ps1" -Section Receipt -IdentityContractProbe "$<TARGET_FILE:GameplayObjectIdentityContractProbe>")
 set_tests_properties(GameplayLabCaptureEvidenceTemporalSmoke GameplayLabCaptureEvidenceReceiptSmoke PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 foreach(warmup IN ITEMS 3 4 5)
-  add_test(NAME GameplayThirdDayTemporalFixtureWarmup${warmup}Smoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayThirdDayTemporalFixtureSmoke.ps1" -Executable "$<TARGET_FILE:GameplayLab>" -Warmup ${warmup})
+  add_test(NAME GameplayThirdDayTemporalFixtureWarmup${warmup}Smoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayThirdDayTemporalFixtureSmoke.ps1" -Executable "$<TARGET_FILE:GameplayLab>" -EvidenceHelper "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLabCaptureEvidence.ps1" -Warmup ${warmup})
   set_tests_properties(GameplayThirdDayTemporalFixtureWarmup${warmup}Smoke PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE)
 endforeach()
 add_test(NAME GameplaySourceInventorySmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplaySourceInventorySmoke.ps1" -SourceRoot "${CMAKE_SOURCE_DIR}" -InventoryPath "${GAMEPLAY_SOURCE_INVENTORY_PATH}")

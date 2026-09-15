@@ -533,7 +533,9 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     environmentBlend.iblDiffuseWeight = .32f;
     environmentBlend.analyticSpecularWeight = .62f;
     environmentBlend.iblSpecularWeight = .38f;
-    environmentBlend.objectFillRadiance = {.44f,.25f,.16f};
+    // 保留暖色主光與小屋局部光，但用等亮度冷中性補光分離森林暗部，
+    // 避免天空、地表與陰影全部落在相同的棕橙色域。
+    environmentBlend.objectFillRadiance = {.22f,.29f,.38f};
     environmentBlend.objectFillIntensity = .72f;
     environmentBlend.phaseFingerprint = 0x4455534b5f49424cull;
   } else {

@@ -229,6 +229,73 @@ bool UnderstoryFormVariationContract(
          uplandCoverage > meadowCoverage;
 }
 
+// 冠層與林下層都以正式 descriptor 對照配置尺度，避免 placement 的覆蓋率
+// 通過後，提交前又縮成果園。面積是水平橢圓 proxy，不宣稱是畫面像素覆蓋。
+bool ForestMidgroundLayerContract(
+    const std::vector<ShowcaseLandPlacement3D> &placements,
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
+  if (descriptors.size() != placements.size() + 8u) return false;
+  std::array<float, 2> sourceCanopy{}, submittedCanopy{};
+  std::array<float, 2> sourceUnderstory{}, submittedUnderstory{};
+  std::array<unsigned, 2> livingTrees{}, shrubs{};
+  for (std::size_t index = 0; index < placements.size(); ++index) {
+    const auto &placement = placements[index];
+    const auto band = std::uint32_t(placement.band);
+    if (band >= 2u) continue;
+    const auto &descriptor = descriptors[index + 2u];
+    const float sourceArea = placement.scale.x * placement.scale.z;
+    const float submittedArea = descriptor.scale.x * descriptor.scale.z;
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.variant != ShowcaseLandVariant3D::DeadTreeTrunk) {
+      sourceCanopy[band] += sourceArea;
+      submittedCanopy[band] += submittedArea;
+      ++livingTrees[band];
+    } else if (placement.kind == ShowcaseLandKind3D::Grass &&
+               placement.zone == ShowcaseLandZone3D::Upland) {
+      sourceUnderstory[band] += sourceArea;
+      submittedUnderstory[band] += submittedArea;
+      ++shrubs[band];
+    }
+  }
+  bool valid = livingTrees == std::array<unsigned, 2>{114, 81} &&
+               shrubs == std::array<unsigned, 2>{38, 18};
+  for (unsigned band = 0; band < 2u; ++band) {
+    const float canopyRatio = sourceCanopy[band] > 0.f
+        ? submittedCanopy[band] / sourceCanopy[band] : 0.f;
+    const float understoryRatio = sourceUnderstory[band] > 0.f
+        ? submittedUnderstory[band] / sourceUnderstory[band] : 0.f;
+    std::cout << "FOREST_MIDGROUND band=" << band
+              << " living=" << livingTrees[band] << " shrubs=" << shrubs[band]
+              << " canopyAreaRetention=" << canopyRatio
+              << " understoryAreaMultiplier=" << understoryRatio << '\n';
+    valid &= canopyRatio >= .91f && canopyRatio <= 1.f &&
+             understoryRatio >= 1.58f && understoryRatio <= 1.80f;
+  }
+  unsigned eligible{}, covered{};
+  for (int z = -160; z < 160; ++z)
+    for (int x = -160; x < 160; ++x) {
+      const float dx = (float(x) + .5f) * .5f;
+      const float dz = (float(z) + .5f) * .5f;
+      if (dx * dx + dz * dz > 80.f * 80.f) continue;
+      ++eligible;
+      for (const auto &descriptor : descriptors) {
+        if (descriptor.kind != ShowcaseSceneKind3D::Tree ||
+            descriptor.meshAsset.find("dead_tree") != std::string::npos)
+          continue;
+        const float u = (-16.f + dx - descriptor.position.x) /
+                        (descriptor.scale.x * .5f);
+        const float v = (8.f + dz - descriptor.position.z) /
+                        (descriptor.scale.z * .5f);
+        if (u * u + v * v <= 1.f) { ++covered; break; }
+      }
+    }
+  const float coverage = eligible ? float(covered) / float(eligible) : 0.f;
+  std::cout << "FOREST_MIDGROUND ROI80UnrotatedEllipseFraction=" << coverage
+            << '\n';
+  valid &= coverage >= .24f;
+  return valid;
+}
+
 template <std::size_t Size>
 std::uint64_t InventoryHash(const std::array<std::string_view, Size> &values) {
   std::uint64_t hash = 14695981039346656037ull;
@@ -286,6 +353,20 @@ bool DuskVegetationReadable(const ShowcaseLightingState3D &value) {
          value.sun.ambient >= .18f && value.sun.ambient < .24f &&
          value.exposureEv >= .07f && value.exposureEv <= .09f &&
          value.sun.ambient * sunLuminance >= .13f;
+}
+
+bool DuskShadowColorSeparated(
+    const EnvironmentLightingBlendSettings3D &environment) {
+  const float luminance = .2126f * environment.objectFillRadiance.x +
+                          .7152f * environment.objectFillRadiance.y +
+                          .0722f * environment.objectFillRadiance.z;
+  return environment.objectFillIntensity >= .71f &&
+         environment.objectFillIntensity <= .73f &&
+         luminance >= .275f && luminance <= .29f &&
+         environment.objectFillRadiance.z >
+             environment.objectFillRadiance.x * 1.6f &&
+         environment.objectFillRadiance.y >
+             environment.objectFillRadiance.x * 1.25f;
 }
 
 bool NightForestReadable(const ShowcaseLightingState3D &state,
@@ -796,6 +877,26 @@ int main() {
       !TreeFormVariationContract(treePlacements, first.Descriptors()) ||
       !UnderstoryFormVariationContract(treePlacements, first.Descriptors()))
     return 84;
+  if (!ForestMidgroundLayerContract(treePlacements, first.Descriptors()))
+    return 93;
+  auto narrowedCanopy = first.Descriptors();
+  for (auto &descriptor : narrowedCanopy)
+    if (descriptor.kind == ShowcaseSceneKind3D::Tree) {
+      descriptor.scale.x *= .82f;
+      descriptor.scale.z *= .82f;
+    }
+  if (ForestMidgroundLayerContract(treePlacements, narrowedCanopy)) return 94;
+  auto collapsedUnderstory = first.Descriptors();
+  for (std::size_t index = 0; index < treePlacements.size(); ++index)
+    if (treePlacements[index].kind == ShowcaseLandKind3D::Grass)
+      collapsedUnderstory[index + 2u].scale = treePlacements[index].scale;
+  if (ForestMidgroundLayerContract(treePlacements, collapsedUnderstory)) return 95;
+  ShowcaseLandEcologySettings3D alternateLandSettings{};
+  alternateLandSettings.seed = 0x4a18u;
+  std::vector<ShowcaseLandPlacement3D> alternateLand;
+  if (!BuildShowcaseLandEcology3D(alternateLandSettings, alternateLand) ||
+      !ForestMidgroundLayerContract(alternateLand, differentSeed.Descriptors()))
+    return 96;
   auto collapsedTreeDescriptors = first.Descriptors();
   for (auto &descriptor : collapsedTreeDescriptors)
     if (descriptor.meshAsset == "poly-haven/tree_small_02/cooked-lod") {
@@ -1078,6 +1179,10 @@ int main() {
   const auto duskRadiance = draw.PhaseRadianceProfile();
   if (draw.VolumetricAtmospherePhase() != VolumetricAtmospherePhase3D::Dusk)
     return 21;
+  if (!DuskShadowColorSeparated(duskEnvironmentBlend)) return 97;
+  auto previousWarmDuskFill = duskEnvironmentBlend;
+  previousWarmDuskFill.objectFillRadiance = {.44f,.25f,.16f};
+  if (DuskShadowColorSeparated(previousWarmDuskFill)) return 98;
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Night, {1, 2, 3});
   const auto nightAtmosphere = draw.Atmosphere();
   const auto nightEnvironmentBlend = draw.EnvironmentLightingBlend();

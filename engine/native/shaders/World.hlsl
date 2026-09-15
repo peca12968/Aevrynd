@@ -1131,6 +1131,28 @@ float3 ApplyVolumetricClouds(float3 atmosphere,float3 rayDirection,float3 sunDir
     return atmosphere*transmittance+scattering;
 }
 
+float DirectionalShadowBilinearCompare(float2 uv, uint cascadeIndex, float comparisonDepth)
+{
+    uint width = 0, height = 0, layers = 0, levels = 0;
+    shadowTexture.GetDimensions(0, width, height, layers, levels);
+    const float2 texelPosition = uv * float2(width, height) - 0.5;
+    const int2 baseTexel = int2(floor(texelPosition));
+    const float2 fraction = frac(texelPosition);
+    // 讀取原始深度並明確執行比較。部分驅動程式可能讓 GatherCmp 在相同程序間產生一個 FP16 ULP 的差異；
+    // 原始 Gather 可讓 12 點 PCSS 取樣範圍保持決定性。Gather 使用點取樣夾制取樣器，
+    // 因此套用 LESS_EQUAL 語意前，逐一恢復比較取樣器的白色邊界。
+    float4 depths = shadowTexture.Gather(
+        screenPointClampSampler, float3(uv, cascadeIndex));
+    if (baseTexel.x < 0 || baseTexel.x >= int(width) || baseTexel.y < 0 || baseTexel.y >= int(height)) depths.w = 1.0;
+    if (baseTexel.x + 1 < 0 || baseTexel.x + 1 >= int(width) || baseTexel.y < 0 || baseTexel.y >= int(height)) depths.z = 1.0;
+    if (baseTexel.x < 0 || baseTexel.x >= int(width) || baseTexel.y + 1 < 0 || baseTexel.y + 1 >= int(height)) depths.x = 1.0;
+    if (baseTexel.x + 1 < 0 || baseTexel.x + 1 >= int(width) || baseTexel.y + 1 < 0 || baseTexel.y + 1 >= int(height)) depths.y = 1.0;
+    const float4 compared = step(comparisonDepth.xxxx, depths);
+    const float top = lerp(compared.w, compared.z, fraction.x);
+    const float bottom = lerp(compared.x, compared.y, fraction.x);
+    return lerp(top, bottom, fraction.y);
+}
+
 float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPosition, float3 normal, float3 lightDirection)
 {
     const float3 projected = shadowPosition.xyz / max(0.0001, shadowPosition.w);
@@ -1174,7 +1196,8 @@ float DirectionalShadow(float4 shadowPosition, uint cascadeIndex, float3 worldPo
     [unroll] for (int sampleIndex = 0; sampleIndex < 12; ++sampleIndex)
     {
         const float2 offset = lerp(poisson[sampleIndex], poisson[sampleIndex].yx, swapAxes) * rotationSigns * shadowParameters.w * filterRadiusTexels;
-        visibility += shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv + offset, cascadeIndex), projected.z - bias);
+        // 原始深度 Gather 與明確比較保留線性比較範圍，同時讓擷取證據不依賴特定實作的比較過濾。
+        visibility += DirectionalShadowBilinearCompare(uv + offset, cascadeIndex, projected.z - bias);
     }
     return visibility / 12.0;
 }
@@ -1192,13 +1215,15 @@ float CascadedDirectionalShadow(WorldPixelInput input, float3 normal, float3 lig
 
 float DirectionalLightShaftCascadeShadow(float3 worldPosition, uint cascadeIndex)
 {
-    // 光柱每步只做一次硬體比較取樣；表面仍使用完整 PCSS，避免體積積分成本隨 PCSS tap 數放大。
+    // 光柱每步保留一次雙線性陰影查詢；比較與插值由 shader 明確執行，
+    // 避免硬體 comparison filtering 在跨程序擷取時產生 1 ULP 漂移。
     const float4 shadowPosition = mul(lightViewProjection[cascadeIndex], float4(worldPosition, 1.0));
     if (shadowPosition.w <= 0.0001) return 1.0;
     const float3 projected = shadowPosition.xyz / shadowPosition.w;
     const float2 uv = float2(projected.x * 0.5 + 0.5, -projected.y * 0.5 + 0.5);
     if (projected.z <= 0.0 || projected.z >= 1.0 || any(uv < 0.0) || any(uv > 1.0)) return 1.0;
-    return shadowTexture.SampleCmpLevelZero(shadowSampler, float3(uv, cascadeIndex), projected.z - max(0.0007, shadowParameters.z));
+    return DirectionalShadowBilinearCompare(
+        uv, cascadeIndex, projected.z - max(0.0007, shadowParameters.z));
 }
 
 float DirectionalLightShaftShadow(float3 worldPosition)

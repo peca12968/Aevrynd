@@ -1597,7 +1597,15 @@ std::filesystem::path GameplayLabGame::GameplayHdrCapturePath(std::size_t index)
   return captureDirectory_/(std::filesystem::path(Names[index]).stem().wstring()+L".production-hdr.aevhdr");
 }
 void GameplayLabGame::CleanupGameplayHdrCaptureArtifacts(std::size_t index,bool removeFinal)noexcept{
-  const auto destination=GameplayHdrCapturePath(index);if(destination.empty())return;std::error_code error;if(removeFinal)std::filesystem::remove(destination,error);error.clear();const std::wstring prefix=destination.filename().wstring()+L".tmp.";for(std::filesystem::directory_iterator iterator(captureDirectory_,error),end;!error&&iterator!=end;iterator.increment(error)){const auto name=iterator->path().filename().wstring();if(name.starts_with(prefix)){std::error_code removeError;std::filesystem::remove(iterator->path(),removeError);}}
+  const auto destination=GameplayHdrCapturePath(index);if(destination.empty())return;std::error_code error;if(removeFinal)std::filesystem::remove(destination,error);error.clear();const std::wstring stem=std::filesystem::path(Names[index]).stem().wstring();
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+  if(removeFinal){
+    for(const auto& name:{stem+L"-raw.production-hdr.aevhdr",stem+L"-atmosphere-rgba16f.bin",stem+L"-atmosphere-output.json",stem+L"-atmosphere-scene-rgba16f.bin",stem+L"-atmosphere-scene.json"}){
+      error.clear();std::filesystem::remove(captureDirectory_/name,error);
+    }
+  }
+#endif
+  const std::wstring prefix=destination.filename().wstring()+L".tmp.";for(std::filesystem::directory_iterator iterator(captureDirectory_,error),end;!error&&iterator!=end;iterator.increment(error)){const auto name=iterator->path().filename().wstring();if(name.starts_with(prefix)){std::error_code removeError;std::filesystem::remove(iterator->path(),removeError);}}
 }
 void GameplayLabGame::FailGameplayHdrCapture(Engine& engine,std::size_t index)noexcept{
   if(index<gameplayHdrCaptureStates_.size()){gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Failed;gameplayHdrCaptureReceipts_[index]={};gameplayHdrCaptureReceipts_[index].state=GameplayHdrCaptureState3D::Failed;CleanupGameplayHdrCaptureArtifacts(index,true);}
@@ -1902,7 +1910,7 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     captureShadowCascadeRendered_[index]=std::uint32_t(std::accumulate(capture->directionalShadow.rendered.begin(),capture->directionalShadow.rendered.end(),std::uint64_t{}));captureShadowCascadeReused_[index]=std::uint32_t(std::accumulate(capture->directionalShadow.reused.begin(),capture->directionalShadow.reused.end(),std::uint64_t{}));captureShadowActiveCascades_[index]=capture->directionalShadow.activeCascades;captureShadowFrameSerial_[index]=capture->directionalShadow.frameSerial;
     captureShadowEvidencePassed_[index]=EvaluateGameplayCaptureShadowEvidence3D(capture->directionalShadow,capture->rasterProvenance)?1u:0u;
 #if AEVRYND_SHADOW_MAP_DIAGNOSTICS
-    if(captureShadowMapDiagnostic_&&index==8){
+    if(captureShadowMapDiagnostic_&&(index==0||index==8||index==9||index==10)){
       const auto shadowStem=std::filesystem::path(Names[index]).stem().wstring();const auto receiptPath=captureDirectory_/(shadowStem+L"-shadow-map-evidence.json");const auto receiptTemporary=receiptPath.wstring()+L".tmp";
       std::ofstream shadowReceipt(std::filesystem::path(receiptTemporary),std::ios::binary|std::ios::trunc);if(!shadowReceipt)return failReadback("shadow-map-receipt-open-failed");
       shadowReceipt<<"{\"source\":\"GameplayDirectionalShadowMapEvidence\",\"version\":1,\"runId\":\""<<runId_<<"\",\"capture\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"frameSerial\":"<<capture->directionalShadow.frameSerial<<",\"activeCascades\":"<<capture->directionalShadow.activeCascades<<",\"cascades\":[";
@@ -2031,6 +2039,9 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       }
       const auto gpuProvenance=engine.ReadbackCaptureSequenceGpuProvenance(captureSequenceToken_);if(gpuProvenance.token!=captureSequenceToken_||gpuProvenance.phases.size()!=captureSequencePhaseCount_){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay GPU sequence provenance was incomplete");}for(const auto& phase:gpuProvenance.phases){if(phase.phaseIndex>=3){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay GPU sequence provenance phase was invalid");}captureAtmospherePhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.atmosphere;captureTemporalPhaseProvenance_[captureIndex_][phase.phaseIndex]=phase.temporalResolve;}
       const auto sequenceResult=engine.EndReadbackCaptureSequence3D(captureSequenceToken_);
+      // 一個已封存鏡位必須先退役所有 GPU 階段，下一鏡位才能重用大氣與歷史資源。
+      // 診斷讀回原本已提供此邊界；現在將它納入正式擷取契約，避免結果取決於是否編入診斷功能。
+      engine.WaitRendererIdle3D();
       const std::uint64_t expectedHdrMask=captureRawHdrDiagnostic_?((1ull<<0)|(1ull<<1)):(1ull<<1);
       if(!sequenceResult||sequenceResult.receipt.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.expectedPhaseCount!=captureSequencePhaseCount_||sequenceResult.receipt.descriptor.jitterPolicy!=ReadbackCaptureSequenceJitterPolicy3D::FixedSample||sequenceResult.receipt.descriptor.fixedSampleIndex!=0||sequenceResult.receipt.descriptor.requiredLinearHdrPhaseMask!=expectedHdrMask){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay paired fixed-sample HDR readback capture sequence failed closed");}
       for(const auto& phase:sequenceResult.receipt.phases){if(phase.phaseIndex>=captureIntegrityDiagnostics_[captureIndex_].size()){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism phase index was invalid");}auto& diagnostic=captureIntegrityDiagnostics_[captureIndex_][phase.phaseIndex];if(!diagnostic.recorded||diagnostic.objectId!=phase.determinism||diagnostic.depth!=phase.determinism){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay frame-bound determinism phase evidence drifted");}diagnostic={captureIndex_,phase.phaseIndex,phase.determinism,phase.determinism,true};}
@@ -2314,9 +2325,8 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       rules_.SetLighting(route.lighting);
       rules_.SetCamera(route.camera);
     } else {
-      // Palette retains the male material-authoring case; the combat showcase must
-      // explicitly select the current Candidate7 female hero instead of inheriting
-      // the preceding male night shot through mutable presentation state.
+      // 材質面板保留男性編輯案例；戰鬥展示必須明確選用目前的 Candidate7
+      // 女性主角，避免從前一張男性夜景繼承可變的呈現狀態。
       rules_.SetCharacterFemale(captureIndex_ == 10);
       rules_.SetCamera(CameraMode::ThirdPerson);
       rules_.SetLighting(captureIndex_ == 9 ? LightingPhase::Day
@@ -2345,7 +2355,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     // 場景切換後必須先完成一次正式 submission，再開始固定暖機。
     // 否則 Update/Render 排程次序會決定 DrawIdentity 重設落在暖機之前或期間，
     // 使相同 capture 出現不同的 HDR 起始狀態。
-    if(!GameplayCaptureWarmupMayBegin3D(capturePreparedSceneSubmitted_))return;
+    if(!GameplayCaptureWarmupMayBegin3D(capturePreparedSceneSubmitted_,engine.CurrentBufferedFrameIndex3D()))return;
     if(!captureTemporalWarmupActive_){activeCaptureRoute_.phase=GameplayActiveCaptureRoutePhase3D::Warming;captureTemporalWarmupActive_=true;captureTemporalWarmupRemaining_=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D::CaptureShot);QueueTemporalHistoryReseed(GameplayTemporalReseedReason3D::CaptureShot);return;}
     if(!GameplayTemporalCaptureReady3D(captureTemporalWarmupActive_,capturePoseFrozen_,captureTemporalWarmupRemaining_))return;
     captureTemporalWarmupActive_=false;
@@ -2385,7 +2395,8 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     captureSequencePhaseCount_=thirdCapture?3u:2u;
     if(!capturePoseFrozen_)throw std::runtime_error("Gameplay temporal warm-up did not freeze the canonical capture pose");
     captureTemporalWarmupFrames_[captureIndex_]=captureTemporalWarmupFramesCurrent_;captureTemporalReseedReasonMask_[captureIndex_]=captureTemporalReseedReasonCurrent_;
-    if(captureTemporalWarmupFrames_[captureIndex_]<GameplayTemporalCaptureWarmupFrames3D||!(captureTemporalReseedReasonMask_[captureIndex_]&GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D::CaptureShot)))throw std::runtime_error("Gameplay temporal capture warm-up evidence was incomplete");
+    const auto requiredEvidenceWarmup=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;
+    if(captureTemporalWarmupFrames_[captureIndex_]<requiredEvidenceWarmup||!(captureTemporalReseedReasonMask_[captureIndex_]&GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D::CaptureShot)))throw std::runtime_error("Gameplay temporal capture warm-up evidence was incomplete");
     const std::uint64_t frozenCameraHash=CaptureCameraHash(camera_);std::uint64_t animationState=CaptureStateSeed;MixCaptureHash(animationState,HashPose(captureFrozenFemalePose_));MixCaptureHash(animationState,HashPose(captureFrozenMalePose_));MixCaptureHash(animationState,HashPose(captureFrozenMonsterPose_));std::uint64_t physicsState=CaptureStateSeed;MixCaptureHash(physicsState,captureAuthoritativePhysicsSteps_);MixCaptureHash(physicsState,captureFrozenFootPlacementHash_);
     if(rules_.Camera()==CameraMode::FirstPerson)MixCaptureHash(animationState,captureFrozenFirstPersonPose_.hash);
     GameplayCanonicalCaptureStateInput3D canonicalInput{};canonicalInput.captureIndex=captureIndex_;canonicalInput.entities.assign(rules_.Entities().begin(),rules_.Entities().end());canonicalInput.controllerPosition=controller_.Position();canonicalInput.yaw=yaw_;canonicalInput.pitch=pitch_;canonicalInput.camera=rules_.Camera();canonicalInput.lighting=rules_.Lighting();canonicalInput.paletteCategory=rules_.Category();canonicalInput.female=rules_.Female();canonicalInput.paletteOpen=rules_.PaletteOpen();canonicalInput.grabbedEntity=rules_.Grabbed().value_or(0);canonicalInput.cameraHash=frozenCameraHash;canonicalInput.animationHash=animationState;canonicalInput.physicsHash=physicsState;captureCanonicalState_[captureIndex_]=BuildGameplayCanonicalCaptureState3D(canonicalInput);if(!captureCanonicalState_[captureIndex_].valid)throw std::runtime_error("Gameplay canonical capture state contained a non-finite or invalid entity");for(auto& diagnostic:captureCanonicalState_[captureIndex_].entityDiagnostics){diagnostic.initialSeed=std::ranges::find(initialSeedEntityIds_,diagnostic.stableId)!=initialSeedEntityIds_.end();if(const auto* body=static_cast<const PhysicsWorld3D&>(physics_).GetBody(palette_->Body(diagnostic.stableId))){diagnostic.bodyAvailable=true;diagnostic.bodyPosition=body->settings.transform.position;diagnostic.bodyVelocity=body->velocity;}if(const auto* scene=static_cast<const SceneECSRegistry3D&>(sceneEcs_).Transform(palette_->SceneEntity(diagnostic.stableId))){diagnostic.sceneAvailable=true;diagnostic.scenePosition=scene->value.position;}}const std::uint64_t frozenStateHash=captureCanonicalState_[captureIndex_].canonical;

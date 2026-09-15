@@ -63,23 +63,27 @@ const bool ValidateGameplayCottageGlassGapSmoke=[](){if(!GameplayCottageGlassGap
 namespace {struct CanonicalStateMutationSmoke{CanonicalStateMutationSmoke(){GameplayCanonicalCaptureStateInput3D state{};state.captureIndex=2;state.entities={{9,PaletteCategory::Props,{1,2,3},.2f,true,true},{3,PaletteCategory::Building,{4,5,6},.4f,false,true}};state.controllerPosition={7,8,9};state.yaw=.3f;state.pitch=-.2f;state.camera=CameraMode::ThirdPerson;state.lighting=LightingPhase::Dusk;state.paletteCategory=PaletteCategory::Building;state.female=true;state.paletteOpen=true;state.grabbedEntity=9;state.cameraHash=41;state.animationHash=42;state.physicsHash=43;const auto canonical=BuildGameplayCanonicalCaptureState3D(state);if(!canonical.valid||canonical.entityDiagnostics.size()!=2||canonical.entityDiagnostics[0].stableId!=3||canonical.entityDiagnostics[1].stableId!=9)throw std::runtime_error("canonical entity diagnostic contract failed");auto permuted=state;std::ranges::reverse(permuted.entities);if(canonical.canonical!=BuildGameplayCanonicalCaptureState3D(permuted).canonical)throw std::runtime_error("canonical entity permutation changed state");auto signedZero=state;signedZero.entities[0].position.x=-0.f;auto positiveZero=signedZero;positiveZero.entities[0].position.x=0.f;if(BuildGameplayCanonicalCaptureState3D(signedZero).canonical!=BuildGameplayCanonicalCaptureState3D(positiveZero).canonical)throw std::runtime_error("canonical signed zero was not normalized");const auto changed=[&](auto mutate){auto value=state;mutate(value);const auto receipt=BuildGameplayCanonicalCaptureState3D(value);return receipt.valid&&receipt.canonical!=canonical.canonical;};if(!changed([](auto&v){v.entities[0].id++;})||!changed([](auto&v){v.entities[0].category=PaletteCategory::Lights;})||!changed([](auto&v){v.entities[0].position.x=std::nextafter(v.entities[0].position.x,std::numeric_limits<float>::infinity());})||!changed([](auto&v){v.entities[0].position.z+=2.f;})||!changed([](auto&v){v.controllerPosition.y+=.01f;})||!changed([](auto&v){v.yaw+=.01f;})||!changed([](auto&v){v.pitch+=.01f;})||!changed([](auto&v){v.lighting=LightingPhase::Night;})||!changed([](auto&v){v.cameraHash++;})||!changed([](auto&v){v.paletteOpen=false;})||!changed([](auto&v){v.animationHash++;})||!changed([](auto&v){v.physicsHash++;}))throw std::runtime_error("canonical state mutation was not observed");for(const float invalid:{std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}){auto value=state;value.entities[0].position.x=invalid;if(BuildGameplayCanonicalCaptureState3D(value).valid)throw std::runtime_error("canonical non-finite entity was accepted");value=state;value.entities[0].rotation=invalid;if(BuildGameplayCanonicalCaptureState3D(value).valid)throw std::runtime_error("canonical non-finite rotation was accepted");}}} canonicalStateMutationSmoke;}
 static_assert(GameplayTemporalCaptureReady3D(true,true,0));
 static_assert(!GameplayTemporalCaptureReady3D(false,true,0)&&!GameplayTemporalCaptureReady3D(true,false,0)&&!GameplayTemporalCaptureReady3D(true,true,1));
-static_assert(GameplayCaptureWarmupMayBegin3D(true));
-static_assert(!GameplayCaptureWarmupMayBegin3D(false));
+static_assert(GameplayCaptureWarmupMayBegin3D(true,0));
+static_assert(!GameplayCaptureWarmupMayBegin3D(false,0));
+static_assert(!GameplayCaptureWarmupMayBegin3D(true,1));
+static_assert(!GameplayCaptureWarmupMayBegin3D(true,2));
 // Engine 可在單一 outer frame 內先做多次 fixed update，再只做一次 render。
 // 不論 preparation 後是立刻 render，或先多做一次 update，兩條排程都必須
 // 等到新 route 的 scene submission 被觀察後，才能啟動 warmup。
 static_assert([]{
   bool submitted{},warmup{};
-  if(GameplayCaptureWarmupMayBegin3D(submitted))warmup=true; // 額外 fixed update
+  if(GameplayCaptureWarmupMayBegin3D(submitted,0))warmup=true; // 額外 fixed update
   if(warmup)return false;
   submitted=true; // 唯一 render / scene submission
-  if(GameplayCaptureWarmupMayBegin3D(submitted))warmup=true;
+  if(GameplayCaptureWarmupMayBegin3D(submitted,1))warmup=true;
+  if(warmup)return false;
+  if(GameplayCaptureWarmupMayBegin3D(submitted,0))warmup=true;
   return warmup;
 }());
 static_assert([]{
   bool submitted{},warmup{};
   submitted=true; // preparation 後直接 render
-  if(GameplayCaptureWarmupMayBegin3D(submitted))warmup=true;
+  if(GameplayCaptureWarmupMayBegin3D(submitted,0))warmup=true;
   return warmup;
 }());
 static_assert(GameplayUseFrozenPose3D(true,true,false,false,false));

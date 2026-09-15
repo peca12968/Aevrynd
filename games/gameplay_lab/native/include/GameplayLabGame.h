@@ -133,7 +133,7 @@ inline constexpr std::uint32_t GameplayTemporalCaptureWarmupFrames3D=5;
            std::abs(previous.projection.orthographicHeight-current.projection.orthographicHeight)>.5f;
 }
 [[nodiscard]] constexpr bool GameplayTemporalCaptureReady3D(bool active,bool poseFrozen,std::uint32_t remaining)noexcept{return active&&poseFrozen&&!remaining;}
-[[nodiscard]] constexpr bool GameplayCaptureWarmupMayBegin3D(bool preparedSceneSubmitted)noexcept{return preparedSceneSubmitted;}
+[[nodiscard]] constexpr bool GameplayCaptureWarmupMayBegin3D(bool preparedSceneSubmitted,std::uint32_t bufferedFrameIndex)noexcept{return preparedSceneSubmitted&&bufferedFrameIndex==0;}
 [[nodiscard]] constexpr bool GameplayUseFrozenPose3D(bool poseFrozen,bool temporalFixture,bool pairFrozen,bool warmupActive,bool readyToStage)noexcept{return poseFrozen&&(temporalFixture||pairFrozen||warmupActive||readyToStage);}
 [[nodiscard]] constexpr bool GameplayGodCameraRequiresCaptureLayout3D(bool readyToStage,GameplayCaptureCamera3D expected)noexcept{return readyToStage&&expected==GameplayCaptureCamera3D::God;}
 [[nodiscard]] constexpr std::uint64_t GameplayTemporalWarmupScheduleTick3D(std::uint64_t frozenTick)noexcept{return frozenTick;}

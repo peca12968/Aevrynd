@@ -86,15 +86,57 @@ bool ProductionSlabUsesDeterministicReciprocal() {
   const auto shaderPath = std::filesystem::path{__FILE__}.parent_path()
                               .parent_path() / "shaders" /
                           "VolumetricAtmosphere.hlsl";
+  const auto rayPath = std::filesystem::path{__FILE__}.parent_path()
+                           .parent_path() / "shaders" /
+                       "WorldRayReconstruction.hlsli";
+  std::ifstream input(shaderPath, std::ios::binary);
+  std::ifstream rayInput(rayPath, std::ios::binary);
+  if (!input || !rayInput)
+    return false;
+  const std::string shader{std::istreambuf_iterator<char>{input}, {}};
+  const std::string ray{std::istreambuf_iterator<char>{rayInput}, {}};
+  return shader.find("rcp(") == std::string::npos &&
+         shader.find("precise float DeterministicReciprocal(float value)") !=
+             std::string::npos &&
+         shader.find("return AevryndDeterministicReciprocalSigned(value);") !=
+             std::string::npos &&
+         shader.find("DeterministicReciprocal(ray.y)") != std::string::npos &&
+         shader.find("DeterministicReciprocal(float(outputWidth))") !=
+             std::string::npos &&
+         shader.find("DeterministicReciprocal(float(outputHeight))") !=
+             std::string::npos &&
+         ray.find("precise float AevryndDeterministicReciprocalSigned(float value)") !=
+             std::string::npos &&
+         ray.find("0x7ef311c3u - normalizedBits") != std::string::npos &&
+         ray.find("!all(isfinite(homogeneous))") != std::string::npos &&
+         ray.find("inverseW == 0.0 || !isfinite(inverseW)") !=
+             std::string::npos &&
+         ray.find("homogeneous.xyz * inverseW") != std::string::npos;
+}
+
+bool ProductionCompositeUsesDeterministicCoordinateReciprocal() {
+  const auto shaderPath = std::filesystem::path{__FILE__}.parent_path()
+                              .parent_path() / "shaders" /
+                          "VolumetricAtmosphereComposite.hlsl";
   std::ifstream input(shaderPath, std::ios::binary);
   if (!input)
     return false;
   const std::string shader{std::istreambuf_iterator<char>{input}, {}};
-  return shader.find("rcp(") == std::string::npos &&
-         shader.find("precise float DeterministicReciprocal(float value)") !=
+  return shader.find("precise float2 CompositeViewportUv(uint2 pixel)") !=
              std::string::npos &&
-         shader.find("0x7ef311c3u-asuint(magnitude)") != std::string::npos &&
-         shader.find("DeterministicReciprocal(ray.y)") != std::string::npos;
+         shader.find("CompositeDeterministicReciprocal(max(viewportExtent.x,1.0))") !=
+             std::string::npos &&
+         shader.find("CompositeDeterministicReciprocal(max(viewportExtent.y,1.0))") !=
+             std::string::npos &&
+         shader.find("precise float2 CompositeAtmosphereTexelUv(") !=
+             std::string::npos &&
+         shader.find("CompositeDeterministicReciprocal(float(width))") !=
+             std::string::npos &&
+         shader.find("CompositeDeterministicReciprocal(float(height))") !=
+             std::string::npos &&
+         shader.find("(float2(candidate)+.5)/atmosphereExtent") ==
+             std::string::npos &&
+         shader.find("/max(viewportExtent,1.0)") == std::string::npos;
 }
 
 float DeterministicInverseSqrtContract(float value) {
@@ -119,12 +161,21 @@ float DeterministicPhaseContract(float cosine, float anisotropy) {
 float DeterministicReciprocalContract(float value) {
   if (!std::isfinite(value) || std::abs(value) < 1e-20f)
     return 0.f;
-  const float magnitude = std::abs(value);
+  const auto valueBits = std::bit_cast<std::uint32_t>(value);
+  const auto magnitudeBits = valueBits & 0x7fffffffu;
+  const auto exponent = (magnitudeBits >> 23u) & 0xffu;
+  const auto normalizedBits =
+      0x3f800000u | (magnitudeBits & 0x007fffffu);
+  const float normalizedMagnitude = std::bit_cast<float>(normalizedBits);
   float estimate = std::bit_cast<float>(
-      0x7ef311c3u - std::bit_cast<std::uint32_t>(magnitude));
+      0x7ef311c3u - normalizedBits);
   for (unsigned iteration = 0; iteration < 4; ++iteration)
-    estimate = estimate * (2.f - magnitude * estimate);
-  return value < 0.f ? -estimate : estimate;
+    estimate = estimate * (2.f - normalizedMagnitude * estimate);
+  const float exponentScale = exponent < 254u
+      ? std::bit_cast<float>((254u - exponent) << 23u)
+      : std::bit_cast<float>(0x00800000u) * .5f;
+  estimate *= exponentScale;
+  return (valueBits & 0x80000000u) != 0u ? -estimate : estimate;
 }
 } // namespace
 
@@ -278,6 +329,9 @@ int main() {
   if (!ProductionSlabUsesDeterministicReciprocal())
     return 15;
 
+  if (!ProductionCompositeUsesDeterministicCoordinateReciprocal())
+    return 17;
+
   double maximumReciprocalRelativeError{};
   for (unsigned sample = 0; sample <= 65536; ++sample) {
     const float magnitude =
@@ -291,8 +345,34 @@ int main() {
           (std::max)(maximumReciprocalRelativeError, relativeError);
     }
   }
+  for (unsigned exponent = 61; exponent <= 254; ++exponent) {
+    for (unsigned mantissaSample = 0; mantissaSample <= 512;
+         ++mantissaSample) {
+      const auto mantissa = std::uint32_t(
+          (std::uint64_t{mantissaSample} * 0x7fffffu) / 512u);
+      const float magnitude =
+          std::bit_cast<float>((exponent << 23u) | mantissa);
+      for (const float value : {-magnitude, magnitude}) {
+        const float reference = 1.f / value;
+        const float deterministic = DeterministicReciprocalContract(value);
+        if (deterministic == 0.f)
+          return 16;
+        const double relativeError =
+            std::abs(double(deterministic - reference)) /
+            std::abs(double(reference));
+        maximumReciprocalRelativeError =
+            (std::max)(maximumReciprocalRelativeError, relativeError);
+      }
+    }
+  }
   if (!std::isfinite(maximumReciprocalRelativeError) ||
       maximumReciprocalRelativeError > 5e-6 ||
+      !std::isfinite(DeterministicReciprocalContract(
+          std::numeric_limits<float>::max())) ||
+      !std::isfinite(DeterministicReciprocalContract(
+          -std::numeric_limits<float>::max())) ||
+      DeterministicReciprocalContract(std::numeric_limits<float>::max()) < 0.f ||
+      DeterministicReciprocalContract(-std::numeric_limits<float>::max()) > 0.f ||
       DeterministicReciprocalContract(0.f) != 0.f ||
       DeterministicReciprocalContract(
           std::numeric_limits<float>::infinity()) != 0.f ||

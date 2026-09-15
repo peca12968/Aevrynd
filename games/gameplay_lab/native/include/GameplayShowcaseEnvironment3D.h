@@ -41,7 +41,7 @@ struct ShowcaseUnderstoryFormVariation3D {
 
 // 同一棵來源樹仍維持原 material、descriptor、collision 與 HLOD identity；
 // 只由 placement 的永久 stableKey、距離帶與既有樹種選出有限輪廓變化。
-// 水平尺度只縮不放，避免新增樹冠／碰撞重疊；林緣的 Far 樹略矮，讓
+// 水平尺度不超過配置冠幅；近中景保留冠層連接，林緣的 Far 樹略矮，讓
 // 主冠層、次冠層、幼樹與枯立木形成可辨識的高度節奏而不增加 draw。
 [[nodiscard]] inline ShowcaseTreeFormVariation3D
 ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
@@ -56,13 +56,21 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
                                : 1.f;
   const bool dead = placement.variant == ShowcaseLandVariant3D::DeadTreeTrunk;
   const bool sapling = placement.variant == ShowcaseLandVariant3D::TreeSmall02;
-  const float canopy = dead ? .58f + .16f * u
+  // 舊版活冠在兩軸重複收窄，正式 Near/Mid 面積只剩配置的約 72%，
+  // 使已群聚的樹林再次讀成果園。高度與 yaw 保留原有 stable-key 節奏，
+  // 水平僅做小幅輪廓差異；Y 不變，因此正式樹幹 collision 代理逐值不變。
+  const bool connectedCanopy = !dead &&
+      placement.band != ShowcaseLandBand3D::Far;
+  const float canopy = connectedCanopy
+                           ? (sapling ? .90f + .10f * u : .94f + .06f * u)
+                       : dead ? .58f + .16f * u
                        : sapling ? .72f + .18f * u
                                  : .82f + .18f * u;
   const float height = bandHeight *
       (dead ? .82f + .24f * v : sapling ? .88f + .18f * v
                                         : .94f + .16f * v);
-  const float depth = canopy * (.88f + .12f * v);
+  const float depth = canopy * (connectedCanopy ? .98f + .02f * v
+                                                : .88f + .12f * v);
   return {{canopy, height, depth}, (u - .5f) * .42f};
 }
 
@@ -103,8 +111,12 @@ ShowcaseUnderstoryFormVariation(
     return {{bandCoverage * (.98f + .16f * u), 1.f,
              bandCoverage * (.90f + .16f * v)},
             (u - .5f) * .64f};
-  // Upland 是樹根周圍的正式林下生境；蕨／灌木網格以公尺建模，正式
-  // submission 會維持 Y=1，這裡只調整葉冠的水平群落覆蓋。
+  // Upland 是樹根周圍的正式林下生境；中景必須維持完整群落冠幅，不能
+  // 再隨 band 收窄成零星草點。蕨／灌木網格以公尺建模，正式 submission
+  // 維持 Y=1；只補回水平覆蓋，仍守既有 1.34 上限且不擴張 Far 的 overdraw。
+  if (placement.band != ShowcaseLandBand3D::Far)
+    return {{1.24f + .095f * u, 1.f, 1.24f + .095f * v},
+            (u - .5f) * .76f};
   return {{bandCoverage * (1.02f + .16f * u), 1.f,
            bandCoverage * (1.02f + .16f * v)},
           (u - .5f) * .76f};

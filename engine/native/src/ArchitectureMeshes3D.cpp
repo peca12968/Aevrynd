@@ -64,6 +64,20 @@ void AppendRoofCourses(Mesh3D& mesh,const CottageMeshSettings3D& settings,Color 
     }
 }
 
+void AppendEaveJoinery(Mesh3D& mesh,const CottageMeshSettings3D& settings,Color timber){
+    const float halfWidth=settings.width*.5f+settings.roofOverhang,halfDepth=settings.depth*.5f+settings.roofOverhang;
+    // 簷底板與牆體、外側封簷重疊，讓屋頂挑出部分有連續承接面。
+    for(float side:{-1.f,1.f})AppendBox(mesh,{side*(settings.width*.5f+settings.roofOverhang*.5f),settings.wallHeight-.065f,0},{settings.roofOverhang+.12f,.13f,halfDepth*2.f},timber);
+    // 山牆斜封邊共用屋頂坡度；每片只用兩個三角形維持近景預算。
+    for(float side:{-1.f,1.f}){
+        const float z=side*(halfDepth+.006f),eave=settings.wallHeight+.018f,ridge=eave+settings.roofHeight;
+        std::array<Vec3,4> left={Vec3{-halfWidth,eave-.14f,z},Vec3{0,ridge-.14f,z},Vec3{0,ridge,z},Vec3{-halfWidth,eave,z}};
+        std::array<Vec3,4> right={Vec3{0,ridge-.14f,z},Vec3{halfWidth,eave-.14f,z},Vec3{halfWidth,eave,z},Vec3{0,ridge,z}};
+        if(side>0){std::reverse(left.begin(),left.end());std::reverse(right.begin(),right.end());}
+        AppendFace(mesh,left,timber);AppendFace(mesh,right,timber);
+    }
+}
+
 }
 
 Mesh3D CreateCottageMesh3D(const CottageMeshSettings3D& settings){
@@ -85,8 +99,11 @@ Mesh3D CreateCottageMesh3D(const CottageMeshSettings3D& settings){
     for(float x:{-settings.width*.47f,settings.width*.47f})AppendBox(mesh,{x,settings.wallHeight*.5f,settings.depth*.5f+.04f},{.16f,settings.wallHeight,.16f},timber);
     AppendBox(mesh,{0,settings.wallHeight-.18f,front-.04f},{settings.width-.22f,.17f,.16f},timber);
     for(float x:{-sideOffset,sideOffset})AppendBox(mesh,{x,settings.wallHeight-.18f,0},{.16f,.17f,settings.depth-.22f},timber);
-    AppendBox(mesh,{0,.08f,front-.22f},{doorWidth+.35f,.16f,.42f},{.37f,.34f,.29f,1});
-    AppendBox(mesh,{0,doorHeight+.38f,front-.33f},{doorWidth+.55f,.15f,.68f},timber);for(float x:{-doorWidth*.58f,doorWidth*.58f})AppendBox(mesh,{x,doorHeight+.22f,front-.22f},{.1f,.42f,.1f},timber);
+    // 門廊立柱從石階頂面連至雨遮底面，避免短支撐懸空；台階本身仍落在地面。
+    AppendBox(mesh,{0,.08f,front-.35f},{doorWidth+.35f,.16f,.82f},{.37f,.34f,.29f,1});
+    AppendBox(mesh,{0,doorHeight+.38f,front-.33f},{doorWidth+.55f,.15f,.68f},timber);
+    const float porchBase=.16f,porchTop=doorHeight+.305f;
+    for(float x:{-doorWidth*.58f,doorWidth*.58f})AppendBox(mesh,{x,(porchBase+porchTop)*.5f,front-.5f},{.14f,porchTop-porchBase,.14f},timber);
     for(float x:{-windowOffset,windowOffset})AppendBox(mesh,{x,windowY-.62f,front-.13f},{1.14f,.13f,.24f},timber);for(float x:{-sideOffset,sideOffset})AppendBox(mesh,{x+(x<0?-.12f:.12f),windowY-.62f,0},{.24f,.13f,1.14f},timber);
     AppendBox(mesh,{0,settings.wallHeight+.02f,-settings.depth*.5f-settings.roofOverhang*.62f},{settings.width+settings.roofOverhang*1.7f,.13f,.16f},timber);
     const float roofHalfWidth=settings.width*.5f+settings.roofOverhang,roofDepth=settings.depth+settings.roofOverhang*2.f;AppendBox(mesh,{0,settings.wallHeight+settings.roofHeight+.045f,0},{.16f,.13f,roofDepth+.12f},{.3f,.13f,.07f,1});for(float x:{-roofHalfWidth,roofHalfWidth})AppendBox(mesh,{x,settings.wallHeight+.01f,0},{.13f,.15f,roofDepth+.08f},timber);
@@ -94,6 +111,7 @@ Mesh3D CreateCottageMesh3D(const CottageMeshSettings3D& settings){
     AppendBox(mesh,{chimneyX,settings.wallHeight+settings.roofHeight+.08f,chimneyZ},{.64f,.14f,.72f},{.28f,.2f,.16f,1});
     // 屋瓦以少量坡面層次表現重疊瓦列，避免為每片瓦建立昂貴立體幾何。
     AppendRoofCourses(mesh,settings,roof);
+    AppendEaveJoinery(mesh,settings,timber);
     return mesh;
 }
 

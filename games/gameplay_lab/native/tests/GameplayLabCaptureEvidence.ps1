@@ -230,7 +230,7 @@ function Get-GameplayEvidenceBgra32($Bitmap) {
   $graphics=[Drawing.Graphics]::FromImage($converted);$data=$null
   try {
     $graphics.DrawImageUnscaled($Bitmap,0,0);$rectangle=[Drawing.Rectangle]::new(0,0,$converted.Width,$converted.Height);$data=$converted.LockBits($rectangle,[Drawing.Imaging.ImageLockMode]::ReadOnly,[Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $bytes=[byte[]]::new([Math]::Abs($data.Stride)*$converted.Height);[Runtime.InteropServices.Marshal]::Copy($data.Scan0,$bytes,0,$bytes.Length);return ,$bytes
+    $bytes=[byte[]]::new([Math]::Abs($data.Stride)*$converted.Height);[Runtime.InteropServices.Marshal]::Copy($data.Scan0,$bytes,0,$bytes.Length);return [pscustomobject]@{bytes=$bytes}
   } finally {if($data){$converted.UnlockBits($data)};$graphics.Dispose();$converted.Dispose()}
 }
 
@@ -302,6 +302,187 @@ function Get-GameplayTemporalTokenStableMetadataSha([string]$Path) {
   return Get-GameplayEvidenceTextSha256Hex ($stable|ConvertTo-Json -Depth 8 -Compress)
 }
 
+if(-not('AevryndGameplayTemporalGhostKernel' -as [type])){
+  Add-Type -TypeDefinition @'
+using System;
+
+public sealed class AevryndGameplayTemporalGhostKernelResult
+{
+    public byte[] DifferenceMap;
+    public bool[] EligibleMap;
+    public bool[] RingMap;
+    public int[] Histogram;
+    public int[] RingHistogram;
+    public int[] TilePixels;
+    public int[] TileStablePixels;
+    public long[] TileEnergy;
+    public long[] TileDifferenceSum;
+    public long[] TileDifferenceSquaredSum;
+    public int[] TileHistogram;
+    public long[] TileSignedSum;
+    public int[] TileSignedHistogram;
+    public long AbsoluteChannelEnergy;
+    public long RingChannelEnergy;
+    public int Eligible;
+    public int StablePixels;
+    public int RingPixels;
+    public int Excluded;
+    public int MaximumDifference;
+    public int RingMaximum;
+}
+
+public static class AevryndGameplayTemporalGhostKernel
+{
+    public static bool[] BuildSemanticEmptyMap(
+        byte[] rawObjectId, byte[] effectiveObjectId,
+        int imageWidth, int x, int y, int width, int height)
+    {
+        var semanticEmpty = new bool[checked(width * height)];
+        for (int row = 0; row < height; ++row) {
+            int sourceIndex = (y + row) * imageWidth + x;
+            int mapIndex = row * width;
+            for (int column = 0; column < width; ++column) {
+                int offset = (sourceIndex + column) * 4;
+                semanticEmpty[mapIndex + column] =
+                    rawObjectId[offset] <= 8 && rawObjectId[offset + 1] <= 8 &&
+                    rawObjectId[offset + 2] <= 8 &&
+                    effectiveObjectId[offset] <= 8 && effectiveObjectId[offset + 1] <= 8 &&
+                    effectiveObjectId[offset + 2] <= 8;
+            }
+        }
+        return semanticEmpty;
+    }
+
+    public static AevryndGameplayTemporalGhostKernelResult MeasureWithoutTokens(
+        byte[] rawBeauty, byte[] effectiveBeauty, bool[] semanticEmpty,
+        int imageWidth, int x, int y, int width, int height)
+    {
+        return Measure(rawBeauty, effectiveBeauty, semanticEmpty, new int[0], false, imageWidth, x, y, width, height);
+    }
+
+    public static AevryndGameplayTemporalGhostKernelResult MeasureWithoutTokensFromObjectIds(
+        byte[] rawBeauty, byte[] effectiveBeauty, byte[] rawObjectId, byte[] effectiveObjectId,
+        int imageWidth, int x, int y, int width, int height)
+    {
+        return MeasureWithoutTokens(
+            rawBeauty, effectiveBeauty,
+            BuildSemanticEmptyMap(rawObjectId, effectiveObjectId, imageWidth, x, y, width, height),
+            imageWidth, x, y, width, height);
+    }
+
+    public static AevryndGameplayTemporalGhostKernelResult MeasureWithTokens(
+        byte[] rawBeauty, byte[] effectiveBeauty, bool[] semanticEmpty, int[] tokenKeys,
+        int imageWidth, int x, int y, int width, int height)
+    {
+        return Measure(rawBeauty, effectiveBeauty, semanticEmpty, tokenKeys, true, imageWidth, x, y, width, height);
+    }
+
+    public static AevryndGameplayTemporalGhostKernelResult Measure(
+        byte[] rawBeauty, byte[] effectiveBeauty, bool[] semanticEmpty,
+        int[] tokenKeys, bool useTokenKeys, int imageWidth, int x, int y, int width, int height)
+    {
+        const int tileColumns = 8;
+        const int tileRows = 4;
+        const int tileCount = tileColumns * tileRows;
+        int pixelCount = checked(width * height);
+        var result = new AevryndGameplayTemporalGhostKernelResult {
+            DifferenceMap = new byte[pixelCount], EligibleMap = new bool[pixelCount],
+            RingMap = new bool[pixelCount], Histogram = new int[256],
+            RingHistogram = new int[256], TilePixels = new int[tileCount],
+            TileStablePixels = new int[tileCount], TileEnergy = new long[tileCount],
+            TileDifferenceSum = new long[tileCount], TileDifferenceSquaredSum = new long[tileCount],
+            TileHistogram = new int[tileCount * 256], TileSignedSum = new long[tileCount * 3],
+            TileSignedHistogram = new int[tileCount * 3 * 511]
+        };
+        for (int row = 0; row < height; ++row) {
+            int py = y + row;
+            int mapRow = row * width;
+            for (int column = 0; column < width; ++column) {
+                int mapIndex = mapRow + column;
+                if (!semanticEmpty[mapIndex]) { ++result.Excluded; continue; }
+                ++result.Eligible;
+                bool adjacentObject = false;
+                for (int oy = -1; oy <= 1 && !adjacentObject; ++oy) {
+                    int neighborRow = row + oy;
+                    if (neighborRow < 0 || neighborRow >= height) continue;
+                    int neighborMapRow = neighborRow * width;
+                    for (int ox = -1; ox <= 1; ++ox) {
+                        int neighborColumn = column + ox;
+                        if (neighborColumn < 0 || neighborColumn >= width) continue;
+                        if (!semanticEmpty[neighborMapRow + neighborColumn]) { adjacentObject = true; break; }
+                    }
+                }
+                int px = x + column;
+                int sourceIndex = py * imageWidth + px;
+                int rawOffset = sourceIndex * 4;
+                int difference = 0;
+                int channelDifference = 0;
+                if (!adjacentObject) {
+                    ++result.StablePixels;
+                    for (int channel = 0; channel < 3; ++channel) {
+                        int delta = Math.Abs((int)rawBeauty[rawOffset + channel] - effectiveBeauty[rawOffset + channel]);
+                        channelDifference += delta;
+                        difference = Math.Max(difference, delta);
+                    }
+                    result.AbsoluteChannelEnergy += channelDifference;
+                    ++result.Histogram[difference];
+                } else {
+                    ++result.RingPixels;
+                    result.RingMap[mapIndex] = true;
+                    int forward = 255, backward = 255;
+                    for (int oy = -1; oy <= 1; ++oy) {
+                        int neighborRow = row + oy;
+                        if (neighborRow < 0 || neighborRow >= height) continue;
+                        int sy = y + neighborRow;
+                        int neighborMapRow = neighborRow * width;
+                        for (int ox = -1; ox <= 1; ++ox) {
+                            int neighborColumn = column + ox;
+                            if (neighborColumn < 0 || neighborColumn >= width) continue;
+                            int neighborMapIndex = neighborMapRow + neighborColumn;
+                            if (!semanticEmpty[neighborMapIndex]) continue;
+                            int neighborSourceIndex = sy * imageWidth + x + neighborColumn;
+                            if (useTokenKeys && tokenKeys[neighborSourceIndex] != tokenKeys[sourceIndex]) continue;
+                            int neighbor = neighborSourceIndex * 4;
+                            int fd = 0, bd = 0;
+                            for (int channel = 0; channel < 3; ++channel) {
+                                fd = Math.Max(fd, Math.Abs((int)rawBeauty[rawOffset + channel] - effectiveBeauty[neighbor + channel]));
+                                bd = Math.Max(bd, Math.Abs((int)effectiveBeauty[rawOffset + channel] - rawBeauty[neighbor + channel]));
+                            }
+                            forward = Math.Min(forward, fd);
+                            backward = Math.Min(backward, bd);
+                        }
+                    }
+                    difference = Math.Max(forward, backward);
+                    channelDifference = 3 * difference;
+                    result.RingChannelEnergy += channelDifference;
+                    ++result.RingHistogram[difference];
+                    result.RingMaximum = Math.Max(result.RingMaximum, difference);
+                }
+                result.EligibleMap[mapIndex] = true;
+                result.DifferenceMap[mapIndex] = (byte)difference;
+                result.MaximumDifference = Math.Max(result.MaximumDifference, difference);
+                int tile = ((row * tileRows) / height) * tileColumns + ((column * tileColumns) / width);
+                ++result.TilePixels[tile];
+                if (!adjacentObject) {
+                    ++result.TileStablePixels[tile];
+                    result.TileEnergy[tile] += channelDifference;
+                    result.TileDifferenceSum[tile] += difference;
+                    result.TileDifferenceSquaredSum[tile] += difference * difference;
+                    ++result.TileHistogram[tile * 256 + difference];
+                    for (int channel = 0; channel < 3; ++channel) {
+                        int signed = (int)effectiveBeauty[rawOffset + channel] - rawBeauty[rawOffset + channel];
+                        result.TileSignedSum[tile * 3 + channel] += signed;
+                        ++result.TileSignedHistogram[((tile * 3 + channel) * 511) + signed + 255];
+                    }
+                }
+            }
+        }
+        return result;
+    }
+}
+'@
+}
+
 function Get-GameplayTemporalGhostEvidence(
   [string]$RawBeautyPath,[string]$EffectiveBeautyPath,
   [string]$RawObjectIdPath,[string]$EffectiveObjectIdPath,
@@ -319,34 +500,32 @@ function Get-GameplayTemporalGhostEvidence(
       $snapshots[$key]=$snapshot
     }
     foreach($key in $paths.Keys){$stream=[IO.MemoryStream]::new([byte[]]$snapshots[$key].bytes,$false);$streams+=$stream;$bitmaps+=[Drawing.Bitmap]::FromStream($stream)}
-    $rawBeauty,$effectiveBeauty,$rawObjectId,$effectiveObjectId,$rawDepth,$effectiveDepth=$bitmaps
+    if($bitmaps.Count-ne6-or@($bitmaps|Where-Object{$null-eq$_}).Count){throw 'Temporal ghost bitmap decode was incomplete'}
+    $rawBeauty=$bitmaps[0]
+    $effectiveBeauty=$bitmaps[1]
+    $rawObjectId=$bitmaps[2]
+    $effectiveObjectId=$bitmaps[3]
+    $rawDepth=$bitmaps[4]
+    $effectiveDepth=$bitmaps[5]
     $tokenPair=$null
     if($ExpectedSha256){$stem=[IO.Path]::GetFileName($RawObjectIdPath)-replace '-raw-object-id.png$','';$tokenPair=Read-GameplayTemporalTokenPair ([IO.Path]::GetDirectoryName($RawObjectIdPath)) $stem $rawBeauty.Width $rawBeauty.Height}
     foreach($bitmap in $bitmaps){if($bitmap.Width-ne$rawBeauty.Width-or$bitmap.Height-ne$rawBeauty.Height){throw 'Temporal ghost artifact dimensions did not match'}}
     if($X-lt0-or$Y-lt0-or$Width-lt16-or$Height-lt16-or$X+$Width-gt$rawBeauty.Width-or$Y+$Height-gt$rawBeauty.Height){throw 'Temporal ghost world-only bounds were invalid'}
 
-    # 正式擷取以無損身份判斷靜態背景；未附 provenance 的舊合成測試只接受空白 OID。 (full-frame coverage).
-    $rawBeautyBytes=Get-GameplayEvidenceBgra32 $rawBeauty;$effectiveBeautyBytes=Get-GameplayEvidenceBgra32 $effectiveBeauty;$rawOidBytes=Get-GameplayEvidenceBgra32 $rawObjectId;$effectiveOidBytes=Get-GameplayEvidenceBgra32 $effectiveObjectId;$imageWidth=$rawBeauty.Width
-    $pixelCount=$Width*$Height;$differenceMap=[byte[]]::new($pixelCount);$eligibleMap=[bool[]]::new($pixelCount);$ringMap=[bool[]]::new($pixelCount);$histogram=[int[]]::new(256);$ringHistogram=[int[]]::new(256);$tileColumns=8;$tileRows=4;$tileCount=$tileColumns*$tileRows;$tilePixels=[int[]]::new($tileCount);$tileStablePixels=[int[]]::new($tileCount);$tileEnergy=[int64[]]::new($tileCount);$tileDifferenceSum=[int64[]]::new($tileCount);$tileDifferenceSquaredSum=[int64[]]::new($tileCount);$tileHistogram=[int[]]::new($tileCount*256);$tileSignedSum=[int64[]]::new($tileCount*3);$tileSignedHistogram=[int[]]::new($tileCount*3*511)
-    [int64]$absoluteChannelEnergy=0;[int64]$ringChannelEnergy=0;$eligible=0;$stablePixels=0;$ringPixels=0;$excluded=0;$maximumDifference=0;$ringMaximum=0
-    for($row=0;$row-lt$Height;++$row){for($column=0;$column-lt$Width;++$column){
-      $px=$X+$column;$py=$Y+$row;$oidOffset=($py*$imageWidth+$px)*4;$rawEmpty=$rawOidBytes[$oidOffset]-le8-and$rawOidBytes[$oidOffset+1]-le8-and$rawOidBytes[$oidOffset+2]-le8;$effectiveEmpty=$effectiveOidBytes[$oidOffset]-le8-and$effectiveOidBytes[$oidOffset+1]-le8-and$effectiveOidBytes[$oidOffset+2]-le8
-      if($tokenPair){$rawEmpty=$effectiveEmpty=$tokenPair.compatible[$py*$imageWidth+$px]}
-      if(-not($rawEmpty-and$effectiveEmpty)){++$excluded;continue};++$eligible
-      # 直接索引已鎖定的 BGRA 緩衝，避免每個像素呼叫 PowerShell scriptblock。 (hot evidence loop).
-      $adjacentObject=$false;for($oy=-1;$oy-le1-and-not$adjacentObject;++$oy){for($ox=-1;$ox-le1;++$ox){$sx=$px+$ox;$sy=$py+$oy;if($sx-lt$X-or$sy-lt$Y-or$sx-ge$X+$Width-or$sy-ge$Y+$Height-or$sx-lt0-or$sy-lt0-or$sx-ge$imageWidth-or$sy-ge$rawBeauty.Height){continue};$neighborOidOffset=($sy*$imageWidth+$sx)*4;$rawNeighborEmpty=$rawOidBytes[$neighborOidOffset]-le8-and$rawOidBytes[$neighborOidOffset+1]-le8-and$rawOidBytes[$neighborOidOffset+2]-le8;$effectiveNeighborEmpty=$effectiveOidBytes[$neighborOidOffset]-le8-and$effectiveOidBytes[$neighborOidOffset+1]-le8-and$effectiveOidBytes[$neighborOidOffset+2]-le8;if($tokenPair){$rawNeighborEmpty=$effectiveNeighborEmpty=$tokenPair.compatible[$sy*$imageWidth+$sx]};if(-not($rawNeighborEmpty-and$effectiveNeighborEmpty)){$adjacentObject=$true;break}}}
-      $rawOffset=($py*$imageWidth+$px)*4;$effectiveOffset=$rawOffset;$difference=0;$channelDifference=0
-      if(-not$adjacentObject){
-        ++$stablePixels;for($channel=0;$channel-lt3;++$channel){$delta=[Math]::Abs([int]$rawBeautyBytes[$rawOffset+$channel]-[int]$effectiveBeautyBytes[$effectiveOffset+$channel]);$channelDifference+=$delta;$difference=[Math]::Max($difference,$delta)};$absoluteChannelEnergy+=$channelDifference;++$histogram[$difference]
-      }else{
-        # 物件鄰接ring使用雙向3x3最佳匹配，允許一像素合法運動但仍會抓到單向trail。 (object-adjacent ring).
-        ++$ringPixels;$ringMap[$row*$Width+$column]=$true;$forward=255;$backward=255
-        for($oy=-1;$oy-le1;++$oy){for($ox=-1;$ox-le1;++$ox){$sx=$px+$ox;$sy=$py+$oy;if($sx-lt$X-or$sy-lt$Y-or$sx-ge$X+$Width-or$sy-ge$Y+$Height-or$sx-lt0-or$sy-lt0-or$sx-ge$imageWidth-or$sy-ge$rawBeauty.Height){continue};$neighbor=($sy*$imageWidth+$sx)*4;$rawNeighborEmpty=$rawOidBytes[$neighbor]-le8-and$rawOidBytes[$neighbor+1]-le8-and$rawOidBytes[$neighbor+2]-le8;$effectiveNeighborEmpty=$effectiveOidBytes[$neighbor]-le8-and$effectiveOidBytes[$neighbor+1]-le8-and$effectiveOidBytes[$neighbor+2]-le8;if($tokenPair){$rawNeighborEmpty=$effectiveNeighborEmpty=($tokenPair.compatible[$sy*$imageWidth+$sx]-and$tokenPair.keys[$sy*$imageWidth+$sx]-eq$tokenPair.keys[$py*$imageWidth+$px])};if(-not($rawNeighborEmpty-and$effectiveNeighborEmpty)){continue};$fd=0;$bd=0;for($channel=0;$channel-lt3;++$channel){$fd=[Math]::Max($fd,[Math]::Abs([int]$rawBeautyBytes[$rawOffset+$channel]-[int]$effectiveBeautyBytes[$neighbor+$channel]));$bd=[Math]::Max($bd,[Math]::Abs([int]$effectiveBeautyBytes[$effectiveOffset+$channel]-[int]$rawBeautyBytes[$neighbor+$channel]))};$forward=[Math]::Min($forward,$fd);$backward=[Math]::Min($backward,$bd)}}
-        $difference=[Math]::Max($forward,$backward);$channelDifference=3*$difference;$ringChannelEnergy+=$channelDifference;++$ringHistogram[$difference];$ringMaximum=[Math]::Max($ringMaximum,$difference)
-      }
-      $mapIndex=$row*$Width+$column;$eligibleMap[$mapIndex]=$true;$differenceMap[$mapIndex]=[byte]$difference;$maximumDifference=[Math]::Max($maximumDifference,$difference);$tileX=[Math]::Min($tileColumns-1,[int][Math]::Floor($column*$tileColumns/[double]$Width));$tileY=[Math]::Min($tileRows-1,[int][Math]::Floor($row*$tileRows/[double]$Height));$tile=$tileY*$tileColumns+$tileX;++$tilePixels[$tile]
-      if(-not$adjacentObject){++$tileStablePixels[$tile];$tileEnergy[$tile]+=$channelDifference;$tileDifferenceSum[$tile]+=$difference;$tileDifferenceSquaredSum[$tile]+=$difference*$difference;++$tileHistogram[$tile*256+$difference];for($channel=0;$channel-lt3;++$channel){$signed=[int]$effectiveBeautyBytes[$effectiveOffset+$channel]-[int]$rawBeautyBytes[$rawOffset+$channel];$tileSignedSum[$tile*3+$channel]+=$signed;++$tileSignedHistogram[(($tile*3+$channel)*511)+$signed+255]}}
-    }}
+    $bgraBuffers=@($(Get-GameplayEvidenceBgra32 $rawBeauty);$(Get-GameplayEvidenceBgra32 $effectiveBeauty);$(Get-GameplayEvidenceBgra32 $rawObjectId);$(Get-GameplayEvidenceBgra32 $effectiveObjectId))
+    # 正式擷取以無損身份判斷靜態背景；未附來源證明的舊合成測試只接受空白 OID。
+    if($bgraBuffers.Count-ne4){throw 'Temporal ghost BGRA buffer collection was incomplete'}
+    $expectedBgraLength=$rawBeauty.Width*$rawBeauty.Height*4
+    if($bgraBuffers[0].bytes.Count-ne$expectedBgraLength-or$bgraBuffers[1].bytes.Count-ne$expectedBgraLength-or$bgraBuffers[2].bytes.Count-ne$expectedBgraLength-or$bgraBuffers[3].bytes.Count-ne$expectedBgraLength){throw 'Temporal ghost BGRA conversion was incomplete'}
+    $imageWidth=$rawBeauty.Width
+    $pixelCount=$Width*$Height;$tileColumns=8;$tileRows=4;$tileCount=$tileColumns*$tileRows
+    # 每個 3x3 查詢的 OID／token 合格性與格狀歸屬皆固定；逐像素只解碼一次，避免在兩次鄰域掃描重複處理屬性與位元組陣列。
+    # 單一已編譯 kernel 逐像素產生所有 map、ring、histogram、tile 與 signed 統計；後段 gate 保持原樣。
+    $kernel=[AevryndGameplayTemporalGhostKernelResult]::new()
+    if($tokenPair){$kernel=[AevryndGameplayTemporalGhostKernel]::MeasureWithTokens($bgraBuffers[0].bytes,$bgraBuffers[1].bytes,$tokenPair.compatible,[int[]]($tokenPair.keys),$imageWidth,$X,$Y,$Width,$Height)}else{$kernel=[AevryndGameplayTemporalGhostKernel]::MeasureWithoutTokensFromObjectIds($bgraBuffers[0].bytes,$bgraBuffers[1].bytes,$bgraBuffers[2].bytes,$bgraBuffers[3].bytes,$imageWidth,$X,$Y,$Width,$Height)}
+    if($null-eq$kernel){throw 'Temporal ghost compiled kernel returned no result'}
+    $differenceMap=$kernel.DifferenceMap;$eligibleMap=$kernel.EligibleMap;$ringMap=$kernel.RingMap;$histogram=$kernel.Histogram;$ringHistogram=$kernel.RingHistogram;$tilePixels=$kernel.TilePixels;$tileStablePixels=$kernel.TileStablePixels;$tileEnergy=$kernel.TileEnergy;$tileDifferenceSum=$kernel.TileDifferenceSum;$tileDifferenceSquaredSum=$kernel.TileDifferenceSquaredSum;$tileHistogram=$kernel.TileHistogram;$tileSignedSum=$kernel.TileSignedSum;$tileSignedHistogram=$kernel.TileSignedHistogram
+    [int64]$absoluteChannelEnergy=$kernel.AbsoluteChannelEnergy;[int64]$ringChannelEnergy=$kernel.RingChannelEnergy;$eligible=$kernel.Eligible;$stablePixels=$kernel.StablePixels;$ringPixels=$kernel.RingPixels;$excluded=$kernel.Excluded;$maximumDifference=$kernel.MaximumDifference;$ringMaximum=$kernel.RingMaximum
     $minimumEligible=[Math]::Min($pixelCount,[Math]::Max(129,[int][Math]::Ceiling($pixelCount*.05)));if($eligible-lt$minimumEligible-or$stablePixels-lt129-or($excluded-gt0-and$ringPixels-lt1)-or$stablePixels+$ringPixels-ne$eligible){throw "Temporal ghost full-frame eligible coverage was insufficient: eligible=$eligible stable=$stablePixels ring=$ringPixels required=$minimumEligible"}
     $getP99={param([int[]]$Values,[int]$Start,[int]$Count)$rank=[int][Math]::Ceiling($Count*.99);$running=0;for($value=0;$value-lt256;++$value){$running+=$Values[$Start+$value];if($running-ge$rank){return $value}};return 255}
     $p99=& $getP99 $histogram 0 $stablePixels;$ringP99=& $getP99 $ringHistogram 0 $ringPixels
@@ -376,7 +555,7 @@ function Get-GameplayTemporalGhostEvidence(
       $tiles+=[pscustomobject]@{index=$tile;x=$tile%$tileColumns;y=[int][Math]::Floor($tile/$tileColumns);eligiblePixels=$coverageCount;stablePixels=$count;ringPixels=$coverageCount-$count;gateApplied=if($tileGate){1}else{0};coverageFallbackFailed=if($fallbackFail){1}else{0};meanAbsoluteChannelDifference=$tileMean;p99MaximumChannelDifference=$tileP99;maximumChannelDifference=$tileMax;signedMeanB=$signedMeans[0];signedMeanG=$signedMeans[1];signedMeanR=$signedMeans[2];signedMedianB=$signedMedians[0];signedMedianG=$signedMedians[1];signedMedianR=$signedMedians[2];signedBias=$signedBias;medianBias=$medianBias;absoluteDifferenceMean=$tileDifferenceMeanValue;absoluteDifferenceSecondMoment=$tileDifferenceSecondMomentValue;absoluteDifferenceVariance=$tileVarianceValue;coherence=$coherence;pass=if($tilePass){1}else{0}}
     }
     if($eligibleTiles-lt4){throw "Temporal ghost full-frame tile coverage was insufficient: eligibleTiles=$eligibleTiles"}
-    $getLevel={param([int]$Threshold,[bool]$RingOnly)$count=0;[int64]$energy=0;$mask=[bool[]]::new($pixelCount);for($index=0;$index-lt$pixelCount;++$index){if(-not$eligibleMap[$index]-or$ringMap[$index]-ne$RingOnly-or$differenceMap[$index]-le$Threshold){continue};$mask[$index]=$true;++$count;$energy+=$differenceMap[$index]-$Threshold};$maximumComponent=0;$queue=[Collections.Generic.Queue[int]]::new();for($index=0;$index-lt$pixelCount;++$index){if(-not$mask[$index]){continue};$mask[$index]=$false;$queue.Enqueue($index);$component=0;while($queue.Count){$current=$queue.Dequeue();++$component;$cx=$current%$Width;$cy=[Math]::Floor($current/$Width);foreach($next in @($(if($cx){$current-1}else{-1}),$(if($cx+1-lt$Width){$current+1}else{-1}),$(if($cy){$current-$Width}else{-1}),$(if($cy+1-lt$Height){$current+$Width}else{-1}))){if($next-ge0-and$mask[$next]){$mask[$next]=$false;$queue.Enqueue($next)}}};$maximumComponent=[Math]::Max($maximumComponent,$component)};$population=if($RingOnly){$ringPixels}else{$stablePixels};return [pscustomobject]@{threshold=$Threshold;pixels=$count;fraction=if($population){[double]$count/$population}else{0.0};maximumConnectedPixels=$maximumComponent;normalizedExcessEnergy=if($population){[double]$energy/$population}else{0.0}}}
+    $getLevel={param([int]$Threshold,[bool]$RingOnly)$count=0;[int64]$energy=0;$mask=[bool[]]::new([int]$pixelCount);for($index=0;$index-lt$pixelCount;++$index){if(-not$eligibleMap[$index]-or$ringMap[$index]-ne$RingOnly-or$differenceMap[$index]-le$Threshold){continue};$mask[$index]=$true;++$count;$energy+=$differenceMap[$index]-$Threshold};$maximumComponent=0;$queue=[Collections.Generic.Queue[int]]::new();for($index=0;$index-lt$pixelCount;++$index){if(-not$mask[$index]){continue};$mask[$index]=$false;$queue.Enqueue($index);$component=0;while($queue.Count){$current=$queue.Dequeue();++$component;$cx=$current%$Width;$cy=[Math]::Floor($current/$Width);foreach($next in @($(if($cx){$current-1}else{-1}),$(if($cx+1-lt$Width){$current+1}else{-1}),$(if($cy){$current-$Width}else{-1}),$(if($cy+1-lt$Height){$current+$Width}else{-1}))){if($next-ge0-and$mask[$next]){$mask[$next]=$false;$queue.Enqueue($next)}}};$maximumComponent=[Math]::Max($maximumComponent,$component)};$population=if($RingOnly){$ringPixels}else{$stablePixels};return [pscustomobject]@{threshold=$Threshold;pixels=$count;fraction=if($population){[double]$count/$population}else{0.0};maximumConnectedPixels=$maximumComponent;normalizedExcessEnergy=if($population){[double]$energy/$population}else{0.0}}}
     $stableLevels=@((& $getLevel 8 $false),(& $getLevel 12 $false),(& $getLevel 16 $false));$ringLevels=@((& $getLevel 8 $true),(& $getLevel 12 $true),(& $getLevel 16 $true));$meanAbs=[double]$absoluteChannelEnergy/(3.0*$stablePixels);$ringMean=if($ringPixels){[double]$ringChannelEnergy/(3.0*$ringPixels)}else{0.0}
     # stable與ring以面積、cluster、energy共同判定，孤立量化差不主導結果。 (multi-level contract).
     $stablePass=$meanAbs-le1.25-and$p99-le4-and($stableLevels[0].pixels-le2-or$stableLevels[0].fraction-le.002)-and$stableLevels[0].maximumConnectedPixels-le12-and$stableLevels[0].normalizedExcessEnergy-le.02-and($stableLevels[1].pixels-le2-or$stableLevels[1].fraction-le.00025)-and$stableLevels[1].maximumConnectedPixels-le4-and$stableLevels[1].normalizedExcessEnergy-le.005-and$stableLevels[2].fraction-le.00002-and$stableLevels[2].maximumConnectedPixels-le2-and$stableLevels[2].normalizedExcessEnergy-le.0005
@@ -384,7 +563,8 @@ function Get-GameplayTemporalGhostEvidence(
     $tilePass=@($tiles|Where-Object { $_.pass -ne 1 }).Count -eq 0;$pass=$stablePass-and$ringPass-and$tilePass
     $artifactSha=[ordered]@{};$artifactName=[ordered]@{};foreach($key in $paths.Keys){$artifactSha[$key]=$snapshots[$key].sha256;$artifactName[$key]=[IO.Path]::GetFileName($paths[$key])}
     $coverageText="$X,$Y,$Width,$Height|$eligible,$stablePixels,$ringPixels,$excluded|"+(@($tiles|ForEach-Object{"$($_.index):$($_.eligiblePixels)"})-join',')
-    return [pscustomobject]@{pass=if($pass){1}else{0};contract='raw-effective-full-frame-v3';losslessIdentityVerified=($null-ne$tokenPair);tokenMetadataSha256=@($tokenPair.metadataSha256);tokenPlaneSha256=@($tokenPair.planeSha256);stablePass=if($stablePass){1}else{0};ringPass=if($ringPass){1}else{0};tilePass=if($tilePass){1}else{0};boundsX=$X;boundsY=$Y;boundsWidth=$Width;boundsHeight=$Height;eligiblePixels=$eligible;coveredPixels=$stablePixels+$ringPixels;excludedPixels=$excluded;stableEmptyPixels=$stablePixels;objectAdjacentRingPixels=$ringPixels;eligibleTiles=$eligibleTiles;tileColumns=$tileColumns;tileRows=$tileRows;meanAbsoluteChannelDifference=$meanAbs;p99MaximumChannelDifference=$p99;maximumChannelDifference=$maximumDifference;ringMeanAbsoluteChannelDifference=$ringMean;ringP99MaximumChannelDifference=$ringP99;ringMaximumChannelDifference=$ringMaximum;stableLevels=$stableLevels;ringLevels=$ringLevels;worstTileMeanAbsoluteChannelDifference=$worstTileMean;worstTileP99MaximumChannelDifference=$worstTileP99;worstTileMaximumChannelDifference=$worstTileMaximum;worstTileSignedBias=$worstTileSignedBias;worstTileMedianBias=$worstTileMedianBias;worstTileCoherence=$worstTileCoherence;tiles=$tiles;meanThreshold=1.25;ringMeanThreshold=2.0;p99Threshold=4;ringP99Threshold=8;tileMinimumStablePixels=$tileMinimumStablePixels;tileFallbackCoveragePixels=$tileFallbackCoveragePixels;tileMeanThreshold=$tileMeanThreshold;tileP99Threshold=$tileP99Threshold;tileSignedBiasThreshold=$tileSignedBiasThreshold;tileMedianBiasThreshold=$tileMedianBiasThreshold;tileCoherenceThreshold=$tileCoherenceThreshold;artifactName=[pscustomobject]$artifactName;artifactSha256=[pscustomobject]$artifactSha;coverageSha256=Get-GameplayEvidenceTextSha256Hex $coverageText}
+    $tokenMetadataSha256=if($tokenPair){@($tokenPair.metadataSha256)}else{@()};$tokenPlaneSha256=if($tokenPair){@($tokenPair.planeSha256)}else{@()}
+    return [pscustomobject]@{pass=if($pass){1}else{0};contract='raw-effective-full-frame-v3';losslessIdentityVerified=($null-ne$tokenPair);tokenMetadataSha256=$tokenMetadataSha256;tokenPlaneSha256=$tokenPlaneSha256;stablePass=if($stablePass){1}else{0};ringPass=if($ringPass){1}else{0};tilePass=if($tilePass){1}else{0};boundsX=$X;boundsY=$Y;boundsWidth=$Width;boundsHeight=$Height;eligiblePixels=$eligible;coveredPixels=$stablePixels+$ringPixels;excludedPixels=$excluded;stableEmptyPixels=$stablePixels;objectAdjacentRingPixels=$ringPixels;eligibleTiles=$eligibleTiles;tileColumns=$tileColumns;tileRows=$tileRows;meanAbsoluteChannelDifference=$meanAbs;p99MaximumChannelDifference=$p99;maximumChannelDifference=$maximumDifference;ringMeanAbsoluteChannelDifference=$ringMean;ringP99MaximumChannelDifference=$ringP99;ringMaximumChannelDifference=$ringMaximum;stableLevels=$stableLevels;ringLevels=$ringLevels;worstTileMeanAbsoluteChannelDifference=$worstTileMean;worstTileP99MaximumChannelDifference=$worstTileP99;worstTileMaximumChannelDifference=$worstTileMaximum;worstTileSignedBias=$worstTileSignedBias;worstTileMedianBias=$worstTileMedianBias;worstTileCoherence=$worstTileCoherence;tiles=$tiles;meanThreshold=1.25;ringMeanThreshold=2.0;p99Threshold=4;ringP99Threshold=8;tileMinimumStablePixels=$tileMinimumStablePixels;tileFallbackCoveragePixels=$tileFallbackCoveragePixels;tileMeanThreshold=$tileMeanThreshold;tileP99Threshold=$tileP99Threshold;tileSignedBiasThreshold=$tileSignedBiasThreshold;tileMedianBiasThreshold=$tileMedianBiasThreshold;tileCoherenceThreshold=$tileCoherenceThreshold;artifactName=[pscustomobject]$artifactName;artifactSha256=[pscustomobject]$artifactSha;coverageSha256=Get-GameplayEvidenceTextSha256Hex $coverageText}
   } finally {foreach($bitmap in $bitmaps){if($bitmap){$bitmap.Dispose()}};foreach($stream in $streams){if($stream){$stream.Dispose()}}}
 }
 

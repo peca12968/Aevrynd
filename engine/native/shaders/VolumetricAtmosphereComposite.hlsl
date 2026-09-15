@@ -28,16 +28,24 @@ float3 CompositeCameraPosition()
 
 precise float CompositeDeterministicReciprocal(float value)
 {
-    precise const float magnitude=abs(value);
-    const uint magnitudeBits=asuint(magnitude);
-    if(magnitudeBits>=0x7f800000u||magnitudeBits<asuint(1e-20))return 0.0;
-    precise float estimate=asfloat(0x7ef311c3u-magnitudeBits);
-    estimate=estimate*(2.0-magnitude*estimate);
-    estimate=estimate*(2.0-magnitude*estimate);
-    estimate=estimate*(2.0-magnitude*estimate);
-    estimate=estimate*(2.0-magnitude*estimate);
-    precise const float result=value<0.0?-estimate:estimate;
-    return result;
+    return AevryndDeterministicReciprocalSigned(value);
+}
+
+precise float2 CompositeViewportUv(uint2 pixel)
+{
+    precise const float2 inverseExtent=float2(
+        CompositeDeterministicReciprocal(max(viewportExtent.x,1.0)),
+        CompositeDeterministicReciprocal(max(viewportExtent.y,1.0)));
+    precise const float2 localUv=(float2(pixel)+.5-viewportOrigin)*inverseExtent;
+    return saturate(localUv);
+}
+
+precise float2 CompositeAtmosphereTexelUv(int2 pixel,uint width,uint height)
+{
+    precise const float2 inverseExtent=float2(
+        CompositeDeterministicReciprocal(float(width)),
+        CompositeDeterministicReciprocal(float(height)));
+    return (float2(pixel)+.5)*inverseExtent;
 }
 
 struct FullscreenVertex
@@ -60,15 +68,12 @@ float SceneAtmosphereWeight(uint2 pixel,float2 localUv)
     const float depth=sceneDepthTexture.Load(int3(pixel,0));
     if(depth>=0.999999)
         return 1.0;
-    const float2 ndc=float2(localUv.x*2.0-1.0,1.0-localUv.y*2.0);
-    float4 nearWorld=mul(inverseViewProjection,float4(ndc,0.0,1.0));
-    float4 surfaceWorld=mul(inverseViewProjection,float4(ndc,depth,1.0));
-    if(abs(nearWorld.w)<=1e-6||abs(surfaceWorld.w)<=1e-6)
+    float3 nearWorld,surfaceWorld;
+    if(!AevryndReconstructWorldPosition(localUv,0.0,inverseViewProjection,nearWorld)||
+       !AevryndReconstructWorldPosition(localUv,depth,inverseViewProjection,surfaceWorld))
         return 0.0;
-    nearWorld.xyz/=nearWorld.w;
-    surfaceWorld.xyz/=surfaceWorld.w;
-    const float3 rayOrigin=projectionOrthographic!=0?nearWorld.xyz:CompositeCameraPosition();
-    precise const float3 ray=AevryndDeterministicNormalize(surfaceWorld.xyz-rayOrigin);
+    const float3 rayOrigin=projectionOrthographic!=0?nearWorld:CompositeCameraPosition();
+    precise const float3 ray=AevryndDeterministicNormalize(surfaceWorld-rayOrigin);
     if(abs(ray.y)<=1e-6)
         return 0.0;
     precise const float inverseRayY=CompositeDeterministicReciprocal(ray.y);
@@ -76,7 +81,7 @@ float SceneAtmosphereWeight(uint2 pixel,float2 localUv)
     const float slab1=(cloudBaseAltitude+cloudThickness-rayOrigin.y)*inverseRayY;
     const float layerEntry=max(0.0,min(slab0,slab1));
     const float layerExit=max(slab0,slab1);
-    const float sceneDistance=dot(surfaceWorld.xyz-rayOrigin,ray);
+    const float sceneDistance=dot(surfaceWorld-rayOrigin,ray);
     return layerExit>layerEntry+1e-3&&sceneDistance>=layerEntry?1.0:0.0;
 }
 
@@ -94,7 +99,7 @@ float4 SampleDepthAwareAtmosphere(float2 localUv,float centerDepthWeight)
     [unroll] for(int offsetX=0;offsetX<2;++offsetX)
     {
         const int2 candidate=clamp(base+int2(offsetX,offsetY),int2(0,0),int2(atmosphereWidth-1,atmosphereHeight-1));
-        const precise float2 candidateUv=(float2(candidate)+.5)/atmosphereExtent;
+        const precise float2 candidateUv=CompositeAtmosphereTexelUv(candidate,atmosphereWidth,atmosphereHeight);
         const uint2 candidatePixel=min(uint2(viewportOrigin+candidateUv*viewportExtent),uint2(outputExtent)-1);
         const precise float candidateDepthWeight=SceneAtmosphereWeight(candidatePixel,candidateUv);
         const precise float2 axisWeight=offsetX==0?float2(1.0-fraction.x,0):float2(fraction.x,0);
@@ -118,7 +123,7 @@ float4 SampleDepthAwareAtmosphere(float2 localUv,float centerDepthWeight)
 float4 CompositeAtmosphere(FullscreenVertex input)
 {
     const uint2 pixel=min(uint2(input.position.xy),uint2(outputExtent)-1);
-    const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
+    const precise float2 localUv=CompositeViewportUv(pixel);
     const float depthWeight=SceneAtmosphereWeight(pixel,localUv);
     const float4 atmosphere=SampleDepthAwareAtmosphere(localUv,depthWeight);
     const float alpha=saturate(atmosphere.a*depthWeight);
@@ -132,7 +137,7 @@ float4 CompositeSceneColor(uint2 pixel,uint sampleIndex,bool preserveSemanticAlp
 #else
     const float4 scene=sceneColorTexture.Load(int3(pixel,0));
 #endif
-    const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
+    const precise float2 localUv=CompositeViewportUv(pixel);
     const float depthWeight=SceneAtmosphereWeight(pixel,localUv);
     const float4 atmosphere=SampleDepthAwareAtmosphere(localUv,depthWeight);
     const precise float alpha=saturate(atmosphere.a*depthWeight);
@@ -161,7 +166,7 @@ float4 VolumetricAtmosphereCompositeNearestPixelMain(FullscreenVertex input) : S
     const uint2 pixel=min(uint2(input.position.xy),uint2(outputExtent)-1);
     uint atmosphereWidth,atmosphereHeight;
     atmosphereTexture.GetDimensions(atmosphereWidth,atmosphereHeight);
-    const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
+    const precise float2 localUv=CompositeViewportUv(pixel);
     const uint2 atmospherePixel=min(uint2(localUv*float2(atmosphereWidth,atmosphereHeight)),uint2(atmosphereWidth-1,atmosphereHeight-1));
     const float4 atmosphere=atmosphereTexture.Load(int3(atmospherePixel,0));
     const float depthWeight=SceneAtmosphereWeight(pixel,localUv);
@@ -174,7 +179,7 @@ float4 VolumetricAtmosphereCompositeLegacyDepthPixelMain(FullscreenVertex input)
     const uint2 pixel=min(uint2(input.position.xy),uint2(outputExtent)-1);
     uint atmosphereWidth,atmosphereHeight;
     atmosphereTexture.GetDimensions(atmosphereWidth,atmosphereHeight);
-    const float2 localUv=saturate((float2(pixel)+.5-viewportOrigin)/max(viewportExtent,1.0));
+    const precise float2 localUv=CompositeViewportUv(pixel);
     const uint2 atmospherePixel=min(uint2(localUv*float2(atmosphereWidth,atmosphereHeight)),uint2(atmosphereWidth-1,atmosphereHeight-1));
     const float4 atmosphere=atmosphereTexture.Load(int3(atmospherePixel,0));
     const float hardwareDepth=sceneDepthTexture.Load(int3(pixel,0));

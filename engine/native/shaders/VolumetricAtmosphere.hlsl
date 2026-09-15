@@ -89,16 +89,13 @@ precise float DeterministicExp(float exponentValue)
 
 precise float DeterministicReciprocal(float value)
 {
-    // Production slab 僅接受有限且遠離零的 ray.y。固定 IEEE-754 初始值
-    // 與四次 Newton 疊代取代 vendor-dependent rcp；符號最後獨立還原。
-    if(!isfinite(value)||abs(value)<1e-20)return 0.0;
-    precise const float magnitude=abs(value);
-    precise float estimate=asfloat(0x7ef311c3u-asuint(magnitude));
-    estimate=estimate*(2.0-magnitude*estimate);
-    estimate=estimate*(2.0-magnitude*estimate);
-    estimate=estimate*(2.0-magnitude*estimate);
-    estimate=estimate*(2.0-magnitude*estimate);
-    precise const float result=value<0.0?-estimate:estimate;
+    return AevryndDeterministicReciprocalSigned(value);
+}
+
+precise float DeterministicSmoothstep(float edge0,float edge1,float value)
+{
+    precise const float t=saturate((value-edge0)*DeterministicReciprocal(edge1-edge0));
+    precise const float result=t*t*(3.0-2.0*t);
     return result;
 }
 
@@ -121,7 +118,7 @@ precise float Fbm3D(float3 coordinate,uint seed,float rotation,uint octaves)
         value+=sampleValue*amplitude;weight+=amplitude;
         coordinate=coordinate*2.03+float3(17.1,31.7,11.9);amplitude*=.48;
     }
-    precise const float result=value/max(weight,1e-5);
+    precise const float result=value*DeterministicReciprocal(max(weight,1e-5));
     return result;
 }
 
@@ -166,11 +163,11 @@ precise float CloudField(float3 worldPosition)
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
     if(testMutation==3){base=LegacyPlanarCloudNoise(advected);detail=LegacyPlanarCloudNoise(advected*2.31+31.7);}
 #endif
-    precise const float h=saturate((worldPosition.y-cloudBaseAltitude)/max(1.0,cloudThickness));
-    precise const float profile=smoothstep(0.0,.16,h)*smoothstep(0.0,.28,1.0-h);
-    precise const float layout=smoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
+    precise const float h=saturate((worldPosition.y-cloudBaseAltitude)*DeterministicReciprocal(max(1.0,cloudThickness)));
+    precise const float profile=DeterministicSmoothstep(0.0,.16,h)*DeterministicSmoothstep(0.0,.28,1.0-h);
+    precise const float layout=DeterministicSmoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
     precise const float threshold=.38+cloudErosion*(detail-.5);
-    precise const float result=layout*smoothstep(threshold,threshold+.18,base)*profile*cloudDensity;
+    precise const float result=layout*DeterministicSmoothstep(threshold,threshold+.18,base)*profile*cloudDensity;
     return result;
 }
 
@@ -181,7 +178,7 @@ precise float HenyeyGreenstein(float cosine,float anisotropy)
     // 1.5 是固定指數；x*x*固定反平方根與 x*sqrt(x) 等價，並避開
     // vendor-dependent pow / log / exp 特殊函式路徑。
     precise const float denominatorPower=denominator*denominator*AevryndDeterministicInverseSqrt(denominator);
-    precise const float result=(1.0-g2)/(12.5663706144*denominatorPower);
+    precise const float result=(1.0-g2)*DeterministicReciprocal(12.5663706144*denominatorPower);
     return result;
 }
 
@@ -190,10 +187,10 @@ precise float CloudShadowField(float3 worldPosition)
     precise const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
     precise const float3 rotated=RotateNoise(advected*.00125,cloudBaseNoiseRotation,0);
     precise const float base=ValueNoise3D(rotated,cloudBaseNoiseSeed);
-    precise const float h=saturate((worldPosition.y-cloudBaseAltitude)/max(1.0,cloudThickness));
-    precise const float profile=smoothstep(0.0,.16,h)*smoothstep(0.0,.28,1.0-h);
-    precise const float layout=smoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
-    precise const float result=layout*smoothstep(.38,.60,base)*profile*cloudDensity;
+    precise const float h=saturate((worldPosition.y-cloudBaseAltitude)*DeterministicReciprocal(max(1.0,cloudThickness)));
+    precise const float profile=DeterministicSmoothstep(0.0,.16,h)*DeterministicSmoothstep(0.0,.28,1.0-h);
+    precise const float layout=DeterministicSmoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
+    precise const float result=layout*DeterministicSmoothstep(.38,.60,base)*profile*cloudDensity;
     return result;
 }
 
@@ -208,7 +205,7 @@ precise float BlueR2Jitter(uint2 pixel,uint frameIndex)
 precise float CloudSunTransmittance(float3 p,float3 sun,uint shadowSamples)
 {
     if(cloudShadowsEnabled==0||cloudShadowStrength<=0.0)return 1.0;
-    const uint count=clamp(shadowSamples,1u,8u);precise const float stepLength=max(8.0,cloudThickness/(float(count)*3.0));precise float depth=0;
+    const uint count=clamp(shadowSamples,1u,8u);precise const float stepLength=max(8.0,cloudThickness*DeterministicReciprocal(float(count)*3.0));precise float depth=0;
     [loop] for(uint index=0;index<count;++index)depth+=CloudShadowField(p+sun*stepLength*(float(index)+.5))*.00135*stepLength;
     precise const float result=lerp(1.0,DeterministicExp(-min(depth,80.0)),saturate(cloudShadowStrength));
     return result;
@@ -230,20 +227,23 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
         return;
     }
 #endif
-    precise const float2 uv=(float2(id.xy)+.5)/float2(outputWidth,outputHeight);precise float3 rayOrigin,ray;
+    precise const float2 inverseOutputExtent=float2(
+        DeterministicReciprocal(float(outputWidth)),
+        DeterministicReciprocal(float(outputHeight)));
+    precise const float2 uv=(float2(id.xy)+.5)*inverseOutputExtent;precise float3 rayOrigin,ray;
     const bool rayValid=AevryndReconstructWorldRay(uv,inverseViewProjection,cameraPosition,projectionOrthographic!=0,rayOrigin,ray);
     const uint2 depthPixel=min(uint2(viewportOrigin+uv*viewportExtent),uint2(fullWidth-1,fullHeight-1));
     const float hardwareDepth=sceneDepthValid!=0?sceneDepthTexture.Load(int3(depthPixel,0)):1.0;float3 surfaceWorld;
     const bool surfaceValid=hardwareDepth<.999999&&AevryndReconstructWorldPosition(uv,hardwareDepth,inverseViewProjection,surfaceWorld);
-    const float sceneDistance=surfaceValid?max(0.0,dot(surfaceWorld-rayOrigin,ray)):1e30;
+    precise const float sceneDistance=surfaceValid?max(0.0,dot(surfaceWorld-rayOrigin,ray)):1e30;
     precise const float inverseRayY=abs(ray.y)>1e-6?DeterministicReciprocal(ray.y):0.0;
     precise const float slab0=(cloudBaseAltitude-rayOrigin.y)*inverseRayY,slab1=(cloudBaseAltitude+cloudThickness-rayOrigin.y)*inverseRayY;
-    const float layerEntry=min(slab0,slab1),layerExit=max(slab0,slab1);
-    float pathCap=cloudMaximumDistance,pathFade=smoothstep(0.0,clamp(cloudThickness*.12,32.0,256.0),cloudMaximumDistance-max(0.0,layerEntry));
+    precise const float layerEntry=min(slab0,slab1),layerExit=max(slab0,slab1);
+    precise float pathCap=cloudMaximumDistance,pathFade=DeterministicSmoothstep(0.0,clamp(cloudThickness*.12,32.0,256.0),cloudMaximumDistance-max(0.0,layerEntry));
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
     if(testMutation==4){pathCap=1e30;pathFade=1.0;}
 #endif
-    const float cloudStart=max(0.0,layerEntry),cloudEnd=min(min(layerExit,sceneDistance),pathCap),grazing=smoothstep(.004,.032,abs(ray.y));
+    precise const float cloudStart=max(0.0,layerEntry),cloudEnd=min(min(layerExit,sceneDistance),pathCap),grazing=DeterministicSmoothstep(.004,.032,abs(ray.y));
     const bool cloudValid=rayValid&&abs(ray.y)>1e-6&&cloudDensity>0.0&&grazing>0.0&&cloudEnd>cloudStart+1e-3;
     const float shaftEnd=min(sceneDistance,lightShaftMaximumDistance);const bool shaftValid=rayValid&&lightShaftIntensity>0.0&&heightFogDensity>0.0&&shaftEnd>1e-3;
     const bool segmentValid=cloudValid||shaftValid;
@@ -257,16 +257,16 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
     precise float cloudT=1.0;precise float3 cloudL=0;precise float integratedCloudOpticalDepth=0;
     if(cloudValid)
     {
-        const uint count=clamp(cloudSampleCount,4u,32u);precise const float segmentLength=cloudEnd-cloudStart,physicalStep=segmentLength/float(count);
+        const uint count=clamp(cloudSampleCount,4u,32u);precise const float segmentLength=cloudEnd-cloudStart,physicalStep=segmentLength*DeterministicReciprocal(float(count));
         [loop] for(uint index=0;index<count;++index)
         {
             precise const float distance=cloudStart+physicalStep*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float density=CloudField(p)*grazing*pathFade;
-            precise const float sigmaT=density*.00135,sigmaS=sigmaT*.88;
+            precise const float sigmaT=density*.00135;
             precise float opticalDepth=sigmaT*physicalStep;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
             if(testMutation==6)opticalDepth=density*.105*segmentLength/max(1.0,cloudThickness);
 #endif
-            precise const float stepT=DeterministicExp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
+            precise const float stepT=DeterministicExp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?.88*(1.0-stepT):0.0;
             precise const float sunT=CloudSunTransmittance(p,sun,cloudShadowSampleCount);precise float3 incident=ambientRadiance*phaseAmbientScale+sunRadiance*sunRadianceIntensity*phaseSunScale*sunT*phaseValue;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
             // 中文：只歸零夜間雲層入射光，保留消光累積以驗證 opacity 路徑沒有被旁路。
@@ -278,16 +278,16 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
     precise float fogT=1.0;precise float3 shaftL=0;
     if(shaftValid)
     {
-        const uint count=clamp(lightShaftSampleCount,2u,16u);precise const float stepLength=shaftEnd/float(count);
+        const uint count=clamp(lightShaftSampleCount,2u,16u);precise const float stepLength=shaftEnd*DeterministicReciprocal(float(count));
         [loop] for(uint index=0;index<count;++index)
         {
-            precise const float distance=stepLength*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float sigmaT=HeightFogExtinction(p.y),sigmaS=sigmaT*.9;
-            precise const float stepT=DeterministicExp(-min(sigmaT*stepLength,80.0)),scatter=sigmaT>1e-7?sigmaS/sigmaT*(1.0-stepT):0.0;
+            precise const float distance=stepLength*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float sigmaT=HeightFogExtinction(p.y);
+            precise const float stepT=DeterministicExp(-min(sigmaT*stepLength,80.0)),scatter=sigmaT>1e-7?.9*(1.0-stepT):0.0;
             precise const float cloudToSun=CloudSunTransmittance(p,sun,cloudShadowSampleCount),visibility=lerp(1.0,cloudToSun,saturate(lightShaftShadowStrength));
             shaftL+=fogT*scatter*sunRadiance*sunRadianceIntensity*phaseSunScale*visibility*phaseValue*lightShaftIntensity;fogT*=stepT;
         }
         precise const float rawOpacity=1.0-fogT,limitedOpacity=min(rawOpacity,saturate(heightFogMaximumOpacity));
-        if(rawOpacity>1e-7)shaftL*=limitedOpacity/rawOpacity;
+        if(rawOpacity>1e-7)shaftL*=limitedOpacity*DeterministicReciprocal(rawOpacity);
         fogT=1.0-limitedOpacity;
     }
     precise const float3 conservativeColor=shaftL+fogT*cloudL;precise const float conservativeAlpha=saturate(1.0-fogT*cloudT);
@@ -295,8 +295,8 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
     if(testMutation==5){const float alignment=saturate(dot(ray,sun)*.5+.5),horizon=saturate(ray.y*3.5+.62),legacyShaft=LegacyMiePhase(dot(ray,sun),lightShaftAnisotropy)*lightShaftIntensity*(1.0-exp(-integratedCloudOpticalDepth*.42))*horizon;color=cloudL+float3(1.0,.78,.52)*legacyShaft*alignment*phaseSunScale;alpha=saturate(1.0-cloudT+legacyShaft*.2);}
 #endif
-    const float4 current=segmentValid?float4(max(0,color),alpha):0;
-    const float segmentStart=cloudValid?min(cloudStart,shaftValid?0.0:cloudStart):0.0,segmentEnd=max(cloudValid?cloudEnd:0.0,shaftValid?shaftEnd:0.0);
+    precise const float4 current=segmentValid?float4(max(0,color),alpha):0;
+    precise const float segmentStart=cloudValid?min(cloudStart,shaftValid?0.0:cloudStart):0.0,segmentEnd=max(cloudValid?cloudEnd:0.0,shaftValid?shaftEnd:0.0);
     currentSegmentTexture[id.xy]=segmentValid?float2(segmentStart,segmentEnd):0;
     bool historyAccepted=false;float4 history=0;
     if(segmentValid&&historyValid!=0&&projectionOrthographic==previousProjectionOrthographic)
@@ -310,7 +310,7 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
         const float4 previousClip=mul(previousViewProjection,float4(representativeWorld,1));
         if(abs(previousClip.w)>1e-6)
         {
-            const float2 previousNdc=previousClip.xy/previousClip.w,previousUv=float2(previousNdc.x*.5+.5,.5-previousNdc.y*.5);
+            precise const float2 previousNdc=previousClip.xy*DeterministicReciprocal(previousClip.w),previousUv=float2(previousNdc.x*.5+.5,.5-previousNdc.y*.5);
             if(all(previousUv>=0.0)&&all(previousUv<=1.0))
             {
                 const uint2 previousPixel=min(uint2(previousUv*float2(outputWidth,outputHeight)),uint2(outputWidth-1,outputHeight-1));const float2 previousSegment=previousSegmentTexture.Load(int3(previousPixel,0));

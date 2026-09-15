@@ -1,6 +1,8 @@
-param([Parameter(Mandatory=$true)][string]$Executable,[ValidateSet(0,3,4,5)][int]$Warmup=0)
+param(
+  [Parameter(Mandatory=$true)][string]$Executable,
+  [Parameter(Mandatory=$true)][string]$EvidenceHelper,
+  [ValidateSet(0,3,4,5)][int]$Warmup=0)
 $ErrorActionPreference='Stop'
-. (Join-Path $PSScriptRoot 'GameplayLabCaptureEvidence.ps1')
 
 function Invoke-Fixture([string]$Arguments,[hashtable]$Environment=@{}) {
   foreach($entry in $Environment.GetEnumerator()){[Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')}
@@ -51,7 +53,8 @@ foreach($warmup in $warmups){
   if($exitCode -ne 0){throw "Temporal fixture failed: warmup=$warmup"}
   $directory=Join-Path $root "temporal-fixture-third-day-warmup-$warmup-$validationLabel"
   $receipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'temporal-fixture-receipt.json')|ConvertFrom-Json
-  if($receipt.source-cne'GameplayThirdDayProductionTemporalFixture'-or$receipt.capture-cne'third-day.png'-or$receipt.warmupFrames-ne$warmup-or$receipt.baselineWarmupFrames-ne3-or$receipt.baselineContract-cne'typed-third-day-warmup-v1'-or$receipt.recordedWarmupFrames-ne$warmup-or$receipt.sequenceComplete-ne1-or$receipt.phaseProvenance.Count-ne3){throw "Temporal fixture receipt failed: warmup=$warmup"}
+  # Fixture 可刻意覆寫 3/4/5 幀以驗證排程不變性；正式 capture baseline 仍固定為 5。
+  if($receipt.source-cne'GameplayThirdDayProductionTemporalFixture'-or$receipt.capture-cne'third-day.png'-or$receipt.warmupFrames-ne$warmup-or$receipt.baselineWarmupFrames-ne5-or$receipt.baselineContract-cne'typed-third-day-warmup-v1'-or$receipt.recordedWarmupFrames-ne$warmup-or$receipt.sequenceComplete-ne1-or$receipt.phaseProvenance.Count-ne3){throw "Temporal fixture receipt failed: warmup=$warmup"}
   if($receipt.phaseProvenance[0].atmosphere.dispatch-ne1-or$receipt.phaseProvenance[0].temporal.dispatch-ne1-or$receipt.phaseProvenance[1].atmosphere.reuse-ne1-or$receipt.phaseProvenance[1].temporal.reuse-ne1-or$receipt.phaseProvenance[2].atmosphere.reuse-ne1-or$receipt.phaseProvenance[2].temporal.reuse-ne1){throw "Temporal fixture production provenance failed: warmup=$warmup"}
   $first=$receipt.phaseProvenance[0]
   $firstAtmosphereIdentity=Assert-RenderResourceIdentity $first.atmosphere.outputIdentity "warmup=$warmup phase=0 atmosphere";$firstTemporalIdentity=Assert-RenderResourceIdentity $first.temporal.outputIdentity "warmup=$warmup phase=0 temporal"
@@ -60,12 +63,16 @@ foreach($warmup in $warmups){
   if($presentationReceipt.source-cne'GameplayThirdDayPresentationParity'-or$presentationReceipt.capture-cne'third-day.png'-or$presentationReceipt.diagnosticCapture-cne'third-day-diagnostic.png'-or$presentationReceipt.logicalToken-lt1-or$presentationReceipt.frameSerial-eq$presentationReceipt.diagnosticFrameSerial-or$presentationReceipt.cameraHash-lt1-or$presentationReceipt.stateHash-lt1-or$presentationReceipt.invariantHash-lt1-or$presentationReceipt.paired-ne1-or$presentationReceipt.msaaEnabled-ne1-or$presentationReceipt.taaEnabled-ne1-or$presentationReceipt.historyUsed-ne1-or$presentationReceipt.warmupFrames-ne$warmup){throw "Temporal fixture presentation parity failed: warmup=$warmup validation=$validationLabel"}
   if((Get-Sha256 (Join-Path $directory 'third-day-raw.png'))-ceq(Get-Sha256 (Join-Path $directory 'third-day.png'))-or(Get-Sha256 (Join-Path $directory 'third-day-diagnostic.png'))-ceq(Get-Sha256 (Join-Path $directory 'third-day.png'))){throw "Temporal fixture presentation reused a diagnostic raster: warmup=$warmup validation=$validationLabel"}
   # 診斷 ghost gate 必須比較同類型 semantic raster；presentation 另以 AA/TAA receipt 驗證。
-  $ghost=$null
-  for($attempt=0;$attempt-lt30-and$null-eq$ghost;++$attempt){
-    $candidate=@(Get-GameplayTemporalGhostEvidence (Join-Path $directory 'third-day-raw.png') (Join-Path $directory 'third-day-diagnostic.png') (Join-Path $directory 'third-day-raw-object-id.png') (Join-Path $directory 'third-day-object-id.png') (Join-Path $directory 'third-day-raw-depth.png') (Join-Path $directory 'third-day-depth.png') 64 64 1152 592)
-    if($candidate.Count-gt1){throw "Temporal ghost evidence emitted more than one result: warmup=$warmup count=$($candidate.Count)"}
-    if($candidate.Count-eq1-and$null-ne$candidate[0]){$ghost=$candidate[0]}elseif($attempt-lt29){Start-Sleep -Seconds 1}
-  }
+  # 程序結束後影像已封存；在乾淨的 Windows PowerShell 程序分析一次，
+  # 避免大型布林陣列受本測試程序先前的子程序狀態影響，也不以輪詢掩蓋缺失證據。
+  # 維持左右安全邊界並涵蓋完整垂直畫面，避免茂密樹冠讓局部格只剩物件鄰接環而缺少穩定背景樣本。
+  if([string]::IsNullOrWhiteSpace($EvidenceHelper)-or-not(Test-Path -LiteralPath $EvidenceHelper)){throw 'Temporal ghost evidence helper path was lost'}
+  $evidencePaths=@('third-day-raw.png','third-day-diagnostic.png','third-day-raw-object-id.png','third-day-object-id.png','third-day-raw-depth.png','third-day-depth.png')|ForEach-Object{(Join-Path $directory $_).Replace("'","''")}
+  $analysis=". '$EvidenceHelper'; Get-GameplayTemporalGhostEvidence '$($evidencePaths[0])' '$($evidencePaths[1])' '$($evidencePaths[2])' '$($evidencePaths[3])' '$($evidencePaths[4])' '$($evidencePaths[5])' 64 0 1152 720 | ConvertTo-Json -Depth 8 -Compress"
+  $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($analysis))
+  $ghostJson=& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded
+  if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace($ghostJson)){throw "Temporal ghost evidence process failed: warmup=$warmup"}
+  $ghost=$ghostJson|ConvertFrom-Json
   if($null-eq$ghost){throw "Temporal ghost evidence did not produce a result: warmup=$warmup"}
   if($ghost.pass-ne1){throw "Temporal fixture threshold8 gate failed: warmup=$warmup"}
   $results+=[ordered]@{warmup=$warmup;mean=$ghost.meanAbsoluteChannelDifference;p99=$ghost.p99MaximumChannelDifference;maximum=$ghost.maximumChannelDifference;pixelsOver8=$ghost.stableLevels[0].pixels;connectedOver8=$ghost.stableLevels[0].maximumConnectedPixels;excessOver8=$ghost.stableLevels[0].normalizedExcessEnergy}

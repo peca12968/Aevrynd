@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <string>
 
 using namespace Aevrynd;
@@ -28,12 +29,24 @@ float DeterministicInverseSqrtContract(float value) {
 float DeterministicReciprocalContract(float value) {
   if (!std::isfinite(value) || std::abs(value) < 1e-20f)
     return 0.f;
-  const float magnitude = std::abs(value);
+
+  const auto valueBits = std::bit_cast<std::uint32_t>(value);
+  const auto magnitudeBits = valueBits & 0x7fffffffu;
+  const auto exponent = (magnitudeBits >> 23u) & 0xffu;
+  const auto normalizedBits =
+      0x3f800000u | (magnitudeBits & 0x007fffffu);
+  const float normalizedMagnitude =
+      std::bit_cast<float>(normalizedBits);
   float estimate = std::bit_cast<float>(
-      0x7ef311c3u - std::bit_cast<std::uint32_t>(magnitude));
+      0x7ef311c3u - normalizedBits);
   for (unsigned iteration = 0; iteration < 4; ++iteration)
-    estimate = estimate * (2.f - magnitude * estimate);
-  return value < 0.f ? -estimate : estimate;
+    estimate = estimate * (2.f - normalizedMagnitude * estimate);
+
+  const float exponentScale = exponent < 254u
+                                  ? std::bit_cast<float>((254u - exponent) << 23u)
+                                  : std::bit_cast<float>(0x00800000u) * .5f;
+  estimate *= exponentScale;
+  return (valueBits & 0x80000000u) != 0u ? -estimate : estimate;
 }
 
 bool CompositeDeterministicArithmeticContract(double &maximumInverseSqrtError,
@@ -48,7 +61,11 @@ bool CompositeDeterministicArithmeticContract(double &maximumInverseSqrtError,
   const bool sourceContract =
       shader.find("normalize(") == std::string::npos &&
       shader.find("rcp(") == std::string::npos &&
-      shader.find("AevryndDeterministicNormalize(surfaceWorld.xyz-rayOrigin)") !=
+      shader.find("AevryndDeterministicNormalize(surfaceWorld-rayOrigin)") !=
+          std::string::npos &&
+      shader.find("precise float2 CompositeViewportUv(uint2 pixel)") !=
+          std::string::npos &&
+      shader.find("precise float2 CompositeAtmosphereTexelUv(") !=
           std::string::npos &&
       shader.find("CompositeDeterministicReciprocal(ray.y)") !=
           std::string::npos &&
@@ -86,10 +103,40 @@ bool CompositeDeterministicArithmeticContract(double &maximumInverseSqrtError,
           (std::max)(maximumReciprocalError, relativeError);
     }
   }
+  for (unsigned exponent = 61; exponent <= 254; ++exponent) {
+    for (unsigned mantissaSample = 0; mantissaSample <= 512;
+         ++mantissaSample) {
+      const auto mantissa = std::uint32_t(
+          (std::uint64_t{mantissaSample} * 0x7fffffu) / 512u);
+      const float magnitude =
+          std::bit_cast<float>((exponent << 23u) | mantissa);
+      for (const float value : {-magnitude, magnitude}) {
+        const float reference = 1.f / value;
+        const float deterministic = DeterministicReciprocalContract(value);
+        if (deterministic == 0.f)
+          return false;
+        const double relativeError =
+            std::abs(double(deterministic - reference)) /
+            std::abs(double(reference));
+        maximumReciprocalError =
+            (std::max)(maximumReciprocalError, relativeError);
+      }
+    }
+  }
+  const float maximumFinite = (std::numeric_limits<float>::max)();
   return std::isfinite(maximumInverseSqrtError) &&
          maximumInverseSqrtError <= 5e-6 &&
          std::isfinite(maximumReciprocalError) &&
-         maximumReciprocalError <= 5e-6;
+         maximumReciprocalError <= 5e-6 &&
+         std::isfinite(DeterministicReciprocalContract(maximumFinite)) &&
+         std::isfinite(DeterministicReciprocalContract(-maximumFinite)) &&
+         DeterministicReciprocalContract(maximumFinite) >= 0.f &&
+         DeterministicReciprocalContract(-maximumFinite) <= 0.f &&
+         DeterministicReciprocalContract(0.f) == 0.f &&
+         DeterministicReciprocalContract(
+             std::numeric_limits<float>::infinity()) == 0.f &&
+         DeterministicReciprocalContract(
+             std::numeric_limits<float>::quiet_NaN()) == 0.f;
 }
 } // namespace
 
