@@ -5,6 +5,7 @@
 #include "GameplayBuildingIdentities3D.h"
 #include "GameplayOccluderMask3D.h"
 #include "GameplayProductionHdrSidecar3D.h"
+#include "ShowcaseTerrainMaterials3D.h"
 #include <Aevrynd/EnvironmentMeshes3D.h>
 #include <Aevrynd/FrameCapture3D.h>
 #include <Aevrynd/FirstPersonArmsSkinnedMesh3D.h>
@@ -466,6 +467,9 @@ void GameplayLabGame::OnStart(Engine& engine){
     else if(selected=="ao-off")captureLightingIsolation_=2;
     else if(selected=="shadows-ao-off")captureLightingIsolation_=3;
     else if(selected=="ibl-off")captureLightingIsolation_=4;
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+    else if(selected=="contact-off")captureLightingIsolation_=8;
+#endif
     else if(!selected.empty())throw std::runtime_error("Gameplay capture lighting isolation environment was invalid");
     std::array<char,8> rawHdrDiagnostic{};const DWORD rawHdrDiagnosticLength=GetEnvironmentVariableA("AEVRYND_GAMEPLAY_CAPTURE_RAW_HDR_DIAGNOSTIC",rawHdrDiagnostic.data(),DWORD(rawHdrDiagnostic.size()));
     if(rawHdrDiagnosticLength){if(rawHdrDiagnosticLength>=rawHdrDiagnostic.size()||std::string_view(rawHdrDiagnostic.data(),rawHdrDiagnosticLength)!="1")throw std::runtime_error("Gameplay raw HDR diagnostic environment was invalid");captureRawHdrDiagnostic_=true;}
@@ -540,6 +544,8 @@ void GameplayLabGame::OnStart(Engine& engine){
   // 每個既有 placement 共用一片林下群落網格，不改 descriptor、身份或碰撞。
   // 高細節增加葉片與彎曲段數，遠景也保留六葉輪廓；群落 bounds、葉高與風權重
   // 仍由相同生成器約束，避免只把少量硬片放大成不自然的巨草。
+  // 保留原 grass bounds 作上帝視角配置代理；河岸專用網格使用既有、原先
+  // 只建立但未提交的兩個低模資源槽，不增加成員、descriptor 或 draw。
   auto grassHigh=CreateGameplayGrassCommunityMesh3D(15,4),grassLow=CreateGameplayGrassCommunityMesh3D(10,2);
   showcaseGrassHighMesh_=engine.CreateMeshResource3D(grassHigh);
   showcaseGrassLowMesh_=engine.CreateMeshResource3D(grassLow);
@@ -550,8 +556,8 @@ void GameplayLabGame::OnStart(Engine& engine){
   // descriptors, draw calls or collision objects.
   showcaseShrubHighMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverCommunityMesh3D(GameplayForestGroundCoverDetail3D::Near,0x7c31u));
   showcaseShrubLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestGroundCoverCommunityMesh3D(GameplayForestGroundCoverDetail3D::Far,0x7c31u));
-  showcaseTreeLowMesh_=engine.CreateMeshResource3D(CreateTreeLodMesh3D());
-  showcaseRockLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(7,4));
+  showcaseTreeLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestRiverbankGroundCoverMesh3D(GameplayForestGroundCoverDetail3D::Near,0x31b7u));
+  showcaseRockLowMesh_=engine.CreateMeshResource3D(CreateGameplayForestRiverbankGroundCoverMesh3D(GameplayForestGroundCoverDetail3D::Far,0x31b7u));
   showcaseCottageFrontMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(true,true));
   showcaseCottageBackMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(false,true));
   showcaseCottageSideMesh_=engine.CreateMeshResource3D(CreateCottageFacadeMesh3D(false,false));
@@ -624,19 +630,28 @@ void GameplayLabGame::OnStart(Engine& engine){
   engine.SetMaterialTextureMemoryBudget(128*1024*1024);
   showcaseMaterialLibrary_.Initialize(engine,assetRoot/"environment-material-packs");
   std::array<MaterialAssetDefinition3D,4> showcaseMaterials={
-    MaterialAssetDefinition3D{"ground",{"ambientcg/ground037/1k/Ground037_1K-JPG_Color.jpg","ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg",1024,"ambientcg/ground037/1k/Ground037_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.78f,0,0,.9f},false,{},.085f}},
+    MaterialAssetDefinition3D{"ground",{},{{1,1,1,1},{.78f,0,0,.9f},false,{},.085f}},
     MaterialAssetDefinition3D{"wood",{"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg","ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",1024,"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.48f,0,0,1},true,{},.48f}},
     MaterialAssetDefinition3D{"bark",{"poly-haven/bark_brown_02/1k/base-color.jpg","poly-haven/bark_brown_02/1k/roughness.jpg",1024,"poly-haven/bark_brown_02/1k/normal-dx.jpg"},{{1,1,1,1},{.82f,0,0,.92f},true,{},1.f}},
     MaterialAssetDefinition3D{"rock",{"poly-haven/aerial_ground_rock/1k/base-color.jpg","poly-haven/aerial_ground_rock/1k/roughness.jpg",1024,"poly-haven/aerial_ground_rock/1k/normal-dx.jpg"},{{1,1,1,1},{.76f,0,0,1},true,{},.5f}}};
+  // WoodSiding006 原本只載入但沒有送入繪製；木屋牆面現在會在封存擷取中使用它，
+  // 因此明確綁定不可變來源快照，禁止確定性驗證接受無法核實的貼圖集合。
+  showcaseMaterials[1].textures.integrity={
+    MaterialTextureIntegrity3D{724730,"c626ec1b31055a85e8e09d42ce2d0c6f0b968250ad6672ea3282b136dd568d46"},
+    MaterialTextureIntegrity3D{423700,"adc51758ddaf97bcd795eef154f705a4f020594efc5a5b515d0f92b39240c844"},
+    MaterialTextureIntegrity3D{1849769,"55895492f8b92a1d847201e76d339679097d0901f7b3fbf9bbcd1c740b05f3fb"}};
   auto& terrain=showcaseMaterials[0];
-  // 森林層使用封存 2K DDS；三層共用上限，不沿用基底 JPG 的 1K 限制。
-  terrain.textures.maximumResolution=2048;
+  // 三層都由封存 manifest 建構；共同使用 2K 上限與 packed ORM 語意。
+  CookedRenderManifest3D terrainManifest{};
+  CookedRenderManifestError3D terrainManifestError{};
+  const auto terrainAssetRoot=assetRoot/"photoreal-cooked";
+  if(!terrainManifest.LoadFile(terrainAssetRoot/"runtime-render-manifest.json",&terrainManifestError))
+    throw std::runtime_error("Gameplay terrain production manifest failed: "+terrainManifestError.message);
+  ShowcaseTerrainMaterialReceipt3D terrainMaterialReceipt{};
   terrain.material.materialClass=MaterialClass3D::Terrain;
-  terrain.textures.integrity={MaterialTextureIntegrity3D{2187764,"d92bec8a35b9cb16ec79b421ca0f572a7400286eae109beafa266629ef49a6cf"},MaterialTextureIntegrity3D{694944,"3786b088e981aae562f06b6477972d379cffd09a5cc542ab42f9ffd94f9bcb0e"},MaterialTextureIntegrity3D{2474498,"0e2d613d117d9231aa0aa61f39b19755f891b4ed1d1599a004cb018a8224e039"}};
-  // 保留三層 sampler；壓實小徑直接引用封存 DDS，不把 packed ORM 當單通道 roughness。
-  const auto pathLayerRoot=assetRoot/"photoreal-cooked/materials/stony-dirt-path";
-  terrain.textures.additionalLayers[0]={pathLayerRoot/"slot-0-base.dds",pathLayerRoot/"slot-0-arm.dds",pathLayerRoot/"slot-0-normal.dds",MaterialSurfaceMapEncoding3D::PackedOrm,{MaterialTextureIntegrity3D{1398276,"ad65700bedb816e745c8f742b26c1f5e59428e350261b1c7b667399ba21a03a4"},MaterialTextureIntegrity3D{1398276,"bfdeb9645baa1db8949bbd2e29c957bd070f25fee4b7064343209cb6d9f93abd"},MaterialTextureIntegrity3D{1398276,"1c5a312de5e4c6a7ede14ef6d8f4ea51d7319bd70a3c725085296cda316635e0"}}};
-  terrain.textures.additionalLayers[1]={"poly-haven/rock_surface/1k/base-color.jpg","poly-haven/rock_surface/1k/roughness.jpg","poly-haven/rock_surface/1k/normal-dx.jpg",MaterialSurfaceMapEncoding3D::RoughnessR,{MaterialTextureIntegrity3D{886291,"07edda2bbe4715b01aae2e4bac9f21f204cf4aae37b4733ef01de33281e5e60e"},MaterialTextureIntegrity3D{642680,"ca710d895b01cf323bf00f53194c43504a39d2c964fbfc343c4f45c7d41b10dc"},MaterialTextureIntegrity3D{1161843,"1e1aa5b06f74d22734318cd93ecf49ffe7095c4b2307c5c9b3a4550207c6b1b7"}}};
+  // 正式載入前鎖定三個不同的 production semantic identities。
+  if(!BuildShowcaseTerrainMaterialTextures3D(terrainManifest,terrainAssetRoot,terrain.textures,&terrainMaterialReceipt))
+    throw std::runtime_error("Gameplay terrain material final binding failed");
   if(!showcaseMaterialLibrary_.LoadAll(showcaseMaterials))throw std::runtime_error("Gameplay showcase CC0 PBR material loading failed");
   if(const auto* value=showcaseMaterialLibrary_.Find("ground"))showcaseGroundMaterial_=*value;
   if(const auto* value=showcaseMaterialLibrary_.Find("wood"))showcaseWoodMaterial_=*value;
@@ -788,6 +803,11 @@ void GameplayLabGame::OnStart(Engine& engine){
       captureIndex_=1;captureScenarioClock_.scenario=1;
     }
     std::filesystem::create_directories(captureDirectory_);
+    constexpr std::uintmax_t MinimumCaptureFreeBytes=4ull*1024ull*1024ull*1024ull;
+    std::error_code captureSpaceError;
+    const auto captureSpace=std::filesystem::space(captureDirectory_,captureSpaceError);
+    if(captureSpaceError||captureSpace.available<MinimumCaptureFreeBytes)
+      throw std::runtime_error("Gameplay capture requires at least 4 GiB of free disk space");
     for(std::size_t index=0;index<Names.size();++index)CleanupGameplayHdrCaptureArtifacts(index,true);
     {std::error_code ignored;std::filesystem::remove(captureDirectory_/"gameplay-hdr-capture-receipt.json",ignored);std::filesystem::remove(captureDirectory_/"gameplay-hdr-capture-receipt.json.tmp",ignored);}
     std::unordered_set<std::uint64_t> femaleUnique(femalePoseHashes_.begin(),femalePoseHashes_.end()),maleUnique(malePoseHashes_.begin(),malePoseHashes_.end());
@@ -1546,12 +1566,16 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   DrawList &draw = engine.Draw();
   const auto showcaseLighting=rules_.Lighting()==LightingPhase::Day?ShowcaseLightingProfile3D::Day:rules_.Lighting()==LightingPhase::Dusk?ShowcaseLightingProfile3D::Dusk:ShowcaseLightingProfile3D::Night;
   const auto lightingState=showcaseEnvironment_.EvaluateLighting(showcaseLighting);
-  engine.SetClearColor(lightingState.sky);showcaseEnvironment_.ApplyHighProfile(draw);if(temporalFixtureCloudOff_){auto clouds=draw.VolumetricClouds();clouds.enabled=false;draw.SetVolumetricClouds(clouds);}if(captureLightingIsolation_&1u)draw.SetDirectionalShadowMapEnabled(false);if(captureLightingIsolation_&2u){auto ambientOcclusion=draw.AmbientOcclusion();ambientOcclusion.enabled=false;draw.SetAmbientOcclusion(ambientOcclusion);}if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra)draw.SetDirectionalShadowCascades({4,4096,.1f,220.f,.70f,.10f});showcaseEnvironment_.ApplyLighting(draw,showcaseLighting,camera_.position);
+  engine.SetClearColor(lightingState.sky);showcaseEnvironment_.ApplyHighProfile(draw);if(temporalFixtureCloudOff_){auto clouds=draw.VolumetricClouds();clouds.enabled=false;draw.SetVolumetricClouds(clouds);}if(captureLightingIsolation_&1u)draw.SetDirectionalShadowMapEnabled(false);if(captureLightingIsolation_&2u){auto ambientOcclusion=draw.AmbientOcclusion();ambientOcclusion.enabled=false;draw.SetAmbientOcclusion(ambientOcclusion);}
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+  if(captureLightingIsolation_&8u){auto contactShadows=draw.ContactShadows();contactShadows.enabled=false;draw.SetContactShadows(contactShadows);}
+#endif
+  if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra)draw.SetDirectionalShadowCascades({4,4096,.1f,220.f,.70f,.10f});showcaseEnvironment_.ApplyLighting(draw,showcaseLighting,camera_.position);
   // 曝光直接使用場景型別狀態，避免兩份時段策略發生漂移。
   draw.SetExposureCompensation(lightingState.exposureEv);
   const auto grabbed = palette_->Grabbed();
   const auto grabbedCategory = palette_->GrabbedCategory();
-  const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationRequestPending_||capturePresentationPending_);
+  const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationWarmupActive_||capturePresentationRequestPending_||capturePresentationPending_);
   const auto interactionHudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen(),cleanCapturePresentation);
   if(interactionHudPolicy.interactionDiagnostics){
     draw.Quad({1025, 575}, {490, 122}, {.008f, .018f, .022f, .9f});
@@ -1609,7 +1633,7 @@ void GameplayLabGame::CleanupGameplayHdrCaptureArtifacts(std::size_t index,bool 
 }
 void GameplayLabGame::FailGameplayHdrCapture(Engine& engine,std::size_t index)noexcept{
   if(index<gameplayHdrCaptureStates_.size()){gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Failed;gameplayHdrCaptureReceipts_[index]={};gameplayHdrCaptureReceipts_[index].state=GameplayHdrCaptureState3D::Failed;CleanupGameplayHdrCaptureArtifacts(index,true);}
-  engine.CancelLinearHdrReadback3D();if(captureSequenceToken_)engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};capturePresentationLogicalToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=capturePresentationRequestPending_=capturePresentationPending_=false;capturePending_=false;gameplayHdrInFlight_=0;
+  engine.CancelLinearHdrReadback3D();if(captureSequenceToken_)engine.CancelReadbackCaptureSequence3D(captureSequenceToken_);captureSequenceToken_={};capturePresentationLogicalToken_={};captureSequencePhaseCount_=0;captureScenePhaseLedger_.Clear();capturePhaseRequestPending_=capturePresentationWarmupActive_=capturePresentationRequestPending_=capturePresentationPending_=false;capturePresentationWarmupRemaining_=capturePresentationWarmupFramesCurrent_=captureDiagnosticAsyncWaitFrames_=0;capturePending_=false;gameplayHdrInFlight_=0;
 }
 bool GameplayLabGame::WriteGameplayHdrCaptureReceipt()const{
   constexpr std::uint64_t MaximumEngineHdrBytes=16ull*1024ull*1024ull;if(captureDirectory_.empty()||gameplayHdrEnginePeakBytes_>MaximumEngineHdrBytes||gameplayHdrMaxInFlight_!=1||gameplayHdrInFlight_)return false;
@@ -1673,7 +1697,10 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     const MeshResource3D* grassLow=&showcaseGrassLowMesh_;
     const Aevrynd::Material3D* groundCoverSource{};
     if(descriptor.kind==ShowcaseSceneKind3D::Grass){
-      if(descriptor.meshAsset.find("grass-fan")!=std::string::npos){
+      if(descriptor.meshAsset.find("grass-blade")!=std::string::npos){
+        grassHigh=&showcaseTreeLowMesh_;grassLow=&showcaseRockLowMesh_;
+        groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("island_tree_01:leaves");
+      }else if(descriptor.meshAsset.find("grass-fan")!=std::string::npos){
         grassHigh=&showcaseFernHighMesh_;grassLow=&showcaseFernLowMesh_;
         groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("island_tree_01:leaves");
       }else if(descriptor.meshAsset.find("grass-tuft")!=std::string::npos){
@@ -1696,35 +1723,33 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     case ShowcaseSceneKind3D::Rock:
       submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,descriptor.meshAsset.find("boulder_01")!=std::string::npos?"boulder_01":"coastal_cliff_01",transform,renderIdentity,lodObjectIndex,&productionChains);break;
     case ShowcaseSceneKind3D::Building:
-      {const bool roof=descriptor.meshAsset.find("roof")!=std::string::npos;const auto* source=showcaseRenderAssets_.ProductionMaterial(roof?"RoofingTiles014B":"Bricks100");if(!source)break;auto material=*source;material.normalScale=roof?1.15f:GameplayCottageWallNormalScale3D;material.textureScale=roof?.38f:.3f;
-       // 每個 facade box 都有自己的 0..1 UV；直接使用會令磚紋在門窗分段處
-       // 重新起算並改變磚塊尺寸。牆面改由既有世界空間三向投影連續取樣，
-       // 屋瓦仍保留沿坡面建好的 UV，避免以單一映射策略犧牲另一種材質。
+      {const auto role=GameplayCottageBaseMaterialRole3D(descriptor.meshAsset);const bool roof=role==GameplayCottageMaterialRole3D::RoofTile;const auto* brickSource=showcaseRenderAssets_.ProductionMaterial("Bricks100");const auto* roofSource=showcaseRenderAssets_.ProductionMaterial("RoofingTiles014B");if(!brickSource||!roofSource||!showcaseWoodMaterial_.textures)break;auto material=role==GameplayCottageMaterialRole3D::Brick?*brickSource:role==GameplayCottageMaterialRole3D::RoofTile?*roofSource:showcaseWoodMaterial_;material.normalScale=role==GameplayCottageMaterialRole3D::Brick?GameplayCottageWallNormalScale3D:roof?1.15f:.8f;material.textureScale=role==GameplayCottageMaterialRole3D::Brick?.3f:roof?.38f:.22f;
+       // 分段牆網格以世界空間連續取樣 WoodSiding006；屋瓦只在坡面沿建好的 UV 取樣。
        material.useUv=GameplayCottageMaterialUsesUv3D(roof);const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
-       auto glass=material;glass.textures={};glass.tint={.035f,.075f,.095f,1};glass.surface={.26f,.04f,.025f,1};glass.textureScale=1;glass.normalScale=0;
-       // 裝飾件沿用所屬建築的正式材質貼圖識別，避免同一物件跨材質群組造成不穩定排序。
-       auto wood=material;wood.tint={.46f,.27f,.13f,1};wood.surface.roughness=.62f;wood.surface.metallic=0;wood.surface.emissive=.006f;wood.textureScale=.16f;
+       auto glass=material;glass.textures={};glass.tint={.08f,.17f,.20f,1};glass.surface={.14f,.02f,.012f,.7f};glass.textureScale=1;glass.normalScale=0;glass.castsShadow=false;
+       // 裝飾件使用已載入的 WoodSiding006，不再從基座或屋頂複製磚／瓦紋。
+       auto wood=showcaseWoodMaterial_;wood.tint={.58f,.36f,.19f,1};wood.surface.roughness=.62f;wood.surface.metallic=0;wood.surface.emissive=.006f;wood.textureScale=.16f;wood.useUv=false;
        auto doorMaterial=wood;doorMaterial.tint={.36f,.17f,.07f,1};
+       const auto framedWindowZ=[&](float x,float z,float facing){scene_.Mesh(boxMesh_,{{x,1.95f,z},{0,0,0},{1.35f,1.15f,.12f}},glass,{},renderIdentity);const float frameZ=z+facing*.11f;for(float side:{-.76f,.76f})scene_.Mesh(boxMesh_,{{x+side,1.95f,frameZ},{0,0,0},{.12f,1.48f,.16f}},wood,{},renderIdentity);for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{x,y,frameZ},{0,0,0},{1.64f,.12f,.16f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{x,1.95f,frameZ+facing*.02f},{0,0,0},{.09f,1.22f,.13f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{x,1.95f,frameZ+facing*.02f},{0,0,0},{1.42f,.09f,.13f}},wood,{},renderIdentity);};
+       const auto framedWindowX=[&](float x,float facing){scene_.Mesh(boxMesh_,{{x,1.95f,24},{0,0,0},{.12f,1.15f,1.45f}},glass,{},renderIdentity);const float frameX=x+facing*.11f;for(float side:{-.81f,.81f})scene_.Mesh(boxMesh_,{{frameX,1.95f,24+side},{0,0,0},{.16f,1.48f,.12f}},wood,{},renderIdentity);for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{frameX,y,24},{0,0,0},{.16f,.12f,1.82f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{frameX+facing*.02f,1.95f,24},{0,0,0},{.13f,1.22f,.09f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{frameX+facing*.02f,1.95f,24},{0,0,0},{.13f,.09f,1.52f}},wood,{},renderIdentity);};
        if(descriptor.meshAsset.find("front")!=std::string::npos){
          scene_.Mesh(boxMesh_,{{-12,1.35f,20.17f},{0,0,0},{1.45f,2.1f,.12f}},doorMaterial,{},renderIdentity);
          // 門窗框、窗台與前階共享原建築identity，增加輪廓細節但不改變descriptor或碰撞代理。
-         for(float x:{-14.1f,-9.9f}){
-           scene_.Mesh(boxMesh_,{{x,1.95f,20.17f},{0,0,0},{1.35f,1.15f,.1f}},glass,{},renderIdentity);
-           for(float side:{-.76f,.76f})scene_.Mesh(boxMesh_,{{x+side,1.95f,20.08f},{0,0,0},{.12f,1.48f,.16f}},wood,{},renderIdentity);
-           for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{x,y,20.08f},{0,0,0},{1.64f,.12f,.16f}},wood,{},renderIdentity);
-           scene_.Mesh(boxMesh_,{{x,1.88f,20.05f},{0,0,0},{.1f,1.25f,.18f}},wood,{},renderIdentity);
-         }
+         for(float x:{-14.1f,-9.9f})framedWindowZ(x,20.16f,-1.f);
          for(float side:{-.82f,.82f})scene_.Mesh(boxMesh_,{{-12+side,1.42f,20.06f},{0,0,0},{.14f,2.45f,.18f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,2.69f,20.06f},{0,0,0},{1.78f,.14f,.18f}},wood,{},renderIdentity);
+         for(float y:{.83f,1.38f,1.93f})scene_.Mesh(boxMesh_,{{-12,y,20.04f},{0,0,0},{1.12f,.08f,.16f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
        }
-       else if(descriptor.meshAsset.find("back")!=std::string::npos)for(float x:{-14.1f,-9.9f})scene_.Mesh(boxMesh_,{{x,1.95f,27.83f},{0,0,0},{1.35f,1.15f,.1f}},glass,{},renderIdentity);
-       else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos){const float x=descriptor.meshAsset.find("left")!=std::string::npos?-16.18f:-7.82f;scene_.Mesh(boxMesh_,{{x,1.95f,24},{0,0,0},{.1f,1.15f,1.45f}},glass,{},renderIdentity);}
+       else if(descriptor.meshAsset.find("back")!=std::string::npos)for(float x:{-14.1f,-9.9f})framedWindowZ(x,27.84f,1.f);
+       else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos){const bool left=descriptor.meshAsset.find("left")!=std::string::npos;framedWindowX(left?-16.19f:-7.81f,left?-1.f:1.f);}
        else if(roof){
-         scene_.Mesh(boxMesh_,{{-14.45f,4.72f,25.3f},{0,0,0},{.72f,2.15f,.72f}},material,{},renderIdentity);
-         scene_.Mesh(boxMesh_,{{-14.45f,5.84f,25.3f},{0,0,0},{.94f,.16f,.94f}},material,{},renderIdentity);
+         auto brick=*brickSource;brick.normalScale=GameplayCottageWallNormalScale3D;brick.textureScale=.24f;brick.useUv=false;
+         scene_.Mesh(boxMesh_,{{-14.45f,4.72f,25.3f},{0,0,0},{.72f,2.15f,.72f}},brick,{},renderIdentity);
+         scene_.Mesh(boxMesh_,{{-14.45f,5.84f,25.3f},{0,0,0},{.94f,.16f,.94f}},brick,{},renderIdentity);
          for(float z:{19.78f,28.22f})scene_.Mesh(boxMesh_,{{-12,3.48f,z},{0,0,0},{9.25f,.18f,.24f}},wood,{},renderIdentity);
+         for(float x:{-16.38f,-7.62f})scene_.Mesh(boxMesh_,{{x,3.48f,24},{0,0,0},{.24f,.18f,8.2f}},wood,{},renderIdentity);
        }
        submitted=scene_.MeshCount()>before;}break;
     }
@@ -1802,8 +1827,8 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
     const auto planePath=captureDirectory_/(stem+"-tokens.bin");
     std::ofstream plane(planePath,std::ios::binary|std::ios::trunc);
     for(const auto token:capture->pixels)for(unsigned byte=0;byte<4;++byte)plane.put(char((token>>(byte*8))&255));
-    plane.flush();if(!plane)return false;plane.close();
-    std::array<std::byte,32> planeSha{};if(!CaptureFileSha256(planePath,planeSha))return false;
+    plane.flush();if(!plane)return failReadback("token-plane-publication-failed");plane.close();
+    std::array<std::byte,32> planeSha{};if(!CaptureFileSha256(planePath,planeSha))return failReadback("token-plane-hash-failed");
     const auto metadataPath=captureDirectory_/(stem+"-tokens.json");
     std::ofstream metadata(metadataPath,std::ios::binary|std::ios::trunc);
     metadata<<"{\"source\":\"GameplayLosslessTokens\",\"version\":1,\"runId\":\""<<runId_<<"\",\"width\":"<<capture->width<<",\"height\":"<<capture->height<<",\"frameSerial\":\""<<capture->rasterProvenance.frameSerial<<"\",\"tokenGeneration\":\""<<capture->rasterProvenance.tokenGeneration<<"\",\"phase\":"<<(raw?0:1)<<",\"plane\":\""<<planePath.filename().string()<<"\",\"planeSha256\":\""<<CaptureShaHex(planeSha)<<"\",\"identities\":[";
@@ -1814,8 +1839,8 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
       if(token)metadata<<',';
       metadata<<"{\"high\":\""<<identity.id.high<<"\",\"low\":\""<<identity.id.low<<"\",\"generation\":\""<<identity.generation<<"\",\"class\":\""<<(knownStatic?"static":"dynamic")<<"\",\"opacityAffected\":"<<(identity==cameraPolicyFadeIdentity_?"true":"false")<<'}';
     }
-    metadata<<"]}";metadata.flush();if(!metadata)return false;metadata.close();
-    if(!CaptureFileSha256(metadataPath,raw?captureRawTokenMetadataSha256_[index]:captureEffectiveTokenMetadataSha256_[index]))return false;
+    metadata<<"]}";metadata.flush();if(!metadata)return failReadback("token-metadata-publication-failed");metadata.close();
+    if(!CaptureFileSha256(metadataPath,raw?captureRawTokenMetadataSha256_[index]:captureEffectiveTokenMetadataSha256_[index]))return failReadback("token-metadata-hash-failed");
   }
   const auto buildingIdentities=BuildGameplayBuildingIdentities3D(showcaseEnvironment_.Descriptors(),EnvironmentPartitionId);
   std::array<float,6> buildingCoverage{};
@@ -1968,7 +1993,7 @@ bool GameplayLabGame::ConsumeObjectIdCapture(Engine &engine,std::size_t index,bo
   if(effective){
     const auto failHdr=[&](const char* reason){std::ofstream(captureDirectory_/"gameplay-object-id-failure.txt",std::ios::trunc)<<"index="<<index<<" reason="<<reason<<" state="<<GameplayHdrStateName3D(gameplayHdrCaptureStates_[index]);return false;};
     if(gameplayHdrCaptureStates_[index]!=GameplayHdrCaptureState3D::Taken)return failHdr("hdr-state-not-taken");
-    if(!productionBundle)return failHdr("production-bundle-missing");Aevrynd::GameplayLab::GameplayProductionHdrSidecarValidation3D validation{};auto sealed=Aevrynd::GameplayLab::BuildGameplayProductionHdrSidecar3D(*productionBundle,&validation);if(!sealed||!validation)return failHdr("hdr-sidecar-seal-invalid");
+    if(!productionBundle)return failHdr("production-bundle-missing");Aevrynd::GameplayLab::GameplayProductionHdrSidecarValidation3D validation{};auto sealed=Aevrynd::GameplayLab::BuildGameplayProductionHdrSidecar3D(*productionBundle,&validation);if(!sealed||!validation){std::ofstream(captureDirectory_/"gameplay-hdr-sidecar-validation-failure.txt",std::ios::trunc)<<"index="<<index<<" error="<<std::uint32_t(validation.error)<<" field="<<(validation.field?validation.field:"");return failHdr("hdr-sidecar-seal-invalid");}
     const auto destination=GameplayHdrCapturePath(index);if(destination.empty())return failHdr("hdr-destination-empty");if(std::filesystem::exists(destination))return failHdr("hdr-destination-already-exists");
     Aevrynd::GameplayLab::GameplayProductionHdrSidecarPublishReceipt3D published{};if(!Aevrynd::GameplayLab::PublishGameplayProductionHdrSidecar3D(*sealed,destination,&published))return failHdr("hdr-sidecar-publish-failed");
     gameplayHdrCaptureStates_[index]=GameplayHdrCaptureState3D::Published;
@@ -1992,6 +2017,12 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
   // Scene submission 綁定，禁止誤啟另一個讀回序列。
   if(capturePhaseRequestPending_||capturePresentationRequestPending_)
     return;
+  if(capturePresentationWarmupActive_){
+    if(!capturePairFrozen_||captureSequenceToken_||!capturePresentationLogicalToken_||captureIndex_>=Names.size())throw std::runtime_error("Gameplay presentation warm-up was not paired with a completed diagnostic sequence");
+    if(!GameplayPresentationCaptureRequestDue3D(true,capturePresentationWarmupFramesCurrent_,captureDiagnosticAsyncWaitFrames_))return;
+    capturePresentationWarmupActive_=false;capturePresentationRequestPending_=true;
+    return;
+  }
   const auto renderer = engine.GetRendererStats();
   if(capturePresentationPending_&&(renderer.successfulFrameCaptures>captureSuccess_||renderer.rejectedFrameCaptures>captureReject_)){
     if(renderer.rejectedFrameCaptures>captureReject_)throw std::runtime_error("Gameplay production presentation capture was rejected");
@@ -2059,8 +2090,11 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
 #endif
       const auto requiredWarmup=temporalFixtureWarmupFrames_?temporalFixtureWarmupFrames_:GameplayTemporalCaptureWarmupFrames3D;
       if(!captureTemporalHistoryGeneration_[captureIndex_]||captureTemporalWarmupFrames_[captureIndex_]<requiredWarmup||captureTemporalReseedReasonMask_[captureIndex_]==0||sequenceResult.receipt.phases.empty()||sequenceResult.receipt.phases.front().raster.temporalHistoryReadGeneration!=captureTemporalHistoryGeneration_[captureIndex_]){FailGameplayHdrCapture(engine,captureIndex_);throw std::runtime_error("Gameplay temporal history receipt did not belong to the warmed capture sequence");}
-      // 診斷序列結束後才擷取玩家實際 presentation；此 raster 不掛 OID/depth，保留正式 MSAA/TAA history。
-      capturePresentationLogicalToken_=captureSequenceToken_;captureSequenceToken_={};captureSequencePhaseCount_=0;capturePhaseRequestPending_=false;captureReferencePhase_=false;capturePresentationRequestPending_=true;
+      // 診斷序列結束後，從全新的 camera cut 固定呈現五幀，再擷取玩家實際
+      // presentation。GPU readback 等待長短不得成為 TAA history 的隱含暖機量。
+      capturePresentationLogicalToken_=captureSequenceToken_;captureSequenceToken_={};captureSequencePhaseCount_=0;capturePhaseRequestPending_=false;captureReferencePhase_=false;
+      capturePresentationWarmupActive_=true;capturePresentationWarmupRemaining_=GameplayPresentationCaptureWarmupFrames3D;capturePresentationWarmupFramesCurrent_=0;
+      ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);
       capturePending_=false;
       return;
     }
@@ -2332,7 +2366,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       rules_.SetLighting(captureIndex_ == 9 ? LightingPhase::Day
                                             : LightingPhase::Dusk);
     }
-      capturePreparedIndex_=captureIndex_;capturePreparedSceneSubmitted_=false;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;captureTemporalWarmupRemaining_=0;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=0;
+      capturePreparedIndex_=captureIndex_;capturePreparedSceneSubmitted_=false;captureTemporalWarmupActive_=false;capturePresentationWarmupActive_=false;capturePoseFrozen_=false;captureTemporalWarmupRemaining_=0;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=0;capturePresentationWarmupRemaining_=0;capturePresentationWarmupFramesCurrent_=0;captureDiagnosticAsyncWaitFrames_=0;
       if(captureIndex_>=GameplayCaptureExpectations3D.size())throw std::runtime_error("Gameplay active capture route index was out of range");
       activeCaptureRoute_={captureIndex_,BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[captureIndex_]),GameplayActiveCaptureRoutePhase3D::Prepared};
       // 跨時段保留同一組已驗證的上帝視角構圖；後續 UpdateCamera 仍會依目前角色位置、碰撞、地形與 LOD 重新驗證。
@@ -2596,7 +2630,7 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     if(monsterHistory_.Submit(draw,monsterPalette,std::span<const SkinnedRenderablePart3D>{&monsterPart,1},false,&skinnedGroupStats_))for(std::size_t index=monsterDrawBegin;index<draw.skinnedMeshInstances.size();++index)draw.skinnedMeshInstances[index].identity={{GameplayCharacterIdentityHigh,2},1};
   }
   const auto stats=rules_.GetStats();
-  const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationRequestPending_||capturePresentationPending_);
+  const bool cleanCapturePresentation=!captureDirectory_.empty()&&(capturePresentationWarmupActive_||capturePresentationRequestPending_||capturePresentationPending_);
   const auto hudPolicy=BuildGameplayHudPresentationPolicy3D(diagnosticsVisible_,rules_.PaletteOpen(),cleanCapturePresentation);
   if(cleanCapturePresentation)++captureCleanHudFrames_;
   if(GameplayHudShowsCompactInstructions3D(hudPolicy,cleanCapturePresentation))
@@ -2619,4 +2653,6 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   }
   if(hudPolicy.combatStatus)draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
   if(captureTemporalWarmupActive_&&captureTemporalWarmupRemaining_){--captureTemporalWarmupRemaining_;++captureTemporalWarmupFramesCurrent_;}
+  if(capturePresentationWarmupActive_&&capturePresentationWarmupRemaining_){--capturePresentationWarmupRemaining_;++capturePresentationWarmupFramesCurrent_;}
+  if(capturePairFrozen_&&capturePending_&&captureDiagnosticAsyncWaitFrames_<(std::numeric_limits<std::uint32_t>::max)())++captureDiagnosticAsyncWaitFrames_;
 }

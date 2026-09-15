@@ -1,4 +1,5 @@
 #include "GameplayShowcaseEnvironment3D.h"
+#include "ShowcaseTerrainMaterials3D.h"
 #define AEVRYND_CHARACTER_BUILD_FINGERPRINT "environment-test"
 #include "GameplayLabGame.h"
 #undef AEVRYND_CHARACTER_BUILD_FINGERPRINT
@@ -167,9 +168,9 @@ bool TreeFormVariationContract(
         form.scaleMultiplier.y != repeated.scaleMultiplier.y ||
         form.scaleMultiplier.z != repeated.scaleMultiplier.z ||
         form.yawOffset != repeated.yawOffset ||
-        form.scaleMultiplier.x < .58f || form.scaleMultiplier.x > 1.f ||
-        form.scaleMultiplier.z < .51f || form.scaleMultiplier.z > 1.f ||
-        form.scaleMultiplier.y < .70f || form.scaleMultiplier.y > 1.1f ||
+        form.scaleMultiplier.x < .58f || form.scaleMultiplier.x > 1.24f ||
+        form.scaleMultiplier.z < .51f || form.scaleMultiplier.z > 1.34f ||
+        form.scaleMultiplier.y < .70f || form.scaleMultiplier.y > 1.16f ||
         std::abs(form.yawOffset) > .211f ||
         descriptor.position.x != placement.position.x ||
         descriptor.position.y != placement.position.y ||
@@ -306,7 +307,7 @@ bool ForestMidgroundLayerContract(
               << " living=" << livingTrees[band] << " shrubs=" << shrubs[band]
               << " canopyAreaRetention=" << canopyRatio
               << " understoryAreaMultiplier=" << understoryRatio << '\n';
-    valid &= canopyRatio >= .91f && canopyRatio <= 1.f &&
+    valid &= canopyRatio >= 1.10f && canopyRatio <= 1.55f &&
              understoryRatio >= 1.58f && understoryRatio <= 1.80f;
   }
   unsigned eligible{}, covered{};
@@ -370,17 +371,30 @@ bool ValidateGrassPalette(const std::array<Color, 3> &candidate,
 }
 
 bool ReadableForestWater(const WaterSurfaceSettings3D &value) {
-  return value.minimumRoughness >= .035f && value.minimumRoughness <= .06f &&
-         value.maximumRoughness >= .12f && value.maximumRoughness <= .16f &&
+  const float redTransmission = WaterTransmission3D(value.absorption.x, 2.f);
+  const float greenTransmission = WaterTransmission3D(value.absorption.y, 2.f);
+  const float blueTransmission = WaterTransmission3D(value.absorption.z, 2.f);
+  return value.reflectance >= .019f && value.reflectance <= .023f &&
+         value.minimumRoughness >= .05f && value.minimumRoughness <= .06f &&
+         value.maximumRoughness >= .18f && value.maximumRoughness <= .22f &&
          value.broadWaveScale >= .12f && value.broadWaveScale <= .16f &&
-         value.broadWaveStrength >= .18f && value.broadWaveStrength <= .22f &&
+         value.broadWaveStrength >= .14f && value.broadWaveStrength <= .18f &&
+         value.broadWaveSpeed >= .15f && value.broadWaveSpeed <= .22f &&
          value.detailWaveScale >= .85f && value.detailWaveScale <= 1.f &&
-         value.detailWaveStrength >= .10f && value.detailWaveStrength <= .13f &&
-         value.broadWaveStrength > value.detailWaveStrength * 1.5f &&
-         value.shallowAlpha >= .62f && value.shallowAlpha <= .72f &&
-         value.deepAlpha >= .86f && value.deepAlpha <= .92f &&
-         value.deepAlpha - value.shallowAlpha >= .18f &&
-         value.maximumNightRadiance >= .018f;
+         value.detailWaveStrength >= .045f && value.detailWaveStrength <= .065f &&
+         value.detailWaveSpeed >= .38f && value.detailWaveSpeed <= .48f &&
+         value.broadWaveStrength > value.detailWaveStrength * 2.5f &&
+         value.foamStartDepth >= .02f && value.foamStartDepth <= .035f &&
+         value.foamEndDepth >= .15f && value.foamEndDepth <= .17f &&
+         value.foamStrength >= .24f && value.foamStrength <= .30f &&
+         value.shallowAlpha >= .42f && value.shallowAlpha <= .50f &&
+         value.deepAlpha >= .84f && value.deepAlpha <= .90f &&
+         value.deepAlpha - value.shallowAlpha >= .36f &&
+         value.maximumNightRadiance >= .025f &&
+         value.maximumNightRadiance <= .04f &&
+         redTransmission < greenTransmission &&
+         greenTransmission < blueTransmission &&
+         blueTransmission - redTransmission < .30f;
 }
 
 bool DuskVegetationReadable(const ShowcaseLightingState3D &value) {
@@ -463,10 +477,40 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  const auto materialFixture=[](char seed){
+    CookedRenderMaterial3D material{};
+    material.baseColorBytes=material.surfaceBytes=material.normalBytes=128u;
+    material.baseColorSha256=std::string(64,seed);
+    material.surfaceSha256=std::string(64,char(seed+1));
+    material.normalSha256=std::string(64,char(seed+2));
+    material.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+    return material;
+  };
+  auto forestMaterial=materialFixture('1');
+  auto groundMaterial=materialFixture('4');
+  auto pathMaterial=materialFixture('7');
+  std::array<const CookedRenderMaterial3D*,3> materialLayers{
+      &forestMaterial,&groundMaterial,&pathMaterial};
+  ShowcaseTerrainMaterialReceipt3D materialReceipt{};
+  if(!ValidateShowcaseTerrainMaterialSources3D(materialLayers,&materialReceipt)||
+      !materialReceipt.semanticIdentities[0]||
+      !materialReceipt.semanticIdentities[1]||
+      !materialReceipt.semanticIdentities[2])
+    return 90;
+  auto duplicateLayers=materialLayers;
+  duplicateLayers[2]=duplicateLayers[0];
+  if(ValidateShowcaseTerrainMaterialSources3D(duplicateLayers,&materialReceipt)||
+      materialReceipt.failure!=ShowcaseTerrainMaterialFailure3D::DuplicateSemanticIdentity)
+    return 91;
+  groundMaterial.surfaceEncoding=MaterialSurfaceMapEncoding3D::RoughnessR;
+  if(ValidateShowcaseTerrainMaterialSources3D(materialLayers,&materialReceipt)||
+      materialReceipt.failure!=ShowcaseTerrainMaterialFailure3D::InvalidPackedOrm)
+    return 92;
+  groundMaterial.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
   constexpr auto terrainTint = ShowcaseForestTerrainTint3D();
-  if (terrainTint.g < terrainTint.r + .1f ||
+  if (terrainTint.g < terrainTint.r + .05f ||
       terrainTint.g < terrainTint.b || terrainTint.r > .72f ||
-      Rec709(terrainTint) < .62f || Rec709(terrainTint) > .69f ||
+      Rec709(terrainTint) < .47f || Rec709(terrainTint) > .53f ||
       terrainTint.a != 1.f)
     return 63;
   const std::array<ShowcaseSceneDescriptor3D, 1> ecologyTrees{{
@@ -491,16 +535,17 @@ int main() {
       SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, {});
   const auto invalidEcology = SampleShowcaseTerrainEcologyTint3D(
       {(std::numeric_limits<float>::quiet_NaN)(), 0, 0}, ecologyTrees);
-  const auto mutuallyExclusiveAndBounded = [](const auto &sample) {
+  const auto validAuthoredBlend = [](const auto &sample) {
     const std::array weights{sample.cottagePath, sample.leafLitter,
                              sample.riverWetSoil};
-    unsigned active{};
+    float total{};
     for (const float weight : weights) {
       if (!std::isfinite(weight) || weight < 0.f || weight > 1.f)
         return false;
-      active += weight > 0.f;
+      total += weight;
     }
-    return active <= 1;
+    return total <= 1.f + 1e-6f &&
+           !(sample.cottagePath > 0.f && sample.riverWetSoil > 0.f);
   };
   if (canopyCenter.canopy < .99f || canopyCenter.leafLitter < .99f ||
       canopyCenter.biome != ShowcaseTerrainBiome3D::CanopyLeafLitter ||
@@ -517,18 +562,18 @@ int main() {
       wetBank.riverMoisture < .6f || wetBank.riverWetSoil < .6f ||
       wetBank.biome != ShowcaseTerrainBiome3D::RiverWetSoil ||
       overlappingBank.biome != ShowcaseTerrainBiome3D::RiverWetSoil ||
-      overlappingBank.riverWetSoil < .6f || overlappingBank.leafLitter != 0.f ||
+      overlappingBank.riverWetSoil < .6f || overlappingBank.leafLitter <= 0.f ||
       dryGround.riverMoisture != 0.f ||
       dryGround.biome != ShowcaseTerrainBiome3D::Neutral ||
       Rec709(wetBank.tint) >= Rec709(dryGround.tint) ||
       Chroma(cottagePath.tint) <= Chroma(canopyCenter.tint) ||
       canopyCenter.tint.g <= canopyCenter.tint.r ||
       wetBank.tint.b <= wetBank.tint.r ||
-      !mutuallyExclusiveAndBounded(canopyCenter) ||
-      !mutuallyExclusiveAndBounded(cottagePath) ||
-      !mutuallyExclusiveAndBounded(wetBank) ||
-      !mutuallyExclusiveAndBounded(overlappingBank) ||
-      !mutuallyExclusiveAndBounded(dryGround) ||
+      !validAuthoredBlend(canopyCenter) ||
+      !validAuthoredBlend(cottagePath) ||
+      !validAuthoredBlend(wetBank) ||
+      !validAuthoredBlend(overlappingBank) ||
+      !validAuthoredBlend(dryGround) ||
       invalidEcology.tint.r != 1.f || invalidEcology.tint.g != 1.f ||
       invalidEcology.tint.b != 1.f || invalidEcology.tint.a != 1.f ||
       invalidEcology.canopy != 0.f || invalidEcology.riverMoisture != 0.f ||
@@ -549,6 +594,50 @@ int main() {
               << dryGround.riverWetSoil << '/' << unsigned(dryGround.biome)
               << '\n';
     return 77;
+  }
+  const auto wetCore=SampleShowcaseTerrainEcologyTint3D({-4,0,0},{});
+  const auto wetShoulder=SampleShowcaseTerrainEcologyTint3D({7,0,0},{});
+  const auto wetFar=SampleShowcaseTerrainEcologyTint3D({20,0,0},{});
+  for (const float z : {-96.f, -48.f, 0.f, 48.f, 96.f}) {
+    const float center = -4.f + std::sin(z * .035f) * 5.f +
+                         std::sin(z * .011f) * 2.f;
+    const float width = 12.f + std::sin(z * .057f + .7f) * 2.6f;
+    const Vec3 shoulderPoint{center + width * .5f + 3.f, 0.f, z};
+    const std::array<ShowcaseSceneDescriptor3D, 1> shoulderTree{{
+        {ShowcaseSceneKind3D::Tree, shoulderPoint, {12, 10, 10}}}};
+    const auto openShoulder =
+        SampleShowcaseTerrainEcologyTint3D(shoulderPoint, {});
+    const auto coveredShoulder =
+        SampleShowcaseTerrainEcologyTint3D(shoulderPoint, shoulderTree);
+    if (openShoulder.riverWetSoil <= 0.f ||
+        openShoulder.riverWetSoil >= .95f ||
+        coveredShoulder.riverWetSoil != openShoulder.riverWetSoil ||
+        coveredShoulder.leafLitter <= 0.f ||
+        coveredShoulder.cottagePath != 0.f ||
+        coveredShoulder.riverWetSoil + coveredShoulder.leafLitter >
+            1.f + 1e-6f) {
+      std::cerr << "covered river shoulder divergence z=" << z
+                << " open=" << openShoulder.riverWetSoil
+                << " covered=" << coveredShoulder.riverWetSoil << '/'
+                << coveredShoulder.leafLitter << '\n';
+      return 94;
+    }
+  }
+  float maximumWetStep{};
+  float previousWet=wetCore.riverWetSoil;
+  for(float x=-3.75f;x<=20.f;x+=.25f){
+    const float wet=SampleShowcaseTerrainEcologyTint3D({x,0,0},{}).riverWetSoil;
+    maximumWetStep=(std::max)(maximumWetStep,std::abs(wet-previousWet));
+    previousWet=wet;
+  }
+  if(wetCore.riverWetSoil<.99f||wetShoulder.riverWetSoil<=.05f||
+      wetShoulder.riverWetSoil>=.95f||wetFar.riverWetSoil!=0.f||
+      maximumWetStep>.20f){
+    std::cerr<<"river wet-band continuity divergence core="
+             <<wetCore.riverWetSoil<<" shoulder="<<wetShoulder.riverWetSoil
+             <<" far="<<wetFar.riverWetSoil
+             <<" maxStep="<<maximumWetStep<<'\n';
+    return 93;
   }
   const auto nearWeight = [](float left, float right) {
     return std::abs(left - right) <= 1e-6f;
@@ -781,6 +870,7 @@ int main() {
   if (!ValidateShowcaseTerrainBiomeUv3D(encodedApron, 129u * 129u))
     return 79;
   bool foundPath{}, foundLeaf{}, foundWet{}, foundNeutral{};
+  std::array<std::size_t,3> materialCoverage{};
   for (std::size_t i = 0; i < encodedApron.vertices.size(); ++i) {
     const auto &before = apron.vertices[i];
     const auto &after = encodedApron.vertices[i];
@@ -798,8 +888,42 @@ int main() {
     foundLeaf |= decoded.leafLitter > .99f;
     foundWet |= decoded.riverWetSoil > .6f;
     foundNeutral |= decoded == ShowcaseTerrainBiomeWeights3D{};
+    // 量測實際網格覆蓋而非 descriptor 數量：中性／落葉頂點使用森林層，
+    // 濕岸使用 Ground108，已編寫的小徑使用碎石層。
+    materialCoverage[0]+=decoded.leafLitter>0.f||decoded==ShowcaseTerrainBiomeWeights3D{};
+    materialCoverage[1]+=decoded.riverWetSoil>0.f;
+    materialCoverage[2]+=decoded.cottagePath>0.f;
   }
-  if (!foundPath || !foundLeaf || !foundWet || !foundNeutral)
+  // 直接檢查正式 129x129 encoded mesh，而非只檢查連續函式：多個河道
+  // z 切片的兩側都必須有 partial wet 頂點，且相鄰 4m 頂點不得由飽和濕岸
+  // 單步掉成零。這會重現舊 dominant-biome 分支被 canopy 截斷的缺口。
+  for (const float sliceZ : {-96.f, -48.f, 0.f, 48.f, 96.f}) {
+    std::vector<std::pair<float, float>> row;
+    for (std::size_t i = 0; i < 129u * 129u; ++i) {
+      const auto &vertex = encodedApron.vertices[i];
+      if (std::abs(vertex.z - sliceZ) > .001f) continue;
+      row.emplace_back(vertex.x,
+          DecodeShowcaseTerrainBiomeUv3D({vertex.u, vertex.v}).riverWetSoil);
+    }
+    std::ranges::sort(row);
+    unsigned partialWet{};
+    bool saturatedToZero{};
+    for (std::size_t i = 0; i < row.size(); ++i) {
+      partialWet += row[i].second > 0.f && row[i].second < .95f;
+      if (i && ((row[i - 1].second >= .95f && row[i].second == 0.f) ||
+                (row[i].second >= .95f && row[i - 1].second == 0.f)))
+        saturatedToZero = true;
+    }
+    if (row.size() != 129u || partialWet < 2u || saturatedToZero) {
+      std::cerr << "encoded river wet-band divergence z=" << sliceZ
+                << " row=" << row.size() << " partial=" << partialWet
+                << " saturatedToZero=" << saturatedToZero << '\n';
+      return 94;
+    }
+  }
+  if (!foundPath || !foundLeaf || !foundWet || !foundNeutral ||
+      materialCoverage[0]<1000u || !materialCoverage[1] ||
+      !materialCoverage[2])
     return 81;
   Mesh3D crossSignTriangle{};
   crossSignTriangle.vertices = {
@@ -1010,6 +1134,24 @@ int main() {
   if (targets.materialIdentityHash == InventoryHash(missingTreeIdentity) ||
       targets.licenseInventoryHash == InventoryHash(missingTreeLicense))
     return 81;
+  constexpr std::array expectedCottageMaterials{
+      std::string_view{"ambientcg/Bricks100/cooked-pbr"},
+      std::string_view{"ambientcg/WoodSiding006/material-pbr"},
+      std::string_view{"ambientcg/WoodSiding006/material-pbr"},
+      std::string_view{"ambientcg/WoodSiding006/material-pbr"},
+      std::string_view{"ambientcg/WoodSiding006/material-pbr"},
+      std::string_view{"ambientcg/RoofingTiles014B/cooked-pbr"}};
+  constexpr std::array expectedCottageMeshes{
+      std::string_view{"procedural/cottage-foundation"}, std::string_view{"procedural/cottage-front"},
+      std::string_view{"procedural/cottage-back"}, std::string_view{"procedural/cottage-left"},
+      std::string_view{"procedural/cottage-right"}, std::string_view{"procedural/cottage-pitched-roof"}};
+  if(first.Descriptors().size()!=464)return 100;
+  for(std::size_t cottageIndex=0;cottageIndex<expectedCottageMaterials.size();++cottageIndex){
+    const auto& descriptor=first.Descriptors()[458u+cottageIndex];
+    if(descriptor.kind!=ShowcaseSceneKind3D::Building||descriptor.meshAsset!=expectedCottageMeshes[cottageIndex]||
+       descriptor.materialAsset!=expectedCottageMaterials[cottageIndex]||
+       GameplayCottageDescriptorMaterialAsset3D(GameplayCottageBaseMaterialRole3D(descriptor.meshAsset))!=descriptor.materialAsset)return 101;
+  }
   // 精確負載不能只與可同時退回舊值的 Targets 比較，否則舊荒地統計會假通過。
   const auto healthyForestLoad = [](const ShowcaseEnvironmentReceipt3D &value) {
     return value.trees == 240 && value.grass == 186 && value.rocks == 30 &&
@@ -1204,7 +1346,7 @@ int main() {
     return 38;
 
   // 岸泡深度依實際河床最淺百分位設定；不得再次把整條河當作泡沫。
-  if(draw.WaterSurface().foamStartDepth > .06f ||
+  if(draw.WaterSurface().foamStartDepth > .035f ||
      draw.WaterSurface().foamEndDepth-draw.WaterSurface().foamStartDepth > .14f ||
      draw.WaterSurface().foamStrength <= 0.f ||
      draw.WaterSurface().foamStrength > .30f)
@@ -1216,7 +1358,13 @@ int main() {
         forestWater.absorption.y > forestWater.absorption.z) ||
       forestWater.absorption.x > forestWater.absorption.z * 2.5f ||
       forestWater.deepColor.y > forestWater.deepColor.x + .022f ||
-      forestWater.deepColor.z > forestWater.deepColor.x + .025f)
+      forestWater.deepColor.z > forestWater.deepColor.x + .025f ||
+      draw.WaterOptics().refractionStrength < .018f ||
+      draw.WaterOptics().refractionStrength > .024f ||
+      draw.WaterOptics().depthScale < .42f ||
+      draw.WaterOptics().depthScale > .50f ||
+      draw.WaterOptics().maximumUvOffset < .035f ||
+      draw.WaterOptics().maximumUvOffset > .045f)
     return 66;
   const auto oldFlatWater = NormalizeWaterSurfaceSettings3D(
       {true, {.42f,.25f,.19f}, {.012f,.028f,.030f}, .025f, .09f, .28f,
@@ -1255,7 +1403,7 @@ int main() {
     return 22;
   const TimeOfDayExposureSettings3D defaultToneCurve{};
   auto expectedDuskToneCurve = defaultToneCurve;
-  expectedDuskToneCurve.duskExposureEv = .66f;
+  expectedDuskToneCurve.duskExposureEv = 1.f;
   auto unboundedNightToneCurve = nightToneCurve;
   unboundedNightToneCurve.nightExposureEv = 2.f;
   auto previousBrightNightToneCurve = nightToneCurve;

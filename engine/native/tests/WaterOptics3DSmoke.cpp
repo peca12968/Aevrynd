@@ -6,6 +6,9 @@
 #include <limits>
 #include <fstream>
 #include <iterator>
+#include <d3dcompiler.h>
+
+#pragma comment(lib, "d3dcompiler.lib")
 
 using namespace Aevrynd;
 
@@ -21,6 +24,13 @@ int main(){
  WaterSurfaceSettings3D hostile{};hostile.absorption={invalidValue,-2.f,std::numeric_limits<float>::infinity()};hostile.deepColor={-1.f,9.f,invalidValue};hostile.minimumRoughness=.8f;hostile.maximumRoughness=-1.f;hostile.foamStartDepth=3.f;hostile.foamEndDepth=-2.f;hostile.shallowAlpha=.8f;hostile.deepAlpha=.1f;hostile.maximumNightRadiance=invalidValue;
  const auto surface=NormalizeWaterSurfaceSettings3D(hostile);if(surface.absorption.x!=.42f||surface.absorption.y!=0.f||surface.absorption.z!=.08f||surface.deepColor.x!=0.f||surface.deepColor.y!=4.f||surface.minimumRoughness!=.6f||surface.maximumRoughness!=.6f||surface.foamEndDepth<=surface.foamStartDepth||surface.deepAlpha<surface.shallowAlpha||surface.maximumNightRadiance!=1.25f){std::cerr<<"Water surface hostile normalization failed\n";return 7;}
  WaterSurfaceSettings3D darkNight{};darkNight.maximumNightRadiance=.012f;if(NormalizeWaterSurfaceSettings3D(darkNight).maximumNightRadiance!=.012f){std::cerr<<"Water night radiance floor prevented a physically dark scene\n";return 10;}
+ // 林地場景採用的水體參數必須遵守實際光學方向：掠射反射增加、紅光
+ // 衰減快於藍光，且岸泡覆蓋率隨垂直水深連續遞減，不能硬切或反轉。
+ const float normalFresnel=WaterFresnel3D(1.f,.021f),grazingFresnel=WaterFresnel3D(.08f,.021f);
+ const float redTransmission=WaterTransmission3D(.34f,2.f),greenTransmission=WaterTransmission3D(.22f,2.f),blueTransmission=WaterTransmission3D(.15f,2.f);
+ const std::array<float,5> shoreCoverage{{WaterShoreCoverage3D(0.f,.01f,.025f,.16f),WaterShoreCoverage3D(.04f,.01f,.025f,.16f),WaterShoreCoverage3D(.09f,.01f,.025f,.16f),WaterShoreCoverage3D(.15f,.01f,.025f,.16f),WaterShoreCoverage3D(.24f,.01f,.025f,.16f)}};
+ if(normalFresnel<.0209f||normalFresnel>.0211f||grazingFresnel<=normalFresnel||grazingFresnel>.75f||!(redTransmission<greenTransmission&&greenTransmission<blueTransmission)||shoreCoverage.front()<.95f||shoreCoverage.back()!=0.f){std::cerr<<"Physical forest-water optics contract failed\n";return 22;}
+ for(size_t i=1;i<shoreCoverage.size();++i)if(shoreCoverage[i]>shoreCoverage[i-1]){std::cerr<<"Shore coverage monotonicity failed\n";return 23;}
  const auto fingerprint=WaterSurfaceFingerprint3D(surface);if(!fingerprint||fingerprint!=WaterSurfaceFingerprint3D(surface)){std::cerr<<"Water surface fingerprint failed\n";return 8;}draw.SetWaterSurface(surface);const auto receipt=draw.WaterSurfaceReceipt();if(receipt.fingerprint!=fingerprint||!receipt.normalized||!receipt.enabledRequested||!receipt.singleCompositeRequested){std::cerr<<"Water surface receipt failed\n";return 9;}
  // 中文：GPU 10-bit逐欄量化後仍必須在shader端重建跨欄順序，且root容量不可偷偷增加。
  const auto quantize=[](float value,float minimum,float maximum){return std::lround(Clamp((value-minimum)/(maximum-minimum),0.f,1.f)*1023.f);};
@@ -37,7 +47,33 @@ int main(){
  std::ifstream shaderFile(shaderPath);const std::string shader{std::istreambuf_iterator<char>{shaderFile},std::istreambuf_iterator<char>{}};
  const auto count=[&](const std::string& token){unsigned n=0;size_t p=0;while((p=shader.find(token,p))!=std::string::npos){++n;p+=token.size();}return n;};
  const auto analyticCount=count("WaterAnalyticWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
- if(analyticCount!=5||bandLimitCount!=5||scatterCount!=2||fallbackCount!=2||shader.find("const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);")==std::string::npos||shader.find("broadWave.yz * broadBandLimit * 0.62")==std::string::npos||shader.find("crossWave.yz * crossBandLimit * 0.24")==std::string::npos||shader.find("detailWave.yz * detailBandLimit * 0.16")==std::string::npos||shader.find("crossDetailWave.yz * crossDetailBandLimit * 0.08")==std::string::npos||shader.find("const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);")==std::string::npos||shader.find("heightGradient = heightGradient * waterNormalScale;")==std::string::npos||shader.find("waterComposite+=waterDirectionalSpecular") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader river-spectrum/normal-scale/direct-specular/band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<bandLimitCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
+ if(analyticCount!=5||bandLimitCount!=5||scatterCount!=2||fallbackCount!=2||count("WaterDomainWarpPosition3D(")!=3||count("WaterDomainWarpGradient3D(")!=3||count("WaterReflectionRoughness3D(")!=2||shader.find("const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);")==std::string::npos||shader.find("broadWave.yz * broadBandLimit * 0.30")==std::string::npos||shader.find("crossWave.yz * crossBandLimit * 0.17")==std::string::npos||shader.find("detailWave.yz * detailBandLimit * 0.24")==std::string::npos||shader.find("crossDetailWave.yz * crossDetailBandLimit * 0.29")==std::string::npos||shader.find("const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);")==std::string::npos||shader.find("heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));")==std::string::npos||shader.find("WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,")==std::string::npos||shader.find("waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterDirectionalSpecular,1.0)") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader river-spectrum/warp/roughness/normal-scale/direct-specular/band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<bandLimitCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
+ // single-composite 水體必須逐分量固定乘加順序，禁止回退成向量 lerp/mad 或輸出量化。
+ if(shader.find("precise float3 WaterOrderedScaleAdd3D(")==std::string::npos||
+    shader.find("result.g = firstTerm.g + secondTerm.g;")==std::string::npos||
+    shader.find("WaterOrderedLerp3D(sideTransmittedScene, waterComposite, waterLocalContribution)")==std::string::npos||
+    shader.find("const float3 singleCompositeLit=WaterOrderedLerp3D(baseColor,shaded,surfaceWeight)")==std::string::npos||
+    shader.find("WaterOrderedScaleAdd3D(aerialOutput,1.0,aerialOwnedSceneContribution,recoveredSceneWeight)")==std::string::npos||
+    shader.find("WaterOrderedScaleAdd3D(deepColor, 0.76,")==std::string::npos||
+    shader.find("WaterOrderedLerp3D(environmentRadiance, screenRadiance,")==std::string::npos||
+    count("WaterReconstructWorldPositionDeterministic3D(")!=10||
+    shader.find("f32tof16(")!=std::string::npos||shader.find("f16tof32(")!=std::string::npos){std::cerr<<"Water single-composite ordered arithmetic contract failed\n";return 18;}
+ // 正式折射必須驗證位移位置的深度，並讓 Beer-Lambert 使用同一水下點；
+ // 岸泡也必須經門檻形成零覆蓋缺口，而不是只替連續岸帶改變明暗。
+ if(shader.find("const float candidateDepth = sceneDepthTexture.SampleLevel(screenPointClampSampler, candidateUv, 0.0);")==std::string::npos||
+    shader.find("candidateVerticalDepth >= -0.02")==std::string::npos||
+    shader.find("opticalPathLength = clamp(candidateThickness, 0.0, 8.0);")==std::string::npos||
+    shader.find("const float foamPresence = smoothstep(0.36, 0.70,")==std::string::npos||
+    shader.find("foamMask = saturate(shore * foamPresence);")==std::string::npos){std::cerr<<"Water displaced-depth or broken-shore contract failed\n";return 24;}
+ // 直接以正式 /Gis 等價旗標編譯並反組譯，防止來源看似 precise、DXBC 卻重新產生 mad。
+ ID3DBlob* bytecode=nullptr;ID3DBlob* errors=nullptr;
+ const auto compileResult=D3DCompileFromFile(shaderPath.c_str(),nullptr,D3D_COMPILE_STANDARD_FILE_INCLUDE,"WorldPixelMain","ps_5_0",D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_IEEE_STRICTNESS|D3DCOMPILE_OPTIMIZATION_LEVEL3|D3DCOMPILE_WARNINGS_ARE_ERRORS,0,&bytecode,&errors);
+ if(FAILED(compileResult)){if(errors)std::cerr.write(static_cast<const char*>(errors->GetBufferPointer()),static_cast<std::streamsize>(errors->GetBufferSize()));if(errors)errors->Release();if(bytecode)bytecode->Release();std::cerr<<"Water strict shader compilation contract failed\n";return 19;}
+ ID3DBlob* disassembly=nullptr;const auto disassembleResult=D3DDisassemble(bytecode->GetBufferPointer(),bytecode->GetBufferSize(),0,nullptr,&disassembly);
+ bytecode->Release();if(errors)errors->Release();
+ if(FAILED(disassembleResult)||!disassembly){std::cerr<<"Water shader disassembly contract failed\n";return 20;}
+ const std::string assembly{static_cast<const char*>(disassembly->GetBufferPointer()),disassembly->GetBufferSize()};disassembly->Release();
+ if(assembly.find("\nmad ")!=std::string::npos||assembly.find("\nmad_sat ")!=std::string::npos||assembly.find("[precise") == std::string::npos){std::cerr<<"Water shader emitted reassociated MAD or lost precise DXBC operands\n";return 21;}
  // 雲、地表與水體共用的格點亂數必須只由整數位元運算產生；舊浮點雜湊曾造成跨次 HDR 位元漂移。
  if(count("uint CloudLatticeHash(int2 coordinate, uint seed)")!=1||
     shader.find("uint seed = 0xcb1ab31fu")==std::string::npos||

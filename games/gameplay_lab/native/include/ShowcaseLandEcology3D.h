@@ -92,7 +92,8 @@ struct ShowcaseLandEcologyReceipt3D {
   std::uint32_t failureKind{3}, failureBand{3}, failureItem{};
   float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{},
       minimumPropEdgeSpacing{}, minimumRiverbankRockClearance{},
-      maximumRiverbankRockClearance{}, maximumRiverbankGrassClearance{};
+      maximumRiverbankRockClearance{}, maximumRiverbankGrassClearance{},
+      meanRiverbankRockClearance{}, meanRiverbankGrassClearance{};
   bool terrainBoundsExact{}, bandsExact{}, riverExcluded{}, spawnExcluded{}, cottageExcluded{};
   bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{},
       zonesExact{}, riverbankLayered{}, densityExact{}, heroGroundCoverExact{},

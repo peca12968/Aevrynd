@@ -123,6 +123,18 @@ enum class GameplayTemporalReseedReason3D : std::uint32_t {
 // the extra two frames preserve the strict bit-exact HDR contract instead of
 // weakening the cross-process determinism gate.
 inline constexpr std::uint32_t GameplayTemporalCaptureWarmupFrames3D=5;
+// The player-facing MSAA/TAA presentation is rebuilt only after the diagnostic
+// readback sequence has retired.  Its request frame is counted from a fresh
+// camera cut, never from the (driver-dependent) number of asynchronous readback
+// wait frames that preceded it.
+inline constexpr std::uint32_t GameplayPresentationCaptureWarmupFrames3D=5;
+[[nodiscard]] constexpr bool GameplayPresentationCaptureRequestDue3D(
+    bool diagnosticSequenceComplete,std::uint32_t presentationWarmupFrames,
+    std::uint32_t asynchronousReadbackWaitFrames)noexcept{
+    (void)asynchronousReadbackWaitFrames;
+    return diagnosticSequenceComplete&&
+        presentationWarmupFrames==GameplayPresentationCaptureWarmupFrames3D;
+}
 [[nodiscard]] constexpr std::uint32_t GameplayTemporalReasonMask3D(GameplayTemporalReseedReason3D reason)noexcept{return std::uint32_t(reason);}
 [[nodiscard]] inline bool GameplayTemporalViewDiscontinuity3D(const Aevrynd::Camera3D& previous,const Aevrynd::Camera3D& current)noexcept{
     if(previous.projection.mode!=current.projection.mode)return true;
@@ -433,10 +445,8 @@ inline constexpr float GameplayGodCandidatePlayerCoverage3D=
 }
 
 inline constexpr float GameplayGodMinimumCornerRayOriginHeight3D=1.5f;
-// Bricks100 的 1K 法線在 God 鏡頭縮小後仍保留完整幅度，黃昏掠射光會把
-// 個別 mortar texel 放大成散布牆面的黑孔。0.35 保留近景磚縫起伏，並由
-// 固定 God day/dusk/night readback 證明不再產生可見椒鹽黑點。
-inline constexpr float GameplayCottageWallNormalScale3D=.35f;
+// 小屋的磚基座與煙囪保留足夠法線幅度；木牆另由 WoodSiding006 的載入值控制。
+inline constexpr float GameplayCottageWallNormalScale3D=.9f;
 inline constexpr bool GameplayCottageMaterialUsesUv3D(bool roof) noexcept { return roof; }
 // 正交 God 鏡頭的下方角落若從接近地表的位置開始，局部起伏會落在
 // near plane 後方，即使 y=0 平面射線可命中仍會露出 clear color。
@@ -1051,7 +1061,8 @@ private:
     std::array<std::array<std::byte,32>,11> captureRawDepthFinalFileSha256_{},captureEffectiveDepthFinalFileSha256_{},captureReferenceDepthFinalFileSha256_{};
     std::array<std::array<std::byte,32>,11> captureRawTokenMetadataSha256_{},captureEffectiveTokenMetadataSha256_{};
     std::array<std::uint64_t,11> captureRawDepthFinalFileBytes_{},captureEffectiveDepthFinalFileBytes_{},captureReferenceDepthFinalFileBytes_{};
-    bool capturePresentationRequestPending_{},capturePresentationPending_{};
+    bool capturePresentationWarmupActive_{},capturePresentationRequestPending_{},capturePresentationPending_{};
+    std::uint32_t capturePresentationWarmupRemaining_{},capturePresentationWarmupFramesCurrent_{},captureDiagnosticAsyncWaitFrames_{};
     Aevrynd::ReadbackCaptureSequenceToken3D capturePresentationLogicalToken_{};
     std::array<std::uint64_t,11> capturePresentationFrameSerial_{},capturePresentationCameraHash_{},capturePresentationStateHash_{},capturePresentationInvariantHash_{};
     std::array<std::uint8_t,11> capturePresentationMsaa_{},capturePresentationTaa_{},capturePresentationHistoryUsed_{},capturePresentationPaired_{};

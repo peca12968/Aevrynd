@@ -200,6 +200,41 @@ int main() {
     previousCommunityTriangles = triangles;
   }
 
+  std::size_t previousRiverbankTriangles =
+      (std::numeric_limits<std::size_t>::max)();
+  constexpr std::array<std::size_t, 3> expectedRiverbankTriangles{{44, 26, 14}};
+  for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
+    const auto detail = details[detailIndex];
+    const auto riverbank =
+        CreateGameplayForestRiverbankGroundCoverMesh3D(detail, 0x31b7u);
+    const auto repeated =
+        CreateGameplayForestRiverbankGroundCoverMesh3D(detail, 0x31b7u);
+    const auto bounds = riverbank.Bounds();
+    const std::size_t triangles = riverbank.indices.size() / 3;
+    if (!riverbank.Valid() || !Exact(riverbank, repeated) ||
+        !CommunityUvContract(riverbank) ||
+        triangles != expectedRiverbankTriangles[detailIndex] ||
+        triangles > GameplayForestRiverbankGroundCoverTriangleBudget(detail) ||
+        triangles >= previousRiverbankTriangles ||
+        bounds.extents.x < .55f || bounds.extents.z < .55f ||
+        bounds.center.y - bounds.extents.y < -1e-6f ||
+        bounds.center.y + bounds.extents.y > .61f) {
+      std::cerr << "FOREST_RIVERBANK_GROUND_COVER_CONTRACT=FAIL\n";
+      return 9;
+    }
+    previousRiverbankTriangles = triangles;
+  }
+
+  const auto leafMoss = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::LeafMoss,
+      GameplayForestGroundCoverDetail3D::Near, 0x51a7c3u);
+  const auto leafMossBounds = leafMoss.Bounds();
+  if (leafMossBounds.extents.x < .55f || leafMossBounds.extents.z < .55f ||
+      leafMossBounds.center.y + leafMossBounds.extents.y > .07f) {
+    std::cerr << "LEAF_MOSS_HORIZONTAL_COVERAGE=FAIL\n";
+    return 10;
+  }
+
   auto flattenedShrub = CreateGameplayForestGroundCoverMesh3D(
       GameplayForestGroundCoverSpecies3D::LowShrub,
       GameplayForestGroundCoverDetail3D::Near, 0x51a7c3u);

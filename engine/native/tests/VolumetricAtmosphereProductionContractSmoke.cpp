@@ -61,7 +61,7 @@ bool CompositeDeterministicArithmeticContract(double &maximumInverseSqrtError,
   const bool sourceContract =
       shader.find("normalize(") == std::string::npos &&
       shader.find("rcp(") == std::string::npos &&
-      shader.find("AevryndDeterministicNormalize(surfaceWorld-rayOrigin)") !=
+      shader.find("AevryndDeterministicNormalize(rayVector)") !=
           std::string::npos &&
       shader.find("precise float2 CompositeViewportUv(uint2 pixel)") !=
           std::string::npos &&
@@ -70,7 +70,27 @@ bool CompositeDeterministicArithmeticContract(double &maximumInverseSqrtError,
       shader.find("CompositeDeterministicReciprocal(ray.y)") !=
           std::string::npos &&
       shader.find("CompositeDeterministicReciprocal(accumulatedWeight)") !=
-          std::string::npos;
+          std::string::npos &&
+      shader.find("precise float SceneAtmosphereWeight(") !=
+          std::string::npos &&
+      shader.find("precise float4 SampleDepthAwareAtmosphere(") !=
+          std::string::npos &&
+      shader.find("precise float4 CompositeSceneColor(") !=
+          std::string::npos &&
+      shader.find("precise float4 VolumetricAtmosphereCompositePixelMain(") !=
+          std::string::npos &&
+      shader.find("precise float4 VolumetricAtmosphereCompositeBloomSemanticPixelMain(") !=
+          std::string::npos &&
+      shader.find("precise const float4 output=CompositeSceneColor(pixel,sampleIndex,false)") !=
+          std::string::npos &&
+      shader.find("precise const float4 output=CompositeSceneColor(pixel,sampleIndex,true)") !=
+          std::string::npos &&
+      shader.find("accumulated.r=accumulated.r+weightedSample.r") !=
+          std::string::npos &&
+      shader.find("rgb.r=atmosphereRgb.r+scaledScene.r") !=
+          std::string::npos &&
+      shader.find("scene.rgb*inverseAlpha") == std::string::npos &&
+      shader.find("atmosphereSample*bilateralWeight") == std::string::npos;
   if (!sourceContract)
     return false;
 
@@ -138,6 +158,103 @@ bool CompositeDeterministicArithmeticContract(double &maximumInverseSqrtError,
          DeterministicReciprocalContract(
              std::numeric_limits<float>::quiet_NaN()) == 0.f;
 }
+
+bool MultisampleStageDiagnosticSourceContract() {
+  const auto shaderPath = std::filesystem::path{__FILE__}.parent_path()
+                              .parent_path() / "shaders" /
+                          "DeterministicMsaaResolve.hlsl";
+  std::ifstream input(shaderPath, std::ios::binary);
+  if (!input)
+    return false;
+  const std::string shader{std::istreambuf_iterator<char>{input}, {}};
+  const auto validates = [](const std::string &source) {
+    return source.find("float4 DeterministicMsaaResolvePixelMain(") !=
+             std::string::npos &&
+         source.find("multisampleHdr.Load(pixel, 0)") != std::string::npos &&
+         source.find("multisampleHdr.Load(pixel, 1)") != std::string::npos &&
+         source.find("multisampleHdr.Load(pixel, 2)") != std::string::npos &&
+         source.find("multisampleHdr.Load(pixel, 3)") != std::string::npos &&
+         source.find("sum * 0.25") != std::string::npos &&
+         source.find("uint diagnosticSample;") != std::string::npos &&
+         source.find("float4 DeterministicMsaaSampleDiagnosticPixelMain(") !=
+             std::string::npos &&
+         source.find("return multisampleHdr.Load(pixel, diagnosticSample);") !=
+             std::string::npos &&
+         source.find("f32tof16") == std::string::npos &&
+         source.find("f16tof32") == std::string::npos &&
+         source.find("round(") == std::string::npos;
+  };
+  const auto hostileRejected = [&](std::string before, std::string after) {
+    auto mutation = shader;
+    const auto position = mutation.find(before);
+    if (position == std::string::npos)
+      return false;
+    mutation.replace(position, before.size(), after);
+    return !validates(mutation);
+  };
+  return validates(shader) &&
+         hostileRejected("sum * 0.25", "sum * 0.5") &&
+         hostileRejected("multisampleHdr.Load(pixel, diagnosticSample)",
+                         "multisampleHdr.Load(pixel, 0)") &&
+         hostileRejected("return multisampleHdr.Load(pixel, diagnosticSample);",
+                         "return f32tof16(multisampleHdr.Load(pixel, diagnosticSample));");
+}
+
+bool ContactShadowInvalidHistorySourceContract() {
+  const auto shaderPath = std::filesystem::path{__FILE__}.parent_path()
+                              .parent_path() / "shaders" /
+                          "ContactShadowTemporal.hlsl";
+  std::ifstream input(shaderPath, std::ios::binary);
+  if (!input)
+    return false;
+  const std::string shader{std::istreambuf_iterator<char>{input}, {}};
+  const auto validates = [](const std::string &source) {
+    const auto current = source.find("current=currentContact.Load");
+    const auto valid = source.find("const bool validFlags=");
+    const auto reject = source.find("if(!validFlags)");
+    const auto rejectedWrite = source.find(
+        "temporalContact[id.xy]=float2(currentVisibility,currentDepth);");
+    const auto rejectedReturn = source.find("return;", rejectedWrite);
+    const auto previous = source.find("previousContact.Load");
+    return current != std::string::npos && valid != std::string::npos &&
+           reject != std::string::npos && rejectedWrite != std::string::npos &&
+           rejectedReturn != std::string::npos && previous != std::string::npos &&
+           current < valid && valid < reject && reject < rejectedWrite &&
+           rejectedWrite < rejectedReturn && rejectedReturn < previous;
+  };
+  auto hostile = shader;
+  const auto guard = hostile.find("if(!validFlags)");
+  if (guard == std::string::npos)
+    return false;
+  hostile.replace(guard, sizeof("if(!validFlags)") - 1, "if(false)");
+  return validates(shader) && !validates(hostile);
+}
+
+bool ContactShadowTemporalBypassDiagnosticSourceContract() {
+  const auto rendererPath = std::filesystem::path{__FILE__}.parent_path()
+                                .parent_path() / "src" / "D3D12Renderer.cpp";
+  std::ifstream input(rendererPath, std::ios::binary);
+  if (!input)
+    return false;
+  const std::string source{std::istreambuf_iterator<char>{input}, {}};
+  const auto environment = source.find(
+      "AEVRYND_CONTACT_SHADOW_TEMPORAL_DIAGNOSTIC_OFF");
+  const auto strictValue = source.find("contactTemporalDiagnostic[0]!=L'1'",
+                                       environment);
+  const auto assignment = source.find(
+      "d.contactShadowTemporalDiagnosticBypass=contactTemporalDiagnosticLength==1",
+      strictValue);
+  const auto use = source.find(
+      "if(d.contactShadowTemporalDiagnosticBypass)",
+      assignment);
+  const auto currentSignal = source.find(
+      "CreateShaderResourceView(d.ambientOcclusionContactCurrent.Get()",
+      use);
+  return environment != std::string::npos && strictValue != std::string::npos &&
+         assignment != std::string::npos && use != std::string::npos &&
+         currentSignal != std::string::npos && environment < strictValue &&
+         strictValue < assignment && assignment < use && use < currentSignal;
+}
 } // namespace
 
 int main() {
@@ -150,6 +267,18 @@ int main() {
                                                 maximumReciprocalError)) {
     std::cerr << "Composite deterministic arithmetic contract failed\n";
     return 5;
+  }
+  if (!MultisampleStageDiagnosticSourceContract()) {
+    std::cerr << "MSAA sample diagnostic source contract failed\n";
+    return 6;
+  }
+  if (!ContactShadowInvalidHistorySourceContract()) {
+    std::cerr << "Contact-shadow invalid-history source contract failed\n";
+    return 7;
+  }
+  if (!ContactShadowTemporalBypassDiagnosticSourceContract()) {
+    std::cerr << "Contact-shadow temporal-bypass diagnostic source contract failed\n";
+    return 8;
   }
   const HINSTANCE instance = GetModuleHandleW(nullptr);
   const wchar_t *className = L"AevryndVolumetricAtmosphereProductionContract";

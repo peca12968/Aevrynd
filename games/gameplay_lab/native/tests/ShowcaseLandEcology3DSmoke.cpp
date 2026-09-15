@@ -60,6 +60,10 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
           std::bit_cast<std::uint32_t>(right.maximumRiverbankRockClearance) &&
       std::bit_cast<std::uint32_t>(left.maximumRiverbankGrassClearance) ==
           std::bit_cast<std::uint32_t>(right.maximumRiverbankGrassClearance) &&
+      std::bit_cast<std::uint32_t>(left.meanRiverbankRockClearance) ==
+          std::bit_cast<std::uint32_t>(right.meanRiverbankRockClearance) &&
+      std::bit_cast<std::uint32_t>(left.meanRiverbankGrassClearance) ==
+          std::bit_cast<std::uint32_t>(right.meanRiverbankGrassClearance) &&
       left.terrainBoundsExact == right.terrainBoundsExact &&
       left.bandsExact == right.bandsExact &&
       left.riverExcluded == right.riverExcluded &&
@@ -537,6 +541,8 @@ int main() {
           settings.riverbankRockMaximumClearance ||
       receipt.maximumRiverbankGrassClearance >
           settings.riverbankGrassMaximumClearance ||
+      receipt.meanRiverbankGrassClearance + 1.f >
+          receipt.meanRiverbankRockClearance ||
       receipt.densestHabitatCell < settings.minimumDensestHabitatCell)
     return 12;
   if(!receipt.attemptedCandidates||receipt.attemptedCandidates>32000u||medianBuildMicros>3000){std::cerr<<"land performance attempts="<<receipt.attemptedCandidates<<" medianElapsedUs="<<medianBuildMicros<<" samples=";for(const auto value:buildMicros)std::cerr<<value<<',';std::cerr<<'\n';return 15;}
@@ -645,7 +651,9 @@ int main() {
             << " bank=" << receipt.riverbankRocks << '/'
             << receipt.riverbankGrass << '@'
             << receipt.maximumRiverbankRockClearance << '/'
-            << receipt.maximumRiverbankGrassClearance
+            << receipt.maximumRiverbankGrassClearance << " mean="
+            << receipt.meanRiverbankRockClearance << '/'
+            << receipt.meanRiverbankGrassClearance
             << " habitat=" << receipt.occupiedHabitatCells << '/'
             << receipt.densestHabitatCell
             << " hero=" << receipt.heroGroundCover << "/0x" << std::hex

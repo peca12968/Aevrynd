@@ -335,7 +335,12 @@ bool BuildShowcaseLandEcology3D(
                 : communityOrdinal % std::uint32_t(communityAngles.size());
         const float communityCenter =
             communityAngles[communitySlot] +
-                                      std::fmod(seedPhase, .17f);
+            std::fmod(seedPhase, .17f) +
+            // low=41 的近景母樹保留原群落槽，只沿弧移開 third-day 左側
+            // temporal tile 邊界；小角度避免改寫後續群落拓撲與英雄區草帶。
+            (kind == ShowcaseLandKind3D::Tree && band == 0u && item == 8u
+                 ? .01f
+                 : 0.f);
         const float communityX = std::cos(communityCenter);
         const float communityZ = std::sin(communityCenter);
         float communityFraction = std::fmod(float(ordinal) * .381966011f, 1.f);
@@ -509,6 +514,8 @@ bool BuildShowcaseLandEcology3D(
               zone == ShowcaseLandZone3D::Riverbank) {
             // 河岸項目直接由同一條正式河流函數取樣兩岸，避免先在整個環帶抽樣再
             // 丟棄絕大多數候選；clearance 仍由後續上下限與足跡 gate 驗證。
+            // 正式河岸橫斷面由水向陸依序為：保留的濕土水線、低苔蘚／
+            // 矮蕨帶、岩石帶。只重排既有 62 草與 30 岩石，不增加配置。
             const float minimum = RiverClearance(kind);
             const float maximum = kind == ShowcaseLandKind3D::Rock
                                       ? settings.riverbankRockMaximumClearance
@@ -681,6 +688,7 @@ bool ValidateShowcaseLandEcology3D(
     const float bankClearance = RiverbankClearance(placement.position, footprint);
     if (placement.kind == ShowcaseLandKind3D::Rock) {
       ++result.riverbankRocks;
+      result.meanRiverbankRockClearance += bankClearance;
       if (result.riverbankRocks == 1)
         result.minimumRiverbankRockClearance = bankClearance;
       else
@@ -692,6 +700,7 @@ bool ValidateShowcaseLandEcology3D(
           bankClearance <= settings.riverbankRockMaximumClearance;
     } else if (placement.zone == ShowcaseLandZone3D::Riverbank) {
       ++result.riverbankGrass;
+      result.meanRiverbankGrassClearance += bankClearance;
       result.maximumRiverbankGrassClearance =
           (std::max)(result.maximumRiverbankGrassClearance, bankClearance);
       result.riverbankLayered &= bankClearance >= RiverClearance(placement.kind) &&
@@ -801,6 +810,16 @@ bool ValidateShowcaseLandEcology3D(
     result.occupiedHabitatCells += count ? 1u : 0u;
     result.densestHabitatCell = (std::max)(result.densestHabitatCell, count);
   }
+  if (result.riverbankRocks)
+    result.meanRiverbankRockClearance /= float(result.riverbankRocks);
+  if (result.riverbankGrass)
+    result.meanRiverbankGrassClearance /= float(result.riverbankGrass);
+  // 生態層次由全部實際足跡外緣的平均 clearance 證明；不是只確認兩種
+  // 物件都出現，也不以單一離群石頭／苔蘚決定整條河岸。
+  result.riverbankLayered &= result.riverbankGrass == 62 &&
+      result.riverbankRocks == 30 &&
+      result.meanRiverbankGrassClearance + 1.f <=
+          result.meanRiverbankRockClearance;
   result.heroGroundCoverExact = result.heroGroundCover >= MinimumHeroGroundCover &&
                                 result.heroGroundCoverQuadrantMask == 0x0fu;
   result.understoryGroundCoverExact =

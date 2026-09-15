@@ -35,7 +35,7 @@ The broad internal hooks must remain OFF for Gameplay capture: the existing
 TakeProductionReadbackBundle3D guard intentionally returns empty in hooks-ON
 builds. That guard has not been changed. Water-only diagnostic images remain
 diagnostic evidence, not production visual acceptance.
-WaterEnvironmentCpu extracts the actual parser and checks unset, all thirteen
+WaterEnvironmentCpu extracts the actual parser and checks unset, all twenty
 legal values, and hostile zero/out-of-range/signed/padded/multi-digit values.
 It also verifies disabled-option semantics ignore all values.
 Modes 6..9 isolate absorbed transmission, Fresnel reflection, RGB transmission

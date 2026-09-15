@@ -250,6 +250,8 @@ set_tests_properties(GameplayLabGpuValidationCaptureSmoke PROPERTIES TIMEOUT 240
 set_property(TEST GameplayLabCaptureSmoke GameplayLabGpuValidationCaptureSmoke APPEND PROPERTY LABELS "visual-gates")
 add_test(NAME GameplayLabCaptureCtestContractSmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLabCaptureCtestContractSmoke.ps1" -CTestFile "${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.cmake")
 set_tests_properties(GameplayLabCaptureCtestContractSmoke PROPERTIES TIMEOUT 10)
+add_test(NAME GameplayLightingPhaseEvidenceSmoke COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayLightingPhaseEvidenceSmoke.ps1")
+set_tests_properties(GameplayLightingPhaseEvidenceSmoke PROPERTIES TIMEOUT 10 LABELS "visual-gates")
 add_custom_target(GameplayR7VisualSidecarHostileChecks
   COMMAND ${CMAKE_COMMAND} -E env "LIB=" powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayR7VisualSidecarSmoke.ps1" -Producer "${CMAKE_CURRENT_SOURCE_DIR}/tests/GameplayR7VisualSidecar.ps1"
   VERBATIM)

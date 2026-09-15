@@ -87,6 +87,19 @@ PrepareGameplayForestGroundCoverMaterial3D(Aevrynd::Material3D material,
   return 0;
 }
 
+// 河岸專用單一實例網格：低伏落葉／苔蘚先覆蓋濕土，再以縮短的蕨葉
+// 提供垂直輪廓。它不含灌木，避免水線旁形成不自然的等高綠牆。
+[[nodiscard]] constexpr std::size_t
+GameplayForestRiverbankGroundCoverTriangleBudget(
+    GameplayForestGroundCoverDetail3D detail) noexcept {
+  switch (detail) {
+    case GameplayForestGroundCoverDetail3D::Near: return 44;
+    case GameplayForestGroundCoverDetail3D::Mid: return 26;
+    case GameplayForestGroundCoverDetail3D::Far: return 14;
+  }
+  return 0;
+}
+
 [[nodiscard]] Aevrynd::Mesh3D CreateGameplayForestGroundCoverMesh3D(
     GameplayForestGroundCoverSpecies3D species,
     GameplayForestGroundCoverDetail3D detail = GameplayForestGroundCoverDetail3D::Near,
@@ -94,6 +107,10 @@ PrepareGameplayForestGroundCoverMaterial3D(Aevrynd::Material3D material,
 
 // 直接建立包含蕨類、低灌木與落葉/苔蘚的可實例化單一網格。
 [[nodiscard]] Aevrynd::Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
+    GameplayForestGroundCoverDetail3D detail = GameplayForestGroundCoverDetail3D::Near,
+    std::uint32_t variationSeed = 1);
+
+[[nodiscard]] Aevrynd::Mesh3D CreateGameplayForestRiverbankGroundCoverMesh3D(
     GameplayForestGroundCoverDetail3D detail = GameplayForestGroundCoverDetail3D::Near,
     std::uint32_t variationSeed = 1);
 

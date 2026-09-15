@@ -272,18 +272,24 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                          0,
                          true,
                          std::string(buildingMeshes[index]),
-                         index == 5 ? "ambientcg/RoofingTiles014B/cooked-pbr"
-                                    : "ambientcg/Bricks100/cooked-pbr"});
+                         std::string(GameplayCottageDescriptorMaterialAsset3D(
+                             index == 0 ? GameplayCottageMaterialRole3D::Brick
+                                        : index == 5 ? GameplayCottageMaterialRole3D::RoofTile
+                                                     : GameplayCottageMaterialRole3D::WoodSiding))});
 
   descriptors_.swap(candidate);
-  // 林地河水仍需吸收紅光，但紅、藍吸收差距不能大到讓水面成為自發光
-  // 青色帶。降低深水藍綠散射並收斂通道差距，讓水色主要來自天空、
-  // 河床與岸邊樹木的反射，同時保留淺灘可讀性。
-  // 實際水面內 0.25m 採樣的深度 p1=.0476m、p5=.2710m；泡沫只保留最淺岸帶。
-  // 寬波提升到約 7.1m 波長，配合八個非共線解析分量，讓第三人稱與 God 鏡位
-  // 都看得到可解釋的法線與反射變化，不再是平面或規則百葉條紋。細波仍由
-  // 像素世界足跡 band-limit，不以螢幕亮度雜訊製造假細節。
-  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D({true, {.42f,.25f,.19f}, {.018f,.035f,.038f}, .035f, .045f, .14f, .14f, .20f, .12f, .92f, .12f, .28f, .03f, .14f, .26f, .68f, .90f, .020f});
+  // 林地河水使用低鐵土溪流的 Beer-Lambert 吸收：紅光仍最快衰減，
+  // 但三通道差距受限，深水散射也維持低能量，避免固定青色源項主宰畫面。
+  // 反射率採空氣/淡水介面的約 2.1% F0；粗糙度範圍擴大後，正視角仍可
+  // 透見河床，掠射角則由 Fresnel 平滑轉為天空與樹冠反射。
+  // 7.1m 主波保留可讀輪廓但降低過大的坡度，0.92 cycles/m 細波只提供
+  // 近景碎光並繼續由像素世界足跡 band-limit。實測最淺深度 p1=.0476m，
+  // 泡沫僅覆蓋 0.025~0.16m 岸帶；較低淺水 alpha 與連續濕土肩帶共同
+  // 消除原本的硬切邊，不以畫面空間模糊或時間平滑掩蓋岸線。
+  waterSurface_ = Aevrynd::NormalizeWaterSurfaceSettings3D(
+      {true, {.34f, .22f, .15f}, {.014f, .026f, .029f}, .021f,
+       .055f, .20f, .14f, .16f, .18f, .92f, .055f, .43f,
+       .025f, .16f, .28f, .46f, .86f, .030f});
   seed_ = seed;
   groundingReceipt_ = {};
   initialized_ = true;
@@ -427,10 +433,11 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
   Aevrynd::TerrainDistanceMaterialSettings3D terrainMaterial{
-      true, 32.f, 176.f, .0042f, .22f, 1.28f, .18f};
+      true, 48.f, 224.f, .0055f, .12f, 1.10f, .10f};
   terrainMaterial.mesoPartitionEnabled = true;
   draw.SetTerrainDistanceMaterial(terrainMaterial);
-  draw.SetWaterOptics({true, .028f, .52f, .055f});
+  // 淺溪厚度不應把背景折射到岸外；保留可見折射，但限制最大 UV 偏移。
+  draw.SetWaterOptics({true, .022f, .46f, .040f});
   draw.SetWaterSurface(waterSurface_);
 }
 
@@ -556,8 +563,10 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   Aevrynd::TimeOfDayExposureSettings3D timeOfDayExposure{};
   if (profile == ShowcaseLightingProfile3D::Dusk) {
     // 森林地被改用正確的深色材質後，黃昏中間調需要少量補償，才能維持
-    // 日／昏／夜的清楚亮度階層；只調整黃昏相位，避免抬亮夜景。
-    timeOfDayExposure.duskExposureEv = .66f;
+    // 日／昏／夜的清楚亮度階層。新的低反射率林地與淡水材質在正式 GBV
+    // God-view 量得 dusk/night=1.047，仍略低於既有 1.05 相位門檻；將
+    // 黃昏曝光補到既有允許上限，只提升黃昏中間調，不抬亮夜景或放寬門檻。
+    timeOfDayExposure.duskExposureEv = 1.f;
   } else if (profile == ShowcaseLightingProfile3D::Night) {
     // 夜間不沿用預設 +2 EV：壓住月光與小屋高光，同時只在 tone curve
     // 暗部提供有限 lift，讓林地輪廓可讀而不抬高整個畫面。

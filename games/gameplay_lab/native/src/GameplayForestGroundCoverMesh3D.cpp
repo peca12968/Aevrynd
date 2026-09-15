@@ -165,9 +165,11 @@ Mesh3D CreateLeafMoss(GameplayForestGroundCoverDetail3D detail,
   mesh.indices.reserve(std::size_t(count) * 6);
   for (unsigned item = 0; item < count; ++item) {
     const float phase = 2.f * Pi * UnitNoise(seed, item, 67u);
-    const float radius = .08f + UnitNoise(seed, item, 71u) * .31f;
-    const float halfWidth = .14f + UnitNoise(seed, item, 73u) * .10f;
-    const float halfLength = .18f + UnitNoise(seed, item, 79u) * .14f;
+    // 低伏層負責填滿 placement 之間的裸地，不用增加 descriptor 或
+    // alpha-card 數量。面積擴張只在 XZ，Y 仍貼地，避免冒充灌木高度。
+    const float radius = .12f + UnitNoise(seed, item, 71u) * .48f;
+    const float halfWidth = .21f + UnitNoise(seed, item, 73u) * .16f;
+    const float halfLength = .27f + UnitNoise(seed, item, 79u) * .20f;
     const Vec3 direction{std::cos(phase), 0, std::sin(phase)};
     const Vec3 side{-direction.z, 0, direction.x};
     const Vec3 center{direction.x * radius,
@@ -239,9 +241,26 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
   const auto leafMoss = CreateGameplayForestGroundCoverMesh3D(
       GameplayForestGroundCoverSpecies3D::LeafMoss, detail,
       Mix(variationSeed ^ 0xc4d82a67u));
-  AppendTransformed(result, fern, {-.18f, 0, -.06f}, -.31f, .92f);
-  AppendTransformed(result, shrub, {.17f, 0, .08f}, .47f, .88f);
-  AppendTransformed(result, leafMoss, {0, 0, .03f}, .14f, 1.08f);
+  AppendTransformed(result, fern, {-.24f, 0, -.09f}, -.31f, .92f);
+  AppendTransformed(result, shrub, {.22f, 0, .11f}, .47f, .88f);
+  AppendTransformed(result, leafMoss, {0, 0, .03f}, .14f, 1.22f);
+  return result;
+}
+
+Mesh3D CreateGameplayForestRiverbankGroundCoverMesh3D(
+    GameplayForestGroundCoverDetail3D detail,
+    std::uint32_t variationSeed) {
+  Mesh3D result;
+  const auto fern = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::Fern, detail,
+      Mix(variationSeed ^ 0x82c6e4b9u));
+  const auto leafMoss = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::LeafMoss, detail,
+      Mix(variationSeed ^ 0x3d1a7f25u));
+  // 水線向外先讀到大片低苔蘚，再由兩個方向的矮蕨葉銜接既有岩石。
+  // 蕨類保留真實原始比例但縮短至約 0.55m；苔蘚只擴張水平面。
+  AppendTransformed(result, leafMoss, {0, 0, 0}, .08f, 1.32f);
+  AppendTransformed(result, fern, {-.12f, 0, .07f}, -.38f, .60f);
   return result;
 }
 

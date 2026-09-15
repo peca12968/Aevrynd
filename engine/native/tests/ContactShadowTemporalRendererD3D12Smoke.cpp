@@ -104,6 +104,23 @@ int main() {
     renderer.Render(draw, {.01f, .02f, .03f, 1.f});
     draw.SetCameraCut3D(false);
     const auto reset = renderer.GetStats();
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+    const auto cutCurrent = D3D12RendererTestAccess3D::CaptureContactShadow(
+        renderer, D3D12RendererTestAccess3D::ContactShadowCaptureStage3D::Current);
+    const auto cutHistory = D3D12RendererTestAccess3D::CaptureContactShadow(
+        renderer, D3D12RendererTestAccess3D::ContactShadowCaptureStage3D::History);
+    const bool cutSeedExact = cutCurrent && cutHistory && cutCurrent->Complete() &&
+                              cutHistory->Complete() &&
+                              cutCurrent->width == cutHistory->width &&
+                              cutCurrent->height == cutHistory->height &&
+                              std::memcmp(cutCurrent->pixels.data(),
+                                          cutHistory->pixels.data(),
+                                          cutCurrent->pixels.size() * sizeof(Vec2)) == 0;
+    if (!cutSeedExact || reset.contactShadowTemporalDispatches != 0) {
+      std::cerr << "camera-cut current-to-history seed was not an exact GPU copy\n";
+      result = 15;
+    }
+#endif
     for (unsigned frame = 0; frame < 4; ++frame)
       renderer.Render(draw, {.01f, .02f, .03f, 1.f});
     renderer.WaitIdle();

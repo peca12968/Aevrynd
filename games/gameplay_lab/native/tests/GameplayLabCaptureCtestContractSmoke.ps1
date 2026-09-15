@@ -68,6 +68,11 @@ $cTestPath=(Resolve-Path -LiteralPath $CTestFile).Path
 $buildRoot=Split-Path -Parent $cTestPath
 1..3|ForEach-Object{$buildRoot=Split-Path -Parent $buildRoot}
 $captureScript=Join-Path $PSScriptRoot 'GameplayLabCaptureSmoke.ps1'
+$captureSource=Get-Content -Raw -LiteralPath $captureScript
+foreach($run in 1..3){
+    $pattern='Assert-GameplayLightingPhaseLuminance\s+\$run'+$run+'Evidence\.directory\s+''run-'+$run+''''
+    if(([regex]::Matches($captureSource,$pattern)).Count-ne1){throw "Gameplay capture must enforce the lighting phase gate exactly once for run-$run"}
+}
 $testNames=@('GameplayLabCaptureSmoke','GameplayLabGpuValidationCaptureSmoke')
 $actualRecords=@{GameplayLabCaptureSmoke=@();GameplayLabGpuValidationCaptureSmoke=@()}
 $notAvailableCounts=@{GameplayLabCaptureSmoke=0;GameplayLabGpuValidationCaptureSmoke=0}
@@ -148,4 +153,4 @@ foreach($name in $testNames){
 $normalConfigurations=@($seenConfigurations['GameplayLabCaptureSmoke'].Keys|Sort-Object)
 $gpuConfigurations=@($seenConfigurations['GameplayLabGpuValidationCaptureSmoke'].Keys|Sort-Object)
 if(($normalConfigurations-join',')-cne($gpuConfigurations-join',')){throw 'Normal and GBV CTest configuration coverage differs'}
-Write-Output "GameplayLabCaptureCtestContractSmoke PASS normalCommands=$($actualRecords['GameplayLabCaptureSmoke'].Count) gbvCommands=$($actualRecords['GameplayLabGpuValidationCaptureSmoke'].Count) quoting=double-or-bracket"
+Write-Output "GameplayLabCaptureCtestContractSmoke PASS normalCommands=$($actualRecords['GameplayLabCaptureSmoke'].Count) gbvCommands=$($actualRecords['GameplayLabGpuValidationCaptureSmoke'].Count) lightingRuns=3 quoting=double-or-bracket"

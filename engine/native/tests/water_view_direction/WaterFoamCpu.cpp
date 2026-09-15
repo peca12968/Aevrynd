@@ -31,6 +31,7 @@ float smoothstep(float a,float b,float x){float v=Clamp((x-a)/(b-a),0.f,1.f);ret
 unsigned NoiseSamples=0;
 #include "WaterFoamNoise.inc"
 float Legacy(Vec2 p){return smoothstep(.34f,.76f,CloudNoise(p*.42f)*.72f+(.5f+.5f*std::sin(p.y*1.35f+p.x*.31f))*.28f);}
+float ProductionFoam(Vec2 p,float time,float shore){const float coverage=WaterFoamCoverage3D(p,time);const float presence=smoothstep(.36f,.70f,coverage+shore*.16f);return Clamp(shore*presence,0.f,1.f);}
 template<class F>double GridCorrelation(F f){double energy=0,csX=0,snX=0,csZ=0,snZ=0;for(int z=0;z<256;++z)for(int x=0;x<256;++x){Vec2 p{x*.073f-9.5f,z*.073f-9.5f};double dx=(f({p.x+.002f,p.y})-f({p.x-.002f,p.y}))/.004,dz=(f({p.x,p.y+.002f})-f({p.x,p.y-.002f}))/.004,e=dx*dx+dz*dz;energy+=e;csX+=e*std::cos(6.2831853*.42*p.x);snX+=e*std::sin(6.2831853*.42*p.x);csZ+=e*std::cos(6.2831853*.42*p.y);snZ+=e*std::sin(6.2831853*.42*p.y);}return(std::hypot(csX,snX)+std::hypot(csZ,snZ))/energy;}
 bool NoiseGate(){auto current=[](Vec2 p){return WaterFoamCoverage3D(p,0.f);};const double oldGrid=GridCorrelation(Legacy),newGrid=GridCorrelation(current);float maxDelta=0;for(int i=-50;i<=50;++i)for(int j=-50;j<=50;++j){Vec2 p{i*.117f,j*.133f};maxDelta=std::max(maxDelta,std::abs(current({p.x-.00001f,p.y})-current({p.x+.00001f,p.y})));}std::cout<<"noise oldGrid="<<oldGrid<<" newGrid="<<newGrid<<" adjacentDelta="<<maxDelta<<" samplesPerCoverage=2\n";return newGrid<oldGrid*.7&&maxDelta<.003f;}
 int main(){
@@ -48,6 +49,10 @@ int main(){
  const float derivative=std::min(.08f,(water.foamEndDepth-water.foamStartDepth)*.25f);
  if(1-smoothstep(water.foamStartDepth-derivative,water.foamEndDepth+derivative,.35f)>.00001f)return 4;
  NoiseSamples=0;const float sample=WaterFoamCoverage3D({1.3f,-4.7f},2.f);if(!std::isfinite(sample)||NoiseSamples!=2)return 5;
+ unsigned gaps=0,coveredFoam=0;float monotoneError=0;
+ for(int z=-64;z<=64;++z)for(int x=-64;x<=64;++x){const Vec2 p{x*.173f,z*.151f};const float shallow=ProductionFoam(p,1.25f,1.f);gaps+=shallow<.001f;coveredFoam+=shallow>.15f;float previous=shallow;for(float shore:{.8f,.6f,.4f,.2f,0.f}){const float current=ProductionFoam(p,1.25f,shore);monotoneError=std::max(monotoneError,current-previous);previous=current;}}
+ std::cout<<"foamGaps="<<gaps<<" foamCovered="<<coveredFoam<<" monotoneError="<<monotoneError<<'\n';
+ if(gaps<256||coveredFoam<256||monotoneError>.00001f)return 7;
  float seamDelta=0;
  for(int layer=0;layer<2;++layer)for(int edge=-16;edge<=16;++edge)for(int along=-8;along<=8;++along){const float a=layer?.384615f:.8f,b=layer?.923077f:.6f,s=layer?2.03f:1.17f,ox=layer?17.3f:0,oy=layer?9.7f:0;const float qx=(edge-ox)/s,qz=(along*.37f-oy)/s,det=a*a+b*b;Vec2 p{(a*qx+b*qz)/det,(-b*qx+a*qz)/det};const Vec2 e{a*.00001f,-b*.00001f};seamDelta=std::max(seamDelta,std::abs(WaterFoamCoverage3D(p+e,0)-WaterFoamCoverage3D(p-e,0)));}
  std::cout<<"latticeBoundaryDelta="<<seamDelta<<'\n';if(seamDelta>.003f)return 6;

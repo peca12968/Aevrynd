@@ -41,8 +41,9 @@ struct ShowcaseUnderstoryFormVariation3D {
 
 // 同一棵來源樹仍維持原 material、descriptor、collision 與 HLOD identity；
 // 只由 placement 的永久 stableKey、距離帶與既有樹種選出有限輪廓變化。
-// 水平尺度不超過配置冠幅；近中景保留冠層連接，林緣的 Far 樹略矮，讓
-// 主冠層、次冠層、幼樹與枯立木形成可辨識的高度節奏而不增加 draw。
+// 近中景成熟林冠可在不改樹幹碰撞與 placement spacing 的前提下彼此搭接；
+// 這是森林冠層而不是果園淨空。林緣的 Far 樹略矮，讓主冠層、次冠層、
+// 幼樹與枯立木形成可辨識的高度節奏而不增加 draw。
 [[nodiscard]] inline ShowcaseTreeFormVariation3D
 ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
   if (placement.kind != ShowcaseLandKind3D::Tree || !placement.stableKey)
@@ -62,14 +63,14 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
   const bool connectedCanopy = !dead &&
       placement.band != ShowcaseLandBand3D::Far;
   const float canopy = connectedCanopy
-                           ? (sapling ? .90f + .10f * u : .94f + .06f * u)
+                           ? (sapling ? .98f + .14f * u : 1.08f + .16f * u)
                        : dead ? .58f + .16f * u
                        : sapling ? .72f + .18f * u
                                  : .82f + .18f * u;
   const float height = bandHeight *
-      (dead ? .82f + .24f * v : sapling ? .88f + .18f * v
-                                        : .94f + .16f * v);
-  const float depth = canopy * (connectedCanopy ? .98f + .02f * v
+      (dead ? .82f + .24f * v : sapling ? .86f + .22f * v
+                                        : .90f + .26f * v);
+  const float depth = canopy * (connectedCanopy ? .96f + .08f * v
                                                 : .88f + .12f * v);
   return {{canopy, height, depth}, (u - .5f) * .42f};
 }
@@ -128,7 +129,7 @@ ShowcaseUnderstoryFormVariation(
 ShowcaseForestTerrainTint3D() noexcept {
   // 以低反射率苔蘚綠取代偏黃的亮草坪色：在不改曝光、燈光或材質
   // 取樣的前提下，保留綠色優勢，同時讓土壤、落葉與濕岸分區可讀。
-  return {.61f, .72f, .53f, 1.f};
+  return {.46f, .52f, .39f, 1.f};
 }
 
 // 三層地表使用同一套世界座標貼圖；較低頻率保留近景 PBR 細節，同時
@@ -225,6 +226,24 @@ struct ShowcaseSceneDescriptor3D {
   std::string materialAsset;
 };
 
+enum class GameplayCottageMaterialRole3D : std::uint8_t { Brick, WoodSiding, RoofTile };
+[[nodiscard]] constexpr GameplayCottageMaterialRole3D
+GameplayCottageBaseMaterialRole3D(std::string_view meshAsset) noexcept {
+  return meshAsset.find("foundation") != std::string_view::npos
+             ? GameplayCottageMaterialRole3D::Brick
+         : meshAsset.find("roof") != std::string_view::npos
+             ? GameplayCottageMaterialRole3D::RoofTile
+             : GameplayCottageMaterialRole3D::WoodSiding;
+}
+[[nodiscard]] constexpr std::string_view
+GameplayCottageDescriptorMaterialAsset3D(GameplayCottageMaterialRole3D role) noexcept {
+  return role == GameplayCottageMaterialRole3D::Brick
+             ? "ambientcg/Bricks100/cooked-pbr"
+         : role == GameplayCottageMaterialRole3D::RoofTile
+             ? "ambientcg/RoofingTiles014B/cooked-pbr"
+             : "ambientcg/WoodSiding006/material-pbr";
+}
+
 enum class ShowcaseTerrainBiome3D : std::uint8_t {
   Neutral,
   CottagePath,
@@ -235,9 +254,9 @@ enum class ShowcaseTerrainBiome3D : std::uint8_t {
 struct ShowcaseTerrainEcologyTint3D {
   Aevrynd::Color tint{1, 1, 1, 1};
   float canopy{}, riverMoisture{};
-  // A terrain vertex belongs to at most one authored biome. Keeping the
-  // weights explicit makes the rule testable while canopy/riverMoisture remain
-  // backward-compatible aliases for the two original ecology signals.
+  // Path 與濕岸保持互斥；落葉可使用濕岸剩餘權重連續混合。
+  // Keeping the weights explicit makes the rule testable while
+  // canopy/riverMoisture remain backward-compatible aliases.
   float cottagePath{}, leafLitter{}, riverWetSoil{};
   ShowcaseTerrainBiome3D biome{ShowcaseTerrainBiome3D::Neutral};
 };
@@ -348,7 +367,8 @@ struct ShowcaseTerrainDisturbance3D {
 
 // 屋前步道由出生點至門廊的固定世界幾何定義；林下落葉與河岸濕土則由
 // 場景中的實際樹冠、河道位置決定。不以相機或畫面空間噪聲製造假細節。
-// 三種候選取唯一最高權重，因此材質訊號互斥且全部維持於 [0,1]。呼叫端
+// Path 與 wet 依強度明確互斥；leaf 可填入 wet 剩餘容量，因此樹冠不會
+// 把濕岸肩帶切成零值。全部權重維持於 [0,1] 且總和不超過一。呼叫端
 // 會將權重寫入 Terrain 專用 UV，並保留高度場原有 alpha；不新增 descriptor
 // 或 draw call。
 [[nodiscard]] inline ShowcaseTerrainEcologyTint3D
@@ -419,32 +439,42 @@ SampleShowcaseTerrainEcologyTint3D(
   const float irregularBankClearance =
       bankClearance + authoredEdgeNoise({worldPosition.z, 0, worldPosition.x}) *
                           1.8f;
+  // 寬而連續的濕岸肩帶讓河水與乾土之間逐步過渡；它是世界座標資料，
+  // 不依賴畫面空間模糊，也不會因相機或 phase 改變岸線位置。
+  constexpr float wetBankShoulderMetres = 6.f;
   const float wetSoilCandidate =
-      1.f - smooth((std::max)(0.f, irregularBankClearance) / 3.8f);
+      1.f - smooth((std::max)(0.f, irregularBankClearance) /
+                   wetBankShoulderMetres);
 
-  float weight{};
   Aevrynd::Color authoredTint{1, 1, 1, 1};
-  // The saturated bank core remains wet soil even below a crown; outside that
-  // core, the numerically strongest authored signal wins. This preserves a
-  // continuous path edge without allowing a shoreline tree to erase the bank.
-  if (wetSoilCandidate >= .60f ||
-      (wetSoilCandidate >= pathCandidate &&
-       wetSoilCandidate >= canopyCandidate && wetSoilCandidate > 0.f)) {
-    result.biome = ShowcaseTerrainBiome3D::RiverWetSoil;
-    result.riverWetSoil = result.riverMoisture = weight = wetSoilCandidate;
-    authoredTint = {.62f, .70f, .66f, 1.f};
-  } else if (pathCandidate >= canopyCandidate && pathCandidate > 0.f) {
+  // signed-U 無法同時表達 path/wet；path 僅在嚴格強於 wet 時勝出。
+  // 其他濕岸點保留完整 wet，leaf 只填剩餘容量，避免 canopy 造成斷帶。
+  if (pathCandidate > wetSoilCandidate && pathCandidate > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CottagePath;
-    result.cottagePath = weight = pathCandidate;
+    result.cottagePath = pathCandidate;
     authoredTint = {.88f, .75f, .56f, 1.f};
+  } else if (wetSoilCandidate > 0.f) {
+    result.biome = ShowcaseTerrainBiome3D::RiverWetSoil;
+    result.riverWetSoil = result.riverMoisture = wetSoilCandidate;
+    result.leafLitter = result.canopy =
+        (std::min)(canopyCandidate, 1.f - wetSoilCandidate);
+    result.tint = {1.f + (.62f - 1.f) * result.riverWetSoil +
+                             (.64f - 1.f) * result.leafLitter,
+                   1.f + (.70f - 1.f) * result.riverWetSoil +
+                             (.72f - 1.f) * result.leafLitter,
+                   1.f + (.66f - 1.f) * result.riverWetSoil +
+                             (.50f - 1.f) * result.leafLitter,
+                   1.f};
+    return result;
   } else if (canopyCandidate > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CanopyLeafLitter;
-    result.leafLitter = result.canopy = weight = canopyCandidate;
+    result.leafLitter = result.canopy = canopyCandidate;
     authoredTint = {.64f, .72f, .50f, 1.f};
   }
-  result.tint = {1.f + (authoredTint.r - 1.f) * weight,
-                 1.f + (authoredTint.g - 1.f) * weight,
-                 1.f + (authoredTint.b - 1.f) * weight, 1.f};
+  const float authoredWeight = result.cottagePath + result.leafLitter;
+  result.tint = {1.f + (authoredTint.r - 1.f) * authoredWeight,
+                 1.f + (authoredTint.g - 1.f) * authoredWeight,
+                 1.f + (authoredTint.b - 1.f) * authoredWeight, 1.f};
   return result;
 }
 

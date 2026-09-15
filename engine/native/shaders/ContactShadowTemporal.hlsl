@@ -23,6 +23,16 @@ void ContactShadowTemporalMain(uint3 id : SV_DispatchThreadID)
 {
     if(any(id.xy>=outputSize))return;
     const float2 current=currentContact.Load(int3(id.xy,0));
+    const float currentVisibility=isfinite(current.x)?saturate(current.x):1.0;
+    const float currentDepth=isfinite(current.y)?current.y:1.0;
+    const bool validFlags=historyValid!=0&&cameraCut==0&&resized==0&&qualityChanged==0;
+    // Newly allocated history has no defined texels.  Reject it before any load so
+    // an invalid/cut frame cannot propagate undefined NaNs through lerp(..., 0).
+    if(!validFlags)
+    {
+        temporalContact[id.xy]=float2(currentVisibility,currentDepth);
+        return;
+    }
     uint motionWidth,motionHeight;contactMotion.GetDimensions(motionWidth,motionHeight);
     const bool fullResolutionMotion=motionWidth+1u>=outputSize.x*2u&&motionHeight+1u>=outputSize.y*2u;
     const uint2 motionIndex=min(fullResolutionMotion?id.xy*2u+1u:id.xy,uint2(motionWidth-1u,motionHeight-1u));
@@ -31,7 +41,6 @@ void ContactShadowTemporalMain(uint3 id : SV_DispatchThreadID)
     const bool motionFinite=all(isfinite(motion));
     // 速度已包含目前幀 jitter，previous clip 則未 jitter；只補前一幀 jitter。
     const float2 previousPixel=motionFinite?float2(id.xy)-motion+previousJitterPixels*.5:float2(-1.0,-1.0);
-    const bool validFlags=historyValid!=0&&cameraCut==0&&resized==0&&qualityChanged==0;
     const bool validUv=all(previousPixel>=0.0)&&all(previousPixel<float2(outputSize));
     const float2 clampedPrevious=clamp(previousPixel,0.0,float2(outputSize)-1.0);
     const uint2 previousBase=uint2(floor(clampedPrevious));
@@ -48,9 +57,8 @@ void ContactShadowTemporalMain(uint3 id : SV_DispatchThreadID)
     const float previousDepth=previousContact.Load(int3(previousDepthIndex,0)).y;
     const bool depthValid=abs(current.y-previousDepth)<=max(depthThreshold,0.0);
     const bool motionValid=length(motion)<=max(motionThresholdPixels,0.0);
-    const bool accept=validFlags&&validUv&&depthValid&&motionValid&&motionFinite&&all(isfinite(float4(current,previous)));
+    const bool accept=validUv&&depthValid&&motionValid&&motionFinite&&all(isfinite(float4(current,previous)));
     const float weight=accept?clamp(historyWeight,0.0,0.98):0.0;
-    const float currentVisibility=isfinite(current.x)?saturate(current.x):1.0;
     float neighborhoodMinimum=currentVisibility;
     float neighborhoodMaximum=currentVisibility;
     [unroll] for(int y=-1;y<=1;++y)
@@ -69,6 +77,5 @@ void ContactShadowTemporalMain(uint3 id : SV_DispatchThreadID)
     const float previousVisibility=clamp(isfinite(previous.x)?saturate(previous.x):1.0,
                                          saturate(neighborhoodMinimum-clampEpsilon),
                                          saturate(neighborhoodMaximum+clampEpsilon));
-    const float currentDepth=isfinite(current.y)?current.y:1.0;
     temporalContact[id.xy]=float2(lerp(currentVisibility,previousVisibility,weight),currentDepth);
 }
