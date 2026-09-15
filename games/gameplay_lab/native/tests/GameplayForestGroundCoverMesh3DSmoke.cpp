@@ -95,6 +95,11 @@ bool LowShrubTierContract(const Mesh3D& mesh) {
          outerWidth >= crownWidth + .12f;
 }
 
+bool SameTint(Color left, Color right) {
+  return left.r == right.r && left.g == right.g && left.b == right.b &&
+         left.a == right.a;
+}
+
 } // namespace
 
 int main() {
@@ -118,6 +123,44 @@ int main() {
       prepared.alphaCutoff != .45f || !prepared.useUv ||
       !prepared.doubleSided || prepared.castsShadow)
     return 6;
+
+  constexpr std::array groundCoverVariants{
+      GameplayForestGroundCoverVariant3D::Fern,
+      GameplayForestGroundCoverVariant3D::Riverbank,
+      GameplayForestGroundCoverVariant3D::Community};
+  std::array<Color, groundCoverVariants.size()> multipliers{};
+  source.tint = {.8f, .7f, .6f, .4f};
+  for (std::size_t index = 0; index < groundCoverVariants.size(); ++index) {
+    const auto multiplier =
+        GameplayForestGroundCoverTintMultiplier3D(groundCoverVariants[index]);
+    multipliers[index] = multiplier;
+    const auto tinted = PrepareGameplayForestGroundCoverMaterial3D(
+        source, groundCoverVariants[index], true);
+    if (!std::isfinite(multiplier.r) || !std::isfinite(multiplier.g) ||
+        !std::isfinite(multiplier.b) || !std::isfinite(multiplier.a) ||
+        multiplier.r < 0.f || multiplier.r > 1.f ||
+        multiplier.g < 0.f || multiplier.g > 1.f ||
+        multiplier.b < 0.f || multiplier.b > 1.f || multiplier.a != 1.f ||
+        tinted.tint.r != source.tint.r * multiplier.r ||
+        tinted.tint.g != source.tint.g * multiplier.g ||
+        tinted.tint.b != source.tint.b * multiplier.b ||
+        tinted.tint.a != source.tint.a || tinted.textures != source.textures ||
+        tinted.materialClass != MaterialClass3D::Foliage ||
+        tinted.alphaMode != MaterialAlphaMode3D::Mask ||
+        tinted.alphaCutoff != .45f || !tinted.useUv || !tinted.doubleSided ||
+        !tinted.castsShadow || tinted.surface.roughness != .86f ||
+        tinted.surface.metallic != 0.f || tinted.surface.emissive != 0.f ||
+        tinted.normalScale != .84f || tinted.textureScale != 1.f) {
+      std::cerr << "FOREST_GROUND_COVER_TINT_CONTRACT=FAIL\n";
+      return 11;
+    }
+  }
+  if (SameTint(multipliers[0], multipliers[1]) ||
+      SameTint(multipliers[0], multipliers[2]) ||
+      SameTint(multipliers[1], multipliers[2])) {
+    std::cerr << "FOREST_GROUND_COVER_TINT_VARIANTS=FAIL\n";
+    return 12;
+  }
 
   constexpr std::array species{
       GameplayForestGroundCoverSpecies3D::Fern,

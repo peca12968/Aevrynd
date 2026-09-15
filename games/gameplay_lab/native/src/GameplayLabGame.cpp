@@ -1696,16 +1696,20 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     const MeshResource3D* grassHigh=&showcaseGrassHighMesh_;
     const MeshResource3D* grassLow=&showcaseGrassLowMesh_;
     const Aevrynd::Material3D* groundCoverSource{};
+    GameplayForestGroundCoverVariant3D groundCoverVariant=GameplayForestGroundCoverVariant3D::Fern;
     if(descriptor.kind==ShowcaseSceneKind3D::Grass){
       if(descriptor.meshAsset.find("grass-blade")!=std::string::npos){
         grassHigh=&showcaseTreeLowMesh_;grassLow=&showcaseRockLowMesh_;
         groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("island_tree_01:leaves");
+        groundCoverVariant=GameplayForestGroundCoverVariant3D::Riverbank;
       }else if(descriptor.meshAsset.find("grass-fan")!=std::string::npos){
         grassHigh=&showcaseFernHighMesh_;grassLow=&showcaseFernLowMesh_;
         groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("island_tree_01:leaves");
+        groundCoverVariant=GameplayForestGroundCoverVariant3D::Fern;
       }else if(descriptor.meshAsset.find("grass-tuft")!=std::string::npos){
         grassHigh=&showcaseShrubHighMesh_;grassLow=&showcaseShrubLowMesh_;
         groundCoverSource=showcaseRenderAssets_.ProductionMaterialById("tree_small_02:leaves");
+        groundCoverVariant=GameplayForestGroundCoverVariant3D::Community;
       }
       if(groundCoverSource)
         transform.scale=GameplayForestGroundCoverWorldScale3D(transform.scale);
@@ -1719,7 +1723,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
       {const std::string_view asset=ResolveShowcasePhotorealAssetId3D(descriptor);if(!asset.empty())submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,asset,transform,renderIdentity,lodObjectIndex,&productionChains);}break;
     case ShowcaseSceneKind3D::Grass:
       {const auto* source=groundCoverSource?groundCoverSource:showcaseRenderAssets_.ProductionMaterial(ShowcaseForestGrassMaterialAsset3D(descriptor.materialAsset));
-       if(source){const auto material=groundCoverSource?PrepareGameplayForestGroundCoverMaterial3D(*source,descriptor.castsShadow):ShowcaseForestGrassMaterial3D(*source,descriptor.materialAsset,descriptor.castsShadow);const auto before=scene_.MeshCount();scene_.MeshLod(*grassHigh,*grassLow,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}}break;
+       if(source){const auto material=groundCoverSource?PrepareGameplayForestGroundCoverMaterial3D(*source,groundCoverVariant,descriptor.castsShadow):ShowcaseForestGrassMaterial3D(*source,descriptor.materialAsset,descriptor.castsShadow);const auto before=scene_.MeshCount();scene_.MeshLod(*grassHigh,*grassLow,ShowcaseGrassLodPolicy3D(),transform,material,material,{},renderIdentity);submitted=scene_.MeshCount()==before+1;}}break;
     case ShowcaseSceneKind3D::Rock:
       submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,descriptor.meshAsset.find("boulder_01")!=std::string::npos?"boulder_01":"coastal_cliff_01",transform,renderIdentity,lodObjectIndex,&productionChains);break;
     case ShowcaseSceneKind3D::Building:

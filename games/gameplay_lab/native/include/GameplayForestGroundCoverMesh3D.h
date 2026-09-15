@@ -18,6 +18,26 @@ enum class GameplayForestGroundCoverDetail3D : std::uint8_t {
   Far,
 };
 
+enum class GameplayForestGroundCoverVariant3D : std::uint8_t {
+  Fern,
+  Riverbank,
+  Community,
+};
+
+// 線性空間乘數只壓低樹冠貼圖能量；alpha 維持原值，避免改變遮罩輪廓。
+[[nodiscard]] constexpr Aevrynd::Color GameplayForestGroundCoverTintMultiplier3D(
+    GameplayForestGroundCoverVariant3D variant) noexcept {
+  switch (variant) {
+    case GameplayForestGroundCoverVariant3D::Fern:
+      return {.70f, .78f, .62f, 1.f};
+    case GameplayForestGroundCoverVariant3D::Riverbank:
+      return {.68f, .73f, .76f, 1.f};
+    case GameplayForestGroundCoverVariant3D::Community:
+      return {.78f, .72f, .60f, 1.f};
+  }
+  return {1.f, 1.f, 1.f, 1.f};
+}
+
 // 三種地被可共用既有、完整 0..1 UV 的葉片 alpha 紋理；呼叫端必須提交
 // 含 alpha 的貼圖，並沿用這份 mask/double-sided 契約。
 struct GameplayForestGroundCoverAlphaCardContract3D {
@@ -64,6 +84,20 @@ PrepareGameplayForestGroundCoverMaterial3D(Aevrynd::Material3D material,
   material.surface.emissive = 0.f;
   material.normalScale = .84f;
   material.textureScale = 1.f;
+  return material;
+}
+
+[[nodiscard]] inline Aevrynd::Material3D
+PrepareGameplayForestGroundCoverMaterial3D(
+    Aevrynd::Material3D material,
+    GameplayForestGroundCoverVariant3D variant,
+    bool castsShadow = false) noexcept {
+  material = PrepareGameplayForestGroundCoverMaterial3D(material, castsShadow);
+  const auto multiplier = GameplayForestGroundCoverTintMultiplier3D(variant);
+  material.tint = {material.tint.r * multiplier.r,
+                   material.tint.g * multiplier.g,
+                   material.tint.b * multiplier.b,
+                   material.tint.a};
   return material;
 }
 
