@@ -1439,21 +1439,37 @@ float FoliagePhysicalTransmission(float normalLight,float viewLight)
     return backLight*backLight*(0.45+0.55*physicalForwardScatter);
 }
 
-float FoliageLowSunFactor(float sunElevation)
+float3 FoliageTwoSidedShadingNormal(float3 normal,float3 viewDirection,bool isFrontFace)
 {
-    return 1.0-smoothstep(0.55,0.85,saturate(sunElevation));
+    // 葉片背面先進入與正面相同的觀察半球；只在背面或近掠射角時，
+    // 保守向視線半球收斂，避免薄面法線在葉冠中形成突兀的黑白翻轉。
+    // 正面且 facing >= 0.32 時 blend 嚴格為零，不改變一般正面材質回應。
+    const float3 orientedNormal=isFrontFace?normal:-normal;
+    const float rawFacing=dot(orientedNormal,viewDirection);
+    const float3 hemisphereTangent=orientedNormal-viewDirection*rawFacing;
+    const float3 hemisphereNormal=rawFacing<0.0?normalize(hemisphereTangent+viewDirection*0.02):orientedNormal;
+    const float facing=saturate(dot(hemisphereNormal,viewDirection));
+    const float grazingBlend=(1.0-smoothstep(0.08,0.32,facing))*0.12;
+    const float backFaceBlend=isFrontFace?0.0:0.18;
+    const float convergence=max(grazingBlend,backFaceBlend);
+    const float3 viewHemisphereNormal=normalize(hemisphereNormal+viewDirection*0.18);
+    return normalize(lerp(hemisphereNormal,viewHemisphereNormal,convergence));
 }
 
-float FoliageForwardScatterSuppressionBlend(float normalLight,float viewLight,float sunElevation)
+float FoliageIndirectOcclusion(float combinedOcclusion,float foliageMask)
 {
-    return smoothstep(0.25,1.0,-normalLight)*smoothstep(0.35,1.0,viewLight)*FoliageLowSunFactor(sunElevation);
+    // 薄葉片不應像封閉實體般承受完整 AO；僅 foliage 提升最深的間接遮蔽，
+    // 且保留 82% 原始訊號。非 foliage 走嚴格 identity。
+    if(foliageMask<=0.5)return combinedOcclusion;
+    combinedOcclusion=saturate(combinedOcclusion);
+    return lerp(combinedOcclusion,sqrt(combinedOcclusion),0.18);
 }
 
-float3 FoliageNeutralizedTransmissionColor(float3 color,float suppressionBlend)
+float3 FoliageNeutralizedTransmissionColor(float3 color,float transmissionWeight)
 {
     color=max(color,0.0);
     const float luminance=dot(color,float3(0.2126,0.7152,0.0722));
-    return lerp(color,luminance.xxx,0.08*saturate(suppressionBlend));
+    return lerp(color,luminance.xxx,0.08*saturate(transmissionWeight));
 }
 
 float CorneaFresnel(float cosine)
@@ -2125,7 +2141,6 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     }
 
     const float foliageMask = input.materialClass == 2 ? 1.0 : 0.0;
-    if (foliageMask > 0.5 && !isFrontFace) normal = -normal;
 
     const float skyMask = 1.0 - saturate(input.normal.w);
     const float3 skyRay = normalize(input.worldPosition - cameraFogStart.xyz);
@@ -2318,16 +2333,19 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float3 viewDirection = waterMaterialMask > 0.5
         ? WaterSurfaceViewDirection(input.worldPosition, cameraFogStart.xyz, viewProjection)
         : normalize(cameraFogStart.xyz - input.worldPosition);
+    [branch] if (foliageMask > 0.5)
+        normal=FoliageTwoSidedShadingNormal(normal,viewDirection,isFrontFace);
     roughness = lerp(roughness, max(roughness, 0.72), foliageMask * pow(1.0 - saturate(dot(normal, viewDirection)), 2.0));
     // SSAO 僅調制間接環境光，避免把太陽、點光、自發光與水面反射一起壓暗。
     const float2 screenOcclusion = colorPipeline.y > 0.5 && waterMask < 0.5
                                 ? ambientOcclusionTexture.SampleLevel(materialSampler, input.position.xy * colorPipeline.zw, 0.0)
                                 : 1.0;
+    const float indirectOcclusion=FoliageIndirectOcclusion(occlusion*screenOcclusion.x,foliageMask);
     const float3 environmentLighting = eyeMask > 0.5
         ? EvaluateEyeEnvironment(input.worldPosition,normal, geometricNormal, viewDirection, baseColor, roughness,
-                                 occlusion * screenOcclusion.x, lightDirectionAmbient.w, skyLightDirection)
+                                 indirectOcclusion, lightDirectionAmbient.w, skyLightDirection)
         : EvaluateEnvironmentLighting(input.worldPosition,normal, viewDirection, baseColor, roughness, metallic,
-                                      occlusion * screenOcclusion.x, lightDirectionAmbient.w, skyLightDirection);
+                                      indirectOcclusion, lightDirectionAmbient.w, skyLightDirection);
     const float3 directionalLighting = eyeMask > 0.5
         ? EvaluateEyeLight(normal, geometricNormal, viewDirection, lightDirection,
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness)
@@ -2357,13 +2375,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     [branch] if (foliageMask > 0.5)
     {
         const float foliageWrappedDiffuse = saturate((dot(normal, lightDirection) + 0.35) / 1.35);
-        const float foliageBackLight = saturate(dot(-normal, lightDirection));
-        const float foliageForwardScatter = saturate(dot(viewDirection, lightDirection));
-        const float foliageTransmission = foliageBackLight * foliageBackLight * (0.45 + 0.55 * foliageForwardScatter);
         const float foliagePhysicalTransmission = FoliagePhysicalTransmission(dot(normal, lightDirection), dot(viewDirection, lightDirection));
-        const float foliageSuppressionBlend = FoliageForwardScatterSuppressionBlend(dot(normal, lightDirection), dot(viewDirection, lightDirection), lightDirection.y);
-        const float foliageTransmissionTerm = lerp(foliageTransmission, min(foliageTransmission, foliagePhysicalTransmission), foliageSuppressionBlend) * 0.48;
-        const float3 foliageTransmissionColor = FoliageNeutralizedTransmissionColor(baseColor, foliageSuppressionBlend);
+        const float foliageTransmissionTerm = foliagePhysicalTransmission * 0.48;
+        const float3 foliageTransmissionColor = FoliageNeutralizedTransmissionColor(baseColor, foliagePhysicalTransmission);
         const float foliageShadow = CascadedDirectionalShadow(input, normal, lightDirection);
         shaded += lightColorIntensity.rgb * lightColorIntensity.w * (baseColor * foliageWrappedDiffuse * 0.22 + foliageTransmissionColor * foliageTransmissionTerm) * foliageShadow*cloudShadow;
     }
