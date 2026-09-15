@@ -204,7 +204,11 @@ int main() {
                       << ",1\n";
             if (surfaceZero > .005f || foliageZero > .005f ||
                 surfaceQuarter <= .05f || surfaceQuarter >= .95f ||
-                foliageQuarter <= surfaceQuarter + .01f ||
+                // 薄葉片缺少封閉體積，不應只比一般實體表面多保留幾個百分點
+                // 的間接光；否則真實林冠在 SSAO 下會形成可見黑色椒鹽雜點。
+                foliageQuarter <= surfaceQuarter + .08f ||
+                // 仍保留足夠 AO 層次；完全繞過遮蔽也必須被拒絕。
+                foliageQuarter >= surfaceQuarter + .18f ||
                 foliageQuarter >= 1.f)
                 result = 5;
         }

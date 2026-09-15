@@ -1459,10 +1459,11 @@ float3 FoliageTwoSidedShadingNormal(float3 normal,float3 viewDirection,bool isFr
 float FoliageIndirectOcclusion(float combinedOcclusion,float foliageMask)
 {
     // 薄葉片不應像封閉實體般承受完整 AO；僅 foliage 提升最深的間接遮蔽，
-    // 且保留 82% 原始訊號。非 foliage 走嚴格 identity。
+    // 在原始 AO 與平方根響應間各保留一半，抑制真實林冠中的黑色椒鹽雜點。
+    // 非 foliage 走嚴格 identity，直射光、陰影與 alpha coverage 也不受影響。
     if(foliageMask<=0.5)return combinedOcclusion;
     combinedOcclusion=saturate(combinedOcclusion);
-    return lerp(combinedOcclusion,sqrt(combinedOcclusion),0.18);
+    return lerp(combinedOcclusion,sqrt(combinedOcclusion),0.50);
 }
 
 float3 FoliageNeutralizedTransmissionColor(float3 color,float transmissionWeight)
