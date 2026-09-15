@@ -1997,6 +1997,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             soilWeight = nonRockWeight * lerp(originalSoilFraction, targetSoilFraction, 0.62);
             grassWeight = nonRockWeight - soilWeight;
         }
+        // 保留三個 authored 權重直到 PBR 合成完成；後段只能用這些相同權重
+        // 做有界的區域反應，不能重新解碼 UV 或增加任何材質取樣。
+        float authoredPathWeight = 0.0;
+        float authoredLeafLitterWeight = 0.0;
         float authoredWetSoilWeight = 0.0;
         // useUv 是既有 generic bit；再要求 Renderer.h 宣告、可精確表示的
         // -15.5 marker，避免任何歷史 Terrain UV 或一般負 normalScale 誤啟用。
@@ -2013,9 +2017,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     input.worldPosition.x * 0.6 + input.worldPosition.z * 0.8);
                 const float wetBreakup = CloudNoise(input.worldPosition.xz * 0.31 + float2(7.1, -3.7)) * 0.65
                                        + CloudNoise(wetBreakupCoordinate * 0.83 + float2(-11.3, 5.9)) * 0.35;
+                authoredPathWeight = authoredBiomeWeights.x;
+                authoredLeafLitterWeight = authoredBiomeWeights.y;
                 authoredWetSoilWeight = TerrainWetShoreBlend(authoredBiomeWeights.z, wetBreakup);
                 const float3 shapedAuthoredBiomeWeights = float3(
-                    authoredBiomeWeights.x, authoredBiomeWeights.y, authoredWetSoilWeight);
+                    authoredPathWeight, authoredLeafLitterWeight, authoredWetSoilWeight);
                 const float shapedAuthoredBiomeWeight = shapedAuthoredBiomeWeights.x
                                                       + shapedAuthoredBiomeWeights.y
                                                       + shapedAuthoredBiomeWeights.z;
@@ -2133,10 +2139,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         [branch] if (authoredWetSoilWeight > 0.0)
         {
-            // 濕土只做受限的能量與微表面調整，不增加 sample，也不冒充積水。
-            baseColor *= lerp(1.0, 0.88, authoredWetSoilWeight);
-            roughness = clamp(roughness * lerp(1.0, 0.82, authoredWetSoilWeight),
-                              0.045, 1.0);
+            // 河岸濕土只做受限的暗冷能量與微表面反應，不增加 sample、
+            // 不冒充積水；roughness 下限避免形成黑色鏡面。
+            const float3 riverWetSoilAlbedo = float3(0.78, 0.82, 0.84);
+            baseColor *= lerp(1.0.xxx, riverWetSoilAlbedo, authoredWetSoilWeight);
+            roughness = clamp(roughness * lerp(1.0, 0.90, authoredWetSoilWeight),
+                              0.24, 1.0);
         }
     }
 

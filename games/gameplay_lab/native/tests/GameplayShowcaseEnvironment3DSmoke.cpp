@@ -107,6 +107,44 @@ bool TreeDescriptorDistributionContract(
          deadByBand == std::array<unsigned, 3>{10, 7, 3};
 }
 
+// 以正式提交的中景 descriptor 檢查每四株一群的母樹方位；不能只檢查
+// placement 或總樹數，否則 ordinal 以四遞增、六槽只命中三槽的 alias 仍會通過。
+bool TreeMotherAngularDistributionContract(
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
+  constexpr float twoPi = 6.2831853071795864769f;
+  constexpr std::array<float, 6> directions{
+      .18f, .86f, 2.22f, 3.05f, 4.38f, 5.72f};
+  constexpr Vec3 spawnCenter{-16.f, 0.f, 8.f};
+  std::array<unsigned, 6> mothersByDirection{};
+  unsigned treeOrdinal{}, midMothers{};
+  for (const auto &descriptor : descriptors) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree) continue;
+    if (descriptor.lodGroup == 1u && treeOrdinal % 4u == 0u) {
+      const float angle = std::atan2(descriptor.position.z - spawnCenter.z,
+                                     descriptor.position.x - spawnCenter.x);
+      float nearestDistance = twoPi;
+      std::size_t nearestDirection{};
+      for (std::size_t slot = 0; slot < directions.size(); ++slot) {
+        const float distance =
+            std::abs(std::remainder(angle - directions[slot], twoPi));
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestDirection = slot;
+        }
+      }
+      ++mothersByDirection[nearestDirection];
+      ++midMothers;
+    }
+    ++treeOrdinal;
+  }
+  std::cout << "TREE_MOTHER_DIRECTIONS mid=" << midMothers << " slots=";
+  for (const auto count : mothersByDirection) std::cout << count << ',';
+  std::cout << '\n';
+  return midMothers == 22u &&
+         std::ranges::none_of(mothersByDirection,
+                              [](unsigned count) { return count == 0u; });
+}
+
 bool TreeFormVariationContract(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
@@ -870,8 +908,30 @@ int main() {
               << " attempts=" << failedLand.attemptedCandidates << '\n';
     return 1;
   }
-  if (!TreeDescriptorDistributionContract(first.Descriptors()))
+  if (!TreeDescriptorDistributionContract(first.Descriptors()) ||
+      !TreeMotherAngularDistributionContract(first.Descriptors()))
     return 78;
+  auto threeRayTreeMothers = first.Descriptors();
+  constexpr std::array<float, 6> legacyCommunityDirections{
+      .18f, .86f, 2.22f, 3.05f, 4.38f, 5.72f};
+  constexpr Vec3 landSpawnCenter{-16.f, 0.f, 8.f};
+  unsigned legacyTreeOrdinal{};
+  for (auto &descriptor : threeRayTreeMothers) {
+    if (descriptor.kind != ShowcaseSceneKind3D::Tree) continue;
+    if (descriptor.lodGroup == 1u && legacyTreeOrdinal % 4u == 0u) {
+      const float x = descriptor.position.x - landSpawnCenter.x;
+      const float z = descriptor.position.z - landSpawnCenter.z;
+      const float radius = std::sqrt(x * x + z * z);
+      // 舊錯誤以單株 ordinal 選六槽；母樹 ordinal 每次加四，只命中三槽。
+      const float angle =
+          legacyCommunityDirections[legacyTreeOrdinal %
+                                    legacyCommunityDirections.size()];
+      descriptor.position.x = landSpawnCenter.x + std::cos(angle) * radius;
+      descriptor.position.z = landSpawnCenter.z + std::sin(angle) * radius;
+    }
+    ++legacyTreeOrdinal;
+  }
+  if (TreeMotherAngularDistributionContract(threeRayTreeMothers)) return 99;
   std::vector<ShowcaseLandPlacement3D> treePlacements;
   if (!BuildShowcaseLandEcology3D({}, treePlacements) ||
       !TreeFormVariationContract(treePlacements, first.Descriptors()) ||
@@ -895,7 +955,8 @@ int main() {
   alternateLandSettings.seed = 0x4a18u;
   std::vector<ShowcaseLandPlacement3D> alternateLand;
   if (!BuildShowcaseLandEcology3D(alternateLandSettings, alternateLand) ||
-      !ForestMidgroundLayerContract(alternateLand, differentSeed.Descriptors()))
+      !ForestMidgroundLayerContract(alternateLand, differentSeed.Descriptors()) ||
+      !TreeMotherAngularDistributionContract(differentSeed.Descriptors()))
     return 96;
   auto collapsedTreeDescriptors = first.Descriptors();
   for (auto &descriptor : collapsedTreeDescriptors)

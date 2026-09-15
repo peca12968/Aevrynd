@@ -633,9 +633,9 @@ void GameplayLabGame::OnStart(Engine& engine){
   terrain.textures.maximumResolution=2048;
   terrain.material.materialClass=MaterialClass3D::Terrain;
   terrain.textures.integrity={MaterialTextureIntegrity3D{2187764,"d92bec8a35b9cb16ec79b421ca0f572a7400286eae109beafa266629ef49a6cf"},MaterialTextureIntegrity3D{694944,"3786b088e981aae562f06b6477972d379cffd09a5cc542ab42f9ffd94f9bcb0e"},MaterialTextureIntegrity3D{2474498,"0e2d613d117d9231aa0aa61f39b19755f891b4ed1d1599a004cb018a8224e039"}};
-  // 保留三層 sampler；森林地表直接引用封存 DDS，不把 packed ORM 當單通道 roughness。
-  const auto forestLayerRoot=assetRoot/"photoreal-cooked/materials/forest-ground-04";
-  terrain.textures.additionalLayers[0]={forestLayerRoot/"slot-0-base.dds",forestLayerRoot/"slot-0-arm.dds",forestLayerRoot/"slot-0-normal.dds",MaterialSurfaceMapEncoding3D::PackedOrm,{MaterialTextureIntegrity3D{5592580,"00850c7c033be2bcb2818c0ab3db91a62c8353eba746daede3c0de373c3e32b4"},MaterialTextureIntegrity3D{5592580,"3427bf0a83e0c33326a207f700305620402fd0fb6c532240f204bcebefeabcc4"},MaterialTextureIntegrity3D{5592580,"56e687b2a208f2eaaf9b0e3670530f0a36e5e88d6e74b26090633daaa4e9db93"}}};
+  // 保留三層 sampler；壓實小徑直接引用封存 DDS，不把 packed ORM 當單通道 roughness。
+  const auto pathLayerRoot=assetRoot/"photoreal-cooked/materials/stony-dirt-path";
+  terrain.textures.additionalLayers[0]={pathLayerRoot/"slot-0-base.dds",pathLayerRoot/"slot-0-arm.dds",pathLayerRoot/"slot-0-normal.dds",MaterialSurfaceMapEncoding3D::PackedOrm,{MaterialTextureIntegrity3D{1398276,"ad65700bedb816e745c8f742b26c1f5e59428e350261b1c7b667399ba21a03a4"},MaterialTextureIntegrity3D{1398276,"bfdeb9645baa1db8949bbd2e29c957bd070f25fee4b7064343209cb6d9f93abd"},MaterialTextureIntegrity3D{1398276,"1c5a312de5e4c6a7ede14ef6d8f4ea51d7319bd70a3c725085296cda316635e0"}}};
   terrain.textures.additionalLayers[1]={"poly-haven/rock_surface/1k/base-color.jpg","poly-haven/rock_surface/1k/roughness.jpg","poly-haven/rock_surface/1k/normal-dx.jpg",MaterialSurfaceMapEncoding3D::RoughnessR,{MaterialTextureIntegrity3D{886291,"07edda2bbe4715b01aae2e4bac9f21f204cf4aae37b4733ef01de33281e5e60e"},MaterialTextureIntegrity3D{642680,"ca710d895b01cf323bf00f53194c43504a39d2c964fbfc343c4f45c7d41b10dc"},MaterialTextureIntegrity3D{1161843,"1e1aa5b06f74d22734318cd93ecf49ffe7095c4b2307c5c9b3a4550207c6b1b7"}}};
   if(!showcaseMaterialLibrary_.LoadAll(showcaseMaterials))throw std::runtime_error("Gameplay showcase CC0 PBR material loading failed");
   if(const auto* value=showcaseMaterialLibrary_.Find("ground"))showcaseGroundMaterial_=*value;

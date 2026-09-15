@@ -319,7 +319,22 @@ bool BuildShowcaseLandEcology3D(
         float radialDirectionZ = std::sin(seedPhase);
         // 不等角群落留下較寬空地，避免六等分環形人工排列。
         constexpr std::array<float,6> communityAngles{.18f,.86f,2.22f,3.05f,4.38f,5.72f};
-        const float communityCenter = communityAngles[ordinal % communityAngles.size()] +
+        // 中景樹每四株共用一棵母樹；角槽必須由母群序號推進。若直接用
+        // 單株 ordinal，母樹的 0,4,8... stride 與六槽有公因數，只會留下
+        // 三輻。seedPhase 仍只提供原本的小幅抖動，不改群落槽的六向覆蓋。
+        const std::uint32_t communityOrdinal =
+            kind == ShowcaseLandKind3D::Tree && band == 1u ? ordinal / 4u
+                                                           : ordinal;
+        // 以和六槽互質的 5 做固定置換，解除母群序號與既有半徑候選
+        // (ordinal * 37) 的相鄰相關；六槽計數不變，但不讓相鄰母群與
+        // 同一組陰影／投影邊界規律鎖定。
+        const std::uint32_t communitySlot =
+            kind == ShowcaseLandKind3D::Tree && band == 1u
+                ? (communityOrdinal * 5u + band * 2u) %
+                      std::uint32_t(communityAngles.size())
+                : communityOrdinal % std::uint32_t(communityAngles.size());
+        const float communityCenter =
+            communityAngles[communitySlot] +
                                       std::fmod(seedPhase, .17f);
         const float communityX = std::cos(communityCenter);
         const float communityZ = std::sin(communityCenter);
