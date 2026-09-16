@@ -274,6 +274,9 @@ Mesh3D CreateShowcaseRiverRefinedTerrainMesh3D(const HeightField3D& terrain,Heig
   }
   return result;
 }
+float RiverWaterDisplacementWeight3D(float boundaryDistance){
+  constexpr float fadeDistance=.20f;const float t=Clamp(boundaryDistance/fadeDistance,0.f,1.f);return t*t*(3.f-2.f*t);
+}
 Mesh3D CreateRiverHeroCellMesh3D(const HeightField3D& terrain){
   // 水面取自實際地形三角形的等高線；共享索引避免獨立透明 cell 重疊。
   Mesh3D mesh;const auto ground=terrain.CreateMesh();constexpr float waterY=-.42f;
@@ -296,6 +299,22 @@ Mesh3D CreateRiverHeroCellMesh3D(const HeightField3D& terrain){
     for(std::size_t j=1;j+1<wet.size();++j){const auto a=add(wet[0]),b=add(wet[j]),c=add(wet[j+1]);const auto&pa=mesh.vertices[a];const auto&pb=mesh.vertices[b];const auto&pc=mesh.vertices[c];const float area=(pb.x-pa.x)*(pc.z-pa.z)-(pb.z-pa.z)*(pc.x-pa.x);if(a!=b&&b!=c&&a!=c&&std::abs(area)>1e-12f)mesh.indices.insert(mesh.indices.end(),{a,b,c});}
   }
   if(mesh.indices.empty())throw std::runtime_error("River terrain contour is empty");
+  // normal.w 對 water 材質不參與 foliage wind；改承載岸界位移權重，避免擴充
+  // 共用頂點格式。以實際最終拓樸的所有開放邊為岸界，包含河道兩端。
+  std::unordered_map<std::uint64_t,unsigned> edgeUse;
+  const auto edgeKey=[](std::uint32_t a,std::uint32_t b){if(a>b)std::swap(a,b);return(std::uint64_t(a)<<32)|b;};
+  for(std::size_t i=0;i<mesh.indices.size();i+=3)for(unsigned j=0;j<3;++j)++edgeUse[edgeKey(mesh.indices[i+j],mesh.indices[i+(j+1)%3])];
+  std::vector<std::pair<Vec2,Vec2>> boundarySegments;
+  for(const auto&[key,count]:edgeUse)if(count==1){
+    const auto& a=mesh.vertices[std::uint32_t(key>>32)];const auto& b=mesh.vertices[std::uint32_t(key)];
+    boundarySegments.push_back({{a.x*30.f,a.z*272.f},{b.x*30.f,b.z*272.f}});
+  }
+  for(auto& vertex:mesh.vertices){
+    const Vec2 point{vertex.x*30.f,vertex.z*272.f};float minimumDistanceSquared=std::numeric_limits<float>::max();
+    for(const auto&[a,b]:boundarySegments){const Vec2 edge=b-a,toPoint=point-a;const float lengthSquared=edge.x*edge.x+edge.y*edge.y;const float projection=toPoint.x*edge.x+toPoint.y*edge.y;const float t=lengthSquared>.0000001f?Clamp(projection/lengthSquared,0.f,1.f):0.f;const Vec2 delta=toPoint-edge*t;minimumDistanceSquared=(std::min)(minimumDistanceSquared,delta.x*delta.x+delta.y*delta.y);}
+    const float weight=RiverWaterDisplacementWeight3D(std::sqrt(minimumDistanceSquared));
+    vertex.normal=PackNormalSnorm8({0,1,0},weight);
+  }
   return mesh;
 }
 Mesh3D CreateCottageFacadeMesh3D(bool door,bool pairedWindows){

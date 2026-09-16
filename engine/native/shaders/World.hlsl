@@ -546,6 +546,7 @@ struct WorldPixelInput
 
 struct ShadowVertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; nointerpolation float alphaCutoff : TEXCOORD1; nointerpolation uint alphaMasked : TEXCOORD2; float alpha : TEXCOORD3; nointerpolation float lodCoverage : TEXCOORD4; nointerpolation uint lodSeed : TEXCOORD5; nointerpolation uint lodInvert : TEXCOORD6; };
 float3 ApplyWind(float3 position, float packedWeight, uint materialClass);
+float WaterVertexDisplacementHeight3D(float2 worldXZ, float time, float waveScale, float waveStrength, float waveSpeed);
 
 ShadowVertexOutput ShadowWorldVertexMain(WorldVertexInput input)
 {
@@ -707,6 +708,24 @@ WorldPixelInput InstancedVertexMain(InstancedVertexInput input)
     output.occlusionCoordinate=input.position;
     output.shadowPosition = mul(lightViewProjection[0], worldPosition);
     output.farShadowPosition = mul(lightViewProjection[1], worldPosition);
+    return output;
+}
+
+// Water owns a dedicated vertex entry and root signature.  The shared instanced
+// entry above must remain independent of b4 so non-water geometry cannot inherit
+// displacement; object-ID, AO and shadow retain their existing dedicated entries.
+WorldPixelInput InstancedWaterVertexMain(InstancedVertexInput input)
+{
+    WorldPixelInput output = InstancedVertexMain(input);
+    [branch] if (waterSurfaceEnabled != 0u)
+    {
+        const float3 broadWave = DecodeWaterTriple(WaterSurfacePacked(3), float3(.001, 0.0, -8.0), float3(8.0, .3, 8.0));
+        output.worldPosition.y += WaterVertexDisplacementHeight3D(output.worldPosition.xz, fogEndEnabled.w, broadWave.x, broadWave.y, broadWave.z)
+                                * saturate(input.normal.w);
+        output.position = mul(viewProjection, float4(output.worldPosition, 1.0));
+        output.shadowPosition = mul(lightViewProjection[0], float4(output.worldPosition, 1.0));
+        output.farShadowPosition = mul(lightViewProjection[1], float4(output.worldPosition, 1.0));
+    }
     return output;
 }
 
@@ -1786,6 +1805,18 @@ float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float am
     gradient = gradient + direction2 * slope2;
     gradient = gradient + direction3 * slope3;
     return float3(height, gradient.x, gradient.y);
+}
+
+float WaterVertexDisplacementHeight3D(float2 worldXZ, float time, float waveScale, float waveStrength, float waveSpeed)
+{
+    // 頂點只重用兩組可解析低頻波；細波仍由像素法線承擔。0.16 的幾何比例
+    // 在正式 .16/.136m 波強度下將最壞位移限制為約 4.7cm，再以 5cm 硬上限
+    // 保護 hostile preset。此路徑不取樣貼圖，也不增加 draw 或 pass。
+    const precise float2 riverTangent = float2(0.28, 0.96);
+    const precise float2 riverAcross = float2(-0.96, 0.28);
+    const precise float3 broadWave = WaterAnalyticWave3D(worldXZ, time, waveScale, waveStrength, waveSpeed, riverTangent, 0.31);
+    const precise float3 crossWave = WaterAnalyticWave3D(worldXZ, time, waveScale * 1.31, waveStrength * 0.85, waveSpeed * 0.73, riverTangent * 0.573576436 + riverAcross * 0.819152044, 2.03);
+    return clamp((broadWave.x + crossWave.x) * 0.16, -0.05, 0.05);
 }
 
 float WaterDomainWarpDistance3D(float broadWaveScale, float detailWaveScale)
