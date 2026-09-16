@@ -141,13 +141,64 @@ mask_sidecar = {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount"
     "alphaDilationPixels": 1}]}
 mask_material = MODULE.parse_sidecar(mask_sidecar)[0]
 assert mask_material["alphaSource"] == "black-key" and mask_material["alphaDilationPixels"] == 1
+
+separate_alpha_sidecar = {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11, "materials": [{
+    "name": "official-leaves", "baseColor": "base.png", "normalGl": "normal.png", "packedArm": "arm.png",
+    "alphaMode": "mask", "alphaSource": "separate", "alphaMask": "opacity.png", "alphaCutoff": 0.5,
+    "alphaDilationPixels": 1}]}
+separate_alpha_material = MODULE.parse_sidecar(separate_alpha_sidecar)[0]
+assert separate_alpha_material["alphaSource"] == "separate"
+assert separate_alpha_material["alphaMask"] == "opacity.png"
+
+# 中文註解：官方遮罩才決定 alpha；深色 RGB 可保留，亮色 RGB 也可完全裁除。
+separate_base_pixels = np.array([[[4, 5, 6, 255], [250, 240, 230, 255]]], dtype=np.uint8)
+separate_mask_pixels = np.array([[255, 0]], dtype=np.uint8)
+separate_composed = MODULE.separate_mask_alpha(
+    Image.fromarray(separate_base_pixels, "RGBA"), Image.fromarray(separate_mask_pixels, "L"))
+separate_composed_pixels = np.asarray(separate_composed)
+assert separate_composed_pixels[0, 0].tolist() == [4, 5, 6, 255]
+assert separate_composed_pixels[0, 1].tolist() == [250, 240, 230, 0]
+separate_dilated = np.asarray(MODULE.dilate_mask_rgb(separate_composed, 1, 0.5))
+assert np.array_equal(separate_dilated[..., 3], separate_composed_pixels[..., 3])
+
+try:
+    MODULE.separate_mask_alpha(
+        Image.new("RGBA", (2, 1), (0, 0, 0, 255)), Image.new("L", (1, 2), 255))
+except ValueError:
+    pass
+else:
+    raise AssertionError("mismatched separate alpha-mask dimensions passed")
+
+for hostile_alpha_fields in (
+    {"alphaSource": "separate"},
+    {"alphaSource": "separate", "alphaMask": ""},
+    {"alphaSource": "separate", "alphaMask": 7},
+    {"alphaSource": "separate", "alphaMask": "../opacity.png"},
+    {"alphaSource": "separate", "alphaMask": "textures\\opacity.png"},
+    {"alphaSource": "separate", "alphaMask": "opacity.png", "alphaBlackKeyThreshold": 0.05},
+    {"alphaSource": "embedded", "alphaMask": "opacity.png"},
+    {"alphaSource": "black-key", "alphaMask": "opacity.png", "alphaBlackKeyThreshold": 0.05},
+):
+    hostile_material = {
+        "name": "leaves", "baseColor": "a", "normalGl": "b", "packedArm": "c", "alphaMode": "mask",
+        "alphaCutoff": 0.5, "alphaDilationPixels": 1, **hostile_alpha_fields}
+    hostile_sidecar = {"schemaVersion": 1, "outputResolution": 1024, "expectedMipCount": 11,
+                       "materials": [hostile_material]}
+    try:
+        MODULE.parse_sidecar(hostile_sidecar)
+    except ValueError:
+        continue
+    raise AssertionError("hostile separate alpha schema passed")
+
 island_root = SCRIPT.parent.parent / "engine" / "assets" / "realistic-cc0-first-batch" / "island-tree-01"
 island_sidecar = json.loads((island_root / "island-tree-01.materials.json").read_text(encoding="utf-8"))
 island_leaves = next(item for item in MODULE.parse_sidecar(island_sidecar) if item["name"] == "leaves")
-assert island_leaves["alphaSource"] == "black-key" and island_leaves["alphaCutoff"] == 0.5 and island_leaves["alphaDilationPixels"] == 8
+assert island_leaves["alphaSource"] == "separate" and island_leaves["alphaCutoff"] == 0.5 and island_leaves["alphaDilationPixels"] == 8
+assert island_leaves["alphaMask"] == "textures/island_tree_01_leaves_alpha_1k.png"
 assert island_leaves["doubleSided"] is True and island_leaves["materialClass"] == "foliage"
-island_keyed = MODULE.black_key_alpha(Image.open(island_root / island_leaves["base"]), island_leaves["alphaBlackKeyThreshold"])
-MODULE.validate_mask_alpha(island_keyed, island_leaves["alphaCutoff"])
+island_masked = MODULE.separate_mask_alpha(
+    Image.open(island_root / island_leaves["base"]), Image.open(island_root / island_leaves["alphaMask"]))
+MODULE.validate_mask_alpha(island_masked, island_leaves["alphaCutoff"])
 fixture_pixels = np.zeros((5, 5, 4), dtype=np.uint8)
 fixture_pixels[..., 3] = 255
 fixture_pixels[2, 2, :3] = (80, 110, 30)

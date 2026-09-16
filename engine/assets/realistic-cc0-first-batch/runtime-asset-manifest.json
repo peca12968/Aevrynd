@@ -353,8 +353,8 @@
           "path": "island-tree-01/island-tree-01.materials.json",
           "width": 0,
           "height": 0,
-          "bytes": 1081,
-          "sha256": "ddae875bb2d58bef739de4df26847db9de1f12042663215f69943e262efe6762"
+          "bytes": 1131,
+          "sha256": "1375a73f7d771cfd72a26c04389f4802c06767549cd9092618d3d9c415d9e585"
         },
         {
           "path": "island-tree-01/textures/island_tree_01_arm_1k.jpg",
@@ -395,6 +395,13 @@
           "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
           "bytes": 489476,
           "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_leaves_alpha_1k.png",
+          "bytes": 57438,
+          "sha256": "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39",
           "width": 1024,
           "height": 1024
         },

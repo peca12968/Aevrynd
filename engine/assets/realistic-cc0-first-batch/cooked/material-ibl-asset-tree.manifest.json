@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "fileCount": 48,
-  "totalBytes": 69460838,
+  "totalBytes": 69465310,
   "files": [
     {
       "path": "ibl/environment-brdf.dds",
@@ -136,7 +136,7 @@
     {
       "path": "materials/island-tree-01/leaves-base.dds",
       "bytes": 1398276,
-      "sha256": "453e779d4ca573aa150af26c8289dcad89bfb1bbdd45547fdbb6948f2f17073f"
+      "sha256": "4a1f4e5544d2b91ed3822455f457b93a4d3237019bc8ae6202ce1e0aef9f14c2"
     },
     {
       "path": "materials/island-tree-01/leaves-normal.dds",
@@ -160,8 +160,8 @@
     },
     {
       "path": "materials/material-bake-receipt.json",
-      "bytes": 28532,
-      "sha256": "6c5ffd862ed4d7c5d422a51e187f6404eecf9f7e5aa9bda79fbc93cc4cdf4760"
+      "bytes": 33005,
+      "sha256": "1f21af72bc761c0f07e04a5ab98d61d709fa4babc4ab3e5c30899ca18c4b81fe"
     },
     {
       "path": "materials/roofing-tiles014-b/slot-0-arm.dds",
@@ -225,8 +225,8 @@
     },
     {
       "path": "materials/tree-small-02/material-bake-receipt.json",
-      "bytes": 11549,
-      "sha256": "1dc69509623f58c82f465e260fa8efe21318cf32245cf68e27bc4208e833e974"
+      "bytes": 11548,
+      "sha256": "4641330e3cd18ce1390ffc4c730333051157417476b3bd630baf84547e7242b1"
     },
     {
       "path": "materials/tree-small-02/trunk-arm.dds",

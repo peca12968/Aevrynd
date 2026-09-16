@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "pass",
-  "runtimeManifestSha256": "57ff7ec7c1c2800b2292624e076d73d4eabae039b1f67a2b9ec60a1017e96f67",
+  "runtimeManifestSha256": "dfda4db1f31353f0724b050fbecc9bb04016c81b0e19be8f30fac85e37e468e4",
   "quality": "Ultra",
   "mipPolicy": "complete-chain",
   "tool": {
@@ -316,6 +316,38 @@
           "materialClass": "surface",
           "normalConversion": "OpenGL green inverted to DirectX",
           "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": null,
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 127.80457305908203
+            },
+            "preparedGreen": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 127.19542694091797
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 147.35239028930664
+            },
+            "roughness": {
+              "minimum": 134,
+              "maximum": 238,
+              "mean": 181.4756212234497
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 37,
+              "mean": 1.1481103897094727
+            }
+          },
           "sources": {
             "base": {
               "path": "island-tree-01/textures/island_tree_01_diff_1k.jpg",
@@ -382,6 +414,38 @@
           "materialClass": "surface",
           "normalConversion": "OpenGL green inverted to DirectX",
           "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": null,
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 126.78355693817139
+            },
+            "preparedGreen": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 128.2164430618286
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 128,
+              "maximum": 254,
+              "mean": 237.65682888031006
+            },
+            "roughness": {
+              "minimum": 180,
+              "maximum": 246,
+              "mean": 222.03134536743164
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 15,
+              "mean": 0.4633035659790039
+            }
+          },
           "sources": {
             "base": {
               "path": "island-tree-01/textures/island_tree_01_branches_diff_1k.jpg",
@@ -441,13 +505,64 @@
         {
           "slot": "leaves",
           "alphaMode": "mask",
-          "alphaSource": "black-key",
+          "alphaSource": "separate",
           "alphaCutoff": 0.5,
           "alphaDilationPixels": 8,
           "doubleSided": true,
           "materialClass": "foliage",
           "normalConversion": "OpenGL green inverted to DirectX",
           "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": {
+            "source": {
+              "cutoffByte": 128,
+              "visiblePixels": 272234,
+              "totalPixels": 1048576,
+              "fraction": 0.25962257385253906,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "prepared": {
+              "cutoffByte": 128,
+              "visiblePixels": 272234,
+              "totalPixels": 1048576,
+              "fraction": 0.25962257385253906,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "mipPolicy": "DirectXTex --keep-coverage",
+            "mipCoverageCutoff": 0.5
+          },
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 0,
+              "maximum": 250,
+              "mean": 118.20316982269287
+            },
+            "preparedGreen": {
+              "minimum": 5,
+              "maximum": 255,
+              "mean": 136.79683017730713
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 160,
+              "maximum": 255,
+              "mean": 247.17265033721924
+            },
+            "roughness": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 159.87388515472412
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 49,
+              "mean": 0.783660888671875
+            }
+          },
           "sources": {
             "base": {
               "path": "island-tree-01/textures/island_tree_01_leaves_diff_1k.jpg",
@@ -460,6 +575,10 @@
             "arm": {
               "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
               "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037"
+            },
+            "alphaMask": {
+              "path": "island-tree-01/textures/island_tree_01_leaves_alpha_1k.png",
+              "sha256": "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39"
             }
           },
           "outputs": [
@@ -468,7 +587,7 @@
               "path": "island-tree-01/leaves-base.dds",
               "sourceColorSpace": "sRGB",
               "bytes": 1398276,
-              "sha256": "453e779d4ca573aa150af26c8289dcad89bfb1bbdd45547fdbb6948f2f17073f",
+              "sha256": "4a1f4e5544d2b91ed3822455f457b93a4d3237019bc8ae6202ce1e0aef9f14c2",
               "height": 1024,
               "width": 1024,
               "mips": 11,

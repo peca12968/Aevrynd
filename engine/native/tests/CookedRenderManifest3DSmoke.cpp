@@ -14,7 +14,7 @@ namespace {
 constexpr auto FixtureSha =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 constexpr auto ProductionManifestSha =
-    "f837cb2dfd24e9e43e6a8396853d3c07ca9a8d93710995f9f6cb72afdea5466f";
+    "45657aad82732ecd7bb2612bae9fb6b929e2a9816419fee1f459ea5ffd7d85b3";
 
 bool WriteFixture(const std::filesystem::path &root, std::string_view path) {
     const auto absolute = root / path;

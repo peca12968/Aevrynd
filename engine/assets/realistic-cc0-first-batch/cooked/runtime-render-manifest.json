@@ -843,6 +843,10 @@
           {
             "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
             "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037"
+          },
+          {
+            "path": "island-tree-01/textures/island_tree_01_leaves_alpha_1k.png",
+            "sha256": "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39"
           }
         ]
       },
@@ -852,7 +856,7 @@
     {
       "path": "materials/island-tree-01/leaves-base.dds",
       "bytes": 1398276,
-      "sha256": "453e779d4ca573aa150af26c8289dcad89bfb1bbdd45547fdbb6948f2f17073f",
+      "sha256": "4a1f4e5544d2b91ed3822455f457b93a4d3237019bc8ae6202ce1e0aef9f14c2",
       "format": "BC7_UNORM_SRGB",
       "mips": 11,
       "dimensions": {
@@ -876,6 +880,10 @@
           {
             "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
             "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037"
+          },
+          {
+            "path": "island-tree-01/textures/island_tree_01_leaves_alpha_1k.png",
+            "sha256": "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39"
           }
         ]
       },
@@ -909,6 +917,10 @@
           {
             "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
             "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037"
+          },
+          {
+            "path": "island-tree-01/textures/island_tree_01_leaves_alpha_1k.png",
+            "sha256": "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39"
           }
         ]
       },
@@ -2899,9 +2911,9 @@
     "payloadFileCount": 72,
     "payloadBytes": 241991252,
     "manifestPath": "runtime-render-manifest.json",
-    "manifestBytes": 95960,
+    "manifestBytes": 96548,
     "packageFileCount": 73,
-    "packageBytes": 242087212,
+    "packageBytes": 242087800,
     "manifestHashPolicy": "external-envelope",
     "excludedClasses": [
       "GLB",

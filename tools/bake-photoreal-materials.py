@@ -139,6 +139,15 @@ def black_key_alpha(image: Image.Image, threshold: float) -> Image.Image:
     return Image.fromarray(pixels, "RGBA")
 
 
+def separate_mask_alpha(base: Image.Image, mask: Image.Image) -> Image.Image:
+    if base.size != mask.size:
+        raise ValueError("Separate alpha-mask dimensions do not match the base color")
+    pixels = np.asarray(base.convert("RGBA"), dtype=np.uint8).copy()
+    # 中文註解：官方遮罩先轉成單通道亮度，僅覆寫 alpha，絕不以 base RGB 明暗推測可見性。
+    pixels[..., 3] = np.asarray(mask.convert("L"), dtype=np.uint8)
+    return Image.fromarray(pixels, "RGBA")
+
+
 def validate_mask_alpha(image: Image.Image, alpha_cutoff: float) -> None:
     if not isinstance(alpha_cutoff, (int, float)) or isinstance(alpha_cutoff, bool) or not math.isfinite(float(alpha_cutoff)) or not 0.0 < float(alpha_cutoff) < 1.0:
         raise ValueError("Mask alpha cutoff is invalid")
@@ -251,24 +260,32 @@ def parse_sidecar(sidecar: dict) -> list[dict]:
         allowed = {"name", "slot", "baseColor", "normalGl", "normal", "packedArm", "arm",
                    "ambientOcclusion", "roughness", "metallicScalar", "alphaMode", "alphaCutoff",
                    "doubleSided", "materialClass"}
-        alpha_source, alpha_threshold, dilation = None, None, 0
+        alpha_source, alpha_mask, alpha_threshold, dilation = None, None, None, 0
         alpha_cutoff = material.get("alphaCutoff", 0.5)
         double_sided = material.get("doubleSided", False)
         material_class = material.get("materialClass", "surface")
         if not isinstance(alpha_cutoff, (int, float)) or isinstance(alpha_cutoff, bool) or not math.isfinite(float(alpha_cutoff)) or float(alpha_cutoff) != 0.5 or not isinstance(double_sided, bool) or material_class not in ("surface", "foliage"):
             raise ValueError("Material cutoff, sidedness, or class contract is invalid")
         if alpha_mode == "mask":
-            allowed.update({"alphaSource", "alphaBlackKeyThreshold", "alphaDilationPixels"})
+            allowed.update({"alphaSource", "alphaMask", "alphaBlackKeyThreshold", "alphaDilationPixels"})
             alpha_source = material.get("alphaSource")
             dilation = material.get("alphaDilationPixels")
-            if "alphaCutoff" not in material or alpha_source not in ("embedded", "black-key") or not isinstance(dilation, int) or isinstance(dilation, bool) or dilation < 0 or dilation > 32:
+            if "alphaCutoff" not in material or alpha_source not in ("embedded", "black-key", "separate") or not isinstance(dilation, int) or isinstance(dilation, bool) or dilation < 0 or dilation > 32:
                 raise ValueError("MASK alpha source, cutoff, or dilation contract is invalid")
+            alpha_mask = material.get("alphaMask")
             alpha_threshold = material.get("alphaBlackKeyThreshold")
             if alpha_source == "black-key":
                 if not isinstance(alpha_threshold, (int, float)) or isinstance(alpha_threshold, bool) or not math.isfinite(float(alpha_threshold)) or not 0.0 < float(alpha_threshold) <= 0.25:
                     raise ValueError("MASK black-key threshold is invalid")
             elif "alphaBlackKeyThreshold" in material:
-                raise ValueError("Embedded alpha must not declare a black-key threshold")
+                raise ValueError("Only black-key alpha may declare a black-key threshold")
+            if alpha_source == "separate":
+                # 中文註解：獨立遮罩必須是資產目錄內的正規相對路徑；實際檔案與收據在 cook 階段再驗證。
+                if (not isinstance(alpha_mask, str) or not alpha_mask or Path(alpha_mask).is_absolute() or
+                        "\\" in alpha_mask or any(part in ("", ".", "..") for part in alpha_mask.split("/"))):
+                    raise ValueError("Separate alpha mask must be a safe relative path")
+            elif "alphaMask" in material:
+                raise ValueError("Only separate alpha may declare an alpha mask")
         if material_class == "foliage" and (alpha_mode != "mask" or not double_sided):
             raise ValueError("Foliage must be a double-sided MASK material")
         if any(key not in allowed for key in material):
@@ -278,6 +295,7 @@ def parse_sidecar(sidecar: dict) -> list[dict]:
                        "roughness": roughness if separate else None,
                        "metallicScalar": float(metallic_scalar) if separate else None,
                        "alphaMode": alpha_mode, "alphaSource": alpha_source,
+                       "alphaMask": alpha_mask,
                        "alphaCutoff": float(alpha_cutoff), "alphaBlackKeyThreshold": alpha_threshold,
                        "alphaDilationPixels": dilation, "doubleSided": double_sided,
                        "materialClass": material_class})
@@ -324,6 +342,8 @@ def cook(args: argparse.Namespace) -> dict:
             for material in materials:
                 source_paths = {}
                 channels = ["base", "normal", "arm"] if material["arm"] else ["base", "normal", "ambientOcclusion", "roughness"]
+                if material["alphaMask"]:
+                    channels.append("alphaMask")
                 for channel in channels:
                     source = safe_file(asset_directory, material[channel])
                     relative = f"{asset_relative}/{material[channel]}"
@@ -339,6 +359,8 @@ def cook(args: argparse.Namespace) -> dict:
                 if material["alphaMode"] == "mask":
                     if material["alphaSource"] == "black-key":
                         images["base"] = black_key_alpha(images["base"], material["alphaBlackKeyThreshold"])
+                    elif material["alphaSource"] == "separate":
+                        images["base"] = separate_mask_alpha(images["base"], images["alphaMask"])
                     elif images["base"].getextrema()[3] == (255, 255):
                         raise ValueError(f"Embedded MASK base color has no alpha variation: {name}/{material['name']}")
                     validate_mask_alpha(images["base"], material["alphaCutoff"])
