@@ -169,9 +169,9 @@ PrepareGameplayForestGroundCoverMaterial3D(
 [[nodiscard]] constexpr std::size_t GameplayForestGroundCoverTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 56;
-    case GameplayForestGroundCoverDetail3D::Mid: return 36;
-    case GameplayForestGroundCoverDetail3D::Far: return 24;
+    case GameplayForestGroundCoverDetail3D::Near: return 88;
+    case GameplayForestGroundCoverDetail3D::Mid: return 48;
+    case GameplayForestGroundCoverDetail3D::Far: return 32;
   }
   return 0;
 }
@@ -179,9 +179,9 @@ PrepareGameplayForestGroundCoverMaterial3D(
 [[nodiscard]] constexpr std::size_t GameplayForestGroundCoverCommunityTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 96;
-    case GameplayForestGroundCoverDetail3D::Mid: return 62;
-    case GameplayForestGroundCoverDetail3D::Far: return 36;
+    case GameplayForestGroundCoverDetail3D::Near: return 128;
+    case GameplayForestGroundCoverDetail3D::Mid: return 74;
+    case GameplayForestGroundCoverDetail3D::Far: return 44;
   }
   return 0;
 }
@@ -192,9 +192,9 @@ PrepareGameplayForestGroundCoverMaterial3D(
 GameplayForestRiverbankGroundCoverTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 76;
-    case GameplayForestGroundCoverDetail3D::Mid: return 50;
-    case GameplayForestGroundCoverDetail3D::Far: return 30;
+    case GameplayForestGroundCoverDetail3D::Near: return 108;
+    case GameplayForestGroundCoverDetail3D::Mid: return 62;
+    case GameplayForestGroundCoverDetail3D::Far: return 38;
   }
   return 0;
 }

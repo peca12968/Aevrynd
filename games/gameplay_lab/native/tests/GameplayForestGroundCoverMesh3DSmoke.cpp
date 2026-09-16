@@ -101,9 +101,35 @@ bool LowShrubTierContract(const Mesh3D& mesh) {
          outerWidth >= crownWidth + .12f;
 }
 
-bool FernCardShapeContract(const Mesh3D& mesh) {
-  if (mesh.vertices.empty() || mesh.vertices.size() % 4 != 0) return false;
-  std::size_t leafVertexCount = 0;
+bool FernClusterContract(const Mesh3D& mesh,
+                         GameplayForestGroundCoverDetail3D detail) {
+  const auto fail = [detail](const char* reason) {
+    std::cerr << "FERN_CLUSTER_CONTRACT=FAIL detail="
+              << static_cast<unsigned>(detail) << " reason=" << reason << '\n';
+    return false;
+  };
+  if (mesh.vertices.empty() || mesh.vertices.size() % 4 != 0)
+    return fail("vertex-layout");
+  constexpr std::array<unsigned, 3> LeafCards{{28u, 16u, 12u}};
+  constexpr std::array<unsigned, 3> FrondCounts{{3u, 2u, 2u}};
+  constexpr std::array<std::array<unsigned, 3>, 3> PairPlan{{
+      {{5u, 5u, 4u}}, {{4u, 4u, 0u}}, {{3u, 3u, 0u}}}};
+  constexpr std::array<std::array<unsigned, 3>, 3> SegmentPlan{{
+      {{3u, 3u, 2u}}, {{2u, 2u, 0u}}, {{1u, 1u, 0u}}}};
+  const auto detailIndex = static_cast<std::size_t>(detail);
+  const std::size_t leafVertexCount = std::size_t(LeafCards[detailIndex]) * 4u;
+  const unsigned frondCount = FrondCounts[detailIndex];
+  if (mesh.vertices.size() <= leafVertexCount) return fail("leaf-layout");
+  const auto center = [&mesh](std::size_t base, bool tip) {
+    const std::size_t offset = tip ? 2u : 0u;
+    return Vec3{
+        (mesh.vertices[base + offset].x +
+         mesh.vertices[base + offset + 1u].x) * .5f,
+        (mesh.vertices[base + offset].y +
+         mesh.vertices[base + offset + 1u].y) * .5f,
+        (mesh.vertices[base + offset].z +
+         mesh.vertices[base + offset + 1u].z) * .5f};
+  };
   for (std::size_t base = 0; base < mesh.vertices.size(); base += 4) {
     const auto& rootA = mesh.vertices[base];
     const auto& rootB = mesh.vertices[base + 1];
@@ -111,7 +137,7 @@ bool FernCardShapeContract(const Mesh3D& mesh) {
     const auto& tipB = mesh.vertices[base + 3];
     if (rootA.y < 0.f || rootB.y < 0.f || tipA.y < 0.f || tipB.y < 0.f ||
         rootA.y > .66f || rootB.y > .66f || tipA.y > .66f || tipB.y > .66f)
-      return false;
+      return fail("finite-height");
     const float rootWidth = Length(Vec3{rootA.x - rootB.x, 0,
                                         rootA.z - rootB.z});
     const float tipWidth = Length(Vec3{tipA.x - tipB.x, 0,
@@ -128,108 +154,121 @@ bool FernCardShapeContract(const Mesh3D& mesh) {
     const float tipZ = (tipA.z + tipB.z) * .5f;
     const float cardLength = Length(Vec3{tipX - rootX, tipA.y - rootA.y,
                                          tipZ - rootZ});
-    const bool stem = tipWidth3D < .05f;
+    const bool stem = base >= leafVertexCount;
     if (stem) {
-      if (rootWidth3D < .0035f || rootWidth3D > .0095f ||
-          tipWidth3D < .0035f || tipWidth3D > .0095f ||
-          cardLength < .05f || cardLength > .70f)
-        return false;
+      if (rootWidth3D < .0025f ||
+          rootWidth3D > .0095f || tipWidth3D < .0025f ||
+          tipWidth3D > .0095f ||
+          cardLength < .05f || cardLength > .70f) {
+        std::cerr << "FERN_STEM_SHAPE base=" << base
+                  << " rootWidth=" << rootWidth3D
+                  << " tipWidth=" << tipWidth3D
+                  << " length=" << cardLength << '\n';
+        return fail("stem-shape");
+      }
     } else {
-      if (leafVertexCount != base ||
+      if (base >= leafVertexCount ||
           std::abs(rootA.y - rootB.y) > 1e-6f ||
           std::abs(tipA.y - tipB.y) > 1e-6f ||
-          rootWidth < .012f || rootWidth > .024f ||
-          tipWidth < .050f || tipWidth > .112f ||
-          cardLength < .12f || cardLength > .225f || tipWidth <= rootWidth ||
-          std::abs(tipA.y - rootA.y) > .08f)
-        return false;
-      leafVertexCount += 4;
+          rootWidth < .007f || rootWidth > .028f ||
+          tipWidth < .032f || tipWidth > .122f ||
+          cardLength < .08f || cardLength > .25f || tipWidth <= rootWidth ||
+          std::abs(tipA.y - rootA.y) > .08f) {
+        std::cerr << "FERN_LEAF_SHAPE base=" << base
+                  << " rootWidth=" << rootWidth
+                  << " tipWidth=" << tipWidth
+                  << " length=" << cardLength
+                  << " deltaY=" << std::abs(tipA.y - rootA.y) << '\n';
+        return fail("leaf-shape");
+      }
     }
   }
   // 每兩張卡片必須由同一個莖節向左右展開；這個幾何條件防止日後
   // 回退成沿莖交錯、低鏡頭只剩零碎浮片的配置。
-  if (!leafVertexCount || leafVertexCount == mesh.vertices.size() ||
-      leafVertexCount % 8 != 0)
-    return false;
   for (std::size_t base = 0; base + 7 < leafVertexCount; base += 8) {
-    const Vec3 rootLeft{
-        (mesh.vertices[base].x + mesh.vertices[base + 1].x) * .5f,
-        (mesh.vertices[base].y + mesh.vertices[base + 1].y) * .5f,
-        (mesh.vertices[base].z + mesh.vertices[base + 1].z) * .5f};
-    const Vec3 rootRight{
-        (mesh.vertices[base + 4].x + mesh.vertices[base + 5].x) * .5f,
-        (mesh.vertices[base + 4].y + mesh.vertices[base + 5].y) * .5f,
-        (mesh.vertices[base + 4].z + mesh.vertices[base + 5].z) * .5f};
-    const Vec3 tipLeft{
-        (mesh.vertices[base + 2].x + mesh.vertices[base + 3].x) * .5f,
-        (mesh.vertices[base + 2].y + mesh.vertices[base + 3].y) * .5f,
-        (mesh.vertices[base + 2].z + mesh.vertices[base + 3].z) * .5f};
-    const Vec3 tipRight{
-        (mesh.vertices[base + 6].x + mesh.vertices[base + 7].x) * .5f,
-        (mesh.vertices[base + 6].y + mesh.vertices[base + 7].y) * .5f,
-        (mesh.vertices[base + 6].z + mesh.vertices[base + 7].z) * .5f};
+    const Vec3 rootLeft = center(base, false);
+    const Vec3 rootRight = center(base + 4u, false);
+    const Vec3 tipLeft = center(base, true);
+    const Vec3 tipRight = center(base + 4u, true);
     const float rootWeightLeft = UnpackNormalSnorm8(mesh.vertices[base].normal).w;
     const float rootWeightRight = UnpackNormalSnorm8(mesh.vertices[base + 4].normal).w;
     const float tipWeightLeft = UnpackNormalSnorm8(mesh.vertices[base + 2].normal).w;
     const float tipWeightRight = UnpackNormalSnorm8(mesh.vertices[base + 6].normal).w;
     if (Length(rootLeft - rootRight) > 1e-5f ||
-        Length(tipLeft - tipRight) < .20f ||
+        Length(tipLeft - tipRight) < .10f ||
         std::abs(rootWeightLeft - rootWeightRight) > .02f ||
         std::abs(tipWeightLeft - tipWeightRight) > .02f ||
         tipWeightLeft > rootWeightLeft + .02f)
-      return false;
+      return fail("leaf-pair");
   }
-  // 每段莖有兩張交叉卡片且必須首尾相接，從地面連到最後一組葉節；
-  // 任何斷點都會在玩家鏡頭中重新形成懸空葉片。
-  Vec3 previousEnd{};
-  bool havePrevious = false;
-  float previousEndWeight = 1.f;
-  if ((mesh.vertices.size() - leafVertexCount) % 8 != 0) return false;
-  for (std::size_t base = leafVertexCount; base < mesh.vertices.size(); base += 8) {
-    const Vec3 startA{
-        (mesh.vertices[base].x + mesh.vertices[base + 1].x) * .5f,
-        (mesh.vertices[base].y + mesh.vertices[base + 1].y) * .5f,
-        (mesh.vertices[base].z + mesh.vertices[base + 1].z) * .5f};
-    const Vec3 endA{
-        (mesh.vertices[base + 2].x + mesh.vertices[base + 3].x) * .5f,
-        (mesh.vertices[base + 2].y + mesh.vertices[base + 3].y) * .5f,
-        (mesh.vertices[base + 2].z + mesh.vertices[base + 3].z) * .5f};
-    const Vec3 startB{
-        (mesh.vertices[base + 4].x + mesh.vertices[base + 5].x) * .5f,
-        (mesh.vertices[base + 4].y + mesh.vertices[base + 5].y) * .5f,
-        (mesh.vertices[base + 4].z + mesh.vertices[base + 5].z) * .5f};
-    const Vec3 endB{
-        (mesh.vertices[base + 6].x + mesh.vertices[base + 7].x) * .5f,
-        (mesh.vertices[base + 6].y + mesh.vertices[base + 7].y) * .5f,
-        (mesh.vertices[base + 6].z + mesh.vertices[base + 7].z) * .5f};
-    const float startWeightA = UnpackNormalSnorm8(mesh.vertices[base].normal).w;
-    const float endWeightA = UnpackNormalSnorm8(mesh.vertices[base + 2].normal).w;
-    const float startWeightB = UnpackNormalSnorm8(mesh.vertices[base + 4].normal).w;
-    const float endWeightB = UnpackNormalSnorm8(mesh.vertices[base + 6].normal).w;
-    if (Length(startA - startB) > 1e-5f || Length(endA - endB) > 1e-5f ||
-        (!havePrevious && startA.y > 1e-6f) ||
-        (havePrevious && Length(startA - previousEnd) > 1e-5f) ||
-        std::abs(startWeightA - startWeightB) > .02f ||
-        std::abs(endWeightA - endWeightB) > .02f ||
-        endWeightA > startWeightA + .02f ||
-        (havePrevious && std::abs(startWeightA - previousEndWeight) > .02f))
-      return false;
-    previousEnd = endA;
-    previousEndWeight = endWeightA;
-    havePrevious = true;
+  // 每支 frond 都從完全相同的地面根點開始，莖段在該支內連續並精確
+  // 接到最後一對葉節；不同 frond 的終端方向必須真正分開。
+  std::array<Vec3, 3> directions{};
+  std::size_t leafPairOffset{};
+  std::size_t stemBase = leafVertexCount;
+  Vec3 commonRoot{};
+  for (unsigned frond = 0; frond < frondCount; ++frond) {
+    Vec3 previousEnd{};
+    float previousEndWeight = 1.f;
+    for (unsigned segment = 0; segment < SegmentPlan[detailIndex][frond];
+         ++segment, stemBase += 8u) {
+      const Vec3 startA = center(stemBase, false);
+      const Vec3 endA = center(stemBase, true);
+      const Vec3 startB = center(stemBase + 4u, false);
+      const Vec3 endB = center(stemBase + 4u, true);
+      const float startWeightA =
+          UnpackNormalSnorm8(mesh.vertices[stemBase].normal).w;
+      const float endWeightA =
+          UnpackNormalSnorm8(mesh.vertices[stemBase + 2u].normal).w;
+      const float startWeightB =
+          UnpackNormalSnorm8(mesh.vertices[stemBase + 4u].normal).w;
+      const float endWeightB =
+          UnpackNormalSnorm8(mesh.vertices[stemBase + 6u].normal).w;
+      if (Length(startA - startB) > 1e-5f ||
+          Length(endA - endB) > 1e-5f ||
+          (segment == 0u && startA.y > 1e-6f) ||
+          (segment == 0u && frond > 0u && Length(startA - commonRoot) > 1e-5f) ||
+          (segment > 0u && Length(startA - previousEnd) > 1e-5f) ||
+          std::abs(startWeightA - startWeightB) > .02f ||
+          std::abs(endWeightA - endWeightB) > .02f ||
+          endWeightA > startWeightA + .02f ||
+          (segment > 0u &&
+           std::abs(startWeightA - previousEndWeight) > .02f))
+        return fail("stem-chain");
+      if (segment == 0u) commonRoot = startA;
+      previousEnd = endA;
+      previousEndWeight = endWeightA;
+    }
+    const std::size_t lastLeafPair =
+        leafPairOffset + PairPlan[detailIndex][frond] - 1u;
+    const Vec3 lastLeafRoot = center(lastLeafPair * 8u, false);
+    if (Length(previousEnd - lastLeafRoot) > 1e-5f ||
+        previousEndWeight > .02f)
+      return fail("stem-terminal");
+    directions[frond] = Aevrynd::Normalize(
+        Vec3{previousEnd.x - commonRoot.x, 0,
+             previousEnd.z - commonRoot.z});
+    leafPairOffset += PairPlan[detailIndex][frond];
   }
-  const std::size_t lastLeafBase = leafVertexCount - 8;
-  const Vec3 lastLeafRoot{
-      (mesh.vertices[lastLeafBase].x + mesh.vertices[lastLeafBase + 1].x) * .5f,
-      (mesh.vertices[lastLeafBase].y + mesh.vertices[lastLeafBase + 1].y) * .5f,
-      (mesh.vertices[lastLeafBase].z + mesh.vertices[lastLeafBase + 1].z) * .5f};
-  if (!havePrevious || Length(previousEnd - lastLeafRoot) > 1e-5f ||
-      previousEndWeight > .02f)
-    return false;
+  if (stemBase != mesh.vertices.size() || leafPairOffset * 8u != leafVertexCount)
+    return fail("topology-count");
+  for (unsigned left = 0; left < frondCount; ++left)
+    for (unsigned right = left + 1u; right < frondCount; ++right)
+      if (Aevrynd::Dot(directions[left], directions[right]) > .26f)
+        return fail("direction-collapse");
   const auto bounds = mesh.Bounds();
-  return bounds.center.y - bounds.extents.y >= -1e-6f &&
-         bounds.center.y + bounds.extents.y >= .48f &&
-         bounds.center.y + bounds.extents.y <= .63f;
+  if (bounds.center.y - bounds.extents.y < -1e-6f ||
+      bounds.center.y + bounds.extents.y < .48f ||
+      bounds.center.y + bounds.extents.y > .63f ||
+      bounds.extents.x > .75f || bounds.extents.z > .75f ||
+      bounds.extents.x < .18f || bounds.extents.z < .18f) {
+    std::cerr << "FERN_BOUNDS minY=" << bounds.center.y - bounds.extents.y
+              << " maxY=" << bounds.center.y + bounds.extents.y
+              << " extentX=" << bounds.extents.x
+              << " extentZ=" << bounds.extents.z << '\n';
+    return fail("bounds");
+  }
+  return true;
 }
 
 bool LeafMossCardScaleContract(const Mesh3D& mesh) {
@@ -322,6 +361,7 @@ int main() {
       GameplayForestGroundCoverDetail3D::Mid,
       GameplayForestGroundCoverDetail3D::Far};
   constexpr std::array<std::size_t, 3> expectedLowShrubTriangles{{20, 12, 6}};
+  constexpr std::array<std::size_t, 3> expectedFernTriangles{{88, 48, 32}};
 
   for (const auto item : species) {
     std::size_t previousTriangles = (std::numeric_limits<std::size_t>::max)();
@@ -333,10 +373,12 @@ int main() {
       if (!mesh.Valid() || !Exact(mesh, repeated) ||
           triangles > GameplayForestGroundCoverTriangleBudget(detail) ||
           triangles >= previousTriangles || !VertexContract(mesh, item) ||
+          (item == GameplayForestGroundCoverSpecies3D::Fern &&
+           triangles != expectedFernTriangles[detailIndex]) ||
           !AtlasUvContract(mesh,
                            GameplayForestGroundCoverAtlas3D::IslandTree01) ||
           (item == GameplayForestGroundCoverSpecies3D::Fern &&
-           !FernCardShapeContract(mesh)) ||
+           !FernClusterContract(mesh, detail)) ||
           (item == GameplayForestGroundCoverSpecies3D::LeafMoss &&
            !LeafMossCardScaleContract(mesh)) ||
           (item == GameplayForestGroundCoverSpecies3D::LowShrub &&
@@ -350,7 +392,7 @@ int main() {
                   << " atlas=" << AtlasUvContract(
                          mesh, GameplayForestGroundCoverAtlas3D::IslandTree01)
                   << " fern=" << (item != GameplayForestGroundCoverSpecies3D::Fern ||
-                                      FernCardShapeContract(mesh))
+                                      FernClusterContract(mesh, detail))
                   << " leaf=" << (item != GameplayForestGroundCoverSpecies3D::LeafMoss ||
                                       LeafMossCardScaleContract(mesh)) << '\n';
         return 1;
@@ -388,9 +430,110 @@ int main() {
     }
   }
 
+  const auto fernNear = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::Fern,
+      GameplayForestGroundCoverDetail3D::Near, 0x51a7c3u);
+  const auto fernMid = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::Fern,
+      GameplayForestGroundCoverDetail3D::Mid, 0x51a7c3u);
+  const auto fernFar = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::Fern,
+      GameplayForestGroundCoverDetail3D::Far, 0x51a7c3u);
+  const auto leafRoot = [](const Mesh3D& mesh, std::size_t pair) {
+    const std::size_t base = pair * 8u;
+    return Vec3{(mesh.vertices[base].x + mesh.vertices[base + 1u].x) * .5f,
+                (mesh.vertices[base].y + mesh.vertices[base + 1u].y) * .5f,
+                (mesh.vertices[base].z + mesh.vertices[base + 1u].z) * .5f};
+  };
+  const auto horizontalDirection = [](Vec3 value) {
+    value.y = 0.f;
+    return Normalize(value);
+  };
+  constexpr std::array<std::size_t, 2> nearTerminals{{4u, 9u}};
+  constexpr std::array<std::size_t, 2> midTerminals{{3u, 7u}};
+  constexpr std::array<std::size_t, 2> farTerminals{{2u, 5u}};
+  for (std::size_t frond = 0; frond < 2u; ++frond) {
+    const auto nearDirection = horizontalDirection(
+        leafRoot(fernNear, nearTerminals[frond]));
+    const auto midDirection = horizontalDirection(
+        leafRoot(fernMid, midTerminals[frond]));
+    const auto farDirection = horizontalDirection(
+        leafRoot(fernFar, farTerminals[frond]));
+    if (Dot(nearDirection, midDirection) < .999f ||
+        Dot(nearDirection, farDirection) < .999f) {
+      std::cerr << "FERN_LOD_DIRECTION_STABILITY=FAIL\n";
+      return 13;
+    }
+  }
+
+  auto detachedRoot = fernNear;
+  for (const std::size_t vertex : {136u, 137u, 140u, 141u})
+    detachedRoot.vertices[vertex].x += .04f;
+  if (FernClusterContract(detachedRoot,
+                          GameplayForestGroundCoverDetail3D::Near)) {
+    std::cerr << "FERN_COMMON_ROOT_HOSTILE=FAIL\n";
+    return 14;
+  }
+
+  auto severedStem = fernNear;
+  for (const std::size_t vertex : {120u, 121u, 124u, 125u})
+    severedStem.vertices[vertex].z += .03f;
+  if (FernClusterContract(severedStem,
+                          GameplayForestGroundCoverDetail3D::Near)) {
+    std::cerr << "FERN_SEVERED_STEM_HOSTILE=FAIL\n";
+    return 15;
+  }
+
+  auto oversizedCrown = fernNear;
+  for (auto& vertex : oversizedCrown.vertices) {
+    vertex.x *= 2.f;
+    vertex.z *= 2.f;
+  }
+  if (FernClusterContract(oversizedCrown,
+                          GameplayForestGroundCoverDetail3D::Near)) {
+    std::cerr << "FERN_OVERSIZED_CROWN_HOSTILE=FAIL\n";
+    return 16;
+  }
+
+  auto reversedWind = fernNear;
+  for (const std::size_t vertex : {120u, 121u, 124u, 125u}) {
+    const auto normal = UnpackNormalSnorm8(reversedWind.vertices[vertex].normal);
+    reversedWind.vertices[vertex].normal =
+        PackNormalSnorm8({normal.x, normal.y, normal.z}, 1.f);
+  }
+  if (FernClusterContract(reversedWind,
+                          GameplayForestGroundCoverDetail3D::Near)) {
+    std::cerr << "FERN_WIND_MONOTONIC_HOSTILE=FAIL\n";
+    return 17;
+  }
+
+  auto collapsedFronds = fernNear;
+  const auto firstDirection = horizontalDirection(leafRoot(fernNear, 4u));
+  const auto secondDirection = horizontalDirection(leafRoot(fernNear, 9u));
+  const float rotation = std::atan2(firstDirection.z, firstDirection.x) -
+                         std::atan2(secondDirection.z, secondDirection.x);
+  const float rotationSine = std::sin(rotation);
+  const float rotationCosine = std::cos(rotation);
+  const auto rotateVertex = [&](std::size_t vertexIndex) {
+    auto& vertex = collapsedFronds.vertices[vertexIndex];
+    const float x = vertex.x;
+    const float z = vertex.z;
+    vertex.x = x * rotationCosine - z * rotationSine;
+    vertex.z = x * rotationSine + z * rotationCosine;
+  };
+  for (std::size_t vertex = 40u; vertex < 80u; ++vertex)
+    rotateVertex(vertex);
+  for (std::size_t vertex = 136u; vertex < 160u; ++vertex)
+    rotateVertex(vertex);
+  if (FernClusterContract(collapsedFronds,
+                          GameplayForestGroundCoverDetail3D::Near)) {
+    std::cerr << "FERN_COLLAPSED_DIRECTIONS_HOSTILE=FAIL\n";
+    return 18;
+  }
+
   std::size_t previousCommunityTriangles =
       (std::numeric_limits<std::size_t>::max)();
-  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{96, 62, 36}};
+  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{128, 74, 44}};
   for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
     const auto detail = details[detailIndex];
     const auto community =
@@ -413,7 +556,7 @@ int main() {
 
   std::size_t previousRiverbankTriangles =
       (std::numeric_limits<std::size_t>::max)();
-  constexpr std::array<std::size_t, 3> expectedRiverbankTriangles{{76, 50, 30}};
+  constexpr std::array<std::size_t, 3> expectedRiverbankTriangles{{108, 62, 38}};
   for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
     const auto detail = details[detailIndex];
     const auto riverbank =

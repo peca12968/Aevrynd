@@ -81,7 +81,7 @@ void AppendCard(Mesh3D& mesh,
 unsigned CardCount(GameplayForestGroundCoverSpecies3D species,
                    GameplayForestGroundCoverDetail3D detail) noexcept {
   constexpr std::array<std::array<unsigned, 3>, 3> Counts{{
-      {{16, 10, 6}},
+      {{28, 16, 12}},
       {{10, 6, 3}},
       {{10, 7, 3}},
   }};
@@ -96,81 +96,126 @@ Mesh3D CreateFern(GameplayForestGroundCoverDetail3D detail,
   const unsigned leafCount = CardCount(GameplayForestGroundCoverSpecies3D::Fern,
                                        detail);
   const unsigned stemSegments = detail == GameplayForestGroundCoverDetail3D::Near
-                                    ? 6u
+                                    ? 8u
                                     : detail == GameplayForestGroundCoverDetail3D::Mid
-                                          ? 4u : 3u;
+                                          ? 4u : 2u;
   const unsigned cardCount = leafCount + stemSegments * 2u;
   mesh.vertices.reserve(std::size_t(cardCount) * 4);
   mesh.indices.reserve(std::size_t(cardCount) * 6);
-  const unsigned pairCount = leafCount / 2u;
-  const float stemEndT = pairCount > 0u
-                             ? float(pairCount) / float(pairCount + 1u) : .5f;
-  const float phase = UnitNoise(seed, 0u, 11u) * 2.f * Pi;
-  const float radial = .025f + UnitNoise(seed, 0u, 19u) * .035f;
-  const float length = .46f + UnitNoise(seed, 0u, 23u) * .14f;
-  const float archHeight = .50f + UnitNoise(seed, 0u, 31u) * .06f;
-  const Vec3 direction{std::cos(phase), 0, std::sin(phase)};
-  const Vec3 side{-direction.z, 0, direction.x};
-  const auto stemPointAt = [&](float t) {
-    const float arch = (std::max)(0.f, std::sin(Pi * t));
-    return direction * (radial + length * t) +
-           Vec3{0, arch * archHeight, 0};
+  struct FernFrond {
+    unsigned pairs{};
+    unsigned segments{};
+    float scale{};
+    Vec3 direction{};
+    Vec3 side{};
+    float length{};
+    float height{};
   };
-  for (unsigned item = 0; item < leafCount; ++item) {
-    const unsigned pair = item / 2u;
-    // 左右小葉共用同一個莖節；最末節刻意停在弧線下降前段，避免葉尖
-    // 穿入地面，同時讓低鏡頭能讀到完整蕨葉輪廓。
-    const float t = pairCount > 0u
-                        ? float(pair + 1u) / float(pairCount + 1u) : .5f;
-    const Vec3 stemPoint = stemPointAt(t);
-    const float handedness = item % 2u ? 1.f : -1.f;
-    const Vec3 horizontalDirection = Aevrynd::Normalize(
-        direction * (.22f + t * .16f) + side * handedness);
-    // sin(pi*t) 的導數提供莖弧切線：根部向上、冠部逐漸放平，後段
-    // 自然略向下。這使卡片真正面向低鏡頭，而不是只露出一條薄邊。
-    const float tangentY = .34f * std::cos(Pi * t);
-    const Vec3 leafDirection = Aevrynd::Normalize(
-        horizontalDirection + Vec3{0, tangentY, 0});
-    const float leafLength = .115f + (1.f - t) * .10f +
-                             UnitNoise(seed, item, 29u) * .015f;
-    const float halfWidth = .026f + (1.f - t) * .030f;
-    const Vec3 leafSide{-horizontalDirection.z, 0, horizontalDirection.x};
-    const Vec3 leafTip = stemPoint + leafDirection * leafLength;
-    // 葉片先寫入，後面再接連續交叉莖段；近中遠分別使用
-    // 8/5/3 對葉，莖用 6/4/3 段平滑漸縮。局部預算明確提高至
-    // 56/36/24 triangles，避免為保住過低數字而產生懸空碎片。
-    const float rootAnchor = (std::max)(0.f, 1.f - t / stemEndT);
-    const float tipAnchor = (std::max)(0.f, rootAnchor - .12f);
-    AppendCard(mesh,
-               {stemPoint - leafSide * halfWidth * .22f,
-                stemPoint + leafSide * halfWidth * .22f,
-                leafTip + leafSide * halfWidth,
-                leafTip - leafSide * halfWidth},
-               SpeciesColor(GameplayForestGroundCoverSpecies3D::Fern,
-                            UnitNoise(seed, item, 37u)),
-               true, GameplayForestGroundCoverAtlasUv3D(atlas, item),
-               rootAnchor, tipAnchor);
+  std::array<FernFrond, 3> fronds{};
+  const unsigned frondCount = detail == GameplayForestGroundCoverDetail3D::Near
+                                  ? 3u : 2u;
+  constexpr std::array<std::array<unsigned, 3>, 3> PairPlan{{
+      {{5u, 5u, 4u}}, {{4u, 4u, 0u}}, {{3u, 3u, 0u}}}};
+  constexpr std::array<std::array<unsigned, 3>, 3> SegmentPlan{{
+      {{3u, 3u, 2u}}, {{2u, 2u, 0u}}, {{1u, 1u, 0u}}}};
+  constexpr std::array<std::array<float, 3>, 3> ScalePlan{{
+      {{1.f, .90f, .80f}}, {{1.f, .88f, 0.f}}, {{1.f, .84f, 0.f}}}};
+  const auto detailIndex = static_cast<std::size_t>(detail);
+  const float basePhase = UnitNoise(seed, 0u, 11u) * 2.f * Pi;
+  unsigned plannedPairs{};
+  unsigned plannedSegments{};
+  for (unsigned frond = 0; frond < frondCount; ++frond) {
+    auto& geometry = fronds[frond];
+    geometry.pairs = PairPlan[detailIndex][frond];
+    geometry.segments = SegmentPlan[detailIndex][frond];
+    geometry.scale = ScalePlan[detailIndex][frond];
+    // 固定 125 度槽位讓 Near 保留三向冠幅，Mid/Far 保留前兩向；方向
+    // 不依 LOD 的 frond 數重算，避免切換時整株旋轉或翻面。
+    const float phase = basePhase + 2.18166156f * float(frond) +
+                        (UnitNoise(seed, frond, 17u) - .5f) * .22f;
+    geometry.direction = {std::cos(phase), 0, std::sin(phase)};
+    geometry.side = {-geometry.direction.z, 0, geometry.direction.x};
+    geometry.length = (.43f + UnitNoise(seed, frond, 23u) * .12f) *
+                      geometry.scale;
+    geometry.height = (.525f + UnitNoise(seed, frond, 31u) * .06f) *
+                      geometry.scale;
+    plannedPairs += geometry.pairs;
+    plannedSegments += geometry.segments;
   }
-  for (unsigned segment = 0; segment < stemSegments; ++segment) {
-    const float t0 = stemEndT * float(segment) / float(stemSegments);
-    const float t1 = stemEndT * float(segment + 1u) / float(stemSegments);
-    const Vec3 start = stemPointAt(t0);
-    const Vec3 end = stemPointAt(t1);
-    const float startHalfWidth = .0045f - .0025f * (t0 / stemEndT);
-    const float endHalfWidth = .0045f - .0025f * (t1 / stemEndT);
-    const float startAnchor = 1.f - t0 / stemEndT;
-    const float endAnchor = 1.f - t1 / stemEndT;
-    // 兩張垂直 ribbon 在水平截面互相垂直；保持寬度方向 y=0，確保
-    // 第一節不會因截面厚度穿入地表。
-    for (const Vec3 widthDirection : {side, direction}) {
-      AppendCard(mesh,
-                 {start - widthDirection * startHalfWidth,
-                  start + widthDirection * startHalfWidth,
-                 end + widthDirection * endHalfWidth,
-                  end - widthDirection * endHalfWidth},
-                 {.90f, 1.f, .82f, 1.f}, false,
-                 GameplayForestGroundCoverStemUv3D(atlas),
-                 startAnchor, endAnchor);
+  if (plannedPairs * 2u != leafCount || plannedSegments != stemSegments)
+    return {};
+
+  const auto stemPointAt = [](const FernFrond& frond, float t) {
+    // 單調上升的四分之一弧取代倒 U；所有 frond 從同一地面根部發散，
+    // 但以不同高度與方向形成真正植株，而不是一條被放大的葉枝。
+    return frond.direction * (frond.length * t) +
+           Vec3{0, std::sin(.5f * Pi * t) * frond.height, 0};
+  };
+  unsigned leafItem{};
+  for (unsigned frond = 0; frond < frondCount; ++frond) {
+    const auto& geometry = fronds[frond];
+    const float stemEndT = float(geometry.pairs) / float(geometry.pairs + 1u);
+    for (unsigned pair = 0; pair < geometry.pairs; ++pair) {
+      const float t = float(pair + 1u) / float(geometry.pairs + 1u);
+      const Vec3 stemPoint = stemPointAt(geometry, t);
+      for (unsigned sideIndex = 0; sideIndex < 2u; ++sideIndex, ++leafItem) {
+        const float handedness = sideIndex ? 1.f : -1.f;
+        const Vec3 horizontalDirection = Aevrynd::Normalize(
+            geometry.direction * (.22f + t * .16f) +
+            geometry.side * handedness);
+        const float tangentY = .30f * geometry.scale *
+                               std::cos(.5f * Pi * t);
+        const Vec3 leafDirection = Aevrynd::Normalize(
+            horizontalDirection + Vec3{0, tangentY, 0});
+        // 每支 frond 都保有連續葉序；較短的側枝只縮短莖長，不再把葉片
+        // 面積同步縮到只剩細線。這是可讀群落體積，不是放大單一卡片。
+        const float leafScale = .84f + .16f * geometry.scale;
+        const float leafLength =
+            (.12f + (1.f - t) * .105f +
+             UnitNoise(seed, leafItem, 29u) * .015f) * leafScale;
+        const float halfWidth =
+            (.028f + (1.f - t) * .032f) * leafScale;
+        const Vec3 leafSide{-horizontalDirection.z, 0,
+                            horizontalDirection.x};
+        const Vec3 leafTip = stemPoint + leafDirection * leafLength;
+        const float rootAnchor = (std::max)(0.f, 1.f - t / stemEndT);
+        const float tipAnchor = (std::max)(0.f, rootAnchor - .12f);
+        AppendCard(mesh,
+                   {stemPoint - leafSide * halfWidth * .22f,
+                    stemPoint + leafSide * halfWidth * .22f,
+                    leafTip + leafSide * halfWidth,
+                    leafTip - leafSide * halfWidth},
+                   SpeciesColor(GameplayForestGroundCoverSpecies3D::Fern,
+                                UnitNoise(seed, leafItem, 37u)),
+                   true, GameplayForestGroundCoverAtlasUv3D(atlas, leafItem),
+                   rootAnchor, tipAnchor);
+      }
+    }
+  }
+  for (unsigned frond = 0; frond < frondCount; ++frond) {
+    const auto& geometry = fronds[frond];
+    const float stemEndT = float(geometry.pairs) / float(geometry.pairs + 1u);
+    for (unsigned segment = 0; segment < geometry.segments; ++segment) {
+      const float t0 = stemEndT * float(segment) / float(geometry.segments);
+      const float t1 = stemEndT * float(segment + 1u) / float(geometry.segments);
+      const Vec3 start = stemPointAt(geometry, t0);
+      const Vec3 end = stemPointAt(geometry, t1);
+      const float startHalfWidth =
+          (.0042f - .0023f * (t0 / stemEndT)) * geometry.scale;
+      const float endHalfWidth =
+          (.0042f - .0023f * (t1 / stemEndT)) * geometry.scale;
+      const float startAnchor = 1.f - t0 / stemEndT;
+      const float endAnchor = 1.f - t1 / stemEndT;
+      for (const Vec3 widthDirection : {geometry.side, geometry.direction}) {
+        AppendCard(mesh,
+                   {start - widthDirection * startHalfWidth,
+                    start + widthDirection * startHalfWidth,
+                    end + widthDirection * endHalfWidth,
+                    end - widthDirection * endHalfWidth},
+                   {.90f, 1.f, .82f, 1.f}, false,
+                   GameplayForestGroundCoverStemUv3D(atlas),
+                   startAnchor, endAnchor);
+      }
     }
   }
   return mesh;
