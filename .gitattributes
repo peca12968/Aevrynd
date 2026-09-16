@@ -2,3 +2,5 @@
 engine/assets/realistic-cc0-first-batch/cooked/*.json text eol=lf
 engine/assets/realistic-cc0-first-batch/cooked/**/*.json text eol=lf
 games/character_lab/assets/model-packs/*/*.provenance.json text eol=lf
+engine/assets/realistic-cc0-first-batch/tree-small-02/*.gltf text eol=lf
+engine/assets/realistic-cc0-first-batch/tree-small-02/*.json text eol=lf

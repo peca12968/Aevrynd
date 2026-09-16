@@ -47,7 +47,7 @@ int main(){
  std::ifstream shaderFile(shaderPath);const std::string shader{std::istreambuf_iterator<char>{shaderFile},std::istreambuf_iterator<char>{}};
  const auto count=[&](const std::string& token){unsigned n=0;size_t p=0;while((p=shader.find(token,p))!=std::string::npos){++n;p+=token.size();}return n;};
  const auto analyticCount=count("WaterAnalyticWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
- if(analyticCount!=5||bandLimitCount!=5||scatterCount!=2||fallbackCount!=2||count("WaterDomainWarpPosition3D(")!=3||count("WaterDomainWarpGradient3D(")!=3||count("WaterReflectionRoughness3D(")!=2||shader.find("const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);")==std::string::npos||shader.find("broadWave.yz * broadBandLimit * 0.30")==std::string::npos||shader.find("crossWave.yz * crossBandLimit * 0.17")==std::string::npos||shader.find("detailWave.yz * detailBandLimit * 0.24")==std::string::npos||shader.find("crossDetailWave.yz * crossDetailBandLimit * 0.29")==std::string::npos||shader.find("const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);")==std::string::npos||shader.find("heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));")==std::string::npos||shader.find("WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,")==std::string::npos||shader.find("waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterDirectionalSpecular,1.0)") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader river-spectrum/warp/roughness/normal-scale/direct-specular/band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<bandLimitCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
+  if(analyticCount!=5||bandLimitCount!=5||scatterCount!=2||fallbackCount!=2||count("WaterDomainWarpPosition3D(")!=3||count("WaterDomainWarpGradient3D(")!=3||count("WaterReflectionRoughness3D(")!=2||shader.find("const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);")==std::string::npos||shader.find("waterBroadWaveStrength * 0.85")==std::string::npos||shader.find("const float2 waterInterpolatedDeltaX = ddx(input.worldPosition.xz);")==std::string::npos||shader.find("waterInterpolatedFootprint);")==std::string::npos||shader.find("waterBroadWaveScale * 1.31 * 1.91")==std::string::npos||shader.find("const precise float lowFrequencyDiversity = min(broadBandLimit, crossBandLimit);")==std::string::npos||shader.find("broadWave.yz * lowFrequencyDiversity * 0.27")==std::string::npos||shader.find("crossWave.yz * lowFrequencyDiversity * 0.27")==std::string::npos||shader.find("detailWave.yz * detailBandLimit * 0.22")==std::string::npos||shader.find("crossDetailWave.yz * crossDetailBandLimit * 0.24")==std::string::npos||shader.find("const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);")==std::string::npos||shader.find("heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));")==std::string::npos||shader.find("WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,")==std::string::npos||shader.find("waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterDirectionalSpecular,1.0)") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader river-spectrum/warp/roughness/normal-scale/direct-specular/band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<bandLimitCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
  // single-composite 水體必須逐分量固定乘加順序，禁止回退成向量 lerp/mad 或輸出量化。
  if(shader.find("precise float3 WaterOrderedScaleAdd3D(")==std::string::npos||
     shader.find("result.g = firstTerm.g + secondTerm.g;")==std::string::npos||
@@ -84,11 +84,13 @@ int main(){
  const auto cloudLatticeHash=[](int32_t x,int32_t y){uint32_t value=static_cast<uint32_t>(x)*0x8da6b343u^static_cast<uint32_t>(y)*0xd8163841u^0xcb1ab31fu;value^=value>>16u;value*=0x7feb352du;value^=value>>15u;value*=0x846ca68bu;value^=value>>16u;return value>>8u;};
  const std::array<std::array<int32_t,3>,8> cloudGolden{{{{0,0,7178068}},{{1,0,4053091}},{{0,1,2916818}},{{-1,0,13612103}},{{0,-1,4346319}},{{-17,43,11618627}},{{12345,-6789,1674007}},{{1048576,-1048576,4925535}}}};
  for(const auto& sample:cloudGolden){if(cloudLatticeHash(sample[0],sample[1])!=static_cast<uint32_t>(sample[2])){std::cerr<<"Deterministic cloud/water lattice hash golden failed\n";return 14;}}
- // 四個尺度錨點與每組內部方向都必須留在主流向半球。舊版的
- // (-.89,.46)、(.8,-.6) 及 direction*-0.71 會令此 hostile gate 失敗。
- const std::array<std::array<float,2>,3> scaleAnchors{{{{.923879533f,.382683432f}},{{.965925826f,-.258819045f}},{{.866025404f,.5f}}}};
+ // 四個尺度錨點仍留在主流向半球，但必須覆蓋足夠寬的入射角；把全部
+ // 鎖在主流向附近會在實際河面疊成規則平行亮帶。舊版的完全反流
+ // (-.89,.46) 仍被拒絕，正式組合的方向集中度另由 WaterAnalyticCpu 封住。
+ const std::array<std::array<float,2>,3> scaleAnchors{{{{.573576436f,.819152044f}},{{.707106781f,-.707106781f}},{{.087155743f,.996194698f}}}};
  const std::array<std::array<float,2>,3> intraDirections{{{{.978147601f,.207911691f}},{{.945518576f,-.325568154f}},{{.874619707f,.484809620f}}}};
- for(const auto& anchor:scaleAnchors)if(anchor[0]<.85f){std::cerr<<"Water cross-scale flow coherence failed\n";return 15;}
+ for(const auto& anchor:scaleAnchors)if(anchor[0]<=0.f){std::cerr<<"Water cross-scale flow hemisphere failed\n";return 15;}
+ if(scaleAnchors[0][1]<.8f||scaleAnchors[1][1]>-.7f||scaleAnchors[2][1]<.99f){std::cerr<<"Water cross-scale angular spread failed\n";return 15;}
  for(const auto& direction:intraDirections)if(direction[0]<.85f){std::cerr<<"Water intra-wave reverse-flow rejection failed\n";return 16;}
  if(std::abs(.46f+.26f+.18f+.10f-1.f)>1e-6f||
     shader.find("direction * 0.978147601 + perpendicular * 0.207911691")==std::string::npos||
@@ -96,9 +98,9 @@ int main(){
     shader.find("direction * 0.874619707 + perpendicular * 0.484809620")==std::string::npos||
     shader.find("const precise float2 riverTangent = float2(0.28, 0.96);")==std::string::npos||
     shader.find("const precise float2 riverAcross = float2(-0.96, 0.28);")==std::string::npos||
-    shader.find("riverTangent * 0.923879533 + riverAcross * 0.382683432, 2.03")==std::string::npos||
-    shader.find("riverTangent * 0.965925826 - riverAcross * 0.258819045, 4.79")==std::string::npos||
-    shader.find("riverTangent * 0.866025404 + riverAcross * 0.5, 7.31")==std::string::npos||
+    shader.find("riverTangent * 0.573576436 + riverAcross * 0.819152044, 2.03")==std::string::npos||
+    shader.find("riverTangent * 0.707106781 - riverAcross * 0.707106781, 4.79")==std::string::npos||
+    shader.find("riverTangent * 0.087155743 + riverAcross * 0.996194698, 7.31")==std::string::npos||
     shader.find("direction * -0.71 + perpendicular * 0.70")!=std::string::npos){std::cerr<<"Water production flow-direction binding failed\n";return 17;}
  std::cout<<"waterOffset="<<offset.x<<','<<offset.y<<" maximumUvOffset="<<draw.WaterOptics().maximumUvOffset<<'\n';
 }

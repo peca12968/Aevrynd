@@ -2369,7 +2369,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     waterWorldLengthSquaredX = waterWorldLengthSquaredX + waterWorldDeltaX.y * waterWorldDeltaX.y;
     precise float waterWorldLengthSquaredY = waterWorldDeltaY.x * waterWorldDeltaY.x;
     waterWorldLengthSquaredY = waterWorldLengthSquaredY + waterWorldDeltaY.y * waterWorldDeltaY.y;
-    const precise float waterWorldFootprint = max(sqrt(waterWorldLengthSquaredX), sqrt(waterWorldLengthSquaredY));
+    // 固定 depth 重建的鄰點並不一定落在同一個透視水面上，斜視時會低估
+    // 真正的世界空間像素跨度。插值 world position 的 quad derivative 才是
+    // 當前三角形表面上的實際 footprint；取兩者較大值只會更保守地濾除
+    // 不可解析波，不會重新引入高頻。
+    const float2 waterInterpolatedDeltaX = ddx(input.worldPosition.xz);
+    const float2 waterInterpolatedDeltaY = ddy(input.worldPosition.xz);
+    const float waterInterpolatedFootprint = max(length(waterInterpolatedDeltaX), length(waterInterpolatedDeltaY));
+    const precise float waterWorldFootprint = max(max(sqrt(waterWorldLengthSquaredX), sqrt(waterWorldLengthSquaredY)),
+                                                   waterInterpolatedFootprint);
     float4 evaluatedOutput=float4(0.0,0.0,0.0,0.0);
     if (skyMask > 0.5)
     {
@@ -2518,26 +2526,36 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const precise float2 riverTangent = float2(0.28, 0.96);
             const precise float2 riverAcross = float2(-0.96, 0.28);
             const precise float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, riverTangent, 0.31);
-            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.47, waterBroadWaveSpeed * 0.73, riverTangent * 0.923879533 + riverAcross * 0.382683432, 2.03);
+            // 次要頻譜不可只在主流方向附近擺動，否則多組解析波仍會疊成
+            // 橫跨河寬的規則平行亮帶。保留順流長波作為主要輪廓，其餘三組
+            // 分散到 +55、-45 與 +85 度，形成有方向但不呈瓦楞狀的河面。
+            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.85, waterBroadWaveSpeed * 0.73, riverTangent * 0.573576436 + riverAcross * 0.819152044, 2.03);
             const precise float detailWarpDistance = WaterDomainWarpDistance3D(waterBroadWaveScale, waterDetailWaveScale);
             const precise float crossDetailWarpDistance = WaterDomainWarpDistance3D(waterBroadWaveScale * 1.31, waterDetailWaveScale * 0.71);
             const precise float2 detailPosition = WaterDomainWarpPosition3D(input.worldPosition.xz, riverAcross, broadWave, waterBroadWaveStrength, detailWarpDistance);
-            const precise float2 crossDetailPosition = WaterDomainWarpPosition3D(input.worldPosition.xz, riverAcross, crossWave, waterBroadWaveStrength * 0.47, crossDetailWarpDistance);
-            precise float3 detailWave = WaterAnalyticWave3D(detailPosition, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, riverTangent * 0.965925826 - riverAcross * 0.258819045, 4.79);
-            precise float3 crossDetailWave = WaterAnalyticWave3D(crossDetailPosition, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, riverTangent * 0.866025404 + riverAcross * 0.5, 7.31);
+            const precise float2 crossDetailPosition = WaterDomainWarpPosition3D(input.worldPosition.xz, riverAcross, crossWave, waterBroadWaveStrength * 0.85, crossDetailWarpDistance);
+            precise float3 detailWave = WaterAnalyticWave3D(detailPosition, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, riverTangent * 0.707106781 - riverAcross * 0.707106781, 4.79);
+            precise float3 crossDetailWave = WaterAnalyticWave3D(crossDetailPosition, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, riverTangent * 0.087155743 + riverAcross * 0.996194698, 7.31);
             detailWave.yz = WaterDomainWarpGradient3D(detailWave.yz, riverAcross, broadWave, waterBroadWaveStrength, detailWarpDistance);
-            crossDetailWave.yz = WaterDomainWarpGradient3D(crossDetailWave.yz, riverAcross, crossWave, waterBroadWaveStrength * 0.47, crossDetailWarpDistance);
-            const precise float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale);
-            const precise float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31);
-            const precise float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale);
-            const precise float crossDetailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 0.71);
+            crossDetailWave.yz = WaterDomainWarpGradient3D(crossDetailWave.yz, riverAcross, crossWave, waterBroadWaveStrength * 0.85, crossDetailWarpDistance);
+            // WaterAnalyticWave3D 的最高分量是 base scale 的 1.91 倍；若只用
+            // base scale 估算 footprint，內部高頻已低於 Nyquist 時仍會殘留。
+            const precise float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.91);
+            const precise float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31 * 1.91);
+            const precise float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 1.91);
+            const precise float crossDetailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 0.71 * 1.91);
+            // 遠距不得只剩單一 broad 方向。兩組低頻任一不可解析時共同退場，
+            // 避免最後一條相干正弦被 Fresnel／GGX 放大成橫跨河面的亮帶。
+            const precise float lowFrequencyDiversity = min(broadBandLimit, crossBandLimit);
             // 四組各含四個非共線分量的解析高度場分散主要方向。每組偏導
             // 與高度共用相位，遠景亦各自依像素世界足跡衰減；不採跨程序
             // 可能落在不同半精度邊界的格點雜訊梯度。
-            precise float2 heightGradient = broadWave.yz * broadBandLimit * 0.30;
-            heightGradient = heightGradient + crossWave.yz * crossBandLimit * 0.17;
-            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.24;
-            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.29;
+            // 遠景會先濾除兩組細波，因此兩組寬波必須保留相近能量；否則
+            // 只剩單一順流正弦主宰高光，即使近景的總方向統計已分散仍會出現條帶。
+            precise float2 heightGradient = broadWave.yz * lowFrequencyDiversity * 0.27;
+            heightGradient = heightGradient + crossWave.yz * lowFrequencyDiversity * 0.27;
+            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.22;
+            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.24;
             // Material3D already carries the authored normal amplitude. The water path
             // previously ignored it, so distant river pixels used only half of the
             // intended analytic slope and collapsed into a flat translucent sheet.
@@ -2548,7 +2566,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const precise float unboundedSlope = length(heightGradient);
             heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));
             waterResolvedSlope = min(unboundedSlope, 0.48);
-            waterUnresolvedDetail = 1.0 - max(detailBandLimit, crossDetailBandLimit);
+            waterUnresolvedDetail = 1.0 - (lowFrequencyDiversity * 0.54
+                                           + detailBandLimit * 0.22
+                                           + crossDetailBandLimit * 0.24);
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
             waterDiagnosticHeightGradient = heightGradient;
 #endif
