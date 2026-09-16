@@ -11,12 +11,11 @@
 #include <cstdint>
 #include <iostream>
 #include <utility>
+#include <vector>
 
 using namespace Aevrynd;
 using namespace GameplayLab;
 
-static_assert(!noexcept(ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(
-    std::declval<Mesh3D &>())));
 static_assert(!noexcept(ApplyShowcaseTerrainBiomeUv3D(
     std::declval<Mesh3D &>(), std::size_t{},
     std::span<const ShowcaseSceneDescriptor3D>{})));
@@ -542,9 +541,9 @@ int main() {
   const auto canopyFar =
       SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, ecologyTrees);
   const auto cottagePath =
-      SampleShowcaseTerrainEcologyTint3D({-14, 0, 14}, ecologyTrees);
+      SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
   const auto cottagePathRepeated =
-      SampleShowcaseTerrainEcologyTint3D({-14, 0, 14}, ecologyTrees);
+      SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
   const auto cottagePathFourMetreGrid =
       SampleShowcaseTerrainEcologyTint3D({-16, 0, 12}, ecologyTrees);
   const auto wetBank =
@@ -557,6 +556,18 @@ int main() {
       SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, {});
   const auto invalidEcology = SampleShowcaseTerrainEcologyTint3D(
       {(std::numeric_limits<float>::quiet_NaN)(), 0, 0}, ecologyTrees);
+  const auto pathDominantHandoff =
+      ResolveShowcaseTerrainPathWetHandoff3D(.8f, .3f);
+  const auto wetDominantHandoff =
+      ResolveShowcaseTerrainPathWetHandoff3D(.2f, .7f);
+  const auto balancedHandoff =
+      ResolveShowcaseTerrainPathWetHandoff3D(.75f, .75f);
+  const auto nearPathHandoff =
+      ResolveShowcaseTerrainPathWetHandoff3D(.51f, .5f);
+  const auto nearWetHandoff =
+      ResolveShowcaseTerrainPathWetHandoff3D(.5f, .51f);
+  const auto invalidHandoff = ResolveShowcaseTerrainPathWetHandoff3D(
+      (std::numeric_limits<float>::quiet_NaN)(), .7f);
   const auto validAuthoredBlend = [](const auto &sample) {
     const std::array weights{sample.cottagePath, sample.leafLitter,
                              sample.riverWetSoil};
@@ -601,7 +612,21 @@ int main() {
       invalidEcology.canopy != 0.f || invalidEcology.riverMoisture != 0.f ||
       invalidEcology.cottagePath != 0.f || invalidEcology.leafLitter != 0.f ||
       invalidEcology.riverWetSoil != 0.f ||
-      invalidEcology.biome != ShowcaseTerrainBiome3D::Neutral) {
+      invalidEcology.biome != ShowcaseTerrainBiome3D::Neutral ||
+      std::abs(pathDominantHandoff.cottagePath - .5f) > 1e-6f ||
+      pathDominantHandoff.riverWetSoil != 0.f ||
+      wetDominantHandoff.cottagePath != 0.f ||
+      std::abs(wetDominantHandoff.riverWetSoil - .5f) > 1e-6f ||
+      balancedHandoff.cottagePath != 0.f ||
+      balancedHandoff.riverWetSoil != 0.f ||
+      nearPathHandoff.cottagePath <= 0.f ||
+      nearPathHandoff.cottagePath > .011f ||
+      nearPathHandoff.riverWetSoil != 0.f ||
+      nearWetHandoff.cottagePath != 0.f ||
+      nearWetHandoff.riverWetSoil <= 0.f ||
+      nearWetHandoff.riverWetSoil > .011f ||
+      invalidHandoff.cottagePath != 0.f ||
+      invalidHandoff.riverWetSoil != 0.f) {
     std::cerr << "terrain ecology divergence canopy=" << canopyCenter.canopy
               << '/' << canopyCenter.leafLitter << '/'
               << unsigned(canopyCenter.biome) << " path="
@@ -660,6 +685,41 @@ int main() {
              <<" far="<<wetFar.riverWetSoil
              <<" maxStep="<<maximumWetStep<<'\n';
     return 93;
+  }
+  // 正式 hero terrain 在此區為 1m 網格。掃描相鄰頂點而非只測單點，
+  // 鎖住 path/wet 的連續 signed-U 交接；舊 winner-takes-all 最大跳幅
+  // 會超過 1.5，並觸發共享頂點成片清零。
+  float maximumAuthoredSignedStep{};
+  std::size_t crossSignedEdges{};
+  std::array<float, 81> previousRow{};
+  for (int zIndex = 0; zIndex <= 296; ++zIndex) {
+    const float z = -148.f + float(zIndex);
+    float previousInRow{};
+    for (int xIndex = 0; xIndex <= 80; ++xIndex) {
+      const float x = -40.f + float(xIndex);
+      const auto encoded = EncodeShowcaseTerrainBiomeUv3D(
+          SampleShowcaseTerrainEcologyTint3D({x, 0, z}, ecologyTrees));
+      const auto inspectEdge = [&](float neighbour) {
+        maximumAuthoredSignedStep =
+            (std::max)(maximumAuthoredSignedStep,
+                       std::abs(encoded.x - neighbour));
+        crossSignedEdges +=
+            (encoded.x < 0.f && neighbour > 0.f) ||
+            (encoded.x > 0.f && neighbour < 0.f);
+      };
+      if (xIndex)
+        inspectEdge(previousInRow);
+      if (zIndex)
+        inspectEdge(previousRow[std::size_t(xIndex)]);
+      previousInRow = encoded.x;
+      previousRow[std::size_t(xIndex)] = encoded.x;
+    }
+  }
+  if (maximumAuthoredSignedStep > .90f || !crossSignedEdges) {
+    std::cerr << "terrain authored handoff divergence maxStep="
+              << maximumAuthoredSignedStep
+              << " crossSignedEdges=" << crossSignedEdges << '\n';
+    return 95;
   }
   const auto nearWeight = [](float left, float right) {
     return std::abs(left - right) <= 1e-6f;
@@ -906,6 +966,11 @@ int main() {
         return 80;
       continue;
     }
+    const auto expected = EncodeShowcaseTerrainBiomeUv3D(
+        SampleShowcaseTerrainEcologyTint3D(
+            {before.x, before.y, before.z}, ecologyTrees));
+    if (after.u != expected.x || after.v != expected.y)
+      return 96;
     foundPath |= decoded.cottagePath > .2f;
     foundLeaf |= decoded.leafLitter > .99f;
     foundWet |= decoded.riverWetSoil > .6f;
@@ -952,69 +1017,25 @@ int main() {
       {0, 0, 0, 0, 0, .8f, 0}, {1, 0, 0, 0, 0, -.7f, 0},
       {0, 0, 1, 0, 0, 0, 0}};
   crossSignTriangle.indices = {0, 1, 2};
-  ShowcaseTerrainBiomeUvValidation3D crossSignFailure{};
-  if (ValidateShowcaseTerrainBiomeUv3D(crossSignTriangle,
-                                        crossSignTriangle.vertices.size(),
-                                        &crossSignFailure) ||
-      crossSignFailure.failure !=
-          ShowcaseTerrainBiomeUvFailure3D::CrossSignedTriangle ||
-      crossSignFailure.elementIndex != 0 ||
-      crossSignFailure.minimumU != -.7f ||
-      crossSignFailure.maximumU != .8f)
+  if (!ValidateShowcaseTerrainBiomeUv3D(
+          crossSignTriangle, crossSignTriangle.vertices.size()))
     return 82;
-  auto resolvedCrossSignTriangle = crossSignTriangle;
-  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(resolvedCrossSignTriangle);
-  if (!ValidateShowcaseTerrainBiomeUv3D(
-          resolvedCrossSignTriangle,
-          resolvedCrossSignTriangle.vertices.size()) ||
-      resolvedCrossSignTriangle.vertices[0].u != .8f ||
-      resolvedCrossSignTriangle.vertices[1].u != 0.f)
-    return 83;
-  Mesh3D sharedConflictForward{};
-  sharedConflictForward.vertices = {
-      {0, 0, 0, 0, 0, .8f, .1f},
-      {1, 0, 0, 0, 0, -.7f, .2f},
-      {2, 0, 0, 0, 0, .6f, .3f},
-      {1, 0, 1, 0, 0, 0.f, .4f},
-      {1, 0, 2, 0, 0, -.5f, .5f},
-      {2, 0, 2, 0, 0, -.2f, .6f}};
-  sharedConflictForward.indices = {0, 1, 3, 1, 2, 3, 1, 4, 5};
-  auto sharedConflictReverse = sharedConflictForward;
-  sharedConflictReverse.indices = {1, 4, 5, 1, 2, 3, 0, 1, 3};
-  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(sharedConflictForward);
-  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(sharedConflictReverse);
-  const auto exactVertices = [](const Mesh3D &left, const Mesh3D &right) {
-    if (left.vertices.size() != right.vertices.size())
-      return false;
-    for (std::size_t index = 0; index < left.vertices.size(); ++index) {
-      const auto &a = left.vertices[index];
-      const auto &b = right.vertices[index];
-      if (a.x != b.x || a.y != b.y || a.z != b.z ||
-          a.normal != b.normal || a.color != b.color || a.u != b.u ||
-          a.v != b.v)
-        return false;
-    }
-    return true;
-  };
-  if (!ValidateShowcaseTerrainBiomeUv3D(
-          sharedConflictForward, sharedConflictForward.vertices.size()) ||
-      !ValidateShowcaseTerrainBiomeUv3D(
-          sharedConflictReverse, sharedConflictReverse.vertices.size()) ||
-      !exactVertices(sharedConflictForward, sharedConflictReverse) ||
-      sharedConflictForward.vertices[0].u != .8f ||
-      sharedConflictForward.vertices[1].u != 0.f ||
-      sharedConflictForward.vertices[2].u != 0.f ||
-      sharedConflictForward.vertices[4].u != -.5f ||
-      sharedConflictForward.vertices[5].u != -.2f)
+  for (unsigned step = 0; step <= 100; ++step) {
+    const float t = float(step) / 100.f;
+    const Vec2 interpolated{.8f + (-.7f - .8f) * t, 0.f};
+    const auto decoded = DecodeShowcaseTerrainBiomeUv3D(interpolated);
+    const float total = decoded.cottagePath + decoded.leafLitter +
+                        decoded.riverWetSoil;
+    if (!std::isfinite(total) || total > 1.f + 1e-6f ||
+        (decoded.cottagePath > 0.f && decoded.riverWetSoil > 0.f))
+      return 83;
+  }
+  const float zeroCrossingT = .8f / 1.5f;
+  const auto zeroCrossing = DecodeShowcaseTerrainBiomeUv3D(
+      {.8f + (-.7f - .8f) * zeroCrossingT, 0.f});
+  if (std::abs(zeroCrossing.cottagePath) > 1e-6f ||
+      std::abs(zeroCrossing.riverWetSoil) > 1e-6f)
     return 84;
-  auto tieConflict = crossSignTriangle;
-  tieConflict.vertices[0].u = .5f;
-  tieConflict.vertices[1].u = -.5f;
-  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(tieConflict);
-  if (!ValidateShowcaseTerrainBiomeUv3D(tieConflict,
-                                         tieConflict.vertices.size()) ||
-      tieConflict.vertices[0].u != .5f || tieConflict.vertices[1].u != 0.f)
-    return 85;
   // 正式河岸細分後會多出內部頂點；只要原世界邊界完整，外環仍必須建立。
   auto refinedApron=originalApron;
   refinedApron.vertices.push_back({.5f,.25f,.5f,PackNormalSnorm8({0,1,0}),0xff334455u,.1f,.2f});

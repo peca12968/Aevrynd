@@ -305,6 +305,22 @@ NormalizeShowcaseTerrainBiomeWeights3D(
   return value;
 }
 
+// Path 與 wet 共用 signed U，若以 winner-takes-all 在兩個候選值的交界
+// 直接換號，線性插值會由強正值跳到強負值，後續三角形修復還會把共享頂點
+// 成片清零。改以候選值的有號殘差交接：兩側都連續收斂到 neutral，再由
+// 另一側增強。這不是畫面空間平滑，也不改變任一候選的世界座標邊界。
+[[nodiscard]] inline ShowcaseTerrainBiomeWeights3D
+ResolveShowcaseTerrainPathWetHandoff3D(float cottagePathCandidate,
+                                       float riverWetSoilCandidate) noexcept {
+  if (!std::isfinite(cottagePathCandidate) ||
+      !std::isfinite(riverWetSoilCandidate))
+    return {};
+  cottagePathCandidate = Aevrynd::Clamp(cottagePathCandidate, 0.f, 1.f);
+  riverWetSoilCandidate = Aevrynd::Clamp(riverWetSoilCandidate, 0.f, 1.f);
+  return {(std::max)(0.f, cottagePathCandidate - riverWetSoilCandidate), 0.f,
+          (std::max)(0.f, riverWetSoilCandidate - cottagePathCandidate)};
+}
+
 [[nodiscard]] inline Aevrynd::Vec2 EncodeShowcaseTerrainBiomeUv3D(
     ShowcaseTerrainBiomeWeights3D value) noexcept {
   if (!std::isfinite(value.cottagePath) ||
@@ -333,45 +349,6 @@ DecodeShowcaseTerrainBiomeUv3D(Aevrynd::Vec2 encoded) noexcept {
   return NormalizeShowcaseTerrainBiomeWeights3D(
       {(std::max)(0.f, encoded.x), (std::max)(0.f, encoded.y),
        (std::max)(0.f, -encoded.x)});
-}
-
-// signed U 的 path/wet 不能在同一三角形內跨號插值。兩者邊界剛好落在
-// refined terrain cell 時，保留該三角形較強的 authored 訊號，較弱一側
-// 退回明確 neutral。第一階段只讀 immutable 原始 U 並建立 zero mask，第二
-// 階段才一次清零；因此共享頂點的 collateral neutralization 不受 triangle
-// 順序影響。操作不改 ecology 門檻，也不把訊號擴張到原本沒有的頂點。
-inline void ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(
-    Aevrynd::Mesh3D &mesh) {
-  if (mesh.indices.size() % 3)
-    return;
-  constexpr float activeEpsilon = 1e-6f;
-  std::vector<std::uint8_t> zeroMask(mesh.vertices.size());
-  for (std::size_t offset = 0; offset < mesh.indices.size(); offset += 3) {
-    float minimumU = 1.f, maximumU = -1.f;
-    bool valid = true;
-    for (unsigned corner = 0; corner < 3; ++corner) {
-      const std::size_t index = mesh.indices[offset + corner];
-      if (index >= mesh.vertices.size()) {
-        valid = false;
-        break;
-      }
-      minimumU = (std::min)(minimumU, mesh.vertices[index].u);
-      maximumU = (std::max)(maximumU, mesh.vertices[index].u);
-    }
-    if (!valid || minimumU >= -activeEpsilon || maximumU <= activeEpsilon)
-      continue;
-    const bool preservePath = maximumU >= -minimumU;
-    for (unsigned corner = 0; corner < 3; ++corner) {
-      const std::size_t index = mesh.indices[offset + corner];
-      const float u = mesh.vertices[index].u;
-      if ((preservePath && u < -activeEpsilon) ||
-          (!preservePath && u > activeEpsilon))
-        zeroMask[index] = 1;
-    }
-  }
-  for (std::size_t index = 0; index < mesh.vertices.size(); ++index)
-    if (zeroMask[index])
-      mesh.vertices[index].u = 0.f;
 }
 
 struct ShowcaseTerrainDisturbance3D {
@@ -460,18 +437,21 @@ SampleShowcaseTerrainEcologyTint3D(
       1.f - smooth((std::max)(0.f, irregularBankClearance) /
                    wetBankShoulderMetres);
 
+  const auto pathWetHandoff = ResolveShowcaseTerrainPathWetHandoff3D(
+      pathCandidate, wetSoilCandidate);
   Aevrynd::Color authoredTint{1, 1, 1, 1};
-  // signed-U 無法同時表達 path/wet；path 僅在嚴格強於 wet 時勝出。
-  // 其他濕岸點保留完整 wet，leaf 只填剩餘容量，避免 canopy 造成斷帶。
-  if (pathCandidate > wetSoilCandidate && pathCandidate > 0.f) {
+  // signed-U 無法同時表達 path/wet；以兩候選的殘差連續交接，避免在
+  // 相鄰 terrain 頂點由完整 path 突然翻成完整 wet。
+  if (pathWetHandoff.cottagePath > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CottagePath;
-    result.cottagePath = pathCandidate;
+    result.cottagePath = pathWetHandoff.cottagePath;
     authoredTint = {.88f, .75f, .56f, 1.f};
-  } else if (wetSoilCandidate > 0.f) {
+  } else if (pathWetHandoff.riverWetSoil > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::RiverWetSoil;
-    result.riverWetSoil = result.riverMoisture = wetSoilCandidate;
+    result.riverWetSoil = result.riverMoisture =
+        pathWetHandoff.riverWetSoil;
     result.leafLitter = result.canopy =
-        (std::min)(canopyCandidate, 1.f - wetSoilCandidate);
+        (std::min)(canopyCandidate, 1.f - result.riverWetSoil);
     result.tint = {1.f + (.62f - 1.f) * result.riverWetSoil +
                              (.64f - 1.f) * result.leafLitter,
                    1.f + (.70f - 1.f) * result.riverWetSoil +
@@ -509,7 +489,6 @@ inline void ApplyShowcaseTerrainBiomeUv3D(
     vertex.u = encoded.x;
     vertex.v = encoded.y;
   }
-  ResolveShowcaseTerrainBiomeUvTriangleConflicts3D(mesh);
 }
 
 enum class ShowcaseTerrainBiomeUvFailure3D : std::uint8_t {
@@ -518,8 +497,7 @@ enum class ShowcaseTerrainBiomeUvFailure3D : std::uint8_t {
   InvalidVertexEncoding,
   InvalidWeightSum,
   NonNeutralApron,
-  IndexOutOfRange,
-  CrossSignedTriangle
+  IndexOutOfRange
 };
 
 struct ShowcaseTerrainBiomeUvValidation3D {
@@ -562,22 +540,15 @@ struct ShowcaseTerrainBiomeUvValidation3D {
       return reject(ShowcaseTerrainBiomeUvFailure3D::NonNeutralApron, index,
                     vertex.u, vertex.v);
   }
-  // signed U 的正負兩側不可落在同一三角形，否則 path/wet 會在插值中央
-  // 相消為假 neutral seam。兩區本來互斥且空間分離；此 gate 將其鎖定。
-  constexpr float activeEpsilon = 1e-6f;
+  // signed U 可以在三角形內由 path 連續穿零轉為 wet；Decode 使用正負半軸，
+  // 因此光柵插值的每一點仍然互斥。這裡只驗證索引，不得再破壞已採樣頂點。
   for (std::size_t offset = 0; offset < mesh.indices.size(); offset += 3) {
-    float minimumU = 1.f, maximumU = -1.f;
     for (unsigned corner = 0; corner < 3; ++corner) {
       const std::size_t index = mesh.indices[offset + corner];
       if (index >= mesh.vertices.size())
         return reject(ShowcaseTerrainBiomeUvFailure3D::IndexOutOfRange,
                       offset / 3, float(index), float(mesh.vertices.size()));
-      minimumU = (std::min)(minimumU, mesh.vertices[index].u);
-      maximumU = (std::max)(maximumU, mesh.vertices[index].u);
     }
-    if (minimumU < -activeEpsilon && maximumU > activeEpsilon)
-      return reject(ShowcaseTerrainBiomeUvFailure3D::CrossSignedTriangle,
-                    offset / 3, minimumU, maximumU);
   }
   return true;
 }

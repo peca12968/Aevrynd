@@ -27,11 +27,12 @@ bool R16TerrainBindingContract(std::string_view world,std::string_view gameplay,
                                std::string_view binding){
   return world.find("input.textureData.w > 0.5 && input.normalScale == -15.5")!=std::string_view::npos&&
       world.find("0.24, 1.0")!=std::string_view::npos&&
-      Count(world,"showcaseTerrainProductionBinding ? float3(1.72, 1.58, 1.68) : 1.0.xxx;")==1&&
+      Count(world,"lerp(1.0.xxx, float3(1.72, 1.58, 1.68), showcaseTerrainAuthoredBiomeCalibration);")==1&&
       Count(world,"grassColor * terrainGrassReflectanceNormalization")==1&&
-      Count(world,"grassSurface.g = clamp(grassSurface.g * 0.854514, 0.55, 0.96);")==1&&
+      Count(world,"const float calibratedGrassRoughness = clamp(grassSurface.g * 0.854514, 0.55, 0.96);")==1&&
+      Count(world,"grassSurface.g = lerp(grassSurface.g, calibratedGrassRoughness,")==1&&
       Count(world,"soilSurface.g = clamp")==0&&Count(world,"rockSurface.g = clamp")==0&&
-      Count(world,"showcaseTerrainProductionBinding ? float3(0.94, 0.96, 1.04) : 1.0.xxx;")==1&&
+      Count(world,"lerp(1.0.xxx, float3(0.94, 0.96, 1.04), showcaseTerrainAuthoredBiomeCalibration);")==1&&
       Count(world,"terrainAlbedo * terrainProductionSpectralTrim * microVariation")==1&&
       Count(world,"distanceMacroVariation, 0.82.xxx);")==1&&
       Count(world,"const float3 riverWetSoilAlbedo = float3(0.62, 0.72, 0.74);")==1&&
@@ -51,6 +52,33 @@ bool R16FoliageReflectanceContract(std::string_view world){
       Count(world,"const float chromaNeutralization=0.24*smoothstep(0.08,0.34,chroma);")==1&&
       Count(world,"const float reflectanceScale=min(1.0,0.58/max(balancedPeak,0.000001));")==1&&
       Count(world,"baseColor=FoliageNaturalDiffuseAlbedo(baseColor);")==1;
+}
+bool TerrainOriginalWeightSnapshotContract(std::string_view world){
+  const auto rockSnapshot=world.find("const float originalRockWeight = rockWeight;");
+  const auto soilSnapshot=world.find("const float originalSoilWeight =");
+  const auto authoredRockAssignment=world.find("rockWeight = materialWeights.z;");
+  return rockSnapshot!=std::string_view::npos&&soilSnapshot!=std::string_view::npos&&
+      authoredRockAssignment!=std::string_view::npos&&rockSnapshot<soilSnapshot&&
+      soilSnapshot<authoredRockAssignment&&
+      Count(world,"const float originalRockWeight = rockWeight;")==1&&
+      Count(world,"calibratedGrassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * originalRockWeight")==1&&
+      Count(world,"originalGrassWeight * float3(0.72, 0.91, 0.63) + originalSoilWeight * float3(0.82, 0.67, 0.48) + originalRockWeight * float3(0.76, 0.78, 0.80)")==1&&
+      // 中文：當前 authored 權重仍用於當前材質；只有亮度基準必須保留修改前三元組。
+      Count(world,"calibratedGrassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight")==1;
+}
+bool TerrainAuthoredLumaPreservationContract(std::string_view world){
+  return Count(world,"float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)")==1&&
+      Count(world,"authoredWeights /= authoredWeightTotal;")==1&&
+      Count(world,"dot(authoredWeights, float3(1.16, 1.05, 0.62))")==1&&
+      Count(world,"showcaseTerrainAuthoredBiomeCalibration = saturate(shapedAuthoredBiomeWeight);")==1&&
+      Count(world,"showcaseTerrainAuthoredBiomeCalibration = sqrt")==0&&
+      Count(world,"TerrainAuthoredBiomeLumaScale(shapedAuthoredBiomeWeights);")==1&&
+      Count(world,"partitionLuma * showcaseTerrainAuthoredBiomeLumaScale")==2&&
+      Count(world,"terrainAlbedo *= referenceLuma / partitionLuma;")==1&&
+      Count(world,"terrainTint *= referenceLuma / partitionLuma;")==1&&
+      Count(world,"terrainAlbedo *= originalLuma / partitionLuma;")==0&&
+      Count(world,"terrainTint *= originalLuma / partitionLuma;")==0&&
+      Count(world,"const float referenceLuma = lerp(originalLuma, partitionLuma,")==0;
 }
 struct SurfacePixels {double red{},green{},blue{},luminance{},luminanceDeviation{},brightFraction{};bool valid{};};
 SurfacePixels MeasureTerrainPixels(const std::filesystem::path& path){ComPtr<IWICImagingFactory> factory;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;ComPtr<IWICFormatConverter> converter;UINT width{},height{};if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))||FAILED(factory->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder))||FAILED(decoder->GetFrame(0,&frame))||FAILED(frame->GetSize(&width,&height))||width!=640||height!=360||FAILED(factory->CreateFormatConverter(&converter))||FAILED(converter->Initialize(frame.Get(),GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom)))return{};std::vector<std::uint8_t> pixels(std::size_t(width)*height*4);if(FAILED(converter->CopyPixels(nullptr,width*4,UINT(pixels.size()),pixels.data())))return{};SurfacePixels result{};double luminanceSquare{};std::size_t count{},bright{};for(unsigned y=170;y<300;++y)for(unsigned x=220;x<420;++x){const std::size_t offset=(std::size_t(y)*width+x)*4;const double red=pixels[offset],green=pixels[offset+1],blue=pixels[offset+2],luminance=.2126*red+.7152*green+.0722*blue;result.red+=red;result.green+=green;result.blue+=blue;result.luminance+=luminance;luminanceSquare+=luminance*luminance;bright+=red>230&&green>230&&blue>230;++count;}result.red/=count;result.green/=count;result.blue/=count;result.luminance/=count;result.luminanceDeviation=std::sqrt((std::max)(0.0,luminanceSquare/count-result.luminance*result.luminance));result.brightFraction=double(bright)/count;result.valid=true;return result;}
@@ -87,19 +115,84 @@ int main(){
     std::string hostileFoliage=worldShader;
     if(const auto peak=hostileFoliage.find("0.58/max(balancedPeak,0.000001)");peak!=std::string_view::npos)
       hostileFoliage.replace(peak,std::string_view("0.58/max(balancedPeak,0.000001)").size(),"1.0/max(balancedPeak,0.000001)");
+    std::string hostileOriginalAlbedo=worldShader;
+    if(const auto rock=hostileOriginalAlbedo.find("rockColor * originalRockWeight");rock!=std::string::npos)
+      hostileOriginalAlbedo.replace(rock,std::string_view("rockColor * originalRockWeight").size(),"rockColor * rockWeight");
+    std::string hostileOriginalTint=worldShader;
+    if(const auto rock=hostileOriginalTint.find("originalRockWeight * float3(0.76, 0.78, 0.80)");rock!=std::string::npos)
+      hostileOriginalTint.replace(rock,std::string_view("originalRockWeight * float3(0.76, 0.78, 0.80)").size(),"rockWeight * float3(0.76, 0.78, 0.80)");
+    std::string hostileMovedSnapshot=worldShader;
+    const std::string rockSnapshotDeclaration="const float originalRockWeight = rockWeight;";
+    if(const auto snapshot=hostileMovedSnapshot.find(rockSnapshotDeclaration);snapshot!=std::string::npos){
+      hostileMovedSnapshot.erase(snapshot,rockSnapshotDeclaration.size());
+      if(const auto authored=hostileMovedSnapshot.find("rockWeight = materialWeights.z;");authored!=std::string::npos)
+        hostileMovedSnapshot.insert(authored+std::string_view("rockWeight = materialWeights.z;").size(),"\n                "+rockSnapshotDeclaration);
+    }
+    std::string hostileAuthoredLuma=worldShader;
+    if(const auto scale=hostileAuthoredLuma.find("partitionLuma * showcaseTerrainAuthoredBiomeLumaScale");scale!=std::string::npos)
+      hostileAuthoredLuma.replace(scale,std::string_view("partitionLuma * showcaseTerrainAuthoredBiomeLumaScale").size(),"partitionLuma");
+    std::string hostileAuthoredNormalization=worldShader;
+    if(const auto normalization=hostileAuthoredNormalization.find("authoredWeights /= authoredWeightTotal;");normalization!=std::string::npos)
+      hostileAuthoredNormalization.erase(normalization,std::string_view("authoredWeights /= authoredWeightTotal;").size());
+    std::string hostileAuthoredCoefficient=worldShader;
+    if(const auto coefficient=hostileAuthoredCoefficient.find("float3(1.16, 1.05, 0.62)");coefficient!=std::string::npos)
+      hostileAuthoredCoefficient.replace(coefficient,std::string_view("float3(1.16, 1.05, 0.62)").size(),"float3(1.36, 1.05, 0.62)");
     const auto terrainBinding=ReadText(source/L"games/gameplay_lab/native/include/ShowcaseTerrainMaterials3D.h");
     std::string hostileBinding=terrainBinding;
     if(const auto layer=hostileBinding.find("\"Ground108:slot-0\"");layer!=std::string::npos)
       hostileBinding.replace(layer,std::string_view("\"Ground108:slot-0\"").size(),"\"forest_ground_04:slot-0\"");
-    if(!R16TerrainBindingContract(worldShader,gameplaySource,terrainBinding)||
-       !R16FoliageReflectanceContract(worldShader)||
-       R16FoliageReflectanceContract(hostileFoliage)||
-       R16TerrainBindingContract(hostileMarker,gameplaySource,terrainBinding)||
-       R16TerrainBindingContract(hostileWet,gameplaySource,terrainBinding)||
-       R16TerrainBindingContract(worldShader,gameplaySource,hostileBinding)){
-      std::cerr<<"R16 terrain production binding failed\n";
+    const bool productionBinding=R16TerrainBindingContract(worldShader,gameplaySource,terrainBinding);
+    const bool foliageReflectance=R16FoliageReflectanceContract(worldShader);
+    const bool originalWeightSnapshot=TerrainOriginalWeightSnapshotContract(worldShader);
+    const bool rejectsHostileFoliage=!R16FoliageReflectanceContract(hostileFoliage);
+    const bool rejectsHostileOriginalAlbedo=!TerrainOriginalWeightSnapshotContract(hostileOriginalAlbedo);
+    const bool rejectsHostileOriginalTint=!TerrainOriginalWeightSnapshotContract(hostileOriginalTint);
+    const bool rejectsMovedSnapshot=!TerrainOriginalWeightSnapshotContract(hostileMovedSnapshot);
+    const bool authoredLumaPreservation=TerrainAuthoredLumaPreservationContract(worldShader);
+    const bool rejectsHostileAuthoredLuma=!TerrainAuthoredLumaPreservationContract(hostileAuthoredLuma);
+    const bool rejectsHostileAuthoredNormalization=!TerrainAuthoredLumaPreservationContract(hostileAuthoredNormalization);
+    const bool rejectsHostileAuthoredCoefficient=!TerrainAuthoredLumaPreservationContract(hostileAuthoredCoefficient);
+    const bool rejectsHostileMarker=!R16TerrainBindingContract(hostileMarker,gameplaySource,terrainBinding);
+    const bool rejectsHostileWet=!R16TerrainBindingContract(hostileWet,gameplaySource,terrainBinding);
+    const bool rejectsHostileBinding=!R16TerrainBindingContract(worldShader,gameplaySource,hostileBinding);
+    if(!productionBinding||!foliageReflectance||!originalWeightSnapshot||!authoredLumaPreservation||!rejectsHostileFoliage||
+       !rejectsHostileOriginalAlbedo||!rejectsHostileOriginalTint||!rejectsMovedSnapshot||!rejectsHostileMarker||
+       !rejectsHostileAuthoredLuma||!rejectsHostileAuthoredNormalization||
+       !rejectsHostileAuthoredCoefficient||!rejectsHostileWet||!rejectsHostileBinding){
+      std::cerr<<"R16 terrain production binding failed production="<<productionBinding
+               <<" foliage="<<foliageReflectance<<" original="<<originalWeightSnapshot
+               <<" hostileFoliage="<<rejectsHostileFoliage
+               <<" hostileAlbedo="<<rejectsHostileOriginalAlbedo
+               <<" hostileTint="<<rejectsHostileOriginalTint
+               <<" hostileMoved="<<rejectsMovedSnapshot
+               <<" authoredLuma="<<authoredLumaPreservation
+               <<" hostileAuthoredLuma="<<rejectsHostileAuthoredLuma
+               <<" hostileAuthoredNormalization="<<rejectsHostileAuthoredNormalization
+               <<" hostileAuthoredCoefficient="<<rejectsHostileAuthoredCoefficient
+               <<" hostileMarker="<<rejectsHostileMarker
+               <<" hostileWet="<<rejectsHostileWet
+               <<" hostileBinding="<<rejectsHostileBinding<<'\n';
       return 33;
     }
+    // 中文：原始亮度基準必須使用同一時刻的正規化三元組。
+    // 峻峭岩面可被 authored leaf 重分配，但不得因為混入新 rock 權重把原始基準縮到 0.02。
+    const float originalGrass=0.f,originalSoil=0.f,originalRock=1.f,authoredRock=.02f;
+    if(std::abs(originalGrass+originalSoil+originalRock-1.f)>1e-6f||
+       std::abs(originalGrass+originalSoil+authoredRock-1.f)<.9f)return 34;
+    const auto authoredLumaScale=[](Vec3 value){
+      if(!std::isfinite(value.x)||!std::isfinite(value.y)||!std::isfinite(value.z))return 1.f;
+      value.x=std::clamp(value.x,0.f,1.f);value.y=std::clamp(value.y,0.f,1.f);value.z=std::clamp(value.z,0.f,1.f);
+      const float total=value.x+value.y+value.z;if(total<=.000001f)return 1.f;const float inverse=1.f/total;
+      value.x*=inverse;value.y*=inverse;value.z*=inverse;
+      return std::clamp(value.x*1.16f+value.y*1.05f+value.z*.62f,.62f,1.16f);
+    };
+    const float hostileScale=authoredLumaScale({1.f,1.f,1.f});
+    if(std::abs(authoredLumaScale({0,0,0})-1.f)>1e-6f||
+       std::abs(authoredLumaScale({1,0,0})-1.16f)>1e-6f||
+       std::abs(authoredLumaScale({0,1,0})-1.05f)>1e-6f||
+       std::abs(authoredLumaScale({0,0,1})-.62f)>1e-6f||
+       hostileScale<.62f||hostileScale>1.16f||
+       authoredLumaScale({(std::numeric_limits<float>::quiet_NaN)(),0,0})!=1.f)return 35;
     const HRESULT apartment=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     TerrainDistanceMaterialSettings3D invalid;invalid.detailFadeStart=-4;invalid.detailFadeEnd=(std::numeric_limits<float>::quiet_NaN)();invalid.macroVariationScale=0;invalid.macroVariationStrength=8;invalid.normalDetailStrength=-2;invalid.farRoughnessBoost=9;invalid.warpScale=(std::numeric_limits<float>::quiet_NaN)();invalid.warpStrength=(std::numeric_limits<float>::infinity)();invalid.grassLayerScale=0;invalid.soilLayerScale=3;invalid.rockLayerScale=(std::numeric_limits<float>::quiet_NaN)();invalid.chromaVariationStrength=9;const auto normalized=NormalizeTerrainDistanceMaterialSettings3D(invalid);if(normalized.detailFadeStart!=0||normalized.detailFadeEnd!=192.f||normalized.macroVariationScale!=.00001f||normalized.macroVariationStrength!=.5f||normalized.normalDetailStrength!=0||normalized.farRoughnessBoost!=.5f||normalized.warpScale!=.012f||normalized.warpStrength!=2.4f||normalized.grassLayerScale!=.5f||normalized.soilLayerScale!=1.75f||normalized.rockLayerScale!=.68f||normalized.chromaVariationStrength!=.2f)return 1;
     const TerrainDistanceMaterialSettings3D quality{};const float sampledMacroVariation=TerrainMacroVariation3D({10,20},quality);if(TerrainDetailWeight3D(0,quality)!=1||TerrainDetailWeight3D(300,quality)!=0||TerrainDetailWeight3D((std::numeric_limits<float>::infinity)(),quality)!=0||TerrainDetailWeight3D((std::numeric_limits<float>::quiet_NaN)(),quality)!=0||TerrainMaterialTextureSamples3D(0,true,quality)!=9||TerrainMaterialTextureSamples3D(0,true,quality,true)!=15||TerrainMaterialTextureSamples3D(300,true,quality,true)!=3||TerrainMaterialTextureSamples3D(300,true,quality)!=3||TerrainMaterialTextureSamples3D(0,false,quality)||sampledMacroVariation<1.f-quality.macroVariationStrength||sampledMacroVariation>1.f+quality.macroVariationStrength||TerrainMacroVariation3D({(std::numeric_limits<float>::infinity)(),0},quality)!=1)return 2;

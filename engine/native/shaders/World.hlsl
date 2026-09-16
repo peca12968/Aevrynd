@@ -835,6 +835,21 @@ float3 DecodeAuthoredTerrainBiomeWeights(float2 encoded)
     return weights;
 }
 
+float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)
+{
+    // 亮度校準只取決於已驗證的 authored 材質權重。惡意／非有限輸入
+    // fail-neutral；超額總和先正規化，因此輸出嚴格限制於 wet .62 到
+    // path 1.16，不會改變 neutral 或以無界曝光掩蓋材質錯誤。
+    if (any(shapedWeights != shapedWeights) || any(abs(shapedWeights) > 65504.0))
+        return 1.0;
+    float3 authoredWeights = saturate(shapedWeights);
+    const float authoredWeightTotal = authoredWeights.x + authoredWeights.y + authoredWeights.z;
+    if (authoredWeightTotal <= 0.000001)
+        return 1.0;
+    authoredWeights /= authoredWeightTotal;
+    return clamp(dot(authoredWeights, float3(1.16, 1.05, 0.62)), 0.62, 1.16);
+}
+
 float RayleighPhase(float cosine)
 {
     return 3.0 * (1.0 + cosine * cosine) / (16.0 * 3.14159265);
@@ -2083,6 +2098,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
         const float terrainHeight = TerrainBiomeHeight(input.color.a);
         float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
+        const float originalRockWeight = rockWeight;
         const float originalSoilWeight = (1.0 - rockWeight) * smoothstep(0.18, 0.62, terrainSlope + (1.0 - macroNoise) * 0.18);
         const float originalGrassWeight = max(0.0, 1.0 - rockWeight - originalSoilWeight);
         float soilWeight = originalSoilWeight;
@@ -2104,6 +2120,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float authoredLeafLitterWeight = 0.0;
         float authoredWetSoilWeight = 0.0;
         float showcaseTerrainAuthoredBiomeCalibration = 0.0;
+        float showcaseTerrainAuthoredBiomeLumaScale = 1.0;
         const bool showcaseTerrainProductionBinding =
             input.textureData.w > 0.5 && input.normalScale == -15.5;
         // useUv 是既有 generic bit；再要求 Renderer.h 宣告、可精確表示的
@@ -2129,7 +2146,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 const float shapedAuthoredBiomeWeight = shapedAuthoredBiomeWeights.x
                                                       + shapedAuthoredBiomeWeights.y
                                                       + shapedAuthoredBiomeWeights.z;
-                showcaseTerrainAuthoredBiomeCalibration = sqrt(saturate(shapedAuthoredBiomeWeight));
+                // materialWeights 已按 authored 強度混合；校準再次使用 sqrt
+                // 會放大低權重外緣，形成高空可見遮罩。線性強度保持連續且
+                // 只施加一次區域影響。
+                showcaseTerrainAuthoredBiomeCalibration = saturate(shapedAuthoredBiomeWeight);
+                showcaseTerrainAuthoredBiomeLumaScale =
+                    TerrainAuthoredBiomeLumaScale(shapedAuthoredBiomeWeights);
                 // 實際綁定順序固定為 forest / Ground108 / stony path。
                 // path 因此主導第三層；leaf litter 以森林層為主；wet soil
                 // 使用 Ground108。三者仍共用既有 9/3 次 PBR sample。
@@ -2284,7 +2306,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
             const float microVariation=lerp(1.0,lerp(0.92,1.08,microNoise),terrainDetailWeight);
-            const float3 originalTerrainAlbedo = calibratedGrassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * rockWeight;
+            const float3 originalTerrainAlbedo = calibratedGrassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * originalRockWeight;
             float3 terrainAlbedo = calibratedGrassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight;
             [branch] if (TerrainMesoPartitionEnabled())
             {
@@ -2294,8 +2316,13 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 terrainAlbedo *= biomeTint;
                 const float originalLuma = dot(originalTerrainAlbedo, float3(0.2126, 0.7152, 0.0722));
                 const float partitionLuma = dot(terrainAlbedo, float3(0.2126, 0.7152, 0.0722));
+                // 程序式 meso 分區仍守住原曝光；明確 authored 材質則保留自身物理亮度，
+                // 避免將草、土路與岩面強制拉成同一明度而壓平層次。
+                const float referenceLuma = lerp(originalLuma,
+                    partitionLuma * showcaseTerrainAuthoredBiomeLumaScale,
+                    showcaseTerrainAuthoredBiomeCalibration);
                 if (originalLuma > 0.0 && partitionLuma > 0.000001)
-                    terrainAlbedo *= originalLuma / partitionLuma;
+                    terrainAlbedo *= referenceLuma / partitionLuma;
                 // 中尺度亮度變化代表樹冠遮蔽、苔蘚與落葉堆積；範圍仍有界且不依賴相機或時間。
                 // 讓遠景在細節貼圖淡出後仍保有可讀層次，避免大片同亮度地表形成規律重複。
                 terrainAlbedo *= lerp(0.90, 1.08, terrainMesoSignal);
@@ -2317,14 +2344,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
-            const float3 originalTerrainTint = originalGrassWeight * float3(0.72, 0.91, 0.63) + originalSoilWeight * float3(0.82, 0.67, 0.48) + rockWeight * float3(0.76, 0.78, 0.80);
+            const float3 originalTerrainTint = originalGrassWeight * float3(0.72, 0.91, 0.63) + originalSoilWeight * float3(0.82, 0.67, 0.48) + originalRockWeight * float3(0.76, 0.78, 0.80);
             float3 terrainTint = grassWeight * float3(0.76, 0.92, 0.64) + soilWeight * float3(0.90, 0.70, 0.50) + rockWeight * float3(0.76, 0.78, 0.80);
             [branch] if (TerrainMesoPartitionEnabled())
             {
                 const float originalLuma = dot(originalTerrainTint, float3(0.2126, 0.7152, 0.0722));
                 const float partitionLuma = dot(terrainTint, float3(0.2126, 0.7152, 0.0722));
+                const float referenceLuma = lerp(originalLuma,
+                    partitionLuma * showcaseTerrainAuthoredBiomeLumaScale,
+                    showcaseTerrainAuthoredBiomeCalibration);
                 if (originalLuma > 0.0 && partitionLuma > 0.000001)
-                    terrainTint *= originalLuma / partitionLuma;
+                    terrainTint *= referenceLuma / partitionLuma;
                 terrainTint *= lerp(0.84, 1.16, terrainMesoSignal);
             }
             const float3 decorrelatedTerrainTint = terrainDecorrelationEnabled
