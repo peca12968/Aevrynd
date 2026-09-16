@@ -332,6 +332,65 @@ Mesh3D CreateCottageRoofMesh3D(){
   AppendShowcaseQuad(mesh,lf,ridgeF,ridgeB,lb,3.f,2.f);AppendShowcaseQuad(mesh,ridgeF,rf,rb,ridgeB,3.f,2.f);AppendShowcaseTriangle(mesh,lf,rf,ridgeF);AppendShowcaseTriangle(mesh,rb,lb,ridgeB);AppendShowcaseQuad(mesh,lb,rb,rf,lf);
   return mesh;
 }
+struct GameplayCottageMaterialResponse3D {
+  float roughness{}, normalScale{}, textureScale{};
+  bool useUv{};
+};
+constexpr float GameplayCottageWoodRoughness3D=.68f;
+constexpr float GameplayCottageWoodNormalScale3D=.62f;
+constexpr float GameplayCottageWoodTextureScale3D=.20f;
+constexpr float GameplayCottageRoofRoughness3D=.78f;
+constexpr float GameplayCottageRoofNormalScale3D=.72f;
+constexpr float GameplayCottageRoofTextureScale3D=.26f;
+constexpr float GameplayCottageBrickRoughness3D=.82f;
+constexpr float GameplayCottageBrickNormalScale3D=.72f;
+constexpr float GameplayCottageBrickTextureScale3D=.26f;
+constexpr GameplayCottageMaterialResponse3D GameplayCottageMaterialResponse(
+    GameplayCottageMaterialRole3D role) noexcept {
+  if(role==GameplayCottageMaterialRole3D::RoofTile)
+    return {GameplayCottageRoofRoughness3D,GameplayCottageRoofNormalScale3D,
+            GameplayCottageRoofTextureScale3D,true};
+  if(role==GameplayCottageMaterialRole3D::Brick)
+    return {GameplayCottageBrickRoughness3D,GameplayCottageBrickNormalScale3D,
+            GameplayCottageBrickTextureScale3D,false};
+  return {GameplayCottageWoodRoughness3D,GameplayCottageWoodNormalScale3D,
+          GameplayCottageWoodTextureScale3D,false};
+}
+bool ApplyGameplayCottageMaterialResponse3D(
+    Material3D& material,GameplayCottageMaterialRole3D role) noexcept {
+  const auto response=GameplayCottageMaterialResponse(role);
+  const bool expectedUseUv=GameplayCottageMaterialUsesUv3D(
+      role==GameplayCottageMaterialRole3D::RoofTile);
+  const auto in=[](float value,float minimum,float maximum){
+    return value>=minimum&&value<=maximum;
+  };
+  const bool roleResponseInRange=
+      role==GameplayCottageMaterialRole3D::RoofTile
+          ? in(response.roughness,.70f,.88f)&&
+            in(response.normalScale,.55f,.80f)&&
+            in(response.textureScale,.20f,.32f)
+      : role==GameplayCottageMaterialRole3D::Brick
+          ? in(response.roughness,.72f,.90f)&&
+            in(response.normalScale,.55f,.80f)&&
+            in(response.textureScale,.20f,.32f)
+          : in(response.roughness,.60f,.76f)&&
+            in(response.normalScale,.50f,.70f)&&
+            in(response.textureScale,.16f,.26f);
+  // 這些界限是正式小屋的材質契約：粗糙度禁止退回塑膠高光，normal 與
+  // 貼圖頻率禁止在 God view 形成高頻閃爍；非有限值與錯誤 UV 路徑一律拒絕。
+  if(!std::isfinite(response.roughness)||!std::isfinite(response.normalScale)||
+     !std::isfinite(response.textureScale)||response.roughness<.55f||
+     response.roughness>.92f||response.normalScale<.45f||
+     response.normalScale>.82f||response.textureScale<.12f||
+     response.textureScale>.34f||!roleResponseInRange||
+     response.useUv!=expectedUseUv)
+    return false;
+  material.surface.roughness=response.roughness;
+  material.normalScale=response.normalScale;
+  material.textureScale=response.textureScale;
+  material.useUv=response.useUv;
+  return true;
+}
 }
 std::string CreateGameplayLabRunId(){return RunId();}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){return HashGameplayCapturePose3D(pose);}std::uint64_t HashFootPlacement(const FootPlacementResult3D& value){return HashGameplayCaptureFootPlacement3D(value);}}
@@ -1746,9 +1805,10 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     case ShowcaseSceneKind3D::Rock:
       submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,descriptor.meshAsset.find("boulder_01")!=std::string::npos?"boulder_01":"coastal_cliff_01",transform,renderIdentity,lodObjectIndex,&productionChains);break;
     case ShowcaseSceneKind3D::Building:
-      {const auto role=GameplayCottageBaseMaterialRole3D(descriptor.meshAsset);const bool roof=role==GameplayCottageMaterialRole3D::RoofTile;const auto* brickSource=showcaseRenderAssets_.ProductionMaterial("Bricks100");const auto* roofSource=showcaseRenderAssets_.ProductionMaterial("RoofingTiles014B");if(!brickSource||!roofSource||!showcaseWoodMaterial_.textures)break;auto material=role==GameplayCottageMaterialRole3D::Brick?*brickSource:role==GameplayCottageMaterialRole3D::RoofTile?*roofSource:showcaseWoodMaterial_;material.normalScale=role==GameplayCottageMaterialRole3D::Brick?GameplayCottageWallNormalScale3D:roof?1.15f:.8f;material.textureScale=role==GameplayCottageMaterialRole3D::Brick?.3f:roof?.38f:.22f;
+      {const auto role=GameplayCottageBaseMaterialRole3D(descriptor.meshAsset);const bool roof=role==GameplayCottageMaterialRole3D::RoofTile;const auto* brickSource=showcaseRenderAssets_.ProductionMaterial("Bricks100");const auto* roofSource=showcaseRenderAssets_.ProductionMaterial("RoofingTiles014B");if(!brickSource||!roofSource||!showcaseWoodMaterial_.textures)break;auto material=role==GameplayCottageMaterialRole3D::Brick?*brickSource:role==GameplayCottageMaterialRole3D::RoofTile?*roofSource:showcaseWoodMaterial_;
        // 分段牆網格以世界空間連續取樣 WoodSiding006；屋瓦只在坡面沿建好的 UV 取樣。
-       material.useUv=GameplayCottageMaterialUsesUv3D(roof);const auto before=scene_.MeshCount();
+       // 材質回應只覆寫既有 PBR 參數；mesh、transform、identity 與 draw 路徑保持不變。
+       if(!ApplyGameplayCottageMaterialResponse3D(material,role))break;const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
        auto glass=material;glass.textures={};glass.tint={.08f,.17f,.20f,1};glass.surface={.14f,.02f,.012f,.7f};glass.textureScale=1;glass.normalScale=0;glass.castsShadow=false;
        // 裝飾件使用已載入的 WoodSiding006，不再從基座或屋頂複製磚／瓦紋。
@@ -1767,8 +1827,8 @@ void GameplayLabGame::AddShowcaseEnvironment(){
        }
        else if(descriptor.meshAsset.find("back")!=std::string::npos)for(float x:{-14.1f,-9.9f})framedWindowZ(x,27.84f,1.f);
        else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos){const bool left=descriptor.meshAsset.find("left")!=std::string::npos;framedWindowX(left?-16.19f:-7.81f,left?-1.f:1.f);}
-       else if(roof){
-         auto brick=*brickSource;brick.normalScale=GameplayCottageWallNormalScale3D;brick.textureScale=.24f;brick.useUv=false;
+        else if(roof){
+          auto brick=*brickSource;if(!ApplyGameplayCottageMaterialResponse3D(brick,GameplayCottageMaterialRole3D::Brick))break;
          scene_.Mesh(boxMesh_,{{-14.45f,4.72f,25.3f},{0,0,0},{.72f,2.15f,.72f}},brick,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-14.45f,5.84f,25.3f},{0,0,0},{.94f,.16f,.94f}},brick,{},renderIdentity);
          for(float z:{19.78f,28.22f})scene_.Mesh(boxMesh_,{{-12,3.48f,z},{0,0,0},{9.25f,.18f,.24f}},wood,{},renderIdentity);

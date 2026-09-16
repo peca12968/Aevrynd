@@ -72,8 +72,8 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
   const bool dead = placement.variant == ShowcaseLandVariant3D::DeadTreeTrunk;
   const bool sapling = placement.variant == ShowcaseLandVariant3D::TreeSmall02;
   // 舊版活冠在兩軸重複收窄，正式 Near/Mid 面積只剩配置的約 72%，
-  // 使已群聚的樹林再次讀成果園。高度與 yaw 保留原有 stable-key 節奏，
-  // 水平僅做小幅輪廓差異；Y 不變，因此正式樹幹 collision 代理逐值不變。
+  // 使已群聚的樹林再次讀成果園。水平僅做小幅輪廓差異；render form 不回寫
+  // placement，因此正式樹幹 collision 代理與道路／河岸淨空逐值不變。
   const bool connectedCanopy = !dead &&
       placement.band != ShowcaseLandBand3D::Far;
   const float canopy = connectedCanopy
@@ -81,9 +81,40 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
                        : dead ? .58f + .16f * u
                        : sapling ? .72f + .18f * u
                                  : .82f + .18f * u;
-  const float height = bandHeight *
-      (dead ? .82f + .24f * v : sapling ? .86f + .22f * v
-                                        : .90f + .26f * v);
+  float heightProfile = dead ? .82f + .24f * v
+                              : sapling ? .86f + .22f * v
+                                        : .90f + .26f * v;
+  if (!dead) {
+    // 三個距離帶都保留清楚的物種高度角色：幼樹形成連續低層，成熟樹以
+    // 四階冠層建立高輪廓，Far 再整體略矮。只改 render Y；水平 footprint、
+    // placement/collision、道路與河岸淨空完全不變，且 stableKey 使結果永久
+    // 固定，不引入相機依賴或 descriptor/draw 增量。
+    if (sapling) {
+      const float submittedHeight = placement.band == ShowcaseLandBand3D::Far
+                                        ? .70f + .10f * v
+                                    : placement.band == ShowcaseLandBand3D::Mid
+                                        ? .71f + .13f * v
+                                        : .74f + .12f * v;
+      heightProfile = submittedHeight / bandHeight;
+    } else {
+      constexpr std::array<float, 4> crownTierOffset{-.02f, .01f, .025f,
+                                                     .04f};
+      const auto tier = std::size_t((placement.stableKey >> 6u) & 3u);
+      // 直接約束提交後的高度，避免 Far 先用偏大的 profile 再依 band 縮放，
+      // 仍留下昂貴高冠層。成熟樹維持比幼樹高約 0.18~0.32，但最大值壓在
+      // 1.05 左右，降低 masked 葉片與四層 shadow 的投影面積。
+      const float submittedHeight = placement.band == ShowcaseLandBand3D::Far
+                                        ? .91f + .08f * v +
+                                              crownTierOffset[tier]
+                                    : placement.band == ShowcaseLandBand3D::Mid
+                                        ? .92f + .09f * v +
+                                              crownTierOffset[tier]
+                                        : .92f + .09f * v +
+                                              crownTierOffset[tier];
+      heightProfile = submittedHeight / bandHeight;
+    }
+  }
+  const float height = bandHeight * heightProfile;
   const float depth = canopy * (connectedCanopy ? .96f + .08f * v
                                                 : .88f + .12f * v);
   return {{canopy, height, depth}, (u - .5f) * .42f};

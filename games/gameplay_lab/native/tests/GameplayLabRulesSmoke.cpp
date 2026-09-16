@@ -6,8 +6,11 @@
 #include <Aevrynd/EnvironmentMeshes3D.h>
 #include <chrono>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <iterator>
+#include <optional>
 #include <sstream>
 using namespace GameplayLab;using namespace Aevrynd;
 namespace {
@@ -73,6 +76,95 @@ static_assert(GameplayCottageDescriptorMaterialAsset3D(GameplayCottageMaterialRo
 static_assert(GameplayCottageDescriptorMaterialAsset3D(GameplayCottageMaterialRole3D::WoodSiding)=="ambientcg/WoodSiding006/material-pbr");
 static_assert(GameplayCottageDescriptorMaterialAsset3D(GameplayCottageMaterialRole3D::RoofTile)=="ambientcg/RoofingTiles014B/cooked-pbr");
 const bool ValidateGameplayCottageGlassGapSmoke=[](){if(!GameplayCottageGlassGapValid3D(27.74f,27.84f,.06f)||GameplayCottageGlassGapValid3D(27.74f,27.83f,.06f))throw std::runtime_error("cottage glass gap oracle failed");return true;}();
+namespace {
+std::optional<float> GameplayCottageSourceFloat3D(
+    std::string_view source,std::string_view name){
+  const auto namePosition=source.find(name);
+  if(namePosition==std::string_view::npos)return std::nullopt;
+  const auto equals=source.find('=',namePosition+name.size());
+  const auto suffix=equals==std::string_view::npos?std::string_view::npos:
+      source.find("f;",equals+1);
+  if(equals==std::string_view::npos||suffix==std::string_view::npos)return std::nullopt;
+  try{
+    std::size_t consumed{};
+    const std::string token(source.substr(equals+1,suffix-equals-1));
+    const float value=std::stof(token,&consumed);
+    if(consumed!=token.size()||!std::isfinite(value))return std::nullopt;
+    return value;
+  }catch(...){return std::nullopt;}
+}
+bool ValidateGameplayCottageMaterialSource3D(std::string_view source){
+  const auto woodRoughness=GameplayCottageSourceFloat3D(source,"GameplayCottageWoodRoughness3D");
+  const auto woodNormal=GameplayCottageSourceFloat3D(source,"GameplayCottageWoodNormalScale3D");
+  const auto woodScale=GameplayCottageSourceFloat3D(source,"GameplayCottageWoodTextureScale3D");
+  const auto roofRoughness=GameplayCottageSourceFloat3D(source,"GameplayCottageRoofRoughness3D");
+  const auto roofNormal=GameplayCottageSourceFloat3D(source,"GameplayCottageRoofNormalScale3D");
+  const auto roofScale=GameplayCottageSourceFloat3D(source,"GameplayCottageRoofTextureScale3D");
+  const auto brickRoughness=GameplayCottageSourceFloat3D(source,"GameplayCottageBrickRoughness3D");
+  const auto brickNormal=GameplayCottageSourceFloat3D(source,"GameplayCottageBrickNormalScale3D");
+  const auto brickScale=GameplayCottageSourceFloat3D(source,"GameplayCottageBrickTextureScale3D");
+  if(!woodRoughness||!woodNormal||!woodScale||!roofRoughness||!roofNormal||
+     !roofScale||!brickRoughness||!brickNormal||!brickScale)return false;
+  const auto in=[](float value,float minimum,float maximum){
+    return std::isfinite(value)&&value>=minimum&&value<=maximum;
+  };
+  if(!in(*woodRoughness,.60f,.76f)||!in(*roofRoughness,.70f,.88f)||
+     !in(*brickRoughness,.72f,.90f)||!in(*woodNormal,.50f,.70f)||
+     !in(*roofNormal,.55f,.80f)||!in(*brickNormal,.55f,.80f)||
+     !in(*woodScale,.16f,.26f)||!in(*roofScale,.20f,.32f)||
+     !in(*brickScale,.20f,.32f))return false;
+  // 正式 helper 必須在寫入前拒絕非有限值、越界回應與錯誤 UV 角色；
+  // submission 及煙囪磚材都只能走同一個 fail-closed 入口。
+  constexpr std::array<std::string_view,11> required{
+      "!std::isfinite(response.roughness)",
+      "!std::isfinite(response.normalScale)",
+      "!std::isfinite(response.textureScale)",
+      "response.useUv!=expectedUseUv",
+      "GameplayCottageRoofTextureScale3D,true};",
+      "GameplayCottageBrickTextureScale3D,false};",
+      "GameplayCottageWoodTextureScale3D,false};",
+      "material.surface.roughness=response.roughness;",
+      "material.useUv=response.useUv;",
+      "if(!ApplyGameplayCottageMaterialResponse3D(material,role))break;",
+      "if(!ApplyGameplayCottageMaterialResponse3D(brick,GameplayCottageMaterialRole3D::Brick))break;"};
+  return std::ranges::all_of(required,[&](std::string_view token){
+    return source.find(token)!=std::string_view::npos;
+  });
+}
+bool GameplayCottageReplaceOnce3D(std::string& source,std::string_view from,
+                                  std::string_view to){
+  const auto position=source.find(from);
+  if(position==std::string::npos||source.find(from,position+from.size())!=std::string::npos)
+    return false;
+  source.replace(position,from.size(),to);
+  return true;
+}
+const bool ValidateGameplayCottageMaterialResponseSmoke=[](){
+  const auto path=std::filesystem::path(AEVRYND_SOURCE_DIR)/"games/gameplay_lab/native/src/GameplayLabGame.cpp";
+  std::ifstream stream(path,std::ios::binary);
+  if(!stream)throw std::runtime_error("cottage material response source missing");
+  const std::string source{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+  if(source.empty()||!ValidateGameplayCottageMaterialSource3D(source))
+    throw std::runtime_error("cottage material response source contract failed");
+  const auto rejects=[&](std::string_view from,std::string_view to){
+    auto mutation=source;
+    return GameplayCottageReplaceOnce3D(mutation,from,to)&&
+           !ValidateGameplayCottageMaterialSource3D(mutation);
+  };
+  if(!rejects("GameplayCottageWoodRoughness3D=.68f","GameplayCottageWoodRoughness3D=.59f")||
+     !rejects("GameplayCottageRoofRoughness3D=.78f","GameplayCottageRoofRoughness3D=.89f")||
+     !rejects("GameplayCottageRoofNormalScale3D=.72f","GameplayCottageRoofNormalScale3D=.81f")||
+     !rejects("GameplayCottageWoodTextureScale3D=.20f","GameplayCottageWoodTextureScale3D=.15f")||
+     !rejects("GameplayCottageBrickTextureScale3D=.26f","GameplayCottageBrickTextureScale3D=.33f")||
+     !rejects("GameplayCottageWoodNormalScale3D=.62f","GameplayCottageWoodNormalScale3D=NAN" )||
+     !rejects("GameplayCottageRoofTextureScale3D,true};","GameplayCottageRoofTextureScale3D,false};")||
+     !rejects("GameplayCottageWoodTextureScale3D,false};","GameplayCottageWoodTextureScale3D,true};")||
+     !rejects("response.useUv!=expectedUseUv","false"))
+    throw std::runtime_error("cottage material fail-closed mutation oracle failed");
+  return true;
+}();
+}
 namespace {struct CanonicalStateMutationSmoke{CanonicalStateMutationSmoke(){GameplayCanonicalCaptureStateInput3D state{};state.captureIndex=2;state.entities={{9,PaletteCategory::Props,{1,2,3},.2f,true,true},{3,PaletteCategory::Building,{4,5,6},.4f,false,true}};state.controllerPosition={7,8,9};state.yaw=.3f;state.pitch=-.2f;state.camera=CameraMode::ThirdPerson;state.lighting=LightingPhase::Dusk;state.paletteCategory=PaletteCategory::Building;state.female=true;state.paletteOpen=true;state.grabbedEntity=9;state.cameraHash=41;state.animationHash=42;state.physicsHash=43;const auto canonical=BuildGameplayCanonicalCaptureState3D(state);if(!canonical.valid||canonical.entityDiagnostics.size()!=2||canonical.entityDiagnostics[0].stableId!=3||canonical.entityDiagnostics[1].stableId!=9)throw std::runtime_error("canonical entity diagnostic contract failed");auto permuted=state;std::ranges::reverse(permuted.entities);if(canonical.canonical!=BuildGameplayCanonicalCaptureState3D(permuted).canonical)throw std::runtime_error("canonical entity permutation changed state");auto signedZero=state;signedZero.entities[0].position.x=-0.f;auto positiveZero=signedZero;positiveZero.entities[0].position.x=0.f;if(BuildGameplayCanonicalCaptureState3D(signedZero).canonical!=BuildGameplayCanonicalCaptureState3D(positiveZero).canonical)throw std::runtime_error("canonical signed zero was not normalized");const auto changed=[&](auto mutate){auto value=state;mutate(value);const auto receipt=BuildGameplayCanonicalCaptureState3D(value);return receipt.valid&&receipt.canonical!=canonical.canonical;};if(!changed([](auto&v){v.entities[0].id++;})||!changed([](auto&v){v.entities[0].category=PaletteCategory::Lights;})||!changed([](auto&v){v.entities[0].position.x=std::nextafter(v.entities[0].position.x,std::numeric_limits<float>::infinity());})||!changed([](auto&v){v.entities[0].position.z+=2.f;})||!changed([](auto&v){v.controllerPosition.y+=.01f;})||!changed([](auto&v){v.yaw+=.01f;})||!changed([](auto&v){v.pitch+=.01f;})||!changed([](auto&v){v.lighting=LightingPhase::Night;})||!changed([](auto&v){v.cameraHash++;})||!changed([](auto&v){v.paletteOpen=false;})||!changed([](auto&v){v.animationHash++;})||!changed([](auto&v){v.physicsHash++;}))throw std::runtime_error("canonical state mutation was not observed");for(const float invalid:{std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}){auto value=state;value.entities[0].position.x=invalid;if(BuildGameplayCanonicalCaptureState3D(value).valid)throw std::runtime_error("canonical non-finite entity was accepted");value=state;value.entities[0].rotation=invalid;if(BuildGameplayCanonicalCaptureState3D(value).valid)throw std::runtime_error("canonical non-finite rotation was accepted");}}} canonicalStateMutationSmoke;}
 static_assert(GameplayTemporalCaptureReady3D(true,true,0));
 static_assert(!GameplayTemporalCaptureReady3D(false,true,0)&&!GameplayTemporalCaptureReady3D(true,false,0)&&!GameplayTemporalCaptureReady3D(true,true,1));

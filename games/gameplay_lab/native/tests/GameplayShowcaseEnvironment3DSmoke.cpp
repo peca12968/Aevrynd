@@ -334,6 +334,101 @@ bool ForestMidgroundLayerContract(
   return valid;
 }
 
+// 固定 first/third/god 視角各自把可見活樹依相機深度排序為近／中／遠三段；
+// 每段都必須同時包含成熟樹、幼樹、低層與高層，避免只用整體跨度掩蓋其中
+// 一段仍是等高樹牆。水平 transform 逐值對照正式 form，確保輪廓調整沒有
+// 侵入河岸、道路或屋舍淨空。
+bool FixedViewForestDepthContract(
+    const std::vector<ShowcaseLandPlacement3D> &placements,
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors,
+    std::span<const Camera3D> cameras) {
+  if (descriptors.size() != placements.size() + 8u || cameras.size() != 3u)
+    return false;
+  constexpr std::array<float, 3> projectedHeightAggregateLimit{
+      14.70f, 13.55f, 13.50f};
+  bool valid = true;
+  for (std::size_t index = 0; index < placements.size(); ++index) {
+    const auto &placement = placements[index];
+    if (placement.kind != ShowcaseLandKind3D::Tree)
+      continue;
+    const auto &descriptor = descriptors[index + 2u];
+    const auto form = ShowcaseTreeFormVariation(placement);
+    valid &= descriptor.position.x == placement.position.x &&
+             descriptor.position.z == placement.position.z &&
+             descriptor.scale.x == placement.scale.x * form.scaleMultiplier.x &&
+             descriptor.scale.z == placement.scale.z * form.scaleMultiplier.z;
+  }
+  for (std::size_t view = 0; view < cameras.size(); ++view) {
+    const auto forward = Normalize(cameras[view].target - cameras[view].position);
+    struct VisibleTree {
+      float depth{}, normalizedHeight{}, projectedHeight{};
+      bool sapling{};
+    };
+    std::vector<VisibleTree> visible;
+    for (std::size_t index = 0; index < placements.size(); ++index) {
+      const auto &placement = placements[index];
+      if (placement.kind != ShowcaseLandKind3D::Tree ||
+          placement.variant == ShowcaseLandVariant3D::DeadTreeTrunk)
+        continue;
+      const auto &descriptor = descriptors[index + 2u];
+      const float radius = Length(descriptor.scale) * .5f;
+      if (!SphereIntersectsFrustum(descriptor.position, radius, cameras[view],
+                                   16.f / 9.f))
+        continue;
+      const float normalizedHeight = descriptor.scale.y / placement.scale.y;
+      const float depth = Dot(descriptor.position - cameras[view].position,
+                              forward);
+      const float projectedHeight = cameras[view].projection.mode ==
+                                            ProjectionMode::Orthographic
+                                        ? descriptor.scale.y /
+                                              cameras[view].projection
+                                                  .orthographicHeight
+                                        : descriptor.scale.y * .5f /
+                                              ((std::max)(depth, .05f) *
+                                               std::tan(cameras[view].projection
+                                                            .verticalFieldOfView *
+                                                        .5f));
+      visible.push_back({depth, normalizedHeight, projectedHeight,
+                         placement.variant ==
+                             ShowcaseLandVariant3D::TreeSmall02});
+    }
+    std::ranges::sort(visible, {}, &VisibleTree::depth);
+    const float depthSpan = visible.empty()
+                                ? 0.f
+                                : visible.back().depth - visible.front().depth;
+    float projectedHeightAggregate{};
+    for (const auto &tree : visible)
+      projectedHeightAggregate += tree.projectedHeight;
+    valid &= visible.size() >= 24u && depthSpan >= 30.f &&
+             std::isfinite(projectedHeightAggregate) &&
+             projectedHeightAggregate <= projectedHeightAggregateLimit[view];
+    for (unsigned slice = 0; slice < 3u; ++slice) {
+      const std::size_t begin = visible.size() * slice / 3u;
+      const std::size_t end = visible.size() * (slice + 1u) / 3u;
+      unsigned saplings{}, mature{}, lowerTier{}, upperTier{};
+      for (std::size_t index = begin; index < end; ++index) {
+        saplings += visible[index].sapling ? 1u : 0u;
+        mature += visible[index].sapling ? 0u : 1u;
+        lowerTier += visible[index].normalizedHeight <= .90f ? 1u : 0u;
+        upperTier += visible[index].normalizedHeight >= .98f ? 1u : 0u;
+      }
+      std::cout << "FOREST_FIXED_VIEW_DEPTH view=" << view
+                << " slice=" << slice << " count=" << end - begin
+                << " mature=" << mature << " sapling=" << saplings
+                << " lower=" << lowerTier << " upper=" << upperTier
+                << " depthSpan=" << depthSpan
+                << " projectedHeightAggregate=" << projectedHeightAggregate
+                << '/' << projectedHeightAggregateLimit[view]
+                << '\n';
+      const auto minimumTier =
+          (std::max)(2u, unsigned((end - begin + 4u) / 5u));
+      valid &= end - begin >= 8u && mature >= 2u && saplings >= 1u &&
+               lowerTier >= minimumTier && upperTier >= minimumTier;
+    }
+  }
+  return valid;
+}
+
 template <std::size_t Size>
 std::uint64_t InventoryHash(const std::array<std::string_view, Size> &values) {
   std::uint64_t hash = 14695981039346656037ull;
@@ -1606,6 +1701,29 @@ int main() {
         productionCameras[index].projection.mode != route.projection)
       return 28;
   }
+  const std::array<Camera3D, 3> forestDepthCameras{
+      productionCameras[0], productionCameras[1], productionCameras[2]};
+  if (!FixedViewForestDepthContract(treePlacements, first.Descriptors(),
+                                    forestDepthCameras))
+    return 102;
+  auto flattenedCanopy = first.Descriptors();
+  for (std::size_t index = 0; index < treePlacements.size(); ++index) {
+    const auto &placement = treePlacements[index];
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.variant != ShowcaseLandVariant3D::DeadTreeTrunk)
+      flattenedCanopy[index + 2u].scale.y = placement.scale.y * .94f;
+  }
+  if (FixedViewForestDepthContract(treePlacements, flattenedCanopy,
+                                   forestDepthCameras))
+    return 103;
+  auto oversizedMatureCanopy = first.Descriptors();
+  for (std::size_t index = 0; index < treePlacements.size(); ++index)
+    if (treePlacements[index].kind == ShowcaseLandKind3D::Tree &&
+        treePlacements[index].variant == ShowcaseLandVariant3D::IslandTree)
+      oversizedMatureCanopy[index + 2u].scale.y *= 1.05f;
+  if (FixedViewForestDepthContract(treePlacements, oversizedMatureCanopy,
+                                   forestDepthCameras))
+    return 104;
   auto wrongGodRoute = BuildGameplayCaptureProductionRoute3D(
       GameplayCaptureExpectations3D[2]);
   wrongGodRoute.projection = ProjectionMode::Perspective;

@@ -194,6 +194,32 @@ bool TerrainMesoPartitionEnabled()
 {
     return (terrainDecorrelationPacked & (1u << 31u)) != 0u;
 }
+float3 TerrainMaterialDepthContrast(float mesoSignal, float3 shapedAuthoredWeights)
+{
+    // 程序分區需要在細節貼圖淡出後仍有可讀明度跨度；明確 authored 區域
+    // 則改由步道、落葉與濕岸的有界光譜目標接管。只重用既有訊號，沒有
+    // 新取樣、相機、時間或霧依賴。
+    if (any(shapedAuthoredWeights != shapedAuthoredWeights) ||
+        any(abs(shapedAuthoredWeights) > 65504.0))
+        return 1.0;
+    float3 authoredWeights = saturate(shapedAuthoredWeights);
+    const float authoredWeightTotal = authoredWeights.x + authoredWeights.y + authoredWeights.z;
+    // smoothstep 的固定邊界展開成飽和座標與 Hermite 多項式，避免通用
+    // intrinsic；neutral 是絕大多數 terrain pixel，直接跳過三組 RGB 混合。
+    const float mesoCoordinate = saturate((mesoSignal - 0.18) * 1.5625);
+    const float shapedMeso = mesoCoordinate * mesoCoordinate * (3.0 - 2.0 * mesoCoordinate);
+    const float proceduralScale = 0.84 + 0.30 * shapedMeso;
+    [branch] if (authoredWeightTotal <= 0.000001)
+        return proceduralScale.xxx;
+    const float authoredAmount = saturate(authoredWeightTotal);
+    // 對 production 契約的 sum<=1 權重，normalizedTarget*total 嚴格等於
+    // rawWeight*target；直接展開可移除 reciprocal 與三次 normalize multiply。
+    const float3 authoredContrast = authoredWeights.x * float3(1.12, 1.13, 1.18)
+                                  + authoredWeights.y * float3(1.02, 0.88, 0.72)
+                                  + authoredWeights.z * float3(0.70, 0.76, 0.82);
+    return clamp(proceduralScale.xxx * (1.0 - authoredAmount) + authoredContrast,
+                 0.70.xxx, 1.18.xxx);
+}
 float3 TerrainDecorrelatedWorldPosition(float3 worldPosition, float warpScale, float warpStrength)
 {
     // 只使用連續世界座標；不含格線、相機或時間，因此跨分區及視角移動時不會跳接或游動。
@@ -881,23 +907,32 @@ float MiePhase(float cosine, float anisotropy)
     return 3.0 * (1.0 - squared) * (1.0 + cosine * cosine) / (8.0 * 3.14159265 * (2.0 + squared) * pow(denominator, 1.5));
 }
 
+float3 EvaluatePhaseCoherentSkyRadiance(float3 rayDirection)
+{
+    // 相位 profile 已同時驅動森林表面的環境漫射；天空／反射若退回固定
+    // 日間藍橙色，遠景輪廓便會像貼在天空上。這裡只塑形入射天空，
+    // 不改 aerial extinction，避免用全畫面霧化偽造深度。
+    const float vertical = clamp(rayDirection.y, -1.0, 1.0);
+    const float hemisphere = pow(saturate(abs(vertical)), max(0.05, phaseSkyHorizon.a));
+    const float3 poleRadiance = vertical >= 0.0 ? phaseSkyZenith.rgb : phaseSkyGround.rgb;
+    return max(0.0, lerp(phaseSkyHorizon.rgb, poleRadiance, hemisphere) * phaseSkyZenith.a);
+}
+
 float3 EvaluateAnalyticSkyRadiance(float3 rayDirection, float3 sunDirection, float roughness)
 {
     const float blur = saturate(roughness) * saturate(roughness);
     const float3 blurredDirection = normalize(lerp(rayDirection, float3(0.0, 1.0, 0.0), blur * 0.28));
-    const float height = clamp(blurredDirection.y, -0.08, 1.0);
-    const float opticalDepth = min(8.0, 1.0 / max(0.09, height + 0.13));
     const float sunCosine = clamp(dot(blurredDirection, sunDirection), -1.0, 1.0);
-    const float3 rayleighColor = float3(0.23, 0.48, 1.0) * RayleighPhase(sunCosine) * (0.75 + opticalDepth * 0.16);
-    const float3 mieColor = float3(1.0, 0.68, 0.38) * MiePhase(sunCosine, 0.76) * (0.045 + opticalDepth * 0.018);
-    const float horizon = pow(saturate(1.0 - abs(height)), 4.0);
-    const float sunsetAmount = 1.0 - saturate(max(0.0, sunDirection.y) * 2.2);
-    const float3 horizonColor = lerp(float3(0.26, 0.38, 0.52), float3(0.72, 0.49, 0.30), sunsetAmount);
+    const float3 atmosphereBase = EvaluatePhaseCoherentSkyRadiance(blurredDirection);
+    const float rayleighShape = 0.88 + RayleighPhase(sunCosine) * 1.35;
     const float sunDisk = pow(saturate(sunCosine), lerp(1400.0, 12.0, blur));
     const float sunGlow = pow(saturate(sunCosine), lerp(22.0, 4.0, blur));
-    const float sunAmplitude = lerp(7.0, 0.10, blur);
-    return clamp(rayleighColor + mieColor + horizonColor * horizon * 0.42
-               + float3(1.0, 0.78, 0.48) * (sunDisk * sunAmplitude + sunGlow * lerp(0.16, 0.04, blur)), 0.0, 16.0);
+    const float sunAmplitude = phaseSunDisk.a * lerp(1.0, 0.014, blur);
+    const float forwardScatter = MiePhase(sunCosine, 0.76) * lerp(0.035, 0.012, blur);
+    return clamp(atmosphereBase * rayleighShape
+               + phaseSunDisk.rgb * (sunDisk * sunAmplitude
+               + sunGlow * phaseSunDisk.a * lerp(0.020, 0.005, blur)
+               + forwardScatter), 0.0, 16.0);
 }
 
 float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
@@ -2204,6 +2239,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 rockWeight = materialWeights.z;
             }
         }
+        const float3 terrainMaterialDepthContrast = TerrainMesoPartitionEnabled()
+            ? TerrainMaterialDepthContrast(terrainMesoSignal,
+                float3(authoredPathWeight, authoredLeafLitterWeight, authoredWetSoilWeight))
+            : 1.0.xxx;
         // Keep one secondary material domain per pixel.  The showcase path and
         // wet bank are authored as rock- and soil-dominant layers, so the old
         // grass-only route left the two hero transitions visibly tiled.  A
@@ -2406,6 +2445,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             roughness = clamp(roughness * lerp(1.0, 0.90, authoredWetSoilWeight),
                               0.24, 1.0);
         }
+        // 最後套用一次即可同時涵蓋貼圖與 fallback 路徑；介電質 .82 上限已在
+        // 各路徑內處理，contrast 後再次夾限，避免 path 增益越過該能量界線。
+        baseColor *= terrainMaterialDepthContrast;
+        baseColor = min(baseColor, 0.82.xxx);
     }
 
     const float foliageMask = input.materialClass == 2 ? 1.0 : 0.0;
