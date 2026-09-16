@@ -25,21 +25,15 @@ bool Exact(const Mesh3D& left, const Mesh3D& right) {
 
 bool VertexContract(const Mesh3D& mesh,
                     GameplayForestGroundCoverSpecies3D species) {
-  const float minimumU = 0.f;
-  const float maximumU = 1.f;
-  bool hasMinimumU = false;
-  bool hasMaximumU = false;
   bool hasAnchor = false;
   bool hasWindTip = species == GameplayForestGroundCoverSpecies3D::LeafMoss;
   for (const auto& vertex : mesh.vertices) {
     if (!std::isfinite(vertex.x) || !std::isfinite(vertex.y) ||
         !std::isfinite(vertex.z) || !std::isfinite(vertex.u) ||
         !std::isfinite(vertex.v) || vertex.y < 0.f ||
-        vertex.u < minimumU - 1e-6f || vertex.u > maximumU + 1e-6f ||
+        vertex.u < 0.f || vertex.u > 1.f ||
         vertex.v < 0.f || vertex.v > 1.f || (vertex.color >> 24) != 255u)
       return false;
-    hasMinimumU |= std::abs(vertex.u - minimumU) < 1e-6f;
-    hasMaximumU |= std::abs(vertex.u - maximumU) < 1e-6f;
     const auto normal = UnpackNormalSnorm8(vertex.normal);
     const float normalLength = Length(Vec3{normal.x, normal.y, normal.z});
     if (!std::isfinite(normalLength) || normalLength < .985f || normalLength > 1.015f)
@@ -47,18 +41,30 @@ bool VertexContract(const Mesh3D& mesh,
     hasAnchor |= normal.w > .98f;
     hasWindTip |= normal.w < .02f;
   }
-  return hasMinimumU && hasMaximumU && hasAnchor && hasWindTip;
+  return hasAnchor && hasWindTip;
 }
 
-bool CommunityUvContract(const Mesh3D& mesh) {
-  bool minimumU{}, maximumU{};
+bool AtlasUvContract(const Mesh3D& mesh,
+                     GameplayForestGroundCoverAtlas3D atlas) {
+  if (mesh.vertices.empty()) return false;
   for (const auto& vertex : mesh.vertices) {
-    if (vertex.u < 0.f || vertex.u > 1.f || vertex.v < 0.f || vertex.v > 1.f)
+    bool knownRegion = false;
+    for (std::uint32_t region = 0; region < 5; ++region) {
+      const auto uv = GameplayForestGroundCoverAtlasUv3D(atlas, region);
+      const float middleV = uv.minimumV +
+                            (uv.maximumV - uv.minimumV) * .48f;
+      knownRegion |= (vertex.u == uv.minimumU || vertex.u == uv.maximumU) &&
+                     (vertex.v == uv.minimumV || vertex.v == uv.maximumV ||
+                      vertex.v == middleV);
+    }
+    const auto stemUv = GameplayForestGroundCoverStemUv3D(atlas);
+    knownRegion |= (vertex.u == stemUv.minimumU || vertex.u == stemUv.maximumU) &&
+                   (vertex.v == stemUv.minimumV || vertex.v == stemUv.maximumV);
+    if (!knownRegion || vertex.u == 0.f || vertex.u == 1.f ||
+        vertex.v == 0.f || vertex.v == 1.f)
       return false;
-    minimumU |= vertex.u == 0.f;
-    maximumU |= vertex.u == 1.f;
   }
-  return minimumU && maximumU;
+  return true;
 }
 
 bool LowShrubTierContract(const Mesh3D& mesh) {
@@ -93,6 +99,151 @@ bool LowShrubTierContract(const Mesh3D& mesh) {
   const float crownWidth = widthSums[2] / float(counts[2]);
   return outerRadius >= crownRadius + .08f &&
          outerWidth >= crownWidth + .12f;
+}
+
+bool FernCardShapeContract(const Mesh3D& mesh) {
+  if (mesh.vertices.empty() || mesh.vertices.size() % 4 != 0) return false;
+  std::size_t leafVertexCount = 0;
+  for (std::size_t base = 0; base < mesh.vertices.size(); base += 4) {
+    const auto& rootA = mesh.vertices[base];
+    const auto& rootB = mesh.vertices[base + 1];
+    const auto& tipA = mesh.vertices[base + 2];
+    const auto& tipB = mesh.vertices[base + 3];
+    if (rootA.y < 0.f || rootB.y < 0.f || tipA.y < 0.f || tipB.y < 0.f ||
+        rootA.y > .66f || rootB.y > .66f || tipA.y > .66f || tipB.y > .66f)
+      return false;
+    const float rootWidth = Length(Vec3{rootA.x - rootB.x, 0,
+                                        rootA.z - rootB.z});
+    const float tipWidth = Length(Vec3{tipA.x - tipB.x, 0,
+                                       tipA.z - tipB.z});
+    const float rootWidth3D = Length(Vec3{rootA.x - rootB.x,
+                                          rootA.y - rootB.y,
+                                          rootA.z - rootB.z});
+    const float tipWidth3D = Length(Vec3{tipA.x - tipB.x,
+                                         tipA.y - tipB.y,
+                                         tipA.z - tipB.z});
+    const float rootX = (rootA.x + rootB.x) * .5f;
+    const float rootZ = (rootA.z + rootB.z) * .5f;
+    const float tipX = (tipA.x + tipB.x) * .5f;
+    const float tipZ = (tipA.z + tipB.z) * .5f;
+    const float cardLength = Length(Vec3{tipX - rootX, tipA.y - rootA.y,
+                                         tipZ - rootZ});
+    const bool stem = tipWidth3D < .05f;
+    if (stem) {
+      if (rootWidth3D < .0035f || rootWidth3D > .0095f ||
+          tipWidth3D < .0035f || tipWidth3D > .0095f ||
+          cardLength < .05f || cardLength > .70f)
+        return false;
+    } else {
+      if (leafVertexCount != base ||
+          std::abs(rootA.y - rootB.y) > 1e-6f ||
+          std::abs(tipA.y - tipB.y) > 1e-6f ||
+          rootWidth < .012f || rootWidth > .024f ||
+          tipWidth < .050f || tipWidth > .112f ||
+          cardLength < .12f || cardLength > .225f || tipWidth <= rootWidth ||
+          std::abs(tipA.y - rootA.y) > .08f)
+        return false;
+      leafVertexCount += 4;
+    }
+  }
+  // 每兩張卡片必須由同一個莖節向左右展開；這個幾何條件防止日後
+  // 回退成沿莖交錯、低鏡頭只剩零碎浮片的配置。
+  if (!leafVertexCount || leafVertexCount == mesh.vertices.size() ||
+      leafVertexCount % 8 != 0)
+    return false;
+  for (std::size_t base = 0; base + 7 < leafVertexCount; base += 8) {
+    const Vec3 rootLeft{
+        (mesh.vertices[base].x + mesh.vertices[base + 1].x) * .5f,
+        (mesh.vertices[base].y + mesh.vertices[base + 1].y) * .5f,
+        (mesh.vertices[base].z + mesh.vertices[base + 1].z) * .5f};
+    const Vec3 rootRight{
+        (mesh.vertices[base + 4].x + mesh.vertices[base + 5].x) * .5f,
+        (mesh.vertices[base + 4].y + mesh.vertices[base + 5].y) * .5f,
+        (mesh.vertices[base + 4].z + mesh.vertices[base + 5].z) * .5f};
+    const Vec3 tipLeft{
+        (mesh.vertices[base + 2].x + mesh.vertices[base + 3].x) * .5f,
+        (mesh.vertices[base + 2].y + mesh.vertices[base + 3].y) * .5f,
+        (mesh.vertices[base + 2].z + mesh.vertices[base + 3].z) * .5f};
+    const Vec3 tipRight{
+        (mesh.vertices[base + 6].x + mesh.vertices[base + 7].x) * .5f,
+        (mesh.vertices[base + 6].y + mesh.vertices[base + 7].y) * .5f,
+        (mesh.vertices[base + 6].z + mesh.vertices[base + 7].z) * .5f};
+    const float rootWeightLeft = UnpackNormalSnorm8(mesh.vertices[base].normal).w;
+    const float rootWeightRight = UnpackNormalSnorm8(mesh.vertices[base + 4].normal).w;
+    const float tipWeightLeft = UnpackNormalSnorm8(mesh.vertices[base + 2].normal).w;
+    const float tipWeightRight = UnpackNormalSnorm8(mesh.vertices[base + 6].normal).w;
+    if (Length(rootLeft - rootRight) > 1e-5f ||
+        Length(tipLeft - tipRight) < .20f ||
+        std::abs(rootWeightLeft - rootWeightRight) > .02f ||
+        std::abs(tipWeightLeft - tipWeightRight) > .02f ||
+        tipWeightLeft > rootWeightLeft + .02f)
+      return false;
+  }
+  // 每段莖有兩張交叉卡片且必須首尾相接，從地面連到最後一組葉節；
+  // 任何斷點都會在玩家鏡頭中重新形成懸空葉片。
+  Vec3 previousEnd{};
+  bool havePrevious = false;
+  float previousEndWeight = 1.f;
+  if ((mesh.vertices.size() - leafVertexCount) % 8 != 0) return false;
+  for (std::size_t base = leafVertexCount; base < mesh.vertices.size(); base += 8) {
+    const Vec3 startA{
+        (mesh.vertices[base].x + mesh.vertices[base + 1].x) * .5f,
+        (mesh.vertices[base].y + mesh.vertices[base + 1].y) * .5f,
+        (mesh.vertices[base].z + mesh.vertices[base + 1].z) * .5f};
+    const Vec3 endA{
+        (mesh.vertices[base + 2].x + mesh.vertices[base + 3].x) * .5f,
+        (mesh.vertices[base + 2].y + mesh.vertices[base + 3].y) * .5f,
+        (mesh.vertices[base + 2].z + mesh.vertices[base + 3].z) * .5f};
+    const Vec3 startB{
+        (mesh.vertices[base + 4].x + mesh.vertices[base + 5].x) * .5f,
+        (mesh.vertices[base + 4].y + mesh.vertices[base + 5].y) * .5f,
+        (mesh.vertices[base + 4].z + mesh.vertices[base + 5].z) * .5f};
+    const Vec3 endB{
+        (mesh.vertices[base + 6].x + mesh.vertices[base + 7].x) * .5f,
+        (mesh.vertices[base + 6].y + mesh.vertices[base + 7].y) * .5f,
+        (mesh.vertices[base + 6].z + mesh.vertices[base + 7].z) * .5f};
+    const float startWeightA = UnpackNormalSnorm8(mesh.vertices[base].normal).w;
+    const float endWeightA = UnpackNormalSnorm8(mesh.vertices[base + 2].normal).w;
+    const float startWeightB = UnpackNormalSnorm8(mesh.vertices[base + 4].normal).w;
+    const float endWeightB = UnpackNormalSnorm8(mesh.vertices[base + 6].normal).w;
+    if (Length(startA - startB) > 1e-5f || Length(endA - endB) > 1e-5f ||
+        (!havePrevious && startA.y > 1e-6f) ||
+        (havePrevious && Length(startA - previousEnd) > 1e-5f) ||
+        std::abs(startWeightA - startWeightB) > .02f ||
+        std::abs(endWeightA - endWeightB) > .02f ||
+        endWeightA > startWeightA + .02f ||
+        (havePrevious && std::abs(startWeightA - previousEndWeight) > .02f))
+      return false;
+    previousEnd = endA;
+    previousEndWeight = endWeightA;
+    havePrevious = true;
+  }
+  const std::size_t lastLeafBase = leafVertexCount - 8;
+  const Vec3 lastLeafRoot{
+      (mesh.vertices[lastLeafBase].x + mesh.vertices[lastLeafBase + 1].x) * .5f,
+      (mesh.vertices[lastLeafBase].y + mesh.vertices[lastLeafBase + 1].y) * .5f,
+      (mesh.vertices[lastLeafBase].z + mesh.vertices[lastLeafBase + 1].z) * .5f};
+  if (!havePrevious || Length(previousEnd - lastLeafRoot) > 1e-5f ||
+      previousEndWeight > .02f)
+    return false;
+  const auto bounds = mesh.Bounds();
+  return bounds.center.y - bounds.extents.y >= -1e-6f &&
+         bounds.center.y + bounds.extents.y >= .48f &&
+         bounds.center.y + bounds.extents.y <= .63f;
+}
+
+bool LeafMossCardScaleContract(const Mesh3D& mesh) {
+  if (mesh.vertices.empty() || mesh.vertices.size() % 4 != 0) return false;
+  for (std::size_t base = 0; base < mesh.vertices.size(); base += 4) {
+    const auto& a = mesh.vertices[base];
+    const auto& b = mesh.vertices[base + 1];
+    const auto& d = mesh.vertices[base + 3];
+    const float width = Length(Vec3{a.x - b.x, 0, a.z - b.z});
+    const float length = Length(Vec3{a.x - d.x, 0, a.z - d.z});
+    if (width < .12f || width > .21f || length < .15f || length > .26f)
+      return false;
+  }
+  return true;
 }
 
 bool SameTint(Color left, Color right) {
@@ -182,10 +333,26 @@ int main() {
       if (!mesh.Valid() || !Exact(mesh, repeated) ||
           triangles > GameplayForestGroundCoverTriangleBudget(detail) ||
           triangles >= previousTriangles || !VertexContract(mesh, item) ||
+          !AtlasUvContract(mesh,
+                           GameplayForestGroundCoverAtlas3D::IslandTree01) ||
+          (item == GameplayForestGroundCoverSpecies3D::Fern &&
+           !FernCardShapeContract(mesh)) ||
+          (item == GameplayForestGroundCoverSpecies3D::LeafMoss &&
+           !LeafMossCardScaleContract(mesh)) ||
           (item == GameplayForestGroundCoverSpecies3D::LowShrub &&
            (triangles != expectedLowShrubTriangles[detailIndex] ||
             !LowShrubTierContract(mesh)))) {
-        std::cerr << "FOREST_GROUND_COVER_SPECIES_CONTRACT=FAIL\n";
+        std::cerr << "FOREST_GROUND_COVER_SPECIES_CONTRACT=FAIL species="
+                  << static_cast<unsigned>(item) << " detail=" << detailIndex
+                  << " triangles=" << triangles
+                  << " valid=" << mesh.Valid()
+                  << " vertex=" << VertexContract(mesh, item)
+                  << " atlas=" << AtlasUvContract(
+                         mesh, GameplayForestGroundCoverAtlas3D::IslandTree01)
+                  << " fern=" << (item != GameplayForestGroundCoverSpecies3D::Fern ||
+                                      FernCardShapeContract(mesh))
+                  << " leaf=" << (item != GameplayForestGroundCoverSpecies3D::LeafMoss ||
+                                      LeafMossCardScaleContract(mesh)) << '\n';
         return 1;
       }
       for (std::size_t triangle = 0; triangle < mesh.indices.size(); triangle += 3) {
@@ -223,7 +390,7 @@ int main() {
 
   std::size_t previousCommunityTriangles =
       (std::numeric_limits<std::size_t>::max)();
-  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{64, 38, 20}};
+  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{96, 62, 36}};
   for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
     const auto detail = details[detailIndex];
     const auto community =
@@ -232,7 +399,8 @@ int main() {
         CreateGameplayForestGroundCoverCommunityMesh3D(detail, 0xf04e57u);
     const std::size_t triangles = community.indices.size() / 3;
     if (!community.Valid() || !Exact(community, repeated) ||
-        !CommunityUvContract(community) ||
+        !AtlasUvContract(community,
+                         GameplayForestGroundCoverAtlas3D::TreeSmall02) ||
         triangles > GameplayForestGroundCoverCommunityTriangleBudget(detail) ||
         triangles != expectedCommunityTriangles[detailIndex] ||
         triangles >= previousCommunityTriangles ||
@@ -245,7 +413,7 @@ int main() {
 
   std::size_t previousRiverbankTriangles =
       (std::numeric_limits<std::size_t>::max)();
-  constexpr std::array<std::size_t, 3> expectedRiverbankTriangles{{44, 26, 14}};
+  constexpr std::array<std::size_t, 3> expectedRiverbankTriangles{{76, 50, 30}};
   for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
     const auto detail = details[detailIndex];
     const auto riverbank =
@@ -255,14 +423,21 @@ int main() {
     const auto bounds = riverbank.Bounds();
     const std::size_t triangles = riverbank.indices.size() / 3;
     if (!riverbank.Valid() || !Exact(riverbank, repeated) ||
-        !CommunityUvContract(riverbank) ||
+        !AtlasUvContract(riverbank,
+                         GameplayForestGroundCoverAtlas3D::IslandTree01) ||
         triangles != expectedRiverbankTriangles[detailIndex] ||
         triangles > GameplayForestRiverbankGroundCoverTriangleBudget(detail) ||
         triangles >= previousRiverbankTriangles ||
         bounds.extents.x < .55f || bounds.extents.z < .55f ||
         bounds.center.y - bounds.extents.y < -1e-6f ||
         bounds.center.y + bounds.extents.y > .61f) {
-      std::cerr << "FOREST_RIVERBANK_GROUND_COVER_CONTRACT=FAIL\n";
+      std::cerr << "FOREST_RIVERBANK_GROUND_COVER_CONTRACT=FAIL detail="
+                << detailIndex << " triangles=" << triangles
+                << " extents=" << bounds.extents.x << ',' << bounds.extents.y
+                << ',' << bounds.extents.z << " centerY=" << bounds.center.y
+                << " atlas=" << AtlasUvContract(
+                       riverbank, GameplayForestGroundCoverAtlas3D::IslandTree01)
+                << '\n';
       return 9;
     }
     previousRiverbankTriangles = triangles;

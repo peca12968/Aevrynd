@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Aevrynd/Mesh3D.h>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -24,6 +25,70 @@ enum class GameplayForestGroundCoverVariant3D : std::uint8_t {
   Community,
 };
 
+enum class GameplayForestGroundCoverAtlas3D : std::uint8_t {
+  IslandTree01,
+  TreeSmall02,
+};
+
+struct GameplayForestGroundCoverUvRect3D {
+  float minimumU{};
+  float minimumV{};
+  float maximumU{1.f};
+  float maximumV{1.f};
+
+  [[nodiscard]] constexpr bool operator==(
+      const GameplayForestGroundCoverUvRect3D&) const noexcept = default;
+};
+
+// 正式葉片來源是 atlas，不是可整張平鋪的單一葉片。區域保留數個 texel
+// 的透明 padding，避免線性取樣跨到相鄰葉片；所有 PBR 貼圖共用同一 UV。
+[[nodiscard]] constexpr GameplayForestGroundCoverUvRect3D
+GameplayForestGroundCoverAtlasUv3D(GameplayForestGroundCoverAtlas3D atlas,
+                                   std::uint32_t item) noexcept {
+  constexpr float inverseExtent = 1.f / 1024.f;
+  constexpr std::array<GameplayForestGroundCoverUvRect3D, 5> islandTree{{
+      {12.f * inverseExtent, 16.f * inverseExtent, 152.f * inverseExtent,
+       526.f * inverseExtent},
+      {164.f * inverseExtent, 16.f * inverseExtent, 349.f * inverseExtent,
+       405.f * inverseExtent},
+      {365.f * inverseExtent, 27.f * inverseExtent, 498.f * inverseExtent,
+       373.f * inverseExtent},
+      {525.f * inverseExtent, 46.f * inverseExtent, 668.f * inverseExtent,
+       375.f * inverseExtent},
+      {706.f * inverseExtent, 16.f * inverseExtent, 839.f * inverseExtent,
+       427.f * inverseExtent},
+  }};
+  constexpr std::array<GameplayForestGroundCoverUvRect3D, 5> treeSmall{{
+      {46.f * inverseExtent, 36.f * inverseExtent, 214.f * inverseExtent,
+       194.f * inverseExtent},
+      {191.f * inverseExtent, 16.f * inverseExtent, 354.f * inverseExtent,
+       184.f * inverseExtent},
+      {571.f * inverseExtent, 21.f * inverseExtent, 769.f * inverseExtent,
+       209.f * inverseExtent},
+      {256.f * inverseExtent, 231.f * inverseExtent, 434.f * inverseExtent,
+       389.f * inverseExtent},
+      {51.f * inverseExtent, 221.f * inverseExtent, 244.f * inverseExtent,
+       394.f * inverseExtent},
+  }};
+  return atlas == GameplayForestGroundCoverAtlas3D::IslandTree01
+             ? islandTree[item % islandTree.size()]
+             : treeSmall[item % treeSmall.size()];
+}
+
+// 莖使用葉片內部已知不透明的小區域，避免在 foliage 材質上拉伸整片
+// 葉形造成中軸斷裂；四周仍留有足夠 texel 避免跨區域取樣。
+[[nodiscard]] constexpr GameplayForestGroundCoverUvRect3D
+GameplayForestGroundCoverStemUv3D(GameplayForestGroundCoverAtlas3D atlas) noexcept {
+  constexpr float inverseExtent = 1.f / 1024.f;
+  return atlas == GameplayForestGroundCoverAtlas3D::IslandTree01
+             ? GameplayForestGroundCoverUvRect3D{
+                   78.f * inverseExtent, 267.f * inverseExtent,
+                   86.f * inverseExtent, 275.f * inverseExtent}
+             : GameplayForestGroundCoverUvRect3D{
+                   126.f * inverseExtent, 111.f * inverseExtent,
+                   134.f * inverseExtent, 119.f * inverseExtent};
+}
+
 // 線性空間乘數只壓低樹冠貼圖能量；alpha 維持原值，避免改變遮罩輪廓。
 [[nodiscard]] constexpr Aevrynd::Color GameplayForestGroundCoverTintMultiplier3D(
     GameplayForestGroundCoverVariant3D variant) noexcept {
@@ -38,8 +103,8 @@ enum class GameplayForestGroundCoverVariant3D : std::uint8_t {
   return {1.f, 1.f, 1.f, 1.f};
 }
 
-// 三種地被可共用既有、完整 0..1 UV 的葉片 alpha 紋理；呼叫端必須提交
-// 含 alpha 的貼圖，並沿用這份 mask/double-sided 契約。
+// 三種地被共用既有葉片 atlas 的已驗證子區域；呼叫端必須提交含 alpha
+// 的對應貼圖，並沿用這份 mask/double-sided 契約。
 struct GameplayForestGroundCoverAlphaCardContract3D {
   Aevrynd::MaterialAlphaMode3D alphaMode{Aevrynd::MaterialAlphaMode3D::Mask};
   float alphaCutoff{.45f};
@@ -104,9 +169,9 @@ PrepareGameplayForestGroundCoverMaterial3D(
 [[nodiscard]] constexpr std::size_t GameplayForestGroundCoverTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 24;
-    case GameplayForestGroundCoverDetail3D::Mid: return 14;
-    case GameplayForestGroundCoverDetail3D::Far: return 8;
+    case GameplayForestGroundCoverDetail3D::Near: return 56;
+    case GameplayForestGroundCoverDetail3D::Mid: return 36;
+    case GameplayForestGroundCoverDetail3D::Far: return 24;
   }
   return 0;
 }
@@ -114,9 +179,9 @@ PrepareGameplayForestGroundCoverMaterial3D(
 [[nodiscard]] constexpr std::size_t GameplayForestGroundCoverCommunityTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 64;
-    case GameplayForestGroundCoverDetail3D::Mid: return 40;
-    case GameplayForestGroundCoverDetail3D::Far: return 24;
+    case GameplayForestGroundCoverDetail3D::Near: return 96;
+    case GameplayForestGroundCoverDetail3D::Mid: return 62;
+    case GameplayForestGroundCoverDetail3D::Far: return 36;
   }
   return 0;
 }
@@ -127,9 +192,9 @@ PrepareGameplayForestGroundCoverMaterial3D(
 GameplayForestRiverbankGroundCoverTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 44;
-    case GameplayForestGroundCoverDetail3D::Mid: return 26;
-    case GameplayForestGroundCoverDetail3D::Far: return 14;
+    case GameplayForestGroundCoverDetail3D::Near: return 76;
+    case GameplayForestGroundCoverDetail3D::Mid: return 50;
+    case GameplayForestGroundCoverDetail3D::Far: return 30;
   }
   return 0;
 }

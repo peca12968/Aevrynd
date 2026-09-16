@@ -565,12 +565,14 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     // 森林地被改用正確的深色材質後，黃昏中間調需要少量補償，才能維持
     // 日／昏／夜的清楚亮度階層。新的低反射率林地與淡水材質在正式 GBV
     // God-view 量得 dusk/night=1.047，仍略低於既有 1.05 相位門檻；將
-    // 黃昏曝光補到既有允許上限，只提升黃昏中間調，不抬亮夜景或放寬門檻。
+    // 黃昏曝光補到既有允許上限，只提升黃昏中間調，不放寬門檻。
     timeOfDayExposure.duskExposureEv = 1.f;
   } else if (profile == ShowcaseLightingProfile3D::Night) {
     // 夜間不沿用預設 +2 EV：壓住月光與小屋高光，同時只在 tone curve
     // 暗部提供有限 lift，讓林地輪廓可讀而不抬高整個畫面。
-    timeOfDayExposure.nightExposureEv = 1.50f;
+    // 正式森林鏡頭顯示 +1.50 EV 仍會讓月光夜景過度接近黃昏；降低
+    // 0.05 EV，建立可量測的相位間隔，同時保留物件專用補光所提供的輪廓。
+    timeOfDayExposure.nightExposureEv = 1.45f;
     // first-person 鏡頭的近場樹幹與林床仍在有效黑階下被壓成
     // 剪影。只稍微抬高有幾何深度的 toe；PostProcess 的 sceneSemantic
     // 使天空、水面與 bloom 不會被全螢幕提亮。
