@@ -89,6 +89,46 @@ float RiverWidth(float z) {
   return 12.f + std::sin(z * .057f + .7f) * 2.6f;
 }
 
+float TerrainApronRelief(float boundaryX, float boundaryZ, float distance) {
+  if (distance <= 24.f)
+    return 0.f;
+  const auto smoothStep = [](float value) {
+    const float t = Aevrynd::Clamp(value, 0.f, 1.f);
+    return t * t * (3.f - 2.f * t);
+  };
+  // 兩段低頻抬升在 320m 後才形成明確山脊；近場 24m 維持原地形接縫，
+  // 避免第一／第三人稱可行走區產生不可碰撞的視覺斜坡。相位只取世界
+  // 邊界座標，因此相同來源每次建立都得到完全相同的遠景輪廓。
+  const float baseRise =
+      48.f * smoothStep((distance - 24.f) / 232.f) +
+      118.f * smoothStep((distance - 256.f) / 512.f);
+  const float broadRidge =
+      .70f + .25f * std::sin(boundaryX * .019f + boundaryZ * .013f) +
+      .12f * std::sin(boundaryX * .037f - boundaryZ * .021f + 1.1f) +
+      .07f * std::sin(boundaryX * .071f + boundaryZ * .043f + .4f);
+  return baseRise * broadRidge;
+}
+
+std::uint32_t TerrainApronColor(std::uint32_t color, float distance,
+                                float relief) {
+  const auto smoothStep = [](float value) {
+    const float t = Aevrynd::Clamp(value, 0.f, 1.f);
+    return t * t * (3.f - 2.f * t);
+  };
+  // 遠山保留材質色相，但逐層降低直接反照率，讓夜間不被天空環境光抬成
+  // 均勻冷藍牆；真正的距離霧仍由 aerial perspective 負責。
+  const float reflectance = 1.f - .38f * smoothStep((distance - 64.f) / 704.f);
+  std::uint32_t result = color & 0xff000000u;
+  for (unsigned shift : {0u, 8u, 16u}) {
+    const auto channel = float((color >> shift) & 0xffu);
+    result |= std::uint32_t(std::lround(channel * reflectance)) << shift;
+  }
+  const std::uint32_t sourceHeight = (color >> 24) & 0xffu;
+  const auto heightLift = std::uint32_t((std::min)(96.f, relief * 2.f));
+  return (result & 0x00ffffffu) |
+         ((std::min)(255u, sourceHeight + heightLift) << 24);
+}
+
 struct ProjectedBounds3D {
   float minimumX{(std::numeric_limits<float>::max)()};
   float minimumY{(std::numeric_limits<float>::max)()};
@@ -174,9 +214,28 @@ bool AppendShowcaseTerrainApron3D(Aevrynd::Mesh3D &mesh) {
       const float dx=source.x/256.f*distance,dz=source.z/256.f*distance;
       const auto n=Aevrynd::UnpackNormalSnorm8(source.normal);
       const float slope=std::abs(n.y)>.2f?-(n.x*dx+n.z*dz)/n.y:0.f;
-      v.x+=dx;v.z+=dz;v.y+=slope/(1.f+distance/32.f);
+      v.x+=dx;v.z+=dz;
+      const float relief=TerrainApronRelief(source.x,source.z,distance);
+      v.y+=slope/(1.f+distance/32.f)+relief;
+      v.color=TerrainApronColor(v.color,distance,relief);
       v.u=v.x*.085f;v.v=v.z*.085f;
       outer[i]=unsigned(mesh.vertices.size());mesh.vertices.push_back(v);
+    }
+    // 遠景山脊不是垂直 billboard：以環帶切線與向外斜率建立幾何法線，
+    // 讓日／暮／夜光照能呈現實際坡向。原 512m 世界邊界仍完全不變。
+    for(unsigned i=0;i<perimeter;++i){
+      const unsigned previous=(i+perimeter-1)%perimeter,next=(i+1)%perimeter;
+      const auto& a=mesh.vertices[outer[previous]];
+      const auto& b=mesh.vertices[outer[i]];
+      const auto& c=mesh.vertices[outer[next]];
+      const auto& inside=mesh.vertices[inner[i]];
+      const Aevrynd::Vec3 tangent{c.x-a.x,c.y-a.y,c.z-a.z};
+      const Aevrynd::Vec3 radial{b.x-inside.x,b.y-inside.y,b.z-inside.z};
+      Aevrynd::Vec3 normal{tangent.y*radial.z-tangent.z*radial.y,
+                           tangent.z*radial.x-tangent.x*radial.z,
+                           tangent.x*radial.y-tangent.y*radial.x};
+      if(normal.y<0.f)normal={-normal.x,-normal.y,-normal.z};
+      mesh.vertices[outer[i]].normal=Aevrynd::PackNormalSnorm8(Aevrynd::Normalize(normal));
     }
     for(unsigned i=0;i<perimeter;++i){const unsigned j=(i+1)%perimeter;
       mesh.indices.insert(mesh.indices.end(),{inner[i],inner[j],outer[j],inner[i],outer[j],outer[i]});
