@@ -2155,6 +2155,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
 
     const float terrainMask = input.materialClass == 3 ? 1.0 : 0.0;
+    float terrainDetailWeight = 1.0;
     [branch] if (terrainMask > 0.5)
     {
         const float macroNoise = CloudNoise(input.worldPosition.xz * 0.021);
@@ -2162,7 +2163,6 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         // 約 31cm 的方格色塊。
         const float microNoise = CloudNoise(input.worldPosition.xz * 3.2);
         const float terrainCameraDistance = distance(input.worldPosition, cameraFogStart.xyz);
-        float terrainDetailWeight = 1.0;
         float distanceMacroVariation = 1.0;
         float3 grassSamplePosition = input.worldPosition;
         float3 soilSamplePosition = input.worldPosition;
@@ -3078,6 +3078,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         aerialOutput=WaterOrderedScaleAdd3D(singleCompositeLit,aerialTransmittance,aerialInscattering,1.0);
         precise const float recoveredSceneWeight = 1.0 - aerialTransmittance;
         aerialOutput = WaterOrderedScaleAdd3D(aerialOutput,1.0,aerialOwnedSceneContribution,recoveredSceneWeight);
+    }
+    // 遠山的最終可見亮度包含 aerial in-scattering，因此必須在大氣合成後、
+    // tone map 前收斂；否則霧會重新抬亮已壓低的 PBR 結果。只處理夜間遠距 terrain。
+    [branch] if (terrainMask > 0.5 && phaseSkyZenith.w < 0.5 && terrainDetailWeight < 1.0)
+    {
+        const float lowSkyLinear = saturate((0.5 - phaseSkyZenith.w) / 0.22);
+        const float lowSkyWeight = lowSkyLinear * lowSkyLinear * (3.0 - 2.0 * lowSkyLinear);
+        const float distantNightWeight = saturate((1.0 - terrainDetailWeight) * lowSkyWeight * 4.0);
+        const float terrainNightLuma = dot(aerialOutput, float3(0.2126, 0.7152, 0.0722));
+        const float3 distantNightLighting = lerp(aerialOutput, terrainNightLuma.xxx, 0.30) * 0.68;
+        aerialOutput = lerp(aerialOutput, distantNightLighting, distantNightWeight);
     }
 #endif
     evaluatedOutput=float4(max(0.0, aerialOutput), outputAlpha);
