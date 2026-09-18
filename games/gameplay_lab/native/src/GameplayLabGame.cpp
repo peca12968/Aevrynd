@@ -70,6 +70,83 @@ constexpr std::uint64_t GameplayPlacedIdentityHigh=0xaec047504c414301ull;
 constexpr std::uint64_t GameplayPreviewIdentityHigh=0xaec0475052455601ull;
 constexpr std::uint64_t GameplayCameraCandidateHigh=0xaec04743414d4301ull;
 constexpr std::uint64_t EnvironmentMirrorUserData=0xe000000000000000ull;
+// The shared gabled prism is centered inside the palette's unchanged 1 m box.
+// These scalar constants are also consumed by the executable geometry smoke gate.
+constexpr float GameplayPaletteBuildingOffsetX3D=0.f;
+constexpr float GameplayPaletteBuildingOffsetY3D=-.109f;
+constexpr float GameplayPaletteBuildingOffsetZ3D=.02f;
+constexpr float GameplayPaletteBuildingScaleX3D=1.f;
+constexpr float GameplayPaletteBuildingScaleY3D=.83f;
+constexpr float GameplayPaletteBuildingScaleZ3D=1.05f;
+constexpr float GameplayPaletteBuildingLocalMinimumX3D=-.33f;
+constexpr float GameplayPaletteBuildingLocalMinimumY3D=-.47f;
+constexpr float GameplayPaletteBuildingLocalMinimumZ3D=-.31f;
+constexpr float GameplayPaletteBuildingLocalMaximumX3D=.33f;
+constexpr float GameplayPaletteBuildingLocalMaximumY3D=.44f;
+constexpr float GameplayPaletteBuildingLocalMaximumZ3D=.31f;
+constexpr std::uint32_t GameplayPaletteBuildingDrawCap3D=1;
+constexpr float GameplayPaletteCaptureGhostMinimumSeparation3D=1.5f;
+bool GameplayPaletteCaptureGhostsDistinct3D(Vec3 valid,Vec3 invalid){
+  const auto finite=[](Vec3 value){return std::isfinite(value.x)&&
+      std::isfinite(value.y)&&std::isfinite(value.z);};
+  if(!finite(valid)||!finite(invalid))return false;
+  const float x=invalid.x-valid.x,z=invalid.z-valid.z;
+  return x*x+z*z>=GameplayPaletteCaptureGhostMinimumSeparation3D*
+      GameplayPaletteCaptureGhostMinimumSeparation3D;
+}
+bool GameplayPaletteBuildingTransform3D(Vec3 center,float yaw,Transform3D& result){
+  const auto finite=[](Vec3 value){return std::isfinite(value.x)&&
+      std::isfinite(value.y)&&std::isfinite(value.z);};
+  if(!finite(center)||!std::isfinite(yaw))return false;
+  const Vec3 localOffset{GameplayPaletteBuildingOffsetX3D,
+      GameplayPaletteBuildingOffsetY3D,GameplayPaletteBuildingOffsetZ3D};
+  const Vec3 rotatedOffset=TransformPoint(CreateRotationMatrix({0,yaw,0}),localOffset);
+  result={center+rotatedOffset,{0,yaw,0},{GameplayPaletteBuildingScaleX3D,
+      GameplayPaletteBuildingScaleY3D,GameplayPaletteBuildingScaleZ3D}};
+  if(!finite(result.position)||!finite(result.rotation)||!finite(result.scale))return false;
+  // The generated merged house validates these exact local bounds at upload.
+  const float sine=std::abs(std::sin(yaw)),cosine=std::abs(std::cos(yaw));
+  constexpr float localExtentX=(GameplayPaletteBuildingLocalMaximumX3D-GameplayPaletteBuildingLocalMinimumX3D)*.5f;
+  constexpr float localExtentZ=(GameplayPaletteBuildingLocalMaximumZ3D-GameplayPaletteBuildingLocalMinimumZ3D)*.5f;
+  const float extentX=cosine*localExtentX*result.scale.x+sine*localExtentZ*result.scale.z;
+  const float extentZ=sine*localExtentX*result.scale.x+cosine*localExtentZ*result.scale.z;
+  const Vec3 relative=result.position-center;
+  constexpr float epsilon=.00001f;
+  return std::abs(relative.x)+extentX<=.5f+epsilon&&
+      std::abs(relative.z)+extentZ<=.5f+epsilon&&
+      relative.y+GameplayPaletteBuildingLocalMinimumY3D*result.scale.y>=-.5f-epsilon&&
+      relative.y+GameplayPaletteBuildingLocalMaximumY3D*result.scale.y<=.5f+epsilon;
+}
+const bool GameplayPaletteBuildingGeometryRuntimeGate3D=[](){
+  static_assert(GameplayPaletteBuildingDrawCap3D==1);
+  Transform3D zero{},quarter{};
+  if(!GameplayPaletteBuildingTransform3D({2,3,4},0,zero)||
+     !GameplayPaletteBuildingTransform3D({2,3,4},1.57079632679f,quarter)||
+     zero.rotation.y!=0||quarter.rotation.y!=1.57079632679f||
+     std::abs(zero.position.x-quarter.position.x)<.01f)
+    throw std::runtime_error("Palette building yaw transform gate failed");
+  for(unsigned step=0;step<24;++step){Transform3D transform{};
+    if(!GameplayPaletteBuildingTransform3D({},float(step)*.2617993878f,transform))
+      throw std::runtime_error("Palette building exceeded the placement footprint");
+  }
+  constexpr float builtWidthX=(GameplayPaletteBuildingLocalMaximumX3D-
+      GameplayPaletteBuildingLocalMinimumX3D)*GameplayPaletteBuildingScaleX3D;
+  constexpr float builtWidthZ=(GameplayPaletteBuildingLocalMaximumZ3D-
+      GameplayPaletteBuildingLocalMinimumZ3D)*GameplayPaletteBuildingScaleZ3D;
+  constexpr float builtHeight=(GameplayPaletteBuildingLocalMaximumY3D-
+      GameplayPaletteBuildingLocalMinimumY3D)*GameplayPaletteBuildingScaleY3D;
+  if(builtWidthX<.65f||builtWidthZ<.65f||builtHeight<.75f)
+    throw std::runtime_error("Palette building visual occupancy gate failed");
+  Transform3D rejected{};
+  if(GameplayPaletteBuildingTransform3D({},std::numeric_limits<float>::infinity(),rejected))
+    throw std::runtime_error("Palette building accepted a non-finite yaw");
+  if(!GameplayPaletteCaptureGhostsDistinct3D({}, {0,0,1.5f})||
+     GameplayPaletteCaptureGhostsDistinct3D({}, {0,0,1.499f})||
+     GameplayPaletteCaptureGhostsDistinct3D({},
+       {std::numeric_limits<float>::infinity(),0,2.f}))
+    throw std::runtime_error("Palette capture ghost separation gate failed");
+  return true;
+}();
 const char* CaptureCameraName(GameplayCaptureCamera3D value){switch(value){case GameplayCaptureCamera3D::First:return "first";case GameplayCaptureCamera3D::Third:return "third";case GameplayCaptureCamera3D::God:return "god";}return "invalid";}
 const char* CaptureLightingName(GameplayCaptureLighting3D value){switch(value){case GameplayCaptureLighting3D::Day:return "day";case GameplayCaptureLighting3D::Dusk:return "dusk";case GameplayCaptureLighting3D::Night:return "night";}return "invalid";}
 const char* CaptureProjectionName(ProjectionMode value){switch(value){case ProjectionMode::Perspective:return "Perspective";case ProjectionMode::Orthographic:return "Orthographic";}return "Invalid";}
@@ -330,6 +407,39 @@ Mesh3D CreateCottageFacadeMesh3D(bool door,bool pairedWindows){
 Mesh3D CreateCottageRoofMesh3D(){
   Mesh3D mesh;const Vec3 lf{- .5f,-.22f,-.5f},lb{-.5f,-.22f,.5f},rf{.5f,-.22f,-.5f},rb{.5f,-.22f,.5f},ridgeF{0,.5f,-.5f},ridgeB{0,.5f,.5f};
   AppendShowcaseQuad(mesh,lf,ridgeF,ridgeB,lb,3.f,2.f);AppendShowcaseQuad(mesh,ridgeF,rf,rb,ridgeB,3.f,2.f);AppendShowcaseTriangle(mesh,lf,rf,ridgeF);AppendShowcaseTriangle(mesh,rb,lb,ridgeB);AppendShowcaseQuad(mesh,lb,rb,rf,lf);
+  return mesh;
+}
+Mesh3D CreateGameplayPaletteBuildingMesh3D(){
+  Mesh3D mesh;
+  const auto shade=[&](std::size_t first,Color color){
+    const auto packed=PackColorRgba8(color);
+    for(std::size_t index=first;index<mesh.vertices.size();++index)
+      mesh.vertices[index].color=packed;
+  };
+  const auto box=[&](Vec3 minimum,Vec3 maximum,Color color){
+    const auto first=mesh.vertices.size();AppendShowcaseBox(mesh,minimum,maximum);shade(first,color);
+  };
+  // Wall shell, door, two recessed-looking windows and chimney are merged with
+  // the roof into one immutable GPU mesh. Grayscale vertex shades retain the
+  // green/red preview tint while keeping facade features legible.
+  box({-.27f,-.47f,-.27f},{.27f,.03f,.27f},{.58f,.34f,.18f,1});
+  box({-.075f,-.46f,-.285f},{.075f,-.13f,-.27f},{.16f,.09f,.045f,1});
+  box({-.225f,-.27f,-.287f},{-.12f,-.09f,-.27f},{.035f,.03f,.025f,1});
+  box({.12f,-.27f,-.287f},{.225f,-.09f,-.27f},{.035f,.03f,.025f,1});
+  const Vec3 lf{-.33f,0,-.31f},lb{-.33f,0,.31f},rf{.33f,0,-.31f},rb{.33f,0,.31f};
+  const Vec3 ridgeF{0,.36f,-.31f},ridgeB{0,.36f,.31f};
+  const auto roofFirst=mesh.vertices.size();
+  AppendShowcaseQuad(mesh,lf,ridgeF,ridgeB,lb);AppendShowcaseQuad(mesh,ridgeF,rf,rb,ridgeB);
+  AppendShowcaseTriangle(mesh,lf,rf,ridgeF);AppendShowcaseTriangle(mesh,rb,lb,ridgeB);
+  AppendShowcaseQuad(mesh,lb,rb,rf,lf);shade(roofFirst,{.22f,.20f,.18f,1});
+  box({-.22f,.23f,.08f},{-.14f,.44f,.18f},{.25f,.14f,.08f,1});
+  const auto bounds=mesh.Bounds();
+  const auto approximately=[](float a,float b){return std::abs(a-b)<=.00001f;};
+  if(!mesh.Valid()||mesh.vertices.size()!=138||mesh.indices.size()!=204||
+     mesh.indices.size()/3!=68||
+     !approximately(bounds.center.x,0)||!approximately(bounds.center.y,-.015f)||!approximately(bounds.center.z,0)||
+     !approximately(bounds.extents.x,.33f)||!approximately(bounds.extents.y,.455f)||!approximately(bounds.extents.z,.31f))
+    throw std::runtime_error("Palette building merged mesh bounds/topology gate failed");
   return mesh;
 }
 struct GameplayCottageMaterialResponse3D {
@@ -617,7 +727,9 @@ void GameplayLabGame::OnStart(Engine& engine){
   sphereMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitSphere(18,12));
   if(!showcaseEnvironment_.Initialize(0x4a17u))throw std::runtime_error("Gameplay showcase environment initialization failed");
   showcaseCylinderMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCylinder(14));
-  showcaseConeHighMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(16));
+  // This existing, otherwise-unsubmitted resource slot owns the one-time merged
+  // palette house mesh; its normal destroy/check lifecycle remains unchanged.
+  showcaseConeHighMesh_=engine.CreateMeshResource3D(CreateGameplayPaletteBuildingMesh3D());
   showcaseConeLowMesh_=engine.CreateMeshResource3D(Mesh3D::CreateUnitCone(7));
   // 每個既有 placement 共用一片林下群落網格，不改 descriptor、身份或碰撞。
   // 高細節增加葉片與彎曲段數，遠景也保留六葉輪廓；群落 bounds、葉高與風權重
@@ -929,7 +1041,7 @@ void GameplayLabGame::OnStop(Engine &engine) {
     const auto ui=paletteUi_->Receipt();
     std::ofstream uiOut(captureDirectory_/"gameplay-palette-ui-receipt.json",std::ios::trunc);
     uiOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
-    uiOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayObjectPaletteUi3D\",\"categories\":6,\"drawnFrames\":{},\"cleanHudPresentationFrames\":{},\"pointerDowns\":{},\"drags\":{},\"previews\":{},\"commits\":{},\"invalidPlacements\":{},\"cancels\":{},\"deterministicHash\":{}}}",runId_,paletteUiDrawnFrames_,captureCleanHudFrames_,ui.pointerDowns,ui.drags,ui.previews,ui.commits,ui.invalidPlacements,ui.cancels,ui.deterministicHash);
+    uiOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayObjectPaletteUi3D\",\"categories\":6,\"drawnFrames\":{},\"cleanHudPresentationFrames\":{},\"pointerDowns\":{},\"drags\":{},\"previews\":{},\"commits\":{},\"invalidPlacements\":{},\"cancels\":{},\"evidenceColliderReleased\":{},\"evidenceColliderHandleCleared\":{},\"deterministicHash\":{}}}",runId_,paletteUiDrawnFrames_,captureCleanHudFrames_,ui.pointerDowns,ui.drags,ui.previews,ui.commits,ui.invalidPlacements,ui.cancels,captureEvidenceColliderReleased_?1:0,captureEvidenceCollider_?0:1,ui.deterministicHash);
   }
   palette_->Clear();
   const auto environmentCollisionBeforeRelease=environmentCollisionActiveReceipt_;
@@ -1091,8 +1203,28 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const Vec2 cameraViewport{float((std::max)(1u,engine.RenderWidth())),float((std::max)(1u,engine.RenderHeight()))};
       // 每個互動視角使用自己的正式投影；不得繼承前一個God capture的窄FOV。
       CameraProjection cameraProjection{};
-      std::vector<::GameplayLab::GameplayOccluderBox3D> buildingOccluders;buildingOccluders.reserve(6);std::uint64_t descriptorLow{};
+      std::vector<::GameplayLab::GameplayOccluderBox3D> buildingOccluders;buildingOccluders.reserve(6+rules_.Entities().size());std::uint64_t descriptorLow{};
       for(const auto& descriptor:showcaseEnvironment_.Descriptors()){++descriptorLow;if(descriptor.kind==ShowcaseSceneKind3D::Building)buildingOccluders.push_back({descriptorLow,descriptor.position,descriptor.scale,descriptor.yaw});}
+      // Runtime palette buildings are authoritative world occluders too.  If
+      // they are omitted here a valid camera candidate can be chosen directly
+      // behind a newly placed building even though collision shortening keeps
+      // the camera itself outside the collider.
+      std::uint64_t paletteOccluderHash=14695981039346656037ull;
+      const auto mixPaletteOccluder=[&](std::uint64_t value){for(unsigned byte=0;byte<8;++byte){paletteOccluderHash^=std::uint8_t(value>>(byte*8));paletteOccluderHash*=1099511628211ull;}};
+      for(const auto& placed:rules_.Entities()){
+        // Initial physics-stack fixtures (1..18) are deliberate test clutter,
+        // not user-authored palette content.  Only replay/live additions can
+        // invalidate the presentation camera after its candidate cache exists.
+        if(placed.id<=18||(!captureDirectory_.empty()&&captureIndex_==9))continue;
+        const auto* body=static_cast<const PhysicsWorld3D&>(physics_).GetBody(palette_->Body(placed.id));
+        if(!body)continue;
+        const Vec3 size=body->settings.colliderExtents*2.f;
+        const auto& transform=body->settings.transform;
+        buildingOccluders.push_back({0x100000000ull+placed.id,transform.position,size,transform.rotation.y});
+        mixPaletteOccluder(placed.id);
+        for(float value:{transform.position.x,transform.position.y,transform.position.z,size.x,size.y,size.z,transform.rotation.y})
+          mixPaletteOccluder(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));
+      }
       const SkinnedModel3D& cameraSubjectModel=rules_.Female()?femaleModel_:maleModel_;
       const AnimationPose3D& cameraSubjectPose=rules_.Female()?femalePose_:malePose_;
       if(!SkinModelInto(cameraSubjectModel,cameraSubjectPose,skinning_,cameraPoseVisualMesh_)){
@@ -1125,10 +1257,11 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const float minimumSubjectScreenArea=rules_.PaletteOpen()?.08f:.05f;
       cameraBuildInput.minimumSubjectScreenHeight=.52f;cameraBuildInput.minimumSubjectScreenArea=minimumSubjectScreenArea;
       // 物件面板展示必須保留完整角色輪廓與乾淨背景；一般遊玩仍容許少量建築入鏡並交由淡出策略處理。
-      cameraBuildInput.maximumBuildingUnionCoverage=rules_.PaletteOpen()?0.f:.22f;
-      cameraBuildInput.maximumBuildingPartCoverage=rules_.PaletteOpen()?0.f:.08f;
-      cameraBuildInput.maximumRoofCoverage=rules_.PaletteOpen()?0.f:.05f;
-      cameraBuildInput.maximumSubjectOcclusion=rules_.PaletteOpen()?0.f:.005f;
+      cameraBuildInput.maximumBuildingUnionCoverage=rules_.PaletteOpen()?.08f:.22f;
+      cameraBuildInput.maximumBuildingPartCoverage=rules_.PaletteOpen()?.06f:.08f;
+      cameraBuildInput.maximumRoofCoverage=rules_.PaletteOpen()?.04f:.05f;
+      cameraBuildInput.maximumSubjectOcclusion=.005f;
+      cameraBuildInput.useCleanShowcaseYawOffsets=rules_.PaletteOpen();
       cameraBuildInput.compositionOccluders=buildingOccluders;
       cameraBuildInput.compositionActors=std::span<const ::GameplayLab::GameplayCameraCompositionActor3D>{compositionActors.data(),compositionActorCount};
       const MeshBounds3D playerWorldBounds=TransformBounds(playerEnvelope,{feet,{0,yaw_,0},{1,1,1}});
@@ -1139,8 +1272,8 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const bool companionBoundsChanged=compositionActorCount!=(cameraBuildCacheHasCompanion_?1u:0u)||(compositionActorCount&&Length(companionPresentation-cameraBuildCacheCompanionPosition_)>.02f);
       const bool animationChanged=playerCameraAnimation!=cameraBuildCachePlayerAnimation_||(compositionActorCount&&companionCameraAnimation!=cameraBuildCacheCompanionAnimation_);
       const bool envelopeExpanded=!cameraBuildCacheValid_||animationChanged||boundsChanged(playerEnvelope,cameraBuildCacheVisualBounds_)||(compositionActorCount&&boundsChanged(companionEnvelope,cameraBuildCacheCompanionBounds_));
-      const bool rebuildCameraCandidates=envelopeExpanded||companionBoundsChanged||Length(feet-cameraBuildCacheFeet_)>.02f||std::abs(yaw_-cameraBuildCacheYaw_)>.002f||cameraViewport.x!=cameraBuildCacheViewport_.x||cameraViewport.y!=cameraBuildCacheViewport_.y||rules_.Female()!=cameraBuildCacheFemale_||rules_.Crouched()!=cameraBuildCacheCrouched_||rules_.PaletteOpen()!=cameraBuildCachePaletteOpen_||minimumSubjectScreenArea!=cameraBuildCacheMinimumSubjectScreenArea_;
-      if(rebuildCameraCandidates){cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=desiredArm;if(cameraBuildCache_.receipt.valid&&!cameraBuildCache_.receipt.admittedCandidates&&compositionActorCount&&derivedMultiActorArm>desiredArm+.0001f){cameraBuildInput.desiredArm=derivedMultiActorArm;cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=derivedMultiActorArm;}cameraBuildCacheFeet_=feet;cameraBuildCacheYaw_=yaw_;cameraBuildCacheViewport_=cameraViewport;cameraBuildCacheFemale_=rules_.Female();cameraBuildCacheCrouched_=rules_.Crouched();cameraBuildCachePaletteOpen_=rules_.PaletteOpen();cameraBuildCacheMinimumSubjectScreenArea_=minimumSubjectScreenArea;cameraBuildCacheVisualBounds_=playerEnvelope;cameraBuildCacheCompanionBounds_=companionEnvelope;cameraBuildCacheCompanionPosition_=companionPresentation;cameraBuildCachePlayerAnimation_=playerCameraAnimation;cameraBuildCacheCompanionAnimation_=companionCameraAnimation;cameraBuildCacheHasCompanion_=compositionActorCount!=0;cameraBuildCacheValid_=cameraBuildCache_.receipt.valid;}
+      const bool rebuildCameraCandidates=envelopeExpanded||companionBoundsChanged||Length(feet-cameraBuildCacheFeet_)>.02f||std::abs(yaw_-cameraBuildCacheYaw_)>.002f||cameraViewport.x!=cameraBuildCacheViewport_.x||cameraViewport.y!=cameraBuildCacheViewport_.y||rules_.Female()!=cameraBuildCacheFemale_||rules_.Crouched()!=cameraBuildCacheCrouched_||rules_.PaletteOpen()!=cameraBuildCachePaletteOpen_||minimumSubjectScreenArea!=cameraBuildCacheMinimumSubjectScreenArea_||paletteOccluderHash!=cameraBuildCachePaletteOccluderHash_;
+      if(rebuildCameraCandidates){cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=desiredArm;if(cameraBuildCache_.receipt.valid&&!cameraBuildCache_.receipt.admittedCandidates&&compositionActorCount&&derivedMultiActorArm>desiredArm+.0001f){cameraBuildInput.desiredArm=derivedMultiActorArm;cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=derivedMultiActorArm;}cameraBuildCacheFeet_=feet;cameraBuildCacheYaw_=yaw_;cameraBuildCacheViewport_=cameraViewport;cameraBuildCacheFemale_=rules_.Female();cameraBuildCacheCrouched_=rules_.Crouched();cameraBuildCachePaletteOpen_=rules_.PaletteOpen();cameraBuildCacheMinimumSubjectScreenArea_=minimumSubjectScreenArea;cameraBuildCachePaletteOccluderHash_=paletteOccluderHash;cameraBuildCacheVisualBounds_=playerEnvelope;cameraBuildCacheCompanionBounds_=companionEnvelope;cameraBuildCacheCompanionPosition_=companionPresentation;cameraBuildCachePlayerAnimation_=playerCameraAnimation;cameraBuildCacheCompanionAnimation_=companionCameraAnimation;cameraBuildCacheHasCompanion_=compositionActorCount!=0;cameraBuildCacheValid_=cameraBuildCache_.receipt.valid;}
       if(cameraPresentationChanged)cameraOcclusionPolicy_.Reset();
       const auto& cameraBuild=cameraBuildCache_;
       const float cameraSearchArm=cameraBuildCacheDesiredArm_;
@@ -1414,7 +1547,15 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   // gameplayTick在Rules::Tick之後，26精確對應ApplyReplayInput的tick 25拖曳階段。
   if(!captureDirectory_.empty()&&gameplayTick==26){
     if(!captureReplayInteractionCamera_)throw std::runtime_error("Capture palette replay interaction camera was not frozen at tick 24");
-    const auto pointer=FindGameplayClearPlacementPointer3D(*captureReplayInteractionCamera_,collisions_);
+    // The placed building must remain part of the authoritative replay, but it
+    // may not be dropped beside the player and turn the later third-person
+    // evidence shot into a close-up of one wall.  The same God-view ray,
+    // collision and grid-snap path is retained; only a production-safe world
+    // separation from the controlled actor is required.
+    constexpr float minimumCaptureBuildingPlayerSeparation=7.f;
+    const auto pointer=FindGameplayClearPlacementPointer3D(
+        *captureReplayInteractionCamera_,collisions_,0.f,
+        controller_.Position(),minimumCaptureBuildingPlayerSeparation);
     if(!pointer)throw std::runtime_error("Capture palette replay found no collision-free production pointer ray");
     mapped.mouse=*pointer;
   }
@@ -1580,6 +1721,21 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
     scene_.MaterialBox({0, 1.5f, -12}, {8, 3, 1.2f},
                        {{.24f, .13f, .08f, 1}, {.48f, 0, 0, 1}, false},
                        {{GameplayWorldIdentityHigh, 1}, 1});
+  // R34_PALETTE_BUILDING_BEGIN
+  // One shared gabled mesh replaces one cube: no per-entity draw growth at the
+  // 256-entity cap. The original body/collider and identity remain authoritative.
+  const auto submitPaletteBuilding=[&](Vec3 center,float yaw,Color accent,
+      RenderObjectIdentity3D identity,bool feedback){
+    if(!showcaseWoodMaterial_.textures)return false;
+    auto wood=showcaseWoodMaterial_;
+    wood.tint=feedback?accent:Color{.64f,.50f,.38f,1.f};
+    wood.surface.roughness=.68f;wood.surface.metallic=0;
+    Transform3D transform{};
+    if(!GameplayPaletteBuildingTransform3D(center,yaw,transform))return false;
+    const auto before=scene_.MeshCount();
+    scene_.Mesh(showcaseConeHighMesh_,transform,wood,{},identity);
+    return scene_.MeshCount()==before+GameplayPaletteBuildingDrawCap3D;
+  };
   std::uint64_t worldBodyIndex{};
   for (auto handle : bodies_) {
     if (const auto *b = physics_.GetBody(handle))
@@ -1591,34 +1747,54 @@ void GameplayLabGame::BuildWorld(Engine &engine) {
   }
   if (showPaletteFixtures) {
     for (const auto &placed : rules_.Entities()) {
-      if (const auto *body = physics_.GetBody(palette_->Body(placed.id)))
-        scene_.MaterialBox(
-            body->settings.transform.position, body->settings.colliderExtents * 2,
-            {{placed.id <= 18 ? .18f : .8f, placed.id <= 18 ? .28f : .42f,
-              placed.id <= 18 ? .38f : .12f, 1},
-             {.32f, .08f, 0, 1},
-             false},
-            {{GameplayPlacedIdentityHigh, placed.id}, 1});
+      // Capture 9 owns the palette UI plus its explicit valid/invalid building
+      // ghosts.  Entities added after the initial stack belong to later replay
+      // scenarios (notably the capture-10 grab fixture) and remain physically
+      // authoritative without leaking into this shot's draw list.
+      if(!captureDirectory_.empty()&&captureIndex_==9&&placed.id>18)continue;
+      if (const auto *body = physics_.GetBody(palette_->Body(placed.id))) {
+        if(placed.category==PaletteCategory::Building){
+          if(!submitPaletteBuilding(body->settings.transform.position,
+              body->settings.transform.rotation.y,
+              Color{.58f,.36f,.19f,1.f},
+              {{GameplayPlacedIdentityHigh,placed.id},1},false))
+            throw std::runtime_error("Palette building visual assembly unavailable");
+        }else scene_.MaterialBox(
+              body->settings.transform.position, body->settings.colliderExtents * 2,
+              {{placed.id <= 18 ? .18f : .8f, placed.id <= 18 ? .28f : .42f,
+                placed.id <= 18 ? .38f : .12f, 1},
+               {.32f, .08f, 0, 1},
+               false},
+              {{GameplayPlacedIdentityHigh, placed.id}, 1});
+      }
     }
   }
   const auto preview = palette_->Preview();
-  if (preview.active)
-    scene_.MaterialBox(
-        preview.position, {1.04f, 1.04f, 1.04f},
-        {{preview.valid ? .15f : .9f, preview.valid ? .85f : .12f, .08f, .55f},
-         {.7f, 0, 0, .5f},
-         false},
-        {{GameplayPreviewIdentityHigh, 1}, 1});
+  if (preview.active){
+    if(preview.category==PaletteCategory::Building){
+      const Color accent=preview.valid ? Color{.72f,.92f,.72f,1.f} :
+                                         Color{1.f,.60f,.55f,1.f};
+      if(!submitPaletteBuilding(preview.position,preview.rotation,accent,
+          {{GameplayPreviewIdentityHigh,1},1},true))
+        throw std::runtime_error("Palette building preview assembly unavailable");
+    }else scene_.MaterialBox(
+          preview.position, {1.04f, 1.04f, 1.04f},
+          {{preview.valid ? .15f : .9f, preview.valid ? .85f : .12f, .08f, .55f},
+           {.7f, 0, 0, .5f},
+           false},
+          {{GameplayPreviewIdentityHigh, 1}, 1});
+  }
   if (captureIndex_ == 9) {
     if (const auto valid = captureValidGhost_)
-      scene_.MaterialBox(*valid, {.9f, .9f, .9f},
-                         {{.02f, 1.f, .05f, 1.f}, {.1f, 0, 0, 1.f}, false},
-                         {{GameplayPreviewIdentityHigh, 2}, 1});
+      if(!submitPaletteBuilding(*valid,0.f,Color{.72f,.92f,.72f,1.f},
+          {{GameplayPreviewIdentityHigh,2},1},true))
+        throw std::runtime_error("Valid palette capture building unavailable");
     if (const auto invalid = captureInvalidGhost_)
-      scene_.MaterialBox(*invalid, {1.25f, 1.25f, 1.25f},
-                         {{1.f, .01f, .01f, .9f}, {.1f, 0, 0, 1.f}, false},
-                         {{GameplayPreviewIdentityHigh, 3}, 1});
+      if(!submitPaletteBuilding(*invalid,0.f,Color{1.f,.60f,.55f,1.f},
+          {{GameplayPreviewIdentityHigh,3},1},true))
+        throw std::runtime_error("Invalid palette capture building unavailable");
   }
+  // R34_PALETTE_BUILDING_END
   appliedOcclusionIdentity_={};appliedOcclusionUpdate_={};appliedOcclusionOpacity_=1.f;
   if(cameraPolicyFadeIdentity_){
     const float opacity=GameplayCaptureQueuedPhaseActive3D(capturePairFrozen_,captureRawPhase_)?1.f:cameraFadeAlpha_;
@@ -1824,6 +2000,47 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          scene_.Mesh(boxMesh_,{{-12,2.69f,20.06f},{0,0,0},{1.78f,.14f,.18f}},wood,{},renderIdentity);
          for(float y:{.83f,1.38f,1.93f})scene_.Mesh(boxMesh_,{{-12,y,20.04f},{0,0,0},{1.12f,.08f,.16f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
+         // R34_COTTAGE_LIFE_BEGIN
+         // Twelve opaque, render-only pieces remain inside the cottage footprint:
+         // a log stack, bench, crates, and paired threshold stones.
+         struct CottageLifeDetail3D{Transform3D transform;bool cylindrical;bool brick;};
+          const std::array<CottageLifeDetail3D,12> lifeDetails{{
+           {{{-15.2f,.22f,26.55f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-15.2f,.22f,27.02f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-15.2f,.50f,26.78f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-14.55f,.22f,26.55f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-14.55f,.22f,27.02f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-8.75f,.58f,24.9f},{0,0,0},{.55f,.16f,2.f}},false,false},
+           {{{-8.75f,.28f,24.22f},{0,0,0},{.42f,.55f,.18f}},false,false},
+           {{{-8.75f,.28f,25.58f},{0,0,0},{.42f,.55f,.18f}},false,false},
+           {{{-15.05f,.42f,21.25f},{0,.12f,0},{.78f,.78f,.78f}},false,false},
+           {{{-14.18f,.32f,21.55f},{0,-.16f,0},{.58f,.58f,.58f}},false,false},
+            {{{-12.f,.12f,19.72f},{0,0,0},{1.15f,.18f,.32f}},false,true},
+            {{{-10.72f,.10f,19.72f},{0,0,0},{.95f,.14f,.32f}},false,true}}};
+          const auto finite=[](Vec3 value){return std::isfinite(value.x)&&
+              std::isfinite(value.y)&&std::isfinite(value.z);};
+          if(lifeDetails.size()!=12)
+            throw std::runtime_error("Cottage life detail count gate failed");
+          for(const auto& detail:lifeDetails){
+            if(!finite(detail.transform.position)||!finite(detail.transform.rotation)||
+               !finite(detail.transform.scale)||detail.transform.scale.x<=0||
+               detail.transform.scale.y<=0||detail.transform.scale.z<=0)
+              throw std::runtime_error("Cottage life detail finite transform gate failed");
+            const auto& resource=detail.cylindrical?showcaseCylinderMesh_:boxMesh_;
+            const auto bounds=TransformBounds(resource.bounds,detail.transform);
+            const Vec3 minimum=bounds.center-bounds.extents,maximum=bounds.center+bounds.extents;
+            if(minimum.x< -16.5f||maximum.x> -7.5f||minimum.y<-.001f||
+               minimum.z<19.5f||maximum.z>28.5f)
+              throw std::runtime_error("Cottage life detail exceeded cottage footprint");
+          }
+          const auto lifeDrawsBefore=scene_.MeshCount();
+          for(const auto& detail:lifeDetails)
+            scene_.Mesh(detail.cylindrical?showcaseCylinderMesh_:boxMesh_,
+                detail.transform,detail.brick?*brickSource:showcaseWoodMaterial_,
+                {},renderIdentity);
+          if(scene_.MeshCount()!=lifeDrawsBefore+lifeDetails.size())
+            throw std::runtime_error("Cottage life detail draw count gate failed");
+         // R34_COTTAGE_LIFE_END
        }
        else if(descriptor.meshAsset.find("back")!=std::string::npos)for(float x:{-14.1f,-9.9f})framedWindowZ(x,27.84f,1.f);
        else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos){const bool left=descriptor.meshAsset.find("left")!=std::string::npos;framedWindowX(left?-16.19f:-7.81f,left?-1.f:1.f);}
@@ -2127,7 +2344,15 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     capturePresentationFrameSerial_[captureIndex_]=frameSerial;capturePresentationCameraHash_[captureIndex_]=capturePairMetadata_.cameraHash;capturePresentationStateHash_[captureIndex_]=capturePairMetadata_.stateHash;capturePresentationInvariantHash_[captureIndex_]=capturePairMetadata_.sequenceInvariantHash;capturePresentationMsaa_[captureIndex_]=renderer.multisampleEnabled;capturePresentationTaa_[captureIndex_]=renderer.temporalAntiAliasingEnabled;capturePresentationHistoryUsed_[captureIndex_]=renderer.temporalHistoryUsed;capturePresentationPaired_[captureIndex_]=1;
     if(!captureScenarioClock_.CompleteReadback(captureIndex_,temporalFixtureWarmupFrames_?2:Names.size()))throw std::runtime_error("Gameplay presentation completion was out of order");
     capturePresentationPending_=false;capturePresentationLogicalToken_={};captureScenePhaseLedger_.Clear();captureReferencePhase_=false;
-    if(captureIndex_==9&&rules_.PaletteOpen()){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette close input failed");}
+    if(captureIndex_==9){
+      if(rules_.PaletteOpen()){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette close input failed");}
+      if(!captureEvidenceCollider_||!collisions_.Destroy(captureEvidenceCollider_))
+        throw std::runtime_error("Gameplay capture palette evidence collider cleanup failed");
+      captureEvidenceCollider_={};captureValidGhost_.reset();captureInvalidGhost_.reset();
+      if(captureEvidenceCollider_)
+        throw std::runtime_error("Gameplay capture palette evidence collider remained live");
+      captureEvidenceColliderReleased_=true;
+    }
     activeCaptureRoute_.Clear();++captureIndex_;capturePairFrozen_=false;captureTemporalWarmupActive_=false;capturePoseFrozen_=false;capturePreparedIndex_.reset();
     if(captureIndex_==4||captureIndex_==5)captureCrouchTapPending_=true;
     return;
@@ -2417,25 +2642,10 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
         return;
     }
     if(requiresPreparation){
-    if (captureIndex_ == 9 && !captureEvidenceCollider_) {
-      const auto groundPoint=[](const Camera3D& camera,Vec2 pointer)->std::optional<Vec3>{const auto ray=ScreenPointToRay(camera,{1280,720},pointer);if(std::abs(ray.direction.y)<.0001f)return std::nullopt;const float t=-ray.origin.y/ray.direction.y;if(t<0||t>200)return std::nullopt;auto point=ray.origin+ray.direction*t;point.x=std::round(point.x*.5f)*2;point.z=std::round(point.z*.5f)*2;point.y=.5f;return point;};
-      // 先用正式pointer搜尋找到當前world layout的空位，再在同點注入單一隔離碰撞體驗證invalid ghost。
-      const auto pointer=FindGameplayClearPlacementPointer3D(camera_,collisions_);
-      const auto point=pointer?groundPoint(camera_,*pointer):std::nullopt;
-      if(!point||!palette_->PreviewAt(*point,PaletteCategory::Building))
-        throw std::runtime_error("Capture palette fixture found no valid collision-free placement");
-      captureValidGhost_ = palette_->Preview().position;
-      palette_->Cancel();
-      captureEvidenceCollider_=collisions_.CreateBox({{*point,{.5f,.5f,.5f}},4,0xffffffffu,0xfeed,false});
-      if(!captureEvidenceCollider_)throw std::runtime_error("Capture palette fixture could not isolate invalid placement");
-      if (palette_->PreviewAt(*point, PaletteCategory::Building))
-        throw std::runtime_error("Expected invalid capture ghost");
-      captureInvalidGhost_ = palette_->Preview().position;
-      palette_->Cancel();
-      rules_.SetPaletteCategory(PaletteCategory::Lights);
-    }
-    const bool capturePaletteOpen=captureIndex_==9;
-    if(rules_.PaletteOpen()!=capturePaletteOpen){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette open/close input failed");}
+    // The palette evidence locations must be selected with the same camera that
+    // will render the shot.  Selecting them with the previous capture camera
+    // can satisfy the world-space distance gate yet land directly in front of
+    // the final third-person camera, producing a screen-filling building.
     if (captureIndex_ < 9) {
       const auto route=BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[captureIndex_]);
       rules_.SetCharacterFemale(captureIndex_ < 5);
@@ -2449,11 +2659,61 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       rules_.SetLighting(captureIndex_ == 9 ? LightingPhase::Day
                                             : LightingPhase::Dusk);
     }
+    ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);
+    UpdateCamera(engine);
+    if (captureIndex_ == 9 && !captureEvidenceCollider_) {
+      const auto groundPoint=[](const Camera3D& camera,Vec2 pointer)->std::optional<Vec3>{const auto ray=ScreenPointToRay(camera,{1280,720},pointer);if(std::abs(ray.direction.y)<.0001f)return std::nullopt;const float t=-ray.origin.y/ray.direction.y;if(t<0||t>200)return std::nullopt;auto point=ray.origin+ray.direction*t;point.x=std::round(point.x*.5f)*2;point.z=std::round(point.z*.5f)*2;point.y=.5f;return point;};
+      // 先用正式pointer搜尋找到當前world layout的空位，再在同點注入單一隔離碰撞體驗證invalid ghost。
+      constexpr float minimumCapturePaletteRayDistance=4.f;
+      const auto pointer=FindGameplayClearPlacementPointer3D(
+          camera_,collisions_,minimumCapturePaletteRayDistance);
+      const auto point=pointer?groundPoint(camera_,*pointer):std::nullopt;
+      if(!point||!palette_->PreviewAt(*point,PaletteCategory::Building))
+        throw std::runtime_error("Capture palette fixture found no valid collision-free placement");
+      captureValidGhost_ = palette_->Preview().position;
+      palette_->Cancel();
+
+      // Reserve the first snapped cell only while searching. This forces the
+      // production pointer finder to choose a second clear grid cell, then the
+      // reservation is removed before either persistent evidence check.
+      const auto reservation=collisions_.CreateBox(
+          {{*point,{.5f,.5f,.5f}},4,0xffffffffu,0xfeed0001,false});
+      if(!reservation)
+        throw std::runtime_error("Capture palette fixture could not reserve valid placement");
+      std::optional<Vec3> invalidPoint;
+      try{
+        const auto invalidPointer=FindGameplayClearPlacementPointer3D(
+            camera_,collisions_,minimumCapturePaletteRayDistance);
+        invalidPoint=invalidPointer?groundPoint(camera_,*invalidPointer):std::nullopt;
+      }catch(...){
+        collisions_.Destroy(reservation);
+        throw;
+      }
+      if(!collisions_.Destroy(reservation))
+        throw std::runtime_error("Capture palette fixture reservation cleanup failed");
+      if(!invalidPoint||
+         !GameplayPaletteCaptureGhostsDistinct3D(*captureValidGhost_,*invalidPoint)||
+         !palette_->PreviewAt(*invalidPoint,PaletteCategory::Building))
+        throw std::runtime_error("Capture palette fixture found no distinct second valid placement");
+      palette_->Cancel();
+
+      captureEvidenceCollider_=collisions_.CreateBox(
+          {{*invalidPoint,{.5f,.5f,.5f}},4,0xffffffffu,0xfeed,false});
+      if(!captureEvidenceCollider_)throw std::runtime_error("Capture palette fixture could not isolate invalid placement");
+      if (palette_->PreviewAt(*invalidPoint, PaletteCategory::Building))
+        throw std::runtime_error("Expected invalid capture ghost");
+      captureInvalidGhost_ = palette_->Preview().position;
+      if(!GameplayPaletteCaptureGhostsDistinct3D(*captureValidGhost_,*captureInvalidGhost_))
+        throw std::runtime_error("Capture palette valid and invalid ghosts overlapped");
+      palette_->Cancel();
+      rules_.SetPaletteCategory(PaletteCategory::Lights);
+    }
+    const bool capturePaletteOpen=captureIndex_==9;
+    if(rules_.PaletteOpen()!=capturePaletteOpen){TickInput paletteToggle{};paletteToggle.togglePalette=true;if(!rules_.ApplyPalettePresentationInput(paletteToggle))throw std::runtime_error("Gameplay capture palette open/close input failed");}
       capturePreparedIndex_=captureIndex_;capturePreparedSceneSubmitted_=false;captureTemporalWarmupActive_=false;capturePresentationWarmupActive_=false;capturePoseFrozen_=false;captureTemporalWarmupRemaining_=0;captureTemporalWarmupFramesCurrent_=0;captureTemporalReseedReasonCurrent_=0;capturePresentationWarmupRemaining_=0;capturePresentationWarmupFramesCurrent_=0;captureDiagnosticAsyncWaitFrames_=0;
       if(captureIndex_>=GameplayCaptureExpectations3D.size())throw std::runtime_error("Gameplay active capture route index was out of range");
       activeCaptureRoute_={captureIndex_,BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[captureIndex_]),GameplayActiveCaptureRoutePhase3D::Prepared};
       // 跨時段保留同一組已驗證的上帝視角構圖；後續 UpdateCamera 仍會依目前角色位置、碰撞、地形與 LOD 重新驗證。
-      ResetProductionCameraCut(GameplayTemporalReseedReason3D::CaptureShot);UpdateCamera(engine);
       // 凍結決策只發生於 fixed simulation 呼叫，來源是本 tick 已完成的權威 pose/foot。
       captureFrozenFemalePose_=femalePose_;captureFrozenMalePose_=malePose_;captureFrozenMonsterPose_=monsterPose_;
       captureFrozenFootPlacementHash_=authorityFootPlacementHash_;capturePoseFrozen_=true;

@@ -44,6 +44,7 @@ struct GameplayCameraProductionBuildInput3D {
   float maximumRoofCoverage{.05f};
   float maximumSubjectOcclusion{.005f};
   float minimumTopCenterRayElevation{.03f};
+  bool useCleanShowcaseYawOffsets{};
   std::uint64_t candidateIdHigh{};
   std::span<const GameplayOccluderBox3D> compositionOccluders{};
   std::span<const GameplayCameraCompositionActor3D> compositionActors{};

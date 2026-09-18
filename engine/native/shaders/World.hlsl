@@ -1881,15 +1881,40 @@ float2 WaterDomainWarpGradient3D(float2 warpedGradient, float2 acrossDirection,
     return warpedGradient + driverGradient * (warpDistance * dot(acrossDirection, warpedGradient));
 }
 
+float WaterDepthSampleValidity3D(float verticalDepth, float measuredThickness)
+{
+    // distance() alone cannot distinguish a submerged receiver from opaque geometry
+    // reconstructed above the water plane. Ordered finite bounds reject NaN and both
+    // infinities without relying on driver-specific isfinite lowering. The small
+    // negative tolerance preserves quantized/co-planar shore samples; every other
+    // invalid reconstruction fails deep through waterDepthValid == 0.
+    const bool finiteReasonableVerticalDepth = verticalDepth >= -0.02
+                                              && verticalDepth < 100000.0;
+    const bool finiteReasonableThickness = measuredThickness >= 0.0
+                                         && measuredThickness < 100000.0;
+    return finiteReasonableVerticalDepth && finiteReasonableThickness ? 1.0 : 0.0;
+}
+
+float WaterDepthSlice3D(float shoreDepth, float depthValid)
+{
+    // 只使用已重建的垂直水深建立低頻視覺切片；深度無效時回到深水中性值，
+    // 避免天空或輪廓 depth 被誤當成淺岸。這裡不取樣、不依賴相機距離或曝光。
+    const float boundedDepth = clamp(shoreDepth, 0.0, 8.0);
+    const float depthSlice = smoothstep(0.06, 1.35, boundedDepth);
+    return lerp(1.0, depthSlice, saturate(depthValid));
+}
+
 float WaterReflectionRoughness3D(float minimumRoughness, float maximumRoughness,
                                  float resolvedSlope, float unresolvedDetail,
-                                 float foamCoverage)
+                                 float foamCoverage, float depthSlice)
 {
     // 材質粗糙度只有單一設定值；改由已解析及已濾除的波能量推導空間微面寬度，
-    // 避免整片水面都把該值夾到相同上限。
+    // 避免整片水面都把該值夾到相同上限。有效淺水增加受限粗糙度，讓近岸
+    // 折射深度、泡沫與天空反射使用同一個水深分區，而不是彼此滑動。
     const float weight = saturate(0.12 + resolvedSlope * 2.25
-                                       + unresolvedDetail * 0.30
-                                       + foamCoverage * 0.70);
+                                        + unresolvedDetail * 0.30
+                                        + foamCoverage * 0.70
+                                        + (1.0 - saturate(depthSlice)) * 0.32);
     return lerp(minimumRoughness, maximumRoughness, weight);
 }
 
@@ -2527,6 +2552,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     float waterFoamCoverage = 0.0;
     float waterResolvedSlope = 0.0;
     float waterUnresolvedDetail = 0.0;
+    float2 waterLowFrequencyGradient = 0.0;
+    const float3 waterReflectionBaseNormal = normal;
     float waterThickness = 1.6;
     float opticalPathLength = 1.6;
     float shoreDepth = 1.6;
@@ -2552,13 +2579,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         {
             const precise float3 bottomWorldPosition = WaterReconstructWorldPositionDeterministic3D(screenUv, opaqueDepth);
             const float measuredThickness = distance(bottomWorldPosition, input.worldPosition);
-            if (measuredThickness >= 0.0 && measuredThickness < 100000.0)
+            const float verticalDepth = input.worldPosition.y - bottomWorldPosition.y;
+            if (WaterDepthSampleValidity3D(verticalDepth, measuredThickness) > 0.5)
             {
                 waterDepthValid = 1.0;
                 waterThickness = clamp(measuredThickness, 0.0, 8.0);
                 opticalPathLength = waterThickness;
                 shoreDepth = waterSurfaceEnabled != 0u
-                    ? clamp(max(0.0, input.worldPosition.y - bottomWorldPosition.y), 0.0, 8.0)
+                    ? clamp(max(0.0, verticalDepth), 0.0, 8.0)
                     : waterThickness;
                 // 新路徑用垂直岸深避免斜視放大，導數寬度讓岸線跨解析度保持連續；停用時維持舊公式。
                 // 深度斷層不可把導數放大成整片泡沫，只保留窄帶像素抗鋸齒。
@@ -2576,15 +2604,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 {
                     const precise float3 neighbourBottomX = WaterReconstructWorldPositionDeterministic3D(neighbourUvX, neighbourOpaqueDepthX);
                     const float neighbourThicknessX = distance(neighbourBottomX, input.worldPosition);
-                    if (neighbourThicknessX >= 0.0 && neighbourThicknessX < 100000.0)
-                        neighbourShoreDepthX = clamp(max(0.0, input.worldPosition.y - neighbourBottomX.y), 0.0, 8.0);
+                    const float neighbourVerticalDepthX = input.worldPosition.y - neighbourBottomX.y;
+                    if (WaterDepthSampleValidity3D(neighbourVerticalDepthX, neighbourThicknessX) > 0.5)
+                        neighbourShoreDepthX = clamp(max(0.0, neighbourVerticalDepthX), 0.0, 8.0);
                 }
                 if (neighbourOpaqueDepthY > 0.0 && neighbourOpaqueDepthY < 0.999999)
                 {
                     const precise float3 neighbourBottomY = WaterReconstructWorldPositionDeterministic3D(neighbourUvY, neighbourOpaqueDepthY);
                     const float neighbourThicknessY = distance(neighbourBottomY, input.worldPosition);
-                    if (neighbourThicknessY >= 0.0 && neighbourThicknessY < 100000.0)
-                        neighbourShoreDepthY = clamp(max(0.0, input.worldPosition.y - neighbourBottomY.y), 0.0, 8.0);
+                    const float neighbourVerticalDepthY = input.worldPosition.y - neighbourBottomY.y;
+                    if (WaterDepthSampleValidity3D(neighbourVerticalDepthY, neighbourThicknessY) > 0.5)
+                        neighbourShoreDepthY = clamp(max(0.0, neighbourVerticalDepthY), 0.0, 8.0);
                 }
                 const float shoreFiniteDifference = max(abs(neighbourShoreDepthX - shoreDepth), abs(neighbourShoreDepthY - shoreDepth));
                 const float shoreDerivative = clamp(shoreFiniteDifference * 1.5, 0.002, shoreDerivativeMaximum);
@@ -2667,6 +2697,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // sub-pixel waves suppressed and does not introduce screen-space noise.
             const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);
             heightGradient = heightGradient * waterNormalScale;
+            waterLowFrequencyGradient = (broadWave.yz + crossWave.yz)
+                                      * lowFrequencyDiversity * 0.27 * waterNormalScale;
+            const precise float lowFrequencySlope = length(waterLowFrequencyGradient);
+            waterLowFrequencyGradient = waterLowFrequencyGradient
+                                      * min(1.0, 0.48 / max(lowFrequencySlope, 0.0001));
             const precise float unboundedSlope = length(heightGradient);
             heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));
             waterResolvedSlope = min(unboundedSlope, 0.48);
@@ -2791,7 +2826,23 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
 #endif
     [branch] if (waterCompositeMask > 0.5)
     {
-        const precise float waterViewCosine = saturate(dot(normal, viewDirection));
+        const float waterDepthSlice = waterSurfaceEnabled != 0u
+            ? WaterDepthSlice3D(shoreDepth, waterDepthValid)
+            : 1.0;
+        float3 waterReflectionNormal = normal;
+        if(waterSurfaceEnabled != 0u && waterMask > 0.5)
+        {
+            precise float3 lowFrequencyNormal = waterReflectionBaseNormal;
+            lowFrequencyNormal.x = lowFrequencyNormal.x - waterLowFrequencyGradient.x;
+            lowFrequencyNormal.z = lowFrequencyNormal.z - waterLowFrequencyGradient.y;
+            lowFrequencyNormal = WaterDeterministicNormalize3D(lowFrequencyNormal);
+            // 深水天空輪廓主要由可解析寬波驅動；近岸逐步回到完整法線並由
+            // 同一 depth slice 提高粗糙度，避免 Fresnel 與天空查詢使用不同相位。
+            const float lowFrequencyWeight = waterDepthSlice * (1.0 - foamMask) * 0.72;
+            waterReflectionNormal = WaterDeterministicNormalize3D(
+                lerp(normal, lowFrequencyNormal, lowFrequencyWeight));
+        }
+        const precise float waterViewCosine = saturate(dot(waterReflectionNormal, viewDirection));
         // 固定 Schlick Fresnel 的乘法順序。pow(x, 5) 可由驅動程式改寫成
         // 不同的近似序列，極小差異會在反射與半精度 HDR 封存時跨越位元邊界。
         const precise float fresnelBase = 1.0 - waterViewCosine;
@@ -2855,19 +2906,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         precise const float3 absorbedWater = WaterOrderedScaleAdd3D(transmittedWater, 1.0, scatteredWater, 1.0);
         const float waterReflectionRoughness = waterSurfaceEnabled != 0u
             ? WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,
-                                         waterResolvedSlope, waterUnresolvedDetail, foamMask)
+                                         waterResolvedSlope, waterUnresolvedDetail, foamMask,
+                                         waterDepthSlice)
             : clamp(roughness, waterMinimumRoughness, waterMaximumRoughness);
-        float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, normal), skyLightDirection, waterReflectionRoughness)
+        float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, waterReflectionNormal), skyLightDirection, waterReflectionRoughness)
                               * lerp(1.0, 0.55, waterReflectionRoughness);
         // 透明水面會以不透明場景取代先前的 shaded 值，因此基礎
         // directionalLighting 內的太陽高光不能沿用。以金屬路徑的零漫射
         // GGX 明確重建水的 F0 高光；EvaluatePbrLight 已計算 Fresnel，後續
         // 不可再乘一次 water fresnel。
         const float3 waterDirectionalSpecular = directionalVisibility * EvaluatePbrLight(
-            normal, viewDirection, lightDirection,
+            waterReflectionNormal, viewDirection, lightDirection,
             lightColorIntensity.rgb * lightColorIntensity.w,
             waterReflectance.xxx, waterReflectionRoughness, 1.0);
-        const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,normal,viewDirection,waterReflectionRoughness);
+        const float4 screenSpaceReflection=EvaluateWaterScreenSpaceReflection(input.worldPosition,waterReflectionNormal,viewDirection,waterReflectionRoughness);
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 14
         waterDiagnosticEnvironmentReflection = reflectedWater * fresnel;
         waterDiagnosticScreenSpaceReflection = screenSpaceReflection;

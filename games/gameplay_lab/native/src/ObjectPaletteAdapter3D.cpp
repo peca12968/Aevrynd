@@ -65,18 +65,26 @@ bool ObjectPaletteAdapter3D::PlaceAt(Vec3 position, PaletteCategory category) {
   return Commit();
 }
 bool ObjectPaletteAdapter3D::Update(Ray3D ray, float delta) {
-  if (!preview_.active)
+  if (!preview_.active || !std::isfinite(delta))
     return false;
-  preview_.rotation =
+  const float rotation =
       std::round((preview_.rotation + delta * .2617994f) / .2617994f) *
       .2617994f;
-  return Project(ray);
+  if (!std::isfinite(rotation) || !Project(ray))
+    return false;
+  preview_.rotation = rotation;
+  return true;
 }
 bool ObjectPaletteAdapter3D::Commit() {
   if (!preview_.active || !preview_.valid)
     return false;
   const bool dynamic = preview_.category == PaletteCategory::Physics;
-  if (!rules_.Place(preview_.position, dynamic))
+  // Direct production helpers (PlaceAt) and pointer UI both commit through the
+  // adapter.  The authoritative entity category must therefore come from this
+  // transaction, not from whichever palette category happened to be selected
+  // previously in Rules3D.
+  rules_.SetPaletteCategory(preview_.category);
+  if (!rules_.Place(preview_.position, dynamic, preview_.rotation))
     return false;
   const auto &placed = rules_.Entities().back();
   const auto id = placed.id;

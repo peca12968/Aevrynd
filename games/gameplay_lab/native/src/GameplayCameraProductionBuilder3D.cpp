@@ -153,7 +153,7 @@ BuildGameplayCameraProductionCandidates3D(
   // 零建築展示只補一個經正式 gate 驗出的正面角度；一般遊玩不支付額外候選成本，
   // 避免鏡頭求解時間改變固定擷取的 frame pacing。
   constexpr std::array<float, 16> cleanShowcaseYawOffsets{0.f,-.25f,.25f,-.35f,.35f,-.45f,.45f,-.55f,.55f,-.8f,.8f,-1.05f,1.05f,-1.57079633f,1.57079633f,2.6f};
-  const std::span<const float> yawOffsets=input.maximumBuildingUnionCoverage==0.f
+  const std::span<const float> yawOffsets=input.useCleanShowcaseYawOffsets||input.maximumBuildingUnionCoverage==0.f
       ?std::span<const float>{cleanShowcaseYawOffsets}
       :std::span<const float>{runtimeYawOffsets};
   constexpr std::array<float, 4> pitches{.12f,.28f,.44f,.60f};

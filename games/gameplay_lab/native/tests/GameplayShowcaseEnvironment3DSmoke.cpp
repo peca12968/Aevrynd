@@ -1,4 +1,6 @@
 #include "GameplayShowcaseEnvironment3D.h"
+#include "GameplayForestGroundCoverMesh3D.h"
+#include "GameplayGrassCommunityMesh3D.h"
 #include "ShowcaseTerrainMaterials3D.h"
 #define AEVRYND_CHARACTER_BUILD_FINGERPRINT "environment-test"
 #include "GameplayLabGame.h"
@@ -12,6 +14,11 @@
 #include <iostream>
 #include <utility>
 #include <vector>
+
+// 將 GameplayLabGame 使用的同一份程序地被 builder 編入這個 focused smoke。
+// 此 target 原本只擁有 environment/ecology translation units；直接納入正式
+// builder，讓 footprint 證據隨實際提交網格演進，不依賴手寫假幾何。
+#include "../src/GameplayForestGroundCoverMesh3D.cpp"
 
 using namespace Aevrynd;
 using namespace GameplayLab;
@@ -267,6 +274,301 @@ bool UnderstoryFormVariationContract(
          uplandCoverage > meadowCoverage;
 }
 
+struct UnderstoryHighDetailBounds3D {
+  MeshBounds3D riverbank{};
+  MeshBounds3D fern{};
+  MeshBounds3D community{};
+};
+
+UnderstoryHighDetailBounds3D BuildSubmittedUnderstoryHighDetailBounds3D() {
+  return {
+      CreateGameplayForestRiverbankGroundCoverMesh3D(
+          GameplayForestGroundCoverDetail3D::Near, 0x31b7u).Bounds(),
+      CreateGameplayForestGroundCoverMesh3D(
+          GameplayForestGroundCoverSpecies3D::Fern,
+          GameplayForestGroundCoverDetail3D::Near, 0x4a17u).Bounds(),
+      CreateGameplayForestGroundCoverCommunityMesh3D(
+          GameplayForestGroundCoverDetail3D::Near, 0x7c31u).Bounds()};
+}
+
+const MeshBounds3D *SubmittedUnderstoryMeshBounds3D(
+    const ShowcaseSceneDescriptor3D &descriptor,
+    const UnderstoryHighDetailBounds3D &bounds) {
+  if (descriptor.meshAsset == "procedural/grass-blade") return &bounds.riverbank;
+  if (descriptor.meshAsset == "procedural/grass-fan") return &bounds.fern;
+  if (descriptor.meshAsset == "procedural/grass-tuft") return &bounds.community;
+  return nullptr;
+}
+
+struct SubmittedUnderstoryFootprint3D {
+  std::array<Vec2, 4> corners{};
+  Vec3 worldCenter{};
+  float sphereRadius{};
+  float horizontalArea{};
+};
+
+SubmittedUnderstoryFootprint3D TransformSubmittedUnderstoryFootprint3D(
+    const ShowcaseSceneDescriptor3D &descriptor,
+    const MeshBounds3D &meshBounds) {
+  // GameplayLabGame 在提交前套用 GameplayForestGroundCoverWorldScale3D：保留
+  // descriptor 水平尺度，公尺建模的 Y 則固定為一；此處連同 local center
+  // 一起變換真實 AABB。
+  const Vec3 scale = GameplayForestGroundCoverWorldScale3D(descriptor.scale);
+  const float sine = std::sin(descriptor.yaw);
+  const float cosine = std::cos(descriptor.yaw);
+  const auto rotate = [sine, cosine](float x, float z) {
+    return Vec2{x * cosine - z * sine, x * sine + z * cosine};
+  };
+  const Vec2 rotatedCenter =
+      rotate(meshBounds.center.x * scale.x, meshBounds.center.z * scale.z);
+  SubmittedUnderstoryFootprint3D result{};
+  result.worldCenter = {descriptor.position.x + rotatedCenter.x,
+                        descriptor.position.y + meshBounds.center.y * scale.y,
+                        descriptor.position.z + rotatedCenter.y};
+  const float extentX = std::abs(meshBounds.extents.x * scale.x);
+  const float extentY = std::abs(meshBounds.extents.y * scale.y);
+  const float extentZ = std::abs(meshBounds.extents.z * scale.z);
+  constexpr std::array<Vec2, 4> signs{{{-1.f, -1.f}, {1.f, -1.f},
+                                       {1.f, 1.f}, {-1.f, 1.f}}};
+  for (std::size_t corner = 0; corner < signs.size(); ++corner) {
+    const Vec2 offset = rotate(signs[corner].x * extentX,
+                               signs[corner].y * extentZ);
+    result.corners[corner] = {result.worldCenter.x + offset.x,
+                              result.worldCenter.z + offset.y};
+  }
+  result.sphereRadius =
+      std::sqrt(extentX * extentX + extentY * extentY + extentZ * extentZ);
+  result.horizontalArea = 4.f * extentX * extentZ;
+  return result;
+}
+
+float PointSegmentDistance2D(Vec2 point, Vec2 start, Vec2 end) {
+  const Vec2 delta{end.x - start.x, end.y - start.y};
+  const float lengthSquared = delta.x * delta.x + delta.y * delta.y;
+  const float t = lengthSquared > 0.f
+                      ? std::clamp(((point.x - start.x) * delta.x +
+                                    (point.y - start.y) * delta.y) /
+                                       lengthSquared,
+                                   0.f, 1.f)
+                      : 0.f;
+  const float dx = point.x - (start.x + delta.x * t);
+  const float dz = point.y - (start.y + delta.y * t);
+  return std::sqrt(dx * dx + dz * dz);
+}
+
+float SegmentSegmentDistance2D(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+  const auto cross = [](Vec2 left, Vec2 right) {
+    return left.x * right.y - left.y * right.x;
+  };
+  const Vec2 ab{b.x - a.x, b.y - a.y};
+  const Vec2 cd{d.x - c.x, d.y - c.y};
+  const float denominator = cross(ab, cd);
+  if (std::abs(denominator) > 1e-7f) {
+    const Vec2 ac{c.x - a.x, c.y - a.y};
+    const float t = cross(ac, cd) / denominator;
+    const float u = cross(ac, ab) / denominator;
+    if (t >= 0.f && t <= 1.f && u >= 0.f && u <= 1.f) return 0.f;
+  }
+  return (std::min)({PointSegmentDistance2D(a, c, d),
+                     PointSegmentDistance2D(b, c, d),
+                     PointSegmentDistance2D(c, a, b),
+                     PointSegmentDistance2D(d, a, b)});
+}
+
+bool PointInsideFootprint2D(
+    Vec2 point, const std::array<Vec2, 4> &corners) {
+  bool positive = false, negative = false;
+  for (std::size_t edge = 0; edge < corners.size(); ++edge) {
+    const auto a = corners[edge];
+    const auto b = corners[(edge + 1u) % corners.size()];
+    const float side = (b.x - a.x) * (point.y - a.y) -
+                       (b.y - a.y) * (point.x - a.x);
+    positive |= side > 1e-6f;
+    negative |= side < -1e-6f;
+  }
+  return !(positive && negative);
+}
+
+float SubmittedFootprintWalkingClearance3D(
+    const SubmittedUnderstoryFootprint3D &footprint) {
+  constexpr Vec2 laneStart{-16.f, 8.f};
+  constexpr Vec2 laneEnd{-12.f, 19.f};
+  if (PointInsideFootprint2D(laneStart, footprint.corners) ||
+      PointInsideFootprint2D(laneEnd, footprint.corners))
+    return 0.f;
+  float clearance = (std::numeric_limits<float>::max)();
+  for (std::size_t edge = 0; edge < footprint.corners.size(); ++edge)
+    clearance = (std::min)(clearance, SegmentSegmentDistance2D(
+        laneStart, laneEnd, footprint.corners[edge],
+        footprint.corners[(edge + 1u) % footprint.corners.size()]));
+  return clearance;
+}
+
+float LegacyPlacementWalkingClearance3D(
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  constexpr Vec2 laneStart{-16.f, 8.f};
+  constexpr Vec2 laneEnd{-12.f, 19.f};
+  float clearance = (std::numeric_limits<float>::max)();
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Grass) continue;
+    const float oldRadius =
+        .34f * (std::max)(placement.scale.x, placement.scale.z);
+    clearance = (std::min)(
+        clearance,
+        PointSegmentDistance2D({placement.position.x, placement.position.z},
+                               laneStart, laneEnd) - oldRadius);
+  }
+  return clearance;
+}
+
+float SubmittedUnderstoryWalkingClearance3D(
+    const std::vector<ShowcaseLandPlacement3D> &placements,
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors,
+    const UnderstoryHighDetailBounds3D &bounds) {
+  if (descriptors.size() != placements.size() + 8u) return -1.f;
+  float clearance = (std::numeric_limits<float>::max)();
+  for (std::size_t index = 0; index < placements.size(); ++index) {
+    if (placements[index].kind != ShowcaseLandKind3D::Grass) continue;
+    const auto &descriptor = descriptors[index + 2u];
+    const auto *meshBounds = SubmittedUnderstoryMeshBounds3D(descriptor, bounds);
+    if (!meshBounds) return -1.f;
+    clearance = (std::min)(clearance, SubmittedFootprintWalkingClearance3D(
+        TransformSubmittedUnderstoryFootprint3D(descriptor, *meshBounds)));
+  }
+  return clearance;
+}
+
+// 固定 third / God 視角只量正式 186 個地被的提交 footprint proxy；不以增加
+// descriptor、移動根部或放寬步道淨空換取密度。proxy 是實際高細節 mesh AABB
+// 投影面積的總和，沒有量 rasterized pixels、重疊或遮擋；clearance 則以旋轉後
+// 的正式 AABB 外緣保證不蓋入角色至屋前的 2.8m 步行帶。
+bool FixedViewUnderstoryFootprintProxyContract(
+    const std::vector<ShowcaseLandPlacement3D> &placements,
+    const std::vector<ShowcaseSceneDescriptor3D> &descriptors,
+    std::span<const Camera3D> cameras,
+    const UnderstoryHighDetailBounds3D &meshBoundsByVariant) {
+  if (descriptors.size() != placements.size() + 8u || cameras.size() != 2u)
+    return false;
+  const auto distanceToWalkingLane = [](Vec3 point) {
+    constexpr Vec3 start{-16.f, 0.f, 8.f};
+    constexpr Vec3 end{-12.f, 0.f, 19.f};
+    const float x = end.x - start.x, z = end.z - start.z;
+    const float lengthSquared = x * x + z * z;
+    const float t = std::clamp(
+        ((point.x - start.x) * x + (point.z - start.z) * z) /
+            lengthSquared,
+        0.f, 1.f);
+    const float dx = point.x - (start.x + x * t);
+    const float dz = point.z - (start.z + z * t);
+    return std::sqrt(dx * dx + dz * dz);
+  };
+  std::array<float, 2> projectedFootprintProxy{};
+  std::array<unsigned, 2> frustumCandidateGrass{};
+  std::array<float, 3> clusterAreaSum{}, clusterAreaSquaredSum{};
+  std::array<unsigned, 3> clusterSamples{};
+  unsigned grassCount{}, stableKeysSeen{};
+  float pathShoulderArea{};
+  unsigned pathShoulderCount{};
+  float minimumWalkingClearance = (std::numeric_limits<float>::max)();
+  std::size_t minimumWalkingClearanceIndex{};
+  float minimumWalkingLaneRootDistance{};
+  bool rootsUnchanged = true;
+  for (std::size_t index = 0; index < placements.size(); ++index) {
+    const auto &placement = placements[index];
+    if (placement.kind != ShowcaseLandKind3D::Grass) continue;
+    const auto &descriptor = descriptors[index + 2u];
+    const auto *meshBounds =
+        SubmittedUnderstoryMeshBounds3D(descriptor, meshBoundsByVariant);
+    if (!meshBounds) return false;
+    const auto footprint =
+        TransformSubmittedUnderstoryFootprint3D(descriptor, *meshBounds);
+    ++grassCount;
+    stableKeysSeen += placement.stableKey ? 1u : 0u;
+    rootsUnchanged &= descriptor.position.x == placement.position.x &&
+                      descriptor.position.y == placement.position.y &&
+                      descriptor.position.z == placement.position.z;
+    const float areaMultiplier =
+        descriptor.scale.x * descriptor.scale.z /
+        (placement.scale.x * placement.scale.z);
+    const std::size_t zone =
+        placement.zone == ShowcaseLandZone3D::Riverbank ? 0u
+        : placement.zone == ShowcaseLandZone3D::Meadow ? 1u : 2u;
+    clusterAreaSum[zone] += areaMultiplier;
+    clusterAreaSquaredSum[zone] += areaMultiplier * areaMultiplier;
+    ++clusterSamples[zone];
+    const float laneDistance = distanceToWalkingLane(descriptor.position);
+    const float submittedClearance =
+        SubmittedFootprintWalkingClearance3D(footprint);
+    if (submittedClearance < minimumWalkingClearance) {
+      minimumWalkingClearance = submittedClearance;
+      minimumWalkingClearanceIndex = index;
+      minimumWalkingLaneRootDistance = laneDistance;
+    }
+    if (placement.band == ShowcaseLandBand3D::Near &&
+        placement.zone != ShowcaseLandZone3D::Riverbank &&
+        laneDistance >= 1.4f && laneDistance <= 5.25f) {
+      pathShoulderArea += footprint.horizontalArea;
+      ++pathShoulderCount;
+    }
+    for (std::size_t view = 0; view < cameras.size(); ++view) {
+      if (!SphereIntersectsFrustum(footprint.worldCenter,
+                                   footprint.sphereRadius, cameras[view],
+                                   16.f / 9.f))
+        continue;
+      ++frustumCandidateGrass[view];
+      if (cameras[view].projection.mode == ProjectionMode::Orthographic) {
+        const float height = cameras[view].projection.orthographicHeight;
+        projectedFootprintProxy[view] += footprint.horizontalArea /
+            (height * height * (16.f / 9.f));
+      } else {
+        const Vec3 forward =
+            Normalize(cameras[view].target - cameras[view].position);
+        const float depth = (std::max)(
+            .05f, Dot(footprint.worldCenter - cameras[view].position, forward));
+        const float halfHeight = depth * std::tan(
+            cameras[view].projection.verticalFieldOfView * .5f);
+        projectedFootprintProxy[view] += footprint.horizontalArea /
+            (4.f * halfHeight * halfHeight * (16.f / 9.f));
+      }
+    }
+  }
+  std::array<float, 3> clusterCoefficient{};
+  for (std::size_t zone = 0; zone < clusterCoefficient.size(); ++zone) {
+    const float mean = clusterSamples[zone]
+                           ? clusterAreaSum[zone] / float(clusterSamples[zone])
+                           : 0.f;
+    const float variance = clusterSamples[zone]
+        ? (std::max)(0.f, clusterAreaSquaredSum[zone] /
+                              float(clusterSamples[zone]) - mean * mean)
+        : 0.f;
+    clusterCoefficient[zone] = mean > 0.f ? std::sqrt(variance) / mean : 0.f;
+  }
+  std::cout << "UNDERSTORY_FIXED_VIEW frustumCandidatesThirdGod="
+            << frustumCandidateGrass[0] << '/' << frustumCandidateGrass[1]
+            << " projectedFootprintProxy=" << projectedFootprintProxy[0]
+            << '/' << projectedFootprintProxy[1]
+            << " clusterCv=" << clusterCoefficient[0] << '/'
+            << clusterCoefficient[1] << '/' << clusterCoefficient[2]
+            << " pathShoulder=" << pathShoulderCount << '/'
+            << pathShoulderArea << " walkingClearance="
+            << minimumWalkingClearance << " clearanceIndex="
+            << minimumWalkingClearanceIndex << " rootDistance="
+            << minimumWalkingLaneRootDistance << " scale="
+            << descriptors[minimumWalkingClearanceIndex + 2u].scale.x << '/'
+            << descriptors[minimumWalkingClearanceIndex + 2u].scale.z
+            << " yaw=" << descriptors[minimumWalkingClearanceIndex + 2u].yaw
+            << " mesh="
+            << descriptors[minimumWalkingClearanceIndex + 2u].meshAsset << '\n';
+  return grassCount == 186u && stableKeysSeen == grassCount &&
+         rootsUnchanged && frustumCandidateGrass[0] >= 72u &&
+         frustumCandidateGrass[1] >= 48u &&
+         projectedFootprintProxy[0] >= .155f &&
+         projectedFootprintProxy[1] >= .060f && clusterCoefficient[0] >= .08f &&
+         clusterCoefficient[1] >= .10f && clusterCoefficient[2] >= .07f &&
+         pathShoulderCount >= 12u && pathShoulderArea >= 34.f &&
+         minimumWalkingClearance >= 1.4f;
+}
+
 // 冠層與林下層都以正式 descriptor 對照配置尺度，避免 placement 的覆蓋率
 // 通過後，提交前又縮成果園。面積是水平橢圓 proxy，不宣稱是畫面像素覆蓋。
 bool ForestMidgroundLayerContract(
@@ -306,8 +608,10 @@ bool ForestMidgroundLayerContract(
               << " living=" << livingTrees[band] << " shrubs=" << shrubs[band]
               << " canopyAreaRetention=" << canopyRatio
               << " understoryAreaMultiplier=" << understoryRatio << '\n';
+    // 真實葉片淨空會只縮減侵入步道的少數 Near 群落；仍要求兩個 seed 的
+    // Upland 提交面積至少比 placement proxy 高 52%，但不以越界葉片湊門檻。
     valid &= canopyRatio >= 1.10f && canopyRatio <= 1.55f &&
-             understoryRatio >= 1.58f && understoryRatio <= 1.80f;
+             understoryRatio >= 1.52f && understoryRatio <= 1.80f;
   }
   unsigned eligible{}, covered{};
   for (int z = -160; z < 160; ++z)
@@ -1703,6 +2007,103 @@ int main() {
   }
   const std::array<Camera3D, 3> forestDepthCameras{
       productionCameras[0], productionCameras[1], productionCameras[2]};
+  const std::array<Camera3D, 2> understoryDensityCameras{
+      productionCameras[1], productionCameras[2]};
+  const auto submittedUnderstoryBounds =
+      BuildSubmittedUnderstoryHighDetailBounds3D();
+  std::cout << "UNDERSTORY_HIGH_BOUNDS riverbank="
+            << submittedUnderstoryBounds.riverbank.center.x << '/'
+            << submittedUnderstoryBounds.riverbank.center.z << ':'
+            << submittedUnderstoryBounds.riverbank.extents.x << '/'
+            << submittedUnderstoryBounds.riverbank.extents.z << " fern="
+            << submittedUnderstoryBounds.fern.center.x << '/'
+            << submittedUnderstoryBounds.fern.center.z << ':'
+            << submittedUnderstoryBounds.fern.extents.x << '/'
+            << submittedUnderstoryBounds.fern.extents.z << " community="
+            << submittedUnderstoryBounds.community.center.x << '/'
+            << submittedUnderstoryBounds.community.center.z << ':'
+            << submittedUnderstoryBounds.community.extents.x << '/'
+            << submittedUnderstoryBounds.community.extents.z << '\n';
+  const auto productionBoundsMatch = [](ShowcaseLandVariant3D variant,
+                                        const MeshBounds3D &actual) {
+    const auto expected = ShowcaseUnderstoryHighDetailFootprintBounds3D(variant);
+    return std::abs(expected.center.x - actual.center.x) <= 1e-5f &&
+           std::abs(expected.center.y - actual.center.z) <= 1e-5f &&
+           std::abs(expected.extents.x - actual.extents.x) <= 1e-5f &&
+           std::abs(expected.extents.y - actual.extents.z) <= 1e-5f;
+  };
+  if (!productionBoundsMatch(ShowcaseLandVariant3D::GrassBlade,
+                             submittedUnderstoryBounds.riverbank) ||
+      !productionBoundsMatch(ShowcaseLandVariant3D::GrassFan,
+                             submittedUnderstoryBounds.fern) ||
+      !productionBoundsMatch(ShowcaseLandVariant3D::GrassTuft,
+                             submittedUnderstoryBounds.community))
+    return 110;
+  if (!FixedViewUnderstoryFootprintProxyContract(
+          treePlacements, first.Descriptors(), understoryDensityCameras,
+          submittedUnderstoryBounds))
+    return 105;
+  auto sparseUnderstory = first.Descriptors();
+  for (auto &descriptor : sparseUnderstory)
+    if (descriptor.kind == ShowcaseSceneKind3D::Grass) {
+      descriptor.scale.x *= .82f;
+      descriptor.scale.z *= .82f;
+    }
+  if (FixedViewUnderstoryFootprintProxyContract(
+          treePlacements, sparseUnderstory, understoryDensityCameras,
+          submittedUnderstoryBounds))
+    return 106;
+  auto repeatedUnderstory = first.Descriptors();
+  for (std::size_t index = 0; index < treePlacements.size(); ++index) {
+    const auto &placement = treePlacements[index];
+    if (placement.kind != ShowcaseLandKind3D::Grass) continue;
+    const float uniformScale =
+        placement.zone == ShowcaseLandZone3D::Riverbank ? 1.15f
+        : placement.zone == ShowcaseLandZone3D::Meadow ? 1.22f : 1.28f;
+    repeatedUnderstory[index + 2u].scale.x = placement.scale.x * uniformScale;
+    repeatedUnderstory[index + 2u].scale.z = placement.scale.z * uniformScale;
+  }
+  if (FixedViewUnderstoryFootprintProxyContract(
+          treePlacements, repeatedUnderstory, understoryDensityCameras,
+          submittedUnderstoryBounds))
+    return 107;
+  auto blockedPlacements = treePlacements;
+  auto blockedUnderstory = first.Descriptors();
+  const auto blocked = std::ranges::find_if(
+      blockedPlacements, [](const auto &placement) {
+        return placement.kind == ShowcaseLandKind3D::Grass &&
+               placement.variant == ShowcaseLandVariant3D::GrassTuft;
+      });
+  if (blocked == blockedPlacements.end()) return 108;
+  const auto blockedIndex = std::size_t(blocked - blockedPlacements.begin());
+  constexpr Vec2 laneMiddle{-14.f, 13.5f};
+  constexpr float inverseLaneLength = 1.f / 11.7046999107f;
+  constexpr Vec2 laneNormal{-11.f * inverseLaneLength,
+                             4.f * inverseLaneLength};
+  const float oldRadius =
+      .34f * (std::max)(blocked->scale.x, blocked->scale.z);
+  const float oldPassingRootDistance = 1.4f + oldRadius + .01f;
+  const auto placeOldMiss = [&](float side) {
+    blocked->position.x = laneMiddle.x + laneNormal.x * oldPassingRootDistance * side;
+    blocked->position.z = laneMiddle.y + laneNormal.y * oldPassingRootDistance * side;
+    blockedUnderstory[blockedIndex + 2u].position = blocked->position;
+  };
+  placeOldMiss(1.f);
+  if (SubmittedUnderstoryWalkingClearance3D(
+          blockedPlacements, blockedUnderstory, submittedUnderstoryBounds) >=
+      1.4f)
+    placeOldMiss(-1.f);
+  // 敵對控制：已淘汰的 .34 * placement.scale 圓會回報通過，但套用正式
+  // descriptor scale/yaw 的 community AABB 已進入步行帶；禁止舊 proxy
+  // 日後悄悄回流。
+  if (LegacyPlacementWalkingClearance3D(blockedPlacements) < 1.4f ||
+      SubmittedUnderstoryWalkingClearance3D(
+          blockedPlacements, blockedUnderstory, submittedUnderstoryBounds) >=
+          1.4f ||
+      FixedViewUnderstoryFootprintProxyContract(
+          blockedPlacements, blockedUnderstory, understoryDensityCameras,
+          submittedUnderstoryBounds))
+    return 109;
   if (!FixedViewForestDepthContract(treePlacements, first.Descriptors(),
                                     forestDepthCameras))
     return 102;

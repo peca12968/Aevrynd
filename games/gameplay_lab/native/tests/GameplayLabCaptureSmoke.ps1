@@ -126,7 +126,29 @@ $allObjectIdComplete=@($characterReceipt.captures|Where-Object{$_.objectIdOpaque
 if($photorealReceipt.objectIdPass-ne1-or-not$allObjectIdComplete){throw 'GPU object-ID completeness receipt did not pass directly'}
 if($environmentCollisionReceipt.runId-ne$receipt.runId-or$environmentCollisionReceipt.source-ne'EnvironmentCollisionStreaming3D'-or$environmentCollisionReceipt.stateHash-eq0-or$environmentCollisionReceipt.descriptors-ne$expectedWorld-or$environmentCollisionReceipt.solidDescriptors-ne$expectedSolid-or$environmentCollisionReceipt.nonSolidDescriptors-ne$expectedNonSolid-or$environmentCollisionReceipt.solidDescriptors+$environmentCollisionReceipt.nonSolidDescriptors-ne$expectedWorld-or$environmentCollisionReceipt.activePartitions-ne1-or$environmentCollisionReceipt.activeColliders-ne$expectedSolid-or$environmentCollisionReceipt.activePhysicsBodies-ne$expectedSolid-or$environmentCollisionReceipt.activations-lt2-or$environmentCollisionReceipt.deactivations-lt1-or$environmentCollisionReceipt.failedActivations-ne0-or$environmentCollisionReceipt.rollbacks-ne0-or$environmentCollisionReceipt.stableIdEvidence-ne1-or$environmentCollisionReceipt.rayEvidence-ne1-or$environmentCollisionReceipt.meleeQueryEvidence-ne1-or$environmentCollisionReceipt.reloadStable-ne1-or$environmentCollisionReceipt.releasedDescriptors-ne$expectedWorld-or$environmentCollisionReceipt.releasedColliders-ne$expectedSolid-or$environmentCollisionReceipt.releasedPhysicsBodies-ne$expectedSolid-or$environmentCollisionReceipt.retainedBytesAfterRelease-ne0-or$environmentCollisionReceipt.activeCollidersAfterRelease-ne0-or$environmentCollisionReceipt.activePhysicsBodiesAfterRelease-ne0){throw 'Gameplay environment collision semantic/streaming/release receipt gate failed'}
 if($paletteUiReceipt.runId-ne$receipt.runId-or$paletteUiReceipt.source-ne'GameplayObjectPaletteUi3D'-or$paletteUiReceipt.categories-ne6-or$paletteUiReceipt.drawnFrames-lt11-or$paletteUiReceipt.cleanHudPresentationFrames-lt11-or$paletteUiReceipt.pointerDowns-lt1-or$paletteUiReceipt.drags-lt1-or$paletteUiReceipt.previews-lt1-or$paletteUiReceipt.commits-lt1-or$paletteUiReceipt.deterministicHash-eq0){throw 'Gameplay palette UI draw/pointer/clean-presentation receipt gate failed'}
-$paletteCharacter=@($characterReceipt.captures|Where-Object name -ceq 'palette-building.png');$palettePhotoreal=@($photorealReceipt.captures|Where-Object name -ceq 'palette-building.png');if($paletteCharacter.Count-ne1-or$palettePhotoreal.Count-ne1-or$paletteUiReceipt.categories-gt8-or[double]$paletteCharacter[0].characterReferenceCoverage-lt.023-or[double]$paletteCharacter[0].characterEffectiveCoverage-ne[double]$paletteCharacter[0].characterReferenceCoverage-or[double]$paletteCharacter[0].characterVisibility-ne1-or[double]$paletteCharacter[0].characterSilhouetteIou-ne1-or[double]$paletteCharacter[0].rawOccluderCoverage-ne0-or[double]$paletteCharacter[0].occluderCoverage-ne0-or[uint64]$palettePhotoreal[0].requiredIdentities[0].nonzeroPixels-lt[uint64][Math]::Ceiling(.023*1280*720)){throw 'Gameplay palette camera OID framing/visibility/UI gate failed'}
+$paletteCharacter=@($characterReceipt.captures|Where-Object name -ceq 'palette-building.png')
+$palettePhotoreal=@($photorealReceipt.captures|Where-Object name -ceq 'palette-building.png')
+$paletteBuildingEvidenceValid=$false
+if($paletteCharacter.Count-eq1){
+  $paletteCapture=$paletteCharacter[0]
+  $rawBuildingParts=@($paletteCapture.rawBuildingCoverage151To156)
+  $effectiveBuildingParts=@($paletteCapture.effectiveBuildingCoverage151To156)
+  $paletteBuildingEvidenceValid=$rawBuildingParts.Count-eq6-and
+      $effectiveBuildingParts.Count-eq6-and
+      [double]$paletteCapture.rawBuildingUnion-eq[double]$paletteCapture.effectiveBuildingUnion-and
+      [double]$paletteCapture.rawBuildingUnion-le.08-and
+      [double]$paletteCapture.rawOccluderCoverage-eq[double]$paletteCapture.occluderCoverage-and
+      [double]$paletteCapture.rawOccluderCoverage-le.06-and
+      [double]$rawBuildingParts[5]-le.04-and
+      [uint64]$paletteCapture.occlusionAdjusted-eq0
+  if($paletteBuildingEvidenceValid){
+    for($part=0;$part-lt6;++$part){
+      if([double]$rawBuildingParts[$part]-ne[double]$effectiveBuildingParts[$part]-or
+          [double]$rawBuildingParts[$part]-gt.06){$paletteBuildingEvidenceValid=$false;break}
+    }
+  }
+}
+if($paletteCharacter.Count-ne1-or$palettePhotoreal.Count-ne1-or$paletteUiReceipt.categories-gt8-or-not$paletteBuildingEvidenceValid-or[double]$paletteCharacter[0].characterReferenceCoverage-lt.023-or[double]$paletteCharacter[0].characterEffectiveCoverage-ne[double]$paletteCharacter[0].characterReferenceCoverage-or[double]$paletteCharacter[0].characterVisibility-ne1-or[double]$paletteCharacter[0].characterSilhouetteIou-ne1-or[uint64]$palettePhotoreal[0].requiredIdentities[0].nonzeroPixels-lt[uint64][Math]::Ceiling(.023*1280*720)){throw 'Gameplay palette camera OID framing/visibility/UI gate failed'}
 if((Get-Sha256Hex (Join-Path $directory 'palette-building-raw-object-id.png'))-cne(Get-Sha256Hex (Join-Path $directory 'palette-building-object-id.png'))){throw 'Gameplay palette raw/effective object-ID frame mismatch'}
 if($grabReceipt.runId-ne$receipt.runId-or$grabReceipt.source-ne'GameplayLabGrab'-or$grabReceipt.activeAtStop-ne0-or$grabReceipt.pickAttempts-lt1-or$grabReceipt.grabBegins-lt1-or$grabReceipt.grabHoldSteps-lt1-or$grabReceipt.releaseDrops-lt1){throw 'Gameplay grab receipt gate failed'}
 if($poseReceipt.runId-ne$receipt.runId-or$poseReceipt.source-ne'GameplayLabSemanticSkinning'-or$poseReceipt.female.Count-ne11-or$poseReceipt.male.Count-ne11-or@($poseReceipt.female|Select-Object -Unique).Count-ne11-or@($poseReceipt.male|Select-Object -Unique).Count-ne11){throw 'Semantic F2/M2 pose receipt failed'}

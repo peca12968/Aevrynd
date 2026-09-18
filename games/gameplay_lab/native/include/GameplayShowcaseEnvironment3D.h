@@ -39,6 +39,146 @@ struct ShowcaseUnderstoryFormVariation3D {
   float yawOffset{};
 };
 
+struct ShowcaseUnderstoryFootprintBounds3D {
+  Aevrynd::Vec2 center{};
+  Aevrynd::Vec2 extents{};
+};
+
+// 這三組水平 AABB 來自正式 submission 使用的 Near 網格與固定 seed；smoke
+// 會直接重建 production mesh 並逐值核對，避免此處在網格演進後靜默失真。
+[[nodiscard]] inline constexpr ShowcaseUnderstoryFootprintBounds3D
+ShowcaseUnderstoryHighDetailFootprintBounds3D(
+    ShowcaseLandVariant3D variant) noexcept {
+  switch (variant) {
+  case ShowcaseLandVariant3D::GrassBlade:
+    return {{.0554493f, .00563303f}, {.736945f, .703501f}};
+  case ShowcaseLandVariant3D::GrassFan:
+    return {{.0142904f, -.0146019f}, {.40636f, .442553f}};
+  case ShowcaseLandVariant3D::GrassTuft:
+    return {{-.109293f, .125083f}, {.853737f, .866476f}};
+  default: return {};
+  }
+}
+
+[[nodiscard]] inline float ShowcaseUnderstoryPointSegmentDistance3D(
+    Aevrynd::Vec2 point, Aevrynd::Vec2 start, Aevrynd::Vec2 end) noexcept {
+  const Aevrynd::Vec2 delta{end.x - start.x, end.y - start.y};
+  const float lengthSquared = delta.x * delta.x + delta.y * delta.y;
+  const float t = lengthSquared > 0.f
+                      ? std::clamp(((point.x - start.x) * delta.x +
+                                    (point.y - start.y) * delta.y) /
+                                       lengthSquared,
+                                   0.f, 1.f)
+                      : 0.f;
+  const float dx = point.x - (start.x + delta.x * t);
+  const float dz = point.y - (start.y + delta.y * t);
+  return std::sqrt(dx * dx + dz * dz);
+}
+
+[[nodiscard]] inline float ShowcaseUnderstorySegmentDistance3D(
+    Aevrynd::Vec2 a, Aevrynd::Vec2 b, Aevrynd::Vec2 c,
+    Aevrynd::Vec2 d) noexcept {
+  const auto cross = [](Aevrynd::Vec2 left, Aevrynd::Vec2 right) {
+    return left.x * right.y - left.y * right.x;
+  };
+  const Aevrynd::Vec2 ab{b.x - a.x, b.y - a.y};
+  const Aevrynd::Vec2 cd{d.x - c.x, d.y - c.y};
+  const float denominator = cross(ab, cd);
+  if (std::abs(denominator) > 1e-7f) {
+    const Aevrynd::Vec2 ac{c.x - a.x, c.y - a.y};
+    const float t = cross(ac, cd) / denominator;
+    const float u = cross(ac, ab) / denominator;
+    if (t >= 0.f && t <= 1.f && u >= 0.f && u <= 1.f) return 0.f;
+  }
+  return (std::min)({ShowcaseUnderstoryPointSegmentDistance3D(a, c, d),
+                     ShowcaseUnderstoryPointSegmentDistance3D(b, c, d),
+                     ShowcaseUnderstoryPointSegmentDistance3D(c, a, b),
+                     ShowcaseUnderstoryPointSegmentDistance3D(d, a, b)});
+}
+
+[[nodiscard]] inline bool ShowcaseUnderstoryPointInsideFootprint3D(
+    Aevrynd::Vec2 point,
+    const std::array<Aevrynd::Vec2, 4> &corners) noexcept {
+  bool positive = false, negative = false;
+  for (std::size_t edge = 0; edge < corners.size(); ++edge) {
+    const auto a = corners[edge];
+    const auto b = corners[(edge + 1u) % corners.size()];
+    const float side = (b.x - a.x) * (point.y - a.y) -
+                       (b.y - a.y) * (point.x - a.x);
+    positive |= side > 1e-6f;
+    negative |= side < -1e-6f;
+  }
+  return !(positive && negative);
+}
+
+// 以正式 descriptor scale/yaw 變換高細節網格 AABB，再量到步行帶中心線的
+// 最近距離。2.8m 步行帶因此要求葉片外緣至少保留 1.4m。
+[[nodiscard]] inline float ShowcaseUnderstoryWalkingClearance3D(
+    const ShowcaseLandPlacement3D &placement,
+    const ShowcaseUnderstoryFormVariation3D &form) noexcept {
+  constexpr Aevrynd::Vec2 laneStart{-16.f, 8.f};
+  constexpr Aevrynd::Vec2 laneEnd{-12.f, 19.f};
+  const auto bounds =
+      ShowcaseUnderstoryHighDetailFootprintBounds3D(placement.variant);
+  if (bounds.extents.x <= 0.f || bounds.extents.y <= 0.f)
+    return (std::numeric_limits<float>::max)();
+  const float scaleX = placement.scale.x * form.scaleMultiplier.x;
+  const float scaleZ = placement.scale.z * form.scaleMultiplier.z;
+  const float yaw = placement.yaw + form.yawOffset;
+  const float sine = std::sin(yaw), cosine = std::cos(yaw);
+  const auto rotate = [sine, cosine](float x, float z) {
+    return Aevrynd::Vec2{x * cosine - z * sine, x * sine + z * cosine};
+  };
+  const auto centerOffset = rotate(bounds.center.x * scaleX,
+                                   bounds.center.y * scaleZ);
+  const Aevrynd::Vec2 center{placement.position.x + centerOffset.x,
+                             placement.position.z + centerOffset.y};
+  constexpr std::array<Aevrynd::Vec2, 4> signs{{
+      {-1.f, -1.f}, {1.f, -1.f}, {1.f, 1.f}, {-1.f, 1.f}}};
+  std::array<Aevrynd::Vec2, 4> corners{};
+  for (std::size_t index = 0; index < corners.size(); ++index) {
+    const auto offset = rotate(signs[index].x * bounds.extents.x * scaleX,
+                               signs[index].y * bounds.extents.y * scaleZ);
+    corners[index] = {center.x + offset.x, center.y + offset.y};
+  }
+  if (ShowcaseUnderstoryPointInsideFootprint3D(laneStart, corners) ||
+      ShowcaseUnderstoryPointInsideFootprint3D(laneEnd, corners))
+    return 0.f;
+  float clearance = (std::numeric_limits<float>::max)();
+  for (std::size_t edge = 0; edge < corners.size(); ++edge)
+    clearance = (std::min)(clearance, ShowcaseUnderstorySegmentDistance3D(
+        laneStart, laneEnd, corners[edge],
+        corners[(edge + 1u) % corners.size()]));
+  return clearance;
+}
+
+// 只在正式葉片 AABB 會進入步行帶時，沿用原寬深比例做最大可通過縮放；
+// 二分搜尋保留盡可能多的既有密度變化，並留 0.5mm 浮點安全量。
+[[nodiscard]] inline ShowcaseUnderstoryFormVariation3D
+ClampShowcaseUnderstoryWalkingClearance3D(
+    const ShowcaseLandPlacement3D &placement,
+    ShowcaseUnderstoryFormVariation3D form) noexcept {
+  constexpr float requiredClearance = 1.4005f;
+  if (ShowcaseUnderstoryWalkingClearance3D(placement, form) >=
+      requiredClearance)
+    return form;
+  float passing = 0.f, failing = 1.f;
+  for (unsigned iteration = 0; iteration < 24u; ++iteration) {
+    const float candidate = (passing + failing) * .5f;
+    auto trial = form;
+    trial.scaleMultiplier.x *= candidate;
+    trial.scaleMultiplier.z *= candidate;
+    if (ShowcaseUnderstoryWalkingClearance3D(placement, trial) >=
+        requiredClearance)
+      passing = candidate;
+    else
+      failing = candidate;
+  }
+  form.scaleMultiplier.x *= passing;
+  form.scaleMultiplier.z *= passing;
+  return form;
+}
+
 // 活樹模型根部帶有來源資產的亮色切面；只在 render transform 將它埋入
 // 地表少許。枯木保留既有落地姿態，未知資產也採保守的零位移策略。
 [[nodiscard]] inline float ShowcaseTreeBurialOffset3D(
@@ -122,9 +262,11 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
 
 // 固定 186 個地被 descriptor 不增量；只以既有 stableKey、生境與距離帶
 // 形成三種可讀輪廓。河岸葉片較高且順著河道切線排列，草甸維持開闊扇形，
-// 林下叢則形成樹根周圍的連續中低層。草是明確 non-solid，placement 仍是
-// 碰撞／步行淨空權威；Near/Mid 葉片僅允許受限外伸（<=1.34），不改 HLOD
-// identity、descriptor/draw budget 或任何實體碰撞代理。
+// 林下叢則形成樹根周圍的連續中低層。每個 stableKey 固定選出寬窄節奏，
+// 讓既有十二株群落在 third / God 視角仍讀成不規則植被島；屋前步道肩帶只
+// 補足葉面，不移動根部。草是明確 non-solid，placement 仍是碰撞／步行淨空
+// 權威；葉片僅允許受限外伸（<=1.34），不改 HLOD identity、descriptor/draw
+// budget 或任何實體碰撞代理。
 [[nodiscard]] inline ShowcaseUnderstoryFormVariation3D
 ShowcaseUnderstoryFormVariation(
     const ShowcaseLandPlacement3D &placement) noexcept {
@@ -137,35 +279,60 @@ ShowcaseUnderstoryFormVariation(
                            : placement.band == ShowcaseLandBand3D::Mid
                                ? .97f
                                : 1.f;
-  const float bandCoverage = placement.band == ShowcaseLandBand3D::Near
-                                 ? 1.12f
-                             : placement.band == ShowcaseLandBand3D::Mid
-                                 ? 1.07f
-                                 : 1.f;
+  constexpr std::array<float, 4> riverWidths{.94f, 1.04f, 1.15f, 1.25f};
+  constexpr std::array<float, 4> riverDepths{1.08f, 1.17f, 1.26f, 1.34f};
+  constexpr std::array<float, 4> meadowWidths{1.03f, 1.14f, 1.25f, 1.34f};
+  constexpr std::array<float, 4> meadowDepths{1.06f, 1.16f, 1.27f, 1.34f};
+  constexpr std::array<float, 4> uplandWidths{1.18f, 1.27f, 1.33f, 1.34f};
+  constexpr std::array<float, 4> uplandDepths{1.18f, 1.27f, 1.32f, 1.34f};
+  const auto xClass = std::size_t((placement.stableKey >> 12u) & 3u);
+  const auto zClass = std::size_t((placement.stableKey >> 46u) & 3u);
   if (placement.zone == ShowcaseLandZone3D::Riverbank) {
     const float z = placement.position.z;
     const float riverDerivative =
         .175f * std::cos(z * .035f) + .022f * std::cos(z * .011f);
     const float tangentYaw = std::atan2(1.f, riverDerivative);
     const float targetYaw = tangentYaw + (u - .5f) * .24f;
-    return {{.78f + .12f * u, bandHeight * (1.28f + .34f * v),
-             bandCoverage * (1.02f + .14f * v)},
-            std::remainder(targetYaw - placement.yaw,
-                           6.2831853071795864769f)};
+    return ClampShowcaseUnderstoryWalkingClearance3D(
+        placement,
+        {{riverWidths[xClass], bandHeight * (1.28f + .34f * v),
+          riverDepths[zClass]},
+         std::remainder(targetYaw - placement.yaw,
+                        6.2831853071795864769f)});
+  }
+  float pathShoulderBoost{};
+  if (placement.band == ShowcaseLandBand3D::Near) {
+    constexpr Aevrynd::Vec3 laneStart{-16.f, 0.f, 8.f};
+    constexpr Aevrynd::Vec3 laneEnd{-12.f, 0.f, 19.f};
+    constexpr float laneX = laneEnd.x - laneStart.x;
+    constexpr float laneZ = laneEnd.z - laneStart.z;
+    constexpr float laneLengthSquared = laneX * laneX + laneZ * laneZ;
+    const float t = std::clamp(
+        ((placement.position.x - laneStart.x) * laneX +
+         (placement.position.z - laneStart.z) * laneZ) /
+            laneLengthSquared,
+        0.f, 1.f);
+    const float dx = placement.position.x - (laneStart.x + laneX * t);
+    const float dz = placement.position.z - (laneStart.z + laneZ * t);
+    const float laneDistance = std::sqrt(dx * dx + dz * dz);
+    // 既有肩帶中心約落在道路外 3~5m；只提高該葉簇的 render footprint。
+    if (laneDistance >= 1.4f && laneDistance <= 5.25f)
+      pathShoulderBoost = 1.32f;
   }
   if (placement.zone == ShowcaseLandZone3D::Meadow)
-    return {{bandCoverage * (.98f + .16f * u), 1.f,
-             bandCoverage * (.90f + .16f * v)},
-            (u - .5f) * .64f};
+    return ClampShowcaseUnderstoryWalkingClearance3D(
+        placement,
+        {{(std::max)(meadowWidths[xClass], pathShoulderBoost), 1.f,
+          (std::max)(meadowDepths[zClass], pathShoulderBoost)},
+         (u - .5f) * .64f});
   // Upland 是樹根周圍的正式林下生境；中景必須維持完整群落冠幅，不能
   // 再隨 band 收窄成零星草點。蕨／灌木網格以公尺建模，正式 submission
   // 維持 Y=1；只補回水平覆蓋，仍守既有 1.34 上限且不擴張 Far 的 overdraw。
-  if (placement.band != ShowcaseLandBand3D::Far)
-    return {{1.24f + .095f * u, 1.f, 1.24f + .095f * v},
-            (u - .5f) * .76f};
-  return {{bandCoverage * (1.02f + .16f * u), 1.f,
-           bandCoverage * (1.02f + .16f * v)},
-          (u - .5f) * .76f};
+  return ClampShowcaseUnderstoryWalkingClearance3D(
+      placement,
+      {{(std::max)(uplandWidths[xClass], pathShoulderBoost), 1.f,
+        (std::max)(uplandDepths[zClass], pathShoulderBoost)},
+       (u - .5f) * .76f});
 }
 
 // 日光下的 moss/soil 貼圖會經 IBL 與直射光再次增亮；保持綠色通道優勢並

@@ -93,6 +93,23 @@ std::optional<float> GameplayCottageSourceFloat3D(
     return value;
   }catch(...){return std::nullopt;}
 }
+std::optional<std::uint32_t> GameplaySourceUnsigned3D(
+    std::string_view source,std::string_view name){
+  const auto namePosition=source.find(name);
+  if(namePosition==std::string_view::npos)return std::nullopt;
+  const auto equals=source.find('=',namePosition+name.size());
+  const auto suffix=equals==std::string_view::npos?std::string_view::npos:
+      source.find(';',equals+1);
+  if(equals==std::string_view::npos||suffix==std::string_view::npos)return std::nullopt;
+  try{
+    std::size_t consumed{};
+    const std::string token(source.substr(equals+1,suffix-equals-1));
+    const auto value=std::stoul(token,&consumed);
+    if(consumed!=token.size()||value>std::numeric_limits<std::uint32_t>::max())
+      return std::nullopt;
+    return std::uint32_t(value);
+  }catch(...){return std::nullopt;}
+}
 bool ValidateGameplayCottageMaterialSource3D(std::string_view source){
   const auto woodRoughness=GameplayCottageSourceFloat3D(source,"GameplayCottageWoodRoughness3D");
   const auto woodNormal=GameplayCottageSourceFloat3D(source,"GameplayCottageWoodNormalScale3D");
@@ -162,6 +179,142 @@ const bool ValidateGameplayCottageMaterialResponseSmoke=[](){
      !rejects("GameplayCottageWoodTextureScale3D,false};","GameplayCottageWoodTextureScale3D,true};")||
      !rejects("response.useUv!=expectedUseUv","false"))
     throw std::runtime_error("cottage material fail-closed mutation oracle failed");
+  return true;
+}();
+
+bool ValidateGameplayR34CottageAndPaletteSource3D(std::string_view source){
+  const auto block=[&](std::string_view begin,std::string_view end){
+    const auto first=source.find(begin);
+    const auto last=first==std::string_view::npos?std::string_view::npos:
+        source.find(end,first+begin.size());
+    return first==std::string_view::npos||last==std::string_view::npos?
+        std::string_view{}:source.substr(first,last+end.size()-first);
+  };
+  const auto cottage=block("R34_COTTAGE_LIFE_BEGIN","R34_COTTAGE_LIFE_END");
+  const auto palette=block("R34_PALETTE_BUILDING_BEGIN","R34_PALETTE_BUILDING_END");
+  if(cottage.empty()||palette.empty())return false;
+
+  // Exactly twelve opaque, render-only details share loaded cottage materials.
+  constexpr std::array<std::string_view,20> cottageContract{
+      "std::array<CottageLifeDetail3D,12>","showcaseCylinderMesh_",
+      "boxMesh_","showcaseWoodMaterial_","*brickSource",
+      "scene_.Mesh(detail.cylindrical?showcaseCylinderMesh_:boxMesh_",
+      "renderIdentity","{-15.2f,.22f,26.55f}","{-15.2f,.22f,27.02f}",
+      "{-15.2f,.50f,26.78f}","{-14.55f,.22f,26.55f}",
+      "{-14.55f,.22f,27.02f}","{-8.75f,.58f,24.9f}",
+      "{-15.05f,.42f,21.25f}","{-14.18f,.32f,21.55f}",
+      "{-12.f,.12f,19.72f}","lifeDetails.size()!=12",
+      "TransformBounds(resource.bounds,detail.transform)",
+      "Cottage life detail exceeded cottage footprint",
+      "scene_.MeshCount()!=lifeDrawsBefore+lifeDetails.size()"};
+  if(!std::ranges::all_of(cottageContract,[&](std::string_view token){
+       return cottage.find(token)!=std::string_view::npos;
+     })||cottage.find("physics_")!=std::string_view::npos||
+     cottage.find("MaterialBox")!=std::string_view::npos||
+     cottage.find("textures={}")!=std::string_view::npos)return false;
+
+  // The palette implementation itself must route body/preview yaw through one
+  // shared-mesh builder, retain identity and retain valid/invalid feedback.
+  constexpr std::array<std::string_view,13> paletteContract{
+      "submitPaletteBuilding","showcaseWoodMaterial_",
+      "GameplayPaletteBuildingTransform3D(center,yaw,transform)",
+      "scene_.Mesh(showcaseConeHighMesh_,transform,wood,{},identity)",
+      "scene_.MeshCount()==before+GameplayPaletteBuildingDrawCap3D",
+      "placed.category==PaletteCategory::Building",
+      "body->settings.transform.rotation.y",
+      "preview.category==PaletteCategory::Building","preview.rotation",
+      "preview.valid ? Color{.72f,.92f,.72f,1.f}",
+      "Color{1.f,.60f,.55f,1.f}","{{GameplayPlacedIdentityHigh,placed.id},1}",
+      "{{GameplayPreviewIdentityHigh,1},1}"};
+  constexpr std::array<std::string_view,5> mergedMeshContract{
+      "CreateGameplayPaletteBuildingMesh3D()",
+      "mesh.vertices.size()!=138","mesh.indices.size()!=204",
+      "mesh.indices.size()/3!=68",
+      "Palette building merged mesh bounds/topology gate failed"};
+  constexpr std::array<std::string_view,15> captureGhostContract{
+      "GameplayPaletteCaptureGhostMinimumSeparation3D=1.5f",
+      "GameplayPaletteCaptureGhostsDistinct3D(*captureValidGhost_,*invalidPoint)",
+      "const auto reservation=collisions_.CreateBox",
+      "minimumCapturePaletteRayDistance=4.f",
+      "camera_,collisions_,minimumCapturePaletteRayDistance",
+      "collisions_.Destroy(reservation)",
+      "!palette_->PreviewAt(*invalidPoint,PaletteCategory::Building)",
+      "palette_->PreviewAt(*invalidPoint, PaletteCategory::Building)",
+      "GameplayPaletteCaptureGhostsDistinct3D(*captureValidGhost_,*captureInvalidGhost_)",
+      "!collisions_.Destroy(captureEvidenceCollider_)",
+      "captureEvidenceCollider_={}","captureValidGhost_.reset()",
+      "captureInvalidGhost_.reset()","captureEvidenceColliderReleased_=true",
+      "evidenceColliderHandleCleared"};
+  if(!std::ranges::all_of(paletteContract,[&](std::string_view token){
+       return palette.find(token)!=std::string_view::npos;
+     })||!std::ranges::all_of(mergedMeshContract,[&](std::string_view token){
+       return source.find(token)!=std::string_view::npos;
+     })||!std::ranges::all_of(captureGhostContract,[&](std::string_view token){
+       return source.find(token)!=std::string_view::npos;
+     })||palette.find("CreateMeshResource3D")!=std::string_view::npos||
+     palette.find("CreateTexture")!=std::string_view::npos)return false;
+  std::size_t identityUses{};
+  for(auto at=palette.find(",identity)");at!=std::string_view::npos;
+      at=palette.find(",identity)",at+1))++identityUses;
+  if(identityUses!=1||source.find("GameplayPaletteBuildingGeometryRuntimeGate3D")==
+      std::string_view::npos)return false;
+
+  // Parse the implementation's actual builder constants, then execute its
+  // footprint mathematics across all 15-degree palette yaw steps. This makes
+  // bounds, finite transforms, yaw propagation and the per-building draw cap
+  // behavioral gates rather than source-token presence checks.
+  const auto offsetX=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingOffsetX3D");
+  const auto offsetY=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingOffsetY3D");
+  const auto offsetZ=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingOffsetZ3D");
+  const auto scaleX=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingScaleX3D");
+  const auto scaleY=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingScaleY3D");
+  const auto scaleZ=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingScaleZ3D");
+  const auto minimumX=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingLocalMinimumX3D");
+  const auto minimumY=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingLocalMinimumY3D");
+  const auto minimumZ=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingLocalMinimumZ3D");
+  const auto maximumX=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingLocalMaximumX3D");
+  const auto maximumY=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingLocalMaximumY3D");
+  const auto maximumZ=GameplayCottageSourceFloat3D(source,"GameplayPaletteBuildingLocalMaximumZ3D");
+  const auto drawCap=GameplaySourceUnsigned3D(source,"GameplayPaletteBuildingDrawCap3D");
+  if(!offsetX||!offsetY||!offsetZ||!scaleX||!scaleY||!scaleZ||!drawCap||
+     !minimumX||!minimumY||!minimumZ||!maximumX||!maximumY||!maximumZ||
+     *drawCap!=1||std::uint64_t(*drawCap)*256u!=256u)return false;
+  const float builtWidthX=(*maximumX-*minimumX)**scaleX;
+  const float builtWidthZ=(*maximumZ-*minimumZ)**scaleZ;
+  const float builtHeight=(*maximumY-*minimumY)**scaleY;
+  if(builtWidthX<.65f||builtWidthZ<.65f||builtHeight<.75f||
+     builtWidthX>1.f||builtWidthZ>1.f||builtHeight>1.f)return false;
+  float zeroX{},quarterX{};
+  for(unsigned step=0;step<24;++step){
+    const float yaw=float(step)*.2617993878f;
+    const float sine=std::sin(yaw),cosine=std::cos(yaw);
+    const float x=cosine**offsetX+sine**offsetZ;
+    const float z=-sine**offsetX+cosine**offsetZ;
+    const float localExtentX=(*maximumX-*minimumX)*.5f;
+    const float localExtentZ=(*maximumZ-*minimumZ)*.5f;
+    const float extentX=std::abs(cosine)*localExtentX**scaleX+
+        std::abs(sine)*localExtentZ**scaleZ;
+    const float extentZ=std::abs(sine)*localExtentX**scaleX+
+        std::abs(cosine)*localExtentZ**scaleZ;
+    const float builtMinimumY=*offsetY+*minimumY**scaleY;
+    const float builtMaximumY=*offsetY+*maximumY**scaleY;
+    for(float component:{x,*offsetY,z,yaw,extentX,extentZ,builtMinimumY,builtMaximumY})
+      if(!std::isfinite(component))return false;
+    if(std::abs(x)+extentX>.50001f||std::abs(z)+extentZ>.50001f||
+       builtMinimumY<-.50001f||builtMaximumY>.50001f)return false;
+    if(step==0)zeroX=x;if(step==6)quarterX=x;
+  }
+  return std::abs(zeroX-quarterX)>.01f;
+}
+const bool ValidateGameplayR34CottageAndPaletteSmoke=[](){
+  const auto path=std::filesystem::path(AEVRYND_SOURCE_DIR)/
+      "games/gameplay_lab/native/src/GameplayLabGame.cpp";
+  std::ifstream stream(path,std::ios::binary);
+  if(!stream)throw std::runtime_error("r34 cottage/palette source missing");
+  const std::string source{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+  if(!ValidateGameplayR34CottageAndPaletteSource3D(source))
+    throw std::runtime_error("r34 cottage/palette geometry or identity contract failed");
   return true;
 }();
 }
@@ -240,7 +393,7 @@ std::vector<std::uint32_t> separatedPixels(100*40);for(unsigned y=8;y<32;++y){fo
 GameplayShowcaseEnvironment3D cameraEnvironment;if(!cameraEnvironment.Initialize(0x4a17u))return 43;const auto grassBounds=CreateGrassClumpMesh3D(11,3).Bounds();const Vec3 godFocus{-16,1.4f,8.73334f};const auto godFixture=Mesh3D::CreateUnitBox();const Matrix4 godFixtureWorld=CreateTransformMatrix(godFocus-Vec3{0,.4f,0},{},{.7f,2.f,.5f});const auto searchStart=std::chrono::steady_clock::now();const auto godLayout=SelectGameplayGodCameraLayout3D(godFocus,cameraEnvironment.Descriptors(),grassBounds,godFixture.vertices,godFixture.indices,godFixtureWorld);const auto searchTime=std::chrono::steady_clock::now()-searchStart;if(!godLayout.valid||godLayout.distance<18.f||godLayout.distance>30.f||godLayout.playerCoverage<GameplayGodMinimumPlayerCoverage3D||!godLayout.lodTransitions||godLayout.camera.projection.mode!=ProjectionMode::Orthographic||!std::isfinite(godLayout.camera.projection.orthographicHeight)||godLayout.camera.projection.orthographicHeight<4.f||godLayout.camera.projection.orthographicHeight>180.f||godLayout.elevation<.52f||godLayout.elevation>1.31f||godLayout.buildingUnion>.22f||godLayout.maximumBuildingPart>.08f||godLayout.roofCoverage>.05f||godLayout.roofTouchesTop||godLayout.visibleWorldDescriptors<20){std::cerr<<"god invalid distance="<<godLayout.distance<<" azimuth="<<godLayout.azimuth<<" elevation="<<godLayout.elevation<<" fov="<<godLayout.camera.projection.verticalFieldOfView<<" ortho="<<godLayout.camera.projection.orthographicHeight<<" coverage="<<godLayout.playerCoverage<<" transitions="<<godLayout.lodTransitions<<" union="<<godLayout.buildingUnion<<" maxPart="<<godLayout.maximumBuildingPart<<" roof="<<godLayout.roofCoverage<<" roofTop="<<godLayout.roofTouchesTop<<" world="<<godLayout.visibleWorldDescriptors<<'\n';return 44;}
 GameplayCaptureProjectionEvidence3D firstProjection{ProjectionMode::Perspective,1.04719755f,0};GameplayCaptureProjectionEvidence3D godProjection{ProjectionMode::Orthographic,godLayout.camera.projection.verticalFieldOfView,godLayout.camera.projection.orthographicHeight,godLayout.playerCoverage,godLayout.buildingUnion,godLayout.maximumBuildingPart,godLayout.roofCoverage,godLayout.visibleWorldDescriptors,godLayout.lodTransitions};if(!firstProjection.Complete(GameplayCaptureCamera3D::First)||!godProjection.Complete(GameplayCaptureCamera3D::God))return 53;auto invalidProjection=firstProjection;invalidProjection.projectionMode=ProjectionMode::Orthographic;if(invalidProjection.Complete(GameplayCaptureCamera3D::First))return 54;invalidProjection=firstProjection;invalidProjection.verticalFovRadians=std::numeric_limits<float>::infinity();if(invalidProjection.Complete(GameplayCaptureCamera3D::Third))return 55;invalidProjection=firstProjection;invalidProjection.godActualTriangleCoverage=GameplayGodMinimumPlayerCoverage3D;if(invalidProjection.Complete(GameplayCaptureCamera3D::First))return 56;auto invalidGod=godProjection;invalidGod.projectionMode=ProjectionMode::Perspective;if(invalidGod.Complete(GameplayCaptureCamera3D::God))return 57;invalidGod=godProjection;invalidGod.godLodTransitions=0;if(invalidGod.Complete(GameplayCaptureCamera3D::God))return 57;
 std::uint32_t searchCount=1,cacheHits{};const auto validationStart=std::chrono::steady_clock::now();for(unsigned tick=0;tick<120;++tick){const Vec3 translatedFocus=godFocus+Vec3{float(tick%4)*.01f,0,0};auto translatedCamera=godLayout.camera;const Vec3 delta=translatedFocus-godFocus;translatedCamera.position=translatedCamera.position+delta;translatedCamera.target=translatedCamera.target+delta;const Matrix4 translatedPlayerWorld=CreateTranslationMatrix(delta)*godFixtureWorld;const auto validation=ValidateGameplayGodCameraLayout3D(translatedFocus,translatedCamera,cameraEnvironment.Descriptors(),grassBounds,godLayout.distance,godLayout.azimuth,godLayout.elevation,godFixture.vertices,godFixture.indices,translatedPlayerWorld);if(!validation.valid)return 51;++cacheHits;}const auto validationTime=std::chrono::steady_clock::now()-validationStart;if(searchCount!=1||cacheHits!=120||validationTime>=searchTime||validationTime>std::chrono::seconds(2))return 52;
-CollisionWorld3D placementCollision;if(!placementCollision.CreateBox({{{-16,.5f,8},{2,1,2}}}))return 48;const auto placementPointer=FindGameplayClearPlacementPointer3D(godLayout.camera,placementCollision);if(!placementPointer)return 49;const auto placementRay=ScreenPointToRay(godLayout.camera,{1280,720},*placementPointer);const float placementT=-placementRay.origin.y/placementRay.direction.y;auto placementPoint=placementRay.origin+placementRay.direction*placementT;placementPoint.x=std::round(placementPoint.x*.5f)*2;placementPoint.z=std::round(placementPoint.z*.5f)*2;placementPoint.y=.5f;if(placementCollision.OverlapsBox(placementPoint,{.48f,.48f,.48f}))return 50;
+CollisionWorld3D placementCollision;if(!placementCollision.CreateBox({{{-16,.5f,8},{2,1,2}}}))return 48;const auto placementPointer=FindGameplayClearPlacementPointer3D(godLayout.camera,placementCollision);if(!placementPointer)return 49;const auto placementRay=ScreenPointToRay(godLayout.camera,{1280,720},*placementPointer);const float placementT=-placementRay.origin.y/placementRay.direction.y;auto placementPoint=placementRay.origin+placementRay.direction*placementT;placementPoint.x=std::round(placementPoint.x*.5f)*2;placementPoint.z=std::round(placementPoint.z*.5f)*2;placementPoint.y=.5f;if(placementCollision.OverlapsBox(placementPoint,{.48f,.48f,.48f}))return 50;const auto distantPlacementPointer=FindGameplayClearPlacementPointer3D(godLayout.camera,placementCollision,4.f);if(!distantPlacementPointer||FindGameplayClearPlacementPointer3D(godLayout.camera,placementCollision,201.f))return 108;const auto distantPlacementRay=ScreenPointToRay(godLayout.camera,{1280,720},*distantPlacementPointer);const float distantPlacementT=-distantPlacementRay.origin.y/distantPlacementRay.direction.y;if(!std::isfinite(distantPlacementT)||distantPlacementT<4.f)return 109;const Vec3 placementAnchor{-16,0,8.73334f};const auto separatedPlacementPointer=FindGameplayClearPlacementPointer3D(godLayout.camera,placementCollision,0.f,placementAnchor,7.f);if(!separatedPlacementPointer)return 110;const auto separatedPlacementRay=ScreenPointToRay(godLayout.camera,{1280,720},*separatedPlacementPointer);const float separatedPlacementT=-separatedPlacementRay.origin.y/separatedPlacementRay.direction.y;auto separatedPlacementPoint=separatedPlacementRay.origin+separatedPlacementRay.direction*separatedPlacementT;separatedPlacementPoint.x=std::round(separatedPlacementPoint.x*.5f)*2;separatedPlacementPoint.z=std::round(separatedPlacementPoint.z*.5f)*2;const float separatedDx=separatedPlacementPoint.x-placementAnchor.x,separatedDz=separatedPlacementPoint.z-placementAnchor.z;if(separatedDx*separatedDx+separatedDz*separatedDz<49.f)return 111;if(FindGameplayClearPlacementPointer3D(godLayout.camera,placementCollision,0.f,placementAnchor,std::numeric_limits<float>::infinity()))return 112;
 const Camera3D firstCamera=MakeFirstPersonCamera({},0,0);for(const auto sex:{GameplayViewmodelSex3D::Female,GameplayViewmodelSex3D::Male}){const auto modelRoot=std::filesystem::path(AEVRYND_SOURCE_DIR)/"games/character_lab/assets/model-packs";const auto source=LoadSkinnedModelAssetFileDetailed(modelRoot/(sex==GameplayViewmodelSex3D::Female?"realistic-female/realistic-female.aeskin":"realistic-male/realistic-male.aeskin"));HumanoidSkeletonMap3D rig{};CharacterEquipmentAsset3D weapon{};if(!source||!ResolveCharacterRig3D(source.asset,rig)||!CreateCharacterEquipmentAsset3D(source.asset,rig,CharacterEquipmentShape3D::Sword,weapon))return 143;const auto geometry=BuildGameplayFirstPersonWeaponProjectionGeometry3D(weapon);if(!geometry.Valid())return 144;const auto layout=GameplayFirstPersonViewmodelLayout(sex);const Matrix4 desiredGrip=GameplayFirstPersonDesiredGripTransform3D(layout),handSocket=desiredGrip*CreateTranslationMatrix({0,-.105f,-.02f});const auto evidence=EvaluateGameplayFirstPersonViewmodelProjection3D(firstCamera,handSocket,layout,geometry);if(!evidence.actualWeaponGeometryMeasured||evidence.Complete()){std::cerr<<"first viewmodel accepted without actual posed arms sex="<<unsigned(sex)<<'\n';return 45;}auto wrong=handSocket;wrong[0][3]=.30f;if(EvaluateGameplayFirstPersonViewmodelProjection3D(firstCamera,wrong,layout,geometry).Complete())return 63;wrong=handSocket;wrong[1][3]=-.42f;if(EvaluateGameplayFirstPersonViewmodelProjection3D(firstCamera,wrong,layout,geometry).Complete())return 64;wrong=handSocket;wrong[2][3]=firstCamera.projection.nearPlane+.005f;if(EvaluateGameplayFirstPersonViewmodelProjection3D(firstCamera,wrong,layout,geometry).Complete())return 65;}
 ReadbackRasterProvenance3D raster{};raster.frameSerial=42;raster.viewProjectionHash=1;raster.tokenGeneration=1;raster.temporalHistoryReadGeneration=1;ObjectIdCaptureRequestMetadata3D frameRequest{7,42,9,ReadbackEmptyReason3D::None,{{5},0},11};FrameBoundDeterminismEvidence3D frameEvidence{};frameEvidence.frameSerial=42;frameEvidence.integrity={DeterminismIntegrityMode3D::SealedCapture,DeterminismIntegrityMode3D::SealedCapture,DeterminismIntegrityRejectionReason3D::None,0,0,0,true};frameEvidence.canonical={1,1,2,3,4,5,6,7};frameEvidence.render={42,7,8,9,10,11,12,13};if(!ValidateGameplayFrameBoundRenderPair3D(frameEvidence,frameEvidence,raster,raster,frameRequest,frameRequest))return 76;auto wrongFrameEvidence=frameEvidence;++wrongFrameEvidence.render.frameSerial;if(ValidateGameplayFrameBoundRenderPair3D(frameEvidence,wrongFrameEvidence,raster,raster,frameRequest,frameRequest))return 77;auto wrongSceneEvidence=frameEvidence;++wrongSceneEvidence.render.sceneDrawRevision;if(ValidateGameplayFrameBoundRenderPair3D(wrongSceneEvidence,wrongSceneEvidence,raster,raster,frameRequest,frameRequest))return 78;auto wrongRaster=raster;++wrongRaster.frameSerial;if(ValidateGameplayFrameBoundRenderPair3D(frameEvidence,frameEvidence,raster,wrongRaster,frameRequest,frameRequest))return 79;auto wrongRequest=frameRequest;++wrongRequest.drawListRevision;if(ValidateGameplayFrameBoundRenderPair3D(frameEvidence,frameEvidence,raster,raster,frameRequest,wrongRequest))return 80;DirectionalShadowFrameProvenance3D shadow{};shadow.frameSerial=42;shadow.resourceGeneration=7;shadow.activeCascades=2;shadow.casters=3;shadow.drawCalls=4;shadow.cascadeDrawCalls=4;shadow.cascadeFingerprints[0]=11;shadow.cascadeFingerprints[1]=12;shadow.rendered[0]=1;shadow.reused[1]=1;if(!EvaluateGameplayCaptureShadowEvidence3D(shadow,raster))return 18;shadow.frameSerial=41;if(EvaluateGameplayCaptureShadowEvidence3D(shadow,raster))return 24;shadow.frameSerial=42;shadow.cascadeFingerprints[1]=0;if(EvaluateGameplayCaptureShadowEvidence3D(shadow,raster))return 25;shadow.cascadeFingerprints[1]=12;shadow.rendered[1]=1;if(EvaluateGameplayCaptureShadowEvidence3D(shadow,raster))return 26;if(!EvaluateGameplayCaptureLodEvidence3D(*godDay,42,42,1,1,1,0)||EvaluateGameplayCaptureLodEvidence3D(*godDay,41,42,1,1,1,0)||EvaluateGameplayCaptureLodEvidence3D(*godDay,42,42,1,0,1,0)||EvaluateGameplayCaptureLodEvidence3D(*godDay,42,42,1,1,0,0)||EvaluateGameplayCaptureLodEvidence3D(*godDay,42,42,1,1,1,1)||!EvaluateGameplayCaptureLodEvidence3D(third,42,42,1,0,0,0)||EvaluateGameplayCaptureLodEvidence3D(third,42,42,1,1,0,0)||EvaluateGameplayCaptureLodEvidence3D(third,42,42,1,0,1,0)||EvaluateGameplayCaptureLodEvidence3D(third,42,42,0,0,0,0))return 19;
 AnimationPose3D hashPose{};hashPose.globalMatrices.push_back(Matrix4::Identity());const auto poseHash=HashGameplayCapturePose3D(hashPose);auto negativeZeroPose=hashPose;negativeZeroPose.globalMatrices[0][0][3]=-0.f;if(!poseHash||HashGameplayCapturePose3D(negativeZeroPose)!=poseHash)return 69;auto changedPose=hashPose;changedPose.globalMatrices[0][0][3]=std::nextafter(0.f,1.f);if(HashGameplayCapturePose3D(changedPose)==poseHash)return 70;auto invalidPose=hashPose;invalidPose.globalMatrices[0][0][3]=std::numeric_limits<float>::infinity();if(HashGameplayCapturePose3D(invalidPose)!=0)return 71;

@@ -28,7 +28,7 @@ public:
     void SetPaletteCategory(PaletteCategory category){category_=category;}
     bool ApplyPalettePresentationInput(TickInput input)noexcept;
     void Tick(TickInput input,float dt=1.f/60.f);
-    bool Place(Aevrynd::Vec3 position,bool dynamic=false);bool RollbackLastPlacement(std::uint64_t id);bool Delete(std::uint64_t id);bool Undo();bool Redo();
+    bool Place(Aevrynd::Vec3 position,bool dynamic=false,float rotation=0.f);bool RollbackLastPlacement(std::uint64_t id);bool Delete(std::uint64_t id);bool Undo();bool Redo();
     bool BeginGrab(std::uint64_t id,float distance);void EndGrab();
     CameraMode Camera()const{return camera_;} LightingPhase Lighting()const{return lighting_;} PaletteCategory Category()const{return category_;}
     LocomotionState Locomotion()const{return locomotion_;} Aevrynd::Vec3 CharacterPosition()const{return characterPosition_;}

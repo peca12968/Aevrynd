@@ -7,7 +7,85 @@
 #include <limits>
 using namespace GameplayLab;
 using namespace Aevrynd;
+namespace {
+bool NearlyEqual(float left, float right) {
+  return std::abs(left - right) <= 1e-6f;
+}
+
+bool ValidateCommittedRotation(float updateDelta, float expectedRotation) {
+  Rules3D rules;
+  CollisionWorld3D collision;
+  PhysicsWorld3D physics;
+  SceneECSRegistry3D scene;
+  collision.CreateBox({{{0, -.5f, 0}, {20, .5f, 20}}});
+  ObjectPaletteAdapter3D palette(rules, collision, physics, scene);
+  const Ray3D ray{{2, 10, 2}, {0, -1, 0}};
+  if (!palette.Begin(ray, PaletteCategory::Building) ||
+      !palette.Update(ray, updateDelta) ||
+      !NearlyEqual(palette.Preview().rotation, expectedRotation))
+    return false;
+
+  const auto previewBeforeHostile = palette.Preview();
+  for (const float hostile : {std::numeric_limits<float>::quiet_NaN(),
+                              std::numeric_limits<float>::infinity()}) {
+    if (palette.Update(ray, hostile) ||
+        !NearlyEqual(palette.Preview().rotation,
+                     previewBeforeHostile.rotation) ||
+        Length(palette.Preview().position - previewBeforeHostile.position) >
+            1e-6f)
+      return false;
+  }
+
+  if (!palette.Commit() || rules.Entities().size() != 1)
+    return false;
+  const auto id = rules.Entities().front().id;
+  const auto bodyRotation = [&]() {
+    const auto *body = physics.GetBody(palette.Body(id));
+    return body ? body->settings.transform.rotation.y
+                : std::numeric_limits<float>::quiet_NaN();
+  };
+  const auto sceneRotation = [&]() {
+    const auto *transform = scene.Transform(palette.SceneEntity(id));
+    return transform ? transform->value.rotation.y
+                     : std::numeric_limits<float>::quiet_NaN();
+  };
+  if (!NearlyEqual(rules.Entities().front().rotation, expectedRotation) ||
+      !NearlyEqual(bodyRotation(), expectedRotation) ||
+      !NearlyEqual(sceneRotation(), expectedRotation))
+    return false;
+
+  if (!palette.Undo() || !rules.Entities().empty() || palette.Body(id) ||
+      !palette.Redo() || rules.Entities().size() != 1 ||
+      !NearlyEqual(rules.Entities().front().rotation, expectedRotation) ||
+      !NearlyEqual(bodyRotation(), expectedRotation) ||
+      !NearlyEqual(sceneRotation(), expectedRotation))
+    return false;
+
+  if (!palette.Delete(id) || !palette.Undo() ||
+      rules.Entities().size() != 1 ||
+      !NearlyEqual(rules.Entities().front().rotation, expectedRotation) ||
+      !NearlyEqual(bodyRotation(), expectedRotation) ||
+      !NearlyEqual(sceneRotation(), expectedRotation))
+    return false;
+  return true;
+}
+} // namespace
 int main() {
+  if (!ValidateCommittedRotation(1.f, .2617994f) ||
+      !ValidateCommittedRotation(6.f, 1.5707964f))
+    return 42;
+  {
+    Rules3D hostileRules;
+    hostileRules.SetPaletteCategory(PaletteCategory::Building);
+    const auto rejectedBefore = hostileRules.GetStats().placementRejected;
+    for (const float hostile : {std::numeric_limits<float>::quiet_NaN(),
+                                std::numeric_limits<float>::infinity()})
+      if (hostileRules.Place({0, .5f, 0}, false, hostile))
+        return 43;
+    if (!hostileRules.Entities().empty() ||
+        hostileRules.GetStats().placementRejected != rejectedBefore + 2)
+      return 44;
+  }
   Input input;
   input.SetKey('1', true);
   input.SetKey('9', true);
@@ -238,6 +316,9 @@ int main() {
     return 7;
   if (!palette.PlaceAt({10, .5f, 2}, PaletteCategory::Physics))
     return 37;
+  if (rules.Entities().empty() ||
+      rules.Entities().back().category != PaletteCategory::Physics)
+    return 39;
   const Ray3D restoredPick{{2, .5f, -4}, {0, 0, 1}};
   if (!palette.BeginGrab(restoredPick) || !palette.Undo() ||
       palette.Grabbed() || rules.Grabbed() || rules.Entities().size() != 1 ||
