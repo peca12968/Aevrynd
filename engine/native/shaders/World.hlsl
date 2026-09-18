@@ -2927,7 +2927,16 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         reflectedWater=WaterReflectionFallback3D(reflectedWater,screenSpaceReflection.rgb,screenSpaceReflection.a);
         // 反射只取得 Fresnel 能量，其餘能量保留給透射，避免日夜切換時雙重增亮。
         if(waterSurfaceEnabled!=0u)
-            reflectedWater=min(reflectedWater,max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*4.0);
+        {
+            // 低光 phase 之後仍會經 time-of-day exposure；四倍天空亮度上限會把
+            // 黃昏／夜間掠射角反射重新抬成均勻亮帶。保留淡水 Fresnel 與波面
+            // 起伏，只把環境反射限制在可讀、非自發光的天空能量範圍。以峰值
+            // 等比例縮放而不是逐通道 min，避免把高光裁成失去色彩與波紋的平帶。
+            const precise float waterReflectionCap=max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*1.5;
+            const precise float waterReflectionPeak=max(reflectedWater.r,max(reflectedWater.g,reflectedWater.b));
+            const precise float waterReflectionScale=min(1.0,waterReflectionCap/max(waterReflectionPeak,0.000001));
+            reflectedWater=WaterOrderedMultiply3D(reflectedWater,waterReflectionScale.xxx);
+        }
         precise const float inverseFresnel = 1.0 - fresnel;
         precise float3 waterComposite=waterSurfaceEnabled!=0u
             ? WaterOrderedScaleAdd3D(absorbedWater, inverseFresnel, reflectedWater, fresnel)

@@ -46,6 +46,12 @@ int main(){
  const auto shaderPath=std::filesystem::path(__FILE__).parent_path().parent_path()/"shaders"/"World.hlsl";
   std::ifstream shaderFile(shaderPath);const std::string shader{std::istreambuf_iterator<char>{shaderFile},std::istreambuf_iterator<char>{}};
   const auto count=[&](const std::string& token){unsigned n=0;size_t p=0;while((p=shader.find(token,p))!=std::string::npos){++n;p+=token.size();}return n;};
+  // 黃昏與夜間另有 time-of-day exposure；環境反射上限若回到四倍天空
+  // 能量，掠射角河面會再次成為均勻亮帶。固定正式 shader 的保守上限。
+  if(shader.find("const precise float waterReflectionCap=max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*1.5;") == std::string::npos ||
+     shader.find("const precise float waterReflectionPeak=max(reflectedWater.r,max(reflectedWater.g,reflectedWater.b));") == std::string::npos ||
+     shader.find("reflectedWater=WaterOrderedMultiply3D(reflectedWater,waterReflectionScale.xxx);") == std::string::npos ||
+     shader.find("max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*4.0") != std::string::npos){std::cerr<<"Water low-light reflection cap contract failed\n";return 27;}
   const auto analyticCount=count("WaterAnalyticWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
   const auto sharedBegin=shader.find("WorldPixelInput InstancedVertexMain("),waterBegin=shader.find("WorldPixelInput InstancedWaterVertexMain("),skinnedBegin=shader.find("WorldPixelInput SkinnedVertexMain(");
   if(sharedBegin==std::string::npos||waterBegin<=sharedBegin||skinnedBegin<=waterBegin){std::cerr<<"Dedicated water vertex entry ordering failed\n";return 25;}
