@@ -240,6 +240,29 @@ float3 ApplyTerrainChromaVariation(float3 albedo, float noiseSample, float stren
     // 色度擾動後恢復原本線性亮度，避免以提亮地形偽造細節或破壞曝光排序。
     return before > 0.0 && after > 0.000001 ? shifted * (before / after) : albedo;
 }
+float3 TerrainForestFloorSpectralVariation(float mesoSignal, float macroSignal,
+                                           float grassWeight, float soilWeight,
+                                           float authoredCalibration)
+{
+    // Reuse the continuous world-space macro/meso communities to separate
+    // cool moss pockets from warm leaf litter.  This adds no texture/noise
+    // sample and normalizes the multiplier to unit Rec.709 luminance, keeping
+    // exposure plus authored path/wet-bank energy unchanged.
+    if (mesoSignal != mesoSignal || macroSignal != macroSignal ||
+        grassWeight != grassWeight || soilWeight != soilWeight ||
+        authoredCalibration != authoredCalibration)
+        return 1.0.xxx;
+    const float habitat = saturate(mesoSignal * 0.68 + macroSignal * 0.32);
+    const float shapedHabitat = habitat * habitat * (3.0 - 2.0 * habitat);
+    const float3 leafLitter = float3(1.12, 0.96, 0.78);
+    const float3 moss = float3(0.78, 1.12, 0.84);
+    const float naturalFloor = saturate(grassWeight + soilWeight) *
+                               (1.0 - saturate(authoredCalibration));
+    const float3 spectral = lerp(1.0.xxx, lerp(leafLitter, moss, shapedHabitat),
+                                 naturalFloor * 0.62);
+    const float spectralLuma = dot(spectral, float3(0.2126, 0.7152, 0.0722));
+    return spectralLuma > 0.000001 ? spectral / spectralLuma : 1.0.xxx;
+}
 cbuffer VolumetricCloudConstants : register(b6)
 {
     float cloudBaseAltitude;
@@ -2435,6 +2458,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     showcaseTerrainAuthoredBiomeCalibration);
                 if (originalLuma > 0.0 && partitionLuma > 0.000001)
                     terrainAlbedo *= referenceLuma / partitionLuma;
+                terrainAlbedo *= TerrainForestFloorSpectralVariation(
+                    terrainMesoSignal, macroNoise, grassWeight, soilWeight,
+                    showcaseTerrainAuthoredBiomeCalibration);
                 // 中尺度亮度變化代表樹冠遮蔽、苔蘚與落葉堆積；範圍仍有界且不依賴相機或時間。
                 // 讓遠景在細節貼圖淡出後仍保有可讀層次，避免大片同亮度地表形成規律重複。
                 terrainAlbedo *= lerp(0.90, 1.08, terrainMesoSignal);
