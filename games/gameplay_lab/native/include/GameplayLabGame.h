@@ -314,7 +314,8 @@ GameplayShowcaseMonsterStage3DForCapture(bool godCapture) noexcept {
 struct GameplayGodCameraLayout3D {
     Aevrynd::Camera3D camera{};
     float distance{},azimuth{},elevation{},playerCoverage{},buildingUnion{},maximumBuildingPart{},roofCoverage{};
-    std::uint32_t lodTransitions{},visibleWorldDescriptors{};
+    float forestCoverage{},semanticCoverage{};
+    std::uint32_t lodTransitions{},visibleWorldDescriptors{},visibleTreeDescriptors{};
     bool roofTouchesTop{},valid{};
     float maximumActualTriangleCoverage{};
     std::uint32_t evaluatedCandidates{},coarseCandidates{},rasterCandidates{},rejectedActualCoverage{},rejectedLod{},rejectedWorld{},rejectedBuilding{};
@@ -337,12 +338,13 @@ LegacyGameplayGodProductionGeometry3D(const Aevrynd::MeshBounds3D& grass) noexce
 
 struct GameplayGodWorldEvidence3D {
     float riverCoverage{},buildingCoverage{},maximumBuildingPart{},roofCoverage{};
-    std::uint32_t visibleWorldDescriptors{},visibleBuildingComponents{},buildingEdgeMask{},lodTransitions{};
+    float forestCoverage{},semanticCoverage{};
+    std::uint32_t visibleWorldDescriptors{},visibleTreeDescriptors{},visibleBuildingComponents{},buildingEdgeMask{},lodTransitions{};
     bool buildingValid{true};
 };
 
 struct GameplayGodCoarseEvidence3D {
-    std::uint32_t visibleWorldDescriptors{},visibleBuildingComponents{},lodTransitions{};
+    std::uint32_t visibleWorldDescriptors{},visibleTreeDescriptors{},visibleBuildingComponents{},lodTransitions{};
     bool riverVisible{};
 };
 
@@ -359,6 +361,7 @@ struct GameplayGodCoarseEvidence3D {
         const auto bounds=localBounds?Aevrynd::TransformBounds(*localBounds,transform):Aevrynd::MeshBounds3D{descriptor.position,(std::max)(.1f,Aevrynd::Length(descriptor.scale)*.5f),descriptor.scale*.5f};
         if(!Aevrynd::SphereIntersectsFrustum(bounds.center,bounds.radius,camera,1280.f/720.f))continue;
         ++result.visibleWorldDescriptors;
+        if(descriptor.kind==ShowcaseSceneKind3D::Tree)++result.visibleTreeDescriptors;
         if(descriptor.kind==ShowcaseSceneKind3D::Water)result.riverVisible=true;
         else if(descriptor.kind==ShowcaseSceneKind3D::Building)++result.visibleBuildingComponents;
         else if(descriptor.kind==ShowcaseSceneKind3D::Grass){const auto selection=Aevrynd::EvaluateMeshLod3D(Aevrynd::Length(bounds.center-camera.position),bounds.radius,ShowcaseGrassLodPolicy3D());result.lodTransitions+=selection.submitNear&&selection.submitFar?1u:0u;}
@@ -370,10 +373,11 @@ struct GameplayGodCoarseEvidence3D {
     const Aevrynd::Camera3D& camera,std::span<const ShowcaseSceneDescriptor3D> descriptors,
     const GameplayGodProductionGeometry3D& geometry) noexcept {
     GameplayGodWorldEvidence3D result{};constexpr std::uint32_t maskWidth=80,maskHeight=45;
-    std::vector<std::uint8_t> riverMask(std::size_t(maskWidth)*maskHeight),buildingMask(riverMask.size());
+    std::vector<std::uint8_t> riverMask(std::size_t(maskWidth)*maskHeight),buildingMask(riverMask.size()),forestMask(riverMask.size()),semanticMask(riverMask.size());
     std::uint64_t stableLow{};
     const auto merge=[&](const GameplayOccluderMask3D& source,std::vector<std::uint8_t>& target){for(std::size_t pixel=0;pixel<target.size();++pixel)target[pixel]|=source.pixels[pixel];};
-    const auto edgeMask=[&](const GameplayOccluderMask3D& mask){std::uint32_t value{};for(std::uint32_t y=0;y<maskHeight;++y)for(std::uint32_t x=0;x<maskWidth;++x)if(mask.pixels[std::size_t(y)*maskWidth+x]){value|=x<1?1u:0u;value|=y<1?2u:0u;value|=x+1>=maskWidth?4u:0u;value|=y+1>=maskHeight?8u:0u;}return value;};
+    // 80x45 語意遮罩保留兩格（約 32px）安全邊距；僅「沒有碰到最後一列像素」仍會在正式三角形 raster 裁掉屋簷。
+    const auto edgeMask=[&](const GameplayOccluderMask3D& mask){std::uint32_t value{};for(std::uint32_t y=0;y<maskHeight;++y)for(std::uint32_t x=0;x<maskWidth;++x)if(mask.pixels[std::size_t(y)*maskWidth+x]){value|=x<2?1u:0u;value|=y<2?2u:0u;value|=x+2>=maskWidth?4u:0u;value|=y+2>=maskHeight?8u:0u;}return value;};
     for(const auto& descriptor:descriptors){
         ++stableLow;const Aevrynd::Transform3D transform{descriptor.position,{0,descriptor.yaw,0},descriptor.scale};
         const Aevrynd::MeshBounds3D* localBounds=nullptr;
@@ -381,18 +385,24 @@ struct GameplayGodCoarseEvidence3D {
         else if(descriptor.kind==ShowcaseSceneKind3D::Water)localBounds=&geometry.river;
         else if(descriptor.kind==ShowcaseSceneKind3D::Building){if(descriptor.meshAsset.find("foundation")!=std::string::npos)localBounds=&geometry.foundation;else if(descriptor.meshAsset.find("front")!=std::string::npos)localBounds=&geometry.front;else if(descriptor.meshAsset.find("back")!=std::string::npos)localBounds=&geometry.back;else if(descriptor.meshAsset.find("roof")!=std::string::npos)localBounds=&geometry.roof;else localBounds=&geometry.side;}
         const auto bounds=localBounds?Aevrynd::TransformBounds(*localBounds,transform):Aevrynd::MeshBounds3D{descriptor.position,(std::max)(.1f,Aevrynd::Length(descriptor.scale)*.5f),descriptor.scale*.5f};
-        if(Aevrynd::SphereIntersectsFrustum(bounds.center,bounds.radius,camera,1280.f/720.f))++result.visibleWorldDescriptors;
-        if(descriptor.kind==ShowcaseSceneKind3D::Grass){if(!Aevrynd::SphereIntersectsFrustum(bounds.center,bounds.radius,camera,1280.f/720.f))continue;const auto selection=Aevrynd::EvaluateMeshLod3D(Aevrynd::Length(bounds.center-camera.position),bounds.radius,ShowcaseGrassLodPolicy3D());result.lodTransitions+=selection.submitNear&&selection.submitFar?1u:0u;continue;}
-        if(descriptor.kind!=ShowcaseSceneKind3D::Water&&descriptor.kind!=ShowcaseSceneKind3D::Building)continue;
+        const bool visible=Aevrynd::SphereIntersectsFrustum(bounds.center,bounds.radius,camera,1280.f/720.f);
+        if(visible)++result.visibleWorldDescriptors;
+        if(descriptor.kind==ShowcaseSceneKind3D::Tree&&visible)++result.visibleTreeDescriptors;
+        if(descriptor.kind==ShowcaseSceneKind3D::Grass){if(!visible)continue;const auto selection=Aevrynd::EvaluateMeshLod3D(Aevrynd::Length(bounds.center-camera.position),bounds.radius,ShowcaseGrassLodPolicy3D());result.lodTransitions+=selection.submitNear&&selection.submitFar?1u:0u;continue;}
+        if(descriptor.kind!=ShowcaseSceneKind3D::Tree&&descriptor.kind!=ShowcaseSceneKind3D::Water&&descriptor.kind!=ShowcaseSceneKind3D::Building)continue;
         GameplayOccluderMask3D mask{};auto rasterExtents=bounds.extents;
         // 水面是零厚度的正式三角形網格；以極小數值厚度避免盒狀光柵器丟失可見面積。
         if(descriptor.kind==ShowcaseSceneKind3D::Water)rasterExtents.y=(std::max)(rasterExtents.y,.001f);
         const GameplayOccluderBox3D box{stableLow,bounds.center,rasterExtents*2.f,0};if(!AnalyzeGameplayOccluderMask3D(camera,std::span<const GameplayOccluderBox3D>{&box,1},maskWidth,maskHeight,mask))continue;
-        if(descriptor.kind==ShowcaseSceneKind3D::Water){merge(mask,riverMask);continue;}
+        if(descriptor.kind==ShowcaseSceneKind3D::Tree){merge(mask,forestMask);merge(mask,semanticMask);continue;}
+        if(descriptor.kind==ShowcaseSceneKind3D::Water){merge(mask,riverMask);merge(mask,semanticMask);continue;}
         ++result.visibleBuildingComponents;result.buildingValid&=!mask.nearPlaneClipped;result.maximumBuildingPart=(std::max)(result.maximumBuildingPart,mask.coverage);if(descriptor.meshAsset.find("roof")!=std::string::npos)result.roofCoverage=mask.coverage;result.buildingEdgeMask|=edgeMask(mask);merge(mask,buildingMask);
+        merge(mask,semanticMask);
     }
     result.riverCoverage=float(std::ranges::count(riverMask,std::uint8_t{255}))/float(riverMask.size());
     result.buildingCoverage=float(std::ranges::count(buildingMask,std::uint8_t{255}))/float(buildingMask.size());
+    result.forestCoverage=float(std::ranges::count(forestMask,std::uint8_t{255}))/float(forestMask.size());
+    result.semanticCoverage=float(std::ranges::count(semanticMask,std::uint8_t{255}))/float(semanticMask.size());
     return result;
 }
 
@@ -470,6 +480,50 @@ inline constexpr bool GameplayCottageMaterialUsesUv3D(bool roof) noexcept { retu
     return true;
 }
 
+[[nodiscard]] inline bool GameplayGodWorldCompositionPass3D(
+    const Aevrynd::Camera3D& camera,const GameplayGodWorldEvidence3D& world) noexcept {
+    constexpr float minimumForestCoverage=72.f/(80.f*45.f);
+    constexpr float minimumSemanticCoverage=180.f/(80.f*45.f);
+    return GameplayGodTerrainFrameCovered3D(camera)&&world.buildingValid&&
+        std::isfinite(world.riverCoverage)&&std::isfinite(world.buildingCoverage)&&
+        std::isfinite(world.forestCoverage)&&std::isfinite(world.semanticCoverage)&&
+        world.riverCoverage>=.002f&&world.buildingCoverage>=.002f&&world.buildingCoverage<=.22f&&
+        world.visibleBuildingComponents==6&&!world.buildingEdgeMask&&world.maximumBuildingPart<=.08f&&
+        world.roofCoverage<=.05f&&world.visibleWorldDescriptors>=20&&world.visibleTreeDescriptors>=8&&
+        world.forestCoverage>=minimumForestCoverage&&world.semanticCoverage>=minimumSemanticCoverage&&
+        world.lodTransitions;
+}
+
+[[nodiscard]] inline float GameplayGodCompositionScore3D(
+    const GameplayGodCameraLayout3D& layout) noexcept {
+    const auto target=[](float value,float ideal){
+        if(!std::isfinite(value)||value<0.f)return 0.f;
+        return (std::max)(0.f,1.f-std::abs(value-ideal)/ideal);
+    };
+    return target(layout.forestCoverage,.28f)+target(layout.riverCoverage,.16f)+
+        target(layout.buildingUnion,.10f)+target(layout.semanticCoverage,.48f);
+}
+
+[[nodiscard]] inline bool GameplayGodCompositionBetter3D(
+    const GameplayGodCameraLayout3D& candidate,const GameplayGodCameraLayout3D& current) noexcept {
+    if(candidate.valid!=current.valid)return candidate.valid;
+    if(!candidate.valid)return false;
+    constexpr float preferredAzimuth=5.49778714f;
+    const auto angularDistance=[](float left,float right){return std::abs(std::atan2(std::sin(left-right),std::cos(left-right)));};
+    const float candidatePreference=angularDistance(candidate.azimuth,preferredAzimuth),currentPreference=angularDistance(current.azimuth,preferredAzimuth);
+    if(candidatePreference<currentPreference-.00001f)return true;
+    if(currentPreference<candidatePreference-.00001f)return false;
+    if(candidate.playerCoverage>current.playerCoverage)return true;
+    if(current.playerCoverage>candidate.playerCoverage)return false;
+    const float candidateScore=GameplayGodCompositionScore3D(candidate),currentScore=GameplayGodCompositionScore3D(current);
+    if(candidateScore>currentScore+.00001f)return true;
+    if(currentScore>candidateScore+.00001f)return false;
+    if(candidate.semanticCoverage>current.semanticCoverage+.00001f)return true;
+    if(current.semanticCoverage>candidate.semanticCoverage+.00001f)return false;
+    if(candidate.lodTransitions!=current.lodTransitions)return candidate.lodTransitions>current.lodTransitions;
+    return false;
+}
+
 struct GameplayCaptureProjectionEvidence3D {
     Aevrynd::ProjectionMode projectionMode{Aevrynd::ProjectionMode::Perspective};
     float verticalFovRadians{},orthographicHeight{};
@@ -507,8 +561,8 @@ struct GameplayCaptureProjectionEvidence3D {
     for(unsigned corner=0;corner<8;++corner){const Aevrynd::Vec3 local=posedCenter+Aevrynd::Vec3{corner&1?posedExtents.x:-posedExtents.x,corner&2?posedExtents.y:-posedExtents.y,corner&4?posedExtents.z:-posedExtents.z};const auto point=Aevrynd::ProjectToViewport(Aevrynd::TransformPoint(playerWorld,local),camera,{1280,720});if(!point.visible){visible=false;continue;}minimumX=(std::min)(minimumX,point.position.x);maximumX=(std::max)(maximumX,point.position.x);minimumY=(std::min)(minimumY,point.position.y);maximumY=(std::max)(maximumY,point.position.y);}
     if(!visible)return result;
     result.playerCoverage=RasterGameplayPosedMeshCoverage3D(camera,posedVertices,posedIndices,playerWorld);
-    const auto world=EvaluateGameplayGodWorldEvidence3D(camera,descriptors,geometry);result.visibleWorldDescriptors=world.visibleWorldDescriptors;result.lodTransitions=world.lodTransitions;result.buildingUnion=world.buildingCoverage;result.maximumBuildingPart=world.maximumBuildingPart;result.roofCoverage=world.roofCoverage;result.riverCoverage=world.riverCoverage;result.visibleBuildingComponents=world.visibleBuildingComponents;result.buildingEdgeMask=world.buildingEdgeMask;result.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;result.productionLodExact=true;
-    result.valid=GameplayGodCandidatePlayerCoveragePass3D(result.playerCoverage)&&GameplayGodTerrainFrameCovered3D(camera)&&result.lodTransitions&&world.buildingValid&&result.riverCoverage>=.002f&&result.buildingUnion>=.002f&&result.buildingUnion<=.22f&&result.visibleBuildingComponents==6&&!result.buildingEdgeMask&&result.maximumBuildingPart<=.08f&&result.roofCoverage<=.05f&&result.visibleWorldDescriptors>=20;
+    const auto world=EvaluateGameplayGodWorldEvidence3D(camera,descriptors,geometry);result.visibleWorldDescriptors=world.visibleWorldDescriptors;result.visibleTreeDescriptors=world.visibleTreeDescriptors;result.lodTransitions=world.lodTransitions;result.buildingUnion=world.buildingCoverage;result.maximumBuildingPart=world.maximumBuildingPart;result.roofCoverage=world.roofCoverage;result.riverCoverage=world.riverCoverage;result.forestCoverage=world.forestCoverage;result.semanticCoverage=world.semanticCoverage;result.visibleBuildingComponents=world.visibleBuildingComponents;result.buildingEdgeMask=world.buildingEdgeMask;result.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;result.productionLodExact=true;
+    result.valid=GameplayGodCandidatePlayerCoveragePass3D(result.playerCoverage)&&GameplayGodWorldCompositionPass3D(camera,world);
     return result;
 }
 
@@ -572,8 +626,11 @@ template<class CollisionConstraint,class TerrainConstraint>
         GameplayGodCameraLayout3D preliminary{};preliminary.camera=camera;preliminary.distance=distance;preliminary.azimuth=azimuth;preliminary.elevation=elevation;preliminary.playerCoverage=coverage;preliminary.valid=true;
         const std::size_t directionIndex=std::size_t(elevationIndex)*8+azimuthIndex,fovBucket=(std::min)(std::size_t(heightStep/4),fovBuckets-1),distanceBucket=(std::min)(std::size_t(step/17),distanceBuckets-1),slot=directionIndex*preliminaryPerDirection+fovBucket*distanceBuckets+distanceBucket;if(!preliminaryCandidates[slot].valid||preliminaryCandidates[slot].playerCoverage<coverage)preliminaryCandidates[slot]=preliminary;
     }
-    for(std::size_t preliminaryIndex=0;preliminaryIndex<preliminaryCandidates.size();++preliminaryIndex){const auto& preliminary=preliminaryCandidates[preliminaryIndex];if(!preliminary.valid)continue;const auto cheap=EvaluateGameplayGodCoarseEvidence3D(preliminary.camera,descriptors,geometry);if(!cheap.lodTransitions){++rejectedLod;continue;}if(cheap.visibleWorldDescriptors<20){++rejectedWorld;continue;}if(!cheap.riverVisible||cheap.visibleBuildingComponents<6){++rejectedBuilding;continue;}const auto world=EvaluateGameplayGodWorldEvidence3D(preliminary.camera,descriptors,geometry);const bool hardWorld=GameplayGodTerrainFrameCovered3D(preliminary.camera)&&world.buildingValid&&world.riverCoverage>=.002f&&world.buildingCoverage>=.002f&&world.buildingCoverage<=.22f&&world.visibleBuildingComponents==6&&!world.buildingEdgeMask&&world.maximumBuildingPart<=.08f&&world.roofCoverage<=.05f&&world.visibleWorldDescriptors>=20&&world.lodTransitions;if(!hardWorld){++rejectedBuilding;continue;}auto coarse=preliminary;coarse.buildingUnion=world.buildingCoverage;coarse.maximumBuildingPart=world.maximumBuildingPart;coarse.roofCoverage=world.roofCoverage;coarse.lodTransitions=world.lodTransitions;coarse.visibleWorldDescriptors=world.visibleWorldDescriptors;coarse.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;coarse.riverCoverage=world.riverCoverage;coarse.visibleBuildingComponents=world.visibleBuildingComponents;coarse.buildingEdgeMask=world.buildingEdgeMask;coarse.productionLodExact=true;const float penalty=(std::max)(0.f,GameplayGodMinimumPlayerCoverage3D-coarse.playerCoverage)*1000.f;if(penalty<fallbackPenalty){fallbackPenalty=penalty;fallback=coarse;}const std::size_t directionIndex=preliminaryIndex/preliminaryPerDirection,begin=directionIndex*candidatesPerDirection;auto& count=coarseCounts[directionIndex];if(count<candidatesPerDirection){coarseCandidates[begin+count++]=coarse;++coarseCandidateCount;}else{auto first=coarseCandidates.begin()+std::ptrdiff_t(begin),last=first+std::ptrdiff_t(candidatesPerDirection);auto minimum=std::ranges::min_element(std::ranges::subrange(first,last),{},&GameplayGodCameraLayout3D::playerCoverage);if(minimum!=last&&minimum->playerCoverage<coarse.playerCoverage)*minimum=coarse;}}
-    std::array<GameplayGodCameraLayout3D,directionCount> refinementBases{};const auto coarseFallback=fallback;best={};fallback={};std::uint32_t rejectedActualCoverage{},rasterCandidates{};float maximumActualCoverage{};for(const auto& stored:coarseCandidates){if(!stored.valid)continue;++rasterCandidates;auto candidate=ResolveGameplayGodCameraLayout3D(focus,stored,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);const auto directionIndex=std::size_t(&stored-coarseCandidates.data())/candidatesPerDirection;if(candidate.playerCoverage>refinementBases[directionIndex].playerCoverage)refinementBases[directionIndex]=candidate;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}constexpr float preferredAzimuth=5.49778714f;const auto angularDistance=[](float left,float right){return std::abs(std::atan2(std::sin(left-right),std::cos(left-right)));};const float preference=angularDistance(candidate.azimuth,preferredAzimuth),bestPreference=angularDistance(best.azimuth,preferredAzimuth);if(!best.valid||candidate.lodTransitions>best.lodTransitions||(candidate.lodTransitions==best.lodTransitions&&candidate.playerCoverage>best.playerCoverage+.00001f)||(candidate.lodTransitions==best.lodTransitions&&std::abs(candidate.playerCoverage-best.playerCoverage)<=.00001f&&preference<bestPreference))best=candidate;}
+    for(std::size_t preliminaryIndex=0;preliminaryIndex<preliminaryCandidates.size();++preliminaryIndex){const auto& preliminary=preliminaryCandidates[preliminaryIndex];if(!preliminary.valid)continue;const auto cheap=EvaluateGameplayGodCoarseEvidence3D(preliminary.camera,descriptors,geometry);if(!cheap.lodTransitions){++rejectedLod;continue;}if(cheap.visibleWorldDescriptors<20||cheap.visibleTreeDescriptors<8){++rejectedWorld;continue;}if(!cheap.riverVisible||cheap.visibleBuildingComponents<6){++rejectedBuilding;continue;}const auto world=EvaluateGameplayGodWorldEvidence3D(preliminary.camera,descriptors,geometry);if(!GameplayGodWorldCompositionPass3D(preliminary.camera,world)){++rejectedBuilding;continue;}auto coarse=preliminary;coarse.buildingUnion=world.buildingCoverage;coarse.maximumBuildingPart=world.maximumBuildingPart;coarse.roofCoverage=world.roofCoverage;coarse.forestCoverage=world.forestCoverage;coarse.semanticCoverage=world.semanticCoverage;coarse.lodTransitions=world.lodTransitions;coarse.visibleWorldDescriptors=world.visibleWorldDescriptors;coarse.visibleTreeDescriptors=world.visibleTreeDescriptors;coarse.roofTouchesTop=(world.buildingEdgeMask&2u)!=0;coarse.riverCoverage=world.riverCoverage;coarse.visibleBuildingComponents=world.visibleBuildingComponents;coarse.buildingEdgeMask=world.buildingEdgeMask;coarse.productionLodExact=true;const float penalty=(std::max)(0.f,GameplayGodMinimumPlayerCoverage3D-coarse.playerCoverage)*1000.f;if(penalty<fallbackPenalty){fallbackPenalty=penalty;fallback=coarse;}const std::size_t directionIndex=preliminaryIndex/preliminaryPerDirection,begin=directionIndex*candidatesPerDirection;auto& count=coarseCounts[directionIndex];if(count<candidatesPerDirection){coarseCandidates[begin+count++]=coarse;++coarseCandidateCount;}else{auto first=coarseCandidates.begin()+std::ptrdiff_t(begin),last=first+std::ptrdiff_t(candidatesPerDirection);auto weakest=first;for(auto candidate=first+1;candidate!=last;++candidate)if(GameplayGodCompositionBetter3D(*weakest,*candidate))weakest=candidate;if(weakest!=last&&GameplayGodCompositionBetter3D(coarse,*weakest))*weakest=coarse;}}
+    std::array<GameplayGodCameraLayout3D,directionCount> refinementBases{};const auto coarseFallback=fallback;best={};fallback={};std::uint32_t rejectedActualCoverage{},rasterCandidates{};float maximumActualCoverage{};for(const auto& stored:coarseCandidates){if(!stored.valid)continue;++rasterCandidates;auto candidate=ResolveGameplayGodCameraLayout3D(focus,stored,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);const auto directionIndex=std::size_t(&stored-coarseCandidates.data())/candidatesPerDirection;if(candidate.playerCoverage>refinementBases[directionIndex].playerCoverage)refinementBases[directionIndex]=candidate;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}if(!best.valid||GameplayGodCompositionBetter3D(candidate,best))best=candidate;}
+    // 有效 coarse 候選仍要做有界 zoom/pan refinement；否則第一個合法大景會阻止角色與世界形成可讀雙錨。
+    // 每個候選都重跑 collision→terrain、人物 raster 與完整 world hard gates，不能以平移裁切木屋換取放大。
+    if(best.valid){const auto refinementBase=best;for(unsigned refinement=1;refinement<=12;++refinement)for(unsigned panStep=0;panStep<=8;++panStep)for(unsigned axis=0;axis<(panStep?2u:1u);++axis)for(const float sign:{-1.f,1.f}){if(!panStep&&sign>0)continue;auto refined=refinementBase;refined.valid=true;refined.camera.projection.orthographicHeight=refinementBase.camera.projection.orthographicHeight-float(refinement)*.25f;if(refined.camera.projection.orthographicHeight<4.f)continue;const float pan=sign*float(panStep)*.5f;const Aevrynd::Vec3 offset=axis?Aevrynd::Vec3{0,0,pan}:Aevrynd::Vec3{pan,0,0};refined.camera.position=refined.camera.position+offset;refined.camera.target=refined.camera.target+offset;auto candidate=ResolveGameplayGodCameraLayout3D(focus,refined,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);++rasterCandidates;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(!candidate.valid){++rejectedActualCoverage;continue;}if(GameplayGodCompositionBetter3D(candidate,best))best=candidate;}}
     // 正交投影不可用距離調整角色尺寸；微縮高度時同步搜尋小幅平移，並重跑全部world hard gates避免裁切建築。
     // 裕量不能靠放寬 world gate；保留八個不同視向的最佳 raster 候選作有界局部重驗。
     if(!best.valid&&fallback.playerCoverage>0.f){std::ranges::sort(refinementBases,[](const auto& a,const auto& b){return a.playerCoverage>b.playerCoverage;});for(std::size_t baseIndex=0;baseIndex<8&&!best.valid;++baseIndex){const auto refinementBase=refinementBases[baseIndex];if(refinementBase.playerCoverage<=0.f)continue;for(unsigned refinement=1;refinement<=24&&!best.valid;++refinement)for(unsigned panStep=0;panStep<=8&&!best.valid;++panStep)for(unsigned axis=0;axis<(panStep?2u:1u)&&!best.valid;++axis)for(const float sign:{-1.f,1.f}){if(!panStep&&sign>0)continue;auto refined=refinementBase;refined.valid=true;refined.camera.projection.orthographicHeight=refinementBase.camera.projection.orthographicHeight-float(refinement)*.125f;if(refined.camera.projection.orthographicHeight<4.f)continue;const float pan=sign*float(panStep)*.25f;const Aevrynd::Vec3 offset=axis?Aevrynd::Vec3{0,0,pan}:Aevrynd::Vec3{pan,0,0};refined.camera.position=refined.camera.position+offset;refined.camera.target=refined.camera.target+offset;auto candidate=ResolveGameplayGodCameraLayout3D(focus,refined,descriptors,geometry,posedVertices,posedIndices,playerWorld,collisionConstraint,terrainConstraint);++rasterCandidates;maximumActualCoverage=(std::max)(maximumActualCoverage,candidate.playerCoverage);if(candidate.playerCoverage>fallback.playerCoverage)fallback=candidate;if(!candidate.valid){++rejectedActualCoverage;continue;}best=candidate;break;}}}
