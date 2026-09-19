@@ -746,8 +746,14 @@ WorldPixelInput InstancedWaterVertexMain(InstancedVertexInput input)
     [branch] if (waterSurfaceEnabled != 0u)
     {
         const float3 broadWave = DecodeWaterTriple(WaterSurfacePacked(3), float3(.001, 0.0, -8.0), float3(8.0, .3, 8.0));
+        // Production water meshes author a 0..1 shoreline handoff in normal.w.
+        // The shared vertex path normalizes normal.w to a surface flag, so carry
+        // the authored value through color.a only for enabled water.  The opaque
+        // single-composite target does not otherwise consume water vertex alpha.
+        const float waterBoundaryWeight = saturate(input.normal.w);
         output.worldPosition.y += WaterVertexDisplacementHeight3D(output.worldPosition.xz, fogEndEnabled.w, broadWave.x, broadWave.y, broadWave.z)
-                                * saturate(input.normal.w);
+                                * waterBoundaryWeight;
+        output.color.a = waterBoundaryWeight;
         output.position = mul(viewProjection, float4(output.worldPosition, 1.0));
         output.shadowPosition = mul(lightViewProjection[0], float4(output.worldPosition, 1.0));
         output.farShadowPosition = mul(lightViewProjection[1], float4(output.worldPosition, 1.0));
@@ -2567,7 +2573,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float diagnosticFoamWave = 0.5 + 0.5 * sin(input.worldPosition.z * 1.35 + input.worldPosition.x * 0.31 + fogEndEnabled.w * 1.8);
     const float waterDiagnosticFoamCoverage = smoothstep(0.34, 0.76, CloudNoise(diagnosticFoamFlow) * 0.72 + diagnosticFoamWave * 0.28);
 #endif
-    float waterOutputAlpha = input.color.a;
+    // Enabled water uses color.a for the interpolated contour weight; optical
+    // coverage comes from the packed shallow/deep water settings.
+    const float waterBoundaryWeight = waterSurfaceEnabled != 0u && waterMaterialMask > 0.5
+        ? saturate(input.color.a) : 1.0;
+    float waterOutputAlpha = waterSurfaceEnabled != 0u && waterMaterialMask > 0.5
+        ? waterDeepAlpha : input.color.a;
     const float2 waterScreenUv = input.position.xy * colorPipeline.zw;
     [branch] if (waterMask > 0.5 && worldViewport.z > 0.0 && worldViewport.w > 0.0)
     {
@@ -2932,9 +2943,17 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 黃昏／夜間掠射角反射重新抬成均勻亮帶。保留淡水 Fresnel 與波面
             // 起伏，只把環境反射限制在可讀、非自發光的天空能量範圍。以峰值
             // 等比例縮放而不是逐通道 min，避免把高光裁成失去色彩與波紋的平帶。
-            const precise float waterReflectionCap=max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*1.5;
+            const precise float waterReflectionKnee=max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*1.5;
+            const precise float waterReflectionMaximum=waterReflectionKnee*1.1;
             const precise float waterReflectionPeak=max(reflectedWater.r,max(reflectedWater.g,reflectedWater.b));
-            const precise float waterReflectionScale=min(1.0,waterReflectionCap/max(waterReflectionPeak,0.000001));
+            // C1 連續的有界 soft-knee：門檻以下 exact no-op；門檻以上仍單調
+            // 保留亮暗差，漸近上限為 1.65 倍天空能量。硬 cap 會把所有超限像素
+            // 正規化成相同峰值，正是黃昏水面雖不過曝、卻像平色帶的原因。
+            const precise float waterReflectionCompressedPeak=waterReflectionPeak<=waterReflectionKnee
+                ? waterReflectionPeak
+                : waterReflectionMaximum-(waterReflectionMaximum-waterReflectionKnee)
+                  *(waterReflectionKnee/max(waterReflectionPeak,0.000001));
+            const precise float waterReflectionScale=min(1.0,waterReflectionCompressedPeak/max(waterReflectionPeak,0.000001));
             reflectedWater=WaterOrderedMultiply3D(reflectedWater,waterReflectionScale.xxx);
         }
         precise const float inverseFresnel = 1.0 - fresnel;
@@ -2951,8 +2970,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         waterDiagnosticReflected = reflectedWater * fresnel;
         waterDiagnosticTransmission = waterTransmission;
 #endif
-        // 水體側壁仍屬透明體積邊界；保留背景透射，避免掠射 Fresnel 將箱型水網格變成不透明鏡牆。
-        const float waterLocalContribution = lerp(0.35, 1.0, waterMask);
+        // 單次合成輸出必須保持 alpha=1，但 authored shallow/deep alpha 仍應
+        // 在 production contour mesh 的過渡帶控制 RGB 覆蓋曲線；深水內部
+        // 回到完整水材質，避免 deepAlpha 令整條河回滲明亮背景。側壁維持舊值。
+        const float waterLocalContribution = waterSurfaceEnabled != 0u && waterMask > 0.5
+            ? saturate(waterBoundaryWeight * lerp(waterOutputAlpha, 1.0, waterBoundaryWeight))
+            : lerp(0.35, 1.0, waterMask);
         const float3 sideTransmittedScene = waterSceneColorEnabled > 0.5
             ? opaqueSceneColorTexture.SampleLevel(screenPointClampSampler, waterScreenUv, 0.0).rgb
             : transmittedScene;
