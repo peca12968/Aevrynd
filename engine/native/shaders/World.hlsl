@@ -2220,6 +2220,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float showcaseTerrainAuthoredBiomeLumaScale = 1.0;
         const bool showcaseTerrainProductionBinding =
             input.textureData.w > 0.5 && input.normalScale == -15.5;
+        // Showcase 的第三個實體槽是 stony_dirt_path，不是可全域散佈的
+        // geology/rock layer。程序式坡度仍可決定 forest 與 Ground108 的
+        // 比例，但在沒有 authored +U path 權重時，第三槽必須精確為零。
+        // 這也讓中性高地與陡坡不再間接取樣道路紋理。
+        [branch] if (showcaseTerrainProductionBinding)
+        {
+            soilWeight += rockWeight;
+            rockWeight = 0.0;
+        }
         // useUv 是既有 generic bit；再要求 Renderer.h 宣告、可精確表示的
         // -15.5 marker，避免任何歷史 Terrain UV 或一般負 normalScale 誤啟用。
         [branch] if (showcaseTerrainProductionBinding)
@@ -2407,7 +2416,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
             const float microVariation=lerp(1.0,lerp(0.92,1.08,microNoise),terrainDetailWeight);
-            const float3 originalTerrainAlbedo = calibratedGrassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * originalRockWeight;
+            // 原始曝光基準也必須遵守相同角色；否則即使 rockWeight 已歸零，
+            // stony path 仍會透過 luma reference 汙染未標記的坡地。
+            const float3 originalTerrainAlbedo = calibratedGrassColor * originalGrassWeight + soilColor * (originalSoilWeight + originalRockWeight);
             float3 terrainAlbedo = calibratedGrassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight;
             [branch] if (TerrainMesoPartitionEnabled())
             {
@@ -2445,7 +2456,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
         else
         {
-            const float3 originalTerrainTint = originalGrassWeight * float3(0.72, 0.91, 0.63) + originalSoilWeight * float3(0.82, 0.67, 0.48) + originalRockWeight * float3(0.76, 0.78, 0.80);
+            const float3 originalTerrainTint = originalGrassWeight * float3(0.72, 0.91, 0.63) + (originalSoilWeight + originalRockWeight) * float3(0.82, 0.67, 0.48);
             float3 terrainTint = grassWeight * float3(0.76, 0.92, 0.64) + soilWeight * float3(0.90, 0.70, 0.50) + rockWeight * float3(0.76, 0.78, 0.80);
             [branch] if (TerrainMesoPartitionEnabled())
             {

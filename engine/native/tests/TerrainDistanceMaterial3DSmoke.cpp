@@ -39,6 +39,10 @@ bool R16TerrainBindingContract(std::string_view world,std::string_view gameplay,
       Count(world,"const float3 pathTarget = float3(0.04, 0.18, 0.78);")==1&&
       Count(world,"const float3 leafTarget = float3(0.86, 0.12, 0.02);")==1&&
       Count(world,"const float3 wetSoilTarget = float3(0.04, 0.92, 0.04);")==1&&
+      Count(world,"soilWeight += rockWeight;")==1&&
+      Count(world,"rockWeight = 0.0;")==1&&
+      Count(world,"soilColor * (originalSoilWeight + originalRockWeight)")==1&&
+      Count(world,"rockColor * originalRockWeight")==0&&
       gameplay.find("BuildShowcaseTerrainMaterialTextures3D(terrainManifest,terrainAssetRoot,terrain.textures")!=std::string_view::npos&&
       binding.find("\"forest_ground_04:slot-0\", \"Ground108:slot-0\"")!=std::string_view::npos&&
       binding.find("\"stony_dirt_path:slot-0\"")!=std::string_view::npos&&
@@ -61,8 +65,8 @@ bool TerrainOriginalWeightSnapshotContract(std::string_view world){
       authoredRockAssignment!=std::string_view::npos&&rockSnapshot<soilSnapshot&&
       soilSnapshot<authoredRockAssignment&&
       Count(world,"const float originalRockWeight = rockWeight;")==1&&
-      Count(world,"calibratedGrassColor * originalGrassWeight + soilColor * originalSoilWeight + rockColor * originalRockWeight")==1&&
-      Count(world,"originalGrassWeight * float3(0.72, 0.91, 0.63) + originalSoilWeight * float3(0.82, 0.67, 0.48) + originalRockWeight * float3(0.76, 0.78, 0.80)")==1&&
+      Count(world,"calibratedGrassColor * originalGrassWeight + soilColor * (originalSoilWeight + originalRockWeight)")==1&&
+      Count(world,"originalGrassWeight * float3(0.72, 0.91, 0.63) + (originalSoilWeight + originalRockWeight) * float3(0.82, 0.67, 0.48)")==1&&
       // 中文：當前 authored 權重仍用於當前材質；只有亮度基準必須保留修改前三元組。
       Count(world,"calibratedGrassColor * grassWeight + soilColor * soilWeight + rockColor * rockWeight")==1;
 }
@@ -116,11 +120,11 @@ int main(){
     if(const auto peak=hostileFoliage.find("0.58/max(balancedPeak,0.000001)");peak!=std::string_view::npos)
       hostileFoliage.replace(peak,std::string_view("0.58/max(balancedPeak,0.000001)").size(),"1.0/max(balancedPeak,0.000001)");
     std::string hostileOriginalAlbedo=worldShader;
-    if(const auto rock=hostileOriginalAlbedo.find("rockColor * originalRockWeight");rock!=std::string::npos)
-      hostileOriginalAlbedo.replace(rock,std::string_view("rockColor * originalRockWeight").size(),"rockColor * rockWeight");
+    if(const auto ground=hostileOriginalAlbedo.find("soilColor * (originalSoilWeight + originalRockWeight)");ground!=std::string::npos)
+      hostileOriginalAlbedo.replace(ground,std::string_view("soilColor * (originalSoilWeight + originalRockWeight)").size(),"soilColor * originalSoilWeight + rockColor * originalRockWeight");
     std::string hostileOriginalTint=worldShader;
-    if(const auto rock=hostileOriginalTint.find("originalRockWeight * float3(0.76, 0.78, 0.80)");rock!=std::string::npos)
-      hostileOriginalTint.replace(rock,std::string_view("originalRockWeight * float3(0.76, 0.78, 0.80)").size(),"rockWeight * float3(0.76, 0.78, 0.80)");
+    if(const auto ground=hostileOriginalTint.find("(originalSoilWeight + originalRockWeight) * float3(0.82, 0.67, 0.48)");ground!=std::string::npos)
+      hostileOriginalTint.replace(ground,std::string_view("(originalSoilWeight + originalRockWeight) * float3(0.82, 0.67, 0.48)").size(),"originalSoilWeight * float3(0.82, 0.67, 0.48) + originalRockWeight * float3(0.76, 0.78, 0.80)");
     std::string hostileMovedSnapshot=worldShader;
     const std::string rockSnapshotDeclaration="const float originalRockWeight = rockWeight;";
     if(const auto snapshot=hostileMovedSnapshot.find(rockSnapshotDeclaration);snapshot!=std::string::npos){
