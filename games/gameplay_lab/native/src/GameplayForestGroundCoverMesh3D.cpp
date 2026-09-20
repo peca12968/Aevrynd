@@ -355,9 +355,14 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
                                     GameplayForestGroundCoverAtlas3D::TreeSmall02);
   const auto leafMoss = CreateLeafMoss(detail, Mix(variationSeed ^ 0xc4d82a67u),
                                        GameplayForestGroundCoverAtlas3D::TreeSmall02);
-  AppendTransformed(result, fern, {-.24f, 0, -.09f}, -.31f, .92f);
-  AppendTransformed(result, shrub, {.22f, 0, .11f}, .47f, .88f);
-  AppendTransformed(result, leafMoss, {0, 0, .03f}, .14f, 1.22f);
+  // One ecology descriptor represents a small understory colony rather than
+  // three species stacked at the same root.  Separating the fern and shrub
+  // produces a readable near-to-midground footprint while preserving the
+  // exact triangle, draw, texture and placement budgets.  The offsets stay
+  // inside a 2.3 m diameter so path and cottage clearances remain bounded.
+  AppendTransformed(result, fern, {-.52f, 0, -.20f}, -.31f, .92f);
+  AppendTransformed(result, shrub, {.48f, 0, .22f}, .47f, .88f);
+  AppendTransformed(result, leafMoss, {.02f, 0, .02f}, .14f, 1.22f);
   return result;
 }
 

@@ -540,6 +540,7 @@ int main() {
         CreateGameplayForestGroundCoverCommunityMesh3D(detail, 0xf04e57u);
     const auto repeated =
         CreateGameplayForestGroundCoverCommunityMesh3D(detail, 0xf04e57u);
+    const auto bounds = community.Bounds();
     const std::size_t triangles = community.indices.size() / 3;
     if (!community.Valid() || !Exact(community, repeated) ||
         !AtlasUvContract(community,
@@ -547,8 +548,15 @@ int main() {
         triangles > GameplayForestGroundCoverCommunityTriangleBudget(detail) ||
         triangles != expectedCommunityTriangles[detailIndex] ||
         triangles >= previousCommunityTriangles ||
-        community.Bounds().extents.x < .3f || community.Bounds().extents.z < .3f) {
-      std::cerr << "FOREST_GROUND_COVER_COMMUNITY_CONTRACT=FAIL\n";
+        bounds.extents.x < .78f || bounds.extents.z < .72f ||
+        bounds.extents.x > 1.15f || bounds.extents.z > 1.15f ||
+        bounds.center.y - bounds.extents.y < -1e-6f ||
+        bounds.center.y + bounds.extents.y > .82f) {
+      std::cerr << "FOREST_GROUND_COVER_COMMUNITY_CONTRACT=FAIL detail="
+                << detailIndex << " triangles=" << triangles
+                << " extents=" << bounds.extents.x << ',' << bounds.extents.y
+                << ',' << bounds.extents.z << " centerY=" << bounds.center.y
+                << '\n';
       return 5;
     }
     previousCommunityTriangles = triangles;
