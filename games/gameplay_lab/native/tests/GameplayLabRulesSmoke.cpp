@@ -210,13 +210,18 @@ const bool ValidateGameplayR43CottageRoofTintSmoke=[](){
 }();
 
 bool ValidateGameplayR44CottageWindowLightingSource3D(std::string_view source){
-  constexpr std::array<std::string_view,11> contract{
+  constexpr std::array<std::string_view,16> contract{
       "ApplyGameplayCottageWindowResponse3D",
       "LightingPhase::Day",
       "LightingPhase::Dusk",
       "LightingPhase::Night",
-      "{.055f,.050f,.042f,1.f}",
-      "response.emissive>=0.f&&response.emissive<=.02f",
+      "{.12f,.16f,.20f,1.f},.10f,.04f,0.f,1.f",
+      "{.16f,.09f,.035f,1.f},.14f,.03f,.018f,1.f",
+      "{.20f,.11f,.035f,1.f},.16f,.02f,.060f,1.f",
+      "response.tint.r<0.f||response.tint.r>.25f",
+      "response.tint.g<0.f||response.tint.g>.20f",
+      "response.tint.b<0.f||response.tint.b>.25f",
+      "response.emissive>=0.f&&response.emissive<=.08f",
       "response.opacity!=1.f",
       "material.surface.emissive=response.emissive;",
       "material.alphaMode=MaterialAlphaMode3D::Opaque;",
