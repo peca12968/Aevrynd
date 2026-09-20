@@ -20,6 +20,8 @@
 namespace GameplayLab {
 
 enum class ShowcaseLightingProfile3D : std::uint8_t { Day, Dusk, Night };
+inline constexpr Aevrynd::Vec3 GameplayCottagePorchLanternCenter3D{
+    -12.f, 2.75f, 19.70f};
 enum class ShowcaseSceneKind3D : std::uint8_t {
   Terrain,
   Water,

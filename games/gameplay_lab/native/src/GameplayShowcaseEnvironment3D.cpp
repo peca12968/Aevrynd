@@ -528,7 +528,7 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   // 不用提高全畫面曝光來把天空、河面與陰影一起洗亮。
   if (profile != ShowcaseLightingProfile3D::Day) {
     const float night = profile == ShowcaseLightingProfile3D::Night ? 1.25f : .55f;
-    draw.AddPointLight({{-12.f, 2.15f, 19.65f}, 11.f,
+    draw.AddPointLight({GameplayCottagePorchLanternCenter3D, 11.f,
                         {1.f, .57f, .25f, 1.f}, 4.2f * night});
     draw.AddPointLight({{-14.55f, 2.25f, 19.75f}, 7.5f,
                         {1.f, .72f, .38f, 1.f}, 2.35f * night});

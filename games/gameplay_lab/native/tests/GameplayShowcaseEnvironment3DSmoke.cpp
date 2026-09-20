@@ -844,6 +844,10 @@ bool NightCabinHighlightsBalanced(const std::vector<PointLight3D> &dusk,
                                   const std::vector<PointLight3D> &night) {
   if (dusk.size() != 3 || night.size() != dusk.size())
     return false;
+  if (dusk[0].position.x != GameplayCottagePorchLanternCenter3D.x ||
+      dusk[0].position.y != GameplayCottagePorchLanternCenter3D.y ||
+      dusk[0].position.z != GameplayCottagePorchLanternCenter3D.z)
+    return false;
   float duskIntensity = 0.f, nightIntensity = 0.f;
   for (std::size_t index = 0; index < dusk.size(); ++index) {
     if (night[index].position.x != dusk[index].position.x ||

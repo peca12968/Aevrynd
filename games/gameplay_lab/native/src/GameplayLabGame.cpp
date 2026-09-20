@@ -2000,6 +2000,47 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          scene_.Mesh(boxMesh_,{{-12,2.69f,20.06f},{0,0,0},{1.78f,.14f,.18f}},wood,{},renderIdentity);
          for(float y:{.83f,1.38f,1.93f})scene_.Mesh(boxMesh_,{{-12,y,20.04f},{0,0,0},{1.12f,.08f,.16f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
+         // R42_COTTAGE_LANTERN_BEGIN
+         // The porch light now has a visible physical source at the exact point-light
+         // origin. Seven render-only pieces reuse resident meshes and add no textures.
+         auto lanternMetal=wood;lanternMetal.textures={};
+         lanternMetal.tint={.075f,.065f,.055f,1.f};
+         lanternMetal.surface={.28f,.78f,.015f,1.f};
+         lanternMetal.textureScale=1.f;lanternMetal.normalScale=0.f;
+         lanternMetal.useUv=false;
+         auto lanternGlass=glass;lanternGlass.textures={};
+         lanternGlass.tint={1.f,.42f,.12f,1.f};
+         lanternGlass.surface={.12f,.04f,1.75f,.92f};
+         lanternGlass.textureScale=1.f;lanternGlass.normalScale=0.f;
+         lanternGlass.useUv=false;lanternGlass.castsShadow=false;
+         struct CottageLanternPart3D{Transform3D transform;bool cylindrical;bool glass;};
+         const Vec3 lantern=GameplayCottagePorchLanternCenter3D;
+         const std::array<CottageLanternPart3D,7> lanternParts{{
+           {{{lantern.x,lantern.y,lantern.z},{0,0,0},{.38f,.42f,.30f}},false,true},
+           {{{lantern.x,lantern.y+.27f,lantern.z},{0,0,0},{.48f,.10f,.40f}},true,false},
+           {{{lantern.x,lantern.y-.27f,lantern.z},{0,0,0},{.48f,.10f,.40f}},true,false},
+           {{{lantern.x-.21f,lantern.y,lantern.z-.17f},{0,0,0},{.045f,.50f,.045f}},false,false},
+           {{{lantern.x+.21f,lantern.y,lantern.z-.17f},{0,0,0},{.045f,.50f,.045f}},false,false},
+           {{{lantern.x,lantern.y+.48f,lantern.z+.28f},{0,0,0},{.08f,.48f,.08f}},false,false},
+           {{{lantern.x,lantern.y+.55f,lantern.z+.14f},{1.5708f,0,0},{.08f,.32f,.08f}},true,false}}};
+         if(lanternParts.size()!=7)
+           throw std::runtime_error("Cottage lantern part count gate failed");
+         for(const auto& part:lanternParts){
+           const auto& resource=part.cylindrical?showcaseCylinderMesh_:boxMesh_;
+           const auto bounds=TransformBounds(resource.bounds,part.transform);
+           const Vec3 minimum=bounds.center-bounds.extents,maximum=bounds.center+bounds.extents;
+           if(minimum.x<lantern.x-.32f||maximum.x>lantern.x+.32f||
+              minimum.y<lantern.y-.36f||maximum.y>lantern.y+.76f||
+              minimum.z<lantern.z-.25f||maximum.z>lantern.z+.38f)
+             throw std::runtime_error("Cottage lantern part exceeded fixture bounds");
+         }
+         const auto lanternDrawsBefore=scene_.MeshCount();
+         for(const auto& part:lanternParts)
+           scene_.Mesh(part.cylindrical?showcaseCylinderMesh_:boxMesh_,part.transform,
+               part.glass?lanternGlass:lanternMetal,{},renderIdentity);
+         if(scene_.MeshCount()!=lanternDrawsBefore+lanternParts.size())
+           throw std::runtime_error("Cottage lantern draw count gate failed");
+         // R42_COTTAGE_LANTERN_END
          // R34_COTTAGE_LIFE_BEGIN
          // Twelve opaque, render-only pieces remain inside the cottage footprint:
          // a log stack, bench, crates, and paired threshold stones.

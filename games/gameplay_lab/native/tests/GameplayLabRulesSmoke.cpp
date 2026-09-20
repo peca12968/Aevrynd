@@ -317,6 +317,39 @@ const bool ValidateGameplayR34CottageAndPaletteSmoke=[](){
     throw std::runtime_error("r34 cottage/palette geometry or identity contract failed");
   return true;
 }();
+
+bool ValidateGameplayR42CottageLanternSource3D(std::string_view source){
+  const auto begin=source.find("R42_COTTAGE_LANTERN_BEGIN");
+  const auto end=begin==std::string_view::npos?std::string_view::npos:
+      source.find("R42_COTTAGE_LANTERN_END",begin);
+  if(begin==std::string_view::npos||end==std::string_view::npos)return false;
+  const auto lantern=source.substr(begin,end+std::string_view{
+      "R42_COTTAGE_LANTERN_END"}.size()-begin);
+  constexpr std::array<std::string_view,13> contract{
+      "GameplayCottagePorchLanternCenter3D",
+      "std::array<CottageLanternPart3D,7>",
+      "lanternMetal.textures={}","lanternGlass.textures={}",
+      "lanternGlass.castsShadow=false","showcaseCylinderMesh_",
+      "boxMesh_","renderIdentity","part.glass?lanternGlass:lanternMetal",
+      "lanternParts.size()!=7","scene_.MeshCount()!=lanternDrawsBefore+lanternParts.size()",
+      "Cottage lantern draw count gate failed","Cottage lantern part exceeded fixture bounds"};
+  return std::ranges::all_of(contract,[&](std::string_view token){
+    return lantern.find(token)!=std::string_view::npos;
+  })&&lantern.find("CreateTexture") == std::string_view::npos&&
+      lantern.find("physics_") == std::string_view::npos;
+}
+
+const bool ValidateGameplayR42CottageLanternSmoke=[](){
+  const auto path=std::filesystem::path(AEVRYND_SOURCE_DIR)/
+      "games/gameplay_lab/native/src/GameplayLabGame.cpp";
+  std::ifstream stream(path,std::ios::binary);
+  if(!stream)throw std::runtime_error("r42 cottage lantern source missing");
+  const std::string source{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+  if(!ValidateGameplayR42CottageLanternSource3D(source))
+    throw std::runtime_error("r42 cottage lantern geometry or identity contract failed");
+  return true;
+}();
 }
 namespace {struct CanonicalStateMutationSmoke{CanonicalStateMutationSmoke(){GameplayCanonicalCaptureStateInput3D state{};state.captureIndex=2;state.entities={{9,PaletteCategory::Props,{1,2,3},.2f,true,true},{3,PaletteCategory::Building,{4,5,6},.4f,false,true}};state.controllerPosition={7,8,9};state.yaw=.3f;state.pitch=-.2f;state.camera=CameraMode::ThirdPerson;state.lighting=LightingPhase::Dusk;state.paletteCategory=PaletteCategory::Building;state.female=true;state.paletteOpen=true;state.grabbedEntity=9;state.cameraHash=41;state.animationHash=42;state.physicsHash=43;const auto canonical=BuildGameplayCanonicalCaptureState3D(state);if(!canonical.valid||canonical.entityDiagnostics.size()!=2||canonical.entityDiagnostics[0].stableId!=3||canonical.entityDiagnostics[1].stableId!=9)throw std::runtime_error("canonical entity diagnostic contract failed");auto permuted=state;std::ranges::reverse(permuted.entities);if(canonical.canonical!=BuildGameplayCanonicalCaptureState3D(permuted).canonical)throw std::runtime_error("canonical entity permutation changed state");auto signedZero=state;signedZero.entities[0].position.x=-0.f;auto positiveZero=signedZero;positiveZero.entities[0].position.x=0.f;if(BuildGameplayCanonicalCaptureState3D(signedZero).canonical!=BuildGameplayCanonicalCaptureState3D(positiveZero).canonical)throw std::runtime_error("canonical signed zero was not normalized");const auto changed=[&](auto mutate){auto value=state;mutate(value);const auto receipt=BuildGameplayCanonicalCaptureState3D(value);return receipt.valid&&receipt.canonical!=canonical.canonical;};if(!changed([](auto&v){v.entities[0].id++;})||!changed([](auto&v){v.entities[0].category=PaletteCategory::Lights;})||!changed([](auto&v){v.entities[0].position.x=std::nextafter(v.entities[0].position.x,std::numeric_limits<float>::infinity());})||!changed([](auto&v){v.entities[0].position.z+=2.f;})||!changed([](auto&v){v.controllerPosition.y+=.01f;})||!changed([](auto&v){v.yaw+=.01f;})||!changed([](auto&v){v.pitch+=.01f;})||!changed([](auto&v){v.lighting=LightingPhase::Night;})||!changed([](auto&v){v.cameraHash++;})||!changed([](auto&v){v.paletteOpen=false;})||!changed([](auto&v){v.animationHash++;})||!changed([](auto&v){v.physicsHash++;}))throw std::runtime_error("canonical state mutation was not observed");for(const float invalid:{std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::infinity()}){auto value=state;value.entities[0].position.x=invalid;if(BuildGameplayCanonicalCaptureState3D(value).valid)throw std::runtime_error("canonical non-finite entity was accepted");value=state;value.entities[0].rotation=invalid;if(BuildGameplayCanonicalCaptureState3D(value).valid)throw std::runtime_error("canonical non-finite rotation was accepted");}}} canonicalStateMutationSmoke;}
 static_assert(GameplayTemporalCaptureReady3D(true,true,0));
