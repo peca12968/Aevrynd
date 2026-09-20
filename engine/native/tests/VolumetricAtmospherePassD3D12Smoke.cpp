@@ -389,12 +389,22 @@ int main() {
       VolumetricAtmospherePassSettings3D route{};route.enableTemporalDiagnostics=true;route.viewportWidth=960;route.viewportHeight=540;route.phase=routePhases[routePhase];route.resetHistory=true;route.frameSlice=std::uint32_t(routePhase%3);
       route.cloudDensity=0;route.lightShaftIntensity=0;const auto bothOff=execute(route,(std::string("route-")+routeNames[routePhase]+"-off.bmp").c_str());
       route.cloudDensity=1.08f;route.lightShaftIntensity=0;const auto cloudOnly=execute(route,(std::string("route-")+routeNames[routePhase]+"-cloud.bmp").c_str());
+      auto legacyCloudOnly=cloudOnly;
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+      route.testMutation=10;legacyCloudOnly=execute(route,(std::string("route-")+routeNames[routePhase]+"-legacy-cloud.bmp").c_str());route.testMutation=0;
+#endif
       route.cloudDensity=0;route.lightShaftIntensity=.68f;const auto shaftOnly=execute(route,(std::string("route-")+routeNames[routePhase]+"-shaft.bmp").c_str());
       route.cloudDensity=1.08f;route.lightShaftIntensity=.68f;const auto both=execute(route,(std::string("route-")+routeNames[routePhase]+"-both.bmp").c_str());
       const auto repeated=execute(route,(std::string("route-")+routeNames[routePhase]+"-repeat.bmp").c_str());
       const double whiteLimit=routePhase==0?.03:(routePhase==1?.01:.001);
-      const bool routeValid=bothOff.nonzeroFraction==0&&cloudOnly.nonzeroFraction>=.05&&cloudOnly.nonzeroFraction<=.8&&cloudOnly.variance>1e-7&&shaftOnly.nonzeroFraction>0&&both.nonzeroFraction>0&&both.hash==repeated.hash&&both.neutralWhiteFraction<=whiteLimit&&both.maximumVerticalRunFraction<=.18&&both.longColumnFraction<=.02&&both.gpuNanoseconds<=1500000ull&&both.gpuNanoseconds<=bothOff.gpuNanoseconds+750000ull;
-      std::cout<<"route phase="<<routeNames[routePhase]<<" cloudChanged="<<cloudOnly.nonzeroFraction<<" cloudVariance="<<cloudOnly.variance<<" shaftChanged="<<shaftOnly.nonzeroFraction<<" white="<<both.neutralWhiteFraction<<" vertical="<<both.maximumVerticalRunFraction<<" columns="<<both.longColumnFraction<<" gpuUs="<<bothOff.gpuNanoseconds/1000<<'/'<<both.gpuNanoseconds/1000<<" deterministic="<<(both.hash==repeated.hash)<<'\n';
+      const bool rangeFadeProven=
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+          cloudOnly.hash!=legacyCloudOnly.hash&&cloudOnly.average<legacyCloudOnly.average&&cloudOnly.nonzeroFraction>=legacyCloudOnly.nonzeroFraction*.98;
+#else
+          true;
+#endif
+      const bool routeValid=bothOff.nonzeroFraction==0&&cloudOnly.nonzeroFraction>=.05&&cloudOnly.nonzeroFraction<=.8&&cloudOnly.variance>1e-7&&rangeFadeProven&&shaftOnly.nonzeroFraction>0&&both.nonzeroFraction>0&&both.hash==repeated.hash&&both.neutralWhiteFraction<=whiteLimit&&both.maximumVerticalRunFraction<=.18&&both.longColumnFraction<=.02&&both.gpuNanoseconds<=1500000ull&&both.gpuNanoseconds<=bothOff.gpuNanoseconds+750000ull;
+      std::cout<<"route phase="<<routeNames[routePhase]<<" cloudChanged="<<cloudOnly.nonzeroFraction<<" cloudAverage="<<cloudOnly.average<<" legacy="<<legacyCloudOnly.nonzeroFraction<<'/'<<legacyCloudOnly.average<<" cloudVariance="<<cloudOnly.variance<<" shaftChanged="<<shaftOnly.nonzeroFraction<<" white="<<both.neutralWhiteFraction<<" vertical="<<both.maximumVerticalRunFraction<<" columns="<<both.longColumnFraction<<" gpuUs="<<bothOff.gpuNanoseconds/1000<<'/'<<both.gpuNanoseconds/1000<<" deterministic="<<(both.hash==repeated.hash)<<'\n';
       if(!routeValid)return 9;
     }
     const auto dispatchesBeforeDisabled = pass.Stats().dispatches;

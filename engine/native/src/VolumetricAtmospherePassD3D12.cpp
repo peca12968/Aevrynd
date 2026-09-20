@@ -557,7 +557,7 @@ bool VolumetricAtmospherePassD3D12::Record(
 #endif
   constants[19] =
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
-      (std::min)(source.testMutation, 9u);
+      (std::min)(source.testMutation, 10u);
 #else
       0u;
 #endif

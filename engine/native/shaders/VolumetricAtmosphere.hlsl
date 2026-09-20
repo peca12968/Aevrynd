@@ -239,7 +239,15 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
     precise const float inverseRayY=abs(ray.y)>1e-6?DeterministicReciprocal(ray.y):0.0;
     precise const float slab0=(cloudBaseAltitude-rayOrigin.y)*inverseRayY,slab1=(cloudBaseAltitude+cloudThickness-rayOrigin.y)*inverseRayY;
     precise const float layerEntry=min(slab0,slab1),layerExit=max(slab0,slab1);
-    precise float pathCap=cloudMaximumDistance,pathFade=DeterministicSmoothstep(0.0,clamp(cloudThickness*.12,32.0,256.0),cloudMaximumDistance-max(0.0,layerEntry));
+    // 雲層有限視距的淡出寬度必須跟可見距離成比例。舊版只取厚度的 12%
+    // 且上限 256m，在 9km path cap 的低仰角射線上會壓成水平灰色煙牆。
+    // 保留 finite cap 與取樣數，把 range edge 擴為 1600..4000m 的有界區間；
+    // 9km showcase 視距會得到 2.7km 漸退，避免只在最後數百公尺突然壓成灰帶。
+    precise float pathFadeDistance=clamp(cloudMaximumDistance*.30,1600.0,4000.0);
+#if AEVRYND_VOLUMETRIC_DIAGNOSTICS
+    if(testMutation==10)pathFadeDistance=clamp(cloudThickness*.12,32.0,256.0);
+#endif
+    precise float pathCap=cloudMaximumDistance,pathFade=DeterministicSmoothstep(0.0,pathFadeDistance,cloudMaximumDistance-max(0.0,layerEntry));
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
     if(testMutation==4){pathCap=1e30;pathFade=1.0;}
 #endif
