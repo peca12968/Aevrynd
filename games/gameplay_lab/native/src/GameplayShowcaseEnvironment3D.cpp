@@ -106,7 +106,14 @@ float TerrainApronRelief(float boundaryX, float boundaryZ, float distance) {
       .70f + .25f * std::sin(boundaryX * .019f + boundaryZ * .013f) +
       .12f * std::sin(boundaryX * .037f - boundaryZ * .021f + 1.1f) +
       .07f * std::sin(boundaryX * .071f + boundaryZ * .043f + .4f);
-  return baseRise * broadRidge;
+  // 只有 64m 外才逐步加入兩個較短波長的次級山脊。輸入仍是原始 4m
+  // 世界邊界座標，因此最外環展開後得到約 100~200m 的山稜尺度，而非
+  // 像素噪點；近場兩圈保持 exact no-op，不改可行走地形與碰撞接縫。
+  const float detailActivation = smoothStep((distance - 64.f) / 704.f);
+  const float secondaryRidges = detailActivation *
+      (.05f * std::sin(boundaryX * .123f - boundaryZ * .097f + .8f) +
+       .03f * std::sin(boundaryX * .217f + boundaryZ * .151f + 2.f));
+  return baseRise * (broadRidge + secondaryRidges);
 }
 
 std::uint32_t TerrainApronColor(std::uint32_t color, float distance,

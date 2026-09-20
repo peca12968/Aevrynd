@@ -1407,6 +1407,7 @@ int main() {
   float middleRidgeMinimum=(std::numeric_limits<float>::max)();
   float farRidgeMinimum=(std::numeric_limits<float>::max)();
   float farRidgeMaximum=-(std::numeric_limits<float>::max)();
+  std::array<float,512> farRidgeRelief{};
   const std::size_t apronStart=129u*129u;
   for(std::size_t i=apronStart;i<apron.vertices.size();++i){const auto& v=apron.vertices[i];
     const auto decodedNormal=UnpackNormalSnorm8(v.normal);
@@ -1424,8 +1425,27 @@ int main() {
     const float slope=-(sourceNormal.x*dx+sourceNormal.z*dz)/sourceNormal.y;
     const float relief=v.y-sourceY-slope/(1.f+distance/32.f);
     if(ring==2u)middleRidgeMinimum=(std::min)(middleRidgeMinimum,relief);
-    if(ring==4u){farRidgeMinimum=(std::min)(farRidgeMinimum,relief);farRidgeMaximum=(std::max)(farRidgeMaximum,relief);}
+    if(ring==4u){
+      const std::size_t ringIndex=(i-apronStart)%512u;
+      farRidgeRelief[ringIndex]=relief;
+      farRidgeMinimum=(std::min)(farRidgeMinimum,relief);
+      farRidgeMaximum=(std::max)(farRidgeMaximum,relief);
+    }
   }
+  unsigned farRidgeTurningPoints{};
+  float farRidgeSecondDifference{};
+  float farRidgeMaximumSecondDifference{};
+  for(std::size_t i=0;i<farRidgeRelief.size();++i){
+    const float previous=farRidgeRelief[(i+farRidgeRelief.size()-1)%farRidgeRelief.size()];
+    const float current=farRidgeRelief[i];
+    const float next=farRidgeRelief[(i+1)%farRidgeRelief.size()];
+    const float incoming=current-previous,outgoing=next-current;
+    farRidgeTurningPoints+=incoming*outgoing<0.f;
+    const float second=std::abs(next-2.f*current+previous);
+    farRidgeSecondDifference+=second;
+    farRidgeMaximumSecondDifference=(std::max)(farRidgeMaximumSecondDifference,second);
+  }
+  farRidgeSecondDifference/=float(farRidgeRelief.size());
   const auto& nearApronColor=apron.vertices[apronStart].color;
   const auto& farApronColor=apron.vertices[apronStart+4u*512u].color;
   if(nearApronColor!=0xff778899u||
@@ -1433,7 +1453,9 @@ int main() {
       !(((farApronColor>>8)&0xffu)<((nearApronColor>>8)&0xffu))||
       !(((farApronColor>>16)&0xffu)<((nearApronColor>>16)&0xffu))||
       !(middleRidgeMinimum>.25f)||!(farRidgeMinimum>35.f)||
-      !(farRidgeMaximum-farRidgeMinimum>45.f))return 97;
+      !(farRidgeMaximum-farRidgeMinimum>100.f)||
+      farRidgeTurningPoints<48u||farRidgeSecondDifference<.9f||
+      farRidgeMaximumSecondDifference>20.f)return 97;
   auto encodedApron = apron;
   ApplyShowcaseTerrainBiomeUv3D(encodedApron, 129u * 129u, ecologyTrees);
   if (!ValidateShowcaseTerrainBiomeUv3D(encodedApron, 129u * 129u))
