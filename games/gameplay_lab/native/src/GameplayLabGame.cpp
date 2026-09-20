@@ -452,6 +452,14 @@ constexpr float GameplayCottageWoodTextureScale3D=.20f;
 constexpr float GameplayCottageRoofRoughness3D=.78f;
 constexpr float GameplayCottageRoofNormalScale3D=.72f;
 constexpr float GameplayCottageRoofTextureScale3D=.26f;
+constexpr Color GameplayCottageRoofTint3D{.54f,.31f,.19f,1.f};
+constexpr bool GameplayCottageRoofTintLuminanceGate3D(Color value) noexcept {
+  const float luminance=value.r*.2126f+value.g*.7152f+value.b*.0722f;
+  return luminance>=.32f&&luminance<=.38f;
+}
+constexpr bool GameplayCottageRoofTintChromaGate3D(Color value) noexcept {
+  return value.r>=value.g*1.55f&&value.g>=value.b*1.45f&&value.a==1.f;
+}
 constexpr float GameplayCottageBrickRoughness3D=.82f;
 constexpr float GameplayCottageBrickNormalScale3D=.72f;
 constexpr float GameplayCottageBrickTextureScale3D=.26f;
@@ -495,10 +503,18 @@ bool ApplyGameplayCottageMaterialResponse3D(
      response.textureScale>.34f||!roleResponseInRange||
      response.useUv!=expectedUseUv)
     return false;
+  const auto tint=role==GameplayCottageMaterialRole3D::RoofTile?GameplayCottageRoofTint3D:material.tint;
+  if(!std::isfinite(material.tint.r)||!std::isfinite(material.tint.g)||
+     !std::isfinite(material.tint.b)||!std::isfinite(material.tint.a)||
+     (role==GameplayCottageMaterialRole3D::RoofTile&&
+      (!GameplayCottageRoofTintLuminanceGate3D(tint)||
+       !GameplayCottageRoofTintChromaGate3D(tint))))
+    return false;
   material.surface.roughness=response.roughness;
   material.normalScale=response.normalScale;
   material.textureScale=response.textureScale;
   material.useUv=response.useUv;
+  material.tint=tint;
   return true;
 }
 }

@@ -182,6 +182,33 @@ const bool ValidateGameplayCottageMaterialResponseSmoke=[](){
   return true;
 }();
 
+bool ValidateGameplayR43CottageRoofTintSource3D(std::string_view source){
+  constexpr std::array<std::string_view,8> contract{
+      "GameplayCottageRoofTint3D",
+      "{.54f,.31f,.19f,1.f}",
+      "GameplayCottageMaterialRole3D::RoofTile?GameplayCottageRoofTint3D",
+      "material.tint=",
+      "GameplayCottageRoofTintLuminanceGate3D(tint)",
+      "GameplayCottageRoofTintChromaGate3D(tint)",
+      "std::isfinite(material.tint.r)",
+      "value.a==1.f"};
+  return std::ranges::all_of(contract,[&](std::string_view token){
+    return source.find(token)!=std::string_view::npos;
+  });
+}
+
+const bool ValidateGameplayR43CottageRoofTintSmoke=[](){
+  const auto path=std::filesystem::path(AEVRYND_SOURCE_DIR)/
+      "games/gameplay_lab/native/src/GameplayLabGame.cpp";
+  std::ifstream stream(path,std::ios::binary);
+  if(!stream)throw std::runtime_error("r43 cottage roof tint source missing");
+  const std::string source{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+  if(!ValidateGameplayR43CottageRoofTintSource3D(source))
+    throw std::runtime_error("r43 cottage roof tint contract failed");
+  return true;
+}();
+
 bool ValidateGameplayR34CottageAndPaletteSource3D(std::string_view source){
   const auto block=[&](std::string_view begin,std::string_view end){
     const auto first=source.find(begin);
