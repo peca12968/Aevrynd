@@ -209,6 +209,36 @@ const bool ValidateGameplayR43CottageRoofTintSmoke=[](){
   return true;
 }();
 
+bool ValidateGameplayR44CottageWindowLightingSource3D(std::string_view source){
+  constexpr std::array<std::string_view,11> contract{
+      "ApplyGameplayCottageWindowResponse3D",
+      "LightingPhase::Day",
+      "LightingPhase::Dusk",
+      "LightingPhase::Night",
+      "{.055f,.050f,.042f,1.f}",
+      "response.emissive>=0.f&&response.emissive<=.02f",
+      "response.opacity!=1.f",
+      "material.surface.emissive=response.emissive;",
+      "material.alphaMode=MaterialAlphaMode3D::Opaque;",
+      "material.castsShadow=false;",
+      "ApplyGameplayCottageWindowResponse3D(glass,rules_.Lighting())"};
+  return std::ranges::all_of(contract,[&](std::string_view token){
+    return source.find(token)!=std::string_view::npos;
+  });
+}
+
+const bool ValidateGameplayR44CottageWindowLightingSmoke=[](){
+  const auto path=std::filesystem::path(AEVRYND_SOURCE_DIR)/
+      "games/gameplay_lab/native/src/GameplayLabGame.cpp";
+  std::ifstream stream(path,std::ios::binary);
+  if(!stream)throw std::runtime_error("r44 cottage window lighting source missing");
+  const std::string source{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+  if(!ValidateGameplayR44CottageWindowLightingSource3D(source))
+    throw std::runtime_error("r44 cottage window lighting contract failed");
+  return true;
+}();
+
 bool ValidateGameplayR34CottageAndPaletteSource3D(std::string_view source){
   const auto block=[&](std::string_view begin,std::string_view end){
     const auto first=source.find(begin);

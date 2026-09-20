@@ -517,6 +517,53 @@ bool ApplyGameplayCottageMaterialResponse3D(
   material.tint=tint;
   return true;
 }
+
+struct GameplayCottageWindowResponse3D {
+  Color tint{};
+  float roughness{},metallic{},emissive{},opacity{};
+};
+
+constexpr GameplayCottageWindowResponse3D GameplayCottageWindowResponse(
+    LightingPhase phase) noexcept {
+  switch(phase){
+  case LightingPhase::Day:
+  case LightingPhase::Dusk:
+  case LightingPhase::Night:
+    return {{.055f,.050f,.042f,1.f},.12f,.04f,.012f,1.f};
+  }
+  return {};
+}
+
+bool ApplyGameplayCottageWindowResponse3D(
+    Material3D& material,LightingPhase phase) noexcept {
+  const auto response=GameplayCottageWindowResponse(phase);
+  const bool finite=std::isfinite(response.tint.r)&&
+      std::isfinite(response.tint.g)&&std::isfinite(response.tint.b)&&
+      std::isfinite(response.tint.a)&&std::isfinite(response.roughness)&&
+      std::isfinite(response.metallic)&&std::isfinite(response.emissive)&&
+      std::isfinite(response.opacity);
+  if(!finite||response.tint.r<0.f||response.tint.r>.35f||
+     response.tint.g<0.f||response.tint.g>.18f||
+     response.tint.b<0.f||response.tint.b>.08f||response.tint.a!=1.f||
+     response.roughness<.08f||response.roughness>.20f||
+     response.metallic<0.f||response.metallic>.08f||
+     !(response.emissive>=0.f&&response.emissive<=.02f)||
+     response.opacity!=1.f)
+    return false;
+  material.textures={};
+  material.tint={response.tint.r,response.tint.g,response.tint.b,response.opacity};
+  material.surface.roughness=response.roughness;
+  material.surface.metallic=response.metallic;
+  material.surface.emissive=response.emissive;
+  material.surface.occlusion=1.f;
+  material.textureScale=1.f;
+  material.normalScale=0.f;
+  material.useUv=false;
+  material.alphaMode=MaterialAlphaMode3D::Opaque;
+  material.doubleSided=true;
+  material.castsShadow=false;
+  return true;
+}
 }
 std::string CreateGameplayLabRunId(){return RunId();}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){return HashGameplayCapturePose3D(pose);}std::uint64_t HashFootPlacement(const FootPlacementResult3D& value){return HashGameplayCaptureFootPlacement3D(value);}}
@@ -2002,7 +2049,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
        // 材質回應只覆寫既有 PBR 參數；mesh、transform、identity 與 draw 路徑保持不變。
        if(!ApplyGameplayCottageMaterialResponse3D(material,role))break;const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
-       auto glass=material;glass.textures={};glass.tint={.08f,.17f,.20f,1};glass.surface={.14f,.02f,.012f,.7f};glass.textureScale=1;glass.normalScale=0;glass.castsShadow=false;
+       auto glass=material;if(!ApplyGameplayCottageWindowResponse3D(glass,rules_.Lighting()))break;
        // 裝飾件使用已載入的 WoodSiding006，不再從基座或屋頂複製磚／瓦紋。
        auto wood=showcaseWoodMaterial_;wood.tint={.58f,.36f,.19f,1};wood.surface.roughness=.62f;wood.surface.metallic=0;wood.surface.emissive=.006f;wood.textureScale=.16f;wood.useUv=false;
        auto doorMaterial=wood;doorMaterial.tint={.36f,.17f,.07f,1};
