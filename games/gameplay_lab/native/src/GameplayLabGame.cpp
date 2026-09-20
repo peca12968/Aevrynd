@@ -564,6 +564,38 @@ bool ApplyGameplayCottageWindowResponse3D(
   material.castsShadow=false;
   return true;
 }
+
+constexpr Color GameplayCottageChimneyStoneTint3D{.38f,.32f,.26f,1.f};
+constexpr bool GameplayCottageChimneyStoneLuminanceGate3D(
+    Color value) noexcept {
+  const float luminance=value.r*.2126f+value.g*.7152f+value.b*.0722f;
+  return luminance>=.30f&&luminance<=.36f&&value.a==1.f;
+}
+constexpr bool GameplayCottageChimneyStoneChromaGate3D(
+    Color value) noexcept {
+  return value.r>=value.g*1.12f&&value.g>=value.b*1.15f;
+}
+bool ApplyGameplayCottageChimneyStoneResponse3D(
+    Material3D& material) noexcept {
+  constexpr auto tint=GameplayCottageChimneyStoneTint3D;
+  if(!material.textures||!std::isfinite(tint.r)||!std::isfinite(tint.g)||
+     !std::isfinite(tint.b)||!std::isfinite(tint.a)||
+     !GameplayCottageChimneyStoneLuminanceGate3D(tint)||
+     !GameplayCottageChimneyStoneChromaGate3D(tint))
+    return false;
+  material.tint=tint;
+  material.surface.roughness=.86f;
+  material.surface.metallic=.015f;
+  material.surface.emissive=0.f;
+  material.surface.occlusion=1.f;
+  material.normalScale=.76f;
+  material.textureScale=.22f;
+  material.useUv=false;
+  material.alphaMode=MaterialAlphaMode3D::Opaque;
+  material.doubleSided=false;
+  material.castsShadow=true;
+  return true;
+}
 }
 std::string CreateGameplayLabRunId(){return RunId();}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){return HashGameplayCapturePose3D(pose);}std::uint64_t HashFootPlacement(const FootPlacementResult3D& value){return HashGameplayCaptureFootPlacement3D(value);}}
@@ -2150,6 +2182,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
        else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos){const bool left=descriptor.meshAsset.find("left")!=std::string::npos;framedWindowX(left?-16.19f:-7.81f,left?-1.f:1.f);}
         else if(roof){
           auto brick=*brickSource;if(!ApplyGameplayCottageMaterialResponse3D(brick,GameplayCottageMaterialRole3D::Brick))break;
+         if(!ApplyGameplayCottageChimneyStoneResponse3D(brick))break;
          scene_.Mesh(boxMesh_,{{-14.45f,4.72f,25.3f},{0,0,0},{.72f,2.15f,.72f}},brick,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-14.45f,5.84f,25.3f},{0,0,0},{.94f,.16f,.94f}},brick,{},renderIdentity);
          for(float z:{19.78f,28.22f})scene_.Mesh(boxMesh_,{{-12,3.48f,z},{0,0,0},{9.25f,.18f,.24f}},wood,{},renderIdentity);
