@@ -267,6 +267,37 @@ const bool ValidateGameplayR45CottageChimneyStoneSmoke=[](){
   return true;
 }();
 
+bool ValidateGameplayR46CottageFoundationStoneSource3D(std::string_view source){
+  constexpr std::array<std::string_view,12> contract{
+      "ApplyGameplayCottageFoundationStoneResponse3D",
+      "GameplayCottageFoundationStoneTint3D",
+      "GameplayCottageFoundationStoneLuminanceGate3D",
+      "GameplayCottageFoundationStoneChromaGate3D",
+      "material.surface.roughness=.88f;",
+      "material.surface.metallic=0.f;",
+      "material.normalScale=.72f;",
+      "material.textureScale=.24f;",
+      "role==GameplayCottageMaterialRole3D::Brick&&",
+      "ApplyGameplayCottageFoundationStoneResponse3D(material)",
+      "ApplyGameplayCottageFoundationStoneResponse3D(thresholdStone)",
+      "detail.brick?thresholdStone:showcaseWoodMaterial_"};
+  return std::ranges::all_of(contract,[&](std::string_view token){
+    return source.find(token)!=std::string_view::npos;
+  });
+}
+
+const bool ValidateGameplayR46CottageFoundationStoneSmoke=[](){
+  const auto path=std::filesystem::path(AEVRYND_SOURCE_DIR)/
+      "games/gameplay_lab/native/src/GameplayLabGame.cpp";
+  std::ifstream stream(path,std::ios::binary);
+  if(!stream)throw std::runtime_error("r46 cottage foundation stone source missing");
+  const std::string source{std::istreambuf_iterator<char>(stream),
+                           std::istreambuf_iterator<char>()};
+  if(!ValidateGameplayR46CottageFoundationStoneSource3D(source))
+    throw std::runtime_error("r46 cottage foundation stone contract failed");
+  return true;
+}();
+
 bool ValidateGameplayR34CottageAndPaletteSource3D(std::string_view source){
   const auto block=[&](std::string_view begin,std::string_view end){
     const auto first=source.find(begin);

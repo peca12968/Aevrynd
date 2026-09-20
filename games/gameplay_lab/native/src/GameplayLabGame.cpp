@@ -596,6 +596,38 @@ bool ApplyGameplayCottageChimneyStoneResponse3D(
   material.castsShadow=true;
   return true;
 }
+
+constexpr Color GameplayCottageFoundationStoneTint3D{.43f,.39f,.33f,1.f};
+constexpr bool GameplayCottageFoundationStoneLuminanceGate3D(
+    Color value) noexcept {
+  const float luminance=value.r*.2126f+value.g*.7152f+value.b*.0722f;
+  return luminance>=.36f&&luminance<=.42f&&value.a==1.f;
+}
+constexpr bool GameplayCottageFoundationStoneChromaGate3D(
+    Color value) noexcept {
+  return value.r>=value.g*1.08f&&value.g>=value.b*1.14f;
+}
+bool ApplyGameplayCottageFoundationStoneResponse3D(
+    Material3D& material) noexcept {
+  constexpr auto tint=GameplayCottageFoundationStoneTint3D;
+  if(!material.textures||!std::isfinite(tint.r)||!std::isfinite(tint.g)||
+     !std::isfinite(tint.b)||!std::isfinite(tint.a)||
+     !GameplayCottageFoundationStoneLuminanceGate3D(tint)||
+     !GameplayCottageFoundationStoneChromaGate3D(tint))
+    return false;
+  material.tint=tint;
+  material.surface.roughness=.88f;
+  material.surface.metallic=0.f;
+  material.surface.emissive=0.f;
+  material.surface.occlusion=1.f;
+  material.normalScale=.72f;
+  material.textureScale=.24f;
+  material.useUv=false;
+  material.alphaMode=MaterialAlphaMode3D::Opaque;
+  material.doubleSided=false;
+  material.castsShadow=true;
+  return true;
+}
 }
 std::string CreateGameplayLabRunId(){return RunId();}
 namespace {std::uint64_t HashPose(const AnimationPose3D& pose){return HashGameplayCapturePose3D(pose);}std::uint64_t HashFootPlacement(const FootPlacementResult3D& value){return HashGameplayCaptureFootPlacement3D(value);}}
@@ -2079,7 +2111,10 @@ void GameplayLabGame::AddShowcaseEnvironment(){
       {const auto role=GameplayCottageBaseMaterialRole3D(descriptor.meshAsset);const bool roof=role==GameplayCottageMaterialRole3D::RoofTile;const auto* brickSource=showcaseRenderAssets_.ProductionMaterial("Bricks100");const auto* roofSource=showcaseRenderAssets_.ProductionMaterial("RoofingTiles014B");if(!brickSource||!roofSource||!showcaseWoodMaterial_.textures)break;auto material=role==GameplayCottageMaterialRole3D::Brick?*brickSource:role==GameplayCottageMaterialRole3D::RoofTile?*roofSource:showcaseWoodMaterial_;
        // 分段牆網格以世界空間連續取樣 WoodSiding006；屋瓦只在坡面沿建好的 UV 取樣。
        // 材質回應只覆寫既有 PBR 參數；mesh、transform、identity 與 draw 路徑保持不變。
-       if(!ApplyGameplayCottageMaterialResponse3D(material,role))break;const auto before=scene_.MeshCount();
+       if(!ApplyGameplayCottageMaterialResponse3D(material,role))break;
+       if(role==GameplayCottageMaterialRole3D::Brick&&
+          !ApplyGameplayCottageFoundationStoneResponse3D(material))break;
+       const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
        auto glass=material;if(!ApplyGameplayCottageWindowResponse3D(glass,rules_.Lighting()))break;
        // 裝飾件使用已載入的 WoodSiding006，不再從基座或屋頂複製磚／瓦紋。
@@ -2140,6 +2175,10 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          // Twelve opaque, render-only pieces remain inside the cottage footprint:
          // a log stack, bench, crates, and paired threshold stones.
          struct CottageLifeDetail3D{Transform3D transform;bool cylindrical;bool brick;};
+          auto thresholdStone=*brickSource;
+          if(!ApplyGameplayCottageMaterialResponse3D(
+                 thresholdStone,GameplayCottageMaterialRole3D::Brick)||
+             !ApplyGameplayCottageFoundationStoneResponse3D(thresholdStone))break;
           const std::array<CottageLifeDetail3D,12> lifeDetails{{
            {{{-15.2f,.22f,26.55f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
            {{{-15.2f,.22f,27.02f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
@@ -2172,7 +2211,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
           const auto lifeDrawsBefore=scene_.MeshCount();
           for(const auto& detail:lifeDetails)
             scene_.Mesh(detail.cylindrical?showcaseCylinderMesh_:boxMesh_,
-                detail.transform,detail.brick?*brickSource:showcaseWoodMaterial_,
+                detail.transform,detail.brick?thresholdStone:showcaseWoodMaterial_,
                 {},renderIdentity);
           if(scene_.MeshCount()!=lifeDrawsBefore+lifeDetails.size())
             throw std::runtime_error("Cottage life detail draw count gate failed");
