@@ -230,9 +230,45 @@ public:
     const auto manifest = std::filesystem::path(AEVRYND_SOURCE_DIR) /
         "engine/assets/realistic-cc0-first-batch/cooked/runtime-render-manifest.json";
     if (!assets_.LoadProduction(engine, registry_, manifest,
-                                environment_.Descriptors(), load_) ||
-        !runtime_.Initialize(engine, assets_,
-                             environment_.Descriptors(),
+                                environment_.Descriptors(), load_)) {
+      Fail("Gameplay production HLOD runtime initialization failed", engine);
+      return;
+    }
+    const auto close = [](float left, float right) {
+      return std::abs(left - right) <= .0001f;
+    };
+    const auto *islandTrunk =
+        assets_.ProductionMaterialById("island_tree_01:trunk");
+    const auto *smallBranches =
+        assets_.ProductionMaterialById("tree_small_02:branches");
+    const auto *islandLeaves =
+        assets_.ProductionMaterialById("island_tree_01:leaves");
+    const auto *deadTree =
+        assets_.ProductionMaterialById("dead_tree_trunk_02:slot-0");
+    if (load_.barkMaterialResponses != 4 ||
+        !load_.barkMaterialResponseFingerprint || !islandTrunk ||
+        !smallBranches || !islandLeaves || !deadTree ||
+        !close(islandTrunk->tint.r, 1.f) ||
+        !close(islandTrunk->tint.g, .995f) ||
+        !close(islandTrunk->tint.b, .98f) ||
+        !close(islandTrunk->surface.roughness, .68f) ||
+        !close(islandTrunk->normalScale, 1.12f) ||
+        !close(smallBranches->tint.g, .997f) ||
+        !close(smallBranches->tint.b, .985f) ||
+        !close(smallBranches->surface.roughness, .74f) ||
+        !close(smallBranches->normalScale, 1.06f) ||
+        islandLeaves->materialClass != MaterialClass3D::Foliage ||
+        islandLeaves->alphaMode != MaterialAlphaMode3D::Mask ||
+        !close(islandLeaves->tint.r, 1.f) ||
+        !close(islandLeaves->tint.g, 1.f) ||
+        !close(islandLeaves->tint.b, 1.f) ||
+        !close(islandLeaves->normalScale, 1.f) ||
+        !close(deadTree->tint.r, 1.f) || !close(deadTree->tint.g, 1.f) ||
+        !close(deadTree->tint.b, 1.f) || !close(deadTree->normalScale, 1.f)) {
+      Fail("Gameplay production bark response contract failed", engine);
+      return;
+    }
+    if (!runtime_.Initialize(engine, assets_, environment_.Descriptors(),
                              GameplayHlodWorldIdentity3D)) {
       Fail("Gameplay production HLOD runtime initialization failed", engine);
       return;

@@ -7,7 +7,7 @@
   "memoryGateDetail": "Windows Job Object peak memory plus sampled process-tree working set; conservative maximum under 2 GiB.",
   "catalogId": "gameplay-ultra-realistic-cc0",
   "downloadBudgetBytes": 1073741824,
-  "runtimeBytes": 235751222.0,
+  "runtimeBytes": 235774612.0,
   "assets": [
     {
       "commercialUse": true,

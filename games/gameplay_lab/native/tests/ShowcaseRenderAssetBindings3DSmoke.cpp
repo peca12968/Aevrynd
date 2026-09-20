@@ -2,6 +2,7 @@
 #include "ShowcaseRenderAssetBindings3D.h"
 
 #include <Aevrynd/CookedRenderManifest3D.h>
+#include <Aevrynd/MaterialLibrary3D.h>
 #include <Aevrynd/PhotorealAssetProfile3D.h>
 
 #include <Windows.h>
@@ -85,6 +86,89 @@ bool VerifyUnionBoundsNormalization() {
   auto invalidTarget = target;
   invalidTarget.scale.z = 0.0f;
   return !NormalizeShowcaseAssetTransform3D(unionBounds, invalidTarget, first);
+}
+
+bool VerifyProductionBarkResponse() {
+  constexpr float epsilon = 0.0001f;
+  const auto close = [](float left, float right) {
+    return std::abs(left - right) <= epsilon;
+  };
+  const auto makeDefinition = [](std::string name) {
+    Aevrynd::MaterialAssetDefinition3D definition{};
+    definition.name = std::move(name);
+    definition.textures.baseColorPath = "tree-base.dds";
+    definition.textures.roughnessPath = "tree-arm.dds";
+    definition.textures.normalPath = "tree-normal.dds";
+    definition.textures.alphaMode = Aevrynd::MaterialAlphaMode3D::Opaque;
+    definition.textures.surfaceEncoding =
+        Aevrynd::MaterialSurfaceMapEncoding3D::PackedOrm;
+    definition.material.useUv = true;
+    definition.material.materialClass = Aevrynd::MaterialClass3D::Surface;
+    definition.material.shadingModel =
+        Aevrynd::CharacterShadingModel3D::Default;
+    definition.material.alphaMode = Aevrynd::MaterialAlphaMode3D::Opaque;
+    return definition;
+  };
+
+  auto islandTrunk = makeDefinition("island_tree_01:trunk");
+  const auto trunkSurfaceBefore = islandTrunk.material.surface;
+  if (!ApplyShowcaseProductionBarkResponse3D(islandTrunk.name, islandTrunk) ||
+      !close(islandTrunk.material.tint.r, 1.0f) ||
+      !close(islandTrunk.material.tint.g, 0.995f) ||
+      !close(islandTrunk.material.tint.b, 0.98f) ||
+      !close(islandTrunk.material.normalScale, 1.12f) ||
+      !close(islandTrunk.material.surface.roughness, 0.68f) ||
+      islandTrunk.material.surface.metallic != trunkSurfaceBefore.metallic ||
+      islandTrunk.material.surface.emissive != trunkSurfaceBefore.emissive ||
+      islandTrunk.material.surface.occlusion != trunkSurfaceBefore.occlusion ||
+      islandTrunk.material.materialClass != Aevrynd::MaterialClass3D::Surface ||
+      islandTrunk.material.alphaMode != Aevrynd::MaterialAlphaMode3D::Opaque)
+    return false;
+
+  auto smallBranches = makeDefinition("tree_small_02:branches");
+  if (!ApplyShowcaseProductionBarkResponse3D(smallBranches.name,
+                                              smallBranches) ||
+      !close(smallBranches.material.tint.r, 1.0f) ||
+      !close(smallBranches.material.tint.g, 0.997f) ||
+      !close(smallBranches.material.tint.b, 0.985f) ||
+      !close(smallBranches.material.surface.roughness, 0.74f) ||
+      !close(smallBranches.material.normalScale, 1.06f))
+    return false;
+
+  auto leaves = makeDefinition("island_tree_01:leaves");
+  leaves.material.materialClass = Aevrynd::MaterialClass3D::Foliage;
+  leaves.material.alphaMode = Aevrynd::MaterialAlphaMode3D::Mask;
+  leaves.material.doubleSided = true;
+  leaves.material.normalScale = 1.17f;
+  leaves.material.tint = {.73f, .81f, .62f, .94f};
+  const auto leavesBefore = leaves.material;
+  if (ApplyShowcaseProductionBarkResponse3D(leaves.name, leaves) ||
+      leaves.material.tint.r != leavesBefore.tint.r ||
+      leaves.material.tint.g != leavesBefore.tint.g ||
+      leaves.material.tint.b != leavesBefore.tint.b ||
+      leaves.material.tint.a != leavesBefore.tint.a ||
+      leaves.material.normalScale != leavesBefore.normalScale ||
+      leaves.material.materialClass != leavesBefore.materialClass ||
+      leaves.material.alphaMode != leavesBefore.alphaMode ||
+      leaves.material.doubleSided != leavesBefore.doubleSided)
+    return false;
+
+  auto invalid = makeDefinition("tree_small_02:trunk");
+  invalid.material.useUv = false;
+  const auto invalidBefore = invalid.material;
+  if (ApplyShowcaseProductionBarkResponse3D(invalid.name, invalid) ||
+      invalid.material.normalScale != invalidBefore.normalScale ||
+      invalid.material.surface.emissive != invalidBefore.surface.emissive)
+    return false;
+  invalid = makeDefinition("tree_small_02:trunk");
+  invalid.material.normalScale = std::numeric_limits<float>::infinity();
+  if (ApplyShowcaseProductionBarkResponse3D(invalid.name, invalid))
+    return false;
+  invalid = makeDefinition("wrong-name");
+  if (ApplyShowcaseProductionBarkResponse3D("island_tree_01:trunk", invalid))
+    return false;
+  auto deadTree = makeDefinition("dead_tree_trunk_02:slot-0");
+  return !ApplyShowcaseProductionBarkResponse3D(deadTree.name, deadTree);
 }
 
 std::uint64_t MeshIdentity(const Aevrynd::Mesh3D &mesh) {
@@ -352,6 +436,8 @@ int main(int argc, char **argv) {
     return 13;
   if (!VerifyUnionBoundsNormalization())
     return 12;
+  if (!VerifyProductionBarkResponse())
+    return 15;
   if (!VerifyHlodDescriptorAndAggregatePolicy())
     return 14;
   GameplayShowcaseEnvironment3D world;

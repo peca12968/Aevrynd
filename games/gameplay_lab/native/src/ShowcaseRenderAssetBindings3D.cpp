@@ -22,6 +22,57 @@
 
 namespace GameplayLab {
 
+namespace {
+constexpr std::array<std::string_view, 4> ShowcaseProductionBarkMaterialIds{
+    "island_tree_01:branches", "island_tree_01:trunk",
+    "tree_small_02:branches", "tree_small_02:trunk"};
+constexpr std::uint64_t ShowcaseProductionBarkResponseFingerprint =
+    0x4241524b5f523530ull;
+
+bool IsShowcaseProductionBarkMaterial3D(std::string_view materialId) noexcept {
+  return std::ranges::find(ShowcaseProductionBarkMaterialIds, materialId) !=
+      ShowcaseProductionBarkMaterialIds.end();
+}
+} // namespace
+
+bool ApplyShowcaseProductionBarkResponse3D(
+    std::string_view materialId,
+    Aevrynd::MaterialAssetDefinition3D &definition) noexcept {
+  if (!IsShowcaseProductionBarkMaterial3D(materialId))
+    return false;
+  const auto finite = [](float value) { return std::isfinite(value); };
+  const auto &material = definition.material;
+  if (definition.name != materialId ||
+      definition.textures.baseColorPath.empty() ||
+      definition.textures.roughnessPath.empty() ||
+      definition.textures.normalPath.empty() || !material.useUv ||
+      material.materialClass != Aevrynd::MaterialClass3D::Surface ||
+      material.shadingModel != Aevrynd::CharacterShadingModel3D::Default ||
+      material.alphaMode != Aevrynd::MaterialAlphaMode3D::Opaque ||
+      definition.textures.alphaMode != Aevrynd::MaterialAlphaMode3D::Opaque ||
+      material.doubleSided ||
+      definition.textures.surfaceEncoding !=
+          Aevrynd::MaterialSurfaceMapEncoding3D::PackedOrm ||
+      !finite(material.tint.r) || !finite(material.tint.g) ||
+      !finite(material.tint.b) || !finite(material.tint.a) ||
+      !finite(material.surface.roughness) ||
+      !finite(material.surface.metallic) ||
+      !finite(material.surface.emissive) ||
+      !finite(material.surface.occlusion) || !finite(material.normalScale) ||
+      !finite(material.textureScale) || !finite(material.alphaCutoff))
+    return false;
+
+  const bool trunk = materialId.ends_with(":trunk");
+  // Preserve the authored albedo while giving living bark enough grazing-light
+  // response to retain its ridges under the forest canopy.  The packed ORM
+  // texture remains authoritative; this is the per-material response multiplier.
+  definition.material.tint = trunk ? Aevrynd::Color{1.f, .995f, .98f, 1.f}
+                                    : Aevrynd::Color{1.f, .997f, .985f, 1.f};
+  definition.material.surface.roughness = trunk ? .68f : .74f;
+  definition.material.normalScale = trunk ? 1.12f : 1.06f;
+  return true;
+}
+
 bool AssignShowcaseProductionManifestEvidence3D(
     const Aevrynd::CookedRenderManifestStats3D &stats,
     ShowcaseProductionRenderReceipt3D &receipt) noexcept {
@@ -1227,7 +1278,11 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
       return false;
     state->expectedCompressedBytes += material.baseColorBytes +
         material.surfaceBytes + material.normalBytes - DdsHeaderBytes * 3;
-    materialDefinitions.push_back(material.Definition());
+    auto definition = material.Definition();
+    if (IsShowcaseProductionBarkMaterial3D(material.id) &&
+        !ApplyShowcaseProductionBarkResponse3D(material.id, definition))
+      return false;
+    materialDefinitions.push_back(std::move(definition));
   }
   if (!state->materials.Initialize(engine, state->manifest.AssetRoot()) ||
       !state->materials.LoadAll(materialDefinitions))
@@ -1248,6 +1303,10 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     definition.name = part.id;
     definition.meshPath = part.lodPaths[0];
     definition.material = material->Definition();
+    if (IsShowcaseProductionBarkMaterial3D(material->id) &&
+        !ApplyShowcaseProductionBarkResponse3D(material->id,
+                                                definition.material))
+      return false;
     definition.generateLods = false;
     definition.importedLodCount = 2;
     definition.importedLods[0].meshPath = part.lodPaths[1];
@@ -1343,6 +1402,9 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   receipt.profileAssets = 11;
   receipt.meshLodLevels = receipt.meshParts * 3;
   receipt.iblFiles = 3;
+  receipt.barkMaterialResponses = ShowcaseProductionBarkMaterialIds.size();
+  receipt.barkMaterialResponseFingerprint =
+      ShowcaseProductionBarkResponseFingerprint;
   receipt.uploadComplete = true;
   receipt.collisionStableIdsUnchanged =
       receipt.descriptorFingerprint == DescriptorFingerprint(descriptors);

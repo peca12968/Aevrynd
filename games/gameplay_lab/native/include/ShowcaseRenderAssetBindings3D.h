@@ -21,10 +21,18 @@ class Engine;
 class Scene3D;
 class SceneECSRegistry3D;
 struct Material3D;
+struct MaterialAssetDefinition3D;
 struct CookedRenderManifestStats3D;
 }
 
 namespace GameplayLab {
+
+// Applies the authored Showcase response only to the four living-tree bark
+// slots. Non-bark ids and malformed bark definitions fail closed before any
+// field is changed.
+[[nodiscard]] bool ApplyShowcaseProductionBarkResponse3D(
+    std::string_view materialId,
+    Aevrynd::MaterialAssetDefinition3D &definition) noexcept;
 
 enum class ShowcaseCookedResourceKind3D : std::uint8_t {
   Mesh,
@@ -159,6 +167,8 @@ struct ShowcaseProductionRenderReceipt3D {
   std::size_t validatedReferencedFiles{};
   std::size_t meshLodLevels{};
   std::size_t iblFiles{};
+  std::size_t barkMaterialResponses{};
+  std::uint64_t barkMaterialResponseFingerprint{};
   bool uploadComplete{};
   bool collisionStableIdsUnchanged{};
   bool photorealActive{};
