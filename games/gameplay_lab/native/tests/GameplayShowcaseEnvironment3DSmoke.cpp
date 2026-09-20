@@ -983,6 +983,64 @@ int main() {
     return total <= 1.f + 1e-6f &&
            !(sample.cottagePath > 0.f && sample.riverWetSoil > 0.f);
   };
+  // The authored cottage trail must remain connected down its centre while
+  // reading as worn ground rather than a uniform five-metre carpet.  Sample
+  // both sides of four cross-sections: the low-frequency width change and
+  // asymmetric shoulder must be visible, while the 2.5m outer band is clear.
+  float minimumPathCentre = 1.f;
+  float minimumPathShoulder = 1.f;
+  float maximumPathShoulder{};
+  float maximumPathAsymmetry{};
+  float maximumPathOuter{};
+  float pathShoulderSum{};
+  unsigned pathShoulderSamples{};
+  for (const float z : {9.f, 12.f, 15.f, 18.f}) {
+    const Vec3 start = z <= 14.f ? Vec3{-16.f, 0.f, 8.f}
+                                     : Vec3{-14.f, 0.f, 14.f};
+    const Vec3 end = z <= 14.f ? Vec3{-14.f, 0.f, 14.f}
+                                   : Vec3{-12.f, 0.f, 19.8f};
+    const float t = (z - start.z) / (end.z - start.z);
+    const Vec3 centre{start.x + (end.x - start.x) * t, 0.f, z};
+    const float tangentLength =
+        std::hypot(end.x - start.x, end.z - start.z);
+    const Vec3 normal{-(end.z - start.z) / tangentLength, 0.f,
+                      (end.x - start.x) / tangentLength};
+    const auto sampleAt = [&](float offset) {
+      return SampleShowcaseTerrainEcologyTint3D(
+                 {centre.x + normal.x * offset, 0.f,
+                  centre.z + normal.z * offset},
+                 ecologyTrees)
+          .cottagePath;
+    };
+    minimumPathCentre = (std::min)(minimumPathCentre, sampleAt(0.f));
+    const float leftShoulder = sampleAt(-1.5f);
+    const float rightShoulder = sampleAt(1.5f);
+    minimumPathShoulder =
+        (std::min)(minimumPathShoulder,
+                   (std::min)(leftShoulder, rightShoulder));
+    maximumPathShoulder =
+        (std::max)(maximumPathShoulder,
+                   (std::max)(leftShoulder, rightShoulder));
+    maximumPathAsymmetry =
+        (std::max)(maximumPathAsymmetry,
+                   std::abs(leftShoulder - rightShoulder));
+    maximumPathOuter =
+        (std::max)(maximumPathOuter,
+                   (std::max)(sampleAt(-2.5f), sampleAt(2.5f)));
+    pathShoulderSum += leftShoulder + rightShoulder;
+    pathShoulderSamples += 2u;
+  }
+  const float meanPathShoulder = pathShoulderSum / pathShoulderSamples;
+  if (minimumPathCentre < .85f || maximumPathOuter > .006f ||
+      maximumPathShoulder - minimumPathShoulder < .40f ||
+      maximumPathAsymmetry < .14f || meanPathShoulder >= .30f) {
+    std::cerr << "cottage path profile divergence centre="
+              << minimumPathCentre << " shoulder=" << minimumPathShoulder
+              << '/' << maximumPathShoulder << '/' << meanPathShoulder
+              << " asymmetry=" << maximumPathAsymmetry
+              << " outer=" << maximumPathOuter << '\n';
+    return 101;
+  }
   if (canopyCenter.canopy < .99f || canopyCenter.leafLitter < .99f ||
       canopyCenter.biome != ShowcaseTerrainBiome3D::CanopyLeafLitter ||
       canopyFar.canopy != 0.f ||

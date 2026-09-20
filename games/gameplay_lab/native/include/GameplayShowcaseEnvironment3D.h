@@ -573,8 +573,8 @@ SampleShowcaseTerrainEcologyTint3D(
     value = Aevrynd::Clamp(value, 0.f, 1.f);
     return value * value * (3.f - 2.f * value);
   };
-  const auto segmentDistance = [](Aevrynd::Vec3 point, Aevrynd::Vec3 start,
-                                  Aevrynd::Vec3 end) {
+  const auto segmentProfile = [](Aevrynd::Vec3 point, Aevrynd::Vec3 start,
+                                 Aevrynd::Vec3 end) {
     const float vx = end.x - start.x, vz = end.z - start.z;
     const float wx = point.x - start.x, wz = point.z - start.z;
     const float lengthSquared = vx * vx + vz * vz;
@@ -584,7 +584,10 @@ SampleShowcaseTerrainEcologyTint3D(
                         : 0.f;
     const float dx = point.x - (start.x + vx * t);
     const float dz = point.z - (start.z + vz * t);
-    return std::sqrt(dx * dx + dz * dz);
+    const float length = std::sqrt(lengthSquared);
+    const float signedSide =
+        length > 0.f ? (vx * dz - vz * dx) / length : 0.f;
+    return Aevrynd::Vec2{std::sqrt(dx * dx + dz * dz), signedSide};
   };
   const auto authoredEdgeNoise = [](Aevrynd::Vec3 point) {
     // Stable world-space harmonics break up biome borders without adding a
@@ -594,15 +597,26 @@ SampleShowcaseTerrainEcologyTint3D(
   };
   // A shallow bend avoids the artificial ruler-straight strip between spawn
   // and the front porch while preserving a deterministic, bounded footprint.
-  const float pathDistance = (std::min)(
-      segmentDistance(worldPosition, {-16.f, 0.f, 8.f}, {-14.f, 0.f, 14.f}),
-      segmentDistance(worldPosition, {-14.f, 0.f, 14.f},
-                      {-12.f, 0.f, 19.8f}));
-  const float pathEdge = pathDistance + authoredEdgeNoise(worldPosition);
-  // 129x129 / 512m terrain is sampled every four metres. A 1.1m-wide signal
-  // can disappear between vertices; retain a narrow full-strength centre but
-  // extend the smooth shoulder to 2.6m so adjacent vertices carry the path.
-  const float pathCandidate = 1.f - smooth((pathEdge - .55f) / 2.05f);
+  const auto firstPath =
+      segmentProfile(worldPosition, {-16.f, 0.f, 8.f}, {-14.f, 0.f, 14.f});
+  const auto secondPath = segmentProfile(worldPosition, {-14.f, 0.f, 14.f},
+                                         {-12.f, 0.f, 19.8f});
+  const auto path = firstPath.x <= secondPath.x ? firstPath : secondPath;
+  // Low-frequency world-space width changes keep the trail connected while
+  // avoiding a constant-width carpet.  A small signed-side bias and the
+  // existing authored harmonics break the two shoulders differently without
+  // changing height, geometry, descriptors, or camera-dependent state.
+  const float pathTreadHalfWidth =
+      .52f + std::sin(worldPosition.z * .31f + .8f) * .14f +
+      std::sin(worldPosition.z * .13f - 1.1f) * .09f;
+  const float pathShoulderWidth =
+      2.06f +
+      std::sin(worldPosition.z * .23f - worldPosition.x * .07f + .35f) *
+          .16f;
+  const float pathEdge = path.x + authoredEdgeNoise(worldPosition) +
+                         (path.y >= 0.f ? .10f : -.05f);
+  const float pathCandidate =
+      1.f - smooth((pathEdge - pathTreadHalfWidth) / pathShoulderWidth);
 
   float canopyCandidate{};
   for (const auto &descriptor : descriptors) {
