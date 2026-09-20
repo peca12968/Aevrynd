@@ -106,10 +106,10 @@ bool TreeVariantDistributionContract(
       ++deadByBand[band];
     }
   }
-  return island == 160 && small == 60 && dead == 20 &&
-         islandByBand == std::array<unsigned, 3>{83, 59, 18} &&
-         smallByBand == std::array<unsigned, 3>{31, 22, 7} &&
-         deadByBand == std::array<unsigned, 3>{10, 7, 3};
+  return island == 124 && small == 104 && dead == 20 &&
+         islandByBand == std::array<unsigned, 3>{62, 46, 16} &&
+         smallByBand == std::array<unsigned, 3>{52, 38, 14} &&
+         deadByBand == std::array<unsigned, 3>{10, 8, 2};
 }
 
 struct HeroClearingDressingMetrics {
@@ -229,7 +229,7 @@ int main() {
   ShowcaseLandEcologyReceipt3D receipt{};
   // 中文：暖機只填滿程式碼與配置器快取，不列入三毫秒正式門檻。
   const bool warmupBuilt=BuildShowcaseLandEcology3D(settings, first, &receipt);
-  if (!warmupBuilt && first.size() == 456) {
+  if (!warmupBuilt && first.size() == 464) {
     const bool diagnosticValid =
         ValidateShowcaseLandEcology3D(settings, first, &receipt);
     (void)diagnosticValid;
@@ -518,12 +518,12 @@ int main() {
     }
   }
 
-  if (receipt.placements != 456 || receipt.integratedDescriptors != 464 ||
+  if (receipt.placements != 464 || receipt.integratedDescriptors != 472 ||
       receipt.descriptorCapacity != 480 ||
-      receipt.trees != std::array<std::uint32_t, 3>{124, 88, 28} ||
+      receipt.trees != std::array<std::uint32_t, 3>{124, 92, 32} ||
       receipt.grass != std::array<std::uint32_t, 3>{116, 52, 18} ||
       receipt.rocks != std::array<std::uint32_t, 3>{12, 12, 6} ||
-      receipt.variants != std::array<std::uint32_t, 8>{160, 60, 20, 20, 10, 62, 62, 62} ||
+      receipt.variants != std::array<std::uint32_t, 8>{124, 104, 20, 20, 10, 62, 62, 62} ||
       !receipt.terrainBoundsExact || !receipt.bandsExact || !receipt.riverExcluded ||
       !receipt.spawnExcluded || !receipt.cottageExcluded ||
       !receipt.stableKeysExact || !receipt.transformsExact) return 2;
@@ -548,7 +548,7 @@ int main() {
   if(!receipt.attemptedCandidates||receipt.attemptedCandidates>32000u||medianBuildMicros>3000){std::cerr<<"land performance attempts="<<receipt.attemptedCandidates<<" medianElapsedUs="<<medianBuildMicros<<" samples=";for(const auto value:buildMicros)std::cerr<<value<<',';std::cerr<<'\n';return 15;}
   // 子叢找到安全點即停止；候選數可減少，但不能超過原本二萬四千次上限。
   if (receipt.attemptedCandidates > 24000u ||
-      receipt.zones != std::array<std::uint32_t, 4>{240, 62, 92, 62}) return 19;
+      receipt.zones != std::array<std::uint32_t, 4>{248, 62, 92, 62}) return 19;
 
   std::array<unsigned,3> canopyLayers{};
   for(const auto& item:first)if(IsLivingTreeVariant(item.variant))

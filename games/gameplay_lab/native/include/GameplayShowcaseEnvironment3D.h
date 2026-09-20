@@ -246,12 +246,12 @@ ShowcaseTreeFormVariation(const ShowcaseLandPlacement3D &placement) noexcept {
       // 仍留下昂貴高冠層。成熟樹維持比幼樹高約 0.18~0.32，但最大值壓在
       // 1.05 左右，降低 masked 葉片與四層 shadow 的投影面積。
       const float submittedHeight = placement.band == ShowcaseLandBand3D::Far
-                                        ? .91f + .08f * v +
+                                        ? .93f + .08f * v +
                                               crownTierOffset[tier]
                                     : placement.band == ShowcaseLandBand3D::Mid
-                                        ? .92f + .09f * v +
+                                        ? .94f + .09f * v +
                                               crownTierOffset[tier]
-                                        : .92f + .09f * v +
+                                        : .94f + .09f * v +
                                               crownTierOffset[tier];
       heightProfile = submittedHeight / bandHeight;
     }
@@ -1106,10 +1106,10 @@ struct ShowcaseEnvironmentReceipt3D {
 };
 
 struct ShowcaseSceneTargets3D {
-  std::size_t terrainPatches{1}, waterSegments{1}, treeInstances{240},
+  std::size_t terrainPatches{1}, waterSegments{1}, treeInstances{248},
       grassInstances{186}, rockInstances{30}, buildingComponents{6};
-  // 植被僅含樹與草；含岩石的陸地分帶另為 180／196／80。
-  std::size_t nearVegetation{240}, midVegetation{140}, farVegetation{46};
+  // 植被僅含樹與草；含岩石的陸地分帶另為 252／156／56。
+  std::size_t nearVegetation{240}, midVegetation{144}, farVegetation{50};
   float terrainSpanMeters{512.f}, riverLengthMeters{272.f},
       riverMinimumWidthMeters{9.f}, riverMaximumWidthMeters{15.f},
       minimumRiverSurfaceAreaSquareMeters{2800.f};

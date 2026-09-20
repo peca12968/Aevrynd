@@ -250,7 +250,7 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     return false;
 
   std::vector<ShowcaseSceneDescriptor3D> candidate;
-  candidate.reserve(464);
+  candidate.reserve(472);
   candidate.push_back({ShowcaseSceneKind3D::Terrain,
                        {0, 0, 0},
                        {512, 48, 512},

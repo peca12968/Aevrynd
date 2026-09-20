@@ -125,8 +125,9 @@ ShowcaseLandVariant3D Variant(ShowcaseLandKind3D kind,
     // 樹形打散單一冠層剪影，同時避免把森林讀成枯敗林。
     if (ordinal % 12u == 11u)
       return ShowcaseLandVariant3D::DeadTreeTrunk;
-    // 三個距離帶共 60 株使用第二種活闊葉樹；與枯木槽位互斥，因此總數固定。
-    return ordinal % 4u == 1u ? ShowcaseLandVariant3D::TreeSmall02
+    // 活樹以奇偶序號交替兩套闊葉拓撲；枯木槽位先行保留，因此三帶仍維持
+    // 八成以上活樹，且不再由單一冠層網格支配遠景剪影。
+    return ordinal % 2u == 1u ? ShowcaseLandVariant3D::TreeSmall02
                               : ShowcaseLandVariant3D::IslandTree;
   }
   if (kind == ShowcaseLandKind3D::Rock)
@@ -160,7 +161,7 @@ Aevrynd::Vec3 Scale(ShowcaseLandKind3D kind,
                              : a < .65f ? 6.f + (a-.2f) * 11.111111f
                                         : 11.f + (a-.65f) * 13.f;
     // 闊葉樹的成熟冠幅通常不應只有樹高的一半；維持同一網格、三個 LOD 與
-    // 固定 240 株預算，只讓近中景冠層形成可讀的交疊，不增加 draw 數。
+    // 固定 248 株預算，只讓近中景冠層形成可讀的交疊，不增加材質種類。
     // 新增的稀疏枯立木不應以削薄既有活冠層換取輪廓多樣性；僅補回一個
     // 兩個百分點冠幅，維持 default 與 alternate seed 的既有固定 ROI canopy gate。
     const float width = height * (.70f + b * .18f) *
@@ -225,12 +226,12 @@ bool ValidSettings(const ShowcaseLandEcologySettings3D &settings) noexcept {
 } // namespace
 
 bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
-  return fingerprint && placements == 456 && integratedDescriptors == placements + 8 &&
+  return fingerprint && placements == 464 && integratedDescriptors == placements + 8 &&
          descriptorCapacity >= integratedDescriptors &&
-      trees == std::array<std::uint32_t, 3>{124, 88, 28} &&
+      trees == std::array<std::uint32_t, 3>{124, 92, 32} &&
       grass == std::array<std::uint32_t, 3>{116, 52, 18} &&
       rocks == std::array<std::uint32_t, 3>{12, 12, 6} &&
-      variants == std::array<std::uint32_t, 8>{160, 60, 20, 20, 10, 62, 62, 62} &&
+      variants == std::array<std::uint32_t, 8>{124, 104, 20, 20, 10, 62, 62, 62} &&
       zones[0] && zones[1] && zones[2] && zones[3] &&
       minimumTreeSpacing >= RequiredSpacing[0] &&
       minimumGrassSpacing >= RequiredSpacing[1] &&
@@ -259,6 +260,9 @@ bool BuildShowcaseLandEcology3D(
                                  Count(settings.rocks);
   placements.reserve(expected);
   std::uint64_t random = settings.seed;
+  // r51 新增的中遠景樹使用獨立亂數流；既有 240 株之後的草與岩石必須保持
+  // 原來的 transform／stable key，避免密度提升暗中改寫道路肩帶與河岸證據。
+  std::uint64_t expandedTreeRandom = settings.seed ^ 0xd1b54a32d192ed03ull;
   std::uint32_t rejectedCandidates{},attemptedCandidates{};
   std::uint32_t failureKind{3},failureBand{3},failureItem{};
   constexpr float cellSize=16.f;
@@ -286,7 +290,10 @@ bool BuildShowcaseLandEcology3D(
       for (std::uint32_t item = 0; item < counts[band]; ++item, ++ordinal) {
         const auto variant = Variant(kind, ordinal);
         const auto zone = Zone(kind, variant);
-        const auto scale = Scale(kind, variant, random);
+        auto &itemRandom = kind == ShowcaseLandKind3D::Tree && ordinal >= 240u
+                               ? expandedTreeRandom
+                               : random;
+        const auto scale = Scale(kind, variant, itemRandom);
         const float footprint = PlacementFootprint(kind, scale);
         Aevrynd::Vec3 best{};
         float bestDistance = -1.f;
@@ -586,8 +593,8 @@ bool BuildShowcaseLandEcology3D(
         }
         if (!found || bestDistance < 0.f){failureKind=std::uint32_t(kind);failureBand=band;failureItem=item;return false;}
         placements.push_back({kind, ShowcaseLandBand3D(band), variant, best,
-                              scale, UnitRandom(random) * 2.f * Pi,
-                              NextRandom(random) | 1ull, zone});
+                              scale, UnitRandom(itemRandom) * 2.f * Pi,
+                              NextRandom(itemRandom) | 1ull, zone});
         if(kind==ShowcaseLandKind3D::Grass&&item%12u<3u)grassCenters[item%3u]=best;
         if(kind==ShowcaseLandKind3D::Grass&&zone!=ShowcaseLandZone3D::Riverbank&&
            item%12u<3u)
@@ -650,7 +657,7 @@ bool ValidateShowcaseLandEcology3D(
   MixFloat(hash, settings.habitatCellSize);
   Mix(hash, &settings.minimumDensestHabitatCell,
       sizeof(settings.minimumDensestHabitatCell));
-  std::array<std::uint64_t,456> stableKeys{};
+  std::array<std::uint64_t,464> stableKeys{};
   std::array<std::uint32_t, HabitatGridSide * HabitatGridSide> habitatCells{};
   std::size_t stableKeyCount{};
   for (const auto &placement : placements) {

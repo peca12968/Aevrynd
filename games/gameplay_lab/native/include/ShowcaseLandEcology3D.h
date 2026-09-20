@@ -58,9 +58,9 @@ struct ShowcaseLandPlacement3D {
 
 struct ShowcaseLandEcologySettings3D {
   std::uint64_t seed{0x4a17u};
-  // 固定四百五十六項預算；近景非河岸草集中英雄區，每生境四株一群。
+  // 固定四百六十四項預算；近景非河岸草集中英雄區，每生境四株一群。
   // 中遠景樹以四株群落優先找安全點，不再用全域最大淨空將森林攤成果園。
-  std::array<std::uint32_t, 3> trees{124, 88, 28};
+  std::array<std::uint32_t, 3> trees{124, 92, 32};
   std::array<std::uint32_t, 3> grass{116, 52, 18};
   std::array<std::uint32_t, 3> rocks{12, 12, 6};
   float terrainHalfSpan{256.f};
