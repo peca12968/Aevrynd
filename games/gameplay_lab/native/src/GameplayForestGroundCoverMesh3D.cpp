@@ -229,35 +229,41 @@ Mesh3D CreateLowShrub(GameplayForestGroundCoverDetail3D detail,
   mesh.vertices.reserve(std::size_t(count) * 4);
   mesh.indices.reserve(std::size_t(count) * 6);
   for (unsigned item = 0; item < count; ++item) {
-    // One placement must read as a low forest shrub rather than a wall of
-    // equally tall cards.  Every LOD retains one deterministic card from each
-    // of the outer skirt, middle foliage and crown tiers; only the authored
-    // vertex positions change, so triangle count, draw count and texture work
-    // remain identical to the original community mesh.
+    // The atlas region represents one leaf, not an entire shrub.  Keep the
+    // original card/triangle budget, but distribute leaf-scale cards over a
+    // three-tier branch volume so the placement reads as one continuous plant
+    // instead of metre-wide quads rooted along the ground plane.
     const unsigned tier = item % 3u;
-    const float phase = Pi * (float(item) / float(count) +
-                              UnitNoise(seed, item, 41u) * .13f);
-    constexpr std::array<float, 3> RadiusBase{{.26f, .14f, .05f}};
-    constexpr std::array<float, 3> RadiusVariation{{.10f, .08f, .07f}};
-    constexpr std::array<float, 3> WidthBase{{.55f, .44f, .30f}};
-    constexpr std::array<float, 3> WidthVariation{{.15f, .12f, .10f}};
-    constexpr std::array<float, 3> HeightBase{{.38f, .54f, .72f}};
-    constexpr std::array<float, 3> HeightVariation{{.10f, .11f, .12f}};
+    const float phase = 2.f * Pi *
+                        (float(item) / float(count) +
+                         UnitNoise(seed, item, 41u) * .09f);
+    constexpr std::array<float, 3> RadiusBase{{.46f, .18f, .05f}};
+    constexpr std::array<float, 3> RadiusVariation{{.08f, .07f, .05f}};
+    constexpr std::array<float, 3> RootHeightBase{{.035f, .255f, .455f}};
+    constexpr std::array<float, 3> RootHeightVariation{{.035f, .045f, .045f}};
+    constexpr std::array<float, 3> LeafLengthBase{{.245f, .225f, .195f}};
+    constexpr std::array<float, 3> LeafLengthVariation{{.035f, .030f, .025f}};
+    constexpr std::array<float, 3> LeafWidthBase{{.145f, .125f, .105f}};
+    constexpr std::array<float, 3> LeafWidthVariation{{.030f, .025f, .020f}};
+    constexpr std::array<float, 3> RadialLean{{.105f, .080f, .050f}};
     const float radius = RadiusBase[tier] +
                          UnitNoise(seed, item, 43u) * RadiusVariation[tier];
-    const float width = WidthBase[tier] +
-                        UnitNoise(seed, item, 47u) * WidthVariation[tier];
-    const float height = HeightBase[tier] +
-                         UnitNoise(seed, item, 53u) * HeightVariation[tier];
-    const Vec3 facing{std::sin(phase), 0, std::cos(phase)};
-    const Vec3 side{facing.z, 0, -facing.x};
-    const float radialPhase = 2.f * Pi * UnitNoise(seed, item, 59u);
-    const Vec3 radial{std::cos(radialPhase), 0,
-                      std::sin(radialPhase)};
-    const Vec3 root = radial * (radius * .42f);
-    const Vec3 top = radial * radius + Vec3{0, height, 0};
-    const Vec3 rootHalfSide = side * (width * .16f);
-    const Vec3 topHalfSide = side * (width * .5f);
+    const float rootHeight = RootHeightBase[tier] +
+                             UnitNoise(seed, item, 47u) * RootHeightVariation[tier];
+    const float leafLength = LeafLengthBase[tier] +
+                             UnitNoise(seed, item, 53u) * LeafLengthVariation[tier];
+    const float leafWidth = LeafWidthBase[tier] +
+                            UnitNoise(seed, item, 59u) * LeafWidthVariation[tier];
+    const Vec3 radial{std::cos(phase), 0, std::sin(phase)};
+    const Vec3 side{-radial.z, 0, radial.x};
+    const float lean = RadialLean[tier] *
+                       (.82f + UnitNoise(seed, item, 67u) * .18f);
+    const float rise = std::sqrt(std::max(.0001f,
+        leafLength * leafLength - lean * lean));
+    const Vec3 root = radial * radius + Vec3{0, rootHeight, 0};
+    const Vec3 top = root + radial * lean + Vec3{0, rise, 0};
+    const Vec3 rootHalfSide = side * (leafWidth * .34f);
+    const Vec3 topHalfSide = side * (leafWidth * .5f);
     AppendCard(mesh,
                {root - rootHalfSide, root + rootHalfSide,
                 top + topHalfSide, top - topHalfSide},

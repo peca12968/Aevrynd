@@ -71,34 +71,39 @@ bool LowShrubTierContract(const Mesh3D& mesh) {
   if (mesh.vertices.size() < 12 || mesh.vertices.size() % 4 != 0)
     return false;
   std::array<unsigned, 3> counts{};
-  std::array<float, 3> radiusSums{}, widthSums{};
+  std::array<float, 3> radiusSums{};
   for (std::size_t base = 0; base < mesh.vertices.size(); base += 4) {
     const auto& rootA = mesh.vertices[base];
     const auto& rootB = mesh.vertices[base + 1];
     const auto& topA = mesh.vertices[base + 2];
     const auto& topB = mesh.vertices[base + 3];
-    if (std::abs(rootA.y) > 1e-6f || std::abs(rootB.y) > 1e-6f ||
-        std::abs(topA.y - topB.y) > 1e-6f)
+    if (std::abs(rootA.y - rootB.y) > 1e-6f ||
+        std::abs(topA.y - topB.y) > 1e-6f || topA.y <= rootA.y)
       return false;
+    const float rootY = (rootA.y + rootB.y) * .5f;
     const float topY = (topA.y + topB.y) * .5f;
-    const unsigned tier = topY < .52f ? 0u : topY < .70f ? 1u : 2u;
-    const float centerX = (topA.x + topB.x) * .5f;
-    const float centerZ = (topA.z + topB.z) * .5f;
+    const unsigned tier = rootY < .15f ? 0u : rootY < .38f ? 1u : 2u;
+    const float rootX = (rootA.x + rootB.x) * .5f;
+    const float rootZ = (rootA.z + rootB.z) * .5f;
+    const float topX = (topA.x + topB.x) * .5f;
+    const float topZ = (topA.z + topB.z) * .5f;
     const float width = Length(Vec3{topA.x - topB.x, topA.y - topB.y,
                                     topA.z - topB.z});
-    if (topY < .37f || topY > .85f || width <= 0.f)
+    const float length = Length(Vec3{topX - rootX, topY - rootY,
+                                     topZ - rootZ});
+    constexpr std::array<float, 3> MinTipY{{.24f, .43f, .62f}};
+    constexpr std::array<float, 3> MaxTipY{{.36f, .55f, .73f}};
+    if (topY < MinTipY[tier] || topY > MaxTipY[tier] ||
+        width < .09f || width > .18f ||
+        length < .18f || length > .29f)
       return false;
     ++counts[tier];
-    radiusSums[tier] += std::sqrt(centerX * centerX + centerZ * centerZ);
-    widthSums[tier] += width;
+    radiusSums[tier] += std::sqrt(rootX * rootX + rootZ * rootZ);
   }
   if (!counts[0] || !counts[1] || !counts[2]) return false;
   const float outerRadius = radiusSums[0] / float(counts[0]);
   const float crownRadius = radiusSums[2] / float(counts[2]);
-  const float outerWidth = widthSums[0] / float(counts[0]);
-  const float crownWidth = widthSums[2] / float(counts[2]);
-  return outerRadius >= crownRadius + .08f &&
-         outerWidth >= crownWidth + .12f;
+  return outerRadius >= crownRadius + .36f;
 }
 
 bool FernClusterContract(const Mesh3D& mesh,
@@ -613,6 +618,27 @@ int main() {
   }
   if (LowShrubTierContract(flattenedShrub)) {
     std::cerr << "LOW_SHRUB_FLATTENED_HOSTILE=FAIL\n";
+    return 8;
+  }
+
+  auto oversizedShrub = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::LowShrub,
+      GameplayForestGroundCoverDetail3D::Near, 0x51a7c3u);
+  oversizedShrub.vertices[2].x += .22f;
+  if (LowShrubTierContract(oversizedShrub)) {
+    std::cerr << "LOW_SHRUB_OVERSIZED_LEAF_HOSTILE=FAIL\n";
+    return 8;
+  }
+
+  auto groundedShrub = CreateGameplayForestGroundCoverMesh3D(
+      GameplayForestGroundCoverSpecies3D::LowShrub,
+      GameplayForestGroundCoverDetail3D::Near, 0x51a7c3u);
+  for (std::size_t base = 0; base < groundedShrub.vertices.size(); base += 4) {
+    groundedShrub.vertices[base].y = 0.f;
+    groundedShrub.vertices[base + 1].y = 0.f;
+  }
+  if (LowShrubTierContract(groundedShrub)) {
+    std::cerr << "LOW_SHRUB_GROUNDED_WALL_HOSTILE=FAIL\n";
     return 8;
   }
 
