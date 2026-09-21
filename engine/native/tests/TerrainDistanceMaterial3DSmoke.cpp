@@ -73,7 +73,7 @@ bool TerrainOriginalWeightSnapshotContract(std::string_view world){
 bool TerrainAuthoredLumaPreservationContract(std::string_view world){
   return Count(world,"float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)")==1&&
       Count(world,"authoredWeights /= authoredWeightTotal;")==1&&
-      Count(world,"dot(authoredWeights, float3(1.16, 1.05, 0.62))")==1&&
+      Count(world,"dot(authoredWeights, float3(1.05, 1.05, 0.62))")==1&&
       Count(world,"showcaseTerrainAuthoredBiomeCalibration = saturate(shapedAuthoredBiomeWeight);")==1&&
       Count(world,"showcaseTerrainAuthoredBiomeCalibration = sqrt")==0&&
       Count(world,"TerrainAuthoredBiomeLumaScale(shapedAuthoredBiomeWeights);")==1&&
@@ -146,8 +146,8 @@ int main(){
     if(const auto normalization=hostileAuthoredNormalization.find("authoredWeights /= authoredWeightTotal;");normalization!=std::string::npos)
       hostileAuthoredNormalization.erase(normalization,std::string_view("authoredWeights /= authoredWeightTotal;").size());
     std::string hostileAuthoredCoefficient=worldShader;
-    if(const auto coefficient=hostileAuthoredCoefficient.find("float3(1.16, 1.05, 0.62)");coefficient!=std::string::npos)
-      hostileAuthoredCoefficient.replace(coefficient,std::string_view("float3(1.16, 1.05, 0.62)").size(),"float3(1.36, 1.05, 0.62)");
+    if(const auto coefficient=hostileAuthoredCoefficient.find("float3(1.05, 1.05, 0.62)");coefficient!=std::string::npos)
+      hostileAuthoredCoefficient.replace(coefficient,std::string_view("float3(1.05, 1.05, 0.62)").size(),"float3(1.25, 1.05, 0.62)");
     const auto terrainBinding=ReadText(source/L"games/gameplay_lab/native/include/ShowcaseTerrainMaterials3D.h");
     std::string hostileBinding=terrainBinding;
     if(const auto layer=hostileBinding.find("\"Ground108:slot-0\"");layer!=std::string::npos)
@@ -195,11 +195,11 @@ int main(){
       value.x=std::clamp(value.x,0.f,1.f);value.y=std::clamp(value.y,0.f,1.f);value.z=std::clamp(value.z,0.f,1.f);
       const float total=value.x+value.y+value.z;if(total<=.000001f)return 1.f;const float inverse=1.f/total;
       value.x*=inverse;value.y*=inverse;value.z*=inverse;
-      return std::clamp(value.x*1.16f+value.y*1.05f+value.z*.62f,.62f,1.16f);
+      return std::clamp(value.x*1.05f+value.y*1.05f+value.z*.62f,.62f,1.16f);
     };
     const float hostileScale=authoredLumaScale({1.f,1.f,1.f});
     if(std::abs(authoredLumaScale({0,0,0})-1.f)>1e-6f||
-       std::abs(authoredLumaScale({1,0,0})-1.16f)>1e-6f||
+       std::abs(authoredLumaScale({1,0,0})-1.05f)>1e-6f||
        std::abs(authoredLumaScale({0,1,0})-1.05f)>1e-6f||
        std::abs(authoredLumaScale({0,0,1})-.62f)>1e-6f||
        hostileScale<.62f||hostileScale>1.16f||

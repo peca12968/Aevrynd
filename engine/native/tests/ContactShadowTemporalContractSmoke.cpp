@@ -22,12 +22,13 @@ int main() {
   ContactShadowTemporalConstants3D constants{};
   constants.historyValid = 1;
   constants.historyWeight = .75f;
+  constants.darkeningHistoryWeight = .65f;
   constants.depthThreshold = .02f;
   constants.motionThresholdPixels = 4.f;
   const ContactShadowTemporalSample3D sample{.2f, .8f, .5f, .505f, 1.f, true};
   const auto stable = EvaluateContactShadowTemporal3D(sample, constants);
   if (!stable.historyAccepted || stable.rejection != ContactShadowTemporalReset3D::None ||
-      !Near(stable.visibility, .65f))
+      !Near(stable.visibility, .59f))
     return 1;
   for(const auto depths:std::array{std::array{1.f,1.01f},std::array{10.f,10.01f},std::array{100.f,100.01f}})
     if(!EvaluateContactShadowTemporal3D({.4f,.5f,depths[0],depths[1],0.f,true},constants).historyAccepted)
@@ -72,7 +73,7 @@ int main() {
   const auto highWeight = EvaluateContactShadowTemporal3D({-.5f,2.f,.5f,.5f,0.f,true}, clamped);
   clamped.historyWeight = -1.f;
   const auto lowWeight = EvaluateContactShadowTemporal3D({.25f,.8f,.5f,.5f,0.f,true}, clamped);
-  if (!highWeight.historyAccepted || !Near(highWeight.visibility, .98f) ||
+  if (!highWeight.historyAccepted || !Near(highWeight.visibility, .65f) ||
       !lowWeight.historyAccepted || !Near(lowWeight.visibility, .25f))
     return 5;
 
@@ -86,9 +87,24 @@ int main() {
       return 6;
   }
   auto fallback = constants;
-  fallback.historyWeight = fallback.depthThreshold = fallback.motionThresholdPixels = nan;
+  fallback.historyWeight = fallback.darkeningHistoryWeight = fallback.depthThreshold = fallback.motionThresholdPixels = nan;
   const auto fallbackResult = EvaluateContactShadowTemporal3D({.2f,.8f,.5f,.505f,1.f,true}, fallback);
-  if (!fallbackResult.historyAccepted || !Near(fallbackResult.visibility, .71f))
+  if (!fallbackResult.historyAccepted || !Near(fallbackResult.visibility, .59f))
     return 7;
+
+  // 正式接觸輪廓通常只有數個半解析度像素寬；新遮擋必須在兩個有效幀內
+  // 清楚建立，不能長時間受先前全亮歷程主導。
+  ContactShadowTemporalConstants3D production{};
+  production.historyValid = 1;
+  float visibility = 1.f;
+  for (unsigned frame = 0; frame < 2; ++frame) {
+    const auto result = EvaluateContactShadowTemporal3D(
+        {.08f, visibility, 4.f, 4.f, 0.f, true}, production);
+    if (!result.historyAccepted)
+      return 10;
+    visibility = result.visibility;
+  }
+  if (visibility > .47f)
+    return 11;
   return 0;
 }

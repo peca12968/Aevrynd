@@ -505,16 +505,44 @@ int main() {
                <<jitterCoordinate[Probe][0]<<", expected 0.4\n";
       return 8;
     }
+
+    // 細薄的正式接觸區鄰接亮像素，因此鄰域限縮可合理保留全亮歷程範圍；
+    // 非對稱權重仍必須在一個有效幀內建立新遮擋。
+    std::array<std::array<float, 2>, Width * Height> roiCurrent{};
+    std::array<std::array<float, 2>, Width * Height> roiPrevious{};
+    std::array<std::array<float, 2>, Width * Height> roiMotion{};
+    for (std::size_t index = 0; index < roiCurrent.size(); ++index) {
+      roiCurrent[index] = {1.f, 4.f};
+      roiPrevious[index] = {1.f, 4.f};
+    }
+    roiCurrent[Probe][0] = .08f;
+    Fixture roiFixture;
+    roiFixture.Initialize(roiCurrent, roiPrevious, roiMotion);
+    ContactShadowTemporalConstants3D roiConstants{};
+    roiConstants.historyValid = 1;
+    roiConstants.outputWidth = Width;
+    roiConstants.outputHeight = Height;
+    roiConstants.inverseOutputWidth = 1.f / Width;
+    roiConstants.inverseOutputHeight = 1.f / Height;
+    const auto roi = roiFixture.Dispatch(roiConstants);
+    if (!Near(roi[Probe][0], .678f) || !Near(roi[Probe][1], 4.f) ||
+        roi[Probe][0] >= .7f) {
+      std::cerr << "Thin-contact ROI response mismatch: got "
+                << roi[Probe][0] << ", expected 0.678\n";
+      return 9;
+    }
     const auto severe = fixture.SevereMessages();
     const auto coordinateSevere = coordinateFixture.SevereMessages();
-    if (severe || coordinateSevere)
+    const auto roiSevere = roiFixture.SevereMessages();
+    if (severe || coordinateSevere || roiSevere)
       return 5;
     std::cout << "ContactShadowTemporalD3D12 mode="
               << (GpuValidationRequested() ? "gbv" : "normal")
               << " dispatches=4 pixels=" << Width * Height
               << " coordinateProbe=" << coordinate[Probe][0]
               << " jitterCoordinateProbe=" << jitterCoordinate[Probe][0]
-              << " warningsOrErrors=" << severe + coordinateSevere << '\n';
+              << " thinContactProbe=" << roi[Probe][0]
+              << " warningsOrErrors=" << severe + coordinateSevere + roiSevere << '\n';
     return 0;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

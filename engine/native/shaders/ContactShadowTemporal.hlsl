@@ -8,7 +8,7 @@ cbuffer ContactShadowTemporalConstants : register(b0)
     float historyWeight;
     float depthThreshold;
     float motionThresholdPixels;
-    float padding;
+    float darkeningHistoryWeight;
     uint historyValid;
     uint cameraCut;
     uint resized;
@@ -58,7 +58,7 @@ void ContactShadowTemporalMain(uint3 id : SV_DispatchThreadID)
     const bool depthValid=abs(current.y-previousDepth)<=max(depthThreshold,0.0);
     const bool motionValid=length(motion)<=max(motionThresholdPixels,0.0);
     const bool accept=validUv&&depthValid&&motionValid&&motionFinite&&all(isfinite(float4(current,previous)));
-    const float weight=accept?clamp(historyWeight,0.0,0.98):0.0;
+    const float configuredHistoryWeight=accept?clamp(historyWeight,0.0,0.98):0.0;
     float neighborhoodMinimum=currentVisibility;
     float neighborhoodMaximum=currentVisibility;
     [unroll] for(int y=-1;y<=1;++y)
@@ -77,5 +77,9 @@ void ContactShadowTemporalMain(uint3 id : SV_DispatchThreadID)
     const float previousVisibility=clamp(isfinite(previous.x)?saturate(previous.x):1.0,
                                          saturate(neighborhoodMinimum-clampEpsilon),
                                          saturate(neighborhoodMaximum+clampEpsilon));
-    temporalContact[id.xy]=float2(lerp(currentVisibility,previousVisibility,weight),currentDepth);
+    // 可見度代表透射率；目前值較低表示新遮擋。讓遮擋快速建立，並沿用
+    // 空間限縮與深度／移動拒絕，避免殘留過時的暗色拖影。
+    const float darkeningWeight=clamp(darkeningHistoryWeight,0.0,configuredHistoryWeight);
+    const float effectiveHistoryWeight=currentVisibility<previousVisibility?darkeningWeight:configuredHistoryWeight;
+    temporalContact[id.xy]=float2(lerp(currentVisibility,previousVisibility,effectiveHistoryWeight),currentDepth);
 }

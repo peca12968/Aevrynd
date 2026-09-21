@@ -913,7 +913,7 @@ float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)
 {
     // 亮度校準只取決於已驗證的 authored 材質權重。惡意／非有限輸入
     // fail-neutral；超額總和先正規化，因此輸出嚴格限制於 wet .62 到
-    // path 1.16，不會改變 neutral 或以無界曝光掩蓋材質錯誤。
+    // path 1.05，不會改變 neutral 或以無界曝光掩蓋材質錯誤。
     if (any(shapedWeights != shapedWeights) || any(abs(shapedWeights) > 65504.0))
         return 1.0;
     float3 authoredWeights = saturate(shapedWeights);
@@ -921,7 +921,7 @@ float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)
     if (authoredWeightTotal <= 0.000001)
         return 1.0;
     authoredWeights /= authoredWeightTotal;
-    return clamp(dot(authoredWeights, float3(1.16, 1.05, 0.62)), 0.62, 1.16);
+    return clamp(dot(authoredWeights, float3(1.05, 1.05, 0.62)), 0.62, 1.16);
 }
 
 float RayleighPhase(float cosine)
