@@ -2136,16 +2136,25 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          for(float y:{.83f,1.38f,1.93f})scene_.Mesh(boxMesh_,{{-12,y,20.04f},{0,0,0},{1.12f,.08f,.16f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
          // R42_COTTAGE_LANTERN_BEGIN
-         // The porch light now has a visible physical source at the exact point-light
-         // origin. Seven render-only pieces reuse resident meshes and add no textures.
-         auto lanternMetal=wood;lanternMetal.textures={};
+          // The porch light now has a visible physical source at the exact point-light
+          // origin. Seven render-only pieces reuse resident meshes and add no textures.
+          const auto GameplayCottageLanternEmissive3D=[](LightingPhase phase) constexpr noexcept {
+            switch(phase){
+            case LightingPhase::Day:return 0.f;
+            case LightingPhase::Dusk:return .72f;
+            case LightingPhase::Night:return 1.75f;
+            }
+            return 0.f;
+          };
+          auto lanternMetal=wood;lanternMetal.textures={};
          lanternMetal.tint={.075f,.065f,.055f,1.f};
          lanternMetal.surface={.28f,.78f,.015f,1.f};
          lanternMetal.textureScale=1.f;lanternMetal.normalScale=0.f;
-         lanternMetal.useUv=false;
-         auto lanternGlass=glass;lanternGlass.textures={};
-         lanternGlass.tint={1.f,.42f,.12f,1.f};
-         lanternGlass.surface={.12f,.04f,1.75f,.92f};
+          lanternMetal.useUv=false;
+          auto lanternGlass=glass;lanternGlass.textures={};
+          lanternGlass.tint={1.f,.42f,.12f,1.f};
+          lanternGlass.surface={.12f,.04f,
+              GameplayCottageLanternEmissive3D(rules_.Lighting()),.92f};
          lanternGlass.textureScale=1.f;lanternGlass.normalScale=0.f;
          lanternGlass.useUv=false;lanternGlass.castsShadow=false;
          struct CottageLanternPart3D{Transform3D transform;bool cylindrical;bool glass;};

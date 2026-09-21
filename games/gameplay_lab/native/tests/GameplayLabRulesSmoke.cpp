@@ -446,8 +446,13 @@ bool ValidateGameplayR42CottageLanternSource3D(std::string_view source){
   if(begin==std::string_view::npos||end==std::string_view::npos)return false;
   const auto lantern=source.substr(begin,end+std::string_view{
       "R42_COTTAGE_LANTERN_END"}.size()-begin);
-  constexpr std::array<std::string_view,13> contract{
+  constexpr std::array<std::string_view,18> contract{
       "GameplayCottagePorchLanternCenter3D",
+      "GameplayCottageLanternEmissive3D",
+      "case LightingPhase::Day:return 0.f;",
+      "case LightingPhase::Dusk:return .72f;",
+      "case LightingPhase::Night:return 1.75f;",
+      "GameplayCottageLanternEmissive3D(rules_.Lighting())",
       "std::array<CottageLanternPart3D,7>",
       "lanternMetal.textures={}","lanternGlass.textures={}",
       "lanternGlass.castsShadow=false","showcaseCylinderMesh_",
@@ -456,7 +461,9 @@ bool ValidateGameplayR42CottageLanternSource3D(std::string_view source){
       "Cottage lantern draw count gate failed","Cottage lantern part exceeded fixture bounds"};
   return std::ranges::all_of(contract,[&](std::string_view token){
     return lantern.find(token)!=std::string_view::npos;
-  })&&lantern.find("CreateTexture") == std::string_view::npos&&
+  })&&lantern.find("lanternGlass.surface={.12f,.04f,1.75f,.92f}")==
+          std::string_view::npos&&
+      lantern.find("CreateTexture") == std::string_view::npos&&
       lantern.find("physics_") == std::string_view::npos;
 }
 
