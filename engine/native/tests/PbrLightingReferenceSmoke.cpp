@@ -1,9 +1,59 @@
 #include <Aevrynd/PbrLightingReference.h>
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
+#include <string>
 
 using namespace Aevrynd;
+
+namespace {
+double BoundedObjectFillRadianceReference(double radiance,double intensity,double peakRadiance) {
+    const double authored=(std::max)(0.0,radiance*intensity);
+    const double peak=(std::max)(0.0,peakRadiance*intensity);
+    const double coupledScale=(std::min)(.24,.12/(std::max)(peak,.000001));
+    return authored*coupledScale;
+}
+
+double ProductionObjectFillReference(double normalView,double baseColor,double roughness,
+                                     double metallic,double occlusion,double waterMask,
+                                     double terrainMask,double foliageMask,bool environmentEnabled,
+                                     double radiance,double intensity,double peakRadiance) {
+    const auto unit=[](double value){return std::clamp(value,0.0,1.0);};
+    const double boundedRadiance=BoundedObjectFillRadianceReference(radiance,intensity,peakRadiance);
+    const double viewShape=.35+.65*unit(normalView);
+    const double aoVisibility=.35+.65*unit(occlusion);
+    const double metal=unit(metallic),view=unit(normalView),color=unit(baseColor);
+    const double reflectance=.04+(color-.04)*metal;
+    const double grazing=(std::max)(1.0-unit(roughness),reflectance);
+    const double fresnel=reflectance+(grazing-reflectance)*std::pow(1.0-view,5.0);
+    const double eligibility=(1.0-unit(waterMask))*(1.0-unit(terrainMask))
+                            *(1.0-unit(foliageMask))*(environmentEnabled?1.0:0.0);
+    return boundedRadiance*viewShape*aoVisibility*eligibility
+          *(1.0-fresnel)*(1.0-metal)*color;
+}
+
+bool HasProductionObjectFillContract() {
+    const auto shaderPath=std::filesystem::path(__FILE__).parent_path().parent_path()/"shaders"/"World.hlsl";
+    std::ifstream input(shaderPath,std::ios::binary);
+    const std::string source{std::istreambuf_iterator<char>{input},std::istreambuf_iterator<char>{}};
+    const auto diffuseBegin=source.find("float3 EvaluateEnvironmentDiffuse(");
+    const auto diffuseEnd=diffuseBegin==std::string::npos?std::string::npos:source.find("float3 BoxProjectedEnvironmentDirection",diffuseBegin);
+    const auto fillBegin=source.find("float3 EvaluateProductionObjectFill(");
+    const auto fillEnd=fillBegin==std::string::npos?std::string::npos:source.find("float3 EvaluateEnvironmentLighting(",fillBegin);
+    if(diffuseBegin==std::string::npos||diffuseEnd==std::string::npos||fillBegin==std::string::npos||fillEnd==std::string::npos)return false;
+    const auto diffuse=source.substr(diffuseBegin,diffuseEnd-diffuseBegin);
+    const auto fill=source.substr(fillBegin,fillEnd-fillBegin);
+    return diffuse.find("environmentObjectFill")==std::string::npos
+        && fill.find("viewShape")!=std::string::npos
+        && fill.find("aoVisibility")!=std::string::npos
+        && fill.find("waterMask")!=std::string::npos
+        && fill.find("boundedRadiance")!=std::string::npos;
+}
+}
 
 int main(){
     if(PbrClampedRoughness(0)!=.045||PbrClampedRoughness(2)!=1||PbrClampedRoughness(std::numeric_limits<double>::quiet_NaN())!=1||PbrClampedRoughness(std::numeric_limits<double>::infinity())!=1)return 1;
@@ -29,5 +79,8 @@ int main(){
     const double corneaF0=PbrCorneaReflectance(),corneaNormal=PbrCorneaFresnel(1),corneaHalf=PbrCorneaFresnel(.5),corneaGrazing=PbrCorneaFresnel(0);if(std::abs(corneaF0-.0250427960865671)>1e-12||std::abs(corneaNormal-corneaF0)>1e-12||!(corneaNormal<corneaHalf&&corneaHalf<corneaGrazing)||std::abs(corneaGrazing-1)>1e-12||PbrCorneaRoughness(0)!=.025||PbrCorneaRoughness(1)!=.08||PbrCorneaRoughness(std::numeric_limits<double>::quiet_NaN())!=.08){std::cerr<<"Cornea Fresnel or roughness reference mismatch f0="<<corneaF0<<'\n';return 27;}
     const double eyeFront=PbrReferenceEyeLight(.42,.4,.9,.8,.92,.9,.9,.8,.92,2),eyeOffAxis=PbrReferenceEyeLight(.42,.4,.9,.8,.65,.65,.9,.8,.65,2),eyeInvalid=PbrReferenceEyeLight(.42,std::numeric_limits<double>::quiet_NaN(),.9,.8,.92,.9,.9,.8,.92,2),eyeNoCornea=PbrReferenceEyeLight(.42,.4,.9,.8,.92,.9,0,.8,.92,2);if(!std::isfinite(eyeFront)||!std::isfinite(eyeOffAxis)||!std::isfinite(eyeInvalid)||!std::isfinite(eyeNoCornea)||eyeFront<0||eyeOffAxis<0||eyeNoCornea<0||eyeFront<=eyeOffAxis){std::cerr<<"Eye clearcoat reference is not finite, bounded, or view dependent values="<<eyeFront<<','<<eyeOffAxis<<','<<eyeInvalid<<'\n';return 28;}
     const double eyeBase=PbrReferenceEvaluateLight(.42,0,.4,.9,.8,.92,.9,2),expectedNoCornea=eyeBase;if(std::abs(eyeNoCornea-expectedNoCornea)>1e-12||!std::isfinite(eyeBase*(1.0-corneaHalf))||eyeBase*(1.0-corneaHalf)>eyeBase){std::cerr<<"Eye base-layer energy conservation failed base="<<eyeBase<<" fallback="<<eyeNoCornea<<'\n';return 29;}
-    std::cout<<"sharp="<<sharp<<" rough="<<rough<<" attenuation4="<<PbrPointLightAttenuation(4,10)<<" aces4="<<PbrAcesToneMap(4)<<" srgb18="<<PbrLinearToSrgb(.18)<<" linearBlend50="<<linearHalf<<" hdrBlend="<<blendedHdr<<" environment="<<metalEnvironment.total<<" waterF0="<<waterF0<<" skin="<<skinFront<<" hair="<<hairSharp<<" corneaF0="<<corneaF0<<" eye="<<eyeFront<<'\n';return 0;
+    const auto objectFill=[](double normalView,double baseColor=.65,double roughness=.45,double metallic=0,double occlusion=1,double water=0,double terrain=0,double foliage=0,bool environmentEnabled=true,double radiance=.72,double intensity=.58,double peakRadiance=1.0){return ProductionObjectFillReference(normalView,baseColor,roughness,metallic,occlusion,water,terrain,foliage,environmentEnabled,radiance,intensity,peakRadiance);};
+    const double fillFront=objectFill(1),fillSide=objectFill(0),fillOccluded=objectFill(1,.65,.45,0,0),fillMetal=objectFill(1,.65,.45,1),fillWater=objectFill(1,.65,.45,0,1,1),fillTerrain=objectFill(1,.65,.45,0,1,0,1),fillFoliage=objectFill(1,.65,.45,0,1,0,0,1),fillEnvironmentNull=objectFill(1,.65,.45,0,1,0,0,0,false),fillDarkBase=objectFill(1,.2),fillBrightBase=objectFill(1,.8),fillSmoothGrazing=objectFill(.35,.65,.1),fillRoughGrazing=objectFill(.35,.65,.9),fillBeforeCap=BoundedObjectFillRadianceReference(.25,.8,.25),fillAfterCap=BoundedObjectFillRadianceReference(16,8,16),fillCoupledRed=BoundedObjectFillRadianceReference(.72,.58,1.0),fillCoupledBlue=BoundedObjectFillRadianceReference(1.0,.58,1.0);
+    if(!(fillFront>fillSide&&fillSide>0&&fillOccluded>0&&fillOccluded<fillFront&&fillDarkBase<fillBrightBase&&fillSmoothGrazing<fillRoughGrazing&&fillCoupledRed<fillCoupledBlue)||fillMetal!=0||fillWater!=0||fillTerrain!=0||fillFoliage!=0||fillEnvironmentNull!=0||std::abs(fillBeforeCap-.048)>1e-12||std::abs(fillAfterCap-.12)>1e-12||std::abs(fillCoupledBlue-.12)>1e-12){std::cerr<<"Production object fill CPU contract failed front="<<fillFront<<" side="<<fillSide<<" occluded="<<fillOccluded<<" metal="<<fillMetal<<" water="<<fillWater<<" terrain="<<fillTerrain<<" foliage="<<fillFoliage<<" null="<<fillEnvironmentNull<<" base="<<fillDarkBase<<'/'<<fillBrightBase<<" roughness="<<fillSmoothGrazing<<'/'<<fillRoughGrazing<<" bounded="<<fillBeforeCap<<'/'<<fillAfterCap<<" coupled="<<fillCoupledRed<<'/'<<fillCoupledBlue<<'\n';return 30;}if(!HasProductionObjectFillContract()){std::cerr<<"Production object fill shader source contract failed\n";return 31;}
+    std::cout<<"sharp="<<sharp<<" rough="<<rough<<" attenuation4="<<PbrPointLightAttenuation(4,10)<<" aces4="<<PbrAcesToneMap(4)<<" srgb18="<<PbrLinearToSrgb(.18)<<" linearBlend50="<<linearHalf<<" hdrBlend="<<blendedHdr<<" environment="<<metalEnvironment.total<<" waterF0="<<waterF0<<" skin="<<skinFront<<" hair="<<hairSharp<<" corneaF0="<<corneaF0<<" eye="<<eyeFront<<" objectFillFront="<<fillFront<<'\n';return 0;
 }

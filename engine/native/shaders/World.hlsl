@@ -1003,11 +1003,8 @@ float3 EvaluateEnvironmentDiffuse(float3 normal, float3 sunDirection)
         lighting = analyticLighting * environmentAnalyticIblWeights.x
                  + iblLighting * environmentAnalyticIblWeights.y;
     }
-    const float3 blendedEnvironment=max(float3(0.0,0.0,0.0),lighting)
+    return max(float3(0.0,0.0,0.0),lighting)
          * environmentDiffuseScaleIntensity.rgb * environmentDiffuseScaleIntensity.a;
-    // 中文：物件專用的 typed 解析底光位於 IBL 混合後，不修改天空、曝光或各相位的混合權重。
-    const float3 objectFill=environmentObjectFill.rgb*environmentObjectFill.a;
-    return blendedEnvironment+objectFill*step(0.5,environmentEnabled);
 }
 
 float3 BoxProjectedEnvironmentDirection(float3 worldPosition,float3 reflectionDirection)
@@ -1494,9 +1491,28 @@ float3 FresnelSchlickRoughness(float cosine, float3 reflectance, float roughness
     return reflectance + (grazing - reflectance) * pow(1.0 - saturate(cosine), 5.0);
 }
 
+float3 EvaluateProductionObjectFill(float3 normal,float3 viewDirection,float3 baseColor,
+                                    float3 diffuseWeight,float occlusion,
+                                    float waterMask,float terrainMask,float foliageMask)
+{
+    // 0.24 coupling 保留既有日間 AO=1 峰值級別；耦合的 0.12 峰值上限
+    // 等比縮放 RGB，阻止低 ambient 相位放大成近似自發光且不破壞夜色彩度。
+    // AO 保底只救回形體，仍保持遮蔽單調性。
+    const float3 authoredRadiance=max(float3(0.0,0.0,0.0),environmentObjectFill.rgb*environmentObjectFill.a);
+    const float authoredPeak=max(authoredRadiance.r,max(authoredRadiance.g,authoredRadiance.b));
+    const float coupledScale=min(0.24,0.12/max(authoredPeak,0.000001));
+    const float3 boundedRadiance=authoredRadiance*coupledScale;
+    const float viewShape=0.35+0.65*saturate(dot(normal,viewDirection));
+    const float aoVisibility=0.35+0.65*saturate(occlusion);
+    const float eligibility=(1.0-saturate(waterMask))*(1.0-saturate(terrainMask))
+                           *(1.0-saturate(foliageMask))*step(0.5,environmentEnabled);
+    return boundedRadiance*viewShape*aoVisibility*eligibility*diffuseWeight*baseColor;
+}
+
 float3 EvaluateEnvironmentLighting(float3 worldPosition,float3 normal, float3 viewDirection, float3 baseColor,
-                                   float roughness, float metallic, float occlusion,
-                                   float ambientIntensity, float3 sunDirection)
+                                    float roughness, float metallic, float occlusion,
+                                    float ambientIntensity, float3 sunDirection,
+                                    float waterMask,float terrainMask,float foliageMask)
 {
     const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
     const float3 fresnel = FresnelSchlickRoughness(saturate(dot(normal, viewDirection)), reflectance, roughness);
@@ -1510,8 +1526,12 @@ float3 EvaluateEnvironmentLighting(float3 worldPosition,float3 normal, float3 vi
               float2(saturate(dot(normal, viewDirection)), saturate(roughness)), 0.0)
         : float2(0.0,0.0);
     const float2 brdf=sampledBrdf.x+sampledBrdf.y>0.00001?sampledBrdf:analyticBrdf;
-    return (diffuseWeight * baseColor * skyDiffuse + skySpecular * (fresnel * brdf.x + brdf.y))
-         * clamp(ambientIntensity, 0.0, 2.0) * saturate(occlusion);
+    const float3 environment=(diffuseWeight*baseColor*skyDiffuse
+                            + skySpecular*(fresnel*brdf.x+brdf.y))
+                           * clamp(ambientIntensity,0.0,2.0)*saturate(occlusion);
+    const float3 objectFill=EvaluateProductionObjectFill(normal,viewDirection,baseColor,diffuseWeight,
+        occlusion,waterMask,terrainMask,foliageMask);
+    return environment+objectFill;
 }
 
 float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirection,
@@ -1634,9 +1654,10 @@ float3 EvaluateEyeEnvironment(float3 worldPosition,float3 baseNormal, float3 cor
                               float3 baseColor, float materialRoughness, float occlusion,
                               float ambientIntensity, float3 sunDirection)
 {
+    // 眼球仍取得同一 dielectric fill；後續 cornea Fresnel 會先分走 clearcoat 能量。
     const float3 baseLayer = EvaluateEnvironmentLighting(worldPosition,baseNormal, viewDirection, baseColor,
-                                                          materialRoughness, 0.0, occlusion,
-                                                          ambientIntensity, sunDirection);
+                                                           materialRoughness, 0.0, occlusion,
+                                                           ambientIntensity, sunDirection,0.0,0.0,0.0);
     const float fresnel = CorneaFresnel(dot(corneaNormal, viewDirection));
     const float3 reflectionDirection = reflect(-viewDirection, corneaNormal);
     const float3 clearcoat = EvaluateEnvironmentSpecular(worldPosition,reflectionDirection, sunDirection,
@@ -2988,7 +3009,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         ? EvaluateEyeEnvironment(input.worldPosition,normal, geometricNormal, viewDirection, baseColor, roughness,
                                  indirectOcclusion, lightDirectionAmbient.w, skyLightDirection)
         : EvaluateEnvironmentLighting(input.worldPosition,normal, viewDirection, baseColor, roughness, metallic,
-                                      indirectOcclusion, lightDirectionAmbient.w, skyLightDirection);
+                                      indirectOcclusion, lightDirectionAmbient.w, skyLightDirection,
+                                      waterMaterialMask,terrainMask,foliageMask);
     const float3 directionalLighting = eyeMask > 0.5
         ? EvaluateEyeLight(normal, geometricNormal, viewDirection, lightDirection,
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness)
