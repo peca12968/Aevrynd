@@ -28,10 +28,21 @@ constexpr std::array<std::string_view, 4> ShowcaseProductionBarkMaterialIds{
     "tree_small_02:branches", "tree_small_02:trunk"};
 constexpr std::uint64_t ShowcaseProductionBarkResponseFingerprint =
     0x4241524b5f523530ull;
+constexpr std::array<std::string_view, 2> ShowcaseProductionWeatheredPropMaterialIds{
+    "dead_tree_trunk_02:slot-0", "boulder_01:slot-0"};
+constexpr std::uint64_t ShowcaseProductionWeatheredPropResponseFingerprint =
+    0x5745415448523534ull;
 
 bool IsShowcaseProductionBarkMaterial3D(std::string_view materialId) noexcept {
   return std::ranges::find(ShowcaseProductionBarkMaterialIds, materialId) !=
       ShowcaseProductionBarkMaterialIds.end();
+}
+
+bool IsShowcaseProductionWeatheredPropMaterial3D(
+    std::string_view materialId) noexcept {
+  return std::ranges::find(ShowcaseProductionWeatheredPropMaterialIds,
+                           materialId) !=
+      ShowcaseProductionWeatheredPropMaterialIds.end();
 }
 } // namespace
 
@@ -70,6 +81,42 @@ bool ApplyShowcaseProductionBarkResponse3D(
                                     : Aevrynd::Color{1.f, .997f, .985f, 1.f};
   definition.material.surface.roughness = trunk ? .68f : .74f;
   definition.material.normalScale = trunk ? 1.12f : 1.06f;
+  return true;
+}
+
+bool ApplyShowcaseProductionWeatheredPropResponse3D(
+    std::string_view materialId,
+    Aevrynd::MaterialAssetDefinition3D &definition) noexcept {
+  if (!IsShowcaseProductionWeatheredPropMaterial3D(materialId))
+    return false;
+  const auto finite = [](float value) { return std::isfinite(value); };
+  const auto &material = definition.material;
+  if (definition.name != materialId ||
+      definition.textures.baseColorPath.empty() ||
+      definition.textures.roughnessPath.empty() ||
+      definition.textures.normalPath.empty() || !material.useUv ||
+      material.materialClass != Aevrynd::MaterialClass3D::Surface ||
+      material.shadingModel != Aevrynd::CharacterShadingModel3D::Default ||
+      material.alphaMode != Aevrynd::MaterialAlphaMode3D::Opaque ||
+      definition.textures.alphaMode != Aevrynd::MaterialAlphaMode3D::Opaque ||
+      material.doubleSided ||
+      definition.textures.surfaceEncoding !=
+          Aevrynd::MaterialSurfaceMapEncoding3D::PackedOrm ||
+      !finite(material.tint.r) || !finite(material.tint.g) ||
+      !finite(material.tint.b) || !finite(material.tint.a) ||
+      !finite(material.surface.roughness) ||
+      !finite(material.surface.metallic) ||
+      !finite(material.surface.emissive) ||
+      !finite(material.surface.occlusion) || !finite(material.normalScale) ||
+      !finite(material.textureScale) || !finite(material.alphaCutoff))
+    return false;
+
+  const bool deadwood = materialId == "dead_tree_trunk_02:slot-0";
+  definition.material.tint =
+      deadwood ? Aevrynd::Color{.58f, .47f, .34f, 1.f}
+               : Aevrynd::Color{.62f, .66f, .58f, 1.f};
+  definition.material.surface.roughness = deadwood ? .82f : .86f;
+  definition.material.normalScale = deadwood ? 1.15f : 1.20f;
   return true;
 }
 
@@ -1282,6 +1329,10 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     if (IsShowcaseProductionBarkMaterial3D(material.id) &&
         !ApplyShowcaseProductionBarkResponse3D(material.id, definition))
       return false;
+    if (IsShowcaseProductionWeatheredPropMaterial3D(material.id) &&
+        !ApplyShowcaseProductionWeatheredPropResponse3D(material.id,
+                                                        definition))
+      return false;
     materialDefinitions.push_back(std::move(definition));
   }
   if (!state->materials.Initialize(engine, state->manifest.AssetRoot()) ||
@@ -1306,6 +1357,10 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     if (IsShowcaseProductionBarkMaterial3D(material->id) &&
         !ApplyShowcaseProductionBarkResponse3D(material->id,
                                                 definition.material))
+      return false;
+    if (IsShowcaseProductionWeatheredPropMaterial3D(material->id) &&
+        !ApplyShowcaseProductionWeatheredPropResponse3D(material->id,
+                                                        definition.material))
       return false;
     definition.generateLods = false;
     definition.importedLodCount = 2;
@@ -1405,6 +1460,10 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   receipt.barkMaterialResponses = ShowcaseProductionBarkMaterialIds.size();
   receipt.barkMaterialResponseFingerprint =
       ShowcaseProductionBarkResponseFingerprint;
+  receipt.weatheredPropMaterialResponses =
+      ShowcaseProductionWeatheredPropMaterialIds.size();
+  receipt.weatheredPropMaterialResponseFingerprint =
+      ShowcaseProductionWeatheredPropResponseFingerprint;
   receipt.uploadComplete = true;
   receipt.collisionStableIdsUnchanged =
       receipt.descriptorFingerprint == DescriptorFingerprint(descriptors);

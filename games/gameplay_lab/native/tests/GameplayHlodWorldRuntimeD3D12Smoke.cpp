@@ -245,9 +245,13 @@ public:
         assets_.ProductionMaterialById("island_tree_01:leaves");
     const auto *deadTree =
         assets_.ProductionMaterialById("dead_tree_trunk_02:slot-0");
+    const auto *boulder =
+        assets_.ProductionMaterialById("boulder_01:slot-0");
     if (load_.barkMaterialResponses != 4 ||
-        !load_.barkMaterialResponseFingerprint || !islandTrunk ||
-        !smallBranches || !islandLeaves || !deadTree ||
+        !load_.barkMaterialResponseFingerprint ||
+        load_.weatheredPropMaterialResponses != 2 ||
+        !load_.weatheredPropMaterialResponseFingerprint || !islandTrunk ||
+        !smallBranches || !islandLeaves || !deadTree || !boulder ||
         !close(islandTrunk->tint.r, 1.f) ||
         !close(islandTrunk->tint.g, .995f) ||
         !close(islandTrunk->tint.b, .98f) ||
@@ -263,9 +267,16 @@ public:
         !close(islandLeaves->tint.g, 1.f) ||
         !close(islandLeaves->tint.b, 1.f) ||
         !close(islandLeaves->normalScale, 1.f) ||
-        !close(deadTree->tint.r, 1.f) || !close(deadTree->tint.g, 1.f) ||
-        !close(deadTree->tint.b, 1.f) || !close(deadTree->normalScale, 1.f)) {
-      Fail("Gameplay production bark response contract failed", engine);
+        !close(deadTree->tint.r, .58f) || !close(deadTree->tint.g, .47f) ||
+        !close(deadTree->tint.b, .34f) ||
+        !close(deadTree->surface.roughness, .82f) ||
+        !close(deadTree->normalScale, 1.15f) ||
+        !close(boulder->tint.r, .62f) || !close(boulder->tint.g, .66f) ||
+        !close(boulder->tint.b, .58f) ||
+        !close(boulder->surface.roughness, .86f) ||
+        !close(boulder->normalScale, 1.20f)) {
+      Fail("Gameplay production bark/weathered-prop response contract failed",
+           engine);
       return;
     }
     if (!runtime_.Initialize(engine, assets_, environment_.Descriptors(),

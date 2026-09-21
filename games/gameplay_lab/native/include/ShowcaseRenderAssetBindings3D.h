@@ -34,6 +34,13 @@ namespace GameplayLab {
     std::string_view materialId,
     Aevrynd::MaterialAssetDefinition3D &definition) noexcept;
 
+// Applies a forest-integrated response only to the authored deadwood and
+// boulder slots. Other ids and malformed definitions fail closed before any
+// field is changed.
+[[nodiscard]] bool ApplyShowcaseProductionWeatheredPropResponse3D(
+    std::string_view materialId,
+    Aevrynd::MaterialAssetDefinition3D &definition) noexcept;
+
 enum class ShowcaseCookedResourceKind3D : std::uint8_t {
   Mesh,
   Material,
@@ -169,6 +176,8 @@ struct ShowcaseProductionRenderReceipt3D {
   std::size_t iblFiles{};
   std::size_t barkMaterialResponses{};
   std::uint64_t barkMaterialResponseFingerprint{};
+  std::size_t weatheredPropMaterialResponses{};
+  std::uint64_t weatheredPropMaterialResponseFingerprint{};
   bool uploadComplete{};
   bool collisionStableIdsUnchanged{};
   bool photorealActive{};

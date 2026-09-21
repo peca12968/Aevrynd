@@ -171,6 +171,90 @@ bool VerifyProductionBarkResponse() {
   return !ApplyShowcaseProductionBarkResponse3D(deadTree.name, deadTree);
 }
 
+bool VerifyProductionWeatheredPropResponse() {
+  constexpr float epsilon = 0.0001f;
+  const auto close = [](float left, float right) {
+    return std::abs(left - right) <= epsilon;
+  };
+  const auto makeDefinition = [](std::string name) {
+    Aevrynd::MaterialAssetDefinition3D definition{};
+    definition.name = std::move(name);
+    definition.textures.baseColorPath = "prop-base.dds";
+    definition.textures.roughnessPath = "prop-arm.dds";
+    definition.textures.normalPath = "prop-normal.dds";
+    definition.textures.alphaMode = Aevrynd::MaterialAlphaMode3D::Opaque;
+    definition.textures.surfaceEncoding =
+        Aevrynd::MaterialSurfaceMapEncoding3D::PackedOrm;
+    definition.material.useUv = true;
+    definition.material.materialClass = Aevrynd::MaterialClass3D::Surface;
+    definition.material.shadingModel =
+        Aevrynd::CharacterShadingModel3D::Default;
+    definition.material.alphaMode = Aevrynd::MaterialAlphaMode3D::Opaque;
+    return definition;
+  };
+  const auto unchanged = [](const Aevrynd::MaterialAssetDefinition3D &left,
+                            const Aevrynd::MaterialAssetDefinition3D &right) {
+    return left.material.tint.r == right.material.tint.r &&
+        left.material.tint.g == right.material.tint.g &&
+        left.material.tint.b == right.material.tint.b &&
+        left.material.tint.a == right.material.tint.a &&
+        left.material.surface.roughness == right.material.surface.roughness &&
+        left.material.surface.metallic == right.material.surface.metallic &&
+        left.material.surface.emissive == right.material.surface.emissive &&
+        left.material.surface.occlusion == right.material.surface.occlusion &&
+        left.material.normalScale == right.material.normalScale &&
+        left.material.useUv == right.material.useUv &&
+        left.material.materialClass == right.material.materialClass &&
+        left.material.alphaMode == right.material.alphaMode;
+  };
+
+  auto deadwood = makeDefinition("dead_tree_trunk_02:slot-0");
+  const auto deadwoodSurfaceBefore = deadwood.material.surface;
+  if (!ApplyShowcaseProductionWeatheredPropResponse3D(deadwood.name, deadwood) ||
+      !close(deadwood.material.tint.r, .58f) ||
+      !close(deadwood.material.tint.g, .47f) ||
+      !close(deadwood.material.tint.b, .34f) ||
+      !close(deadwood.material.surface.roughness, .82f) ||
+      !close(deadwood.material.normalScale, 1.15f) ||
+      deadwood.material.surface.metallic != deadwoodSurfaceBefore.metallic ||
+      deadwood.material.surface.emissive != deadwoodSurfaceBefore.emissive ||
+      deadwood.material.surface.occlusion != deadwoodSurfaceBefore.occlusion)
+    return false;
+
+  auto boulder = makeDefinition("boulder_01:slot-0");
+  if (!ApplyShowcaseProductionWeatheredPropResponse3D(boulder.name, boulder) ||
+      !close(boulder.material.tint.r, .62f) ||
+      !close(boulder.material.tint.g, .66f) ||
+      !close(boulder.material.tint.b, .58f) ||
+      !close(boulder.material.surface.roughness, .86f) ||
+      !close(boulder.material.normalScale, 1.20f))
+    return false;
+
+  for (const auto id : {"island_tree_01:trunk", "island_tree_01:leaves",
+                        "coastal_cliff_01:slot-0", "Bricks100:slot-0",
+                        "unknown:slot-0"}) {
+    auto excluded = makeDefinition(id);
+    const auto before = excluded;
+    if (ApplyShowcaseProductionWeatheredPropResponse3D(id, excluded) ||
+        !unchanged(excluded, before))
+      return false;
+  }
+
+  auto invalid = makeDefinition("dead_tree_trunk_02:slot-0");
+  invalid.material.useUv = false;
+  const auto invalidBefore = invalid;
+  if (ApplyShowcaseProductionWeatheredPropResponse3D(invalid.name, invalid) ||
+      !unchanged(invalid, invalidBefore))
+    return false;
+  invalid = makeDefinition("boulder_01:slot-0");
+  invalid.material.normalScale = std::numeric_limits<float>::infinity();
+  if (ApplyShowcaseProductionWeatheredPropResponse3D(invalid.name, invalid))
+    return false;
+  invalid = makeDefinition("wrong-name");
+  return !ApplyShowcaseProductionWeatheredPropResponse3D(
+      "dead_tree_trunk_02:slot-0", invalid);
+}
+
 std::uint64_t MeshIdentity(const Aevrynd::Mesh3D &mesh) {
   std::uint64_t hash = 1469598103934665603ull;
   const auto add = [&hash](const void *data, std::size_t bytes) {
@@ -438,6 +522,8 @@ int main(int argc, char **argv) {
     return 12;
   if (!VerifyProductionBarkResponse())
     return 15;
+  if (!VerifyProductionWeatheredPropResponse())
+    return 16;
   if (!VerifyHlodDescriptorAndAggregatePolicy())
     return 14;
   GameplayShowcaseEnvironment3D world;
