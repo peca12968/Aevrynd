@@ -53,8 +53,29 @@ int main(){
  for(int z=-64;z<=64;++z)for(int x=-64;x<=64;++x){const Vec2 p{x*.173f,z*.151f};const float shallow=ProductionFoam(p,1.25f,1.f);gaps+=shallow<.001f;coveredFoam+=shallow>.15f;float previous=shallow;for(float shore:{.8f,.6f,.4f,.2f,0.f}){const float current=ProductionFoam(p,1.25f,shore);monotoneError=std::max(monotoneError,current-previous);previous=current;}}
  std::cout<<"foamGaps="<<gaps<<" foamCovered="<<coveredFoam<<" monotoneError="<<monotoneError<<'\n';
  if(gaps<256||coveredFoam<256||monotoneError>.00001f)return 7;
+ // A broken shoreline must not turn into metre-scale, regularly spaced white
+ // slabs in the fixed God camera.  Sample multiple deterministic shore-aligned
+ // transects at 5 cm spacing and bound the longest strongly covered island.
+ float maximumFoamIslandMetres=0.f;
+ for(int transect=-12;transect<=12;++transect){
+  unsigned run=0;
+  for(int sampleIndex=0;sampleIndex<=800;++sampleIndex){
+   const float along=-20.f+float(sampleIndex)*.05f;
+   const Vec2 point{along+float(transect)*.173f,
+                    along*.31f-float(transect)*.127f};
+   if(ProductionFoam(point,1.25f,1.f)>.42f)++run;
+   else{maximumFoamIslandMetres=std::max(maximumFoamIslandMetres,float(run)*.05f);run=0;}
+  }
+  maximumFoamIslandMetres=std::max(maximumFoamIslandMetres,float(run)*.05f);
+ }
+ std::cout<<"maximumFoamIslandMetres="<<maximumFoamIslandMetres<<'\n';
+ if(maximumFoamIslandMetres>1.25f)return 8;
+ float maximumTemporalCoverageDelta=0.f;
+ for(int z=-32;z<=32;++z)for(int x=-32;x<=32;++x){const Vec2 p{x*.137f,z*.149f};const float reference=WaterFoamCoverage3D(p,0.f);for(float time:{.016f,1.25f,17.f,240.f})maximumTemporalCoverageDelta=std::max(maximumTemporalCoverageDelta,std::abs(reference-WaterFoamCoverage3D(p,time)));}
+ std::cout<<"maximumTemporalCoverageDelta="<<maximumTemporalCoverageDelta<<'\n';
+ if(maximumTemporalCoverageDelta>.000001f)return 9;
  float seamDelta=0;
- for(int layer=0;layer<2;++layer)for(int edge=-16;edge<=16;++edge)for(int along=-8;along<=8;++along){const float a=layer?.384615f:.8f,b=layer?.923077f:.6f,s=layer?2.03f:1.17f,ox=layer?17.3f:0,oy=layer?9.7f:0;const float qx=(edge-ox)/s,qz=(along*.37f-oy)/s,det=a*a+b*b;Vec2 p{(a*qx+b*qz)/det,(-b*qx+a*qz)/det};const Vec2 e{a*.00001f,-b*.00001f};seamDelta=std::max(seamDelta,std::abs(WaterFoamCoverage3D(p+e,0)-WaterFoamCoverage3D(p-e,0)));}
+ for(int layer=0;layer<2;++layer)for(int edge=-16;edge<=16;++edge)for(int along=-8;along<=8;++along){const float a=layer?.384615f:.8f,b=layer?.923077f:.6f,s=layer?15.73f:9.17f,ox=layer?17.3f:0,oy=layer?9.7f:0;const float qx=(edge-ox)/s,qz=(along*.37f-oy)/s,det=a*a+b*b;Vec2 p{(a*qx+b*qz)/det,(-b*qx+a*qz)/det};const Vec2 e{a*.00001f,-b*.00001f};seamDelta=std::max(seamDelta,std::abs(WaterFoamCoverage3D(p+e,0)-WaterFoamCoverage3D(p-e,0)));}
  std::cout<<"latticeBoundaryDelta="<<seamDelta<<'\n';if(seamDelta>.003f)return 6;
  return NoiseGate()?0:3;
 }

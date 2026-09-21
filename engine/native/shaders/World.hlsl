@@ -1131,9 +1131,12 @@ float TerrainWetShoreBlend(float authoredWeight, float breakupSignal)
 
 float WaterFoamCoverage3D(float2 worldXZ, float time)
 {
-    // 固定兩次連續值雜訊，採不同旋轉與非整比尺度，避免單格網沿河面重複。
-    const float2 first = float2(worldXZ.x * 0.8 - worldXZ.y * 0.6, worldXZ.x * 0.6 + worldXZ.y * 0.8) * 1.17 + float2(time * 0.07, -time * 0.04);
-    const float2 second = float2(worldXZ.x * 0.384615 - worldXZ.y * 0.923077, worldXZ.x * 0.923077 + worldXZ.y * 0.384615) * 2.03 + float2(17.3 - time * 0.031, 9.7 + time * 0.053);
+    // 固定兩次連續值雜訊，採不同旋轉與非整比尺度。舊 1.17/2.03
+    // cycles/m 在高空視角會連成數公尺長的規則亮塊，像沿岸鋪設的石板；
+    // 提高世界空間頻率只縮小泡沫島。岸線覆蓋固定於世界座標，避免遠景
+    // 高對比邊界因時間位移產生單像素閃爍；水面法線與反射動畫仍由其他項保留。
+    const float2 first = float2(worldXZ.x * 0.8 - worldXZ.y * 0.6, worldXZ.x * 0.6 + worldXZ.y * 0.8) * 9.17;
+    const float2 second = float2(worldXZ.x * 0.384615 - worldXZ.y * 0.923077, worldXZ.x * 0.923077 + worldXZ.y * 0.384615) * 15.73 + float2(17.3, 9.7);
     return smoothstep(0.30, 0.72, CloudNoise(first) * 0.58 + CloudNoise(second) * 0.42);
 }
 
