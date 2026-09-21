@@ -28,6 +28,36 @@ float EvaluateLunarSurface(float3 ray,float3 moonDirection,float angularRadius)
     return saturate((0.96-maria-crater*0.16+highland)*limb);
 }
 
+float StellarHash(float2 value)
+{
+    value=frac(value*float2(0.1031,0.1030));
+    value+=dot(value,value.yx+33.33);
+    return frac((value.x+value.y)*value.x);
+}
+
+float3 EvaluateStellarRadiance(float3 ray)
+{
+    // 由世界方向建立上半球八面體格；不使用像素座標或時間，因此相機平移、
+    // TAA 與重拍都看見同一組星點。每格最多一顆，低密度避免夜空變成白噪聲。
+    const float octahedralDenominator=max(abs(ray.x)+abs(ray.y)+abs(ray.z),1e-5);
+    const float2 stellarUv=ray.xz/octahedralDenominator*0.5+0.5;
+    const float2 grid=stellarUv*192.0;
+    const float2 cell=floor(grid);
+    const float2 local=frac(grid)-0.5;
+    const float existence=step(0.982,StellarHash(cell+float2(7.0,19.0)));
+    const float2 offset=float2(StellarHash(cell+float2(31.0,11.0)),StellarHash(cell+float2(17.0,47.0)))*0.5-0.25;
+    const float seed=StellarHash(cell+float2(59.0,23.0));
+    const float radius=lerp(0.055,0.13,seed*seed*seed);
+    const float radialDistance=length(local-offset);
+    const float antialiasWidth=max(fwidth(radialDistance),0.018);
+    const float star=existence*smoothstep(radius+antialiasWidth,radius-antialiasWidth,radialDistance);
+    const float horizonVisibility=smoothstep(0.035,0.22,ray.y);
+    const float brightness=lerp(0.025,0.12,pow(seed,6.0));
+    const float temperature=StellarHash(cell+float2(83.0,5.0));
+    const float3 color=lerp(float3(0.72,0.82,1.0),float3(1.0,0.86,0.70),temperature);
+    return color*(star*horizonVisibility*brightness);
+}
+
 float4 BaseSkyPixelMain(SkyVertexOutput input) : SV_TARGET {
     const row_major float4x4 inverseViewProjection=float4x4(sceneValues[16],sceneValues[17],sceneValues[18],sceneValues[19]);
     const bool orthographic=dot(abs(sceneValues[29].xyz),1.0.xxx)<1e-5&&abs(sceneValues[29].w-1.0)<1e-5;
@@ -43,6 +73,8 @@ float4 BaseSkyPixelMain(SkyVertexOutput input) : SV_TARGET {
     precise const float3 sunDirection=AevryndDeterministicNormalize(-sceneValues[4].xyz);
     float sunMask=smoothstep(cos(sceneValues[41].a*1.8),cos(sceneValues[41].a),dot(ray,sunDirection));
     const float lunarDetailStrength=saturate(sceneValues[38].z);
+    const float stellarDetailStrength=saturate(sceneValues[38].w);
+    sky+=stellarDetailStrength>0.0?EvaluateStellarRadiance(ray)*stellarDetailStrength:0.0;
     const float lunarSurface=lunarDetailStrength>0.0?EvaluateLunarSurface(ray,sunDirection,sceneValues[41].a):1.0;
     sky+=sceneValues[43].rgb*sceneValues[43].a*sunMask*lerp(1.0,lunarSurface,lunarDetailStrength);
 #if defined(AEVRYND_BASE_SKY_LEGACY_BLUE)

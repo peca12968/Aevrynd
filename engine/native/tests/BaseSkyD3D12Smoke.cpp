@@ -52,11 +52,12 @@ SkyMetrics MeasureSky(const Capture& capture){
     return metrics;
 }
 
-LunarMetrics MeasureLunarSurface(const Capture& capture){
-    float maximumLuma{};unsigned peakX{},peakY{};
+LunarMetrics MeasureLunarSurface(const Capture& capture,const Capture& flatCapture){
+    float maximumDelta{};unsigned peakX{},peakY{};
     for(unsigned y=0;y<capture.hdr.height/2;++y)for(unsigned x=0;x<capture.hdr.width;++x){
-        const float luma=Luma(Rgb(capture.hdr.pixels[std::size_t(y)*capture.hdr.width+x]));
-        if(luma>maximumLuma){maximumLuma=luma;peakX=x;peakY=y;}
+        const auto index=std::size_t(y)*capture.hdr.width+x;
+        const float delta=std::abs(Luma(Rgb(capture.hdr.pixels[index]))-Luma(Rgb(flatCapture.hdr.pixels[index])));
+        if(delta>maximumDelta){maximumDelta=delta;peakX=x;peakY=y;}
     }
     LunarMetrics metrics{};
     constexpr int CoreRadius=6;
@@ -76,7 +77,7 @@ PhaseRadianceProfile3D Profile(unsigned phase){
     PhaseRadianceProfile3D result{};
     if(phase==0){result.skyZenith={.12f,.31f,.72f};result.skyHorizon={.88f,.48f,.18f};result.groundBounce={.08f,.065f,.05f};result.skyIntensity=1.15f;result.sunDisk={1.f,.82f,.45f};result.sunDiskIntensity=7.f;result.phaseFingerprint=0x444159u;}
     else if(phase==1){result.skyZenith={.045f,.075f,.18f};result.skyHorizon={.42f,.16f,.07f};result.groundBounce={.035f,.025f,.03f};result.skyIntensity=.72f;result.sunDisk={1.f,.28f,.08f};result.sunDiskIntensity=2.5f;result.phaseFingerprint=0x4455534bu;}
-    else{result.skyZenith={.008f,.014f,.035f};result.skyHorizon={.025f,.035f,.075f};result.groundBounce={.006f,.009f,.018f};result.skyIntensity=.42f;result.sunDisk={.12f,.18f,.35f};result.sunDiskIntensity=.08f;result.phaseFingerprint=0x4e49474854ull;result.lunarDetailStrength=1.f;}
+    else{result.skyZenith={.008f,.014f,.035f};result.skyHorizon={.025f,.035f,.075f};result.groundBounce={.006f,.009f,.018f};result.skyIntensity=.42f;result.sunDisk={.12f,.18f,.35f};result.sunDiskIntensity=.08f;result.phaseFingerprint=0x4e49474854ull;result.lunarDetailStrength=1.f;result.stellarDetailStrength=1.f;}
     result.horizonExponent=4.f;result.sunAngularRadius=.035f;return result;
 }
 
@@ -109,13 +110,13 @@ int main(){
         std::array<MeshHandle3D,3> cards{};for(std::size_t index=0;index<cards.size();++index){const auto source=Card(cardColors[index]);cards[index]=renderer.CreateMesh(source.vertices,source.indices);}
         const auto skyProxySource=SkyProxy();const auto skyProxy=renderer.CreateMesh(skyProxySource.vertices,skyProxySource.indices);
         if(!box||!skyProxy||std::ranges::any_of(cards,[](MeshHandle3D handle){return!handle;}))result=2;
-        if(!result){DrawList validation;auto invalid=Profile(2);invalid.lunarDetailStrength=std::numeric_limits<float>::quiet_NaN();if(validation.SetPhaseRadianceProfile(invalid))result=21;auto clamped=Profile(2);clamped.lunarDetailStrength=2.f;if(!validation.SetPhaseRadianceProfile(clamped)||validation.PhaseRadianceProfile().lunarDetailStrength!=1.f)result=21;}
+        if(!result){DrawList validation;auto invalid=Profile(2);invalid.lunarDetailStrength=std::numeric_limits<float>::quiet_NaN();if(validation.SetPhaseRadianceProfile(invalid))result=21;invalid=Profile(2);invalid.stellarDetailStrength=std::numeric_limits<float>::quiet_NaN();if(validation.SetPhaseRadianceProfile(invalid))result=21;auto clamped=Profile(2);clamped.lunarDetailStrength=2.f;clamped.stellarDetailStrength=2.f;if(!validation.SetPhaseRadianceProfile(clamped)||validation.PhaseRadianceProfile().lunarDetailStrength!=1.f||validation.PhaseRadianceProfile().stellarDetailStrength!=1.f)result=21;}
 
         const RenderObjectIdentity3D boxIdentity{{0x534b594f43434c55ull,0x53494f4e424f5831ull},1};
-        auto capture=[&](unsigned phase,bool orthographic,bool msaa,D3D12RendererTestAccess3D::BaseSkyMutation mutation,bool semantics,bool lunarDetails=true)->std::optional<Capture>{
+        auto capture=[&](unsigned phase,bool orthographic,bool msaa,D3D12RendererTestAccess3D::BaseSkyMutation mutation,bool semantics,bool lunarDetails=true,bool stellarDetails=true)->std::optional<Capture>{
             renderer.SetQualitySettings({false,false,msaa,false});if(!D3D12RendererTestAccess3D::SetBaseSkyMutation(renderer,mutation))return{};
             Camera3D camera{{0,0,-5},{0,0,0},{0,1,0},{}};if(orthographic){camera.projection.mode=ProjectionMode::Orthographic;camera.projection.orthographicHeight=5.f;}
-            DrawList draw;draw.SetViewProjection(CreateViewProjectionMatrix(camera,float(Width)/Height));draw.SetBackfaceCulling(false);Atmosphere3D atmosphere{};atmosphere.cameraPosition=camera.position;draw.SetAtmosphere(atmosphere);draw.SetDirectionalLight({{0,-.08f,-1.f},0.f,{1,1,1,1},0.f});auto profile=Profile(phase);if(!lunarDetails)profile.lunarDetailStrength=0.f;if(!draw.SetPhaseRadianceProfile(profile))return{};
+            DrawList draw;draw.SetViewProjection(CreateViewProjectionMatrix(camera,float(Width)/Height));draw.SetBackfaceCulling(false);Atmosphere3D atmosphere{};atmosphere.cameraPosition=camera.position;draw.SetAtmosphere(atmosphere);draw.SetDirectionalLight({{0,-.08f,-1.f},0.f,{1,1,1,1},0.f});auto profile=Profile(phase);if(!lunarDetails)profile.lunarDetailStrength=0.f;if(!stellarDetails)profile.stellarDetailStrength=0.f;if(!draw.SetPhaseRadianceProfile(profile))return{};
             const Vec3 fixtureScale=semantics?Vec3{1.25f,1.25f,.6f}:Vec3{.05f,.05f,.05f};
             draw.MeshInstance(box,CreateTransformMatrix({0,-.45f,1.5f},{},fixtureScale),{.18f,.21f,.24f,1},{1,0,1,1},MeshRenderLayer3D::Opaque,{},1.f,false,MaterialClass3D::Surface,std::numeric_limits<float>::quiet_NaN(),false,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,1.f,MaterialAlphaMode3D::Opaque,.5f,false,boxIdentity);
             const ObjectIdCaptureRequestMetadata3D metadata{0x7000u+phase,0x7100u+unsigned(orthographic),0x7200u+unsigned(msaa)};if(semantics&&(!renderer.RequestObjectIdReadback3D(metadata)||!renderer.RequestDepthReadback3D(metadata)))return{};
@@ -132,12 +133,24 @@ int main(){
         if(!result){
             if(!lunarCapture||!flatLunarCapture){result=19;}
             else{
-                const LunarMetrics lunar=MeasureLunarSurface(*lunarCapture);
+                const LunarMetrics lunar=MeasureLunarSurface(*lunarCapture,*flatLunarCapture);
                 float maximumDetailDelta{};double detailDeltaSum{};std::size_t changedPixels{};
                 for(unsigned y=0;y<lunarCapture->hdr.height/2;++y)for(unsigned x=0;x<lunarCapture->hdr.width;++x){const auto index=std::size_t(y)*lunarCapture->hdr.width+x;const float delta=std::abs(Luma(Rgb(lunarCapture->hdr.pixels[index]))-Luma(Rgb(flatLunarCapture->hdr.pixels[index])));maximumDetailDelta=(std::max)(maximumDetailDelta,delta);detailDeltaSum+=delta;if(delta>1e-4f)++changedPixels;}
                 const float coreContrast=lunar.coreMaximumLuma-lunar.coreMinimumLuma;
                 std::cout<<"lunar corePixels="<<lunar.corePixels<<" min="<<lunar.coreMinimumLuma<<" max="<<lunar.coreMaximumLuma<<" contrast="<<coreContrast<<" maxDetailDelta="<<maximumDetailDelta<<" changedPixels="<<changedPixels<<" deltaSum="<<detailDeltaSum<<'\n';
                 if(lunar.corePixels<20||maximumDetailDelta<.003f||changedPixels<20||changedPixels>1200||detailDeltaSum<.08||detailDeltaSum>8.0)result=19;
+            }
+        }
+
+        const auto stellarCapture=!result?capture(2,false,false,D3D12RendererTestAccess3D::BaseSkyMutation::Production,false,true,true):std::optional<Capture>{};
+        const auto emptySkyCapture=!result?capture(2,false,false,D3D12RendererTestAccess3D::BaseSkyMutation::Production,false,true,false):std::optional<Capture>{};
+        if(!result){
+            if(!stellarCapture||!emptySkyCapture)result=22;
+            else{
+                float maximumStellarDelta{};double stellarDeltaSum{};std::size_t stellarPixels{};
+                for(unsigned y=0;y<stellarCapture->hdr.height/2;++y)for(unsigned x=0;x<stellarCapture->hdr.width;++x){const auto index=std::size_t(y)*stellarCapture->hdr.width+x;const float delta=std::abs(Luma(Rgb(stellarCapture->hdr.pixels[index]))-Luma(Rgb(emptySkyCapture->hdr.pixels[index])));maximumStellarDelta=(std::max)(maximumStellarDelta,delta);stellarDeltaSum+=delta;if(delta>1e-4f)++stellarPixels;}
+                std::cout<<"stellar maxDelta="<<maximumStellarDelta<<" changedPixels="<<stellarPixels<<" deltaSum="<<stellarDeltaSum<<'\n';
+                if(maximumStellarDelta<.0015f||stellarPixels<16||stellarPixels>1600||stellarDeltaSum<.04||stellarDeltaSum>12.0)result=22;
             }
         }
 

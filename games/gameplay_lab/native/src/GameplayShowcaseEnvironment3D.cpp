@@ -583,7 +583,7 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   Aevrynd::PhaseRadianceProfile3D radiance{};
   if(profile==ShowcaseLightingProfile3D::Day)radiance={{.08f,.20f,.46f},.88f,{.28f,.46f,.68f},2.6f,{.13f,.12f,.095f},.00935f,{.94f,.96f,.93f},.68f,{1.f,.88f,.68f},9.f,0x4441595f534b5932ull};
   else if(profile==ShowcaseLightingProfile3D::Dusk)radiance={{.045f,.055f,.09f},.72f,{.44f,.25f,.16f},2.2f,{.08f,.045f,.035f},.00935f,{1.f,.82f,.68f},.46f,{1.f,.48f,.22f},7.f,0x4455534b534b5932ull};
-  else {radiance={{.016f,.030f,.066f},.28f,{.052f,.070f,.110f},1.8f,{.012f,.018f,.028f},.00935f,{.72f,.78f,1.f},.28f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};radiance.lunarDetailStrength=1.f;}
+  else {radiance={{.016f,.030f,.066f},.28f,{.052f,.070f,.110f},1.8f,{.012f,.018f,.028f},.00935f,{.72f,.78f,1.f},.28f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};radiance.lunarDetailStrength=1.f;radiance.stellarDetailStrength=1.f;}
   draw.SetPhaseRadianceProfile(radiance);
   // 固定日間 HDRI 只提供穩定的高頻環境細節；黃昏與夜間提高物理天空比例，避免把日間色彩當作地圖染色。
   Aevrynd::EnvironmentLightingBlendSettings3D environmentBlend{};

@@ -76,7 +76,9 @@ bool ValidateLightingRoutes(
         observed[index].radiance.analyticDiffuseIntensity !=
             expected[index].radiance.analyticDiffuseIntensity ||
         observed[index].radiance.lunarDetailStrength !=
-            expected[index].radiance.lunarDetailStrength)
+            expected[index].radiance.lunarDetailStrength ||
+        observed[index].radiance.stellarDetailStrength !=
+            expected[index].radiance.stellarDetailStrength)
       return false;
   }
   return true;
@@ -2042,6 +2044,9 @@ int main() {
       dayRadiance.lunarDetailStrength != 0.f ||
       duskRadiance.lunarDetailStrength != 0.f ||
       nightRadiance.lunarDetailStrength != 1.f ||
+      dayRadiance.stellarDetailStrength != 0.f ||
+      duskRadiance.stellarDetailStrength != 0.f ||
+      nightRadiance.stellarDetailStrength != 1.f ||
       !(dayRadiance.horizonExponent > duskRadiance.horizonExponent &&
         duskRadiance.horizonExponent > nightRadiance.horizonExponent) ||
       dayEnvironmentBlend.iblDiffuseWeight <=
