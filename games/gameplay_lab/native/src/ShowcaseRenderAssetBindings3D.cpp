@@ -28,6 +28,8 @@ constexpr std::array<std::string_view, 4> ShowcaseProductionBarkMaterialIds{
     "tree_small_02:branches", "tree_small_02:trunk"};
 constexpr std::uint64_t ShowcaseProductionBarkResponseFingerprint =
     0x4241524b5f523530ull;
+constexpr std::array<std::string_view, 2> ShowcaseProductionLeafMaterialIds{
+    "island_tree_01:leaves", "tree_small_02:leaves"};
 constexpr std::array<std::string_view, 2> ShowcaseProductionWeatheredPropMaterialIds{
     "dead_tree_trunk_02:slot-0", "boulder_01:slot-0"};
 constexpr std::uint64_t ShowcaseProductionWeatheredPropResponseFingerprint =
@@ -36,6 +38,11 @@ constexpr std::uint64_t ShowcaseProductionWeatheredPropResponseFingerprint =
 bool IsShowcaseProductionBarkMaterial3D(std::string_view materialId) noexcept {
   return std::ranges::find(ShowcaseProductionBarkMaterialIds, materialId) !=
       ShowcaseProductionBarkMaterialIds.end();
+}
+
+bool IsShowcaseProductionLeafMaterial3D(std::string_view materialId) noexcept {
+  return std::ranges::find(ShowcaseProductionLeafMaterialIds, materialId) !=
+      ShowcaseProductionLeafMaterialIds.end();
 }
 
 bool IsShowcaseProductionWeatheredPropMaterial3D(
@@ -81,6 +88,53 @@ bool ApplyShowcaseProductionBarkResponse3D(
                                     : Aevrynd::Color{1.f, .997f, .985f, 1.f};
   definition.material.surface.roughness = trunk ? .68f : .74f;
   definition.material.normalScale = trunk ? 1.12f : 1.06f;
+  return true;
+}
+
+bool ApplyShowcaseProductionLeafResponse3D(
+    std::string_view materialId,
+    Aevrynd::MaterialAssetDefinition3D &definition) noexcept {
+  if (!IsShowcaseProductionLeafMaterial3D(materialId))
+    return false;
+  const auto finite = [](float value) { return std::isfinite(value); };
+  const auto &material = definition.material;
+  if (definition.name != materialId ||
+      definition.textures.baseColorPath.empty() ||
+      definition.textures.roughnessPath.empty() ||
+      definition.textures.normalPath.empty() || !material.useUv ||
+      material.materialClass != Aevrynd::MaterialClass3D::Foliage ||
+      material.shadingModel != Aevrynd::CharacterShadingModel3D::Default ||
+      material.alphaMode != Aevrynd::MaterialAlphaMode3D::Mask ||
+      definition.textures.alphaMode != Aevrynd::MaterialAlphaMode3D::Mask ||
+      !material.doubleSided ||
+      definition.textures.surfaceEncoding !=
+          Aevrynd::MaterialSurfaceMapEncoding3D::PackedOrm ||
+      !finite(material.tint.r) || !finite(material.tint.g) ||
+      !finite(material.tint.b) || !finite(material.tint.a) ||
+      material.tint.a <= 0.f || material.tint.a > 1.f ||
+      !finite(material.surface.roughness) ||
+      !finite(material.surface.metallic) || material.surface.metallic != 0.f ||
+      !finite(material.surface.emissive) || material.surface.emissive != 0.f ||
+      !finite(material.surface.occlusion) || material.surface.occlusion < 0.f ||
+      material.surface.occlusion > 1.f || !finite(material.normalScale) ||
+      material.normalScale < 0.f || !finite(material.textureScale) ||
+      !finite(material.alphaCutoff) ||
+      !finite(definition.textures.alphaCutoff) ||
+      material.alphaCutoff != definition.textures.alphaCutoff ||
+      material.alphaCutoff <= 0.f || material.alphaCutoff >= 1.f)
+    return false;
+
+  const bool island = materialId == "island_tree_01:leaves";
+  // Preserve the authored textures and physical mask semantics while retaining
+  // more sub-pixel foliage in the generated mask mips.  A restrained species
+  // response separates the two existing crowns without another material,
+  // descriptor, mesh, instance, or draw.
+  definition.material.tint = island ? Aevrynd::Color{.96f, 1.f, .93f, 1.f}
+                                    : Aevrynd::Color{.91f, .98f, .86f, 1.f};
+  definition.material.surface.roughness = island ? .76f : .82f;
+  definition.material.normalScale = island ? 1.08f : 1.12f;
+  definition.material.alphaCutoff = .42f;
+  definition.textures.alphaCutoff = .42f;
   return true;
 }
 
@@ -1329,6 +1383,9 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     if (IsShowcaseProductionBarkMaterial3D(material.id) &&
         !ApplyShowcaseProductionBarkResponse3D(material.id, definition))
       return false;
+    if (IsShowcaseProductionLeafMaterial3D(material.id) &&
+        !ApplyShowcaseProductionLeafResponse3D(material.id, definition))
+      return false;
     if (IsShowcaseProductionWeatheredPropMaterial3D(material.id) &&
         !ApplyShowcaseProductionWeatheredPropResponse3D(material.id,
                                                         definition))
@@ -1356,6 +1413,10 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     definition.material = material->Definition();
     if (IsShowcaseProductionBarkMaterial3D(material->id) &&
         !ApplyShowcaseProductionBarkResponse3D(material->id,
+                                                 definition.material))
+      return false;
+    if (IsShowcaseProductionLeafMaterial3D(material->id) &&
+        !ApplyShowcaseProductionLeafResponse3D(material->id,
                                                 definition.material))
       return false;
     if (IsShowcaseProductionWeatheredPropMaterial3D(material->id) &&

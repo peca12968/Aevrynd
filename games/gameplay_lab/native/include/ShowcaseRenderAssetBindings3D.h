@@ -34,6 +34,13 @@ namespace GameplayLab {
     std::string_view materialId,
     Aevrynd::MaterialAssetDefinition3D &definition) noexcept;
 
+// Applies the authored canopy response only to the two living-tree leaf slots.
+// The shared material count and texture identities stay unchanged; invalid or
+// non-leaf definitions fail closed before any field is changed.
+[[nodiscard]] bool ApplyShowcaseProductionLeafResponse3D(
+    std::string_view materialId,
+    Aevrynd::MaterialAssetDefinition3D &definition) noexcept;
+
 // Applies a forest-integrated response only to the authored deadwood and
 // boulder slots. Other ids and malformed definitions fail closed before any
 // field is changed.

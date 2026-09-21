@@ -29,7 +29,7 @@ bool R16TerrainBindingContract(std::string_view world,std::string_view gameplay,
       world.find("0.24, 1.0")!=std::string_view::npos&&
       Count(world,"lerp(1.0.xxx, float3(1.72, 1.58, 1.68), showcaseTerrainAuthoredBiomeCalibration);")==1&&
       Count(world,"grassColor * terrainGrassReflectanceNormalization")==1&&
-      Count(world,"const float calibratedGrassRoughness = clamp(grassSurface.g * 0.854514, 0.55, 0.96);")==1&&
+      Count(world,"const float calibratedGrassRoughness = clamp(grassSurface.g * 0.986, 0.68, 0.98);")==1&&
       Count(world,"grassSurface.g = lerp(grassSurface.g, calibratedGrassRoughness,")==1&&
       Count(world,"soilSurface.g = clamp")==0&&Count(world,"rockSurface.g = clamp")==0&&
       Count(world,"lerp(1.0.xxx, float3(0.94, 0.96, 1.04), showcaseTerrainAuthoredBiomeCalibration);")==1&&
@@ -110,6 +110,13 @@ int main(){
     const std::filesystem::path source=AEVRYND_SOURCE_DIR;
     const auto worldShader=ReadText(source/L"engine/native/shaders/World.hlsl");
     const auto gameplaySource=ReadText(source/L"games/gameplay_lab/native/src/GameplayLabGame.cpp");
+    // forest_ground_04 packed roughness mean (.9128) is calibrated in the
+    // shader before the Showcase terrain base roughness (.78) is applied.
+    constexpr float packedForestMean=.9128f;
+    constexpr float calibratedPackedMean=packedForestMean*.986f;
+    constexpr float finalForestRoughness=.78f*calibratedPackedMean;
+    static_assert(calibratedPackedMean>=.90f&&calibratedPackedMean<=.913f);
+    static_assert(finalForestRoughness>=.70f&&finalForestRoughness<=.72f);
     std::string hostileMarker=worldShader;
     if(const auto marker=hostileMarker.find(" && input.normalScale == -15.5");marker!=std::string_view::npos)
       hostileMarker.erase(marker,std::string_view(" && input.normalScale == -15.5").size());

@@ -11,6 +11,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -936,9 +937,13 @@ int main() {
     return 92;
   groundMaterial.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
   constexpr auto terrainTint = ShowcaseForestTerrainTint3D();
-  if (terrainTint.g < terrainTint.r + .05f ||
+  constexpr Color priorTerrainTint{.46f, .52f, .39f, 1.f};
+  if (terrainTint.g < terrainTint.r + .055f ||
       terrainTint.g < terrainTint.b || terrainTint.r > .72f ||
-      Rec709(terrainTint) < .47f || Rec709(terrainTint) > .53f ||
+      Rec709(terrainTint) < .50f || Rec709(terrainTint) > .52f ||
+      std::abs(terrainTint.r - priorTerrainTint.r) > .02f ||
+      std::abs(terrainTint.g - priorTerrainTint.g) > .02f ||
+      std::abs(terrainTint.b - priorTerrainTint.b) > .02f ||
       terrainTint.a != 1.f)
     return 63;
   const std::array<ShowcaseSceneDescriptor3D, 1> ecologyTrees{{
@@ -951,8 +956,8 @@ int main() {
       SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
   const auto cottagePathRepeated =
       SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
-  const auto cottagePathFourMetreGrid =
-      SampleShowcaseTerrainEcologyTint3D({-16, 0, 12}, ecologyTrees);
+  const auto cottagePathShoulderProbe =
+      SampleShowcaseTerrainEcologyTint3D({-15.5f, 0, 12}, ecologyTrees);
   const auto wetBank =
       SampleShowcaseTerrainEcologyTint3D({4, 0, 0}, {});
   const std::array<ShowcaseSceneDescriptor3D, 1> overlappingTree{{
@@ -990,7 +995,7 @@ int main() {
   // The authored cottage trail must remain connected down its centre while
   // reading as worn ground rather than a uniform five-metre carpet.  Sample
   // both sides of four cross-sections: the low-frequency width change and
-  // asymmetric shoulder must be visible, while the 2.5m outer band is clear.
+  // asymmetric shoulder must be visible, while the 2.0m outer band is clear.
   float minimumPathCentre = 1.f;
   float minimumPathShoulder = 1.f;
   float maximumPathShoulder{};
@@ -1017,8 +1022,8 @@ int main() {
           .cottagePath;
     };
     minimumPathCentre = (std::min)(minimumPathCentre, sampleAt(0.f));
-    const float leftShoulder = sampleAt(-1.5f);
-    const float rightShoulder = sampleAt(1.5f);
+    const float leftShoulder = sampleAt(-1.15f);
+    const float rightShoulder = sampleAt(1.15f);
     minimumPathShoulder =
         (std::min)(minimumPathShoulder,
                    (std::min)(leftShoulder, rightShoulder));
@@ -1030,14 +1035,15 @@ int main() {
                    std::abs(leftShoulder - rightShoulder));
     maximumPathOuter =
         (std::max)(maximumPathOuter,
-                   (std::max)(sampleAt(-2.5f), sampleAt(2.5f)));
+                   (std::max)(sampleAt(-2.f), sampleAt(2.f)));
     pathShoulderSum += leftShoulder + rightShoulder;
     pathShoulderSamples += 2u;
   }
   const float meanPathShoulder = pathShoulderSum / pathShoulderSamples;
   if (minimumPathCentre < .85f || maximumPathOuter > .006f ||
-      maximumPathShoulder - minimumPathShoulder < .40f ||
-      maximumPathAsymmetry < .14f || meanPathShoulder >= .30f) {
+      maximumPathShoulder - minimumPathShoulder < .18f ||
+      maximumPathShoulder > .30f || maximumPathAsymmetry < .12f ||
+      meanPathShoulder >= .15f) {
     std::cerr << "cottage path profile divergence centre="
               << minimumPathCentre << " shoulder=" << minimumPathShoulder
               << '/' << maximumPathShoulder << '/' << meanPathShoulder
@@ -1051,8 +1057,8 @@ int main() {
       Rec709(canopyCenter.tint) >= Rec709(canopyFar.tint) ||
       cottagePath.cottagePath < .99f ||
       cottagePath.biome != ShowcaseTerrainBiome3D::CottagePath ||
-      cottagePathFourMetreGrid.cottagePath < .20f ||
-      cottagePathFourMetreGrid.biome != ShowcaseTerrainBiome3D::CottagePath ||
+      cottagePathShoulderProbe.cottagePath < .20f ||
+      cottagePathShoulderProbe.biome != ShowcaseTerrainBiome3D::CottagePath ||
       cottagePath.tint.r != cottagePathRepeated.tint.r ||
       cottagePath.tint.g != cottagePathRepeated.tint.g ||
       cottagePath.tint.b != cottagePathRepeated.tint.b ||
@@ -1096,6 +1102,8 @@ int main() {
               << '/' << canopyCenter.leafLitter << '/'
               << unsigned(canopyCenter.biome) << " path="
               << cottagePath.cottagePath << '/' << unsigned(cottagePath.biome)
+              << " shoulderProbe=" << cottagePathShoulderProbe.cottagePath
+              << '/' << unsigned(cottagePathShoulderProbe.biome)
               << " wet=" << wetBank.riverMoisture << '/'
               << wetBank.riverWetSoil << '/' << unsigned(wetBank.biome)
               << " overlap=" << overlappingBank.cottagePath << '/'
@@ -1155,6 +1163,7 @@ int main() {
   // 鎖住 path/wet 的連續 signed-U 交接；舊 winner-takes-all 最大跳幅
   // 會超過 1.5，並觸發共享頂點成片清零。
   float maximumAuthoredSignedStep{};
+  Vec3 maximumAuthoredSignedStepAt{};
   std::size_t crossSignedEdges{};
   std::array<float, 81> previousRow{};
   for (int zIndex = 0; zIndex <= 296; ++zIndex) {
@@ -1165,9 +1174,11 @@ int main() {
       const auto encoded = EncodeShowcaseTerrainBiomeUv3D(
           SampleShowcaseTerrainEcologyTint3D({x, 0, z}, ecologyTrees));
       const auto inspectEdge = [&](float neighbour) {
-        maximumAuthoredSignedStep =
-            (std::max)(maximumAuthoredSignedStep,
-                       std::abs(encoded.x - neighbour));
+        const float step = std::abs(encoded.x - neighbour);
+        if (step > maximumAuthoredSignedStep) {
+          maximumAuthoredSignedStep = step;
+          maximumAuthoredSignedStepAt = {x, 0.f, z};
+        }
         crossSignedEdges +=
             (encoded.x < 0.f && neighbour > 0.f) ||
             (encoded.x > 0.f && neighbour < 0.f);
@@ -1183,6 +1194,8 @@ int main() {
   if (maximumAuthoredSignedStep > .90f || !crossSignedEdges) {
     std::cerr << "terrain authored handoff divergence maxStep="
               << maximumAuthoredSignedStep
+              << " at=" << maximumAuthoredSignedStepAt.x << ','
+              << maximumAuthoredSignedStepAt.z
               << " crossSignedEdges=" << crossSignedEdges << '\n';
     return 95;
   }
@@ -1870,6 +1883,13 @@ int main() {
 
   DrawList draw{DrawListCapacityProfile::Minimal2D};
   first.ApplyHighProfile(draw);
+  const auto terrainDistanceMaterial = draw.TerrainDistanceMaterial();
+  if (std::abs(terrainDistanceMaterial.macroVariationScale - .020f) > 1e-6f ||
+      std::abs(terrainDistanceMaterial.macroVariationStrength - .17f) >
+          1e-6f ||
+      std::abs(terrainDistanceMaterial.normalDetailStrength - 1.24f) >
+          1e-6f)
+    return 111;
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Day, {1, 2, 3});
   const auto dayAtmosphere = draw.Atmosphere();
   const auto dayEnvironmentBlend = draw.EnvironmentLightingBlend();
@@ -2062,7 +2082,9 @@ int main() {
                1.f) > 1e-6f ||
       std::abs(duskEnvironmentBlend.analyticSpecularWeight +
                    duskEnvironmentBlend.iblSpecularWeight -
-               1.f) > 1e-6f)
+               1.f) > 1e-6f ||
+      duskEnvironmentBlend.iblSpecularWeight < .65f ||
+      duskEnvironmentBlend.analyticSpecularWeight > .35f)
     return 24;
   const std::array<LightingRouteEvidence3D, 3> productionLighting{{
       {day, daySubmittedSun, VolumetricAtmospherePhase3D::Day,
@@ -2131,7 +2153,8 @@ int main() {
       productionCameras[1], productionCameras[2]};
   const auto submittedUnderstoryBounds =
       BuildSubmittedUnderstoryHighDetailBounds3D();
-  std::cout << "UNDERSTORY_HIGH_BOUNDS riverbank="
+  std::cout << std::setprecision(9)
+            << "UNDERSTORY_HIGH_BOUNDS riverbank="
             << submittedUnderstoryBounds.riverbank.center.x << '/'
             << submittedUnderstoryBounds.riverbank.center.z << ':'
             << submittedUnderstoryBounds.riverbank.extents.x << '/'

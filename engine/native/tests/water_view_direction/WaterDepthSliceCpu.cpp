@@ -26,8 +26,8 @@ float ExpectedDepthSlice(float shoreDepth, float depthValid) {
 float ExpectedRoughness(float minimumRoughness, float maximumRoughness,
                         float resolvedSlope, float unresolvedDetail,
                         float foamCoverage, float depthSlice) {
-  const float weight = Saturate(.12f + resolvedSlope * 2.25f +
-                                unresolvedDetail * .30f + foamCoverage * .70f +
+  (void)resolvedSlope;
+  const float weight = Saturate(.12f + unresolvedDetail * .30f + foamCoverage * .70f +
                                 (1.f - Saturate(depthSlice)) * .32f);
   return minimumRoughness + (maximumRoughness - minimumRoughness) * weight;
 }
@@ -44,20 +44,36 @@ int main() {
   const std::string source((std::istreambuf_iterator<char>(stream)),
                            std::istreambuf_iterator<char>());
 
+  if (!Contains(source, "float WaterWaveDirectionalFootprint3D(") ||
+      !Contains(source, "abs(dot(reconstructedDeltaX, waveDirection))") ||
+      !Contains(source, "abs(dot(reconstructedDeltaY, waveDirection))") ||
+      !Contains(source, "abs(dot(interpolatedDeltaX, waveDirection))") ||
+      !Contains(source, "abs(dot(interpolatedDeltaY, waveDirection))") ||
+      !Contains(source, "WaterWaveDirectionalResolvedWeight3D(") ||
+      !Contains(source, "WaterAnalyticDirectionalWave3D(") ||
+      !Contains(source, "WaterAnalyticWave3D(detailPosition") ||
+      !Contains(source, "WaterAnalyticWave3D(crossDetailPosition") ||
+      Contains(source, "WaterAnalyticDirectionalWave3D(detailPosition") ||
+      Contains(source, "WaterAnalyticDirectionalWave3D(crossDetailPosition")) {
+    std::cerr << "water grazing footprint is not directional or detail filtering is no longer conservative\n";
+    return 8;
+  }
+
   const auto sliceBegin = source.find("float WaterDepthSlice3D(");
   const auto roughnessBegin = source.find("float WaterReflectionRoughness3D(");
-  const auto bandLimitBegin = source.find("float WaterWavePixelBandLimit3D(");
+  const auto helperEnd = source.find("precise float3 WaterOrderedScaleAdd3D(");
   if (sliceBegin == std::string::npos || roughnessBegin == std::string::npos ||
-      bandLimitBegin == std::string::npos || sliceBegin >= roughnessBegin ||
-      roughnessBegin >= bandLimitBegin) {
+      helperEnd == std::string::npos || sliceBegin >= roughnessBegin ||
+      roughnessBegin >= helperEnd) {
     std::cerr << "missing production water depth-slice helper\n";
     return 1;
   }
 
-  const std::string helperSource = source.substr(sliceBegin, bandLimitBegin - sliceBegin);
+  const std::string helperSource = source.substr(sliceBegin, helperEnd - sliceBegin);
   if (!Contains(helperSource, "smoothstep(0.06, 1.35, boundedDepth)") ||
       !Contains(helperSource, "lerp(1.0, depthSlice, saturate(depthValid))") ||
       !Contains(helperSource, "(1.0 - saturate(depthSlice)) * 0.32") ||
+      Contains(helperSource, "resolvedSlope * 2.25") ||
       Contains(helperSource, ".Sample") || Contains(helperSource, "CloudNoise") ||
       Contains(helperSource, "cameraFogStart") || Contains(helperSource, "exposure")) {
     std::cerr << "depth slice is not bounded, physical, or texture-free\n";
@@ -92,9 +108,11 @@ int main() {
   const float deep = ExpectedDepthSlice(1.35f, 1.f);
   const float shallowRoughness = ExpectedRoughness(.055f, .20f, 0.f, 0.f, 0.f, shore);
   const float deepRoughness = ExpectedRoughness(.055f, .20f, 0.f, 0.f, 0.f, deep);
+  const float resolvedDeepRoughness = ExpectedRoughness(.055f, .20f, .48f, 0.f, 0.f, deep);
   if (invalid != 1.f || shore != 0.f || std::abs(transition - .5f) > 1e-5f ||
       deep != 1.f || shallowRoughness <= deepRoughness ||
-      shallowRoughness > .20001f || deepRoughness < .05499f) return 6;
+      shallowRoughness > .20001f || deepRoughness < .05499f ||
+      resolvedDeepRoughness != deepRoughness) return 6;
 
   struct ValidityCase {
     float verticalDepth;

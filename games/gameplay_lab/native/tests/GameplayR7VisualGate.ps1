@@ -15,7 +15,7 @@ $requiredShots = @(
   'palette-building', 'melee-combat'
 )
 $nightShots = @('first-night', 'third-night', 'god-night')
-$waterShots = @('third-day', 'god-day', 'god-dusk')
+$waterShots = @('third-day', 'third-dusk', 'god-day', 'god-dusk')
 $actorShots = @('third-day', 'third-dusk', 'third-night', 'god-day', 'god-dusk', 'god-night', 'palette-building', 'melee-combat')
 $issues = [Collections.Generic.List[string]]::new()
 $shotReceipts = [Collections.Generic.List[object]]::new()

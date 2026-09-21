@@ -2135,6 +2135,38 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          scene_.Mesh(boxMesh_,{{-12,2.69f,20.06f},{0,0,0},{1.78f,.14f,.18f}},wood,{},renderIdentity);
          for(float y:{.83f,1.38f,1.93f})scene_.Mesh(boxMesh_,{{-12,y,20.04f},{0,0,0},{1.12f,.08f,.16f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
+         // R60_COTTAGE_FRONTAGE_BEGIN
+         // 門廊六個木構件與兩支角板只增加繪製；延用 front descriptor
+         // 的 identity 與 WoodSiding006，不產生新 descriptor、碰撞或紋理。
+         const std::array<Transform3D,8> cottageFrontage{{
+           {{-12.f,3.05f,19.55f},{-.10f,0,0},{3.45f,.14f,1.45f}},
+           {{-12.f,2.94f,18.84f},{0,0,0},{3.55f,.26f,.14f}},
+           {{-13.10f,1.60f,19.18f},{0,0,0},{.16f,2.62f,.16f}},
+           {{-10.90f,1.60f,19.18f},{0,0,0},{.16f,2.62f,.16f}},
+           {{-12.88f,2.72f,19.20f},{0,0,-.65f},{.12f,.62f,.12f}},
+           {{-11.12f,2.72f,19.20f},{0,0,.65f},{.12f,.62f,.12f}},
+           {{-16.11f,1.83f,20.13f},{0,0,0},{.18f,3.12f,.16f}},
+           {{-7.89f,1.83f,20.13f},{0,0,0},{.18f,3.12f,.16f}}}};
+         const MeshBounds3D doorPassage{{-12.f,1.40f,19.52f},0.f,
+                                         {.60f,1.10f,.72f}};
+         const Vec3 passageMinimum=doorPassage.center-doorPassage.extents;
+         const Vec3 passageMaximum=doorPassage.center+doorPassage.extents;
+         const auto frontageDrawsBefore=scene_.MeshCount();
+         for(const auto& frontage:cottageFrontage){
+           const auto bounds=TransformBounds(boxMesh_.bounds,frontage);
+           const Vec3 minimum=bounds.center-bounds.extents;
+           const Vec3 maximum=bounds.center+bounds.extents;
+           const bool overlapsPassage=minimum.x<passageMaximum.x&&
+               maximum.x>passageMinimum.x&&minimum.y<passageMaximum.y&&
+               maximum.y>passageMinimum.y&&minimum.z<passageMaximum.z&&
+               maximum.z>passageMinimum.z;
+           if(overlapsPassage)
+             throw std::runtime_error("Cottage frontage obstructed door passage");
+           scene_.Mesh(boxMesh_,frontage,wood,{},renderIdentity);
+         }
+         if(scene_.MeshCount()!=frontageDrawsBefore+cottageFrontage.size())
+           throw std::runtime_error("Cottage frontage draw count gate failed");
+         // R60_COTTAGE_FRONTAGE_END
          // R42_COTTAGE_LANTERN_BEGIN
           // The porch light now has a visible physical source at the exact point-light
           // origin. Seven render-only pieces reuse resident meshes and add no textures.
@@ -2194,16 +2226,16 @@ void GameplayLabGame::AddShowcaseEnvironment(){
                  thresholdStone,GameplayCottageMaterialRole3D::Brick)||
              !ApplyGameplayCottageFoundationStoneResponse3D(thresholdStone))break;
           const std::array<CottageLifeDetail3D,12> lifeDetails{{
-           {{{-15.2f,.22f,26.55f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
-           {{{-15.2f,.22f,27.02f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
-           {{{-15.2f,.50f,26.78f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
-           {{{-14.55f,.22f,26.55f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
-           {{{-14.55f,.22f,27.02f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
-           {{{-8.75f,.58f,24.9f},{0,0,0},{.55f,.16f,2.f}},false,false},
-           {{{-8.75f,.28f,24.22f},{0,0,0},{.42f,.55f,.18f}},false,false},
-           {{{-8.75f,.28f,25.58f},{0,0,0},{.42f,.55f,.18f}},false,false},
-           {{{-15.05f,.42f,21.25f},{0,.12f,0},{.78f,.78f,.78f}},false,false},
-           {{{-14.18f,.32f,21.55f},{0,-.16f,0},{.58f,.58f,.58f}},false,false},
+           {{{-15.60f,.22f,19.72f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-15.60f,.22f,20.08f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-15.35f,.50f,19.90f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-15.02f,.22f,19.72f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-15.02f,.22f,20.08f},{0,0,1.5708f},{.36f,.90f,.36f}},true,false},
+           {{{-8.85f,.58f,19.78f},{0,0,0},{1.65f,.16f,.48f}},false,false},
+           {{{-9.42f,.28f,19.78f},{0,0,0},{.18f,.55f,.42f}},false,false},
+           {{{-8.28f,.28f,19.78f},{0,0,0},{.18f,.55f,.42f}},false,false},
+           {{{-14.55f,.42f,19.92f},{0,.12f,0},{.68f,.68f,.68f}},false,false},
+           {{{-13.86f,.32f,20.00f},{0,-.16f,0},{.54f,.54f,.54f}},false,false},
             {{{-12.f,.12f,19.72f},{0,0,0},{1.15f,.18f,.32f}},false,true},
             {{{-10.72f,.10f,19.72f},{0,0,0},{.95f,.14f,.32f}},false,true}}};
           const auto finite=[](Vec3 value){return std::isfinite(value.x)&&
@@ -2240,6 +2272,9 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          scene_.Mesh(boxMesh_,{{-14.45f,5.84f,25.3f},{0,0,0},{.94f,.16f,.94f}},brick,{},renderIdentity);
          for(float z:{19.78f,28.22f})scene_.Mesh(boxMesh_,{{-12,3.48f,z},{0,0,0},{9.25f,.18f,.24f}},wood,{},renderIdentity);
          for(float x:{-16.38f,-7.62f})scene_.Mesh(boxMesh_,{{x,3.48f,24},{0,0,0},{.24f,.18f,8.2f}},wood,{},renderIdentity);
+         // 屋脊蓋只用常駐圓柱網格與既有屋瓦材質，且沿用 roof identity。
+         scene_.Mesh(showcaseCylinderMesh_,{{-12.f,4.47f,24.f},{1.5708f,0,0},
+                     {.20f,7.85f,.20f}},material,{},renderIdentity);
        }
        submitted=scene_.MeshCount()>before;}break;
     }

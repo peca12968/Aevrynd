@@ -88,6 +88,8 @@ struct ShowcaseLandEcologyReceipt3D {
   std::uint32_t placements{}, integratedDescriptors{}, descriptorCapacity{480}, rejectedCandidates{}, attemptedCandidates{};
   std::uint32_t riverbankRocks{}, riverbankGrass{}, occupiedHabitatCells{},
       densestHabitatCell{}, heroGroundCover{}, heroGroundCoverQuadrantMask{},
+      heroPathShoulderCluster{}, heroCottageRearCluster{},
+      heroRiverForegroundCluster{},
       understoryGroundCover{}, understoryGroundCoverBandMask{};
   std::uint32_t failureKind{3}, failureBand{3}, failureItem{};
   float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{},
@@ -97,6 +99,7 @@ struct ShowcaseLandEcologyReceipt3D {
   bool terrainBoundsExact{}, bandsExact{}, riverExcluded{}, spawnExcluded{}, cottageExcluded{};
   bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{},
       zonesExact{}, riverbankLayered{}, densityExact{}, heroGroundCoverExact{},
+      heroCompositionClustersExact{},
       understoryGroundCoverExact{};
   bool deterministicBudget{};
   bool walkingLaneClear{}, vegetationScaleBounded{};

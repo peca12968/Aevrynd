@@ -290,6 +290,96 @@ bool LeafMossCardScaleContract(const Mesh3D& mesh) {
   return true;
 }
 
+Vec3 CardRoot(const Mesh3D& mesh, std::size_t card) {
+  const std::size_t base = card * 4u;
+  return {(mesh.vertices[base].x + mesh.vertices[base + 1u].x) * .5f,
+          (mesh.vertices[base].y + mesh.vertices[base + 1u].y) * .5f,
+          (mesh.vertices[base].z + mesh.vertices[base + 1u].z) * .5f};
+}
+
+bool CommunityColonyContract(
+    const Mesh3D& mesh, GameplayForestGroundCoverDetail3D detail) {
+  const auto fail = [detail](const char* reason) {
+    std::cerr << "COMMUNITY_COLONY_CONTRACT=FAIL detail="
+              << static_cast<unsigned>(detail) << " reason=" << reason << '\n';
+    return false;
+  };
+  constexpr std::array<unsigned, 3> FernCards{{44u, 24u, 16u}};
+  constexpr std::array<unsigned, 3> ShrubCards{{10u, 6u, 3u}};
+  constexpr std::array<unsigned, 3> LeafCards{{10u, 7u, 3u}};
+  const auto detailIndex = static_cast<std::size_t>(detail);
+  const unsigned totalCards = FernCards[detailIndex] +
+                              ShrubCards[detailIndex] +
+                              LeafCards[detailIndex];
+  if (mesh.vertices.size() != std::size_t(totalCards) * 4u)
+    return fail("card-count");
+  const auto bounds = mesh.Bounds();
+  if (bounds.extents.x > 1.15f || bounds.extents.z > 1.15f)
+    return fail("footprint");
+
+  std::array<unsigned, 4> quadrants{};
+  std::array<unsigned, 3> radialBands{};
+  for (unsigned card = 0; card < totalCards; ++card) {
+    const Vec3 root = CardRoot(mesh, card);
+    const float x = root.x - bounds.center.x;
+    const float z = root.z - bounds.center.z;
+    const unsigned quadrant = (x >= 0.f ? 1u : 0u) + (z >= 0.f ? 2u : 0u);
+    ++quadrants[quadrant];
+    const float radius = std::sqrt(x * x + z * z);
+    ++radialBands[radius < .30f ? 0u : radius < .62f ? 1u : 2u];
+  }
+  for (const auto count : quadrants)
+    if (!count) return fail("quadrant-coverage");
+  for (const auto count : radialBands)
+    if (!count) return fail("radial-bands");
+
+  if (detail == GameplayForestGroundCoverDetail3D::Far) return true;
+  const unsigned primaryStemCard = detail == GameplayForestGroundCoverDetail3D::Near
+                                       ? 28u : 16u;
+  const unsigned secondStemCard = detail == GameplayForestGroundCoverDetail3D::Near
+                                      ? 40u : 20u;
+  const Vec3 primaryFernRoot = CardRoot(mesh, primaryStemCard);
+  const Vec3 secondFernRoot = CardRoot(mesh, secondStemCard);
+  const float fernSeparation = Length(Vec3{
+      primaryFernRoot.x - secondFernRoot.x, 0,
+      primaryFernRoot.z - secondFernRoot.z});
+  if (fernSeparation < .48f) return fail("fern-root-overlap");
+
+  const unsigned leafStart = FernCards[detailIndex] + ShrubCards[detailIndex];
+  std::array<Vec3, 2> leafCentres{};
+  std::array<unsigned, 2> leafCounts{};
+  for (unsigned leaf = 0; leaf < LeafCards[detailIndex]; ++leaf) {
+    const unsigned colony = leaf & 1u;
+    leafCentres[colony] = leafCentres[colony] + CardRoot(mesh, leafStart + leaf);
+    ++leafCounts[colony];
+  }
+  for (unsigned colony = 0; colony < 2u; ++colony)
+    leafCentres[colony] = leafCentres[colony] *
+                          (1.f / float(leafCounts[colony]));
+  const float leafSeparation = Length(Vec3{
+      leafCentres[0].x - leafCentres[1].x, 0,
+      leafCentres[0].z - leafCentres[1].z});
+  if (leafSeparation < .34f) return fail("leaf-root-overlap");
+  Vec3 shrubCentre{};
+  for (unsigned shrub = 0; shrub < ShrubCards[detailIndex]; ++shrub)
+    shrubCentre = shrubCentre + CardRoot(mesh, FernCards[detailIndex] + shrub);
+  shrubCentre = shrubCentre * (1.f / float(ShrubCards[detailIndex]));
+  const std::array colonyRoots{primaryFernRoot, secondFernRoot, shrubCentre,
+                               leafCentres[0], leafCentres[1]};
+  for (std::size_t left = 0; left < colonyRoots.size(); ++left)
+    for (std::size_t right = left + 1u; right < colonyRoots.size(); ++right) {
+      const float separation = Length(Vec3{
+          colonyRoots[left].x - colonyRoots[right].x, 0,
+          colonyRoots[left].z - colonyRoots[right].z});
+      if (separation < .16f) return fail("colony-root-overlap");
+    }
+  // Equal radial spacing would recreate a procedural ring.  The two species
+  // families intentionally use different transforms and must stay asymmetric.
+  if (std::abs(fernSeparation - leafSeparation) < .035f)
+    return fail("regularized-spacing");
+  return true;
+}
+
 bool SameTint(Color left, Color right) {
   return left.r == right.r && left.g == right.g && left.b == right.b &&
          left.a == right.a;
@@ -553,6 +643,7 @@ int main() {
         triangles > GameplayForestGroundCoverCommunityTriangleBudget(detail) ||
         triangles != expectedCommunityTriangles[detailIndex] ||
         triangles >= previousCommunityTriangles ||
+        !CommunityColonyContract(community, detail) ||
         bounds.extents.x < .78f || bounds.extents.z < .72f ||
         bounds.extents.x > 1.15f || bounds.extents.z > 1.15f ||
         bounds.center.y - bounds.extents.y < -1e-6f ||
@@ -565,6 +656,37 @@ int main() {
       return 5;
     }
     previousCommunityTriangles = triangles;
+  }
+
+  const auto communityNear = CreateGameplayForestGroundCoverCommunityMesh3D(
+      GameplayForestGroundCoverDetail3D::Near, 0xf04e57u);
+  const auto communityMid = CreateGameplayForestGroundCoverCommunityMesh3D(
+      GameplayForestGroundCoverDetail3D::Mid, 0xf04e57u);
+  const auto communityFar = CreateGameplayForestGroundCoverCommunityMesh3D(
+      GameplayForestGroundCoverDetail3D::Far, 0xf04e57u);
+  if (communityNear.indices.size() <= communityMid.indices.size() ||
+      communityMid.indices.size() <= communityFar.indices.size()) {
+    std::cerr << "COMMUNITY_NEAR_MID_FAR_DENSITY=FAIL\n";
+    return 19;
+  }
+  auto overlappingCommunity = communityNear;
+  const Vec3 primaryRoot = CardRoot(overlappingCommunity, 28u);
+  const Vec3 secondRoot = CardRoot(overlappingCommunity, 40u);
+  const Vec3 collapse{primaryRoot.x - secondRoot.x, 0,
+                      primaryRoot.z - secondRoot.z};
+  for (const std::pair<unsigned, unsigned> range :
+       {std::pair{20u, 8u}, std::pair{40u, 4u}}) {
+    for (unsigned card = range.first; card < range.first + range.second; ++card)
+      for (unsigned corner = 0; corner < 4u; ++corner) {
+        auto& vertex = overlappingCommunity.vertices[card * 4u + corner];
+        vertex.x += collapse.x;
+        vertex.z += collapse.z;
+      }
+  }
+  if (CommunityColonyContract(
+          overlappingCommunity, GameplayForestGroundCoverDetail3D::Near)) {
+    std::cerr << "COMMUNITY_OVERLAPPING_ROOT_HOSTILE=FAIL\n";
+    return 20;
   }
 
   std::size_t previousRiverbankTriangles =

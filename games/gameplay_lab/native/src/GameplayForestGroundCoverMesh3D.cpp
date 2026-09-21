@@ -331,6 +331,41 @@ void AppendTransformed(Mesh3D& destination, const Mesh3D& source,
   for (const auto index : source.indices) destination.indices.push_back(base + index);
 }
 
+void TransformCardRange(Mesh3D& mesh, unsigned firstCard, unsigned cardCount,
+                        Vec3 offset, float yaw, float scale) {
+  const float sine = std::sin(yaw);
+  const float cosine = std::cos(yaw);
+  const std::size_t firstVertex = std::size_t(firstCard) * 4u;
+  const std::size_t endVertex = firstVertex + std::size_t(cardCount) * 4u;
+  if (endVertex > mesh.vertices.size()) return;
+  for (std::size_t index = firstVertex; index < endVertex; ++index) {
+    auto& vertex = mesh.vertices[index];
+    const float x = vertex.x * scale;
+    const float z = vertex.z * scale;
+    vertex.x = x * cosine - z * sine + offset.x;
+    vertex.y *= scale;
+    vertex.z = x * sine + z * cosine + offset.z;
+    const auto normal = Aevrynd::UnpackNormalSnorm8(vertex.normal);
+    vertex.normal = Aevrynd::PackNormalSnorm8(
+        {normal.x * cosine - normal.z * sine, normal.y,
+         normal.x * sine + normal.z * cosine},
+        normal.w);
+  }
+}
+
+void SplitLeafMossColonies(Mesh3D& mesh, Vec3 firstOffset, float firstYaw,
+                           float firstScale, Vec3 secondOffset,
+                           float secondYaw, float secondScale) {
+  const unsigned cardCount = static_cast<unsigned>(mesh.vertices.size() / 4u);
+  for (unsigned card = 0; card < cardCount; ++card) {
+    const bool secondColony = (card & 1u) != 0u;
+    TransformCardRange(mesh, card, 1u,
+                       secondColony ? secondOffset : firstOffset,
+                       secondColony ? secondYaw : firstYaw,
+                       secondColony ? secondScale : firstScale);
+  }
+}
+
 } // namespace
 
 Mesh3D CreateGameplayForestGroundCoverMesh3D(
@@ -355,17 +390,31 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
     GameplayForestGroundCoverDetail3D detail,
     std::uint32_t variationSeed) {
   Mesh3D result;
-  const auto fern = CreateFern(detail, Mix(variationSeed ^ 0x19a4f3cdu),
-                               GameplayForestGroundCoverAtlas3D::TreeSmall02);
+  auto fern = CreateFern(detail, Mix(variationSeed ^ 0x19a4f3cdu),
+                         GameplayForestGroundCoverAtlas3D::TreeSmall02);
   const auto shrub = CreateLowShrub(detail, Mix(variationSeed ^ 0x753c28b1u),
                                     GameplayForestGroundCoverAtlas3D::TreeSmall02);
-  const auto leafMoss = CreateLeafMoss(detail, Mix(variationSeed ^ 0xc4d82a67u),
-                                       GameplayForestGroundCoverAtlas3D::TreeSmall02);
-  // One ecology descriptor represents a small understory colony rather than
-  // three species stacked at the same root.  Separating the fern and shrub
-  // produces a readable near-to-midground footprint while preserving the
-  // exact triangle, draw, texture and placement budgets.  The offsets stay
-  // inside a 2.3 m diameter so path and cottage clearances remain bounded.
+  auto leafMoss = CreateLeafMoss(detail, Mix(variationSeed ^ 0xc4d82a67u),
+                                 GameplayForestGroundCoverAtlas3D::TreeSmall02);
+  // Near and Mid reuse their existing cards as two asymmetric fern and
+  // leaf/moss colonies.  This fills several viewing quadrants without adding a
+  // descriptor, draw call, placement, collision identity or triangle.  Far is
+  // deliberately left on the previous single-root layout and cost.
+  if (detail == GameplayForestGroundCoverDetail3D::Near) {
+    // Third frond: eight leaf cards followed by four two-sided stem cards.
+    TransformCardRange(fern, 20u, 8u, {.24f, 0, .76f}, .69f, .82f);
+    TransformCardRange(fern, 40u, 4u, {.24f, 0, .76f}, .69f, .82f);
+    SplitLeafMossColonies(leafMoss, {-.24f, 0, .27f}, -.29f, .61f,
+                           {.34f, 0, -.29f}, .53f, .66f);
+  } else if (detail == GameplayForestGroundCoverDetail3D::Mid) {
+    // Second frond: eight leaf cards followed by four two-sided stem cards.
+    TransformCardRange(fern, 8u, 8u, {.28f, 0, .82f}, .61f, .78f);
+    TransformCardRange(fern, 20u, 4u, {.28f, 0, .82f}, .61f, .78f);
+    SplitLeafMossColonies(leafMoss, {-.27f, 0, .30f}, -.24f, .59f,
+                           {.39f, 0, -.34f}, .47f, .63f);
+  }
+  // One ecology descriptor remains a single bounded mesh.  The final offsets
+  // keep all four visual centres inside the original 2.3 m diameter contract.
   AppendTransformed(result, fern, {-.52f, 0, -.20f}, -.31f, .92f);
   AppendTransformed(result, shrub, {.48f, 0, .22f}, .47f, .88f);
   AppendTransformed(result, leafMoss, {.02f, 0, .02f}, .14f, 1.22f);

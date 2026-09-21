@@ -12,7 +12,7 @@ $shots = @(
   'god-day', 'god-dusk', 'god-night',
   'palette-building', 'melee-combat'
 )
-$waterShots = @('third-day', 'god-day', 'god-dusk')
+$waterShots = @('third-day', 'third-dusk', 'god-day', 'god-dusk')
 
 function Write-PatternPng([string]$Path, [string]$Kind, [int]$ShotIndex) {
   $width = 1280

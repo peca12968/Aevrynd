@@ -263,10 +263,12 @@ public:
         !close(smallBranches->normalScale, 1.06f) ||
         islandLeaves->materialClass != MaterialClass3D::Foliage ||
         islandLeaves->alphaMode != MaterialAlphaMode3D::Mask ||
-        !close(islandLeaves->tint.r, 1.f) ||
+        !close(islandLeaves->tint.r, .96f) ||
         !close(islandLeaves->tint.g, 1.f) ||
-        !close(islandLeaves->tint.b, 1.f) ||
-        !close(islandLeaves->normalScale, 1.f) ||
+        !close(islandLeaves->tint.b, .93f) ||
+        !close(islandLeaves->surface.roughness, .76f) ||
+        !close(islandLeaves->normalScale, 1.08f) ||
+        !close(islandLeaves->alphaCutoff, .42f) ||
         !close(deadTree->tint.r, .58f) || !close(deadTree->tint.g, .47f) ||
         !close(deadTree->tint.b, .34f) ||
         !close(deadTree->surface.roughness, .82f) ||
@@ -320,8 +322,12 @@ public:
       Fail("Host palette SceneECS ownership collection failed", engine);
       return;
     }
+    // The source-only phase must remain a genuinely near view even when the
+    // production rock layout changes a cluster's aggregate bounds.  Keeping
+    // this camera inside the authored world tests Source selection without
+    // weakening the production screen-error or transition thresholds.
     const Camera3D camera = stage_ == 0
-        ? Camera3D{{0, 80, -300}, {0, 0, 0}, {0, 1, 0},
+        ? Camera3D{{0, 100, -20}, {0, 0, 0}, {0, 1, 0},
                    {ProjectionMode::Perspective, 1.0471976f, 0, .1f, 10000.f}}
         : stage_ == 1
             ? Camera3D{{0, 4000, -50000}, {0, 0, 0}, {0, 1, 0},

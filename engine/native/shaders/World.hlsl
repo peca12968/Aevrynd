@@ -1816,7 +1816,105 @@ float3 WaterDeterministicNormalize3D(float3 value)
     return value * inverseLength;
 }
 
-float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float amplitude, float speed, float2 direction, float phaseOffset)
+float WaterWavePixelBandLimit3D(float worldFootprint, float waveScale)
+{
+    // 以實際世界座標像素足跡做解析式 band-limit。每週期少於約 16px 時
+    // 逐步衰減，少於約 4.5px 時完全移除，避免斜視水面把波峰變成規則閃爍條帶。
+    const precise float cyclesPerPixel = max(0.0, waveScale) * worldFootprint;
+    const precise float blend = saturate((cyclesPerPixel - 0.06) / 0.16);
+    const precise float smoothed = blend * blend * (3.0 - 2.0 * blend);
+    return 1.0 - smoothed;
+}
+
+float WaterWaveDirectionalFootprint3D(float2 reconstructedDeltaX,
+                                      float2 reconstructedDeltaY,
+                                      float2 interpolatedDeltaX,
+                                      float2 interpolatedDeltaY,
+                                      float2 waveDirection)
+{
+    // 掠射水面的 pixel footprint 高度各向異性；不能先取最長軸再套給所有
+    // 波向。沿實際波向投影兩組既有 footprint，仍取較大值維持保守濾波，
+    // 但與長軸近乎正交且仍可解析的分量不再被一併清零。
+    precise float footprint = abs(dot(reconstructedDeltaX, waveDirection));
+    footprint = max(footprint, abs(dot(reconstructedDeltaY, waveDirection)));
+    footprint = max(footprint, abs(dot(interpolatedDeltaX, waveDirection)));
+    footprint = max(footprint, abs(dot(interpolatedDeltaY, waveDirection)));
+    return footprint;
+}
+
+float WaterWaveDirectionalPixelBandLimit3D(float2 reconstructedDeltaX,
+                                           float2 reconstructedDeltaY,
+                                           float2 interpolatedDeltaX,
+                                           float2 interpolatedDeltaY,
+                                           float waveScale,
+                                           float2 waveDirection)
+{
+    return WaterWavePixelBandLimit3D(
+        WaterWaveDirectionalFootprint3D(reconstructedDeltaX, reconstructedDeltaY,
+                                        interpolatedDeltaX, interpolatedDeltaY,
+                                        waveDirection),
+        waveScale);
+}
+
+float4 WaterWaveDirectionalBandLimits3D(float2 reconstructedDeltaX,
+                                        float2 reconstructedDeltaY,
+                                        float2 interpolatedDeltaX,
+                                        float2 interpolatedDeltaY,
+                                        float waveScale,
+                                        float2 direction)
+{
+    const precise float2 perpendicular = float2(-direction.y, direction.x);
+    const precise float2 direction1 = direction * 0.978147601 + perpendicular * 0.207911691;
+    const precise float2 direction2 = direction * 0.945518576 - perpendicular * 0.325568154;
+    const precise float2 direction3 = direction * 0.874619707 + perpendicular * 0.484809620;
+    return float4(
+        WaterWaveDirectionalPixelBandLimit3D(reconstructedDeltaX, reconstructedDeltaY,
+                                             interpolatedDeltaX, interpolatedDeltaY,
+                                             waveScale * 0.73, direction),
+        WaterWaveDirectionalPixelBandLimit3D(reconstructedDeltaX, reconstructedDeltaY,
+                                             interpolatedDeltaX, interpolatedDeltaY,
+                                             waveScale, direction1),
+        WaterWaveDirectionalPixelBandLimit3D(reconstructedDeltaX, reconstructedDeltaY,
+                                             interpolatedDeltaX, interpolatedDeltaY,
+                                             waveScale * 1.37, direction2),
+        WaterWaveDirectionalPixelBandLimit3D(reconstructedDeltaX, reconstructedDeltaY,
+                                             interpolatedDeltaX, interpolatedDeltaY,
+                                             waveScale * 1.91, direction3));
+}
+
+float WaterWaveResolvedWeight3D(float worldFootprint, float waveScale)
+{
+    // 與解析高度場相同的四分量頻率及能量權重。此值只描述保留下來的
+    // 頻譜能量，正式高度與偏導仍在 WaterAnalyticWave3D 內逐分量一起衰減。
+    const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);
+    precise float resolved = componentWeights.x * WaterWavePixelBandLimit3D(worldFootprint, waveScale * 0.73);
+    resolved = resolved + componentWeights.y * WaterWavePixelBandLimit3D(worldFootprint, waveScale);
+    resolved = resolved + componentWeights.z * WaterWavePixelBandLimit3D(worldFootprint, waveScale * 1.37);
+    resolved = resolved + componentWeights.w * WaterWavePixelBandLimit3D(worldFootprint, waveScale * 1.91);
+    return saturate(resolved);
+}
+
+float WaterWaveDirectionalResolvedWeight3D(float2 reconstructedDeltaX,
+                                           float2 reconstructedDeltaY,
+                                           float2 interpolatedDeltaX,
+                                           float2 interpolatedDeltaY,
+                                           float waveScale,
+                                           float2 direction)
+{
+    const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);
+    const precise float4 bandLimits = WaterWaveDirectionalBandLimits3D(
+        reconstructedDeltaX, reconstructedDeltaY, interpolatedDeltaX,
+        interpolatedDeltaY, waveScale, direction);
+    precise float resolved = componentWeights.x * bandLimits.x;
+    resolved = resolved + componentWeights.y * bandLimits.y;
+    resolved = resolved + componentWeights.z * bandLimits.z;
+    resolved = resolved + componentWeights.w * bandLimits.w;
+    return saturate(resolved);
+}
+
+float3 WaterAnalyticWaveComponents3D(float2 worldXZ, float time, float waveScale,
+                                     float amplitude, float speed, float2 direction,
+                                     float phaseOffset, float4 componentBandLimits)
 {
     // 四個非整比、不同方向的解析波共同形成水面；高度與偏導使用完全相同
     // 的相位，因此法線仍是實際高度場的導數，而不是後製擾動。單一正弦波
@@ -1860,18 +1958,54 @@ float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale, float am
     // 非等權能譜讓順流長波承擔主要形狀，高頻只提供細碎法線；總權重為 1，
     // 高度仍嚴格受 amplitude 上限約束。
     const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);
-    const precise float slope0 = boundedAmplitude * componentWeights.x * waveNumber0 * wave0.y;
-    const precise float slope1 = boundedAmplitude * componentWeights.y * waveNumber1 * wave1.y;
-    const precise float slope2 = boundedAmplitude * componentWeights.z * waveNumber2 * wave2.y;
-    const precise float slope3 = boundedAmplitude * componentWeights.w * waveNumber3 * wave3.y;
-    precise float height = wave0.x * componentWeights.x + wave1.x * componentWeights.y;
-    height = height + wave2.x * componentWeights.z + wave3.x * componentWeights.w;
+    // 每個頻率分量依自己的 cycles-per-pixel 退場。舊路徑以最高 1.91x
+    // 頻率得到單一 group 權重，斜視時會連仍可解析的 0.73x/1.0x 長波一起
+    // 清零。高度與偏導共用完全相同的解析權重，避免法線脫離實際高度場。
+    const precise float resolvedWeight0 = componentWeights.x * componentBandLimits.x;
+    const precise float resolvedWeight1 = componentWeights.y * componentBandLimits.y;
+    const precise float resolvedWeight2 = componentWeights.z * componentBandLimits.z;
+    const precise float resolvedWeight3 = componentWeights.w * componentBandLimits.w;
+    const precise float slope0 = boundedAmplitude * resolvedWeight0 * waveNumber0 * wave0.y;
+    const precise float slope1 = boundedAmplitude * resolvedWeight1 * waveNumber1 * wave1.y;
+    const precise float slope2 = boundedAmplitude * resolvedWeight2 * waveNumber2 * wave2.y;
+    const precise float slope3 = boundedAmplitude * resolvedWeight3 * waveNumber3 * wave3.y;
+    precise float height = wave0.x * resolvedWeight0 + wave1.x * resolvedWeight1;
+    height = height + wave2.x * resolvedWeight2 + wave3.x * resolvedWeight3;
     height = boundedAmplitude * height;
     precise float2 gradient = direction * slope0;
     gradient = gradient + direction1 * slope1;
     gradient = gradient + direction2 * slope2;
     gradient = gradient + direction3 * slope3;
     return float3(height, gradient.x, gradient.y);
+}
+
+float3 WaterAnalyticWave3D(float2 worldXZ, float time, float waveScale,
+                           float amplitude, float speed, float2 direction,
+                           float phaseOffset, float worldFootprint)
+{
+    const precise float4 bandLimits = float4(
+        WaterWavePixelBandLimit3D(worldFootprint, waveScale * 0.73),
+        WaterWavePixelBandLimit3D(worldFootprint, waveScale),
+        WaterWavePixelBandLimit3D(worldFootprint, waveScale * 1.37),
+        WaterWavePixelBandLimit3D(worldFootprint, waveScale * 1.91));
+    return WaterAnalyticWaveComponents3D(worldXZ, time, waveScale, amplitude,
+                                         speed, direction, phaseOffset, bandLimits);
+}
+
+float3 WaterAnalyticDirectionalWave3D(float2 worldXZ, float time,
+                                      float waveScale, float amplitude,
+                                      float speed, float2 direction,
+                                      float phaseOffset,
+                                      float2 reconstructedDeltaX,
+                                      float2 reconstructedDeltaY,
+                                      float2 interpolatedDeltaX,
+                                      float2 interpolatedDeltaY)
+{
+    const precise float4 bandLimits = WaterWaveDirectionalBandLimits3D(
+        reconstructedDeltaX, reconstructedDeltaY, interpolatedDeltaX,
+        interpolatedDeltaY, waveScale, direction);
+    return WaterAnalyticWaveComponents3D(worldXZ, time, waveScale, amplitude,
+                                         speed, direction, phaseOffset, bandLimits);
 }
 
 float WaterVertexDisplacementHeight3D(float2 worldXZ, float time, float waveScale, float waveStrength, float waveSpeed)
@@ -1881,8 +2015,9 @@ float WaterVertexDisplacementHeight3D(float2 worldXZ, float time, float waveScal
     // 保護 hostile preset。此路徑不取樣貼圖，也不增加 draw 或 pass。
     const precise float2 riverTangent = float2(0.28, 0.96);
     const precise float2 riverAcross = float2(-0.96, 0.28);
-    const precise float3 broadWave = WaterAnalyticWave3D(worldXZ, time, waveScale, waveStrength, waveSpeed, riverTangent, 0.31);
-    const precise float3 crossWave = WaterAnalyticWave3D(worldXZ, time, waveScale * 1.31, waveStrength * 0.85, waveSpeed * 0.73, riverTangent * 0.573576436 + riverAcross * 0.819152044, 2.03);
+    // footprint=0 保留原本的頂點位移頻譜；只有像素法線依畫面解析度退場。
+    const precise float3 broadWave = WaterAnalyticWave3D(worldXZ, time, waveScale, waveStrength, waveSpeed, riverTangent, 0.31, 0.0);
+    const precise float3 crossWave = WaterAnalyticWave3D(worldXZ, time, waveScale * 1.31, waveStrength * 0.85, waveSpeed * 0.73, riverTangent * 0.573576436 + riverAcross * 0.819152044, 2.03, 0.0);
     return clamp((broadWave.x + crossWave.x) * 0.16, -0.05, 0.05);
 }
 
@@ -1940,24 +2075,13 @@ float WaterReflectionRoughness3D(float minimumRoughness, float maximumRoughness,
                                  float resolvedSlope, float unresolvedDetail,
                                  float foamCoverage, float depthSlice)
 {
-    // 材質粗糙度只有單一設定值；改由已解析及已濾除的波能量推導空間微面寬度，
-    // 避免整片水面都把該值夾到相同上限。有效淺水增加受限粗糙度，讓近岸
-    // 折射深度、泡沫與天空反射使用同一個水深分區，而不是彼此滑動。
-    const float weight = saturate(0.12 + resolvedSlope * 2.25
-                                        + unresolvedDetail * 0.30
+    // 已解析坡度已由 waterReflectionNormal 改變反射方向，不能再把同一坡度
+    // 當成微面粗糙度展寬一次。粗糙度只承接未解析頻譜、泡沫及淺岸擾動；
+    // resolvedSlope 保留在介面中供診斷比對，不參與 lobe 寬度。
+    const float weight = saturate(0.12 + unresolvedDetail * 0.30
                                         + foamCoverage * 0.70
                                         + (1.0 - saturate(depthSlice)) * 0.32);
     return lerp(minimumRoughness, maximumRoughness, weight);
-}
-
-float WaterWavePixelBandLimit3D(float worldFootprint, float waveScale)
-{
-    // 以實際世界座標像素足跡做解析式 band-limit。每週期少於約 16px 時
-    // 逐步衰減，少於約 4.5px 時完全移除，避免斜視水面把波峰變成規則閃爍條帶。
-    const precise float cyclesPerPixel = max(0.0, waveScale) * worldFootprint;
-    const precise float blend = saturate((cyclesPerPixel - 0.06) / 0.16);
-    const precise float smoothed = blend * blend * (3.0 - 2.0 * blend);
-    return 1.0 - smoothed;
 }
 
 precise float3 WaterOrderedScaleAdd3D(precise float3 first, precise float firstScale,
@@ -2404,11 +2528,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     }
                 }
                 // forest_ground_04 的 packed roughness 平均值為 .9128；Showcase
-                // terrain 的基礎 roughness 尚會乘 .78。只將 forest layer 固定
-                // 收斂到 packed mean .78（最終約 .6084），保留 AO、metallic
+                // terrain 的基礎 roughness 尚會乘 .78。只將 forest layer 輕微
+                // 收斂到 packed mean 約 .90（最終約 .702），保留 AO、metallic
                 // 以及 Ground108/path 的原始表面資料。界限避免極端 texel 形成
                 // 鏡面閃點或重新退化為沒有微表面層次的平坦地表。
-                const float calibratedGrassRoughness = clamp(grassSurface.g * 0.854514, 0.55, 0.96);
+                const float calibratedGrassRoughness = clamp(grassSurface.g * 0.986, 0.68, 0.98);
                 grassSurface.g = lerp(grassSurface.g, calibratedGrassRoughness,
                                       showcaseTerrainAuthoredBiomeCalibration);
                 const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
@@ -2710,55 +2834,130 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 每一頻譜使用不同相位原點，避免四組重播相同相位格。
             const precise float2 riverTangent = float2(0.28, 0.96);
             const precise float2 riverAcross = float2(-0.96, 0.28);
-            const precise float3 broadWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale, waterBroadWaveStrength, waterBroadWaveSpeed, riverTangent, 0.31);
+            const precise float2 crossBroadDirection = riverTangent * 0.342020143
+                                                      + riverAcross * 0.939692621;
+            const precise float2 macroDirection = riverTangent * 0.906307787
+                                                 + riverAcross * 0.422618262;
+            const precise float2 crossMacroDirection = riverTangent * 0.573576436
+                                                      - riverAcross * 0.819152044;
+            const precise float broadResolvedWeight = WaterWaveDirectionalResolvedWeight3D(
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY,
+                waterBroadWaveScale, riverTangent);
+            const precise float crossResolvedWeight = WaterWaveDirectionalResolvedWeight3D(
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY,
+                waterBroadWaveScale * 1.31, crossBroadDirection);
+            const precise float pairedBroadResolvedWeight = min(broadResolvedWeight, crossResolvedWeight);
+            const precise float broadDiversityScale = broadResolvedWeight > 0.0001
+                ? pairedBroadResolvedWeight / broadResolvedWeight : 0.0;
+            const precise float crossDiversityScale = crossResolvedWeight > 0.0001
+                ? pairedBroadResolvedWeight / crossResolvedWeight : 0.0;
+            precise float3 broadWave = WaterAnalyticDirectionalWave3D(
+                input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale,
+                waterBroadWaveStrength, waterBroadWaveSpeed, riverTangent, 0.31,
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY);
             // 次要頻譜不可只在主流方向附近擺動，否則多組解析波仍會疊成
             // 橫跨河寬的規則平行亮帶。保留順流長波作為主要輪廓，其餘三組
-            // 分散到 +55、-45 與 +85 度，形成有方向但不呈瓦楞狀的河面。
-            const precise float3 crossWave = WaterAnalyticWave3D(input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31, waterBroadWaveStrength * 0.85, waterBroadWaveSpeed * 0.73, riverTangent * 0.573576436 + riverAcross * 0.819152044, 2.03);
+            // 分散到 +70、-45 與 +85 度，讓低頻分量逐級退場時仍保有兩個
+            // 足夠分離的方向，形成有方向但不呈瓦楞狀的河面。
+            precise float3 crossWave = WaterAnalyticDirectionalWave3D(
+                input.worldPosition.xz, fogEndEnabled.w, waterBroadWaveScale * 1.31,
+                waterBroadWaveStrength * 0.85, waterBroadWaveSpeed * 0.73,
+                crossBroadDirection, 2.03,
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY);
+            // 暮色斜視鏡頭每像素跨越一公尺以上；即使寬波逐方向 band-limit，
+            // 0.14 cycle/m 的主要頻譜也只剩很小斜率。兩組 15~40m 波長的
+            // 河面 swell 提供仍可解析的大尺度法線，不使用螢幕雜訊或復活
+            // 已過 Nyquist 的 detail 頻率。
+            const precise float macroWaveScale = waterBroadWaveScale * 0.36;
+            const precise float crossMacroWaveScale = macroWaveScale * 1.23;
+            const precise float macroResolvedWeight = WaterWaveDirectionalResolvedWeight3D(
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY,
+                macroWaveScale, macroDirection);
+            const precise float crossMacroResolvedWeight = WaterWaveDirectionalResolvedWeight3D(
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY,
+                crossMacroWaveScale, crossMacroDirection);
+            const precise float pairedMacroResolvedWeight = min(macroResolvedWeight, crossMacroResolvedWeight);
+            const precise float macroDiversityScale = macroResolvedWeight > 0.0001
+                ? pairedMacroResolvedWeight / macroResolvedWeight : 0.0;
+            const precise float crossMacroDiversityScale = crossMacroResolvedWeight > 0.0001
+                ? pairedMacroResolvedWeight / crossMacroResolvedWeight : 0.0;
+            precise float3 macroWave = WaterAnalyticDirectionalWave3D(
+                input.worldPosition.xz, fogEndEnabled.w, macroWaveScale,
+                waterBroadWaveStrength, waterBroadWaveSpeed * 0.55,
+                macroDirection, 1.13,
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY);
+            precise float3 crossMacroWave = WaterAnalyticDirectionalWave3D(
+                input.worldPosition.xz, fogEndEnabled.w, crossMacroWaveScale,
+                waterBroadWaveStrength * 0.82, waterBroadWaveSpeed * 0.41,
+                crossMacroDirection, 5.17,
+                waterWorldDeltaX, waterWorldDeltaY,
+                waterInterpolatedDeltaX, waterInterpolatedDeltaY);
+            // 每組內部四個頻率仍獨立退場；此處只平衡兩組尚可解析的總能量，
+            // 並同時縮放高度與偏導，避免中間 LOD 只剩單一方向形成高光條帶。
+            broadWave = broadWave * broadDiversityScale;
+            crossWave = crossWave * crossDiversityScale;
+            macroWave = macroWave * macroDiversityScale;
+            crossMacroWave = crossMacroWave * crossMacroDiversityScale;
             const precise float detailWarpDistance = WaterDomainWarpDistance3D(waterBroadWaveScale, waterDetailWaveScale);
             const precise float crossDetailWarpDistance = WaterDomainWarpDistance3D(waterBroadWaveScale * 1.31, waterDetailWaveScale * 0.71);
             const precise float2 detailPosition = WaterDomainWarpPosition3D(input.worldPosition.xz, riverAcross, broadWave, waterBroadWaveStrength, detailWarpDistance);
             const precise float2 crossDetailPosition = WaterDomainWarpPosition3D(input.worldPosition.xz, riverAcross, crossWave, waterBroadWaveStrength * 0.85, crossDetailWarpDistance);
-            precise float3 detailWave = WaterAnalyticWave3D(detailPosition, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, riverTangent * 0.707106781 - riverAcross * 0.707106781, 4.79);
-            precise float3 crossDetailWave = WaterAnalyticWave3D(crossDetailPosition, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, riverTangent * 0.087155743 + riverAcross * 0.996194698, 7.31);
+            precise float3 detailWave = WaterAnalyticWave3D(detailPosition, fogEndEnabled.w, waterDetailWaveScale, waterDetailWaveStrength, waterDetailWaveSpeed, riverTangent * 0.707106781 - riverAcross * 0.707106781, 4.79, waterWorldFootprint);
+            precise float3 crossDetailWave = WaterAnalyticWave3D(crossDetailPosition, fogEndEnabled.w, waterDetailWaveScale * 0.71, waterDetailWaveStrength * 0.58, waterDetailWaveSpeed * 1.27, riverTangent * 0.087155743 + riverAcross * 0.996194698, 7.31, waterWorldFootprint);
             detailWave.yz = WaterDomainWarpGradient3D(detailWave.yz, riverAcross, broadWave, waterBroadWaveStrength, detailWarpDistance);
             crossDetailWave.yz = WaterDomainWarpGradient3D(crossDetailWave.yz, riverAcross, crossWave, waterBroadWaveStrength * 0.85, crossDetailWarpDistance);
-            // WaterAnalyticWave3D 的最高分量是 base scale 的 1.91 倍；若只用
-            // base scale 估算 footprint，內部高頻已低於 Nyquist 時仍會殘留。
-            const precise float broadBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.91);
-            const precise float crossBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterBroadWaveScale * 1.31 * 1.91);
-            const precise float detailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 1.91);
-            const precise float crossDetailBandLimit = WaterWavePixelBandLimit3D(waterWorldFootprint, waterDetailWaveScale * 0.71 * 1.91);
-            // 遠距不得只剩單一 broad 方向。兩組低頻任一不可解析時共同退場，
-            // 避免最後一條相干正弦被 Fresnel／GGX 放大成橫跨河面的亮帶。
-            const precise float lowFrequencyDiversity = min(broadBandLimit, crossBandLimit);
+            // 僅用加權頻譜保留量估算 unresolved roughness；正式高度與偏導已在
+            // WaterAnalyticWave3D 內逐分量 band-limit，不再用最高頻率清零整組波。
+            const precise float detailResolvedWeight = WaterWaveResolvedWeight3D(waterWorldFootprint, waterDetailWaveScale);
+            const precise float crossDetailResolvedWeight = WaterWaveResolvedWeight3D(waterWorldFootprint, waterDetailWaveScale * 0.71);
+            const precise float pairedDetailResolvedWeight = min(detailResolvedWeight, crossDetailResolvedWeight);
+            const precise float detailDiversityScale = detailResolvedWeight > 0.0001
+                ? pairedDetailResolvedWeight / detailResolvedWeight : 0.0;
+            const precise float crossDetailDiversityScale = crossDetailResolvedWeight > 0.0001
+                ? pairedDetailResolvedWeight / crossDetailResolvedWeight : 0.0;
+            detailWave = detailWave * detailDiversityScale;
+            crossDetailWave = crossDetailWave * crossDetailDiversityScale;
             // 四組各含四個非共線分量的解析高度場分散主要方向。每組偏導
             // 與高度共用相位，遠景亦各自依像素世界足跡衰減；不採跨程序
             // 可能落在不同半精度邊界的格點雜訊梯度。
             // 遠景會先濾除兩組細波，因此兩組寬波必須保留相近能量；否則
             // 只剩單一順流正弦主宰高光，即使近景的總方向統計已分散仍會出現條帶。
-            precise float2 heightGradient = broadWave.yz * lowFrequencyDiversity * 0.27;
-            heightGradient = heightGradient + crossWave.yz * lowFrequencyDiversity * 0.27;
-            heightGradient = heightGradient + detailWave.yz * detailBandLimit * 0.22;
-            heightGradient = heightGradient + crossDetailWave.yz * crossDetailBandLimit * 0.24;
+            precise float2 heightGradient = broadWave.yz * 1.48;
+            heightGradient = heightGradient + crossWave.yz * 1.48;
+            heightGradient = heightGradient + macroWave.yz * 3.48;
+            heightGradient = heightGradient + crossMacroWave.yz * 3.48;
+            heightGradient = heightGradient + detailWave.yz * 0.22;
+            heightGradient = heightGradient + crossDetailWave.yz * 0.24;
             // Material3D already carries the authored normal amplitude. The water path
             // previously ignored it, so distant river pixels used only half of the
             // intended analytic slope and collapsed into a flat translucent sheet.
             // Scale the real height derivative after per-band filtering; this keeps
             // sub-pixel waves suppressed and does not introduce screen-space noise.
-            const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);
+            const precise float waterNormalScale = clamp(input.normalScale, 0.0, 2.0);
             heightGradient = heightGradient * waterNormalScale;
-            waterLowFrequencyGradient = (broadWave.yz + crossWave.yz)
-                                      * lowFrequencyDiversity * 0.27 * waterNormalScale;
+            waterLowFrequencyGradient = ((broadWave.yz + crossWave.yz) * 1.48
+                                      + (macroWave.yz + crossMacroWave.yz) * 3.48)
+                                      * waterNormalScale;
             const precise float lowFrequencySlope = length(waterLowFrequencyGradient);
             waterLowFrequencyGradient = waterLowFrequencyGradient
                                       * min(1.0, 0.48 / max(lowFrequencySlope, 0.0001));
             const precise float unboundedSlope = length(heightGradient);
             heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));
             waterResolvedSlope = min(unboundedSlope, 0.48);
-            waterUnresolvedDetail = 1.0 - (lowFrequencyDiversity * 0.54
-                                           + detailBandLimit * 0.22
-                                           + crossDetailBandLimit * 0.24);
+            // 解析度粗糙度能量必須包含新增的 macro swell。舊式重複 broad、
+            // 完全漏掉 macro，讓已清楚出現在法線中的大波仍被當成未解析微面，
+            // 在反射查詢中再次模糊。三個頻帶的歸一化權重總和固定為 1。
+            waterUnresolvedDetail = saturate(1.0 - (
+                pairedBroadResolvedWeight * 0.54
+              + pairedMacroResolvedWeight * 0.36
+              + pairedDetailResolvedWeight * 0.10));
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC == 19
             waterDiagnosticHeightGradient = heightGradient;
 #endif
@@ -2984,15 +3183,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 起伏，只把環境反射限制在可讀、非自發光的天空能量範圍。以峰值
             // 等比例縮放而不是逐通道 min，避免把高光裁成失去色彩與波紋的平帶。
             const precise float waterReflectionKnee=max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*1.5;
-            const precise float waterReflectionMaximum=waterReflectionKnee*1.1;
+            const precise float waterReflectionMaximum=waterReflectionKnee*1.65;
             const precise float waterReflectionPeak=max(reflectedWater.r,max(reflectedWater.g,reflectedWater.b));
             // C1 連續的有界 soft-knee：門檻以下 exact no-op；門檻以上仍單調
-            // 保留亮暗差，漸近上限為 1.65 倍天空能量。硬 cap 會把所有超限像素
-            // 正規化成相同峰值，正是黃昏水面雖不過曝、卻像平色帶的原因。
+            // 保留亮暗差，漸近上限為 1.65 倍天空能量。用 excess/(excess+headroom)
+            // 使 knee 右導數保持 1；舊 K/peak 形式在 knee 右側只剩 0.1，會把
+            // 黃昏波面剛形成的反射對比立即壓平。
+            const precise float waterReflectionHeadroom=max(
+                waterReflectionMaximum-waterReflectionKnee,0.000001);
+            const precise float waterReflectionExcess=max(
+                0.0,waterReflectionPeak-waterReflectionKnee);
             const precise float waterReflectionCompressedPeak=waterReflectionPeak<=waterReflectionKnee
                 ? waterReflectionPeak
-                : waterReflectionMaximum-(waterReflectionMaximum-waterReflectionKnee)
-                  *(waterReflectionKnee/max(waterReflectionPeak,0.000001));
+                : waterReflectionKnee+waterReflectionHeadroom*waterReflectionExcess
+                  /(waterReflectionExcess+waterReflectionHeadroom);
             const precise float waterReflectionScale=min(1.0,waterReflectionCompressedPeak/max(waterReflectionPeak,0.000001));
             reflectedWater=WaterOrderedMultiply3D(reflectedWater,waterReflectionScale.xxx);
         }

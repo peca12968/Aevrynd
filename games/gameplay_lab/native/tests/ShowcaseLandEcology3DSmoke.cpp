@@ -40,6 +40,9 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.densestHabitatCell == right.densestHabitatCell &&
       left.heroGroundCover == right.heroGroundCover &&
       left.heroGroundCoverQuadrantMask == right.heroGroundCoverQuadrantMask &&
+      left.heroPathShoulderCluster == right.heroPathShoulderCluster &&
+      left.heroCottageRearCluster == right.heroCottageRearCluster &&
+      left.heroRiverForegroundCluster == right.heroRiverForegroundCluster &&
       left.understoryGroundCover == right.understoryGroundCover &&
       left.understoryGroundCoverBandMask ==
           right.understoryGroundCoverBandMask &&
@@ -76,6 +79,8 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.riverbankLayered == right.riverbankLayered &&
       left.densityExact == right.densityExact &&
       left.heroGroundCoverExact == right.heroGroundCoverExact &&
+      left.heroCompositionClustersExact ==
+          right.heroCompositionClustersExact &&
       left.understoryGroundCoverExact == right.understoryGroundCoverExact &&
       left.deterministicBudget == right.deterministicBudget &&
       left.walkingLaneClear == right.walkingLaneClear &&
@@ -247,11 +252,49 @@ int main() {
              <<" bands="<<receipt.bandsExact
              <<" spawn="<<receipt.spawnExcluded
              <<" cottage="<<receipt.cottageExcluded
+             <<" clusters="<<receipt.heroPathShoulderCluster<<'/'
+             <<receipt.heroCottageRearCluster<<'/'
+             <<receipt.heroRiverForegroundCluster
+             <<" clusterExact="<<receipt.heroCompositionClustersExact
+             <<" understory="<<receipt.understoryGroundCover<<"/0x"<<std::hex
+             <<receipt.understoryGroundCoverBandMask<<std::dec
+             <<" spacing="<<receipt.minimumTreeSpacing<<'/'
+             <<receipt.minimumGrassSpacing<<'/'<<receipt.minimumRockSpacing<<'/'
+             <<receipt.minimumPropEdgeSpacing
+             <<" river="<<receipt.riverbankLayered
+             <<'/'<<receipt.meanRiverbankGrassClearance<<'/'
+             <<receipt.meanRiverbankRockClearance
+             <<" deterministic="<<receipt.deterministicBudget
+             <<" lane="<<receipt.walkingLaneClear
+             <<" scale="<<receipt.vegetationScaleBounded
              <<" fingerprint="<<receipt.fingerprint<<'\n';
     return 1;
   }
   if (!TreeVariantDistributionContract(first))
     return 35;
+  if (!receipt.heroCompositionClustersExact ||
+      receipt.heroPathShoulderCluster < 3u ||
+      receipt.heroCottageRearCluster < 3u ||
+      receipt.heroRiverForegroundCluster < 6u)
+    return 42;
+  // 三群必須由既有中景配置本身成立；移除任一樹群的三個 transform 應使正式
+  // validator 拒絕，而不是只靠總 placement 數或測試內的別名計數通過。
+  auto brokenComposition = first;
+  unsigned movedHeroTrees{};
+  for (auto &placement : brokenComposition)
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.band == ShowcaseLandBand3D::Mid &&
+        placement.position.z >= 55.f && placement.position.z <= 80.f &&
+        placement.position.x >= -40.f && movedHeroTrees < 3u) {
+      ++movedHeroTrees;
+      placement.position = {100.f + float(movedHeroTrees) * 6.f, 0.f, 20.f};
+    }
+  ShowcaseLandEcologyReceipt3D brokenCompositionReceipt{};
+  if (movedHeroTrees < 3u ||
+      ValidateShowcaseLandEcology3D(settings, brokenComposition,
+                                    &brokenCompositionReceipt) ||
+      brokenCompositionReceipt.heroCompositionClustersExact)
+    return 43;
   auto concentratedDeadwood = first;
   for (auto &placement : concentratedDeadwood)
     if (placement.kind == ShowcaseLandKind3D::Tree)

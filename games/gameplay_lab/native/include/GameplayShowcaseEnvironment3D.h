@@ -21,7 +21,7 @@ namespace GameplayLab {
 
 enum class ShowcaseLightingProfile3D : std::uint8_t { Day, Dusk, Night };
 inline constexpr Aevrynd::Vec3 GameplayCottagePorchLanternCenter3D{
-    -12.f, 2.75f, 19.70f};
+    -12.f, 2.45f, 19.70f};
 enum class ShowcaseSceneKind3D : std::uint8_t {
   Terrain,
   Water,
@@ -57,7 +57,7 @@ ShowcaseUnderstoryHighDetailFootprintBounds3D(
   case ShowcaseLandVariant3D::GrassFan:
     return {{.0142904f, -.0146019f}, {.40636f, .442553f}};
   case ShowcaseLandVariant3D::GrassTuft:
-    return {{.00975448f, .115083f}, {.975619f, .866476f}};
+    return {{.00975448f, .0405891f}, {.975619f, .760599f}};
   default: return {};
   }
 }
@@ -343,7 +343,7 @@ ShowcaseUnderstoryFormVariation(
 ShowcaseForestTerrainTint3D() noexcept {
   // 以低反射率苔蘚綠取代偏黃的亮草坪色：在不改曝光、燈光或材質
   // 取樣的前提下，保留綠色優勢，同時讓土壤、落葉與濕岸分區可讀。
-  return {.46f, .52f, .39f, 1.f};
+  return {.47f, .535f, .405f, 1.f};
 }
 
 // 三層地表使用同一套世界座標貼圖；較低頻率保留近景 PBR 細節，同時
@@ -592,8 +592,8 @@ SampleShowcaseTerrainEcologyTint3D(
   const auto authoredEdgeNoise = [](Aevrynd::Vec3 point) {
     // Stable world-space harmonics break up biome borders without adding a
     // texture lookup, descriptor, camera dependency, or temporal shimmer.
-    return std::sin(point.x * .47f + point.z * .19f) * .18f +
-           std::sin(point.x * .13f - point.z * .41f + 1.7f) * .11f;
+    return std::sin(point.x * .47f + point.z * .19f) * .10f +
+           std::sin(point.x * .13f - point.z * .41f + 1.7f) * .06f;
   };
   // A shallow bend avoids the artificial ruler-straight strip between spawn
   // and the front porch while preserving a deterministic, bounded footprint.
@@ -607,16 +607,25 @@ SampleShowcaseTerrainEcologyTint3D(
   // existing authored harmonics break the two shoulders differently without
   // changing height, geometry, descriptors, or camera-dependent state.
   const float pathTreadHalfWidth =
-      .52f + std::sin(worldPosition.z * .31f + .8f) * .14f +
-      std::sin(worldPosition.z * .13f - 1.1f) * .09f;
-  const float pathShoulderWidth =
-      2.06f +
+      .15f + std::sin(worldPosition.z * .31f + .8f) * .05f +
+      std::sin(worldPosition.z * .13f - 1.1f) * .03f;
+  // Give the authored shoulder enough world-space support to hand off to wet
+  // soil without flipping the signed terrain weight between adjacent one-metre
+  // vertices.  The mild power curve keeps the perceptual trail narrow and
+  // guarantees the authored band is clear before two metres.
+  const float pathVisibleHalfWidth =
+      1.70f +
       std::sin(worldPosition.z * .23f - worldPosition.x * .07f + .35f) *
-          .16f;
+          .10f;
+  const float pathShoulderWidth =
+      (std::max)(.75f, pathVisibleHalfWidth - pathTreadHalfWidth);
   const float pathEdge = path.x + authoredEdgeNoise(worldPosition) +
-                         (path.y >= 0.f ? .10f : -.05f);
+                         (path.y >= 0.f ? .05f : -.025f);
+  const float pathShoulderCoordinate =
+      Aevrynd::Clamp((pathEdge - pathTreadHalfWidth) / pathShoulderWidth,
+                     0.f, 1.f);
   const float pathCandidate =
-      1.f - smooth((pathEdge - pathTreadHalfWidth) / pathShoulderWidth);
+      std::pow(1.f - pathShoulderCoordinate, 1.2f);
 
   float canopyCandidate{};
   for (const auto &descriptor : descriptors) {

@@ -171,6 +171,111 @@ bool VerifyProductionBarkResponse() {
   return !ApplyShowcaseProductionBarkResponse3D(deadTree.name, deadTree);
 }
 
+bool VerifyProductionLeafResponse() {
+  constexpr float epsilon = 0.0001f;
+  const auto close = [](float left, float right) {
+    return std::abs(left - right) <= epsilon;
+  };
+  const auto makeDefinition = [](std::string name) {
+    Aevrynd::MaterialAssetDefinition3D definition{};
+    definition.name = std::move(name);
+    definition.textures.baseColorPath = "leaf-base.dds";
+    definition.textures.roughnessPath = "leaf-arm.dds";
+    definition.textures.normalPath = "leaf-normal.dds";
+    definition.textures.alphaMode = Aevrynd::MaterialAlphaMode3D::Mask;
+    definition.textures.alphaCutoff = .5f;
+    definition.textures.surfaceEncoding =
+        Aevrynd::MaterialSurfaceMapEncoding3D::PackedOrm;
+    definition.material.useUv = true;
+    definition.material.materialClass = Aevrynd::MaterialClass3D::Foliage;
+    definition.material.shadingModel =
+        Aevrynd::CharacterShadingModel3D::Default;
+    definition.material.alphaMode = Aevrynd::MaterialAlphaMode3D::Mask;
+    definition.material.alphaCutoff = .5f;
+    definition.material.doubleSided = true;
+    return definition;
+  };
+  const auto unchanged = [](const Aevrynd::MaterialAssetDefinition3D &left,
+                             const Aevrynd::MaterialAssetDefinition3D &right) {
+    return left.textures.alphaMode == right.textures.alphaMode &&
+        left.textures.alphaCutoff == right.textures.alphaCutoff &&
+        left.material.tint.r == right.material.tint.r &&
+        left.material.tint.g == right.material.tint.g &&
+        left.material.tint.b == right.material.tint.b &&
+        left.material.tint.a == right.material.tint.a &&
+        left.material.surface.roughness == right.material.surface.roughness &&
+        left.material.surface.metallic == right.material.surface.metallic &&
+        left.material.surface.emissive == right.material.surface.emissive &&
+        left.material.surface.occlusion == right.material.surface.occlusion &&
+        left.material.normalScale == right.material.normalScale &&
+        left.material.useUv == right.material.useUv &&
+        left.material.materialClass == right.material.materialClass &&
+        left.material.alphaMode == right.material.alphaMode &&
+        left.material.alphaCutoff == right.material.alphaCutoff &&
+        left.material.doubleSided == right.material.doubleSided;
+  };
+
+  auto island = makeDefinition("island_tree_01:leaves");
+  const auto islandSurfaceBefore = island.material.surface;
+  if (!ApplyShowcaseProductionLeafResponse3D(island.name, island) ||
+      !close(island.material.tint.r, .96f) ||
+      !close(island.material.tint.g, 1.f) ||
+      !close(island.material.tint.b, .93f) ||
+      !close(island.material.tint.a, 1.f) ||
+      !close(island.material.surface.roughness, .76f) ||
+      !close(island.material.normalScale, 1.08f) ||
+      !close(island.material.alphaCutoff, .42f) ||
+      !close(island.textures.alphaCutoff, .42f) ||
+      island.material.surface.metallic != islandSurfaceBefore.metallic ||
+      island.material.surface.emissive != islandSurfaceBefore.emissive ||
+      island.material.surface.occlusion != islandSurfaceBefore.occlusion ||
+      island.material.materialClass != Aevrynd::MaterialClass3D::Foliage ||
+      island.material.alphaMode != Aevrynd::MaterialAlphaMode3D::Mask ||
+      !island.material.doubleSided)
+    return false;
+
+  auto small = makeDefinition("tree_small_02:leaves");
+  if (!ApplyShowcaseProductionLeafResponse3D(small.name, small) ||
+      !close(small.material.tint.r, .91f) ||
+      !close(small.material.tint.g, .98f) ||
+      !close(small.material.tint.b, .86f) ||
+      !close(small.material.surface.roughness, .82f) ||
+      !close(small.material.normalScale, 1.12f) ||
+      !close(small.material.alphaCutoff, .42f) ||
+      !close(small.textures.alphaCutoff, .42f))
+    return false;
+
+  for (const auto id : {"island_tree_01:trunk",
+                         "tree_small_02:branches",
+                         "dead_tree_trunk_02:slot-0", "unknown:leaves"}) {
+    auto excluded = makeDefinition(id);
+    const auto before = excluded;
+    if (ApplyShowcaseProductionLeafResponse3D(id, excluded) ||
+        !unchanged(excluded, before))
+      return false;
+  }
+
+  auto invalid = makeDefinition("island_tree_01:leaves");
+  invalid.material.doubleSided = false;
+  const auto invalidBefore = invalid;
+  if (ApplyShowcaseProductionLeafResponse3D(invalid.name, invalid) ||
+      !unchanged(invalid, invalidBefore))
+    return false;
+  invalid = makeDefinition("tree_small_02:leaves");
+  invalid.textures.alphaCutoff = .49f;
+  const auto mismatchedBefore = invalid;
+  if (ApplyShowcaseProductionLeafResponse3D(invalid.name, invalid) ||
+      !unchanged(invalid, mismatchedBefore))
+    return false;
+  invalid = makeDefinition("island_tree_01:leaves");
+  invalid.material.normalScale = std::numeric_limits<float>::infinity();
+  if (ApplyShowcaseProductionLeafResponse3D(invalid.name, invalid))
+    return false;
+  invalid = makeDefinition("wrong-name");
+  return !ApplyShowcaseProductionLeafResponse3D(
+      "tree_small_02:leaves", invalid);
+}
+
 bool VerifyProductionWeatheredPropResponse() {
   constexpr float epsilon = 0.0001f;
   const auto close = [](float left, float right) {
@@ -522,6 +627,8 @@ int main(int argc, char **argv) {
     return 12;
   if (!VerifyProductionBarkResponse())
     return 15;
+  if (!VerifyProductionLeafResponse())
+    return 17;
   if (!VerifyProductionWeatheredPropResponse())
     return 16;
   if (!VerifyHlodDescriptorAndAggregatePolicy())

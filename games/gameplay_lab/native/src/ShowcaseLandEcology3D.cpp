@@ -19,6 +19,13 @@ constexpr std::uint32_t HeroGroundCoverOrdinals = 84;
 constexpr std::uint32_t MinimumHeroGroundCover = 28;
 constexpr float UnderstoryTreeRadius = 12.f;
 constexpr std::uint32_t MinimumUnderstoryGroundCover = 80;
+constexpr std::array<Aevrynd::Vec3, 3> HeroPathShoulderAnchors{{
+    {-20.f, 0.f, 58.f}, {30.f, 0.f, 62.f}, {-19.f, 0.f, 70.f}}};
+constexpr std::array<Aevrynd::Vec3, 3> HeroCottageRearAnchors{{
+    {-31.f, 0.f, 60.f}, {-38.f, 0.f, 68.f}, {-28.f, 0.f, 77.f}}};
+constexpr std::array<float, 6> HeroRiverForegroundZ{{58.f, 64.f, 70.f,
+                                                     76.f, 82.f, 88.f}};
+constexpr float HeroClusterTolerance = 4.f;
 
 float BandMinimumFor(ShowcaseLandKind3D kind, std::uint32_t band) noexcept {
   // 草叢不參與實體碰撞；近景地被可進入玩家安全圈外緣，樹與岩石仍維持原本的實體淨空。
@@ -239,6 +246,7 @@ bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
       bandsExact && riverExcluded && spawnExcluded && cottageExcluded &&
       stableKeysExact && transformsExact && footprintSpacingExact && zonesExact &&
       riverbankLayered && densityExact && heroGroundCoverExact &&
+      heroCompositionClustersExact &&
       understoryGroundCoverExact &&
       heroGroundCover >= MinimumHeroGroundCover &&
       heroGroundCoverQuadrantMask == 0x0fu && riverbankRocks == 30 &&
@@ -517,6 +525,33 @@ bool BuildShowcaseLandEcology3D(
                          center.z+radialDirectionZ*childRadius};
             }
           }
+          // 十二個既有中景 identity 改作固定鏡頭的三個構圖錨點；數量、
+          // band、variant、stable key 與碰撞 gate 均不變。前六棵形成步道
+          // S 彎兩肩及小屋側後輪廓，六顆河岸石把前中景河道接回畫面。
+          const bool heroPathCluster =
+              kind == ShowcaseLandKind3D::Tree && band == 1u &&
+              item >= 7u && item <= 31u && item % 12u == 7u;
+          const bool heroCottageCluster =
+              kind == ShowcaseLandKind3D::Tree && band == 1u &&
+              item >= 43u && item <= 67u && item % 12u == 7u;
+          const bool heroRiverCluster =
+              kind == ShowcaseLandKind3D::Rock && band == 1u && item < 6u;
+          if (heroPathCluster || heroCottageCluster) {
+            const auto anchor = heroPathCluster
+                ? HeroPathShoulderAnchors[(item - 7u) / 12u]
+                : HeroCottageRearAnchors[(item - 43u) / 12u];
+            const float retryRadius = trial == 0u
+                ? 0.f
+                : .55f + .22f * float((trial - 1u) / 8u);
+            const float retryAngle = seedPhase + float(trial) * 2.39996323f;
+            candidate = {anchor.x + std::cos(retryAngle) * retryRadius, 0,
+                         anchor.z + std::sin(retryAngle) * retryRadius};
+          } else if (heroRiverCluster) {
+            candidate.z = HeroRiverForegroundZ[item] +
+                (trial == 0u ? 0.f
+                             : std::sin(seedPhase + float(trial) * 2.39996323f) *
+                                   (1.f + .15f * float(trial / 8u)));
+          }
           if (kind == ShowcaseLandKind3D::Rock ||
               zone == ShowcaseLandZone3D::Riverbank) {
             // 河岸項目直接由同一條正式河流函數取樣兩岸，避免先在整個環帶抽樣再
@@ -527,8 +562,10 @@ bool BuildShowcaseLandEcology3D(
             const float maximum = kind == ShowcaseLandKind3D::Rock
                                       ? settings.riverbankRockMaximumClearance
                                       : settings.riverbankGrassMaximumClearance;
-            const float clearance = minimum + .05f +
-                bankFraction * (maximum - minimum - .1f);
+            const float clearance = heroRiverCluster
+                ? 7.f + bankFraction * (maximum - 7.1f)
+                : minimum + .05f +
+                      bankFraction * (maximum - minimum - .1f);
             bankFraction += .754877666f;
             if (bankFraction >= 1.f) bankFraction -= 1.f;
             const float side = ((trial + ordinal) & 1u) ? 1.f : -1.f;
@@ -638,6 +675,7 @@ bool ValidateShowcaseLandEcology3D(
       result.spawnExcluded = result.cottageExcluded = result.stableKeysExact =
       result.transformsExact = result.footprintSpacingExact = result.zonesExact =
       result.riverbankLayered = result.densityExact = true;
+  result.heroCompositionClustersExact = true;
   std::uint64_t hash = 14695981039346656037ull;
   Mix(hash, &settings.seed, sizeof(settings.seed));
   Mix(hash, settings.trees.data(), sizeof(settings.trees));
@@ -713,6 +751,28 @@ bool ValidateShowcaseLandEcology3D(
       result.riverbankLayered &= bankClearance >= RiverClearance(placement.kind) &&
           bankClearance <= settings.riverbankGrassMaximumClearance;
     }
+    if (placement.band == ShowcaseLandBand3D::Mid &&
+        placement.kind == ShowcaseLandKind3D::Tree) {
+      for (const auto anchor : HeroPathShoulderAnchors)
+        if (DistanceSquared(placement.position, anchor) <=
+            HeroClusterTolerance * HeroClusterTolerance) {
+          ++result.heroPathShoulderCluster;
+          break;
+        }
+      for (const auto anchor : HeroCottageRearAnchors)
+        if (DistanceSquared(placement.position, anchor) <=
+            HeroClusterTolerance * HeroClusterTolerance) {
+          ++result.heroCottageRearCluster;
+          break;
+        }
+    }
+    if (placement.band == ShowcaseLandBand3D::Mid &&
+        placement.kind == ShowcaseLandKind3D::Rock &&
+        placement.position.z >= HeroRiverForegroundZ.front() -
+                                    HeroClusterTolerance &&
+        placement.position.z <= HeroRiverForegroundZ.back() +
+                                    HeroClusterTolerance)
+      ++result.heroRiverForegroundCluster;
     const int habitatX = (std::clamp)(
         int((placement.position.x + settings.terrainHalfSpan) /
             settings.habitatCellSize), 0, int(HabitatGridSide) - 1);
@@ -829,6 +889,10 @@ bool ValidateShowcaseLandEcology3D(
           result.meanRiverbankRockClearance;
   result.heroGroundCoverExact = result.heroGroundCover >= MinimumHeroGroundCover &&
                                 result.heroGroundCoverQuadrantMask == 0x0fu;
+  result.heroCompositionClustersExact =
+      result.heroPathShoulderCluster >= HeroPathShoulderAnchors.size() &&
+      result.heroCottageRearCluster >= HeroCottageRearAnchors.size() &&
+      result.heroRiverForegroundCluster >= HeroRiverForegroundZ.size();
   result.understoryGroundCoverExact =
       result.understoryGroundCover >= MinimumUnderstoryGroundCover &&
       result.understoryGroundCoverBandMask == 0x07u;

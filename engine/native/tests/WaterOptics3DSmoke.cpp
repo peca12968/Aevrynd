@@ -46,16 +46,45 @@ int main(){
  const auto shaderPath=std::filesystem::path(__FILE__).parent_path().parent_path()/"shaders"/"World.hlsl";
   std::ifstream shaderFile(shaderPath);const std::string shader{std::istreambuf_iterator<char>{shaderFile},std::istreambuf_iterator<char>{}};
   const auto count=[&](const std::string& token){unsigned n=0;size_t p=0;while((p=shader.find(token,p))!=std::string::npos){++n;p+=token.size();}return n;};
+  const auto reflectionShoulder=[](float peak,float knee,float maximum){
+   if(peak<=knee)return peak;
+   const float headroom=(std::max)(maximum-knee,.000001f),excess=(std::max)(0.f,peak-knee);
+   return knee+headroom*excess/(excess+headroom);
+  };
+  const float shoulderKnee=1.f,shoulderMaximum=1.65f,shoulderStep=1e-4f;
+  const float shoulderRightDerivative=(reflectionShoulder(shoulderKnee+shoulderStep,shoulderKnee,shoulderMaximum)-shoulderKnee)/shoulderStep;
+  float previousShoulder=reflectionShoulder(shoulderKnee,shoulderKnee,shoulderMaximum);
+  if(reflectionShoulder(.75f,shoulderKnee,shoulderMaximum)!=.75f||previousShoulder!=shoulderKnee||
+     shoulderRightDerivative<.995f||shoulderRightDerivative>1.001f){std::cerr<<"Water reflection shoulder continuity failed\n";return 30;}
+  for(unsigned sample=1;sample<=160;++sample){
+   const float peak=shoulderKnee+float(sample)*.1f;
+   const float compressed=reflectionShoulder(peak,shoulderKnee,shoulderMaximum);
+   if(compressed<previousShoulder||compressed>shoulderMaximum){std::cerr<<"Water reflection shoulder bounds failed\n";return 31;}
+   previousShoulder=compressed;
+  }
+  const std::array<float,3> shoulderColor{{2.f,.8f,.2f}};
+  const float shoulderScale=reflectionShoulder(shoulderColor[0],shoulderKnee,shoulderMaximum)/shoulderColor[0];
+  const std::array<float,3> compressedColor{{shoulderColor[0]*shoulderScale,shoulderColor[1]*shoulderScale,shoulderColor[2]*shoulderScale}};
+  if(std::abs(compressedColor[1]/compressedColor[0]-shoulderColor[1]/shoulderColor[0])>1e-6f||
+     std::abs(compressedColor[2]/compressedColor[0]-shoulderColor[2]/shoulderColor[0])>1e-6f){std::cerr<<"Water reflection shoulder chroma failed\n";return 32;}
   // 黃昏與夜間另有 time-of-day exposure；環境反射上限若回到四倍天空
   // 能量，掠射角河面會再次成為均勻亮帶。固定正式 shader 的保守上限。
   if(shader.find("const precise float waterReflectionKnee=max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*1.5;") == std::string::npos ||
-     shader.find("const precise float waterReflectionMaximum=waterReflectionKnee*1.1;") == std::string::npos ||
-     shader.find("const precise float waterReflectionPeak=max(reflectedWater.r,max(reflectedWater.g,reflectedWater.b));") == std::string::npos ||
-     shader.find("const precise float waterReflectionCompressedPeak=waterReflectionPeak<=waterReflectionKnee") == std::string::npos ||
-     shader.find("waterReflectionMaximum-(waterReflectionMaximum-waterReflectionKnee)") == std::string::npos ||
-     shader.find("reflectedWater=WaterOrderedMultiply3D(reflectedWater,waterReflectionScale.xxx);") == std::string::npos ||
+      shader.find("const precise float waterReflectionMaximum=waterReflectionKnee*1.65;") == std::string::npos ||
+      shader.find("const precise float waterReflectionPeak=max(reflectedWater.r,max(reflectedWater.g,reflectedWater.b));") == std::string::npos ||
+      shader.find("const precise float waterReflectionCompressedPeak=waterReflectionPeak<=waterReflectionKnee") == std::string::npos ||
+      shader.find("const precise float waterReflectionHeadroom=max(") == std::string::npos ||
+      shader.find("waterReflectionKnee+waterReflectionHeadroom*waterReflectionExcess") == std::string::npos ||
+      shader.find("*(waterReflectionKnee/max(waterReflectionPeak") != std::string::npos ||
+      shader.find("reflectedWater=WaterOrderedMultiply3D(reflectedWater,waterReflectionScale.xxx);") == std::string::npos ||
      shader.find("waterReflectionCap/max(waterReflectionPeak") != std::string::npos ||
-     shader.find("max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*4.0") != std::string::npos){std::cerr<<"Water low-light reflection soft-knee contract failed\n";return 27;}
+      shader.find("max(waterMaximumNightRadiance,dot(aerialSkyRadianceSunScale.rgb,float3(.2126,.7152,.0722)))*4.0") != std::string::npos){std::cerr<<"Water low-light reflection soft-knee contract failed\n";return 27;}
+  // 已解析的大波會直接改變反射法線；不得又當成 unresolved microfacet
+  // roughness 展寬。新的 macro 頻帶也必須參與解析能量守恆。
+  if(shader.find("pairedBroadResolvedWeight * 0.54") == std::string::npos ||
+     shader.find("pairedMacroResolvedWeight * 0.36") == std::string::npos ||
+     shader.find("pairedDetailResolvedWeight * 0.10") == std::string::npos ||
+     shader.find("resolvedSlope * 2.25") != std::string::npos){std::cerr<<"Water resolved/unresolved roughness contract failed\n";return 33;}
   // Opaque single-composite water cannot rely on target alpha for shoreline
   // softness.  The validated vertical shore field and authored water alpha must
   // both participate in the RGB scene-to-water handoff.
@@ -63,11 +92,14 @@ int main(){
      shader.find("output.color.a = waterBoundaryWeight;") == std::string::npos ||
      shader.find("? waterDeepAlpha : input.color.a;") == std::string::npos ||
      shader.find("? saturate(waterBoundaryWeight * lerp(waterOutputAlpha, 1.0, waterBoundaryWeight))") == std::string::npos){std::cerr<<"Water shoreline RGB handoff contract failed\n";return 28;}
-  const auto analyticCount=count("WaterAnalyticWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
+  const auto analyticCount=count("WaterAnalyticWave3D("),directionalAnalyticCount=count("WaterAnalyticDirectionalWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),directionalBandLimitCount=count("WaterWaveDirectionalPixelBandLimit3D("),resolvedWeightCount=count("WaterWaveResolvedWeight3D("),directionalResolvedWeightCount=count("WaterWaveDirectionalResolvedWeight3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
   const auto sharedBegin=shader.find("WorldPixelInput InstancedVertexMain("),waterBegin=shader.find("WorldPixelInput InstancedWaterVertexMain("),skinnedBegin=shader.find("WorldPixelInput SkinnedVertexMain(");
   if(sharedBegin==std::string::npos||waterBegin<=sharedBegin||skinnedBegin<=waterBegin){std::cerr<<"Dedicated water vertex entry ordering failed\n";return 25;}
   const auto sharedVertex=shader.substr(sharedBegin,waterBegin-sharedBegin),waterVertex=shader.substr(waterBegin,skinnedBegin-waterBegin);
   const auto rendererPath=shaderPath.parent_path().parent_path()/"src"/"D3D12Renderer.cpp";std::ifstream rendererFile(rendererPath);const std::string renderer{std::istreambuf_iterator<char>{rendererFile},std::istreambuf_iterator<char>{}};
+  if(renderer.find("s.maximumNightRadiance,.005f,8.f") == std::string::npos ||
+     renderer.find("s.maximumNightRadiance,.05f,8.f") != std::string::npos ||
+     shader.find("float3(0.0,0.0,.005),float3(1.0,1.0,8.0)") == std::string::npos){std::cerr<<"Water night-radiance GPU pack/decode range drifted\n";return 29;}
   if(sharedVertex.find("waterSurfaceEnabled")!=std::string::npos||sharedVertex.find("WaterSurfacePacked(")!=std::string::npos||sharedVertex.find("WaterVertexDisplacementHeight3D(")!=std::string::npos||
      waterVertex.find("waterSurfaceEnabled") == std::string::npos||waterVertex.find("WaterSurfacePacked(3)") == std::string::npos||waterVertex.find("WaterVertexDisplacementHeight3D(") == std::string::npos||waterVertex.find("saturate(input.normal.w)") == std::string::npos||
      renderer.find("parameters[11].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;\n D3D12_STATIC_SAMPLER_DESC") == std::string::npos||renderer.find("parameters[11].ShaderVisibility=D3D12_SHADER_VISIBILITY_ALL;blob.Reset()") == std::string::npos||
@@ -76,7 +108,7 @@ int main(){
      renderer.find("makeMsaa(instancedWater,d.msaaInstancedWaterPipeline") == std::string::npos||renderer.find("createSemanticPipeline(instancedWater,d.bloomSemanticWaterPipeline") == std::string::npos||
      renderer.find("makeSemanticMsaa(instancedWater,d.msaaBloomSemanticWaterPipeline") == std::string::npos||renderer.find("objectIdInstanced.VS = {ObjectIdInstancedVertexShader") == std::string::npos||
      renderer.find("aoDepthInstanced.VS={AmbientOcclusionDepthInstancedVertexShader") == std::string::npos||renderer.find("shadowInstanced.VS={ShadowPackedInstancedVertexShader") == std::string::npos){std::cerr<<"Dedicated water/shared instanced vertex isolation contract failed\n";return 26;}
-   if(analyticCount!=7||bandLimitCount!=5||scatterCount!=2||fallbackCount!=2||count("WaterVertexDisplacementHeight3D(")!=3||count("WaterDomainWarpPosition3D(")!=3||count("WaterDomainWarpGradient3D(")!=3||count("WaterReflectionRoughness3D(")!=2||shader.find("* waterBoundaryWeight;")==std::string::npos||shader.find("clamp((broadWave.x + crossWave.x) * 0.16, -0.05, 0.05)")==std::string::npos||shader.find("const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);")==std::string::npos||shader.find("waterBroadWaveStrength * 0.85")==std::string::npos||shader.find("const float2 waterInterpolatedDeltaX = ddx(input.worldPosition.xz);")==std::string::npos||shader.find("waterInterpolatedFootprint);")==std::string::npos||shader.find("waterBroadWaveScale * 1.31 * 1.91")==std::string::npos||shader.find("const precise float lowFrequencyDiversity = min(broadBandLimit, crossBandLimit);")==std::string::npos||shader.find("broadWave.yz * lowFrequencyDiversity * 0.27")==std::string::npos||shader.find("crossWave.yz * lowFrequencyDiversity * 0.27")==std::string::npos||shader.find("detailWave.yz * detailBandLimit * 0.22")==std::string::npos||shader.find("crossDetailWave.yz * crossDetailBandLimit * 0.24")==std::string::npos||shader.find("const precise float waterNormalScale = clamp(input.normalScale, 0.0, 1.35);")==std::string::npos||shader.find("heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));")==std::string::npos||shader.find("WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,")==std::string::npos||shader.find("waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterDirectionalSpecular,1.0)") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader river-spectrum/vertex-depth/warp/roughness/normal-scale/direct-specular/band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<bandLimitCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
+  if(analyticCount!=5||directionalAnalyticCount!=5||bandLimitCount!=10||directionalBandLimitCount!=5||resolvedWeightCount!=3||directionalResolvedWeightCount!=5||scatterCount!=2||fallbackCount!=2||count("WaterVertexDisplacementHeight3D(")!=3||count("WaterDomainWarpPosition3D(")!=3||count("WaterDomainWarpGradient3D(")!=3||count("WaterReflectionRoughness3D(")!=2||shader.find("* waterBoundaryWeight;")==std::string::npos||shader.find("clamp((broadWave.x + crossWave.x) * 0.16, -0.05, 0.05)")==std::string::npos||shader.find("const precise float4 componentWeights = float4(0.46, 0.26, 0.18, 0.10);")==std::string::npos||shader.find("worldFootprint, waveScale * 0.73")==std::string::npos||shader.find("worldFootprint, waveScale * 1.37")==std::string::npos||shader.find("worldFootprint, waveScale * 1.91")==std::string::npos||shader.find("riverTangent, 0.31, 0.0")==std::string::npos||shader.find("waterBroadWaveStrength * 0.85")==std::string::npos||shader.find("const float2 waterInterpolatedDeltaX = ddx(input.worldPosition.xz);")==std::string::npos||shader.find("waterInterpolatedFootprint);")==std::string::npos||shader.find("WaterWaveDirectionalFootprint3D(")==std::string::npos||shader.find("WaterWaveDirectionalBandLimits3D(")==std::string::npos||shader.find("WaterWaveResolvedWeight3D(waterWorldFootprint, waterBroadWaveScale)")!=std::string::npos||shader.find("const precise float macroWaveScale = waterBroadWaveScale * 0.36;")==std::string::npos||shader.find("macroWave.yz * 3.48")==std::string::npos||shader.find("crossMacroWave.yz * 3.48")==std::string::npos||shader.find("4.79, waterWorldFootprint")==std::string::npos||shader.find("7.31, waterWorldFootprint")==std::string::npos||shader.find("broadWave.yz * 1.48")==std::string::npos||shader.find("crossWave.yz * 1.48")==std::string::npos||shader.find("detailWave.yz * 0.22")==std::string::npos||shader.find("crossDetailWave.yz * 0.24")==std::string::npos||shader.find("const precise float lowFrequencyDiversity")!=std::string::npos||shader.find("waterBroadWaveScale * 1.31 * 1.91")!=std::string::npos||shader.find("const precise float waterNormalScale = clamp(input.normalScale, 0.0, 2.0);")==std::string::npos||shader.find("heightGradient = heightGradient * min(1.0, 0.48 / max(unboundedSlope, 0.0001));")==std::string::npos||shader.find("WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,")==std::string::npos||shader.find("waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterDirectionalSpecular,1.0)") == std::string::npos||shader.find("WaterContinuousNoiseGradient3D(")!=std::string::npos||shader.find("physicalDeepWaterColor:legacyDeepColor,baseColor")!=std::string::npos){std::cerr<<"Water production shader river-spectrum/vertex-depth/warp/roughness/normal-scale/direct-specular/component-band-limit/scatter/fallback contract failed counts="<<analyticCount<<'/'<<directionalAnalyticCount<<'/'<<bandLimitCount<<'/'<<directionalBandLimitCount<<'/'<<resolvedWeightCount<<'/'<<directionalResolvedWeightCount<<'/'<<scatterCount<<'/'<<fallbackCount<<'\n';return 12;}
  // single-composite 水體必須逐分量固定乘加順序，禁止回退成向量 lerp/mad 或輸出量化。
  if(shader.find("precise float3 WaterOrderedScaleAdd3D(")==std::string::npos||
     shader.find("result.g = firstTerm.g + secondTerm.g;")==std::string::npos||

@@ -499,7 +499,7 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
   Aevrynd::TerrainDistanceMaterialSettings3D terrainMaterial{
-      true, 48.f, 224.f, .0055f, .12f, 1.10f, .10f};
+      true, 48.f, 224.f, .020f, .17f, 1.24f, .10f};
   terrainMaterial.mesoPartitionEnabled = true;
   draw.SetTerrainDistanceMaterial(terrainMaterial);
   // 淺溪厚度不應把背景折射到岸外；保留可見折射，但限制最大 UV 偏移。
@@ -604,8 +604,10 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     environmentBlend.specularIntensity = .78f;
     environmentBlend.analyticDiffuseWeight = .68f;
     environmentBlend.iblDiffuseWeight = .32f;
-    environmentBlend.analyticSpecularWeight = .62f;
-    environmentBlend.iblSpecularWeight = .38f;
+    // 黃昏鏡面仍需保留真實 HDRI 的高頻環境形狀；舊 38% IBL 讓平滑解析
+    // 天空主宰水面與濕材質，反射退化為均勻色帶。權重總和維持 1，不增加能量。
+    environmentBlend.analyticSpecularWeight = .30f;
+    environmentBlend.iblSpecularWeight = .70f;
     // 保留暖色主光與小屋局部光，但用等亮度冷中性補光分離森林暗部，
     // 避免天空、地表與陰影全部落在相同的棕橙色域。
     environmentBlend.objectFillRadiance = {.22f,.29f,.38f};
