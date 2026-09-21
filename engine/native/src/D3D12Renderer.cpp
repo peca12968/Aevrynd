@@ -2385,7 +2385,7 @@ void D3D12Renderer::Render(const DrawList& dl,Color clear){
   scene.values[140]=environmentBlend.diffuseRgbScale.x;scene.values[141]=environmentBlend.diffuseRgbScale.y;scene.values[142]=environmentBlend.diffuseRgbScale.z;scene.values[143]=environmentBlend.diffuseIntensity;
   scene.values[144]=environmentBlend.specularRgbScale.x;scene.values[145]=environmentBlend.specularRgbScale.y;scene.values[146]=environmentBlend.specularRgbScale.z;scene.values[147]=environmentBlend.specularIntensity;
   scene.values[148]=environmentBlend.analyticDiffuseWeight;scene.values[149]=environmentBlend.iblDiffuseWeight;scene.values[150]=environmentBlend.analyticSpecularWeight;scene.values[151]=environmentBlend.iblSpecularWeight;
-  scene.values[152]=std::bit_cast<float>(uint32_t(environmentBlend.phaseFingerprint));scene.values[153]=std::bit_cast<float>(uint32_t(environmentBlend.phaseFingerprint>>32));scene.values[154]=scene.values[155]=0.f;
+  scene.values[152]=std::bit_cast<float>(uint32_t(environmentBlend.phaseFingerprint));scene.values[153]=std::bit_cast<float>(uint32_t(environmentBlend.phaseFingerprint>>32));scene.values[154]=dl.PhaseRadianceProfile().lunarDetailStrength;scene.values[155]=0.f;
   const auto& phaseRadiance=dl.PhaseRadianceProfile();
   scene.values[156]=phaseRadiance.skyZenith.x;scene.values[157]=phaseRadiance.skyZenith.y;scene.values[158]=phaseRadiance.skyZenith.z;scene.values[159]=phaseRadiance.skyIntensity;
   scene.values[160]=phaseRadiance.skyHorizon.x;scene.values[161]=phaseRadiance.skyHorizon.y;scene.values[162]=phaseRadiance.skyHorizon.z;scene.values[163]=phaseRadiance.horizonExponent;

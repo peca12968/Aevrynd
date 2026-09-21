@@ -74,7 +74,9 @@ bool ValidateLightingRoutes(
         observed[index].radianceFingerprint !=
             expected[index].radianceFingerprint ||
         observed[index].radiance.analyticDiffuseIntensity !=
-            expected[index].radiance.analyticDiffuseIntensity)
+            expected[index].radiance.analyticDiffuseIntensity ||
+        observed[index].radiance.lunarDetailStrength !=
+            expected[index].radiance.lunarDetailStrength)
       return false;
   }
   return true;
@@ -2037,6 +2039,9 @@ int main() {
       dayRadiance.horizonExponent < 2.4f ||
       duskRadiance.horizonExponent < 2.f ||
       nightRadiance.horizonExponent < 1.6f ||
+      dayRadiance.lunarDetailStrength != 0.f ||
+      duskRadiance.lunarDetailStrength != 0.f ||
+      nightRadiance.lunarDetailStrength != 1.f ||
       !(dayRadiance.horizonExponent > duskRadiance.horizonExponent &&
         duskRadiance.horizonExponent > nightRadiance.horizonExponent) ||
       dayEnvironmentBlend.iblDiffuseWeight <=
