@@ -32,9 +32,20 @@ unsigned NoiseSamples=0;
 #include "WaterFoamNoise.inc"
 float Legacy(Vec2 p){return smoothstep(.34f,.76f,CloudNoise(p*.42f)*.72f+(.5f+.5f*std::sin(p.y*1.35f+p.x*.31f))*.28f);}
 float ProductionFoam(Vec2 p,float time,float shore){const float coverage=WaterFoamCoverage3D(p,time);const float presence=smoothstep(.36f,.70f,coverage+shore*.16f);return Clamp(shore*presence,0.f,1.f);}
+float ProductionFoamBlend(float foamMask,float foamStrength,float foamCoverage,float waterLocalContribution,bool waterSurfaceEnabled){return foamMask*foamStrength*lerp(.42f,waterSurfaceEnabled?1.f:.88f,foamCoverage)*(waterSurfaceEnabled?waterLocalContribution:1.f);}
 template<class F>double GridCorrelation(F f){double energy=0,csX=0,snX=0,csZ=0,snZ=0;for(int z=0;z<256;++z)for(int x=0;x<256;++x){Vec2 p{x*.073f-9.5f,z*.073f-9.5f};double dx=(f({p.x+.002f,p.y})-f({p.x-.002f,p.y}))/.004,dz=(f({p.x,p.y+.002f})-f({p.x,p.y-.002f}))/.004,e=dx*dx+dz*dz;energy+=e;csX+=e*std::cos(6.2831853*.42*p.x);snX+=e*std::sin(6.2831853*.42*p.x);csZ+=e*std::cos(6.2831853*.42*p.y);snZ+=e*std::sin(6.2831853*.42*p.y);}return(std::hypot(csX,snX)+std::hypot(csZ,snZ))/energy;}
 bool NoiseGate(){auto current=[](Vec2 p){return WaterFoamCoverage3D(p,0.f);};const double oldGrid=GridCorrelation(Legacy),newGrid=GridCorrelation(current);float maxDelta=0;for(int i=-50;i<=50;++i)for(int j=-50;j<=50;++j){Vec2 p{i*.117f,j*.133f};maxDelta=std::max(maxDelta,std::abs(current({p.x-.00001f,p.y})-current({p.x+.00001f,p.y})));}std::cout<<"noise oldGrid="<<oldGrid<<" newGrid="<<newGrid<<" adjacentDelta="<<maxDelta<<" samplesPerCoverage=2\n";return newGrid<oldGrid*.7&&maxDelta<.003f;}
 int main(){
+ // 正式水面泡沫必須跟隨既有 RGB 邊界權重；內部維持原值、半覆蓋減半、輪廓歸零。
+ const float interiorFoamBlend=ProductionFoamBlend(.8f,.6f,.75f,1.f,true);
+ const float halfFoamBlend=ProductionFoamBlend(.8f,.6f,.75f,.5f,true);
+ const float contourFoamBlend=ProductionFoamBlend(.8f,.6f,.75f,0.f,true);
+ // 停用正式水面時仍須逐常數保留 legacy 泡沫，不得套用 production 邊界權重。
+ const float legacyInteriorFoamBlend=ProductionFoamBlend(.8f,.6f,.75f,1.f,false);
+ const float legacyContourFoamBlend=ProductionFoamBlend(.8f,.6f,.75f,0.f,false);
+ std::cout<<"foamBlend contour="<<contourFoamBlend<<" half="<<halfFoamBlend<<" interior="<<interiorFoamBlend<<" legacy="<<legacyContourFoamBlend<<'\n';
+ if(std::abs(contourFoamBlend)>1e-6f||std::abs(halfFoamBlend-interiorFoamBlend*.5f)>1e-6f||
+    std::abs(legacyContourFoamBlend-legacyInteriorFoamBlend)>1e-6f)return 10;
  HeightField3D t({{-256,0,-256},129,129,4});
  if(!t.GenerateUltra(0x4a17u,{10.5f,.0105f,.56f,.22f,24.f,.34f,7,3,.68f,.16f}))return 1;
  t.FlattenCircle({-16,0,8},8,0,8);t.FlattenCircle({-12,0,24},7.2f,0,4.5f);CarveShowcaseRiverShore3D(t);

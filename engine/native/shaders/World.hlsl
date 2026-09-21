@@ -3241,7 +3241,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             }
             const float3 foamColor = baseColor * lerp(0.58, 0.96, foamCoverage)
                                    + EvaluateEnvironmentDiffuse(normal, skyLightDirection) * 0.055;
-            const float foamBlend=foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage);
+            const float foamBlend=foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage)*(waterSurfaceEnabled!=0u?waterLocalContribution:1.0);
 #if AEVRYND_WATER_AERIAL_DIAGNOSTIC >= 6
             waterDiagnosticFoam = foamBlend;
 #endif

@@ -92,6 +92,8 @@ int main(){
      shader.find("output.color.a = waterBoundaryWeight;") == std::string::npos ||
      shader.find("? waterDeepAlpha : input.color.a;") == std::string::npos ||
      shader.find("? saturate(waterBoundaryWeight * lerp(waterOutputAlpha, 1.0, waterBoundaryWeight))") == std::string::npos){std::cerr<<"Water shoreline RGB handoff contract failed\n";return 28;}
+  // 正式泡沫必須共用既有 RGB 邊界權重；disabled 分支以 1 保留 legacy，內部權重 1 也保持原輸出。
+  if(shader.find("const float foamBlend=foamMask*waterFoamStrength*lerp(.42,waterSurfaceEnabled!=0u?1.0:.88,foamCoverage)*(waterSurfaceEnabled!=0u?waterLocalContribution:1.0);") == std::string::npos){std::cerr<<"Water shoreline foam handoff contract failed\n";return 34;}
   const auto analyticCount=count("WaterAnalyticWave3D("),directionalAnalyticCount=count("WaterAnalyticDirectionalWave3D("),bandLimitCount=count("WaterWavePixelBandLimit3D("),directionalBandLimitCount=count("WaterWaveDirectionalPixelBandLimit3D("),resolvedWeightCount=count("WaterWaveResolvedWeight3D("),directionalResolvedWeightCount=count("WaterWaveDirectionalResolvedWeight3D("),scatterCount=count("WaterLitScatter3D("),fallbackCount=count("WaterReflectionFallback3D(");
   const auto sharedBegin=shader.find("WorldPixelInput InstancedVertexMain("),waterBegin=shader.find("WorldPixelInput InstancedWaterVertexMain("),skinnedBegin=shader.find("WorldPixelInput SkinnedVertexMain(");
   if(sharedBegin==std::string::npos||waterBegin<=sharedBegin||skinnedBegin<=waterBegin){std::cerr<<"Dedicated water vertex entry ordering failed\n";return 25;}
