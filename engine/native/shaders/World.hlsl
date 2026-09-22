@@ -2583,7 +2583,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                     }
                 }
                 const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
-                terrainNormal=normalize(lerp(geometricNormal,sampledNormal,saturate(terrainDetailWeight*terrainNormalDetailStrength)));
+                // 強日光可承受較深的切線凹凸；低照度仍保留細節，但限制法線偏轉，
+                // 避免月光下的微表面因 NdotL 變化把整片地表壓黑。
+                const float terrainDirectionalNormalWeight=smoothstep(.42,1.42,lightColorIntensity.w);
+                const float terrainLowLightNormalStrength=min(terrainNormalDetailStrength,1.24);
+                const float terrainEffectiveNormalStrength=lerp(terrainLowLightNormalStrength,
+                    terrainNormalDetailStrength,terrainDirectionalNormalWeight);
+                terrainNormal=ScaleNormalDetail(geometricNormal,sampledNormal,
+                    terrainDetailWeight*terrainEffectiveNormalStrength);
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
             const float microVariation=lerp(1.0,lerp(0.92,1.08,microNoise),terrainDetailWeight);

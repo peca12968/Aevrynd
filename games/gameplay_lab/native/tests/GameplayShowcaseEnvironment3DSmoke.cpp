@@ -1894,7 +1894,7 @@ int main() {
   if (std::abs(terrainDistanceMaterial.macroVariationScale - .020f) > 1e-6f ||
       std::abs(terrainDistanceMaterial.macroVariationStrength - .17f) >
           1e-6f ||
-      std::abs(terrainDistanceMaterial.normalDetailStrength - 1.24f) >
+      std::abs(terrainDistanceMaterial.normalDetailStrength - 1.80f) >
           1e-6f)
     return 111;
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Day, {1, 2, 3});

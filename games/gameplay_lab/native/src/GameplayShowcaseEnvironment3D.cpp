@@ -499,7 +499,7 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
   Aevrynd::TerrainDistanceMaterialSettings3D terrainMaterial{
-      true, 48.f, 224.f, .020f, .17f, 1.24f, .10f};
+      true, 48.f, 224.f, .020f, .17f, 1.80f, .10f};
   terrainMaterial.mesoPartitionEnabled = true;
   draw.SetTerrainDistanceMaterial(terrainMaterial);
   // 淺溪厚度不應把背景折射到岸外；保留可見折射，但限制最大 UV 偏移。
