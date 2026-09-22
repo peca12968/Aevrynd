@@ -1610,6 +1610,8 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   if (!combatSpawned_) {
     // 怪物跟隨玩家出生區配置，避免更換合法展示站位後超出AI追蹤與近戰範圍。
     combat_->SpawnMonster(GameplayShowcaseMonsterSpawn3D(controller_.Position(),yaw_));
+    const Vec3 cottageEntry{-12.f,showcaseTerrain_.SampleHeight(-12.f,19.f),19.f};
+    if(!forestTrial_.Reset(cottageEntry))throw std::runtime_error("Gameplay forest trial initialization failed");
     combatSpawned_ = true;
   }
   if(!captureDirectory_.empty()){
@@ -1635,6 +1637,13 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     rules_.SetPaletteCategory(*mapped.category);
   if (mapped.female){if(!rules_.Female())ResetProductionCameraCut(GameplayTemporalReseedReason3D::Character);rules_.SetCharacterFemale(true);}
   if (mapped.male){if(rules_.Female())ResetProductionCameraCut(GameplayTemporalReseedReason3D::Character);rules_.SetCharacterFemale(false);}
+  if(captureDirectory_.empty()&&!uiOwnedInput&&forestTrial_.Complete()&&in.Pressed('R')){
+    combat_->SpawnMonster(GameplayShowcaseMonsterSpawn3D(controller_.Position(),yaw_));
+    const Vec3 cottageEntry{-12.f,showcaseTerrain_.SampleHeight(-12.f,19.f),19.f};
+    if(!forestTrial_.Reset(cottageEntry))throw std::runtime_error("Gameplay forest trial restart failed");
+    monsterHistory_={};
+    ResetProductionCameraCut(GameplayTemporalReseedReason3D::PoseState);
+  }
   yaw_ -= mapped.mouseDelta.x * .0025f;
   pitch_ = Clamp(pitch_ - mapped.mouseDelta.y * .0025f, -.75f, .9f);
   if(!SyncEnvironmentCollision(controller_.Position()))throw std::runtime_error("Gameplay environment collision streaming update failed");
@@ -1677,6 +1686,8 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   }
   const CharacterControl3D control=BuildProductionCharacterControl3D(mapped.tick,rules_);
   controller_.Step(control, collisions_, showcaseTerrain_, gameplayDelta);
+  if(!forestTrial_.Tick(combat_->Monster().alive,controller_.Position()))
+    throw std::runtime_error("Gameplay forest trial rejected authoritative state");
   const auto gameplayTick = rules_.GetStats().ticks;
   // gameplayTick在Rules::Tick之後，26精確對應ApplyReplayInput的tick 25拖曳階段。
   if(!captureDirectory_.empty()&&gameplayTick==26){
@@ -3205,9 +3216,17 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   if(cleanCapturePresentation)++captureCleanHudFrames_;
   if(GameplayHudShowsCompactInstructions3D(hudPolicy,cleanCapturePresentation))
     draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
+  if(!cleanCapturePresentation&&forestTrial_.Initialized()){
+    const auto objective=forestTrial_.Phase()==ForestTrialPhase3D::ReturnToCottage
+      ?std::format("FOREST TRIAL: {}  {:.1f} m",forestTrial_.ObjectiveLabel(),forestTrial_.DistanceToCottage(controller_.Position()))
+      :forestTrial_.Complete()?std::format("FOREST TRIAL COMPLETE  [R] RESTART")
+                             :std::format("FOREST TRIAL: {}",forestTrial_.ObjectiveLabel());
+    draw.Quad({640,82},{610,42},{.008f,.018f,.022f,.84f});
+    draw.Text({352,68},objective,1.05f,forestTrial_.Complete()?Gold:Cyan);
+  }
   if(hudPolicy.instructions){
     draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});
-    draw.Text({18,14},"[F1] HIDE HELP  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);
+    draw.Text({18,14},"[F1] HIDE HELP  [1/2/3,V] CAMERA  [WASD/SHIFT/SPACE/C/Z] MOVE  [LMB] COMBO  [TAB/B] PALETTE",1.25f,Cyan);
   }
   if(hudPolicy.palette){
     draw.Quad({190,585},{360,230},{.008f,.018f,.022f,.9f});
