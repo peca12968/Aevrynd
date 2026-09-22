@@ -1,5 +1,6 @@
 #include "GameplayForestGroundCoverMesh3D.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -295,6 +296,36 @@ Vec3 CardRoot(const Mesh3D& mesh, std::size_t card) {
   return {(mesh.vertices[base].x + mesh.vertices[base + 1u].x) * .5f,
           (mesh.vertices[base].y + mesh.vertices[base + 1u].y) * .5f,
           (mesh.vertices[base].z + mesh.vertices[base + 1u].z) * .5f};
+}
+
+float ProjectedForestFloorCoverage(const Mesh3D& mesh) {
+  constexpr unsigned Grid = 96u;
+  constexpr float HalfSpan = 1.15f;
+  std::array<bool, Grid * Grid> occupied{};
+  const auto edge = [](Vec2 a, Vec2 b, Vec2 p) {
+    return (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x);
+  };
+  for (std::size_t triangle = 0; triangle + 2u < mesh.indices.size();
+       triangle += 3u) {
+    const auto& av = mesh.vertices[mesh.indices[triangle]];
+    const auto& bv = mesh.vertices[mesh.indices[triangle + 1u]];
+    const auto& cv = mesh.vertices[mesh.indices[triangle + 2u]];
+    const Vec2 a{av.x, av.z}, b{bv.x, bv.z}, c{cv.x, cv.z};
+    const float area = edge(a, b, c);
+    if (std::abs(area) <= 1e-7f) continue;
+    for (unsigned z = 0; z < Grid; ++z)
+      for (unsigned x = 0; x < Grid; ++x) {
+        const Vec2 point{-HalfSpan + (float(x) + .5f) * (2.f * HalfSpan / Grid),
+                         -HalfSpan + (float(z) + .5f) * (2.f * HalfSpan / Grid)};
+        const float ab = edge(a, b, point), bc = edge(b, c, point),
+                    ca = edge(c, a, point);
+        const bool hasNegative = ab < 0.f || bc < 0.f || ca < 0.f;
+        const bool hasPositive = ab > 0.f || bc > 0.f || ca > 0.f;
+        if (!(hasNegative && hasPositive)) occupied[z * Grid + x] = true;
+      }
+  }
+  const auto count = std::count(occupied.begin(), occupied.end(), true);
+  return float(count) / float(occupied.size());
 }
 
 bool CommunityColonyContract(
@@ -664,6 +695,27 @@ int main() {
       GameplayForestGroundCoverDetail3D::Mid, 0xf04e57u);
   const auto communityFar = CreateGameplayForestGroundCoverCommunityMesh3D(
       GameplayForestGroundCoverDetail3D::Far, 0xf04e57u);
+  const float nearProjectedCoverage =
+      ProjectedForestFloorCoverage(communityNear);
+  const float midProjectedCoverage =
+      ProjectedForestFloorCoverage(communityMid);
+  const float farProjectedCoverage =
+      ProjectedForestFloorCoverage(communityFar);
+  std::cout << "COMMUNITY_PROJECTED_COVERAGE near="
+            << nearProjectedCoverage << " mid=" << midProjectedCoverage
+            << " far=" << farProjectedCoverage << " bounds="
+            << communityNear.Bounds().extents.x << '/'
+            << communityNear.Bounds().extents.z << ','
+            << communityMid.Bounds().extents.x << '/'
+            << communityMid.Bounds().extents.z << '\n';
+  // Fixed 2.3 m forest-floor projection: the former layout measured
+  // 0.08095/0.04763 for Near/Mid even while all count gates passed.  Require
+  // the same cards to form a real carpet, without increasing Far cost.
+  if (nearProjectedCoverage < .09f || midProjectedCoverage < .06f ||
+      farProjectedCoverage < .045f || farProjectedCoverage > .050f) {
+    std::cerr << "COMMUNITY_PROJECTED_COVERAGE=FAIL\n";
+    return 21;
+  }
   if (communityNear.indices.size() <= communityMid.indices.size() ||
       communityMid.indices.size() <= communityFar.indices.size()) {
     std::cerr << "COMMUNITY_NEAR_MID_FAR_DENSITY=FAIL\n";
