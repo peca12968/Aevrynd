@@ -18,7 +18,7 @@ MAGIC = b"AEM3"
 VERSION = 1
 HEADER = struct.Struct("<4sIII")
 VERTEX = struct.Struct("<fffIIff")
-POLICY = "component-centroid-voxel-triplanar-card-v3"
+POLICY = "component-centroid-voxel-triplanar-card-v4"
 PLANES = ((0, 1), (0, 2), (1, 2))
 
 
@@ -169,6 +169,24 @@ def expanded_cluster_bounds(
     return minimum, maximum
 
 
+def transform_normalized_uv(uv: tuple[float, float], variant: int) -> tuple[float, float]:
+    """Apply one of the eight square symmetries without changing the atlas crop."""
+    u, v = uv
+    transforms = (
+        (u, v),
+        (1.0 - u, v),
+        (u, 1.0 - v),
+        (1.0 - u, 1.0 - v),
+        (1.0 - v, u),
+        (v, 1.0 - u),
+        (v, u),
+        (1.0 - v, 1.0 - u),
+    )
+    if variant < 0 or variant >= len(transforms):
+        fail("UV variant is outside the D4 domain")
+    return transforms[variant]
+
+
 def append_card(
     output_vertices: list[tuple[float, float, float, int, int, float, float]],
     output_indices: list[int],
@@ -191,12 +209,10 @@ def append_card(
     u0, v0 = uv_range["min"]
     u1, v1 = uv_range["max"]
     normalized_uvs = ((0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0))
-    mirror_u = bool(uv_variant & 1)
-    mirror_v = bool(uv_variant & 2)
     uvs = tuple((
-        u0 + (u1 - u0) * (1.0 - u if mirror_u else u),
-        v0 + (v1 - v0) * (1.0 - v if mirror_v else v),
-    ) for u, v in normalized_uvs)
+        u0 + (u1 - u0) * transformed[0],
+        v0 + (v1 - v0) * transformed[1],
+    ) for transformed in (transform_normalized_uv(uv, uv_variant) for uv in normalized_uvs))
     base = len(output_vertices)
     for corner, uv in zip(corners, uvs):
         position = center[:]
@@ -293,7 +309,7 @@ def build(
             selected_planes = [candidates[digest[0] % len(candidates)]]
         uv_variants = []
         for ordinal, plane in enumerate(selected_planes):
-            uv_variant = digest[(ordinal + 1) % len(digest)] & 3
+            uv_variant = digest[(ordinal + 1) % len(digest)] & 7
             uv_variants.append(uv_variant)
             append_card(output_vertices, output_indices, plane, minimum, maximum, cluster["centroid"], uv_range, uv_variant)
         occupied_receipt.append({

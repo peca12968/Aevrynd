@@ -72,11 +72,25 @@ class FoliageCardLodTests(unittest.TestCase):
             self.assertTrue(receipt["diagnosticOnly"])
             self.assertTrue(all(item["components"] == 1 and len(item["planes"]) == 3 for item in receipt["occupiedVoxels"]))
             variants = [variant for item in receipt["occupiedVoxels"] for variant in item["uvVariants"]]
-            self.assertTrue(all(0 <= variant <= 3 for variant in variants))
+            self.assertTrue(all(0 <= variant <= 7 for variant in variants))
             self.assertGreaterEqual(len(set(variants)), 2)
+            self.assertEqual(receipt["policy"], "component-centroid-voxel-triplanar-card-v4")
             for triangle in range(len(indices) // 3):
                 a, b, c = (vertices[indices[triangle * 3 + corner]] for corner in range(3))
                 self.assertGreater(MODULE.triangle_area_squared(a, b, c), 0.0)
+
+    def test_d4_uv_variants_are_unique_crop_corner_permutations(self):
+        corners = ((0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0))
+        variants = [tuple(MODULE.transform_normalized_uv(uv, variant) for uv in corners) for variant in range(8)]
+        self.assertEqual(len(set(variants)), 8)
+        expected_corners = set(corners)
+        self.assertTrue(all(set(permutation) == expected_corners for permutation in variants))
+        self.assertEqual(variants[0], corners)
+        self.assertEqual(variants[1], tuple((1.0 - u, v) for u, v in corners))
+        self.assertEqual(variants[2], tuple((u, 1.0 - v) for u, v in corners))
+        self.assertEqual(variants[3], tuple((1.0 - u, 1.0 - v) for u, v in corners))
+        with self.assertRaises(MODULE.CardLodError):
+            MODULE.transform_normalized_uv((0.0, 0.0), 8)
 
     def test_output_and_policy_are_deterministic(self):
         first_temp, first, first_output, first_receipt = self.run_tool(make_mesh(), ("--seed", "fixed", "--card-scale", "1.5"))
@@ -89,6 +103,24 @@ class FoliageCardLodTests(unittest.TestCase):
             second_json = json.loads(second_receipt.read_text(encoding="utf-8"))
             self.assertEqual(first_json["outputSha256"], second_json["outputSha256"])
             self.assertEqual(first_json["policyHash"], second_json["policyHash"])
+
+    def test_seed_changes_only_uv_assignment(self):
+        first_temp, first, first_output, first_receipt = self.run_tool(make_mesh(), ("--seed", "fixed-a"))
+        second_temp, second, second_output, second_receipt = self.run_tool(make_mesh(), ("--seed", "fixed-b"))
+        with first_temp, second_temp:
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            first_vertices, first_indices = MODULE.parse_aemesh(first_output.read_bytes())
+            second_vertices, second_indices = MODULE.parse_aemesh(second_output.read_bytes())
+            self.assertNotEqual(first_output.read_bytes(), second_output.read_bytes())
+            self.assertEqual(first_indices, second_indices)
+            self.assertEqual([vertex[:5] for vertex in first_vertices], [vertex[:5] for vertex in second_vertices])
+            first_json = json.loads(first_receipt.read_text(encoding="utf-8"))
+            second_json = json.loads(second_receipt.read_text(encoding="utf-8"))
+            self.assertEqual(first_json["bounds"], second_json["bounds"])
+            self.assertEqual(first_json["triangles"], second_json["triangles"])
+            self.assertEqual(first_json["cards"], second_json["cards"])
+            self.assertEqual(first_json["occupiedVoxelCount"], second_json["occupiedVoxelCount"])
 
     def test_production_mode_is_explicit_and_preserves_geometry(self):
         diagnostic_temp, diagnostic, diagnostic_output, diagnostic_receipt = self.run_tool(make_mesh())

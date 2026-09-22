@@ -4,7 +4,7 @@
   "assetName": "island-tree-01",
   "lod": 2,
   "sourceFile": "island-tree-01-canopy-card-lod2-receipt.json",
-  "sourceSha256": "86eaaac80c022ead27117575ed5014cdb5740bc85e5cd9fa88546b3eaf95a50f",
+  "sourceSha256": "c25394e39d0703d1810a66da910e2e2d1bb47f44abb84f82f17a2388a4fd9e65",
   "outputs": [
     {
       "file": "island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
@@ -59,7 +59,7 @@
     },
     {
       "file": "island-tree-01-lod2-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
-      "sha256": "b61dd2e097a7c2d938a5f65767992d91de95ce25e3fad943aaa3891e27b82f77",
+      "sha256": "77d898bd42f649fdfa062a8c6d820a24ab015405f50b43f5404848136f27cbb6",
       "bytes": 78760,
       "nodeIndex": 0,
       "nodePath": [
