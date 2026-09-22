@@ -425,6 +425,28 @@ int main() {
   static_assert(metreAuthoredScale.x == ecologyScale.x &&
                 metreAuthoredScale.y == 1.f &&
                 metreAuthoredScale.z == ecologyScale.z);
+  constexpr auto nearFernScale = GameplayForestGroundCoverPresentationScale3D(
+      ecologyScale, GameplayForestGroundCoverVariant3D::Fern, 0);
+  constexpr auto midFernScale = GameplayForestGroundCoverPresentationScale3D(
+      ecologyScale, GameplayForestGroundCoverVariant3D::Fern, 1);
+  constexpr auto farFernScale = GameplayForestGroundCoverPresentationScale3D(
+      ecologyScale, GameplayForestGroundCoverVariant3D::Fern, 2);
+  constexpr auto midCommunityScale =
+      GameplayForestGroundCoverPresentationScale3D(
+          ecologyScale, GameplayForestGroundCoverVariant3D::Community, 1);
+  constexpr auto riverbankScale = GameplayForestGroundCoverPresentationScale3D(
+      ecologyScale, GameplayForestGroundCoverVariant3D::Riverbank, 2);
+  static_assert(nearFernScale.x == metreAuthoredScale.x &&
+                nearFernScale.y == 2.2f &&
+                nearFernScale.z == metreAuthoredScale.z &&
+                midFernScale.x == ecologyScale.x &&
+                midFernScale.y == 3.2f &&
+                midFernScale.z == ecologyScale.z &&
+                farFernScale.y == 3.f &&
+                midCommunityScale.y == 2.5f &&
+                riverbankScale.x == metreAuthoredScale.x &&
+                riverbankScale.y == metreAuthoredScale.y &&
+                riverbankScale.z == metreAuthoredScale.z);
   constexpr auto contract = GameplayForestGroundCoverAlphaCardContract();
   static_assert(contract.alphaMode == MaterialAlphaMode3D::Mask);
   static_assert(contract.alphaCutoff == .45f);

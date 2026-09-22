@@ -2111,7 +2111,8 @@ void GameplayLabGame::AddShowcaseEnvironment(){
         groundCoverVariant=GameplayForestGroundCoverVariant3D::Community;
       }
       if(groundCoverSource)
-        transform.scale=GameplayForestGroundCoverWorldScale3D(transform.scale);
+        transform.scale=GameplayForestGroundCoverPresentationScale3D(
+            transform.scale,groundCoverVariant,descriptor.lodGroup);
     }
     switch(descriptor.kind){
     case ShowcaseSceneKind3D::Terrain:

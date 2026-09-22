@@ -1839,6 +1839,7 @@ int main() {
   std::array<std::size_t, 3> terrainLayers{};
   std::size_t grassDescriptors = 0;
   std::size_t shadowCastingGrassDescriptors = 0;
+  std::size_t verticalUnderstoryDescriptors = 0;
   bool grassBiomeMaterialsExact = true;
   for (const auto &descriptor : first.Descriptors()) {
     if (descriptor.kind == ShowcaseSceneKind3D::Grass) {
@@ -1848,14 +1849,16 @@ int main() {
         grassBiomeMaterialsExact &=
             descriptor.materialAsset.find("stony_dirt_path") !=
             std::string::npos;
-      else if (descriptor.meshAsset == "procedural/grass-fan")
+      else if (descriptor.meshAsset == "procedural/grass-fan") {
         grassBiomeMaterialsExact &=
             descriptor.materialAsset.find("Ground108") != std::string::npos;
-      else if (descriptor.meshAsset == "procedural/grass-tuft")
+        verticalUnderstoryDescriptors += descriptor.lodGroup != 0 ? 1u : 0u;
+      } else if (descriptor.meshAsset == "procedural/grass-tuft") {
         grassBiomeMaterialsExact &=
             descriptor.materialAsset.find("forest_ground_04") !=
             std::string::npos;
-      else
+        verticalUnderstoryDescriptors += descriptor.lodGroup != 0 ? 1u : 0u;
+      } else
         grassBiomeMaterialsExact = false;
     }
     if (descriptor.materialAsset.find("forest_ground_04") != std::string::npos)
@@ -1866,9 +1869,14 @@ int main() {
       ++terrainLayers[2];
   }
   if (terrainLayers != std::array<std::size_t, 3>{63, 62, 62} ||
-      grassDescriptors != 186 || shadowCastingGrassDescriptors != 0 ||
-      !grassBiomeMaterialsExact)
+      grassDescriptors != 186 || verticalUnderstoryDescriptors != 47 ||
+      shadowCastingGrassDescriptors != 0 ||
+      !grassBiomeMaterialsExact) {
+    std::cerr << "GRASS_VARIANT_ROUTING=FAIL descriptors=" << grassDescriptors
+              << " vertical=" << verticalUnderstoryDescriptors
+              << " shadows=" << shadowCastingGrassDescriptors << '\n';
     return 32;
+  }
 
   constexpr Vec3 heroCenter{-16.f, 0.f, 8.f};
   constexpr float heroRadius = 22.f;

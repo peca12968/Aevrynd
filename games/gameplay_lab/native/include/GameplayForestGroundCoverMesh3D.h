@@ -130,6 +130,25 @@ GameplayForestGroundCoverWorldScale3D(Aevrynd::Vec3 ecologyScale) noexcept {
   return ecologyScale;
 }
 
+// 既有生態配置已把 GrassFan/GrassTuft 分派到中遠景，但公尺建模的蕨與
+// 灌叢最高仍不到一公尺，畫面因此缺少樹冠與貼地層之間的垂直林下層。
+// 只提升既有實例的 Y；XZ footprint、位置、identity、碰撞、triangle 與
+// draw-call 全部保持不變。Near 的倍率較低，且不會讓葉片橫向侵入步行帶。
+[[nodiscard]] constexpr Aevrynd::Vec3
+GameplayForestGroundCoverPresentationScale3D(
+    Aevrynd::Vec3 ecologyScale,
+    GameplayForestGroundCoverVariant3D variant,
+    std::uint32_t lodGroup) noexcept {
+  ecologyScale = GameplayForestGroundCoverWorldScale3D(ecologyScale);
+  if (variant == GameplayForestGroundCoverVariant3D::Riverbank)
+    return ecologyScale;
+  if (variant == GameplayForestGroundCoverVariant3D::Fern)
+    ecologyScale.y = lodGroup == 0 ? 2.2f : lodGroup == 1 ? 3.2f : 3.f;
+  else if (variant == GameplayForestGroundCoverVariant3D::Community)
+    ecologyScale.y = lodGroup == 0 ? 1.7f : lodGroup == 1 ? 2.5f : 2.3f;
+  return ecologyScale;
+}
+
 [[nodiscard]] constexpr GameplayForestGroundCoverAlphaCardContract3D
 GameplayForestGroundCoverAlphaCardContract() noexcept {
   return {};
