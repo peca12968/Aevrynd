@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "converter": "convert-glb-to-aemesh.py",
+  "converter": "build-foliage-card-lod.py",
   "assetName": "island-tree-01",
   "lod": 2,
-  "sourceFile": "island-tree-01-lod2.glb",
-  "sourceSha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24",
+  "sourceFile": "island-tree-01-canopy-card-lod2-receipt.json",
+  "sourceSha256": "86eaaac80c022ead27117575ed5014cdb5740bc85e5cd9fa88546b3eaf95a50f",
   "outputs": [
     {
       "file": "island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
@@ -59,8 +59,8 @@
     },
     {
       "file": "island-tree-01-lod2-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
-      "sha256": "0e96ddea6fd88c7c9e1e6b43352503affcd6ba97ace0d2abbf37b48429d1a9a6",
-      "bytes": 8568172,
+      "sha256": "b61dd2e097a7c2d938a5f65767992d91de95ce25e3fad943aaa3891e27b82f77",
+      "bytes": 78760,
       "nodeIndex": 0,
       "nodePath": [
         1,
@@ -71,18 +71,18 @@
       "primitiveIndex": 1,
       "materialIndex": 1,
       "materialName": "island-tree-01-leaves",
-      "vertices": 237861,
-      "indices": 477012,
-      "triangles": 159004,
+      "vertices": 2316,
+      "indices": 3474,
+      "triangles": 1158,
       "boundsMinimumGltf": [
-        -2.34364605,
-        0.6302542282579999,
+        -2.34444571,
+        0.63023595132,
         -2.58353806
       ],
       "boundsMaximumGltf": [
-        2.4106825208099996,
-        5.007118853845999,
-        2.2339566949819996
+        2.4108077965360004,
+        5.007119067203,
+        2.2340100039590003
       ],
       "windingReversed": true,
       "hasNormals": true,

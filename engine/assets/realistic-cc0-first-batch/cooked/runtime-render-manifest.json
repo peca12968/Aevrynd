@@ -2069,8 +2069,8 @@
         "officialPage": "https://polyhaven.com/a/island_tree_01",
         "inputs": [
           {
-            "path": "island-tree-01/island-tree-01-lod2.glb",
-            "sha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24"
+            "path": "island-tree-01/island-tree-01-canopy-card-lod2-receipt.json",
+            "sha256": "0e7a8afc1ca7ceb90115eb58d397585e952b3f7009fa07a2e618dc7c7769e65e"
           }
         ]
       },
@@ -2079,23 +2079,23 @@
     },
     {
       "path": "meshes/island-tree-01/island-tree-01-lod2-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
-      "bytes": 8568172,
-      "sha256": "0e96ddea6fd88c7c9e1e6b43352503affcd6ba97ace0d2abbf37b48429d1a9a6",
+      "bytes": 78760,
+      "sha256": "b61dd2e097a7c2d938a5f65767992d91de95ce25e3fad943aaa3891e27b82f77",
       "format": "AEMESH-v1",
       "mips": null,
       "dimensions": {
-        "vertices": 237861,
-        "indices": 477012,
-        "triangles": 159004,
+        "vertices": 2316,
+        "indices": 3474,
+        "triangles": 1158,
         "boundsMinimum": [
-          -2.34364605,
-          0.6302542282579999,
+          -2.34444571,
+          0.63023595132,
           -2.58353806
         ],
         "boundsMaximum": [
-          2.4106825208099996,
-          5.007118853845999,
-          2.2339566949819996
+          2.4108077965360004,
+          5.007119067203,
+          2.2340100039590003
         ]
       },
       "source": {
@@ -2103,8 +2103,8 @@
         "officialPage": "https://polyhaven.com/a/island_tree_01",
         "inputs": [
           {
-            "path": "island-tree-01/island-tree-01-lod2.glb",
-            "sha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24"
+            "path": "island-tree-01/island-tree-01-canopy-card-lod2-receipt.json",
+            "sha256": "0e7a8afc1ca7ceb90115eb58d397585e952b3f7009fa07a2e618dc7c7769e65e"
           }
         ]
       },
@@ -2137,8 +2137,8 @@
         "officialPage": "https://polyhaven.com/a/island_tree_01",
         "inputs": [
           {
-            "path": "island-tree-01/island-tree-01-lod2.glb",
-            "sha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24"
+            "path": "island-tree-01/island-tree-01-canopy-card-lod2-receipt.json",
+            "sha256": "0e7a8afc1ca7ceb90115eb58d397585e952b3f7009fa07a2e618dc7c7769e65e"
           }
         ]
       },
@@ -2909,11 +2909,11 @@
   ],
   "package": {
     "payloadFileCount": 72,
-    "payloadBytes": 241991252,
+    "payloadBytes": 233501840,
     "manifestPath": "runtime-render-manifest.json",
-    "manifestBytes": 96548,
+    "manifestBytes": 96595,
     "packageFileCount": 73,
-    "packageBytes": 242087800,
+    "packageBytes": 233598435,
     "manifestHashPolicy": "external-envelope",
     "excludedClasses": [
       "GLB",
