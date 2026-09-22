@@ -195,8 +195,11 @@ bool TreeFormVariationContract(
         descriptor.scale.x != placement.scale.x * form.scaleMultiplier.x ||
         descriptor.scale.y != placement.scale.y * form.scaleMultiplier.y ||
         descriptor.scale.z != placement.scale.z * form.scaleMultiplier.z ||
-        descriptor.yaw != placement.yaw + form.yawOffset)
+        descriptor.yaw != placement.yaw + form.yawOffset) {
+      std::cerr << "TREE_FORM_MISMATCH index=" << index
+                << " stableKey=" << placement.stableKey << '\n';
       return false;
+    }
     const auto variant = placement.variant == ShowcaseLandVariant3D::IslandTree
                              ? 0u
                          : placement.variant == ShowcaseLandVariant3D::TreeSmall02
@@ -227,7 +230,11 @@ bool TreeFormVariationContract(
 bool UnderstoryFormVariationContract(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
-  if (descriptors.size() != placements.size() + 8u) return false;
+  if (descriptors.size() != placements.size() + 8u) {
+    std::cerr << "UNDERSTORY_DESCRIPTOR_COUNT " << descriptors.size() << '/'
+              << placements.size() << '\n';
+    return false;
+  }
   std::array<unsigned, 3> counts{};
   std::array<float, 3> horizontalCoverageSums{};
   std::array<bool, 3> bands{};
@@ -250,8 +257,25 @@ bool UnderstoryFormVariationContract(
         descriptor.scale.x != placement.scale.x * form.scaleMultiplier.x ||
         descriptor.scale.y != placement.scale.y * form.scaleMultiplier.y ||
         descriptor.scale.z != placement.scale.z * form.scaleMultiplier.z ||
-        descriptor.yaw != placement.yaw + form.yawOffset)
+        descriptor.yaw != placement.yaw + form.yawOffset) {
+      std::cerr << "UNDERSTORY_FORM_MISMATCH index=" << index
+                << " position=" << placement.position.x << ','
+                << placement.position.z << " descriptor="
+                << descriptor.position.x << ',' << descriptor.position.y << ','
+                << descriptor.position.z << " placementY="
+                << placement.position.y
+                << " scale=" << descriptor.scale.x << ','
+                << descriptor.scale.y << ',' << descriptor.scale.z
+                << " expected="
+                << placement.scale.x * form.scaleMultiplier.x << ','
+                << placement.scale.y * form.scaleMultiplier.y << ','
+                << placement.scale.z * form.scaleMultiplier.z
+                << " form=" << form.scaleMultiplier.x << ','
+                << form.scaleMultiplier.y << ',' << form.scaleMultiplier.z
+                << " yaw=" << descriptor.yaw << "/"
+                << placement.yaw + form.yawOffset << '\n';
       return false;
+    }
     const auto band = std::uint32_t(placement.band);
     if (band >= bands.size()) return false;
     bands[band] = true;
@@ -262,13 +286,17 @@ bool UnderstoryFormVariationContract(
       const float tangentYaw = std::atan2(
           1.f, .175f * std::cos(z * .035f) + .022f * std::cos(z * .011f));
       if (std::abs(std::remainder(descriptor.yaw - tangentYaw,
-                                  6.2831853071795864769f)) > .121f)
+                                  6.2831853071795864769f)) > .121f) {
+        std::cerr << "UNDERSTORY_RIVER_YAW_MISMATCH index=" << index
+                  << " z=" << z << '\n';
         return false;
+      }
     } else if (placement.zone == ShowcaseLandZone3D::Meadow) {
       zone = 1;
     } else if (placement.zone == ShowcaseLandZone3D::Upland) {
       zone = 2;
     } else {
+      std::cerr << "UNDERSTORY_ZONE_MISMATCH index=" << index << '\n';
       return false;
     }
     ++counts[zone];
@@ -402,23 +430,24 @@ bool PointInsideFootprint2D(
 
 float SubmittedFootprintWalkingClearance3D(
     const SubmittedUnderstoryFootprint3D &footprint) {
-  constexpr Vec2 laneStart{-16.f, 8.f};
-  constexpr Vec2 laneEnd{-12.f, 19.f};
-  if (PointInsideFootprint2D(laneStart, footprint.corners) ||
-      PointInsideFootprint2D(laneEnd, footprint.corners))
-    return 0.f;
   float clearance = (std::numeric_limits<float>::max)();
-  for (std::size_t edge = 0; edge < footprint.corners.size(); ++edge)
-    clearance = (std::min)(clearance, SegmentSegmentDistance2D(
-        laneStart, laneEnd, footprint.corners[edge],
-        footprint.corners[(edge + 1u) % footprint.corners.size()]));
+  const auto &controls = ShowcaseHeroTrailControls3D();
+  for (const auto control : controls)
+    if (PointInsideFootprint2D({control.x, control.z}, footprint.corners))
+      return 0.f;
+  for (std::size_t segment = 0; segment + 1 < controls.size(); ++segment) {
+    const Vec2 laneStart{controls[segment].x, controls[segment].z};
+    const Vec2 laneEnd{controls[segment + 1].x, controls[segment + 1].z};
+    for (std::size_t edge = 0; edge < footprint.corners.size(); ++edge)
+      clearance = (std::min)(clearance, SegmentSegmentDistance2D(
+          laneStart, laneEnd, footprint.corners[edge],
+          footprint.corners[(edge + 1u) % footprint.corners.size()]));
+  }
   return clearance;
 }
 
 float LegacyPlacementWalkingClearance3D(
     const std::vector<ShowcaseLandPlacement3D> &placements) {
-  constexpr Vec2 laneStart{-16.f, 8.f};
-  constexpr Vec2 laneEnd{-12.f, 19.f};
   float clearance = (std::numeric_limits<float>::max)();
   for (const auto &placement : placements) {
     if (placement.kind != ShowcaseLandKind3D::Grass) continue;
@@ -426,8 +455,7 @@ float LegacyPlacementWalkingClearance3D(
         .34f * (std::max)(placement.scale.x, placement.scale.z);
     clearance = (std::min)(
         clearance,
-        PointSegmentDistance2D({placement.position.x, placement.position.z},
-                               laneStart, laneEnd) - oldRadius);
+        SampleShowcaseHeroTrail3D(placement.position).distance - oldRadius);
   }
   return clearance;
 }
@@ -461,17 +489,7 @@ bool FixedViewUnderstoryFootprintProxyContract(
   if (descriptors.size() != placements.size() + 8u || cameras.size() != 2u)
     return false;
   const auto distanceToWalkingLane = [](Vec3 point) {
-    constexpr Vec3 start{-16.f, 0.f, 8.f};
-    constexpr Vec3 end{-12.f, 0.f, 19.f};
-    const float x = end.x - start.x, z = end.z - start.z;
-    const float lengthSquared = x * x + z * z;
-    const float t = std::clamp(
-        ((point.x - start.x) * x + (point.z - start.z) * z) /
-            lengthSquared,
-        0.f, 1.f);
-    const float dx = point.x - (start.x + x * t);
-    const float dz = point.z - (start.z + z * t);
-    return std::sqrt(dx * dx + dz * dz);
+    return SampleShowcaseHeroTrail3D(point).distance;
   };
   std::array<float, 2> projectedFootprintProxy{};
   std::array<unsigned, 2> frustumCandidateGrass{};
@@ -573,10 +591,10 @@ bool FixedViewUnderstoryFootprintProxyContract(
   return grassCount == 186u && stableKeysSeen == grassCount &&
          rootsUnchanged && frustumCandidateGrass[0] >= 72u &&
          frustumCandidateGrass[1] >= 48u &&
-         projectedFootprintProxy[0] >= .155f &&
-         projectedFootprintProxy[1] >= .060f && clusterCoefficient[0] >= .08f &&
+         projectedFootprintProxy[0] >= .75f &&
+         projectedFootprintProxy[1] >= .14f && clusterCoefficient[0] >= .08f &&
          clusterCoefficient[1] >= .10f && clusterCoefficient[2] >= .07f &&
-         pathShoulderCount >= 12u && pathShoulderArea >= 34.f &&
+         pathShoulderCount >= 20u && pathShoulderArea >= 50.f &&
          minimumWalkingClearance >= 1.4f;
 }
 
@@ -999,10 +1017,10 @@ int main() {
     return total <= 1.f + 1e-6f &&
            !(sample.cottagePath > 0.f && sample.riverWetSoil > 0.f);
   };
-  // The authored cottage trail must remain connected down its centre while
-  // reading as worn ground rather than a uniform five-metre carpet.  Sample
-  // both sides of four cross-sections: the low-frequency width change and
-  // asymmetric shoulder must be visible, while the 2.0m outer band is clear.
+  // The authored hero trail must remain connected down its centre while
+  // reading as worn ground rather than a uniform road.  Its full-strength
+  // tread is deliberately wider than one terrain sample so it cannot vanish
+  // between adjacent one-metre vertices.
   float minimumPathCentre = 1.f;
   float minimumPathShoulder = 1.f;
   float maximumPathShoulder{};
@@ -1047,10 +1065,11 @@ int main() {
     pathShoulderSamples += 2u;
   }
   const float meanPathShoulder = pathShoulderSum / pathShoulderSamples;
-  if (minimumPathCentre < .85f || maximumPathOuter > .006f ||
+  if (minimumPathCentre < .62f || maximumPathOuter > .08f ||
       maximumPathShoulder - minimumPathShoulder < .18f ||
-      maximumPathShoulder > .30f || maximumPathAsymmetry < .12f ||
-      meanPathShoulder >= .15f) {
+      minimumPathShoulder < .18f || maximumPathShoulder > .75f ||
+      maximumPathAsymmetry < .12f || meanPathShoulder < .30f ||
+      meanPathShoulder > .60f) {
     std::cerr << "cottage path profile divergence centre="
               << minimumPathCentre << " shoulder=" << minimumPathShoulder
               << '/' << maximumPathShoulder << '/' << meanPathShoulder
@@ -1058,11 +1077,34 @@ int main() {
               << " outer=" << maximumPathOuter << '\n';
     return 101;
   }
+  for (const Vec3 control : {Vec3{-28.f, 0.f, -8.f},
+                             Vec3{-25.5f, 0.f, 1.f},
+                             Vec3{-16.f, 0.f, 8.f},
+                             Vec3{-14.f, 0.f, 14.f},
+                             Vec3{-12.f, 0.f, 19.8f}}) {
+    const auto trail = SampleShowcaseHeroTrail3D(control);
+    const auto terrain =
+        SampleShowcaseTerrainEcologyTint3D(control, ecologyTrees);
+    if (!trail.valid || trail.distance > 1e-5f ||
+        terrain.cottagePath < .55f ||
+        !ShowcaseHeroTrailWalkingLane3D(control, 0.f)) {
+      std::cerr << "hero trail control divergence at " << control.x << ','
+                << control.z << " distance=" << trail.distance
+                << " weight=" << terrain.cottagePath << '\n';
+      return 102;
+    }
+  }
+  const auto invalidTrail = SampleShowcaseHeroTrail3D(
+      {(std::numeric_limits<float>::quiet_NaN)(), 0.f, 0.f});
+  if (invalidTrail.valid ||
+      ShowcaseHeroTrailWalkingLane3D({100.f, 0.f, 100.f}, 0.f) ||
+      ShowcaseHeroTrailWalkingLane3D({-16.f, 0.f, 8.f}, -1.f))
+    return 103;
   if (canopyCenter.canopy < .99f || canopyCenter.leafLitter < .99f ||
       canopyCenter.biome != ShowcaseTerrainBiome3D::CanopyLeafLitter ||
       canopyFar.canopy != 0.f ||
       Rec709(canopyCenter.tint) >= Rec709(canopyFar.tint) ||
-      cottagePath.cottagePath < .99f ||
+      cottagePath.cottagePath < .74f ||
       cottagePath.biome != ShowcaseTerrainBiome3D::CottagePath ||
       cottagePathShoulderProbe.cottagePath < .20f ||
       cottagePathShoulderProbe.biome != ShowcaseTerrainBiome3D::CottagePath ||
@@ -1633,10 +1675,17 @@ int main() {
   }
   if (TreeMotherAngularDistributionContract(threeRayTreeMothers)) return 99;
   std::vector<ShowcaseLandPlacement3D> treePlacements;
-  if (!BuildShowcaseLandEcology3D({}, treePlacements) ||
-      !TreeFormVariationContract(treePlacements, first.Descriptors()) ||
-      !UnderstoryFormVariationContract(treePlacements, first.Descriptors()))
+  const bool rebuiltLand = BuildShowcaseLandEcology3D({}, treePlacements);
+  const bool treeForms = rebuiltLand &&
+      TreeFormVariationContract(treePlacements, first.Descriptors());
+  const bool understoryForms = rebuiltLand &&
+      UnderstoryFormVariationContract(treePlacements, first.Descriptors());
+  if (!rebuiltLand || !treeForms || !understoryForms) {
+    std::cerr << "environment ecology form divergence rebuilt=" << rebuiltLand
+              << " treeForms=" << treeForms
+              << " understoryForms=" << understoryForms << '\n';
     return 84;
+  }
   if (!ForestMidgroundLayerContract(treePlacements, first.Descriptors()))
     return 93;
   auto narrowedCanopy = first.Descriptors();
@@ -2234,10 +2283,9 @@ int main() {
       });
   if (blocked == blockedPlacements.end()) return 108;
   const auto blockedIndex = std::size_t(blocked - blockedPlacements.begin());
-  constexpr Vec2 laneMiddle{-14.f, 13.5f};
-  constexpr float inverseLaneLength = 1.f / 11.7046999107f;
-  constexpr Vec2 laneNormal{-11.f * inverseLaneLength,
-                             4.f * inverseLaneLength};
+  const auto laneFrame = SampleShowcaseHeroTrailFrame3D(.75f);
+  const Vec2 laneMiddle{laneFrame.position.x, laneFrame.position.z};
+  const Vec2 laneNormal{-laneFrame.tangent.z, laneFrame.tangent.x};
   const float oldRadius =
       .34f * (std::max)(blocked->scale.x, blocked->scale.z);
   const float oldPassingRootDistance = 1.4f + oldRadius + .01f;

@@ -139,27 +139,19 @@ float TestRiverWidth(float z) {
 bool IsPathShoulder(const ShowcaseLandEcologySettings3D &settings,
                     const ShowcaseLandPlacement3D &placement,
                     unsigned *side = nullptr, unsigned *longitudinal = nullptr) {
+  (void)settings;
   if (placement.kind != ShowcaseLandKind3D::Grass ||
       placement.zone == ShowcaseLandZone3D::Riverbank)
     return false;
-  const Aevrynd::Vec3 end{settings.cottageCenter.x, 0,
-                          settings.cottageCenter.z - 5.f};
-  const float vx = end.x - settings.spawnCenter.x;
-  const float vz = end.z - settings.spawnCenter.z;
-  const float lengthSquared = vx * vx + vz * vz;
-  const float px = placement.position.x - settings.spawnCenter.x;
-  const float pz = placement.position.z - settings.spawnCenter.z;
-  const float t = (px * vx + pz * vz) / lengthSquared;
-  if (t < .08f || t > .88f)
+  const auto trail = SampleShowcaseHeroTrail3D(placement.position);
+  if (!trail.valid || trail.along < .08f || trail.along > .88f)
     return false;
-  const float cross = vx * pz - vz * px;
-  const float perpendicular = std::abs(cross) / std::sqrt(lengthSquared);
-  if (perpendicular < 1.65f || perpendicular > 5.5f)
+  if (trail.distance < 1.65f || trail.distance > 5.5f)
     return false;
   if (side)
-    *side = cross >= 0.f ? 1u : 0u;
+    *side = trail.signedSide >= 0.f ? 1u : 0u;
   if (longitudinal)
-    *longitudinal = (std::min)(3u, unsigned(t * 4.f));
+    *longitudinal = (std::min)(3u, unsigned(trail.along * 4.f));
   return true;
 }
 

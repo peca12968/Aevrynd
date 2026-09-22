@@ -113,13 +113,11 @@ ShowcaseUnderstoryHighDetailFootprintBounds3D(
   return !(positive && negative);
 }
 
-// 以正式 descriptor scale/yaw 變換高細節網格 AABB，再量到步行帶中心線的
-// 最近距離。2.8m 步行帶因此要求葉片外緣至少保留 1.4m。
+// 以正式 descriptor scale/yaw 變換高細節網格 AABB，再量到共享英雄步道
+// 折線的最近距離；不再另存一條會和地表路徑漂移的直線。
 [[nodiscard]] inline float ShowcaseUnderstoryWalkingClearance3D(
     const ShowcaseLandPlacement3D &placement,
     const ShowcaseUnderstoryFormVariation3D &form) noexcept {
-  constexpr Aevrynd::Vec2 laneStart{-16.f, 8.f};
-  constexpr Aevrynd::Vec2 laneEnd{-12.f, 19.f};
   const auto bounds =
       ShowcaseUnderstoryHighDetailFootprintBounds3D(placement.variant);
   if (bounds.extents.x <= 0.f || bounds.extents.y <= 0.f)
@@ -143,14 +141,21 @@ ShowcaseUnderstoryHighDetailFootprintBounds3D(
                                signs[index].y * bounds.extents.y * scaleZ);
     corners[index] = {center.x + offset.x, center.y + offset.y};
   }
-  if (ShowcaseUnderstoryPointInsideFootprint3D(laneStart, corners) ||
-      ShowcaseUnderstoryPointInsideFootprint3D(laneEnd, corners))
-    return 0.f;
   float clearance = (std::numeric_limits<float>::max)();
-  for (std::size_t edge = 0; edge < corners.size(); ++edge)
-    clearance = (std::min)(clearance, ShowcaseUnderstorySegmentDistance3D(
-        laneStart, laneEnd, corners[edge],
-        corners[(edge + 1u) % corners.size()]));
+  const auto &controls = ShowcaseHeroTrailControls3D();
+  for (const auto control : controls)
+    if (ShowcaseUnderstoryPointInsideFootprint3D(
+            {control.x, control.z}, corners))
+      return 0.f;
+  for (std::size_t segment = 0; segment + 1 < controls.size(); ++segment) {
+    const Aevrynd::Vec2 laneStart{controls[segment].x, controls[segment].z};
+    const Aevrynd::Vec2 laneEnd{controls[segment + 1].x,
+                                controls[segment + 1].z};
+    for (std::size_t edge = 0; edge < corners.size(); ++edge)
+      clearance = (std::min)(clearance, ShowcaseUnderstorySegmentDistance3D(
+          laneStart, laneEnd, corners[edge],
+          corners[(edge + 1u) % corners.size()]));
+  }
   return clearance;
 }
 
@@ -304,19 +309,8 @@ ShowcaseUnderstoryFormVariation(
   }
   float pathShoulderBoost{};
   if (placement.band == ShowcaseLandBand3D::Near) {
-    constexpr Aevrynd::Vec3 laneStart{-16.f, 0.f, 8.f};
-    constexpr Aevrynd::Vec3 laneEnd{-12.f, 0.f, 19.f};
-    constexpr float laneX = laneEnd.x - laneStart.x;
-    constexpr float laneZ = laneEnd.z - laneStart.z;
-    constexpr float laneLengthSquared = laneX * laneX + laneZ * laneZ;
-    const float t = std::clamp(
-        ((placement.position.x - laneStart.x) * laneX +
-         (placement.position.z - laneStart.z) * laneZ) /
-            laneLengthSquared,
-        0.f, 1.f);
-    const float dx = placement.position.x - (laneStart.x + laneX * t);
-    const float dz = placement.position.z - (laneStart.z + laneZ * t);
-    const float laneDistance = std::sqrt(dx * dx + dz * dz);
+    const float laneDistance =
+        SampleShowcaseHeroTrail3D(placement.position).distance;
     // 既有肩帶中心約落在道路外 3~5m；只提高該葉簇的 render footprint。
     if (laneDistance >= 1.4f && laneDistance <= 5.25f)
       pathShoulderBoost = 1.32f;
@@ -573,59 +567,37 @@ SampleShowcaseTerrainEcologyTint3D(
     value = Aevrynd::Clamp(value, 0.f, 1.f);
     return value * value * (3.f - 2.f * value);
   };
-  const auto segmentProfile = [](Aevrynd::Vec3 point, Aevrynd::Vec3 start,
-                                 Aevrynd::Vec3 end) {
-    const float vx = end.x - start.x, vz = end.z - start.z;
-    const float wx = point.x - start.x, wz = point.z - start.z;
-    const float lengthSquared = vx * vx + vz * vz;
-    const float t = lengthSquared > 0.f
-                        ? Aevrynd::Clamp((wx * vx + wz * vz) / lengthSquared,
-                                         0.f, 1.f)
-                        : 0.f;
-    const float dx = point.x - (start.x + vx * t);
-    const float dz = point.z - (start.z + vz * t);
-    const float length = std::sqrt(lengthSquared);
-    const float signedSide =
-        length > 0.f ? (vx * dz - vz * dx) / length : 0.f;
-    return Aevrynd::Vec2{std::sqrt(dx * dx + dz * dz), signedSide};
-  };
   const auto authoredEdgeNoise = [](Aevrynd::Vec3 point) {
     // Stable world-space harmonics break up biome borders without adding a
     // texture lookup, descriptor, camera dependency, or temporal shimmer.
     return std::sin(point.x * .47f + point.z * .19f) * .10f +
            std::sin(point.x * .13f - point.z * .41f + 1.7f) * .06f;
   };
-  // A shallow bend avoids the artificial ruler-straight strip between spawn
-  // and the front porch while preserving a deterministic, bounded footprint.
-  const auto firstPath =
-      segmentProfile(worldPosition, {-16.f, 0.f, 8.f}, {-14.f, 0.f, 14.f});
-  const auto secondPath = segmentProfile(worldPosition, {-14.f, 0.f, 14.f},
-                                         {-12.f, 0.f, 19.8f});
-  const auto path = firstPath.x <= secondPath.x ? firstPath : secondPath;
+  const auto path = SampleShowcaseHeroTrail3D(worldPosition);
   // Low-frequency world-space width changes keep the trail connected while
   // avoiding a constant-width carpet.  A small signed-side bias and the
   // existing authored harmonics break the two shoulders differently without
   // changing height, geometry, descriptors, or camera-dependent state.
   const float pathTreadHalfWidth =
-      .15f + std::sin(worldPosition.z * .31f + .8f) * .05f +
-      std::sin(worldPosition.z * .13f - 1.1f) * .03f;
+      ShowcaseHeroTrailTreadHalfWidth3D(worldPosition);
   // Give the authored shoulder enough world-space support to hand off to wet
   // soil without flipping the signed terrain weight between adjacent one-metre
   // vertices.  The mild power curve keeps the perceptual trail narrow and
   // guarantees the authored band is clear before two metres.
   const float pathVisibleHalfWidth =
-      1.70f +
-      std::sin(worldPosition.z * .23f - worldPosition.x * .07f + .35f) *
-          .10f;
+      ShowcaseHeroTrailVisibleHalfWidth3D(worldPosition);
   const float pathShoulderWidth =
       (std::max)(.75f, pathVisibleHalfWidth - pathTreadHalfWidth);
-  const float pathEdge = path.x + authoredEdgeNoise(worldPosition) +
-                         (path.y >= 0.f ? .05f : -.025f);
+  const float pathEdge = path.distance + authoredEdgeNoise(worldPosition) +
+                         (path.signedSide >= 0.f ? .05f : -.025f);
   const float pathShoulderCoordinate =
       Aevrynd::Clamp((pathEdge - pathTreadHalfWidth) / pathShoulderWidth,
                      0.f, 1.f);
+  // Reserve headroom for the signed path/wet handoff where the trail reaches
+  // the river-side porch.  The old saturated core could jump from +1 to wet
+  // soil in one terrain vertex even though both source fields were smooth.
   const float pathCandidate =
-      std::pow(1.f - pathShoulderCoordinate, 1.2f);
+      .76f * std::pow(1.f - pathShoulderCoordinate, 1.2f);
 
   float canopyCandidate{};
   for (const auto &descriptor : descriptors) {

@@ -91,21 +91,24 @@ float PlacementFootprint(ShowcaseLandKind3D kind,
 }
 
 // 玩家到屋前的連續步行帶保留根部淨空；不是用降低相機假裝可通行。
-bool InWalkingLane(const ShowcaseLandEcologySettings3D &settings,
-                   Aevrynd::Vec3 point, float footprint) noexcept {
-  const auto a=settings.spawnCenter;
-  const Aevrynd::Vec3 b{settings.cottageCenter.x,0,settings.cottageCenter.z-5.f};
-  const float dx=b.x-a.x,dz=b.z-a.z;
-  const float lengthSquared=dx*dx+dz*dz;
-  const float t=lengthSquared>0.f?(std::clamp)(((point.x-a.x)*dx+(point.z-a.z)*dz)/lengthSquared,0.f,1.f):0.f;
-  return DistanceSquared(point,{a.x+t*dx,0,a.z+t*dz})<(1.4f+footprint)*(1.4f+footprint);
+bool InWalkingLane(const ShowcaseLandEcologySettings3D &,
+                   ShowcaseLandKind3D kind, Aevrynd::Vec3 point,
+                   float footprint) noexcept {
+  const auto trail = SampleShowcaseHeroTrail3D(point);
+  const float playableHalfWidth =
+      kind == ShowcaseLandKind3D::Grass ? 1.4f : .75f;
+  return trail.valid && trail.distance < playableHalfWidth + footprint;
 }
 
 bool InExclusion(const ShowcaseLandEcologySettings3D &settings,
                  ShowcaseLandKind3D kind, Aevrynd::Vec3 point,
                  float footprint) noexcept {
   const float limit = settings.terrainHalfSpan - settings.terrainMargin;
-  if (InWalkingLane(settings,point,footprint)) return true;
+  // Preserve the established forest/rock distribution when it already clears
+  // the trail contract; grass is the only non-colliding layer that needs
+  // candidate-time relocation to keep its full submitted leaves out.
+  if (kind == ShowcaseLandKind3D::Grass &&
+      InWalkingLane(settings,kind,point,footprint)) return true;
   if (std::abs(point.x) + footprint > limit ||
       std::abs(point.z) + footprint > limit) return true;
   const float spawnExclusion = SpawnExclusionRadius(settings, kind);
@@ -309,7 +312,7 @@ bool BuildShowcaseLandEcology3D(
         const bool heroWetland = kind == ShowcaseLandKind3D::Grass &&
                                  band == 0 &&
                                  zone == ShowcaseLandZone3D::Riverbank &&
-                                 item < 18u;
+                                 item < 30u;
         const bool heroGroundCover = kind == ShowcaseLandKind3D::Grass &&
                                      band == 0 &&
                                      (heroWetland ||
@@ -325,7 +328,8 @@ bool BuildShowcaseLandEcology3D(
                 ? settings.candidateTrials / 4u
                 : kind == ShowcaseLandKind3D::Rock
                       ? settings.candidateTrials / 2u
-                      // 四十八候選覆蓋完整環帶，保留三毫秒 CPU 預算。
+                      // 四十八候選覆蓋完整環帶，保留既有森林分布與三毫秒
+                      // CPU 預算；最終驗證會確認樹幹外緣仍清出步道核心。
                       : settings.candidateTrials * 3u / 8u;
         const float seedPhase = float((settings.seed ^
             (std::uint64_t(ordinal + 1) * 0x9e3779b97f4a7c15ull)) & 0xffffu) /
@@ -389,7 +393,8 @@ bool BuildShowcaseLandEcology3D(
           const std::uint32_t treeRadiusIndex = (trial * 8u / 3u + ordinal * 37u) % 128u;
           float radius{};
           if (heroGroundCover) {
-            // 英雄區保留全部近景非河岸群落及前六株河岸地被；其餘河岸維持完整環帶。
+            // 英雄區保留全部近景非河岸群落及前十株河岸地被；新增步道
+            // 仍會剔除相交候選，其餘河岸維持完整環帶。
             const float u = (float(trial) + .5f) / float(boundedTrials);
             const float minimum = BandMinimumFor(kind, band);
             radius = std::sqrt(minimum * minimum +
@@ -408,20 +413,18 @@ bool BuildShowcaseLandEcology3D(
           // 前兩組非河岸母叢沿屋前步道兩肩交錯配置。中心離中線至少三公尺，
           // 後續仍通過帶足跡的 1.4m 半寬 gate，因此保留完整 2.8m 步行帶。
           if (pathShoulderCommunity && item % 12u < 3u) {
-            const Aevrynd::Vec3 laneEnd{settings.cottageCenter.x, 0,
-                                        settings.cottageCenter.z - 5.f};
-            const float laneX = laneEnd.x - settings.spawnCenter.x;
-            const float laneZ = laneEnd.z - settings.spawnCenter.z;
-            const float inverseLaneLength =
-                1.f / std::sqrt(laneX * laneX + laneZ * laneZ);
-            const float tangentX = laneX * inverseLaneLength;
-            const float tangentZ = laneZ * inverseLaneLength;
-            const float normalX = -tangentZ;
-            const float normalZ = tangentX;
             const std::uint32_t communityIndex = item / 12u;
             const std::uint32_t grassType = item % 3u;
-            const float laneT = .18f + float(communityIndex) * .25f +
-                                (grassType == 2u ? .055f : 0.f);
+            // These two authored shoulder groups frame spawn and the porch,
+            // while the entry leg remains naturally wooded.  Values are full
+            // trail arc-length fractions, not the former short-line fraction.
+            const float laneT = .48f + float(communityIndex) * .24f +
+                                (grassType == 2u ? .035f : 0.f);
+            const auto frame = SampleShowcaseHeroTrailFrame3D(laneT);
+            const float tangentX = frame.tangent.x;
+            const float tangentZ = frame.tangent.z;
+            const float normalX = -tangentZ;
+            const float normalZ = tangentX;
             const float side = ((communityIndex + grassType) & 1u) ? -1.f : 1.f;
             const float shoulderOffset =
                 3.05f + .35f * float((communityIndex + grassType) % 3u);
@@ -430,11 +433,11 @@ bool BuildShowcaseLandEcology3D(
                 (float(trial) / float((std::max)(1u, boundedTrials - 1u)) -
                  .5f) * .65f;
             candidate = {
-                settings.spawnCenter.x + laneX * laneT +
+                frame.position.x +
                     tangentX * alongJitter + normalX * side *
                     (shoulderOffset + outwardJitter),
                 0,
-                settings.spawnCenter.z + laneZ * laneT +
+                frame.position.z +
                     tangentZ * alongJitter + normalZ * side *
                     (shoulderOffset + outwardJitter)};
           }
@@ -482,17 +485,12 @@ bool BuildShowcaseLandEcology3D(
             constexpr std::array<float,3> along{{-2.25f,1.65f,3.45f}};
             constexpr std::array<float,3> bow{{.52f,.28f,1.08f}};
             if(pathShoulderCommunity&&trial<boundedTrials*3u/4u){
-              const Aevrynd::Vec3 laneEnd{settings.cottageCenter.x, 0,
-                                          settings.cottageCenter.z - 5.f};
-              const float laneX=laneEnd.x-settings.spawnCenter.x;
-              const float laneZ=laneEnd.z-settings.spawnCenter.z;
-              const float inverseLaneLength=1.f/std::sqrt(laneX*laneX+laneZ*laneZ);
-              const float tangentX=laneX*inverseLaneLength;
-              const float tangentZ=laneZ*inverseLaneLength;
+              const auto trail=SampleShowcaseHeroTrail3D(center);
+              const auto frame=SampleShowcaseHeroTrailFrame3D(trail.along);
+              const float tangentX=frame.tangent.x;
+              const float tangentZ=frame.tangent.z;
               const float normalX=-tangentZ,normalZ=tangentX;
-              const float cross=laneX*(center.z-settings.spawnCenter.z)-
-                                laneZ*(center.x-settings.spawnCenter.x);
-              const float side=cross>=0.f?1.f:-1.f;
+              const float side=trail.signedSide>=0.f?1.f:-1.f;
               constexpr std::array<float,3> pathAlong{{-1.45f,.95f,2.2f}};
               constexpr std::array<float,3> pathBow{{-.18f,.32f,.68f}};
               const std::uint32_t childIndex=(item%12u)/3u-1u;
@@ -716,7 +714,8 @@ bool ValidateShowcaseLandEcology3D(
     ++(*counts)[band]; ++result.variants[variant]; ++result.zones[zone];
     result.zonesExact &= placement.zone == Zone(placement.kind, placement.variant);
     const float footprint = PlacementFootprint(placement.kind, placement.scale);
-    result.walkingLaneClear &= !InWalkingLane(settings,placement.position,footprint);
+    result.walkingLaneClear &=
+        !InWalkingLane(settings, placement.kind, placement.position, footprint);
     if(placement.kind==ShowcaseLandKind3D::Grass)
       result.vegetationScaleBounded &= placement.scale.y<=.44f && placement.scale.x<=1.5f;
     if(placement.kind==ShowcaseLandKind3D::Tree)
