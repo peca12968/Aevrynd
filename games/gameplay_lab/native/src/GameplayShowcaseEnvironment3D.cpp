@@ -534,7 +534,11 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   // 小屋是英雄場景的視覺錨點。以實際局部光源建立黃昏／夜間層次，
   // 不用提高全畫面曝光來把天空、河面與陰影一起洗亮。
   if (profile != ShowcaseLightingProfile3D::Day) {
-    const float night = profile == ShowcaseLightingProfile3D::Night ? 1.25f : .55f;
+    // Night stays brighter than dusk at the actual lamps, but the former 1.25
+    // multiplier lifted the complete god-view phase until dusk/night measured
+    // only 1.023.  1.16 remains above the 2.1x local-light contrast contract
+    // while restoring separation in the surrounding forest.
+    const float night = profile == ShowcaseLightingProfile3D::Night ? 1.16f : .55f;
     draw.AddPointLight({GameplayCottagePorchLanternCenter3D, 11.f,
                         {1.f, .57f, .25f, 1.f}, 4.2f * night});
     draw.AddPointLight({{-14.55f, 2.25f, 19.75f}, 7.5f,
@@ -583,7 +587,7 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   Aevrynd::PhaseRadianceProfile3D radiance{};
   if(profile==ShowcaseLightingProfile3D::Day)radiance={{.08f,.20f,.46f},.88f,{.28f,.46f,.68f},2.6f,{.13f,.12f,.095f},.00935f,{.94f,.96f,.93f},.68f,{1.f,.88f,.68f},9.f,0x4441595f534b5932ull};
   else if(profile==ShowcaseLightingProfile3D::Dusk)radiance={{.045f,.055f,.09f},.72f,{.44f,.25f,.16f},2.2f,{.08f,.045f,.035f},.00935f,{1.f,.82f,.68f},.46f,{1.f,.48f,.22f},7.f,0x4455534b534b5932ull};
-  else {radiance={{.016f,.030f,.066f},.28f,{.052f,.070f,.110f},1.8f,{.012f,.018f,.028f},.00935f,{.72f,.78f,1.f},.28f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};radiance.lunarDetailStrength=1.f;radiance.stellarDetailStrength=1.f;}
+  else {radiance={{.016f,.030f,.066f},.22f,{.052f,.070f,.110f},1.8f,{.012f,.018f,.028f},.00935f,{.72f,.78f,1.f},.22f,{.55f,.66f,1.f},1.2f,0x4e49474854534b32ull};radiance.lunarDetailStrength=1.f;radiance.stellarDetailStrength=1.f;}
   draw.SetPhaseRadianceProfile(radiance);
   // 固定日間 HDRI 只提供穩定的高頻環境細節；黃昏與夜間提高物理天空比例，避免把日間色彩當作地圖染色。
   Aevrynd::EnvironmentLightingBlendSettings3D environmentBlend{};
@@ -642,7 +646,10 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     // 暗部提供有限 lift，讓林地輪廓可讀而不抬高整個畫面。
     // 正式森林鏡頭顯示 +1.50 EV 仍會讓月光夜景過度接近黃昏；降低
     // 0.05 EV，建立可量測的相位間隔，同時保留物件專用補光所提供的輪廓。
-    timeOfDayExposure.nightExposureEv = 1.45f;
+    // Keep the night tone curve below the former 1.45 EV plateau: formal
+    // framebuffer evidence showed that value collapsed god-view dusk/night to
+    // 1.023 even after reducing local lamps and analytic sky fill.
+    timeOfDayExposure.nightExposureEv = 1.30f;
     // first-person 鏡頭的近場樹幹與林床仍在有效黑階下被壓成
     // 剪影。只稍微抬高有幾何深度的 toe；PostProcess 的 sceneSemantic
     // 使天空、水面與 bloom 不會被全螢幕提亮。

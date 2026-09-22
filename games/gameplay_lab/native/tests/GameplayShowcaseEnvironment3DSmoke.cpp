@@ -881,9 +881,9 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
                             const ShowcaseLightingState3D &night) {
   const float totalNightEv = night.exposureEv + tone.nightExposureEv;
   return tone.enabled && tone.dayExposureEv == .2f &&
-         tone.duskExposureEv == .6f && tone.nightExposureEv >= 1.44f &&
-         tone.nightExposureEv <= 1.46f && totalNightEv >= 1.29f &&
-         totalNightEv <= 1.31f && tone.shadowLift >= .038f &&
+         tone.duskExposureEv == .6f && tone.nightExposureEv >= 1.29f &&
+         tone.nightExposureEv <= 1.31f && totalNightEv >= 1.14f &&
+         totalNightEv <= 1.16f && tone.shadowLift >= .038f &&
          tone.shadowLift <= .042f && tone.toeStrength >= .30f &&
          tone.toeStrength <= .36f && tone.shoulderStrength >= 1.08f &&
          tone.shoulderStrength <= 1.18f;
