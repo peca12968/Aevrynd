@@ -7,11 +7,16 @@
 #include "GameplayShowcaseEnvironment3D.h"
 
 #include <Windows.h>
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <limits>
+#include <numeric>
 #include <span>
 #include <string>
+#include <vector>
 
 using namespace Aevrynd;
 
@@ -48,12 +53,51 @@ struct Mode {
   const char* name;
   RendererQualitySettings3D quality;
 };
+
+struct ReadabilityMetrics {
+  std::size_t pixels{};
+  double mean{};
+  double p10{};
+  double clippedFraction{};
+};
+
+ReadabilityMetrics MeasureIdentity(
+    const D3D12RendererTestAccess3D::LinearHdrCapture3D& capture,
+    const ObjectIdCapture3D& identities,
+    const RenderObjectIdentity3D* expected) {
+  ReadabilityMetrics result{};
+  std::vector<double> luminance;
+  luminance.reserve(capture.pixels.size());
+  std::size_t clipped{};
+  for (std::size_t index = 0; index < capture.pixels.size(); ++index) {
+    const auto* identity = identities.Resolve(identities.pixels[index]);
+    if ((expected && (!identity || *identity != *expected)) ||
+        (!expected && identity))
+      continue;
+    const auto& pixel = capture.pixels[index];
+    const double value = .2126 * pixel.x + .7152 * pixel.y + .0722 * pixel.z;
+    luminance.push_back(value);
+    clipped += pixel.x >= .999f || pixel.y >= .999f || pixel.z >= .999f;
+  }
+  result.pixels = luminance.size();
+  if (luminance.empty()) return result;
+  std::ranges::sort(luminance);
+  result.mean = std::accumulate(luminance.begin(), luminance.end(), 0.0) /
+                static_cast<double>(luminance.size());
+  result.p10 = luminance[(luminance.size() - 1) / 10];
+  result.clippedFraction = static_cast<double>(clipped) /
+                           static_cast<double>(luminance.size());
+  return result;
+}
 }
 
 int main() {
   HWND window = CreateWindowExW(0, L"STATIC", L"AevryndTerrainNightDeterminism",
       WS_OVERLAPPED, 0, 0, 640, 360, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
-  if (!window) return 1;
+  if (!window) {
+    std::cerr << "terrain_night window creation failed win32=" << GetLastError() << '\n';
+    return 1;
+  }
 
   HeightField3D field({{-128.f, 0.f, -128.f}, 129, 129, 2.f});
   if (!field.GenerateUltra(0x4a17u, {10.5f, .0105f, .56f, .22f, 24.f, .34f, 7, 3, .68f, .16f})) return 2;
@@ -105,24 +149,66 @@ int main() {
     for (unsigned index = 0; index < 5; ++index) {
       const Vec3 position{-32.f + float(index) * 16.f, 8.f + float(index % 2) * 5.f,
           -12.f + float(index % 3) * 18.f};
+      const RenderObjectIdentity3D boxIdentity{{0x2ec093e0e5318ca1ull,
+                                                 std::uint64_t(index + 2)}, 1};
       draw.MeshInstance(boxHandle, CreateTransformMatrix(position, {}, {3.f, 18.f, 3.f}),
           {.18f, .24f, .12f, 1.f}, {.82f, 0.f, 0.f, 1.f}, MeshRenderLayer3D::Opaque,
-          {}, 1.f, false, MaterialClass3D::Surface);
+          {}, 1.f, false, MaterialClass3D::Surface,
+          std::numeric_limits<float>::quiet_NaN(), false, 1, 0, false,
+          DirectionalShadowAllCascades3D, ShadowCascadeSelection3D::Automatic,
+          Matrix4::Identity(), false, 1.f, MaterialAlphaMode3D::Opaque, .5f,
+          false, boxIdentity);
     }
 
     for (unsigned warmup = 0; warmup < 4; ++warmup) renderer.Render(draw, {.003f, .006f, .014f, 1.f});
+    if (!renderer.RequestObjectIdReadback3D()) {
+      std::cerr << "terrain_night object-id request failed mode=" << modes[modeIndex].name << '\n';
+      return 7;
+    }
+    renderer.Render(draw, {.003f, .006f, .014f, 1.f});
+    const auto identities = renderer.TakeObjectIdReadback3D();
     auto hdr = D3D12RendererTestAccess3D::CaptureLinearHdr(renderer,
         showcase.EvaluateLighting(GameplayLab::ShowcaseLightingProfile3D::Night).exposureEv);
+    auto tone = D3D12RendererTestAccess3D::CaptureToneMapped(renderer,
+        showcase.EvaluateLighting(GameplayLab::ShowcaseLightingProfile3D::Night).exposureEv);
     renderer.WaitIdle();
-    if (!hdr || !hdr->Complete()) return 7;
+    if (!identities || !identities->Complete() || !hdr || !hdr->Complete() ||
+        !tone || !tone->Complete() || hdr->width != identities->width ||
+        hdr->height != identities->height || tone->width != identities->width ||
+        tone->height != identities->height) {
+      std::cerr << "terrain_night capture incomplete mode=" << modes[modeIndex].name
+                << " oid=" << bool(identities) << '/' << (identities && identities->Complete())
+                << " hdr=" << bool(hdr) << '/' << (hdr && hdr->Complete())
+                << " tone=" << bool(tone) << '/' << (tone && tone->Complete()) << '\n';
+      return 7;
+    }
+    const auto terrainHdr = MeasureIdentity(*hdr, *identities, &terrainIdentity);
+    const auto terrainTone = MeasureIdentity(*tone, *identities, &terrainIdentity);
+    const auto skyHdr = MeasureIdentity(*hdr, *identities, nullptr);
+    const auto skyTone = MeasureIdentity(*tone, *identities, nullptr);
     const auto hash = HexSha(std::as_bytes(std::span(hdr->pixels)));
     const auto stats = renderer.GetStats();
     std::cout << "terrain_night mode=" << modes[modeIndex].name << " sha256=" << hash
               << " samples=" << stats.multisampleCount
               << " shadows=" << stats.effectiveQuality.directionalShadows
               << " ao=" << stats.ambientOcclusionEnabled
-              << " terrain=" << stats.lastSubmittedTerrainInstances << '\n';
-    if (hash.empty() || !stats.lastSubmittedTerrainInstances) return 8;
+              << " terrain=" << stats.lastSubmittedTerrainInstances
+              << " terrainPixels=" << terrainHdr.pixels
+              << " terrainHdr=" << terrainHdr.mean << '/' << terrainHdr.p10
+              << " terrainTone=" << terrainTone.mean << '/' << terrainTone.p10
+              << " terrainClip=" << terrainTone.clippedFraction
+              << " skyPixels=" << skyHdr.pixels
+              << " skyHdr=" << skyHdr.mean << '/' << skyHdr.p10
+              << " skyTone=" << skyTone.mean << '/' << skyTone.p10
+              << " skyClip=" << skyTone.clippedFraction << '\n';
+    if (hash.empty() || !stats.lastSubmittedTerrainInstances ||
+        terrainHdr.pixels < 4096 || terrainTone.pixels != terrainHdr.pixels ||
+        skyHdr.pixels < 64 || skyTone.pixels != skyHdr.pixels ||
+        terrainHdr.mean < .0153 || terrainHdr.p10 < .0146 ||
+        terrainTone.mean < .0100 || terrainTone.p10 < .0063 ||
+        terrainTone.clippedFraction > .001 || skyTone.mean < .0144 ||
+        skyTone.mean > .0147 || skyTone.clippedFraction > .001)
+      return 8;
     renderer.DestroyMaterialTextureSet(textures);
     renderer.DestroyMesh(boxHandle);
     renderer.DestroyMesh(terrainHandle);

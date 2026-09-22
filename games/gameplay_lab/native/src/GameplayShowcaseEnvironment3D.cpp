@@ -520,7 +520,7 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
   } else {
     // 月光保留冷色辨識，但夜間亮度由局部光源與反射建立層次，不能用
     // 全畫面藍色增益把水面與地表抬得比黃昏更亮。
-    state = {profile, {{-.25f, -.62f, -.74f}, .11f, {.42f, .55f, 1, 1}, .42f},
+    state = {profile, {{-.25f, -.62f, -.74f}, .42f, {.42f, .55f, 1, 1}, .42f},
              {.06f, .10f, .18f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
   }
   return state;
@@ -615,6 +615,8 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     environmentBlend.phaseFingerprint = 0x4455534b5f49424cull;
   } else {
     environmentBlend.diffuseRgbScale = {.72f,.78f,1.f};
+    // 提高夜間不透明地表使用的月光半球漫射；天空、水體、物件補光、
+    // 曝光與相機路徑皆保持原值，避免以全畫面增亮掩蓋林床黑階。
     environmentBlend.diffuseIntensity = .33f;
     environmentBlend.specularIntensity = .26f;
     environmentBlend.analyticDiffuseWeight = .84f;

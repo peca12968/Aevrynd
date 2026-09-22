@@ -59,8 +59,14 @@ bool ValidateLightingRoutes(
   constexpr std::array<VolumetricAtmospherePhase3D, 3> volumePhases{
       VolumetricAtmospherePhase3D::Day, VolumetricAtmospherePhase3D::Dusk,
       VolumetricAtmospherePhase3D::Night};
-  if (!(observed[0].typed.sun.ambient > observed[1].typed.sun.ambient &&
-        observed[1].typed.sun.ambient > observed[2].typed.sun.ambient &&
+  const auto effectiveDiffuse = [](const LightingRouteEvidence3D &route) {
+    return route.typed.sun.ambient * route.environment.diffuseIntensity *
+           route.radiance.analyticDiffuseIntensity;
+  };
+  // 單一 ambient 參數不能代表相位能量；真正進入不透明表面的解析漫射
+  // 同時受環境強度與相位 radiance 約束。驗證合成後的能量仍維持日＞昏＞夜。
+  if (!(effectiveDiffuse(observed[0]) > effectiveDiffuse(observed[1]) &&
+        effectiveDiffuse(observed[1]) > effectiveDiffuse(observed[2]) &&
         observed[0].environment.diffuseIntensity > observed[1].environment.diffuseIntensity &&
         observed[1].environment.diffuseIntensity > observed[2].environment.diffuseIntensity &&
         observed[0].radiance.analyticDiffuseIntensity > observed[1].radiance.analyticDiffuseIntensity &&
@@ -830,8 +836,9 @@ bool NightForestReadable(const ShowcaseLightingState3D &state,
   const float skyLuminance = .2126f * state.sky.r + .7152f * state.sky.g +
                              .0722f * state.sky.b;
   return state.profile == ShowcaseLightingProfile3D::Night &&
-         state.exposureEv <= -.10f && state.sun.ambient >= .108f &&
-         state.sun.ambient <= .11f && state.sun.color.b > state.sun.color.g &&
+         state.exposureEv <= -.10f && state.sun.ambient >= .418f &&
+         state.sun.ambient <= .422f &&
+         state.sun.color.b > state.sun.color.g &&
          state.sun.color.g > state.sun.color.r && skyLuminance >= .08f &&
          environment.diffuseIntensity >= .325f &&
          environment.diffuseIntensity <= .34f &&
