@@ -34,11 +34,20 @@ public:
     if (input.tick.crouch) {
       if (!state_.crouched || headroomClear_) {
         state_.crouched = !state_.crouched;
+        state_.posture = state_.crouched ? PostureState::Crouched
+                                         : PostureState::Standing;
         state_.characterHeight = state_.crouched ? 1.15f : 1.8f;
         ++state_.crouchToggles;
       }
     }
-    if (input.tick.jump)
+    if (input.tick.prone) {
+      state_.prone = !state_.prone;
+      state_.crouched = false;
+      state_.posture = state_.prone ? PostureState::Prone : PostureState::Standing;
+      state_.characterHeight = state_.prone ? .6f : 1.8f;
+      ++state_.proneToggles;
+    }
+    if (input.tick.jump && state_.posture == PostureState::Standing)
       ++state_.jumps;
     if (edges.escapePressed) {
       if (state_.paletteOpen || state_.dragging) {
@@ -82,7 +91,8 @@ public:
     const float length = Length(movement);
     if (length > 1.f)
       movement = movement * (1.f / length);
-    const float speed = input.tick.run ? 8.f : 4.f;
+    const float speed = state_.prone ? 1.5f : state_.crouched ? 2.f
+                                     : input.tick.run ? 8.f : 4.f;
     state_.playerPosition =
         state_.playerPosition + movement * (speed * fixedDeltaTime);
     // 中文註解：受控障礙位於 z=2，第三人稱相機距離不可穿越障礙。

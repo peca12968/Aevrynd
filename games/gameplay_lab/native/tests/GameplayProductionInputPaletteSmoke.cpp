@@ -105,6 +105,16 @@ int main() {
       !m.tick.attack || !input.MouseDown() || m.mouseDelta.x != 10 ||
       m.wheel != 1)
     return 1;
+  {
+    Input postureInput;
+    postureInput.SetKey('Z', true);
+    if (!ReadProductionInput3D(postureInput, 0).tick.prone)
+      return 45;
+    postureInput.SetKey(VK_CONTROL, true);
+    if (ReadProductionInput3D(postureInput, 0).tick.prone ||
+        !ReadProductionInput3D(postureInput, 0).tick.undo)
+      return 46;
+  }
   input.ConsumePresses();
   input.SetMouse({700, 390});
   if (ReadProductionInput3D(input, 0).tick.attack || !input.MouseDown())

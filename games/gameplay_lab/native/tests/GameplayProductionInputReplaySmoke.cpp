@@ -1,4 +1,6 @@
 #include "ProductionInputReplayHarness3D.h"
+#include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/HeightField3D.h>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -73,6 +75,34 @@ std::uint64_t ReplayCompleteScenario() {
 } // namespace
 
 int main() {
+  // 正式 runtime 曾只在 Rules3D 拒絕蹲跳，卻仍把原始 Space 傳給
+  // CharacterController3D。這裡走相同控制器路徑，避免規則統計看似正確、
+  // 實際角色卻離地的分層分歧。
+  {
+    Rules3D postureRules;
+    CharacterController3D controller;
+    CollisionWorld3D collisions;
+    HeightField3D terrain;
+    controller.Reset({0, 0, 0});
+    terrain.Configure({{-32, 0, -32}, 17, 17, 4});
+    controller.Step({}, collisions, terrain,
+                    ProductionInputReplayHarness3D::FixedDeltaTime);
+    TickInput crouchInput{};
+    crouchInput.crouch = true;
+    postureRules.Tick(crouchInput);
+    controller.SetHeight(postureRules.CharacterHeight());
+    TickInput crouchedJump{};
+    crouchedJump.jump = true;
+    postureRules.Tick(crouchedJump);
+    const CharacterControl3D control =
+        BuildProductionCharacterControl3D(crouchedJump, postureRules);
+    controller.Step(control, collisions, terrain,
+                    ProductionInputReplayHarness3D::FixedDeltaTime);
+    if (controller.Position().y > 1e-5f ||
+        postureRules.GetStats().jumps != 0)
+      return 10;
+  }
+
   // 視角必須由正式按鍵邊緣依序切換，且每種投影都產生獨立雜湊。
   ProductionInputReplayHarness3D cameras(.37f);
   std::array<std::uint64_t, 3> cameraHashes{};
@@ -154,6 +184,46 @@ int main() {
   if (standing.crouched || !Near(standing.characterHeight, 1.8f) ||
       !Near(standing.position, standingFeet) || !IsFinite(standing))
     return 8;
+
+  ProductionInputReplayHarness3D prone;
+  const Vec3 proneFeet = prone.Snapshot().position;
+  prone.SetKey('Z', true);
+  const auto proneEntered = prone.Tick();
+  prone.SetKey('Z', false);
+  prone.Tick();
+  if (proneEntered.posture != PostureState::Prone || !proneEntered.prone ||
+      proneEntered.crouched || !Near(proneEntered.characterHeight, .6f) ||
+      !Near(proneEntered.position, proneFeet) ||
+      prone.Rules().GetStats().prones != 1)
+    return 11;
+  const auto crawlStart = prone.Snapshot().position;
+  const auto crawlEnd = Hold(prone, 'W', VK_SHIFT);
+  if (!Near(Length(crawlEnd.position - crawlStart), 3.f, .001f))
+    return 12;
+  const auto jumpsBefore = prone.Rules().GetStats().jumps;
+  prone.SetKey(VK_SPACE, true);
+  const auto proneJump = prone.Tick();
+  prone.SetKey(VK_SPACE, false);
+  prone.Tick();
+  if (!Near(proneJump.position.y, proneFeet.y) ||
+      prone.Rules().GetStats().jumps != jumpsBefore)
+    return 13;
+  prone.SetHeadroom(false);
+  prone.SetKey('Z', true);
+  const auto proneBlocked = prone.Tick();
+  prone.SetKey('Z', false);
+  prone.Tick();
+  if (!proneBlocked.prone ||
+      prone.Rules().GetStats().headroomRejected != 1)
+    return 14;
+  prone.SetHeadroom(true);
+  prone.SetKey('Z', true);
+  const auto proneStanding = prone.Tick();
+  prone.SetKey('Z', false);
+  prone.Tick();
+  if (proneStanding.posture != PostureState::Standing ||
+      proneStanding.prone || !Near(proneStanding.characterHeight, 1.8f))
+    return 15;
 
   const auto firstScenario = ReplayCompleteScenario();
   const auto secondScenario = ReplayCompleteScenario();

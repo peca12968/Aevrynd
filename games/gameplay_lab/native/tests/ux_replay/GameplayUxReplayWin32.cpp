@@ -33,13 +33,15 @@ std::uint64_t HashReplayState3D(const ReplayState3D &state) {
   mixFloat(state.cameraDistance);
   mixFloat(state.characterHeight);
   hash = Mix(hash, static_cast<std::uint64_t>(state.camera));
+  hash = Mix(hash, static_cast<std::uint64_t>(state.posture));
   const bool flags[] = {state.focused, state.cursorCaptured, state.cursorVisible,
                         state.paletteOpen, state.dragging, state.grabbed,
-                        state.crouched, state.closed};
+                        state.crouched, state.prone, state.closed};
   for (const bool flag : flags)
     hash = Mix(hash, flag ? 1u : 0u);
   const std::uint64_t counters[] = {
       state.cameraToggles, state.paletteToggles, state.crouchToggles,
+      state.proneToggles,
       state.jumps,        state.grabs,          state.melee,
       state.commits,      state.cancels};
   for (const auto counter : counters)

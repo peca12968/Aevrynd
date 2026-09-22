@@ -1400,12 +1400,12 @@ void GameplayLabGame::UpdateCamera(Engine& engine) {
       const float derivedMultiActorArm=::GameplayLab::DeriveGameplayMultiActorCameraArm3D(desiredArm,playerWorldBounds,cameraBuildInput.compositionActors);
       if(!std::isfinite(derivedMultiActorArm)||derivedMultiActorArm<desiredArm)throw std::runtime_error("Gameplay multi-actor camera arm derivation failed closed");
       cameraBuildInput.desiredArm=desiredArm;
-      const bool cameraPresentationChanged=cameraBuildCacheValid_&&(rules_.Female()!=cameraBuildCacheFemale_||rules_.Crouched()!=cameraBuildCacheCrouched_);
+      const bool cameraPresentationChanged=cameraBuildCacheValid_&&(rules_.Female()!=cameraBuildCacheFemale_||rules_.Posture()!=cameraBuildCachePosture_);
       const bool companionBoundsChanged=compositionActorCount!=(cameraBuildCacheHasCompanion_?1u:0u)||(compositionActorCount&&Length(companionPresentation-cameraBuildCacheCompanionPosition_)>.02f);
       const bool animationChanged=playerCameraAnimation!=cameraBuildCachePlayerAnimation_||(compositionActorCount&&companionCameraAnimation!=cameraBuildCacheCompanionAnimation_);
       const bool envelopeExpanded=!cameraBuildCacheValid_||animationChanged||boundsChanged(playerEnvelope,cameraBuildCacheVisualBounds_)||(compositionActorCount&&boundsChanged(companionEnvelope,cameraBuildCacheCompanionBounds_));
-      const bool rebuildCameraCandidates=envelopeExpanded||companionBoundsChanged||Length(feet-cameraBuildCacheFeet_)>.02f||std::abs(yaw_-cameraBuildCacheYaw_)>.002f||cameraViewport.x!=cameraBuildCacheViewport_.x||cameraViewport.y!=cameraBuildCacheViewport_.y||rules_.Female()!=cameraBuildCacheFemale_||rules_.Crouched()!=cameraBuildCacheCrouched_||rules_.PaletteOpen()!=cameraBuildCachePaletteOpen_||minimumSubjectScreenArea!=cameraBuildCacheMinimumSubjectScreenArea_||paletteOccluderHash!=cameraBuildCachePaletteOccluderHash_;
-      if(rebuildCameraCandidates){cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=desiredArm;if(cameraBuildCache_.receipt.valid&&!cameraBuildCache_.receipt.admittedCandidates&&compositionActorCount&&derivedMultiActorArm>desiredArm+.0001f){cameraBuildInput.desiredArm=derivedMultiActorArm;cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=derivedMultiActorArm;}cameraBuildCacheFeet_=feet;cameraBuildCacheYaw_=yaw_;cameraBuildCacheViewport_=cameraViewport;cameraBuildCacheFemale_=rules_.Female();cameraBuildCacheCrouched_=rules_.Crouched();cameraBuildCachePaletteOpen_=rules_.PaletteOpen();cameraBuildCacheMinimumSubjectScreenArea_=minimumSubjectScreenArea;cameraBuildCachePaletteOccluderHash_=paletteOccluderHash;cameraBuildCacheVisualBounds_=playerEnvelope;cameraBuildCacheCompanionBounds_=companionEnvelope;cameraBuildCacheCompanionPosition_=companionPresentation;cameraBuildCachePlayerAnimation_=playerCameraAnimation;cameraBuildCacheCompanionAnimation_=companionCameraAnimation;cameraBuildCacheHasCompanion_=compositionActorCount!=0;cameraBuildCacheValid_=cameraBuildCache_.receipt.valid;}
+      const bool rebuildCameraCandidates=envelopeExpanded||companionBoundsChanged||Length(feet-cameraBuildCacheFeet_)>.02f||std::abs(yaw_-cameraBuildCacheYaw_)>.002f||cameraViewport.x!=cameraBuildCacheViewport_.x||cameraViewport.y!=cameraBuildCacheViewport_.y||rules_.Female()!=cameraBuildCacheFemale_||rules_.Posture()!=cameraBuildCachePosture_||rules_.PaletteOpen()!=cameraBuildCachePaletteOpen_||minimumSubjectScreenArea!=cameraBuildCacheMinimumSubjectScreenArea_||paletteOccluderHash!=cameraBuildCachePaletteOccluderHash_;
+      if(rebuildCameraCandidates){cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=desiredArm;if(cameraBuildCache_.receipt.valid&&!cameraBuildCache_.receipt.admittedCandidates&&compositionActorCount&&derivedMultiActorArm>desiredArm+.0001f){cameraBuildInput.desiredArm=derivedMultiActorArm;cameraBuildCache_=::GameplayLab::BuildGameplayCameraProductionCandidates3D(cameraBuildInput,cameraQueries);cameraBuildCacheDesiredArm_=derivedMultiActorArm;}cameraBuildCacheFeet_=feet;cameraBuildCacheYaw_=yaw_;cameraBuildCacheViewport_=cameraViewport;cameraBuildCacheFemale_=rules_.Female();cameraBuildCachePosture_=rules_.Posture();cameraBuildCachePaletteOpen_=rules_.PaletteOpen();cameraBuildCacheMinimumSubjectScreenArea_=minimumSubjectScreenArea;cameraBuildCachePaletteOccluderHash_=paletteOccluderHash;cameraBuildCacheVisualBounds_=playerEnvelope;cameraBuildCacheCompanionBounds_=companionEnvelope;cameraBuildCacheCompanionPosition_=companionPresentation;cameraBuildCachePlayerAnimation_=playerCameraAnimation;cameraBuildCacheCompanionAnimation_=companionCameraAnimation;cameraBuildCacheHasCompanion_=compositionActorCount!=0;cameraBuildCacheValid_=cameraBuildCache_.receipt.valid;}
       if(cameraPresentationChanged)cameraOcclusionPolicy_.Reset();
       const auto& cameraBuild=cameraBuildCache_;
       const float cameraSearchArm=cameraBuildCacheDesiredArm_;
@@ -1650,8 +1650,11 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
          0xffffffffu,
          0xc001,
          false});
-  const Vec3 standingCenter = controller_.Position() + Vec3{0, .9f, 0};
-  rules_.SetHeadroom(
+  const Vec3 feet = controller_.Position();
+  const Vec3 standingCenter = feet + Vec3{0, .9f, 0};
+  const Vec3 crouchedCenter = feet + Vec3{0, .575f, 0};
+  rules_.SetPostureClearance(
+      !collisions_.OverlapsBox(crouchedCenter, {.44f, .565f, .44f}),
       !collisions_.OverlapsBox(standingCenter, {.44f, .89f, .44f}));
   TickInput rulesInput = mapped.tick;
   rulesInput.attack = false;
@@ -1659,10 +1662,10 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   const bool paletteWasOpen=rules_.PaletteOpen();
   rules_.Tick(rulesInput, gameplayDelta);
   if(paletteWasOpen&&!rules_.PaletteOpen()){
-    for(const unsigned key:{unsigned('W'),unsigned('A'),unsigned('S'),unsigned('D'),unsigned(VK_SHIFT),unsigned(VK_SPACE),unsigned('F'),unsigned('G')})in.SetKey(key,false);
+    for(const unsigned key:{unsigned('W'),unsigned('A'),unsigned('S'),unsigned('D'),unsigned(VK_SHIFT),unsigned(VK_SPACE),unsigned('F'),unsigned('G'),unsigned('Z')})in.SetKey(key,false);
     in.SetMouseButton(false);in.SetRightMouseButton(false);mapped.mouseDelta={};
   }
-  controller_.SetHeight(rules_.Crouched() ? 1.15f : 1.8f);
+  controller_.SetHeight(rules_.CharacterHeight());
   minimumControllerHeight_ =
       (std::min)(minimumControllerHeight_, controller_.Extents().y * 2.f);
   crouchFeetInvariant_ =
@@ -1672,8 +1675,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     collisions_.Destroy(captureCeiling_);
     captureCeiling_ = {};
   }
-  const float movementSpeedMultiplier=rules_.Crouched()?2.f/6.f:mapped.tick.run?7.f/6.f:4.f/6.f;
-  CharacterControl3D control{mapped.tick.movement, mapped.tick.jump,movementSpeedMultiplier};
+  const CharacterControl3D control=BuildProductionCharacterControl3D(mapped.tick,rules_);
   controller_.Step(control, collisions_, showcaseTerrain_, gameplayDelta);
   const auto gameplayTick = rules_.GetStats().ticks;
   // gameplayTick在Rules::Tick之後，26精確對應ApplyReplayInput的tick 25拖曳階段。
@@ -1707,7 +1709,7 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   else if (!controller_.Grounded())
     animation = controller_.Velocity().y >= 0 ? AnimationState3D::Jump
                                               : AnimationState3D::Fall;
-  else if (rules_.Crouched())
+  else if (rules_.LowPosture())
     animation = AnimationState3D::Crouch;
   else if (Length(mapped.tick.movement) > .1f)
     animation =

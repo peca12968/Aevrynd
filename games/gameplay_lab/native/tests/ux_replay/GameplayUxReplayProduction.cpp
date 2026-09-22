@@ -86,12 +86,8 @@ public:
     rules_.Tick(tick, fixedDeltaTime);
     const float height = rules_.CharacterHeight();
     controller_.SetHeight(height);
-    Aevrynd::CharacterControl3D control{};
-    control.movement = tick.movement;
-    control.jump = tick.jump;
-    control.speedMultiplier = rules_.Crouched() ? 2.f / 6.f
-                              : tick.run         ? 7.f / 6.f
-                                                 : 4.f / 6.f;
+    const Aevrynd::CharacterControl3D control =
+        BuildProductionCharacterControl3D(tick, rules_);
     controller_.Step(control, collisions_, terrain_, fixedDeltaTime);
     const Aevrynd::Vec3 forward{std::sin(yaw_), 0, std::cos(yaw_)};
     combat_.Tick({controller_.Position(), forward,
@@ -123,6 +119,7 @@ public:
     state.pitch = pitch_;
     state.cameraDistance = rules_.Camera() == CameraMode::FirstPerson ? .25f : 3.4f;
     state.characterHeight = rules_.CharacterHeight();
+    state.posture = rules_.Posture();
     state.focused = focused_;
     state.cursorCaptured = captured_;
     state.cursorVisible = !focused_ || rules_.PaletteOpen() || !captured_;
@@ -130,10 +127,12 @@ public:
     state.dragging = palette_.Preview().active;
     state.grabbed = palette_.Grabbed().has_value();
     state.crouched = rules_.Crouched();
+    state.prone = rules_.Prone();
     state.closed = closed_;
     state.cameraToggles = ruleStats.cameraSwitches;
     state.paletteToggles = paletteToggles_;
     state.crouchToggles = ruleStats.crouches;
+    state.proneToggles = ruleStats.prones;
     state.jumps = ruleStats.jumps;
     state.grabs = paletteStats.grabs;
     state.melee = combat_.Stats().sweeps +
@@ -230,7 +229,26 @@ int RunGameplayUxReplayProduction(const std::filesystem::path &receiptPath) {
   for(unsigned tick=0;tick<120;++tick)if(!harness.Tick())return 92;
   if(!harness.Key('W',false)||!harness.Tick())return 92;
   const float crouchDistance=Aevrynd::Length(adapter.Snapshot().playerPosition-crouchStart);
-  if(std::abs(crouchDistance-2.f)>.05f||!Edge(harness,VK_SPACE))return 92;
+  const auto beforeCrouchedJump=adapter.Snapshot();
+  const auto writePostureFailure=[&](const char* stage){const auto snapshot=adapter.Snapshot();std::ofstream diagnostic(receiptPath,std::ios::trunc);diagnostic<<"{\"status\":\"posture-fail\",\"stage\":\""<<stage<<"\",\"height\":"<<snapshot.characterHeight<<",\"posture\":"<<unsigned(snapshot.posture)<<",\"y\":"<<snapshot.playerPosition.y<<",\"jumps\":"<<snapshot.jumps<<",\"crouchDistance\":"<<crouchDistance<<"}";};
+  if(std::abs(crouchDistance-2.f)>.05f||!Edge(harness,VK_SPACE)){writePostureFailure("crouch-jump-edge");return 92;}
+  const auto afterCrouchedJump=adapter.Snapshot();
+  if(std::abs(afterCrouchedJump.playerPosition.y-beforeCrouchedJump.playerPosition.y)>.0001f||
+     afterCrouchedJump.jumps!=beforeCrouchedJump.jumps){writePostureFailure("crouch-jump-gate");return 92;}
+  if(!Edge(harness,'Z')||!adapter.Snapshot().prone||
+     std::abs(adapter.Snapshot().characterHeight-.6f)>.001f){writePostureFailure("prone-enter");return 92;}
+  const auto beforeProneJump=adapter.Snapshot();
+  if(!Edge(harness,VK_SPACE)){writePostureFailure("prone-jump-edge");return 92;}
+  const auto afterProneJump=adapter.Snapshot();
+  if(std::abs(afterProneJump.playerPosition.y-beforeProneJump.playerPosition.y)>.0001f||
+     afterProneJump.jumps!=beforeProneJump.jumps){writePostureFailure("prone-jump-gate");return 92;}
+  const auto crawlStart=adapter.Snapshot().playerPosition;
+  if(!harness.Key(VK_SHIFT,true)||!harness.Key('W',true)){writePostureFailure("crawl-key-down");return 92;}
+  for(unsigned tick=0;tick<120;++tick)if(!harness.Tick()){writePostureFailure("crawl-tick");return 92;}
+  if(!harness.Key('W',false)||!harness.Key(VK_SHIFT,false)||!harness.Tick()){writePostureFailure("crawl-key-up");return 92;}
+  const float crawlDistance=Aevrynd::Length(adapter.Snapshot().playerPosition-crawlStart);
+  if(std::abs(crawlDistance-1.5f)>.05f){std::ofstream diagnostic(receiptPath,std::ios::trunc);diagnostic<<"{\"status\":\"posture-fail\",\"stage\":\"crawl-distance\",\"crawlDistance\":"<<crawlDistance<<"}";return 92;}
+  if(!Edge(harness,'Z')||adapter.Snapshot().posture!=GameplayLab::PostureState::Standing){writePostureFailure("prone-exit");return 92;}
   if (!Edge(harness, VK_TAB) || !harness.MouseMove(100, 100) ||
       !harness.MouseButton(true) || !harness.Tick() ||
       !adapter.Snapshot().dragging || !adapter.Snapshot().cursorCaptured ||
@@ -270,6 +288,10 @@ int RunGameplayUxReplayProduction(const std::filesystem::path &receiptPath) {
       << ",\"runDistance\":" << runDistance
       << ",\"runRatio\":" << runDistance/walkDistance
       << ",\"crouchDistance\":" << crouchDistance
+      << ",\"crawlDistance\":" << crawlDistance
+      << ",\"proneHeight\":" << afterProneJump.characterHeight
+      << ",\"proneToggles\":" << state.proneToggles
+      << ",\"lowPostureJumpBlocked\":1"
       << ",\"rateHash\":" << rateHashes[0]
       << ",\"crouched\":" << (state.crouched ? 1 : 0)
       << ",\"cursorCaptured\":" << (state.cursorCaptured ? 1 : 0)

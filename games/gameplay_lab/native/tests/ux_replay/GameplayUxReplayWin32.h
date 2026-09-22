@@ -31,8 +31,9 @@ struct ReplayState3D {
   CameraMode camera{CameraMode::ThirdPerson};
   float yaw{}, pitch{}, cameraDistance{3.4f}, characterHeight{1.8f};
   bool focused{true}, cursorCaptured{}, cursorVisible{true};
-  bool paletteOpen{}, dragging{}, grabbed{}, crouched{}, closed{};
-  std::uint64_t cameraToggles{}, paletteToggles{}, crouchToggles{};
+  PostureState posture{PostureState::Standing};
+  bool paletteOpen{}, dragging{}, grabbed{}, crouched{}, prone{}, closed{};
+  std::uint64_t cameraToggles{}, paletteToggles{}, crouchToggles{}, proneToggles{};
   std::uint64_t jumps{}, grabs{}, melee{}, commits{}, cancels{};
 };
 

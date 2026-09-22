@@ -13,7 +13,8 @@ struct ProductionReplaySnapshot3D {
   Aevrynd::Camera3D cameraState{};
   Aevrynd::Vec3 position{};
   float characterHeight{1.8f};
-  bool crouched{};
+  PostureState posture{PostureState::Standing};
+  bool crouched{}, prone{};
   std::uint64_t stateHash{};
   std::uint64_t cameraHash{};
 };
@@ -44,7 +45,9 @@ public:
     result.camera = rules_.Camera();
     result.position = rules_.CharacterPosition();
     result.characterHeight = rules_.CharacterHeight();
+    result.posture = rules_.Posture();
     result.crouched = rules_.Crouched();
+    result.prone = rules_.Prone();
     result.cameraState = MakeCamera(result.camera, result.position);
     result.cameraHash = HashCamera(result.cameraState);
     result.stateHash = HashState(result);
@@ -109,7 +112,9 @@ private:
     hash = MixFloat(hash, state.position.y);
     hash = MixFloat(hash, state.position.z);
     hash = MixFloat(hash, state.characterHeight);
+    hash = Mix(hash, static_cast<std::uint64_t>(state.posture));
     hash = Mix(hash, state.crouched ? 1u : 0u);
+    hash = Mix(hash, state.prone ? 1u : 0u);
     return hash;
   }
 

@@ -522,6 +522,21 @@ static_assert(ValidateGameplayProductionRouteMatrix());
 constexpr bool RejectWrongGameplayProjectionRoute(){auto wrong=BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[2]);wrong.projection=ProjectionMode::Perspective;return !ValidateGameplayCaptureProductionRoute3D(wrong);}
 static_assert(RejectWrongGameplayProjectionRoute());
 bool ValidateGameplayProductionProjectionSmoke(){for(std::size_t index=0;index<9;++index){const auto route=BuildGameplayCaptureProductionRoute3D(GameplayCaptureExpectations3D[index]);Camera3D camera{{0,3,-8},{0,1,0},{0,1,0},{}};camera.projection.orthographicHeight=route.projection==ProjectionMode::Orthographic?26.f:0.f;if(!ApplyGameplayCaptureProductionProjection3D(camera,route))return false;const auto matrix=CreateViewProjectionMatrix(camera,1280.f/720.f);auto wrongMatrix=matrix;wrongMatrix[0][0]+=.01f;if(!ValidateGameplayCaptureProductionProjectionMatrix3D(camera,route,1280.f/720.f,matrix)||ValidateGameplayCaptureProductionProjectionMatrix3D(camera,route,1280.f/720.f,Matrix4{})||ValidateGameplayCaptureProductionProjectionMatrix3D(camera,route,1280.f/720.f,wrongMatrix))return false;auto wrongRoute=route;wrongRoute.projection=route.projection==ProjectionMode::Orthographic?ProjectionMode::Perspective:ProjectionMode::Orthographic;if(ValidateGameplayCaptureProductionProjectionMatrix3D(camera,wrongRoute,1280.f/720.f,matrix))return false;if(route.projection==ProjectionMode::Orthographic){auto wrongHeight=camera;wrongHeight.projection.orthographicHeight=0;if(ValidateGameplayCaptureProductionProjectionMatrix3D(wrongHeight,route,1280.f/720.f,CreateViewProjectionMatrix(wrongHeight,1280.f/720.f)))return false;}}return true;}
+const bool GameplayPostureCameraCacheContract=[](){
+  const auto root=std::filesystem::path(AEVRYND_SOURCE_DIR)/"games/gameplay_lab/native";
+  const auto read=[](const std::filesystem::path& path){std::ifstream stream(path,std::ios::binary);return std::string(std::istreambuf_iterator<char>(stream),std::istreambuf_iterator<char>());};
+  const std::string header=read(root/"include/GameplayLabGame.h");
+  const std::string source=read(root/"src/GameplayLabGame.cpp");
+  constexpr std::string_view member="GameplayLab::PostureState cameraBuildCachePosture_{GameplayLab::PostureState::Standing}";
+  constexpr std::string_view comparison="rules_.Posture()!=cameraBuildCachePosture_";
+  constexpr std::string_view update="cameraBuildCachePosture_=rules_.Posture()";
+  const auto occurrences=[&](std::string_view token){std::size_t count{},position{};while((position=source.find(token,position))!=std::string::npos){++count;position+=token.size();}return count;};
+  if(header.find(member)==std::string::npos||occurrences(comparison)!=2||occurrences(update)!=1||
+     source.find("cameraBuildCacheCrouched_")!=std::string::npos)
+    throw std::runtime_error("posture camera cache must distinguish standing, crouched and prone");
+  return true;
+}();
+
 const bool GameplayPaletteCameraRouteRegression=[](){Rules3D rules;TickInput toggle{};toggle.togglePalette=true;const auto ticks=rules.GetStats().ticks;if(!rules.ApplyPalettePresentationInput(toggle)||!rules.PaletteOpen()||rules.GetStats().ticks!=ticks)throw std::runtime_error("palette camera route did not open without simulation");if(rules.ApplyPalettePresentationInput({})||!rules.PaletteOpen())throw std::runtime_error("palette camera route accepted missing toggle");auto mixed=toggle;mixed.attack=true;if(rules.ApplyPalettePresentationInput(mixed)||!rules.PaletteOpen())throw std::runtime_error("palette camera route accepted mixed simulation input");if(!rules.ApplyPalettePresentationInput(toggle)||rules.PaletteOpen()||rules.GetStats().ticks!=ticks)throw std::runtime_error("palette camera route did not close without simulation");return true;}();
 const bool GameplayGodConstraintClosureRegression=[](){
   GameplayShowcaseEnvironment3D environment;if(!environment.Initialize(0x4a17u))throw std::runtime_error("god resolver fixture environment failed");
