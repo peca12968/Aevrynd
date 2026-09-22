@@ -61,11 +61,17 @@ try{
     Write-TestBeauty (Join-Path $root "$name.png") $kind
     Copy-Item -LiteralPath $prototype -Destination (Join-Path $root "$name-object-id.png")
     Copy-Item -LiteralPath $prototype -Destination (Join-Path $root "$name-depth.png")
-    Copy-Item -LiteralPath $tokenPrototype -Destination (Join-Path $root "$name-tokens.bin")
+    $tokenPath=Join-Path $root "$name-tokens.bin";Copy-Item -LiteralPath $tokenPrototype -Destination $tokenPath
+    if($name-eq'god-day'){
+      $roofTokens=[IO.File]::ReadAllBytes($tokenPath)
+      for($y=80;$y-lt250;$y++){for($x=80;$x-lt300;$x++){[BitConverter]::GetBytes([uint32]5).CopyTo($roofTokens,($y*$w+$x)*4)}}
+      [IO.File]::WriteAllBytes($tokenPath,$roofTokens)
+    }
     $hdrName="$name.production-hdr.aevhdr";Copy-Item -LiteralPath $hdrPrototype -Destination (Join-Path $root $hdrName)
-    $tokenMap=[ordered]@{runId=$runId;width=$w;height=$h;planeSha256=Sha (Join-Path $root "$name-tokens.bin");identities=@(
+    $tokenMap=[ordered]@{runId=$runId;width=$w;height=$h;planeSha256=Sha $tokenPath;identities=@(
       [ordered]@{high='3368770884265705473';low='1'},[ordered]@{high='3368770884265705473';low='2'},
-      [ordered]@{high='3368770884265705473';low='33'},[ordered]@{high='12592142912428528129';low='1'})}
+      [ordered]@{high='3368770884265705473';low='33'},[ordered]@{high='12592142912428528129';low='1'},
+      [ordered]@{high='3368770884265705473';low='472'})}
     Write-Json (Join-Path $root "$name-tokens.json") $tokenMap
     $hdrFile=Get-Item -LiteralPath (Join-Path $root $hdrName)
     $hdrRows+=,[ordered]@{name="$name.png";path=$hdrName;verified=$true;state='Verified';byteCount=[uint64]$hdrFile.Length;fileHash=Sha $hdrFile.FullName}
@@ -89,13 +95,15 @@ try{
   $output=Join-Path $root 'r7-visual-sidecar.test.json';$positive=Invoke-Producer @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',$output)
   if($positive.Code-ne0){throw "positive producer failed: $($positive.Text)"};$made=Get-Content -Raw -LiteralPath $output|ConvertFrom-Json
   if(@($made.shots).Count-ne11-or[int]$made.directorReferenceScore-ne34-or[string]$made.runId-ne$runId-or[string]$made.sourceFingerprint-ne$fingerprint){throw 'positive binding mismatch'}
-  if([int]$made.evaluatorVersion-ne2-or[string]$made.algorithms.terrainAutocorrelation-ne'beauty-luma-token-masked-box33-detrended-periodic-peak-lags-32-to-256-v2'){throw 'terrain analyzer provenance mismatch'}
+  if([int]$made.evaluatorVersion-ne3-or[string]$made.algorithms.terrainAutocorrelation-ne'beauty-luma-token-masked-box33-detrended-periodic-peak-lags-32-to-256-v2'-or[string]$made.algorithms.roofFrequency-ne'beauty-srgb-to-linear-rec709-token472-forward-axis-mean-gradient-p95-1px-p90-4px-v1'){throw 'metric analyzer provenance mismatch'}
   $byName=@{};foreach($shot in @($made.shots)){$byName[[string]$shot.name]=$shot}
   $slope=[double]$byName['first-day'].terrain.autocorrelation32To256;$radial=[double]$byName['first-dusk'].terrain.autocorrelation32To256
   $tile32=[double]$byName['first-night'].terrain.autocorrelation32To256;$tile64=[double]$byName['third-day'].terrain.autocorrelation32To256;$tile32Affine=[double]$byName['third-dusk'].terrain.autocorrelation32To256
   if($slope-ge0.65-or$radial-ge0.65){throw "smooth lighting false positive: slope=$slope radial=$radial"}
   if($tile32-lt0.65-or$tile64-lt0.65){throw "tiled terrain escaped gate: tile32=$tile32 tile64=$tile64"}
   if($tile32Affine-lt0.65-or[Math]::Abs($tile32-$tile32Affine)-gt0.03){throw "affine luma instability: base=$tile32 affine=$tile32Affine"}
+  $roof=$byName['god-day'].roof
+  if([double]$roof.pixelCoverage-le0-or[double]$roof.meanLuma-le0-or[double]$roof.gradient1pxP95-le0-or[double]$roof.gradient4pxP90-le0){throw 'roof metric coverage failed'}
 
   $marker=Join-Path $root 'fixture-manifest.json';[IO.File]::WriteAllText($marker,'{}');Must-Fail 'synthetic fixture' @('-PrintEvidenceDigestOnly') 'synthetic fixture is forbidden';Remove-Item -LiteralPath $marker
   $gameplayPath=Join-Path $root 'gameplay-receipt.json';$savedGameplay=Get-Content -Raw -LiteralPath $gameplayPath
@@ -112,14 +120,14 @@ try{
     $savedTokenPlanes[$name]=[IO.File]::ReadAllBytes($plane);$savedTokenMaps[$name]=[IO.File]::ReadAllText($map)
     [IO.File]::WriteAllBytes($plane,$terrainOnly);$tokenJson=Get-Content -Raw -LiteralPath $map|ConvertFrom-Json;$tokenJson.planeSha256=Sha $plane;Write-Json $map $tokenJson
   }
-  Must-Fail 'all-shot missing water semantics' @('-PrintEvidenceDigestOnly') 'required production water token coverage was zero: third-day'
+  Must-Fail 'all-shot missing water semantics' @('-PrintEvidenceDigestOnly') 'required production water token coverage was zero:\s+third-day'
   foreach($name in $shots){[IO.File]::WriteAllBytes((Join-Path $root "$name-tokens.bin"),$savedTokenPlanes[$name]);[IO.File]::WriteAllText((Join-Path $root "$name-tokens.json"),$savedTokenMaps[$name])}
   $review.reviewer='';Sign-Review $review;Write-Json $reviewPath $review;Must-Fail 'unnamed reviewer' @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',$output) 'reviewer identity missing'
   $review.reviewer='R7 Smoke Reviewer';$review.rubric.composition=21;$review.rubric.total=48;$review.directorReferenceScore=48;Sign-Review $review;Write-Json $reviewPath $review;Must-Fail 'illegal score' @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',$output) 'illegal reviewer score'
   $review.rubric.composition=7;$review.rubric.total=34;$review.directorReferenceScore=34;$review.signature='';Write-Json $reviewPath $review;Must-Fail 'unsigned review' @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',$output) 'review signature mismatch'
   Sign-Review $review;Write-Json $reviewPath $review
   Must-Fail 'output escape' @('-ReviewerInput',$reviewPath,'-HdrValidator',$validator,'-OutputPath',(Join-Path $temp 'escaped.test.json')) 'path escaped capture root'
-  Write-Output "GameplayR7VisualSidecarSmoke=PASS evidence=$digest slope=$slope radial=$radial tile32=$tile32 tile64=$tile64 tile32Affine=$tile32Affine"
+  Write-Output "GameplayR7VisualSidecarSmoke=PASS evidence=$digest slope=$slope radial=$radial tile32=$tile32 tile64=$tile64 tile32Affine=$tile32Affine roofCoverage=$($roof.pixelCoverage) roofGradient1pxP95=$($roof.gradient1pxP95) roofGradient4pxP90=$($roof.gradient4pxP90)"
 }finally{
   if((Test-Path -LiteralPath $temp)-and( [IO.Path]::GetFullPath($temp).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()),[StringComparison]::OrdinalIgnoreCase))){Remove-Item -LiteralPath $temp -Recurse -Force}
 }

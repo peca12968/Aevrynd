@@ -128,16 +128,18 @@ bool ValidateGameplayCottageMaterialSource3D(std::string_view source){
   if(!in(*woodRoughness,.60f,.76f)||!in(*roofRoughness,.70f,.88f)||
      !in(*brickRoughness,.72f,.90f)||!in(*woodNormal,.50f,.70f)||
      !in(*roofNormal,.55f,.80f)||!in(*brickNormal,.55f,.80f)||
-     !in(*woodScale,.16f,.26f)||!in(*roofScale,.20f,.32f)||
+     !in(*woodScale,.16f,.26f)||!in(*roofScale,.10f,.32f)||
+     *roofScale!=.16f||
      !in(*brickScale,.20f,.32f))return false;
   // 正式 helper 必須在寫入前拒絕非有限值、越界回應與錯誤 UV 角色；
   // submission 及煙囪磚材都只能走同一個 fail-closed 入口。
-  constexpr std::array<std::string_view,11> required{
+  constexpr std::array<std::string_view,12> required{
       "!std::isfinite(response.roughness)",
       "!std::isfinite(response.normalScale)",
       "!std::isfinite(response.textureScale)",
       "response.useUv!=expectedUseUv",
       "GameplayCottageRoofTextureScale3D,true};",
+      "in(response.textureScale,.10f,.32f)",
       "GameplayCottageBrickTextureScale3D,false};",
       "GameplayCottageWoodTextureScale3D,false};",
       "material.surface.roughness=response.roughness;",
@@ -173,6 +175,8 @@ const bool ValidateGameplayCottageMaterialResponseSmoke=[](){
      !rejects("GameplayCottageRoofRoughness3D=.78f","GameplayCottageRoofRoughness3D=.89f")||
      !rejects("GameplayCottageRoofNormalScale3D=.72f","GameplayCottageRoofNormalScale3D=.81f")||
      !rejects("GameplayCottageWoodTextureScale3D=.20f","GameplayCottageWoodTextureScale3D=.15f")||
+      !rejects("GameplayCottageRoofTextureScale3D=.16f","GameplayCottageRoofTextureScale3D=.33f")||
+      !rejects("in(response.textureScale,.10f,.32f)","in(response.textureScale,.20f,.32f)")||
      !rejects("GameplayCottageBrickTextureScale3D=.26f","GameplayCottageBrickTextureScale3D=.33f")||
      !rejects("GameplayCottageWoodNormalScale3D=.62f","GameplayCottageWoodNormalScale3D=NAN" )||
      !rejects("GameplayCottageRoofTextureScale3D,true};","GameplayCottageRoofTextureScale3D,false};")||

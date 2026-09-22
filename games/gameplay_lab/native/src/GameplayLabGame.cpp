@@ -451,7 +451,7 @@ constexpr float GameplayCottageWoodNormalScale3D=.62f;
 constexpr float GameplayCottageWoodTextureScale3D=.20f;
 constexpr float GameplayCottageRoofRoughness3D=.78f;
 constexpr float GameplayCottageRoofNormalScale3D=.72f;
-constexpr float GameplayCottageRoofTextureScale3D=.26f;
+constexpr float GameplayCottageRoofTextureScale3D=.16f;
 constexpr Color GameplayCottageRoofTint3D{.54f,.31f,.19f,1.f};
 constexpr bool GameplayCottageRoofTintLuminanceGate3D(Color value) noexcept {
   const float luminance=value.r*.2126f+value.g*.7152f+value.b*.0722f;
@@ -486,7 +486,7 @@ bool ApplyGameplayCottageMaterialResponse3D(
       role==GameplayCottageMaterialRole3D::RoofTile
           ? in(response.roughness,.70f,.88f)&&
             in(response.normalScale,.55f,.80f)&&
-            in(response.textureScale,.20f,.32f)
+            in(response.textureScale,.10f,.32f)
       : role==GameplayCottageMaterialRole3D::Brick
           ? in(response.roughness,.72f,.90f)&&
             in(response.normalScale,.55f,.80f)&&

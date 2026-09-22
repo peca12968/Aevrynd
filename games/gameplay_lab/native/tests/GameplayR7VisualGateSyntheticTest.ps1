@@ -78,6 +78,25 @@ $actor = Write-SidecarMutation 'actor-coverage' { param($s) $s.shots[3].actor.co
 $null = Invoke-Gate 'actor-coverage' $fixtureA $actor $false
 $ui = Write-SidecarMutation 'ui-coverage' { param($s) $s.shots[4].ui.coverage = 0.5 }
 $null = Invoke-Gate 'ui-coverage' $fixtureA $ui $false
+$roofBaseline = Write-SidecarMutation 'roof-r75-baseline' {
+  param($s)
+  $roof = $s.shots | Where-Object name -eq 'god-day' | Select-Object -ExpandProperty roof
+  $roof.pixelCoverage = 0.0430208333333333
+  $roof.meanLuma = 0.096183361
+  $roof.gradient1pxP95 = 0.054805845
+  $roof.gradient4pxP90 = 0.067549904
+}
+$null = Invoke-Gate 'roof-r75-baseline' $fixtureA $roofBaseline $false
+$roofBlurred = Write-SidecarMutation 'roof-overblurred' {
+  param($s)
+  ($s.shots | Where-Object name -eq 'god-day').roof.gradient4pxP90 = 0.049
+}
+$null = Invoke-Gate 'roof-overblurred' $fixtureA $roofBlurred $false
+$roofAlgorithm = Write-SidecarMutation 'roof-algorithm' {
+  param($s)
+  $s.algorithms.roofFrequency = 'untrusted-roof-metric'
+}
+$null = Invoke-Gate 'roof-algorithm' $fixtureA $roofAlgorithm $false
 
 $nightRoot = Join-Path $WorkingRoot 'night-dark'
 Copy-Item -LiteralPath $fixtureA -Destination $nightRoot -Recurse
@@ -95,6 +114,6 @@ Copy-Item -LiteralPath $fixtureA -Destination $missingShotRoot -Recurse
 Remove-Item -LiteralPath (Join-Path $missingShotRoot 'god-night-depth.png')
 $null = Invoke-Gate 'missing-shot' $missingShotRoot '' $false
 
-$summary = [ordered]@{schemaVersion=1;result='PASS';seed=7367;fixtureFileCount=34;passReceiptSha256=$passHash1;negativeCases=@('night-dark','water-low-entropy','terrain-correlated','actor-coverage','ui-coverage','missing-sidecar','missing-shot')}
+$summary = [ordered]@{schemaVersion=1;result='PASS';seed=7367;fixtureFileCount=34;passReceiptSha256=$passHash1;negativeCases=@('night-dark','water-low-entropy','terrain-correlated','actor-coverage','ui-coverage','roof-r75-baseline','roof-overblurred','roof-algorithm','missing-sidecar','missing-shot')}
 [IO.File]::WriteAllText((Join-Path $WorkingRoot 'test-summary.json'), (($summary | ConvertTo-Json -Depth 4) + "`n"), (New-Object Text.UTF8Encoding($false)))
-Write-Output "R7_VISUAL_GATE_SYNTHETIC=PASS receiptSha256=$passHash1 negatives=7"
+Write-Output "R7_VISUAL_GATE_SYNTHETIC=PASS receiptSha256=$passHash1 negatives=10"

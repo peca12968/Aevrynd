@@ -70,10 +70,21 @@ for ($index = 0; $index -lt $shots.Count; ++$index) {
     terrain = [ordered]@{autocorrelation32To256=0.28}
     vegetation = [ordered]@{coverage=0.18;spatialEntropy=4.2}
     actor = [ordered]@{coverage=0.035}
+    roof = if ($name -eq 'god-day') {
+      [ordered]@{pixelCoverage=0.0430208333333333;meanLuma=0.096183361;gradient1pxP95=0.040;gradient4pxP90=0.060}
+    } else {
+      [ordered]@{pixelCoverage=0.0;meanLuma=0.0;gradient1pxP95=0.0;gradient4pxP90=0.0}
+    }
     ui = [ordered]@{coverage=0.035;heroOverlap=0}
   }
 }
-$sidecar = [ordered]@{schemaVersion=1;seed=$Seed;shots=$rows}
+$sidecar = [ordered]@{
+  schemaVersion=1
+  seed=$Seed
+  evaluatorVersion=3
+  algorithms=[ordered]@{roofFrequency='beauty-srgb-to-linear-rec709-token472-forward-axis-mean-gradient-p95-1px-p90-4px-v1'}
+  shots=$rows
+}
 [IO.File]::WriteAllText((Join-Path $OutputRoot 'r7-visual-sidecar.json'), (($sidecar | ConvertTo-Json -Depth 8) + "`n"), (New-Object Text.UTF8Encoding($false)))
 
 $manifestRows = @(Get-ChildItem -LiteralPath $OutputRoot -File | Sort-Object Name | ForEach-Object {

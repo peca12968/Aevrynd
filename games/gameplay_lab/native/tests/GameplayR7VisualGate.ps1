@@ -17,6 +17,7 @@ $requiredShots = @(
 $nightShots = @('first-night', 'third-night', 'god-night')
 $waterShots = @('third-day', 'third-dusk', 'god-day', 'god-dusk')
 $actorShots = @('third-day', 'third-dusk', 'third-night', 'god-day', 'god-dusk', 'god-night', 'palette-building', 'melee-combat')
+$roofBaseline = [ordered]@{pixelCoverage=0.0430208333333333;meanLuma=0.096183361;gradient1pxP95=0.054805845;gradient4pxP90=0.067549904}
 $issues = [Collections.Generic.List[string]]::new()
 $shotReceipts = [Collections.Generic.List[object]]::new()
 
@@ -101,6 +102,10 @@ if (Test-Path -LiteralPath $SidecarPath -PathType Leaf) {
 $sidecarRows = @{}
 if ($sidecar) {
   if ($sidecar.schemaVersion -ne 1) { $issues.Add('sidecar-schema') }
+  if ([int]$sidecar.evaluatorVersion -lt 3 -or
+      [string]$sidecar.algorithms.roofFrequency -ne 'beauty-srgb-to-linear-rec709-token472-forward-axis-mean-gradient-p95-1px-p90-4px-v1') {
+    $issues.Add('sidecar-roof-algorithm')
+  }
   foreach ($row in @($sidecar.shots)) {
     if (-not $row.name -or $sidecarRows.ContainsKey([string]$row.name)) { $issues.Add('sidecar-shot-identity'); continue }
     $sidecarRows[[string]$row.name] = $row
@@ -155,7 +160,21 @@ foreach ($name in $requiredShots) {
   }
   $uiPass = $semantic -and $semantic.ui -and $semantic.ui.coverage -le 0.08 -and $semantic.ui.heroOverlap -eq 0
   if ($uiPass) { ++$uiPasses } else { $issues.Add("ui-composition:$name") }
-  $shotReceipts.Add([ordered]@{name=$name;beauty=$beauty;objectId=$objectId;depth=$depth;nightPass=$nightPass;waterApplicable=$waterApplicable;waterPass=[bool]$waterPass;terrainPass=[bool]$terrainPass;vegetationPass=[bool]$vegetationPass;actorPass=[bool]$actorPass;uiPass=[bool]$uiPass})
+  $roofApplicable = $name -eq 'god-day'
+  $roofPass = $true
+  if ($roofApplicable) {
+    $roof = if ($semantic) { $semantic.roof } else { $null }
+    $roofPass = $roof -and
+      [double]$roof.pixelCoverage -ge ($roofBaseline.pixelCoverage - 0.001) -and
+      [double]$roof.pixelCoverage -le ($roofBaseline.pixelCoverage + 0.001) -and
+      [double]$roof.meanLuma -ge ($roofBaseline.meanLuma * 0.95) -and
+      [double]$roof.meanLuma -le ($roofBaseline.meanLuma * 1.05) -and
+      [double]$roof.gradient1pxP95 -le 0.045 -and
+      [double]$roof.gradient1pxP95 -le ($roofBaseline.gradient1pxP95 * 0.80) -and
+      [double]$roof.gradient4pxP90 -ge 0.050
+    if (-not $roofPass) { $issues.Add("roof-frequency:$name") }
+  }
+  $shotReceipts.Add([ordered]@{name=$name;beauty=$beauty;objectId=$objectId;depth=$depth;nightPass=$nightPass;waterApplicable=$waterApplicable;waterPass=[bool]$waterPass;terrainPass=[bool]$terrainPass;vegetationPass=[bool]$vegetationPass;actorPass=[bool]$actorPass;roofApplicable=$roofApplicable;roofPass=[bool]$roofPass;uiPass=[bool]$uiPass})
 }
 
 $artifactScore = [Math]::Floor(10.0 * $artifactPasses / $requiredShots.Count)
