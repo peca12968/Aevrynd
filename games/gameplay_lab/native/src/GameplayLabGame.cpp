@@ -3299,7 +3299,10 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   if(!cleanCapturePresentation&&forestTrial_.Initialized()){
     const auto objective=forestTrial_.Complete()
       ?std::format("FOREST TRIAL COMPLETE  [R] RESTART")
-      :std::format("FOREST TRIAL: {}  {:.1f} m",forestTrial_.ObjectiveLabel(),
+      :std::format("FOREST TRIAL [{}/{}]: {}  {}  {:.1f} m",
+                   forestTrial_.ObjectiveStep(),forestTrial_.ObjectiveStepCount(),
+                   forestTrial_.ObjectiveLabel(),
+                   forestTrial_.DirectionLabel(controller_.Position(),yaw_),
                    forestTrial_.DistanceToObjective(controller_.Position()));
     draw.Quad({640,82},{610,42},{.008f,.018f,.022f,.84f});
     draw.Text({352,68},objective,1.05f,forestTrial_.Complete()?Gold:Cyan);

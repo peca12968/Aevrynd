@@ -91,6 +91,27 @@ public:
   [[nodiscard]] std::uint64_t Transitions() const noexcept {
     return transitions_;
   }
+  [[nodiscard]] constexpr std::uint32_t ObjectiveStepCount() const noexcept {
+    return 5;
+  }
+  [[nodiscard]] std::uint32_t ObjectiveStep() const noexcept {
+    if (!initialized_)
+      return 0;
+    switch (phase_) {
+    case ForestTrialPhase3D::ReachBridgeApproach:
+      return 1;
+    case ForestTrialPhase3D::CrossBridge:
+      return 2;
+    case ForestTrialPhase3D::DefeatGuardian:
+      return 3;
+    case ForestTrialPhase3D::ReturnAcrossBridge:
+      return 4;
+    case ForestTrialPhase3D::ReturnToCottage:
+    case ForestTrialPhase3D::Complete:
+      return 5;
+    }
+    return 0;
+  }
   [[nodiscard]] const ForestTrialRoute3D &Route() const noexcept {
     return route_;
   }
@@ -113,6 +134,47 @@ public:
       return 0.f;
     }
     return 0.f;
+  }
+  [[nodiscard]] Aevrynd::Vec3 ObjectivePosition() const noexcept {
+    if (!initialized_)
+      return {};
+    switch (phase_) {
+    case ForestTrialPhase3D::ReachBridgeApproach:
+    case ForestTrialPhase3D::ReturnAcrossBridge:
+      return route_.bridgeApproach;
+    case ForestTrialPhase3D::CrossBridge:
+      return route_.bridgeExit;
+    case ForestTrialPhase3D::DefeatGuardian:
+      return route_.guardianArena;
+    case ForestTrialPhase3D::ReturnToCottage:
+    case ForestTrialPhase3D::Complete:
+      return route_.cottageEntry;
+    }
+    return {};
+  }
+  [[nodiscard]] std::string_view
+  DirectionLabel(Aevrynd::Vec3 playerFeet, float playerYaw) const noexcept {
+    if (!initialized_ || !Finite(playerFeet) || !std::isfinite(playerYaw) ||
+        Complete())
+      return "ARRIVED";
+    const auto target = ObjectivePosition();
+    const float x = target.x - playerFeet.x;
+    const float z = target.z - playerFeet.z;
+    const float distance = std::hypot(x, z);
+    if (!std::isfinite(distance) || distance <= .05f)
+      return "ARRIVED";
+    const float directionX = x / distance;
+    const float directionZ = z / distance;
+    const float forwardX = std::sin(playerYaw);
+    const float forwardZ = std::cos(playerYaw);
+    const float dot = forwardX * directionX + forwardZ * directionZ;
+    constexpr float thirtyDegreeCosine = .8660254f;
+    if (dot >= thirtyDegreeCosine)
+      return "AHEAD";
+    if (dot <= -thirtyDegreeCosine)
+      return "BEHIND";
+    const float right = forwardZ * directionX - forwardX * directionZ;
+    return right >= 0.f ? "RIGHT" : "LEFT";
   }
   [[nodiscard]] std::string_view ObjectiveLabel() const noexcept {
     switch (phase_) {

@@ -31,7 +31,9 @@ int main() {
 
   if (!trial.Reset(route) || trial.Complete() ||
       trial.Phase() != ForestTrialPhase3D::ReachBridgeApproach ||
-      trial.ObjectiveLabel() != "FOLLOW THE TRAIL TO THE BRIDGE")
+      trial.ObjectiveLabel() != "FOLLOW THE TRAIL TO THE BRIDGE" ||
+      trial.ObjectiveStep() != 1 || trial.ObjectiveStepCount() != 5 ||
+      trial.DirectionLabel({-16.f, 0.f, 8.f}, 0.f) != "RIGHT")
     return 3;
 
   // Cottage, exit and dead guardian cannot skip the ordered traversal.
@@ -41,7 +43,9 @@ int main() {
     return 4;
 
   if (!trial.Tick(true, route.bridgeApproach) || trial.Transitions() != 1 ||
-      trial.Phase() != ForestTrialPhase3D::CrossBridge || trial.Complete())
+      trial.Phase() != ForestTrialPhase3D::CrossBridge || trial.Complete() ||
+      trial.ObjectiveStep() != 2 ||
+      trial.DirectionLabel(route.bridgeApproach, 0.f) != "RIGHT")
     return 5;
   if (!trial.Tick(false, route.bridgeApproach) || trial.Transitions() != 1 ||
       trial.Phase() != ForestTrialPhase3D::CrossBridge)
@@ -70,7 +74,9 @@ int main() {
     return 11;
   if (!trial.Tick(false, route.cottageEntry) || !trial.Complete() ||
       trial.Transitions() != 5 ||
-      trial.ObjectiveLabel() != "FOREST TRIAL COMPLETE")
+      trial.ObjectiveLabel() != "FOREST TRIAL COMPLETE" ||
+      trial.ObjectiveStep() != trial.ObjectiveStepCount() ||
+      trial.DirectionLabel(route.cottageEntry, 0.f) != "ARRIVED")
     return 12;
   if (!trial.Tick(true, {50, 0, 50}) || !trial.Complete() ||
       trial.Transitions() != 5)
@@ -90,6 +96,20 @@ int main() {
   if (!trial.Reset(route) || trial.Complete() || trial.Transitions() != 0 ||
       trial.Phase() != ForestTrialPhase3D::ReachBridgeApproach)
     return 14;
+
+  // Direction cues are authoritative XZ bearings relative to the same yaw
+  // convention used by production movement: yaw zero faces +Z.
+  ForestTrialRoute3D compassRoute = route;
+  compassRoute.bridgeApproach = {0.f, 0.f, 10.f};
+  compassRoute.bridgeExit = {0.f, 0.f, 20.f};
+  compassRoute.guardianArena = {0.f, 0.f, 21.f};
+  compassRoute.cottageEntry = {-10.f, 0.f, 0.f};
+  if (!trial.Reset(compassRoute) ||
+      trial.DirectionLabel({0.f, 0.f, 0.f}, 0.f) != "AHEAD" ||
+      trial.DirectionLabel({0.f, 0.f, 0.f}, 3.14159265f) != "BEHIND" ||
+      trial.DirectionLabel({10.f, 0.f, 10.f}, 0.f) != "LEFT" ||
+      trial.DirectionLabel({-10.f, 0.f, 10.f}, 0.f) != "RIGHT")
+    return 15;
 
   std::cout << "GAMEPLAY_FOREST_TRIAL=PASS transitions="
             << completedTransitions << " routeDistance=" << routeDistance
