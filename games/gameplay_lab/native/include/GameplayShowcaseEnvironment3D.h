@@ -617,6 +617,33 @@ SampleShowcaseTerrainEcologyTint3D(
         1.f - std::sqrt(dx * dx + dz * dz) / (crownRadius * 1.4f);
     canopyCandidate = (std::max)(canopyCandidate, smooth(normalized));
   }
+  // The authored trail is a maintained route rather than an isolated strip of
+  // road material.  Build a deterministic leaf-litter shoulder outside the
+  // walkable tread so the forecourt reads as a forest clearing with a broken
+  // edge, not a broad sheet of neutral dirt.  The shoulder is encoded into the
+  // existing leaf layer: no descriptor, draw, collision, texture, or camera
+  // dependent state is added.  The inner fade preserves the full walking lane;
+  // the two swapped world axes give each side a different but stable outline.
+  float trailShoulderCandidate{};
+  if (path.valid) {
+    const float longitudinal =
+        smooth(path.along / .08f) * smooth((1.f - path.along) / .08f);
+    const float inner = pathVisibleHalfWidth + .18f;
+    const float shoulderNoise =
+        authoredEdgeNoise({worldPosition.z, 0.f, worldPosition.x});
+    const float outer = 5.35f + shoulderNoise * 3.25f;
+    const float enter = smooth((path.distance - inner) / .72f);
+    const float leave = 1.f - smooth((path.distance - (outer - 1.10f)) /
+                                     1.10f);
+    const float mottling = Aevrynd::Clamp(
+        .88f + authoredEdgeNoise({worldPosition.x * 1.37f, 0.f,
+                                  worldPosition.z * .83f}) * .75f,
+        .70f, 1.f);
+    trailShoulderCandidate =
+        Aevrynd::Clamp(.82f * longitudinal * enter * leave * mottling,
+                       0.f, .82f);
+  }
+  canopyCandidate = (std::max)(canopyCandidate, trailShoulderCandidate);
   const float riverCenter = -4.f + std::sin(worldPosition.z * .035f) * 5.f +
                             std::sin(worldPosition.z * .011f) * 2.f;
   const float riverWidth =

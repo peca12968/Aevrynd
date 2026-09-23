@@ -1080,6 +1080,73 @@ int main() {
               << " outer=" << maximumPathOuter << '\n';
     return 101;
   }
+  // R87 keeps the maintained tread clear while replacing the broad neutral
+  // forecourt beside it with a deterministic, irregular leaf-litter band.
+  // Empty descriptors isolate the authored trail shoulder from tree canopies;
+  // all probes are world-space and therefore must remain camera independent.
+  float minimumAuthoredShoulder = 1.f;
+  float maximumLeafShoulder{};
+  float maximumLeafEdgeVariation{};
+  for (const float z : {9.f, 12.f, 15.f, 18.f}) {
+    const Vec3 start = z <= 14.f ? Vec3{-16.f, 0.f, 8.f}
+                                     : Vec3{-14.f, 0.f, 14.f};
+    const Vec3 end = z <= 14.f ? Vec3{-14.f, 0.f, 14.f}
+                                   : Vec3{-12.f, 0.f, 19.8f};
+    const float t = (z - start.z) / (end.z - start.z);
+    const Vec3 centre{start.x + (end.x - start.x) * t, 0.f, z};
+    const float tangentLength =
+        std::hypot(end.x - start.x, end.z - start.z);
+    const Vec3 normal{-(end.z - start.z) / tangentLength, 0.f,
+                      (end.x - start.x) / tangentLength};
+    const auto sampleAt = [&](float offset) {
+      return SampleShowcaseTerrainEcologyTint3D(
+          {centre.x + normal.x * offset, 0.f,
+           centre.z + normal.z * offset},
+          {});
+    };
+    const auto core = sampleAt(0.f);
+    const auto leftShoulder = sampleAt(-3.f);
+    const auto rightShoulder = sampleAt(3.f);
+    const auto edgeA = sampleAt(-4.7f);
+    const auto edgeB = sampleAt(4.7f);
+    const auto exterior = sampleAt(6.5f);
+    minimumAuthoredShoulder =
+        (std::min)(minimumAuthoredShoulder,
+                   (std::min)(leftShoulder.leafLitter +
+                                  leftShoulder.riverWetSoil,
+                              rightShoulder.leafLitter +
+                                  rightShoulder.riverWetSoil));
+    maximumLeafShoulder =
+        (std::max)(maximumLeafShoulder,
+                   (std::max)(leftShoulder.leafLitter,
+                              rightShoulder.leafLitter));
+    maximumLeafEdgeVariation =
+        (std::max)(maximumLeafEdgeVariation,
+                   std::abs(edgeA.leafLitter - edgeB.leafLitter));
+    if (core.leafLitter != 0.f || core.cottagePath < .62f ||
+        leftShoulder.cottagePath != 0.f ||
+        rightShoulder.cottagePath != 0.f ||
+        exterior.leafLitter != 0.f || exterior.cottagePath != 0.f ||
+        !validAuthoredBlend(core) || !validAuthoredBlend(leftShoulder) ||
+        !validAuthoredBlend(rightShoulder) ||
+        !validAuthoredBlend(exterior)) {
+      std::cerr << "hero trail leaf shoulder topology divergence z=" << z
+                << " core=" << core.cottagePath << '/' << core.leafLitter
+                << " shoulder=" << leftShoulder.leafLitter << '/'
+                << rightShoulder.leafLitter << " exterior="
+                << exterior.cottagePath << '/' << exterior.leafLitter
+                << '\n';
+      return 104;
+    }
+  }
+  if (minimumAuthoredShoulder < .45f || maximumLeafShoulder < .55f ||
+      maximumLeafShoulder > .82f ||
+      maximumLeafEdgeVariation < .03f) {
+    std::cerr << "hero trail leaf shoulder profile divergence shoulder="
+              << minimumAuthoredShoulder << '/' << maximumLeafShoulder
+              << " edgeVariation=" << maximumLeafEdgeVariation << '\n';
+    return 105;
+  }
   for (const Vec3 control : {Vec3{-28.f, 0.f, -8.f},
                              Vec3{-25.5f, 0.f, 1.f},
                              Vec3{-16.f, 0.f, 8.f},
