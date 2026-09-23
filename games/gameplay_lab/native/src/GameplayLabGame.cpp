@@ -2217,8 +2217,41 @@ void GameplayLabGame::AddShowcaseEnvironment(){
        // 裝飾件使用已載入的 WoodSiding006，不再從基座或屋頂複製磚／瓦紋。
        auto wood=showcaseWoodMaterial_;wood.tint={.58f,.36f,.19f,1};wood.surface.roughness=.62f;wood.surface.metallic=0;wood.surface.emissive=.006f;wood.textureScale=.16f;wood.useUv=false;
        auto doorMaterial=wood;doorMaterial.tint={.36f,.17f,.07f,1};
-       const auto framedWindowZ=[&](float x,float z,float facing){scene_.Mesh(boxMesh_,{{x,1.95f,z},{0,0,0},{1.35f,1.15f,.12f}},glass,{},renderIdentity);const float frameZ=z+facing*.11f;for(float side:{-.76f,.76f})scene_.Mesh(boxMesh_,{{x+side,1.95f,frameZ},{0,0,0},{.12f,1.48f,.16f}},wood,{},renderIdentity);for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{x,y,frameZ},{0,0,0},{1.64f,.12f,.16f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{x,1.95f,frameZ+facing*.02f},{0,0,0},{.09f,1.22f,.13f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{x,1.95f,frameZ+facing*.02f},{0,0,0},{1.42f,.09f,.13f}},wood,{},renderIdentity);};
-       const auto framedWindowX=[&](float x,float facing){scene_.Mesh(boxMesh_,{{x,1.95f,24},{0,0,0},{.12f,1.15f,1.45f}},glass,{},renderIdentity);const float frameX=x+facing*.11f;for(float side:{-.81f,.81f})scene_.Mesh(boxMesh_,{{frameX,1.95f,24+side},{0,0,0},{.16f,1.48f,.12f}},wood,{},renderIdentity);for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{frameX,y,24},{0,0,0},{.16f,.12f,1.82f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{frameX+facing*.02f,1.95f,24},{0,0,0},{.13f,1.22f,.09f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{frameX+facing*.02f,1.95f,24},{0,0,0},{.13f,.09f,1.52f}},wood,{},renderIdentity);};
+       // R100_COTTAGE_WINDOW_DETAIL_BEGIN
+       // Six existing windows share these render-only exterior pieces. The
+       // shutters sit outside the glass aperture while the sill projects far
+       // enough to remain legible in the fixed first/third/God cameras.
+       constexpr float shutterThickness=.14f;
+       constexpr float sillProjection=.30f;
+       const auto cottageWindowDetailZ=[&](float x,float z,float facing){
+         const auto windowDetailDrawsBefore=scene_.MeshCount();
+         for(float side:{-1.f,1.f})
+           scene_.Mesh(boxMesh_,{{x+side*1.13f,1.95f,
+                                  z+facing*(.18f+shutterThickness*.5f)},
+                                 {0,side*facing*.18f,0},
+                                 {.50f,1.34f,shutterThickness}},
+                       doorMaterial,{},renderIdentity);
+         scene_.Mesh(boxMesh_,{{x,1.17f,z+facing*sillProjection},{0,0,0},
+                                {1.94f,.16f,.46f}},wood,{},renderIdentity);
+         if(scene_.MeshCount()!=windowDetailDrawsBefore+3u)
+           throw std::runtime_error("Cottage Z window detail draw count gate failed");
+       };
+       const auto cottageWindowDetailX=[&](float x,float facing){
+         const auto windowDetailDrawsBefore=scene_.MeshCount();
+         for(float side:{-1.f,1.f})
+           scene_.Mesh(boxMesh_,{{x+facing*(.18f+shutterThickness*.5f),
+                                  1.95f,24.f+side*1.18f},
+                                 {0,-side*facing*.18f,0},
+                                 {shutterThickness,1.34f,.52f}},
+                       doorMaterial,{},renderIdentity);
+         scene_.Mesh(boxMesh_,{{x+facing*sillProjection,1.17f,24.f},{0,0,0},
+                                {.46f,.16f,2.02f}},wood,{},renderIdentity);
+         if(scene_.MeshCount()!=windowDetailDrawsBefore+3u)
+           throw std::runtime_error("Cottage X window detail draw count gate failed");
+       };
+       // R100_COTTAGE_WINDOW_DETAIL_END
+       const auto framedWindowZ=[&](float x,float z,float facing){scene_.Mesh(boxMesh_,{{x,1.95f,z},{0,0,0},{1.35f,1.15f,.12f}},glass,{},renderIdentity);const float frameZ=z+facing*.11f;for(float side:{-.76f,.76f})scene_.Mesh(boxMesh_,{{x+side,1.95f,frameZ},{0,0,0},{.12f,1.48f,.16f}},wood,{},renderIdentity);for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{x,y,frameZ},{0,0,0},{1.64f,.12f,.16f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{x,1.95f,frameZ+facing*.02f},{0,0,0},{.09f,1.22f,.13f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{x,1.95f,frameZ+facing*.02f},{0,0,0},{1.42f,.09f,.13f}},wood,{},renderIdentity);cottageWindowDetailZ(x,z,facing);};
+       const auto framedWindowX=[&](float x,float facing){scene_.Mesh(boxMesh_,{{x,1.95f,24},{0,0,0},{.12f,1.15f,1.45f}},glass,{},renderIdentity);const float frameX=x+facing*.11f;for(float side:{-.81f,.81f})scene_.Mesh(boxMesh_,{{frameX,1.95f,24+side},{0,0,0},{.16f,1.48f,.12f}},wood,{},renderIdentity);for(float y:{1.27f,2.63f})scene_.Mesh(boxMesh_,{{frameX,y,24},{0,0,0},{.16f,.12f,1.82f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{frameX+facing*.02f,1.95f,24},{0,0,0},{.13f,1.22f,.09f}},wood,{},renderIdentity);scene_.Mesh(boxMesh_,{{frameX+facing*.02f,1.95f,24},{0,0,0},{.13f,.09f,1.52f}},wood,{},renderIdentity);cottageWindowDetailX(x,facing);};
        if(descriptor.meshAsset.find("front")!=std::string::npos){
          scene_.Mesh(boxMesh_,{{-12,1.35f,20.17f},{0,0,0},{1.45f,2.1f,.12f}},doorMaterial,{},renderIdentity);
          // 門窗框、窗台與前階共享原建築identity，增加輪廓細節但不改變descriptor或碰撞代理。
