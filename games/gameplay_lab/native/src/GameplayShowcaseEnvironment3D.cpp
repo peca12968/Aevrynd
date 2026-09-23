@@ -616,7 +616,7 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
   ShowcaseLightingState3D state{};
   state.profile = profile;
   if (profile == ShowcaseLightingProfile3D::Day) {
-    state = {profile, {{.34f, -.91f, .23f}, .24f, {1, .96f, .88f, 1}, 1.42f},
+    state = {profile, {{.34f, -.91f, .23f}, .22f, {1, .96f, .88f, 1}, 1.62f},
              {.24f, .42f, .67f, 1}, {.32f, .43f, .55f, .62f}, -.12f, 46800.f};
   } else if (profile == ShowcaseLightingProfile3D::Dusk) {
     state = {profile, {{-.74f, -.42f, .18f}, .19f, {1, .66f, .38f, 1}, .94f},
@@ -704,7 +704,11 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     environmentBlend.analyticSpecularWeight = .10f;
     environmentBlend.iblSpecularWeight = .90f;
     environmentBlend.objectFillRadiance = {.46f,.49f,.48f};
-    environmentBlend.objectFillIntensity = .92f;
+    // Let the directional sun shape trunks, foliage and terrain.  The former
+    // 0.92 fill sat too close to the 1.42 sun and flattened the forest into a
+    // single mid-tone.  Total illumination stays bounded: sun rises while the
+    // omnidirectional fill falls, rather than increasing exposure.
+    environmentBlend.objectFillIntensity = .84f;
     environmentBlend.phaseFingerprint = 0x4441595f49424c31ull;
   } else if (profile == ShowcaseLightingProfile3D::Dusk) {
     environmentBlend.diffuseRgbScale = {1.f,.88f,.72f};

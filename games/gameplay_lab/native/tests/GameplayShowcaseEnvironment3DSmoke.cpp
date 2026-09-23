@@ -1008,13 +1008,11 @@ int main() {
     return 92;
   groundMaterial.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
   constexpr auto terrainTint = ShowcaseForestTerrainTint3D();
-  constexpr Color priorTerrainTint{.46f, .52f, .39f, 1.f};
-  if (terrainTint.g < terrainTint.r + .055f ||
-      terrainTint.g < terrainTint.b || terrainTint.r > .72f ||
+  constexpr Color priorTerrainTint{.47f, .535f, .405f, 1.f};
+  if (terrainTint.g < terrainTint.r + .11f ||
+      terrainTint.g < terrainTint.b + .18f || terrainTint.r > .72f ||
       Rec709(terrainTint) < .50f || Rec709(terrainTint) > .52f ||
-      std::abs(terrainTint.r - priorTerrainTint.r) > .02f ||
-      std::abs(terrainTint.g - priorTerrainTint.g) > .02f ||
-      std::abs(terrainTint.b - priorTerrainTint.b) > .02f ||
+      std::abs(Rec709(terrainTint) - Rec709(priorTerrainTint)) > .01f ||
       terrainTint.a != 1.f)
     return 63;
   const std::array<ShowcaseSceneDescriptor3D, 1> ecologyTrees{{
@@ -2123,6 +2121,14 @@ int main() {
   const auto daySubmittedSun = draw.DirectionalLight();
   const auto dayRadianceFingerprint = draw.PhaseRadianceProfile().phaseFingerprint;
   const auto dayRadiance = draw.PhaseRadianceProfile();
+  // Daylight must shape trunks, foliage and terrain instead of relying on a
+  // nearly equal omnidirectional object fill that flattens the forest.  This
+  // ratio is evaluated from submitted production state, not a screenshot.
+  if (daySubmittedSun.intensity /
+          dayEnvironmentBlend.objectFillIntensity < 1.85f ||
+      dayEnvironmentBlend.objectFillIntensity < .78f ||
+      dayEnvironmentBlend.objectFillIntensity > .86f)
+    return 108;
   if (draw.VolumetricAtmospherePhase() != VolumetricAtmospherePhase3D::Day)
     return 20;
   if (!draw.DirectionalShadowMapEnabled() ||

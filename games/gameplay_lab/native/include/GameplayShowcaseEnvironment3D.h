@@ -355,9 +355,10 @@ ShowcaseUnderstoryFormVariation(
 // 壓低總反射率，避免林地在正式曝光下變成黃白色草原。
 [[nodiscard]] inline constexpr Aevrynd::Color
 ShowcaseForestTerrainTint3D() noexcept {
-  // 以低反射率苔蘚綠取代偏黃的亮草坪色：在不改曝光、燈光或材質
-  // 取樣的前提下，保留綠色優勢，同時讓土壤、落葉與濕岸分區可讀。
-  return {.47f, .535f, .405f, 1.f};
+  // Keep Rec.709 energy equivalent to the previous terrain response while
+  // separating green from red/blue.  This removes the broad yellow-grey cast
+  // without using exposure or post-process saturation as a shortcut.
+  return {.43f, .56f, .35f, 1.f};
 }
 
 // 三層地表使用同一套世界座標貼圖；較低頻率保留近景 PBR 細節，同時
@@ -730,18 +731,18 @@ SampleShowcaseTerrainEcologyTint3D(
         pathWetHandoff.riverWetSoil;
     result.leafLitter = result.canopy =
         (std::min)(canopyCandidate, 1.f - result.riverWetSoil);
-    result.tint = {1.f + (.62f - 1.f) * result.riverWetSoil +
-                             (.64f - 1.f) * result.leafLitter,
+    result.tint = {1.f + (.60f - 1.f) * result.riverWetSoil +
+                             (.56f - 1.f) * result.leafLitter,
                    1.f + (.70f - 1.f) * result.riverWetSoil +
-                             (.72f - 1.f) * result.leafLitter,
-                   1.f + (.66f - 1.f) * result.riverWetSoil +
-                             (.50f - 1.f) * result.leafLitter,
+                             (.68f - 1.f) * result.leafLitter,
+                   1.f + (.64f - 1.f) * result.riverWetSoil +
+                             (.46f - 1.f) * result.leafLitter,
                    1.f};
     return result;
   } else if (canopyCandidate > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CanopyLeafLitter;
     result.leafLitter = result.canopy = canopyCandidate;
-    authoredTint = {.64f, .72f, .50f, 1.f};
+    authoredTint = {.56f, .68f, .46f, 1.f};
   }
   const float authoredWeight = result.cottagePath + result.leafLitter;
   result.tint = {1.f + (authoredTint.r - 1.f) * authoredWeight,
