@@ -2192,10 +2192,21 @@ int main() {
 
   // 低仰角英雄鏡頭不得再次使用會形成水平煙牆的低空、高覆蓋雲層。
   const auto &heroClouds = draw.VolumetricClouds();
-  if (heroClouds.baseAltitude < 1800.f || heroClouds.coverage > .45f ||
-      heroClouds.density > .65f || heroClouds.erosion < .50f ||
-      heroClouds.shadowStrength > .40f || heroClouds.maximumDistance < 6000.f)
+  if (heroClouds.baseAltitude < 2600.f || heroClouds.coverage > .56f ||
+      heroClouds.density > .48f || heroClouds.erosion < .68f ||
+      heroClouds.shadowStrength > .30f || heroClouds.maximumDistance < 8500.f)
     return 38;
+  // R104：正式第一／第三人稱低仰角鏡頭必須使用高空、較薄且侵蝕充分的
+  // 雲層。舊 2100m／1700m 厚層雖通過寬鬆上限，仍在地平線形成連續灰牆；
+  // 這裡鎖定美術可讀的有限範圍，而不是以停用體積雲取得乾淨天空。
+  if (heroClouds.baseAltitude < 2600.f || heroClouds.baseAltitude > 3200.f ||
+      heroClouds.thickness < 900.f || heroClouds.thickness > 1400.f ||
+      heroClouds.coverage < .48f || heroClouds.coverage > .56f ||
+      heroClouds.density < .38f || heroClouds.density > .48f ||
+      heroClouds.erosion < .68f || heroClouds.erosion > .80f ||
+      heroClouds.shadowStrength < .20f || heroClouds.shadowStrength > .30f ||
+      heroClouds.maximumDistance < 8500.f)
+    return 109;
 
   // 岸泡深度依實際河床最淺百分位設定；不得再次把整條河當作泡沫。
   if(draw.WaterSurface().foamStartDepth > .035f ||

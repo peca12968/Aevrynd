@@ -604,15 +604,15 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   // 灰色水平煙牆。保留真正的體積雲與雲影，但提高雲底、降低覆蓋與密度，
   // 並加強侵蝕，讓天空由分散雲團建立深度而不是由均勻長帶切割。
   Aevrynd::VolumetricCloudSettings3D clouds{};
-  clouds.baseAltitude = 2100.f;
-  clouds.thickness = 1700.f;
-  clouds.coverage = .38f;
-  clouds.density = .56f;
-  clouds.erosion = .58f;
-  clouds.windSpeed = 9.f;
+  clouds.baseAltitude = 2800.f;
+  clouds.thickness = 1150.f;
+  clouds.coverage = .52f;
+  clouds.density = .42f;
+  clouds.erosion = .74f;
+  clouds.windSpeed = 7.f;
   clouds.sampleCount = 16;
   clouds.shadowsEnabled = true;
-  clouds.shadowStrength = .32f;
+  clouds.shadowStrength = .24f;
   clouds.maximumDistance = 9000.f;
   draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});

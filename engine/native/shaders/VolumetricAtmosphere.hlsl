@@ -158,16 +158,32 @@ precise float CloudLayout(float3 advected)
 precise float CloudField(float3 worldPosition)
 {
     precise const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
-    precise float base=Fbm3D(advected*.00125,cloudBaseNoiseSeed,cloudBaseNoiseRotation,4);
-    precise float detail=Fbm3D(advected*.0047+29.3,cloudDetailNoiseSeed,cloudDetailNoiseRotation,3);
-#if AEVRYND_VOLUMETRIC_DIAGNOSTICS
-    if(testMutation==3){base=LegacyPlanarCloudNoise(advected);detail=LegacyPlanarCloudNoise(advected*2.31+31.7);}
-#endif
     precise const float h=saturate((worldPosition.y-cloudBaseAltitude)*DeterministicReciprocal(max(1.0,cloudThickness)));
     precise const float profile=DeterministicSmoothstep(0.0,.16,h)*DeterministicSmoothstep(0.0,.28,1.0-h);
-    precise const float layout=DeterministicSmoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
-    precise const float threshold=.38+cloudErosion*(detail-.5);
-    precise const float result=layout*DeterministicSmoothstep(threshold,threshold+.18,base)*profile*cloudDensity;
+    precise float result=0.0;
+    [branch] if(profile>0.0)
+    {
+        precise const float layout=DeterministicSmoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
+        [branch] if(layout>0.0)
+        {
+            precise float base=Fbm3D(advected*.00125,cloudBaseNoiseSeed,cloudBaseNoiseRotation,4);
+            precise const float minimumThreshold=.38-cloudErosion*.5;
+#if AEVRYND_VOLUMETRIC_DIAGNOSTICS
+            const bool densityCandidate=base>minimumThreshold||testMutation==3;
+#else
+            const bool densityCandidate=base>minimumThreshold;
+#endif
+            [branch] if(densityCandidate)
+            {
+                precise float detail=Fbm3D(advected*.0047+29.3,cloudDetailNoiseSeed,cloudDetailNoiseRotation,3);
+#if AEVRYND_VOLUMETRIC_DIAGNOSTICS
+                if(testMutation==3){base=LegacyPlanarCloudNoise(advected);detail=LegacyPlanarCloudNoise(advected*2.31+31.7);}
+#endif
+                precise const float threshold=.38+cloudErosion*(detail-.5);
+                result=layout*DeterministicSmoothstep(threshold,threshold+.18,base)*profile*cloudDensity;
+            }
+        }
+    }
     return result;
 }
 
@@ -185,12 +201,19 @@ precise float HenyeyGreenstein(float cosine,float anisotropy)
 precise float CloudShadowField(float3 worldPosition)
 {
     precise const float3 advected=worldPosition+float3(.72,0,.34)*(timeSeconds*cloudWindSpeed);
-    precise const float3 rotated=RotateNoise(advected*.00125,cloudBaseNoiseRotation,0);
-    precise const float base=ValueNoise3D(rotated,cloudBaseNoiseSeed);
     precise const float h=saturate((worldPosition.y-cloudBaseAltitude)*DeterministicReciprocal(max(1.0,cloudThickness)));
     precise const float profile=DeterministicSmoothstep(0.0,.16,h)*DeterministicSmoothstep(0.0,.28,1.0-h);
-    precise const float layout=DeterministicSmoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
-    precise const float result=layout*DeterministicSmoothstep(.38,.60,base)*profile*cloudDensity;
+    precise float result=0.0;
+    [branch] if(profile>0.0)
+    {
+        precise const float layout=DeterministicSmoothstep(cloudCoverage,cloudCoverage+.16,CloudLayout(advected));
+        [branch] if(layout>0.0)
+        {
+            precise const float3 rotated=RotateNoise(advected*.00125,cloudBaseNoiseRotation,0);
+            precise const float base=ValueNoise3D(rotated,cloudBaseNoiseSeed);
+            result=layout*DeterministicSmoothstep(.38,.60,base)*profile*cloudDensity;
+        }
+    }
     return result;
 }
 
@@ -269,18 +292,25 @@ void VolumetricAtmosphereMain(uint3 id:SV_DispatchThreadID)
         [loop] for(uint index=0;index<count;++index)
         {
             precise const float distance=cloudStart+physicalStep*(float(index)+jitter);precise const float3 p=rayOrigin+ray*distance;precise const float density=CloudField(p)*grazing*pathFade;
-            precise const float sigmaT=density*.00135;
-            precise float opticalDepth=sigmaT*physicalStep;
+            [branch] if(density>0.0)
+            {
+                precise const float sigmaT=density*.00135;
+                precise float opticalDepth=sigmaT*physicalStep;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
-            if(testMutation==6)opticalDepth=density*.105*segmentLength/max(1.0,cloudThickness);
+                if(testMutation==6)opticalDepth=density*.105*segmentLength/max(1.0,cloudThickness);
 #endif
-            precise const float stepT=DeterministicExp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?.88*(1.0-stepT):0.0;
-            precise const float sunT=CloudSunTransmittance(p,sun,cloudShadowSampleCount);precise float3 incident=ambientRadiance*phaseAmbientScale+sunRadiance*sunRadianceIntensity*phaseSunScale*sunT*phaseValue;
+                precise const float stepT=DeterministicExp(-min(opticalDepth,80.0));precise const float scatter=sigmaT>1e-7?.88*(1.0-stepT):0.0;
+                // 沒有散射時 incident 不會貢獻 cloudL；略過昂貴的向日光陰影步進，
+                // 保持結果等價並把稀疏雲場的成本留給真正含雲的採樣點。
+                precise float sunT=1.0;
+                [branch] if(scatter>0.0)sunT=CloudSunTransmittance(p,sun,cloudShadowSampleCount);
+                precise float3 incident=ambientRadiance*phaseAmbientScale+sunRadiance*sunRadianceIntensity*phaseSunScale*sunT*phaseValue;
 #if AEVRYND_VOLUMETRIC_DIAGNOSTICS
-            // 中文：只歸零夜間雲層入射光，保留消光累積以驗證 opacity 路徑沒有被旁路。
-            if(testMutation==8)incident=0.0;
+                // 中文：只歸零夜間雲層入射光，保留消光累積以驗證 opacity 路徑沒有被旁路。
+                if(testMutation==8)incident=0.0;
 #endif
-            cloudL+=cloudT*scatter*incident;cloudT*=stepT;integratedCloudOpticalDepth+=opticalDepth;
+                cloudL+=cloudT*scatter*incident;cloudT*=stepT;integratedCloudOpticalDepth+=opticalDepth;
+            }
         }
     }
     precise float fogT=1.0;precise float3 shaftL=0;
