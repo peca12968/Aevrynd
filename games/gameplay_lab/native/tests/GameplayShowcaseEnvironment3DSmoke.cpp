@@ -927,6 +927,31 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  HeightField3D heroTrailTerrain;
+  heroTrailTerrain.Configure({{-256.f, 0.f, -256.f}, 513, 513, 1.f});
+  if (!heroTrailTerrain.GenerateUltra(
+          0x4a17u,
+          {10.5f, .0105f, .56f, .22f, 24.f, .34f, 7, 3, .68f, .16f}))
+    return 112;
+  ShowcaseHeroTrailTerrainReceipt3D heroTrailReceipt{};
+  if (!SculptShowcaseHeroTrailTerrain3D(heroTrailTerrain,
+                                        &heroTrailReceipt) ||
+      !heroTrailReceipt.Complete() ||
+      heroTrailReceipt.modifiedSamples < 300u ||
+      heroTrailReceipt.treadSamples < 40u ||
+      heroTrailReceipt.shoulderSamples < 160u ||
+      heroTrailReceipt.shoulderRelief < .75f ||
+      heroTrailReceipt.maximumTreadHeight > .0801f ||
+      heroTrailReceipt.maximumCottagePadHeight > .0301f) {
+    std::cerr << "HERO_TRAIL_TERRAIN modified="
+              << heroTrailReceipt.modifiedSamples << " tread="
+              << heroTrailReceipt.treadSamples << " shoulder="
+              << heroTrailReceipt.shoulderSamples << " relief="
+              << heroTrailReceipt.shoulderRelief << " treadHeight="
+              << heroTrailReceipt.maximumTreadHeight << " cottageHeight="
+              << heroTrailReceipt.maximumCottagePadHeight << '\n';
+    return 112;
+  }
   const float minimumTreeBurial =
       ShowcaseTreeBurialOffset3D("island_tree_01", 1.f);
   const float scaledTreeBurial =

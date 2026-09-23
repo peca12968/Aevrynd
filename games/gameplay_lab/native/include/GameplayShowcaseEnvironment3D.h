@@ -1178,6 +1178,28 @@ struct ShowcaseTerrainGroundingReceipt3D {
   }
 };
 
+struct ShowcaseHeroTrailTerrainReceipt3D {
+  std::size_t modifiedSamples{}, treadSamples{}, shoulderSamples{},
+      cottagePadSamples{};
+  float shoulderRelief{}, maximumTreadHeight{},
+      maximumCottagePadHeight{};
+  bool applied{};
+  [[nodiscard]] bool Complete() const noexcept {
+    return applied && modifiedSamples != 0 && treadSamples != 0 &&
+           shoulderSamples != 0 && cottagePadSamples != 0 &&
+           std::isfinite(shoulderRelief) &&
+           std::isfinite(maximumTreadHeight) &&
+           std::isfinite(maximumCottagePadHeight);
+  }
+};
+
+// 將出生點至屋前的可走區限制在共享 HeroTrail spline，而不是以兩個
+// 重疊大圓抹平整片前場。道路中心保持水平，肩帶平順接回原高度場；
+// 木屋實際 footprint 另有小型 pad，避免建築懸空。
+[[nodiscard]] bool SculptShowcaseHeroTrailTerrain3D(
+    Aevrynd::HeightField3D &terrain,
+    ShowcaseHeroTrailTerrainReceipt3D *receipt = nullptr);
+
 struct ShowcaseReleaseReceipt3D {
   std::uint64_t worldHashBefore{};
   std::uint64_t worldHashAfter{};

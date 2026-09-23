@@ -323,9 +323,6 @@ void CarveShowcaseRiverShore3D(HeightField3D& terrain){
     const float outerBlend=Clamp((inward+4.f)/4.f,0.f,1.f),weight=outerBlend*outerBlend*(3.f-2.f*outerBlend);
     terrain.SetHeight(x,z,terrain.Height(x,z)*(1.f-weight)+target*weight);
   }
-  // 保留既有出生與屋前平整區，不增加玩家碰撞或改變通行分類。
-  terrain.FlattenCircle({-16,0,8},8,0,8);
-  terrain.FlattenCircle({-12,0,24},7.2f,0,4.5f);
   terrain.RecalculateRange();
 }
 Mesh3D CreateShowcaseRiverRefinedTerrainMesh3D(const HeightField3D& terrain,HeightFieldMeshSettings3D settings={}){
@@ -886,9 +883,13 @@ void GameplayLabGame::OnStart(Engine& engine){
   showcaseCottageRoofMesh_=engine.CreateMeshResource3D(CreateCottageRoofMesh3D());
   showcaseTerrain_.Configure({{-256,0,-256},129,129,4});
   if(!showcaseTerrain_.GenerateUltra(0x4a17u,{10.5f,.0105f,.56f,.22f,24.f,.34f,7,3,.68f,.16f}))throw std::runtime_error("Gameplay showcase terrain generation failed");
-  showcaseTerrain_.FlattenCircle({-16,0,8},8,0,8);
-  showcaseTerrain_.FlattenCircle({-12,0,24},7.2f,0,4.5f);
   CarveShowcaseRiverShore3D(showcaseTerrain_);
+  ::GameplayLab::ShowcaseHeroTrailTerrainReceipt3D heroTrailTerrain{};
+  if(!::GameplayLab::SculptShowcaseHeroTrailTerrain3D(showcaseTerrain_,&heroTrailTerrain)||
+     heroTrailTerrain.shoulderRelief<.75f||
+     heroTrailTerrain.maximumTreadHeight>.0801f||
+     heroTrailTerrain.maximumCottagePadHeight>.0301f)
+    throw std::runtime_error("Gameplay showcase hero trail terrain sculpt failed");
   // 只在既有 near-band 倒木附近留下壓痕與鬆土；先縮成十個實際 descriptor，
   // 再限制高度場取樣的 bounding boxes，避免把地表初始化變成全場景乘積掃描。
   std::vector<ShowcaseSceneDescriptor3D> terrainDisturbanceAnchors;

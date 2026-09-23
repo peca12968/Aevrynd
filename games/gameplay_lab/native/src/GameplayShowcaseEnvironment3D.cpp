@@ -255,6 +255,88 @@ bool AppendShowcaseTerrainApron3D(Aevrynd::Mesh3D &mesh) {
   return true;
 }
 
+bool SculptShowcaseHeroTrailTerrain3D(
+    Aevrynd::HeightField3D &terrain,
+    ShowcaseHeroTrailTerrainReceipt3D *receipt) {
+  ShowcaseHeroTrailTerrainReceipt3D result{};
+  const auto settings = terrain.Settings();
+  if (settings.width < 2u || settings.depth < 2u ||
+      !std::isfinite(settings.cellSize) || settings.cellSize <= 0.f) {
+    if (receipt) *receipt = result;
+    return false;
+  }
+  const auto smooth = [](float value) {
+    value = Aevrynd::Clamp(value, 0.f, 1.f);
+    return value * value * (3.f - 2.f * value);
+  };
+  std::vector<float> shoulderHeights;
+  shoulderHeights.reserve(768u);
+  constexpr float pathOuterHalfWidth = 7.25f;
+  constexpr Aevrynd::Vec3 cottageCenter{-12.f, 0.f, 24.f};
+  constexpr Aevrynd::Vec2 cottageHalfExtent{4.35f, 3.95f};
+  constexpr float cottageTransition = 1.65f;
+  for (unsigned z = 0; z < settings.depth; ++z) {
+    for (unsigned x = 0; x < settings.width; ++x) {
+      const auto point = terrain.SamplePosition(x, z);
+      const float sourceHeight = terrain.Height(x, z);
+      const auto trail = SampleShowcaseHeroTrail3D(point);
+      float pathWeight{};
+      if (trail.valid) {
+        const float tread = ShowcaseHeroTrailTreadHalfWidth3D(point);
+        pathWeight = 1.f - smooth((trail.distance - tread) /
+                                  (pathOuterHalfWidth - tread));
+      }
+      const float outsideX =
+          (std::max)(0.f, std::abs(point.x - cottageCenter.x) -
+                              cottageHalfExtent.x);
+      const float outsideZ =
+          (std::max)(0.f, std::abs(point.z - cottageCenter.z) -
+                              cottageHalfExtent.y);
+      const float padOutside = std::sqrt(outsideX * outsideX +
+                                         outsideZ * outsideZ);
+      const float cottageWeight =
+          1.f - smooth(padOutside / cottageTransition);
+      const float flattenWeight = (std::max)(pathWeight, cottageWeight);
+      const float sculptedHeight = sourceHeight * (1.f - flattenWeight);
+      if (std::abs(sculptedHeight - sourceHeight) > 1e-6f) {
+        terrain.SetHeight(x, z, sculptedHeight);
+        ++result.modifiedSamples;
+      }
+      if (trail.valid && trail.distance <=
+                             ShowcaseHeroTrailTreadHalfWidth3D(point)) {
+        ++result.treadSamples;
+        result.maximumTreadHeight =
+            (std::max)(result.maximumTreadHeight, std::abs(sculptedHeight));
+      }
+      if (trail.valid && trail.along >= .15f && trail.along <= .95f &&
+          trail.distance >= 2.2f && trail.distance <= 6.f) {
+        shoulderHeights.push_back(sculptedHeight);
+        ++result.shoulderSamples;
+      }
+      if (outsideX == 0.f && outsideZ == 0.f) {
+        ++result.cottagePadSamples;
+        result.maximumCottagePadHeight =
+            (std::max)(result.maximumCottagePadHeight,
+                       std::abs(sculptedHeight));
+      }
+    }
+  }
+  if (!shoulderHeights.empty()) {
+    std::ranges::sort(shoulderHeights);
+    const auto percentile = [&](float fraction) {
+      const auto index = (std::min)(
+          shoulderHeights.size() - 1u,
+          std::size_t(fraction * float(shoulderHeights.size() - 1u)));
+      return shoulderHeights[index];
+    };
+    result.shoulderRelief = percentile(.9f) - percentile(.1f);
+  }
+  terrain.RecalculateRange();
+  result.applied = true;
+  if (receipt) *receipt = result;
+  return result.Complete();
+}
+
 bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
   if (!seed)
     return false;
