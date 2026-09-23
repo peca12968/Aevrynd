@@ -288,7 +288,10 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     // 4096 陰影圖。樹木、岩石與建築維持正式動態投影，避免 Ultra 的
     // 透明草葉 overdraw 吞掉 60 FPS 預算而幾乎沒有可辨識的畫面收益。
     descriptor.castsShadow = placement.kind != ShowcaseLandKind3D::Grass;
-    const std::string id(ShowcaseLandAssetId3D(placement.variant));
+    const auto presentationVariant = placement.kind == ShowcaseLandKind3D::Grass
+        ? ShowcaseUnderstoryPresentationVariant3D(placement)
+        : placement.variant;
+    const std::string id(ShowcaseLandAssetId3D(presentationVariant));
     if (placement.kind == ShowcaseLandKind3D::Tree) {
       const auto form = ShowcaseTreeFormVariation(placement);
       descriptor.scale = {descriptor.scale.x * form.scaleMultiplier.x,

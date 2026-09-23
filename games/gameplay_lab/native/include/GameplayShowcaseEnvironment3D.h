@@ -46,6 +46,25 @@ struct ShowcaseUnderstoryFootprintBounds3D {
   Aevrynd::Vec2 extents{};
 };
 
+// The authored ecology variant describes habitat intent.  Near hero-trail
+// shoulders need the already-loaded multi-species community silhouette rather
+// than a single fern, while every placement outside that narrow band keeps its
+// original mesh.  This is deterministic world-space routing, not camera LOD.
+[[nodiscard]] inline ShowcaseLandVariant3D
+ShowcaseUnderstoryPresentationVariant3D(
+    const ShowcaseLandPlacement3D &placement) noexcept {
+  if (placement.kind != ShowcaseLandKind3D::Grass ||
+      placement.variant != ShowcaseLandVariant3D::GrassFan ||
+      placement.band != ShowcaseLandBand3D::Near ||
+      placement.zone == ShowcaseLandZone3D::Riverbank)
+    return placement.variant;
+  const float laneDistance =
+      SampleShowcaseHeroTrail3D(placement.position).distance;
+  return laneDistance >= 1.4f && laneDistance <= 5.25f
+             ? ShowcaseLandVariant3D::GrassTuft
+             : placement.variant;
+}
+
 // 這三組水平 AABB 來自正式 submission 使用的 Near 網格與固定 seed；smoke
 // 會直接重建 production mesh 並逐值核對，避免此處在網格演進後靜默失真。
 [[nodiscard]] inline constexpr ShowcaseUnderstoryFootprintBounds3D
@@ -118,8 +137,8 @@ ShowcaseUnderstoryHighDetailFootprintBounds3D(
 [[nodiscard]] inline float ShowcaseUnderstoryWalkingClearance3D(
     const ShowcaseLandPlacement3D &placement,
     const ShowcaseUnderstoryFormVariation3D &form) noexcept {
-  const auto bounds =
-      ShowcaseUnderstoryHighDetailFootprintBounds3D(placement.variant);
+  const auto bounds = ShowcaseUnderstoryHighDetailFootprintBounds3D(
+      ShowcaseUnderstoryPresentationVariant3D(placement));
   if (bounds.extents.x <= 0.f || bounds.extents.y <= 0.f)
     return (std::numeric_limits<float>::max)();
   const float scaleX = placement.scale.x * form.scaleMultiplier.x;

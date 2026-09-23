@@ -238,12 +238,23 @@ bool UnderstoryFormVariationContract(
   std::array<unsigned, 3> counts{};
   std::array<float, 3> horizontalCoverageSums{};
   std::array<bool, 3> bands{};
+  unsigned routedShoulderCommunities{}, untouchedFerns{};
   for (std::size_t index = 0; index < placements.size(); ++index) {
     const auto &placement = placements[index];
     if (placement.kind != ShowcaseLandKind3D::Grass) continue;
     const auto form = ShowcaseUnderstoryFormVariation(placement);
     const auto repeated = ShowcaseUnderstoryFormVariation(placement);
     const auto &descriptor = descriptors[index + 2u];
+    const auto presentationVariant =
+        ShowcaseUnderstoryPresentationVariant3D(placement);
+    if (placement.variant == ShowcaseLandVariant3D::GrassFan) {
+      if (presentationVariant == ShowcaseLandVariant3D::GrassTuft)
+        ++routedShoulderCommunities;
+      else if (presentationVariant == ShowcaseLandVariant3D::GrassFan)
+        ++untouchedFerns;
+      else
+        return false;
+    }
     if (form.scaleMultiplier.x != repeated.scaleMultiplier.x ||
         form.scaleMultiplier.y != repeated.scaleMultiplier.y ||
         form.scaleMultiplier.z != repeated.scaleMultiplier.z ||
@@ -257,7 +268,8 @@ bool UnderstoryFormVariationContract(
         descriptor.scale.x != placement.scale.x * form.scaleMultiplier.x ||
         descriptor.scale.y != placement.scale.y * form.scaleMultiplier.y ||
         descriptor.scale.z != placement.scale.z * form.scaleMultiplier.z ||
-        descriptor.yaw != placement.yaw + form.yawOffset) {
+        descriptor.yaw != placement.yaw + form.yawOffset ||
+        descriptor.meshAsset != ShowcaseLandAssetId3D(presentationVariant)) {
       std::cerr << "UNDERSTORY_FORM_MISMATCH index=" << index
                 << " position=" << placement.position.x << ','
                 << placement.position.z << " descriptor="
@@ -310,7 +322,8 @@ bool UnderstoryFormVariationContract(
   const float meadowCoverage = horizontalCoverageSums[1] / float(counts[1]);
   const float uplandCoverage = horizontalCoverageSums[2] / float(counts[2]);
   return riverCoverage >= .86f && meadowCoverage >= 1.f &&
-         uplandCoverage > meadowCoverage;
+         uplandCoverage > meadowCoverage && routedShoulderCommunities >= 4u &&
+         untouchedFerns > routedShoulderCommunities;
 }
 
 struct UnderstoryHighDetailBounds3D {
@@ -2001,7 +2014,8 @@ int main() {
       } else if (descriptor.meshAsset == "procedural/grass-tuft") {
         grassBiomeMaterialsExact &=
             descriptor.materialAsset.find("forest_ground_04") !=
-            std::string::npos;
+                std::string::npos ||
+            descriptor.materialAsset.find("Ground108") != std::string::npos;
         verticalUnderstoryDescriptors += descriptor.lodGroup != 0 ? 1u : 0u;
       } else
         grassBiomeMaterialsExact = false;
