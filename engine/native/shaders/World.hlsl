@@ -3079,6 +3079,37 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         pointLightStart=entry.x;
         pointLightIterationCount=entry.z!=0u?canonicalPointLightCount:entry.y;
     }
+    // Production water replaces the generic shaded accumulator with its captured-scene
+    // composite below.  Resolve the same reflection frame before the one canonical light
+    // loop so local GGX highlights can be routed into that composite without evaluating
+    // every point light twice.  Legacy/fallback water keeps the previous shaded path.
+    float waterDepthSlice = 1.0;
+    float3 waterReflectionNormal = normal;
+    float waterReflectionRoughness = roughness;
+    [branch] if (waterCompositeMask > 0.5)
+    {
+        waterDepthSlice = waterSurfaceEnabled != 0u
+            ? WaterDepthSlice3D(shoreDepth, waterDepthValid)
+            : 1.0;
+        if(waterSurfaceEnabled != 0u && waterMask > 0.5)
+        {
+            precise float3 lowFrequencyNormal = waterReflectionBaseNormal;
+            lowFrequencyNormal.x = lowFrequencyNormal.x - waterLowFrequencyGradient.x;
+            lowFrequencyNormal.z = lowFrequencyNormal.z - waterLowFrequencyGradient.y;
+            lowFrequencyNormal = WaterDeterministicNormalize3D(lowFrequencyNormal);
+            const float lowFrequencyWeight = waterDepthSlice * (1.0 - foamMask) * 0.72;
+            waterReflectionNormal = WaterDeterministicNormalize3D(
+                lerp(normal, lowFrequencyNormal, lowFrequencyWeight));
+        }
+        waterReflectionRoughness = waterSurfaceEnabled != 0u
+            ? WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,
+                                         waterResolvedSlope, waterUnresolvedDetail, foamMask,
+                                         waterDepthSlice)
+            : clamp(roughness, waterMinimumRoughness, waterMaximumRoughness);
+    }
+    const bool routePointLightsToWater = waterSurfaceEnabled != 0u
+        && waterCompositeMask > 0.5 && waterSceneColorEnabled > 0.5;
+    float3 waterPointSpecular = 0.0;
     [loop]
     for (uint pointIteration = 0; pointIteration < pointLightIterationCount; ++pointIteration)
     {
@@ -3090,18 +3121,29 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float attenuation = PointLightAttenuation(distanceSquared, pointLight.radius);
         const float3 localDirection = delta / lightDistance;
         const float3 pointRadiance = pointLight.color * pointLight.intensity * attenuation;
-        shaded += eyeMask > 0.5
-                ? EvaluateEyeLight(normal, geometricNormal, viewDirection, localDirection, pointRadiance, baseColor, roughness)
-                : EvaluatePbrLight(normal, viewDirection, localDirection, pointRadiance, baseColor, roughness, metallic);
-        if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
-                    pointLight.color*pointLight.intensity*attenuation,
-                    baseColor,roughness,skinCurvature);
-        if(hairMask>0.5)shaded+=EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,localDirection,
-                    pointLight.color*pointLight.intensity*attenuation,
-                    baseColor,roughness);
-        if(clothMask>0.5)shaded+=EvaluateClothSupplement(normal,viewDirection,localDirection,
-                    pointLight.color*pointLight.intensity*attenuation,
-                    baseColor,roughness);
+        [branch] if(routePointLightsToWater)
+        {
+            // Metallic=1 removes diffuse; the water F0 is the authored reflectance.
+            // EvaluatePbrLight already applies Schlick Fresnel, so do not multiply it again.
+            waterPointSpecular += EvaluatePbrLight(
+                waterReflectionNormal, viewDirection, localDirection, pointRadiance,
+                waterReflectance.xxx, waterReflectionRoughness, 1.0);
+        }
+        else
+        {
+            shaded += eyeMask > 0.5
+                    ? EvaluateEyeLight(normal, geometricNormal, viewDirection, localDirection, pointRadiance, baseColor, roughness)
+                    : EvaluatePbrLight(normal, viewDirection, localDirection, pointRadiance, baseColor, roughness, metallic);
+            if(skinMask>0.5)shaded+=EvaluateSkinSupplement(normal,viewDirection,localDirection,
+                        pointLight.color*pointLight.intensity*attenuation,
+                        baseColor,roughness,skinCurvature);
+            if(hairMask>0.5)shaded+=EvaluateHairSupplement(normal,input.tangent.xyz,viewDirection,localDirection,
+                        pointLight.color*pointLight.intensity*attenuation,
+                        baseColor,roughness);
+            if(clothMask>0.5)shaded+=EvaluateClothSupplement(normal,viewDirection,localDirection,
+                        pointLight.color*pointLight.intensity*attenuation,
+                        baseColor,roughness);
+        }
     }
 
     float3 aerialOwnedSceneContribution = 0.0;
@@ -3116,22 +3158,6 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
 #endif
     [branch] if (waterCompositeMask > 0.5)
     {
-        const float waterDepthSlice = waterSurfaceEnabled != 0u
-            ? WaterDepthSlice3D(shoreDepth, waterDepthValid)
-            : 1.0;
-        float3 waterReflectionNormal = normal;
-        if(waterSurfaceEnabled != 0u && waterMask > 0.5)
-        {
-            precise float3 lowFrequencyNormal = waterReflectionBaseNormal;
-            lowFrequencyNormal.x = lowFrequencyNormal.x - waterLowFrequencyGradient.x;
-            lowFrequencyNormal.z = lowFrequencyNormal.z - waterLowFrequencyGradient.y;
-            lowFrequencyNormal = WaterDeterministicNormalize3D(lowFrequencyNormal);
-            // 深水天空輪廓主要由可解析寬波驅動；近岸逐步回到完整法線並由
-            // 同一 depth slice 提高粗糙度，避免 Fresnel 與天空查詢使用不同相位。
-            const float lowFrequencyWeight = waterDepthSlice * (1.0 - foamMask) * 0.72;
-            waterReflectionNormal = WaterDeterministicNormalize3D(
-                lerp(normal, lowFrequencyNormal, lowFrequencyWeight));
-        }
         const precise float waterViewCosine = saturate(dot(waterReflectionNormal, viewDirection));
         // 固定 Schlick Fresnel 的乘法順序。pow(x, 5) 可由驅動程式改寫成
         // 不同的近似序列，極小差異會在反射與半精度 HDR 封存時跨越位元邊界。
@@ -3194,11 +3220,6 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         precise const float3 transmittedWater = WaterOrderedMultiply3D(transmittedScene, waterTransmission);
         precise const float3 scatteredWater = WaterOrderedMultiply3D(deepWaterColor, inverseWaterTransmission);
         precise const float3 absorbedWater = WaterOrderedScaleAdd3D(transmittedWater, 1.0, scatteredWater, 1.0);
-        const float waterReflectionRoughness = waterSurfaceEnabled != 0u
-            ? WaterReflectionRoughness3D(waterMinimumRoughness, waterMaximumRoughness,
-                                         waterResolvedSlope, waterUnresolvedDetail, foamMask,
-                                         waterDepthSlice)
-            : clamp(roughness, waterMinimumRoughness, waterMaximumRoughness);
         float3 reflectedWater = EvaluateEnvironmentSpecular(input.worldPosition,reflect(-viewDirection, waterReflectionNormal), skyLightDirection, waterReflectionRoughness)
                               * lerp(1.0, 0.55, waterReflectionRoughness);
         // 透明水面會以不透明場景取代先前的 shaded 值，因此基礎
@@ -3245,7 +3266,10 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             ? WaterOrderedScaleAdd3D(absorbedWater, inverseFresnel, reflectedWater, fresnel)
             : lerp(absorbedWater,reflectedWater,fresnel);
         if(waterSurfaceEnabled!=0u)
+        {
             waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterDirectionalSpecular,1.0);
+            waterComposite=WaterOrderedScaleAdd3D(waterComposite,1.0,waterPointSpecular,1.0);
+        }
         aerialOwnedSceneContribution = WaterOrderedMultiply3D(aerialOwnedSceneContribution, waterTransmission);
         aerialOwnedSceneContribution = WaterOrderedScaleAdd3D(aerialOwnedSceneContribution, inverseFresnel,
                                                                 float3(0.0,0.0,0.0), 0.0);
