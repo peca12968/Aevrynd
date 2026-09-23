@@ -591,8 +591,13 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetDirectionalShadowMapEnabled(true);
   draw.SetDirectionalShadowCascades({4, 2048, .1f, 220.f, .7f, .1f});
   draw.SetSoftDirectionalShadows({true, 18.f, 112.f, 28.f});
-  draw.SetContactShadows({true, 24, 2.2f, .032f, .92f});
-  draw.SetAmbientOcclusion({true, 1.25f, .025f, 1.32f});
+  // The playable forest uses a broad sunlit clearing, so contact response must
+  // remain readable beneath feet, roots and low foliage without changing the
+  // collision surface or adding shadow casters.  The bounded production
+  // strengths deepen only geometry-backed occlusion and retain the existing
+  // pass counts, radii and sample budgets.
+  draw.SetContactShadows({true, 24, 2.2f, .032f, .98f});
+  draw.SetAmbientOcclusion({true, 1.25f, .025f, 1.42f});
   draw.SetScreenSpaceReflections({true, .82f, 42.f, .7f, .32f, 16});
   draw.SetBloom({true, 1.18f, .38f, .085f, 2.2f});
   // 英雄鏡頭仰角低，舊的低空高覆蓋雲層會把投影壓成一條貫穿畫面的
@@ -611,8 +616,15 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   clouds.maximumDistance = 9000.f;
   draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});
+  // Preserve the authored three-layer material and its mean energy, but let
+  // the already continuous world-space macro/chroma domains separate moss,
+  // leaf litter and compacted soil across the large playable clearing.  R97's
+  // lower amplitudes collapsed all three fixed cameras into one yellow-green
+  // sheet; these values remain within the renderer's normalized bounds and do
+  // not add texture samples, descriptors, instances or draw calls.
   Aevrynd::TerrainDistanceMaterialSettings3D terrainMaterial{
-      true, 48.f, 224.f, .020f, .17f, 1.80f, .10f};
+      true, 48.f, 224.f, .020f, .24f, 1.80f, .10f};
+  terrainMaterial.chromaVariationStrength = .15f;
   terrainMaterial.mesoPartitionEnabled = true;
   draw.SetTerrainDistanceMaterial(terrainMaterial);
   // 淺溪厚度不應把背景折射到岸外；保留可見折射，但限制最大 UV 偏移。
@@ -717,7 +729,7 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     // 0.92 fill sat too close to the 1.42 sun and flattened the forest into a
     // single mid-tone.  Total illumination stays bounded: sun rises while the
     // omnidirectional fill falls, rather than increasing exposure.
-    environmentBlend.objectFillIntensity = .84f;
+    environmentBlend.objectFillIntensity = .78f;
     environmentBlend.phaseFingerprint = 0x4441595f49424c31ull;
   } else if (profile == ShowcaseLightingProfile3D::Dusk) {
     environmentBlend.diffuseRgbScale = {1.f,.88f,.72f};

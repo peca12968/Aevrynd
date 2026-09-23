@@ -2135,9 +2135,11 @@ int main() {
   first.ApplyHighProfile(draw);
   const auto terrainDistanceMaterial = draw.TerrainDistanceMaterial();
   if (std::abs(terrainDistanceMaterial.macroVariationScale - .020f) > 1e-6f ||
-      std::abs(terrainDistanceMaterial.macroVariationStrength - .17f) >
+      std::abs(terrainDistanceMaterial.macroVariationStrength - .24f) >
           1e-6f ||
       std::abs(terrainDistanceMaterial.normalDetailStrength - 1.80f) >
+          1e-6f ||
+      std::abs(terrainDistanceMaterial.chromaVariationStrength - .15f) >
           1e-6f)
     return 111;
   first.ApplyLighting(draw, ShowcaseLightingProfile3D::Day, {1, 2, 3});
@@ -2152,8 +2154,9 @@ int main() {
   // ratio is evaluated from submitted production state, not a screenshot.
   if (daySubmittedSun.intensity /
           dayEnvironmentBlend.objectFillIntensity < 1.85f ||
-      dayEnvironmentBlend.objectFillIntensity < .78f ||
-      dayEnvironmentBlend.objectFillIntensity > .86f)
+      std::abs(dayEnvironmentBlend.objectFillIntensity - .78f) > 1e-6f ||
+      std::abs(draw.AmbientOcclusion().intensity - 1.42f) > 1e-6f ||
+      std::abs(draw.ContactShadows().strength - .98f) > 1e-6f)
     return 108;
   if (draw.VolumetricAtmospherePhase() != VolumetricAtmospherePhase3D::Day)
     return 20;
