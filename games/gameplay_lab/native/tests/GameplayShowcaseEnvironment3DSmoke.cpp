@@ -941,7 +941,8 @@ int main() {
       heroTrailReceipt.treadSamples < 40u ||
       heroTrailReceipt.shoulderSamples < 160u ||
       heroTrailReceipt.shoulderRelief < .75f ||
-      heroTrailReceipt.maximumTreadHeight > .0801f ||
+      heroTrailReceipt.maximumTreadHeight >
+          ShowcaseRiverBridgeDeckHeight3D + .0001f ||
       heroTrailReceipt.maximumCottagePadHeight > .0301f) {
     std::cerr << "HERO_TRAIL_TERRAIN modified="
               << heroTrailReceipt.modifiedSamples << " tread="
@@ -951,6 +952,31 @@ int main() {
               << heroTrailReceipt.maximumTreadHeight << " cottageHeight="
               << heroTrailReceipt.maximumCottagePadHeight << '\n';
     return 112;
+  }
+  // Production traversal gate: the player must be able to walk onto and over
+  // the real bridge deck at fixed 60 Hz without a jump or teleport.  Checking
+  // checkpoint coordinates alone cannot detect a bridge-head step that turns
+  // the deck collider into a wall.
+  CharacterController3D bridgeWalker;
+  const std::vector<BoxCollider3D> bridgeDeck{{
+      {{-1.35f, .18f, 14.f}, {8.5f, .18f, 1.4f}}}};
+  bridgeWalker.Reset({-12.f, heroTrailTerrain.SampleHeight(-12.f, 14.f),
+                      14.f});
+  float bridgeMaximumHeight{};
+  for (unsigned tick = 0; tick < 360u; ++tick) {
+    bridgeWalker.Step({{1.f, 0.f, 0.f}, false, 4.f / 6.f}, bridgeDeck,
+                      heroTrailTerrain, 1.f / 60.f);
+    bridgeMaximumHeight =
+        (std::max)(bridgeMaximumHeight, bridgeWalker.Position().y);
+  }
+  if (!bridgeWalker.Grounded() || bridgeWalker.Position().x < 8.f ||
+      bridgeMaximumHeight < .34f) {
+    std::cerr << "HERO_TRAIL_BRIDGE_TRAVERSAL x="
+              << bridgeWalker.Position().x << " y="
+              << bridgeWalker.Position().y << " peak=" << bridgeMaximumHeight
+              << " grounded=" << bridgeWalker.Grounded() << " collisions="
+              << bridgeWalker.Stats().collisions << '\n';
+    return 113;
   }
   const float minimumTreeBurial =
       ShowcaseTreeBurialOffset3D("island_tree_01", 1.f);

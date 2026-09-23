@@ -656,6 +656,15 @@ bool GameplayGodPoseAuthorityPass3D(bool activeRoute,bool warmup,bool pairFrozen
 namespace {Matrix4 InverseAffineViewmodelSocket(const Matrix4& source){const double a=source[0][0],b=source[0][1],c=source[0][2],d=source[1][0],e=source[1][1],f=source[1][2],g=source[2][0],h=source[2][1],i=source[2][2],det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(!std::isfinite(det)||std::abs(det)<1e-12)throw std::runtime_error("Viewmodel grip socket is singular");Matrix4 inverse=Matrix4::Identity();inverse[0][0]=float((e*i-f*h)/det);inverse[0][1]=float((c*h-b*i)/det);inverse[0][2]=float((b*f-c*e)/det);inverse[1][0]=float((f*g-d*i)/det);inverse[1][1]=float((a*i-c*g)/det);inverse[1][2]=float((c*d-a*f)/det);inverse[2][0]=float((d*h-e*g)/det);inverse[2][1]=float((b*g-a*h)/det);inverse[2][2]=float((a*e-b*d)/det);const float tx=source[0][3],ty=source[1][3],tz=source[2][3];inverse[0][3]=-(inverse[0][0]*tx+inverse[0][1]*ty+inverse[0][2]*tz);inverse[1][3]=-(inverse[1][0]*tx+inverse[1][1]*ty+inverse[1][2]*tz);inverse[2][3]=-(inverse[2][0]*tx+inverse[2][1]*ty+inverse[2][2]*tz);return inverse;}}
 namespace {void ApplyCombatFinishInput(Input& input,std::uint64_t tick){if(tick==132||tick==166||(tick>=200&&tick<=440&&tick%40==0)){input.SetMouseButton(true);input.SetMouseButton(false);}}}
 namespace {
+ForestTrialRoute3D BuildGameplayForestTrialRoute3D(const HeightField3D& terrain) {
+  const auto grounded=[&](float x,float z){
+    return Vec3{x,terrain.SampleHeight(x,z),z};
+  };
+  return {grounded(-9.85f,14.f),grounded(7.15f,14.f),
+          grounded(9.2f,14.f),grounded(-12.f,19.f),2.25f,2.25f};
+}
+}
+namespace {
 void ApplyReplayInput(Input &input, std::uint64_t tick) {
   const auto tap = [&](WPARAM key) {
     input.SetKey(unsigned(key), true);
@@ -900,7 +909,8 @@ void GameplayLabGame::OnStart(Engine& engine){
   ::GameplayLab::ShowcaseHeroTrailTerrainReceipt3D heroTrailTerrain{};
   if(!::GameplayLab::SculptShowcaseHeroTrailTerrain3D(showcaseTerrain_,&heroTrailTerrain)||
      heroTrailTerrain.shoulderRelief<.75f||
-     heroTrailTerrain.maximumTreadHeight>.0801f||
+     heroTrailTerrain.maximumTreadHeight>
+       ::GameplayLab::ShowcaseRiverBridgeDeckHeight3D+.0001f||
      heroTrailTerrain.maximumCottagePadHeight>.0301f)
     throw std::runtime_error("Gameplay showcase hero trail terrain sculpt failed");
   // 只在既有 near-band 倒木附近留下壓痕與鬆土；先縮成十個實際 descriptor，
@@ -1623,10 +1633,13 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     else engine.Quit();
   }
   if (!combatSpawned_) {
-    // 怪物跟隨玩家出生區配置，避免更換合法展示站位後超出AI追蹤與近戰範圍。
-    combat_->SpawnMonster(GameplayShowcaseMonsterSpawn3D(controller_.Position(),yaw_));
-    const Vec3 cottageEntry{-12.f,showcaseTerrain_.SampleHeight(-12.f,19.f),19.f};
-    if(!forestTrial_.Reset(cottageEntry))throw std::runtime_error("Gameplay forest trial initialization failed");
+    const auto route=BuildGameplayForestTrialRoute3D(showcaseTerrain_);
+    // 正式遊玩把守衛放在橋的東岸：必須走過林徑和橋才會進入 AI 的
+    // 12m 追蹤範圍。固定 capture 仍保留近身戰鬥位置，以維持既有 11-shot
+    // 戰鬥證據；任務狀態不會把 capture 的位置冒充路線完成。
+    combat_->SpawnMonster(captureDirectory_.empty()?route.guardianArena:
+                          GameplayShowcaseMonsterSpawn3D(controller_.Position(),yaw_));
+    if(!forestTrial_.Reset(route))throw std::runtime_error("Gameplay forest trial initialization failed");
     combatSpawned_ = true;
   }
   if(!captureDirectory_.empty()){
@@ -1653,9 +1666,9 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   if (mapped.female){if(!rules_.Female())ResetProductionCameraCut(GameplayTemporalReseedReason3D::Character);rules_.SetCharacterFemale(true);}
   if (mapped.male){if(rules_.Female())ResetProductionCameraCut(GameplayTemporalReseedReason3D::Character);rules_.SetCharacterFemale(false);}
   if(captureDirectory_.empty()&&!uiOwnedInput&&forestTrial_.Complete()&&in.Pressed('R')){
-    combat_->SpawnMonster(GameplayShowcaseMonsterSpawn3D(controller_.Position(),yaw_));
-    const Vec3 cottageEntry{-12.f,showcaseTerrain_.SampleHeight(-12.f,19.f),19.f};
-    if(!forestTrial_.Reset(cottageEntry))throw std::runtime_error("Gameplay forest trial restart failed");
+    const auto route=BuildGameplayForestTrialRoute3D(showcaseTerrain_);
+    combat_->SpawnMonster(route.guardianArena);
+    if(!forestTrial_.Reset(route))throw std::runtime_error("Gameplay forest trial restart failed");
     monsterHistory_={};
     ResetProductionCameraCut(GameplayTemporalReseedReason3D::PoseState);
   }
@@ -3284,10 +3297,10 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   if(GameplayHudShowsCompactInstructions3D(hudPolicy,cleanCapturePresentation))
     draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
   if(!cleanCapturePresentation&&forestTrial_.Initialized()){
-    const auto objective=forestTrial_.Phase()==ForestTrialPhase3D::ReturnToCottage
-      ?std::format("FOREST TRIAL: {}  {:.1f} m",forestTrial_.ObjectiveLabel(),forestTrial_.DistanceToCottage(controller_.Position()))
-      :forestTrial_.Complete()?std::format("FOREST TRIAL COMPLETE  [R] RESTART")
-                             :std::format("FOREST TRIAL: {}",forestTrial_.ObjectiveLabel());
+    const auto objective=forestTrial_.Complete()
+      ?std::format("FOREST TRIAL COMPLETE  [R] RESTART")
+      :std::format("FOREST TRIAL: {}  {:.1f} m",forestTrial_.ObjectiveLabel(),
+                   forestTrial_.DistanceToObjective(controller_.Position()));
     draw.Quad({640,82},{610,42},{.008f,.018f,.022f,.84f});
     draw.Text({352,68},objective,1.05f,forestTrial_.Complete()?Gold:Cyan);
   }

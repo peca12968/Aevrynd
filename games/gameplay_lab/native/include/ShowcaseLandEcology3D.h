@@ -99,6 +99,28 @@ struct ShowcaseHeroTrailFrame3D {
   bool valid{};
 };
 
+// The bridge deck is physical gameplay geometry.  The trail rises onto its
+// top before the west collider edge so the current no-step character
+// controller can enter the deck without a jump, then remains level across the
+// river.  Keep this value shared with terrain authoring and traversal gates.
+inline constexpr float ShowcaseRiverBridgeDeckHeight3D = .36f;
+
+[[nodiscard]] inline float
+ShowcaseHeroTrailTargetHeight3D(float along) noexcept {
+  if (!std::isfinite(along))
+    return 0.f;
+  // Start beyond the capture/spawn pose, yet complete the rise before the
+  // controller radius reaches the west collider edge.  With the 1 m authoring
+  // grid this leaves the contact point exactly on deck height without moving
+  // the character evidence fixture vertically.
+  constexpr float rampBegin = .48f;
+  constexpr float deckBegin = .56f;
+  const float normalized =
+      std::clamp((along - rampBegin) / (deckBegin - rampBegin), 0.f, 1.f);
+  const float smooth = normalized * normalized * (3.f - 2.f * normalized);
+  return ShowcaseRiverBridgeDeckHeight3D * smooth;
+}
+
 [[nodiscard]] inline const std::array<Aevrynd::Vec3, 5> &
 ShowcaseHeroTrailControls3D() noexcept {
   static const std::array<Aevrynd::Vec3, 5> controls{{

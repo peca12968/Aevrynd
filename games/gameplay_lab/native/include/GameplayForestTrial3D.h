@@ -9,21 +9,30 @@
 namespace GameplayLab {
 
 enum class ForestTrialPhase3D : std::uint8_t {
+  ReachBridgeApproach,
+  CrossBridge,
   DefeatGuardian,
+  ReturnAcrossBridge,
   ReturnToCottage,
   Complete
 };
 
+struct ForestTrialRoute3D {
+  Aevrynd::Vec3 bridgeApproach{};
+  Aevrynd::Vec3 bridgeExit{};
+  Aevrynd::Vec3 guardianArena{};
+  Aevrynd::Vec3 cottageEntry{};
+  float checkpointRadius{2.25f};
+  float completionRadius{2.25f};
+};
+
 class GameplayForestTrial3D {
 public:
-  [[nodiscard]] bool Reset(Aevrynd::Vec3 cottageEntry,
-                           float completionRadius = 2.25f) noexcept {
-    if (!Finite(cottageEntry) || !std::isfinite(completionRadius) ||
-        completionRadius < .5f || completionRadius > 6.f)
+  [[nodiscard]] bool Reset(const ForestTrialRoute3D &route) noexcept {
+    if (!ValidRoute(route))
       return false;
-    cottageEntry_ = cottageEntry;
-    completionRadius_ = completionRadius;
-    phase_ = ForestTrialPhase3D::DefeatGuardian;
+    route_ = route;
+    phase_ = ForestTrialPhase3D::ReachBridgeApproach;
     transitions_ = 0;
     initialized_ = true;
     return true;
@@ -31,16 +40,45 @@ public:
 
   [[nodiscard]] bool Tick(bool guardianAlive,
                           Aevrynd::Vec3 playerFeet) noexcept {
-    if (!initialized_ || !Finite(playerFeet)) return false;
-    if (phase_ == ForestTrialPhase3D::DefeatGuardian && !guardianAlive) {
-      phase_ = ForestTrialPhase3D::ReturnToCottage;
-      ++transitions_;
-      return true;
-    }
-    if (phase_ == ForestTrialPhase3D::ReturnToCottage &&
-        DistanceXZ(playerFeet, cottageEntry_) <= completionRadius_) {
-      phase_ = ForestTrialPhase3D::Complete;
-      ++transitions_;
+    if (!initialized_ || !Finite(playerFeet))
+      return false;
+    // Exactly one phase may advance per authoritative simulation tick.  This
+    // prevents a teleported/stale position from satisfying several route
+    // checkpoints at once and turning the trial into a HUD-only claim.
+    switch (phase_) {
+    case ForestTrialPhase3D::ReachBridgeApproach:
+      if (Within(playerFeet, route_.bridgeApproach, route_.checkpointRadius)) {
+        phase_ = ForestTrialPhase3D::CrossBridge;
+        ++transitions_;
+      }
+      break;
+    case ForestTrialPhase3D::CrossBridge:
+      if (Within(playerFeet, route_.bridgeExit, route_.checkpointRadius)) {
+        phase_ = ForestTrialPhase3D::DefeatGuardian;
+        ++transitions_;
+      }
+      break;
+    case ForestTrialPhase3D::DefeatGuardian:
+      if (!guardianAlive) {
+        phase_ = ForestTrialPhase3D::ReturnAcrossBridge;
+        ++transitions_;
+      }
+      break;
+    case ForestTrialPhase3D::ReturnAcrossBridge:
+      if (Within(playerFeet, route_.bridgeApproach,
+                 route_.checkpointRadius)) {
+        phase_ = ForestTrialPhase3D::ReturnToCottage;
+        ++transitions_;
+      }
+      break;
+    case ForestTrialPhase3D::ReturnToCottage:
+      if (Within(playerFeet, route_.cottageEntry, route_.completionRadius)) {
+        phase_ = ForestTrialPhase3D::Complete;
+        ++transitions_;
+      }
+      break;
+    case ForestTrialPhase3D::Complete:
+      break;
     }
     return true;
   }
@@ -53,15 +91,39 @@ public:
   [[nodiscard]] std::uint64_t Transitions() const noexcept {
     return transitions_;
   }
-  [[nodiscard]] float DistanceToCottage(Aevrynd::Vec3 playerFeet) const noexcept {
-    return initialized_ && Finite(playerFeet)
-               ? DistanceXZ(playerFeet, cottageEntry_)
-               : 0.f;
+  [[nodiscard]] const ForestTrialRoute3D &Route() const noexcept {
+    return route_;
+  }
+  [[nodiscard]] float
+  DistanceToObjective(Aevrynd::Vec3 playerFeet) const noexcept {
+    if (!initialized_ || !Finite(playerFeet))
+      return 0.f;
+    switch (phase_) {
+    case ForestTrialPhase3D::ReachBridgeApproach:
+      return DistanceXZ(playerFeet, route_.bridgeApproach);
+    case ForestTrialPhase3D::CrossBridge:
+      return DistanceXZ(playerFeet, route_.bridgeExit);
+    case ForestTrialPhase3D::DefeatGuardian:
+      return DistanceXZ(playerFeet, route_.guardianArena);
+    case ForestTrialPhase3D::ReturnAcrossBridge:
+      return DistanceXZ(playerFeet, route_.bridgeApproach);
+    case ForestTrialPhase3D::ReturnToCottage:
+      return DistanceXZ(playerFeet, route_.cottageEntry);
+    case ForestTrialPhase3D::Complete:
+      return 0.f;
+    }
+    return 0.f;
   }
   [[nodiscard]] std::string_view ObjectiveLabel() const noexcept {
     switch (phase_) {
+    case ForestTrialPhase3D::ReachBridgeApproach:
+      return "FOLLOW THE TRAIL TO THE BRIDGE";
+    case ForestTrialPhase3D::CrossBridge:
+      return "CROSS THE RIVER BRIDGE";
     case ForestTrialPhase3D::DefeatGuardian:
       return "DEFEAT THE FOREST GUARDIAN";
+    case ForestTrialPhase3D::ReturnAcrossBridge:
+      return "CROSS THE BRIDGE BACK TO THE COTTAGE";
     case ForestTrialPhase3D::ReturnToCottage:
       return "RETURN TO THE COTTAGE";
     case ForestTrialPhase3D::Complete:
@@ -80,9 +142,33 @@ private:
     return std::hypot(left.x - right.x, left.z - right.z);
   }
 
-  Aevrynd::Vec3 cottageEntry_{};
-  float completionRadius_{2.25f};
-  ForestTrialPhase3D phase_{ForestTrialPhase3D::DefeatGuardian};
+  [[nodiscard]] static bool Within(Aevrynd::Vec3 left, Aevrynd::Vec3 right,
+                                   float radius) noexcept {
+    return DistanceXZ(left, right) <= radius;
+  }
+  [[nodiscard]] static bool ValidRadius(float value) noexcept {
+    return std::isfinite(value) && value >= .5f && value <= 6.f;
+  }
+  [[nodiscard]] static bool
+  ValidRoute(const ForestTrialRoute3D &route) noexcept {
+    if (!Finite(route.bridgeApproach) || !Finite(route.bridgeExit) ||
+        !Finite(route.guardianArena) || !Finite(route.cottageEntry) ||
+        !ValidRadius(route.checkpointRadius) ||
+        !ValidRadius(route.completionRadius))
+      return false;
+    // A real bridge traversal must span more than two checkpoint diameters.
+    // The guardian remains inside the production AI's wake-up range after the
+    // player reaches the far bank.
+    return DistanceXZ(route.bridgeApproach, route.bridgeExit) >=
+               route.checkpointRadius * 2.f &&
+           DistanceXZ(route.bridgeExit, route.guardianArena) >= .5f &&
+           DistanceXZ(route.bridgeExit, route.guardianArena) <= 10.f &&
+           DistanceXZ(route.cottageEntry, route.bridgeApproach) >=
+               route.checkpointRadius;
+  }
+
+  ForestTrialRoute3D route_{};
+  ForestTrialPhase3D phase_{ForestTrialPhase3D::ReachBridgeApproach};
   std::uint64_t transitions_{};
   bool initialized_{};
 };

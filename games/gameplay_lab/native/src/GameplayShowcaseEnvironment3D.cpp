@@ -297,7 +297,16 @@ bool SculptShowcaseHeroTrailTerrain3D(
       const float cottageWeight =
           1.f - smooth(padOutside / cottageTransition);
       const float flattenWeight = (std::max)(pathWeight, cottageWeight);
-      const float sculptedHeight = sourceHeight * (1.f - flattenWeight);
+      // Cottage ground remains at authored zero.  The trail itself rises
+      // smoothly to the physical bridge top before the west collider edge;
+      // otherwise the .36 m deck is an impassable wall for a controller that
+      // intentionally has no implicit step-up.
+      const float targetHeight =
+          cottageWeight >= pathWeight
+              ? 0.f
+              : ShowcaseHeroTrailTargetHeight3D(trail.along);
+      const float sculptedHeight =
+          sourceHeight * (1.f - flattenWeight) + targetHeight * flattenWeight;
       if (std::abs(sculptedHeight - sourceHeight) > 1e-6f) {
         terrain.SetHeight(x, z, sculptedHeight);
         ++result.modifiedSamples;
