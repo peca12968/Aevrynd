@@ -431,12 +431,12 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                                         : index == 5 ? GameplayCottageMaterialRole3D::RoofTile
                                                      : GameplayCottageMaterialRole3D::WoodSiding))});
 
-  // 讓出生區不再被河流切成只能觀賞的半張地圖。單一橋面 descriptor
+  // 讓小屋前的英雄道路可直接延伸到河對岸。單一橋面 descriptor
   // 擁有正式碰撞與穩定 identity；木板、扶手和橋墩由同一 identity 的
   // render-only 細節建立，避免為裝飾件製造虛假的 gameplay 物件。
   candidate.push_back({ShowcaseSceneKind3D::Building,
-                       {-8.2f, .14f, -24.f},
-                       {15.f, .28f, 2.8f},
+                       {-1.35f, .14f, 14.f},
+                       {17.f, .28f, 2.8f},
                        0.f,
                        0,
                        true,

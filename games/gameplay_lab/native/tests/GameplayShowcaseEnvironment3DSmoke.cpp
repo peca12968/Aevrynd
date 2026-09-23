@@ -1915,10 +1915,10 @@ int main() {
   if (bridge.kind != ShowcaseSceneKind3D::Building ||
       bridge.meshAsset != "procedural/forest-river-bridge" ||
       bridge.materialAsset != "ambientcg/WoodSiding006/material-pbr" ||
-      std::abs(bridge.position.x + 8.2f) > .0001f ||
+      std::abs(bridge.position.x + 1.35f) > .0001f ||
       std::abs(bridge.position.y - .14f) > .0001f ||
-      std::abs(bridge.position.z + 24.f) > .0001f ||
-      std::abs(bridge.scale.x - 15.f) > .0001f ||
+      std::abs(bridge.position.z - 14.f) > .0001f ||
+      std::abs(bridge.scale.x - 17.f) > .0001f ||
       std::abs(bridge.scale.y - .28f) > .0001f ||
       std::abs(bridge.scale.z - 2.8f) > .0001f || !bridge.castsShadow)
     return 113;
