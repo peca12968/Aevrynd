@@ -798,10 +798,10 @@ function Get-GameplayPhotorealPackageEvidence([string]$ManifestPath) {
   }
 
   if ($manifest.schemaVersion -ne 1 -or $manifest.manifestType -ne 'aevrynd-runtime-render-package' -or
-      $manifest.exactAssetSet.count -ne 11 -or @($manifest.exactAssetSet.assetIds).Count -ne 11 -or
-      @($manifest.assets).Count -ne 11 -or @($manifest.files).Count -ne 72 -or
-      @($manifest.materials).Count -ne 14 -or @($manifest.meshParts).Count -ne 9 -or
-      $manifest.package.payloadFileCount -ne 72 -or $manifest.package.packageFileCount -ne 73 -or
+      $manifest.exactAssetSet.count -ne 12 -or @($manifest.exactAssetSet.assetIds).Count -ne 12 -or
+      @($manifest.assets).Count -ne 12 -or @($manifest.files).Count -ne 96 -or
+      @($manifest.materials).Count -ne 18 -or @($manifest.meshParts).Count -ne 13 -or
+      $manifest.package.payloadFileCount -ne 96 -or $manifest.package.packageFileCount -ne 97 -or
       $manifest.package.manifestPath -ne 'runtime-render-manifest.json' -or
       $manifest.package.manifestHashPolicy -ne 'external-envelope') {
     throw 'Photoreal manifest exact schema/count gate failed'
@@ -859,7 +859,7 @@ function Get-GameplayPhotorealPackageEvidence([string]$ManifestPath) {
       throw "Photoreal IBL reference is missing or duplicated: $value"
     }
   }
-  if ($referenced.Count -ne 72) { throw 'Photoreal referenced payload count is not exactly 72' }
+  if ($referenced.Count -ne 96) { throw 'Photoreal referenced payload count is not exactly 96' }
   foreach ($value in $declared) {
     if (-not $referenced.Contains($value)) { throw "Photoreal payload is not schema-referenced: $value" }
   }
@@ -869,24 +869,24 @@ function Get-GameplayPhotorealPackageEvidence([string]$ManifestPath) {
     $relative = $file.FullName.Substring($rootPrefix.Length).Replace('\', '/')
     if (-not $actual.Add($relative)) { throw "Photoreal package has duplicate normalized path: $relative" }
   }
-  if ($actual.Count -ne 73 -or -not $actual.Contains('runtime-render-manifest.json')) {
-    throw 'Photoreal staging package is not the exact clean 73-file set'
+  if ($actual.Count -ne 97 -or -not $actual.Contains('runtime-render-manifest.json')) {
+    throw 'Photoreal staging package is not the exact clean 97-file set'
   }
   foreach ($value in $declared) {
     if (-not $actual.Contains($value)) { throw "Photoreal staged payload is missing: $value" }
   }
 
   $payloadSha256 = Get-GameplayEvidenceTextSha256Hex ($payloadSnapshotLines -join "`n")
-  $snapshotEpochSha256 = Get-GameplayEvidenceTextSha256Hex "manifest=$($manifestSnapshot.sha256):$($manifestBytes.LongLength)|payload=$payloadSha256|files=73|bytes=$($payloadBytes + $manifestBytes.LongLength)"
+  $snapshotEpochSha256 = Get-GameplayEvidenceTextSha256Hex "manifest=$($manifestSnapshot.sha256):$($manifestBytes.LongLength)|payload=$payloadSha256|files=97|bytes=$($payloadBytes + $manifestBytes.LongLength)"
   return [pscustomobject]@{
     manifestPath = $resolvedManifest
     manifestSha256 = $manifestSnapshot.sha256
     manifestBytes = $manifestBytes.LongLength
-    payloadFiles = 72
-    materials = 14
-    meshParts = 9
-    referencedFiles = 72
-    packageFiles = 73
+    payloadFiles = 96
+    materials = 18
+    meshParts = 13
+    referencedFiles = 96
+    packageFiles = 97
     payloadBytes = $payloadBytes
     packageBytes = $payloadBytes + $manifestBytes.LongLength
     payloadSha256 = $payloadSha256
@@ -1145,11 +1145,12 @@ function Assert-GameplayRunEvidence(
   }
   if ($Photoreal.source -ne 'GameplayPhotorealTyped' -or
       $Photoreal.manifestSha256 -ne $PackageEvidence.manifestSha256 -or
-      $Photoreal.payloadFiles -ne 72 -or $Photoreal.validatedPayloadFiles -ne 72 -or
-      $Photoreal.profileAssets -ne 11 -or
-      $Photoreal.materials -ne 14 -or $Photoreal.validatedMaterials -ne 14 -or
-      $Photoreal.meshParts -ne 9 -or $Photoreal.validatedMeshParts -ne 9 -or
-      $Photoreal.validatedReferencedFiles -ne 72) {
+      $Photoreal.payloadFiles -ne 96 -or $Photoreal.validatedPayloadFiles -ne 96 -or
+      $Photoreal.profileAssets -ne 12 -or
+      $Photoreal.visualFirReplacements -ne 46 -or
+      $Photoreal.materials -ne 18 -or $Photoreal.validatedMaterials -ne 18 -or
+      $Photoreal.meshParts -ne 13 -or $Photoreal.validatedMeshParts -ne 13 -or
+      $Photoreal.validatedReferencedFiles -ne 96) {
     throw 'Gameplay typed manifest SHA/exact-count package cross-check failed'
   }
   if ($Photoreal.objectIdSupported -ne 1 -or $Photoreal.objectIdRequested -ne 1 -or

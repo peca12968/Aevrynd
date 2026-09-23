@@ -28,6 +28,15 @@ def require_source_failure(module, asset_root, provenance, gltfpack, label):
     raise AssertionError(f"hostile source-chain case was accepted: {label}")
 
 
+def require_fir_source_failure(module, asset_root, provenance, cook, label):
+    try:
+        module.validate_fir_tree_01_c_source_chain(
+            asset_root, provenance=provenance, cook=cook)
+    except (module.ManifestError, KeyError, TypeError, ValueError):
+        return
+    raise AssertionError(f"hostile fir source-chain case was accepted: {label}")
+
+
 def main():
     tools_root = pathlib.Path(__file__).resolve().parent
     repo_root = tools_root.parent
@@ -62,6 +71,16 @@ def main():
         changed = copy.deepcopy(gltfpack); changed["levels"][0]["sha256"] = "0" * 64; source_cases.append(("gltfpack-output-hash", provenance, changed))
         for label, provenance_case, gltfpack_case in source_cases:
             require_source_failure(module, asset_root, provenance_case, gltfpack_case, label)
+        fir_root = asset_root / "fir-tree-01-c"
+        fir_provenance = module.load_json(fir_root / "fir-tree-01-c-provenance-receipt.json")
+        fir_cook = module.load_json(fir_root / "fir-tree-01-c-cook-receipt.json")
+        fir_cases = []
+        changed = copy.deepcopy(fir_provenance); changed["validation"]["officialMd5AndBytesMatchAll"] = False; fir_cases.append(("fir-provenance-audit", changed, fir_cook))
+        changed = copy.deepcopy(fir_provenance); changed["files"][0]["sha256"] = "0" * 64; fir_cases.append(("fir-source-hash", changed, fir_cook))
+        changed = copy.deepcopy(fir_cook); changed["levels"][0]["materialAlphaModes"]["fir_tree_01_twig"] = "OPAQUE"; fir_cases.append(("fir-opaque-foliage", fir_provenance, changed))
+        changed = copy.deepcopy(fir_cook); changed["levels"][2]["triangles"] = 9001; fir_cases.append(("fir-lod2-budget", fir_provenance, changed))
+        for label, provenance_case, cook_case in fir_cases:
+            require_fir_source_failure(module, asset_root, provenance_case, cook_case, label)
         semantic_fields = ("alphaMode", "alphaCutoff", "doubleSided", "materialClass")
         if any(set(semantic_fields) - set(material) for material in authoritative["materials"]):
             raise AssertionError("authoritative material rendering semantics are incomplete")
@@ -146,7 +165,7 @@ def main():
             else:
                 raise AssertionError("reparse point was accepted")
 
-    print("runtime-render-manifest-tests=pass; deterministic=3-way; manifest-hostile=24; source-chain-hostile=8; legacy=pass")
+    print("runtime-render-manifest-tests=pass; deterministic=3-way; manifest-hostile=24; source-chain-hostile=12; legacy=pass")
 
 
 if __name__ == "__main__":

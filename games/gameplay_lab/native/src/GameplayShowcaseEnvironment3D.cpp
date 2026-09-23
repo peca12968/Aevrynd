@@ -52,6 +52,8 @@ std::uint64_t MaterialIdentityHash() {
       "island_tree_01:trunk", "island_tree_01:leaves",
       "island_tree_01:branches", "tree_small_02:trunk",
       "tree_small_02:leaves", "tree_small_02:branches",
+      "fir_tree_01_c:bark", "fir_tree_01_c:twig",
+      "fir_tree_01_c:dead-branches", "fir_tree_01_c:trunk-c",
       "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
       "coastal_cliff_01:slot-0", "stony_dirt_path:slot-0",
       "runtime/water-optics"};
@@ -71,6 +73,7 @@ std::uint64_t LicenseInventoryHash() {
       "coastal_cliff_01|poly-haven|CC0-1.0|commercial",
       "dead_tree_trunk_02|poly-haven|CC0-1.0|commercial",
       "forest_ground_04|poly-haven|CC0-1.0|commercial",
+      "fir_tree_01_c|poly-haven|CC0-1.0|commercial",
       "island_tree_01|poly-haven|CC0-1.0|commercial",
       "stony_dirt_path|poly-haven|CC0-1.0|commercial",
       "tree_small_02|poly-haven|CC0-1.0|commercial",

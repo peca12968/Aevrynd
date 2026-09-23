@@ -194,7 +194,8 @@ ClampShowcaseUnderstoryWalkingClearance3D(
     return 0.f;
   const bool liveTree =
       assetId.find("island_tree_01") != std::string_view::npos ||
-      assetId.find("tree_small_02") != std::string_view::npos;
+      assetId.find("tree_small_02") != std::string_view::npos ||
+      assetId.find("fir_tree_01_c") != std::string_view::npos;
   if (!liveTree) return 0.f;
   if (!std::isfinite(scaleY)) return 0.f;
   return std::clamp(scaleY * .012f, .10f, .20f);

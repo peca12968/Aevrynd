@@ -207,7 +207,7 @@
       "lodAtlas": "Cluster as instanced forest-floor scatter; cull at 45 m."
     },
     {
-      "id": "fir_tree_01",
+      "id": "fir_tree_01_c",
       "source": "poly-haven",
       "category": "tree-deadwood",
       "kind": "mesh-pbr",

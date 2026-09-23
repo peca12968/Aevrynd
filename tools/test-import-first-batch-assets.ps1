@@ -22,7 +22,7 @@ try {
     if ($runtime.memoryGate -ne 'pass' -or $runtime.memoryGateMethod -ne 'gltfpack-process-tree' -or $runtime.peakProcessTreeBytes -le 0 -or $runtime.peakProcessTreeBytes -ge $runtime.peakWorkingSetLimitBytes) {
         throw 'Runtime manifest process-tree memory admission contract failed.'
     }
-    if ($runtime.assetCount -ne 10 -or @($runtime.assets).Count -ne 10 -or @($runtime.assets | Where-Object memoryGate -ne 'pass').Count) { throw 'Runtime per-asset admission contract failed.' }
+    if ($runtime.assetCount -ne 12 -or @($runtime.assets).Count -ne 12 -or @($runtime.assets | Where-Object memoryGate -ne 'pass').Count) { throw 'Runtime per-asset admission contract failed.' }
     $assetRoot = Split-Path -Parent $RuntimeManifest
     $computedBytes = 0L
     foreach ($asset in $runtime.assets) {

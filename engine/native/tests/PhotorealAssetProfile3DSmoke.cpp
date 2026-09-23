@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <string>
 
@@ -46,7 +47,52 @@ int main(int argc,char** argv){
     auto incomplete=*catalog.EmbeddedPreflight();incomplete.channels=PhotorealMaterialChannel3D::BaseColor;
     if(PhotorealAssetProfile3D::ValidateMaterialChannels(*ground,incomplete,&error)||error.code!=PhotorealAssetErrorCode3D::MaterialChannelsIncomplete)return Fail(8,"Incomplete PBR channel gate failed");
 
-    PhotorealRuntimeManifest3D realRuntime;if(!realRuntime.LoadFile(argv[2],&error)){std::cerr<<"Runtime parse error "<<int(error.code)<<": "<<error.message<<'\n';return Fail(44,"Real runtime manifest parse failed");}if(realRuntime.Stats().assetCount!=11||!realRuntime.Stats().memoryGatePassed||!realRuntime.Passed())return Fail(44,"Real runtime manifest gate state failed");PhotorealAssetProfile3D realRuntimeProfile;if(!realRuntimeProfile.Initialize(catalog,realRuntime,{},&error))return Fail(45,"Real runtime profile initialization failed");PhotorealAssetResidencyRequest3D realGroundRequest{};realGroundRequest.assetId=ground->id;realGroundRequest.receipt=*catalog.EmbeddedPreflight();realGroundRequest.selection=realRuntimeProfile.Select(*ground,{20.f,.02f,PhotorealImportance3D::Important});realGroundRequest.importance=PhotorealImportance3D::Important;realGroundRequest.cpuBytes=realGroundRequest.receipt.uncompressedBytes;realGroundRequest.gpuBytes=realGroundRequest.selection.estimatedGpuBytes;PhotorealAssetResidencyReceipt3D realLoaded;if(!realRuntimeProfile.Admit(realGroundRequest,realLoaded,&error)||!realLoaded||realRuntimeProfile.Stats().residentAssets!=1)return Fail(45,"Real runtime admission failed");PhotorealAssetResidencyReceipt3D realUnloaded;if(!realRuntimeProfile.Unload(ground->id,realUnloaded,&error)||!realUnloaded||realRuntimeProfile.Stats().residentAssets||realRuntimeProfile.Stats().residentCpuBytes||realRuntimeProfile.Stats().residentGpuBytes)return Fail(45,"Real runtime unload failed");
+    PhotorealRuntimeManifest3D realRuntime;
+    if (!realRuntime.LoadFile(argv[2], &error)) {
+      std::cerr << "Runtime parse error " << int(error.code) << ": "
+                << error.message << '\n';
+      return Fail(44, "Real runtime manifest parse failed");
+    }
+    if (realRuntime.Stats().assetCount != 12 ||
+        !realRuntime.Stats().memoryGatePassed || !realRuntime.Passed())
+      return Fail(44, "Real runtime manifest gate state failed");
+    PhotorealAssetProfile3D realRuntimeProfile;
+    if (!realRuntimeProfile.Initialize(catalog, realRuntime, {}, &error))
+      return Fail(45, "Real runtime profile initialization failed");
+    std::ifstream runtimeInput(argv[2], std::ios::binary);
+    std::string unknownRuntimeJson((std::istreambuf_iterator<char>(runtimeInput)),
+                                   std::istreambuf_iterator<char>());
+    const std::string knownFirId = "\"id\": \"fir_tree_01_c\"";
+    const auto knownFirPosition = unknownRuntimeJson.find(knownFirId);
+    if (knownFirPosition == std::string::npos)
+      return Fail(57, "Extended runtime fixture lost fir identity");
+    unknownRuntimeJson.replace(knownFirPosition, knownFirId.size(),
+                               "\"id\": \"unknown_fir_tree\"");
+    PhotorealRuntimeManifest3D unknownRuntime;
+    if (!unknownRuntime.LoadJson(unknownRuntimeJson, &error))
+      return Fail(57, "Unknown runtime fixture did not parse");
+    PhotorealAssetProfile3D unknownRuntimeProfile;
+    if (unknownRuntimeProfile.Initialize(catalog, unknownRuntime, {}, &error) ||
+        error.code != PhotorealAssetErrorCode3D::RuntimeManifestRejected)
+      return Fail(57, "Unknown extended runtime asset was accepted");
+    PhotorealAssetResidencyRequest3D realGroundRequest{};
+    realGroundRequest.assetId = ground->id;
+    realGroundRequest.receipt = *catalog.EmbeddedPreflight();
+    realGroundRequest.selection = realRuntimeProfile.Select(
+        *ground, {20.f, .02f, PhotorealImportance3D::Important});
+    realGroundRequest.importance = PhotorealImportance3D::Important;
+    realGroundRequest.cpuBytes = realGroundRequest.receipt.uncompressedBytes;
+    realGroundRequest.gpuBytes = realGroundRequest.selection.estimatedGpuBytes;
+    PhotorealAssetResidencyReceipt3D realLoaded;
+    if (!realRuntimeProfile.Admit(realGroundRequest, realLoaded, &error) ||
+        !realLoaded || realRuntimeProfile.Stats().residentAssets != 1)
+      return Fail(45, "Real runtime admission failed");
+    PhotorealAssetResidencyReceipt3D realUnloaded;
+    if (!realRuntimeProfile.Unload(ground->id, realUnloaded, &error) ||
+        !realUnloaded || realRuntimeProfile.Stats().residentAssets ||
+        realRuntimeProfile.Stats().residentCpuBytes ||
+        realRuntimeProfile.Stats().residentGpuBytes)
+      return Fail(45, "Real runtime unload failed");
     PhotorealAssetProfile3D profile;if(!profile.Initialize(catalog,{},&error))return Fail(9,"Profile initialization failed");
     const auto far=profile.Select(*cliff,{200.f,.001f,PhotorealImportance3D::Background});
     const auto general=profile.Select(*cliff,{20.f,.02f,PhotorealImportance3D::Standard});

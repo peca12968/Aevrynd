@@ -27,14 +27,14 @@ struct CookedRenderManifestStats3D;
 
 namespace GameplayLab {
 
-// Applies the authored Showcase response only to the four living-tree bark
+// Applies the authored Showcase response only to the seven living-tree bark
 // slots. Non-bark ids and malformed bark definitions fail closed before any
 // field is changed.
 [[nodiscard]] bool ApplyShowcaseProductionBarkResponse3D(
     std::string_view materialId,
     Aevrynd::MaterialAssetDefinition3D &definition) noexcept;
 
-// Applies the authored canopy response only to the two living-tree leaf slots.
+// Applies the authored canopy response only to the three living-tree leaf slots.
 // The shared material count and texture identities stay unchanged; invalid or
 // non-leaf definitions fail closed before any field is changed.
 [[nodiscard]] bool ApplyShowcaseProductionLeafResponse3D(
@@ -181,6 +181,7 @@ struct ShowcaseProductionRenderReceipt3D {
   std::size_t validatedReferencedFiles{};
   std::size_t meshLodLevels{};
   std::size_t iblFiles{};
+  std::size_t visualFirReplacements{};
   std::size_t barkMaterialResponses{};
   std::uint64_t barkMaterialResponseFingerprint{};
   std::size_t weatheredPropMaterialResponses{};
@@ -315,6 +316,12 @@ struct ShowcaseProductionSubmittedLodChain3D {
     std::span<const Aevrynd::MeshBounds3D> lodBounds) noexcept;
 [[nodiscard]] std::string_view ResolveShowcasePhotorealAssetId3D(
     const ShowcaseSceneDescriptor3D &descriptor) noexcept;
+// Resolves the production-only visual species without mutating the semantic
+// descriptor. Every fifth living-tree ordinal is rendered as fir_tree_01_c;
+// dead trees and all non-tree descriptors retain their semantic asset id.
+[[nodiscard]] std::string_view ResolveShowcaseProductionVisualAssetId3D(
+    std::span<const ShowcaseSceneDescriptor3D> descriptors,
+    std::size_t descriptorIndex) noexcept;
 [[nodiscard]] std::uint64_t ShowcaseAssetIdentityFingerprint3D(
     std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept;
 

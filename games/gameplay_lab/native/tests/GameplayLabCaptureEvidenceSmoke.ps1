@@ -224,7 +224,7 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   }
 
   $materials = @()
-  for ($material = 0; $material -lt 14; ++$material) {
+  for ($material = 0; $material -lt 18; ++$material) {
     $paths = @()
     foreach ($channel in @('base', 'surface', 'normal')) {
       $relative = "materials/m$material/$channel.bin"
@@ -234,7 +234,7 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
     $materials += [ordered]@{ id = "m$material"; baseColorPath = $paths[0]; surfacePath = $paths[1]; normalPath = $paths[2] }
   }
   $meshParts = @()
-  for ($part = 0; $part -lt 9; ++$part) {
+  for ($part = 0; $part -lt 13; ++$part) {
     $lods = @()
     for ($lod = 0; $lod -lt 3; ++$lod) {
       $relative = "meshes/p$part/lod$lod.bin"
@@ -249,18 +249,18 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
     Add-Payload $relative "ibl-$name"
     $iblPaths += $relative
   }
-  if ($files.Count -ne 72) { throw 'Synthetic payload fixture count failed' }
-  $assetIds = @(0..10 | ForEach-Object { "asset-$_" })
+  if ($files.Count -ne 96) { throw 'Synthetic payload fixture count failed' }
+  $assetIds = @(0..11 | ForEach-Object { "asset-$_" })
   $manifest = [ordered]@{
     schemaVersion = 1
     manifestType = 'aevrynd-runtime-render-package'
-    exactAssetSet = [ordered]@{ id = 'synthetic'; count = 11; assetIds = $assetIds }
+    exactAssetSet = [ordered]@{ id = 'synthetic'; count = 12; assetIds = $assetIds }
     files = $files
     materials = $materials
     meshParts = $meshParts
     ibl = [ordered]@{ specularPath = $iblPaths[0]; irradiancePath = $iblPaths[1]; brdfLutPath = $iblPaths[2] }
-    assets = @(0..10 | ForEach-Object { [ordered]@{ id = "asset-$_" } })
-    package = [ordered]@{ payloadFileCount = 72; payloadBytes = $payloadBytes; manifestPath = 'runtime-render-manifest.json'; manifestBytes = 0; packageFileCount = 73; packageBytes = $payloadBytes; manifestHashPolicy = 'external-envelope' }
+    assets = @(0..11 | ForEach-Object { [ordered]@{ id = "asset-$_" } })
+    package = [ordered]@{ payloadFileCount = 96; payloadBytes = $payloadBytes; manifestPath = 'runtime-render-manifest.json'; manifestBytes = 0; packageFileCount = 97; packageBytes = $payloadBytes; manifestHashPolicy = 'external-envelope' }
   }
   $manifestPath = Join-Path $packageRoot 'runtime-render-manifest.json'
   for ($iteration = 0; $iteration -lt 10; ++$iteration) {
@@ -273,7 +273,7 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   $json = $manifest | ConvertTo-Json -Depth 10
   [IO.File]::WriteAllText($manifestPath, $json, (New-Object Text.UTF8Encoding($false)))
   $package = Get-GameplayPhotorealPackageEvidence $manifestPath
-  if ($package.packageFiles -ne 73 -or $package.payloadFiles -ne 72) { throw 'Synthetic package positive failed' }
+  if ($package.packageFiles -ne 97 -or $package.payloadFiles -ne 96) { throw 'Synthetic package positive failed' }
 
   $gitSealRoot=Join-Path $scratch 'git-seal';New-Item -ItemType Directory -Path $gitSealRoot|Out-Null
   & git -C $gitSealRoot init -q;if($LASTEXITCODE-ne0){throw 'Synthetic Git seal init failed'}
@@ -399,7 +399,7 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
     if($viewExpectations[$captureIndex].camera-eq'first'){$viewmodel=@($firstPersonViewmodels|Where-Object{$_.name-eq$names[$captureIndex]})[0];$required=@([pscustomobject]@{high='12592142912428528129';low=3;generation=1;nonzeroPixels=$viewmodel.armsPixels;coverage=.1},[pscustomobject]@{high='12592142912428528129';low=4;generation=1;nonzeroPixels=$viewmodel.weaponPixels;coverage=.2});$forbidden=@([pscustomobject]@{high='12592142912428528129';low=3;generation=2},[pscustomobject]@{high='12592142912428528129';low=4;generation=2})}else{$god=$viewExpectations[$captureIndex].camera-eq'god';$required=@([pscustomobject]@{high='12592142912428528129';low=1;generation=1;nonzeroPixels=if($god){$godCoverageContract.minimumPixels}else{100};coverage=if($god){$godCoverageContract.coverage}else{.1}},[pscustomobject]@{high=[string]$identityContract.environmentHigh;low=1;generation=1;nonzeroPixels=200;coverage=.2});$forbidden=@([pscustomobject]@{high='12592142912428528129';low=1;generation=2})}
     $god=$viewExpectations[$captureIndex].camera-eq'god';$lodTransition=if($viewExpectations[$captureIndex].requireLodTransition){1}else{0};$capturePath=[IO.Path]::GetFullPath((Join-Path $scratch $names[$captureIndex]));$photorealCaptures += [pscustomobject]@{ name=$names[$captureIndex];requestedName=$names[$captureIndex];committedName=$names[$captureIndex];requestedPath=$capturePath;committedPath=$capturePath;camera=$viewExpectations[$captureIndex].camera;lighting=$viewExpectations[$captureIndex].lighting;projectionMode=if($god){'Orthographic'}else{'Perspective'};projectionModeValue=if($god){1}else{0};verticalFovRadians=.85;orthographicHeight=if($god){26}else{0};godActualTriangleCoverage=if($god){$godCoverageContract.coverage}else{0};godVisibleWorldDescriptors=if($god){20}else{0};godBuildingUnion=if($god){.1}else{0};godMaximumBuildingPart=if($god){.05}else{0};godRoofCoverage=if($god){.02}else{0};godPredictedLodTransitions=if($god){1}else{0};godActualLodTransitions=if($god){1}else{0};godActualLodDualSubmissions=if($god){1}else{0};godLodPredictionMatched=1;godLodContractMissing=0;godLodContractExtra=0;godLodContractWrongLevel=0;godLodContractWrongBlend=0;requiredIdentityCount=$required.Count;requiredMatched=$required.Count;forbiddenIdentityCount=$forbidden.Count;forbiddenMatched=0;generationConflicts=0;semanticPass=1;effectiveFrameSerial=2;semanticFrameSerial=2;sceneSubmissionSerial=1;sceneDrawRevision=1;sceneIdentityOrderFingerprint=1;shadowFrameSerial=2;shadowResourceGeneration=1;shadowCasters=1;shadowDrawCalls=1;shadowCascadeDrawCalls=1;shadowCascadeRendered=1;shadowCascadeReused=0;shadowActiveCascades=1;shadowCascadeFingerprints=@(1,0,0,0);shadowPass=1;lodFrameSerial=2;lodInstances=1;lodTransitions=$lodTransition;lodDualSubmissions=$lodTransition;lodBudgetFallbacks=0;lodPass=1;requiredIdentities=$required;forbiddenIdentities=$forbidden }
   }
-  $photoreal = [pscustomobject]@{ runId=$runId; source='GameplayPhotorealTyped'; expectedCaptures=11; actualCaptureIndex=11; completedCaptures=11; uniqueCaptureNames=11; manifestSha256=$package.manifestSha256; payloadFiles=72; validatedPayloadFiles=72; profileAssets=11; materials=14; validatedMaterials=14; meshParts=9; validatedMeshParts=9; validatedReferencedFiles=72; objectIdSupported=1; objectIdRequested=1; objectIdPass=1; semanticPass=1; depthCaptureSupported=1; depthPass=1; shadowPass=1; lodPass=1; shadowCasters=11; shadowDrawCalls=11; shadowCascadeDrawCalls=11; lodInstances=11; lodTransitions=3; lodDualSubmissions=3; lodBudgetFallbacks=0; captures=$photorealCaptures }
+  $photoreal = [pscustomobject]@{ runId=$runId; source='GameplayPhotorealTyped'; expectedCaptures=11; actualCaptureIndex=11; completedCaptures=11; uniqueCaptureNames=11; manifestSha256=$package.manifestSha256; payloadFiles=96; validatedPayloadFiles=96; profileAssets=12; materials=18; validatedMaterials=18; meshParts=13; validatedMeshParts=13; validatedReferencedFiles=96; visualFirReplacements=46; objectIdSupported=1; objectIdRequested=1; objectIdPass=1; semanticPass=1; depthCaptureSupported=1; depthPass=1; shadowPass=1; lodPass=1; shadowCasters=11; shadowDrawCalls=11; shadowCascadeDrawCalls=11; lodInstances=11; lodTransitions=3; lodDualSubmissions=3; lodBudgetFallbacks=0; captures=$photorealCaptures }
   foreach($capture in $photoreal.captures){if($capture.camera-ne'god'){$capture.godActualLodTransitions=$capture.lodTransitions;$capture.godActualLodDualSubmissions=$capture.lodDualSubmissions}}
   $photoreal.lodTransitions=11;$photoreal.lodDualSubmissions=11
   Assert-GameplayRunEvidence $receipt $environment $collision $palette $character $camera $sequence $photoreal $package $names

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "assetName": "fir-tree-01-c",
+  "resolutionPolicy": "1k-runtime",
+  "normalConvention": "OpenGL",
+  "outputResolution": 1024,
+  "expectedMipCount": 11,
+  "materials": [
+    {
+      "name": "bark",
+      "slot": 0,
+      "baseColor": "textures/fir_tree_01_bark_diff_1k.jpg",
+      "normal": "textures/fir_tree_01_bark_nor_gl_1k.jpg",
+      "arm": "textures/fir_tree_01_bark_arm_1k.jpg"
+    },
+    {
+      "name": "twig",
+      "slot": 1,
+      "baseColor": "textures/fir_tree_01_twig_diff_1k.jpg",
+      "normal": "textures/fir_tree_01_twig_nor_gl_1k.jpg",
+      "arm": "textures/fir_tree_01_twig_arm_1k.jpg",
+      "alphaMode": "mask",
+      "alphaSource": "separate",
+      "alphaMask": "textures/fir_tree_01_twig_alpha_1k.png",
+      "alphaCutoff": 0.5,
+      "alphaDilationPixels": 8,
+      "doubleSided": true,
+      "materialClass": "foliage"
+    },
+    {
+      "name": "dead-branches",
+      "slot": 2,
+      "baseColor": "textures/fir_tree_01_bark_diff_1k.jpg",
+      "normal": "textures/fir_tree_01_bark_nor_gl_1k.jpg",
+      "arm": "textures/fir_tree_01_bark_arm_1k.jpg"
+    },
+    {
+      "name": "trunk-c",
+      "slot": 3,
+      "baseColor": "textures/fir_tree_01_trunk_c_diff_1k.jpg",
+      "normal": "textures/fir_tree_01_trunk_c_nor_gl_1k.jpg",
+      "arm": "textures/fir_tree_01_trunk_c_arm_1k.jpg"
+    }
+  ]
+}

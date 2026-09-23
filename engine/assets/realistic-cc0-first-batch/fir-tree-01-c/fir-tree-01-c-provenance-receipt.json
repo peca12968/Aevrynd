@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "receiptType": "aevrynd-authoritative-asset-provenance",
+  "assetId": "fir_tree_01_c",
+  "assetName": "Fir Tree 01 C",
+  "provider": "Poly Haven",
+  "authors": ["Rob Tuytel", "Rico Cilliers"],
+  "officialPage": "https://polyhaven.com/a/fir_tree_01",
+  "officialFilesApi": "https://api.polyhaven.com/files/fir_tree_01",
+  "officialInfoApi": "https://api.polyhaven.com/info/fir_tree_01",
+  "license": "CC0-1.0",
+  "licensePage": "https://polyhaven.com/license",
+  "commercialUse": true,
+  "apiObservedAtTaipei": "2026-09-23T08:55:00+08:00",
+  "apiSnapshots": [
+    {"url": "https://api.polyhaven.com/files/fir_tree_01", "bytes": 109797, "sha256": "b72c1e9efce10799ffa9502ce06409745d1deba9d091630412a69891e370ce0c"},
+    {"url": "https://api.polyhaven.com/info/fir_tree_01", "bytes": 1163, "sha256": "7868bfc9e38b8093735bc10ddca7a5427779fcc750600e8bd850c3b421baee80"}
+  ],
+  "officialContract": {
+    "datePublishedUnix": 1686873600,
+    "filesHash": "6b79f3da0de1d192fc78ab54efa5e8956af97749",
+    "polycount": 7853731,
+    "lods": true,
+    "selectedAuthoredVariant": "fir_tree_01_c",
+    "selectedAuthoredLods": ["fir_tree_01_c_LOD1", "fir_tree_01_c_LOD2"],
+    "sourceBlendSha256": "153d20aae6d7c63a4c52689d91e8bead78f6d17a70e11ef4d03d19953383de00",
+    "sourceResolution": "1k"
+  },
+  "files": [
+    {"path":"textures/fir_tree_01_bark_diff_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_bark_diff_1k.jpg","bytes":776567,"officialMd5":"93265c0d9fbd3cf17deabdb68aa8b5e9","sha256":"a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"},
+    {"path":"textures/fir_tree_01_bark_nor_gl_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_bark_nor_gl_1k.jpg","bytes":1137533,"officialMd5":"978d32ec721696e45b38a72411c4edf4","sha256":"6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"},
+    {"path":"textures/fir_tree_01_bark_arm_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_bark_arm_1k.jpg","bytes":789264,"officialMd5":"4e48a7fa876a1ad47401fe86277a4373","sha256":"95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"},
+    {"path":"textures/fir_tree_01_trunk_c_diff_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_trunk_c_diff_1k.jpg","bytes":772467,"officialMd5":"fbb1ceea48a2615b9e41cad5e3cef132","sha256":"fd13a53cc8e69cd356245eb0017c51f56e35726683123888f94ed4451cc0486d"},
+    {"path":"textures/fir_tree_01_trunk_c_nor_gl_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_trunk_c_nor_gl_1k.jpg","bytes":1054639,"officialMd5":"96f2a20fe5543f883e18915bdeae91ee","sha256":"d8e80fa8849a2bcf37203d8359d1f498738306cee7065cac03c3131a6b71791f"},
+    {"path":"textures/fir_tree_01_trunk_c_arm_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_trunk_c_arm_1k.jpg","bytes":829710,"officialMd5":"03cb38207328503f4695c0bafcc0b2fc","sha256":"22736ea32fdcb9b515601225f554fde2da533b721063ee63e9a52502b93c5f54"},
+    {"path":"textures/fir_tree_01_twig_diff_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_twig_diff_1k.jpg","bytes":371741,"officialMd5":"d267b1117a5d6dbbbd620bd997fb498e","sha256":"8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8"},
+    {"path":"textures/fir_tree_01_twig_nor_gl_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg","bytes":472604,"officialMd5":"1ef6c0d7c2dc74cc073a8c33f58f3795","sha256":"d470dc39b1d02bbeba06feb0ad818680ef3c24623b4db597270301a5fb8c9369"},
+    {"path":"textures/fir_tree_01_twig_arm_1k.jpg","url":"https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fir_tree_01/fir_tree_01_twig_arm_1k.jpg","bytes":407309,"officialMd5":"b0d09189350cb716533c1590fec8f8a4","sha256":"d66c81fc073ee7ea97a76b6da2399769f16944e50ef0e007f09c95619f597c79"},
+    {"path":"textures/fir_tree_01_twig_alpha_1k.png","url":"https://dl.polyhaven.org/file/ph-assets/Models/png/1k/fir_tree_01/fir_tree_01_twig_alpha_1k.png","bytes":371026,"officialMd5":"02ab808c8b2ff77ad9fdb2f92892db80","sha256":"3f399629337e7ac3af27a01b08ffb9c0d60224a9dd374a1427761a5c2eea9d6e"}
+  ],
+  "validation": {"actualFileCount": 10, "officialMd5AndBytesMatchAll": true, "localSha256RecordedAll": true}
+}

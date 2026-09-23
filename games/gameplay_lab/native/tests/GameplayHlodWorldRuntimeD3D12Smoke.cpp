@@ -243,15 +243,22 @@ public:
         assets_.ProductionMaterialById("tree_small_02:branches");
     const auto *islandLeaves =
         assets_.ProductionMaterialById("island_tree_01:leaves");
+    const auto *firTrunk =
+        assets_.ProductionMaterialById("fir_tree_01_c:trunk-c");
+    const auto *firDeadBranches =
+        assets_.ProductionMaterialById("fir_tree_01_c:dead-branches");
+    const auto *firTwig =
+        assets_.ProductionMaterialById("fir_tree_01_c:twig");
     const auto *deadTree =
         assets_.ProductionMaterialById("dead_tree_trunk_02:slot-0");
     const auto *boulder =
         assets_.ProductionMaterialById("boulder_01:slot-0");
-    if (load_.barkMaterialResponses != 4 ||
+    if (load_.barkMaterialResponses != 7 ||
         !load_.barkMaterialResponseFingerprint ||
         load_.weatheredPropMaterialResponses != 2 ||
         !load_.weatheredPropMaterialResponseFingerprint || !islandTrunk ||
-        !smallBranches || !islandLeaves || !deadTree || !boulder ||
+        !smallBranches || !islandLeaves || !firTrunk || !firDeadBranches ||
+        !firTwig || !deadTree || !boulder ||
         !close(islandTrunk->tint.r, 1.f) ||
         !close(islandTrunk->tint.g, .995f) ||
         !close(islandTrunk->tint.b, .98f) ||
@@ -269,6 +276,15 @@ public:
         !close(islandLeaves->surface.roughness, .76f) ||
         !close(islandLeaves->normalScale, 1.08f) ||
         !close(islandLeaves->alphaCutoff, .42f) ||
+        !close(firTrunk->surface.roughness, .68f) ||
+        !close(firTrunk->normalScale, 1.12f) ||
+        !close(firDeadBranches->surface.roughness, .74f) ||
+        !close(firDeadBranches->normalScale, 1.06f) ||
+        firTwig->materialClass != MaterialClass3D::Foliage ||
+        firTwig->alphaMode != MaterialAlphaMode3D::Mask || !firTwig->doubleSided ||
+        !close(firTwig->surface.roughness, .82f) ||
+        !close(firTwig->normalScale, 1.12f) ||
+        !close(firTwig->alphaCutoff, .42f) ||
         !close(deadTree->tint.r, .58f) || !close(deadTree->tint.g, .47f) ||
         !close(deadTree->tint.b, .34f) ||
         !close(deadTree->surface.roughness, .82f) ||

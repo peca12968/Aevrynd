@@ -3,7 +3,7 @@
   "manifestType": "aevrynd-runtime-render-package",
   "exactAssetSet": {
     "id": "gameplay-ultra-realistic-cc0",
-    "count": 11,
+    "count": 12,
     "assetIds": [
       "Bricks100",
       "Ground108",
@@ -11,6 +11,7 @@
       "boulder_01",
       "coastal_cliff_01",
       "dead_tree_trunk_02",
+      "fir_tree_01_c",
       "forest_ground_04",
       "island_tree_01",
       "stony_dirt_path",
@@ -501,6 +502,414 @@
           {
             "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_arm_1k.jpg",
             "sha256": "ea15561ce36572ebd0db3c997f70d68a76d4bcbfef7efb4f91c8fd3b5f766e62"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/bark-arm.dds",
+      "bytes": 1398276,
+      "sha256": "a1d895baa855d31dd705e10be6b3c8ed56e2e663665b8a7001c0cf39e128a3e8",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+            "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+            "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+            "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/bark-base.dds",
+      "bytes": 1398276,
+      "sha256": "49fd9058e6a5059e6bced88360e44d0bcf303a164a3c0f4c08a151ddb236015a",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+            "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+            "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+            "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/bark-normal.dds",
+      "bytes": 1398276,
+      "sha256": "21291b807a30761309f810086d6732b752546c951e2a2a091101dd4f7cdb29f3",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+            "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+            "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+            "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/dead-branches-arm.dds",
+      "bytes": 1398276,
+      "sha256": "a1d895baa855d31dd705e10be6b3c8ed56e2e663665b8a7001c0cf39e128a3e8",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+            "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+            "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+            "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/dead-branches-base.dds",
+      "bytes": 1398276,
+      "sha256": "49fd9058e6a5059e6bced88360e44d0bcf303a164a3c0f4c08a151ddb236015a",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+            "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+            "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+            "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/dead-branches-normal.dds",
+      "bytes": 1398276,
+      "sha256": "21291b807a30761309f810086d6732b752546c951e2a2a091101dd4f7cdb29f3",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+            "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+            "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+            "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/trunk-c-arm.dds",
+      "bytes": 1398276,
+      "sha256": "6b894f1c1da10361f2f07c1211cb1902342fbdee10afef66c03150c995836dee",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_diff_1k.jpg",
+            "sha256": "fd13a53cc8e69cd356245eb0017c51f56e35726683123888f94ed4451cc0486d"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_nor_gl_1k.jpg",
+            "sha256": "d8e80fa8849a2bcf37203d8359d1f498738306cee7065cac03c3131a6b71791f"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_arm_1k.jpg",
+            "sha256": "22736ea32fdcb9b515601225f554fde2da533b721063ee63e9a52502b93c5f54"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/trunk-c-base.dds",
+      "bytes": 1398276,
+      "sha256": "c5f308b9a1ebc6fbf4a1eb44750309e1cc191fd829bfdc50098d69b817f8a168",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_diff_1k.jpg",
+            "sha256": "fd13a53cc8e69cd356245eb0017c51f56e35726683123888f94ed4451cc0486d"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_nor_gl_1k.jpg",
+            "sha256": "d8e80fa8849a2bcf37203d8359d1f498738306cee7065cac03c3131a6b71791f"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_arm_1k.jpg",
+            "sha256": "22736ea32fdcb9b515601225f554fde2da533b721063ee63e9a52502b93c5f54"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/trunk-c-normal.dds",
+      "bytes": 1398276,
+      "sha256": "22726faaab8c104237ffe7c8f17ccfa50637561222b4148b61eda0b0fcc03344",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_diff_1k.jpg",
+            "sha256": "fd13a53cc8e69cd356245eb0017c51f56e35726683123888f94ed4451cc0486d"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_nor_gl_1k.jpg",
+            "sha256": "d8e80fa8849a2bcf37203d8359d1f498738306cee7065cac03c3131a6b71791f"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_arm_1k.jpg",
+            "sha256": "22736ea32fdcb9b515601225f554fde2da533b721063ee63e9a52502b93c5f54"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/twig-arm.dds",
+      "bytes": 1398276,
+      "sha256": "37af8ba7a3a7f94edb8a58f3bb716c978ca9631bd04027625ea5818be0223e10",
+      "format": "BC7_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_diff_1k.jpg",
+            "sha256": "8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_nor_gl_1k.jpg",
+            "sha256": "d470dc39b1d02bbeba06feb0ad818680ef3c24623b4db597270301a5fb8c9369"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_arm_1k.jpg",
+            "sha256": "d66c81fc073ee7ea97a76b6da2399769f16944e50ef0e007f09c95619f597c79"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_alpha_1k.png",
+            "sha256": "3f399629337e7ac3af27a01b08ffb9c0d60224a9dd374a1427761a5c2eea9d6e"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/twig-base.dds",
+      "bytes": 1398276,
+      "sha256": "b1a458c5584b5fa40ce04144f341e013b1a999881bf17fff2880032363d58d5e",
+      "format": "BC7_UNORM_SRGB",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_diff_1k.jpg",
+            "sha256": "8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_nor_gl_1k.jpg",
+            "sha256": "d470dc39b1d02bbeba06feb0ad818680ef3c24623b4db597270301a5fb8c9369"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_arm_1k.jpg",
+            "sha256": "d66c81fc073ee7ea97a76b6da2399769f16944e50ef0e007f09c95619f597c79"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_alpha_1k.png",
+            "sha256": "3f399629337e7ac3af27a01b08ffb9c0d60224a9dd374a1427761a5c2eea9d6e"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "materials/fir-tree-01-c/twig-normal.dds",
+      "bytes": 1398276,
+      "sha256": "3f656dfa0f462f4812c17ff0487261c770a637d8d7c97536c9d98a36f429d3bb",
+      "format": "BC5_UNORM",
+      "mips": 11,
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "arraySize": 1,
+        "faces": 1
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_diff_1k.jpg",
+            "sha256": "8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_nor_gl_1k.jpg",
+            "sha256": "d470dc39b1d02bbeba06feb0ad818680ef3c24623b4db597270301a5fb8c9369"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_arm_1k.jpg",
+            "sha256": "d66c81fc073ee7ea97a76b6da2399769f16944e50ef0e007f09c95619f597c79"
+          },
+          {
+            "path": "fir-tree-01-c/textures/fir_tree_01_twig_alpha_1k.png",
+            "sha256": "3f399629337e7ac3af27a01b08ffb9c0d60224a9dd374a1427761a5c2eea9d6e"
           }
         ]
       },
@@ -1840,6 +2249,462 @@
       "commercialUse": true
     },
     {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh",
+      "bytes": 274304,
+      "sha256": "f2623a7bba3ee4d16a7325b196cc320da9565ad0f5704d6c083ba2783bc704b0",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 5728,
+        "indices": 28476,
+        "triangles": 9492,
+        "boundsMinimum": [
+          -2.397446393966675,
+          4.7970404624938965,
+          -2.776984214782715
+        ],
+        "boundsMaximum": [
+          3.0378353595733643,
+          14.099542617797852,
+          2.5421195030212402
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh",
+      "bytes": 450740,
+      "sha256": "c9a16431ac6687fad5322c802b5a0ead6064020a3df8b097220de1a18ff65fd1",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 12115,
+        "indices": 27876,
+        "triangles": 9292,
+        "boundsMinimum": [
+          -2.761598587036133,
+          6.899463176727295,
+          -3.023411273956299
+        ],
+        "boundsMaximum": [
+          3.5874412059783936,
+          14.451992988586426,
+          2.982006311416626
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh",
+      "bytes": 103220,
+      "sha256": "c47f9fcb9719c2a7425b4e200bf25a64ea484ca8376409f1418429675de34387",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 2257,
+        "indices": 10002,
+        "triangles": 3334,
+        "boundsMinimum": [
+          -0.6280517578125,
+          1.943076729774475,
+          -0.6898808479309082
+        ],
+        "boundsMaximum": [
+          0.673003077507019,
+          7.4479594230651855,
+          0.6691532135009766
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh",
+      "bytes": 610948,
+      "sha256": "578838cd434e54da61152241fbcbf2e43cdc3663783521d516886084667f3180",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 12111,
+        "indices": 67956,
+        "triangles": 22652,
+        "boundsMinimum": [
+          -0.6787248253822327,
+          -0.09382282942533493,
+          -0.660910427570343
+        ],
+        "boundsMaximum": [
+          0.5437984466552734,
+          13.228507995605469,
+          0.5266891121864319
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh",
+      "bytes": 208204,
+      "sha256": "02084a8c2f9a4aeadb16d1a9438091d93920c4c9852658da99d219e5a74f61a5",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 4419,
+        "indices": 21114,
+        "triangles": 7038,
+        "boundsMinimum": [
+          -2.397446393966675,
+          4.797051906585693,
+          -2.776984214782715
+        ],
+        "boundsMaximum": [
+          3.0378353595733643,
+          14.099542617797852,
+          2.5421195030212402
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh",
+      "bytes": 288464,
+      "sha256": "5c597f3d5722f61cb957689d3719b949e7550455d0a0012d254329b4fcadd8da",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 8152,
+        "indices": 15048,
+        "triangles": 5016,
+        "boundsMinimum": [
+          -2.761598587036133,
+          6.899463176727295,
+          -3.023411273956299
+        ],
+        "boundsMaximum": [
+          3.5883054733276367,
+          14.45848560333252,
+          2.982006311416626
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh",
+      "bytes": 35748,
+      "sha256": "dc3fe7f82e9becc8bb23aa1af9822b82dbd4687d868a3d8b776a198038e0f899",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 908,
+        "indices": 2577,
+        "triangles": 859,
+        "boundsMinimum": [
+          -0.6232418417930603,
+          1.9490143060684204,
+          -0.6781548857688904
+        ],
+        "boundsMaximum": [
+          0.6629114747047424,
+          7.4479594230651855,
+          0.6602439880371094
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh",
+      "bytes": 175520,
+      "sha256": "13dec2d3f0332b83130efe00ab0256b0ef83a955b86ca60d4f448e908bda37a2",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 5050,
+        "indices": 8526,
+        "triangles": 2842,
+        "boundsMinimum": [
+          -0.6793994307518005,
+          -0.09320797026157379,
+          -0.6609088182449341
+        ],
+        "boundsMaximum": [
+          0.5438454747200012,
+          13.228546142578125,
+          0.5267517566680908
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh",
+      "bytes": 136728,
+      "sha256": "55a5ccc2cbca2078c97bab46f6f98f2a33a0114cdb683280049e74955f78a4ab",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 3044,
+        "indices": 12870,
+        "triangles": 4290,
+        "boundsMinimum": [
+          -2.397446393966675,
+          4.797051906585693,
+          -2.776984214782715
+        ],
+        "boundsMaximum": [
+          3.0384345054626465,
+          14.099542617797852,
+          2.5421195030212402
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh",
+      "bytes": 83488,
+      "sha256": "2ec74fe514c152f03867a8d9d2d2c975d8c35e91aa3e2551602f72d1bdf219d4",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 2448,
+        "indices": 3732,
+        "triangles": 1244,
+        "boundsMinimum": [
+          -2.591805934906006,
+          6.954505920410156,
+          -2.984097719192505
+        ],
+        "boundsMaximum": [
+          3.402655839920044,
+          14.470732688903809,
+          2.858288526535034
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh",
+      "bytes": 2992,
+      "sha256": "2b31900122a30b74cf95a6db04f7abac6875bbd7c8c3ec642223e9cef93869f5",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 87,
+        "indices": 135,
+        "triangles": 45,
+        "boundsMinimum": [
+          -0.44122758507728577,
+          2.2864251136779785,
+          -0.6508255004882812
+        ],
+        "boundsMaximum": [
+          0.5708397626876831,
+          7.454862117767334,
+          0.5775923132896423
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
+      "path": "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh",
+      "bytes": 7348,
+      "sha256": "e5b84998ea8631f2b8e0db1b8c2c90a21a22ebc996defad90b61d96f7fb80532",
+      "format": "AEMESH-v1",
+      "mips": null,
+      "dimensions": {
+        "vertices": 222,
+        "indices": 279,
+        "triangles": 93,
+        "boundsMinimum": [
+          -0.682871401309967,
+          -0.1000855341553688,
+          -0.6600067615509033
+        ],
+        "boundsMaximum": [
+          0.5440491437911987,
+          13.228740692138672,
+          0.5097057223320007
+        ]
+      },
+      "source": {
+        "provider": "poly-haven",
+        "officialPage": "https://polyhaven.com/a/fir_tree_01",
+        "inputs": [
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+            "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773"
+          },
+          {
+            "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+            "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b"
+          }
+        ]
+      },
+      "license": "CC0-1.0",
+      "commercialUse": true
+    },
+    {
       "path": "meshes/island-tree-01/island-tree-01-lod0-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
       "bytes": 959120,
       "sha256": "1154fe8d204bb22155447ae15689146f4bc7d0b46c99942269a0fcf491fe489f",
@@ -2535,6 +3400,58 @@
       "materialClass": "surface"
     },
     {
+      "id": "fir_tree_01_c:bark",
+      "assetId": "fir_tree_01_c",
+      "slot": "bark",
+      "baseColorPath": "materials/fir-tree-01-c/bark-base.dds",
+      "surfacePath": "materials/fir-tree-01-c/bark-arm.dds",
+      "normalPath": "materials/fir-tree-01-c/bark-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
+    },
+    {
+      "id": "fir_tree_01_c:dead-branches",
+      "assetId": "fir_tree_01_c",
+      "slot": "dead-branches",
+      "baseColorPath": "materials/fir-tree-01-c/dead-branches-base.dds",
+      "surfacePath": "materials/fir-tree-01-c/dead-branches-arm.dds",
+      "normalPath": "materials/fir-tree-01-c/dead-branches-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
+    },
+    {
+      "id": "fir_tree_01_c:trunk-c",
+      "assetId": "fir_tree_01_c",
+      "slot": "trunk-c",
+      "baseColorPath": "materials/fir-tree-01-c/trunk-c-base.dds",
+      "surfacePath": "materials/fir-tree-01-c/trunk-c-arm.dds",
+      "normalPath": "materials/fir-tree-01-c/trunk-c-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "opaque",
+      "alphaCutoff": 0.5,
+      "doubleSided": false,
+      "materialClass": "surface"
+    },
+    {
+      "id": "fir_tree_01_c:twig",
+      "assetId": "fir_tree_01_c",
+      "slot": "twig",
+      "baseColorPath": "materials/fir-tree-01-c/twig-base.dds",
+      "surfacePath": "materials/fir-tree-01-c/twig-arm.dds",
+      "normalPath": "materials/fir-tree-01-c/twig-normal.dds",
+      "surfaceEncoding": "packed-orm",
+      "alphaMode": "mask",
+      "alphaCutoff": 0.5,
+      "doubleSided": true,
+      "materialClass": "foliage"
+    },
+    {
       "id": "forest_ground_04:slot-0",
       "assetId": "forest_ground_04",
       "slot": "slot-0",
@@ -2670,6 +3587,46 @@
         "meshes/dead-tree-trunk-02/dead-tree-trunk-02-lod0-node0-mesh0-primitive0-material0-dead-tree-trunk-02.aemesh",
         "meshes/dead-tree-trunk-02/dead-tree-trunk-02-lod1-node0-mesh0-primitive0-material0-dead-tree-trunk-02.aemesh",
         "meshes/dead-tree-trunk-02/dead-tree-trunk-02-lod2-node0-mesh0-primitive0-material0-dead-tree-trunk-02.aemesh"
+      ]
+    },
+    {
+      "id": "fir-tree-01-c:material-0",
+      "assetId": "fir_tree_01_c",
+      "materialId": "fir_tree_01_c:bark",
+      "lodPaths": [
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh"
+      ]
+    },
+    {
+      "id": "fir-tree-01-c:material-1",
+      "assetId": "fir_tree_01_c",
+      "materialId": "fir_tree_01_c:twig",
+      "lodPaths": [
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh"
+      ]
+    },
+    {
+      "id": "fir-tree-01-c:material-2",
+      "assetId": "fir_tree_01_c",
+      "materialId": "fir_tree_01_c:dead-branches",
+      "lodPaths": [
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh"
+      ]
+    },
+    {
+      "id": "fir-tree-01-c:material-3",
+      "assetId": "fir_tree_01_c",
+      "materialId": "fir_tree_01_c:trunk-c",
+      "lodPaths": [
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod0-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod1-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh",
+        "meshes/fir-tree-01-c/fir-tree-01-c-lod2-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh"
       ]
     },
     {
@@ -2835,6 +3792,27 @@
       ]
     },
     {
+      "id": "fir_tree_01_c",
+      "name": "fir-tree-01-c",
+      "kind": "mesh-pbr",
+      "provider": "poly-haven",
+      "officialPage": "https://polyhaven.com/a/fir_tree_01",
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materialIds": [
+        "fir_tree_01_c:bark",
+        "fir_tree_01_c:dead-branches",
+        "fir_tree_01_c:trunk-c",
+        "fir_tree_01_c:twig"
+      ],
+      "meshPartIds": [
+        "fir-tree-01-c:material-0",
+        "fir-tree-01-c:material-1",
+        "fir-tree-01-c:material-2",
+        "fir-tree-01-c:material-3"
+      ]
+    },
+    {
       "id": "forest_ground_04",
       "name": "forest-ground-04",
       "kind": "pbr-material",
@@ -2908,12 +3886,12 @@
     }
   ],
   "package": {
-    "payloadFileCount": 72,
-    "payloadBytes": 233501840,
+    "payloadFileCount": 96,
+    "payloadBytes": 252658856,
     "manifestPath": "runtime-render-manifest.json",
-    "manifestBytes": 96595,
-    "packageFileCount": 73,
-    "packageBytes": 233598435,
+    "manifestBytes": 129864,
+    "packageFileCount": 97,
+    "packageBytes": 252788720,
     "manifestHashPolicy": "external-envelope",
     "excludedClasses": [
       "GLB",

@@ -1,6 +1,6 @@
 # Realistic CC0 First Batch
 
-All ten assets in this directory are acquired from the official Poly Haven or ambientCG source listed in `runtime-asset-manifest.json`.
+All twelve assets in this directory are acquired from the official Poly Haven or ambientCG source listed in `runtime-asset-manifest.json`.
 
 - License: CC0 1.0
 - Commercial use: allowed

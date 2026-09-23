@@ -32,14 +32,18 @@ MESH_MATERIALS = {
     ("tree-small-02", 0): "tree_small_02:branches",
     ("tree-small-02", 1): "tree_small_02:leaves",
     ("tree-small-02", 2): "tree_small_02:trunk",
+    ("fir-tree-01-c", 0): "fir_tree_01_c:bark",
+    ("fir-tree-01-c", 1): "fir_tree_01_c:twig",
+    ("fir-tree-01-c", 2): "fir_tree_01_c:dead-branches",
+    ("fir-tree-01-c", 3): "fir_tree_01_c:trunk-c",
 }
 PRODUCTION_PROFILE = {
-    "assets": 11,
-    "materials": 14,
-    "meshParts": 9,
-    "meshLodLevels": 27,
-    "payloadFiles": 72,
-    "packageFiles": 73,
+    "assets": 12,
+    "materials": 18,
+    "meshParts": 13,
+    "meshLodLevels": 39,
+    "payloadFiles": 96,
+    "packageFiles": 97,
 }
 STANDALONE_ROLES = {
     "forest_ground_04": "terrain",
@@ -201,6 +205,67 @@ def validate_tree_small_02_source_chain(asset_root: pathlib.Path, runtime=None,
     return True
 
 
+def validate_fir_tree_01_c_source_chain(asset_root: pathlib.Path, runtime=None,
+                                        provenance=None, cook=None):
+    fir_root = asset_root / "fir-tree-01-c"
+    provenance_path = checked_disk_path(fir_root, "fir-tree-01-c-provenance-receipt.json")
+    cook_path = checked_disk_path(fir_root, "fir-tree-01-c-cook-receipt.json")
+    provenance = provenance if provenance is not None else load_json(provenance_path)
+    cook = cook if cook is not None else load_json(cook_path)
+    if (provenance.get("schemaVersion") != 1 or
+            provenance.get("receiptType") != "aevrynd-authoritative-asset-provenance" or
+            provenance.get("assetId") != "fir_tree_01_c" or
+            provenance.get("provider") != "Poly Haven" or
+            provenance.get("officialPage") != "https://polyhaven.com/a/fir_tree_01" or
+            provenance.get("license") != "CC0-1.0" or
+            provenance.get("commercialUse") is not True):
+        raise ManifestError("fir_tree_01_c authoritative provenance contract failed")
+    source_files = provenance.get("files", [])
+    source_paths = [item.get("path") for item in source_files if isinstance(item, dict)]
+    validation = provenance.get("validation", {})
+    if (len(source_files) != 10 or len(set(source_paths)) != 10 or
+            validation.get("actualFileCount") != 10 or
+            validation.get("officialMd5AndBytesMatchAll") is not True or
+            validation.get("localSha256RecordedAll") is not True or
+            any(not path.startswith("textures/") or pathlib.PurePosixPath(path).suffix.lower() not in (".jpg", ".png")
+                for path in source_paths)):
+        raise ManifestError("fir_tree_01_c compact source exact-set failed")
+    for item in source_files:
+        validate_receipted_file(fir_root, item, "fir_tree_01_c official source")
+    contract = provenance.get("officialContract", {})
+    if (contract.get("selectedAuthoredVariant") != "fir_tree_01_c" or
+            contract.get("selectedAuthoredLods") != ["fir_tree_01_c_LOD1", "fir_tree_01_c_LOD2"] or
+            contract.get("sourceBlendSha256") != "153d20aae6d7c63a4c52689d91e8bead78f6d17a70e11ef4d03d19953383de00"):
+        raise ManifestError("fir_tree_01_c authored-source contract failed")
+    if (cook.get("schemaVersion") != 1 or cook.get("pipeline") != "cook-poly-haven-fir" or
+            cook.get("assetName") != "fir-tree-01-c" or cook.get("license") != "CC0-1.0" or
+            cook.get("sourceSha256", "").lower() != contract["sourceBlendSha256"] or
+            cook.get("opaqueFoliageRejected") is not True):
+        raise ManifestError("fir_tree_01_c cook provenance contract failed")
+    levels = cook.get("levels", [])
+    triangles = [item.get("triangles") for item in levels if isinstance(item, dict)]
+    if (len(levels) != 3 or [item.get("level") for item in levels] != [0, 1, 2] or
+            not triangles[0] > triangles[1] > triangles[2] or triangles[0] > 50000 or triangles[2] > 9000 or
+            any(item.get("materialAlphaModes", {}).get("fir_tree_01_twig") == "OPAQUE" for item in levels)):
+        raise ManifestError("fir_tree_01_c realtime LOD or foliage-alpha contract failed")
+    runtime = runtime if runtime is not None else load_json(asset_root / "runtime-asset-manifest.json")
+    runtime_asset = next((item for item in runtime.get("assets", []) if item.get("id") == "fir_tree_01_c"), None)
+    if runtime_asset is None or runtime_asset.get("sourcePayloadPolicy") != "Blend/GLB/BIN excluded; provenance and deterministic cook receipts retained":
+        raise ManifestError("fir_tree_01_c runtime source policy failed")
+    runtime_files = {item.get("path"): item for item in runtime_asset.get("files", [])}
+    required = {f"fir-tree-01-c/{item['path']}" for item in source_files}
+    required |= {"fir-tree-01-c/fir-tree-01-c.materials.json",
+                 "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+                 "fir-tree-01-c/fir-tree-01-c-cook-receipt.json"}
+    if set(runtime_files) != required or any(path.lower().endswith((".blend", ".glb", ".bin")) for path in runtime_files):
+        raise ManifestError("fir_tree_01_c runtime source exact-set or exclusion policy failed")
+    for relative, item in runtime_files.items():
+        local = dict(item)
+        local["path"] = relative.removeprefix("fir-tree-01-c/")
+        validate_receipted_file(fir_root, local, "fir_tree_01_c runtime source")
+    return True
+
+
 def source_metadata(asset, inputs):
     return {
         "provider": asset["source"],
@@ -246,6 +311,7 @@ def parse_dds(path: pathlib.Path):
 def build_manifest(asset_root: pathlib.Path, cooked_root: pathlib.Path):
     runtime = load_json(asset_root / "runtime-asset-manifest.json")
     validate_tree_small_02_source_chain(asset_root, runtime)
+    validate_fir_tree_01_c_source_chain(asset_root, runtime)
     runtime_assets = {item["id"]: item for item in runtime["assets"]}
     material_receipts = [load_json(path) for path in sorted((cooked_root / "materials").rglob("material-bake-receipt.json"))]
     ibl_receipt = load_json(cooked_root / "ibl" / "ibl-bake-receipt.json")
@@ -306,7 +372,14 @@ def build_manifest(asset_root: pathlib.Path, cooked_root: pathlib.Path):
         asset_name = receipt["assetName"]
         asset_id = asset_name.replace("-", "_")
         provenance = runtime_assets[asset_id]
-        source_inputs = [{"path": f"{asset_name}/{receipt['sourceFile']}", "sha256": receipt["sourceSha256"]}]
+        if asset_id == "fir_tree_01_c":
+            source_inputs = [
+                {"path": item["path"], "sha256": item["sha256"]}
+                for item in provenance["files"]
+                if item["path"].endswith(("fir-tree-01-c-cook-receipt.json", "fir-tree-01-c-provenance-receipt.json"))
+            ]
+        else:
+            source_inputs = [{"path": f"{asset_name}/{receipt['sourceFile']}", "sha256": receipt["sourceSha256"]}]
         for output in receipt["outputs"]:
             relative = f"meshes/{asset_name}/{output['file']}"
             disk = cooked_root / pathlib.PurePosixPath(relative)
@@ -437,6 +510,7 @@ def validate_manifest(manifest, cooked_root: pathlib.Path, verify_disk=True):
     exact = manifest.get("exactAssetSet", {})
     if verify_disk:
         validate_tree_small_02_source_chain(cooked_root.parent)
+        validate_fir_tree_01_c_source_chain(cooked_root.parent)
     exact_ids = exact.get("assetIds", [])
     if (type(exact.get("count")) is not int or exact["count"] <= 0 or
             len(exact_ids) != exact["count"] or len(set(exact_ids)) != exact["count"] or

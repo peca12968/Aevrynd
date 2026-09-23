@@ -15,16 +15,18 @@ def main():
     root = parser.parse_args().root.resolve(strict=True)
     manifest = json.loads((root / "first-batch-aemesh-manifest.json").read_text(encoding="utf-8-sig"))
     receipts = sorted(root.glob("*/*-aemesh-receipt.json"))
-    assert manifest["schemaVersion"] == 1 and len(receipts) == 12 and manifest["memoryGate"]
+    assert manifest["schemaVersion"] == 1 and len(receipts) == 18 and manifest["memoryGate"]
     files = 0
     total_bytes = total_triangles = 0
     island_slots = {}
+    fir_slots = {}
     for receipt_path in receipts:
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         assert receipt["memoryGate"] and receipt["peakWorkingSetBytes"] < 2 * 1024**3
         assert receipt["peakWorkingSetScope"] == "converter-process-no-children"
         assert receipt["materialPrimitiveBijection"] and receipt["outputCount"] == len(receipt["outputs"])
         if receipt["assetName"] == "island-tree-01": island_slots[receipt["lod"]] = sorted(item["materialIndex"] for item in receipt["outputs"])
+        if receipt["assetName"] == "fir-tree-01-c": fir_slots[receipt["lod"]] = sorted(item["materialIndex"] for item in receipt["outputs"])
         for item in receipt["outputs"]:
             path = receipt_path.parent / item["file"]
             data = path.read_bytes()
@@ -46,8 +48,9 @@ def main():
             for index in struct.iter_unpack("<I", memoryview(data)[index_offset:]): assert index[0] < vertices
             files += 1; total_bytes += len(data); total_triangles += indices // 3
     assert island_slots == {0: [0, 1, 2], 1: [0, 1, 2], 2: [0, 1, 2]}
+    assert fir_slots == {0: [0, 1, 2, 3], 1: [0, 1, 2, 3], 2: [0, 1, 2, 3]}
     assert files == manifest["outputFiles"] and total_bytes == manifest["totalBytes"] and total_triangles == manifest["totalTriangles"]
-    print(f"firstBatchAemesh=pass files={files} bytes={total_bytes} triangles={total_triangles} peak={manifest['maximumPeakWorkingSetBytes']} islandSlots=3x3")
+    print(f"firstBatchAemesh=pass files={files} bytes={total_bytes} triangles={total_triangles} peak={manifest['maximumPeakWorkingSetBytes']} islandSlots=3x3 firSlots=3x4")
 
 
 if __name__ == "__main__":

@@ -104,13 +104,13 @@ add_custom_command(TARGET GameplayLab POST_BUILD
     "${CMAKE_SOURCE_DIR}/engine/assets/model-packs"
     "$<TARGET_FILE_DIR:GameplayLab>/assets/environment-model-packs")
 
-# 只封裝 authoritative 11-asset production manifest 引用的 72 個 GPU payload；不帶入 GLB、JPG、HDR 或烘焙收據。
+# 只封裝 authoritative 12-asset production manifest 引用的 96 個 GPU payload；不帶入 GLB、JPG、HDR 或烘焙收據。
 set(GAMEPLAY_PHOTOREAL_COOKED_ROOT "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked")
 set(GAMEPLAY_PHOTOREAL_MANIFEST "${GAMEPLAY_PHOTOREAL_COOKED_ROOT}/runtime-render-manifest.json")
 file(READ "${GAMEPLAY_PHOTOREAL_MANIFEST}" GAMEPLAY_PHOTOREAL_MANIFEST_JSON)
 string(JSON GAMEPLAY_PHOTOREAL_FILE_COUNT LENGTH "${GAMEPLAY_PHOTOREAL_MANIFEST_JSON}" files)
-if(NOT GAMEPLAY_PHOTOREAL_FILE_COUNT EQUAL 72)
-  message(FATAL_ERROR "Gameplay 11-asset photoreal package requires exactly 72 manifest payloads")
+if(NOT GAMEPLAY_PHOTOREAL_FILE_COUNT EQUAL 96)
+  message(FATAL_ERROR "Gameplay 12-asset photoreal package requires exactly 96 manifest payloads")
 endif()
 add_custom_command(TARGET GameplayLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GameplayLab>/assets/photoreal-cooked"

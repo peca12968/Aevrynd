@@ -23,13 +23,15 @@
 namespace GameplayLab {
 
 namespace {
-constexpr std::array<std::string_view, 4> ShowcaseProductionBarkMaterialIds{
+constexpr std::array<std::string_view, 7> ShowcaseProductionBarkMaterialIds{
     "island_tree_01:branches", "island_tree_01:trunk",
-    "tree_small_02:branches", "tree_small_02:trunk"};
+    "tree_small_02:branches", "tree_small_02:trunk",
+    "fir_tree_01_c:bark", "fir_tree_01_c:dead-branches",
+    "fir_tree_01_c:trunk-c"};
 constexpr std::uint64_t ShowcaseProductionBarkResponseFingerprint =
     0x4241524b5f523530ull;
-constexpr std::array<std::string_view, 2> ShowcaseProductionLeafMaterialIds{
-    "island_tree_01:leaves", "tree_small_02:leaves"};
+constexpr std::array<std::string_view, 3> ShowcaseProductionLeafMaterialIds{
+    "island_tree_01:leaves", "tree_small_02:leaves", "fir_tree_01_c:twig"};
 constexpr std::array<std::string_view, 2> ShowcaseProductionWeatheredPropMaterialIds{
     "dead_tree_trunk_02:slot-0", "boulder_01:slot-0"};
 constexpr std::uint64_t ShowcaseProductionWeatheredPropResponseFingerprint =
@@ -80,7 +82,8 @@ bool ApplyShowcaseProductionBarkResponse3D(
       !finite(material.textureScale) || !finite(material.alphaCutoff))
     return false;
 
-  const bool trunk = materialId.ends_with(":trunk");
+  const bool trunk = materialId.ends_with(":trunk") ||
+      materialId == "fir_tree_01_c:trunk-c";
   // Preserve the authored albedo while giving living bark enough grazing-light
   // response to retain its ridges under the forest canopy.  The packed ORM
   // texture remains authoritative; this is the per-material response multiplier.
@@ -1056,6 +1059,28 @@ std::string_view ResolveShowcasePhotorealAssetId3D(
   return AssetFor(descriptor);
 }
 
+std::string_view ResolveShowcaseProductionVisualAssetId3D(
+    std::span<const ShowcaseSceneDescriptor3D> descriptors,
+    std::size_t descriptorIndex) noexcept {
+  if (descriptorIndex >= descriptors.size())
+    return {};
+  const auto semantic = AssetFor(descriptors[descriptorIndex]);
+  if (descriptors[descriptorIndex].kind != ShowcaseSceneKind3D::Tree)
+    return semantic;
+  const auto living = [](std::string_view id) noexcept {
+    return id == "island_tree_01" || id == "tree_small_02";
+  };
+  if (!living(semantic))
+    return semantic == "dead_tree_trunk_02" ? semantic : std::string_view{};
+  std::size_t livingOrdinal{};
+  for (std::size_t index = 0; index < descriptorIndex; ++index)
+    if (descriptors[index].kind == ShowcaseSceneKind3D::Tree &&
+        living(AssetFor(descriptors[index])))
+      ++livingOrdinal;
+  return livingOrdinal % 5u == 0u ? std::string_view{"fir_tree_01_c"}
+                                  : semantic;
+}
+
 std::uint64_t ShowcaseAssetIdentityFingerprint3D(
     std::span<const ShowcaseSceneDescriptor3D> descriptors) noexcept {
   std::uint64_t hash = 14695981039346656037ull;
@@ -1355,9 +1380,9 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   engine.SetMaterialTextureMemoryBudget(512ull * 1024ull * 1024ull);
   Aevrynd::CookedRenderManifestError3D error{};
   if (!state->manifest.LoadFile(manifestPath, &error) ||
-      state->manifest.Stats().files != 72 ||
-      state->manifest.Materials().size() != 14 ||
-      state->manifest.MeshParts().size() != 9 ||
+      state->manifest.Stats().files != 96 ||
+      state->manifest.Materials().size() != 18 ||
+      state->manifest.MeshParts().size() != 13 ||
       state->manifest.Stats().manifestSha256.size() != 64 ||
       state->manifest.Stats().validatedFiles !=
           state->manifest.Stats().files ||
@@ -1428,7 +1453,8 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     definition.importedLods[0].meshPath = part.lodPaths[1];
     definition.importedLods[1].meshPath = part.lodPaths[2];
     const auto lodPolicies =
-        part.assetId == "island_tree_01" ||
+        part.assetId == "fir_tree_01_c" ||
+                part.assetId == "island_tree_01" ||
                 part.assetId == "tree_small_02" ||
                 part.assetId == "dead_tree_trunk_02"
             ? ShowcaseTreeLodPolicies3D()
@@ -1488,13 +1514,13 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   engine.WaitRendererIdle3D();
   const auto resident = engine.GetRendererStats();
   if (!engine.IsUploadComplete3D(upload) ||
-      resident.residentMeshes != state->baseline.residentMeshes + 27 ||
+      resident.residentMeshes != state->baseline.residentMeshes + 39 ||
       resident.residentMeshReferences !=
-          state->baseline.residentMeshReferences + 27 ||
+          state->baseline.residentMeshReferences + 39 ||
       resident.residentMaterialTextureSets !=
-          state->baseline.residentMaterialTextureSets + 14 ||
+          state->baseline.residentMaterialTextureSets + 18 ||
       resident.residentMaterialTextureReferences !=
-          state->baseline.residentMaterialTextureReferences + 23 ||
+          state->baseline.residentMaterialTextureReferences + 31 ||
       resident.residentEnvironmentLightingSets !=
           state->baseline.residentEnvironmentLightingSets + 1 ||
       resident.totalMaterialTextureDecodedBytes !=
@@ -1515,9 +1541,15 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
   if (!AssignShowcaseProductionManifestEvidence3D(state->manifest.Stats(),
                                                   receipt))
     return false;
-  receipt.profileAssets = 11;
+  receipt.profileAssets = 12;
   receipt.meshLodLevels = receipt.meshParts * 3;
   receipt.iblFiles = 3;
+  for (std::size_t index = 0; index < descriptors.size(); ++index)
+    receipt.visualFirReplacements +=
+        ResolveShowcaseProductionVisualAssetId3D(descriptors, index) ==
+        "fir_tree_01_c";
+  if (receipt.visualFirReplacements != 46u)
+    return false;
   receipt.barkMaterialResponses = ShowcaseProductionBarkMaterialIds.size();
   receipt.barkMaterialResponseFingerprint =
       ShowcaseProductionBarkResponseFingerprint;

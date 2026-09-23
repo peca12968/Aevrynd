@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "fir-tree-01-c",
+  "lod": 2,
+  "sourceFile": "fir-tree-01-c-lod2.glb",
+  "sourceSha256": "1c1844cab203bf202fd5f2ec9b93994343797a647fa113bb1ea71b3af5e792a5",
+  "outputs": [
+    {
+      "file": "fir-tree-01-c-lod2-node0-mesh0-primitive0-material0-fir-tree-01-bark.aemesh",
+      "sha256": "55a5ccc2cbca2078c97bab46f6f98f2a33a0114cdb683280049e74955f78a4ab",
+      "bytes": 136728,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "fir-tree-01-bark",
+      "vertices": 3044,
+      "indices": 12870,
+      "triangles": 4290,
+      "boundsMinimumGltf": [
+        -2.397446393966675,
+        4.797051906585693,
+        -2.776984214782715
+      ],
+      "boundsMaximumGltf": [
+        3.0384345054626465,
+        14.099542617797852,
+        2.5421195030212402
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        -0.007297488860785961,
+        0.3333333134651184
+      ],
+      "effectiveUvMaximum": [
+        1.0327812433242798,
+        0.6666667461395264
+      ]
+    },
+    {
+      "file": "fir-tree-01-c-lod2-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh",
+      "sha256": "2ec74fe514c152f03867a8d9d2d2c975d8c35e91aa3e2551602f72d1bdf219d4",
+      "bytes": 83488,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 1,
+      "materialIndex": 1,
+      "materialName": "fir-tree-01-twig",
+      "vertices": 2448,
+      "indices": 3732,
+      "triangles": 1244,
+      "boundsMinimumGltf": [
+        -2.591805934906006,
+        6.954505920410156,
+        -2.984097719192505
+      ],
+      "boundsMaximumGltf": [
+        3.402655839920044,
+        14.470732688903809,
+        2.858288526535034
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.19008101522922516,
+        0.04408067464828491
+      ],
+      "effectiveUvMaximum": [
+        0.924522876739502,
+        0.3923696279525757
+      ]
+    },
+    {
+      "file": "fir-tree-01-c-lod2-node0-mesh0-primitive2-material2-fir-tree-01-dead-branches.aemesh",
+      "sha256": "2b31900122a30b74cf95a6db04f7abac6875bbd7c8c3ec642223e9cef93869f5",
+      "bytes": 2992,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 2,
+      "materialIndex": 2,
+      "materialName": "fir-tree-01-dead-branches",
+      "vertices": 87,
+      "indices": 135,
+      "triangles": 45,
+      "boundsMinimumGltf": [
+        -0.44122758507728577,
+        2.2864251136779785,
+        -0.6508255004882812
+      ],
+      "boundsMaximumGltf": [
+        0.5708397626876831,
+        7.454862117767334,
+        0.5775923132896423
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.1740839034318924,
+        0.2148149609565735
+      ],
+      "effectiveUvMaximum": [
+        0.5843070149421692,
+        0.7868351936340332
+      ]
+    },
+    {
+      "file": "fir-tree-01-c-lod2-node0-mesh0-primitive3-material3-fir-tree-01-trunk-c.aemesh",
+      "sha256": "e5b84998ea8631f2b8e0db1b8c2c90a21a22ebc996defad90b61d96f7fb80532",
+      "bytes": 7348,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 3,
+      "materialIndex": 3,
+      "materialName": "fir-tree-01-trunk-c",
+      "vertices": 222,
+      "indices": 279,
+      "triangles": 93,
+      "boundsMinimumGltf": [
+        -0.682871401309967,
+        -0.1000855341553688,
+        -0.6600067615509033
+      ],
+      "boundsMaximumGltf": [
+        0.5440491437911987,
+        13.228740692138672,
+        0.5097057223320007
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.06801408529281616,
+        0.029906749725341797
+      ],
+      "effectiveUvMaximum": [
+        4.999997138977051,
+        1.9879662990570068
+      ]
+    }
+  ],
+  "outputCount": 4,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 230556,
+  "totalTriangles": 5672,
+  "peakWorkingSetBytes": 79069184,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

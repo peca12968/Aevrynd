@@ -135,6 +135,20 @@ bool VerifyProductionBarkResponse() {
       !close(smallBranches.material.normalScale, 1.06f))
     return false;
 
+  auto firTrunk = makeDefinition("fir_tree_01_c:trunk-c");
+  if (!ApplyShowcaseProductionBarkResponse3D(firTrunk.name, firTrunk) ||
+      !close(firTrunk.material.tint.g, .995f) ||
+      !close(firTrunk.material.tint.b, .98f) ||
+      !close(firTrunk.material.surface.roughness, .68f) ||
+      !close(firTrunk.material.normalScale, 1.12f))
+    return false;
+  auto firDeadBranches = makeDefinition("fir_tree_01_c:dead-branches");
+  if (!ApplyShowcaseProductionBarkResponse3D(firDeadBranches.name,
+                                              firDeadBranches) ||
+      !close(firDeadBranches.material.surface.roughness, .74f) ||
+      !close(firDeadBranches.material.normalScale, 1.06f))
+    return false;
+
   auto leaves = makeDefinition("island_tree_01:leaves");
   leaves.material.materialClass = Aevrynd::MaterialClass3D::Foliage;
   leaves.material.alphaMode = Aevrynd::MaterialAlphaMode3D::Mask;
@@ -234,15 +248,24 @@ bool VerifyProductionLeafResponse() {
       !island.material.doubleSided)
     return false;
 
-  auto small = makeDefinition("tree_small_02:leaves");
-  if (!ApplyShowcaseProductionLeafResponse3D(small.name, small) ||
-      !close(small.material.tint.r, .91f) ||
-      !close(small.material.tint.g, .98f) ||
-      !close(small.material.tint.b, .86f) ||
-      !close(small.material.surface.roughness, .82f) ||
-      !close(small.material.normalScale, 1.12f) ||
-      !close(small.material.alphaCutoff, .42f) ||
-      !close(small.textures.alphaCutoff, .42f))
+  auto smallLeaves = makeDefinition("tree_small_02:leaves");
+  if (!ApplyShowcaseProductionLeafResponse3D(smallLeaves.name, smallLeaves) ||
+      !close(smallLeaves.material.tint.r, .91f) ||
+      !close(smallLeaves.material.tint.g, .98f) ||
+      !close(smallLeaves.material.tint.b, .86f) ||
+      !close(smallLeaves.material.surface.roughness, .82f) ||
+      !close(smallLeaves.material.normalScale, 1.12f) ||
+      !close(smallLeaves.material.alphaCutoff, .42f) ||
+      !close(smallLeaves.textures.alphaCutoff, .42f))
+    return false;
+
+  auto firTwig = makeDefinition("fir_tree_01_c:twig");
+  if (!ApplyShowcaseProductionLeafResponse3D(firTwig.name, firTwig) ||
+      !close(firTwig.material.tint.r, .91f) ||
+      !close(firTwig.material.tint.g, .98f) ||
+      !close(firTwig.material.tint.b, .86f) ||
+      !close(firTwig.material.alphaCutoff, .42f) ||
+      !firTwig.material.doubleSided)
     return false;
 
   for (const auto id : {"island_tree_01:trunk",
@@ -647,8 +670,11 @@ int main(int argc, char **argv) {
   Aevrynd::PhotorealAssetProfileSettings3D settings{};
   settings.cpuBudgetBytes = 512ull * 1024ull * 1024ull;
   settings.gpuBudgetBytes = 512ull * 1024ull * 1024ull;
-  if (!profile.Initialize(catalog, runtime, settings))
+  Aevrynd::PhotorealAssetError3D profileError{};
+  if (!profile.Initialize(catalog, runtime, settings, &profileError)) {
+    std::cerr << "profile initialization failed: " << profileError.message << '\n';
     return 4;
+  }
 
   constexpr std::array ids = {
       "forest_ground_04", "Ground108",          "coastal_cliff_01",
@@ -788,6 +814,36 @@ int main(int argc, char **argv) {
   if (ResolveShowcasePhotorealAssetId3D(semantic) != "Ground108") return 6;
   semantic.materialAsset = "mutation/unknown-ground";
   if (!ResolveShowcasePhotorealAssetId3D(semantic).empty()) return 6;
+  std::size_t livingTrees{}, deadTrees{}, firTrees{}, retainedLivingTrees{};
+  for (std::size_t index = 0; index < descriptorSnapshot.size(); ++index) {
+    const auto semanticAsset =
+        ResolveShowcasePhotorealAssetId3D(descriptorSnapshot[index]);
+    const auto visualAsset = ResolveShowcaseProductionVisualAssetId3D(
+        descriptorSnapshot, index);
+    if (descriptorSnapshot[index].kind != ShowcaseSceneKind3D::Tree)
+      continue;
+    if (semanticAsset == "dead_tree_trunk_02") {
+      ++deadTrees;
+      if (visualAsset != semanticAsset) return 18;
+    } else if (semanticAsset == "island_tree_01" ||
+               semanticAsset == "tree_small_02") {
+      ++livingTrees;
+      if (visualAsset == "fir_tree_01_c") ++firTrees;
+      else if (visualAsset == semanticAsset) ++retainedLivingTrees;
+      else return 18;
+    } else {
+      return 18;
+    }
+  }
+  if (livingTrees != 228u || deadTrees != 20u || firTrees != 46u ||
+      retainedLivingTrees != 182u ||
+      !ResolveShowcaseProductionVisualAssetId3D(
+           descriptorSnapshot, descriptorSnapshot.size()).empty())
+    return 18;
+  for (std::size_t index = 0; index < descriptorSnapshot.size(); ++index)
+    if (ResolveShowcaseProductionVisualAssetId3D(descriptorSnapshot, index) !=
+        ResolveShowcaseProductionVisualAssetId3D(world.Descriptors(), index))
+      return 18;
   auto reorderedDescriptors = descriptorSnapshot;
   const auto differentIdentity = std::ranges::find_if(
       reorderedDescriptors.begin() + 1, reorderedDescriptors.end(),

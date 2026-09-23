@@ -915,6 +915,8 @@ int main() {
       ShowcaseTreeBurialOffset3D("island_tree_01", 10.f);
   const float maximumTreeBurial =
       ShowcaseTreeBurialOffset3D("tree_small_02", 30.f);
+  const float firTreeBurial =
+      ShowcaseTreeBurialOffset3D("fir_tree_01_c", 10.f);
   const float invalidScaleBurial = ShowcaseTreeBurialOffset3D(
       "tree_small_02", std::numeric_limits<float>::quiet_NaN());
   const float deadTreeBurial =
@@ -927,6 +929,7 @@ int main() {
       minimumTreeBurial > scaledTreeBurial ||
       scaledTreeBurial > maximumTreeBurial ||
       std::abs(scaledTreeBurial - .12f) > 1e-6f ||
+      std::abs(firTreeBurial - scaledTreeBurial) > 1e-6f ||
       deadTreeBurial != 0.f ||
       ShowcaseTreeBurialOffset3D("unknown_tree", 30.f) != 0.f)
     return 100;
@@ -1728,16 +1731,18 @@ int main() {
   const auto receipt = first.Receipt();
   const auto repeated = second.Receipt();
   const auto targets = GameplayShowcaseEnvironment3D::Targets();
-  constexpr std::array<std::string_view, 15> materialIdentities{
+  constexpr std::array<std::string_view, 19> materialIdentities{
       "forest_ground_04:slot-0", "Ground108:slot-0",
       "RoofingTiles014B:slot-0", "Bricks100:slot-0",
       "island_tree_01:trunk", "island_tree_01:leaves",
       "island_tree_01:branches", "tree_small_02:trunk",
       "tree_small_02:leaves", "tree_small_02:branches",
+      "fir_tree_01_c:bark", "fir_tree_01_c:twig",
+      "fir_tree_01_c:dead-branches", "fir_tree_01_c:trunk-c",
       "dead_tree_trunk_02:slot-0", "boulder_01:slot-0",
       "coastal_cliff_01:slot-0", "stony_dirt_path:slot-0",
       "runtime/water-optics"};
-  constexpr std::array<std::string_view, 11> licensedAssets{
+  constexpr std::array<std::string_view, 12> licensedAssets{
       "Bricks100|ambientcg|CC0-1.0|commercial",
       "Ground108|ambientcg|CC0-1.0|commercial",
       "RoofingTiles014B|ambientcg|CC0-1.0|commercial",
@@ -1745,6 +1750,7 @@ int main() {
       "coastal_cliff_01|poly-haven|CC0-1.0|commercial",
       "dead_tree_trunk_02|poly-haven|CC0-1.0|commercial",
       "forest_ground_04|poly-haven|CC0-1.0|commercial",
+      "fir_tree_01_c|poly-haven|CC0-1.0|commercial",
       "island_tree_01|poly-haven|CC0-1.0|commercial",
       "stony_dirt_path|poly-haven|CC0-1.0|commercial",
       "tree_small_02|poly-haven|CC0-1.0|commercial",
@@ -1755,7 +1761,7 @@ int main() {
   auto missingTreeIdentity = materialIdentities;
   missingTreeIdentity[7] = "island_tree_01:trunk";
   auto missingTreeLicense = licensedAssets;
-  missingTreeLicense[9] = "island_tree_01|poly-haven|CC0-1.0|commercial";
+  missingTreeLicense[10] = "island_tree_01|poly-haven|CC0-1.0|commercial";
   if (targets.materialIdentityHash == InventoryHash(missingTreeIdentity) ||
       targets.licenseInventoryHash == InventoryHash(missingTreeLicense))
     return 81;

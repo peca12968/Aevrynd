@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "pipeline": "cook-poly-haven-fir",
+  "assetName": "fir-tree-01-c",
+  "license": "CC0-1.0",
+  "officialPage": "https://polyhaven.com/a/fir_tree_01",
+  "source": "C:\\Temp\\AevryndAssets\\fir_tree_01\\fir_tree_01_1k.blend",
+  "sourceSha256": "153D20AAE6D7C63A4C52689D91E8BEAD78F6D17A70E11EF4D03D19953383DE00",
+  "offlineTextureInputs": [
+    {
+      "file": "fir_tree_01_bark_diff_1k.png",
+      "bytes": 5652976,
+      "sha256": "508CA0A40D118BEEC98E8375B4611E8A16123EEC94B5D2B4870617CF4D24E6FA"
+    },
+    {
+      "file": "fir_tree_01_bark_nor_gl_1k.png",
+      "bytes": 5778805,
+      "sha256": "B889E7080D6EFB0592F83E64CC5A5AFA5FB7787B4B7D1AE13A65602689E793E8"
+    },
+    {
+      "file": "fir_tree_01_bark_rough_1k.png",
+      "bytes": 1778413,
+      "sha256": "B198105D3022DB6C459AE9C307ECDB7B644832EE20BCBFD89C3741CECC77881F"
+    },
+    {
+      "file": "fir_tree_01_trunk_c_diff_1k.png",
+      "bytes": 5140137,
+      "sha256": "EDBCEB8657A036E98831A3550433AB2D78928FCF9060E400CA84748CEDCAF962"
+    },
+    {
+      "file": "fir_tree_01_trunk_c_nor_gl_1k.png",
+      "bytes": 4450875,
+      "sha256": "08A40A7486AD3A8D97CF3DA0AFE5951F1A038CB51395020E2C4A2113F46D1610"
+    },
+    {
+      "file": "fir_tree_01_trunk_c_rough_1k.png",
+      "bytes": 1722380,
+      "sha256": "48FCCED840B4BEED4E03E09A352A67DD36185C9CD4247090069391BFB9746DE9"
+    },
+    {
+      "file": "fir_tree_01_twig_alpha_1k.png",
+      "bytes": 371026,
+      "sha256": "3F399629337E7AC3AF27A01B08FFB9C0D60224A9DD374A1427761A5C2EEA9D6E"
+    },
+    {
+      "file": "fir_tree_01_twig_diff_1k.png",
+      "bytes": 3411459,
+      "sha256": "76F6D0C0044D76BAC08FBBD3D2AC1C9B66BB046DE7D0B1A22AA9B319308F3833"
+    },
+    {
+      "file": "fir_tree_01_twig_nor_gl_1k.png",
+      "bytes": 1825146,
+      "sha256": "CBB6B8179A9F7F6E84FD15D1F422BC342841D20845B2BAD437612F03FB0067DE"
+    },
+    {
+      "file": "fir_tree_01_twig_rough_1k.png",
+      "bytes": 1155354,
+      "sha256": "A4F0A4C8BC93946DEA229DEF779FFE5D32C555C717E4BF7B0E4B4D86BC21987A"
+    }
+  ],
+  "blenderVersion": "5.2.1 LTS",
+  "opaqueFoliageRejected": true,
+  "levels": [
+    {
+      "level": 0,
+      "authoredSourceObject": "fir_tree_01_c_LOD1",
+      "decimateRatio": 0.65,
+      "vertices": 31128,
+      "triangles": 44770,
+      "materials": [
+        "fir_tree_01_bark",
+        "fir_tree_01_twig",
+        "fir_tree_01_dead_branches",
+        "fir_tree_01_trunk_c"
+      ],
+      "materialAlphaModes": {
+        "fir_tree_01_bark": "OPAQUE",
+        "fir_tree_01_twig": "BLEND",
+        "fir_tree_01_dead_branches": "OPAQUE",
+        "fir_tree_01_trunk_c": "OPAQUE"
+      },
+      "bounds": {
+        "minimum": [
+          -2.761598587036133,
+          -2.982006311416626,
+          -0.09382282942533493
+        ],
+        "maximum": [
+          3.5874412059783936,
+          3.023411273956299,
+          14.451992988586426
+        ]
+      },
+      "file": "fir-tree-01-c-lod0.glb",
+      "bytes": 28084844,
+      "sha256": "0D24218B14369E4A1DB6CF7E14795267DD6C4BAE944B2C2FD980BB42DCAE04AE"
+    },
+    {
+      "level": 1,
+      "authoredSourceObject": "fir_tree_01_c_LOD2",
+      "decimateRatio": 0.5,
+      "vertices": 14584,
+      "triangles": 15755,
+      "materials": [
+        "fir_tree_01_bark",
+        "fir_tree_01_twig",
+        "fir_tree_01_dead_branches",
+        "fir_tree_01_trunk_c"
+      ],
+      "materialAlphaModes": {
+        "fir_tree_01_bark": "OPAQUE",
+        "fir_tree_01_twig": "BLEND",
+        "fir_tree_01_dead_branches": "OPAQUE",
+        "fir_tree_01_trunk_c": "OPAQUE"
+      },
+      "bounds": {
+        "minimum": [
+          -2.761598587036133,
+          -2.982006311416626,
+          -0.09320797026157379
+        ],
+        "maximum": [
+          3.5883054733276367,
+          3.023411273956299,
+          14.45848560333252
+        ]
+      },
+      "file": "fir-tree-01-c-lod1.glb",
+      "bytes": 27308728,
+      "sha256": "C34EC27D222AB260109B856A91C5ABE0317A5172E05DBACCD76940F33AEBC8CE"
+    },
+    {
+      "level": 2,
+      "authoredSourceObject": "fir_tree_01_c_LOD2",
+      "decimateRatio": 0.18,
+      "vertices": 7850,
+      "triangles": 5672,
+      "materials": [
+        "fir_tree_01_bark",
+        "fir_tree_01_twig",
+        "fir_tree_01_dead_branches",
+        "fir_tree_01_trunk_c"
+      ],
+      "materialAlphaModes": {
+        "fir_tree_01_bark": "OPAQUE",
+        "fir_tree_01_twig": "BLEND",
+        "fir_tree_01_dead_branches": "OPAQUE",
+        "fir_tree_01_trunk_c": "OPAQUE"
+      },
+      "bounds": {
+        "minimum": [
+          -2.7567975521087646,
+          -2.969953775405884,
+          -0.1000855341553688
+        ],
+        "maximum": [
+          3.568830966949463,
+          3.0443902015686035,
+          14.48098373413086
+        ]
+      },
+      "file": "fir-tree-01-c-lod2.glb",
+      "bytes": 26688168,
+      "sha256": "1C1844CAB203BF202FD5F2EC9B93994343797A647FA113BB1EA71B3AF5E792A5"
+    }
+  ]
+}

@@ -14,7 +14,7 @@ namespace {
 constexpr auto FixtureSha =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 constexpr auto ProductionManifestSha =
-    "45657aad82732ecd7bb2612bae9fb6b929e2a9816419fee1f459ea5ffd7d85b3";
+    "3a28a543f02673e515164a002d000e6caf8bafd9849568e3ee9c024342f40d4d";
 
 bool WriteFixture(const std::filesystem::path &root, std::string_view path) {
     const auto absolute = root / path;
@@ -369,16 +369,16 @@ int main() {
     passed &= Expect(production.LoadFile(productionPath, &error),
                      error.message.empty() ? "production manifest was rejected"
                                            : error.message.c_str());
-    passed &= Expect(production.Stats().files == 72 &&
-                         production.Stats().materials == 14 &&
-                         production.Stats().meshParts == 9 &&
-                         production.Stats().referencedFiles == 72 &&
+    passed &= Expect(production.Stats().files == 96 &&
+                         production.Stats().materials == 18 &&
+                         production.Stats().meshParts == 13 &&
+                         production.Stats().referencedFiles == 96 &&
                          production.Stats().manifestSha256 ==
                              ProductionManifestSha &&
-                         production.Stats().validatedFiles == 72 &&
-                         production.Stats().validatedMaterials == 14 &&
-                         production.Stats().validatedMeshParts == 9 &&
-                         production.Stats().validatedReferencedFiles == 72,
+                         production.Stats().validatedFiles == 96 &&
+                         production.Stats().validatedMaterials == 18 &&
+                         production.Stats().validatedMeshParts == 13 &&
+                         production.Stats().validatedReferencedFiles == 96,
                      "production exact-set counts changed");
     const auto *leaves = production.FindMaterial("island_tree_01:leaves");
     const auto leavesDefinition =
@@ -412,9 +412,22 @@ int main() {
                              MaterialClass3D::Foliage &&
                          smallTreeParts == 3,
                      "tree_small_02 three-slot/three-LOD binding was lost");
+    const auto *firTwigs = production.FindMaterial("fir_tree_01_c:twig");
+    const auto firParts = std::ranges::count_if(
+        production.MeshParts(), [](const auto &part) {
+            return part.assetId == "fir_tree_01_c" && part.lodPaths.size() == 3;
+        });
+    passed &= Expect(firTwigs &&
+                         firTwigs->Definition().textures.alphaMode ==
+                             MaterialAlphaMode3D::Mask &&
+                         firTwigs->Definition().material.doubleSided &&
+                         firTwigs->Definition().material.materialClass ==
+                             MaterialClass3D::Foliage &&
+                         firParts == 4,
+                     "fir_tree_01_c four-slot/three-LOD binding was lost");
 
     std::filesystem::remove_all(root, filesystemError);
     if (passed)
-        std::cout << "synthetic=9 production=72 materials=14 meshParts=9 exactSet=passed\n";
+        std::cout << "synthetic=9 production=96 materials=18 meshParts=13 exactSet=passed\n";
     return passed ? 0 : 1;
 }

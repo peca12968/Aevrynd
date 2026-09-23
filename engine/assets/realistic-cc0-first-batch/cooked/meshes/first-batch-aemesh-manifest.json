@@ -5,12 +5,14 @@
     "boulder-01",
     "coastal-cliff-01",
     "dead-tree-trunk-02",
-    "island-tree-01"
+    "fir-tree-01-c",
+    "island-tree-01",
+    "tree-small-02"
   ],
-  "lodReceipts": 12,
-  "outputFiles": 18,
-  "totalBytes": 128801268,
-  "totalTriangles": 3655484,
+  "lodReceipts": 18,
+  "outputFiles": 39,
+  "totalBytes": 166460596,
+  "totalTriangles": 4613511,
   "maximumPeakWorkingSetBytes": 1430941696,
   "peakWorkingSetScope": "converter-process-no-children",
   "peakLimitBytes": 2147483648,
@@ -38,6 +40,35 @@
         0,
         1,
         2
+      ]
+    }
+  ],
+  "firMaterialSlotsByLod": [
+    {
+      "lod": 0,
+      "slots": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "lod": 1,
+      "slots": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "lod": 2,
+      "slots": [
+        0,
+        1,
+        2,
+        3
       ]
     }
   ]
