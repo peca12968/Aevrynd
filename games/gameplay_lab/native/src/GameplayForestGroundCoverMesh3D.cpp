@@ -135,9 +135,11 @@ Mesh3D CreateFern(GameplayForestGroundCoverDetail3D detail,
                         (UnitNoise(seed, frond, 17u) - .5f) * .22f;
     geometry.direction = {std::cos(phase), 0, std::sin(phase)};
     geometry.side = {-geometry.direction.z, 0, geometry.direction.x};
-    geometry.length = (.43f + UnitNoise(seed, frond, 23u) * .12f) *
+    const float lengthBase =
+        detail == GameplayForestGroundCoverDetail3D::Far ? .43f : .48f;
+    geometry.length = (lengthBase + UnitNoise(seed, frond, 23u) * .12f) *
                       geometry.scale;
-    geometry.height = (.525f + UnitNoise(seed, frond, 31u) * .06f) *
+    geometry.height = (.505f + UnitNoise(seed, frond, 31u) * .055f) *
                       geometry.scale;
     plannedPairs += geometry.pairs;
     plannedSegments += geometry.segments;
@@ -163,18 +165,26 @@ Mesh3D CreateFern(GameplayForestGroundCoverDetail3D detail,
         const Vec3 horizontalDirection = Aevrynd::Normalize(
             geometry.direction * (.22f + t * .16f) +
             geometry.side * handedness);
-        const float tangentY = .30f * geometry.scale *
+        const float tangentY =
+            (detail == GameplayForestGroundCoverDetail3D::Far ? .22f : .17f) *
+            geometry.scale *
                                std::cos(.5f * Pi * t);
         const Vec3 leafDirection = Aevrynd::Normalize(
             horizontalDirection + Vec3{0, tangentY, 0});
         // 每支 frond 都保有連續葉序；較短的側枝只縮短莖長，不再把葉片
         // 面積同步縮到只剩細線。這是可讀群落體積，不是放大單一卡片。
         const float leafScale = .84f + .16f * geometry.scale;
+        const float leafBase =
+            detail == GameplayForestGroundCoverDetail3D::Far ? .12f : .135f;
         const float leafLength =
-            (.12f + (1.f - t) * .105f +
-             UnitNoise(seed, leafItem, 29u) * .015f) * leafScale;
+            (leafBase + (1.f - t) * .105f +
+             UnitNoise(seed, leafItem, 29u) * .010f) * leafScale;
+        const float leafWidthBase =
+            detail == GameplayForestGroundCoverDetail3D::Far ? .028f : .032f;
+        const float leafWidthSlope =
+            detail == GameplayForestGroundCoverDetail3D::Far ? .032f : .034f;
         const float halfWidth =
-            (.028f + (1.f - t) * .032f) * leafScale;
+            (leafWidthBase + (1.f - t) * leafWidthSlope) * leafScale;
         const Vec3 leafSide{-horizontalDirection.z, 0,
                             horizontalDirection.x};
         const Vec3 leafTip = stemPoint + leafDirection * leafLength;

@@ -473,6 +473,33 @@ bool SameTint(Color left, Color right) {
          left.a == right.a;
 }
 
+// 檢查真正送往場景的公尺尺寸，避免只驗證未變形網格而放過 Y 單軸拉長。
+bool PresentationProportionContract(const Mesh3D& mesh, Vec3 scale,
+                                    GameplayForestGroundCoverVariant3D variant,
+                                    bool report = false) {
+  if (mesh.vertices.empty() || !std::isfinite(scale.x) ||
+      !std::isfinite(scale.y) || !std::isfinite(scale.z) ||
+      scale.x <= 0.f || scale.y <= 0.f || scale.z <= 0.f)
+    return false;
+  const auto bounds = mesh.Bounds();
+  const float height = bounds.extents.y * 2.f * scale.y;
+  const float crown = (std::max)(bounds.extents.x * 2.f * scale.x,
+                                 bounds.extents.z * 2.f * scale.z);
+  const float minimumHeight =
+      variant == GameplayForestGroundCoverVariant3D::Fern ? .35f : .40f;
+  const bool accepted = std::isfinite(height) && std::isfinite(crown) &&
+      height >= minimumHeight && height <= .95f && crown > 0.f &&
+      height / crown <= 1.3f &&
+      std::abs((bounds.center.y - bounds.extents.y) * scale.y) <= 1e-5f;
+  if (!accepted && report)
+    std::cerr << "GROUND_COVER_PRESENTATION_PROPORTION=FAIL variant="
+              << static_cast<unsigned>(variant) << " height=" << height
+              << " crown=" << crown << " ratio=" << height / crown
+              << " scale=" << scale.x << ',' << scale.y << ',' << scale.z
+              << '\n';
+  return accepted;
+}
+
 } // namespace
 
 int main() {
@@ -500,16 +527,67 @@ int main() {
   constexpr auto riverbankScale = GameplayForestGroundCoverPresentationScale3D(
       ecologyScale, GameplayForestGroundCoverVariant3D::Riverbank, 2);
   static_assert(nearFernScale.x == metreAuthoredScale.x &&
-                nearFernScale.y == 2.2f &&
                 nearFernScale.z == metreAuthoredScale.z &&
                 midFernScale.x == ecologyScale.x &&
-                midFernScale.y == 3.2f &&
                 midFernScale.z == ecologyScale.z &&
-                farFernScale.y == 3.f &&
-                midCommunityScale.y == 2.5f &&
+                farFernScale.x == ecologyScale.x &&
+                farFernScale.z == ecologyScale.z &&
+                midCommunityScale.x == ecologyScale.x &&
+                midCommunityScale.z == ecologyScale.z &&
                 riverbankScale.x == metreAuthoredScale.x &&
                 riverbankScale.y == metreAuthoredScale.y &&
                 riverbankScale.z == metreAuthoredScale.z);
+  // R102：正式 Near/Mid/Far 與不同冠幅均須成立，不能只修一個展示 seed。
+  constexpr std::array presentationEcologyScales{
+      Vec3{.42f, .31f, .78f}, Vec3{.78f, .31f, .42f}, Vec3{1.f, .55f, 1.f}};
+  constexpr std::array presentationSeeds{0x4a17u, 0x7c31u, 0x51a7c3u};
+  constexpr std::array presentationDetails{
+      GameplayForestGroundCoverDetail3D::Near,
+      GameplayForestGroundCoverDetail3D::Mid,
+      GameplayForestGroundCoverDetail3D::Far};
+  for (const auto variant : {GameplayForestGroundCoverVariant3D::Fern,
+                              GameplayForestGroundCoverVariant3D::Community}) {
+    for (std::uint32_t group = 0; group < presentationDetails.size(); ++group) {
+      for (const auto seed : presentationSeeds) {
+        const auto mesh = variant == GameplayForestGroundCoverVariant3D::Fern
+            ? CreateGameplayForestGroundCoverMesh3D(
+                  GameplayForestGroundCoverSpecies3D::Fern,
+                  presentationDetails[group], seed)
+            : CreateGameplayForestGroundCoverCommunityMesh3D(
+                  presentationDetails[group], seed);
+        for (const auto inputScale : presentationEcologyScales) {
+          const auto scale = GameplayForestGroundCoverPresentationScale3D(
+              inputScale, variant, group);
+          if (scale.x != inputScale.x || scale.z != inputScale.z ||
+              !PresentationProportionContract(mesh, scale, variant, true)) {
+            std::cerr << "GROUND_COVER_PRODUCTION_PROPORTION=FAIL group="
+                      << group << " seed=" << seed << '\n';
+            return 22;
+          }
+          // 對同一驗證器注入過高、壓扁、過窄、NaN 和漂浮網格，確認會拒絕。
+          auto raised = scale;
+          raised.y = 3.2f;
+          auto flattened = scale;
+          flattened.y = .1f;
+          auto narrow = scale;
+          narrow.x *= .1f;
+          narrow.z *= .1f;
+          auto invalid = scale;
+          invalid.y = std::numeric_limits<float>::quiet_NaN();
+          auto floating = mesh;
+          for (auto& vertex : floating.vertices) vertex.y += .05f;
+          if (PresentationProportionContract(mesh, raised, variant) ||
+              PresentationProportionContract(mesh, flattened, variant) ||
+              PresentationProportionContract(mesh, narrow, variant) ||
+              PresentationProportionContract(mesh, invalid, variant) ||
+              PresentationProportionContract(floating, scale, variant)) {
+            std::cerr << "GROUND_COVER_PROPORTION_HOSTILE=FAIL\n";
+            return 23;
+          }
+        }
+      }
+    }
+  }
   constexpr auto contract = GameplayForestGroundCoverAlphaCardContract();
   static_assert(contract.alphaMode == MaterialAlphaMode3D::Mask);
   static_assert(contract.alphaCutoff == .45f);
