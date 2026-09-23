@@ -2468,6 +2468,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             const float authoredSecondaryActivation = smoothstep(0.20, 0.55, authoredSecondaryWeight);
             const float grassSecondaryActivation = smoothstep(0.45, 0.72, grassWeight)
                                                    * (1.0 - smoothstep(0.05, 0.20, authoredSecondaryWeight));
+            const float soilSecondaryActivation = smoothstep(0.45, 0.70, soilWeight)
+                                                  * (1.0 - smoothstep(0.05, 0.20, authoredSecondaryWeight));
             float selectedActivation = grassSecondaryActivation;
             const float authoredSecondaryDominance = authoredPathWeight - authoredWetSoilWeight;
             if (authoredSecondaryDominance > 0.04 && authoredSecondaryActivation > 0.0)
@@ -2479,6 +2481,15 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             {
                 terrainSecondaryDomainLayer = 1u;
                 selectedActivation = authoredSecondaryActivation;
+            }
+            // Neutral soil is the largest continuous surface in the playable
+            // clearing.  Give a soil-dominant pixel the same single secondary
+            // domain used by forest/path/wet regions; this breaks Ground108
+            // tiling while preserving the existing 15-sample worst case.
+            else if (soilWeight > grassWeight + 0.08 && soilSecondaryActivation > 0.0)
+            {
+                terrainSecondaryDomainLayer = 1u;
+                selectedActivation = soilSecondaryActivation;
             }
             else if (grassSecondaryActivation > 0.0)
                 terrainSecondaryDomainLayer = 0u;

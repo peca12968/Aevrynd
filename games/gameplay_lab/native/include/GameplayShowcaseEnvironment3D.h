@@ -613,9 +613,23 @@ SampleShowcaseTerrainEcologyTint3D(
     const float crownRadius = (std::max)(
         2.5f, (std::max)(std::abs(descriptor.scale.x),
                          std::abs(descriptor.scale.z)) * .62f);
+    const float radialDistance = std::sqrt(dx * dx + dz * dz);
     const float normalized =
-        1.f - std::sqrt(dx * dx + dz * dz) / (crownRadius * 1.4f);
-    canopyCandidate = (std::max)(canopyCandidate, smooth(normalized));
+        1.f - radialDistance / (crownRadius * 1.4f);
+    const float canopyCore = smooth(normalized);
+    // Mature trees affect more than the vertical crown projection: needles,
+    // leaves and moss form a lower-density forest-floor skirt between trunks.
+    // Anchor that skirt to the real descriptor and use bounded world-space
+    // harmonics only to break the circular edge.  It therefore remains stable
+    // across cameras and frames, reaches beyond the crown without becoming an
+    // infinite biome, and reuses the existing forest PBR layer/draw.
+    const float skirtRadiusMultiplier = Aevrynd::Clamp(
+        2.60f + authoredEdgeNoise(worldPosition) * 2.40f, 2.20f, 2.90f);
+    const float forestFloorSkirt =
+        .55f * smooth(1.f - radialDistance /
+                                (crownRadius * skirtRadiusMultiplier));
+    canopyCandidate = (std::max)(
+        canopyCandidate, (std::max)(canopyCore, forestFloorSkirt));
   }
   // The authored trail is a maintained route rather than an isolated strip of
   // road material.  Build a deterministic leaf-litter shoulder outside the

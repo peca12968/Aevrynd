@@ -985,6 +985,17 @@ int main() {
       SampleShowcaseTerrainEcologyTint3D({40, 0, 40}, ecologyTrees);
   const auto canopyFar =
       SampleShowcaseTerrainEcologyTint3D({100, 0, 100}, ecologyTrees);
+  // R90: the existing canopy core stops almost exactly at the projected
+  // crown.  A real forest floor keeps a lower-density leaf/moss skirt beyond
+  // that hard edge; otherwise the playable clearing reads as one uniform
+  // sheet of dirt between otherwise mature trees.  Lock the skirt to the
+  // actual tree descriptor and world coordinates, with finite reach.
+  const auto canopyFloorSkirtA =
+      SampleShowcaseTerrainEcologyTint3D({52.f, 0, 40.f}, ecologyTrees);
+  const auto canopyFloorSkirtB =
+      SampleShowcaseTerrainEcologyTint3D({40.f, 0, 52.f}, ecologyTrees);
+  const auto canopyFloorExterior =
+      SampleShowcaseTerrainEcologyTint3D({61.f, 0, 40.f}, ecologyTrees);
   const auto cottagePath =
       SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
   const auto cottagePathRepeated =
@@ -1178,6 +1189,13 @@ int main() {
   if (canopyCenter.canopy < .99f || canopyCenter.leafLitter < .99f ||
       canopyCenter.biome != ShowcaseTerrainBiome3D::CanopyLeafLitter ||
       canopyFar.canopy != 0.f ||
+      canopyFloorSkirtA.leafLitter < .10f ||
+      canopyFloorSkirtA.leafLitter > .58f ||
+      canopyFloorSkirtB.leafLitter < .10f ||
+      canopyFloorSkirtB.leafLitter > .58f ||
+      std::abs(canopyFloorSkirtA.leafLitter -
+               canopyFloorSkirtB.leafLitter) < .015f ||
+      canopyFloorExterior.leafLitter != 0.f ||
       Rec709(canopyCenter.tint) >= Rec709(canopyFar.tint) ||
       cottagePath.cottagePath < .74f ||
       cottagePath.biome != ShowcaseTerrainBiome3D::CottagePath ||
