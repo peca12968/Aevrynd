@@ -621,7 +621,7 @@ function Assert-GameplayDepthFileReceipts([string]$Directory,$CharacterReceipt) 
 function Get-GameplayKindDerivedBuildingStableLows($Receipt) {
   if($Receipt.buildingIdentitySource-cne'GameplayShowcaseEnvironment3D.Descriptors'-or$Receipt.buildingIdentityDomain-cne'3368770884265705473'-or$Receipt.buildingIdentityGeneration-ne1){throw 'Building descriptor identity provenance failed'}
   $kinds=@($Receipt.descriptorKinds)
-  if($kinds.Count-lt6-or$kinds.Count-gt480){throw 'Building descriptor capacity failed'}
+  if($kinds.Count-lt6-or$kinds.Count-gt528){throw 'Building descriptor capacity failed'}
   $result=@()
   for($index=0;$index-lt$kinds.Count;++$index){
     $kind=$kinds[$index]
@@ -1147,7 +1147,7 @@ function Assert-GameplayRunEvidence(
       $Photoreal.manifestSha256 -ne $PackageEvidence.manifestSha256 -or
       $Photoreal.payloadFiles -ne 96 -or $Photoreal.validatedPayloadFiles -ne 96 -or
       $Photoreal.profileAssets -ne 12 -or
-      $Photoreal.visualFirReplacements -ne 46 -or
+      $Photoreal.visualFirReplacements -ne 55 -or
       $Photoreal.materials -ne 18 -or $Photoreal.validatedMaterials -ne 18 -or
       $Photoreal.meshParts -ne 13 -or $Photoreal.validatedMeshParts -ne 13 -or
       $Photoreal.validatedReferencedFiles -ne 96) {
@@ -1168,7 +1168,7 @@ function Assert-GameplayRunEvidence(
   $expectedSolid = [uint64]$Environment.terrainPatches + [uint64]$Environment.treeInstances + [uint64]$Environment.rockInstances + [uint64]$Environment.buildingComponents
   $expectedNonSolid = [uint64]$Environment.waterSegments + [uint64]$Environment.grassInstances
   if ($Environment.source -ne 'GameplayShowcaseEnvironment3D' -or $Environment.worldHash -eq 0 -or
-      $Environment.descriptors -ne $expectedWorld -or $expectedWorld -gt 480 -or $Environment.submittedDescriptors -ne $expectedWorld -or
+      $Environment.descriptors -ne $expectedWorld -or $expectedWorld -gt 528 -or $Environment.submittedDescriptors -ne $expectedWorld -or
       $Environment.executionObserved -ne 1 -or @($Environment.counterDeltas).Count -ne 10 -or
       @($Environment.counterDeltas | Where-Object { $_ -le 0 }).Count -ne 0 -or
       $Environment.releasedDescriptors -ne $expectedWorld -or $Environment.retainedBytesAfterRelease -ne 0) {

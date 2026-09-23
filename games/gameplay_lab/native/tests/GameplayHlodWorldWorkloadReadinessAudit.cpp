@@ -20,7 +20,7 @@ int main() {
       targets.buildingComponents;
   if (environment.Descriptors().size() != expectedDescriptors ||
       receipt.integratedDescriptors != expectedDescriptors ||
-      expectedDescriptors != 472) {
+      expectedDescriptors != 520) {
     std::cerr << "Production showcase workload cardinality drifted\n";
     return 2;
   }

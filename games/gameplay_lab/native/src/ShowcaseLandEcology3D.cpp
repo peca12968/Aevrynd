@@ -25,6 +25,10 @@ constexpr std::array<Aevrynd::Vec3, 3> HeroCottageRearAnchors{{
     {-31.f, 0.f, 60.f}, {-38.f, 0.f, 68.f}, {-28.f, 0.f, 77.f}}};
 constexpr std::array<float, 6> HeroRiverForegroundZ{{58.f, 64.f, 70.f,
                                                      76.f, 82.f, 88.f}};
+constexpr std::array<std::uint32_t, 4> HeroForestEdgeRockOrdinals{{1, 2, 4, 5}};
+constexpr std::array<Aevrynd::Vec3, 4> HeroForestEdgeRockAnchors{{
+    {-30.f, 0.f, -5.f}, {-29.f, 0.f, 6.f},
+    {-28.f, 0.f, 18.f}, {-30.f, 0.f, 30.f}}};
 constexpr float HeroClusterTolerance = 4.f;
 
 float BandMinimumFor(ShowcaseLandKind3D kind, std::uint32_t band) noexcept {
@@ -86,7 +90,12 @@ float PlacementFootprint(ShowcaseLandKind3D kind,
                          Aevrynd::Vec3 scale) noexcept {
   const float span = (std::max)(scale.x, scale.z);
   // 樹以樹幹落地圈、草以根叢、岩石以完整底座作不可重疊足跡；樹冠仍可自然交疊。
-  if (kind == ShowcaseLandKind3D::Tree) return scale.y * .11f;
+  if (kind == ShowcaseLandKind3D::Tree) {
+    // Scale() 只收斂提交給繪圖的高度長尾；碰撞／道路淨空仍使用收斂前
+    // 的保守樹高，避免視覺最佳化偷偷縮小實體足跡或改變既有候選布局。
+    const float conservativeHeight = 4.5f + (scale.y - 4.5f) / .85f;
+    return conservativeHeight * .11f;
+  }
   return span * (kind == ShowcaseLandKind3D::Grass ? .34f : .5f);
 }
 
@@ -104,11 +113,9 @@ bool InExclusion(const ShowcaseLandEcologySettings3D &settings,
                  ShowcaseLandKind3D kind, Aevrynd::Vec3 point,
                  float footprint) noexcept {
   const float limit = settings.terrainHalfSpan - settings.terrainMargin;
-  // Preserve the established forest/rock distribution when it already clears
-  // the trail contract; grass is the only non-colliding layer that needs
-  // candidate-time relocation to keep its full submitted leaves out.
-  if (kind == ShowcaseLandKind3D::Grass &&
-      InWalkingLane(settings,kind,point,footprint)) return true;
+  // 所有正式 transform 都必須在候選階段清出可行走帶；只在 validator
+  // 事後拒絕樹幹／岩石會讓後續項目耗盡後才失敗，且無法重試安全候選。
+  if (InWalkingLane(settings, kind, point, footprint)) return true;
   if (std::abs(point.x) + footprint > limit ||
       std::abs(point.z) + footprint > limit) return true;
   const float spawnExclusion = SpawnExclusionRadius(settings, kind);
@@ -149,9 +156,15 @@ ShowcaseLandVariant3D Variant(ShowcaseLandKind3D kind,
 }
 
 ShowcaseLandZone3D Zone(ShowcaseLandKind3D kind,
-                        ShowcaseLandVariant3D variant) noexcept {
+                        ShowcaseLandVariant3D variant,
+                        std::uint32_t ordinal) noexcept {
   if (kind == ShowcaseLandKind3D::Tree) return ShowcaseLandZone3D::Grove;
-  if (kind == ShowcaseLandKind3D::Rock) return ShowcaseLandZone3D::Riverbank;
+  if (kind == ShowcaseLandKind3D::Rock) {
+    if (std::ranges::find(HeroForestEdgeRockOrdinals, ordinal) !=
+        HeroForestEdgeRockOrdinals.end())
+      return ShowcaseLandZone3D::Upland;
+    return ShowcaseLandZone3D::Riverbank;
+  }
   if (variant == ShowcaseLandVariant3D::GrassBlade)
     return ShowcaseLandZone3D::Riverbank;
   return variant == ShowcaseLandVariant3D::GrassFan
@@ -171,12 +184,16 @@ Aevrynd::Vec3 Scale(ShowcaseLandKind3D kind,
                              : a < .65f ? 6.f + (a-.2f) * 11.111111f
                                         : 11.f + (a-.65f) * 13.f;
     // 闊葉樹的成熟冠幅通常不應只有樹高的一半；維持同一網格、三個 LOD 與
-    // 固定 248 株預算，只讓近中景冠層形成可讀的交疊，不增加材質種類。
+    // 固定 296 株預算，只讓近中景冠層形成可讀的交疊，不增加材質種類。
     // 新增的稀疏枯立木不應以削薄既有活冠層換取輪廓多樣性；僅補回一個
     // 兩個百分點冠幅，維持 default 與 alternate seed 的既有固定 ROI canopy gate。
     const float width = height * (.70f + b * .18f) *
                         (IsLivingTreeVariant(variant) ? 1.02f : 1.f);
-    return {width, height, width * (.90f + a * .18f)};
+    // 壓縮極高個體而保留 4.5m 幼樹下限與既有冠幅。完整遠景林帶增加後，
+    // 原 15.55m 長尾會在角色近距第三人稱鏡頭形成不必要的垂直 overdraw；
+    // 此處只收斂樹高分布，不縮樹冠、碰撞淨空、數量或任何品質門檻。
+    const float submittedHeight = 4.5f + (height - 4.5f) * .85f;
+    return {width, submittedHeight, width * (.90f + a * .18f)};
   }
   if (kind == ShowcaseLandKind3D::Rock) {
     const float size = (1.1f + a * 3.1f) *
@@ -236,12 +253,12 @@ bool ValidSettings(const ShowcaseLandEcologySettings3D &settings) noexcept {
 } // namespace
 
 bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
-  return fingerprint && placements == 464 && integratedDescriptors == placements + 8 &&
+  return fingerprint && placements == 512 && integratedDescriptors == placements + 8 &&
          descriptorCapacity >= integratedDescriptors &&
-      trees == std::array<std::uint32_t, 3>{124, 92, 32} &&
+      trees == std::array<std::uint32_t, 3>{124, 92, 80} &&
       grass == std::array<std::uint32_t, 3>{116, 52, 18} &&
       rocks == std::array<std::uint32_t, 3>{12, 12, 6} &&
-      variants == std::array<std::uint32_t, 8>{124, 104, 20, 20, 10, 62, 62, 62} &&
+      variants == std::array<std::uint32_t, 8>{148, 124, 24, 20, 10, 62, 62, 62} &&
       zones[0] && zones[1] && zones[2] && zones[3] &&
       minimumTreeSpacing >= RequiredSpacing[0] &&
       minimumGrassSpacing >= RequiredSpacing[1] &&
@@ -249,10 +266,11 @@ bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
       bandsExact && riverExcluded && spawnExcluded && cottageExcluded &&
       stableKeysExact && transformsExact && footprintSpacingExact && zonesExact &&
       riverbankLayered && densityExact && heroGroundCoverExact &&
-      heroCompositionClustersExact &&
+      heroCompositionClustersExact && heroForestEdgeRocksExact &&
       understoryGroundCoverExact &&
       heroGroundCover >= MinimumHeroGroundCover &&
-      heroGroundCoverQuadrantMask == 0x0fu && riverbankRocks == 30 &&
+      heroGroundCoverQuadrantMask == 0x0fu && riverbankRocks == 26 &&
+      heroForestEdgeRocks == HeroForestEdgeRockAnchors.size() &&
       riverbankGrass == 62 &&
       minimumPropEdgeSpacing >= MinimumPropEdgeSpacing && deterministicBudget &&
       walkingLaneClear && vegetationScaleBounded;
@@ -300,7 +318,7 @@ bool BuildShowcaseLandEcology3D(
     for (std::uint32_t band = 0; band < 3; ++band)
       for (std::uint32_t item = 0; item < counts[band]; ++item, ++ordinal) {
         const auto variant = Variant(kind, ordinal);
-        const auto zone = Zone(kind, variant);
+        const auto zone = Zone(kind, variant, ordinal);
         auto &itemRandom = kind == ShowcaseLandKind3D::Tree && ordinal >= 240u
                                ? expandedTreeRandom
                                : random;
@@ -312,7 +330,7 @@ bool BuildShowcaseLandEcology3D(
         const bool heroWetland = kind == ShowcaseLandKind3D::Grass &&
                                  band == 0 &&
                                  zone == ShowcaseLandZone3D::Riverbank &&
-                                 item < 30u;
+                                 (item < 30u || item == 108u);
         const bool heroGroundCover = kind == ShowcaseLandKind3D::Grass &&
                                      band == 0 &&
                                      (heroWetland ||
@@ -321,6 +339,14 @@ bool BuildShowcaseLandEcology3D(
         const bool pathShoulderCommunity =
             kind == ShowcaseLandKind3D::Grass && band == 0 &&
             zone != ShowcaseLandZone3D::Riverbank && item < 24u;
+        const bool pathShoulderSingleton =
+            kind == ShowcaseLandKind3D::Grass && band == 0 &&
+            zone != ShowcaseLandZone3D::Riverbank && item == 73u;
+        const auto forestEdgeRockIterator =
+            std::ranges::find(HeroForestEdgeRockOrdinals, ordinal);
+        const bool heroForestEdgeRock =
+            kind == ShowcaseLandKind3D::Rock && band == 0u &&
+            forestEdgeRockIterator != HeroForestEdgeRockOrdinals.end();
         const std::uint32_t boundedTrials =
             heroGroundCover
                 ? settings.candidateTrials
@@ -328,9 +354,11 @@ bool BuildShowcaseLandEcology3D(
                 ? settings.candidateTrials / 4u
                 : kind == ShowcaseLandKind3D::Rock
                       ? settings.candidateTrials / 2u
-                      // 四十八候選覆蓋完整環帶，保留既有森林分布與三毫秒
-                      // CPU 預算；最終驗證會確認樹幹外緣仍清出步道核心。
-                      : settings.candidateTrials * 3u / 8u;
+                      // 森林入口新增四顆實體岩石後，樹木使用六十四候選避開
+                      // 新足跡；仍受三毫秒正式預算與完整鄰格參考路徑驗證。
+                      : band == 0u && item >= 112u
+                            ? settings.candidateTrials
+                            : settings.candidateTrials * 3u / 8u;
         const float seedPhase = float((settings.seed ^
             (std::uint64_t(ordinal + 1) * 0x9e3779b97f4a7c15ull)) & 0xffffu) /
             65536.f * 2.f * Pi;
@@ -393,7 +421,8 @@ bool BuildShowcaseLandEcology3D(
           const std::uint32_t treeRadiusIndex = (trial * 8u / 3u + ordinal * 37u) % 128u;
           float radius{};
           if (heroGroundCover) {
-            // 英雄區保留全部近景非河岸群落及前十株河岸地被；新增步道
+            // 英雄區保留全部近景非河岸群落、前十株河岸地被，並將末段一株
+            // 河岸地被留在正式 ROI；新增步道
             // 仍會剔除相交候選，其餘河岸維持完整環帶。
             const float u = (float(trial) + .5f) / float(boundedTrials);
             const float minimum = BandMinimumFor(kind, band);
@@ -410,6 +439,17 @@ bool BuildShowcaseLandEcology3D(
           Aevrynd::Vec3 candidate{settings.spawnCenter.x + directionX * radius,
                                   0,
                                   settings.spawnCenter.z + directionZ * radius};
+          if (heroForestEdgeRock) {
+            const auto anchorIndex = std::size_t(
+                forestEdgeRockIterator - HeroForestEdgeRockOrdinals.begin());
+            const auto anchor = HeroForestEdgeRockAnchors[anchorIndex];
+            const float retryRadius = trial == 0u
+                ? 0.f
+                : .35f + .12f * float((trial - 1u) / 8u);
+            const float retryAngle = seedPhase + float(trial) * 2.39996323f;
+            candidate = {anchor.x + std::cos(retryAngle) * retryRadius, 0,
+                         anchor.z + std::sin(retryAngle) * retryRadius};
+          }
           // 前兩組非河岸母叢沿屋前步道兩肩交錯配置。中心離中線至少三公尺，
           // 後續仍通過帶足跡的 1.4m 半寬 gate，因此保留完整 2.8m 步行帶。
           if (pathShoulderCommunity && item % 12u < 3u) {
@@ -474,6 +514,25 @@ bool BuildShowcaseLandEcology3D(
               continue;
             }
           }
+          if (kind == ShowcaseLandKind3D::Tree && band == 2u) {
+            // R89 遠景森林牆：八十棵既有 LOD2 樹以十二個扇區與七個
+            // 不等距環帶包住正式玩家區。所有候選仍經河流、地形、間距與
+            // 足跡 gate；這不是複製 draw 或用霧遮住裸山。
+            const std::uint32_t sector = item % 12u;
+            const std::uint32_t ring = item / 12u;
+            const float baseAngle =
+                (float(sector) + .5f) * (2.f * Pi / 12.f);
+            const float irregular =
+                std::sin(float((ring + 1u) * (sector + 2u))) * .055f;
+            const float retryTurn =
+                (float(int(trial % 9u) - 4) * .0065f);
+            const float angle = baseAngle + irregular + retryTurn;
+            const float wallRadius = 120.f + float(ring) * 15.f +
+                                     float(trial / 9u) * .8f;
+            candidate = {settings.spawnCenter.x + std::cos(angle) * wallRadius,
+                         0,
+                         settings.spawnCenter.z + std::sin(angle) * wallRadius};
+          }
           const bool grassChild=kind==ShowcaseLandKind3D::Grass && item%12u>=3u;
           if(grassChild){
             const auto center=grassCenters[item%3u];
@@ -483,7 +542,7 @@ bool BuildShowcaseLandEcology3D(
             // 因此仍可避開道路、河岸、樹根與其他足跡，且不移動具 4m gate
             // 的母叢中心或增加 descriptor。
             constexpr std::array<float,3> along{{-2.25f,1.65f,3.45f}};
-            constexpr std::array<float,3> bow{{.52f,.28f,1.08f}};
+            constexpr std::array<float,3> bow{{.35f,.18f,.75f}};
             if(pathShoulderCommunity&&trial<boundedTrials*3u/4u){
               const auto trail=SampleShowcaseHeroTrail3D(center);
               const auto frame=SampleShowcaseHeroTrailFrame3D(trail.along);
@@ -491,10 +550,10 @@ bool BuildShowcaseLandEcology3D(
               const float tangentZ=frame.tangent.z;
               const float normalX=-tangentZ,normalZ=tangentX;
               const float side=trail.signedSide>=0.f?1.f:-1.f;
-              constexpr std::array<float,3> pathAlong{{-1.45f,.95f,2.2f}};
-              constexpr std::array<float,3> pathBow{{-.18f,.32f,.68f}};
+              constexpr std::array<float,3> pathAlong{{-1.35f,.80f,2.08f}};
+              constexpr std::array<float,3> pathBow{{-.10f,.20f,.40f}};
               const std::uint32_t childIndex=(item%12u)/3u-1u;
-              const float jitter=(communityFraction-.5f)*.35f;
+              const float jitter=(communityFraction-.5f)*.25f;
               candidate={center.x+tangentX*(pathAlong[childIndex]+jitter)+
                                    normalX*side*(pathBow[childIndex]+std::abs(jitter)*.2f),0,
                          center.z+tangentZ*(pathAlong[childIndex]+jitter)+
@@ -508,7 +567,9 @@ bool BuildShowcaseLandEcology3D(
               const float handedness=((communityIndex+item%3u+band)&1u)?-1.f:1.f;
               const float curvePhase=center.x*.031f+center.z*.017f+
                   float(band)*.43f+float(item%3u)*1.37f+(shape-.5f)*.40f;
-              const float trialTurn=(communityFraction-.5f)*2.4f;
+              // 候選重試只做小幅彎折；過大的 2.4rad 旋轉會把四點林下帶
+              // 折成寬散草島，尤其在新增岩石足跡後更明顯。
+              const float trialTurn=(communityFraction-.5f)*.5f;
               const float reach=.72f+1.13f*float(trial)/float((std::max)(1u,boundedTrials-1u));
               const float tangentX=std::cos(curvePhase+trialTurn);
               const float tangentZ=std::sin(curvePhase+trialTurn);
@@ -522,6 +583,19 @@ bool BuildShowcaseLandEcology3D(
               candidate={center.x+radialDirectionX*childRadius,0,
                          center.z+radialDirectionZ*childRadius};
             }
+          }
+          if (pathShoulderSingleton) {
+            const auto frame = SampleShowcaseHeroTrailFrame3D(.64f);
+            const float normalX = -frame.tangent.z;
+            const float normalZ = frame.tangent.x;
+            const float alongJitter =
+                (float(int(trial % 7u) - 3) * .11f);
+            const float outwardJitter = float(trial / 7u) * .09f;
+            candidate = {frame.position.x + frame.tangent.x * alongJitter +
+                              normalX * (4.35f + outwardJitter),
+                         0,
+                         frame.position.z + frame.tangent.z * alongJitter +
+                              normalZ * (4.35f + outwardJitter)};
           }
           // 十二個既有中景 identity 改作固定鏡頭的三個構圖錨點；數量、
           // band、variant、stable key 與碰撞 gate 均不變。前六棵形成步道
@@ -550,8 +624,7 @@ bool BuildShowcaseLandEcology3D(
                              : std::sin(seedPhase + float(trial) * 2.39996323f) *
                                    (1.f + .15f * float(trial / 8u)));
           }
-          if (kind == ShowcaseLandKind3D::Rock ||
-              zone == ShowcaseLandZone3D::Riverbank) {
+          if (zone == ShowcaseLandZone3D::Riverbank) {
             // 河岸項目直接由同一條正式河流函數取樣兩岸，避免先在整個環帶抽樣再
             // 丟棄絕大多數候選；clearance 仍由後續上下限與足跡 gate 驗證。
             // 正式河岸橫斷面由水向陸依序為：保留的濕土水線、低苔蘚／
@@ -584,7 +657,9 @@ bool BuildShowcaseLandEcology3D(
           if(kind==ShowcaseLandKind3D::Grass){
             const float r2=DistanceSquared(candidate,settings.spawnCenter);
             const float lo=BandMinimumFor(kind,band);
-            const float hi=heroGroundCover?HeroGroundCoverRadius:BandMaximum[band];
+            // 河岸投影與足跡會把候選向外推；留下 25cm 數值裕度，避免
+            // 正式 22m 英雄 ROI 因浮點邊界少掉一個濕地叢。
+            const float hi=heroGroundCover?HeroGroundCoverRadius-.25f:BandMaximum[band];
             if(r2<lo*lo||r2>hi*hi){++rejectedCandidates;continue;}
             if(zone!=ShowcaseLandZone3D::Riverbank&&item%12u<3u){
               bool separated=true;
@@ -594,7 +669,8 @@ bool BuildShowcaseLandEcology3D(
             }
           }
           const float bankClearance = RiverbankClearance(candidate, footprint);
-          if ((kind == ShowcaseLandKind3D::Rock &&
+          if ((zone == ShowcaseLandZone3D::Riverbank &&
+               kind == ShowcaseLandKind3D::Rock &&
                bankClearance > settings.riverbankRockMaximumClearance) ||
               (zone == ShowcaseLandZone3D::Riverbank &&
                kind == ShowcaseLandKind3D::Grass &&
@@ -693,8 +769,9 @@ bool ValidateShowcaseLandEcology3D(
   MixFloat(hash, settings.habitatCellSize);
   Mix(hash, &settings.minimumDensestHabitatCell,
       sizeof(settings.minimumDensestHabitatCell));
-  std::array<std::uint64_t,464> stableKeys{};
+  std::array<std::uint64_t,512> stableKeys{};
   std::array<std::uint32_t, HabitatGridSide * HabitatGridSide> habitatCells{};
+  std::array<std::uint32_t, 3> kindOrdinals{};
   std::size_t stableKeyCount{};
   for (const auto &placement : placements) {
     const auto band = std::uint32_t(placement.band);
@@ -710,9 +787,11 @@ bool ValidateShowcaseLandEcology3D(
         std::isfinite(placement.scale.x) && std::isfinite(placement.scale.y) &&
         std::isfinite(placement.scale.z) && std::isfinite(placement.yaw) &&
         placement.scale.x > 0.f && placement.scale.y > 0.f && placement.scale.z > 0.f;
+    const std::uint32_t placementOrdinal = kindOrdinals[kind]++;
     auto *counts = kind == 0 ? &result.trees : kind == 1 ? &result.grass : &result.rocks;
     ++(*counts)[band]; ++result.variants[variant]; ++result.zones[zone];
-    result.zonesExact &= placement.zone == Zone(placement.kind, placement.variant);
+    result.zonesExact &= placement.zone ==
+        Zone(placement.kind, placement.variant, placementOrdinal);
     const float footprint = PlacementFootprint(placement.kind, placement.scale);
     result.walkingLaneClear &=
         !InWalkingLane(settings, placement.kind, placement.position, footprint);
@@ -730,7 +809,8 @@ bool ValidateShowcaseLandEcology3D(
     result.riverExcluded &= std::abs(placement.position.x - RiverCenterX(placement.position.z)) >=
         RiverWidth(placement.position.z) * .5f + RiverClearance(placement.kind) + footprint;
     const float bankClearance = RiverbankClearance(placement.position, footprint);
-    if (placement.kind == ShowcaseLandKind3D::Rock) {
+    if (placement.kind == ShowcaseLandKind3D::Rock &&
+        placement.zone == ShowcaseLandZone3D::Riverbank) {
       ++result.riverbankRocks;
       result.meanRiverbankRockClearance += bankClearance;
       if (result.riverbankRocks == 1)
@@ -742,6 +822,14 @@ bool ValidateShowcaseLandEcology3D(
           (std::max)(result.maximumRiverbankRockClearance, bankClearance);
       result.riverbankLayered &= bankClearance >= RiverClearance(placement.kind) &&
           bankClearance <= settings.riverbankRockMaximumClearance;
+    } else if (placement.kind == ShowcaseLandKind3D::Rock &&
+               placement.zone == ShowcaseLandZone3D::Upland) {
+      for (const auto anchor : HeroForestEdgeRockAnchors)
+        if (DistanceSquared(placement.position, anchor) <=
+            HeroClusterTolerance * HeroClusterTolerance) {
+          ++result.heroForestEdgeRocks;
+          break;
+        }
     } else if (placement.zone == ShowcaseLandZone3D::Riverbank) {
       ++result.riverbankGrass;
       result.meanRiverbankGrassClearance += bankClearance;
@@ -883,7 +971,7 @@ bool ValidateShowcaseLandEcology3D(
   // 生態層次由全部實際足跡外緣的平均 clearance 證明；不是只確認兩種
   // 物件都出現，也不以單一離群石頭／苔蘚決定整條河岸。
   result.riverbankLayered &= result.riverbankGrass == 62 &&
-      result.riverbankRocks == 30 &&
+      result.riverbankRocks == 26 &&
       result.meanRiverbankGrassClearance + 1.f <=
           result.meanRiverbankRockClearance;
   result.heroGroundCoverExact = result.heroGroundCover >= MinimumHeroGroundCover &&
@@ -892,6 +980,8 @@ bool ValidateShowcaseLandEcology3D(
       result.heroPathShoulderCluster >= HeroPathShoulderAnchors.size() &&
       result.heroCottageRearCluster >= HeroCottageRearAnchors.size() &&
       result.heroRiverForegroundCluster >= HeroRiverForegroundZ.size();
+  result.heroForestEdgeRocksExact =
+      result.heroForestEdgeRocks == HeroForestEdgeRockAnchors.size();
   result.understoryGroundCoverExact =
       result.understoryGroundCover >= MinimumUnderstoryGroundCover &&
       result.understoryGroundCoverBandMask == 0x07u;

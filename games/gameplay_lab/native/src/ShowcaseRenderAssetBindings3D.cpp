@@ -1548,7 +1548,7 @@ bool ShowcaseRenderAssetBindings3D::LoadProduction(
     receipt.visualFirReplacements +=
         ResolveShowcaseProductionVisualAssetId3D(descriptors, index) ==
         "fir_tree_01_c";
-  if (receipt.visualFirReplacements != 46u)
+  if (receipt.visualFirReplacements != 55u)
     return false;
   receipt.barkMaterialResponses = ShowcaseProductionBarkMaterialIds.size();
   receipt.barkMaterialResponseFingerprint =

@@ -119,10 +119,10 @@ bool TreeDescriptorDistributionContract(
     ++resolvedTrees;
     ++(*counts)[descriptor.lodGroup];
   }
-  return resolvedTrees == 248 &&
-         islandByBand == std::array<unsigned, 3>{62, 46, 16} &&
-         smallByBand == std::array<unsigned, 3>{52, 38, 14} &&
-         deadByBand == std::array<unsigned, 3>{10, 8, 2};
+  return resolvedTrees == 296 &&
+         islandByBand == std::array<unsigned, 3>{62, 46, 40} &&
+         smallByBand == std::array<unsigned, 3>{52, 38, 34} &&
+         deadByBand == std::array<unsigned, 3>{10, 8, 6};
 }
 
 // 以正式提交的中景 descriptor 檢查每四株一群的母樹方位；不能只檢查
@@ -220,7 +220,7 @@ bool TreeFormVariationContract(
     ++trees;
   }
   const auto distinct = std::ranges::count(silhouetteBuckets, true);
-  return trees == 248 && std::ranges::all_of(sawVariant, [](bool v) { return v; }) &&
+  return trees == 296 && std::ranges::all_of(sawVariant, [](bool v) { return v; }) &&
          std::ranges::all_of(sawBand, [](bool v) { return v; }) && distinct >= 8 &&
          heightRange[0][1] - heightRange[0][0] >= .20f &&
          heightRange[1][1] - heightRange[1][0] >= .18f &&
@@ -711,6 +711,11 @@ bool FixedViewForestDepthContract(
       const float normalizedHeight = descriptor.scale.y / placement.scale.y;
       const float depth = Dot(descriptor.position - cameras[view].position,
                               forward);
+      // 完整 360° 遠景森林牆會包含相機後方樹木。舊 proxy 把負深度
+      // clamp 到 5cm 後仍加總，將不可見背後樹誤報成巨量 overdraw；正式
+      // 前向近裁面之外才屬於此固定鏡頭的可見深度樣本。
+      if (depth <= cameras[view].projection.nearPlane)
+        continue;
       const float projectedHeight = cameras[view].projection.mode ==
                                             ProjectionMode::Orthographic
                                         ? descriptor.scale.y /
@@ -1843,19 +1848,19 @@ int main() {
       std::string_view{"procedural/cottage-foundation"}, std::string_view{"procedural/cottage-front"},
       std::string_view{"procedural/cottage-back"}, std::string_view{"procedural/cottage-left"},
       std::string_view{"procedural/cottage-right"}, std::string_view{"procedural/cottage-pitched-roof"}};
-  if(first.Descriptors().size()!=472)return 100;
+  if(first.Descriptors().size()!=520)return 100;
   for(std::size_t cottageIndex=0;cottageIndex<expectedCottageMaterials.size();++cottageIndex){
-    const auto& descriptor=first.Descriptors()[466u+cottageIndex];
+    const auto& descriptor=first.Descriptors()[514u+cottageIndex];
     if(descriptor.kind!=ShowcaseSceneKind3D::Building||descriptor.meshAsset!=expectedCottageMeshes[cottageIndex]||
        descriptor.materialAsset!=expectedCottageMaterials[cottageIndex]||
        GameplayCottageDescriptorMaterialAsset3D(GameplayCottageBaseMaterialRole3D(descriptor.meshAsset))!=descriptor.materialAsset)return 101;
   }
   // 精確負載不能只與可同時退回舊值的 Targets 比較，否則舊荒地統計會假通過。
   const auto healthyForestLoad = [](const ShowcaseEnvironmentReceipt3D &value) {
-    return value.trees == 248 && value.grass == 186 && value.rocks == 30 &&
-        value.vegetation == 434 && value.nearVegetation == 240 &&
-        value.midVegetation == 144 && value.farVegetation == 50 &&
-        value.riverbankProps == 92;
+    return value.trees == 296 && value.grass == 186 && value.rocks == 30 &&
+        value.vegetation == 482 && value.nearVegetation == 240 &&
+        value.midVegetation == 144 && value.farVegetation == 98 &&
+        value.riverbankProps == 88;
   };
   if (!healthyForestLoad(receipt)) return 52;
   auto legacyLoad = receipt;
@@ -1871,10 +1876,10 @@ int main() {
   rocksAsVegetation.farVegetation = 80;
   if (healthyForestLoad(rocksAsVegetation)) return 54;
   const auto land = first.LandReceipt();
-  if (!land.Complete() || land.placements != 464 ||
+  if (!land.Complete() || land.placements != 512 ||
       land.trees[0] + land.grass[0] + land.rocks[0] != 252 ||
       land.trees[1] + land.grass[1] + land.rocks[1] != 156 ||
-      land.trees[2] + land.grass[2] + land.rocks[2] != 56) return 55;
+      land.trees[2] + land.grass[2] + land.rocks[2] != 104) return 55;
   // 所有陸地 placement 必須由同一份最終高度場取得基部高度；非陸地
   // descriptor 保持原位置，重複套用亦必須位元穩定。
   GameplayShowcaseEnvironment3D grounded;
@@ -1889,8 +1894,8 @@ int main() {
       nonLandY.push_back(descriptor.position.y);
   ShowcaseTerrainGroundingReceipt3D grounding{};
   if (!grounded.GroundLandDescriptors(groundingTerrain, &grounding) ||
-      !grounding.Complete() || grounding.eligibleDescriptors != 464 ||
-      grounding.groundedDescriptors != 464 || grounding.maximumHeightError > .0001f)
+      !grounding.Complete() || grounding.eligibleDescriptors != 512 ||
+      grounding.groundedDescriptors != 512 || grounding.maximumHeightError > .0001f)
     return 88;
   std::size_t nonLandIndex{};
   for (const auto &descriptor : grounded.Descriptors()) {
@@ -1904,8 +1909,8 @@ int main() {
   const auto groundedWorldHash = grounded.Receipt().worldHash;
   const auto groundedReceipt = grounded.Receipt();
   if (!groundedReceipt.terrainGroundingApplied ||
-      groundedReceipt.terrainGroundingEligible != 464 ||
-      groundedReceipt.terrainGroundedDescriptors != 464 ||
+      groundedReceipt.terrainGroundingEligible != 512 ||
+      groundedReceipt.terrainGroundedDescriptors != 512 ||
       groundedReceipt.terrainGroundingMaximumError > .0001f)
     return 92;
   ShowcaseTerrainGroundingReceipt3D repeatedGrounding{};
@@ -1915,7 +1920,7 @@ int main() {
     return 91;
   if (receipt.worldHash == 0 || receipt.worldHash != repeated.worldHash ||
       receipt.terrain != 1 || receipt.water != 1 ||
-      receipt.vegetation != 434 || receipt.rocks != 30 ||
+      receipt.vegetation != 482 || receipt.rocks != 30 ||
       receipt.buildings != 6 || receipt.trees != targets.treeInstances ||
       receipt.grass != targets.grassInstances ||
       receipt.nearVegetation != targets.nearVegetation ||
@@ -1931,7 +1936,7 @@ int main() {
       receipt.riverStripSlices != 64 || receipt.riverStripVertices != 130 ||
       receipt.riverStripIndices != 384 || !receipt.riverUvMonotonic ||
       receipt.riverMaximumJoinError > 0.00001f ||
-      receipt.integratedDescriptors != 472 || receipt.descriptorCapacity != 480 ||
+      receipt.integratedDescriptors != 520 || receipt.descriptorCapacity != 528 ||
       receipt.retainedDescriptorBytes == 0 || !receipt.landFingerprint ||
       !receipt.terrainZoneFingerprint ||
       receipt.terrainZoneFingerprint != repeated.terrainZoneFingerprint ||

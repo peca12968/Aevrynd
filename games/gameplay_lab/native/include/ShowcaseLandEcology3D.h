@@ -63,7 +63,7 @@ struct ShowcaseLandEcologySettings3D {
   std::uint64_t seed{0x4a17u};
   // 固定四百六十四項預算；近景非河岸草集中英雄區，每生境四株一群。
   // 中遠景樹以四株群落優先找安全點，不再用全域最大淨空將森林攤成果園。
-  std::array<std::uint32_t, 3> trees{124, 92, 32};
+  std::array<std::uint32_t, 3> trees{124, 92, 80};
   std::array<std::uint32_t, 3> grass{116, 52, 18};
   std::array<std::uint32_t, 3> rocks{12, 12, 6};
   float terrainHalfSpan{256.f};
@@ -73,7 +73,7 @@ struct ShowcaseLandEcologySettings3D {
   Aevrynd::Vec3 cottageCenter{-12, 0, 24};
   Aevrynd::Vec3 cottageExclusionHalfExtent{11, 0, 9};
   std::uint32_t fixedNonLandDescriptors{8};
-  std::uint32_t maximumIntegratedDescriptors{480};
+  std::uint32_t maximumIntegratedDescriptors{528};
   std::uint32_t candidateTrials{128};
   float riverbankRockMaximumClearance{9.f};
   float riverbankGrassMaximumClearance{7.f};
@@ -208,11 +208,11 @@ struct ShowcaseLandEcologyReceipt3D {
   std::array<std::uint32_t, 3> trees{}, grass{}, rocks{};
   std::array<std::uint32_t, 8> variants{};
   std::array<std::uint32_t, 4> zones{};
-  std::uint32_t placements{}, integratedDescriptors{}, descriptorCapacity{480}, rejectedCandidates{}, attemptedCandidates{};
+  std::uint32_t placements{}, integratedDescriptors{}, descriptorCapacity{528}, rejectedCandidates{}, attemptedCandidates{};
   std::uint32_t riverbankRocks{}, riverbankGrass{}, occupiedHabitatCells{},
       densestHabitatCell{}, heroGroundCover{}, heroGroundCoverQuadrantMask{},
       heroPathShoulderCluster{}, heroCottageRearCluster{},
-      heroRiverForegroundCluster{},
+      heroRiverForegroundCluster{}, heroForestEdgeRocks{},
       understoryGroundCover{}, understoryGroundCoverBandMask{};
   std::uint32_t failureKind{3}, failureBand{3}, failureItem{};
   float minimumTreeSpacing{}, minimumGrassSpacing{}, minimumRockSpacing{},
@@ -223,7 +223,7 @@ struct ShowcaseLandEcologyReceipt3D {
   bool stableKeysExact{}, transformsExact{}, footprintSpacingExact{},
       zonesExact{}, riverbankLayered{}, densityExact{}, heroGroundCoverExact{},
       heroCompositionClustersExact{},
-      understoryGroundCoverExact{};
+      understoryGroundCoverExact{}, heroForestEdgeRocksExact{};
   bool deterministicBudget{};
   bool walkingLaneClear{}, vegetationScaleBounded{};
   [[nodiscard]] bool Complete() const noexcept;

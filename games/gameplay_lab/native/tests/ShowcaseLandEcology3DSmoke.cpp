@@ -43,6 +43,7 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.heroPathShoulderCluster == right.heroPathShoulderCluster &&
       left.heroCottageRearCluster == right.heroCottageRearCluster &&
       left.heroRiverForegroundCluster == right.heroRiverForegroundCluster &&
+      left.heroForestEdgeRocks == right.heroForestEdgeRocks &&
       left.understoryGroundCover == right.understoryGroundCover &&
       left.understoryGroundCoverBandMask ==
           right.understoryGroundCoverBandMask &&
@@ -82,6 +83,7 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.heroCompositionClustersExact ==
           right.heroCompositionClustersExact &&
       left.understoryGroundCoverExact == right.understoryGroundCoverExact &&
+      left.heroForestEdgeRocksExact == right.heroForestEdgeRocksExact &&
       left.deterministicBudget == right.deterministicBudget &&
       left.walkingLaneClear == right.walkingLaneClear &&
       left.vegetationScaleBounded == right.vegetationScaleBounded;
@@ -111,10 +113,10 @@ bool TreeVariantDistributionContract(
       ++deadByBand[band];
     }
   }
-  return island == 124 && small == 104 && dead == 20 &&
-         islandByBand == std::array<unsigned, 3>{62, 46, 16} &&
-         smallByBand == std::array<unsigned, 3>{52, 38, 14} &&
-         deadByBand == std::array<unsigned, 3>{10, 8, 2};
+  return island == 148 && small == 124 && dead == 24 &&
+         islandByBand == std::array<unsigned, 3>{62, 46, 40} &&
+         smallByBand == std::array<unsigned, 3>{52, 38, 34} &&
+         deadByBand == std::array<unsigned, 3>{10, 8, 6};
 }
 
 struct HeroClearingDressingMetrics {
@@ -218,6 +220,79 @@ bool HeroClearingDressingExact(const HeroClearingDressingMetrics &metrics) {
       std::popcount(metrics.wetlandLongitudinalMask) >= 3;
 }
 
+// R89：森林入口不能只靠遠處河岸岩石宣稱有岩層。四顆既有 Near 岩石
+// 必須留在步道左側林緣，形成前、中景可讀的天然門框；仍保留完整步行帶、
+// 角色出生安全圈與小屋維修淨空。這裡量測正式 placement，不用相機貼花。
+bool ForestEdgeRockClusterContract(
+    const ShowcaseLandEcologySettings3D &settings,
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  unsigned rocks{}, longitudinalMask{}, sizeBands{};
+  float minimumTrailClearance = 1e9f;
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Rock ||
+        placement.band != ShowcaseLandBand3D::Near ||
+        placement.zone != ShowcaseLandZone3D::Upland ||
+        placement.position.x > -23.f || placement.position.z < -8.f ||
+        placement.position.z > 32.f)
+      continue;
+    ++rocks;
+    const auto trail = SampleShowcaseHeroTrail3D(placement.position);
+    if (!trail.valid) return false;
+    minimumTrailClearance =
+        (std::min)(minimumTrailClearance, trail.distance);
+    const float normalized = (placement.position.z + 8.f) / 40.f;
+    longitudinalMask |= 1u << (std::min)(3u, unsigned(normalized * 4.f));
+    const float span = (std::max)(placement.scale.x, placement.scale.z);
+    sizeBands |= span < 2.4f ? 1u : span < 4.2f ? 2u : 4u;
+    const float spawnX = placement.position.x - settings.spawnCenter.x;
+    const float spawnZ = placement.position.z - settings.spawnCenter.z;
+    if (spawnX * spawnX + spawnZ * spawnZ < 10.f * 10.f)
+      return false;
+  }
+  std::cout << "FOREST_EDGE_ROCKS count=" << rocks
+            << " longitudinal=" << std::popcount(longitudinalMask)
+            << " sizeBands=" << std::popcount(sizeBands)
+            << " trailClearance=" << minimumTrailClearance << '\n';
+  return rocks == 4u && std::popcount(longitudinalMask) >= 3 &&
+         std::popcount(sizeBands) >= 2 && minimumTrailClearance >= 2.4f;
+}
+
+// R89：112–230m 的遠景帶必須形成完整森林輪廓，而不是以 32 棵樹讓
+// third-person 鏡頭直接露出裸山。這是世界空間扇區與高度層契約；不以
+// fog、相機裁切或重複提交同一棵樹製造假密度。
+bool FarForestWallContract(
+    const ShowcaseLandEcologySettings3D &settings,
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  unsigned trees{}, living{}, sectorMask{}, heightMask{};
+  std::array<unsigned, 12> sectorCounts{};
+  constexpr float twoPi = 6.28318530717958647692f;
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Tree ||
+        placement.band != ShowcaseLandBand3D::Far)
+      continue;
+    ++trees;
+    if (placement.variant != ShowcaseLandVariant3D::DeadTreeTrunk)
+      ++living;
+    float angle = std::atan2(placement.position.z - settings.spawnCenter.z,
+                             placement.position.x - settings.spawnCenter.x);
+    if (angle < 0.f) angle += twoPi;
+    const unsigned sector = (std::min)(11u, unsigned(angle / twoPi * 12.f));
+    sectorMask |= 1u << sector;
+    ++sectorCounts[sector];
+    heightMask |= placement.scale.y < 8.f ? 1u
+                : placement.scale.y < 12.f ? 2u : 4u;
+  }
+  const auto [minimum, maximum] =
+      std::ranges::minmax_element(sectorCounts);
+  std::cout << "FAR_FOREST_WALL trees=" << trees << " living=" << living
+            << " sectors=" << std::popcount(sectorMask)
+            << " sectorRange=" << *minimum << '-' << *maximum
+            << " heightTiers=" << std::popcount(heightMask) << '\n';
+  return trees == 80u && living >= 72u && sectorMask == 0x0fffu &&
+         *minimum >= 4u && *maximum <= 10u &&
+         std::popcount(heightMask) == 3;
+}
+
 }
 
 int main() {
@@ -226,10 +301,25 @@ int main() {
   ShowcaseLandEcologyReceipt3D receipt{};
   // 中文：暖機只填滿程式碼與配置器快取，不列入三毫秒正式門檻。
   const bool warmupBuilt=BuildShowcaseLandEcology3D(settings, first, &receipt);
-  if (!warmupBuilt && first.size() == 464) {
+  if (!warmupBuilt && first.size() == 512) {
     const bool diagnosticValid =
         ValidateShowcaseLandEcology3D(settings, first, &receipt);
     (void)diagnosticValid;
+    for (std::size_t index = 0; index < first.size(); ++index) {
+      const auto &placement = first[index];
+      const float footprint = placement.kind == ShowcaseLandKind3D::Tree
+          ? placement.scale.y * .11f
+          : (std::max)(placement.scale.x, placement.scale.z) *
+                (placement.kind == ShowcaseLandKind3D::Grass ? .34f : .5f);
+      if (ShowcaseHeroTrailWalkingLane3D(placement.position, footprint))
+        std::cerr << "walking lane overlap index=" << index
+                  << " kind=" << unsigned(placement.kind)
+                  << " band=" << unsigned(placement.band)
+                  << " zone=" << unsigned(placement.zone)
+                  << " position=" << placement.position.x << ','
+                  << placement.position.z << " footprint=" << footprint
+                  << '\n';
+    }
   }
   if (!warmupBuilt || !receipt.Complete()) {
     std::cerr<<"land warmup gate built="<<warmupBuilt
@@ -264,6 +354,10 @@ int main() {
   }
   if (!TreeVariantDistributionContract(first))
     return 35;
+  if (!ForestEdgeRockClusterContract(settings, first))
+    return 44;
+  if (!FarForestWallContract(settings, first))
+    return 45;
   if (!receipt.heroCompositionClustersExact ||
       receipt.heroPathShoulderCluster < 3u ||
       receipt.heroCottageRearCluster < 3u ||
@@ -553,18 +647,20 @@ int main() {
     }
   }
 
-  if (receipt.placements != 464 || receipt.integratedDescriptors != 472 ||
-      receipt.descriptorCapacity != 480 ||
-      receipt.trees != std::array<std::uint32_t, 3>{124, 92, 32} ||
+  if (receipt.placements != 512 || receipt.integratedDescriptors != 520 ||
+      receipt.descriptorCapacity != 528 ||
+      receipt.trees != std::array<std::uint32_t, 3>{124, 92, 80} ||
       receipt.grass != std::array<std::uint32_t, 3>{116, 52, 18} ||
       receipt.rocks != std::array<std::uint32_t, 3>{12, 12, 6} ||
-      receipt.variants != std::array<std::uint32_t, 8>{124, 104, 20, 20, 10, 62, 62, 62} ||
+      receipt.variants != std::array<std::uint32_t, 8>{148, 124, 24, 20, 10, 62, 62, 62} ||
       !receipt.terrainBoundsExact || !receipt.bandsExact || !receipt.riverExcluded ||
       !receipt.spawnExcluded || !receipt.cottageExcluded ||
       !receipt.stableKeysExact || !receipt.transformsExact) return 2;
   if (!receipt.footprintSpacingExact || !receipt.zonesExact ||
       !receipt.riverbankLayered || !receipt.densityExact ||
-      receipt.riverbankRocks != 30 || receipt.riverbankGrass != 62 ||
+      receipt.riverbankRocks != 26 || receipt.riverbankGrass != 62 ||
+      receipt.heroForestEdgeRocks != 4 ||
+      !receipt.heroForestEdgeRocksExact ||
       receipt.heroGroundCover < 28 ||
       receipt.heroGroundCoverQuadrantMask != 0x0fu ||
       !receipt.heroGroundCoverExact ||
@@ -583,7 +679,7 @@ int main() {
   if(!receipt.attemptedCandidates||receipt.attemptedCandidates>32000u||medianBuildMicros>3000){std::cerr<<"land performance attempts="<<receipt.attemptedCandidates<<" medianElapsedUs="<<medianBuildMicros<<" samples=";for(const auto value:buildMicros)std::cerr<<value<<',';std::cerr<<'\n';return 15;}
   // 子叢找到安全點即停止；候選數可減少，但不能超過原本二萬四千次上限。
   if (receipt.attemptedCandidates > 24000u ||
-      receipt.zones != std::array<std::uint32_t, 4>{248, 62, 92, 62}) return 19;
+      receipt.zones != std::array<std::uint32_t, 4>{296, 62, 88, 66}) return 19;
 
   std::array<unsigned,3> canopyLayers{};
   for(const auto& item:first)if(IsLivingTreeVariant(item.variant))

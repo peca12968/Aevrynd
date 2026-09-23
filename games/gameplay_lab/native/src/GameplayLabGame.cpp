@@ -1003,7 +1003,7 @@ void GameplayLabGame::OnStart(Engine& engine){
      showcaseProductionReceipt_.materialSets!=18||
      showcaseProductionReceipt_.meshParts!=13||
      showcaseProductionReceipt_.meshLodLevels!=39||
-     showcaseProductionReceipt_.visualFirReplacements!=46||
+     showcaseProductionReceipt_.visualFirReplacements!=55||
      showcaseProductionReceipt_.iblFiles!=3)
      throw std::runtime_error("Gameplay photoreal cooked exact-set activation failed");
   if((captureLightingIsolation_&4u)&&!engine.ClearEnvironmentLighting3D())

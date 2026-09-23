@@ -220,7 +220,7 @@ public:
   void OnStart(Engine &engine) override {
     baseline_ = engine.GetRendererStats();
     if (!environment_.Initialize(0x4a17u) ||
-        environment_.Descriptors().size() != 472 ||
+        environment_.Descriptors().size() != 520 ||
         !GameplayEnvironmentIdentityContract3D(
             GameplayEnvironmentObjectIdentity3D(1)) ||
         (GameplayHlodWorldIdentity3D.high & HlodProxyIdentityDomainBit3D)) {
@@ -439,7 +439,7 @@ public:
                 ? instance.identity.id.high != GameplayEnvironmentIdentityDomain3D
                 : GameplayEnvironmentIdentityContract3D(instance.identity.id);
           });
-      if (near_.build.inputDescriptors != 472 ||
+      if (near_.build.inputDescriptors != 520 ||
           near_.build.eligibleRockDescriptors != 30 ||
           near_.build.sourceInstances != 30 || near_.build.clusters != 6 ||
           !near_.aggregateProxyBuilt || !near_.allDescriptorKindsCovered ||
