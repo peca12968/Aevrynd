@@ -198,9 +198,22 @@ PrepareGameplayForestGroundCoverMaterial3D(
 [[nodiscard]] constexpr std::size_t GameplayForestGroundCoverCommunityTriangleBudget(
     GameplayForestGroundCoverDetail3D detail) noexcept {
   switch (detail) {
-    case GameplayForestGroundCoverDetail3D::Near: return 128;
-    case GameplayForestGroundCoverDetail3D::Mid: return 74;
-    case GameplayForestGroundCoverDetail3D::Far: return 44;
+    case GameplayForestGroundCoverDetail3D::Near: return 138;
+    case GameplayForestGroundCoverDetail3D::Mid: return 80;
+    case GameplayForestGroundCoverDetail3D::Far: return 46;
+  }
+  return 0;
+}
+
+// Fallen branch cards are baked into the existing Community mesh.  Their LOD
+// count is explicit so tests and future budget changes cannot silently turn
+// this floor-detail layer into another draw or placement resource.
+[[nodiscard]] constexpr std::size_t GameplayForestGroundCoverBranchCount(
+    GameplayForestGroundCoverDetail3D detail) noexcept {
+  switch (detail) {
+    case GameplayForestGroundCoverDetail3D::Near: return 5;
+    case GameplayForestGroundCoverDetail3D::Mid: return 3;
+    case GameplayForestGroundCoverDetail3D::Far: return 1;
   }
   return 0;
 }

@@ -339,9 +339,11 @@ bool CommunityColonyContract(
   constexpr std::array<unsigned, 3> ShrubCards{{10u, 6u, 3u}};
   constexpr std::array<unsigned, 3> LeafCards{{10u, 7u, 3u}};
   const auto detailIndex = static_cast<std::size_t>(detail);
-  const unsigned totalCards = FernCards[detailIndex] +
-                              ShrubCards[detailIndex] +
-                              LeafCards[detailIndex];
+  const unsigned foliageCards = FernCards[detailIndex] +
+                                ShrubCards[detailIndex] +
+                                LeafCards[detailIndex];
+  const unsigned totalCards = foliageCards + static_cast<unsigned>(
+      GameplayForestGroundCoverBranchCount(detail));
   if (mesh.vertices.size() != std::size_t(totalCards) * 4u)
     return fail("card-count");
   const auto bounds = mesh.Bounds();
@@ -411,6 +413,61 @@ bool CommunityColonyContract(
   return true;
 }
 
+bool CommunityBranchContract(
+    const Mesh3D& mesh, GameplayForestGroundCoverDetail3D detail) {
+  constexpr std::array<unsigned, 3> FoliageCards{{64u, 37u, 22u}};
+  const auto detailIndex = static_cast<std::size_t>(detail);
+  const std::size_t branchCount = GameplayForestGroundCoverBranchCount(detail);
+  if (!branchCount || mesh.vertices.size() !=
+                          (FoliageCards[detailIndex] + branchCount) * 4u)
+    return false;
+
+  const auto stemUv = GameplayForestGroundCoverStemUv3D(
+      GameplayForestGroundCoverAtlas3D::TreeSmall02);
+  std::array<Vec3, 5> directions{};
+  for (std::size_t branch = 0; branch < branchCount; ++branch) {
+    const std::size_t base = (FoliageCards[detailIndex] + branch) * 4u;
+    const auto& a = mesh.vertices[base];
+    const auto& b = mesh.vertices[base + 1u];
+    const auto& c = mesh.vertices[base + 2u];
+    const auto& d = mesh.vertices[base + 3u];
+    const Vec3 root{(a.x + b.x) * .5f, (a.y + b.y) * .5f,
+                    (a.z + b.z) * .5f};
+    const Vec3 tip{(c.x + d.x) * .5f, (c.y + d.y) * .5f,
+                   (c.z + d.z) * .5f};
+    const float rootWidth = Length(Vec3{a.x - b.x, a.y - b.y, a.z - b.z});
+    const float tipWidth = Length(Vec3{c.x - d.x, c.y - d.y, c.z - d.z});
+    const float length = Length(tip - root);
+    const Vec3 centre = (root + tip) * .5f;
+    const float centreRadius = Length(Vec3{centre.x, 0, centre.z});
+    if (rootWidth < .012f || rootWidth > .030f ||
+        tipWidth < .008f || tipWidth > rootWidth ||
+        length < .24f || length > .48f ||
+        a.y < .006f || b.y < .006f || c.y < .006f || d.y < .006f ||
+        a.y > .035f || b.y > .035f || c.y > .035f || d.y > .035f ||
+        centreRadius < .34f || centreRadius > .94f)
+      return false;
+    for (const auto* vertex : {&a, &b, &c, &d})
+      if ((vertex->u != stemUv.minimumU && vertex->u != stemUv.maximumU) ||
+          (vertex->v != stemUv.minimumV && vertex->v != stemUv.maximumV))
+        return false;
+    Vec3 direction = tip - root;
+    direction.y = 0.f;
+    directions[branch] = Normalize(direction);
+    if (std::abs(directions[branch].x) < .08f ||
+        std::abs(directions[branch].z) < .08f)
+      return false;
+  }
+  if (branchCount >= 3u) {
+    const float firstSecond = std::abs(Dot(directions[0], directions[1]));
+    const float secondThird = std::abs(Dot(directions[1], directions[2]));
+    if (firstSecond > .94f || secondThird > .94f ||
+        std::abs(firstSecond - secondThird) < .08f)
+      return false;
+  }
+  return true;
+}
+
 bool SameTint(Color left, Color right) {
   return left.r == right.r && left.g == right.g && left.b == right.b &&
          left.a == right.a;
@@ -419,6 +476,12 @@ bool SameTint(Color left, Color right) {
 } // namespace
 
 int main() {
+  static_assert(GameplayForestGroundCoverBranchCount(
+                    GameplayForestGroundCoverDetail3D::Near) == 5u &&
+                GameplayForestGroundCoverBranchCount(
+                    GameplayForestGroundCoverDetail3D::Mid) == 3u &&
+                GameplayForestGroundCoverBranchCount(
+                    GameplayForestGroundCoverDetail3D::Far) == 1u);
   constexpr Vec3 ecologyScale{.42f, .31f, .78f};
   constexpr auto metreAuthoredScale =
       GameplayForestGroundCoverWorldScale3D(ecologyScale);
@@ -681,7 +744,7 @@ int main() {
 
   std::size_t previousCommunityTriangles =
       (std::numeric_limits<std::size_t>::max)();
-  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{128, 74, 44}};
+  constexpr std::array<std::size_t, 3> expectedCommunityTriangles{{138, 80, 46}};
   for (std::size_t detailIndex = 0; detailIndex < details.size(); ++detailIndex) {
     const auto detail = details[detailIndex];
     const auto community =
@@ -697,6 +760,7 @@ int main() {
         triangles != expectedCommunityTriangles[detailIndex] ||
         triangles >= previousCommunityTriangles ||
         !CommunityColonyContract(community, detail) ||
+        !CommunityBranchContract(community, detail) ||
         bounds.extents.x < .78f || bounds.extents.z < .72f ||
         bounds.extents.x > 1.15f || bounds.extents.z > 1.15f ||
         bounds.center.y - bounds.extents.y < -1e-6f ||

@@ -371,6 +371,51 @@ void SplitLeafMossColonies(Mesh3D& mesh, Vec3 firstOffset, float firstYaw,
   }
 }
 
+void AppendFallenBranches(Mesh3D& mesh,
+                          GameplayForestGroundCoverDetail3D detail,
+                          std::uint32_t seed) {
+  // A small irregular set is shared by all LODs; lower LODs retain the first
+  // entries instead of redistributing the floor whenever the LOD changes.
+  constexpr std::array<float, 5> PositionAngles{{
+      .23f, 2.08f, 4.46f, 5.62f, 3.18f}};
+  constexpr std::array<float, 5> DirectionAngles{{
+      .37f, 1.49f, 3.92f, 5.31f, 2.68f}};
+  const auto count = GameplayForestGroundCoverBranchCount(detail);
+  const float phase = (UnitNoise(seed, 0u, 0x5b19u) - .5f) * .42f;
+  for (std::size_t item = 0; item < count; ++item) {
+    const float positionAngle = PositionAngles[item] + phase;
+    const float radius = .48f + UnitNoise(seed, static_cast<std::uint32_t>(item),
+                                          0x91d3u) * .24f;
+    const Vec3 centre{std::cos(positionAngle) * radius,
+                      .010f + UnitNoise(seed, static_cast<std::uint32_t>(item),
+                                         0xa761u) * .007f,
+                      std::sin(positionAngle) * radius};
+    const float yaw = DirectionAngles[item] + phase +
+                      (UnitNoise(seed, static_cast<std::uint32_t>(item),
+                                 0xc42bu) - .5f) * .12f;
+    const Vec3 direction{std::cos(yaw), 0, std::sin(yaw)};
+    const Vec3 side{-direction.z, 0, direction.x};
+    const float length = .27f +
+                         UnitNoise(seed, static_cast<std::uint32_t>(item),
+                                   0xe137u) * .17f;
+    const float rootHalfWidth = .0075f +
+        UnitNoise(seed, static_cast<std::uint32_t>(item), 0x247du) * .0055f;
+    const float tipHalfWidth = rootHalfWidth *
+        (.58f + UnitNoise(seed, static_cast<std::uint32_t>(item),
+                          0x73afu) * .20f);
+    const Vec3 root = centre - direction * (length * .5f);
+    Vec3 tip = centre + direction * (length * .5f);
+    tip.y += .004f + UnitNoise(seed, static_cast<std::uint32_t>(item),
+                               0xb529u) * .007f;
+    AppendCard(mesh,
+               {root - side * rootHalfWidth, root + side * rootHalfWidth,
+                tip + side * tipHalfWidth, tip - side * tipHalfWidth},
+               {.63f, .48f, .31f, 1.f}, false,
+               GameplayForestGroundCoverStemUv3D(
+                   GameplayForestGroundCoverAtlas3D::TreeSmall02));
+  }
+}
+
 } // namespace
 
 Mesh3D CreateGameplayForestGroundCoverMesh3D(
@@ -429,6 +474,9 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
                                                                : 1.12f;
   AppendTransformed(result, leafMoss, {.02f, 0, .02f}, .14f,
                     leafMossScale);
+  // Render-only debris stays inside this already submitted Community mesh:
+  // no descriptor, draw, resource, placement identity or collision is added.
+  AppendFallenBranches(result, detail, Mix(variationSeed ^ 0x6f21b8d3u));
   return result;
 }
 
