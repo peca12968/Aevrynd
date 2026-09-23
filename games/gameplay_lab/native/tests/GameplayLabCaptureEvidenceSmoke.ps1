@@ -358,8 +358,9 @@ $json=$row|ConvertTo-Json -Compress;[Console]::Out.WriteLine($json);if($env:AEVR
   }
   $sequence = [pscustomobject]@{ runId=$runId; captures=$sequenceCaptures }
   foreach($capture in $character.captures){Add-Member -InputObject $capture -NotePropertyName effectiveBuildingUnion -NotePropertyValue 0.0 -Force}
-  $descriptorKinds=@(0,1)+@(4)*30+@(2)*240+@(3)*186+@(5)*6
-  $referenceOpacity=[pscustomobject]@{runId=$runId;source='GameplayLabReferenceOpacity';buildingIdentitySource='GameplayShowcaseEnvironment3D.Descriptors';buildingIdentityDomain='3368770884265705473';buildingIdentityGeneration=1;descriptorKinds=$descriptorKinds;captures=@()}
+  $descriptorKinds=@(0,1)+@(4)*30+@(2)*240+@(3)*186+@(5)*6+@(5)
+  $descriptorMeshAssets=@('procedural/fixture')*464+@('procedural/forest-river-bridge')
+  $referenceOpacity=[pscustomobject]@{runId=$runId;source='GameplayLabReferenceOpacity';buildingIdentitySource='GameplayShowcaseEnvironment3D.Descriptors';buildingIdentityDomain='3368770884265705473';buildingIdentityGeneration=1;descriptorKinds=$descriptorKinds;descriptorMeshAssets=$descriptorMeshAssets;captures=@()}
   $buildingStableLows=@(Get-GameplayKindDerivedBuildingStableLows $referenceOpacity)
   $referenceOpacityCaptures=@();foreach($capture in $character.captures){
     $third=$capture.camera-eq'third';$parts=@();for($partIndex=0;$partIndex-lt6;++$partIndex){$parts+=[pscustomobject]@{stableLow=$buildingStableLows[$partIndex];requested=0;matched=0;missing=0;generationConflict=0;appliedOpacity=$null}}

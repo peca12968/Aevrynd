@@ -274,7 +274,20 @@ EnvironmentColliderDescriptor3D EnvironmentProxy(const ShowcaseSceneDescriptor3D
   case ShowcaseSceneKind3D::Terrain:result.center={source.position.x,-.5f,source.position.z};result.extents={(std::max)(1.f,source.scale.x*.5f),.5f,(std::max)(1.f,source.scale.z*.5f)};break;
   case ShowcaseSceneKind3D::Tree:{const float radius=Clamp(source.scale.y*.11f,.24f,.82f),halfHeight=(std::max)(1.f,source.scale.y*.45f);result.center=source.position+Vec3{0,halfHeight,0};result.extents={radius,halfHeight,radius};break;}
   case ShowcaseSceneKind3D::Rock:result.extents={(std::max)(.35f,source.scale.x*.5f),(std::max)(.3f,source.scale.y*.48f),(std::max)(.35f,source.scale.z*.5f)};result.center=source.position+Vec3{0,result.extents.y,0};break;
-  case ShowcaseSceneKind3D::Building:result.center=source.position;result.extents={(std::max)(.1f,source.scale.x*.5f),(std::max)(.1f,source.scale.y*.5f),(std::max)(.1f,source.scale.z*.5f)};break;
+  case ShowcaseSceneKind3D::Building:
+    if(source.meshAsset.find("forest-river-bridge")!=std::string::npos){
+      // 碰撞只代表可走橋面；扶手與橋墩是同 identity 的視覺細節，不能
+      // 把整座橋的高包圍盒變成阻擋玩家的實心牆。
+      result.center={source.position.x,source.position.y+.04f,source.position.z};
+      result.extents={(std::max)(.1f,source.scale.x*.5f),.18f,
+                      (std::max)(.1f,source.scale.z*.5f)};
+    }else{
+      result.center=source.position;
+      result.extents={(std::max)(.1f,source.scale.x*.5f),
+                      (std::max)(.1f,source.scale.y*.5f),
+                      (std::max)(.1f,source.scale.z*.5f)};
+    }
+    break;
   case ShowcaseSceneKind3D::Water:
   case ShowcaseSceneKind3D::Grass:result.center=source.position;result.extents={(std::max)(.05f,source.scale.x*.5f),(std::max)(.05f,source.scale.y*.5f),(std::max)(.05f,source.scale.z*.5f)};break;
   }return result;}
@@ -2129,7 +2142,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
     case ShowcaseSceneKind3D::Rock:
       submitted=showcaseRenderAssets_.SubmitProductionMesh(scene_,descriptor.meshAsset.find("boulder_01")!=std::string::npos?"boulder_01":"coastal_cliff_01",transform,renderIdentity,lodObjectIndex,&productionChains);break;
     case ShowcaseSceneKind3D::Building:
-      {const auto role=GameplayCottageBaseMaterialRole3D(descriptor.meshAsset);const bool roof=role==GameplayCottageMaterialRole3D::RoofTile;const auto* brickSource=showcaseRenderAssets_.ProductionMaterial("Bricks100");const auto* roofSource=showcaseRenderAssets_.ProductionMaterial("RoofingTiles014B");if(!brickSource||!roofSource||!showcaseWoodMaterial_.textures)break;auto material=role==GameplayCottageMaterialRole3D::Brick?*brickSource:role==GameplayCottageMaterialRole3D::RoofTile?*roofSource:showcaseWoodMaterial_;
+      {const bool forestBridge=descriptor.meshAsset.find("forest-river-bridge")!=std::string::npos;const auto role=GameplayCottageBaseMaterialRole3D(descriptor.meshAsset);const bool roof=role==GameplayCottageMaterialRole3D::RoofTile;const auto* brickSource=showcaseRenderAssets_.ProductionMaterial("Bricks100");const auto* roofSource=showcaseRenderAssets_.ProductionMaterial("RoofingTiles014B");if(!brickSource||!roofSource||!showcaseWoodMaterial_.textures)break;auto material=role==GameplayCottageMaterialRole3D::Brick?*brickSource:role==GameplayCottageMaterialRole3D::RoofTile?*roofSource:showcaseWoodMaterial_;
        // 分段牆網格以世界空間連續取樣 WoodSiding006；屋瓦只在坡面沿建好的 UV 取樣。
        // 材質回應只覆寫既有 PBR 參數；mesh、transform、identity 與 draw 路徑保持不變。
        if(!ApplyGameplayCottageMaterialResponse3D(material,role))break;
@@ -2137,6 +2150,56 @@ void GameplayLabGame::AddShowcaseEnvironment(){
           !ApplyGameplayCottageFoundationStoneResponse3D(material))break;
        const auto before=scene_.MeshCount();
        const MeshResource3D* mesh=&boxMesh_;if(descriptor.meshAsset.find("front")!=std::string::npos)mesh=&showcaseCottageFrontMesh_;else if(descriptor.meshAsset.find("back")!=std::string::npos)mesh=&showcaseCottageBackMesh_;else if(descriptor.meshAsset.find("left")!=std::string::npos||descriptor.meshAsset.find("right")!=std::string::npos)mesh=&showcaseCottageSideMesh_;else if(roof)mesh=&showcaseCottageRoofMesh_;scene_.Mesh(*mesh,transform,material,{},renderIdentity);
+       if(forestBridge){
+         auto bridgeWood=showcaseWoodMaterial_;
+         bridgeWood.tint={.50f,.29f,.13f,1.f};
+         bridgeWood.surface.roughness=.72f;
+         bridgeWood.surface.metallic=0.f;
+         bridgeWood.surface.emissive=0.f;
+         bridgeWood.textureScale=.20f;
+         bridgeWood.useUv=false;
+         const auto bridgeDrawsBefore=scene_.MeshCount();
+         // 十三片不完全等寬的木板打散整塊箱體輪廓，但保留連續碰撞面。
+         for(unsigned plank=0;plank<13;++plank){
+           const float fraction=(float(plank)+.5f)/13.f;
+           const float x=descriptor.position.x-descriptor.scale.x*.5f+
+                         fraction*descriptor.scale.x;
+           const float width=descriptor.scale.x/13.f*.90f+
+                             float((plank*7u)%5u)*.014f;
+           const float yawOffset=(int(plank%3u)-1)*.004f;
+           scene_.Mesh(boxMesh_,{{x,descriptor.position.y+.18f,
+                                  descriptor.position.z},{0,yawOffset,0},
+                                  {width,.08f,descriptor.scale.z-.12f}},
+                       bridgeWood,{},renderIdentity);
+         }
+         // 兩側扶手、立柱及水中橋墩共用正式 bridge identity；它們只
+         // 增加可見輪廓，不擴張 gameplay collider。
+         for(float side:{-1.f,1.f}){
+           const float z=descriptor.position.z+side*(descriptor.scale.z*.5f-.09f);
+           for(float y:{descriptor.position.y+.62f,descriptor.position.y+1.04f})
+             scene_.Mesh(boxMesh_,{{descriptor.position.x,y,z},{0,0,0},
+                                    {descriptor.scale.x,.11f,.11f}},
+                          bridgeWood,{},renderIdentity);
+           for(float fraction:{.025f,.2675f,.5f,.7325f,.975f}){
+             const float x=descriptor.position.x-descriptor.scale.x*.5f+
+                           fraction*descriptor.scale.x;
+             scene_.Mesh(boxMesh_,{{x,descriptor.position.y+.58f,z},{0,0,0},
+                                    {.15f,1.05f,.15f}},
+                          bridgeWood,{},renderIdentity);
+           }
+           for(float fraction:{.17f,.5f,.83f}){
+             const float x=descriptor.position.x-descriptor.scale.x*.5f+
+                           fraction*descriptor.scale.x;
+             scene_.Mesh(boxMesh_,{{x,descriptor.position.y-.29f,
+                                    descriptor.position.z+side*(descriptor.scale.z*.5f-.36f)},
+                                    {0,0,0},
+                                    {.32f,1.15f,.32f}},bridgeWood,{},renderIdentity);
+           }
+         }
+         constexpr std::size_t bridgeDetailDraws=33u;
+         if(scene_.MeshCount()!=bridgeDrawsBefore+bridgeDetailDraws)
+           throw std::runtime_error("Forest river bridge detail draw gate failed");
+       }
        auto glass=material;if(!ApplyGameplayCottageWindowResponse3D(glass,rules_.Lighting()))break;
        // 裝飾件使用已載入的 WoodSiding006，不再從基座或屋頂複製磚／瓦紋。
        auto wood=showcaseWoodMaterial_;wood.tint={.58f,.36f,.19f,1};wood.surface.roughness=.62f;wood.surface.metallic=0;wood.surface.emissive=.006f;wood.textureScale=.16f;wood.useUv=false;
@@ -2682,6 +2745,7 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     std::ofstream temporalOut(captureDirectory_/"gameplay-temporal-history-receipt.json",std::ios::trunc);temporalOut<<std::setprecision(std::numeric_limits<float>::max_digits10);temporalOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabTemporalHistory\",\"minimumWarmupFrames\":"<<GameplayTemporalCaptureWarmupFrames3D<<",\"captures\":[";for(std::size_t index=0;index<Names.size();++index){if(index)temporalOut<<',';temporalOut<<"{\"name\":\""<<std::filesystem::path(Names[index]).string()<<"\",\"historyReseedReasonMask\":"<<captureTemporalReseedReasonMask_[index]<<",\"historyWarmupFrames\":"<<captureTemporalWarmupFrames_[index]<<",\"historyGeneration\":"<<captureTemporalHistoryGeneration_[index]<<"}";}temporalOut<<"]}";temporalOut.close();
     std::ofstream referenceOpacityOut(captureDirectory_/"gameplay-reference-opacity-receipt.json",std::ios::trunc);referenceOpacityOut<<"{\"runId\":\""<<runId_<<"\",\"source\":\"GameplayLabReferenceOpacity\",\"buildingIdentitySource\":\"GameplayShowcaseEnvironment3D.Descriptors\",\"buildingIdentityDomain\":\""<<EnvironmentPartitionId<<"\",\"buildingIdentityGeneration\":1,\"descriptorKinds\":[";
     for(std::size_t descriptor=0;descriptor<showcaseEnvironment_.Descriptors().size();++descriptor){if(descriptor)referenceOpacityOut<<',';referenceOpacityOut<<unsigned(showcaseEnvironment_.Descriptors()[descriptor].kind);}
+    referenceOpacityOut<<"],\"descriptorMeshAssets\":[";for(std::size_t descriptor=0;descriptor<showcaseEnvironment_.Descriptors().size();++descriptor){if(descriptor)referenceOpacityOut<<',';referenceOpacityOut<<'\"'<<showcaseEnvironment_.Descriptors()[descriptor].meshAsset<<'\"';}
     referenceOpacityOut<<"],\"captures\":[";
     referenceOpacityOut<<std::setprecision(std::numeric_limits<float>::max_digits10);
     const auto buildingIdentities=BuildGameplayBuildingIdentities3D(showcaseEnvironment_.Descriptors(),EnvironmentPartitionId);

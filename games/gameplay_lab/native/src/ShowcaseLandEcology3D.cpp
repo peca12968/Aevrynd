@@ -253,7 +253,7 @@ bool ValidSettings(const ShowcaseLandEcologySettings3D &settings) noexcept {
 } // namespace
 
 bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
-  return fingerprint && placements == 512 && integratedDescriptors == placements + 8 &&
+  return fingerprint && placements == 512 && integratedDescriptors == placements + 9 &&
          descriptorCapacity >= integratedDescriptors &&
       trees == std::array<std::uint32_t, 3>{124, 92, 80} &&
       grass == std::array<std::uint32_t, 3>{116, 52, 18} &&

@@ -72,7 +72,7 @@ struct ShowcaseLandEcologySettings3D {
   float spawnExclusionRadius{9.f};
   Aevrynd::Vec3 cottageCenter{-12, 0, 24};
   Aevrynd::Vec3 cottageExclusionHalfExtent{11, 0, 9};
-  std::uint32_t fixedNonLandDescriptors{8};
+  std::uint32_t fixedNonLandDescriptors{9};
   std::uint32_t maximumIntegratedDescriptors{528};
   std::uint32_t candidateTrials{128};
   float riverbankRockMaximumClearance{9.f};

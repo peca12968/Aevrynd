@@ -621,12 +621,15 @@ function Assert-GameplayDepthFileReceipts([string]$Directory,$CharacterReceipt) 
 function Get-GameplayKindDerivedBuildingStableLows($Receipt) {
   if($Receipt.buildingIdentitySource-cne'GameplayShowcaseEnvironment3D.Descriptors'-or$Receipt.buildingIdentityDomain-cne'3368770884265705473'-or$Receipt.buildingIdentityGeneration-ne1){throw 'Building descriptor identity provenance failed'}
   $kinds=@($Receipt.descriptorKinds)
+  $meshes=@($Receipt.descriptorMeshAssets)
   if($kinds.Count-lt6-or$kinds.Count-gt528){throw 'Building descriptor capacity failed'}
+  if($meshes.Count-ne$kinds.Count){throw 'Building descriptor mesh provenance failed'}
   $result=@()
   for($index=0;$index-lt$kinds.Count;++$index){
     $kind=$kinds[$index]
     if($kind-is[string]-or$kind-is[bool]-or$null-eq$kind-or[double]$kind-ne[math]::Truncate([double]$kind)-or$kind-lt0-or$kind-gt5){throw 'Building descriptor kind invalid'}
-    if($kind-eq5){$result+=([uint64]$index+1)}
+    if($meshes[$index]-isnot[string]-or[string]::IsNullOrWhiteSpace([string]$meshes[$index])){throw 'Building descriptor mesh invalid'}
+    if($kind-eq5-and$meshes[$index]-cne'procedural/forest-river-bridge'){$result+=([uint64]$index+1)}
   }
   if($result.Count-ne6-or@($result|Select-Object -Unique).Count-ne6){throw 'Building descriptor set incomplete or duplicated'}
   return $result

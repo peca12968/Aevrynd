@@ -10,6 +10,7 @@ int main() {
     descriptors[1].kind=ShowcaseSceneKind3D::Water;
     for(std::size_t i=2;i<descriptors.size();++i)descriptors[i].kind=ShowcaseSceneKind3D::Tree;
     for(unsigned i=0;i<6;++i){ShowcaseSceneDescriptor3D building{};building.kind=ShowcaseSceneKind3D::Building;descriptors.push_back(building);}
+    ShowcaseSceneDescriptor3D bridge{};bridge.kind=ShowcaseSceneKind3D::Building;bridge.meshAsset="procedural/forest-river-bridge";descriptors.push_back(bridge);
     const auto identities=BuildGameplayBuildingIdentities3D(descriptors,domain);
     for(std::size_t part=0;part<identities.size();++part){
       const auto identity=identities[part];
@@ -21,6 +22,7 @@ int main() {
       wrong=identity;wrong.id.high++;if(GameplayBuildingPart3D(identities,wrong)!=6)return 4;
     }
     if(GameplayBuildingPart3D(identities,{{domain,3},1})!=6)return 5;
+    if(GameplayBuildingPart3D(identities,{{domain,descriptors.size()},1})!=6)return 10;
   }
   std::vector<ShowcaseSceneDescriptor3D> mixed(12);
   for(std::size_t i=0;i<mixed.size();++i)mixed[i].kind=i%2?ShowcaseSceneKind3D::Building:ShowcaseSceneKind3D::Tree;

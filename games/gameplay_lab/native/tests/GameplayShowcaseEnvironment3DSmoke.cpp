@@ -166,7 +166,7 @@ bool TreeMotherAngularDistributionContract(
 bool TreeFormVariationContract(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
-  if (descriptors.size() != placements.size() + 8u) return false;
+  if (descriptors.size() != placements.size() + 9u) return false;
   std::array<std::array<float, 2>, 3> heightRange{{
       {{(std::numeric_limits<float>::max)(), 0.f}},
       {{(std::numeric_limits<float>::max)(), 0.f}},
@@ -230,7 +230,7 @@ bool TreeFormVariationContract(
 bool UnderstoryFormVariationContract(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
-  if (descriptors.size() != placements.size() + 8u) {
+  if (descriptors.size() != placements.size() + 9u) {
     std::cerr << "UNDERSTORY_DESCRIPTOR_COUNT " << descriptors.size() << '/'
               << placements.size() << '\n';
     return false;
@@ -477,7 +477,7 @@ float SubmittedUnderstoryWalkingClearance3D(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors,
     const UnderstoryHighDetailBounds3D &bounds) {
-  if (descriptors.size() != placements.size() + 8u) return -1.f;
+  if (descriptors.size() != placements.size() + 9u) return -1.f;
   float clearance = (std::numeric_limits<float>::max)();
   for (std::size_t index = 0; index < placements.size(); ++index) {
     if (placements[index].kind != ShowcaseLandKind3D::Grass) continue;
@@ -499,7 +499,7 @@ bool FixedViewUnderstoryFootprintProxyContract(
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors,
     std::span<const Camera3D> cameras,
     const UnderstoryHighDetailBounds3D &meshBoundsByVariant) {
-  if (descriptors.size() != placements.size() + 8u || cameras.size() != 2u)
+  if (descriptors.size() != placements.size() + 9u || cameras.size() != 2u)
     return false;
   const auto distanceToWalkingLane = [](Vec3 point) {
     return SampleShowcaseHeroTrail3D(point).distance;
@@ -616,7 +616,7 @@ bool FixedViewUnderstoryFootprintProxyContract(
 bool ForestMidgroundLayerContract(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors) {
-  if (descriptors.size() != placements.size() + 8u) return false;
+  if (descriptors.size() != placements.size() + 9u) return false;
   std::array<float, 2> sourceCanopy{}, submittedCanopy{};
   std::array<float, 2> sourceUnderstory{}, submittedUnderstory{};
   std::array<unsigned, 2> livingTrees{}, shrubs{};
@@ -688,7 +688,7 @@ bool FixedViewForestDepthContract(
     const std::vector<ShowcaseLandPlacement3D> &placements,
     const std::vector<ShowcaseSceneDescriptor3D> &descriptors,
     std::span<const Camera3D> cameras) {
-  if (descriptors.size() != placements.size() + 8u || cameras.size() != 3u)
+  if (descriptors.size() != placements.size() + 9u || cameras.size() != 3u)
     return false;
   constexpr std::array<float, 3> projectedHeightAggregateLimit{
       14.70f, 13.55f, 13.50f};
@@ -1904,13 +1904,24 @@ int main() {
       std::string_view{"procedural/cottage-foundation"}, std::string_view{"procedural/cottage-front"},
       std::string_view{"procedural/cottage-back"}, std::string_view{"procedural/cottage-left"},
       std::string_view{"procedural/cottage-right"}, std::string_view{"procedural/cottage-pitched-roof"}};
-  if(first.Descriptors().size()!=520)return 100;
+  if(first.Descriptors().size()!=521)return 100;
   for(std::size_t cottageIndex=0;cottageIndex<expectedCottageMaterials.size();++cottageIndex){
     const auto& descriptor=first.Descriptors()[514u+cottageIndex];
     if(descriptor.kind!=ShowcaseSceneKind3D::Building||descriptor.meshAsset!=expectedCottageMeshes[cottageIndex]||
        descriptor.materialAsset!=expectedCottageMaterials[cottageIndex]||
        GameplayCottageDescriptorMaterialAsset3D(GameplayCottageBaseMaterialRole3D(descriptor.meshAsset))!=descriptor.materialAsset)return 101;
   }
+  const auto &bridge = first.Descriptors()[520u];
+  if (bridge.kind != ShowcaseSceneKind3D::Building ||
+      bridge.meshAsset != "procedural/forest-river-bridge" ||
+      bridge.materialAsset != "ambientcg/WoodSiding006/material-pbr" ||
+      std::abs(bridge.position.x + 8.2f) > .0001f ||
+      std::abs(bridge.position.y - .14f) > .0001f ||
+      std::abs(bridge.position.z + 24.f) > .0001f ||
+      std::abs(bridge.scale.x - 15.f) > .0001f ||
+      std::abs(bridge.scale.y - .28f) > .0001f ||
+      std::abs(bridge.scale.z - 2.8f) > .0001f || !bridge.castsShadow)
+    return 113;
   // 精確負載不能只與可同時退回舊值的 Targets 比較，否則舊荒地統計會假通過。
   const auto healthyForestLoad = [](const ShowcaseEnvironmentReceipt3D &value) {
     return value.trees == 296 && value.grass == 186 && value.rocks == 30 &&
@@ -1977,7 +1988,7 @@ int main() {
   if (receipt.worldHash == 0 || receipt.worldHash != repeated.worldHash ||
       receipt.terrain != 1 || receipt.water != 1 ||
       receipt.vegetation != 482 || receipt.rocks != 30 ||
-      receipt.buildings != 6 || receipt.trees != targets.treeInstances ||
+      receipt.buildings != 7 || receipt.trees != targets.treeInstances ||
       receipt.grass != targets.grassInstances ||
       receipt.nearVegetation != targets.nearVegetation ||
       receipt.midVegetation != targets.midVegetation ||
@@ -1992,7 +2003,7 @@ int main() {
       receipt.riverStripSlices != 64 || receipt.riverStripVertices != 130 ||
       receipt.riverStripIndices != 384 || !receipt.riverUvMonotonic ||
       receipt.riverMaximumJoinError > 0.00001f ||
-      receipt.integratedDescriptors != 520 || receipt.descriptorCapacity != 528 ||
+      receipt.integratedDescriptors != 521 || receipt.descriptorCapacity != 528 ||
       receipt.retainedDescriptorBytes == 0 || !receipt.landFingerprint ||
       !receipt.terrainZoneFingerprint ||
       receipt.terrainZoneFingerprint != repeated.terrainZoneFingerprint ||

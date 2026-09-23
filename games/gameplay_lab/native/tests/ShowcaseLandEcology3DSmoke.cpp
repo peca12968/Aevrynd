@@ -647,7 +647,7 @@ int main() {
     }
   }
 
-  if (receipt.placements != 512 || receipt.integratedDescriptors != 520 ||
+  if (receipt.placements != 512 || receipt.integratedDescriptors != 521 ||
       receipt.descriptorCapacity != 528 ||
       receipt.trees != std::array<std::uint32_t, 3>{124, 92, 80} ||
       receipt.grass != std::array<std::uint32_t, 3>{116, 52, 18} ||

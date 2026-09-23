@@ -1149,7 +1149,7 @@ struct ShowcaseEnvironmentReceipt3D {
 
 struct ShowcaseSceneTargets3D {
   std::size_t terrainPatches{1}, waterSegments{1}, treeInstances{296},
-      grassInstances{186}, rockInstances{30}, buildingComponents{6};
+      grassInstances{186}, rockInstances{30}, buildingComponents{7};
   // 植被僅含樹與草；含岩石的陸地分帶另為 252／156／104。
   std::size_t nearVegetation{240}, midVegetation{144}, farVegetation{98};
   float terrainSpanMeters{512.f}, riverLengthMeters{272.f},

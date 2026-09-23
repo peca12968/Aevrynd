@@ -342,7 +342,7 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
     return false;
 
   std::vector<ShowcaseSceneDescriptor3D> candidate;
-  candidate.reserve(520);
+  candidate.reserve(521);
   candidate.push_back({ShowcaseSceneKind3D::Terrain,
                        {0, 0, 0},
                        {512, 48, 512},
@@ -431,6 +431,18 @@ bool GameplayShowcaseEnvironment3D::Initialize(std::uint64_t seed) {
                                         : index == 5 ? GameplayCottageMaterialRole3D::RoofTile
                                                      : GameplayCottageMaterialRole3D::WoodSiding))});
 
+  // 讓出生區不再被河流切成只能觀賞的半張地圖。單一橋面 descriptor
+  // 擁有正式碰撞與穩定 identity；木板、扶手和橋墩由同一 identity 的
+  // render-only 細節建立，避免為裝飾件製造虛假的 gameplay 物件。
+  candidate.push_back({ShowcaseSceneKind3D::Building,
+                       {-8.2f, .14f, -24.f},
+                       {15.f, .28f, 2.8f},
+                       0.f,
+                       0,
+                       true,
+                       "procedural/forest-river-bridge",
+                       "ambientcg/WoodSiding006/material-pbr"});
+
   descriptors_.swap(candidate);
   // 林地河水使用低鐵土溪流的 Beer-Lambert 吸收：紅光仍最快衰減，
   // 但三通道差距受限，深水散射也維持低能量，避免固定青色源項主宰畫面。
@@ -472,6 +484,10 @@ ShowcaseCameraVisibility3D GameplayShowcaseEnvironment3D::EvaluateCameraVisibili
       for(unsigned slice=0;slice<slices;++slice){const float z=-length*.5f+(float(slice)+.5f)*step;ShowcaseSceneDescriptor3D cell=descriptor;cell.position={RiverCenterX(z),descriptor.position.y,z};cell.scale={RiverWidth(z),descriptor.scale.y,step*1.02f};cell.yaw=std::atan(RiverCenterX(z+.5f)-RiverCenterX(z-.5f));const auto cellBounds=ProjectDescriptorBounds(cell,camera,viewport);if(cellBounds.visibleCorners){++result.visibleRiverSegments;result.riverCoverage+=ProjectedCoverage(cellBounds,viewport);}}
       continue;
     }
+    // 固定鏡頭的 building 合約量測木屋六個結構件；橋樑是可見世界
+    // 地標，但不可擴張 cottage union 來放寬既有構圖門檻。
+    if(descriptor.meshAsset.find("forest-river-bridge")!=std::string::npos)
+      continue;
     const auto bounds = ProjectDescriptorBounds(descriptor, camera, viewport);
     if (!bounds.visibleCorners)
       continue;

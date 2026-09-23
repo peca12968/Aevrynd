@@ -364,7 +364,9 @@ struct GameplayGodCoarseEvidence3D {
         ++result.visibleWorldDescriptors;
         if(descriptor.kind==ShowcaseSceneKind3D::Tree)++result.visibleTreeDescriptors;
         if(descriptor.kind==ShowcaseSceneKind3D::Water)result.riverVisible=true;
-        else if(descriptor.kind==ShowcaseSceneKind3D::Building)++result.visibleBuildingComponents;
+        else if(descriptor.kind==ShowcaseSceneKind3D::Building&&
+                descriptor.meshAsset.find("forest-river-bridge")==std::string::npos)
+          ++result.visibleBuildingComponents;
         else if(descriptor.kind==ShowcaseSceneKind3D::Grass){const auto selection=Aevrynd::EvaluateMeshLod3D(Aevrynd::Length(bounds.center-camera.position),bounds.radius,ShowcaseGrassLodPolicy3D());result.lodTransitions+=selection.submitNear&&selection.submitFar?1u:0u;}
     }
     return result;
@@ -391,6 +393,9 @@ struct GameplayGodCoarseEvidence3D {
         if(descriptor.kind==ShowcaseSceneKind3D::Tree&&visible)++result.visibleTreeDescriptors;
         if(descriptor.kind==ShowcaseSceneKind3D::Grass){if(!visible)continue;const auto selection=Aevrynd::EvaluateMeshLod3D(Aevrynd::Length(bounds.center-camera.position),bounds.radius,ShowcaseGrassLodPolicy3D());result.lodTransitions+=selection.submitNear&&selection.submitFar?1u:0u;continue;}
         if(descriptor.kind!=ShowcaseSceneKind3D::Tree&&descriptor.kind!=ShowcaseSceneKind3D::Water&&descriptor.kind!=ShowcaseSceneKind3D::Building)continue;
+        if(descriptor.kind==ShowcaseSceneKind3D::Building&&
+           descriptor.meshAsset.find("forest-river-bridge")!=std::string::npos)
+          continue;
         GameplayOccluderMask3D mask{};auto rasterExtents=bounds.extents;
         // 水面是零厚度的正式三角形網格；以極小數值厚度避免盒狀光柵器丟失可見面積。
         if(descriptor.kind==ShowcaseSceneKind3D::Water)rasterExtents.y=(std::max)(rasterExtents.y,.001f);
