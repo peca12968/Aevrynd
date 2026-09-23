@@ -19,8 +19,102 @@ function Get-MarkedBlock([string]$Source, [string]$Begin, [string]$End) {
 }
 
 $windowDetail = Get-MarkedBlock $game 'R100_COTTAGE_WINDOW_DETAIL_BEGIN' 'R100_COTTAGE_WINDOW_DETAIL_END'
+$guideRender = Get-MarkedBlock $game 'R101_FOREST_GUIDE_LIGHT_RENDER_BEGIN' 'R101_FOREST_GUIDE_LIGHT_RENDER_END'
+$guideLighting = Get-MarkedBlock $environment 'R101_FOREST_GUIDE_LIGHT_LIGHTING_BEGIN' 'R101_FOREST_GUIDE_LIGHT_LIGHTING_END'
 $frontage = Get-MarkedBlock $game 'R60_COTTAGE_FRONTAGE_BEGIN' 'R60_COTTAGE_FRONTAGE_END'
 $life = Get-MarkedBlock $game 'R34_COTTAGE_LIFE_BEGIN' 'R34_COTTAGE_LIFE_END'
+
+# Five fixed shoulder markers lead from the west bridgehead across the
+# clearing to the cottage approach. Render and light submissions must share
+# these positions so the warm light comes from the visible fixtures.
+$guidePositions = [regex]::Match($header,
+  '(?s)inline\s+constexpr\s+std::array<Aevrynd::Vec3,\s*5>\s+GameplayForestGuideLightPositions3D\s*\{\{(?<entries>.*?)\}\}\s*;')
+if (-not $guidePositions.Success) { throw 'missing shared five-position forest guide light contract' }
+$coordinatePattern = '\{\s*(?<x>-?(?:\d+(?:\.\d*)?|\.\d+))f\s*,\s*(?<y>-?(?:\d+(?:\.\d*)?|\.\d+))f\s*,\s*(?<z>-?(?:\d+(?:\.\d*)?|\.\d+))f\s*\}'
+$coordinateMatches = [regex]::Matches($guidePositions.Groups['entries'].Value, $coordinatePattern)
+if ($coordinateMatches.Count -ne 5) { throw 'guide light positions must be five fixed Vec3 literals' }
+$previousZ = [double]::NegativeInfinity
+$previousSide = 0
+for ($index = 0; $index -lt 5; ++$index) {
+  $point = $coordinateMatches[$index]
+  $x = [double]::Parse($point.Groups['x'].Value, [Globalization.CultureInfo]::InvariantCulture)
+  $y = [double]::Parse($point.Groups['y'].Value, [Globalization.CultureInfo]::InvariantCulture)
+  $z = [double]::Parse($point.Groups['z'].Value, [Globalization.CultureInfo]::InvariantCulture)
+  if ($x -lt -12.5 -or $x -gt -8.0 -or $y -lt 0 -or $y -gt 1.2 -or $z -le $previousZ) {
+    throw "guide light $index left the low bridge-to-cottage sequence"
+  }
+  $centerX = -9.85 + (-2.15 * (($z - 14.0) / 5.7))
+  $offset = $x - $centerX
+  $side = [Math]::Sign($offset)
+  if ([Math]::Abs($offset) -lt .15 -or ($index -gt 0 -and $side -eq $previousSide)) {
+    throw "guide light $index lost alternating trail-shoulder clearance"
+  }
+  $previousZ = $z
+  $previousSide = $side
+}
+if ($coordinateMatches[0].Groups['z'].Value -notmatch '^(?:13|14|15)\.' -or
+    $previousZ -lt 18.5 -or $previousZ -gt 20) {
+  throw 'guide lights no longer span bridgehead to cottage approach'
+}
+
+$guideRenderCode = [regex]::Replace($guideRender, '(?m)//[^\r\n]*', '')
+$guideLightingCode = [regex]::Replace($guideLighting, '(?m)//[^\r\n]*', '')
+$guideIdentityHigh = [regex]::Match($header,
+  'inline\s+constexpr\s+std::uint64_t\s+GameplayForestGuideLightIdentityHigh3D\s*=\s*0x(?<hex>[0-9a-fA-F]+)ull\s*;')
+if (-not $guideIdentityHigh.Success -or $guideIdentityHigh.Groups['hex'].Value -match '^0+$') {
+  throw 'guide fixtures lost their independent stable identity domain'
+}
+foreach ($block in @($guideRenderCode, $guideLightingCode)) {
+  if ($block -notmatch '\bGameplayForestGuideLightPositions3D\b') {
+    throw 'guide render and lighting must share the fixed positions'
+  }
+  if ($block -match '(?i)physics_|collider|CreateMesh|CreateTexture|CreateMaterial|\.textures\b|textureAsset|materialAsset|\bdescriptor\s*(?:\.|->|\[)|\b(?:push_back|emplace_back)\s*\(|SetExposure|\bcamera_\b|SetCamera') {
+    throw "guide light detail gained gameplay, asset, exposure, or camera state: $($Matches[0])"
+  }
+}
+if ($guideRenderCode -notmatch 'RenderObjectIdentity3D\s+guideLightIdentity\s*\{' -or
+    $guideRenderCode -match '\brenderIdentity\b' -or
+    $guideRenderCode -notmatch '\bguideLightIdentity\b' -or
+    $guideRenderCode -notmatch '\bGameplayForestGuideLightIdentityHigh3D\b' -or
+    $guideRenderCode -notmatch 'for\s*\([^)]*GameplayForestGuideLightPositions3D' -or
+    $guideRenderCode -notmatch '\b(?:index|lampIndex|i)\s*\+\s*1u?\b' -or
+    [regex]::Matches($guideRenderCode, 'scene_\.Mesh\s*\(').Count -ne 3 -or
+    [regex]::Matches($guideRenderCode, '\{\s*\}\s*,\s*guideLightIdentity\s*\)').Count -ne 3 -or
+    $guideRenderCode -notmatch '\bboxMesh_\b|\bshowcaseCylinderMesh_\b') {
+  throw 'guide fixtures lost resident geometry or independent stable render identity'
+}
+if ($guideRenderCode -notmatch 'scene_\.MeshCount\s*\(\s*\)\s*!=\s*\w+\s*\+\s*3u?\b' -or
+    $guideRenderCode -notmatch 'scene_\.MeshCount\s*\(\s*\)\s*!=\s*\w+\s*\+\s*15u?\b') {
+  throw 'guide fixtures must draw exactly three pieces each and fifteen total'
+}
+$radius = [regex]::Match($guideLightingCode, 'constexpr\s+float\s+guideLightRadius\s*=\s*(?<value>\d*\.?\d+)f\s*;')
+$intensity = [regex]::Match($guideLightingCode, 'constexpr\s+float\s+guideLightIntensity\s*=\s*(?<value>\d*\.?\d+)f\s*;')
+if (-not $radius.Success -or -not $intensity.Success) { throw 'missing bounded guide light radius/intensity' }
+$radiusValue = [double]::Parse($radius.Groups['value'].Value, [Globalization.CultureInfo]::InvariantCulture)
+$intensityValue = [double]::Parse($intensity.Groups['value'].Value, [Globalization.CultureInfo]::InvariantCulture)
+if ($radiusValue -le 0 -or $radiusValue -gt 4.5 -or $intensityValue -le 0 -or $intensityValue -ge 2.3) {
+  throw 'guide light energy/radius must stay below the cottage main lamp'
+}
+$lightingMarkerIndex = $environment.IndexOf('R101_FOREST_GUIDE_LIGHT_LIGHTING_BEGIN', [StringComparison]::Ordinal)
+$lightingPrelude = $environment.Substring(0, $lightingMarkerIndex)
+$guardMatches = [regex]::Matches($lightingPrelude,
+  'if\s*\(\s*profile\s*!=\s*ShowcaseLightingProfile3D::Day\s*\)\s*\{')
+$outerDayGuard = $false
+if ($guardMatches.Count -gt 0) {
+  $afterGuard = $lightingPrelude.Substring($guardMatches[$guardMatches.Count - 1].Index)
+  $outerDayGuard = $afterGuard -notmatch '(?m)^  \}'
+}
+$dayGuarded = $guideLightingCode -match 'profile\s*!=\s*ShowcaseLightingProfile3D::Day' -or $outerDayGuard
+if (-not $dayGuarded -or
+    $guideLightingCode -notmatch 'for\s*\([^)]*GameplayForestGuideLightPositions3D' -or
+    [regex]::Matches($guideLightingCode, 'draw\.AddPointLight\s*\(').Count -ne 1 -or
+    $guideLightingCode -notmatch '\bguideLightRadius\b' -or
+    $guideLightingCode -notmatch '\bguideLightIntensity\s*\*\s*night\b') {
+  throw 'guide lighting must add exactly five bounded lights at Dusk/Night and none at Day'
+}
+if ($guideLightingCode -notmatch '\{\s*1\.f\s*,\s*\.(?:[5-8]\d*|[5-8])f\s*,\s*\.(?:[1-4]\d*|[1-4])f\s*,\s*1\.f\s*\}') {
+  throw 'guide lights lost their bounded warm RGB color'
+}
 
 # All six existing windows receive two substantial shutter leaves and one
 # outward sill/drip board. The helpers submit only resident box meshes under
@@ -158,4 +252,4 @@ foreach ($part in $parts) {
   if ($overlapsX -and $overlapsY) { throw 'frontage obstructs the door passage' }
 }
 
-Write-Host 'Gameplay cottage frontage: 6 descriptors, 6 windows/+18 render-only details, inherited identity/material, no collision/assets, 12 moved life props, lantern clearance, and door passage passed'
+Write-Host 'Gameplay cottage frontage: 6 descriptors, 6 windows/+18 details, 5 guide lamps/+15 geometry and dusk/night lights, inherited materials, no collision/assets, 12 moved life props, lantern clearance, and door passage passed'

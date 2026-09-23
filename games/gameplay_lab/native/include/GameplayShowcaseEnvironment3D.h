@@ -22,6 +22,13 @@ namespace GameplayLab {
 enum class ShowcaseLightingProfile3D : std::uint8_t { Day, Dusk, Night };
 inline constexpr Aevrynd::Vec3 GameplayCottagePorchLanternCenter3D{
     -12.f, 2.45f, 19.70f};
+inline constexpr std::uint64_t GameplayForestGuideLightIdentityHigh3D =
+    0xaec0474c414d5001ull;
+inline constexpr std::array<Aevrynd::Vec3, 5>
+    GameplayForestGuideLightPositions3D{{
+        {-8.45f, .86f, 14.65f}, {-11.25f, .86f, 15.75f},
+        {-8.95f, .86f, 16.85f}, {-11.55f, .86f, 17.95f},
+        {-9.65f, .86f, 19.05f}}};
 enum class ShowcaseSceneKind3D : std::uint8_t {
   Terrain,
   Water,

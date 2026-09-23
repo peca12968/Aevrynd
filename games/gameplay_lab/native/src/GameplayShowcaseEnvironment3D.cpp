@@ -670,6 +670,15 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
                         {1.f, .72f, .38f, 1.f}, 2.35f * night});
     draw.AddPointLight({{-9.45f, 2.25f, 19.75f}, 7.5f,
                         {1.f, .72f, .38f, 1.f}, 2.35f * night});
+    // R101_FOREST_GUIDE_LIGHT_LIGHTING_BEGIN
+    // The trail practicals remain subordinate to the cottage sources: their
+    // short radius creates separated pools instead of lifting global exposure.
+    constexpr float guideLightRadius=4.2f;
+    constexpr float guideLightIntensity=1.05f;
+    for(const auto position:GameplayForestGuideLightPositions3D)
+      draw.AddPointLight({position,guideLightRadius,
+                          {1.f,.58f,.24f,1.f},guideLightIntensity*night});
+    // R101_FOREST_GUIDE_LIGHT_LIGHTING_END
   }
   const float heightFogDensity =
       profile == ShowcaseLightingProfile3D::Day

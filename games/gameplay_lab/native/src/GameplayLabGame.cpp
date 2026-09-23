@@ -2428,6 +2428,43 @@ void GameplayLabGame::AddShowcaseEnvironment(){
       }
     }
   }
+  // R101_FOREST_GUIDE_LIGHT_RENDER_BEGIN
+  // A low, alternating row of practical fixtures visually connects the west
+  // bridge landing to the cottage.  They are render-only: the walking lane,
+  // terrain collision and environment descriptor set remain authoritative.
+  auto guideLightMetal=showcaseWoodMaterial_;
+  guideLightMetal.tint={.055f,.048f,.040f,1.f};
+  guideLightMetal.surface={.24f,.82f,.02f,1.f};
+  guideLightMetal.textureScale=1.f;
+  guideLightMetal.normalScale=0.f;
+  guideLightMetal.useUv=false;
+  auto guideLightGlow=guideLightMetal;
+  guideLightGlow.tint={1.f,.48f,.14f,1.f};
+  guideLightGlow.surface={.10f,.08f,
+      rules_.Lighting()==LightingPhase::Day?0.f:
+      rules_.Lighting()==LightingPhase::Dusk?.18f:.62f,.88f};
+  guideLightGlow.castsShadow=false;
+  const auto guideLightTotalDrawsBefore=scene_.MeshCount();
+  for(std::size_t index=0;index<GameplayForestGuideLightPositions3D.size();++index){
+    const Vec3 light=GameplayForestGuideLightPositions3D[index];
+    const RenderObjectIdentity3D guideLightIdentity{
+        {GameplayForestGuideLightIdentityHigh3D,index+1u},1};
+    const auto guideLightDrawsBefore=scene_.MeshCount();
+    scene_.Mesh(showcaseCylinderMesh_,
+        {{light.x,.40f,light.z},{0,0,0},{.12f,.72f,.12f}},
+        guideLightMetal,{},guideLightIdentity);
+    scene_.Mesh(boxMesh_,
+        {{light.x,light.y+.16f,light.z},{0,0,0},{.34f,.10f,.34f}},
+        guideLightMetal,{},guideLightIdentity);
+    scene_.Mesh(boxMesh_,
+        {{light.x,light.y,light.z},{0,0,0},{.22f,.24f,.22f}},
+        guideLightGlow,{},guideLightIdentity);
+    if(scene_.MeshCount()!=guideLightDrawsBefore+3u)
+      throw std::runtime_error("Forest guide light draw count gate failed");
+  }
+  if(scene_.MeshCount()!=guideLightTotalDrawsBefore+15u)
+    throw std::runtime_error("Forest guide light total draw count gate failed");
+  // R101_FOREST_GUIDE_LIGHT_RENDER_END
 }
 bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
   if(captureDirectory_.empty())return false;

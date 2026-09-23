@@ -890,7 +890,10 @@ bool NightForestReadable(const ShowcaseLightingState3D &state,
 
 bool NightCabinHighlightsBalanced(const std::vector<PointLight3D> &dusk,
                                   const std::vector<PointLight3D> &night) {
-  if (dusk.size() != 3 || night.size() != dusk.size())
+  constexpr std::size_t cottageLightCount = 3u;
+  constexpr float guideLightRadius = 4.2f;
+  if (dusk.size() != cottageLightCount + GameplayForestGuideLightPositions3D.size() ||
+      night.size() != dusk.size())
     return false;
   if (dusk[0].position.x != GameplayCottagePorchLanternCenter3D.x ||
       dusk[0].position.y != GameplayCottagePorchLanternCenter3D.y ||
@@ -908,6 +911,18 @@ bool NightCabinHighlightsBalanced(const std::vector<PointLight3D> &dusk,
       return false;
     duskIntensity += dusk[index].intensity;
     nightIntensity += night[index].intensity;
+  }
+  for (std::size_t index = 0;
+       index < GameplayForestGuideLightPositions3D.size(); ++index) {
+    const auto lightIndex = cottageLightCount + index;
+    const auto &position = GameplayForestGuideLightPositions3D[index];
+    if (dusk[lightIndex].position.x != position.x ||
+        dusk[lightIndex].position.y != position.y ||
+        dusk[lightIndex].position.z != position.z ||
+        dusk[lightIndex].radius != guideLightRadius ||
+        dusk[lightIndex].intensity <= 0.f ||
+        dusk[lightIndex].intensity >= dusk[0].intensity)
+      return false;
   }
   return nightIntensity >= duskIntensity * 2.1f &&
          nightIntensity <= duskIntensity * 2.4f;
