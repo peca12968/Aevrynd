@@ -342,6 +342,9 @@ bool BuildShowcaseLandEcology3D(
         const bool pathShoulderSingleton =
             kind == ShowcaseLandKind3D::Grass && band == 0 &&
             zone != ShowcaseLandZone3D::Riverbank && item == 73u;
+        const bool entryPathShoulderSingleton =
+            kind == ShowcaseLandKind3D::Grass && band == 0 &&
+            zone != ShowcaseLandZone3D::Riverbank && item == 110u;
         const auto forestEdgeRockIterator =
             std::ranges::find(HeroForestEdgeRockOrdinals, ordinal);
         const bool heroForestEdgeRock =
@@ -458,7 +461,7 @@ bool BuildShowcaseLandEcology3D(
             // These two authored shoulder groups frame spawn and the porch,
             // while the entry leg remains naturally wooded.  Values are full
             // trail arc-length fractions, not the former short-line fraction.
-            const float laneT = .48f + float(communityIndex) * .24f +
+            const float laneT = .30f + float(communityIndex) * .25f +
                                 (grassType == 2u ? .035f : 0.f);
             const auto frame = SampleShowcaseHeroTrailFrame3D(laneT);
             const float tangentX = frame.tangent.x;
@@ -480,6 +483,24 @@ bool BuildShowcaseLandEcology3D(
                 frame.position.z +
                     tangentZ * alongJitter + normalZ * side *
                     (shoulderOffset + outwardJitter)};
+            if (item == 14u) {
+              const float trialFraction =
+                  float(trial) /
+                  float((std::max)(1u, boundedTrials - 1u));
+              const auto searchFrame = SampleShowcaseHeroTrailFrame3D(
+                  .45f + .15f * trialFraction);
+              const float searchNormalX = -searchFrame.tangent.z;
+              const float searchNormalZ = searchFrame.tangent.x;
+              const float searchSide = (trial & 1u) ? -1.f : 1.f;
+              const float searchDistance =
+                  4.f + .8f * std::fmod(float(trial) * .618033989f, 1.f);
+              candidate = {
+                  searchFrame.position.x +
+                      searchNormalX * searchSide * searchDistance,
+                  0,
+                  searchFrame.position.z +
+                      searchNormalZ * searchSide * searchDistance};
+            }
           }
           // 每個非河岸地被母叢直接取同距離帶活樹作錨點；子叢沿用母叢，
           // 形成可見的林下島狀覆蓋。Near 僅選英雄 ROI 內側樹，維持角色安全圈。
@@ -550,10 +571,10 @@ bool BuildShowcaseLandEcology3D(
               const float tangentZ=frame.tangent.z;
               const float normalX=-tangentZ,normalZ=tangentX;
               const float side=trail.signedSide>=0.f?1.f:-1.f;
-              constexpr std::array<float,3> pathAlong{{-1.35f,.80f,2.08f}};
+              constexpr std::array<float,3> pathAlong{{-2.25f,.80f,2.08f}};
               constexpr std::array<float,3> pathBow{{-.10f,.20f,.40f}};
               const std::uint32_t childIndex=(item%12u)/3u-1u;
-              const float jitter=(communityFraction-.5f)*.25f;
+              const float jitter=(communityFraction-.5f)*1.2f;
               candidate={center.x+tangentX*(pathAlong[childIndex]+jitter)+
                                    normalX*side*(pathBow[childIndex]+std::abs(jitter)*.2f),0,
                          center.z+tangentZ*(pathAlong[childIndex]+jitter)+
@@ -584,18 +605,38 @@ bool BuildShowcaseLandEcology3D(
                          center.z+radialDirectionZ*childRadius};
             }
           }
-          if (pathShoulderSingleton) {
-            const auto frame = SampleShowcaseHeroTrailFrame3D(.64f);
+          if (pathShoulderCommunity && (item == 20u || item == 23u)) {
+            const auto center = grassCenters[item % 3u];
+            const auto centerTrail = SampleShowcaseHeroTrail3D(center);
+            const float trialFraction =
+                float(trial) / float((std::max)(1u, boundedTrials - 1u));
+            const float along = Aevrynd::Clamp(
+                centerTrail.along + (trialFraction - .5f) * .12f, .08f, .88f);
+            const auto frame = SampleShowcaseHeroTrailFrame3D(along);
             const float normalX = -frame.tangent.z;
             const float normalZ = frame.tangent.x;
-            const float alongJitter =
-                (float(int(trial % 7u) - 3) * .11f);
-            const float outwardJitter = float(trial / 7u) * .09f;
-            candidate = {frame.position.x + frame.tangent.x * alongJitter +
-                              normalX * (4.35f + outwardJitter),
+            const std::uint32_t phase = trial + (item == 23u ? 37u : 0u);
+            const float side = centerTrail.signedSide >= 0.f ? 1.f : -1.f;
+            const float distance =
+                4.1f + .9f * std::fmod(float(phase) * .618033989f, 1.f);
+            candidate = {frame.position.x + normalX * side * distance, 0,
+                         frame.position.z + normalZ * side * distance};
+          }
+          if (pathShoulderSingleton || entryPathShoulderSingleton) {
+            const float trialFraction =
+                float(trial) / float((std::max)(1u, boundedTrials - 1u));
+            const auto frame = SampleShowcaseHeroTrailFrame3D(
+                entryPathShoulderSingleton
+                    ? .10f + .12f * trialFraction
+                    : .40f + .18f * trialFraction);
+            const float normalX = -frame.tangent.z;
+            const float normalZ = frame.tangent.x;
+            const float side = (trial & 1u) ? -1.f : 1.f;
+            const float shoulderDistance =
+                4.f + .8f * std::fmod(float(trial) * .618033989f, 1.f);
+            candidate = {frame.position.x + normalX * side * shoulderDistance,
                          0,
-                         frame.position.z + frame.tangent.z * alongJitter +
-                              normalZ * (4.35f + outwardJitter)};
+                         frame.position.z + normalZ * side * shoulderDistance};
           }
           // 十二個既有中景 identity 改作固定鏡頭的三個構圖錨點；數量、
           // band、variant、stable key 與碰撞 gate 均不變。前六棵形成步道
@@ -624,6 +665,9 @@ bool BuildShowcaseLandEcology3D(
                              : std::sin(seedPhase + float(trial) * 2.39996323f) *
                                    (1.f + .15f * float(trial / 8u)));
           }
+          if (kind == ShowcaseLandKind3D::Grass && band == 0u && item == 0u)
+            candidate.z = 17.85f +
+                std::sin(seedPhase + float(trial) * 2.39996323f) * .05f;
           if (zone == ShowcaseLandZone3D::Riverbank) {
             // 河岸項目直接由同一條正式河流函數取樣兩岸，避免先在整個環帶抽樣再
             // 丟棄絕大多數候選；clearance 仍由後續上下限與足跡 gate 驗證。
@@ -642,6 +686,19 @@ bool BuildShowcaseLandEcology3D(
             const float side = ((trial + ordinal) & 1u) ? 1.f : -1.f;
             candidate.x = RiverCenterX(candidate.z) + side *
                 (RiverWidth(candidate.z) * .5f + footprint + clearance);
+            if (kind == ShowcaseLandKind3D::Grass) {
+              const auto trail = SampleShowcaseHeroTrail3D(candidate);
+              const float requiredTrailClearance = .75f + footprint + .20f;
+              if (trail.valid && trail.distance < requiredTrailClearance) {
+                const auto frame = SampleShowcaseHeroTrailFrame3D(trail.along);
+                const float normalX = -frame.tangent.z;
+                const float normalZ = frame.tangent.x;
+                const float outward = trail.signedSide >= 0.f ? 1.f : -1.f;
+                const float correction = requiredTrailClearance - trail.distance;
+                candidate.x += normalX * outward * correction;
+                candidate.z += normalZ * outward * correction;
+              }
+            }
             const float adjustedRadius = std::sqrt(
                 DistanceSquared(candidate, settings.spawnCenter));
             if (adjustedRadius < BandMinimum[band] ||

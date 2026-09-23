@@ -103,7 +103,7 @@ struct ShowcaseHeroTrailFrame3D {
 ShowcaseHeroTrailControls3D() noexcept {
   static const std::array<Aevrynd::Vec3, 5> controls{{
       {-28.f, 0.f, -8.f}, {-25.5f, 0.f, 1.f}, {-16.f, 0.f, 8.f},
-      {-14.f, 0.f, 14.f}, {-12.f, 0.f, 19.8f}}};
+      {-9.85f, 0.f, 14.f}, {7.15f, 0.f, 14.f}}};
   return controls;
 }
 
@@ -191,7 +191,7 @@ SampleShowcaseHeroTrail3D(Aevrynd::Vec3 point) noexcept {
 
 [[nodiscard]] inline float ShowcaseHeroTrailVisibleHalfWidth3D(
     Aevrynd::Vec3 point) noexcept {
-  return 2.12f +
+  return 1.90f +
          std::sin(point.z * .23f - point.x * .07f + .35f) * .10f;
 }
 

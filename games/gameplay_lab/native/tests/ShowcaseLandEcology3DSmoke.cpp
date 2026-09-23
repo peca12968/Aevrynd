@@ -693,8 +693,7 @@ int main() {
   if(ValidateShowcaseLandEcology3D(settings,oversized,&oversizedReceipt)||oversizedReceipt.vegetationScaleBounded)return 25;
   auto blockedLane=first;
   const auto laneGrass=std::ranges::find_if(blockedLane,[](const auto& item){return item.kind==ShowcaseLandKind3D::Grass;});
-  laneGrass->position={settings.spawnCenter.x+(settings.cottageCenter.x-settings.spawnCenter.x)*.5f,0,
-      settings.spawnCenter.z+(settings.cottageCenter.z-5.f-settings.spawnCenter.z)*.5f};
+  laneGrass->position = SampleShowcaseHeroTrailFrame3D(.35f).position;
   ShowcaseLandEcologyReceipt3D laneReceipt{};
   if(ValidateShowcaseLandEcology3D(settings,blockedLane,&laneReceipt)||laneReceipt.walkingLaneClear)return 26;
 

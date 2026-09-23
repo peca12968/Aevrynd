@@ -1038,8 +1038,15 @@ int main() {
       SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
   const auto cottagePathRepeated =
       SampleShowcaseTerrainEcologyTint3D({-16, 0, 8}, ecologyTrees);
-  const auto cottagePathShoulderProbe =
-      SampleShowcaseTerrainEcologyTint3D({-15.5f, 0, 12}, ecologyTrees);
+  const auto cottagePathShoulderFrame = SampleShowcaseHeroTrailFrame3D(.65f);
+  if (!cottagePathShoulderFrame.valid)
+    return 77;
+  const Vec3 cottagePathShoulderNormal{-cottagePathShoulderFrame.tangent.z,
+                                       0.f,
+                                       cottagePathShoulderFrame.tangent.x};
+  const auto cottagePathShoulderProbe = SampleShowcaseTerrainEcologyTint3D(
+      cottagePathShoulderFrame.position + cottagePathShoulderNormal * 1.15f,
+      ecologyTrees);
   const auto wetBank =
       SampleShowcaseTerrainEcologyTint3D({4, 0, 0}, {});
   const std::array<ShowcaseSceneDescriptor3D, 1> overlappingTree{{
@@ -1085,17 +1092,12 @@ int main() {
   float maximumPathOuter{};
   float pathShoulderSum{};
   unsigned pathShoulderSamples{};
-  for (const float z : {9.f, 12.f, 15.f, 18.f}) {
-    const Vec3 start = z <= 14.f ? Vec3{-16.f, 0.f, 8.f}
-                                     : Vec3{-14.f, 0.f, 14.f};
-    const Vec3 end = z <= 14.f ? Vec3{-14.f, 0.f, 14.f}
-                                   : Vec3{-12.f, 0.f, 19.8f};
-    const float t = (z - start.z) / (end.z - start.z);
-    const Vec3 centre{start.x + (end.x - start.x) * t, 0.f, z};
-    const float tangentLength =
-        std::hypot(end.x - start.x, end.z - start.z);
-    const Vec3 normal{-(end.z - start.z) / tangentLength, 0.f,
-                      (end.x - start.x) / tangentLength};
+  for (const float along : {.12f, .25f, .38f, .52f}) {
+    const auto frame = SampleShowcaseHeroTrailFrame3D(along);
+    if (!frame.valid)
+      return 105;
+    const Vec3 centre = frame.position;
+    const Vec3 normal{-frame.tangent.z, 0.f, frame.tangent.x};
     const auto sampleAt = [&](float offset) {
       return SampleShowcaseTerrainEcologyTint3D(
                  {centre.x + normal.x * offset, 0.f,
@@ -1141,17 +1143,12 @@ int main() {
   float minimumAuthoredShoulder = 1.f;
   float maximumLeafShoulder{};
   float maximumLeafEdgeVariation{};
-  for (const float z : {9.f, 12.f, 15.f, 18.f}) {
-    const Vec3 start = z <= 14.f ? Vec3{-16.f, 0.f, 8.f}
-                                     : Vec3{-14.f, 0.f, 14.f};
-    const Vec3 end = z <= 14.f ? Vec3{-14.f, 0.f, 14.f}
-                                   : Vec3{-12.f, 0.f, 19.8f};
-    const float t = (z - start.z) / (end.z - start.z);
-    const Vec3 centre{start.x + (end.x - start.x) * t, 0.f, z};
-    const float tangentLength =
-        std::hypot(end.x - start.x, end.z - start.z);
-    const Vec3 normal{-(end.z - start.z) / tangentLength, 0.f,
-                      (end.x - start.x) / tangentLength};
+  for (const float along : {.10f, .22f, .34f, .46f}) {
+    const auto frame = SampleShowcaseHeroTrailFrame3D(along);
+    if (!frame.valid)
+      return 104;
+    const Vec3 centre = frame.position;
+    const Vec3 normal{-frame.tangent.z, 0.f, frame.tangent.x};
     const auto sampleAt = [&](float offset) {
       return SampleShowcaseTerrainEcologyTint3D(
           {centre.x + normal.x * offset, 0.f,
@@ -1184,7 +1181,7 @@ int main() {
         !validAuthoredBlend(core) || !validAuthoredBlend(leftShoulder) ||
         !validAuthoredBlend(rightShoulder) ||
         !validAuthoredBlend(exterior)) {
-      std::cerr << "hero trail leaf shoulder topology divergence z=" << z
+      std::cerr << "hero trail leaf shoulder topology divergence along=" << along
                 << " core=" << core.cottagePath << '/' << core.leafLitter
                 << " shoulder=" << leftShoulder.leafLitter << '/'
                 << rightShoulder.leafLitter << " exterior="
@@ -1204,13 +1201,16 @@ int main() {
   for (const Vec3 control : {Vec3{-28.f, 0.f, -8.f},
                              Vec3{-25.5f, 0.f, 1.f},
                              Vec3{-16.f, 0.f, 8.f},
-                             Vec3{-14.f, 0.f, 14.f},
-                             Vec3{-12.f, 0.f, 19.8f}}) {
+                             Vec3{-9.85f, 0.f, 14.f},
+                             Vec3{7.15f, 0.f, 14.f}}) {
     const auto trail = SampleShowcaseHeroTrail3D(control);
     const auto terrain =
         SampleShowcaseTerrainEcologyTint3D(control, ecologyTrees);
+    const bool bridgeDeckExit =
+        std::abs(control.x - 7.15f) <= 1e-5f &&
+        std::abs(control.z - 14.f) <= 1e-5f;
     if (!trail.valid || trail.distance > 1e-5f ||
-        terrain.cottagePath < .55f ||
+        (!bridgeDeckExit && terrain.cottagePath < .55f) ||
         !ShowcaseHeroTrailWalkingLane3D(control, 0.f)) {
       std::cerr << "hero trail control divergence at " << control.x << ','
                 << control.z << " distance=" << trail.distance
@@ -1218,6 +1218,22 @@ int main() {
       return 102;
     }
   }
+  // The authored route must touch the west bridge landing exactly.  A bridge
+  // that is visible but disconnected from the material, sculpt and walking
+  // lane is not an admitted gameplay route.
+  const Vec3 bridgeWestLanding{-9.85f, 0.f, 14.f};
+  const auto bridgeLandingTrail = SampleShowcaseHeroTrail3D(bridgeWestLanding);
+  const auto bridgeLandingTerrain =
+      SampleShowcaseTerrainEcologyTint3D(bridgeWestLanding, ecologyTrees);
+  if (!bridgeLandingTrail.valid || bridgeLandingTrail.distance > 1e-5f ||
+      bridgeLandingTerrain.cottagePath < .55f ||
+      !ShowcaseHeroTrailWalkingLane3D(bridgeWestLanding, 0.f))
+    return 106;
+  const Vec3 bridgeEastLanding{7.15f, 0.f, 14.f};
+  const auto bridgeEastTrail = SampleShowcaseHeroTrail3D(bridgeEastLanding);
+  if (!bridgeEastTrail.valid || bridgeEastTrail.distance > 1e-5f ||
+      !ShowcaseHeroTrailWalkingLane3D(bridgeEastLanding, 0.f))
+    return 107;
   const auto invalidTrail = SampleShowcaseHeroTrail3D(
       {(std::numeric_limits<float>::quiet_NaN)(), 0.f, 0.f});
   if (invalidTrail.valid ||

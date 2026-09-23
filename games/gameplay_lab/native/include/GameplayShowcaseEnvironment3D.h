@@ -609,7 +609,7 @@ SampleShowcaseTerrainEcologyTint3D(
   const float pathShoulderWidth =
       (std::max)(.75f, pathVisibleHalfWidth - pathTreadHalfWidth);
   const float pathEdge = path.distance + authoredEdgeNoise(worldPosition) +
-                         (path.signedSide >= 0.f ? .05f : -.025f);
+                         (path.signedSide >= 0.f ? .12f : -.06f);
   const float pathShoulderCoordinate =
       Aevrynd::Clamp((pathEdge - pathTreadHalfWidth) / pathShoulderWidth,
                      0.f, 1.f);
@@ -689,9 +689,31 @@ SampleShowcaseTerrainEcologyTint3D(
   // 寬而連續的濕岸肩帶讓河水與乾土之間逐步過渡；它是世界座標資料，
   // 不依賴畫面空間模糊，也不會因相機或 phase 改變岸線位置。
   constexpr float wetBankShoulderMetres = 6.f;
-  const float wetSoilCandidate =
+  float wetSoilCandidate =
       1.f - smooth((std::max)(0.f, irregularBankClearance) /
                    wetBankShoulderMetres);
+
+  // The maintained route reaches the west bridge landing and continues over
+  // the deck to the east bank.  Compacted bridge-head soil must remain visible
+  // instead of being cancelled by the river-bank candidate at full strength.
+  // Keep this authored exception local: outside the 2.8 m landing apron the
+  // original wet shoreline is untouched, and the river channel itself is not
+  // moved or widened.
+  constexpr Aevrynd::Vec3 bridgeWestLanding{-9.85f, 0.f, 14.f};
+  const float bridgeLandingDistance =
+      std::hypot(worldPosition.x - bridgeWestLanding.x,
+                 worldPosition.z - bridgeWestLanding.z);
+  const float bridgeLandingCompaction =
+      1.f - smooth(bridgeLandingDistance / 2.8f);
+  const float bridgeApproachCompaction =
+      path.valid
+          ? smooth((path.along - .40f) / .15f) *
+                (1.f - smooth(path.distance / 4.5f)) *
+                (.80f + .20f *
+                            smooth((path.signedSide + 1.5f) / 3.f))
+          : 0.f;
+  wetSoilCandidate *=
+      1.f - (std::max)(bridgeLandingCompaction, bridgeApproachCompaction);
 
   const auto pathWetHandoff = ResolveShowcaseTerrainPathWetHandoff3D(
       pathCandidate, wetSoilCandidate);
