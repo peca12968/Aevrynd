@@ -942,6 +942,25 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  // R105：橋面西端到木屋門廊必須有可讀但不阻擋 traversal 的石板引導徑。
+  // 位置屬於世界空間 authoring；不得用 camera-space decal 或擴張碰撞假造。
+  if (GameplayForestCottageApproachPavers3D.size() != 9u ||
+      GameplayForestCottageApproachPaverIdentityHigh3D == 0u)
+    return 110;
+  float precedingZ = 13.f;
+  for (std::size_t index = 0;
+       index < GameplayForestCottageApproachPavers3D.size(); ++index) {
+    const auto &paver = GameplayForestCottageApproachPavers3D[index];
+    if (!std::isfinite(paver.x) || !std::isfinite(paver.y) ||
+        !std::isfinite(paver.z) || paver.x < -12.8f || paver.x > -8.7f ||
+        paver.y != 0.f || paver.z <= precedingZ || paver.z > 19.35f)
+      return 111;
+    precedingZ = paver.z;
+    for (const auto &light : GameplayForestGuideLightPositions3D)
+      if (std::hypot(paver.x - light.x, paver.z - light.z) < .52f)
+        return 113;
+  }
+
   HeightField3D heroTrailTerrain;
   heroTrailTerrain.Configure({{-256.f, 0.f, -256.f}, 513, 513, 1.f});
   if (!heroTrailTerrain.GenerateUltra(

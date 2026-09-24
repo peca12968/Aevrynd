@@ -2465,6 +2465,36 @@ void GameplayLabGame::AddShowcaseEnvironment(){
   if(scene_.MeshCount()!=guideLightTotalDrawsBefore+15u)
     throw std::runtime_error("Forest guide light total draw count gate failed");
   // R101_FOREST_GUIDE_LIGHT_RENDER_END
+
+  // R105_COTTAGE_APPROACH_PAVERS_BEGIN
+  // 以已駐留的 box 幾何與 PBR 石材建立橋到門廊的視覺路線。
+  // 每塊石板貼合權威高度場、使用獨立穩定 identity，且不進入環境
+  // descriptor/collider 集合；因此玩家可以自然踏過，不會被裝飾卡住。
+  const auto* approachStoneSource=
+      showcaseRenderAssets_.ProductionMaterial("Bricks100");
+  if(!approachStoneSource)
+    throw std::runtime_error("Cottage approach stone material missing");
+  auto approachStone=*approachStoneSource;
+  if(!ApplyGameplayCottageFoundationStoneResponse3D(approachStone))
+    throw std::runtime_error("Cottage approach stone response invalid");
+  const auto approachDrawsBefore=scene_.MeshCount();
+  for(std::size_t index=0;
+      index<GameplayForestCottageApproachPavers3D.size();++index){
+    const auto authored=GameplayForestCottageApproachPavers3D[index];
+    const float terrainY=showcaseTerrain_.SampleHeight(authored.x,authored.z);
+    const float alternating=index%2u?-.06f:.06f;
+    const float yaw=-.28f+float(index)*.19f;
+    const Vec3 scale{.82f+alternating,.08f,.56f-alternating*.30f};
+    const RenderObjectIdentity3D identity{
+        {GameplayForestCottageApproachPaverIdentityHigh3D,index+1u},1};
+    scene_.Mesh(boxMesh_,
+        {{authored.x,terrainY+.035f,authored.z},{0,yaw,0},scale},
+        approachStone,{},identity);
+  }
+  if(scene_.MeshCount()!=approachDrawsBefore+
+       GameplayForestCottageApproachPavers3D.size())
+    throw std::runtime_error("Cottage approach paver draw count gate failed");
+  // R105_COTTAGE_APPROACH_PAVERS_END
 }
 bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
   if(captureDirectory_.empty())return false;

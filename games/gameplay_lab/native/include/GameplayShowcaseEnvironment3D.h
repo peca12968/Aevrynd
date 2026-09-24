@@ -29,6 +29,18 @@ inline constexpr std::array<Aevrynd::Vec3, 5>
         {-8.45f, .86f, 14.65f}, {-11.25f, .86f, 15.75f},
         {-8.95f, .86f, 16.85f}, {-11.55f, .86f, 17.95f},
         {-9.65f, .86f, 19.05f}}};
+inline constexpr std::uint64_t
+    GameplayForestCottageApproachPaverIdentityHigh3D =
+        0xaec0504156455201ull;
+// 九塊非碰撞石板由橋面西端引導至木屋門廊；刻意與兩側燈具錯位，
+// 讓白天靠石材輪廓、夜間靠光池共同呈現同一條可走路線。
+inline constexpr std::array<Aevrynd::Vec3, 9>
+    GameplayForestCottageApproachPavers3D{{
+        {-9.63f, 0.f, 14.15f}, {-10.29f, 0.f, 14.78f},
+        {-10.14f, 0.f, 15.41f}, {-10.80f, 0.f, 16.04f},
+        {-10.65f, 0.f, 16.68f}, {-11.31f, 0.f, 17.31f},
+        {-10.75f, 0.f, 17.94f}, {-11.82f, 0.f, 18.57f},
+        {-11.68f, 0.f, 19.20f}}};
 enum class ShowcaseSceneKind3D : std::uint8_t {
   Terrain,
   Water,

@@ -21,6 +21,7 @@ function Get-MarkedBlock([string]$Source, [string]$Begin, [string]$End) {
 $windowDetail = Get-MarkedBlock $game 'R100_COTTAGE_WINDOW_DETAIL_BEGIN' 'R100_COTTAGE_WINDOW_DETAIL_END'
 $guideRender = Get-MarkedBlock $game 'R101_FOREST_GUIDE_LIGHT_RENDER_BEGIN' 'R101_FOREST_GUIDE_LIGHT_RENDER_END'
 $guideLighting = Get-MarkedBlock $environment 'R101_FOREST_GUIDE_LIGHT_LIGHTING_BEGIN' 'R101_FOREST_GUIDE_LIGHT_LIGHTING_END'
+$approachPavers = Get-MarkedBlock $game 'R105_COTTAGE_APPROACH_PAVERS_BEGIN' 'R105_COTTAGE_APPROACH_PAVERS_END'
 $frontage = Get-MarkedBlock $game 'R60_COTTAGE_FRONTAGE_BEGIN' 'R60_COTTAGE_FRONTAGE_END'
 $life = Get-MarkedBlock $game 'R34_COTTAGE_LIFE_BEGIN' 'R34_COTTAGE_LIFE_END'
 
@@ -114,6 +115,23 @@ if (-not $dayGuarded -or
 }
 if ($guideLightingCode -notmatch '\{\s*1\.f\s*,\s*\.(?:[5-8]\d*|[5-8])f\s*,\s*\.(?:[1-4]\d*|[1-4])f\s*,\s*1\.f\s*\}') {
   throw 'guide lights lost their bounded warm RGB color'
+}
+
+# Nine non-colliding production-material pavers share the authored world-space
+# route and sample the final terrain rather than floating at a fixed Y.
+$paverCode = [regex]::Replace($approachPavers, '(?m)//[^\r\n]*', '')
+if ($paverCode -notmatch '\bGameplayForestCottageApproachPavers3D\b' -or
+    $paverCode -notmatch '\bGameplayForestCottageApproachPaverIdentityHigh3D\b' -or
+    $paverCode -notmatch '\bshowcaseTerrain_\.SampleHeight\b' -or
+    $paverCode -notmatch '\bProductionMaterial\("Bricks100"\)' -or
+    $paverCode -notmatch '\bApplyGameplayCottageFoundationStoneResponse3D\b' -or
+    $paverCode -notmatch 'scene_\.Mesh\(boxMesh_' -or
+    [regex]::Matches($paverCode, 'scene_\.Mesh\s*\(').Count -ne 1 -or
+    $paverCode -notmatch 'scene_\.MeshCount\s*\(\s*\)\s*!=\s*\w+\s*\+\s*\r?\n?\s*GameplayForestCottageApproachPavers3D\.size\s*\(\s*\)') {
+  throw 'cottage approach pavers lost production material, terrain grounding, identity, or fixed draw gate'
+}
+if ($paverCode -match '(?i)physics_|collider|CreateMesh|CreateTexture|\.textures\b|\bdescriptor\s*(?:\.|->|\[)|\b(?:push_back|emplace_back)\s*\(') {
+  throw "cottage approach pavers gained gameplay, asset creation, or descriptor state: $($Matches[0])"
 }
 
 # All six existing windows receive two substantial shutter leaves and one
