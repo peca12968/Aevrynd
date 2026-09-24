@@ -537,14 +537,13 @@ constexpr GameplayCottageWindowResponse3D GameplayCottageWindowResponse(
     LightingPhase phase) noexcept {
   switch(phase){
   case LightingPhase::Day:
-    // Cool, low-emission daylight glass reads as reflected sky instead of a
-    // black opening.  Dusk and night remain progressively warmer, but bounded
-    // emission keeps the panes subordinate to the physical porch lantern.
-    return {{.12f,.16f,.20f,1.f},.10f,.04f,0.f,1.f};
+    // 日景窗面以冷色天空反射建立可讀深度，不靠 emissive 假裝室內亮度。
+    // 黃昏與夜間才逐步轉暖；受限 emissive 仍低於門廊實體燈的局部照明。
+    return {{.20f,.29f,.40f,1.f},.08f,.06f,0.f,1.f};
   case LightingPhase::Dusk:
-    return {{.16f,.09f,.035f,1.f},.14f,.03f,.018f,1.f};
+    return {{.34f,.17f,.055f,1.f},.12f,.03f,.030f,1.f};
   case LightingPhase::Night:
-    return {{.20f,.11f,.035f,1.f},.16f,.02f,.060f,1.f};
+    return {{.46f,.24f,.070f,1.f},.14f,.02f,.085f,1.f};
   }
   return {};
 }
@@ -557,12 +556,12 @@ bool ApplyGameplayCottageWindowResponse3D(
       std::isfinite(response.tint.a)&&std::isfinite(response.roughness)&&
       std::isfinite(response.metallic)&&std::isfinite(response.emissive)&&
       std::isfinite(response.opacity);
-  if(!finite||response.tint.r<0.f||response.tint.r>.25f||
-     response.tint.g<0.f||response.tint.g>.20f||
-     response.tint.b<0.f||response.tint.b>.25f||response.tint.a!=1.f||
+  if(!finite||response.tint.r<0.f||response.tint.r>.50f||
+     response.tint.g<0.f||response.tint.g>.32f||
+     response.tint.b<0.f||response.tint.b>.45f||response.tint.a!=1.f||
      response.roughness<.08f||response.roughness>.20f||
      response.metallic<0.f||response.metallic>.08f||
-     !(response.emissive>=0.f&&response.emissive<=.08f)||
+     !(response.emissive>=0.f&&response.emissive<=.09f)||
      response.opacity!=1.f)
     return false;
   material.textures={};
