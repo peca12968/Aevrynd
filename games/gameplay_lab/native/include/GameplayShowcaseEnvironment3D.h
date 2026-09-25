@@ -95,7 +95,7 @@ ShowcaseUnderstoryHighDetailFootprintBounds3D(
   case ShowcaseLandVariant3D::GrassFan:
     return {{.0143334f, -.0190976f}, {.44612f, .488927f}};
   case ShowcaseLandVariant3D::GrassTuft:
-    return {{-.0137945f, .136403f}, {.999168f, .856231f}};
+    return {{.136160f, .213175f}, {1.149123f, 1.014458f}};
   default: return {};
   }
 }

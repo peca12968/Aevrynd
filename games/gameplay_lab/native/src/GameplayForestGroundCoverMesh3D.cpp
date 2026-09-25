@@ -381,6 +381,28 @@ void SplitLeafMossColonies(Mesh3D& mesh, Vec3 firstOffset, float firstYaw,
   }
 }
 
+void SpreadElevatedCardCentres(Mesh3D& mesh, float minimumHeight,
+                               float xScale, float zScale) {
+  const std::size_t cardCount = mesh.vertices.size() / 4u;
+  for (std::size_t card = 0; card < cardCount; ++card) {
+    const std::size_t first = card * 4u;
+    Vec3 centre{};
+    for (std::size_t corner = 0; corner < 4u; ++corner) {
+      const auto& vertex = mesh.vertices[first + corner];
+      centre = centre + Vec3{vertex.x, vertex.y, vertex.z};
+    }
+    centre = centre * .25f;
+    if (centre.y < minimumHeight) continue;
+    const Vec3 offset{centre.x * (xScale - 1.f), 0,
+                      centre.z * (zScale - 1.f)};
+    for (std::size_t corner = 0; corner < 4u; ++corner) {
+      auto& vertex = mesh.vertices[first + corner];
+      vertex.x += offset.x;
+      vertex.z += offset.z;
+    }
+  }
+}
+
 void AppendFallenBranches(Mesh3D& mesh,
                           GameplayForestGroundCoverDetail3D detail,
                           std::uint32_t seed) {
@@ -452,8 +474,8 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
   Mesh3D result;
   auto fern = CreateFern(detail, Mix(variationSeed ^ 0x19a4f3cdu),
                          GameplayForestGroundCoverAtlas3D::TreeSmall02);
-  const auto shrub = CreateLowShrub(detail, Mix(variationSeed ^ 0x753c28b1u),
-                                    GameplayForestGroundCoverAtlas3D::TreeSmall02);
+  auto shrub = CreateLowShrub(detail, Mix(variationSeed ^ 0x753c28b1u),
+                              GameplayForestGroundCoverAtlas3D::TreeSmall02);
   auto leafMoss = CreateLeafMoss(detail, Mix(variationSeed ^ 0xc4d82a67u),
                                  GameplayForestGroundCoverAtlas3D::TreeSmall02);
   // Near and Mid reuse their existing cards as two asymmetric fern and
@@ -471,7 +493,21 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
     TransformCardRange(fern, 8u, 8u, {.28f, 0, .82f}, .61f, .78f);
     TransformCardRange(fern, 20u, 4u, {.28f, 0, .82f}, .61f, .78f);
     SplitLeafMossColonies(leafMoss, {-.30f, 0, .33f}, -.24f, .84f,
-                           {.41f, 0, -.36f}, .47f, .88f);
+                            {.41f, 0, -.36f}, .47f, .88f);
+  }
+  // Use the existing shrub cards as two broad, low-frequency leaf masses.  The
+  // previous single radial clump put almost every elevated card on the same
+  // depth plane, so moonlight and the low sun revealed a thin strip rather than
+  // a middle layer.  Translating complete cards preserves their authored size,
+  // normal, UV, wind weight and triangle budget.
+  if (detail != GameplayForestGroundCoverDetail3D::Far) {
+    const unsigned shrubCards = CardCount(
+        GameplayForestGroundCoverSpecies3D::LowShrub, detail);
+    const unsigned nearShrubCards = (shrubCards + 1u) / 2u;
+    TransformCardRange(shrub, 0u, nearShrubCards,
+                       {-.15f, 0, -1.177f}, 0.f, 1.f);
+    TransformCardRange(shrub, nearShrubCards, shrubCards - nearShrubCards,
+                       {.18f, 0, .86f}, 0.f, 1.f);
   }
   // One ecology descriptor remains a single bounded mesh.  The final offsets
   // keep all four visual centres inside the original 2.3 m diameter contract.
@@ -484,6 +520,8 @@ Mesh3D CreateGameplayForestGroundCoverCommunityMesh3D(
                                                                : 1.12f;
   AppendTransformed(result, leafMoss, {.02f, 0, .02f}, .14f,
                     leafMossScale);
+  if (detail == GameplayForestGroundCoverDetail3D::Mid)
+    SpreadElevatedCardCentres(result, .24f, 1.48f, 1.02f);
   // Render-only debris stays inside this already submitted Community mesh:
   // no descriptor, draw, resource, placement identity or collision is added.
   AppendFallenBranches(result, detail, Mix(variationSeed ^ 0x6f21b8d3u));

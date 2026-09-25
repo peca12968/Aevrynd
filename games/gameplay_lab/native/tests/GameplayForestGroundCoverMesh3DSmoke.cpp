@@ -413,6 +413,78 @@ bool CommunityColonyContract(
   return true;
 }
 
+bool CommunityMidLayerLightContract(
+    const Mesh3D& mesh, GameplayForestGroundCoverDetail3D detail,
+    bool report = false) {
+  // Far deliberately retains the former sparse single-root silhouette and
+  // exact projected-coverage budget.  This contract protects the visible
+  // Near/Mid middle layer where the fragmented strip was observed.
+  if (detail == GameplayForestGroundCoverDetail3D::Far) return true;
+  constexpr std::array<unsigned, 3> FoliageCards{{64u, 37u, 22u}};
+  constexpr std::array<float, 3> MinimumWidth{{1.90f, 1.82f, 1.68f}};
+  constexpr std::array<float, 3> MinimumDepth{{1.86f, 1.80f, 1.66f}};
+  const auto detailIndex = static_cast<std::size_t>(detail);
+  if (mesh.vertices.size() < std::size_t(FoliageCards[detailIndex]) * 4u)
+    return false;
+
+  const Vec3 day = Normalize(Vec3{.34f, -.91f, .23f});
+  const Vec3 moon = Normalize(Vec3{-.25f, -.62f, -.74f});
+  std::array<unsigned, 4> elevatedQuadrants{};
+  float minimumX = (std::numeric_limits<float>::max)();
+  float maximumX = (std::numeric_limits<float>::lowest)();
+  float minimumZ = (std::numeric_limits<float>::max)();
+  float maximumZ = (std::numeric_limits<float>::lowest)();
+  float dayResponse{}, moonResponse{};
+  unsigned elevatedCards{};
+  for (unsigned card = 0; card < FoliageCards[detailIndex]; ++card) {
+    const std::size_t base = std::size_t(card) * 4u;
+    Vec3 centre{};
+    for (unsigned corner = 0; corner < 4u; ++corner) {
+      const auto& vertex = mesh.vertices[base + corner];
+      centre = centre + Vec3{vertex.x, vertex.y, vertex.z};
+    }
+    centre = centre * .25f;
+    const auto packed = UnpackNormalSnorm8(mesh.vertices[base].normal);
+    const Vec3 normal{packed.x, packed.y, packed.z};
+    dayResponse += std::abs(Dot(normal, day));
+    moonResponse += std::abs(Dot(normal, moon));
+    if (centre.y < .24f) continue;
+    ++elevatedCards;
+    const unsigned quadrant = (centre.x >= 0.f ? 1u : 0u) +
+                              (centre.z >= 0.f ? 2u : 0u);
+    ++elevatedQuadrants[quadrant];
+    for (unsigned corner = 0; corner < 4u; ++corner) {
+      const auto& vertex = mesh.vertices[base + corner];
+      minimumX = (std::min)(minimumX, vertex.x);
+      maximumX = (std::max)(maximumX, vertex.x);
+      minimumZ = (std::min)(minimumZ, vertex.z);
+      maximumZ = (std::max)(maximumZ, vertex.z);
+    }
+  }
+  dayResponse /= float(FoliageCards[detailIndex]);
+  moonResponse /= float(FoliageCards[detailIndex]);
+  const float width = maximumX - minimumX;
+  const float depth = maximumZ - minimumZ;
+  const unsigned occupiedQuadrants = static_cast<unsigned>(
+      std::ranges::count_if(elevatedQuadrants,
+                            [](unsigned count) { return count >= 2u; }));
+  const bool accepted = elevatedCards * 4u >= FoliageCards[detailIndex] &&
+      occupiedQuadrants == 4u && width >= MinimumWidth[detailIndex] &&
+      depth >= MinimumDepth[detailIndex] && dayResponse >= .36f &&
+      moonResponse >= .36f;
+  if (report)
+    std::cout << "COMMUNITY_MID_LAYER detail=" << detailIndex
+              << " elevated=" << elevatedCards << '/'
+              << FoliageCards[detailIndex] << " quadrants="
+              << occupiedQuadrants << '[' << elevatedQuadrants[0] << ','
+              << elevatedQuadrants[1] << ',' << elevatedQuadrants[2] << ','
+              << elevatedQuadrants[3] << "] span=" << width << '/' << depth
+              << " range=" << minimumX << ':' << maximumX << ','
+              << minimumZ << ':' << maximumZ
+              << " light=" << dayResponse << '/' << moonResponse << '\n';
+  return accepted;
+}
+
 bool CommunityBranchContract(
     const Mesh3D& mesh, GameplayForestGroundCoverDetail3D detail) {
   constexpr std::array<unsigned, 3> FoliageCards{{64u, 37u, 22u}};
@@ -609,6 +681,11 @@ int main() {
       GameplayForestGroundCoverVariant3D::Community};
   std::array<Color, groundCoverVariants.size()> multipliers{};
   source.tint = {.8f, .7f, .6f, .4f};
+  source.alphaMode = MaterialAlphaMode3D::Mask;
+  source.alphaCutoff = .42f;
+  const auto luminance = [](Color color) {
+    return .2126f * color.r + .7152f * color.g + .0722f * color.b;
+  };
   for (std::size_t index = 0; index < groundCoverVariants.size(); ++index) {
     const auto multiplier =
         GameplayForestGroundCoverTintMultiplier3D(groundCoverVariants[index]);
@@ -626,12 +703,19 @@ int main() {
         tinted.tint.a != source.tint.a || tinted.textures != source.textures ||
         tinted.materialClass != MaterialClass3D::Foliage ||
         tinted.alphaMode != MaterialAlphaMode3D::Mask ||
-        tinted.alphaCutoff != .45f || !tinted.useUv || !tinted.doubleSided ||
+        tinted.alphaCutoff != source.alphaCutoff || !tinted.useUv ||
+        !tinted.doubleSided ||
         !tinted.castsShadow || tinted.surface.roughness != .86f ||
         tinted.surface.metallic != 0.f || tinted.surface.emissive != 0.f ||
         tinted.normalScale != .84f || tinted.textureScale != 1.f) {
       std::cerr << "FOREST_GROUND_COVER_TINT_CONTRACT=FAIL\n";
       return 11;
+    }
+    if (groundCoverVariants[index] ==
+            GameplayForestGroundCoverVariant3D::Community &&
+        luminance(tinted.tint) < luminance(source.tint) * .95f) {
+      std::cerr << "FOREST_GROUND_COVER_COMMUNITY_LUMINANCE=FAIL\n";
+      return 26;
     }
   }
   if (SameTint(multipliers[0], multipliers[1]) ||
@@ -639,6 +723,22 @@ int main() {
       SameTint(multipliers[1], multipliers[2])) {
     std::cerr << "FOREST_GROUND_COVER_TINT_VARIANTS=FAIL\n";
     return 12;
+  }
+  for (const auto invalid : std::array{
+           Material3D{.alphaMode = MaterialAlphaMode3D::Opaque,
+                      .alphaCutoff = .42f},
+           Material3D{.alphaMode = MaterialAlphaMode3D::Mask,
+                      .alphaCutoff = 0.f},
+           Material3D{.alphaMode = MaterialAlphaMode3D::Mask,
+                      .alphaCutoff = 1.f},
+           Material3D{.alphaMode = MaterialAlphaMode3D::Mask,
+                      .alphaCutoff =
+                          std::numeric_limits<float>::quiet_NaN()}}) {
+    if (PrepareGameplayForestGroundCoverMaterial3D(invalid).alphaCutoff !=
+        contract.alphaCutoff) {
+      std::cerr << "FOREST_GROUND_COVER_ALPHA_FALLBACK=FAIL\n";
+      return 27;
+    }
   }
 
   constexpr std::array species{
@@ -837,6 +937,7 @@ int main() {
         triangles > GameplayForestGroundCoverCommunityTriangleBudget(detail) ||
         triangles != expectedCommunityTriangles[detailIndex] ||
         triangles >= previousCommunityTriangles ||
+        !CommunityMidLayerLightContract(community, detail, true) ||
         !CommunityColonyContract(community, detail) ||
         !CommunityBranchContract(community, detail) ||
         bounds.extents.x < .78f || bounds.extents.z < .72f ||

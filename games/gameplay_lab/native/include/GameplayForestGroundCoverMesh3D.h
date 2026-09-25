@@ -98,7 +98,10 @@ GameplayForestGroundCoverStemUv3D(GameplayForestGroundCoverAtlas3D atlas) noexce
     case GameplayForestGroundCoverVariant3D::Riverbank:
       return {.68f, .73f, .76f, 1.f};
     case GameplayForestGroundCoverVariant3D::Community:
-      return {.78f, .72f, .60f, 1.f};
+      // The production TreeSmall02 material is already colour authored.  A
+      // second warm multiplier removed roughly 28% of its linear luminance
+      // and turned the middle layer into black fragments at dusk/night.
+      return {1.f, 1.f, 1.f, 1.f};
   }
   return {1.f, 1.f, 1.f, 1.f};
 }
@@ -157,9 +160,16 @@ GameplayForestGroundCoverAlphaCardContract() noexcept {
 [[nodiscard]] inline Aevrynd::Material3D
 PrepareGameplayForestGroundCoverMaterial3D(Aevrynd::Material3D material,
                                            bool castsShadow = false) noexcept {
+  const float authoredAlphaCutoff = material.alphaCutoff;
+  const bool hasAuthoredMaskCutoff =
+      material.alphaMode == Aevrynd::MaterialAlphaMode3D::Mask &&
+      authoredAlphaCutoff > 0.f && authoredAlphaCutoff < 1.f;
   material.materialClass = Aevrynd::MaterialClass3D::Foliage;
   material.alphaMode = Aevrynd::MaterialAlphaMode3D::Mask;
-  material.alphaCutoff = GameplayForestGroundCoverAlphaCardContract().alphaCutoff;
+  material.alphaCutoff = hasAuthoredMaskCutoff
+                             ? authoredAlphaCutoff
+                             : GameplayForestGroundCoverAlphaCardContract()
+                                   .alphaCutoff;
   material.useUv = true;
   material.doubleSided = true;
   material.castsShadow = castsShadow;
