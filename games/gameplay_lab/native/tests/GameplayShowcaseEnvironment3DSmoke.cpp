@@ -820,21 +820,21 @@ bool ReadableForestWater(const WaterSurfaceSettings3D &value) {
   const float greenTransmission = WaterTransmission3D(value.absorption.y, 2.f);
   const float blueTransmission = WaterTransmission3D(value.absorption.z, 2.f);
   return value.reflectance >= .019f && value.reflectance <= .023f &&
-         value.minimumRoughness >= .05f && value.minimumRoughness <= .06f &&
-         value.maximumRoughness >= .18f && value.maximumRoughness <= .22f &&
-         value.broadWaveScale >= .12f && value.broadWaveScale <= .16f &&
-         value.broadWaveStrength >= .14f && value.broadWaveStrength <= .18f &&
-         value.broadWaveSpeed >= .15f && value.broadWaveSpeed <= .22f &&
-         value.detailWaveScale >= .85f && value.detailWaveScale <= 1.f &&
-         value.detailWaveStrength >= .045f && value.detailWaveStrength <= .065f &&
-         value.detailWaveSpeed >= .38f && value.detailWaveSpeed <= .48f &&
+         value.minimumRoughness >= .045f && value.minimumRoughness <= .055f &&
+         value.maximumRoughness >= .16f && value.maximumRoughness <= .18f &&
+         value.broadWaveScale >= .20f && value.broadWaveScale <= .24f &&
+         value.broadWaveStrength >= .085f && value.broadWaveStrength <= .105f &&
+         value.broadWaveSpeed >= .18f && value.broadWaveSpeed <= .22f &&
+         value.detailWaveScale >= 1.35f && value.detailWaveScale <= 1.55f &&
+         value.detailWaveStrength >= .03f && value.detailWaveStrength <= .04f &&
+         value.detailWaveSpeed >= .50f && value.detailWaveSpeed <= .60f &&
          value.broadWaveStrength > value.detailWaveStrength * 2.5f &&
-         value.foamStartDepth >= .02f && value.foamStartDepth <= .035f &&
-         value.foamEndDepth >= .15f && value.foamEndDepth <= .17f &&
-         value.foamStrength >= .24f && value.foamStrength <= .30f &&
-         value.shallowAlpha >= .42f && value.shallowAlpha <= .50f &&
-         value.deepAlpha >= .84f && value.deepAlpha <= .90f &&
-         value.deepAlpha - value.shallowAlpha >= .36f &&
+         value.foamStartDepth >= .015f && value.foamStartDepth <= .025f &&
+         value.foamEndDepth >= .11f && value.foamEndDepth <= .13f &&
+         value.foamStrength >= .16f && value.foamStrength <= .20f &&
+         value.shallowAlpha >= .36f && value.shallowAlpha <= .40f &&
+         value.deepAlpha >= .76f && value.deepAlpha <= .80f &&
+         value.deepAlpha - value.shallowAlpha >= .38f &&
          value.maximumNightRadiance >= .025f &&
          value.maximumNightRadiance <= .04f &&
          redTransmission < greenTransmission &&
