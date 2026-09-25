@@ -600,19 +600,19 @@ void GameplayShowcaseEnvironment3D::ApplyHighProfile(
   draw.SetAmbientOcclusion({true, 1.25f, .025f, 1.42f});
   draw.SetScreenSpaceReflections({true, .82f, 42.f, .7f, .32f, 16});
   draw.SetBloom({true, 1.18f, .38f, .085f, 2.2f});
-  // 英雄鏡頭仰角低，舊的低空高覆蓋雲層會把投影壓成一條貫穿畫面的
-  // 灰色水平煙牆。保留真正的體積雲與雲影，但提高雲底、降低覆蓋與密度，
-  // 並加強侵蝕，讓天空由分散雲團建立深度而不是由均勻長帶切割。
+  // 英雄鏡頭仰角低，因此雲底維持在山脊上方；適度提高密度並減少過度
+  // 侵蝕，讓分散雲團能在固定鏡頭中形成可讀的明暗體積，而不是退化成
+  // 幾乎不可見的灰帶。取樣數、最大距離與 draw budget 均維持不變。
   Aevrynd::VolumetricCloudSettings3D clouds{};
   clouds.baseAltitude = 2800.f;
   clouds.thickness = 1150.f;
-  clouds.coverage = .52f;
-  clouds.density = .42f;
-  clouds.erosion = .74f;
+  clouds.coverage = .56f;
+  clouds.density = .48f;
+  clouds.erosion = .68f;
   clouds.windSpeed = 7.f;
   clouds.sampleCount = 16;
   clouds.shadowsEnabled = true;
-  clouds.shadowStrength = .24f;
+  clouds.shadowStrength = .28f;
   clouds.maximumDistance = 9000.f;
   draw.SetVolumetricClouds(clouds);
   draw.SetDirectionalLightShafts({true, .68f, .72f, 360.f, 6});

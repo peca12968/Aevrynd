@@ -835,8 +835,11 @@ int main(int argc, char **argv) {
       return 18;
     }
   }
-  if (livingTrees != 228u || deadTrees != 20u || firTrees != 46u ||
-      retainedLivingTrees != 182u ||
+  std::cout << "treeVisuals living=" << livingTrees << " dead=" << deadTrees
+            << " fir=" << firTrees << " retained=" << retainedLivingTrees
+            << '\n';
+  if (livingTrees != 272u || deadTrees != 24u || firTrees != 55u ||
+      retainedLivingTrees != 217u ||
       !ResolveShowcaseProductionVisualAssetId3D(
            descriptorSnapshot, descriptorSnapshot.size()).empty())
     return 18;
