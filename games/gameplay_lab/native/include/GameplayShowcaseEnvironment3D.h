@@ -22,6 +22,41 @@ namespace GameplayLab {
 enum class ShowcaseLightingProfile3D : std::uint8_t { Day, Dusk, Night };
 inline constexpr Aevrynd::Vec3 GameplayCottagePorchLanternCenter3D{
     -12.f, 2.45f, 19.70f};
+struct GameplayForestReflectionProbeVolume3D {
+  Aevrynd::ReflectionProbeCaptureSettings3D capture{};
+  Aevrynd::Vec3 minimum{}, maximum{};
+  std::int32_t priority{};
+};
+
+// Two compact hero volumes provide local image-based lighting without applying
+// a single indoor/river reflection to the entire 512 m terrain draw.
+[[nodiscard]] inline constexpr std::array<GameplayForestReflectionProbeVolume3D, 2>
+GameplayForestReflectionProbeVolumes3D() noexcept {
+  return {{{{{-12.f, 2.45f, 19.70f}, 128, .1f, 96.f},
+             {-17.f, -.1f, 18.f}, {-7.f, 7.f, 30.f}, 20},
+            {{{-4.f, 1.2f, 14.f}, 128, .1f, 180.f},
+             {-16.f, -2.f, -136.f}, {12.f, 8.f, 136.f}, 10}}};
+}
+
+[[nodiscard]] inline bool ValidGameplayForestReflectionProbeVolumes3D(
+    const std::array<GameplayForestReflectionProbeVolume3D, 2> &volumes) noexcept {
+  for (const auto &volume : volumes) {
+    if (!Aevrynd::ValidReflectionProbeCaptureSettings3D(volume.capture) ||
+        !(volume.minimum.x < volume.maximum.x &&
+          volume.minimum.y < volume.maximum.y &&
+          volume.minimum.z < volume.maximum.z))
+      return false;
+  }
+  return volumes[0].priority > volumes[1].priority;
+}
+
+[[nodiscard]] inline Aevrynd::LocalReflectionProbe3D
+MakeGameplayForestLocalReflectionProbe3D(
+    const GameplayForestReflectionProbeVolume3D &volume,
+    Aevrynd::EnvironmentLightingHandle3D environment) noexcept {
+  return {environment, volume.minimum, volume.maximum,
+          volume.capture.position, volume.priority};
+}
 inline constexpr std::uint64_t GameplayForestGuideLightIdentityHigh3D =
     0xaec0474c414d5001ull;
 inline constexpr std::array<Aevrynd::Vec3, 5>

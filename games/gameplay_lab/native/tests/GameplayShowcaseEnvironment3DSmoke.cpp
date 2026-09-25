@@ -942,6 +942,17 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  const auto reflectionVolumes = GameplayForestReflectionProbeVolumes3D();
+  if (!ValidGameplayForestReflectionProbeVolumes3D(reflectionVolumes))
+    return 60;
+  const std::array<LocalReflectionProbe3D, 2> reflectionProbes{
+      MakeGameplayForestLocalReflectionProbe3D(reflectionVolumes[0], {101}),
+      MakeGameplayForestLocalReflectionProbe3D(reflectionVolumes[1], {202})};
+  if (SelectLocalReflectionProbe3D({-12.f, 2.f, 22.f}, reflectionProbes) != 0 ||
+      SelectLocalReflectionProbe3D({-10.6f, .5f, 18.6f}, reflectionProbes) != 0 ||
+      SelectLocalReflectionProbe3D({-4.f, 1.f, 14.f}, reflectionProbes) != 1 ||
+      SelectLocalReflectionProbe3D({40.f, 1.f, 40.f}, reflectionProbes) != SIZE_MAX)
+    return 61;
   {
     const Color source{.8f, .6f, .4f, .73f};
     ShowcaseTerrainEcologyTint3D ecology{};

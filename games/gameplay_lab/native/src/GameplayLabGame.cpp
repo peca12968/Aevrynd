@@ -1143,6 +1143,13 @@ void GameplayLabGame::OnStart(Engine& engine){
   paletteUi_->SetLayout({18,502,344,150},4);
   showcaseEnvironment_.ApplyHighProfile(engine.Draw());if(engine.RequestedRenderQuality()==RenderQuality3D::Ultra)engine.Draw().SetDirectionalShadowCascades({4,4096,.1f,220.f,.70f,.10f});
   showcaseRendererBaseline_=engine.GetRendererStats();
+  const auto reflectionProbeVolumes=GameplayForestReflectionProbeVolumes3D();
+  if(!ValidGameplayForestReflectionProbeVolumes3D(reflectionProbeVolumes))throw std::runtime_error("Gameplay forest reflection probe layout was invalid");
+  for(std::size_t index=0;index<reflectionProbeVolumes.size();++index){
+    showcaseReflectionProbeCaptures_[index]=engine.CreateReflectionProbeCapture3D(reflectionProbeVolumes[index].capture);
+    if(!showcaseReflectionProbeCaptures_[index])throw std::runtime_error("Gameplay forest reflection probe capture creation failed");
+  }
+  showcaseReflectionProbeLightingPhase_=std::uint8_t(rules_.Lighting());
   if(!InitializeEnvironmentCollision())throw std::runtime_error("Gameplay environment collision streaming initialization failed");
   collisions_.CreateBox({{{0,1.5f,-12},{4,1.5f,.6f}},1,0xffffffffu});
   for(int i=0;i<18;++i){const Vec3 p{-8.f+float(i%6)*1.6f,.65f+float(i/6)*1.25f,-3.f};if(!palette_->PlaceAt(p,PaletteCategory::Physics))throw std::runtime_error("Initial gameplay palette transaction failed");}
@@ -1248,6 +1255,12 @@ void GameplayLabGame::OnStop(Engine &engine) {
     }
     showcaseOut<<"],\"terrainGroundingEligible\":"<<showcaseReceipt.terrainGroundingEligible<<",\"terrainGroundedDescriptors\":"<<showcaseReceipt.terrainGroundedDescriptors<<",\"terrainGroundingMaximumError\":"<<showcaseReceipt.terrainGroundingMaximumError<<",\"terrainGroundingApplied\":"<<(showcaseReceipt.terrainGroundingApplied?1:0)<<",\"normalizedAssets\":"<<productionSubmission.normalizedAssets<<",\"normalizationRejected\":"<<productionSubmission.normalizationRejected<<",\"meshChainsSubmitted\":"<<productionSubmission.meshChainsSubmitted<<",\"meshChainsRejected\":"<<productionSubmission.meshChainsRejected<<",\"releasedDescriptors\":"<<showcaseRelease.descriptorsReleased<<",\"retainedBytesAfterRelease\":"<<showcaseRelease.retainedBytesAfter<<"}";
   }
+  if(!captureDirectory_.empty()){
+    std::ofstream probeOut(captureDirectory_/"gameplay-reflection-probe-receipt.json",std::ios::trunc);
+    probeOut<<std::format("{{\"runId\":\"{}\",\"source\":\"GameplayForestReflectionProbes3D\",\"captureRequests\":{},\"facesRendered\":{},\"budgetRejections\":{},\"localProbeCount\":{},\"localProbeDraws\":{},\"readyCount\":{}}}",runId_,showcaseRendererAfter.reflectionProbeCaptureRequests-showcaseRendererBaseline_.reflectionProbeCaptureRequests,showcaseRendererAfter.reflectionProbeCaptureFacesRendered-showcaseRendererBaseline_.reflectionProbeCaptureFacesRendered,showcaseRendererAfter.reflectionProbeCaptureBudgetRejections-showcaseRendererBaseline_.reflectionProbeCaptureBudgetRejections,showcaseRendererAfter.localReflectionProbeCount,showcaseRendererAfter.localReflectionProbeDraws-showcaseRendererBaseline_.localReflectionProbeDraws,showcaseReflectionProbeReadyCount_);
+  }
+  for(auto& capture:showcaseReflectionProbeCaptures_){engine.DestroyReflectionProbeCapture3D(capture);capture={};}
+  showcaseReflectionProbeEnvironments_={};
   // typed LOD證據寫出後立即釋放每景向量容量，避免長時間工具執行保留記憶體。
   for(auto& samples:captureEnvironmentLodSamples_)std::vector<::GameplayLab::ShowcaseLodSample3D>{}.swap(samples);
   physics_.Clear();
@@ -1886,6 +1899,26 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   }
   if(!captureDirectory_.empty())captureReplayInput_.ConsumePresses();
   UpdateCapture(engine,true);
+}
+void GameplayLabGame::SubmitForestReflectionProbes(Engine& engine,DrawList& draw){
+  const auto volumes=GameplayForestReflectionProbeVolumes3D();
+  const auto desiredPhase=std::uint8_t(rules_.Lighting());
+  if(showcaseReflectionProbeLightingPhase_!=desiredPhase){
+    bool pending=false;
+    for(const auto capture:showcaseReflectionProbeCaptures_){const auto status=engine.QueryReflectionProbeCaptureStatus3D(capture);pending=pending||!status||status->stage==ReflectionProbeCaptureStage3D::Pending;}
+    if(!pending){
+      bool refreshed=true;
+      for(const auto capture:showcaseReflectionProbeCaptures_)refreshed=engine.MarkReflectionProbeCaptureDirty3D(capture)&&refreshed;
+      if(refreshed)showcaseReflectionProbeLightingPhase_=desiredPhase;
+    }
+  }
+  showcaseReflectionProbeReadyCount_=0;
+  for(std::size_t index=0;index<showcaseReflectionProbeCaptures_.size();++index){
+    if(const auto status=engine.QueryReflectionProbeCaptureStatus3D(showcaseReflectionProbeCaptures_[index]);status&&status->stage==ReflectionProbeCaptureStage3D::ReadyFiltered&&status->environment)showcaseReflectionProbeEnvironments_[index]=status->environment;
+    if(!showcaseReflectionProbeEnvironments_[index])continue;
+    ++showcaseReflectionProbeReadyCount_;
+    if(!draw.AddLocalReflectionProbe(MakeGameplayForestLocalReflectionProbe3D(volumes[index],showcaseReflectionProbeEnvironments_[index])))throw std::runtime_error("Gameplay forest local reflection probe submission failed");
+  }
 }
 void GameplayLabGame::BuildWorld(Engine &engine) {
   scene_.Clear();
@@ -2874,12 +2907,13 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       const auto qualityStats=engine.GetRendererStats();
       if(qualityStats.submittedFrames!=captureUltraSettleLastSubmittedFrame_){captureUltraSettleLastSubmittedFrame_=qualityStats.submittedFrames;++captureUltraSettleFrames_;}
       if(captureUltraSettleFrames_>120)throw std::runtime_error(std::format(
-        "Gameplay Ultra quality did not commit after capture settle: frames={} gpuNs={} shadowNs={} shadowRecorded={} shadowValid={} captureCopyNs={} captureCopyRecorded={} captureCopyValid={} atmosphereNs={} hzbPrepassNs={} hzbBuildNs={} hzbCullNs={} hzbColorNs={} errors={} warnings={}",
+        "Gameplay Ultra quality did not commit after capture settle: frames={} gpuNs={} shadowNs={} shadowRecorded={} shadowValid={} captureCopyNs={} captureCopyRecorded={} captureCopyValid={} atmosphereNs={} hzbPrepassNs={} hzbBuildNs={} hzbCullNs={} hzbColorNs={} errors={} warnings={} firstErrorId={} firstError={}",
         captureUltraSettleFrames_,qualityStats.lastGpuFrameNanoseconds,
         qualityStats.lastShadowRenderingGpuTiming.nanoseconds,qualityStats.lastShadowRenderingGpuTiming.recorded,qualityStats.lastShadowRenderingGpuTiming.valid,
         qualityStats.lastProductionCaptureCopyGpuTiming.nanoseconds,qualityStats.lastProductionCaptureCopyGpuTiming.recorded,qualityStats.lastProductionCaptureCopyGpuTiming.valid,
         qualityStats.lastVolumetricAtmosphereGpuNanoseconds,qualityStats.lastHzbPrepassGpuNanoseconds,qualityStats.lastHzbBuildGpuNanoseconds,
-        qualityStats.lastHzbCullGpuNanoseconds,qualityStats.lastHzbColorGpuNanoseconds,qualityStats.debugErrorCount,qualityStats.debugWarningCount));
+        qualityStats.lastHzbCullGpuNanoseconds,qualityStats.lastHzbColorGpuNanoseconds,qualityStats.debugErrorCount,qualityStats.debugWarningCount,
+        qualityStats.debugFirstErrorId,qualityStats.debugErrorIdCount?qualityStats.debugErrorDescriptions[0]:std::string{}));
       return;
     }
     std::ofstream presentationOut(captureDirectory_/"gameplay-presentation-receipt.json",std::ios::trunc);
@@ -3271,6 +3305,7 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   if(playerHistory_.HasPendingSubmission())playerHistory_.ResolveSubmitted(engine);
   if(monsterHistory_.HasPendingSubmission())monsterHistory_.ResolveSubmitted(engine);
   BuildWorld(engine);
+  SubmitForestReflectionProbes(engine,engine.Draw());
   const bool frozenBeforeCaptureRequest=GameplayUseFrozenPose3D(capturePoseFrozen_,temporalFixtureWarmupFrames_!=0,capturePairFrozen_,captureTemporalWarmupActive_,captureScenarioClock_.ReadyToStage());
   RequestCapturePhase(engine);
   // Render 只選擇 fixed simulation 已發布的 authority/frozen snapshot；不得回寫或重新求值。

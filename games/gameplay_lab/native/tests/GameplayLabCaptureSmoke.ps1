@@ -36,7 +36,7 @@ if($GpuValidation){$env:AEVRYND_GPU_VALIDATION='1'}else{Remove-Item Env:AEVRYND_
 $manifestPath=Join-Path (Split-Path -Parent $Executable) 'assets/photoreal-cooked/runtime-render-manifest.json'
 if(-not(Test-Path -LiteralPath $manifestPath)){throw 'Packaged runtime render manifest missing'}
 $packageEvidence=Get-GameplayPhotorealPackageEvidence $manifestPath
-$runReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-presentation-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
+$runReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-presentation-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-reflection-probe-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
 # 離線重播只讀取既有完整artifact；正式capture仍重建受控目錄。
 if($OfflineReplay -and -not(Test-Path -LiteralPath $directory -PathType Container)){throw 'Gameplay offline replay capture directory is missing'}
 if(-not$OfflineReplay){
@@ -105,6 +105,8 @@ $temporalReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-t
 $referenceOpacityReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-reference-opacity-receipt.json')|ConvertFrom-Json
 $releaseReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-character-release-receipt.json')|ConvertFrom-Json
 $environmentReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-environment-receipt.json')|ConvertFrom-Json
+$reflectionProbeReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-reflection-probe-receipt.json')|ConvertFrom-Json
+if($reflectionProbeReceipt.runId-ne$receipt.runId-or$reflectionProbeReceipt.source-cne'GameplayForestReflectionProbes3D'-or[uint32]$reflectionProbeReceipt.captureRequests-ne2-or[uint64]$reflectionProbeReceipt.facesRendered-lt12-or[uint64]$reflectionProbeReceipt.budgetRejections-ne0-or[uint32]$reflectionProbeReceipt.localProbeCount-ne2-or[uint64]$reflectionProbeReceipt.localProbeDraws-lt1-or[uint32]$reflectionProbeReceipt.readyCount-ne2){throw 'Gameplay forest reflection probe execution gate failed'}
 $photorealReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-photoreal-receipt.json')|ConvertFrom-Json
 $environmentCollisionReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-environment-collision-receipt.json')|ConvertFrom-Json
 $paletteUiReceipt=Get-Content -Raw -LiteralPath (Join-Path $directory 'gameplay-palette-ui-receipt.json')|ConvertFrom-Json

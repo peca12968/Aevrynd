@@ -186,6 +186,11 @@ public:
     ReadbackCaptureSequenceResult3D EndReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token){return renderer_?renderer_->EndReadbackCaptureSequence3D(token):ReadbackCaptureSequenceResult3D{ReadbackCaptureSequenceStatus3D::DeviceLost,{}};}
     ReadbackCaptureSequenceGpuProvenance3D ReadbackCaptureSequenceGpuProvenance(ReadbackCaptureSequenceToken3D token)const{return renderer_?renderer_->ReadbackCaptureSequenceGpuProvenance(token):ReadbackCaptureSequenceGpuProvenance3D{};}
     bool CancelReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token)noexcept{return renderer_&&renderer_->CancelReadbackCaptureSequence3D(token);}
+    ReflectionProbeCaptureHandle3D CreateReflectionProbeCapture3D(ReflectionProbeCaptureSettings3D settings){return renderer_?renderer_->CreateReflectionProbeCapture3D(settings):ReflectionProbeCaptureHandle3D{};}
+    void DestroyReflectionProbeCapture3D(ReflectionProbeCaptureHandle3D handle){if(renderer_)renderer_->DestroyReflectionProbeCapture3D(handle);}
+    bool MarkReflectionProbeCaptureDirty3D(ReflectionProbeCaptureHandle3D handle){return renderer_&&renderer_->MarkReflectionProbeCaptureDirty3D(handle);}
+    std::optional<ReflectionProbeCaptureStatus3D> QueryReflectionProbeCaptureStatus3D(ReflectionProbeCaptureHandle3D handle)const{return renderer_?renderer_->ReflectionProbeCaptureStatus(handle):std::optional<ReflectionProbeCaptureStatus3D>{};}
+    EnvironmentLightingHandle3D ReflectionProbeCaptureEnvironment3D(ReflectionProbeCaptureHandle3D handle)const{return renderer_?renderer_->ReflectionProbeCaptureEnvironment3D(handle):EnvironmentLightingHandle3D{};}
     bool PrepareRebaseReflectionProbeCaptures3D(Vec3 localDelta,uint64_t originGeneration){return renderer_&&renderer_->PrepareRebaseReflectionProbeCaptures3D(localDelta,originGeneration);}
     void CommitPreparedReflectionProbeCaptureRebase3D()noexcept{if(renderer_)renderer_->CommitPreparedReflectionProbeCaptureRebase3D();}
     void AbortPreparedReflectionProbeCaptureRebase3D()noexcept{if(renderer_)renderer_->AbortPreparedReflectionProbeCaptureRebase3D();}
