@@ -1005,9 +1005,13 @@ void GameplayLabGame::OnStart(Engine& engine){
   showcaseGroundMaterial_.normalScale=.65f;showcaseWoodMaterial_.normalScale=.8f;showcaseBarkMaterial_.normalScale=1.1f;showcaseRockMaterial_.normalScale=1.2f;
   const auto showcaseModelRoot=assetRoot/"environment-model-packs";
   showcaseModelMaterialLibrary_.Initialize(engine,showcaseModelRoot);
-  const std::array<MaterialAssetDefinition3D,2> showcaseModelMaterials={
+  std::array<MaterialAssetDefinition3D,2> showcaseModelMaterials={
     MaterialAssetDefinition3D{"quiver-tree-02",{"poly-haven/quiver_tree_02/1k/base-color.jpg","poly-haven/quiver_tree_02/1k/roughness.jpg",1024,"poly-haven/quiver_tree_02/1k/normal-dx.jpg"},{{1,1,1,1},{.82f,0,0,.92f},true,{},1.f,true}},
     MaterialAssetDefinition3D{"rock-09",{"poly-haven/rock_09/1k/base-color.jpg","poly-haven/rock_09/1k/roughness.jpg",1024,"poly-haven/rock_09/1k/normal-dx.jpg"},{{1,1,1,1},{.76f,0,0,1},true,{},1.f,true}}};
+  showcaseModelMaterials[1].textures.integrity={
+    MaterialTextureIntegrity3D{595103,"afb7ae5ae82238d304aba589391ac6bc87f7cf1dbfe50980c21f762cfdd87efd"},
+    MaterialTextureIntegrity3D{445567,"a32a88790a2f5a1e2a89faaa2caeadc7c89453b49916495dbf2a88cd0a8f39ef"},
+    MaterialTextureIntegrity3D{747331,"97ab8b59d38c40602851d13f7641e2773146c617cb57d4cf573398b48ab0da9a"}};
   if(!showcaseModelMaterialLibrary_.LoadAll(showcaseModelMaterials))throw std::runtime_error("Gameplay showcase CC0 model material loading failed");
   if(const auto* value=showcaseModelMaterialLibrary_.Find("quiver-tree-02"))showcaseQuiverTreeMaterial_=*value;
   if(const auto* value=showcaseModelMaterialLibrary_.Find("rock-09"))showcaseRock09Material_=*value;
@@ -2500,7 +2504,7 @@ void GameplayLabGame::AddShowcaseEnvironment(){
   // low-light silhouettes in the capture-proven third/God overlap.  The
   // placements intentionally remain outside the maintained tread and never
   // enter the environment descriptor/collider set.
-  auto trailDetailStone=approachStone;
+  auto trailDetailStone=showcaseRock09Material_;
   trailDetailStone.tint=rules_.Lighting()==LightingPhase::Night
       ?Color{.51f,.46f,.39f,1.f}:Color{.42f,.38f,.32f,1.f};
   trailDetailStone.normalScale=1.18f;
