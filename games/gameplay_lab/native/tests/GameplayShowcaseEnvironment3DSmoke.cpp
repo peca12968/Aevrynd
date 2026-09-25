@@ -822,16 +822,17 @@ bool ReadableForestWater(const WaterSurfaceSettings3D &value) {
   return value.reflectance >= .019f && value.reflectance <= .023f &&
          value.minimumRoughness >= .045f && value.minimumRoughness <= .055f &&
          value.maximumRoughness >= .16f && value.maximumRoughness <= .18f &&
-         value.broadWaveScale >= .20f && value.broadWaveScale <= .24f &&
-         value.broadWaveStrength >= .085f && value.broadWaveStrength <= .105f &&
+         value.broadWaveScale >= .30f && value.broadWaveScale <= .34f &&
+         value.broadWaveStrength >= .035f && value.broadWaveStrength <= .045f &&
          value.broadWaveSpeed >= .18f && value.broadWaveSpeed <= .22f &&
          value.detailWaveScale >= 1.35f && value.detailWaveScale <= 1.55f &&
          value.detailWaveStrength >= .03f && value.detailWaveStrength <= .04f &&
          value.detailWaveSpeed >= .50f && value.detailWaveSpeed <= .60f &&
-         value.broadWaveStrength > value.detailWaveStrength * 2.5f &&
+         value.broadWaveStrength >= value.detailWaveStrength * 1.05f &&
+         value.broadWaveStrength <= value.detailWaveStrength * 1.35f &&
          value.foamStartDepth >= .015f && value.foamStartDepth <= .025f &&
          value.foamEndDepth >= .11f && value.foamEndDepth <= .13f &&
-         value.foamStrength >= .16f && value.foamStrength <= .20f &&
+         value.foamStrength >= .07f && value.foamStrength <= .10f &&
          value.shallowAlpha >= .36f && value.shallowAlpha <= .40f &&
          value.deepAlpha >= .76f && value.deepAlpha <= .80f &&
          value.deepAlpha - value.shallowAlpha >= .38f &&
