@@ -3,6 +3,7 @@
 #include <Aevrynd/Math.h>
 
 #include <cmath>
+#include <array>
 #include <cstdint>
 #include <string_view>
 
@@ -25,6 +26,31 @@ struct ForestTrialRoute3D {
   float checkpointRadius{2.25f};
   float completionRadius{2.25f};
 };
+
+struct ForestTrialArenaStone3D {
+  Aevrynd::Vec3 offset{};
+  Aevrynd::Vec3 scale{1.f, 1.f, 1.f};
+  float yaw{};
+};
+
+inline constexpr std::uint64_t GameplayForestTrialArenaStoneIdentityHigh3D =
+    0xaec04152454e4101ull;
+
+// A broken stone ring gives the east-bank guardian encounter a readable place
+// in the world without fencing the player in.  The gaps face the bridge and
+// forest exit, every stone remains outside the melee envelope, and the props
+// are render-only so the authoritative controller/collision route is unchanged.
+inline constexpr std::array<ForestTrialArenaStone3D, 8>
+    GameplayForestTrialArenaStones3D{{
+        {{-3.65f, 0.f, -.85f}, {.78f, .62f, 1.05f}, .28f},
+        {{-2.55f, 0.f, -2.85f}, {.92f, .70f, .76f}, 1.04f},
+        {{-.55f, 0.f, -3.75f}, {.72f, .58f, 1.10f}, 1.82f},
+        {{2.05f, 0.f, -3.10f}, {1.08f, .76f, .82f}, 2.48f},
+        {{3.70f, 0.f, -.60f}, {.84f, .66f, 1.02f}, -.36f},
+        {{3.15f, 0.f, 2.20f}, {1.02f, .72f, .78f}, .72f},
+        {{.75f, 0.f, 3.75f}, {.76f, .60f, 1.14f}, 1.44f},
+        {{-2.05f, 0.f, 3.05f}, {1.10f, .78f, .80f}, 2.12f},
+    }};
 
 class GameplayForestTrial3D {
 public:

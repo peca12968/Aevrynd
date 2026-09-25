@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <set>
 
 using namespace GameplayLab;
 
@@ -111,8 +112,34 @@ int main() {
       trial.DirectionLabel({-10.f, 0.f, 10.f}, 0.f) != "RIGHT")
     return 15;
 
+  // The guardian arena is physical world composition, not a HUD-only target.
+  // Keep a clear melee centre and two useful approach gaps while proving all
+  // render identities and authored transforms are deterministic and finite.
+  std::set<std::uint64_t> arenaIdentities;
+  float minimumArenaRadius = std::numeric_limits<float>::max();
+  float maximumArenaRadius = 0.f;
+  for (std::size_t index = 0;
+       index < GameplayForestTrialArenaStones3D.size(); ++index) {
+    const auto &stone = GameplayForestTrialArenaStones3D[index];
+    const float radius = std::hypot(stone.offset.x, stone.offset.z);
+    minimumArenaRadius = (std::min)(minimumArenaRadius, radius);
+    maximumArenaRadius = (std::max)(maximumArenaRadius, radius);
+    if (!std::isfinite(stone.offset.x) || !std::isfinite(stone.offset.z) ||
+        !std::isfinite(stone.yaw) || stone.scale.x <= 0.f ||
+        stone.scale.y <= 0.f || stone.scale.z <= 0.f ||
+        !arenaIdentities.insert(
+             GameplayForestTrialArenaStoneIdentityHigh3D ^ (index + 1u))
+             .second)
+      return 16;
+  }
+  if (GameplayForestTrialArenaStones3D.size() != 8u ||
+      minimumArenaRadius < 3.45f || maximumArenaRadius > 3.90f)
+    return 17;
+
   std::cout << "GAMEPLAY_FOREST_TRIAL=PASS transitions="
             << completedTransitions << " routeDistance=" << routeDistance
-            << '\n';
+            << " arenaStones=" << GameplayForestTrialArenaStones3D.size()
+            << " arenaRadius=" << minimumArenaRadius << ".."
+            << maximumArenaRadius << '\n';
   return 0;
 }

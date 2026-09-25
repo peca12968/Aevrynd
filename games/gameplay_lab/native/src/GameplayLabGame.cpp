@@ -2559,6 +2559,37 @@ void GameplayLabGame::AddShowcaseEnvironment(){
        GameplayForestTrailDetailStones3D.size())
     throw std::runtime_error("Forest trail detail stone draw count gate failed");
   // R109_FOREST_TRAIL_DETAIL_STONES_END
+
+  // FOREST_TRIAL_ARENA_BEGIN
+  // The quest target is authored into the landscape rather than represented
+  // only by HUD text.  A deliberately broken ring leaves two broad approaches
+  // clear and reuses the resident licensed rock mesh/material; these props do
+  // not enter collision or the streamed environment descriptor set.
+  if(forestTrial_.Initialized()){
+    auto arenaStone=showcaseRock09Material_;
+    arenaStone.tint=rules_.Lighting()==LightingPhase::Night
+        ?Color{.40f,.44f,.38f,1.f}:Color{.47f,.49f,.40f,1.f};
+    arenaStone.normalScale=1.24f;
+    arenaStone.castsShadow=rules_.Lighting()!=LightingPhase::Night;
+    const auto arenaCenter=forestTrial_.Route().guardianArena;
+    const auto arenaDrawsBefore=scene_.MeshCount();
+    for(std::size_t index=0;
+        index<GameplayForestTrialArenaStones3D.size();++index){
+      const auto& authored=GameplayForestTrialArenaStones3D[index];
+      const Vec3 position{arenaCenter.x+authored.offset.x,0.f,
+                          arenaCenter.z+authored.offset.z};
+      const float terrainY=showcaseTerrain_.SampleHeight(position.x,position.z);
+      const RenderObjectIdentity3D identity{
+          {GameplayForestTrialArenaStoneIdentityHigh3D,index+1u},1};
+      scene_.Mesh(showcaseRock09Mesh_,
+          {{position.x,terrainY+.008f,position.z},
+           {0,authored.yaw,0},authored.scale},arenaStone,{},identity);
+    }
+    if(scene_.MeshCount()!=arenaDrawsBefore+
+         GameplayForestTrialArenaStones3D.size())
+      throw std::runtime_error("Forest trial arena stone draw count gate failed");
+  }
+  // FOREST_TRIAL_ARENA_END
 }
 bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
   if(captureDirectory_.empty())return false;
