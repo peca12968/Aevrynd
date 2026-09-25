@@ -795,6 +795,19 @@ SampleShowcaseTerrainEcologyTint3D(
   return result;
 }
 
+// 將已驗證的世界座標生態資料以保守強度帶入地形頂點色。PBR 三層材質
+// 仍是主要外觀來源；這層只提供步道、林床與濕岸的大尺度色調分區，避免
+// 在相機空間造假或增加 draw call。alpha 保留原本的高度編碼。
+inline constexpr float ShowcaseTerrainEcologyVertexTintStrength3D = .34f;
+[[nodiscard]] inline Aevrynd::Color BlendShowcaseTerrainEcologyTint3D(
+    Aevrynd::Color source,
+    const ShowcaseTerrainEcologyTint3D &ecology) noexcept {
+  constexpr float strength = ShowcaseTerrainEcologyVertexTintStrength3D;
+  return {source.r * (1.f + (ecology.tint.r - 1.f) * strength),
+          source.g * (1.f + (ecology.tint.g - 1.f) * strength),
+          source.b * (1.f + (ecology.tint.b - 1.f) * strength), source.a};
+}
+
 // 必須在外環建立後呼叫，確保正式網格的每個頂點都有明確 biome 資料。
 // 外環不延伸遊戲區內的 authored biome；它只負責 God 鏡頭的遠景覆蓋。
 inline void ApplyShowcaseTerrainBiomeUv3D(

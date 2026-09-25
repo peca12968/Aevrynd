@@ -942,6 +942,21 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  {
+    const Color source{.8f, .6f, .4f, .73f};
+    ShowcaseTerrainEcologyTint3D ecology{};
+    ecology.tint = {.5f, .75f, .25f, 1.f};
+    const auto blended = BlendShowcaseTerrainEcologyTint3D(source, ecology);
+    const auto neutral = BlendShowcaseTerrainEcologyTint3D(source, {});
+    if (std::abs(blended.r - .664f) > 1e-6f ||
+        std::abs(blended.g - .549f) > 1e-6f ||
+        std::abs(blended.b - .298f) > 1e-6f || blended.a != source.a ||
+        neutral.r != source.r || neutral.g != source.g ||
+        neutral.b != source.b || neutral.a != source.a) {
+      std::cerr << "terrain ecology vertex tint divergence\n";
+      return 106;
+    }
+  }
   // R109: the playable third-person foreground needs real world-space
   // silhouettes in dusk/night, not another full-screen or terrain scalar.
   // These stones are render-only, keep the maintained tread clear, and stay

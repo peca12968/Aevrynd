@@ -956,8 +956,9 @@ void GameplayLabGame::OnStart(Engine& engine){
      terrainGrounding.groundedDescriptors!=showcaseEnvironment_.LandReceipt().placements)
     throw std::runtime_error("Gameplay showcase land descriptors could not be grounded to the final terrain");
   showcaseRiverMesh_=engine.CreateMeshResource3D(CreateRiverHeroCellMesh3D(showcaseTerrain_));
-  // 真實三層 PBR 貼圖提供細節；RGB 只保留倒木造成的微地表擾動，
-  // path/leaf-litter/wet-soil 則透過 Terrain 專用 signed UV 直接重配材質層。
+  // 真實三層 PBR 貼圖提供細節；RGB 保留倒木造成的微地表擾動，並以
+  // 保守強度加入同一份 path/leaf-litter/wet-soil 世界資料的大尺度色調。
+  // Terrain 專用 signed UV 仍負責直接重配材質層。
   // alpha 仍原封不動保存高度供原有坡度／高度 biome 使用。
   auto terrainMesh=CreateShowcaseRiverRefinedTerrainMesh3D(showcaseTerrain_,{{1,1,1,1},{1,1,1,1},{1,1,1,1},.7f,{1,1,1,1},-.65f,2.2f,0x4a17u,.0042f,0.f,.32f,{1,1,1,1},{1,1,1,1},{1,1,1,1},.34f,.7f,.11f,.7f,.1f});
   const std::size_t authoredTerrainVertexCount=terrainMesh.vertices.size();
@@ -968,7 +969,7 @@ void GameplayLabGame::OnStart(Engine& engine){
   ShowcaseTerrainBiomeUvValidation3D biomeValidation{};
   if(!ValidateShowcaseTerrainBiomeUv3D(terrainMesh,authoredTerrainVertexCount,&biomeValidation))
     throw std::runtime_error("Gameplay showcase terrain biome UV contract failed: reason="+std::to_string(unsigned(biomeValidation.failure))+" element="+std::to_string(biomeValidation.elementIndex)+" u="+std::to_string(biomeValidation.minimumU)+"/"+std::to_string(biomeValidation.maximumU));
-  for(auto& vertex:terrainMesh.vertices){const auto source=UnpackColorRgba8(vertex.color);const auto disturbance=SampleShowcaseTerrainDisturbance3D({vertex.x,vertex.y,vertex.z},terrainDisturbanceAnchors);vertex.color=PackColorRgba8({source.r*disturbance.tint.r,source.g*disturbance.tint.g,source.b*disturbance.tint.b,source.a});}
+  for(std::size_t vertexIndex=0;vertexIndex<terrainMesh.vertices.size();++vertexIndex){auto& vertex=terrainMesh.vertices[vertexIndex];const auto source=UnpackColorRgba8(vertex.color);const auto disturbance=SampleShowcaseTerrainDisturbance3D({vertex.x,vertex.y,vertex.z},terrainDisturbanceAnchors);const Color disturbed{source.r*disturbance.tint.r,source.g*disturbance.tint.g,source.b*disturbance.tint.b,source.a};const auto ecology=vertexIndex<authoredTerrainVertexCount?SampleShowcaseTerrainEcologyTint3D({vertex.x,vertex.y,vertex.z},showcaseEnvironment_.Descriptors()):ShowcaseTerrainEcologyTint3D{};vertex.color=PackColorRgba8(BlendShowcaseTerrainEcologyTint3D(disturbed,ecology));}
   showcaseTerrainMesh_=engine.CreateMeshResource3D(terrainMesh);
   if(!showcaseCylinderMesh_||!showcaseConeHighMesh_||!showcaseConeLowMesh_||!showcaseGrassHighMesh_||!showcaseGrassLowMesh_||!showcaseFernHighMesh_||!showcaseFernLowMesh_||!showcaseShrubHighMesh_||!showcaseShrubLowMesh_||!showcaseTreeLowMesh_||!showcaseRockLowMesh_||!showcaseRiverMesh_||!showcaseCottageFrontMesh_||!showcaseCottageBackMesh_||!showcaseCottageSideMesh_||!showcaseCottageRoofMesh_||!showcaseTerrainMesh_)throw std::runtime_error("Gameplay showcase procedural GPU upload failed");
   const auto assetRoot=engine.ExecutableDirectory()/"assets";
