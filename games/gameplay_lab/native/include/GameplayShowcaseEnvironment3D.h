@@ -41,6 +41,31 @@ inline constexpr std::array<Aevrynd::Vec3, 9>
         {-10.65f, 0.f, 16.68f}, {-11.31f, 0.f, 17.31f},
         {-10.75f, 0.f, 17.94f}, {-11.82f, 0.f, 18.57f},
         {-11.68f, 0.f, 19.20f}}};
+struct GameplayForestTrailDetailStone3D {
+  Aevrynd::Vec3 position{};
+  Aevrynd::Vec3 scale{1.f, 1.f, 1.f};
+  float yaw{};
+};
+inline constexpr std::uint64_t
+    GameplayForestTrailDetailStoneIdentityHigh3D =
+        0xaec0524f434b0001ull;
+// 實際 capture 的 third/God 重疊區域內放置少量世界空間石塊。
+// 它們全部離開主走道、不加入 collider，只負責在黃昏與夜間提供
+// 可辨識的輪廓、陰影與 PBR 粗糙度細節。
+inline constexpr std::array<GameplayForestTrailDetailStone3D, 12>
+    GameplayForestTrailDetailStones3D{{
+        {{-20.65f, 0.f, 7.55f}, {1.18f, .82f, .94f}, .28f},
+        {{-19.70f, 0.f, 8.65f}, {.92f, .68f, 1.20f}, 1.04f},
+        {{-20.72f, 0.f, 10.05f}, {1.30f, .72f, .78f}, 2.12f},
+        {{-19.42f, 0.f, 10.92f}, {.95f, .75f, 1.10f}, -.54f},
+        {{-18.62f, 0.f, 9.72f}, {1.05f, .75f, .90f}, .62f},
+        {{-11.12f, 0.f, 7.42f}, {1.35f, .95f, 1.00f}, 2.42f},
+        {{-10.18f, 0.f, 8.52f}, {1.05f, .80f, 1.32f}, -.92f},
+        {{-10.60f, 0.f, 9.48f}, {1.45f, 1.20f, 1.00f}, .16f},
+        {{-9.65f, 0.f, 10.58f}, {.95f, .72f, 1.10f}, 1.62f},
+        {{-21.10f, 0.f, 11.00f}, {1.05f, .70f, 1.12f}, -1.34f},
+        {{-20.95f, 0.f, 8.85f}, {.88f, .65f, .86f}, -.15f},
+        {{-10.15f, 0.f, 7.25f}, {.95f, .66f, .78f}, .75f}}};
 enum class ShowcaseSceneKind3D : std::uint8_t {
   Terrain,
   Water,

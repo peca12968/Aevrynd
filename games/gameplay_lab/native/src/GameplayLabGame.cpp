@@ -2494,6 +2494,33 @@ void GameplayLabGame::AddShowcaseEnvironment(){
        GameplayForestCottageApproachPavers3D.size())
     throw std::runtime_error("Cottage approach paver draw count gate failed");
   // R105_COTTAGE_APPROACH_PAVERS_END
+
+  // R109_FOREST_TRAIL_DETAIL_STONES_BEGIN
+  // Reuse the resident licensed rock_09 mesh and PBR material to add real
+  // low-light silhouettes in the capture-proven third/God overlap.  The
+  // placements intentionally remain outside the maintained tread and never
+  // enter the environment descriptor/collider set.
+  auto trailDetailStone=approachStone;
+  trailDetailStone.tint=rules_.Lighting()==LightingPhase::Night
+      ?Color{.51f,.46f,.39f,1.f}:Color{.42f,.38f,.32f,1.f};
+  trailDetailStone.normalScale=1.18f;
+  trailDetailStone.castsShadow=rules_.Lighting()!=LightingPhase::Night;
+  const auto trailDetailDrawsBefore=scene_.MeshCount();
+  for(std::size_t index=0;
+      index<GameplayForestTrailDetailStones3D.size();++index){
+    const auto& authored=GameplayForestTrailDetailStones3D[index];
+    const float terrainY=showcaseTerrain_.SampleHeight(
+        authored.position.x,authored.position.z);
+    const RenderObjectIdentity3D identity{
+        {GameplayForestTrailDetailStoneIdentityHigh3D,index+1u},1};
+    scene_.Mesh(showcaseRock09Mesh_,
+        {{authored.position.x,terrainY+.008f,authored.position.z},
+         {0,authored.yaw,0},authored.scale},trailDetailStone,{},identity);
+  }
+  if(scene_.MeshCount()!=trailDetailDrawsBefore+
+       GameplayForestTrailDetailStones3D.size())
+    throw std::runtime_error("Forest trail detail stone draw count gate failed");
+  // R109_FOREST_TRAIL_DETAIL_STONES_END
 }
 bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
   if(captureDirectory_.empty())return false;

@@ -942,6 +942,47 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
 } // namespace
 
 int main() {
+  // R109: the playable third-person foreground needs real world-space
+  // silhouettes in dusk/night, not another full-screen or terrain scalar.
+  // These stones are render-only, keep the maintained tread clear, and stay
+  // inside the independently reconstructed third/God capture overlap.
+  if (GameplayForestTrailDetailStones3D.size() != 12u ||
+      GameplayForestTrailDetailStoneIdentityHigh3D == 0u)
+    return 114;
+  bool trailDetailStoneInvalid = false;
+  for (std::size_t index = 0;
+       index < GameplayForestTrailDetailStones3D.size(); ++index) {
+    const auto &stone = GameplayForestTrailDetailStones3D[index];
+    const auto trail = SampleShowcaseHeroTrail3D(stone.position);
+    if (!trail.valid || !std::isfinite(stone.position.x) ||
+        !std::isfinite(stone.position.z) || !std::isfinite(stone.yaw) ||
+        stone.position.x < -21.25f || stone.position.x > -9.50f ||
+        stone.position.z < 7.20f || stone.position.z > 11.10f ||
+        stone.position.y != 0.f || trail.distance < 2.35f ||
+        trail.distance > 5.50f || stone.scale.x < .65f ||
+        stone.scale.x > 1.45f || stone.scale.y < .55f ||
+        stone.scale.y > 1.25f || stone.scale.z < .65f ||
+        stone.scale.z > 1.45f) {
+      std::cerr << "trail detail stone divergence index=" << index
+                << " position=" << stone.position.x << ','
+                << stone.position.z << " distance=" << trail.distance
+                << " scale=" << stone.scale.x << ',' << stone.scale.y
+                << ',' << stone.scale.z << '\n';
+      trailDetailStoneInvalid = true;
+    }
+    for (std::size_t previous = 0; previous < index; ++previous) {
+      const auto delta = stone.position -
+                         GameplayForestTrailDetailStones3D[previous].position;
+      if (std::hypot(delta.x, delta.z) < .75f) {
+        std::cerr << "trail detail stone spacing divergence index=" << index
+                  << " previous=" << previous << '\n';
+        trailDetailStoneInvalid = true;
+      }
+    }
+  }
+  if (trailDetailStoneInvalid)
+    return 115;
+
   // R105：橋面西端到木屋門廊必須有可讀但不阻擋 traversal 的石板引導徑。
   // 位置屬於世界空間 authoring；不得用 camera-space decal 或擴張碰撞假造。
   if (GameplayForestCottageApproachPavers3D.size() != 9u ||
