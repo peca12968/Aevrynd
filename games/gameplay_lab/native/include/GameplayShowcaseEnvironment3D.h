@@ -848,7 +848,11 @@ SampleShowcaseTerrainEcologyTint3D(
 // 將已驗證的世界座標生態資料以保守強度帶入地形頂點色。PBR 三層材質
 // 仍是主要外觀來源；這層只提供步道、林床與濕岸的大尺度色調分區，避免
 // 在相機空間造假或增加 draw call。alpha 保留原本的高度編碼。
-inline constexpr float ShowcaseTerrainEcologyVertexTintStrength3D = .34f;
+// signed-UV 材質混合負責局部 PBR 回應；此頂點項則在第三人稱與上帝視角
+// 保留步道、落葉林床與濕岸的大尺度層次。舊 .34 雖有數值差異，但經直射光
+// 與 IBL 後會接近中性地表。強度必須低於 .60，避免重疊生態區在樹冠周圍
+// 形成深色圓斑。
+inline constexpr float ShowcaseTerrainEcologyVertexTintStrength3D = .44f;
 [[nodiscard]] inline Aevrynd::Color BlendShowcaseTerrainEcologyTint3D(
     Aevrynd::Color source,
     const ShowcaseTerrainEcologyTint3D &ecology) noexcept {

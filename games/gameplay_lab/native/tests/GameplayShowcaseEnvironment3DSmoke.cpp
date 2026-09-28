@@ -960,14 +960,16 @@ int main() {
       GameplayForestReflectionProbesReadyForCapture3D(0, 0, 2, 0))
     return 62;
   {
+    static_assert(ShowcaseTerrainEcologyVertexTintStrength3D > .34f &&
+                  ShowcaseTerrainEcologyVertexTintStrength3D < .60f);
     const Color source{.8f, .6f, .4f, .73f};
     ShowcaseTerrainEcologyTint3D ecology{};
     ecology.tint = {.5f, .75f, .25f, 1.f};
     const auto blended = BlendShowcaseTerrainEcologyTint3D(source, ecology);
     const auto neutral = BlendShowcaseTerrainEcologyTint3D(source, {});
-    if (std::abs(blended.r - .664f) > 1e-6f ||
-        std::abs(blended.g - .549f) > 1e-6f ||
-        std::abs(blended.b - .298f) > 1e-6f || blended.a != source.a ||
+    if (std::abs(blended.r - .624f) > 1e-6f ||
+        std::abs(blended.g - .534f) > 1e-6f ||
+        std::abs(blended.b - .268f) > 1e-6f || blended.a != source.a ||
         neutral.r != source.r || neutral.g != source.g ||
         neutral.b != source.b || neutral.a != source.a) {
       std::cerr << "terrain ecology vertex tint divergence\n";
