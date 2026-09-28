@@ -913,7 +913,7 @@ float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)
 {
     // 亮度校準只取決於已驗證的 authored 材質權重。惡意／非有限輸入
     // fail-neutral；超額總和先正規化，因此輸出嚴格限制於 wet .62 到
-    // path 1.05，不會改變 neutral 或以無界曝光掩蓋材質錯誤。
+    // path 1.08，不會改變 neutral 或以無界曝光掩蓋材質錯誤。
     if (any(shapedWeights != shapedWeights) || any(abs(shapedWeights) > 65504.0))
         return 1.0;
     float3 authoredWeights = saturate(shapedWeights);
@@ -921,7 +921,35 @@ float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)
     if (authoredWeightTotal <= 0.000001)
         return 1.0;
     authoredWeights /= authoredWeightTotal;
-    return clamp(dot(authoredWeights, float3(1.05, 1.05, 0.62)), 0.62, 1.16);
+    // Maintained trail stays slightly sun-readable, leaf litter sits beneath
+    // the canopy as a darker visual frame, and saturated shoreline soil keeps
+    // the existing low-energy role.  Keeping these roles distinct is what
+    // makes the authored world-space regions readable without changing their
+    // geometry or using a screen-space grading mask.
+    return clamp(dot(authoredWeights, float3(1.08, 0.84, 0.62)), 0.62, 1.16);
+}
+
+float3 TerrainAuthoredBiomeSpectralTint(float3 shapedWeights)
+{
+    // Give the three existing PBR layers separate material identities while
+    // preserving Rec.709 luminance.  Exposure therefore remains owned by the
+    // luma contract above: this function only separates warm compacted trail,
+    // warm-brown leaf litter and cool wet soil.  Invalid input fails neutral.
+    if (any(shapedWeights != shapedWeights) || any(abs(shapedWeights) > 65504.0))
+        return 1.0.xxx;
+    float3 authoredWeights = saturate(shapedWeights);
+    const float authoredWeightTotal = authoredWeights.x + authoredWeights.y + authoredWeights.z;
+    if (authoredWeightTotal <= 0.000001)
+        return 1.0.xxx;
+    authoredWeights /= authoredWeightTotal;
+    const float3 pathTint = float3(1.10, 0.98, 0.82);
+    const float3 leafTint = float3(1.16, 0.88, 0.64);
+    const float3 wetTint = float3(0.76, 0.88, 1.08);
+    const float3 tint = pathTint * authoredWeights.x
+                      + leafTint * authoredWeights.y
+                      + wetTint * authoredWeights.z;
+    const float tintLuma = dot(tint, float3(0.2126, 0.7152, 0.0722));
+    return tintLuma > 0.000001 ? tint / tintLuma : 1.0.xxx;
 }
 
 float RayleighPhase(float cosine)
@@ -2389,6 +2417,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float authoredWetSoilWeight = 0.0;
         float showcaseTerrainAuthoredBiomeCalibration = 0.0;
         float showcaseTerrainAuthoredBiomeLumaScale = 1.0;
+        float3 showcaseTerrainAuthoredBiomeSpectralTint = 1.0.xxx;
         const bool showcaseTerrainProductionBinding =
             input.textureData.w > 0.5 && input.normalScale == -15.5;
         // Showcase 的第三個實體槽是 stony_dirt_path，不是可全域散佈的
@@ -2429,6 +2458,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 showcaseTerrainAuthoredBiomeCalibration = saturate(shapedAuthoredBiomeWeight);
                 showcaseTerrainAuthoredBiomeLumaScale =
                     TerrainAuthoredBiomeLumaScale(shapedAuthoredBiomeWeights);
+                showcaseTerrainAuthoredBiomeSpectralTint =
+                    TerrainAuthoredBiomeSpectralTint(shapedAuthoredBiomeWeights);
                 // 實際綁定順序固定為 forest / Ground108 / stony path。
                 // path 因此主導第三層；leaf litter 以森林層為主；wet soil
                 // 使用 Ground108。三者仍共用既有 9/3 次 PBR sample。
@@ -2638,8 +2669,14 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 光源或相機，也不覆蓋各 layer 的真實反照率。
             const float3 terrainProductionSpectralTrim =
                 lerp(1.0.xxx, float3(0.94, 0.96, 1.04), showcaseTerrainAuthoredBiomeCalibration);
+            // Blend the luminance-neutral biome spectrum only where authored
+            // world data exists.  The bounded strength keeps source texture
+            // variation visible instead of replacing it with a flat tint.
+            const float3 terrainAuthoredBiomeSpectrum = lerp(
+                1.0.xxx, showcaseTerrainAuthoredBiomeSpectralTint,
+                showcaseTerrainAuthoredBiomeCalibration * 0.58);
             // 最終介電質輸出仍保留 .82 上限。
-            baseColor = min(baseColor * terrainAlbedo * terrainProductionSpectralTrim * microVariation *
+            baseColor = min(baseColor * terrainAlbedo * terrainProductionSpectralTrim * terrainAuthoredBiomeSpectrum * microVariation *
                             distanceMacroVariation, 0.82.xxx);
             occlusion*=terrainSurface.r;
             roughness=clamp(roughness*PackedArmRoughness(terrainSurface)*(1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)),0.045,1.0);

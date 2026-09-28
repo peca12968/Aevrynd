@@ -33,7 +33,12 @@ bool R16TerrainBindingContract(std::string_view world,std::string_view gameplay,
       Count(world,"grassSurface.g = lerp(grassSurface.g, calibratedGrassRoughness,")==1&&
       Count(world,"soilSurface.g = clamp")==0&&Count(world,"rockSurface.g = clamp")==0&&
       Count(world,"lerp(1.0.xxx, float3(0.94, 0.96, 1.04), showcaseTerrainAuthoredBiomeCalibration);")==1&&
-      Count(world,"terrainAlbedo * terrainProductionSpectralTrim * microVariation")==1&&
+      Count(world,"float3 TerrainAuthoredBiomeSpectralTint(float3 shapedWeights)")==1&&
+      Count(world,"const float3 pathTint = float3(1.10, 0.98, 0.82);")==1&&
+      Count(world,"const float3 leafTint = float3(1.16, 0.88, 0.64);")==1&&
+      Count(world,"const float3 wetTint = float3(0.76, 0.88, 1.08);")==1&&
+      Count(world,"showcaseTerrainAuthoredBiomeCalibration * 0.58")==1&&
+      Count(world,"terrainAlbedo * terrainProductionSpectralTrim * terrainAuthoredBiomeSpectrum * microVariation")==1&&
       Count(world,"distanceMacroVariation, 0.82.xxx);")==1&&
       Count(world,"const float3 riverWetSoilAlbedo = float3(0.62, 0.72, 0.74);")==1&&
       Count(world,"const float3 pathTarget = float3(0.04, 0.18, 0.78);")==1&&
@@ -72,8 +77,9 @@ bool TerrainOriginalWeightSnapshotContract(std::string_view world){
 }
 bool TerrainAuthoredLumaPreservationContract(std::string_view world){
   return Count(world,"float TerrainAuthoredBiomeLumaScale(float3 shapedWeights)")==1&&
-      Count(world,"authoredWeights /= authoredWeightTotal;")==1&&
-      Count(world,"dot(authoredWeights, float3(1.05, 1.05, 0.62))")==1&&
+      // 中文：亮度與光譜函式各自正規化；任一條被移除都必須 fail closed。
+      Count(world,"authoredWeights /= authoredWeightTotal;")==2&&
+      Count(world,"dot(authoredWeights, float3(1.08, 0.84, 0.62))")==1&&
       Count(world,"showcaseTerrainAuthoredBiomeCalibration = saturate(shapedAuthoredBiomeWeight);")==1&&
       Count(world,"showcaseTerrainAuthoredBiomeCalibration = sqrt")==0&&
       Count(world,"TerrainAuthoredBiomeLumaScale(shapedAuthoredBiomeWeights);")==1&&
@@ -146,8 +152,8 @@ int main(){
     if(const auto normalization=hostileAuthoredNormalization.find("authoredWeights /= authoredWeightTotal;");normalization!=std::string::npos)
       hostileAuthoredNormalization.erase(normalization,std::string_view("authoredWeights /= authoredWeightTotal;").size());
     std::string hostileAuthoredCoefficient=worldShader;
-    if(const auto coefficient=hostileAuthoredCoefficient.find("float3(1.05, 1.05, 0.62)");coefficient!=std::string::npos)
-      hostileAuthoredCoefficient.replace(coefficient,std::string_view("float3(1.05, 1.05, 0.62)").size(),"float3(1.25, 1.05, 0.62)");
+    if(const auto coefficient=hostileAuthoredCoefficient.find("float3(1.08, 0.84, 0.62)");coefficient!=std::string::npos)
+      hostileAuthoredCoefficient.replace(coefficient,std::string_view("float3(1.08, 0.84, 0.62)").size(),"float3(1.25, 0.84, 0.62)");
     const auto terrainBinding=ReadText(source/L"games/gameplay_lab/native/include/ShowcaseTerrainMaterials3D.h");
     std::string hostileBinding=terrainBinding;
     if(const auto layer=hostileBinding.find("\"Ground108:slot-0\"");layer!=std::string::npos)
@@ -195,12 +201,12 @@ int main(){
       value.x=std::clamp(value.x,0.f,1.f);value.y=std::clamp(value.y,0.f,1.f);value.z=std::clamp(value.z,0.f,1.f);
       const float total=value.x+value.y+value.z;if(total<=.000001f)return 1.f;const float inverse=1.f/total;
       value.x*=inverse;value.y*=inverse;value.z*=inverse;
-      return std::clamp(value.x*1.05f+value.y*1.05f+value.z*.62f,.62f,1.16f);
+      return std::clamp(value.x*1.08f+value.y*.84f+value.z*.62f,.62f,1.16f);
     };
     const float hostileScale=authoredLumaScale({1.f,1.f,1.f});
     if(std::abs(authoredLumaScale({0,0,0})-1.f)>1e-6f||
-       std::abs(authoredLumaScale({1,0,0})-1.05f)>1e-6f||
-       std::abs(authoredLumaScale({0,1,0})-1.05f)>1e-6f||
+       std::abs(authoredLumaScale({1,0,0})-1.08f)>1e-6f||
+       std::abs(authoredLumaScale({0,1,0})-.84f)>1e-6f||
        std::abs(authoredLumaScale({0,0,1})-.62f)>1e-6f||
        hostileScale<.62f||hostileScale>1.16f||
        authoredLumaScale({(std::numeric_limits<float>::quiet_NaN)(),0,0})!=1.f)return 35;
