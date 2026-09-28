@@ -663,6 +663,12 @@ int main() {
   constexpr auto contract = GameplayForestGroundCoverAlphaCardContract();
   static_assert(contract.alphaMode == MaterialAlphaMode3D::Mask);
   static_assert(contract.alphaCutoff == .45f);
+  static_assert(GameplayForestGroundCoverAlphaCutoff3D(
+                    GameplayForestGroundCoverVariant3D::Fern) == .34f);
+  static_assert(GameplayForestGroundCoverAlphaCutoff3D(
+                    GameplayForestGroundCoverVariant3D::Riverbank) == .34f);
+  static_assert(GameplayForestGroundCoverAlphaCutoff3D(
+                    GameplayForestGroundCoverVariant3D::Community) == .34f);
   static_assert(contract.requiresTexture && contract.requiresUv &&
                 contract.doubleSided && contract.atlasColumns == 1);
   Material3D source{};
@@ -703,7 +709,9 @@ int main() {
         tinted.tint.a != source.tint.a || tinted.textures != source.textures ||
         tinted.materialClass != MaterialClass3D::Foliage ||
         tinted.alphaMode != MaterialAlphaMode3D::Mask ||
-        tinted.alphaCutoff != source.alphaCutoff || !tinted.useUv ||
+        tinted.alphaCutoff !=
+            GameplayForestGroundCoverAlphaCutoff3D(groundCoverVariants[index]) ||
+        tinted.alphaCutoff >= source.alphaCutoff || !tinted.useUv ||
         !tinted.doubleSided ||
         !tinted.castsShadow || tinted.surface.roughness != .86f ||
         tinted.surface.metallic != 0.f || tinted.surface.emissive != 0.f ||

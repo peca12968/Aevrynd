@@ -1424,7 +1424,7 @@ function Write-GameplayFinalEvidenceReceipt(
   if (@($Runs | ForEach-Object { $_.stateSha256 } | Select-Object -Unique).Count -ne 1) {
     throw 'Final capture determinism run state SHA mismatch'
   }
-  $expectedReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-presentation-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
+  $expectedReceiptNames=@('gameplay-receipt.json','gameplay-character-capture-receipt.json','gameplay-camera-depth-diagnostic-receipt.json','gameplay-camera-policy-receipt.json','gameplay-determinism-integrity-receipt.json','gameplay-readback-sequence-receipt.json','gameplay-hdr-capture-receipt.json','gameplay-temporal-history-receipt.json','gameplay-presentation-receipt.json','gameplay-temporal-ghost-artifact-receipt.json','gameplay-reference-opacity-receipt.json','gameplay-environment-receipt.json','gameplay-reflection-probe-receipt.json','gameplay-environment-collision-receipt.json','gameplay-palette-ui-receipt.json','gameplay-photoreal-receipt.json')
   foreach($run in $Runs){Assert-GameplayRunArchiveSchema $run $ExpectedNames $expectedReceiptNames}
   $captureEntries = @()
   foreach ($name in $ExpectedNames) {

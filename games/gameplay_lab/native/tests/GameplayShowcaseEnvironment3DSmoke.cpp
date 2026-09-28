@@ -954,6 +954,11 @@ int main() {
       SelectLocalReflectionProbe3D({-4.f, 1.f, 14.f}, reflectionProbes) != 1 ||
       SelectLocalReflectionProbe3D({40.f, 1.f, 40.f}, reflectionProbes) != SIZE_MAX)
     return 61;
+  if (!GameplayForestReflectionProbesReadyForCapture3D(0, 0, 2, 2) ||
+      GameplayForestReflectionProbesReadyForCapture3D(1, 0, 2, 2) ||
+      GameplayForestReflectionProbesReadyForCapture3D(0, 0, 1, 2) ||
+      GameplayForestReflectionProbesReadyForCapture3D(0, 0, 2, 0))
+    return 62;
   {
     const Color source{.8f, .6f, .4f, .73f};
     ShowcaseTerrainEcologyTint3D ecology{};

@@ -157,6 +157,14 @@ GameplayForestGroundCoverAlphaCardContract() noexcept {
   return {};
 }
 
+// 樹冠與林下地被共用同一份葉片 atlas，但用途不同：樹冠需要較高門檻
+// 保持枝葉間隙，縮小後的蕨與低灌叢則需要保留亞像素葉片。此門檻只在
+// ground-cover 變體提交時使用，不改寫來源材質、mip、樹木或其他 foliage。
+[[nodiscard]] constexpr float GameplayForestGroundCoverAlphaCutoff3D(
+    GameplayForestGroundCoverVariant3D) noexcept {
+  return .34f;
+}
+
 [[nodiscard]] inline Aevrynd::Material3D
 PrepareGameplayForestGroundCoverMaterial3D(Aevrynd::Material3D material,
                                            bool castsShadow = false) noexcept {
@@ -187,6 +195,7 @@ PrepareGameplayForestGroundCoverMaterial3D(
     GameplayForestGroundCoverVariant3D variant,
     bool castsShadow = false) noexcept {
   material = PrepareGameplayForestGroundCoverMaterial3D(material, castsShadow);
+  material.alphaCutoff = GameplayForestGroundCoverAlphaCutoff3D(variant);
   const auto multiplier = GameplayForestGroundCoverTintMultiplier3D(variant);
   material.tint = {material.tint.r * multiplier.r,
                    material.tint.g * multiplier.g,

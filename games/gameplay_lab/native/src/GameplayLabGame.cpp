@@ -1909,12 +1909,19 @@ void GameplayLabGame::SubmitForestReflectionProbes(Engine& engine,DrawList& draw
     if(!pending){
       bool refreshed=true;
       for(const auto capture:showcaseReflectionProbeCaptures_)refreshed=engine.MarkReflectionProbeCaptureDirty3D(capture)&&refreshed;
-      if(refreshed)showcaseReflectionProbeLightingPhase_=desiredPhase;
+      if(refreshed){
+        // The prior phase's handles remain valid renderer resources, but they
+        // are not valid evidence for the newly requested lighting phase.
+        showcaseReflectionProbeEnvironments_={};
+        showcaseReflectionProbeLightingPhase_=desiredPhase;
+      }
     }
   }
   showcaseReflectionProbeReadyCount_=0;
   for(std::size_t index=0;index<showcaseReflectionProbeCaptures_.size();++index){
-    if(const auto status=engine.QueryReflectionProbeCaptureStatus3D(showcaseReflectionProbeCaptures_[index]);status&&status->stage==ReflectionProbeCaptureStage3D::ReadyFiltered&&status->environment)showcaseReflectionProbeEnvironments_[index]=status->environment;
+    const auto status=engine.QueryReflectionProbeCaptureStatus3D(showcaseReflectionProbeCaptures_[index]);
+    if(status&&status->stage==ReflectionProbeCaptureStage3D::ReadyFiltered&&status->environment)showcaseReflectionProbeEnvironments_[index]=status->environment;
+    else showcaseReflectionProbeEnvironments_[index]={};
     if(!showcaseReflectionProbeEnvironments_[index])continue;
     ++showcaseReflectionProbeReadyCount_;
     if(!draw.AddLocalReflectionProbe(MakeGameplayForestLocalReflectionProbe3D(volumes[index],showcaseReflectionProbeEnvironments_[index])))throw std::runtime_error("Gameplay forest local reflection probe submission failed");
@@ -3231,6 +3238,12 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
       // 凍結決策只發生於 fixed simulation 呼叫，來源是本 tick 已完成的權威 pose/foot。
       captureFrozenFemalePose_=femalePose_;captureFrozenMalePose_=malePose_;captureFrozenMonsterPose_=monsterPose_;
       captureFrozenFootPlacementHash_=authorityFootPlacementHash_;capturePoseFrozen_=true;
+      // Probe resources are created during startup and may have captured an
+      // unconstrained live-animation frame before the first production route
+      // froze its authoritative pose.  Force the initial day probes through
+      // the same phase-refresh path used by dusk/night; the capture gate below
+      // then waits for this deterministic, frozen-scene rebuild.
+      if(captureIndex_==0)showcaseReflectionProbeLightingPhase_=0xff;
       // 首張正式暖機之前沒有受控 capture 前史，不得繼承最後一個即時呈現幀的
       // palette/transform；該幀取決於 Update/Render 排程，會把不同 previous pose 帶入
       // velocity/temporal history。後續鏡頭保留前一個受控 capture 建立的正式前史。
@@ -3243,6 +3256,14 @@ void GameplayLabGame::UpdateCapture(Engine &engine,bool fixedSimulationStep) {
     if(captureIndex_==9&&paletteUiDrawnFrames_<Names.size())return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&cameraPolicyFadeIdentity_&&!cameraFadeSettled_)return;
     if(rules_.Camera()==CameraMode::ThirdPerson&&!GameplayCameraSelectionSettled3D(cameraPolicyReceipt_,cameraSelectedCandidate_))return;
+    // Reflection captures are asynchronous.  Starting temporal warmup before
+    // both current-phase probes are filtered makes the first two shots depend
+    // on process/GPU scheduling even though geometry and camera are identical.
+    if(!GameplayForestReflectionProbesReadyForCapture3D(
+           std::uint8_t(rules_.Lighting()),
+           showcaseReflectionProbeLightingPhase_,
+           showcaseReflectionProbeReadyCount_,
+           showcaseReflectionProbeCaptures_.size()))return;
     // 場景切換後必須先完成一次正式 submission，再開始固定暖機。
     // 否則 Update/Render 排程次序會決定 DrawIdentity 重設落在暖機之前或期間，
     // 使相同 capture 出現不同的 HDR 起始狀態。

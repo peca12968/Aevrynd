@@ -57,6 +57,21 @@ MakeGameplayForestLocalReflectionProbe3D(
   return {environment, volume.minimum, volume.maximum,
           volume.capture.position, volume.priority};
 }
+
+// Production captures must not inherit a probe from the previous time-of-day
+// phase or begin temporal warmup while an asynchronous probe is still being
+// filtered.  Keep this decision independent from wall-clock/frame timing so a
+// fresh process and a warmed process stage the same lighting state.
+[[nodiscard]] inline constexpr bool
+GameplayForestReflectionProbesReadyForCapture3D(
+    std::uint8_t requestedLightingPhase,
+    std::uint8_t capturedLightingPhase,
+    std::size_t readyProbeCount,
+    std::size_t expectedProbeCount) noexcept {
+  return expectedProbeCount != 0u &&
+         requestedLightingPhase == capturedLightingPhase &&
+         readyProbeCount == expectedProbeCount;
+}
 inline constexpr std::uint64_t GameplayForestGuideLightIdentityHigh3D =
     0xaec0474c414d5001ull;
 inline constexpr std::array<Aevrynd::Vec3, 5>
