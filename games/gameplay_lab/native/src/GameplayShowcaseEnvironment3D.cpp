@@ -647,7 +647,7 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
     // 月光保留冷色辨識，但夜間亮度由局部光源與反射建立層次，不能用
     // 全畫面藍色增益把水面與地表抬得比黃昏更亮。
     state = {profile, {{-.25f, -.62f, -.74f}, .42f, {.42f, .55f, 1, 1}, .42f},
-             {.06f, .10f, .18f, 1}, {.1f, .16f, .28f, .7f}, -.15f, 79200.f};
+             {.06f, .10f, .18f, 1}, {.1f, .16f, .28f, .7f}, -.16f, 79200.f};
   }
   return state;
 }

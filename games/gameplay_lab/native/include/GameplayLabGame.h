@@ -312,6 +312,42 @@ GameplayShowcaseMonsterStage3DForCapture(bool godCapture) noexcept {
             {stage.uniformScale,stage.uniformScale,stage.uniformScale}};
 }
 
+struct GameplayMonsterHudAnchor3D {
+    Aevrynd::Vec2 position{};
+    float width{},health{};
+    bool visible{};
+};
+
+// Interactive combat needs to identify the forest guardian in world space;
+// the old diagnostics-only footer did not tell players which actor was hostile.
+// Projection is fail-closed so invalid state cannot place a misleading marker.
+[[nodiscard]] inline GameplayMonsterHudAnchor3D
+BuildGameplayMonsterHudAnchor3D(Aevrynd::Vec3 monster,float health,
+                                float maximumHealth,
+                                const Aevrynd::Camera3D& camera,
+                                Aevrynd::Vec2 viewport) noexcept {
+    GameplayMonsterHudAnchor3D result{};
+    const auto finite=[](float value){return std::isfinite(value);};
+    if(!finite(monster.x)||!finite(monster.y)||!finite(monster.z)||
+       !finite(health)||!finite(maximumHealth)||maximumHealth<=0.f||
+       health<=0.f||!finite(viewport.x)||!finite(viewport.y)||
+       viewport.x<=0.f||viewport.y<=0.f)
+        return result;
+    const auto projected=Aevrynd::ProjectToViewport(monster+Aevrynd::Vec3{0,2.28f,0},camera,viewport);
+    if(!projected.visible||!finite(projected.position.x)||
+       !finite(projected.position.y)||!finite(projected.depth))
+        return result;
+    const float projectedRadius=Aevrynd::ProjectedSphereRadiusPixels(
+        monster+Aevrynd::Vec3{0,1.1f,0},1.1f,camera,viewport);
+    if(!finite(projectedRadius)||projectedRadius<=0.f)
+        return result;
+    result.position=projected.position;
+    result.width=Aevrynd::Clamp(projectedRadius*1.45f,96.f,180.f);
+    result.health=Aevrynd::Clamp(health/maximumHealth,0.f,1.f);
+    result.visible=true;
+    return result;
+}
+
 struct GameplayGodCameraLayout3D {
     Aevrynd::Camera3D camera{};
     float distance{},azimuth{},elevation{},playerCoverage{},buildingUnion{},maximumBuildingPart{},roofCoverage{};

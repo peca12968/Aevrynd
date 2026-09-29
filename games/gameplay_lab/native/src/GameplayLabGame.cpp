@@ -3542,6 +3542,19 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     ++paletteUiDrawnFrames_;
   }
   if(hudPolicy.combatStatus)draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
+  if(!cleanCapturePresentation&&combatSpawned_&&combat_->Monster().alive){
+    const auto guardianHud=BuildGameplayMonsterHudAnchor3D(
+        combat_->Monster().position,combat_->Monster().health,100.f,camera_,
+        {1280,720});
+    if(guardianHud.visible){
+      const float x=guardianHud.position.x,y=guardianHud.position.y;
+      const float filled=guardianHud.width*guardianHud.health;
+      draw.Quad({x,y},{guardianHud.width+18.f,48.f},{.008f,.012f,.015f,.88f});
+      draw.Text({x-guardianHud.width*.5f,y-20.f},"FOREST GUARDIAN",.82f,{1.f,.72f,.34f,1.f});
+      draw.Quad({x,y+13.f},{guardianHud.width,8.f},{.11f,.025f,.025f,.96f});
+      draw.Quad({x-guardianHud.width*.5f+filled*.5f,y+13.f},{filled,8.f},{.86f,.16f,.10f,1.f});
+    }
+  }
   if(captureTemporalWarmupActive_&&captureTemporalWarmupRemaining_){--captureTemporalWarmupRemaining_;++captureTemporalWarmupFramesCurrent_;}
   if(capturePresentationWarmupActive_&&capturePresentationWarmupRemaining_){--capturePresentationWarmupRemaining_;++capturePresentationWarmupFramesCurrent_;}
   if(capturePairFrozen_&&capturePending_&&captureDiagnosticAsyncWaitFrames_<(std::numeric_limits<std::uint32_t>::max)())++captureDiagnosticAsyncWaitFrames_;
