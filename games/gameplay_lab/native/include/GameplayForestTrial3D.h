@@ -35,6 +35,8 @@ struct ForestTrialArenaStone3D {
 
 inline constexpr std::uint64_t GameplayForestTrialArenaStoneIdentityHigh3D =
     0xaec04152454e4101ull;
+inline constexpr std::uint64_t GameplayForestTrialObjectiveIdentityHigh3D =
+    0xaec04f424a454354ull;
 
 // A broken stone ring gives the east-bank guardian encounter a readable place
 // in the world without fencing the player in.  The gaps face the bridge and

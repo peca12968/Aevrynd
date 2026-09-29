@@ -138,6 +138,9 @@ int main() {
       return 17;
   }
   if (GameplayForestTrialArenaStones3D.size() != 8u ||
+      GameplayForestTrialObjectiveIdentityHigh3D == 0u ||
+      GameplayForestTrialObjectiveIdentityHigh3D ==
+          GameplayForestTrialArenaStoneIdentityHigh3D ||
       minimumArenaRadius < 3.45f || maximumArenaRadius > 3.90f)
     return 18;
 

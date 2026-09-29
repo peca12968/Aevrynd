@@ -2631,6 +2631,49 @@ void GameplayLabGame::AddShowcaseEnvironment(){
       throw std::runtime_error("Forest trial arena stone draw count gate failed");
   }
   // FOREST_TRIAL_ARENA_END
+
+  // FOREST_TRIAL_OBJECTIVE_BEACON_BEGIN
+  // Interactive play needs a world-space destination, not only HUD text. The
+  // three-piece marker follows the authoritative trial phase and remains
+  // render-only, so it cannot alter collision, AI, or route completion. It is
+  // included in formal capture runs so visual evidence proves the same marker
+  // that players receive rather than relying on an interactive-only branch.
+  if(forestTrial_.Initialized()&&!forestTrial_.Complete()){
+    const auto target=forestTrial_.ObjectivePosition();
+    const float terrainY=showcaseTerrain_.SampleHeight(target.x,target.z);
+    auto objectiveBase=showcaseRockMaterial_;
+    objectiveBase.textures={};
+    objectiveBase.tint={.055f,.12f,.14f,1.f};
+    objectiveBase.surface={.30f,.52f,.06f,1.f};
+    objectiveBase.textureScale=1.f;
+    objectiveBase.normalScale=0.f;
+    objectiveBase.useUv=false;
+    auto objectiveGlow=objectiveBase;
+    const bool guardianPhase=
+        forestTrial_.Phase()==ForestTrialPhase3D::DefeatGuardian;
+    objectiveGlow.tint=guardianPhase
+        ?Color{1.f,.29f,.08f,1.f}:Color{.08f,.88f,1.f,1.f};
+    objectiveGlow.surface={.10f,.05f,
+        rules_.Lighting()==LightingPhase::Day?.58f:
+        rules_.Lighting()==LightingPhase::Dusk?1.15f:1.75f,1.f};
+    objectiveGlow.castsShadow=false;
+    const RenderObjectIdentity3D identity{
+        {GameplayForestTrialObjectiveIdentityHigh3D,
+         std::uint64_t(forestTrial_.ObjectiveStep())},1};
+    const auto objectiveDrawsBefore=scene_.MeshCount();
+    scene_.Mesh(showcaseCylinderMesh_,
+        {{target.x,terrainY+.045f,target.z},{0,0,0},{1.65f,.09f,1.65f}},
+        objectiveBase,{},identity);
+    scene_.Mesh(showcaseConeLowMesh_,
+        {{target.x,terrainY+1.45f,target.z},{3.1415927f,0,0},
+         {.42f,.72f,.42f}},objectiveGlow,{},identity);
+    scene_.Mesh(showcaseCylinderMesh_,
+        {{target.x,terrainY+.83f,target.z},{0,0,0},{.075f,1.42f,.075f}},
+        objectiveGlow,{},identity);
+    if(scene_.MeshCount()!=objectiveDrawsBefore+3u)
+      throw std::runtime_error("Forest trial objective beacon draw count gate failed");
+  }
+  // FOREST_TRIAL_OBJECTIVE_BEACON_END
 }
 bool GameplayLabGame::WriteCaptureIntegrityDiagnostic(bool fatal)const{
   if(captureDirectory_.empty())return false;
