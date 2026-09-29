@@ -1214,6 +1214,79 @@ int main() {
     return total <= 1.f + 1e-6f &&
            !(sample.cottagePath > 0.f && sample.riverWetSoil > 0.f);
   };
+  // R123: lock the material route as a connected graph.  This specifically
+  // includes the formerly visual-only west-bridge-to-porch paver branch.
+  // Dense hostile sampling catches a gap between waypoints, non-finite output,
+  // or a path/ground overlap that would average back into uniform bare soil.
+  const auto authoredSegments = ShowcaseAuthoredTrailClearingSegments3D();
+  for (std::size_t segmentIndex = 0; segmentIndex < authoredSegments.size();
+       ++segmentIndex) {
+    const auto &segment = authoredSegments[segmentIndex];
+    for (unsigned step = 0; step <= 32u; ++step) {
+      const float t = float(step) / 32.f;
+      const Vec3 point{segment.start.x +
+                           (segment.end.x - segment.start.x) * t,
+                       0.f,
+                       segment.start.z +
+                           (segment.end.z - segment.start.z) * t};
+      const auto mask = SampleShowcaseAuthoredTrailClearingMask3D(point);
+      if (!mask.valid || !std::isfinite(mask.distance) ||
+          !std::isfinite(mask.path) || !std::isfinite(mask.forestGround) ||
+          mask.distance > 1e-4f || mask.path < .79f ||
+          mask.forestGround != 0.f) {
+        std::cerr << "authored trail continuity divergence segment="
+                  << segmentIndex << " step=" << step
+                  << " distance=" << mask.distance << " blend=" << mask.path
+                  << '/' << mask.forestGround << '\n';
+        return 108;
+      }
+    }
+  }
+  const std::array<std::size_t, 3> separatedSegments{1u, 2u, 5u};
+  for (const std::size_t segmentIndex : separatedSegments) {
+    const auto &segment = authoredSegments[segmentIndex];
+    const Vec3 midpoint{(segment.start.x + segment.end.x) * .5f, 0.f,
+                        (segment.start.z + segment.end.z) * .5f};
+    const float dx = segment.end.x - segment.start.x;
+    const float dz = segment.end.z - segment.start.z;
+    const float inverseLength = 1.f / std::hypot(dx, dz);
+    const Vec3 normal{-dz * inverseLength, 0.f, dx * inverseLength};
+    const auto pathMask = SampleShowcaseAuthoredTrailClearingMask3D(midpoint);
+    const auto groundMask = SampleShowcaseAuthoredTrailClearingMask3D(
+        midpoint + normal * 3.15f);
+    const auto exteriorMask = SampleShowcaseAuthoredTrailClearingMask3D(
+        midpoint + normal * 6.8f);
+    if (!pathMask.valid || pathMask.path < .79f ||
+        pathMask.forestGround != 0.f || !groundMask.valid ||
+        groundMask.path != 0.f || groundMask.forestGround < .45f ||
+        groundMask.forestGround > .82f || !exteriorMask.valid ||
+        exteriorMask.path != 0.f || exteriorMask.forestGround != 0.f) {
+      std::cerr << "authored trail blend separation divergence segment="
+                << segmentIndex << " path=" << pathMask.path << '/'
+                << pathMask.forestGround << " ground=" << groundMask.path
+                << '/' << groundMask.forestGround << " exterior="
+                << exteriorMask.path << '/' << exteriorMask.forestGround
+                << '\n';
+      return 109;
+    }
+  }
+  const auto invalidAuthoredMask =
+      SampleShowcaseAuthoredTrailClearingMask3D(
+          {(std::numeric_limits<float>::quiet_NaN)(), 0.f, 0.f});
+  const auto infiniteAuthoredMask =
+      SampleShowcaseAuthoredTrailClearingMask3D(
+          {0.f, 0.f, (std::numeric_limits<float>::infinity)()});
+  const auto exteriorAuthoredMask =
+      SampleShowcaseAuthoredTrailClearingMask3D({100.f, 0.f, 100.f});
+  if (invalidAuthoredMask.valid || infiniteAuthoredMask.valid ||
+      invalidAuthoredMask.path != 0.f ||
+      invalidAuthoredMask.forestGround != 0.f ||
+      infiniteAuthoredMask.path != 0.f ||
+      infiniteAuthoredMask.forestGround != 0.f ||
+      !exteriorAuthoredMask.valid || !std::isfinite(exteriorAuthoredMask.distance) ||
+      exteriorAuthoredMask.path != 0.f ||
+      exteriorAuthoredMask.forestGround != 0.f)
+    return 110;
   // The authored hero trail must remain connected down its centre while
   // reading as worn ground rather than a uniform road.  Its full-strength
   // tread is deliberately wider than one terrain sample so it cannot vanish

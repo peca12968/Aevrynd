@@ -665,6 +665,98 @@ struct ShowcaseTerrainDisturbance3D {
   float heightDelta{}, weight{};
 };
 
+struct ShowcaseAuthoredTrailClearingSegment3D {
+  Aevrynd::Vec3 start{}, end{};
+};
+
+struct ShowcaseAuthoredTrailClearingMask3D {
+  float distance{(std::numeric_limits<float>::max)()};
+  float path{}, forestGround{};
+  bool valid{};
+};
+
+// The maintained route is a small graph rather than one polyline: the west
+// bridge landing joins both the combat clearing and the cottage porch.  Keep
+// this material-only branch separate from the gameplay HeroTrail controls so
+// it cannot silently change placement, collision, or walking clearance.
+[[nodiscard]] inline constexpr
+    std::array<ShowcaseAuthoredTrailClearingSegment3D, 6>
+    ShowcaseAuthoredTrailClearingSegments3D() noexcept {
+  return {{{{-28.f, 0.f, -8.f}, {-25.5f, 0.f, 1.f}},
+           {{-25.5f, 0.f, 1.f}, {-16.f, 0.f, 8.f}},
+           {{-16.f, 0.f, 8.f}, {-9.85f, 0.f, 14.f}},
+           {{-9.85f, 0.f, 14.f}, {7.15f, 0.f, 14.f}},
+           {{-9.85f, 0.f, 14.f}, {-10.80f, 0.f, 17.05f}},
+           {{-10.80f, 0.f, 17.05f}, {-11.68f, 0.f, 19.70f}}}};
+}
+
+// Produces two disjoint, measurable material regions.  The compacted path is
+// stony_dirt_path; the outer clearing reveals the existing forest_ground_04
+// character through the leaf/ground channel.  A guaranteed neutral seam
+// between them prevents the broad yellow-green average produced when both
+// materials compete at the same terrain vertex.  Rounded segment caps keep
+// every junction continuous, including the bridge/porch fork.
+[[nodiscard]] inline ShowcaseAuthoredTrailClearingMask3D
+SampleShowcaseAuthoredTrailClearingMask3D(
+    Aevrynd::Vec3 worldPosition) noexcept {
+  ShowcaseAuthoredTrailClearingMask3D result{};
+  if (!std::isfinite(worldPosition.x) || !std::isfinite(worldPosition.z))
+    return result;
+  float signedSide{};
+  for (const auto &segment : ShowcaseAuthoredTrailClearingSegments3D()) {
+    const float vx = segment.end.x - segment.start.x;
+    const float vz = segment.end.z - segment.start.z;
+    const float lengthSquared = vx * vx + vz * vz;
+    if (!(lengthSquared > 0.f) || !std::isfinite(lengthSquared))
+      continue;
+    const float wx = worldPosition.x - segment.start.x;
+    const float wz = worldPosition.z - segment.start.z;
+    const float t = std::clamp((wx * vx + wz * vz) / lengthSquared, 0.f, 1.f);
+    const float dx = worldPosition.x - (segment.start.x + vx * t);
+    const float dz = worldPosition.z - (segment.start.z + vz * t);
+    const float distance = std::hypot(dx, dz);
+    if (distance < result.distance) {
+      result.distance = distance;
+      signedSide = (vx * dz - vz * dx) / std::sqrt(lengthSquared);
+    }
+  }
+  if (!std::isfinite(result.distance) ||
+      result.distance == (std::numeric_limits<float>::max)())
+    return result;
+  const auto smooth = [](float value) {
+    value = Aevrynd::Clamp(value, 0.f, 1.f);
+    return value * value * (3.f - 2.f * value);
+  };
+  const auto harmonic = [](float x, float z) {
+    return std::sin(x * .47f + z * .19f) * .10f +
+           std::sin(x * .13f - z * .41f + 1.7f) * .06f;
+  };
+  const float tread = ShowcaseHeroTrailTreadHalfWidth3D(worldPosition);
+  const float visible = ShowcaseHeroTrailVisibleHalfWidth3D(worldPosition);
+  const float shoulderWidth = (std::max)(.75f, visible - tread);
+  const float pathEdge = result.distance +
+                         harmonic(worldPosition.x, worldPosition.z) +
+                         (signedSide >= 0.f ? .12f : -.06f);
+  const float pathCoordinate = Aevrynd::Clamp(
+      (pathEdge - tread) / shoulderWidth, 0.f, 1.f);
+  result.path = .80f * std::pow(1.f - pathCoordinate, 1.2f);
+
+  constexpr float clearingInner = 2.18f;
+  const float outer = 5.45f +
+                      harmonic(worldPosition.z, worldPosition.x) * 3.10f;
+  const float enter = smooth((result.distance - clearingInner) / .72f);
+  const float leave = 1.f -
+                      smooth((result.distance - (outer - 1.10f)) / 1.10f);
+  const float mottling = Aevrynd::Clamp(
+      .88f + harmonic(worldPosition.x * 1.37f,
+                      worldPosition.z * .83f) * .75f,
+      .70f, 1.f);
+  result.forestGround = Aevrynd::Clamp(
+      .82f * enter * leave * mottling, 0.f, .82f);
+  result.valid = true;
+  return result;
+}
+
 // 屋前步道由出生點至門廊的固定世界幾何定義；林下落葉與河岸濕土則由
 // 場景中的實際樹冠、河道位置決定。不以相機或畫面空間噪聲製造假細節。
 // Path 與 wet 依強度明確互斥；leaf 可填入 wet 剩餘容量，因此樹冠不會
@@ -689,30 +781,12 @@ SampleShowcaseTerrainEcologyTint3D(
            std::sin(point.x * .13f - point.z * .41f + 1.7f) * .06f;
   };
   const auto path = SampleShowcaseHeroTrail3D(worldPosition);
-  // Low-frequency world-space width changes keep the trail connected while
-  // avoiding a constant-width carpet.  A small signed-side bias and the
-  // existing authored harmonics break the two shoulders differently without
-  // changing height, geometry, descriptors, or camera-dependent state.
-  const float pathTreadHalfWidth =
-      ShowcaseHeroTrailTreadHalfWidth3D(worldPosition);
-  // Give the authored shoulder enough world-space support to hand off to wet
-  // soil without flipping the signed terrain weight between adjacent one-metre
-  // vertices.  The mild power curve keeps the perceptual trail narrow and
-  // guarantees the authored band is clear before two metres.
-  const float pathVisibleHalfWidth =
-      ShowcaseHeroTrailVisibleHalfWidth3D(worldPosition);
-  const float pathShoulderWidth =
-      (std::max)(.75f, pathVisibleHalfWidth - pathTreadHalfWidth);
-  const float pathEdge = path.distance + authoredEdgeNoise(worldPosition) +
-                         (path.signedSide >= 0.f ? .12f : -.06f);
-  const float pathShoulderCoordinate =
-      Aevrynd::Clamp((pathEdge - pathTreadHalfWidth) / pathShoulderWidth,
-                     0.f, 1.f);
+  const auto authoredTrail =
+      SampleShowcaseAuthoredTrailClearingMask3D(worldPosition);
   // Reserve headroom for the signed path/wet handoff where the trail reaches
   // the river-side porch.  The old saturated core could jump from +1 to wet
   // soil in one terrain vertex even though both source fields were smooth.
-  const float pathCandidate =
-      .76f * std::pow(1.f - pathShoulderCoordinate, 1.2f);
+  const float pathCandidate = authoredTrail.path;
 
   float canopyCandidate{};
   for (const auto &descriptor : descriptors) {
@@ -752,25 +826,7 @@ SampleShowcaseTerrainEcologyTint3D(
   // existing leaf layer: no descriptor, draw, collision, texture, or camera
   // dependent state is added.  The inner fade preserves the full walking lane;
   // the two swapped world axes give each side a different but stable outline.
-  float trailShoulderCandidate{};
-  if (path.valid) {
-    const float longitudinal =
-        smooth(path.along / .08f) * smooth((1.f - path.along) / .08f);
-    const float inner = pathVisibleHalfWidth + .18f;
-    const float shoulderNoise =
-        authoredEdgeNoise({worldPosition.z, 0.f, worldPosition.x});
-    const float outer = 5.35f + shoulderNoise * 3.25f;
-    const float enter = smooth((path.distance - inner) / .72f);
-    const float leave = 1.f - smooth((path.distance - (outer - 1.10f)) /
-                                     1.10f);
-    const float mottling = Aevrynd::Clamp(
-        .88f + authoredEdgeNoise({worldPosition.x * 1.37f, 0.f,
-                                  worldPosition.z * .83f}) * .75f,
-        .70f, 1.f);
-    trailShoulderCandidate =
-        Aevrynd::Clamp(.82f * longitudinal * enter * leave * mottling,
-                       0.f, .82f);
-  }
+  const float trailShoulderCandidate = authoredTrail.forestGround;
   canopyCandidate = (std::max)(canopyCandidate, trailShoulderCandidate);
   const float riverCenter = -4.f + std::sin(worldPosition.z * .035f) * 5.f +
                             std::sin(worldPosition.z * .011f) * 2.f;
@@ -818,7 +874,7 @@ SampleShowcaseTerrainEcologyTint3D(
   if (pathWetHandoff.cottagePath > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::CottagePath;
     result.cottagePath = pathWetHandoff.cottagePath;
-    authoredTint = {.88f, .75f, .56f, 1.f};
+    authoredTint = {.68f, .52f, .31f, 1.f};
   } else if (pathWetHandoff.riverWetSoil > 0.f) {
     result.biome = ShowcaseTerrainBiome3D::RiverWetSoil;
     result.riverWetSoil = result.riverMoisture =
