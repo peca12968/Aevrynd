@@ -639,8 +639,8 @@ ShowcaseLightingState3D GameplayShowcaseEnvironment3D::EvaluateLighting(
   ShowcaseLightingState3D state{};
   state.profile = profile;
   if (profile == ShowcaseLightingProfile3D::Day) {
-    state = {profile, {{.34f, -.91f, .23f}, .22f, {1, .96f, .88f, 1}, 1.62f},
-             {.24f, .42f, .67f, 1}, {.32f, .43f, .55f, .62f}, -.12f, 46800.f};
+    state = {profile, {{.28f, -.84f, .46f}, .26f, {1, .97f, .91f, 1}, 1.52f},
+             {.25f, .43f, .69f, 1}, {.32f, .43f, .55f, .62f}, -.12f, 46800.f};
   } else if (profile == ShowcaseLightingProfile3D::Dusk) {
     state = {profile, {{-.74f, -.42f, .18f}, .19f, {1, .66f, .38f, 1}, .94f},
              {.19f, .14f, .23f, 1}, {.3f, .19f, .25f, .68f}, .08f, 68400.f};

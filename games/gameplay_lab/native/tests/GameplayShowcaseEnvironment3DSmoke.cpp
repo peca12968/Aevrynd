@@ -864,6 +864,28 @@ bool DuskVegetationReadable(const ShowcaseLightingState3D &value) {
          value.sun.ambient * sunLuminance >= .13f;
 }
 
+bool DayCottageFacadeLightShapeContract(
+    const ShowcaseLightingState3D &value) {
+  if (value.profile != ShowcaseLightingProfile3D::Day ||
+      !std::isfinite(value.sun.direction.y) ||
+      !std::isfinite(value.sun.direction.z) ||
+      !std::isfinite(value.sun.ambient) ||
+      !std::isfinite(value.sun.intensity) || value.exposureEv != -.12f)
+    return false;
+  const float sunLuminance = .2126f * value.sun.color.r +
+                             .7152f * value.sun.color.g +
+                             .0722f * value.sun.color.b;
+  const float fill = value.sun.ambient * sunLuminance;
+  const float facadeKey = value.sun.direction.z * value.sun.intensity;
+  const float groundKey = -value.sun.direction.y * value.sun.intensity;
+  return value.sun.direction.z >= .40f && value.sun.direction.z <= .50f &&
+         value.sun.direction.y >= -.88f && value.sun.direction.y <= -.80f &&
+         value.sun.ambient >= .245f && value.sun.ambient <= .275f &&
+         value.sun.intensity >= 1.45f && value.sun.intensity <= 1.58f &&
+         fill > 0.f && facadeKey / fill >= 2.5f &&
+         groundKey > facadeKey && groundKey / facadeKey <= 2.4f;
+}
+
 bool DuskShadowColorSeparated(
     const EnvironmentLightingBlendSettings3D &environment) {
   const float luminance = .2126f * environment.objectFillRadiance.x +
@@ -2556,7 +2578,9 @@ int main() {
           dayEnvironmentBlend.objectFillIntensity < 1.85f ||
       std::abs(dayEnvironmentBlend.objectFillIntensity - .78f) > 1e-6f ||
       std::abs(draw.AmbientOcclusion().intensity - 1.42f) > 1e-6f ||
-      std::abs(draw.ContactShadows().strength - .98f) > 1e-6f)
+      std::abs(draw.ContactShadows().strength - .98f) > 1e-6f ||
+      !DayCottageFacadeLightShapeContract(
+          first.EvaluateLighting(ShowcaseLightingProfile3D::Day)))
     return 108;
   if (draw.VolumetricAtmospherePhase() != VolumetricAtmospherePhase3D::Day)
     return 20;
