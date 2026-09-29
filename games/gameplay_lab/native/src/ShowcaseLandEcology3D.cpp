@@ -30,6 +30,8 @@ constexpr std::array<Aevrynd::Vec3, 4> HeroForestEdgeRockAnchors{{
     {-30.f, 0.f, -5.f}, {-29.f, 0.f, 6.f},
     {-28.f, 0.f, 18.f}, {-30.f, 0.f, 30.f}}};
 constexpr float HeroClusterTolerance = 4.f;
+constexpr std::uint32_t MinimumFarCottageRearArcTrees = 16;
+constexpr std::uint32_t MinimumFarRiverSideArcTrees = 18;
 
 float BandMinimumFor(ShowcaseLandKind3D kind, std::uint32_t band) noexcept {
   // 草叢不參與實體碰撞；近景地被可進入玩家安全圈外緣，樹與岩石仍維持原本的實體淨空。
@@ -267,7 +269,7 @@ bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
       stableKeysExact && transformsExact && footprintSpacingExact && zonesExact &&
       riverbankLayered && densityExact && heroGroundCoverExact &&
       heroCompositionClustersExact && heroForestEdgeRocksExact &&
-      understoryGroundCoverExact &&
+      understoryGroundCoverExact && farForestCompositionExact &&
       heroGroundCover >= MinimumHeroGroundCover &&
       heroGroundCoverQuadrantMask == 0x0fu && riverbankRocks == 26 &&
       heroForestEdgeRocks == HeroForestEdgeRockAnchors.size() &&
@@ -536,20 +538,41 @@ bool BuildShowcaseLandEcology3D(
             }
           }
           if (kind == ShowcaseLandKind3D::Tree && band == 2u) {
-            // R89 遠景森林牆：八十棵既有 LOD2 樹以十二個扇區與七個
-            // 不等距環帶包住正式玩家區。所有候選仍經河流、地形、間距與
-            // 足跡 gate；這不是複製 draw 或用霧遮住裸山。
-            const std::uint32_t sector = item % 12u;
-            const std::uint32_t ring = item / 12u;
-            const float baseAngle =
-                (float(sector) + .5f) * (2.f * Pi / 12.f);
+            // R127 遠景林緣：只重排八十棵既有 LOD2 樹。前三十二棵形成
+            // 小屋後方與河道東西兩側的三道不規則弧線，其餘四十八棵維持
+            // 全向扇區背景，避免 third/God 視角把遠景讀成等距圓環。
+            // 所有候選仍經地形、河流、步道、足跡與間距 gate；沒有新增
+            // descriptor、draw、碰撞或資產。
+            const bool cottageRearArc = item < 12u;
+            const bool westRiverArc = item >= 12u && item < 22u;
+            const bool eastRiverArc = item >= 22u && item < 32u;
+            float baseAngle{}, wallRadius{};
+            if (cottageRearArc) {
+              const std::uint32_t sideItem = item % 6u;
+              const float t = (float(sideItem) + .5f) / 6.f;
+              baseAngle = item < 6u ? (.18f + .25f * t) * Pi
+                                    : (.57f + .25f * t) * Pi;
+              wallRadius = 128.f + std::sin(float(item + 1u) * 1.7f) * 8.f;
+            } else if (westRiverArc || eastRiverArc) {
+              const std::uint32_t arcItem = westRiverArc ? item - 12u
+                                                         : item - 22u;
+              const float t = (float(arcItem) + .5f) / 10.f;
+              baseAngle = westRiverArc ? (.61f + .78f * t) * Pi
+                                       : (-.39f + .78f * t) * Pi;
+              wallRadius = 150.f + std::sin(float(arcItem + 2u) * 1.3f) * 12.f;
+            } else {
+              const std::uint32_t backdropItem = item - 32u;
+              const std::uint32_t sector = backdropItem % 12u;
+              const std::uint32_t ring = backdropItem / 12u;
+              baseAngle = (float(sector) + .5f) * (2.f * Pi / 12.f);
+              wallRadius = 176.f + float(ring) * 14.f;
+            }
             const float irregular =
-                std::sin(float((ring + 1u) * (sector + 2u))) * .055f;
+                std::sin(float((item + 3u) * 5u)) * .035f;
             const float retryTurn =
                 (float(int(trial % 9u) - 4) * .0065f);
             const float angle = baseAngle + irregular + retryTurn;
-            const float wallRadius = 120.f + float(ring) * 15.f +
-                                     float(trial / 9u) * .8f;
+            wallRadius += float(trial / 9u) * .8f;
             candidate = {settings.spawnCenter.x + std::cos(angle) * wallRadius,
                          0,
                          settings.spawnCenter.z + std::sin(angle) * wallRadius};
@@ -856,6 +879,33 @@ bool ValidateShowcaseLandEcology3D(
       result.vegetationScaleBounded &= placement.scale.y<=.44f && placement.scale.x<=1.5f;
     if(placement.kind==ShowcaseLandKind3D::Tree)
       result.vegetationScaleBounded &= placement.scale.y>=4.5f && placement.scale.y<=15.56f;
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.band == ShowcaseLandBand3D::Far &&
+        std::isfinite(placement.position.x) &&
+        std::isfinite(placement.position.z)) {
+      // 以正式 hero focus 為固定世界空間觀測原點量測，不讀取像素、霧或
+      // camera jitter。木屋後方保留橫向弧帶，河道兩側各有林緣，並要求
+      // 十二方位及近／中／遠三層皆有實體樹 transform。
+      const float relativeX = placement.position.x - settings.spawnCenter.x;
+      const float relativeZ = placement.position.z - settings.spawnCenter.z;
+      float angle = std::atan2(relativeZ, relativeX);
+      if (angle < 0.f) angle += 2.f * Pi;
+      const auto sector = (std::min)(
+          11u, std::uint32_t(angle / (2.f * Pi) * 12.f));
+      result.farForestSectorMask |= 1u << sector;
+      const float radius = std::hypot(relativeX, relativeZ);
+      result.farForestDepthMask |= radius < 145.f ? 1u
+                                  : radius < 180.f ? 2u : 4u;
+      if (placement.position.z >= settings.cottageCenter.z + 48.f &&
+          std::abs(placement.position.x - settings.cottageCenter.x) <= 116.f)
+        ++result.farCottageRearArcTrees;
+      const float riverSide = placement.position.x -
+                              RiverCenterX(placement.position.z);
+      if (riverSide <= -70.f)
+        ++result.farRiverWestArcTrees;
+      else if (riverSide >= 70.f)
+        ++result.farRiverEastArcTrees;
+    }
     const float limit = settings.terrainHalfSpan - settings.terrainMargin;
     result.terrainBoundsExact &= std::abs(placement.position.x) + footprint <= limit &&
                                  std::abs(placement.position.z) + footprint <= limit;
@@ -1042,6 +1092,13 @@ bool ValidateShowcaseLandEcology3D(
   result.understoryGroundCoverExact =
       result.understoryGroundCover >= MinimumUnderstoryGroundCover &&
       result.understoryGroundCoverBandMask == 0x07u;
+  result.farForestCompositionExact =
+      result.transformsExact && result.trees[2] == 80u &&
+      result.farCottageRearArcTrees >= MinimumFarCottageRearArcTrees &&
+      result.farRiverWestArcTrees >= MinimumFarRiverSideArcTrees &&
+      result.farRiverEastArcTrees >= MinimumFarRiverSideArcTrees &&
+      result.farForestSectorMask == 0x0fffu &&
+      result.farForestDepthMask == 0x07u;
   result.densityExact = result.occupiedHabitatCells >= 12 &&
       result.densestHabitatCell >= settings.minimumDensestHabitatCell &&
       result.heroGroundCoverExact && result.understoryGroundCoverExact;

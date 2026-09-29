@@ -213,7 +213,7 @@ public:
     case ForestTrialPhase3D::ReturnAcrossBridge:
       return "CROSS THE BRIDGE BACK TO THE COTTAGE";
     case ForestTrialPhase3D::ReturnToCottage:
-      return "RETURN TO THE COTTAGE";
+      return "ENTER THE COTTAGE";
     case ForestTrialPhase3D::Complete:
       return "FOREST TRIAL COMPLETE";
     }

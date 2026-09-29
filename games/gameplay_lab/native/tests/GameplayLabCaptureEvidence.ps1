@@ -1170,6 +1170,12 @@ function Assert-GameplayRunEvidence(
   $expectedWorld = [uint64]$Environment.terrainPatches + [uint64]$Environment.waterSegments + [uint64]$Environment.treeInstances + [uint64]$Environment.grassInstances + [uint64]$Environment.rockInstances + [uint64]$Environment.buildingComponents
   $expectedSolid = [uint64]$Environment.terrainPatches + [uint64]$Environment.treeInstances + [uint64]$Environment.rockInstances + [uint64]$Environment.buildingComponents
   $expectedNonSolid = [uint64]$Environment.waterSegments + [uint64]$Environment.grassInstances
+  # The authored cottage-front remains one render descriptor, while gameplay
+  # collision replaces its sealed box with left/right/header pieces. Two of
+  # those pieces are supplemental, solid collision descriptors.
+  $expectedCottageCollisionSupplemental = [uint64]2
+  $expectedCollisionWorld = $expectedWorld + $expectedCottageCollisionSupplemental
+  $expectedCollisionSolid = $expectedSolid + $expectedCottageCollisionSupplemental
   if ($Environment.source -ne 'GameplayShowcaseEnvironment3D' -or $Environment.worldHash -eq 0 -or
       $Environment.descriptors -ne $expectedWorld -or $expectedWorld -gt 528 -or $Environment.submittedDescriptors -ne $expectedWorld -or
       $Environment.executionObserved -ne 1 -or @($Environment.counterDeltas).Count -ne 10 -or
@@ -1178,15 +1184,16 @@ function Assert-GameplayRunEvidence(
     throw 'Gameplay environment typed execution/release evidence failed'
   }
   if ($Collision.source -ne 'EnvironmentCollisionStreaming3D' -or $Collision.stateHash -eq 0 -or
-      $Collision.descriptors -ne $expectedWorld -or $Collision.solidDescriptors -ne $expectedSolid -or
-      $Collision.nonSolidDescriptors -ne $expectedNonSolid -or $Collision.solidDescriptors + $Collision.nonSolidDescriptors -ne $expectedWorld -or $Collision.activePartitions -ne 1 -or
-      $Collision.activeColliders -ne $expectedSolid -or $Collision.activePhysicsBodies -ne $expectedSolid -or
+      $Collision.descriptors -ne $expectedCollisionWorld -or $Collision.solidDescriptors -ne $expectedCollisionSolid -or
+      $Collision.nonSolidDescriptors -ne $expectedNonSolid -or
+      $Collision.solidDescriptors + $Collision.nonSolidDescriptors -ne $expectedCollisionWorld -or $Collision.activePartitions -ne 1 -or
+      $Collision.activeColliders -ne $expectedCollisionSolid -or $Collision.activePhysicsBodies -ne $expectedCollisionSolid -or
       $Collision.activations -lt 2 -or $Collision.deactivations -lt 1 -or
       $Collision.failedActivations -ne 0 -or $Collision.rollbacks -ne 0 -or
       $Collision.stableIdEvidence -ne 1 -or $Collision.rayEvidence -ne 1 -or
       $Collision.meleeQueryEvidence -ne 1 -or $Collision.reloadStable -ne 1 -or
-      $Collision.releasedDescriptors -ne $expectedWorld -or $Collision.releasedColliders -ne $expectedSolid -or
-      $Collision.releasedPhysicsBodies -ne $expectedSolid -or $Collision.retainedBytesAfterRelease -ne 0 -or
+      $Collision.releasedDescriptors -ne $expectedCollisionWorld -or $Collision.releasedColliders -ne $expectedCollisionSolid -or
+      $Collision.releasedPhysicsBodies -ne $expectedCollisionSolid -or $Collision.retainedBytesAfterRelease -ne 0 -or
       $Collision.activeCollidersAfterRelease -ne 0 -or $Collision.activePhysicsBodiesAfterRelease -ne 0) {
     throw 'Gameplay collision typed execution/release evidence failed'
   }

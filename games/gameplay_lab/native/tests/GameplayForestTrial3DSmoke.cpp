@@ -13,9 +13,9 @@ int main() {
   const ForestTrialRoute3D route{{-9.85f, 0, 14},
                                  {7.15f, 0, 14},
                                  {9.2f, 0, 14},
-                                 {-12, 0, 19},
+                                 {-12, 0, 21.6f},
                                  2.25f,
-                                 2.25f};
+                                 .75f};
   auto invalid = route;
   invalid.bridgeApproach.x = std::numeric_limits<float>::quiet_NaN();
   if (trial.Reset(invalid))
@@ -73,15 +73,20 @@ int main() {
       trial.Transitions() != 4 ||
       trial.Phase() != ForestTrialPhase3D::ReturnToCottage)
     return 11;
+  // The exterior porch and threshold are not completion points. The final
+  // checkpoint is beyond the front wall, inside the cottage footprint.
+  if (!trial.Tick(false, {-12.f, 0.f, 20.4f}) || trial.Complete() ||
+      trial.Transitions() != 4)
+    return 12;
   if (!trial.Tick(false, route.cottageEntry) || !trial.Complete() ||
       trial.Transitions() != 5 ||
       trial.ObjectiveLabel() != "FOREST TRIAL COMPLETE" ||
       trial.ObjectiveStep() != trial.ObjectiveStepCount() ||
       trial.DirectionLabel(route.cottageEntry, 0.f) != "ARRIVED")
-    return 12;
+    return 13;
   if (!trial.Tick(true, {50, 0, 50}) || !trial.Complete() ||
       trial.Transitions() != 5)
-    return 13;
+    return 14;
   const auto completedTransitions = trial.Transitions();
   const float routeDistance =
       std::hypot(route.bridgeApproach.x + 16.f,
@@ -96,7 +101,7 @@ int main() {
                  route.cottageEntry.z - route.bridgeApproach.z);
   if (!trial.Reset(route) || trial.Complete() || trial.Transitions() != 0 ||
       trial.Phase() != ForestTrialPhase3D::ReachBridgeApproach)
-    return 14;
+    return 15;
 
   // Direction cues are authoritative XZ bearings relative to the same yaw
   // convention used by production movement: yaw zero faces +Z.
@@ -110,7 +115,7 @@ int main() {
       trial.DirectionLabel({0.f, 0.f, 0.f}, 3.14159265f) != "BEHIND" ||
       trial.DirectionLabel({10.f, 0.f, 10.f}, 0.f) != "LEFT" ||
       trial.DirectionLabel({-10.f, 0.f, 10.f}, 0.f) != "RIGHT")
-    return 15;
+    return 16;
 
   // The guardian arena is physical world composition, not a HUD-only target.
   // Keep a clear melee centre and two useful approach gaps while proving all
@@ -130,11 +135,11 @@ int main() {
         !arenaIdentities.insert(
              GameplayForestTrialArenaStoneIdentityHigh3D ^ (index + 1u))
              .second)
-      return 16;
+      return 17;
   }
   if (GameplayForestTrialArenaStones3D.size() != 8u ||
       minimumArenaRadius < 3.45f || maximumArenaRadius > 3.90f)
-    return 17;
+    return 18;
 
   std::cout << "GAMEPLAY_FOREST_TRIAL=PASS transitions="
             << completedTransitions << " routeDistance=" << routeDistance

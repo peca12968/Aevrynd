@@ -47,6 +47,11 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.understoryGroundCover == right.understoryGroundCover &&
       left.understoryGroundCoverBandMask ==
           right.understoryGroundCoverBandMask &&
+      left.farCottageRearArcTrees == right.farCottageRearArcTrees &&
+      left.farRiverWestArcTrees == right.farRiverWestArcTrees &&
+      left.farRiverEastArcTrees == right.farRiverEastArcTrees &&
+      left.farForestSectorMask == right.farForestSectorMask &&
+      left.farForestDepthMask == right.farForestDepthMask &&
       left.failureKind == right.failureKind &&
       left.failureBand == right.failureBand &&
       left.failureItem == right.failureItem &&
@@ -84,6 +89,7 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
           right.heroCompositionClustersExact &&
       left.understoryGroundCoverExact == right.understoryGroundCoverExact &&
       left.heroForestEdgeRocksExact == right.heroForestEdgeRocksExact &&
+      left.farForestCompositionExact == right.farForestCompositionExact &&
       left.deterministicBudget == right.deterministicBudget &&
       left.walkingLaneClear == right.walkingLaneClear &&
       left.vegetationScaleBounded == right.vegetationScaleBounded;
@@ -287,10 +293,54 @@ bool FarForestWallContract(
   std::cout << "FAR_FOREST_WALL trees=" << trees << " living=" << living
             << " sectors=" << std::popcount(sectorMask)
             << " sectorRange=" << *minimum << '-' << *maximum
-            << " heightTiers=" << std::popcount(heightMask) << '\n';
+            << " heightTiers=" << std::popcount(heightMask) << " counts=";
+  for (const auto count : sectorCounts) std::cout << count << ',';
+  std::cout << '\n';
   return trees == 80u && living >= 72u && sectorMask == 0x0fffu &&
          *minimum >= 4u && *maximum <= 10u &&
          std::popcount(heightMask) == 3;
+}
+
+// 固定正式 hero focus 的世界空間 sector/depth gate。它驗證木屋後方與
+// 河道兩側都有實體 Far-tree 弧帶，同時保留 HLOD 可見性的十二方位與三個
+// 深度層；完全不讀取 framebuffer，因此不能用 fog 或像素色塊假造通過。
+bool FarForestEdgeCompositionContract(
+    const ShowcaseLandEcologySettings3D &settings,
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  unsigned trees{}, cottageRear{}, riverWest{}, riverEast{}, sectors{}, depths{};
+  constexpr float twoPi = 6.28318530717958647692f;
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Tree ||
+        placement.band != ShowcaseLandBand3D::Far)
+      continue;
+    ++trees;
+    if (!std::isfinite(placement.position.x) ||
+        !std::isfinite(placement.position.z))
+      return false;
+    const float dx = placement.position.x - settings.spawnCenter.x;
+    const float dz = placement.position.z - settings.spawnCenter.z;
+    float angle = std::atan2(dz, dx);
+    if (angle < 0.f) angle += twoPi;
+    sectors |= 1u << (std::min)(11u, unsigned(angle / twoPi * 12.f));
+    const float radius = std::hypot(dx, dz);
+    depths |= radius < 145.f ? 1u : radius < 180.f ? 2u : 4u;
+    if (placement.position.z >= settings.cottageCenter.z + 48.f &&
+        std::abs(placement.position.x - settings.cottageCenter.x) <= 116.f)
+      ++cottageRear;
+    const float riverSide =
+        placement.position.x - TestRiverCenterX(placement.position.z);
+    if (riverSide <= -70.f)
+      ++riverWest;
+    else if (riverSide >= 70.f)
+      ++riverEast;
+  }
+  std::cout << "FAR_FOREST_EDGE trees=" << trees
+            << " cottageRear=" << cottageRear
+            << " riverSides=" << riverWest << '/' << riverEast
+            << " sectors=" << std::popcount(sectors)
+            << " depthTiers=" << std::popcount(depths) << '\n';
+  return trees == 80u && cottageRear >= 16u && riverWest >= 18u &&
+         riverEast >= 18u && sectors == 0x0fffu && depths == 0x07u;
 }
 
 }
@@ -358,6 +408,35 @@ int main() {
     return 44;
   if (!FarForestWallContract(settings, first))
     return 45;
+  if (!FarForestEdgeCompositionContract(settings, first) ||
+      !receipt.farForestCompositionExact)
+    return 46;
+  auto missingCottageArc = first;
+  for (auto &placement : missingCottageArc)
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.band == ShowcaseLandBand3D::Far &&
+        placement.position.z >= settings.cottageCenter.z + 48.f &&
+        std::abs(placement.position.x - settings.cottageCenter.x) <= 116.f)
+      placement.position.z = settings.spawnCenter.z -
+                             std::abs(placement.position.z -
+                                      settings.spawnCenter.z);
+  if (FarForestEdgeCompositionContract(settings, missingCottageArc))
+    return 47;
+  auto nonFiniteForestEdge = first;
+  const auto farTree = std::ranges::find_if(
+      nonFiniteForestEdge, [](const auto &placement) {
+        return placement.kind == ShowcaseLandKind3D::Tree &&
+               placement.band == ShowcaseLandBand3D::Far;
+      });
+  if (farTree == nonFiniteForestEdge.end())
+    return 48;
+  farTree->position.x = (std::numeric_limits<float>::infinity)();
+  ShowcaseLandEcologyReceipt3D nonFiniteReceipt{};
+  if (FarForestEdgeCompositionContract(settings, nonFiniteForestEdge) ||
+      ValidateShowcaseLandEcology3D(settings, nonFiniteForestEdge,
+                                    &nonFiniteReceipt) ||
+      nonFiniteReceipt.farForestCompositionExact)
+    return 48;
   if (!receipt.heroCompositionClustersExact ||
       receipt.heroPathShoulderCluster < 3u ||
       receipt.heroCottageRearCluster < 3u ||

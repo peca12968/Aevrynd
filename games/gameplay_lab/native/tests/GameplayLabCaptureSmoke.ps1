@@ -126,7 +126,29 @@ if($photorealReceipt.objectIdSupported-ne1-or$photorealReceipt.objectIdRequested
 if($photorealReceipt.depthCaptureSupported-ne1-or$photorealReceipt.depthPass-ne1){throw 'Typed production D32 depth/contact gate failed'}
 $allObjectIdComplete=@($characterReceipt.captures|Where-Object{$_.objectIdOpaqueComplete-ne1-or$_.objectIdMaskedComplete-ne1-or$_.objectIdSkinnedComplete-ne1}).Count-eq0
 if($photorealReceipt.objectIdPass-ne1-or-not$allObjectIdComplete){throw 'GPU object-ID completeness receipt did not pass directly'}
-if($environmentCollisionReceipt.runId-ne$receipt.runId-or$environmentCollisionReceipt.source-ne'EnvironmentCollisionStreaming3D'-or$environmentCollisionReceipt.stateHash-eq0-or$environmentCollisionReceipt.descriptors-ne$expectedWorld-or$environmentCollisionReceipt.solidDescriptors-ne$expectedSolid-or$environmentCollisionReceipt.nonSolidDescriptors-ne$expectedNonSolid-or$environmentCollisionReceipt.solidDescriptors+$environmentCollisionReceipt.nonSolidDescriptors-ne$expectedWorld-or$environmentCollisionReceipt.activePartitions-ne1-or$environmentCollisionReceipt.activeColliders-ne$expectedSolid-or$environmentCollisionReceipt.activePhysicsBodies-ne$expectedSolid-or$environmentCollisionReceipt.activations-lt2-or$environmentCollisionReceipt.deactivations-lt1-or$environmentCollisionReceipt.failedActivations-ne0-or$environmentCollisionReceipt.rollbacks-ne0-or$environmentCollisionReceipt.stableIdEvidence-ne1-or$environmentCollisionReceipt.rayEvidence-ne1-or$environmentCollisionReceipt.meleeQueryEvidence-ne1-or$environmentCollisionReceipt.reloadStable-ne1-or$environmentCollisionReceipt.releasedDescriptors-ne$expectedWorld-or$environmentCollisionReceipt.releasedColliders-ne$expectedSolid-or$environmentCollisionReceipt.releasedPhysicsBodies-ne$expectedSolid-or$environmentCollisionReceipt.retainedBytesAfterRelease-ne0-or$environmentCollisionReceipt.activeCollidersAfterRelease-ne0-or$environmentCollisionReceipt.activePhysicsBodiesAfterRelease-ne0){throw 'Gameplay environment collision semantic/streaming/release receipt gate failed'}
+$expectedCottageCollisionSupplemental=[uint64]2
+$expectedCollisionWorld=$expectedWorld+$expectedCottageCollisionSupplemental
+$expectedCollisionSolid=$expectedSolid+$expectedCottageCollisionSupplemental
+if($environmentCollisionReceipt.runId-ne$receipt.runId-or
+   $environmentCollisionReceipt.source-ne'EnvironmentCollisionStreaming3D'-or
+   $environmentCollisionReceipt.stateHash-eq0-or
+   $environmentCollisionReceipt.descriptors-ne$expectedCollisionWorld-or
+   $environmentCollisionReceipt.solidDescriptors-ne$expectedCollisionSolid-or
+   $environmentCollisionReceipt.nonSolidDescriptors-ne$expectedNonSolid-or
+   $environmentCollisionReceipt.solidDescriptors+$environmentCollisionReceipt.nonSolidDescriptors-ne$expectedCollisionWorld-or
+   $environmentCollisionReceipt.activePartitions-ne1-or
+   $environmentCollisionReceipt.activeColliders-ne$expectedCollisionSolid-or
+   $environmentCollisionReceipt.activePhysicsBodies-ne$expectedCollisionSolid-or
+   $environmentCollisionReceipt.activations-lt2-or$environmentCollisionReceipt.deactivations-lt1-or
+   $environmentCollisionReceipt.failedActivations-ne0-or$environmentCollisionReceipt.rollbacks-ne0-or
+   $environmentCollisionReceipt.stableIdEvidence-ne1-or$environmentCollisionReceipt.rayEvidence-ne1-or
+   $environmentCollisionReceipt.meleeQueryEvidence-ne1-or$environmentCollisionReceipt.reloadStable-ne1-or
+   $environmentCollisionReceipt.releasedDescriptors-ne$expectedCollisionWorld-or
+   $environmentCollisionReceipt.releasedColliders-ne$expectedCollisionSolid-or
+   $environmentCollisionReceipt.releasedPhysicsBodies-ne$expectedCollisionSolid-or
+   $environmentCollisionReceipt.retainedBytesAfterRelease-ne0-or
+   $environmentCollisionReceipt.activeCollidersAfterRelease-ne0-or
+   $environmentCollisionReceipt.activePhysicsBodiesAfterRelease-ne0){throw 'Gameplay environment collision semantic/streaming/release receipt gate failed'}
 if($paletteUiReceipt.runId-ne$receipt.runId-or$paletteUiReceipt.source-ne'GameplayObjectPaletteUi3D'-or$paletteUiReceipt.categories-ne6-or$paletteUiReceipt.drawnFrames-lt11-or$paletteUiReceipt.cleanHudPresentationFrames-lt11-or$paletteUiReceipt.pointerDowns-lt1-or$paletteUiReceipt.drags-lt1-or$paletteUiReceipt.previews-lt1-or$paletteUiReceipt.commits-lt1-or$paletteUiReceipt.deterministicHash-eq0){throw 'Gameplay palette UI draw/pointer/clean-presentation receipt gate failed'}
 $paletteCharacter=@($characterReceipt.captures|Where-Object name -ceq 'palette-building.png')
 $palettePhotoreal=@($photorealReceipt.captures|Where-Object name -ceq 'palette-building.png')
