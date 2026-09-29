@@ -90,6 +90,19 @@ bool TerrainAuthoredLumaPreservationContract(std::string_view world){
       Count(world,"terrainTint *= originalLuma / partitionLuma;")==0&&
       Count(world,"const float referenceLuma = lerp(originalLuma, partitionLuma,")==0;
 }
+bool TerrainAuthoredPbrResponseContract(std::string_view world){
+  return Count(world,"float3 TerrainAuthoredBiomePbrResponse(float3 shapedWeights)")==1&&
+      Count(world,"const float3 pathResponse = float3(0.82, 1.35, 0.22);")==1&&
+      Count(world,"const float3 leafResponse = float3(1.18, 1.05, 0.30);")==1&&
+      Count(world,"const float3 wetResponse = float3(0.58, 0.65, 0.14);")==1&&
+      Count(world,"showcaseTerrainAuthoredBiomeWeights = shapedAuthoredBiomeWeights;")==1&&
+      Count(world,"TerrainAuthoredBiomePbrResponse(showcaseTerrainAuthoredBiomeWeights)")==1&&
+      Count(world,"terrainEffectiveNormalStrength * terrainAuthoredBiomePbrResponse.y")==1&&
+      Count(world,"terrainMesoSignal * 2.0 - 1.0")==1&&
+      Count(world,"terrainAuthoredBiomePbrResponse.z")==1&&
+      Count(world,"roughness * terrainAuthoredBiomePbrResponse.x")==1&&
+      Count(world,"roughness * lerp(1.0, 0.90, authoredWetSoilWeight)")==0;
+}
 struct SurfacePixels {double red{},green{},blue{},luminance{},luminanceDeviation{},brightFraction{};bool valid{};};
 SurfacePixels MeasureTerrainPixels(const std::filesystem::path& path){ComPtr<IWICImagingFactory> factory;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;ComPtr<IWICFormatConverter> converter;UINT width{},height{};if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))||FAILED(factory->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder))||FAILED(decoder->GetFrame(0,&frame))||FAILED(frame->GetSize(&width,&height))||width!=640||height!=360||FAILED(factory->CreateFormatConverter(&converter))||FAILED(converter->Initialize(frame.Get(),GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom)))return{};std::vector<std::uint8_t> pixels(std::size_t(width)*height*4);if(FAILED(converter->CopyPixels(nullptr,width*4,UINT(pixels.size()),pixels.data())))return{};SurfacePixels result{};double luminanceSquare{};std::size_t count{},bright{};for(unsigned y=170;y<300;++y)for(unsigned x=220;x<420;++x){const std::size_t offset=(std::size_t(y)*width+x)*4;const double red=pixels[offset],green=pixels[offset+1],blue=pixels[offset+2],luminance=.2126*red+.7152*green+.0722*blue;result.red+=red;result.green+=green;result.blue+=blue;result.luminance+=luminance;luminanceSquare+=luminance*luminance;bright+=red>230&&green>230&&blue>230;++count;}result.red/=count;result.green/=count;result.blue/=count;result.luminance/=count;result.luminanceDeviation=std::sqrt((std::max)(0.0,luminanceSquare/count-result.luminance*result.luminance));result.brightFraction=double(bright)/count;result.valid=true;return result;}
 bool LoadRgba(const std::filesystem::path& path,std::vector<std::uint8_t>& pixels){ComPtr<IWICImagingFactory> factory;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;ComPtr<IWICFormatConverter> converter;UINT width{},height{};if(FAILED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))||FAILED(factory->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnLoad,&decoder))||FAILED(decoder->GetFrame(0,&frame))||FAILED(frame->GetSize(&width,&height))||width!=640||height!=360||FAILED(factory->CreateFormatConverter(&converter))||FAILED(converter->Initialize(frame.Get(),GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom)))return false;pixels.resize(std::size_t(width)*height*4);return SUCCEEDED(converter->CopyPixels(nullptr,width*4,UINT(pixels.size()),pixels.data()));}
@@ -154,6 +167,9 @@ int main(){
     std::string hostileAuthoredCoefficient=worldShader;
     if(const auto coefficient=hostileAuthoredCoefficient.find("float3(1.08, 0.84, 0.62)");coefficient!=std::string::npos)
       hostileAuthoredCoefficient.replace(coefficient,std::string_view("float3(1.08, 0.84, 0.62)").size(),"float3(1.25, 0.84, 0.62)");
+    std::string hostileAuthoredPbr=worldShader;
+    if(const auto coefficient=hostileAuthoredPbr.find("float3(0.82, 1.35, 0.22)");coefficient!=std::string::npos)
+      hostileAuthoredPbr.replace(coefficient,std::string_view("float3(0.82, 1.35, 0.22)").size(),"float3(1.02, 1.35, 0.22)");
     const auto terrainBinding=ReadText(source/L"games/gameplay_lab/native/include/ShowcaseTerrainMaterials3D.h");
     std::string hostileBinding=terrainBinding;
     if(const auto layer=hostileBinding.find("\"Ground108:slot-0\"");layer!=std::string::npos)
@@ -166,16 +182,18 @@ int main(){
     const bool rejectsHostileOriginalTint=!TerrainOriginalWeightSnapshotContract(hostileOriginalTint);
     const bool rejectsMovedSnapshot=!TerrainOriginalWeightSnapshotContract(hostileMovedSnapshot);
     const bool authoredLumaPreservation=TerrainAuthoredLumaPreservationContract(worldShader);
+    const bool authoredPbrContract=TerrainAuthoredPbrResponseContract(worldShader);
     const bool rejectsHostileAuthoredLuma=!TerrainAuthoredLumaPreservationContract(hostileAuthoredLuma);
     const bool rejectsHostileAuthoredNormalization=!TerrainAuthoredLumaPreservationContract(hostileAuthoredNormalization);
     const bool rejectsHostileAuthoredCoefficient=!TerrainAuthoredLumaPreservationContract(hostileAuthoredCoefficient);
+    const bool rejectsHostileAuthoredPbr=!TerrainAuthoredPbrResponseContract(hostileAuthoredPbr);
     const bool rejectsHostileMarker=!R16TerrainBindingContract(hostileMarker,gameplaySource,terrainBinding);
     const bool rejectsHostileWet=!R16TerrainBindingContract(hostileWet,gameplaySource,terrainBinding);
     const bool rejectsHostileBinding=!R16TerrainBindingContract(worldShader,gameplaySource,hostileBinding);
-    if(!productionBinding||!foliageReflectance||!originalWeightSnapshot||!authoredLumaPreservation||!rejectsHostileFoliage||
+    if(!productionBinding||!foliageReflectance||!originalWeightSnapshot||!authoredLumaPreservation||!authoredPbrContract||!rejectsHostileFoliage||
        !rejectsHostileOriginalAlbedo||!rejectsHostileOriginalTint||!rejectsMovedSnapshot||!rejectsHostileMarker||
        !rejectsHostileAuthoredLuma||!rejectsHostileAuthoredNormalization||
-       !rejectsHostileAuthoredCoefficient||!rejectsHostileWet||!rejectsHostileBinding){
+       !rejectsHostileAuthoredCoefficient||!rejectsHostileAuthoredPbr||!rejectsHostileWet||!rejectsHostileBinding){
       std::cerr<<"R16 terrain production binding failed production="<<productionBinding
                <<" foliage="<<foliageReflectance<<" original="<<originalWeightSnapshot
                <<" hostileFoliage="<<rejectsHostileFoliage
@@ -183,9 +201,11 @@ int main(){
                <<" hostileTint="<<rejectsHostileOriginalTint
                <<" hostileMoved="<<rejectsMovedSnapshot
                <<" authoredLuma="<<authoredLumaPreservation
+               <<" authoredPbr="<<authoredPbrContract
                <<" hostileAuthoredLuma="<<rejectsHostileAuthoredLuma
                <<" hostileAuthoredNormalization="<<rejectsHostileAuthoredNormalization
                <<" hostileAuthoredCoefficient="<<rejectsHostileAuthoredCoefficient
+               <<" hostileAuthoredPbr="<<rejectsHostileAuthoredPbr
                <<" hostileMarker="<<rejectsHostileMarker
                <<" hostileWet="<<rejectsHostileWet
                <<" hostileBinding="<<rejectsHostileBinding<<'\n';
@@ -210,6 +230,20 @@ int main(){
        std::abs(authoredLumaScale({0,0,1})-.62f)>1e-6f||
        hostileScale<.62f||hostileScale>1.16f||
        authoredLumaScale({(std::numeric_limits<float>::quiet_NaN)(),0,0})!=1.f)return 35;
+    const auto authoredPbrResponse=[](Vec3 value){
+      if(!std::isfinite(value.x)||!std::isfinite(value.y)||!std::isfinite(value.z))return Vec3{1.f,1.f,0.f};
+      value.x=std::clamp(value.x,0.f,1.f);value.y=std::clamp(value.y,0.f,1.f);value.z=std::clamp(value.z,0.f,1.f);
+      const float total=value.x+value.y+value.z;if(total<=.000001f)return Vec3{1.f,1.f,0.f};
+      const float amount=std::clamp(total,0.f,1.f),inverse=1.f/total;value=value*inverse;
+      const Vec3 target=Vec3{.82f,1.35f,.22f}*value.x+Vec3{1.18f,1.05f,.30f}*value.y+Vec3{.58f,.65f,.14f}*value.z;
+      return Vec3{1,1,0}+(target-Vec3{1,1,0})*amount;
+    };
+    const Vec3 neutralResponse=authoredPbrResponse({0,0,0}),pathResponse=authoredPbrResponse({1,0,0}),leafResponse=authoredPbrResponse({0,1,0}),wetResponse=authoredPbrResponse({0,0,1}),invalidResponse=authoredPbrResponse({(std::numeric_limits<float>::quiet_NaN)(),0,0}),hostileResponse=authoredPbrResponse({4,3,2});
+    if(!SameVec3(neutralResponse,{1,1,0})||!SameVec3(invalidResponse,neutralResponse)||
+       leafResponse.x-wetResponse.x<.50f||std::abs(pathResponse.x-leafResponse.x)<.30f||
+       !(pathResponse.y>leafResponse.y&&leafResponse.y>wetResponse.y)||
+       !(leafResponse.z>pathResponse.z&&pathResponse.z>wetResponse.z)||
+       hostileResponse.x<.58f||hostileResponse.x>1.18f||hostileResponse.y<.65f||hostileResponse.y>1.35f||hostileResponse.z<.14f||hostileResponse.z>.30f)return 37;
     const HRESULT apartment=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
     TerrainDistanceMaterialSettings3D invalid;invalid.detailFadeStart=-4;invalid.detailFadeEnd=(std::numeric_limits<float>::quiet_NaN)();invalid.macroVariationScale=0;invalid.macroVariationStrength=8;invalid.normalDetailStrength=-2;invalid.farRoughnessBoost=9;invalid.warpScale=(std::numeric_limits<float>::quiet_NaN)();invalid.warpStrength=(std::numeric_limits<float>::infinity)();invalid.grassLayerScale=0;invalid.soilLayerScale=3;invalid.rockLayerScale=(std::numeric_limits<float>::quiet_NaN)();invalid.chromaVariationStrength=9;const auto normalized=NormalizeTerrainDistanceMaterialSettings3D(invalid);if(normalized.detailFadeStart!=0||normalized.detailFadeEnd!=192.f||normalized.macroVariationScale!=.00001f||normalized.macroVariationStrength!=.5f||normalized.normalDetailStrength!=0||normalized.farRoughnessBoost!=.5f||normalized.warpScale!=.012f||normalized.warpStrength!=2.4f||normalized.grassLayerScale!=.5f||normalized.soilLayerScale!=1.75f||normalized.rockLayerScale!=.68f||normalized.chromaVariationStrength!=.2f)return 1;
     const TerrainDistanceMaterialSettings3D quality{};const float sampledMacroVariation=TerrainMacroVariation3D({10,20},quality);if(TerrainDetailWeight3D(0,quality)!=1||TerrainDetailWeight3D(300,quality)!=0||TerrainDetailWeight3D((std::numeric_limits<float>::infinity)(),quality)!=0||TerrainDetailWeight3D((std::numeric_limits<float>::quiet_NaN)(),quality)!=0||TerrainMaterialTextureSamples3D(0,true,quality)!=9||TerrainMaterialTextureSamples3D(0,true,quality,true)!=15||TerrainMaterialTextureSamples3D(300,true,quality,true)!=3||TerrainMaterialTextureSamples3D(300,true,quality)!=3||TerrainMaterialTextureSamples3D(0,false,quality)||sampledMacroVariation<1.f-quality.macroVariationStrength||sampledMacroVariation>1.f+quality.macroVariationStrength||TerrainMacroVariation3D({(std::numeric_limits<float>::infinity)(),0},quality)!=1)return 2;

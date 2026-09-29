@@ -952,6 +952,30 @@ float3 TerrainAuthoredBiomeSpectralTint(float3 shapedWeights)
     return tintLuma > 0.000001 ? tint / tintLuma : 1.0.xxx;
 }
 
+float3 TerrainAuthoredBiomePbrResponse(float3 shapedWeights)
+{
+    // x=roughness scale、y=normal detail scale、z=zero-centred meso amplitude。
+    // 只由已驗證的 authored 權重啟用；neutral／非法 UV 必須精確回到
+    // (1,1,0)，避免改動未標記地形或把惡意資料擴散到 shading。
+    if (any(shapedWeights != shapedWeights) || any(abs(shapedWeights) > 65504.0))
+        return float3(1.0, 1.0, 0.0);
+    float3 weights = saturate(shapedWeights);
+    const float total = weights.x + weights.y + weights.z;
+    if (total <= 0.000001)
+        return float3(1.0, 1.0, 0.0);
+    const float authoredAmount = saturate(total);
+    weights /= total;
+    // 濕土保持最平滑，落葉保持最粗糙；步道則以較強法線讀出壓實石粒。
+    // 三組 meso 幅度同樣分離，但都以零中心訊號作用，不能冒充曝光調整。
+    const float3 pathResponse = float3(0.82, 1.35, 0.22);
+    const float3 leafResponse = float3(1.18, 1.05, 0.30);
+    const float3 wetResponse = float3(0.58, 0.65, 0.14);
+    const float3 target = pathResponse * weights.x
+                        + leafResponse * weights.y
+                        + wetResponse * weights.z;
+    return lerp(float3(1.0, 1.0, 0.0), target, authoredAmount);
+}
+
 float RayleighPhase(float cosine)
 {
     return 3.0 * (1.0 + cosine * cosine) / (16.0 * 3.14159265);
@@ -2418,6 +2442,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float showcaseTerrainAuthoredBiomeCalibration = 0.0;
         float showcaseTerrainAuthoredBiomeLumaScale = 1.0;
         float3 showcaseTerrainAuthoredBiomeSpectralTint = 1.0.xxx;
+        float3 showcaseTerrainAuthoredBiomeWeights = 0.0.xxx;
         const bool showcaseTerrainProductionBinding =
             input.textureData.w > 0.5 && input.normalScale == -15.5;
         // Showcase 的第三個實體槽是 stony_dirt_path，不是可全域散佈的
@@ -2449,6 +2474,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 authoredWetSoilWeight = TerrainWetShoreBlend(authoredBiomeWeights.z, wetBreakup);
                 const float3 shapedAuthoredBiomeWeights = float3(
                     authoredPathWeight, authoredLeafLitterWeight, authoredWetSoilWeight);
+                showcaseTerrainAuthoredBiomeWeights = shapedAuthoredBiomeWeights;
                 const float shapedAuthoredBiomeWeight = shapedAuthoredBiomeWeights.x
                                                       + shapedAuthoredBiomeWeights.y
                                                       + shapedAuthoredBiomeWeights.z;
@@ -2481,6 +2507,8 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 rockWeight = materialWeights.z;
             }
         }
+        const float3 terrainAuthoredBiomePbrResponse =
+            TerrainAuthoredBiomePbrResponse(showcaseTerrainAuthoredBiomeWeights);
         const float3 terrainMaterialDepthContrast = TerrainMesoPartitionEnabled()
             ? TerrainMaterialDepthContrast(terrainMesoSignal,
                 float3(authoredPathWeight, authoredLeafLitterWeight, authoredWetSoilWeight))
@@ -2632,7 +2660,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 const float terrainEffectiveNormalStrength=lerp(terrainLowLightNormalStrength,
                     terrainNormalDetailStrength,terrainDirectionalNormalWeight);
                 terrainNormal=ScaleNormalDetail(geometricNormal,sampledNormal,
-                    terrainDetailWeight*terrainEffectiveNormalStrength);
+                    terrainDetailWeight * terrainEffectiveNormalStrength * terrainAuthoredBiomePbrResponse.y);
             }
             // 微變化隨細節權重淡出，宏觀變化保留到遠景，避免遠距閃爍又維持近中遠色彩連續。
             const float microVariation=lerp(1.0,lerp(0.92,1.08,microNoise),terrainDetailWeight);
@@ -2658,6 +2686,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 terrainAlbedo *= TerrainForestFloorSpectralVariation(
                     terrainMesoSignal, macroNoise, grassWeight, soilWeight,
                     showcaseTerrainAuthoredBiomeCalibration);
+                // 重用既有連續 meso 訊號；零中心且有界，三個 authored family
+                // 只改自身尺度，不提高整體曝光，也不影響 neutral terrain。
+                const float authoredMesoResponse = clamp(
+                    1.0 + (terrainMesoSignal * 2.0 - 1.0) * terrainAuthoredBiomePbrResponse.z,
+                    0.82, 1.18);
+                terrainAlbedo *= authoredMesoResponse;
                 // 中尺度亮度變化代表樹冠遮蔽、苔蘚與落葉堆積；範圍仍有界且不依賴相機或時間。
                 // 讓遠景在細節貼圖淡出後仍保有可讀層次，避免大片同亮度地表形成規律重複。
                 terrainAlbedo *= lerp(0.90, 1.08, terrainMesoSignal);
@@ -2705,6 +2739,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             baseColor *= decorrelatedTerrainTint * lerp(0.92, 1.08, microNoise) * distanceMacroVariation;
             roughness = clamp(roughness * (grassWeight * 0.86 + soilWeight * 1.03 + rockWeight * 0.74) * (1.0+terrainFarRoughnessBoost*(1.0-terrainDetailWeight)), 0.045, 1.0);
         }
+        // 使用相同 authored family 權重塑形微表面；neutral 的乘數精確為 1。
+        roughness = clamp(roughness * terrainAuthoredBiomePbrResponse.x,
+                          0.045, 1.0);
         [branch] if (authoredWetSoilWeight > 0.0)
         {
             // 河岸濕土只做受限的暗冷能量與微表面反應，不增加 sample、
@@ -2713,8 +2750,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             // 並沿 authored weight 平滑退回遠岸原材質。
             const float3 riverWetSoilAlbedo = float3(0.62, 0.72, 0.74);
             baseColor *= lerp(1.0.xxx, riverWetSoilAlbedo, authoredWetSoilWeight);
-            roughness = clamp(roughness * lerp(1.0, 0.90, authoredWetSoilWeight),
-                              0.24, 1.0);
+            roughness = clamp(roughness, 0.24, 1.0);
         }
         // 最後套用一次即可同時涵蓋貼圖與 fallback 路徑；介電質 .82 上限已在
         // 各路徑內處理，contrast 後再次夾限，避免 path 增益越過該能量界線。
