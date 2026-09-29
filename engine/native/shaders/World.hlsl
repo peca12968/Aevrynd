@@ -2780,15 +2780,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     waterWorldLengthSquaredX = waterWorldLengthSquaredX + waterWorldDeltaX.y * waterWorldDeltaX.y;
     precise float waterWorldLengthSquaredY = waterWorldDeltaY.x * waterWorldDeltaY.x;
     waterWorldLengthSquaredY = waterWorldLengthSquaredY + waterWorldDeltaY.y * waterWorldDeltaY.y;
-    // 固定 depth 重建的鄰點並不一定落在同一個透視水面上，斜視時會低估
-    // 真正的世界空間像素跨度。插值 world position 的 quad derivative 才是
-    // 當前三角形表面上的實際 footprint；取兩者較大值只會更保守地濾除
-    // 不可解析波，不會重新引入高頻。
-    const float2 waterInterpolatedDeltaX = ddx(input.worldPosition.xz);
-    const float2 waterInterpolatedDeltaY = ddy(input.worldPosition.xz);
-    const float waterInterpolatedFootprint = max(length(waterInterpolatedDeltaX), length(waterInterpolatedDeltaY));
-    const precise float waterWorldFootprint = max(max(sqrt(waterWorldLengthSquaredX), sqrt(waterWorldLengthSquaredY)),
-                                                   waterInterpolatedFootprint);
+    // 不可混入 ddx/ddy：三角形邊界的 helper lane 並無跨程序穩定保證，
+    // 會讓相同河面偶發產生一個 half-float ULP 的 HDR 漂移。顯式鄰點重建
+    // 已提供與畫面解析度一致的 footprint，且不依賴 wave/quad 排程。
+    const precise float2 waterInterpolatedDeltaX = waterWorldDeltaX;
+    const precise float2 waterInterpolatedDeltaY = waterWorldDeltaY;
+    const precise float waterWorldFootprint = max(sqrt(waterWorldLengthSquaredX), sqrt(waterWorldLengthSquaredY));
     float4 evaluatedOutput=float4(0.0,0.0,0.0,0.0);
     if (skyMask > 0.5)
     {

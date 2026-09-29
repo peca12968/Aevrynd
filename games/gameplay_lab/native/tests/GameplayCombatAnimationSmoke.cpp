@@ -273,6 +273,33 @@ int main(int argumentCount,char** arguments) {
     const auto obstacle=reachCollision.CreateBox({{{0,1,.4f},{.2f,.8f,.2f}},2,1,99,false});
     reachCombat.Tick({{}, {1,0,0}, true},.1f);reachCombat.Tick({{}, {1,0,0}, false},.02f);
     if(!obstacle||reachCombat.Stats().hits!=1||std::abs(reachCombat.Monster().health-70.f)>.001f||Length(reachCombat.Monster().position-Vec3{GameplayMonsterStopDistance3D,0,0})>.001f||!reachCollision.Get(obstacle))return 11;
+
+    // A 3D trial is not a game if the guardian can only follow the player.
+    // Incoming damage is fixed-tick, range-gated and once-per-attack-window;
+    // death must freeze further attacks until the encounter is explicitly reset.
+    CollisionWorld3D survivalCollision;PhysicsWorld3D survivalPhysics;
+    GameplayCombat3D survival(survivalCollision,survivalPhysics);
+    survival.SpawnMonster({GameplayMonsterStopDistance3D,0,0},100);
+    CombatInput3D survivalInput{{}, {1,0,0}, false};
+    for(int tick=0;tick<59;++tick)survival.Tick(survivalInput,.01f);
+    if(!survival.Player().alive||survival.Player().health!=GameplayPlayerMaximumHealth3D||survival.Stats().playerHits)return 17;
+    for(int tick=0;tick<600&&survival.Player().alive;++tick)survival.Tick(survivalInput,.01f);
+    if(survival.Player().alive||survival.Player().health!=0.f||survival.Stats().playerHits!=5||
+       survival.Stats().playerDeaths!=1||survival.Stats().monsterAttacks!=5||!survival.Monster().alive)return 18;
+    const auto deadStats=survival.Stats();
+    for(int tick=0;tick<180;++tick)survival.Tick(survivalInput,.01f);
+    if(survival.Stats().playerHits!=deadStats.playerHits||survival.Stats().monsterAttacks!=deadStats.monsterAttacks)return 19;
+    survival.SpawnMonster({6,0,0},100);
+    for(int tick=0;tick<30;++tick)survival.Tick(survivalInput,.01f);
+    if(!survival.Player().alive||survival.Player().health!=GameplayPlayerMaximumHealth3D||survival.Stats().playerHits)return 20;
+
+    const auto deterministicRun=[](){
+        CollisionWorld3D world;PhysicsWorld3D simulation;GameplayCombat3D value(world,simulation);
+        value.SpawnMonster({GameplayMonsterStopDistance3D,0,0},100);
+        for(int tick=0;tick<240;++tick)value.Tick({{}, {1,0,0}, false},1.f/60.f);
+        return std::array{value.Player().health,float(value.Stats().monsterAttacks),float(value.Stats().playerHits),float(value.Stats().playerDeaths)};
+    };
+    if(deterministicRun()!=deterministicRun())return 21;
     std::cout << "combatHits=3 kills=1 animationStates=11 joints="
               << productionJointCount << " trajectories=3 phaseError="
               << maximumPhaseError

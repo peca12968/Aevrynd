@@ -1684,12 +1684,19 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
     rules_.SetPaletteCategory(*mapped.category);
   if (mapped.female){if(!rules_.Female())ResetProductionCameraCut(GameplayTemporalReseedReason3D::Character);rules_.SetCharacterFemale(true);}
   if (mapped.male){if(rules_.Female())ResetProductionCameraCut(GameplayTemporalReseedReason3D::Character);rules_.SetCharacterFemale(false);}
-  if(captureDirectory_.empty()&&!uiOwnedInput&&forestTrial_.Complete()&&in.Pressed('R')){
+  if(captureDirectory_.empty()&&!uiOwnedInput&&
+     (forestTrial_.Complete()||!combat_->Player().alive)&&in.Pressed('R')){
     const auto route=BuildGameplayForestTrialRoute3D(showcaseTerrain_);
     combat_->SpawnMonster(route.guardianArena);
     if(!forestTrial_.Reset(route))throw std::runtime_error("Gameplay forest trial restart failed");
-    monsterHistory_={};
+    controller_.Reset({-16.f,showcaseTerrain_.SampleHeight(-16.f,8.f),8.f});
+    playerHistory_={};monsterHistory_={};
     ResetProductionCameraCut(GameplayTemporalReseedReason3D::PoseState);
+  }
+  if(!combat_->Player().alive){
+    mapped.tick.movement={};mapped.tick.jump=false;mapped.tick.run=false;
+    mapped.tick.crouch=false;mapped.tick.prone=false;mapped.tick.attack=false;
+    mapped.mouseDelta={};
   }
   yaw_ -= mapped.mouseDelta.x * .0025f;
   pitch_ = Clamp(pitch_ - mapped.mouseDelta.y * .0025f, -.75f, .9f);
@@ -1733,7 +1740,8 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   }
   const CharacterControl3D control=BuildProductionCharacterControl3D(mapped.tick,rules_);
   controller_.Step(control, collisions_, showcaseTerrain_, gameplayDelta);
-  if(!forestTrial_.Tick(combat_->Monster().alive,controller_.Position()))
+  if(combat_->Player().alive&&
+     !forestTrial_.Tick(combat_->Monster().alive,controller_.Position()))
     throw std::runtime_error("Gameplay forest trial rejected authoritative state");
   const auto gameplayTick = rules_.GetStats().ticks;
   // gameplayTick在Rules::Tick之後，26精確對應ApplyReplayInput的tick 25拖曳階段。
@@ -1756,12 +1764,17 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
   const bool pointerOverPalette=rules_.PaletteOpen()&&pointerInsidePalettePanel;
   const Vec3 forward{std::sin(yaw_), 0, std::cos(yaw_)};
   combat_->Tick({controller_.Position(), forward,
-                 mapped.tick.attack && !rules_.PaletteOpen()&&!paletteUi_->Active()},
+                 mapped.tick.attack && !rules_.PaletteOpen()&&!paletteUi_->Active(),
+                 captureDirectory_.empty()},
                 gameplayDelta);
   if (combat_->CurrentAttack() == Attack3D::Attack3 && combat_->InHitWindow())
     weaponHitWindowEvidence_ = true;
   AnimationState3D animation = AnimationState3D::Idle;
-  if (combat_->CurrentAttack() != Attack3D::None)
+  if(!combat_->Player().alive)
+    animation=AnimationState3D::Death;
+  else if(combat_->MonsterInHitWindow())
+    animation=AnimationState3D::Hit;
+  else if (combat_->CurrentAttack() != Attack3D::None)
     animation = AnimationState3D(unsigned(AnimationState3D::Attack1) +
                                  unsigned(combat_->CurrentAttack()) - 1);
   else if (!controller_.Grounded())
@@ -1799,9 +1812,11 @@ void GameplayLabGame::OnUpdate(Engine &engine, float dt) {
        !authoritativeTrajectory_.Record(rules_.GetStats().ticks,combat_->CurrentAttack(),combat_->InHitWindow(),combat_->NormalizedAttackPhase(),controller_.Position(),TransformPoint(handSocket,{}),trajectoryTip))
       throw std::runtime_error("Gameplay authoritative attack trajectory checkpoint failed");
   }
-  monsterAnimation_.SetState(combat_->Monster().alive
-                                 ? AnimationState3D::Walk
-                                 : AnimationState3D::Death);
+  monsterAnimation_.SetState(!combat_->Monster().alive
+                                 ?AnimationState3D::Death
+                                 :combat_->MonsterAttackActive()
+                                   ?AnimationState3D::Attack1
+                                   :AnimationState3D::Walk);
   monsterAnimation_.Tick(animationDelta);
   // Camera search 與 renderer 共用同一份 fixed-tick pose。呈現幀不得成為 pose 的作者。
   if(!femaleAnimation_.EvaluateInto(femalePose_)||!maleAnimation_.EvaluateInto(malePose_)||
@@ -3592,7 +3607,9 @@ void GameplayLabGame::OnRender(Engine& engine,float){
   if(GameplayHudShowsCompactInstructions3D(hudPolicy,cleanCapturePresentation))
     draw.Text({18,14},"[WASD] MOVE  [LMB] ATTACK  [TAB] BUILD  [F1] HELP",.9f,Cyan);
   if(!cleanCapturePresentation&&forestTrial_.Initialized()){
-    const auto objective=forestTrial_.Complete()
+    const auto objective=!combat_->Player().alive
+      ?std::string("FOREST TRIAL FAILED  [R] RESTART")
+      :forestTrial_.Complete()
       ?std::format("FOREST TRIAL COMPLETE  [R] RESTART")
       :std::format("FOREST TRIAL [{}/{}]: {}  {}  {:.1f} m",
                    forestTrial_.ObjectiveStep(),forestTrial_.ObjectiveStepCount(),
@@ -3600,7 +3617,9 @@ void GameplayLabGame::OnRender(Engine& engine,float){
                    forestTrial_.DirectionLabel(controller_.Position(),yaw_),
                    forestTrial_.DistanceToObjective(controller_.Position()));
     draw.Quad({640,82},{610,42},{.008f,.018f,.022f,.84f});
-    draw.Text({352,68},objective,1.05f,forestTrial_.Complete()?Gold:Cyan);
+    draw.Text({352,68},objective,1.05f,
+              !combat_->Player().alive?Color{1.f,.30f,.24f,1.f}:
+              forestTrial_.Complete()?Gold:Cyan);
   }
   if(hudPolicy.instructions){
     draw.Quad({640,32},{1280,64},{.008f,.018f,.022f,.92f});
@@ -3618,7 +3637,13 @@ void GameplayLabGame::OnRender(Engine& engine,float){
     }
     ++paletteUiDrawnFrames_;
   }
-  if(hudPolicy.combatStatus)draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
+  if(hudPolicy.combatStatus){
+    const auto& player=combat_->Player();
+    draw.Text({790,660},std::format("PLAYER HP {}{}",player.health,
+              player.alive?"":"  DEFEATED"),1.1f,
+              player.alive?Color{.42f,1.f,.64f,1.f}:Color{1.f,.30f,.24f,1.f});
+    draw.Text({790,684},std::format("MONSTER HP {}  COMBO HITS {} KILLS {}",combat_->Monster().health,combat_->Stats().hits,combat_->Stats().kills),1.1f,combat_->Monster().alive?Cyan:Gold);
+  }
   if(!cleanCapturePresentation&&combatSpawned_&&combat_->Monster().alive){
     const auto guardianHud=BuildGameplayMonsterHudAnchor3D(
         combat_->Monster().position,combat_->Monster().health,100.f,camera_,

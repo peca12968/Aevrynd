@@ -31,5 +31,30 @@ int main(){
         const auto pending=renderer.CreateReflectionProbeCapture3D({{-1,0,0},32,.1f,20});const auto bytesBeforePending=renderer.GetStats().reflectionProbeCaptureResidentBytes,releasesBeforePending=renderer.GetStats().reflectionProbeCaptureReleases;renderer.Render(draw,{.01f,.015f,.025f,1});const auto pendingStatus=renderer.ReflectionProbeCaptureStatus(pending);if(!pendingStatus||pendingStatus->stage!=ReflectionProbeCaptureStage3D::Pending||!pendingStatus->pendingFence)result=20;renderer.DestroyReflectionProbeCapture3D(pending);if(renderer.ReflectionProbeCaptureStatus(pending)||renderer.GetStats().reflectionProbeCaptureCount!=2||renderer.GetStats().reflectionProbeCaptureResidentBytes!=bytesBeforePending||renderer.GetStats().reflectionProbeCaptureReleases!=releasesBeforePending+1)result=20;
         gpuCapture.clear();for(int sample=0;sample<12;++sample){if(!renderer.MarkReflectionProbeCaptureDirty3D(first))result=18;renderer.Render(draw,{.01f,.015f,.025f,1});renderer.WaitIdle();if(renderer.GetStats().lastGpuFrameNanoseconds)gpuCapture.push_back(renderer.GetStats().lastGpuFrameNanoseconds);}DrawList baseline=draw;for(int frame=0;frame<12;++frame){renderer.Render(baseline,{.01f,.015f,.025f,1});renderer.WaitIdle();if(renderer.GetStats().lastGpuFrameNanoseconds)gpuBaseline.push_back(renderer.GetStats().lastGpuFrameNanoseconds);}const uint64_t captureGpu=Median(std::move(gpuCapture)),baselineGpu=Median(std::move(gpuBaseline));if(!captureGpu||!baselineGpu||captureGpu<=baselineGpu||captureGpu-baselineGpu>20000000ull||!renderer.GetStats().localReflectionProbeDraws)result=19;PROCESS_MEMORY_COUNTERS_EX memory{};GetProcessMemoryInfo(GetCurrentProcess(),reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory),sizeof(memory));std::cout<<"ReflectionProbeCaptureD3D12 resolution="<<valid.resolution<<" gpuCaptureUs="<<captureGpu/1000<<" gpuSteadyUs="<<baselineGpu/1000<<" gpuDeltaUs="<<(captureGpu-baselineGpu)/1000<<" residentBytes="<<resized.reflectionProbeCaptureResidentBytes<<" faces="<<renderer.GetStats().reflectionProbeCaptureFacesRendered<<" draws="<<renderer.GetStats().reflectionProbeCaptureDraws<<" workingSetBytes="<<memory.WorkingSetSize<<" hashes=";if(firstReadback)for(uint64_t hash:firstReadback->faceHashes)std::cout<<hash<<',';std::cout<<'\n';
         const auto releasesBeforeTrim=renderer.GetStats().reflectionProbeCaptureReleases,memoryBeforeTrim=renderer.MemoryStats().trackedCapacityBytes;renderer.TrimReflectionProbeCaptures3D();if(renderer.GetStats().reflectionProbeCaptureResidentBytes||renderer.ReflectionProbeCaptureStatus(first)->residentBytes||renderer.GetStats().reflectionProbeCaptureReleases!=releasesBeforeTrim+2||renderer.MemoryStats().trackedCapacityBytes>=memoryBeforeTrim||renderer.GetStats().residentEnvironmentLightingDescriptors||renderer.GetStats().residentEnvironmentLightingSets)result=16;renderer.DestroyReflectionProbeCapture3D(second);renderer.DestroyReflectionProbeCapture3D(first);renderer.DestroySkinnedMesh(skinned);renderer.DestroyMesh(box);renderer.WaitIdle();if(renderer.GetStats().reflectionProbeCaptureCount||renderer.GetStats().residentMeshBytes||renderer.GetStats().residentSkinnedMeshBytes)result=17;
-    }DestroyWindow(window);return result;
+    }
+    {
+        D3D12Renderer renderer;
+        renderer.Initialize(window,320,180,320,180,false);
+        renderer.SetQualitySettings({false,false,false,false});
+        renderer.SetReflectionProbeCaptureBudget(8*1024*1024);
+        Mesh3D foliageData=Mesh3D::CreateUnitBox();
+        for(auto& vertex:foliageData.vertices){const auto normal=UnpackNormalSnorm8(vertex.normal);vertex.normal=PackNormalSnorm8({normal.x,normal.y,normal.z},0.f);}
+        const auto foliage=renderer.CreateMesh(foliageData.vertices,foliageData.indices);
+        DrawList timed{DrawListCapacityProfile::Minimal2D};
+        timed.SetViewProjection(Matrix4::Identity());
+        timed.SetAtmosphere({{.025f,.035f,.06f,1},{0,0,-4},50,100,false});
+        timed.MeshInstance(foliage,CreateTransformMatrix({0,0,-2},{},{1.4f,1.4f,1.4f}),{.1f,.8f,.16f,1},{.7f,0,0,1},MeshRenderLayer3D::Opaque,{},.25f,true,MaterialClass3D::Foliage,1,false);
+        const auto capture=renderer.CreateReflectionProbeCapture3D({{0,0,0},32,.1f,20});
+        if(!capture||!renderer.RequestReflectionProbeCaptureReadback3D(capture))result=24;
+        renderer.Render(timed,{.01f,.015f,.025f,1});renderer.WaitIdle();
+        const auto timeZero=renderer.TakeReflectionProbeCaptureReadback3D(capture);
+        timed.SetEnvironmentTime(7.25f);
+        if(!renderer.MarkReflectionProbeCaptureDirty3D(capture))result=24;
+        if(!renderer.RequestReflectionProbeCaptureReadback3D(capture))result=24;
+        renderer.Render(timed,{.01f,.015f,.025f,1});renderer.WaitIdle();
+        const auto timeAdvanced=renderer.TakeReflectionProbeCaptureReadback3D(capture);
+        if(!timeZero||!timeAdvanced||timeZero->faceHashes!=timeAdvanced->faceHashes||timeZero->specularMipFaceHashes!=timeAdvanced->specularMipFaceHashes||timeZero->irradianceFaceHashes!=timeAdvanced->irradianceFaceHashes)result=25;
+        renderer.DestroyReflectionProbeCapture3D(capture);renderer.DestroyMesh(foliage);renderer.WaitIdle();
+    }
+    DestroyWindow(window);return result;
 }
