@@ -161,7 +161,17 @@ GameplayForestGroundCoverAlphaCardContract() noexcept {
 // 保持枝葉間隙，縮小後的蕨與低灌叢則需要保留亞像素葉片。此門檻只在
 // ground-cover 變體提交時使用，不改寫來源材質、mip、樹木或其他 foliage。
 [[nodiscard]] constexpr float GameplayForestGroundCoverAlphaCutoff3D(
-    GameplayForestGroundCoverVariant3D) noexcept {
+    GameplayForestGroundCoverVariant3D variant) noexcept {
+  switch (variant) {
+    case GameplayForestGroundCoverVariant3D::Fern:
+      return .22f;
+    case GameplayForestGroundCoverVariant3D::Riverbank:
+      return .28f;
+    case GameplayForestGroundCoverVariant3D::Community:
+      return .18f;
+  }
+  // Unknown data must not silently inherit the more permissive production
+  // masks.  Keep the previous conservative cutoff for invalid identities.
   return .34f;
 }
 

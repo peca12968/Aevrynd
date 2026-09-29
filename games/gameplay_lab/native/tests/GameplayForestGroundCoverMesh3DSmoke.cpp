@@ -664,11 +664,14 @@ int main() {
   static_assert(contract.alphaMode == MaterialAlphaMode3D::Mask);
   static_assert(contract.alphaCutoff == .45f);
   static_assert(GameplayForestGroundCoverAlphaCutoff3D(
-                    GameplayForestGroundCoverVariant3D::Fern) == .34f);
+                    GameplayForestGroundCoverVariant3D::Fern) == .22f);
   static_assert(GameplayForestGroundCoverAlphaCutoff3D(
-                    GameplayForestGroundCoverVariant3D::Riverbank) == .34f);
+                    GameplayForestGroundCoverVariant3D::Riverbank) == .28f);
   static_assert(GameplayForestGroundCoverAlphaCutoff3D(
-                    GameplayForestGroundCoverVariant3D::Community) == .34f);
+                    GameplayForestGroundCoverVariant3D::Community) == .18f);
+  static_assert(GameplayForestGroundCoverAlphaCutoff3D(
+                    static_cast<GameplayForestGroundCoverVariant3D>(255)) ==
+                .34f);
   static_assert(contract.requiresTexture && contract.requiresUv &&
                 contract.doubleSided && contract.atlasColumns == 1);
   Material3D source{};
