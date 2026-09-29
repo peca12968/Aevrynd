@@ -692,19 +692,22 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
   Aevrynd::Atmosphere3D atmosphere{state.fog, cameraPosition, 54, 230, true,
                                    heightFogDensity, .09f, -2.f,
                                    heightFogMaximumOpacity};
-  // 表面 aerial perspective 與體積霧分開配置；近場保留材質色，遠景才依物理消光融入天空。
+  // 表面 aerial perspective 與體積霧分開配置；近場保留材質色，遠景才依
+  // Beer-Lambert 消光融入天空。保留 0--36m 的角色、木屋與橋面材質，
+  // 並以較長 fade 讓 60m 仍保有至少 95% 透射；只有 150m 以外的遠樹與
+  // 遠地形獲得明顯分離。它不改曝光、全畫面霧或相位能量。
   if (profile == ShowcaseLightingProfile3D::Day) {
-    atmosphere.aerialPerspective = {true, .00175f, .00110f, .018f, -2.f,
-                                    36.f, 30.f, 420.f, .12f,
-                                    {.105f, .135f, .17f, 1.f}, .032f};
+    atmosphere.aerialPerspective = {true, .00300f, .00180f, .012f, -2.f,
+                                    36.f, 48.f, 420.f, .12f,
+                                    {.105f, .135f, .17f, 1.f}, .036f};
   } else if (profile == ShowcaseLightingProfile3D::Dusk) {
-    atmosphere.aerialPerspective = {true, .00205f, .00130f, .020f, -2.f,
-                                    36.f, 30.f, 420.f, .24f,
-                                    {.060f, .052f, .062f, 1.f}, .052f};
+    atmosphere.aerialPerspective = {true, .00330f, .00200f, .014f, -2.f,
+                                    36.f, 44.f, 420.f, .24f,
+                                    {.060f, .052f, .062f, 1.f}, .056f};
   } else {
-    atmosphere.aerialPerspective = {true, .00135f, .00078f, .018f, -2.f,
-                                    32.f, 34.f, 420.f, .08f,
-                                    {.012f, .022f, .043f, 1.f}, .018f};
+    atmosphere.aerialPerspective = {true, .00240f, .00125f, .011f, -2.f,
+                                    32.f, 56.f, 420.f, .08f,
+                                    {.012f, .022f, .043f, 1.f}, .022f};
   }
   draw.SetAtmosphere(atmosphere);
   auto shafts = draw.DirectionalLightShafts();

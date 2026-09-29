@@ -940,6 +940,52 @@ bool NightToneCurveBalanced(const TimeOfDayExposureSettings3D &tone,
          tone.toeStrength <= .36f && tone.shoulderStrength >= 1.08f &&
          tone.shoulderStrength <= 1.18f;
 }
+
+bool AerialDepthSeparationContract(const Atmosphere3D &atmosphere,
+                                   ShowcaseLightingProfile3D profile) {
+  const auto &settings = atmosphere.aerialPerspective;
+  if (!settings.enabled || settings.nearDistance < 32.f ||
+      settings.nearDistance > 36.f || settings.nearFadeDistance < 44.f ||
+      settings.nearFadeDistance > 56.f || settings.maximumDistance != 420.f ||
+      settings.scattering > settings.extinction)
+    return false;
+
+  // 相同高度的固定距離採樣代表角色近景、橋／樹群中景與遠地形。15m 必須
+  // 完全不受影響，60m 仍保留至少 95% 材質訊號；150／360m 才逐級融入
+  // 天空，且最遠處仍保留至少 35% 透射，避免退化成全畫面灰幕。
+  const Vec3 camera{0.f, 3.f, 0.f};
+  const auto nearValue =
+      EvaluateAerialPerspective3D(settings, camera, {0.f, 3.f, 15.f});
+  const auto materialValue =
+      EvaluateAerialPerspective3D(settings, camera, {0.f, 3.f, 60.f});
+  const auto middleValue =
+      EvaluateAerialPerspective3D(settings, camera, {0.f, 3.f, 150.f});
+  const auto farValue =
+      EvaluateAerialPerspective3D(settings, camera, {0.f, 3.f, 360.f});
+  std::cout << "AERIAL_DEPTH profile=" << unsigned(profile)
+            << " T15/60/150/360=" << nearValue.transmittance << '/'
+            << materialValue.transmittance << '/' << middleValue.transmittance
+            << '/' << farValue.transmittance << '\n';
+  if (!nearValue.FiniteAndConservative() ||
+      !materialValue.FiniteAndConservative() ||
+      !middleValue.FiniteAndConservative() ||
+      !farValue.FiniteAndConservative() || nearValue.transmittance != 1.f ||
+      nearValue.scatteredFraction != 0.f || materialValue.transmittance < .95f ||
+      middleValue.transmittance >= .82f || middleValue.transmittance <= .62f ||
+      farValue.transmittance >= .58f ||
+      farValue.transmittance <= .35f ||
+      farValue.scatteredFraction <= middleValue.scatteredFraction)
+    return false;
+
+  if (profile == ShowcaseLightingProfile3D::Day)
+    return settings.extinction == .00300f && settings.scattering == .00180f &&
+           settings.heightFalloff == .012f && settings.sunRadianceScale == .036f;
+  if (profile == ShowcaseLightingProfile3D::Dusk)
+    return settings.extinction == .00330f && settings.scattering == .00200f &&
+           settings.heightFalloff == .014f && settings.sunRadianceScale == .056f;
+  return settings.extinction == .00240f && settings.scattering == .00125f &&
+         settings.heightFalloff == .011f && settings.sunRadianceScale == .022f;
+}
 } // namespace
 
 int main() {
@@ -2495,8 +2541,12 @@ int main() {
       NightForestReadable(fakeExposureNight, nightEnvironmentBlend,
                           nightRadiance))
     return 72;
-  if (!dayAtmosphere.aerialPerspective.enabled ||
-      dayAtmosphere.aerialPerspective.nearDistance < 32.f ||
+  if (!AerialDepthSeparationContract(dayAtmosphere,
+                                     ShowcaseLightingProfile3D::Day) ||
+      !AerialDepthSeparationContract(duskAtmosphere,
+                                     ShowcaseLightingProfile3D::Dusk) ||
+      !AerialDepthSeparationContract(nightAtmosphere,
+                                     ShowcaseLightingProfile3D::Night) ||
       duskAtmosphere.aerialPerspective.skyRadiance.r <=
           duskAtmosphere.aerialPerspective.skyRadiance.b * .8f ||
       nightAtmosphere.aerialPerspective.skyRadiance.b <=
