@@ -445,14 +445,13 @@ ShowcaseUnderstoryFormVariation(
        (u - .5f) * .76f});
 }
 
-// 日光下的 moss/soil 貼圖會經 IBL 與直射光再次增亮；保持綠色通道優勢並
-// 壓低總反射率，避免林地在正式曝光下變成黃白色草原。
+// 共用底色只校準森林土壤的中性反射，不再把三種 authored PBR 全部染成
+// 黃綠色。綠色由實際草木與 forest-ground layer 提供；微暖的紅色與有限
+// 藍色讓裸土、碎石路及濕岸仍能分離。Rec.709 能量維持舊值，避免以曝光
+// 或整體增亮製造假改善。
 [[nodiscard]] inline constexpr Aevrynd::Color
 ShowcaseForestTerrainTint3D() noexcept {
-  // Keep Rec.709 energy equivalent to the previous terrain response while
-  // separating green from red/blue.  This removes the broad yellow-grey cast
-  // without using exposure or post-process saturation as a shortcut.
-  return {.43f, .56f, .35f, 1.f};
+  return {.54f, .52f, .44f, 1.f};
 }
 
 // 三層地表使用同一套世界座標貼圖；較低頻率保留近景 PBR 細節，同時

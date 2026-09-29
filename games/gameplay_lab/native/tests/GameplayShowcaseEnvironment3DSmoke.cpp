@@ -1190,9 +1190,11 @@ int main() {
   groundMaterial.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
   constexpr auto terrainTint = ShowcaseForestTerrainTint3D();
   constexpr Color priorTerrainTint{.47f, .535f, .405f, 1.f};
-  if (terrainTint.g < terrainTint.r + .11f ||
-      terrainTint.g < terrainTint.b + .18f || terrainTint.r > .72f ||
-      Rec709(terrainTint) < .50f || Rec709(terrainTint) > .52f ||
+  const float terrainTintChroma = Chroma(terrainTint);
+  if (terrainTint.r < terrainTint.g + .01f ||
+      terrainTint.g < terrainTint.b + .07f ||
+      terrainTintChroma < .08f || terrainTintChroma > .12f ||
+      Rec709(terrainTint) < .51f || Rec709(terrainTint) > .53f ||
       std::abs(Rec709(terrainTint) - Rec709(priorTerrainTint)) > .01f ||
       terrainTint.a != 1.f)
     return 63;
