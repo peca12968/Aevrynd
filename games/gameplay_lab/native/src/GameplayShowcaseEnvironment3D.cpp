@@ -931,6 +931,57 @@ ShowcaseEnvironmentReceipt3D GameplayShowcaseEnvironment3D::Receipt() const {
   receipt.terrainZoneFingerprint = zoneHash ? zoneHash : 1;
   receipt.terrainZonesExact = receipt.terrainMaterialLayers ==
       targets.requiredTerrainMaterialLayers;
+  // 直接量正式 4m terrain 格點，不以 descriptor 數量代替可見地表覆蓋。
+  // ROI 包住出生/戰鬥空地與門廊前段，但避開木屋 footprint。
+  constexpr std::size_t clearingColumns = 6, clearingRows = 6;
+  std::array<ShowcaseTerrainBiomeWeights3D,
+             clearingColumns * clearingRows> clearingWeights{};
+  const auto weightDelta = [](const ShowcaseTerrainBiomeWeights3D &a,
+                              const ShowcaseTerrainBiomeWeights3D &b) {
+    return std::abs(a.cottagePath - b.cottagePath) +
+           std::abs(a.leafLitter - b.leafLitter) +
+           std::abs(a.riverWetSoil - b.riverWetSoil);
+  };
+  for (std::size_t row = 0; row < clearingRows; ++row) {
+    for (std::size_t column = 0; column < clearingColumns; ++column) {
+      const Aevrynd::Vec3 position{-28.f + float(column) * 4.f, 0.f,
+                                   float(row) * 4.f};
+      const auto ecology =
+          SampleShowcaseTerrainEcologyTint3D(position, descriptors_);
+      const auto weights = NormalizeShowcaseTerrainBiomeWeights3D(
+          {ecology.cottagePath, ecology.leafLitter, ecology.riverWetSoil});
+      const std::size_t index = row * clearingColumns + column;
+      clearingWeights[index] = weights;
+      std::size_t surface = 3;
+      if (weights.cottagePath >= weights.leafLitter &&
+          weights.cottagePath >= weights.riverWetSoil &&
+          weights.cottagePath >= .35f)
+        surface = 0;
+      else if (weights.leafLitter >= weights.riverWetSoil &&
+               weights.leafLitter >= .35f)
+        surface = 1;
+      else if (weights.riverWetSoil >= .35f)
+        surface = 2;
+      ++receipt.heroClearingSurfaceVertices[surface];
+      if (column)
+        receipt.heroClearingMaximumAdjacentWeightDelta = (std::max)(
+            receipt.heroClearingMaximumAdjacentWeightDelta,
+            weightDelta(weights, clearingWeights[index - 1]));
+      if (row)
+        receipt.heroClearingMaximumAdjacentWeightDelta = (std::max)(
+            receipt.heroClearingMaximumAdjacentWeightDelta,
+            weightDelta(weights,
+                        clearingWeights[index - clearingColumns]));
+    }
+  }
+  receipt.heroClearingMacroBlendExact =
+      receipt.heroClearingSurfaceVertices[0] >= 3u &&
+      receipt.heroClearingSurfaceVertices[1] >= 3u &&
+      receipt.heroClearingSurfaceVertices[2] >= 3u &&
+      std::isfinite(receipt.heroClearingMaximumAdjacentWeightDelta) &&
+      // 4m 格點容許 path(+U) 到 wet(-U) 的 1.8 端點差；光柵化會沿
+      // signed U 穿過 neutral。更細的 0.25m 函式連續性由 smoke 另鎖。
+      receipt.heroClearingMaximumAdjacentWeightDelta <= 1.80f + 1e-5f;
   return receipt;
 }
 

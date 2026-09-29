@@ -1327,11 +1327,14 @@ int main() {
   if (invalidAuthoredMask.valid || infiniteAuthoredMask.valid ||
       invalidAuthoredMask.path != 0.f ||
       invalidAuthoredMask.forestGround != 0.f ||
+      invalidAuthoredMask.wetSoil != 0.f ||
       infiniteAuthoredMask.path != 0.f ||
       infiniteAuthoredMask.forestGround != 0.f ||
+      infiniteAuthoredMask.wetSoil != 0.f ||
       !exteriorAuthoredMask.valid || !std::isfinite(exteriorAuthoredMask.distance) ||
       exteriorAuthoredMask.path != 0.f ||
-      exteriorAuthoredMask.forestGround != 0.f)
+      exteriorAuthoredMask.forestGround != 0.f ||
+      exteriorAuthoredMask.wetSoil != 0.f)
     return 110;
   // The authored hero trail must remain connected down its centre while
   // reading as worn ground rather than a uniform road.  Its full-strength
@@ -1470,6 +1473,149 @@ int main() {
       return 102;
     }
   }
+  // R128 的同一個 21 x 21m 世界 ROI 先以舊 sampler 重現為
+  // path/leaf/wet/neutral=67/80/77/217：49.2% 頂點仍落在無 authored PBR
+  // 權重的中性黃橄欖地表。候選必須改變正式 biome UV 覆蓋，不接受只改 tint。
+  constexpr std::array<unsigned, 4> r128HeroClearingBaselineCoverage{
+      67u, 80u, 77u, 217u};
+  std::array<unsigned, 4> heroClearingCandidateCoverage{};
+  float heroClearingCandidateMaximumStep{};
+  ShowcaseTerrainBiomeWeights3D previousHeroClearingCandidate{};
+  bool havePreviousHeroClearingCandidate{};
+  for (float z = 0.f; z <= 20.f; z += 1.f) {
+    for (float x = -28.f; x <= -8.f; x += 1.f) {
+      const auto sample = SampleShowcaseTerrainEcologyTint3D({x, 0.f, z},
+                                                             ecologyTrees);
+      const auto weights = ShowcaseTerrainBiomeWeights3D{
+          sample.cottagePath, sample.leafLitter, sample.riverWetSoil};
+      if (!std::isfinite(weights.cottagePath) ||
+          !std::isfinite(weights.leafLitter) ||
+          !std::isfinite(weights.riverWetSoil) ||
+          weights.cottagePath < 0.f || weights.leafLitter < 0.f ||
+          weights.riverWetSoil < 0.f ||
+          weights.cottagePath + weights.leafLitter +
+                  weights.riverWetSoil >
+              1.f + 1e-6f)
+        return 111;
+      if (weights.cottagePath >= weights.leafLitter &&
+          weights.cottagePath >= weights.riverWetSoil &&
+          weights.cottagePath >= .35f)
+        ++heroClearingCandidateCoverage[0];
+      else if (weights.leafLitter >= weights.riverWetSoil &&
+               weights.leafLitter >= .35f)
+        ++heroClearingCandidateCoverage[1];
+      else if (weights.riverWetSoil >= .35f)
+        ++heroClearingCandidateCoverage[2];
+      else
+        ++heroClearingCandidateCoverage[3];
+      if (havePreviousHeroClearingCandidate && x > -28.f)
+        heroClearingCandidateMaximumStep = (std::max)(
+            heroClearingCandidateMaximumStep,
+            std::abs(weights.cottagePath -
+                     previousHeroClearingCandidate.cottagePath) +
+                std::abs(weights.leafLitter -
+                         previousHeroClearingCandidate.leafLitter) +
+                std::abs(weights.riverWetSoil -
+                         previousHeroClearingCandidate.riverWetSoil));
+      previousHeroClearingCandidate = weights;
+      havePreviousHeroClearingCandidate = true;
+    }
+  }
+  std::cout << "HERO_CLEARING_R128_BASELINE path/leaf/wet/neutral="
+            << r128HeroClearingBaselineCoverage[0] << '/'
+            << r128HeroClearingBaselineCoverage[1] << '/'
+            << r128HeroClearingBaselineCoverage[2] << '/'
+            << r128HeroClearingBaselineCoverage[3]
+            << " neutralFraction="
+            << float(r128HeroClearingBaselineCoverage[3]) / 441.f
+            << " CANDIDATE=" << heroClearingCandidateCoverage[0] << '/'
+            << heroClearingCandidateCoverage[1] << '/'
+            << heroClearingCandidateCoverage[2] << '/'
+            << heroClearingCandidateCoverage[3]
+            << " scanStep=" << heroClearingCandidateMaximumStep << '\n';
+  if (heroClearingCandidateCoverage[0] < 60u ||
+      heroClearingCandidateCoverage[1] < 60u ||
+      heroClearingCandidateCoverage[2] < 100u ||
+      heroClearingCandidateCoverage[3] > 195u ||
+      heroClearingCandidateMaximumStep > .95f)
+    return 112;
+
+  // 三個淺窪的 0.25m 橫切面必須有限且連續；相同世界座標重採樣需逐值相同。
+  float heroClearingMaximumWetStep{};
+  for (const Vec3 center : {Vec3{-21.5f, 0.f, 10.f},
+                            Vec3{-14.5f, 0.f, 15.f},
+                            Vec3{-20.f, 0.f, 18.5f}}) {
+    const auto repeatedA = SampleShowcaseAuthoredTrailClearingMask3D(center);
+    const auto repeatedB = SampleShowcaseAuthoredTrailClearingMask3D(center);
+    if (!repeatedA.valid || repeatedA.wetSoil < .70f ||
+        repeatedA.wetSoil != repeatedB.wetSoil)
+      return 113;
+    float previousWet =
+        SampleShowcaseAuthoredTrailClearingMask3D(
+            {center.x - 6.f, 0.f, center.z})
+            .wetSoil;
+    for (float offset = -5.75f; offset <= 6.f; offset += .25f) {
+      const auto mask = SampleShowcaseAuthoredTrailClearingMask3D(
+          {center.x + offset, 0.f, center.z});
+      if (!mask.valid || !std::isfinite(mask.wetSoil) ||
+          mask.wetSoil < 0.f || mask.wetSoil > 1.f)
+        return 114;
+      heroClearingMaximumWetStep = (std::max)(
+          heroClearingMaximumWetStep, std::abs(mask.wetSoil - previousWet));
+      previousWet = mask.wetSoil;
+    }
+  }
+  if (heroClearingMaximumWetStep > .16f)
+    return 115;
+
+  Vec3 leafProbePosition{};
+  ShowcaseTerrainEcologyTint3D leafProbe{};
+  for (float z = 0.f; z <= 20.f && leafProbe.leafLitter < .55f; z += .5f)
+    for (float x = -28.f; x <= -8.f; x += .5f) {
+      const auto mask = SampleShowcaseAuthoredTrailClearingMask3D({x, 0.f, z});
+      if (mask.forestGround < .60f || mask.path > .05f ||
+          mask.wetSoil > .05f)
+        continue;
+      const auto sample =
+          SampleShowcaseTerrainEcologyTint3D({x, 0.f, z}, ecologyTrees);
+      if (sample.leafLitter >= .55f) {
+        leafProbePosition = {x, 0.f, z};
+        leafProbe = sample;
+        break;
+      }
+    }
+  const auto pathProbe =
+      SampleShowcaseTerrainEcologyTint3D({-16.f, 0.f, 8.f}, ecologyTrees);
+  const auto wetProbe = SampleShowcaseTerrainEcologyTint3D(
+      {-21.5f, 0.f, 10.f}, ecologyTrees);
+  const std::array<ShowcaseTerrainBiomeWeights3D, 3> separatedWeights{{
+      {pathProbe.cottagePath, pathProbe.leafLitter, pathProbe.riverWetSoil},
+      {leafProbe.cottagePath, leafProbe.leafLitter, leafProbe.riverWetSoil},
+      {wetProbe.cottagePath, wetProbe.leafLitter, wetProbe.riverWetSoil}}};
+  const auto separation = [](const ShowcaseTerrainBiomeWeights3D &a,
+                             const ShowcaseTerrainBiomeWeights3D &b) {
+    return std::abs(a.cottagePath - b.cottagePath) +
+           std::abs(a.leafLitter - b.leafLitter) +
+           std::abs(a.riverWetSoil - b.riverWetSoil);
+  };
+  const auto pathUv = EncodeShowcaseTerrainBiomeUv3D(separatedWeights[0]);
+  const auto leafUv = EncodeShowcaseTerrainBiomeUv3D(separatedWeights[1]);
+  const auto wetUv = EncodeShowcaseTerrainBiomeUv3D(separatedWeights[2]);
+  if (leafProbe.leafLitter < .55f || pathProbe.cottagePath < .55f ||
+      wetProbe.riverWetSoil < .65f ||
+      separation(separatedWeights[0], separatedWeights[1]) < 1.f ||
+      separation(separatedWeights[0], separatedWeights[2]) < 1.f ||
+      separation(separatedWeights[1], separatedWeights[2]) < 1.f ||
+      (pathUv.x == leafUv.x && pathUv.y == leafUv.y) ||
+      (pathUv.x == wetUv.x && pathUv.y == wetUv.y) ||
+      (leafUv.x == wetUv.x && leafUv.y == wetUv.y))
+    return 116;
+  std::cout << "HERO_CLEARING_MACRO worldRoi=-28,-8,0,20"
+            << " wetStep025m=" << heroClearingMaximumWetStep
+            << " probes(path/leaf/wet)=" << pathProbe.cottagePath << '/'
+            << leafProbe.leafLitter << '/' << wetProbe.riverWetSoil
+            << " leafAt=" << leafProbePosition.x << ',' << leafProbePosition.z
+            << '\n';
   // The authored route must touch the west bridge landing exactly.  A bridge
   // that is visible but disconnected from the material, sculpt and walking
   // lane is not an admitted gameplay route.
@@ -2127,6 +2273,19 @@ int main() {
   const auto receipt = first.Receipt();
   const auto repeated = second.Receipt();
   const auto targets = GameplayShowcaseEnvironment3D::Targets();
+  std::cout << "HERO_CLEARING_TERRAIN_VERTICES path/leaf/wet/neutral="
+            << receipt.heroClearingSurfaceVertices[0] << '/'
+            << receipt.heroClearingSurfaceVertices[1] << '/'
+            << receipt.heroClearingSurfaceVertices[2] << '/'
+            << receipt.heroClearingSurfaceVertices[3]
+            << " adjacent4m="
+            << receipt.heroClearingMaximumAdjacentWeightDelta << '\n';
+  if (!receipt.heroClearingMacroBlendExact ||
+      receipt.heroClearingSurfaceVertices !=
+          repeated.heroClearingSurfaceVertices ||
+      receipt.heroClearingMaximumAdjacentWeightDelta !=
+          repeated.heroClearingMaximumAdjacentWeightDelta)
+    return 117;
   constexpr std::array<std::string_view, 19> materialIdentities{
       "forest_ground_04:slot-0", "Ground108:slot-0",
       "RoofingTiles014B:slot-0", "Bricks100:slot-0",

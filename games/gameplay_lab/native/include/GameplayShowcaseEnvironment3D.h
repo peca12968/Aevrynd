@@ -671,7 +671,7 @@ struct ShowcaseAuthoredTrailClearingSegment3D {
 
 struct ShowcaseAuthoredTrailClearingMask3D {
   float distance{(std::numeric_limits<float>::max)()};
-  float path{}, forestGround{};
+  float path{}, forestGround{}, wetSoil{};
   bool valid{};
 };
 
@@ -753,6 +753,30 @@ SampleShowcaseAuthoredTrailClearingMask3D(
       .70f, 1.f);
   result.forestGround = Aevrynd::Clamp(
       .82f * enter * leave * mottling, 0.f, .82f);
+
+  // 屋前角色活動區需要第三種真正的 PBR 地表，而不是把同一張林地貼圖
+  // 換 tint。三個 2--10m 世界空間淺窪重用既有 Ground108 濕土層；中心、
+  // 尺度與邊緣擾動皆固定於世界座標，不依賴相機或時間。淺窪避開木屋本體，
+  // 並由下方的 path/wet signed-U handoff 保持主步道連續。
+  struct DampPocket {
+    Aevrynd::Vec2 center{}, radii{};
+  };
+  constexpr std::array<DampPocket, 3> dampPockets{{
+      {{-21.5f, 10.f}, {4.2f, 3.2f}},
+      {{-14.5f, 15.f}, {3.0f, 4.5f}},
+      {{-20.f, 18.5f}, {3.4f, 2.8f}},
+  }};
+  for (std::size_t index = 0; index < dampPockets.size(); ++index) {
+    const auto &pocket = dampPockets[index];
+    const float dx = (worldPosition.x - pocket.center.x) / pocket.radii.x;
+    const float dz = (worldPosition.z - pocket.center.y) / pocket.radii.y;
+    const float edgeNoise = harmonic(worldPosition.x + float(index) * 3.1f,
+                                     worldPosition.z - float(index) * 2.7f);
+    const float normalizedRadius = std::hypot(dx, dz) + edgeNoise * .42f;
+    const float pocketWeight =
+        .76f * (1.f - smooth((normalizedRadius - .28f) / .72f));
+    result.wetSoil = (std::max)(result.wetSoil, pocketWeight);
+  }
   result.valid = true;
   return result;
 }
@@ -843,6 +867,7 @@ SampleShowcaseTerrainEcologyTint3D(
   float wetSoilCandidate =
       1.f - smooth((std::max)(0.f, irregularBankClearance) /
                    wetBankShoulderMetres);
+  wetSoilCandidate = (std::max)(wetSoilCandidate, authoredTrail.wetSoil);
 
   // The maintained route reaches the west bridge landing and continues over
   // the deck to the east bank.  Compacted bridge-head soil must remain visible
@@ -1331,10 +1356,14 @@ struct ShowcaseEnvironmentReceipt3D {
   float riverMaximumJoinError{};
   std::size_t terrainMaterialLayers{}, riverbankProps{}, occupiedHabitatCells{},
       densestHabitatCell{};
+  // 正式 4m terrain 格點在屋前活動區的 path/leaf/wet/neutral 覆蓋。
+  std::array<std::size_t, 4> heroClearingSurfaceVertices{};
+  float heroClearingMaximumAdjacentWeightDelta{};
   std::size_t terrainGroundingEligible{}, terrainGroundedDescriptors{};
   float terrainGroundingMaximumError{};
   bool riverUvMonotonic{}, terrainZonesExact{}, riverbankLayered{},
-      propFootprintsNonOverlapping{}, terrainGroundingApplied{};
+      propFootprintsNonOverlapping{}, heroClearingMacroBlendExact{},
+      terrainGroundingApplied{};
 };
 
 struct ShowcaseSceneTargets3D {
