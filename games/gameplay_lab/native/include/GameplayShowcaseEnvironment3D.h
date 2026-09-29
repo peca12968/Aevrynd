@@ -140,6 +140,16 @@ struct ShowcaseUnderstoryFootprintBounds3D {
   Aevrynd::Vec2 extents{};
 };
 
+// 只把英雄步道中段的外肩納入較寬的低矮群落。起點保留出生構圖，最後
+// 22% 保留橋頭與木屋入口；1.4m 內仍是可走核心，8m 外維持原始蕨類。
+// 這是固定世界空間判定，與相機、時間及 frame 無關。
+[[nodiscard]] inline bool ShowcaseHeroTrailUnderstoryShoulder3D(
+    Aevrynd::Vec3 position) noexcept {
+  const auto trail = SampleShowcaseHeroTrail3D(position);
+  return trail.valid && trail.along >= .08f && trail.along <= .78f &&
+         trail.distance >= 1.4f && trail.distance <= 8.f;
+}
+
 // The authored ecology variant describes habitat intent.  Near hero-trail
 // shoulders need the already-loaded multi-species community silhouette rather
 // than a single fern, while every placement outside that narrow band keeps its
@@ -152,9 +162,7 @@ ShowcaseUnderstoryPresentationVariant3D(
       placement.band != ShowcaseLandBand3D::Near ||
       placement.zone == ShowcaseLandZone3D::Riverbank)
     return placement.variant;
-  const float laneDistance =
-      SampleShowcaseHeroTrail3D(placement.position).distance;
-  return laneDistance >= 1.4f && laneDistance <= 5.25f
+  return ShowcaseHeroTrailUnderstoryShoulder3D(placement.position)
              ? ShowcaseLandVariant3D::GrassTuft
              : placement.variant;
 }
@@ -422,13 +430,10 @@ ShowcaseUnderstoryFormVariation(
                         6.2831853071795864769f)});
   }
   float pathShoulderBoost{};
-  if (placement.band == ShowcaseLandBand3D::Near) {
-    const float laneDistance =
-        SampleShowcaseHeroTrail3D(placement.position).distance;
-    // 既有肩帶中心約落在道路外 3~5m；只提高該葉簇的 render footprint。
-    if (laneDistance >= 1.4f && laneDistance <= 5.25f)
-      pathShoulderBoost = 1.32f;
-  }
+  if (placement.band == ShowcaseLandBand3D::Near &&
+      ShowcaseHeroTrailUnderstoryShoulder3D(placement.position))
+    // 只提高正式葉簇的 render footprint；root、identity 與碰撞不變。
+    pathShoulderBoost = 1.32f;
   if (placement.zone == ShowcaseLandZone3D::Meadow)
     return ClampShowcaseUnderstoryWalkingClearance3D(
         placement,

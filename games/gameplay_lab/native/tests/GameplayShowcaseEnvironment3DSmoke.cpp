@@ -239,6 +239,8 @@ bool UnderstoryFormVariationContract(
   std::array<float, 3> horizontalCoverageSums{};
   std::array<bool, 3> bands{};
   unsigned routedShoulderCommunities{}, untouchedFerns{};
+  std::array<bool, 8> routedShoulderSectors{};
+  std::array<bool, 2> routedShoulderSides{};
   for (std::size_t index = 0; index < placements.size(); ++index) {
     const auto &placement = placements[index];
     if (placement.kind != ShowcaseLandKind3D::Grass) continue;
@@ -248,9 +250,16 @@ bool UnderstoryFormVariationContract(
     const auto presentationVariant =
         ShowcaseUnderstoryPresentationVariant3D(placement);
     if (placement.variant == ShowcaseLandVariant3D::GrassFan) {
-      if (presentationVariant == ShowcaseLandVariant3D::GrassTuft)
+      if (presentationVariant == ShowcaseLandVariant3D::GrassTuft) {
         ++routedShoulderCommunities;
-      else if (presentationVariant == ShowcaseLandVariant3D::GrassFan)
+        const auto trail = SampleShowcaseHeroTrail3D(placement.position);
+        if (!trail.valid || trail.along < .08f || trail.along > .78f ||
+            trail.distance < 1.4f || trail.distance > 8.f)
+          return false;
+        routedShoulderSectors[(std::min)(
+            std::size_t(7), std::size_t(trail.along * 8.f))] = true;
+        routedShoulderSides[trail.signedSide >= 0.f ? 1u : 0u] = true;
+      } else if (presentationVariant == ShowcaseLandVariant3D::GrassFan)
         ++untouchedFerns;
       else
         return false;
@@ -322,7 +331,9 @@ bool UnderstoryFormVariationContract(
   const float meadowCoverage = horizontalCoverageSums[1] / float(counts[1]);
   const float uplandCoverage = horizontalCoverageSums[2] / float(counts[2]);
   return riverCoverage >= .86f && meadowCoverage >= 1.f &&
-         uplandCoverage > meadowCoverage && routedShoulderCommunities >= 4u &&
+         uplandCoverage > meadowCoverage && routedShoulderCommunities >= 8u &&
+         std::ranges::count(routedShoulderSectors, true) >= 4 &&
+         std::ranges::all_of(routedShoulderSides, [](bool value) { return value; }) &&
          untouchedFerns > routedShoulderCommunities;
 }
 
