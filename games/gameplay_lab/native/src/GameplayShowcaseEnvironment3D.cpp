@@ -1,4 +1,5 @@
 #include "GameplayShowcaseEnvironment3D.h"
+#include "GameplayCottageInterior3D.h"
 
 #include <Aevrynd/Scene3D.h>
 
@@ -657,6 +658,18 @@ void GameplayShowcaseEnvironment3D::ApplyLighting(
     Aevrynd::Vec3 cameraPosition) const {
   const ShowcaseLightingState3D state = EvaluateLighting(profile);
   draw.SetDirectionalLight(state.sun);
+  // R128_COTTAGE_INTERIOR_LIGHT_BEGIN
+  // A short-radius practical reaches only the room shell in daylight, when
+  // the existing cottage lamps are intentionally off. Dusk/night retain their
+  // established local lights; no phase changes global exposure here.
+  if(profile==ShowcaseLightingProfile3D::Day){
+    const auto interiorLight=GameplayCottageInteriorDayLight3D();
+    if(!ValidGameplayCottageInteriorLight3D(interiorLight))
+      throw std::runtime_error("Cottage interior light contract failed");
+    draw.AddPointLight({interiorLight.position,interiorLight.radius,
+                        interiorLight.color,interiorLight.intensity});
+  }
+  // R128_COTTAGE_INTERIOR_LIGHT_END
   // 小屋是英雄場景的視覺錨點。以實際局部光源建立黃昏／夜間層次，
   // 不用提高全畫面曝光來把天空、河面與陰影一起洗亮。
   if (profile != ShowcaseLightingProfile3D::Day) {

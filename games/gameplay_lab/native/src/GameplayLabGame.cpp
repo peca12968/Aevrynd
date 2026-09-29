@@ -4,6 +4,7 @@
 #include "GameplayCandidate7Package3D.h"
 #include "GameplayBuildingIdentities3D.h"
 #include "GameplayCottageEntry3D.h"
+#include "GameplayCottageInterior3D.h"
 #include "GameplayOccluderMask3D.h"
 #include "GameplayProductionHdrSidecar3D.h"
 #include "ShowcaseTerrainMaterials3D.h"
@@ -2304,6 +2305,39 @@ void GameplayLabGame::AddShowcaseEnvironment(){
          for(float side:{-.82f,.82f})scene_.Mesh(boxMesh_,{{-12+side,1.42f,20.06f},{0,0,0},{.14f,2.45f,.18f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,2.69f,20.06f},{0,0,0},{1.78f,.14f,.18f}},wood,{},renderIdentity);
          scene_.Mesh(boxMesh_,{{-12,.16f,19.55f},{0,0,0},{2.45f,.26f,1.05f}},doorMaterial,{},renderIdentity);
+          // R128_COTTAGE_INTERIOR_BEGIN
+          // Real, bounded room surfaces give the always-open doorway parallax
+          // and a readable destination. They reuse resident geometry/materials,
+          // remain render-only, and never intrude into the controller aperture.
+          auto interiorWood=wood;
+          interiorWood.tint={.30f,.19f,.105f,1.f};
+          interiorWood.surface.roughness=.76f;
+          interiorWood.surface.emissive=.008f;
+          interiorWood.textureScale=.18f;
+          auto interiorFloor=interiorWood;
+          interiorFloor.tint={.25f,.145f,.075f,1.f};
+          interiorFloor.surface.roughness=.82f;
+          auto interiorLamp=doorMaterial;
+          interiorLamp.textures={};
+          interiorLamp.tint={1.f,.52f,.18f,1.f};
+          interiorLamp.surface={.18f,.04f,
+              rules_.Lighting()==LightingPhase::Day?.22f:
+              rules_.Lighting()==LightingPhase::Dusk?.62f:.88f,.86f};
+          interiorLamp.useUv=false;
+          interiorLamp.castsShadow=false;
+          const auto interiorDrawsBefore=scene_.MeshCount();
+          for(const auto& part:GameplayCottageInteriorParts3D){
+            const bool lamp=part.role==GameplayCottageInteriorPartRole3D::Lamp;
+            const bool floor=part.role==GameplayCottageInteriorPartRole3D::Floor||
+                part.role==GameplayCottageInteriorPartRole3D::Threshold;
+            scene_.Mesh(boxMesh_,{part.position,{0,0,0},part.scale},
+                        lamp?interiorLamp:floor?interiorFloor:interiorWood,
+                        {},renderIdentity);
+          }
+          if(scene_.MeshCount()!=interiorDrawsBefore+
+              GameplayCottageInteriorParts3D.size())
+            throw std::runtime_error("Cottage interior draw count gate failed");
+          // R128_COTTAGE_INTERIOR_END
          // R60_COTTAGE_FRONTAGE_BEGIN
          // 門廊六個木構件與兩支角板只增加繪製；延用 front descriptor
          // 的 identity 與 WoodSiding006，不產生新 descriptor、碰撞或紋理。

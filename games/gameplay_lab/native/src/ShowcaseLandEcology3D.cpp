@@ -32,6 +32,8 @@ constexpr std::array<Aevrynd::Vec3, 4> HeroForestEdgeRockAnchors{{
 constexpr float HeroClusterTolerance = 4.f;
 constexpr std::uint32_t MinimumFarCottageRearArcTrees = 16;
 constexpr std::uint32_t MinimumFarRiverSideArcTrees = 18;
+constexpr std::uint32_t MinimumMidForestForwardTrees = 94;
+constexpr std::uint32_t MinimumMidForestSectorTrees = 4;
 
 float BandMinimumFor(ShowcaseLandKind3D kind, std::uint32_t band) noexcept {
   // 草叢不參與實體碰撞；近景地被可進入玩家安全圈外緣，樹與岩石仍維持原本的實體淨空。
@@ -270,6 +272,7 @@ bool ShowcaseLandEcologyReceipt3D::Complete() const noexcept {
       riverbankLayered && densityExact && heroGroundCoverExact &&
       heroCompositionClustersExact && heroForestEdgeRocksExact &&
       understoryGroundCoverExact && farForestCompositionExact &&
+      midForestLayeredExact &&
       heroGroundCover >= MinimumHeroGroundCover &&
       heroGroundCoverQuadrantMask == 0x0fu && riverbankRocks == 26 &&
       heroForestEdgeRocks == HeroForestEdgeRockAnchors.size() &&
@@ -537,6 +540,36 @@ bool BuildShowcaseLandEcology3D(
               continue;
             }
           }
+          if (kind == ShowcaseLandKind3D::Tree && band == 0u &&
+              item == 110u) {
+            // 固定 first-person 深度排序的近／中段交界：將既有高冠 Near
+            // 子樹沿世界 +Z 微移，讓三段各保留高低冠層。候選仍須通過
+            // band、步道、河流、屋舍、碰撞與足跡 gate。
+            candidate.z += 1.4f;
+          }
+          const bool midForestArcMother =
+              kind == ShowcaseLandKind3D::Tree && band == 1u &&
+              item < 16u && item % 4u == 0u;
+          if (midForestArcMother) {
+            // R128：四個既有 Mid 四株群落的母樹改排為河道兩側的雙層
+            // 不規則冠層弧。子樹仍沿用既有 4.5m 根部間距與碰撞候選，
+            // 中央河槽、橋、屋前步道與小屋 exclusion 完全不變。
+            const std::uint32_t group = item / 4u;
+            const bool east = group < 2u;
+            const std::uint32_t arcItem = group % 2u;
+            const float t = (float(arcItem) + .5f) / 2.f;
+            const float baseAngle = east ? (.04f + .20f * t) * Pi
+                                         : (.76f + .20f * t) * Pi;
+            const float retryTurn =
+                float(int(trial % 9u) - 4) * .008f;
+            const float arcRadius = 70.f + float(arcItem & 1u) * 18.f +
+                                    std::sin(float(group + 2u) * 1.7f) * 2.5f +
+                                    float(trial / 9u) * .9f;
+            const float angle = baseAngle + retryTurn;
+            candidate = {
+                settings.spawnCenter.x + std::cos(angle) * arcRadius, 0,
+                settings.spawnCenter.z + std::sin(angle) * arcRadius};
+          }
           if (kind == ShowcaseLandKind3D::Tree && band == 2u) {
             // R127 遠景林緣：只重排八十棵既有 LOD2 樹。前三十二棵形成
             // 小屋後方與河道東西兩側的三道不規則弧線，其餘四十八棵維持
@@ -700,9 +733,11 @@ bool BuildShowcaseLandEcology3D(
             const float maximum = kind == ShowcaseLandKind3D::Rock
                                       ? settings.riverbankRockMaximumClearance
                                       : settings.riverbankGrassMaximumClearance;
+            const float bankEdgeInset =
+                kind == ShowcaseLandKind3D::Grass ? .02f : .05f;
             const float clearance = heroRiverCluster
                 ? 7.f + bankFraction * (maximum - 7.1f)
-                : minimum + .05f +
+                : minimum + bankEdgeInset +
                       bankFraction * (maximum - minimum - .1f);
             bankFraction += .754877666f;
             if (bankFraction >= 1.f) bankFraction -= 1.f;
@@ -851,6 +886,7 @@ bool ValidateShowcaseLandEcology3D(
       sizeof(settings.minimumDensestHabitatCell));
   std::array<std::uint64_t,512> stableKeys{};
   std::array<std::uint32_t, HabitatGridSide * HabitatGridSide> habitatCells{};
+  std::array<std::uint32_t, 8> midForestSectorTrees{};
   std::array<std::uint32_t, 3> kindOrdinals{};
   std::size_t stableKeyCount{};
   for (const auto &placement : placements) {
@@ -905,6 +941,25 @@ bool ValidateShowcaseLandEcology3D(
         ++result.farRiverWestArcTrees;
       else if (riverSide >= 70.f)
         ++result.farRiverEastArcTrees;
+    }
+    if (placement.kind == ShowcaseLandKind3D::Tree &&
+        placement.band != ShowcaseLandBand3D::Far &&
+        IsLivingTreeVariant(placement.variant) &&
+        std::isfinite(placement.position.x) &&
+        std::isfinite(placement.position.z)) {
+      const float relativeX = placement.position.x - settings.spawnCenter.x;
+      const float relativeZ = placement.position.z - settings.spawnCenter.z;
+      const float radius = std::hypot(relativeX, relativeZ);
+      if (relativeZ >= 0.f && radius >= 24.f && radius <= 112.f) {
+        ++result.midForestForwardTrees;
+        result.midForestDepthMask |=
+            1u << (radius < 48.f ? 0u : radius < 80.f ? 1u : 2u);
+        const float angle = std::atan2(relativeZ, relativeX);
+        const auto sector = (std::min)(
+            7u, std::uint32_t(angle / Pi * 8.f));
+        result.midForestSectorMask |= 1u << sector;
+        ++midForestSectorTrees[sector];
+      }
     }
     const float limit = settings.terrainHalfSpan - settings.terrainMargin;
     result.terrainBoundsExact &= std::abs(placement.position.x) + footprint <= limit &&
@@ -1099,6 +1154,14 @@ bool ValidateShowcaseLandEcology3D(
       result.farRiverEastArcTrees >= MinimumFarRiverSideArcTrees &&
       result.farForestSectorMask == 0x0fffu &&
       result.farForestDepthMask == 0x07u;
+  result.midForestMinimumSectorTrees =
+      *std::ranges::min_element(midForestSectorTrees);
+  result.midForestLayeredExact =
+      result.transformsExact &&
+      result.midForestForwardTrees >= MinimumMidForestForwardTrees &&
+      result.midForestSectorMask == 0xffu &&
+      result.midForestDepthMask == 0x07u &&
+      result.midForestMinimumSectorTrees >= MinimumMidForestSectorTrees;
   result.densityExact = result.occupiedHabitatCells >= 12 &&
       result.densestHabitatCell >= settings.minimumDensestHabitatCell &&
       result.heroGroundCoverExact && result.understoryGroundCoverExact;

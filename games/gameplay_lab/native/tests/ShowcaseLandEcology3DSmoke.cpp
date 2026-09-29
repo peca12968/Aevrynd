@@ -52,6 +52,11 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.farRiverEastArcTrees == right.farRiverEastArcTrees &&
       left.farForestSectorMask == right.farForestSectorMask &&
       left.farForestDepthMask == right.farForestDepthMask &&
+      left.midForestForwardTrees == right.midForestForwardTrees &&
+      left.midForestSectorMask == right.midForestSectorMask &&
+      left.midForestDepthMask == right.midForestDepthMask &&
+      left.midForestMinimumSectorTrees ==
+          right.midForestMinimumSectorTrees &&
       left.failureKind == right.failureKind &&
       left.failureBand == right.failureBand &&
       left.failureItem == right.failureItem &&
@@ -90,6 +95,7 @@ bool ExactReceipt(const ShowcaseLandEcologyReceipt3D &left,
       left.understoryGroundCoverExact == right.understoryGroundCoverExact &&
       left.heroForestEdgeRocksExact == right.heroForestEdgeRocksExact &&
       left.farForestCompositionExact == right.farForestCompositionExact &&
+      left.midForestLayeredExact == right.midForestLayeredExact &&
       left.deterministicBudget == right.deterministicBudget &&
       left.walkingLaneClear == right.walkingLaneClear &&
       left.vegetationScaleBounded == right.vegetationScaleBounded;
@@ -343,6 +349,95 @@ bool FarForestEdgeCompositionContract(
          riverEast >= 18u && sectors == 0x0fffu && depths == 0x07u;
 }
 
+struct MidForestCanopyMetrics {
+  std::array<float, 3> coverage{};
+  std::array<unsigned, 8> sectorTrees{};
+  unsigned sectorMask{}, depthMask{}, forwardTrees{};
+};
+
+MidForestCanopyMetrics MidForestCanopyContract(
+    const ShowcaseLandEcologySettings3D &settings,
+    const std::vector<ShowcaseLandPlacement3D> &placements) {
+  MidForestCanopyMetrics result{};
+  std::array<unsigned, 3> eligible{}, covered{};
+  constexpr float pi = 3.14159265358979323846f;
+  for (const auto &placement : placements) {
+    if (placement.kind != ShowcaseLandKind3D::Tree ||
+        placement.band == ShowcaseLandBand3D::Far ||
+        !IsLivingTreeVariant(placement.variant))
+      continue;
+    if (!std::isfinite(placement.position.x) ||
+        !std::isfinite(placement.position.z))
+      return {};
+    const float dx = placement.position.x - settings.spawnCenter.x;
+    const float dz = placement.position.z - settings.spawnCenter.z;
+    const float radius = std::hypot(dx, dz);
+    if (dz < 0.f || radius < 24.f || radius > 112.f)
+      continue;
+    ++result.forwardTrees;
+    const unsigned depth = radius < 48.f ? 0u : radius < 80.f ? 1u : 2u;
+    result.depthMask |= 1u << depth;
+    const float angle = std::atan2(dz, dx);
+    const unsigned sector = (std::min)(
+        7u, unsigned(angle / pi * 8.f));
+    result.sectorMask |= 1u << sector;
+    ++result.sectorTrees[sector];
+  }
+  for (int z = 0; z < 112; ++z) for (int x = -112; x < 112; ++x) {
+    const float worldX = settings.spawnCenter.x + float(x) + .5f;
+    const float worldZ = settings.spawnCenter.z + float(z) + .5f;
+    const float dx = worldX - settings.spawnCenter.x;
+    const float dz = worldZ - settings.spawnCenter.z;
+    const float radius = std::hypot(dx, dz);
+    if (radius < 24.f || radius > 112.f)
+      continue;
+    const float riverClearance =
+        std::abs(worldX - TestRiverCenterX(worldZ)) -
+        TestRiverWidth(worldZ) * .5f;
+    if (riverClearance < 8.f ||
+        (std::abs(worldX - settings.cottageCenter.x) < 18.f &&
+         std::abs(worldZ - settings.cottageCenter.z) < 15.f) ||
+        SampleShowcaseHeroTrail3D({worldX, 0.f, worldZ}).distance < 4.f)
+      continue;
+    const unsigned depth = radius < 48.f ? 0u : radius < 80.f ? 1u : 2u;
+    ++eligible[depth];
+    for (const auto &placement : placements) {
+      if (placement.kind != ShowcaseLandKind3D::Tree ||
+          placement.band == ShowcaseLandBand3D::Far ||
+          !IsLivingTreeVariant(placement.variant))
+        continue;
+      const float rx = placement.scale.x * .5f;
+      const float rz = placement.scale.z * .5f;
+      const float u = (worldX - placement.position.x) / rx;
+      const float v = (worldZ - placement.position.z) / rz;
+      if (u * u + v * v <= 1.f) {
+        ++covered[depth];
+        break;
+      }
+    }
+  }
+  for (std::size_t depth = 0; depth < result.coverage.size(); ++depth)
+    result.coverage[depth] = eligible[depth]
+        ? float(covered[depth]) / float(eligible[depth]) : 0.f;
+  std::cout << "MID_FOREST_CANOPY forwardTrees=" << result.forwardTrees
+            << " sectors=" << std::popcount(result.sectorMask)
+            << " depths=" << std::popcount(result.depthMask)
+            << " coverage=" << result.coverage[0] << '/'
+            << result.coverage[1] << '/' << result.coverage[2]
+            << " sectorTrees=";
+  for (const auto count : result.sectorTrees) std::cout << count << ',';
+  std::cout << '\n';
+  return result;
+}
+
+bool MidForestCanopyExact(const MidForestCanopyMetrics &metrics) {
+  return metrics.forwardTrees >= 94u && metrics.sectorMask == 0xffu &&
+      metrics.depthMask == 0x07u && metrics.coverage[0] >= .75f &&
+      metrics.coverage[1] >= .11f && metrics.coverage[2] >= .18f &&
+      std::ranges::all_of(metrics.sectorTrees,
+                         [](unsigned count) { return count >= 4u; });
+}
+
 }
 
 int main() {
@@ -411,6 +506,38 @@ int main() {
   if (!FarForestEdgeCompositionContract(settings, first) ||
       !receipt.farForestCompositionExact)
     return 46;
+  const auto midForestBaseline = MidForestCanopyContract(settings, first);
+  if (!MidForestCanopyExact(midForestBaseline) ||
+      !receipt.midForestLayeredExact)
+    return 49;
+  auto sparseMidForest = first;
+  for (auto &placement : sparseMidForest) {
+    if (placement.kind != ShowcaseLandKind3D::Tree ||
+        placement.band == ShowcaseLandBand3D::Far ||
+        !IsLivingTreeVariant(placement.variant))
+      continue;
+    const float dx = placement.position.x - settings.spawnCenter.x;
+    const float dz = placement.position.z - settings.spawnCenter.z;
+    const float radius = std::hypot(dx, dz);
+    if (dz >= 0.f && radius >= 48.f && radius <= 112.f)
+      placement.position.z = settings.spawnCenter.z - std::abs(dz);
+  }
+  if (MidForestCanopyExact(MidForestCanopyContract(settings, sparseMidForest)))
+    return 50;
+  auto nonFiniteMidForest = first;
+  const auto midTree = std::ranges::find_if(
+      nonFiniteMidForest, [](const auto &placement) {
+        return placement.kind == ShowcaseLandKind3D::Tree &&
+               placement.band == ShowcaseLandBand3D::Mid;
+      });
+  if (midTree == nonFiniteMidForest.end())
+    return 51;
+  midTree->position.z = (std::numeric_limits<float>::quiet_NaN)();
+  ShowcaseLandEcologyReceipt3D nonFiniteMidReceipt{};
+  if (ValidateShowcaseLandEcology3D(settings, nonFiniteMidForest,
+                                    &nonFiniteMidReceipt) ||
+      nonFiniteMidReceipt.midForestLayeredExact)
+    return 51;
   auto missingCottageArc = first;
   for (auto &placement : missingCottageArc)
     if (placement.kind == ShowcaseLandKind3D::Tree &&
@@ -706,6 +833,7 @@ int main() {
   }
   // 兩個 seed 均與完整鄰格掃描參考路徑比較配置欄位、指紋及全部 receipt，非只比總數。
   if(!coverageGate(alternate)||!communityGate(alternate)||
+     !MidForestCanopyExact(MidForestCanopyContract(alternateSettings, alternate))||
      !treeCommunityGate(alternate,ShowcaseLandBand3D::Near,112)||
      !treeCommunityGate(alternate,ShowcaseLandBand3D::Mid,78)||
      canopyCoverage(alternate)<.27f)return 31;
