@@ -37,6 +37,7 @@ class MistwatchGame final : public IGame {
     std::vector<Vec3> groundCover;
     MeshResource3D grassMesh;
     MeshResource3D fernMesh;
+    MeshResource3D relayDish;
     Mistwatch::ForestUnderstory understory;
     unsigned submittedFerns{},submittedSaplings{};
     std::array<MeshResource3D,4> propMeshes;
@@ -65,6 +66,7 @@ class MistwatchGame final : public IGame {
     bool captureWalk{},captureCrouch{};
     bool captureWildlife{};
     bool captureBoarOverview{};
+    bool captureRelayMotion{};
     bool captureRiverOverview{};
     bool captureShelterOverview{};
     Camera3D lastRenderedCamera{};
@@ -167,6 +169,8 @@ public:
         }
         groundCover=Mistwatch::GroundCoverPositions(terrain);
         grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,3));
+        relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
+        if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
         solids=Mistwatch::WorldSolids(session.bridgeRepaired);
         controller.Reset({});
         e.SetClearColor({.16f,.23f,.25f,1});
@@ -197,6 +201,10 @@ public:
                 if(name==L"panel") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 0 3";
                 else if(name==L"powered") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 1 7";
                 else if(name==L"complete") fixture="MISTWATCH 3 7 80 1 1 1 0 0 69 1 1 7";
+                else if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn") {
+                    fixture="MISTWATCH 5 7 80 1 1 0 0 0 65 1 1 7 7 1 50";
+                    captureRelayMotion=name==L"relay-turn";
+                }
                 else if(name==L"strike"||name==L"boar-recovery"||name==L"boar-motion"||name==L"boar-profile") {
                     fixture=name==L"boar-motion"?"MISTWATCH 3 7 100 1 0 0 0 0 43 0 0 0":"MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";
                     captureWildlife=name==L"boar-motion";
@@ -215,6 +223,15 @@ public:
                 else if(name==L"walk" || name==L"crouch") {captureWalk=true;captureCrouch=name==L"crouch";}
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
+                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn") {
+                    session.feet=Mistwatch::Session::relaySites[0]+Vec3{1.15f,0,0};
+                    session.feet.y=terrain.SampleHeight(session.feet.x,session.feet.z);
+                    if(name==L"relay-aligned"||name==L"relay-linked") {
+                        for(unsigned turn=0;turn<Mistwatch::Session::RelayTargetSector(0);++turn)
+                            if(!session.TuneRelay(0,1))throw std::runtime_error("Relay fixture tuning failed");
+                        if(name==L"relay-linked"&&!session.ConnectRelay(0))throw std::runtime_error("Relay fixture link failed");
+                    }
+                }
                 controller.Reset(session.feet);
                 solids=Mistwatch::WorldSolids(session.bridgeRepaired);
                 ResetController();
@@ -228,6 +245,7 @@ public:
                 if(name==L"river") {orbit.yaw=.5f;orbit.pitch=1.f;orbit.distance=10.f;}
                 if(name==L"settlement-clue" || name==L"settlement-clue-read")orbit.yaw=-1.25f;
                 if(name==L"fuse-lock-wrong" || name==L"fuse-lock-ready")orbit.yaw=1.25f;
+                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn")orbit.yaw=1.25f;
                 if(name==L"strike") {
                     encounter.Tick(session.feet,1.f/60.f,false);
                     for(unsigned tick=0;tick<4;++tick)encounter.Tick(session.feet,.1f,false);
@@ -297,6 +315,8 @@ public:
                     <<"\nsubmitted_ferns="<<submittedFerns<<"\nsubmitted_saplings="<<submittedSaplings<<'\n';
                 out<<"enemy_visual=skinned_boar\nenemy_joints="<<boar.model.skeleton.joints.size()
                     <<"\nenemy_phase="<<unsigned(encounter.phase)<<"\nenemy_brace="<<boar.brace<<'\n';
+                out<<"relay_linked="<<session.relayLinked<<"\nrelay_sectors="<<session.relaySectors
+                    <<"\nrelay_target_west="<<Mistwatch::Session::RelayTargetSector(0)<<"\nrelay_signal_west="<<session.RelaySignal(0)<<'\n';
                 out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
@@ -311,7 +331,12 @@ public:
                 out.close();if(!out)throw std::runtime_error("Capture receipt write failed");
                 ++captureCompleted;
                 if(!captureSequenceFrames || captureCompleted>=captureSequenceFrames)e.Quit();
-                else {capturePending=false;waterTime=2.5f+float(captureCompleted)*.1f;}
+                else {
+                    capturePending=false;waterTime=2.5f+float(captureCompleted)*.1f;
+                    // 固定按鍵輸入展示完整一圈，再回到訊號方向；不冒充人工遊玩。
+                    if(captureRelayMotion&&captureCompleted<20&&!session.TuneRelay(0,1))throw std::runtime_error("Relay motion input failed");
+                    if(captureRelayMotion&&captureCompleted==20&&!session.ConnectRelay(0))throw std::runtime_error("Relay motion link failed");
+                }
             }
             // GPU 驗證會插入額外 shader 檢查；診斷等待不作為正式效能數據。
             const auto captureTimeout=std::chrono::seconds(stats.gpuValidationRequested?120:30);
@@ -356,7 +381,10 @@ public:
             throw std::runtime_error("Explorer foot IK failed");
         if(session.feet.y < -5.f) {session.Damage(100);message="Fell into the ravine - R to retry";return;}
         for(unsigned lever=0;lever<3;++lever)if(in.Pressed('1'+lever)) {
-            if(session.CycleFuseDial(lever))message="Cabinet dial turned - match the ranger log, then E";
+            if(session.CurrentStage()==Mistwatch::Stage::Relays) {
+                for(unsigned index=0;index<3;++index)if(lever<2&&session.TuneRelay(index,lever==0?-1:1))message="Antenna rotated - find the green signal lock, then E";
+            }
+            else if(session.CycleFuseDial(lever))message="Cabinet dial turned - match the ranger log, then E";
             else if(session.ToggleCircuit(lever))message="Circuit switched - light all three lamps";
         }
         if(in.Pressed('E')) {
@@ -367,11 +395,13 @@ public:
             changed=session.ReadFuseClue()||changed;
             changed=session.CollectFuse()||changed;
             changed=session.RepairGenerator()||changed;
+            for(unsigned index=0;index<3;++index)changed=session.ConnectRelay(index)||changed;
             changed=session.LightBeacon()||changed;
             message=changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
                 "Find tools in west shelter (CTRL), and both timber caches":
                 session.CurrentStage()==Mistwatch::Stage::Fuse && session.NearInterior(Mistwatch::Session::fuse)?
-                "Cabinet locked - read ranger log, set dials 1 / 2 / 3":"Move closer to the objective";
+                "Cabinet locked - read ranger log, set dials 1 / 2 / 3":
+                session.CurrentStage()==Mistwatch::Stage::Relays?"Ridge relay: 1 left / 2 right, green signal lock, then E":"Move closer to the objective";
         }
         if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
             const auto previous=encounter.feet;
@@ -470,6 +500,22 @@ public:
         scene.Box(generatorSolid.center,generatorSolid.extents*2.f,{.25f,.3f,.28f,1});
         for(unsigned lamp=0;lamp<3;++lamp)
             scene.Box(Mistwatch::Session::generator+Vec3{-.5f+float(lamp)*.5f,1.3f,0},{.2f,.2f,.2f},session.circuit&(1u<<lamp)?Color{.2f,1,.3f,1}:Color{1,.15f,.1f,1});
+        Material3D antenna{{1,1,1,1},{.45f,.65f,0,1},false};antenna.doubleSided=true;
+        for(unsigned index=0;index<3;++index) {
+            const auto p=Mistwatch::Session::relaySites[index];
+            const auto relaySolids=Mistwatch::RelaySolids(index);
+            scene.MaterialBox(relaySolids[0].center,relaySolids[0].extents*2.f,rockMaterial);
+            scene.Box(relaySolids[1].center,relaySolids[1].extents*2.f,{.24f,.28f,.26f,1});
+            const float angle=float(session.RelaySector(index))*6.2831853f/16.f;
+            const Vec3 direction{std::sin(angle),0,std::cos(angle)};
+            scene.Mesh(relayDish,{p+Vec3{0,2.15f,0}+direction*.5f,{0,angle,0},{1,1,1}},antenna);
+            scene.Mesh(box,{p+Vec3{0,2.15f,0}+direction*.15f,{0,angle,0},{.065f,.065f,.3f}},antenna);
+            const bool linked=(session.relayLinked&(1u<<index))!=0;
+            const bool aligned=session.RelaySector(index)==Mistwatch::Session::RelayTargetSector(index);
+            const Color lamp=linked?Color{.1f,1,.4f,1}:session.powerRestored&&aligned?Color{.4f,1,.2f,1}:Color{1,.55f,.08f,1};
+            scene.Box(p+Vec3{index==1?-.69f:.69f,.7f,0},{.08f,.18f,.25f},lamp);
+            scene.Line(p+Vec3{0,.74f,0},p+Vec3{direction.x,.74f,direction.z},3.f,lamp);
+        }
         auto camera=Mistwatch::BuildPlayerCamera(session.feet,controller.Settings().height,orbit,solids,terrain);
         if(diagnosticCrown && !capture.empty()) camera=MakeThirdPersonCamera({-7,6,-5},0,.1f,8);
         // 遠景只用於地形影像驗收，不改變玩家可操作鏡頭的距離上限。
@@ -496,7 +542,7 @@ public:
         if(!draw.SkinnedMeshInstance(explorerMesh.handle,palette,CreateTransformMatrix(session.feet,{0,explorer.yaw,0},{1,1,1})))
             throw std::runtime_error("Explorer skin submission failed");
         draw.Quad({640,38},{1280,76},{.02f,.04f,.04f,.9f});
-        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade wild boar strikes [Q], then counter [F]","Investigate north ranger hut, unlock west workshop cabinet","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
+        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade wild boar strikes [Q], then counter [F]","Investigate north ranger hut, unlock west workshop cabinet","Repair the east generator [E]","Restore three ridge radio relays [1 / 2 / E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
         draw.Text({20,12},"MISTWATCH - playable blockout",2.5f,{.8f,.95f,.85f,1});
         draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume":!session.Alive()?"Expedition failed - R to retry":objectives[unsigned(session.CurrentStage())],2.f,{1,1,1,1});
         const unsigned supplies=unsigned(bool(session.collected&1))+unsigned(bool(session.collected&2))+unsigned(bool(session.collected&4));
@@ -548,6 +594,23 @@ public:
             for(unsigned lamp=0;lamp<3;++lamp) lamps+=(session.circuit&(1u<<lamp))?"[ON] ":"[OFF] ";
             draw.Text({20,555},lamps,2.f,{.7f,1,.7f,1});
         }
+        else if(session.CurrentStage()==Mistwatch::Stage::Relays) {
+            unsigned next=0,connected=0;float nearest=10000.f;
+            for(unsigned index=0;index<3;++index) {
+                if(session.relayLinked&(1u<<index)){++connected;continue;}
+                const auto p=Mistwatch::Session::relaySites[index];
+                const float range=std::hypot(p.x-session.feet.x,p.z-session.feet.z);
+                if(range<nearest){nearest=range;next=index;}
+            }
+            constexpr const char* names[]{"west ridge","east lookout","north-west ridge"};
+            context="Radio links "+std::to_string(connected)+" / 3 | "+names[next]+" | "+std::to_string(unsigned(nearest))+" m";
+            draw.Quad({640,565},{1280,42},{.02f,.04f,.04f,.85f});
+            std::string radio="Follow the uphill dirt branch to the relay mast";
+            if(session.NearRelay(next))radio="ANTENNA "+std::to_string(unsigned(float(session.RelaySector(next))*22.5f))+(session.RelaySector(next)%2?".5":"")+
+                " deg | SIGNAL "+std::to_string(session.RelaySignal(next))+" | 1 left / 2 right | "+
+                (session.RelaySector(next)==Mistwatch::Session::RelayTargetSector(next)?"GREEN LOCK - E: link":"Weak signal - aim toward rescue mast");
+            draw.Text({20,555},radio,1.5f,{.7f,1,.7f,1});
+        }
         else if(session.CurrentStage()==Mistwatch::Stage::Beacon)
             context=session.Near(Mistwatch::Session::beacon)?"Power restored | E: activate rescue beacon":"Power restored | Follow the trail north to the rescue beacon";
         else if(session.CurrentStage()==Mistwatch::Stage::Complete)
@@ -559,7 +622,7 @@ public:
            (!captureBenchmark || benchmarkGpuMilliseconds.size()==120))
             capturePending=e.CaptureNextFrame3D(CapturePath());
     }
-    void OnStop(Engine& e) override {scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);}
+    void OnStop(Engine& e) override {scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
 };
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
     try {

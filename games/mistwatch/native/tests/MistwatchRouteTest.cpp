@@ -68,6 +68,13 @@ int main() {
     if(!walk({0,0,Session::fuse.z})||!walk({0,0,Session::generator.z})||!walk(Session::generator+Aevrynd::Vec3{-1.6f,0,0})) return 8;
     if(game.RepairGenerator()||!game.ToggleCircuit(0)||!game.ToggleCircuit(2)||!game.RepairGenerator()) return 10;
     if(!walk({0,0,Session::generator.z})) return 9;
+    if(game.CurrentStage()!=Stage::Relays||game.LightBeacon())return 20;
+    for(unsigned index=0;index<3;++index) {
+        const auto p=Session::relaySites[index];
+        if(!walk({0,0,p.z})||!walk(p+Aevrynd::Vec3{p.x<0?1.15f:-1.15f,0,0}))return 21;
+        for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)if(!game.TuneRelay(index,1))return 22;
+        if(!game.ConnectRelay(index)||!walk({0,0,p.z}))return 23;
+    }
     if(!walk(Session::beacon)||!game.LightBeacon()||game.CurrentStage()!=Stage::Complete) return 6;
     std::cout<<"Complete collision-backed route PASS; seconds="<<float(ticks)/60.f<<" health="<<game.health<<'\n';
 }

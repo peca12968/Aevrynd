@@ -5,15 +5,14 @@
 #include "MistwatchForestProps.h"
 #include "MistwatchUnderstory.h"
 #include "MistwatchRiverProfile.h"
+#include "MistwatchRelay.h"
 #include <vector>
 namespace Mistwatch {
 inline Aevrynd::HeightField3D CreateTerrain() {
     Aevrynd::HeightField3D terrain({{-50,0,-20},201,241,.5f});
     for(unsigned z=0;z<241;++z) for(unsigned x=0;x<201;++x) {
         const auto p=terrain.SamplePosition(x,z);
-        const float side=(std::max)(0.f,std::abs(p.x)-10.f);
-        const float hills=side*.3f*(1.f+.3f*std::sin(p.z*.13f)+.2f*std::cos(p.x*.19f));
-        terrain.SetHeight(x,z,RiverTerrainHeight(p.x,p.z,hills));
+        terrain.SetHeight(x,z,GroundElevation(p.x,p.z));
     }
     terrain.RecalculateRange();
     return terrain;
@@ -29,13 +28,17 @@ inline float SettlementTrailDistance(float x,float z) {
         const float closestX=std::clamp(x,(std::min)(0.f,p.x),(std::max)(0.f,p.x));
         distance=(std::min)(distance,std::hypot(x-closestX,z-p.z));
     }
+    for(const auto p:Session::relaySites) {
+        const float closestX=std::clamp(x,(std::min)(0.f,p.x),(std::max)(0.f,p.x));
+        distance=(std::min)(distance,std::hypot(x-closestX,z-p.z));
+    }
     return distance;
 }
 inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain) {
     auto mesh=terrain.CreateMesh(GroundMeshSettings());
     // 通路直接混入地表頂點色，保留材質細節與原始碰撞高度，避免懸浮平板。
     for(auto& vertex:mesh.vertices) {
-        if(vertex.z< -10.f || vertex.z>82.f || (vertex.z>32.f && vertex.z<40.f)) continue;
+        if(vertex.z< -10.f || vertex.z>96.f || (vertex.z>32.f && vertex.z<40.f)) continue;
         const float center=.35f*std::sin(vertex.z*.19f);
         const float width=2.8f+.3f*std::sin(vertex.z*.37f);
         float weight=std::clamp(1.f-std::abs(vertex.x-center)/width,0.f,1.f);
@@ -63,6 +66,10 @@ inline std::vector<Aevrynd::Vec3> TreePositions() {
             occupied|=std::abs(z-p.z)<1.5f && x>(std::min)(0.f,p.x)-1.f && x<(std::max)(0.f,p.x)+1.f;
         }
         for(const auto p:{Session::fuse,Session::generator,Session::rangerLog}) occupied|=std::hypot(x-p.x,z-p.z)<5.f;
+        for(const auto p:Session::relaySites) {
+            occupied|=std::hypot(x-p.x,z-p.z)<4.f;
+            occupied|=std::abs(z-p.z)<1.8f&&x>(std::min)(0.f,p.x)-1.f&&x<(std::max)(0.f,p.x)+1.f;
+        }
         for(const auto p:result) occupied|=std::hypot(x-p.x,z-p.z)<3.5f;
         if(occupied) continue;
         result.push_back({x,terrain.SampleHeight(x,z),z});
@@ -129,6 +136,9 @@ inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     const auto shelter=RepairShelterSolids();
     result.insert(result.end(),shelter.begin(),shelter.end());
     result.push_back(GeneratorSolid());
+    for(unsigned index=0;index<3;++index) {
+        const auto relay=RelaySolids(index);result.insert(result.end(),relay.begin(),relay.end());
+    }
     if(repaired) result.push_back({{0,-.2f,36},{2,.2f,4}});
     const auto trees=TreePositions();
     for(const auto tree:trees) result.push_back({tree+Aevrynd::Vec3{0,2,0},{.25f,2,.25f}});

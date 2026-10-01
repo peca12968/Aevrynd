@@ -55,12 +55,19 @@ int main() {
             const bool workshopBranch=a.x>=-9.f&&a.x<=2.f&&a.z>=57.f&&a.z<=61.f;
             const bool generatorBranch=a.x>=-2.f&&a.x<=9.f&&a.z>=63.f&&a.z<=67.f;
             const bool rangerBranch=a.x>=-2.f&&a.x<=10.f&&a.z>=77.f&&a.z<=81.f;
-            if((std::abs(a.x)>4.f&&!workshopBranch&&!generatorBranch&&!rangerBranch) ||
-               a.z< -10.f || a.z>82.f || (a.z>32.f && a.z<40.f)) return 14;
+            // 獨立計算三條中繼支路範圍；新增步道不得改動範圍外的地表。
+            bool relayBranch=false;
+            for(const auto site:Mistwatch::Session::relaySites) {
+                const float closestX=std::clamp(a.x,(std::min)(0.f,site.x),(std::max)(0.f,site.x));
+                relayBranch|=std::hypot(a.x-closestX,a.z-site.z)<=1.15001f;
+            }
+            if((std::abs(a.x)>4.f&&!workshopBranch&&!generatorBranch&&!rangerBranch&&!relayBranch) ||
+               a.z< -10.f || a.z>96.f || (a.z>32.f && a.z<40.f)) return 14;
         }
     }
     if(changedColors<40) return 15;
-    for(const Aevrynd::Vec3 point:std::array<Aevrynd::Vec3,3>{{{-6,0,59},{6,0,65},{7,0,79}}}) {
+    for(const Aevrynd::Vec3 point:std::array<Aevrynd::Vec3,6>{{{-6,0,59},{6,0,65},{7,0,79},
+            {-22,0,62},{22,0,86},{-20,0,94}}}) {
         bool tinted=false;
         for(std::size_t i=0;i<trailMesh.vertices.size();++i) {
             const auto& vertex=trailMesh.vertices[i];

@@ -15,7 +15,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','complete')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -43,6 +43,15 @@ try {
         if($receipt.enemy_visual -ne 'skinned_boar' -or $receipt.enemy_joints -ne '16'){throw ('Missing skinned wildlife: '+$case)}
         if($case -eq 'strike' -and ($receipt.enemy_phase -ne '1' -or [double]$receipt.enemy_brace -lt .4)){throw 'Missing windup posture fixture'}
         if($case -eq 'boar-recovery' -and ($receipt.enemy_phase -ne '2' -or [double]$receipt.enemy_brace -ne 0)){throw 'Missing recovery posture fixture'}
+        if($case -in @('relay-west','relay-aligned','relay-linked')) {
+            $expectedLinked=if($case -eq 'relay-linked'){'1'}else{'0'}
+            $expectedSectors=if($case -eq 'relay-west'){'0'}else{$receipt.relay_target_west}
+            if($receipt.mission_stage -ne '6' -or $receipt.relay_linked -ne $expectedLinked -or
+               $receipt.relay_sectors -ne $expectedSectors -or $receipt.camera_source -ne 'player') {
+                throw ('Relay fixture state or player camera mismatch: '+$case)
+            }
+            if($case -ne 'relay-west' -and $receipt.relay_signal_west -ne '100'){throw 'Aligned relay missing full directional signal'}
+        }
         if([int]$receipt.understory_ferns -lt 220 -or [int]$receipt.understory_ferns -gt 420 -or
            [int]$receipt.understory_saplings -lt 30 -or [int]$receipt.understory_saplings -gt 42) {
             throw ('Missing layered forest population: '+$case)

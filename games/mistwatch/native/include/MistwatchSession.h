@@ -1,4 +1,5 @@
 #pragma once
+#include "MistwatchTerrainProfile.h"
 #include <Aevrynd/Math.h>
 #include <array>
 #include <cmath>
@@ -9,7 +10,7 @@
 #include <locale>
 
 namespace Mistwatch {
-enum class Stage : unsigned { Supplies, RepairMaterials, Bridge, Encounter, Fuse, Generator, Beacon, Complete };
+enum class Stage : unsigned { Supplies, RepairMaterials, Bridge, Encounter, Fuse, Generator, Relays, Beacon, Complete };
 struct Session {
     unsigned collected{}, health{100};
     bool bridgeRepaired{}, guardianDefeated{}, beaconLit{};
@@ -18,11 +19,14 @@ struct Session {
     unsigned repairMaterials{};
     bool fuseClueRead{};
     unsigned fuseDials{};
+    unsigned relayLinked{},relaySectors{};
     Aevrynd::Vec3 feet{};
     static constexpr std::array<Aevrynd::Vec3, 3> supplies{{{4,0,6},{-5,0,14},{8,0,22}}};
     static constexpr Aevrynd::Vec3 bridge{0,0,30}, arena{0,0,48}, beacon{0,0,70};
     static constexpr Aevrynd::Vec3 fuse{-7,0,59}, generator{7,0,65};
     static constexpr Aevrynd::Vec3 rangerLog{8,0,79};
+    inline static const std::array<Aevrynd::Vec3,3> relaySites{{
+        {-22,GroundElevation(-22,62),62},{22,GroundElevation(22,86),86},{-20,GroundElevation(-20,94),94}}};
     static constexpr std::array<unsigned,3> fuseCode{2,0,3};
     static constexpr unsigned solvedFuseDials=fuseCode[0]|(fuseCode[1]<<2)|(fuseCode[2]<<4);
     // 工具位於低矮避雨棚內，兩處木料沿南岸支線分布。
@@ -30,7 +34,7 @@ struct Session {
     bool Alive() const { return health != 0; }
     Stage CurrentStage() const {
         if (beaconLit) return Stage::Complete;
-        if (powerRestored) return Stage::Beacon;
+        if (powerRestored) return relayLinked==7?Stage::Beacon:Stage::Relays;
         if (fuseCollected) return Stage::Generator;
         if (guardianDefeated) return Stage::Fuse;
         if (bridgeRepaired) return Stage::Encounter;
@@ -72,6 +76,36 @@ struct Session {
         beaconLit=true;
         return true;
     }
+    unsigned RelaySector(unsigned index) const {return index<3?(relaySectors>>(index*4))&15u:0;}
+    static unsigned RelayTargetSector(unsigned index) {
+        if(index>=relaySites.size())return 0;
+        const auto delta=beacon-relaySites[index];
+        float angle=std::atan2(delta.x,delta.z);
+        if(angle<0)angle+=6.2831853f;
+        return unsigned(std::floor(angle*16.f/6.2831853f+.5f))&15u;
+    }
+    unsigned RelaySignal(unsigned index) const {
+        if(index>=3||!powerRestored)return 0;
+        const unsigned sector=RelaySector(index),target=RelayTargetSector(index);
+        const unsigned distance=(std::min)((sector+16-target)&15u,(target+16-sector)&15u);
+        return 100-distance*100/8;
+    }
+    bool NearRelay(unsigned index) const {
+        return index<relaySites.size()&&Finite(feet)&&std::abs(feet.y-GroundElevation(feet.x,feet.z))<=.12f&&
+            std::hypot(feet.x-relaySites[index].x,feet.z-relaySites[index].z)<=1.65f;
+    }
+    bool TuneRelay(unsigned index,int direction) {
+        if(!Alive()||CurrentStage()!=Stage::Relays||index>=3||(direction!=1&&direction!=-1)||
+            (relayLinked&(1u<<index))||!NearRelay(index))return false;
+        const unsigned shift=index*4;
+        const unsigned sector=unsigned(int(RelaySector(index))+direction+16)&15u;
+        relaySectors=(relaySectors&~(15u<<shift))|(sector<<shift);return true;
+    }
+    bool ConnectRelay(unsigned index) {
+        if(!Alive()||CurrentStage()!=Stage::Relays||index>=3||(relayLinked&(1u<<index))||
+            !NearRelay(index)||RelaySector(index)!=RelayTargetSector(index))return false;
+        relayLinked|=1u<<index;return true;
+    }
     bool NearInterior(Aevrynd::Vec3 point) const {
         // 線索與鎖櫃要求角色進入室內，不能隔牆或站在屋頂互動。
         return Finite(feet)&&std::abs(feet.y-point.y)<=.35f&&std::hypot(feet.x-point.x,feet.z-point.z)<=.95f;
@@ -105,23 +139,25 @@ struct Session {
         feet=bridgeRepaired?bridge:Aevrynd::Vec3{};
     }
     bool Valid() const {
+        if(relayLinked>7||relaySectors>4095||((relayLinked||relaySectors)&&!powerRestored))return false;
+        for(unsigned index=0;index<3;++index)if((relayLinked&(1u<<index))&&RelaySector(index)!=RelayTargetSector(index))return false;
         return health<=100 && collected<=7 && repairMaterials<=7 && circuit<=7 && (!circuit || fuseCollected) && (!powerRestored || circuit==7) && Finite(feet) &&
             fuseDials<=63 && (!fuseClueRead || guardianDefeated) && (!fuseDials || guardianDefeated) &&
             (!fuseCollected || (fuseClueRead && fuseDials==solvedFuseDials)) &&
             std::abs(feet.x)<=10000 && std::abs(feet.y)<=10000 && std::abs(feet.z)<=10000 &&
             (!bridgeRepaired || (collected==7 && repairMaterials==7)) && (!guardianDefeated || bridgeRepaired) &&
             (!fuseCollected || guardianDefeated) && (!powerRestored || fuseCollected) &&
-            (!beaconLit || powerRestored);
+            (!beaconLit || (powerRestored&&relayLinked==7));
     }
     std::string Serialize() const {
         if (!Valid()) return {};
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out.precision(9);
-        out << "MISTWATCH 5 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
+        out << "MISTWATCH 6 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
             << guardianDefeated << ' ' << beaconLit << ' ' << feet.x << ' ' << feet.y << ' ' << feet.z
             << ' ' << fuseCollected << ' ' << powerRestored << ' ' << circuit << ' ' << repairMaterials
-            << ' ' << fuseClueRead << ' ' << fuseDials;
+            << ' ' << fuseClueRead << ' ' << fuseDials << ' ' << relayLinked << ' ' << relaySectors;
         return out.str();
     }
     bool Restore(std::string_view text) {
@@ -132,7 +168,7 @@ struct Session {
         unsigned version{}, repaired{}, defeated{}, lit{};
         Session candidate;
         if (!(in>>magic>>version>>candidate.collected>>candidate.health>>repaired>>defeated>>lit
-              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>5) ||
+              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>6) ||
               repaired>1 || defeated>1 || lit>1) return false;
         unsigned fuseValue{},powerValue{};
         if(version>=2) {
@@ -150,6 +186,13 @@ struct Session {
             // 舊檔已取出的保險絲與後續供電狀態不退回；未取者進入聚落探索。
             candidate.fuseClueRead=fuseValue!=0;
             candidate.fuseDials=fuseValue?solvedFuseDials:0;
+        }
+        if(version>=6) {
+            if(!(in>>candidate.relayLinked>>candidate.relaySectors))return false;
+        } else if(lit) {
+            // 舊版已完成的救援不倒退；未完成者保留供電進度並進入新中繼任務。
+            candidate.relayLinked=7;
+            for(unsigned index=0;index<3;++index)candidate.relaySectors|=RelayTargetSector(index)<<(index*4);
         }
         if(in>>extra) return false;
         candidate.fuseCollected=fuseValue!=0;candidate.powerRestored=powerValue!=0;

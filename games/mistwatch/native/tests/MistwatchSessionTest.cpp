@@ -47,6 +47,13 @@ int main() {
     if(!loaded.ToggleCircuit(2)||loaded.circuit!=7) return 24;
     if(!loaded.RepairGenerator()||loaded.RepairGenerator()) return 18;
     loaded.feet=Session::beacon;
+    if(loaded.LightBeacon()||loaded.CurrentStage()!=Stage::Relays)return 30;
+    for(unsigned index=0;index<3;++index) {
+        loaded.feet=Session::relaySites[index];
+        for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)if(!loaded.TuneRelay(index,1))return 31;
+        if(!loaded.ConnectRelay(index))return 32;
+    }
+    loaded.feet=Session::beacon;
     if(!loaded.LightBeacon() || loaded.CurrentStage()!=Stage::Complete || loaded.LightBeacon()) return 9;
     std::istringstream oversized(std::string(100000,'x'));
     const auto completed=loaded.Serialize();
