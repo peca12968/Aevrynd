@@ -64,6 +64,7 @@ add_subdirectory(games/engine_lab/native)
 add_subdirectory(games/character_lab/native)
 add_subdirectory(games/frontier_world/native)
 add_subdirectory(games/gameplay_lab/native)
+add_subdirectory(games/mistwatch/native)
 
 # 受限遠端 worker 只允許建置這個既有固定 target；在 gate preset 下，
 # 將它擴充為原有 13 個 gate 與角色／動畫回歸的無互動 CPU 聚合建置入口。

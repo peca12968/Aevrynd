@@ -93,10 +93,20 @@ void CharacterController3D::Step(CharacterControl3D control,std::span<const BoxC
 }
 
 void CharacterController3D::Step(CharacterControl3D control,const CollisionWorld3D& world,float deltaTime,uint32_t layerMask,uint32_t characterLayer){world.CollectBoxes(collisionScratch_,{layerMask,characterLayer,false});Step(control,collisionScratch_,deltaTime);}
-void CharacterController3D::Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,const HeightField3D& terrain,float deltaTime){const bool wasGrounded=grounded_;Step(control,colliders,deltaTime);if(!terrain.Contains(position_.x,position_.z))return;const float ground=terrain.SampleHeight(position_.x,position_.z);if(velocity_.y<=0&&(position_.y<=ground||(wasGrounded&&position_.y-ground<=settings_.groundSnapDistance))){if(!wasGrounded&&!grounded_)++stats_.landings;position_.y=ground;velocity_.y=0;grounded_=true;++stats_.terrainContacts;}}
+// 實體橋面已提供支撐時，不可再向下吸附到橋下的高度場。
+void CharacterController3D::Step(CharacterControl3D control,std::span<const BoxCollider3D> colliders,const HeightField3D& terrain,float deltaTime){const bool wasGrounded=grounded_;Step(control,colliders,deltaTime);if(!terrain.Contains(position_.x,position_.z))return;const float ground=terrain.SampleHeight(position_.x,position_.z);if(velocity_.y<=0&&(position_.y<=ground||(!grounded_&&wasGrounded&&position_.y-ground<=settings_.groundSnapDistance))){if(!wasGrounded&&!grounded_)++stats_.landings;position_.y=ground;velocity_.y=0;grounded_=true;++stats_.terrainContacts;}}
 void CharacterController3D::Step(CharacterControl3D control,const CollisionWorld3D& world,const HeightField3D& terrain,float deltaTime,uint32_t layerMask,uint32_t characterLayer){world.CollectBoxes(collisionScratch_,{layerMask,characterLayer,false});Step(control,collisionScratch_,terrain,deltaTime);}
 
 bool CharacterController3D::SetHeight(float height){if(!std::isfinite(height)||height<.6f||height>3.f)return false;InvalidateDirectPreview(true);settings_.height=height;return true;}
+bool CharacterController3D::TrySetHeight(float height,std::span<const BoxCollider3D> colliders){
+    if(!std::isfinite(height)||height<.6f||height>3.f)return false;
+    if(height==settings_.height)return true;
+    if(height>settings_.height){
+        const Vec3 center=position_+Vec3{0,height*.5f,0},extents{settings_.radius,height*.5f,settings_.radius};
+        for(const auto& collider:colliders)if(OverlapAabb(center,extents,collider))return false;
+    }
+    return SetHeight(height);
+}
 bool CharacterController3D::CanRebaseOrigin(Vec3 delta)const noexcept{const Vec3 position=position_-delta;return std::isfinite(delta.x)&&std::isfinite(delta.y)&&std::isfinite(delta.z)&&std::isfinite(position.x)&&std::isfinite(position.y)&&std::isfinite(position.z);}
 void CharacterController3D::RebaseOrigin(Vec3 delta)noexcept{InvalidateDirectPreview(true);position_=position_-delta;}
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);float nearest=desiredDistance;for(const BoxCollider3D& collider:colliders){float distance{};if(RayIntersectsAabb(ray,collider.center,collider.extents,nearest,&distance))nearest=(std::min)(nearest,(std::max)(.1f,distance-(std::max)(0.f,padding)));}camera.position=target+ray.direction*nearest;camera.target=target;return camera;}

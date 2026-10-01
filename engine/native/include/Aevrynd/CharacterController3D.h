@@ -102,6 +102,8 @@ public:
     [[nodiscard]] bool CanTeleportDirectDisplacement(Vec3 feetPosition,float yawRadians,uint64_t previousTick)const noexcept;
     bool Teleport(Vec3 feetPosition,float yawRadians,uint64_t previousTick)noexcept;
     bool SetHeight(float height);
+    // 增高前檢查完整候選體積，拒絕時保留高度與控制器狀態。
+    bool TrySetHeight(float height,std::span<const BoxCollider3D> colliders);
     const CharacterControllerSettings3D& Settings()const{return settings_;}
     CharacterControllerStats3D Stats()const{return stats_;}
     [[nodiscard]] ReusableMemoryStats MemoryStats()const noexcept;

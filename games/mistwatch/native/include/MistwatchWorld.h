@@ -1,0 +1,89 @@
+#pragma once
+#include <Aevrynd/CollisionWorld3D.h>
+#include <Aevrynd/HeightField3D.h>
+#include "MistwatchSession.h"
+#include "MistwatchForestProps.h"
+#include "MistwatchRiverProfile.h"
+#include <vector>
+namespace Mistwatch {
+inline Aevrynd::HeightField3D CreateTerrain() {
+    Aevrynd::HeightField3D terrain({{-50,0,-20},201,241,.5f});
+    for(unsigned z=0;z<241;++z) for(unsigned x=0;x<201;++x) {
+        const auto p=terrain.SamplePosition(x,z);
+        const float side=(std::max)(0.f,std::abs(p.x)-10.f);
+        const float hills=side*.3f*(1.f+.3f*std::sin(p.z*.13f)+.2f*std::cos(p.x*.19f));
+        terrain.SetHeight(x,z,RiverTerrainHeight(p.x,p.z,hills));
+    }
+    terrain.RecalculateRange();
+    return terrain;
+}
+inline Aevrynd::HeightFieldMeshSettings3D GroundMeshSettings() {
+    Aevrynd::HeightFieldMeshSettings3D settings{{.65f,.75f,.55f,1},{.75f,.72f,.62f,1},{.45f,.43f,.39f,1}};
+    settings.shoreHeight=RiverHeight;settings.shoreBlend=3.f;settings.shoreColor={.36f,.32f,.25f,1};
+    return settings;
+}
+inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain) {
+    auto mesh=terrain.CreateMesh(GroundMeshSettings());
+    // 通路直接混入地表頂點色，保留材質細節與原始碰撞高度，避免懸浮平板。
+    for(auto& vertex:mesh.vertices) {
+        if(vertex.z< -10.f || vertex.z>82.f || (vertex.z>32.f && vertex.z<40.f)) continue;
+        const float center=.35f*std::sin(vertex.z*.19f);
+        const float width=2.8f+.3f*std::sin(vertex.z*.37f);
+        float weight=std::clamp(1.f-std::abs(vertex.x-center)/width,0.f,1.f);
+        weight=weight*weight*(3.f-2.f*weight);
+        const auto original=Aevrynd::UnpackColorRgba8(vertex.color);
+        const Aevrynd::Color soil{.46f,.34f,.22f,1};
+        vertex.color=Aevrynd::PackColorRgba8({original.r+(soil.r-original.r)*weight,
+            original.g+(soil.g-original.g)*weight,original.b+(soil.b-original.b)*weight,original.a});
+    }
+    return mesh;
+}
+inline std::vector<Aevrynd::Vec3> TreePositions() {
+    const auto terrain=CreateTerrain();
+    std::vector<Aevrynd::Vec3> result{{-7,0,-5}};
+    std::uint32_t seed=0x4d495354u;
+    const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
+    for(int i=0;i<360 && result.size()<100;++i) {
+        const float x=-38.f+76.f*random(),z=-12.f+100.f*random();
+        if(std::abs(x)<4.f || RiverDistance(x,z)<RiverOuterWidth(x)+2.f) continue;
+        bool occupied=false;
+        for(const auto p:Session::supplies) occupied|=std::hypot(x-p.x,z-p.z)<3.f;
+        for(const auto p:{Session::fuse,Session::generator}) occupied|=std::hypot(x-p.x,z-p.z)<5.f;
+        for(const auto p:result) occupied|=std::hypot(x-p.x,z-p.z)<3.5f;
+        if(occupied) continue;
+        result.push_back({x,terrain.SampleHeight(x,z),z});
+    }
+    return result;
+}
+inline std::vector<Aevrynd::Vec3> GroundCoverPositions(const Aevrynd::HeightField3D& terrain) {
+    std::vector<Aevrynd::Vec3> result;
+    std::uint32_t seed=0x47524153u;
+    const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
+    for(unsigned i=0;i<1800;++i) {
+        const float x=-32.f+64.f*random(),z=-10.f+98.f*random();
+        if(std::abs(x)<1.8f || RiverDistance(x,z)<RiverOuterWidth(x)+1.5f) continue;
+        result.push_back({x,terrain.SampleHeight(x,z),z});
+    }
+    return result;
+}
+inline std::vector<Aevrynd::BoxCollider3D> WorkshopSolids() {
+    const auto p=Session::fuse;
+    return {{p+Aevrynd::Vec3{0,2.7f,0},{2.5f,.15f,2.f}},
+            {p+Aevrynd::Vec3{-2.4f,1.3f,0},{.1f,1.3f,2.f}},
+            {p+Aevrynd::Vec3{0,1.3f,-1.9f},{2.5f,1.3f,.1f}},
+            {p+Aevrynd::Vec3{0,1.3f,1.9f},{2.5f,1.3f,.1f}}};
+}
+inline Aevrynd::BoxCollider3D GeneratorSolid() {
+    return {Session::generator+Aevrynd::Vec3{0,.6f,0},{.85f,.6f,.6f}};
+}
+// 渲染與碰撞共用設施尺寸，工棚東側保留入口。
+inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
+    auto result=WorkshopSolids();
+    result.push_back(GeneratorSolid());
+    if(repaired) result.push_back({{0,-.2f,36},{2,.2f,4}});
+    const auto trees=TreePositions();
+    for(const auto tree:trees) result.push_back({tree+Aevrynd::Vec3{0,2,0},{.25f,2,.25f}});
+    for(const auto& prop:ForestProps(CreateTerrain(),trees))result.push_back(prop.collider);
+    return result;
+}
+}

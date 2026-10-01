@@ -589,6 +589,11 @@ target_compile_options(AevryndEnvironmentMeshes3DTest PRIVATE /W4 /permissive- /
 target_link_libraries(AevryndEnvironmentMeshes3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndEnvironmentMeshes3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentMeshes3DTest>'")
 
+add_executable(AevryndWaterMesh3DTest tests/WaterMesh3DSmoke.cpp)
+target_compile_options(AevryndWaterMesh3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndWaterMesh3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndWaterMesh3DTest COMMAND AevryndWaterMesh3DTest)
+
 add_executable(AevryndProceduralPlacement3DTest tests/ProceduralPlacement3DSmoke.cpp)
 target_compile_options(AevryndProceduralPlacement3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndProceduralPlacement3DTest PRIVATE AevryndEngine)

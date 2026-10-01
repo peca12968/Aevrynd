@@ -30,6 +30,19 @@ bool EqualMesh(const Mesh3D& a,const Mesh3D& b){
     for(size_t index=0;index<a.vertices.size();++index){const Vertex3D& x=a.vertices[index],&y=b.vertices[index];if(x.x!=y.x||x.y!=y.y||x.z!=y.z||x.normal!=y.normal||x.color!=y.color||x.u!=y.u||x.v!=y.v)return false;}
     return true;
 }
+bool HasOutwardRockSurface(const Mesh3D& mesh){
+    const auto center=mesh.Bounds().center;
+    const auto point=[&](uint32_t index){const auto& v=mesh.vertices[index];return Vec3{v.x,v.y,v.z};};
+    for(size_t offset=0;offset<mesh.indices.size();offset+=3){
+        const auto a=point(mesh.indices[offset]),b=point(mesh.indices[offset+1]),c=point(mesh.indices[offset+2]);
+        if(Dot(Cross(b-a,c-a),(a+b+c)*(1.f/3.f)-center)<=0)return false;
+    }
+    for(const auto& vertex:mesh.vertices){
+        const auto normal=UnpackNormalSnorm8(vertex.normal);
+        if(Dot(Vec3{normal.x,normal.y,normal.z},Vec3{vertex.x,vertex.y,vertex.z}-center)<=0)return false;
+    }
+    return true;
+}
 }
 
 int main(){
@@ -63,6 +76,9 @@ int main(){
     const MeshBounds3D rangeNearBounds=rangeNear.Bounds(),rangeFarBounds=rangeFar.Bounds();if(rangeNearBounds.extents.x<1.45f||rangeNearBounds.extents.y<.2f||rangeNearBounds.extents.z<.7f||rangeFarBounds.extents.x<1.45f||rangeFarBounds.extents.y<.18f||rangeFarBounds.extents.z<.7f){std::cerr<<"Mountain range bounds failed\n";return 30;}
     if(rangeNear.vertices.size()>600||rangeNear.indices.size()/3>1100||rangeFar.vertices.size()>100||rangeFar.indices.size()/3>160||rangeFar.indices.size()>=rangeNear.indices.size()/5){std::cerr<<"Mountain range LOD budget failed\n";return 31;}
     if(!HasSoundTopology(rockNear)||!HasSoundTopology(rockFar)){std::cerr<<"Rock topology or normals failed\n";return 17;}
+    if(!HasOutwardRockSurface(rockNear)||!HasOutwardRockSurface(rockFar)){std::cerr<<"FIRST_DIVERGENCE: rock winding or normals point inward\n";return 21;}
+    for(unsigned seed=0;seed<32;++seed)for(const auto detail:{EnvironmentMeshDetail3D::Near,EnvironmentMeshDetail3D::Far})
+        if(!HasOutwardRockSurface(CreateRockMesh3D(detail,seed))){std::cerr<<"Rock outward surface failed; seed="<<seed<<'\n';return 22;}
     if(!EqualMesh(rockNear,CreateRockMesh3D(EnvironmentMeshDetail3D::Near,17))||!EqualMesh(rockFar,CreateRockMesh3D(EnvironmentMeshDetail3D::Far,17))){std::cerr<<"Rock seed is not deterministic\n";return 18;}
     const MeshBounds3D rockNearBounds=rockNear.Bounds(),rockFarBounds=rockFar.Bounds();if(rockNearBounds.extents.x<.35f||rockNearBounds.extents.y<.4f||rockNearBounds.extents.z<.35f||rockFarBounds.extents.x<.3f||rockFarBounds.extents.y<.38f||rockFarBounds.extents.z<.3f){std::cerr<<"Rock bounds failed\n";return 19;}
     if(rockNear.vertices.size()>64||rockNear.indices.size()/3>125||rockFar.vertices.size()>20||rockFar.indices.size()/3>=rockNear.indices.size()/3/3){std::cerr<<"Rock LOD budget failed\n";return 20;}
