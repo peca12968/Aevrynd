@@ -34,6 +34,9 @@ class MistwatchGame final : public IGame {
     std::vector<Vec3> trees;
     std::vector<Vec3> groundCover;
     MeshResource3D grassMesh;
+    MeshResource3D fernMesh;
+    Mistwatch::ForestUnderstory understory;
+    unsigned submittedFerns{},submittedSaplings{};
     std::array<MeshResource3D,4> propMeshes;
     std::vector<Mistwatch::ForestProp> forestProps;
     MaterialLibrary3D materials;
@@ -137,6 +140,9 @@ public:
         if(!riverMesh)throw std::runtime_error("River GPU upload failed");
         trees=Mistwatch::TreePositions();
         forestProps=Mistwatch::ForestProps(terrain,trees);
+        understory=Mistwatch::CreateUnderstory(terrain,trees,forestProps);
+        fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
+        if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
         for(unsigned mesh=0;mesh<propMeshes.size();++mesh) {
             propMeshes[mesh]=e.CreateMeshResource3D(Mistwatch::ForestPropMeshes()[mesh]);
             if(!propMeshes[mesh])throw std::runtime_error("Forest prop GPU upload failed");
@@ -252,6 +258,8 @@ public:
                     <<"\ncharacter_height="<<controller.Settings().height<<'\n';
                 out<<"fuse_clue_read="<<session.fuseClueRead<<"\nfuse_dials="<<session.fuseDials
                     <<"\nfuse_collected="<<session.fuseCollected<<'\n';
+                out<<"understory_ferns="<<understory.ferns.size()<<"\nunderstory_saplings="<<understory.saplings.size()
+                    <<"\nsubmitted_ferns="<<submittedFerns<<"\nsubmitted_saplings="<<submittedSaplings<<'\n';
                 out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
@@ -349,6 +357,22 @@ public:
         for(const auto tree:trees) {
             for(unsigned slot=0;slot<4;++slot)
                 scene.Mesh(firMeshes[slot],{tree,{0,tree.z,0},{.65f,.65f,.65f}},firMaterials[slot]);
+        }
+        submittedSaplings=0;
+        for(const auto& tree:understory.saplings) {
+            for(unsigned slot=0;slot<4;++slot)scene.Mesh(firMeshes[slot],tree,firMaterials[slot]);
+            ++submittedSaplings;
+        }
+        Material3D fern{{1,1,1,1},{.92f,0,0,.65f}};
+        fern.materialClass=MaterialClass3D::Foliage;
+        fern.doubleSided=true;
+        submittedFerns=0;
+        for(auto plant:understory.ferns) {
+            const float visibility=Mistwatch::UnderstoryVisibility(Length(plant.position-session.feet));
+            if(visibility<=0)continue;
+            plant.scale=plant.scale*visibility;
+            scene.Mesh(fernMesh,plant,fern);
+            ++submittedFerns;
         }
         Material3D grass{{.32f,.43f,.18f,1},{.9f,0,0,.9f}};
         grass.materialClass=MaterialClass3D::Foliage;

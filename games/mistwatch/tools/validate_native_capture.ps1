@@ -40,6 +40,14 @@ try {
         foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0'){throw ('GPU debug errors: '+$case)}
+        if([int]$receipt.understory_ferns -lt 220 -or [int]$receipt.understory_ferns -gt 420 -or
+           [int]$receipt.understory_saplings -lt 30 -or [int]$receipt.understory_saplings -gt 42) {
+            throw ('Missing layered forest population: '+$case)
+        }
+        if($case -eq 'initial' -and ([int]$receipt.submitted_ferns -lt 30 -or
+           [int]$receipt.submitted_saplings -ne [int]$receipt.understory_saplings)) {
+            throw 'Initial player view did not submit expected understory geometry'
+        }
         if($case -in @('repair-shelter','repair-player-camera') -and ($receipt.character_height -ne '1.4' -or $receipt.mission_stage -ne '1' -or $receipt.repair_materials -ne '0')){throw 'Shelter capture does not prove expected crouched mission fixture'}
         if($case -eq 'repair-player-camera') {
             if($receipt.camera_source -ne 'player'){throw 'Shelter camera was replaced by diagnostic view'}

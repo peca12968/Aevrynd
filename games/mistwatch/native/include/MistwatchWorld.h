@@ -3,6 +3,7 @@
 #include <Aevrynd/HeightField3D.h>
 #include "MistwatchSession.h"
 #include "MistwatchForestProps.h"
+#include "MistwatchUnderstory.h"
 #include "MistwatchRiverProfile.h"
 #include <vector>
 namespace Mistwatch {
@@ -131,7 +132,10 @@ inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     if(repaired) result.push_back({{0,-.2f,36},{2,.2f,4}});
     const auto trees=TreePositions();
     for(const auto tree:trees) result.push_back({tree+Aevrynd::Vec3{0,2,0},{.25f,2,.25f}});
-    for(const auto& prop:ForestProps(CreateTerrain(),trees))result.push_back(prop.collider);
+    const auto terrain=CreateTerrain();
+    const auto props=ForestProps(terrain,trees);
+    for(const auto& prop:props)result.push_back(prop.collider);
+    for(const auto& tree:CreateUnderstory(terrain,trees,props).saplings)result.push_back(SaplingCollider(tree));
     return result;
 }
 }

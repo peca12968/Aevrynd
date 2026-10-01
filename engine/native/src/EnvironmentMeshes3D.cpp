@@ -71,6 +71,41 @@ Mesh3D CreateGrassClumpMesh3D(unsigned bladeCount,unsigned segments){
     return mesh;
 }
 
+Mesh3D CreateFernMesh3D(EnvironmentMeshDetail3D detail,unsigned variationSeed){
+    const bool nearDetail=detail==EnvironmentMeshDetail3D::Near;
+    const unsigned fronds=nearDetail?7u:3u,pairs=nearDetail?8u:4u;
+    Mesh3D mesh;
+    for(unsigned frond=0;frond<fronds;++frond){
+        const float yaw=2.f*Pi*(float(frond)+.25f*Variation(variationSeed,frond*3))/float(fronds);
+        const Vec3 outward{std::cos(yaw),0,std::sin(yaw)},side{-outward.z,0,outward.x};
+        const float length=.85f+.25f*Variation(variationSeed,frond*3+1);
+        const float height=.55f+.25f*Variation(variationSeed,frond*3+2);
+        const auto axis=[&](float t){return outward*(length*t)+Vec3{0,height*std::sin(Pi*t*.9f)+.04f*t,0};};
+        // 葉軸有半徑，基部抬高兩公分，避免斜向管壁落到根部平面以下。
+        Vec3 previous{0,.025f,0};
+        for(unsigned step=1;step<=5;++step){
+            const float t=float(step)/5.f;
+            const Vec3 next=axis(t);
+            AppendBranch(mesh,previous,next,.013f*(1.1f-t+.2f),.013f*(1.1f-t),3,{.21f,.32f,.09f,1});
+            previous=next;
+        }
+        for(unsigned pair=0;pair<pairs;++pair){
+            const float t=.15f+.77f*float(pair)/float(pairs-1);
+            const float leaflet=.04f+.22f*std::sin(Pi*t)*(.75f+.25f*Variation(variationSeed,frond*23+pair));
+            for(float sign:{-1.f,1.f}){
+                const Vec3 direction=Normalize(side*sign+outward*.27f+Vec3{0,-.12f,0});
+                const Vec3 across=Normalize(Cross(direction,Vec3{0,1,0}));
+                // 小葉從葉軸向兩側伸出，並留出可看見的空隙，不以整片扇形代替。
+                const Vec3 center=axis(t)+direction*leaflet;
+                const float shade=Variation(variationSeed,frond*31+pair*2+(sign>0?1u:0u));
+                AppendLeafCard(mesh,center,across,direction,.024f+.018f*(1.f-t),leaflet,
+                    {.15f+.08f*shade,.36f+.14f*shade,.07f+.04f*shade,1});
+            }
+        }
+    }
+    return mesh;
+}
+
 Mesh3D CreateBroadleafCrownMesh3D(unsigned slices,unsigned stacks){
     slices=(std::max)(6u,slices);stacks=(std::max)(4u,stacks);Mesh3D mesh;const std::array<Vec3,7> positions={Vec3{0,.02f,0},Vec3{-.52f,-.15f,.12f},Vec3{.5f,-.06f,.18f},Vec3{.12f,.14f,-.48f},Vec3{-.2f,.34f,.36f},Vec3{.34f,.27f,-.14f},Vec3{-.38f,.2f,-.3f}};const std::array<Vec3,7> scales={Vec3{1.05f,.9f,.92f},Vec3{.72f,.66f,.66f},Vec3{.76f,.7f,.7f},Vec3{.78f,.74f,.62f},Vec3{.64f,.62f,.62f},Vec3{.62f,.61f,.58f},Vec3{.58f,.58f,.56f}};for(size_t index=0;index<positions.size();++index){const Vec3 rotation{(Variation(113,unsigned(index)*3)-.5f)*.48f,(Variation(113,unsigned(index)*3+1)-.5f)*1.1f,(Variation(113,unsigned(index)*3+2)-.5f)*.42f};AppendOriented(mesh,CreateIrregularLeafLobe(slices,stacks,unsigned(index+1)),positions[index],rotation,scales[index],index%2?Color{.72f,.9f,.62f,1}:Color{.58f,.8f,.49f,1});}
     return mesh;
