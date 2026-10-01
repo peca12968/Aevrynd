@@ -16,10 +16,15 @@ struct Session {
     bool fuseCollected{}, powerRestored{};
     unsigned circuit{};
     unsigned repairMaterials{};
+    bool fuseClueRead{};
+    unsigned fuseDials{};
     Aevrynd::Vec3 feet{};
     static constexpr std::array<Aevrynd::Vec3, 3> supplies{{{4,0,6},{-5,0,14},{8,0,22}}};
     static constexpr Aevrynd::Vec3 bridge{0,0,30}, arena{0,0,48}, beacon{0,0,70};
     static constexpr Aevrynd::Vec3 fuse{-7,0,59}, generator{7,0,65};
+    static constexpr Aevrynd::Vec3 rangerLog{8,0,79};
+    static constexpr std::array<unsigned,3> fuseCode{2,0,3};
+    static constexpr unsigned solvedFuseDials=fuseCode[0]|(fuseCode[1]<<2)|(fuseCode[2]<<4);
     // 工具位於低矮避雨棚內，兩處木料沿南岸支線分布。
     static constexpr std::array<Aevrynd::Vec3,3> repairSites{{{-8,0,18},{8,0,-8},{-8,0,26}}};
     bool Alive() const { return health != 0; }
@@ -67,8 +72,22 @@ struct Session {
         beaconLit=true;
         return true;
     }
+    bool NearInterior(Aevrynd::Vec3 point) const {
+        // 線索與鎖櫃要求角色進入室內，不能隔牆或站在屋頂互動。
+        return Finite(feet)&&std::abs(feet.y-point.y)<=.35f&&std::hypot(feet.x-point.x,feet.z-point.z)<=.95f;
+    }
+    unsigned FuseDial(unsigned wheel) const {return wheel<3?(fuseDials>>(wheel*2))&3u:0;}
+    bool ReadFuseClue() {
+        if(!Alive()||CurrentStage()!=Stage::Fuse||fuseClueRead||!NearInterior(rangerLog))return false;
+        fuseClueRead=true;return true;
+    }
+    bool CycleFuseDial(unsigned wheel) {
+        if(!Alive()||CurrentStage()!=Stage::Fuse||wheel>=3||!NearInterior(fuse))return false;
+        const unsigned shift=wheel*2;
+        fuseDials=(fuseDials&~(3u<<shift))|(((FuseDial(wheel)+1u)&3u)<<shift);return true;
+    }
     bool CollectFuse() {
-        if(!Alive() || CurrentStage()!=Stage::Fuse || !Near(fuse)) return false;
+        if(!Alive() || CurrentStage()!=Stage::Fuse || !NearInterior(fuse) || !fuseClueRead || fuseDials!=solvedFuseDials) return false;
         fuseCollected=true;return true;
     }
     bool RepairGenerator() {
@@ -87,6 +106,8 @@ struct Session {
     }
     bool Valid() const {
         return health<=100 && collected<=7 && repairMaterials<=7 && circuit<=7 && (!circuit || fuseCollected) && (!powerRestored || circuit==7) && Finite(feet) &&
+            fuseDials<=63 && (!fuseClueRead || guardianDefeated) && (!fuseDials || guardianDefeated) &&
+            (!fuseCollected || (fuseClueRead && fuseDials==solvedFuseDials)) &&
             std::abs(feet.x)<=10000 && std::abs(feet.y)<=10000 && std::abs(feet.z)<=10000 &&
             (!bridgeRepaired || (collected==7 && repairMaterials==7)) && (!guardianDefeated || bridgeRepaired) &&
             (!fuseCollected || guardianDefeated) && (!powerRestored || fuseCollected) &&
@@ -97,9 +118,10 @@ struct Session {
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out.precision(9);
-        out << "MISTWATCH 4 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
+        out << "MISTWATCH 5 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
             << guardianDefeated << ' ' << beaconLit << ' ' << feet.x << ' ' << feet.y << ' ' << feet.z
-            << ' ' << fuseCollected << ' ' << powerRestored << ' ' << circuit << ' ' << repairMaterials;
+            << ' ' << fuseCollected << ' ' << powerRestored << ' ' << circuit << ' ' << repairMaterials
+            << ' ' << fuseClueRead << ' ' << fuseDials;
         return out.str();
     }
     bool Restore(std::string_view text) {
@@ -110,7 +132,7 @@ struct Session {
         unsigned version{}, repaired{}, defeated{}, lit{};
         Session candidate;
         if (!(in>>magic>>version>>candidate.collected>>candidate.health>>repaired>>defeated>>lit
-              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>4) ||
+              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>5) ||
               repaired>1 || defeated>1 || lit>1) return false;
         unsigned fuseValue{},powerValue{};
         if(version>=2) {
@@ -120,6 +142,15 @@ struct Session {
         else candidate.circuit=powerValue?7:0;
         if(version>=4) {if(!(in>>candidate.repairMaterials)) return false;}
         else candidate.repairMaterials=repaired?7:0; // 已修復舊檔保留通路，不重置既有完成進度。
+        if(version>=5) {
+            unsigned clue{};
+            if(!(in>>clue>>candidate.fuseDials)||clue>1)return false;
+            candidate.fuseClueRead=clue!=0;
+        } else {
+            // 舊檔已取出的保險絲與後續供電狀態不退回；未取者進入聚落探索。
+            candidate.fuseClueRead=fuseValue!=0;
+            candidate.fuseDials=fuseValue?solvedFuseDials:0;
+        }
         if(in>>extra) return false;
         candidate.fuseCollected=fuseValue!=0;candidate.powerRestored=powerValue!=0;
         candidate.bridgeRepaired=repaired!=0;

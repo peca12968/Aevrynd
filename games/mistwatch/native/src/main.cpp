@@ -180,6 +180,10 @@ public:
                 }
                 else if(name==L"repair-shelter" || name==L"repair-player-camera") fixture="MISTWATCH 4 7 100 0 0 0 -7.25 0 18 0 0 0 0";
                 else if(name==L"repair-ready") fixture="MISTWATCH 4 7 100 0 0 0 0 0 30 0 0 0 7";
+                else if(name==L"settlement-clue") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 0 0";
+                else if(name==L"settlement-clue-read") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 1 0";
+                else if(name==L"fuse-lock-wrong") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 0";
+                else if(name==L"fuse-lock-ready") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 50";
                 else if(name==L"walk" || name==L"crouch") {captureWalk=true;captureCrouch=name==L"crouch";}
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
@@ -194,6 +198,8 @@ public:
                 orbit.yaw=captureWalk?-.6f:name==L"complete"?0.f:-.65f;
                 message="TEST FIXTURE - not a playthrough or player save";
                 if(name==L"river") {orbit.yaw=.5f;orbit.pitch=1.f;orbit.distance=10.f;}
+                if(name==L"settlement-clue" || name==L"settlement-clue-read")orbit.yaw=-1.25f;
+                if(name==L"fuse-lock-wrong" || name==L"fuse-lock-ready")orbit.yaw=1.25f;
                 if(name==L"strike") {
                     encounter.Tick(session.feet,1.f/60.f,false);
                     for(unsigned tick=0;tick<4;++tick)encounter.Tick(session.feet,.1f,false);
@@ -244,6 +250,8 @@ public:
                     <<"\ngpu_validation_passed="<<stats.gpuValidationPassed<<'\n';
                 out<<"mission_stage="<<unsigned(session.CurrentStage())<<"\nrepair_materials="<<session.repairMaterials
                     <<"\ncharacter_height="<<controller.Settings().height<<'\n';
+                out<<"fuse_clue_read="<<session.fuseClueRead<<"\nfuse_dials="<<session.fuseDials
+                    <<"\nfuse_collected="<<session.fuseCollected<<'\n';
                 out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
@@ -302,18 +310,23 @@ public:
         if(!explorer.PlaceFeet(session.feet,controller.Grounded(),crouched,terrain,solids))
             throw std::runtime_error("Explorer foot IK failed");
         if(session.feet.y < -5.f) {session.Damage(100);message="Fell into the ravine - R to retry";return;}
-        for(unsigned lever=0;lever<3;++lever)
-            if(in.Pressed('1'+lever) && session.ToggleCircuit(lever)) message="Circuit switched - light all three lamps";
+        for(unsigned lever=0;lever<3;++lever)if(in.Pressed('1'+lever)) {
+            if(session.CycleFuseDial(lever))message="Cabinet dial turned - match the ranger log, then E";
+            else if(session.ToggleCircuit(lever))message="Circuit switched - light all three lamps";
+        }
         if(in.Pressed('E')) {
             bool changed=false;
             for(unsigned i=0;i<3;++i) changed=session.Collect(i)||changed;
             for(unsigned i=0;i<3;++i)changed=session.CollectRepairMaterial(i,crouched)||changed;
             if(session.RepairBridge()) {solids=Mistwatch::WorldSolids(true);changed=true;}
+            changed=session.ReadFuseClue()||changed;
             changed=session.CollectFuse()||changed;
             changed=session.RepairGenerator()||changed;
             changed=session.LightBeacon()||changed;
             message=changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
-                "Find tools in west shelter (CTRL), and both timber caches":"Move closer to the objective";
+                "Find tools in west shelter (CTRL), and both timber caches":
+                session.CurrentStage()==Mistwatch::Stage::Fuse && session.NearInterior(Mistwatch::Session::fuse)?
+                "Cabinet locked - read ranger log, set dials 1 / 2 / 3":"Move closer to the objective";
         }
         if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
             session.Damage(encounter.Tick(session.feet,dt,in.Pressed('F') && !motion.dashing));
@@ -379,7 +392,17 @@ public:
         scene.Box(Mistwatch::Session::beacon+Vec3{0,2,0},{.7f,4,.7f},session.beaconLit?Color{1,.7f,.2f,1}:Color{.3f,.35f,.4f,1});
         const auto workshop=Mistwatch::Session::fuse;
         for(const auto solid:Mistwatch::WorkshopSolids()) scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
-        if(!session.fuseCollected) scene.Box(workshop+Vec3{0,.6f,0},{.45f,1.2f,.45f},{1,.65f,.12f,1});
+        const auto cabinet=Mistwatch::FuseCaseSolid();
+        scene.Box(cabinet.center,cabinet.extents*2.f,{.18f,.25f,.26f,1});
+        for(unsigned wheel=0;wheel<3;++wheel) {
+            const float z=workshop.z-.25f+float(wheel)*.25f;
+            scene.Box({cabinet.center.x+.36f,.7f,z},{.03f,.14f,.14f},
+                session.fuseCollected?Color{.2f,1,.3f,1}:Color{1,.65f,.12f,1});
+        }
+        for(const auto solid:Mistwatch::RangerHutSolids())scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
+        scene.Box(Mistwatch::Session::rangerLog+Vec3{.9f,1.02f,0},{.55f,.03f,.65f},{.85f,.82f,.65f,1});
+        scene.MaterialBox({2,.8f,79},{.12f,1.6f,.12f},woodMaterial);
+        scene.Box({2,1.5f,79},{1,.35f,.12f},{.65f,.62f,.25f,1});
         const auto generatorSolid=Mistwatch::GeneratorSolid();
         scene.Box(generatorSolid.center,generatorSolid.extents*2.f,{.25f,.3f,.28f,1});
         for(unsigned lamp=0;lamp<3;++lamp)
@@ -404,7 +427,7 @@ public:
         if(!draw.SkinnedMeshInstance(explorerMesh.handle,palette,CreateTransformMatrix(session.feet,{0,explorer.yaw,0},{1,1,1})))
             throw std::runtime_error("Explorer skin submission failed");
         draw.Quad({640,38},{1280,76},{.02f,.04f,.04f,.9f});
-        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade guardian strikes [Q], then counter [F]","Search the west workshop for a fuse [E]","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
+        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade guardian strikes [Q], then counter [F]","Investigate north ranger hut, unlock west workshop cabinet","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
         draw.Text({20,12},"MISTWATCH - playable blockout",2.5f,{.8f,.95f,.85f,1});
         draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume":!session.Alive()?"Expedition failed - R to retry":objectives[unsigned(session.CurrentStage())],2.f,{1,1,1,1});
         const unsigned supplies=unsigned(bool(session.collected&1))+unsigned(bool(session.collected&2))+unsigned(bool(session.collected&4));
@@ -433,7 +456,22 @@ public:
             context+=encounter.phase==Mistwatch::EnemyPhase::Recovery?" | F: counter once":" | Wait for a counter opening";
             context+=evasion.cooldown>0?" | Q recharging":" | Q ready";
         }
-        else if(session.CurrentStage()==Mistwatch::Stage::Fuse && session.Near(Mistwatch::Session::fuse)) context+=" | E: take replacement fuse";
+        else if(session.CurrentStage()==Mistwatch::Stage::Fuse) {
+            const auto destination=session.fuseClueRead?Mistwatch::Session::fuse:Mistwatch::Session::rangerLog;
+            const auto range=std::hypot(destination.x-session.feet.x,destination.z-session.feet.z);
+            context=session.fuseClueRead?"Ranger log: cabinet code 2 - 0 - 3 | West workshop":"Find north ranger hut | Enter west doorway, E: read log";
+            context+=" | "+std::to_string(unsigned(range))+" m";
+            if(session.NearInterior(Mistwatch::Session::fuse)) {
+                draw.Quad({640,565},{1280,42},{.02f,.04f,.04f,.85f});
+                const std::string dials="CABINET: [1] "+std::to_string(session.FuseDial(0))+"  [2] "+
+                    std::to_string(session.FuseDial(1))+"  [3] "+std::to_string(session.FuseDial(2))+" | 1 / 2 / 3 turn, E: open";
+                draw.Text({20,555},dials,1.5f,{.7f,1,.7f,1});
+            }
+            if(session.NearInterior(Mistwatch::Session::rangerLog)) {
+                draw.Quad({640,565},{1280,42},{.02f,.04f,.04f,.85f});
+                draw.Text({20,555},session.fuseClueRead?"RANGER LOG: replacement fuse cabinet, west workshop: 2 - 0 - 3":"RANGER LOG on desk | E: examine and keep cabinet instructions",1.5f,{.7f,1,.7f,1});
+            }
+        }
         else if(session.CurrentStage()==Mistwatch::Stage::Generator && session.Near(Mistwatch::Session::generator)) {
             context="Panel: 1 toggles A+B | 2 toggles B+C | 3 toggles C | Light all, then E";
             draw.Quad({640,565},{1280,42},{.02f,.04f,.04f,.85f});

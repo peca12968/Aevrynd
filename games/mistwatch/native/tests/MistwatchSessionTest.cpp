@@ -30,6 +30,12 @@ int main() {
     loaded.feet=Session::beacon;
     if(loaded.LightBeacon() || loaded.RepairGenerator() || loaded.CollectFuse()) return 15;
     loaded.feet=Session::fuse;
+    if(loaded.CollectFuse())return 27;
+    loaded.feet=Session::rangerLog;
+    if(!loaded.ReadFuseClue())return 28;
+    loaded.feet=Session::fuse;
+    for(unsigned wheel=0;wheel<3;++wheel)for(unsigned turn=0;turn<Session::fuseCode[wheel];++turn)
+        if(!loaded.CycleFuseDial(wheel))return 29;
     if(!loaded.CollectFuse()||loaded.CollectFuse()) return 16;
     Session powerSave;
     if(!powerSave.Restore(loaded.Serialize())||powerSave.CurrentStage()!=Stage::Generator) return 17;

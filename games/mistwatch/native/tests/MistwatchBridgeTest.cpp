@@ -52,10 +52,22 @@ int main() {
         if(a.x!=b.x || a.y!=b.y || a.z!=b.z || a.normal!=b.normal) return 13;
         if(a.color!=b.color) {
             ++changedColors;
-            if(std::abs(a.x)>4.f || a.z< -10.f || a.z>82.f || (a.z>32.f && a.z<40.f)) return 14;
+            const bool workshopBranch=a.x>=-9.f&&a.x<=2.f&&a.z>=57.f&&a.z<=61.f;
+            const bool generatorBranch=a.x>=-2.f&&a.x<=9.f&&a.z>=63.f&&a.z<=67.f;
+            const bool rangerBranch=a.x>=-2.f&&a.x<=10.f&&a.z>=77.f&&a.z<=81.f;
+            if((std::abs(a.x)>4.f&&!workshopBranch&&!generatorBranch&&!rangerBranch) ||
+               a.z< -10.f || a.z>82.f || (a.z>32.f && a.z<40.f)) return 14;
         }
     }
     if(changedColors<40) return 15;
+    for(const Aevrynd::Vec3 point:std::array<Aevrynd::Vec3,3>{{{-6,0,59},{6,0,65},{7,0,79}}}) {
+        bool tinted=false;
+        for(std::size_t i=0;i<trailMesh.vertices.size();++i) {
+            const auto& vertex=trailMesh.vertices[i];
+            if(vertex.x==point.x&&vertex.z==point.z)tinted=vertex.color!=baseMesh.vertices[i].color;
+        }
+        if(!tinted)return 32;
+    }
     const auto trees=Mistwatch::TreePositions(), repeated=Mistwatch::TreePositions();
     if(trees.size()<60 || trees.size()!=repeated.size()) return 6;
     for(std::size_t i=0;i<trees.size();++i) {
@@ -87,7 +99,8 @@ int main() {
     actor.Reset(Mistwatch::Session::generator+Aevrynd::Vec3{-3,0,0});
     for(int tick=0;tick<90;++tick) actor.Step({{1,0,0},false,1},forest,terrain,1.f/60.f);
     if(actor.Position().x>6.f || actor.Position().x<5.f) return 10;
-    actor.Reset(Mistwatch::Session::fuse);
+    // 起點在新增櫃體的西側，持續獨立驗證工棚西牆，而不是先撞到櫃子。
+    actor.Reset(Mistwatch::Session::fuse+Aevrynd::Vec3{-1.75f,0,0});
     for(int tick=0;tick<90;++tick) actor.Step({{-1,0,0},false,1},forest,terrain,1.f/60.f);
     if(actor.Position().x< -9.1f || actor.Position().x> -8.f) return 11;
     std::cout<<"Bridge repair changes actual controller traversal PASS\n";

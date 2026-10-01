@@ -22,6 +22,14 @@ inline Aevrynd::HeightFieldMeshSettings3D GroundMeshSettings() {
     settings.shoreHeight=RiverHeight;settings.shoreBlend=3.f;settings.shoreColor={.36f,.32f,.25f,1};
     return settings;
 }
+inline float SettlementTrailDistance(float x,float z) {
+    float distance=10000.f;
+    for(const auto p:{Session::fuse,Session::generator,Session::rangerLog}) {
+        const float closestX=std::clamp(x,(std::min)(0.f,p.x),(std::max)(0.f,p.x));
+        distance=(std::min)(distance,std::hypot(x-closestX,z-p.z));
+    }
+    return distance;
+}
 inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain) {
     auto mesh=terrain.CreateMesh(GroundMeshSettings());
     // 通路直接混入地表頂點色，保留材質細節與原始碰撞高度，避免懸浮平板。
@@ -30,6 +38,7 @@ inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain) 
         const float center=.35f*std::sin(vertex.z*.19f);
         const float width=2.8f+.3f*std::sin(vertex.z*.37f);
         float weight=std::clamp(1.f-std::abs(vertex.x-center)/width,0.f,1.f);
+        weight=(std::max)(weight,std::clamp(1.f-SettlementTrailDistance(vertex.x,vertex.z)/1.15f,0.f,1.f));
         weight=weight*weight*(3.f-2.f*weight);
         const auto original=Aevrynd::UnpackColorRgba8(vertex.color);
         const Aevrynd::Color soil{.46f,.34f,.22f,1};
@@ -52,7 +61,7 @@ inline std::vector<Aevrynd::Vec3> TreePositions() {
             occupied|=std::hypot(x-p.x,z-p.z)<4.f;
             occupied|=std::abs(z-p.z)<1.5f && x>(std::min)(0.f,p.x)-1.f && x<(std::max)(0.f,p.x)+1.f;
         }
-        for(const auto p:{Session::fuse,Session::generator}) occupied|=std::hypot(x-p.x,z-p.z)<5.f;
+        for(const auto p:{Session::fuse,Session::generator,Session::rangerLog}) occupied|=std::hypot(x-p.x,z-p.z)<5.f;
         for(const auto p:result) occupied|=std::hypot(x-p.x,z-p.z)<3.5f;
         if(occupied) continue;
         result.push_back({x,terrain.SampleHeight(x,z),z});
@@ -65,9 +74,10 @@ inline std::vector<Aevrynd::Vec3> GroundCoverPositions(const Aevrynd::HeightFiel
     const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
     for(unsigned i=0;i<1800;++i) {
         const float x=-32.f+64.f*random(),z=-10.f+98.f*random();
-        if(std::abs(x)<1.8f || RiverDistance(x,z)<RiverOuterWidth(x)+1.5f) continue;
+        if(std::abs(x)<1.8f || SettlementTrailDistance(x,z)<.7f || RiverDistance(x,z)<RiverOuterWidth(x)+1.5f) continue;
         bool shelter=false;
         for(const auto p:Session::repairSites)shelter|=std::hypot(x-p.x,z-p.z)<3.f;
+        for(const auto p:{Session::fuse,Session::rangerLog})shelter|=std::abs(x-p.x)<3.f&&std::abs(z-p.z)<3.5f;
         if(shelter)continue;
         result.push_back({x,terrain.SampleHeight(x,z),z});
     }
@@ -83,6 +93,23 @@ inline std::vector<Aevrynd::BoxCollider3D> WorkshopSolids() {
 inline Aevrynd::BoxCollider3D GeneratorSolid() {
     return {Session::generator+Aevrynd::Vec3{0,.6f,0},{.85f,.6f,.6f}};
 }
+inline Aevrynd::BoxCollider3D FuseCaseSolid() {
+    return {Session::fuse+Aevrynd::Vec3{-.9f,.45f,0},{.35f,.45f,.4f}};
+}
+inline std::vector<Aevrynd::BoxCollider3D> RangerHutSolids() {
+    const auto p=Session::rangerLog;
+    // 西側朝向主路，東側為實牆，南北窗戶由同一組板材／立柱碰撞體構成。
+    std::vector<Aevrynd::BoxCollider3D> result{
+        {p+Aevrynd::Vec3{0,2.7f,0},{2.5f,.15f,3.f}},
+        {p+Aevrynd::Vec3{2.4f,1.3f,0},{.1f,1.3f,3.f}},
+        {p+Aevrynd::Vec3{.9f,.5f,0},{.35f,.5f,.8f}}};
+    for(float z:{-2.9f,2.9f}) {
+        result.push_back({p+Aevrynd::Vec3{0,.45f,z},{2.5f,.45f,.1f}});
+        result.push_back({p+Aevrynd::Vec3{0,2.4f,z},{2.5f,.2f,.1f}});
+        for(float x:{-2.3f,0.f,2.3f})result.push_back({p+Aevrynd::Vec3{x,1.55f,z},{.15f,.65f,.1f}});
+    }
+    return result;
+}
 inline std::vector<Aevrynd::BoxCollider3D> RepairShelterSolids() {
     const auto p=Session::repairSites[0];
     // 東側入口開放；屋頂下緣 1.45 公尺，蹲姿 1.4 可進，站姿 1.8 被阻擋。
@@ -95,6 +122,9 @@ inline std::vector<Aevrynd::BoxCollider3D> RepairShelterSolids() {
 // 渲染與碰撞共用設施尺寸，工棚東側保留入口。
 inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     auto result=WorkshopSolids();
+    result.push_back(FuseCaseSolid());
+    const auto rangerHut=RangerHutSolids();
+    result.insert(result.end(),rangerHut.begin(),rangerHut.end());
     const auto shelter=RepairShelterSolids();
     result.insert(result.end(),shelter.begin(),shelter.end());
     result.push_back(GeneratorSolid());

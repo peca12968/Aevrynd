@@ -56,7 +56,15 @@ int main() {
     if(!walk({0,0,45.5f})) return 4;
     for(unsigned step=0;step<600 && game.CurrentStage()==Stage::Encounter;++step) tick({},true);
     if(!game.Alive()||!game.guardianDefeated) return 5;
-    if(!walk({0,0,Session::fuse.z})||!walk(Session::fuse)||!game.CollectFuse()) return 7;
+    if(!walk({0,0,Session::rangerLog.z})||!walk(Session::rangerLog)||!game.ReadFuseClue())return 15;
+    const auto clueSave=game.Serialize();
+    Session clueRestored;
+    if(!clueRestored.Restore(clueSave)||!clueRestored.fuseClueRead||clueRestored.fuseDials)return 16;
+    if(!walk({0,0,Session::rangerLog.z})||!walk({0,0,Session::fuse.z})||!walk(Session::fuse)) return 7;
+    if(game.CollectFuse())return 17;
+    for(unsigned wheel=0;wheel<3;++wheel)for(unsigned turn=0;turn<Session::fuseCode[wheel];++turn)
+        if(!game.CycleFuseDial(wheel))return 18;
+    if(!game.CollectFuse())return 19;
     if(!walk({0,0,Session::fuse.z})||!walk({0,0,Session::generator.z})||!walk(Session::generator+Aevrynd::Vec3{-1.6f,0,0})) return 8;
     if(game.RepairGenerator()||!game.ToggleCircuit(0)||!game.ToggleCircuit(2)||!game.RepairGenerator()) return 10;
     if(!walk({0,0,Session::generator.z})) return 9;

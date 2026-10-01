@@ -15,7 +15,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','repair-player-camera')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','panel','powered','complete')}
+$cases=if($GpuValidation){@('river-overlook','strike','repair-player-camera','fuse-lock-ready')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','complete')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -51,6 +51,13 @@ try {
                 [double]::IsNaN($anchor) -or [double]::IsInfinity($anchor) -or [Math]::Abs($anchor-.85) -gt .00001){throw 'Invalid shelter player-camera evidence'}
         }
         if($case -eq 'repair-ready' -and ($receipt.mission_stage -ne '2' -or $receipt.repair_materials -ne '7')){throw 'Bridge-ready capture does not prove repair inventory'}
+        if($case -in @('settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready')) {
+            $expectedClue=if($case -eq 'settlement-clue'){'0'}else{'1'}
+            $expectedDials=if($case -eq 'fuse-lock-ready'){'50'}else{'0'}
+            if($receipt.mission_stage -ne '4' -or $receipt.fuse_collected -ne '0' -or
+                $receipt.fuse_clue_read -ne $expectedClue -or $receipt.fuse_dials -ne $expectedDials -or
+                $receipt.camera_source -ne 'player'){throw 'Invalid settlement investigation fixture or substituted camera'}
+        }
         if($GpuValidation) {
             foreach($flag in @('debug_layer_enabled','gpu_validation_requested','gpu_validation_available','gpu_validation_executed','gpu_validation_passed')) {
                 if($receipt[$flag] -ne '1'){throw ('GPU validation not proven '+$flag+': '+$case)}

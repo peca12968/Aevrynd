@@ -46,7 +46,7 @@ inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b) {
         if(minZ<p.z+1.5f && maxZ>p.z-1.5f && minX<(std::max)(0.f,p.x)+1.f && maxX>(std::min)(0.f,p.x)-1.f)return false;
     }
     return clears(Session::arena,7.f) && clears(Session::fuse,5.f) &&
-        clears(Session::generator,5.f) && clears(Session::beacon,5.f);
+        clears(Session::generator,5.f) && clears(Session::beacon,5.f) && clears(Session::rangerLog,5.f);
 }
 inline std::vector<ForestProp> ForestProps(const Aevrynd::HeightField3D& terrain,
     std::span<const Aevrynd::Vec3> trees) {
