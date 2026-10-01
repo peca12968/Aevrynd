@@ -41,6 +41,10 @@ inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b) {
         // 保留補給點通往中央主路的橫向支線。
         if(minZ<p.z+2.f && maxZ>p.z-2.f && minX<(std::max)(0.f,p.x)+2.f && maxX>(std::min)(0.f,p.x)-2.f)return false;
     }
+    for(const auto p:Session::repairSites) {
+        if(!clears(p,4.f))return false;
+        if(minZ<p.z+1.5f && maxZ>p.z-1.5f && minX<(std::max)(0.f,p.x)+1.f && maxX>(std::min)(0.f,p.x)-1.f)return false;
+    }
     return clears(Session::arena,7.f) && clears(Session::fuse,5.f) &&
         clears(Session::generator,5.f) && clears(Session::beacon,5.f);
 }

@@ -2,7 +2,21 @@
 
 本目錄使用 Aevrynd 原生 Win32／D3D12 引擎。現階段是具有森林、彎曲河谷、水面與簡化蒙皮探險者的可玩流程原型，尚未達到寫實森林、正式角色動畫或 10～15 分鐘內容的要求。
 
-## 最新候選：2026-10-02
+## 修橋探索原型：2026-10-02
+
+橋樑不再只靠三個補給箱直接修復。新增西側低矮避雨棚的工具與兩個木料點，材料允許提前取得；全部到齊才進入修橋階段。HUD 顯示材料缺口、最近未收點與距離，場景加入木料束、小型路標及共享渲染／碰撞的棚屋與工具箱；植被與地物避開棚屋及通往主路的支線。
+
+先以回歸 exit 1 重現「沒有工具或木料也能修橋」。新 `MistwatchRepairExplorationTest` 驗證站姿無法進棚、蹲行能進棚取物、工具箱不可穿入、模型頭部低於屋頂、棚內禁止起身、離開後可起身。存檔 v4 記錄三個材料 bit；非法 bit、缺欄、矛盾進度及額外 token 拒絕且保留原狀態。v1～v3 已修橋者補齊舊材料進度，未修橋者進入新探索階段；死亡重試保留已收材料，棚內讀檔先採蹲姿再檢查起身空間。
+
+增量 `ALL_BUILD`、九項 Mistwatch 測試與九個原生場景通過。完整控制器路線不傳送角色，約 46.6333 秒、生命 40；新增的是取物與蹲行操作，不是降低速度或加入等待來充時長。這仍遠短於 10～15 分鐘垂直切片。
+
+證據位於 `D:/Download/Aevrynd/Evidence/mistwatch-repair-exploration-20261002`。`repair-shelter`／`repair-ready` 使用明確標記的記憶體測試情境，不代替真人通關。全新發布建置 `D:/Download/Aevrynd/Builds/mistwatch-repair-fresh-20261002` 已通過 `ALL_BUILD`、29 項相關單元／整合測試、九個普通原生場景及兩個 GPU-based validation 場景；GPU 除錯錯誤／警告均為零。結果為 `fresh-unit-integration.xml`、`fresh-native-normal/native-validation.json`、`fresh-native-gpu/native-validation.json`。
+
+同批固定場景 GPU P95：起始 2.69994 毫秒、河谷遠景 3.1679 毫秒；各 120 個不同序號樣本、1280×720。這不是遊玩 FPS、CPU 或全路線效能。來源檔案雜湊保存在 `candidate-source-hashes.json`；編譯前後已核對一致。既有 `74e45e6f` 原型保留，本輪不修改網站、不宣稱副機已執行測試。
+
+仍需改善：低屋頂下第三人稱避障會讓鏡頭靠近角色，室內取景待專門驗證與調整。下一內容里程碑為聚落探索與通路障礙，不以降低速度或等待計時填滿 10～15 分鐘。
+
+## 第一份基準原型：2026-10-02／74e45e6f
 
 獨立候選工作樹 `D:/Download/Aevrynd/Worktrees/mistwatch-clean-20261002`，從來源基準 `a8ef0b7797f607c87231079f758f521fb80ce6e3` 建立；只整合本作及所需共用功能，未混入另一工作樹的 Renderer／Shader 實驗。全新建置位於 `D:/Download/Aevrynd/Builds/mistwatch-clean-20261002`，Visual Studio 2022 x64 Release，Streamline、內部 Renderer test hooks、Water／Shadow／Atmosphere 診斷編譯開關均停用。
 

@@ -11,9 +11,10 @@ int main() {
     const auto terrain=CreateTerrain();
     auto solids=WorldSolids(false);
     unsigned ticks{};
+    bool crouching{};
     actor.Reset({});
     const auto tick=[&](Aevrynd::Vec3 move,bool attack=false) {
-        actor.Step({move,false,1},solids,terrain,1.f/60.f);
+        actor.Step({move,false,crouching?.45f:1.f},solids,terrain,1.f/60.f);
         game.feet=actor.Position();
         ++ticks;
         if(game.feet.y< -5) game.Damage(100);
@@ -36,6 +37,16 @@ int main() {
         const auto supply=Session::supplies[index];
         // 沿主路前進，再從橫向支線接近補給，全部經過真實碰撞。
         if(!walk({0,0,game.feet.z})||!walk({0,0,supply.z})||!walk(supply)||!game.Collect(index)) return 1;
+    }
+    for(unsigned index=0;index<Session::repairSites.size();++index) {
+        const auto site=Session::repairSites[index];
+        if(!walk({0,0,game.feet.z})||!walk({0,0,site.z}))return 11;
+        crouching=index==0;
+        const auto approach=site+(crouching?Aevrynd::Vec3{.65f,0,0}:Aevrynd::Vec3{});
+        if(!actor.TrySetHeight(crouching?1.4f:1.8f,solids)||!walk(approach)||!game.CollectRepairMaterial(index,crouching))return 12;
+        if(!walk({0,0,site.z}))return 13;
+        crouching=false;
+        if(!actor.TrySetHeight(1.8f,solids))return 14;
     }
     if(!walk({0,0,game.feet.z})||!walk(Session::bridge)||!game.RepairBridge()) return 2;
     solids=WorldSolids(true);

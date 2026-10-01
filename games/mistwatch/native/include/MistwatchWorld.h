@@ -48,6 +48,10 @@ inline std::vector<Aevrynd::Vec3> TreePositions() {
         if(std::abs(x)<4.f || RiverDistance(x,z)<RiverOuterWidth(x)+2.f) continue;
         bool occupied=false;
         for(const auto p:Session::supplies) occupied|=std::hypot(x-p.x,z-p.z)<3.f;
+        for(const auto p:Session::repairSites) {
+            occupied|=std::hypot(x-p.x,z-p.z)<4.f;
+            occupied|=std::abs(z-p.z)<1.5f && x>(std::min)(0.f,p.x)-1.f && x<(std::max)(0.f,p.x)+1.f;
+        }
         for(const auto p:{Session::fuse,Session::generator}) occupied|=std::hypot(x-p.x,z-p.z)<5.f;
         for(const auto p:result) occupied|=std::hypot(x-p.x,z-p.z)<3.5f;
         if(occupied) continue;
@@ -62,6 +66,9 @@ inline std::vector<Aevrynd::Vec3> GroundCoverPositions(const Aevrynd::HeightFiel
     for(unsigned i=0;i<1800;++i) {
         const float x=-32.f+64.f*random(),z=-10.f+98.f*random();
         if(std::abs(x)<1.8f || RiverDistance(x,z)<RiverOuterWidth(x)+1.5f) continue;
+        bool shelter=false;
+        for(const auto p:Session::repairSites)shelter|=std::hypot(x-p.x,z-p.z)<3.f;
+        if(shelter)continue;
         result.push_back({x,terrain.SampleHeight(x,z),z});
     }
     return result;
@@ -76,9 +83,20 @@ inline std::vector<Aevrynd::BoxCollider3D> WorkshopSolids() {
 inline Aevrynd::BoxCollider3D GeneratorSolid() {
     return {Session::generator+Aevrynd::Vec3{0,.6f,0},{.85f,.6f,.6f}};
 }
+inline std::vector<Aevrynd::BoxCollider3D> RepairShelterSolids() {
+    const auto p=Session::repairSites[0];
+    // 東側入口開放；屋頂下緣 1.45 公尺，蹲姿 1.4 可進，站姿 1.8 被阻擋。
+    return {{p+Aevrynd::Vec3{0,1.55f,0},{2.5f,.1f,2.f}},
+        {p+Aevrynd::Vec3{-2.4f,.7f,0},{.1f,.7f,2.f}},
+        {p+Aevrynd::Vec3{0,.7f,-1.9f},{2.5f,.7f,.1f}},
+        {p+Aevrynd::Vec3{0,.7f,1.9f},{2.5f,.7f,.1f}},
+        {p+Aevrynd::Vec3{0,.23f,0},{.3f,.23f,.2f}}};
+}
 // 渲染與碰撞共用設施尺寸，工棚東側保留入口。
 inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     auto result=WorkshopSolids();
+    const auto shelter=RepairShelterSolids();
+    result.insert(result.end(),shelter.begin(),shelter.end());
     result.push_back(GeneratorSolid());
     if(repaired) result.push_back({{0,-.2f,36},{2,.2f,4}});
     const auto trees=TreePositions();

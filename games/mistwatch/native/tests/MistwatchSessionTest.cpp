@@ -10,6 +10,9 @@ int main() {
         if(!game.Collect(i) || game.Collect(i)) return 2;
     }
     game.feet=Session::bridge;
+    if(game.RepairBridge())return 25;
+    for(unsigned i=0;i<3;++i){game.feet=Session::repairSites[i];if(!game.CollectRepairMaterial(i,i==0))return 26;}
+    game.feet=Session::bridge;
     if(!game.RepairBridge() || game.RepairBridge()) return 3;
     game.Damage(1000);
     game.feet=Session::arena;

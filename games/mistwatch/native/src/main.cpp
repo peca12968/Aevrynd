@@ -56,10 +56,17 @@ class MistwatchGame final : public IGame {
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
     bool captureRiverOverview{};
+    bool captureShelterOverview{};
     bool captureBenchmark{};
     std::uint64_t benchmarkLastSerial{};
     std::vector<double> benchmarkGpuMilliseconds;
     std::chrono::steady_clock::time_point captureStart;
+    void ResetController() {
+        controller.Reset(session.feet);
+        // 讀檔／重試時先採低姿，再嘗試站起，避免載入棚內存檔後頭部穿過屋頂。
+        controller.SetHeight(1.4f);
+        controller.TrySetHeight(1.8f,solids);
+    }
     std::filesystem::path CapturePath()const {
         if(!captureSequenceFrames)return capture;
         const auto ordinal=std::to_wstring(captureCompleted);
@@ -170,11 +177,19 @@ public:
                     fixture="MISTWATCH 3 7 100 0 0 0 0 0 30 0 0 0";
                     captureRiverOverview=name==L"river-overlook";
                 }
+                else if(name==L"repair-shelter") fixture="MISTWATCH 4 7 100 0 0 0 -7.25 0 18 0 0 0 0";
+                else if(name==L"repair-ready") fixture="MISTWATCH 4 7 100 0 0 0 0 0 30 0 0 0 7";
                 else if(name==L"walk" || name==L"crouch") {captureWalk=true;captureCrouch=name==L"crouch";}
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
                 controller.Reset(session.feet);
                 solids=Mistwatch::WorldSolids(session.bridgeRepaired);
+                ResetController();
+                if(name==L"repair-shelter") {
+                    captureShelterOverview=true;
+                    explorer.Update({},1.f/60.f,true);
+                    if(!explorer.PlaceFeet(session.feet,true,true,terrain,solids))throw std::runtime_error("Shelter capture IK failed");
+                }
                 orbit.yaw=captureWalk?-.6f:name==L"complete"?0.f:-.65f;
                 message="TEST FIXTURE - not a playthrough or player save";
                 if(name==L"river") {orbit.yaw=.5f;orbit.pitch=1.f;orbit.distance=10.f;}
@@ -226,6 +241,8 @@ public:
                 out<<"debug_layer_enabled="<<stats.debugLayerEnabled<<"\ngpu_validation_requested="<<stats.gpuValidationRequested
                     <<"\ngpu_validation_available="<<stats.gpuValidationAvailable<<"\ngpu_validation_executed="<<stats.gpuValidationExecuted
                     <<"\ngpu_validation_passed="<<stats.gpuValidationPassed<<'\n';
+                out<<"mission_stage="<<unsigned(session.CurrentStage())<<"\nrepair_materials="<<session.repairMaterials
+                    <<"\ncharacter_height="<<controller.Settings().height<<'\n';
                 if(captureBenchmark) {
                     auto ordered=benchmarkGpuMilliseconds;std::sort(ordered.begin(),ordered.end());
                     out<<"benchmark_mode=fixed_scene_gpu_only\ngpu_samples="<<ordered.size()
@@ -252,12 +269,12 @@ public:
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(in.Pressed(VK_F9) && !save.empty()) {
             std::ifstream file(save,std::ios::binary);
-            if(session.RestoreStream(file)){controller.Reset(session.feet);solids=Mistwatch::WorldSolids(session.bridgeRepaired);encounter={};evasion={};message="Loaded";}else message="Save unavailable";
+            if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};evasion={};message="Loaded";}else message="Save unavailable";
         }
         if(in.Pressed('R') && session.beaconLit) {
             session={};controller.Reset({});solids=Mistwatch::WorldSolids(false);encounter={};evasion={};orbit={};message="New expedition";
         }
-        if(in.Pressed('R') && !session.Alive()) {session.Retry();controller.Reset(session.feet);encounter={};evasion={};}
+        if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};evasion={};}
         if(!session.Alive() || session.beaconLit) return;
         orbit.Update(in.MouseDown() && in.MouseInsideCanvas()?in.MouseDelta():Vec2{},in.MouseWheel(),float(in.Down(VK_RIGHT))-float(in.Down(VK_LEFT)),dt);
         const float yaw=orbit.yaw;
@@ -285,11 +302,13 @@ public:
         if(in.Pressed('E')) {
             bool changed=false;
             for(unsigned i=0;i<3;++i) changed=session.Collect(i)||changed;
+            for(unsigned i=0;i<3;++i)changed=session.CollectRepairMaterial(i,crouched)||changed;
             if(session.RepairBridge()) {solids=Mistwatch::WorldSolids(true);changed=true;}
             changed=session.CollectFuse()||changed;
             changed=session.RepairGenerator()||changed;
             changed=session.LightBeacon()||changed;
-            message=changed?"Objective updated":"Move closer to the objective";
+            message=changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
+                "Find tools in west shelter (CTRL), and both timber caches":"Move closer to the objective";
         }
         if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
             session.Damage(encounter.Tick(session.feet,dt,in.Pressed('F') && !motion.dashing));
@@ -326,6 +345,18 @@ public:
             scene.Box(Mistwatch::Session::supplies[i]+Vec3{0,.4f,0},{.8f,.8f,.8f},{.7f,.45f,.12f,1});
         if(session.bridgeRepaired) scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
         else scene.Box(Mistwatch::Session::bridge+Vec3{1,.35f,0},{1,.7f,1},{.3f,.12f,.08f,1});
+        for(const auto solid:Mistwatch::RepairShelterSolids())scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
+        for(unsigned site=0;site<3;++site) {
+            const auto point=Mistwatch::Session::repairSites[site];
+            if(site==0)scene.Box(point+Vec3{0,.49f,0},{.5f,.06f,.3f},(session.repairMaterials&1)?Color{.3f,.3f,.25f,1}:Color{.82f,.65f,.15f,1});
+            if(session.repairMaterials&(1u<<site))continue;
+            if(site!=0)for(unsigned beam=0;beam<3;++beam)
+                scene.Mesh(propMeshes[3],{point+Vec3{0,.18f+.22f*float(beam),0},{0,0,1.5707963f},{.22f,1.8f,.22f}},woodMaterial);
+            // 小型路標讓材料位置可辨識，不用懸浮的大型目標方塊遮住場景。
+            const auto sign=point+Vec3{site==0?2.8f:1.3f,0,0};
+            scene.MaterialBox(sign+Vec3{0,.6f,0},{.12f,1.2f,.12f},woodMaterial);
+            scene.Box(sign+Vec3{0,1.12f,0},{.7f,.34f,.1f},{.78f,.58f,.15f,1});
+        }
         if(!session.guardianDefeated) scene.Box(encounter.feet+Vec3{0,.8f,0},{1,1.6f,1},
             encounter.phase==Mistwatch::EnemyPhase::Windup?Color{1,.6f,.1f,1}:Color{.5f,.12f,.08f,1});
         if(session.CurrentStage()==Mistwatch::Stage::Encounter && encounter.phase==Mistwatch::EnemyPhase::Windup) {
@@ -354,6 +385,7 @@ public:
         if(diagnosticCrown && !capture.empty()) camera=MakeThirdPersonCamera({-7,6,-5},0,.1f,8);
         // 遠景只用於地形影像驗收，不改變玩家可操作鏡頭的距離上限。
         if(captureRiverOverview && !capture.empty()) {camera.position={-22,28,8};camera.target={0,-2,36};}
+        if(captureShelterOverview && !capture.empty()) {camera.position={-3,1.1f,17};camera.target={-7.25f,.7f,18};}
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
         draw.SetWaterSurface(Mistwatch::RiverSurface());
@@ -368,7 +400,7 @@ public:
         if(!draw.SkinnedMeshInstance(explorerMesh.handle,palette,CreateTransformMatrix(session.feet,{0,explorer.yaw,0},{1,1,1})))
             throw std::runtime_error("Explorer skin submission failed");
         draw.Quad({640,38},{1280,76},{.02f,.04f,.04f,.9f});
-        constexpr const char* objectives[]{"Find three supply crates","Repair the bridge [E]","Evade guardian strikes [Q], then counter [F]","Search the west workshop for a fuse [E]","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
+        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade guardian strikes [Q], then counter [F]","Search the west workshop for a fuse [E]","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
         draw.Text({20,12},"MISTWATCH - playable blockout",2.5f,{.8f,.95f,.85f,1});
         draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume":!session.Alive()?"Expedition failed - R to retry":objectives[unsigned(session.CurrentStage())],2.f,{1,1,1,1});
         const unsigned supplies=unsigned(bool(session.collected&1))+unsigned(bool(session.collected&2))+unsigned(bool(session.collected&4));
@@ -376,7 +408,22 @@ public:
         std::string context="Supplies "+std::to_string(supplies)+" / 3";
         if(session.CurrentStage()==Mistwatch::Stage::Supplies) {
             for(unsigned i=0;i<3;++i) if(!(session.collected&(1u<<i)) && session.Near(Mistwatch::Session::supplies[i])) context+=" | E: collect nearby supplies";
-        } else if(session.CurrentStage()==Mistwatch::Stage::Bridge && session.Near(Mistwatch::Session::bridge)) context+=" | E: repair bridge";
+        } else if(session.CurrentStage()==Mistwatch::Stage::RepairMaterials) {
+            context="Repair kit: ";
+            context+=(session.repairMaterials&1)?"tools OK":"tools missing";
+            const unsigned timber=unsigned(bool(session.repairMaterials&2))+unsigned(bool(session.repairMaterials&4));
+            context+=" | Timber "+std::to_string(timber)+" / 2";
+            unsigned next=0;float nearest=10000.f;
+            for(unsigned site=0;site<3;++site)if(!(session.repairMaterials&(1u<<site))) {
+                const auto point=Mistwatch::Session::repairSites[site];
+                const auto distance=std::hypot(point.x-session.feet.x,point.z-session.feet.z);
+                if(distance<nearest){nearest=distance;next=site;}
+            }
+            constexpr const char* names[]{"west shelter tools - CTRL crouch inside","south-east timber","west-bank timber"};
+            draw.Quad({640,565},{1280,42},{.02f,.04f,.04f,.85f});
+            draw.Text({20,555},std::string("Nearest: ")+names[next]+" | "+std::to_string(unsigned(nearest))+" m | E: collect",1.5f,{.7f,1,.7f,1});
+        }
+        else if(session.CurrentStage()==Mistwatch::Stage::Bridge && session.Near(Mistwatch::Session::bridge)) context+=" | Tools and timber ready | E: repair bridge";
         else if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
             context+=" | Guardian HP "+std::to_string(encounter.health)+" / 3";
             context+=encounter.phase==Mistwatch::EnemyPhase::Recovery?" | F: counter once":" | Wait for a counter opening";
