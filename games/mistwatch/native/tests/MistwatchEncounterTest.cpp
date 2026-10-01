@@ -49,5 +49,14 @@ int main(){
     const auto before=enemy.phaseTime;
     enemy.Tick(player,std::numeric_limits<float>::quiet_NaN(),true);
     if(enemy.phaseTime!=before)return 11;
+    enemy={};player={0,0,43};unsigned windups=0;
+    for(unsigned tick=0;tick<300;++tick) {
+        enemy.Tick(player,1.f/60.f,false);
+        if(enemy.phase==Mistwatch::EnemyPhase::Windup)++windups;
+    }
+    if(!windups) {
+        std::cerr<<"FIRST_DIVERGENCE: pursuit stalls outside attack trigger at distance "
+            <<std::hypot(player.x-enemy.feet.x,player.z-enemy.feet.z)<<'\n';return 14;
+    }
     std::cout<<"Fixed strike target, recovery-only counter, one hit per opening and defeat PASS\n";
 }

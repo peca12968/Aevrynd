@@ -35,7 +35,8 @@ struct Encounter {
             // 蓄力起點鎖定攻擊區域，與畫面預警圈共用位置和半徑。
             phase=EnemyPhase::Windup;phaseTime=WindupDuration;strikeTarget=player;countered=false;
         } else if(distance>2.2f && distance<10.f && player.z>=42.f && player.z<=56.f) {
-            const float step=std::min(2.f*dt,distance-2.2f);
+            // 追擊落點留在觸發距離內，避免尾端步長小於 float ULP 而卡在 2.2 公尺外。
+            const float step=std::min(2.f*dt,distance-2.f);
             feet.x+=(player.x-feet.x)/distance*step;
             feet.z+=(player.z-feet.z)/distance*step;
         }

@@ -6,6 +6,8 @@
 #include "MistwatchForestMaterial.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
+#include "MistwatchBoar.h"
+#include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/CharacterController3D.h>
@@ -48,6 +50,9 @@ class MistwatchGame final : public IGame {
     Mistwatch::Explorer explorer;
     SkinnedMeshResource3D explorerMesh;
     SkinningWorkspace3D explorerSkinning;
+    Mistwatch::Boar boar;
+    SkinnedMeshResource3D boarMesh;
+    SkinningWorkspace3D boarSkinning;
     bool started{}, paused{};
     std::string message="ENTER: begin expedition";
     std::filesystem::path save;
@@ -58,6 +63,8 @@ class MistwatchGame final : public IGame {
     bool diagnosticNoAo{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
+    bool captureWildlife{};
+    bool captureBoarOverview{};
     bool captureRiverOverview{};
     bool captureShelterOverview{};
     Camera3D lastRenderedCamera{};
@@ -71,6 +78,11 @@ class MistwatchGame final : public IGame {
         controller.SetHeight(1.4f);
         controller.TrySetHeight(1.8f,solids);
     }
+    void ResetBoarPose() {
+        boar.initialized=false;
+        if(!boar.Update({},0,encounter.phase,(std::max)(0.f,encounter.phaseTime),{0,0,-1})||
+            !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar reset pose failed");
+    }
     std::filesystem::path CapturePath()const {
         if(!captureSequenceFrames)return capture;
         const auto ordinal=std::to_wstring(captureCompleted);
@@ -78,6 +90,12 @@ class MistwatchGame final : public IGame {
     }
 public:
     void OnStart(Engine& e) override {
+        const auto wildlife=LoadSkinnedModelAssetFile(e.ExecutableDirectory()/"assets"/"mistwatch-wildlife"/"boar.aeskin");
+        if(!wildlife||wildlife.model.skeleton.joints.size()!=16||
+            wildlife.model.bindMesh.indices!=boar.model.bindMesh.indices)throw std::runtime_error("Boar asset unavailable or incompatible");
+        boar.model=wildlife.model;
+        boarMesh=e.CreateSkinnedMeshResource3D(boar.model);
+        if(!boarMesh)throw std::runtime_error("Boar GPU upload failed");
         if(!explorer.model.Valid())throw std::runtime_error("Explorer model invalid");
         explorerMesh=e.CreateSkinnedMeshResource3D(explorer.model);
         if(!explorerMesh)throw std::runtime_error("Explorer GPU upload failed");
@@ -179,7 +197,11 @@ public:
                 if(name==L"panel") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 0 3";
                 else if(name==L"powered") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 1 7";
                 else if(name==L"complete") fixture="MISTWATCH 3 7 80 1 1 1 0 0 69 1 1 7";
-                else if(name==L"strike") fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";
+                else if(name==L"strike"||name==L"boar-recovery"||name==L"boar-motion"||name==L"boar-profile") {
+                    fixture=name==L"boar-motion"?"MISTWATCH 3 7 100 1 0 0 0 0 43 0 0 0":"MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";
+                    captureWildlife=name==L"boar-motion";
+                    captureBoarOverview=name==L"boar-profile";
+                }
                 else if(name==L"river" || name==L"river-overlook") {
                     fixture="MISTWATCH 3 7 100 0 0 0 0 0 30 0 0 0";
                     captureRiverOverview=name==L"river-overlook";
@@ -210,15 +232,28 @@ public:
                     encounter.Tick(session.feet,1.f/60.f,false);
                     for(unsigned tick=0;tick<4;++tick)encounter.Tick(session.feet,.1f,false);
                 }
+                if(name==L"boar-recovery") {
+                    encounter.Tick(session.feet,1.f/60.f,false);
+                    for(unsigned tick=0;tick<9;++tick)encounter.Tick(session.feet,.1f,false);
+                }
             }
         }
         wchar_t noAo[8]{};
         diagnosticNoAo=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_NO_AO",noAo,8)>0 && noAo[0]==L'1';
         wchar_t crown[8]{};
         diagnosticCrown=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CROWN",crown,8)>0 && crown[0]==L'1';
+        if(!boar.Update({},0,encounter.phase,encounter.phaseTime,session.feet-encounter.feet)||
+            !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar initial pose failed");
     }
     void OnUpdate(Engine& e,float dt) override {
         if(!capture.empty()) {
+            if(captureWildlife&&!capturePending) {
+                const auto previous=encounter.feet;
+                session.Damage(encounter.Tick(session.feet,1.f/60.f,false));
+                const auto look=(encounter.phase==Mistwatch::EnemyPhase::Windup?encounter.strikeTarget:session.feet)-encounter.feet;
+                if(!boar.Update(encounter.feet-previous,1.f/60.f,encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
+                    !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar capture pose failed");
+            }
             if(captureWalk && !capturePending){
                 const auto previous=controller.Position();
                 controller.TrySetHeight(captureCrouch?1.4f:1.8f,solids);
@@ -260,7 +295,9 @@ public:
                     <<"\nfuse_collected="<<session.fuseCollected<<'\n';
                 out<<"understory_ferns="<<understory.ferns.size()<<"\nunderstory_saplings="<<understory.saplings.size()
                     <<"\nsubmitted_ferns="<<submittedFerns<<"\nsubmitted_saplings="<<submittedSaplings<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview)?"diagnostic":"player")
+                out<<"enemy_visual=skinned_boar\nenemy_joints="<<boar.model.skeleton.joints.size()
+                    <<"\nenemy_phase="<<unsigned(encounter.phase)<<"\nenemy_brace="<<boar.brace<<'\n';
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -290,12 +327,12 @@ public:
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(in.Pressed(VK_F9) && !save.empty()) {
             std::ifstream file(save,std::ios::binary);
-            if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};evasion={};message="Loaded";}else message="Save unavailable";
+            if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};ResetBoarPose();evasion={};message="Loaded";}else message="Save unavailable";
         }
         if(in.Pressed('R') && session.beaconLit) {
-            session={};controller.Reset({});solids=Mistwatch::WorldSolids(false);encounter={};evasion={};orbit={};message="New expedition";
+            session={};controller.Reset({});solids=Mistwatch::WorldSolids(false);encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";
         }
-        if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};evasion={};}
+        if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};ResetBoarPose();evasion={};}
         if(!session.Alive() || session.beaconLit) return;
         orbit.Update(in.MouseDown() && in.MouseInsideCanvas()?in.MouseDelta():Vec2{},in.MouseWheel(),float(in.Down(VK_RIGHT))-float(in.Down(VK_LEFT)),dt);
         const float yaw=orbit.yaw;
@@ -337,10 +374,14 @@ public:
                 "Cabinet locked - read ranger log, set dials 1 / 2 / 3":"Move closer to the objective";
         }
         if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
+            const auto previous=encounter.feet;
             session.Damage(encounter.Tick(session.feet,dt,in.Pressed('F') && !motion.dashing));
+            const auto look=(encounter.phase==Mistwatch::EnemyPhase::Windup?encounter.strikeTarget:session.feet)-encounter.feet;
+            if(!boar.Update(encounter.feet-previous,(std::min)(dt,.1f),encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
+                !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar locomotion IK failed");
             if(!encounter.health) session.FinishEncounter(encounter.feet);
             if(encounter.phase==Mistwatch::EnemyPhase::Windup) message="Leave the marked circle - Q: evade";
-            else if(encounter.phase==Mistwatch::EnemyPhase::Recovery) message="Guardian recovering - strike with F";
+            else if(encounter.phase==Mistwatch::EnemyPhase::Recovery) message="Boar recovering - counter with F";
         }
         if(in.Pressed(VK_F5) && !save.empty()) {
             std::error_code error;
@@ -399,8 +440,6 @@ public:
             scene.MaterialBox(sign+Vec3{0,.6f,0},{.12f,1.2f,.12f},woodMaterial);
             scene.Box(sign+Vec3{0,1.12f,0},{.7f,.34f,.1f},{.78f,.58f,.15f,1});
         }
-        if(!session.guardianDefeated) scene.Box(encounter.feet+Vec3{0,.8f,0},{1,1.6f,1},
-            encounter.phase==Mistwatch::EnemyPhase::Windup?Color{1,.6f,.1f,1}:Color{.5f,.12f,.08f,1});
         if(session.CurrentStage()==Mistwatch::Stage::Encounter && encounter.phase==Mistwatch::EnemyPhase::Windup) {
             const float progress=std::clamp(1.f-encounter.phaseTime/Mistwatch::Encounter::WindupDuration,0.f,1.f);
             for(unsigned segment=0;segment<48;++segment) {
@@ -436,6 +475,7 @@ public:
         // 遠景只用於地形影像驗收，不改變玩家可操作鏡頭的距離上限。
         if(captureRiverOverview && !capture.empty()) {camera.position={-22,28,8};camera.target={0,-2,36};}
         if(captureShelterOverview && !capture.empty()) {camera.position={-3,1.1f,17};camera.target={-7.25f,.7f,18};}
+        if(captureBoarOverview && !capture.empty()) {camera.position=encounter.feet+Vec3{3,1.4f,1};camera.target=encounter.feet+Vec3{0,.55f,0};}
         lastRenderedCamera=camera;
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
@@ -447,11 +487,16 @@ public:
         draw.SetExposureCompensation(.5f);
         draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,35,110,true,.0035f,.09f,-2.f,.76f});
         scene.Submit(draw,camera,{1280,720});
+        if(!session.guardianDefeated) {
+            const auto animalPalette=AddSkinPaletteFromPose(draw,boar.model,boar.pose,boarSkinning);
+            if(!draw.SkinnedMeshInstance(boarMesh.handle,animalPalette,CreateTransformMatrix(encounter.feet,{0,boar.yaw,0},{1,1,1})))
+                throw std::runtime_error("Boar skin submission failed");
+        }
         const auto palette=AddSkinPaletteFromPose(draw,explorer.model,explorer.pose,explorerSkinning);
         if(!draw.SkinnedMeshInstance(explorerMesh.handle,palette,CreateTransformMatrix(session.feet,{0,explorer.yaw,0},{1,1,1})))
             throw std::runtime_error("Explorer skin submission failed");
         draw.Quad({640,38},{1280,76},{.02f,.04f,.04f,.9f});
-        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade guardian strikes [Q], then counter [F]","Investigate north ranger hut, unlock west workshop cabinet","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
+        constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade wild boar strikes [Q], then counter [F]","Investigate north ranger hut, unlock west workshop cabinet","Repair the east generator [E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
         draw.Text({20,12},"MISTWATCH - playable blockout",2.5f,{.8f,.95f,.85f,1});
         draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume":!session.Alive()?"Expedition failed - R to retry":objectives[unsigned(session.CurrentStage())],2.f,{1,1,1,1});
         const unsigned supplies=unsigned(bool(session.collected&1))+unsigned(bool(session.collected&2))+unsigned(bool(session.collected&4));
@@ -476,7 +521,7 @@ public:
         }
         else if(session.CurrentStage()==Mistwatch::Stage::Bridge && session.Near(Mistwatch::Session::bridge)) context+=" | Tools and timber ready | E: repair bridge";
         else if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
-            context+=" | Guardian HP "+std::to_string(encounter.health)+" / 3";
+            context+=" | Wild boar HP "+std::to_string(encounter.health)+" / 3";
             context+=encounter.phase==Mistwatch::EnemyPhase::Recovery?" | F: counter once":" | Wait for a counter opening";
             context+=evasion.cooldown>0?" | Q recharging":" | Q ready";
         }
