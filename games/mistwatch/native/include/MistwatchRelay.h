@@ -17,7 +17,7 @@ inline Aevrynd::Mesh3D CreateRelayDish() {
     Mesh3D mesh;
     const auto vertex=[&](Vec3 p){
         const auto normal=Normalize(Vec3{-1.454545f*p.x,-1.454545f*p.y,1});
-        mesh.vertices.push_back({p.x,p.y,p.z,PackColorRgba8({.72f,.76f,.73f,1}),PackNormalSnorm8(normal),0,0});
+        mesh.vertices.push_back({p.x,p.y,p.z,PackNormalSnorm8(normal),PackColorRgba8({.72f,.76f,.73f,1}),0,0});
     };
     vertex({0,0,-.22f});
     for(unsigned ring=0;ring<4;++ring)for(unsigned slice=0;slice<16;++slice) {

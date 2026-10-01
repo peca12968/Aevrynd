@@ -40,6 +40,8 @@ try {
         foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0'){throw ('GPU debug errors: '+$case)}
+        if($receipt.landscape_vertices -ne '25480' -or $receipt.landscape_triangles -ne '49000' -or
+           $receipt.landscape_trees -ne '520'){throw ('Missing landscape geography or distant forest: '+$case)}
         if($receipt.enemy_visual -ne 'skinned_boar' -or $receipt.enemy_joints -ne '16'){throw ('Missing skinned wildlife: '+$case)}
         if($case -eq 'strike' -and ($receipt.enemy_phase -ne '1' -or [double]$receipt.enemy_brace -lt .4)){throw 'Missing windup posture fixture'}
         if($case -eq 'boar-recovery' -and ($receipt.enemy_phase -ne '2' -or [double]$receipt.enemy_brace -ne 0)){throw 'Missing recovery posture fixture'}

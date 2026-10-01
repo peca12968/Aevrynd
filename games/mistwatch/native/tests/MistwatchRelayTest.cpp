@@ -96,6 +96,12 @@ int main() {
         if(!game.Restore(legacy)||game.CurrentStage()!=Stage::Complete||game.relayLinked!=7||!game.Valid())return 27;
     const auto dish=CreateRelayDish();
     if(dish.vertices.size()!=65||dish.indices.size()!=336)return 28;
+    for(const auto& vertex:dish.vertices) {
+        const auto normal=Aevrynd::UnpackNormalSnorm8(vertex.normal);
+        if(normal.z<=0||std::abs(Aevrynd::Length(Aevrynd::Vec3{normal.x,normal.y,normal.z})-1.f)>.02f)return 33;
+        const auto color=Aevrynd::UnpackColorRgba8(vertex.color);
+        if(color.r<.70f||color.r>.74f||color.g<.74f||color.g>.78f||color.b<.71f||color.b>.75f)return 34;
+    }
     for(unsigned i=0;i<dish.indices.size();i+=3) {
         const auto& a=dish.vertices[dish.indices[i]];const auto& b=dish.vertices[dish.indices[i+1]];const auto& c=dish.vertices[dish.indices[i+2]];
         const auto normal=Aevrynd::Cross(Aevrynd::Vec3{b.x-a.x,b.y-a.y,b.z-a.z},Aevrynd::Vec3{c.x-a.x,c.y-a.y,c.z-a.z});

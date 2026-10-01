@@ -7,6 +7,7 @@
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
+#include "MistwatchLandscape.h"
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
@@ -27,10 +28,13 @@ class MistwatchGame final : public IGame {
     Scene3D scene;
     MeshResource3D box;
     std::array<MeshResource3D,4> firMeshes;
+    std::array<MeshResource3D,4> landscapeFirMeshes;
     std::array<Material3D,4> firMaterials;
     MaterialLibrary3D forestMaterials;
     HeightField3D terrain;
     MeshResource3D terrainMesh;
+    MeshResource3D landscapeMesh;
+    std::vector<Transform3D> landscapeTrees;
     MeshResource3D riverMesh;
     float waterTime{};
     std::vector<Vec3> trees;
@@ -67,6 +71,7 @@ class MistwatchGame final : public IGame {
     bool captureWildlife{};
     bool captureBoarOverview{};
     bool captureRelayMotion{};
+    bool captureLandscapeMotion{};
     bool captureRiverOverview{};
     bool captureShelterOverview{};
     Camera3D lastRenderedCamera{};
@@ -153,9 +158,17 @@ public:
             if(!loaded) throw std::runtime_error("Fir mesh unavailable");
             firMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
             if(!firMeshes[slot]) throw std::runtime_error("Fir GPU upload failed");
+            const std::string distantName="fir-tree-01-c-lod2-node0-mesh0-primitive"+std::to_string(slot)+"-material"+std::to_string(slot)+"-fir-tree-01-"+name+".aemesh";
+            const auto distant=LoadAevryndMeshFile(forestRoot/"meshes"/distantName);
+            if(!distant)throw std::runtime_error("Landscape fir mesh unavailable");
+            landscapeFirMeshes[slot]=e.CreateMeshResource3D(distant.mesh);
+            if(!landscapeFirMeshes[slot])throw std::runtime_error("Landscape fir GPU upload failed");
         }
         terrain=Mistwatch::CreateTerrain();
         terrainMesh=e.CreateMeshResource3D(Mistwatch::CreateTerrainMesh(terrain));
+        landscapeMesh=e.CreateMeshResource3D(Mistwatch::CreateLandscapeMesh(terrain));
+        if(!landscapeMesh)throw std::runtime_error("Landscape GPU upload failed");
+        landscapeTrees=Mistwatch::LandscapeTrees(terrain);
         riverMesh=e.CreateMeshResource3D(Mistwatch::CreateRiverMesh(terrain));
         if(!riverMesh)throw std::runtime_error("River GPU upload failed");
         trees=Mistwatch::TreePositions();
@@ -201,9 +214,10 @@ public:
                 if(name==L"panel") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 0 3";
                 else if(name==L"powered") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 1 7";
                 else if(name==L"complete") fixture="MISTWATCH 3 7 80 1 1 1 0 0 69 1 1 7";
-                else if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn") {
+                else if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
                     fixture="MISTWATCH 5 7 80 1 1 0 0 0 65 1 1 7 7 1 50";
                     captureRelayMotion=name==L"relay-turn";
+                    captureLandscapeMotion=name==L"ridge-pan";
                 }
                 else if(name==L"strike"||name==L"boar-recovery"||name==L"boar-motion"||name==L"boar-profile") {
                     fixture=name==L"boar-motion"?"MISTWATCH 3 7 100 1 0 0 0 0 43 0 0 0":"MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";
@@ -223,7 +237,7 @@ public:
                 else if(name==L"walk" || name==L"crouch") {captureWalk=true;captureCrouch=name==L"crouch";}
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
-                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn") {
+                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
                     session.feet=Mistwatch::Session::relaySites[0]+Vec3{1.15f,0,0};
                     session.feet.y=terrain.SampleHeight(session.feet.x,session.feet.z);
                     if(name==L"relay-aligned"||name==L"relay-linked") {
@@ -245,7 +259,7 @@ public:
                 if(name==L"river") {orbit.yaw=.5f;orbit.pitch=1.f;orbit.distance=10.f;}
                 if(name==L"settlement-clue" || name==L"settlement-clue-read")orbit.yaw=-1.25f;
                 if(name==L"fuse-lock-wrong" || name==L"fuse-lock-ready")orbit.yaw=1.25f;
-                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn")orbit.yaw=1.25f;
+                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan")orbit.yaw=1.25f;
                 if(name==L"strike") {
                     encounter.Tick(session.feet,1.f/60.f,false);
                     for(unsigned tick=0;tick<4;++tick)encounter.Tick(session.feet,.1f,false);
@@ -317,6 +331,8 @@ public:
                     <<"\nenemy_phase="<<unsigned(encounter.phase)<<"\nenemy_brace="<<boar.brace<<'\n';
                 out<<"relay_linked="<<session.relayLinked<<"\nrelay_sectors="<<session.relaySectors
                     <<"\nrelay_target_west="<<Mistwatch::Session::RelayTargetSector(0)<<"\nrelay_signal_west="<<session.RelaySignal(0)<<'\n';
+                out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
+                    <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
                 out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
@@ -336,6 +352,7 @@ public:
                     // 固定按鍵輸入展示完整一圈，再回到訊號方向；不冒充人工遊玩。
                     if(captureRelayMotion&&captureCompleted<20&&!session.TuneRelay(0,1))throw std::runtime_error("Relay motion input failed");
                     if(captureRelayMotion&&captureCompleted==20&&!session.ConnectRelay(0))throw std::runtime_error("Relay motion link failed");
+                    if(captureLandscapeMotion)orbit.yaw=1.25f+float(captureCompleted)*6.2831853f/36.f;
                 }
             }
             // GPU 驗證會插入額外 shader 檢查；診斷等待不作為正式效能數據。
@@ -424,6 +441,10 @@ public:
     void OnRender(Engine& e,float) override {
         scene.Clear();
         scene.Mesh(terrainMesh,{},groundMaterial);
+        scene.Mesh(landscapeMesh,{},groundMaterial);
+        // 背景林使用既有 CC0 冷杉最低網格細節；不加入任務區的角色碰撞體。
+        for(const auto& tree:landscapeTrees)for(unsigned slot=0;slot<4;++slot)
+            scene.Mesh(landscapeFirMeshes[slot],tree,firMaterials[slot]);
         scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
         for(const auto tree:trees) {
             for(unsigned slot=0;slot<4;++slot)
@@ -531,7 +552,7 @@ public:
         if(diagnosticNoAo) draw.SetAmbientOcclusion({false});
         draw.SetDirectionalLight({{.4f,-.85f,.3f},.55f,{1.f,.95f,.85f,1},1.5f});
         draw.SetExposureCompensation(.5f);
-        draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,35,110,true,.0035f,.09f,-2.f,.76f});
+        draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,45,200,true,.0025f,.09f,-2.f,.76f});
         scene.Submit(draw,camera,{1280,720});
         if(!session.guardianDefeated) {
             const auto animalPalette=AddSkinPaletteFromPose(draw,boar.model,boar.pose,boarSkinning);
@@ -622,7 +643,7 @@ public:
            (!captureBenchmark || benchmarkGpuMilliseconds.size()==120))
             capturePending=e.CaptureNextFrame3D(CapturePath());
     }
-    void OnStop(Engine& e) override {scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
+    void OnStop(Engine& e) override {scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
 };
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
     try {
