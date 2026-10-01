@@ -8,6 +8,7 @@
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
 #include "MistwatchLandscape.h"
+#include "MistwatchAudio.h"
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
@@ -59,6 +60,8 @@ class MistwatchGame final : public IGame {
     SkinnedMeshResource3D boarMesh;
     SkinningWorkspace3D boarSkinning;
     bool started{}, paused{};
+    Mistwatch::GameAudio gameAudio;
+    std::filesystem::path audioSettings;
     std::string message="ENTER: begin expedition";
     std::filesystem::path save;
     std::filesystem::path capture;
@@ -72,6 +75,8 @@ class MistwatchGame final : public IGame {
     bool captureBoarOverview{};
     bool captureRelayMotion{};
     bool captureLandscapeMotion{};
+    bool captureAudioProbe{};
+    unsigned captureAudioTicks{};
     bool captureRiverOverview{};
     bool captureShelterOverview{};
     Camera3D lastRenderedCamera{};
@@ -84,6 +89,32 @@ class MistwatchGame final : public IGame {
         // 讀檔／重試時先採低姿，再嘗試站起，避免載入棚內存檔後頭部穿過屋頂。
         controller.SetHeight(1.4f);
         controller.TrySetHeight(1.8f,solids);
+        gameAudio.director.Reset();
+    }
+    void TickAudio(Engine& e,float dt) {
+        Mistwatch::AudioState state;
+        state.session=session;state.enemyPhase=encounter.phase;state.enemyHealth=encounter.health;state.enemyFeet=encounter.feet;
+        state.active=started&&!paused&&session.Alive();state.grounded=controller.Grounded();state.crouched=controller.Settings().height<1.5f;
+        const auto listener=lastRenderedCamera.position;
+        const auto right=Mistwatch::AudioListenerRight(lastRenderedCamera);
+        gameAudio.Tick(e.Audio(),state,listener,right,dt);
+    }
+    void SaveAudioOptions() {
+        if(audioSettings.empty())return;
+        std::error_code error;std::filesystem::create_directories(audioSettings.parent_path(),error);
+        auto temporary=audioSettings;temporary+=".tmp";
+        std::ofstream out(temporary);out<<gameAudio.options.Serialize();out.close();
+        if(!out||!MoveFileExW(temporary.c_str(),audioSettings.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))message="Audio settings save failed";
+    }
+    void StopGameAudio(Engine& e) {
+        gameAudio.Shutdown(e.Audio());
+        const auto stats=e.Audio().GetStats();
+        if(stats.residentSounds||stats.residentBytes||stats.activeVoices)throw std::runtime_error("Game audio resources not released");
+        if(!capture.empty()) {
+            auto receipt=capture;receipt+=".audio-cleanup.txt";
+            std::ofstream out(receipt);out<<"sounds=0\nbytes=0\nvoices=0\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Audio cleanup receipt failed");
+        }
     }
     void ResetBoarPose() {
         boar.initialized=false;
@@ -234,7 +265,7 @@ public:
                 else if(name==L"settlement-clue-read") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 1 0";
                 else if(name==L"fuse-lock-wrong") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 0";
                 else if(name==L"fuse-lock-ready") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 50";
-                else if(name==L"walk" || name==L"crouch") {captureWalk=true;captureCrouch=name==L"crouch";}
+                else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
                 if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
@@ -276,9 +307,18 @@ public:
         diagnosticCrown=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CROWN",crown,8)>0 && crown[0]==L'1';
         if(!boar.Update({},0,encounter.phase,encounter.phaseTime,session.feet-encounter.feet)||
             !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar initial pose failed");
+        if(capture.empty()&&!save.empty()) {
+            audioSettings=save.parent_path()/"audio-settings.txt";
+            std::ifstream file(audioSettings);std::string line;
+            if(std::getline(file,line))gameAudio.options.Restore(line);
+        }
+        // 自動影像驗證靜音，不寫玩家音量設定；播放收據仍記錄真實裝置與 voice 結果。
+        if(!capture.empty())gameAudio.options.muted=true;
+        gameAudio.Initialize(e.Audio());
     }
     void OnUpdate(Engine& e,float dt) override {
         if(!capture.empty()) {
+            if(captureAudioProbe&&!capturePending){++captureAudioTicks;paused=captureAudioTicks>=60&&captureAudioTicks<80;}
             if(captureWildlife&&!capturePending) {
                 const auto previous=encounter.feet;
                 session.Damage(encounter.Tick(session.feet,1.f/60.f,false));
@@ -286,15 +326,17 @@ public:
                 if(!boar.Update(encounter.feet-previous,1.f/60.f,encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
                     !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar capture pose failed");
             }
-            if(captureWalk && !capturePending){
+            if(captureWalk && !capturePending&&!paused&&(!captureAudioProbe||captureAudioTicks<=180)){
                 const auto previous=controller.Position();
                 controller.TrySetHeight(captureCrouch?1.4f:1.8f,solids);
-                controller.Step({{0,0,1},false,captureCrouch?.45f:1.f},solids,terrain,1.f/60.f);
+                controller.Step({{captureAudioProbe?.55f:0.f,0,1},false,captureCrouch?.45f:1.f},solids,terrain,1.f/60.f);
                 session.feet=controller.Position();
                 explorer.Update(session.feet-previous,1.f/60.f,captureCrouch);
                 if(!explorer.PlaceFeet(session.feet,controller.Grounded(),captureCrouch,terrain,solids))
                     throw std::runtime_error("Capture locomotion IK failed");
+                if(captureAudioProbe)for(unsigned index=0;index<3;++index)session.Collect(index);
             }
+            if(captureAudioProbe)TickAudio(e,1.f/60.f);
             const auto stats=e.GetRendererStats();
             // 排除啟動前六十幀；僅採用已完成且序號不重複的 GPU timestamp 收據。
             const auto& timing=stats.lastCompletedGpuTimingReceipt;
@@ -333,6 +375,13 @@ public:
                     <<"\nrelay_target_west="<<Mistwatch::Session::RelayTargetSector(0)<<"\nrelay_signal_west="<<session.RelaySignal(0)<<'\n';
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
+                const auto audio=e.Audio().GetStats();
+                std::uint64_t steps{};for(unsigned i=0;i<6;++i)steps+=gameAudio.requests[i];
+                out<<"audio_device="<<audio.deviceAvailable<<"\naudio_sounds="<<audio.residentSounds
+                    <<"\naudio_bytes="<<audio.residentBytes<<"\naudio_plays="<<audio.successfulPlays<<"\naudio_dropped="<<audio.droppedPlays
+                    <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
+                    <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
+                    <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
                 out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
@@ -365,17 +414,22 @@ public:
         auto& in=e.GetInput();
         if(in.Pressed(VK_ESCAPE)) paused=!paused;
         if(in.Pressed(VK_RETURN)) started=true;
-        if(!started || paused) return;
+        bool changedAudio=false;
+        if(in.Pressed('M')){gameAudio.options.muted=!gameAudio.options.muted;changedAudio=true;}
+        if(in.Pressed(VK_PRIOR)){gameAudio.options.volume=std::clamp(gameAudio.options.volume+.1f,0.f,1.f);changedAudio=true;}
+        if(in.Pressed(VK_NEXT)){gameAudio.options.volume=std::clamp(gameAudio.options.volume-.1f,0.f,1.f);changedAudio=true;}
+        if(changedAudio){e.Audio().SetMasterVolume(gameAudio.options.Gain());SaveAudioOptions();}
+        if(!started || paused){TickAudio(e,dt);return;}
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(in.Pressed(VK_F9) && !save.empty()) {
             std::ifstream file(save,std::ios::binary);
             if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};ResetBoarPose();evasion={};message="Loaded";}else message="Save unavailable";
         }
         if(in.Pressed('R') && session.beaconLit) {
-            session={};controller.Reset({});solids=Mistwatch::WorldSolids(false);encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";
+            session={};controller.Reset({});gameAudio.director.Reset();solids=Mistwatch::WorldSolids(false);encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";
         }
         if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};ResetBoarPose();evasion={};}
-        if(!session.Alive() || session.beaconLit) return;
+        if(!session.Alive() || session.beaconLit){TickAudio(e,dt);return;}
         orbit.Update(in.MouseDown() && in.MouseInsideCanvas()?in.MouseDelta():Vec2{},in.MouseWheel(),float(in.Down(VK_RIGHT))-float(in.Down(VK_LEFT)),dt);
         const float yaw=orbit.yaw;
         const float x=float(in.Down('D'))-float(in.Down('A'));
@@ -396,7 +450,7 @@ public:
         explorer.Update(session.feet-previousFeet,dt,crouched);
         if(!explorer.PlaceFeet(session.feet,controller.Grounded(),crouched,terrain,solids))
             throw std::runtime_error("Explorer foot IK failed");
-        if(session.feet.y < -5.f) {session.Damage(100);message="Fell into the ravine - R to retry";return;}
+        if(session.feet.y < -5.f) {session.Damage(100);message="Fell into the ravine - R to retry";TickAudio(e,dt);return;}
         for(unsigned lever=0;lever<3;++lever)if(in.Pressed('1'+lever)) {
             if(session.CurrentStage()==Mistwatch::Stage::Relays) {
                 for(unsigned index=0;index<3;++index)if(lever<2&&session.TuneRelay(index,lever==0?-1:1))message="Antenna rotated - find the green signal lock, then E";
@@ -437,6 +491,7 @@ public:
             std::ofstream out(temporary); out<<session.Serialize(); out.close();
             message=out && MoveFileExW(temporary.c_str(),save.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)?"Saved":"Save failed";
         }
+        TickAudio(e,dt);
     }
     void OnRender(Engine& e,float) override {
         scene.Clear();
@@ -565,7 +620,9 @@ public:
         draw.Quad({640,38},{1280,76},{.02f,.04f,.04f,.9f});
         constexpr const char* objectives[]{"Find three supply crates","Find shelter tools and two timber caches [E]","Repair the bridge [E]","Evade wild boar strikes [Q], then counter [F]","Investigate north ranger hut, unlock west workshop cabinet","Repair the east generator [E]","Restore three ridge radio relays [1 / 2 / E]","Light the rescue beacon [E]","Expedition complete - R for a new expedition"};
         draw.Text({20,12},"MISTWATCH - playable blockout",2.5f,{.8f,.95f,.85f,1});
-        draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume":!session.Alive()?"Expedition failed - R to retry":objectives[unsigned(session.CurrentStage())],2.f,{1,1,1,1});
+        draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume | M mute, PgUp/PgDn volume":!session.Alive()?"Expedition failed - R to retry":objectives[unsigned(session.CurrentStage())],2.f,{1,1,1,1});
+        if(!started||paused)draw.Text({20,90},std::string(e.Audio().GetStats().deviceAvailable?"AUDIO ":"AUDIO DEVICE UNAVAILABLE | ")+
+            (gameAudio.options.muted?"MUTED":std::to_string(unsigned(gameAudio.options.volume*100+.5f))+"%")+" | M mute | PgUp/PgDn volume",1.5f,{1,1,1,1});
         const unsigned supplies=unsigned(bool(session.collected&1))+unsigned(bool(session.collected&2))+unsigned(bool(session.collected&4));
         draw.Quad({640,618},{1280,42},{.02f,.04f,.04f,.85f});
         std::string context="Supplies "+std::to_string(supplies)+" / 3";
@@ -640,10 +697,11 @@ public:
         draw.Text({20,655},"WASD move | SHIFT run | SPACE jump | CTRL crouch | Q evade | E use | F counter | Drag / wheel camera",1.5f,{1,1,1,1});
         draw.Text({20,682},"F5 save / F9 load | HP "+std::to_string(session.health)+" | "+message,1.5f,{1,1,1,1});
         if(!capture.empty() && !capturePending && ++captureFrames>=45 &&
+           (!captureAudioProbe||captureAudioTicks>=180) &&
            (!captureBenchmark || benchmarkGpuMilliseconds.size()==120))
             capturePending=e.CaptureNextFrame3D(CapturePath());
     }
-    void OnStop(Engine& e) override {scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
+    void OnStop(Engine& e) override {StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
 };
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
     try {

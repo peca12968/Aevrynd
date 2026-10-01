@@ -15,7 +15,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -38,8 +38,16 @@ try {
         if(-not (Test-Path -LiteralPath $capture) -or -not (Test-Path -LiteralPath $receiptPath)){throw ('Missing native evidence: '+$case)}
         $receipt=@{}
         foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
+        $cleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.audio-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$cleanup[$pair[0]]=$pair[1]}}
+        if($cleanup.cleanup -ne 'success' -or $cleanup.sounds -ne '0' -or $cleanup.bytes -ne '0' -or $cleanup.voices -ne '0'){throw ('Audio resources leaked: '+$case)}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0'){throw ('GPU debug errors: '+$case)}
+        if($receipt.audio_sounds -ne '14' -or [long]$receipt.audio_bytes -le 0 -or [long]$receipt.audio_bytes -gt 1000000 -or $receipt.audio_master -ne '0'){throw ('Audio bank missing or automated capture not muted: '+$case)}
+        if($case -eq 'audio-check' -and ($receipt.audio_device -ne '1' -or [long]$receipt.audio_plays -lt 10 -or
+            [long]$receipt.audio_step_requests -lt 8 -or [long]$receipt.audio_interact_requests -lt 1 -or
+            $receipt.audio_wind_requests -ne '2' -or [long]$receipt.audio_probe_ticks -lt 180 -or
+            $receipt.audio_dropped -ne '0' -or [long]$receipt.audio_peak_voices -gt 8 -or $receipt.camera_source -ne 'player')){throw 'Native audio walk/collect/pause-resume playback not proven'}
         if($receipt.landscape_vertices -ne '25480' -or $receipt.landscape_triangles -ne '49000' -or
            $receipt.landscape_trees -ne '520'){throw ('Missing landscape geography or distant forest: '+$case)}
         if($receipt.enemy_visual -ne 'skinned_boar' -or $receipt.enemy_joints -ne '16'){throw ('Missing skinned wildlife: '+$case)}
