@@ -25,5 +25,22 @@ int main(){
     if(!Near(travel(60,0),6,.03f)||!Near(travel(60,-2),6,.03f)||!Near(travel(60,(std::numeric_limits<float>::quiet_NaN)()),6,.03f)||!Near(travel(60,(std::numeric_limits<float>::infinity)()),6,.03f)||!Near(travel(60,-(std::numeric_limits<float>::infinity)()),6,.03f)||!Near(travel(60,.01f),1.5f,.03f)||!Near(travel(60,99.f),24.f,.03f)){std::cerr<<"Invalid speed multiplier fallback/clamp changed\n";return 11;}
     CharacterController3D runner;runner.Reset({0,0,0});for(int frame=0;frame<120;++frame)runner.Step({{0,0,1},false,2},colliders,1.f/60.f);if(runner.Position().z>3.56f||runner.Stats().collisions==0){std::cerr<<"Run multiplier bypassed collision\n";return 12;}
     const std::vector<BoxCollider3D> thinWall={{{0,-.5f,0},{20,.5f,20}},{{0,1,1},{2,1,.05f}}};CharacterController3D maximumSpeed;maximumSpeed.Reset({0,0,0});maximumSpeed.Step({{0,0,1},false,4},thinWall,.1f);if(maximumSpeed.Position().z>.501f||maximumSpeed.Stats().collisions==0){std::cerr<<"4x dt-limit thin-wall tunneling\n";return 13;}
-    std::cout<<"steps="<<controller.Stats().steps<<" collisions="<<controller.Stats().collisions<<" landings="<<controller.Stats().landings<<" terrain="<<controller.Stats().terrainContacts<<" cameraDistance="<<Length(camera.position-camera.target)<<'\n';return 0;
+    const std::vector<BoxCollider3D> ceilings={{{0,2.1f,0},{4,.1f,4}},{{0,3.1f,0},{4,.1f,4}}};
+    Camera3D indoor=MakeThirdPersonCamera({0,1,0},.4f,.6f,6);
+    indoor.up={0,1,.1f};indoor.projection.nearPlane=.15f;
+    const auto flat=ConstrainThirdPersonCameraCeiling(indoor,ceilings);
+    if(!Near(flat.position.y,1.8f,1e-5f)||!Near(Length(flat.position-flat.target),6,1e-5f)||
+       !Near(std::atan2(flat.position.x,-flat.position.z),.4f,1e-5f)||flat.projection.nearPlane!=.15f||flat.up.z!=.1f)return 14;
+    const auto unchanged=[&](Camera3D input,std::span<const BoxCollider3D> boxes,float padding=.2f,float margin=.45f){return Length(ConstrainThirdPersonCameraCeiling(input,boxes,padding,margin).position-input.position)<1e-5f;};
+    if(!unchanged(MakeThirdPersonCamera({8,1,0},.4f,.6f,6),ceilings)||
+       !unchanged(MakeThirdPersonCamera({0,4,0},.4f,.6f,6),ceilings)||
+       !unchanged(MakeThirdPersonCamera({0,1,0},.4f,-.2f,6),ceilings)||
+       !unchanged(indoor,ceilings,-1)||!unchanged(indoor,ceilings,.2f,(std::numeric_limits<float>::quiet_NaN)()))return 15;
+    const std::vector<BoxCollider3D> reversed={ceilings[1],ceilings[0]};
+    if(Length(ConstrainThirdPersonCameraCeiling(indoor,reversed).position-flat.position)>1e-5f)return 16;
+    const auto tooClose=ConstrainThirdPersonCameraCeiling(MakeThirdPersonCamera({0,1.95f,0},0,.6f,6),ceilings);
+    if(!Near(tooClose.position.y,1.95f,1e-5f)||!Near(Length(tooClose.position-tooClose.target),6,1e-5f))return 17;
+    const Camera3D vertical{{0,6,0},{0,1,0},{0,1,0},{}};
+    if(!unchanged(vertical,ceilings))return 18;
+    std::cout<<"steps="<<controller.Stats().steps<<" collisions="<<controller.Stats().collisions<<" landings="<<controller.Stats().landings<<" terrain="<<controller.Stats().terrainContacts<<" cameraDistance="<<Length(camera.position-camera.target)<<" ceiling_camera=passed\n";return 0;
 }

@@ -57,6 +57,7 @@ class MistwatchGame final : public IGame {
     bool captureWalk{},captureCrouch{};
     bool captureRiverOverview{};
     bool captureShelterOverview{};
+    Camera3D lastRenderedCamera{};
     bool captureBenchmark{};
     std::uint64_t benchmarkLastSerial{};
     std::vector<double> benchmarkGpuMilliseconds;
@@ -177,7 +178,7 @@ public:
                     fixture="MISTWATCH 3 7 100 0 0 0 0 0 30 0 0 0";
                     captureRiverOverview=name==L"river-overlook";
                 }
-                else if(name==L"repair-shelter") fixture="MISTWATCH 4 7 100 0 0 0 -7.25 0 18 0 0 0 0";
+                else if(name==L"repair-shelter" || name==L"repair-player-camera") fixture="MISTWATCH 4 7 100 0 0 0 -7.25 0 18 0 0 0 0";
                 else if(name==L"repair-ready") fixture="MISTWATCH 4 7 100 0 0 0 0 0 30 0 0 0 7";
                 else if(name==L"walk" || name==L"crouch") {captureWalk=true;captureCrouch=name==L"crouch";}
                 else throw std::runtime_error("Unknown capture scenario");
@@ -185,8 +186,8 @@ public:
                 controller.Reset(session.feet);
                 solids=Mistwatch::WorldSolids(session.bridgeRepaired);
                 ResetController();
-                if(name==L"repair-shelter") {
-                    captureShelterOverview=true;
+                if(name==L"repair-shelter" || name==L"repair-player-camera") {
+                    captureShelterOverview=name==L"repair-shelter";
                     explorer.Update({},1.f/60.f,true);
                     if(!explorer.PlaceFeet(session.feet,true,true,terrain,solids))throw std::runtime_error("Shelter capture IK failed");
                 }
@@ -243,6 +244,10 @@ public:
                     <<"\ngpu_validation_passed="<<stats.gpuValidationPassed<<'\n';
                 out<<"mission_stage="<<unsigned(session.CurrentStage())<<"\nrepair_materials="<<session.repairMaterials
                     <<"\ncharacter_height="<<controller.Settings().height<<'\n';
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview)?"diagnostic":"player")
+                    <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
+                    <<"\ncamera_height="<<lastRenderedCamera.position.y
+                    <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
                 if(captureBenchmark) {
                     auto ordered=benchmarkGpuMilliseconds;std::sort(ordered.begin(),ordered.end());
                     out<<"benchmark_mode=fixed_scene_gpu_only\ngpu_samples="<<ordered.size()
@@ -379,13 +384,12 @@ public:
         scene.Box(generatorSolid.center,generatorSolid.extents*2.f,{.25f,.3f,.28f,1});
         for(unsigned lamp=0;lamp<3;++lamp)
             scene.Box(Mistwatch::Session::generator+Vec3{-.5f+float(lamp)*.5f,1.3f,0},{.2f,.2f,.2f},session.circuit&(1u<<lamp)?Color{.2f,1,.3f,1}:Color{1,.15f,.1f,1});
-        auto camera=MakeThirdPersonCamera(session.feet+Vec3{0,1.2f,0},orbit.yaw,orbit.pitch,orbit.distance);
-        camera=ConstrainThirdPersonCamera(camera,session.feet+Vec3{0,1.2f,0},solids);
-        camera=ConstrainThirdPersonCamera(camera,session.feet+Vec3{0,1.2f,0},terrain);
+        auto camera=Mistwatch::BuildPlayerCamera(session.feet,controller.Settings().height,orbit,solids,terrain);
         if(diagnosticCrown && !capture.empty()) camera=MakeThirdPersonCamera({-7,6,-5},0,.1f,8);
         // 遠景只用於地形影像驗收，不改變玩家可操作鏡頭的距離上限。
         if(captureRiverOverview && !capture.empty()) {camera.position={-22,28,8};camera.target={0,-2,36};}
         if(captureShelterOverview && !capture.empty()) {camera.position={-3,1.1f,17};camera.target={-7.25f,.7f,18};}
+        lastRenderedCamera=camera;
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
         draw.SetWaterSurface(Mistwatch::RiverSurface());

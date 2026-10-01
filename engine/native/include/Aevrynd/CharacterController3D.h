@@ -140,6 +140,8 @@ private:
     bool PreviewDirectDisplacementTickInternal(CharacterDirectDisplacementTick3D,std::span<const BoxCollider3D>,const HeightField3D*,bool,CharacterDirectDisplacementPreviewToken3D&,CharacterDirectDisplacementResult3D*)noexcept;
 };
 
+// 先降低低頂棚下的仰角，再交給既有牆面／地形避障；保留方位、期望距離及投影設定。
+Camera3D ConstrainThirdPersonCameraCeiling(Camera3D camera,std::span<const BoxCollider3D> colliders,float padding=.2f,float footprintMargin=.45f);
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding=.2f);
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding=.2f,uint32_t layerMask=0xffffffffu,uint32_t cameraLayer=1);
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const HeightField3D& terrain,float padding=.2f,unsigned samples=32);

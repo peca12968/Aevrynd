@@ -109,6 +109,27 @@ bool CharacterController3D::TrySetHeight(float height,std::span<const BoxCollide
 }
 bool CharacterController3D::CanRebaseOrigin(Vec3 delta)const noexcept{const Vec3 position=position_-delta;return std::isfinite(delta.x)&&std::isfinite(delta.y)&&std::isfinite(delta.z)&&std::isfinite(position.x)&&std::isfinite(position.y)&&std::isfinite(position.z);}
 void CharacterController3D::RebaseOrigin(Vec3 delta)noexcept{InvalidateDirectPreview(true);position_=position_-delta;}
+Camera3D ConstrainThirdPersonCameraCeiling(Camera3D camera,std::span<const BoxCollider3D> colliders,float padding,float footprintMargin){
+    if(!Finite(camera.position)||!Finite(camera.target)||!std::isfinite(padding)||padding<0||
+       !std::isfinite(footprintMargin)||footprintMargin<0)return camera;
+    const Vec3 offset=camera.position-camera.target;
+    const double horizontal=std::hypot(double(offset.x),double(offset.z));
+    const double distance=std::hypot(horizontal,double(offset.y));
+    if(offset.y<=0||horizontal<=.001||!std::isfinite(distance))return camera;
+    double rise=offset.y;
+    for(const auto& collider:colliders){
+        if(!Finite(collider.center)||!Finite(collider.extents)||collider.extents.x<0||collider.extents.y<0||collider.extents.z<0)continue;
+        const double bottom=double(collider.center.y)-collider.extents.y;
+        if(bottom<=camera.target.y||std::abs(double(camera.target.x)-collider.center.x)>double(collider.extents.x)+footprintMargin||
+           std::abs(double(camera.target.z)-collider.center.z)>double(collider.extents.z)+footprintMargin)continue;
+        rise=(std::min)(rise,(std::max)(0.0,bottom-camera.target.y-padding));
+    }
+    if(rise>=offset.y)return camera;
+    const double scale=std::sqrt((std::max)(0.0,distance*distance-rise*rise))/horizontal;
+    const Vec3 candidate=camera.target+Vec3{float(double(offset.x)*scale),float(rise),float(double(offset.z)*scale)};
+    if(Finite(candidate))camera.position=candidate;
+    return camera;
+}
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);float nearest=desiredDistance;for(const BoxCollider3D& collider:colliders){float distance{};if(RayIntersectsAabb(ray,collider.center,collider.extents,nearest,&distance))nearest=(std::min)(nearest,(std::max)(.1f,distance-(std::max)(0.f,padding)));}camera.position=target+ray.direction*nearest;camera.target=target;return camera;}
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding,uint32_t layerMask,uint32_t cameraLayer){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);const CollisionRayHit3D hit=world.Raycast(ray,desiredDistance,{layerMask,cameraLayer,false});if(hit)camera.position=target+ray.direction*(std::max)(.1f,hit.distance-(std::max)(0.f,padding));camera.target=target;return camera;}
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const HeightField3D& terrain,float padding,unsigned samples){padding=(std::max)(0.f,padding);samples=(std::max)(2u,samples);const Vec3 offset=camera.position-target;float safeAmount=1.f;for(unsigned sample=1;sample<=samples;++sample){const float amount=float(sample)/float(samples),previous=float(sample-1)/float(samples);const Vec3 point=target+offset*amount;if(terrain.Contains(point.x,point.z)&&point.y<terrain.SampleHeight(point.x,point.z)+padding){safeAmount=previous;break;}}camera.position=target+offset*safeAmount;if(terrain.Contains(camera.position.x,camera.position.z))camera.position.y=(std::max)(camera.position.y,terrain.SampleHeight(camera.position.x,camera.position.z)+padding);camera.target=target;return camera;}
