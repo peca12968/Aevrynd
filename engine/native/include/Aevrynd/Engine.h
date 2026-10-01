@@ -235,6 +235,13 @@ struct EngineDevelopmentUltraTestAccess3D {
 #endif
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
 struct EngineRendererTestAccess3D {
+    // 只在內部診斷建置中隔離多重採樣，保留其他品質選項。
+    static bool SetMultisampling(Engine& engine,bool enabled) {
+        if(!engine.renderer_)return false;
+        auto quality=engine.renderer_->QualitySettings();quality.multisampling=enabled;
+        engine.renderer_->SetQualitySettings(quality);
+        return engine.renderer_->QualitySettings().multisampling==enabled;
+    }
     static bool Render(Engine& engine, const DrawList& draw) {
         if (!engine.renderer_) return false;
         engine.renderer_->Render(draw, {.02f, .03f, .04f, 1.f});

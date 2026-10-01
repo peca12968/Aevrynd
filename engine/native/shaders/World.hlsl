@@ -1435,17 +1435,33 @@ float3 DecodeBc5Normal(float2 encoded)
     return float3(xy, sqrt(saturate(1.0 - dot(xy, xy))));
 }
 
+float3 ReorientTriplanarNormal(float3 mappedNormal, float3 projectionNormal, float3 geometricNormal)
+{
+    // 先將投影軸以最短旋轉對齊幾何法線，再混合細節；平坦貼圖不得改變斜坡方向。
+    // 投影軸和幾何法線位於同一半球，因此分母至少為 1，不存在反向旋轉奇點。
+    const float3 rotationAxis = cross(projectionNormal, geometricNormal);
+    const float3 firstOffset = cross(rotationAxis, mappedNormal);
+    return mappedNormal + firstOffset
+        + cross(rotationAxis, firstOffset) / (1.0 + dot(projectionNormal, geometricNormal));
+}
+
 float3 TriplanarNormalFrom(Texture2D source, float3 worldPosition, float3 geometricNormal, float scale)
 {
     const float3 blend = BlendWeights(geometricNormal);
-    const float3 axisSign = sign(geometricNormal);
+    const float3 axisSign = float3(geometricNormal.x < 0.0 ? -1.0 : 1.0,
+                                  geometricNormal.y < 0.0 ? -1.0 : 1.0,
+                                  geometricNormal.z < 0.0 ? -1.0 : 1.0);
     const float3 x = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.zy * scale).rg);
     const float3 y = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.xz * scale).rg);
     const float3 z = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.xy * scale).rg);
-    const float3 mappedX = float3(axisSign.x * x.z, x.y, x.x);
-    const float3 mappedY = float3(y.x, axisSign.y * y.z, y.y);
-    const float3 mappedZ = float3(z.x, z.y, axisSign.z * z.z);
-    return normalize(mappedX * blend.x + mappedY * blend.y + mappedZ * blend.z);
+    const float3 mappedX = ReorientTriplanarNormal(float3(axisSign.x * x.z, x.y, x.x),
+        float3(axisSign.x, 0.0, 0.0), geometricNormal);
+    const float3 mappedY = ReorientTriplanarNormal(float3(y.x, axisSign.y * y.z, y.y),
+        float3(0.0, axisSign.y, 0.0), geometricNormal);
+    const float3 mappedZ = ReorientTriplanarNormal(float3(z.x, z.y, axisSign.z * z.z),
+        float3(0.0, 0.0, axisSign.z), geometricNormal);
+    const float3 combined = mappedX * blend.x + mappedY * blend.y + mappedZ * blend.z;
+    return dot(combined, combined) > 0.0000000001 ? normalize(combined) : geometricNormal;
 }
 
 float3 TriplanarNormal(float3 worldPosition, float3 geometricNormal, float scale)
@@ -1791,6 +1807,8 @@ float CharacterNormalDetailStrength(float skinMask,float hairMask,float eyeMask,
 
 float3 ScaleNormalDetail(float3 geometricNormal,float3 detailNormal,float signedScale)
 {
+    // 零強度必須精確保留幾何法線，不能因反向細節的軸向分量而翻面。
+    if (signedScale == 0.0) return geometricNormal;
     // 保留取樣法線的 Z 分量並只縮放切線偏移，因此 scale=1 可精確還原原細節，負值則反轉 X/Y。
     const float axialDetail=dot(geometricNormal,detailNormal);
     const float3 tangentialDetail=detailNormal-geometricNormal*axialDetail;

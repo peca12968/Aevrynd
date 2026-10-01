@@ -69,6 +69,11 @@ class MistwatchGame final : public IGame {
     unsigned captureSequenceFrames{},captureCompleted{};
     bool capturePending{};
     bool diagnosticNoAo{};
+    bool diagnosticNoGroundNormal{},diagnosticNoMsaa{};
+    unsigned diagnosticHdrStage{};
+    bool diagnosticNoShadows{},diagnosticNoBloom{};
+    bool diagnosticNoGroundTextures{};
+    bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
     bool captureWildlife{};
@@ -303,6 +308,54 @@ public:
         }
         wchar_t noAo[8]{};
         diagnosticNoAo=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_NO_AO",noAo,8)>0 && noAo[0]==L'1';
+        // 僅影像診斷允許單變量隔離；不改玩家預設品質或正式玩法。
+        if(!capture.empty()) {
+            const auto enabled=[](const wchar_t* name) {
+                wchar_t value[3]{};const auto length=GetEnvironmentVariableW(name,value,3);
+                if(!length)return false;
+                if(length!=1||(value[0]!=L'0'&&value[0]!=L'1'))throw std::runtime_error("Invalid lighting diagnostic flag");
+                return value[0]==L'1';
+            };
+            diagnosticNoGroundNormal=enabled(L"AEVRYND_MISTWATCH_NO_GROUND_NORMAL");
+            diagnosticNoMsaa=enabled(L"AEVRYND_MISTWATCH_NO_MSAA");
+            diagnosticNoShadows=enabled(L"AEVRYND_MISTWATCH_NO_SHADOWS");
+            diagnosticNoBloom=enabled(L"AEVRYND_MISTWATCH_NO_BLOOM");
+            diagnosticNoGroundTextures=enabled(L"AEVRYND_MISTWATCH_NO_GROUND_TEXTURES");
+            if(diagnosticNoGroundTextures)groundMaterial.textures={};
+            diagnosticNeutralGroundBase=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE");
+            diagnosticNeutralGroundSurface=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE");
+            if(diagnosticNeutralGroundBase||diagnosticNeutralGroundSurface) {
+                // 中性測試圖由診斷收據固定；其他貼圖與品質不變。
+                auto definition=definitions[0];definition.name="ground-diagnostic";
+                if(diagnosticNeutralGroundBase)definition.textures.baseColorPath="diagnostics/neutral-base.bmp";
+                if(diagnosticNeutralGroundSurface)definition.textures.roughnessPath="diagnostics/neutral-surface.bmp";
+                if(!materials.Load(definition))throw std::runtime_error("Ground channel diagnostic material unavailable");
+                groundMaterial.textures=materials.Textures(definition.name);
+            }
+            wchar_t stage[8]{};const auto stageLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_HDR_STAGE",stage,8);
+            if(stageLength) {
+                const std::wstring_view name=stage;
+                if(stageLength>=8||!captureSequenceFrames)throw std::runtime_error("Invalid HDR diagnostic stage or capture mode");
+                if(name==L"pre")diagnosticHdrStage=1;
+                else if(name==L"post")diagnosticHdrStage=2;
+                else if(name==L"final")diagnosticHdrStage=3;
+                else throw std::runtime_error("Unknown HDR diagnostic stage");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+                if(diagnosticHdrStage==1&&!EngineAtmosphereDiagnosticAccess3D::SetPreAtmosphereHdrCapture(e,true))throw std::runtime_error("Pre-atmosphere diagnostic setup failed");
+                if(diagnosticHdrStage==2&&!EngineAtmosphereDiagnosticAccess3D::SetPostAtmosphereHdrCapture(e,true))throw std::runtime_error("Post-atmosphere diagnostic setup failed");
+#else
+                if(diagnosticHdrStage!=3)throw std::runtime_error("HDR stages require atmosphere diagnostic build");
+#endif
+            }
+            if(diagnosticNoGroundNormal)groundMaterial.normalScale=0;
+            if(diagnosticNoMsaa) {
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+                if(!EngineRendererTestAccess3D::SetMultisampling(e,false))throw std::runtime_error("MSAA diagnostic setup failed");
+#else
+                throw std::runtime_error("MSAA diagnostic requires internal renderer test hooks");
+#endif
+            }
+        }
         wchar_t crown[8]{};
         diagnosticCrown=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CROWN",crown,8)>0 && crown[0]==L'1';
         if(!boar.Update({},0,encounter.phase,encounter.phaseTime,session.feet-encounter.feet)||
@@ -347,6 +400,21 @@ public:
             }
             if(capturePending && stats.rejectedFrameCaptures)throw std::runtime_error("Frame capture rejected");
             if(capturePending && stats.successfulFrameCaptures>captureCompleted) {
+                if(diagnosticHdrStage&&(captureCompleted==18||captureCompleted==27)) {
+                    e.WaitRendererIdle3D();
+                    const auto hdr=e.TakeLinearHdrReadback3D();
+                    if(!hdr||!hdr->Complete())throw std::runtime_error("HDR diagnostic readback incomplete");
+                    auto path=CapturePath();path+=L".hdr-half";
+                    std::ofstream raw(path,std::ios::binary);
+                    raw.write(reinterpret_cast<const char*>(hdr->rawHalfBytes.data()),std::streamsize(hdr->rawHalfBytes.size()));
+                    raw.close();if(!raw)throw std::runtime_error("HDR diagnostic write failed");
+                    path+=L".receipt.txt";std::ofstream proof(path);
+                    proof<<"diagnostic_only=1\nstage="<<diagnosticHdrStage<<"\nframe_serial="<<hdr->receipt.rasterProvenance.frameSerial
+                        <<"\nwidth="<<hdr->receipt.width<<"\nheight="<<hdr->receipt.height<<"\nbytes="<<hdr->rawHalfBytes.size()
+                        <<"\nfinite_channels="<<hdr->receipt.statistics.finiteChannelCount<<"\nnan_channels="<<hdr->receipt.statistics.nanChannelCount
+                        <<"\ncamera_hash="<<hdr->receipt.requestMetadata.cameraHash<<"\nstate_hash="<<hdr->receipt.requestMetadata.stateHash<<'\n';
+                    proof.close();if(!proof)throw std::runtime_error("HDR diagnostic receipt write failed");
+                }
                 auto receipt=CapturePath();receipt+=".receipt.txt";
                 std::ofstream out(receipt);
                 out<<"capture=success\nwater_phase_seconds="<<waterTime
@@ -375,6 +443,16 @@ public:
                     <<"\nrelay_target_west="<<Mistwatch::Session::RelayTargetSector(0)<<"\nrelay_signal_west="<<session.RelaySignal(0)<<'\n';
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
+                out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
+                    <<"\nground_textured="<<bool(groundMaterial.textures)
+                    <<"\nground_neutral_base="<<diagnosticNeutralGroundBase<<"\nground_neutral_surface="<<diagnosticNeutralGroundSurface
+                    <<"\ndiagnostic_no_shadows="<<diagnosticNoShadows<<"\ndiagnostic_no_bloom="<<diagnosticNoBloom
+                    <<"\ndiagnostic_hdr_stage="<<diagnosticHdrStage
+                    <<"\nmultisample_count="<<stats.multisampleCount<<"\nquality_shadows="<<stats.effectiveQuality.directionalShadows
+                    <<"\nquality_ao="<<stats.effectiveQuality.ambientOcclusion<<"\nquality_post_aa="<<stats.effectiveQuality.postProcessAntiAliasing<<'\n';
+                out<<"shadow_cascades="<<stats.lastDirectionalShadowCascades<<"\nbloom_enabled="<<stats.bloomEnabled
+                    <<"\nvolumetric_passes="<<stats.volumetricAtmosphereCompositePasses<<"\nvolumetric_scale="<<stats.volumetricAtmosphereResolutionScale
+                    <<"\nvolumetric_width="<<stats.volumetricAtmosphereWidth<<"\nvolumetric_height="<<stats.volumetricAtmosphereHeight<<'\n';
                 const auto audio=e.Audio().GetStats();
                 std::uint64_t steps{};for(unsigned i=0;i<6;++i)steps+=gameAudio.requests[i];
                 out<<"audio_device="<<audio.deviceAvailable<<"\naudio_sounds="<<audio.residentSounds
@@ -605,6 +683,8 @@ public:
         draw.SetWaterOptics({true,.018f,.35f,.035f});
         draw.SetScreenSpaceReflections({true,.7f,32.f,.65f,.28f,12});
         if(diagnosticNoAo) draw.SetAmbientOcclusion({false});
+        if(diagnosticNoShadows)draw.SetDirectionalShadowMapEnabled(false);
+        if(diagnosticNoBloom)draw.SetBloom({false});
         draw.SetDirectionalLight({{.4f,-.85f,.3f},.55f,{1.f,.95f,.85f,1},1.5f});
         draw.SetExposureCompensation(.5f);
         draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,45,200,true,.0025f,.09f,-2.f,.76f});
@@ -698,8 +778,21 @@ public:
         draw.Text({20,682},"F5 save / F9 load | HP "+std::to_string(session.health)+" | "+message,1.5f,{1,1,1,1});
         if(!capture.empty() && !capturePending && ++captureFrames>=45 &&
            (!captureAudioProbe||captureAudioTicks>=180) &&
-           (!captureBenchmark || benchmarkGpuMilliseconds.size()==120))
+           (!captureBenchmark || benchmarkGpuMilliseconds.size()==120)) {
+            if(diagnosticHdrStage&&(captureCompleted==18||captureCompleted==27)) {
+                const auto hash=[](const auto& value) {
+                    std::uint64_t result=1469598103934665603ull;
+                    const auto bytes=std::as_bytes(std::span{&value,1});
+                    for(const auto byte:bytes){result^=std::to_integer<std::uint8_t>(byte);result*=1099511628211ull;}
+                    return result;
+                };
+                const auto cameraHash=hash(draw.ViewProjection());
+                const std::array<std::uint64_t,3> state{hash(waterTime),std::uint64_t(session.CurrentStage()),session.repairMaterials};
+                if(!e.RequestLinearHdrReadback3D({captureFrames,cameraHash,hash(state)}))throw std::runtime_error("HDR diagnostic request rejected");
+            }
             capturePending=e.CaptureNextFrame3D(CapturePath());
+            if(!capturePending)throw std::runtime_error("Frame capture request rejected");
+        }
     }
     void OnStop(Engine& e) override {StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
 };

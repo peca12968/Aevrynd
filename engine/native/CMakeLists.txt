@@ -544,6 +544,13 @@ target_compile_options(AevryndEnvironmentLighting3DTest PRIVATE /W4 /permissive-
 target_link_libraries(AevryndEnvironmentLighting3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndEnvironmentLighting3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndEnvironmentLighting3DTest>'")
 if(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS)
+  add_executable(AevryndTriplanarNormalD3D12Test tests/TriplanarNormalD3D12Smoke.cpp)
+  target_compile_options(AevryndTriplanarNormalD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+  target_link_libraries(AevryndTriplanarNormalD3D12Test PRIVATE AevryndEngine)
+  add_test(NAME AevryndTriplanarNormalD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndTriplanarNormalD3D12Test>")
+  add_test(NAME AevryndTriplanarNormalD3D12GpuValidationTest COMMAND ${CMAKE_COMMAND} -E env AEVRYND_GPU_VALIDATION=1 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/RunWindowsGuiTest.ps1" -Executable "$<TARGET_FILE:AevryndTriplanarNormalD3D12Test>")
+  set_tests_properties(AevryndTriplanarNormalD3D12Test AevryndTriplanarNormalD3D12GpuValidationTest PROPERTIES TIMEOUT 120)
+
   add_executable(AevryndEnvironmentLightingD3D12Test tests/EnvironmentLightingD3D12Smoke.cpp)
   target_compile_options(AevryndEnvironmentLightingD3D12Test PRIVATE /W4 /permissive- /utf-8)
   target_link_libraries(AevryndEnvironmentLightingD3D12Test PRIVATE AevryndEngine)
