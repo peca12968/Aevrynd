@@ -1,0 +1,42 @@
+{
+  "sourceGltfSha256": "50540d37531f93fd693d5340d5b3095c9d6d2834fa05c74bea797d54f290cb6a",
+  "sourceBinarySha256": "fe1abb762bcbbc7ad9e86925c8080437a62add257d9280e9142fdc85c226e64c",
+  "rootedGlbSha256": "d7db36f5dda2e9d0428ef9de6426b91d8e90cad1f4308cd4f2138af4e6cef0e1",
+  "nodePolicy": "remove display translation only; retain local pivot and geometry",
+  "nodes": [
+    {
+      "name": "fern_02_b",
+      "displayTranslationRemoved": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "fern_02_c",
+      "displayTranslationRemoved": [
+        1.0000009536743164,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "fern_02_a",
+      "displayTranslationRemoved": [
+        0,
+        0,
+        1.0000001192092896
+      ]
+    },
+    {
+      "name": "fern_02_d",
+      "displayTranslationRemoved": [
+        1,
+        0,
+        0.9999995827674866
+      ]
+    }
+  ],
+  "materialPolicy": "official separate alpha; GL normal to DX; ARM.R explicitly used for AO",
+  "scriptSha256": "0d2124d29bdc2571d1003855487a97df36ac50dcdaa9a92bfdb9a1e9e5c85ed5"
+}

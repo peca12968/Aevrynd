@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "fern-02",
+  "lod": 0,
+  "sourceFile": "fern-02-rooted.glb",
+  "sourceSha256": "d7db36f5dda2e9d0428ef9de6426b91d8e90cad1f4308cd4f2138af4e6cef0e1",
+  "outputs": [
+    {
+      "file": "fern-02-lod0-node0-mesh0-primitive0-material0-fern-02.aemesh",
+      "sha256": "83bee63c50758af9833aaf8cb0abc06000df21c412f4971bd582d64add4eae81",
+      "bytes": 75104,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "fern-02",
+      "vertices": 1660,
+      "indices": 7152,
+      "triangles": 2384,
+      "boundsMinimumGltf": [
+        -0.5281425714492798,
+        -0.030510280281305313,
+        -0.421874463558197
+      ],
+      "boundsMaximumGltf": [
+        0.4616048336029053,
+        0.39718443155288696,
+        0.4718152582645416
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.07399309426546097,
+        0.020091772079467773
+      ],
+      "effectiveUvMaximum": [
+        0.8451855182647705,
+        0.9710894823074341
+      ]
+    },
+    {
+      "file": "fern-02-lod0-node1-mesh1-primitive0-material0-fern-02.aemesh",
+      "sha256": "07daad96517da59466be5551a6460f0943e5142b55cf2f7f0254938d92ba0306",
+      "bytes": 70896,
+      "nodeIndex": 1,
+      "nodePath": [
+        1
+      ],
+      "instanceOrdinal": 1,
+      "meshIndex": 1,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "fern-02",
+      "vertices": 1568,
+      "indices": 6744,
+      "triangles": 2248,
+      "boundsMinimumGltf": [
+        -0.4299395680427551,
+        -0.028773672878742218,
+        -0.4172818064689636
+      ],
+      "boundsMaximumGltf": [
+        0.44438624382019043,
+        0.32024669647216797,
+        0.34794387221336365
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.07399309426546097,
+        0.020091772079467773
+      ],
+      "effectiveUvMaximum": [
+        0.8451855182647705,
+        0.9710894823074341
+      ]
+    },
+    {
+      "file": "fern-02-lod0-node2-mesh2-primitive0-material0-fern-02.aemesh",
+      "sha256": "78702057068c309d6c559f223fb282c29bac32b8c7b40987c14338f5f65e7e5a",
+      "bytes": 24656,
+      "nodeIndex": 2,
+      "nodePath": [
+        2
+      ],
+      "instanceOrdinal": 2,
+      "meshIndex": 2,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "fern-02",
+      "vertices": 544,
+      "indices": 2352,
+      "triangles": 784,
+      "boundsMinimumGltf": [
+        -0.2976571321487427,
+        -0.028773518279194832,
+        -0.31126806139945984
+      ],
+      "boundsMaximumGltf": [
+        0.25428348779678345,
+        0.2580300271511078,
+        0.3021530210971832
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.07399309426546097,
+        0.020419836044311523
+      ],
+      "effectiveUvMaximum": [
+        0.6305733919143677,
+        0.9710894823074341
+      ]
+    },
+    {
+      "file": "fern-02-lod0-node3-mesh3-primitive0-material0-fern-02.aemesh",
+      "sha256": "243a1ba9863ee362f8bebcdda7ba0dc44d847ff8684cac327b68a422c26663f8",
+      "bytes": 25628,
+      "nodeIndex": 3,
+      "nodePath": [
+        3
+      ],
+      "instanceOrdinal": 3,
+      "meshIndex": 3,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "fern-02",
+      "vertices": 565,
+      "indices": 2448,
+      "triangles": 816,
+      "boundsMinimumGltf": [
+        -0.2907802164554596,
+        -0.013578944839537144,
+        -0.35213664174079895
+      ],
+      "boundsMaximumGltf": [
+        0.28200197219848633,
+        0.19950860738754272,
+        0.2411416471004486
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.3115155100822449,
+        0.020419836044311523
+      ],
+      "effectiveUvMaximum": [
+        0.8451855182647705,
+        0.9710894823074341
+      ]
+    }
+  ],
+  "outputCount": 4,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 196284,
+  "totalTriangles": 6232,
+  "peakWorkingSetBytes": 26152960,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

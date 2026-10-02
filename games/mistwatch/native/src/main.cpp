@@ -5,6 +5,7 @@
 #include "MistwatchExplorer.h"
 #include "MistwatchForestMaterial.h"
 #include "MistwatchGroundMaterial.h"
+#include "MistwatchFern.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
@@ -49,6 +50,10 @@ class MistwatchGame final : public IGame {
     std::vector<Vec3> groundCover;
     MeshResource3D grassMesh;
     MeshResource3D fernMesh;
+    std::array<MeshResource3D,4> scannedFerns;
+    MaterialLibrary3D fernMaterials;
+    Material3D fernSurface;
+    std::size_t submittedFernTriangles{};
     MeshResource3D relayDish;
     Mistwatch::ForestUnderstory understory;
     unsigned submittedFerns{},submittedSaplings{};
@@ -87,12 +92,14 @@ class MistwatchGame final : public IGame {
     bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
     bool diagnosticLegacyGround{};
     bool diagnosticLegacyGrass{};
+    bool diagnosticLegacyFern{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
     bool captureWildlife{};
     bool captureBoarOverview{};
     bool captureBoulderOverview{};
     bool captureGrassOverview{};
+    bool captureFernOverview{};
     unsigned submittedGrass{};
     bool captureRelayMotion{};
     bool captureLandscapeMotion{};
@@ -177,6 +184,11 @@ public:
             if(grassLength&&(grassLength!=1||(legacyGrass[0]!=L'0'&&legacyGrass[0]!=L'1')))
                 throw std::runtime_error("Invalid grass comparison flag");
             diagnosticLegacyGrass=legacyGrass[0]==L'1';
+            wchar_t legacyFern[3]{};
+            const auto fernLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_FERN_LEGACY",legacyFern,3);
+            if(fernLength&&(fernLength!=1||(legacyFern[0]!=L'0'&&legacyFern[0]!=L'1')))
+                throw std::runtime_error("Invalid fern comparison flag");
+            diagnosticLegacyFern=legacyFern[0]==L'1';
         }
         groundDefinition=Mistwatch::GroundMaterialDefinition(diagnosticLegacyGround);
         const std::array<MaterialAssetDefinition3D,4> definitions{{
@@ -296,6 +308,18 @@ public:
         if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
+        const auto fernRoot=e.ExecutableDirectory()/"assets"/"mistwatch-ferns";
+        fernMaterials.Initialize(e,fernRoot);
+        if(!fernMaterials.Load(Mistwatch::FernMaterialDefinition()))throw std::runtime_error("Fern material unavailable");
+        fernSurface=*fernMaterials.Find("fern");
+        for(unsigned variant=0;variant<4;++variant) {
+            auto loaded=LoadAevryndMeshFile(fernRoot/"meshes"/Mistwatch::FernMeshName(variant));
+            if(!loaded||loaded.mesh.vertices.size()!=Mistwatch::FernVertexCounts[variant]||
+                loaded.mesh.indices.size()!=3u*Mistwatch::FernTriangleCounts[variant])throw std::runtime_error("Fern variant unavailable");
+            Mistwatch::NormalizeFernAsset(loaded.mesh);
+            scannedFerns[variant]=e.CreateMeshResource3D(loaded.mesh);
+            if(!scannedFerns[variant])throw std::runtime_error("Scanned fern upload failed");
+        }
         groundCover=Mistwatch::GroundCoverPositions(terrain);
         grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,diagnosticLegacyGrass?3:5,diagnosticLegacyGrass?GrassBladeStyle3D::Upright:GrassBladeStyle3D::Curved));
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
@@ -354,6 +378,7 @@ public:
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else if(name==L"boulder-profile")captureBoulderOverview=true;
                 else if(name==L"grass-profile")captureGrassOverview=true;
+                else if(name==L"fern-profile")captureFernOverview=true;
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
                 if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
@@ -554,6 +579,10 @@ public:
                     <<"\nfuse_collected="<<session.fuseCollected<<'\n';
                 out<<"understory_ferns="<<understory.ferns.size()<<"\nunderstory_saplings="<<understory.saplings.size()
                     <<"\nsubmitted_ferns="<<submittedFerns<<"\nsubmitted_saplings="<<submittedSaplings<<'\n';
+                out<<"fern_source="<<(diagnosticLegacyFern?"procedural":"poly-haven-fern-02")
+                    <<"\nfern_variants=4\nfern_asset_scale="<<Mistwatch::FernAssetScale
+                    <<"\nfern_materials="<<fernMaterials.Stats().materials<<"\nsubmitted_fern_triangles="<<submittedFernTriangles
+                    <<"\nfern_alpha_cutoff="<<fernSurface.alphaCutoff<<"\nfern_use_uv="<<fernSurface.useUv<<'\n';
                 out<<"enemy_visual=skinned_boar\nenemy_joints="<<boar.model.skeleton.joints.size()
                     <<"\nenemy_phase="<<unsigned(encounter.phase)<<"\nenemy_brace="<<boar.brace<<'\n';
                 out<<"relay_linked="<<session.relayLinked<<"\nrelay_sectors="<<session.relaySectors
@@ -595,7 +624,7 @@ public:
                     <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureFernOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -731,12 +760,15 @@ public:
         Material3D fern{{1,1,1,1},{.92f,0,0,.65f}};
         fern.materialClass=MaterialClass3D::Foliage;
         fern.doubleSided=true;
-        submittedFerns=0;
-        for(auto plant:understory.ferns) {
+        submittedFerns=0;submittedFernTriangles=0;
+        for(std::size_t index=0;index<understory.ferns.size();++index) {
+            auto plant=understory.ferns[index];
             const float visibility=Mistwatch::UnderstoryVisibility(Length(plant.position-session.feet));
             if(visibility<=0)continue;
             plant.scale=plant.scale*visibility;
-            scene.Mesh(fernMesh,plant,fern);
+            const auto& mesh=diagnosticLegacyFern?fernMesh:scannedFerns[index%4];
+            scene.Mesh(mesh,plant,diagnosticLegacyFern?fern:fernSurface);
+            submittedFernTriangles+=mesh.TriangleCount();
             ++submittedFerns;
         }
         Material3D grass{{.32f,.43f,.18f,1},{.9f,0,0,.9f}};
@@ -829,6 +861,14 @@ public:
             if(plant==groundCover.end())throw std::runtime_error("Grass detail fixture missing");
             camera.target=*plant+Vec3{0,.3f,0};
             camera.position=camera.target+Vec3{1.15f,.55f,-1.15f};
+        }
+        if(captureFernOverview && !capture.empty()) {
+            const auto plant=std::min_element(understory.ferns.begin(),understory.ferns.end(),[&](const auto& a,const auto& b){
+                return Length(a.position-session.feet)<Length(b.position-session.feet);
+            });
+            if(plant==understory.ferns.end())throw std::runtime_error("Fern detail fixture missing");
+            camera.target=plant->position+Vec3{0,.2f,0};
+            camera.position=camera.target+Vec3{.95f,.55f,-1.2f};
         }
         lastRenderedCamera=camera;
         auto& draw=e.Draw();
@@ -952,6 +992,9 @@ public:
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
         e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
         materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();boulderMaterials.Shutdown();
+        fernMaterials.Shutdown();
+        unsigned fernDestroyed{};
+        for(auto& mesh:scannedFerns){if(mesh){e.DestroyMesh3D(mesh.handle);++fernDestroyed;}mesh={};}
         unsigned broadleafDestroyed{};
         for(auto& mesh:broadleafMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++broadleafDestroyed;}mesh={};}
         if(broadleafMaterials.Stats().materials||broadleafDestroyed!=3)throw std::runtime_error("Broadleaf cleanup incomplete");
@@ -972,6 +1015,13 @@ public:
         }
         e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);
         e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);
+        // 新蕨株檢查放在其餘正常釋放之後；receipt 不宣稱全引擎 GPU 零洩漏。
+        if(fernMaterials.Stats().materials||fernDestroyed!=4)throw std::runtime_error("Scanned fern cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".fern-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=4\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Fern cleanup receipt failed");
+        }
     }
 };
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {

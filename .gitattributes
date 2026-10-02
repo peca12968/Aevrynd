@@ -4,3 +4,7 @@ engine/assets/realistic-cc0-first-batch/cooked/**/*.json text eol=lf
 games/character_lab/assets/model-packs/*/*.provenance.json text eol=lf
 engine/assets/realistic-cc0-first-batch/tree-small-02/*.gltf text eol=lf
 engine/assets/realistic-cc0-first-batch/tree-small-02/*.json text eol=lf
+
+# 原始下載依位元組封印；不可由 Windows checkout 轉換換行，產生的 JSON 收據使用 LF。
+engine/assets/mistwatch-fern-02/source/** -text
+engine/assets/mistwatch-fern-02/*.json text eol=lf

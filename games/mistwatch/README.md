@@ -2,6 +2,20 @@
 
 本目錄使用 Aevrynd 原生 Win32／D3D12 引擎。現階段是具有森林、彎曲河谷、水面與簡化蒙皮探險者的可玩流程原型，尚未達到寫實森林、正式角色動畫或 10～15 分鐘內容的要求。
 
+## 掃描蕨株整合：2026-10-02（可玩原型，寫實美術仍未完成）
+
+使用 [Poly Haven Fern02](https://polyhaven.com/a/fern_02) 的四種 CC0 原始植株，官方六份來源檔保存在 `engine/assets/mistwatch-fern-02/source`，逐檔核對官方 MD5／大小及記錄 SHA-256。`tools/cook-mistwatch-fern.py` 重用既有 AEMESH converter 與材質 baker，移除四株陳列 translation、保留 local pivot，載入時僅等比 1.6；四個變體不是 LOD。所有420個原根點、原旋轉／scale、24～38公尺可見度保留，不以減少植株或刪掉檢查換取成功。
+
+三張2K DDS均有完整12層縮圖及大小／SHA封印：BC7 sRGB基色、BC7 linear Packed ORM、BC5 linear DirectX法線。使用官方 separate alpha 與 MASK .5，RGB dilation不更改alpha，GL normal綠色通道在烘焙時反轉一次；ARM.R作遮蔽是本作明確的整合選擇，並非原glTF宣告。重烘的四網格／三貼圖與候選逐檔雜湊一致；實測baker與texconv子程序峰值395427840 bytes，低於2GiB上限，不以硬填memoryGate冒充測量。
+
+第一個scale 2.0候選因足跡超過原.9公尺避讓門檻而exit9，保留失敗；1.6正式候選的实际配置最大半徑.762587公尺，不以最低葉卡抬高整株。FernTest載入四網格、檢查pivot／UV／法線／索引及420根點，實際載入封印三DDS，拒絕11個壞hash、大小、解析度與通道角色案例。原始a變體兩個三角形含單一反向頂點法線，未偷偷修改或宣稱全部法線完全一致。
+
+同一增量EXE的新舊程序蕨株A/B為起點、河谷及近景六張獨立程序畫面，鏡頭／配置固定；近景能辨識細分蕨葉與透明葉孔，但新株比舊程序叢更小，不宣稱相同canopy覆蓋。起點舊／新P95 5.35728／5.50074ms、河谷4.95414／4.94822ms，各120样本；不宣稱效能提升或人工遊玩FPS。四株共6232三角形、平均1558，較舊單叢1106增加約40.9%；起點201株提交314224三角形。繪製呼叫31（舊28），材質駐留77595624bytes（上一版60818328），不當作全GPU總量。A/B兩路都已載入新DDS，記憶體差值僅作相對上一版資產成本。
+
+全新 `Builds/mistwatch-scanned-fern-fresh-20261002` ALL_BUILD、75／75回歸、24／24普通原生場景已通過；1139個追蹤與未追蹤來源／資產輸入無漂移，四項內部診斷OFF、四项既有編譯警告。EXE SHA-256 `625F79E98F712461AA7148D7ACCBB2E8965B0B85FC530890C5833140A1F36F9D`。普通場景保留4xMSAA、AO、陰影與後製、GPU除錯錯誤／警告零，檢查三DDS接線與四次網格銷毀；不宣稱全引擎零洩漏。當輪起點／河谷固定1280×720各120GPU樣本P95為5.48365／4.93229ms，不是新的舊版同鏡A/B。
+
+實際解碼基色BC7的12層alpha全部非空，mip0～6覆蓋率相對首層變化小於5%；微小層因像素量化並非同等覆蓋率，仍缺遠距與背面人工實機驗收。完整10／10 GBV場景已實際執行並通過，debug layer／requested／available／executed／passed均1、錯誤／警告零；1139個輸入無漂移。當輪EXE產生36張山脊環繞影格、35次相鄰變化，編成 `fresh/world-motion/world-orbit.webp`，每幀100ms；不是人工錄影或遊玩FPS。獨立可玩目錄 `Demo/Mistwatch/prototype-scanned-ferns-20261002` 使用同一EXE與六組逐檔SHA核對資產，附當輪起點／河谷／蕨株近景與世界環繞動圖，其EXE另跑24／24普通場景全部通過。保留舊包；本輪ZIP在乾淨提交及推送後封裝，回讀逐檔雜湊才接受。證據 `Evidence/mistwatch-scanned-fern-20261002`。34／100未重新評分，寫實森林、程序草葉表面、山坡條紋與10～15分鐘人工流程仍未完成。網站與既有Blender未更動。
+
 ## 三機完整回歸恢復：2026-10-02
 
 固定的遠端 CPU 聚合建置入口補入原本已有 release-gates 標籤的死亡、森林試煉、村舍入口與室內四個測試；死亡測試自行複製兩份原始 aeskin，不依賴其他遊戲的 POST_BUILD。資產內容與提交中的 Git blob、來源及輸出 SHA-256 完全一致，沒有修改既有人物。

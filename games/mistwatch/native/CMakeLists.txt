@@ -39,6 +39,16 @@ target_include_directories(MistwatchGrassTest PRIVATE include)
 target_compile_options(MistwatchGrassTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(MistwatchGrassTest PRIVATE AevryndEngine)
 add_test(NAME MistwatchGrassTest COMMAND MistwatchGrassTest)
+add_executable(MistwatchFernTest tests/MistwatchFernTest.cpp)
+target_include_directories(MistwatchFernTest PRIVATE include)
+target_compile_options(MistwatchFernTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(MistwatchFernTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+target_link_libraries(MistwatchFernTest PRIVATE AevryndEngine)
+add_test(NAME MistwatchFernTest COMMAND MistwatchFernTest)
+add_custom_command(TARGET Mistwatch POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-fern-02/meshes" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-ferns/meshes"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-fern-02/materials" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-ferns/materials"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-fern-02/LICENSE.md" "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-fern-02/download-receipt.json" "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-fern-02/material-bake-receipt.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-ferns/")
 add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/materials"
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/meshes"
