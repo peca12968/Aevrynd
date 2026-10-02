@@ -9,6 +9,7 @@
 #include "MistwatchBoar.h"
 #include "MistwatchLandscape.h"
 #include "MistwatchAudio.h"
+#include "MistwatchPlayback.h"
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
@@ -82,6 +83,11 @@ class MistwatchGame final : public IGame {
     bool captureLandscapeMotion{};
     bool captureAudioProbe{};
     unsigned captureAudioTicks{};
+    bool captureFocusProbe{},captureFocusComplete{};
+    unsigned captureFocusTicks{},captureFocusFrozenTicks{};
+    std::string captureFocusSession;
+    Vec3 captureFocusFeet{};
+    float captureFocusWater{},captureFocusEnemyTime{};
     bool captureRiverOverview{};
     bool captureShelterOverview{};
     Camera3D lastRenderedCamera{};
@@ -270,6 +276,7 @@ public:
                 else if(name==L"settlement-clue-read") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 1 0";
                 else if(name==L"fuse-lock-wrong") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 0";
                 else if(name==L"fuse-lock-ready") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 50";
+                else if(name==L"focus-pause") {captureFocusProbe=true;fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";}
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
@@ -296,7 +303,7 @@ public:
                 if(name==L"settlement-clue" || name==L"settlement-clue-read")orbit.yaw=-1.25f;
                 if(name==L"fuse-lock-wrong" || name==L"fuse-lock-ready")orbit.yaw=1.25f;
                 if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan")orbit.yaw=1.25f;
-                if(name==L"strike") {
+                if(name==L"strike"||name==L"focus-pause") {
                     encounter.Tick(session.feet,1.f/60.f,false);
                     for(unsigned tick=0;tick<4;++tick)encounter.Tick(session.feet,.1f,false);
                 }
@@ -382,7 +389,31 @@ public:
         gameAudio.Initialize(e.Audio());
     }
     void OnUpdate(Engine& e,float dt) override {
-        if(!capture.empty()) {
+        if(captureFocusProbe&&!captureFocusComplete) {
+            // 測試只送訊息給自己的隱藏視窗；不切換使用者前景視窗、不讀寫玩家存檔。
+            const auto tick=++captureFocusTicks;
+            if(tick==1){SendMessageW(e.Window(),WM_SETFOCUS,0,0);e.GetInput().ConsumePresses();SendMessageW(e.Window(),WM_KEYDOWN,'W',0);}
+            if(tick==2){
+                captureFocusSession=session.Serialize();captureFocusFeet=session.feet;
+                captureFocusWater=waterTime;captureFocusEnemyTime=encounter.phaseTime;
+                SendMessageW(e.Window(),WM_KILLFOCUS,0,0);
+            }
+            if(tick>=3&&tick<=19){
+                if(!paused||session.Serialize()!=captureFocusSession||waterTime!=captureFocusWater||encounter.phaseTime!=captureFocusEnemyTime)
+                    throw std::runtime_error("Focus pause failed: world advanced while paused");
+                ++captureFocusFrozenTicks;
+            }
+            if(tick==18){SendMessageW(e.Window(),WM_SETFOCUS,0,0);SendMessageW(e.Window(),WM_KEYDOWN,'W',0);}
+            if(tick==20){SendMessageW(e.Window(),WM_KEYDOWN,VK_ESCAPE,0);SendMessageW(e.Window(),WM_KEYUP,VK_ESCAPE,0);}
+            if(tick==21){
+                if(paused||Length(session.feet-captureFocusFeet)<.001f||waterTime==captureFocusWater||encounter.phaseTime==captureFocusEnemyTime)
+                    throw std::runtime_error("Focus resume failed: explicit ESC did not resume simulation");
+                SendMessageW(e.Window(),WM_KEYUP,'W',0);
+                captureFocusComplete=true;paused=true;
+                message="FOCUS PAUSE VERIFIED - ESC resumes expedition";
+            }
+        }
+        if(!capture.empty()&&(!captureFocusProbe||captureFocusComplete)) {
             if(captureAudioProbe&&!capturePending){++captureAudioTicks;paused=captureAudioTicks>=60&&captureAudioTicks<80;}
             if(captureWildlife&&!capturePending) {
                 const auto previous=encounter.feet;
@@ -456,6 +487,8 @@ public:
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
                 out<<"landscape_river_release_m=24\n";
+                if(captureFocusProbe)out<<"focus_pause_verified="<<captureFocusComplete<<"\nfocus_frozen_ticks="<<captureFocusFrozenTicks
+                    <<"\nfocus_explicit_resume_verified="<<captureFocusComplete<<"\npaused="<<paused<<'\n';
                 out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
                     <<"\nground_textured="<<bool(groundMaterial.textures)
                     <<"\nground_neutral_base="<<diagnosticNeutralGroundBase<<"\nground_neutral_surface="<<diagnosticNeutralGroundSurface
@@ -507,8 +540,7 @@ public:
             return;
         }
         auto& in=e.GetInput();
-        if(in.Pressed(VK_ESCAPE)) paused=!paused;
-        if(in.Pressed(VK_RETURN)) started=true;
+        Mistwatch::UpdatePlaybackControl(started,paused,in.Focused()&&!in.FocusLost(),in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
         bool changedAudio=false;
         if(in.Pressed('M')){gameAudio.options.muted=!gameAudio.options.muted;changedAudio=true;}
         if(in.Pressed(VK_PRIOR)){gameAudio.options.volume=std::clamp(gameAudio.options.volume+.1f,0.f,1.f);changedAudio=true;}

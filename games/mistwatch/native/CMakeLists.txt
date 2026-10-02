@@ -1,3 +1,7 @@
+add_executable(MistwatchPlaybackTest tests/MistwatchPlaybackTest.cpp)
+target_include_directories(MistwatchPlaybackTest PRIVATE include "${CMAKE_SOURCE_DIR}/engine/native/include")
+target_compile_options(MistwatchPlaybackTest PRIVATE /W4 /WX /permissive- /utf-8)
+add_test(NAME MistwatchPlaybackTest COMMAND MistwatchPlaybackTest)
 add_executable(MistwatchSessionTest tests/MistwatchSessionTest.cpp)
 target_include_directories(MistwatchSessionTest PRIVATE include "${CMAKE_SOURCE_DIR}/engine/native/include")
 target_compile_options(MistwatchSessionTest PRIVATE /W4 /WX /permissive- /utf-8)

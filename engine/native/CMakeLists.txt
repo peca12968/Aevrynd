@@ -456,6 +456,10 @@ target_compile_options(AevryndShadowSemanticFingerprintD3D12Test PRIVATE /W4 /pe
 target_link_libraries(AevryndShadowSemanticFingerprintD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndShadowSemanticFingerprintD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndShadowSemanticFingerprintD3D12Test>'")
 
+add_executable(AevryndInputFocusTest tests/InputFocusSmoke.cpp)
+target_link_libraries(AevryndInputFocusTest PRIVATE AevryndEngine)
+target_compile_options(AevryndInputFocusTest PRIVATE /W4 /WX /permissive- /utf-8)
+add_test(NAME AevryndInputFocusTest COMMAND AevryndInputFocusTest)
 add_executable(AevryndCameraTest tests/CameraSmoke.cpp)
 target_compile_options(AevryndCameraTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCameraTest PRIVATE AevryndEngine)

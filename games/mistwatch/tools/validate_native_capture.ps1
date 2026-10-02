@@ -11,11 +11,16 @@ if(Test-Path -LiteralPath $evidence){throw 'Evidence directory already exists; p
 New-Item -ItemType Directory -Path $evidence | Out-Null
 $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MISTWATCH_CAPTURE_SERIES',
     'AEVRYND_MISTWATCH_BENCHMARK','AEVRYND_MISTWATCH_TREE_LOD','AEVRYND_MISTWATCH_TWIG_MODE',
-    'AEVRYND_MISTWATCH_CROWN','AEVRYND_MISTWATCH_NO_AO','AEVRYND_GPU_VALIDATION')
+    'AEVRYND_MISTWATCH_CROWN','AEVRYND_MISTWATCH_NO_AO','AEVRYND_GPU_VALIDATION',
+    'AEVRYND_MISTWATCH_CAPTURE_FRAME','AEVRYND_MISTWATCH_NO_GROUND_NORMAL','AEVRYND_MISTWATCH_NO_MSAA',
+    'AEVRYND_MISTWATCH_HDR_STAGE','AEVRYND_MISTWATCH_NO_SHADOWS','AEVRYND_MISTWATCH_NO_BLOOM',
+    'AEVRYND_MISTWATCH_NO_GROUND_TEXTURES','AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE',
+    'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
+    'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -42,7 +47,14 @@ try {
         foreach($line in Get-Content -LiteralPath ($capture+'.audio-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$cleanup[$pair[0]]=$pair[1]}}
         if($cleanup.cleanup -ne 'success' -or $cleanup.sounds -ne '0' -or $cleanup.bytes -ne '0' -or $cleanup.voices -ne '0'){throw ('Audio resources leaked: '+$case)}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
-        if($receipt.debug_errors -ne '0'){throw ('GPU debug errors: '+$case)}
+        if($receipt.debug_errors -ne '0' -or $receipt.debug_warnings -ne '0'){throw ('GPU debug messages: '+$case)}
+        if($receipt.multisample_count -ne '4'){throw ('Production MSAA missing: '+$case)}
+        foreach($flag in @('quality_shadows','quality_ao','quality_post_aa','ground_textured')){
+            if($receipt[$flag] -ne '1'){throw ('Production quality missing '+$flag+': '+$case)}
+        }
+        if($case -eq 'focus-pause' -and ($receipt.focus_pause_verified -ne '1' -or
+            $receipt.focus_explicit_resume_verified -ne '1' -or $receipt.focus_frozen_ticks -ne '17' -or
+            $receipt.paused -ne '1' -or $receipt.camera_source -ne 'player')){throw 'Actual game focus-pause/resume path not proven'}
         if($receipt.audio_sounds -ne '14' -or [long]$receipt.audio_bytes -le 0 -or [long]$receipt.audio_bytes -gt 1000000 -or $receipt.audio_master -ne '0'){throw ('Audio bank missing or automated capture not muted: '+$case)}
         if($case -eq 'audio-check' -and ($receipt.audio_device -ne '1' -or [long]$receipt.audio_plays -lt 10 -or
             [long]$receipt.audio_step_requests -lt 8 -or [long]$receipt.audio_interact_requests -lt 1 -or
