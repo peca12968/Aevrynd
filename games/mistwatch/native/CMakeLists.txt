@@ -34,6 +34,11 @@ target_compile_options(MistwatchGroundMaterialTest PRIVATE /W4 /WX /permissive- 
 target_compile_definitions(MistwatchGroundMaterialTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
 target_link_libraries(MistwatchGroundMaterialTest PRIVATE AevryndEngine)
 add_test(NAME MistwatchGroundMaterialTest COMMAND MistwatchGroundMaterialTest)
+add_executable(MistwatchGrassTest tests/MistwatchGrassTest.cpp)
+target_include_directories(MistwatchGrassTest PRIVATE include)
+target_compile_options(MistwatchGrassTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(MistwatchGrassTest PRIVATE AevryndEngine)
+add_test(NAME MistwatchGrassTest COMMAND MistwatchGrassTest)
 add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/materials"
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/meshes"

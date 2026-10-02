@@ -51,17 +51,22 @@ void AppendConiferTier(Mesh3D& mesh,Vec3 center,float radius,float height,unsign
 }
 }
 
-Mesh3D CreateGrassClumpMesh3D(unsigned bladeCount,unsigned segments){
+Mesh3D CreateGrassClumpMesh3D(unsigned bladeCount,unsigned segments,GrassBladeStyle3D style){
     bladeCount=(std::max)(3u,bladeCount);segments=(std::clamp)(segments,2u,5u);Mesh3D mesh;
     mesh.vertices.reserve(std::size_t(bladeCount)*(segments+1)*2);mesh.indices.reserve(std::size_t(bladeCount)*segments*12);
     for(unsigned blade=0;blade<bladeCount;++blade){
         const float angle=2.f*Pi*(float(blade)+Variation(151,blade)*.72f)/float(bladeCount)+(Variation(157,blade)-.5f)*.38f;
         const Vec3 right{std::cos(angle),0,-std::sin(angle)},forward{std::sin(angle),0,std::cos(angle)};
         const float radial=.06f+.27f*Variation(73,blade*5+1),height=.61f+.43f*Variation(73,blade*5+2),width=.035f+.065f*Variation(73,blade*5+3),sideBias=(Variation(73,blade*5+4)-.5f)*.18f,bendStrength=.1f+.2f*Variation(73,blade*5+5);
+        const bool curved=style==GrassBladeStyle3D::Curved;
+        const float bow=curved?.32f:0.f,lean=curved?.16f+.18f*Variation(73,blade*5+5):bendStrength;
         const uint32_t base=uint32_t(mesh.vertices.size());
         for(unsigned segment=0;segment<=segments;++segment){
-            const float t=float(segment)/float(segments),taper=std::pow(1.f-t,.72f)*.94f+.035f,bend=t*t*bendStrength,lateral=std::sin(t*Pi)*sideBias;
-            const Vec3 center=forward*(radial+bend)+right*lateral+Vec3{0,t*height,0},tangent=Normalize(Vec3{0,height,0}+forward*(2.f*bendStrength*t)+right*(sideBias*Pi*std::cos(t*Pi)));
+            const float t=float(segment)/float(segments),taper=curved?(std::pow(1.f-t,.35f)*.85f+.035f)*.72f:std::pow(1.f-t,.72f)*.94f+.035f;
+            const float bend=t*t*lean,lateral=std::sin(t*Pi)*sideBias;
+            // 弓形中心線維持根與尖的高度，縮窄基部但保留中段葉面；法線使用同一中心線的導數。
+            const Vec3 center=forward*(radial+bend)+right*lateral+Vec3{0,height*(t+bow*std::sin(t*Pi)),0};
+            const Vec3 tangent=Normalize(Vec3{0,height*(1.f+bow*Pi*std::cos(t*Pi)),0}+forward*(2.f*lean*t)+right*(sideBias*Pi*std::cos(t*Pi)));
             const Vec3 normal=Normalize(Cross(right,tangent));const float bladeShade=.82f+.2f*Variation(91,blade+3),sunlit=.1f*t;
             const uint32_t color=PackColorRgba8({(.48f+sunlit)*bladeShade,(.72f+.16f*t)*bladeShade,(.28f+.12f*t)*bladeShade,1});
             const float leftWidth=width*taper*(1.f+.12f*Variation(37,blade+1)),rightWidth=width*taper*(.88f+.16f*Variation(43,blade+2));for(float offset:{-leftWidth,rightWidth}){const Vec3 point=center+right*offset;mesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8(normal,1.f-t),color});}

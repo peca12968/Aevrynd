@@ -16,11 +16,11 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_HDR_STAGE','AEVRYND_MISTWATCH_NO_SHADOWS','AEVRYND_MISTWATCH_NO_BLOOM',
     'AEVRYND_MISTWATCH_NO_GROUND_TEXTURES','AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE',
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
-    'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY')
+    'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GRASS_LEGACY')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -79,12 +79,15 @@ try {
         if($receipt.ground_source -ne 'forest-ground-04' -or $receipt.ground_maximum_resolution -ne '2048' -or
            $receipt.ground_packed_orm -ne '1' -or $receipt.ground_texture_scale -ne '0.25' -or
            $receipt.ground_normal_scale -ne '0.65' -or $receipt.ground_use_uv -ne '0'){throw ('Forest floor production material route missing: '+$case)}
-        if($case -eq 'boulder-profile') {
-            if($receipt.camera_source -ne 'diagnostic'){throw 'Boulder detail fixture missing diagnostic camera'}
+        if($receipt.grass_style -ne 'curved' -or $receipt.grass_vertices -ne '108' -or $receipt.grass_triangles -ne '180' -or
+           $receipt.grass_blades -ne '9' -or $receipt.grass_segments -ne '5' -or
+           [int]$receipt.ground_cover_instances -lt 500 -or [int]$receipt.submitted_grass -lt 1){throw ('Grass production geometry missing: '+$case)}
+        if($case -in @('boulder-profile','grass-profile')) {
+            if($receipt.camera_source -ne 'diagnostic'){throw 'Detail fixture missing diagnostic camera'}
             $position=@($receipt.camera_position.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
             $target=@($receipt.camera_target.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
             if($position.Count -ne 3 -or $target.Count -ne 3){throw 'Boulder camera receipt invalid'}
-            $offset=@(2,1.1,-2)
+            $offset=if($case -eq 'grass-profile'){@(1.15,.55,-1.15)}else{@(2,1.1,-2)}
             for($axis=0;$axis -lt 3;++$axis){
                 if([double]::IsNaN($position[$axis]) -or [double]::IsInfinity($position[$axis]) -or
                     [double]::IsNaN($target[$axis]) -or [double]::IsInfinity($target[$axis]) -or

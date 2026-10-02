@@ -86,11 +86,14 @@ class MistwatchGame final : public IGame {
     bool diagnosticNoGroundTextures{};
     bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
     bool diagnosticLegacyGround{};
+    bool diagnosticLegacyGrass{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
     bool captureWildlife{};
     bool captureBoarOverview{};
     bool captureBoulderOverview{};
+    bool captureGrassOverview{};
+    unsigned submittedGrass{};
     bool captureRelayMotion{};
     bool captureLandscapeMotion{};
     bool captureAudioProbe{};
@@ -169,6 +172,11 @@ public:
             if(length&&(length!=1||(legacyGround[0]!=L'0'&&legacyGround[0]!=L'1')))
                 throw std::runtime_error("Invalid ground comparison flag");
             diagnosticLegacyGround=legacyGround[0]==L'1';
+            wchar_t legacyGrass[3]{};
+            const auto grassLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_LEGACY",legacyGrass,3);
+            if(grassLength&&(grassLength!=1||(legacyGrass[0]!=L'0'&&legacyGrass[0]!=L'1')))
+                throw std::runtime_error("Invalid grass comparison flag");
+            diagnosticLegacyGrass=legacyGrass[0]==L'1';
         }
         groundDefinition=Mistwatch::GroundMaterialDefinition(diagnosticLegacyGround);
         const std::array<MaterialAssetDefinition3D,4> definitions{{
@@ -289,7 +297,7 @@ public:
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
         groundCover=Mistwatch::GroundCoverPositions(terrain);
-        grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,3));
+        grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,diagnosticLegacyGrass?3:5,diagnosticLegacyGrass?GrassBladeStyle3D::Upright:GrassBladeStyle3D::Curved));
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
         if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
         solids=Mistwatch::WorldSolids(session.bridgeRepaired);
@@ -345,6 +353,7 @@ public:
                 else if(name==L"focus-pause") {captureFocusProbe=true;fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";}
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else if(name==L"boulder-profile")captureBoulderOverview=true;
+                else if(name==L"grass-profile")captureGrassOverview=true;
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
                 if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
@@ -552,6 +561,9 @@ public:
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
                 out<<"landscape_river_release_m=24\n";
+                out<<"grass_style="<<(diagnosticLegacyGrass?"upright":"curved")<<"\ngrass_blades=9\ngrass_segments="<<(diagnosticLegacyGrass?3:5)<<"\ngrass_vertices="<<grassMesh.vertexCount
+                    <<"\ngrass_triangles="<<grassMesh.TriangleCount()<<"\nground_cover_instances="<<groundCover.size()
+                    <<"\nsubmitted_grass="<<submittedGrass<<'\n';
                 out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
                     <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
                 out<<"boulder_instances="<<std::count_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();})
@@ -583,7 +595,7 @@ public:
                     <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -730,10 +742,12 @@ public:
         Material3D grass{{.32f,.43f,.18f,1},{.9f,0,0,.9f}};
         grass.materialClass=MaterialClass3D::Foliage;
         grass.doubleSided=true;
+        submittedGrass=0;
         for(const auto plant:groundCover) {
             if(Length(plant-session.feet)>35.f) continue;
             const float scale=.5f+.25f*std::sin(plant.x*1.7f+plant.z);
             scene.Mesh(grassMesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},grass);
+            ++submittedGrass;
         }
         for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);
         for(unsigned i=0;i<3;++i) if(!(session.collected&(1u<<i)))
@@ -809,6 +823,12 @@ public:
             if(rock==forestProps.end())throw std::runtime_error("Boulder detail fixture missing");
             camera.target=rock->collider.center;
             camera.position=camera.target+Vec3{2.f,1.1f,-2.f};
+        }
+        if(captureGrassOverview && !capture.empty()) {
+            const auto plant=std::find_if(groundCover.begin(),groundCover.end(),[&](Vec3 p){return Length(p-session.feet)<12.f;});
+            if(plant==groundCover.end())throw std::runtime_error("Grass detail fixture missing");
+            camera.target=*plant+Vec3{0,.3f,0};
+            camera.position=camera.target+Vec3{1.15f,.55f,-1.15f};
         }
         lastRenderedCamera=camera;
         auto& draw=e.Draw();
