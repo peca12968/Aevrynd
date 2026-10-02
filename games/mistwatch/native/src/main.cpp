@@ -4,6 +4,7 @@
 #include "MistwatchCamera.h"
 #include "MistwatchExplorer.h"
 #include "MistwatchForestMaterial.h"
+#include "MistwatchGroundMaterial.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
@@ -57,6 +58,7 @@ class MistwatchGame final : public IGame {
     Material3D boulderMaterial;
     std::vector<Mistwatch::ForestProp> forestProps;
     MaterialLibrary3D materials;
+    MaterialAssetDefinition3D groundDefinition;
     Material3D groundMaterial, barkMaterial, woodMaterial, rockMaterial;
     std::vector<BoxCollider3D> solids;
     Mistwatch::OrbitCamera orbit;
@@ -83,6 +85,7 @@ class MistwatchGame final : public IGame {
     bool diagnosticNoShadows{},diagnosticNoBloom{};
     bool diagnosticNoGroundTextures{};
     bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
+    bool diagnosticLegacyGround{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
     bool captureWildlife{};
@@ -160,8 +163,16 @@ public:
         box=e.CreateMeshResource3D(Mesh3D::CreateUnitBox());
         scene.SetBoxMesh(box);
         materials.Initialize(e,e.ExecutableDirectory()/"assets"/"mistwatch-materials");
+        wchar_t groundCapture[2]{},legacyGround[3]{};
+        if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",groundCapture,2)>0) {
+            const auto length=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GROUND_LEGACY",legacyGround,3);
+            if(length&&(length!=1||(legacyGround[0]!=L'0'&&legacyGround[0]!=L'1')))
+                throw std::runtime_error("Invalid ground comparison flag");
+            diagnosticLegacyGround=legacyGround[0]==L'1';
+        }
+        groundDefinition=Mistwatch::GroundMaterialDefinition(diagnosticLegacyGround);
         const std::array<MaterialAssetDefinition3D,4> definitions{{
-            {"ground",{"ambientcg/ground037/1k/Ground037_1K-JPG_Color.jpg","ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg",1024,"ambientcg/ground037/1k/Ground037_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.92f,0,0,.8f},false,{},.25f}},
+            groundDefinition,
             {"bark",{"poly-haven/bark_brown_02/1k/base-color.jpg","poly-haven/bark_brown_02/1k/roughness.jpg",1024,"poly-haven/bark_brown_02/1k/normal-dx.jpg"},{{1,1,1,1},{.85f,0,0,.8f},true,{},1.f}},
             {"wood",{"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg","ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",1024,"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.8f,0,0,.8f},true,{},.5f}},
             {"rock",{"poly-haven/rock_surface/1k/base-color.jpg","poly-haven/rock_surface/1k/roughness.jpg",1024,"poly-haven/rock_surface/1k/normal-dx.jpg"},{{1,1,1,1},{.9f,0,0,.85f},true,{},1.f}}
@@ -171,7 +182,6 @@ public:
         barkMaterial=*materials.Find("bark");
         woodMaterial=*materials.Find("wood");
         rockMaterial=*materials.Find("rock");
-        groundMaterial.normalScale=.65f;
         const auto forestRoot=e.ExecutableDirectory()/"assets"/"mistwatch-forest";
         forestMaterials.Initialize(e,forestRoot);
         constexpr const char* slots[]{"bark","twig","dead-branches","trunk-c"};
@@ -402,9 +412,7 @@ public:
             diagnosticNeutralGroundSurface=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE");
             if(diagnosticNeutralGroundBase||diagnosticNeutralGroundSurface) {
                 // 中性測試圖由診斷收據固定；其他貼圖與品質不變。
-                auto definition=definitions[0];definition.name="ground-diagnostic";
-                if(diagnosticNeutralGroundBase)definition.textures.baseColorPath="diagnostics/neutral-base.bmp";
-                if(diagnosticNeutralGroundSurface)definition.textures.roughnessPath="diagnostics/neutral-surface.bmp";
+                auto definition=Mistwatch::GroundDiagnosticDefinition(diagnosticLegacyGround,diagnosticNeutralGroundBase,diagnosticNeutralGroundSurface);
                 if(!materials.Load(definition))throw std::runtime_error("Ground channel diagnostic material unavailable");
                 groundMaterial.textures=materials.Textures(definition.name);
             }
@@ -554,6 +562,12 @@ public:
                     <<"\nfocus_explicit_resume_verified="<<captureFocusComplete<<"\npaused="<<paused<<'\n';
                 out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
                     <<"\nground_textured="<<bool(groundMaterial.textures)
+                    <<"\nground_source="<<(diagnosticLegacyGround?"ground037":"forest-ground-04")
+                    <<"\nground_maximum_resolution="<<groundDefinition.textures.maximumResolution
+                    <<"\nground_packed_orm="<<(groundDefinition.textures.surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrm)
+                    <<"\nground_texture_scale="<<groundMaterial.textureScale<<"\nground_use_uv="<<groundMaterial.useUv
+                    <<"\nlast_draw_calls="<<stats.lastDrawCalls<<"\nresident_texture_bytes="<<stats.residentTextureBytes
+                    <<"\nterrain_vertices="<<terrainMesh.vertexCount<<"\nterrain_triangles="<<terrainMesh.TriangleCount()
                     <<"\nground_neutral_base="<<diagnosticNeutralGroundBase<<"\nground_neutral_surface="<<diagnosticNeutralGroundSurface
                     <<"\ndiagnostic_no_shadows="<<diagnosticNoShadows<<"\ndiagnostic_no_bloom="<<diagnosticNoBloom
                     <<"\ndiagnostic_hdr_stage="<<diagnosticHdrStage

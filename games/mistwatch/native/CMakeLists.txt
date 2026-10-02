@@ -25,6 +25,16 @@ endforeach()
 add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/material-packs/LICENSE.md" "${CMAKE_SOURCE_DIR}/engine/assets/material-packs/material-packs.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/")
 add_custom_command(TARGET Mistwatch POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/forest-ground-04" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/poly-haven/forest-ground-04"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/FOREST_GROUND_LICENSE.md"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/runtime-render-manifest.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/forest-ground-render-manifest.json")
+add_executable(MistwatchGroundMaterialTest tests/MistwatchGroundMaterialTest.cpp)
+target_include_directories(MistwatchGroundMaterialTest PRIVATE include)
+target_compile_options(MistwatchGroundMaterialTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(MistwatchGroundMaterialTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+target_link_libraries(MistwatchGroundMaterialTest PRIVATE AevryndEngine)
+add_test(NAME MistwatchGroundMaterialTest COMMAND MistwatchGroundMaterialTest)
+add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/materials"
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/meshes"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/runtime-asset-manifest.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/")
