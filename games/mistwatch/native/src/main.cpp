@@ -14,6 +14,7 @@
 #include "MistwatchAudio.h"
 #include "MistwatchPlayback.h"
 #include "MistwatchSupplyCrate.h"
+#include "MistwatchRangerHut.h"
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
@@ -36,6 +37,8 @@ class MistwatchGame final : public IGame {
     MeshResource3D box;
     std::array<MeshResource3D,2> supplyMeshes;
     unsigned submittedSupplies{};
+    MeshResource3D rangerHutMesh;
+    bool diagnosticLegacyRangerHut{},captureRangerHutOverview{};
     std::array<MeshResource3D,4> firMeshes;
     std::array<MeshResource3D,4> landscapeFirMeshes;
     std::array<Material3D,4> firMaterials;
@@ -198,6 +201,11 @@ public:
         supplyMeshes[0]=e.CreateMeshResource3D(supplyGeometry.wood);
         supplyMeshes[1]=e.CreateMeshResource3D(supplyGeometry.metal);
         if(!supplyMeshes[0]||!supplyMeshes[1])throw std::runtime_error("Supply crate GPU upload failed");
+        wchar_t hutCapture[2]{},legacyHut[3]{};
+        diagnosticLegacyRangerHut=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",hutCapture,2)>0&&
+            GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LEGACY_RANGER_HUT",legacyHut,3)==1&&legacyHut[0]==L'1';
+        rangerHutMesh=e.CreateMeshResource3D(diagnosticLegacyRangerHut?Mistwatch::CreateLegacyRangerHut():Mistwatch::CreateRangerHut());
+        if(!rangerHutMesh)throw std::runtime_error("Ranger hut GPU upload failed");
         materials.Initialize(e,e.ExecutableDirectory()/"assets"/"mistwatch-materials");
         wchar_t groundCapture[2]{},legacyGround[3]{};
         if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",groundCapture,2)>0) {
@@ -420,6 +428,10 @@ public:
                 else if(name==L"repair-ready") fixture="MISTWATCH 4 7 100 0 0 0 0 0 30 0 0 0 7";
                 else if(name==L"settlement-clue") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 0 0";
                 else if(name==L"settlement-clue-read") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 1 0";
+                else if(name==L"ranger-hut-profile") {
+                    captureRangerHutOverview=true;
+                    fixture="MISTWATCH 5 7 100 1 1 0 2 0 79 0 0 0 7 0 0";
+                }
                 else if(name==L"fuse-lock-wrong") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 0";
                 else if(name==L"fuse-lock-ready") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 50";
                 else if(name==L"focus-pause") {captureFocusProbe=true;fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";}
@@ -661,6 +673,10 @@ public:
                     <<"\nfern_materials="<<fernMaterials.Stats().materials<<"\nsubmitted_fern_triangles="<<submittedFernTriangles
                     <<"\nfern_alpha_cutoff="<<fernSurface.alphaCutoff<<"\nfern_use_uv="<<fernSurface.useUv<<'\n';
                 out<<"grass_tint_scale="<<(diagnosticDimGrass?.7f:1.f)<<'\n';
+                out<<"ranger_hut_visual="<<(diagnosticLegacyRangerHut?"legacy_flat":"planked_pitched_roof")
+                    <<"\nranger_hut_triangles="<<rangerHutMesh.TriangleCount()<<"\nranger_hut_mesh_resources=1"
+                    <<"\nranger_hut_wood_textured="<<bool(woodMaterial.textures)
+                    <<"\nranger_hut_camera_roof="<<!diagnosticLegacyRangerHut<<'\n';
                 out<<"supply_visual=planked_wood_crate\nsupply_mesh_resources=2\nsupply_wood_triangles="<<supplyMeshes[0].TriangleCount()
                     <<"\nsupply_metal_triangles="<<supplyMeshes[1].TriangleCount()<<"\nsubmitted_supply_crates="<<submittedSupplies
                     <<"\nsupply_collected_mask="<<session.collected<<"\nsupply_wood_textured="<<bool(woodMaterial.textures)<<'\n';
@@ -711,7 +727,7 @@ public:
                     <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -949,7 +965,10 @@ public:
             scene.Box({cabinet.center.x+.36f,.7f,z},{.03f,.14f,.14f},
                 session.fuseCollected?Color{.2f,1,.3f,1}:Color{1,.65f,.12f,1});
         }
-        for(const auto solid:Mistwatch::RangerHutSolids())scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
+        if(!scene.Mesh(rangerHutMesh,{Mistwatch::Session::rangerLog,{},{1,1,1}},woodMaterial))
+            throw std::runtime_error("Ranger hut scene insertion failed");
+        const auto desk=Mistwatch::RangerHutSolids()[2];
+        scene.MaterialBox(desk.center,desk.extents*2.f,woodMaterial);
         scene.Box(Mistwatch::Session::rangerLog+Vec3{.9f,1.02f,0},{.55f,.03f,.65f},{.85f,.82f,.65f,1});
         scene.MaterialBox({2,.8f,79},{.12f,1.6f,.12f},woodMaterial);
         scene.Box({2,1.5f,79},{1,.35f,.12f},{.65f,.62f,.25f,1});
@@ -973,7 +992,13 @@ public:
             scene.Box(p+Vec3{index==1?-.69f:.69f,.7f,0},{.08f,.18f,.25f},lamp);
             scene.Line(p+Vec3{0,.74f,0},p+Vec3{direction.x,.74f,direction.z},3.f,lamp);
         }
-        auto camera=Mistwatch::BuildPlayerCamera(session.feet,controller.Settings().height,orbit,solids,terrain);
+        const std::array cameraRoof{Mistwatch::RangerHutCameraRoofSolid()};
+        auto camera=Mistwatch::BuildPlayerCamera(session.feet,controller.Settings().height,orbit,solids,terrain,
+            diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{cameraRoof});
+        if(captureRangerHutOverview&&!capture.empty()) {
+            camera.target=Mistwatch::Session::rangerLog+Vec3{0,1.6f,0};
+            camera.position=camera.target+Vec3{-7,3.2f,-7};
+        }
         if(diagnosticCrown && !capture.empty()) camera=MakeThirdPersonCamera({-7,6,-5},0,.1f,8);
         // 遠景只用於地形影像驗收，不改變玩家可操作鏡頭的距離上限。
         if(captureRiverOverview && !capture.empty()) {camera.position={-22,28,8};camera.target={0,-2,36};}
@@ -1143,6 +1168,13 @@ public:
     void OnStop(Engine& e) override {
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
         unsigned suppliesDestroyed{};
+        if(!rangerHutMesh)throw std::runtime_error("Ranger hut cleanup incomplete");
+        e.DestroyMesh3D(rangerHutMesh.handle);rangerHutMesh={};
+        if(!capture.empty()) {
+            auto path=capture;path+=".hut-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=1\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Ranger hut cleanup receipt failed");
+        }
         for(auto& mesh:supplyMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++suppliesDestroyed;}mesh={};}
         if(suppliesDestroyed!=2)throw std::runtime_error("Supply crate cleanup incomplete");
         if(!capture.empty()) {

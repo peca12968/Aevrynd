@@ -18,11 +18,11 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
     'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GRASS_LEGACY',
     'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL',
-    'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED')
+    'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED','AEVRYND_MISTWATCH_LEGACY_RANGER_HUT')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -63,6 +63,14 @@ try {
         $supplyCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.supply-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$supplyCleanup[$pair[0]]=$pair[1]}}
         if($supplyCleanup.cleanup -ne 'success' -or $supplyCleanup.mesh_destroy_calls -ne '2'){throw ('Supply cleanup incomplete: '+$case)}
+        $hutCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.hut-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$hutCleanup[$pair[0]]=$pair[1]}}
+        if($hutCleanup.cleanup -ne 'success' -or $hutCleanup.mesh_destroy_calls -ne '1' -or
+            $receipt.ranger_hut_visual -ne 'planked_pitched_roof' -or $receipt.ranger_hut_triangles -ne '832' -or
+            $receipt.ranger_hut_wood_textured -ne '1' -or $receipt.ranger_hut_camera_roof -ne '1'){
+            throw ('Ranger hut production geometry/material/camera missing: '+$case)
+        }
+        if($case -eq 'ranger-hut-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Hut profile not proven'}
         if($receipt.supply_visual -ne 'planked_wood_crate' -or $receipt.supply_mesh_resources -ne '2' -or
             $receipt.supply_wood_triangles -ne '360' -or $receipt.supply_metal_triangles -ne '236' -or
             $receipt.supply_wood_textured -ne '1'){throw ('Supply production geometry/material missing: '+$case)}

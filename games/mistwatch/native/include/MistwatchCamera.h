@@ -15,11 +15,14 @@ struct OrbitCamera {
     }
 };
 inline Aevrynd::Camera3D BuildPlayerCamera(Aevrynd::Vec3 feet,float height,const OrbitCamera& orbit,
-    std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain) {
+    std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain,
+    std::span<const Aevrynd::BoxCollider3D> cameraOnly={}) {
     const auto target=feet+Aevrynd::Vec3{0,height<1.5f?.85f:1.2f,0};
     auto camera=Aevrynd::MakeThirdPersonCamera(target,orbit.yaw,orbit.pitch,orbit.distance);
     camera=Aevrynd::ConstrainThirdPersonCameraCeiling(camera,solids);
     camera=Aevrynd::ConstrainThirdPersonCamera(camera,target,solids);
+    camera=Aevrynd::ConstrainThirdPersonCameraCeiling(camera,cameraOnly);
+    camera=Aevrynd::ConstrainThirdPersonCamera(camera,target,cameraOnly);
     return Aevrynd::ConstrainThirdPersonCamera(camera,target,terrain);
 }
 }

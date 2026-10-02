@@ -98,5 +98,6 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     AevryndWorldPartitionDeltaGateFakeTest
     MistwatchSupplyCrateTest
     MistwatchSessionTest
-    MistwatchRouteTest)
+    MistwatchRouteTest
+    MistwatchRangerHutTest)
 endif()
