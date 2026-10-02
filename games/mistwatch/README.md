@@ -2,6 +2,24 @@
 
 本目錄使用 Aevrynd 原生 Win32／D3D12 引擎。現階段是具有森林、彎曲河谷、水面與簡化蒙皮探險者的可玩流程原型，尚未達到寫實森林、正式角色動畫或 10～15 分鐘內容的要求。
 
+## 掃描草叢候選：2026-10-02（WIP，不是穩定版）
+
+同鏡頭調暗程序草的單變量對照仍呈現無貼圖的寬帶，故改接 [Poly Haven Grass Medium 02](https://polyhaven.com/a/grass_medium_02) 原始五種 CC0 草株。六份官方 glTF／bin／JPEG／獨立 alpha PNG 保存在 `engine/assets/mistwatch-grass-medium-02/source`，逐檔大小、MD5、SHA與URL封存。`tools/cook-mistwatch-grass.py` 重用既有 converter／材質 baker，重做五網格及三DDS逐檔雜湊一致，實測峰值396726272bytes，低於2GiB。
+
+保留1363個原根點、逐株比例、旋轉與35m選擇規則，配置索引穩定選擇五種草型（不是LOD）。移除原陳列 translation，但保留local pivot、拓樸、UV、XYZ法線；runtime只等比縮放到最低1.02338m尖高與.584m半徑。最窄a最初僅按尖高匹配時半徑.531097m，足跡檢查exit13；修正為高度與半徑比例取較大值，a因此高1.12532m，並非五種完全等高。五型半徑依序.584、.694293、.739211、.842327、.677827m；未靠縮小植株／刪種植位置換取改善。新增normal.W反高度風權重，保留XYZ packed bits，Y≤0根部固定；不宣稱隨風法線已正確重算或斜坡所有葉卡已接地驗收。
+
+原glTF是BLEND，本作明確採獨立遮罩與MASK .5，並非原資產宣告MASK。三張2K DDS有完整12層及SHA／大小封印：BC7 sRGB base、BC7 linear ARM、BC5 linear DX normal；RGB dilation8不修改alpha，GL綠通道反轉一次，ARM.R為額外AO整合選擇。新近景能看見細長草葉與乾濕色差，但整座森林與聚落仍是原型。
+
+四鏡頭×新舊路由的八張增量EXE A/B保留同一相機、時間、根點與畫質。起點598株，新930578三角／35draw，舊107640三角／31draw；各120GPU樣本P95新5.70208ms、舊5.49258ms，是成本增加而非效能提升。新材質駐留94372920bytes，較上一里程碑增16777296bytes；A/B兩路都載入新DDS，不能以resident相等宣稱零成本。
+
+全新 `Builds/mistwatch-scanned-grass-fresh-20261002` ALL_BUILD、76／76單元整合回歸及24／24普通native場景已通過；1161個輸入快照無漂移，四個內部診斷OFF，保留4xMSAA／AO／陰影／後製，GPU警告／錯誤零。EXE SHA `90FA267569488D57F8CFE51FA35F892171F358B66BD8434561006BD798C906B9`。固定1280×720起點／河谷P95為5.69619／5.17171ms，不是人工遊玩FPS。五草mesh與材質釋放呼叫已驗，不宣稱整個引擎零洩漏。10／10實際GBV場景已完成，debug layer／requested／available／executed／passed均1、GPU錯誤／警告零；未把普通capture當GBV通過。
+
+**遠距品質仍待驗證：** 複用蕨株「12層全部非空」診斷時，草1×1尾層失敗；未壓縮RGBA8 alpha120、BC7解碼116，都低於128。原始覆蓋率約11.367%，1像素量化不能保持同等覆蓋率，pinned DirectXTex的2×2 coverage演算法亦有此退化限制。完整12層、原alpha及.5門檻均未改，不填假alpha、不截尾、不放寬蕨株既有gate。35m、各比例、斜視及時間閃爍需要專門原生影像，不能宣稱已通過。來源：[DirectXTex mip coverage](https://raw.githubusercontent.com/microsoft/DirectXTex/4feb3e1/DirectXTex/DirectXTexMipmaps.cpp)。
+
+同一新鮮EXE產生36張山脊環繞影格，35次相鄰變化，編成每幀100ms的 `fresh/world-motion/world-orbit.webp`；不是人工錄影或遊玩FPS。獨立候選目錄 `Demo/Mistwatch/prototype-scanned-grass-WIP-20261002` 包含同一EXE、七組逐檔SHA核對資產、操作說明、當輪起點／河谷／草株／蕨株圖片及世界動圖。封裝自己的EXE另跑24／24普通場景通過；ZIP於乾淨提交及推送後建立並逐檔回讀。保留前一蕨株版本，候選明確標註遠距草葉尚未驗收，不是穩定版。
+
+台中job `0392e644-e0c6-4fe1-b307-b60511cfee89`、桃園job `94e8e681-c959-41ba-a8e2-646213bd372d` 已以基準f33593f2完成27／27 release回歸、零失敗／跳過，signed狀態及日誌回收；不包括本輪的新草、不作新草視覺通過證據。當輪證據 `Evidence/mistwatch-scanned-grass-20261002`、A/B與alpha診斷 `Evidence/mistwatch-grass-source-evaluation-20261002`。權威分數34／100未重評，10～15分鐘人工流程、山坡條紋、聚落與角色仍需改善，網站與既有Blender未修改。
+
 ## 掃描蕨株整合：2026-10-02（可玩原型，寫實美術仍未完成）
 
 使用 [Poly Haven Fern02](https://polyhaven.com/a/fern_02) 的四種 CC0 原始植株，官方六份來源檔保存在 `engine/assets/mistwatch-fern-02/source`，逐檔核對官方 MD5／大小及記錄 SHA-256。`tools/cook-mistwatch-fern.py` 重用既有 AEMESH converter 與材質 baker，移除四株陳列 translation、保留 local pivot，載入時僅等比 1.6；四個變體不是 LOD。所有420個原根點、原旋轉／scale、24～38公尺可見度保留，不以減少植株或刪掉檢查換取成功。

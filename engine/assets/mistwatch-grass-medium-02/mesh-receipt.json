@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "converter": "convert-glb-to-aemesh.py",
+  "assetName": "grass-medium-02",
+  "lod": 0,
+  "sourceFile": "grass-medium-02-rooted.glb",
+  "sourceSha256": "46e267f230ddc3eff298e08cfcd268c3b7c3e3816f1ba8fb9c3ea82b1b5ad1de",
+  "outputs": [
+    {
+      "file": "grass-medium-02-lod0-node0-mesh0-primitive0-material0-grass-medium-02.aemesh",
+      "sha256": "84c8c7da8eeb335b1bd60415531a30798933c688ff0d3a241eca1958fb9c2e56",
+      "bytes": 26644,
+      "nodeIndex": 0,
+      "nodePath": [
+        0
+      ],
+      "instanceOrdinal": 0,
+      "meshIndex": 0,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "grass-medium-02",
+      "vertices": 645,
+      "indices": 2142,
+      "triangles": 714,
+      "boundsMinimumGltf": [
+        -0.05556991323828697,
+        -0.002838333137333393,
+        -0.056573495268821716
+      ],
+      "boundsMaximumGltf": [
+        0.06355194747447968,
+        0.15409204363822937,
+        0.06318891793489456
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.28230175375938416,
+        0.018152594566345215
+      ],
+      "effectiveUvMaximum": [
+        0.9833980202674866,
+        0.9950953722000122
+      ]
+    },
+    {
+      "file": "grass-medium-02-lod0-node1-mesh1-primitive0-material0-grass-medium-02.aemesh",
+      "sha256": "ce3eb8a245f7c36682fcabb106ebb56e79beae95d6345df330ac2d2dd5f76d05",
+      "bytes": 65236,
+      "nodeIndex": 1,
+      "nodePath": [
+        1
+      ],
+      "instanceOrdinal": 1,
+      "meshIndex": 1,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "grass-medium-02",
+      "vertices": 1575,
+      "indices": 5280,
+      "triangles": 1760,
+      "boundsMinimumGltf": [
+        -0.060163434594869614,
+        -0.0040363832376897335,
+        -0.10509301722049713
+      ],
+      "boundsMaximumGltf": [
+        0.1189635768532753,
+        0.1755276322364807,
+        0.09417536109685898
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.28230175375938416,
+        0.054100751876831055
+      ],
+      "effectiveUvMaximum": [
+        0.8508360981941223,
+        0.9663732647895813
+      ]
+    },
+    {
+      "file": "grass-medium-02-lod0-node2-mesh2-primitive0-material0-grass-medium-02.aemesh",
+      "sha256": "0aa49b54653a3b69a266cc7575ac8ff405a968e220bac500a6ba3faa3d432363",
+      "bytes": 44612,
+      "nodeIndex": 2,
+      "nodePath": [
+        2
+      ],
+      "instanceOrdinal": 2,
+      "meshIndex": 2,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "grass-medium-02",
+      "vertices": 1072,
+      "indices": 3645,
+      "triangles": 1215,
+      "boundsMinimumGltf": [
+        -0.13893021643161774,
+        -0.005509789101779461,
+        -0.1609298586845398
+      ],
+      "boundsMaximumGltf": [
+        0.12274692207574844,
+        0.226151704788208,
+        0.08858048170804977
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.03295845538377762,
+        0.018152594566345215
+      ],
+      "effectiveUvMaximum": [
+        0.9833980202674866,
+        0.9986065030097961
+      ]
+    },
+    {
+      "file": "grass-medium-02-lod0-node3-mesh3-primitive0-material0-grass-medium-02.aemesh",
+      "sha256": "78ed34130eac919ed41f02918676e68d4060713c52c570b9e4abebcd1aa47c5b",
+      "bytes": 91400,
+      "nodeIndex": 3,
+      "nodePath": [
+        3
+      ],
+      "instanceOrdinal": 3,
+      "meshIndex": 3,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "grass-medium-02",
+      "vertices": 2197,
+      "indices": 7467,
+      "triangles": 2489,
+      "boundsMinimumGltf": [
+        -0.18113653361797333,
+        -0.005133261438459158,
+        -0.15386725962162018
+      ],
+      "boundsMaximumGltf": [
+        0.13623955845832825,
+        0.2552432417869568,
+        0.20805847644805908
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.03295845538377762,
+        0.018152594566345215
+      ],
+      "effectiveUvMaximum": [
+        0.9833980202674866,
+        0.9986065030097961
+      ]
+    },
+    {
+      "file": "grass-medium-02-lod0-node4-mesh4-primitive0-material0-grass-medium-02.aemesh",
+      "sha256": "6b95323ace660f307c8c1ebab617b2d87118e773fab4925b4b452b232389a689",
+      "bytes": 63160,
+      "nodeIndex": 4,
+      "nodePath": [
+        4
+      ],
+      "instanceOrdinal": 4,
+      "meshIndex": 4,
+      "primitiveIndex": 0,
+      "materialIndex": 0,
+      "materialName": "grass-medium-02",
+      "vertices": 1542,
+      "indices": 4992,
+      "triangles": 1664,
+      "boundsMinimumGltf": [
+        -0.21328848600387573,
+        -0.0034316747914999723,
+        -0.1754019558429718
+      ],
+      "boundsMaximumGltf": [
+        0.14228084683418274,
+        0.3998044431209564,
+        0.25784459710121155
+      ],
+      "windingReversed": true,
+      "hasNormals": true,
+      "hasUv": true,
+      "sourceTexCoord": 0,
+      "textureTransform": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ]
+      },
+      "effectiveUvMinimum": [
+        0.36142489314079285,
+        0.018152594566345215
+      ],
+      "effectiveUvMaximum": [
+        0.9833980202674866,
+        0.9950953722000122
+      ]
+    }
+  ],
+  "outputCount": 5,
+  "materialPrimitiveBijection": true,
+  "totalBytes": 291052,
+  "totalTriangles": 7842,
+  "peakWorkingSetBytes": 25010176,
+  "peakWorkingSetScope": "converter-process-no-children",
+  "peakLimitBytes": 2147483648,
+  "memoryGate": true
+}

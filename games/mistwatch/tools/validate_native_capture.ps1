@@ -17,7 +17,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_NO_GROUND_TEXTURES','AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE',
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
     'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GRASS_LEGACY',
-    'AEVRYND_MISTWATCH_FERN_LEGACY')
+    'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
@@ -56,6 +56,9 @@ try {
         $fernCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.fern-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$fernCleanup[$pair[0]]=$pair[1]}}
         if($fernCleanup.cleanup -ne 'success' -or $fernCleanup.materials -ne '0' -or $fernCleanup.mesh_destroy_calls -ne '4'){throw ('Fern cleanup incomplete: '+$case)}
+        $grassCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.grass-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$grassCleanup[$pair[0]]=$pair[1]}}
+        if($grassCleanup.cleanup -ne 'success' -or $grassCleanup.materials -ne '0' -or $grassCleanup.mesh_destroy_calls -ne '5'){throw ('Grass cleanup incomplete: '+$case)}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0' -or $receipt.debug_warnings -ne '0'){throw ('GPU debug messages: '+$case)}
         if($receipt.multisample_count -ne '4'){throw ('Production MSAA missing: '+$case)}
@@ -83,9 +86,11 @@ try {
         if($receipt.ground_source -ne 'forest-ground-04' -or $receipt.ground_maximum_resolution -ne '2048' -or
            $receipt.ground_packed_orm -ne '1' -or $receipt.ground_texture_scale -ne '0.25' -or
            $receipt.ground_normal_scale -ne '0.65' -or $receipt.ground_use_uv -ne '0'){throw ('Forest floor production material route missing: '+$case)}
-        if($receipt.grass_style -ne 'curved' -or $receipt.grass_vertices -ne '108' -or $receipt.grass_triangles -ne '180' -or
-           $receipt.grass_blades -ne '9' -or $receipt.grass_segments -ne '5' -or
-           [int]$receipt.ground_cover_instances -lt 500 -or [int]$receipt.submitted_grass -lt 1){throw ('Grass production geometry missing: '+$case)}
+        if($receipt.grass_style -ne 'scanned' -or $receipt.grass_vertices -ne '7031' -or $receipt.grass_triangles -ne '7842' -or
+           $receipt.grass_variants -ne '5' -or $receipt.grass_source -ne 'poly-haven-grass-medium-02' -or
+           $receipt.grass_materials -ne '1' -or $receipt.grass_use_uv -ne '1' -or $receipt.grass_alpha_cutoff -ne '0.5' -or
+           $receipt.grass_tint_scale -ne '1' -or $receipt.ground_cover_instances -ne '1363' -or
+           [int]$receipt.submitted_grass -lt 1 -or [int]$receipt.submitted_grass_triangles -lt 714){throw ('Scanned grass production binding missing: '+$case)}
         if($receipt.fern_source -ne 'poly-haven-fern-02' -or $receipt.fern_variants -ne '4' -or
            $receipt.fern_asset_scale -ne '1.6' -or $receipt.fern_materials -ne '1' -or
            $receipt.fern_use_uv -ne '1' -or $receipt.fern_alpha_cutoff -ne '0.5' -or

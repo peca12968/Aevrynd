@@ -1,0 +1,472 @@
+{
+  "source": "https://polyhaven.com/a/grass_medium_02",
+  "license": "CC0-1.0",
+  "nodes": [
+    {
+      "name": "grass_medium_02_a",
+      "displayTranslationRemoved": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "grass_medium_02_b",
+      "displayTranslationRemoved": [
+        0.2059451788663864,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "grass_medium_02_c",
+      "displayTranslationRemoved": [
+        0.4883299171924591,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "grass_medium_02_d",
+      "displayTranslationRemoved": [
+        0.7895345687866211,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "grass_medium_02_e",
+      "displayTranslationRemoved": [
+        1.1127846240997314,
+        0,
+        0
+      ]
+    }
+  ],
+  "sourceAlphaMode": "BLEND",
+  "runtimeAlphaMode": "MASK",
+  "alphaPolicy": "Separate official coverage mask; deliberate opaque alpha-test integration, not original blend",
+  "scriptSha256": "ac133633be7a1fbad2c75840c8abd4e3f16c7497ab93a5515213083a8f4b9dcd",
+  "meshConverterSha256": "33bc28f796f30ca5ccbd51b5022579fb994b16e60799a6d7ed9fa5fd66aa0c61",
+  "materialBakerSha256": "90e648ece087da2a8daaadc12756492f5f3f9e3abcdd4c08337b0cf03d2366bc",
+  "ddsBytes": 16777740,
+  "mesh": {
+    "schemaVersion": 1,
+    "converter": "convert-glb-to-aemesh.py",
+    "assetName": "grass-medium-02",
+    "lod": 0,
+    "sourceFile": "grass-medium-02-rooted.glb",
+    "sourceSha256": "46e267f230ddc3eff298e08cfcd268c3b7c3e3816f1ba8fb9c3ea82b1b5ad1de",
+    "outputs": [
+      {
+        "file": "grass-medium-02-lod0-node0-mesh0-primitive0-material0-grass-medium-02.aemesh",
+        "sha256": "84c8c7da8eeb335b1bd60415531a30798933c688ff0d3a241eca1958fb9c2e56",
+        "bytes": 26644,
+        "nodeIndex": 0,
+        "nodePath": [
+          0
+        ],
+        "instanceOrdinal": 0,
+        "meshIndex": 0,
+        "primitiveIndex": 0,
+        "materialIndex": 0,
+        "materialName": "grass-medium-02",
+        "vertices": 645,
+        "indices": 2142,
+        "triangles": 714,
+        "boundsMinimumGltf": [
+          -0.05556991323828697,
+          -0.002838333137333393,
+          -0.056573495268821716
+        ],
+        "boundsMaximumGltf": [
+          0.06355194747447968,
+          0.15409204363822937,
+          0.06318891793489456
+        ],
+        "windingReversed": true,
+        "hasNormals": true,
+        "hasUv": true,
+        "sourceTexCoord": 0,
+        "textureTransform": {
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "effectiveUvMinimum": [
+          0.28230175375938416,
+          0.018152594566345215
+        ],
+        "effectiveUvMaximum": [
+          0.9833980202674866,
+          0.9950953722000122
+        ]
+      },
+      {
+        "file": "grass-medium-02-lod0-node1-mesh1-primitive0-material0-grass-medium-02.aemesh",
+        "sha256": "ce3eb8a245f7c36682fcabb106ebb56e79beae95d6345df330ac2d2dd5f76d05",
+        "bytes": 65236,
+        "nodeIndex": 1,
+        "nodePath": [
+          1
+        ],
+        "instanceOrdinal": 1,
+        "meshIndex": 1,
+        "primitiveIndex": 0,
+        "materialIndex": 0,
+        "materialName": "grass-medium-02",
+        "vertices": 1575,
+        "indices": 5280,
+        "triangles": 1760,
+        "boundsMinimumGltf": [
+          -0.060163434594869614,
+          -0.0040363832376897335,
+          -0.10509301722049713
+        ],
+        "boundsMaximumGltf": [
+          0.1189635768532753,
+          0.1755276322364807,
+          0.09417536109685898
+        ],
+        "windingReversed": true,
+        "hasNormals": true,
+        "hasUv": true,
+        "sourceTexCoord": 0,
+        "textureTransform": {
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "effectiveUvMinimum": [
+          0.28230175375938416,
+          0.054100751876831055
+        ],
+        "effectiveUvMaximum": [
+          0.8508360981941223,
+          0.9663732647895813
+        ]
+      },
+      {
+        "file": "grass-medium-02-lod0-node2-mesh2-primitive0-material0-grass-medium-02.aemesh",
+        "sha256": "0aa49b54653a3b69a266cc7575ac8ff405a968e220bac500a6ba3faa3d432363",
+        "bytes": 44612,
+        "nodeIndex": 2,
+        "nodePath": [
+          2
+        ],
+        "instanceOrdinal": 2,
+        "meshIndex": 2,
+        "primitiveIndex": 0,
+        "materialIndex": 0,
+        "materialName": "grass-medium-02",
+        "vertices": 1072,
+        "indices": 3645,
+        "triangles": 1215,
+        "boundsMinimumGltf": [
+          -0.13893021643161774,
+          -0.005509789101779461,
+          -0.1609298586845398
+        ],
+        "boundsMaximumGltf": [
+          0.12274692207574844,
+          0.226151704788208,
+          0.08858048170804977
+        ],
+        "windingReversed": true,
+        "hasNormals": true,
+        "hasUv": true,
+        "sourceTexCoord": 0,
+        "textureTransform": {
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "effectiveUvMinimum": [
+          0.03295845538377762,
+          0.018152594566345215
+        ],
+        "effectiveUvMaximum": [
+          0.9833980202674866,
+          0.9986065030097961
+        ]
+      },
+      {
+        "file": "grass-medium-02-lod0-node3-mesh3-primitive0-material0-grass-medium-02.aemesh",
+        "sha256": "78ed34130eac919ed41f02918676e68d4060713c52c570b9e4abebcd1aa47c5b",
+        "bytes": 91400,
+        "nodeIndex": 3,
+        "nodePath": [
+          3
+        ],
+        "instanceOrdinal": 3,
+        "meshIndex": 3,
+        "primitiveIndex": 0,
+        "materialIndex": 0,
+        "materialName": "grass-medium-02",
+        "vertices": 2197,
+        "indices": 7467,
+        "triangles": 2489,
+        "boundsMinimumGltf": [
+          -0.18113653361797333,
+          -0.005133261438459158,
+          -0.15386725962162018
+        ],
+        "boundsMaximumGltf": [
+          0.13623955845832825,
+          0.2552432417869568,
+          0.20805847644805908
+        ],
+        "windingReversed": true,
+        "hasNormals": true,
+        "hasUv": true,
+        "sourceTexCoord": 0,
+        "textureTransform": {
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "effectiveUvMinimum": [
+          0.03295845538377762,
+          0.018152594566345215
+        ],
+        "effectiveUvMaximum": [
+          0.9833980202674866,
+          0.9986065030097961
+        ]
+      },
+      {
+        "file": "grass-medium-02-lod0-node4-mesh4-primitive0-material0-grass-medium-02.aemesh",
+        "sha256": "6b95323ace660f307c8c1ebab617b2d87118e773fab4925b4b452b232389a689",
+        "bytes": 63160,
+        "nodeIndex": 4,
+        "nodePath": [
+          4
+        ],
+        "instanceOrdinal": 4,
+        "meshIndex": 4,
+        "primitiveIndex": 0,
+        "materialIndex": 0,
+        "materialName": "grass-medium-02",
+        "vertices": 1542,
+        "indices": 4992,
+        "triangles": 1664,
+        "boundsMinimumGltf": [
+          -0.21328848600387573,
+          -0.0034316747914999723,
+          -0.1754019558429718
+        ],
+        "boundsMaximumGltf": [
+          0.14228084683418274,
+          0.3998044431209564,
+          0.25784459710121155
+        ],
+        "windingReversed": true,
+        "hasNormals": true,
+        "hasUv": true,
+        "sourceTexCoord": 0,
+        "textureTransform": {
+          "offset": [
+            0.0,
+            0.0
+          ],
+          "rotation": 0.0,
+          "scale": [
+            1.0,
+            1.0
+          ]
+        },
+        "effectiveUvMinimum": [
+          0.36142489314079285,
+          0.018152594566345215
+        ],
+        "effectiveUvMaximum": [
+          0.9833980202674866,
+          0.9950953722000122
+        ]
+      }
+    ],
+    "outputCount": 5,
+    "materialPrimitiveBijection": true,
+    "totalBytes": 291052,
+    "totalTriangles": 7842,
+    "peakWorkingSetBytes": 25010176,
+    "peakWorkingSetScope": "converter-process-no-children",
+    "peakLimitBytes": 2147483648,
+    "memoryGate": true
+  },
+  "material": {
+    "schemaVersion": 1,
+    "status": "pass",
+    "runtimeManifestSha256": "82a368d0f023764f8da017de99e80fe0d738a1b2a477aedfb2df83b7a4e7eb70",
+    "quality": "Ultra",
+    "mipPolicy": "complete-chain",
+    "tool": {
+      "name": "DirectXTex texconv",
+      "tag": "may2026",
+      "commit": "4feb3e1",
+      "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+    },
+    "memoryGate": "pass",
+    "peakWorkingSetLimitBytes": 2147483648,
+    "peakWorkingSetBytes": 396726272,
+    "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
+    "assets": [
+      {
+        "assetName": "grass-medium-02",
+        "assetId": "grass_medium_02",
+        "officialPage": "https://polyhaven.com/a/grass_medium_02",
+        "outputResolution": 2048,
+        "expectedMipCount": 12,
+        "license": "CC0-1.0",
+        "commercialUse": true,
+        "materials": [
+          {
+            "slot": "grass",
+            "alphaMode": "mask",
+            "alphaSource": "separate",
+            "alphaCutoff": 0.5,
+            "alphaDilationPixels": 8,
+            "doubleSided": true,
+            "materialClass": "foliage",
+            "normalConversion": "OpenGL green inverted to DirectX",
+            "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+            "maskCoverage": {
+              "source": {
+                "cutoffByte": 128,
+                "visiblePixels": 476783,
+                "totalPixels": 4194304,
+                "fraction": 0.11367392539978027,
+                "minimum": 0,
+                "maximum": 255
+              },
+              "prepared": {
+                "cutoffByte": 128,
+                "visiblePixels": 476783,
+                "totalPixels": 4194304,
+                "fraction": 0.11367392539978027,
+                "minimum": 0,
+                "maximum": 255
+              },
+              "mipPolicy": "DirectXTex --keep-coverage",
+              "mipCoverageCutoff": 0.5
+            },
+            "normalChannelAudit": {
+              "sourceGreen": {
+                "minimum": 93,
+                "maximum": 253,
+                "mean": 129.43519282341003
+              },
+              "preparedGreen": {
+                "minimum": 2,
+                "maximum": 162,
+                "mean": 125.56480717658997
+              },
+              "maximumInversionError": 0
+            },
+            "surfaceChannelAudit": {
+              "maximumPreservationError": 0,
+              "ao": {
+                "minimum": 124,
+                "maximum": 255,
+                "mean": 252.44125294685364
+              },
+              "roughness": {
+                "minimum": 97,
+                "maximum": 216,
+                "mean": 150.38004279136658
+              },
+              "metallic": {
+                "minimum": 0,
+                "maximum": 28,
+                "mean": 0.3489806652069092
+              }
+            },
+            "sources": {
+              "base": {
+                "path": "prepared/grass_medium_02_diff_2k.jpg",
+                "sha256": "70c0e294fd94b980d01ed91bde30ab19fe7eeed1f2717088cc88ab20bb115c87"
+              },
+              "normal": {
+                "path": "prepared/grass_medium_02_nor_gl_2k.jpg",
+                "sha256": "98ab154f35798b1e28660c28016e9a9f768859efbe86dbcb2c5bff1aebcd6318"
+              },
+              "arm": {
+                "path": "prepared/grass_medium_02_arm_2k.jpg",
+                "sha256": "8878f8c5a6287c265231f0818c437a6f9dcf1d9fc01d085decf07324ecba1fd9"
+              },
+              "alphaMask": {
+                "path": "prepared/grass_medium_02_alpha_2k.png",
+                "sha256": "c96abf8da86aa750ff6425b8ded78aa98cf61858834e3557ad2dcc5348359337"
+              }
+            },
+            "outputs": [
+              {
+                "channel": "base",
+                "path": "grass-medium-02/grass-base.dds",
+                "sourceColorSpace": "sRGB",
+                "bytes": 5592580,
+                "sha256": "db0aed48e90590d5e606cc3a29844398c015fa72fa1058641082dbb7db5b4ca9",
+                "height": 2048,
+                "width": 2048,
+                "mips": 12,
+                "format": 99,
+                "dimension": 3,
+                "array": 1
+              },
+              {
+                "channel": "normal",
+                "path": "grass-medium-02/grass-normal.dds",
+                "sourceColorSpace": "linear",
+                "bytes": 5592580,
+                "sha256": "c4b2d6d7815092947b186dd57b99af218506ef5fa0408d5e6b476802498836d5",
+                "height": 2048,
+                "width": 2048,
+                "mips": 12,
+                "format": 83,
+                "dimension": 3,
+                "array": 1
+              },
+              {
+                "channel": "arm",
+                "path": "grass-medium-02/grass-arm.dds",
+                "sourceColorSpace": "linear",
+                "bytes": 5592580,
+                "sha256": "2bc94e52366159f6528689f5c813ec94e2be0ee92d193582c947526ef0de9b44",
+                "height": 2048,
+                "width": 2048,
+                "mips": 12,
+                "format": 98,
+                "dimension": 3,
+                "array": 1
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

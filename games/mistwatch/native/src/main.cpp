@@ -6,6 +6,7 @@
 #include "MistwatchForestMaterial.h"
 #include "MistwatchGroundMaterial.h"
 #include "MistwatchFern.h"
+#include "MistwatchScannedGrass.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
@@ -49,6 +50,10 @@ class MistwatchGame final : public IGame {
     std::vector<Vec3> trees;
     std::vector<Vec3> groundCover;
     MeshResource3D grassMesh;
+    std::array<MeshResource3D,5> scannedGrass;
+    MaterialLibrary3D grassMaterials;
+    Material3D grassSurface;
+    std::size_t submittedGrassTriangles{};
     MeshResource3D fernMesh;
     std::array<MeshResource3D,4> scannedFerns;
     MaterialLibrary3D fernMaterials;
@@ -92,6 +97,8 @@ class MistwatchGame final : public IGame {
     bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
     bool diagnosticLegacyGround{};
     bool diagnosticLegacyGrass{};
+    bool diagnosticDimGrass{};
+    bool diagnosticProceduralGrass{};
     bool diagnosticLegacyFern{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
@@ -184,6 +191,16 @@ public:
             if(grassLength&&(grassLength!=1||(legacyGrass[0]!=L'0'&&legacyGrass[0]!=L'1')))
                 throw std::runtime_error("Invalid grass comparison flag");
             diagnosticLegacyGrass=legacyGrass[0]==L'1';
+            wchar_t dimGrass[3]{};
+            const auto dimLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_DIM",dimGrass,3);
+            if(dimLength&&(dimLength!=1||(dimGrass[0]!=L'0'&&dimGrass[0]!=L'1')))
+                throw std::runtime_error("Invalid grass brightness comparison flag");
+            diagnosticDimGrass=dimGrass[0]==L'1';
+            wchar_t proceduralGrass[3]{};
+            const auto proceduralLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_PROCEDURAL",proceduralGrass,3);
+            if(proceduralLength&&(proceduralLength!=1||(proceduralGrass[0]!=L'0'&&proceduralGrass[0]!=L'1')))
+                throw std::runtime_error("Invalid procedural grass comparison flag");
+            diagnosticProceduralGrass=proceduralGrass[0]==L'1'||diagnosticLegacyGrass||diagnosticDimGrass;
             wchar_t legacyFern[3]{};
             const auto fernLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_FERN_LEGACY",legacyFern,3);
             if(fernLength&&(fernLength!=1||(legacyFern[0]!=L'0'&&legacyFern[0]!=L'1')))
@@ -322,6 +339,18 @@ public:
         }
         groundCover=Mistwatch::GroundCoverPositions(terrain);
         grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,diagnosticLegacyGrass?3:5,diagnosticLegacyGrass?GrassBladeStyle3D::Upright:GrassBladeStyle3D::Curved));
+        const auto grassRoot=e.ExecutableDirectory()/"assets"/"mistwatch-grass";
+        grassMaterials.Initialize(e,grassRoot);
+        if(!grassMaterials.Load(Mistwatch::GrassMaterialDefinition()))throw std::runtime_error("Grass material unavailable");
+        grassSurface=*grassMaterials.Find("grass");
+        for(unsigned variant=0;variant<scannedGrass.size();++variant){
+            auto loaded=LoadAevryndMeshFile(grassRoot/"meshes"/Mistwatch::GrassMeshName(variant));
+            if(!loaded||loaded.mesh.vertices.size()!=Mistwatch::GrassVertexCounts[variant]||
+                loaded.mesh.indices.size()!=3u*Mistwatch::GrassTriangleCounts[variant])throw std::runtime_error("Scanned grass topology changed");
+            Mistwatch::NormalizeGrassAsset(loaded.mesh);
+            scannedGrass[variant]=e.CreateMeshResource3D(loaded.mesh);
+            if(!scannedGrass[variant])throw std::runtime_error("Scanned grass upload failed");
+        }
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
         if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
         solids=Mistwatch::WorldSolids(session.bridgeRepaired);
@@ -583,6 +612,11 @@ public:
                     <<"\nfern_variants=4\nfern_asset_scale="<<Mistwatch::FernAssetScale
                     <<"\nfern_materials="<<fernMaterials.Stats().materials<<"\nsubmitted_fern_triangles="<<submittedFernTriangles
                     <<"\nfern_alpha_cutoff="<<fernSurface.alphaCutoff<<"\nfern_use_uv="<<fernSurface.useUv<<'\n';
+                out<<"grass_tint_scale="<<(diagnosticDimGrass?.7f:1.f)<<'\n';
+                out<<"grass_source="<<(diagnosticProceduralGrass?"procedural":"poly-haven-grass-medium-02")
+                    <<"\ngrass_variants="<<(diagnosticProceduralGrass?1:5)<<"\ngrass_minimum_asset_height="<<Mistwatch::GrassAssetHeight
+                    <<"\ngrass_materials="<<grassMaterials.Stats().materials<<"\nsubmitted_grass_triangles="<<submittedGrassTriangles
+                    <<"\ngrass_alpha_cutoff="<<grassSurface.alphaCutoff<<"\ngrass_use_uv="<<grassSurface.useUv<<'\n';
                 out<<"enemy_visual=skinned_boar\nenemy_joints="<<boar.model.skeleton.joints.size()
                     <<"\nenemy_phase="<<unsigned(encounter.phase)<<"\nenemy_brace="<<boar.brace<<'\n';
                 out<<"relay_linked="<<session.relayLinked<<"\nrelay_sectors="<<session.relaySectors
@@ -590,8 +624,10 @@ public:
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
                 out<<"landscape_river_release_m=24\n";
-                out<<"grass_style="<<(diagnosticLegacyGrass?"upright":"curved")<<"\ngrass_blades=9\ngrass_segments="<<(diagnosticLegacyGrass?3:5)<<"\ngrass_vertices="<<grassMesh.vertexCount
-                    <<"\ngrass_triangles="<<grassMesh.TriangleCount()<<"\nground_cover_instances="<<groundCover.size()
+                out<<"grass_style="<<(diagnosticProceduralGrass?(diagnosticLegacyGrass?"upright":"curved"):"scanned")
+                    <<"\ngrass_blades="<<(diagnosticProceduralGrass?"9":"source-geometry")<<"\ngrass_segments="<<(diagnosticProceduralGrass?(diagnosticLegacyGrass?"3":"5"):"source-geometry")
+                    <<"\ngrass_vertices="<<(diagnosticProceduralGrass?grassMesh.vertexCount:7031)
+                    <<"\ngrass_triangles="<<(diagnosticProceduralGrass?grassMesh.TriangleCount():7842)<<"\nground_cover_instances="<<groundCover.size()
                     <<"\nsubmitted_grass="<<submittedGrass<<'\n';
                 out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
                     <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
@@ -771,14 +807,19 @@ public:
             submittedFernTriangles+=mesh.TriangleCount();
             ++submittedFerns;
         }
-        Material3D grass{{.32f,.43f,.18f,1},{.9f,0,0,.9f}};
+        const float grassTintScale=diagnosticDimGrass?.7f:1.f;
+        Material3D grass{{.32f*grassTintScale,.43f*grassTintScale,.18f*grassTintScale,1},{.9f,0,0,.9f}};
         grass.materialClass=MaterialClass3D::Foliage;
         grass.doubleSided=true;
         submittedGrass=0;
-        for(const auto plant:groundCover) {
+        submittedGrassTriangles=0;
+        for(std::size_t index=0;index<groundCover.size();++index) {
+            const auto plant=groundCover[index];
             if(Length(plant-session.feet)>35.f) continue;
             const float scale=.5f+.25f*std::sin(plant.x*1.7f+plant.z);
-            scene.Mesh(grassMesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},grass);
+            const auto& mesh=diagnosticProceduralGrass?grassMesh:scannedGrass[index%5];
+            scene.Mesh(mesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},diagnosticProceduralGrass?grass:grassSurface);
+            submittedGrassTriangles+=mesh.TriangleCount();
             ++submittedGrass;
         }
         for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);
@@ -993,6 +1034,15 @@ public:
         e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
         materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();boulderMaterials.Shutdown();
         fernMaterials.Shutdown();
+        grassMaterials.Shutdown();
+        unsigned grassDestroyed{};
+        for(auto& mesh:scannedGrass){if(mesh){e.DestroyMesh3D(mesh.handle);++grassDestroyed;}mesh={};}
+        if(grassMaterials.Stats().materials||grassDestroyed!=5)throw std::runtime_error("Scanned grass cleanup incomplete");
+        if(!capture.empty()){
+            auto path=capture;path+=".grass-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=5\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Grass cleanup receipt failed");
+        }
         unsigned fernDestroyed{};
         for(auto& mesh:scannedFerns){if(mesh){e.DestroyMesh3D(mesh.handle);++fernDestroyed;}mesh={};}
         unsigned broadleafDestroyed{};

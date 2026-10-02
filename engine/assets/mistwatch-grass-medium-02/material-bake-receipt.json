@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "runtimeManifestSha256": "82a368d0f023764f8da017de99e80fe0d738a1b2a477aedfb2df83b7a4e7eb70",
+  "quality": "Ultra",
+  "mipPolicy": "complete-chain",
+  "tool": {
+    "name": "DirectXTex texconv",
+    "tag": "may2026",
+    "commit": "4feb3e1",
+    "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+  },
+  "memoryGate": "pass",
+  "peakWorkingSetLimitBytes": 2147483648,
+  "peakWorkingSetBytes": 396726272,
+  "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
+  "assets": [
+    {
+      "assetName": "grass-medium-02",
+      "assetId": "grass_medium_02",
+      "officialPage": "https://polyhaven.com/a/grass_medium_02",
+      "outputResolution": 2048,
+      "expectedMipCount": 12,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "grass",
+          "alphaMode": "mask",
+          "alphaSource": "separate",
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 8,
+          "doubleSided": true,
+          "materialClass": "foliage",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": {
+            "source": {
+              "cutoffByte": 128,
+              "visiblePixels": 476783,
+              "totalPixels": 4194304,
+              "fraction": 0.11367392539978027,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "prepared": {
+              "cutoffByte": 128,
+              "visiblePixels": 476783,
+              "totalPixels": 4194304,
+              "fraction": 0.11367392539978027,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "mipPolicy": "DirectXTex --keep-coverage",
+            "mipCoverageCutoff": 0.5
+          },
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 93,
+              "maximum": 253,
+              "mean": 129.43519282341003
+            },
+            "preparedGreen": {
+              "minimum": 2,
+              "maximum": 162,
+              "mean": 125.56480717658997
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 124,
+              "maximum": 255,
+              "mean": 252.44125294685364
+            },
+            "roughness": {
+              "minimum": 97,
+              "maximum": 216,
+              "mean": 150.38004279136658
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 28,
+              "mean": 0.3489806652069092
+            }
+          },
+          "sources": {
+            "base": {
+              "path": "prepared/grass_medium_02_diff_2k.jpg",
+              "sha256": "70c0e294fd94b980d01ed91bde30ab19fe7eeed1f2717088cc88ab20bb115c87"
+            },
+            "normal": {
+              "path": "prepared/grass_medium_02_nor_gl_2k.jpg",
+              "sha256": "98ab154f35798b1e28660c28016e9a9f768859efbe86dbcb2c5bff1aebcd6318"
+            },
+            "arm": {
+              "path": "prepared/grass_medium_02_arm_2k.jpg",
+              "sha256": "8878f8c5a6287c265231f0818c437a6f9dcf1d9fc01d085decf07324ecba1fd9"
+            },
+            "alphaMask": {
+              "path": "prepared/grass_medium_02_alpha_2k.png",
+              "sha256": "c96abf8da86aa750ff6425b8ded78aa98cf61858834e3557ad2dcc5348359337"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "grass-medium-02/grass-base.dds",
+              "sourceColorSpace": "sRGB",
+              "bytes": 5592580,
+              "sha256": "db0aed48e90590d5e606cc3a29844398c015fa72fa1058641082dbb7db5b4ca9",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "grass-medium-02/grass-normal.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 5592580,
+              "sha256": "c4b2d6d7815092947b186dd57b99af218506ef5fa0408d5e6b476802498836d5",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "grass-medium-02/grass-arm.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 5592580,
+              "sha256": "2bc94e52366159f6528689f5c813ec94e2be0ee92d193582c947526ef0de9b44",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
