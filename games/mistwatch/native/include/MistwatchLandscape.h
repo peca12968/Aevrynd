@@ -10,7 +10,15 @@ inline float LandscapeHeight(const Aevrynd::HeightField3D& core,float x,float z)
     const float ridge=24.f+18.f*std::sin(x*.023f+z*.007f)+14.f*std::cos(z*.027f-x*.009f)+
         8.f*std::sin(x*.057f+z*.041f)+.11f*distance;
     const float edge=core.SampleHeight(edgeX,edgeZ);
-    return edge+(ridge-edge)*blend;
+    const float original=edge+(ridge-edge)*blend;
+    if(x==edgeX||distance>=60.f)return original;
+    // 邊界夾取不能把河床凹槽拖成遠山直溝；在四個外側格距內平滑收束。
+    // 從同一解析地形來源取得切槽深度，不將乾地的插值誤差當作溪谷。
+    const float incision=(std::max)(0.f,HillElevation(edgeX,edgeZ)-GroundElevation(edgeX,edgeZ));
+    if(incision==0.f)return original;
+    const float releaseT=std::clamp(std::abs(x-edgeX)/24.f,0.f,1.f);
+    const float release=releaseT*releaseT*releaseT*(releaseT*(releaseT*6.f-15.f)+10.f);
+    return original+incision*release*(1.f-blend);
 }
 inline Aevrynd::Vec3 LandscapeNormal(const Aevrynd::HeightField3D& core,float x,float z) {
     if(core.Contains(x,z))return core.SampleNormal(x,z);
@@ -56,6 +64,19 @@ inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core) {
     }
     return mesh;
 }
+inline float LandscapeSurfaceHeight(const Aevrynd::HeightField3D& core,float x,float z) {
+    // 樹根貼到真正的格點三角面，不使用格點之間的解析曲面高度。
+    const auto cell=[](float value,float start,float end) {
+        if(value<start)return Aevrynd::Vec2{start+std::floor((value-start)/6.f)*6.f,6.f};
+        if(value>=end)return Aevrynd::Vec2{end+std::floor((value-end)/6.f)*6.f,6.f};
+        return Aevrynd::Vec2{start+std::floor((value-start)/.5f)*.5f,.5f};
+    };
+    const auto cx=cell(x,-50.f,50.f),cz=cell(z,-20.f,100.f);
+    const float tx=(x-cx.x)/cx.y,tz=(z-cz.x)/cz.y;
+    const float a=LandscapeHeight(core,cx.x,cz.x),b=LandscapeHeight(core,cx.x+cx.y,cz.x);
+    const float c=LandscapeHeight(core,cx.x,cz.x+cz.y),d=LandscapeHeight(core,cx.x+cx.y,cz.x+cz.y);
+    return tx+tz<=1.f?a+(b-a)*tx+(c-a)*tz:d+(c-d)*(1.f-tx)+(b-d)*(1.f-tz);
+}
 inline std::vector<Aevrynd::Transform3D> LandscapeTrees(const Aevrynd::HeightField3D& core) {
     using namespace Aevrynd;
     std::vector<Transform3D> trees;
@@ -71,7 +92,7 @@ inline std::vector<Aevrynd::Transform3D> LandscapeTrees(const Aevrynd::HeightFie
         for(const auto& tree:trees)occupied|=std::hypot(x-tree.position.x,z-tree.position.z)<5.f;
         if(occupied)continue;
         const float scale=.5f+.35f*random();
-        trees.push_back({{x,LandscapeHeight(core,x,z),z},{0,random()*6.2831853f,0},{scale,scale,scale}});
+        trees.push_back({{x,LandscapeSurfaceHeight(core,x,z),z},{0,random()*6.2831853f,0},{scale,scale,scale}});
     }
     return trees;
 }

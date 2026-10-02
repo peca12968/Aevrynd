@@ -3,6 +3,27 @@
 int main() {
     using namespace Aevrynd;
     const auto core=Mistwatch::CreateTerrain();
+    // 溪谷切槽不能被邊界夾取一路拖到遠山；24 公尺外只保留未切槽的丘陵邊界。
+    const auto smooth=[](float value){const auto t=std::clamp(value,0.f,1.f);return t*t*t*(t*(t*6.f-15.f)+10.f);};
+    const auto legacyHeight=[&](float x,float z) {
+        const float ex=std::clamp(x,-50.f,50.f),ez=std::clamp(z,-20.f,100.f),d=std::hypot(x-ex,z-ez);
+        const float ridge=24.f+18.f*std::sin(x*.023f+z*.007f)+14.f*std::cos(z*.027f-x*.009f)+8.f*std::sin(x*.057f+z*.041f)+.11f*d;
+        const float edge=core.SampleHeight(ex,ez);return edge+(ridge-edge)*smooth(d/60.f);
+    };
+    for(float sign:{-1.f,1.f})for(float d:{6.f,12.f,24.f,30.f,36.f,48.f,60.f})for(float z:{25.f,30.f,35.f,40.f}) {
+        const float edgeX=sign*50.f,x=edgeX+sign*d;
+        const float hills=12.f*(1.f+.3f*std::sin(z*.13f)+.2f*std::cos(edgeX*.19f));
+        const float incision=(std::max)(0.f,hills-core.SampleHeight(edgeX,z));
+        const float expected=legacyHeight(x,z)+incision*smooth(d/24.f)*(1.f-smooth(d/60.f));
+        const float actual=Mistwatch::LandscapeHeight(core,x,z);
+        if(std::abs(actual-expected)>.00005f) {
+            std::cerr<<"River boundary incision persists: x="<<x<<" z="<<z<<" actual="<<actual<<" expected="<<expected<<'\n';
+            return 16;
+        }
+    }
+    // 非溪谷、核心區與60公尺以外遠景必須與原地形一致。
+    for(float x:{-150.f,-110.f,-80.f,-50.f,0.f,50.f,80.f,110.f,150.f})for(float z:{-20.f,20.f,60.f,100.f})
+        if(std::abs(Mistwatch::LandscapeHeight(core,x,z)-legacyHeight(x,z))>.00005f)return 17;
     const auto before=core.CreateMesh(Mistwatch::GroundMeshSettings());
     const auto landscape=Mistwatch::CreateLandscapeMesh(core),repeat=Mistwatch::CreateLandscapeMesh(core);
     if(!landscape.Valid()||landscape.vertices.size()>30000||landscape.indices.size()>180000)return 1;
@@ -29,14 +50,33 @@ int main() {
     }
     const auto trees=Mistwatch::LandscapeTrees(core),again=Mistwatch::LandscapeTrees(core);
     if(trees.size()!=520||trees.size()!=again.size())return 10;
+    float maximumRootError{};
     for(std::size_t i=0;i<trees.size();++i) {
         const auto& tree=trees[i];
         if(Length(tree.position-again[i].position)!=0||tree.rotation.y!=again[i].rotation.y||tree.scale.x!=again[i].scale.x)return 11;
-        if(core.Contains(tree.position.x,tree.position.z)||tree.position.y!=Mistwatch::LandscapeHeight(core,tree.position.x,tree.position.z))return 12;
+        if(core.Contains(tree.position.x,tree.position.z))return 12;
         if(tree.scale.x<.5f||tree.scale.x>.85f)return 13;
         for(std::size_t j=0;j<i;++j)if(std::hypot(tree.position.x-trees[j].position.x,tree.position.z-trees[j].position.z)<5.f)return 14;
+        // 獨立搜尋實際提交的三角面，而非再把解析高度函數當作貼地證據。
+        bool found{};
+        for(std::size_t triangle=0;triangle<landscape.indices.size();triangle+=3) {
+            const auto& a=landscape.vertices[landscape.indices[triangle]];
+            const auto& b=landscape.vertices[landscape.indices[triangle+1]];
+            const auto& c=landscape.vertices[landscape.indices[triangle+2]];
+            if(tree.position.x<(std::min)({a.x,b.x,c.x})||tree.position.x>(std::max)({a.x,b.x,c.x})||
+               tree.position.z<(std::min)({a.z,b.z,c.z})||tree.position.z>(std::max)({a.z,b.z,c.z}))continue;
+            const float determinant=(b.z-c.z)*(a.x-c.x)+(c.x-b.x)*(a.z-c.z);
+            const float wa=((b.z-c.z)*(tree.position.x-c.x)+(c.x-b.x)*(tree.position.z-c.z))/determinant;
+            const float wb=((c.z-a.z)*(tree.position.x-c.x)+(a.x-c.x)*(tree.position.z-c.z))/determinant,wc=1.f-wa-wb;
+            if(wa<-.00001f||wb<-.00001f||wc<-.00001f)continue;
+            const float surface=wa*a.y+wb*b.y+wc*c.y;
+            const float error=std::abs(tree.position.y-surface);maximumRootError=(std::max)(maximumRootError,error);
+            if(error>.00005f){std::cerr<<"Landscape tree off actual mesh: index="<<i<<" error="<<error<<'\n';return 18;}
+            found=true;break;
+        }
+        if(!found)return 19;
     }
     const auto after=core.CreateMesh(Mistwatch::GroundMeshSettings());
     for(std::size_t i=0;i<before.vertices.size();++i)if(before.vertices[i].y!=after.vertices[i].y)return 15;
-    std::cout<<"Landscape PASS; seam="<<seam<<" vertices="<<landscape.vertices.size()<<" triangles="<<landscape.indices.size()/3<<" background_trees="<<trees.size()<<'\n';
+    std::cout<<"Landscape PASS; seam="<<seam<<" vertices="<<landscape.vertices.size()<<" triangles="<<landscape.indices.size()/3<<" background_trees="<<trees.size()<<" max_root_mesh_error="<<maximumRootError<<'\n';
 }

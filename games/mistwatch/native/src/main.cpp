@@ -66,7 +66,7 @@ class MistwatchGame final : public IGame {
     std::filesystem::path save;
     std::filesystem::path capture;
     unsigned captureFrames{};
-    unsigned captureSequenceFrames{},captureCompleted{};
+    unsigned captureSequenceFrames{},captureCompleted{},captureConsumed{};
     bool capturePending{};
     bool diagnosticNoAo{};
     bool diagnosticNoGroundNormal{},diagnosticNoMsaa{};
@@ -306,6 +306,18 @@ public:
                 }
             }
         }
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+        wchar_t selectedFrame[4]{};
+        const auto frameLength=!capture.empty()?GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE_FRAME",selectedFrame,4):0;
+        if(frameLength) {
+            const std::wstring_view frame=selectedFrame;
+            if(frameLength>=4||!captureLandscapeMotion||captureSequenceFrames||captureBenchmark||
+                (frame!=L"18"&&frame!=L"27"))throw std::runtime_error("Invalid selected ridge capture frame");
+            captureCompleted=frame==L"18"?18u:27u;captureSequenceFrames=captureCompleted+1;
+            orbit.yaw=1.25f+float(captureCompleted)*6.2831853f/36.f;
+            waterTime=2.5f+float(captureCompleted)*.1f;
+        }
+#endif
         wchar_t noAo[8]{};
         diagnosticNoAo=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_NO_AO",noAo,8)>0 && noAo[0]==L'1';
         // 僅影像診斷允許單變量隔離；不改玩家預設品質或正式玩法。
@@ -399,7 +411,7 @@ public:
                 benchmarkGpuMilliseconds.push_back(double(timing.nanoseconds)/1000000.0);
             }
             if(capturePending && stats.rejectedFrameCaptures)throw std::runtime_error("Frame capture rejected");
-            if(capturePending && stats.successfulFrameCaptures>captureCompleted) {
+            if(capturePending && stats.successfulFrameCaptures>captureConsumed) {
                 if(diagnosticHdrStage&&(captureCompleted==18||captureCompleted==27)) {
                     e.WaitRendererIdle3D();
                     const auto hdr=e.TakeLinearHdrReadback3D();
@@ -443,6 +455,7 @@ public:
                     <<"\nrelay_target_west="<<Mistwatch::Session::RelayTargetSector(0)<<"\nrelay_signal_west="<<session.RelaySignal(0)<<'\n';
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
+                out<<"landscape_river_release_m=24\n";
                 out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
                     <<"\nground_textured="<<bool(groundMaterial.textures)
                     <<"\nground_neutral_base="<<diagnosticNeutralGroundBase<<"\nground_neutral_surface="<<diagnosticNeutralGroundSurface
@@ -464,6 +477,10 @@ public:
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
+                out<<"camera_position="<<lastRenderedCamera.position.x<<','<<lastRenderedCamera.position.y<<','<<lastRenderedCamera.position.z
+                    <<"\ncamera_target="<<lastRenderedCamera.target.x<<','<<lastRenderedCamera.target.y<<','<<lastRenderedCamera.target.z
+                    <<"\ncamera_up="<<lastRenderedCamera.up.x<<','<<lastRenderedCamera.up.y<<','<<lastRenderedCamera.up.z
+                    <<"\ncamera_fov="<<lastRenderedCamera.projection.verticalFieldOfView<<'\n';
                 if(captureBenchmark) {
                     auto ordered=benchmarkGpuMilliseconds;std::sort(ordered.begin(),ordered.end());
                     out<<"benchmark_mode=fixed_scene_gpu_only\ngpu_samples="<<ordered.size()
@@ -472,7 +489,7 @@ public:
                         <<"\ngpu_max_ms="<<ordered.back()<<'\n';
                 }
                 out.close();if(!out)throw std::runtime_error("Capture receipt write failed");
-                ++captureCompleted;
+                ++captureCompleted;++captureConsumed;
                 if(!captureSequenceFrames || captureCompleted>=captureSequenceFrames)e.Quit();
                 else {
                     capturePending=false;waterTime=2.5f+float(captureCompleted)*.1f;
