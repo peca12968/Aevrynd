@@ -4,6 +4,7 @@
 #include "MistwatchSession.h"
 #include "MistwatchForestProps.h"
 #include "MistwatchUnderstory.h"
+#include "MistwatchBroadleaf.h"
 #include "MistwatchRiverProfile.h"
 #include "MistwatchRelay.h"
 #include <vector>
@@ -145,7 +146,9 @@ inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     const auto terrain=CreateTerrain();
     const auto props=ForestProps(terrain,trees);
     for(const auto& prop:props)result.push_back(prop.collider);
-    for(const auto& tree:CreateUnderstory(terrain,trees,props).saplings)result.push_back(SaplingCollider(tree));
+    const auto understory=CreateUnderstory(terrain,trees,props);
+    for(const auto& tree:understory.saplings)result.push_back(SaplingCollider(tree));
+    for(const auto& tree:CreateBroadleafTrees(terrain,trees,props,understory))result.push_back(tree.trunk);
     return result;
 }
 }

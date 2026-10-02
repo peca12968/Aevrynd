@@ -1,4 +1,10 @@
 add_executable(MistwatchPlaybackTest tests/MistwatchPlaybackTest.cpp)
+add_executable(MistwatchBroadleafTest tests/MistwatchBroadleafTest.cpp)
+target_include_directories(MistwatchBroadleafTest PRIVATE include)
+target_compile_options(MistwatchBroadleafTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(MistwatchBroadleafTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+target_link_libraries(MistwatchBroadleafTest PRIVATE AevryndEngine)
+add_test(NAME MistwatchBroadleafTest COMMAND MistwatchBroadleafTest)
 target_include_directories(MistwatchPlaybackTest PRIVATE include "${CMAKE_SOURCE_DIR}/engine/native/include")
 target_compile_options(MistwatchPlaybackTest PRIVATE /W4 /WX /permissive- /utf-8)
 add_test(NAME MistwatchPlaybackTest COMMAND MistwatchPlaybackTest)
@@ -23,6 +29,14 @@ add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/fir-tree-01-c" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/meshes"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/runtime-asset-manifest.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-forest/")
 add_executable(MistwatchBridgeTest tests/MistwatchBridgeTest.cpp)
+add_custom_command(TARGET Mistwatch POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-broadleaf/meshes"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/tree-small-02" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-broadleaf/materials"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/tree-small-02/tree-small-02-provenance-receipt.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-broadleaf/")
+foreach(slot IN ITEMS "primitive0-material0-tree-small-02-branches" "primitive1-material1-tree-small-02-leaves" "primitive2-material2-tree-small-02-trunk")
+  add_custom_command(TARGET Mistwatch POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-${slot}.aemesh" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-broadleaf/meshes/")
+endforeach()
 target_include_directories(MistwatchBridgeTest PRIVATE include)
 target_compile_options(MistwatchBridgeTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(MistwatchBridgeTest PRIVATE AevryndEngine)

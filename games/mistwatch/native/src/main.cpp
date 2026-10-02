@@ -33,6 +33,11 @@ class MistwatchGame final : public IGame {
     std::array<MeshResource3D,4> landscapeFirMeshes;
     std::array<Material3D,4> firMaterials;
     MaterialLibrary3D forestMaterials;
+    MaterialLibrary3D broadleafMaterials;
+    std::array<MeshResource3D,3> broadleafMeshes;
+    std::array<Material3D,3> broadleafSurface;
+    std::vector<Mistwatch::BroadleafTree> broadleafTrees;
+    std::size_t broadleafTriangles{};
     HeightField3D terrain;
     MeshResource3D terrainMesh;
     MeshResource3D landscapeMesh;
@@ -206,6 +211,32 @@ public:
             landscapeFirMeshes[slot]=e.CreateMeshResource3D(distant.mesh);
             if(!landscapeFirMeshes[slot])throw std::runtime_error("Landscape fir GPU upload failed");
         }
+        const auto broadleafRoot=e.ExecutableDirectory()/"assets"/"mistwatch-broadleaf";
+        broadleafMaterials.Initialize(e,broadleafRoot);
+        constexpr const char* broadleafSlots[]{"branches","leaves","trunk"};
+        constexpr const char* broadleafHashes[3][3]{
+            {"cf4f6fcc9329e66f05b7b2e86d20a38b2d0e8e054013cf3e0431a4cbc1e17d0a","1c54a88ec7a17c55528a99319378283d61b4800002ab4e63ca0fe30ebb1249ea","ea8a046e64ce7eacce435e64f31fc45501624fd131c7e6c8492bfd9de9fb1beb"},
+            {"88fce8dc2f1815c421a0c7c4d9cc7d9cacb4024f6c51e8fc928a5e938b7996a9","c8a6a8747023a64ed506ad62b8e5c0ae16bf14e0353d5e67f8d2511967aaf2ed","320d6df57bf075dbd701acab52740a623f0c86d298bd3048f3986d1988bb0cd9"},
+            {"513d07ece694d03e3c095c4148d7da4649ffdf6db54826cf1bf1754a368b1453","716c128da96feb1f3ad4ea041ecd9d5c167115a7aa0671f517ebaefbc9963b7d","099e981864b1e90b2c0500b0bcb0a92fcdc38ee196f00f7161905dc9bf762712"}};
+        for(unsigned slot=0;slot<3;++slot) {
+            const std::string name=broadleafSlots[slot];
+            MaterialTextureSetDefinition3D textures{std::filesystem::path("materials")/(name+"-base.dds"),
+                std::filesystem::path("materials")/(name+"-arm.dds"),1024,
+                std::filesystem::path("materials")/(name+"-normal.dds")};
+            textures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+            for(unsigned channel=0;channel<3;++channel)textures.integrity[channel]={1398276,broadleafHashes[slot][channel]};
+            Material3D material{{1,1,1,1},{.85f,0,0,1},true,{},1.f,true};
+            if(slot==1){textures.alphaMode=MaterialAlphaMode3D::Mask;material.alphaMode=MaterialAlphaMode3D::Mask;
+                material.alphaCutoff=.5f;material.doubleSided=true;material.materialClass=MaterialClass3D::Foliage;}
+            if(!broadleafMaterials.Load({name,textures,material}))throw std::runtime_error("Broadleaf material unavailable");
+            broadleafSurface[slot]=*broadleafMaterials.Find(name);
+            auto loaded=LoadAevryndMeshFile(broadleafRoot/"meshes"/Mistwatch::BroadleafMeshName(slot));
+            if(!loaded)throw std::runtime_error("Broadleaf mesh unavailable");
+            Mistwatch::RootBroadleafMesh(loaded.mesh);
+            broadleafTriangles+=loaded.mesh.indices.size()/3;
+            broadleafMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
+            if(!broadleafMeshes[slot])throw std::runtime_error("Broadleaf upload failed");
+        }
         terrain=Mistwatch::CreateTerrain();
         terrainMesh=e.CreateMeshResource3D(Mistwatch::CreateTerrainMesh(terrain));
         landscapeMesh=e.CreateMeshResource3D(Mistwatch::CreateLandscapeMesh(terrain));
@@ -216,6 +247,8 @@ public:
         trees=Mistwatch::TreePositions();
         forestProps=Mistwatch::ForestProps(terrain,trees);
         understory=Mistwatch::CreateUnderstory(terrain,trees,forestProps);
+        broadleafTrees=Mistwatch::CreateBroadleafTrees(terrain,trees,forestProps,understory);
+        if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
         for(unsigned mesh=0;mesh<propMeshes.size();++mesh) {
@@ -487,6 +520,8 @@ public:
                 out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
                     <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
                 out<<"landscape_river_release_m=24\n";
+                out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
+                    <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
                 if(captureFocusProbe)out<<"focus_pause_verified="<<captureFocusComplete<<"\nfocus_frozen_ticks="<<captureFocusFrozenTicks
                     <<"\nfocus_explicit_resume_verified="<<captureFocusComplete<<"\npaused="<<paused<<'\n';
                 out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
@@ -627,6 +662,8 @@ public:
         // 背景林使用既有 CC0 冷杉最低網格細節；不加入任務區的角色碰撞體。
         for(const auto& tree:landscapeTrees)for(unsigned slot=0;slot<4;++slot)
             scene.Mesh(landscapeFirMeshes[slot],tree,firMaterials[slot]);
+        for(const auto& tree:broadleafTrees)for(unsigned slot=0;slot<3;++slot)
+            scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot]);
         scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
         for(const auto tree:trees) {
             for(unsigned slot=0;slot<4;++slot)
@@ -843,7 +880,24 @@ public:
             if(!capturePending)throw std::runtime_error("Frame capture request rejected");
         }
     }
-    void OnStop(Engine& e) override {StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);materials.Shutdown();forestMaterials.Shutdown();e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);}
+    void OnStop(Engine& e) override {
+        StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
+        e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
+        materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();
+        unsigned broadleafDestroyed{};
+        for(auto& mesh:broadleafMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++broadleafDestroyed;}mesh={};}
+        if(broadleafMaterials.Stats().materials||broadleafDestroyed!=3)throw std::runtime_error("Broadleaf cleanup incomplete");
+        if(!capture.empty()){
+            auto path=capture;path+=".broadleaf-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=3\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Broadleaf cleanup receipt failed");
+        }
+        e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);
+        for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);
+        for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);
+        e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);
+        e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);
+    }
 };
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
     try {

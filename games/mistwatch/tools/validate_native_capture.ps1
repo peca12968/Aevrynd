@@ -46,11 +46,17 @@ try {
         $cleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.audio-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$cleanup[$pair[0]]=$pair[1]}}
         if($cleanup.cleanup -ne 'success' -or $cleanup.sounds -ne '0' -or $cleanup.bytes -ne '0' -or $cleanup.voices -ne '0'){throw ('Audio resources leaked: '+$case)}
+        $treeCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.broadleaf-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$treeCleanup[$pair[0]]=$pair[1]}}
+        if($treeCleanup.cleanup -ne 'success' -or $treeCleanup.materials -ne '0' -or $treeCleanup.mesh_destroy_calls -ne '3'){throw ('Broadleaf cleanup incomplete: '+$case)}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0' -or $receipt.debug_warnings -ne '0'){throw ('GPU debug messages: '+$case)}
         if($receipt.multisample_count -ne '4'){throw ('Production MSAA missing: '+$case)}
         foreach($flag in @('quality_shadows','quality_ao','quality_post_aa','ground_textured')){
             if($receipt[$flag] -ne '1'){throw ('Production quality missing '+$flag+': '+$case)}
+        }
+        foreach($flag in @('diagnostic_no_shadows','diagnostic_no_msaa','diagnostic_no_bloom','diagnostic_hdr_stage','ground_neutral_base','ground_neutral_surface')){
+            if($receipt[$flag] -ne '0'){throw ('Diagnostic override remains '+$flag+': '+$case)}
         }
         if($case -eq 'focus-pause' -and ($receipt.focus_pause_verified -ne '1' -or
             $receipt.focus_explicit_resume_verified -ne '1' -or $receipt.focus_frozen_ticks -ne '17' -or
@@ -62,6 +68,8 @@ try {
             $receipt.audio_dropped -ne '0' -or [long]$receipt.audio_peak_voices -gt 8 -or $receipt.camera_source -ne 'player')){throw 'Native audio walk/collect/pause-resume playback not proven'}
         if($receipt.landscape_vertices -ne '25480' -or $receipt.landscape_triangles -ne '49000' -or
            $receipt.landscape_trees -ne '520'){throw ('Missing landscape geography or distant forest: '+$case)}
+        if($receipt.broadleaf_trees -ne '12' -or $receipt.broadleaf_mesh_triangles -ne '82854' -or
+           $receipt.broadleaf_materials -ne '3'){throw ('Missing rooted broadleaf trees or verified materials: '+$case)}
         if($receipt.enemy_visual -ne 'skinned_boar' -or $receipt.enemy_joints -ne '16'){throw ('Missing skinned wildlife: '+$case)}
         if($case -eq 'strike' -and ($receipt.enemy_phase -ne '1' -or [double]$receipt.enemy_brace -lt .4)){throw 'Missing windup posture fixture'}
         if($case -eq 'boar-recovery' -and ($receipt.enemy_phase -ne '2' -or [double]$receipt.enemy_brace -ne 0)){throw 'Missing recovery posture fixture'}

@@ -46,9 +46,11 @@ public:
     void OnUpdate(Engine& engine,float) override {
         if(observedRestore)return;
         observedRestore=true;
-        // 首次更新前只有最小化分支會修剪；若恢復訊息提早到達而漏測背景迴圈，必須失敗。
-        const auto minimizedTrimCount=engine.GetMemoryStats().trimCount;
-        if(minimizedTrimCount==0){
+        // 若恢復訊息提早到達而漏測背景迴圈，必須失敗，不能以自動修剪誤認通過。
+        const auto memoryStats=engine.GetMemoryStats();
+        const auto minimizedTrimCount=memoryStats.trimCount;
+        // 無更新的外層幀也可能自動修剪；該計數不能代替最小化分支的證據。
+        if(minimizedTrimCount<=memoryStats.automaticTrimCount){
             std::cerr<<"FIRST_DIVERGENCE: minimized engine branch was not observed\n";++failures;
         }
         if(!engine.GetInput().Focused()||!engine.GetInput().FocusLost()){
