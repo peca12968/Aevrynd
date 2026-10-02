@@ -763,6 +763,12 @@ add_test(NAME AevryndCharacterDeathPresentation3DTest COMMAND AevryndCharacterDe
   "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/assets/model-packs/realistic-female/realistic-female.aeskin"
   "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/assets/model-packs/realistic-male/realistic-male.aeskin")
 set_property(TEST AevryndCharacterDeathPresentation3DTest APPEND PROPERTY LABELS "release-gates")
+# 測試自行攜帶資料，不依賴其他遊戲的 POST_BUILD 副作用。
+foreach(CHARACTER_ASSET IN ITEMS realistic-female realistic-male)
+  add_custom_command(TARGET AevryndCharacterDeathPresentation3DTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:AevryndCharacterDeathPresentation3DTest>/assets/model-packs/${CHARACTER_ASSET}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin" "$<TARGET_FILE_DIR:AevryndCharacterDeathPresentation3DTest>/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin")
+endforeach()
 add_executable(AevryndCharacterAssetProvenance3DTest tests/CharacterAssetProvenance3DSmoke.cpp)
 target_compile_options(AevryndCharacterAssetProvenance3DTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_compile_definitions(AevryndCharacterAssetProvenance3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")

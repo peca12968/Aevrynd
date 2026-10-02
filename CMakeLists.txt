@@ -70,6 +70,10 @@ add_subdirectory(games/mistwatch/native)
 # 將它擴充為原有 13 個 gate 與角色／動畫回歸的無互動 CPU 聚合建置入口。
 if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
   add_dependencies(AevryndStreamlinePackageFixture
+    AevryndCharacterDeathPresentation3DTest
+    GameplayForestTrial3DTest
+    GameplayCottageEntry3DTest
+    GameplayCottageInterior3DTest
     AevryndFootPlacement3DTest
     AevryndSkinnedMaterialSidecar3DTest
     GameplayLabRulesTest

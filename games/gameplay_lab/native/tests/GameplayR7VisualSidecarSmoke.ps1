@@ -10,11 +10,25 @@ $root=Join-Path $temp 'capture';$null=New-Item -ItemType Directory -Path $root
 
 function Write-Json([string]$Path,$Value){[IO.File]::WriteAllText($Path,(($Value|ConvertTo-Json -Depth 12)+"`n"),[Text.UTF8Encoding]::new($false))}
 function Sha([string]$Path){$f=[IO.File]::OpenRead($Path);$s=[Security.Cryptography.SHA256]::Create();try{([BitConverter]::ToString($s.ComputeHash($f))).Replace('-','').ToLowerInvariant()}finally{$s.Dispose();$f.Dispose()}}
+function Quote-ChildArgument([string]$Value){
+  return '"'+[regex]::Replace([regex]::Replace($Value,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"'
+}
 function Invoke-Producer([string[]]$Extra){
-  $all=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$Producer,'-CaptureRoot',$root,'-ExpectedRunId',$runId,'-ExpectedSourceFingerprint',$fingerprint,'-TestOnly')+$Extra
-  $oldPreference=$ErrorActionPreference;$ErrorActionPreference='Continue'
-  try{$text=& powershell.exe @all 2>&1;$code=$LASTEXITCODE}finally{$ErrorActionPreference=$oldPreference}
-  return [pscustomobject]@{Code=$code;Text=($text-join"`n")}
+  $all=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$Producer,'-CaptureRoot',$root,'-ExpectedRunId',$runId,'-ExpectedSourceFingerprint',$fingerprint,'-TestOnly')+$Extra
+  # 直接取得子程序退出碼，並同時排空兩個輸出串流；不依賴呼叫範圍的 LASTEXITCODE。
+  $info=[Diagnostics.ProcessStartInfo]::new()
+  $info.FileName=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $info.Arguments=($all|ForEach-Object{Quote-ChildArgument $_})-join ' '
+  $info.UseShellExecute=$false;$info.CreateNoWindow=$true
+  $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+  $process=[Diagnostics.Process]::new();$process.StartInfo=$info
+  try{
+    if(-not $process.Start()){throw 'sidecar child process did not start'}
+    $stdout=$process.StandardOutput.ReadToEndAsync();$stderr=$process.StandardError.ReadToEndAsync()
+    if(-not $process.WaitForExit(60000)){$process.Kill();$process.WaitForExit();throw 'sidecar child timeout'}
+    $text=$stdout.GetAwaiter().GetResult()+$stderr.GetAwaiter().GetResult()
+    return [pscustomobject]@{Code=$process.ExitCode;Text=$text}
+  }finally{$process.Dispose()}
 }
 function Must-Fail([string]$Name,[string[]]$Extra,[string]$Pattern){$r=Invoke-Producer $Extra;if($r.Code-eq0-or$r.Text-notmatch$Pattern){throw "$Name hostile failed closed contract failed: code=$($r.Code) output=$($r.Text)"}}
 function Sign-Review($Review){
