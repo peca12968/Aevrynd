@@ -95,5 +95,8 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     AevryndNavigation3DTest
     AevryndHeightField3DTest
     AevryndWorldPartition3DFakeSourceTest
-    AevryndWorldPartitionDeltaGateFakeTest)
+    AevryndWorldPartitionDeltaGateFakeTest
+    MistwatchSupplyCrateTest
+    MistwatchSessionTest
+    MistwatchRouteTest)
 endif()

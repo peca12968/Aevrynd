@@ -9,6 +9,12 @@
 namespace Mistwatch {
 inline constexpr float GrassAssetHeight=1.02338f;
 inline constexpr float GrassMinimumRadius=.584f;
+inline constexpr float GrassSelectionDistance=35.f;
+inline bool GrassRootSelected(Aevrynd::Vec3 root,Aevrynd::Vec3 feet) {
+    // 選擇範圍量根部到玩家腳的三維距離，與鏡頭投影距離分開；正好邊界仍包含。
+    const float distance=Aevrynd::Length(root-feet);
+    return std::isfinite(distance)&&distance<=GrassSelectionDistance;
+}
 inline constexpr std::array<unsigned,5> GrassVertexCounts{645,1575,1072,2197,1542};
 inline constexpr std::array<unsigned,5> GrassTriangleCounts{714,1760,1215,2489,1664};
 inline std::string GrassMeshName(unsigned variant) {

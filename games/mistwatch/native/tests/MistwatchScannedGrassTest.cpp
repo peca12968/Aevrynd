@@ -5,6 +5,7 @@
 #include <Aevrynd/NativeMaterialDds3D.h>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 int main(){
     using namespace Aevrynd;
     const auto root=std::filesystem::path(MISTWATCH_SOURCE_ROOT)/"engine/assets/mistwatch-grass-medium-02";
@@ -69,6 +70,16 @@ int main(){
     const auto roots=Mistwatch::GroundCoverPositions(terrain);
     if(roots.size()!=1363)return 16;
     for(const auto p:roots)if(std::abs(p.y-terrain.SampleHeight(p.x,p.z))>.0001f)return 17;
+    const Vec3 boundaryRoot{0,0,0};
+    for(const float d:{2.f,12.f,34.99f,35.f})if(!Mistwatch::GrassRootSelected(boundaryRoot,{d,0,0}))return 18;
+    if(Mistwatch::GrassRootSelected(boundaryRoot,{35.01f,0,0})||
+       Mistwatch::GrassRootSelected(boundaryRoot,{0,35.01f,0})||
+       Mistwatch::GrassRootSelected(boundaryRoot,{34.f,10.f,0})||
+       Mistwatch::GrassRootSelected(boundaryRoot,{std::numeric_limits<float>::quiet_NaN(),0,0})||
+       Mistwatch::GrassRootSelected(boundaryRoot,{std::numeric_limits<float>::infinity(),0,0}))return 19;
+    for(const auto p:roots)for(const Vec3 feet:{Vec3{},Vec3{0,0,36},Vec3{4,2,60}})
+        if(Mistwatch::GrassRootSelected(p,feet)!=(Length(p-feet)<=35.f))return 20;
     std::cout<<"Scanned grass PASS; variants=5 roots="<<roots.size()<<" source_triangles="<<total
-        <<" fixed_root_vertices="<<rootVertices<<" moving_tip_vertices="<<movingVertices<<" hostile_rejections="<<rejected+1<<'\n';
+        <<" fixed_root_vertices="<<rootVertices<<" moving_tip_vertices="<<movingVertices<<" hostile_rejections="<<rejected+1
+        <<" selection_boundary=3d-inclusive-35m finite_placement_equivalence=4089"<<'\n';
 }

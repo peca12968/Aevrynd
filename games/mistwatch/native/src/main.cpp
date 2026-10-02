@@ -13,6 +13,7 @@
 #include "MistwatchLandscape.h"
 #include "MistwatchAudio.h"
 #include "MistwatchPlayback.h"
+#include "MistwatchSupplyCrate.h"
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
@@ -25,6 +26,7 @@
 #include <memory>
 #include <chrono>
 #include <numeric>
+#include <iomanip>
 
 using namespace Aevrynd;
 class MistwatchGame final : public IGame {
@@ -32,6 +34,8 @@ class MistwatchGame final : public IGame {
     CharacterController3D controller;
     Scene3D scene;
     MeshResource3D box;
+    std::array<MeshResource3D,2> supplyMeshes;
+    unsigned submittedSupplies{};
     std::array<MeshResource3D,4> firMeshes;
     std::array<MeshResource3D,4> landscapeFirMeshes;
     std::array<Material3D,4> firMaterials;
@@ -106,6 +110,17 @@ class MistwatchGame final : public IGame {
     bool captureBoarOverview{};
     bool captureBoulderOverview{};
     bool captureGrassOverview{};
+    bool captureSupplyOverview{};
+    bool captureGrassDistance{},grassFixtureEnabled{true};
+    std::size_t grassFixtureIndex{};
+    float grassFixturePlayerDistance{2.f},grassFixtureCameraDistance{12.f};
+    struct GrassFixtureState {
+        Vec3 root{},feet{};
+        float scale{},yaw{},playerDistance{},cameraDistance{};
+        bool selected{},sceneAccepted{};
+        unsigned opaque{},shadowOnly{},triangles{};
+        std::uint64_t sceneSerial{},cameraHash{};
+    } grassFixtureState,grassFixtureFrozen;
     bool captureFernOverview{};
     unsigned submittedGrass{};
     bool captureRelayMotion{};
@@ -179,6 +194,10 @@ public:
         if(!explorerMesh)throw std::runtime_error("Explorer GPU upload failed");
         box=e.CreateMeshResource3D(Mesh3D::CreateUnitBox());
         scene.SetBoxMesh(box);
+        const auto supplyGeometry=Mistwatch::CreateSupplyCrate();
+        supplyMeshes[0]=e.CreateMeshResource3D(supplyGeometry.wood);
+        supplyMeshes[1]=e.CreateMeshResource3D(supplyGeometry.metal);
+        if(!supplyMeshes[0]||!supplyMeshes[1])throw std::runtime_error("Supply crate GPU upload failed");
         materials.Initialize(e,e.ExecutableDirectory()/"assets"/"mistwatch-materials");
         wchar_t groundCapture[2]{},legacyGround[3]{};
         if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",groundCapture,2)>0) {
@@ -407,6 +426,35 @@ public:
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else if(name==L"boulder-profile")captureBoulderOverview=true;
                 else if(name==L"grass-profile")captureGrassOverview=true;
+                else if(name==L"supply-profile"||name==L"supply-collected") {
+                    captureSupplyOverview=true;
+                    session.feet=Mistwatch::Session::supplies[0]+Vec3{0,0,-2};
+                    if(name==L"supply-collected"&&!session.Collect(0))throw std::runtime_error("Supply collection fixture failed");
+                }
+                else if(name==L"grass-distance") {
+                    captureGrassDistance=true;
+                    wchar_t mode[32]{},enabled[3]{};
+                    const auto modeLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_FIXTURE",mode,32);
+                    const auto enabledLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED",enabled,3);
+                    if(!modeLength||modeLength>=32||enabledLength!=1||(enabled[0]!=L'0'&&enabled[0]!=L'1')||
+                        captureSequenceFrames||captureBenchmark||diagnosticProceduralGrass||diagnosticLegacyFern)
+                        throw std::runtime_error("Invalid grass distance fixture configuration");
+                    grassFixtureEnabled=enabled[0]==L'1';
+                    const std::wstring_view distanceMode=mode;
+                    if(distanceMode==L"player-near")grassFixturePlayerDistance=2.f;
+                    else if(distanceMode==L"player-inside")grassFixturePlayerDistance=34.99f;
+                    else if(distanceMode==L"player-edge")grassFixturePlayerDistance=35.f;
+                    else if(distanceMode==L"player-outside")grassFixturePlayerDistance=35.01f;
+                    else if(distanceMode==L"image-near")grassFixtureCameraDistance=2.f;
+                    else if(distanceMode==L"image-middle")grassFixtureCameraDistance=12.f;
+                    else if(distanceMode==L"image-far")grassFixtureCameraDistance=35.f;
+                    else throw std::runtime_error("Unknown grass distance fixture mode");
+                    // 每個程序從相同初始原配置選取同一株，不因腳或鏡頭移動重新尋找最近植株。
+                    const auto plant=std::find_if(groundCover.begin(),groundCover.end(),[](Vec3 p){return Length(p)<12.f;});
+                    if(plant==groundCover.end())throw std::runtime_error("Grass distance root missing");
+                    grassFixtureIndex=std::size_t(plant-groundCover.begin());
+                    session.feet=*plant+Vec3{grassFixturePlayerDistance,0,0};
+                }
                 else if(name==L"fern-profile")captureFernOverview=true;
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
@@ -613,6 +661,9 @@ public:
                     <<"\nfern_materials="<<fernMaterials.Stats().materials<<"\nsubmitted_fern_triangles="<<submittedFernTriangles
                     <<"\nfern_alpha_cutoff="<<fernSurface.alphaCutoff<<"\nfern_use_uv="<<fernSurface.useUv<<'\n';
                 out<<"grass_tint_scale="<<(diagnosticDimGrass?.7f:1.f)<<'\n';
+                out<<"supply_visual=planked_wood_crate\nsupply_mesh_resources=2\nsupply_wood_triangles="<<supplyMeshes[0].TriangleCount()
+                    <<"\nsupply_metal_triangles="<<supplyMeshes[1].TriangleCount()<<"\nsubmitted_supply_crates="<<submittedSupplies
+                    <<"\nsupply_collected_mask="<<session.collected<<"\nsupply_wood_textured="<<bool(woodMaterial.textures)<<'\n';
                 out<<"grass_source="<<(diagnosticProceduralGrass?"procedural":"poly-haven-grass-medium-02")
                     <<"\ngrass_variants="<<(diagnosticProceduralGrass?1:5)<<"\ngrass_minimum_asset_height="<<Mistwatch::GrassAssetHeight
                     <<"\ngrass_materials="<<grassMaterials.Stats().materials<<"\nsubmitted_grass_triangles="<<submittedGrassTriangles
@@ -660,7 +711,7 @@ public:
                     <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureFernOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -668,6 +719,28 @@ public:
                     <<"\ncamera_target="<<lastRenderedCamera.target.x<<','<<lastRenderedCamera.target.y<<','<<lastRenderedCamera.target.z
                     <<"\ncamera_up="<<lastRenderedCamera.up.x<<','<<lastRenderedCamera.up.y<<','<<lastRenderedCamera.up.z
                     <<"\ncamera_fov="<<lastRenderedCamera.projection.verticalFieldOfView<<'\n';
+                if(captureGrassDistance) {
+                    const auto& proof=grassFixtureFrozen;
+                    out<<std::setprecision(std::numeric_limits<float>::max_digits10)
+                        <<"grass_fixture_schema=1\ngrass_fixture_index="<<grassFixtureIndex
+                        <<"\ngrass_fixture_variant="<<grassFixtureIndex%5
+                        <<"\ngrass_fixture_identity_high=5572150615523553875\ngrass_fixture_identity_low="<<grassFixtureIndex+1
+                        <<"\ngrass_fixture_generation=1\ngrass_fixture_enabled="<<grassFixtureEnabled
+                        <<"\ngrass_fixture_feet_mode=synthetic_same_height\ngrass_fixture_root="<<proof.root.x<<','<<proof.root.y<<','<<proof.root.z
+                        <<"\ngrass_fixture_feet="<<proof.feet.x<<','<<proof.feet.y<<','<<proof.feet.z
+                        <<"\ngrass_fixture_scale="<<proof.scale<<"\ngrass_fixture_yaw="<<proof.yaw
+                        <<"\ngrass_fixture_player_distance="<<proof.playerDistance
+                        <<"\ngrass_fixture_camera_distance="<<proof.cameraDistance
+                        <<"\ngrass_fixture_gate_selected="<<proof.selected
+                        <<"\ngrass_fixture_scene_accepted="<<proof.sceneAccepted
+                        <<"\ngrass_fixture_opaque_draw_instances="<<proof.opaque
+                        <<"\ngrass_fixture_shadow_only_instances="<<proof.shadowOnly
+                        <<"\ngrass_fixture_draw_input_triangles="<<proof.triangles
+                        <<"\ngrass_fixture_scene_serial="<<proof.sceneSerial
+                        <<"\ngrass_fixture_camera_hash="<<proof.cameraHash
+                        <<"\ngrass_fixture_selection_limit=35\ngrass_fixture_image_kind=production_final_image_not_direct_pixel_count\n"
+                        <<std::setprecision(6);
+                }
                 if(captureBenchmark) {
                     auto ordered=benchmarkGpuMilliseconds;std::sort(ordered.begin(),ordered.end());
                     out<<"benchmark_mode=fixed_scene_gpu_only\ngpu_samples="<<ordered.size()
@@ -813,18 +886,33 @@ public:
         grass.doubleSided=true;
         submittedGrass=0;
         submittedGrassTriangles=0;
+        grassFixtureState={};
         for(std::size_t index=0;index<groundCover.size();++index) {
             const auto plant=groundCover[index];
-            if(Length(plant-session.feet)>35.f) continue;
             const float scale=.5f+.25f*std::sin(plant.x*1.7f+plant.z);
+            const bool selected=Mistwatch::GrassRootSelected(plant,session.feet);
+            const bool fixtureTarget=captureGrassDistance&&index==grassFixtureIndex;
+            if(fixtureTarget){grassFixtureState.root=plant;grassFixtureState.feet=session.feet;
+                grassFixtureState.scale=scale;grassFixtureState.yaw=plant.x+plant.z;
+                grassFixtureState.playerDistance=Length(plant-session.feet);grassFixtureState.selected=selected;}
+            if(!selected||(fixtureTarget&&!grassFixtureEnabled))continue;
             const auto& mesh=diagnosticProceduralGrass?grassMesh:scannedGrass[index%5];
-            scene.Mesh(mesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},diagnosticProceduralGrass?grass:grassSurface);
+            const RenderObjectIdentity3D identity=fixtureTarget?RenderObjectIdentity3D{{5572150615523553875ull,index+1},1}:RenderObjectIdentity3D{};
+            const auto accepted=scene.Mesh(mesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},diagnosticProceduralGrass?grass:grassSurface,{},identity);
+            if(!accepted)throw std::runtime_error("Grass scene insertion failed");
+            if(fixtureTarget)grassFixtureState.sceneAccepted=true;
             submittedGrassTriangles+=mesh.TriangleCount();
             ++submittedGrass;
         }
         for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);
-        for(unsigned i=0;i<3;++i) if(!(session.collected&(1u<<i)))
-            scene.Box(Mistwatch::Session::supplies[i]+Vec3{0,.4f,0},{.8f,.8f,.8f},{.7f,.45f,.12f,1});
+        submittedSupplies=0;
+        Material3D supplyMetal{{1,1,1,1},{.65f,.7f,0,1}};
+        for(unsigned i=0;i<3;++i) if(!(session.collected&(1u<<i))) {
+            const Transform3D transform{Mistwatch::Session::supplies[i],{},{1,1,1}};
+            if(!scene.Mesh(supplyMeshes[0],transform,woodMaterial)||!scene.Mesh(supplyMeshes[1],transform,supplyMetal))
+                throw std::runtime_error("Supply crate scene insertion failed");
+            ++submittedSupplies;
+        }
         if(session.bridgeRepaired) scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
         else scene.Box(Mistwatch::Session::bridge+Vec3{1,.35f,0},{1,.7f,1},{.3f,.12f,.08f,1});
         for(const auto solid:Mistwatch::RepairShelterSolids())scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
@@ -903,6 +991,16 @@ public:
             camera.target=*plant+Vec3{0,.3f,0};
             camera.position=camera.target+Vec3{1.15f,.55f,-1.15f};
         }
+        if(captureSupplyOverview&&!capture.empty()) {
+            camera.target=Mistwatch::Session::supplies[0]+Vec3{0,.4f,0};
+            camera.position=camera.target+Vec3{1.25f,.8f,-1.6f};
+        }
+        if(captureGrassDistance&&!capture.empty()) {
+            camera.target=groundCover[grassFixtureIndex]+Vec3{0,.3f,0};
+            // 固定方向與目標，僅改鏡頭距離；不把合成腳位置當可行走地形驗收。
+            camera.position=camera.target+Normalize(Vec3{1.15f,.55f,-1.15f})*grassFixtureCameraDistance;
+            grassFixtureState.cameraDistance=Length(camera.position-camera.target);
+        }
         if(captureFernOverview && !capture.empty()) {
             const auto plant=std::min_element(understory.ferns.begin(),understory.ferns.end(),[&](const auto& a,const auto& b){
                 return Length(a.position-session.feet)<Length(b.position-session.feet);
@@ -923,7 +1021,19 @@ public:
         draw.SetDirectionalLight({{.4f,-.85f,.3f},.55f,{1.f,.95f,.85f,1},1.5f});
         draw.SetExposureCompensation(.5f);
         draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,45,200,true,.0025f,.09f,-2.f,.76f});
-        scene.Submit(draw,camera,{1280,720});
+        const auto sceneStats=scene.Submit(draw,camera,{1280,720});
+        if(captureGrassDistance) {
+            grassFixtureState.sceneSerial=sceneStats.submissionSerial;
+            for(const auto& item:draw.meshInstances)if(item.identity==RenderObjectIdentity3D{{5572150615523553875ull,grassFixtureIndex+1},1}){
+                if(item.layer==MeshRenderLayer3D::Opaque)++grassFixtureState.opaque;
+                else if(item.layer==MeshRenderLayer3D::ShadowOnly)++grassFixtureState.shadowOnly;
+                grassFixtureState.triangles+=Mistwatch::GrassTriangleCounts[grassFixtureIndex%5];
+            }
+            auto hash=1469598103934665603ull;
+            const auto& matrix=draw.ViewProjection();
+            for(const auto byte:std::as_bytes(std::span{&matrix,1})){hash^=std::to_integer<std::uint8_t>(byte);hash*=1099511628211ull;}
+            grassFixtureState.cameraHash=hash;
+        }
         if(!session.guardianDefeated) {
             const auto animalPalette=AddSkinPaletteFromPose(draw,boar.model,boar.pose,boarSkinning);
             if(!draw.SkinnedMeshInstance(boarMesh.handle,animalPalette,CreateTransformMatrix(encounter.feet,{0,boar.yaw,0},{1,1,1})))
@@ -1025,12 +1135,21 @@ public:
                 const std::array<std::uint64_t,3> state{hash(waterTime),std::uint64_t(session.CurrentStage()),session.repairMaterials};
                 if(!e.RequestLinearHdrReadback3D({captureFrames,cameraHash,hash(state)}))throw std::runtime_error("HDR diagnostic request rejected");
             }
+            if(captureGrassDistance)grassFixtureFrozen=grassFixtureState;
             capturePending=e.CaptureNextFrame3D(CapturePath());
             if(!capturePending)throw std::runtime_error("Frame capture request rejected");
         }
     }
     void OnStop(Engine& e) override {
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
+        unsigned suppliesDestroyed{};
+        for(auto& mesh:supplyMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++suppliesDestroyed;}mesh={};}
+        if(suppliesDestroyed!=2)throw std::runtime_error("Supply crate cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".supply-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=2\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Supply cleanup receipt failed");
+        }
         e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
         materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();boulderMaterials.Shutdown();
         fernMaterials.Shutdown();

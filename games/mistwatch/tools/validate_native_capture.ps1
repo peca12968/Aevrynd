@@ -17,11 +17,12 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_NO_GROUND_TEXTURES','AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE',
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
     'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GRASS_LEGACY',
-    'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL')
+    'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL',
+    'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -59,6 +60,20 @@ try {
         $grassCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.grass-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$grassCleanup[$pair[0]]=$pair[1]}}
         if($grassCleanup.cleanup -ne 'success' -or $grassCleanup.materials -ne '0' -or $grassCleanup.mesh_destroy_calls -ne '5'){throw ('Grass cleanup incomplete: '+$case)}
+        $supplyCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.supply-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$supplyCleanup[$pair[0]]=$pair[1]}}
+        if($supplyCleanup.cleanup -ne 'success' -or $supplyCleanup.mesh_destroy_calls -ne '2'){throw ('Supply cleanup incomplete: '+$case)}
+        if($receipt.supply_visual -ne 'planked_wood_crate' -or $receipt.supply_mesh_resources -ne '2' -or
+            $receipt.supply_wood_triangles -ne '360' -or $receipt.supply_metal_triangles -ne '236' -or
+            $receipt.supply_wood_textured -ne '1'){throw ('Supply production geometry/material missing: '+$case)}
+        $mask=[int]$receipt.supply_collected_mask
+        if($mask -lt 0 -or $mask -gt 7){throw ('Invalid supply mask: '+$case)}
+        $expectedSupplies=3-[int][bool]($mask-band 1)-[int][bool]($mask-band 2)-[int][bool]($mask-band 4)
+        if([int]$receipt.submitted_supply_crates -ne $expectedSupplies){throw ('Collected supply rendering mismatch: '+$case)}
+        if($case -in @('supply-profile','supply-collected')) {
+            $expectedMask=if($case -eq 'supply-collected'){1}else{0}
+            if($mask -ne $expectedMask -or $receipt.camera_source -ne 'diagnostic'){throw ('Supply fixture not proven: '+$case)}
+        }
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0' -or $receipt.debug_warnings -ne '0'){throw ('GPU debug messages: '+$case)}
         if($receipt.multisample_count -ne '4'){throw ('Production MSAA missing: '+$case)}
