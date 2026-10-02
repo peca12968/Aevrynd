@@ -38,6 +38,11 @@ foreach(slot IN ITEMS "primitive0-material0-tree-small-02-branches" "primitive1-
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/tree-small-02/tree-small-02-lod2-node0-mesh0-${slot}.aemesh" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-broadleaf/meshes/")
 endforeach()
 target_include_directories(MistwatchBridgeTest PRIVATE include)
+add_custom_command(TARGET Mistwatch POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-boulders/meshes"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/boulder-01" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-boulders/materials"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/meshes/boulder-01/boulder-01-lod2-node0-mesh0-primitive0-material0-boulder-01.aemesh" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-boulders/meshes/"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/runtime-asset-manifest.json" "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/boulder-01/boulder-01-lod-receipt.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-boulders/")
 target_compile_options(MistwatchBridgeTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(MistwatchBridgeTest PRIVATE AevryndEngine)
 add_test(NAME MistwatchBridgeTest COMMAND MistwatchBridgeTest)
@@ -62,6 +67,7 @@ target_link_libraries(MistwatchEvasionTest PRIVATE AevryndEngine)
 add_test(NAME MistwatchEvasionTest COMMAND MistwatchEvasionTest)
 add_executable(MistwatchForestPropsTest tests/MistwatchForestPropsTest.cpp)
 target_include_directories(MistwatchForestPropsTest PRIVATE include)
+target_compile_definitions(MistwatchForestPropsTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
 target_compile_options(MistwatchForestPropsTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(MistwatchForestPropsTest PRIVATE AevryndEngine)
 add_test(NAME MistwatchForestPropsTest COMMAND MistwatchForestPropsTest)

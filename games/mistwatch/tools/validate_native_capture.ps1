@@ -20,7 +20,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile')}
 try {
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
@@ -49,6 +49,9 @@ try {
         $treeCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.broadleaf-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$treeCleanup[$pair[0]]=$pair[1]}}
         if($treeCleanup.cleanup -ne 'success' -or $treeCleanup.materials -ne '0' -or $treeCleanup.mesh_destroy_calls -ne '3'){throw ('Broadleaf cleanup incomplete: '+$case)}
+        $boulderCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.boulder-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$boulderCleanup[$pair[0]]=$pair[1]}}
+        if($boulderCleanup.cleanup -ne 'success' -or $boulderCleanup.materials -ne '0' -or $boulderCleanup.mesh_destroy_calls -ne '2'){throw ('Boulder/log cleanup incomplete: '+$case)}
         if($receipt.capture -ne 'success' -or $receipt.output_width -ne '1280' -or $receipt.output_height -ne '720') {throw ('Invalid capture receipt: '+$case)}
         if($receipt.debug_errors -ne '0' -or $receipt.debug_warnings -ne '0'){throw ('GPU debug messages: '+$case)}
         if($receipt.multisample_count -ne '4'){throw ('Production MSAA missing: '+$case)}
@@ -70,6 +73,21 @@ try {
            $receipt.landscape_trees -ne '520'){throw ('Missing landscape geography or distant forest: '+$case)}
         if($receipt.broadleaf_trees -ne '12' -or $receipt.broadleaf_mesh_triangles -ne '82854' -or
            $receipt.broadleaf_materials -ne '3'){throw ('Missing rooted broadleaf trees or verified materials: '+$case)}
+        if($receipt.boulder_instances -ne '32' -or $receipt.boulder_mesh_triangles -ne '26611' -or
+           $receipt.boulder_materials -ne '1' -or $receipt.boulder_gpu_resources -ne '1' -or
+           $receipt.boulder_use_uv -ne '1' -or $receipt.boulder_texture_scale -ne '1'){throw ('Scanned boulder geometry/material binding incorrect: '+$case)}
+        if($case -eq 'boulder-profile') {
+            if($receipt.camera_source -ne 'diagnostic'){throw 'Boulder detail fixture missing diagnostic camera'}
+            $position=@($receipt.camera_position.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
+            $target=@($receipt.camera_target.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
+            if($position.Count -ne 3 -or $target.Count -ne 3){throw 'Boulder camera receipt invalid'}
+            $offset=@(2,1.1,-2)
+            for($axis=0;$axis -lt 3;++$axis){
+                if([double]::IsNaN($position[$axis]) -or [double]::IsInfinity($position[$axis]) -or
+                    [double]::IsNaN($target[$axis]) -or [double]::IsInfinity($target[$axis]) -or
+                    [Math]::Abs($position[$axis]-$target[$axis]-$offset[$axis]) -gt .001){throw 'Boulder detail camera offset mismatch'}
+            }
+        }
         if($receipt.enemy_visual -ne 'skinned_boar' -or $receipt.enemy_joints -ne '16'){throw ('Missing skinned wildlife: '+$case)}
         if($case -eq 'strike' -and ($receipt.enemy_phase -ne '1' -or [double]$receipt.enemy_brace -lt .4)){throw 'Missing windup posture fixture'}
         if($case -eq 'boar-recovery' -and ($receipt.enemy_phase -ne '2' -or [double]$receipt.enemy_brace -ne 0)){throw 'Missing recovery posture fixture'}

@@ -51,7 +51,10 @@ class MistwatchGame final : public IGame {
     MeshResource3D relayDish;
     Mistwatch::ForestUnderstory understory;
     unsigned submittedFerns{},submittedSaplings{};
-    std::array<MeshResource3D,4> propMeshes;
+    // 所有岩石共用一份 GPU 網格，倒木與修復木梁共用另一份。
+    std::array<MeshResource3D,2> propMeshes;
+    MaterialLibrary3D boulderMaterials;
+    Material3D boulderMaterial;
     std::vector<Mistwatch::ForestProp> forestProps;
     MaterialLibrary3D materials;
     Material3D groundMaterial, barkMaterial, woodMaterial, rockMaterial;
@@ -84,6 +87,7 @@ class MistwatchGame final : public IGame {
     bool captureWalk{},captureCrouch{};
     bool captureWildlife{};
     bool captureBoarOverview{};
+    bool captureBoulderOverview{};
     bool captureRelayMotion{};
     bool captureLandscapeMotion{};
     bool captureAudioProbe{};
@@ -237,6 +241,29 @@ public:
             broadleafMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
             if(!broadleafMeshes[slot])throw std::runtime_error("Broadleaf upload failed");
         }
+        const auto boulderRoot=e.ExecutableDirectory()/"assets"/"mistwatch-boulders";
+        boulderMaterials.Initialize(e,boulderRoot);
+        MaterialTextureSetDefinition3D boulderTextures{"materials/slot-0-base.dds","materials/slot-0-arm.dds",1024,
+            "materials/slot-0-normal.dds"};
+        boulderTextures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+        constexpr const char* boulderHashes[]{
+            "5a847a3174e09505b3a404c93716cbae576a5cb8bd32f69ec6395e8c95008d36",
+            "564be8685c266fe7fa03acda76c6c06f706911c4344777ceab6563d743284a1e",
+            "68fbbe04ffdb1c6d327f4262b9230438623f0d3b4b17a0a5155eb13b9ed21e83"};
+        for(unsigned channel=0;channel<3;++channel)boulderTextures.integrity[channel]={1398276,boulderHashes[channel]};
+        if(!boulderMaterials.Load({"boulder",boulderTextures,{{1,1,1,1},{.9f,0,0,1},true,{},1.f,true}}))
+            throw std::runtime_error("Boulder material unavailable");
+        boulderMaterial=*boulderMaterials.Find("boulder");
+        auto boulder=LoadAevryndMeshFile(boulderRoot/"meshes"/Mistwatch::BoulderMeshName);
+        if(!boulder||boulder.mesh.vertices.size()!=56938||boulder.mesh.indices.size()!=79833)
+            throw std::runtime_error("Boulder geometry unavailable");
+        Mistwatch::RootBoulderMesh(boulder.mesh);
+        const auto boulderBounds=boulder.mesh.Bounds(),boulderProfile=Mistwatch::BoulderBounds();
+        if(Length(boulderBounds.center-boulderProfile.center)>.00001f||Length(boulderBounds.extents-boulderProfile.extents)>.00001f)
+            throw std::runtime_error("Boulder collision profile mismatch");
+        propMeshes[0]=e.CreateMeshResource3D(boulder.mesh);
+        propMeshes[1]=e.CreateMeshResource3D(Mistwatch::ForestPropLogMesh());
+        if(!propMeshes[0]||!propMeshes[1])throw std::runtime_error("Forest prop GPU upload failed");
         terrain=Mistwatch::CreateTerrain();
         terrainMesh=e.CreateMeshResource3D(Mistwatch::CreateTerrainMesh(terrain));
         landscapeMesh=e.CreateMeshResource3D(Mistwatch::CreateLandscapeMesh(terrain));
@@ -251,10 +278,6 @@ public:
         if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
-        for(unsigned mesh=0;mesh<propMeshes.size();++mesh) {
-            propMeshes[mesh]=e.CreateMeshResource3D(Mistwatch::ForestPropMeshes()[mesh]);
-            if(!propMeshes[mesh])throw std::runtime_error("Forest prop GPU upload failed");
-        }
         groundCover=Mistwatch::GroundCoverPositions(terrain);
         grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,3));
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
@@ -311,6 +334,7 @@ public:
                 else if(name==L"fuse-lock-ready") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 50";
                 else if(name==L"focus-pause") {captureFocusProbe=true;fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";}
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
+                else if(name==L"boulder-profile")captureBoulderOverview=true;
                 else throw std::runtime_error("Unknown capture scenario");
                 if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
                 if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
@@ -522,6 +546,10 @@ public:
                 out<<"landscape_river_release_m=24\n";
                 out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
                     <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
+                out<<"boulder_instances="<<std::count_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();})
+                    <<"\nboulder_mesh_triangles="<<propMeshes[0].TriangleCount()<<"\nboulder_materials="<<boulderMaterials.Stats().materials
+                    <<"\nboulder_use_uv="<<boulderMaterial.useUv<<"\nboulder_texture_scale="<<boulderMaterial.textureScale
+                    <<"\nboulder_gpu_resources="<<unsigned(bool(propMeshes[0]))<<'\n';
                 if(captureFocusProbe)out<<"focus_pause_verified="<<captureFocusComplete<<"\nfocus_frozen_ticks="<<captureFocusFrozenTicks
                     <<"\nfocus_explicit_resume_verified="<<captureFocusComplete<<"\npaused="<<paused<<'\n';
                 out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
@@ -541,7 +569,7 @@ public:
                     <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -693,7 +721,7 @@ public:
             const float scale=.5f+.25f*std::sin(plant.x*1.7f+plant.z);
             scene.Mesh(grassMesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},grass);
         }
-        for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.mesh],prop.transform,prop.FallenLog()?barkMaterial:rockMaterial);
+        for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);
         for(unsigned i=0;i<3;++i) if(!(session.collected&(1u<<i)))
             scene.Box(Mistwatch::Session::supplies[i]+Vec3{0,.4f,0},{.8f,.8f,.8f},{.7f,.45f,.12f,1});
         if(session.bridgeRepaired) scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
@@ -704,7 +732,7 @@ public:
             if(site==0)scene.Box(point+Vec3{0,.49f,0},{.5f,.06f,.3f},(session.repairMaterials&1)?Color{.3f,.3f,.25f,1}:Color{.82f,.65f,.15f,1});
             if(session.repairMaterials&(1u<<site))continue;
             if(site!=0)for(unsigned beam=0;beam<3;++beam)
-                scene.Mesh(propMeshes[3],{point+Vec3{0,.18f+.22f*float(beam),0},{0,0,1.5707963f},{.22f,1.8f,.22f}},woodMaterial);
+                scene.Mesh(propMeshes[1],{point+Vec3{0,.18f+.22f*float(beam),0},{0,0,1.5707963f},{.22f,1.8f,.22f}},woodMaterial);
             // 小型路標讓材料位置可辨識，不用懸浮的大型目標方塊遮住場景。
             const auto sign=point+Vec3{site==0?2.8f:1.3f,0,0};
             scene.MaterialBox(sign+Vec3{0,.6f,0},{.12f,1.2f,.12f},woodMaterial);
@@ -762,6 +790,12 @@ public:
         if(captureRiverOverview && !capture.empty()) {camera.position={-22,28,8};camera.target={0,-2,36};}
         if(captureShelterOverview && !capture.empty()) {camera.position={-3,1.1f,17};camera.target={-7.25f,.7f,18};}
         if(captureBoarOverview && !capture.empty()) {camera.position=encounter.feet+Vec3{3,1.4f,1};camera.target=encounter.feet+Vec3{0,.55f,0};}
+        if(captureBoulderOverview && !capture.empty()) {
+            const auto rock=std::find_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();});
+            if(rock==forestProps.end())throw std::runtime_error("Boulder detail fixture missing");
+            camera.target=rock->collider.center;
+            camera.position=camera.target+Vec3{2.f,1.1f,-2.f};
+        }
         lastRenderedCamera=camera;
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
@@ -883,7 +917,7 @@ public:
     void OnStop(Engine& e) override {
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
         e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
-        materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();
+        materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();boulderMaterials.Shutdown();
         unsigned broadleafDestroyed{};
         for(auto& mesh:broadleafMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++broadleafDestroyed;}mesh={};}
         if(broadleafMaterials.Stats().materials||broadleafDestroyed!=3)throw std::runtime_error("Broadleaf cleanup incomplete");
@@ -894,7 +928,14 @@ public:
         }
         e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);
         for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);
-        for(auto& mesh:propMeshes)e.DestroyMesh3D(mesh.handle);
+        unsigned propsDestroyed{};
+        for(auto& mesh:propMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++propsDestroyed;}mesh={};}
+        if(boulderMaterials.Stats().materials||propsDestroyed!=2)throw std::runtime_error("Forest prop cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".boulder-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=2\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Boulder cleanup receipt failed");
+        }
         e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);
         e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);
     }

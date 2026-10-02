@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchSession.h"
 #include "MistwatchRiverProfile.h"
+#include "MistwatchBoulder.h"
 #include <Aevrynd/EnvironmentMeshes3D.h>
 #include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/CollisionWorld3D.h>
@@ -13,13 +14,12 @@ struct ForestProp {
     Aevrynd::BoxCollider3D collider;
     bool FallenLog()const{return mesh==3;}
 };
-inline const std::array<Aevrynd::Mesh3D,4>& ForestPropMeshes() {
-    static const std::array<Aevrynd::Mesh3D,4> meshes{{
-        Aevrynd::CreateRockMesh3D(Aevrynd::EnvironmentMeshDetail3D::Near,19),
-        Aevrynd::CreateRockMesh3D(Aevrynd::EnvironmentMeshDetail3D::Near,37),
-        Aevrynd::CreateRockMesh3D(Aevrynd::EnvironmentMeshDetail3D::Near,71),
-        Aevrynd::Mesh3D::CreateUnitCylinder(16)}};
-    return meshes;
+inline const Aevrynd::Mesh3D& ForestPropLogMesh() {
+    static const auto mesh=Aevrynd::Mesh3D::CreateUnitCylinder(16);
+    return mesh;
+}
+inline Aevrynd::MeshBounds3D ForestPropBounds(unsigned style) {
+    return style==3?ForestPropLogMesh().Bounds():BoulderBounds();
 }
 inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b) {
     const float minX=b.center.x-b.extents.x,maxX=b.center.x+b.extents.x;
@@ -58,9 +58,8 @@ inline std::vector<ForestProp> ForestProps(const Aevrynd::HeightField3D& terrain
     std::vector<ForestProp> props;
     std::uint32_t seed=0x50524f50u;
     const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
-    const auto& meshes=ForestPropMeshes();
     unsigned rockCount{},logCount{};
-    for(unsigned candidate=0;candidate<900 && props.size()<44;++candidate) {
+    for(unsigned candidate=0;candidate<12000 && props.size()<44;++candidate) {
         const bool log=candidate%5==0;
         // 各類配額分開，避免先生成的岩石占滿所有倒木名額。
         if((log && logCount>=12) || (!log && rockCount>=32))continue;
@@ -72,10 +71,10 @@ inline std::vector<ForestProp> ForestProps(const Aevrynd::HeightField3D& terrain
         // 近路地標使用固定錨點，其餘依固定種子散布。
         if(candidate==0) {transform.position={-7.5f,0,7};transform.rotation={1.5707963f,0,0};}
         if(candidate==1)transform.position={-6,0,2};
-        const auto initial=TransformBounds(meshes[mesh].Bounds(),transform);
+        const auto initial=TransformBounds(ForestPropBounds(mesh),transform);
         const float ground=terrain.SampleHeight(transform.position.x,transform.position.z);
         transform.position.y=ground-(initial.center.y-initial.extents.y)-(log?.05f:.12f);
-        const auto bounds=TransformBounds(meshes[mesh].Bounds(),transform);
+        auto bounds=TransformBounds(ForestPropBounds(mesh),transform);
         BoxCollider3D collider{bounds.center,bounds.extents};
         if(!PropClearsObjectives(collider))continue;
         // 斜坡上的長倒木容易懸空，僅接受腳印高度差小於 15 公分的落點。
@@ -84,7 +83,25 @@ inline std::vector<ForestProp> ForestProps(const Aevrynd::HeightField3D& terrain
             const float height=terrain.SampleHeight(collider.center.x+x*collider.extents.x,collider.center.z+z*collider.extents.z);
             minimum=(std::min)(minimum,height);maximum=(std::max)(maximum,height);
         }
-        if(maximum-minimum>(log?.15f:.8f))continue;
+        if(log) {
+            if(maximum-minimum>.15f)continue;
+        } else {
+            // 覆蓋脚印相交的全部地形格點；三角內部高度介於頂點極值，避免只看角落漏掉隆起。
+            const auto& grid=terrain.Settings();
+            const int x0=int(std::floor((collider.center.x-collider.extents.x-grid.origin.x)/grid.cellSize));
+            const int x1=int(std::ceil((collider.center.x+collider.extents.x-grid.origin.x)/grid.cellSize));
+            const int z0=int(std::floor((collider.center.z-collider.extents.z-grid.origin.z)/grid.cellSize));
+            const int z1=int(std::ceil((collider.center.z+collider.extents.z-grid.origin.z)/grid.cellSize));
+            if(x0<0||z0<0||x1>=int(grid.width)||z1>=int(grid.depth))continue;
+            for(int z=z0;z<=z1;++z)for(int x=x0;x<=x1;++x) {
+                const float height=terrain.Height(unsigned(x),unsigned(z));
+                minimum=(std::min)(minimum,height);maximum=(std::max)(maximum,height);
+            }
+            if(maximum-minimum>.12f)continue;
+            transform.position.y=minimum-(initial.center.y-initial.extents.y)-.12f;
+            bounds=TransformBounds(ForestPropBounds(mesh),transform);
+            collider={bounds.center,bounds.extents};
+        }
         bool overlaps=false;
         for(const auto tree:trees)overlaps|=std::abs(tree.x-collider.center.x)<collider.extents.x+.6f &&
             std::abs(tree.z-collider.center.z)<collider.extents.z+.6f;
