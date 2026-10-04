@@ -15,6 +15,8 @@
 #include "MistwatchPlayback.h"
 #include "MistwatchSupplyCrate.h"
 #include "MistwatchRangerHut.h"
+#include "MistwatchSaveFile.h"
+#include "MistwatchLoadPreparation.h"
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
@@ -32,6 +34,10 @@
 
 using namespace Aevrynd;
 class MistwatchGame final : public IGame {
+#if defined(MISTWATCH_SAVE_INPUT_AUDIT)
+    // 僅原生按鍵測試可存取私有狀態；正式遊戲不含此測試友元。
+    friend class MistwatchSaveInputProbe;
+#endif
     Mistwatch::Session session;
     CharacterController3D controller;
     Scene3D scene;
@@ -185,6 +191,14 @@ class MistwatchGame final : public IGame {
         const auto listener=lastRenderedCamera.position;
         const auto right=Mistwatch::AudioListenerRight(lastRenderedCamera);
         gameAudio.Tick(e.Audio(),state,listener,right,dt);
+    }
+    void SaveCheckpoint() {
+        const Mistwatch::SaveGame snapshot{session,encounter,evasion};
+        // 先確認目前世界可安全還原，避免走出地形後寫下格式合法、實際讀不回的檔案。
+        // 預檢只操作候選 CPU 狀態；失敗不寫檔，也不取代先前可用的檢查點。
+        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain);
+        if(!prepared){message="Save position unavailable";return;}
+        message=Mistwatch::WriteSaveFile(save,snapshot)==Mistwatch::SaveFileResult::Saved?"Saved":"Save failed";
     }
     void SaveAudioOptions() {
         if(audioSettings.empty())return;
@@ -833,6 +847,23 @@ public:
             return;
         }
         auto& in=e.GetInput();
+        // 焦點安全仍優先；可遊玩狀態的讀檔先於暫停及音量鍵，避免同一步遺失或修改設定。
+        if(started&&!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
+            Mistwatch::SaveGame saved;
+            auto prepared=Mistwatch::ReadSaveFile(save,saved)?Mistwatch::PrepareSavedGame(saved,
+                {controller,explorer,boar,orbit},terrain):Mistwatch::LoadPreparationResult{};
+            if(prepared){
+                Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
+                    solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera});
+                cameraOcclusionSeconds=0;
+                gameAudio.director.Reset();
+                message="Loaded";
+                TickAudio(e,dt);
+            }else message="Save unavailable";
+            // 成功或失敗都不在載入當步推進世界與動作，也不執行同時按下的其他遊戲按鍵。
+            // 失敗也不更新遊戲音效事件觀測器；底層已播放的聲音仍由引擎正常服務。
+            return;
+        }
         Mistwatch::UpdatePlaybackControl(started,paused,in.Focused()&&!in.FocusLost(),in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
         bool changedAudio=false;
         if(in.Pressed('M')){gameAudio.options.muted=!gameAudio.options.muted;changedAudio=true;}
@@ -840,21 +871,24 @@ public:
         if(in.Pressed(VK_NEXT)){gameAudio.options.volume=std::clamp(gameAudio.options.volume-.1f,0.f,1.f);changedAudio=true;}
         if(changedAudio){e.Audio().SetMasterVolume(gameAudio.options.Gain());SaveAudioOptions();}
         if(!started || paused){TickAudio(e,dt);return;}
-        if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         bool resetTick=false;
-        if(in.Pressed(VK_F9) && !save.empty()) {
-            std::ifstream file(save,std::ios::binary);
-            if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};ResetBoarPose();evasion={};message="Loaded";resetTick=true;}else message="Save unavailable";
-        }
+        if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(in.Pressed('R') && session.beaconLit) {
             session={};solids=Mistwatch::WorldSolids(false);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
         }
-        if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};ResetBoarPose();evasion={};resetTick=true;}
+        if(in.Pressed('R') && !session.Alive()) {
+            session.Retry();ResetController();
+            // 重試保留已完成任務；已擊敗的野豬不能重設為未擊敗而破壞檢查點一致性。
+            if(!session.guardianDefeated)encounter={};
+            ResetBoarPose();evasion={};resetTick=true;
+        }
         if(resetTick){
             if(!UpdatePlayerCamera(dt))throw std::runtime_error("Reset-tick player camera unavailable");
             TickAudio(e,dt);return;
         }
         if(!session.Alive() || session.beaconLit){
+            if(in.Pressed(VK_F5) && !save.empty())
+                SaveCheckpoint();
             if(!playerCameraMotion.Initialized()&&!UpdatePlayerCamera(dt))throw std::runtime_error("Loaded terminal-session camera unavailable");
             TickAudio(e,dt);return;
         }
@@ -930,11 +964,7 @@ public:
             else if(encounter.phase==Mistwatch::EnemyPhase::Recovery) message="Boar recovering - counter with F";
         }
         if(in.Pressed(VK_F5) && !save.empty()) {
-            std::error_code error;
-            std::filesystem::create_directories(save.parent_path(),error);
-            auto temporary=save; temporary+=".tmp";
-            std::ofstream out(temporary); out<<session.Serialize(); out.close();
-            message=out && MoveFileExW(temporary.c_str(),save.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)?"Saved":"Save failed";
+            SaveCheckpoint();
         }
         TickAudio(e,dt);
     }

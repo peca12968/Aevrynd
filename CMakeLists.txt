@@ -106,5 +106,8 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchCameraMotionTest
     MistwatchCameraOrbitTest
     MistwatchCameraRouteContextTest
+    MistwatchSaveGameTest
+    MistwatchSaveFileTest
+    MistwatchLoadPreparationTest
     MistwatchCameraTest)
 endif()
