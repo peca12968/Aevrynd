@@ -35,7 +35,7 @@ try {
    $p=Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -WindowStyle Hidden -PassThru
    $deadline=$start.AddSeconds(45)
    while(-not $p.WaitForExit(1000)-and [DateTime]::UtcNow-lt $deadline){}
-   if(-not $p.HasExited){$p.Kill();$p.WaitForExit();throw ('草距離截圖逾時: '+$case)}
+   if(-not $p.HasExited){throw ('草距離觀測逾時；檢查同一執行中 PID='+$p.Id+' case='+$case)}
    if($p.ExitCode-ne 0){throw ('草距離場景失敗: '+$case+' exit='+$p.ExitCode)}
    $r=@{};foreach($line in Get-Content -LiteralPath ($capture+'.receipt.txt')){$pair=$line.Split('=',2);if($pair.Count-eq 2){if($r.ContainsKey($pair[0])){throw '重複收據欄位'};$r[$pair[0]]=$pair[1]}}
    foreach($flag in @('quality_shadows','quality_ao','quality_post_aa','ground_textured')){if($r[$flag]-ne '1'){throw ('正式畫質缺項: '+$flag)}}

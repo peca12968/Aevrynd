@@ -73,6 +73,10 @@ add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/forest-ground-04" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/poly-haven/forest-ground-04"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/FOREST_GROUND_LICENSE.md"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/runtime-render-manifest.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/forest-ground-render-manifest.json")
+add_custom_command(TARGET Mistwatch POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/materials/ground108" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/ambientcg/ground108"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/LICENSE.md" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/GROUND_SOIL_LICENSE.md"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked/runtime-render-manifest.json" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/ground-soil-render-manifest.json")
 add_executable(MistwatchGroundMaterialTest tests/MistwatchGroundMaterialTest.cpp)
 target_include_directories(MistwatchGroundMaterialTest PRIVATE include)
 target_compile_options(MistwatchGroundMaterialTest PRIVATE /W4 /WX /permissive- /utf-8)
@@ -209,6 +213,6 @@ target_include_directories(MistwatchAudioPreview PRIVATE include)
 target_compile_options(MistwatchAudioPreview PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(MistwatchAudioPreview PRIVATE AevryndEngine)
 if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
-  set_tests_properties(MistwatchSupplyCrateTest MistwatchSessionTest MistwatchRouteTest MistwatchRangerHutTest MistwatchRelayCameraTest MistwatchCameraMotionTest MistwatchCameraOrbitTest MistwatchCameraRouteContextTest MistwatchCameraTest MistwatchSaveGameTest MistwatchSaveFileTest MistwatchLoadPreparationTest
+  set_tests_properties(MistwatchSupplyCrateTest MistwatchSessionTest MistwatchRouteTest MistwatchRangerHutTest MistwatchRelayCameraTest MistwatchCameraMotionTest MistwatchCameraOrbitTest MistwatchCameraRouteContextTest MistwatchCameraTest MistwatchSaveGameTest MistwatchSaveFileTest MistwatchLoadPreparationTest MistwatchGroundMaterialTest MistwatchBridgeTest MistwatchLandscapeTest
     PROPERTIES LABELS "release-gates")
 endif()

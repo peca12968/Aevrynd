@@ -83,6 +83,7 @@ class MistwatchGame final : public IGame {
     std::vector<Mistwatch::ForestProp> forestProps;
     MaterialLibrary3D materials;
     MaterialAssetDefinition3D groundDefinition;
+    TerrainDistanceMaterialSettings3D groundDistanceSettings;
     Material3D groundMaterial, barkMaterial, woodMaterial, rockMaterial;
     std::vector<BoxCollider3D> solids;
     Mistwatch::OrbitCamera orbit;
@@ -110,6 +111,7 @@ class MistwatchGame final : public IGame {
     bool diagnosticNoGroundTextures{};
     bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
     bool diagnosticLegacyGround{};
+    bool diagnosticSurfaceGround{};
     bool diagnosticLegacyGrass{};
     bool diagnosticDimGrass{};
     bool diagnosticProceduralGrass{};
@@ -256,6 +258,11 @@ public:
             if(length&&(length!=1||(legacyGround[0]!=L'0'&&legacyGround[0]!=L'1')))
                 throw std::runtime_error("Invalid ground comparison flag");
             diagnosticLegacyGround=legacyGround[0]==L'1';
+            wchar_t surfaceGround[3]{};
+            const auto surfaceLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GROUND_SINGLE_SURFACE",surfaceGround,3);
+            if(surfaceLength&&(surfaceLength!=1||(surfaceGround[0]!=L'0'&&surfaceGround[0]!=L'1')))
+                throw std::runtime_error("Invalid single-surface ground comparison flag");
+            diagnosticSurfaceGround=surfaceGround[0]==L'1';
             wchar_t legacyGrass[3]{};
             const auto grassLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_LEGACY",legacyGrass,3);
             if(grassLength&&(grassLength!=1||(legacyGrass[0]!=L'0'&&legacyGrass[0]!=L'1')))
@@ -277,7 +284,9 @@ public:
                 throw std::runtime_error("Invalid fern comparison flag");
             diagnosticLegacyFern=legacyFern[0]==L'1';
         }
-        groundDefinition=Mistwatch::GroundMaterialDefinition(diagnosticLegacyGround);
+        groundDefinition=Mistwatch::GroundMaterialDefinition(diagnosticLegacyGround,diagnosticSurfaceGround);
+        groundDistanceSettings.normalDetailStrength=.65f;
+        groundDistanceSettings.mesoPartitionEnabled=false;
         const std::array<MaterialAssetDefinition3D,4> definitions{{
             groundDefinition,
             {"bark",{"poly-haven/bark_brown_02/1k/base-color.jpg","poly-haven/bark_brown_02/1k/roughness.jpg",1024,"poly-haven/bark_brown_02/1k/normal-dx.jpg"},{{1,1,1,1},{.85f,0,0,.8f},true,{},1.f}},
@@ -382,8 +391,9 @@ public:
         propMeshes[1]=e.CreateMeshResource3D(Mistwatch::ForestPropLogMesh());
         if(!propMeshes[0]||!propMeshes[1])throw std::runtime_error("Forest prop GPU upload failed");
         terrain=Mistwatch::CreateTerrain();
-        terrainMesh=e.CreateMeshResource3D(Mistwatch::CreateTerrainMesh(terrain));
-        landscapeMesh=e.CreateMeshResource3D(Mistwatch::CreateLandscapeMesh(terrain));
+        const bool layeredGround=groundMaterial.materialClass==MaterialClass3D::Terrain;
+        terrainMesh=e.CreateMeshResource3D(Mistwatch::CreateTerrainMesh(terrain,layeredGround));
+        landscapeMesh=e.CreateMeshResource3D(Mistwatch::CreateLandscapeMesh(terrain,layeredGround));
         if(!landscapeMesh)throw std::runtime_error("Landscape GPU upload failed");
         landscapeTrees=Mistwatch::LandscapeTrees(terrain);
         riverMesh=e.CreateMeshResource3D(Mistwatch::CreateRiverMesh(terrain));
@@ -577,11 +587,14 @@ public:
             if(diagnosticNoGroundTextures)groundMaterial.textures={};
             diagnosticNeutralGroundBase=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE");
             diagnosticNeutralGroundSurface=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE");
+            if(diagnosticNoGroundTextures&&(diagnosticNeutralGroundBase||diagnosticNeutralGroundSurface))
+                throw std::runtime_error("Conflicting ground channel diagnostics");
             if(diagnosticNeutralGroundBase||diagnosticNeutralGroundSurface) {
                 // 中性測試圖由診斷收據固定；其他貼圖與品質不變。
-                auto definition=Mistwatch::GroundDiagnosticDefinition(diagnosticLegacyGround,diagnosticNeutralGroundBase,diagnosticNeutralGroundSurface);
+                auto definition=Mistwatch::GroundDiagnosticDefinition(diagnosticLegacyGround,diagnosticNeutralGroundBase,diagnosticNeutralGroundSurface,diagnosticSurfaceGround);
                 if(!materials.Load(definition))throw std::runtime_error("Ground channel diagnostic material unavailable");
                 groundMaterial.textures=materials.Textures(definition.name);
+                groundDefinition=std::move(definition);
             }
             wchar_t stage[8]{};const auto stageLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_HDR_STAGE",stage,8);
             if(stageLength) {
@@ -598,7 +611,7 @@ public:
                 if(diagnosticHdrStage!=3)throw std::runtime_error("HDR stages require atmosphere diagnostic build");
 #endif
             }
-            if(diagnosticNoGroundNormal)groundMaterial.normalScale=0;
+            if(diagnosticNoGroundNormal){groundMaterial.normalScale=0;groundDistanceSettings.normalDetailStrength=0;}
             if(diagnosticNoMsaa) {
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
                 if(!EngineRendererTestAccess3D::SetMultisampling(e,false))throw std::runtime_error("MSAA diagnostic setup failed");
@@ -755,6 +768,13 @@ public:
                 if(captureFocusProbe)out<<"focus_pause_verified="<<captureFocusComplete<<"\nfocus_frozen_ticks="<<captureFocusFrozenTicks
                     <<"\nfocus_explicit_resume_verified="<<captureFocusComplete<<"\npaused="<<paused<<'\n';
                 out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
+                    <<"\nground_material_class="<<unsigned(groundMaterial.materialClass)
+                    <<"\nground_single_surface="<<diagnosticSurfaceGround
+                    <<"\nground_texture_layers="<<(groundDefinition.textures.additionalLayers[0].baseColorPath.empty()?1:3)
+                    <<"\nground_height_alpha="<<(groundMaterial.materialClass==MaterialClass3D::Terrain?"shared_core_normalized":"opaque_surface_baseline")
+                    <<"\nground_distance_normal_strength="<<groundDistanceSettings.normalDetailStrength
+                    <<"\nground_meso_partition="<<groundDistanceSettings.mesoPartitionEnabled
+                    <<"\nsubmitted_terrain_instances="<<stats.lastSubmittedTerrainInstances
                     <<"\nground_textured="<<bool(groundMaterial.textures)
                     <<"\nground_source="<<(diagnosticLegacyGround?"ground037":"forest-ground-04")
                     <<"\nground_maximum_resolution="<<groundDefinition.textures.maximumResolution
@@ -1155,6 +1175,7 @@ public:
         draw.SetDirectionalLight({{.4f,-.85f,.3f},.55f,{1.f,.95f,.85f,1},1.5f});
         draw.SetExposureCompensation(.5f);
         draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,45,200,true,.0025f,.09f,-2.f,.76f});
+        draw.SetTerrainDistanceMaterial(groundDistanceSettings);
         const auto sceneStats=scene.Submit(draw,camera,{1280,720});
         if(captureGrassDistance) {
             grassFixtureState.sceneSerial=sceneStats.submissionSerial;

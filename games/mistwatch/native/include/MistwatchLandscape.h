@@ -25,7 +25,7 @@ inline Aevrynd::Vec3 LandscapeNormal(const Aevrynd::HeightField3D& core,float x,
     return Aevrynd::Normalize({LandscapeHeight(core,x-.5f,z)-LandscapeHeight(core,x+.5f,z),1.f,
         LandscapeHeight(core,x,z-.5f)-LandscapeHeight(core,x,z+.5f)});
 }
-inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core) {
+inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core,bool layerHeight=true) {
     using namespace Aevrynd;
     const auto axis=[](float start,unsigned samples) {
         std::vector<float> values;
@@ -36,7 +36,7 @@ inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core) {
         return values;
     };
     const auto xs=axis(-50,201),zs=axis(-20,241);
-    const auto original=core.CreateMesh(GroundMeshSettings());
+    const auto original=CreateGroundMesh(core,layerHeight);
     Mesh3D mesh;
     std::vector<std::uint32_t> lookup(xs.size()*zs.size(),(std::numeric_limits<std::uint32_t>::max)());
     const auto vertex=[&](unsigned x,unsigned z) {
@@ -53,7 +53,9 @@ inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core) {
             const Color green{.38f,.47f,.30f,1},stone{.50f,.48f,.43f,1};
             const Color color{green.r+(stone.r-green.r)*rock,green.g+(stone.g-green.g)*rock,
                 green.b+(stone.b-green.b)*rock,1};
-            mesh.vertices.push_back({xs[x],y,zs[z],PackNormalSnorm8(normal),PackColorRgba8(color)});
+            const auto packed=PackColorRgba8(color);
+            mesh.vertices.push_back({xs[x],y,zs[z],PackNormalSnorm8(normal),
+                layerHeight?GroundLayerHeightColor(packed,y,core):packed});
         }
         return index;
     };

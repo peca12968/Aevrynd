@@ -109,5 +109,8 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchSaveGameTest
     MistwatchSaveFileTest
     MistwatchLoadPreparationTest
+    MistwatchGroundMaterialTest
+    MistwatchBridgeTest
+    MistwatchLandscapeTest
     MistwatchCameraTest)
 endif()

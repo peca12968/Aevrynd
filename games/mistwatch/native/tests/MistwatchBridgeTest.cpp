@@ -47,10 +47,22 @@ int main() {
     const auto trailMesh=Mistwatch::CreateTerrainMesh(terrain);
     if(!trailMesh.Valid() || trailMesh.indices!=baseMesh.indices || trailMesh.vertices.size()!=baseMesh.vertices.size()) return 12;
     unsigned changedColors=0;
+    const auto surfaceMesh=Mistwatch::CreateTerrainMesh(terrain,false);
+    if(surfaceMesh.indices!=trailMesh.indices||surfaceMesh.vertices.size()!=trailMesh.vertices.size())return 34;
     for(std::size_t i=0;i<trailMesh.vertices.size();++i) {
         const auto& a=baseMesh.vertices[i];const auto& b=trailMesh.vertices[i];
         if(a.x!=b.x || a.y!=b.y || a.z!=b.z || a.normal!=b.normal) return 13;
-        if(a.color!=b.color) {
+        const auto& surface=surfaceMesh.vertices[i];
+        if(surface.x!=b.x||surface.y!=b.y||surface.z!=b.z||surface.normal!=b.normal||
+           (surface.color>>24)!=255u||(surface.color&0x00ffffffu)!=(b.color&0x00ffffffu))return 35;
+        // 高度只佔 alpha；泥土步道的舊 RGB 範圍驗證仍完整保留。
+        const auto expectedAlpha=unsigned(std::lround(std::clamp((b.y-terrain.MinimumHeight())/
+            (terrain.MaximumHeight()-terrain.MinimumHeight()),0.f,1.f)*255.f));
+        if((b.color>>24)!=expectedAlpha) {
+            std::cerr<<"FIRST_DIVERGENCE: terrain normalized height alpha at vertex="<<i
+                     <<" actual="<<(b.color>>24)<<" expected="<<expectedAlpha<<'\n';return 33;
+        }
+        if((a.color&0x00ffffffu)!=(b.color&0x00ffffffu)) {
             ++changedColors;
             const bool workshopBranch=a.x>=-9.f&&a.x<=2.f&&a.z>=57.f&&a.z<=61.f;
             const bool generatorBranch=a.x>=-2.f&&a.x<=9.f&&a.z>=63.f&&a.z<=67.f;
@@ -71,7 +83,7 @@ int main() {
         bool tinted=false;
         for(std::size_t i=0;i<trailMesh.vertices.size();++i) {
             const auto& vertex=trailMesh.vertices[i];
-            if(vertex.x==point.x&&vertex.z==point.z)tinted=vertex.color!=baseMesh.vertices[i].color;
+            if(vertex.x==point.x&&vertex.z==point.z)tinted=(vertex.color&0x00ffffffu)!=(baseMesh.vertices[i].color&0x00ffffffu);
         }
         if(!tinted)return 32;
     }

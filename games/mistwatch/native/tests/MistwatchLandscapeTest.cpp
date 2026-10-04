@@ -26,19 +26,30 @@ int main() {
         if(std::abs(Mistwatch::LandscapeHeight(core,x,z)-legacyHeight(x,z))>.00005f)return 17;
     const auto before=core.CreateMesh(Mistwatch::GroundMeshSettings());
     const auto landscape=Mistwatch::CreateLandscapeMesh(core),repeat=Mistwatch::CreateLandscapeMesh(core);
+    const auto surfaceBaseline=Mistwatch::CreateLandscapeMesh(core,false);
     if(!landscape.Valid()||landscape.vertices.size()>30000||landscape.indices.size()>180000)return 1;
     if(landscape.indices!=repeat.indices||landscape.vertices.size()!=repeat.vertices.size())return 2;
+    if(surfaceBaseline.indices!=landscape.indices||surfaceBaseline.vertices.size()!=landscape.vertices.size())return 21;
     unsigned seam{};
     for(std::size_t i=0;i<landscape.vertices.size();++i) {
         const auto& v=landscape.vertices[i];const auto& r=repeat.vertices[i];
         if(v.x!=r.x||v.y!=r.y||v.z!=r.z||v.normal!=r.normal||v.color!=r.color||!std::isfinite(v.y))return 3;
+        const auto& baseline=surfaceBaseline.vertices[i];
+        if(baseline.x!=v.x||baseline.y!=v.y||baseline.z!=v.z||baseline.normal!=v.normal||
+           (baseline.color>>24)!=255u||(baseline.color&0x00ffffffu)!=(v.color&0x00ffffffu))return 22;
+        const auto expectedAlpha=unsigned(std::lround(std::clamp((v.y-core.MinimumHeight())/
+            (core.MaximumHeight()-core.MinimumHeight()),0.f,1.f)*255.f));
+        if((v.color>>24)!=expectedAlpha) {
+            std::cerr<<"FIRST_DIVERGENCE: landscape must share core height alpha; vertex="<<i
+                     <<" actual="<<(v.color>>24)<<" expected="<<expectedAlpha<<'\n';return 20;
+        }
         const Vec4 normal=UnpackNormalSnorm8(v.normal);
         if(normal.y<=0||std::abs(Length(Vec3{normal.x,normal.y,normal.z})-1.f)>.02f)return 4;
         if(core.Contains(v.x,v.z)) {
             if(v.x!=-50&&v.x!=50&&v.z!=-20&&v.z!=100)return 5;
             const unsigned x=unsigned((v.x+50)*2),z=unsigned((v.z+20)*2);
             const auto& original=before.vertices[std::size_t(z)*201+x];
-            if(v.y!=original.y||v.normal!=original.normal||v.color!=original.color)return 6;
+            if(v.y!=original.y||v.normal!=original.normal||(v.color&0x00ffffffu)!=(original.color&0x00ffffffu))return 6;
             ++seam;
         }
     }

@@ -16,7 +16,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_HDR_STAGE','AEVRYND_MISTWATCH_NO_SHADOWS','AEVRYND_MISTWATCH_NO_BLOOM',
     'AEVRYND_MISTWATCH_NO_GROUND_TEXTURES','AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE',
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
-    'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GRASS_LEGACY',
+    'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GROUND_SINGLE_SURFACE','AEVRYND_MISTWATCH_GRASS_LEGACY',
     'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL',
     'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED','AEVRYND_MISTWATCH_LEGACY_RANGER_HUT')
 $saved=@{}
@@ -37,8 +37,7 @@ try {
         $deadline=[DateTime]::UtcNow.AddSeconds($(if($GpuValidation){150}else{45}))
         while(-not $process.WaitForExit(1000) -and [DateTime]::UtcNow -lt $deadline) {}
         if(-not $process.HasExited) {
-            $process.Kill();$process.WaitForExit()
-            throw ('Native validation timed out: '+$case)
+            throw ('Native observation timed out; inspect same live PID='+$process.Id+' case='+$case)
         }
         if($process.ExitCode -ne 0){throw ('Native validation failed: '+$case+' exit='+$process.ExitCode)}
         $receiptPath=$capture+'.receipt.txt'
@@ -109,6 +108,10 @@ try {
         if($receipt.ground_source -ne 'forest-ground-04' -or $receipt.ground_maximum_resolution -ne '2048' -or
            $receipt.ground_packed_orm -ne '1' -or $receipt.ground_texture_scale -ne '0.25' -or
            $receipt.ground_normal_scale -ne '0.65' -or $receipt.ground_use_uv -ne '0'){throw ('Forest floor production material route missing: '+$case)}
+        if($receipt.ground_material_class -ne '3' -or $receipt.ground_texture_layers -ne '3' -or
+           $receipt.ground_single_surface -ne '0' -or $receipt.ground_height_alpha -ne 'shared_core_normalized' -or
+           $receipt.ground_distance_normal_strength -ne '0.65' -or $receipt.ground_meso_partition -ne '0' -or
+           [long]$receipt.submitted_terrain_instances -lt 1){throw ('Three-layer terrain production submission missing: '+$case)}
         if($receipt.grass_style -ne 'scanned' -or $receipt.grass_vertices -ne '7031' -or $receipt.grass_triangles -ne '7842' -or
            $receipt.grass_variants -ne '5' -or $receipt.grass_source -ne 'poly-haven-grass-medium-02' -or
            $receipt.grass_materials -ne '1' -or $receipt.grass_use_uv -ne '1' -or $receipt.grass_alpha_cutoff -ne '0.5' -or

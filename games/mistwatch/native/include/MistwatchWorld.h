@@ -8,6 +8,7 @@
 #include "MistwatchRiverProfile.h"
 #include "MistwatchRelay.h"
 #include <array>
+#include <stdexcept>
 #include <vector>
 namespace Mistwatch {
 inline Aevrynd::HeightField3D CreateTerrain() {
@@ -36,8 +37,22 @@ inline float SettlementTrailDistance(float x,float z) {
     }
     return distance;
 }
-inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain) {
+inline std::uint32_t GroundLayerHeightColor(std::uint32_t color,float height,const Aevrynd::HeightField3D& core) {
+    // Terrain 的 alpha 是海拔資料，不是透明度；兩個網格必須共用核心範圍與量化方式。
+    const float range=core.MaximumHeight()-core.MinimumHeight();
+    if(!std::isfinite(height)||!std::isfinite(range)||range<=0)
+        throw std::runtime_error("Invalid ground layer height range");
+    const float normalized=std::clamp((height-core.MinimumHeight())/range,0.f,1.f);
+    return (color&0x00ffffffu)|(Aevrynd::PackColorRgba8({0,0,0,normalized})&0xff000000u);
+}
+inline Aevrynd::Mesh3D CreateGroundMesh(const Aevrynd::HeightField3D& terrain,bool layerHeight=true) {
     auto mesh=terrain.CreateMesh(GroundMeshSettings());
+    if(layerHeight)for(auto& vertex:mesh.vertices)
+        vertex.color=GroundLayerHeightColor(vertex.color,vertex.y,terrain);
+    return mesh;
+}
+inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain,bool layerHeight=true) {
+    auto mesh=CreateGroundMesh(terrain,layerHeight);
     // 通路直接混入地表頂點色，保留材質細節與原始碰撞高度，避免懸浮平板。
     for(auto& vertex:mesh.vertices) {
         if(vertex.z< -10.f || vertex.z>96.f || (vertex.z>32.f && vertex.z<40.f)) continue;
