@@ -19,6 +19,7 @@
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/Scene3D.h>
 #include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/ThirdPersonCameraMotion3D.h>
 #include <Aevrynd/MaterialLibrary3D.h>
 #include <Aevrynd/MeshLoader.h>
 #include <Aevrynd/EnvironmentMeshes3D.h>
@@ -117,6 +118,7 @@ class MistwatchGame final : public IGame {
     bool captureGrassDistance{},grassFixtureEnabled{true};
     std::size_t grassFixtureIndex{};
     float grassFixturePlayerDistance{2.f},grassFixtureCameraDistance{12.f};
+    Vec3 grassFixtureSelectionFeet{};
     struct GrassFixtureState {
         Vec3 root{},feet{};
         float scale{},yaw{},playerDistance{},cameraDistance{};
@@ -138,6 +140,27 @@ class MistwatchGame final : public IGame {
     bool captureRiverOverview{};
     bool captureShelterOverview{};
     Camera3D lastRenderedCamera{};
+    ThirdPersonFramingResult3D lastPlayerFraming{};
+    ThirdPersonCameraMotion3D playerCameraMotion;
+    ThirdPersonCameraMotionResult3D lastCameraMotion{};
+    unsigned cameraFixedTicks{},captureCameraTicks{};
+    float cameraMaximumTickDisplacement{},cameraOcclusionSeconds{};
+    bool UpdatePlayerCamera(float dt) {
+        const std::array roof{Mistwatch::RangerHutCameraRoofSolid()};
+        const auto extra=diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{roof};
+        lastPlayerFraming=Mistwatch::BuildPlayerCameraFraming(session.feet,controller.Settings().height,orbit,solids,terrain,extra);
+        lastCameraMotion=playerCameraMotion.Update(Mistwatch::BuildPlayerCameraMotionRequest(session.feet,
+            controller.Settings().height,orbit,playerCameraMotion.Initialized(),solids,terrain,extra),
+            Mistwatch::PlayerCameraSamples(session.feet,controller.Settings().height),solids,
+            Mistwatch::CameraCeilingSolids(),terrain,dt,extra);
+        if(!lastCameraMotion.accepted)return false;
+        if(lastCameraMotion.status==ThirdPersonCameraMotionStatus3D::ResetCut)
+            orbit.yaw=Mistwatch::PlayerCameraMovementYaw(lastCameraMotion.camera,orbit.yaw);
+        ++cameraFixedTicks;++captureCameraTicks;
+        cameraMaximumTickDisplacement=(std::max)(cameraMaximumTickDisplacement,lastCameraMotion.displacement);
+        cameraOcclusionSeconds=lastCameraMotion.subjectVisible?0.f:cameraOcclusionSeconds+dt;
+        return true;
+    }
     bool captureBenchmark{};
     std::uint64_t benchmarkLastSerial{};
     std::vector<double> benchmarkGpuMilliseconds;
@@ -147,6 +170,12 @@ class MistwatchGame final : public IGame {
         // 讀檔／重試時先採低姿，再嘗試站起，避免載入棚內存檔後頭部穿過屋頂。
         controller.SetHeight(1.4f);
         controller.TrySetHeight(1.8f,solids);
+        playerCameraMotion.Reset();
+        const bool crouched=controller.Settings().height<1.5f;
+        explorer.feetInitialized=false;
+        explorer.Update({},0,crouched);
+        if(!explorer.PlaceFeet(session.feet,controller.Grounded(),crouched,terrain,solids))
+            throw std::runtime_error("Reset explorer foot IK failed");
         gameAudio.director.Reset();
     }
     void TickAudio(Engine& e,float dt) {
@@ -465,7 +494,8 @@ public:
                     const auto plant=std::find_if(groundCover.begin(),groundCover.end(),[](Vec3 p){return Length(p)<12.f;});
                     if(plant==groundCover.end())throw std::runtime_error("Grass distance root missing");
                     grassFixtureIndex=std::size_t(plant-groundCover.begin());
-                    session.feet=*plant+Vec3{grassFixturePlayerDistance,0,0};
+                    // 同高選擇座標不是合法出生點；診斷不能把真正玩家／鏡頭放到遠坡地底。
+                    grassFixtureSelectionFeet=*plant+Vec3{grassFixturePlayerDistance,0,0};
                 }
                 else if(name==L"fern-profile")captureFernOverview=true;
                 else throw std::runtime_error("Unknown capture scenario");
@@ -575,6 +605,10 @@ public:
         // 自動影像驗證靜音，不寫玩家音量設定；播放收據仍記錄真實裝置與 voice 結果。
         if(!capture.empty())gameAudio.options.muted=true;
         gameAudio.Initialize(e.Audio());
+        // 初始切鏡是明確事件；之後只在固定更新推進，繪圖不重複消耗時間。
+        playerCameraMotion.Reset();
+        if(!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Initial player camera unavailable");
+        lastRenderedCamera=lastCameraMotion.camera;
     }
     void OnUpdate(Engine& e,float dt) override {
         if(captureFocusProbe&&!captureFocusComplete) {
@@ -620,6 +654,8 @@ public:
                     throw std::runtime_error("Capture locomotion IK failed");
                 if(captureAudioProbe)for(unsigned index=0;index<3;++index)session.Collect(index);
             }
+            // Readback 尚未回收時保留送出影格的鏡頭，收據不得描述後續更新的位置。
+            if(!capturePending&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Capture camera transition rejected");
             if(captureAudioProbe)TickAudio(e,1.f/60.f);
             const auto stats=e.GetRendererStats();
             // 排除啟動前六十幀；僅採用已完成且序號不重複的 GPU timestamp 收據。
@@ -734,7 +770,17 @@ public:
                 out<<"camera_position="<<lastRenderedCamera.position.x<<','<<lastRenderedCamera.position.y<<','<<lastRenderedCamera.position.z
                     <<"\ncamera_target="<<lastRenderedCamera.target.x<<','<<lastRenderedCamera.target.y<<','<<lastRenderedCamera.target.z
                     <<"\ncamera_up="<<lastRenderedCamera.up.x<<','<<lastRenderedCamera.up.y<<','<<lastRenderedCamera.up.z
-                    <<"\ncamera_fov="<<lastRenderedCamera.projection.verticalFieldOfView<<'\n';
+                    <<"\ncamera_fov="<<lastRenderedCamera.projection.verticalFieldOfView
+                    <<"\ncamera_framing_source=player_candidate"
+                    <<"\ncamera_subject_visible="<<lastPlayerFraming.subjectVisible
+                    <<"\ncamera_yaw_adjustment="<<lastPlayerFraming.yawAdjustment
+                    <<"\ncamera_candidates_tested="<<lastPlayerFraming.candidatesTested<<'\n';
+                out<<"camera_motion_source=fixed_update\ncamera_motion_status="<<int(lastCameraMotion.status)
+                    <<"\ncamera_motion_accepted="<<lastCameraMotion.accepted
+                    <<"\ncamera_motion_subject_visible="<<lastCameraMotion.subjectVisible
+                    <<"\ncamera_fixed_ticks="<<cameraFixedTicks
+                    <<"\ncamera_max_tick_displacement="<<cameraMaximumTickDisplacement
+                    <<"\ncamera_occlusion_seconds="<<cameraOcclusionSeconds<<'\n';
                 if(captureGrassDistance) {
                     const auto& proof=grassFixtureFrozen;
                     out<<std::setprecision(std::numeric_limits<float>::max_digits10)
@@ -744,6 +790,9 @@ public:
                         <<"\ngrass_fixture_generation=1\ngrass_fixture_enabled="<<grassFixtureEnabled
                         <<"\ngrass_fixture_feet_mode=synthetic_same_height\ngrass_fixture_root="<<proof.root.x<<','<<proof.root.y<<','<<proof.root.z
                         <<"\ngrass_fixture_feet="<<proof.feet.x<<','<<proof.feet.y<<','<<proof.feet.z
+                        <<"\ngrass_fixture_selection_source=isolated_diagnostic_reference"
+                        <<"\ngrass_fixture_actor_feet="<<session.feet.x<<','<<session.feet.y<<','<<session.feet.z
+                        <<"\ngrass_fixture_actor_isolated="<<(Length(session.feet-Mistwatch::Session{}.feet)==0)
                         <<"\ngrass_fixture_scale="<<proof.scale<<"\ngrass_fixture_yaw="<<proof.yaw
                         <<"\ngrass_fixture_player_distance="<<proof.playerDistance
                         <<"\ngrass_fixture_camera_distance="<<proof.cameraDistance
@@ -773,10 +822,11 @@ public:
                     if(captureRelayMotion&&captureCompleted<20&&!session.TuneRelay(0,1))throw std::runtime_error("Relay motion input failed");
                     if(captureRelayMotion&&captureCompleted==20&&!session.ConnectRelay(0))throw std::runtime_error("Relay motion link failed");
                     if(captureLandscapeMotion)orbit.yaw=1.25f+float(captureCompleted)*6.2831853f/36.f;
+                    captureCameraTicks=0;cameraMaximumTickDisplacement=0;
                 }
             }
             // GPU 驗證會插入額外 shader 檢查；診斷等待不作為正式效能數據。
-            const auto captureTimeout=std::chrono::seconds(stats.gpuValidationRequested?120:30);
+            const auto captureTimeout=std::chrono::seconds(stats.gpuValidationRequested||captureLandscapeMotion?120:30);
             if(std::chrono::steady_clock::now()-captureStart>captureTimeout)
                 throw std::runtime_error("Frame capture timeout; rendered="+std::to_string(captureFrames)+
                     "; submitted="+std::to_string(stats.submittedFrames)+"; gpu-validation="+std::to_string(stats.gpuValidationRequested));
@@ -791,22 +841,31 @@ public:
         if(changedAudio){e.Audio().SetMasterVolume(gameAudio.options.Gain());SaveAudioOptions();}
         if(!started || paused){TickAudio(e,dt);return;}
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
+        bool resetTick=false;
         if(in.Pressed(VK_F9) && !save.empty()) {
             std::ifstream file(save,std::ios::binary);
-            if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};ResetBoarPose();evasion={};message="Loaded";}else message="Save unavailable";
+            if(session.RestoreStream(file)){solids=Mistwatch::WorldSolids(session.bridgeRepaired);ResetController();encounter={};ResetBoarPose();evasion={};message="Loaded";resetTick=true;}else message="Save unavailable";
         }
         if(in.Pressed('R') && session.beaconLit) {
-            session={};controller.Reset({});gameAudio.director.Reset();solids=Mistwatch::WorldSolids(false);encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";
+            session={};solids=Mistwatch::WorldSolids(false);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
         }
-        if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};ResetBoarPose();evasion={};}
-        if(!session.Alive() || session.beaconLit){TickAudio(e,dt);return;}
+        if(in.Pressed('R') && !session.Alive()) {session.Retry();ResetController();encounter={};ResetBoarPose();evasion={};resetTick=true;}
+        if(resetTick){
+            if(!UpdatePlayerCamera(dt))throw std::runtime_error("Reset-tick player camera unavailable");
+            TickAudio(e,dt);return;
+        }
+        if(!session.Alive() || session.beaconLit){
+            if(!playerCameraMotion.Initialized()&&!UpdatePlayerCamera(dt))throw std::runtime_error("Loaded terminal-session camera unavailable");
+            TickAudio(e,dt);return;
+        }
         orbit.Update(in.MouseDown() && in.MouseInsideCanvas()?in.MouseDelta():Vec2{},in.MouseWheel(),float(in.Down(VK_RIGHT))-float(in.Down(VK_LEFT)),dt);
-        const float yaw=orbit.yaw;
+        const float yaw=Mistwatch::PlayerCameraMovementYaw(playerCameraMotion.Camera(),orbit.yaw);
         const float x=float(in.Down('D'))-float(in.Down('A'));
         const float z=float(in.Down('W'))-float(in.Down('S'));
+        const auto previousController=controller;
         if(!controller.TrySetHeight(in.Down(VK_CONTROL)?1.4f:1.8f,solids))
             message="Low ceiling - move clear before standing";
-        const bool crouched=controller.Settings().height<1.5f;
+        bool crouched=controller.Settings().height<1.5f;
         const auto previousFeet=controller.Position();
         Vec3 movement{x*std::cos(yaw)-z*std::sin(yaw),0,x*std::sin(yaw)+z*std::cos(yaw)};
         // 無方向輸入時 Q 向鏡頭後方閃避；非閃避時維持原移動輸入。
@@ -817,6 +876,13 @@ public:
             in.Pressed(VK_SPACE) && !crouched && !motion.dashing,
             motion.dashing?Mistwatch::Evasion::SpeedMultiplier:crouched?.45f:in.Down(VK_SHIFT)?1.5f:1.f},solids,terrain,dt);
         session.feet=controller.Position();
+        if(!UpdatePlayerCamera(dt)) {
+            // 拒絕不一致的角色候選，保留速度／接地／高度，再以相同舊位置嘗試安全鏡頭。
+            controller=previousController;session.feet=controller.Position();
+            crouched=controller.Settings().height<1.5f;
+            message="Camera clearance - movement held";
+            if(!UpdatePlayerCamera(dt))throw std::runtime_error("Player camera transition unavailable after movement rollback");
+        }
         explorer.Update(session.feet-previousFeet,dt,crouched);
         if(!explorer.PlaceFeet(session.feet,controller.Grounded(),crouched,terrain,solids))
             throw std::runtime_error("Explorer foot IK failed");
@@ -830,15 +896,24 @@ public:
         }
         if(in.Pressed('E')) {
             bool changed=false;
+            bool bridgeCameraRejected=false;
             for(unsigned i=0;i<3;++i) changed=session.Collect(i)||changed;
             for(unsigned i=0;i<3;++i)changed=session.CollectRepairMaterial(i,crouched)||changed;
-            if(session.RepairBridge()) {solids=Mistwatch::WorldSolids(true);changed=true;}
+            auto bridgeCandidate=session;
+            if(bridgeCandidate.RepairBridge()) {
+                auto nextWorld=Mistwatch::WorldSolids(true);
+                const std::array roof{Mistwatch::RangerHutCameraRoofSolid()};
+                if(ThirdPersonCameraPathClear3D(playerCameraMotion.Camera().position,playerCameraMotion.Camera().position,
+                    nextWorld,terrain,diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{roof},.16f)){
+                    session=bridgeCandidate;solids=std::move(nextWorld);changed=true;
+                }else bridgeCameraRejected=true;
+            }
             changed=session.ReadFuseClue()||changed;
             changed=session.CollectFuse()||changed;
             changed=session.RepairGenerator()||changed;
             for(unsigned index=0;index<3;++index)changed=session.ConnectRelay(index)||changed;
             changed=session.LightBeacon()||changed;
-            message=changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
+            message=bridgeCameraRejected?"Move camera clear before bridge repair":changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
                 "Find tools in west shelter (CTRL), and both timber caches":
                 session.CurrentStage()==Mistwatch::Stage::Fuse && session.NearInterior(Mistwatch::Session::fuse)?
                 "Cabinet locked - read ranger log, set dials 1 / 2 / 3":
@@ -903,14 +978,15 @@ public:
         submittedGrass=0;
         submittedGrassTriangles=0;
         grassFixtureState={};
+        const auto grassSelectionFeet=captureGrassDistance?grassFixtureSelectionFeet:session.feet;
         for(std::size_t index=0;index<groundCover.size();++index) {
             const auto plant=groundCover[index];
             const float scale=.5f+.25f*std::sin(plant.x*1.7f+plant.z);
-            const bool selected=Mistwatch::GrassRootSelected(plant,session.feet);
+            const bool selected=Mistwatch::GrassRootSelected(plant,grassSelectionFeet);
             const bool fixtureTarget=captureGrassDistance&&index==grassFixtureIndex;
-            if(fixtureTarget){grassFixtureState.root=plant;grassFixtureState.feet=session.feet;
+            if(fixtureTarget){grassFixtureState.root=plant;grassFixtureState.feet=grassSelectionFeet;
                 grassFixtureState.scale=scale;grassFixtureState.yaw=plant.x+plant.z;
-                grassFixtureState.playerDistance=Length(plant-session.feet);grassFixtureState.selected=selected;}
+                grassFixtureState.playerDistance=Length(plant-grassSelectionFeet);grassFixtureState.selected=selected;}
             if(!selected||(fixtureTarget&&!grassFixtureEnabled))continue;
             const auto& mesh=diagnosticProceduralGrass?grassMesh:scannedGrass[index%5];
             const RenderObjectIdentity3D identity=fixtureTarget?RenderObjectIdentity3D{{5572150615523553875ull,index+1},1}:RenderObjectIdentity3D{};
@@ -993,8 +1069,11 @@ public:
             scene.Line(p+Vec3{0,.74f,0},p+Vec3{direction.x,.74f,direction.z},3.f,lamp);
         }
         const std::array cameraRoof{Mistwatch::RangerHutCameraRoofSolid()};
-        auto camera=Mistwatch::BuildPlayerCamera(session.feet,controller.Settings().height,orbit,solids,terrain,
-            diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{cameraRoof});
+        if(!playerCameraMotion.Initialized())throw std::runtime_error("Player camera not initialized");
+        auto camera=playerCameraMotion.Camera();
+        if(!ThirdPersonCameraPathClear3D(camera.position,camera.position,solids,terrain,
+            diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{cameraRoof},.155f))
+            throw std::runtime_error("Changed world invalidated rendered player camera");
         if(captureRangerHutOverview&&!capture.empty()) {
             camera.target=Mistwatch::Session::rangerLog+Vec3{0,1.6f,0};
             camera.position=camera.target+Vec3{-7,3.2f,-7};
@@ -1147,6 +1226,7 @@ public:
         draw.Text({20,655},"WASD move | SHIFT run | SPACE jump | CTRL crouch | Q evade | E use | F counter | Drag / wheel camera",1.5f,{1,1,1,1});
         draw.Text({20,682},"F5 save / F9 load | HP "+std::to_string(session.health)+" | "+message,1.5f,{1,1,1,1});
         if(!capture.empty() && !capturePending && ++captureFrames>=45 &&
+           (!captureLandscapeMotion||captureCameraTicks>=30) &&
            (!captureAudioProbe||captureAudioTicks>=180) &&
            (!captureBenchmark || benchmarkGpuMilliseconds.size()==120)) {
             if(diagnosticHdrStage&&(captureCompleted==18||captureCompleted==27)) {

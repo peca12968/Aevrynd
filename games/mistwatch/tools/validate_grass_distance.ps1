@@ -44,6 +44,11 @@ try {
     $r.grass_alpha_cutoff-ne '0.5'-or $r.grass_fixture_schema-ne '1'-or $r.grass_fixture_feet_mode-ne 'synthetic_same_height'-or
     $r.grass_fixture_enabled-ne $env:AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED-or $r.grass_fixture_selection_limit-ne '35'-or
     $r.grass_fixture_gate_selected-ne [string]$item.selected-or $r.camera_source-ne 'diagnostic') {throw ('場景契約不符: '+$case)}
+   # 合成同高選擇座標與實際玩家分開；玩家仍通過正式固定更新鏡頭檢查。
+   if($r.grass_fixture_selection_source-ne 'isolated_diagnostic_reference'-or $r.grass_fixture_actor_isolated-ne '1'-or
+      $r.camera_motion_source-ne 'fixed_update'-or $r.camera_motion_accepted-ne '1'){throw ('診斷污染玩家或鏡頭未通過: '+$case)}
+   $actor=@($r.grass_fixture_actor_feet.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
+   if($actor.Count-ne 3-or @($actor|Where-Object{[double]::IsNaN($_)-or [double]::IsInfinity($_)-or $_-ne 0}).Count){throw ('實際玩家位置不是合法原點: '+$case)}
    foreach($numeric in @('grass_fixture_scale','grass_fixture_yaw','grass_fixture_player_distance','grass_fixture_camera_distance')){
     $v=[double]::Parse($r[$numeric],[Globalization.CultureInfo]::InvariantCulture)
     if([double]::IsNaN($v)-or [double]::IsInfinity($v)){throw ('非有限場景數字: '+$numeric)}

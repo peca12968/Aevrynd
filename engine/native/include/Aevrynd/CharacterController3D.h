@@ -145,4 +145,17 @@ Camera3D ConstrainThirdPersonCameraCeiling(Camera3D camera,std::span<const BoxCo
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding=.2f);
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding=.2f,uint32_t layerMask=0xffffffffu,uint32_t cameraLayer=1);
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const HeightField3D& terrain,float padding=.2f,unsigned samples=32);
+struct ThirdPersonFramingResult3D {
+    Camera3D camera{};
+    float yawAdjustment{};
+    unsigned candidatesTested{};
+    bool subjectVisible{};
+};
+// 最多 37 個固定候選（原方位加上 18 組左右方位）；每個重新套用屋頂、碰撞與地形，不能以距離下限穿過障礙。
+// subjectSamples 是呼叫端提供的頭、腳及身體外緣；失敗保留原避障鏡頭並明確回報。
+ThirdPersonFramingResult3D ResolveThirdPersonFraming3D(Vec3 target,float yaw,float pitch,float distance,
+    std::span<const Vec3> subjectSamples,std::span<const BoxCollider3D> solids,
+    std::span<const BoxCollider3D> ceilings,const HeightField3D& terrain,
+    std::span<const BoxCollider3D> cameraOnly={},Vec2 viewport={1280,720},float minimumDistance=1.5f,
+    float maximumYawAdjustment=1.5707963f,unsigned yawSteps=18);
 }

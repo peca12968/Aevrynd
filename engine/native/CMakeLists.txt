@@ -18,6 +18,7 @@ add_library(AevryndEngine STATIC
   src/AssetManifest.cpp
   src/Audio.cpp
   src/CharacterController3D.cpp
+  src/ThirdPersonCameraMotion3D.cpp
   src/CharacterAssetProvenance3D.cpp
   src/CharacterPresentation3D.cpp
   src/CharacterShapeAsset3D.cpp
@@ -464,6 +465,18 @@ add_executable(AevryndCameraTest tests/CameraSmoke.cpp)
 target_compile_options(AevryndCameraTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCameraTest PRIVATE AevryndEngine)
 add_test(NAME AevryndCameraTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCameraTest>'")
+add_executable(AevryndThirdPersonFraming3DTest tests/ThirdPersonFraming3DSmoke.cpp)
+target_compile_options(AevryndThirdPersonFraming3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndThirdPersonFraming3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndThirdPersonFraming3DTest COMMAND AevryndThirdPersonFraming3DTest)
+add_executable(AevryndThirdPersonCameraMotion3DTest tests/ThirdPersonCameraMotion3DSmoke.cpp)
+target_compile_options(AevryndThirdPersonCameraMotion3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndThirdPersonCameraMotion3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndThirdPersonCameraMotion3DTest COMMAND AevryndThirdPersonCameraMotion3DTest)
+if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
+  set_tests_properties(AevryndThirdPersonFraming3DTest PROPERTIES LABELS "release-gates")
+  set_tests_properties(AevryndThirdPersonCameraMotion3DTest PROPERTIES LABELS "release-gates")
+endif()
 
 add_executable(AevryndCharacterControllerTest tests/CharacterControllerSmoke.cpp)
 target_compile_options(AevryndCharacterControllerTest PRIVATE /W4 /permissive- /utf-8)

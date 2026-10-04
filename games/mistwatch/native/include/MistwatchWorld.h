@@ -7,6 +7,7 @@
 #include "MistwatchBroadleaf.h"
 #include "MistwatchRiverProfile.h"
 #include "MistwatchRelay.h"
+#include <array>
 #include <vector>
 namespace Mistwatch {
 inline Aevrynd::HeightField3D CreateTerrain() {
@@ -127,6 +128,11 @@ inline std::vector<Aevrynd::BoxCollider3D> RepairShelterSolids() {
         {p+Aevrynd::Vec3{0,.7f,-1.9f},{2.5f,.7f,.1f}},
         {p+Aevrynd::Vec3{0,.7f,1.9f},{2.5f,.7f,.1f}},
         {p+Aevrynd::Vec3{0,.23f,0},{.3f,.23f,.2f}}};
+}
+inline const std::array<Aevrynd::BoxCollider3D,3>& CameraCeilingSolids() {
+    // 只有結構屋頂約束仰角；設備與植被仍由完整碰撞清單處理避障。
+    static const std::array roofs{WorkshopSolids()[0],RangerHutSolids()[0],RepairShelterSolids()[0]};
+    return roofs;
 }
 // 渲染與碰撞共用設施尺寸，工棚東側保留入口。
 inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {

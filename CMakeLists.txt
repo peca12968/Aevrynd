@@ -99,5 +99,12 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchSupplyCrateTest
     MistwatchSessionTest
     MistwatchRouteTest
-    MistwatchRangerHutTest)
+    MistwatchRangerHutTest
+    MistwatchRelayCameraTest
+    AevryndThirdPersonFraming3DTest
+    AevryndThirdPersonCameraMotion3DTest
+    MistwatchCameraMotionTest
+    MistwatchCameraOrbitTest
+    MistwatchCameraRouteContextTest
+    MistwatchCameraTest)
 endif()

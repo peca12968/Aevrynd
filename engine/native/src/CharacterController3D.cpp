@@ -1,6 +1,7 @@
 #include "Aevrynd/CharacterController3D.h"
 #include "Aevrynd/CollisionWorld3D.h"
 #include "Aevrynd/Geometry3D.h"
+#include "Aevrynd/ThirdPersonCameraMotion3D.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -133,4 +134,61 @@ Camera3D ConstrainThirdPersonCameraCeiling(Camera3D camera,std::span<const BoxCo
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,std::span<const BoxCollider3D> colliders,float padding){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);float nearest=desiredDistance;for(const BoxCollider3D& collider:colliders){float distance{};if(RayIntersectsAabb(ray,collider.center,collider.extents,nearest,&distance))nearest=(std::min)(nearest,(std::max)(.1f,distance-(std::max)(0.f,padding)));}camera.position=target+ray.direction*nearest;camera.target=target;return camera;}
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const CollisionWorld3D& world,float padding,uint32_t layerMask,uint32_t cameraLayer){const Vec3 offset=camera.position-target;const float desiredDistance=Length(offset);if(desiredDistance<=.001f)return camera;const Ray3D ray=MakeRay3D(target,offset);const CollisionRayHit3D hit=world.Raycast(ray,desiredDistance,{layerMask,cameraLayer,false});if(hit)camera.position=target+ray.direction*(std::max)(.1f,hit.distance-(std::max)(0.f,padding));camera.target=target;return camera;}
 Camera3D ConstrainThirdPersonCamera(Camera3D camera,Vec3 target,const HeightField3D& terrain,float padding,unsigned samples){padding=(std::max)(0.f,padding);samples=(std::max)(2u,samples);const Vec3 offset=camera.position-target;float safeAmount=1.f;for(unsigned sample=1;sample<=samples;++sample){const float amount=float(sample)/float(samples),previous=float(sample-1)/float(samples);const Vec3 point=target+offset*amount;if(terrain.Contains(point.x,point.z)&&point.y<terrain.SampleHeight(point.x,point.z)+padding){safeAmount=previous;break;}}camera.position=target+offset*safeAmount;if(terrain.Contains(camera.position.x,camera.position.z))camera.position.y=(std::max)(camera.position.y,terrain.SampleHeight(camera.position.x,camera.position.z)+padding);camera.target=target;return camera;}
+ThirdPersonFramingResult3D ResolveThirdPersonFraming3D(Vec3 target,float yaw,float pitch,float distance,
+    std::span<const Vec3> subjectSamples,std::span<const BoxCollider3D> solids,
+    std::span<const BoxCollider3D> ceilings,const HeightField3D& terrain,
+    std::span<const BoxCollider3D> cameraOnly,Vec2 viewport,float minimumDistance,
+    float maximumYawAdjustment,unsigned yawSteps) {
+    ThirdPersonFramingResult3D result;
+    if(!Finite(target)||!std::isfinite(yaw)||!std::isfinite(pitch)||!std::isfinite(distance)||distance<=0)return result;
+    const auto candidate=[&](float adjustment){
+        auto camera=MakeThirdPersonCamera(target,yaw+adjustment,pitch,distance);
+        camera=ConstrainThirdPersonCameraCeiling(camera,ceilings);
+        camera=ConstrainThirdPersonCamera(camera,target,solids);
+        camera=ConstrainThirdPersonCameraCeiling(camera,cameraOnly);
+        camera=ConstrainThirdPersonCamera(camera,target,cameraOnly);
+        return ConstrainThirdPersonCamera(camera,target,terrain);
+    };
+    result.camera=candidate(0);
+    if(subjectSamples.empty()||!std::isfinite(viewport.x)||!std::isfinite(viewport.y)||viewport.x<=0||viewport.y<=0||
+       !std::isfinite(minimumDistance)||minimumDistance<=0||!std::isfinite(maximumYawAdjustment)||
+       maximumYawAdjustment<0||maximumYawAdjustment>3.1415927f||yawSteps>18)return result;
+    for(const auto sample:subjectSamples)if(!Finite(sample))return result;
+    for(const auto boxes:{solids,ceilings,cameraOnly})for(const auto& box:boxes)
+        if(!Finite(box.center)||!Finite(box.extents)||box.extents.x<0||box.extents.y<0||box.extents.z<0)return result;
+    const auto visible=[&](const Camera3D& camera){
+        if(!Finite(camera.position)||Length(camera.position-target)<minimumDistance)return false;
+        // 射線退讓不是壁面法向間距；初始切鏡也必須滿足固定更新的鏡頭體積／地形安全。
+        const float tangent=std::tan(camera.projection.verticalFieldOfView*.5f);
+        const float aspect=viewport.x/viewport.y;
+        const float radius=(std::max)(.16f,.005f+camera.projection.nearPlane*std::sqrt(1.f+tangent*tangent*(1.f+aspect*aspect)));
+        if(!ThirdPersonCameraPathClear3D(camera.position,camera.position,solids,terrain,cameraOnly,radius))return false;
+        for(const auto sample:subjectSamples){
+            if(!ProjectToViewport(sample,camera,viewport).visible)return false;
+            const Vec3 offset=sample-camera.position;
+            const float length=Length(offset);
+            if(length<=.03f)return false;
+            const auto ray=MakeRay3D(camera.position,offset);
+            for(const auto boxes:{solids,cameraOnly})for(const auto& box:boxes){
+                if(RayIntersectsAabb(ray,box.center,box.extents,length-.03f))return false;
+            }
+            for(unsigned i=1;i<32;++i){
+                const auto point=camera.position+offset*(float(i)/32.f);
+                if(terrain.Contains(point.x,point.z)&&point.y<terrain.SampleHeight(point.x,point.z)+.02f)return false;
+            }
+        }
+        return true;
+    };
+    result.candidatesTested=1;
+    if(visible(result.camera)){result.subjectVisible=true;return result;}
+    for(unsigned step=1;step<=yawSteps;++step){
+        const float amount=maximumYawAdjustment*float(step)/float(yawSteps);
+        for(float adjustment:{amount,-amount}){
+            const auto camera=candidate(adjustment);++result.candidatesTested;
+            if(!visible(camera))continue;
+            result.camera=camera;result.yawAdjustment=adjustment;result.subjectVisible=true;return result;
+        }
+    }
+    return result;
+}
 }
