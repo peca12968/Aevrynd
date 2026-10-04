@@ -4,6 +4,7 @@ param(
     [switch]$GpuValidation
 )
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'forest_cover_contract.ps1')
 $executable=(Resolve-Path -LiteralPath $ExecutablePath).Path
 if([IO.Path]::GetFileName($executable) -ne 'Aevrynd-Mistwatch.exe'){throw 'Unexpected executable'}
 $evidence=[IO.Path]::GetFullPath($EvidenceDirectory)
@@ -17,7 +18,7 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_NO_GROUND_TEXTURES','AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE',
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
     'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GROUND_SINGLE_SURFACE','AEVRYND_MISTWATCH_GRASS_LEGACY',
-    'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL',
+    'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL','AEVRYND_MISTWATCH_GRASS_SCATTER_BASELINE',
     'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED','AEVRYND_MISTWATCH_LEGACY_RANGER_HUT')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
@@ -115,13 +116,14 @@ try {
         if($receipt.grass_style -ne 'scanned' -or $receipt.grass_vertices -ne '7031' -or $receipt.grass_triangles -ne '7842' -or
            $receipt.grass_variants -ne '5' -or $receipt.grass_source -ne 'poly-haven-grass-medium-02' -or
            $receipt.grass_materials -ne '1' -or $receipt.grass_use_uv -ne '1' -or $receipt.grass_alpha_cutoff -ne '0.5' -or
-           $receipt.grass_tint_scale -ne '1' -or $receipt.ground_cover_instances -ne '1363' -or
+           $receipt.grass_tint_scale -ne '1' -or $receipt.ground_cover_instances -ne '3600' -or
            [int]$receipt.submitted_grass -lt 1 -or [int]$receipt.submitted_grass_triangles -lt 714){throw ('Scanned grass production binding missing: '+$case)}
         if($receipt.fern_source -ne 'poly-haven-fern-02' -or $receipt.fern_variants -ne '4' -or
            $receipt.fern_asset_scale -ne '1.6' -or $receipt.fern_materials -ne '1' -or
            $receipt.fern_use_uv -ne '1' -or $receipt.fern_alpha_cutoff -ne '0.5' -or
            $receipt.understory_ferns -ne '420' -or [int]$receipt.submitted_ferns -lt 1 -or
            [int]$receipt.submitted_fern_triangles -lt 1){throw ('Scanned fern production binding missing: '+$case)}
+        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case
         if($case -in @('boulder-profile','grass-profile','fern-profile')) {
             if($receipt.camera_source -ne 'diagnostic'){throw 'Detail fixture missing diagnostic camera'}
             $position=@($receipt.camera_position.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})

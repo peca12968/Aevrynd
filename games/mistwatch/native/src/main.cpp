@@ -7,6 +7,8 @@
 #include "MistwatchGroundMaterial.h"
 #include "MistwatchFern.h"
 #include "MistwatchScannedGrass.h"
+#include "MistwatchForestCover.h"
+#include "MistwatchFernColonies.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
@@ -31,6 +33,7 @@
 #include <chrono>
 #include <numeric>
 #include <iomanip>
+#include <bit>
 
 using namespace Aevrynd;
 class MistwatchGame final : public IGame {
@@ -63,6 +66,13 @@ class MistwatchGame final : public IGame {
     float waterTime{};
     std::vector<Vec3> trees;
     std::vector<Vec3> groundCover;
+    Mistwatch::ForestCoverResult forestCover;
+    Mistwatch::ForestCoverSettings forestCoverSettings;
+    std::array<Mistwatch::ForestCoverAsset,5> grassFootprints;
+    std::array<unsigned,5> groundCoverVariants{},submittedGrassVariants{};
+    std::uint64_t forestCoverFingerprint{},forestCoverColliderFingerprint{};
+    double forestCoverSetupMilliseconds{};
+    std::size_t forestCoverClearanceColliders{};
     MeshResource3D grassMesh;
     std::array<MeshResource3D,5> scannedGrass;
     MaterialLibrary3D grassMaterials;
@@ -70,6 +80,15 @@ class MistwatchGame final : public IGame {
     std::size_t submittedGrassTriangles{};
     MeshResource3D fernMesh;
     std::array<MeshResource3D,4> scannedFerns;
+    std::array<Mistwatch::FernColonyAsset,4> fernFootprints;
+    Mistwatch::FernColonyResult fernColonies;
+    Mistwatch::FernColonySettings fernColonySettings;
+    unsigned submittedColonyFerns{};
+    std::array<unsigned,4> fernColonyVariants{},submittedColonyVariants{};
+    std::array<unsigned,4> submittedOriginalFernVariants{};
+    std::size_t submittedColonyFernTriangles{};
+    std::uint64_t fernColonyFingerprint{},originalFernFingerprint{};
+    double fernColonySetupMilliseconds{};
     MaterialLibrary3D fernMaterials;
     Material3D fernSurface;
     std::size_t submittedFernTriangles{};
@@ -115,6 +134,7 @@ class MistwatchGame final : public IGame {
     bool diagnosticLegacyGrass{};
     bool diagnosticDimGrass{};
     bool diagnosticProceduralGrass{};
+    bool diagnosticScatterCover{};
     bool diagnosticLegacyFern{};
     bool diagnosticCrown{};
     bool captureWalk{},captureCrouch{};
@@ -278,6 +298,11 @@ public:
             if(proceduralLength&&(proceduralLength!=1||(proceduralGrass[0]!=L'0'&&proceduralGrass[0]!=L'1')))
                 throw std::runtime_error("Invalid procedural grass comparison flag");
             diagnosticProceduralGrass=proceduralGrass[0]==L'1'||diagnosticLegacyGrass||diagnosticDimGrass;
+            wchar_t scatter[3]{};
+            const auto scatterLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_SCATTER_BASELINE",scatter,3);
+            if(scatterLength&&(scatterLength!=1||(scatter[0]!=L'0'&&scatter[0]!=L'1')))
+                throw std::runtime_error("Invalid ground-cover scatter comparison flag");
+            diagnosticScatterCover=scatter[0]==L'1';
             wchar_t legacyFern[3]{};
             const auto fernLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_FERN_LEGACY",legacyFern,3);
             if(fernLength&&(fernLength!=1||(legacyFern[0]!=L'0'&&legacyFern[0]!=L'1')))
@@ -414,6 +439,7 @@ public:
             if(!loaded||loaded.mesh.vertices.size()!=Mistwatch::FernVertexCounts[variant]||
                 loaded.mesh.indices.size()!=3u*Mistwatch::FernTriangleCounts[variant])throw std::runtime_error("Fern variant unavailable");
             Mistwatch::NormalizeFernAsset(loaded.mesh);
+            fernFootprints[variant]=Mistwatch::FernColonyAssetFromMesh(loaded.mesh);
             scannedFerns[variant]=e.CreateMeshResource3D(loaded.mesh);
             if(!scannedFerns[variant])throw std::runtime_error("Scanned fern upload failed");
         }
@@ -428,12 +454,58 @@ public:
             if(!loaded||loaded.mesh.vertices.size()!=Mistwatch::GrassVertexCounts[variant]||
                 loaded.mesh.indices.size()!=3u*Mistwatch::GrassTriangleCounts[variant])throw std::runtime_error("Scanned grass topology changed");
             Mistwatch::NormalizeGrassAsset(loaded.mesh);
+            grassFootprints[variant]=Mistwatch::ForestCoverAssetFromMesh(loaded.mesh);
             scannedGrass[variant]=e.CreateMeshResource3D(loaded.mesh);
             if(!scannedGrass[variant])throw std::runtime_error("Scanned grass upload failed");
         }
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
         if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
         solids=Mistwatch::WorldSolids(session.bridgeRepaired);
+        forestCoverClearanceColliders=solids.size();
+        const auto coverStart=std::chrono::steady_clock::now();
+        if(!diagnosticScatterCover&&!diagnosticProceduralGrass){
+            forestCover=Mistwatch::CreateForestCover(terrain,trees,understory,solids,grassFootprints,forestCoverSettings);
+            if(!forestCover.reachedBudget||forestCover.plants.size()!=forestCoverSettings.targetPlants)
+                throw std::runtime_error("Forest cover authored population incomplete");
+            groundCover.clear();groundCover.reserve(forestCover.plants.size());
+            for(const auto& plant:forestCover.plants)groundCover.push_back(plant.transform.position);
+        }
+        forestCoverSetupMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-coverStart).count();
+        const auto colonyStart=std::chrono::steady_clock::now();
+        if(!forestCover.plants.empty()&&!diagnosticLegacyFern){
+            fernColonies=Mistwatch::CreateFernColonies(terrain,forestCover,understory.ferns,solids,fernFootprints,fernColonySettings);
+            if(!fernColonies.reachedBudget||fernColonies.plants.size()!=fernColonySettings.targetPlants)
+                throw std::runtime_error("Fern colony authored population incomplete");
+        }
+        fernColonySetupMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-colonyStart).count();
+        // 固定世界配置只在初始化生成，不隨鏡頭或角色移動重生；收據保留根、變體與原碰撞。
+        const auto mix=[](std::uint64_t& hash,std::uint32_t bits){
+            for(unsigned byte=0;byte<4;++byte){hash^=(bits>>(byte*8))&255u;hash*=1099511628211ull;}
+        };
+        forestCoverFingerprint=forestCoverColliderFingerprint=14695981039346656037ull;
+        fernColonyFingerprint=originalFernFingerprint=14695981039346656037ull;
+        const auto fernTransformHash=[&](std::uint64_t& fingerprint,const Transform3D& plant,unsigned variant){
+            for(float value:{plant.position.x,plant.position.y,plant.position.z,plant.rotation.x,plant.rotation.y,
+                plant.rotation.z,plant.scale.x,plant.scale.y,plant.scale.z})mix(fingerprint,std::bit_cast<std::uint32_t>(value));
+            mix(fingerprint,variant);
+        };
+        for(const auto& plant:fernColonies.plants){
+            fernTransformHash(fernColonyFingerprint,plant.transform,plant.variant);
+            ++fernColonyVariants[plant.variant];
+        }
+        for(std::size_t index=0;index<understory.ferns.size();++index)
+            fernTransformHash(originalFernFingerprint,understory.ferns[index],unsigned(index%4));
+        for(std::size_t index=0;index<groundCover.size();++index){
+            const auto root=groundCover[index];
+            const unsigned variant=forestCover.plants.empty()?unsigned(index%5):forestCover.plants[index].variant;
+            ++groundCoverVariants[variant];
+            for(float value:{root.x,root.y,root.z,Mistwatch::ForestCoverScale(root),root.x+root.z})
+                mix(forestCoverFingerprint,std::bit_cast<std::uint32_t>(value));
+            mix(forestCoverFingerprint,variant);
+        }
+        for(const auto& solid:solids)
+            for(float value:{solid.center.x,solid.center.y,solid.center.z,solid.extents.x,solid.extents.y,solid.extents.z})
+                mix(forestCoverColliderFingerprint,std::bit_cast<std::uint32_t>(value));
         controller.Reset({});
         e.SetClearColor({.16f,.23f,.25f,1});
         wchar_t local[32768]{};
@@ -731,6 +803,21 @@ public:
                     <<"\nfuse_collected="<<session.fuseCollected<<'\n';
                 out<<"understory_ferns="<<understory.ferns.size()<<"\nunderstory_saplings="<<understory.saplings.size()
                     <<"\nsubmitted_ferns="<<submittedFerns<<"\nsubmitted_saplings="<<submittedSaplings<<'\n';
+                out<<"fern_colony_population="<<fernColonies.plants.size()
+                    <<"\nfern_colony_authored_population="<<(fernColonies.plants.empty()?0u:fernColonySettings.targetPlants)
+                    <<"\nfern_colonies="<<fernColonies.colonies.size()
+                    <<"\nfern_colony_seed="<<(fernColonies.plants.empty()?0u:fernColonySettings.seed)
+                    <<"\nfern_colony_reached_budget="<<(fernColonies.plants.empty()||fernColonies.reachedBudget)
+                    <<"\nfern_colony_fingerprint="<<fernColonyFingerprint
+                    <<"\nfern_colony_original_fingerprint="<<originalFernFingerprint
+                    <<"\nfern_colony_setup_ms="<<fernColonySetupMilliseconds
+                    <<"\nsubmitted_colony_ferns="<<submittedColonyFerns
+                    <<"\nsubmitted_colony_fern_triangles="<<submittedColonyFernTriangles
+                    <<"\nfern_colony_variants="<<fernColonyVariants[0]<<','<<fernColonyVariants[1]<<','<<fernColonyVariants[2]<<','<<fernColonyVariants[3]
+                    <<"\nsubmitted_colony_variants="<<submittedColonyVariants[0]<<','<<submittedColonyVariants[1]<<','<<submittedColonyVariants[2]<<','<<submittedColonyVariants[3]
+                    <<"\nsubmitted_original_ferns="<<submittedFerns-submittedColonyFerns
+                    <<"\nsubmitted_original_fern_triangles="<<submittedFernTriangles-submittedColonyFernTriangles
+                    <<"\nsubmitted_original_fern_variants="<<submittedOriginalFernVariants[0]<<','<<submittedOriginalFernVariants[1]<<','<<submittedOriginalFernVariants[2]<<','<<submittedOriginalFernVariants[3]<<'\n';
                 out<<"fern_source="<<(diagnosticLegacyFern?"procedural":"poly-haven-fern-02")
                     <<"\nfern_variants=4\nfern_asset_scale="<<Mistwatch::FernAssetScale
                     <<"\nfern_materials="<<fernMaterials.Stats().materials<<"\nsubmitted_fern_triangles="<<submittedFernTriangles
@@ -758,6 +845,21 @@ public:
                     <<"\ngrass_blades="<<(diagnosticProceduralGrass?"9":"source-geometry")<<"\ngrass_segments="<<(diagnosticProceduralGrass?(diagnosticLegacyGrass?"3":"5"):"source-geometry")
                     <<"\ngrass_vertices="<<(diagnosticProceduralGrass?grassMesh.vertexCount:7031)
                     <<"\ngrass_triangles="<<(diagnosticProceduralGrass?grassMesh.TriangleCount():7842)<<"\nground_cover_instances="<<groundCover.size()
+                    <<"\nforest_cover_mode="<<(forestCover.plants.empty()?"original_scatter":"fixed_cluster_patches")
+                    <<"\nforest_cover_seed="<<(forestCover.plants.empty()?0u:forestCoverSettings.seed)
+                    <<"\nforest_cover_authored_population="<<(forestCover.plants.empty()?groundCover.size():forestCoverSettings.targetPlants)
+                    <<"\nforest_cover_maximum_patches="<<(forestCover.plants.empty()?0u:forestCoverSettings.maximumPatches)
+                    <<"\nforest_cover_patch_minimum_plants="<<(forestCover.plants.empty()?0u:forestCoverSettings.minimumPlantsPerPatch)
+                    <<"\nforest_cover_patch_maximum_plants="<<(forestCover.plants.empty()?0u:forestCoverSettings.maximumPlantsPerPatch)
+                    <<"\nforest_cover_independent_anchors="<<(forestCover.plants.empty()?0u:forestCoverSettings.independentAnchors)
+                    <<"\nforest_cover_patches="<<forestCover.patches.size()
+                    <<"\nforest_cover_reached_budget="<<(forestCover.plants.empty()||forestCover.reachedBudget)
+                    <<"\nforest_cover_fingerprint="<<forestCoverFingerprint
+                    <<"\nforest_cover_clearance_colliders="<<forestCoverClearanceColliders
+                    <<"\nforest_cover_clearance_collider_fingerprint="<<forestCoverColliderFingerprint
+                    <<"\nforest_cover_setup_ms="<<forestCoverSetupMilliseconds
+                    <<"\nforest_cover_variants="<<groundCoverVariants[0]<<','<<groundCoverVariants[1]<<','<<groundCoverVariants[2]<<','<<groundCoverVariants[3]<<','<<groundCoverVariants[4]
+                    <<"\nsubmitted_grass_variants="<<submittedGrassVariants[0]<<','<<submittedGrassVariants[1]<<','<<submittedGrassVariants[2]<<','<<submittedGrassVariants[3]<<','<<submittedGrassVariants[4]
                     <<"\nsubmitted_grass="<<submittedGrass<<'\n';
                 out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
                     <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
@@ -819,7 +921,7 @@ public:
                     const auto& proof=grassFixtureFrozen;
                     out<<std::setprecision(std::numeric_limits<float>::max_digits10)
                         <<"grass_fixture_schema=1\ngrass_fixture_index="<<grassFixtureIndex
-                        <<"\ngrass_fixture_variant="<<grassFixtureIndex%5
+                        <<"\ngrass_fixture_variant="<<(forestCover.plants.empty()?unsigned(grassFixtureIndex%5):forestCover.plants[grassFixtureIndex].variant)
                         <<"\ngrass_fixture_identity_high=5572150615523553875\ngrass_fixture_identity_low="<<grassFixtureIndex+1
                         <<"\ngrass_fixture_generation=1\ngrass_fixture_enabled="<<grassFixtureEnabled
                         <<"\ngrass_fixture_feet_mode=synthetic_same_height\ngrass_fixture_root="<<proof.root.x<<','<<proof.root.y<<','<<proof.root.z
@@ -1011,15 +1113,33 @@ public:
         fern.materialClass=MaterialClass3D::Foliage;
         fern.doubleSided=true;
         submittedFerns=0;submittedFernTriangles=0;
+        submittedColonyFerns=0;submittedColonyFernTriangles=0;
+        submittedColonyVariants={};
+        submittedOriginalFernVariants={};
         for(std::size_t index=0;index<understory.ferns.size();++index) {
             auto plant=understory.ferns[index];
             const float visibility=Mistwatch::UnderstoryVisibility(Length(plant.position-session.feet));
             if(visibility<=0)continue;
             plant.scale=plant.scale*visibility;
             const auto& mesh=diagnosticLegacyFern?fernMesh:scannedFerns[index%4];
-            scene.Mesh(mesh,plant,diagnosticLegacyFern?fern:fernSurface);
+            if(!scene.Mesh(mesh,plant,diagnosticLegacyFern?fern:fernSurface))
+                throw std::runtime_error("Original fern scene insertion failed");
             submittedFernTriangles+=mesh.TriangleCount();
+            ++submittedOriginalFernVariants[index%4];
             ++submittedFerns;
+        }
+        // 共用既有四個真蕨網格與遮罩材質；新增的是固定世界群落，不是相機附著葉片。
+        for(const auto& fernPlant:fernColonies.plants) {
+            auto plant=fernPlant.transform;
+            const float visibility=Mistwatch::UnderstoryVisibility(Length(plant.position-session.feet));
+            if(visibility<=0)continue;
+            plant.scale=plant.scale*visibility;
+            const auto& mesh=scannedFerns[fernPlant.variant];
+            if(!scene.Mesh(mesh,plant,fernSurface))throw std::runtime_error("Fern colony scene insertion failed");
+            submittedFernTriangles+=mesh.TriangleCount();
+            submittedColonyFernTriangles+=mesh.TriangleCount();
+            ++submittedColonyVariants[fernPlant.variant];
+            ++submittedFerns;++submittedColonyFerns;
         }
         const float grassTintScale=diagnosticDimGrass?.7f:1.f;
         Material3D grass{{.32f*grassTintScale,.43f*grassTintScale,.18f*grassTintScale,1},{.9f,0,0,.9f}};
@@ -1027,6 +1147,7 @@ public:
         grass.doubleSided=true;
         submittedGrass=0;
         submittedGrassTriangles=0;
+        submittedGrassVariants={};
         grassFixtureState={};
         const auto grassSelectionFeet=captureGrassDistance?grassFixtureSelectionFeet:session.feet;
         for(std::size_t index=0;index<groundCover.size();++index) {
@@ -1038,12 +1159,14 @@ public:
                 grassFixtureState.scale=scale;grassFixtureState.yaw=plant.x+plant.z;
                 grassFixtureState.playerDistance=Length(plant-grassSelectionFeet);grassFixtureState.selected=selected;}
             if(!selected||(fixtureTarget&&!grassFixtureEnabled))continue;
-            const auto& mesh=diagnosticProceduralGrass?grassMesh:scannedGrass[index%5];
+            const unsigned variant=forestCover.plants.empty()?unsigned(index%5):forestCover.plants[index].variant;
+            const auto& mesh=diagnosticProceduralGrass?grassMesh:scannedGrass[variant];
             const RenderObjectIdentity3D identity=fixtureTarget?RenderObjectIdentity3D{{5572150615523553875ull,index+1},1}:RenderObjectIdentity3D{};
             const auto accepted=scene.Mesh(mesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},diagnosticProceduralGrass?grass:grassSurface,{},identity);
             if(!accepted)throw std::runtime_error("Grass scene insertion failed");
             if(fixtureTarget)grassFixtureState.sceneAccepted=true;
             submittedGrassTriangles+=mesh.TriangleCount();
+            ++submittedGrassVariants[variant];
             ++submittedGrass;
         }
         for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);

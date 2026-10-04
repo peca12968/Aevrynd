@@ -94,6 +94,23 @@ target_compile_options(MistwatchScannedGrassTest PRIVATE /W4 /WX /permissive- /u
 target_compile_definitions(MistwatchScannedGrassTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
 target_link_libraries(MistwatchScannedGrassTest PRIVATE AevryndEngine)
 add_test(NAME MistwatchScannedGrassTest COMMAND MistwatchScannedGrassTest)
+add_executable(MistwatchForestCoverTest tests/MistwatchForestCoverTest.cpp)
+target_include_directories(MistwatchForestCoverTest PRIVATE include)
+target_compile_options(MistwatchForestCoverTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(MistwatchForestCoverTest PRIVATE AevryndEngine)
+add_custom_command(TARGET MistwatchForestCoverTest POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-grass-medium-02/meshes" "$<TARGET_FILE_DIR:MistwatchForestCoverTest>/assets/mistwatch-forest-cover-test/meshes")
+add_test(NAME MistwatchForestCoverTest COMMAND MistwatchForestCoverTest "$<TARGET_FILE_DIR:MistwatchForestCoverTest>/assets/mistwatch-forest-cover-test/meshes")
+add_executable(MistwatchFernColoniesTest tests/MistwatchFernColoniesTest.cpp)
+target_include_directories(MistwatchFernColoniesTest PRIVATE include)
+target_compile_options(MistwatchFernColoniesTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(MistwatchFernColoniesTest PRIVATE AevryndEngine)
+add_custom_command(TARGET MistwatchFernColoniesTest POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-grass-medium-02/meshes" "$<TARGET_FILE_DIR:MistwatchFernColoniesTest>/assets/mistwatch-forest-cover-test/meshes"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-fern-02/meshes" "$<TARGET_FILE_DIR:MistwatchFernColoniesTest>/assets/mistwatch-fern-colonies-test/meshes")
+add_test(NAME MistwatchFernColoniesTest COMMAND MistwatchFernColoniesTest "$<TARGET_FILE_DIR:MistwatchFernColoniesTest>/assets/mistwatch-forest-cover-test/meshes" "$<TARGET_FILE_DIR:MistwatchFernColoniesTest>/assets/mistwatch-fern-colonies-test/meshes")
+add_test(NAME MistwatchForestCoverReceiptTest COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/MistwatchForestCoverReceiptTest.ps1")
+set_tests_properties(MistwatchForestCoverReceiptTest PROPERTIES TIMEOUT 30)
 add_custom_command(TARGET Mistwatch POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-grass-medium-02/meshes" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-grass/meshes"
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/mistwatch-grass-medium-02/materials" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-grass/materials"
@@ -213,6 +230,6 @@ target_include_directories(MistwatchAudioPreview PRIVATE include)
 target_compile_options(MistwatchAudioPreview PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(MistwatchAudioPreview PRIVATE AevryndEngine)
 if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
-  set_tests_properties(MistwatchSupplyCrateTest MistwatchSessionTest MistwatchRouteTest MistwatchRangerHutTest MistwatchRelayCameraTest MistwatchCameraMotionTest MistwatchCameraOrbitTest MistwatchCameraRouteContextTest MistwatchCameraTest MistwatchSaveGameTest MistwatchSaveFileTest MistwatchLoadPreparationTest MistwatchGroundMaterialTest MistwatchBridgeTest MistwatchLandscapeTest
+  set_tests_properties(MistwatchSupplyCrateTest MistwatchSessionTest MistwatchRouteTest MistwatchRangerHutTest MistwatchRelayCameraTest MistwatchCameraMotionTest MistwatchCameraOrbitTest MistwatchCameraRouteContextTest MistwatchCameraTest MistwatchSaveGameTest MistwatchSaveFileTest MistwatchLoadPreparationTest MistwatchGroundMaterialTest MistwatchBridgeTest MistwatchLandscapeTest MistwatchForestCoverTest MistwatchFernColoniesTest MistwatchForestCoverReceiptTest
     PROPERTIES LABELS "release-gates")
 endif()
