@@ -11,6 +11,17 @@ struct Encounter {
     EnemyPhase phase{EnemyPhase::Pursuit};
     float phaseTime{}, playerCooldown{};
     bool countered{};
+    bool Valid() const noexcept {
+        if(!Session::Finite(feet)||!Session::Finite(strikeTarget)||health>3||!std::isfinite(phaseTime)||
+            !std::isfinite(playerCooldown)||playerCooldown<0||playerCooldown>.65f||(health==3&&countered))return false;
+        switch(phase){
+        case EnemyPhase::Pursuit:return health&&phaseTime>=-.1f&&phaseTime<=0;
+        case EnemyPhase::Windup:return health&&!countered&&phaseTime>0&&phaseTime<=WindupDuration;
+        case EnemyPhase::Recovery:return health&&phaseTime>0&&phaseTime<=RecoveryDuration;
+        case EnemyPhase::Defeated:return !health&&countered&&phaseTime>=0&&phaseTime<=RecoveryDuration;
+        default:return false;
+        }
+    }
     unsigned Tick(Aevrynd::Vec3 player,float dt,bool attack) {
         if(!Session::Finite(player) || !std::isfinite(dt) || dt<=0 || dt>.1f || !health) return 0;
         playerCooldown=std::max(0.f,playerCooldown-dt);

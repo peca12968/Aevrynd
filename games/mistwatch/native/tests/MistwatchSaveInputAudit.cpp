@@ -49,6 +49,7 @@ Mistwatch::SaveGame BattleSeed(){
     Require(s.evasion.remaining>0&&s.evasion.cooldown>0&&s.Valid(),"bounded active evasion seed invalid");return s;
 }
 bool KnownCase(std::wstring_view value){
+    for(const auto name:{L"enemy-slope-pursuit",L"enemy-slope-windup",L"enemy-slope-recovery"})if(value==name)return true;
     for(const auto name:{L"hp1-active",L"cooldown-only",L"legacy-v6",L"truncated",L"missing",L"body-overlap",L"middle-overlap",L"dead",L"complete",L"shelter",L"slope",L"terrain-edge",L"outside-save",L"retry-battle",L"retry-after-battle",L"enemy-y-below",L"enemy-y-above"})
         if(value==name)return true;
     return false;
@@ -175,7 +176,7 @@ class MistwatchSaveInputProbe final : public IGame {
             return;
         }
         Require(expected.Restore(saved)&&expected.Serialize()==Snapshot().Serialize(),"actual F5 isolated disk differs from live snapshot");
-        Require(saved.starts_with("MISTWATCH_SAVE 1"),"actual F5 still saves Session-only format");
+        Require(saved.starts_with("MISTWATCH_SAVE 2"),"actual F5 did not save terrain-aware format");
         Write(output/L"after-f5.txt",saved);
         Require(Read(game.audioSettings)==initialAudioSettings,"actual F5 changed isolated audio settings");
         if(caseName==L"legacy-v6"){
@@ -300,6 +301,14 @@ public:
             }else if(caseName==L"slope"){
                 seed.session.feet={-10.1f,0,62};
                 seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
+            }else if(caseName==L"enemy-slope-pursuit"||caseName==L"enemy-slope-windup"||caseName==L"enemy-slope-recovery"){
+                // 坡地快照前置不是按鍵行走證據；F5/F9 仍走正式原生分支且精確核對敵人位置與計時。
+                seed.encounter.feet={18,game.terrain.SampleHeight(18,55),55};seed.evasion={};
+                seed.encounter.phase=caseName==L"enemy-slope-pursuit"?Mistwatch::EnemyPhase::Pursuit:
+                    caseName==L"enemy-slope-windup"?Mistwatch::EnemyPhase::Windup:Mistwatch::EnemyPhase::Recovery;
+                seed.encounter.phaseTime=caseName==L"enemy-slope-windup"?.4f:caseName==L"enemy-slope-recovery"?.7f:0;
+                seed.encounter.countered=false;
+                game.captureBoarOverview=true;
             }else if(caseName==L"terrain-edge"){
                 seed.session.feet={49.4f,0,0};seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
             }else if(caseName==L"outside-save"){

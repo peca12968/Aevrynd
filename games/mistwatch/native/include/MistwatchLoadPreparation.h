@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchSaveGame.h"
 #include "MistwatchBoar.h"
+#include "MistwatchEncounterMotion.h"
 #include "MistwatchCamera.h"
 #include "MistwatchExplorer.h"
 #include "MistwatchRangerHut.h"
@@ -21,7 +22,8 @@ enum class LoadPreparationError {
     OutsideTerrain, BelowTerrainCenter, BodyOverlap, SupportProbeFailed,
     SupportWouldMoveFeet, InvalidExplorerModel, ExplorerPoseFailed,
     InvalidBoarModel, BoarOutsideTerrain, BoarPoseFailed,
-    CameraUnavailable, AllocationFailure, PreparationException, TerrainAboveBodyTop, InvalidExtraSolids
+    CameraUnavailable, AllocationFailure, PreparationException, TerrainAboveBodyTop, InvalidExtraSolids,
+    BoarUnsupported, BoarBodyOverlap, BoarTerrainAboveBodyTop
 };
 struct LoadPreparationInputs {
     const Aevrynd::CharacterController3D& controller;
@@ -211,13 +213,23 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
         }
         if(!FinitePose(p.explorer.model.skeleton,p.explorer.pose))return fail(LoadPreparationError::ExplorerPoseFailed);
         double enemyTerrain{};
-        const auto enemyTerrainError=Footprint(terrain,saved.encounter.feet,1.5f,enemyTerrain);
+        const auto enemyTerrainError=Footprint(terrain,saved.encounter.feet,EncounterBodyRadius,enemyTerrain);
         if(enemyTerrainError==LoadPreparationError::OutsideTerrain)return fail(LoadPreparationError::BoarOutsideTerrain);
         if(enemyTerrainError!=LoadPreparationError::None)return fail(enemyTerrainError);
+        if(!EncounterSupported(saved.encounter.feet,terrain))return fail(LoadPreparationError::BoarUnsupported);
+        if(EncounterBodyOverlaps(saved.encounter.feet,p.solids))return fail(LoadPreparationError::BoarBodyOverlap);
+        if(enemyTerrain>=double(saved.encounter.feet.y)+EncounterBodyBottom+EncounterBodyHeight)
+            return fail(LoadPreparationError::BoarTerrainAboveBodyTop);
         p.boar.initialized=false;p.boar.cycle=0;p.boar.planted={};p.boar.footTargets={};p.boar.lastFeet={};
         const auto look=(saved.encounter.phase==EnemyPhase::Windup?saved.encounter.strikeTarget:saved.session.feet)-saved.encounter.feet;
         if(!p.boar.Update({},0,saved.encounter.phase,(std::max)(0.f,saved.encounter.phaseTime),look)||
             !p.boar.PlaceFeet(saved.encounter.feet,terrain)||!FinitePose(p.boar.model.skeleton,p.boar.pose))return fail(LoadPreparationError::BoarPoseFailed);
+        const auto enemyWorld=CreateTransformMatrix(saved.encounter.feet,{0,p.boar.yaw,0},{1,1,1});
+        for(unsigned leg=0;leg<4;++leg){
+            const auto ankle=TransformPoint(enemyWorld*p.boar.pose.globalMatrices[5+leg*3],{});
+            const float error=Length(ankle-p.boar.footTargets[leg]);
+            if(!std::isfinite(error)||error>.005f)return fail(LoadPreparationError::BoarPoseFailed);
+        }
         std::vector<BoxCollider3D> cameraOnly{RangerHutCameraRoofSolid()};
         cameraOnly.insert(cameraOnly.end(),extraCameraOnly.begin(),extraCameraOnly.end());
         p.cameraMotion.Reset();

@@ -12,7 +12,8 @@
 namespace Mistwatch {
 // 遊戲層快照，不改 Session 的舊格式，也不替引擎保存遊戲規則。
 // 相機、輸入邊沿、音效播放及角色控制器暫態不屬於此快照；整合端須明確處理。
-// 此 MISTWATCH_SAVE 1 尚未發布；EVASION 為必填，不能默默重置既有快照的閃避冷卻。
+// 版本 2 允許地形跟隨的敵人高度；版本 1 仍保留舊固定高度限制。
+// EVASION 為必填；完整身體與地形支撐另由 PrepareSavedGame 驗證，不搬移不安全舊檔。
 struct SaveGame {
     static constexpr std::size_t MaximumBytes=2048;
     Session session;
@@ -40,11 +41,10 @@ struct SaveGame {
         return true;
     }
     bool Valid() const {
-        if(!session.Valid()||!ValidEvasion(evasion)||!ValidPoint(encounter.feet)||!ValidPoint(encounter.strikeTarget)||
-           encounter.health>3||encounter.feet.y!=Session::arena.y||!std::isfinite(encounter.phaseTime)||!std::isfinite(encounter.playerCooldown)||
+        if(!session.Valid()||!encounter.Valid()||!ValidEvasion(evasion)||!ValidPoint(encounter.feet)||!ValidPoint(encounter.strikeTarget)||
+           encounter.health>3||!std::isfinite(encounter.phaseTime)||!std::isfinite(encounter.playerCooldown)||
            encounter.playerCooldown<0||encounter.playerCooldown>.65f)return false;
-        // 現有遭遇戰只移動 x/z，y 始終為 arena.y；不能載入地下或高空而永遠無法反擊的野豬。
-        // 日後加入真正地形跟隨時，必須同步更新此契約及可達狀態測試，不能自行搬動壞檔位置。
+        // 此層僅驗證快照結構；地形高度不是常數，正式載入必須通過世界預檢。
         // .65 是現有 Encounter::Tick 的反擊冷卻，不是假設新的遊戲平衡值。
         switch(encounter.phase) {
         case EnemyPhase::Pursuit:
@@ -80,7 +80,7 @@ struct SaveGame {
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out.precision(std::numeric_limits<float>::max_digits10);
-        out<<"MISTWATCH_SAVE 1\n"<<session.Serialize()<<"\nENCOUNTER "
+        out<<"MISTWATCH_SAVE 2\n"<<session.Serialize()<<"\nENCOUNTER "
            <<encounter.health<<' '<<static_cast<unsigned>(encounter.phase)<<' '
            <<encounter.feet.x<<' '<<encounter.feet.y<<' '<<encounter.feet.z<<' '
            <<encounter.strikeTarget.x<<' '<<encounter.strikeTarget.y<<' '<<encounter.strikeTarget.z<<' '
@@ -107,7 +107,7 @@ struct SaveGame {
         } else {
             unsigned version{};
             std::string remainder,sessionLine;
-            if(magic!="MISTWATCH_SAVE"||!(in>>version)||version!=1)return false;
+            if(magic!="MISTWATCH_SAVE"||!(in>>version)||(version!=1&&version!=2))return false;
             if(!std::getline(in,remainder)||remainder.find_first_not_of(" \t\r")!=std::string::npos||
                !std::getline(in,sessionLine)||!candidate.session.Restore(sessionLine))return false;
             unsigned phase{},countered{};
@@ -117,6 +117,7 @@ struct SaveGame {
                  >>enemy.phaseTime>>enemy.playerCooldown>>countered)||magic!="ENCOUNTER"||
                  phase>static_cast<unsigned>(EnemyPhase::Defeated)||countered>1)return false;
             enemy.phase=static_cast<EnemyPhase>(phase);enemy.countered=countered!=0;
+            if(version==1&&enemy.feet.y!=Session::arena.y)return false;
             auto& action=candidate.evasion;
             if(!(in>>magic>>action.direction.x>>action.direction.y>>action.direction.z>>action.remaining>>action.cooldown)||magic!="EVASION")return false;
             if(in>>remainder)return false;

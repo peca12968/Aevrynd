@@ -46,8 +46,8 @@ SaveGame HpOne(){
     return game;
 }
 std::string Raw(const Session& session,const std::vector<std::string>& fields,
-    const std::vector<std::string>& evasionFields={"0","0","0","0","0"}){
-    std::string text="MISTWATCH_SAVE 1\n"+session.Serialize()+"\nENCOUNTER";
+    const std::vector<std::string>& evasionFields={"0","0","0","0","0"},unsigned version=2){
+    std::string text="MISTWATCH_SAVE "+std::to_string(version)+"\n"+session.Serialize()+"\nENCOUNTER";
     for(const auto& field:fields)text+=' '+field;
     text+="\nEVASION";
     for(const auto& field:evasionFields)text+=' '+field;
@@ -217,11 +217,19 @@ void Malformed(){
     auto game=HpOne();const auto good=game.Serialize();const auto fields=Fields(game);
     for(std::size_t length=0;length<good.size();++length)RejectUnchanged(game,good.substr(0,length),"truncated save accepted");
     RejectUnchanged(game,std::string(SaveGame::MaximumBytes+1,'x'),"oversized save accepted");
-    RejectUnchanged(game,"MISTWATCH_SAVE 2\n"+game.session.Serialize()+"\nENCOUNTER", "unknown snapshot version accepted");
+    auto unknown=good;unknown[15]='3';RejectUnchanged(game,unknown,"unknown snapshot version accepted");
     RejectUnchanged(game,good+" trailing", "trailing tokens accepted");
     const auto mutation=[&](unsigned field,const char* value){auto changed=fields;changed[field]=value;RejectUnchanged(game,Raw(game.session,changed),"invalid encounter field accepted");};
     mutation(0,"4");mutation(0,"0");mutation(0,"-1");mutation(1,"99");mutation(1,"-1");
-    mutation(2,"nan");mutation(3,"inf");mutation(3,"-100");mutation(3,"100");mutation(3,"0.001");mutation(3,"-0.001");mutation(4,"10001");mutation(5,"-inf");
+    mutation(2,"nan");mutation(3,"inf");mutation(4,"10001");mutation(5,"-inf");
+    // 舊版非零 Y 壞檔仍拒絕；新版有限高度交由實際世界預檢，不能靠常數假裝接地。
+    for(const char* height:{"-100","100","0.001","-0.001"}){
+        auto changed=fields;changed[3]=height;
+        RejectUnchanged(game,Raw(game.session,changed,{"0","0","0","0","0"},1),"legacy nonzero enemy height accepted");
+        SaveGame structural;Require(structural.Restore(Raw(game.session,changed)),"version2 finite enemy height structurally rejected");
+    }
+    SaveGame legacy;Require(legacy.Restore(Raw(game.session,fields,{"0","0","0","0","0"},1))&&
+        SameEnemy(legacy.encounter,game.encounter),"version1 centered checkpoint failed migration");
     mutation(8,"nan");mutation(8,"2");mutation(8,"-0.2");mutation(9,"nan");mutation(9,"0.66");mutation(9,"-0.01");mutation(10,"2");
     auto contradiction=fields;contradiction[1]="1";contradiction[8]="0.3";
     RejectUnchanged(game,Raw(game.session,contradiction),"windup with consumed counter accepted");

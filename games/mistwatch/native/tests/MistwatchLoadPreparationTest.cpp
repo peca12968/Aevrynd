@@ -284,7 +284,7 @@ void Run(){
         const auto checked=PrepareChecked(corruptEnemy,live,terrain);
         std::cout<<"CORRUPT_ENEMY_VERTICAL feet_y="<<enemyY<<" snapshot_valid="<<corruptEnemy.Valid()
             <<" load_accepted="<<bool(checked)<<" error="<<unsigned(checked.error)<<'\n';
-        Require(!checked&&checked.error==LoadPreparationError::InvalidSnapshot,
+        Require(!checked&&checked.error==LoadPreparationError::BoarUnsupported,
             "unreachable vertical boar checkpoint accepted and permanently disables combat");++rejections;
     }
     auto air=start;air.session.feet={0,2,0};AcceptedAndRollback(air,live,terrain,false,1.8f);

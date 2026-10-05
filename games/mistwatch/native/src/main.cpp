@@ -786,7 +786,9 @@ public:
             if(captureAudioProbe&&!capturePending){++captureAudioTicks;paused=captureAudioTicks>=60&&captureAudioTicks<80;}
             if(captureWildlife&&!capturePending) {
                 const auto previous=encounter.feet;
-                session.Damage(encounter.Tick(session.feet,1.f/60.f,false));
+                const auto enemyMotion=Mistwatch::TickEncounterWorld(encounter,session.feet,1.f/60.f,false,solids,terrain);
+                if(enemyMotion.status==Mistwatch::EncounterMotionStatus::Invalid)throw std::runtime_error("Boar capture motion rejected");
+                session.Damage(enemyMotion.damage);
                 const auto look=(encounter.phase==Mistwatch::EnemyPhase::Windup?encounter.strikeTarget:session.feet)-encounter.feet;
                 if(!boar.Update(encounter.feet-previous,1.f/60.f,encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
                     !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar capture pose failed");
@@ -1146,7 +1148,9 @@ public:
         }
         if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
             const auto previous=encounter.feet;
-            session.Damage(encounter.Tick(session.feet,dt,in.Pressed('F') && !motion.dashing));
+            const auto enemyMotion=Mistwatch::TickEncounterWorld(encounter,session.feet,dt,in.Pressed('F') && !motion.dashing,solids,terrain);
+            if(enemyMotion.status==Mistwatch::EncounterMotionStatus::Invalid)throw std::runtime_error("Boar world motion rejected");
+            session.Damage(enemyMotion.damage);
             const auto look=(encounter.phase==Mistwatch::EnemyPhase::Windup?encounter.strikeTarget:session.feet)-encounter.feet;
             if(!boar.Update(encounter.feet-previous,(std::min)(dt,.1f),encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
                 !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar locomotion IK failed");

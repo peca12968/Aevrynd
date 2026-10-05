@@ -93,6 +93,21 @@ struct Boar {
         if(!Session::Finite(feet))return false;
         const auto world=CreateTransformMatrix(feet,{0,yaw,0},{1,1,1});
         const auto local=CreateRotationMatrix({0,-yaw,0})*CreateTranslationMatrix(feet*-1.f);
+        // 四個真實蹄點估計身體俯仰／側傾；只靠直立軀幹加 IK 會讓坡地下坡腳超出骨長。
+        std::array<float,4> ground{};
+        for(unsigned leg=0;leg<4;++leg){
+            const auto p=TransformPoint(world,restFeet[leg]);
+            if(!terrain.Contains(p.x,p.z))return false;
+            ground[leg]=terrain.SampleHeight(p.x,p.z);
+            if(!std::isfinite(ground[leg]))return false;
+        }
+        const float front=(ground[0]+ground[1])*.5f,back=(ground[2]+ground[3])*.5f;
+        const float left=(ground[0]+ground[2])*.5f,right=(ground[1]+ground[3])*.5f;
+        auto& root=pose.localTransforms[0];
+        root.rotation={-std::clamp(std::atan2(front-back,.95f),-.5f,.5f),0,
+            std::clamp(std::atan2(right-left,.5f),-.5f,.5f)};
+        root.usesQuaternion=false;
+        BuildAnimationPoseGlobalMatrices3D(model.skeleton,pose);
         if(!initialized || Length(feet-lastFeet)>1.f){planted={};initialized=true;}
         lastFeet=feet;
         for(unsigned leg=0;leg<4;++leg) {
@@ -112,6 +127,25 @@ struct Boar {
             }
             footTargets[leg].y=terrain.SampleHeight(footTargets[leg].x,footTargets[leg].z)+restFeet[leg].y+
                 (support?0.f:.11f*std::sin(phase-3.14159265f));
+        }
+        // 根部仍由碰撞／地形決定；僅在骨長容許區間內調整軀幹高度，不能把 Clamped 當作接地完成。
+        float heightLower=-.15f,heightUpper=.15f;
+        for(unsigned leg=0;leg<4;++leg){
+            const unsigned hip=3+leg*3;
+            const auto target=TransformPoint(local,footTargets[leg]);
+            const auto position=TransformPoint(pose.globalMatrices[hip],{});
+            const float reach=Length(model.skeleton.joints[hip+1].bindTransform.translation)+
+                Length(model.skeleton.joints[hip+2].bindTransform.translation)-.0001f;
+            const float dx=target.x-position.x,dz=target.z-position.z;
+            const float squared=reach*reach-dx*dx-dz*dz;
+            if(!std::isfinite(squared)||squared<=0)return false;
+            const float vertical=std::sqrt(squared),difference=target.y-position.y;
+            heightLower=(std::max)(heightLower,difference-vertical);heightUpper=(std::min)(heightUpper,difference+vertical);
+        }
+        if(heightLower>heightUpper)return false;
+        root.translation.y+=std::clamp(0.f,heightLower,heightUpper);
+        BuildAnimationPoseGlobalMatrices3D(model.skeleton,pose);
+        for(unsigned leg=0;leg<4;++leg){
             const unsigned upper=3+leg*3;
             // 前肢肘關節向後、後肢膝關節向前；共用引擎兩骨 IK，不直接移動蒙皮頂點。
             const Vec3 pole{restFeet[leg].x,.32f,leg<2?-.2f:.2f};
@@ -119,9 +153,13 @@ struct Boar {
                 {TransformPoint(local,footTargets[leg]),pole,1,0},pose))return false;
             const auto a=pose.localTransforms[upper].quaternion,b=pose.localTransforms[upper+1].quaternion;
             if(pose.localTransforms[upper].usesQuaternion&&pose.localTransforms[upper+1].usesQuaternion) {
-                const Quaternion3D product{
+                const Quaternion3D legs{
                     a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,
                     a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w,a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z};
+                const auto r=QuaternionFromEuler3D(root.rotation);
+                const Quaternion3D product{
+                    r.w*legs.x+r.x*legs.w+r.y*legs.z-r.z*legs.y,r.w*legs.y-r.x*legs.z+r.y*legs.w+r.z*legs.x,
+                    r.w*legs.z+r.x*legs.y-r.y*legs.x+r.z*legs.w,r.w*legs.w-r.x*legs.x-r.y*legs.y-r.z*legs.z};
                 auto& ankle=pose.localTransforms[upper+2];
                 ankle.usesQuaternion=true;ankle.quaternion={-product.x,-product.y,-product.z,product.w};ankle.rotation={};
             }
