@@ -23,11 +23,12 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
     'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GROUND_SINGLE_SURFACE','AEVRYND_MISTWATCH_GRASS_LEGACY',
     'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL','AEVRYND_MISTWATCH_GRASS_SCATTER_BASELINE',
+    'AEVRYND_MISTWATCH_SHRUBS','AEVRYND_MISTWATCH_CAPTURE_FRAME_CAMERA',
     'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED','AEVRYND_MISTWATCH_LEGACY_RANGER_HUT','AEVRYND_MISTWATCH_TRAIL_LITTER')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile','trail-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile','trail-profile')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile','trail-profile','shrub-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile','trail-profile','shrub-profile')}
 try {
     # 正常驗收使用遊戲預設，不以環境變數代替 production 接入；舊版只在明確比較時啟用。
     if($BaselineMiddleLayer){[Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER','0','Process')}
@@ -51,6 +52,14 @@ try {
         if(-not (Test-Path -LiteralPath $capture) -or -not (Test-Path -LiteralPath $receiptPath)){throw ('Missing native evidence: '+$case)}
         $receipt=@{}
         foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
+        if($receipt.shrubs_enabled -ne '1' -or $receipt.shrubs_plants -ne '64' -or
+            $receipt.shrubs_fingerprint -ne '18032575485754629455' -or $receipt.shrubs_submitted -ne '64'){
+            throw ('Shrub production contract missing: '+$case)
+        }
+        if($case -eq 'shrub-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Shrub profile not proven'}
+        $shrubCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.shrub-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$shrubCleanup[$pair[0]]=$pair[1]}}
+        if($shrubCleanup.cleanup -ne 'success' -or $shrubCleanup.mesh_destroy_calls -ne '8'){throw ('Shrub cleanup incomplete: '+$case)}
         if($receipt.trail_litter_enabled -ne '1' -or $receipt.trail_litter_patches -ne '48' -or
             $receipt.trail_litter_branches -ne '240' -or $receipt.trail_litter_stones -ne '336' -or
             $receipt.trail_litter_triangles -ne '26530' -or $receipt.trail_litter_fingerprint -ne '17422259039373256066' -or

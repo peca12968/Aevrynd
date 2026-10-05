@@ -10,6 +10,7 @@
 #include "MistwatchScannedGrass.h"
 #include "MistwatchForestCover.h"
 #include "MistwatchTrailLitter.h"
+#include "MistwatchShrubCanopy.h"
 #include "MistwatchFernColonies.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
@@ -71,6 +72,12 @@ class MistwatchGame final : public IGame {
     std::size_t broadleafTriangles{};
     HeightField3D terrain;
     MeshResource3D terrainMesh;
+    Mistwatch::ShrubCanopyResult shrubCanopy;
+    std::array<std::array<MeshResource3D,2>,4> shrubMeshes;
+    bool shrubsEnabled{true};
+    bool captureShrubOverview{};
+    bool captureFrameCamera{};
+    unsigned submittedShrubs{};
     Mistwatch::TrailLitterResult trailLitter;
     std::array<MeshResource3D,2> trailLitterMeshes;
     bool trailLitterEnabled{true};
@@ -562,6 +569,15 @@ public:
             for(float value:{solid.center.x,solid.center.y,solid.center.z,solid.extents.x,solid.extents.y,solid.extents.z})
                 mix(forestCoverColliderFingerprint,std::bit_cast<std::uint32_t>(value));
         controller.Reset({});
+        auto shrubLeaves=LoadAevryndMeshFile(broadleafRoot/"meshes"/Mistwatch::BroadleafMeshName(1));
+        if(!shrubLeaves)throw std::runtime_error("Shrub leaf source missing");
+        shrubCanopy=Mistwatch::CreateShrubCanopy(shrubLeaves.mesh,terrain,solids,understory,forestCover,fernColonies,fernFootprints);
+        if(!shrubCanopy.reachedBudget)throw std::runtime_error("Shrub authored population incomplete");
+        for(unsigned i=0;i<4;++i){
+            shrubMeshes[i][0]=e.CreateMeshResource3D(shrubCanopy.variants[i].stems);
+            shrubMeshes[i][1]=e.CreateMeshResource3D(shrubCanopy.variants[i].leaves);
+            if(!shrubMeshes[i][0]||!shrubMeshes[i][1])throw std::runtime_error("Shrub GPU upload failed");
+        }
         e.SetClearColor({.16f,.23f,.25f,1});
         wchar_t local[32768]{};
         const auto count=GetEnvironmentVariableW(L"LOCALAPPDATA",local,32768);
@@ -569,6 +585,10 @@ public:
         wchar_t output[32768]{};
         const auto outputCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",output,32768);
         if(outputCount && outputCount<32768) {
+            wchar_t cameraFlag[3]{};const auto cameraCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE_FRAME_CAMERA",cameraFlag,3);
+            if(cameraCount){if(cameraCount!=1||cameraFlag[0]!=L'1')throw std::runtime_error("Invalid fixed-frame camera flag");captureFrameCamera=true;}
+            wchar_t shrubFlag[3]{};const auto shrubCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_SHRUBS",shrubFlag,3);
+            if(shrubCount){if(shrubCount!=1||(shrubFlag[0]!=L'0'&&shrubFlag[0]!=L'1'))throw std::runtime_error("Invalid shrub diagnostic flag");shrubsEnabled=shrubFlag[0]!=L'0';}
             // 同執行檔單變量比較；正式遊玩不允許此環境開關關閉裝飾層。
             wchar_t litterFlag[3]{};
             const auto litterCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_TRAIL_LITTER",litterFlag,3);
@@ -625,6 +645,7 @@ public:
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else if(name==L"boulder-profile")captureBoulderOverview=true;
                 else if(name==L"trail-profile")captureTrailOverview=true;
+                else if(name==L"shrub-profile")captureShrubOverview=true;
                 else if(name==L"grass-profile")captureGrassOverview=true;
                 else if(name==L"supply-profile"||name==L"supply-collected") {
                     captureSupplyOverview=true;
@@ -823,7 +844,7 @@ public:
                 if(captureAudioProbe)for(unsigned index=0;index<3;++index)session.Collect(index);
             }
             // Readback 尚未回收時保留送出影格的鏡頭，收據不得描述後續更新的位置。
-            if(!capturePending&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Capture camera transition rejected");
+            if(!captureFrameCamera&&!capturePending&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Capture camera transition rejected");
             if(captureAudioProbe)TickAudio(e,1.f/60.f);
             const auto stats=e.GetRendererStats();
             // 排除啟動前六十幀；僅採用已完成且序號不重複的 GPU timestamp 收據。
@@ -990,13 +1011,15 @@ public:
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
                 out<<"trail_litter_enabled="<<trailLitterEnabled
+                    <<"\nshrubs_enabled="<<shrubsEnabled<<"\nshrubs_plants="<<shrubCanopy.plants.size()
+                    <<"\nshrubs_fingerprint="<<shrubCanopy.fingerprint<<"\nshrubs_submitted="<<submittedShrubs
                     <<"\ntrail_litter_patches="<<trailLitter.patches.size()
                     <<"\ntrail_litter_branches="<<trailLitter.branchCount
                     <<"\ntrail_litter_stones="<<trailLitter.stoneCount
                     <<"\ntrail_litter_fingerprint="<<trailLitter.fingerprint
                     <<"\nsubmitted_trail_litter="<<submittedTrailLitter
                     <<"\ntrail_litter_triangles="<<(trailLitter.branches.indices.size()+trailLitter.stones.indices.size())/3<<'\n';
-                out<<"camera_source="<<((captureTrailOverview||diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((captureShrubOverview||captureTrailOverview||diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -1008,7 +1031,7 @@ public:
                     <<"\ncamera_subject_visible="<<lastPlayerFraming.subjectVisible
                     <<"\ncamera_yaw_adjustment="<<lastPlayerFraming.yawAdjustment
                     <<"\ncamera_candidates_tested="<<lastPlayerFraming.candidatesTested<<'\n';
-                out<<"camera_motion_source=fixed_update\ncamera_motion_status="<<int(lastCameraMotion.status)
+                out<<"camera_motion_source="<<(captureFrameCamera?"diagnostic_render_step":"fixed_update")<<"\ncamera_motion_status="<<int(lastCameraMotion.status)
                     <<"\ncamera_motion_accepted="<<lastCameraMotion.accepted
                     <<"\ncamera_motion_subject_visible="<<lastCameraMotion.subjectVisible
                     <<"\ncamera_fixed_ticks="<<cameraFixedTicks
@@ -1190,9 +1213,22 @@ public:
         TickAudio(e,dt);
     }
     void OnRender(Engine& e,float) override {
+        if(captureFrameCamera){
+            if(capture.empty()||captureWalk||captureSequenceFrames||captureAudioProbe||captureWildlife||captureFocusProbe)
+                throw std::runtime_error("Fixed-frame camera is only supported for static comparison");
+            // 僅外部靜態A/B工具每render步進一次，排除OnUpdate排程次數差異；普通遊玩不走此路徑。
+            if(!capturePending&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Diagnostic render-step camera rejected");
+        }
         scene.Clear();
         scene.Mesh(terrainMesh,{},groundMaterial);
         scene.Mesh(landscapeMesh,{},groundMaterial);
+        submittedShrubs=0;
+        if(shrubsEnabled)for(std::size_t index=0;index<shrubCanopy.plants.size();++index){
+            const auto& plant=shrubCanopy.plants[index];
+            for(unsigned slot=0;slot<2;++slot){const auto material=slot?broadleafSurface[1]:barkMaterial;
+                if(!scene.Mesh(shrubMeshes[plant.variant][slot],plant.pose,material,{},{{0x4d57534852554253ull,index*2+slot+1},1}))throw std::runtime_error("Shrub submission failed");}
+            ++submittedShrubs;
+        }
         // 背景林使用既有 CC0 冷杉最低網格細節；不加入任務區的角色碰撞體。
         for(const auto& tree:landscapeTrees)for(unsigned slot=0;slot<4;++slot)
             scene.Mesh(landscapeFirMeshes[slot],tree,firMaterials[slot]);
@@ -1422,6 +1458,10 @@ public:
             camera.target=p+Vec3{0,.04f,0};camera.position=p+Vec3{.9f,.6f,-1.2f};
             lastRenderedCamera=camera;
         }
+        if(captureShrubOverview&&!capture.empty()){
+            const auto p=shrubCanopy.plants.front().pose.position;
+            camera.target=p+Vec3{0,.65f,0};camera.position=camera.target+Vec3{1.35f,.5f,-1.9f};lastRenderedCamera=camera;
+        }
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
         draw.SetWaterSurface(Mistwatch::RiverSurface());
@@ -1569,6 +1609,7 @@ public:
     void OnStop(Engine& e) override {
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
         unsigned trailDestroyed{};
+        unsigned shrubDestroyed{};for(auto& pair:shrubMeshes)for(auto& mesh:pair){if(mesh){e.DestroyMesh3D(mesh.handle);++shrubDestroyed;}mesh={};}
         for(auto& mesh:trailLitterMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++trailDestroyed;}mesh={};}
         unsigned suppliesDestroyed{};
         if(!rangerHutMesh)throw std::runtime_error("Ranger hut cleanup incomplete");
@@ -1629,6 +1670,8 @@ public:
         }
         // 新碎物檢查與證據寫入在正常釋放完成後，不增加其餘資源的提前退場點。
         if(trailDestroyed!=2)throw std::runtime_error("Trail litter cleanup incomplete");
+        if(shrubDestroyed!=8)throw std::runtime_error("Shrub cleanup incomplete");
+        if(!capture.empty()){auto path=capture;path+=".shrub-cleanup.txt";std::ofstream out(path);out<<"mesh_destroy_calls=8\ncleanup=success\n";out.close();if(!out)throw std::runtime_error("Shrub cleanup receipt failed");}
         if(!capture.empty()){
             auto path=capture;path+=".trail-cleanup.txt";
             std::ofstream out(path);out<<"mesh_destroy_calls=2\ncleanup=success\n";
