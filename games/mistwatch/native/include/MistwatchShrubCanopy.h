@@ -8,6 +8,7 @@ namespace Mistwatch {
 struct ShrubMesh {
     Aevrynd::Mesh3D stems,leaves;
     float radius{},height{};
+    float minimumY{},maximumY{};
     unsigned leafCount{},stemCount{};
     struct Attachment {unsigned vertex{};Aevrynd::Vec3 centre;float branchRadius{};};
     std::vector<Attachment> attachments;
@@ -107,6 +108,10 @@ inline ShrubMesh Build(const std::vector<Mesh3D>& cards,unsigned variant) {
     for(const auto* mesh:{&result.stems,&result.leaves})for(const auto& v:mesh->vertices){
         result.radius=(std::max)(result.radius,std::hypot(v.x,v.z));result.height=(std::max)(result.height,v.y);
     }
+    CanopyVolume::PlantLocalVolume volume;
+    if(!CanopyVolume::MeasureLocalVolume(std::span<const Vertex3D>(result.stems.vertices),
+        std::span<const Vertex3D>(result.leaves.vertices),volume))throw std::runtime_error("Invalid complete shrub full volume");
+    result.minimumY=volume.minimumY;result.maximumY=volume.maximumY;
     if(!result.stems.Valid()||!result.leaves.Valid()||result.radius>.75f||result.height>1.2f||result.leafCount!=504)
         throw std::runtime_error("Shrub geometry outside bounded author envelope: radius="+std::to_string(result.radius)+", height="+std::to_string(result.height));
     return result;
@@ -122,8 +127,10 @@ struct ShrubCanopyResult {
 };
 inline ShrubCanopyResult CreateShrubCanopy(const Aevrynd::Mesh3D& leaves,const Aevrynd::HeightField3D& terrain,
     std::span<const Aevrynd::BoxCollider3D> solids,const ForestUnderstory& understory,const ForestCoverResult& grass,
-    const FernColonyResult& colonies,const std::array<FernColonyAsset,4>& fernAssets,unsigned target=64) {
+    const FernColonyResult& colonies,const std::array<FernColonyAsset,4>& fernAssets,unsigned target=64,
+    std::span<const Aevrynd::BoxCollider3D> canopyWood={}) {
     using namespace Aevrynd;
+    if(!CanopyVolume::ValidWoodParts(canopyWood))throw std::invalid_argument("Invalid canopy wood parts for shrubs");
     if(target>128||solids.size()>10000||understory.ferns.size()>10000||grass.plants.size()>10000||colonies.plants.size()>1000)
         throw std::invalid_argument("Invalid shrub bounded population");
     // 完整腳印比較之前先驗證資料；NaN不得讓距離比較靜默變成未占用。
@@ -155,6 +162,11 @@ inline ShrubCanopyResult CreateShrubCanopy(const Aevrynd::Mesh3D& leaves,const A
         const float x=(attempt%2?1.f:-1.f)*(6.f+22.f*random()),z=-8.f+92.f*random();
         const Vec3 root{x,terrain.SampleHeight(x,z),z};const float radius=result.variants[variant].radius*scale;
         if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
+        if(!canopyWood.empty()&&!CanopyVolume::ClearsCanopyWood(
+            CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(result.variants[variant].radius,
+                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}},canopyWood)){
+            ++result.rejectedClearance;continue;
+        }
         if(!ForestCoverFootprint(terrain,root,radius,footprint)){++result.rejectedTerrain;continue;}
         bool occupied=false;
         // 新灌木保留完整半徑和間隙，舊草蕨族群不重生；不能用放寬混合距離填滿配額。

@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchWorld.h"
 #include "MistwatchScannedGrass.h"
+#include "MistwatchCanopyVolumeClearance.h"
 #include <array>
 #include <span>
 #include <limits>
@@ -8,6 +9,7 @@
 namespace Mistwatch {
 struct ForestCoverAsset {
     float radius{},height{};
+    float minimumY{},maximumY{};
 };
 struct ForestCoverPlant {
     Aevrynd::Transform3D transform;
@@ -37,11 +39,16 @@ struct ForestCoverResult {
     bool reachedBudget{};
 };
 inline ForestCoverAsset ForestCoverAssetFromMesh(const Aevrynd::Mesh3D& normalized) {
+    CanopyVolume::PlantLocalVolume volume;
+    if(!normalized.Valid()||!CanopyVolume::MeasureLocalVolume(std::span<const Aevrynd::Vertex3D>(normalized.vertices),volume))
+        throw std::invalid_argument("Invalid normalized grass full volume");
     ForestCoverAsset result;
     for(const auto& vertex:normalized.vertices) {
         result.radius=(std::max)(result.radius,std::hypot(vertex.x,vertex.z));
         result.height=(std::max)(result.height,vertex.y);
     }
+    // 真最低／最高點另存；原radius/height計算與作者語意維持不變。
+    result.minimumY=volume.minimumY;result.maximumY=volume.maximumY;
     return result;
 }
 inline float ForestCoverScale(Aevrynd::Vec3 root) {
@@ -118,7 +125,8 @@ inline bool ForestCoverFootprint(const Aevrynd::HeightField3D& terrain,Aevrynd::
 inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain,
     std::span<const Aevrynd::Vec3> trees,const ForestUnderstory& understory,
     std::span<const Aevrynd::BoxCollider3D> solids,const std::array<ForestCoverAsset,5>& assets,
-    ForestCoverSettings settings={}) {
+    ForestCoverSettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={}) {
+    if(!CanopyVolume::ValidWoodParts(canopyWood))throw std::invalid_argument("Invalid canopy wood parts for grass");
     if(settings.targetPlants>10000||!settings.maximumPatches||settings.maximumPatches>1000||
        !settings.attemptsPerPatch||settings.attemptsPerPatch>10000||
        settings.independentAnchors>2000||!settings.minimumPlantsPerPatch||
@@ -131,6 +139,9 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
     for(const auto& asset:assets)if(!std::isfinite(asset.radius)||asset.radius<GrassMinimumRadius-.0001f||
        asset.radius>4.f||!std::isfinite(asset.height)||asset.height<GrassAssetHeight-.0001f)
         throw std::invalid_argument("Invalid normalized grass asset footprint");
+    if(!canopyWood.empty())for(const auto& asset:assets)
+        if(!CanopyVolume::Detail::ValidLocal(CanopyVolume::ConservativeLocalVolume(asset.radius,asset.minimumY,asset.maximumY)))
+            throw std::invalid_argument("Invalid normalized grass full volume");
     ForestCoverResult result;
     result.plants.reserve(settings.targetPlants);
     std::uint32_t seed=settings.seed;
@@ -182,6 +193,11 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
             const unsigned variant=(std::min)(unsigned(random()*5.f),4u);
             const float radius=assets[variant].radius*scale;
             if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
+            if(!canopyWood.empty()&&!CanopyVolume::ClearsCanopyWood(
+                CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
+                    assets[variant].minimumY,assets[variant].maximumY),scale,{0,root.x+root.z,0}},canopyWood)){
+                ++result.rejectedClearance;continue;
+            }
             if(!ForestCoverFootprint(terrain,root,radius,settings)){++result.rejectedTerrain;continue;}
             bool crowded=false;
             for(const auto& plant:result.plants)

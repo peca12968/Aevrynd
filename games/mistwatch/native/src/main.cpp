@@ -14,6 +14,7 @@
 #include "MistwatchShrubCanopy.h"
 #include "MistwatchFernColonies.h"
 #include "MistwatchCanopyPopulation.h"
+#include "MistwatchCanopyCollision.h"
 #include "MistwatchRootStemTerrain.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
@@ -70,7 +71,7 @@ class MistwatchGame final : public IGame {
     Mistwatch::MiddleLayerResult middleLayer;
     std::vector<BoxCollider3D> middleLayerSolids;
     bool middleLayerEnabled{true};
-    Mistwatch::WorldProfile worldProfile{Mistwatch::WorldProfile::ForestCanopy};
+    Mistwatch::WorldProfile worldProfile{Mistwatch::WorldProfile::ForestWood};
     unsigned submittedMiddleLayer{};
     std::size_t submittedMiddleLayerTriangles{};
     std::size_t broadleafTriangles{};
@@ -88,6 +89,7 @@ class MistwatchGame final : public IGame {
     std::array<Mesh3D,3> canopySource;
     Mistwatch::CanopyPopulation canopyPopulation;
     std::vector<BoxCollider3D> canopySolids;
+    std::uint64_t canopyWoodSurfaceCells{},canopyWoodEnclosedGridCells{},canopyWoodSourceTriangles{};
     std::array<Material3D,3> canopySurfaces;
     Transform3D canopyPose;
     bool canopyEnabled{true},captureCanopyOverview{};
@@ -293,7 +295,13 @@ class MistwatchGame final : public IGame {
             plant.lower=Mistwatch::ExtendRootCollision(plant.lower,plant.rootedTrunk,plant.pose);
             canopyRootMeshes[i]=e.CreateMeshResource3D(plant.rootedTrunk);
             if(!canopyRootMeshes[i])throw std::runtime_error("Rooted canopy upload failed");
-            canopySolids.push_back(plant.lower);
+            if(Mistwatch::WorldProfileHasWoodCollision(worldProfile)){
+                const auto proxy=Mistwatch::CreateCanopyWoodProxy(plant.rootedTrunk,canopySource[2],plant.pose);
+                if(canopySolids.size()+proxy.parts.size()>9000)throw std::runtime_error("Canopy wood collision author budget exceeded");
+                canopySolids.insert(canopySolids.end(),proxy.parts.begin(),proxy.parts.end());
+                canopyWoodSurfaceCells+=proxy.surfaceCells;canopyWoodEnclosedGridCells+=proxy.enclosedGridCells;
+                canopyWoodSourceTriangles+=proxy.sourceTriangles;
+            }else canopySolids.push_back(plant.lower);
         }
         canopyPose=canopyPopulation.plants.front().pose;
     }
@@ -617,9 +625,15 @@ public:
         if(Mistwatch::WorldProfileHasCanopy(worldProfile))InitializeCanopy(e);
         solids=RuntimeWorldSolids(session.bridgeRepaired);
         forestCoverClearanceColliders=solids.size();
+        // 舊世界固體保留2D路線排除；新增木件只篩完整3D植物體積，避免高枝投影抹掉地被。
+        std::vector<BoxCollider3D> vegetationSolids=solids;
+        const bool woodWorld=Mistwatch::WorldProfileHasWoodCollision(worldProfile);
+        if(woodWorld){vegetationSolids=Mistwatch::WorldSolids(session.bridgeRepaired);
+            vegetationSolids.insert(vegetationSolids.end(),middleLayerSolids.begin(),middleLayerSolids.end());}
+        const std::span<const BoxCollider3D> vegetationWood=woodWorld?std::span<const BoxCollider3D>(canopySolids):std::span<const BoxCollider3D>{};
         const auto coverStart=std::chrono::steady_clock::now();
         if(!diagnosticScatterCover&&!diagnosticProceduralGrass){
-            forestCover=Mistwatch::CreateForestCover(terrain,trees,understory,solids,grassFootprints,forestCoverSettings);
+            forestCover=Mistwatch::CreateForestCover(terrain,trees,understory,vegetationSolids,grassFootprints,forestCoverSettings,vegetationWood);
             if(!forestCover.reachedBudget||forestCover.plants.size()!=forestCoverSettings.targetPlants)
                 throw std::runtime_error("Forest cover authored population incomplete");
             groundCover.clear();groundCover.reserve(forestCover.plants.size());
@@ -628,7 +642,7 @@ public:
         forestCoverSetupMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-coverStart).count();
         const auto colonyStart=std::chrono::steady_clock::now();
         if(!forestCover.plants.empty()&&!diagnosticLegacyFern){
-            fernColonies=Mistwatch::CreateFernColonies(terrain,forestCover,understory.ferns,solids,fernFootprints,fernColonySettings);
+            fernColonies=Mistwatch::CreateFernColonies(terrain,forestCover,understory.ferns,vegetationSolids,fernFootprints,fernColonySettings,vegetationWood);
             if(!fernColonies.reachedBudget||fernColonies.plants.size()!=fernColonySettings.targetPlants)
                 throw std::runtime_error("Fern colony authored population incomplete");
         }
@@ -664,7 +678,7 @@ public:
         controller.Reset({});
         auto shrubLeaves=LoadAevryndMeshFile(broadleafRoot/"meshes"/Mistwatch::BroadleafMeshName(1));
         if(!shrubLeaves)throw std::runtime_error("Shrub leaf source missing");
-        shrubCanopy=Mistwatch::CreateShrubCanopy(shrubLeaves.mesh,terrain,solids,understory,forestCover,fernColonies,fernFootprints);
+        shrubCanopy=Mistwatch::CreateShrubCanopy(shrubLeaves.mesh,terrain,vegetationSolids,understory,forestCover,fernColonies,fernFootprints,64,vegetationWood);
         if(!shrubCanopy.reachedBudget)throw std::runtime_error("Shrub authored population incomplete");
         for(unsigned i=0;i<4;++i){
             shrubMeshes[i][0]=e.CreateMeshResource3D(shrubCanopy.variants[i].stems);
@@ -1120,6 +1134,12 @@ public:
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
                 out<<"trail_litter_enabled="<<trailLitterEnabled
                     <<"\nworld_profile="<<Mistwatch::WorldProfileName(worldProfile)
+                    <<"\ncanopy_collision_mode="<<(Mistwatch::WorldProfileHasWoodCollision(worldProfile)?"wood-grid-conservative":"full-render-envelope")
+                    <<"\ncanopy_collision_parts="<<canopySolids.size()
+                    <<"\ncanopy_collision_spacing_m="<<(Mistwatch::WorldProfileHasWoodCollision(worldProfile)?.15:0.)
+                    <<"\ncanopy_wood_source_triangles="<<canopyWoodSourceTriangles
+                    <<"\ncanopy_wood_surface_cells="<<canopyWoodSurfaceCells
+                    <<"\ncanopy_wood_enclosed_grid_cells="<<canopyWoodEnclosedGridCells
                     <<"\ncanopy_preview_fixture=0\ncanopy_world_profile="<<Mistwatch::WorldProfileHasCanopy(worldProfile)<<"\ncanopy_enabled="<<canopyEnabled
                     <<"\ncanopy_plants="<<canopyPopulation.plants.size()<<"\ncanopy_population_fingerprint="<<canopyPopulation.fingerprint
                     <<"\ncanopy_ground_checks="<<canopyPopulation.groundChecks<<"\ncanopy_rooted_meshes="<<canopyPopulation.plants.size()

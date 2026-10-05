@@ -49,6 +49,7 @@ Mistwatch::SaveGame BattleSeed(){
     Require(s.evasion.remaining>0&&s.evasion.cooldown>0&&s.Valid(),"bounded active evasion seed invalid");return s;
 }
 bool KnownCase(std::wstring_view value){
+    for(const auto name:{L"wood-air-0",L"wood-air-1",L"wood-air-2",L"wood-air-3"})if(value==name)return true;
     for(const auto name:{L"enemy-slope-pursuit",L"enemy-slope-windup",L"enemy-slope-recovery"})if(value==name)return true;
     for(const auto name:{L"canopy-overlap",L"hp1-active",L"cooldown-only",L"legacy-v6",L"truncated",L"missing",L"body-overlap",L"middle-overlap",L"dead",L"complete",L"shelter",L"slope",L"terrain-edge",L"outside-save",L"retry-battle",L"retry-after-battle",L"enemy-y-below",L"enemy-y-above"})
         if(value==name)return true;
@@ -67,12 +68,14 @@ class MistwatchSaveInputProbe final : public IGame {
     bool audioOptionsUnchanged{},masterVolumeUnchanged{},audioSettingsUnchanged{};
     bool unsafeF5Rejected{},oldSavePreserved{};
     bool expectedMiddleLayer{};
-    Mistwatch::WorldProfile expectedWorldProfile{Mistwatch::WorldProfile::ForestCanopy};
+    Mistwatch::WorldProfile expectedWorldProfile{Mistwatch::WorldProfile::ForestWood};
     float beforeLoadWater{},initialMasterVolume{};
     std::string initialAudioSettings;
     std::string oldSaveBytes;
     Vec3 terrainEdgeFeet{};
     unsigned terrainEdgeControllerSteps{};
+    bool WoodAirCase()const{return caseName==L"wood-air-0"||caseName==L"wood-air-1"||caseName==L"wood-air-2"||caseName==L"wood-air-3";}
+    unsigned WoodAirIndex()const{Require(WoodAirCase(),"not a wood-air case");return unsigned(caseName.back()-L'0');}
     Mistwatch::SaveGame Snapshot()const{return {game.session,game.encounter,game.evasion};}
     Mistwatch::SavedGameCommitTargets Targets(){return {game.session,game.encounter,game.evasion,game.controller,game.explorer,game.boar,game.orbit,
         game.solids,game.playerCameraMotion,game.lastPlayerFraming,game.lastCameraMotion,game.lastRenderedCamera};}
@@ -83,13 +86,21 @@ class MistwatchSaveInputProbe final : public IGame {
             game.middleLayerSolids.size()==expectedPopulation,"native branch does not match explicitly expected middle-layer mode");
         const auto base=Mistwatch::WorldSolids(game.session.bridgeRepaired);
         const std::size_t expectedCanopy=Mistwatch::WorldProfileHasCanopy(expectedWorldProfile)?4:0;
-        Require(game.canopySolids.size()==expectedCanopy&&game.canopyPopulation.plants.size()==expectedCanopy&&
+        const bool wood=Mistwatch::WorldProfileHasWoodCollision(expectedWorldProfile);
+        const std::size_t expectedCanopyParts=wood?4267:expectedCanopy;
+        Require(game.canopySolids.size()==expectedCanopyParts&&game.canopyPopulation.plants.size()==expectedCanopy&&
             game.canopyPopulation.fingerprint==(expectedCanopy?13093722598475582899ull:0ull),"native branch changed canopy profile population or identity");
+        Require(game.canopyWoodSourceTriangles==(wood?304768u:0u)&&game.canopyWoodSurfaceCells==(wood?17911u:0u)&&
+            game.canopyWoodEnclosedGridCells==(wood?207u:0u),"native branch changed wood proxy source or topology identity");
+        const std::uint64_t expectedColliderFingerprint=wood?230929787695590120ull:
+            expectedWorldProfile==Mistwatch::WorldProfile::ForestCanopy?16643660641049883501ull:
+            expectedMiddleLayer?11739939804215987065ull:5549580620105119187ull;
+        Require(game.forestCoverColliderFingerprint==expectedColliderFingerprint,"native branch changed authored collider identity");
         const auto extras=game.RuntimeExtraSolids();
-        Require(extras.size()==expectedPopulation+expectedCanopy&&game.solids.size()==base.size()+extras.size(),
+        Require(extras.size()==expectedPopulation+expectedCanopyParts&&game.solids.size()==base.size()+extras.size(),
             "native branch lost or added world solids");
         // 原世界維持精確人口；修橋只增加原本的橋面，不以額外樹冠盒掩蓋錯誤。
-        Require(game.solids.size()==221+expectedPopulation+expectedCanopy+(game.session.bridgeRepaired?1u:0u),
+        Require(game.solids.size()==221+expectedPopulation+expectedCanopyParts+(game.session.bridgeRepaired?1u:0u),
             "native branch world collision population changed");
         for(std::size_t i=0;i<game.middleLayerSolids.size();++i) {
             const auto& actual=game.solids[base.size()+i];const auto& expectedSolid=game.middleLayerSolids[i];
@@ -113,6 +124,7 @@ class MistwatchSaveInputProbe final : public IGame {
         h.Model(game.boar.model);h.Pose(game.boar.pose);h.Add(game.boar.yaw);h.Add(game.boar.cycle);h.Add(game.boar.displacement);h.Add(game.boar.brace);
         h.Add(game.boar.footTargets);h.Add(game.boar.planted);h.Add(game.boar.lastFeet);h.Add(game.boar.initialized);
         h.Vector(game.solids);h.Add(game.worldProfile);h.Vector(game.canopySolids);h.Add(game.canopyPopulation.fingerprint);
+        h.Add(game.canopyWoodSourceTriangles);h.Add(game.canopyWoodSurfaceCells);h.Add(game.canopyWoodEnclosedGridCells);
         h.Add(game.orbit);h.Add(game.playerCameraMotion.Initialized());h.Add(game.playerCameraMotion.Camera());
         h.Add(game.lastPlayerFraming);h.Add(game.lastCameraMotion);h.Add(game.lastRenderedCamera);h.Add(game.waterTime);
         h.Add(game.cameraFixedTicks);h.Add(game.captureCameraTicks);h.Add(game.cameraMaximumTickDisplacement);h.Add(game.cameraOcclusionSeconds);
@@ -149,6 +161,16 @@ class MistwatchSaveInputProbe final : public IGame {
         for(const auto sample:Mistwatch::PlayerCameraSamples(game.session.feet,game.controller.Settings().height))
             Require(ProjectToViewport(sample,camera,{1280,720}).visible,"actual F9 subject sample outside viewport");
         Require(Same(game.controller.Velocity(),{}),"loaded checkpoint retained stale motion");
+        if(WoodAirCase()){
+            Require(game.controller.Settings().height==1.8f&&game.controller.Settings().radius==.45f,
+                "wood-air F9 did not restore full standing body");
+            const auto& oldEnvelope=game.canopyPopulation.plants.at(WoodAirIndex()).lower;
+            const auto feet=expected.session.feet;
+            Require(std::abs(feet.x-oldEnvelope.center.x)+.45f<oldEnvelope.extents.x&&
+                std::abs(feet.z-oldEnvelope.center.z)+.45f<oldEnvelope.extents.z,
+                "wood-air checkpoint no longer lies fully inside old crown XZ envelope");
+            Require(feet.y==game.terrain.SampleHeight(feet.x,feet.z),"wood-air checkpoint was lifted above actual terrain");
+        }
         if(caseName==L"shelter")Require(game.controller.Settings().height==1.4f,"loaded shelter checkpoint stands through roof");
         if(caseName==L"dead")Require(!game.session.Alive(),"F9 plus R retried dead saved session");
         if(caseName==L"complete")Require(game.session.beaconLit,"F9 plus R reset completed saved session");
@@ -213,7 +235,7 @@ class MistwatchSaveInputProbe final : public IGame {
             Write(game.save,invalid.Serialize());
         }
         else if(caseName==L"canopy-overlap"){
-            Require(game.canopyPopulation.plants.size()==4,"canopy-overlap requires explicit forest-canopy profile");
+            Require(game.canopyPopulation.plants.size()==4,"canopy-overlap requires explicit canopy world profile");
             auto invalid=expected;const auto p=game.canopyPopulation.plants.front().pose.position;
             invalid.session.feet={p.x,game.terrain.SampleHeight(p.x,p.z),p.z};
             Require(invalid.Valid(),"canopy-overlap fixture must remain format-valid");
@@ -335,6 +357,13 @@ public:
                 seed.session.feet={49.4f,0,0};seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
             }else if(caseName==L"outside-save"){
                 seed={};seed.session.feet={0,0,99.4f};seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);
+            }else if(WoodAirCase()){
+                // 四棵樹的舊冠盒內真地形空氣點；F5/F9 與相機預檢仍走正式流程，不宣稱按鍵走到此處。
+                Require(Mistwatch::WorldProfileHasWoodCollision(expectedWorldProfile),"wood-air requires explicit forest-wood profile");
+                const std::array<Vec3,4> witnesses{{{-18.3179742552f,0,7.2568771204f},{15.7204334376f,0,4.331083912f},
+                    {-19.4306881992f,0,-.3230881732f},{-29.8309511696f,0,80.7272427048f}}};
+                seed.session.feet=witnesses.at(WoodAirIndex());
+                seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
             }
             Require(seed.Valid(),"native case seed invalid");Seed(seed);
             if(caseName==L"terrain-edge")ReachTerrainEdge();
@@ -407,6 +436,10 @@ public:
             <<"\nworld_solids="<<game.solids.size()<<"\nmiddle_solids_preserved=1"
             <<"\ncanopy_solids_preserved=1\ncanopy_population_fingerprint="<<game.canopyPopulation.fingerprint
             <<"\nworld_profile="<<Mistwatch::WorldProfileName(expectedWorldProfile)<<"\ncanopy_solids="<<game.canopySolids.size()
+            <<"\nwood_air_checkpoint="<<WoodAirCase()<<"\nwood_air_tree_index="<<(WoodAirCase()?int(WoodAirIndex()):-1)
+            <<"\nwood_proxy_source_triangles="<<game.canopyWoodSourceTriangles
+            <<"\nwood_proxy_surface_cells="<<game.canopyWoodSurfaceCells
+            <<"\nwood_proxy_enclosed_grid_cells="<<game.canopyWoodEnclosedGridCells
             <<"\nactual_load_branch_confirmed=1"
             <<"\nexpected_middle_layer_mode="<<expectedMiddleLayer<<"\nmode_matches_expected=1"
             <<"\nown_window_only=1\nglobal_input=0\nforeground_activation=0\nmuted=1\nhidden_window=1"
@@ -421,19 +454,21 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
     bool ownsOutput{};
     try{
         int count{};auto argv=CommandLineToArgvW(GetCommandLineW(),&count);Require(argv!=nullptr,"command line parsing failed");
-        if(count!=3&&count!=4){LocalFree(argv);throw std::runtime_error("usage: CASE NEW_OUTPUT_DIRECTORY [--forest-canopy|--legacy-core|--legacy-middle|--middle-layer|--baseline-middle-layer]");}
-        auto profile=Mistwatch::WorldProfile::ForestCanopy;
+        if(count!=3&&count!=4){LocalFree(argv);throw std::runtime_error("usage: CASE NEW_OUTPUT_DIRECTORY [--forest-wood|--forest-canopy|--legacy-core|--legacy-middle|--middle-layer|--baseline-middle-layer]");}
+        auto profile=Mistwatch::WorldProfile::ForestWood;
         if(count==4) {
             const std::wstring_view option=argv[3];
             if(option==L"--legacy-core"||option==L"--baseline-middle-layer")profile=Mistwatch::WorldProfile::LegacyCore;
             else if(option==L"--legacy-middle"||option==L"--middle-layer")profile=Mistwatch::WorldProfile::LegacyMiddle;
-            else if(option!=L"--forest-canopy"){LocalFree(argv);throw std::runtime_error("unknown native audit option");}
+            else if(option==L"--forest-canopy")profile=Mistwatch::WorldProfile::ForestCanopy;
+            else if(option!=L"--forest-wood"){LocalFree(argv);throw std::runtime_error("unknown native audit option");}
         }
         const bool middleLayer=Mistwatch::WorldProfileHasMiddle(profile);
         const std::wstring name=argv[1];output=argv[2];LocalFree(argv);
         Require(KnownCase(name),"unknown native audit case");
         Require(name!=L"middle-overlap"||middleLayer,"middle-overlap requires --middle-layer");
-        Require(name!=L"canopy-overlap"||Mistwatch::WorldProfileHasCanopy(profile),"canopy-overlap requires --forest-canopy");
+        Require(name!=L"canopy-overlap"||Mistwatch::WorldProfileHasCanopy(profile),"canopy-overlap requires a canopy world profile");
+        Require(!name.starts_with(L"wood-air-")||Mistwatch::WorldProfileHasWoodCollision(profile),"wood-air requires --forest-wood");
         Require(output.is_absolute()&&output!=output.root_path(),"audit output must be a dedicated absolute directory");
         Require(!std::filesystem::exists(output),"audit output already exists; refusing existing saves/evidence");
         Require(std::filesystem::create_directory(output),"fresh audit output creation failed");

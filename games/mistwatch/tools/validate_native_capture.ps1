@@ -1,10 +1,10 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][string]$ExecutablePath,
     [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
     [switch]$GpuValidation,
     [switch]$MiddleLayer,
     [switch]$BaselineMiddleLayer,
-    [ValidateSet('legacy-core','legacy-middle','forest-canopy')][string]$WorldProfile='forest-canopy'
+    [ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile='forest-wood'
 )
 $ErrorActionPreference='Stop'
 if($MiddleLayer -and $BaselineMiddleLayer){throw 'Select either production middle layer or explicit old baseline'}
@@ -35,10 +35,10 @@ $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
 $cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile','trail-profile','shrub-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile','trail-profile','shrub-profile')}
-if($WorldProfile -eq 'forest-canopy'){$cases+=@('canopy-profile','canopy-root','canopy-detail')}
+if($WorldProfile -in @('forest-canopy','forest-wood')){$cases+=@('canopy-profile','canopy-root','canopy-detail')}
 try {
     # 正常驗收使用遊戲預設，不以環境變數代替 production 接入；舊版只在明確比較時啟用。
-    if($WorldProfile -ne 'forest-canopy' -or $PSBoundParameters.ContainsKey('WorldProfile')){
+    if($WorldProfile -ne 'forest-wood' -or $PSBoundParameters.ContainsKey('WorldProfile')){
         [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_WORLD_PROFILE',$WorldProfile,'Process')
         [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER',$(if($WorldProfile -eq 'legacy-core'){'0'}else{'1'}),'Process')
     }

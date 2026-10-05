@@ -101,6 +101,10 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchShrubCanopyTest
     MistwatchRootStemTest
     MistwatchWorldProfileTest
+    AevryndMeshCollisionVoxel3DTest
+    AevryndMeshCollisionGridSolid3DTest
+    MistwatchCanopyCollisionTest
+    MistwatchCanopyVolumeClearanceTest
     AevryndTerrainLayerCoverage3DTest
     AevryndWorldPartition3DFakeSourceTest
     AevryndWorldPartitionDeltaGateFakeTest

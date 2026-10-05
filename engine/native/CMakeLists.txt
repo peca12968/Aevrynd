@@ -1347,6 +1347,15 @@ target_link_libraries(AevryndTerrainObjectIdD3D12Test PRIVATE AevryndEngine)
 add_test(NAME AevryndTerrainObjectIdD3D12Test COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndTerrainObjectIdD3D12Test>'")
 
 # 遠端 release gate 僅包含可在無 GPU、無桌面互動下穩定執行的 CPU 測試。
+add_executable(AevryndMeshCollisionVoxel3DTest tests/MeshCollisionVoxel3DTest.cpp)
+add_executable(AevryndMeshCollisionGridSolid3DTest tests/MeshCollisionGridSolid3DTest.cpp)
+foreach(target AevryndMeshCollisionVoxel3DTest AevryndMeshCollisionGridSolid3DTest)
+  target_include_directories(${target} PRIVATE include)
+  target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(${target} PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+  add_test(NAME ${target} COMMAND ${target})
+  set_tests_properties(${target} PROPERTIES LABELS "release-gates" TIMEOUT 60)
+endforeach()
 set_tests_properties(
   AevryndHlod3DTest
   AevryndHlodSceneECS3DTest

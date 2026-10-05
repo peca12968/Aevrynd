@@ -59,7 +59,8 @@ inline bool FernColonyClearsExisting(Aevrynd::Vec3 root,float radius,
 inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain,
     const ForestCoverResult& grass,std::span<const Aevrynd::Transform3D> existing,
     std::span<const Aevrynd::BoxCollider3D> solids,const std::array<FernColonyAsset,4>& assets,
-    FernColonySettings settings={}) {
+    FernColonySettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={}) {
+    if(!CanopyVolume::ValidWoodParts(canopyWood))throw std::invalid_argument("Invalid canopy wood parts for fern colonies");
     // 有限工作量與輸入範圍是作者 API 契約，不是視覺品質或引擎通用安全門檻。
     if(grass.patches.size()>1000||grass.plants.size()>10000||existing.size()>10000||solids.size()>10000||
        settings.targetPlants>1000||!settings.maximumColonies||settings.maximumColonies>1000||
@@ -69,6 +70,9 @@ inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain
     for(const auto& asset:assets)if(!std::isfinite(asset.radius)||asset.radius<=0||asset.radius>4||
         !std::isfinite(asset.height)||asset.height<=0||asset.height>4||!std::isfinite(asset.minimumY)||asset.minimumY< -4||asset.minimumY>asset.height||
         !asset.vertices||!asset.triangles)throw std::invalid_argument("Invalid measured fern asset");
+    if(!canopyWood.empty())for(const auto& asset:assets)
+        if(!CanopyVolume::Detail::ValidLocal(CanopyVolume::ConservativeLocalVolume(asset.radius,asset.minimumY,asset.height)))
+            throw std::invalid_argument("Invalid measured fern full volume");
     for(std::size_t i=0;i<existing.size();++i) {
         const auto& fern=existing[i];
         if(!Session::Finite(fern.position)||!Session::Finite(fern.rotation)||!Session::Finite(fern.scale)||
@@ -111,6 +115,11 @@ inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain
             const float scale=.6f+.18f*random(),radius=assets[variant].radius*scale;
             const float yaw=random()*6.2831853f;
             if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
+            if(!canopyWood.empty()&&!CanopyVolume::ClearsCanopyWood(
+                CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
+                    assets[variant].minimumY,assets[variant].height),scale,{0,yaw,0}},canopyWood)){
+                ++result.rejectedClearance;continue;
+            }
             if(!ForestCoverFootprint(terrain,root,radius,footprintSettings)){++result.rejectedTerrain;continue;}
             if(!FernColonyClearsExisting(root,radius,existing,assets,settings.rootSeparationRatio)){++result.rejectedExistingFern;continue;}
             bool overlaps=false;

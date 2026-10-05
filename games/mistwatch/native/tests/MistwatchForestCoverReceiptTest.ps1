@@ -338,3 +338,136 @@ foreach($profile in @('legacy-core','legacy-middle','forest-canopy')){
     }
 }
 'WORLD_PROFILE_LIFECYCLE_RECEIPT_PASS; POSITIVE='+$lifecyclePositive+'; REJECTED='+$lifecycleRejected
+
+# V108 真資產 CPU 證據確認第四個世界；上方三種舊世界及反例完全保留。
+$wood=$middle.Clone()
+$woodFields=@{
+    world_profile='forest-wood';forest_cover_patches='168';forest_cover_fingerprint='6471420486779392182'
+    forest_cover_clearance_colliders='4512';forest_cover_clearance_collider_fingerprint='230929787695590120'
+    forest_cover_variants='929,749,614,528,780';fern_colonies='78'
+    fern_colony_fingerprint='9573416696332517026';fern_colony_variants='11,22,165,102'
+}
+$woodCollision=@{
+    canopy_collision_mode='wood-grid-conservative';canopy_collision_parts='4267';canopy_collision_spacing_m='0.15'
+    canopy_wood_source_triangles='304768';canopy_wood_surface_cells='17911';canopy_wood_enclosed_grid_cells='207'
+}
+foreach($field in $woodFields.Keys){$wood[$field]=$woodFields[$field]}
+foreach($field in $woodCollision.Keys){$wood[$field]=$woodCollision[$field]}
+Assert-MistwatchForestCoverReceipt $wood -WorldProfile forest-wood
+$woodRejected=0;$woodPositive=1
+function Assert-WoodRejected([hashtable]$Receipt,[string]$Case){
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $Receipt -WorldProfile forest-wood}catch{$failed=$true}
+    if(-not $failed){throw ('Invalid wood cover accepted: '+$Case)}
+    ++$script:woodRejected
+}
+foreach($field in @($wood.Keys)){
+    $bad=$wood.Clone();$bad.Remove($field);Assert-WoodRejected $bad ('missing '+$field)
+}
+foreach($field in @($woodFields.Keys)+@($woodCollision.Keys)){
+    $bad=$wood.Clone();$bad[$field]='invalid';Assert-WoodRejected $bad ('invalid '+$field)
+}
+foreach($old in @($valid,$middle,$canopy)){
+    Assert-WoodRejected $old ('old world '+$old.world_profile)
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $wood -WorldProfile $old.world_profile}catch{$failed=$true}
+    if(-not $failed){throw 'Wood authored world accepted as an old world'}
+    ++$woodRejected
+    foreach($field in $woodCollision.Keys){
+        $bad=$old.Clone();$bad[$field]=$woodCollision[$field]
+        $failed=$false
+        try{Assert-MistwatchForestCoverReceipt $bad -WorldProfile $old.world_profile}catch{$failed=$true}
+        if(-not $failed){throw ('Old world accepted wood collision contamination: '+$field)}
+        ++$woodRejected
+    }
+}
+foreach($field in $woodCollision.Keys){
+    foreach($value in @('0','NaN','Infinity','-1','00','04267','4267.0','0.150')){
+        $bad=$wood.Clone();$bad[$field]=$value;Assert-WoodRejected $bad ('noncanonical '+$field+'='+$value)
+    }
+}
+foreach($change in @(
+    @{field='forest_cover_fingerprint';value='4989138190905410642'},
+    @{field='forest_cover_clearance_colliders';value='249'},
+    @{field='forest_cover_clearance_collider_fingerprint';value='16643660641049883501'},
+    @{field='forest_cover_variants';value='941,762,617,522,758'},
+    @{field='fern_colonies';value='85'},@{field='fern_colony_fingerprint';value='5579852658837856591'},
+    @{field='fern_colony_variants';value='14,29,168,89'},
+    @{field='submitted_grass_variants';value='930,1,1,1,1'},
+    @{field='submitted_colony_variants';value='12,1,1,1'},
+    @{field='submitted_original_fern_variants';value='0,0,0,0'},
+    @{field='canopy_collision_parts';value='4266'},@{field='canopy_collision_spacing_m';value='0.2'},
+    @{field='canopy_wood_source_triangles';value='304767'},@{field='canopy_wood_surface_cells';value='17910'},
+    @{field='canopy_wood_enclosed_grid_cells';value='206'}
+)){$bad=$wood.Clone();$bad[$change.field]=$change.value;Assert-WoodRejected $bad ('identity '+$change.field)}
+$failed=$false
+try{Assert-MistwatchForestCoverReceipt $wood -WorldProfile forest-wood -MiddleLayer}catch{$failed=$true}
+if(-not $failed){throw 'Conflicting wood and middle selector accepted'}
+++ $woodRejected
+foreach($scene in @('initial','river-overlook')){
+    $fixed=$wood.Clone();$count=if($scene -eq 'initial'){192}else{226}
+    $triangles=if($scene -eq 'initial'){298968}else{350104}
+    $fixed.submitted_original_ferns=[string]$count;$fixed.submitted_original_fern_triangles=[string]$triangles
+    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'47,49,49,47'}else{'51,61,51,63'}
+    $fixed.submitted_ferns=[string]($count+[long]$fixed.submitted_colony_ferns)
+    $fixed.submitted_fern_triangles=[string]($triangles+[long]$fixed.submitted_colony_fern_triangles)
+    Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-wood -Scene $scene
+    ++$woodPositive
+    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'51,45,66,30'}else{'55,57,68,46'}
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-wood -Scene $scene}catch{
+        $failed=$_.Exception.Message -eq 'Original fern fixed-scene variant identity changed'
+    }
+    if(-not $failed){throw ('Wood fixed-scene variant alias accepted: '+$scene)}
+    ++$woodRejected
+}
+'WOOD_FOREST_COVER_RECEIPT_PASS; POSITIVE='+$woodPositive+'; REJECTED='+$woodRejected
+
+$woodLifecycle=@{
+    world_profile='forest-wood';canopy_preview_fixture='0';canopy_world_profile='1';canopy_enabled='1'
+    canopy_plants='4';canopy_rooted_meshes='4';canopy_population_fingerprint='13093722598475582899'
+    canopy_ground_checks='12121992';canopy_primitive_triangles='606207';canopy_materials='3';canopy_submitted_slots='12'
+    forest_cover_clearance_colliders='4512';shrubs_enabled='1';shrubs_plants='64';shrubs_submitted='64'
+    shrubs_fingerprint='6244520233766686875'
+}
+foreach($field in $woodCollision.Keys){$woodLifecycle[$field]=$woodCollision[$field]}
+$woodCleanup=@{cleanup='success';materials_remaining='0';mesh_destroy_calls='7'}
+$woodLifecyclePositive=1;$beforeRejected=$lifecycleRejected
+Assert-MistwatchWorldProfileReceipt $woodLifecycle $woodCleanup forest-wood
+foreach($field in @($woodLifecycle.Keys)){
+    $bad=$woodLifecycle.Clone();$bad.Remove($field);Assert-LifecycleRejected $bad $woodCleanup forest-wood ('missing '+$field)
+    $bad=$woodLifecycle.Clone();$bad[$field]='invalid';Assert-LifecycleRejected $bad $woodCleanup forest-wood ('invalid '+$field)
+}
+foreach($field in @($woodCleanup.Keys)){
+    $bad=$woodCleanup.Clone();$bad.Remove($field);Assert-LifecycleRejected $woodLifecycle $bad forest-wood ('missing cleanup '+$field)
+    $bad=$woodCleanup.Clone();$bad[$field]='invalid';Assert-LifecycleRejected $woodLifecycle $bad forest-wood ('invalid cleanup '+$field)
+}
+foreach($oldProfile in @('legacy-core','legacy-middle','forest-canopy')){
+    Assert-LifecycleRejected $woodLifecycle $woodCleanup $oldProfile 'wood profile mismatch'
+}
+foreach($field in @('canopy_enabled','canopy_submitted_slots','canopy_materials','canopy_rooted_meshes')){
+    $bad=$woodLifecycle.Clone();$bad[$field]='0';Assert-LifecycleRejected $bad $woodCleanup forest-wood ('draw/resource omitted '+$field)
+}
+foreach($scene in @('canopy-profile','canopy-root','canopy-detail')){
+    $camera=$woodLifecycle.Clone();$camera.camera_source='diagnostic';$camera.camera_target='0,0,0'
+    $camera.camera_position=if($scene -eq 'canopy-root'){'1.41421356,0.05,-1.41421356'}elseif($scene -eq 'canopy-detail'){'4.00010156,0.8,-4.00010156'}else{'0,0.5,-8.5'}
+    Assert-MistwatchWorldProfileReceipt $camera $woodCleanup forest-wood -Scene $scene
+    ++$woodLifecyclePositive
+    foreach($change in @(
+        @{field='camera_source';value='player'},@{field='camera_position';value='NaN,0.5,-8.5'},
+        @{field='camera_position';value='Infinity,0.5,-8.5'},@{field='camera_target';value='0,0'},
+        @{field='camera_position';value='0,0,0'}
+    )){$bad=$camera.Clone();$bad[$change.field]=$change.value;Assert-LifecycleRejected $bad $woodCleanup forest-wood ('camera '+$change.field) $scene}
+}
+'WOOD_PROFILE_LIFECYCLE_RECEIPT_PASS; POSITIVE='+$woodLifecyclePositive+'; REJECTED='+($lifecycleRejected-$beforeRejected)
+
+# 只解析原生工具，不啟動 GPU；確認正常預設與明確舊比較的參數契約。
+$tokens=$null;$parseErrors=$null
+$validator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '../../tools/validate_native_capture.ps1'),[ref]$tokens,[ref]$parseErrors)
+if($parseErrors.Count){throw 'Native validation tool failed parser contract'}
+$parameter=@($validator.ParamBlock.Parameters | Where-Object {$_.Name.VariablePath.UserPath -eq 'WorldProfile'})
+if($parameter.Count -ne 1 -or $parameter[0].DefaultValue.Value -cne 'forest-wood'){throw 'Native validation default no longer matches production world'}
+$profileAttribute=@($parameter[0].Attributes | Where-Object {$_.TypeName.Name -eq 'ValidateSet'})
+$profiles=@($profileAttribute[0].PositionalArguments | ForEach-Object {$_.Value})
+if(($profiles -join ',') -cne 'legacy-core,legacy-middle,forest-canopy,forest-wood'){throw 'Native validation lost explicit old-world comparison'}
+'NATIVE_VALIDATOR_PARAMETER_CONTRACT_PASS; DEFAULT=forest-wood; PROFILES=4'
