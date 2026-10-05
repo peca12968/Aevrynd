@@ -94,6 +94,9 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     AevryndPhysicsWorld3DTest
     AevryndNavigation3DTest
     AevryndHeightField3DTest
+    AevryndHeightFieldLineOfSight3DTest
+    MistwatchEncounterMotionTest
+    MistwatchEncounterSightTest
     AevryndTerrainLayerCoverage3DTest
     AevryndWorldPartition3DFakeSourceTest
     AevryndWorldPartitionDeltaGateFakeTest
