@@ -99,6 +99,8 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchEncounterSightTest
     MistwatchTrailLitterTest
     MistwatchShrubCanopyTest
+    MistwatchRootStemTest
+    MistwatchWorldProfileTest
     AevryndTerrainLayerCoverage3DTest
     AevryndWorldPartition3DFakeSourceTest
     AevryndWorldPartitionDeltaGateFakeTest

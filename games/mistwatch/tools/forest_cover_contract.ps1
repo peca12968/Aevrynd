@@ -1,8 +1,13 @@
 ﻿function Assert-MistwatchForestCoverReceipt {
-    param([Parameter(Mandatory=$true)][hashtable]$Receipt,[string]$Scene='',[switch]$MiddleLayer)
+    param([Parameter(Mandatory=$true)][hashtable]$Receipt,[string]$Scene='',[switch]$MiddleLayer,
+        [ValidateSet('legacy-core','legacy-middle','forest-canopy')][string]$WorldProfile='legacy-core')
+    if($MiddleLayer){
+        if($PSBoundParameters.ContainsKey('WorldProfile') -and $WorldProfile -ne 'legacy-middle'){throw 'Middle layer conflicts with world profile'}
+        $WorldProfile='legacy-middle'
+    }
     # 凹灣地形實機重封存作者配置；獨立於畫質評分，不接受舊 scatter、缺欄位或少株 fallback。
     $expected=@{
-        ground_cover_instances='3600';forest_cover_mode='fixed_cluster_patches'
+        world_profile=$WorldProfile;ground_cover_instances='3600';forest_cover_mode='fixed_cluster_patches'
         forest_cover_seed='1129272901';forest_cover_authored_population='3600'
         forest_cover_maximum_patches='400';forest_cover_patch_minimum_plants='20'
         forest_cover_patch_maximum_plants='32';forest_cover_independent_anchors='900'
@@ -16,7 +21,7 @@
         fern_colony_original_fingerprint='3085592665785500013'
         fern_colony_variants='11,23,183,83';understory_ferns='420';understory_saplings='42'
     }
-    if($MiddleLayer) {
+    if($WorldProfile -ne 'legacy-core') {
         # 新幹使低植被重新避讓，另驗精確新作者配置；不把舊FNV投影成假通過。
         $middleExpected=@{
             forest_cover_patches='154';forest_cover_fingerprint='8857932304976401347'
@@ -29,6 +34,16 @@
             submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
         }
         foreach($field in $middleExpected.Keys){$expected[$field]=$middleExpected[$field]}
+        if($WorldProfile -eq 'forest-canopy'){
+            # V85 三世界封存與 V75 獨立 CPU 作者證據；不從本輪收據更新黃金值。
+            $canopyExpected=@{
+                forest_cover_patches='168';forest_cover_fingerprint='4989138190905410642'
+                forest_cover_clearance_colliders='249';forest_cover_clearance_collider_fingerprint='16643660641049883501'
+                forest_cover_variants='941,762,617,522,758';fern_colonies='85'
+                fern_colony_fingerprint='5579852658837856591';fern_colony_variants='14,29,168,89'
+            }
+            foreach($field in $canopyExpected.Keys){$expected[$field]=$canopyExpected[$field]}
+        }
     } else {
         # 舊世界對照必須明確沒有中層樹；舊草蕨指紋不能掩蓋額外繪製。
         $baselineMiddle=@{
@@ -38,7 +53,7 @@
         }
         foreach($field in $baselineMiddle.Keys){$expected[$field]=$baselineMiddle[$field]}
     }
-    foreach($field in $expected.Keys) {
+    foreach($field in ($expected.Keys | Sort-Object)) {
         if(-not $Receipt.ContainsKey($field)-or [string]$Receipt[$field] -cne $expected[$field]) {
             throw ('Forest cover author contract mismatch: '+$field)
         }
@@ -81,6 +96,56 @@
     $originalVariants=if($Scene -eq 'initial'){'47,49,49,47'}elseif($Scene -eq 'river-overlook'){'51,61,51,63'}else{$null}
     if($null -ne $originalVariants -and [string]$Receipt.submitted_original_fern_variants -cne $originalVariants){
         throw 'Original fern fixed-scene variant identity changed'
+    }
+}
+
+function Assert-MistwatchWorldProfileReceipt {
+    param([Parameter(Mandatory=$true)][hashtable]$Receipt,
+        [Parameter(Mandatory=$true)][hashtable]$Cleanup,
+        [Parameter(Mandatory=$true)][ValidateSet('legacy-core','legacy-middle','forest-canopy')][string]$WorldProfile,
+        [string]$Scene='')
+    # 舊世界必須未載入新樹；關閉繪製卻留下資源或碰撞不能當作舊世界。
+    $expected=@{
+        world_profile=$WorldProfile;canopy_preview_fixture='0';canopy_world_profile='0';canopy_enabled='0'
+        canopy_plants='0';canopy_population_fingerprint='0';canopy_ground_checks='0'
+        canopy_rooted_meshes='0';canopy_primitive_triangles='0';canopy_materials='0';canopy_submitted_slots='0'
+        forest_cover_clearance_colliders=$(if($WorldProfile -eq 'legacy-core'){'221'}else{'245'})
+        shrubs_enabled='1';shrubs_plants='64';shrubs_submitted='64'
+        shrubs_fingerprint=$(if($WorldProfile -eq 'legacy-core'){'4812794541849057446'}else{'18032575485754629455'})
+    }
+    $meshDestroyCalls='0'
+    if($WorldProfile -eq 'forest-canopy'){
+        $canopyExpected=@{
+            canopy_world_profile='1';canopy_enabled='1';canopy_plants='4'
+            canopy_population_fingerprint='13093722598475582899';canopy_ground_checks='12121992'
+            canopy_rooted_meshes='4';canopy_primitive_triangles='606207';canopy_materials='3'
+            canopy_submitted_slots='12';forest_cover_clearance_colliders='249';shrubs_fingerprint='5849093981174083644'
+        }
+        foreach($field in $canopyExpected.Keys){$expected[$field]=$canopyExpected[$field]}
+        $meshDestroyCalls='7'
+    }
+    foreach($field in ($expected.Keys | Sort-Object)){
+        if(-not $Receipt.ContainsKey($field) -or [string]$Receipt[$field] -cne $expected[$field]){
+            throw ('World profile lifecycle mismatch: '+$field)
+        }
+    }
+    foreach($field in @('cleanup','materials_remaining','mesh_destroy_calls')){
+        $value=if($field -eq 'cleanup'){'success'}elseif($field -eq 'materials_remaining'){'0'}else{$meshDestroyCalls}
+        if(-not $Cleanup.ContainsKey($field) -or [string]$Cleanup[$field] -cne $value){throw ('Canopy cleanup mismatch: '+$field)}
+    }
+    if($Scene -in @('canopy-profile','canopy-root','canopy-detail')){
+        if($WorldProfile -ne 'forest-canopy' -or $Receipt.camera_source -cne 'diagnostic'){throw 'Canopy profile camera missing'}
+        $position=@([string]$Receipt.camera_position -split ',')
+        $target=@([string]$Receipt.camera_target -split ',')
+        if($position.Count -ne 3 -or $target.Count -ne 3){throw 'Canopy camera receipt invalid'}
+        $offset=if($Scene -eq 'canopy-root'){@(([Math]::Sqrt(2)),.05,(-[Math]::Sqrt(2)))}elseif($Scene -eq 'canopy-detail'){@((5.657/[Math]::Sqrt(2)),.8,(-5.657/[Math]::Sqrt(2)))}else{@(0,.5,-8.5)}
+        for($axis=0;$axis -lt 3;++$axis){
+            [double]$p=0;[double]$t=0
+            if(-not [double]::TryParse($position[$axis],[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$p) -or
+               -not [double]::TryParse($target[$axis],[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$t) -or
+               [double]::IsNaN($p) -or [double]::IsInfinity($p) -or [double]::IsNaN($t) -or [double]::IsInfinity($t) -or
+               [Math]::Abs($p-$t-$offset[$axis]) -gt .001){throw 'Canopy profile camera offset mismatch'}
+        }
     }
 }
 

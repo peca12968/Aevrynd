@@ -50,7 +50,7 @@ Mistwatch::SaveGame BattleSeed(){
 }
 bool KnownCase(std::wstring_view value){
     for(const auto name:{L"enemy-slope-pursuit",L"enemy-slope-windup",L"enemy-slope-recovery"})if(value==name)return true;
-    for(const auto name:{L"hp1-active",L"cooldown-only",L"legacy-v6",L"truncated",L"missing",L"body-overlap",L"middle-overlap",L"dead",L"complete",L"shelter",L"slope",L"terrain-edge",L"outside-save",L"retry-battle",L"retry-after-battle",L"enemy-y-below",L"enemy-y-above"})
+    for(const auto name:{L"canopy-overlap",L"hp1-active",L"cooldown-only",L"legacy-v6",L"truncated",L"missing",L"body-overlap",L"middle-overlap",L"dead",L"complete",L"shelter",L"slope",L"terrain-edge",L"outside-save",L"retry-battle",L"retry-after-battle",L"enemy-y-below",L"enemy-y-above"})
         if(value==name)return true;
     return false;
 }
@@ -67,6 +67,7 @@ class MistwatchSaveInputProbe final : public IGame {
     bool audioOptionsUnchanged{},masterVolumeUnchanged{},audioSettingsUnchanged{};
     bool unsafeF5Rejected{},oldSavePreserved{};
     bool expectedMiddleLayer{};
+    Mistwatch::WorldProfile expectedWorldProfile{Mistwatch::WorldProfile::ForestCanopy};
     float beforeLoadWater{},initialMasterVolume{};
     std::string initialAudioSettings;
     std::string oldSaveBytes;
@@ -76,18 +77,31 @@ class MistwatchSaveInputProbe final : public IGame {
     Mistwatch::SavedGameCommitTargets Targets(){return {game.session,game.encounter,game.evasion,game.controller,game.explorer,game.boar,game.orbit,
         game.solids,game.playerCameraMotion,game.lastPlayerFraming,game.lastCameraMotion,game.lastRenderedCamera};}
     void ValidateMiddleSolids()const {
+        Require(game.worldProfile==expectedWorldProfile,"native branch does not match explicitly expected world profile");
         const std::size_t expectedPopulation=expectedMiddleLayer?24:0;
         Require(game.middleLayerEnabled==expectedMiddleLayer&&game.middleLayer.trees.size()==expectedPopulation&&
             game.middleLayerSolids.size()==expectedPopulation,"native branch does not match explicitly expected middle-layer mode");
         const auto base=Mistwatch::WorldSolids(game.session.bridgeRepaired);
-        Require(game.solids.size()==base.size()+game.middleLayerSolids.size(),"native branch lost middle-layer solids");
+        const std::size_t expectedCanopy=Mistwatch::WorldProfileHasCanopy(expectedWorldProfile)?4:0;
+        Require(game.canopySolids.size()==expectedCanopy&&game.canopyPopulation.plants.size()==expectedCanopy&&
+            game.canopyPopulation.fingerprint==(expectedCanopy?13093722598475582899ull:0ull),"native branch changed canopy profile population or identity");
+        const auto extras=game.RuntimeExtraSolids();
+        Require(extras.size()==expectedPopulation+expectedCanopy&&game.solids.size()==base.size()+extras.size(),
+            "native branch lost or added world solids");
+        // 原世界維持精確人口；修橋只增加原本的橋面，不以額外樹冠盒掩蓋錯誤。
+        Require(game.solids.size()==221+expectedPopulation+expectedCanopy+(game.session.bridgeRepaired?1u:0u),
+            "native branch world collision population changed");
         for(std::size_t i=0;i<game.middleLayerSolids.size();++i) {
             const auto& actual=game.solids[base.size()+i];const auto& expectedSolid=game.middleLayerSolids[i];
             Require(Same(actual.center,expectedSolid.center)&&Same(actual.extents,expectedSolid.extents),"native branch altered middle-layer solid");
         }
+        for(std::size_t i=0;i<game.canopySolids.size();++i) {
+            const auto& actual=game.solids[base.size()+expectedPopulation+i];const auto& expectedSolid=game.canopySolids[i];
+            Require(Same(actual.center,expectedSolid.center)&&Same(actual.extents,expectedSolid.extents),"native branch altered canopy solid");
+        }
     }
     void Seed(const Mistwatch::SaveGame& value){
-        const auto result=Mistwatch::PrepareSavedGame(value,{game.controller,game.explorer,game.boar,game.orbit},game.terrain,{},game.middleLayerSolids);
+        const auto result=Mistwatch::PrepareSavedGame(value,{game.controller,game.explorer,game.boar,game.orbit},game.terrain,{},game.RuntimeExtraSolids());
         if(!result)throw std::runtime_error("native audit seed preflight failed; error="+std::to_string(unsigned(result.error)));
         Mistwatch::SwapPreparedSavedGame(*result.candidate,Targets());
         Require(Snapshot().Serialize()==value.Serialize(),"native audit seed swap lost snapshot");
@@ -98,7 +112,8 @@ class MistwatchSaveInputProbe final : public IGame {
         h.Add(game.explorer.footTargets);h.Add(game.explorer.planted);h.Add(game.explorer.lastFeet);h.Add(game.explorer.feetInitialized);h.Add(game.explorer.locomotionDistance);
         h.Model(game.boar.model);h.Pose(game.boar.pose);h.Add(game.boar.yaw);h.Add(game.boar.cycle);h.Add(game.boar.displacement);h.Add(game.boar.brace);
         h.Add(game.boar.footTargets);h.Add(game.boar.planted);h.Add(game.boar.lastFeet);h.Add(game.boar.initialized);
-        h.Vector(game.solids);h.Add(game.orbit);h.Add(game.playerCameraMotion.Initialized());h.Add(game.playerCameraMotion.Camera());
+        h.Vector(game.solids);h.Add(game.worldProfile);h.Vector(game.canopySolids);h.Add(game.canopyPopulation.fingerprint);
+        h.Add(game.orbit);h.Add(game.playerCameraMotion.Initialized());h.Add(game.playerCameraMotion.Camera());
         h.Add(game.lastPlayerFraming);h.Add(game.lastCameraMotion);h.Add(game.lastRenderedCamera);h.Add(game.waterTime);
         h.Add(game.cameraFixedTicks);h.Add(game.captureCameraTicks);h.Add(game.cameraMaximumTickDisplacement);h.Add(game.cameraOcclusionSeconds);
         h.Add(game.started);h.Add(game.paused);h.Add(game.gameAudio.director);h.Add(game.gameAudio.requests);h.Add(game.gameAudio.options);
@@ -162,7 +177,7 @@ class MistwatchSaveInputProbe final : public IGame {
         try{game.OnUpdate(engine,dt);}catch(...){Keys(engine,keys,false);engine.GetInput().ConsumePresses();throw;}
         Keys(engine,keys,false);engine.GetInput().ConsumePresses();
     }
-    bool FailureCase()const{return caseName==L"truncated"||caseName==L"missing"||caseName==L"body-overlap"||caseName==L"middle-overlap"||caseName==L"enemy-y-below"||caseName==L"enemy-y-above";}
+    bool FailureCase()const{return caseName==L"truncated"||caseName==L"missing"||caseName==L"body-overlap"||caseName==L"middle-overlap"||caseName==L"canopy-overlap"||caseName==L"enemy-y-below"||caseName==L"enemy-y-above";}
     void PrepareDiskAfterF5(){
         const auto saved=Read(game.save);
         if(caseName==L"outside-save"){
@@ -195,6 +210,13 @@ class MistwatchSaveInputProbe final : public IGame {
         else if(caseName==L"missing")Require(std::filesystem::remove(game.save),"isolated missing fixture removal failed");
         else if(caseName==L"body-overlap"){
             auto invalid=expected;invalid.session.feet={-7.25f,0,16.1f};Require(invalid.Valid(),"overlap fixture is invalid serialized game");
+            Write(game.save,invalid.Serialize());
+        }
+        else if(caseName==L"canopy-overlap"){
+            Require(game.canopyPopulation.plants.size()==4,"canopy-overlap requires explicit forest-canopy profile");
+            auto invalid=expected;const auto p=game.canopyPopulation.plants.front().pose.position;
+            invalid.session.feet={p.x,game.terrain.SampleHeight(p.x,p.z),p.z};
+            Require(invalid.Valid(),"canopy-overlap fixture must remain format-valid");
             Write(game.save,invalid.Serialize());
         }
         else if(caseName==L"middle-overlap"){
@@ -267,7 +289,7 @@ class MistwatchSaveInputProbe final : public IGame {
         out.close();Require(bool(out),"outside-save real step receipt write failed");
     }
 public:
-    MistwatchSaveInputProbe(std::wstring name,std::filesystem::path directory,bool middle):caseName(std::move(name)),output(std::move(directory)),capturePath(output/L"native-after-load.png"),expectedMiddleLayer(middle){}
+    MistwatchSaveInputProbe(std::wstring name,std::filesystem::path directory,Mistwatch::WorldProfile profile):caseName(std::move(name)),output(std::move(directory)),capturePath(output/L"native-after-load.png"),expectedMiddleLayer(Mistwatch::WorldProfileHasMiddle(profile)),expectedWorldProfile(profile){}
     void OnStart(Engine& engine)override {
         game.OnStart(engine);initialized=true;
         try{
@@ -383,6 +405,8 @@ public:
             <<"\nunsafe_f5_rejected="<<unsafeF5Rejected<<"\nold_save_preserved="<<oldSavePreserved
             <<"\nmiddle_layer_population="<<game.middleLayer.trees.size()<<"\nmiddle_layer_solids="<<game.middleLayerSolids.size()
             <<"\nworld_solids="<<game.solids.size()<<"\nmiddle_solids_preserved=1"
+            <<"\ncanopy_solids_preserved=1\ncanopy_population_fingerprint="<<game.canopyPopulation.fingerprint
+            <<"\nworld_profile="<<Mistwatch::WorldProfileName(expectedWorldProfile)<<"\ncanopy_solids="<<game.canopySolids.size()
             <<"\nactual_load_branch_confirmed=1"
             <<"\nexpected_middle_layer_mode="<<expectedMiddleLayer<<"\nmode_matches_expected=1"
             <<"\nown_window_only=1\nglobal_input=0\nforeground_activation=0\nmuted=1\nhidden_window=1"
@@ -397,13 +421,19 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
     bool ownsOutput{};
     try{
         int count{};auto argv=CommandLineToArgvW(GetCommandLineW(),&count);Require(argv!=nullptr,"command line parsing failed");
-        if(count!=3&&count!=4){LocalFree(argv);throw std::runtime_error("usage: CASE NEW_OUTPUT_DIRECTORY [--middle-layer|--baseline-middle-layer]");}
-        const bool baseline=count==4&&std::wstring_view(argv[3])==L"--baseline-middle-layer";
-        const bool middleLayer=!baseline;
-        if(count==4&&!baseline&&std::wstring_view(argv[3])!=L"--middle-layer"){LocalFree(argv);throw std::runtime_error("unknown native audit option");}
+        if(count!=3&&count!=4){LocalFree(argv);throw std::runtime_error("usage: CASE NEW_OUTPUT_DIRECTORY [--forest-canopy|--legacy-core|--legacy-middle|--middle-layer|--baseline-middle-layer]");}
+        auto profile=Mistwatch::WorldProfile::ForestCanopy;
+        if(count==4) {
+            const std::wstring_view option=argv[3];
+            if(option==L"--legacy-core"||option==L"--baseline-middle-layer")profile=Mistwatch::WorldProfile::LegacyCore;
+            else if(option==L"--legacy-middle"||option==L"--middle-layer")profile=Mistwatch::WorldProfile::LegacyMiddle;
+            else if(option!=L"--forest-canopy"){LocalFree(argv);throw std::runtime_error("unknown native audit option");}
+        }
+        const bool middleLayer=Mistwatch::WorldProfileHasMiddle(profile);
         const std::wstring name=argv[1];output=argv[2];LocalFree(argv);
         Require(KnownCase(name),"unknown native audit case");
         Require(name!=L"middle-overlap"||middleLayer,"middle-overlap requires --middle-layer");
+        Require(name!=L"canopy-overlap"||Mistwatch::WorldProfileHasCanopy(profile),"canopy-overlap requires --forest-canopy");
         Require(output.is_absolute()&&output!=output.root_path(),"audit output must be a dedicated absolute directory");
         Require(!std::filesystem::exists(output),"audit output already exists; refusing existing saves/evidence");
         Require(std::filesystem::create_directory(output),"fresh audit output creation failed");
@@ -416,12 +446,18 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
             L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE",L"AEVRYND_MISTWATCH_HDR_STAGE",L"AEVRYND_MISTWATCH_LEGACY_RANGER_HUT",
             L"AEVRYND_MISTWATCH_NO_AO",L"AEVRYND_MISTWATCH_NO_BLOOM",L"AEVRYND_MISTWATCH_NO_GROUND_NORMAL",
             L"AEVRYND_MISTWATCH_NO_GROUND_TEXTURES",L"AEVRYND_MISTWATCH_NO_MSAA",L"AEVRYND_MISTWATCH_NO_SHADOWS",
-            L"AEVRYND_MISTWATCH_TREE_LOD",L"AEVRYND_MISTWATCH_TWIG_MODE",L"AEVRYND_MISTWATCH_MIDDLE_LAYER"})Require(SetEnvironmentVariableW(variable,nullptr)!=0,"audit environment reset failed");
-        if(baseline)Require(SetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MIDDLE_LAYER",L"0")!=0,"explicit old baseline environment failed");
+            L"AEVRYND_MISTWATCH_TREE_LOD",L"AEVRYND_MISTWATCH_TWIG_MODE",L"AEVRYND_MISTWATCH_MIDDLE_LAYER",
+            L"AEVRYND_MISTWATCH_WORLD_PROFILE",L"AEVRYND_MISTWATCH_CANOPY_ENABLED",L"AEVRYND_MISTWATCH_CANOPY_VIEW",
+            L"AEVRYND_MISTWATCH_CAPTURE_FRAME_CAMERA",L"AEVRYND_MISTWATCH_SHRUBS",L"AEVRYND_MISTWATCH_TRAIL_LITTER",
+            L"AEVRYND_MISTWATCH_SHADOW_RETAIN_MODE"})Require(SetEnvironmentVariableW(variable,nullptr)!=0,"audit environment reset failed");
+        const auto asciiProfile=Mistwatch::WorldProfileName(profile);
+        const std::wstring profileFlag(asciiProfile.begin(),asciiProfile.end());
+        Require(SetEnvironmentVariableW(L"AEVRYND_MISTWATCH_WORLD_PROFILE",profileFlag.c_str())!=0,"explicit world profile environment failed");
+        Require(SetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MIDDLE_LAYER",middleLayer?L"1":L"0")!=0,"explicit middle-layer environment failed");
         const auto capture=output/L"native-after-load.png";
         Require(SetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",capture.c_str())!=0,"isolated initial capture environment failed");
         Engine engine({L"Aevrynd - Mistwatch Save Input Audit",1280,720});
-        return engine.Run(std::make_unique<MistwatchSaveInputProbe>(name,output,middleLayer),instance,SW_HIDE);
+        return engine.Run(std::make_unique<MistwatchSaveInputProbe>(name,output,profile),instance,SW_HIDE);
     }catch(const std::exception& error){
         // 既有輸出目錄／參數錯誤不覆寫他人的紀錄。
         if(ownsOutput){

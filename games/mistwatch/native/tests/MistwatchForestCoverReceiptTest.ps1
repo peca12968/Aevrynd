@@ -2,6 +2,7 @@
 . (Join-Path $PSScriptRoot '../../tools/forest_cover_contract.ps1')
 # 此為合成收據的負向契約單測，不是實機或畫質證據。
 $valid=@{
+    world_profile='legacy-core'
     ground_cover_instances='3600';forest_cover_mode='fixed_cluster_patches'
     forest_cover_seed='1129272901';forest_cover_authored_population='3600'
     forest_cover_maximum_patches='400';forest_cover_patch_minimum_plants='20'
@@ -86,6 +87,7 @@ foreach($scene in @('initial','river-overlook')) {
 # 中層候選是不同世界配置；保留上方舊契約的全部65反例，不自動猜選版本。
 $middle=$valid.Clone()
 $middleFields=@{
+    world_profile='legacy-middle'
             forest_cover_patches='154';forest_cover_fingerprint='8857932304976401347'
             forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11739939804215987065'
             forest_cover_variants='871,751,625,568,785';fern_colonies='86'
@@ -212,3 +214,127 @@ try{Assert-MistwatchTerrainCoverageMarker @{}}catch{$failed=$true}
 if(-not $failed){throw 'Missing terrain coverage marker accepted'}
 $markerRejected+=1
 'TERRAIN_COVERAGE_MARKER_RECEIPT_PASS; POSITIVE=2; REJECTED='+$markerRejected
+
+# 新世界的作者黃金值來自 V85 三世界封存與 V75 獨立 CPU；保留上方全部舊草蕨反例。
+$canopy=$middle.Clone()
+$canopyFields=@{
+    world_profile='forest-canopy';forest_cover_patches='168';forest_cover_fingerprint='4989138190905410642'
+    forest_cover_clearance_colliders='249';forest_cover_clearance_collider_fingerprint='16643660641049883501'
+    forest_cover_variants='941,762,617,522,758';fern_colonies='85'
+    fern_colony_fingerprint='5579852658837856591';fern_colony_variants='14,29,168,89'
+}
+foreach($field in $canopyFields.Keys){$canopy[$field]=$canopyFields[$field]}
+Assert-MistwatchForestCoverReceipt $canopy -WorldProfile forest-canopy
+$canopyRejected=0
+function Assert-CanopyRejected([hashtable]$Receipt,[string]$Case){
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $Receipt -WorldProfile forest-canopy}catch{$failed=$true}
+    if(-not $failed){throw ('Invalid canopy cover accepted: '+$Case)}
+    ++$script:canopyRejected
+}
+Assert-CanopyRejected $valid 'legacy core passed as canopy'
+Assert-CanopyRejected $middle 'legacy middle passed as canopy'
+foreach($profile in @('legacy-core','legacy-middle')){
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $canopy -WorldProfile $profile}catch{$failed=$true}
+    if(-not $failed){throw ('Canopy authored world accepted as '+$profile)}
+    ++$canopyRejected
+}
+$failed=$false
+try{Assert-MistwatchForestCoverReceipt $canopy -WorldProfile forest-canopy -MiddleLayer}catch{$failed=$true}
+if(-not $failed){throw 'Conflicting world and middle selector accepted'}
+++ $canopyRejected
+foreach($field in @($canopy.Keys)){
+    $bad=$canopy.Clone();$bad.Remove($field);Assert-CanopyRejected $bad ('missing '+$field)
+}
+foreach($field in $canopyFields.Keys){
+    $bad=$canopy.Clone();$bad[$field]=$middle[$field];Assert-CanopyRejected $bad ('legacy middle '+$field)
+}
+foreach($change in @(
+    @{field='submitted_grass_variants';value='942,1,1,1,1'},
+    @{field='submitted_colony_variants';value='15,1,1,1'},
+    @{field='submitted_original_fern_variants';value='0,0,0,0'},
+    @{field='submitted_fern_triangles';value='8617'},
+    @{field='middle_layer_population';value='23'},
+    @{field='forest_cover_clearance_collider_fingerprint';value='15105317612767713774'}
+)){$bad=$canopy.Clone();$bad[$change.field]=$change.value;Assert-CanopyRejected $bad $change.field}
+foreach($scene in @('initial','river-overlook')){
+    $fixed=$canopy.Clone()
+    $count=if($scene -eq 'initial'){192}else{226}
+    $triangles=if($scene -eq 'initial'){298968}else{350104}
+    $fixed.submitted_original_ferns=[string]$count;$fixed.submitted_original_fern_triangles=[string]$triangles
+    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'47,49,49,47'}else{'51,61,51,63'}
+    $fixed.submitted_ferns=[string]($count+[long]$fixed.submitted_colony_ferns)
+    $fixed.submitted_fern_triangles=[string]($triangles+[long]$fixed.submitted_colony_fern_triangles)
+    Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-canopy -Scene $scene
+    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'51,45,66,30'}else{'55,57,68,46'}
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-canopy -Scene $scene}catch{
+        $failed=$_.Exception.Message -eq 'Original fern fixed-scene variant identity changed'
+    }
+    if(-not $failed){throw ('Canopy fixed-scene variant alias accepted: '+$scene)}
+    ++$canopyRejected
+}
+'CANOPY_FOREST_COVER_RECEIPT_PASS; POSITIVE=3; REJECTED='+$canopyRejected
+
+# 每個世界逐欄拒絕缺漏、污染與只關繪圖；同時驗資源清理，不以畫面空白當證據。
+$lifecycleRejected=0;$lifecyclePositive=0
+function Assert-LifecycleRejected([hashtable]$Receipt,[hashtable]$Cleanup,[string]$Profile,[string]$Case,[string]$Scene=''){
+    $failed=$false
+    try{Assert-MistwatchWorldProfileReceipt $Receipt $Cleanup $Profile -Scene $Scene}catch{$failed=$true}
+    if(-not $failed){throw ('Invalid profile lifecycle accepted: '+$Profile+' '+$Case)}
+    ++$script:lifecycleRejected
+}
+foreach($profile in @('legacy-core','legacy-middle','forest-canopy')){
+    $withCanopy=$profile -eq 'forest-canopy'
+    $receipt=@{
+        world_profile=$profile;canopy_preview_fixture='0'
+        canopy_world_profile=$(if($withCanopy){'1'}else{'0'});canopy_enabled=$(if($withCanopy){'1'}else{'0'})
+        canopy_plants=$(if($withCanopy){'4'}else{'0'});canopy_rooted_meshes=$(if($withCanopy){'4'}else{'0'})
+        canopy_population_fingerprint=$(if($withCanopy){'13093722598475582899'}else{'0'})
+        canopy_ground_checks=$(if($withCanopy){'12121992'}else{'0'})
+        canopy_primitive_triangles=$(if($withCanopy){'606207'}else{'0'})
+        canopy_materials=$(if($withCanopy){'3'}else{'0'});canopy_submitted_slots=$(if($withCanopy){'12'}else{'0'})
+        forest_cover_clearance_colliders=$(if($withCanopy){'249'}elseif($profile -eq 'legacy-core'){'221'}else{'245'})
+        shrubs_enabled='1';shrubs_plants='64';shrubs_submitted='64'
+        shrubs_fingerprint=$(if($withCanopy){'5849093981174083644'}elseif($profile -eq 'legacy-core'){'4812794541849057446'}else{'18032575485754629455'})
+    }
+    $cleanup=@{cleanup='success';materials_remaining='0';mesh_destroy_calls=$(if($withCanopy){'7'}else{'0'})}
+    Assert-MistwatchWorldProfileReceipt $receipt $cleanup $profile
+    ++$lifecyclePositive
+    foreach($wrongProfile in @('legacy-core','legacy-middle','forest-canopy') | Where-Object {$_ -ne $profile}){
+        Assert-LifecycleRejected $receipt $cleanup $wrongProfile 'profile selection mismatch'
+    }
+    foreach($field in @($receipt.Keys)){
+        $bad=$receipt.Clone();$bad.Remove($field);Assert-LifecycleRejected $bad $cleanup $profile ('missing '+$field)
+        $bad=$receipt.Clone();$bad[$field]='invalid';Assert-LifecycleRejected $bad $cleanup $profile ('invalid '+$field)
+    }
+    foreach($field in @($cleanup.Keys)){
+        $bad=$cleanup.Clone();$bad.Remove($field);Assert-LifecycleRejected $receipt $bad $profile ('missing cleanup '+$field)
+        $bad=$cleanup.Clone();$bad[$field]='invalid';Assert-LifecycleRejected $receipt $bad $profile ('invalid cleanup '+$field)
+    }
+    foreach($value in @('00','-1','NaN','0.0','04','3','5')){
+        $bad=$receipt.Clone();$bad.canopy_plants=$value;Assert-LifecycleRejected $bad $cleanup $profile ('population '+$value)
+    }
+    if($withCanopy){
+        foreach($field in @('canopy_enabled','canopy_submitted_slots','canopy_materials','canopy_rooted_meshes')){
+            $bad=$receipt.Clone();$bad[$field]='0';Assert-LifecycleRejected $bad $cleanup $profile ('draw/resource omitted '+$field)
+        }
+        foreach($scene in @('canopy-profile','canopy-root','canopy-detail')){
+            $camera=$receipt.Clone();$camera.camera_source='diagnostic';$camera.camera_target='0,0,0'
+            $camera.camera_position=if($scene -eq 'canopy-root'){'1.41421356,0.05,-1.41421356'}elseif($scene -eq 'canopy-detail'){'4.00010156,0.8,-4.00010156'}else{'0,0.5,-8.5'}
+            Assert-MistwatchWorldProfileReceipt $camera $cleanup $profile -Scene $scene
+            ++$lifecyclePositive
+            foreach($change in @(
+                @{field='camera_source';value='player'},@{field='camera_position';value='NaN,0.5,-8.5'},
+                @{field='camera_position';value='Infinity,0.5,-8.5'},@{field='camera_target';value='0,0'},
+                @{field='camera_position';value='0,0,0'}
+            )){$bad=$camera.Clone();$bad[$change.field]=$change.value;Assert-LifecycleRejected $bad $cleanup $profile ('camera '+$change.field) $scene}
+        }
+    }else{
+        # 只關畫面的新世界仍有四株、三材質與249碰撞，必須逐世界拒絕。
+        $bad=$receipt.Clone();$bad.canopy_plants='4';$bad.canopy_materials='3';$bad.forest_cover_clearance_colliders='249'
+        Assert-LifecycleRejected $bad $cleanup $profile 'canopy world with drawing disabled'
+    }
+}
+'WORLD_PROFILE_LIFECYCLE_RECEIPT_PASS; POSITIVE='+$lifecyclePositive+'; REJECTED='+$lifecycleRejected

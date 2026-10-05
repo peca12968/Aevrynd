@@ -3,11 +3,16 @@ param(
     [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
     [switch]$GpuValidation,
     [switch]$MiddleLayer,
-    [switch]$BaselineMiddleLayer
+    [switch]$BaselineMiddleLayer,
+    [ValidateSet('legacy-core','legacy-middle','forest-canopy')][string]$WorldProfile='forest-canopy'
 )
 $ErrorActionPreference='Stop'
 if($MiddleLayer -and $BaselineMiddleLayer){throw 'Select either production middle layer or explicit old baseline'}
-$useMiddleLayer=-not $BaselineMiddleLayer
+if($MiddleLayer -or $BaselineMiddleLayer){
+    $compatibilityProfile=if($BaselineMiddleLayer){'legacy-core'}else{'legacy-middle'}
+    if($PSBoundParameters.ContainsKey('WorldProfile') -and $WorldProfile -ne $compatibilityProfile){throw 'Legacy switch conflicts with explicit world profile'}
+    $WorldProfile=$compatibilityProfile
+}
 . (Join-Path $PSScriptRoot 'forest_cover_contract.ps1')
 $executable=(Resolve-Path -LiteralPath $ExecutablePath).Path
 if([IO.Path]::GetFileName($executable) -ne 'Aevrynd-Mistwatch.exe'){throw 'Unexpected executable'}
@@ -16,6 +21,7 @@ if(Test-Path -LiteralPath $evidence){throw 'Evidence directory already exists; p
 New-Item -ItemType Directory -Path $evidence | Out-Null
 $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MISTWATCH_CAPTURE_SERIES',
     'AEVRYND_MISTWATCH_BENCHMARK','AEVRYND_MISTWATCH_TREE_LOD','AEVRYND_MISTWATCH_TWIG_MODE','AEVRYND_MISTWATCH_MIDDLE_LAYER',
+    'AEVRYND_MISTWATCH_WORLD_PROFILE','AEVRYND_MISTWATCH_CANOPY_ENABLED','AEVRYND_MISTWATCH_CANOPY_VIEW','AEVRYND_MISTWATCH_SHADOW_RETAIN_MODE',
     'AEVRYND_MISTWATCH_CROWN','AEVRYND_MISTWATCH_NO_AO','AEVRYND_GPU_VALIDATION',
     'AEVRYND_MISTWATCH_CAPTURE_FRAME','AEVRYND_MISTWATCH_NO_GROUND_NORMAL','AEVRYND_MISTWATCH_NO_MSAA',
     'AEVRYND_MISTWATCH_HDR_STAGE','AEVRYND_MISTWATCH_NO_SHADOWS','AEVRYND_MISTWATCH_NO_BLOOM',
@@ -29,15 +35,23 @@ $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
 $cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile','trail-profile','shrub-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile','trail-profile','shrub-profile')}
+if($WorldProfile -eq 'forest-canopy'){$cases+=@('canopy-profile','canopy-root','canopy-detail')}
 try {
     # 正常驗收使用遊戲預設，不以環境變數代替 production 接入；舊版只在明確比較時啟用。
-    if($BaselineMiddleLayer){[Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER','0','Process')}
+    if($WorldProfile -ne 'forest-canopy' -or $PSBoundParameters.ContainsKey('WorldProfile')){
+        [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_WORLD_PROFILE',$WorldProfile,'Process')
+        [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER',$(if($WorldProfile -eq 'legacy-core'){'0'}else{'1'}),'Process')
+    }
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
         Write-Progress -Activity '霧境守望原生驗證' -Status $case -PercentComplete ([int](100*$results.Count/$cases.Count))
         $capture=Join-Path $evidence ($case+'.png')
         [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_CAPTURE',$capture,'Process')
-        [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_SCENE',$(if($case -eq 'initial'){$null}else{$case}),'Process')
+        # 根部與細節重用同一原生新樹鏡頭，僅選取已驗證的固定視角。
+        $canopyCase=$case -in @('canopy-profile','canopy-root','canopy-detail')
+        [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_SCENE',$(if($case -eq 'initial'){$null}elseif($canopyCase){'canopy-profile'}else{$case}),'Process')
+        [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_CANOPY_VIEW',$(if($case -eq 'canopy-root'){'root'}elseif($case -eq 'canopy-detail'){'detail'}else{$null}),'Process')
+        [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_CAPTURE_FRAME_CAMERA',$(if($canopyCase){'1'}else{$null}),'Process')
         $benchmark=(-not $GpuValidation) -and $case -in @('initial','river-overlook')
         [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_BENCHMARK',$(if($benchmark){'1'}else{$null}),'Process')
         $start=[DateTime]::UtcNow
@@ -52,10 +66,9 @@ try {
         if(-not (Test-Path -LiteralPath $capture) -or -not (Test-Path -LiteralPath $receiptPath)){throw ('Missing native evidence: '+$case)}
         $receipt=@{}
         foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
-        if($receipt.shrubs_enabled -ne '1' -or $receipt.shrubs_plants -ne '64' -or
-            $receipt.shrubs_fingerprint -ne '18032575485754629455' -or $receipt.shrubs_submitted -ne '64'){
-            throw ('Shrub production contract missing: '+$case)
-        }
+        $canopyCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.canopy-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$canopyCleanup[$pair[0]]=$pair[1]}}
+        Assert-MistwatchWorldProfileReceipt -Receipt $receipt -Cleanup $canopyCleanup -WorldProfile $WorldProfile -Scene $case
         if($case -eq 'shrub-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Shrub profile not proven'}
         $shrubCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.shrub-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$shrubCleanup[$pair[0]]=$pair[1]}}
@@ -147,7 +160,7 @@ try {
            $receipt.fern_use_uv -ne '1' -or $receipt.fern_alpha_cutoff -ne '0.5' -or
            $receipt.understory_ferns -ne '420' -or [int]$receipt.submitted_ferns -lt 1 -or
            [int]$receipt.submitted_fern_triangles -lt 1){throw ('Scanned fern production binding missing: '+$case)}
-        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case -MiddleLayer:$useMiddleLayer
+        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case -WorldProfile $WorldProfile
         if($case -in @('boulder-profile','grass-profile','fern-profile')) {
             if($receipt.camera_source -ne 'diagnostic'){throw 'Detail fixture missing diagnostic camera'}
             $position=@($receipt.camera_position.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
@@ -222,10 +235,10 @@ try {
         $results+= [pscustomobject]@{case=$case;exit_code=$process.ExitCode;started_utc=$start.ToString('o');
             completed_utc=[DateTime]::UtcNow.ToString('o');capture=$capture;capture_sha256=(Get-FileHash -LiteralPath $capture -Algorithm SHA256).Hash;receipt=$receipt}
     }
-    $report=[pscustomobject]@{schema=1;executable=$executable;executable_sha256=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash;
+    $report=[pscustomobject]@{schema=1;world_profile=$WorldProfile;executable=$executable;executable_sha256=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash;
         acceptance='native initialization/capture and fixed-scene GPU timing only; not manual playthrough or realistic-art acceptance';cases=$results}
     $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'native-validation.json') -Encoding UTF8
-    'MISTWATCH_NATIVE_VALIDATION_PASS; CASES='+$results.Count+'; GPU_VALIDATION='+$GpuValidation.IsPresent
+    'MISTWATCH_NATIVE_VALIDATION_PASS; WORLD_PROFILE='+$WorldProfile+'; CASES='+$results.Count+'; GPU_VALIDATION='+$GpuValidation.IsPresent
 } finally {
     foreach($name in $variables){[Environment]::SetEnvironmentVariable($name,$saved[$name],'Process')}
     Write-Progress -Activity '霧境守望原生驗證' -Completed

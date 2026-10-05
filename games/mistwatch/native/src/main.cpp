@@ -1,6 +1,7 @@
 #include "MistwatchSession.h"
 #include "MistwatchWorld.h"
 #include "MistwatchMiddleLayer.h"
+#include "MistwatchWorldProfile.h"
 #include "MistwatchEncounter.h"
 #include "MistwatchCamera.h"
 #include "MistwatchExplorer.h"
@@ -12,6 +13,8 @@
 #include "MistwatchTrailLitter.h"
 #include "MistwatchShrubCanopy.h"
 #include "MistwatchFernColonies.h"
+#include "MistwatchCanopyPopulation.h"
+#include "MistwatchRootStemTerrain.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
@@ -67,6 +70,7 @@ class MistwatchGame final : public IGame {
     Mistwatch::MiddleLayerResult middleLayer;
     std::vector<BoxCollider3D> middleLayerSolids;
     bool middleLayerEnabled{true};
+    Mistwatch::WorldProfile worldProfile{Mistwatch::WorldProfile::ForestCanopy};
     unsigned submittedMiddleLayer{};
     std::size_t submittedMiddleLayerTriangles{};
     std::size_t broadleafTriangles{};
@@ -78,6 +82,17 @@ class MistwatchGame final : public IGame {
     bool captureShrubOverview{};
     bool captureFrameCamera{};
     unsigned submittedShrubs{};
+    MaterialLibrary3D canopyMaterials;
+    std::array<MeshResource3D,3> canopyMeshes;
+    std::array<MeshResource3D,4> canopyRootMeshes;
+    std::array<Mesh3D,3> canopySource;
+    Mistwatch::CanopyPopulation canopyPopulation;
+    std::vector<BoxCollider3D> canopySolids;
+    std::array<Material3D,3> canopySurfaces;
+    Transform3D canopyPose;
+    bool canopyEnabled{true},captureCanopyOverview{};
+    float canopyViewYaw{},canopyViewHeight{3.1f},canopyViewDistance{8.5f},canopyViewTargetHeight{2.6f};
+    unsigned canopyTriangles{},submittedCanopy{};
     Mistwatch::TrailLitterResult trailLitter;
     std::array<MeshResource3D,2> trailLitterMeshes;
     bool trailLitterEnabled{true};
@@ -218,8 +233,69 @@ class MistwatchGame final : public IGame {
     std::chrono::steady_clock::time_point captureStart;
     std::vector<BoxCollider3D> RuntimeWorldSolids(bool repaired)const {
         auto result=Mistwatch::WorldSolids(repaired);
-        result.insert(result.end(),middleLayerSolids.begin(),middleLayerSolids.end());
+        const auto extras=RuntimeExtraSolids();
+        result.insert(result.end(),extras.begin(),extras.end());
         return result;
+    }
+    std::vector<BoxCollider3D> RuntimeExtraSolids()const {
+        auto result=middleLayerSolids;
+        result.insert(result.end(),canopySolids.begin(),canopySolids.end());
+        return result;
+    }
+    void InitializeCanopy(Engine& e) {
+        const auto canopyRoot=e.ExecutableDirectory()/"assets"/"mistwatch-canopy-preview";
+        canopyMaterials.Initialize(e,canopyRoot);
+        // 原網格slot為幹/葉/枝，不能套用sidecar幹/枝/葉的陣列序。
+        constexpr const char* canopyNames[]{"trunk","leaves","branches"};
+        constexpr const char* canopyFiles[]{
+            "island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
+            "island-tree-01-lod1-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
+            "island-tree-01-lod2-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh"};
+        constexpr const char* canopyHashes[3][3]{
+            {"aa3708b589c5f80dddb98022eea49fbb71eb157b9ea7c32a02b3f0111e03c98d","638e6710501bb04d9626294b182246f7e651970b6ef2f791efb941e2fad9aaa4","24eba3fcb9e8d59b088e9cf312bdf25b32445562ce466262aa1d7834cd17bb7a"},
+            {"4a1f4e5544d2b91ed3822455f457b93a4d3237019bc8ae6202ce1e0aef9f14c2","792095487b7b49038da96ca9cb9e417a52b29f98eb109d953ef4eedcb82e9013","cc43d9a2635a0f8a6a750e41cc9857600a16d39fe9edc2d7f2403d39790595ee"},
+            {"75e25268369704a561432df6f3368734e8b5648fdce184a0a4c2c5863317145b","92e5ae39785dbcefc885588deaafd35a1b45d7e5e47f222320b85cb9ce810f05","1aa3118c6fba3891c31fb2e5c961edd463e2a65084f611158dea4adc3e39dbbb"}};
+        for(unsigned slot=0;slot<3;++slot){
+            const std::string name=canopyNames[slot];
+            MaterialTextureSetDefinition3D textures{std::filesystem::path("materials")/(name+"-base.dds"),
+                std::filesystem::path("materials")/(name+"-arm.dds"),1024,
+                std::filesystem::path("materials")/(name+"-normal.dds")};
+            textures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+            for(unsigned channel=0;channel<3;++channel)textures.integrity[channel]={1398276,canopyHashes[slot][channel]};
+            Material3D material{{1,1,1,1},{.85f,0,0,1},true,{},1.f,true};
+            if(slot==1){textures.alphaMode=MaterialAlphaMode3D::Mask;material.alphaMode=MaterialAlphaMode3D::Mask;
+                material.alphaCutoff=.5f;material.doubleSided=true;material.materialClass=MaterialClass3D::Foliage;}
+            if(!canopyMaterials.Load({name,textures,material}))throw std::runtime_error("Canopy preview material unavailable");
+            canopySurfaces[slot]=*canopyMaterials.Find(name);
+            auto loaded=LoadAevryndMeshFile(canopyRoot/"meshes"/canopyFiles[slot]);
+            if(!loaded)throw std::runtime_error("Canopy preview mesh unavailable");
+            canopyTriangles+=unsigned(loaded.mesh.indices.size()/3);
+            canopySource[slot]=loaded.mesh;
+            canopyMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
+            if(!canopyMeshes[slot])throw std::runtime_error("Canopy preview upload failed");
+        }
+        if(canopyTriangles!=606094)throw std::runtime_error("Canopy true primitive count changed");
+
+        const auto geometry=Mistwatch::MeasureCanopy(canopySource);
+        canopyPopulation=Mistwatch::CreateCanopyPopulation(canopySource,geometry,terrain,
+            RuntimeWorldSolids(session.bridgeRepaired),understory,{}, {},fernFootprints,{});
+        if(!canopyPopulation.reachedBudget||canopyPopulation.plants.size()!=4||
+            canopyPopulation.fingerprint!=13093722598475582899ull)
+            throw std::runtime_error("Canopy-world author identity changed");
+        auto stem=LoadAevryndMeshFile(canopyRoot/"meshes"/"island-tree-01-lod2-trunk-root-stem.aemesh");
+        if(!stem||stem.mesh.vertices.size()!=3608||stem.mesh.indices.size()/3!=5330)
+            throw std::runtime_error("Derived canopy root stem unavailable");
+        canopyTriangles=606207;
+        for(std::size_t i=0;i<canopyPopulation.plants.size();++i){
+            auto& plant=canopyPopulation.plants[i];
+            // 來源樹與四棵pose不改；短幹接地的新完整碰撞只擴充、不縮小。
+            plant.rootedTrunk=Mistwatch::PlantDerivedRootStem(stem.mesh,geometry,plant.pose,terrain);
+            plant.lower=Mistwatch::ExtendRootCollision(plant.lower,plant.rootedTrunk,plant.pose);
+            canopyRootMeshes[i]=e.CreateMeshResource3D(plant.rootedTrunk);
+            if(!canopyRootMeshes[i])throw std::runtime_error("Rooted canopy upload failed");
+            canopySolids.push_back(plant.lower);
+        }
+        canopyPose=canopyPopulation.plants.front().pose;
     }
     void ResetController() {
         controller.Reset(session.feet);
@@ -246,7 +322,7 @@ class MistwatchGame final : public IGame {
         const Mistwatch::SaveGame snapshot{session,encounter,evasion};
         // 先確認目前世界可安全還原，避免走出地形後寫下格式合法、實際讀不回的檔案。
         // 預檢只操作候選 CPU 狀態；失敗不寫檔，也不取代先前可用的檢查點。
-        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,{},middleLayerSolids);
+        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,{},RuntimeExtraSolids());
         if(!prepared){message="Save position unavailable";return;}
         message=Mistwatch::WriteSaveFile(save,snapshot)==Mistwatch::SaveFileResult::Saved?"Saved":"Save failed";
     }
@@ -279,6 +355,28 @@ class MistwatchGame final : public IGame {
     }
 public:
     void OnStart(Engine& e) override {
+        // 資產載入前決定完整世界版本；截斷或相對截圖路徑不能啟用舊世界。
+        wchar_t profileCapture[32768]{};
+        const auto profileCaptureLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",profileCapture,32768);
+        if(profileCaptureLength>=32768)throw std::runtime_error("Capture path truncated");
+        const bool validProfileCapture=profileCaptureLength>0;
+        if(validProfileCapture) {
+            const std::filesystem::path path(profileCapture);
+            if(!path.is_absolute()||!path.has_filename()||path.filename()==L"."||path.filename()==L"..")
+                throw std::runtime_error("Capture path must be complete and absolute");
+        }
+        const auto profileFlag=[](const wchar_t* name) {
+            wchar_t text[64]{};
+            const auto length=GetEnvironmentVariableW(name,text,64);
+            if(length>=64)throw std::runtime_error("World profile flag truncated");
+            return std::wstring(text,length);
+        };
+        worldProfile=Mistwatch::ResolveWorldProfile(validProfileCapture,
+            validProfileCapture?profileFlag(L"AEVRYND_MISTWATCH_WORLD_PROFILE"):std::wstring{},
+            validProfileCapture?profileFlag(L"AEVRYND_MISTWATCH_MIDDLE_LAYER"):std::wstring{});
+        middleLayerEnabled=Mistwatch::WorldProfileHasMiddle(worldProfile);
+        canopyEnabled=Mistwatch::WorldProfileHasCanopy(worldProfile);
+        if(!canopyEnabled)canopyPopulation.fingerprint=0;
         const auto wildlife=LoadSkinnedModelAssetFile(e.ExecutableDirectory()/"assets"/"mistwatch-wildlife"/"boar.aeskin");
         if(!wildlife||wildlife.model.skeleton.joints.size()!=16||
             wildlife.model.bindMesh.indices!=boar.model.bindMesh.indices)throw std::runtime_error("Boar asset unavailable or incompatible");
@@ -470,14 +568,6 @@ public:
         understory=Mistwatch::CreateUnderstory(terrain,trees,forestProps);
         broadleafTrees=Mistwatch::CreateBroadleafTrees(terrain,trees,forestProps,understory);
         if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
-        wchar_t middleCapture[2]{},middleFlag[3]{};
-        const bool middleCaptureProvided=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",middleCapture,2)>0;
-        if(middleCaptureProvided) {
-            const auto length=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MIDDLE_LAYER",middleFlag,3);
-            if(length&&(length!=1||(middleFlag[0]!=L'0'&&middleFlag[0]!=L'1')))
-                throw std::runtime_error("Invalid middle-layer comparison flag");
-        }
-        middleLayerEnabled=Mistwatch::UseMiddleLayer(middleCaptureProvided,middleFlag);
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
         const auto fernRoot=e.ExecutableDirectory()/"assets"/"mistwatch-ferns";
@@ -523,6 +613,9 @@ public:
         trailLitterMeshes[0]=e.CreateMeshResource3D(trailLitter.branches);
         trailLitterMeshes[1]=e.CreateMeshResource3D(trailLitter.stones);
         if(!trailLitterMeshes[0]||!trailLitterMeshes[1])throw std::runtime_error("Trail litter GPU upload failed");
+        // 新樹先配置，再依原門檻生成地被；核心景物與枯枝保留原位置。
+        if(Mistwatch::WorldProfileHasCanopy(worldProfile))InitializeCanopy(e);
+        solids=RuntimeWorldSolids(session.bridgeRepaired);
         forestCoverClearanceColliders=solids.size();
         const auto coverStart=std::chrono::steady_clock::now();
         if(!diagnosticScatterCover&&!diagnosticProceduralGrass){
@@ -585,6 +678,20 @@ public:
         wchar_t output[32768]{};
         const auto outputCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",output,32768);
         if(outputCount && outputCount<32768) {
+            wchar_t flag[3]{};const auto flagCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CANOPY_ENABLED",flag,3);
+            if(flagCount){if(flagCount!=1||(flag[0]!=L'0'&&flag[0]!=L'1'))throw std::runtime_error("Invalid canopy preview flag");if(flag[0]==L'1'&&!Mistwatch::WorldProfileHasCanopy(worldProfile))throw std::runtime_error("Canopy draw requires canopy world");canopyEnabled=flag[0]!=L'0';}
+            wchar_t angle[16]{};const auto angleCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CANOPY_VIEW",angle,16);
+            if(angleCount){
+                const std::wstring text=angle;unsigned degrees{};
+                if(text==L"0")degrees=0;else if(text==L"45")degrees=45;else if(text==L"60")degrees=60;else if(text==L"120")degrees=120;
+                else if(text==L"180")degrees=180;else if(text==L"240")degrees=240;else if(text==L"300")degrees=300;
+                else if(text==L"detail"){degrees=45;canopyViewHeight=3.8f;canopyViewDistance=5.657f;canopyViewTargetHeight=3.f;}
+                else if(text==L"under"){degrees=0;canopyViewHeight=1.7f;canopyViewDistance=4.8f;canopyViewTargetHeight=3.2f;}
+                else if(text==L"root"){degrees=45;canopyViewHeight=.35f;canopyViewDistance=2.f;canopyViewTargetHeight=.3f;}
+                else if(text==L"high"){degrees=45;canopyViewHeight=8.f;canopyViewDistance=7.071f;canopyViewTargetHeight=2.2f;}
+                else throw std::runtime_error("Invalid canopy preview angle");
+                canopyViewYaw=float(degrees)*3.1415926535f/180.f;
+            }
             wchar_t cameraFlag[3]{};const auto cameraCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE_FRAME_CAMERA",cameraFlag,3);
             if(cameraCount){if(cameraCount!=1||cameraFlag[0]!=L'1')throw std::runtime_error("Invalid fixed-frame camera flag");captureFrameCamera=true;}
             wchar_t shrubFlag[3]{};const auto shrubCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_SHRUBS",shrubFlag,3);
@@ -646,6 +753,7 @@ public:
                 else if(name==L"boulder-profile")captureBoulderOverview=true;
                 else if(name==L"trail-profile")captureTrailOverview=true;
                 else if(name==L"shrub-profile")captureShrubOverview=true;
+                else if(name==L"canopy-profile")captureCanopyOverview=true;
                 else if(name==L"grass-profile")captureGrassOverview=true;
                 else if(name==L"supply-profile"||name==L"supply-collected") {
                     captureSupplyOverview=true;
@@ -1011,6 +1119,12 @@ public:
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
                 out<<"trail_litter_enabled="<<trailLitterEnabled
+                    <<"\nworld_profile="<<Mistwatch::WorldProfileName(worldProfile)
+                    <<"\ncanopy_preview_fixture=0\ncanopy_world_profile="<<Mistwatch::WorldProfileHasCanopy(worldProfile)<<"\ncanopy_enabled="<<canopyEnabled
+                    <<"\ncanopy_plants="<<canopyPopulation.plants.size()<<"\ncanopy_population_fingerprint="<<canopyPopulation.fingerprint
+                    <<"\ncanopy_ground_checks="<<canopyPopulation.groundChecks<<"\ncanopy_rooted_meshes="<<canopyPopulation.plants.size()
+                    <<"\ncanopy_primitive_triangles="<<canopyTriangles<<"\ncanopy_materials="<<canopyMaterials.Stats().materials
+                    <<"\ncanopy_submitted_slots="<<submittedCanopy<<"\ncanopy_view_yaw="<<canopyViewYaw
                     <<"\nshrubs_enabled="<<shrubsEnabled<<"\nshrubs_plants="<<shrubCanopy.plants.size()
                     <<"\nshrubs_fingerprint="<<shrubCanopy.fingerprint<<"\nshrubs_submitted="<<submittedShrubs
                     <<"\ntrail_litter_patches="<<trailLitter.patches.size()
@@ -1019,7 +1133,7 @@ public:
                     <<"\ntrail_litter_fingerprint="<<trailLitter.fingerprint
                     <<"\nsubmitted_trail_litter="<<submittedTrailLitter
                     <<"\ntrail_litter_triangles="<<(trailLitter.branches.indices.size()+trailLitter.stones.indices.size())/3<<'\n';
-                out<<"camera_source="<<((captureShrubOverview||captureTrailOverview||diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
+                out<<"camera_source="<<((captureCanopyOverview||captureShrubOverview||captureTrailOverview||diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -1093,7 +1207,7 @@ public:
         if(started&&!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
             Mistwatch::SaveGame saved;
             auto prepared=Mistwatch::ReadSaveFile(save,saved)?Mistwatch::PrepareSavedGame(saved,
-                {controller,explorer,boar,orbit},terrain,{},middleLayerSolids):Mistwatch::LoadPreparationResult{};
+                {controller,explorer,boar,orbit},terrain,{},RuntimeExtraSolids()):Mistwatch::LoadPreparationResult{};
             if(prepared){
                 Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera});
@@ -1217,11 +1331,19 @@ public:
             if(capture.empty()||captureWalk||captureSequenceFrames||captureAudioProbe||captureWildlife||captureFocusProbe)
                 throw std::runtime_error("Fixed-frame camera is only supported for static comparison");
             // 僅外部靜態A/B工具每render步進一次，排除OnUpdate排程次數差異；普通遊玩不走此路徑。
-            if(!capturePending&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Diagnostic render-step camera rejected");
+            // 靜態比較在固定46步後凍結鏡頭，GPU收據回收延遲不可再改鏡頭狀態。
+            if(!capturePending&&cameraFixedTicks<46&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Diagnostic render-step camera rejected");
         }
         scene.Clear();
         scene.Mesh(terrainMesh,{},groundMaterial);
         scene.Mesh(landscapeMesh,{},groundMaterial);
+        submittedCanopy=0;
+        if(canopyEnabled)for(std::size_t i=0;i<canopyPopulation.plants.size();++i)for(unsigned slot=0;slot<3;++slot){
+            const auto mesh=slot?canopyMeshes[slot]:canopyRootMeshes[i];
+            if(!scene.Mesh(mesh,canopyPopulation.plants[i].pose,canopySurfaces[slot],{},{{0x43414e4f50594658ull,i*3+slot+1},1}))
+                throw std::runtime_error("Canopy-world submission failed");
+            ++submittedCanopy;
+        }
         submittedShrubs=0;
         if(shrubsEnabled)for(std::size_t index=0;index<shrubCanopy.plants.size();++index){
             const auto& plant=shrubCanopy.plants[index];
@@ -1462,6 +1584,11 @@ public:
             const auto p=shrubCanopy.plants.front().pose.position;
             camera.target=p+Vec3{0,.65f,0};camera.position=camera.target+Vec3{1.35f,.5f,-1.9f};lastRenderedCamera=camera;
         }
+        if(captureCanopyOverview&&!capture.empty()){
+            camera.target=canopyPose.position+Vec3{0,canopyViewTargetHeight,0};
+            camera.position=canopyPose.position+Vec3{std::sin(canopyViewYaw)*canopyViewDistance,canopyViewHeight,-std::cos(canopyViewYaw)*canopyViewDistance};
+            lastRenderedCamera=camera;
+        }
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
         draw.SetWaterSurface(Mistwatch::RiverSurface());
@@ -1608,6 +1735,9 @@ public:
     }
     void OnStop(Engine& e) override {
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
+        unsigned canopyDestroyed{};for(auto& mesh:canopyMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++canopyDestroyed;}mesh={};}
+        for(auto& mesh:canopyRootMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++canopyDestroyed;}mesh={};}
+        canopyMaterials.Shutdown();
         unsigned trailDestroyed{};
         unsigned shrubDestroyed{};for(auto& pair:shrubMeshes)for(auto& mesh:pair){if(mesh){e.DestroyMesh3D(mesh.handle);++shrubDestroyed;}mesh={};}
         for(auto& mesh:trailLitterMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++trailDestroyed;}mesh={};}
@@ -1671,6 +1801,8 @@ public:
         // 新碎物檢查與證據寫入在正常釋放完成後，不增加其餘資源的提前退場點。
         if(trailDestroyed!=2)throw std::runtime_error("Trail litter cleanup incomplete");
         if(shrubDestroyed!=8)throw std::runtime_error("Shrub cleanup incomplete");
+        if(canopyDestroyed!=(Mistwatch::WorldProfileHasCanopy(worldProfile)?7u:0u)||canopyMaterials.Stats().materials)throw std::runtime_error("Canopy preview normal cleanup incomplete");
+        if(!capture.empty()){auto path=capture;path+=".canopy-cleanup.txt";std::ofstream out(path);out<<"mesh_destroy_calls="<<canopyDestroyed<<"\nmaterials_remaining=0\ncleanup=success\n";out.close();if(!out)throw std::runtime_error("Canopy preview cleanup receipt failed");}
         if(!capture.empty()){auto path=capture;path+=".shrub-cleanup.txt";std::ofstream out(path);out<<"mesh_destroy_calls=8\ncleanup=success\n";out.close();if(!out)throw std::runtime_error("Shrub cleanup receipt failed");}
         if(!capture.empty()){
             auto path=capture;path+=".trail-cleanup.txt";

@@ -1,4 +1,30 @@
 add_executable(MistwatchPlaybackTest tests/MistwatchPlaybackTest.cpp)
+find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+set(MISTWATCH_CANOPY_BATCH "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch")
+set(MISTWATCH_ROOT_SOURCE "${MISTWATCH_CANOPY_BATCH}/cooked/meshes/island-tree-01/island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh")
+# 每個 fresh build 自有派生目錄；作者工具拒絕覆寫非空輸出。
+set(MISTWATCH_ROOT_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated-root-stem")
+set(MISTWATCH_ROOT_COOKED "${MISTWATCH_ROOT_OUTPUT}/island-tree-01-lod2-trunk-root-stem.aemesh")
+set(MISTWATCH_ROOT_RECEIPT "${MISTWATCH_ROOT_OUTPUT}/author-receipt.json")
+add_custom_command(OUTPUT "${MISTWATCH_ROOT_COOKED}" "${MISTWATCH_ROOT_RECEIPT}"
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/author_root_stem.py"
+    --source "${MISTWATCH_ROOT_SOURCE}" --output-dir "${MISTWATCH_ROOT_OUTPUT}"
+  DEPENDS "${MISTWATCH_ROOT_SOURCE}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/author_root_stem.py"
+  VERBATIM)
+add_custom_target(MistwatchRootStemAsset DEPENDS "${MISTWATCH_ROOT_COOKED}" "${MISTWATCH_ROOT_RECEIPT}")
+add_executable(MistwatchRootStemTest tests/MistwatchRootStemTest.cpp)
+target_include_directories(MistwatchRootStemTest PRIVATE include)
+target_compile_options(MistwatchRootStemTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchRootStemTest PRIVATE MISTWATCH_SOURCE_ROOT="${CMAKE_SOURCE_DIR}" MISTWATCH_DERIVED_STEM="${MISTWATCH_ROOT_COOKED}" WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(MistwatchRootStemTest PRIVATE AevryndEngine)
+add_dependencies(MistwatchRootStemTest MistwatchRootStemAsset)
+add_test(NAME MistwatchRootStemTest COMMAND MistwatchRootStemTest)
+set_tests_properties(MistwatchRootStemTest PROPERTIES LABELS "release-gates" TIMEOUT 60)
+add_executable(MistwatchWorldProfileTest tests/MistwatchWorldProfileTest.cpp)
+target_include_directories(MistwatchWorldProfileTest PRIVATE include)
+target_compile_options(MistwatchWorldProfileTest PRIVATE /W4 /WX /permissive- /utf-8)
+add_test(NAME MistwatchWorldProfileTest COMMAND MistwatchWorldProfileTest)
+set_tests_properties(MistwatchWorldProfileTest PROPERTIES LABELS "release-gates" TIMEOUT 60)
 add_executable(MistwatchShrubCanopyTest tests/MistwatchShrubCanopyTest.cpp)
 target_include_directories(MistwatchShrubCanopyTest PRIVATE include)
 target_compile_options(MistwatchShrubCanopyTest PRIVATE /W4 /WX /permissive- /utf-8)
@@ -32,6 +58,7 @@ target_include_directories(MistwatchSessionTest PRIVATE include "${CMAKE_SOURCE_
 target_compile_options(MistwatchSessionTest PRIVATE /W4 /WX /permissive- /utf-8)
 add_test(NAME MistwatchSessionTest COMMAND MistwatchSessionTest)
 add_executable(Mistwatch WIN32 src/main.cpp)
+add_dependencies(Mistwatch MistwatchRootStemAsset)
 add_executable(MistwatchSupplyCrateTest tests/MistwatchSupplyCrateTest.cpp)
 target_include_directories(MistwatchSupplyCrateTest PRIVATE include)
 target_compile_options(MistwatchSupplyCrateTest PRIVATE /W4 /WX /permissive- /utf-8)
@@ -89,6 +116,34 @@ target_compile_options(Mistwatch PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(Mistwatch PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(Mistwatch PRIVATE AevryndEngine)
 set_target_properties(Mistwatch PROPERTIES OUTPUT_NAME "Aevrynd-Mistwatch")
+# runtime 只複製實際三槽與九個原材質，不帶整個 LOD 資料夾。
+set(MISTWATCH_CANOPY_RUNTIME "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-canopy-preview")
+add_custom_command(TARGET Mistwatch POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${MISTWATCH_CANOPY_RUNTIME}/meshes" "${MISTWATCH_CANOPY_RUNTIME}/materials"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${MISTWATCH_CANOPY_BATCH}/LICENSE.md"
+    "${MISTWATCH_CANOPY_BATCH}/runtime-asset-manifest.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../ROOT_DERIVATION.md" "${MISTWATCH_CANOPY_RUNTIME}/"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MISTWATCH_ROOT_COOKED}" "${MISTWATCH_CANOPY_RUNTIME}/meshes/"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MISTWATCH_ROOT_RECEIPT}" "${MISTWATCH_CANOPY_RUNTIME}/root-stem-derivation.json"
+  VERBATIM)
+foreach(canopy_mesh IN ITEMS
+    island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh
+    island-tree-01-lod1-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh
+    island-tree-01-lod2-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh)
+  add_custom_command(TARGET Mistwatch POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${MISTWATCH_CANOPY_BATCH}/cooked/meshes/island-tree-01/${canopy_mesh}" "${MISTWATCH_CANOPY_RUNTIME}/meshes/"
+    VERBATIM)
+endforeach()
+foreach(canopy_slot IN ITEMS trunk leaves branches)
+  foreach(canopy_channel IN ITEMS base normal arm)
+    add_custom_command(TARGET Mistwatch POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MISTWATCH_CANOPY_BATCH}/cooked/materials/island-tree-01/${canopy_slot}-${canopy_channel}.dds" "${MISTWATCH_CANOPY_RUNTIME}/materials/"
+      VERBATIM)
+  endforeach()
+endforeach()
 foreach(material IN ITEMS ambientcg/ground037 ambientcg/woodsiding006 poly-haven/bark_brown_02 poly-haven/rock_surface)
   add_custom_command(TARGET Mistwatch POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/material-packs/${material}" "$<TARGET_FILE_DIR:Mistwatch>/assets/mistwatch-materials/${material}")
