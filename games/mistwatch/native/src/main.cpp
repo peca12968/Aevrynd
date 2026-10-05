@@ -9,6 +9,7 @@
 #include "MistwatchFern.h"
 #include "MistwatchScannedGrass.h"
 #include "MistwatchForestCover.h"
+#include "MistwatchTrailLitter.h"
 #include "MistwatchFernColonies.h"
 #include "MistwatchEvasion.h"
 #include "MistwatchRiver.h"
@@ -70,6 +71,11 @@ class MistwatchGame final : public IGame {
     std::size_t broadleafTriangles{};
     HeightField3D terrain;
     MeshResource3D terrainMesh;
+    Mistwatch::TrailLitterResult trailLitter;
+    std::array<MeshResource3D,2> trailLitterMeshes;
+    bool trailLitterEnabled{true};
+    bool captureTrailOverview{};
+    unsigned submittedTrailLitter{};
     MeshResource3D landscapeMesh;
     std::vector<Transform3D> landscapeTrees;
     MeshResource3D riverMesh;
@@ -505,6 +511,11 @@ public:
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
         if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
         solids=RuntimeWorldSolids(session.bridgeRepaired);
+        trailLitter=Mistwatch::CreateTrailLitter(terrain,solids);
+        if(!trailLitter.reachedBudget)throw std::runtime_error("Trail litter authored budget incomplete");
+        trailLitterMeshes[0]=e.CreateMeshResource3D(trailLitter.branches);
+        trailLitterMeshes[1]=e.CreateMeshResource3D(trailLitter.stones);
+        if(!trailLitterMeshes[0]||!trailLitterMeshes[1])throw std::runtime_error("Trail litter GPU upload failed");
         forestCoverClearanceColliders=solids.size();
         const auto coverStart=std::chrono::steady_clock::now();
         if(!diagnosticScatterCover&&!diagnosticProceduralGrass){
@@ -558,6 +569,13 @@ public:
         wchar_t output[32768]{};
         const auto outputCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",output,32768);
         if(outputCount && outputCount<32768) {
+            // 同執行檔單變量比較；正式遊玩不允許此環境開關關閉裝飾層。
+            wchar_t litterFlag[3]{};
+            const auto litterCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_TRAIL_LITTER",litterFlag,3);
+            if(litterCount){
+                if(litterCount!=1||(litterFlag[0]!=L'0'&&litterFlag[0]!=L'1'))throw std::runtime_error("Invalid trail litter comparison flag");
+                trailLitterEnabled=litterFlag[0]!=L'0';
+            }
             capture=output;
             captureStart=std::chrono::steady_clock::now();
             started=true;
@@ -606,6 +624,7 @@ public:
                 else if(name==L"focus-pause") {captureFocusProbe=true;fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";}
                 else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
                 else if(name==L"boulder-profile")captureBoulderOverview=true;
+                else if(name==L"trail-profile")captureTrailOverview=true;
                 else if(name==L"grass-profile")captureGrassOverview=true;
                 else if(name==L"supply-profile"||name==L"supply-collected") {
                     captureSupplyOverview=true;
@@ -970,7 +989,14 @@ public:
                     <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
                     <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
                     <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
-                out<<"camera_source="<<((diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
+                out<<"trail_litter_enabled="<<trailLitterEnabled
+                    <<"\ntrail_litter_patches="<<trailLitter.patches.size()
+                    <<"\ntrail_litter_branches="<<trailLitter.branchCount
+                    <<"\ntrail_litter_stones="<<trailLitter.stoneCount
+                    <<"\ntrail_litter_fingerprint="<<trailLitter.fingerprint
+                    <<"\nsubmitted_trail_litter="<<submittedTrailLitter
+                    <<"\ntrail_litter_triangles="<<(trailLitter.branches.indices.size()+trailLitter.stones.indices.size())/3<<'\n';
+                out<<"camera_source="<<((captureTrailOverview||diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
                     <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
                     <<"\ncamera_height="<<lastRenderedCamera.position.y
                     <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
@@ -1262,6 +1288,16 @@ public:
             ++submittedGrassVariants[variant];
             ++submittedGrass;
         }
+        submittedTrailLitter=0;
+        if(trailLitterEnabled){
+            for(unsigned index=0;index<2;++index){
+                auto material=index==0?barkMaterial:rockMaterial;
+                material.textureScale=1.f;
+                if(!scene.Mesh(trailLitterMeshes[index],{},material,{},{{0x4d57545241494c4cull,index+1},1}))
+                    throw std::runtime_error("Trail litter scene insertion failed");
+                ++submittedTrailLitter;
+            }
+        }
         for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);
         submittedSupplies=0;
         Material3D supplyMetal{{1,1,1,1},{.65f,.7f,0,1}};
@@ -1380,6 +1416,12 @@ public:
             camera.position=camera.target+Vec3{.95f,.55f,-1.2f};
         }
         lastRenderedCamera=camera;
+        if(captureTrailOverview&&!capture.empty()){
+            if(trailLitter.patches.empty())throw std::runtime_error("Trail litter profile missing");
+            const auto p=trailLitter.patches.front().centre;
+            camera.target=p+Vec3{0,.04f,0};camera.position=p+Vec3{.9f,.6f,-1.2f};
+            lastRenderedCamera=camera;
+        }
         auto& draw=e.Draw();
         draw.SetEnvironmentTime(waterTime);
         draw.SetWaterSurface(Mistwatch::RiverSurface());
@@ -1526,6 +1568,8 @@ public:
     }
     void OnStop(Engine& e) override {
         StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
+        unsigned trailDestroyed{};
+        for(auto& mesh:trailLitterMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++trailDestroyed;}mesh={};}
         unsigned suppliesDestroyed{};
         if(!rangerHutMesh)throw std::runtime_error("Ranger hut cleanup incomplete");
         e.DestroyMesh3D(rangerHutMesh.handle);rangerHutMesh={};
@@ -1582,6 +1626,13 @@ public:
             auto path=capture;path+=".fern-cleanup.txt";
             std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=4\ncleanup=success\n";out.close();
             if(!out)throw std::runtime_error("Fern cleanup receipt failed");
+        }
+        // 新碎物檢查與證據寫入在正常釋放完成後，不增加其餘資源的提前退場點。
+        if(trailDestroyed!=2)throw std::runtime_error("Trail litter cleanup incomplete");
+        if(!capture.empty()){
+            auto path=capture;path+=".trail-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=2\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Trail litter cleanup receipt failed");
         }
     }
 };

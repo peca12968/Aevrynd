@@ -23,11 +23,11 @@ $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MIST
     'AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE','AEVRYND_MSAA_STAGE_DIAGNOSTIC_SAMPLE',
     'AEVRYND_MISTWATCH_LANDSCAPE_PHASE_PROBE','AEVRYND_MISTWATCH_GROUND_LEGACY','AEVRYND_MISTWATCH_GROUND_SINGLE_SURFACE','AEVRYND_MISTWATCH_GRASS_LEGACY',
     'AEVRYND_MISTWATCH_FERN_LEGACY','AEVRYND_MISTWATCH_GRASS_DIM','AEVRYND_MISTWATCH_GRASS_PROCEDURAL','AEVRYND_MISTWATCH_GRASS_SCATTER_BASELINE',
-    'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED','AEVRYND_MISTWATCH_LEGACY_RANGER_HUT')
+    'AEVRYND_MISTWATCH_GRASS_FIXTURE','AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED','AEVRYND_MISTWATCH_LEGACY_RANGER_HUT','AEVRYND_MISTWATCH_TRAIL_LITTER')
 $saved=@{}
 foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process');[Environment]::SetEnvironmentVariable($name,$null,'Process')}
 $results=@()
-$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile')}
+$cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile','trail-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile','trail-profile')}
 try {
     # 正常驗收使用遊戲預設，不以環境變數代替 production 接入；舊版只在明確比較時啟用。
     if($BaselineMiddleLayer){[Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER','0','Process')}
@@ -51,6 +51,14 @@ try {
         if(-not (Test-Path -LiteralPath $capture) -or -not (Test-Path -LiteralPath $receiptPath)){throw ('Missing native evidence: '+$case)}
         $receipt=@{}
         foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
+        if($receipt.trail_litter_enabled -ne '1' -or $receipt.trail_litter_patches -ne '48' -or
+            $receipt.trail_litter_branches -ne '240' -or $receipt.trail_litter_stones -ne '336' -or
+            $receipt.trail_litter_triangles -ne '26530' -or $receipt.trail_litter_fingerprint -ne '17422259039373256066' -or
+            $receipt.submitted_trail_litter -ne '2'){throw ('Trail litter production contract missing: '+$case)}
+        if($case -eq 'trail-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Trail profile not proven'}
+        $trailCleanup=@{}
+        foreach($line in Get-Content -LiteralPath ($capture+'.trail-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$trailCleanup[$pair[0]]=$pair[1]}}
+        if($trailCleanup.cleanup -ne 'success' -or $trailCleanup.mesh_destroy_calls -ne '2'){throw ('Trail cleanup incomplete: '+$case)}
         $cleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.audio-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$cleanup[$pair[0]]=$pair[1]}}
         if($cleanup.cleanup -ne 'success' -or $cleanup.sounds -ne '0' -or $cleanup.bytes -ne '0' -or $cleanup.voices -ne '0'){throw ('Audio resources leaked: '+$case)}
