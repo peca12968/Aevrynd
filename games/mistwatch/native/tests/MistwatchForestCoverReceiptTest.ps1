@@ -7,14 +7,14 @@ $valid=@{
     forest_cover_maximum_patches='400';forest_cover_patch_minimum_plants='20'
     forest_cover_patch_maximum_plants='32';forest_cover_independent_anchors='900'
     forest_cover_patches='165';forest_cover_reached_budget='1'
-    forest_cover_fingerprint='18346272358334413870';forest_cover_clearance_colliders='221'
-    forest_cover_clearance_collider_fingerprint='522388356439590700'
-    forest_cover_variants='900,764,672,563,701'
-    fern_colony_population='300';fern_colony_authored_population='300';fern_colonies='82'
+        forest_cover_fingerprint='11564884043970395063';forest_cover_clearance_colliders='221'
+        forest_cover_clearance_collider_fingerprint='5549580620105119187'
+        forest_cover_variants='927,782,615,543,733'
+        fern_colony_population='300';fern_colony_authored_population='300';fern_colonies='84'
     fern_colony_seed='1128681010';fern_colony_reached_budget='1'
-    fern_colony_fingerprint='18387932991795706967'
-    fern_colony_original_fingerprint='14418781708182382769'
-    fern_colony_variants='11,29,169,91';understory_ferns='420';understory_saplings='42'
+        fern_colony_fingerprint='6509400757303582109'
+        fern_colony_original_fingerprint='3085592665785500013'
+        fern_colony_variants='11,23,183,83';understory_ferns='420';understory_saplings='42'
     submitted_grass_variants='1,1,1,1,1';submitted_grass='5';submitted_grass_triangles='7842'
     submitted_colony_variants='1,1,1,1';submitted_colony_ferns='4';submitted_colony_fern_triangles='6232'
     submitted_ferns='5';submitted_fern_triangles='8616'
@@ -86,13 +86,13 @@ foreach($scene in @('initial','river-overlook')) {
 # 中層候選是不同世界配置；保留上方舊契約的全部65反例，不自動猜選版本。
 $middle=$valid.Clone()
 $middleFields=@{
-    forest_cover_patches='162';forest_cover_fingerprint='1048722341261312903'
-    forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='6744664032273563734'
-    forest_cover_variants='964,741,630,546,719';fern_colonies='79'
-    fern_colony_fingerprint='3053818525289996684';fern_colony_variants='10,28,173,89'
+            forest_cover_patches='154';forest_cover_fingerprint='8857932304976401347'
+            forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11739939804215987065'
+            forest_cover_variants='871,751,625,568,785';fern_colonies='86'
+            fern_colony_fingerprint='3313014129975770240';fern_colony_variants='6,37,170,87'
     middle_layer_comparison='1';middle_layer_population='24';middle_layer_target='24'
-    middle_layer_reached_budget='1';middle_layer_attempted='16999'
-    middle_layer_transform_fingerprint='12515088988881324841'
+            middle_layer_reached_budget='1';middle_layer_attempted='19887'
+            middle_layer_transform_fingerprint='11352586881239724297'
     submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
 }
 foreach($field in $middleFields.Keys){$middle[$field]=$middleFields[$field]}
@@ -152,17 +152,17 @@ $fixedPositive=0;$aliasRejected=0
 foreach($useMiddle in @($false,$true)){
     foreach($scene in @('initial','river-overlook')){
         $fixed=if($useMiddle){$middle.Clone()}else{$valid.Clone()}
-        $count=if($scene -eq 'initial'){188}else{224}
-        $triangles=if($scene -eq 'initial'){286568}else{346056}
+        $count=if($scene -eq 'initial'){192}else{226}
+        $triangles=if($scene -eq 'initial'){298968}else{350104}
         $fixed.submitted_original_ferns=[string]$count
         $fixed.submitted_original_fern_triangles=[string]$triangles
-        $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'43,47,49,49'}else{'55,55,54,60'}
+        $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'47,49,49,47'}else{'51,61,51,63'}
         $fixed.submitted_ferns=[string]($count+[long]$fixed.submitted_colony_ferns)
         $fixed.submitted_fern_triangles=[string]($triangles+[long]$fixed.submitted_colony_fern_triangles)
         Assert-MistwatchForestCoverReceipt $fixed -Scene $scene -MiddleLayer:$useMiddle
         ++$fixedPositive
         $alias=$fixed.Clone()
-        $alias.submitted_original_fern_variants=if($scene -eq 'initial'){'47,43,66,32'}else{'59,51,71,43'}
+        $alias.submitted_original_fern_variants=if($scene -eq 'initial'){'51,45,66,30'}else{'55,57,68,46'}
         $identityRejected=$false
         try{Assert-MistwatchForestCoverReceipt $alias -Scene $scene -MiddleLayer:$useMiddle}catch{
             if($_.Exception.Message -eq 'Original fern fixed-scene variant identity changed'){$identityRejected=$true}
@@ -172,3 +172,43 @@ foreach($useMiddle in @($false,$true)){
     }
 }
 'FIXED_SCENE_VARIANT_IDENTITY_PASS; POSITIVE='+$fixedPositive+'; ALIAS_REJECTED='+$aliasRejected
+
+# 舊作者內容不能被新地形當作相同配置；每欄獨立拒絕，原反例全部保留。
+foreach($change in @(
+    @{field='forest_cover_fingerprint';value='18346272358334413870'},
+    @{field='forest_cover_clearance_collider_fingerprint';value='522388356439590700'},
+    @{field='forest_cover_variants';value='900,764,672,563,701'},
+    @{field='fern_colonies';value='82'},
+    @{field='fern_colony_fingerprint';value='18387932991795706967'},
+    @{field='fern_colony_original_fingerprint';value='14418781708182382769'},
+    @{field='fern_colony_variants';value='11,29,169,91'}
+)){$bad=$valid.Clone();$bad[$change.field]=$change.value;Assert-Rejected $bad ('old authored '+$change.field)}
+foreach($change in @(
+    @{field='forest_cover_patches';value='162'},
+    @{field='forest_cover_fingerprint';value='1048722341261312903'},
+    @{field='forest_cover_clearance_collider_fingerprint';value='6744664032273563734'},
+    @{field='forest_cover_variants';value='964,741,630,546,719'},
+    @{field='fern_colonies';value='79'},
+    @{field='fern_colony_fingerprint';value='3053818525289996684'},
+    @{field='fern_colony_variants';value='10,28,173,89'},
+    @{field='middle_layer_attempted';value='16999'},
+    @{field='middle_layer_transform_fingerprint';value='12515088988881324841'}
+)){$bad=$middle.Clone();$bad[$change.field]=$change.value;Assert-MiddleRejected $bad ('old authored '+$change.field)}
+'EROSION_AUTHOR_REBASE_REJECTION_PASS; OLD_BASELINE=7; OLD_MIDDLE=9'
+
+# NaN 的 abs 比較不會超出容差，須先明確拒絕非有限值；保留原有容差。
+foreach($marker in @('-15.46875','-15.4688')){
+    Assert-MistwatchTerrainCoverageMarker @{ground_normal_scale=$marker}
+}
+$markerRejected=0
+foreach($marker in @('NaN','Infinity','-Infinity','1e999','-1e999','','bad','0','-15.5','-15.4685',$null)){
+    $failed=$false
+    try{Assert-MistwatchTerrainCoverageMarker @{ground_normal_scale=$marker}}catch{$failed=$true}
+    if(-not $failed){throw 'Invalid terrain coverage marker accepted'}
+    ++$markerRejected
+}
+$failed=$false
+try{Assert-MistwatchTerrainCoverageMarker @{}}catch{$failed=$true}
+if(-not $failed){throw 'Missing terrain coverage marker accepted'}
+$markerRejected+=1
+'TERRAIN_COVERAGE_MARKER_RECEIPT_PASS; POSITIVE=2; REJECTED='+$markerRejected

@@ -51,6 +51,10 @@ class MistwatchGame final : public IGame {
     MeshResource3D rangerHutMesh;
     bool diagnosticLegacyRangerHut{},captureRangerHutOverview{};
     std::array<MeshResource3D,4> firMeshes;
+    MeshResource3D detailedFirTwig;
+    bool nearFirTwigLod{true};
+    Scene3DStats firLodSubmission{};
+    bool shadowRetentionEnabled{true};
     std::array<MeshResource3D,4> landscapeFirMeshes;
     std::array<Material3D,4> firMaterials;
     MaterialLibrary3D forestMaterials;
@@ -331,6 +335,10 @@ public:
         }};
         if(!materials.LoadAll(definitions)) throw std::runtime_error("Mistwatch CC0 materials unavailable");
         groundMaterial=*materials.Find("ground");
+        if(groundMaterial.materialClass==MaterialClass3D::Terrain&&groundMaterial.textures){
+            groundMaterial.useUv=true;
+            groundMaterial.normalScale=TerrainLayerCoverageNormalScaleMarker3D;
+        }
         barkMaterial=*materials.Find("bark");
         woodMaterial=*materials.Find("wood");
         rockMaterial=*materials.Find("rock");
@@ -343,6 +351,10 @@ public:
         wchar_t twigMode[16]{},captureFlag[2]{};
         const bool treeDiagnostic=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",captureFlag,2)>0;
         if(treeDiagnostic)GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_TWIG_MODE",twigMode,16);
+        if(treeDiagnostic&&std::wstring(twigMode)==L"baseline")nearFirTwigLod=false;
+        wchar_t shadowMode[16]{};
+        if(treeDiagnostic)GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_SHADOW_RETAIN_MODE",shadowMode,16);
+        if(treeDiagnostic&&std::wstring(shadowMode)==L"baseline")shadowRetentionEnabled=false;
         constexpr const char* hashes[3][3]{
             {"49fd9058e6a5059e6bced88360e44d0bcf303a164a3c0f4c08a151ddb236015a","a1d895baa855d31dd705e10be6b3c8ed56e2e663665b8a7001c0cf39e128a3e8","21291b807a30761309f810086d6732b752546c951e2a2a091101dd4f7cdb29f3"},
             {"b1a458c5584b5fa40ce04144f341e013b1a999881bf17fff2880032363d58d5e","37af8ba7a3a7f94edb8a58f3bb716c978ca9631bd04027625ea5818be0223e10","3f656dfa0f462f4812c17ff0487261c770a637d8d7c97536c9d98a36f429d3bb"},
@@ -371,6 +383,12 @@ public:
             if(!loaded) throw std::runtime_error("Fir mesh unavailable");
             firMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
             if(!firMeshes[slot]) throw std::runtime_error("Fir GPU upload failed");
+            if(slot==1) {
+                const auto detail=LoadAevryndMeshFile(forestRoot/"meshes"/"fir-tree-01-c-lod0-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh");
+                if(!detail)throw std::runtime_error("Detailed fir twig unavailable");
+                detailedFirTwig=e.CreateMeshResource3D(detail.mesh);
+                if(!detailedFirTwig)throw std::runtime_error("Detailed fir twig GPU upload failed");
+            }
             const std::string distantName="fir-tree-01-c-lod2-node0-mesh0-primitive"+std::to_string(slot)+"-material"+std::to_string(slot)+"-fir-tree-01-"+name+".aemesh";
             const auto distant=LoadAevryndMeshFile(forestRoot/"meshes"/distantName);
             if(!distant)throw std::runtime_error("Landscape fir mesh unavailable");
@@ -709,7 +727,11 @@ public:
                 if(diagnosticHdrStage!=3)throw std::runtime_error("HDR stages require atmosphere diagnostic build");
 #endif
             }
-            if(diagnosticNoGroundNormal){groundMaterial.normalScale=0;groundDistanceSettings.normalDetailStrength=0;}
+            if(diagnosticNoGroundNormal) {
+                // Terrain 的 normalScale 同時是覆蓋路由標記，停用法線不得移除材質覆蓋。
+                if(groundMaterial.materialClass!=MaterialClass3D::Terrain)groundMaterial.normalScale=0;
+                groundDistanceSettings.normalDetailStrength=0;
+            }
             if(diagnosticNoMsaa) {
 #if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
                 if(!EngineRendererTestAccess3D::SetMultisampling(e,false))throw std::runtime_error("MSAA diagnostic setup failed");
@@ -809,7 +831,20 @@ public:
                 }
                 auto receipt=CapturePath();receipt+=".receipt.txt";
                 std::ofstream out(receipt);
-                out<<"capture=success\nwater_phase_seconds="<<waterTime
+                out<<"capture=success\nfir_lod_enabled="<<nearFirTwigLod
+                    <<"\nfir_lod_candidates="<<firLodSubmission.lodMeshInstances
+                    <<"\nfir_lod_near="<<firLodSubmission.nearLodInstances
+                    <<"\nfir_lod_far="<<firLodSubmission.farLodInstances
+                    <<"\nfir_lod_transitions="<<firLodSubmission.lodTransitionInstances
+                    <<"\nfir_lod_dual="<<firLodSubmission.lodDualSubmittedInstances
+                    <<"\nfir_lod_budget_fallbacks="<<firLodSubmission.lodTransitionBudgetFallbacks
+                    <<"\nshadow_retention_enabled="<<(shadowRetentionEnabled&&!diagnosticNoShadows)
+                    <<"\nscene_shadow_only_instances="<<firLodSubmission.shadowOnlyInstances
+                    <<"\nscene_shadow_budget_dropped="<<firLodSubmission.shadowOnlyBudgetDropped
+                    <<"\nscene_cpu_fallback_unavailable="<<firLodSubmission.cpuFallbackUnavailable
+                    <<"\nscene_projected_overlay_instances="<<firLodSubmission.shadowInstances
+                    <<"\nscene_visible_instances="<<firLodSubmission.visibleMeshInstances
+                    <<"\nwater_phase_seconds="<<waterTime
                     <<"\nwater_surface_fingerprint="<<WaterSurfaceFingerprint3D(Mistwatch::RiverSurface())
                     <<"\nwater_single_composite="<<stats.waterSingleCompositeEnabled
                     <<"\nwater_composite_draws="<<stats.waterSingleCompositeDraws
@@ -1144,13 +1179,23 @@ public:
             ++submittedMiddleLayer;
         }
         scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
-        for(const auto tree:trees) {
-            for(unsigned slot=0;slot<4;++slot)
-                scene.Mesh(firMeshes[slot],{tree,{0,tree.z,0},{.65f,.65f,.65f}},firMaterials[slot]);
-        }
+        // 鏡頭到樹冠包絡距離決定針葉細節，六公尺過渡帶保留互補色彩與陰影。
+        const auto submitFir=[&](Transform3D transform) {
+            for(unsigned slot=0;slot<4;++slot) {
+                if(slot==1&&nearFirTwigLod) {
+                    const std::array<MeshLodLevel3D,2> levels{{
+                        {detailedFirTwig,firMaterials[slot],12.f,6.f},
+                        {firMeshes[slot],firMaterials[slot]}}};
+                    if(!scene.MeshLodChain(levels,MeshLodDistanceMetric3D::BoundsSurface,transform))
+                        throw std::runtime_error("Fir twig LOD insertion failed");
+                } else if(!scene.Mesh(firMeshes[slot],transform,firMaterials[slot]))
+                    throw std::runtime_error("Fir scene insertion failed");
+            }
+        };
+        for(const auto tree:trees)submitFir({tree,{0,tree.z,0},{.65f,.65f,.65f}});
         submittedSaplings=0;
         for(const auto& tree:understory.saplings) {
-            for(unsigned slot=0;slot<4;++slot)scene.Mesh(firMeshes[slot],tree,firMaterials[slot]);
+            submitFir(tree);
             ++submittedSaplings;
         }
         Material3D fern{{1,1,1,1},{.92f,0,0,.65f}};
@@ -1343,7 +1388,19 @@ public:
         draw.SetExposureCompensation(.5f);
         draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,45,200,true,.0025f,.09f,-2.f,.76f});
         draw.SetTerrainDistanceMaterial(groundDistanceSettings);
-        const auto sceneStats=scene.Submit(draw,camera,{1280,720});
+        // 相機外物件仍投影；關閉陰影時不復活舊式投影 Overlay。
+        Scene3DSubmissionOptions submission{};
+        submission.shadows.enabled=shadowRetentionEnabled&&draw.DirectionalShadowMapEnabled();
+        submission.shadows.maximumDistance=55.f;
+        submission.maximumLodTransitionInstances=512;
+        submission.maximumShadowOnlyInstances=4096;
+        const auto sceneStats=scene.Submit(draw,camera,{1280,720},submission);
+        firLodSubmission=sceneStats;
+        if(diagnosticNoShadows&&(sceneStats.shadowOnlyInstances||sceneStats.shadowInstances))
+            throw std::runtime_error("Disabled shadows unexpectedly submitted");
+        // 容量退回是有效降級路徑；驗收明確拒絕，不中止正常遊玩。
+        if(!CapturePath().empty()&&nearFirTwigLod&&sceneStats.lodTransitionBudgetFallbacks)
+            throw std::runtime_error("Fir twig LOD transition budget fallback");
         if(captureGrassDistance) {
             grassFixtureState.sceneSerial=sceneStats.submissionSerial;
             for(const auto& item:draw.meshInstances)if(item.identity==RenderObjectIdentity3D{{5572150615523553875ull,grassFixtureIndex+1},1}){
@@ -1503,6 +1560,7 @@ public:
             if(!out)throw std::runtime_error("Broadleaf cleanup receipt failed");
         }
         e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);
+        e.DestroyMesh3D(detailedFirTwig.handle);detailedFirTwig={};
         for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);
         unsigned propsDestroyed{};
         for(auto& mesh:propMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++propsDestroyed;}mesh={};}

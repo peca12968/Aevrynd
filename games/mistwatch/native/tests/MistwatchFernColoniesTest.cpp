@@ -140,9 +140,9 @@ int main(int argc,char** argv) {
             NormalizeGrassAsset(loaded.mesh);grassAssets[variant]=ForestCoverAssetFromMesh(loaded.mesh);
         }
         const auto grass=CreateForestCover(terrain,trees,original,solids,grassAssets);
-        Require(grass.reachedBudget&&grass.plants.size()==3600&&grass.patches.size()==(useMiddle?162u:165u),"River-bank true grass author profile changed");
+        Require(grass.reachedBudget&&grass.plants.size()==3600&&grass.patches.size()==(useMiddle?154u:165u),"River-bank true grass author profile changed");
         const auto before=WorldFingerprint(trees,original,broadleaf,solids,grass);
-        Require(before==(useMiddle?4875756677184273101ull:3765836134243830339ull),"River-bank true world author fingerprint changed");
+        Require(before==(useMiddle?14570490119226306139ull:14319149161271836151ull),"River-bank true world author fingerprint changed");
         std::array<Mesh3D,4> meshes;std::array<FernColonyAsset,4> assets;
         constexpr std::array<float,4> expectedRadius{.981686473f,.821101248f,.549620509f,.635080874f};
         constexpr std::array<float,4> expectedHeight{.635495126f,.512394726f,.412848055f,.319213778f};
@@ -167,7 +167,7 @@ int main(int argc,char** argv) {
         Require(settings.targetPlants==300&&settings.seed==0x43464e32u&&settings.maximumColonies==256&&
             settings.attemptsPerColony==240&&settings.rootSeparationRatio==.65f,"Authored colony defaults changed");
         const auto population=CreateFernColonies(terrain,grass,original.ferns,solids,assets,settings);
-        Require(population.reachedBudget&&population.plants.size()==300&&population.colonies.size()==(useMiddle?79u:82u),"300 authored fern colonies incomplete");
+        Require(population.reachedBudget&&population.plants.size()==300&&population.colonies.size()==(useMiddle?86u:84u),"300 authored fern colonies incomplete");
         const auto repeat=CreateFernColonies(terrain,grass,original.ferns,solids,assets,settings);
         Require(SamePopulation(population,repeat),"Same seed full transform determinism failed");
         auto alternate=settings;alternate.seed^=0x11111111u;
@@ -175,8 +175,8 @@ int main(int argc,char** argv) {
         const auto ratios=CheckPopulation(population,grass,original,solids,terrain,assets,meshes);
         auto larger=settings;larger.targetPlants=500;
         const auto shortfall=CreateFernColonies(terrain,grass,original.ferns,solids,assets,larger);
-        Require(!shortfall.reachedBudget&&shortfall.plants.size()==(useMiddle?465u:477u)&&
-            shortfall.colonies.size()==(useMiddle?127u:132u),"River-bank 500 shortfall was hidden or changed");
+        Require(!shortfall.reachedBudget&&shortfall.plants.size()==(useMiddle?459u:498u)&&
+            shortfall.colonies.size()==(useMiddle?129u:140u),"River-bank 500 shortfall was hidden or changed");
         (void)CheckPopulation(shortfall,grass,original,solids,terrain,assets,meshes);
         for(std::size_t i=0;i<population.plants.size();++i)Require(SamePlant(population.plants[i],shortfall.plants[i]),"Budget candidate prefix changed");
         auto zero=settings;zero.targetPlants=0;

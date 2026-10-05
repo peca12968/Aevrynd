@@ -1,31 +1,31 @@
 ﻿function Assert-MistwatchForestCoverReceipt {
     param([Parameter(Mandatory=$true)][hashtable]$Receipt,[string]$Scene='',[switch]$MiddleLayer)
-    # 精確作者配置獨立於畫質評分；不接受舊 scatter、缺欄位或少株 fallback。
+    # 凹灣地形實機重封存作者配置；獨立於畫質評分，不接受舊 scatter、缺欄位或少株 fallback。
     $expected=@{
         ground_cover_instances='3600';forest_cover_mode='fixed_cluster_patches'
         forest_cover_seed='1129272901';forest_cover_authored_population='3600'
         forest_cover_maximum_patches='400';forest_cover_patch_minimum_plants='20'
         forest_cover_patch_maximum_plants='32';forest_cover_independent_anchors='900'
         forest_cover_patches='165';forest_cover_reached_budget='1'
-        forest_cover_fingerprint='18346272358334413870';forest_cover_clearance_colliders='221'
-        forest_cover_clearance_collider_fingerprint='522388356439590700'
-        forest_cover_variants='900,764,672,563,701'
-        fern_colony_population='300';fern_colony_authored_population='300';fern_colonies='82'
+        forest_cover_fingerprint='11564884043970395063';forest_cover_clearance_colliders='221'
+        forest_cover_clearance_collider_fingerprint='5549580620105119187'
+        forest_cover_variants='927,782,615,543,733'
+        fern_colony_population='300';fern_colony_authored_population='300';fern_colonies='84'
         fern_colony_seed='1128681010';fern_colony_reached_budget='1'
-        fern_colony_fingerprint='18387932991795706967'
-        fern_colony_original_fingerprint='14418781708182382769'
-        fern_colony_variants='11,29,169,91';understory_ferns='420';understory_saplings='42'
+        fern_colony_fingerprint='6509400757303582109'
+        fern_colony_original_fingerprint='3085592665785500013'
+        fern_colony_variants='11,23,183,83';understory_ferns='420';understory_saplings='42'
     }
     if($MiddleLayer) {
         # 新幹使低植被重新避讓，另驗精確新作者配置；不把舊FNV投影成假通過。
         $middleExpected=@{
-            forest_cover_patches='162';forest_cover_fingerprint='1048722341261312903'
-            forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='6744664032273563734'
-            forest_cover_variants='964,741,630,546,719';fern_colonies='79'
-            fern_colony_fingerprint='3053818525289996684';fern_colony_variants='10,28,173,89'
+            forest_cover_patches='154';forest_cover_fingerprint='8857932304976401347'
+            forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11739939804215987065'
+            forest_cover_variants='871,751,625,568,785';fern_colonies='86'
+            fern_colony_fingerprint='3313014129975770240';fern_colony_variants='6,37,170,87'
             middle_layer_comparison='1';middle_layer_population='24';middle_layer_target='24'
-            middle_layer_reached_budget='1';middle_layer_attempted='16999'
-            middle_layer_transform_fingerprint='12515088988881324841'
+            middle_layer_reached_budget='1';middle_layer_attempted='19887'
+            middle_layer_transform_fingerprint='11352586881239724297'
             submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
         }
         foreach($field in $middleExpected.Keys){$expected[$field]=$middleExpected[$field]}
@@ -73,13 +73,25 @@
         throw 'Original fern accounting was replaced or merged incorrectly'
     }
     # 固定兩景另保留原版實機提交數，不讓新蕨的總數掩蓋原林下層漏畫。
-    if(($Scene -eq 'initial' -and ($originalCount -ne 188 -or $originalTriangles -ne 286568)) -or
-       ($Scene -eq 'river-overlook' -and ($originalCount -ne 224 -or $originalTriangles -ne 346056))) {
+    if(($Scene -eq 'initial' -and ($originalCount -ne 192 -or $originalTriangles -ne 298968)) -or
+       ($Scene -eq 'river-overlook' -and ($originalCount -ne 226 -or $originalTriangles -ne 350104))) {
         throw 'Original fern fixed-scene submission changed'
     }
     # 相同總株數與三角數仍可由錯誤種類分布湊出；固定景需逐種類保留身分。
-    $originalVariants=if($Scene -eq 'initial'){'43,47,49,49'}elseif($Scene -eq 'river-overlook'){'55,55,54,60'}else{$null}
+    $originalVariants=if($Scene -eq 'initial'){'47,49,49,47'}elseif($Scene -eq 'river-overlook'){'51,61,51,63'}else{$null}
     if($null -ne $originalVariants -and [string]$Receipt.submitted_original_fern_variants -cne $originalVariants){
         throw 'Original fern fixed-scene variant identity changed'
+    }
+}
+
+function Assert-MistwatchTerrainCoverageMarker {
+    param([Parameter(Mandatory=$true)][hashtable]$Receipt)
+    [double]$marker=0
+    if(-not $Receipt.ContainsKey('ground_normal_scale') -or
+       -not [double]::TryParse([string]$Receipt.ground_normal_scale,[Globalization.NumberStyles]::Float,
+           [Globalization.CultureInfo]::InvariantCulture,[ref]$marker) -or
+       [double]::IsNaN($marker) -or [double]::IsInfinity($marker) -or
+       [Math]::Abs($marker+15.46875) -gt .0001) {
+        throw 'Forest floor production coverage marker missing or invalid'
     }
 }

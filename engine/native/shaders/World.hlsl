@@ -82,7 +82,8 @@ struct MotionVertexOutput
 
 void ClipMotionLod(float4 position, float coverage, uint seed, uint invert)
 {
-    if (coverage >= 0.999) return;
+    // 量化至完整覆蓋時，反向遮罩仍須全部拒絕，不能跳過裁切。
+    if (coverage >= 0.999 && invert == 0u) return;
     const uint2 pixel = uint2(position.xy);
     uint noise = pixel.x * 1973u + pixel.y * 9277u + seed * 26699u + 911u;
     noise = (noise << 13u) ^ noise;
@@ -681,7 +682,7 @@ ShadowVertexOutput ShadowSkinnedVertexMain(SkinnedVertexInput input)
 void ShadowSkinnedPixelMain(ShadowVertexOutput input)
 {
     if(input.alphaMasked!=0)clip(input.alpha*baseColorTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
-    if(input.lodCoverage<0.999){const uint2 pixel=uint2(input.position.xy);uint noise=pixel.x*1973u+pixel.y*9277u+input.lodSeed*26699u+911u;noise=(noise<<13u)^noise;noise=noise*(noise*noise*15731u+789221u)+1376312589u;const float threshold=float(noise&255u)/255.0;clip(input.lodInvert!=0?threshold-input.lodCoverage-0.0000001:input.lodCoverage-threshold);}
+    if(input.lodCoverage<0.999 || input.lodInvert!=0u){const uint2 pixel=uint2(input.position.xy);uint noise=pixel.x*1973u+pixel.y*9277u+input.lodSeed*26699u+911u;noise=(noise<<13u)^noise;noise=noise*(noise*noise*15731u+789221u)+1376312589u;const float threshold=float(noise&255u)/255.0;clip(input.lodInvert!=0?threshold-input.lodCoverage-0.0000001:input.lodCoverage-threshold);}
 }
 
 float3 ApplyWind(float3 position, float packedWeight, uint materialClass)
@@ -890,6 +891,15 @@ float TerrainBiomeHeight(float vertexAlpha)
 #else
     return saturate(vertexAlpha);
 #endif
+}
+
+float2 DecodeTerrainLayerCoverage(float2 encoded)
+{
+    // 非有限、負值或越界資料退回中性；不得把錯誤覆蓋偷偷正規化成合法資料。
+    if (encoded.x != encoded.x || encoded.y != encoded.y ||
+        any(encoded < 0.0) || any(encoded > 1.0) || encoded.x + encoded.y > 1.0)
+        return 0.0;
+    return encoded;
 }
 
 float3 DecodeAuthoredTerrainBiomeWeights(float2 encoded)
@@ -2321,7 +2331,7 @@ float MaskedAlphaToCoverage(float materialAlpha, float alphaCutoff)
 void ClipWorldLod(WorldPixelInput input)
 {
     // 固定的螢幕空間雜訊讓兩級網格互補淡化，不依賴時間所以不會逐幀閃爍。
-    if (input.lodCoverage < 0.999)
+    if (input.lodCoverage < 0.999 || input.lodInvert != 0u)
     {
         const uint2 pixel = uint2(input.position.xy);
         uint noise = pixel.x * 1973u + pixel.y * 9277u + input.lodSeed * 26699u + 911u;
@@ -2441,6 +2451,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         const float originalGrassWeight = max(0.0, 1.0 - rockWeight - originalSoilWeight);
         float soilWeight = originalSoilWeight;
         float grassWeight = originalGrassWeight;
+        float terrainLayerCoverageStrength = 0.0;
         float terrainMesoSignal = 0.5;
         [branch] if (terrainDistanceMaterialEnabled > 0.5 && TerrainMesoPartitionEnabled())
         {
@@ -2523,6 +2534,20 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 grassWeight = materialWeights.x;
                 soilWeight = materialWeights.y;
                 rockWeight = materialWeights.z;
+            }
+        }
+        // 通用覆蓋只改既有三層 PBR 的相同權重，不借用展示的濕土／步道校準。
+        // 中性資料不重算權重，陡坡岩面也須逐像素保留，而非全域取消 rock。
+        [branch] if (input.textureData.x > 0.5 && input.textureData.w > 0.5 && input.normalScale == -15.46875)
+        {
+            const float2 coverage = DecodeTerrainLayerCoverage(input.uv);
+            terrainLayerCoverageStrength = coverage.x + coverage.y;
+            [branch] if (terrainLayerCoverageStrength > 0.0)
+            {
+                const float proceduralCoverage = 1.0 - terrainLayerCoverageStrength;
+                grassWeight *= proceduralCoverage;
+                soilWeight = soilWeight * proceduralCoverage + coverage.x;
+                rockWeight = rockWeight * proceduralCoverage + coverage.y;
             }
         }
         const float3 terrainAuthoredBiomePbrResponse =
@@ -2696,9 +2721,12 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                 const float partitionLuma = dot(terrainAlbedo, float3(0.2126, 0.7152, 0.0722));
                 // 程序式 meso 分區仍守住原曝光；明確 authored 材質則保留自身物理亮度，
                 // 避免將草、土路與岩面強制拉成同一明度而壓平層次。
-                const float referenceLuma = lerp(originalLuma,
+                float referenceLuma = lerp(originalLuma,
                     partitionLuma * showcaseTerrainAuthoredBiomeLumaScale,
                     showcaseTerrainAuthoredBiomeCalibration);
+                // 覆蓋保留所選材質的真亮度；零權重不改動既有曝光守恆路徑。
+                [branch] if (terrainLayerCoverageStrength > 0.0)
+                    referenceLuma = lerp(referenceLuma, partitionLuma, terrainLayerCoverageStrength);
                 if (originalLuma > 0.0 && partitionLuma > 0.000001)
                     terrainAlbedo *= referenceLuma / partitionLuma;
                 terrainAlbedo *= TerrainForestFloorSpectralVariation(
@@ -2743,9 +2771,11 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             {
                 const float originalLuma = dot(originalTerrainTint, float3(0.2126, 0.7152, 0.0722));
                 const float partitionLuma = dot(terrainTint, float3(0.2126, 0.7152, 0.0722));
-                const float referenceLuma = lerp(originalLuma,
+                float referenceLuma = lerp(originalLuma,
                     partitionLuma * showcaseTerrainAuthoredBiomeLumaScale,
                     showcaseTerrainAuthoredBiomeCalibration);
+                [branch] if (terrainLayerCoverageStrength > 0.0)
+                    referenceLuma = lerp(referenceLuma, partitionLuma, terrainLayerCoverageStrength);
                 if (originalLuma > 0.0 && partitionLuma > 0.000001)
                     terrainTint *= referenceLuma / partitionLuma;
                 terrainTint *= lerp(0.84, 1.16, terrainMesoSignal);

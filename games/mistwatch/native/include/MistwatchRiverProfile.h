@@ -17,6 +17,12 @@ inline float RiverOuterWidth(float x) {
     return 4.f+2.f*RiverOuterBlend(x)+4.f*RiverSmooth((std::abs(x)-20.f)/12.f);
 }
 inline float RiverDistance(float x,float z) {return std::abs(z-RiverCenterZ(x));}
+inline float RiverErosionMask(float x,float z) {
+    // 兩個外岸形成局部凹灣，平滑延長乾坡，不挖出需要陡峭補償的上緣。
+    const bool north=z>RiverCenterZ(x);
+    const float center=north?37.f:-37.f,extent=13.f;
+    return RiverSmooth(1.f-std::abs(x-center)/extent);
+}
 inline float RiverTerrainHeight(float x,float z,float hills) {
     const float distance=RiverDistance(x,z),width=RiverOuterWidth(x);
     if(distance<width)return -8.f*(1.f-RiverSmooth(distance/width));
@@ -24,6 +30,7 @@ inline float RiverTerrainHeight(float x,float z,float hills) {
     const float outer=RiverSmooth((std::abs(x)-12.f)/12.f);
     const float bank=z<RiverCenterZ(x)?13.f+2.f*std::sin(x*.07f):13.f+2.f*std::cos(x*.08f);
     const float transition=4.f+(bank-4.f)*outer;
-    return hills*RiverSmooth((distance-width)/transition);
+    const float erosion=RiverErosionMask(x,z);
+    return hills*RiverSmooth((distance-width)/(transition*(1.f+.5f*erosion)));
 }
 }

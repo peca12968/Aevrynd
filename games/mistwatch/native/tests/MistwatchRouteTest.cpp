@@ -28,7 +28,7 @@ int main(int argc,char** argv) {
             NormalizeFernAsset(mesh.mesh);radii[i]=FernColonyAssetFromMesh(mesh.mesh).radius;
         }
         const auto generated=CreateMiddleLayer(terrain,conifers,props,understory,original,WorldSolids(false),24,radii);
-        if(generated.trees.size()!=24||!generated.reachedBudget||MiddleLayerTransformFingerprint(generated.trees)!=12515088988881324841ull)return 26;
+        if(generated.trees.size()!=24||!generated.reachedBudget||MiddleLayerTransformFingerprint(generated.trees)!=11352586881239724297ull)return 26;
         for(const auto& tree:generated.trees)middleSolids.push_back(tree.trunk);
     }
     auto solids=WorldSolids(false);

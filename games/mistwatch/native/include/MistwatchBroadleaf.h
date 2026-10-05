@@ -39,7 +39,8 @@ inline std::vector<BroadleafTree> CreateBroadleafTrees(const Aevrynd::HeightFiel
     std::vector<BroadleafTree> result;
     std::uint32_t seed=0x42524f41u;
     const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
-    for(unsigned attempt=0;attempt<2400&&result.size()<12;++attempt) {
+    // 地形改變後仍以原根部、樹冠與碰撞門檻搜尋；延長有限搜尋而不降低標準。
+    for(unsigned attempt=0;attempt<9600&&result.size()<12;++attempt) {
         const float x=-40.f+80.f*random(),z=-12.f+104.f*random();
         const float scale=.95f+.25f*random();
         Transform3D pose{{x,terrain.SampleHeight(x,z)-.045f,z},{0,random()*6.2831853f,0},{scale,scale,scale}};

@@ -2,6 +2,14 @@ option(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS "Build internal renderer diagnostic 
 option(AEVRYND_SHADOW_MAP_DIAGNOSTICS "Build read-only directional shadow-map capture diagnostics" OFF)
 option(AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS "Build read-only volumetric-atmosphere output capture diagnostics" OFF)
 
+add_executable(AevryndTerrainLayerCoverage3DTest tests/TerrainLayerCoverage3DSmoke.cpp)
+target_include_directories(AevryndTerrainLayerCoverage3DTest PRIVATE include)
+target_compile_features(AevryndTerrainLayerCoverage3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndTerrainLayerCoverage3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndTerrainLayerCoverage3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+add_test(NAME AevryndTerrainLayerCoverage3DTest COMMAND AevryndTerrainLayerCoverage3DTest)
+set_tests_properties(AevryndTerrainLayerCoverage3DTest PROPERTIES LABELS "release-gates")
+
 add_library(AevryndEngine STATIC
   src/ArchitectureMeshes3D.cpp
   src/Animation3D.cpp
@@ -522,6 +530,10 @@ else()
 endif()
 
 add_executable(AevryndScene3DTest tests/Scene3DSmoke.cpp)
+add_executable(AevryndMaskedLodShadow3DTest tests/MaskedLodShadow3DSmoke.cpp)
+target_compile_options(AevryndMaskedLodShadow3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndMaskedLodShadow3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndMaskedLodShadow3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndMaskedLodShadow3DTest>'")
 target_compile_options(AevryndScene3DTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(AevryndScene3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndScene3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndScene3DTest>'")

@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 #include "Math.h"
+#include "TerrainLayerCoverage3D.h"
 #include "Viewport.h"
 #include "EnvironmentIbl3D.h"
 #include "Hlod3D.h"
@@ -161,8 +162,8 @@ constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surfa
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
 enum class CharacterShadingModel3D:uint8_t {Default,Skin,Hair,Eye,Cloth};
 // Terrain 的 normal detail 不讀逐 instance normalScale；保留一個可精確表示的
-// 負值作 authored-biome UV 契約 sentinel。其他值（包括一般負 scale）都不得
-// 啟用該路徑，以維持既有 Terrain/useUv 呼叫相容。
+// 負值作 authored-biome UV 契約 sentinel；通用 layer coverage 使用另一個
+// 明確 marker。其他值（包括一般負 scale）都不得啟用這兩條路徑。
 inline constexpr float TerrainAuthoredBiomeNormalScaleMarker3D=-15.5f;
 static constexpr std::size_t MaximumMeshInstancesPerFrame3D=65536;
 static constexpr uint32_t MeshInstanceHasTexturesBit3D=1u,MeshInstanceUsesUvBit3D=2u,MeshInstanceMaterialClassShift3D=2u,MeshInstanceMaterialClassMask3D=3u<<MeshInstanceMaterialClassShift3D,MeshInstanceLodCoverageShift3D=4u,MeshInstanceLodCoverageMask3D=255u<<MeshInstanceLodCoverageShift3D,MeshInstanceLodInvertBit3D=1u<<12,MeshInstanceLodSeedShift3D=13u,MeshInstanceLodSeedMask3D=7u<<MeshInstanceLodSeedShift3D,MeshInstanceHlodSharedSeedBit3D=1u<<31;

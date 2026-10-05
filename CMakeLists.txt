@@ -94,6 +94,7 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     AevryndPhysicsWorld3DTest
     AevryndNavigation3DTest
     AevryndHeightField3DTest
+    AevryndTerrainLayerCoverage3DTest
     AevryndWorldPartition3DFakeSourceTest
     AevryndWorldPartitionDeltaGateFakeTest
     MistwatchSupplyCrateTest
@@ -111,6 +112,7 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchLoadPreparationTest
     MistwatchMiddleLayerTest
     MistwatchGroundMaterialTest
+    MistwatchBankLayerCoverageTest
     MistwatchForestCoverTest
     MistwatchFernColoniesTest
     MistwatchBridgeTest

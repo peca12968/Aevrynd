@@ -228,8 +228,9 @@ public:
           } else
             ++stats.shadowSkipped;
         }
-        if (options.gpuInstancing && resource)
-          draw.MeshInstance(resource.handle, transform.Matrix(), material.tint,
+        if (options.gpuInstancing && resource) {
+          if(draw.meshInstances.size()>=MaximumMeshInstancesPerFrame3D){++stats.cpuFallbackUnavailable;return false;}
+          const bool accepted=draw.MeshInstance(resource.handle, transform.Matrix(), material.tint,
                             material.surface, layer,
                             material.textures, material.textureScale,
                             material.useUv, material.materialClass,
@@ -240,6 +241,8 @@ public:
                             Matrix4::Identity(),false,material.normalScale,
                             material.alphaMode,material.alphaCutoff,
                             material.doubleSided,identity,occlusionOpacity);
+          if(!accepted){++stats.cpuFallbackUnavailable;return false;}
+        }
         else if (resource.cpuMesh)
           SubmitMesh(draw, *resource.cpuMesh, transform, material);
         else if (fallback)
@@ -312,12 +315,44 @@ public:
                                      MaterialClass3D::Water;
         bool transition =
             selection.transition && options.gpuInstancing && !transparent;
+        const auto validMaterial=[](const Material3D& material){
+          const auto alpha=NormalizeMaterialAlphaMode3D(material.alphaMode);
+          return alpha!=MaterialAlphaMode3D::Blend&&std::isfinite(material.alphaCutoff)&&
+              (alpha!=MaterialAlphaMode3D::Mask||(material.textures&&material.useUv));
+        };
+        // 非法端點整對拒絕，不能先送一端再把另一端的拒絕算成成功。
+        if(transition&&(!validMaterial(nearLevel.material)||!validMaterial(farLevel.material))){++stats.cpuFallbackUnavailable;return;}
+        // 目前只有遮罩陰影管線執行 LOD clip；不透明陰影仍保留既有 primary 策略。
+        const bool maskedShadowTransition=NormalizeMaterialAlphaMode3D(nearLevel.material.alphaMode)==MaterialAlphaMode3D::Mask&&
+            NormalizeMaterialAlphaMode3D(farLevel.material.alphaMode)==MaterialAlphaMode3D::Mask;
         if (!visible(worldBounds)) {
+          const bool nearShadow=shadowEligible(worldBounds,nearLevel.material,nearLevel.mesh);
+          const bool farShadow=shadowEligible(worldBounds,farLevel.material,farLevel.mesh);
+          if (transition && maskedShadowTransition && (nearShadow || farShadow)) {
+            const std::size_t required=std::size_t(nearShadow)+std::size_t(farShadow);
+            // 陰影過渡整對預留；容量不足不能留下只送一半的遮罩。
+            const bool capacity=stats.lodTransitionInstances<options.maximumLodTransitionInstances &&
+                stats.shadowOnlyInstances<=options.maximumShadowOnlyInstances &&
+                required<=options.maximumShadowOnlyInstances-stats.shadowOnlyInstances &&
+                draw.meshInstances.size()<=MaximumMeshInstancesPerFrame3D &&
+                required<=MaximumMeshInstancesPerFrame3D-draw.meshInstances.size();
+            if(capacity) {
+              ++stats.shadowOnlyCandidates;
+              ++stats.lodTransitionInstances;
+              if(required==2)++stats.lodDualSubmittedInstances;
+              stats.lodTransitionTriangles+=(nearShadow?nearLevel.mesh.TriangleCount():0)+(farShadow?farLevel.mesh.TriangleCount():0);
+              const std::uint32_t code=std::uint32_t((lodIndex*5u+selection.nearLevel*3u+3u)&7u);
+              if(nearShadow)submit(nearLevel.mesh,nearLevel.mesh.cpuMesh.get(),nullptr,lod.transform,nearLevel.material,selection.farCoverage,code,true,true,true,MeshRenderLayer3D::ShadowOnly,lod.assetLease,lod.identity,lod.occlusionOpacity);
+              if(farShadow)submit(farLevel.mesh,farLevel.mesh.cpuMesh.get(),nullptr,lod.transform,farLevel.material,selection.farCoverage,code,true,true,false,MeshRenderLayer3D::ShadowOnly,lod.assetLease,lod.identity,lod.occlusionOpacity);
+              return;
+            }
+            ++stats.lodTransitionBudgetFallbacks;
+          }
           const MeshLodLevel3D &selected = lod.levels[selection.primaryLevel];
           if (shadowEligible(worldBounds, selected.material, selected.mesh)) {
             ++stats.shadowOnlyCandidates;
             if (stats.shadowOnlyInstances <
-                options.maximumShadowOnlyInstances)
+                options.maximumShadowOnlyInstances && draw.meshInstances.size()<MaximumMeshInstancesPerFrame3D)
               submit(selected.mesh, selected.mesh.cpuMesh.get(), nullptr,
                      lod.transform, selected.material, 1.f, 0, true, true,
                      false, MeshRenderLayer3D::ShadowOnly, lod.assetLease,lod.identity,lod.occlusionOpacity);
@@ -360,13 +395,13 @@ public:
                  lod.transform, nearLevel.material, selection.farCoverage,
                  transitionCode,
                  withinShadowDistance &&
-                     selection.primaryLevel == selection.nearLevel,
+                     ((draw.DirectionalShadowMapEnabled() && maskedShadowTransition) || selection.primaryLevel == selection.nearLevel),
                  true, true, MeshRenderLayer3D::Opaque, lod.assetLease,lod.identity,lod.occlusionOpacity);
           submit(farLevel.mesh, farLevel.mesh.cpuMesh.get(), nullptr,
                  lod.transform, farLevel.material, selection.farCoverage,
                  transitionCode,
                  withinShadowDistance &&
-                     selection.primaryLevel == selection.farLevel,
+                     ((draw.DirectionalShadowMapEnabled() && maskedShadowTransition) || selection.primaryLevel == selection.farLevel),
                  true, false, MeshRenderLayer3D::Opaque, lod.assetLease,lod.identity,lod.occlusionOpacity);
         } else {
           const MeshLodLevel3D *selected = &lod.levels[selection.primaryLevel];

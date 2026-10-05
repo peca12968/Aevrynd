@@ -180,12 +180,161 @@ int main(){
       if(!result){std::array<Vec3,7> measured{};for(std::size_t index=0;index<biomeMeshes.size()&&!result;++index){DrawList draw;Camera3D camera{{0,0,-4},{0,0,0},{0,1,0},{}};draw.SetViewProjection(CreateViewProjectionMatrix(camera,480.f/270.f));draw.SetBackfaceCulling(false);draw.SetTerrainDistanceMaterial(isolatedTerrainMaterial);draw.SetDirectionalLight({{0,0,1},0.f,{1,1,1,1},0.f});EnvironmentLightingBlendSettings3D blend{};blend.diffuseIntensity=blend.specularIntensity=0.f;draw.SetEnvironmentLightingBlend(blend);const RenderObjectIdentity3D identity{{0x5445525241494e46ull,0x4958545552450000ull+index},1};draw.MeshInstance(biomeMeshes[index],Matrix4::Identity(),{1,1,1,1},{1,0,1,1},MeshRenderLayer3D::Opaque,distinctTerrainTextures,1.f,true,MaterialClass3D::Terrain,std::numeric_limits<float>::quiet_NaN(),false,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,1.f,MaterialAlphaMode3D::Opaque,.5f,false,identity);renderer.RequestObjectIdReadback3D({0x5400u+index,0x5500u+index,0x5600u+index});renderer.Render(draw,{.01f,.02f,.03f,1});const auto oid=renderer.TakeObjectIdReadback3D();const auto hdr=D3D12RendererTestAccess3D::CaptureLinearHdr(renderer,0.f);renderer.WaitIdle();if(!oid||!hdr||!oid->Complete()||!hdr->Complete()){result=33;break;}const auto sample=MeasureGpu(*hdr,*oid,identity);if(sample.count<1000){result=33;break;}measured[index]=sample.mean;}if(!result){const Vec3 expectedGrass{.915956f,.0420193f,.0301922f},expectedRock{.0305349f,.0791491f,1.01625f};for(std::size_t index:{0u,1u,2u})if(std::abs(measured[index].x-expectedGrass.x)+std::abs(measured[index].y-expectedGrass.y)+std::abs(measured[index].z-expectedGrass.z)>.012f||!(measured[index].x>measured[index].y*4.f&&measured[index].x>measured[index].z*4.f))result=34;for(std::size_t index:{4u,5u,6u})if(std::abs(measured[index].x-expectedRock.x)+std::abs(measured[index].y-expectedRock.y)+std::abs(measured[index].z-expectedRock.z)>.012f||!(measured[index].z>measured[index].x*4.f&&measured[index].z>measured[index].y*4.f))result=34;if(!(measured[3].y>measured[3].x&&measured[3].y>measured[3].z)||Length(measured[3]-measured[0])<.08f||Length(measured[3]-measured[4])<.08f)result=34;std::cout<<"terrainLayerGpu flat="<<measured[0].x<<','<<measured[0].y<<','<<measured[0].z<<" soil="<<measured[3].x<<','<<measured[3].y<<','<<measured[3].z<<" steep="<<measured[4].x<<','<<measured[4].y<<','<<measured[4].z<<" alphaCases=6\n";}}
        if(!result){
         const RenderObjectIdentity3D identity{{0x4155544842494f4dull,0x455445525241494eull},1};
-        const auto captureAuthored=[&](MeshHandle3D selected,float normalScale,std::uint64_t serial,MaterialTextureSetHandle3D textures,const TerrainDistanceMaterialSettings3D& terrainSettings)->std::optional<AuthoredBiomeCapture>{
-          DrawList draw;Camera3D camera{{0,0,-4},{0,0,0},{0,1,0},{}};draw.SetViewProjection(CreateViewProjectionMatrix(camera,480.f/270.f));draw.SetBackfaceCulling(false);draw.SetTerrainDistanceMaterial(terrainSettings);draw.SetDirectionalLight({{0,0,1},0.f,{1,1,1,1},0.f});EnvironmentLightingBlendSettings3D blend{};blend.diffuseIntensity=blend.specularIntensity=0.f;draw.SetEnvironmentLightingBlend(blend);
+        const auto captureAuthored=[&](MeshHandle3D selected,float normalScale,std::uint64_t serial,MaterialTextureSetHandle3D textures,const TerrainDistanceMaterialSettings3D& terrainSettings,bool useUv=true,bool lit=false,bool linearOracle=false)->std::optional<AuthoredBiomeCapture>{
+          DrawList draw;Camera3D camera{{0,0,-4},{0,0,0},{0,1,0},{}};draw.SetViewProjection(CreateViewProjectionMatrix(camera,480.f/270.f));draw.SetBackfaceCulling(false);draw.SetTerrainDistanceMaterial(terrainSettings);draw.SetDirectionalLight({lit?Vec3{0,-1,.2f}:Vec3{0,0,1},0.f,{1,1,1,1},lit?3.f:0.f});EnvironmentLightingBlendSettings3D blend{};blend.diffuseIntensity=blend.specularIntensity=0.f;draw.SetEnvironmentLightingBlend(blend);
+          // 診斷讀回仍含正式 filmic；只有線性混色 oracle 使用恆等曲線，既有對照不變。
+          if(linearOracle){TimeOfDayExposureSettings3D exposure{};exposure.shadowLift=0.f;exposure.toeStrength=0.f;exposure.shoulderStrength=.5f;draw.SetTimeOfDayExposure(exposure);}
           const ObjectIdCaptureRequestMetadata3D metadata{serial,serial^0x21u,serial^0x43u};
-          if(!draw.MeshInstance(selected,Matrix4::Identity(),{1,1,1,1},{1,0,1,1},MeshRenderLayer3D::Opaque,textures,1.f,true,MaterialClass3D::Terrain,std::numeric_limits<float>::quiet_NaN(),false,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,normalScale,MaterialAlphaMode3D::Opaque,.5f,false,identity)||!renderer.RequestObjectIdReadback3D(metadata)||!renderer.RequestDepthReadback3D(metadata))return{};
+          if(!draw.MeshInstance(selected,Matrix4::Identity(),{1,1,1,1},lit?Surface3D{.72f,0,0,1}:Surface3D{1,0,1,1},MeshRenderLayer3D::Opaque,textures,1.f,useUv,MaterialClass3D::Terrain,std::numeric_limits<float>::quiet_NaN(),false,1,0,false,DirectionalShadowAllCascades3D,ShadowCascadeSelection3D::Automatic,Matrix4::Identity(),false,normalScale,MaterialAlphaMode3D::Opaque,.5f,false,identity)||!renderer.RequestObjectIdReadback3D(metadata)||!renderer.RequestDepthReadback3D(metadata))return{};
           renderer.Render(draw,{.01f,.02f,.03f,1});auto oid=renderer.TakeObjectIdReadback3D();auto depth=renderer.TakeDepthReadback3D();const auto hdr=D3D12RendererTestAccess3D::CaptureLinearHdr(renderer,0.f);renderer.WaitIdle();if(!oid||!depth||!hdr||!oid->Complete()||!depth->Complete()||!hdr->Complete())return{};const auto sample=MeasureGpu(*hdr,*oid,identity);if(sample.count<1000)return{};return AuthoredBiomeCapture{*hdr,std::move(*oid),std::move(*depth),sample};
         };
+        // 通用覆蓋須在平地及陡岩面都證明 neutral bit-exact；不是只驗平地看不到 rock 的情況。
+        unsigned coverageConfigurations{},coverageCaptures{},linearMixCaptures{};
+        for(unsigned config=0;!result&&config<4;++config)for(unsigned slope=0;!result&&slope<2;++slope){
+          auto settings=isolatedTerrainMaterial;settings.mesoPartitionEnabled=(config&1u)!=0;
+          if(config&2u){settings.detailFadeStart=.1f;settings.detailFadeEnd=.2f;}
+          const std::array<Vec2,9> encoded{{{0,0},{1,0},{0,1},{.35f,.4f},
+            {std::numeric_limits<float>::quiet_NaN(),0},{std::numeric_limits<float>::infinity(),0},{-.1f,0},{.7f,.6f},{0,1.001f}}};
+          std::array<MeshHandle3D,9> handles{};std::array<std::optional<AuthoredBiomeCapture>,9> samples{};
+          const auto coverageNormal=slope?Vec3{0,0,-1}:Vec3{0,1,0};
+          const std::uint64_t serial=0x6000u+config*0x100u+slope*0x40u;
+          for(std::size_t index=0;!result&&index<handles.size();++index){
+            const auto card=TerrainCard(coverageNormal,.5f,encoded[index]);handles[index]=renderer.CreateMesh(card.vertices,card.indices);
+            if(!handles[index]){result=45;break;}
+            samples[index]=captureAuthored(handles[index],TerrainLayerCoverageNormalScaleMarker3D,serial+index,distinctTerrainTextures,settings);
+            ++coverageCaptures;if(!samples[index])result=45;
+          }
+          if(!result){
+            const auto legacy=captureAuthored(handles[0],1.f,serial+16u,distinctTerrainTextures,settings);
+            const auto wrongMarker=captureAuthored(handles[1],-15.4375f,serial+17u,distinctTerrainTextures,settings);
+            const auto uvOff=captureAuthored(handles[1],TerrainLayerCoverageNormalScaleMarker3D,serial+18u,distinctTerrainTextures,settings,false);
+            const auto noTextureOff=captureAuthored(handles[0],1.f,serial+19u,{},settings);
+            const auto noTextureOn=captureAuthored(handles[1],TerrainLayerCoverageNormalScaleMarker3D,serial+20u,{},settings);
+            const auto repeat=captureAuthored(handles[3],TerrainLayerCoverageNormalScaleMarker3D,serial+21u,distinctTerrainTextures,settings);
+            coverageCaptures+=6;
+            bool exact=legacy&&wrongMarker&&uvOff&&noTextureOff&&noTextureOn&&repeat;
+            if(exact)exact=SameAuthoredBiomeRaster(*legacy,*samples[0])&&SameAuthoredBiomeRaster(*legacy,*wrongMarker)&&
+              SameAuthoredBiomeRaster(*legacy,*uvOff)&&SameAuthoredBiomeRaster(*noTextureOff,*noTextureOn)&&SameAuthoredBiomeRaster(*samples[3],*repeat);
+            for(std::size_t index=4;exact&&index<samples.size();++index)exact=SameAuthoredBiomeRaster(*samples[0],*samples[index]);
+            bool geometry=true;for(std::size_t index=1;geometry&&index<4;++index)geometry=samples[0]->oid.pixels==samples[index]->oid.pixels&&
+              samples[0]->oid.tokenMap==samples[index]->oid.tokenMap&&samples[0]->depth.pixelSha256==samples[index]->depth.pixelSha256;
+            const auto soil=samples[1]->sample.mean,rock=samples[2]->sample.mean,mixed=samples[3]->sample.mean;
+            float mixedMaximumError{};bool mixedFormula=true;std::size_t mixedErrorPixel{};std::array<Vec3,4> mixedErrorInputs{};
+            std::array<std::optional<AuthoredBiomeCapture>,4> linearSamples{};
+            if(!(config&1u))for(std::size_t index=0;index<linearSamples.size();++index){
+              linearSamples[index]=captureAuthored(handles[index],TerrainLayerCoverageNormalScaleMarker3D,serial+24u+index,distinctTerrainTextures,settings,true,false,true);
+              ++linearMixCaptures;if(!linearSamples[index])mixedFormula=false;
+            }
+            if(!(config&1u)&&mixedFormula)for(std::size_t pixel=0;pixel<linearSamples[0]->sample.mask.size();++pixel)if(linearSamples[0]->sample.mask[pixel]){
+              const auto procedural=linearSamples[0]->hdr.pixels[pixel],soilPixel=linearSamples[1]->hdr.pixels[pixel],rockPixel=linearSamples[2]->hdr.pixels[pixel],actual=linearSamples[3]->hdr.pixels[pixel];
+              const float errorR=std::abs(actual.x-(procedural.x*.25f+soilPixel.x*.35f+rockPixel.x*.4f));
+              const float errorG=std::abs(actual.y-(procedural.y*.25f+soilPixel.y*.35f+rockPixel.y*.4f));
+              const float errorB=std::abs(actual.z-(procedural.z*.25f+soilPixel.z*.35f+rockPixel.z*.4f));
+              mixedFormula=mixedFormula&&std::isfinite(errorR)&&std::isfinite(errorG)&&std::isfinite(errorB);
+              const float pixelError=(std::max)({errorR,errorG,errorB});
+              if(pixelError>mixedMaximumError){mixedMaximumError=pixelError;mixedErrorPixel=pixel;mixedErrorInputs={Vec3{procedural.x,procedural.y,procedural.z},Vec3{soilPixel.x,soilPixel.y,soilPixel.z},Vec3{rockPixel.x,rockPixel.y,rockPixel.z},Vec3{actual.x,actual.y,actual.z}};}
+            }
+            mixedFormula=mixedFormula&&mixedMaximumError<.001f;
+            const bool routed=soil.y>soil.x*2.f&&soil.y>soil.z*2.f&&rock.z>rock.x*2.f&&rock.z>rock.y*2.f&&
+              Length(mixed-soil)>.03f&&Length(mixed-rock)>.03f;
+            std::cout<<"terrainCoverageGpu config="<<config<<" slope="<<slope<<" exact="<<exact<<" geometry="<<geometry<<" routed="<<routed
+              <<" soil="<<soil.x<<','<<soil.y<<','<<soil.z<<" rock="<<rock.x<<','<<rock.y<<','<<rock.z<<" mixFormulaChecked="<<!(config&1u)<<" mixMaximumError="<<mixedMaximumError<<'\n';
+            if(!mixedFormula){std::cerr<<"Coverage mix first divergence pixel="<<mixedErrorPixel<<" inputs=";for(auto rgb:mixedErrorInputs)std::cerr<<rgb.x<<','<<rgb.y<<','<<rgb.z<<"; ";std::cerr<<'\n';}
+            if(!exact||!geometry||!routed||!mixedFormula)result=45;else ++coverageConfigurations;
+          }
+          for(auto handle:handles)if(handle)renderer.DestroyMesh(handle);
+        }
+        if(!result)std::cout<<"TERRAIN_LAYER_COVERAGE_GPU_PASS; configurations="<<coverageConfigurations<<" captures="<<coverageCaptures<<" neutral/invalid/opt-in/depth exact; meso on/off and detail near/far\n";
+        if(!result)std::cout<<"TERRAIN_LAYER_COVERAGE_LINEAR_MIX_PASS; captures="<<linearMixCaptures<<"; identity filmic; linear HDR tolerance=0.001\n";
+        // 三層反照率完全相同，只改指定層的 G 粗糙度或法線。無光自發光對照須精確相同，
+        // 真受光版本須不同，才能拒絕只更新 albedo 而未把覆蓋接入 PBR 的錯誤。
+        if(!result){
+          const auto coverageBase=root/L"coverage-base.bmp",coverageNormalMap=root/L"coverage-tilt.bmp",
+            coverageSmooth=root/L"coverage-smooth.dds",coverageRough=root/L"coverage-rough.dds";
+          if(!WriteBmp(coverageBase,8,4,{110,110,110,255})||!WriteBmp(coverageNormalMap,8,4,{230,128,200,255})||
+             !WritePackedOrmBc3(coverageSmooth,255,32,32)||!WritePackedOrmBc3(coverageRough,255,220,220))result=46;
+          auto uniform=terrainDefinition;uniform.baseColorPath=coverageBase;uniform.roughnessPath=coverageSmooth;
+          uniform.integrity[1]=Integrity(coverageSmooth);
+          for(auto& layer:uniform.additionalLayers){layer.baseColorPath=coverageBase;layer.roughnessPath=coverageSmooth;layer.integrity[1]=Integrity(coverageSmooth);}
+          unsigned pbrCaptures{},pbrConfigurations{};
+          for(unsigned config=0;!result&&config<2;++config)for(unsigned selectedLayer=0;!result&&selectedLayer<2;++selectedLayer){
+            auto settings=isolatedTerrainMaterial;settings.decorrelationEnabled=config!=0;settings.mesoPartitionEnabled=config!=0;
+            const auto sourceCard=TerrainCard({0,.70710678f,-.70710678f},.5f,selectedLayer?Vec2{0,1}:Vec2{1,0});
+            const auto coverageMesh=renderer.CreateMesh(sourceCard.vertices,sourceCard.indices);
+            std::array<MaterialTextureSetHandle3D,4> textures{};
+            for(unsigned variant=0;variant<textures.size();++variant){
+              auto definition=uniform;
+              if(variant==1){auto& layer=definition.additionalLayers[selectedLayer];layer.roughnessPath=coverageRough;layer.integrity[1]=Integrity(coverageRough);}
+              if(variant==2)definition.additionalLayers[selectedLayer].normalPath=coverageNormalMap;
+              if(variant==3){auto& other=definition.additionalLayers[1-selectedLayer];other.roughnessPath=coverageRough;other.integrity[1]=Integrity(coverageRough);other.normalPath=coverageNormalMap;}
+              textures[variant]=renderer.CreateMaterialTextureSet(definition);
+            }
+            if(!coverageMesh||std::ranges::any_of(textures,[](auto handle){return !handle;}))result=46;
+            std::array<std::optional<AuthoredBiomeCapture>,4> litSamples{};
+            std::array<std::optional<AuthoredBiomeCapture>,3> unlitSamples{};
+            const std::uint64_t serial=0x6800u+config*0x100u+selectedLayer*0x40u;
+            for(unsigned variant=0;!result&&variant<textures.size();++variant){
+              litSamples[variant]=captureAuthored(coverageMesh,TerrainLayerCoverageNormalScaleMarker3D,serial+variant,textures[variant],settings,true,true);
+              ++pbrCaptures;if(!litSamples[variant])result=46;
+              if(!result&&variant<unlitSamples.size()){
+                unlitSamples[variant]=captureAuthored(coverageMesh,TerrainLayerCoverageNormalScaleMarker3D,serial+8u+variant,textures[variant],settings);
+                ++pbrCaptures;if(!unlitSamples[variant])result=46;
+              }
+            }
+            if(!result){
+              const auto repeat=captureAuthored(coverageMesh,TerrainLayerCoverageNormalScaleMarker3D,serial+16u,textures[0],settings,true,true);++pbrCaptures;
+              const auto armDelta=MeasureAuthoredBiomeDelta(*litSamples[0],*litSamples[1]),normalDelta=MeasureAuthoredBiomeDelta(*litSamples[0],*litSamples[2]);
+              const bool sameAlbedo=SameAuthoredBiomeRaster(*unlitSamples[0],*unlitSamples[1])&&SameAuthoredBiomeRaster(*unlitSamples[0],*unlitSamples[2]);
+              const bool geometry=SameAuthoredBiomeGeometry(*litSamples[0],*litSamples[1])&&SameAuthoredBiomeGeometry(*litSamples[0],*litSamples[2]);
+              const bool foreignExact=SameAuthoredBiomeRaster(*litSamples[0],*litSamples[3]);
+              const bool deterministic=repeat&&SameAuthoredBiomeRaster(*litSamples[0],*repeat);
+              const bool response=armDelta.finite&&normalDelta.finite&&armDelta.count>1000&&normalDelta.count==armDelta.count&&armDelta.mean>.002f&&normalDelta.mean>.002f;
+              std::cout<<"terrainCoveragePbrGpu config="<<config<<" layer="<<selectedLayer<<" sameAlbedo="<<sameAlbedo<<" geometry="<<geometry
+                <<" foreignExact="<<foreignExact<<" repeat="<<deterministic<<" armDelta="<<armDelta.mean<<" normalDelta="<<normalDelta.mean<<'\n';
+              if(!sameAlbedo||!geometry||!foreignExact||!deterministic||!response)result=46;else ++pbrConfigurations;
+            }
+            for(auto handle:textures)if(handle)renderer.DestroyMaterialTextureSet(handle);
+            if(coverageMesh)renderer.DestroyMesh(coverageMesh);
+          }
+          if(!result)std::cout<<"TERRAIN_LAYER_COVERAGE_PBR_PASS; configurations="<<pbrConfigurations<<" captures="<<pbrCaptures<<" albedo-only rejected; soil/rock ARM and normal; secondary-domain on/off\n";
+        }
+        // 同深度平面上的左右 UV 漸變，逐像素以投影位置推導權重；不拿受測 UV 或 shader 回讀當預期。
+        if(!result){
+          auto gradientCard=TerrainCard({0,1,0},.5f);
+          for(auto& vertex:gradientCard.vertices)if(vertex.x>0.f){vertex.u=.25f;vertex.v=.65f;}
+          const std::array<Mesh3D,4> definitions{TerrainCard({0,1,0},.5f),TerrainCard({0,1,0},.5f,{1,0}),TerrainCard({0,1,0},.5f,{0,1}),gradientCard};
+          std::array<MeshHandle3D,4> handles{};std::array<std::optional<AuthoredBiomeCapture>,4> captures{};
+          for(std::size_t index=0;!result&&index<handles.size();++index){
+            handles[index]=renderer.CreateMesh(definitions[index].vertices,definitions[index].indices);
+            if(!handles[index]){result=47;break;}
+            captures[index]=captureAuthored(handles[index],TerrainLayerCoverageNormalScaleMarker3D,0x6c00u+index,distinctTerrainTextures,isolatedTerrainMaterial,true,false,true);
+            if(!captures[index])result=47;
+          }
+          if(!result){
+            const Camera3D camera{{0,0,-4},{0,0,0},{0,1,0},{}};const auto projection=CreateViewProjectionMatrix(camera,480.f/270.f);
+            const float left=(TransformPoint(projection,{-2,0,0}).x*.5f+.5f)*480.f;
+            const float right=(TransformPoint(projection,{2,0,0}).x*.5f+.5f)*480.f;
+            bool finite=true;float maximumError{};std::size_t pixels{};
+            for(std::size_t pixel=0;pixel<captures[3]->sample.mask.size();++pixel)if(captures[3]->sample.mask[pixel]){
+              const float t=Clamp((float(pixel%480u)+.5f-left)/(right-left),0.f,1.f);
+              const auto a=captures[0]->hdr.pixels[pixel],s=captures[1]->hdr.pixels[pixel],r=captures[2]->hdr.pixels[pixel],g=captures[3]->hdr.pixels[pixel];
+              const float errorR=std::abs(g.x-(a.x*(1.f-.9f*t)+s.x*.25f*t+r.x*.65f*t));
+              const float errorG=std::abs(g.y-(a.y*(1.f-.9f*t)+s.y*.25f*t+r.y*.65f*t));
+              const float errorB=std::abs(g.z-(a.z*(1.f-.9f*t)+s.z*.25f*t+r.z*.65f*t));
+              finite=finite&&std::isfinite(errorR)&&std::isfinite(errorG)&&std::isfinite(errorB);
+              maximumError=(std::max)({maximumError,errorR,errorG,errorB});++pixels;
+            }
+            const auto repeat=captureAuthored(handles[3],TerrainLayerCoverageNormalScaleMarker3D,0x6c10u,distinctTerrainTextures,isolatedTerrainMaterial,true,false,true);
+            const bool exactGeometry=SameAuthoredBiomeGeometry(*captures[0],*captures[3]);
+            const bool exactRepeat=repeat&&SameAuthoredBiomeRaster(*captures[3],*repeat);
+            const auto visibleDelta=MeasureAuthoredBiomeDelta(*captures[0],*captures[3]);
+            std::cout<<"terrainCoverageInterpolationGpu pixels="<<pixels<<" finite="<<finite<<" maximumError="<<maximumError
+              <<" geometry="<<exactGeometry<<" repeat="<<exactRepeat<<" visibleDelta="<<visibleDelta.mean<<'\n';
+            if(!finite||pixels<1000||maximumError>=.001f||!exactGeometry||!exactRepeat||visibleDelta.mean<.04f)result=47;
+            else std::cout<<"TERRAIN_LAYER_COVERAGE_INTERPOLATION_PASS; captures=5; independent projected pixel weights; linear HDR tolerance=0.001\n";
+          }
+          for(auto handle:handles)if(handle)renderer.DestroyMesh(handle);
+        }
         const auto neutralOff=captureAuthored(authoredBiomeMeshes[0],1.f,0x5900u,distinctTerrainTextures,isolatedTerrainMaterial),neutralOn=captureAuthored(authoredBiomeMeshes[0],TerrainAuthoredBiomeNormalScaleMarker3D,0x5901u,distinctTerrainTextures,isolatedTerrainMaterial),legacyConventionalUv=captureAuthored(authoredBiomeMeshes[1],1.f,0x5902u,distinctTerrainTextures,isolatedTerrainMaterial),legacyNegativeScale=captureAuthored(authoredBiomeMeshes[1],-1.18f,0x5903u,distinctTerrainTextures,isolatedTerrainMaterial),path=captureAuthored(authoredBiomeMeshes[1],TerrainAuthoredBiomeNormalScaleMarker3D,0x5904u,distinctTerrainTextures,isolatedTerrainMaterial),leaf=captureAuthored(authoredBiomeMeshes[2],TerrainAuthoredBiomeNormalScaleMarker3D,0x5905u,distinctTerrainTextures,isolatedTerrainMaterial),wet=captureAuthored(authoredBiomeMeshes[3],TerrainAuthoredBiomeNormalScaleMarker3D,0x5906u,distinctTerrainTextures,isolatedTerrainMaterial),nanUv=captureAuthored(authoredBiomeMeshes[4],TerrainAuthoredBiomeNormalScaleMarker3D,0x5907u,distinctTerrainTextures,isolatedTerrainMaterial),infiniteUv=captureAuthored(authoredBiomeMeshes[5],TerrainAuthoredBiomeNormalScaleMarker3D,0x5908u,distinctTerrainTextures,isolatedTerrainMaterial);
         if(!neutralOff||!neutralOn||!legacyConventionalUv||!legacyNegativeScale||!path||!leaf||!wet||!nanUv||!infiniteUv)result=43;
         else{

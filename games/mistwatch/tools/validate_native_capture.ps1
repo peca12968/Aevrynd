@@ -112,9 +112,10 @@ try {
         if($receipt.boulder_instances -ne '32' -or $receipt.boulder_mesh_triangles -ne '26611' -or
            $receipt.boulder_materials -ne '1' -or $receipt.boulder_gpu_resources -ne '1' -or
            $receipt.boulder_use_uv -ne '1' -or $receipt.boulder_texture_scale -ne '1'){throw ('Scanned boulder geometry/material binding incorrect: '+$case)}
+        Assert-MistwatchTerrainCoverageMarker $receipt
         if($receipt.ground_source -ne 'forest-ground-04' -or $receipt.ground_maximum_resolution -ne '2048' -or
            $receipt.ground_packed_orm -ne '1' -or $receipt.ground_texture_scale -ne '0.25' -or
-           $receipt.ground_normal_scale -ne '0.65' -or $receipt.ground_use_uv -ne '0'){throw ('Forest floor production material route missing: '+$case)}
+           $receipt.ground_use_uv -ne '1'){throw ('Forest floor production coverage material route missing: '+$case)}
         if($receipt.ground_material_class -ne '3' -or $receipt.ground_texture_layers -ne '3' -or
            $receipt.ground_single_surface -ne '0' -or $receipt.ground_height_alpha -ne 'shared_core_normalized' -or
            $receipt.ground_distance_normal_strength -ne '0.65' -or $receipt.ground_meso_partition -ne '0' -or

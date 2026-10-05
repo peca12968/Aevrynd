@@ -1,6 +1,7 @@
 #pragma once
 #include <Aevrynd/CollisionWorld3D.h>
 #include <Aevrynd/HeightField3D.h>
+#include <Aevrynd/TerrainLayerCoverage3D.h>
 #include "MistwatchSession.h"
 #include "MistwatchForestProps.h"
 #include "MistwatchUnderstory.h"
@@ -51,6 +52,19 @@ inline Aevrynd::Mesh3D CreateGroundMesh(const Aevrynd::HeightField3D& terrain,bo
         vertex.color=GroundLayerHeightColor(vertex.color,vertex.y,terrain);
     return mesh;
 }
+inline float RiverSedimentWeight(float x,float z) {
+    const float mask=RiverSmooth((std::abs(x)-16.f)/8.f),distance=RiverDistance(x,z),width=RiverOuterWidth(x);
+    // 水位 -4 穿過 -8～0 河床的半寬位置；可見下岸在半寬與全寬之間，不能誤當水下區域。
+    if(mask<=0.f||distance<=width*.5f)return 0.f;
+    const float outer=RiverSmooth((std::abs(x)-12.f)/12.f);
+    const float bank=z<RiverCenterZ(x)?13.f+2.f*std::sin(x*.07f):13.f+2.f*std::cos(x*.08f);
+    const float t=(distance-width)/((4.f+(bank-4.f)*outer)*(1.f+.5f*RiverErosionMask(x,z)));
+    const float lower=RiverSmooth((distance/width-.5f)/.08f),upper=1.f-RiverSmooth((t-.45f)/.55f);
+    // 中央橋樑域完全保留；外側真露出的河床岸坡與上岸採世界固定斑塊，不動水下／地形。
+    const float signal=.5f+.5f*std::sin(x*.61f+z*.49f)*std::cos(x*.31f-z*.27f);
+    const float breakup=RiverSmooth((signal-.30f)/.45f);
+    return .95f*mask*lower*upper*(.65f+.35f*breakup);
+}
 inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain,bool layerHeight=true) {
     auto mesh=CreateGroundMesh(terrain,layerHeight);
     // 通路直接混入地表頂點色，保留材質細節與原始碰撞高度，避免懸浮平板。
@@ -65,6 +79,15 @@ inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain,b
         const Aevrynd::Color soil{.46f,.34f,.22f,1};
         vertex.color=Aevrynd::PackColorRgba8({original.r+(soil.r-original.r)*weight,
             original.g+(soil.g-original.g)*weight,original.b+(soil.b-original.b)*weight,original.a});
+    }
+    if(!layerHeight)return mesh;
+    for(auto& vertex:mesh.vertices){
+        const float weight=RiverSedimentWeight(vertex.x,vertex.z);
+        if(weight<=0.f)continue;
+        // 第二槽是 Ground108 淺灰碎石，第三槽是褐色粗粒岩面；不改頂點色或曝光。
+        Aevrynd::Vec2 encoded{};
+        if(!Aevrynd::TryEncodeTerrainLayerCoverage3D(.15f*weight,.85f*weight,encoded))throw std::runtime_error("Invalid bank sediment coverage");
+        vertex.u=encoded.x;vertex.v=encoded.y;
     }
     return mesh;
 }
