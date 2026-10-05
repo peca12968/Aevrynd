@@ -6,6 +6,19 @@
 
 namespace Aevrynd {
 struct Ray3D {Vec3 origin{},direction{0,0,1};};
+// 有限線段以 double slab 裁切；包括零長度與微小位移，不略去末端或 Normalize epsilon。
+inline bool SegmentIntersectsAabb3D(Vec3 start,Vec3 end,Vec3 center,Vec3 extents) noexcept {
+    const auto finite=[](Vec3 p){return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);};
+    if(!finite(start)||!finite(end)||!finite(center)||!finite(extents)||extents.x<0||extents.y<0||extents.z<0)return true;
+    double enter=0,exit=1;
+    const auto clip=[&](double a,double b,double c,double extent){
+        const double delta=b-a,low=c-extent,high=c+extent;
+        if(delta==0)return a>=low&&a<=high;
+        double first=(low-a)/delta,last=(high-a)/delta;if(first>last)std::swap(first,last);
+        enter=(std::max)(enter,first);exit=(std::min)(exit,last);return enter<=exit;
+    };
+    return clip(start.x,end.x,center.x,extents.x)&&clip(start.y,end.y,center.y,extents.y)&&clip(start.z,end.z,center.z,extents.z);
+}
 struct RayTriangleHit3D {
     float distance{std::numeric_limits<float>::infinity()};
     Vec3 barycentric{},normal{};

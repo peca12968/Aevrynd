@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchEncounter.h"
 #include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/HeightFieldLineOfSight3D.h>
 
 namespace Mistwatch {
 // 包住目前野豬非對稱吻部的根部半徑；不是人物控制器的預設尺寸。
@@ -93,7 +94,20 @@ inline EncounterMotionResult TickEncounterWorld(Encounter& enemy,Aevrynd::Vec3 p
     std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain) noexcept {
     EncounterMotionResult invalid;invalid.feet=enemy.feet;
     if(!enemy.Valid()||!Session::Finite(player)||!std::isfinite(dt)||dt<=0||dt>.1f)return invalid;
-    auto next=enemy;const unsigned damage=next.Tick(player,dt,attack);
+    if(!ValidEncounterWorld(solids,terrain))return invalid;
+    // .65m 位於目前站立／蹲姿與野豬軀幹內；腳底高度隨跳躍改變，不以地面固定射線穿牆。
+    const auto clear=[&](Aevrynd::Vec3 target,bool& malformed){
+        const auto start=enemy.feet+Aevrynd::Vec3{0,.65f,0},end=target+Aevrynd::Vec3{0,.65f,0};
+        for(const auto& box:solids)if(Aevrynd::SegmentIntersectsAabb3D(start,end,box.center,box.extents))return false;
+        const auto status=Aevrynd::QueryHeightFieldLine3D(start,end,terrain);
+        malformed|=status==Aevrynd::HeightFieldLineStatus3D::InvalidInput;
+        return status==Aevrynd::HeightFieldLineStatus3D::Clear;
+    };
+    bool malformed{},playerClear=true,strikeClear=true;
+    if(enemy.phase==EnemyPhase::Windup||std::hypot(player.x-enemy.feet.x,player.z-enemy.feet.z)<=2.5f)playerClear=clear(player,malformed);
+    if(enemy.phase==EnemyPhase::Windup)strikeClear=clear(enemy.strikeTarget,malformed);
+    if(malformed)return invalid;
+    auto next=enemy;const unsigned damage=next.Tick(player,dt,attack,playerClear,strikeClear);
     auto result=ResolveEncounterMove(enemy.feet,{next.feet.x-enemy.feet.x,0,next.feet.z-enemy.feet.z},solids,terrain);
     // 非法世界／狀態整步拒絕；安全碰撞停步仍推進既有蓄力、反擊及冷卻。
     if(result.status==EncounterMotionStatus::Invalid)return result;
