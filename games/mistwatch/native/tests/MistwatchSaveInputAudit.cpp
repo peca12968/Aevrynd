@@ -49,7 +49,7 @@ Mistwatch::SaveGame BattleSeed(){
     Require(s.evasion.remaining>0&&s.evasion.cooldown>0&&s.Valid(),"bounded active evasion seed invalid");return s;
 }
 bool KnownCase(std::wstring_view value){
-    for(const auto name:{L"hp1-active",L"cooldown-only",L"legacy-v6",L"truncated",L"missing",L"body-overlap",L"dead",L"complete",L"shelter",L"slope",L"terrain-edge",L"outside-save",L"retry-battle",L"retry-after-battle",L"enemy-y-below",L"enemy-y-above"})
+    for(const auto name:{L"hp1-active",L"cooldown-only",L"legacy-v6",L"truncated",L"missing",L"body-overlap",L"middle-overlap",L"dead",L"complete",L"shelter",L"slope",L"terrain-edge",L"outside-save",L"retry-battle",L"retry-after-battle",L"enemy-y-below",L"enemy-y-above"})
         if(value==name)return true;
     return false;
 }
@@ -65,6 +65,7 @@ class MistwatchSaveInputProbe final : public IGame {
     bool initialized{},stopped{},passed{},snapshotEqual{},stateUnchanged{};
     bool audioOptionsUnchanged{},masterVolumeUnchanged{},audioSettingsUnchanged{};
     bool unsafeF5Rejected{},oldSavePreserved{};
+    bool expectedMiddleLayer{};
     float beforeLoadWater{},initialMasterVolume{};
     std::string initialAudioSettings;
     std::string oldSaveBytes;
@@ -73,8 +74,19 @@ class MistwatchSaveInputProbe final : public IGame {
     Mistwatch::SaveGame Snapshot()const{return {game.session,game.encounter,game.evasion};}
     Mistwatch::SavedGameCommitTargets Targets(){return {game.session,game.encounter,game.evasion,game.controller,game.explorer,game.boar,game.orbit,
         game.solids,game.playerCameraMotion,game.lastPlayerFraming,game.lastCameraMotion,game.lastRenderedCamera};}
+    void ValidateMiddleSolids()const {
+        const std::size_t expectedPopulation=expectedMiddleLayer?24:0;
+        Require(game.middleLayerEnabled==expectedMiddleLayer&&game.middleLayer.trees.size()==expectedPopulation&&
+            game.middleLayerSolids.size()==expectedPopulation,"native branch does not match explicitly expected middle-layer mode");
+        const auto base=Mistwatch::WorldSolids(game.session.bridgeRepaired);
+        Require(game.solids.size()==base.size()+game.middleLayerSolids.size(),"native branch lost middle-layer solids");
+        for(std::size_t i=0;i<game.middleLayerSolids.size();++i) {
+            const auto& actual=game.solids[base.size()+i];const auto& expectedSolid=game.middleLayerSolids[i];
+            Require(Same(actual.center,expectedSolid.center)&&Same(actual.extents,expectedSolid.extents),"native branch altered middle-layer solid");
+        }
+    }
     void Seed(const Mistwatch::SaveGame& value){
-        const auto result=Mistwatch::PrepareSavedGame(value,{game.controller,game.explorer,game.boar,game.orbit},game.terrain);
+        const auto result=Mistwatch::PrepareSavedGame(value,{game.controller,game.explorer,game.boar,game.orbit},game.terrain,{},game.middleLayerSolids);
         if(!result)throw std::runtime_error("native audit seed preflight failed; error="+std::to_string(unsigned(result.error)));
         Mistwatch::SwapPreparedSavedGame(*result.candidate,Targets());
         Require(Snapshot().Serialize()==value.Serialize(),"native audit seed swap lost snapshot");
@@ -104,6 +116,7 @@ class MistwatchSaveInputProbe final : public IGame {
         }
     }
     void ValidateLoaded(){
+        ValidateMiddleSolids();
         Require(Snapshot().Valid()&&Snapshot().Serialize()==expected.Serialize(),"actual F9 did not restore exact complete snapshot");
         snapshotEqual=true;
         Require(Same(game.controller.Position(),expected.session.feet),"actual F9 relocated saved feet");
@@ -148,7 +161,7 @@ class MistwatchSaveInputProbe final : public IGame {
         try{game.OnUpdate(engine,dt);}catch(...){Keys(engine,keys,false);engine.GetInput().ConsumePresses();throw;}
         Keys(engine,keys,false);engine.GetInput().ConsumePresses();
     }
-    bool FailureCase()const{return caseName==L"truncated"||caseName==L"missing"||caseName==L"body-overlap"||caseName==L"enemy-y-below"||caseName==L"enemy-y-above";}
+    bool FailureCase()const{return caseName==L"truncated"||caseName==L"missing"||caseName==L"body-overlap"||caseName==L"middle-overlap"||caseName==L"enemy-y-below"||caseName==L"enemy-y-above";}
     void PrepareDiskAfterF5(){
         const auto saved=Read(game.save);
         if(caseName==L"outside-save"){
@@ -181,6 +194,13 @@ class MistwatchSaveInputProbe final : public IGame {
         else if(caseName==L"missing")Require(std::filesystem::remove(game.save),"isolated missing fixture removal failed");
         else if(caseName==L"body-overlap"){
             auto invalid=expected;invalid.session.feet={-7.25f,0,16.1f};Require(invalid.Valid(),"overlap fixture is invalid serialized game");
+            Write(game.save,invalid.Serialize());
+        }
+        else if(caseName==L"middle-overlap"){
+            Require(game.middleLayerSolids.size()==24,"middle-overlap requires explicit middle-layer mode");
+            auto invalid=expected;const auto p=game.middleLayerSolids.front().center;
+            invalid.session.feet={p.x,game.terrain.SampleHeight(p.x,p.z),p.z};
+            Require(invalid.Valid(),"middle-overlap fixture must be format-valid");
             Write(game.save,invalid.Serialize());
         }
         if(!FailureCase()){
@@ -246,10 +266,11 @@ class MistwatchSaveInputProbe final : public IGame {
         out.close();Require(bool(out),"outside-save real step receipt write failed");
     }
 public:
-    MistwatchSaveInputProbe(std::wstring name,std::filesystem::path directory):caseName(std::move(name)),output(std::move(directory)),capturePath(output/L"native-after-load.png"){}
+    MistwatchSaveInputProbe(std::wstring name,std::filesystem::path directory,bool middle):caseName(std::move(name)),output(std::move(directory)),capturePath(output/L"native-after-load.png"),expectedMiddleLayer(middle){}
     void OnStart(Engine& engine)override {
         game.OnStart(engine);initialized=true;
         try{
+            ValidateMiddleSolids();
             Require(game.capture==capturePath&&game.gameAudio.options.muted,"initial capture did not isolate or mute assets");
             game.capture.clear();game.save=output/L"isolated-save.txt";game.audioSettings=output/L"isolated-audio-settings.txt";game.started=true;game.paused=false;
             Require(!std::filesystem::exists(game.save),"audit attempted existing save path");
@@ -299,6 +320,7 @@ public:
                     game.session.bridgeRepaired==prior.bridgeRepaired&&game.session.collected==prior.collected&&
                     game.session.repairMaterials==prior.repairMaterials,"actual R retry changed completed mission progress");
                 Require(Snapshot().Valid(),"actual R retry after completed battle made checkpoint invalid");
+                ValidateMiddleSolids();
                 Require(game.encounter.phase==(prior.guardianDefeated?Mistwatch::EnemyPhase::Defeated:Mistwatch::EnemyPhase::Pursuit)&&
                     game.encounter.health==(prior.guardianDefeated?0u:3u),"actual R retry reset encounter contrary to mission progress");
                 Write(output/L"retry-native.txt","actual_R_count=1\nmission_progress_preserved=1\nencounter_consistent=1\ncheckpoint_valid=1\n");
@@ -313,15 +335,17 @@ public:
             const std::array keys{unsigned(VK_F9),unsigned('R'),unsigned('Q'),unsigned('F'),unsigned(VK_SPACE),unsigned('W'),
                 unsigned('M'),unsigned(VK_PRIOR),unsigned(VK_NEXT),unsigned(VK_ESCAPE)};
             NativeTick(engine,keys,.1f);
+            ValidateMiddleSolids();
             Require(game.gameAudio.options.Serialize()==beforeAudioOptions,"actual F9 plus audio keys changed options");audioOptionsUnchanged=true;
             Require(engine.Audio().GetStats().masterVolume==beforeMaster,"actual F9 plus audio keys changed effective master volume");masterVolumeUnchanged=true;
             Require(Read(game.audioSettings)==initialAudioSettings,"actual F9 plus audio keys rewrote isolated audio settings");audioSettingsUnchanged=true;
             Require(game.started&&!game.paused,"actual F9 plus Escape changed playback state");
             Require(game.waterTime==beforeLoadWater,"actual F9 consumed load-tick water time");
             if(FailureCase()){
+                Require(game.message=="Save unavailable","invalid actual F9 did not take rejection branch");
                 Require(Fingerprint()==before,"rejected actual F9 partially changed live CPU/audio state");
                 UnchangedCameraContinuation(camera);stateUnchanged=true;
-            }else ValidateLoaded();
+            }else {Require(game.message=="Loaded","valid actual F9 did not take load branch");ValidateLoaded();}
             Write(output/L"after-f9.txt",Snapshot().Serialize());passed=true;RestoreCapture();++phase;return;
         }
         game.OnUpdate(engine,dt);
@@ -348,6 +372,10 @@ public:
             <<"\naudio_options_unchanged="<<audioOptionsUnchanged<<"\neffective_master_volume_unchanged="<<masterVolumeUnchanged
             <<"\nplayer_audio_settings_touched=0\nterrain_edge_controller_steps="<<terrainEdgeControllerSteps
             <<"\nunsafe_f5_rejected="<<unsafeF5Rejected<<"\nold_save_preserved="<<oldSavePreserved
+            <<"\nmiddle_layer_population="<<game.middleLayer.trees.size()<<"\nmiddle_layer_solids="<<game.middleLayerSolids.size()
+            <<"\nworld_solids="<<game.solids.size()<<"\nmiddle_solids_preserved=1"
+            <<"\nactual_load_branch_confirmed=1"
+            <<"\nexpected_middle_layer_mode="<<expectedMiddleLayer<<"\nmode_matches_expected=1"
             <<"\nown_window_only=1\nglobal_input=0\nforeground_activation=0\nmuted=1\nhidden_window=1"
             <<"\nactual_capture=1\nactual_cleanup=1\nscope=native-key-branch-audit-not-human-playthrough"
             <<"\nload_semantics=checkpoint-not-exact-motion\n";
@@ -360,9 +388,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
     bool ownsOutput{};
     try{
         int count{};auto argv=CommandLineToArgvW(GetCommandLineW(),&count);Require(argv!=nullptr,"command line parsing failed");
-        if(count!=3){LocalFree(argv);throw std::runtime_error("usage: CASE NEW_OUTPUT_DIRECTORY");}
+        if(count!=3&&count!=4){LocalFree(argv);throw std::runtime_error("usage: CASE NEW_OUTPUT_DIRECTORY [--middle-layer|--baseline-middle-layer]");}
+        const bool baseline=count==4&&std::wstring_view(argv[3])==L"--baseline-middle-layer";
+        const bool middleLayer=!baseline;
+        if(count==4&&!baseline&&std::wstring_view(argv[3])!=L"--middle-layer"){LocalFree(argv);throw std::runtime_error("unknown native audit option");}
         const std::wstring name=argv[1];output=argv[2];LocalFree(argv);
         Require(KnownCase(name),"unknown native audit case");
+        Require(name!=L"middle-overlap"||middleLayer,"middle-overlap requires --middle-layer");
         Require(output.is_absolute()&&output!=output.root_path(),"audit output must be a dedicated absolute directory");
         Require(!std::filesystem::exists(output),"audit output already exists; refusing existing saves/evidence");
         Require(std::filesystem::create_directory(output),"fresh audit output creation failed");
@@ -375,11 +407,12 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
             L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE",L"AEVRYND_MISTWATCH_HDR_STAGE",L"AEVRYND_MISTWATCH_LEGACY_RANGER_HUT",
             L"AEVRYND_MISTWATCH_NO_AO",L"AEVRYND_MISTWATCH_NO_BLOOM",L"AEVRYND_MISTWATCH_NO_GROUND_NORMAL",
             L"AEVRYND_MISTWATCH_NO_GROUND_TEXTURES",L"AEVRYND_MISTWATCH_NO_MSAA",L"AEVRYND_MISTWATCH_NO_SHADOWS",
-            L"AEVRYND_MISTWATCH_TREE_LOD",L"AEVRYND_MISTWATCH_TWIG_MODE"})Require(SetEnvironmentVariableW(variable,nullptr)!=0,"audit environment reset failed");
+            L"AEVRYND_MISTWATCH_TREE_LOD",L"AEVRYND_MISTWATCH_TWIG_MODE",L"AEVRYND_MISTWATCH_MIDDLE_LAYER"})Require(SetEnvironmentVariableW(variable,nullptr)!=0,"audit environment reset failed");
+        if(baseline)Require(SetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MIDDLE_LAYER",L"0")!=0,"explicit old baseline environment failed");
         const auto capture=output/L"native-after-load.png";
         Require(SetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",capture.c_str())!=0,"isolated initial capture environment failed");
         Engine engine({L"Aevrynd - Mistwatch Save Input Audit",1280,720});
-        return engine.Run(std::make_unique<MistwatchSaveInputProbe>(name,output),instance,SW_HIDE);
+        return engine.Run(std::make_unique<MistwatchSaveInputProbe>(name,output,middleLayer),instance,SW_HIDE);
     }catch(const std::exception& error){
         // 既有輸出目錄／參數錯誤不覆寫他人的紀錄。
         if(ownsOutput){

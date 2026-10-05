@@ -1,4 +1,5 @@
 #include "MistwatchLoadPreparation.h"
+#include "MistwatchMiddleLayer.h"
 #include <bit>
 #include <iostream>
 #include <iomanip>
@@ -233,6 +234,42 @@ void Run(){
     Require(live.result.accepted,"live baseline camera rejected");live.rendered=live.result.camera;
     Require(Length(live.controller.Velocity())>0&&live.explorer.phase>0,"live fixture lacks motion state to preserve");
     SaveGame start;AcceptedAndRollback(start,live,terrain,true,1.8f);
+    // 真中層樹幹必須保留於載入候選及原子提交；相交存檔拒絕且 live 不變。
+    const auto conifers=TreePositions();const auto props=ForestProps(terrain,conifers);
+    const auto understory=CreateUnderstory(terrain,conifers,props);
+    const auto original=CreateBroadleafTrees(terrain,conifers,props,understory);
+    const auto middle=CreateMiddleLayer(terrain,conifers,props,understory,original,WorldSolids(false));
+    Require(middle.reachedBudget&&middle.trees.size()==24,"middle-layer regression fixture incomplete");
+    std::vector<BoxCollider3D> extraSolids;
+    for(const auto& tree:middle.trees)extraSolids.push_back(tree.trunk);
+    const auto beforeMiddle=live.Fingerprint();
+    auto middlePrepared=PrepareSavedGame(start,live.Inputs(),terrain,{},extraSolids);
+    Require(bool(middlePrepared)&&middlePrepared.candidate->solids.size()==245,"load omitted real middle-layer trunks");
+    Require(live.Fingerprint()==beforeMiddle,"extra-solid preparation changed live state");
+    for(std::size_t i=0;i<extraSolids.size();++i){
+        const auto& actual=middlePrepared.candidate->solids[221+i];
+        Require(Same(actual.center,extraSolids[i].center)&&Same(actual.extents,extraSolids[i].extents),"load changed additional trunk collision");
+    }
+    SwapPreparedSavedGame(*middlePrepared.candidate,live.Targets());
+    Require(live.solids.size()==245,"commit dropped extra solids");
+    SwapPreparedSavedGame(*middlePrepared.candidate,live.Targets());
+    Require(live.Fingerprint()==beforeMiddle,"extra-solid commit rollback not exact");
+    for(const auto& tree:middle.trees){
+        auto overlapping=start;const auto p=tree.trunk.center;
+        overlapping.session.feet={p.x,terrain.SampleHeight(p.x,p.z),p.z};
+        const auto rejected=PrepareSavedGame(overlapping,live.Inputs(),terrain,{},extraSolids);
+        Require(!rejected&&rejected.error==LoadPreparationError::BodyOverlap,"load inside added trunk accepted");
+        Require(live.Fingerprint()==beforeMiddle,"added-trunk rejection changed live state");
+    }
+    for(const float extent:{0.f,-1.f,(std::numeric_limits<float>::infinity)(),(std::numeric_limits<float>::quiet_NaN)()}){
+        const std::array badExtra{BoxCollider3D{{12,0,12},{extent,1,1}}};
+        const auto rejected=PrepareSavedGame(start,live.Inputs(),terrain,{},badExtra);
+        Require(!rejected&&rejected.error==LoadPreparationError::InvalidExtraSolids,"invalid extra extent accepted");
+        Require(live.Fingerprint()==beforeMiddle,"invalid extra extent changed live state");
+    }
+    const std::array badCenter{BoxCollider3D{{(std::numeric_limits<float>::quiet_NaN)(),0,12},{1,1,1}}};
+    const auto rejectedCenter=PrepareSavedGame(start,live.Inputs(),terrain,{},badCenter);
+    Require(!rejectedCenter&&rejectedCenter.error==LoadPreparationError::InvalidExtraSolids,"nonfinite extra center accepted");
     SaveGame beforeBridge;beforeBridge.session.collected=7;beforeBridge.session.repairMaterials=7;beforeBridge.session.feet=Session::bridge;
     Require(beforeBridge.Valid(),"before-bridge snapshot invalid");AcceptedAndRollback(beforeBridge,live,terrain,true,1.8f);
     SaveGame onBridge;onBridge.session=BridgeSession();onBridge.session.feet={0,0,36};AcceptedAndRollback(onBridge,live,terrain,true,1.8f);

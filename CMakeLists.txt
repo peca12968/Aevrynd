@@ -109,6 +109,7 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchSaveGameTest
     MistwatchSaveFileTest
     MistwatchLoadPreparationTest
+    MistwatchMiddleLayerTest
     MistwatchGroundMaterialTest
     MistwatchForestCoverTest
     MistwatchFernColoniesTest

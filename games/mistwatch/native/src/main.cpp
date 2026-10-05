@@ -1,5 +1,6 @@
 #include "MistwatchSession.h"
 #include "MistwatchWorld.h"
+#include "MistwatchMiddleLayer.h"
 #include "MistwatchEncounter.h"
 #include "MistwatchCamera.h"
 #include "MistwatchExplorer.h"
@@ -57,6 +58,11 @@ class MistwatchGame final : public IGame {
     std::array<MeshResource3D,3> broadleafMeshes;
     std::array<Material3D,3> broadleafSurface;
     std::vector<Mistwatch::BroadleafTree> broadleafTrees;
+    Mistwatch::MiddleLayerResult middleLayer;
+    std::vector<BoxCollider3D> middleLayerSolids;
+    bool middleLayerEnabled{true};
+    unsigned submittedMiddleLayer{};
+    std::size_t submittedMiddleLayerTriangles{};
     std::size_t broadleafTriangles{};
     HeightField3D terrain;
     MeshResource3D terrainMesh;
@@ -193,6 +199,11 @@ class MistwatchGame final : public IGame {
     std::uint64_t benchmarkLastSerial{};
     std::vector<double> benchmarkGpuMilliseconds;
     std::chrono::steady_clock::time_point captureStart;
+    std::vector<BoxCollider3D> RuntimeWorldSolids(bool repaired)const {
+        auto result=Mistwatch::WorldSolids(repaired);
+        result.insert(result.end(),middleLayerSolids.begin(),middleLayerSolids.end());
+        return result;
+    }
     void ResetController() {
         controller.Reset(session.feet);
         // 讀檔／重試時先採低姿，再嘗試站起，避免載入棚內存檔後頭部穿過屋頂。
@@ -218,7 +229,7 @@ class MistwatchGame final : public IGame {
         const Mistwatch::SaveGame snapshot{session,encounter,evasion};
         // 先確認目前世界可安全還原，避免走出地形後寫下格式合法、實際讀不回的檔案。
         // 預檢只操作候選 CPU 狀態；失敗不寫檔，也不取代先前可用的檢查點。
-        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain);
+        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,{},middleLayerSolids);
         if(!prepared){message="Save position unavailable";return;}
         message=Mistwatch::WriteSaveFile(save,snapshot)==Mistwatch::SaveFileResult::Saved?"Saved":"Save failed";
     }
@@ -428,6 +439,14 @@ public:
         understory=Mistwatch::CreateUnderstory(terrain,trees,forestProps);
         broadleafTrees=Mistwatch::CreateBroadleafTrees(terrain,trees,forestProps,understory);
         if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
+        wchar_t middleCapture[2]{},middleFlag[3]{};
+        const bool middleCaptureProvided=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",middleCapture,2)>0;
+        if(middleCaptureProvided) {
+            const auto length=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MIDDLE_LAYER",middleFlag,3);
+            if(length&&(length!=1||(middleFlag[0]!=L'0'&&middleFlag[0]!=L'1')))
+                throw std::runtime_error("Invalid middle-layer comparison flag");
+        }
+        middleLayerEnabled=Mistwatch::UseMiddleLayer(middleCaptureProvided,middleFlag);
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
         const auto fernRoot=e.ExecutableDirectory()/"assets"/"mistwatch-ferns";
@@ -444,6 +463,13 @@ public:
             if(!scannedFerns[variant])throw std::runtime_error("Scanned fern upload failed");
         }
         groundCover=Mistwatch::GroundCoverPositions(terrain);
+        if(middleLayerEnabled) {
+            const std::array<float,4> radii{fernFootprints[0].radius,fernFootprints[1].radius,fernFootprints[2].radius,fernFootprints[3].radius};
+            middleLayer=Mistwatch::CreateMiddleLayer(terrain,trees,forestProps,understory,broadleafTrees,Mistwatch::WorldSolids(false),24,radii);
+            if(!middleLayer.reachedBudget||middleLayer.trees.size()!=24)
+                throw std::runtime_error("Middle-layer authored budget incomplete");
+            for(const auto& tree:middleLayer.trees)middleLayerSolids.push_back(tree.trunk);
+        }
         grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,diagnosticLegacyGrass?3:5,diagnosticLegacyGrass?GrassBladeStyle3D::Upright:GrassBladeStyle3D::Curved));
         const auto grassRoot=e.ExecutableDirectory()/"assets"/"mistwatch-grass";
         grassMaterials.Initialize(e,grassRoot);
@@ -460,7 +486,7 @@ public:
         }
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
         if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
-        solids=Mistwatch::WorldSolids(session.bridgeRepaired);
+        solids=RuntimeWorldSolids(session.bridgeRepaired);
         forestCoverClearanceColliders=solids.size();
         const auto coverStart=std::chrono::steady_clock::now();
         if(!diagnosticScatterCover&&!diagnosticProceduralGrass){
@@ -606,7 +632,7 @@ public:
                     }
                 }
                 controller.Reset(session.feet);
-                solids=Mistwatch::WorldSolids(session.bridgeRepaired);
+                solids=RuntimeWorldSolids(session.bridgeRepaired);
                 ResetController();
                 if(name==L"repair-shelter" || name==L"repair-player-camera") {
                     captureShelterOverview=name==L"repair-shelter";
@@ -863,6 +889,14 @@ public:
                     <<"\nsubmitted_grass="<<submittedGrass<<'\n';
                 out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
                     <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
+                out<<"middle_layer_comparison="<<middleLayerEnabled
+                    <<"\nmiddle_layer_population="<<middleLayer.trees.size()
+                    <<"\nmiddle_layer_target="<<(middleLayerEnabled?24:0)
+                    <<"\nmiddle_layer_reached_budget="<<(!middleLayerEnabled||middleLayer.reachedBudget)
+                    <<"\nsubmitted_middle_layer="<<submittedMiddleLayer
+                    <<"\nsubmitted_middle_layer_triangles="<<submittedMiddleLayerTriangles
+                    <<"\nmiddle_layer_attempted="<<middleLayer.attempted
+                    <<"\nmiddle_layer_transform_fingerprint="<<Mistwatch::MiddleLayerTransformFingerprint(middleLayer.trees)<<'\n';
                 out<<"boulder_instances="<<std::count_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();})
                     <<"\nboulder_mesh_triangles="<<propMeshes[0].TriangleCount()<<"\nboulder_materials="<<boulderMaterials.Stats().materials
                     <<"\nboulder_use_uv="<<boulderMaterial.useUv<<"\nboulder_texture_scale="<<boulderMaterial.textureScale
@@ -973,7 +1007,7 @@ public:
         if(started&&!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
             Mistwatch::SaveGame saved;
             auto prepared=Mistwatch::ReadSaveFile(save,saved)?Mistwatch::PrepareSavedGame(saved,
-                {controller,explorer,boar,orbit},terrain):Mistwatch::LoadPreparationResult{};
+                {controller,explorer,boar,orbit},terrain,{},middleLayerSolids):Mistwatch::LoadPreparationResult{};
             if(prepared){
                 Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera});
@@ -996,7 +1030,7 @@ public:
         bool resetTick=false;
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(in.Pressed('R') && session.beaconLit) {
-            session={};solids=Mistwatch::WorldSolids(false);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
+            session={};solids=RuntimeWorldSolids(false);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
         }
         if(in.Pressed('R') && !session.Alive()) {
             session.Retry();ResetController();
@@ -1057,7 +1091,7 @@ public:
             for(unsigned i=0;i<3;++i)changed=session.CollectRepairMaterial(i,crouched)||changed;
             auto bridgeCandidate=session;
             if(bridgeCandidate.RepairBridge()) {
-                auto nextWorld=Mistwatch::WorldSolids(true);
+                auto nextWorld=RuntimeWorldSolids(true);
                 const std::array roof{Mistwatch::RangerHutCameraRoofSolid()};
                 if(ThirdPersonCameraPathClear3D(playerCameraMotion.Camera().position,playerCameraMotion.Camera().position,
                     nextWorld,terrain,diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{roof},.16f)){
@@ -1099,6 +1133,16 @@ public:
             scene.Mesh(landscapeFirMeshes[slot],tree,firMaterials[slot]);
         for(const auto& tree:broadleafTrees)for(unsigned slot=0;slot<3;++slot)
             scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot]);
+        // 中層候選共用既有合法闊葉網格與材質；真樹幹亦加入角色及鏡頭碰撞。
+        submittedMiddleLayer=0;submittedMiddleLayerTriangles=0;
+        for(const auto& tree:middleLayer.trees) {
+            for(unsigned slot=0;slot<3;++slot) {
+                if(!scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot]))
+                    throw std::runtime_error("Middle-layer scene insertion failed");
+                submittedMiddleLayerTriangles+=broadleafMeshes[slot].TriangleCount();
+            }
+            ++submittedMiddleLayer;
+        }
         scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
         for(const auto tree:trees) {
             for(unsigned slot=0;slot<4;++slot)

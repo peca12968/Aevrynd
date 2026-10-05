@@ -19,6 +19,9 @@ $valid=@{
     submitted_colony_variants='1,1,1,1';submitted_colony_ferns='4';submitted_colony_fern_triangles='6232'
     submitted_ferns='5';submitted_fern_triangles='8616'
     submitted_original_ferns='1';submitted_original_fern_triangles='2384';submitted_original_fern_variants='1,0,0,0'
+    middle_layer_comparison='0';middle_layer_population='0';middle_layer_target='0'
+    middle_layer_reached_budget='1';middle_layer_attempted='0';middle_layer_transform_fingerprint='0'
+    submitted_middle_layer='0';submitted_middle_layer_triangles='0'
 }
 Assert-MistwatchForestCoverReceipt $valid
 $script:rejected=0
@@ -79,3 +82,67 @@ foreach($scene in @('initial','river-overlook')) {
     ++$script:rejected
 }
 'FOREST_COVER_RECEIPT_TEST_PASS; VALID=2; REJECTED='+$script:rejected
+
+# 中層候選是不同世界配置；保留上方舊契約的全部65反例，不自動猜選版本。
+$middle=$valid.Clone()
+$middleFields=@{
+    forest_cover_patches='166';forest_cover_fingerprint='13112970783824743828'
+    forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11331479475778127843'
+    forest_cover_variants='974,737,624,535,730';fern_colonies='86'
+    fern_colony_fingerprint='5859764795355075831';fern_colony_variants='9,37,168,86'
+    middle_layer_comparison='1';middle_layer_population='24';middle_layer_target='24'
+    middle_layer_reached_budget='1';middle_layer_attempted='11395'
+    middle_layer_transform_fingerprint='9091870748330489572'
+    submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
+}
+foreach($field in $middleFields.Keys){$middle[$field]=$middleFields[$field]}
+Assert-MistwatchForestCoverReceipt $middle -MiddleLayer
+# 各欄位及整組中層資料污染都必須在 baseline 模式拒絕，不讓舊指紋遮住多畫的樹。
+foreach($field in @('middle_layer_comparison','middle_layer_population','middle_layer_target',
+    'middle_layer_reached_budget','middle_layer_attempted','middle_layer_transform_fingerprint',
+    'submitted_middle_layer','submitted_middle_layer_triangles')){
+    $bad=$valid.Clone();$bad[$field]=$(if($field -eq 'middle_layer_reached_budget'){'0'}else{'1'})
+    Assert-Rejected $bad ('baseline polluted '+$field)
+}
+$polluted=$valid.Clone()
+foreach($field in @('middle_layer_comparison','middle_layer_population','middle_layer_target',
+    'middle_layer_reached_budget','middle_layer_attempted','middle_layer_transform_fingerprint',
+    'submitted_middle_layer','submitted_middle_layer_triangles')){$polluted[$field]=$middleFields[$field]}
+Assert-Rejected $polluted 'baseline old grass/fern fingerprints plus all middle data'
+foreach($value in @('00','-1','NaN','0.0','024')){
+    $bad=$valid.Clone();$bad.middle_layer_population=$value;Assert-Rejected $bad ('noncanonical baseline population '+$value)
+}
+'BASELINE_MIDDLE_LAYER_REJECTION_PASS; EXTRA_NEGATIVE_CASES=14; TOTAL_BASELINE_REJECTED='+$script:rejected
+$middleRejected=0
+function Assert-MiddleRejected([hashtable]$Receipt,[string]$Case) {
+    $failed=$false
+    try {Assert-MistwatchForestCoverReceipt $Receipt -MiddleLayer}catch{$failed=$true}
+    if(-not $failed){throw ('Invalid middle receipt accepted: '+$Case)}
+    ++$script:middleRejected
+}
+foreach($field in @($middle.Keys)){
+    $bad=$middle.Clone();$bad.Remove($field);Assert-MiddleRejected $bad ('missing '+$field)
+}
+foreach($field in $middleFields.Keys){
+    $bad=$middle.Clone();$bad[$field]='0';Assert-MiddleRejected $bad ('zero '+$field)
+}
+Assert-MiddleRejected $valid 'old world passed as middle-layer candidate'
+foreach($change in @(
+    @{field='submitted_grass_variants';value='975,1,1,1,1'},
+    @{field='submitted_colony_variants';value='10,1,1,1'},
+    @{field='submitted_original_fern_variants';value='0,0,0,0'},
+    @{field='submitted_middle_layer';value='23'},
+    @{field='submitted_middle_layer_triangles';value='1988495'},
+    @{field='middle_layer_population';value='024'},
+    @{field='middle_layer_transform_fingerprint';value='9091870748330489573'},
+    @{field='forest_cover_clearance_colliders';value='221'},
+    @{field='forest_cover_fingerprint';value='5098415506555036174'},
+    @{field='fern_colony_fingerprint';value='3770887003960151305'},
+    @{field='submitted_colony_fern_triangles';value='6231'},
+    @{field='submitted_fern_triangles';value='8617'}
+)){
+    $bad=$middle.Clone();$bad[$change.field]=$change.value;Assert-MiddleRejected $bad $change.field
+}
+$wrongMode=$false;try{Assert-MistwatchForestCoverReceipt $middle}catch{$wrongMode=$true}
+if(-not $wrongMode){throw 'Middle world accepted without explicit mode'}
+'MIDDLE_LAYER_RECEIPT_TEST_PASS; VALID=1; REJECTED='+$middleRejected+'; MODE_MIX_REJECTED=1'

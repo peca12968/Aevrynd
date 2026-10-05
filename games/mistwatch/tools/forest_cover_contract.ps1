@@ -1,5 +1,5 @@
 ﻿function Assert-MistwatchForestCoverReceipt {
-    param([Parameter(Mandatory=$true)][hashtable]$Receipt,[string]$Scene='')
+    param([Parameter(Mandatory=$true)][hashtable]$Receipt,[string]$Scene='',[switch]$MiddleLayer)
     # 精確作者配置獨立於畫質評分；不接受舊 scatter、缺欄位或少株 fallback。
     $expected=@{
         ground_cover_instances='3600';forest_cover_mode='fixed_cluster_patches'
@@ -16,14 +16,36 @@
         fern_colony_original_fingerprint='14330624253385469047'
         fern_colony_variants='13,32,165,90';understory_ferns='420';understory_saplings='42'
     }
+    if($MiddleLayer) {
+        # 新幹使低植被重新避讓，另驗精確新作者配置；不把舊FNV投影成假通過。
+        $middleExpected=@{
+            forest_cover_patches='166';forest_cover_fingerprint='13112970783824743828'
+            forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11331479475778127843'
+            forest_cover_variants='974,737,624,535,730';fern_colonies='86'
+            fern_colony_fingerprint='5859764795355075831';fern_colony_variants='9,37,168,86'
+            middle_layer_comparison='1';middle_layer_population='24';middle_layer_target='24'
+            middle_layer_reached_budget='1';middle_layer_attempted='11395'
+            middle_layer_transform_fingerprint='9091870748330489572'
+            submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
+        }
+        foreach($field in $middleExpected.Keys){$expected[$field]=$middleExpected[$field]}
+    } else {
+        # 舊世界對照必須明確沒有中層樹；舊草蕨指紋不能掩蓋額外繪製。
+        $baselineMiddle=@{
+            middle_layer_comparison='0';middle_layer_population='0';middle_layer_target='0'
+            middle_layer_reached_budget='1';middle_layer_attempted='0';middle_layer_transform_fingerprint='0'
+            submitted_middle_layer='0';submitted_middle_layer_triangles='0'
+        }
+        foreach($field in $baselineMiddle.Keys){$expected[$field]=$baselineMiddle[$field]}
+    }
     foreach($field in $expected.Keys) {
         if(-not $Receipt.ContainsKey($field)-or [string]$Receipt[$field] -cne $expected[$field]) {
             throw ('Forest cover author contract mismatch: '+$field)
         }
     }
     $groups=@(
-        @{field='submitted_grass_variants';population=@(941,744,629,563,723);triangles=@(714,1760,1215,2489,1664);count='submitted_grass';total='submitted_grass_triangles'},
-        @{field='submitted_colony_variants';population=@(13,32,165,90);triangles=@(2384,2248,784,816);count='submitted_colony_ferns';total='submitted_colony_fern_triangles'},
+        @{field='submitted_grass_variants';population=@($expected.forest_cover_variants.Split(',')|ForEach-Object{[int]$_});triangles=@(714,1760,1215,2489,1664);count='submitted_grass';total='submitted_grass_triangles'},
+        @{field='submitted_colony_variants';population=@($expected.fern_colony_variants.Split(',')|ForEach-Object{[int]$_});triangles=@(2384,2248,784,816);count='submitted_colony_ferns';total='submitted_colony_fern_triangles'},
         @{field='submitted_original_fern_variants';population=@(105,105,105,105);triangles=@(2384,2248,784,816);count='submitted_original_ferns';total='submitted_original_fern_triangles'}
     )
     foreach($group in $groups) {

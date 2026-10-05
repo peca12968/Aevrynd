@@ -21,7 +21,7 @@ enum class LoadPreparationError {
     OutsideTerrain, BelowTerrainCenter, BodyOverlap, SupportProbeFailed,
     SupportWouldMoveFeet, InvalidExplorerModel, ExplorerPoseFailed,
     InvalidBoarModel, BoarOutsideTerrain, BoarPoseFailed,
-    CameraUnavailable, AllocationFailure, PreparationException, TerrainAboveBodyTop
+    CameraUnavailable, AllocationFailure, PreparationException, TerrainAboveBodyTop, InvalidExtraSolids
 };
 struct LoadPreparationInputs {
     const Aevrynd::CharacterController3D& controller;
@@ -137,12 +137,16 @@ inline bool ValidSettings(const Aevrynd::CharacterControllerSettings3D& s) {
 }
 
 inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPreparationInputs& live,
-    const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> extraCameraOnly={}) noexcept {
+    const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> extraCameraOnly={},
+    std::span<const Aevrynd::BoxCollider3D> extraSolids={}) noexcept {
     using namespace Aevrynd;
     using namespace LoadPreparationDetail;
     const auto fail=[](LoadPreparationError error){return LoadPreparationResult{error,{}};};
     try {
         if(!saved.Valid())return fail(LoadPreparationError::InvalidSnapshot);
+        // 附加世界物件必須參與整個預檢及提交，不得讀檔後只保留渲染而遺失碰撞。
+        for(const auto& box:extraSolids)if(!Session::Finite(box.center)||!Session::Finite(box.extents)||
+            box.extents.x<=0||box.extents.y<=0||box.extents.z<=0)return fail(LoadPreparationError::InvalidExtraSolids);
         if(!ValidSettings(live.controller.Settings()))return fail(LoadPreparationError::InvalidControllerSettings);
         if(!std::isfinite(live.orbit.yaw)||!std::isfinite(live.orbit.pitch)||!std::isfinite(live.orbit.distance)||
             live.orbit.pitch<-.15f||live.orbit.pitch>1.1f||live.orbit.distance<2.5f||live.orbit.distance>10)return fail(LoadPreparationError::InvalidOrbit);
@@ -151,6 +155,7 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
         auto candidate=std::make_unique<PreparedSavedGame>(saved,live);
         auto& p=*candidate;
         p.solids=WorldSolids(saved.session.bridgeRepaired);
+        p.solids.insert(p.solids.end(),extraSolids.begin(),extraSolids.end());
         p.controller.Reset(saved.session.feet);
         if(!p.controller.SetHeight(1.4f))return fail(LoadPreparationError::InvalidControllerSettings);
         double highest{};

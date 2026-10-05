@@ -1,9 +1,13 @@
 param(
     [Parameter(Mandatory=$true)][string]$ExecutablePath,
     [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
-    [switch]$GpuValidation
+    [switch]$GpuValidation,
+    [switch]$MiddleLayer,
+    [switch]$BaselineMiddleLayer
 )
 $ErrorActionPreference='Stop'
+if($MiddleLayer -and $BaselineMiddleLayer){throw 'Select either production middle layer or explicit old baseline'}
+$useMiddleLayer=-not $BaselineMiddleLayer
 . (Join-Path $PSScriptRoot 'forest_cover_contract.ps1')
 $executable=(Resolve-Path -LiteralPath $ExecutablePath).Path
 if([IO.Path]::GetFileName($executable) -ne 'Aevrynd-Mistwatch.exe'){throw 'Unexpected executable'}
@@ -11,7 +15,7 @@ $evidence=[IO.Path]::GetFullPath($EvidenceDirectory)
 if(Test-Path -LiteralPath $evidence){throw 'Evidence directory already exists; preserve previous results'}
 New-Item -ItemType Directory -Path $evidence | Out-Null
 $variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MISTWATCH_CAPTURE_SERIES',
-    'AEVRYND_MISTWATCH_BENCHMARK','AEVRYND_MISTWATCH_TREE_LOD','AEVRYND_MISTWATCH_TWIG_MODE',
+    'AEVRYND_MISTWATCH_BENCHMARK','AEVRYND_MISTWATCH_TREE_LOD','AEVRYND_MISTWATCH_TWIG_MODE','AEVRYND_MISTWATCH_MIDDLE_LAYER',
     'AEVRYND_MISTWATCH_CROWN','AEVRYND_MISTWATCH_NO_AO','AEVRYND_GPU_VALIDATION',
     'AEVRYND_MISTWATCH_CAPTURE_FRAME','AEVRYND_MISTWATCH_NO_GROUND_NORMAL','AEVRYND_MISTWATCH_NO_MSAA',
     'AEVRYND_MISTWATCH_HDR_STAGE','AEVRYND_MISTWATCH_NO_SHADOWS','AEVRYND_MISTWATCH_NO_BLOOM',
@@ -25,6 +29,8 @@ foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable
 $results=@()
 $cases=if($GpuValidation){@('river-overlook','strike','boar-recovery','repair-player-camera','fuse-lock-ready','relay-aligned','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','ranger-hut-profile')}else{@('initial','repair-shelter','repair-player-camera','repair-ready','river','river-overlook','strike','boar-recovery','boar-profile','settlement-clue','settlement-clue-read','fuse-lock-wrong','fuse-lock-ready','panel','powered','relay-west','relay-aligned','relay-linked','complete','audio-check','focus-pause','boulder-profile','grass-profile','fern-profile','supply-profile','supply-collected','ranger-hut-profile')}
 try {
+    # 正常驗收使用遊戲預設，不以環境變數代替 production 接入；舊版只在明確比較時啟用。
+    if($BaselineMiddleLayer){[Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER','0','Process')}
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
         Write-Progress -Activity '霧境守望原生驗證' -Status $case -PercentComplete ([int](100*$results.Count/$cases.Count))
@@ -123,7 +129,7 @@ try {
            $receipt.fern_use_uv -ne '1' -or $receipt.fern_alpha_cutoff -ne '0.5' -or
            $receipt.understory_ferns -ne '420' -or [int]$receipt.submitted_ferns -lt 1 -or
            [int]$receipt.submitted_fern_triangles -lt 1){throw ('Scanned fern production binding missing: '+$case)}
-        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case
+        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case -MiddleLayer:$useMiddleLayer
         if($case -in @('boulder-profile','grass-profile','fern-profile')) {
             if($receipt.camera_source -ne 'diagnostic'){throw 'Detail fixture missing diagnostic camera'}
             $position=@($receipt.camera_position.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})

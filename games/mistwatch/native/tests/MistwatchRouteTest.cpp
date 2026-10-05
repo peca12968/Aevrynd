@@ -1,15 +1,39 @@
 #include "MistwatchWorld.h"
 #include "MistwatchEncounter.h"
+#include "MistwatchMiddleLayer.h"
+#include "MistwatchFernColonies.h"
 #include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/MeshLoader.h>
+#include <filesystem>
+#include <string_view>
 #include <iostream>
 
-int main() {
+int main(int argc,char** argv) {
     using namespace Mistwatch;
     Session game;
     Encounter enemy;
     Aevrynd::CharacterController3D actor;
     const auto terrain=CreateTerrain();
+    const bool middle=argc==2&&std::string_view(argv[1])=="--middle-layer";
+    if(argc!=1&&!middle)return 24;
+    std::vector<Aevrynd::BoxCollider3D> middleSolids;
+    if(middle) {
+        const auto conifers=TreePositions();const auto props=ForestProps(terrain,conifers);
+        const auto understory=CreateUnderstory(terrain,conifers,props);
+        const auto original=CreateBroadleafTrees(terrain,conifers,props,understory);
+        std::array<float,4> radii{};
+        for(unsigned i=0;i<radii.size();++i) {
+            auto mesh=Aevrynd::LoadAevryndMeshFile(std::filesystem::path(MISTWATCH_SOURCE_ROOT)/"engine/assets/mistwatch-fern-02/meshes"/FernMeshName(i));
+            if(!mesh)return 25;
+            NormalizeFernAsset(mesh.mesh);radii[i]=FernColonyAssetFromMesh(mesh.mesh).radius;
+        }
+        const auto generated=CreateMiddleLayer(terrain,conifers,props,understory,original,WorldSolids(false),24,radii);
+        if(generated.trees.size()!=24||!generated.reachedBudget||MiddleLayerTransformFingerprint(generated.trees)!=9091870748330489572ull)return 26;
+        for(const auto& tree:generated.trees)middleSolids.push_back(tree.trunk);
+    }
     auto solids=WorldSolids(false);
+    solids.insert(solids.end(),middleSolids.begin(),middleSolids.end());
+    if(solids.size()!=(middle?245u:221u))return 27;
     unsigned ticks{};
     bool crouching{};
     actor.Reset({});
@@ -50,6 +74,8 @@ int main() {
     }
     if(!walk({0,0,game.feet.z})||!walk(Session::bridge)||!game.RepairBridge()) return 2;
     solids=WorldSolids(true);
+    solids.insert(solids.end(),middleSolids.begin(),middleSolids.end());
+    if(solids.size()!=(middle?246u:222u))return 28;
     const auto checkpoint=game.Serialize();
     Session restored;
     if(!restored.Restore(checkpoint)||restored.CurrentStage()!=Stage::Encounter) return 3;
@@ -76,5 +102,5 @@ int main() {
         if(!game.ConnectRelay(index)||!walk({0,0,p.z}))return 23;
     }
     if(!walk(Session::beacon)||!game.LightBeacon()||game.CurrentStage()!=Stage::Complete) return 6;
-    std::cout<<"Complete collision-backed route PASS; seconds="<<float(ticks)/60.f<<" health="<<game.health<<'\n';
+    std::cout<<"Complete collision-backed route PASS; middle_layer="<<middle<<" colliders="<<solids.size()<<" seconds="<<float(ticks)/60.f<<" health="<<game.health<<'\n';
 }
