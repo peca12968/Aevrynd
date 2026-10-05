@@ -6,15 +6,15 @@ $valid=@{
     forest_cover_seed='1129272901';forest_cover_authored_population='3600'
     forest_cover_maximum_patches='400';forest_cover_patch_minimum_plants='20'
     forest_cover_patch_maximum_plants='32';forest_cover_independent_anchors='900'
-    forest_cover_patches='169';forest_cover_reached_budget='1'
-    forest_cover_fingerprint='5098415506555036174';forest_cover_clearance_colliders='221'
-    forest_cover_clearance_collider_fingerprint='6196035014821778326'
-    forest_cover_variants='941,744,629,563,723'
+    forest_cover_patches='165';forest_cover_reached_budget='1'
+    forest_cover_fingerprint='18346272358334413870';forest_cover_clearance_colliders='221'
+    forest_cover_clearance_collider_fingerprint='522388356439590700'
+    forest_cover_variants='900,764,672,563,701'
     fern_colony_population='300';fern_colony_authored_population='300';fern_colonies='82'
     fern_colony_seed='1128681010';fern_colony_reached_budget='1'
-    fern_colony_fingerprint='3770887003960151305'
-    fern_colony_original_fingerprint='14330624253385469047'
-    fern_colony_variants='13,32,165,90';understory_ferns='420';understory_saplings='42'
+    fern_colony_fingerprint='18387932991795706967'
+    fern_colony_original_fingerprint='14418781708182382769'
+    fern_colony_variants='11,29,169,91';understory_ferns='420';understory_saplings='42'
     submitted_grass_variants='1,1,1,1,1';submitted_grass='5';submitted_grass_triangles='7842'
     submitted_colony_variants='1,1,1,1';submitted_colony_ferns='4';submitted_colony_fern_triangles='6232'
     submitted_ferns='5';submitted_fern_triangles='8616'
@@ -86,13 +86,13 @@ foreach($scene in @('initial','river-overlook')) {
 # 中層候選是不同世界配置；保留上方舊契約的全部65反例，不自動猜選版本。
 $middle=$valid.Clone()
 $middleFields=@{
-    forest_cover_patches='166';forest_cover_fingerprint='13112970783824743828'
-    forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11331479475778127843'
-    forest_cover_variants='974,737,624,535,730';fern_colonies='86'
-    fern_colony_fingerprint='5859764795355075831';fern_colony_variants='9,37,168,86'
+    forest_cover_patches='162';forest_cover_fingerprint='1048722341261312903'
+    forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='6744664032273563734'
+    forest_cover_variants='964,741,630,546,719';fern_colonies='79'
+    fern_colony_fingerprint='3053818525289996684';fern_colony_variants='10,28,173,89'
     middle_layer_comparison='1';middle_layer_population='24';middle_layer_target='24'
-    middle_layer_reached_budget='1';middle_layer_attempted='11395'
-    middle_layer_transform_fingerprint='9091870748330489572'
+    middle_layer_reached_budget='1';middle_layer_attempted='16999'
+    middle_layer_transform_fingerprint='12515088988881324841'
     submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
 }
 foreach($field in $middleFields.Keys){$middle[$field]=$middleFields[$field]}
@@ -129,15 +129,15 @@ foreach($field in $middleFields.Keys){
 Assert-MiddleRejected $valid 'old world passed as middle-layer candidate'
 foreach($change in @(
     @{field='submitted_grass_variants';value='975,1,1,1,1'},
-    @{field='submitted_colony_variants';value='10,1,1,1'},
+    @{field='submitted_colony_variants';value='11,1,1,1'},
     @{field='submitted_original_fern_variants';value='0,0,0,0'},
     @{field='submitted_middle_layer';value='23'},
     @{field='submitted_middle_layer_triangles';value='1988495'},
     @{field='middle_layer_population';value='024'},
     @{field='middle_layer_transform_fingerprint';value='9091870748330489573'},
     @{field='forest_cover_clearance_colliders';value='221'},
-    @{field='forest_cover_fingerprint';value='5098415506555036174'},
-    @{field='fern_colony_fingerprint';value='3770887003960151305'},
+    @{field='forest_cover_fingerprint';value='18346272358334413870'},
+    @{field='fern_colony_fingerprint';value='18387932991795706967'},
     @{field='submitted_colony_fern_triangles';value='6231'},
     @{field='submitted_fern_triangles';value='8617'}
 )){
@@ -146,3 +146,29 @@ foreach($change in @(
 $wrongMode=$false;try{Assert-MistwatchForestCoverReceipt $middle}catch{$wrongMode=$true}
 if(-not $wrongMode){throw 'Middle world accepted without explicit mode'}
 'MIDDLE_LAYER_RECEIPT_TEST_PASS; VALID=1; REJECTED='+$middleRejected+'; MODE_MIX_REJECTED=1'
+
+# 同總數、同三角數的種類別名不得繞過固定景檢查；兩種世界皆驗正反例。
+$fixedPositive=0;$aliasRejected=0
+foreach($useMiddle in @($false,$true)){
+    foreach($scene in @('initial','river-overlook')){
+        $fixed=if($useMiddle){$middle.Clone()}else{$valid.Clone()}
+        $count=if($scene -eq 'initial'){188}else{224}
+        $triangles=if($scene -eq 'initial'){286568}else{346056}
+        $fixed.submitted_original_ferns=[string]$count
+        $fixed.submitted_original_fern_triangles=[string]$triangles
+        $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'43,47,49,49'}else{'55,55,54,60'}
+        $fixed.submitted_ferns=[string]($count+[long]$fixed.submitted_colony_ferns)
+        $fixed.submitted_fern_triangles=[string]($triangles+[long]$fixed.submitted_colony_fern_triangles)
+        Assert-MistwatchForestCoverReceipt $fixed -Scene $scene -MiddleLayer:$useMiddle
+        ++$fixedPositive
+        $alias=$fixed.Clone()
+        $alias.submitted_original_fern_variants=if($scene -eq 'initial'){'47,43,66,32'}else{'59,51,71,43'}
+        $identityRejected=$false
+        try{Assert-MistwatchForestCoverReceipt $alias -Scene $scene -MiddleLayer:$useMiddle}catch{
+            if($_.Exception.Message -eq 'Original fern fixed-scene variant identity changed'){$identityRejected=$true}
+        }
+        if(-not $identityRejected){throw 'Equal-count/equal-triangle variant alias accepted'}
+        ++$aliasRejected
+    }
+}
+'FIXED_SCENE_VARIANT_IDENTITY_PASS; POSITIVE='+$fixedPositive+'; ALIAS_REJECTED='+$aliasRejected

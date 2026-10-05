@@ -71,9 +71,10 @@ int main() {
                 bool found=false;
                 for(const auto& solid:solids)found|=Length(solid.center-trunk.center)<.0001f&&Length(solid.extents-trunk.extents)<.0001f;
                 if(!found)return 11;
-                if(std::abs(plant.position.x)<10.f) {
+                {
                     CharacterController3D player;
-                    player.Reset(plant.position+Vec3{-1.5f,0,0});
+                    const auto start=plant.position+Vec3{-1.5f,0,0};
+                    player.Reset({start.x,terrain.SampleHeight(start.x,start.z),start.z});
                     const std::array<BoxCollider3D,1> obstacle{trunk};
                     for(unsigned tick=0;tick<60;++tick)player.Step({{1,0,0},false,1},obstacle,terrain,1.f/60.f);
                     if(player.Position().x>trunk.center.x-trunk.extents.x-player.Settings().radius+.02f)return 12;
@@ -85,7 +86,7 @@ int main() {
             for(std::size_t j=0;j<i;++j)if(std::hypot(plant.position.x-collection[j].position.x,plant.position.z-collection[j].position.z)<(sapling?3.f:1.f))return 14;
         }
     }
-    if(!trunkChecks)return 15;
+    if(trunkChecks!=42)return 15;
     float previous=1;
     for(unsigned distance=0;distance<=400;++distance) {
         const float value=Mistwatch::UnderstoryVisibility(float(distance)*.1f);

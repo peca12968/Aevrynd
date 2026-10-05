@@ -16,7 +16,8 @@ inline ForestUnderstory CreateUnderstory(const Aevrynd::HeightField3D& terrain,
     ForestUnderstory result;
     std::uint32_t seed=0x4645524eu;
     const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
-    for(unsigned attempt=0;attempt<5000 && (result.ferns.size()<420 || result.saplings.size()<42);++attempt) {
+    // 加寬河岸後保留相同拒絕條件與亂數前綴，只增加有上限的找位機會。
+    for(unsigned attempt=0;attempt<12000 && (result.ferns.size()<420 || result.saplings.size()<42);++attempt) {
         const bool sapling=attempt%6==0;
         if((sapling && result.saplings.size()>=42)||(!sapling && result.ferns.size()>=420))continue;
         const float x=-31.f+62.f*random(),z=-9.f+97.f*random();

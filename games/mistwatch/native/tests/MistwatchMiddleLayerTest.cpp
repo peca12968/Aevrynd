@@ -48,7 +48,7 @@ int main() {
         const auto result=generate(24),repeat=generate(24),prefix=generate(12),empty=generate(0),shortfall=generate(48);
         Require(original.size()==12&&conifers.size()==100&&understory.saplings.size()==42&&
             understory.ferns.size()==420&&baseSolids.size()==221,"Original world population changed");
-        Require(result.reachedBudget&&result.trees.size()==24&&result.attempted==11395,"Authored budget changed");
+        Require(result.reachedBudget&&result.trees.size()==24&&result.attempted==16999,"Authored budget changed");
         Require(empty.reachedBudget&&empty.trees.empty()&&empty.attempted==0,"Zero budget not empty");
         Require(!shortfall.reachedBudget&&shortfall.trees.size()<48&&shortfall.attempted==20252,
             "Bounded shortfall hidden or search unbounded");
@@ -90,7 +90,7 @@ int main() {
             Require(actor.Stats().collisions&&actor.Position().x>=tree.trunk.center.x+tree.trunk.extents.x+actor.Settings().radius-.02f,
                 "Controller crossed actual trunk");++blocked;
         }
-        Require(fingerprint==9091870748330489572ull&&nearInitial==5,"Authored transform fingerprint changed");
+        Require(fingerprint==12515088988881324841ull&&nearInitial==7,"Authored transform fingerprint changed");
         Require(MiddleLayerTransformFingerprint(result.trees)==fingerprint&&MiddleLayerTransformFingerprint(empty.trees)==0,
             "Runtime fingerprint differs from independent matrix hash");
         auto changed=result.trees;changed.front().transform.position.x+=.01f;
@@ -102,11 +102,11 @@ int main() {
             grassAssets[i]=ForestCoverAssetFromMesh(loaded.mesh);
         }
         const auto grass=CreateForestCover(terrain,conifers,understory,solids,grassAssets);
-        Require(grass.reachedBudget&&grass.plants.size()==3600&&grass.patches.size()==166,"Regenerated grass shortfall/layout drift");
+        Require(grass.reachedBudget&&grass.plants.size()==3600&&grass.patches.size()==162,"Regenerated grass shortfall/layout drift");
         for(const auto& plant:grass.plants)Require(ForestCoverClearance(plant.transform.position,plant.radius,solids)&&
             ForestCoverFootprint(terrain,plant.transform.position,plant.radius,{}),"Regenerated grass clearance/footprint failed");
         const auto ferns=CreateFernColonies(terrain,grass,understory.ferns,solids,fernAssets);
-        Require(ferns.reachedBudget&&ferns.plants.size()==300&&ferns.colonies.size()==86,"Regenerated fern shortfall/layout drift");
+        Require(ferns.reachedBudget&&ferns.plants.size()==300&&ferns.colonies.size()==79,"Regenerated fern shortfall/layout drift");
         for(const auto& plant:ferns.plants)Require(ForestCoverClearance(plant.transform.position,plant.radius,solids)&&
             ForestCoverFootprint(terrain,plant.transform.position,plant.radius,{})&&
             FernColonyClearsExisting(plant.transform.position,plant.radius,understory.ferns,fernAssets),"Regenerated fern footprint failed");
@@ -131,7 +131,7 @@ int main() {
         }
         std::cout<<"MIDDLE_LAYER_PASS; trees=24; solids="<<solids.size()<<"; fingerprint="<<fingerprint
             <<"; original_fern_checks="<<fernChecks<<"; trunk_collisions="<<blocked<<"; route_ticks="<<routeTicks
-            <<"; grass=3600/166; ferns=300/86; shortfall_population="<<shortfall.trees.size()<<'\n';
+            <<"; grass=3600/162; ferns=300/79; shortfall_population="<<shortfall.trees.size()<<'\n';
         return 0;
     }catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

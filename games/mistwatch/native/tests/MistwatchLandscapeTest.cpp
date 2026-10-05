@@ -21,9 +21,18 @@ int main() {
             return 16;
         }
     }
-    // 非溪谷、核心區與60公尺以外遠景必須與原地形一致。
-    for(float x:{-150.f,-110.f,-80.f,-50.f,0.f,50.f,80.f,110.f,150.f})for(float z:{-20.f,20.f,60.f,100.f})
-        if(std::abs(Mistwatch::LandscapeHeight(core,x,z)-legacyHeight(x,z))>.00005f)return 17;
+    // 加寬河谷後按實際邊界切槽判定，不把固定 z 當成永遠乾燥的岸。
+    // 核心、真正乾岸與60公尺以外仍須等於原遠山；影響區只允許原24公尺解槽式。
+    unsigned released{},unchanged{};
+    for(float x:{-150.f,-110.f,-80.f,-50.f,0.f,50.f,80.f,110.f,150.f})for(float z:{-20.f,20.f,60.f,100.f}) {
+        const float ex=std::clamp(x,-50.f,50.f),ez=std::clamp(z,-20.f,100.f),d=std::hypot(x-ex,z-ez);
+        const float hills=Mistwatch::HillElevation(ex,ez),incision=(std::max)(0.f,hills-core.SampleHeight(ex,ez));
+        float expected=legacyHeight(x,z);
+        if(x!=ex&&d<60.f&&incision>0){expected+=incision*smooth(std::abs(x-ex)/24.f)*(1.f-smooth(d/60.f));++released;}
+        else ++unchanged;
+        if(std::abs(Mistwatch::LandscapeHeight(core,x,z)-expected)>.00005f)return 17;
+    }
+    if(!released||!unchanged)return 23;
     const auto before=core.CreateMesh(Mistwatch::GroundMeshSettings());
     const auto landscape=Mistwatch::CreateLandscapeMesh(core),repeat=Mistwatch::CreateLandscapeMesh(core);
     const auto surfaceBaseline=Mistwatch::CreateLandscapeMesh(core,false);

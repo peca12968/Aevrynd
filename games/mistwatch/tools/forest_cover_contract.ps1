@@ -6,26 +6,26 @@
         forest_cover_seed='1129272901';forest_cover_authored_population='3600'
         forest_cover_maximum_patches='400';forest_cover_patch_minimum_plants='20'
         forest_cover_patch_maximum_plants='32';forest_cover_independent_anchors='900'
-        forest_cover_patches='169';forest_cover_reached_budget='1'
-        forest_cover_fingerprint='5098415506555036174';forest_cover_clearance_colliders='221'
-        forest_cover_clearance_collider_fingerprint='6196035014821778326'
-        forest_cover_variants='941,744,629,563,723'
+        forest_cover_patches='165';forest_cover_reached_budget='1'
+        forest_cover_fingerprint='18346272358334413870';forest_cover_clearance_colliders='221'
+        forest_cover_clearance_collider_fingerprint='522388356439590700'
+        forest_cover_variants='900,764,672,563,701'
         fern_colony_population='300';fern_colony_authored_population='300';fern_colonies='82'
         fern_colony_seed='1128681010';fern_colony_reached_budget='1'
-        fern_colony_fingerprint='3770887003960151305'
-        fern_colony_original_fingerprint='14330624253385469047'
-        fern_colony_variants='13,32,165,90';understory_ferns='420';understory_saplings='42'
+        fern_colony_fingerprint='18387932991795706967'
+        fern_colony_original_fingerprint='14418781708182382769'
+        fern_colony_variants='11,29,169,91';understory_ferns='420';understory_saplings='42'
     }
     if($MiddleLayer) {
         # 新幹使低植被重新避讓，另驗精確新作者配置；不把舊FNV投影成假通過。
         $middleExpected=@{
-            forest_cover_patches='166';forest_cover_fingerprint='13112970783824743828'
-            forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='11331479475778127843'
-            forest_cover_variants='974,737,624,535,730';fern_colonies='86'
-            fern_colony_fingerprint='5859764795355075831';fern_colony_variants='9,37,168,86'
+            forest_cover_patches='162';forest_cover_fingerprint='1048722341261312903'
+            forest_cover_clearance_colliders='245';forest_cover_clearance_collider_fingerprint='6744664032273563734'
+            forest_cover_variants='964,741,630,546,719';fern_colonies='79'
+            fern_colony_fingerprint='3053818525289996684';fern_colony_variants='10,28,173,89'
             middle_layer_comparison='1';middle_layer_population='24';middle_layer_target='24'
-            middle_layer_reached_budget='1';middle_layer_attempted='11395'
-            middle_layer_transform_fingerprint='9091870748330489572'
+            middle_layer_reached_budget='1';middle_layer_attempted='16999'
+            middle_layer_transform_fingerprint='12515088988881324841'
             submitted_middle_layer='24';submitted_middle_layer_triangles='1988496'
         }
         foreach($field in $middleExpected.Keys){$expected[$field]=$middleExpected[$field]}
@@ -73,8 +73,13 @@
         throw 'Original fern accounting was replaced or merged incorrectly'
     }
     # 固定兩景另保留原版實機提交數，不讓新蕨的總數掩蓋原林下層漏畫。
-    if(($Scene -eq 'initial' -and ($originalCount -ne 201 -or $originalTriangles -ne 314224)) -or
-       ($Scene -eq 'river-overlook' -and ($originalCount -ne 238 -or $originalTriangles -ne 379128))) {
+    if(($Scene -eq 'initial' -and ($originalCount -ne 188 -or $originalTriangles -ne 286568)) -or
+       ($Scene -eq 'river-overlook' -and ($originalCount -ne 224 -or $originalTriangles -ne 346056))) {
         throw 'Original fern fixed-scene submission changed'
+    }
+    # 相同總株數與三角數仍可由錯誤種類分布湊出；固定景需逐種類保留身分。
+    $originalVariants=if($Scene -eq 'initial'){'43,47,49,49'}elseif($Scene -eq 'river-overlook'){'55,55,54,60'}else{$null}
+    if($null -ne $originalVariants -and [string]$Receipt.submitted_original_fern_variants -cne $originalVariants){
+        throw 'Original fern fixed-scene variant identity changed'
     }
 }

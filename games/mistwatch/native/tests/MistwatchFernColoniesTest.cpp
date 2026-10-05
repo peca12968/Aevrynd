@@ -1,4 +1,5 @@
 #include "MistwatchFernColonies.h"
+#include "MistwatchMiddleLayer.h"
 #include <Aevrynd/MeshLoader.h>
 #include <bit>
 #include <iostream>
@@ -118,12 +119,19 @@ Ratios CheckPopulation(const FernColonyResult& population,const ForestCoverResul
 }
 int main(int argc,char** argv) {
     try {
-        Require(argc==3,"Expected grass mesh directory and fern mesh directory");
+        const bool useMiddle=argc==4&&std::string_view(argv[3])=="--middle-layer";
+        Require(argc==3||useMiddle,"Expected grass and fern directories, optional --middle-layer");
         const std::filesystem::path grassDirectory(argv[1]),fernDirectory(argv[2]);
         const auto terrain=CreateTerrain();const auto trees=TreePositions();const auto props=ForestProps(terrain,trees);
         const auto original=CreateUnderstory(terrain,trees,props);const auto broadleaf=CreateBroadleafTrees(terrain,trees,props,original);
-        const auto solids=WorldSolids(false);
+        auto solids=WorldSolids(false);
         Require(trees.size()==100&&original.ferns.size()==420&&original.saplings.size()==42&&broadleaf.size()==12&&solids.size()==221,"Original world population changed");
+        if(useMiddle) {
+            const auto middle=CreateMiddleLayer(terrain,trees,props,original,broadleaf,solids);
+            Require(middle.reachedBudget&&middle.trees.size()==24,"Production middle-layer population incomplete");
+            for(const auto& tree:middle.trees)solids.push_back(tree.trunk);
+            Require(solids.size()==245,"Production collision world incomplete");
+        }
         std::array<ForestCoverAsset,5> grassAssets;
         for(unsigned variant=0;variant<5;++variant) {
             auto loaded=LoadAevryndMeshFile(grassDirectory/GrassMeshName(variant));
@@ -132,9 +140,9 @@ int main(int argc,char** argv) {
             NormalizeGrassAsset(loaded.mesh);grassAssets[variant]=ForestCoverAssetFromMesh(loaded.mesh);
         }
         const auto grass=CreateForestCover(terrain,trees,original,solids,grassAssets);
-        Require(grass.reachedBudget&&grass.plants.size()==3600&&grass.patches.size()==169,"Current true grass world changed");
+        Require(grass.reachedBudget&&grass.plants.size()==3600&&grass.patches.size()==(useMiddle?162u:165u),"River-bank true grass author profile changed");
         const auto before=WorldFingerprint(trees,original,broadleaf,solids,grass);
-        Require(before==7712946498302379849ull,"Original true world fingerprint changed");
+        Require(before==(useMiddle?4875756677184273101ull:3765836134243830339ull),"River-bank true world author fingerprint changed");
         std::array<Mesh3D,4> meshes;std::array<FernColonyAsset,4> assets;
         constexpr std::array<float,4> expectedRadius{.981686473f,.821101248f,.549620509f,.635080874f};
         constexpr std::array<float,4> expectedHeight{.635495126f,.512394726f,.412848055f,.319213778f};
@@ -159,7 +167,7 @@ int main(int argc,char** argv) {
         Require(settings.targetPlants==300&&settings.seed==0x43464e32u&&settings.maximumColonies==256&&
             settings.attemptsPerColony==240&&settings.rootSeparationRatio==.65f,"Authored colony defaults changed");
         const auto population=CreateFernColonies(terrain,grass,original.ferns,solids,assets,settings);
-        Require(population.reachedBudget&&population.plants.size()==300&&population.colonies.size()==82,"300 authored fern colonies incomplete");
+        Require(population.reachedBudget&&population.plants.size()==300&&population.colonies.size()==(useMiddle?79u:82u),"300 authored fern colonies incomplete");
         const auto repeat=CreateFernColonies(terrain,grass,original.ferns,solids,assets,settings);
         Require(SamePopulation(population,repeat),"Same seed full transform determinism failed");
         auto alternate=settings;alternate.seed^=0x11111111u;
@@ -167,7 +175,8 @@ int main(int argc,char** argv) {
         const auto ratios=CheckPopulation(population,grass,original,solids,terrain,assets,meshes);
         auto larger=settings;larger.targetPlants=500;
         const auto shortfall=CreateFernColonies(terrain,grass,original.ferns,solids,assets,larger);
-        Require(!shortfall.reachedBudget&&shortfall.plants.size()==489&&shortfall.colonies.size()==134,"500 shortfall was hidden or changed");
+        Require(!shortfall.reachedBudget&&shortfall.plants.size()==(useMiddle?465u:477u)&&
+            shortfall.colonies.size()==(useMiddle?127u:132u),"River-bank 500 shortfall was hidden or changed");
         (void)CheckPopulation(shortfall,grass,original,solids,terrain,assets,meshes);
         for(std::size_t i=0;i<population.plants.size();++i)Require(SamePlant(population.plants[i],shortfall.plants[i]),"Budget candidate prefix changed");
         auto zero=settings;zero.targetPlants=0;
@@ -248,7 +257,8 @@ int main(int argc,char** argv) {
         const Vec3 edge{-49.99f,terrain.SampleHeight(-49.99f,0),0};
         Require(!ForestCoverFootprint(terrain,edge,assets[0].radius*.6f,footprintSettings),"Boundary footprint accepted");
         Require(before==WorldFingerprint(trees,original,broadleaf,solids,grass),"Original world mutated");
-        std::cout<<"MistwatchFernColoniesTest pass; added300=300; target500=489; root ratios="<<
+        std::cout<<"MistwatchFernColoniesTest pass; middle="<<useMiddle<<" solids="<<solids.size()
+            <<"; added300=300; target500="<<shortfall.plants.size()<<"; root ratios="<<
             ratios.original<<'/'<<ratios.grass<<'/'<<ratios.added<<"; original world unchanged; GPU visual unverified\n";
         return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

@@ -1,4 +1,5 @@
 #include "MistwatchForestCover.h"
+#include "MistwatchMiddleLayer.h"
 #include <Aevrynd/MeshLoader.h>
 #include <bit>
 #include <iostream>
@@ -110,17 +111,24 @@ Statistics Measure(std::span<const ForestCoverPlant> plants,const HeightField3D&
 }
 int main(int argc,char** argv) {
     try {
-        Require(argc==2,"Expected actual copied grass mesh directory");
+        const bool useMiddle=argc==3&&std::string_view(argv[2])=="--middle-layer";
+        Require(argc==2||useMiddle,"Expected grass mesh directory, optional --middle-layer");
         const auto meshRoot=std::filesystem::path(argv[1]);
         const auto terrain=CreateTerrain();const auto terrainMesh=CreateTerrainMesh(terrain);
         const auto trees=TreePositions();const auto props=ForestProps(terrain,trees);
         const auto understory=CreateUnderstory(terrain,trees,props);
         const auto broadleaf=CreateBroadleafTrees(terrain,trees,props,understory);
-        const auto solids=WorldSolids(false),repairedSolids=WorldSolids(true);
+        auto solids=WorldSolids(false),repairedSolids=WorldSolids(true);
         Require(trees.size()==100&&understory.saplings.size()==42&&understory.ferns.size()==420&&
             broadleaf.size()==12&&solids.size()==221,"Actual forest/collision fixture changed");
+        if(useMiddle) {
+            const auto middle=CreateMiddleLayer(terrain,trees,props,understory,broadleaf,solids);
+            Require(middle.reachedBudget&&middle.trees.size()==24,"Production middle-layer population incomplete");
+            for(const auto& tree:middle.trees){solids.push_back(tree.trunk);repairedSolids.push_back(tree.trunk);}
+            Require(solids.size()==245&&repairedSolids.size()==246,"Production collision world incomplete");
+        }
         const auto oldRoots=GroundCoverPositions(terrain);
-        Require(oldRoots.size()==1363,"Actual scatter changed; refresh comparison before accepting prototype");
+        Require(oldRoots.size()==1330,"River-bank authored scatter differs from measured candidate");
         for(const auto root:oldRoots) {
             Require(std::abs(root.x)>=1.8f&&SettlementTrailDistance(root.x,root.z)>=.7f&&
                 RiverDistance(root.x,root.z)>=RiverOuterWidth(root.x)+1.5f,"Original root contract changed");
@@ -242,13 +250,18 @@ int main(int argc,char** argv) {
         Require(!ForestCoverClearance({0,std::numeric_limits<float>::quiet_NaN(),0},.5f,solids)&&
             !ForestCoverFootprint(terrain,{},std::numeric_limits<float>::quiet_NaN(),{}),"NaN root or footprint radius accepted");
         // 採樣同一個實際世界的輸入在原型前後完全不變。
-        const auto solidsAfter=WorldSolids(false);
+        auto solidsAfter=WorldSolids(false);
+        if(useMiddle) {
+            const auto middle=CreateMiddleLayer(terrain,trees,props,understory,broadleaf,solidsAfter);
+            Require(middle.reachedBudget&&middle.trees.size()==24,"Repeated middle-layer population incomplete");
+            for(const auto& tree:middle.trees)solidsAfter.push_back(tree.trunk);
+        }
         Require(solids.size()==solidsAfter.size(),"Prototype changed world collider count");
         for(std::size_t index=0;index<solids.size();++index)
             Require(Length(solids[index].center-solidsAfter[index].center)==0&&
                 Length(solids[index].extents-solidsAfter[index].extents)==0,"Prototype moved a collidable object");
         Require(terrainMesh.indices==CreateTerrainMesh(terrain).indices,"Prototype changed ground topology");
-        std::cout<<"MistwatchForestCover CPU PASS actual_scatter="<<baseline.size()<<" clustered="<<clustered.plants.size()<<
+        std::cout<<"MistwatchForestCover CPU PASS middle="<<useMiddle<<" actual_scatter="<<baseline.size()<<" clustered="<<clustered.plants.size()<<
             " patches="<<clustered.patches.size()<<" nearest_p50="<<baselineStats.nearestP50<<"->"<<clusterStats.nearestP50<<
             " authored_population="<<authored.plants.size()<<" authored_patches="<<authored.patches.size()<<
             " isolated="<<baselineStats.isolated<<"->"<<clusterStats.isolated<<" cell_dispersion="<<baselineStats.cellVarianceToMean<<
