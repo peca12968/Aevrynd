@@ -1503,8 +1503,17 @@ float3 UvNormal(float3 worldPosition, float3 geometricNormal, float2 uv)
        && bitangentLengthSquared > 1e-10 && bitangentLengthSquared < 1e20
        && basisAreaSquared > 1e-16 && basisAreaSquared < 1e30))
         return geometricNormal;
-    const float3 tangent = tangentRaw * rsqrt(tangentLengthSquared);
-    const float3 bitangent = bitangentRaw * rsqrt(bitangentLengthSquared);
+    const float uvDeterminant = uvX.x * uvY.y - uvX.y * uvY.x;
+    if (!isfinite(uvDeterminant) || uvDeterminant == 0.0)
+        return geometricNormal;
+    float3 tangent = tangentRaw * rsqrt(tangentLengthSquared);
+    float3 bitangent = bitangentRaw * rsqrt(bitangentLengthSquared);
+    // cofactor 等於 det(UV) 乘真正 dPdu/dPdv；normalize 後仍須恢復兩軸符號。
+    if (uvDeterminant < 0.0)
+    {
+        tangent = -tangent;
+        bitangent = -bitangent;
+    }
     const float3 mapped = DecodeBc5Normal(normalTexture.Sample(materialSampler, uv).rg);
     const float3 mappedWorld = mapped.x * tangent + mapped.y * bitangent + mapped.z * geometricNormal;
     const float mappedLengthSquared = dot(mappedWorld, mappedWorld);

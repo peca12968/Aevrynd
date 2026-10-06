@@ -1381,3 +1381,14 @@ set_tests_properties(
   AevryndWorldPartitionHlodAdapterFakeTest
   AevryndWorldPartitionHlodAdapterFakeGpuValidationTest
   PROPERTIES LABELS "gpu-release-gates")
+
+# UV 法線數學回歸另列 append phase，不改既有 release-gates CPU 順序或 membership。
+add_executable(AevryndUvNormalSignedJacobianMathTest tests/UvNormalSignedJacobianMathTest.cpp)
+target_compile_options(AevryndUvNormalSignedJacobianMathTest PRIVATE /W4 /WX /utf-8)
+add_test(NAME AevryndUvNormalSignedJacobianMathTest COMMAND AevryndUvNormalSignedJacobianMathTest)
+set_tests_properties(AevryndUvNormalSignedJacobianMathTest PROPERTIES LABELS "uv-normal-cpu-regression" TIMEOUT 60)
+
+# 公開 PNG 的有限 native witness 只建置，不加入 CPU CTest 或原 32/17 GPU 矩陣。
+add_executable(AevryndUvNormalNativeRegression WIN32 tests/UvNormalNativeRegression.cpp)
+target_compile_options(AevryndUvNormalNativeRegression PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndUvNormalNativeRegression PRIVATE AevryndEngine shell32)
