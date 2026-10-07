@@ -128,7 +128,8 @@ bool Sha256(std::span<const std::uint8_t> bytes, std::string &output) {
 bool FormatAllowed(DXGI_FORMAT format, NativeMaterialDdsRole3D role) {
     switch (role) {
     case NativeMaterialDdsRole3D::BaseColor:
-        return format == DXGI_FORMAT_BC7_UNORM_SRGB;
+        return format == DXGI_FORMAT_BC7_UNORM_SRGB ||
+               format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     case NativeMaterialDdsRole3D::Surface:
         return format == DXGI_FORMAT_BC7_UNORM ||
                format == DXGI_FORMAT_BC3_UNORM;
@@ -249,18 +250,28 @@ bool LoadNativeMaterialDds3D(const std::filesystem::path &path,
         SetError(error, NativeMaterialDdsError3D::InvalidMipChain);
         return false;
     }
+    // 眉睫等精細遮罩可使用未壓縮 RGBA；仍要求明確 sRGB 與完整 mip。
+    const bool rgba8 = format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    if (rgba8 && (!(header.flags & 0x8u) ||
+                  header.pitchOrLinearSize != header.width * 4u)) {
+        SetError(error, NativeMaterialDdsError3D::InvalidHeader);
+        return false;
+    }
     std::size_t payloadBytes{};
     std::uint32_t width = header.width, height = header.height;
     for (std::uint32_t mip = 0; mip < expectedMipCount; ++mip) {
-        const std::size_t blocksWide = (std::size_t(width) + 3) / 4;
-        const std::size_t blocksHigh = (std::size_t(height) + 3) / 4;
-        if (blocksWide > (std::numeric_limits<std::size_t>::max)() / 16 ||
-            blocksHigh > (std::numeric_limits<std::size_t>::max)() /
-                             (blocksWide * 16)) {
+        const std::size_t unitsWide = rgba8 ? std::size_t(width)
+                                          : (std::size_t(width) + 3) / 4;
+        const std::size_t unitsHigh = rgba8 ? std::size_t(height)
+                                          : (std::size_t(height) + 3) / 4;
+        const std::size_t unitBytes = rgba8 ? 4u : 16u;
+        if (unitsWide > (std::numeric_limits<std::size_t>::max)() / unitBytes ||
+            unitsHigh > (std::numeric_limits<std::size_t>::max)() /
+                            (unitsWide * unitBytes)) {
             SetError(error, NativeMaterialDdsError3D::InvalidPayload);
             return false;
         }
-        const std::size_t mipBytes = blocksWide * blocksHigh * 16;
+        const std::size_t mipBytes = unitsWide * unitsHigh * unitBytes;
         if (payloadBytes > (std::numeric_limits<std::size_t>::max)() - mipBytes) {
             SetError(error, NativeMaterialDdsError3D::InvalidPayload);
             return false;
@@ -297,8 +308,11 @@ bool LoadNativeMaterialDds3D(const std::filesystem::path &path,
     width = header.width;
     height = header.height;
     for (std::uint32_t mip = 0; mip < expectedMipCount; ++mip) {
-        const std::size_t rowBytes = ((std::size_t(width) + 3) / 4) * 16;
-        const std::size_t mipBytes = rowBytes * ((std::size_t(height) + 3) / 4);
+        const std::size_t rowBytes = rgba8 ? std::size_t(width) * 4u
+                                         : ((std::size_t(width) + 3) / 4) * 16;
+        const std::size_t rows = rgba8 ? std::size_t(height)
+                                     : (std::size_t(height) + 3) / 4;
+        const std::size_t mipBytes = rowBytes * rows;
         NativeMaterialDdsMip3D item{width, height, rowBytes};
         item.pixels.assign(bytes.begin() + payloadOffset,
                            bytes.begin() + payloadOffset + mipBytes);

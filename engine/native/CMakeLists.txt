@@ -714,6 +714,13 @@ target_compile_definitions(AevryndNativeMaterialDds3DTest PRIVATE AEVRYND_SOURCE
 target_link_libraries(AevryndNativeMaterialDds3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndNativeMaterialDds3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndNativeMaterialDds3DTest>'")
 
+add_executable(AevryndNativeMaterialRgba8Dds3DTest tests/NativeMaterialRgba8Dds3DSmoke.cpp)
+target_compile_options(AevryndNativeMaterialRgba8Dds3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndNativeMaterialRgba8Dds3DTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(AevryndNativeMaterialRgba8Dds3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndNativeMaterialRgba8Dds3DTest COMMAND "$<TARGET_FILE:AevryndNativeMaterialRgba8Dds3DTest>")
+set_tests_properties(AevryndNativeMaterialRgba8Dds3DTest PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}" TIMEOUT 60 LABELS "release-gates")
+
 add_executable(AevryndStaticMeshAssetLibrary3DTest tests/StaticMeshAssetLibrary3DSmoke.cpp)
 target_compile_options(AevryndStaticMeshAssetLibrary3DTest PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(AevryndStaticMeshAssetLibrary3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
