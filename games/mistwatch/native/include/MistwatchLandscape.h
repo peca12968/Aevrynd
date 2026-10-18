@@ -66,6 +66,37 @@ inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core,bo
     }
     return mesh;
 }
+inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core,bool layerHeight,
+    ForestFloorMaskSelector selector) {
+    if(selector==ForestFloorMaskSelector::Legacy)return CreateLandscapeMesh(core,layerHeight);
+    if(!ValidForestFloorMaskSelector(selector))throw std::invalid_argument("Invalid forest-floor selector");
+    auto mesh=CreateLandscapeMesh(core,layerHeight);
+    if(!layerHeight)return mesh;
+    for(auto& vertex:mesh.vertices) {
+        const auto coverage=ComposeForestFloorCoverage(vertex.x,vertex.z,LandscapeNormal(core,vertex.x,vertex.z),
+            RiverSedimentWeight(vertex.x,vertex.z),selector);
+        Aevrynd::Vec2 encoded{};
+        if(!Aevrynd::TryEncodeTerrainLayerCoverage3D(coverage.soil,coverage.rock,encoded))
+            throw std::runtime_error("Invalid landscape forest-floor coverage");
+        vertex.u=encoded.x;vertex.v=encoded.y;
+    }
+    return mesh;
+}
+inline Aevrynd::Mesh3D CreateLandscapeMesh(const Aevrynd::HeightField3D& core,bool layerHeight,
+    ForestFloorMaskSelector floor,BankCoverageSelector bank) {
+    ValidateBankCoverageRoute(floor,bank);
+    auto mesh=CreateLandscapeMesh(core,layerHeight,floor);
+    if(!layerHeight||bank==BankCoverageSelector::Legacy)return mesh;
+    for(auto& vertex:mesh.vertices) {
+        const auto coverage=ComposeBankFloorCoverage(vertex.x,vertex.z,LandscapeNormal(core,vertex.x,vertex.z),
+            RiverSedimentWeight(vertex.x,vertex.z),floor,bank);
+        Aevrynd::Vec2 encoded{};
+        if(!Aevrynd::TryEncodeTerrainLayerCoverage3D(coverage.soil,coverage.rock,encoded))
+            throw std::runtime_error("Invalid landscape patchy bank coverage");
+        vertex.u=encoded.x;vertex.v=encoded.y;
+    }
+    return mesh;
+}
 inline float LandscapeSurfaceHeight(const Aevrynd::HeightField3D& core,float x,float z) {
     // 樹根貼到真正的格點三角面，不使用格點之間的解析曲面高度。
     const auto cell=[](float value,float start,float end) {

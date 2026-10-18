@@ -1,4 +1,6 @@
 #include <Aevrynd/PbrLightingReference.h>
+#include <bit>
+#include <cstdint>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -55,6 +57,64 @@ bool HasProductionObjectFillContract() {
 }
 }
 
+namespace {
+bool TerrainGeometricLightCases(){
+    constexpr double pi=3.141592653589793;
+    unsigned positiveCases{},grazingCases{},blockedCases{};
+    // 幾何可見且 Ns·V>0：必直接沿用舊函式的 double bits，非近似相等。
+    for(double base:{0.0,.3,1.0})for(double metal:{0.0,.5,1.0})
+    for(double roughness:{.045,.5,1.0})for(double view:{.01,.8,1.0}){
+        const double original=PbrReferenceEvaluateLight(base,metal,roughness,view,.6,.7,.8,3);
+        const double candidate=PbrReferenceEvaluateTerrainLight(base,metal,roughness,
+            .6,1,view,.6,.7,.8,3);
+        if(std::bit_cast<std::uint64_t>(original)!=std::bit_cast<std::uint64_t>(candidate))return false;
+        ++positiveCases;
+    }
+    // 原函式仍拒 shading 背視；新分支的 oracle 為原 Fresnel diffuse，不含 GGX。
+    for(double base:{0.0,.3,1.0})for(double metal:{0.0,.5,1.0})
+    for(double view:{-1.0,-.28,0.0})for(double light:{.01,.6,1.0}){
+        const double reflectance=.04*(1-metal)+base*metal;
+        const double diffuse=(1-PbrFresnelSchlick(.8,reflectance))*(1-metal)*base;
+        const double expected=diffuse*(1/pi)*3*light;
+        const double value=PbrReferenceEvaluateTerrainLight(base,metal,.045,.6,1,
+            view,light,.7,.8,3);
+        const double rough=PbrReferenceEvaluateTerrainLight(base,metal,1,.6,1,
+            view,light,.7,.8,3);
+        const double bound=base*(1/pi)*3*light;
+        const double tolerance=16*std::numeric_limits<double>::epsilon()*(std::max)(1.0,bound);
+        if(PbrReferenceEvaluateLight(base,metal,.045,view,light,.7,.8,3)!=0
+            ||!std::isfinite(value)||value<0||std::abs(value-expected)>tolerance
+            ||value>bound+tolerance||std::bit_cast<std::uint64_t>(value)!=std::bit_cast<std::uint64_t>(rough)
+            ||(metal==1&&value!=0)||(base>0&&metal<1&&!(value>0)))return false;
+        ++grazingCases;
+    }
+    // Ng 背面不得漏光，即使 shading normal 同時對光與觀察者可見。
+    for(double blocked:{-1.0,0.0})for(double view:{-.28,0.0,.8}){
+        if(PbrReferenceEvaluateTerrainLight(.7,0,.5,blocked,1,view,.6,.7,.8,3)!=0
+            ||PbrReferenceEvaluateTerrainLight(.7,0,.5,.6,blocked,view,.6,.7,.8,3)!=0)return false;
+        ++blockedCases;
+    }
+    for(double light:{-1.0,0.0})if(PbrReferenceEvaluateTerrainLight(.7,0,.5,.6,1,
+        -.28,light,.7,.8,3)!=0)return false;
+    // 真單位向量 Ng=(0,0,1)、Ns=(-.8,0,.6)、V=(.8,0,.6)、L=Ng。
+    const double halfLength=std::sqrt(.8*.8+1.6*1.6);
+    const double shadingView=-.8*.8+.6*.6;
+    const double normalHalf=(-.8*.8+.6*1.6)/halfLength;
+    const double viewHalf=(.8*.8+.6*1.6)/halfLength;
+    const double witness=PbrReferenceEvaluateTerrainLight(.7,0,.5,.6,1,
+        shadingView,.6,normalHalf,viewHalf,3);
+    const double expected=(1-PbrFresnelSchlick(viewHalf,.04))*.7*(1/pi)*3*.6;
+    if(!(shadingView<0)||!(witness>0)||std::abs(witness-expected)>16*std::numeric_limits<double>::epsilon()
+        ||PbrReferenceEvaluateLight(.7,0,.5,shadingView,.6,normalHalf,viewHalf,3)!=0)return false;
+    // 原 reference 輻射量防護亦保留，沒有新 brightness floor。
+    for(double radiance:{-1.0,std::numeric_limits<double>::infinity()})
+        if(PbrReferenceEvaluateTerrainLight(.7,0,.5,.6,1,-.28,.6,.7,.8,radiance)!=0)return false;
+    std::cout<<"terrainGeometricLight positive="<<positiveCases<<" grazing="<<grazingCases
+        <<" blocked="<<blockedCases<<" witness="<<witness<<" oldEarlyOutPreserved=1\n";
+    return true;
+}
+}
+
 int main(){
     if(PbrClampedRoughness(0)!=.045||PbrClampedRoughness(2)!=1||PbrClampedRoughness(std::numeric_limits<double>::quiet_NaN())!=1||PbrClampedRoughness(std::numeric_limits<double>::infinity())!=1)return 1;
     for(double roughness:{0.0,.045,.2,.5,1.0})for(double metallic:{0.0,.5,1.0}){const PbrEnergyWeights energy=PbrReferenceEnergy(.7,metallic,roughness,.8,.7,.9,.85);if(!std::isfinite(energy.diffuse)||!std::isfinite(energy.specular)||!std::isfinite(energy.specularResponse)||energy.diffuse<0||energy.specular<0||energy.specularResponse<0||energy.diffuse+energy.specular>1.0000001)return 2;}
@@ -82,5 +142,6 @@ int main(){
     const auto objectFill=[](double normalView,double baseColor=.65,double roughness=.45,double metallic=0,double occlusion=1,double water=0,double terrain=0,double foliage=0,bool environmentEnabled=true,double radiance=.72,double intensity=.58,double peakRadiance=1.0){return ProductionObjectFillReference(normalView,baseColor,roughness,metallic,occlusion,water,terrain,foliage,environmentEnabled,radiance,intensity,peakRadiance);};
     const double fillFront=objectFill(1),fillSide=objectFill(0),fillOccluded=objectFill(1,.65,.45,0,0),fillMetal=objectFill(1,.65,.45,1),fillWater=objectFill(1,.65,.45,0,1,1),fillTerrain=objectFill(1,.65,.45,0,1,0,1),fillFoliage=objectFill(1,.65,.45,0,1,0,0,1),fillEnvironmentNull=objectFill(1,.65,.45,0,1,0,0,0,false),fillDarkBase=objectFill(1,.2),fillBrightBase=objectFill(1,.8),fillSmoothGrazing=objectFill(.35,.65,.1),fillRoughGrazing=objectFill(.35,.65,.9),fillBeforeCap=BoundedObjectFillRadianceReference(.25,.8,.25),fillAfterCap=BoundedObjectFillRadianceReference(16,8,16),fillCoupledRed=BoundedObjectFillRadianceReference(.72,.58,1.0),fillCoupledBlue=BoundedObjectFillRadianceReference(1.0,.58,1.0);
     if(!(fillFront>fillSide&&fillSide>0&&fillOccluded>0&&fillOccluded<fillFront&&fillDarkBase<fillBrightBase&&fillSmoothGrazing<fillRoughGrazing&&fillCoupledRed<fillCoupledBlue)||fillMetal!=0||fillWater!=0||fillTerrain!=0||fillFoliage!=0||fillEnvironmentNull!=0||std::abs(fillBeforeCap-.048)>1e-12||std::abs(fillAfterCap-.12)>1e-12||std::abs(fillCoupledBlue-.12)>1e-12){std::cerr<<"Production object fill CPU contract failed front="<<fillFront<<" side="<<fillSide<<" occluded="<<fillOccluded<<" metal="<<fillMetal<<" water="<<fillWater<<" terrain="<<fillTerrain<<" foliage="<<fillFoliage<<" null="<<fillEnvironmentNull<<" base="<<fillDarkBase<<'/'<<fillBrightBase<<" roughness="<<fillSmoothGrazing<<'/'<<fillRoughGrazing<<" bounded="<<fillBeforeCap<<'/'<<fillAfterCap<<" coupled="<<fillCoupledRed<<'/'<<fillCoupledBlue<<'\n';return 30;}if(!HasProductionObjectFillContract()){std::cerr<<"Production object fill shader source contract failed\n";return 31;}
+    if(!TerrainGeometricLightCases()){std::cerr<<"Terrain geometric/shading-normal CPU reference failed\n";return 32;}
     std::cout<<"sharp="<<sharp<<" rough="<<rough<<" attenuation4="<<PbrPointLightAttenuation(4,10)<<" aces4="<<PbrAcesToneMap(4)<<" srgb18="<<PbrLinearToSrgb(.18)<<" linearBlend50="<<linearHalf<<" hdrBlend="<<blendedHdr<<" environment="<<metalEnvironment.total<<" waterF0="<<waterF0<<" skin="<<skinFront<<" hair="<<hairSharp<<" corneaF0="<<corneaF0<<" eye="<<eyeFront<<" objectFillFront="<<fillFront<<'\n';return 0;
 }

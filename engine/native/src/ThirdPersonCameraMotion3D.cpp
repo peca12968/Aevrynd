@@ -1,6 +1,9 @@
 #include <Aevrynd/ThirdPersonCameraMotion3D.h>
 #include <algorithm>
 #include <cmath>
+#include <new>
+#include <stdexcept>
+#include <vector>
 
 namespace Aevrynd {
 namespace {
@@ -40,17 +43,65 @@ bool Visible(const Camera3D& camera,std::span<const Vec3> samples,std::span<cons
     }
     return true;
 }
-}
-bool ThirdPersonCameraPathClear3D(Vec3 start,Vec3 end,std::span<const BoxCollider3D> solids,
-    const HeightField3D& terrain,std::span<const BoxCollider3D> extra,float radius){
+// 只屬於這一次Update；普通追蹤不啟用，也不配置幾何暫存。
+struct PreparedPathBox {
+    Vec3 extents{};
+    bool prepared{},baseValid{},extentsChecked{},extentsValid{},boundsChecked{},boundsValid{};
+};
+class PerUpdatePathGeometry {
+public:
+    void Enable()noexcept{enabled_=true;}
+    bool Enabled()const noexcept{return enabled_;}
+    bool Prepare(std::size_t solids,std::size_t extra){
+        if(attempted_)return available_;
+        attempted_=true;
+        if(solids>boxes_.max_size()||extra>boxes_.max_size()-solids)return false;
+        try{boxes_.resize(solids+extra);}
+        catch(const std::bad_alloc&){return false;}
+        catch(const std::length_error&){return false;}
+        available_=true;return true;
+    }
+    PreparedPathBox& Box(std::size_t index)noexcept{return boxes_[index];}
+private:
+    std::vector<PreparedPathBox> boxes_{};
+    bool enabled_{},attempted_{},available_{};
+};
+bool CameraPathClearUsingGeometry(Vec3 start,Vec3 end,std::span<const BoxCollider3D> solids,
+    const HeightField3D& terrain,std::span<const BoxCollider3D> extra,float radius,PerUpdatePathGeometry* geometry){
     if(!Finite(start)||!Finite(end)||!std::isfinite(radius)||radius<=0)return false;
     const Vec3 shift=end-start;const float length=Length(shift);
     if(!Finite(shift)||!std::isfinite(length))return false;
+    // 配置失敗只退回原數值路徑；不新增更新失敗或丟出例外。
+    if(geometry&&!geometry->Prepare(solids.size(),extra.size()))geometry=nullptr;
+    std::size_t boxIndex{};
     for(const auto boxes:{solids,extra})for(const auto& box:boxes){
-        if(!Finite(box.center)||!Finite(box.extents)||box.extents.x<0||box.extents.y<0||box.extents.z<0)return false;
-        const auto extents=box.extents+Vec3{radius,radius,radius};
+        auto* prepared=geometry?&geometry->Box(boxIndex++):nullptr;
+        Vec3 extents{};
+        if(prepared){
+            if(!prepared->prepared){
+                prepared->baseValid=!(!Finite(box.center)||!Finite(box.extents)||box.extents.x<0||box.extents.y<0||box.extents.z<0);
+                if(prepared->baseValid)prepared->extents=box.extents+Vec3{radius,radius,radius};
+                prepared->prepared=true;
+            }
+            if(!prepared->baseValid)return false;
+            extents=prepared->extents;
+        }else{
+            if(!Finite(box.center)||!Finite(box.extents)||box.extents.x<0||box.extents.y<0||box.extents.z<0)return false;
+            extents=box.extents+Vec3{radius,radius,radius};
+        }
         const auto local=start-box.center;
-        if(!Finite(extents)||!Finite(local)||!Finite(box.center+extents)||!Finite(box.center-extents))return false;
+        if(prepared){
+            if(!prepared->extentsChecked){
+                prepared->extentsValid=Finite(extents);prepared->extentsChecked=true;
+            }
+            if(!prepared->extentsValid||!Finite(local))return false;
+            // 起點相關的local仍逐path驗證；只有真正走到這一步才準備世界邊界。
+            if(!prepared->boundsChecked){
+                prepared->boundsValid=Finite(box.center+extents)&&Finite(box.center-extents);
+                prepared->boundsChecked=true;
+            }
+            if(!prepared->boundsValid)return false;
+        }else if(!Finite(extents)||!Finite(local)||!Finite(box.center+extents)||!Finite(box.center-extents))return false;
         // 直接以線段參數裁切，包含零長度與微小位移，不依賴 Normalize 的 epsilon。
         double enter=0,exit=1;
         const auto clip=[&](double origin,double delta,double extent){
@@ -92,6 +143,11 @@ bool ThirdPersonCameraPathClear3D(Vec3 start,Vec3 end,std::span<const BoxCollide
     }
     return true;
 }
+}
+bool ThirdPersonCameraPathClear3D(Vec3 start,Vec3 end,std::span<const BoxCollider3D> solids,
+    const HeightField3D& terrain,std::span<const BoxCollider3D> extra,float radius){
+    return CameraPathClearUsingGeometry(start,end,solids,terrain,extra,radius,nullptr);
+}
 ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desired,std::span<const Vec3> samples,
     std::span<const BoxCollider3D> solids,std::span<const BoxCollider3D> ceilings,const HeightField3D& terrain,
     float dt,std::span<const BoxCollider3D> extra){
@@ -99,6 +155,8 @@ ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desir
     // 拒絕的更新不提交路徑快取，讓呼叫者的控制器回滾與重試保持原子性。
     auto stagedRoute=route_;unsigned stagedCount=routeCount_,stagedIndex=routeIndex_;
     float stagedDirection=routeDirection_,stagedWantedPitch=routeWantedPitch_,stagedWantedRange=routeWantedRange_;
+    bool stagedRecovery=occlusionRecovery_;
+    float stagedRequestedYaw=recoveryRequestedYaw_,stagedOcclusion=occlusionSeconds_,stagedRetry=retrySeconds_;
     if(!ValidCamera(desired)||samples.empty()||samples.size()>64||!std::isfinite(dt)||dt<0||dt>.1f||
         !ValidBoxes(solids)||!ValidBoxes(ceilings)||!ValidBoxes(extra)){
         result.status=ThirdPersonCameraMotionStatus3D::InvalidInput;return result;
@@ -107,13 +165,32 @@ ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desir
     const float tangent=std::tan(desired.projection.verticalFieldOfView*.5f);
     const float radius=(std::max)(.16f,.005f+desired.projection.nearPlane*std::sqrt(1.f+tangent*tangent*(1.f+1280.f/720.f*1280.f/720.f)));
     if(!std::isfinite(radius)){result.status=ThirdPersonCameraMotionStatus3D::InvalidInput;return result;}
-    const auto safe=[&](const Camera3D& camera){return Framed(camera,samples)&&ThirdPersonCameraPathClear3D(camera.position,camera.position,solids,terrain,extra,radius);};
-    const auto commit=[&](Camera3D camera,ThirdPersonCameraMotionStatus3D status){
+    PerUpdatePathGeometry pathGeometry;
+    const auto pathClear=[&](Vec3 startPoint,Vec3 endPoint){
+        if(pathGeometry.Enabled())return CameraPathClearUsingGeometry(startPoint,endPoint,solids,terrain,extra,radius,&pathGeometry);
+        return ThirdPersonCameraPathClear3D(startPoint,endPoint,solids,terrain,extra,radius);
+    };
+    const auto requestOffset=desired.position-desired.target;
+    const float requestYaw=std::atan2(requestOffset.x,-requestOffset.z);
+    const float requestPitch=std::atan2(requestOffset.y,std::hypot(requestOffset.x,requestOffset.z));
+    const float requestRange=Length(requestOffset);
+    const bool changedRequest=!requestInitialized_||
+        std::abs(std::remainder(requestYaw-requestedYaw_,6.2831853f))>.001f||
+        std::abs(requestPitch-requestedPitch_)>.0001f||std::abs(requestRange-requestedRange_)>.0001f;
+    const float stagedQuiet=changedRequest?0.f:poseQuietSeconds_;
+    if(changedRequest&&stagedRecovery){stagedRecovery=false;stagedCount=stagedIndex=0;}
+    const auto safe=[&](const Camera3D& camera){return Framed(camera,samples)&&pathClear(camera.position,camera.position);};
+    const auto commit=[&](Camera3D camera,ThirdPersonCameraMotionStatus3D status,const bool* provenVisible=nullptr){
         result.displacement=initialized_?Length(camera.position-camera_.position):0;
         camera_=camera;initialized_=true;result.camera=camera;result.accepted=true;
         route_=stagedRoute;routeCount_=stagedCount;routeIndex_=stagedIndex;routeDirection_=stagedDirection;
         routeWantedPitch_=stagedWantedPitch;routeWantedRange_=stagedWantedRange;
-        result.subjectVisible=Visible(camera,samples,solids,extra,terrain);
+        occlusionRecovery_=stagedRecovery;recoveryRequestedYaw_=stagedRequestedYaw;
+        retrySeconds_=stagedRetry;
+        requestInitialized_=true;requestedYaw_=requestYaw;requestedPitch_=requestPitch;requestedRange_=requestRange;
+        poseQuietSeconds_=(std::min)(1.f,stagedQuiet+dt);
+        result.subjectVisible=provenVisible?*provenVisible:Visible(camera,samples,solids,extra,terrain);
+        occlusionSeconds_=result.subjectVisible?0.f:stagedOcclusion+dt;
         result.status=status;
         if(status==ThirdPersonCameraMotionStatus3D::TrackingVisible&&!result.subjectVisible)
             result.status=ThirdPersonCameraMotionStatus3D::TrackingOccluded;
@@ -129,8 +206,11 @@ ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desir
     const auto targetShift=desired.target-camera_.target;
     if(Length(targetShift)>2.f)return result;
     auto anchor=camera_;anchor.target=desired.target;anchor.position=anchor.position+targetShift;
-    if(!ThirdPersonCameraPathClear3D(camera_.position,anchor.position,solids,terrain,extra,radius))anchor.position=camera_.position;
-    const auto from=anchor.position-anchor.target,to=desired.position-desired.target;
+    if(!pathClear(camera_.position,anchor.position))anchor.position=camera_.position;
+    // 屋頂限制的是追蹤終點；先限制終點，再沿原速度預算平滑，不能壓低已平滑的一步。
+    auto constrainedGoal=ConstrainThirdPersonCameraCeiling(desired,ceilings);
+    constrainedGoal=ConstrainThirdPersonCameraCeiling(constrainedGoal,extra);
+    const auto from=anchor.position-anchor.target,to=constrainedGoal.position-constrainedGoal.target;
     const float range=Length(from),wantedRange=Length(to);
     if(range<=.01f||wantedRange<=.01f)return result;
     const float yaw=std::atan2(from.x,-from.z),wantedYaw=std::atan2(to.x,-to.z);
@@ -139,25 +219,44 @@ ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desir
     const float nextPitch=pitch+std::clamp(wantedPitch-pitch,-1.8f*dt,1.8f*dt);
     const float nextRange=range+std::clamp(wantedRange-range,-10.f*dt,10.f*dt);
     auto candidate=MakeThirdPersonCamera(desired.target,nextYaw,nextPitch,nextRange,desired.projection);
-    candidate=ConstrainThirdPersonCameraCeiling(candidate,ceilings);
-    candidate=ConstrainThirdPersonCameraCeiling(candidate,extra);
+    // 只重用本次Update、同一candidate與不可變幾何的可見性證據。
+    bool candidateVisibilityKnown{},candidateVisibility{};
+    const auto candidateVisible=[&](){
+        if(!candidateVisibilityKnown){candidateVisibility=Visible(candidate,samples,solids,extra,terrain);candidateVisibilityKnown=true;}
+        return candidateVisibility;
+    };
     const auto continuous=[&](const Camera3D& camera){
         const float budget=30.f*dt+Length(targetShift);
         return Length(camera.position-camera_.position)<=budget+.00001f&&Framed(camera,samples)&&
-            ThirdPersonCameraPathClear3D(camera_.position,camera.position,solids,terrain,extra,radius);
+            pathClear(camera_.position,camera.position);
     };
     const float error=std::remainder(wantedYaw-yaw,6.2831853f);
-    if(stagedIndex<stagedCount){
+    stagedRetry=(std::max)(0.f,stagedRetry-dt);
+    if(stagedRecovery&&(std::abs(std::remainder(wantedYaw-stagedRequestedYaw,6.2831853f))>.001f||
+        std::abs(wantedPitch-stagedWantedPitch)>.0001f||std::abs(wantedRange-stagedWantedRange)>.0001f)){
+        stagedRecovery=false;stagedCount=stagedIndex=0;stagedOcclusion=0;
+    }
+    if(!stagedRecovery&&stagedIndex<stagedCount){
         const float promised=std::remainder(stagedRoute[stagedCount-1].x-yaw,6.2831853f)*stagedDirection;
         if(error*stagedDirection<promised-.001f||std::abs(wantedPitch-stagedWantedPitch)>.0001f||
            std::abs(wantedRange-stagedWantedRange)>.0001f)stagedCount=stagedIndex=0;
     }
     const auto advanceRoute=[&](){
+        if(stagedIndex<stagedCount)pathGeometry.Enable();
         // 世界、目標與角色姿態可能已改變；重新確認整條剩餘出口，不只驗下一步。
+        if(stagedRecovery&&stagedIndex<stagedCount){
+            const auto spec=stagedRoute[stagedCount-1];
+            const auto endpoint=MakeThirdPersonCamera(desired.target,spec.x,spec.y,spec.z,desired.projection);
+            // 移動目標已使出口視線失效；撤銷本次快取，不沿用過期可見性證據。
+            if(!Visible(endpoint,samples,solids,extra,terrain)){
+                // 目標移動令出口失效時，立刻重新證明新出口；不在重試冷卻中走回遮擋方向。
+                stagedCount=stagedIndex=0;stagedRetry=0;return false;
+            }
+        }
         auto proof=camera_;
         for(unsigned i=stagedIndex;i<stagedCount;++i){const auto spec=stagedRoute[i];
             const auto next=MakeThirdPersonCamera(desired.target,spec.x,spec.y,spec.z,desired.projection);
-            if(!Framed(next,samples)||!ThirdPersonCameraPathClear3D(proof.position,next.position,solids,terrain,extra,radius)){
+            if(!Framed(next,samples)||!pathClear(proof.position,next.position)){
                 stagedCount=stagedIndex=0;return false;
             }
             proof=next;
@@ -177,16 +276,123 @@ ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desir
                    std::abs(newPitch-pitch)>1.8f*dt+.00001f||std::abs(Length(offset)-range)>10.f*dt+.00001f)continue;
                 // 執行已驗證的直線邊；不把直線證據錯用在極座標弧線。每步仍檢查目前世界。
                 if(!continuous(next)){stagedCount=stagedIndex=0;return false;}
+                // 減半只用來找安全下界；有限細分回收剩餘速率，避免沿出口僅用到一半轉向速度。
+                // 每個候選仍驗原角度、距離、位移、投影與完整體積路徑，不放寬任何上限。
+                if(attempt){
+                    float low=fraction,high=(std::min)(1.f,fraction*2.f);
+                    for(unsigned refinement=0;refinement<8;++refinement){
+                        const float amount=(low+high)*.5f;
+                        auto probe=anchor;probe.position=anchor.position+shift*amount;
+                        const auto probeOffset=probe.position-probe.target;
+                        const float probeYaw=std::atan2(probeOffset.x,-probeOffset.z);
+                        const float probePitch=std::atan2(probeOffset.y,std::hypot(probeOffset.x,probeOffset.z));
+                        if(std::abs(std::remainder(probeYaw-yaw,6.2831853f))<=2.4f*dt+.00001f&&
+                           std::abs(probePitch-pitch)<=1.8f*dt+.00001f&&
+                           std::abs(Length(probeOffset)-range)<=10.f*dt+.00001f&&continuous(probe)){
+                            low=amount;next=probe;
+                        }else high=amount;
+                    }
+                }
                 commit(next,ThirdPersonCameraMotionStatus3D::TrackingVisible);return true;
             }
             stagedCount=stagedIndex=0;return false;
         }
         return false;
     };
+    if(stagedRecovery){
+        // 已恢復的安全鏡頭暫時維持，直到原期望視線也可見；不立即走回遮擋。
+        if(safe(constrainedGoal)&&Visible(constrainedGoal,samples,solids,extra,terrain)&&
+           continuous(candidate)&&candidateVisible()){
+            stagedRecovery=false;stagedCount=stagedIndex=0;
+        }else if(stagedIndex>=stagedCount&&continuous(anchor)){
+            if(Visible(anchor,samples,solids,extra,terrain)){
+                commit(anchor,ThirdPersonCameraMotionStatus3D::Held);return result;
+            }
+            // 已恢復的出口被移動目標遮住，不重新消耗首次遮擋等待，也不退回原遮擋方向。
+            stagedRetry=0;
+        }
+    }
     if(advanceRoute())return result;
-    if(continuous(candidate))commit(candidate,ThirdPersonCameraMotionStatus3D::TrackingVisible);
+    // 平移anchor會遮住角色時，僅保留仍有完整視線的上一個世界鏡位。
+    // 不插入有效剩餘路線，不縮短既有首次等待或手動請求優先權。
+    if(stagedQuiet>=1.f&&occlusionSeconds_==0.f&&stagedOcclusion==0.f&&stagedIndex>=stagedCount&&
+       (stagedRecovery||std::abs(error)<=.001f)&&
+       !candidateVisible()){
+        auto worldHold=camera_;worldHold.target=desired.target;
+        const auto offset=worldHold.position-worldHold.target,priorOffset=camera_.position-camera_.target;
+        const float holdYaw=std::atan2(offset.x,-offset.z),holdPitch=std::atan2(offset.y,std::hypot(offset.x,offset.z));
+        const float holdRange=Length(offset),priorYaw=std::atan2(priorOffset.x,-priorOffset.z);
+        const float priorPitch=std::atan2(priorOffset.y,std::hypot(priorOffset.x,priorOffset.z)),priorRange=Length(priorOffset);
+        const bool sourceRates=std::abs(std::remainder(holdYaw-yaw,6.2831853f))<=2.4f*dt+.00001f&&
+            std::abs(holdPitch-pitch)<=1.8f*dt+.00001f&&std::abs(holdRange-range)<=10.f*dt+.00001f;
+        const bool priorRates=std::abs(std::remainder(holdYaw-priorYaw,6.2831853f))<=2.4f*dt+.00001f&&
+            std::abs(holdPitch-priorPitch)<=1.8f*dt+.00001f&&std::abs(holdRange-priorRange)<=10.f*dt+.00001f;
+        if(sourceRates&&priorRates&&continuous(worldHold)&&safe(worldHold)){
+            const bool worldHoldVisible=Visible(worldHold,samples,solids,extra,terrain);
+            if(worldHoldVisible){
+                stagedRecovery=true;stagedCount=stagedIndex=0;stagedRequestedYaw=wantedYaw;
+                stagedWantedPitch=wantedPitch;stagedWantedRange=wantedRange;stagedRetry=0;
+                commit(worldHold,ThirdPersonCameraMotionStatus3D::Held,&worldHoldVisible);return result;
+            }
+        }
+    }
+    if(stagedQuiet>=1.f&&stagedRetry<=0&&(stagedRecovery||stagedOcclusion>=.15f)&&
+       (stagedRecovery||std::abs(error)<=.001f)&&!candidateVisible()){
+        // 固定 81 節點：左右九個角度、三個距離、三個仰角；最多六條鄰接邊。
+        // 終點必须同時有完整視線和安全體積，過渡允許短暫遮擋但不穿牆。
+        pathGeometry.Enable();
+        constexpr unsigned count=81,start=36;
+        const std::array ranges{range,(std::min)(range,2.5f),(std::min)(range,1.6f)};
+        const std::array pitches{pitch,0.f,-.1f};
+        std::array<Camera3D,count> nodes{};std::array<Vec3,count> specs{};
+        std::array<bool,count> allowed{},visited{},visible{};
+        std::array<float,count> costs{};std::array<int,count> parents{};
+        costs.fill(1e30f);parents.fill(-1);
+        for(unsigned i=0;i<count;++i){
+            const unsigned y=i/9,r=(i%9)/3,p=i%3;
+            specs[i]={yaw+(float(y)-4.f)*.39269908f,pitches[p],ranges[r]};
+            nodes[i]=MakeThirdPersonCamera(desired.target,specs[i].x,specs[i].y,specs[i].z,desired.projection);
+            allowed[i]=safe(nodes[i]);visible[i]=allowed[i]&&Visible(nodes[i],samples,solids,extra,terrain);
+        }
+        if(allowed[start]&&pathClear(camera_.position,nodes[start].position))costs[start]=0;
+        int goal=-1;
+        for(unsigned iteration=0;iteration<count;++iteration){
+            int best=-1;
+            for(unsigned i=0;i<count;++i)if(!visited[i]&&allowed[i]&&costs[i]<1e29f&&(best<0||costs[i]<costs[unsigned(best)]))best=int(i);
+            if(best<0)break;
+            const unsigned index=unsigned(best);visited[index]=true;
+            if(visible[index]){goal=best;break;}
+            const int y=int(index/9),r=int((index%9)/3),p=int(index%3);
+            const std::array<std::array<int,3>,6> adjacent{{{y-1,r,p},{y+1,r,p},{y,r-1,p},{y,r+1,p},{y,r,p-1},{y,r,p+1}}};
+            for(const auto xyz:adjacent){
+                if(xyz[0]<0||xyz[0]>8||xyz[1]<0||xyz[1]>2||xyz[2]<0||xyz[2]>2)continue;
+                const unsigned next=unsigned(xyz[0]*9+xyz[1]*3+xyz[2]);
+                if(visited[next]||!allowed[next]||!pathClear(nodes[index].position,nodes[next].position))continue;
+                const float cost=costs[index]+Length(nodes[next].position-nodes[index].position)+.001f;
+                if(cost<costs[next]){costs[next]=cost;parents[next]=best;}
+            }
+        }
+        stagedRetry=.25f;
+        if(goal>=0){
+            std::array<Vec3,count> reversed{};unsigned size{};
+            for(int node=goal;node>=0&&node!=int(start)&&size<count;node=parents[unsigned(node)])reversed[size++]=specs[unsigned(node)];
+            stagedCount=size;stagedIndex=0;stagedRecovery=true;stagedRequestedYaw=wantedYaw;
+            stagedWantedPitch=wantedPitch;stagedWantedRange=wantedRange;
+            for(unsigned i=0;i<size;++i)stagedRoute[i]=reversed[size-1-i];
+            if(advanceRoute())return result;
+            if(continuous(anchor)){commit(anchor,ThirdPersonCameraMotionStatus3D::Held);return result;}
+        }
+    }
+    if(stagedRecovery&&continuous(anchor)){
+        commit(anchor,ThirdPersonCameraMotionStatus3D::Held);return result;
+    }
+    if(continuous(candidate)){
+        const bool visible=candidateVisible();
+        commit(candidate,ThirdPersonCameraMotionStatus3D::TrackingVisible,&visible);
+    }
     else if(std::abs(error)>.001f){
         // 最多 81 節點的向前極座標圖；只有已找到完整出口才移動，避免盲目縮距後卡住。
+        pathGeometry.Enable();
         constexpr unsigned count=81;
         const float direction=error>0?1.f:-1.f,horizon=(std::min)(std::abs(error),.34906585f);
         const std::array ranges{range,(std::max)(1.5f,range-1.5f),(std::min)(10.f,range+1.5f)};
@@ -210,7 +416,7 @@ ThirdPersonCameraMotionResult3D ThirdPersonCameraMotion3D::Update(Camera3D desir
             const std::array<std::array<int,3>,5> adjacent{{{plane+1,r,p},{plane,r==0?1:0,p},{plane,r==0?2:0,p},{plane,r,p-1},{plane,r,p+1}}};
             for(const auto xyz:adjacent){if(xyz[0]>8||xyz[1]<0||xyz[1]>2||xyz[2]<0||xyz[2]>2)continue;
                 const unsigned next=unsigned(xyz[0]*9+xyz[1]*3+xyz[2]);
-                if(visited[next]||!allowed[next]||!ThirdPersonCameraPathClear3D(nodes[index].position,nodes[next].position,solids,terrain,extra,radius))continue;
+                if(visited[next]||!allowed[next]||!pathClear(nodes[index].position,nodes[next].position))continue;
                 const float cost=costs[index]+Length(nodes[next].position-nodes[index].position)+.001f;
                 if(cost<costs[next]){costs[next]=cost;parents[next]=best;}
             }

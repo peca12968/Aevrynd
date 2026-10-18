@@ -99,6 +99,15 @@ int main(int argc,char** argv) {
         const auto p=Session::relaySites[index];
         if(!walk({0,0,p.z})||!walk(p+Aevrynd::Vec3{p.x<0?1.15f:-1.15f,0,0}))return 21;
         for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)if(!game.TuneRelay(index,1))return 22;
+        // 保留原真碰撞路線；只在已走到站位後新增任務前置，不以傳送省略行走。
+        if(index==0){
+            if(game.ConnectRelay(index))return 29;
+            if(!game.CycleRelayPatch(0)||!game.ConfirmRelayCircuit())return 30;
+        }
+        if(index==2){
+            if(game.ConnectRelay(index))return 31;
+            if(!game.CycleExtractionRoute()||!game.ConfirmExtractionRoute())return 32;
+        }
         if(!game.ConnectRelay(index)||!walk({0,0,p.z}))return 23;
     }
     if(!walk(Session::beacon)||!game.LightBeacon()||game.CurrentStage()!=Stage::Complete) return 6;

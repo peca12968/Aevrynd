@@ -1,0 +1,12 @@
+{
+"schema_version":1,
+"scope":"runtime-identity-only; authored_world_qualified=false",
+"profile":"authored-leaf-cluster-full-v3",
+"parent":"authored-boulder-full-v2",
+"parent_mapping_sha256":"D1CB0D00DAF1853E1A3F8393B6D15610223931C6EC313555E110FD495E6093F3",
+"count":416,
+"additions":[
+["mistwatch-leaf-clusters/leaves-v1.aemesh","games/mistwatch/assets/leaf-clusters/leaves-v1.aemesh",64,"copy",6377336,"23E72E7CE41CCA9567F2843EE8602B2D910B984F4D93D644199FD44E539E7767"],
+["mistwatch-leaf-clusters/PROVENANCE.txt","games/mistwatch/assets/leaf-clusters/PROVENANCE.txt",64,"copy",1790,"839D5C2A041D6D4E63A081DC65D3D47080B743FF734D8E01A4500E4C35B4D884"]
+]
+}

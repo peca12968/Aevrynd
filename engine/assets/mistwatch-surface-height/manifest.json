@@ -1,0 +1,47 @@
+{
+  "schema": "aevrynd.forest-surface-height.1",
+  "profile": "forest-moss-leaf-metric-v1",
+  "license": "CC0-1.0",
+  "color_space": "linear-data",
+  "resampled": false,
+  "gamma_applied": false,
+  "channels": {"R": "neutral AO 255", "G": "original roughness.R", "B": "non-metallic 0", "A": "source height"},
+  "assets": [
+    {
+      "file": "moss-height/Ground037_SurfaceOrmHeight_Level0.png",
+      "runtime_file": "assets/mistwatch-materials/moss-height/Ground037_SurfaceOrmHeight_Level0.png",
+      "bytes": 1531546,
+      "sha256": "012D2378AA6E62CCA05AD66D69B512966D5894694B7B24D39AFD0CA7CA655F38",
+      "dimensions": [1024, 1024],
+      "height_quantization": "exact decoded displacement.R",
+      "height_source": "../material-packs/ambientcg/ground037/1k/Ground037_1K-JPG_Displacement.jpg",
+      "height_source_bytes": 500481,
+      "height_source_sha256": "BC102168F5D014CE208ED5C1D9140C39513D29303E1B3436CB06C92C7780E419",
+      "roughness_source": "../material-packs/ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg",
+      "roughness_source_bytes": 694944,
+      "roughness_source_sha256": "3786B088E981AAE562F06B6477972D379CFFD09A5CC542AB42F9FFD94F9BCB0E",
+      "asset_url": "https://ambientcg.com/view?id=Ground037"
+    },
+    {
+      "file": "leaf-height/ForestLeaves04_SurfaceOrmHeight_Level0.png",
+      "runtime_file": "assets/mistwatch-materials/leaf-height/ForestLeaves04_SurfaceOrmHeight_Level0.png",
+      "bytes": 9102955,
+      "sha256": "9F3259F4772F294EDCA1DE03FA4E8D7ED65C0924238B1A6D0B27B8FED7C0EF85",
+      "dimensions": [2048, 2048],
+      "height_quantization": "(source16 + 128) // 257",
+      "height_source": "source/forest_leaves_04_disp_2k.png",
+      "height_source_bytes": 6671341,
+      "height_source_sha256": "C12974DF23B6437BAD50640E094F0B490E7528DE9B77A8FEFC0F50F24E46ECF6",
+      "roughness_source": "../material-packs/poly-haven/forest_leaves_04/2k/forest_leaves_04_rough_2k.png",
+      "roughness_source_bytes": 6083648,
+      "roughness_source_sha256": "713874257D143AF49C482CE8B7648CB7C5C748CA6540DB0E44563A04A9FE09CE",
+      "maximum_source16_quantization_error": 128,
+      "asset_url": "https://polyhaven.com/a/forest_leaves_04"
+    }
+  ],
+  "default_enabled": false,
+  "manual_cli": "--forest-surface-candidate",
+  "geometry_displacement": false,
+  "art_accepted": false,
+  "published": false
+}

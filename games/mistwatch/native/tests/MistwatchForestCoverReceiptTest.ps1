@@ -277,6 +277,31 @@ foreach($scene in @('initial','river-overlook')){
 }
 'CANOPY_FOREST_COVER_RECEIPT_PASS; POSITIVE=3; REJECTED='+$canopyRejected
 
+# 舊三世界的歷史收據可缺新增欄；若新收據提供欄位，必須是完整 Legacy 診斷且拒絕污染。
+$legacyFirFields=@{
+    fir_layout='legacy';fir_layout_population='100';fir_layout_reached_budget='1'
+    fir_layout_fingerprint='14695981039346656037';fir_layout_patch_centres='0'
+}
+$legacyFirPositive=0;$legacyFirRejected=0
+foreach($case in @(
+    @{profile='legacy-core';receipt=$valid},@{profile='legacy-middle';receipt=$middle},
+    @{profile='forest-canopy';receipt=$canopy})) {
+    $annotated=$case.receipt.Clone()
+    foreach($field in $legacyFirFields.Keys){$annotated[$field]=$legacyFirFields[$field]}
+    Assert-MistwatchForestCoverReceipt $annotated -WorldProfile $case.profile
+    ++$legacyFirPositive
+    foreach($change in @(
+        @{field='fir_layout';value='forest-wood-mature'},@{field='fir_layout_population';value='99'},
+        @{field='fir_layout_reached_budget';value='0'},@{field='fir_layout_fingerprint';value='8236695966185867318'},
+        @{field='fir_layout_patch_centres';value='24'})) {
+        $bad=$annotated.Clone();$bad[$change.field]=$change.value;$failed=$false
+        try{Assert-MistwatchForestCoverReceipt $bad -WorldProfile $case.profile}catch{$failed=$true}
+        if(-not $failed){throw ('Legacy fir layout pollution accepted: '+$case.profile+' '+$change.field)}
+        ++$legacyFirRejected
+    }
+}
+'LEGACY_FIR_LAYOUT_RECEIPT_PASS; POSITIVE='+$legacyFirPositive+'; REJECTED='+$legacyFirRejected
+
 # 每個世界逐欄拒絕缺漏、污染與只關繪圖；同時驗資源清理，不以畫面空白當證據。
 $lifecycleRejected=0;$lifecyclePositive=0
 function Assert-LifecycleRejected([hashtable]$Receipt,[hashtable]$Cleanup,[string]$Profile,[string]$Case,[string]$Scene=''){
@@ -339,17 +364,21 @@ foreach($profile in @('legacy-core','legacy-middle','forest-canopy')){
 }
 'WORLD_PROFILE_LIFECYCLE_RECEIPT_PASS; POSITIVE='+$lifecyclePositive+'; REJECTED='+$lifecycleRejected
 
-# V108 真資產 CPU 證據確認第四個世界；上方三種舊世界及反例完全保留。
+# V121/V128/V129 分別封存素材作者、完整世界與真蕨送件；上方三種舊世界及反例完全保留。
 $wood=$middle.Clone()
 $woodFields=@{
-    world_profile='forest-wood';forest_cover_patches='168';forest_cover_fingerprint='6471420486779392182'
-    forest_cover_clearance_colliders='4512';forest_cover_clearance_collider_fingerprint='230929787695590120'
-    forest_cover_variants='929,749,614,528,780';fern_colonies='78'
-    fern_colony_fingerprint='9573416696332517026';fern_colony_variants='11,22,165,102'
+    world_profile='forest-wood';forest_cover_patches='158';forest_cover_fingerprint='7394606949570911368'
+    forest_cover_clearance_colliders='4582';forest_cover_clearance_collider_fingerprint='876747342402009001'
+    forest_cover_variants='956,738,635,540,731';fern_colonies='77'
+    fern_colony_fingerprint='14103587995731364812';fern_colony_variants='14,28,171,87'
+    fern_colony_original_fingerprint='8112783215925746322'
+    middle_layer_attempted='11615';middle_layer_transform_fingerprint='10337542786750772359'
+    fir_layout='forest-wood-mature';fir_layout_population='100';fir_layout_reached_budget='1'
+    fir_layout_fingerprint='8236695966185867318';fir_layout_patch_centres='24'
 }
 $woodCollision=@{
-    canopy_collision_mode='wood-grid-conservative';canopy_collision_parts='4267';canopy_collision_spacing_m='0.15'
-    canopy_wood_source_triangles='304768';canopy_wood_surface_cells='17911';canopy_wood_enclosed_grid_cells='207'
+    canopy_collision_mode='wood-grid-conservative';canopy_collision_parts='4335';canopy_collision_spacing_m='0.15'
+    canopy_wood_source_triangles='304768';canopy_wood_surface_cells='18192';canopy_wood_enclosed_grid_cells='178'
 }
 foreach($field in $woodFields.Keys){$wood[$field]=$woodFields[$field]}
 foreach($field in $woodCollision.Keys){$wood[$field]=$woodCollision[$field]}
@@ -396,6 +425,9 @@ foreach($change in @(
     @{field='submitted_grass_variants';value='930,1,1,1,1'},
     @{field='submitted_colony_variants';value='12,1,1,1'},
     @{field='submitted_original_fern_variants';value='0,0,0,0'},
+    @{field='fir_layout';value='legacy'},@{field='fir_layout_population';value='99'},
+    @{field='fir_layout_reached_budget';value='0'},@{field='fir_layout_fingerprint';value='14695981039346656037'},
+    @{field='fir_layout_patch_centres';value='23'},
     @{field='canopy_collision_parts';value='4266'},@{field='canopy_collision_spacing_m';value='0.2'},
     @{field='canopy_wood_source_triangles';value='304767'},@{field='canopy_wood_surface_cells';value='17910'},
     @{field='canopy_wood_enclosed_grid_cells';value='206'}
@@ -405,15 +437,16 @@ try{Assert-MistwatchForestCoverReceipt $wood -WorldProfile forest-wood -MiddleLa
 if(-not $failed){throw 'Conflicting wood and middle selector accepted'}
 ++ $woodRejected
 foreach($scene in @('initial','river-overlook')){
-    $fixed=$wood.Clone();$count=if($scene -eq 'initial'){192}else{226}
-    $triangles=if($scene -eq 'initial'){298968}else{350104}
+    $fixed=$wood.Clone();$count=if($scene -eq 'initial'){198}else{227}
+    $triangles=if($scene -eq 'initial'){317224}else{359632}
     $fixed.submitted_original_ferns=[string]$count;$fixed.submitted_original_fern_triangles=[string]$triangles
-    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'47,49,49,47'}else{'51,61,51,63'}
+    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'50,55,47,46'}else{'65,52,62,48'}
     $fixed.submitted_ferns=[string]($count+[long]$fixed.submitted_colony_ferns)
     $fixed.submitted_fern_triangles=[string]($triangles+[long]$fixed.submitted_colony_fern_triangles)
     Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-wood -Scene $scene
     ++$woodPositive
-    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'51,45,66,30'}else{'55,57,68,46'}
+    # 此別名同時保留總株數與總三角形，只改變真素材 slot 身分。
+    $fixed.submitted_original_fern_variants=if($scene -eq 'initial'){'46,59,30,63'}else{'61,56,45,65'}
     $failed=$false
     try{Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-wood -Scene $scene}catch{
         $failed=$_.Exception.Message -eq 'Original fern fixed-scene variant identity changed'
@@ -425,10 +458,12 @@ foreach($scene in @('initial','river-overlook')){
 
 $woodLifecycle=@{
     world_profile='forest-wood';canopy_preview_fixture='0';canopy_world_profile='1';canopy_enabled='1'
-    canopy_plants='4';canopy_rooted_meshes='4';canopy_population_fingerprint='13093722598475582899'
+    canopy_plants='4';canopy_rooted_meshes='4';canopy_population_fingerprint='6584434718760703877'
     canopy_ground_checks='12121992';canopy_primitive_triangles='606207';canopy_materials='3';canopy_submitted_slots='12'
-    forest_cover_clearance_colliders='4512';shrubs_enabled='1';shrubs_plants='64';shrubs_submitted='64'
-    shrubs_fingerprint='6244520233766686875'
+    forest_cover_clearance_colliders='4582';shrubs_enabled='1';shrubs_plants='64';shrubs_submitted='64'
+    shrubs_fingerprint='14817549782697216774'
+    fir_layout='forest-wood-mature';fir_layout_population='100';fir_layout_reached_budget='1'
+    fir_layout_fingerprint='8236695966185867318';fir_layout_patch_centres='24'
 }
 foreach($field in $woodCollision.Keys){$woodLifecycle[$field]=$woodCollision[$field]}
 $woodCleanup=@{cleanup='success';materials_remaining='0';mesh_destroy_calls='7'}
@@ -471,3 +506,188 @@ $profileAttribute=@($parameter[0].Attributes | Where-Object {$_.TypeName.Name -e
 $profiles=@($profileAttribute[0].PositionalArguments | ForEach-Object {$_.Value})
 if(($profiles -join ',') -cne 'legacy-core,legacy-middle,forest-canopy,forest-wood'){throw 'Native validation lost explicit old-world comparison'}
 'NATIVE_VALIDATOR_PARAMETER_CONTRACT_PASS; DEFAULT=forest-wood; PROFILES=4'
+
+# 新倒木的合成收據契約單測；下列常數是獨立 CPU 作者配置，不是本輪 GPU 黃金值。
+# 真原生入口仍必須讀同一 fresh build 產生、來源與387runtime身分一致的 CPU certificate。
+$scannedExpected=@{
+    native_contract=@{
+        canopy_collision_mode='wood-grid-conservative'
+        canopy_collision_parts='4335'
+        canopy_collision_spacing_m='0.15'
+        canopy_enabled='1'
+        canopy_ground_checks='12121992'
+        canopy_materials='3'
+        canopy_plants='4'
+        canopy_population_fingerprint='6584434718760703877'
+        canopy_primitive_triangles='606207'
+        canopy_rooted_meshes='4'
+        canopy_submitted_slots='12'
+        canopy_wood_enclosed_grid_cells='178'
+        canopy_wood_source_triangles='304768'
+        canopy_wood_surface_cells='18192'
+        canopy_world_profile='1'
+        fern_colonies='84'
+        fern_colony_authored_population='300'
+        fern_colony_fingerprint='10788989389604024881'
+        fern_colony_original_fingerprint='8112783215925746322'
+        fern_colony_population='300'
+        fern_colony_reached_budget='1'
+        fern_colony_seed='1128681010'
+        fern_colony_variants='13,24,184,79'
+        fir_layout='forest-wood-mature'
+        fir_layout_fingerprint='8236695966185867318'
+        fir_layout_patch_centres='24'
+        fir_layout_population='100'
+        fir_layout_reached_budget='1'
+        forest_cover_authored_population='3600'
+        forest_cover_clearance_collider_fingerprint='9905927095422790687'
+        forest_cover_clearance_colliders='4582'
+        forest_cover_fingerprint='6588246535391004864'
+        forest_cover_independent_anchors='900'
+        forest_cover_maximum_patches='400'
+        forest_cover_mode='fixed_cluster_patches'
+        forest_cover_patch_maximum_plants='32'
+        forest_cover_patch_minimum_plants='20'
+        forest_cover_patches='156'
+        forest_cover_reached_budget='1'
+        forest_cover_seed='1129272901'
+        forest_cover_variants='937,727,648,506,782'
+        ground_cover_instances='3600'
+        middle_layer_attempted='11615'
+        middle_layer_comparison='1'
+        middle_layer_population='24'
+        middle_layer_reached_budget='1'
+        middle_layer_target='24'
+        middle_layer_transform_fingerprint='10337542786750772359'
+        shrubs_author_instance_triangles='716137'
+        shrubs_author_leaf_count='504'
+        shrubs_enabled='1'
+        shrubs_fingerprint='13203614399962699898'
+        shrubs_plants='64'
+        shrubs_render_instance_triangles='354006'
+        shrubs_render_leaf_counts='224,224,224,224'
+        shrubs_submitted='64'
+        shrubs_uploaded_leaf_indices='13608,13599,13530,13551'
+        shrubs_uploaded_meshes='8'
+        shrubs_uploaded_stem_indices='3024,3024,3024,3024'
+        submitted_middle_layer='24'
+        submitted_middle_layer_triangles='1988496'
+        trail_litter_branches='240'
+        trail_litter_enabled='1'
+        trail_litter_fingerprint='16254976898190631993'
+        trail_litter_patches='48'
+        trail_litter_stones='336'
+        trail_litter_triangles='27391'
+        understory_ferns='420'
+        understory_saplings='42'
+        world_profile='forest-wood'
+    }
+    fallen_pose_words=(Get-MistwatchFallenAuthoredPoseWords)
+}
+$scanned=$wood.Clone()
+foreach($field in $scannedExpected.native_contract.Keys){$scanned[$field]=$scannedExpected.native_contract[$field]}
+$scanned.canopy_preview_fixture='0'
+Assert-MistwatchForestCoverReceipt $scanned -WorldProfile forest-wood -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected
+Assert-MistwatchWorldProfileReceipt $scanned $woodCleanup forest-wood -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected
+$scannedRejected=0
+function Assert-ScannedRejected([hashtable]$Receipt,[string]$Case) {
+    foreach($lifecycle in @($false,$true)){
+        $failed=$false
+        try{
+            if($lifecycle){Assert-MistwatchWorldProfileReceipt $Receipt $woodCleanup forest-wood -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected}
+            else{Assert-MistwatchForestCoverReceipt $Receipt -WorldProfile forest-wood -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected}
+        }catch{$failed=$true}
+        if(-not $failed){throw ('Invalid scanned independent receipt accepted: '+$Case+' lifecycle='+$lifecycle)}
+        ++$script:scannedRejected
+    }
+}
+foreach($field in $scannedExpected.native_contract.Keys){
+    $bad=$scanned.Clone();$bad.Remove($field);Assert-ScannedRejected $bad ('missing native70 '+$field)
+    $bad=$scanned.Clone();$bad[$field]='invalid';Assert-ScannedRejected $bad ('changed native70 '+$field)
+}
+Assert-ScannedRejected $wood 'legacy forestwood as scanned without independent fields'
+foreach($profile in @('legacy-core','legacy-middle','forest-canopy')){
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $scanned -WorldProfile $profile -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected}catch{$failed=$true}
+    if(-not $failed){throw ('Scanned mode accepted nonwood profile: '+$profile)}
+    ++$scannedRejected
+}
+$failed=$false
+try{Assert-MistwatchForestCoverReceipt $scanned -WorldProfile forest-wood -FallenLogProfile scanned-straight-v1}catch{$failed=$true}
+if(-not $failed){throw 'Scanned mode accepted missing independent CPU contract'}
+++$scannedRejected
+$failed=$false
+try{Assert-MistwatchForestCoverReceipt $scanned -WorldProfile forest-wood -FallenLogProfile legacy-cylinder}catch{$failed=$true}
+if(-not $failed){throw 'Scanned values silently accepted as legacy-cylinder'}
+++$scannedRejected
+foreach($kind in @('missing','extra','wrong-type','changed-pose')){
+    $badExpected=@{native_contract=$scannedExpected.native_contract.Clone();fallen_pose_words=$scannedExpected.fallen_pose_words.Clone()}
+    if($kind -ceq 'missing'){$badExpected.native_contract.Remove('forest_cover_fingerprint')}
+    elseif($kind -ceq 'extra'){$badExpected.native_contract['fake_extra']='1'}
+    elseif($kind -ceq 'wrong-type'){$badExpected.native_contract['ground_cover_instances']=3600}
+    else{$badExpected.fallen_pose_words['prop_0']='0,'}
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $scanned -WorldProfile forest-wood -FallenLogProfile scanned-straight-v1 -IndependentExpected $badExpected}catch{$failed=$true}
+    if(-not $failed){throw ('Malformed independent CPU contract accepted: '+$kind)}
+    ++$scannedRejected
+}
+foreach($scene in @('initial','river-overlook')){
+    $fixed=$scanned.Clone()
+    $count=if($scene -ceq 'initial'){198}else{227}
+    $triangles=if($scene -ceq 'initial'){317224}else{359632}
+    $fixed.submitted_original_ferns=[string]$count;$fixed.submitted_original_fern_triangles=[string]$triangles
+    $fixed.submitted_original_fern_variants=if($scene -ceq 'initial'){'50,55,47,46'}else{'65,52,62,48'}
+    $fixed.submitted_ferns=[string]($count+[long]$fixed.submitted_colony_ferns)
+    $fixed.submitted_fern_triangles=[string]($triangles+[long]$fixed.submitted_colony_fern_triangles)
+    Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-wood -Scene $scene -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected
+    $fixed.submitted_original_fern_variants=if($scene -ceq 'initial'){'46,59,30,63'}else{'61,56,45,65'}
+    $failed=$false
+    try{Assert-MistwatchForestCoverReceipt $fixed -WorldProfile forest-wood -Scene $scene -FallenLogProfile scanned-straight-v1 -IndependentExpected $scannedExpected}catch{$failed=$_.Exception.Message -ceq 'Original fern fixed-scene variant identity changed'}
+    if(-not $failed){throw ('Scanned fixed-scene equal count/triangle alias accepted: '+$scene)}
+    ++$scannedRejected
+}
+'SCANNED_FALLEN_NATIVE70_RECEIPT_PASS; POSITIVE=4; REJECTED='+$scannedRejected
+$fallenParameter=@($validator.ParamBlock.Parameters|Where-Object{$_.Name.VariablePath.UserPath -ceq 'FallenLogProfile'})
+if($fallenParameter.Count -ne 1 -or $fallenParameter[0].DefaultValue.Value -cne 'scanned-straight-v1'){throw 'Native validator default lost scanned production profile'}
+$fallenAttribute=@($fallenParameter[0].Attributes|Where-Object{$_.TypeName.Name -ceq 'ValidateSet'})
+if((@($fallenAttribute[0].PositionalArguments|ForEach-Object{$_.Value})-join ',') -cne 'legacy-cylinder,scanned-straight-v1'){throw 'Native validator lost explicit legacy fallen comparison'}
+'NATIVE_FALLEN_PARAMETER_CONTRACT_PASS; DEFAULT=scanned-straight-v1; PROFILES=2'
+
+# JSON 的整數寬度不能造成假失敗，也不能接受經隱式轉換的錯誤型別。
+$toolchainValid=@{msc_full_ver=[int]194435228;cplusplus=[int]202002;
+    configuration='Release-x64-C++20-/W4-/WX-/MP1-/fp:strict-MultiThreadedDLL';abi='formal-AevryndEngine'}
+Assert-MistwatchFallenToolchain $toolchainValid
+$toolchainLong=$toolchainValid.Clone()
+$toolchainLong.msc_full_ver=[long]194435228;$toolchainLong.cplusplus=[long]202002
+Assert-MistwatchFallenToolchain $toolchainLong
+$toolchainJson=($toolchainValid|ConvertTo-Json -Compress)|ConvertFrom-Json -AsHashtable
+if($toolchainJson.msc_full_ver -isnot [long] -or $toolchainJson.cplusplus -isnot [long]){throw 'Actual JSON integer representation changed'}
+Assert-MistwatchFallenToolchain $toolchainJson
+$toolchainRejected=0
+function Assert-ToolchainRejected($Value,[string]$Case) {
+    $failed=$false
+    try{Assert-MistwatchFallenToolchain $Value}catch{$failed=$true}
+    if(-not $failed){throw ('Invalid formal toolchain accepted: '+$Case)}
+    ++$script:toolchainRejected
+}
+foreach($field in @($toolchainValid.Keys)){
+    $bad=$toolchainValid.Clone();$bad.Remove($field);Assert-ToolchainRejected $bad ('missing '+$field)
+    $bad=$toolchainValid.Clone();$bad[$field]=$null;Assert-ToolchainRejected $bad ('null '+$field)
+}
+foreach($value in @('194435228',[double]194435228,$true,$false,[int]0,[int]-1,[int]189999999,[long]2147483648)){
+    $bad=$toolchainValid.Clone();$bad.msc_full_ver=$value;Assert-ToolchainRejected $bad ('compiler type/value '+[string]$value)
+}
+foreach($value in @('202002',[double]202002,$true,$false,[int]201703,[int]0)){
+    $bad=$toolchainValid.Clone();$bad.cplusplus=$value;Assert-ToolchainRejected $bad ('language type/value '+[string]$value)
+}
+foreach($value in @('private-borrowed-engine','formal-aevryndengine','')){
+    $bad=$toolchainValid.Clone();$bad.abi=$value;Assert-ToolchainRejected $bad ('ABI '+$value)
+}
+foreach($value in @('Debug-x64-C++20-/W4-/WX-/MP1-/fp:strict-MultiThreadedDLL',
+    'Release-x64-C++20-/W4-/WX-/MP1-/fp:fast-MultiThreadedDLL',
+    'Release-x64-C++20-/W4-/MP1-/fp:strict-MultiThreadedDLL',
+    'Release-x64-C++20-/W4-/WX-/MP1-/fp:strict-MultiThreaded')){
+    $bad=$toolchainValid.Clone();$bad.configuration=$value;Assert-ToolchainRejected $bad ('configuration '+$value)
+}
+$bad=$toolchainValid.Clone();$bad.extra='unexpected';Assert-ToolchainRejected $bad 'extra key'
+'FORMAL_TOOLCHAIN_JSON_RECEIPT_PASS; POSITIVE=3; REJECTED='+$toolchainRejected

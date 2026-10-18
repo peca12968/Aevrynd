@@ -29,9 +29,13 @@ if(WIN32)
       -Executable "$<TARGET_FILE:EngineLab>" -SourceRoot "${CMAKE_SOURCE_DIR}" -Mode gbv -CascadeCount 4)
   set_tests_properties(EngineLabShadowCaptureNormalSmoke EngineLabShadowCaptureFallbackSmoke EngineLabShadowCaptureGbvSmoke PROPERTIES TIMEOUT 420 RUN_SERIAL TRUE)
 endif()
+if(TARGET AevryndReleaseGateAssets)
+  add_dependencies(EngineLab AevryndReleaseGateAssets)
+else()
 add_custom_command(TARGET EngineLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:EngineLab>/assets"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_CURRENT_SOURCE_DIR}/../assets/engine_probe.obj"
     "$<TARGET_FILE_DIR:EngineLab>/assets/engine_probe.obj")
+endif()
 aevrynd_package_streamline_runtime(EngineLab)

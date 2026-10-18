@@ -6,7 +6,58 @@ engine/assets/realistic-cc0-first-batch/tree-small-02/*.gltf text eol=lf
 engine/assets/realistic-cc0-first-batch/tree-small-02/*.json text eol=lf
 
 # 原始下載依位元組封印；不可由 Windows checkout 轉換換行，產生的 JSON 收據使用 LF。
-engine/assets/mistwatch-fern-02/source/** -text
+engine/assets/mistwatch-fern-02/source/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 engine/assets/mistwatch-fern-02/*.json text eol=lf
-engine/assets/mistwatch-grass-medium-02/source/** -text
+engine/assets/mistwatch-grass-medium-02/source/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 engine/assets/mistwatch-grass-medium-02/*.json text eol=lf
+
+# 新增的封印契約與固定答案依原始位元組比對，保留各檔原有換行。
+# 不套用到一般原始碼或既有資產，避免改寫歷史雜湊。
+# 封印檔的 CRLF 不改位元組；仍檢查行尾空白、檔尾空行與空白後接 tab，只將 CR 視為合法行尾。
+games/mistwatch/native/tests/qualification/runtime-current-forest-full-v5.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/tests/qualification/runtime-forest-surface-full-v4.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/tests/qualification/runtime-leaf-cluster-full-v3.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/tests/qualification/runtime-profiles-v1.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/tests/fixtures/dynamic-contact/original-empty36.golden -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/tests/fixtures/dynamic-contact/original-pair1440.golden -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/tests/fixtures/dynamic-contact/original-vertical1536.golden -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# 保留封印複製中繼資料與產生器的精確位元組，包括既有 CRLF。
+engine/assets/material-packs/LICENSE.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/material-packs/material-packs.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/material-packs/poly-haven/forest_leaves_04/DERIVATION.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/material-packs/poly-haven/forest_leaves_04/LICENSE.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-fallen-logs/LICENSE.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-fallen-logs/fallen-log-package-manifest.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-fern-02/LICENSE.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-fern-02/download-receipt.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-fern-02/material-bake-receipt.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-grass-medium-02/LICENSE.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-grass-medium-02/download-receipt.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-nettle-plant/LICENSE.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-surface-height/LICENSE.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/mistwatch-surface-height/manifest.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/model-packs/LICENSE.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/model-packs/model-packs.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/model-packs/poly-haven/quiver_tree_02/source/quiver_tree_02_1k.gltf -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/model-packs/poly-haven/rock_09/source/rock_09_1k.gltf -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/realistic-cc0-first-batch/LICENSE.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/realistic-cc0-first-batch/boulder-01/boulder-01-lod-receipt.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/assets/realistic-cc0-first-batch/runtime-asset-manifest.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/include/Aevrynd/Math.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/include/Aevrynd/SkinnedModel3D.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/include/Aevrynd/SkinnedModelAsset.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/src/SkinnedModelAsset.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/material-packs/original/LICENSE.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/material-packs/original/README.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/material-packs/original/female.materials.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/material-packs/original/male.materials.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/material-packs/original/manifest.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/model-packs/CC0-HUMAN-BASE-MESHES.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/character_lab/assets/model-packs/realistic-female/source/realistic-female.gltf -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/engine_lab/assets/engine_probe.obj -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/ROOT_DERIVATION.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/assets/leaf-clusters/PROVENANCE.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/include/MistwatchBoar.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/native/tools/export_boar.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/tools/author_root_stem.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

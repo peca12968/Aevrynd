@@ -187,39 +187,182 @@ size_t Engine::TrimUnusedMemory(){for(auto iterator=meshCpuCache_.begin();iterat
 
 int Engine::Run(std::unique_ptr<IGame> game,HINSTANCE instance,int showCommand){
     std::filesystem::path diagnosticPath;std::array<wchar_t,32768> diagnosticBuffer{};const DWORD diagnosticLength=GetEnvironmentVariableW(L"AEVRYND_FATAL_DIAGNOSTIC_PATH",diagnosticBuffer.data(),DWORD(diagnosticBuffer.size()));if(diagnosticLength&&diagnosticLength<diagnosticBuffer.size())diagnosticPath=std::wstring_view(diagnosticBuffer.data(),diagnosticLength);
+    const auto diagnosticStart=std::chrono::steady_clock::now();
     const auto phase=[&](const char* value){if(diagnosticPath.empty())return;std::ofstream output(diagnosticPath,std::ios::app);output<<value<<'\n';output.flush();};
-    bool gameStarted=false,gameStopped=false,audioStarted=false,firstUpdate=true,firstRender=true;
+    // 僅明確啟用診斷時，有限度記錄真正提交進度；不改畫面、更新時鐘或擷取期限。
+    unsigned diagnosticFrames=0,diagnosticMinimizedEvents=0,diagnosticUpdates=0;
+    bool diagnosticWasMinimized=false,diagnosticHeaderWritten=false;
+    uint64_t diagnosticUpdateNanoseconds=0,diagnosticGameNanoseconds=0,diagnosticRendererNanoseconds=0;
+    const auto diagnosticProgress=[&](const char* stage){
+        if(diagnosticPath.empty())return;
+        auto path=diagnosticPath;path+=L".progress.tsv";
+        const auto stats=renderer_->GetStats();
+        std::ofstream output(path,std::ios::app);
+        if(!diagnosticHeaderWritten){output<<"stage\telapsed_seconds\tloop_frame\tsubmitted\tgpu_serial\tgpu_nanoseconds\tcaptures\trejected\tminimized\tpresent_cpu_ns\tfence_cpu_ns\tpreparation_cpu_ns\tcommand_cpu_ns\tqueue_cpu_ns\tvisible\ticonic\tforeground\tupdates_count\tupdate_loop_ns\tgame_render_ns\trenderer_ns\n";diagnosticHeaderWritten=true;}
+        output<<stage<<'\t'<<std::chrono::duration<double>(std::chrono::steady_clock::now()-diagnosticStart).count()
+            <<'\t'<<diagnosticFrames<<'\t'<<stats.submittedFrames<<'\t'<<stats.lastCompletedGpuTimingReceipt.serial
+            <<'\t'<<stats.lastCompletedGpuTimingReceipt.nanoseconds<<'\t'<<stats.successfulFrameCaptures
+            <<'\t'<<stats.rejectedFrameCaptures<<'\t'<<minimized_
+            <<'\t'<<stats.lastRenderPresentCpuNanoseconds<<'\t'<<stats.lastRenderFenceWaitCpuNanoseconds
+            <<'\t'<<stats.lastRenderPreparationCpuNanoseconds<<'\t'<<stats.lastRenderCommandRecordingCpuNanoseconds
+            <<'\t'<<stats.lastRenderQueueExecuteCpuNanoseconds<<'\t'<<bool(IsWindowVisible(hwnd_))
+            <<'\t'<<bool(IsIconic(hwnd_))<<'\t'<<(GetForegroundWindow()==hwnd_)<<'\t'<<diagnosticUpdates
+            <<'\t'<<diagnosticUpdateNanoseconds<<'\t'<<diagnosticGameNanoseconds<<'\t'<<diagnosticRendererNanoseconds<<'\n';
+    };
+    bool gameStarted=false,gameStopped=false,gameStopAttempted=false,audioStarted=false,firstUpdate=true,firstRender=true;
     game_=std::move(game);SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     try{
+    if(config_.windowMode!=EngineWindowMode3D::LauncherDefault&&config_.windowMode!=EngineWindowMode3D::OffscreenNoActivateDiagnostic)
+        throw std::runtime_error("Invalid engine window mode");
+    const bool offscreen=config_.windowMode==EngineWindowMode3D::OffscreenNoActivateDiagnostic;
+    if(config_.enableUnsynchronizedDiagnosticPresent&&(!offscreen||!config_.enableFrameCostProbe))
+        throw std::runtime_error("Unsynchronized present requires measured diagnostic window");
+    STARTUPINFOW startup{};GetStartupInfoW(&startup);
+    const bool hiddenStartup=DiagnosticWindow3D::HiddenStartup(showCommand,startup.dwFlags,startup.wShowWindow);
+    if(offscreen&&!hiddenStartup)throw std::runtime_error("Diagnostic window requires hidden launcher");
     WNDCLASSEXW wc{sizeof(wc)};wc.style=CS_HREDRAW|CS_VREDRAW;wc.lpfnWndProc=WindowProc;wc.hInstance=instance;wc.hCursor=LoadCursor(nullptr,IDC_ARROW);wc.hbrBackground=nullptr;wc.lpszClassName=L"AevryndEngineWindow";
     if(!RegisterClassExW(&wc)&&GetLastError()!=ERROR_CLASS_ALREADY_EXISTS)throw std::runtime_error("RegisterClass failed");
-    RECT workArea{};SystemParametersInfoW(SPI_GETWORKAREA,0,&workArea,0);const LONG workWidth=workArea.right-workArea.left,workHeight=workArea.bottom-workArea.top;
-    const float fit=(std::min)({1.f,float((std::max)(320L,workWidth-48))/config_.width,float((std::max)(180L,workHeight-72))/config_.height});
-    const LONG desiredWidth=LONG(std::lround(config_.width*fit)),desiredHeight=LONG(std::lround(config_.height*fit));
-    RECT rect{0,0,desiredWidth,desiredHeight};DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|(config_.resizable?WS_THICKFRAME|WS_MAXIMIZEBOX:0);AdjustWindowRectEx(&rect,style,FALSE,0);
-    const LONG windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,x=workArea.left+(workWidth-windowWidth)/2,y=workArea.top+(workHeight-windowHeight)/2;
-    hwnd_=CreateWindowExW(0,wc.lpszClassName,config_.title.c_str(),style,x,y,windowWidth,windowHeight,nullptr,nullptr,instance,this);
-    if(!hwnd_)throw std::runtime_error("CreateWindow failed");ShowWindow(hwnd_,showCommand);UpdateWindow(hwnd_);RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)),config_.width,config_.height,config_.enableDLSS);SetRenderQuality(requestedRenderQuality_);audio_.Initialize();audioStarted=true;processMemoryStats_=QueryProcessMemoryStats();phase("OnStartBefore");game_->OnStart(*this);gameStarted=true;phase("OnStartAfter");
+    RECT workArea{};if(!SystemParametersInfoW(SPI_GETWORKAREA,0,&workArea,0))throw std::runtime_error("Window work area unavailable");
+    const LONG workWidth=DiagnosticWindow3D::Coordinate(std::int64_t(workArea.right)-workArea.left),
+        workHeight=DiagnosticWindow3D::Coordinate(std::int64_t(workArea.bottom)-workArea.top);
+    // 明確隱藏啟動保留要求的像素；一般可見視窗仍使用原工作區縮放政策。
+    const auto desired=DiagnosticWindow3D::InitialClientSize(config_.width,config_.height,workArea,
+        showCommand,startup.dwFlags,startup.wShowWindow);
+    const LONG desiredWidth=desired.cx,desiredHeight=desired.cy;
+    const DWORD extendedStyle=offscreen?WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW:0;
+    RECT rect{0,0,desiredWidth,desiredHeight};DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX|(config_.resizable?WS_THICKFRAME|WS_MAXIMIZEBOX:0);
+    if(!AdjustWindowRectEx(&rect,style,FALSE,extendedStyle))throw std::runtime_error("Window frame calculation failed");
+    const LONG windowWidth=DiagnosticWindow3D::Coordinate(std::int64_t(rect.right)-rect.left),
+        windowHeight=DiagnosticWindow3D::Coordinate(std::int64_t(rect.bottom)-rect.top);
+    if(windowWidth<=0||windowHeight<=0)throw std::runtime_error("Invalid window frame extent");
+    LONG x=DiagnosticWindow3D::Coordinate(std::int64_t(workArea.left)+(std::int64_t(workWidth)-windowWidth)/2),
+        y=DiagnosticWindow3D::Coordinate(std::int64_t(workArea.top)+(std::int64_t(workHeight)-windowHeight)/2);
+    if(offscreen){const auto placement=DiagnosticWindow3D::Placement(DiagnosticWindow3D::VirtualDesktop(),windowWidth,windowHeight);x=placement.left;y=placement.top;}
+    (void)DiagnosticWindow3D::Coordinate(std::int64_t(x)+windowWidth);
+    (void)DiagnosticWindow3D::Coordinate(std::int64_t(y)+windowHeight);
+    hwnd_=CreateWindowExW(extendedStyle,wc.lpszClassName,config_.title.c_str(),style,x,y,windowWidth,windowHeight,nullptr,nullptr,instance,this);
+    if(!hwnd_)throw std::runtime_error("CreateWindow failed");
+    // 非客戶區尺寸可能受 DPI 影響，只在仍隱藏且 renderer 未初始化時補差一次。
+    if(hiddenStartup)DiagnosticWindow3D::RequireHiddenClientSize(hwnd_,desiredWidth,desiredHeight);
+    const auto verifyHiddenClient=[&]{
+        if(!hiddenStartup||offscreen)return;
+        if(!DiagnosticWindow3D::HiddenClientValid(hwnd_,desiredWidth,desiredHeight))
+            throw std::runtime_error("Hidden explicit client window contract changed");
+    };
+    // 第一次 ShowWindow 可能服從啟動器的 SW_HIDE；第二次明確顯示但不得取得焦點。
+    ShowWindow(hwnd_,showCommand);
+    if(offscreen){ShowWindow(hwnd_,SW_SHOWNOACTIVATE);DiagnosticWindow3D::RequireValid(hwnd_,desiredWidth,desiredHeight);}
+    verifyHiddenClient();
+    UpdateWindow(hwnd_);RECT client{};GetClientRect(hwnd_,&client);renderer_->Initialize(hwnd_,unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)),config_.width,config_.height,config_.enableDLSS);SetRenderQuality(requestedRenderQuality_);audio_.Initialize();audioStarted=true;processMemoryStats_=QueryProcessMemoryStats();phase("OnStartBefore");diagnosticProgress("OnStartBefore");game_->OnStart(*this);gameStarted=true;phase("OnStartAfter");diagnosticProgress("OnStartAfter");
     using Clock=std::chrono::steady_clock;auto last=Clock::now();double accumulator=0.0;MSG msg{};int exitCode{};
     while(running_){
         input_.BeginFrame();
         input_.PollGamepad();
         while(PeekMessageW(&msg,nullptr,0,0,PM_REMOVE)){if(msg.message==WM_QUIT){exitCode=int(msg.wParam);running_=false;break;}TranslateMessage(&msg);DispatchMessageW(&msg);}if(!running_)break;
+        if(offscreen){if(diagnosticWindowInvalid_)throw std::runtime_error("Diagnostic display topology changed");DiagnosticWindow3D::RequireValid(hwnd_,desiredWidth,desiredHeight);}
         // 最小化時停止提交畫面，並只在進入背景時修剪一次暫存容量。
-        if(minimized_){if(trimPending_){TrimUnusedMemory();trimPending_=false;}audio_.Update();input_.ConsumePresses(true);accumulator=0;Sleep(50);last=Clock::now();continue;}
+        if(minimized_){if(!diagnosticPath.empty()&&!diagnosticWasMinimized&&diagnosticMinimizedEvents<16){diagnosticProgress("Minimized");++diagnosticMinimizedEvents;}diagnosticWasMinimized=true;if(trimPending_){TrimUnusedMemory();trimPending_=false;}audio_.Update();input_.ConsumePresses(true);accumulator=0;Sleep(50);last=Clock::now();continue;}
+        diagnosticWasMinimized=false;
         auto now=Clock::now();double frame=std::chrono::duration<double>(now-last).count();last=now;if(frame>.25)frame=.25;accumulator+=frame;int updates=0;
+        const bool diagnosticFrame=!diagnosticPath.empty()&&diagnosticFrames<512&&diagnosticFrames%16==0;
+        const bool measureFrame=config_.enableFrameCostProbe;
+        const bool timeFrame=measureFrame||diagnosticFrame;
+        if(diagnosticFrame){diagnosticUpdates=0;diagnosticUpdateNanoseconds=diagnosticGameNanoseconds=diagnosticRendererNanoseconds=0;diagnosticProgress("UpdatesBefore");}
+        const auto costStart=timeFrame?Clock::now():Clock::time_point{};
         while(accumulator>=config_.fixedStep&&updates<5){if(firstUpdate)phase("FirstOnUpdateBefore");game_->OnUpdate(*this,config_.fixedStep);if(firstUpdate){phase("FirstOnUpdateAfter");firstUpdate=false;}input_.ConsumePresses();time_+=config_.fixedStep;accumulator-=config_.fixedStep;updates++;}
-        if(updates==5)accumulator=0;audio_.Update();draw_.Clear();draw_.SetClipRect({0,0},{float(config_.width),float(config_.height)});if(firstRender)phase("FirstOnRenderBefore");game_->OnRender(*this,float(accumulator/config_.fixedStep));if(firstRender)phase("FirstOnRenderAfter");if(firstRender)phase("FirstRendererRenderBefore");renderer_->Render(draw_,clearColor_);RefreshDevelopmentUltraGpuTruth();if(firstRender){phase("FirstRendererRenderAfter");if(!diagnosticPath.empty())phase("CaptureCallback");firstRender=false;}if(lastMemorySampleTime_<0||time_-lastMemorySampleTime_>=.5f){processMemoryStats_=QueryProcessMemoryStats();lastMemorySampleTime_=time_;const TransientMemoryStats drawMemory=draw_.MemoryStats(),rendererMemory=renderer_->MemoryStats();const ReusableMemoryStats audioMemory=audio_.MemoryStats(),gameMemory=game_->GetReusableMemoryStats();const RendererStats rendererStats=renderer_->GetStats();const size_t reclaimable=drawMemory.reclaimableCapacityBytes+rendererMemory.reclaimableCapacityBytes+audioMemory.reclaimableCapacityBytes+gameMemory.reclaimableCapacityBytes;const bool disposableGpuResources=rendererStats.idleMeshUploadContexts||rendererStats.idleMaterialTextureUploadContexts;const MemoryPressurePolicy policy{config_.memoryPressureThresholdPercent,config_.minimumAutomaticMemoryReclaimBytes,config_.memoryTrimCooldownSeconds};const float secondsSinceAutomaticTrim=automaticTrimmed_?time_-lastAutomaticTrimTime_:config_.memoryTrimCooldownSeconds;if(config_.enableAutomaticMemoryTrim&&ShouldTrimMemory(processMemoryStats_,reclaimable,secondsSinceAutomaticTrim,policy,disposableGpuResources)){TrimUnusedMemory();lastAutomaticTrimTime_=time_;automaticTrimmed_=true;++automaticTrimCount_;}}
+        const auto updatesEnd=timeFrame?Clock::now():Clock::time_point{};
+        if(diagnosticFrame){diagnosticUpdates=unsigned(updates);diagnosticUpdateNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(updatesEnd-costStart).count());diagnosticProgress("UpdatesAfter");}
+        if(updates==5)accumulator=0;
+        audio_.Update();draw_.Clear();draw_.SetClipRect({0,0},{float(config_.width),float(config_.height)});
+        if(firstRender)phase("FirstOnRenderBefore");
+        if(!diagnosticPath.empty()&&diagnosticFrames<512&&diagnosticFrames%16==0)diagnosticProgress("GameRenderBefore");
+        const auto gameRenderBegin=timeFrame?Clock::now():Clock::time_point{};
+        if(offscreen){if(diagnosticWindowInvalid_)throw std::runtime_error("Diagnostic display topology changed");DiagnosticWindow3D::RequireValid(hwnd_,desiredWidth,desiredHeight);}
+        game_->OnRender(*this,float(accumulator/config_.fixedStep));
+        if(offscreen)DiagnosticWindow3D::RequireValid(hwnd_,desiredWidth,desiredHeight);
+        const auto gameRenderEnd=timeFrame?Clock::now():Clock::time_point{};
+        if(diagnosticFrame){diagnosticGameNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(gameRenderEnd-gameRenderBegin).count());diagnosticProgress("GameRenderAfter");}
+        if(firstRender)phase("FirstOnRenderAfter");if(firstRender)phase("FirstRendererRenderBefore");
+        draw_.SetPresentObservationEnabled3D(measureFrame);
+        if(!draw_.SetUnsynchronizedDiagnosticPresent3D(config_.enableUnsynchronizedDiagnosticPresent))
+            throw std::runtime_error("Diagnostic present observation missing");
+        const auto diagnosticRendererBegin=diagnosticFrame?Clock::now():Clock::time_point{};
+        renderer_->Render(draw_,clearColor_);
+        if(offscreen)DiagnosticWindow3D::RequireValid(hwnd_,desiredWidth,desiredHeight);
+        const auto rendererEnd=timeFrame?Clock::now():Clock::time_point{};
+        if(diagnosticFrame){diagnosticRendererNanoseconds=uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(rendererEnd-diagnosticRendererBegin).count());diagnosticProgress("RendererAfter");}
+        RefreshDevelopmentUltraGpuTruth();if(firstRender){phase("FirstRendererRenderAfter");if(!diagnosticPath.empty())phase("CaptureCallback");firstRender=false;}
+        if(!diagnosticPath.empty()&&diagnosticFrames<512){++diagnosticFrames;if(diagnosticFrames==1||diagnosticFrames%16==0)diagnosticProgress("RenderProgress");}
+if(lastMemorySampleTime_<0||time_-lastMemorySampleTime_>=.5f){processMemoryStats_=QueryProcessMemoryStats();lastMemorySampleTime_=time_;const TransientMemoryStats drawMemory=draw_.MemoryStats(),rendererMemory=renderer_->MemoryStats();const ReusableMemoryStats audioMemory=audio_.MemoryStats(),gameMemory=game_->GetReusableMemoryStats();const RendererStats rendererStats=renderer_->GetStats();const size_t reclaimable=drawMemory.reclaimableCapacityBytes+rendererMemory.reclaimableCapacityBytes+audioMemory.reclaimableCapacityBytes+gameMemory.reclaimableCapacityBytes;const bool disposableGpuResources=rendererStats.idleMeshUploadContexts||rendererStats.idleMaterialTextureUploadContexts;const MemoryPressurePolicy policy{config_.memoryPressureThresholdPercent,config_.minimumAutomaticMemoryReclaimBytes,config_.memoryTrimCooldownSeconds};const float secondsSinceAutomaticTrim=automaticTrimmed_?time_-lastAutomaticTrimTime_:config_.memoryTrimCooldownSeconds;if(config_.enableAutomaticMemoryTrim&&ShouldTrimMemory(processMemoryStats_,reclaimable,secondsSinceAutomaticTrim,policy,disposableGpuResources)){TrimUnusedMemory();lastAutomaticTrimTime_=time_;automaticTrimmed_=true;++automaticTrimCount_;}}
+        if(measureFrame){
+            const auto workEnd=Clock::now();
+            const auto ns=[](auto begin,auto end){return std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(end-begin).count());};
+            frameCostProbe_={frameCostProbe_.serial+1,std::uint64_t(updates),ns(costStart,updatesEnd),ns(updatesEnd,gameRenderBegin),
+                ns(gameRenderBegin,gameRenderEnd),ns(gameRenderEnd,rendererEnd),ns(rendererEnd,workEnd),ns(costStart,workEnd),true};
+        }
     }
-    game_->OnStop(*this);gameStopped=true;game_.reset();audio_.Shutdown();audioStarted=false;return exitCode;
-    }catch(...){phase("EngineCatch");if(game_&&gameStarted&&!gameStopped){try{game_->OnStop(*this);gameStopped=true;phase("OnStopAfterCatch");}catch(...){phase("OnStopCatch");}}game_.reset();if(audioStarted){audio_.Shutdown();audioStarted=false;}throw;}
+    gameStopAttempted=true;game_->OnStop(*this);gameStopped=true;game_.reset();audio_.Shutdown();audioStarted=false;return exitCode;
+    }catch(...){phase("EngineCatch");if(game_&&gameStarted&&!gameStopped&&!gameStopAttempted){gameStopAttempted=true;try{game_->OnStop(*this);gameStopped=true;phase("OnStopAfterCatch");}catch(...){phase("OnStopCatch");}}game_.reset();if(audioStarted){audio_.Shutdown();audioStarted=false;}throw;}
 }
 
 LRESULT CALLBACK Engine::WindowProc(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){Engine* self=reinterpret_cast<Engine*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));if(message==WM_NCCREATE){auto cs=reinterpret_cast<CREATESTRUCTW*>(lParam);self=static_cast<Engine*>(cs->lpCreateParams);SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));self->hwnd_=hwnd;}
+    if(self&&self->config_.windowMode==EngineWindowMode3D::OffscreenNoActivateDiagnostic&&
+        (message==WM_DPICHANGED||message==WM_DISPLAYCHANGE)){
+        self->diagnosticWindowInvalid_=true;ShowWindow(hwnd,SW_HIDE);return 0;
+    }
     if(self&&(message==WM_SETFOCUS||message==WM_KILLFOCUS)){
         self->input_.SetFocused(message==WM_SETFOCUS);
         if(message==WM_KILLFOCUS&&GetCapture()==hwnd)ReleaseCapture();
     }
     if(self&&message==WM_RBUTTONDOWN){self->input_.SetRightMouseButton(true);return 0;}if(self&&message==WM_RBUTTONUP){self->input_.SetRightMouseButton(false);return 0;}return self?self->HandleMessage(message,wParam,lParam):DefWindowProcW(hwnd,message,wParam,lParam);}
-LRESULT Engine::HandleMessage(UINT message,WPARAM wParam,LPARAM lParam){switch(message){case WM_CLOSE:running_=false;DestroyWindow(hwnd_);return 0;case WM_DESTROY:PostQuitMessage(0);return 0;case WM_SIZE:if(wParam==SIZE_MINIMIZED){minimized_=true;trimPending_=true;}else{minimized_=false;if(!resizing_)renderer_->Resize(unsigned(LOWORD(lParam)),unsigned(HIWORD(lParam)));}return 0;case WM_ENTERSIZEMOVE:resizing_=true;return 0;case WM_EXITSIZEMOVE:{resizing_=false;RECT client{};GetClientRect(hwnd_,&client);renderer_->Resize(unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)));return 0;}case WM_DPICHANGED:{const RECT* suggested=reinterpret_cast<const RECT*>(lParam);SetWindowPos(hwnd_,nullptr,suggested->left,suggested->top,suggested->right-suggested->left,suggested->bottom-suggested->top,SWP_NOACTIVATE|SWP_NOZORDER);return 0;}case WM_GETMINMAXINFO:{auto info=reinterpret_cast<MINMAXINFO*>(lParam);info->ptMinTrackSize={400,260};return 0;}case WM_KEYDOWN:case WM_SYSKEYDOWN:input_.SetKey(unsigned(wParam),true);return 0;case WM_KEYUP:case WM_SYSKEYUP:input_.SetKey(unsigned(wParam),false);return 0;case WM_MOUSEMOVE:{RECT client{};GetClientRect(hwnd_,&client);const Vec2 output{float((std::max)(1L,client.right-client.left)),float((std::max)(1L,client.bottom-client.top))},point{float(GET_X_LPARAM(lParam)),float(GET_Y_LPARAM(lParam))};const CanvasViewport viewport=CalculateCanvasViewport({float(config_.width),float(config_.height)},output);input_.SetMouse(MapClientToCanvas(point,viewport),viewport.Contains(point));return 0;}case WM_MOUSEWHEEL:input_.AddMouseWheel(float(GET_WHEEL_DELTA_WPARAM(wParam))/float(WHEEL_DELTA));return 0;case WM_LBUTTONDOWN:if(input_.MouseInsideCanvas()){SetCapture(hwnd_);input_.SetMouseButton(true);}return 0;case WM_LBUTTONUP:ReleaseCapture();input_.SetMouseButton(false);return 0;}return DefWindowProcW(hwnd_,message,wParam,lParam);}
+LRESULT Engine::HandleMessage(UINT message,WPARAM wParam,LPARAM lParam){
+    const auto mouseEvent=[&](bool button,bool down=false){
+        RECT client{};GetClientRect(hwnd_,&client);
+        const Vec2 output{float((std::max)(1L,client.right-client.left)),float((std::max)(1L,client.bottom-client.top))},
+            point{float(GET_X_LPARAM(lParam)),float(GET_Y_LPARAM(lParam))};
+        const CanvasViewport viewport=CalculateCanvasViewport({float(config_.width),float(config_.height)},output);
+        const Vec2 mapped=MapClientToCanvas(point,viewport);const bool inside=viewport.Contains(point);
+        // 移動、按下與放開使用相同座標映射，不再沿用前一則移動訊息的位置。
+        if(button)input_.SetMouseButtonAt(mapped,down,inside);else input_.SetMouse(mapped,inside);
+    };
+    switch(message){
+    case WM_CLOSE:running_=false;DestroyWindow(hwnd_);return 0;
+    case WM_DESTROY:PostQuitMessage(0);return 0;
+    case WM_SIZE:
+        if(wParam==SIZE_MINIMIZED){minimized_=true;trimPending_=true;}
+        else{minimized_=false;if(!resizing_)renderer_->Resize(unsigned(LOWORD(lParam)),unsigned(HIWORD(lParam)));}
+        return 0;
+    case WM_ENTERSIZEMOVE:resizing_=true;return 0;
+    case WM_EXITSIZEMOVE:{resizing_=false;RECT client{};GetClientRect(hwnd_,&client);
+        renderer_->Resize(unsigned((std::max)(1L,client.right-client.left)),unsigned((std::max)(1L,client.bottom-client.top)));return 0;}
+    case WM_DPICHANGED:{const RECT* suggested=reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd_,nullptr,suggested->left,suggested->top,suggested->right-suggested->left,suggested->bottom-suggested->top,SWP_NOACTIVATE|SWP_NOZORDER);return 0;}
+    case WM_GETMINMAXINFO:{auto info=reinterpret_cast<MINMAXINFO*>(lParam);info->ptMinTrackSize={400,260};return 0;}
+    case WM_KEYDOWN:case WM_SYSKEYDOWN:input_.SetKey(unsigned(wParam),true);return 0;
+    case WM_KEYUP:case WM_SYSKEYUP:input_.SetKey(unsigned(wParam),false);return 0;
+    case WM_MOUSEMOVE:mouseEvent(false);return 0;
+    case WM_MOUSEWHEEL:{
+        POINT point{GET_X_LPARAM(lParam),GET_Y_LPARAM(lParam)};RECT client{};
+        // 滾輪座標是有號螢幕座標；只用本事件轉換後的位置，不改滑鼠錨點或讀舊 inside 狀態。
+        if(!ScreenToClient(hwnd_,&point)||!GetClientRect(hwnd_,&client))return 0;
+        const LONG width=client.right-client.left,height=client.bottom-client.top;
+        if(width<=0||height<=0)return 0;
+        const auto viewport=CalculateCanvasViewport({float(config_.width),float(config_.height)},{float(width),float(height)});
+        if(viewport.Contains({float(point.x),float(point.y)}))
+            input_.AddMouseWheel(float(GET_WHEEL_DELTA_WPARAM(wParam))/float(WHEEL_DELTA));
+        return 0;
+    }
+    case WM_LBUTTONDOWN:mouseEvent(true,true);if(input_.Focused()&&input_.MouseInsideCanvas())SetCapture(hwnd_);return 0;
+    case WM_LBUTTONUP:mouseEvent(true,false);if(GetCapture()==hwnd_)ReleaseCapture();return 0;
+    case WM_CAPTURECHANGED:
+        // 擷取已轉給別人，不能再 ReleaseCapture；正常 Up 後的末段拖曳由 no-op 保留。
+        if(reinterpret_cast<HWND>(lParam)!=hwnd_)input_.CancelLeftMouseDrag();
+        return 0;
+    case WM_CANCELMODE:
+        input_.CancelLeftMouseDrag();
+        if(GetCapture()==hwnd_)ReleaseCapture();
+        return 0;
+    }
+    return DefWindowProcW(hwnd_,message,wParam,lParam);
+}
 }

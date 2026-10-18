@@ -1,0 +1,12 @@
+{
+"schema_version":1,
+"scope":"runtime-and-surface-only; current_geometry_qualified=false",
+"profile":"authored-forest-surface-full-v4",
+"parent":"authored-leaf-cluster-full-v3",
+"parent_manifest_sha256":"DE5E956E5191F620301D8088471C5FCF4BCADF3071BA51AA808EA6832C49AC4A",
+"count":418,
+"additions":[
+["mistwatch-materials/moss-height/Ground037_SurfaceOrmHeight_Level0.png","engine/assets/mistwatch-surface-height/moss-height/Ground037_SurfaceOrmHeight_Level0.png",128,"copy",1531546,"012D2378AA6E62CCA05AD66D69B512966D5894694B7B24D39AFD0CA7CA655F38"],
+["mistwatch-materials/leaf-height/ForestLeaves04_SurfaceOrmHeight_Level0.png","engine/assets/mistwatch-surface-height/leaf-height/ForestLeaves04_SurfaceOrmHeight_Level0.png",128,"copy",9102955,"9F3259F4772F294EDCA1DE03FA4E8D7ED65C0924238B1A6D0B27B8FED7C0EF85"]
+]
+}

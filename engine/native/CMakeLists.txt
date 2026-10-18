@@ -2,6 +2,43 @@ option(AEVRYND_INTERNAL_RENDERER_TEST_HOOKS "Build internal renderer diagnostic 
 option(AEVRYND_SHADOW_MAP_DIAGNOSTICS "Build read-only directional shadow-map capture diagnostics" OFF)
 option(AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS "Build read-only volumetric-atmosphere output capture diagnostics" OFF)
 
+add_executable(AevryndTerrainParallaxContractTest tests/TerrainParallaxContractSmoke.cpp)
+target_compile_features(AevryndTerrainParallaxContractTest PRIVATE cxx_std_20)
+target_compile_options(AevryndTerrainParallaxContractTest PRIVATE /W4 /WX /fp:strict /permissive- /utf-8)
+set_property(TARGET AevryndTerrainParallaxContractTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndTerrainParallaxContractTest PRIVATE AevryndEngine)
+add_test(NAME AevryndTerrainParallaxContractTest COMMAND AevryndTerrainParallaxContractTest)
+set_tests_properties(AevryndTerrainParallaxContractTest PROPERTIES LABELS "release-gates;terrain-surface" TIMEOUT 30)
+
+add_executable(AevryndTerrainRockVariationTest tests/TerrainRockVariationSmoke.cpp)
+target_include_directories(AevryndTerrainRockVariationTest PRIVATE include)
+target_compile_features(AevryndTerrainRockVariationTest PRIVATE cxx_std_20)
+target_compile_options(AevryndTerrainRockVariationTest PRIVATE /W4 /WX /fp:strict /permissive- /utf-8)
+add_test(NAME AevryndTerrainRockVariationTest COMMAND AevryndTerrainRockVariationTest)
+set_tests_properties(AevryndTerrainRockVariationTest PROPERTIES LABELS "release-gates")
+
+foreach(slope_test TerrainUphillLimit3D CharacterTerrainUphill3D CharacterTerrainStanding3D)
+  add_executable(Aevrynd${slope_test}Test tests/${slope_test}Smoke.cpp)
+  target_compile_features(Aevrynd${slope_test}Test PRIVATE cxx_std_20)
+  target_compile_options(Aevrynd${slope_test}Test PRIVATE /W4 /WX /permissive- /utf-8)
+  target_link_libraries(Aevrynd${slope_test}Test PRIVATE AevryndEngine)
+  add_test(NAME Aevrynd${slope_test}Test COMMAND Aevrynd${slope_test}Test)
+  set_tests_properties(Aevrynd${slope_test}Test PROPERTIES LABELS "terrain-locomotion")
+endforeach()
+
+add_executable(AevryndPhaseSkyDiffuseTest tests/PhaseSkyDiffuseSmoke.cpp)
+target_compile_features(AevryndPhaseSkyDiffuseTest PRIVATE cxx_std_20)
+target_compile_options(AevryndPhaseSkyDiffuseTest PRIVATE /W4 /WX /fp:strict /permissive- /utf-8)
+add_test(NAME AevryndPhaseSkyDiffuseTest COMMAND AevryndPhaseSkyDiffuseTest)
+set_tests_properties(AevryndPhaseSkyDiffuseTest PROPERTIES LABELS "release-gates")
+
+add_executable(AevryndOcclusionNormalTest tests/OcclusionNormalSmoke.cpp)
+target_include_directories(AevryndOcclusionNormalTest PRIVATE include)
+target_compile_features(AevryndOcclusionNormalTest PRIVATE cxx_std_20)
+target_compile_options(AevryndOcclusionNormalTest PRIVATE /W4 /WX /fp:strict /permissive- /utf-8)
+add_test(NAME AevryndOcclusionNormalTest COMMAND AevryndOcclusionNormalTest)
+set_tests_properties(AevryndOcclusionNormalTest PROPERTIES LABELS "release-gates")
+
 add_executable(AevryndTerrainLayerCoverage3DTest tests/TerrainLayerCoverage3DSmoke.cpp)
 target_include_directories(AevryndTerrainLayerCoverage3DTest PRIVATE include)
 target_compile_features(AevryndTerrainLayerCoverage3DTest PRIVATE cxx_std_20)
@@ -193,6 +230,14 @@ set(AEVRYND_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
 function(aevrynd_compile_shader output_name source_name entry profile symbol)
   set(output "${AEVRYND_SHADER_OUTPUT_DIR}/${output_name}")
   set(shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}")
+  if(source_name STREQUAL "World.hlsl")
+    list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/PhaseSkyDiffuse.hlsli")
+    list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/TerrainRockVariation.hlsli")
+    list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/TerrainParallax.hlsli")
+  endif()
+  if(source_name STREQUAL "AmbientOcclusion.hlsl")
+    list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/OcclusionNormal.hlsli")
+  endif()
   if(source_name STREQUAL "World.hlsl" OR source_name STREQUAL "AmbientOcclusion.hlsl")
     list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/OcclusionDither.hlsli")
   endif()
@@ -339,7 +384,7 @@ target_compile_definitions(AevryndEngine PUBLIC AEVRYND_SHADOW_MAP_DIAGNOSTICS=$
 target_compile_definitions(AevryndEngine PUBLIC AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS=$<BOOL:${AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS}>)
 target_compile_definitions(AevryndEngine PRIVATE AEVRYND_WATER_COMPONENT_DIAGNOSTICS=$<BOOL:${AEVRYND_WATER_COMPONENT_DIAGNOSTICS}>)
 target_compile_options(AevryndEngine PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0 bcrypt)
+target_link_libraries(AevryndEngine PUBLIC d3d12 dxgi windowscodecs ole32 user32 gdi32 psapi xaudio2 xinput9_1_0 bcrypt dwmapi)
 
 add_executable(AevryndCookedRenderManifest3DTest tests/CookedRenderManifest3DSmoke.cpp)
 target_compile_definitions(AevryndCookedRenderManifest3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
@@ -487,6 +532,14 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
 endif()
 
 add_executable(AevryndCharacterControllerTest tests/CharacterControllerSmoke.cpp)
+add_executable(AevryndCharacterGroundLaunch3DTest tests/CharacterGroundLaunch3DSmoke.cpp)
+target_compile_options(AevryndCharacterGroundLaunch3DTest PRIVATE /W4 /permissive- /utf-8)
+target_link_libraries(AevryndCharacterGroundLaunch3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterGroundLaunch3DTest COMMAND AevryndCharacterGroundLaunch3DTest)
+add_executable(AevryndCharacterMotionRestore3DTest tests/CharacterMotionRestore3DSmoke.cpp)
+target_compile_options(AevryndCharacterMotionRestore3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+target_link_libraries(AevryndCharacterMotionRestore3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterMotionRestore3DTest COMMAND AevryndCharacterMotionRestore3DTest)
 target_compile_options(AevryndCharacterControllerTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndCharacterControllerTest PRIVATE AevryndEngine)
 add_test(NAME AevryndCharacterControllerTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndCharacterControllerTest>'")
@@ -661,6 +714,20 @@ target_compile_options(AevryndFrameCapture3DTest PRIVATE /W4 /permissive- /utf-8
 target_link_libraries(AevryndFrameCapture3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndFrameCapture3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndFrameCapture3DTest>'")
 
+add_executable(AevryndFrameCaptureCostTest tests/FrameCaptureCostTest.cpp)
+target_compile_options(AevryndFrameCaptureCostTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndFrameCaptureCostTest PRIVATE AevryndEngine)
+add_test(NAME AevryndFrameCaptureCostTest COMMAND AevryndFrameCaptureCostTest)
+set_tests_properties(AevryndFrameCaptureCostTest PROPERTIES LABELS "capture-cost-diagnostics" TIMEOUT 120 RUN_SERIAL TRUE)
+add_executable(AevryndEngineStopOnceD3D12Test tests/EngineStopOnceD3D12Test.cpp)
+target_compile_options(AevryndEngineStopOnceD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndEngineStopOnceD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndEngineStopOnceD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case normal)
+add_test(NAME AevryndEngineStopOnceStopThrowD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case stop-throw)
+add_test(NAME AevryndEngineStopOnceUpdateThrowD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case update-throw)
+add_test(NAME AevryndEngineStopOnceBothThrowD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case both-throw)
+set_tests_properties(AevryndEngineStopOnceD3D12Test AevryndEngineStopOnceStopThrowD3D12Test AevryndEngineStopOnceUpdateThrowD3D12Test AevryndEngineStopOnceBothThrowD3D12Test PROPERTIES LABELS "stop-lifetime-diagnostics;native-d3d12" TIMEOUT 120 RUN_SERIAL TRUE)
+
 add_executable(AevryndMeshUploadStreamingTest tests/MeshUploadStreamingSmoke.cpp)
 target_compile_options(AevryndMeshUploadStreamingTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndMeshUploadStreamingTest PRIVATE AevryndEngine)
@@ -795,12 +862,16 @@ add_test(NAME AevryndCharacterDeathPresentation3DTest COMMAND AevryndCharacterDe
   "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/assets/model-packs/realistic-female/realistic-female.aeskin"
   "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/assets/model-packs/realistic-male/realistic-male.aeskin")
 set_property(TEST AevryndCharacterDeathPresentation3DTest APPEND PROPERTY LABELS "release-gates")
-# 測試自行攜帶資料，不依賴其他遊戲的 POST_BUILD 副作用。
+# 測試自行攜帶資料；固定測試入口改由單一部署者提供，避免完整建置競寫。
+if(TARGET AevryndReleaseGateAssets)
+  add_dependencies(AevryndCharacterDeathPresentation3DTest AevryndReleaseGateAssets)
+else()
 foreach(CHARACTER_ASSET IN ITEMS realistic-female realistic-male)
   add_custom_command(TARGET AevryndCharacterDeathPresentation3DTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:AevryndCharacterDeathPresentation3DTest>/assets/model-packs/${CHARACTER_ASSET}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin" "$<TARGET_FILE_DIR:AevryndCharacterDeathPresentation3DTest>/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin")
 endforeach()
+endif()
 add_executable(AevryndCharacterAssetProvenance3DTest tests/CharacterAssetProvenance3DSmoke.cpp)
 target_compile_options(AevryndCharacterAssetProvenance3DTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_compile_definitions(AevryndCharacterAssetProvenance3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
@@ -828,6 +899,20 @@ target_compile_options(AevryndFootPlacement3DTest PRIVATE /W4 /permissive- /utf-
 target_link_libraries(AevryndFootPlacement3DTest PRIVATE AevryndEngine)
 add_test(NAME AevryndFootPlacement3DTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndFootPlacement3DTest>'")
 set_property(TEST AevryndFootPlacement3DTest APPEND PROPERTY LABELS "release-gates")
+add_executable(AevryndFootSwingTrajectory3DTest tests/FootSwingTrajectory3DSmoke.cpp)
+target_include_directories(AevryndFootSwingTrajectory3DTest PRIVATE include)
+target_compile_features(AevryndFootSwingTrajectory3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndFootSwingTrajectory3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+target_compile_definitions(AevryndFootSwingTrajectory3DTest PRIVATE NOMINMAX)
+add_test(NAME AevryndFootSwingTrajectory3DTest COMMAND AevryndFootSwingTrajectory3DTest)
+set_tests_properties(AevryndFootSwingTrajectory3DTest PROPERTIES TIMEOUT 30 LABELS "animation-foot-swing-cpu")
+add_executable(AevryndFootSwingReplan3DTest tests/FootSwingReplan3DSmoke.cpp)
+target_include_directories(AevryndFootSwingReplan3DTest PRIVATE include)
+target_compile_features(AevryndFootSwingReplan3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndFootSwingReplan3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+target_compile_definitions(AevryndFootSwingReplan3DTest PRIVATE NOMINMAX)
+add_test(NAME AevryndFootSwingReplan3DTest COMMAND AevryndFootSwingReplan3DTest)
+set_tests_properties(AevryndFootSwingReplan3DTest PROPERTIES TIMEOUT 30 LABELS "animation-foot-swing-cpu")
 add_executable(AevryndRootMotion3DTest tests/RootMotion3DSmoke.cpp)
 target_compile_options(AevryndRootMotion3DTest PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndRootMotion3DTest PRIVATE AevryndEngine)
@@ -1399,3 +1484,230 @@ set_tests_properties(AevryndUvNormalSignedJacobianMathTest PROPERTIES LABELS "uv
 add_executable(AevryndUvNormalNativeRegression WIN32 tests/UvNormalNativeRegression.cpp)
 target_compile_options(AevryndUvNormalNativeRegression PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(AevryndUvNormalNativeRegression PRIVATE AevryndEngine shell32)
+
+# 小面法線是額外 CPU 回歸，不改既有 GPU 或 release-gates 矩陣。
+add_executable(AevryndGeometryNormals3DTest tests/GeometryNormals3DSmoke.cpp)
+target_include_directories(AevryndGeometryNormals3DTest PRIVATE include)
+target_compile_features(AevryndGeometryNormals3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndGeometryNormals3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+add_test(NAME AevryndGeometryNormals3DTest COMMAND AevryndGeometryNormals3DTest)
+set_tests_properties(AevryndGeometryNormals3DTest PROPERTIES LABELS "geometry-normal-cpu-regression" TIMEOUT 60)
+
+# 表面變形傳遞作者法線；獨立 CPU 測試，不把平滑策略或遊戲接地規則放入引擎。
+add_executable(AevryndSurfaceNormalTransport3DTest tests/SurfaceNormalTransport3DSmoke.cpp)
+target_include_directories(AevryndSurfaceNormalTransport3DTest PRIVATE include)
+target_compile_features(AevryndSurfaceNormalTransport3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndSurfaceNormalTransport3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+add_test(NAME AevryndSurfaceNormalTransport3DTest COMMAND AevryndSurfaceNormalTransport3DTest)
+set_tests_properties(AevryndSurfaceNormalTransport3DTest PROPERTIES LABELS "geometry-normal-cpu-regression" TIMEOUT 60)
+
+# 共用物件倒角：獨立CPU幾何與交易式失敗回歸，不依賴單一遊戲內容。
+add_executable(AevryndBeveledBox3DTest tests/BeveledBox3DSmoke.cpp)
+target_compile_features(AevryndBeveledBox3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndBeveledBox3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+target_link_libraries(AevryndBeveledBox3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndBeveledBox3DTest COMMAND AevryndBeveledBox3DTest)
+set_tests_properties(AevryndBeveledBox3DTest PROPERTIES LABELS "geometry-bevel-cpu-regression" TIMEOUT 60)
+
+# 共用分板面板：真板縫／倒角／公尺UV，獨立驗證封閉拓樸與精確包圍盒。
+add_executable(AevryndPlankedPanel3DTest tests/PlankedPanel3DSmoke.cpp)
+target_compile_features(AevryndPlankedPanel3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndPlankedPanel3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+target_link_libraries(AevryndPlankedPanel3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndPlankedPanel3DTest COMMAND AevryndPlankedPanel3DTest)
+set_tests_properties(AevryndPlankedPanel3DTest PROPERTIES LABELS "geometry-planked-panel-cpu-regression" TIMEOUT 60)
+
+# 射線接縫精度另列回歸，不改原release-gates或GPU矩陣的順序與集合。
+add_executable(AevryndRayTrianglePrecision3DTest tests/RayTrianglePrecision3DSmoke.cpp)
+target_include_directories(AevryndRayTrianglePrecision3DTest PRIVATE include)
+target_compile_features(AevryndRayTrianglePrecision3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndRayTrianglePrecision3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+add_test(NAME AevryndRayTrianglePrecision3DTest COMMAND AevryndRayTrianglePrecision3DTest)
+set_tests_properties(AevryndRayTrianglePrecision3DTest PROPERTIES LABELS "geometry-ray-cpu-regression" TIMEOUT 60)
+
+# 共用封口圓柱：獨立side/cap法線與外向拓樸，不改原Cylinder API。
+add_executable(AevryndCappedCylinder3DTest tests/CappedCylinder3DSmoke.cpp)
+target_include_directories(AevryndCappedCylinder3DTest PRIVATE include)
+target_compile_features(AevryndCappedCylinder3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndCappedCylinder3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+add_test(NAME AevryndCappedCylinder3DTest COMMAND AevryndCappedCylinder3DTest)
+set_tests_properties(AevryndCappedCylinder3DTest PROPERTIES LABELS "geometry-capped-cylinder-cpu-regression" TIMEOUT 60)
+
+# 共用精確三角接觸：完整交域與真共享單形，獨立CPU回歸並納入release-gates。
+add_executable(AevryndExactTriangleContact3DTest tests/ExactTriangleContact3DSmoke.cpp)
+target_include_directories(AevryndExactTriangleContact3DTest PRIVATE include)
+target_compile_features(AevryndExactTriangleContact3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndExactTriangleContact3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+add_test(NAME AevryndExactTriangleContact3DTest COMMAND AevryndExactTriangleContact3DTest)
+set_tests_properties(AevryndExactTriangleContact3DTest PROPERTIES LABELS "release-gates" TIMEOUT 60)
+
+# 低棚入口移動追蹤另列 CPU 回歸，不改原 release-gates 與 GPU 矩陣。
+add_executable(AevryndThirdPersonCameraLowRoof3DTest tests/ThirdPersonCameraLowRoof3DSmoke.cpp)
+target_compile_features(AevryndThirdPersonCameraLowRoof3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndThirdPersonCameraLowRoof3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+target_link_libraries(AevryndThirdPersonCameraLowRoof3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndThirdPersonCameraLowRoof3DTest COMMAND AevryndThirdPersonCameraLowRoof3DTest)
+set_tests_properties(AevryndThirdPersonCameraLowRoof3DTest PROPERTIES LABELS "camera-low-roof-cpu-regression" TIMEOUT 60)
+
+# 系統字型共用真 GDI 基線、空字形、UTF-8 與有界暖快取回歸。
+add_executable(AevryndSystemText2DTest tests/SystemText2DSmoke.cpp)
+target_compile_features(AevryndSystemText2DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndSystemText2DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+target_link_libraries(AevryndSystemText2DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndSystemText2DTest COMMAND AevryndSystemText2DTest)
+set_tests_properties(AevryndSystemText2DTest PROPERTIES TIMEOUT 60 LABELS "system-text-cpu-regression")
+
+# 不搶焦點的桌面外視窗策略；只有 Win32 契約，不執行 GPU 工作。
+add_executable(AevryndDiagnosticWindow3DTest tests/DiagnosticWindow3DSmoke.cpp)
+target_include_directories(AevryndDiagnosticWindow3DTest PRIVATE include)
+target_compile_features(AevryndDiagnosticWindow3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndDiagnosticWindow3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndDiagnosticWindow3DTest PRIVATE user32)
+add_test(NAME AevryndDiagnosticWindow3DTest COMMAND AevryndDiagnosticWindow3DTest)
+set_tests_properties(AevryndDiagnosticWindow3DTest PROPERTIES TIMEOUT 60 LABELS "diagnostic-window-win32" RUN_SERIAL TRUE)
+add_test(NAME AevryndEngineOffscreenWindowD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-normal)
+add_test(NAME AevryndEngineOffscreenUnsynchronizedPresentD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-unsynchronized-present)
+set_tests_properties(AevryndEngineOffscreenUnsynchronizedPresentD3D12Test PROPERTIES TIMEOUT 120 LABELS "diagnostic-window-native-d3d12" RUN_SERIAL TRUE)
+add_test(NAME AevryndEngineOffscreenDisplayChangeD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-display-change)
+add_test(NAME AevryndEngineOffscreenDpiChangeD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-dpi-change)
+add_test(NAME AevryndEngineOffscreenDisplayChangeAfterRenderD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-display-change-after-render)
+add_test(NAME AevryndEngineOffscreenDpiChangeAfterRenderD3D12Test COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-dpi-change-after-render)
+set_tests_properties(AevryndEngineOffscreenWindowD3D12Test AevryndEngineOffscreenDisplayChangeD3D12Test AevryndEngineOffscreenDpiChangeD3D12Test PROPERTIES TIMEOUT 120 LABELS "diagnostic-window-native-d3d12" RUN_SERIAL TRUE)
+set_tests_properties(AevryndEngineOffscreenDisplayChangeAfterRenderD3D12Test AevryndEngineOffscreenDpiChangeAfterRenderD3D12Test PROPERTIES TIMEOUT 120 LABELS "diagnostic-window-native-d3d12" RUN_SERIAL TRUE)
+add_test(NAME AevryndEngineOffscreenNonhiddenRejectTest COMMAND AevryndEngineStopOnceD3D12Test --case offscreen-nonhidden-reject)
+set_tests_properties(AevryndEngineOffscreenNonhiddenRejectTest PROPERTIES TIMEOUT 60 LABELS "diagnostic-window-native-entry" RUN_SERIAL TRUE)
+
+# 真來源低部貼地作者候選，獨立 CPU 回歸；不替代整株地表／風擺或 GPU 驗收。
+add_executable(AevryndGroundConform3DTest tests/GroundConform3DSmoke.cpp)
+target_include_directories(AevryndGroundConform3DTest PRIVATE include)
+target_compile_features(AevryndGroundConform3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndGroundConform3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+target_compile_definitions(AevryndGroundConform3DTest PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+set_property(TARGET AevryndGroundConform3DTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndGroundConform3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndGroundConform3DTest COMMAND AevryndGroundConform3DTest)
+set_tests_properties(AevryndGroundConform3DTest PROPERTIES TIMEOUT 60 LABELS "geometry-ground-conform-cpu")
+
+# 凸形坡面與直立角色盒的連續碰撞查詢；尚不宣稱玩家回應已整合。
+add_executable(AevryndConvexAabbSweep3DTest tests/ConvexAabbSweep3DSmoke.cpp)
+target_include_directories(AevryndConvexAabbSweep3DTest PRIVATE include)
+target_compile_features(AevryndConvexAabbSweep3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndConvexAabbSweep3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict)
+target_link_options(AevryndConvexAabbSweep3DTest PRIVATE /STACK:16777216)
+add_test(NAME AevryndConvexAabbSweep3DTest COMMAND AevryndConvexAabbSweep3DTest)
+set_tests_properties(AevryndConvexAabbSweep3DTest PROPERTIES TIMEOUT 60 LABELS "convex-aabb-sweep-cpu")
+# 僅追加至目前engine/native/CMakeLists.txt；不修改正式Engine的FP模式或release-gates。
+# 正式Engine仍編譯自己的default-precise CC；此object只供原strict CPU gates使用。
+add_library(AevryndDynamicContactStrictCC OBJECT src/CharacterController3D.cpp)
+target_include_directories(AevryndDynamicContactStrictCC PRIVATE include)
+target_link_libraries(AevryndDynamicContactStrictCC PRIVATE AevryndEngine)
+
+set(dynamic_contact_support "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/dynamic-contact")
+add_executable(AevryndCharacterDynamicContact3DTest
+  tests/CharacterDynamicContact3DTest.cpp
+  tests/support/dynamic-contact/QueryOriginalCases.cpp
+  tests/support/dynamic-contact/QueryNumericCases.cpp)
+target_include_directories(AevryndCharacterDynamicContact3DTest PRIVATE
+  include "${dynamic_contact_support}/mistwatch")
+target_link_libraries(AevryndCharacterDynamicContact3DTest PRIVATE AevryndEngine)
+
+# 此正式案例在單一TU include生產CC.cpp；不能再連StrictCC object或另列CC.cpp。
+add_executable(AevryndCharacterDynamicVerticalResponse3DTest
+  tests/VerticalResponse3DTest.cpp
+  tests/support/dynamic-contact/PreservedEarliestCases.cpp
+  tests/support/dynamic-contact/EarliestExtraCases.cpp)
+target_include_directories(AevryndCharacterDynamicVerticalResponse3DTest PRIVATE include)
+target_link_libraries(AevryndCharacterDynamicVerticalResponse3DTest PRIVATE AevryndEngine)
+target_compile_definitions(AevryndCharacterDynamicVerticalResponse3DTest PRIVATE CANDIDATE=1 GREEN=1)
+
+foreach(dynamic_contact_target IN ITEMS AevryndDynamicContactStrictCC
+    AevryndCharacterDynamicContact3DTest AevryndCharacterDynamicVerticalResponse3DTest)
+  target_compile_features(${dynamic_contact_target} PRIVATE cxx_std_20)
+  target_compile_options(${dynamic_contact_target} PRIVATE /W4 /WX /permissive- /utf-8
+    /fp:strict "$<$<CONFIG:Release>:/O2>" /Ob2 /EHsc /Gy /MP1 /showIncludes)
+  target_compile_definitions(${dynamic_contact_target} PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  set_property(TARGET ${dynamic_contact_target} PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+endforeach()
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/pair-formal-maps")
+foreach(dynamic_contact_target IN ITEMS AevryndCharacterDynamicContact3DTest AevryndCharacterDynamicVerticalResponse3DTest)
+  target_link_options(${dynamic_contact_target} PRIVATE /INCREMENTAL:NO /VERBOSE:LIB
+    "/MAP:${CMAKE_BINARY_DIR}/pair-formal-maps/${dynamic_contact_target}.map")
+endforeach()
+
+set(dynamic_contact_work "${CMAKE_CURRENT_BINARY_DIR}/test-artifacts/character-dynamic-contact")
+set(dynamic_vertical_work "${CMAKE_CURRENT_BINARY_DIR}/test-artifacts/character-dynamic-vertical")
+file(MAKE_DIRECTORY "${dynamic_contact_work}" "${dynamic_vertical_work}")
+set(dynamic_vertical_golden "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/dynamic-contact/original-vertical1536.golden")
+file(SHA256 "${dynamic_vertical_golden}" dynamic_vertical_golden_sha256)
+if(NOT dynamic_vertical_golden_sha256 STREQUAL "41ae383aeae1e85f08bdfc91f58a65b406b078e0847c8768732dff89f517e359")
+  message(FATAL_ERROR "Original dynamic-contact 1536 snapshot expected-data identity differs")
+endif()
+configure_file("${dynamic_vertical_golden}" "${dynamic_vertical_work}/original-vertical1536.golden" COPYONLY)
+add_test(NAME AevryndCharacterDynamicContact3DTest COMMAND AevryndCharacterDynamicContact3DTest)
+add_test(NAME AevryndCharacterDynamicVerticalResponse3DTest COMMAND AevryndCharacterDynamicVerticalResponse3DTest)
+set_tests_properties(AevryndCharacterDynamicContact3DTest PROPERTIES
+  LABELS "dynamic-contact-cpu" TIMEOUT 120 RUN_SERIAL TRUE WORKING_DIRECTORY "${dynamic_contact_work}")
+set_tests_properties(AevryndCharacterDynamicVerticalResponse3DTest PROPERTIES
+  LABELS "dynamic-contact-cpu" TIMEOUT 120 RUN_SERIAL TRUE WORKING_DIRECTORY "${dynamic_vertical_work}")
+# 僅追加正式CPU回歸；不改原release136、七項pair案例或生產Engine的FP模式。
+# 每個target自行在單一TU include生產CC，不連AevryndDynamicContactStrictCC。
+foreach(projection_profile IN ITEMS Default Strict)
+  set(projection_target "AevryndCharacterProjectionResidual3D${projection_profile}Test")
+  add_executable(${projection_target} tests/CharacterProjectionResidual3DTest.cpp)
+  target_include_directories(${projection_target} PRIVATE include)
+  target_compile_features(${projection_target} PRIVATE cxx_std_20)
+  target_compile_definitions(${projection_target} PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+    HAS_REPAIR=1 PROJECTION_PROFILE_NAME="${projection_profile}")
+  target_compile_options(${projection_target} PRIVATE /W4 /WX /permissive- /utf-8
+    "$<$<CONFIG:Release>:/O2>" /Ob2 /EHsc /MP1 /showIncludes)
+  if(projection_profile STREQUAL "Strict")
+    target_compile_options(${projection_target} PRIVATE /fp:strict)
+  endif()
+  set_property(TARGET ${projection_target} PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+  target_link_libraries(${projection_target} PRIVATE AevryndEngine)
+  target_link_options(${projection_target} PRIVATE /INCREMENTAL:NO /VERBOSE:LIB
+    "/MAP:${CMAKE_CURRENT_BINARY_DIR}/${projection_target}.map")
+  add_test(NAME ${projection_target} COMMAND ${projection_target})
+  set_tests_properties(${projection_target} PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE
+    LABELS "gameplay-diagnostics;dynamic-contact-cpu;projection-residual-cpu;additional-mandatory-cpu")
+endforeach()
+
+# 連續非零鍵使用密集索引；不改原可見性與一般鍵的 map 路徑。
+add_executable(AevryndVisibilityBvhDenseKey3DTest tests/VisibilityBvhDenseKey3DSmoke.cpp)
+target_compile_features(AevryndVisibilityBvhDenseKey3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndVisibilityBvhDenseKey3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+set_property(TARGET AevryndVisibilityBvhDenseKey3DTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndVisibilityBvhDenseKey3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndVisibilityBvhDenseKey3DTest COMMAND AevryndVisibilityBvhDenseKey3DTest)
+set_tests_properties(AevryndVisibilityBvhDenseKey3DTest PROPERTIES TIMEOUT 30 LABELS "release-gates")
+if(TARGET AevryndStreamlinePackageFixture)
+  add_dependencies(AevryndStreamlinePackageFixture AevryndVisibilityBvhDenseKey3DTest)
+endif()
+
+# 世界錨點只在完整安全與可見性證據成立時保持；原低頂案例不刪減。
+add_executable(AevryndThirdPersonCameraWorldAnchor3DTest tests/ThirdPersonCameraWorldAnchor3DSmoke.cpp)
+target_compile_features(AevryndThirdPersonCameraWorldAnchor3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndThirdPersonCameraWorldAnchor3DTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise)
+set_property(TARGET AevryndThirdPersonCameraWorldAnchor3DTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndThirdPersonCameraWorldAnchor3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndThirdPersonCameraWorldAnchor3DTest COMMAND AevryndThirdPersonCameraWorldAnchor3DTest)
+set_tests_properties(AevryndThirdPersonCameraWorldAnchor3DTest PROPERTIES TIMEOUT 60 LABELS "camera-world-anchor-cpu-regression")
+
+# 兩種浮點設定都編譯同一份生產控制器，保留逐查詢窗口與巢狀入口負控。
+foreach(query_window_profile IN ITEMS Default Strict)
+  set(query_window_target "AevryndCharacterQueryWindow3D${query_window_profile}Test")
+  add_executable(${query_window_target} tests/CharacterQueryWindow3DTest.cpp)
+  target_compile_features(${query_window_target} PRIVATE cxx_std_20)
+  target_compile_definitions(${query_window_target} PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_options(${query_window_target} PRIVATE /W4 /WX /permissive- /utf-8 /O2 /Ob2 /MP1 /showIncludes)
+  if(query_window_profile STREQUAL "Strict")
+    target_compile_options(${query_window_target} PRIVATE /fp:strict)
+  endif()
+  set_property(TARGET ${query_window_target} PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+  target_link_libraries(${query_window_target} PRIVATE AevryndEngine)
+  target_link_options(${query_window_target} PRIVATE /INCREMENTAL:NO /STACK:16777216
+    "/MAP:${CMAKE_CURRENT_BINARY_DIR}/${query_window_target}.map")
+  add_test(NAME ${query_window_target} COMMAND ${query_window_target})
+  set_tests_properties(${query_window_target} PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE
+    LABELS "controller-query-window-cpu;additional-mandatory-cpu")
+endforeach()

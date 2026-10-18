@@ -116,11 +116,78 @@ Ratios CheckPopulation(const FernColonyResult& population,const ForestCoverResul
         accepted[i]>0&&accepted[i]<=population.colonies[i].requested,"Colony accounting failed");
     return ratios;
 }
+unsigned ImmutableBoundsHelperControls() {
+    using Cache=FernColonyDetail::ImmutableCanopyWoodBounds;
+    unsigned controls{};
+    std::vector<BoxCollider3D> source{{{0,0,0},{1,1,1}},{{20,2,3},{2,3,4}}};
+    const auto cached=Cache::Create(source);Require(cached.Size()==source.size(),"Cache complete part count");
+    const float nan=std::numeric_limits<float>::quiet_NaN();
+    for(const float x:{0.f,1.5f,1.53f,1.5301f,3.f,20.f,24.f})for(const float y:{0.f,2.f,5.f})for(const float margin:{0.f,.03f,.5f}) {
+        const CanopyVolume::PlantVolume p{{x,y,0},{.5f,-.5f,.5f},1,{}};
+        Require(cached.Clears(p,margin)==CanopyVolume::ClearsCanopyWood(p,source,margin),"Cache touch margin or separation differs");++controls;
+    }
+    for(const auto p:std::array<CanopyVolume::PlantVolume,4>{{{{nan,0,0},{.5f,-.5f,.5f},1,{}},
+        {{0,0,0},{.5f,-.5f,.5f},-1,{}},{{0,0,0},{.5f,.5f,.5f},1,{}},{{0,0,0},{.5f,-.5f,.5f},1,{1,0,0}}}}) {
+        Require(!cached.Clears(p)&&!CanopyVolume::ClearsCanopyWood(p,source),"Cache invalid plant accepted");++controls;
+    }
+    const auto reject=[&](const auto& boxes) {
+        bool rejected=false;try{(void)Cache::Create(boxes);}catch(const std::invalid_argument& e) {
+            Require(std::string_view(e.what())=="Invalid canopy wood parts for fern colonies","Cache rejection reason");rejected=true;
+        }
+        Require(rejected,"Cache invalid parts accepted");++controls;
+    };
+    for(const float value:{0.f,-1.f,nan,std::numeric_limits<float>::infinity()}) {
+        auto changed=source;changed.back().extents.x=value;reject(changed);
+    }
+    std::vector<BoxCollider3D> tooMany(10001,{{20,20,20},{1,1,1}});reject(tooMany);
+    const std::vector<BoxCollider3D> empty;
+    const auto emptyCache=Cache::Create(empty);
+    Require(emptyCache.Size()==0&&emptyCache.Clears({{0,0,0},{1,-1,1},1,{}}),"Cache empty world");++controls;
+    std::vector<BoxCollider3D> changed{{{20,0,0},{1,1,1}}};
+    const CanopyVolume::PlantVolume plant{{0,0,0},{.5f,-.5f,.5f},1,{}};
+    const auto prior=Cache::Create(changed);Require(prior.Clears(plant),"Cache old world control");
+    changed[0].center={0,0,0};const auto replacement=Cache::Create(changed);
+    Require(!replacement.Clears(plant)&&prior.Clears(plant),"Cache source epoch replacement");++controls;
+    Require(controls==74,"Cache proven helper controls incomplete");
+    // 另補零縮放與非法margin，確認仍委派原PlantBounds拒絕。
+    const CanopyVolume::PlantVolume zeroScale{{0,0,0},{.5f,-.5f,.5f},0,{}};
+    Require(!cached.Clears(zeroScale)&&!CanopyVolume::ClearsCanopyWood(zeroScale,source),"Cache zero scale accepted");
+    for(float margin:{-1.f,nan})Require(!cached.Clears(plant,margin)&&!CanopyVolume::ClearsCanopyWood(plant,source,margin),"Cache invalid margin accepted");
+    return controls;
+}
+void ImmutableBoundsEntryControls(const HeightField3D& terrain,const ForestCoverResult& grass,
+    std::span<const Transform3D> original,std::span<const BoxCollider3D> solids,const std::array<FernColonyAsset,4>& assets) {
+    FernColonySettings zero;zero.targetPlants=0;
+    const float nan=std::numeric_limits<float>::quiet_NaN();
+    for(const float value:{0.f,-1.f,nan,std::numeric_limits<float>::infinity()}) {
+        std::vector<BoxCollider3D> invalid{{{1000,1000,1000},{1,1,1}},{{2000,2000,2000},{value,1,1}}};
+        MustReject([&]{(void)CreateFernColonies(terrain,grass,original,solids,assets,zero,invalid,true);});
+    }
+    // 固定小型分組fixture的獨立字節hash，不用Measure授權自己的輸入；不是完整世界證書。
+    const std::vector<BoxCollider3D> farWood{{{1000,1000,1000},{1,1,1}}};
+    const std::array<GroupedCanopyVolume::Group,1> groups{{GroupedCanopyVolume::Group(farWood)}};
+    const GroupedCanopyVolume::ValidatedWood grouped(groups,{1,1,6698648685370634984ull});
+    FernColonySettings small;small.targetPlants=8;
+    const auto flat=CreateFernColonies(terrain,grass,original,solids,assets,small,farWood,true);
+    const auto group=CreateFernColonies(terrain,grass,original,solids,assets,small,{},true,&grouped);
+    Require(flat.reachedBudget&&group.reachedBudget&&SamePopulation(flat,group)&&
+        flat.rejectedClearance==group.rejectedClearance&&flat.rejectedTerrain==group.rejectedTerrain&&
+        flat.rejectedExistingFern==group.rejectedExistingFern&&flat.rejectedGrass==group.rejectedGrass&&
+        flat.rejectedSpacing==group.rejectedSpacing,"Cache changed original grouped fern path");
+    const auto empty=CreateFernColonies(terrain,grass,original,solids,assets,zero,{},true,&grouped);
+    Require(empty.reachedBudget&&empty.plants.empty()&&empty.colonies.empty(),"Cache changed zero grouped population");
+    MustReject([&]{(void)CreateFernColonies(terrain,grass,original,solids,assets,zero,farWood,true,&grouped);});
+    MustReject([&]{(void)CreateFernColonies(terrain,grass,original,solids,assets,zero,{},false,&grouped);});
+    auto movedFrom=grouped;const auto movedTo=std::move(movedFrom);
+    Require(movedTo.Identity()==grouped.Identity(),"Grouped move fixture differs");
+    MustReject([&]{(void)CreateFernColonies(terrain,grass,original,solids,assets,zero,{},true,&movedFrom);});
+}
 }
 int main(int argc,char** argv) {
     try {
         const bool useMiddle=argc==4&&std::string_view(argv[3])=="--middle-layer";
         Require(argc==3||useMiddle,"Expected grass and fern directories, optional --middle-layer");
+        Require(ImmutableBoundsHelperControls()==74,"Immutable bounds controls incomplete");
         const std::filesystem::path grassDirectory(argv[1]),fernDirectory(argv[2]);
         const auto terrain=CreateTerrain();const auto trees=TreePositions();const auto props=ForestProps(terrain,trees);
         const auto original=CreateUnderstory(terrain,trees,props);const auto broadleaf=CreateBroadleafTrees(terrain,trees,props,original);
@@ -182,6 +249,7 @@ int main(int argc,char** argv) {
         auto zero=settings;zero.targetPlants=0;
         const auto empty=CreateFernColonies(terrain,grass,original.ferns,solids,assets,zero);
         Require(empty.reachedBudget&&empty.plants.empty()&&empty.colonies.empty(),"Zero target failed");
+        ImmutableBoundsEntryControls(terrain,grass,original.ferns,solids,assets);
         const ForestCoverResult noAnchors{};
         const auto noPopulation=CreateFernColonies(terrain,noAnchors,original.ferns,solids,assets,settings);
         Require(!noPopulation.reachedBudget&&noPopulation.plants.empty(),"Empty anchors caused unsafe fallback");

@@ -4,22 +4,43 @@
     [switch]$GpuValidation,
     [switch]$MiddleLayer,
     [switch]$BaselineMiddleLayer,
-    [ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile='forest-wood'
+    [ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile='forest-wood',
+    [ValidateSet('legacy-cylinder','scanned-straight-v1')][string]$FallenLogProfile='scanned-straight-v1',
+    [string]$SourceRoot='', [string]$BuildRoot=''
 )
 $ErrorActionPreference='Stop'
+function Read-MistwatchExactReceipt([string]$Path){
+    $values=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    foreach($line in Get-Content -LiteralPath $Path){
+        if([string]::IsNullOrWhiteSpace($line)){continue}
+        $pair=$line.Split('=',2)
+        if($pair.Count -ne 2 -or $pair[0] -cnotmatch '^[a-z][a-z0-9_]*$' -or $values.ContainsKey($pair[0])){
+            throw ('Malformed or duplicate native receipt field: '+$Path)
+        }
+        $values.Add($pair[0],$pair[1])
+    }
+    return ,$values
+}
 if($MiddleLayer -and $BaselineMiddleLayer){throw 'Select either production middle layer or explicit old baseline'}
 if($MiddleLayer -or $BaselineMiddleLayer){
     $compatibilityProfile=if($BaselineMiddleLayer){'legacy-core'}else{'legacy-middle'}
     if($PSBoundParameters.ContainsKey('WorldProfile') -and $WorldProfile -ne $compatibilityProfile){throw 'Legacy switch conflicts with explicit world profile'}
     $WorldProfile=$compatibilityProfile
 }
+if($WorldProfile -cne 'forest-wood' -and -not $PSBoundParameters.ContainsKey('FallenLogProfile')){$FallenLogProfile='legacy-cylinder'}
+if($FallenLogProfile -ceq 'scanned-straight-v1' -and $WorldProfile -cne 'forest-wood'){throw 'Scanned fallen logs require forest-wood'}
 . (Join-Path $PSScriptRoot 'forest_cover_contract.ps1')
 $executable=(Resolve-Path -LiteralPath $ExecutablePath).Path
 if([IO.Path]::GetFileName($executable) -ne 'Aevrynd-Mistwatch.exe'){throw 'Unexpected executable'}
+$independent=$null;$independentSha='';$fallenResults=@()
+if($FallenLogProfile -ceq 'scanned-straight-v1'){
+    $independent=Get-MistwatchIndependentExpected -SourceRoot $SourceRoot -BuildRoot $BuildRoot -ExecutablePath $executable
+    $independentSha=(Get-FileHash -LiteralPath (Join-Path $BuildRoot 'games/mistwatch/native/fallen-cpu-certificate/Expected.json') -Algorithm SHA256).Hash
+}
 $evidence=[IO.Path]::GetFullPath($EvidenceDirectory)
 if(Test-Path -LiteralPath $evidence){throw 'Evidence directory already exists; preserve previous results'}
 New-Item -ItemType Directory -Path $evidence | Out-Null
-$variables=@('AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MISTWATCH_CAPTURE_SERIES',
+$variables=@('AEVRYND_MISTWATCH_FALLEN_LOGS','AEVRYND_MISTWATCH_FALLEN_VIEW','AEVRYND_MISTWATCH_CAPTURE','AEVRYND_MISTWATCH_SCENE','AEVRYND_MISTWATCH_CAPTURE_SERIES',
     'AEVRYND_MISTWATCH_BENCHMARK','AEVRYND_MISTWATCH_TREE_LOD','AEVRYND_MISTWATCH_TWIG_MODE','AEVRYND_MISTWATCH_MIDDLE_LAYER',
     'AEVRYND_MISTWATCH_WORLD_PROFILE','AEVRYND_MISTWATCH_CANOPY_ENABLED','AEVRYND_MISTWATCH_CANOPY_VIEW','AEVRYND_MISTWATCH_SHADOW_RETAIN_MODE',
     'AEVRYND_MISTWATCH_CROWN','AEVRYND_MISTWATCH_NO_AO','AEVRYND_GPU_VALIDATION',
@@ -42,6 +63,8 @@ try {
         [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_WORLD_PROFILE',$WorldProfile,'Process')
         [Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_MIDDLE_LAYER',$(if($WorldProfile -eq 'legacy-core'){'0'}else{'1'}),'Process')
     }
+    # 新模式驗正式預設；只有明示舊模式設定0，不用診斷override造新模式通過。
+    if($FallenLogProfile -ceq 'legacy-cylinder'){[Environment]::SetEnvironmentVariable('AEVRYND_MISTWATCH_FALLEN_LOGS','0','Process')}
     if($GpuValidation){[Environment]::SetEnvironmentVariable('AEVRYND_GPU_VALIDATION','1','Process')}
     foreach($case in $cases) {
         Write-Progress -Activity '霧境守望原生驗證' -Status $case -PercentComplete ([int](100*$results.Count/$cases.Count))
@@ -64,18 +87,23 @@ try {
         if($process.ExitCode -ne 0){throw ('Native validation failed: '+$case+' exit='+$process.ExitCode)}
         $receiptPath=$capture+'.receipt.txt'
         if(-not (Test-Path -LiteralPath $capture) -or -not (Test-Path -LiteralPath $receiptPath)){throw ('Missing native evidence: '+$case)}
-        $receipt=@{}
-        foreach($line in Get-Content -LiteralPath $receiptPath){$pair=$line.Split('=',2);if($pair.Count -eq 2){$receipt[$pair[0]]=$pair[1]}}
+        $receipt=Read-MistwatchExactReceipt $receiptPath
+        if($FallenLogProfile -ceq 'scanned-straight-v1'){
+            $fallenResults+=@{case=$case;contract=(Assert-MistwatchFallenLogEvidence -Capture $capture -Expected $independent)}
+        }
         $canopyCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.canopy-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$canopyCleanup[$pair[0]]=$pair[1]}}
-        Assert-MistwatchWorldProfileReceipt -Receipt $receipt -Cleanup $canopyCleanup -WorldProfile $WorldProfile -Scene $case
+        Assert-MistwatchWorldProfileReceipt -Receipt $receipt -Cleanup $canopyCleanup -WorldProfile $WorldProfile -Scene $case -FallenLogProfile $FallenLogProfile -IndependentExpected $independent
         if($case -eq 'shrub-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Shrub profile not proven'}
         $shrubCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.shrub-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$shrubCleanup[$pair[0]]=$pair[1]}}
         if($shrubCleanup.cleanup -ne 'success' -or $shrubCleanup.mesh_destroy_calls -ne '8'){throw ('Shrub cleanup incomplete: '+$case)}
+        $expectedTrailFingerprint=if($WorldProfile -eq 'forest-wood'){'16254976898190631993'}else{'17422259039373256066'}
+        # V137 以實際 premiddle/core 輸入獨立重建；新群落改變貼地切分，舊三世界仍保留原值。
+        $expectedTrailTriangles=if($WorldProfile -eq 'forest-wood'){'27391'}else{'26530'}
         if($receipt.trail_litter_enabled -ne '1' -or $receipt.trail_litter_patches -ne '48' -or
             $receipt.trail_litter_branches -ne '240' -or $receipt.trail_litter_stones -ne '336' -or
-            $receipt.trail_litter_triangles -ne '26530' -or $receipt.trail_litter_fingerprint -ne '17422259039373256066' -or
+            $receipt.trail_litter_triangles -ne $expectedTrailTriangles -or $receipt.trail_litter_fingerprint -ne $expectedTrailFingerprint -or
             $receipt.submitted_trail_litter -ne '2'){throw ('Trail litter production contract missing: '+$case)}
         if($case -eq 'trail-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Trail profile not proven'}
         $trailCleanup=@{}
@@ -102,13 +130,36 @@ try {
         $hutCleanup=@{}
         foreach($line in Get-Content -LiteralPath ($capture+'.hut-cleanup.txt')){$pair=$line.Split('=',2);if($pair.Count -eq 2){$hutCleanup[$pair[0]]=$pair[1]}}
         if($hutCleanup.cleanup -ne 'success' -or $hutCleanup.mesh_destroy_calls -ne '1' -or
-            $receipt.ranger_hut_visual -ne 'planked_pitched_roof' -or $receipt.ranger_hut_triangles -ne '832' -or
+            $receipt.ranger_hut_visual -ne 'planked_pitched_roof' -or $receipt.ranger_hut_triangles -ne '3200' -or
             $receipt.ranger_hut_wood_textured -ne '1' -or $receipt.ranger_hut_camera_roof -ne '1'){
             throw ('Ranger hut production geometry/material/camera missing: '+$case)
         }
         if($case -eq 'ranger-hut-profile' -and $receipt.camera_source -ne 'diagnostic'){throw 'Hut profile not proven'}
+        # 新版美術逐項精確驗收；其餘原32/17場景、品質與資源門檻保持。
+        $artExpected=@{
+            art_contract='mistwatch-art-v297';ranger_hut_mesh_resources='1';ranger_hut_indices='9600';
+            ranger_hut_authored_uv='1';ranger_hut_visible_trim='1';ranger_hut_use_uv='1';
+            ranger_hut_texture_scale='1';ranger_hut_normal_scale='0.22';
+            explorer_vertices='9281';explorer_triangles='12344';explorer_surface_windows='9';
+            explorer_surface_skin_windows='3';explorer_surface_eye_windows='2';explorer_surface_textured_windows='0';
+            explorer_lens_drawlist_accepted='2';explorer_lens_indices='1404';explorer_surface_routes_match='1';
+            renderer_accepted_skin_instances='3';renderer_accepted_eye_instances='2';
+            renderer_accepted_hair_instances='1';renderer_accepted_cloth_instances='1';renderer_accepted_textured_skinned_instances='0';
+            generator_static_triangles='1228';generator_indicator_triangles='24'
+        }
+        foreach($key in $artExpected.Keys){
+            if(-not $receipt.ContainsKey($key) -or $receipt[$key] -cne $artExpected[$key]){
+                throw ('New art production contract mismatch '+$key+': '+$case)
+            }
+        }
+        if($receipt.generator_circuit -cnotmatch '^[0-7]$'){throw ('Invalid generator circuit: '+$case)}
+        $generatorCleanup=Read-MistwatchExactReceipt ($capture+'.generator-cleanup.txt')
+        if($generatorCleanup.Count -ne 3 -or $generatorCleanup['cleanup'] -cne 'success' -or
+            $generatorCleanup['mesh_destroy_calls'] -cne '3' -or $generatorCleanup['cleared_resources'] -cne '3'){
+            throw ('Generator resources leaked: '+$case)
+        }
         if($receipt.supply_visual -ne 'planked_wood_crate' -or $receipt.supply_mesh_resources -ne '2' -or
-            $receipt.supply_wood_triangles -ne '360' -or $receipt.supply_metal_triangles -ne '236' -or
+            $receipt.supply_wood_triangles -ne '664' -or $receipt.supply_metal_triangles -ne '236' -or
             $receipt.supply_wood_textured -ne '1'){throw ('Supply production geometry/material missing: '+$case)}
         $mask=[int]$receipt.supply_collected_mask
         if($mask -lt 0 -or $mask -gt 7){throw ('Invalid supply mask: '+$case)}
@@ -143,9 +194,24 @@ try {
            $receipt.boulder_materials -ne '1' -or $receipt.boulder_gpu_resources -ne '1' -or
            $receipt.boulder_use_uv -ne '1' -or $receipt.boulder_texture_scale -ne '1'){throw ('Scanned boulder geometry/material binding incorrect: '+$case)}
         Assert-MistwatchTerrainCoverageMarker $receipt
-        if($receipt.ground_source -ne 'forest-ground-04' -or $receipt.ground_maximum_resolution -ne '2048' -or
-           $receipt.ground_packed_orm -ne '1' -or $receipt.ground_texture_scale -ne '0.25' -or
+        $expectedGroundSource=if($WorldProfile -eq 'forest-wood'){'ground037-moss-floor'}else{'forest-ground-04'}
+        $expectedGroundPacked=if($WorldProfile -eq 'forest-wood'){'0'}else{'1'}
+        if($receipt.ground_source -cne $expectedGroundSource -or $receipt.ground_maximum_resolution -ne '2048' -or
+           $receipt.ground_packed_orm -cne $expectedGroundPacked -or $receipt.ground_texture_scale -ne '0.25' -or
            $receipt.ground_use_uv -ne '1'){throw ('Forest floor production coverage material route missing: '+$case)}
+        if($WorldProfile -eq 'forest-wood'){
+            $groundArtExpected=@{
+                ground_art_base_color_path='ambientcg/ground037/1k/Ground037_1K-JPG_Color.jpg'
+                ground_art_surface_path='ambientcg/ground037/1k/Ground037_1K-JPG_Roughness.jpg'
+                ground_art_normal_path='ambientcg/ground037/1k/Ground037_1K-JPG_NormalDX.jpg'
+                ground_art_surface_encoding='0'
+            }
+            foreach($key in $groundArtExpected.Keys){
+                if(-not $receipt.ContainsKey($key) -or $receipt[$key] -cne $groundArtExpected[$key]){
+                    throw ('Forest moss floor final definition mismatch '+$key+': '+$case)
+                }
+            }
+        }
         if($receipt.ground_material_class -ne '3' -or $receipt.ground_texture_layers -ne '3' -or
            $receipt.ground_single_surface -ne '0' -or $receipt.ground_height_alpha -ne 'shared_core_normalized' -or
            $receipt.ground_distance_normal_strength -ne '0.65' -or $receipt.ground_meso_partition -ne '0' -or
@@ -160,7 +226,7 @@ try {
            $receipt.fern_use_uv -ne '1' -or $receipt.fern_alpha_cutoff -ne '0.5' -or
            $receipt.understory_ferns -ne '420' -or [int]$receipt.submitted_ferns -lt 1 -or
            [int]$receipt.submitted_fern_triangles -lt 1){throw ('Scanned fern production binding missing: '+$case)}
-        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case -WorldProfile $WorldProfile
+        Assert-MistwatchForestCoverReceipt -Receipt $receipt -Scene $case -WorldProfile $WorldProfile -FallenLogProfile $FallenLogProfile -IndependentExpected $independent
         if($case -in @('boulder-profile','grass-profile','fern-profile')) {
             if($receipt.camera_source -ne 'diagnostic'){throw 'Detail fixture missing diagnostic camera'}
             $position=@($receipt.camera_position.Split(',')|ForEach-Object{[double]::Parse($_,[Globalization.CultureInfo]::InvariantCulture)})
@@ -232,10 +298,31 @@ try {
                 if([double]::IsNaN($value) -or [double]::IsInfinity($value) -or $value -le 0){throw ('Invalid GPU timing: '+$case)}
             }
         }
+        # 桌子的真網格與回收必須獨立成立，不能只看到木屋就算道具通過。
+        foreach($pair in @(@('ranger_desk_mesh_resources','1'),@('ranger_desk_vertices','216'),
+            @('ranger_desk_triangles','108'),@('ranger_desk_indices','324'),
+            @('ranger_desk_scene_submissions','1'),@('ranger_desk_wood_textured','1'))){
+            if(-not $receipt.ContainsKey($pair[0]) -or $receipt[$pair[0]] -cne $pair[1]){throw ('Invalid ranger desk resource: '+$case+' '+$pair[0])}
+        }
+        [ulong]$deskHandle=0
+        if(-not $receipt.ContainsKey('ranger_desk_resource_handle') -or
+           -not [ulong]::TryParse($receipt['ranger_desk_resource_handle'],[Globalization.NumberStyles]::None,
+               [Globalization.CultureInfo]::InvariantCulture,[ref]$deskHandle) -or $deskHandle -eq 0){throw 'Missing true ranger desk handle'}
+        $deskCleanup=Read-MistwatchExactReceipt ($capture+'.desk-cleanup.txt')
+        if($deskCleanup.Count -ne 4 -or $deskCleanup['mesh_destroy_calls'] -cne '1' -or
+           $deskCleanup['destroyed_handle'] -cne $receipt['ranger_desk_resource_handle'] -or
+           $deskCleanup['cleared_resources'] -cne '1' -or $deskCleanup['cleanup'] -cne 'success'){
+            throw ('Ranger desk cleanup not proven: '+$case)
+        }
         $results+= [pscustomobject]@{case=$case;exit_code=$process.ExitCode;started_utc=$start.ToString('o');
             completed_utc=[DateTime]::UtcNow.ToString('o');capture=$capture;capture_sha256=(Get-FileHash -LiteralPath $capture -Algorithm SHA256).Hash;receipt=$receipt}
     }
-    $report=[pscustomobject]@{schema=1;world_profile=$WorldProfile;executable=$executable;executable_sha256=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash;
+    if($FallenLogProfile -ceq 'scanned-straight-v1'){
+        $null=Get-MistwatchIndependentExpected -SourceRoot $SourceRoot -BuildRoot $BuildRoot -ExecutablePath $executable
+        if((Get-FileHash -LiteralPath (Join-Path $BuildRoot 'games/mistwatch/native/fallen-cpu-certificate/Expected.json') -Algorithm SHA256).Hash -cne $independentSha){throw 'Independent CPU certificate drifted during matrix'}
+        if($fallenResults.Count -ne $cases.Count){throw 'Missing actual fallen resource/cleanup case'}
+    }
+    $report=[pscustomobject]@{schema=1;world_profile=$WorldProfile;fallen_log_profile=$FallenLogProfile;independent_expected_sha256=$independentSha;fallen_cases=$fallenResults;executable=$executable;executable_sha256=(Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash;
         acceptance='native initialization/capture and fixed-scene GPU timing only; not manual playthrough or realistic-art acceptance';cases=$results}
     $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'native-validation.json') -Encoding UTF8
     'MISTWATCH_NATIVE_VALIDATION_PASS; WORLD_PROFILE='+$WorldProfile+'; CASES='+$results.Count+'; GPU_VALIDATION='+$GpuValidation.IsPresent

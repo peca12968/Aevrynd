@@ -2,6 +2,7 @@
 #include "MistwatchWorld.h"
 #include "MistwatchScannedGrass.h"
 #include "MistwatchCanopyVolumeClearance.h"
+#include "MistwatchImmutableVolumeBounds.h"
 #include <array>
 #include <span>
 #include <limits>
@@ -125,7 +126,7 @@ inline bool ForestCoverFootprint(const Aevrynd::HeightField3D& terrain,Aevrynd::
 inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain,
     std::span<const Aevrynd::Vec3> trees,const ForestUnderstory& understory,
     std::span<const Aevrynd::BoxCollider3D> solids,const std::array<ForestCoverAsset,5>& assets,
-    ForestCoverSettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={}) {
+    ForestCoverSettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false) {
     if(!CanopyVolume::ValidWoodParts(canopyWood))throw std::invalid_argument("Invalid canopy wood parts for grass");
     if(settings.targetPlants>10000||!settings.maximumPatches||settings.maximumPatches>1000||
        !settings.attemptsPerPatch||settings.attemptsPerPatch>10000||
@@ -142,6 +143,7 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
     if(!canopyWood.empty())for(const auto& asset:assets)
         if(!CanopyVolume::Detail::ValidLocal(CanopyVolume::ConservativeLocalVolume(asset.radius,asset.minimumY,asset.maximumY)))
             throw std::invalid_argument("Invalid normalized grass full volume");
+    CanopyVolume::ImmutableVolumeBoundsCache solidVolumeBounds(solids),canopyVolumeBounds(canopyWood);
     ForestCoverResult result;
     result.plants.reserve(settings.targetPlants);
     std::uint32_t seed=settings.seed;
@@ -193,9 +195,16 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
             const unsigned variant=(std::min)(unsigned(random()*5.f),4u);
             const float radius=assets[variant].radius*scale;
             if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
-            if(!canopyWood.empty()&&!CanopyVolume::ClearsCanopyWood(
+            // 開始完整實體體積檢查
+if(fullSolidVolumes&&!solids.empty()&&!solidVolumeBounds.Clears(
                 CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
-                    assets[variant].minimumY,assets[variant].maximumY),scale,{0,root.x+root.z,0}},canopyWood)){
+                    assets[variant].minimumY,assets[variant].maximumY),scale,{0,root.x+root.z,0}})){
+                ++result.rejectedClearance;continue;
+            }
+// 結束完整實體體積檢查
+if(!canopyWood.empty()&&!canopyVolumeBounds.Clears(
+                CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
+                    assets[variant].minimumY,assets[variant].maximumY),scale,{0,root.x+root.z,0}})){
                 ++result.rejectedClearance;continue;
             }
             if(!ForestCoverFootprint(terrain,root,radius,settings)){++result.rejectedTerrain;continue;}

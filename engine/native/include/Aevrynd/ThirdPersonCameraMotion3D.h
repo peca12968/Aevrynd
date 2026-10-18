@@ -15,7 +15,7 @@ bool ThirdPersonCameraPathClear3D(Vec3 start,Vec3 end,std::span<const BoxCollide
     const HeightField3D& terrain,std::span<const BoxCollider3D> cameraOnly={},float radius=.12f);
 class ThirdPersonCameraMotion3D {
 public:
-    void Reset()noexcept{initialized_=false;routeCount_=routeIndex_=0;routeDirection_=0;}
+    void Reset()noexcept{initialized_=false;routeCount_=routeIndex_=0;routeDirection_=0;occlusionRecovery_=false;occlusionSeconds_=retrySeconds_=0;requestInitialized_=false;poseQuietSeconds_=0;}
     bool Initialized()const noexcept{return initialized_;}
     const Camera3D& Camera()const noexcept{return camera_;}
     // 每次固定更新只呼叫一次；繪圖只讀 Camera，不得重複消耗 dt。
@@ -33,5 +33,11 @@ private:
     unsigned routeCount_{},routeIndex_{};
     float routeDirection_{};
     float routeWantedPitch_{},routeWantedRange_{};
+    // 遮擋恢復與玩家轉向路線分開辨識，不以目前鏡頭 yaw 誤認新輸入。
+    // 接受的原始請求姿態變化擁有一秒手動優先權；不把抵達目標當成停止輸入。
+    bool requestInitialized_{};
+    float requestedYaw_{},requestedPitch_{},requestedRange_{},poseQuietSeconds_{};
+    bool occlusionRecovery_{};
+    float recoveryRequestedYaw_{},occlusionSeconds_{},retrySeconds_{};
 };
 }

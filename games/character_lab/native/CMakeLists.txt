@@ -13,6 +13,9 @@ target_compile_options(CharacterLabDemoLauncher PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(CharacterLabDemoLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(CharacterLabDemoLauncher PRIVATE bcrypt)
 set_target_properties(CharacterLabDemoLauncher PROPERTIES OUTPUT_NAME "Aevrynd-Character-Lab-Launcher" VS_DPI_AWARE "PerMonitor")
+if(TARGET AevryndReleaseGateAssets)
+  add_dependencies(CharacterLab AevryndReleaseGateAssets)
+else()
 foreach(CHARACTER_ASSET realistic-female realistic-male)
   add_custom_command(TARGET CharacterLab POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -39,6 +42,7 @@ add_custom_command(TARGET CharacterLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_SOURCE_DIR}/games/character_lab/assets/material-packs"
     "$<TARGET_FILE_DIR:CharacterLab>/assets/material-packs")
+endif()
 aevrynd_package_streamline_runtime(CharacterLab)
 
 add_executable(CharacterLabAutomationTest tests/CharacterLabAutomationSmoke.cpp)

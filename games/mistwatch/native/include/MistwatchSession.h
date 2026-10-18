@@ -1,5 +1,6 @@
 #pragma once
 #include "MistwatchTerrainProfile.h"
+#include "MistwatchFieldRelayTask.h"
 #include <Aevrynd/Math.h>
 #include <array>
 #include <cmath>
@@ -20,6 +21,7 @@ struct Session {
     bool fuseClueRead{};
     unsigned fuseDials{};
     unsigned relayLinked{},relaySectors{};
+    unsigned relayPatchA{},relayPatchB{},relayFieldTasks{},extractionRoute{};
     Aevrynd::Vec3 feet{};
     static constexpr std::array<Aevrynd::Vec3, 3> supplies{{{4,0,6},{-5,0,14},{8,0,22}}};
     static constexpr Aevrynd::Vec3 bridge{0,0,30}, arena{0,0,48}, beacon{0,0,70};
@@ -34,7 +36,7 @@ struct Session {
     bool Alive() const { return health != 0; }
     Stage CurrentStage() const {
         if (beaconLit) return Stage::Complete;
-        if (powerRestored) return relayLinked==7?Stage::Beacon:Stage::Relays;
+        if (powerRestored) return relayLinked==7&&relayFieldTasks==FieldRelayTask::AllTasks?Stage::Beacon:Stage::Relays;
         if (fuseCollected) return Stage::Generator;
         if (guardianDefeated) return Stage::Fuse;
         if (bridgeRepaired) return Stage::Encounter;
@@ -72,7 +74,7 @@ struct Session {
         return true;
     }
     bool LightBeacon() {
-        if (!Alive() || CurrentStage()!=Stage::Beacon || !Near(beacon)) return false;
+        if (!Alive() || CurrentStage()!=Stage::Beacon || !Valid() || relayFieldTasks!=FieldRelayTask::AllTasks || !Near(beacon)) return false;
         beaconLit=true;
         return true;
     }
@@ -101,9 +103,45 @@ struct Session {
         const unsigned sector=unsigned(int(RelaySector(index))+direction+16)&15u;
         relaySectors=(relaySectors&~(15u<<shift))|(sector<<shift);return true;
     }
+    // 新操作只在原站點地面近場作用；一次呼叫只提交一項確認，不順便連站。
+    bool CycleRelayPatch(unsigned connector) {
+        if(!Alive()||CurrentStage()!=Stage::Relays||connector>=2||!Valid()||
+           (relayFieldTasks&FieldRelayTask::WestCircuitBit)||(relayLinked&1u)||
+           !NearRelay(FieldRelayTask::WestRelay))return false;
+        auto& choice=connector==0?relayPatchA:relayPatchB;
+        choice=(choice+1u)%FieldRelayTask::PatchOptions;return true;
+    }
+    bool ConfirmRelayCircuit() {
+        if(!Alive()||CurrentStage()!=Stage::Relays||!Valid()||
+           (relayFieldTasks&FieldRelayTask::WestCircuitBit)||(relayLinked&1u)||
+           !NearRelay(FieldRelayTask::WestRelay)||
+           !FieldRelayTask::CircuitConnected(relayPatchA,relayPatchB))return false;
+        relayFieldTasks|=FieldRelayTask::WestCircuitBit;return true;
+    }
+    bool CycleExtractionRoute() {
+        if(!Alive()||CurrentStage()!=Stage::Relays||!Valid()||
+           (relayFieldTasks&FieldRelayTask::NorthWestRouteBit)||(relayLinked&4u)||
+           !NearRelay(FieldRelayTask::NorthWestRelay))return false;
+        extractionRoute=(extractionRoute+1u)%FieldRelayTask::RouteOptions;return true;
+    }
+    bool ConfirmExtractionRoute() {
+        if(!Alive()||CurrentStage()!=Stage::Relays||!Valid()||
+           (relayFieldTasks&FieldRelayTask::NorthWestRouteBit)||(relayLinked&4u)||
+           !NearRelay(FieldRelayTask::NorthWestRelay)||
+           !FieldRelayTask::SafeExtractionRoute(extractionRoute,bridgeRepaired))return false;
+        relayFieldTasks|=FieldRelayTask::NorthWestRouteBit;return true;
+    }
+    bool RelayFieldTaskReady(unsigned index) const {
+        if(!Valid())return false;
+        if(index==FieldRelayTask::WestRelay)return (relayFieldTasks&FieldRelayTask::WestCircuitBit)&&
+            FieldRelayTask::CircuitConnected(relayPatchA,relayPatchB);
+        if(index==FieldRelayTask::NorthWestRelay)return (relayFieldTasks&FieldRelayTask::NorthWestRouteBit)&&
+            FieldRelayTask::SafeExtractionRoute(extractionRoute,bridgeRepaired);
+        return index==1;
+    }
     bool ConnectRelay(unsigned index) {
         if(!Alive()||CurrentStage()!=Stage::Relays||index>=3||(relayLinked&(1u<<index))||
-            !NearRelay(index)||RelaySector(index)!=RelayTargetSector(index))return false;
+            !NearRelay(index)||RelaySector(index)!=RelayTargetSector(index)||!RelayFieldTaskReady(index))return false;
         relayLinked|=1u<<index;return true;
     }
     bool NearInterior(Aevrynd::Vec3 point) const {
@@ -139,6 +177,15 @@ struct Session {
         feet=bridgeRepaired?bridge:Aevrynd::Vec3{};
     }
     bool Valid() const {
+        if(relayPatchA>=FieldRelayTask::PatchOptions||relayPatchB>=FieldRelayTask::PatchOptions||
+           relayFieldTasks>FieldRelayTask::AllTasks||extractionRoute>=FieldRelayTask::RouteOptions)return false;
+        if((relayPatchA||relayPatchB||relayFieldTasks||extractionRoute)&&!powerRestored)return false;
+        if((relayFieldTasks&FieldRelayTask::WestCircuitBit)&&
+           !FieldRelayTask::CircuitConnected(relayPatchA,relayPatchB))return false;
+        if((relayFieldTasks&FieldRelayTask::NorthWestRouteBit)&&
+           !FieldRelayTask::SafeExtractionRoute(extractionRoute,bridgeRepaired))return false;
+        if(((relayLinked&1u)&&!(relayFieldTasks&FieldRelayTask::WestCircuitBit))||
+           ((relayLinked&4u)&&!(relayFieldTasks&FieldRelayTask::NorthWestRouteBit)))return false;
         if(relayLinked>7||relaySectors>4095||((relayLinked||relaySectors)&&!powerRestored))return false;
         for(unsigned index=0;index<3;++index)if((relayLinked&(1u<<index))&&RelaySector(index)!=RelayTargetSector(index))return false;
         return health<=100 && collected<=7 && repairMaterials<=7 && circuit<=7 && (!circuit || fuseCollected) && (!powerRestored || circuit==7) && Finite(feet) &&
@@ -154,10 +201,11 @@ struct Session {
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out.precision(9);
-        out << "MISTWATCH 6 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
+        out << "MISTWATCH 7 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
             << guardianDefeated << ' ' << beaconLit << ' ' << feet.x << ' ' << feet.y << ' ' << feet.z
             << ' ' << fuseCollected << ' ' << powerRestored << ' ' << circuit << ' ' << repairMaterials
-            << ' ' << fuseClueRead << ' ' << fuseDials << ' ' << relayLinked << ' ' << relaySectors;
+            << ' ' << fuseClueRead << ' ' << fuseDials << ' ' << relayLinked << ' ' << relaySectors
+            << ' ' << relayPatchA << ' ' << relayPatchB << ' ' << relayFieldTasks << ' ' << extractionRoute;
         return out.str();
     }
     bool Restore(std::string_view text) {
@@ -168,7 +216,7 @@ struct Session {
         unsigned version{}, repaired{}, defeated{}, lit{};
         Session candidate;
         if (!(in>>magic>>version>>candidate.collected>>candidate.health>>repaired>>defeated>>lit
-              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>6) ||
+              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>7) ||
               repaired>1 || defeated>1 || lit>1) return false;
         unsigned fuseValue{},powerValue{};
         if(version>=2) {
@@ -193,6 +241,19 @@ struct Session {
             // 舊版已完成的救援不倒退；未完成者保留供電進度並進入新中繼任務。
             candidate.relayLinked=7;
             for(unsigned index=0;index<3;++index)candidate.relaySectors|=RelayTargetSector(index)<<(index*4);
+        }
+        if(version>=7) {
+            if(!(in>>candidate.relayPatchA>>candidate.relayPatchB>>candidate.relayFieldTasks>>candidate.extractionRoute))return false;
+        } else {
+            // 舊版任意部分連線都保留；補值只表示相容，不偽稱舊玩家已做過新判斷。
+            if(candidate.relayLinked&1u) {
+                candidate.relayPatchA=1;candidate.relayPatchB=0;
+                candidate.relayFieldTasks|=FieldRelayTask::WestCircuitBit;
+            }
+            if(candidate.relayLinked&4u) {
+                candidate.extractionRoute=static_cast<unsigned>(FieldRelayTask::ExtractionRoute::RepairedBridge);
+                candidate.relayFieldTasks|=FieldRelayTask::NorthWestRouteBit;
+            }
         }
         if(in>>extra) return false;
         candidate.fuseCollected=fuseValue!=0;candidate.powerRestored=powerValue!=0;

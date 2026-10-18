@@ -4,12 +4,16 @@ target_compile_options(FrontierWorld PRIVATE /W4 /permissive- /utf-8)
 target_compile_definitions(FrontierWorld PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(FrontierWorld PRIVATE AevryndEngine)
 set_target_properties(FrontierWorld PROPERTIES OUTPUT_NAME "Aevrynd-Frontier-World" VS_DPI_AWARE "PerMonitor")
+if(TARGET AevryndReleaseGateAssets)
+  add_dependencies(FrontierWorld AevryndReleaseGateAssets)
+else()
 add_custom_command(TARGET FrontierWorld POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:FrontierWorld>/assets"
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/material-packs" "$<TARGET_FILE_DIR:FrontierWorld>/assets/material-packs"
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/engine/assets/model-packs" "$<TARGET_FILE_DIR:FrontierWorld>/assets/model-packs"
   COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:FrontierWorld>/assets/model-packs/poly-haven/quiver_tree_02/source"
   COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:FrontierWorld>/assets/model-packs/poly-haven/rock_09/source")
+endif()
 aevrynd_package_streamline_runtime(FrontierWorld)
 add_executable(FrontierWorldRulesTest tests/FrontierWorldRulesSmoke.cpp)
 target_include_directories(FrontierWorldRulesTest PRIVATE include)

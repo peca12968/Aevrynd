@@ -1,0 +1,16 @@
+Forest surface height assets for Aevrynd Mistwatch
+
+Ground037: ambientCG, CC0 1.0 Universal.
+Asset: https://ambientcg.com/view?id=Ground037
+License: https://ambientcg.com/license
+The existing Ground037 roughness and displacement channels are combined without resampling.
+
+Forest Leaves 04: Poly Haven, artist Rob Tuytel, CC0 1.0 Universal.
+Asset: https://polyhaven.com/a/forest_leaves_04
+License: https://polyhaven.com/license
+Original displacement: https://dl.polyhaven.org/file/ph-assets/Textures/png/2k/forest_leaves_04/forest_leaves_04_disp_2k.png
+The 16-bit displacement is rounded to 8-bit normalized height without contrast rescaling.
+
+Derived RGBA files: R=255 (neutral occlusion, not measured AO), G=original roughness.R,
+B=0 (non-metallic), A=linear source height. These are material data, not transparency maps.
+No generated geometry, collision displacement, self-shadowing or accepted art score is claimed.

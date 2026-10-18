@@ -7,10 +7,11 @@
 namespace Mistwatch {
 struct OrbitCamera {
     float yaw{}, pitch{.3f}, distance{6.f};
-    void Update(Aevrynd::Vec2 drag,float wheel,float keyboard,float dt) {
+    void Update(Aevrynd::Vec2 drag,float wheel,float keyboard,float dt,bool recenter=false,float heading=0) {
         if(!std::isfinite(drag.x)||!std::isfinite(drag.y)||!std::isfinite(wheel)||
-           !std::isfinite(keyboard)||!std::isfinite(dt)||dt<0) return;
-        yaw=std::remainder(yaw-drag.x*.005f+keyboard*(std::min)(dt,.1f)*1.5f,6.2831853f);
+           !std::isfinite(keyboard)||!std::isfinite(dt)||dt<0||(recenter&&!std::isfinite(heading))) return;
+        if(recenter&&drag.x==0&&drag.y==0&&keyboard==0)yaw=std::remainder(heading,6.2831853f);
+        else yaw=std::remainder(yaw-drag.x*.005f+keyboard*(std::min)(dt,.1f)*1.5f,6.2831853f);
         pitch=std::clamp(pitch+drag.y*.004f,-.15f,1.1f);
         distance=std::clamp(distance-wheel*.7f,2.5f,10.f);
     }

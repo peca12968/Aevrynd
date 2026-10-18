@@ -1,4 +1,5 @@
 #include "OcclusionDither.hlsli"
+#include "OcclusionNormal.hlsli"
 
 Texture2D<float> sceneDepth : register(t0);
 Texture2D<float2> ambientOcclusion : register(t1);
@@ -277,8 +278,7 @@ float3 ReconstructViewNormal(float2 uv, float3 centerPosition)
     const float topDepth = length(top - cameraFogStart.xyz), bottomDepth = length(bottom - cameraFogStart.xyz);
     const float3 horizontal = abs(leftDepth - centerDepth) < abs(rightDepth - centerDepth) ? centerPosition - left : right - centerPosition;
     const float3 vertical = abs(topDepth - centerDepth) < abs(bottomDepth - centerDepth) ? centerPosition - top : bottom - centerPosition;
-    const float3 normal = normalize(cross(vertical, horizontal));
-    return all(isfinite(normal)) ? normal : float3(0.0, 0.0, -1.0);
+    return ReconstructOcclusionSurfaceNormal(horizontal, vertical, cameraFogStart.xyz - centerPosition);
 }
 
 struct AmbientOcclusionOutput { float2 occlusion : SV_TARGET0; float2 contactDepth : SV_TARGET1; };

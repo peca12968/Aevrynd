@@ -10,6 +10,29 @@
   },
   "packs": [
     {
+      "id": "worn-planks",
+      "source": "Poly Haven",
+      "author": "Dimitrios Savva",
+      "sourceUrl": "https://polyhaven.com/a/worn_planks",
+      "licenseUrl": "https://polyhaven.com/license",
+      "retrievedAt": "2026-10-07T09:38:52.9022262Z",
+      "detailClass": "environment",
+      "physicalWidthMeters": 1.4,
+      "normalConvention": "DirectX",
+      "directory": "poly-haven/worn_planks/1k",
+      "maps": ["base-color.jpg", "roughness.jpg", "normal-dx.png"],
+      "sha256": {
+        "base-color.jpg": "698C09B337375A9AAE12A76AD09FF2FDA11D735E6C1BBB18D72875BD61988DB6",
+        "roughness.jpg": "C79F640DC2D7EF81D69DE463EF6676B7C540D598FB0E462A6EB39EB5462770A9",
+        "normal-dx.png": "743411ACF7332D8176D4E402237BB4B2D28A89FDC9BA160BB1EEE2DE6FBFB74B"
+      },
+      "originalUrls": {
+        "base-color.jpg": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/worn_planks/worn_planks_diff_1k.jpg",
+        "roughness.jpg": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/worn_planks/worn_planks_rough_1k.jpg",
+        "normal-dx.png": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/worn_planks/worn_planks_nor_dx_1k.png"
+      }
+    },
+    {
       "id": "aerial-ground-rock",
       "source": "Poly Haven",
       "sourceUrl": "https://polyhaven.com/a/aerial_ground_rock",

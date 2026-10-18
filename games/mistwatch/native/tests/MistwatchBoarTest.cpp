@@ -3,6 +3,80 @@
 #include <Aevrynd/SkinnedModelAsset.h>
 #include <iostream>
 #include <limits>
+namespace {
+bool LoadedBoarArticulation(const Aevrynd::SkinnedModel3D& model,const Aevrynd::HeightField3D& terrain) {
+    using namespace Aevrynd;
+    constexpr std::array<unsigned,3> channels{1,2,15};
+    struct PhaseCase {Mistwatch::EnemyPhase phase;float remaining;};
+    constexpr std::array<PhaseCase,5> phases{{
+        {Mistwatch::EnemyPhase::Pursuit,0.f},{Mistwatch::EnemyPhase::Windup,.85f},
+        {Mistwatch::EnemyPhase::Windup,.425f},{Mistwatch::EnemyPhase::Windup,.05f},
+        {Mistwatch::EnemyPhase::Recovery,1.f}}};
+    const auto sameMatrix=[](const Matrix4& a,const Matrix4& b) {
+        for(unsigned r=0;r<4;++r)for(unsigned c=0;c<4;++c)
+            if(!std::isfinite(a[r][c])||!std::isfinite(b[r][c])||std::abs(a[r][c]-b[r][c])>1e-5f)return false;
+        return true;
+    };
+    if(!model.Valid()||model.skeleton.joints.size()!=16)return false;
+    // 這是目前本作 AESK1 的 identity bind 契約，不假稱支援任意第三方旋轉骨架。
+    for(const auto& joint:model.skeleton.joints) {
+        const auto& bind=joint.bindTransform;
+        if(!bind.usesQuaternion||bind.quaternion.x!=0||bind.quaternion.y!=0||
+            bind.quaternion.z!=0||bind.quaternion.w!=1)return false;
+    }
+    std::vector<std::byte> immutableModel;
+    if(!EncodeSkinnedModelAsset(model,immutableModel))return false;
+    const Vec3 feet{12,terrain.SampleHeight(12,48),48};
+    unsigned poses{},weightedChecks{};
+    for(const auto& phase:phases)for(float beforeCycle:{0.f,1.f,4.f}) {
+        Mistwatch::Boar runtime;runtime.model=model;runtime.cycle=beforeCycle;
+        if(!runtime.Update({0,0,.012f},1.f/60.f,phase.phase,phase.remaining,{0,0,1})||
+            !runtime.PlaceFeet(feet,terrain))return false;
+        // 預期旋轉由固定輸入獨立推導；不可把正在受測的 Euler 欄位當成期望值。
+        const float brace=phase.phase==Mistwatch::EnemyPhase::Windup?
+            std::clamp(1.f-phase.remaining/.85f,0.f,1.f):0.f;
+        const float cycle=std::fmod(beforeCycle+.012f*6.f,6.2831853f);
+        const std::array<Vec3,3> angles{{
+            {phase.phase==Mistwatch::EnemyPhase::Recovery?-.13f:.12f+.36f*brace,0,0},
+            {-.1f*brace,0,0},{0,0,.15f*std::sin(cycle)}}};
+        std::array<Matrix4,3> expectedGlobal{};
+        for(unsigned c=0;c<3;++c) {
+            const auto& bind=model.skeleton.joints[channels[c]].bindTransform;
+            const auto local=CreateTransformMatrix(bind.translation,angles[c],bind.scale);
+            expectedGlobal[c]=(c==1?expectedGlobal[0]:runtime.pose.globalMatrices[0])*local;
+            if(!sameMatrix(runtime.pose.localTransforms[channels[c]].Matrix(),local)||
+                !sameMatrix(runtime.pose.globalMatrices[channels[c]],expectedGlobal[c]))return false;
+        }
+        const auto world=CreateTransformMatrix(feet,{0,runtime.yaw,0},{1,1,1});
+        for(unsigned leg=0;leg<4;++leg)
+            if(Length(TransformPoint(world*runtime.pose.globalMatrices[5+leg*3],{})-runtime.footTargets[leg])>.005f)return false;
+        SkinningWorkspace3D workspace;Mesh3D skinned;
+        if(!SkinModelInto(runtime.model,runtime.pose,workspace,skinned))return false;
+        std::array<unsigned,3> weighted{};
+        for(std::size_t v=0;v<model.bindMesh.vertices.size();++v) {
+            const auto& source=model.bindMesh.vertices[v];const auto& influence=model.influences[v];
+            Vec3 expected{};bool affected{};
+            for(unsigned slot=0;slot<4;++slot)if(influence.weights[slot]) {
+                const unsigned joint=influence.joints[slot];auto global=runtime.pose.globalMatrices[joint];
+                for(unsigned c=0;c<3;++c)if(joint==channels[c]){global=expectedGlobal[c];++weighted[c];affected=true;}
+                expected=expected+TransformPoint(global*model.inverseBindMatrices[joint],{source.x,source.y,source.z})*
+                    (float(influence.weights[slot])/65535.f);
+            }
+            const auto& actual=skinned.vertices[v];const float error=Length(Vec3{actual.x,actual.y,actual.z}-expected);
+            if(!std::isfinite(error)||error>1e-5f)return false;
+            if(affected)++weightedChecks;
+        }
+        for(unsigned count:weighted)if(!count)return false;
+        std::vector<std::byte> after;
+        if(!EncodeSkinnedModelAsset(runtime.model,after)||after!=immutableModel)return false;
+        ++poses;
+    }
+    std::cout<<"BOAR_AESK1_ROUNDTRIP_ARTICULATION_CPU_PASS poses="<<poses
+        <<" channels=3 local_matrices="<<poses*3<<" global_matrices="<<poses*3
+        <<" weighted_vertex_checks="<<weightedChecks<<'\n';
+    return poses==15;
+}
+}
 int main() {
     using namespace Aevrynd;
     Mistwatch::Boar boar;
@@ -82,6 +156,7 @@ int main() {
     if(pursuitFrames<50||windupFrames<100||recoveryFrames<100) {
         std::cerr<<"Phase coverage: pursuit="<<pursuitFrames<<" windup="<<windupFrames<<" recovery="<<recoveryFrames<<'\n';return 19;
     }
+    if(!LoadedBoarArticulation(loaded.model,terrain)) {std::cerr<<"Loaded boar articulation divergence\n";return 20;}
     std::cout<<"Boar PASS; joints=16; vertices="<<boar.model.bindMesh.vertices.size()<<" triangles="<<boar.model.bindMesh.indices.size()/3
         <<" locked="<<locked<<" lifted="<<lifted<<" maxFootError="<<maximumError<<" maxSlip="<<maximumSlip<<'\n';
 }

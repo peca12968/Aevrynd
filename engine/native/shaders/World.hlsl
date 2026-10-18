@@ -1,4 +1,6 @@
 #include "OcclusionDither.hlsli"
+#include "PhaseSkyDiffuse.hlsli"
+#include "TerrainRockVariation.hlsli"
 
 cbuffer Scene : register(b0)
 {
@@ -31,6 +33,8 @@ cbuffer Scene : register(b0)
     float4 phaseAnalyticDiffuse;
     float4 phaseSunDisk;
     float4 environmentObjectFill;
+    float4 terrainParallaxParameters;
+    float4 terrainParallaxView;
 };
 
 struct PointLightGpu3D
@@ -1033,11 +1037,12 @@ float3 EvaluateAtmosphere(float3 rayDirection, float3 sunDirection)
 
 float3 EvaluateAnalyticSkyDiffuse(float3 normal, float3 sunDirection)
 {
-    const float upperHemisphere = saturate(normal.y * 0.5 + 0.5);
-    const float horizon = pow(saturate(1.0 - abs(normal.y)), phaseSkyHorizon.a);
-    const float3 hemisphereColor = lerp(phaseSkyGround.rgb,phaseSkyZenith.rgb,upperHemisphere);
-    const float sunWrap = pow(saturate(dot(normal, sunDirection) * 0.5 + 0.5), 4.0);
-    return max(0.0,(lerp(hemisphereColor,phaseSkyHorizon.rgb,horizon*.42)+phaseSunDisk.rgb*sunWrap*.018)*phaseAnalyticDiffuse.rgb*phaseAnalyticDiffuse.a);
+    // 同一天空的 E/pi；太陽仍只走獨立的受影直射路徑，不以補光取代陰影。
+    const PhaseSkyDiffuseWeights weights = EvaluatePhaseSkyDiffuseWeights(normal.y, phaseSkyHorizon.a);
+    const float3 irradianceOverPi = phaseSkyZenith.rgb * weights.zenith
+                                 + phaseSkyHorizon.rgb * weights.horizon
+                                 + phaseSkyGround.rgb * weights.ground;
+    return max(0.0, irradianceOverPi * phaseSkyZenith.a * phaseAnalyticDiffuse.rgb * phaseAnalyticDiffuse.a);
 }
 
 float3 EvaluateAnalyticSkySpecular(float3 reflectionDirection, float3 sunDirection, float roughness)
@@ -1165,6 +1170,15 @@ float TerrainGrassDualDomainBlend(float2 worldPosition)
     const float signal = TerrainMesoPartitionSignal(blendPosition, CloudNoise(blendPosition * 0.021));
     const float smoothSignal = signal * signal * (3.0 - 2.0 * signal);
     return lerp(0.28, 0.62, smoothSignal);
+}
+
+float TerrainRockDualDomainBlend(float3 worldPosition)
+{
+    // 局部保留完整主域或第二域，只在連續過渡帶混合，避免整面裂紋被平均模糊。
+    // 含高度的兩組非整比尺度，讓垂直岩面也能變化；不依賴相機或時間。
+    const float first = CloudNoise(worldPosition.xy * 0.71 + float2(13.7, -5.9));
+    const float second = CloudNoise(worldPosition.zy * 0.93 + float2(-11.9, 7.3));
+    return smoothstep(0.40, 0.60, first * 0.65 + second * 0.35);
 }
 
 float3 BlendTerrainGrassAlbedo(float3 primary, float3 secondary, float blend)
@@ -1479,6 +1493,8 @@ float3 TriplanarNormal(float3 worldPosition, float3 geometricNormal, float scale
     return TriplanarNormalFrom(normalTexture, worldPosition, geometricNormal, scale);
 }
 
+#include "TerrainParallax.hlsli"
+
 float3 TerrainTopDownNormal(Texture2D source, float3 worldPosition, float3 geometricNormal, float scale)
 {
     const float3 sampled = DecodeBc5Normal(source.Sample(materialSampler, worldPosition.xz * scale).rg);
@@ -1638,6 +1654,29 @@ float3 EvaluatePbrLight(float3 normal, float3 viewDirection, float3 lightDirecti
                           / max(4.0 * normalView * normalLight, 0.0001);
     const float3 diffuseWeight = (1.0 - fresnel) * (1.0 - metallic);
     return (diffuseWeight * baseColor * (1.0 / 3.14159265) + specular) * radiance * normalLight;
+}
+
+// Terrain 以幾何法線判斷可見反射半球；陰影與 shading normal 不在此改動。
+float3 EvaluateTerrainPbrLight(float3 geometricNormal, float3 shadingNormal,
+    float3 viewDirection, float3 lightDirection, float3 radiance,
+    float3 baseColor, float roughness, float metallic)
+{
+    const float geometricView = dot(geometricNormal, viewDirection);
+    const float geometricLight = dot(geometricNormal, lightDirection);
+    if (!(geometricView > 0.0) || !(geometricLight > 0.0))
+        return float3(0.0,0.0,0.0);
+    if (dot(shadingNormal, viewDirection) > 0.0)
+        return EvaluatePbrLight(shadingNormal, viewDirection, lightDirection,
+            radiance, baseColor, roughness, metallic);
+    const float normalLight = saturate(dot(shadingNormal, lightDirection));
+    if (normalLight <= 0.0) return float3(0.0,0.0,0.0);
+    const float3 halfVector = lightDirection + viewDirection;
+    const float3 halfDirection = halfVector * rsqrt(max(dot(halfVector, halfVector), 0.000001));
+    const float3 reflectance = lerp(float3(0.04, 0.04, 0.04), baseColor, metallic);
+    const float3 fresnel = FresnelSchlick(saturate(dot(halfDirection, viewDirection)), reflectance);
+    const float3 diffuseWeight = (1.0 - fresnel) * (1.0 - metallic);
+    // 此幾何可見／shading 背視分支僅保留原 diffuse；GGX specular 為零。
+    return diffuseWeight * baseColor * (1.0 / 3.14159265) * radiance * normalLight;
 }
 
 float FoliagePhysicalTransmission(float normalLight,float viewLight)
@@ -2372,6 +2411,11 @@ float3 WaterSurfaceViewDirection(float3 worldPosition, float3 cameraPosition, fl
 
 float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToCoverage)
 {
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+    // 在材質／距離／掠射角分支前取得原世界 quad 導數，march 中不再取導數。
+    const float3 terrainParallaxWorldDx = ddx(input.worldPosition);
+    const float3 terrainParallaxWorldDy = ddy(input.worldPosition);
+#endif
     ClipWorldLod(input);
     const float3 geometricNormal = input.materialClass == 1
         ? WaterDeterministicNormalize3D(input.normal.xyz)
@@ -2453,6 +2497,19 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             }
         }
         const float terrainSlope = 1.0 - saturate(abs(geometricNormal.y));
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+        // b5 的座標變換是 draw-uniform；所有新的 per-pixel 視差／layer 分支前先捕捉。
+        const float3 terrainParallaxGrassDx = ddx(grassSamplePosition);
+        const float3 terrainParallaxGrassDy = ddy(grassSamplePosition);
+        const float3 terrainParallaxSecondaryPosition = TerrainGrassSecondarySamplePosition(grassSamplePosition);
+        const float3 terrainParallaxSecondaryDx = ddx(terrainParallaxSecondaryPosition);
+        const float3 terrainParallaxSecondaryDy = ddy(terrainParallaxSecondaryPosition);
+        const float3 terrainParallaxSoilDx = ddx(soilSamplePosition);
+        const float3 terrainParallaxSoilDy = ddy(soilSamplePosition);
+        const float3 terrainParallaxSecondarySoilPosition = TerrainGrassSecondarySamplePosition(soilSamplePosition);
+        const float3 terrainParallaxSecondarySoilDx = ddx(terrainParallaxSecondarySoilPosition);
+        const float3 terrainParallaxSecondarySoilDy = ddy(terrainParallaxSecondarySoilPosition);
+#endif
         const float terrainHeight = TerrainBiomeHeight(input.color.a);
         float rockWeight = smoothstep(0.38, 0.78, terrainSlope + max(0.0, terrainHeight - 0.62) * 0.35);
         const float originalRockWeight = rockWeight;
@@ -2461,6 +2518,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         float soilWeight = originalSoilWeight;
         float grassWeight = originalGrassWeight;
         float terrainLayerCoverageStrength = 0.0;
+        float terrainRockCoverage = 0.0;
         float terrainMesoSignal = 0.5;
         [branch] if (terrainDistanceMaterialEnabled > 0.5 && TerrainMesoPartitionEnabled())
         {
@@ -2550,6 +2608,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         [branch] if (input.textureData.x > 0.5 && input.textureData.w > 0.5 && input.normalScale == -15.46875)
         {
             const float2 coverage = DecodeTerrainLayerCoverage(input.uv);
+            terrainRockCoverage = coverage.y;
             terrainLayerCoverageStrength = coverage.x + coverage.y;
             [branch] if (terrainLayerCoverageStrength > 0.0)
             {
@@ -2573,6 +2632,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         // far-material cutoff.
         uint terrainSecondaryDomainLayer = 3u;
         float terrainSecondaryDomainBlend = 0.0;
+        bool terrainRockVariation = false;
         [branch] if (terrainDecorrelationEnabled && TerrainMesoPartitionEnabled())
         {
             const float authoredSecondaryWeight = max(authoredPathWeight, authoredWetSoilWeight);
@@ -2607,11 +2667,82 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             terrainSecondaryDomainBlend = TerrainGrassDualDomainBlend(input.worldPosition.xz)
                                         * selectedActivation * terrainDetailWeight;
         }
+        // 獨立 opt-in，只影響作者指定且已主導的岩層；不啟用草土重新分區。
+        [branch] if (terrainDistanceMaterialEnabled > 1.5 && terrainDecorrelationEnabled
+                     && terrainDetailWeight > 0.001 && terrainRockCoverage > 0.55)
+        {
+            const float rockActivation = smoothstep(0.55, 0.90, terrainRockCoverage)
+                                       * smoothstep(0.60, 0.90, rockWeight);
+            if (rockActivation > 0.0)
+            {
+                terrainRockVariation = true;
+                terrainSecondaryDomainLayer = 2u;
+                terrainSecondaryDomainBlend = TerrainRockDualDomainBlend(input.worldPosition)
+                                            * rockActivation * terrainDetailWeight;
+            }
+        }
+        float3 secondaryRockPosition = rockSamplePosition;
+        float3 secondaryRockProjectionNormal = geometricNormal;
+        [branch] if (terrainSecondaryDomainLayer == 2u && terrainSecondaryDomainBlend > 0.001)
+        {
+            secondaryRockPosition = terrainRockVariation ? TerrainRockSecondaryPosition(rockSamplePosition)
+                : TerrainGrassSecondarySamplePosition(rockSamplePosition);
+            if (terrainRockVariation)secondaryRockProjectionNormal = normalize(TerrainRockDomainRotate(geometricNormal));
+        }
         if (input.textureData.x > 0.5)
         {
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+            // bit0/bit1 分別是 validated 基層／落葉土壤高度；不能拿另一層的 A 冒充高度。
+            // 若 base/detail 尺度不同，不能宣稱三個 PBR 通道使用同一 UV，故維持舊路徑。
+            const bool terrainParallaxDrawEnabled = terrainParallaxView.z > 0.5 && terrainParallaxParameters.x > 0.0
+                && input.textureData.y > 0.0 && input.textureData.y == input.textureData.z;
+            const bool terrainParallaxDispatch = terrainParallaxDrawEnabled && (drawConstantReserved & 1u) != 0u;
+            const bool terrainParallaxSoilDispatch = terrainParallaxDrawEnabled && (drawConstantReserved & 2u) != 0u;
+            const float terrainParallaxWeight = (terrainParallaxDispatch || terrainParallaxSoilDispatch)
+                ? TerrainParallaxWeight(input.worldPosition, geometricNormal) : 0.0;
+            float2 terrainParallaxPrimaryUvOffset = float2(0.0, 0.0);
+            float2 terrainParallaxSecondaryUvOffset = float2(0.0, 0.0);
+            float2 terrainParallaxSoilUvOffset = float2(0.0, 0.0);
+            float2 terrainParallaxSecondarySoilUvOffset = float2(0.0, 0.0);
+            [branch] if (terrainParallaxDispatch)
+                terrainParallaxPrimaryUvOffset = TerrainParallaxOffset(roughnessTexture, input.worldPosition,
+                    grassSamplePosition, terrainParallaxGrassDx, terrainParallaxGrassDy,
+                    terrainParallaxWorldDx, terrainParallaxWorldDy, input.textureData.z, terrainParallaxWeight);
+            [branch] if (terrainParallaxSoilDispatch)
+                terrainParallaxSoilUvOffset = TerrainParallaxOffset(soilRoughnessTexture, input.worldPosition,
+                    soilSamplePosition, terrainParallaxSoilDx, terrainParallaxSoilDy,
+                    terrainParallaxWorldDx, terrainParallaxWorldDy, input.textureData.z, terrainParallaxWeight);
+            // 兩個 primary 加最多一個 selected secondary：各域最多 8+2 次，總量不超過 30。
+            [branch] if (terrainSecondaryDomainBlend > 0.001)
+            {
+                if (terrainSecondaryDomainLayer == 0u && terrainParallaxDispatch)
+                    terrainParallaxSecondaryUvOffset = TerrainParallaxOffset(roughnessTexture, input.worldPosition,
+                        terrainParallaxSecondaryPosition, terrainParallaxSecondaryDx, terrainParallaxSecondaryDy,
+                        terrainParallaxWorldDx, terrainParallaxWorldDy, input.textureData.z, terrainParallaxWeight);
+                else if (terrainSecondaryDomainLayer == 1u && terrainParallaxSoilDispatch)
+                    terrainParallaxSecondarySoilUvOffset = TerrainParallaxOffset(soilRoughnessTexture, input.worldPosition,
+                        terrainParallaxSecondarySoilPosition, terrainParallaxSecondarySoilDx, terrainParallaxSecondarySoilDy,
+                        terrainParallaxWorldDx, terrainParallaxWorldDy, input.textureData.z, terrainParallaxWeight);
+            }
+#endif
             // 三層都使用同一個世界空間三平面投影；只讓 rock 使用 triplanar 會讓草地與土壤在陡坡拉伸。
-            float3 grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
-            float3 soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
+            float3 grassColor;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+            // dispatch 只依 Scene／draw 與固定材質資料；像素淡出只改 offset。
+            [branch] if (terrainParallaxDispatch)
+                grassColor = TerrainParallaxTriplanar(baseColorTexture, grassSamplePosition, geometricNormal,
+                    input.textureData.y, terrainParallaxGrassDx, terrainParallaxGrassDy, terrainParallaxPrimaryUvOffset).rgb;
+            else
+#endif
+                grassColor = Triplanar(baseColorTexture, grassSamplePosition, geometricNormal, input.textureData.y).rgb;
+            float3 soilColor;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+            [branch] if (terrainParallaxSoilDispatch)
+                soilColor = TerrainParallaxTriplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal,
+                    input.textureData.y, terrainParallaxSoilDx, terrainParallaxSoilDy, terrainParallaxSoilUvOffset).rgb;
+            else
+#endif
+                soilColor = Triplanar(soilBaseColorTexture, soilSamplePosition, geometricNormal, input.textureData.y).rgb;
             float3 rockColor = Triplanar(rockBaseColorTexture, rockSamplePosition, geometricNormal, input.textureData.y).rgb;
             // The selected secondary domain is reused by base color, ARM and
             // normal.  This keeps the existing worst case rather than stacking
@@ -2620,17 +2751,33 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             {
                 if (terrainSecondaryDomainLayer == 0u)
                 {
-                    const float3 secondaryGrassColor = Triplanar(baseColorTexture, TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.y).rgb;
+                    float3 secondaryGrassColor;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                    [branch] if (terrainParallaxDispatch)
+                        secondaryGrassColor = TerrainParallaxTriplanar(baseColorTexture, terrainParallaxSecondaryPosition,
+                            geometricNormal, input.textureData.y, terrainParallaxSecondaryDx, terrainParallaxSecondaryDy,
+                            terrainParallaxSecondaryUvOffset).rgb;
+                    else
+#endif
+                        secondaryGrassColor = Triplanar(baseColorTexture, TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.y).rgb;
                     grassColor = BlendTerrainGrassAlbedo(grassColor, secondaryGrassColor, terrainSecondaryDomainBlend);
                 }
                 else if (terrainSecondaryDomainLayer == 1u)
                 {
-                    const float3 secondarySoilColor = Triplanar(soilBaseColorTexture, TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.y).rgb;
+                    float3 secondarySoilColor;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                    [branch] if (terrainParallaxSoilDispatch)
+                        secondarySoilColor = TerrainParallaxTriplanar(soilBaseColorTexture, terrainParallaxSecondarySoilPosition,
+                            geometricNormal, input.textureData.y, terrainParallaxSecondarySoilDx, terrainParallaxSecondarySoilDy,
+                            terrainParallaxSecondarySoilUvOffset).rgb;
+                    else
+#endif
+                        secondarySoilColor = Triplanar(soilBaseColorTexture, TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.y).rgb;
                     soilColor = BlendTerrainGrassAlbedo(soilColor, secondarySoilColor, terrainSecondaryDomainBlend);
                 }
                 else if (terrainSecondaryDomainLayer == 2u)
                 {
-                    const float3 secondaryRockColor = Triplanar(rockBaseColorTexture, TerrainGrassSecondarySamplePosition(rockSamplePosition), geometricNormal, input.textureData.y).rgb;
+                    const float3 secondaryRockColor = Triplanar(rockBaseColorTexture, secondaryRockPosition, secondaryRockProjectionNormal, input.textureData.y).rgb;
                     rockColor = BlendTerrainGrassAlbedo(rockColor, secondaryRockColor, terrainSecondaryDomainBlend);
                 }
             }
@@ -2646,27 +2793,57 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
             [branch] if (terrainDetailWeight > 0.001)
             {
                 // surface map 固定為 R=AO、G=roughness、B=metallic；A 不參與材質能量。
-                float4 grassSurface=Triplanar(roughnessTexture,grassSamplePosition,geometricNormal,input.textureData.z);
-                float4 soilSurface=Triplanar(soilRoughnessTexture,soilSamplePosition,geometricNormal,input.textureData.z);
+                float4 grassSurface;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                [branch] if (terrainParallaxDispatch)
+                    grassSurface = TerrainParallaxTriplanar(roughnessTexture, grassSamplePosition, geometricNormal,
+                        input.textureData.z, terrainParallaxGrassDx, terrainParallaxGrassDy, terrainParallaxPrimaryUvOffset);
+                else
+#endif
+                    grassSurface=Triplanar(roughnessTexture,grassSamplePosition,geometricNormal,input.textureData.z);
+                float4 soilSurface;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                [branch] if (terrainParallaxSoilDispatch)
+                    soilSurface = TerrainParallaxTriplanar(soilRoughnessTexture, soilSamplePosition, geometricNormal,
+                        input.textureData.z, terrainParallaxSoilDx, terrainParallaxSoilDy, terrainParallaxSoilUvOffset);
+                else
+#endif
+                    soilSurface=Triplanar(soilRoughnessTexture,soilSamplePosition,geometricNormal,input.textureData.z);
                 float4 rockSurface=Triplanar(rockRoughnessTexture,rockSamplePosition,geometricNormal,input.textureData.z);
                 [branch] if (terrainSecondaryDomainBlend > 0.001)
                 {
                     if (terrainSecondaryDomainLayer == 0u)
                     {
-                        const float4 secondaryGrassSurface = Triplanar(roughnessTexture,
-                            TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
+                        float4 secondaryGrassSurface;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                        [branch] if (terrainParallaxDispatch)
+                            secondaryGrassSurface = TerrainParallaxTriplanar(roughnessTexture, terrainParallaxSecondaryPosition,
+                                geometricNormal, input.textureData.z, terrainParallaxSecondaryDx, terrainParallaxSecondaryDy,
+                                terrainParallaxSecondaryUvOffset);
+                        else
+#endif
+                            secondaryGrassSurface = Triplanar(roughnessTexture,
+                                TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
                         grassSurface = lerp(grassSurface, secondaryGrassSurface, terrainSecondaryDomainBlend);
                     }
                     else if (terrainSecondaryDomainLayer == 1u)
                     {
-                        const float4 secondarySoilSurface = Triplanar(soilRoughnessTexture,
-                            TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.z);
+                        float4 secondarySoilSurface;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                        [branch] if (terrainParallaxSoilDispatch)
+                            secondarySoilSurface = TerrainParallaxTriplanar(soilRoughnessTexture, terrainParallaxSecondarySoilPosition,
+                                geometricNormal, input.textureData.z, terrainParallaxSecondarySoilDx, terrainParallaxSecondarySoilDy,
+                                terrainParallaxSecondarySoilUvOffset);
+                        else
+#endif
+                            secondarySoilSurface = Triplanar(soilRoughnessTexture,
+                                TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.z);
                         soilSurface = lerp(soilSurface, secondarySoilSurface, terrainSecondaryDomainBlend);
                     }
                     else if (terrainSecondaryDomainLayer == 2u)
                     {
                         const float4 secondaryRockSurface = Triplanar(rockRoughnessTexture,
-                            TerrainGrassSecondarySamplePosition(rockSamplePosition), geometricNormal, input.textureData.z);
+                            secondaryRockPosition, secondaryRockProjectionNormal, input.textureData.z);
                         rockSurface = lerp(rockSurface, secondaryRockSurface, terrainSecondaryDomainBlend);
                     }
                 }
@@ -2680,28 +2857,62 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
                                       showcaseTerrainAuthoredBiomeCalibration);
                 const float4 sampledSurface=grassSurface*grassWeight+soilSurface*soilWeight+rockSurface*rockWeight;
                 terrainSurface=lerp(1.0,sampledSurface,terrainDetailWeight);
-                float3 grassNormal = TriplanarNormalFrom(normalTexture, grassSamplePosition, geometricNormal, input.textureData.z);
-                float3 soilNormal = TriplanarNormalFrom(soilNormalTexture, soilSamplePosition, geometricNormal, input.textureData.z);
+                float3 grassNormal;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                [branch] if (terrainParallaxDispatch)
+                    grassNormal = TerrainParallaxNormal(normalTexture, grassSamplePosition, geometricNormal,
+                        input.textureData.z, terrainParallaxGrassDx, terrainParallaxGrassDy, terrainParallaxPrimaryUvOffset);
+                else
+#endif
+                    grassNormal = TriplanarNormalFrom(normalTexture, grassSamplePosition, geometricNormal, input.textureData.z);
+                float3 soilNormal;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                [branch] if (terrainParallaxSoilDispatch)
+                    soilNormal = TerrainParallaxNormal(soilNormalTexture, soilSamplePosition, geometricNormal,
+                        input.textureData.z, terrainParallaxSoilDx, terrainParallaxSoilDy, terrainParallaxSoilUvOffset);
+                else
+#endif
+                    soilNormal = TriplanarNormalFrom(soilNormalTexture, soilSamplePosition, geometricNormal, input.textureData.z);
                 float3 rockNormal = TriplanarNormalFrom(rockNormalTexture, rockSamplePosition, geometricNormal, input.textureData.z);
                 [branch] if (terrainSecondaryDomainBlend > 0.001)
                 {
                     if (terrainSecondaryDomainLayer == 0u)
                     {
-                        const float3 secondaryGrassNormal = TriplanarNormalFrom(normalTexture,
-                            TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
+                        float3 secondaryGrassNormal;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                        [branch] if (terrainParallaxDispatch)
+                            secondaryGrassNormal = TerrainParallaxNormal(normalTexture, terrainParallaxSecondaryPosition,
+                                geometricNormal, input.textureData.z, terrainParallaxSecondaryDx, terrainParallaxSecondaryDy,
+                                terrainParallaxSecondaryUvOffset);
+                        else
+#endif
+                            secondaryGrassNormal = TriplanarNormalFrom(normalTexture,
+                                TerrainGrassSecondarySamplePosition(grassSamplePosition), geometricNormal, input.textureData.z);
                         grassNormal = normalize(lerp(grassNormal, secondaryGrassNormal, terrainSecondaryDomainBlend));
                     }
                     else if (terrainSecondaryDomainLayer == 1u)
                     {
-                        const float3 secondarySoilNormal = TriplanarNormalFrom(soilNormalTexture,
-                            TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.z);
+                        float3 secondarySoilNormal;
+#if !defined(AEVRYND_WORLD_TERRAIN_PARALLAX_DISABLED)
+                        [branch] if (terrainParallaxSoilDispatch)
+                            secondarySoilNormal = TerrainParallaxNormal(soilNormalTexture, terrainParallaxSecondarySoilPosition,
+                                geometricNormal, input.textureData.z, terrainParallaxSecondarySoilDx, terrainParallaxSecondarySoilDy,
+                                terrainParallaxSecondarySoilUvOffset);
+                        else
+#endif
+                            secondarySoilNormal = TriplanarNormalFrom(soilNormalTexture,
+                                TerrainGrassSecondarySamplePosition(soilSamplePosition), geometricNormal, input.textureData.z);
                         soilNormal = normalize(lerp(soilNormal, secondarySoilNormal, terrainSecondaryDomainBlend));
                     }
                     else if (terrainSecondaryDomainLayer == 2u)
                     {
-                        const float3 secondaryRockNormal = TriplanarNormalFrom(rockNormalTexture,
-                            TerrainGrassSecondarySamplePosition(rockSamplePosition), geometricNormal, input.textureData.z);
-                        rockNormal = normalize(lerp(rockNormal, secondaryRockNormal, terrainSecondaryDomainBlend));
+                        float3 secondaryRockNormal = TriplanarNormalFrom(rockNormalTexture,
+                            secondaryRockPosition, secondaryRockProjectionNormal, input.textureData.z);
+                        if (terrainRockVariation)
+                            secondaryRockNormal = normalize(TerrainRockDomainInverse(secondaryRockNormal));
+                        const float3 mixedRockNormal = lerp(rockNormal, secondaryRockNormal, terrainSecondaryDomainBlend);
+                        rockNormal = dot(mixedRockNormal, mixedRockNormal) > 0.0000000001
+                            ? normalize(mixedRockNormal) : geometricNormal;
                     }
                 }
                 const float3 sampledNormal=normalize(grassNormal*grassWeight+soilNormal*soilWeight+rockNormal*rockWeight);
@@ -3159,6 +3370,9 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
     const float3 directionalLighting = eyeMask > 0.5
         ? EvaluateEyeLight(normal, geometricNormal, viewDirection, lightDirection,
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness)
+        : terrainMask > 0.5
+        ? EvaluateTerrainPbrLight(geometricNormal, normal, viewDirection, lightDirection,
+                           lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness, metallic)
         : EvaluatePbrLight(normal, viewDirection, lightDirection,
                            lightColorIntensity.rgb * lightColorIntensity.w, baseColor, roughness, metallic);
     // 基礎 PBR 與角色補光共用同一次級聯陰影，避免 Skin/Hair 每像素重複取樣陰影圖。

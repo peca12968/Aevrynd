@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "binding": "runtime-sidecar",
+  "outputResolution": 2048,
+  "expectedMipCount": 12,
+  "normalConvention": "OpenGL",
+  "materials": [
+    {
+      "slot": 0,
+      "baseColor": "textures/dead_tree_trunk_diff_2k.jpg",
+      "normalGl": "textures/dead_tree_trunk_nor_gl_2k.jpg",
+      "packedArm": "textures/dead_tree_trunk_arm_2k.jpg",
+      "doubleSided": true
+    }
+  ]
+}

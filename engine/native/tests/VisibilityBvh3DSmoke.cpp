@@ -11,7 +11,107 @@ using namespace Aevrynd;
 namespace {std::size_t AllocationCount{};}
 void* operator new(std::size_t size){if(void* memory=std::malloc(size)){++AllocationCount;return memory;}throw std::bad_alloc{};}
 void* operator new[](std::size_t size){return ::operator new(size);}void operator delete(void* memory)noexcept{std::free(memory);}void operator delete(void* memory,std::size_t)noexcept{std::free(memory);}void operator delete[](void* memory)noexcept{std::free(memory);}void operator delete[](void* memory,std::size_t)noexcept{std::free(memory);}
+namespace {
+bool VerifySinglePassBuildMap(){
+    // 兩個符號、全部指數及代表性尾數，逐一放入9個分量；獨立標準分類不可變。
+    std::size_t finiteChecks{};
+    for(std::uint32_t sign:{0u,0x80000000u})for(std::uint32_t exponent=0;exponent<256;++exponent)
+        for(std::uint32_t mantissa:{0u,1u,0x003fffffu,0x00400000u,0x007fffffu}){
+            const float value=std::bit_cast<float>(sign|(exponent<<23)|mantissa);
+            for(unsigned component=0;component<9;++component){
+                Transform3D transform{};
+                std::array<float*,9> fields{{&transform.position.x,&transform.position.y,&transform.position.z,
+                    &transform.rotation.x,&transform.rotation.y,&transform.rotation.z,
+                    &transform.scale.x,&transform.scale.y,&transform.scale.z}};
+                *fields[component]=value;
+                if(Scene3DDetail::FiniteTransform(transform)!=std::isfinite(value)){
+                    std::cerr<<"Finite scene transform classification differs bits="<<(sign|(exponent<<23)|mantissa)
+                        <<" component="<<component<<'\n';return false;
+                }
+                ++finiteChecks;
+            }
+        }
+    std::cout<<"finiteTransformEquivalentCases="<<finiteChecks<<'\n';
+    constexpr std::uint32_t Count=4096,Side=64;
+    std::vector<VisibilityBvhItem3D> population;population.reserve(Count);
+    for(std::uint32_t index=0;index<Count;++index)
+        population.push_back({std::uint64_t(index)+1,{{float(index%Side)*2.f-64.f,0,float(index/Side)*2.f+4.f},1.75f,{1,1,1}},index});
+    VisibilityBvh3D tree;
+    Camera3D camera{{0,8,0},{0,8,1}};
+    const VisibilityBvhQuery3D all{camera,16.f/9.f,0,0,false};
+    std::array<std::size_t,3> buildAllocations{};
+    for(std::size_t round=0;round<buildAllocations.size();++round){
+        AllocationCount=0;
+        const bool built=tree.Build(population);
+        buildAllocations[round]=AllocationCount;
+        // 一個物件只配置一個最終 map 節點；固定容器開銷另留 32 次，不容許舊兩輪節點路徑。
+        if(!built||!buildAllocations[round]||buildAllocations[round]>Count+32){
+            std::cerr<<"Single-pass BVH build allocation budget failed round="<<round<<" allocations="<<buildAllocations[round]<<'\n';return false;
+        }
+        const auto result=tree.Query(all);
+        if(result.size()!=Count){std::cerr<<"Single-pass BVH build lost payloads\n";return false;}
+        for(std::uint32_t index=0;index<Count;++index)
+            if(result[index]!=index){std::cerr<<"Single-pass BVH build changed payload ordering\n";return false;}
+    }
+    const auto sameStats=[](const VisibilityBvhStats3D& a,const VisibilityBvhStats3D& b){
+        return a.objects==b.objects&&a.nodes==b.nodes&&a.candidates==b.candidates&&
+            a.nodesTested==b.nodesTested&&a.nodesRejected==b.nodesRejected&&
+            a.distanceRejectedObjects==b.distanceRejectedObjects&&a.frustumRejectedObjects==b.frustumRejectedObjects&&
+            a.refittedLeaves==b.refittedLeaves&&a.builds==b.builds&&a.refits==b.refits&&a.queries==b.queries;
+    };
+    const auto rejectsWithoutPublishing=[&](std::span<const VisibilityBvhItem3D> bad,const char* label){
+        const auto beforeStats=tree.Stats();const auto beforeMemory=tree.MemoryStats();
+        if(tree.Build(bad)||!sameStats(beforeStats,tree.Stats())||
+            tree.MemoryStats().retainedCapacityBytes!=beforeMemory.retainedCapacityBytes||
+            tree.MemoryStats().reclaimableCapacityBytes!=beforeMemory.reclaimableCapacityBytes){
+            std::cerr<<"Single-pass BVH rejection changed published state: "<<label<<'\n';return false;
+        }
+        const auto result=tree.Query(all);
+        if(result.size()!=Count){std::cerr<<"Single-pass BVH rejection lost old tree: "<<label<<'\n';return false;}
+        for(std::uint32_t index=0;index<Count;++index)
+            if(result[index]!=index){std::cerr<<"Single-pass BVH rejection changed old payloads: "<<label<<'\n';return false;}
+        return true;
+    };
+    // 非相鄰重複鍵在排序後可能分居不同葉節點；相同／不同 bounds、反序都必須拒絕。
+    auto bad=population;bad.back().key=bad.front().key;
+    if(!rejectsWithoutPublishing(bad,"distant duplicate with different bounds"))return false;
+    std::reverse(bad.begin(),bad.end());
+    if(!rejectsWithoutPublishing(bad,"reversed distant duplicate"))return false;
+    bad=population;bad.back()=bad.front();
+    if(!rejectsWithoutPublishing(bad,"identical distant duplicate"))return false;
+    bad=population;bad[Count/2].key=bad[Count/2-1].key;
+    if(!rejectsWithoutPublishing(bad,"adjacent interior duplicate"))return false;
+    bad=population;bad[Count/2].key=0;
+    if(!rejectsWithoutPublishing(bad,"zero key"))return false;
+    bad=population;bad[Count/2].bounds.center.z=(std::numeric_limits<float>::quiet_NaN)();
+    if(!rejectsWithoutPublishing(bad,"non-finite center"))return false;
+    bad=population;bad[Count/2].bounds.radius=(std::numeric_limits<float>::infinity)();
+    if(!rejectsWithoutPublishing(bad,"non-finite radius"))return false;
+    bad=population;bad[Count/2].bounds.extents.y=-1.f;
+    if(!rejectsWithoutPublishing(bad,"negative extent"))return false;
+    bad=population;bad[Count/2].bounds.radius=-1.f;
+    if(!rejectsWithoutPublishing(bad,"negative radius"))return false;
+    bad=population;bad[Count/2].bounds.extents.x=(std::numeric_limits<float>::infinity)();
+    if(!rejectsWithoutPublishing(bad,"non-finite extent"))return false;
+    auto moved=population.front().bounds;moved.center={0,8,4};
+    // 最終索引必須指向 BuildNode 排序後的位置；失敗 Build 也不可破壞後續 Update／Refit。
+    if(!tree.Update(population.front().key,moved)||!tree.Refit()){
+        std::cerr<<"Single-pass BVH retained key could not update/refit\n";return false;
+    }
+    const auto local=tree.Query({camera,16.f/9.f,5.f,0,false});
+    if(std::find(local.begin(),local.end(),population.front().payload)==local.end()){
+        std::cerr<<"Single-pass BVH final key index points to wrong entry\n";return false;
+    }
+    const auto restored=tree.Query(all);
+    if(restored.size()!=Count){std::cerr<<"Single-pass BVH update/refit lost membership\n";return false;}
+    for(std::uint32_t index=0;index<Count;++index)
+        if(restored[index]!=index){std::cerr<<"Single-pass BVH update/refit changed payload order\n";return false;}
+    std::cout<<"singlePassBuildObjects="<<Count<<" buildAllocations="<<buildAllocations[0]<<','<<buildAllocations[1]<<','<<buildAllocations[2]<<'\n';
+    return true;
+}
+}
 int main(){
+    if(!VerifySinglePassBuildMap())return 16;
     constexpr std::uint32_t Count=65536,Side=256;
     std::vector<VisibilityBvhItem3D> items;items.reserve(Count);
     for(std::uint32_t index=0;index<Count;++index){const float x=float(index%Side)*4.f-512.f,z=float(index/Side)*4.f+4.f;items.push_back({std::uint64_t(index)+1,{{x,0,z},1.75f,{1,1,1}},index});}

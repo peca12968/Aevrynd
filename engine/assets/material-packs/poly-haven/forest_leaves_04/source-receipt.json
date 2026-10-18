@@ -1,0 +1,69 @@
+{
+  "schema": "aevrynd.portable-texture-source.1",
+  "asset": "forest_leaves_04",
+  "author": "Rob Tuytel / Poly Haven",
+  "asset_url": "https://polyhaven.com/a/forest_leaves_04",
+  "license": "CC0-1.0",
+  "license_url": "https://polyhaven.com/license",
+  "official_files_index": "https://api.polyhaven.com/files/forest_leaves_04",
+  "representation": "Local PNG re-encoding of official 2K JPG maps, not downloaded provider PNGs.",
+  "maps": [
+    {
+      "name": "forest_leaves_04_diff_2k",
+      "source": {
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forest_leaves_04/forest_leaves_04_diff_2k.jpg",
+        "bytes": 1539210,
+        "sha256": "A4F964EB32909EF9B41DBF4000BDE142995711B7B755850F6523EB4D99C4A5D4",
+        "md5": "a6cfde9e6846f5aa27bcbe0a58fe9907"
+      },
+      "derived": {
+        "path": "2k/forest_leaves_04_diff_2k.png",
+        "bytes": 10402792,
+        "sha256": "40B1786AFA17C9930CCAE93A9CA75880FC52FC34B96453489C767B2CC82D7EE9",
+        "width": 2048,
+        "height": 2048,
+        "rgba_sha256": "CDA0A644E8A23B2277682E3F7799E0EBFD273125C6CA09F8B26A483516CF2D75"
+      }
+    },
+    {
+      "name": "forest_leaves_04_nor_dx_2k",
+      "source": {
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forest_leaves_04/forest_leaves_04_nor_dx_2k.jpg",
+        "bytes": 2207426,
+        "sha256": "151D2B52A2764B747DC253757053CD11AF3591D7184ADDB0B1402BC2BECFB0B6",
+        "md5": "a2a95e99dbef49d5feda0ad35e171007"
+      },
+      "derived": {
+        "path": "2k/forest_leaves_04_nor_dx_2k.png",
+        "bytes": 11539651,
+        "sha256": "19BBAA0EB67EDA146129946B9605CFC9B472A302BA1F75EB8EA0B48AA21BAA33",
+        "width": 2048,
+        "height": 2048,
+        "rgba_sha256": "6783AC6D4D9734FA7C591C16C1ADFA173D535BCCD0C38C2D3B092F254CD4EC07"
+      }
+    },
+    {
+      "name": "forest_leaves_04_rough_2k",
+      "source": {
+        "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forest_leaves_04/forest_leaves_04_rough_2k.jpg",
+        "bytes": 1227328,
+        "sha256": "80DB3AF88B964A24FBE3F9E2C1284C5D8426E51A0B776D8F1FCA5A4E0FDD8B2F",
+        "md5": "af02739e88a39f8760df09f28c64fee6"
+      },
+      "derived": {
+        "path": "2k/forest_leaves_04_rough_2k.png",
+        "bytes": 6083648,
+        "sha256": "713874257D143AF49C482CE8B7648CB7C5C748CA6540DB0E44563A04A9FE09CE",
+        "width": 2048,
+        "height": 2048,
+        "rgba_sha256": "6C808BA7A362DBE34046463360BDF5640ECB80A1399752DAB9106A29F18E324D"
+      }
+    }
+  ],
+  "pixel_equivalence": {
+    "format": "RGBA8",
+    "all_pixels_equal": true,
+    "decoder": "Pillow 12.3.0"
+  },
+  "notes": "Preserve the existing LICENSE.txt and DERIVATION.txt. This source record is not a runtime or visual qualification certificate."
+}

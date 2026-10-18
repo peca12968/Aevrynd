@@ -8,10 +8,33 @@
 #include <limits>
 #include <bcrypt.h>
 #include <ranges>
+#include <chrono>
 
 using Microsoft::WRL::ComPtr;
 namespace Aevrynd {
 namespace {
+// 空指標路徑不讀取時鐘；離開函式（含失敗）時才完成總時間。
+struct CaptureCostScope3D {
+    using Clock=std::chrono::steady_clock;
+    FrameCaptureCost3D* cost{};
+    Clock::time_point start{},phaseStart{};
+    std::uint64_t FrameCaptureCost3D::* phase{&FrameCaptureCost3D::setupNanoseconds};
+    explicit CaptureCostScope3D(FrameCaptureCost3D* value):cost(value) {
+        if(cost){*cost={};start=phaseStart=Clock::now();}
+    }
+    void Next(std::uint64_t FrameCaptureCost3D::* next) {
+        if(!cost)return;
+        const auto now=Clock::now();
+        if(phase)cost->*phase+=std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now-phaseStart).count());
+        phaseStart=now;phase=next;
+    }
+    ~CaptureCostScope3D() {
+        if(!cost)return;
+        const auto now=Clock::now();
+        if(phase)cost->*phase+=std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now-phaseStart).count());
+        cost->totalNanoseconds=std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now-start).count());
+    }
+};
 struct CaptureComApartment3D {HRESULT result{CoInitializeEx(nullptr,COINIT_MULTITHREADED)};~CaptureComApartment3D(){if(result==S_OK||result==S_FALSE)CoUninitialize();}};
 double SrgbToLinear3D(double value){return value<=.04045?value/12.92:std::pow((value+.055)/1.055,2.4);}
 double LuminancePercentile3D(const std::array<std::size_t,256>& histogram,std::size_t samples,double percentile){const std::size_t rank=(std::max)(std::size_t{1},std::size_t(std::ceil(percentile*samples)));std::size_t accumulated{};for(std::size_t bin=0;bin<histogram.size();++bin){accumulated+=histogram[bin];if(accumulated>=rank)return double(bin)/255.0;}return 1;}
@@ -32,14 +55,19 @@ FrameCaptureAnalysis3D AnalyzeFrameCaptureRgba8(unsigned width,unsigned height,s
     if(!result.sampledPixels)return result;result.valid=true;result.averageLuminance=mean;result.luminanceVariance=result.sampledPixels>1?m2/double(result.sampledPixels-1):0;result.darkPixelFraction=double(dark)/result.sampledPixels;result.brightPixelFraction=double(bright)/result.sampledPixels;result.linearAverageLuminance=linearSum/result.sampledPixels;result.linearLuminanceP05=LuminancePercentile3D(linearHistogram,result.sampledPixels,.05);result.linearLuminanceP50=LuminancePercentile3D(linearHistogram,result.sampledPixels,.50);result.linearLuminanceP95=LuminancePercentile3D(linearHistogram,result.sampledPixels,.95);result.linearLuminanceP99=LuminancePercentile3D(linearHistogram,result.sampledPixels,.99);return result;
 }
 
-bool EncodeFrameCapturePng3D(const std::filesystem::path& path,unsigned width,unsigned height,std::size_t rowPitch,std::span<const std::uint8_t> pixels,PublishedFrameCapture3D& publication){
+bool EncodeFrameCapturePng3D(const std::filesystem::path& path,unsigned width,unsigned height,std::size_t rowPitch,std::span<const std::uint8_t> pixels,PublishedFrameCapture3D& publication,FrameCaptureCost3D* cost){
+    CaptureCostScope3D timing(cost);
     publication={};
     if(path.empty()||!width||!height||width>MaximumFrameCaptureDimension3D||height>MaximumFrameCaptureDimension3D||rowPitch<std::size_t(width)*4||rowPitch>(std::numeric_limits<UINT>::max)())return false;
     const std::size_t lastRowBytes=std::size_t(width)*4;if(std::size_t(height-1)>(std::numeric_limits<std::size_t>::max)()/rowPitch)return false;const std::size_t required=std::size_t(height-1)*rowPitch+lastRowBytes;if(required>pixels.size()||pixels.size()>(std::numeric_limits<UINT>::max)())return false;
     std::error_code error;const std::filesystem::path parent=path.parent_path();if(!parent.empty()){std::filesystem::create_directories(parent,error);if(error)return false;}std::filesystem::path temporary=path;temporary+=L"."+std::to_wstring(GetCurrentProcessId())+L".tmp";std::filesystem::remove(temporary,error);error.clear();
     CaptureComApartment3D apartment;ComPtr<IWICImagingFactory> factory;ComPtr<IWICStream> stream;ComPtr<IWICBitmapEncoder> encoder;ComPtr<IWICBitmapFrameEncode> frame;ComPtr<IPropertyBag2> properties;ComPtr<IWICBitmap> bitmap;bool success=false;
-    if(SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))&&SUCCEEDED(factory->CreateStream(&stream))&&SUCCEEDED(stream->InitializeFromFilename(temporary.c_str(),GENERIC_WRITE))&&SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng,nullptr,&encoder))&&SUCCEEDED(encoder->Initialize(stream.Get(),WICBitmapEncoderNoCache))&&SUCCEEDED(encoder->CreateNewFrame(&frame,&properties))&&SUCCEEDED(frame->Initialize(properties.Get()))&&SUCCEEDED(frame->SetSize(width,height))&&SUCCEEDED(factory->CreateBitmapFromMemory(width,height,GUID_WICPixelFormat32bppRGBA,UINT(rowPitch),UINT(pixels.size()),const_cast<BYTE*>(pixels.data()),&bitmap))){WICPixelFormatGUID format=GUID_WICPixelFormat32bppRGBA;if(SUCCEEDED(frame->SetPixelFormat(&format))&&SUCCEEDED(frame->WriteSource(bitmap.Get(),nullptr))&&SUCCEEDED(frame->Commit())&&SUCCEEDED(encoder->Commit()))success=true;}
-    bitmap.Reset();frame.Reset();properties.Reset();encoder.Reset();stream.Reset();factory.Reset();if(!success){std::filesystem::remove(temporary,error);return false;}if(!MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::filesystem::remove(temporary,error);return false;}return PinAndHashFinalFile3D(path,publication);
+    if(SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))&&SUCCEEDED(factory->CreateStream(&stream))&&SUCCEEDED(stream->InitializeFromFilename(temporary.c_str(),GENERIC_WRITE))&&SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng,nullptr,&encoder))&&SUCCEEDED(encoder->Initialize(stream.Get(),WICBitmapEncoderNoCache))&&SUCCEEDED(encoder->CreateNewFrame(&frame,&properties))&&SUCCEEDED(frame->Initialize(properties.Get()))&&SUCCEEDED(frame->SetSize(width,height))&&SUCCEEDED(factory->CreateBitmapFromMemory(width,height,GUID_WICPixelFormat32bppRGBA,UINT(rowPitch),UINT(pixels.size()),const_cast<BYTE*>(pixels.data()),&bitmap))){WICPixelFormatGUID format=GUID_WICPixelFormat32bppRGBA;if(SUCCEEDED(frame->SetPixelFormat(&format))){
+        // COM/WIC 建立與像素格式設定屬 setup；WriteSource/Commit 與 stream 關閉屬編碼及寫入。
+        timing.Next(&FrameCaptureCost3D::encodeWriteNanoseconds);
+        if(SUCCEEDED(frame->WriteSource(bitmap.Get(),nullptr))&&SUCCEEDED(frame->Commit())&&SUCCEEDED(encoder->Commit()))success=true;
+    }}
+    bitmap.Reset();frame.Reset();properties.Reset();encoder.Reset();stream.Reset();factory.Reset();if(!success){std::filesystem::remove(temporary,error);return false;}timing.Next(&FrameCaptureCost3D::publishNanoseconds);if(!MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){std::filesystem::remove(temporary,error);return false;}timing.Next(&FrameCaptureCost3D::verifyHashNanoseconds);const bool verified=PinAndHashFinalFile3D(path,publication);timing.Next(nullptr);if(cost)cost->complete=verified;return verified;
 }
 bool EncodeFrameCapturePng3D(const std::filesystem::path& path,unsigned width,unsigned height,std::size_t rowPitch,std::span<const std::uint8_t> pixels){PublishedFrameCapture3D publication{};return EncodeFrameCapturePng3D(path,width,height,rowPitch,pixels,publication);}
 bool ValidatePublishedFrameCapture3D(const std::filesystem::path& path,const PublishedFrameCapture3D& publication){if(!publication.Complete())return false;PublishedFrameCapture3D actual{};return PinAndHashFinalFile3D(path,actual)&&actual.finalFileBytes==publication.finalFileBytes&&actual.finalFileSha256==publication.finalFileSha256;}

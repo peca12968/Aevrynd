@@ -6,7 +6,8 @@ int main() {
     const auto crate=Mistwatch::CreateSupplyCrate();
     const auto repeated=Mistwatch::CreateSupplyCrate();
     if(!crate.wood.Valid()||!crate.metal.Valid())return 1;
-    if(crate.wood.indices.size()/3!=360||crate.metal.indices.size()/3!=236)return 2;
+    // 新凹板／倒角角柱／斜撐共664面，金屬仍236面；精確驗證批准的拓撲。
+    if(crate.wood.indices.size()/3!=664||crate.metal.indices.size()/3!=236)return 2;
     unsigned checked{};
     for(const auto* mesh:{&crate.wood,&crate.metal}) {
         for(const auto& v:mesh->vertices) {
@@ -54,6 +55,6 @@ int main() {
         loaded.Damage(100);
         if(loaded.Collect((i+1)%3))return 12;
     }
-    std::cout<<"Supply crate PASS; wood_parts=30 metal_triangles=236 total_triangles="<<checked
+    std::cout<<"Supply crate PASS; wood_parts=34 metal_triangles=236 total_triangles="<<checked
         <<" grounded_sites=3 collection_and_save=passed cap_clearance=6mm rivet_clearance=3mm\n";
 }

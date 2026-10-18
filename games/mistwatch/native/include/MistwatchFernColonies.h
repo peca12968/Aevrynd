@@ -1,6 +1,8 @@
 #pragma once
 #include "MistwatchForestCover.h"
+#include "MistwatchGroupedCanopyVolume.h"
 #include "MistwatchFern.h"
+#include "MistwatchFernColonyWoodBounds.h"
 #include <span>
 #include <stdexcept>
 
@@ -59,8 +61,15 @@ inline bool FernColonyClearsExisting(Aevrynd::Vec3 root,float radius,
 inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain,
     const ForestCoverResult& grass,std::span<const Aevrynd::Transform3D> existing,
     std::span<const Aevrynd::BoxCollider3D> solids,const std::array<FernColonyAsset,4>& assets,
-    FernColonySettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={}) {
-    if(!CanopyVolume::ValidWoodParts(canopyWood))throw std::invalid_argument("Invalid canopy wood parts for fern colonies");
+    FernColonySettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false,
+    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr) {
+    // 群組入口只接受已驗完整世界，不允許混用或以零目標跳過失效身分。
+    if(groupedWood&&(!fullSolidVolumes||!canopyWood.empty()||groupedWood->Identity().groupCount==0||
+        groupedWood->Identity().groupCount>GroupedCanopyVolume::MaximumGroups||
+        groupedWood->Groups().size()!=groupedWood->Identity().groupCount||groupedWood->Identity().totalParts==0||
+        groupedWood->Identity().totalParts>GroupedCanopyVolume::MaximumTotalParts))
+        throw std::invalid_argument("Invalid grouped fern canopy wood");
+    const auto cachedCanopy=FernColonyDetail::ImmutableCanopyWoodBounds::Create(canopyWood);
     // 有限工作量與輸入範圍是作者 API 契約，不是視覺品質或引擎通用安全門檻。
     if(grass.patches.size()>1000||grass.plants.size()>10000||existing.size()>10000||solids.size()>10000||
        settings.targetPlants>1000||!settings.maximumColonies||settings.maximumColonies>1000||
@@ -70,7 +79,7 @@ inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain
     for(const auto& asset:assets)if(!std::isfinite(asset.radius)||asset.radius<=0||asset.radius>4||
         !std::isfinite(asset.height)||asset.height<=0||asset.height>4||!std::isfinite(asset.minimumY)||asset.minimumY< -4||asset.minimumY>asset.height||
         !asset.vertices||!asset.triangles)throw std::invalid_argument("Invalid measured fern asset");
-    if(!canopyWood.empty())for(const auto& asset:assets)
+    if(groupedWood||!canopyWood.empty())for(const auto& asset:assets)
         if(!CanopyVolume::Detail::ValidLocal(CanopyVolume::ConservativeLocalVolume(asset.radius,asset.minimumY,asset.height)))
             throw std::invalid_argument("Invalid measured fern full volume");
     for(std::size_t i=0;i<existing.size();++i) {
@@ -115,9 +124,18 @@ inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain
             const float scale=.6f+.18f*random(),radius=assets[variant].radius*scale;
             const float yaw=random()*6.2831853f;
             if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
-            if(!canopyWood.empty()&&!CanopyVolume::ClearsCanopyWood(
+            // 開始完整實體體積檢查
+if(fullSolidVolumes&&!solids.empty()&&!CanopyVolume::ClearsCanopyWood(
                 CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
-                    assets[variant].minimumY,assets[variant].height),scale,{0,yaw,0}},canopyWood)){
+                    assets[variant].minimumY,assets[variant].height),scale,{0,yaw,0}},solids)){
+                ++result.rejectedClearance;continue;
+            }
+// 結束完整實體體積檢查
+if((groupedWood||!canopyWood.empty())&&!(groupedWood?groupedWood->Clears(
+                CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
+                    assets[variant].minimumY,assets[variant].height),scale,{0,yaw,0}}):cachedCanopy.Clears(
+                CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,
+                    assets[variant].minimumY,assets[variant].height),scale,{0,yaw,0}}))){
                 ++result.rejectedClearance;continue;
             }
             if(!ForestCoverFootprint(terrain,root,radius,footprintSettings)){++result.rejectedTerrain;continue;}

@@ -1,0 +1,340 @@
+{
+  "schema": "portable-source-facts",
+  "schema_version": 1,
+  "scope": "Historical source and derivation facts only; not a recook, current-file validation, native-render or release receipt.",
+  "asset": "nettle_plant",
+  "official_page": "https://polyhaven.com/a/nettle_plant",
+  "license_id": "CC0-1.0",
+  "license_page": "https://polyhaven.com/license",
+  "attribution": {
+    "modeling": "Rico Cilliers",
+    "photography": "Rob Tuytel"
+  },
+  "historical_original_receipt": {
+    "sha256": "dca11b3262500df175ba2d5d4c93eb5a38ee02a603a76208bb5cfa0a9318df37",
+    "schema": "mistwatch.nettle-official-cook.1",
+    "retention": "Original historical evidence is not reproduced by this candidate."
+  },
+  "official_index": {
+    "path": "engine/assets/mistwatch-nettle-plant/provenance/official-files.json",
+    "bytes": 35924,
+    "sha256": "1d4d781ce038ba3ab03c41eadce1f4765a5f97ba648644458a79ab22e13c9c41"
+  },
+  "files": [
+    {
+      "file": "nettle_plant_2k.gltf",
+      "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_2k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/nettle_plant/nettle_plant_2k.gltf",
+      "official_md5": "b684bcbe68aa98aa7988e3fa3b40ffd1",
+      "bytes": 10450,
+      "sha256": "75e1debf2fce510fb119847ec4a427d6dea4de33a1aac3e6484d880845e4047b"
+    },
+    {
+      "file": "nettle_plant_nor_gl_2k.jpg",
+      "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/nettle_plant/nettle_plant_nor_gl_2k.jpg",
+      "official_md5": "f9c7a2f400685159583a75221e06bfa8",
+      "bytes": 2356297,
+      "sha256": "90d75c7ac70df26d6abb938e14676b0ecc08e35a596034a47f54865a5ab283a2"
+    },
+    {
+      "file": "nettle_plant.bin",
+      "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/nettle_plant/nettle_plant.bin",
+      "official_md5": "975cb59d9f42871bb448de70aeecbc01",
+      "bytes": 956560,
+      "sha256": "24810f9d80b5fafdd71e1599b0cc81afa3eb9b744cfa8bf388c5e9f30271ba46"
+    },
+    {
+      "file": "nettle_plant_diff_2k.jpg",
+      "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/nettle_plant/nettle_plant_diff_2k.jpg",
+      "official_md5": "bd08db8a634d02c12a0cf4f4daac8937",
+      "bytes": 1197929,
+      "sha256": "7baf0c5bf0695ddbba590baba686e284803244703959092526eb2bc226724351"
+    },
+    {
+      "file": "nettle_plant_arm_2k.jpg",
+      "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/nettle_plant/nettle_plant_arm_2k.jpg",
+      "official_md5": "dee323f552417bf65614c1f9bbb73214",
+      "bytes": 1566589,
+      "sha256": "94a5bcfdb6c00f3f44105e06eef9cc759e6826bf30bd3ef56c4991b18691d230"
+    },
+    {
+      "file": "nettle_plant_alpha_2k.png",
+      "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_alpha_2k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/2k/nettle_plant/nettle_plant_alpha_2k.png",
+      "official_md5": "e41081a23ef3480364649e152b0a09b3",
+      "bytes": 421402,
+      "sha256": "0efece04fcc2780e7a13cd92ad3acd8eb7ad5f84fc4b66beb4402af06b229434"
+    }
+  ],
+  "mesh_derivation": {
+    "variants_are_not_lods": true,
+    "display_translations_removed": [
+      [
+        0.4000000059604645,
+        0,
+        0
+      ],
+      [
+        0.6000000238418579,
+        0,
+        0
+      ],
+      [
+        0.8000000715255737,
+        0,
+        0
+      ],
+      [
+        1.0000001192092896,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0.20000000298023224,
+        0,
+        0
+      ]
+    ],
+    "transform": "Remove display-only X translations; preserve local pivots, positions and UVs; reflect Z and reverse triangle winding for native AEMESH. No authoring scale included.",
+    "bounds_space": "Original glTF local coordinates, before Z reflection.",
+    "variants": [
+      {
+        "variant": 0,
+        "source_name": "nettle_plant_medium_a_LOD0",
+        "vertices": 4585,
+        "triangles": 5896,
+        "bounds_min": [
+          -0.0284300297498703,
+          -0.0015644739614799619,
+          -0.04656519740819931
+        ],
+        "bounds_max": [
+          0.048856571316719055,
+          0.12992630898952484,
+          0.04249810427427292
+        ],
+        "mesh": {
+          "path": "engine/assets/mistwatch-nettle-plant/meshes/nettle-plant-lod0-node0-mesh0-primitive0-material0-nettle-plant.aemesh",
+          "bytes": 199148,
+          "sha256": "91556c49eb48ac45ee556975a08e4c31b4ec25b94e80208751c62feb2f7ef195"
+        }
+      },
+      {
+        "variant": 1,
+        "source_name": "nettle_plant_medium_b_LOD0",
+        "vertices": 4336,
+        "triangles": 5664,
+        "bounds_min": [
+          -0.01987099088728428,
+          -0.0016869709361344576,
+          -0.03346773236989975
+        ],
+        "bounds_max": [
+          0.04561179503798485,
+          0.1028880923986435,
+          0.03269710764288902
+        ],
+        "mesh": {
+          "path": "engine/assets/mistwatch-nettle-plant/meshes/nettle-plant-lod0-node1-mesh1-primitive0-material0-nettle-plant.aemesh",
+          "bytes": 189392,
+          "sha256": "4da84d00d7ee5c86a3396d0522518661eb98e0a2e589907b3cfe6b4864d8117f"
+        }
+      },
+      {
+        "variant": 2,
+        "source_name": "nettle_plant_small_a_LOD0",
+        "vertices": 2736,
+        "triangles": 3592,
+        "bounds_min": [
+          -0.03092743456363678,
+          -0.0012624202063307166,
+          -0.02224699966609478
+        ],
+        "bounds_max": [
+          0.03326515480875969,
+          0.06130361184477806,
+          0.021210959181189537
+        ],
+        "mesh": {
+          "path": "engine/assets/mistwatch-nettle-plant/meshes/nettle-plant-lod0-node2-mesh2-primitive0-material0-nettle-plant.aemesh",
+          "bytes": 119728,
+          "sha256": "5c5d1c571d6ffd0ccf75d969c37ed34d8164d127c89ef28d2f94957548ab44d6"
+        }
+      },
+      {
+        "variant": 3,
+        "source_name": "nettle_plant_small_b_LOD0",
+        "vertices": 849,
+        "triangles": 1088,
+        "bounds_min": [
+          -0.02956516295671463,
+          -0.0007196160149760544,
+          -0.018236525356769562
+        ],
+        "bounds_max": [
+          0.030160607770085335,
+          0.02100224234163761,
+          0.020272545516490936
+        ],
+        "mesh": {
+          "path": "engine/assets/mistwatch-nettle-plant/meshes/nettle-plant-lod0-node3-mesh3-primitive0-material0-nettle-plant.aemesh",
+          "bytes": 36844,
+          "sha256": "550ab1456df945e1af708b3d3b5c8613fe9d8fdcde90ca4fd5aa69655be706bc"
+        }
+      },
+      {
+        "variant": 4,
+        "source_name": "nettle_plant_tall_a_LOD0",
+        "vertices": 5259,
+        "triangles": 6984,
+        "bounds_min": [
+          -0.05262836813926697,
+          -0.003934997133910656,
+          -0.04579240083694458
+        ],
+        "bounds_max": [
+          0.05096288397908211,
+          0.21283993124961853,
+          0.04426511004567146
+        ],
+        "mesh": {
+          "path": "engine/assets/mistwatch-nettle-plant/meshes/nettle-plant-lod0-node4-mesh4-primitive0-material0-nettle-plant.aemesh",
+          "bytes": 231076,
+          "sha256": "d1043c22537c243329bd8610ec14692234f54af0fd5ae49132d0b7540f550e58"
+        }
+      },
+      {
+        "variant": 5,
+        "source_name": "nettle_plant_tall_b_LOD0",
+        "vertices": 6258,
+        "triangles": 8080,
+        "bounds_min": [
+          -0.04104148596525192,
+          -0.0055817291140556335,
+          -0.04856731742620468
+        ],
+        "bounds_max": [
+          0.041281938552856445,
+          0.18714646995067596,
+          0.04611610248684883
+        ],
+        "mesh": {
+          "path": "engine/assets/mistwatch-nettle-plant/meshes/nettle-plant-lod0-node5-mesh5-primitive0-material0-nettle-plant.aemesh",
+          "bytes": 272200,
+          "sha256": "adde7aa47a39f321ed4fa8ab8bc336d4e42ef319ff6f7cef3baf068f65f53369"
+        }
+      }
+    ]
+  },
+  "material_derivation": {
+    "alphaMode": "mask",
+    "alphaSource": "separate",
+    "alphaCutoff": 0.5,
+    "alphaDilationPixels": 8,
+    "doubleSided": true,
+    "materialClass": "foliage",
+    "normalConversion": "OpenGL green inverted to DirectX",
+    "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+    "mipPolicy": "DirectXTex --keep-coverage",
+    "mipCoverageCutoff": 0.5,
+    "sources": {
+      "base": {
+        "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_diff_2k.jpg",
+        "sha256": "7baf0c5bf0695ddbba590baba686e284803244703959092526eb2bc226724351"
+      },
+      "normal": {
+        "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_nor_gl_2k.jpg",
+        "sha256": "90d75c7ac70df26d6abb938e14676b0ecc08e35a596034a47f54865a5ab283a2"
+      },
+      "arm": {
+        "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_arm_2k.jpg",
+        "sha256": "94a5bcfdb6c00f3f44105e06eef9cc759e6826bf30bd3ef56c4991b18691d230"
+      },
+      "alphaMask": {
+        "path": "engine/assets/mistwatch-nettle-plant/source/nettle_plant_alpha_2k.png",
+        "sha256": "0efece04fcc2780e7a13cd92ad3acd8eb7ad5f84fc4b66beb4402af06b229434"
+      }
+    },
+    "outputs": [
+      {
+        "channel": "base",
+        "path": "engine/assets/mistwatch-nettle-plant/materials/nettle-base.dds",
+        "sourceColorSpace": "sRGB",
+        "bytes": 5592580,
+        "sha256": "1e875aa8967262dfef1cb8b3b372527eee308071948865489d263630fb826fb1",
+        "height": 2048,
+        "width": 2048,
+        "mips": 12,
+        "format": 99,
+        "dimension": 3,
+        "array": 1
+      },
+      {
+        "channel": "normal",
+        "path": "engine/assets/mistwatch-nettle-plant/materials/nettle-normal.dds",
+        "sourceColorSpace": "linear",
+        "bytes": 5592580,
+        "sha256": "85729c0b6920f4d2c640c7fc038506c9071450de103a44ca2b6f2bde5451790f",
+        "height": 2048,
+        "width": 2048,
+        "mips": 12,
+        "format": 83,
+        "dimension": 3,
+        "array": 1
+      },
+      {
+        "channel": "arm",
+        "path": "engine/assets/mistwatch-nettle-plant/materials/nettle-arm.dds",
+        "sourceColorSpace": "linear",
+        "bytes": 5592580,
+        "sha256": "895365555a197cf5f86feb088858cb0700cfc27f0ba05477bbd9407783cbacd0",
+        "height": 2048,
+        "width": 2048,
+        "mips": 12,
+        "format": 98,
+        "dimension": 3,
+        "array": 1
+      }
+    ]
+  },
+  "historical_tools": [
+    {
+      "name": "convert-glb-to-aemesh.py",
+      "bytes": 28473,
+      "sha256": "33bc28f796f30ca5ccbd51b5022579fb994b16e60799a6d7ed9fa5fd66aa0c61"
+    },
+    {
+      "name": "bake-photoreal-materials.py",
+      "bytes": 30106,
+      "sha256": "90e648ece087da2a8daaadc12756492f5f3f9e3abcdd4c08337b0cf03d2366bc"
+    },
+    {
+      "name": "texconv.exe",
+      "bytes": 966480,
+      "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+    },
+    {
+      "name": "Prepare.py",
+      "bytes": 10553,
+      "sha256": "7e5103b88671cd29e63202a0808843d094f942968a2e931fd1d09e4d83462122"
+    }
+  ],
+  "recipe": {
+    "path": "engine/assets/mistwatch-nettle-plant/recipes/Prepare.py",
+    "role": "Historical one-off audit recipe; not a portable end-user recook command."
+  },
+  "limitations": [
+    "Current six source and nine cooked file pins require independent root verification.",
+    "No execution status, memory qualification, recook or visual acceptance is asserted.",
+    "Retaining this filename preserves the LICENSE source-facts reference, not old execution-receipt schema compatibility."
+  ]
+}

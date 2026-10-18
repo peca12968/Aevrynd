@@ -23,6 +23,7 @@
 #include "Hlod3D.h"
 #include "StableId3D.h"
 #include "VolumetricAtmospherePassD3D12.h"
+#include "FrameCapture3D.h"
 
 namespace Aevrynd {
 class IGpuRetirementReceiptSource3D;
@@ -150,14 +151,42 @@ private:
 };
 struct AssetLeaseState3D {std::uint64_t identity{};};
 using AssetLease3D=std::shared_ptr<const AssetLeaseState3D>;
-enum class MaterialSurfaceMapEncoding3D:uint8_t {RoughnessR,PackedOrm};
-constexpr std::array<uint8_t,4> CanonicalMaterialSurfaceTexel3D(std::array<uint8_t,4> texel,MaterialSurfaceMapEncoding3D encoding){return encoding==MaterialSurfaceMapEncoding3D::PackedOrm?std::array<uint8_t,4>{texel[0],texel[1],texel[2],texel[1]}:std::array<uint8_t,4>{255,texel[0],255,texel[0]};}
+enum class MaterialSurfaceMapEncoding3D:uint8_t {RoughnessR,PackedOrm,PackedOrmHeight};
+// 高度是獨立線性資料；舊兩種編碼的 alpha 行為保持，不能由全域開關偷換其語義。
+constexpr std::array<uint8_t,4> CanonicalMaterialSurfaceTexel3D(std::array<uint8_t,4> texel,MaterialSurfaceMapEncoding3D encoding){return encoding==MaterialSurfaceMapEncoding3D::PackedOrmHeight?texel:encoding==MaterialSurfaceMapEncoding3D::PackedOrm?std::array<uint8_t,4>{texel[0],texel[1],texel[2],texel[1]}:std::array<uint8_t,4>{255,texel[0],255,texel[0]};}
 struct MaterialTextureIntegrity3D {std::uint64_t expectedBytes{};std::string expectedSha256;};
 struct MaterialTextureLayerDefinition3D {std::filesystem::path baseColorPath,roughnessPath,normalPath;MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};std::array<MaterialTextureIntegrity3D,3> integrity{};};
 enum class MaterialAlphaMode3D:uint8_t {Opaque,Mask,Blend};
 constexpr MaterialAlphaMode3D NormalizeMaterialAlphaMode3D(MaterialAlphaMode3D value){return value==MaterialAlphaMode3D::Mask||value==MaterialAlphaMode3D::Blend?value:MaterialAlphaMode3D::Opaque;}
 struct MaterialTextureSetDefinition3D {std::filesystem::path baseColorPath,roughnessPath;unsigned maximumResolution{2048};std::filesystem::path normalPath;std::array<MaterialTextureLayerDefinition3D,2> additionalLayers{};MaterialAlphaMode3D alphaMode{MaterialAlphaMode3D::Opaque};float alphaCutoff{.5f};MaterialSurfaceMapEncoding3D surfaceEncoding{MaterialSurfaceMapEncoding3D::RoughnessR};std::array<MaterialTextureIntegrity3D,3> integrity{};};
 struct Surface3D {float roughness{.72f},metallic{},emissive{},occlusion{1.f};};
+inline bool ValidMaterialSurfaceEncodingDefinition3D(const MaterialTextureSetDefinition3D& definition){
+    const auto known=[](MaterialSurfaceMapEncoding3D value){return value==MaterialSurfaceMapEncoding3D::RoughnessR||value==MaterialSurfaceMapEncoding3D::PackedOrm||value==MaterialSurfaceMapEncoding3D::PackedOrmHeight;};
+    if(!known(definition.surfaceEncoding))return false;
+    for(const auto& layer:definition.additionalLayers)if(!known(layer.surfaceEncoding))return false;
+    if(definition.additionalLayers[1].surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrmHeight)return false;
+    const bool baseHeight=definition.surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrmHeight;
+    const bool leafHeight=definition.additionalLayers[0].surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrmHeight;
+    if(!baseHeight&&!leafHeight)return true;
+    if(definition.alphaMode!=MaterialAlphaMode3D::Opaque)return false;
+    const auto sealed=[](const std::filesystem::path& color,const std::filesystem::path& surface,
+        const std::filesystem::path& normal,const std::array<MaterialTextureIntegrity3D,3>& integrity){
+        if(color.empty()||surface.empty()||normal.empty())return false;
+        for(const auto& seal:integrity){if(!seal.expectedBytes||seal.expectedSha256.size()!=64)return false;
+            for(char c:seal.expectedSha256)if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')||(c>='A'&&c<='F')))return false;}
+        return true;
+    };
+    if(baseHeight&&!sealed(definition.baseColorPath,definition.roughnessPath,definition.normalPath,definition.integrity))return false;
+    const auto& leaf=definition.additionalLayers[0];
+    if(leafHeight&&!sealed(leaf.baseColorPath,leaf.roughnessPath,leaf.normalPath,leaf.integrity))return false;
+    return true;
+}
+// 僅宣告完整封印的地面基層／落葉層；真正內容雜湊由 renderer admission 再核。
+inline uint32_t MaterialHeightLayerMask3D(const MaterialTextureSetDefinition3D& definition){
+    if(!ValidMaterialSurfaceEncodingDefinition3D(definition))return 0;
+    return (definition.surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrmHeight?1u:0u)|
+        (definition.additionalLayers[0].surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrmHeight?2u:0u);
+}
 constexpr uint32_t PackSurface3D(Surface3D surface){return PackColorRgba8({surface.roughness,surface.metallic,surface.emissive,surface.occlusion});}
 enum class MaterialClass3D:uint8_t {Surface,Water,Foliage,Terrain};
 enum class CharacterShadingModel3D:uint8_t {Default,Skin,Hair,Eye,Cloth};
@@ -364,15 +393,35 @@ inline bool ValidReflectionProbeCaptureSettings3D(const ReflectionProbeCaptureSe
 struct ReflectionProbeCaptureStatus3D {ReflectionProbeCaptureStage3D stage{ReflectionProbeCaptureStage3D::Dirty};uint32_t resolution{},specularMipCount{};size_t residentBytes{};uint64_t generation{},pendingFence{};EnvironmentLightingHandle3D environment{};bool requiresPrefilter{true};uint64_t originGeneration{},pendingOriginGeneration{};bool requeueAfterFence{};};
 enum class ReflectionProbeCaptureFace3D:uint8_t {PositiveX,NegativeX,PositiveY,NegativeY,PositiveZ,NegativeZ};
 struct ReflectionProbeCaptureReadback3D {uint32_t resolution{},specularMipCount{};uint64_t generation{};std::array<uint64_t,6> faceHashes{},irradianceFaceHashes{};std::vector<uint64_t> specularMipFaceHashes;std::array<double,6> irradianceFaceEnergy{};std::vector<double> specularMipFaceEnergy;};
+// 有界近水平視差；不改世界頂點或碰撞，所有不合法要求回到關閉狀態。
+struct TerrainParallaxSettings3D {
+    bool enabled{false};
+    float depthMeters{},fadeStart{12.f},fadeEnd{18.f},minimumNormalY{.96f},minimumViewCosine{.15f},maximumUvOffset{.08f};
+    friend constexpr bool operator==(const TerrainParallaxSettings3D&,const TerrainParallaxSettings3D&)=default;
+};
+inline bool ValidTerrainParallaxSettings3D(const TerrainParallaxSettings3D& s){
+    for(float v:{s.depthMeters,s.fadeStart,s.fadeEnd,s.minimumNormalY,s.minimumViewCosine,s.maximumUvOffset})if(!std::isfinite(v))return false;
+    return s.depthMeters>=0.f&&s.depthMeters<=.02f&&s.fadeStart>=0.f&&s.fadeStart<=100.f&&s.fadeEnd>s.fadeStart&&s.fadeEnd<=120.f&&s.minimumNormalY>=.9f&&s.minimumNormalY<=1.f&&s.minimumViewCosine>=.05f&&s.minimumViewCosine<=.8f&&s.maximumUvOffset>=.001f&&s.maximumUvOffset<=.1f&&(!s.enabled||s.depthMeters>0.f);
+}
+inline TerrainParallaxSettings3D NormalizeTerrainParallaxSettings3D(TerrainParallaxSettings3D s){return ValidTerrainParallaxSettings3D(s)&&s.enabled?s:TerrainParallaxSettings3D{};}
+inline std::uint64_t FingerprintTerrainParallaxSettings3D(TerrainParallaxSettings3D s){
+    s=NormalizeTerrainParallaxSettings3D(s);if(!s.enabled)return 0;
+    std::uint64_t hash=14695981039346656037ull;
+    for(float value:{s.depthMeters,s.fadeStart,s.fadeEnd,s.minimumNormalY,s.minimumViewCosine,s.maximumUvOffset})for(unsigned b=0;b<4;++b){hash^=(std::bit_cast<std::uint32_t>(value)>>(8*b))&255u;hash*=1099511628211ull;}
+    return hash;
+}
 struct TerrainDistanceMaterialSettings3D {
     bool enabled{true};
     float detailFadeStart{48.f},detailFadeEnd{192.f},macroVariationScale{.05f},macroVariationStrength{.24f},normalDetailStrength{1.f},farRoughnessBoost{.12f};
     bool decorrelationEnabled{true};
     float warpScale{.012f},warpStrength{2.4f},grassLayerScale{.92f},soilLayerScale{1.21f},rockLayerScale{.68f},chromaVariationStrength{.075f};
     bool mesoPartitionEnabled{false};
+    bool rockVariationEnabled{false};
     friend constexpr bool operator==(const TerrainDistanceMaterialSettings3D&,const TerrainDistanceMaterialSettings3D&)=default;
 };
 inline TerrainDistanceMaterialSettings3D NormalizeTerrainDistanceMaterialSettings3D(TerrainDistanceMaterialSettings3D settings){settings.detailFadeStart=Clamp(std::isfinite(settings.detailFadeStart)?settings.detailFadeStart:48.f,0.f,100000.f);settings.detailFadeEnd=Clamp(std::isfinite(settings.detailFadeEnd)?settings.detailFadeEnd:192.f,settings.detailFadeStart+.01f,100001.f);settings.macroVariationScale=Clamp(std::isfinite(settings.macroVariationScale)?settings.macroVariationScale:.05f,.00001f,4.f);settings.macroVariationStrength=Clamp(std::isfinite(settings.macroVariationStrength)?settings.macroVariationStrength:.24f,0.f,.5f);settings.normalDetailStrength=Clamp(std::isfinite(settings.normalDetailStrength)?settings.normalDetailStrength:1.f,0.f,2.f);settings.farRoughnessBoost=Clamp(std::isfinite(settings.farRoughnessBoost)?settings.farRoughnessBoost:.12f,0.f,.5f);settings.warpScale=Clamp(std::isfinite(settings.warpScale)?settings.warpScale:.012f,.0001f,.05f);settings.warpStrength=Clamp(std::isfinite(settings.warpStrength)?settings.warpStrength:2.4f,0.f,8.f);settings.grassLayerScale=Clamp(std::isfinite(settings.grassLayerScale)?settings.grassLayerScale:.92f,.5f,1.75f);settings.soilLayerScale=Clamp(std::isfinite(settings.soilLayerScale)?settings.soilLayerScale:1.21f,.5f,1.75f);settings.rockLayerScale=Clamp(std::isfinite(settings.rockLayerScale)?settings.rockLayerScale:.68f,.5f,1.75f);settings.chromaVariationStrength=Clamp(std::isfinite(settings.chromaVariationStrength)?settings.chromaVariationStrength:.075f,0.f,.2f);return settings;}
+// 沿用既有 root constant：0 關閉、1 原路徑、2 啟用獨立岩層取樣變化。
+inline float TerrainDistanceMaterialMode3D(const TerrainDistanceMaterialSettings3D& settings){return settings.enabled?(settings.rockVariationEnabled&&settings.decorrelationEnabled?2.f:1.f):0.f;}
 inline std::uint32_t PackTerrainDecorrelationSettings3D(const TerrainDistanceMaterialSettings3D& source={}){
     const auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);if(!settings.enabled)return 0;
     const auto encode=[](float value,float minimum,float maximum){return std::uint32_t(std::lround(Clamp((value-minimum)/(maximum-minimum),0.f,1.f)*31.f));};
@@ -384,7 +433,7 @@ inline TerrainDistanceMaterialSettings3D EffectiveTerrainDecorrelationSettings3D
     auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);const std::uint32_t packed=PackTerrainDecorrelationSettings3D(settings);settings.decorrelationEnabled=(packed&(1u<<30))!=0;settings.mesoPartitionEnabled=(packed&(1u<<31))!=0;if(!settings.decorrelationEnabled)return settings;const auto decode=[&](unsigned shift,float minimum,float maximum){return minimum+(maximum-minimum)*(float((packed>>shift)&31u)/31.f);};settings.warpScale=decode(0,.0001f,.05f);settings.warpStrength=decode(5,0.f,8.f);settings.grassLayerScale=decode(10,.5f,1.75f);settings.soilLayerScale=decode(15,.5f,1.75f);settings.rockLayerScale=decode(20,.5f,1.75f);settings.chromaVariationStrength=decode(25,0.f,.2f);return settings;
 }
 inline std::uint64_t FingerprintTerrainDistanceMaterialSettings3D(const TerrainDistanceMaterialSettings3D& source={}){
-    const auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);std::uint64_t hash=1469598103934665603ull;const auto mix=[&](std::uint32_t value){for(unsigned byte=0;byte<4;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};mix(settings.enabled?1u:0u);if(settings.enabled){for(float value:{settings.detailFadeStart,settings.detailFadeEnd,settings.macroVariationScale,settings.macroVariationStrength,settings.normalDetailStrength,settings.farRoughnessBoost})mix(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));mix(PackTerrainDecorrelationSettings3D(settings));}return hash;
+    const auto settings=NormalizeTerrainDistanceMaterialSettings3D(source);std::uint64_t hash=1469598103934665603ull;const auto mix=[&](std::uint32_t value){for(unsigned byte=0;byte<4;++byte){hash^=std::uint8_t(value>>(byte*8));hash*=1099511628211ull;}};mix(std::uint32_t(TerrainDistanceMaterialMode3D(settings)));if(settings.enabled){for(float value:{settings.detailFadeStart,settings.detailFadeEnd,settings.macroVariationScale,settings.macroVariationStrength,settings.normalDetailStrength,settings.farRoughnessBoost})mix(std::bit_cast<std::uint32_t>(value==0.f?0.f:value));mix(PackTerrainDecorrelationSettings3D(settings));}return hash;
 }
 inline Vec3 TerrainDecorrelatedWorldPosition3D(Vec3 worldPosition,const TerrainDistanceMaterialSettings3D& source={}){
     const auto settings=EffectiveTerrainDecorrelationSettings3D(source);if(!settings.enabled||!settings.decorrelationEnabled||settings.warpStrength<=0.f)return worldPosition;if(!std::isfinite(worldPosition.x)||!std::isfinite(worldPosition.y)||!std::isfinite(worldPosition.z))return{};
@@ -612,7 +661,22 @@ static_assert(EnhancedWorldRootDwords3D==64,"Enhanced world root signature must 
 enum class BloomSemanticSource3D : uint8_t { Unavailable, NativeDepth, HdrAlphaCarrier, TemporalDepthHistory, DlssDepthReplay, DlssUnavailable };
 struct BloomSemanticCapability3D {bool hdrAlphaShaders{},opaquePipelines{},transparentDualSourcePipeline{},maskedPipeline{},maskedMsaaPipeline{},atmospherePipeline{},postProcessPipeline{};[[nodiscard]] constexpr bool Complete()const noexcept{return hdrAlphaShaders&&opaquePipelines&&transparentDualSourcePipeline&&maskedPipeline&&maskedMsaaPipeline&&atmospherePipeline&&postProcessPipeline;}};
 struct BloomSemanticReceipt3D {BloomSemanticSource3D requested{BloomSemanticSource3D::Unavailable},actual{BloomSemanticSource3D::Unavailable};BloomSemanticCapability3D capability{};bool requestedDepthAware{},available{},failOpen{},dualSourceBlendAvailable{},transparentOrderingPreserved{},nativeDepthTransitioned{},currentTemporalDepthHistory{},carrierProduced{},postProcessCarrierPipeline{};uint32_t transparentLayerCount{};uint64_t transparentOrderHash{};bool transparentCarrierPipeline{},atmosphereCarrierPipeline{};uint32_t semanticRenderWidth{},semanticRenderHeight{},semanticOutputWidth{},semanticOutputHeight{},semanticFrameIndex{};uint64_t semanticResourceGeneration{},semanticResizeGeneration{};bool dlssReplayCurrentFrame{},dlssReplaySampleable{},dlssReplayTransitioned{};};
+// 視窗狀態不是完整遮蔽判定；flip swap chain 的 S_OK 也不能證明未被遮蔽。
+struct WindowPresentationState3D {
+    uint32_t showCommand{},cloaked{},cloakedHresult{};
+    bool valid{},visible{},iconic{},foreground{},placementValid{},cloakedValid{};
+};
+struct PresentObservation3D {
+    uint64_t serial{},qpcBegin{},qpcEnd{},qpcFrequency{},threadCpuCycles{};
+    uint32_t hresult{},syncInterval{},flags{},swapEffect{},swapFlags{},bufferCount{},width{},height{};
+    WindowPresentationState3D before{},after{};
+    bool observed{},clockValid{},threadCpuCyclesValid{},descriptorValid{},captureRequested{};
+};
 struct RendererStats {
+    uint64_t lastTerrainParallaxMaterialBinds{},lastTerrainParallaxMaterialSemanticIdentity{};
+    uint32_t lastTerrainParallaxHeightLayerMask{};
+    bool terrainParallaxEnabled{};
+    TerrainParallaxSettings3D terrainParallaxAppliedSettings{};
     unsigned outputWidth{},outputHeight{};
     uint32_t adapterLuidLow{};
     int32_t adapterLuidHigh{};
@@ -634,6 +698,7 @@ struct RendererStats {
     bool lastStaticMeshSubmissionWarmHit{},lastStaticMeshSubmissionCpuRebuild{},lastStaticMeshSubmissionCacheEligible{};size_t lastStaticMeshSubmissionCopiedBytes{},lastStaticMeshSubmissionInstanceCopiedBytes{},lastStaticMeshSubmissionGroupCopiedBytes{},lastStaticMeshSubmissionCommandCopiedBytes{},lastStaticMeshSubmissionPreparationIterations{};
     struct HlodCapacityReceipt3D {size_t consideredClusters{},acceptedClusters{},sourceFallbackClusters{},proxyFallbackClusters{},rejectedClusters{},droppedInstances{};uint64_t decisionHash{1469598103934665603ull};friend constexpr bool operator==(const HlodCapacityReceipt3D&,const HlodCapacityReceipt3D&)=default;} lastHlodCapacityReceipt{};
     uint64_t lastRenderPreparationCpuNanoseconds{},lastRenderCommandRecordingCpuNanoseconds{},lastRenderCommandRecordingCpuCycles{},lastRenderQueueExecuteCpuNanoseconds{},lastRenderFenceWaitCpuNanoseconds{},lastRenderPresentCpuNanoseconds{},lastRenderThreadCpuCycles{},performanceTelemetryMutationAllocations{};bool lastRenderThreadCpuQuerySucceeded{};
+    PresentObservation3D lastPresentObservation{};
     // 僅量測最終 Bloom 合成區段，包含語意深度狀態轉換與統計更新。
     uint64_t lastBloomPostProcessCpuCycles{},lastBloomPostProcessCpuNanoseconds{};
     std::vector<uint32_t> lastGpuInstanceCullingGroupVisible{};
@@ -797,6 +862,12 @@ struct RendererStats {
     float softDirectionalShadowMaximumPenumbraRadiusTexels{};
     uint64_t successfulFrameCaptures{};
     uint64_t rejectedFrameCaptures{};
+    // 最近正式擷取的 CPU 區段，以 submissionSerial 連結；不重用舊擷取假稱目前幀。
+    struct FrameCapturePipelineCost3D {
+        uint64_t submissionSerial{},fenceWaitNanoseconds{},mapNanoseconds{},analysisNanoseconds{},unmapNanoseconds{},totalNanoseconds{};
+        FrameCaptureCost3D png{};
+        bool complete{};
+    } lastFrameCapturePipelineCost{};
     double lastCapturedAverageLuminance{};
     double lastCapturedLuminanceVariance{};
     double lastCapturedDarkPixelFraction{};
@@ -1000,7 +1071,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);additiveSpans_.reserve(InitialAdditiveSpanCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){AbortPreparedWorldOriginShift3D();vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();staticMeshSubmission_={};staticMeshSubmissionGeneration_=0;skinnedMeshInstances.clear();skinPaletteJoints.clear();localReflectionProbes_.clear();resourceLeases_.clear();resourceLeaseKeys_.clear();skinPaletteCount_=0;nextSkinnedSubmissionGroupId_=1;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();cameraCut3D_=false;performanceTelemetryEnabled3D_=false;determinismIntegrityMode3D_=DeterminismIntegrityMode3D::Runtime;atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
+    void Clear(){AbortPreparedWorldOriginShift3D();vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();staticMeshSubmission_={};staticMeshSubmissionGeneration_=0;skinnedMeshInstances.clear();skinPaletteJoints.clear();localReflectionProbes_.clear();resourceLeases_.clear();resourceLeaseKeys_.clear();skinPaletteCount_=0;nextSkinnedSubmissionGroupId_=1;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();cameraCut3D_=false;performanceTelemetryEnabled3D_=false;presentObservationEnabled3D_=false;unsynchronizedDiagnosticPresent3D_=false;determinismIntegrityMode3D_=DeterminismIntegrityMode3D::Runtime;atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -1044,6 +1115,10 @@ public:
     bool CameraCut3D()const{return cameraCut3D_;}
     void SetPerformanceTelemetryEnabled3D(bool enabled){performanceTelemetryEnabled3D_=enabled;}
     bool PerformanceTelemetryEnabled3D()const{return performanceTelemetryEnabled3D_;}
+    void SetPresentObservationEnabled3D(bool enabled){presentObservationEnabled3D_=enabled;if(!enabled)unsynchronizedDiagnosticPresent3D_=false;}
+    bool PresentObservationEnabled3D()const{return presentObservationEnabled3D_;}
+    bool SetUnsynchronizedDiagnosticPresent3D(bool enabled)noexcept{if(enabled&&!presentObservationEnabled3D_)return false;unsynchronizedDiagnosticPresent3D_=enabled;return true;}
+    bool UnsynchronizedDiagnosticPresent3D()const noexcept{return unsynchronizedDiagnosticPresent3D_;}
     bool SetDeterminismIntegrityMode3D(DeterminismIntegrityMode3D mode)noexcept{if(mode!=DeterminismIntegrityMode3D::Runtime&&mode!=DeterminismIntegrityMode3D::SealedCapture)return false;determinismIntegrityMode3D_=mode;return true;}
     [[nodiscard]] DeterminismIntegrityMode3D DeterminismIntegrityMode()const noexcept{return determinismIntegrityMode3D_;}
     void SetOriginGeneration3D(uint64_t generation){originGeneration3D_=generation;}
@@ -1104,6 +1179,8 @@ public:
     std::span<const LocalReflectionProbe3D> LocalReflectionProbes()const{return localReflectionProbes_;}
     void SetTerrainDistanceMaterial(TerrainDistanceMaterialSettings3D settings){terrainDistanceMaterial_=NormalizeTerrainDistanceMaterialSettings3D(settings);}
     const TerrainDistanceMaterialSettings3D& TerrainDistanceMaterial()const{return terrainDistanceMaterial_;}
+    void SetTerrainParallax(TerrainParallaxSettings3D settings){terrainParallax_=NormalizeTerrainParallaxSettings3D(settings);}
+    const TerrainParallaxSettings3D& TerrainParallax()const{return terrainParallax_;}
     void SetVolumetricClouds(VolumetricCloudSettings3D settings){volumetricClouds_=NormalizeVolumetricCloudSettings3D(settings);}
     const VolumetricCloudSettings3D& VolumetricClouds()const{return volumetricClouds_;}
     void SetDirectionalLightShafts(DirectionalLightShaftSettings3D settings){directionalLightShafts_=NormalizeDirectionalLightShaftSettings3D(settings);}
@@ -1138,6 +1215,9 @@ public:
     void Geometry(const Geometry2D& geometry);
     void Text(Vec2 pos,std::string_view text,float scale,Color color);
     Vec2 MeasureText(std::string_view text,float scale)const;
+    // 選用 Windows 系統字型；pixelHeight 為字型像素尺度，保留舊 Text 外觀。
+    void SystemText(Vec2 pos,std::string_view text,float pixelHeight,Color color);
+    Vec2 MeasureSystemText(std::string_view text,float pixelHeight)const;
     std::vector<Vertex> vertices;
     std::vector<Vertex3D> worldVertices;
     std::vector<uint32_t> worldIndices;
@@ -1181,6 +1261,7 @@ private:
     ScreenSpaceReflectionSettings3D screenSpaceReflections_{};
     std::vector<LocalReflectionProbe3D> localReflectionProbes_{};
     TerrainDistanceMaterialSettings3D terrainDistanceMaterial_{};
+    TerrainParallaxSettings3D terrainParallax_{};
     VolumetricCloudSettings3D volumetricClouds_{};
     DirectionalLightShaftSettings3D directionalLightShafts_{};
     SkinSubsurfaceSettings3D skinSubsurface_{};
@@ -1203,7 +1284,7 @@ private:
     uint64_t ellipseStepCacheClock_{};
     bool backfaceCulling_{true};
     bool directionalShadowMapEnabled_{true};
-    bool cameraCut3D_{},performanceTelemetryEnabled3D_{};DeterminismIntegrityMode3D determinismIntegrityMode3D_{DeterminismIntegrityMode3D::Runtime};uint64_t originGeneration3D_{},preparedOriginGeneration3D_{};Vec3 preparedOriginDelta3D_{};StaticMeshSubmission3D preparedStaticMeshSubmission3D_{};
+    bool cameraCut3D_{},performanceTelemetryEnabled3D_{},presentObservationEnabled3D_{},unsynchronizedDiagnosticPresent3D_{};DeterminismIntegrityMode3D determinismIntegrityMode3D_{DeterminismIntegrityMode3D::Runtime};uint64_t originGeneration3D_{},preparedOriginGeneration3D_{};Vec3 preparedOriginDelta3D_{};StaticMeshSubmission3D preparedStaticMeshSubmission3D_{};
     BlendMode2D blendMode_{BlendMode2D::Alpha};
     DrawListCapacityProfile capacityProfile_{DrawListCapacityProfile::Frame};
 };

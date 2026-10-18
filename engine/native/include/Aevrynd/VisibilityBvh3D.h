@@ -34,6 +34,8 @@ private:
     static bool Valid(MeshBounds3D bounds);
     std::vector<Entry> entries_{};
     std::unordered_map<VisibilityEntityKey3D,std::uint32_t> keyToEntry_{};
+    std::vector<std::uint32_t> denseKeyToEntry_{};
+    VisibilityEntityKey3D denseKeyBase_{};
     std::vector<Node> nodes_{};
     mutable std::vector<std::uint32_t> traversal_{},candidates_{};
     std::vector<MeshBounds3D> refitBounds_{};

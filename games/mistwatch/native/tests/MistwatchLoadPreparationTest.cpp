@@ -45,6 +45,15 @@ struct Live {
         Hash h;h.Text(game.Serialize());h.Add(controller.StateHash());h.Add(controller.Settings());
         h.Model(explorer.model);h.Pose(explorer.pose);h.Add(explorer.phase);h.Add(explorer.yaw);h.Add(explorer.footTargets);
         h.Add(explorer.planted);h.Add(explorer.lastFeet);h.Add(explorer.feetInitialized);h.Add(explorer.locomotionDistance);
+        h.Add(explorer.locomotionSeconds);h.Add(explorer.locomotionVelocity);h.Add(explorer.gaitGrounded);h.Add(explorer.nextFoot);
+        h.Add(explorer.footFacing);h.Add(explorer.swingFacingStart);h.Add(explorer.swingFacingEnd);
+        for(const auto& swing:explorer.footSwings){
+            h.Add(swing.Ready());h.Add(swing.Active());h.Add(swing.Start());h.Add(swing.Landing());
+            h.Add(swing.Elapsed());h.Add(swing.Duration());h.Add(swing.LiftHeight());h.Add(swing.SpeedBound());
+        }
+        h.Add(explorer.DeathProgress());h.Add(explorer.DeathFinished());
+        h.Add(explorer.deathActive);h.Add(explorer.deathGroundedBasis);h.Add(explorer.deathLimited);
+        h.Add(explorer.deathMinimumClearance);h.Add(explorer.deathSupportGaps);h.Pose(explorer.deathStart);h.Pose(explorer.deathEnd);
         h.Model(boar.model);h.Pose(boar.pose);h.Add(boar.yaw);h.Add(boar.cycle);h.Add(boar.displacement);h.Add(boar.brace);
         h.Add(boar.footTargets);h.Add(boar.planted);h.Add(boar.lastFeet);h.Add(boar.initialized);
         h.Add(orbit);h.Vector(solids);h.Add(motion.Initialized());h.Add(motion.Camera());h.Add(framing);h.Add(result);h.Add(rendered);
@@ -82,12 +91,28 @@ void ValidateCandidate(const PreparedSavedGame& p,const SaveGame& original,const
     Require(Same(p.controller.Position(),original.session.feet),"checkpoint silently relocated saved feet");
     Require(Same(p.controller.Velocity(),{}),"checkpoint velocity not explicitly reset");
     Require(p.supported==p.controller.Grounded(),"support receipt differs from candidate controller");
-    Require(p.explorerIkApplied==p.supported&&p.airbornePoseValidated==!p.supported,"airborne shortcut falsely labeled IK applied");
+    Require(p.explorerIkApplied==(p.supported&&original.session.Alive())&&p.airbornePoseValidated==!p.supported,"airborne/dead pose falsely labeled standing IK applied");
+    Require(p.explorerDeathPoseApplied==!original.session.Alive(),"loaded death pose receipt inconsistent");
+    Require(original.session.Alive()?p.explorer.DeathProgress()==0:(p.explorer.DeathFinished()||p.explorer.DeathLimited()),"loaded checkpoint retained unrelated death clock");
     Require(std::isfinite(p.explorerFootTargetError)&&p.explorerFootTargetError>=0,"foot target error diagnostic invalid");
+    Require(p.explorer.locomotionSeconds==0&&Same(p.explorer.locomotionVelocity,{})&&p.explorer.nextFoot==1,"load retained locomotion timing");
+    for(const auto& swing:p.explorer.footSwings)Require(!swing.Active(),"load retained swing");
     if(p.supported){Require(p.supportProbeUsed&&(p.supportProbeSeconds==0||p.supportProbeSeconds==1.f/60.f),"real support probe evidence missing");
-        Require(p.explorer.planted[0]&&p.explorer.planted[1],"supported checkpoint did not solve planted feet");}
+        if(original.session.Alive())Require(p.explorer.planted[0]&&p.explorer.planted[1],"supported checkpoint did not solve planted feet");}
     else {Require(!p.supportProbeUsed&&p.supportProbeSeconds==0,"airborne checkpoint advanced fake support time");
-        Require(!p.explorer.planted[0]&&!p.explorer.planted[1],"airborne checkpoint retained ground foot locks");}
+        Require(!p.explorer.planted[0]&&!p.explorer.planted[1],"airborne checkpoint retained ground foot locks");
+        if(original.session.Alive()){
+            const auto world=CreateTransformMatrix(original.session.feet,{0,p.explorer.yaw,0},{1,1,1});
+            for(unsigned side=0;side<2;++side){
+                const auto ankle=TransformPoint(world,TransformPoint(p.explorer.pose.globalMatrices[11+side*3],{}));
+                Require(Length(ankle-p.explorer.footTargets[side])<=.005f,"airborne load must execute actual clearance, not only set validated flag");
+                for(const auto sole:p.explorer.soleOffsets[side]){
+                    const auto point=TransformPoint(world,TransformPoint(p.explorer.pose.globalMatrices[11+side*3],sole));
+                    Require(point.y>=terrain.SampleHeight(point.x,point.z)-.005f,"loaded airborne sole below terrain");
+                }
+            }
+        }
+    }
     CollisionWorld3D independent;
     for(const auto& box:p.solids)Require(bool(independent.CreateBox({box})),"independent collision fixture creation failed");
     Require(!independent.OverlapsBox(p.controller.Center(),p.controller.Extents()),"accepted body overlaps current-world box");
@@ -276,9 +301,25 @@ void Run(){
     auto preBridgeVoid=onBridge;preBridgeVoid.session.bridgeRepaired=false;
     // 未修橋時相同腳座標位於溪谷上空，不虛構橋面接地。
     Require(preBridgeVoid.Valid(),"pre-bridge air fixture invalid");AcceptedAndRollback(preBridgeVoid,live,terrain,false,1.8f);
+    auto deadBridge=onBridge;deadBridge.session.health=0;
+    AcceptedAndRollback(deadBridge,live,terrain,true,1.8f);
+    auto deadAir=preBridgeVoid;deadAir.session.health=0;
+    AcceptedAndRollback(deadAir,live,terrain,false,1.8f);
     SaveGame shelter;shelter.session.collected=7;shelter.session.feet={-7.25f,0,18};
     AcceptedAndRollback(shelter,live,terrain,true,1.4f);
+    auto deadShelter=shelter;deadShelter.session.health=0;
+    AcceptedAndRollback(deadShelter,live,terrain,true,1.4f);
     auto battle=HpOne();AcceptedAndRollback(battle,live,terrain,true,1.8f);
+    auto dead=battle;dead.session.health=0;
+    AcceptedAndRollback(dead,live,terrain,true,1.8f);
+    auto deadResult=PrepareChecked(dead,live,terrain);
+    Require(bool(deadResult)&&deadResult.candidate->explorer.DeathFinished(),"death checkpoint restored standing character");
+    const auto deadHead=TransformPoint(deadResult.candidate->explorer.pose.globalMatrices[2],{});
+    Require(deadHead.y<1.2f,"loaded-dead head was not lowered");
+    auto deadLive=live;
+    SwapPreparedSavedGame(*deadResult.candidate,deadLive.Targets());
+    auto liveResult=PrepareChecked(start,deadLive,terrain);
+    Require(bool(liveResult)&&liveResult.candidate->explorer.DeathProgress()==0&&!liveResult.candidate->explorer.DeathFinished(),"alive load kept previous death posture state");
     for(const float enemyY:{-100.f,100.f}){
         auto corruptEnemy=battle;corruptEnemy.encounter.feet.y=enemyY;
         const auto checked=PrepareChecked(corruptEnemy,live,terrain);

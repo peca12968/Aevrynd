@@ -8,6 +8,10 @@
 #include "MistwatchBroadleaf.h"
 #include "MistwatchRiverProfile.h"
 #include "MistwatchRelay.h"
+#include "MistwatchFirLayout.h"
+#include "MistwatchFallenLogProfile.h"
+#include "MistwatchForestFloorMask.h"
+#include "MistwatchBankCoverage.h"
 #include <array>
 #include <stdexcept>
 #include <vector>
@@ -91,6 +95,46 @@ inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain,b
     }
     return mesh;
 }
+inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain,bool layerHeight,
+    ForestFloorMaskSelector selector) {
+    if(selector==ForestFloorMaskSelector::Legacy)return CreateTerrainMesh(terrain,layerHeight);
+    if(!ValidForestFloorMaskSelector(selector))throw std::invalid_argument("Invalid forest-floor selector");
+    auto mesh=CreateGroundMesh(terrain,layerHeight);
+    for(auto& vertex:mesh.vertices) {
+        if(vertex.z< -10.f||vertex.z>96.f||(vertex.z>32.f&&vertex.z<40.f))continue;
+        float weight=CentralTrailVisualWeight(vertex.x,vertex.z,selector);
+        weight=(std::max)(weight,std::clamp(1.f-SettlementTrailDistance(vertex.x,vertex.z)/1.15f,0.f,1.f));
+        const auto original=Aevrynd::UnpackColorRgba8(vertex.color);
+        const Aevrynd::Color soil{.46f,.34f,.22f,1};
+        vertex.color=Aevrynd::PackColorRgba8({original.r+(soil.r-original.r)*weight,
+            original.g+(soil.g-original.g)*weight,original.b+(soil.b-original.b)*weight,original.a});
+    }
+    if(!layerHeight)return mesh;
+    for(auto& vertex:mesh.vertices) {
+        const auto coverage=ComposeForestFloorCoverage(vertex.x,vertex.z,terrain.SampleNormal(vertex.x,vertex.z),
+            RiverSedimentWeight(vertex.x,vertex.z),selector);
+        Aevrynd::Vec2 encoded{};
+        if(!Aevrynd::TryEncodeTerrainLayerCoverage3D(coverage.soil,coverage.rock,encoded))
+            throw std::runtime_error("Invalid forest-floor coverage");
+        vertex.u=encoded.x;vertex.v=encoded.y;
+    }
+    return mesh;
+}
+inline Aevrynd::Mesh3D CreateTerrainMesh(const Aevrynd::HeightField3D& terrain,bool layerHeight,
+    ForestFloorMaskSelector floor,BankCoverageSelector bank) {
+    ValidateBankCoverageRoute(floor,bank);
+    auto mesh=CreateTerrainMesh(terrain,layerHeight,floor);
+    if(!layerHeight||bank==BankCoverageSelector::Legacy)return mesh;
+    for(auto& vertex:mesh.vertices) {
+        const auto coverage=ComposeBankFloorCoverage(vertex.x,vertex.z,terrain.SampleNormal(vertex.x,vertex.z),
+            RiverSedimentWeight(vertex.x,vertex.z),floor,bank);
+        Aevrynd::Vec2 encoded{};
+        if(!Aevrynd::TryEncodeTerrainLayerCoverage3D(coverage.soil,coverage.rock,encoded))
+            throw std::runtime_error("Invalid patchy bank coverage");
+        vertex.u=encoded.x;vertex.v=encoded.y;
+    }
+    return mesh;
+}
 inline std::vector<Aevrynd::Vec3> TreePositions() {
     const auto terrain=CreateTerrain();
     std::vector<Aevrynd::Vec3> result{{-7,0,-5}};
@@ -115,6 +159,9 @@ inline std::vector<Aevrynd::Vec3> TreePositions() {
         result.push_back({x,terrain.SampleHeight(x,z),z});
     }
     return result;
+}
+inline MatureFirLayout CreateMatureFirLayout(const Aevrynd::HeightField3D& terrain,FirLayoutSelector selector) {
+    return SelectMatureFirLayout(terrain,TreePositions(),selector);
 }
 inline std::vector<Aevrynd::Vec3> GroundCoverPositions(const Aevrynd::HeightField3D& terrain) {
     std::vector<Aevrynd::Vec3> result;
@@ -193,6 +240,63 @@ inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     const auto understory=CreateUnderstory(terrain,trees,props);
     for(const auto& tree:understory.saplings)result.push_back(SaplingCollider(tree));
     for(const auto& tree:CreateBroadleafTrees(terrain,trees,props,understory))result.push_back(tree.trunk);
+    return result;
+}
+inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired,FirLayoutSelector selector) {
+    switch(selector) {
+    case FirLayoutSelector::Legacy:return WorldSolids(repaired);
+    case FirLayoutSelector::ForestWood:break;
+    default:throw std::invalid_argument("Invalid fir layout selector");
+    }
+    auto result=WorkshopSolids();
+    result.push_back(FuseCaseSolid());
+    const auto rangerHut=RangerHutSolids();
+    result.insert(result.end(),rangerHut.begin(),rangerHut.end());
+    const auto shelter=RepairShelterSolids();
+    result.insert(result.end(),shelter.begin(),shelter.end());
+    result.push_back(GeneratorSolid());
+    for(unsigned index=0;index<3;++index) {
+        const auto relay=RelaySolids(index);result.insert(result.end(),relay.begin(),relay.end());
+    }
+    if(repaired)result.push_back({{0,-.2f,36},{2,.2f,4}});
+    const auto terrain=CreateTerrain();
+    const auto layout=CreateMatureFirLayout(terrain,selector);
+    for(const auto& tree:layout.firs)result.push_back(tree.collider);
+    const auto props=ForestProps(terrain,layout.roots);
+    for(const auto& prop:props)result.push_back(prop.collider);
+    const auto understory=CreateUnderstory(terrain,layout.roots,props);
+    for(const auto& tree:understory.saplings)result.push_back(SaplingCollider(tree));
+    for(const auto& tree:CreateBroadleafTrees(terrain,layout.roots,props,understory))result.push_back(tree.trunk);
+    return result;
+}
+
+inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired,FirLayoutSelector fir,
+    FallenLogProfile profile) {
+    ValidateFallenLogRoute(fir,profile);
+    if(profile==FallenLogProfile::LegacyCylinder)return WorldSolids(repaired,fir);
+    const auto terrain=CreateTerrain();
+    ValidateFallenLogTerrain(terrain);
+    const auto layout=CreateMatureFirLayout(terrain,fir);
+    if(!layout.reachedBudget||layout.firs.size()!=100||layout.roots.size()!=100||
+        layout.fingerprint!=FallenLogFirFingerprint)
+        throw std::invalid_argument("FALLEN_WORLD_FIR_COHORT");
+    const auto original=ForestProps(terrain,layout.roots);
+    const auto mapped=ApplyFallenLogProfile(original,fir,profile);
+    // 原世界保留設施、成熟樹、灌木與闊葉作者化；只原位替換四個倒木角色。
+    auto result=WorldSolids(repaired,fir);
+    const auto workshop=WorkshopSolids(),hut=RangerHutSolids(),shelter=RepairShelterSolids();
+    std::size_t propBegin=workshop.size()+1+hut.size()+shelter.size()+1;
+    for(unsigned id=0;id<3;++id)propBegin+=RelaySolids(id).size();
+    propBegin+=(repaired?1u:0u)+layout.firs.size();
+    if(propBegin!=133u+(repaired?1u:0u)||result.size()!=223u+(repaired?1u:0u)||
+        propBegin+original.size()>result.size())
+        throw std::invalid_argument("FALLEN_WORLD_ROLE_ORDER");
+    // 所有原 prop role 先逐欄驗完；不能接收任意外部 mapped boxes 或半替換。
+    for(std::size_t id=0;id<original.size();++id)
+        if(!FallenLogDetail::SameBox(result[propBegin+id],original[id].collider))
+            throw std::invalid_argument("FALLEN_WORLD_ORIGINAL_BOX");
+    for(const auto& placement:FallenLogPlacements())
+        result[propBegin+placement.propId]=mapped[placement.propId].collider;
     return result;
 }
 }

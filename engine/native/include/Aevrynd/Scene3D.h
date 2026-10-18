@@ -16,6 +16,17 @@
 #include <vector>
 
 namespace Aevrynd {
+namespace Scene3DDetail {
+// IEEE754 單精度的指數全1恰為 NaN／Infinity；仍逐項驗證，不略過隱藏物件。
+// 避免 strict 浮點模式下每個分量的分類呼叫，有限值（含次正規數）語意不變。
+inline bool FiniteTransform(const Transform3D& value) noexcept {
+    static_assert(std::numeric_limits<float>::is_iec559&&sizeof(float)==sizeof(std::uint32_t));
+    const auto finite=[](float component){return (std::bit_cast<std::uint32_t>(component)&0x7f800000u)!=0x7f800000u;};
+    return finite(value.position.x)&&finite(value.position.y)&&finite(value.position.z)&&
+        finite(value.rotation.x)&&finite(value.rotation.y)&&finite(value.rotation.z)&&
+        finite(value.scale.x)&&finite(value.scale.y)&&finite(value.scale.z);
+}
+}
 struct Triangle3D {Vec3 a{},b{},c{};Color color{};};
 struct Line3D {Vec3 a{},b{};float width{1.f};Color color{};};
 struct Box3D {Transform3D transform{};Material3D material{};RenderObjectIdentity3D identity{};float occlusionOpacity{1.f};};
@@ -24,7 +35,22 @@ enum class MeshLodDistanceMetric3D : std::uint8_t {Center,BoundsSurface};
 struct MeshLodPolicy3D {float switchDistance{40.f},transitionWidth{};MeshLodDistanceMetric3D distanceMetric{MeshLodDistanceMetric3D::Center};};
 struct MeshLodSelection3D {float nearCoverage{1.f},farCoverage{};bool submitNear{true},submitFar{};};
 inline MeshLodSelection3D EvaluateMeshLod3D(float centerDistance,float boundsRadius,MeshLodPolicy3D policy){
-    if(!std::isfinite(centerDistance)||centerDistance<0.f)return{};const float switchDistance=std::isfinite(policy.switchDistance)?(std::max)(.001f,policy.switchDistance):40.f,width=std::isfinite(policy.transitionWidth)?(std::max)(0.f,policy.transitionWidth):0.f,distance=policy.distanceMetric==MeshLodDistanceMetric3D::BoundsSurface?(std::max)(0.f,centerDistance-(std::isfinite(boundsRadius)?(std::max)(0.f,boundsRadius):0.f)):centerDistance;if(width<=.001f)return distance>=switchDistance?MeshLodSelection3D{0,1,false,true}:MeshLodSelection3D{};const float start=switchDistance-width*.5f,end=switchDistance+width*.5f;if(distance<=start)return{};if(distance>=end)return{0,1,false,true};float blend=Clamp((distance-start)/(std::max)(.001f,end-start),0.f,1.f);blend=blend*blend*(3.f-2.f*blend);return{1.f-blend,blend,true,true};
+    if(!std::isfinite(centerDistance)||centerDistance<0.f)return{};
+    const float switchDistance=std::isfinite(policy.switchDistance)?(std::max)(.001f,policy.switchDistance):40.f,
+        width=std::isfinite(policy.transitionWidth)?(std::max)(0.f,policy.transitionWidth):0.f,
+        distance=policy.distanceMetric==MeshLodDistanceMetric3D::BoundsSurface?
+            (std::max)(0.f,centerDistance-(std::isfinite(boundsRadius)?(std::max)(0.f,boundsRadius):0.f)):centerDistance;
+    if(width<=.001f)return distance>=switchDistance?MeshLodSelection3D{0,1,false,true}:MeshLodSelection3D{};
+    const float start=switchDistance-width*.5f,end=switchDistance+width*.5f;
+    if(distance<=start)return{};
+    if(distance>=end)return{0,1,false,true};
+    float blend=Clamp((distance-start)/(std::max)(.001f,end-start),0.f,1.f);
+    blend=blend*blend*(3.f-2.f*blend);
+    // 浮點捨入可在距離尚未到端點時產生精確 0／1；零覆蓋端不可仍標為過渡。
+    // 只判斷實際覆蓋端點，不用 epsilon 提早切掉仍有覆蓋的另一端。
+    if(blend<=0.f)return{};
+    if(blend>=1.f)return{0,1,false,true};
+    return{1.f-blend,blend,true,true};
 }
 static constexpr std::size_t MaximumMeshLodLevels3D=4;
 struct MeshLodLevel3D {MeshResource3D mesh{};Material3D material{};float switchDistance{},transitionWidth{};};
@@ -120,7 +146,7 @@ public:
         draw.WorldTriangle(triangle.a, triangle.b, triangle.c, triangle.color);
       Scene3DStats stats{};
       stats.submissionSerial=++submissionSerial_;if(!stats.submissionSerial)stats.submissionSerial=++submissionSerial_;
-      const auto finiteTransform=[](const Transform3D& value){return std::isfinite(value.position.x)&&std::isfinite(value.position.y)&&std::isfinite(value.position.z)&&std::isfinite(value.rotation.x)&&std::isfinite(value.rotation.y)&&std::isfinite(value.rotation.z)&&std::isfinite(value.scale.x)&&std::isfinite(value.scale.y)&&std::isfinite(value.scale.z);};
+      const auto finiteTransform=[](const Transform3D& value) noexcept {return Scene3DDetail::FiniteTransform(value);};
       stats.canonicalTransformValid=std::ranges::all_of(boxes_,finiteTransform,&Box3D::transform)&&std::ranges::all_of(meshes_,finiteTransform,&MeshObject3D::transform)&&std::ranges::all_of(lodMeshes_,finiteTransform,&MeshLodObject3D::transform);
       stats.inputTriangles = TriangleCount();
       stats.visibleTriangles = triangles_.size();
@@ -201,11 +227,12 @@ public:
                         bool visibilityAccepted = false,
                         bool lodInvert = false,
                         MeshRenderLayer3D layer = MeshRenderLayer3D::Opaque,
-                        AssetLease3D assetLease = {},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f) {
+                        AssetLease3D assetLease = {},RenderObjectIdentity3D identity={},float occlusionOpacity=1.f,
+                        const MeshBounds3D* preparedBounds=nullptr) {
         const MeshBounds3D localBounds =
                                resource ? resource.bounds : *fallbackBounds,
                            worldBounds =
-                               TransformSphereBounds(localBounds, transform);
+                               preparedBounds?*preparedBounds:TransformSphereBounds(localBounds, transform);
         const std::size_t triangles =
             resource ? resource.TriangleCount() : fallback->indices.size() / 3;
         const float distanceToCamera =
@@ -280,7 +307,7 @@ public:
             ++stats.shadowDistanceRejected;
           submit(resource, fallback, fallbackBounds, transform, material, lodCoverage,
                  lodSeed, withinShadowDistance, true, lodInvert,
-                 MeshRenderLayer3D::Opaque, std::move(assetLease),identity,occlusionOpacity);
+                 MeshRenderLayer3D::Opaque, std::move(assetLease),identity,occlusionOpacity,&worldBounds);
           return;
         }
         if (!shadowEligible(worldBounds, material, resource))
@@ -292,7 +319,7 @@ public:
         }
         submit(resource, fallback, fallbackBounds, transform, material, lodCoverage, lodSeed,
                true, true, lodInvert, MeshRenderLayer3D::ShadowOnly,
-               std::move(assetLease),identity,occlusionOpacity);
+               std::move(assetLease),identity,occlusionOpacity,&worldBounds);
       };
       const auto submitVisibilityObject = [&](std::size_t objectIndex) {
         if(objectIndex<boxes_.size()){const Box3D& box=boxes_[objectIndex];submitObject(boxMesh_,&fallbackBox,&UnitBoxBounds(),box.transform,box.material,{},box.identity,box.occlusionOpacity);return;}

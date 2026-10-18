@@ -1,0 +1,9 @@
+{
+"schema_version":1,
+"scope":"runtime-identity-only; current_world_qualified=false",
+"profile":"authored-current-forest-full-v5",
+"parent":"authored-forest-surface-full-v4",
+"parent_manifest_sha256":"467BE56D0F3C5F1408E014DB50728DD1BCC9D28AB0366CE6B74957C74505F291",
+"count":418,
+"additions":[]
+}

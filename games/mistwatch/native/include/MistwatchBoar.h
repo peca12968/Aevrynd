@@ -83,8 +83,11 @@ struct Boar {
         for(const auto& joint:model.skeleton.joints)pose.localTransforms.push_back(joint.bindTransform);
         pose.localTransforms[0].translation.y-=.025f+.045f*brace;
         pose.localTransforms[1].rotation.x=phase==EnemyPhase::Recovery?-.13f:.12f+.36f*brace;
+        pose.localTransforms[1].usesQuaternion=false;
         pose.localTransforms[2].rotation.x=-.1f*brace;
+        pose.localTransforms[2].usesQuaternion=false;
         pose.localTransforms[15].rotation.z=.15f*std::sin(cycle);
+        pose.localTransforms[15].usesQuaternion=false;
         BuildAnimationPoseGlobalMatrices3D(model.skeleton,pose);
         return true;
     }

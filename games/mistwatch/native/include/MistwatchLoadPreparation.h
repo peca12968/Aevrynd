@@ -1,11 +1,16 @@
 #pragma once
+#include "MistwatchWorld.h"
+#include "MistwatchEntranceWorldAuthor.h"
 #include "MistwatchSaveGame.h"
 #include "MistwatchBoar.h"
 #include "MistwatchEncounterMotion.h"
 #include "MistwatchCamera.h"
 #include "MistwatchExplorer.h"
+#include "MistwatchPlayerLocomotion.h"
+#include "MistwatchWestCliffRelief.h"
 #include "MistwatchRangerHut.h"
 #include <Aevrynd/ThirdPersonCameraMotion3D.h>
+#include <Aevrynd/ConvexAabbSweep3D.h>
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -16,15 +21,18 @@
 namespace Mistwatch {
 // 僅預檢 CPU 檢查點：不操作音效、GPU、按鍵邊沿、檔案或執行中的狀態。
 // Session1..6 遷移由 SaveGame 負責；本層另驗證目前世界的載入安全。
-// 速度、接地／姿態、動畫相位與鏡頭路線未被序列化，採明確重設，不宣稱精確續接。
+// 舊檔採明確重設；v3 恢復物理、動作擁有者與動畫方向／相位。
+// 足部擺動軌跡與鏡頭路線仍重新建立，不宣稱完整畫面逐位元續接。
 enum class LoadPreparationError {
     None, InvalidSnapshot, InvalidControllerSettings, InvalidOrbit, InvalidTerrain,
     OutsideTerrain, BelowTerrainCenter, BodyOverlap, SupportProbeFailed,
     SupportWouldMoveFeet, InvalidExplorerModel, ExplorerPoseFailed,
     InvalidBoarModel, BoarOutsideTerrain, BoarPoseFailed,
     CameraUnavailable, AllocationFailure, PreparationException, TerrainAboveBodyTop, InvalidExtraSolids,
-    BoarUnsupported, BoarBodyOverlap, BoarTerrainAboveBodyTop
+    BoarUnsupported, BoarBodyOverlap, BoarTerrainAboveBodyTop, MotionRestoreRejected, LocomotionRestoreRejected
 };
+// 衍生地形是另一個明確版本；預設路徑仍維持既有 canonical 驗證。
+enum class LoadTerrainProfile { Canonical, WestCliffLedgesV1, WestCliffSlope45V1, WestCliffStanding45V1 };
 struct LoadPreparationInputs {
     const Aevrynd::CharacterController3D& controller;
     const Explorer& explorer;
@@ -34,6 +42,7 @@ struct LoadPreparationInputs {
 struct PreparedSavedGame {
     SaveGame snapshot;
     Aevrynd::CharacterController3D controller;
+    PlayerLocomotion locomotion;
     Explorer explorer;
     Boar boar;
     OrbitCamera orbit;
@@ -43,6 +52,7 @@ struct PreparedSavedGame {
     Aevrynd::ThirdPersonCameraMotionResult3D cameraResult;
     Aevrynd::Camera3D renderedCamera;
     bool supported{}, explorerIkApplied{}, airbornePoseValidated{}, supportProbeUsed{};
+    bool explorerDeathPoseApplied{}, motionRestored{};
     float footprintHighest{}, supportProbeSeconds{}, explorerFootTargetError{};
     PreparedSavedGame(const SaveGame& saved,const LoadPreparationInputs& live)
         :snapshot(saved),controller(live.controller),explorer(live.explorer),boar(live.boar),orbit(live.orbit){}
@@ -56,11 +66,15 @@ struct LoadPreparationResult {
 namespace LoadPreparationDetail {
 inline bool Same(Aevrynd::Vec3 a,Aevrynd::Vec3 b) noexcept {return a.x==b.x&&a.y==b.y&&a.z==b.z;}
 inline bool BodyOverlaps(Aevrynd::Vec3 center,Aevrynd::Vec3 extents,
-    std::span<const Aevrynd::BoxCollider3D> solids) noexcept {
+    std::span<const Aevrynd::BoxCollider3D> solids,
+    std::span<const Aevrynd::ConvexAabbSweep3D* const> hulls={}) noexcept {
     // 嚴格相交，與控制器零位移 AABB 重疊語意一致。
     for(const auto& box:solids){
         const auto low=box.center-box.extents-extents,high=box.center+box.extents+extents;
         if(center.x>low.x&&center.x<high.x&&center.y>low.y&&center.y<high.y&&center.z>low.z&&center.z<high.z)return true;
+    }
+    for(const auto* hull:hulls){Aevrynd::ConvexAabbSweep3D::Result query;
+        if(!hull||!hull->Sweep(center,extents,{},query)||query.status==Aevrynd::ConvexAabbSweepStatus3D::StartedOverlapping)return true;
     }
     return false;
 }
@@ -134,21 +148,44 @@ inline bool ValidSettings(const Aevrynd::CharacterControllerSettings3D& s) {
         std::isfinite(s.moveSpeed)&&s.moveSpeed>0&&std::isfinite(s.jumpSpeed)&&s.jumpSpeed>=0&&
         std::isfinite(s.gravity)&&s.gravity>0&&std::isfinite(s.maximumFallSpeed)&&s.maximumFallSpeed>0&&
         std::isfinite(s.groundSnapDistance)&&s.groundSnapDistance>=0&&std::isfinite(s.maximumDirectDisplacement)&&s.maximumDirectDisplacement>0&&
-        s.maximumSlideIterations>=1&&s.maximumSlideIterations<=3;
+        s.maximumSlideIterations>=1&&s.maximumSlideIterations<=3&&
+        std::isfinite(s.maximumTerrainUphillGrade)&&s.maximumTerrainUphillGrade>=0&&s.maximumTerrainUphillGrade<=16&&
+        std::isfinite(s.maximumTerrainStandingGrade)&&s.maximumTerrainStandingGrade>=0&&s.maximumTerrainStandingGrade<=16;
 }
 }
 
 inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPreparationInputs& live,
-    const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> extraCameraOnly={},
-    std::span<const Aevrynd::BoxCollider3D> extraSolids={}) noexcept {
+    const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> extraCameraOnly,
+    std::span<const Aevrynd::BoxCollider3D> extraSolids,FirLayoutSelector firLayout,
+    FallenLogProfile fallenProfile,const EntranceWorldAuthor* authored=nullptr,
+    std::span<const Aevrynd::ConvexAabbSweep3D* const> hulls={},
+    LoadTerrainProfile terrainProfile=LoadTerrainProfile::Canonical) noexcept {
     using namespace Aevrynd;
     using namespace LoadPreparationDetail;
     const auto fail=[](LoadPreparationError error){return LoadPreparationResult{error,{}};};
     try {
+        ValidateFallenLogRoute(firLayout,fallenProfile);
+        if(terrainProfile==LoadTerrainProfile::Canonical){
+            if(fallenProfile==FallenLogProfile::ScannedStraightV1)ValidateFallenLogTerrain(terrain);
+        }else if(terrainProfile==LoadTerrainProfile::WestCliffLedgesV1||terrainProfile==LoadTerrainProfile::WestCliffSlope45V1||
+            terrainProfile==LoadTerrainProfile::WestCliffStanding45V1){
+            if(terrainProfile==LoadTerrainProfile::WestCliffSlope45V1&&
+                (live.controller.Settings().maximumTerrainUphillGrade!=1.f||live.controller.Settings().maximumTerrainStandingGrade!=0.f))
+                return fail(LoadPreparationError::InvalidControllerSettings);
+            if(terrainProfile==LoadTerrainProfile::WestCliffStanding45V1&&
+                (live.controller.Settings().maximumTerrainUphillGrade!=1.f||live.controller.Settings().maximumTerrainStandingGrade!=1.f))
+                return fail(LoadPreparationError::InvalidControllerSettings);
+            if(firLayout!=FirLayoutSelector::ForestWood||fallenProfile!=FallenLogProfile::ScannedStraightV1)
+                return fail(LoadPreparationError::InvalidTerrain);
+            // 重新構造整張已知地形、逐位元核對；以下支撐／碰撞只能使用實際衍生場。
+            try { WestCliffRelief::ValidateExact(terrain); }
+            catch(const std::invalid_argument&) {return fail(LoadPreparationError::InvalidTerrain);}
+        }else return fail(LoadPreparationError::InvalidTerrain);
         if(!saved.Valid())return fail(LoadPreparationError::InvalidSnapshot);
         // 附加世界物件必須參與整個預檢及提交，不得讀檔後只保留渲染而遺失碰撞。
         for(const auto& box:extraSolids)if(!Session::Finite(box.center)||!Session::Finite(box.extents)||
             box.extents.x<=0||box.extents.y<=0||box.extents.z<=0)return fail(LoadPreparationError::InvalidExtraSolids);
+        for(const auto* hull:hulls)if(!hull||!hull->AxisCount())return fail(LoadPreparationError::InvalidExtraSolids);
         if(!ValidSettings(live.controller.Settings()))return fail(LoadPreparationError::InvalidControllerSettings);
         if(!std::isfinite(live.orbit.yaw)||!std::isfinite(live.orbit.pitch)||!std::isfinite(live.orbit.distance)||
             live.orbit.pitch<-.15f||live.orbit.pitch>1.1f||live.orbit.distance<2.5f||live.orbit.distance>10)return fail(LoadPreparationError::InvalidOrbit);
@@ -156,8 +193,24 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
         if(!live.boar.model.Valid()||live.boar.model.skeleton.joints.size()!=16)return fail(LoadPreparationError::InvalidBoarModel);
         auto candidate=std::make_unique<PreparedSavedGame>(saved,live);
         auto& p=*candidate;
-        p.solids=WorldSolids(saved.session.bridgeRepaired);
+        if(authored&&(!authored->applied||firLayout!=FirLayoutSelector::ForestWood||
+            authored->fallenProfile!=fallenProfile))return fail(LoadPreparationError::PreparationException);
+        p.solids=authored?authored->WorldSolids(saved.session.bridgeRepaired):
+            WorldSolids(saved.session.bridgeRepaired,firLayout,fallenProfile);
         p.solids.insert(p.solids.end(),extraSolids.begin(),extraSolids.end());
+        if(saved.motion){
+            // 不積分重力、不先落地再重跳。引擎以保存的真實體積／支撐驗證並恢復速度。
+            double highest{};
+            const auto terrainError=Footprint(terrain,saved.session.feet,p.controller.Settings().radius,highest);
+            if(terrainError!=LoadPreparationError::None)return fail(terrainError);
+            p.footprintHighest=static_cast<float>(highest);
+            if(!p.controller.TryRestoreMotionState(saved.motion->controller,p.solids,hulls,terrain))
+                return fail(LoadPreparationError::MotionRestoreRejected);
+            if(!Same(p.controller.Position(),saved.session.feet))return fail(LoadPreparationError::SupportWouldMoveFeet);
+            if(!p.locomotion.TryRestoreMotionState(saved.motion->locomotion,p.controller,saved.evasion))
+                return fail(LoadPreparationError::LocomotionRestoreRejected);
+            p.motionRestored=true;
+        }else{
         p.controller.Reset(saved.session.feet);
         if(!p.controller.SetHeight(1.4f))return fail(LoadPreparationError::InvalidControllerSettings);
         double highest{};
@@ -167,10 +220,10 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
         const float ground=terrain.SampleHeight(saved.session.feet.x,saved.session.feet.z);
         if(!std::isfinite(ground))return fail(LoadPreparationError::InvalidTerrain);
         if(saved.session.feet.y<ground)return fail(LoadPreparationError::BelowTerrainCenter);
-        if(BodyOverlaps(p.controller.Center(),p.controller.Extents(),p.solids))return fail(LoadPreparationError::BodyOverlap);
+        if(BodyOverlaps(p.controller.Center(),p.controller.Extents(),p.solids,hulls))return fail(LoadPreparationError::BodyOverlap);
         // 無法站起可保留蹲姿；不得因此忽略完整體積安全。
-        p.controller.TrySetHeight(1.8f,p.solids);
-        if(BodyOverlaps(p.controller.Center(),p.controller.Extents(),p.solids))return fail(LoadPreparationError::BodyOverlap);
+        p.controller.TrySetHeight(1.8f,p.solids,hulls);
+        if(BodyOverlaps(p.controller.Center(),p.controller.Extents(),p.solids,hulls))return fail(LoadPreparationError::BodyOverlap);
         if(highest>=double(saved.session.feet.y)+p.controller.Settings().height)return fail(LoadPreparationError::TerrainAboveBodyTop);
         bool contact=saved.session.feet.y==ground;
         for(const auto& box:p.solids){
@@ -178,7 +231,13 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
             contact|=saved.session.feet.y==top&&std::abs(saved.session.feet.x-box.center.x)<p.controller.Settings().radius+box.extents.x&&
                 std::abs(saved.session.feet.z-box.center.z)<p.controller.Settings().radius+box.extents.z;
         }
-        if(contact){
+        if(!hulls.empty()){
+            // 凸形支撐包含保存的0.1mm skin；零時間只重建0.2mm內的支撐，不能用重力步挪動存檔。
+            p.supportProbeUsed=true;
+            if(!p.controller.Step({},p.solids,hulls,terrain,0))return fail(LoadPreparationError::SupportProbeFailed);
+            if(!Same(p.controller.Position(),saved.session.feet))return fail(LoadPreparationError::SupportWouldMoveFeet);
+            if((contact&&!p.controller.Grounded())||!Same(p.controller.Velocity(),{}))return fail(LoadPreparationError::SupportProbeFailed);
+        }else if(contact){
             // 地形同高先使用原控制器零時間步；橋面支撐無法由零時間建立才做有限重力步。
             // 兩者均只改候選控制器；不推進 Session／Encounter／Evasion，腳座標必須完全不變。
             p.supportProbeUsed=true;
@@ -191,12 +250,22 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
             if(!Same(p.controller.Position(),saved.session.feet))return fail(LoadPreparationError::SupportWouldMoveFeet);
             if(!p.controller.Grounded()||!Same(p.controller.Velocity(),{}))return fail(LoadPreparationError::SupportProbeFailed);
         }
+        }
         p.supported=p.controller.Grounded();
         const bool crouched=p.controller.Settings().height<1.5f;
-        p.explorer.phase=0;p.explorer.yaw=0;p.explorer.planted={};p.explorer.footTargets={};p.explorer.lastFeet={};p.explorer.feetInitialized=false;
-        p.explorer.Update({},0,crouched);
+        p.explorer.ResetDeath();
+        p.explorer.phase=0;p.explorer.yaw=0;p.explorer.ResetLocomotion();
+        if(saved.motion){
+            p.explorer.phase=saved.motion->explorerPhase;p.explorer.yaw=saved.motion->explorerYaw;
+            p.explorer.requestedYaw=saved.motion->explorerRequestedYaw;
+            p.explorer.locomotionDistance=saved.motion->explorerDistance;
+            p.explorer.locomotionSeconds=saved.motion->explorerSeconds;
+            p.explorer.locomotionVelocity=saved.motion->locomotion.motor.velocity;
+            // 僅重建原有肢體旋轉，不以虛構位移推進相位或轉向；隨後仍驗證真實靴底淨空。
+            p.explorer.RebuildLocomotionPose(crouched);
+        }else p.explorer.Update({},0,crouched);
         if(p.supported){
-            if(!p.explorer.PlaceFeet(saved.session.feet,true,crouched,terrain,p.solids))return fail(LoadPreparationError::ExplorerPoseFailed);
+            if(!p.explorer.PlaceFeet(saved.session.feet,true,crouched,terrain,p.solids,hulls))return fail(LoadPreparationError::ExplorerPoseFailed);
             // 既有求解器 Clamped 仍回傳成功；旗標僅代表實際套用 IK，不保證踝端點誤差為零。
             p.explorerIkApplied=true;
             const auto toWorld=CreateTransformMatrix(saved.session.feet,{0,p.explorer.yaw,0},{1,1,1});
@@ -207,9 +276,17 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
                 p.explorerFootTargetError=(std::max)(p.explorerFootTargetError,error);
             }
         } else {
-            // 不呼叫 grounded=false 的提早返回分支冒充 IK 已解算。
-            p.explorer.lastFeet=saved.session.feet;p.explorer.feetInitialized=true;
+            // 空中也執行真正的鞋底淨空檢查；不建立接地旗標或移動存檔根位置。
+            if(!p.explorer.PlaceFeet(saved.session.feet,false,crouched,terrain,p.solids,hulls))return fail(LoadPreparationError::ExplorerPoseFailed);
             p.airbornePoseValidated=true;
+        }
+        if(!saved.session.Alive()){
+            // 檢查點未保存死亡動畫時鐘，明確重建終點；不改變保存的世界位置與任務。
+            if(!p.explorer.UpdateDeath(Explorer::DeathDuration,saved.session.feet,terrain,p.solids)||
+               (!p.explorer.DeathFinished()&&!p.explorer.DeathLimited()))
+                return fail(LoadPreparationError::ExplorerPoseFailed);
+            p.explorerDeathPoseApplied=true;
+            p.explorerIkApplied=false;
         }
         if(!FinitePose(p.explorer.model.skeleton,p.explorer.pose))return fail(LoadPreparationError::ExplorerPoseFailed);
         double enemyTerrain{};
@@ -245,6 +322,18 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
       catch(...) {return fail(LoadPreparationError::PreparationException);}
 }
 
+inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPreparationInputs& live,
+    const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> extraCameraOnly,
+    std::span<const Aevrynd::BoxCollider3D> extraSolids,FirLayoutSelector firLayout) noexcept {
+    return PrepareSavedGame(saved,live,terrain,extraCameraOnly,extraSolids,firLayout,FallenLogProfile::LegacyCylinder);
+}
+
+inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPreparationInputs& live,
+    const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> extraCameraOnly={},
+    std::span<const Aevrynd::BoxCollider3D> extraSolids={}) noexcept {
+    return PrepareSavedGame(saved,live,terrain,extraCameraOnly,extraSolids,FirLayoutSelector::Legacy);
+}
+
 struct SavedGameCommitTargets {
     Session& session;Encounter& encounter;Evasion& evasion;
     Aevrynd::CharacterController3D& controller;Explorer& explorer;Boar& boar;OrbitCamera& orbit;
@@ -253,6 +342,8 @@ struct SavedGameCommitTargets {
     Aevrynd::ThirdPersonFramingResult3D& framing;
     Aevrynd::ThirdPersonCameraMotionResult3D& cameraResult;
     Aevrynd::Camera3D& renderedCamera;
+    // 舊 CPU 呼叫可省略；正式遊戲必須提供，讓物理與動作擁有者同時交換。
+    PlayerLocomotion* locomotion{};
 };
 // 僅成功的 PrepareSavedGame 候選可進入單執行緒、無失敗點的提交。
 // 交換後 p 保留舊 CPU 狀態，可立即再次交換回滾；診斷旗標仍描述首次預檢，不描述舊狀態。
@@ -261,6 +352,7 @@ struct SavedGameCommitTargets {
 inline void SwapPreparedSavedGame(PreparedSavedGame& p,SavedGameCommitTargets live) noexcept {
     static_assert(std::is_nothrow_swappable_v<Session> && std::is_nothrow_swappable_v<Encounter> && std::is_nothrow_swappable_v<Evasion>);
     static_assert(std::is_nothrow_swappable_v<Aevrynd::CharacterController3D>);
+    static_assert(std::is_nothrow_swappable_v<PlayerLocomotion>);
     static_assert(std::is_nothrow_swappable_v<Explorer> && std::is_nothrow_swappable_v<Boar>,"CPU models must support noexcept swap; otherwise no transactional integration claim");
     static_assert(std::is_nothrow_swappable_v<OrbitCamera> && std::is_nothrow_swappable_v<std::vector<Aevrynd::BoxCollider3D>>);
     static_assert(std::is_nothrow_swappable_v<Aevrynd::ThirdPersonCameraMotion3D> && std::is_nothrow_swappable_v<Aevrynd::ThirdPersonFramingResult3D> &&
@@ -270,5 +362,6 @@ inline void SwapPreparedSavedGame(PreparedSavedGame& p,SavedGameCommitTargets li
     swap(p.controller,live.controller);swap(p.explorer,live.explorer);swap(p.boar,live.boar);swap(p.orbit,live.orbit);
     swap(p.solids,live.solids);swap(p.cameraMotion,live.cameraMotion);swap(p.framing,live.framing);
     swap(p.cameraResult,live.cameraResult);swap(p.renderedCamera,live.renderedCamera);
+    if(live.locomotion)swap(p.locomotion,*live.locomotion);
 }
 }

@@ -65,6 +65,7 @@ class MistwatchSaveInputProbe final : public IGame {
     Mistwatch::SaveGame expected;
     unsigned phase{},f5Count{},f9Count{};
     bool initialized{},stopped{},passed{},snapshotEqual{},stateUnchanged{};
+    bool fieldJournalUnchanged{};
     bool audioOptionsUnchanged{},masterVolumeUnchanged{},audioSettingsUnchanged{};
     bool unsafeF5Rejected{},oldSavePreserved{};
     bool expectedMiddleLayer{};
@@ -72,6 +73,7 @@ class MistwatchSaveInputProbe final : public IGame {
     float beforeLoadWater{},initialMasterVolume{};
     std::string initialAudioSettings;
     std::string oldSaveBytes;
+    std::string legacySession6Bytes;
     Vec3 terrainEdgeFeet{};
     unsigned terrainEdgeControllerSteps{};
     bool WoodAirCase()const{return caseName==L"wood-air-0"||caseName==L"wood-air-1"||caseName==L"wood-air-2"||caseName==L"wood-air-3";}
@@ -84,15 +86,19 @@ class MistwatchSaveInputProbe final : public IGame {
         const std::size_t expectedPopulation=expectedMiddleLayer?24:0;
         Require(game.middleLayerEnabled==expectedMiddleLayer&&game.middleLayer.trees.size()==expectedPopulation&&
             game.middleLayerSolids.size()==expectedPopulation,"native branch does not match explicitly expected middle-layer mode");
-        const auto base=Mistwatch::WorldSolids(game.session.bridgeRepaired);
+        const auto base=Mistwatch::WorldSolids(game.session.bridgeRepaired,game.firLayoutSelector,game.fallenLogProfile);
         const std::size_t expectedCanopy=Mistwatch::WorldProfileHasCanopy(expectedWorldProfile)?4:0;
         const bool wood=Mistwatch::WorldProfileHasWoodCollision(expectedWorldProfile);
-        const std::size_t expectedCanopyParts=wood?4267:expectedCanopy;
+        Require(game.fallenLogProfile==(wood?Mistwatch::FallenLogProfile::ScannedStraightV1:Mistwatch::FallenLogProfile::LegacyCylinder),
+            "native audit fallen profile does not match explicit expected world");
+        const std::size_t expectedCanopyParts=wood?4335:expectedCanopy;
         Require(game.canopySolids.size()==expectedCanopyParts&&game.canopyPopulation.plants.size()==expectedCanopy&&
-            game.canopyPopulation.fingerprint==(expectedCanopy?13093722598475582899ull:0ull),"native branch changed canopy profile population or identity");
-        Require(game.canopyWoodSourceTriangles==(wood?304768u:0u)&&game.canopyWoodSurfaceCells==(wood?17911u:0u)&&
-            game.canopyWoodEnclosedGridCells==(wood?207u:0u),"native branch changed wood proxy source or topology identity");
-        const std::uint64_t expectedColliderFingerprint=wood?230929787695590120ull:
+            game.canopyPopulation.fingerprint==(wood?6584434718760703877ull:expectedCanopy?13093722598475582899ull:0ull),"native branch changed canopy profile population or identity");
+        Require(game.canopyWoodSourceTriangles==(wood?304768u:0u)&&game.canopyWoodSurfaceCells==(wood?18192u:0u)&&
+            game.canopyWoodEnclosedGridCells==(wood?178u:0u),"native branch changed wood proxy source or topology identity");
+        const bool scanned=game.fallenLogProfile==Mistwatch::FallenLogProfile::ScannedStraightV1;
+        Require(!scanned||wood,"scanned fallen logs require forest-wood profile");
+        const std::uint64_t expectedColliderFingerprint=wood?(scanned?9905927095422790687ull:876747342402009001ull):
             expectedWorldProfile==Mistwatch::WorldProfile::ForestCanopy?16643660641049883501ull:
             expectedMiddleLayer?11739939804215987065ull:5549580620105119187ull;
         Require(game.forestCoverColliderFingerprint==expectedColliderFingerprint,"native branch changed authored collider identity");
@@ -100,7 +106,7 @@ class MistwatchSaveInputProbe final : public IGame {
         Require(extras.size()==expectedPopulation+expectedCanopyParts&&game.solids.size()==base.size()+extras.size(),
             "native branch lost or added world solids");
         // 原世界維持精確人口；修橋只增加原本的橋面，不以額外樹冠盒掩蓋錯誤。
-        Require(game.solids.size()==221+expectedPopulation+expectedCanopyParts+(game.session.bridgeRepaired?1u:0u),
+        Require(game.solids.size()==(wood?223u:221u)+expectedPopulation+expectedCanopyParts+(game.session.bridgeRepaired?1u:0u),
             "native branch world collision population changed");
         for(std::size_t i=0;i<game.middleLayerSolids.size();++i) {
             const auto& actual=game.solids[base.size()+i];const auto& expectedSolid=game.middleLayerSolids[i];
@@ -112,7 +118,7 @@ class MistwatchSaveInputProbe final : public IGame {
         }
     }
     void Seed(const Mistwatch::SaveGame& value){
-        const auto result=Mistwatch::PrepareSavedGame(value,{game.controller,game.explorer,game.boar,game.orbit},game.terrain,{},game.RuntimeExtraSolids());
+        const auto result=Mistwatch::PrepareSavedGame(value,{game.controller,game.explorer,game.boar,game.orbit},game.terrain,{},game.RuntimeExtraSolids(),game.firLayoutSelector,game.fallenLogProfile);
         if(!result)throw std::runtime_error("native audit seed preflight failed; error="+std::to_string(unsigned(result.error)));
         Mistwatch::SwapPreparedSavedGame(*result.candidate,Targets());
         Require(Snapshot().Serialize()==value.Serialize(),"native audit seed swap lost snapshot");
@@ -123,12 +129,12 @@ class MistwatchSaveInputProbe final : public IGame {
         h.Add(game.explorer.footTargets);h.Add(game.explorer.planted);h.Add(game.explorer.lastFeet);h.Add(game.explorer.feetInitialized);h.Add(game.explorer.locomotionDistance);
         h.Model(game.boar.model);h.Pose(game.boar.pose);h.Add(game.boar.yaw);h.Add(game.boar.cycle);h.Add(game.boar.displacement);h.Add(game.boar.brace);
         h.Add(game.boar.footTargets);h.Add(game.boar.planted);h.Add(game.boar.lastFeet);h.Add(game.boar.initialized);
-        h.Vector(game.solids);h.Add(game.worldProfile);h.Vector(game.canopySolids);h.Add(game.canopyPopulation.fingerprint);
+        h.Vector(game.solids);h.Add(game.worldProfile);h.Add(game.fallenLogProfile);h.Vector(game.canopySolids);h.Add(game.canopyPopulation.fingerprint);
         h.Add(game.canopyWoodSourceTriangles);h.Add(game.canopyWoodSurfaceCells);h.Add(game.canopyWoodEnclosedGridCells);
         h.Add(game.orbit);h.Add(game.playerCameraMotion.Initialized());h.Add(game.playerCameraMotion.Camera());
         h.Add(game.lastPlayerFraming);h.Add(game.lastCameraMotion);h.Add(game.lastRenderedCamera);h.Add(game.waterTime);
         h.Add(game.cameraFixedTicks);h.Add(game.captureCameraTicks);h.Add(game.cameraMaximumTickDisplacement);h.Add(game.cameraOcclusionSeconds);
-        h.Add(game.started);h.Add(game.paused);h.Add(game.gameAudio.director);h.Add(game.gameAudio.requests);h.Add(game.gameAudio.options);
+        h.Add(game.started);h.Add(game.paused);h.Add(game.fieldJournalOpen);h.Add(game.gameAudio.director);h.Add(game.gameAudio.requests);h.Add(game.gameAudio.options);
         return h.value;
     }
     void UnchangedCameraContinuation(const ThirdPersonCameraMotion3D& before){
@@ -173,7 +179,12 @@ class MistwatchSaveInputProbe final : public IGame {
         }
         if(caseName==L"shelter")Require(game.controller.Settings().height==1.4f,"loaded shelter checkpoint stands through roof");
         if(caseName==L"dead")Require(!game.session.Alive(),"F9 plus R retried dead saved session");
-        if(caseName==L"complete")Require(game.session.beaconLit,"F9 plus R reset completed saved session");
+        if(caseName==L"complete"){
+            Require(game.session.beaconLit,"F9 plus R reset completed saved session");
+            Require(game.session.Valid()&&game.session.relayLinked==7&&game.session.relayPatchA==1&&game.session.relayPatchB==0&&
+                game.session.relayFieldTasks==3&&game.session.extractionRoute==1,
+                "actual F9 plus field keys changed completed Session7 local-task fields");
+        }
         if(caseName==L"terrain-edge")Require(Same(game.session.feet,terrainEdgeFeet)&&game.terrain.Contains(game.session.feet.x,game.session.feet.z)&&
             game.session.feet.x>49.69f&&game.session.feet.x<49.71f&&game.session.feet.y==game.terrain.SampleHeight(game.session.feet.x,game.session.feet.z),
             "terrain-edge actual F9 shifted feet or rejected runtime-legal center");
@@ -213,12 +224,28 @@ class MistwatchSaveInputProbe final : public IGame {
             return;
         }
         Require(expected.Restore(saved)&&expected.Serialize()==Snapshot().Serialize(),"actual F5 isolated disk differs from live snapshot");
-        Require(saved.starts_with("MISTWATCH_SAVE 2"),"actual F5 did not save terrain-aware format");
+        Require(saved.starts_with("MISTWATCH_SAVE 2\nMISTWATCH 7 "),"actual F5 did not save complete wrapper2 and Session7");
         Write(output/L"after-f5.txt",saved);
         Require(Read(game.audioSettings)==initialAudioSettings,"actual F5 changed isolated audio settings");
         if(caseName==L"legacy-v6"){
-            const auto legacy=expected.session.Serialize();Write(game.save,legacy);
-            Mistwatch::SaveGame migration;Require(migration.Restore(legacy),"legacy fixture migration invalid");expected=migration;
+            // 唯一隔離舊格式輸入：逐欄沿原 Session6 順序，不由新版 Serialize 改字串冒充。
+            const auto& s=expected.session;
+            std::ostringstream old;
+            old.imbue(std::locale::classic());old.precision(9);
+            old<<"MISTWATCH 6 "<<s.collected<<' '<<s.health<<' '<<s.bridgeRepaired<<' '
+               <<s.guardianDefeated<<' '<<s.beaconLit<<' '<<s.feet.x<<' '<<s.feet.y<<' '<<s.feet.z
+               <<' '<<s.fuseCollected<<' '<<s.powerRestored<<' '<<s.circuit<<' '<<s.repairMaterials
+               <<' '<<s.fuseClueRead<<' '<<s.fuseDials<<' '<<s.relayLinked<<' '<<s.relaySectors;
+            legacySession6Bytes=old.str();
+            std::istringstream fields(legacySession6Bytes);std::string token;unsigned count{};
+            while(fields>>token)++count;
+            Require(legacySession6Bytes.starts_with("MISTWATCH 6 ")&&count==18,
+                "legacy fixture must be the exact original Session6 field layout");
+            Write(output/L"legacy-session6-input.txt",legacySession6Bytes);
+            Write(game.save,legacySession6Bytes);
+            Require(Read(game.save)==legacySession6Bytes,"actual legacy Session6 file differs from source input");
+            Mistwatch::SaveGame migration;
+            Require(migration.Restore(legacySession6Bytes),"legacy fixture migration invalid");expected=migration;
         }else if(caseName==L"enemy-y-below"||caseName==L"enemy-y-above"){
             const auto begin=saved.find("\nENCOUNTER "),end=saved.find("\nEVASION ",begin);
             Require(begin!=std::string::npos&&end!=std::string::npos,"enemy-y serialized fixture missing records");
@@ -335,10 +362,26 @@ public:
                 }
             }
             else if(caseName==L"complete"){
+                // 合成任務fixture，不宣稱原生按鍵或世界行走；局部任務與連站仍呼叫真 Session7 API。
                 seed.session.guardianDefeated=true;seed.session.fuseClueRead=true;seed.session.fuseDials=Mistwatch::Session::solvedFuseDials;
-                seed.session.fuseCollected=true;seed.session.circuit=7;seed.session.powerRestored=true;seed.session.relayLinked=7;
-                seed.session.relaySectors=0;for(unsigned i=0;i<3;++i)seed.session.relaySectors|=Mistwatch::Session::RelayTargetSector(i)<<(i*4);
-                seed.session.beaconLit=true;seed.session.feet=Mistwatch::Session::beacon;seed.evasion={};
+                seed.session.fuseCollected=true;seed.session.circuit=7;seed.session.powerRestored=true;
+                seed.session.relayLinked=0;seed.session.relaySectors=0;
+                seed.session.relayPatchA=0;seed.session.relayPatchB=0;seed.session.relayFieldTasks=0;seed.session.extractionRoute=0;
+                for(unsigned index=0;index<3;++index){
+                    seed.session.feet=Mistwatch::Session::relaySites[index];
+                    if(index==0)Require(seed.session.CycleRelayPatch(0)&&seed.session.ConfirmRelayCircuit(),
+                        "complete fixture west circuit APIs failed");
+                    if(index==2)Require(seed.session.CycleExtractionRoute()&&seed.session.ConfirmExtractionRoute(),
+                        "complete fixture repaired-bridge route APIs failed");
+                    for(unsigned turn=0;turn<Mistwatch::Session::RelayTargetSector(index);++turn)
+                        Require(seed.session.TuneRelay(index,1),"complete fixture original tuning failed");
+                    Require(seed.session.ConnectRelay(index),"complete fixture independent relay link failed");
+                }
+                seed.session.feet=Mistwatch::Session::beacon;
+                Require(seed.session.LightBeacon(),"complete fixture true completion gate failed");
+                Require(seed.session.Valid()&&seed.session.beaconLit&&seed.session.relayLinked==7&&
+                    seed.session.relayPatchA==1&&seed.session.relayPatchB==0&&seed.session.relayFieldTasks==3&&seed.session.extractionRoute==1,
+                    "complete fixture true APIs did not retain exact nonzero Session7 local-task fields");seed.evasion={};
                 seed.encounter.health=0;seed.encounter.phase=Mistwatch::EnemyPhase::Defeated;seed.encounter.countered=true;
             }else if(caseName==L"shelter"){
                 seed={};seed.session.collected=7;seed.session.feet={-7.25f,0,18};
@@ -347,11 +390,40 @@ public:
                 seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
             }else if(caseName==L"enemy-slope-pursuit"||caseName==L"enemy-slope-windup"||caseName==L"enemy-slope-recovery"){
                 // 坡地快照前置不是按鍵行走證據；F5/F9 仍走正式原生分支且精確核對敵人位置與計時。
-                seed.encounter.feet={18,game.terrain.SampleHeight(18,55),55};seed.evasion={};
+                seed.encounter.feet={17.25f,game.terrain.SampleHeight(17.25f,55),55};seed.evasion={};
                 seed.encounter.phase=caseName==L"enemy-slope-pursuit"?Mistwatch::EnemyPhase::Pursuit:
                     caseName==L"enemy-slope-windup"?Mistwatch::EnemyPhase::Windup:Mistwatch::EnemyPhase::Recovery;
                 seed.encounter.phaseTime=caseName==L"enemy-slope-windup"?.4f:caseName==L"enemy-slope-recovery"?.7f:0;
                 seed.encounter.countered=false;
+                // V197 完整四配置的共同坡地見證；舊樹幹相交點仍必須拒絕。
+                const auto extra=game.RuntimeExtraSolids();
+                auto routeSolids=Mistwatch::WorldSolids(seed.session.bridgeRepaired,game.firLayoutSelector,game.fallenLogProfile);
+                routeSolids.insert(routeSolids.end(),extra.begin(),extra.end());
+                Vec3 at{17.25f,game.terrain.SampleHeight(17.25f,54.5f),54.5f};
+                Require(Mistwatch::EncounterSupported(at,game.terrain)&&!Mistwatch::EncounterBodyOverlaps(at,routeSolids),"slope local route origin invalid");
+                for(unsigned step=0;step<16;++step){
+                    const auto move=Mistwatch::ResolveEncounterMove(at,{0,0,.03125f},routeSolids,game.terrain);
+                    Require(move.status==Mistwatch::EncounterMotionStatus::Applied&&move.collisions==0&&
+                        Mistwatch::EncounterSupported(move.feet,game.terrain)&&!Mistwatch::EncounterBodyOverlaps(move.feet,routeSolids),"slope real collision route failed");
+                    at=move.feet;
+                }
+                {
+                    std::ofstream route(output/L"enemy-slope-route.txt");
+                    route.precision(std::numeric_limits<float>::max_digits10);
+                    route<<"actual="<<at.x<<','<<at.y<<','<<at.z
+                         <<"\nexpected="<<seed.encounter.feet.x<<','<<seed.encounter.feet.y<<','<<seed.encounter.feet.z
+                         <<"\nexact="<<Same(at,seed.encounter.feet)<<"\nsteps=16\nstep_z=.03125\n";
+                    route.close();Require(bool(route),"slope actual route receipt unavailable");
+                }
+                Require(Same(at,seed.encounter.feet),"slope local route failed to reach exact saved feet");
+                if(Mistwatch::WorldProfileHasWoodCollision(expectedWorldProfile)){
+                    auto unsafe=seed;unsafe.encounter.feet={18,game.terrain.SampleHeight(18,55),55};
+                    const auto before=Fingerprint();
+                    const auto rejected=Mistwatch::PrepareSavedGame(unsafe,{game.controller,game.explorer,game.boar,game.orbit},game.terrain,{},extra,game.firLayoutSelector,game.fallenLogProfile);
+                    Require(!rejected&&rejected.error==Mistwatch::LoadPreparationError::BoarBodyOverlap,"old unsafe slope fixture must reject error21");
+                    Require(Fingerprint()==before,"unsafe slope preflight changed live state");
+                }
+                Write(output/L"enemy-slope-witness.txt","x=17.25\nz=55\nlocal_route_steps=16\nstep_z=.03125\nold_wood_point_rejection_required_for_wood=1\nscope=local-encounter-motion-not-global-native-walk\n");
                 game.captureBoarOverview=true;
             }else if(caseName==L"terrain-edge"){
                 seed.session.feet={49.4f,0,0};seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
@@ -360,8 +432,9 @@ public:
             }else if(WoodAirCase()){
                 // 四棵樹的舊冠盒內真地形空氣點；F5/F9 與相機預檢仍走正式流程，不宣稱按鍵走到此處。
                 Require(Mistwatch::WorldProfileHasWoodCollision(expectedWorldProfile),"wood-air requires explicit forest-wood profile");
-                const std::array<Vec3,4> witnesses{{{-18.3179742552f,0,7.2568771204f},{15.7204334376f,0,4.331083912f},
-                    {-19.4306881992f,0,-.3230881732f},{-29.8309511696f,0,80.7272427048f}}};
+                // V128 新四 pose 的真 CPU body/camera 見證；高度仍由當前 terrain 取樣。
+                const std::array<Vec3,4> witnesses{{{14.0195484f,0,-5.87344456f},{-17.3745556f,0,8.28709888f},
+                    {16.5742359f,0,6.135818f},{13.0382147f,0,14.3173075f}}};
                 seed.session.feet=witnesses.at(WoodAirIndex());
                 seed.session.feet.y=game.terrain.SampleHeight(seed.session.feet.x,seed.session.feet.z);seed.evasion={};
             }
@@ -389,11 +462,13 @@ public:
         }
         if(phase==1){
             const auto before=Fingerprint();const auto camera=game.playerCameraMotion;beforeLoadWater=game.waterTime;
+            const bool beforeFieldJournalOpen=game.fieldJournalOpen;
             const auto beforeAudioOptions=game.gameAudio.options.Serialize();const auto beforeMaster=engine.Audio().GetStats().masterVolume;
             Require(beforeAudioOptions==initialAudioSettings&&Read(game.audioSettings)==initialAudioSettings&&beforeMaster==initialMasterVolume,
                 "pre-F9 isolated audio state differs from initial options");
             const std::array keys{unsigned(VK_F9),unsigned('R'),unsigned('Q'),unsigned('F'),unsigned(VK_SPACE),unsigned('W'),
-                unsigned('M'),unsigned(VK_PRIOR),unsigned(VK_NEXT),unsigned(VK_ESCAPE)};
+                unsigned('M'),unsigned(VK_PRIOR),unsigned(VK_NEXT),unsigned(VK_ESCAPE),
+                unsigned('1'),unsigned('2'),unsigned('3'),unsigned('E'),unsigned('J')};
             NativeTick(engine,keys,.1f);
             ValidateMiddleSolids();
             Require(game.gameAudio.options.Serialize()==beforeAudioOptions,"actual F9 plus audio keys changed options");audioOptionsUnchanged=true;
@@ -401,6 +476,7 @@ public:
             Require(Read(game.audioSettings)==initialAudioSettings,"actual F9 plus audio keys rewrote isolated audio settings");audioSettingsUnchanged=true;
             Require(game.started&&!game.paused,"actual F9 plus Escape changed playback state");
             Require(game.waterTime==beforeLoadWater,"actual F9 consumed load-tick water time");
+            Require(game.fieldJournalOpen==beforeFieldJournalOpen,"actual F9 plus J changed field journal state");fieldJournalUnchanged=true;
             if(FailureCase()){
                 Require(game.message=="Save unavailable","invalid actual F9 did not take rejection branch");
                 Require(Fingerprint()==before,"rejected actual F9 partially changed live CPU/audio state");
@@ -427,7 +503,8 @@ public:
         out<<"schema=mistwatch-save-input-audit-2\ncase="<<asciiCase
             <<"\nstatus=passed\nactual_f5_count="<<f5Count<<"\nactual_f9_count="<<f9Count
             <<"\nsnapshot_equal="<<snapshotEqual<<"\nstate_unchanged="<<stateUnchanged
-            <<"\nf9_same_tick_R_Q_F_SPACE_W_M_PAGEUP_PAGEDOWN_ESCAPE=1\nf9_same_tick_keys=R,Q,F,SPACE,W,M,PAGEUP,PAGEDOWN,ESCAPE"
+            <<"\nf9_same_tick_R_Q_F_SPACE_W_M_PAGEUP_PAGEDOWN_ESCAPE_1_2_3_E_J=1\nf9_same_tick_keys=R,Q,F,SPACE,W,M,PAGEUP,PAGEDOWN,ESCAPE,1,2,3,E,J"
+            <<"\nfield_journal_state_unchanged="<<fieldJournalUnchanged<<"\nfield_journal_open_after_f9="<<game.fieldJournalOpen
             <<"\nload_tick_time_not_consumed=1\nisolated_save=1\nisolated_audio_settings=1\nisolated_audio_settings_bytes_unchanged="<<audioSettingsUnchanged
             <<"\naudio_options_unchanged="<<audioOptionsUnchanged<<"\neffective_master_volume_unchanged="<<masterVolumeUnchanged
             <<"\nplayer_audio_settings_touched=0\nterrain_edge_controller_steps="<<terrainEdgeControllerSteps
@@ -444,7 +521,15 @@ public:
             <<"\nexpected_middle_layer_mode="<<expectedMiddleLayer<<"\nmode_matches_expected=1"
             <<"\nown_window_only=1\nglobal_input=0\nforeground_activation=0\nmuted=1\nhidden_window=1"
             <<"\nactual_capture=1\nactual_cleanup=1\nscope=native-key-branch-audit-not-human-playthrough"
-            <<"\nload_semantics=checkpoint-not-exact-motion\n";
+            <<"\nload_semantics=checkpoint-not-exact-motion\n"
+            <<"session_serialization_version="<<(game.session.Serialize().starts_with("MISTWATCH 7 ")?7u:0u)<<"\nrelay_patch_a="<<game.session.relayPatchA
+            <<"\nrelay_patch_b="<<game.session.relayPatchB<<"\nrelay_field_tasks="<<game.session.relayFieldTasks
+            <<"\nextraction_route="<<game.session.extractionRoute
+            <<"\nrelay_field_ready_west="<<game.session.RelayFieldTaskReady(0)
+            <<"\nrelay_field_ready_northwest="<<game.session.RelayFieldTaskReady(2)
+            <<"\nlegacy_session6_input_observed="<<(!legacySession6Bytes.empty()&&legacySession6Bytes.starts_with("MISTWATCH 6 "))
+            <<"\nlegacy_session6_input_bytes="<<legacySession6Bytes.size()
+            <<"\nlegacy_session6_input_scope=session-only-no-enemy-or-action-snapshot\n";
         out.close();Require(bool(out),"native audit receipt write failed");
     }
 };
@@ -474,7 +559,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int){
         Require(std::filesystem::create_directory(output),"fresh audit output creation failed");
         ownsOutput=true;
         // 只清除此測試程序的診斷環境，不更改系統設定或 GPU 驗證開關。
-        for(const auto variable:{L"AEVRYND_MISTWATCH_SCENE",L"AEVRYND_MISTWATCH_CAPTURE_FRAME",L"AEVRYND_MISTWATCH_CAPTURE_SERIES",
+        for(const auto variable:{L"AEVRYND_MISTWATCH_FALLEN_LOGS",L"AEVRYND_MISTWATCH_FALLEN_VIEW",L"AEVRYND_MISTWATCH_SCENE",L"AEVRYND_MISTWATCH_CAPTURE_FRAME",L"AEVRYND_MISTWATCH_CAPTURE_SERIES",
             L"AEVRYND_MISTWATCH_BENCHMARK",L"AEVRYND_MISTWATCH_CROWN",L"AEVRYND_MISTWATCH_FERN_LEGACY",L"AEVRYND_MISTWATCH_GRASS_DIM",
             L"AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED",L"AEVRYND_MISTWATCH_GRASS_FIXTURE",L"AEVRYND_MISTWATCH_GRASS_LEGACY",
             L"AEVRYND_MISTWATCH_GRASS_PROCEDURAL",L"AEVRYND_MISTWATCH_GROUND_LEGACY",L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE",

@@ -112,8 +112,10 @@ struct AudioDirector {
         }else stepDistance=0;
         const auto& a=previous.session;const auto& b=state.session;
         events.interact=a.collected!=b.collected||a.repairMaterials!=b.repairMaterials||a.bridgeRepaired!=b.bridgeRepaired||
-            a.fuseClueRead!=b.fuseClueRead||a.fuseCollected!=b.fuseCollected||a.powerRestored!=b.powerRestored||a.relayLinked!=b.relayLinked;
-        events.tune=a.circuit!=b.circuit||a.fuseDials!=b.fuseDials||a.relaySectors!=b.relaySectors;
+            a.fuseClueRead!=b.fuseClueRead||a.fuseCollected!=b.fuseCollected||a.powerRestored!=b.powerRestored||a.relayLinked!=b.relayLinked||
+            a.relayFieldTasks!=b.relayFieldTasks;
+        events.tune=a.circuit!=b.circuit||a.fuseDials!=b.fuseDials||a.relaySectors!=b.relaySectors||
+            a.relayPatchA!=b.relayPatchA||a.relayPatchB!=b.relayPatchB||a.extractionRoute!=b.extractionRoute;
         events.warning=previous.enemyPhase!=EnemyPhase::Windup&&state.enemyPhase==EnemyPhase::Windup;
         events.hurt=b.health<a.health||state.enemyHealth<previous.enemyHealth;
         events.success=!a.beaconLit&&b.beaconLit;

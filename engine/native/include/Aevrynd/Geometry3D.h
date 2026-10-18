@@ -1,5 +1,6 @@
 #pragma once
 #include "Camera.h"
+#include "GeometryNormals3D.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -43,8 +44,35 @@ inline bool RayIntersectsAabb(const Ray3D& ray,Vec3 center,Vec3 extents,float ma
     if(!axis(ray.origin.x,ray.direction.x,minimum.x,maximum.x)||!axis(ray.origin.y,ray.direction.y,minimum.y,maximum.y)||!axis(ray.origin.z,ray.direction.z,minimum.z,maximum.z))return false;if(entryDistance)*entryDistance=nearDistance;return true;
 }
 
-// Moller-Trumbore 測試回傳距離、重心座標與朝向射線的表面法線。
+// 保留原 Moller-Trumbore 接受範圍；先提升原 float 座標再求邊，避免接縫上的單精度漏判。
+// 這是中間計算精度改良，並非任意三角形的 watertight／精確述詞保證。
 inline RayTriangleHit3D RayIntersectsTriangle(const Ray3D& ray,Vec3 a,Vec3 b,Vec3 c,float maximumDistance=std::numeric_limits<float>::infinity(),bool cullBackfaces=false){
-    const Vec3 edgeB=b-a,edgeC=c-a,cross=Cross(ray.direction,edgeC);const float determinant=Dot(edgeB,cross);if(cullBackfaces?determinant<=.000001f:std::abs(determinant)<=.000001f)return{};const float inverse=1.f/determinant;const Vec3 offset=ray.origin-a;const float barycentricB=Dot(offset,cross)*inverse;if(barycentricB<0||barycentricB>1)return{};const Vec3 side=Cross(offset,edgeB);const float barycentricC=Dot(ray.direction,side)*inverse;if(barycentricC<0||barycentricB+barycentricC>1)return{};const float distance=Dot(edgeC,side)*inverse;if(distance<0||distance>maximumDistance)return{};Vec3 normal=Normalize(Cross(edgeB,edgeC));if(Dot(normal,ray.direction)>0)normal=normal*-1.f;return{distance,{1.f-barycentricB-barycentricC,barycentricB,barycentricC},normal};
+    const auto finite=[](Vec3 value){return std::isfinite(value.x)&&std::isfinite(value.y)&&std::isfinite(value.z);};
+    if(!finite(ray.origin)||!finite(ray.direction)||!finite(a)||!finite(b)||!finite(c)||
+        std::isnan(maximumDistance)||maximumDistance<0.f)return{};
+    struct PreciseVector{double x,y,z;};
+    const auto promote=[](Vec3 value){return PreciseVector{double(value.x),double(value.y),double(value.z)};};
+    const auto subtract=[](PreciseVector left,PreciseVector right){return PreciseVector{left.x-right.x,left.y-right.y,left.z-right.z};};
+    const auto crossProduct=[](PreciseVector left,PreciseVector right){return PreciseVector{left.y*right.z-left.z*right.y,left.z*right.x-left.x*right.z,left.x*right.y-left.y*right.x};};
+    const auto dotProduct=[](PreciseVector left,PreciseVector right){return left.x*right.x+left.y*right.y+left.z*right.z;};
+    const auto vertex=promote(a),direction=promote(ray.direction);
+    const auto edgeB=subtract(promote(b),vertex),edgeC=subtract(promote(c),vertex);
+    const auto cross=crossProduct(direction,edgeC);
+    const double determinant=dotProduct(edgeB,cross),originalGate=double(.000001f);
+    if(cullBackfaces?determinant<=originalGate:std::abs(determinant)<=originalGate)return{};
+    const double inverse=1./determinant;
+    const auto offset=subtract(promote(ray.origin),vertex);
+    const double barycentricB=dotProduct(offset,cross)*inverse;
+    if(barycentricB<0.||barycentricB>1.)return{};
+    const auto side=crossProduct(offset,edgeB);
+    const double barycentricC=dotProduct(direction,side)*inverse;
+    if(barycentricC<0.||barycentricB+barycentricC>1.)return{};
+    const double distance=dotProduct(edgeC,side)*inverse;
+    if(!std::isfinite(distance)||distance<0.||distance>double(maximumDistance)||
+        distance>double((std::numeric_limits<float>::max)()))return{};
+    Vec3 normal{};
+    if(!TryComputeTriangleNormal(a,b,c,normal))return{};
+    if(dotProduct(promote(normal),direction)>0.)normal=normal*-1.f;
+    return{float(distance),{float(1.-(barycentricB+barycentricC)),float(barycentricB),float(barycentricC)},normal};
 }
 }

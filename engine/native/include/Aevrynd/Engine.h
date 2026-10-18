@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <utility>
 #include "Audio.h"
+#include "DiagnosticWindow3D.h"
 #include "DevelopmentUltraQuality3D.h"
 #include "Game.h"
 #include "Input.h"
@@ -75,7 +76,12 @@ struct MeshCpuMemoryStats3D {std::size_t residentResources{},residentBytes{},cac
 enum class RenderQuality3D:std::uint8_t {Low,Medium,High,Ultra};
 constexpr std::string_view RenderQualityName3D(RenderQuality3D quality){switch(quality){case RenderQuality3D::Low:return"LOW";case RenderQuality3D::Medium:return"MEDIUM";case RenderQuality3D::High:return"HIGH";case RenderQuality3D::Ultra:return"ULTRA";default:return"UNKNOWN";}}
 constexpr RenderQuality3D NextRenderQuality3D(RenderQuality3D quality){return quality==RenderQuality3D::Low?RenderQuality3D::Medium:quality==RenderQuality3D::Medium?RenderQuality3D::High:quality==RenderQuality3D::High?RenderQuality3D::Ultra:RenderQuality3D::Low;}
-struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; RenderQuality3D renderQuality{RenderQuality3D::Ultra}; };
+// 可選牆鐘診斷；連續 CPU 區段，不把非同步 GPU 時間加進 CPU 總和。
+struct EngineFrameCost3D {
+    std::uint64_t serial{},fixedUpdates{},fixedUpdateNanoseconds{},drawPreparationNanoseconds{},gameRenderNanoseconds{},rendererNanoseconds{},postRenderNanoseconds{},workNanoseconds{};
+    bool complete{};
+};
+struct EngineConfig { std::wstring title=L"Aevrynd Engine"; unsigned width=1280,height=720; float fixedStep=1.f/60.f; bool resizable=true,enableDLSS=false,enableAutomaticMemoryTrim=true; unsigned memoryPressureThresholdPercent=85; float memoryTrimCooldownSeconds=10.f; size_t minimumAutomaticMemoryReclaimBytes=512*1024; RenderQuality3D renderQuality{RenderQuality3D::Ultra}; bool enableFrameCostProbe{}; EngineWindowMode3D windowMode{EngineWindowMode3D::LauncherDefault}; bool enableUnsynchronizedDiagnosticPresent{}; };
 struct EngineMemoryStats {
     ProcessMemoryStats process{};
     TransientMemoryStats draw{};
@@ -128,6 +134,7 @@ public:
     Color ClearColor()const{return clearColor_;}
     std::filesystem::path ExecutableDirectory()const;
     HWND Window()const{return hwnd_;}
+    EngineWindowMode3D WindowMode3D()const noexcept{return config_.windowMode;}
     bool SupportsDLSS()const{return renderer_->SupportsDLSS();}
     bool DLSSModuleRequested()const{return renderer_->DLSSModuleRequested();}
     bool DLSSOn()const{return renderer_->DLSSOn();}
@@ -158,6 +165,7 @@ public:
     size_t TrimUnusedMemory();
     [[nodiscard]] EngineMemoryStats GetMemoryStats()const;
     RendererStats GetRendererStats()const{return renderer_->GetStats();}
+    [[nodiscard]] const EngineFrameCost3D& GetFrameCostProbe3D()const noexcept{return frameCostProbe_;}
     [[nodiscard]] RendererRuntimeEpoch3D GetRendererRuntimeEpoch3D()const noexcept{return renderer_?renderer_->RuntimeEpoch3D():RendererRuntimeEpoch3D{};}
     [[nodiscard]] unsigned CurrentBufferedFrameIndex3D()const noexcept{return renderer_?renderer_->CurrentBufferedFrameIndex3D():0;}
     void SetGpuInstanceCullingSettings3D(GpuInstanceCullingSettings3D settings){renderer_->SetGpuInstanceCullingSettings(settings);}
@@ -206,12 +214,13 @@ private:
 #if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
     friend struct EngineAtmosphereDiagnosticAccess3D;
 #endif
+    bool diagnosticWindowInvalid_{};
     void RefreshDevelopmentUltraGpuTruth();
     bool ExitDevelopmentUltraToLastKnownGood();
     bool RestoreDevelopmentUltraRendererBaseline(bool trim);
     static LRESULT CALLBACK WindowProc(HWND,UINT,WPARAM,LPARAM);
     LRESULT HandleMessage(UINT,WPARAM,LPARAM);
-    EngineConfig config_; RenderQuality3D requestedRenderQuality_{RenderQuality3D::High}; DevelopmentUltraReceipt3D developmentUltraReceipt_{}; DevelopmentUltraTerminalState3D developmentUltraTerminalState_{}; DevelopmentUltraQuality3D stagedDevelopmentUltraProfile_{}; DevelopmentUltraGpuTruthSequence3D developmentUltraGpuTruth_{}; DevelopmentUltraRendererBaseline3D lastKnownGoodRendererBaseline_{}; DirectionalShadowCascadeSettings3D lastKnownGoodShadowCascades_{}; std::uint64_t renderQualityEpoch_{}; std::uint8_t developmentUltraTestFailure_{},developmentUltraTestGpuTruthFailure_{}; bool developmentUltraTestFrameBudgetFailure_{},developmentUltraTestRollbackFailure_{},developmentUltraStaged_{},developmentUltraApplied_{}; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
+    EngineConfig config_; EngineFrameCost3D frameCostProbe_{}; RenderQuality3D requestedRenderQuality_{RenderQuality3D::High}; DevelopmentUltraReceipt3D developmentUltraReceipt_{}; DevelopmentUltraTerminalState3D developmentUltraTerminalState_{}; DevelopmentUltraQuality3D stagedDevelopmentUltraProfile_{}; DevelopmentUltraGpuTruthSequence3D developmentUltraGpuTruth_{}; DevelopmentUltraRendererBaseline3D lastKnownGoodRendererBaseline_{}; DirectionalShadowCascadeSettings3D lastKnownGoodShadowCascades_{}; std::uint64_t renderQualityEpoch_{}; std::uint8_t developmentUltraTestFailure_{},developmentUltraTestGpuTruthFailure_{}; bool developmentUltraTestFrameBudgetFailure_{},developmentUltraTestRollbackFailure_{},developmentUltraStaged_{},developmentUltraApplied_{}; HWND hwnd_{}; bool running_{true},resizing_{},minimized_{},trimPending_{},automaticTrimmed_{}; float time_{},lastMemorySampleTime_{-1.f};
     Input input_; AudioEngine audio_; DrawList draw_; std::unique_ptr<D3D12Renderer> renderer_; std::unique_ptr<IGame> game_;
     std::unordered_map<uint32_t,std::weak_ptr<const Mesh3D>> meshCpuCache_;
     struct EnvironmentLightingBinding3D {

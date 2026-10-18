@@ -1,0 +1,421 @@
+{
+  "schema": "mistwatch.player-head.expected-hit-set.1",
+  "cases": [
+    {
+      "id": "cap-mm-1825",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1830",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1835",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1840",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1845",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1850",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1855",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1860",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1865",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1870",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1875",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1880",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1885",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1890",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1895",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1900",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1905",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1910",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1915",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1920",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1925",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1930",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1935",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1940",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1945",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1950",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1955",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1960",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1965",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1970",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1975",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1980",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1985",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-1990",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-1995",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-2000",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-2005",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        2
+      ]
+    },
+    {
+      "id": "cap-mm-2010",
+      "expected_guarded": true,
+      "original_guarded_events": 1,
+      "original_source_inferred_phases": [
+        1
+      ]
+    },
+    {
+      "id": "cap-mm-2015",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2020",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2025",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2030",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2035",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2040",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2045",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2050",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2055",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2060",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2065",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2070",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2075",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2080",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2085",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2090",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2095",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    },
+    {
+      "id": "cap-mm-2100",
+      "expected_guarded": false,
+      "original_guarded_events": 0,
+      "original_source_inferred_phases": []
+    }
+  ],
+  "authority": "Additional root-approved regression gate, not an assertion present in the old Run.py.",
+  "source_receipt_sha256": "704C3E21CDF53FFFC057E169C10FF62D5E530ABA83705C0E2731D6FC3022BA10",
+  "source_matrix_sha256": "6853EAD1044376BB8C9247A9BE9F9483E1155F7875CF99509FA3BFD705930227",
+  "extraction": "Stable unique id from actual sealed matrix cases; expected_guarded = guarded_events >0. No new physics, position, input or expected numeric values."
+}

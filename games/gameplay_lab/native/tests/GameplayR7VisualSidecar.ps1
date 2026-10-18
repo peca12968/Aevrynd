@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory=$true)][string]$CaptureRoot,
   [Parameter(Mandatory=$true)][string]$ExpectedRunId,
   [Parameter(Mandatory=$true)][string]$ExpectedSourceFingerprint,

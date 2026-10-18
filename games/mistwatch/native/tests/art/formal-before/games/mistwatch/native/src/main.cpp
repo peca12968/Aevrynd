@@ -1,0 +1,1892 @@
+#include "MistwatchSession.h"
+#include "MistwatchFuseDialVisual.h"
+#include "MistwatchBeaconDetail.h"
+#include "MistwatchGeneratorDetail.h"
+#include "MistwatchWorld.h"
+#include "MistwatchMiddleLayer.h"
+#include "MistwatchWorldProfile.h"
+#include "MistwatchFirLayout.h"
+#include "MistwatchEncounter.h"
+#include "MistwatchEncounterFeedback.h"
+#include "MistwatchCamera.h"
+#include "MistwatchObjectiveGuide.h"
+#include "MistwatchActionFeedback.h"
+#include "MistwatchExplorer.h"
+#include "MistwatchForestMaterial.h"
+#include "MistwatchGroundMaterial.h"
+#include "MistwatchFern.h"
+#include "MistwatchScannedGrass.h"
+#include "MistwatchForestCover.h"
+#include "MistwatchTrailLitter.h"
+#include "MistwatchShrubCanopy.h"
+#include "MistwatchFernColonies.h"
+#include "MistwatchCanopyPopulation.h"
+#include "MistwatchCanopyCollision.h"
+#include "MistwatchRootStemTerrain.h"
+#include "MistwatchEvasion.h"
+#include "MistwatchRiver.h"
+#include "MistwatchBoar.h"
+#include "MistwatchLandscape.h"
+#include "MistwatchAudio.h"
+#include "MistwatchPlayback.h"
+#include "MistwatchSupplyCrate.h"
+#include "MistwatchRangerHut.h"
+#include "MistwatchBridgeWorksite.h"
+#include "MistwatchSaveFile.h"
+#include "MistwatchLoadPreparation.h"
+#include <Aevrynd/SkinnedModelAsset.h>
+#include <Aevrynd/Engine.h>
+#include <Aevrynd/Scene3D.h>
+#include <Aevrynd/CharacterController3D.h>
+#include <Aevrynd/ThirdPersonCameraMotion3D.h>
+#include <Aevrynd/MaterialLibrary3D.h>
+#include <Aevrynd/MeshLoader.h>
+#include <Aevrynd/EnvironmentMeshes3D.h>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <chrono>
+#include <numeric>
+#include <iomanip>
+#include <bit>
+
+using namespace Aevrynd;
+class MistwatchGame final : public IGame {
+#if defined(MISTWATCH_SAVE_INPUT_AUDIT)
+    // 僅原生按鍵測試可存取私有狀態；正式遊戲不含此測試友元。
+    friend class MistwatchSaveInputProbe;
+#endif
+    Mistwatch::Session session;
+    CharacterController3D controller;
+    Scene3D scene;
+    MeshResource3D box;
+    std::array<MeshResource3D,2> supplyMeshes;
+    unsigned submittedSupplies{};
+    MeshResource3D rangerHutMesh;
+    std::array<MeshResource3D,2> bridgeWorksiteMeshes;
+    std::array<MeshResource3D,Mistwatch::GeneratorDetailGroups> generatorDetailMeshes;
+    const std::array<Material3D,Mistwatch::GeneratorDetailGroups> generatorDetailMaterials=Mistwatch::GeneratorDetailMaterials();
+    unsigned submittedBridgeWorksite{};
+    bool diagnosticLegacyRangerHut{},captureRangerHutOverview{};
+    std::array<MeshResource3D,4> firMeshes;
+    MeshResource3D detailedFirTwig;
+    bool nearFirTwigLod{true};
+    Scene3DStats firLodSubmission{};
+    bool shadowRetentionEnabled{true};
+    std::array<MeshResource3D,4> landscapeFirMeshes;
+    std::array<Material3D,4> firMaterials;
+    MaterialLibrary3D forestMaterials;
+    MaterialLibrary3D broadleafMaterials;
+    std::array<MeshResource3D,3> broadleafMeshes;
+    std::array<Material3D,3> broadleafSurface;
+    std::vector<Mistwatch::BroadleafTree> broadleafTrees;
+    Mistwatch::MiddleLayerResult middleLayer;
+    std::vector<BoxCollider3D> middleLayerSolids;
+    bool middleLayerEnabled{true};
+    Mistwatch::WorldProfile worldProfile{Mistwatch::WorldProfile::ForestWood};
+    Mistwatch::FirLayoutSelector firLayoutSelector{Mistwatch::FirLayoutSelector::ForestWood};
+    Mistwatch::MatureFirLayout firLayout;
+    unsigned submittedMiddleLayer{};
+    std::size_t submittedMiddleLayerTriangles{};
+    std::size_t broadleafTriangles{};
+    HeightField3D terrain;
+    MeshResource3D terrainMesh;
+    Mistwatch::ShrubCanopyResult shrubCanopy;
+    std::array<std::array<MeshResource3D,2>,4> shrubMeshes;
+    bool shrubsEnabled{true};
+    bool captureShrubOverview{};
+    bool captureFrameCamera{};
+    unsigned submittedShrubs{};
+    MaterialLibrary3D canopyMaterials;
+    std::array<MeshResource3D,3> canopyMeshes;
+    std::array<MeshResource3D,4> canopyRootMeshes;
+    std::array<Mesh3D,3> canopySource;
+    Mistwatch::CanopyPopulation canopyPopulation;
+    std::vector<BoxCollider3D> canopySolids;
+    std::uint64_t canopyWoodSurfaceCells{},canopyWoodEnclosedGridCells{},canopyWoodSourceTriangles{};
+    std::array<Material3D,3> canopySurfaces;
+    Transform3D canopyPose;
+    bool canopyEnabled{true},captureCanopyOverview{};
+    float canopyViewYaw{},canopyViewHeight{3.1f},canopyViewDistance{8.5f},canopyViewTargetHeight{2.6f};
+    unsigned canopyTriangles{},submittedCanopy{};
+    Mistwatch::TrailLitterResult trailLitter;
+    std::array<MeshResource3D,2> trailLitterMeshes;
+    bool trailLitterEnabled{true};
+    bool captureTrailOverview{};
+    unsigned submittedTrailLitter{};
+    MeshResource3D landscapeMesh;
+    std::vector<Transform3D> landscapeTrees;
+    MeshResource3D riverMesh;
+    float waterTime{};
+    std::vector<Vec3> trees;
+    std::vector<Vec3> groundCover;
+    Mistwatch::ForestCoverResult forestCover;
+    Mistwatch::ForestCoverSettings forestCoverSettings;
+    std::array<Mistwatch::ForestCoverAsset,5> grassFootprints;
+    std::array<unsigned,5> groundCoverVariants{},submittedGrassVariants{};
+    std::uint64_t forestCoverFingerprint{},forestCoverColliderFingerprint{};
+    double forestCoverSetupMilliseconds{};
+    std::size_t forestCoverClearanceColliders{};
+    MeshResource3D grassMesh;
+    std::array<MeshResource3D,5> scannedGrass;
+    MaterialLibrary3D grassMaterials;
+    Material3D grassSurface;
+    std::size_t submittedGrassTriangles{};
+    MeshResource3D fernMesh;
+    std::array<MeshResource3D,4> scannedFerns;
+    std::array<Mistwatch::FernColonyAsset,4> fernFootprints;
+    Mistwatch::FernColonyResult fernColonies;
+    Mistwatch::FernColonySettings fernColonySettings;
+    unsigned submittedColonyFerns{};
+    std::array<unsigned,4> fernColonyVariants{},submittedColonyVariants{};
+    std::array<unsigned,4> submittedOriginalFernVariants{};
+    std::size_t submittedColonyFernTriangles{};
+    std::uint64_t fernColonyFingerprint{},originalFernFingerprint{};
+    double fernColonySetupMilliseconds{};
+    MaterialLibrary3D fernMaterials;
+    Material3D fernSurface;
+    std::size_t submittedFernTriangles{};
+    MeshResource3D relayDish;
+    Mistwatch::ForestUnderstory understory;
+    unsigned submittedFerns{},submittedSaplings{};
+    // 所有岩石共用一份 GPU 網格，倒木與修復木梁共用另一份。
+    std::array<MeshResource3D,2> propMeshes;
+    MaterialLibrary3D boulderMaterials;
+    Material3D boulderMaterial;
+    std::vector<Mistwatch::ForestProp> forestProps;
+    MaterialLibrary3D materials;
+    MaterialAssetDefinition3D groundDefinition;
+    TerrainDistanceMaterialSettings3D groundDistanceSettings;
+    Material3D groundMaterial, barkMaterial, woodMaterial, rockMaterial;
+    std::vector<BoxCollider3D> solids;
+    Mistwatch::OrbitCamera orbit;
+    Mistwatch::Encounter encounter;
+    Mistwatch::Evasion evasion;
+    Mistwatch::Explorer explorer;
+    SkinnedMeshResource3D explorerMesh;
+    SkinningWorkspace3D explorerSkinning;
+    Mistwatch::Boar boar;
+    SkinnedMeshResource3D boarMesh;
+    SkinningWorkspace3D boarSkinning;
+    bool started{}, paused{};
+    Mistwatch::GameAudio gameAudio;
+    std::filesystem::path audioSettings;
+    std::string message="ENTER: begin expedition";
+    Mistwatch::ActionFeedbackToast actionFeedback;
+    std::filesystem::path save;
+    std::filesystem::path capture;
+    unsigned captureFrames{};
+    unsigned captureSequenceFrames{},captureCompleted{},captureConsumed{};
+    bool capturePending{};
+    bool diagnosticNoAo{};
+    bool diagnosticNoGroundNormal{},diagnosticNoMsaa{};
+    unsigned diagnosticHdrStage{};
+    bool diagnosticNoShadows{},diagnosticNoBloom{};
+    bool diagnosticNoGroundTextures{};
+    bool diagnosticNeutralGroundBase{},diagnosticNeutralGroundSurface{};
+    bool diagnosticLegacyGround{};
+    bool diagnosticSurfaceGround{};
+    bool diagnosticLegacyGrass{};
+    bool diagnosticDimGrass{};
+    bool diagnosticProceduralGrass{};
+    bool diagnosticScatterCover{};
+    bool diagnosticLegacyFern{};
+    bool diagnosticCrown{};
+    bool captureWalk{},captureCrouch{};
+    bool captureWildlife{};
+    bool captureBoarOverview{};
+    bool captureBoulderOverview{};
+    bool captureGrassOverview{};
+    bool captureSupplyOverview{};
+    bool captureGrassDistance{},grassFixtureEnabled{true};
+    std::size_t grassFixtureIndex{};
+    float grassFixturePlayerDistance{2.f},grassFixtureCameraDistance{12.f};
+    Vec3 grassFixtureSelectionFeet{};
+    struct GrassFixtureState {
+        Vec3 root{},feet{};
+        float scale{},yaw{},playerDistance{},cameraDistance{};
+        bool selected{},sceneAccepted{};
+        unsigned opaque{},shadowOnly{},triangles{};
+        std::uint64_t sceneSerial{},cameraHash{};
+    } grassFixtureState,grassFixtureFrozen;
+    bool captureFernOverview{};
+    unsigned submittedGrass{};
+    bool captureRelayMotion{};
+    bool captureLandscapeMotion{};
+    bool captureAudioProbe{};
+    unsigned captureAudioTicks{};
+    bool captureFocusProbe{},captureFocusComplete{};
+    unsigned captureFocusTicks{},captureFocusFrozenTicks{};
+    std::string captureFocusSession;
+    Vec3 captureFocusFeet{};
+    float captureFocusWater{},captureFocusEnemyTime{};
+    bool captureRiverOverview{};
+    bool captureShelterOverview{};
+    Camera3D lastRenderedCamera{};
+    ThirdPersonFramingResult3D lastPlayerFraming{};
+    ThirdPersonCameraMotion3D playerCameraMotion;
+    ThirdPersonCameraMotionResult3D lastCameraMotion{};
+    unsigned cameraFixedTicks{},captureCameraTicks{};
+    float cameraMaximumTickDisplacement{},cameraOcclusionSeconds{};
+    bool UpdatePlayerCamera(float dt) {
+        const std::array roof{Mistwatch::RangerHutCameraRoofSolid()};
+        const auto extra=diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{roof};
+        lastPlayerFraming=Mistwatch::BuildPlayerCameraFraming(session.feet,controller.Settings().height,orbit,solids,terrain,extra);
+        lastCameraMotion=playerCameraMotion.Update(Mistwatch::BuildPlayerCameraMotionRequest(session.feet,
+            controller.Settings().height,orbit,playerCameraMotion.Initialized(),solids,terrain,extra),
+            Mistwatch::PlayerCameraSamples(session.feet,controller.Settings().height),solids,
+            Mistwatch::CameraCeilingSolids(),terrain,dt,extra);
+        if(!lastCameraMotion.accepted)return false;
+        if(lastCameraMotion.status==ThirdPersonCameraMotionStatus3D::ResetCut)
+            orbit.yaw=Mistwatch::PlayerCameraMovementYaw(lastCameraMotion.camera,orbit.yaw);
+        ++cameraFixedTicks;++captureCameraTicks;
+        cameraMaximumTickDisplacement=(std::max)(cameraMaximumTickDisplacement,lastCameraMotion.displacement);
+        cameraOcclusionSeconds=lastCameraMotion.subjectVisible?0.f:cameraOcclusionSeconds+dt;
+        return true;
+    }
+    bool captureBenchmark{};
+    std::uint64_t benchmarkLastSerial{};
+    std::vector<double> benchmarkGpuMilliseconds;
+    std::chrono::steady_clock::time_point captureStart;
+    std::vector<BoxCollider3D> RuntimeWorldSolids(bool repaired)const {
+        auto result=Mistwatch::WorldSolids(repaired,firLayoutSelector);
+        const auto extras=RuntimeExtraSolids();
+        result.insert(result.end(),extras.begin(),extras.end());
+        return result;
+    }
+    std::vector<BoxCollider3D> RuntimeExtraSolids()const {
+        auto result=middleLayerSolids;
+        result.insert(result.end(),canopySolids.begin(),canopySolids.end());
+        return result;
+    }
+    void InitializeCanopy(Engine& e) {
+        const auto canopyRoot=e.ExecutableDirectory()/"assets"/"mistwatch-canopy-preview";
+        canopyMaterials.Initialize(e,canopyRoot);
+        // 原網格slot為幹/葉/枝，不能套用sidecar幹/枝/葉的陣列序。
+        constexpr const char* canopyNames[]{"trunk","leaves","branches"};
+        constexpr const char* canopyFiles[]{
+            "island-tree-01-lod2-node0-mesh0-primitive0-material0-island-tree-01.aemesh",
+            "island-tree-01-lod1-node0-mesh0-primitive1-material1-island-tree-01-leaves.aemesh",
+            "island-tree-01-lod2-node0-mesh0-primitive2-material2-island-tree-01-branches.aemesh"};
+        constexpr const char* canopyHashes[3][3]{
+            {"aa3708b589c5f80dddb98022eea49fbb71eb157b9ea7c32a02b3f0111e03c98d","638e6710501bb04d9626294b182246f7e651970b6ef2f791efb941e2fad9aaa4","24eba3fcb9e8d59b088e9cf312bdf25b32445562ce466262aa1d7834cd17bb7a"},
+            {"4a1f4e5544d2b91ed3822455f457b93a4d3237019bc8ae6202ce1e0aef9f14c2","792095487b7b49038da96ca9cb9e417a52b29f98eb109d953ef4eedcb82e9013","cc43d9a2635a0f8a6a750e41cc9857600a16d39fe9edc2d7f2403d39790595ee"},
+            {"75e25268369704a561432df6f3368734e8b5648fdce184a0a4c2c5863317145b","92e5ae39785dbcefc885588deaafd35a1b45d7e5e47f222320b85cb9ce810f05","1aa3118c6fba3891c31fb2e5c961edd463e2a65084f611158dea4adc3e39dbbb"}};
+        for(unsigned slot=0;slot<3;++slot){
+            const std::string name=canopyNames[slot];
+            MaterialTextureSetDefinition3D textures{std::filesystem::path("materials")/(name+"-base.dds"),
+                std::filesystem::path("materials")/(name+"-arm.dds"),1024,
+                std::filesystem::path("materials")/(name+"-normal.dds")};
+            textures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+            for(unsigned channel=0;channel<3;++channel)textures.integrity[channel]={1398276,canopyHashes[slot][channel]};
+            Material3D material{{1,1,1,1},{.85f,0,0,1},true,{},1.f,true};
+            if(slot==1){textures.alphaMode=MaterialAlphaMode3D::Mask;material.alphaMode=MaterialAlphaMode3D::Mask;
+                material.alphaCutoff=.5f;material.doubleSided=true;material.materialClass=MaterialClass3D::Foliage;}
+            if(!canopyMaterials.Load({name,textures,material}))throw std::runtime_error("Canopy preview material unavailable");
+            canopySurfaces[slot]=*canopyMaterials.Find(name);
+            auto loaded=LoadAevryndMeshFile(canopyRoot/"meshes"/canopyFiles[slot]);
+            if(!loaded)throw std::runtime_error("Canopy preview mesh unavailable");
+            canopyTriangles+=unsigned(loaded.mesh.indices.size()/3);
+            canopySource[slot]=loaded.mesh;
+            canopyMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
+            if(!canopyMeshes[slot])throw std::runtime_error("Canopy preview upload failed");
+        }
+        if(canopyTriangles!=606094)throw std::runtime_error("Canopy true primitive count changed");
+
+        const auto geometry=Mistwatch::MeasureCanopy(canopySource);
+        canopyPopulation=Mistwatch::CreateCanopyPopulation(canopySource,geometry,terrain,
+            RuntimeWorldSolids(session.bridgeRepaired),understory,{}, {},fernFootprints,{});
+        // V121 真實 CPU 作者證據只更新新布局；舊 forest-canopy 身分保持不變。
+        const auto expectedCanopyFingerprint=firLayoutSelector==Mistwatch::FirLayoutSelector::ForestWood?
+            6584434718760703877ull:13093722598475582899ull;
+        if(!canopyPopulation.reachedBudget||canopyPopulation.plants.size()!=4||
+            canopyPopulation.fingerprint!=expectedCanopyFingerprint)
+            throw std::runtime_error("Canopy-world author identity changed");
+        auto stem=LoadAevryndMeshFile(canopyRoot/"meshes"/"island-tree-01-lod2-trunk-root-stem.aemesh");
+        if(!stem||stem.mesh.vertices.size()!=3608||stem.mesh.indices.size()/3!=5330)
+            throw std::runtime_error("Derived canopy root stem unavailable");
+        canopyTriangles=606207;
+        for(std::size_t i=0;i<canopyPopulation.plants.size();++i){
+            auto& plant=canopyPopulation.plants[i];
+            // 來源樹不改；選定布局的四棵 pose 共用渲染與完整短幹接地碰撞。
+            plant.rootedTrunk=Mistwatch::PlantDerivedRootStem(stem.mesh,geometry,plant.pose,terrain);
+            plant.lower=Mistwatch::ExtendRootCollision(plant.lower,plant.rootedTrunk,plant.pose);
+            canopyRootMeshes[i]=e.CreateMeshResource3D(plant.rootedTrunk);
+            if(!canopyRootMeshes[i])throw std::runtime_error("Rooted canopy upload failed");
+            if(Mistwatch::WorldProfileHasWoodCollision(worldProfile)){
+                const auto proxy=Mistwatch::CreateCanopyWoodProxy(plant.rootedTrunk,canopySource[2],plant.pose);
+                if(canopySolids.size()+proxy.parts.size()>9000)throw std::runtime_error("Canopy wood collision author budget exceeded");
+                canopySolids.insert(canopySolids.end(),proxy.parts.begin(),proxy.parts.end());
+                canopyWoodSurfaceCells+=proxy.surfaceCells;canopyWoodEnclosedGridCells+=proxy.enclosedGridCells;
+                canopyWoodSourceTriangles+=proxy.sourceTriangles;
+            }else canopySolids.push_back(plant.lower);
+        }
+        canopyPose=canopyPopulation.plants.front().pose;
+    }
+    void ResetController() {
+        controller.Reset(session.feet);
+        // 讀檔／重試時先採低姿，再嘗試站起，避免載入棚內存檔後頭部穿過屋頂。
+        controller.SetHeight(1.4f);
+        controller.TrySetHeight(1.8f,solids);
+        playerCameraMotion.Reset();
+        const bool crouched=controller.Settings().height<1.5f;
+        explorer.feetInitialized=false;
+        explorer.Update({},0,crouched);
+        if(!explorer.PlaceFeet(session.feet,controller.Grounded(),crouched,terrain,solids))
+            throw std::runtime_error("Reset explorer foot IK failed");
+        gameAudio.director.Reset();
+    }
+    void TickAudio(Engine& e,float dt) {
+        Mistwatch::AudioState state;
+        state.session=session;state.enemyPhase=encounter.phase;state.enemyHealth=encounter.health;state.enemyFeet=encounter.feet;
+        state.active=started&&!paused&&session.Alive();state.grounded=controller.Grounded();state.crouched=controller.Settings().height<1.5f;
+        const auto listener=lastRenderedCamera.position;
+        const auto right=Mistwatch::AudioListenerRight(lastRenderedCamera);
+        gameAudio.Tick(e.Audio(),state,listener,right,dt);
+    }
+    void SaveCheckpoint() {
+        const Mistwatch::SaveGame snapshot{session,encounter,evasion};
+        // 先確認目前世界可安全還原，避免走出地形後寫下格式合法、實際讀不回的檔案。
+        // 預檢只操作候選 CPU 狀態；失敗不寫檔，也不取代先前可用的檢查點。
+        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,{},RuntimeExtraSolids(),firLayoutSelector);
+        if(!prepared){
+            message="Save position unavailable";
+            actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::SavePositionUnavailable);
+            return;
+        }
+        const auto result=Mistwatch::WriteSaveFile(save,snapshot);
+        message=result==Mistwatch::SaveFileResult::Saved?"Saved":"Save failed";
+        actionFeedback.Publish(result==Mistwatch::SaveFileResult::Saved?
+            Mistwatch::ActionFeedbackEvent::Saved:Mistwatch::ActionFeedbackEvent::SaveFailed);
+    }
+    void SaveAudioOptions() {
+        if(audioSettings.empty())return;
+        std::error_code error;std::filesystem::create_directories(audioSettings.parent_path(),error);
+        auto temporary=audioSettings;temporary+=".tmp";
+        std::ofstream out(temporary);out<<gameAudio.options.Serialize();out.close();
+        if(!out||!MoveFileExW(temporary.c_str(),audioSettings.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))message="Audio settings save failed";
+    }
+    void StopGameAudio(Engine& e) {
+        gameAudio.Shutdown(e.Audio());
+        const auto stats=e.Audio().GetStats();
+        if(stats.residentSounds||stats.residentBytes||stats.activeVoices)throw std::runtime_error("Game audio resources not released");
+        if(!capture.empty()) {
+            auto receipt=capture;receipt+=".audio-cleanup.txt";
+            std::ofstream out(receipt);out<<"sounds=0\nbytes=0\nvoices=0\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Audio cleanup receipt failed");
+        }
+    }
+    void ResetBoarPose() {
+        boar.initialized=false;
+        if(!boar.Update({},0,encounter.phase,(std::max)(0.f,encounter.phaseTime),{0,0,-1})||
+            !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar reset pose failed");
+    }
+    std::filesystem::path CapturePath()const {
+        if(!captureSequenceFrames)return capture;
+        const auto ordinal=std::to_wstring(captureCompleted);
+        return capture.parent_path()/(capture.stem().wstring()+L"-"+std::wstring(3-ordinal.size(),L'0')+ordinal+L".png");
+    }
+public:
+    void OnStart(Engine& e) override {
+        // 資產載入前決定完整世界版本；截斷或相對截圖路徑不能啟用舊世界。
+        wchar_t profileCapture[32768]{};
+        const auto profileCaptureLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",profileCapture,32768);
+        if(profileCaptureLength>=32768)throw std::runtime_error("Capture path truncated");
+        const bool validProfileCapture=profileCaptureLength>0;
+        if(validProfileCapture) {
+            const std::filesystem::path path(profileCapture);
+            if(!path.is_absolute()||!path.has_filename()||path.filename()==L"."||path.filename()==L"..")
+                throw std::runtime_error("Capture path must be complete and absolute");
+        }
+        const auto profileFlag=[](const wchar_t* name) {
+            wchar_t text[64]{};
+            const auto length=GetEnvironmentVariableW(name,text,64);
+            if(length>=64)throw std::runtime_error("World profile flag truncated");
+            return std::wstring(text,length);
+        };
+        worldProfile=Mistwatch::ResolveWorldProfile(validProfileCapture,
+            validProfileCapture?profileFlag(L"AEVRYND_MISTWATCH_WORLD_PROFILE"):std::wstring{},
+            validProfileCapture?profileFlag(L"AEVRYND_MISTWATCH_MIDDLE_LAYER"):std::wstring{});
+        firLayoutSelector=Mistwatch::WorldProfileHasWoodCollision(worldProfile)?
+            Mistwatch::FirLayoutSelector::ForestWood:Mistwatch::FirLayoutSelector::Legacy;
+        middleLayerEnabled=Mistwatch::WorldProfileHasMiddle(worldProfile);
+        canopyEnabled=Mistwatch::WorldProfileHasCanopy(worldProfile);
+        if(!canopyEnabled)canopyPopulation.fingerprint=0;
+        const auto wildlife=LoadSkinnedModelAssetFile(e.ExecutableDirectory()/"assets"/"mistwatch-wildlife"/"boar.aeskin");
+        if(!wildlife||wildlife.model.skeleton.joints.size()!=16||
+            wildlife.model.bindMesh.indices!=boar.model.bindMesh.indices)throw std::runtime_error("Boar asset unavailable or incompatible");
+        boar.model=wildlife.model;
+        boarMesh=e.CreateSkinnedMeshResource3D(boar.model);
+        if(!boarMesh)throw std::runtime_error("Boar GPU upload failed");
+        if(!explorer.model.Valid())throw std::runtime_error("Explorer model invalid");
+        explorerMesh=e.CreateSkinnedMeshResource3D(explorer.model);
+        if(!explorerMesh)throw std::runtime_error("Explorer GPU upload failed");
+        box=e.CreateMeshResource3D(Mesh3D::CreateUnitBox());
+        scene.SetBoxMesh(box);
+        const auto supplyGeometry=Mistwatch::CreateSupplyCrate();
+        supplyMeshes[0]=e.CreateMeshResource3D(supplyGeometry.wood);
+        supplyMeshes[1]=e.CreateMeshResource3D(supplyGeometry.metal);
+        if(!supplyMeshes[0]||!supplyMeshes[1])throw std::runtime_error("Supply crate GPU upload failed");
+        const auto bridgeWorksiteGeometry=Mistwatch::CreateBridgeWorksite();
+        bridgeWorksiteMeshes[0]=e.CreateMeshResource3D(bridgeWorksiteGeometry.wood);
+        bridgeWorksiteMeshes[1]=e.CreateMeshResource3D(bridgeWorksiteGeometry.metal);
+        if(!bridgeWorksiteMeshes[0]||!bridgeWorksiteMeshes[1])
+            throw std::runtime_error("Bridge worksite GPU upload failed");
+        const auto generatorDetail=Mistwatch::CreateGeneratorDetail();
+        try {
+            for(std::size_t group=0;group<generatorDetailMeshes.size();++group) {
+                generatorDetailMeshes[group]=e.CreateMeshResource3D(generatorDetail.meshes[group]);
+                if(!generatorDetailMeshes[group])throw std::runtime_error("Generator detail GPU upload failed");
+            }
+        } catch(...) {
+            for(auto& mesh:generatorDetailMeshes){if(mesh)e.DestroyMesh3D(mesh.handle);mesh={};}
+            throw;
+        }
+        wchar_t hutCapture[2]{},legacyHut[3]{};
+        diagnosticLegacyRangerHut=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",hutCapture,2)>0&&
+            GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LEGACY_RANGER_HUT",legacyHut,3)==1&&legacyHut[0]==L'1';
+        rangerHutMesh=e.CreateMeshResource3D(diagnosticLegacyRangerHut?Mistwatch::CreateLegacyRangerHut():Mistwatch::CreateRangerHut());
+        if(!rangerHutMesh)throw std::runtime_error("Ranger hut GPU upload failed");
+        materials.Initialize(e,e.ExecutableDirectory()/"assets"/"mistwatch-materials");
+        wchar_t groundCapture[2]{},legacyGround[3]{};
+        if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",groundCapture,2)>0) {
+            const auto length=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GROUND_LEGACY",legacyGround,3);
+            if(length&&(length!=1||(legacyGround[0]!=L'0'&&legacyGround[0]!=L'1')))
+                throw std::runtime_error("Invalid ground comparison flag");
+            diagnosticLegacyGround=legacyGround[0]==L'1';
+            wchar_t surfaceGround[3]{};
+            const auto surfaceLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GROUND_SINGLE_SURFACE",surfaceGround,3);
+            if(surfaceLength&&(surfaceLength!=1||(surfaceGround[0]!=L'0'&&surfaceGround[0]!=L'1')))
+                throw std::runtime_error("Invalid single-surface ground comparison flag");
+            diagnosticSurfaceGround=surfaceGround[0]==L'1';
+            wchar_t legacyGrass[3]{};
+            const auto grassLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_LEGACY",legacyGrass,3);
+            if(grassLength&&(grassLength!=1||(legacyGrass[0]!=L'0'&&legacyGrass[0]!=L'1')))
+                throw std::runtime_error("Invalid grass comparison flag");
+            diagnosticLegacyGrass=legacyGrass[0]==L'1';
+            wchar_t dimGrass[3]{};
+            const auto dimLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_DIM",dimGrass,3);
+            if(dimLength&&(dimLength!=1||(dimGrass[0]!=L'0'&&dimGrass[0]!=L'1')))
+                throw std::runtime_error("Invalid grass brightness comparison flag");
+            diagnosticDimGrass=dimGrass[0]==L'1';
+            wchar_t proceduralGrass[3]{};
+            const auto proceduralLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_PROCEDURAL",proceduralGrass,3);
+            if(proceduralLength&&(proceduralLength!=1||(proceduralGrass[0]!=L'0'&&proceduralGrass[0]!=L'1')))
+                throw std::runtime_error("Invalid procedural grass comparison flag");
+            diagnosticProceduralGrass=proceduralGrass[0]==L'1'||diagnosticLegacyGrass||diagnosticDimGrass;
+            wchar_t scatter[3]{};
+            const auto scatterLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_SCATTER_BASELINE",scatter,3);
+            if(scatterLength&&(scatterLength!=1||(scatter[0]!=L'0'&&scatter[0]!=L'1')))
+                throw std::runtime_error("Invalid ground-cover scatter comparison flag");
+            diagnosticScatterCover=scatter[0]==L'1';
+            wchar_t legacyFern[3]{};
+            const auto fernLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_FERN_LEGACY",legacyFern,3);
+            if(fernLength&&(fernLength!=1||(legacyFern[0]!=L'0'&&legacyFern[0]!=L'1')))
+                throw std::runtime_error("Invalid fern comparison flag");
+            diagnosticLegacyFern=legacyFern[0]==L'1';
+        }
+        groundDefinition=Mistwatch::GroundMaterialDefinition(diagnosticLegacyGround,diagnosticSurfaceGround);
+        groundDistanceSettings.normalDetailStrength=.65f;
+        groundDistanceSettings.mesoPartitionEnabled=false;
+        const std::array<MaterialAssetDefinition3D,4> definitions{{
+            groundDefinition,
+            {"bark",{"poly-haven/bark_brown_02/1k/base-color.jpg","poly-haven/bark_brown_02/1k/roughness.jpg",1024,"poly-haven/bark_brown_02/1k/normal-dx.jpg"},{{1,1,1,1},{.85f,0,0,.8f},true,{},1.f}},
+            {"wood",{"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Color.jpg","ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_Roughness.jpg",1024,"ambientcg/woodsiding006/1k/WoodSiding006_1K-JPG_NormalDX.jpg"},{{1,1,1,1},{.8f,0,0,.8f},true,{},.5f}},
+            {"rock",{"poly-haven/rock_surface/1k/base-color.jpg","poly-haven/rock_surface/1k/roughness.jpg",1024,"poly-haven/rock_surface/1k/normal-dx.jpg"},{{1,1,1,1},{.9f,0,0,.85f},true,{},1.f}}
+        }};
+        if(!materials.LoadAll(definitions)) throw std::runtime_error("Mistwatch CC0 materials unavailable");
+        groundMaterial=*materials.Find("ground");
+        if(groundMaterial.materialClass==MaterialClass3D::Terrain&&groundMaterial.textures){
+            groundMaterial.useUv=true;
+            groundMaterial.normalScale=TerrainLayerCoverageNormalScaleMarker3D;
+        }
+        barkMaterial=*materials.Find("bark");
+        woodMaterial=*materials.Find("wood");
+        rockMaterial=*materials.Find("rock");
+        const auto forestRoot=e.ExecutableDirectory()/"assets"/"mistwatch-forest";
+        forestMaterials.Initialize(e,forestRoot);
+        constexpr const char* slots[]{"bark","twig","dead-branches","trunk-c"};
+        wchar_t lodOverride[8]{};
+        GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_TREE_LOD",lodOverride,8);
+        const std::string treeLod=lodOverride[0]==L'0'?"0":"1";
+        wchar_t twigMode[16]{},captureFlag[2]{};
+        const bool treeDiagnostic=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",captureFlag,2)>0;
+        if(treeDiagnostic)GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_TWIG_MODE",twigMode,16);
+        if(treeDiagnostic&&std::wstring(twigMode)==L"baseline")nearFirTwigLod=false;
+        wchar_t shadowMode[16]{};
+        if(treeDiagnostic)GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_SHADOW_RETAIN_MODE",shadowMode,16);
+        if(treeDiagnostic&&std::wstring(shadowMode)==L"baseline")shadowRetentionEnabled=false;
+        constexpr const char* hashes[3][3]{
+            {"49fd9058e6a5059e6bced88360e44d0bcf303a164a3c0f4c08a151ddb236015a","a1d895baa855d31dd705e10be6b3c8ed56e2e663665b8a7001c0cf39e128a3e8","21291b807a30761309f810086d6732b752546c951e2a2a091101dd4f7cdb29f3"},
+            {"b1a458c5584b5fa40ce04144f341e013b1a999881bf17fff2880032363d58d5e","37af8ba7a3a7f94edb8a58f3bb716c978ca9631bd04027625ea5818be0223e10","3f656dfa0f462f4812c17ff0487261c770a637d8d7c97536c9d98a36f429d3bb"},
+            {"c5f308b9a1ebc6fbf4a1eb44750309e1cc191fd829bfdc50098d69b817f8a168","6b894f1c1da10361f2f07c1211cb1902342fbdee10afef66c03150c995836dee","22726faaab8c104237ffe7c8f17ccfa50637561222b4148b61eda0b0fcc03344"}};
+        for(unsigned slot=0;slot<4;++slot) {
+            const std::string name=slots[slot];
+            MaterialTextureSetDefinition3D textures{
+                std::filesystem::path("materials")/(name+"-base.dds"),
+                std::filesystem::path("materials")/(name+"-arm.dds"),1024,
+                std::filesystem::path("materials")/(name+"-normal.dds")};
+            textures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+            for(unsigned channel=0;channel<3;++channel)
+                textures.integrity[channel]={1398276,hashes[slot==3?2:slot==1?1:0][channel]};
+            Material3D material{{1,1,1,1},{.85f,0,0,.8f},true,{},1.f,true};
+            if(slot==1) {
+                textures.alphaMode=MaterialAlphaMode3D::Mask;
+                material=Mistwatch::FirTwigMaterial();
+                if(std::wstring(twigMode)==L"opaque")material.alphaMode=MaterialAlphaMode3D::Opaque;
+                else if(std::wstring(twigMode)==L"low")material.alphaCutoff=.15f;
+                else if(std::wstring(twigMode)==L"original")material.alphaCutoff=.5f;
+            }
+            if(!forestMaterials.Load({name,textures,material})) throw std::runtime_error("Fir material unavailable");
+            firMaterials[slot]=*forestMaterials.Find(name);
+            const std::string meshName="fir-tree-01-c-lod"+treeLod+"-node0-mesh0-primitive"+std::to_string(slot)+"-material"+std::to_string(slot)+"-fir-tree-01-"+name+".aemesh";
+            const auto loaded=LoadAevryndMeshFile(forestRoot/"meshes"/meshName);
+            if(!loaded) throw std::runtime_error("Fir mesh unavailable");
+            firMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
+            if(!firMeshes[slot]) throw std::runtime_error("Fir GPU upload failed");
+            if(slot==1) {
+                const auto detail=LoadAevryndMeshFile(forestRoot/"meshes"/"fir-tree-01-c-lod0-node0-mesh0-primitive1-material1-fir-tree-01-twig.aemesh");
+                if(!detail)throw std::runtime_error("Detailed fir twig unavailable");
+                detailedFirTwig=e.CreateMeshResource3D(detail.mesh);
+                if(!detailedFirTwig)throw std::runtime_error("Detailed fir twig GPU upload failed");
+            }
+            const std::string distantName="fir-tree-01-c-lod2-node0-mesh0-primitive"+std::to_string(slot)+"-material"+std::to_string(slot)+"-fir-tree-01-"+name+".aemesh";
+            const auto distant=LoadAevryndMeshFile(forestRoot/"meshes"/distantName);
+            if(!distant)throw std::runtime_error("Landscape fir mesh unavailable");
+            landscapeFirMeshes[slot]=e.CreateMeshResource3D(distant.mesh);
+            if(!landscapeFirMeshes[slot])throw std::runtime_error("Landscape fir GPU upload failed");
+        }
+        const auto broadleafRoot=e.ExecutableDirectory()/"assets"/"mistwatch-broadleaf";
+        broadleafMaterials.Initialize(e,broadleafRoot);
+        constexpr const char* broadleafSlots[]{"branches","leaves","trunk"};
+        constexpr const char* broadleafHashes[3][3]{
+            {"cf4f6fcc9329e66f05b7b2e86d20a38b2d0e8e054013cf3e0431a4cbc1e17d0a","1c54a88ec7a17c55528a99319378283d61b4800002ab4e63ca0fe30ebb1249ea","ea8a046e64ce7eacce435e64f31fc45501624fd131c7e6c8492bfd9de9fb1beb"},
+            {"88fce8dc2f1815c421a0c7c4d9cc7d9cacb4024f6c51e8fc928a5e938b7996a9","c8a6a8747023a64ed506ad62b8e5c0ae16bf14e0353d5e67f8d2511967aaf2ed","320d6df57bf075dbd701acab52740a623f0c86d298bd3048f3986d1988bb0cd9"},
+            {"513d07ece694d03e3c095c4148d7da4649ffdf6db54826cf1bf1754a368b1453","716c128da96feb1f3ad4ea041ecd9d5c167115a7aa0671f517ebaefbc9963b7d","099e981864b1e90b2c0500b0bcb0a92fcdc38ee196f00f7161905dc9bf762712"}};
+        for(unsigned slot=0;slot<3;++slot) {
+            const std::string name=broadleafSlots[slot];
+            MaterialTextureSetDefinition3D textures{std::filesystem::path("materials")/(name+"-base.dds"),
+                std::filesystem::path("materials")/(name+"-arm.dds"),1024,
+                std::filesystem::path("materials")/(name+"-normal.dds")};
+            textures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+            for(unsigned channel=0;channel<3;++channel)textures.integrity[channel]={1398276,broadleafHashes[slot][channel]};
+            Material3D material{{1,1,1,1},{.85f,0,0,1},true,{},1.f,true};
+            if(slot==1){textures.alphaMode=MaterialAlphaMode3D::Mask;material.alphaMode=MaterialAlphaMode3D::Mask;
+                material.alphaCutoff=.5f;material.doubleSided=true;material.materialClass=MaterialClass3D::Foliage;}
+            if(!broadleafMaterials.Load({name,textures,material}))throw std::runtime_error("Broadleaf material unavailable");
+            broadleafSurface[slot]=*broadleafMaterials.Find(name);
+            auto loaded=LoadAevryndMeshFile(broadleafRoot/"meshes"/Mistwatch::BroadleafMeshName(slot));
+            if(!loaded)throw std::runtime_error("Broadleaf mesh unavailable");
+            Mistwatch::RootBroadleafMesh(loaded.mesh);
+            broadleafTriangles+=loaded.mesh.indices.size()/3;
+            broadleafMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
+            if(!broadleafMeshes[slot])throw std::runtime_error("Broadleaf upload failed");
+        }
+        const auto boulderRoot=e.ExecutableDirectory()/"assets"/"mistwatch-boulders";
+        boulderMaterials.Initialize(e,boulderRoot);
+        MaterialTextureSetDefinition3D boulderTextures{"materials/slot-0-base.dds","materials/slot-0-arm.dds",1024,
+            "materials/slot-0-normal.dds"};
+        boulderTextures.surfaceEncoding=MaterialSurfaceMapEncoding3D::PackedOrm;
+        constexpr const char* boulderHashes[]{
+            "5a847a3174e09505b3a404c93716cbae576a5cb8bd32f69ec6395e8c95008d36",
+            "564be8685c266fe7fa03acda76c6c06f706911c4344777ceab6563d743284a1e",
+            "68fbbe04ffdb1c6d327f4262b9230438623f0d3b4b17a0a5155eb13b9ed21e83"};
+        for(unsigned channel=0;channel<3;++channel)boulderTextures.integrity[channel]={1398276,boulderHashes[channel]};
+        if(!boulderMaterials.Load({"boulder",boulderTextures,{{1,1,1,1},{.9f,0,0,1},true,{},1.f,true}}))
+            throw std::runtime_error("Boulder material unavailable");
+        boulderMaterial=*boulderMaterials.Find("boulder");
+        auto boulder=LoadAevryndMeshFile(boulderRoot/"meshes"/Mistwatch::BoulderMeshName);
+        if(!boulder||boulder.mesh.vertices.size()!=56938||boulder.mesh.indices.size()!=79833)
+            throw std::runtime_error("Boulder geometry unavailable");
+        Mistwatch::RootBoulderMesh(boulder.mesh);
+        const auto boulderBounds=boulder.mesh.Bounds(),boulderProfile=Mistwatch::BoulderBounds();
+        if(Length(boulderBounds.center-boulderProfile.center)>.00001f||Length(boulderBounds.extents-boulderProfile.extents)>.00001f)
+            throw std::runtime_error("Boulder collision profile mismatch");
+        propMeshes[0]=e.CreateMeshResource3D(boulder.mesh);
+        propMeshes[1]=e.CreateMeshResource3D(Mistwatch::ForestPropLogMesh());
+        if(!propMeshes[0]||!propMeshes[1])throw std::runtime_error("Forest prop GPU upload failed");
+        terrain=Mistwatch::CreateTerrain();
+        const bool layeredGround=groundMaterial.materialClass==MaterialClass3D::Terrain;
+        // 成熟森林選用新地表遮罩；歷史配置維持原網格，兩側共用相同接縫權重。
+        const auto floorMask=Mistwatch::WorldProfileHasWoodCollision(worldProfile)?
+            Mistwatch::ForestFloorMaskSelector::ForestWood:Mistwatch::ForestFloorMaskSelector::Legacy;
+        const auto bankMask=Mistwatch::WorldProfileHasWoodCollision(worldProfile)?
+            Mistwatch::BankCoverageSelector::Patchy:Mistwatch::BankCoverageSelector::Legacy;
+        terrainMesh=e.CreateMeshResource3D(Mistwatch::CreateTerrainMesh(terrain,layeredGround,floorMask,bankMask));
+        landscapeMesh=e.CreateMeshResource3D(Mistwatch::CreateLandscapeMesh(terrain,layeredGround,floorMask,bankMask));
+        if(!landscapeMesh)throw std::runtime_error("Landscape GPU upload failed");
+        landscapeTrees=Mistwatch::LandscapeTrees(terrain);
+        riverMesh=e.CreateMeshResource3D(Mistwatch::CreateRiverMesh(terrain));
+        if(!riverMesh)throw std::runtime_error("River GPU upload failed");
+        // 同一 typed 作者保留根、完整 render pose 與縮放後樹幹，不能只重排畫面。
+        firLayout=Mistwatch::CreateMatureFirLayout(terrain,firLayoutSelector);
+        if(!firLayout.reachedBudget||firLayout.firs.size()!=100||firLayout.roots.size()!=100)
+            throw std::runtime_error("Mature fir authored population incomplete");
+        trees=firLayout.roots;
+        forestProps=Mistwatch::ForestProps(terrain,trees);
+        understory=Mistwatch::CreateUnderstory(terrain,trees,forestProps);
+        broadleafTrees=Mistwatch::CreateBroadleafTrees(terrain,trees,forestProps,understory);
+        if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
+        fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
+        if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
+        const auto fernRoot=e.ExecutableDirectory()/"assets"/"mistwatch-ferns";
+        fernMaterials.Initialize(e,fernRoot);
+        if(!fernMaterials.Load(Mistwatch::FernMaterialDefinition()))throw std::runtime_error("Fern material unavailable");
+        fernSurface=*fernMaterials.Find("fern");
+        for(unsigned variant=0;variant<4;++variant) {
+            auto loaded=LoadAevryndMeshFile(fernRoot/"meshes"/Mistwatch::FernMeshName(variant));
+            if(!loaded||loaded.mesh.vertices.size()!=Mistwatch::FernVertexCounts[variant]||
+                loaded.mesh.indices.size()!=3u*Mistwatch::FernTriangleCounts[variant])throw std::runtime_error("Fern variant unavailable");
+            Mistwatch::NormalizeFernAsset(loaded.mesh);
+            fernFootprints[variant]=Mistwatch::FernColonyAssetFromMesh(loaded.mesh);
+            scannedFerns[variant]=e.CreateMeshResource3D(loaded.mesh);
+            if(!scannedFerns[variant])throw std::runtime_error("Scanned fern upload failed");
+        }
+        groundCover=Mistwatch::GroundCoverPositions(terrain);
+        if(middleLayerEnabled) {
+            const std::array<float,4> radii{fernFootprints[0].radius,fernFootprints[1].radius,fernFootprints[2].radius,fernFootprints[3].radius};
+            middleLayer=Mistwatch::CreateMiddleLayer(terrain,trees,forestProps,understory,broadleafTrees,Mistwatch::WorldSolids(false,firLayoutSelector),24,radii);
+            if(!middleLayer.reachedBudget||middleLayer.trees.size()!=24)
+                throw std::runtime_error("Middle-layer authored budget incomplete");
+            for(const auto& tree:middleLayer.trees)middleLayerSolids.push_back(tree.trunk);
+        }
+        grassMesh=e.CreateMeshResource3D(CreateGrassClumpMesh3D(9,diagnosticLegacyGrass?3:5,diagnosticLegacyGrass?GrassBladeStyle3D::Upright:GrassBladeStyle3D::Curved));
+        const auto grassRoot=e.ExecutableDirectory()/"assets"/"mistwatch-grass";
+        grassMaterials.Initialize(e,grassRoot);
+        if(!grassMaterials.Load(Mistwatch::GrassMaterialDefinition()))throw std::runtime_error("Grass material unavailable");
+        grassSurface=*grassMaterials.Find("grass");
+        for(unsigned variant=0;variant<scannedGrass.size();++variant){
+            auto loaded=LoadAevryndMeshFile(grassRoot/"meshes"/Mistwatch::GrassMeshName(variant));
+            if(!loaded||loaded.mesh.vertices.size()!=Mistwatch::GrassVertexCounts[variant]||
+                loaded.mesh.indices.size()!=3u*Mistwatch::GrassTriangleCounts[variant])throw std::runtime_error("Scanned grass topology changed");
+            Mistwatch::NormalizeGrassAsset(loaded.mesh);
+            grassFootprints[variant]=Mistwatch::ForestCoverAssetFromMesh(loaded.mesh);
+            scannedGrass[variant]=e.CreateMeshResource3D(loaded.mesh);
+            if(!scannedGrass[variant])throw std::runtime_error("Scanned grass upload failed");
+        }
+        relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
+        if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
+        solids=RuntimeWorldSolids(session.bridgeRepaired);
+        trailLitter=Mistwatch::CreateTrailLitter(terrain,solids);
+        if(!trailLitter.reachedBudget)throw std::runtime_error("Trail litter authored budget incomplete");
+        trailLitterMeshes[0]=e.CreateMeshResource3D(trailLitter.branches);
+        trailLitterMeshes[1]=e.CreateMeshResource3D(trailLitter.stones);
+        if(!trailLitterMeshes[0]||!trailLitterMeshes[1])throw std::runtime_error("Trail litter GPU upload failed");
+        // 新樹先配置，再依原門檻生成地被；舊三模式維持原作者及根位置。
+        if(Mistwatch::WorldProfileHasCanopy(worldProfile))InitializeCanopy(e);
+        solids=RuntimeWorldSolids(session.bridgeRepaired);
+        forestCoverClearanceColliders=solids.size();
+        // 舊世界固體保留2D路線排除；新增木件只篩完整3D植物體積，避免高枝投影抹掉地被。
+        std::vector<BoxCollider3D> vegetationSolids=solids;
+        const bool woodWorld=Mistwatch::WorldProfileHasWoodCollision(worldProfile);
+        if(woodWorld){vegetationSolids=Mistwatch::WorldSolids(session.bridgeRepaired,firLayoutSelector);
+            vegetationSolids.insert(vegetationSolids.end(),middleLayerSolids.begin(),middleLayerSolids.end());}
+        const std::span<const BoxCollider3D> vegetationWood=woodWorld?std::span<const BoxCollider3D>(canopySolids):std::span<const BoxCollider3D>{};
+        const auto coverStart=std::chrono::steady_clock::now();
+        if(!diagnosticScatterCover&&!diagnosticProceduralGrass){
+            forestCover=Mistwatch::CreateForestCover(terrain,trees,understory,vegetationSolids,grassFootprints,forestCoverSettings,vegetationWood);
+            if(!forestCover.reachedBudget||forestCover.plants.size()!=forestCoverSettings.targetPlants)
+                throw std::runtime_error("Forest cover authored population incomplete");
+            groundCover.clear();groundCover.reserve(forestCover.plants.size());
+            for(const auto& plant:forestCover.plants)groundCover.push_back(plant.transform.position);
+        }
+        forestCoverSetupMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-coverStart).count();
+        const auto colonyStart=std::chrono::steady_clock::now();
+        if(!forestCover.plants.empty()&&!diagnosticLegacyFern){
+            fernColonies=Mistwatch::CreateFernColonies(terrain,forestCover,understory.ferns,vegetationSolids,fernFootprints,fernColonySettings,vegetationWood);
+            if(!fernColonies.reachedBudget||fernColonies.plants.size()!=fernColonySettings.targetPlants)
+                throw std::runtime_error("Fern colony authored population incomplete");
+        }
+        fernColonySetupMilliseconds=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-colonyStart).count();
+        // 固定世界配置只在初始化生成，不隨鏡頭或角色移動重生；收據保留根、變體與原碰撞。
+        const auto mix=[](std::uint64_t& hash,std::uint32_t bits){
+            for(unsigned byte=0;byte<4;++byte){hash^=(bits>>(byte*8))&255u;hash*=1099511628211ull;}
+        };
+        forestCoverFingerprint=forestCoverColliderFingerprint=14695981039346656037ull;
+        fernColonyFingerprint=originalFernFingerprint=14695981039346656037ull;
+        const auto fernTransformHash=[&](std::uint64_t& fingerprint,const Transform3D& plant,unsigned variant){
+            for(float value:{plant.position.x,plant.position.y,plant.position.z,plant.rotation.x,plant.rotation.y,
+                plant.rotation.z,plant.scale.x,plant.scale.y,plant.scale.z})mix(fingerprint,std::bit_cast<std::uint32_t>(value));
+            mix(fingerprint,variant);
+        };
+        for(const auto& plant:fernColonies.plants){
+            fernTransformHash(fernColonyFingerprint,plant.transform,plant.variant);
+            ++fernColonyVariants[plant.variant];
+        }
+        for(std::size_t index=0;index<understory.ferns.size();++index)
+            fernTransformHash(originalFernFingerprint,understory.ferns[index],unsigned(index%4));
+        for(std::size_t index=0;index<groundCover.size();++index){
+            const auto root=groundCover[index];
+            const unsigned variant=forestCover.plants.empty()?unsigned(index%5):forestCover.plants[index].variant;
+            ++groundCoverVariants[variant];
+            for(float value:{root.x,root.y,root.z,Mistwatch::ForestCoverScale(root),root.x+root.z})
+                mix(forestCoverFingerprint,std::bit_cast<std::uint32_t>(value));
+            mix(forestCoverFingerprint,variant);
+        }
+        for(const auto& solid:solids)
+            for(float value:{solid.center.x,solid.center.y,solid.center.z,solid.extents.x,solid.extents.y,solid.extents.z})
+                mix(forestCoverColliderFingerprint,std::bit_cast<std::uint32_t>(value));
+        controller.Reset({});
+        auto shrubLeaves=LoadAevryndMeshFile(broadleafRoot/"meshes"/Mistwatch::BroadleafMeshName(1));
+        if(!shrubLeaves)throw std::runtime_error("Shrub leaf source missing");
+        shrubCanopy=Mistwatch::CreateShrubCanopy(shrubLeaves.mesh,terrain,vegetationSolids,understory,forestCover,fernColonies,fernFootprints,64,vegetationWood);
+        if(!shrubCanopy.reachedBudget)throw std::runtime_error("Shrub authored population incomplete");
+        for(unsigned i=0;i<4;++i){
+            shrubMeshes[i][0]=e.CreateMeshResource3D(shrubCanopy.variants[i].stems);
+            shrubMeshes[i][1]=e.CreateMeshResource3D(shrubCanopy.variants[i].leaves);
+            if(!shrubMeshes[i][0]||!shrubMeshes[i][1])throw std::runtime_error("Shrub GPU upload failed");
+        }
+        e.SetClearColor({.16f,.23f,.25f,1});
+        wchar_t local[32768]{};
+        const auto count=GetEnvironmentVariableW(L"LOCALAPPDATA",local,32768);
+        if(count && count<32768) save=std::filesystem::path(local)/"Aevrynd"/"Mistwatch"/"save.txt";
+        wchar_t output[32768]{};
+        const auto outputCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",output,32768);
+        if(outputCount && outputCount<32768) {
+            wchar_t flag[3]{};const auto flagCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CANOPY_ENABLED",flag,3);
+            if(flagCount){if(flagCount!=1||(flag[0]!=L'0'&&flag[0]!=L'1'))throw std::runtime_error("Invalid canopy preview flag");if(flag[0]==L'1'&&!Mistwatch::WorldProfileHasCanopy(worldProfile))throw std::runtime_error("Canopy draw requires canopy world");canopyEnabled=flag[0]!=L'0';}
+            wchar_t angle[16]{};const auto angleCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CANOPY_VIEW",angle,16);
+            if(angleCount){
+                const std::wstring text=angle;unsigned degrees{};
+                if(text==L"0")degrees=0;else if(text==L"45")degrees=45;else if(text==L"60")degrees=60;else if(text==L"120")degrees=120;
+                else if(text==L"180")degrees=180;else if(text==L"240")degrees=240;else if(text==L"300")degrees=300;
+                else if(text==L"detail"){degrees=45;canopyViewHeight=3.8f;canopyViewDistance=5.657f;canopyViewTargetHeight=3.f;}
+                else if(text==L"under"){degrees=0;canopyViewHeight=1.7f;canopyViewDistance=4.8f;canopyViewTargetHeight=3.2f;}
+                else if(text==L"root"){degrees=45;canopyViewHeight=.35f;canopyViewDistance=2.f;canopyViewTargetHeight=.3f;}
+                else if(text==L"high"){degrees=45;canopyViewHeight=8.f;canopyViewDistance=7.071f;canopyViewTargetHeight=2.2f;}
+                else throw std::runtime_error("Invalid canopy preview angle");
+                canopyViewYaw=float(degrees)*3.1415926535f/180.f;
+            }
+            wchar_t cameraFlag[3]{};const auto cameraCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE_FRAME_CAMERA",cameraFlag,3);
+            if(cameraCount){if(cameraCount!=1||cameraFlag[0]!=L'1')throw std::runtime_error("Invalid fixed-frame camera flag");captureFrameCamera=true;}
+            wchar_t shrubFlag[3]{};const auto shrubCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_SHRUBS",shrubFlag,3);
+            if(shrubCount){if(shrubCount!=1||(shrubFlag[0]!=L'0'&&shrubFlag[0]!=L'1'))throw std::runtime_error("Invalid shrub diagnostic flag");shrubsEnabled=shrubFlag[0]!=L'0';}
+            // 同執行檔單變量比較；正式遊玩不允許此環境開關關閉裝飾層。
+            wchar_t litterFlag[3]{};
+            const auto litterCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_TRAIL_LITTER",litterFlag,3);
+            if(litterCount){
+                if(litterCount!=1||(litterFlag[0]!=L'0'&&litterFlag[0]!=L'1'))throw std::runtime_error("Invalid trail litter comparison flag");
+                trailLitterEnabled=litterFlag[0]!=L'0';
+            }
+            capture=output;
+            captureStart=std::chrono::steady_clock::now();
+            started=true;
+            waterTime=2.5f;
+            wchar_t sequence[4]{};
+            if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE_SERIES",sequence,4)>0 && sequence[0]==L'1')captureSequenceFrames=36;
+            wchar_t benchmark[4]{};
+            captureBenchmark=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_BENCHMARK",benchmark,4)>0 && benchmark[0]==L'1';
+            if(captureBenchmark && captureSequenceFrames)throw std::runtime_error("Benchmark and capture series must run separately");
+            if(captureBenchmark)benchmarkGpuMilliseconds.reserve(120);
+            message="Capture mode - initial playable scene";
+            // 階段截圖只使用記憶體測試資料，不讀寫玩家存檔。
+            wchar_t scenario[32]{};
+            const auto scenarioCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_SCENE",scenario,32);
+            if(scenarioCount) {
+                if(scenarioCount>=32) throw std::runtime_error("Capture scenario too long");
+                const std::wstring name=scenario;
+                std::string fixture;
+                if(name==L"panel") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 0 3";
+                else if(name==L"powered") fixture="MISTWATCH 3 7 80 1 1 0 5.4 0 65 1 1 7";
+                else if(name==L"complete") fixture="MISTWATCH 3 7 80 1 1 1 0 0 69 1 1 7";
+                else if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
+                    fixture="MISTWATCH 5 7 80 1 1 0 0 0 65 1 1 7 7 1 50";
+                    captureRelayMotion=name==L"relay-turn";
+                    captureLandscapeMotion=name==L"ridge-pan";
+                }
+                else if(name==L"strike"||name==L"boar-recovery"||name==L"boar-motion"||name==L"boar-profile") {
+                    fixture=name==L"boar-motion"?"MISTWATCH 3 7 100 1 0 0 0 0 43 0 0 0":"MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";
+                    captureWildlife=name==L"boar-motion";
+                    captureBoarOverview=name==L"boar-profile";
+                }
+                else if(name==L"river" || name==L"river-overlook") {
+                    fixture="MISTWATCH 3 7 100 0 0 0 0 0 30 0 0 0";
+                    captureRiverOverview=name==L"river-overlook";
+                }
+                else if(name==L"repair-shelter" || name==L"repair-player-camera") fixture="MISTWATCH 4 7 100 0 0 0 -7.25 0 18 0 0 0 0";
+                else if(name==L"repair-ready") fixture="MISTWATCH 4 7 100 0 0 0 0 0 30 0 0 0 7";
+                else if(name==L"settlement-clue") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 0 0";
+                else if(name==L"settlement-clue-read") fixture="MISTWATCH 5 7 100 1 1 0 7.15 0 79 0 0 0 7 1 0";
+                else if(name==L"ranger-hut-profile") {
+                    captureRangerHutOverview=true;
+                    fixture="MISTWATCH 5 7 100 1 1 0 2 0 79 0 0 0 7 0 0";
+                }
+                else if(name==L"fuse-lock-wrong") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 0";
+                else if(name==L"fuse-lock-ready") fixture="MISTWATCH 5 7 100 1 1 0 -6.9 0 59 0 0 0 7 1 50";
+                else if(name==L"focus-pause") {captureFocusProbe=true;fixture="MISTWATCH 3 7 100 1 0 0 0 0 46.5 0 0 0";}
+                else if(name==L"walk" || name==L"crouch"||name==L"audio-check") {captureWalk=true;captureCrouch=name==L"crouch";captureAudioProbe=name==L"audio-check";}
+                else if(name==L"boulder-profile")captureBoulderOverview=true;
+                else if(name==L"trail-profile")captureTrailOverview=true;
+                else if(name==L"shrub-profile")captureShrubOverview=true;
+                else if(name==L"canopy-profile")captureCanopyOverview=true;
+                else if(name==L"grass-profile")captureGrassOverview=true;
+                else if(name==L"supply-profile"||name==L"supply-collected") {
+                    captureSupplyOverview=true;
+                    session.feet=Mistwatch::Session::supplies[0]+Vec3{0,0,-2};
+                    if(name==L"supply-collected"&&!session.Collect(0))throw std::runtime_error("Supply collection fixture failed");
+                }
+                else if(name==L"grass-distance") {
+                    captureGrassDistance=true;
+                    wchar_t mode[32]{},enabled[3]{};
+                    const auto modeLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_FIXTURE",mode,32);
+                    const auto enabledLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_GRASS_FIXTURE_ENABLED",enabled,3);
+                    if(!modeLength||modeLength>=32||enabledLength!=1||(enabled[0]!=L'0'&&enabled[0]!=L'1')||
+                        captureSequenceFrames||captureBenchmark||diagnosticProceduralGrass||diagnosticLegacyFern)
+                        throw std::runtime_error("Invalid grass distance fixture configuration");
+                    grassFixtureEnabled=enabled[0]==L'1';
+                    const std::wstring_view distanceMode=mode;
+                    if(distanceMode==L"player-near")grassFixturePlayerDistance=2.f;
+                    else if(distanceMode==L"player-inside")grassFixturePlayerDistance=34.99f;
+                    else if(distanceMode==L"player-edge")grassFixturePlayerDistance=35.f;
+                    else if(distanceMode==L"player-outside")grassFixturePlayerDistance=35.01f;
+                    else if(distanceMode==L"image-near")grassFixtureCameraDistance=2.f;
+                    else if(distanceMode==L"image-middle")grassFixtureCameraDistance=12.f;
+                    else if(distanceMode==L"image-far")grassFixtureCameraDistance=35.f;
+                    else throw std::runtime_error("Unknown grass distance fixture mode");
+                    // 每個程序從相同初始原配置選取同一株，不因腳或鏡頭移動重新尋找最近植株。
+                    const auto plant=std::find_if(groundCover.begin(),groundCover.end(),[](Vec3 p){return Length(p)<12.f;});
+                    if(plant==groundCover.end())throw std::runtime_error("Grass distance root missing");
+                    grassFixtureIndex=std::size_t(plant-groundCover.begin());
+                    // 同高選擇座標不是合法出生點；診斷不能把真正玩家／鏡頭放到遠坡地底。
+                    grassFixtureSelectionFeet=*plant+Vec3{grassFixturePlayerDistance,0,0};
+                }
+                else if(name==L"fern-profile")captureFernOverview=true;
+                else throw std::runtime_error("Unknown capture scenario");
+                if(!fixture.empty() && !session.Restore(fixture)) throw std::runtime_error("Invalid capture fixture");
+                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan") {
+                    session.feet=Mistwatch::Session::relaySites[0]+Vec3{1.15f,0,0};
+                    session.feet.y=terrain.SampleHeight(session.feet.x,session.feet.z);
+                    if(name==L"relay-aligned"||name==L"relay-linked") {
+                        for(unsigned turn=0;turn<Mistwatch::Session::RelayTargetSector(0);++turn)
+                            if(!session.TuneRelay(0,1))throw std::runtime_error("Relay fixture tuning failed");
+                        if(name==L"relay-linked"&&!session.ConnectRelay(0))throw std::runtime_error("Relay fixture link failed");
+                    }
+                }
+                controller.Reset(session.feet);
+                solids=RuntimeWorldSolids(session.bridgeRepaired);
+                ResetController();
+                if(name==L"repair-shelter" || name==L"repair-player-camera") {
+                    captureShelterOverview=name==L"repair-shelter";
+                    explorer.Update({},1.f/60.f,true);
+                    if(!explorer.PlaceFeet(session.feet,true,true,terrain,solids))throw std::runtime_error("Shelter capture IK failed");
+                }
+                orbit.yaw=captureWalk?-.6f:name==L"complete"?0.f:-.65f;
+                message="TEST FIXTURE - not a playthrough or player save";
+                if(name==L"river") {orbit.yaw=.5f;orbit.pitch=1.f;orbit.distance=10.f;}
+                if(name==L"settlement-clue" || name==L"settlement-clue-read")orbit.yaw=-1.25f;
+                if(name==L"fuse-lock-wrong" || name==L"fuse-lock-ready")orbit.yaw=1.25f;
+                if(name==L"relay-west"||name==L"relay-aligned"||name==L"relay-linked"||name==L"relay-turn"||name==L"ridge-pan")orbit.yaw=1.25f;
+                if(name==L"strike"||name==L"focus-pause") {
+                    encounter.Tick(session.feet,1.f/60.f,false);
+                    for(unsigned tick=0;tick<4;++tick)encounter.Tick(session.feet,.1f,false);
+                }
+                if(name==L"boar-recovery") {
+                    encounter.Tick(session.feet,1.f/60.f,false);
+                    for(unsigned tick=0;tick<9;++tick)encounter.Tick(session.feet,.1f,false);
+                }
+            }
+        }
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+        wchar_t selectedFrame[4]{};
+        const auto frameLength=!capture.empty()?GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE_FRAME",selectedFrame,4):0;
+        if(frameLength) {
+            const std::wstring_view frame=selectedFrame;
+            if(frameLength>=4||!captureLandscapeMotion||captureSequenceFrames||captureBenchmark||
+                (frame!=L"18"&&frame!=L"27"))throw std::runtime_error("Invalid selected ridge capture frame");
+            captureCompleted=frame==L"18"?18u:27u;captureSequenceFrames=captureCompleted+1;
+            orbit.yaw=1.25f+float(captureCompleted)*6.2831853f/36.f;
+            waterTime=2.5f+float(captureCompleted)*.1f;
+        }
+#endif
+        wchar_t noAo[8]{};
+        diagnosticNoAo=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_NO_AO",noAo,8)>0 && noAo[0]==L'1';
+        // 僅影像診斷允許單變量隔離；不改玩家預設品質或正式玩法。
+        if(!capture.empty()) {
+            const auto enabled=[](const wchar_t* name) {
+                wchar_t value[3]{};const auto length=GetEnvironmentVariableW(name,value,3);
+                if(!length)return false;
+                if(length!=1||(value[0]!=L'0'&&value[0]!=L'1'))throw std::runtime_error("Invalid lighting diagnostic flag");
+                return value[0]==L'1';
+            };
+            diagnosticNoGroundNormal=enabled(L"AEVRYND_MISTWATCH_NO_GROUND_NORMAL");
+            diagnosticNoMsaa=enabled(L"AEVRYND_MISTWATCH_NO_MSAA");
+            diagnosticNoShadows=enabled(L"AEVRYND_MISTWATCH_NO_SHADOWS");
+            diagnosticNoBloom=enabled(L"AEVRYND_MISTWATCH_NO_BLOOM");
+            diagnosticNoGroundTextures=enabled(L"AEVRYND_MISTWATCH_NO_GROUND_TEXTURES");
+            if(diagnosticNoGroundTextures)groundMaterial.textures={};
+            diagnosticNeutralGroundBase=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_BASE");
+            diagnosticNeutralGroundSurface=enabled(L"AEVRYND_MISTWATCH_GROUND_NEUTRAL_SURFACE");
+            if(diagnosticNoGroundTextures&&(diagnosticNeutralGroundBase||diagnosticNeutralGroundSurface))
+                throw std::runtime_error("Conflicting ground channel diagnostics");
+            if(diagnosticNeutralGroundBase||diagnosticNeutralGroundSurface) {
+                // 中性測試圖由診斷收據固定；其他貼圖與品質不變。
+                auto definition=Mistwatch::GroundDiagnosticDefinition(diagnosticLegacyGround,diagnosticNeutralGroundBase,diagnosticNeutralGroundSurface,diagnosticSurfaceGround);
+                if(!materials.Load(definition))throw std::runtime_error("Ground channel diagnostic material unavailable");
+                groundMaterial.textures=materials.Textures(definition.name);
+                groundDefinition=std::move(definition);
+            }
+            wchar_t stage[8]{};const auto stageLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_HDR_STAGE",stage,8);
+            if(stageLength) {
+                const std::wstring_view name=stage;
+                if(stageLength>=8||!captureSequenceFrames)throw std::runtime_error("Invalid HDR diagnostic stage or capture mode");
+                if(name==L"pre")diagnosticHdrStage=1;
+                else if(name==L"post")diagnosticHdrStage=2;
+                else if(name==L"final")diagnosticHdrStage=3;
+                else throw std::runtime_error("Unknown HDR diagnostic stage");
+#if AEVRYND_ATMOSPHERE_OUTPUT_DIAGNOSTICS
+                if(diagnosticHdrStage==1&&!EngineAtmosphereDiagnosticAccess3D::SetPreAtmosphereHdrCapture(e,true))throw std::runtime_error("Pre-atmosphere diagnostic setup failed");
+                if(diagnosticHdrStage==2&&!EngineAtmosphereDiagnosticAccess3D::SetPostAtmosphereHdrCapture(e,true))throw std::runtime_error("Post-atmosphere diagnostic setup failed");
+#else
+                if(diagnosticHdrStage!=3)throw std::runtime_error("HDR stages require atmosphere diagnostic build");
+#endif
+            }
+            if(diagnosticNoGroundNormal) {
+                // Terrain 的 normalScale 同時是覆蓋路由標記，停用法線不得移除材質覆蓋。
+                if(groundMaterial.materialClass!=MaterialClass3D::Terrain)groundMaterial.normalScale=0;
+                groundDistanceSettings.normalDetailStrength=0;
+            }
+            if(diagnosticNoMsaa) {
+#if AEVRYND_INTERNAL_RENDERER_TEST_HOOKS
+                if(!EngineRendererTestAccess3D::SetMultisampling(e,false))throw std::runtime_error("MSAA diagnostic setup failed");
+#else
+                throw std::runtime_error("MSAA diagnostic requires internal renderer test hooks");
+#endif
+            }
+        }
+        wchar_t crown[8]{};
+        diagnosticCrown=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CROWN",crown,8)>0 && crown[0]==L'1';
+        if(!boar.Update({},0,encounter.phase,encounter.phaseTime,session.feet-encounter.feet)||
+            !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar initial pose failed");
+        if(capture.empty()&&!save.empty()) {
+            audioSettings=save.parent_path()/"audio-settings.txt";
+            std::ifstream file(audioSettings);std::string line;
+            if(std::getline(file,line))gameAudio.options.Restore(line);
+        }
+        // 自動影像驗證靜音，不寫玩家音量設定；播放收據仍記錄真實裝置與 voice 結果。
+        if(!capture.empty())gameAudio.options.muted=true;
+        gameAudio.Initialize(e.Audio());
+        // 初始切鏡是明確事件；之後只在固定更新推進，繪圖不重複消耗時間。
+        playerCameraMotion.Reset();
+        if(!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Initial player camera unavailable");
+        lastRenderedCamera=lastCameraMotion.camera;
+    }
+    void OnUpdate(Engine& e,float dt) override {
+        if(captureFocusProbe&&!captureFocusComplete) {
+            // 測試只送訊息給自己的隱藏視窗；不切換使用者前景視窗、不讀寫玩家存檔。
+            const auto tick=++captureFocusTicks;
+            if(tick==1){SendMessageW(e.Window(),WM_SETFOCUS,0,0);e.GetInput().ConsumePresses();SendMessageW(e.Window(),WM_KEYDOWN,'W',0);}
+            if(tick==2){
+                captureFocusSession=session.Serialize();captureFocusFeet=session.feet;
+                captureFocusWater=waterTime;captureFocusEnemyTime=encounter.phaseTime;
+                SendMessageW(e.Window(),WM_KILLFOCUS,0,0);
+            }
+            if(tick>=3&&tick<=19){
+                if(!paused||session.Serialize()!=captureFocusSession||waterTime!=captureFocusWater||encounter.phaseTime!=captureFocusEnemyTime)
+                    throw std::runtime_error("Focus pause failed: world advanced while paused");
+                ++captureFocusFrozenTicks;
+            }
+            if(tick==18){SendMessageW(e.Window(),WM_SETFOCUS,0,0);SendMessageW(e.Window(),WM_KEYDOWN,'W',0);}
+            if(tick==20){SendMessageW(e.Window(),WM_KEYDOWN,VK_ESCAPE,0);SendMessageW(e.Window(),WM_KEYUP,VK_ESCAPE,0);}
+            if(tick==21){
+                if(paused||Length(session.feet-captureFocusFeet)<.001f||waterTime==captureFocusWater||encounter.phaseTime==captureFocusEnemyTime)
+                    throw std::runtime_error("Focus resume failed: explicit ESC did not resume simulation");
+                SendMessageW(e.Window(),WM_KEYUP,'W',0);
+                captureFocusComplete=true;paused=true;
+                message="FOCUS PAUSE VERIFIED - ESC resumes expedition";
+            }
+        }
+        if(!capture.empty()&&(!captureFocusProbe||captureFocusComplete)) {
+            if(captureAudioProbe&&!capturePending){++captureAudioTicks;paused=captureAudioTicks>=60&&captureAudioTicks<80;}
+            if(captureWildlife&&!capturePending) {
+                const auto previous=encounter.feet;
+                const auto enemyMotion=Mistwatch::TickEncounterWorld(encounter,session.feet,1.f/60.f,false,solids,terrain);
+                if(enemyMotion.status==Mistwatch::EncounterMotionStatus::Invalid)throw std::runtime_error("Boar capture motion rejected");
+                session.Damage(enemyMotion.damage);
+                const auto look=(encounter.phase==Mistwatch::EnemyPhase::Windup?encounter.strikeTarget:session.feet)-encounter.feet;
+                if(!boar.Update(encounter.feet-previous,1.f/60.f,encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
+                    !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar capture pose failed");
+            }
+            if(captureWalk && !capturePending&&!paused&&(!captureAudioProbe||captureAudioTicks<=180)){
+                const auto previous=controller.Position();
+                controller.TrySetHeight(captureCrouch?1.4f:1.8f,solids);
+                controller.Step({{captureAudioProbe?.55f:0.f,0,1},false,captureCrouch?.45f:1.f},solids,terrain,1.f/60.f);
+                session.feet=controller.Position();
+                explorer.Update(session.feet-previous,1.f/60.f,captureCrouch);
+                if(!explorer.PlaceFeet(session.feet,controller.Grounded(),captureCrouch,terrain,solids))
+                    throw std::runtime_error("Capture locomotion IK failed");
+                if(captureAudioProbe)for(unsigned index=0;index<3;++index)session.Collect(index);
+            }
+            // Readback 尚未回收時保留送出影格的鏡頭，收據不得描述後續更新的位置。
+            if(!captureFrameCamera&&!capturePending&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Capture camera transition rejected");
+            if(captureAudioProbe)TickAudio(e,1.f/60.f);
+            const auto stats=e.GetRendererStats();
+            // 排除啟動前六十幀；僅採用已完成且序號不重複的 GPU timestamp 收據。
+            const auto& timing=stats.lastCompletedGpuTimingReceipt;
+            if(captureBenchmark && timing.serial>60 && timing.serial>benchmarkLastSerial &&
+               timing.Complete() && benchmarkGpuMilliseconds.size()<120) {
+                benchmarkLastSerial=timing.serial;
+                benchmarkGpuMilliseconds.push_back(double(timing.nanoseconds)/1000000.0);
+            }
+            if(capturePending && stats.rejectedFrameCaptures)throw std::runtime_error("Frame capture rejected");
+            if(capturePending && stats.successfulFrameCaptures>captureConsumed) {
+                if(diagnosticHdrStage&&(captureCompleted==18||captureCompleted==27)) {
+                    e.WaitRendererIdle3D();
+                    const auto hdr=e.TakeLinearHdrReadback3D();
+                    if(!hdr||!hdr->Complete())throw std::runtime_error("HDR diagnostic readback incomplete");
+                    auto path=CapturePath();path+=L".hdr-half";
+                    std::ofstream raw(path,std::ios::binary);
+                    raw.write(reinterpret_cast<const char*>(hdr->rawHalfBytes.data()),std::streamsize(hdr->rawHalfBytes.size()));
+                    raw.close();if(!raw)throw std::runtime_error("HDR diagnostic write failed");
+                    path+=L".receipt.txt";std::ofstream proof(path);
+                    proof<<"diagnostic_only=1\nstage="<<diagnosticHdrStage<<"\nframe_serial="<<hdr->receipt.rasterProvenance.frameSerial
+                        <<"\nwidth="<<hdr->receipt.width<<"\nheight="<<hdr->receipt.height<<"\nbytes="<<hdr->rawHalfBytes.size()
+                        <<"\nfinite_channels="<<hdr->receipt.statistics.finiteChannelCount<<"\nnan_channels="<<hdr->receipt.statistics.nanChannelCount
+                        <<"\ncamera_hash="<<hdr->receipt.requestMetadata.cameraHash<<"\nstate_hash="<<hdr->receipt.requestMetadata.stateHash<<'\n';
+                    proof.close();if(!proof)throw std::runtime_error("HDR diagnostic receipt write failed");
+                }
+                auto receipt=CapturePath();receipt+=".receipt.txt";
+                std::ofstream out(receipt);
+                out<<"capture=success\nfir_lod_enabled="<<nearFirTwigLod
+                    <<"\nfir_lod_candidates="<<firLodSubmission.lodMeshInstances
+                    <<"\nfir_lod_near="<<firLodSubmission.nearLodInstances
+                    <<"\nfir_lod_far="<<firLodSubmission.farLodInstances
+                    <<"\nfir_lod_transitions="<<firLodSubmission.lodTransitionInstances
+                    <<"\nfir_lod_dual="<<firLodSubmission.lodDualSubmittedInstances
+                    <<"\nfir_lod_budget_fallbacks="<<firLodSubmission.lodTransitionBudgetFallbacks
+                    <<"\nshadow_retention_enabled="<<(shadowRetentionEnabled&&!diagnosticNoShadows)
+                    <<"\nscene_shadow_only_instances="<<firLodSubmission.shadowOnlyInstances
+                    <<"\nscene_shadow_budget_dropped="<<firLodSubmission.shadowOnlyBudgetDropped
+                    <<"\nscene_cpu_fallback_unavailable="<<firLodSubmission.cpuFallbackUnavailable
+                    <<"\nscene_projected_overlay_instances="<<firLodSubmission.shadowInstances
+                    <<"\nscene_visible_instances="<<firLodSubmission.visibleMeshInstances
+                    <<"\nwater_phase_seconds="<<waterTime
+                    <<"\nwater_surface_fingerprint="<<WaterSurfaceFingerprint3D(Mistwatch::RiverSurface())
+                    <<"\nwater_single_composite="<<stats.waterSingleCompositeEnabled
+                    <<"\nwater_composite_draws="<<stats.waterSingleCompositeDraws
+                    <<"\nrefraction="<<stats.screenSpaceWaterRefractionEnabled
+                    <<"\nrefraction_passes="<<stats.screenSpaceWaterRefractionPasses
+                    <<"\nscreen_space_reflections="<<stats.screenSpaceReflectionsEnabled
+                    <<"\nreflection_passes="<<stats.screenSpaceReflectionPasses<<'\n';
+                out<<"output_width="<<stats.outputWidth<<"\noutput_height="<<stats.outputHeight
+                    <<"\nadapter_luid_low="<<stats.adapterLuidLow<<"\nadapter_luid_high="<<stats.adapterLuidHigh
+                    <<"\ndebug_errors="<<stats.debugErrorCount<<"\ndebug_warnings="<<stats.debugWarningCount<<'\n';
+                out<<"debug_layer_enabled="<<stats.debugLayerEnabled<<"\ngpu_validation_requested="<<stats.gpuValidationRequested
+                    <<"\ngpu_validation_available="<<stats.gpuValidationAvailable<<"\ngpu_validation_executed="<<stats.gpuValidationExecuted
+                    <<"\ngpu_validation_passed="<<stats.gpuValidationPassed<<'\n';
+                out<<"mission_stage="<<unsigned(session.CurrentStage())<<"\nrepair_materials="<<session.repairMaterials
+                    <<"\ncharacter_height="<<controller.Settings().height<<'\n';
+                out<<"fuse_clue_read="<<session.fuseClueRead<<"\nfuse_dials="<<session.fuseDials
+                    <<"\nfuse_collected="<<session.fuseCollected<<'\n';
+                out<<"understory_ferns="<<understory.ferns.size()<<"\nunderstory_saplings="<<understory.saplings.size()
+                    <<"\nsubmitted_ferns="<<submittedFerns<<"\nsubmitted_saplings="<<submittedSaplings<<'\n';
+                out<<"fern_colony_population="<<fernColonies.plants.size()
+                    <<"\nfern_colony_authored_population="<<(fernColonies.plants.empty()?0u:fernColonySettings.targetPlants)
+                    <<"\nfern_colonies="<<fernColonies.colonies.size()
+                    <<"\nfern_colony_seed="<<(fernColonies.plants.empty()?0u:fernColonySettings.seed)
+                    <<"\nfern_colony_reached_budget="<<(fernColonies.plants.empty()||fernColonies.reachedBudget)
+                    <<"\nfern_colony_fingerprint="<<fernColonyFingerprint
+                    <<"\nfern_colony_original_fingerprint="<<originalFernFingerprint
+                    <<"\nfern_colony_setup_ms="<<fernColonySetupMilliseconds
+                    <<"\nsubmitted_colony_ferns="<<submittedColonyFerns
+                    <<"\nsubmitted_colony_fern_triangles="<<submittedColonyFernTriangles
+                    <<"\nfern_colony_variants="<<fernColonyVariants[0]<<','<<fernColonyVariants[1]<<','<<fernColonyVariants[2]<<','<<fernColonyVariants[3]
+                    <<"\nsubmitted_colony_variants="<<submittedColonyVariants[0]<<','<<submittedColonyVariants[1]<<','<<submittedColonyVariants[2]<<','<<submittedColonyVariants[3]
+                    <<"\nsubmitted_original_ferns="<<submittedFerns-submittedColonyFerns
+                    <<"\nsubmitted_original_fern_triangles="<<submittedFernTriangles-submittedColonyFernTriangles
+                    <<"\nsubmitted_original_fern_variants="<<submittedOriginalFernVariants[0]<<','<<submittedOriginalFernVariants[1]<<','<<submittedOriginalFernVariants[2]<<','<<submittedOriginalFernVariants[3]<<'\n';
+                out<<"fern_source="<<(diagnosticLegacyFern?"procedural":"poly-haven-fern-02")
+                    <<"\nfern_variants=4\nfern_asset_scale="<<Mistwatch::FernAssetScale
+                    <<"\nfern_materials="<<fernMaterials.Stats().materials<<"\nsubmitted_fern_triangles="<<submittedFernTriangles
+                    <<"\nfern_alpha_cutoff="<<fernSurface.alphaCutoff<<"\nfern_use_uv="<<fernSurface.useUv<<'\n';
+                out<<"grass_tint_scale="<<(diagnosticDimGrass?.7f:1.f)<<'\n';
+                out<<"ranger_hut_visual="<<(diagnosticLegacyRangerHut?"legacy_flat":"planked_pitched_roof")
+                    <<"\nranger_hut_triangles="<<rangerHutMesh.TriangleCount()<<"\nranger_hut_mesh_resources=1"
+                    <<"\nranger_hut_wood_textured="<<bool(woodMaterial.textures)
+                    <<"\nranger_hut_camera_roof="<<!diagnosticLegacyRangerHut<<'\n';
+                out<<"supply_visual=planked_wood_crate\nsupply_mesh_resources=2\nsupply_wood_triangles="<<supplyMeshes[0].TriangleCount()
+                    <<"\nsupply_metal_triangles="<<supplyMeshes[1].TriangleCount()<<"\nsubmitted_supply_crates="<<submittedSupplies
+                    <<"\nsupply_collected_mask="<<session.collected<<"\nsupply_wood_textured="<<bool(woodMaterial.textures)<<'\n';
+                out<<"bridge_worksite_visual=stacked_timber_tool_station\nbridge_worksite_mesh_resources=2"
+                    <<"\nbridge_worksite_wood_triangles="<<bridgeWorksiteMeshes[0].TriangleCount()
+                    <<"\nbridge_worksite_metal_triangles="<<bridgeWorksiteMeshes[1].TriangleCount()
+                    <<"\nbridge_worksite_fingerprint="<<Mistwatch::BridgeWorksiteFingerprintV1
+                    <<"\nbridge_worksite_unrepaired="<<!session.bridgeRepaired
+                    <<"\nsubmitted_bridge_worksite="<<submittedBridgeWorksite
+                    <<"\nbridge_worksite_wood_textured="<<bool(woodMaterial.textures)
+                    <<"\nbridge_worksite_wood_use_uv=1\n";
+                out<<"grass_source="<<(diagnosticProceduralGrass?"procedural":"poly-haven-grass-medium-02")
+                    <<"\ngrass_variants="<<(diagnosticProceduralGrass?1:5)<<"\ngrass_minimum_asset_height="<<Mistwatch::GrassAssetHeight
+                    <<"\ngrass_materials="<<grassMaterials.Stats().materials<<"\nsubmitted_grass_triangles="<<submittedGrassTriangles
+                    <<"\ngrass_alpha_cutoff="<<grassSurface.alphaCutoff<<"\ngrass_use_uv="<<grassSurface.useUv<<'\n';
+                out<<"enemy_visual=skinned_boar\nenemy_joints="<<boar.model.skeleton.joints.size()
+                    <<"\nenemy_phase="<<unsigned(encounter.phase)<<"\nenemy_brace="<<boar.brace<<'\n';
+                out<<"relay_linked="<<session.relayLinked<<"\nrelay_sectors="<<session.relaySectors
+                    <<"\nrelay_target_west="<<Mistwatch::Session::RelayTargetSector(0)<<"\nrelay_signal_west="<<session.RelaySignal(0)<<'\n';
+                out<<"landscape_vertices="<<landscapeMesh.vertexCount<<"\nlandscape_triangles="<<landscapeMesh.TriangleCount()
+                    <<"\nlandscape_trees="<<landscapeTrees.size()<<"\ncamera_orbit_yaw="<<orbit.yaw<<'\n';
+                out<<"fir_layout="<<(firLayoutSelector==Mistwatch::FirLayoutSelector::ForestWood?"forest-wood-mature":"legacy")
+                    <<"\nfir_layout_population="<<firLayout.firs.size()<<"\nfir_layout_reached_budget="<<firLayout.reachedBudget
+                    <<"\nfir_layout_fingerprint="<<firLayout.fingerprint<<"\nfir_layout_patch_centres="<<firLayout.patchCentres.size()<<'\n';
+                out<<"landscape_river_release_m=24\n";
+                out<<"grass_style="<<(diagnosticProceduralGrass?(diagnosticLegacyGrass?"upright":"curved"):"scanned")
+                    <<"\ngrass_blades="<<(diagnosticProceduralGrass?"9":"source-geometry")<<"\ngrass_segments="<<(diagnosticProceduralGrass?(diagnosticLegacyGrass?"3":"5"):"source-geometry")
+                    <<"\ngrass_vertices="<<(diagnosticProceduralGrass?grassMesh.vertexCount:7031)
+                    <<"\ngrass_triangles="<<(diagnosticProceduralGrass?grassMesh.TriangleCount():7842)<<"\nground_cover_instances="<<groundCover.size()
+                    <<"\nforest_cover_mode="<<(forestCover.plants.empty()?"original_scatter":"fixed_cluster_patches")
+                    <<"\nforest_cover_seed="<<(forestCover.plants.empty()?0u:forestCoverSettings.seed)
+                    <<"\nforest_cover_authored_population="<<(forestCover.plants.empty()?groundCover.size():forestCoverSettings.targetPlants)
+                    <<"\nforest_cover_maximum_patches="<<(forestCover.plants.empty()?0u:forestCoverSettings.maximumPatches)
+                    <<"\nforest_cover_patch_minimum_plants="<<(forestCover.plants.empty()?0u:forestCoverSettings.minimumPlantsPerPatch)
+                    <<"\nforest_cover_patch_maximum_plants="<<(forestCover.plants.empty()?0u:forestCoverSettings.maximumPlantsPerPatch)
+                    <<"\nforest_cover_independent_anchors="<<(forestCover.plants.empty()?0u:forestCoverSettings.independentAnchors)
+                    <<"\nforest_cover_patches="<<forestCover.patches.size()
+                    <<"\nforest_cover_reached_budget="<<(forestCover.plants.empty()||forestCover.reachedBudget)
+                    <<"\nforest_cover_fingerprint="<<forestCoverFingerprint
+                    <<"\nforest_cover_clearance_colliders="<<forestCoverClearanceColliders
+                    <<"\nforest_cover_clearance_collider_fingerprint="<<forestCoverColliderFingerprint
+                    <<"\nforest_cover_setup_ms="<<forestCoverSetupMilliseconds
+                    <<"\nforest_cover_variants="<<groundCoverVariants[0]<<','<<groundCoverVariants[1]<<','<<groundCoverVariants[2]<<','<<groundCoverVariants[3]<<','<<groundCoverVariants[4]
+                    <<"\nsubmitted_grass_variants="<<submittedGrassVariants[0]<<','<<submittedGrassVariants[1]<<','<<submittedGrassVariants[2]<<','<<submittedGrassVariants[3]<<','<<submittedGrassVariants[4]
+                    <<"\nsubmitted_grass="<<submittedGrass<<'\n';
+                out<<"broadleaf_trees="<<broadleafTrees.size()<<"\nbroadleaf_mesh_triangles="<<broadleafTriangles
+                    <<"\nbroadleaf_materials="<<broadleafMaterials.Stats().materials<<'\n';
+                out<<"middle_layer_comparison="<<middleLayerEnabled
+                    <<"\nmiddle_layer_population="<<middleLayer.trees.size()
+                    <<"\nmiddle_layer_target="<<(middleLayerEnabled?24:0)
+                    <<"\nmiddle_layer_reached_budget="<<(!middleLayerEnabled||middleLayer.reachedBudget)
+                    <<"\nsubmitted_middle_layer="<<submittedMiddleLayer
+                    <<"\nsubmitted_middle_layer_triangles="<<submittedMiddleLayerTriangles
+                    <<"\nmiddle_layer_attempted="<<middleLayer.attempted
+                    <<"\nmiddle_layer_transform_fingerprint="<<Mistwatch::MiddleLayerTransformFingerprint(middleLayer.trees)<<'\n';
+                out<<"boulder_instances="<<std::count_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();})
+                    <<"\nboulder_mesh_triangles="<<propMeshes[0].TriangleCount()<<"\nboulder_materials="<<boulderMaterials.Stats().materials
+                    <<"\nboulder_use_uv="<<boulderMaterial.useUv<<"\nboulder_texture_scale="<<boulderMaterial.textureScale
+                    <<"\nboulder_gpu_resources="<<unsigned(bool(propMeshes[0]))<<'\n';
+                if(captureFocusProbe)out<<"focus_pause_verified="<<captureFocusComplete<<"\nfocus_frozen_ticks="<<captureFocusFrozenTicks
+                    <<"\nfocus_explicit_resume_verified="<<captureFocusComplete<<"\npaused="<<paused<<'\n';
+                out<<"ground_normal_scale="<<groundMaterial.normalScale<<"\ndiagnostic_no_msaa="<<diagnosticNoMsaa
+                    <<"\nground_material_class="<<unsigned(groundMaterial.materialClass)
+                    <<"\nground_single_surface="<<diagnosticSurfaceGround
+                    <<"\nground_texture_layers="<<(groundDefinition.textures.additionalLayers[0].baseColorPath.empty()?1:3)
+                    <<"\nground_height_alpha="<<(groundMaterial.materialClass==MaterialClass3D::Terrain?"shared_core_normalized":"opaque_surface_baseline")
+                    <<"\nground_distance_normal_strength="<<groundDistanceSettings.normalDetailStrength
+                    <<"\nground_meso_partition="<<groundDistanceSettings.mesoPartitionEnabled
+                    <<"\nsubmitted_terrain_instances="<<stats.lastSubmittedTerrainInstances
+                    <<"\nground_textured="<<bool(groundMaterial.textures)
+                    <<"\nground_source="<<(diagnosticLegacyGround?"ground037":"forest-ground-04")
+                    <<"\nground_maximum_resolution="<<groundDefinition.textures.maximumResolution
+                    <<"\nground_packed_orm="<<(groundDefinition.textures.surfaceEncoding==MaterialSurfaceMapEncoding3D::PackedOrm)
+                    <<"\nground_texture_scale="<<groundMaterial.textureScale<<"\nground_use_uv="<<groundMaterial.useUv
+                    <<"\nlast_draw_calls="<<stats.lastDrawCalls<<"\nresident_texture_bytes="<<stats.residentTextureBytes
+                    <<"\nterrain_vertices="<<terrainMesh.vertexCount<<"\nterrain_triangles="<<terrainMesh.TriangleCount()
+                    <<"\nground_neutral_base="<<diagnosticNeutralGroundBase<<"\nground_neutral_surface="<<diagnosticNeutralGroundSurface
+                    <<"\ndiagnostic_no_shadows="<<diagnosticNoShadows<<"\ndiagnostic_no_bloom="<<diagnosticNoBloom
+                    <<"\ndiagnostic_hdr_stage="<<diagnosticHdrStage
+                    <<"\nmultisample_count="<<stats.multisampleCount<<"\nquality_shadows="<<stats.effectiveQuality.directionalShadows
+                    <<"\nquality_ao="<<stats.effectiveQuality.ambientOcclusion<<"\nquality_post_aa="<<stats.effectiveQuality.postProcessAntiAliasing<<'\n';
+                out<<"shadow_cascades="<<stats.lastDirectionalShadowCascades<<"\nbloom_enabled="<<stats.bloomEnabled
+                    <<"\nvolumetric_passes="<<stats.volumetricAtmosphereCompositePasses<<"\nvolumetric_scale="<<stats.volumetricAtmosphereResolutionScale
+                    <<"\nvolumetric_width="<<stats.volumetricAtmosphereWidth<<"\nvolumetric_height="<<stats.volumetricAtmosphereHeight<<'\n';
+                const auto audio=e.Audio().GetStats();
+                std::uint64_t steps{};for(unsigned i=0;i<6;++i)steps+=gameAudio.requests[i];
+                out<<"audio_device="<<audio.deviceAvailable<<"\naudio_sounds="<<audio.residentSounds
+                    <<"\naudio_bytes="<<audio.residentBytes<<"\naudio_plays="<<audio.successfulPlays<<"\naudio_dropped="<<audio.droppedPlays
+                    <<"\naudio_peak_voices="<<audio.peakActiveVoices<<"\naudio_master="<<audio.masterVolume
+                    <<"\naudio_step_requests="<<steps<<"\naudio_interact_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Interact)]
+                    <<"\naudio_wind_requests="<<gameAudio.requests[unsigned(Mistwatch::Sound::Wind)]<<"\naudio_probe_ticks="<<captureAudioTicks<<'\n';
+                out<<"trail_litter_enabled="<<trailLitterEnabled
+                    <<"\nworld_profile="<<Mistwatch::WorldProfileName(worldProfile)
+                    <<"\ncanopy_collision_mode="<<(Mistwatch::WorldProfileHasWoodCollision(worldProfile)?"wood-grid-conservative":"full-render-envelope")
+                    <<"\ncanopy_collision_parts="<<canopySolids.size()
+                    <<"\ncanopy_collision_spacing_m="<<(Mistwatch::WorldProfileHasWoodCollision(worldProfile)?.15:0.)
+                    <<"\ncanopy_wood_source_triangles="<<canopyWoodSourceTriangles
+                    <<"\ncanopy_wood_surface_cells="<<canopyWoodSurfaceCells
+                    <<"\ncanopy_wood_enclosed_grid_cells="<<canopyWoodEnclosedGridCells
+                    <<"\ncanopy_preview_fixture=0\ncanopy_world_profile="<<Mistwatch::WorldProfileHasCanopy(worldProfile)<<"\ncanopy_enabled="<<canopyEnabled
+                    <<"\ncanopy_plants="<<canopyPopulation.plants.size()<<"\ncanopy_population_fingerprint="<<canopyPopulation.fingerprint
+                    <<"\ncanopy_ground_checks="<<canopyPopulation.groundChecks<<"\ncanopy_rooted_meshes="<<canopyPopulation.plants.size()
+                    <<"\ncanopy_primitive_triangles="<<canopyTriangles<<"\ncanopy_materials="<<canopyMaterials.Stats().materials
+                    <<"\ncanopy_submitted_slots="<<submittedCanopy<<"\ncanopy_view_yaw="<<canopyViewYaw
+                    <<"\nshrubs_enabled="<<shrubsEnabled<<"\nshrubs_plants="<<shrubCanopy.plants.size()
+                    <<"\nshrubs_fingerprint="<<shrubCanopy.fingerprint<<"\nshrubs_submitted="<<submittedShrubs
+                    <<"\ntrail_litter_patches="<<trailLitter.patches.size()
+                    <<"\ntrail_litter_branches="<<trailLitter.branchCount
+                    <<"\ntrail_litter_stones="<<trailLitter.stoneCount
+                    <<"\ntrail_litter_fingerprint="<<trailLitter.fingerprint
+                    <<"\nsubmitted_trail_litter="<<submittedTrailLitter
+                    <<"\ntrail_litter_triangles="<<(trailLitter.branches.indices.size()+trailLitter.stones.indices.size())/3<<'\n';
+                out<<"camera_source="<<((captureCanopyOverview||captureShrubOverview||captureTrailOverview||diagnosticCrown||captureRiverOverview||captureShelterOverview||captureBoarOverview||captureBoulderOverview||captureGrassOverview||captureGrassDistance||captureFernOverview||captureSupplyOverview||captureRangerHutOverview)?"diagnostic":"player")
+                    <<"\ncamera_distance="<<Length(lastRenderedCamera.position-lastRenderedCamera.target)
+                    <<"\ncamera_height="<<lastRenderedCamera.position.y
+                    <<"\ncamera_anchor_above_feet="<<lastRenderedCamera.target.y-session.feet.y<<'\n';
+                out<<"camera_position="<<lastRenderedCamera.position.x<<','<<lastRenderedCamera.position.y<<','<<lastRenderedCamera.position.z
+                    <<"\ncamera_target="<<lastRenderedCamera.target.x<<','<<lastRenderedCamera.target.y<<','<<lastRenderedCamera.target.z
+                    <<"\ncamera_up="<<lastRenderedCamera.up.x<<','<<lastRenderedCamera.up.y<<','<<lastRenderedCamera.up.z
+                    <<"\ncamera_fov="<<lastRenderedCamera.projection.verticalFieldOfView
+                    <<"\ncamera_framing_source=player_candidate"
+                    <<"\ncamera_subject_visible="<<lastPlayerFraming.subjectVisible
+                    <<"\ncamera_yaw_adjustment="<<lastPlayerFraming.yawAdjustment
+                    <<"\ncamera_candidates_tested="<<lastPlayerFraming.candidatesTested<<'\n';
+                out<<"camera_motion_source="<<(captureFrameCamera?"diagnostic_render_step":"fixed_update")<<"\ncamera_motion_status="<<int(lastCameraMotion.status)
+                    <<"\ncamera_motion_accepted="<<lastCameraMotion.accepted
+                    <<"\ncamera_motion_subject_visible="<<lastCameraMotion.subjectVisible
+                    <<"\ncamera_fixed_ticks="<<cameraFixedTicks
+                    <<"\ncamera_max_tick_displacement="<<cameraMaximumTickDisplacement
+                    <<"\ncamera_occlusion_seconds="<<cameraOcclusionSeconds<<'\n';
+                if(captureGrassDistance) {
+                    const auto& proof=grassFixtureFrozen;
+                    out<<std::setprecision(std::numeric_limits<float>::max_digits10)
+                        <<"grass_fixture_schema=1\ngrass_fixture_index="<<grassFixtureIndex
+                        <<"\ngrass_fixture_variant="<<(forestCover.plants.empty()?unsigned(grassFixtureIndex%5):forestCover.plants[grassFixtureIndex].variant)
+                        <<"\ngrass_fixture_identity_high=5572150615523553875\ngrass_fixture_identity_low="<<grassFixtureIndex+1
+                        <<"\ngrass_fixture_generation=1\ngrass_fixture_enabled="<<grassFixtureEnabled
+                        <<"\ngrass_fixture_feet_mode=synthetic_same_height\ngrass_fixture_root="<<proof.root.x<<','<<proof.root.y<<','<<proof.root.z
+                        <<"\ngrass_fixture_feet="<<proof.feet.x<<','<<proof.feet.y<<','<<proof.feet.z
+                        <<"\ngrass_fixture_selection_source=isolated_diagnostic_reference"
+                        <<"\ngrass_fixture_actor_feet="<<session.feet.x<<','<<session.feet.y<<','<<session.feet.z
+                        <<"\ngrass_fixture_actor_isolated="<<(Length(session.feet-Mistwatch::Session{}.feet)==0)
+                        <<"\ngrass_fixture_scale="<<proof.scale<<"\ngrass_fixture_yaw="<<proof.yaw
+                        <<"\ngrass_fixture_player_distance="<<proof.playerDistance
+                        <<"\ngrass_fixture_camera_distance="<<proof.cameraDistance
+                        <<"\ngrass_fixture_gate_selected="<<proof.selected
+                        <<"\ngrass_fixture_scene_accepted="<<proof.sceneAccepted
+                        <<"\ngrass_fixture_opaque_draw_instances="<<proof.opaque
+                        <<"\ngrass_fixture_shadow_only_instances="<<proof.shadowOnly
+                        <<"\ngrass_fixture_draw_input_triangles="<<proof.triangles
+                        <<"\ngrass_fixture_scene_serial="<<proof.sceneSerial
+                        <<"\ngrass_fixture_camera_hash="<<proof.cameraHash
+                        <<"\ngrass_fixture_selection_limit=35\ngrass_fixture_image_kind=production_final_image_not_direct_pixel_count\n"
+                        <<std::setprecision(6);
+                }
+                if(captureBenchmark) {
+                    auto ordered=benchmarkGpuMilliseconds;std::sort(ordered.begin(),ordered.end());
+                    out<<"benchmark_mode=fixed_scene_gpu_only\ngpu_samples="<<ordered.size()
+                        <<"\ngpu_mean_ms="<<std::accumulate(ordered.begin(),ordered.end(),0.0)/double(ordered.size())
+                        <<"\ngpu_p50_ms="<<ordered[59]<<"\ngpu_p95_ms="<<ordered[113]
+                        <<"\ngpu_max_ms="<<ordered.back()<<'\n';
+                }
+                out.close();if(!out)throw std::runtime_error("Capture receipt write failed");
+                ++captureCompleted;++captureConsumed;
+                if(!captureSequenceFrames || captureCompleted>=captureSequenceFrames)e.Quit();
+                else {
+                    capturePending=false;waterTime=2.5f+float(captureCompleted)*.1f;
+                    // 固定按鍵輸入展示完整一圈，再回到訊號方向；不冒充人工遊玩。
+                    if(captureRelayMotion&&captureCompleted<20&&!session.TuneRelay(0,1))throw std::runtime_error("Relay motion input failed");
+                    if(captureRelayMotion&&captureCompleted==20&&!session.ConnectRelay(0))throw std::runtime_error("Relay motion link failed");
+                    if(captureLandscapeMotion)orbit.yaw=1.25f+float(captureCompleted)*6.2831853f/36.f;
+                    captureCameraTicks=0;cameraMaximumTickDisplacement=0;
+                }
+            }
+            // GPU 驗證會插入額外 shader 檢查；診斷等待不作為正式效能數據。
+            const auto captureTimeout=std::chrono::seconds(stats.gpuValidationRequested||captureLandscapeMotion?120:30);
+            if(std::chrono::steady_clock::now()-captureStart>captureTimeout)
+                throw std::runtime_error("Frame capture timeout; rendered="+std::to_string(captureFrames)+
+                    "; submitted="+std::to_string(stats.submittedFrames)+"; gpu-validation="+std::to_string(stats.gpuValidationRequested));
+            return;
+        }
+        auto& in=e.GetInput();
+        // 焦點安全仍優先；可遊玩狀態的讀檔先於暫停及音量鍵，避免同一步遺失或修改設定。
+        if(started&&!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
+            Mistwatch::SaveGame saved;
+            auto prepared=Mistwatch::ReadSaveFile(save,saved)?Mistwatch::PrepareSavedGame(saved,
+                {controller,explorer,boar,orbit},terrain,{},RuntimeExtraSolids(),firLayoutSelector):Mistwatch::LoadPreparationResult{};
+            if(prepared){
+                Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
+                    solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera});
+                cameraOcclusionSeconds=0;
+                gameAudio.director.Reset();
+                message="Loaded";
+                actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::Loaded);
+                TickAudio(e,dt);
+            }else{
+                message="Save unavailable";
+                actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::LoadUnavailable);
+            }
+            // 成功或失敗都不在載入當步推進世界與動作，也不執行同時按下的其他遊戲按鍵。
+            // 失敗也不更新遊戲音效事件觀測器；底層已播放的聲音仍由引擎正常服務。
+            return;
+        }
+        Mistwatch::UpdatePlaybackControl(started,paused,in.Focused()&&!in.FocusLost(),in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
+        bool changedAudio=false;
+        if(in.Pressed('M')){gameAudio.options.muted=!gameAudio.options.muted;changedAudio=true;}
+        if(in.Pressed(VK_PRIOR)){gameAudio.options.volume=std::clamp(gameAudio.options.volume+.1f,0.f,1.f);changedAudio=true;}
+        if(in.Pressed(VK_NEXT)){gameAudio.options.volume=std::clamp(gameAudio.options.volume-.1f,0.f,1.f);changedAudio=true;}
+        if(changedAudio){e.Audio().SetMasterVolume(gameAudio.options.Gain());SaveAudioOptions();}
+        actionFeedback.Advance(dt,(!started||paused)?Mistwatch::ActionFeedbackClock::Suspended:
+            Mistwatch::ActionFeedbackClock::Active);
+        if(!started || paused){TickAudio(e,dt);return;}
+        bool resetTick=false;
+        if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
+        if(in.Pressed('R') && session.beaconLit) {
+            session={};solids=RuntimeWorldSolids(false);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
+        }
+        if(in.Pressed('R') && !session.Alive()) {
+            session.Retry();ResetController();
+            // 重試保留已完成任務；已擊敗的野豬不能重設為未擊敗而破壞檢查點一致性。
+            if(!session.guardianDefeated)encounter={};
+            ResetBoarPose();evasion={};resetTick=true;
+        }
+        if(resetTick){
+            actionFeedback.Clear();
+            if(!UpdatePlayerCamera(dt))throw std::runtime_error("Reset-tick player camera unavailable");
+            TickAudio(e,dt);return;
+        }
+        if(!session.Alive() || session.beaconLit){
+            if(in.Pressed(VK_F5) && !save.empty())
+                SaveCheckpoint();
+            if(!playerCameraMotion.Initialized()&&!UpdatePlayerCamera(dt))throw std::runtime_error("Loaded terminal-session camera unavailable");
+            TickAudio(e,dt);return;
+        }
+        orbit.Update(in.MouseDown() && in.MouseInsideCanvas()?in.MouseDelta():Vec2{},in.MouseWheel(),float(in.Down(VK_RIGHT))-float(in.Down(VK_LEFT)),dt);
+        const float yaw=Mistwatch::PlayerCameraMovementYaw(playerCameraMotion.Camera(),orbit.yaw);
+        const float x=float(in.Down('D'))-float(in.Down('A'));
+        const float z=float(in.Down('W'))-float(in.Down('S'));
+        const auto previousController=controller;
+        if(!controller.TrySetHeight(in.Down(VK_CONTROL)?1.4f:1.8f,solids))
+            message="Low ceiling - move clear before standing";
+        bool crouched=controller.Settings().height<1.5f;
+        const auto previousFeet=controller.Position();
+        Vec3 movement{x*std::cos(yaw)-z*std::sin(yaw),0,x*std::sin(yaw)+z*std::cos(yaw)};
+        // 無方向輸入時 Q 向鏡頭後方閃避；非閃避時維持原移動輸入。
+        const bool evade=in.Pressed('Q');
+        const Vec3 dodgeDirection=evade && Length(movement)<.001f?Vec3{std::sin(yaw),0,-std::cos(yaw)}:movement;
+        const auto motion=evasion.Tick(dt,evade,controller.Grounded(),crouched,dodgeDirection);
+        controller.Step({motion.dashing?motion.movement:movement,
+            in.Pressed(VK_SPACE) && !crouched && !motion.dashing,
+            motion.dashing?Mistwatch::Evasion::SpeedMultiplier:crouched?.45f:in.Down(VK_SHIFT)?1.5f:1.f},solids,terrain,dt);
+        session.feet=controller.Position();
+        if(!UpdatePlayerCamera(dt)) {
+            // 拒絕不一致的角色候選，保留速度／接地／高度，再以相同舊位置嘗試安全鏡頭。
+            controller=previousController;session.feet=controller.Position();
+            crouched=controller.Settings().height<1.5f;
+            message="Camera clearance - movement held";
+            if(!UpdatePlayerCamera(dt))throw std::runtime_error("Player camera transition unavailable after movement rollback");
+        }
+        explorer.Update(session.feet-previousFeet,dt,crouched);
+        if(!explorer.PlaceFeet(session.feet,controller.Grounded(),crouched,terrain,solids))
+            throw std::runtime_error("Explorer foot IK failed");
+        if(session.feet.y < -5.f) {session.Damage(100);message="Fell into the ravine - R to retry";TickAudio(e,dt);return;}
+        for(unsigned lever=0;lever<3;++lever)if(in.Pressed('1'+lever)) {
+            if(session.CurrentStage()==Mistwatch::Stage::Relays) {
+                for(unsigned index=0;index<3;++index)if(lever<2&&session.TuneRelay(index,lever==0?-1:1))message="Antenna rotated - find the green signal lock, then E";
+            }
+            else if(session.CycleFuseDial(lever))message="Cabinet dial turned - match the ranger log, then E";
+            else if(session.ToggleCircuit(lever))message="Circuit switched - light all three lamps";
+        }
+        if(in.Pressed('E')) {
+            bool changed=false;
+            bool bridgeCameraRejected=false;
+            for(unsigned i=0;i<3;++i) changed=session.Collect(i)||changed;
+            for(unsigned i=0;i<3;++i)changed=session.CollectRepairMaterial(i,crouched)||changed;
+            auto bridgeCandidate=session;
+            if(bridgeCandidate.RepairBridge()) {
+                auto nextWorld=RuntimeWorldSolids(true);
+                const std::array roof{Mistwatch::RangerHutCameraRoofSolid()};
+                if(ThirdPersonCameraPathClear3D(playerCameraMotion.Camera().position,playerCameraMotion.Camera().position,
+                    nextWorld,terrain,diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{roof},.16f)){
+                    session=bridgeCandidate;solids=std::move(nextWorld);changed=true;
+                }else bridgeCameraRejected=true;
+            }
+            changed=session.ReadFuseClue()||changed;
+            changed=session.CollectFuse()||changed;
+            changed=session.RepairGenerator()||changed;
+            for(unsigned index=0;index<3;++index)changed=session.ConnectRelay(index)||changed;
+            changed=session.LightBeacon()||changed;
+            message=bridgeCameraRejected?"Move camera clear before bridge repair":changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
+                "Find tools in west shelter (CTRL), and both timber caches":
+                session.CurrentStage()==Mistwatch::Stage::Fuse && session.NearInterior(Mistwatch::Session::fuse)?
+                "Cabinet locked - read ranger log, set dials 1 / 2 / 3":
+                session.CurrentStage()==Mistwatch::Stage::Relays?"Ridge relay: 1 left / 2 right, green signal lock, then E":"Move closer to the objective";
+        }
+        if(session.CurrentStage()==Mistwatch::Stage::Encounter) {
+            const auto previous=encounter.feet;
+            const auto enemyMotion=Mistwatch::TickEncounterWorld(encounter,session.feet,dt,in.Pressed('F') && !motion.dashing,solids,terrain);
+            if(enemyMotion.status==Mistwatch::EncounterMotionStatus::Invalid)throw std::runtime_error("Boar world motion rejected");
+            session.Damage(enemyMotion.damage);
+            const auto look=(encounter.phase==Mistwatch::EnemyPhase::Windup?encounter.strikeTarget:session.feet)-encounter.feet;
+            if(!boar.Update(encounter.feet-previous,(std::min)(dt,.1f),encounter.phase,(std::max)(0.f,encounter.phaseTime),look)||
+                !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar locomotion IK failed");
+            Mistwatch::UpdateEncounterFeedback(session,encounter,message);
+        }
+        if(in.Pressed(VK_F5) && !save.empty()) {
+            SaveCheckpoint();
+        }
+        TickAudio(e,dt);
+    }
+    void OnRender(Engine& e,float) override {
+        if(captureFrameCamera){
+            if(capture.empty()||captureWalk||captureSequenceFrames||captureAudioProbe||captureWildlife||captureFocusProbe)
+                throw std::runtime_error("Fixed-frame camera is only supported for static comparison");
+            // 僅外部靜態A/B工具每render步進一次，排除OnUpdate排程次數差異；普通遊玩不走此路徑。
+            // 靜態比較在固定46步後凍結鏡頭，GPU收據回收延遲不可再改鏡頭狀態。
+            if(!capturePending&&cameraFixedTicks<46&&!UpdatePlayerCamera(1.f/60.f))throw std::runtime_error("Diagnostic render-step camera rejected");
+        }
+        scene.Clear();
+        scene.Mesh(terrainMesh,{},groundMaterial);
+        scene.Mesh(landscapeMesh,{},groundMaterial);
+        submittedCanopy=0;
+        if(canopyEnabled)for(std::size_t i=0;i<canopyPopulation.plants.size();++i)for(unsigned slot=0;slot<3;++slot){
+            const auto mesh=slot?canopyMeshes[slot]:canopyRootMeshes[i];
+            if(!scene.Mesh(mesh,canopyPopulation.plants[i].pose,canopySurfaces[slot],{},{{0x43414e4f50594658ull,i*3+slot+1},1}))
+                throw std::runtime_error("Canopy-world submission failed");
+            ++submittedCanopy;
+        }
+        submittedShrubs=0;
+        if(shrubsEnabled)for(std::size_t index=0;index<shrubCanopy.plants.size();++index){
+            const auto& plant=shrubCanopy.plants[index];
+            for(unsigned slot=0;slot<2;++slot){const auto material=slot?broadleafSurface[1]:barkMaterial;
+                if(!scene.Mesh(shrubMeshes[plant.variant][slot],plant.pose,material,{},{{0x4d57534852554253ull,index*2+slot+1},1}))throw std::runtime_error("Shrub submission failed");}
+            ++submittedShrubs;
+        }
+        // 背景林使用既有 CC0 冷杉最低網格細節；不加入任務區的角色碰撞體。
+        for(const auto& tree:landscapeTrees)for(unsigned slot=0;slot<4;++slot)
+            scene.Mesh(landscapeFirMeshes[slot],tree,firMaterials[slot]);
+        for(const auto& tree:broadleafTrees)for(unsigned slot=0;slot<3;++slot)
+            scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot]);
+        // 中層候選共用既有合法闊葉網格與材質；真樹幹亦加入角色及鏡頭碰撞。
+        submittedMiddleLayer=0;submittedMiddleLayerTriangles=0;
+        for(const auto& tree:middleLayer.trees) {
+            for(unsigned slot=0;slot<3;++slot) {
+                if(!scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot]))
+                    throw std::runtime_error("Middle-layer scene insertion failed");
+                submittedMiddleLayerTriangles+=broadleafMeshes[slot].TriangleCount();
+            }
+            ++submittedMiddleLayer;
+        }
+        scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
+        // 鏡頭到樹冠包絡距離決定針葉細節，六公尺過渡帶保留互補色彩與陰影。
+        const auto submitFir=[&](Transform3D transform) {
+            for(unsigned slot=0;slot<4;++slot) {
+                if(slot==1&&nearFirTwigLod) {
+                    const std::array<MeshLodLevel3D,2> levels{{
+                        {detailedFirTwig,firMaterials[slot],12.f,6.f},
+                        {firMeshes[slot],firMaterials[slot]}}};
+                    if(!scene.MeshLodChain(levels,MeshLodDistanceMetric3D::BoundsSurface,transform))
+                        throw std::runtime_error("Fir twig LOD insertion failed");
+                } else if(!scene.Mesh(firMeshes[slot],transform,firMaterials[slot]))
+                    throw std::runtime_error("Fir scene insertion failed");
+            }
+        };
+        for(const auto& tree:firLayout.firs)submitFir(tree.render);
+        submittedSaplings=0;
+        for(const auto& tree:understory.saplings) {
+            submitFir(tree);
+            ++submittedSaplings;
+        }
+        Material3D fern{{1,1,1,1},{.92f,0,0,.65f}};
+        fern.materialClass=MaterialClass3D::Foliage;
+        fern.doubleSided=true;
+        submittedFerns=0;submittedFernTriangles=0;
+        submittedColonyFerns=0;submittedColonyFernTriangles=0;
+        submittedColonyVariants={};
+        submittedOriginalFernVariants={};
+        for(std::size_t index=0;index<understory.ferns.size();++index) {
+            auto plant=understory.ferns[index];
+            const float visibility=Mistwatch::UnderstoryVisibility(Length(plant.position-session.feet));
+            if(visibility<=0)continue;
+            plant.scale=plant.scale*visibility;
+            const auto& mesh=diagnosticLegacyFern?fernMesh:scannedFerns[index%4];
+            if(!scene.Mesh(mesh,plant,diagnosticLegacyFern?fern:fernSurface))
+                throw std::runtime_error("Original fern scene insertion failed");
+            submittedFernTriangles+=mesh.TriangleCount();
+            ++submittedOriginalFernVariants[index%4];
+            ++submittedFerns;
+        }
+        // 共用既有四個真蕨網格與遮罩材質；新增的是固定世界群落，不是相機附著葉片。
+        for(const auto& fernPlant:fernColonies.plants) {
+            auto plant=fernPlant.transform;
+            const float visibility=Mistwatch::UnderstoryVisibility(Length(plant.position-session.feet));
+            if(visibility<=0)continue;
+            plant.scale=plant.scale*visibility;
+            const auto& mesh=scannedFerns[fernPlant.variant];
+            if(!scene.Mesh(mesh,plant,fernSurface))throw std::runtime_error("Fern colony scene insertion failed");
+            submittedFernTriangles+=mesh.TriangleCount();
+            submittedColonyFernTriangles+=mesh.TriangleCount();
+            ++submittedColonyVariants[fernPlant.variant];
+            ++submittedFerns;++submittedColonyFerns;
+        }
+        const float grassTintScale=diagnosticDimGrass?.7f:1.f;
+        Material3D grass{{.32f*grassTintScale,.43f*grassTintScale,.18f*grassTintScale,1},{.9f,0,0,.9f}};
+        grass.materialClass=MaterialClass3D::Foliage;
+        grass.doubleSided=true;
+        submittedGrass=0;
+        submittedGrassTriangles=0;
+        submittedGrassVariants={};
+        grassFixtureState={};
+        const auto grassSelectionFeet=captureGrassDistance?grassFixtureSelectionFeet:session.feet;
+        for(std::size_t index=0;index<groundCover.size();++index) {
+            const auto plant=groundCover[index];
+            const float scale=.5f+.25f*std::sin(plant.x*1.7f+plant.z);
+            const bool selected=Mistwatch::GrassRootSelected(plant,grassSelectionFeet);
+            const bool fixtureTarget=captureGrassDistance&&index==grassFixtureIndex;
+            if(fixtureTarget){grassFixtureState.root=plant;grassFixtureState.feet=grassSelectionFeet;
+                grassFixtureState.scale=scale;grassFixtureState.yaw=plant.x+plant.z;
+                grassFixtureState.playerDistance=Length(plant-grassSelectionFeet);grassFixtureState.selected=selected;}
+            if(!selected||(fixtureTarget&&!grassFixtureEnabled))continue;
+            const unsigned variant=forestCover.plants.empty()?unsigned(index%5):forestCover.plants[index].variant;
+            const auto& mesh=diagnosticProceduralGrass?grassMesh:scannedGrass[variant];
+            const RenderObjectIdentity3D identity=fixtureTarget?RenderObjectIdentity3D{{5572150615523553875ull,index+1},1}:RenderObjectIdentity3D{};
+            const auto accepted=scene.Mesh(mesh,{plant,{0,plant.x+plant.z,0},{scale,scale,scale}},diagnosticProceduralGrass?grass:grassSurface,{},identity);
+            if(!accepted)throw std::runtime_error("Grass scene insertion failed");
+            if(fixtureTarget)grassFixtureState.sceneAccepted=true;
+            submittedGrassTriangles+=mesh.TriangleCount();
+            ++submittedGrassVariants[variant];
+            ++submittedGrass;
+        }
+        submittedTrailLitter=0;
+        if(trailLitterEnabled){
+            for(unsigned index=0;index<2;++index){
+                auto material=index==0?barkMaterial:rockMaterial;
+                material.textureScale=1.f;
+                if(!scene.Mesh(trailLitterMeshes[index],{},material,{},{{0x4d57545241494c4cull,index+1},1}))
+                    throw std::runtime_error("Trail litter scene insertion failed");
+                ++submittedTrailLitter;
+            }
+        }
+        for(const auto& prop:forestProps)scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial);
+        submittedSupplies=0;
+        Material3D supplyMetal{{1,1,1,1},{.65f,.7f,0,1}};
+        for(unsigned i=0;i<3;++i) if(!(session.collected&(1u<<i))) {
+            const Transform3D transform{Mistwatch::Session::supplies[i],{},{1,1,1}};
+            if(!scene.Mesh(supplyMeshes[0],transform,woodMaterial)||!scene.Mesh(supplyMeshes[1],transform,supplyMetal))
+                throw std::runtime_error("Supply crate scene insertion failed");
+            ++submittedSupplies;
+        }
+        submittedBridgeWorksite=0;
+        if(session.bridgeRepaired) scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
+        else {
+            const Transform3D pose{Mistwatch::Session::bridge+Vec3{1,0,0},{},{1,1,1}};
+            auto bridgeWood=woodMaterial;bridgeWood.useUv=true;
+            for(unsigned index=0;index<2;++index) {
+                const auto material=index?supplyMetal:bridgeWood;
+                if(!scene.Mesh(bridgeWorksiteMeshes[index],pose,material,{},
+                    {{0x4d57425249444745ull,index+1},1}))
+                    throw std::runtime_error("Bridge worksite scene insertion failed");
+                ++submittedBridgeWorksite;
+            }
+        }
+        for(const auto solid:Mistwatch::RepairShelterSolids())scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
+        for(unsigned site=0;site<3;++site) {
+            const auto point=Mistwatch::Session::repairSites[site];
+            if(site==0)scene.Box(point+Vec3{0,.49f,0},{.5f,.06f,.3f},(session.repairMaterials&1)?Color{.3f,.3f,.25f,1}:Color{.82f,.65f,.15f,1});
+            if(session.repairMaterials&(1u<<site))continue;
+            if(site!=0)for(unsigned beam=0;beam<3;++beam)
+                scene.Mesh(propMeshes[1],{point+Vec3{0,.18f+.22f*float(beam),0},{0,0,1.5707963f},{.22f,1.8f,.22f}},woodMaterial);
+            // 小型路標讓材料位置可辨識，不用懸浮的大型目標方塊遮住場景。
+            const auto sign=point+Vec3{site==0?2.8f:1.3f,0,0};
+            scene.MaterialBox(sign+Vec3{0,.6f,0},{.12f,1.2f,.12f},woodMaterial);
+            scene.Box(sign+Vec3{0,1.12f,0},{.7f,.34f,.1f},{.78f,.58f,.15f,1});
+        }
+        if(session.CurrentStage()==Mistwatch::Stage::Encounter && encounter.phase==Mistwatch::EnemyPhase::Windup) {
+            const float progress=std::clamp(1.f-encounter.phaseTime/Mistwatch::Encounter::WindupDuration,0.f,1.f);
+            for(unsigned segment=0;segment<48;++segment) {
+                const auto point=[&](unsigned index,float radius){
+                    const float angle=float(index)*6.2831853f/48.f;
+                    Vec3 p=encounter.strikeTarget+Vec3{std::cos(angle)*radius,0,std::sin(angle)*radius};
+                    p.y=terrain.SampleHeight(p.x,p.z)+.06f;return p;
+                };
+                scene.Line(point(segment,Mistwatch::Encounter::StrikeRadius),point(segment+1,Mistwatch::Encounter::StrikeRadius),4.f,{1,.25f,.04f,1});
+                scene.Line(point(segment,Mistwatch::Encounter::StrikeRadius*progress),point(segment+1,Mistwatch::Encounter::StrikeRadius*progress),2.f,{1,.75f,.12f,1});
+            }
+        }
+        if(!Mistwatch::SubmitBeaconDetail(scene,session))
+            throw std::runtime_error("Beacon detail scene insertion failed");
+        for(const auto solid:Mistwatch::WorkshopSolids()) scene.MaterialBox(solid.center,solid.extents*2.f,woodMaterial);
+        const auto cabinet=Mistwatch::FuseCaseSolid();
+        scene.Box(cabinet.center,cabinet.extents*2.f,{.18f,.25f,.26f,1});
+        const auto fuseDialVisuals=Mistwatch::CreateFuseDialVisuals(session,cabinet.center);
+        if(!fuseDialVisuals)throw std::runtime_error("Fuse dial visual state invalid");
+        for(const auto& dial:*fuseDialVisuals) {
+            scene.Box(dial.centre,dial.panelSize,dial.panelColor);
+            for(const auto& triangle:dial.triangles)
+                scene.Triangle(triangle.a,triangle.b,triangle.c,triangle.color);
+        }
+        if(!scene.Mesh(rangerHutMesh,{Mistwatch::Session::rangerLog,{},{1,1,1}},woodMaterial))
+            throw std::runtime_error("Ranger hut scene insertion failed");
+        const auto desk=Mistwatch::RangerHutSolids()[2];
+        scene.MaterialBox(desk.center,desk.extents*2.f,woodMaterial);
+        scene.Box(Mistwatch::Session::rangerLog+Vec3{.9f,1.02f,0},{.55f,.03f,.65f},{.85f,.82f,.65f,1});
+        scene.MaterialBox({2,.8f,79},{.12f,1.6f,.12f},woodMaterial);
+        scene.Box({2,1.5f,79},{1,.35f,.12f},{.65f,.62f,.25f,1});
+        for(std::size_t group=0;group<generatorDetailMeshes.size();++group)
+            if(!scene.Mesh(generatorDetailMeshes[group],{Mistwatch::Session::generator,{}, {1,1,1}},generatorDetailMaterials[group]))
+                throw std::runtime_error("Generator detail scene insertion failed");
+        for(unsigned lamp=0;lamp<3;++lamp)
+            scene.Box(Mistwatch::Session::generator+Vec3{-.5f+float(lamp)*.5f,1.3f,0},{.2f,.2f,.2f},session.circuit&(1u<<lamp)?Color{.2f,1,.3f,1}:Color{1,.15f,.1f,1});
+        Material3D antenna{{1,1,1,1},{.45f,.65f,0,1},false};antenna.doubleSided=true;
+        for(unsigned index=0;index<3;++index) {
+            const auto p=Mistwatch::Session::relaySites[index];
+            const auto relaySolids=Mistwatch::RelaySolids(index);
+            scene.MaterialBox(relaySolids[0].center,relaySolids[0].extents*2.f,rockMaterial);
+            scene.Box(relaySolids[1].center,relaySolids[1].extents*2.f,{.24f,.28f,.26f,1});
+            const float angle=float(session.RelaySector(index))*6.2831853f/16.f;
+            const Vec3 direction{std::sin(angle),0,std::cos(angle)};
+            scene.Mesh(relayDish,{p+Vec3{0,2.15f,0}+direction*.5f,{0,angle,0},{1,1,1}},antenna);
+            scene.Mesh(box,{p+Vec3{0,2.15f,0}+direction*.15f,{0,angle,0},{.065f,.065f,.3f}},antenna);
+            const bool linked=(session.relayLinked&(1u<<index))!=0;
+            const bool aligned=session.RelaySector(index)==Mistwatch::Session::RelayTargetSector(index);
+            const Color lamp=linked?Color{.1f,1,.4f,1}:session.powerRestored&&aligned?Color{.4f,1,.2f,1}:Color{1,.55f,.08f,1};
+            scene.Box(p+Vec3{index==1?-.69f:.69f,.7f,0},{.08f,.18f,.25f},lamp);
+            scene.Line(p+Vec3{0,.74f,0},p+Vec3{direction.x,.74f,direction.z},3.f,lamp);
+        }
+        const std::array cameraRoof{Mistwatch::RangerHutCameraRoofSolid()};
+        if(!playerCameraMotion.Initialized())throw std::runtime_error("Player camera not initialized");
+        auto camera=playerCameraMotion.Camera();
+        if(!ThirdPersonCameraPathClear3D(camera.position,camera.position,solids,terrain,
+            diagnosticLegacyRangerHut?std::span<const BoxCollider3D>{}:std::span<const BoxCollider3D>{cameraRoof},.155f))
+            throw std::runtime_error("Changed world invalidated rendered player camera");
+        if(captureRangerHutOverview&&!capture.empty()) {
+            camera.target=Mistwatch::Session::rangerLog+Vec3{0,1.6f,0};
+            camera.position=camera.target+Vec3{-7,3.2f,-7};
+        }
+        if(diagnosticCrown && !capture.empty()) camera=MakeThirdPersonCamera({-7,6,-5},0,.1f,8);
+        // 遠景只用於地形影像驗收，不改變玩家可操作鏡頭的距離上限。
+        if(captureRiverOverview && !capture.empty()) {camera.position={-22,28,8};camera.target={0,-2,36};}
+        if(captureShelterOverview && !capture.empty()) {camera.position={-3,1.1f,17};camera.target={-7.25f,.7f,18};}
+        if(captureBoarOverview && !capture.empty()) {camera.position=encounter.feet+Vec3{3,1.4f,1};camera.target=encounter.feet+Vec3{0,.55f,0};}
+        if(captureBoulderOverview && !capture.empty()) {
+            const auto rock=std::find_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();});
+            if(rock==forestProps.end())throw std::runtime_error("Boulder detail fixture missing");
+            camera.target=rock->collider.center;
+            camera.position=camera.target+Vec3{2.f,1.1f,-2.f};
+        }
+        if(captureGrassOverview && !capture.empty()) {
+            const auto plant=std::find_if(groundCover.begin(),groundCover.end(),[&](Vec3 p){return Length(p-session.feet)<12.f;});
+            if(plant==groundCover.end())throw std::runtime_error("Grass detail fixture missing");
+            camera.target=*plant+Vec3{0,.3f,0};
+            camera.position=camera.target+Vec3{1.15f,.55f,-1.15f};
+        }
+        if(captureSupplyOverview&&!capture.empty()) {
+            camera.target=Mistwatch::Session::supplies[0]+Vec3{0,.4f,0};
+            camera.position=camera.target+Vec3{1.25f,.8f,-1.6f};
+        }
+        if(captureGrassDistance&&!capture.empty()) {
+            camera.target=groundCover[grassFixtureIndex]+Vec3{0,.3f,0};
+            // 固定方向與目標，僅改鏡頭距離；不把合成腳位置當可行走地形驗收。
+            camera.position=camera.target+Normalize(Vec3{1.15f,.55f,-1.15f})*grassFixtureCameraDistance;
+            grassFixtureState.cameraDistance=Length(camera.position-camera.target);
+        }
+        if(captureFernOverview && !capture.empty()) {
+            const auto plant=std::min_element(understory.ferns.begin(),understory.ferns.end(),[&](const auto& a,const auto& b){
+                return Length(a.position-session.feet)<Length(b.position-session.feet);
+            });
+            if(plant==understory.ferns.end())throw std::runtime_error("Fern detail fixture missing");
+            camera.target=plant->position+Vec3{0,.2f,0};
+            camera.position=camera.target+Vec3{.95f,.55f,-1.2f};
+        }
+        lastRenderedCamera=camera;
+        if(captureTrailOverview&&!capture.empty()){
+            if(trailLitter.patches.empty())throw std::runtime_error("Trail litter profile missing");
+            const auto p=trailLitter.patches.front().centre;
+            camera.target=p+Vec3{0,.04f,0};camera.position=p+Vec3{.9f,.6f,-1.2f};
+            lastRenderedCamera=camera;
+        }
+        if(captureShrubOverview&&!capture.empty()){
+            const auto p=shrubCanopy.plants.front().pose.position;
+            camera.target=p+Vec3{0,.65f,0};camera.position=camera.target+Vec3{1.35f,.5f,-1.9f};lastRenderedCamera=camera;
+        }
+        if(captureCanopyOverview&&!capture.empty()){
+            camera.target=canopyPose.position+Vec3{0,canopyViewTargetHeight,0};
+            camera.position=canopyPose.position+Vec3{std::sin(canopyViewYaw)*canopyViewDistance,canopyViewHeight,-std::cos(canopyViewYaw)*canopyViewDistance};
+            lastRenderedCamera=camera;
+        }
+        auto& draw=e.Draw();
+        draw.SetEnvironmentTime(waterTime);
+        draw.SetWaterSurface(Mistwatch::RiverSurface());
+        draw.SetWaterOptics({true,.018f,.35f,.035f});
+        draw.SetScreenSpaceReflections({true,.7f,32.f,.65f,.28f,12});
+        if(diagnosticNoAo) draw.SetAmbientOcclusion({false});
+        if(diagnosticNoShadows)draw.SetDirectionalShadowMapEnabled(false);
+        if(diagnosticNoBloom)draw.SetBloom({false});
+        draw.SetDirectionalLight({{.4f,-.85f,.3f},.55f,{1.f,.95f,.85f,1},1.5f});
+        draw.SetExposureCompensation(.5f);
+        draw.SetAtmosphere({{.42f,.53f,.58f,.65f},camera.position,45,200,true,.0025f,.09f,-2.f,.76f});
+        draw.SetTerrainDistanceMaterial(groundDistanceSettings);
+        // 相機外物件仍投影；關閉陰影時不復活舊式投影 Overlay。
+        Scene3DSubmissionOptions submission{};
+        submission.shadows.enabled=shadowRetentionEnabled&&draw.DirectionalShadowMapEnabled();
+        submission.shadows.maximumDistance=55.f;
+        submission.maximumLodTransitionInstances=512;
+        submission.maximumShadowOnlyInstances=4096;
+        const auto sceneStats=scene.Submit(draw,camera,{1280,720},submission);
+        firLodSubmission=sceneStats;
+        if(diagnosticNoShadows&&(sceneStats.shadowOnlyInstances||sceneStats.shadowInstances))
+            throw std::runtime_error("Disabled shadows unexpectedly submitted");
+        // 容量退回是有效降級路徑；驗收明確拒絕，不中止正常遊玩。
+        if(!CapturePath().empty()&&nearFirTwigLod&&sceneStats.lodTransitionBudgetFallbacks)
+            throw std::runtime_error("Fir twig LOD transition budget fallback");
+        if(captureGrassDistance) {
+            grassFixtureState.sceneSerial=sceneStats.submissionSerial;
+            for(const auto& item:draw.meshInstances)if(item.identity==RenderObjectIdentity3D{{5572150615523553875ull,grassFixtureIndex+1},1}){
+                if(item.layer==MeshRenderLayer3D::Opaque)++grassFixtureState.opaque;
+                else if(item.layer==MeshRenderLayer3D::ShadowOnly)++grassFixtureState.shadowOnly;
+                grassFixtureState.triangles+=Mistwatch::GrassTriangleCounts[grassFixtureIndex%5];
+            }
+            auto hash=1469598103934665603ull;
+            const auto& matrix=draw.ViewProjection();
+            for(const auto byte:std::as_bytes(std::span{&matrix,1})){hash^=std::to_integer<std::uint8_t>(byte);hash*=1099511628211ull;}
+            grassFixtureState.cameraHash=hash;
+        }
+        if(!session.guardianDefeated) {
+            const auto animalPalette=AddSkinPaletteFromPose(draw,boar.model,boar.pose,boarSkinning);
+            if(!draw.SkinnedMeshInstance(boarMesh.handle,animalPalette,CreateTransformMatrix(encounter.feet,{0,boar.yaw,0},{1,1,1})))
+                throw std::runtime_error("Boar skin submission failed");
+        }
+        const auto palette=AddSkinPaletteFromPose(draw,explorer.model,explorer.pose,explorerSkinning);
+        if(!draw.SkinnedMeshInstance(explorerMesh.handle,palette,CreateTransformMatrix(session.feet,{0,explorer.yaw,0},{1,1,1})))
+            throw std::runtime_error("Explorer skin submission failed");
+        draw.Quad({640,38},{1280,76},{.02f,.04f,.04f,.9f});
+        const auto guide=Mistwatch::BuildObjectiveGuide(session,encounter,evasion,camera,
+            controller.Settings().height<1.5f,controller.Grounded(),solids,terrain);
+        draw.Text({20,12},"MISTWATCH - playable blockout",2.5f,{.8f,.95f,.85f,1});
+        draw.Text({20,42},!started?"ENTER: begin expedition":paused?"PAUSED - ESC to resume | M mute, PgUp/PgDn volume":!session.Alive()?"Expedition failed - R to retry":guide.objective,2.f,{1,1,1,1});
+        if(!started||paused)draw.Text({20,90},std::string(e.Audio().GetStats().deviceAvailable?"AUDIO ":"AUDIO DEVICE UNAVAILABLE | ")+
+            (gameAudio.options.muted?"MUTED":std::to_string(unsigned(gameAudio.options.volume*100+.5f))+"%")+" | M mute | PgUp/PgDn volume",1.5f,{1,1,1,1});
+        if(started&&actionFeedback.Visible()){
+            draw.Quad({240,128},{450,30},{.02f,.04f,.04f,.9f});
+            draw.Text({20,121},actionFeedback.Text(),1.5f,{1,.9f,.65f,1});
+        }
+        // 引導只讀目前任務與實際 render 鏡頭；修橋只提示嘗試，原 E 分支仍做真預檢。
+        draw.Quad({640,568},{1280,58},{.02f,.04f,.04f,.85f});
+        draw.Text({20,545},guide.navigation,1.5f,{.7f,1,.7f,1});
+        // 暫停／未開始仍保留目標資料，但不把目前不能按的動作顯示成可操作提示。
+        const std::string hudInstruction=!started?"ENTER: begin expedition":
+            paused?"ESC: resume expedition; gameplay controls are paused":guide.instruction;
+        draw.Text({20,572},hudInstruction,1.5f,{.7f,1,.7f,1});
+        draw.Quad({640,618},{1280,42},{.02f,.04f,.04f,.85f});
+        draw.Text({20,608},guide.context,2.f,{1,.9f,.65f,1});
+        draw.Text({20,655},"WASD move | SHIFT run | SPACE jump | CTRL crouch | Q evade | E use | F counter | Drag / wheel camera",1.5f,{1,1,1,1});
+        // bridge 訊息是上次動作的歷史回饋，不是目前世界已預檢的通行證。
+        const std::string hudMessage=session.CurrentStage()==Mistwatch::Stage::Encounter?hudInstruction:
+            session.CurrentStage()==Mistwatch::Stage::Bridge?std::string("Last action: ")+message:message;
+        draw.Text({20,682},"F5 save / F9 load | HP "+std::to_string(session.health)+" | "+hudMessage,1.5f,{1,1,1,1});
+        if(!capture.empty() && !capturePending && ++captureFrames>=45 &&
+           (!captureLandscapeMotion||captureCameraTicks>=30) &&
+           (!captureAudioProbe||captureAudioTicks>=180) &&
+           (!captureBenchmark || benchmarkGpuMilliseconds.size()==120)) {
+            if(diagnosticHdrStage&&(captureCompleted==18||captureCompleted==27)) {
+                const auto hash=[](const auto& value) {
+                    std::uint64_t result=1469598103934665603ull;
+                    const auto bytes=std::as_bytes(std::span{&value,1});
+                    for(const auto byte:bytes){result^=std::to_integer<std::uint8_t>(byte);result*=1099511628211ull;}
+                    return result;
+                };
+                const auto cameraHash=hash(draw.ViewProjection());
+                const std::array<std::uint64_t,3> state{hash(waterTime),std::uint64_t(session.CurrentStage()),session.repairMaterials};
+                if(!e.RequestLinearHdrReadback3D({captureFrames,cameraHash,hash(state)}))throw std::runtime_error("HDR diagnostic request rejected");
+            }
+            if(captureGrassDistance)grassFixtureFrozen=grassFixtureState;
+            capturePending=e.CaptureNextFrame3D(CapturePath());
+            if(!capturePending)throw std::runtime_error("Frame capture request rejected");
+        }
+    }
+    void OnStop(Engine& e) override {
+        StopGameAudio(e);scene.Clear();scene.SetBoxMesh({});
+        unsigned generatorDestroyed{};
+        for(auto& mesh:generatorDetailMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++generatorDestroyed;}mesh={};}
+        unsigned canopyDestroyed{};for(auto& mesh:canopyMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++canopyDestroyed;}mesh={};}
+        for(auto& mesh:canopyRootMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++canopyDestroyed;}mesh={};}
+        canopyMaterials.Shutdown();
+        unsigned trailDestroyed{};
+        unsigned shrubDestroyed{};for(auto& pair:shrubMeshes)for(auto& mesh:pair){if(mesh){e.DestroyMesh3D(mesh.handle);++shrubDestroyed;}mesh={};}
+        for(auto& mesh:trailLitterMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++trailDestroyed;}mesh={};}
+        unsigned suppliesDestroyed{};
+        unsigned bridgeWorksiteDestroyed{};
+        for(auto& mesh:bridgeWorksiteMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++bridgeWorksiteDestroyed;}mesh={};}
+        if(bridgeWorksiteDestroyed!=2)throw std::runtime_error("Bridge worksite cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".bridge-worksite-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=2\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Bridge worksite cleanup receipt failed");
+        }
+        if(!rangerHutMesh)throw std::runtime_error("Ranger hut cleanup incomplete");
+        e.DestroyMesh3D(rangerHutMesh.handle);rangerHutMesh={};
+        if(!capture.empty()) {
+            auto path=capture;path+=".hut-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=1\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Ranger hut cleanup receipt failed");
+        }
+        for(auto& mesh:supplyMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++suppliesDestroyed;}mesh={};}
+        if(suppliesDestroyed!=2)throw std::runtime_error("Supply crate cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".supply-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=2\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Supply cleanup receipt failed");
+        }
+        e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
+        materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();boulderMaterials.Shutdown();
+        fernMaterials.Shutdown();
+        grassMaterials.Shutdown();
+        unsigned grassDestroyed{};
+        for(auto& mesh:scannedGrass){if(mesh){e.DestroyMesh3D(mesh.handle);++grassDestroyed;}mesh={};}
+        if(grassMaterials.Stats().materials||grassDestroyed!=5)throw std::runtime_error("Scanned grass cleanup incomplete");
+        if(!capture.empty()){
+            auto path=capture;path+=".grass-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=5\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Grass cleanup receipt failed");
+        }
+        unsigned fernDestroyed{};
+        for(auto& mesh:scannedFerns){if(mesh){e.DestroyMesh3D(mesh.handle);++fernDestroyed;}mesh={};}
+        unsigned broadleafDestroyed{};
+        for(auto& mesh:broadleafMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++broadleafDestroyed;}mesh={};}
+        if(broadleafMaterials.Stats().materials||broadleafDestroyed!=3)throw std::runtime_error("Broadleaf cleanup incomplete");
+        if(!capture.empty()){
+            auto path=capture;path+=".broadleaf-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=3\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Broadleaf cleanup receipt failed");
+        }
+        e.DestroyMesh3D(box.handle);for(auto& mesh:firMeshes)e.DestroyMesh3D(mesh.handle);
+        e.DestroyMesh3D(detailedFirTwig.handle);detailedFirTwig={};
+        for(auto& mesh:landscapeFirMeshes)e.DestroyMesh3D(mesh.handle);
+        unsigned propsDestroyed{};
+        for(auto& mesh:propMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++propsDestroyed;}mesh={};}
+        if(boulderMaterials.Stats().materials||propsDestroyed!=2)throw std::runtime_error("Forest prop cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".boulder-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=2\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Boulder cleanup receipt failed");
+        }
+        e.DestroyMesh3D(terrainMesh.handle);e.DestroyMesh3D(landscapeMesh.handle);e.DestroyMesh3D(riverMesh.handle);
+        e.DestroyMesh3D(grassMesh.handle);e.DestroyMesh3D(fernMesh.handle);e.DestroyMesh3D(relayDish.handle);
+        // 新蕨株檢查放在其餘正常釋放之後；receipt 不宣稱全引擎 GPU 零洩漏。
+        if(fernMaterials.Stats().materials||fernDestroyed!=4)throw std::runtime_error("Scanned fern cleanup incomplete");
+        if(!capture.empty()) {
+            auto path=capture;path+=".fern-cleanup.txt";
+            std::ofstream out(path);out<<"materials=0\nmesh_destroy_calls=4\ncleanup=success\n";out.close();
+            if(!out)throw std::runtime_error("Fern cleanup receipt failed");
+        }
+        // 新碎物檢查與證據寫入在正常釋放完成後，不增加其餘資源的提前退場點。
+        if(trailDestroyed!=2)throw std::runtime_error("Trail litter cleanup incomplete");
+        if(shrubDestroyed!=8)throw std::runtime_error("Shrub cleanup incomplete");
+        if(canopyDestroyed!=(Mistwatch::WorldProfileHasCanopy(worldProfile)?7u:0u)||canopyMaterials.Stats().materials)throw std::runtime_error("Canopy preview normal cleanup incomplete");
+        if(!capture.empty()){auto path=capture;path+=".canopy-cleanup.txt";std::ofstream out(path);out<<"mesh_destroy_calls="<<canopyDestroyed<<"\nmaterials_remaining=0\ncleanup=success\n";out.close();if(!out)throw std::runtime_error("Canopy preview cleanup receipt failed");}
+        if(!capture.empty()){auto path=capture;path+=".shrub-cleanup.txt";std::ofstream out(path);out<<"mesh_destroy_calls=8\ncleanup=success\n";out.close();if(!out)throw std::runtime_error("Shrub cleanup receipt failed");}
+        if(!capture.empty()){
+            auto path=capture;path+=".trail-cleanup.txt";
+            std::ofstream out(path);out<<"mesh_destroy_calls=2\ncleanup=success\n";
+            out.close();if(!out)throw std::runtime_error("Trail litter cleanup receipt failed");
+        }
+        const auto generatorCleared=static_cast<std::size_t>(std::count_if(generatorDetailMeshes.begin(),generatorDetailMeshes.end(),
+            [](const auto& mesh){return !mesh;}));
+        const bool generatorCleanupOk=generatorDestroyed==Mistwatch::GeneratorDetailGroups&&
+            generatorCleared==Mistwatch::GeneratorDetailGroups;
+        if(!capture.empty()) {
+            auto path=capture;path+=".generator-cleanup.txt";
+            if(std::filesystem::exists(path))throw std::runtime_error("Generator cleanup refuses overwrite");
+            std::ofstream out(path);out<<"mesh_destroy_calls="<<generatorDestroyed
+                <<"\ncleared_resources="<<generatorCleared<<"\ncleanup="<<(generatorCleanupOk?"success":"failed")<<"\n";
+            out.close();if(!out)throw std::runtime_error("Generator cleanup receipt failed");
+        }
+        if(!generatorCleanupOk)throw std::runtime_error("Generator detail cleanup incomplete");
+    }
+};
+int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int show) {
+    try {
+        Engine engine({L"Aevrynd - Mistwatch",1280,720});
+        return engine.Run(std::make_unique<MistwatchGame>(),instance,show);
+    } catch(const std::exception& error) {
+        std::ofstream log("mistwatch-startup-error.txt");
+        log<<error.what()<<'\n';
+        return 1;
+    }
+}

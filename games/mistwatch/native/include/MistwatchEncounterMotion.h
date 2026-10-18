@@ -114,3 +114,56 @@ inline EncounterMotionResult TickEncounterWorld(Encounter& enemy,Aevrynd::Vec3 p
     next.feet=result.feet;enemy=next;result.damage=damage;return result;
 }
 }
+
+namespace Mistwatch {
+// 舊公開入口逐字保留；新入口只在本作候選逐段加驗玩家與落點。
+template<class SegmentCheck>
+inline EncounterMotionResult ResolveEncounterMoveChecked(Aevrynd::Vec3 feet,Aevrynd::Vec3 delta,
+    std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain,SegmentCheck&& check) noexcept {
+    using namespace Aevrynd;
+    EncounterMotionResult result;result.feet=feet;
+    if(!ValidEncounterWorld(solids,terrain)||!Session::Finite(delta)||delta.y!=0||
+        std::hypot(delta.x,delta.z)>.201f||!EncounterSupported(feet,terrain)||EncounterBodyOverlaps(feet,solids))return result;
+    CharacterControllerSettings3D settings;
+    settings.radius=EncounterBodyRadius;settings.height=EncounterBodyHeight;
+    settings.maximumDirectDisplacement=4.f;settings.groundSnapDistance=0;
+    const Vec3 bodyOffset{0,EncounterBodyBottom,0};
+    CharacterController3D controller(settings);controller.Reset(feet+bodyOffset);
+    const auto count=(std::max)(1u,static_cast<unsigned>(std::ceil(std::hypot(delta.x,delta.z)/.05f)));
+    const auto part=delta*(1.f/float(count));
+    bool blocked{};std::uint64_t tick{};
+    for(unsigned substep=0;substep<count;++substep){
+        const auto beforeStep=controller;
+        const auto prior=controller.Position(),target=prior+part-bodyOffset;
+        // 場外、陡崖或被障礙阻擋保留最後合法落點；不捏造地形高度。
+        if(!EncounterTerrainContains(target,terrain)){blocked=true;break;}
+        const float height=terrain.SampleHeight(target.x,target.z)+bodyOffset.y;
+        if(!std::isfinite(height))return result;
+        if(std::abs(height-prior.y)>.25f){blocked=true;break;}
+        CharacterDirectDisplacementResult3D moved;
+        // 不用 terrain overload 的碰撞後直接抬升；Y 修正也必須真正通過 swept-AABB。
+        if(!controller.ApplyDirectDisplacementTick({++tick,{part.x,height-prior.y,part.z},0},solids,&moved))return result;
+        result.collisions+=moved.collisionCount;
+        if(moved.status==CharacterDirectDisplacementStatus3D::StartedOverlapping)return result;
+        auto candidate=controller.Position();
+        if(!check(prior-bodyOffset,candidate-bodyOffset,0u)){blocked=true;controller=beforeStep;break;}
+        if(!EncounterTerrainContains(candidate-bodyOffset,terrain)){blocked=true;controller.Reset(prior);break;}
+        const float actual=terrain.SampleHeight(candidate.x,candidate.z)+bodyOffset.y;
+        if(!std::isfinite(actual))return result;
+        CharacterDirectDisplacementResult3D corrected;
+        if(!controller.ApplyDirectDisplacementTick({++tick,{0,actual-candidate.y,0},0},solids,&corrected))return result;
+        result.collisions+=corrected.collisionCount;const auto beforeCorrection=candidate;candidate=controller.Position();
+        if(!check(beforeCorrection-bodyOffset,candidate-bodyOffset,1u)){blocked=true;controller=beforeStep;break;}
+        if(!EncounterSupported(candidate-bodyOffset,terrain)||EncounterBodyOverlaps(candidate-bodyOffset,solids)){
+            blocked=true;controller.Reset(prior);break;
+        }
+        if(!check(prior-bodyOffset,candidate-bodyOffset,2u))return result;
+        // direct result 把浮點剩餘量也標成 Blocked；此遊戲狀態只把真正碰撞算作障礙停步。
+        blocked|=(moved.collisionCount>0&&moved.status==CharacterDirectDisplacementStatus3D::Blocked)||
+            (corrected.collisionCount>0&&corrected.status==CharacterDirectDisplacementStatus3D::Blocked);
+    }
+    result.feet=controller.Position()-bodyOffset;
+    result.status=blocked?EncounterMotionStatus::Blocked:EncounterMotionStatus::Applied;
+    return result;
+}
+}

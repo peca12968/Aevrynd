@@ -1,6 +1,9 @@
-﻿function Assert-MistwatchForestCoverReceipt {
+﻿. (Join-Path $PSScriptRoot 'FallenLogContract.ps1')
+function Assert-MistwatchForestCoverReceipt {
     param([Parameter(Mandatory=$true)][hashtable]$Receipt,[string]$Scene='',[switch]$MiddleLayer,
-        [ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile='legacy-core')
+        [ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile='legacy-core',
+        [ValidateSet('legacy-cylinder','scanned-straight-v1')][string]$FallenLogProfile='legacy-cylinder',
+        [hashtable]$IndependentExpected=$null)
     if($MiddleLayer){
         if($PSBoundParameters.ContainsKey('WorldProfile') -and $WorldProfile -ne 'legacy-middle'){throw 'Middle layer conflicts with world profile'}
         $WorldProfile='legacy-middle'
@@ -45,12 +48,14 @@
             foreach($field in $canopyExpected.Keys){$expected[$field]=$canopyExpected[$field]}
         }
         elseif($WorldProfile -eq 'forest-wood'){
-            # V108 保留三個舊配置並以完整網格／木質盒獨立重現的新作者身分。
+            # V121 全素材獨立作者與 V128 完整世界重建；只更新新杉樹布局，舊三世界不變。
             $woodExpected=@{
-                forest_cover_patches='168';forest_cover_fingerprint='6471420486779392182'
-                forest_cover_clearance_colliders='4512';forest_cover_clearance_collider_fingerprint='230929787695590120'
-                forest_cover_variants='929,749,614,528,780';fern_colonies='78'
-                fern_colony_fingerprint='9573416696332517026';fern_colony_variants='11,22,165,102'
+                forest_cover_patches='158';forest_cover_fingerprint='7394606949570911368'
+                forest_cover_clearance_colliders='4582';forest_cover_clearance_collider_fingerprint='876747342402009001'
+                forest_cover_variants='956,738,635,540,731';fern_colonies='77'
+                fern_colony_fingerprint='14103587995731364812';fern_colony_variants='14,28,171,87'
+                fern_colony_original_fingerprint='8112783215925746322'
+                middle_layer_attempted='11615';middle_layer_transform_fingerprint='10337542786750772359'
             }
             foreach($field in $woodExpected.Keys){$expected[$field]=$woodExpected[$field]}
         }
@@ -63,12 +68,24 @@
         }
         foreach($field in $baselineMiddle.Keys){$expected[$field]=$baselineMiddle[$field]}
     }
+    if($FallenLogProfile -ceq 'scanned-straight-v1'){
+        if($WorldProfile -cne 'forest-wood'){throw 'Scanned independent branch is only current forest-wood'}
+        if($null -eq $IndependentExpected){throw 'Scanned branch requires independent CPU expected contract'}
+        $independent=$IndependentExpected
+        Assert-MistwatchIndependentExpectedContract $independent
+        foreach($field in @('forest_cover_patches','forest_cover_fingerprint','forest_cover_clearance_collider_fingerprint',
+            'forest_cover_variants','fern_colonies','fern_colony_fingerprint','fern_colony_variants')){
+            $expected[$field]=$independent.native_contract[$field]
+        }
+        Assert-MistwatchIndependentNativeFields $Receipt $independent
+    }
     foreach($field in ($expected.Keys | Sort-Object)) {
         if(-not $Receipt.ContainsKey($field)-or [string]$Receipt[$field] -cne $expected[$field]) {
             throw ('Forest cover author contract mismatch: '+$field)
         }
     }
     Assert-MistwatchCanopyCollisionReceipt $Receipt $WorldProfile
+    Assert-MistwatchFirLayoutReceipt $Receipt $WorldProfile
     $groups=@(
         @{field='submitted_grass_variants';population=@($expected.forest_cover_variants.Split(',')|ForEach-Object{[int]$_});triangles=@(714,1760,1215,2489,1664);count='submitted_grass';total='submitted_grass_triangles'},
         @{field='submitted_colony_variants';population=@($expected.fern_colony_variants.Split(',')|ForEach-Object{[int]$_});triangles=@(2384,2248,784,816);count='submitted_colony_ferns';total='submitted_colony_fern_triangles'},
@@ -98,13 +115,17 @@
        [string]$Receipt.submitted_original_fern_triangles -cne [string]$originalTriangles) {
         throw 'Original fern accounting was replaced or merged incorrectly'
     }
-    # 固定兩景另保留原版實機提交數，不讓新蕨的總數掩蓋原林下層漏畫。
-    if(($Scene -eq 'initial' -and ($originalCount -ne 192 -or $originalTriangles -ne 298968)) -or
-       ($Scene -eq 'river-overlook' -and ($originalCount -ne 226 -or $originalTriangles -ne 350104))) {
+    # V129 以真四素材重建距離送件；新根布局有自己的精確值，舊三世界仍保留原值。
+    $wood=$WorldProfile -eq 'forest-wood'
+    $initialCount=if($wood){198}else{192};$initialTriangles=if($wood){317224}else{298968}
+    $riverCount=if($wood){227}else{226};$riverTriangles=if($wood){359632}else{350104}
+    if(($Scene -eq 'initial' -and ($originalCount -ne $initialCount -or $originalTriangles -ne $initialTriangles)) -or
+       ($Scene -eq 'river-overlook' -and ($originalCount -ne $riverCount -or $originalTriangles -ne $riverTriangles))) {
         throw 'Original fern fixed-scene submission changed'
     }
     # 相同總株數與三角數仍可由錯誤種類分布湊出；固定景需逐種類保留身分。
-    $originalVariants=if($Scene -eq 'initial'){'47,49,49,47'}elseif($Scene -eq 'river-overlook'){'51,61,51,63'}else{$null}
+    $originalVariants=if($Scene -eq 'initial'){if($wood){'50,55,47,46'}else{'47,49,49,47'}}
+        elseif($Scene -eq 'river-overlook'){if($wood){'65,52,62,48'}else{'51,61,51,63'}}else{$null}
     if($null -ne $originalVariants -and [string]$Receipt.submitted_original_fern_variants -cne $originalVariants){
         throw 'Original fern fixed-scene variant identity changed'
     }
@@ -114,7 +135,9 @@ function Assert-MistwatchWorldProfileReceipt {
     param([Parameter(Mandatory=$true)][hashtable]$Receipt,
         [Parameter(Mandatory=$true)][hashtable]$Cleanup,
         [Parameter(Mandatory=$true)][ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile,
-        [string]$Scene='')
+        [string]$Scene='',
+        [ValidateSet('legacy-cylinder','scanned-straight-v1')][string]$FallenLogProfile='legacy-cylinder',
+        [hashtable]$IndependentExpected=$null)
     # 舊世界必須未載入新樹；關閉繪製卻留下資源或碰撞不能當作舊世界。
     $expected=@{
         world_profile=$WorldProfile;canopy_preview_fixture='0';canopy_world_profile='0';canopy_enabled='0'
@@ -135,9 +158,18 @@ function Assert-MistwatchWorldProfileReceipt {
         foreach($field in $canopyExpected.Keys){$expected[$field]=$canopyExpected[$field]}
         $meshDestroyCalls='7'
         if($WorldProfile -eq 'forest-wood'){
-            $expected.forest_cover_clearance_colliders='4512'
-            $expected.shrubs_fingerprint='6244520233766686875'
+            $expected.forest_cover_clearance_colliders='4582'
+            $expected.shrubs_fingerprint='14817549782697216774'
+            $expected.canopy_population_fingerprint='6584434718760703877'
         }
+    }
+    if($FallenLogProfile -ceq 'scanned-straight-v1'){
+        if($WorldProfile -cne 'forest-wood'){throw 'Scanned independent branch is only current forest-wood'}
+        if($null -eq $IndependentExpected){throw 'Scanned branch requires independent CPU expected contract'}
+        $independent=$IndependentExpected
+        Assert-MistwatchIndependentExpectedContract $independent
+        $expected.shrubs_fingerprint=$independent.native_contract.shrubs_fingerprint
+        Assert-MistwatchIndependentNativeFields $Receipt $independent
     }
     foreach($field in ($expected.Keys | Sort-Object)){
         if(-not $Receipt.ContainsKey($field) -or [string]$Receipt[$field] -cne $expected[$field]){
@@ -145,6 +177,7 @@ function Assert-MistwatchWorldProfileReceipt {
         }
     }
     Assert-MistwatchCanopyCollisionReceipt $Receipt $WorldProfile
+    Assert-MistwatchFirLayoutReceipt $Receipt $WorldProfile
     foreach($field in @('cleanup','materials_remaining','mesh_destroy_calls')){
         $value=if($field -eq 'cleanup'){'success'}elseif($field -eq 'materials_remaining'){'0'}else{$meshDestroyCalls}
         if(-not $Cleanup.ContainsKey($field) -or [string]$Cleanup[$field] -cne $value){throw ('Canopy cleanup mismatch: '+$field)}
@@ -168,21 +201,40 @@ function Assert-MistwatchWorldProfileReceipt {
 function Assert-MistwatchCanopyCollisionReceipt {
     param([Parameter(Mandatory=$true)][hashtable]$Receipt,
         [Parameter(Mandatory=$true)][ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile)
-    # V108 真資產 CPU 作者證據；只把新木質配置加為第四個世界，不重寫舊黃金值。
+    # V121/V128 真素材與新四 pose 的木件作者結果；舊冠盒世界保持原黃金值。
     $wood=$WorldProfile -eq 'forest-wood'
     $expected=@{
         canopy_collision_mode=$(if($wood){'wood-grid-conservative'}else{'full-render-envelope'})
-        canopy_collision_parts=$(if($wood){'4267'}elseif($WorldProfile -eq 'forest-canopy'){'4'}else{'0'})
+        canopy_collision_parts=$(if($wood){'4335'}elseif($WorldProfile -eq 'forest-canopy'){'4'}else{'0'})
         canopy_collision_spacing_m=$(if($wood){'0.15'}else{'0'})
         canopy_wood_source_triangles=$(if($wood){'304768'}else{'0'})
-        canopy_wood_surface_cells=$(if($wood){'17911'}else{'0'})
-        canopy_wood_enclosed_grid_cells=$(if($wood){'207'}else{'0'})
+        canopy_wood_surface_cells=$(if($wood){'18192'}else{'0'})
+        canopy_wood_enclosed_grid_cells=$(if($wood){'178'}else{'0'})
     }
     foreach($field in $expected.Keys){
         # 舊封存收據可能沒有新診斷欄位；存在時仍逐欄拒絕木質配置污染。
         if(($wood -or $Receipt.ContainsKey($field)) -and
             (-not $Receipt.ContainsKey($field) -or [string]$Receipt[$field] -cne $expected[$field])){
             throw ('Canopy collision contract mismatch: '+$field)
+        }
+    }
+}
+
+function Assert-MistwatchFirLayoutReceipt {
+    param([Parameter(Mandatory=$true)][hashtable]$Receipt,
+        [Parameter(Mandatory=$true)][ValidateSet('legacy-core','legacy-middle','forest-canopy','forest-wood')][string]$WorldProfile)
+    $wood=$WorldProfile -eq 'forest-wood'
+    $expected=@{
+        fir_layout=$(if($wood){'forest-wood-mature'}else{'legacy'})
+        fir_layout_population='100';fir_layout_reached_budget='1'
+        fir_layout_fingerprint=$(if($wood){'8236695966185867318'}else{'14695981039346656037'})
+        fir_layout_patch_centres=$(if($wood){'24'}else{'0'})
+    }
+    foreach($field in $expected.Keys){
+        # 舊歷史收據可缺新增診斷欄；新木質布局必須完整提供，不能省略或少株。
+        if(($wood -or $Receipt.ContainsKey($field)) -and
+            (-not $Receipt.ContainsKey($field) -or [string]$Receipt[$field] -cne $expected[$field])){
+            throw ('Mature fir layout contract mismatch: '+$field)
         }
     }
 }

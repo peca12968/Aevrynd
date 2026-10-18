@@ -19,6 +19,18 @@ int main() {
         if(!game.Restore(powered))return 5;
         game.feet=Session::relaySites[index];
         if(game.TuneRelay(index,0)||game.TuneRelay(3,1)||game.ConnectRelay(3))return 6;
+        // 先以副本真調向驗未確認拒絕，再只補 live 局部確認；原 16 sector 序列不變。
+        if(index==0||index==2) {
+            auto unconfirmed=game;
+            for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)
+                if(!unconfirmed.TuneRelay(index,1))return 35;
+            const auto beforeLocal=unconfirmed.Serialize();
+            if(beforeLocal.empty()||unconfirmed.ConnectRelay(index)||unconfirmed.Serialize()!=beforeLocal)return 36;
+            if(index==0) {
+                if(!game.CycleRelayPatch(0)||!game.ConfirmRelayCircuit())return 37;
+            } else if(!game.CycleExtractionRoute()||!game.ConfirmExtractionRoute())return 38;
+            if(game.relayLinked||game.relaySectors||!game.RelayFieldTaskReady(index))return 39;
+        }
         for(unsigned sector=0;sector<16;++sector) {
             Session candidate;
             if(!candidate.Restore(game.Serialize())||candidate.RelaySector(index)!=sector||
@@ -69,6 +81,16 @@ int main() {
         game.feet=actor.Position();
         if(!game.NearRelay(index))return 31;
         for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)if(!game.TuneRelay(index,1))return 19;
+        // 原碰撞連續行走及調角已完成；確認不能取代原連站呼叫。
+        if(index==0||index==2) {
+            const auto beforeLocal=game.Serialize();
+            const auto maskBefore=game.relayLinked,anglesBefore=game.relaySectors;
+            if(beforeLocal.empty()||game.ConnectRelay(index)||game.Serialize()!=beforeLocal)return 40;
+            if(index==0) {
+                if(!game.CycleRelayPatch(0)||!game.ConfirmRelayCircuit())return 41;
+            } else if(!game.CycleExtractionRoute()||!game.ConfirmExtractionRoute())return 42;
+            if(game.relayLinked!=maskBefore||game.relaySectors!=anglesBefore||!game.RelayFieldTaskReady(index))return 43;
+        }
         if(!game.ConnectRelay(index))return 20;
         Session loaded;if(!loaded.Restore(game.Serialize())||loaded.relayLinked!=game.relayLinked||loaded.relaySectors!=game.relaySectors)return 21;
         const auto mask=game.relayLinked,angles=game.relaySectors;game.Damage(100);game.Retry();

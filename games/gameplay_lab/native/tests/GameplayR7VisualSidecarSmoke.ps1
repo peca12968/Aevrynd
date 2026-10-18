@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Producer)
+﻿param([Parameter(Mandatory=$true)][string]$Producer)
 
 $ErrorActionPreference='Stop'
 $shots=@('first-day','first-dusk','first-night','third-day','third-dusk','third-night','god-day','god-dusk','god-night','palette-building','melee-combat')

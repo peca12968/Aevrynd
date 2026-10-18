@@ -1,5 +1,6 @@
 #include "MistwatchWorld.h"
 #include "MistwatchExplorer.h"
+#include "MistwatchPlayerLocomotion.h"
 #include "MistwatchForestMaterial.h"
 #include <Aevrynd/CharacterController3D.h>
 #include <iostream>
@@ -15,10 +16,31 @@ int main() {
     Aevrynd::Mesh3D posed;
     if(!Aevrynd::SkinModelInto(explorer.model,explorer.pose,skinning,posed))return 26;
     if(posed.Bounds().extents.y<.8f || posed.Bounds().extents.y>.95f)return 27;
-    explorer.Update({.05f,0,0},1.f/60.f,false);
-    if(explorer.yaw<1.5f || explorer.pose.localTransforms[9].rotation.x==0)return 28;
+    // 正式所有者逐步轉身並提交足部支撐；不再要求單幀瞬轉九十度。
+    Aevrynd::HeightField3D poseTerrain{{{-8,0,-8},32,32,1}};poseTerrain.Fill(0);
+    Aevrynd::CharacterController3D poseActor;poseActor.Reset({});
+    Mistwatch::Evasion poseEvasion;Mistwatch::PlayerLocomotion poseOwner;
+    if(!poseActor.Step({}, {},{},poseTerrain,Mistwatch::LocomotionMotor::FixedStep)||
+       !explorer.PlaceFeet(poseActor.Position(),poseActor.Grounded(),false,poseTerrain,{}))return 28;
+    Mistwatch::PlayerLocomotionInput turn;turn.movement={1,0,0};
+    const auto initialLeg=explorer.pose.globalMatrices[9];
+    bool animated=false;
+    for(unsigned tick=0;tick<120;++tick){
+        const float previousYaw=explorer.yaw;
+        const auto result=poseOwner.Advance(poseActor,poseEvasion,explorer,turn,1.f/60.f,{}, {},poseTerrain,[]{return true;});
+        if(!result.accepted||!std::isfinite(explorer.yaw)||
+           std::abs(std::remainder(explorer.yaw-previousYaw,6.2831853f))>9.42477796f/60.f+.00001f){
+            std::cerr<<"FIRST_DIVERGENCE owner turn tick="<<tick<<" pose_line="<<result.poseFailureLine<<'\n';return 28;}
+        for(unsigned row=0;row<4;++row)for(unsigned column=0;column<4;++column)
+            animated|=std::abs(explorer.pose.globalMatrices[9][row][column]-initialLeg[row][column])>.0001f;
+        if(!Aevrynd::SkinModelInto(explorer.model,explorer.pose,skinning,posed))return 29;
+    }
+    if(std::abs(std::remainder(explorer.yaw-1.57079637f,6.2831853f))>.05f||poseActor.Position().x<.5f||!animated)return 28;
+    std::cout<<"Bounded owner turn PASS yaw="<<explorer.yaw<<" root_x="<<poseActor.Position().x<<'\n';
     if(!Aevrynd::SkinModelInto(explorer.model,explorer.pose,skinning,posed))return 29;
-    explorer.Update({},1.f/60.f,true);
+    Mistwatch::PlayerLocomotionInput crouch;crouch.crouched=true;
+    const auto crouchResult=poseOwner.Advance(poseActor,poseEvasion,explorer,crouch,1.f/60.f,{}, {},poseTerrain,[]{return true;});
+    if(!crouchResult.accepted)return 30;
     if(!Aevrynd::SkinModelInto(explorer.model,explorer.pose,skinning,posed) || posed.Bounds().center.y+posed.Bounds().extents.y>1.4f)return 30;
     const auto terrain=Mistwatch::CreateTerrain();
     Aevrynd::CharacterController3D crouching;

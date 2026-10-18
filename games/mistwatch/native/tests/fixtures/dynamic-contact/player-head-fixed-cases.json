@@ -1,0 +1,588 @@
+{
+  "schema": "mistwatch.player-head.phase-audit.fixed-cases.1",
+  "status": "PREPARED_NOT_EXECUTED",
+  "definition": "All integer millimeters1825+5*i for i0..55 inclusive; one double division by1000 then one float cast. No accumulated float or selection after seeing result.",
+  "case_count": 56,
+  "case_order": "ascending fixed",
+  "reset_each_case": true,
+  "shared_recipe": {
+    "body_radius_f32_bits": 1067869798,
+    "body_halfheight_f32_bits": 1061997773,
+    "center_x": 0,
+    "center_z": 0,
+    "standing_height": 1.8,
+    "standing_uphill_grades": [
+      1,
+      1
+    ],
+    "gravity": 20,
+    "FixedStep_f32_bits": 1007192201,
+    "duration_f32_bits": 1049582633,
+    "input": "Only Q tick0, direction(0,0,1), all other input empty on every actual120Hz call.",
+    "observation_ticks": 38,
+    "window_derivation": "ceil(double(Evasion::Duration+2*H)/H)+2, from same frozen source; covers ordinary full Q flight and landing.",
+    "model": "True current Explorer9F+NapeHairBinding+BackpackFit1250,9281/37032. No new model or pose thresholds."
+  },
+  "cases": [
+    {
+      "index": 0,
+      "id": "cap-mm-1825",
+      "target_millimeters": 1825,
+      "decimal_bottom": "1.825",
+      "bottom_f32_bits": 1072273818,
+      "body_center_y_f32_bits": 1076363264,
+      "actual_query_bottom_f64": 1.824999988079071,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 1,
+      "id": "cap-mm-1830",
+      "target_millimeters": 1830,
+      "decimal_bottom": "1.830",
+      "bottom_f32_bits": 1072315761,
+      "body_center_y_f32_bits": 1076384236,
+      "actual_query_bottom_f64": 1.830000102519989,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 2,
+      "id": "cap-mm-1835",
+      "target_millimeters": 1835,
+      "decimal_bottom": "1.835",
+      "bottom_f32_bits": 1072357704,
+      "body_center_y_f32_bits": 1076405207,
+      "actual_query_bottom_f64": 1.8349999785423279,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 3,
+      "id": "cap-mm-1840",
+      "target_millimeters": 1840,
+      "decimal_bottom": "1.840",
+      "bottom_f32_bits": 1072399647,
+      "body_center_y_f32_bits": 1076426179,
+      "actual_query_bottom_f64": 1.8400000929832458,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 4,
+      "id": "cap-mm-1845",
+      "target_millimeters": 1845,
+      "decimal_bottom": "1.845",
+      "bottom_f32_bits": 1072441590,
+      "body_center_y_f32_bits": 1076447150,
+      "actual_query_bottom_f64": 1.8449999690055847,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 5,
+      "id": "cap-mm-1850",
+      "target_millimeters": 1850,
+      "decimal_bottom": "1.850",
+      "bottom_f32_bits": 1072483533,
+      "body_center_y_f32_bits": 1076468122,
+      "actual_query_bottom_f64": 1.8500000834465027,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 6,
+      "id": "cap-mm-1855",
+      "target_millimeters": 1855,
+      "decimal_bottom": "1.855",
+      "bottom_f32_bits": 1072525476,
+      "body_center_y_f32_bits": 1076489093,
+      "actual_query_bottom_f64": 1.8549999594688416,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 7,
+      "id": "cap-mm-1860",
+      "target_millimeters": 1860,
+      "decimal_bottom": "1.860",
+      "bottom_f32_bits": 1072567419,
+      "body_center_y_f32_bits": 1076510065,
+      "actual_query_bottom_f64": 1.8600000739097595,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 8,
+      "id": "cap-mm-1865",
+      "target_millimeters": 1865,
+      "decimal_bottom": "1.865",
+      "bottom_f32_bits": 1072609362,
+      "body_center_y_f32_bits": 1076531036,
+      "actual_query_bottom_f64": 1.8649999499320984,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 9,
+      "id": "cap-mm-1870",
+      "target_millimeters": 1870,
+      "decimal_bottom": "1.870",
+      "bottom_f32_bits": 1072651305,
+      "body_center_y_f32_bits": 1076552008,
+      "actual_query_bottom_f64": 1.8700000643730164,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 10,
+      "id": "cap-mm-1875",
+      "target_millimeters": 1875,
+      "decimal_bottom": "1.875",
+      "bottom_f32_bits": 1072693248,
+      "body_center_y_f32_bits": 1076572979,
+      "actual_query_bottom_f64": 1.8749999403953552,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 11,
+      "id": "cap-mm-1880",
+      "target_millimeters": 1880,
+      "decimal_bottom": "1.880",
+      "bottom_f32_bits": 1072735191,
+      "body_center_y_f32_bits": 1076593951,
+      "actual_query_bottom_f64": 1.8800000548362732,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 12,
+      "id": "cap-mm-1885",
+      "target_millimeters": 1885,
+      "decimal_bottom": "1.885",
+      "bottom_f32_bits": 1072777134,
+      "body_center_y_f32_bits": 1076614922,
+      "actual_query_bottom_f64": 1.884999930858612,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 13,
+      "id": "cap-mm-1890",
+      "target_millimeters": 1890,
+      "decimal_bottom": "1.890",
+      "bottom_f32_bits": 1072819077,
+      "body_center_y_f32_bits": 1076635894,
+      "actual_query_bottom_f64": 1.89000004529953,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 14,
+      "id": "cap-mm-1895",
+      "target_millimeters": 1895,
+      "decimal_bottom": "1.895",
+      "bottom_f32_bits": 1072861020,
+      "body_center_y_f32_bits": 1076656865,
+      "actual_query_bottom_f64": 1.894999921321869,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 15,
+      "id": "cap-mm-1900",
+      "target_millimeters": 1900,
+      "decimal_bottom": "1.900",
+      "bottom_f32_bits": 1072902963,
+      "body_center_y_f32_bits": 1076677837,
+      "actual_query_bottom_f64": 1.9000000357627869,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 16,
+      "id": "cap-mm-1905",
+      "target_millimeters": 1905,
+      "decimal_bottom": "1.905",
+      "bottom_f32_bits": 1072944906,
+      "body_center_y_f32_bits": 1076698808,
+      "actual_query_bottom_f64": 1.9049999117851257,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 17,
+      "id": "cap-mm-1910",
+      "target_millimeters": 1910,
+      "decimal_bottom": "1.910",
+      "bottom_f32_bits": 1072986849,
+      "body_center_y_f32_bits": 1076719780,
+      "actual_query_bottom_f64": 1.9100000262260437,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 18,
+      "id": "cap-mm-1915",
+      "target_millimeters": 1915,
+      "decimal_bottom": "1.915",
+      "bottom_f32_bits": 1073028792,
+      "body_center_y_f32_bits": 1076740751,
+      "actual_query_bottom_f64": 1.9149999022483826,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 19,
+      "id": "cap-mm-1920",
+      "target_millimeters": 1920,
+      "decimal_bottom": "1.920",
+      "bottom_f32_bits": 1073070735,
+      "body_center_y_f32_bits": 1076761723,
+      "actual_query_bottom_f64": 1.9200000166893005,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 20,
+      "id": "cap-mm-1925",
+      "target_millimeters": 1925,
+      "decimal_bottom": "1.925",
+      "bottom_f32_bits": 1073112678,
+      "body_center_y_f32_bits": 1076782694,
+      "actual_query_bottom_f64": 1.9249998927116394,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 21,
+      "id": "cap-mm-1930",
+      "target_millimeters": 1930,
+      "decimal_bottom": "1.930",
+      "bottom_f32_bits": 1073154621,
+      "body_center_y_f32_bits": 1076803666,
+      "actual_query_bottom_f64": 1.9300000071525574,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 22,
+      "id": "cap-mm-1935",
+      "target_millimeters": 1935,
+      "decimal_bottom": "1.935",
+      "bottom_f32_bits": 1073196564,
+      "body_center_y_f32_bits": 1076824637,
+      "actual_query_bottom_f64": 1.9349998831748962,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 23,
+      "id": "cap-mm-1940",
+      "target_millimeters": 1940,
+      "decimal_bottom": "1.940",
+      "bottom_f32_bits": 1073238508,
+      "body_center_y_f32_bits": 1076845609,
+      "actual_query_bottom_f64": 1.9399999976158142,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 24,
+      "id": "cap-mm-1945",
+      "target_millimeters": 1945,
+      "decimal_bottom": "1.945",
+      "bottom_f32_bits": 1073280451,
+      "body_center_y_f32_bits": 1076866581,
+      "actual_query_bottom_f64": 1.9450001120567322,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 25,
+      "id": "cap-mm-1950",
+      "target_millimeters": 1950,
+      "decimal_bottom": "1.950",
+      "bottom_f32_bits": 1073322394,
+      "body_center_y_f32_bits": 1076887552,
+      "actual_query_bottom_f64": 1.949999988079071,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 26,
+      "id": "cap-mm-1955",
+      "target_millimeters": 1955,
+      "decimal_bottom": "1.955",
+      "bottom_f32_bits": 1073364337,
+      "body_center_y_f32_bits": 1076908524,
+      "actual_query_bottom_f64": 1.955000102519989,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 27,
+      "id": "cap-mm-1960",
+      "target_millimeters": 1960,
+      "decimal_bottom": "1.960",
+      "bottom_f32_bits": 1073406280,
+      "body_center_y_f32_bits": 1076929495,
+      "actual_query_bottom_f64": 1.9599999785423279,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 28,
+      "id": "cap-mm-1965",
+      "target_millimeters": 1965,
+      "decimal_bottom": "1.965",
+      "bottom_f32_bits": 1073448223,
+      "body_center_y_f32_bits": 1076950467,
+      "actual_query_bottom_f64": 1.9650000929832458,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 29,
+      "id": "cap-mm-1970",
+      "target_millimeters": 1970,
+      "decimal_bottom": "1.970",
+      "bottom_f32_bits": 1073490166,
+      "body_center_y_f32_bits": 1076971438,
+      "actual_query_bottom_f64": 1.9699999690055847,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 30,
+      "id": "cap-mm-1975",
+      "target_millimeters": 1975,
+      "decimal_bottom": "1.975",
+      "bottom_f32_bits": 1073532109,
+      "body_center_y_f32_bits": 1076992410,
+      "actual_query_bottom_f64": 1.9750000834465027,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 31,
+      "id": "cap-mm-1980",
+      "target_millimeters": 1980,
+      "decimal_bottom": "1.980",
+      "bottom_f32_bits": 1073574052,
+      "body_center_y_f32_bits": 1077013381,
+      "actual_query_bottom_f64": 1.9799999594688416,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 32,
+      "id": "cap-mm-1985",
+      "target_millimeters": 1985,
+      "decimal_bottom": "1.985",
+      "bottom_f32_bits": 1073615995,
+      "body_center_y_f32_bits": 1077034353,
+      "actual_query_bottom_f64": 1.9850000739097595,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 33,
+      "id": "cap-mm-1990",
+      "target_millimeters": 1990,
+      "decimal_bottom": "1.990",
+      "bottom_f32_bits": 1073657938,
+      "body_center_y_f32_bits": 1077055324,
+      "actual_query_bottom_f64": 1.9899999499320984,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 34,
+      "id": "cap-mm-1995",
+      "target_millimeters": 1995,
+      "decimal_bottom": "1.995",
+      "bottom_f32_bits": 1073699881,
+      "body_center_y_f32_bits": 1077076296,
+      "actual_query_bottom_f64": 1.9950000643730164,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 35,
+      "id": "cap-mm-2000",
+      "target_millimeters": 2000,
+      "decimal_bottom": "2.000",
+      "bottom_f32_bits": 1073741824,
+      "body_center_y_f32_bits": 1077097267,
+      "actual_query_bottom_f64": 1.9999999403953552,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 36,
+      "id": "cap-mm-2005",
+      "target_millimeters": 2005,
+      "decimal_bottom": "2.005",
+      "bottom_f32_bits": 1073762796,
+      "body_center_y_f32_bits": 1077118239,
+      "actual_query_bottom_f64": 2.005000054836273,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 37,
+      "id": "cap-mm-2010",
+      "target_millimeters": 2010,
+      "decimal_bottom": "2.010",
+      "bottom_f32_bits": 1073783767,
+      "body_center_y_f32_bits": 1077139210,
+      "actual_query_bottom_f64": 2.009999930858612,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 38,
+      "id": "cap-mm-2015",
+      "target_millimeters": 2015,
+      "decimal_bottom": "2.015",
+      "bottom_f32_bits": 1073804739,
+      "body_center_y_f32_bits": 1077160182,
+      "actual_query_bottom_f64": 2.01500004529953,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 39,
+      "id": "cap-mm-2020",
+      "target_millimeters": 2020,
+      "decimal_bottom": "2.020",
+      "bottom_f32_bits": 1073825710,
+      "body_center_y_f32_bits": 1077181153,
+      "actual_query_bottom_f64": 2.019999921321869,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 40,
+      "id": "cap-mm-2025",
+      "target_millimeters": 2025,
+      "decimal_bottom": "2.025",
+      "bottom_f32_bits": 1073846682,
+      "body_center_y_f32_bits": 1077202125,
+      "actual_query_bottom_f64": 2.025000035762787,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 41,
+      "id": "cap-mm-2030",
+      "target_millimeters": 2030,
+      "decimal_bottom": "2.030",
+      "bottom_f32_bits": 1073867653,
+      "body_center_y_f32_bits": 1077223096,
+      "actual_query_bottom_f64": 2.0299999117851257,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 42,
+      "id": "cap-mm-2035",
+      "target_millimeters": 2035,
+      "decimal_bottom": "2.035",
+      "bottom_f32_bits": 1073888625,
+      "body_center_y_f32_bits": 1077244068,
+      "actual_query_bottom_f64": 2.0350000262260437,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 43,
+      "id": "cap-mm-2040",
+      "target_millimeters": 2040,
+      "decimal_bottom": "2.040",
+      "bottom_f32_bits": 1073909596,
+      "body_center_y_f32_bits": 1077265039,
+      "actual_query_bottom_f64": 2.0399999022483826,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 44,
+      "id": "cap-mm-2045",
+      "target_millimeters": 2045,
+      "decimal_bottom": "2.045",
+      "bottom_f32_bits": 1073930568,
+      "body_center_y_f32_bits": 1077286011,
+      "actual_query_bottom_f64": 2.0450000166893005,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 45,
+      "id": "cap-mm-2050",
+      "target_millimeters": 2050,
+      "decimal_bottom": "2.050",
+      "bottom_f32_bits": 1073951539,
+      "body_center_y_f32_bits": 1077306982,
+      "actual_query_bottom_f64": 2.0499998927116394,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 46,
+      "id": "cap-mm-2055",
+      "target_millimeters": 2055,
+      "decimal_bottom": "2.055",
+      "bottom_f32_bits": 1073972511,
+      "body_center_y_f32_bits": 1077327954,
+      "actual_query_bottom_f64": 2.0550000071525574,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 47,
+      "id": "cap-mm-2060",
+      "target_millimeters": 2060,
+      "decimal_bottom": "2.060",
+      "bottom_f32_bits": 1073993482,
+      "body_center_y_f32_bits": 1077348925,
+      "actual_query_bottom_f64": 2.0599998831748962,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 48,
+      "id": "cap-mm-2065",
+      "target_millimeters": 2065,
+      "decimal_bottom": "2.065",
+      "bottom_f32_bits": 1074014454,
+      "body_center_y_f32_bits": 1077369897,
+      "actual_query_bottom_f64": 2.064999997615814,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 49,
+      "id": "cap-mm-2070",
+      "target_millimeters": 2070,
+      "decimal_bottom": "2.070",
+      "bottom_f32_bits": 1074035425,
+      "body_center_y_f32_bits": 1077390868,
+      "actual_query_bottom_f64": 2.069999873638153,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 50,
+      "id": "cap-mm-2075",
+      "target_millimeters": 2075,
+      "decimal_bottom": "2.075",
+      "bottom_f32_bits": 1074056397,
+      "body_center_y_f32_bits": 1077411840,
+      "actual_query_bottom_f64": 2.074999988079071,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 51,
+      "id": "cap-mm-2080",
+      "target_millimeters": 2080,
+      "decimal_bottom": "2.080",
+      "bottom_f32_bits": 1074077368,
+      "body_center_y_f32_bits": 1077432811,
+      "actual_query_bottom_f64": 2.07999986410141,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 52,
+      "id": "cap-mm-2085",
+      "target_millimeters": 2085,
+      "decimal_bottom": "2.085",
+      "bottom_f32_bits": 1074098340,
+      "body_center_y_f32_bits": 1077453783,
+      "actual_query_bottom_f64": 2.084999978542328,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 53,
+      "id": "cap-mm-2090",
+      "target_millimeters": 2090,
+      "decimal_bottom": "2.090",
+      "bottom_f32_bits": 1074119311,
+      "body_center_y_f32_bits": 1077474754,
+      "actual_query_bottom_f64": 2.0899998545646667,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 54,
+      "id": "cap-mm-2095",
+      "target_millimeters": 2095,
+      "decimal_bottom": "2.095",
+      "bottom_f32_bits": 1074140283,
+      "body_center_y_f32_bits": 1077495726,
+      "actual_query_bottom_f64": 2.0949999690055847,
+      "status": "NOT_EXECUTED"
+    },
+    {
+      "index": 55,
+      "id": "cap-mm-2100",
+      "target_millimeters": 2100,
+      "decimal_bottom": "2.100",
+      "bottom_f32_bits": 1074161254,
+      "body_center_y_f32_bits": 1077516697,
+      "actual_query_bottom_f64": 2.0999998450279236,
+      "status": "NOT_EXECUTED"
+    }
+  ]
+}

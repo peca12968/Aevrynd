@@ -1,0 +1,202 @@
+{
+  "schema": "mistwatch.fallen-log.portable-cook-recipe.1",
+  "asset_id": "dead_tree_trunk",
+  "path_base": "source-package-root",
+  "working_directory": "source-package-root",
+  "status": "documented-existing-cook-not-reexecuted",
+  "runtime_requires_recook": false,
+  "steps": [
+    {
+      "id": "lod2",
+      "tool": "blender",
+      "arguments": [
+        "--background",
+        "--python",
+        "recipes/build-static-mesh-lods.py",
+        "--",
+        "--source",
+        "source/dead-tree-trunk/dead_tree_trunk_2k.gltf",
+        "--output",
+        "recook/glb",
+        "--asset-name",
+        "dead-tree-trunk",
+        "--ratios",
+        "0.15",
+        "--level-offset",
+        "2"
+      ],
+      "expected_intermediate": {
+        "path": "recook/glb/dead-tree-trunk-lod2.glb",
+        "bytes": 379248,
+        "sha256": "A771A2869515E61E028F36764AAD8E5F7095253661C82786955826393DD41BED"
+      },
+      "operation": "Locally decimate original official geometry, retain UVs/normals, clear material bindings, export glTF GLB LOD2. No branch trimming, support search or vertical seating is performed by this recipe."
+    },
+    {
+      "id": "native-mesh",
+      "tool": "python",
+      "arguments": [
+        "-B",
+        "recipes/convert-glb-to-aemesh.py",
+        "--source",
+        "recook/glb/dead-tree-trunk-lod2.glb",
+        "--output-directory",
+        "recook/meshes",
+        "--receipt",
+        "recook/mesh-receipt.json",
+        "--asset",
+        "dead-tree-trunk",
+        "--lod",
+        "2"
+      ],
+      "expected_outputs": [
+        {
+          "path": "recook/meshes/dead-tree-trunk-lod2-node0-mesh0-primitive0-materialnone-material-none.aemesh",
+          "bytes": 434012,
+          "sha256": "B7F6A05BF928787082DEA92A0051557496E45894A9C2B1A0AF1E51110ABD0D46",
+          "format": "AEMESH-v1",
+          "vertices": 8956,
+          "indices": 45807,
+          "triangles": 15269,
+          "lod": 2,
+          "node": 0,
+          "mesh": 0,
+          "primitive": 0,
+          "material_index": -1,
+          "winding_reversed": true,
+          "has_normals": true,
+          "has_uv": true,
+          "source_texcoord": 0
+        }
+      ],
+      "operation": "AEMESH coordinate Z reflection plus corresponding winding reversal; no mesh content/triangle omission."
+    },
+    {
+      "id": "materials",
+      "tool": "python",
+      "arguments": [
+        "-B",
+        "recipes/bake-photoreal-materials-hidden.py",
+        "--asset-root",
+        "source",
+        "--runtime-manifest",
+        "recipes/material-source-manifest.json",
+        "--output",
+        "recook/materials",
+        "--texconv",
+        "${TEXCONV}",
+        "--asset",
+        "dead-tree-trunk"
+      ],
+      "expected_outputs": [
+        {
+          "path": "recook/materials/dead-tree-trunk/slot-0-base.dds",
+          "bytes": 5592580,
+          "sha256": "DA9DB4EDE331A22F4E47BA2EAB34CFCFB2C6979F6F180007E28DFC61EA23410B",
+          "channel": "base",
+          "width": 2048,
+          "height": 2048,
+          "mips": 12,
+          "dxgi_format": 99,
+          "resource_dimension": 3,
+          "array_size": 1,
+          "color_space": "sRGB"
+        },
+        {
+          "path": "recook/materials/dead-tree-trunk/slot-0-arm.dds",
+          "bytes": 5592580,
+          "sha256": "147D81E27AFEAA1D1AFC6E88D70D3814912A7D6235110CA4935EDF6FFB5838FE",
+          "channel": "arm",
+          "width": 2048,
+          "height": 2048,
+          "mips": 12,
+          "dxgi_format": 98,
+          "resource_dimension": 3,
+          "array_size": 1,
+          "color_space": "linear"
+        },
+        {
+          "path": "recook/materials/dead-tree-trunk/slot-0-normal.dds",
+          "bytes": 5592580,
+          "sha256": "F2F8EBD0A4C52C543047FB8131AD42391374313D595CD0901DDF5136C2B01354",
+          "channel": "normal",
+          "width": 2048,
+          "height": 2048,
+          "mips": 12,
+          "dxgi_format": 83,
+          "resource_dimension": 3,
+          "array_size": 1,
+          "color_space": "linear"
+        }
+      ],
+      "operation": "Preserve packed ARM channels; invert OpenGL normal green to DirectX; texconv produces complete 2048 mip chains. Existing actual hidden baker is byte-copied, not newly edited."
+    }
+  ],
+  "external_tools": {
+    "blender": {
+      "caller_supplied_executable": true,
+      "original_version": "5.2.1 LTS",
+      "original_bytes": 113014232,
+      "original_sha256": "284F4041F98E113F3DC10654A7193FFAAA9BFDFEC8B87FA116620A48B5F6D4CB",
+      "included": false
+    },
+    "texconv": {
+      "caller_supplied_executable": true,
+      "placeholder": "${TEXCONV}",
+      "tag": "may2026",
+      "commit": "4feb3e1",
+      "bytes": 966480,
+      "sha256": "DCFDEC10244E02CF5037FBA089C55FB7E1326B1C8181742D77D15FA5CB5EEF06",
+      "included": false
+    },
+    "python": {
+      "caller_supplied_executable": true,
+      "requires_modules": [
+        "numpy",
+        "PIL"
+      ],
+      "original_python_numpy_pillow_versions_recorded": false,
+      "exact_recook_identity_not_claimed": true
+    },
+    "launch_policy": "Future caller must launch tool processes without visible windows and within its existing bounded Job/deadline workflow; no executable is started by this JSON."
+  },
+  "recipe_inputs": [
+    {
+      "path": "recipes/build-static-mesh-lods.py",
+      "bytes": 6674,
+      "sha256": "C163DB476E94F2BE3EBE94B9F77009D7B0A364A00382C3D841A018CEB8662C91"
+    },
+    {
+      "path": "recipes/convert-glb-to-aemesh.py",
+      "bytes": 28473,
+      "sha256": "33BC28F796F30CA5CCBD51B5022579FB994B16E60799A6D7ED9FA5FD66AA0C61"
+    },
+    {
+      "path": "recipes/bake-photoreal-materials.py",
+      "bytes": 30106,
+      "sha256": "90E648ECE087DA2A8DAAADC12756492F5F3F9E3ABCDD4C08337B0CF03D2366BC"
+    },
+    {
+      "path": "recipes/bake-photoreal-materials-hidden.py",
+      "bytes": 30149,
+      "sha256": "7ACFEBE1C50BFFE4572146307733AF87E0C55D41375798A7E894753D0AB3D5A0"
+    },
+    {
+      "path": "recipes/material-source-manifest.json",
+      "bytes": 1817,
+      "sha256": "81389E58F0DEC11BB8E7B2911524DC52D5494CAF061F5E53CDF571D0DC6EC669"
+    }
+  ],
+  "guardrails": {
+    "fresh_recook_directory_required": true,
+    "do_not_overwrite_sealed_payloads": true,
+    "all_input_hashes_must_be_rechecked": true,
+    "no_download_required": true,
+    "no_evidence_mount_required": true,
+    "existing_memory_gates_preserved": true,
+    "recook_process_not_run_in_this_package": true,
+    "current_payload_identity_is_mechanical_copy_not_new_recook": true,
+    "future_recook_must_recheck_all_expected_payload_bytes_sha": true
+  },
+  "material_binding_note": "Unique LOD2 materialnone/-1 is explicitly externally mapped to original glTF material0 / slot-0. Original glTF lacks occlusionTexture; PackedOrm R AO is a manual runtime extension."
+}

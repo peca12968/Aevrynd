@@ -1,7 +1,51 @@
 #include "MistwatchSession.h"
 #include "MistwatchCamera.h"
+#include "MistwatchCameraInput.h"
 #include <iostream>
+bool EventTimeOrbitInputContract(){
+    unsigned cases{};
+    const auto closeEnough=[](float a,float b){return std::abs(a-b)<.000001f;};
+    for(const float dt:{1.f/30.f,1.f/60.f,1.f/120.f}){
+        for(const float postPress:{0.f,10.f})for(const bool release:{false,true}){
+            Aevrynd::Input input;Mistwatch::OrbitCamera orbit;
+            input.SetMouse({100,100});input.ConsumePresses();
+            input.SetMouse({200,100});input.SetMouseButton(true);
+            if(postPress>0)input.SetMouse({200+postPress,95});
+            if(release){input.SetMouseButton(false);input.SetMouse({300+postPress,100});}
+            Mistwatch::UpdateOrbitFromInput(orbit,input,0,dt);
+            if(!closeEnough(orbit.yaw,-postPress*.005f)||!closeEnough(orbit.pitch,postPress>0?.28f:.3f)||
+                !closeEnough(input.MouseDelta().x,100+postPress+(release?100.f:0.f))){
+                std::cerr<<"EVENT_TIME_ORBIT_FIRST_DIVERGENCE post_press="<<postPress<<" release="<<release
+                    <<" dt="<<dt<<" actual_yaw="<<orbit.yaw<<'\n';return false;
+            }
+            const float savedYaw=orbit.yaw,savedPitch=orbit.pitch;
+            input.ConsumePresses();Mistwatch::UpdateOrbitFromInput(orbit,input,0,dt);
+            if(!closeEnough(orbit.yaw,savedYaw)||!closeEnough(orbit.pitch,savedPitch))return false;
+            ++cases;
+        }
+        Aevrynd::Input input;Mistwatch::OrbitCamera orbit;input.AddMouseWheel(2);
+        Mistwatch::UpdateOrbitFromInput(orbit,input,1,dt);
+        if(!closeEnough(orbit.yaw,dt*1.5f)||!closeEnough(orbit.distance,4.6f))return false;
+        input.ConsumePresses();input.SetMouse({0,0});input.SetMouseButton(true);input.SetMouse({10,10});
+        input.SetFocused(false);input.SetFocused(true);input.SetMouse({600,400});
+        const float savedYaw=orbit.yaw,savedPitch=orbit.pitch;Mistwatch::UpdateOrbitFromInput(orbit,input,0,dt);
+        if(!closeEnough(orbit.yaw,savedYaw)||!closeEnough(orbit.pitch,savedPitch))return false;
+        ++cases;
+        // 不先補移動訊息：按下／放開的真座標本身必須界定拖曳，不可依賴上一個anchor。
+        Aevrynd::Input buttonInput;Mistwatch::OrbitCamera buttonOrbit;
+        buttonInput.SetMouse({100,100});buttonInput.ConsumePresses();
+        buttonInput.SetMouseButtonAt({200,100},true);buttonInput.SetMouse({210,100});
+        buttonInput.SetMouseButtonAt({220,100},false);buttonInput.SetMouse({300,100});
+        Mistwatch::UpdateOrbitFromInput(buttonOrbit,buttonInput,0,dt);
+        if(!closeEnough(buttonOrbit.yaw,-.1f)||!closeEnough(buttonOrbit.pitch,.3f)||
+            !closeEnough(buttonInput.MouseDelta().x,200.f)||!closeEnough(buttonInput.LeftMouseDragDelta().x,20.f))return false;
+        ++cases;
+    }
+    std::cout<<"EVENT_TIME_ORBIT_PRODUCTION_INPUT_CPU_PASS cases="<<cases<<" raw_delta_preserved=1 release_tail_preserved=1 native_window=0\n";
+    return cases==18;
+}
 int main() {
+    if(!EventTimeOrbitInputContract())return 31;
     using namespace Mistwatch;
     Session game;
     if(game.Collect(0) || game.RepairBridge() || game.LightBeacon()) return 1;
@@ -51,6 +95,15 @@ int main() {
     for(unsigned index=0;index<3;++index) {
         loaded.feet=Session::relaySites[index];
         for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)if(!loaded.TuneRelay(index,1))return 31;
+        // 原連站正例先驗新任務未確認必拒絕，再走真確認API，不移除原檢查。
+        if(index==0){
+            if(loaded.ConnectRelay(index))return 33;
+            if(!loaded.CycleRelayPatch(0)||!loaded.ConfirmRelayCircuit())return 34;
+        }
+        if(index==2){
+            if(loaded.ConnectRelay(index))return 35;
+            if(!loaded.CycleExtractionRoute()||!loaded.ConfirmExtractionRoute())return 36;
+        }
         if(!loaded.ConnectRelay(index))return 32;
     }
     loaded.feet=Session::beacon;

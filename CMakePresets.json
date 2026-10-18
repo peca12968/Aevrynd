@@ -40,6 +40,26 @@
         "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "OFF",
         "AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET": "ON"
       }
+    },
+    {
+      "name": "windows-mistwatch-normal-gates",
+      "inherits": "windows-release-gates",
+      "displayName": "Windows Mistwatch production normal gates (VS2022 x64)",
+      "description": "Full native ForestWood scene matrix; requires an available interactive D3D12 desktop. Not Gameplay.",
+      "cacheVariables": {
+        "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "OFF",
+        "AEVRYND_MISTWATCH_NATIVE_GATES": "ON"
+      }
+    },
+    {
+      "name": "windows-mistwatch-gbv-gates",
+      "inherits": "windows-release-gates",
+      "displayName": "Windows Mistwatch production gbv gates (VS2022 x64)",
+      "description": "Full native ForestWood scene matrix; requires an available interactive D3D12 desktop. Not Gameplay.",
+      "cacheVariables": {
+        "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "OFF",
+        "AEVRYND_MISTWATCH_NATIVE_GATES": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -47,20 +67,48 @@
       "name": "windows-gameplay-visual-gates",
       "configurePreset": "windows-gameplay-visual-gates",
       "configuration": "Release",
-      "targets": ["GameplayLab", "GameplayObjectIdentityContractProbe"],
+      "targets": [
+        "GameplayLab",
+        "GameplayObjectIdentityContractProbe"
+      ],
       "jobs": 2
     },
     {
       "name": "windows-visual-gates",
       "configurePreset": "windows-visual-gates",
       "configuration": "Release",
-      "targets": ["GameplayLab", "GameplayObjectIdentityContractProbe", "AevryndAtmosphereFoliageCoverageD3D12VisualTest"],
+      "targets": [
+        "GameplayLab",
+        "GameplayObjectIdentityContractProbe",
+        "AevryndAtmosphereFoliageCoverageD3D12VisualTest"
+      ],
       "jobs": 2
     },
     {
       "name": "windows-release-gates",
       "configurePreset": "windows-release-gates",
-      "configuration": "RelWithDebInfo",
+      "configuration": "Release",
+      "targets": [
+        "AevryndStreamlinePackageFixture"
+      ],
+      "jobs": 2
+    },
+    {
+      "name": "windows-mistwatch-normal-gates",
+      "configurePreset": "windows-mistwatch-normal-gates",
+      "configuration": "Release",
+      "targets": [
+        "Mistwatch"
+      ],
+      "jobs": 2
+    },
+    {
+      "name": "windows-mistwatch-gbv-gates",
+      "configurePreset": "windows-mistwatch-gbv-gates",
+      "configuration": "Release",
+      "targets": [
+        "Mistwatch"
+      ],
       "jobs": 2
     }
   ],
@@ -69,25 +117,81 @@
       "name": "windows-gameplay-visual-gates",
       "configurePreset": "windows-gameplay-visual-gates",
       "configuration": "Release",
-      "filter": {"include": {"name": "^(GameplayLabCaptureSmoke|GameplayLabGpuValidationCaptureSmoke)$"}},
-      "execution": {"jobs": 1, "noTestsAction": "error", "stopOnFailure": false},
-      "output": {"outputOnFailure": true}
+      "filter": {
+        "include": {
+          "name": "^(GameplayLabCaptureSmoke|GameplayLabGpuValidationCaptureSmoke)$"
+        }
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "windows-visual-gates",
       "configurePreset": "windows-visual-gates",
       "configuration": "Release",
-      "filter": {"include": {"label": "^visual-gates$"}},
-      "execution": {"jobs": 1, "noTestsAction": "error", "stopOnFailure": false},
-      "output": {"outputOnFailure": true}
+      "filter": {
+        "include": {
+          "label": "^visual-gates$"
+        }
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "windows-release-gates",
       "configurePreset": "windows-release-gates",
-      "configuration": "RelWithDebInfo",
+      "configuration": "Release",
       "filter": {
         "include": {
           "label": "^release-gates$"
+        }
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mistwatch-normal-gates",
+      "configurePreset": "windows-mistwatch-normal-gates",
+      "configuration": "Release",
+      "filter": {
+        "include": {
+          "label": "^mistwatch-native-normal$"
+        }
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mistwatch-gbv-gates",
+      "configurePreset": "windows-mistwatch-gbv-gates",
+      "configuration": "Release",
+      "filter": {
+        "include": {
+          "label": "^mistwatch-native-gbv$"
         }
       },
       "execution": {

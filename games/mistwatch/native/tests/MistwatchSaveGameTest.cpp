@@ -1,4 +1,5 @@
 #include "MistwatchSaveGame.h"
+#include <bit>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -115,6 +116,17 @@ void RoundTripAndFuture(){
     for(unsigned index=0;index<3;++index){
         original.session.feet=Session::relaySites[index];
         for(unsigned turn=0;turn<Session::RelayTargetSector(index);++turn)Require(original.session.TuneRelay(index,1),"snapshot relay fixture failed");
+        // 新局部進度也逐步真完整存檔往返；原敵人／閃避／malformed回歸全部保留。
+        if(index==0){
+            Require(!original.session.ConnectRelay(index),"unconfirmed west circuit connected");
+            Require(original.session.CycleRelayPatch(0),"snapshot west patch selection failed");worldRoundTrip();
+            Require(original.session.ConfirmRelayCircuit(),"snapshot west patch confirmation failed");worldRoundTrip();
+        }
+        if(index==2){
+            Require(!original.session.ConnectRelay(index),"unconfirmed northwest route connected");
+            Require(original.session.CycleExtractionRoute(),"snapshot route selection failed");worldRoundTrip();
+            Require(original.session.ConfirmExtractionRoute(),"snapshot route confirmation failed");worldRoundTrip();
+        }
         Require(original.session.ConnectRelay(index),"snapshot relay link fixture failed");worldRoundTrip();
     }
     original.session.feet=Session::beacon;
@@ -217,7 +229,7 @@ void Malformed(){
     auto game=HpOne();const auto good=game.Serialize();const auto fields=Fields(game);
     for(std::size_t length=0;length<good.size();++length)RejectUnchanged(game,good.substr(0,length),"truncated save accepted");
     RejectUnchanged(game,std::string(SaveGame::MaximumBytes+1,'x'),"oversized save accepted");
-    auto unknown=good;unknown[15]='3';RejectUnchanged(game,unknown,"unknown snapshot version accepted");
+    auto unknown=good;unknown[15]='4';RejectUnchanged(game,unknown,"unknown snapshot version accepted");
     RejectUnchanged(game,good+" trailing", "trailing tokens accepted");
     const auto mutation=[&](unsigned field,const char* value){auto changed=fields;changed[field]=value;RejectUnchanged(game,Raw(game.session,changed),"invalid encounter field accepted");};
     mutation(0,"4");mutation(0,"0");mutation(0,"-1");mutation(1,"99");mutation(1,"-1");
@@ -248,8 +260,102 @@ void Malformed(){
     Require(fromStream.RestoreStream(stream)&&fromStream.Serialize()==good,"valid bounded stream restore failed");
     std::cout<<"MALFORMED truncation_prefixes="<<good.size()<<" max_read_bytes="<<SaveGame::MaximumBytes+1<<" transactional_rejection=1\n";
 }
+bool SameFloat(float a,float b){return std::bit_cast<std::uint32_t>(a)==std::bit_cast<std::uint32_t>(b);}
+bool SameMotion(const SavedPlayerMotion& a,const SavedPlayerMotion& b){
+    const auto vector=[](Aevrynd::Vec3 x,Aevrynd::Vec3 y){return SameFloat(x.x,y.x)&&SameFloat(x.y,y.y)&&SameFloat(x.z,y.z);};
+    const auto& c=a.controller;const auto& d=b.controller;const auto& m=a.locomotion.motor;const auto& n=b.locomotion.motor;
+    return vector(c.feet,d.feet)&&vector(c.velocity,d.velocity)&&SameFloat(c.height,d.height)&&SameFloat(c.yaw,d.yaw)&&c.grounded==d.grounded&&
+        vector(m.velocity,n.velocity)&&SameFloat(m.heading,n.heading)&&m.headingReady==n.headingReady&&m.phase==n.phase&&
+        m.supportTicks==n.supportTicks&&m.tick==n.tick&&m.runFlight==n.runFlight&&m.wasDashing==n.wasDashing&&
+        std::bit_cast<std::uint64_t>(a.locomotion.remainder)==std::bit_cast<std::uint64_t>(b.locomotion.remainder)&&
+        a.locomotion.dodgeFlight==b.locomotion.dodgeFlight&&SameFloat(a.explorerYaw,b.explorerYaw)&&
+        SameFloat(a.explorerRequestedYaw,b.explorerRequestedYaw)&&SameFloat(a.explorerPhase,b.explorerPhase)&&
+        SameFloat(a.explorerDistance,b.explorerDistance)&&SameFloat(a.explorerSeconds,b.explorerSeconds);
+}
+SaveGame MotionFixture(unsigned mode){
+    auto saved=HpOne();SavedPlayerMotion motion;
+    auto& c=motion.controller;auto& l=motion.locomotion;auto& m=l.motor;
+    c.feet=saved.session.feet;c.height=mode==1?1.4f:1.8f;c.yaw=-.371234567f;c.grounded=mode<3;
+    c.velocity={mode==0?0.f:mode==2?6.f:2.34567881f,mode<3?0.f:mode==3?3.12500024f:-2.98765421f,0};
+    m.velocity={c.velocity.x,0,c.velocity.z};m.heading=mode==0?0.f:1.23456788f;m.headingReady=mode!=0;
+    m.phase=mode==0?LocomotionPhase::Standing:mode==2?LocomotionPhase::RunSupport:
+        mode<3?LocomotionPhase::GroundMotion:LocomotionPhase::JumpOrFall;
+    m.supportTicks=mode==2?7:0;m.tick=9007199254740993ull;
+    l.remainder=std::nextafter(double(LocomotionMotor::FixedStep),0.);
+    motion.explorerYaw=-1.12345672f;motion.explorerRequestedYaw=2.98765421f;motion.explorerPhase=5.12345648f;
+    motion.explorerDistance=mode==0?0.f:.0834567845f;motion.explorerSeconds=mode==0?0.f:LocomotionMotor::FixedStep;
+    if(mode==5){saved.evasion.Tick(.02f,true,true,false,{1,0,0});l.dodgeFlight=true;m.wasDashing=true;}
+    if(mode==6){m.phase=LocomotionPhase::RunFlight;m.runFlight=true;}
+    saved.motion=motion;Require(saved.Valid(),"synthetic motion fixture invalid");return saved;
+}
+void MotionRoundTrip(){
+    for(unsigned mode=0;mode<7;++mode){
+        const auto original=MotionFixture(mode);const auto text=original.Serialize();SaveGame restored;
+        Require(text.starts_with("MISTWATCH_SAVE 3\n")&&text.ends_with("MOTION_END"),"motion did not use complete v3 envelope");
+        Require(restored.Restore(text)&&restored.motion.has_value()&&SameMotion(*original.motion,*restored.motion),"motion did not roundtrip bit exactly");
+        Require(restored.Serialize()==text&&SameEnemy(restored.encounter,original.encounter)&&
+            SameEvasion(restored.evasion,original.evasion)&&restored.session.Serialize()==original.session.Serialize(),"v3 changed surrounding game state");
+        std::istringstream stream(text);SaveGame bounded;
+        Require(bounded.RestoreStream(stream)&&bounded.motion&&SameMotion(*original.motion,*bounded.motion),"v3 bounded read failed");
+        auto old=original;old.motion.reset();const auto legacy=old.Serialize();
+        Require(legacy.starts_with("MISTWATCH_SAVE 2\n")&&restored.Restore(legacy)&&!restored.motion&&restored.Serialize()==legacy,
+            "v2 migration invented or retained prior v3 motion");
+        Require(restored.Restore(text)&&restored.Restore(old.session.Serialize())&&!restored.motion,"session-only restore retained prior v3 motion");
+    }
+    std::cout<<"MOTION_ROUNDTRIP versions=2,3 modes=7 float_double_bit_exact=1 large_integer_exact=1 world_and_native_validation=0\n";
+}
+void MalformedMotion(){
+    auto saved=MotionFixture(5);const auto good=saved.Serialize();
+    for(std::size_t size=0;size<good.size();++size)RejectUnchanged(saved,good.substr(0,size),"truncated v3 motion accepted");
+    RejectUnchanged(saved,good+"\nMOTION_END","duplicate motion terminator accepted");
+    RejectUnchanged(saved,good+" trailing","v3 trailing token accepted");
+    const auto mutate=[&](const char* name,unsigned index,const char* value){
+        const std::string marker=std::string("\n")+name+' ';const auto start=good.find(marker);
+        Require(start!=std::string::npos,"motion mutation record absent");
+        const auto end=good.find('\n',start+1);Require(end!=std::string::npos,"motion mutation end absent");
+        std::istringstream in(good.substr(start+marker.size(),end-start-marker.size()));
+        std::vector<std::string> fields;std::string token;while(in>>token)fields.push_back(token);
+        Require(index<fields.size(),"motion mutation field absent");fields[index]=value;
+        std::string record=std::string("\n")+name;for(const auto& field:fields)record+=' '+field;
+        RejectUnchanged(saved,good.substr(0,start)+record+good.substr(end),"malformed motion field accepted");
+    };
+    mutate("MOTION_CONTROLLER",0,"10001");mutate("MOTION_CONTROLLER",0,"42");
+    mutate("MOTION_CONTROLLER",3,"nan");mutate("MOTION_CONTROLLER",4,"inf");mutate("MOTION_CONTROLLER",5,"1e50");
+    mutate("MOTION_CONTROLLER",6,"0.59");mutate("MOTION_CONTROLLER",6,"3.1");mutate("MOTION_CONTROLLER",7,"4");
+    mutate("MOTION_CONTROLLER",8,"2");mutate("MOTION_CONTROLLER",8,"-1");mutate("MOTION_CONTROLLER",8,"1");
+    mutate("MOTION_MOTOR",0,"0");mutate("MOTION_MOTOR",1,"1");mutate("MOTION_MOTOR",3,"inf");
+    mutate("MOTION_MOTOR",4,"2");mutate("MOTION_MOTOR",4,"0");mutate("MOTION_MOTOR",5,"9");
+    mutate("MOTION_MOTOR",5,"0");mutate("MOTION_MOTOR",5,"-1");mutate("MOTION_MOTOR",6,"11");
+    mutate("MOTION_MOTOR",7,"-2");mutate("MOTION_MOTOR",7,"18446744073709551615");
+    mutate("MOTION_MOTOR",7,"18446744073709551616");mutate("MOTION_MOTOR",7,"12x");mutate("MOTION_MOTOR",7,"1.0");
+    mutate("MOTION_MOTOR",8,"2");mutate("MOTION_MOTOR",8,"1");mutate("MOTION_MOTOR",9,"2");
+    mutate("MOTION_OWNER",0,"nan");mutate("MOTION_OWNER",0,"-0.1");mutate("MOTION_OWNER",0,"0.1");
+    mutate("MOTION_OWNER",1,"0");mutate("MOTION_OWNER",1,"2");
+    mutate("MOTION_EXPLORER",0,"nan");mutate("MOTION_EXPLORER",1,"4");
+    mutate("MOTION_EXPLORER",2,"-0.1");mutate("MOTION_EXPLORER",2,"6.2831853");
+    mutate("MOTION_EXPLORER",3,"nan");mutate("MOTION_EXPLORER",3,"-0.01");
+    mutate("MOTION_EXPLORER",4,"inf");mutate("MOTION_EXPLORER",4,"-0.01");mutate("MOTION_EXPLORER",4,"0.101");
+    {
+        // 未發佈的三欄候選格式不可靜默遺失重建姿態所需的最後一步距離與時間。
+        const auto start=good.find("\nMOTION_EXPLORER ");const auto end=good.find("\nMOTION_END",start);
+        std::istringstream fields(good.substr(start,end-start));std::string name,yaw,requested,phase;
+        Require(bool(fields>>name>>yaw>>requested>>phase),"motion pose record fixture missing");
+        RejectUnchanged(saved,good.substr(0,start)+"\n"+name+" "+yaw+" "+requested+" "+phase+good.substr(end),
+            "missing pose-driving distance and seconds silently defaulted");
+    }
+    for(const char* name:{"MOTION_CONTROLLER","MOTION_MOTOR","MOTION_OWNER","MOTION_EXPLORER"}){
+        const auto start=good.find(std::string("\n")+name);const auto end=good.find('\n',start+1);
+        RejectUnchanged(saved,good.substr(0,start)+good.substr(end),"missing v3 record accepted");
+        RejectUnchanged(saved,good.substr(0,end)+good.substr(start,end-start)+good.substr(end),"duplicate v3 record accepted");
+    }
+    auto wrongVersion=good;wrongVersion[15]='2';RejectUnchanged(saved,wrongVersion,"motion smuggled into v2 accepted");
+    auto invalid=saved;invalid.motion->locomotion.remainder=std::numeric_limits<double>::quiet_NaN();
+    Require(invalid.Serialize().empty(),"non-finite motion serialized");
+    invalid=saved;invalid.motion->controller.feet.x+=1;Require(invalid.Serialize().empty(),"session/controller mismatch serialized");
+    std::cout<<"MOTION_MALFORMED missing_duplicate_trailing_nonfinite_integer_overflow_cross_state=1 transactional_rejection=1\n";
+}
 }
 int main(){
-    try{Baseline();RoundTripAndFuture();Legacy();EvasionRoundTrip();MalformedEvasion();Malformed();std::cout<<"SaveGame CPU contract PASS; checks="<<checks<<" native_F5_F9_tested=0\n";return 0;}
+    try{Baseline();RoundTripAndFuture();Legacy();EvasionRoundTrip();MalformedEvasion();Malformed();MotionRoundTrip();MalformedMotion();std::cout<<"SaveGame CPU contract PASS; checks="<<checks<<" native_F5_F9_tested=0\n";return 0;}
     catch(const std::exception& error){std::cerr<<"FIRST_DIVERGENCE: "<<error.what()<<" checks="<<checks<<'\n';return 1;}
 }

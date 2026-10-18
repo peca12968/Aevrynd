@@ -71,6 +71,7 @@ file(GLOB_RECURSE GAMEPLAY_SOURCE_INVENTORY_FILES CONFIGURE_DEPENDS RELATIVE "${
   "${CMAKE_SOURCE_DIR}/games/gameplay_lab/native/tools/*.cpp")
 list(APPEND GAMEPLAY_SOURCE_INVENTORY_FILES
   CMakeLists.txt
+  cmake/AevryndReleaseGateAssets.cmake
   engine/native/CMakeLists.txt
   games/gameplay_lab/game.json
   games/gameplay_lab/native/CMakeLists.txt
@@ -100,6 +101,9 @@ add_custom_command(TARGET GameplayLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${GAMEPLAY_SOURCE_INVENTORY_PATH}"
     "$<TARGET_FILE_DIR:GameplayLab>/GameplaySourceInventory.txt")
+if(TARGET AevryndReleaseGateAssets)
+  add_dependencies(GameplayLab AevryndReleaseGateAssets)
+else()
 foreach(CHARACTER_ASSET realistic-female realistic-male)
   add_custom_command(TARGET GameplayLab POST_BUILD COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GameplayLab>/assets/model-packs/${CHARACTER_ASSET}" COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/games/character_lab/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin" "$<TARGET_FILE_DIR:GameplayLab>/assets/model-packs/${CHARACTER_ASSET}/${CHARACTER_ASSET}.aeskin")
 endforeach()
@@ -117,6 +121,7 @@ add_custom_command(TARGET GameplayLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_SOURCE_DIR}/engine/assets/model-packs"
     "$<TARGET_FILE_DIR:GameplayLab>/assets/environment-model-packs")
+endif()
 
 # 只封裝 authoritative 12-asset production manifest 引用的 96 個 GPU payload；不帶入 GLB、JPG、HDR 或烘焙收據。
 set(GAMEPLAY_PHOTOREAL_COOKED_ROOT "${CMAKE_SOURCE_DIR}/engine/assets/realistic-cc0-first-batch/cooked")
@@ -126,6 +131,7 @@ string(JSON GAMEPLAY_PHOTOREAL_FILE_COUNT LENGTH "${GAMEPLAY_PHOTOREAL_MANIFEST_
 if(NOT GAMEPLAY_PHOTOREAL_FILE_COUNT EQUAL 96)
   message(FATAL_ERROR "Gameplay 12-asset photoreal package requires exactly 96 manifest payloads")
 endif()
+if(NOT TARGET AevryndReleaseGateAssets)
 add_custom_command(TARGET GameplayLab POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GameplayLab>/assets/photoreal-cooked"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GAMEPLAY_PHOTOREAL_MANIFEST}" "$<TARGET_FILE_DIR:GameplayLab>/assets/photoreal-cooked/runtime-render-manifest.json")
@@ -137,6 +143,7 @@ foreach(GAMEPLAY_PHOTOREAL_FILE_INDEX RANGE 0 ${GAMEPLAY_PHOTOREAL_FILE_LAST})
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GameplayLab>/assets/photoreal-cooked/${GAMEPLAY_PHOTOREAL_FILE_DIRECTORY}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${GAMEPLAY_PHOTOREAL_COOKED_ROOT}/${GAMEPLAY_PHOTOREAL_FILE_PATH}" "$<TARGET_FILE_DIR:GameplayLab>/assets/photoreal-cooked/${GAMEPLAY_PHOTOREAL_FILE_PATH}")
 endforeach()
+endif()
 
 add_executable(ShowcaseRenderAssetBindings3DTest tests/ShowcaseRenderAssetBindings3DSmoke.cpp src/ShowcaseRenderAssetBindings3D.cpp src/GameplayShowcaseEnvironment3D.cpp src/ShowcaseLandEcology3D.cpp)
 target_include_directories(ShowcaseRenderAssetBindings3DTest PRIVATE include)

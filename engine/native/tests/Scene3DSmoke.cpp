@@ -2,11 +2,309 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace Aevrynd;
 bool Near(float left,float right,float tolerance=.001f){return std::abs(left-right)<tolerance;}
 
+bool CanonicalLodBoundaryContract(){
+    enum class Endpoint {Near,Transition,Far};
+    struct Sample {float distance;Endpoint endpoint;};
+    // 首個樣本直接重現玩家路線失敗；緊鄰的未飽和值不可被 epsilon 提早切掉。
+    const std::array<Sample,9> samples{{
+        {std::bit_cast<float>(0x4287FFFFu),Endpoint::Far},
+        {std::bit_cast<float>(0x4287FF4Bu),Endpoint::Far},
+        {std::bit_cast<float>(0x4287FF4Au),Endpoint::Transition},
+        {std::nextafter(52.f,0.f),Endpoint::Near},{52.f,Endpoint::Near},
+        {std::nextafter(52.f,100.f),Endpoint::Transition},{60.f,Endpoint::Transition},
+        {68.f,Endpoint::Far},{std::nextafter(68.f,100.f),Endpoint::Far}}};
+    Material3D material{};material.materialClass=MaterialClass3D::Foliage;
+    material.textures={701,801};material.useUv=true;material.alphaMode=MaterialAlphaMode3D::Mask;
+    material.alphaCutoff=.25f;material.doubleSided=true;
+    unsigned selectionChecks{},submissionChecks{};
+    for(const auto metric:{MeshLodDistanceMetric3D::Center,MeshLodDistanceMetric3D::BoundsSurface}){
+        const float radius=metric==MeshLodDistanceMetric3D::BoundsSurface?4.f:0.f;
+        for(const auto& sample:samples){
+            volatile float observedDistance=sample.distance+radius;
+            const float centerDistance=observedDistance;
+            const auto selection=EvaluateMeshLod3D(centerDistance,radius,{60.f,16.f,metric});
+            const bool transition=sample.endpoint==Endpoint::Transition,isFarEndpoint=sample.endpoint==Endpoint::Far;
+            const bool valid=transition?selection.submitNear&&selection.submitFar&&selection.farCoverage>0.f&&selection.farCoverage<1.f:
+                isFarEndpoint?!selection.submitNear&&selection.submitFar&&selection.nearCoverage==0.f&&selection.farCoverage==1.f:
+                    selection.submitNear&&!selection.submitFar&&selection.nearCoverage==1.f&&selection.farCoverage==0.f;
+            if(!valid){std::cerr<<"LOD_CANONICAL_BOUNDARY_FIRST_DIVERGENCE distance="<<std::hexfloat<<centerDistance
+                <<" farCoverage="<<selection.farCoverage<<std::defaultfloat<<" near="<<selection.submitNear
+                <<" far="<<selection.submitFar<<'\n';return false;}
+            if(sample.distance==std::bit_cast<float>(0x4287FF4Au)&&selection.farCoverage!=std::bit_cast<float>(0x3F7FFFFFu)){
+                std::cerr<<"LOD boundary negative control changed\n";return false;}
+            ++selectionChecks;
+            for(const std::size_t count:{std::size_t{2},std::size_t{4}}){
+                std::array<MeshLodLevel3D,4> levels{};
+                for(std::size_t i=0;i<count;++i){
+                    levels[i].mesh={{static_cast<std::uint32_t>(710+i)},{{},4.f,{4.f,0.f,0.f}},8,36-i*6,{}};
+                    levels[i].material=material;
+                }
+                const std::size_t nearLevel=count==2?0:1,farLevel=nearLevel+1;
+                if(count==4){levels[0].switchDistance=20.f;levels[0].transitionWidth=4.f;
+                    levels[2].switchDistance=100.f;levels[2].transitionWidth=16.f;}
+                levels[nearLevel].switchDistance=60.f;levels[nearLevel].transitionWidth=16.f;
+                const std::span<const MeshLodLevel3D> active(levels.data(),count);
+                const auto chain=EvaluateMeshLodChain3D(centerDistance,radius,active,metric);
+                const std::size_t primary=isFarEndpoint||(transition&&selection.farCoverage>=.5f)?farLevel:nearLevel;
+                if(chain.transition!=transition||chain.primaryLevel!=primary||
+                    (transition&&(chain.nearLevel!=nearLevel||chain.farLevel!=farLevel||chain.farCoverage!=selection.farCoverage))){
+                    std::cerr<<"LOD boundary chain index contract failed\n";return false;}
+                for(const bool shadowOnly:{false,true}){
+                    Scene3D scene;DrawList draw;draw.SetDirectionalShadowMapEnabled(true);
+                    const RenderObjectIdentity3D identity{{0xAE2573,17},1};
+                    if(!scene.MeshLodChain(active,metric,{{0,1,centerDistance}},{},identity)){
+                        std::cerr<<"LOD boundary scene insertion failed\n";return false;}
+                    const auto camera=MakeFirstPersonCamera({0,1,0},shadowOnly?3.14159265358979323846f:0.f,0.f);
+                    Scene3DSubmissionOptions options{};options.shadows={true,.025f,.25f,200.f,8};
+                    // 飽和端點在零過渡預算下仍必須直接單端提交，不能依賴 fallback。
+                    options.maximumLodTransitionInstances=transition?512:0;
+                    const auto stats=scene.Submit(draw,camera,{1280,720},options);
+                    const auto expectedDraws=transition?2u:1u;
+                    const std::size_t expectedTriangles=transition?levels[nearLevel].mesh.TriangleCount()+levels[farLevel].mesh.TriangleCount():levels[primary].mesh.TriangleCount();
+                    if(draw.meshInstances.size()!=expectedDraws||stats.lodTransitionInstances!=(transition?1u:0u)||
+                        stats.lodDualSubmittedInstances!=(transition?1u:0u)||stats.lodTransitionBudgetFallbacks||stats.cpuFallbackUnavailable||
+                        (shadowOnly?stats.shadowOnlyInstances!=expectedDraws:stats.visibleTriangles!=expectedTriangles)){
+                        std::cerr<<"LOD boundary real scene submission failed\n";return false;}
+                    for(std::size_t i=0;i<draw.meshInstances.size();++i){
+                        const auto& item=draw.meshInstances[i];const auto level=transition?(i==0?nearLevel:farLevel):primary;
+                        if(item.identity!=identity||item.mesh.value!=levels[level].mesh.handle.value||!item.castsShadow||
+                            item.layer!=(shadowOnly?MeshRenderLayer3D::ShadowOnly:MeshRenderLayer3D::Opaque)||
+                            (transition?item.lodCoverage!=chain.farCoverage:item.lodCoverage!=1.f||item.lodSeed!=0)){
+                            std::cerr<<"LOD boundary submitted endpoint contract failed\n";return false;}
+                    }
+                    ++submissionChecks;
+                }
+            }
+        }
+    }
+    std::cout<<"LOD_CANONICAL_BOUNDARY_PASS selections="<<selectionChecks<<" submissions="<<submissionChecks<<'\n';
+    return true;
+}
+
+namespace CanonicalTransformIntegrationDetail {
+using namespace Aevrynd;
+enum class Kind : unsigned {Box,Mesh,Lod};
+inline constexpr RenderObjectIdentity3D Sentinel{{0x43414e4f4e494341ull,1},1};
+inline constexpr RenderObjectIdentity3D Distant{{0x43414e4f4e494341ull,2},1};
+inline const char* Name(Kind kind){switch(kind){case Kind::Box:return "box";case Kind::Mesh:return "mesh";case Kind::Lod:return "lod";}return "invalid";}
+inline void Need(bool condition,const char* reason){if(!condition)throw std::runtime_error(reason);}
+inline std::array<std::uint32_t,9> Bits(const Transform3D& t){
+    return {{std::bit_cast<std::uint32_t>(t.position.x),std::bit_cast<std::uint32_t>(t.position.y),std::bit_cast<std::uint32_t>(t.position.z),
+        std::bit_cast<std::uint32_t>(t.rotation.x),std::bit_cast<std::uint32_t>(t.rotation.y),std::bit_cast<std::uint32_t>(t.rotation.z),
+        std::bit_cast<std::uint32_t>(t.scale.x),std::bit_cast<std::uint32_t>(t.scale.y),std::bit_cast<std::uint32_t>(t.scale.z)}};
+}
+inline void Component(Transform3D& t,unsigned component,std::uint32_t bits){
+    std::array<float*,9> fields{{&t.position.x,&t.position.y,&t.position.z,&t.rotation.x,&t.rotation.y,&t.rotation.z,
+        &t.scale.x,&t.scale.y,&t.scale.z}};
+    Need(component<fields.size(),"component index invalid");*fields[component]=std::bit_cast<float>(bits);
+}
+struct Snapshot {
+    Scene3DStats stats;
+    std::vector<std::uint64_t> payload,geometry;
+};
+inline void Float(std::vector<std::uint64_t>& words,float f){words.push_back(std::bit_cast<std::uint32_t>(f));}
+inline void Matrix(std::vector<std::uint64_t>& words,const Matrix4& m){for(const auto& row:m.values)for(float f:row)Float(words,f);}
+inline Snapshot Observe(Scene3D& scene,bool linear,bool hidden=true){
+    DrawList draw(DrawListCapacityProfile::Minimal2D);
+    draw.SetDirectionalShadowMapEnabled(false);
+    Camera3D camera{{0,0,0},{0,0,1}};
+    Scene3DSubmissionOptions options{};options.frustumCulling=false;options.gpuInstancing=true;
+    options.shadows.enabled=false;options.visibility.maximumDistance=25.f;
+    options.visibility.minimumProjectedRadiusPixels=0;options.linearVisibilityReference=linear;
+    Snapshot s;s.stats=scene.Submit(draw,camera,{1280,720},options);
+    auto& words=s.payload;
+    words.push_back(draw.meshInstances.size());words.push_back(draw.worldVertices.size());words.push_back(draw.worldIndices.size());
+    // 不讀結構padding，也不把雜湊相等當成payload相等；逐欄保存實際bit與順序。
+    for(const auto& i:draw.meshInstances){
+        words.push_back(i.mesh.value);words.push_back(i.mesh.contentPrimary);words.push_back(i.mesh.contentSecondary);
+        words.push_back(i.mesh.vertexCount);words.push_back(i.mesh.indexCount);words.push_back(i.tint);words.push_back(i.surface);
+        words.push_back(static_cast<unsigned>(i.layer));words.push_back(i.textures.value);words.push_back(i.textures.semanticIdentity);
+        words.push_back(i.useUv);words.push_back(static_cast<unsigned>(i.materialClass));words.push_back(i.castsShadow);
+        words.push_back(i.lodSeed);words.push_back(i.shadowCascadeMask);words.push_back(static_cast<unsigned>(i.shadowCascadeSelection));
+        words.push_back(i.motionValid);words.push_back(static_cast<unsigned>(i.alphaMode));words.push_back(i.doubleSided);
+        words.push_back(i.identity.id.high);words.push_back(i.identity.id.low);words.push_back(i.identity.generation);
+        words.push_back(i.identity.hlodClusterId.high);words.push_back(i.identity.hlodClusterId.low);
+        words.push_back(i.identity.sharedLodDither);words.push_back(i.identity.hlodProxy);
+        for(float f:{i.textureScale,i.normalScale,i.cameraDepth,i.lodCoverage,i.alphaCutoff,i.occlusionOpacity})Float(words,f);
+        Matrix(words,i.transform);Matrix(words,i.normalTransform);Matrix(words,i.previousTransform);
+    }
+    for(const auto& v:draw.worldVertices){for(float f:{v.x,v.y,v.z,v.u,v.v})Float(words,f);words.push_back(v.normal);words.push_back(v.color);}
+    for(auto index:draw.worldIndices)words.push_back(index);
+    const auto& t=s.stats;
+    // 每條路徑各自比較；BVH與linear的候選數／節點數不要求相等，也不誤要求serial停止遞增。
+    s.geometry={t.inputTriangles,t.visibleTriangles,t.culledTriangles,t.inputLines,t.visibleLines,t.meshInstances,
+        t.visibleMeshInstances,t.culledMeshInstances,t.distanceCulledMeshInstances,t.screenSizeCulledMeshInstances,
+        t.lodMeshInstances,t.nearLodInstances,t.farLodInstances,t.lodTrianglesSaved,t.lodTransitionInstances,
+        t.lodDualSubmittedInstances,t.lodTransitionTriangles,t.lodTransitionBudgetFallbacks,t.shadowCasters,t.shadowInstances,
+        t.shadowSkipped,t.shadowOnlyCandidates,t.shadowOnlyInstances,t.shadowOnlyBudgetDropped,t.shadowDistanceRejected,
+        t.cpuFallbackUnavailable,t.acceptedIdentityOrderFingerprint,t.acceptedIdentityCount};
+    for(auto count:t.selectedLodLevels)s.geometry.push_back(count);
+    // 哨兵必須真的提交；遠物件必須因距離被剔除，而不是讓壞物件畫出來才靠matrix指紋偵測。
+    Need(scene.MeshCount()==2&&t.meshInstances==2&&draw.worldVertices.empty()&&draw.worldIndices.empty(),"scene fixture population changed");
+    if(hidden){
+        Need(t.visibleMeshInstances==1&&t.culledMeshInstances==1&&t.distanceCulledMeshInstances==1,
+            "hidden fixture did not distance-cull exactly one object");
+        Need(draw.meshInstances.size()==1&&draw.meshInstances.front().identity==Sentinel&&
+            t.acceptedIdentityCount==1&&t.acceptedIdentityOrderFingerprint!=0,
+            "valid sentinel payload missing or hidden object submitted");
+    }else{
+        Need(t.visibleMeshInstances==2&&t.culledMeshInstances==0&&t.distanceCulledMeshInstances==0&&
+            draw.meshInstances.size()==2&&t.acceptedIdentityCount==2&&t.acceptedIdentityOrderFingerprint!=0,
+            "near refit control did not submit both objects");
+        unsigned sentinels{},distant{};for(const auto& i:draw.meshInstances){sentinels+=i.identity==Sentinel;distant+=i.identity==Distant;}
+        Need(sentinels==1&&distant==1,"near refit control identities changed");
+    }
+    return s;
+}
+inline void SameVisible(const Snapshot& a,const Snapshot& b){
+    Need(a.payload==b.payload,"visible payload bits or order changed");
+    Need(a.geometry==b.geometry,"visible geometry or identity accounting changed");
+}
+inline MeshResource3D Resource(){
+    auto cpu=std::make_shared<Mesh3D>(Mesh3D::CreateUnitBox());const auto bounds=cpu->Bounds();
+    Need(bounds.center.x==0&&bounds.center.y==0&&bounds.center.z==0&&bounds.radius>0,"resource must have an exact centered sphere");
+    const auto vertices=static_cast<std::uint32_t>(cpu->vertices.size()),indices=static_cast<std::uint32_t>(cpu->indices.size());
+    return {MeshHandle3D{951,0x43414e4f4e494341ull,0x4c5041594c4f4144ull,vertices,indices},bounds,vertices,indices,std::move(cpu)};
+}
+inline VisibilityEntityKey3D AddDistant(Scene3D& scene,Kind kind,const MeshResource3D& resource,Material3D material){
+    const Transform3D pose{{0,0,200},{},{1,1,1}};
+    switch(kind){
+    case Kind::Box:return scene.MaterialBox(pose.position,pose.scale,material,Distant);
+    case Kind::Mesh:return scene.Mesh(resource,pose,material,{},Distant);
+    case Kind::Lod:{const std::array<MeshLodLevel3D,2> levels{{{resource,material,20.f,0.f},{resource,material}}};
+        return scene.MeshLodChain(levels,MeshLodDistanceMetric3D::Center,pose,{},Distant);}
+    }
+    return 0;
+}
+inline void RefitControl(Kind kind){
+    const auto resource=Resource();Scene3D scene;scene.SetBoxMesh(resource);Material3D material{};material.castsShadow=false;
+    Need(scene.Mesh(resource,{{0,0,6},{},{1,1,1}},material,{},Sentinel)!=0,"refit sentinel insertion failed");
+    const auto key=AddDistant(scene,kind,resource,material);Need(key!=0,"refit distant insertion failed");
+    const auto beforeBvh=Observe(scene,false),beforeLinear=Observe(scene,true);
+    Need(beforeBvh.stats.visibilityNodesTested>0&&beforeBvh.payload==beforeLinear.payload,"refit baseline BVH fixture failed");
+    // 真正改變球心，讓漏掉Update／Refit時BVH仍把物件留在遠處；不能只測同bounds的rotation。
+    Need(scene.UpdateTransform(key,{{3,0,8},{},{1,1,1}}),"near public transform update rejected");
+    const auto nearBvh=Observe(scene,false,false),nearLinear=Observe(scene,true,false);
+    Need(nearBvh.stats.visibilityNodesTested>0&&nearBvh.stats.canonicalTransformValid&&nearLinear.stats.canonicalTransformValid&&
+        nearBvh.stats.drawListRevision!=0&&nearBvh.stats.drawListRevision==nearLinear.stats.drawListRevision&&
+        nearBvh.stats.drawListRevision!=beforeBvh.stats.drawListRevision&&nearBvh.payload==nearLinear.payload,
+        "public update/refit did not publish the same valid near payload as linear");
+    Need(scene.UpdateTransform(key,{{0,0,200},{},{1,1,1}}),"far public transform recovery rejected");
+    const auto afterBvh=Observe(scene,false),afterLinear=Observe(scene,true);
+    Need(afterBvh.stats.canonicalTransformValid&&afterLinear.stats.canonicalTransformValid&&
+        afterBvh.stats.drawListRevision==beforeBvh.stats.drawListRevision&&
+        afterLinear.stats.drawListRevision==beforeLinear.stats.drawListRevision,"public refit recovery revision changed");
+    SameVisible(beforeBvh,afterBvh);SameVisible(beforeLinear,afterLinear);
+}
+inline void HiddenCase(Kind kind,unsigned axis,std::uint32_t invalidBits){
+    const auto resource=Resource();Scene3D scene;scene.SetBoxMesh(resource);
+    Material3D material{};material.castsShadow=false;
+    Need(scene.Mesh(resource,{{0,0,6},{},{1,1,1}},material,{},Sentinel)!=0,"sentinel insertion failed");
+    const auto distantKey=AddDistant(scene,kind,resource,material);Need(distantKey!=0,"distant insertion failed");
+    const auto beforeBvh=Observe(scene,false);
+    Need(beforeBvh.stats.visibilityNodesTested>0,"baseline failed to build and query the BVH");
+    const auto beforeLinear=Observe(scene,true);
+    Need(beforeBvh.payload==beforeLinear.payload,"baseline BVH and linear payload differ");
+    Need(beforeBvh.stats.canonicalTransformValid&&beforeLinear.stats.canonicalTransformValid&&
+        beforeBvh.stats.drawListRevision!=0&&beforeBvh.stats.drawListRevision==beforeLinear.stats.drawListRevision,
+        "baseline canonical provenance invalid");
+    Need(beforeLinear.stats.submissionSerial==beforeBvh.stats.submissionSerial+1,"baseline serial not monotonic");
+    Transform3D hostile{{0,0,200},{},{1,1,1}};Component(hostile,3+axis,invalidBits);
+    // centered sphere的公開更新路徑不依賴rotation；明確要求接受，避免負控根本沒進容器卻冒稱通過。
+    Need(scene.UpdateTransform(distantKey,hostile),"public API no longer admits the centered-sphere rotation fixture");
+    const auto invalidBvh=Observe(scene,false);const auto invalidLinear=Observe(scene,true);
+    Need(invalidBvh.stats.visibilityNodesTested>0,"updated fixture did not query the BVH/refit path");
+    Need(!invalidBvh.stats.canonicalTransformValid&&!invalidLinear.stats.canonicalTransformValid&&
+        invalidBvh.stats.drawListRevision==0&&invalidLinear.stats.drawListRevision==0,
+        "hidden invalid transform escaped canonical all_of validation");
+    Need(invalidBvh.stats.submissionSerial==beforeLinear.stats.submissionSerial+1&&
+        invalidLinear.stats.submissionSerial==invalidBvh.stats.submissionSerial+1,"invalid serial not monotonic");
+    SameVisible(beforeBvh,invalidBvh);SameVisible(beforeLinear,invalidLinear);
+    Need(scene.UpdateTransform(distantKey,{{0,0,200},{},{1,1,1}}),"valid rotation recovery rejected");
+    const auto afterBvh=Observe(scene,false);const auto afterLinear=Observe(scene,true);
+    Need(afterBvh.stats.canonicalTransformValid&&afterLinear.stats.canonicalTransformValid&&
+        afterBvh.stats.drawListRevision==beforeBvh.stats.drawListRevision&&
+        afterLinear.stats.drawListRevision==beforeLinear.stats.drawListRevision,"canonical recovery did not restore revisions");
+    Need(afterBvh.stats.submissionSerial==invalidLinear.stats.submissionSerial+1&&
+        afterLinear.stats.submissionSerial==afterBvh.stats.submissionSerial+1,"recovery serial not monotonic");
+    SameVisible(beforeBvh,afterBvh);SameVisible(beforeLinear,afterLinear);
+    Need(afterBvh.payload==afterLinear.payload,"recovered BVH and linear payload differ");
+}
+struct CanonicalZero {Scene3DStats stats;std::size_t instances{};};
+inline CanonicalZero ZeroSnapshot(unsigned component,std::uint32_t zeroBits){
+    const auto resource=Resource();Scene3D scene;Transform3D transform{{0,0,6},{},{1,1,1}};
+    Component(transform,component,zeroBits);const auto before=Bits(transform);
+    Need(Scene3DDetail::FiniteTransform(transform),"signed zero classified non-finite");
+    Need(Bits(transform)==before,"finite helper modified signed zero input bits");
+    Material3D material{};material.castsShadow=false;
+    Need(scene.Mesh(resource,transform,material,{},Sentinel)!=0,"signed zero scene insertion rejected");
+    DrawList draw(DrawListCapacityProfile::Minimal2D);Camera3D camera{{0,0,0},{0,0,1}};
+    Scene3DSubmissionOptions options{};options.frustumCulling=false;options.linearVisibilityReference=true;
+    const auto stats=scene.Submit(draw,camera,{1280,720},options);
+    Need(stats.canonicalTransformValid&&stats.drawListRevision!=0&&stats.acceptedIdentityCount==1&&
+        draw.meshInstances.size()==1&&draw.meshInstances.front().identity==Sentinel,"signed zero canonical fixture not submitted");
+    Need(Bits(transform)==before,"scene submission modified signed zero input bits");
+    return {stats,draw.meshInstances.size()};
+}
+}
+
+inline bool CanonicalTransformIntegrationContract(){
+    using namespace CanonicalTransformIntegrationDetail;
+    std::string activeCase="setup";
+    try{
+        unsigned helperCases{},hiddenCases{},zeroPairs{},refitControls{};
+        struct Sample {std::uint32_t bits;bool finite;};
+        // 固定語義預期，不由被測helper的位元分類公式產生expected。
+        const std::array<Sample,12> samples{{{0x00000000u,true},{0x80000000u,true},
+            {0x00000001u,true},{0x80000001u,true},{0x3f800000u,true},{0xbf800000u,true},
+            {0x7fc12345u,false},{0xffc12345u,false},{0x7f800000u,false},{0xff800000u,false},
+            {0x7f800001u,false},{0xff800001u,false}}};
+        for(unsigned component=0;component<9;++component)for(const auto sample:samples){
+            activeCase="helper-component-"+std::to_string(component)+"-bits-"+std::to_string(sample.bits);
+            Transform3D transform{};Component(transform,component,sample.bits);const auto before=Bits(transform);
+            Need(Scene3DDetail::FiniteTransform(transform)==sample.finite,"fixed helper classification mismatch");
+            Need(Bits(transform)==before,"finite helper modified input bits");++helperCases;
+        }
+        for(const auto kind:{Kind::Box,Kind::Mesh,Kind::Lod}){
+            activeCase=std::string(Name(kind))+"-public-refit-control";RefitControl(kind);++refitControls;
+        }
+        // 各容器分開放壞值，防止&&短路讓後兩個projection沒有實際被驗到。
+        for(const auto kind:{Kind::Box,Kind::Mesh,Kind::Lod})for(unsigned axis=0;axis<3;++axis)
+            for(const auto bits:{0x7fc12345u,0xffc12345u,0x7f800000u,0xff800000u}){
+                activeCase=std::string(Name(kind))+"-rotation-"+std::to_string(axis)+"-bits-"+std::to_string(bits);
+                HiddenCase(kind,axis,bits);++hiddenCases;
+            }
+        for(unsigned component=0;component<9;++component){
+            activeCase="signed-zero-component-"+std::to_string(component);
+            const auto positive=ZeroSnapshot(component,0x00000000u),negative=ZeroSnapshot(component,0x80000000u);
+            Need(positive.stats.drawListRevision==negative.stats.drawListRevision&&
+                positive.stats.acceptedIdentityOrderFingerprint==negative.stats.acceptedIdentityOrderFingerprint&&
+                positive.stats.acceptedIdentityCount==negative.stats.acceptedIdentityCount&&positive.instances==negative.instances,
+                "signed zero changed canonical revision or accepted identity order");++zeroPairs;
+        }
+        Need(helperCases==108&&hiddenCases==36&&zeroPairs==9&&refitControls==3,"integration case count mismatch");
+        std::cout<<"CANONICAL_TRANSFORM_INTEGRATION_CPU_PASS helper_bit_cases="<<helperCases
+            <<" hidden_rotation_cases="<<hiddenCases<<" invalid_submissions="<<hiddenCases*2
+            <<" restored_submissions="<<hiddenCases*2<<" signed_zero_pairs="<<zeroPairs
+            <<" public_refit_controls="<<refitControls
+            <<" native=false GPU=false\n";return true;
+    }catch(const std::exception& error){
+        std::cerr<<"CANONICAL_TRANSFORM_INTEGRATION_FIRST_DIVERGENCE case="<<activeCase<<" reason="<<error.what()<<'\n';return false;
+    }
+}
+
 int main(){
+    if(!CanonicalTransformIntegrationContract())return 53;
+    if(!CanonicalLodBoundaryContract())return 52;
     const Matrix4 shadowMatrix=CreateDirectionalShadowMatrix({.5f,-1.f,.25f},.1f);const Vec3 projected=TransformPoint(shadowMatrix,{2,4,6});if(!Near(projected.x,3.95f)||!Near(projected.y,.1f)||!Near(projected.z,6.975f)){std::cerr<<"Directional shadow projection failed\n";return 18;}
     Scene3D scene;
     scene.Box({0,1,6},{2,2,2},{.2f,.8f,.7f,1});

@@ -37,6 +37,21 @@ inline PbrEnergyWeights PbrReferenceEnergy(double baseColor,double metallic,doub
 }
 
 inline double PbrReferenceEvaluateLight(double baseColor,double metallic,double roughness,double normalView,double normalLight,double normalHalf,double viewHalf,double radiance){if(!std::isfinite(radiance)||radiance<0||normalView<=0||normalLight<=0)return 0;const PbrEnergyWeights energy=PbrReferenceEnergy(baseColor,metallic,roughness,normalView,normalLight,normalHalf,viewHalf);baseColor=(std::clamp)(baseColor,0.0,1.0);normalLight=(std::clamp)(normalLight,0.0,1.0);return(energy.diffuse*baseColor/3.141592653589793+energy.specularResponse)*radiance*normalLight;}
+// Terrain-only 純量參考；原一般 PBR 與其 early-out 不變。
+inline double PbrReferenceEvaluateTerrainLight(double baseColor,double metallic,double roughness,
+    double geometricView,double geometricLight,double normalView,double normalLight,
+    double normalHalf,double viewHalf,double radiance){
+    if(!(geometricView>0)||!(geometricLight>0))return 0;
+    if(normalView>0)return PbrReferenceEvaluateLight(baseColor,metallic,roughness,
+        normalView,normalLight,normalHalf,viewHalf,radiance);
+    if(!std::isfinite(radiance)||radiance<0||normalLight<=0)return 0;
+    baseColor=(std::clamp)(baseColor,0.0,1.0);metallic=(std::clamp)(metallic,0.0,1.0);
+    normalLight=(std::clamp)(normalLight,0.0,1.0);
+    const double reflectance=.04*(1.0-metallic)+baseColor*metallic;
+    const double fresnel=PbrFresnelSchlick(viewHalf,reflectance);
+    const double diffuseWeight=(1.0-fresnel)*(1.0-metallic);
+    return diffuseWeight*baseColor*(1.0/3.141592653589793)*radiance*normalLight;
+}
 // 此純量參考與 shader 相同：角膜 Fresnel 先扣除基底能量，再疊加受控 GGX clearcoat。
 inline double PbrReferenceEyeLight(double baseColor,double materialRoughness,double baseNormalView,double baseNormalLight,double baseNormalHalf,double viewHalf,double corneaNormalView,double corneaNormalLight,double corneaNormalHalf,double radiance){if(!std::isfinite(radiance)||radiance<0)return 0;const double base=PbrReferenceEvaluateLight(baseColor,0,materialRoughness,baseNormalView,baseNormalLight,baseNormalHalf,viewHalf,radiance);corneaNormalView=(std::clamp)(std::isfinite(corneaNormalView)?corneaNormalView:0.0,0.0,1.0);corneaNormalLight=(std::clamp)(std::isfinite(corneaNormalLight)?corneaNormalLight:0.0,0.0,1.0);corneaNormalHalf=(std::clamp)(std::isfinite(corneaNormalHalf)?corneaNormalHalf:0.0,0.0,1.0);if(corneaNormalView<=0||corneaNormalLight<=0)return base;const double fresnel=PbrCorneaFresnel(viewHalf),roughness=PbrCorneaRoughness(materialRoughness),distribution=PbrDistributionGgxStabilized(corneaNormalHalf,roughness),geometry=PbrGeometrySchlickGgx(corneaNormalView,roughness)*PbrGeometrySchlickGgx(corneaNormalLight,roughness),clearcoat=distribution*geometry*fresnel/(std::max)(4.0*corneaNormalView*corneaNormalLight,.0001)*radiance*corneaNormalLight;return base*(1.0-fresnel)+clearcoat;}
 inline double PbrReferenceSkinSupplement(double baseColor,double roughness,double normalView,double normalLight,double normalHalf,double viewHalf,double backView,double radiance){if(!std::isfinite(radiance)||radiance<0)return 0;baseColor=(std::clamp)(std::isfinite(baseColor)?baseColor:0.0,0.0,1.0);roughness=PbrClampedRoughness(roughness);normalLight=(std::clamp)(std::isfinite(normalLight)?normalLight:0.0,-1.0,1.0);backView=(std::clamp)(std::isfinite(backView)?backView:0.0,0.0,1.0);const double wrapped=(std::clamp)((normalLight+.25)/1.25,0.0,1.0),wrapExtra=(std::max)(0.0,wrapped-(std::max)(0.0,normalLight)),backScatter=std::pow(backView,4.0)*(std::max)(0.0,-normalLight),narrow=PbrReferenceEvaluateLight(0,0,(std::max)(.09,roughness*.45),normalView,(std::max)(0.0,normalLight),normalHalf,viewHalf,radiance)*.18,warm=baseColor*.48*radiance*(wrapExtra*.20+backScatter*.08);return narrow+warm;}

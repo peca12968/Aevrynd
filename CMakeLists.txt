@@ -47,6 +47,8 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
   file(WRITE "${CMAKE_BINARY_DIR}/streamline-package-fixture.cpp" "int main(){return 0;}\n")
   add_executable(AevryndStreamlinePackageFixture "${CMAKE_BINARY_DIR}/streamline-package-fixture.cpp")
   aevrynd_package_streamline_runtime(AevryndStreamlinePackageFixture)
+  # 固定測試入口與完整建置共用唯一資產部署者，先於各遊戲設定。
+  include("${CMAKE_SOURCE_DIR}/cmake/AevryndReleaseGateAssets.cmake")
 endif()
 if(WIN32)
   add_test(NAME AevryndStreamlineRuntimePackageGateTest COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
@@ -67,15 +69,85 @@ add_subdirectory(games/gameplay_lab/native)
 add_subdirectory(games/mistwatch/native)
 
 # 受限遠端 worker 只允許建置這個既有固定 target；在 gate preset 下，
-# 將它擴充為原有 13 個 gate 與角色／動畫回歸的無互動 CPU 聚合建置入口。
+# 保留既有依賴，明列 release-gates 所需的 CPU 測試與資產。
+# 固定聚合原生測試執行檔；純 PowerShell 契約測試沒有額外執行檔依賴。
+# 不依賴 ALL_BUILD、不在建置階段執行測試，也不納入其他 GPU 測試入口。
 if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
   add_dependencies(AevryndStreamlinePackageFixture
+    AevryndTerrainParallaxContractTest
+    AevryndCharacterQueryWindow3DDefaultTest
+    AevryndCharacterQueryWindow3DStrictTest
+    MistwatchForestSurfaceProfileTest
+    MistwatchReplayCostProbeTest
+    AevryndExactTriangleContact3DTest
+    AevryndOcclusionNormalTest
+    AevryndTerrainRockVariationTest
+    AevryndPhaseSkyDiffuseTest
+    MistwatchAuthoredNativeExpectedTest
+    MistwatchAuthoredWorldQualificationTest
+    MistwatchBackpackFitCpuTest
+    MistwatchBoulderDetailTest
+    MistwatchEntranceAuthoredWorldTest
+    MistwatchExplorerArtCpuTest
+    MistwatchExplorerFaceArtCpuTest
+    MistwatchExplorerNapeHairTest
+    MistwatchExplorerSurfaceCpuTest
+    MistwatchFallenWorldQualificationTest
+    MistwatchForestCoverRetentionTest
+    MistwatchForestGrassShapeTest
+    MistwatchForestHabitatFloorTest
+    MistwatchGrassCaptureReferenceTest
+    MistwatchGroundForestWoodArtTest
+    MistwatchHabitatLeafMaterialTest
+    MistwatchHutMaterialCpuTest
+    MistwatchInputReplayTest
+    MistwatchLandscapeTwigDrawTest
+    MistwatchLeafClusterTest
+    MistwatchNettleAssetTest
+    MistwatchPlayableArtProfileTest
+    MistwatchPlayableFlowRulesTest1420
+    MistwatchPlayableFlowSaveTest1420
+    MistwatchPlayableFlowUiTest1436
+    MistwatchPropArtCpuTest
+    MistwatchQualificationRuntimeTest
+    MistwatchRangerHutLiningCpuTest
+    MistwatchRangerRoofBandCpuTest
+    MistwatchRepairShelterBoardUvTest
+    MistwatchRepairShelterDetailTest
+    MistwatchRepairShelterRoofUvTest
+    MistwatchRepairShelterVisualTest
+    MistwatchRepairSignVisualTest
+    MistwatchRepairToolsVisualTest
+    MistwatchShelterWeatheredUvTest
+    MistwatchShrubDensityQualificationTest
+    MistwatchShrubOpenCrownTest
+    MistwatchWorkshopFrameTest
+    MistwatchWorkshopVisualTest
+    MistwatchWorkshopWoodUvTest
+      MistwatchSettlementSurfaceTest
+      MistwatchPoseCouplingTest
+      MistwatchSettlingRegressionTest
+      MistwatchTurnBoundaryTest
+      MistwatchLocomotionMotorTest
+      MistwatchTuningInputRepeatTest
+      MistwatchPlayerLocomotionTest
+      MistwatchMotionCheckpointTest
+      MistwatchMotionLoadTest
+      MistwatchBankCoverageCandidateTest
+      MistwatchFuseDialVisualTest
+      MistwatchCameraQuietContractTest
+      MistwatchBeaconWorldDetailTest
+      MistwatchEncounterFeedbackTest
+      MistwatchGeneratorDetailTest
+      Mistwatch
+      MistwatchSaveInputAudit
     AevryndCharacterDeathPresentation3DTest
     GameplayForestTrial3DTest
     GameplayCottageEntry3DTest
     GameplayCottageInterior3DTest
     AevryndFootPlacement3DTest
     AevryndSkinnedMaterialSidecar3DTest
+    AevryndNativeMaterialRgba8Dds3DTest
     GameplayLabRulesTest
     GameplayLabCombatAnimationTest
     GameplayCameraProductionIntegrationTest
@@ -101,6 +173,15 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchShrubCanopyTest
     MistwatchRootStemTest
     MistwatchWorldProfileTest
+    MistwatchFirLayoutTest
+    MistwatchObjectiveGuideTest
+    MistwatchSurveyMapTest
+    MistwatchPickupFeedbackTest
+    MistwatchPickupIntentTest
+    MistwatchPickupIntentMainTest
+    MistwatchCounterWindowCueTest
+    MistwatchBoarHitReactionTest
+    MistwatchForestFloorMaskTest
     AevryndMeshCollisionVoxel3DTest
     AevryndMeshCollisionGridSolid3DTest
     MistwatchCanopyCollisionTest
@@ -109,15 +190,28 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     AevryndWorldPartition3DFakeSourceTest
     AevryndWorldPartitionDeltaGateFakeTest
     MistwatchSupplyCrateTest
+    MistwatchSupplyCrateBoardUvTest
     MistwatchSessionTest
     MistwatchRouteTest
     MistwatchRangerHutTest
+    MistwatchHutWholeArtCpuTest
+    MistwatchRangerDeskCpuTest
     MistwatchRelayCameraTest
     AevryndThirdPersonFraming3DTest
     AevryndThirdPersonCameraMotion3DTest
     MistwatchCameraMotionTest
     MistwatchCameraOrbitTest
     MistwatchCameraRouteContextTest
+    # 固定遠端入口也必須產生近期操作回歸的執行檔；不改測試選集或門檻。
+    MistwatchSlopeFootReachTest
+    MistwatchWestCliffReplayTest
+    MistwatchNearTurnReplayTest
+    MistwatchRelayTrackingTest
+    MistwatchCounterBoundaryTest
+    MistwatchDashJumpHandoffTest
+    MistwatchBrakingFootLeadTest
+    MistwatchCameraRecenterTest
+    MistwatchObjectivePointerTest
     MistwatchSaveGameTest
     MistwatchSaveFileTest
     MistwatchLoadPreparationTest
