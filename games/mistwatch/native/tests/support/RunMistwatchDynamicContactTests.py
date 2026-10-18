@@ -59,7 +59,7 @@ def run(executable,args,work,name,accepted=(0,)):
 def main():
     need(sys.dont_write_bytecode and not sys.flags.optimize,'MINUS_B_WITHOUT_OPT_REQUIRED')
     need(len(sys.argv)>=2 and sys.argv[1]in('player','pair','pair-history'),'EXPECTED_EXPLICIT_DYNAMIC_CONTACT_MODE')
-    mode=sys.argv[1];need(len(sys.argv)=={'player':3,'pair':5,'pair-history':4}[mode],'EXACT_ARGUMENT_COUNT')
+    mode=sys.argv[1];need(len(sys.argv)=={'player':3,'pair':5,'pair-history':5}[mode],'EXACT_ARGUMENT_COUNT')
     executable=Path(sys.argv[2]).resolve();need(executable.is_file(),'REAL_CPP_EXECUTABLE_MISSING')
     # 只在 CTest 指定的 build working directory 建立新資料夾；保留失敗原物，不覆寫前輪。
     work=Path(tempfile.mkdtemp(prefix='MistwatchDynamicContact-'+mode+'-',dir=Path.cwd()))
@@ -94,14 +94,19 @@ def main():
         print('FORMAL_PAIR_CONTACT_CASES_COMPLETE current_ordinary1440_raw_equal=1 main=0 native=0 camera=0 save=0 GPU=0')
     else:
         historical=Path(sys.argv[3]).resolve();need(historical!=executable,'INDEPENDENT_HISTORICAL_EXECUTABLE')
+        current_control=Path(sys.argv[4]).resolve()
+        need(current_control not in(executable,historical),'INDEPENDENT_CURRENT_BRAKING_CONTROL_EXECUTABLE')
         current_folder=ordinary(executable,work,'ordinary-current')
         historical_folder=ordinary(historical,work,'ordinary-no-braking')
+        control_folder=ordinary(current_control,work,'ordinary-current-no-foot-braking')
         golden=FIXTURES/'original-pair1440.golden';expected=row(golden)
         need(expected['bytes']==175372 and expected['sha256']=='ECDBEF8BDCE405DD710D81DD175D634CF23E0D792EFF0842F63528CD109DEF76',
              'IMMUTABLE_HISTORICAL1440_GOLDEN')
         compare_tapes(historical_folder/'parity.tsv',golden,work,'historical-no-braking-vs-golden')
         compare_tapes(current_folder/'parity.tsv',historical_folder/'parity.tsv',work,'current-braking-effect',False)
+        compare_tapes(current_folder/'parity.tsv',control_folder/'parity.tsv',work,'current-single-player-braking-effect',False)
         print('FORMAL_HISTORICAL_BRAKING_PARITY_COMPLETE original1440_raw_equal=1 current_differs=1 fields=20 main=0 native=0 GPU=0')
+        print('FORMAL_CURRENT_BRAKING_CONTROL_COMPLETE single_player_differs=1 rows=1440 fields=20 main=0 native=0 GPU=0')
 
 if __name__=='__main__':
     try:main()

@@ -32,7 +32,7 @@ struct LocomotionDynamicStepResult {
 // 呼叫端負責按鍵邊沿、暫停及把此物件與姿態/鏡頭一起作整幀交易。
 class LocomotionMotor {
 public:
-    static constexpr float FixedStep=1.f/120.f,Acceleration=12.f,Deceleration=18.f;
+    static constexpr float FixedStep=1.f/120.f,Acceleration=12.f,Deceleration=18.f,CrouchDeceleration=30.f;
     static constexpr float TurnRate=4.71238898f;
     void Reset()noexcept{velocity_={};heading_=0;headingReady_=false;phase_=LocomotionPhase::Standing;supportTicks_=0;tick_=0;runFlight_=false;wasDashing_=false;pendingJumpTicks_=0;}
     void ClearPendingJump()noexcept{pendingJumpTicks_=0;}
@@ -168,7 +168,9 @@ private:
             const Vec3 difference=desired-next.velocity_;
             const float distance=Length(difference);
             if(!finite(desired)||!finite(difference)||!std::isfinite(distance)||!std::isfinite(Length(desired)))return false;
-            const float rate=Length(desired)<Length(next.velocity_)?Deceleration:Acceleration;
+            // 接地蹲行較快收速；空中及一般行走沿用原有慣性，不瞬移或硬夾速度。
+            const float rate=Length(desired)<Length(next.velocity_)?
+                (input.crouched&&candidate.Grounded()?CrouchDeceleration:Deceleration):Acceleration;
             // 閃避及退出當幀沿用舊即時速度；末幀fraction不得變成額外滑行慣性。
             next.velocity_=input.dashing||next.wasDashing_?desired:distance<=rate*FixedStep?desired:next.velocity_+difference*(rate*FixedStep/distance);
             next.wasDashing_=input.dashing;

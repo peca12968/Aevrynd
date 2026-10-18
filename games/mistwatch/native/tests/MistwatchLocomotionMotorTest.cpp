@@ -7,6 +7,36 @@ unsigned checks{};
 void Need(bool value,const char* why){++checks;if(!value)throw std::runtime_error(why);}
 int main()try{
     HeightField3D terrain({{-20,0,-20},128,128,1});terrain.Fill(0);
+    // 跑轉蹲只加快接地制動；保留連續速度、一般制動與空中慣性。
+    {
+        CharacterController3D seed;seed.Reset({0,0,0});
+        Need(seed.Step({}, {},{},terrain,LocomotionMotor::FixedStep)&&seed.Grounded(),"crouch brake seed grounded");
+        LocomotionMotor seedMotor;LocomotionInput sprint;sprint.movement={0,0,1};sprint.speedMultiplier=1.5f;
+        for(unsigned tick=0;tick<180;++tick)Need(seedMotor.Step(seed,sprint,{}, {},terrain),"crouch brake finite real sprint");
+        const float before=Length(seedMotor.Velocity());
+        Need(before>8.9f&&seed.Grounded(),"crouch brake reaches real sprint speed without auto flight");
+        auto crouchActor=seed,ordinaryActor=seed,airCrouchActor=seed,airOrdinaryActor=seed;
+        auto crouchMotor=seedMotor,ordinaryMotor=seedMotor,airCrouchMotor=seedMotor,airOrdinaryMotor=seedMotor;
+        LocomotionInput crouch;crouch.movement={0,0,1};crouch.speedMultiplier=.45f;crouch.crouched=true;
+        auto ordinary=crouch;ordinary.crouched=false;
+        Need(crouchActor.TrySetHeight(1.4f,{},{}),"crouch brake uses legally accepted low body");
+        Need(crouchMotor.Step(crouchActor,crouch,{}, {},terrain)&&ordinaryMotor.Step(ordinaryActor,ordinary,{}, {},terrain),"grounded crouch and ordinary braking");
+        Need(std::abs(before-Length(crouchMotor.Velocity())-LocomotionMotor::CrouchDeceleration*LocomotionMotor::FixedStep)<.0003f,
+            "grounded crouch follows finite30 braking rather than instantaneous clamp");
+        Need(std::abs(before-Length(ordinaryMotor.Velocity())-LocomotionMotor::Deceleration*LocomotionMotor::FixedStep)<.0003f,
+            "ordinary braking retains18");
+        Need(Length(crouchMotor.Velocity())>seed.Settings().moveSpeed*.45f,"first crouch step retains continuous momentum");
+        const auto jumps=crouchActor.Stats().jumps;
+        for(unsigned tick=0;tick<40;++tick)Need(crouchMotor.Step(crouchActor,crouch,{}, {},terrain),"crouch brake approaches original target");
+        Need(crouchActor.Grounded()&&crouchActor.Stats().jumps==jumps&&
+             std::abs(Length(crouchMotor.Velocity())-seed.Settings().moveSpeed*.45f)<.00003f,
+             "faster crouch braking preserves target speed and no auto jump");
+        Need(airCrouchActor.TryLaunchFromGround(1.2f)&&airOrdinaryActor.TryLaunchFromGround(1.2f),"air braking paired real launch");
+        Need(airCrouchMotor.Step(airCrouchActor,crouch,{}, {},terrain)&&airOrdinaryMotor.Step(airOrdinaryActor,ordinary,{}, {},terrain),"air paired braking step");
+        Need(!airCrouchActor.Grounded()&&airCrouchActor.StateHash()==airOrdinaryActor.StateHash()&&
+             airCrouchMotor.StateHash()==airOrdinaryMotor.StateHash(),"airborne crouch does not acquire grounded30 braking");
+        std::cout<<"LOCOMOTION_CROUCH_BRAKING_PASS grounded_rate=30 ordinary_rate=18 airborne_pair_equal=1\n";
+    }
     // 完全反向的左右路徑等長；相機矩陣的數個浮點尾差不能使轉向側跳變。
     for(float heading:{0.f,1.57079632679f,-1.57079632679f,3.14159265359f,-3.14159265359f})
     for(float residual:{-1.e-7f,0.f,1.e-7f}){

@@ -1727,18 +1727,21 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   ${historical_braking_input_headers}
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/PrepareMistwatchHistoricalBrakingHeaders.py")
 set(historical_braking_headers "${CMAKE_CURRENT_BINARY_DIR}/historical-braking/include")
+set(current_braking_control_headers "${CMAKE_CURRENT_BINARY_DIR}/current-braking-control/include")
 execute_process(COMMAND "${Python3_EXECUTABLE}" -B
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/PrepareMistwatchHistoricalBrakingHeaders.py"
   --binary-root "${CMAKE_BINARY_DIR}" --output "${historical_braking_headers}"
+  --current-output "${current_braking_control_headers}"
   RESULT_VARIABLE historical_braking_result)
 if(NOT historical_braking_result STREQUAL "0")
   message(FATAL_ERROR "Historical braking private-header preparation failed")
 endif()
 foreach(pair_formal IN ITEMS MistwatchPlayerDynamicContactTest MistwatchPairContactTest
     MistwatchFrameInputLatchTest MistwatchPairLoadPreparationTest MistwatchPlayablePairFrameTest
-    MistwatchGameplayOrdinaryParity MistwatchGameplayHistoricalBrakingParity)
+    MistwatchGameplayOrdinaryParity MistwatchGameplayHistoricalBrakingParity MistwatchGameplayCurrentBrakingControl)
   if(pair_formal STREQUAL "MistwatchGameplayOrdinaryParity" OR
-      pair_formal STREQUAL "MistwatchGameplayHistoricalBrakingParity")
+      pair_formal STREQUAL "MistwatchGameplayHistoricalBrakingParity" OR
+      pair_formal STREQUAL "MistwatchGameplayCurrentBrakingControl")
     set(pair_source tests/MistwatchGameplayOrdinaryParity.cpp)
   else()
     set(pair_source tests/${pair_formal}.cpp)
@@ -1761,9 +1764,11 @@ target_link_libraries(MistwatchPlayablePairFrameTest PRIVATE shell32)
 target_compile_definitions(MistwatchPairContactTest PRIVATE CANDIDATE=1)
 target_compile_definitions(MistwatchGameplayOrdinaryParity PRIVATE CANDIDATE=0)
 target_compile_definitions(MistwatchGameplayHistoricalBrakingParity PRIVATE CANDIDATE=0)
+target_compile_definitions(MistwatchGameplayCurrentBrakingControl PRIVATE CANDIDATE=0)
 target_include_directories(MistwatchGameplayHistoricalBrakingParity BEFORE PRIVATE "${historical_braking_headers}")
+target_include_directories(MistwatchGameplayCurrentBrakingControl BEFORE PRIVATE "${current_braking_control_headers}")
 add_dependencies(MistwatchPairContactTest Mistwatch MistwatchGameplayOrdinaryParity)
-add_dependencies(MistwatchGameplayHistoricalBrakingParity MistwatchGameplayOrdinaryParity)
+add_dependencies(MistwatchGameplayHistoricalBrakingParity MistwatchGameplayOrdinaryParity MistwatchGameplayCurrentBrakingControl)
 add_dependencies(MistwatchPairLoadPreparationTest Mistwatch)
 add_dependencies(MistwatchPlayablePairFrameTest Mistwatch)
 
@@ -1779,7 +1784,8 @@ set_tests_properties(MistwatchPlayerDynamicContactTest MistwatchPairContactTest 
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 add_test(NAME MistwatchHistoricalBrakingParityTest
   COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/RunMistwatchDynamicContactTests.py"
-    pair-history "$<TARGET_FILE:MistwatchGameplayOrdinaryParity>" "$<TARGET_FILE:MistwatchGameplayHistoricalBrakingParity>")
+    pair-history "$<TARGET_FILE:MistwatchGameplayOrdinaryParity>" "$<TARGET_FILE:MistwatchGameplayHistoricalBrakingParity>"
+    "$<TARGET_FILE:MistwatchGameplayCurrentBrakingControl>")
 set_tests_properties(MistwatchHistoricalBrakingParityTest PROPERTIES
   LABELS "gameplay-diagnostics;dynamic-contact;historical-braking" TIMEOUT 120 RUN_SERIAL TRUE
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
