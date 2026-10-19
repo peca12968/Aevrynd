@@ -85,9 +85,9 @@ class MistwatchSaveInputProbe {
         if constexpr(requires{TrackingTest::Map::Build(g.session,guide,g.lastRenderedCamera,g.terrain,Tracked(g),Preview(g),true);})
             return TrackingTest::Map::Build(g.session,guide,g.lastRenderedCamera,g.terrain,Tracked(g),Preview(g),true);
         else return TrackingTest::Map::Build(g.session,guide,g.lastRenderedCamera,g.terrain);}
-    std::unique_ptr<MistwatchGame> Seed(Aevrynd::Vec3 feet={0,0,65}){using namespace TrackingTest;
+    std::unique_ptr<MistwatchGame> Seed(Aevrynd::Vec3 feet={0,0,65},const Mistwatch::Session* prepared=nullptr){using namespace TrackingTest;
         engine_.GetInput().SetFocused(true);Input({});auto p=std::make_unique<MistwatchGame>();auto& g=*p;
-        g.session=Powered();g.encounter=Defeated();g.session.feet=feet;g.session.feet.y=GroundElevation(feet.x,feet.z);
+        g.session=prepared?*prepared:Powered();g.encounter=Defeated();g.session.feet=feet;g.session.feet.y=GroundElevation(feet.x,feet.z);
         g.terrain=CreateTerrain();g.solids=g.RuntimeWorldSolids(true);g.boar.model=raw_;
         ExplorerNapeHairBinding::Apply(g.explorer);BackpackFit1250::Apply(g.explorer,{+[](void*){},nullptr});
         g.started=true;g.paused=false;g.waterTime=2.5f;g.save.clear();g.fieldJournalOpen=false;
@@ -195,6 +195,118 @@ class MistwatchSaveInputProbe {
         for(unsigned n=0;n<16&&g.session.RelaySignal(2)!=100;++n){Step(g,{});Step(g,{'2'});}
         Step(g,{});Step(g,{'E'});Need((g.session.relayLinked&4u)&&Tracked(g)==None&&Preview(g)==None&&
             !Same(View(g).target,Session::relaySites[2]),"TRUE_COMPLETED_STATION_NOT_FALLBACK");++groups;}
+    void TuningConfirmationPriority(){using namespace TrackingTest;
+        const auto aim=[&](){
+            auto p=Seed(StationFeet(1));auto& g=*p;
+            // 至少真按一次；最後一次調向仍保持 Down，但下一 tick 沒有新 Pressed。
+            unsigned presses{};
+            do{Step(g,{});Step(g,{'2'});++presses;}
+            while(g.session.RelaySignal(1)!=100&&presses<16);
+            Need(g.session.RelaySignal(1)==100&&g.tuningInputRepeat.ArmedMask()==2,"CONFIRM_GREEN_HELD_FIXTURE");
+            return p;
+        };
+        const auto approachRepeat=[&](MistwatchGame& g){
+            unsigned ticks{};
+            while(g.tuningInputRepeat.Remaining(1)>Dt&&ticks++<30)Step(g,{'2'});
+            Need(ticks<30&&g.tuningInputRepeat.Remaining(1)>0&&g.tuningInputRepeat.Remaining(1)<=Dt,
+                "CONFIRM_NEXT_TICK_CROSSES_REPEAT");
+            Need(g.session.RelaySignal(1)==100,"CONFIRM_LOCK_LOST_BEFORE_EDGE");
+        };
+        // 第一輪 .35 秒與後續 .12 秒連發都要覆蓋；釋鍵對照不能取代仍按住的案例。
+        for(unsigned mode=0;mode<3;++mode){
+            auto p=aim();auto& g=*p;
+            if(mode==2){
+                unsigned ticks{};const auto sector=g.session.RelaySector(1);
+                do{Step(g,{'2'});++ticks;}while(g.session.RelaySector(1)==sector&&ticks<30);
+                while(g.session.RelaySignal(1)!=100&&ticks<160){Step(g,{'2'});++ticks;}
+                Need(ticks>1&&ticks<160&&g.session.RelaySignal(1)==100,"CONFIRM_PERIODIC_LOCK_FIXTURE");
+            }
+            approachRepeat(g);const auto sector=g.session.RelaySector(1);const auto serial=g.playablePairState.lastSerial;
+            if(mode==0)Step(g,{'E'});else Step(g,{'2','E'});
+            std::cout<<"TUNING_CONFIRM mode="<<mode<<" sector_before="<<sector<<" sector_after="<<g.session.RelaySector(1)
+                <<" signal_after="<<g.session.RelaySignal(1)<<" linked="<<g.session.relayLinked<<'\n';
+            Need(g.playableOutcome==MistwatchGame::PlayableOutcome::WorldCommitted&&g.playablePairState.lastSerial==serial+1,
+                "CONFIRM_TRUE_MAIN_NOT_COMMITTED");
+            Need(g.session.relayLinked==2&&g.session.RelaySector(1)==sector,"HELD_REPEAT_STOLE_EXPLICIT_CONFIRMATION");
+            Need(g.playableInputs.Count()==0,"CONFIRM_FIFO_NOT_CONSUMED");
+            for(unsigned n=0;n<12;++n)Step(g,{'2','E'});
+            Need(g.session.relayLinked==2&&g.session.RelaySector(1)==sector&&g.tuningInputRepeat.ArmedMask()==0,
+                "CONFIRM_HELD_KEYS_REEDITED_LINKED_STATION");
+        }
+        // 沒有 E 的正常連發不能被抑制。
+        {auto p=aim();auto& g=*p;approachRepeat(g);const auto sector=g.session.RelaySector(1);
+            Step(g,{'2'});Need(g.session.RelaySector(1)!=sector&&g.session.RelaySignal(1)<100&&g.session.relayLinked==0,
+                "CONFIRM_CHANGE_DISABLED_ORDINARY_REPEAT");}
+        // 同批次的新調向仍優先於 E：不能忽略玩家剛按的數字鍵而替他連線。
+        for(unsigned key:{unsigned('1'),unsigned('2')}){
+            auto p=aim();auto& g=*p;Step(g,{});const auto sector=g.session.RelaySector(1);
+            Step(g,{key,'E'});Need(g.session.RelaySector(1)!=sector&&g.session.RelaySignal(1)<100&&g.session.relayLinked==0,
+                "CONFIRM_CHANGE_IGNORED_FRESH_TUNING_EDGE");
+        }
+        // 按住 E 不等於新的確認邊沿；後續調向仍照常連發。
+        {auto p=aim();auto& g=*p;Step(g,{});Step(g,{'2','E'});
+            Need(g.session.relayLinked==0,"CONFIRM_HELD_E_NEGATIVE_FIXTURE");
+            const auto sector=g.session.RelaySector(1);unsigned ticks{};
+            while(g.tuningInputRepeat.Remaining(1)>Dt&&ticks++<30)Step(g,{'2','E'});
+            Step(g,{'2','E'});Need(ticks<30&&g.session.RelaySector(1)!=sector&&g.session.relayLinked==0,
+                "CONFIRM_HELD_E_SUPPRESSED_REPEAT_OR_RECONFIRMED");}
+        // 保險絲與發電機走真 OnUpdate；fixture 只用 Session 的合法進程操作準備。
+        const auto ready=[&](bool generator){
+            Session s;
+            for(unsigned i=0;i<3;++i){s.feet=Session::supplies[i];Need(s.Collect(i),"CONFIRM_STAGE_SUPPLY");}
+            for(unsigned i=0;i<3;++i){s.feet=Session::repairSites[i];Need(s.CollectRepairMaterial(i,i==0),"CONFIRM_STAGE_MATERIAL");}
+            s.feet=Session::bridge;Need(s.RepairBridge(),"CONFIRM_STAGE_BRIDGE");const auto enemy=Defeated();
+            s.feet=enemy.feet;Need(s.FinishEncounter(enemy.feet),"CONFIRM_STAGE_ENCOUNTER");
+            s.feet=Session::rangerLog;Need(s.ReadFuseClue(),"CONFIRM_STAGE_CLUE");s.feet=Session::fuse;
+            for(unsigned i=0;i<3;++i)for(unsigned n=0;n<Session::fuseCode[i]-(i==0&&!generator?1u:0u);++n)
+                Need(s.CycleFuseDial(i),"CONFIRM_STAGE_DIAL");
+            if(generator){Need(s.CollectFuse(),"CONFIRM_STAGE_FUSE");s.feet=Session::generator;
+                Need(s.ToggleCircuit(2),"CONFIRM_STAGE_CIRCUIT");s.feet.z-=1.5f;}
+            Need(s.Valid(),"CONFIRM_LEGAL_STAGE_FIXTURE");return s;
+        };
+        for(bool generator:{false,true})for(unsigned mode=0;mode<4;++mode){
+            const auto session=ready(generator);auto p=Seed(session.feet,&session);auto& g=*p;
+            const auto value=[&](){return generator?g.session.circuit:g.session.fuseDials;};
+            const auto completed=[&](){return generator?g.session.powerRestored:g.session.fuseCollected;};
+            if(mode==2){Step(g,{'1','E'});Need(completed(),"CONFIRM_FRESH_TUNE_THEN_E_CANNOT_COMPLETE");}
+            else{
+                Step(g,{'1'});Need(!completed(),"CONFIRM_TUNING_AUTO_COMPLETED_OBJECTIVE");
+                if(mode==1){Step(g,{});Step(g,{'1','E'});Need(!completed(),"CONFIRM_FRESH_WRONG_TUNE_WAS_IGNORED");}
+                else{
+                    if(mode==3){Step(g,{});Step(g,{'1'});}
+                    unsigned ticks{};
+                    while(g.tuningInputRepeat.Remaining(0)>Dt&&ticks++<30)Step(g,{'1'});
+                    Need(ticks<30&&g.tuningInputRepeat.Remaining(0)>0&&g.tuningInputRepeat.Remaining(0)<=Dt,
+                        "CONFIRM_STAGE_NEXT_REPEAT_BOUNDARY");
+                    const auto before=value();const auto remaining=g.tuningInputRepeat.Remaining(0);Step(g,{'1','E'});
+                    Need(value()==before,"CONFIRM_STAGE_AUTOREPEAT_CHANGED_EXPLICIT_CONFIRMATION");
+                    Need(completed()==(mode==0),"CONFIRM_STAGE_WRONG_COMPLETION");
+                    if(mode==3){
+                        Need(g.tuningInputRepeat.Remaining(0)>0&&g.tuningInputRepeat.Remaining(0)<=.12L,
+                            "CONFIRM_FAILED_E_RESTARTED_HOLD_DELAY");
+                        Need(g.tuningInputRepeat.Remaining(0)==.12L-(static_cast<long double>(Dt)-remaining),
+                            "CONFIRM_FAILED_E_LOST_EXACT_REPEAT_FRACTION");
+                        unsigned after{};
+                        while(value()==before&&after++<9)Step(g,{'1','E'});
+                        Need(after>1&&after<=9&&value()!=before&&!completed(),"CONFIRM_FAILED_E_LOST_NORMAL_HELD_REPEAT");
+                    }
+                }
+            }
+            Need(g.playableOutcome==MistwatchGame::PlayableOutcome::WorldCommitted&&g.playableInputs.Count()==0&&g.CaptureSaveGame().Valid(),
+                "CONFIRM_STAGE_NOT_VALID_COMMITTED_GAME");
+            std::cout<<"TUNING_CONFIRM stage="<<(generator?"generator":"fuse")<<" mode="<<mode<<" completed="<<completed()<<'\n';
+        }
+        // 同批混合舊長按與新按鍵：只排除舊鍵，不能整批取消或整批放行。
+        {auto session=ready(true);Need(session.ToggleCircuit(2)&&session.circuit==0,"CONFIRM_MIXED_CIRCUIT_FIXTURE");
+            auto p=Seed(session.feet,&session);auto& g=*p;Step(g,{'1'});Need(g.session.circuit==3,"CONFIRM_MIXED_ARM");
+            unsigned ticks{};while(g.tuningInputRepeat.Remaining(0)>Dt&&ticks++<30)Step(g,{'1'});
+            Need(ticks<30&&g.session.circuit==3&&g.tuningInputRepeat.Remaining(0)<=Dt,"CONFIRM_MIXED_DEADLINE");
+            Step(g,{'1','3','E'});
+            Need(g.session.circuit==7&&g.session.powerRestored&&g.playableInputs.Count()==0&&
+                g.playableOutcome==MistwatchGame::PlayableOutcome::WorldCommitted,"CONFIRM_MIXED_MASK_NOT_FRESH_ONLY");
+            std::cout<<"TUNING_CONFIRM mixed_held1_fresh3_E=pass circuit=7 powered=1\n";}
+        ++groups;
+    }
     template<class G>void InvalidHud(G guide,const MistwatchGame& g){using namespace TrackingTest;
         if constexpr(requires{guide.relayTrackingActive;guide.navigationRelayIndex;}){
             const auto reject=[&](const Session& session,const G& malformed,const char* reason){
@@ -254,8 +366,8 @@ class MistwatchSaveInputProbe {
         Need(g.session.Alive()&&Tracked(g)==None&&Preview(g)==None&&Same(g.session.feet,Session::bridge),"TRUE_DEATH_RETRY_KEPT_TRACKING");++groups;}
 public:
     MistwatchSaveInputProbe(Aevrynd::Engine& engine,Aevrynd::SkinnedModel3D model,std::filesystem::path output):engine_(engine),raw_(std::move(model)),output_(std::move(output)){}
-    void Run(){using namespace TrackingTest;Headless();SelectionAndResume();CancelAndHeld();PureGuideAndFallback();NearPairs();MapLayout();LoadAndReset();
-        Need(groups==6&&nearPairs==6,"TRACKING_EXACT_GROUPS");std::cout<<"RELAY_TRACKING_TRUE_MAIN_CPU_PASS groups="<<groups<<" near_pairs="<<nearPairs<<" checks="<<checks<<" frames="<<frames
+    void Run(){using namespace TrackingTest;Headless();SelectionAndResume();CancelAndHeld();PureGuideAndFallback();NearPairs();TuningConfirmationPriority();MapLayout();LoadAndReset();
+        Need(groups==7&&nearPairs==6,"TRACKING_EXACT_GROUPS");std::cout<<"RELAY_TRACKING_TRUE_MAIN_CPU_PASS groups="<<groups<<" near_pairs="<<nearPairs<<" checks="<<checks<<" frames="<<frames
             <<" true_OnUpdate=1 OnRender=0 window=0 GPU=false\n";}
 };
 int main(int argc,char** argv){try{using namespace TrackingTest;Need(argc==3,"RAW_BOAR_AND_FRESH_OUTPUT_REQUIRED");

@@ -4379,7 +4379,10 @@ private:
                     if(in.Down('1'+lever))tuningDown|=1u<<lever;
                 }
                 const auto tuningContext=in.Focused()&&!in.FocusLost()?Mistwatch::FieldInput::RepeatContext(session):0;
-                const auto tuningKeys=tuningInputRepeat.Tick((std::min)(double(dt),.1),tuningContext,tuningPressed,tuningDown);
+                auto tuningKeys=tuningInputRepeat.Tick((std::min)(double(dt),.1),tuningContext,tuningPressed,tuningDown);
+                // 明示確認不被同 tick 到期的長按連發搶先改值；新按調整仍照原順序先執行。
+                // 計時器照常前進，失敗確認不重啟延遲，也不在下一 tick 補發被略過的連發。
+                if(edges.Pressed(Mistwatch::FrameEdge::Interact))tuningKeys&=tuningPressed;
                 for(unsigned lever=0;lever<3;++lever)if(tuningKeys&(1u<<lever)){
                     if(session.CurrentStage()==Mistwatch::Stage::Relays){
                         const auto result=Mistwatch::FieldInput::Lever(session,lever);
