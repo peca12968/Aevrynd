@@ -1711,3 +1711,15 @@ foreach(query_window_profile IN ITEMS Default Strict)
   set_tests_properties(${query_window_target} PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE
     LABELS "controller-query-window-cpu;additional-mandatory-cpu")
 endforeach()
+
+# 上升中水平切入可行走坡面，仍須完成真地形與屋頂／動態體的必要接觸交易。
+add_executable(AevryndCharacterAscendingTerrain3DTest tests/CharacterAscendingTerrain3DSmoke.cpp)
+target_compile_features(AevryndCharacterAscendingTerrain3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndCharacterAscendingTerrain3DTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(AevryndCharacterAscendingTerrain3DTest PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+set_property(TARGET AevryndCharacterAscendingTerrain3DTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndCharacterAscendingTerrain3DTest PRIVATE AevryndEngine)
+target_link_options(AevryndCharacterAscendingTerrain3DTest PRIVATE /STACK:16777216)
+add_test(NAME AevryndCharacterAscendingTerrain3DTest COMMAND AevryndCharacterAscendingTerrain3DTest)
+set_tests_properties(AevryndCharacterAscendingTerrain3DTest PROPERTIES TIMEOUT 60
+  LABELS "terrain-locomotion;additional-mandatory-cpu")

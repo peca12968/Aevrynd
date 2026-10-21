@@ -820,7 +820,8 @@ bool CharacterController3D::StepConvexInternal(CharacterControl3D control,std::s
             // 本子步已掃掠確認實體支撐時，不再向較低地形吸附穿過橋面。
             // 真正低於地形的修正仍由下方 p.y<=ground 獨立處理。
             const bool touch=standingPolicy&&!grounded&&p.y<=ground+ConvexSkin*2;
-            if(v.y<=0&&(p.y<=ground||touch||(!endpoint.steep&&!grounded&&previousSupport&&p.y-ground<=s.groundSnapDistance))){
+            // 上升中仍可能水平切入上坡；必要地形修正不受垂直速度符號限制。
+            if(p.y<ground||(v.y<=0&&(p.y<=ground||touch||(!endpoint.steep&&!grounded&&previousSupport&&p.y-ground<=s.groundSnapDistance)))){
                 // 高度場修正也必須走完整體積的連續路徑，不能跳到頂棚另一側。
                 BodySweep correction;
                 if(!SweepBody(p+Vec3{0,extents.y,0},extents,{0,ground-p.y,0},boxes,hulls,correction)||correction.fraction<1)return false;
