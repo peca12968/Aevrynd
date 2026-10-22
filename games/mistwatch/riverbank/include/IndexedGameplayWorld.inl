@@ -1,4 +1,5 @@
     #include "RiverbankMethods.inl"
+    #include "StormRiverMethods.inl"
     std::optional<Mistwatch::BearingBridge::Model> bearingBridge;
     std::ofstream indexedGameplayTrace;
     unsigned indexedGameplayCommits{},indexedGameplayRepairedCommits{},indexedBridgeComparisons{};
@@ -9,6 +10,7 @@
         const auto before=RuntimeWorldSolids(false),after=RuntimeWorldSolids(true);
         matureContactWorld.Load(e.ExecutableDirectory()/"assets/mature-contact",before,after);matureStudy.contactWorld=&matureContactWorld;
         RebuildRiverbank(e);
+        RebuildStormRiver(e);
         bearingBridge=Mistwatch::BearingBridge::Build(terrain);
         std::vector<BoxCollider3D> repairedWithBearings(matureContactWorld.All(true).begin(),matureContactWorld.All(true).end());
         repairedWithBearings.insert(repairedWithBearings.end(),bearingBridge->additions.begin(),bearingBridge->additions.end());

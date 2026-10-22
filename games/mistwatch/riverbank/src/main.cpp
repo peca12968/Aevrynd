@@ -62,6 +62,7 @@
 #include "MistwatchWoodlandRecipe.h"
 #include "MistwatchWoodlandBridgeWorld.h"
 #include "MistwatchBearingBridge.h"
+#include "MistwatchStormRiver.h"
 #include "MistwatchWoodlandProfile.h"
 #include "MistwatchLeafCluster.h"
 #include "MistwatchEntranceComposition.h"

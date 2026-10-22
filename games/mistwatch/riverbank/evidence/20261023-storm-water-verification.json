@@ -1,0 +1,102 @@
+{
+  "status": "EXPERIMENT_SOURCE_PRESERVED_APPEARANCE_NOT_ACCEPTED",
+  "recorded_utc": "2026-10-22T22:48:39.171265+00:00",
+  "branch": "dev/mistwatch-storm-water-20261023",
+  "base": "77b7371a28c46166122d2321a15c4fa2d256fa3f",
+  "source_pairs": [
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4159-storm-river/Aevrynd/WaterShoreline3D.h",
+        "bytes": 980,
+        "sha256": "384481DBD8636FF1DFEB7550010BBBEAD4846AC89BD171FA1726E168004C1AAE"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/engine/native/include/Aevrynd/WaterShoreline3D.h",
+        "bytes": 980,
+        "sha256": "384481DBD8636FF1DFEB7550010BBBEAD4846AC89BD171FA1726E168004C1AAE"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4159-storm-river/MistwatchStormRiver.h",
+        "bytes": 483,
+        "sha256": "B594EFDF01E50BE3019C4DD9428DF2A9A5DAAA327CDA567F8C487747AC4C7584"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/MistwatchStormRiver.h",
+        "bytes": 483,
+        "sha256": "B594EFDF01E50BE3019C4DD9428DF2A9A5DAAA327CDA567F8C487747AC4C7584"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4159-storm-river/include/StormRiverMethods.inl",
+        "bytes": 3713,
+        "sha256": "4BC57B89C27B4CD791C05B1BD3848D991B7A68B4FF73145352B3D3586C417B60"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/StormRiverMethods.inl",
+        "bytes": 3713,
+        "sha256": "4BC57B89C27B4CD791C05B1BD3848D991B7A68B4FF73145352B3D3586C417B60"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4159-storm-river/include/IndexedGameplayWorld.inl",
+        "bytes": 6799,
+        "sha256": "C28007C57C3B8B5FC6F8D7591C4B29429C9A2361050942C9602802B69374F560"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/IndexedGameplayWorld.inl",
+        "bytes": 6799,
+        "sha256": "C28007C57C3B8B5FC6F8D7591C4B29429C9A2361050942C9602802B69374F560"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4159-storm-river/PrivateMain.cpp",
+        "bytes": 505763,
+        "sha256": "EFBF18FEFBD94B9F69C911B8C1AD1761AFBA1BA6DE1D08BD9B1B8791EB842D78"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/src/main.cpp",
+        "bytes": 505763,
+        "sha256": "EFBF18FEFBD94B9F69C911B8C1AD1761AFBA1BA6DE1D08BD9B1B8791EB842D78"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4159-storm-river/StormWaterContractTest.cpp",
+        "bytes": 3595,
+        "sha256": "82F3044A8E831CC64B0B4F95FEE4381F8DFC8AE8F93C4A679E9AE74593962DB8"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/tests/StormWaterContractTest.cpp",
+        "bytes": 3595,
+        "sha256": "82F3044A8E831CC64B0B4F95FEE4381F8DFC8AE8F93C4A679E9AE74593962DB8"
+      }
+    }
+  ],
+  "actual_image": {
+    "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/evidence/20261023-storm-water-unaccepted.png",
+    "bytes": 1619329,
+    "sha256": "B922B4E5A17EAEDBB0AAB06CC1CF57B112EA55D79CE33FCEE71BA5EA0F536CDD"
+  },
+  "decision": "Do not replace recommended bearing-bridge playable or adopt as realistic water. Current storm water is visible but bright/smooth with hard shoreline. Preserve useful final-terrain clip/wave boundary construction; next work must isolate reflection/transmission/foam contributions, not a colour/roughness sweep.",
+  "functional_evidence": {
+    "cpu": "m4160 StormWaterContractTest: stale20424vs20550reclipped vertices;29088newvertices/2203zero-wave/26267full-wave;155068checks include sample rows and vertices.",
+    "native": "Same current candidate Normal full original mission6666ticks/6665commits/229decoded images,health100,3counters,zero retries. Not GBV/manual/human/FPS/fullALL proof.",
+    "current_mesh": "m4159/route-completion/water-readback.json: exact shore weights,memory118279928bytes under128MiB; terrain/4148plants/57bridgeparts/25obstacles/protected6665rows unchanged."
+  },
+  "game": {
+    "path": "E:/AevryndEvidence/m4159-storm-river/build/Release/Aevrynd-Mistwatch-BearingBridge.exe",
+    "bytes": 7654400,
+    "sha256": "BF1E496B73559CD9CDC987F5A366E93815F8B225EC93E6178E4E521452C0BA22"
+  },
+  "scope": "Separate experimental source branch, not formal adoption/main/website change. Surface-geometry change only; collision-world/save identity unchanged14393446918687916796. No fluid forces, swimming or environment threat rule introduced. Generic inline engine API appends capability without changing old CreateHeightFieldWaterMesh3D signature or shaders. Actual local source-content evidence, not a clean build of this later commit. Preserved original game-link/test-include compile failure and support deadline.",
+  "writer": {
+    "path": "E:/AevryndEvidence/m4159-storm-river/PreserveExperiment.py",
+    "bytes": 4189,
+    "sha256": "261DCB498E1CDFEE37352BDA0917BAB4BE3980CE535FB190D0FE290A785BF99E"
+  }
+}

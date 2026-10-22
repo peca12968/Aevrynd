@@ -43,3 +43,14 @@ set_target_properties(MistwatchBearingBridgeContractTest PROPERTIES MSVC_RUNTIME
 add_test(NAME MistwatchBearingBridgeContractTest COMMAND MistwatchBearingBridgeContractTest
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv")
 set_tests_properties(MistwatchBearingBridgeContractTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;finite-bridge;rail-contact")
+
+add_executable(MistwatchStormWaterContractTest tests/StormWaterContractTest.cpp)
+target_compile_features(MistwatchStormWaterContractTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchStormWaterContractTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchStormWaterContractTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchStormWaterContractTest BEFORE PRIVATE include)
+target_link_libraries(MistwatchStormWaterContractTest PRIVATE AevryndEngine)
+set_target_properties(MistwatchStormWaterContractTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+add_test(NAME MistwatchStormWaterContractTest COMMAND MistwatchStormWaterContractTest
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv")
+set_tests_properties(MistwatchStormWaterContractTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;storm-water;shore-wave")
