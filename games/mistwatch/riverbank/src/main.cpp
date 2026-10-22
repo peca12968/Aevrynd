@@ -61,6 +61,7 @@
 #include "MistwatchEntranceWorldAuthor.h"
 #include "MistwatchWoodlandRecipe.h"
 #include "MistwatchWoodlandBridgeWorld.h"
+#include "MistwatchBearingBridge.h"
 #include "MistwatchWoodlandProfile.h"
 #include "MistwatchLeafCluster.h"
 #include "MistwatchEntranceComposition.h"
@@ -5080,7 +5081,10 @@ private:
             ++submittedSupplies;
         }
         submittedBridgeWorksite=0;
-        if(session.bridgeRepaired) scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
+        if(session.bridgeRepaired) {
+            if(bearingBridge)Mistwatch::BearingBridge::Submit(scene,*bearingBridge,woodMaterial,boulderMaterial);
+            else scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
+        }
         else {
             const Transform3D pose{Mistwatch::Session::bridge+Vec3{1,0,0},{},{1,1,1}};
             auto bridgeWood=woodMaterial;bridgeWood.useUv=true;

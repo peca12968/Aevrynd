@@ -1,0 +1,104 @@
+{
+  "status": "TESTED_FINITE_BRIDGE_SOURCE_CONTENT_MIRRORED_TO_WIP_ENTRY",
+  "recorded_utc": "2026-10-22T22:09:45.098847+00:00",
+  "base_commit": "7b2cdab4e942a9eb7668da7c2ef510e3a4ff770e",
+  "source_pairs": [
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4156-bearing-bridge-include-closure/PrivateMain.cpp",
+        "bytes": 499447,
+        "sha256": "093FD655C3EE7E7708B11B3BE969071710A9F048284668B68F273981B53A26B1"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/src/main.cpp",
+        "bytes": 499447,
+        "sha256": "093FD655C3EE7E7708B11B3BE969071710A9F048284668B68F273981B53A26B1"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4156-bearing-bridge-include-closure/IndexedGameplayWorld.inl",
+        "bytes": 6663,
+        "sha256": "0F48B29DDD64319C52BF6FA4CA820437D6D7D34095024600D42BE513A208DC60"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/IndexedGameplayWorld.inl",
+        "bytes": 6663,
+        "sha256": "0F48B29DDD64319C52BF6FA4CA820437D6D7D34095024600D42BE513A208DC60"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4156-bearing-bridge-include-closure/ManualEntrySmoke.inl",
+        "bytes": 7922,
+        "sha256": "714DEFC2862705DD5BF65C6DA9AAEEE0FD014C07338E422AA6AEB8A29AFEB211"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/ManualEntrySmoke.inl",
+        "bytes": 7922,
+        "sha256": "714DEFC2862705DD5BF65C6DA9AAEEE0FD014C07338E422AA6AEB8A29AFEB211"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4156-bearing-bridge-include-closure/MistwatchBearingBridge.h",
+        "bytes": 3463,
+        "sha256": "B6F220A0E3FEB84EBB788DA705EDB7F70A352D9A92E3D48FE6E9B3FE17D48D13"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/MistwatchBearingBridge.h",
+        "bytes": 3463,
+        "sha256": "B6F220A0E3FEB84EBB788DA705EDB7F70A352D9A92E3D48FE6E9B3FE17D48D13"
+      }
+    },
+    {
+      "tested": {
+        "path": "E:/AevryndEvidence/m4157-bearing-bridge-contract/BridgeConstructionTest.cpp",
+        "bytes": 4028,
+        "sha256": "0B7A4B0A27FDC4597E0531A7C7B08D08C7243156779B593103F303180F7E0606"
+      },
+      "repository": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/tests/BearingBridgeConstructionTest.cpp",
+        "bytes": 4028,
+        "sha256": "0B7A4B0A27FDC4597E0531A7C7B08D08C7243156779B593103F303180F7E0606"
+      }
+    }
+  ],
+  "game": {
+    "path": "E:/AevryndEvidence/m4156-bearing-bridge-include-closure/build/Release/Aevrynd-Mistwatch-BearingBridge.exe",
+    "bytes": 7649280,
+    "sha256": "856F3A4B7206D4FA0889C29958730E9FE99A3D2A7289B01FA6B9F92DDD78753B"
+  },
+  "engine": {
+    "path": "E:/AevryndEvidence/m4152-isolated-cpp-compiler/fresh-build/b/engine/native/Release/AevryndEngine.lib",
+    "bytes": 58935680,
+    "sha256": "457BBB5FA0CF22289CCFD33F8B4B13DA5B6859FF292C38A4A2426148E949008A"
+  },
+  "normal_and_actual_gbv": {
+    "ticks_each": 6666,
+    "commits_each": 6665,
+    "images_each": 229,
+    "health": 100,
+    "counters": 3,
+    "stages": "0..8",
+    "debug_errors": 0,
+    "debug_warnings": 0,
+    "manual_physical_input": false
+  },
+  "manual_normal_and_gbv": {
+    "ticks_each": 582,
+    "images_each": 2,
+    "f5_f9_exact_restore": true
+  },
+  "new_complete_world": "14393446918687916796",
+  "boxes_before": 47014,
+  "boxes_after": 47040,
+  "new_rendered_parts": 57,
+  "new_obstacle_boxes": 25,
+  "actual_image": {
+    "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/evidence/20261023-bearing-bridge.png",
+    "bytes": 1616555,
+    "sha256": "4D28780386E20A9F23B145FF0B3109165CCFDD34A28FFFF85B07852A69CCB6C2"
+  },
+  "scope": "Source bytes equal the actual local standalone candidate. Repository CMake target shares current AevryndEngine and448sealed assets. This records a WIP source-content preservation, NOT a fresh clean build of this later Git commit, full ALL_BUILD, isolated FPS, exact all-contact or stable/main promotion. Original compiler/route/staging failures retained externally; no score increase. Material dark, bank steepness, repetitive forest and coarse buildings/ranger remain."
+}

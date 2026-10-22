@@ -11,7 +11,7 @@ cmake --build E:/AevryndBuilds/riverbank --config Release --target MistwatchRive
 WASD 移動、Shift 跑步、Space 跳躍、Ctrl 蹲下、E 互動、Q 閃避、F 反擊。
 滑鼠左鍵拖曳／方向鍵轉鏡頭、滾輪縮放；J 任務手冊、Esc 暫停、F5 存檔、F9 讀檔。
 
-目前河岸世界識別：871859920946925248。不同世界不混讀存檔。
+目前承重橋梁河岸世界識別：14393446918687916796。不同世界不混讀存檔。
 原有通路、物件與十二株成熟樹保留。河岸實際改變 1486 格高度，保護 46610 格及 188 個植物腳印。
 Poly Haven Jacaranda 為 CC0 第三方資產；作者、來源及修改鏈見 THIRD-PARTY.txt 與 provenance 目錄。
 資產中的六份 ambientCG 材質 .blend 與 engine_probe.obj 是已存在於基準 Git 歷史的原始相同資料，不是使用者的女人偶或編譯中間檔。
@@ -27,3 +27,14 @@ Poly Haven Jacaranda 為 CC0 第三方資產；作者、來源及修改鏈見 TH
 本地證據：E:/AevryndEvidence/m4154-integrated-riverbank-native/RootHandoff.json。
 這是本地實機來源內容的開發保存，不將保存／推送本身當成美術或完整遊戲驗收。
 河岸陡峭、林相重複、建物與遊戲角色仍粗略，完整寫實美術、真人 10～15 分鐘體驗與穩定發布仍未完成。
+
+2026-10-23 承重橋梁開發增量：
+原本單薄的平板改為 32 塊有限厚度木板、3 根深主樑、2 根橫向承樑、8 根護欄柱、4 根欄桿、4 個河床基座與 4 根橋腳，共 57 個實際渲染構件。
+新增 25 個實體碰撞盒；保留原行走高度及跨越六毫米板縫的封閉橋面碰撞代理。不是每條板縫的精確碰撞模擬或真實橋梁工程認證。
+修橋前世界仍為 47014 盒；修橋後為 47040 盒。實際河岸與成熟樹原有物件逐位元組不變，新世界識別防止舊存檔混讀。
+獨立 CPU 測試確認護欄會擋住角色且可正常退開，錯誤河床條件會拒收。可建置目標：MistwatchBearingBridgeContractTest。
+同一本地候選通過一般及實際 GPU 驗證完整任務，各 6666 ticks／229 張讀回畫面，零 GPU 錯誤／警告；一般及 GPU 入口各通過真實處理器 F5/F9、精確狀態還原與兩張畫面。
+圖片 evidence/20261023-bearing-bridge.png 是這份本地候選的實機畫面，不是概念圖；evidence/20261023-bearing-bridge-verification.json 記實際遊戲／引擎雜湊與來源對應。
+本次 Git 保存的是與實測候選相同的來源內容；不將較晚的 Git 提交冒稱為已完成全新整庫建置。原引擎編譯與角色綁定物件重用、原失敗與成本均記錄。
+目前僅採開發版橋梁形體增益，木材仍偏暗，橋腳側面外觀、全場景接觸、隔離效能與真人遊玩仍待驗收。未重新提高權威視覺分數。
+最新本地證據：E:/AevryndEvidence/m4156-bearing-bridge-include-closure/RootHandoff.json。

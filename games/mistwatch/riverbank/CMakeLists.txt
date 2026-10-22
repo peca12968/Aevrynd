@@ -32,3 +32,14 @@ add_test(NAME MistwatchRiverbankLocomotionTest COMMAND MistwatchRiverbankLocomot
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/mature-world-before.f32"
   "${CMAKE_CURRENT_BINARY_DIR}/bank-trace.tsv")
 set_tests_properties(MistwatchRiverbankLocomotionTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;changed-terrain;locomotion")
+
+add_executable(MistwatchBearingBridgeContractTest tests/BearingBridgeConstructionTest.cpp)
+target_compile_features(MistwatchBearingBridgeContractTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchBearingBridgeContractTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchBearingBridgeContractTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchBearingBridgeContractTest BEFORE PRIVATE include)
+target_link_libraries(MistwatchBearingBridgeContractTest PRIVATE AevryndEngine)
+set_target_properties(MistwatchBearingBridgeContractTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+add_test(NAME MistwatchBearingBridgeContractTest COMMAND MistwatchBearingBridgeContractTest
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv")
+set_tests_properties(MistwatchBearingBridgeContractTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;finite-bridge;rail-contact")

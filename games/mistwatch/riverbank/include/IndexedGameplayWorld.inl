@@ -1,4 +1,5 @@
     #include "RiverbankMethods.inl"
+    std::optional<Mistwatch::BearingBridge::Model> bearingBridge;
     std::ofstream indexedGameplayTrace;
     unsigned indexedGameplayCommits{},indexedGameplayRepairedCommits{},indexedBridgeComparisons{};
     void InitializeIndexedGameplayWorld(Engine& e){
@@ -8,8 +9,16 @@
         const auto before=RuntimeWorldSolids(false),after=RuntimeWorldSolids(true);
         matureContactWorld.Load(e.ExecutableDirectory()/"assets/mature-contact",before,after);matureStudy.contactWorld=&matureContactWorld;
         RebuildRiverbank(e);
+        bearingBridge=Mistwatch::BearingBridge::Build(terrain);
+        std::vector<BoxCollider3D> repairedWithBearings(matureContactWorld.All(true).begin(),matureContactWorld.All(true).end());
+        repairedWithBearings.insert(repairedWithBearings.end(),bearingBridge->additions.begin(),bearingBridge->additions.end());
         matureIndexedDomain=std::make_unique<Mistwatch::IndexedValleySaveDomain>(*valleySaveDomain,*riverbankOriginal,terrain,before,after,
-            matureContactWorld.All(false),matureContactWorld.All(true),RuntimeRoofHulls(),RuntimeRoofCameraOnly());
+            matureContactWorld.All(false),repairedWithBearings,RuntimeRoofHulls(),RuntimeRoofCameraOnly());
+        {
+            std::ofstream parts(indexedGameplayOutput/"bearing-bridge-source.tsv");parts.precision(9);parts<<"role\tx\ty\tz\tsx\tsy\tsz\ttone\n";
+            for(const auto& p:bearingBridge->parts)parts<<unsigned(p.role)<<'\t'<<p.center.x<<'\t'<<p.center.y<<'\t'<<p.center.z<<'\t'<<p.size.x<<'\t'<<p.size.y<<'\t'<<p.size.z<<'\t'<<p.tone<<'\n';
+            parts.close();MatureContact::Require(bool(parts),"BRIDGE_FINITE_SOURCE_EXPORT_FAILED");
+        }
         solids=RuntimeGameplayBody(session.bridgeRepaired,session.feet);
         ResetController();
         MatureContact::Require(UpdatePlayerCamera(1.f/60.f,solids),"INDEXED_NORMAL_ENTRY_INITIAL_CAMERA_UNAVAILABLE");
@@ -40,7 +49,11 @@
     }
     void WriteIndexedGameplayResult(){
         indexedGameplayTrace.close();MatureContact::Require(bool(indexedGameplayTrace),"INDEXED_GAMEPLAY_COMMIT_TRACE_CLOSE_FAILED");
-        matureContactWorld.Write(inputReplayDirectory);
+        matureContactWorld.Write(inputReplayDirectory); // original mature-tree source remains byte preserved
+        const auto complete=matureIndexedDomain->Registered(true);
+        std::ofstream bridgeWorld(inputReplayDirectory/"bearing-world-after.f32",std::ios::binary);
+        bridgeWorld.write(reinterpret_cast<const char*>(complete.data()),std::streamsize(complete.size_bytes()));
+        bridgeWorld.close();MatureContact::Require(bool(bridgeWorld),"BRIDGE_ACTUAL_COMPLETE_WORLD_WRITE_FAILED");
         std::ofstream out(inputReplayDirectory/"indexed-gameplay-result.txt");out.precision(9);
         out<<"schema=indexed-normal-entry-gameplay-v1\noriginal_replay_passed="<<inputReplay.Passed()<<"\noriginal_failure="<<inputReplay.Failure()
             <<"\nworld="<<matureIndexedDomain->Identity()<<"\ncommitted_frames="<<indexedGameplayCommits<<"\nrepaired_world_commits="<<indexedGameplayRepairedCommits
