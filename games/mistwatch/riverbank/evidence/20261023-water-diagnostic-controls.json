@@ -1,0 +1,2123 @@
+{
+  "status": "QA_CAPTURE_COMPARATOR_VERIFIED_TWO_REAL_NEGATIVE_CASES_WATER_APPEARANCE_UNACCEPTED",
+  "recorded_utc": "2026-10-22T23:40:58.281504+00:00",
+  "base_commit": "cc3b8e498e9b720cebe793cd009cedcee6779293",
+  "tool": {
+    "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/tools/CompareWaterDiagnosticFrames.py",
+    "bytes": 7846,
+    "sha256": "47B4B2151F6254E44A5A7535BB48EE663ABD9D14132EEAE5DD721D1BE153A5E8"
+  },
+  "unit": {
+    "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/tests/WaterDiagnosticRasterComparatorTest.py",
+    "bytes": 2226,
+    "sha256": "C2BB4E28777C92779A25CAF907ABEA0C34F37EC424E364E76AF72C7BC237EAFB"
+  },
+  "unit_exit": 0,
+  "unit_stdout": {
+    "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/comparator-unit.stdout.log",
+    "bytes": 0,
+    "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+  },
+  "unit_stderr": {
+    "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/comparator-unit.stderr.log",
+    "bytes": 108,
+    "sha256": "6CE19FE5C6E39322CA0B13F5B467573E2EEEC70D41FBF64D3E414DDBE59845D6"
+  },
+  "real_negative_cases": [
+    {
+      "exit_code": 20,
+      "report": {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/comparator-v2-negative-prior-raster.json",
+        "bytes": 63782,
+        "sha256": "E0325E67E3F996E6A5A33FE3C9B6D24BF026455A9EAE905EF3CADE22EBC8A04C"
+      },
+      "first_divergence": "ACTUAL_UPLOADED_RASTER_MISMATCH"
+    },
+    {
+      "exit_code": 20,
+      "report": {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/comparator-v2-negative-nonwater-pixels.json",
+        "bytes": 63267,
+        "sha256": "1F92E60FE3E76707A97F05BF886D32D04FD02A63F00C6F5C838E0689808EE0DD"
+      },
+      "first_divergence": "NONWATER_PIXEL_CONTROL_MISMATCH:protected_top_forest_hud"
+    }
+  ],
+  "actual_fixed_pair": {
+    "status": "SAME_EXE_CAMERA_CUT_CONTROL_FAILURE_PRESERVED_NO_FURTHER_VARIANTS",
+    "recorded_utc": "2026-10-22T23:36:21.831145+00:00",
+    "actual_raster_exact_all229": true,
+    "nonwater_pixel_controls_exact": false,
+    "selected_interiors_reflection_signal": true,
+    "regions": {
+      "protected_top_forest_hud": {
+        "box": [
+          0,
+          0,
+          1280,
+          280
+        ],
+        "pixels": 358400,
+        "changed_pixels": 122086,
+        "maximum_channel_difference": 62,
+        "postprocessed_diagnostic_means_rgb": [
+          90.35180803571428,
+          88.09652622767857,
+          63.61056361607143
+        ],
+        "green_dominant_pixels": 126997
+      },
+      "protected_lower_terrain_actor": {
+        "box": [
+          0,
+          430,
+          1280,
+          720
+        ],
+        "pixels": 371200,
+        "changed_pixels": 12452,
+        "maximum_channel_difference": 45,
+        "postprocessed_diagnostic_means_rgb": [
+          94.12144935344827,
+          78.25318426724138,
+          42.761686422413796
+        ],
+        "green_dominant_pixels": 30582
+      },
+      "left_water_interior": {
+        "box": [
+          30,
+          355,
+          450,
+          370
+        ],
+        "pixels": 6300,
+        "changed_pixels": 6300,
+        "maximum_channel_difference": 183,
+        "postprocessed_diagnostic_means_rgb": [
+          58.58095238095238,
+          111.26428571428572,
+          0.0
+        ],
+        "green_dominant_pixels": 6155
+      },
+      "right_water_interior": {
+        "box": [
+          1105,
+          312,
+          1270,
+          335
+        ],
+        "pixels": 3795,
+        "changed_pixels": 3795,
+        "maximum_channel_difference": 208,
+        "postprocessed_diagnostic_means_rgb": [
+          46.498814229249014,
+          165.37364953886694,
+          0.0
+        ],
+        "green_dominant_pixels": 3795
+      }
+    },
+    "raster": [
+      {
+        "file": "0-start-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "1-wait-start.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "10-verify-low-roof.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "100-power-workshop-exit.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "101-power-road-65.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "102-power-switch-1-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "103-power-switch-1-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "104-power-switch-1-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "105-power-switch-1-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "106-power-switch-3-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "107-power-switch-3-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "108-power-switch-3-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "109-power-switch-3-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "11-exit-shelter.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "110-power-generator-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "111-power-generator-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "112-power-generator-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "113-power-generator-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "114-completion-road-65.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "115-completion-road-62.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "116-completion-west-station.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "117-completion-west-station-turn-0-prerequisite-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "118-completion-west-station-turn-0-prerequisite-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "119-completion-west-station-turn-0-prerequisite-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "12-stand-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "120-completion-west-station-turn-0-confirm-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "121-completion-west-station-turn-0-confirm-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "122-completion-west-station-turn-0-confirm-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "123-completion-west-station-turn-0-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "124-completion-west-station-turn-0-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "125-completion-west-station-turn-0-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "126-completion-west-station-turn-1-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "127-completion-west-station-turn-1-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "128-completion-west-station-turn-1-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "129-completion-west-station-turn-1-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "13-verify-standing.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "130-completion-west-station-turn-2-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "131-completion-west-station-turn-2-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "132-completion-west-station-turn-2-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "133-completion-west-station-turn-2-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "134-completion-west-station-turn-3-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "135-completion-west-station-turn-3-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "136-completion-west-station-turn-3-link-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "137-completion-west-station-turn-3-link-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "138-completion-west-station-turn-3-link-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "139-completion-west-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "14-bridge-road-18.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "140-completion-road-86.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "141-completion-east-station.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "142-completion-east-station-turn-0-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "143-completion-east-station-turn-0-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "144-completion-east-station-turn-0-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "145-completion-east-station-turn-1-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "146-completion-east-station-turn-1-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "147-completion-east-station-turn-1-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "148-completion-east-station-turn-1-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "149-completion-east-station-turn-2-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "15-wood-1-road.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "150-completion-east-station-turn-2-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "151-completion-east-station-turn-2-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "152-completion-east-station-turn-2-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "153-completion-east-station-turn-3-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "154-completion-east-station-turn-3-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "155-completion-east-station-turn-3-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "156-completion-east-station-turn-3-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "157-completion-east-station-turn-4-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "158-completion-east-station-turn-4-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "159-completion-east-station-turn-4-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "16-wood-1-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "160-completion-east-station-turn-4-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "161-completion-east-station-turn-5-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "162-completion-east-station-turn-5-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "163-completion-east-station-turn-5-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "164-completion-east-station-turn-5-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "165-completion-east-station-turn-6-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "166-completion-east-station-turn-6-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "167-completion-east-station-turn-6-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "168-completion-east-station-turn-6-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "169-completion-east-station-turn-7-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "17-wood-1-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "170-completion-east-station-turn-7-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "171-completion-east-station-turn-7-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "172-completion-east-station-turn-7-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "173-completion-east-station-turn-8-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "174-completion-east-station-turn-8-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "175-completion-east-station-turn-8-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "176-completion-east-station-turn-8-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "177-completion-east-station-turn-9-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "178-completion-east-station-turn-9-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "179-completion-east-station-turn-9-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "18-wood-1-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "180-completion-east-station-turn-9-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "181-completion-east-station-turn-10-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "182-completion-east-station-turn-10-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "183-completion-east-station-turn-10-link-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "184-completion-east-station-turn-10-link-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "185-completion-east-station-turn-10-link-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "186-completion-east-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "187-completion-road-94.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "188-completion-northwest-station.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "189-completion-northwest-station-turn-0-prerequisite-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "19-wood-1-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "190-completion-northwest-station-turn-0-prerequisite-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "191-completion-northwest-station-turn-0-prerequisite-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "192-completion-northwest-station-turn-0-confirm-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "193-completion-northwest-station-turn-0-confirm-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "194-completion-northwest-station-turn-0-confirm-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "195-completion-northwest-station-turn-0-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "196-completion-northwest-station-turn-0-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "197-completion-northwest-station-turn-0-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "198-completion-northwest-station-turn-1-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "199-completion-northwest-station-turn-1-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "2-walk-road.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "20-wood-1-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "200-completion-northwest-station-turn-1-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "201-completion-northwest-station-turn-1-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "202-completion-northwest-station-turn-2-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "203-completion-northwest-station-turn-2-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "204-completion-northwest-station-turn-2-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "205-completion-northwest-station-turn-2-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "206-completion-northwest-station-turn-3-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "207-completion-northwest-station-turn-3-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "208-completion-northwest-station-turn-3-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "209-completion-northwest-station-turn-3-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "21-bridge-road-6.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "210-completion-northwest-station-turn-4-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "211-completion-northwest-station-turn-4-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "212-completion-northwest-station-turn-4-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "213-completion-northwest-station-turn-4-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "214-completion-northwest-station-turn-5-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "215-completion-northwest-station-turn-5-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "216-completion-northwest-station-turn-5-signal-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "217-completion-northwest-station-turn-5-signal-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "218-completion-northwest-station-turn-6-signal-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "219-completion-northwest-station-turn-6-signal-observe.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "22-supply-0-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "220-completion-northwest-station-turn-6-link-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "221-completion-northwest-station-turn-6-link-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "222-completion-northwest-station-turn-6-link-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "223-completion-northwest-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "224-completion-beacon.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "225-completion-beacon-turn-0-link-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "226-completion-beacon-turn-0-link-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "227-completion-beacon-turn-0-link-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "228-complete.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "23-supply-0-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "24-supply-0-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "25-supply-0-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "26-supply-0-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "27-bridge-road-14.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "28-supply-1-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "29-supply-1-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "3-approach-shelter.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "30-supply-1-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "31-supply-1-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "32-supply-1-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "33-bridge-road-22.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "34-supply-2-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "35-supply-2-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "36-supply-2-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "37-supply-2-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "38-supply-2-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "39-wood-2-road.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "4-crouch-outside.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "40-wood-2-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "41-wood-2-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "42-wood-2-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "43-wood-2-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "44-wood-2-return.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "45-repair-bridge-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "46-repair-bridge-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "47-repair-bridge-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "48-repair-bridge-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "49-cross-bridge.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "5-enter-shelter.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "50-combat-1-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "51-combat-1-windup.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "52-combat-1-dodge.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "53-combat-1-outside-circle.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "54-combat-1-recovery-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "55-combat-1-counter-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "56-combat-1-counter-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "57-combat-1-counter-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "58-combat-2-windup.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "59-combat-2-dodge.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "6-interaction-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "60-combat-2-outside-circle.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "61-combat-2-recovery-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "62-combat-2-counter-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "63-combat-2-counter-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "64-combat-2-counter-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "65-combat-3-windup.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "66-combat-3-dodge.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "67-combat-3-outside-circle.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "68-combat-3-recovery-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "69-combat-3-counter-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "7-collect-tools.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "70-combat-3-counter-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "71-combat-3-counter-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "72-power-road-48.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "73-power-road-79.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "74-power-log-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "75-power-log-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "76-power-log-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "77-power-log-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "78-power-hut-exit.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "79-power-road-59.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "8-verify-tools.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "80-power-cabinet-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "81-power-dial-1-turn-1-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "82-power-dial-1-turn-1-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "83-power-dial-1-turn-1-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "84-power-dial-1-turn-2-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "85-power-dial-1-turn-2-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "86-power-dial-1-turn-2-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "87-power-dial-3-turn-1-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "88-power-dial-3-turn-1-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "89-power-dial-3-turn-1-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "9-low-roof-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "90-power-dial-3-turn-2-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "91-power-dial-3-turn-2-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "92-power-dial-3-turn-2-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "93-power-dial-3-turn-3-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "94-power-dial-3-turn-3-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "95-power-dial-3-turn-3-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "96-power-fuse-approach.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "97-power-fuse-release.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "98-power-fuse-press.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      },
+      {
+        "file": "99-power-fuse-verify.png",
+        "actual_uploaded_vp_equal": true,
+        "unjittered_vp_equal": true,
+        "jitter_equal": true,
+        "left_jitter": "0.0546875,-0.166666716",
+        "right_jitter": "0.0546875,-0.166666716"
+      }
+    ],
+    "protected_exact_files": [
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/bearing-bridge-source.tsv",
+        "bytes": 3892,
+        "sha256": "A50CB3E8767DAECF0311026D0A54A8DAD5E39949E8D27D00A806444E9F3717D4"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/bearing-world-after.f32",
+        "bytes": 1128960,
+        "sha256": "9851B3A99C4ADB39EAC2DEF843DD3CAE9CB74E8BBAFFAC58BF448ED62E9E52C6"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/mature-world-before.f32",
+        "bytes": 1128336,
+        "sha256": "19626071C75E0DDFFE8A3F797BC4DF0E195D4B982611C8B5FBD7CF35497ED22B"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/mature-world-after.f32",
+        "bytes": 1128360,
+        "sha256": "647BCF3FE5505F9AC99892534AA7880290F4822A48A2340700E113F561B42761"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/riverbank-guards.tsv",
+        "bytes": 10240,
+        "sha256": "1345AFB5BE031ECE6EC427DB9952E6D450459E84ADBB97A07F544628CC0EF585"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/riverbank-heightfield.tsv",
+        "bytes": 1395319,
+        "sha256": "DDE6A9B7637FB2C5DDCBB7A5C46C97F55EA5ABF768B2AEA97C7E85519EB6076D"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/storm-river-current-actual-mesh.bin",
+        "bytes": 930832,
+        "sha256": "DDA5F13529A82B049E5F90302BCBFF05C76E0072FECE88396210D94595A2C5B1"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/storm-river-old-actual-mesh.bin",
+        "bytes": 653584,
+        "sha256": "2CCE3E9864E45F094090416387A02B08F84781369252502A51C3D57B20A18EB9"
+      },
+      {
+        "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/indexed-gameplay-commits.tsv",
+        "bytes": 473435,
+        "sha256": "66A81428E4A1DA5B7C5215F43BA0A62F2E319FE9B7E1311C7AD54C06DE049158"
+      }
+    ],
+    "baseline": {
+      "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/formal/native/48-repair-bridge-verify.png",
+      "bytes": 1907732,
+      "sha256": "3B14234BD298E7A83FE6759DEA810EB106B75FEB7F1A1B6F2CEEA74B66C95D3A"
+    },
+    "diagnostic": {
+      "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/native/48-repair-bridge-verify.png",
+      "bytes": 1904871,
+      "sha256": "359E1D349A64A782DA2BC8024C6DBB96AEF5F99EA98CABD9B53EE9F2AD0676DC"
+    },
+    "scope": "Diagnostic per-frame camera cuts reject temporal histories; all original quality flags remain but this is current-frame diagnostic scope, not production temporal AA quality acceptance. Exact uploaded raster, jitter and scoped non-water pixels required; no percentages inferred as linear energy. No production water appearance, score or stable build claim.",
+    "next": "Only if all strict controls pass run the already-built reflection-source mode2; otherwise stop this diagnostic family and retain failure, do not relax gates.",
+    "reader": {
+      "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/Compare.py",
+      "bytes": 3934,
+      "sha256": "971AEE5BA8F65DDB93F8FCA2800B512AD09EB1D9521808DD11AB184C6718231F"
+    }
+  },
+  "prior_raster_mismatch": {
+    "status": "PRIOR_UNJITTERED_CAMERA_MATCH_WAS_NOT_ACTUAL_RASTER_MATCH_DEMONSTRATED",
+    "recorded_utc": "2026-10-22T23:31:36.009579+00:00",
+    "pairs": [
+      {
+        "label": "original-bloom",
+        "frames": 229,
+        "unjittered_equal_frames": 229,
+        "actual_uploaded_equal_frames": 13,
+        "jitter_equal_frames": 13,
+        "ordered_pair_view_bytes_sha256": "41A184F5C9DAB02383A167346129C51C14E7BD4DCDB6B75DB2B3E0F51BA3558D",
+        "actual48witness": {
+          "file": "48-repair-bridge-verify.png.uploaded-view.txt",
+          "unjittered_equal": true,
+          "actual_uploaded_equal": false,
+          "jitter_equal": false,
+          "before": {
+            "render_serial": "601",
+            "uploaded_vp_bits": "1064921683,3084112943,950743617,1016688591,0,1070844018,1057170938,3246595047,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "uploaded_unjittered_vp_bits": "1064921683,0,0,1017629475,0,1070845166,1057163518,3246590069,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "jitter": "0.0546875,-0.166666716",
+            "window": "0.5,0.545499384,0.0526962355,0.182000279,1,0.98552531,0.649999976,0,"
+          },
+          "after": {
+            "render_serial": "682",
+            "uploaded_vp_bits": "1064921683,951919110,3113802389,1020989775,0,1070846314,1057156098,3246585091,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "uploaded_unjittered_vp_bits": "1064921683,0,0,1017629475,0,1070845166,1057163518,3246590069,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "jitter": "-0.1953125,0.166666627",
+            "window": "0.5,0.545499384,0.0526962355,0.182000279,1,0.98552531,0.649999976,0,"
+          }
+        },
+        "view_before": {
+          "path": "E:/AevryndEvidence/m4159-storm-river/route-completion/native/48-repair-bridge-verify.png.uploaded-view.txt",
+          "bytes": 455,
+          "sha256": "A6B3F415A29230561EDD198FF34C046F7FEFE4226690575186455A2F1EF75C1C"
+        },
+        "view_after": {
+          "path": "E:/AevryndEvidence/m4161-water-optics-components/route-completion/native/48-repair-bridge-verify.png.uploaded-view.txt",
+          "bytes": 455,
+          "sha256": "0FA3D0DEF8D4D8882931FD32D9D73C2FCB6D035E6BF778D0A0D770361AA9D599"
+        }
+      },
+      {
+        "label": "paired-no-bloom",
+        "frames": 229,
+        "unjittered_equal_frames": 229,
+        "actual_uploaded_equal_frames": 22,
+        "jitter_equal_frames": 22,
+        "ordered_pair_view_bytes_sha256": "046551D0F9EB88809FEDD19A8636806E40DAF72202F00861B9B91191A088F193",
+        "actual48witness": {
+          "file": "48-repair-bridge-verify.png.uploaded-view.txt",
+          "unjittered_equal": true,
+          "actual_uploaded_equal": false,
+          "jitter_equal": false,
+          "before": {
+            "render_serial": "595",
+            "uploaded_vp_bits": "1064921683,3105064463,971928502,1009753245,0,1070842488,1057180832,3246601685,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "uploaded_unjittered_vp_bits": "1064921683,0,0,1017629475,0,1070845166,1057163518,3246590069,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "jitter": "0.3046875,-0.388888955",
+            "window": "0.5,0.545499384,0.0526962355,0.182000279,1,0.98552531,0.649999976,0,"
+          },
+          "after": {
+            "render_serial": "706",
+            "uploaded_vp_bits": "1064921683,951919110,3113802389,1020989775,0,1070846314,1057156098,3246585091,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "uploaded_unjittered_vp_bits": "1064921683,0,0,1017629475,0,1070845166,1057163518,3246590069,0,3197588043,1064605490,3248809158,0,3197587051,1064603887,3248755649,",
+            "jitter": "-0.1953125,0.166666627",
+            "window": "0.5,0.545499384,0.0526962355,0.182000279,1,0.98552531,0.649999976,0,"
+          }
+        },
+        "view_before": {
+          "path": "E:/AevryndEvidence/m4162-water-no-bloom-control/baseline-no-bloom/native/48-repair-bridge-verify.png.uploaded-view.txt",
+          "bytes": 455,
+          "sha256": "D09E449CB2502C0D4CF5DC87D5F9989670C7ED057DD4611920A3FEF834272A28"
+        },
+        "view_after": {
+          "path": "E:/AevryndEvidence/m4162-water-no-bloom-control/components-no-bloom/native/48-repair-bridge-verify.png.uploaded-view.txt",
+          "bytes": 455,
+          "sha256": "E1B5CB394051216A95FF295FAC345D7B605C294EAFCC90458A915FF33B537285"
+        }
+      }
+    ],
+    "interpretation": "Demonstrated mismatch of actual uploaded camera and temporal jitter is a failed prerequisite for exact pixel comparison, despite equal unjittered VP/actor/geometry. This does not prove it explains every differing pixel, prove a compiler bug, establish bloom as cause, or identify the physical cause of milky water.",
+    "next": "Use same executable, per-render diagnostic camera-cut and require exact actual uploaded VP+jitter before interpreting scoped opaque/water pixels. Existing failure receipts remain failures.",
+    "reader": {
+      "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/RetainPriorRasterMismatch.py",
+      "bytes": 2881,
+      "sha256": "69CA81FC805A2DD51753EBFED608EEA816771CB2728B7EA99580931203311664"
+    }
+  },
+  "native_readbacks": [
+    {
+      "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/formal/readback.json",
+      "bytes": 216450,
+      "sha256": "5C456897C3A59D53F661602D77B39750BEF7E015A8F830CCCB990FFD98479626"
+    },
+    {
+      "path": "E:/AevryndEvidence/m4164-camera-cut-water-controls/components/readback.json",
+      "bytes": 219222,
+      "sha256": "92593AF44AC6894B4FAC7B61D2F66D025A70E253E0392151361B0FC28F7F1D31"
+    }
+  ],
+  "scope": "QA comparison admission only. Original temporal/color failures are preserved. No production Engine/game/Shader source changed, no water appearance acceptance/score/main merge/site change. Private source and full actual images remain at exact evidence locators; this is not a claim all private diagnostic builds are portable from this commit."
+}
