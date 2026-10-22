@@ -34,7 +34,8 @@ inline MiddleLayerResult CreateMiddleLayer(const Aevrynd::HeightField3D& terrain
     std::span<const Aevrynd::Vec3> conifers,std::span<const Mistwatch::ForestProp> props,
     const Mistwatch::ForestUnderstory& understory,std::span<const Mistwatch::BroadleafTree> original,
     std::span<const Aevrynd::BoxCollider3D> originalSolids,unsigned target=24,
-    std::array<float,4> originalFernRadii={.981686473f,.821101248f,.549620509f,.635080874f}) {
+    std::array<float,4> originalFernRadii={.981686473f,.821101248f,.549620509f,.635080874f},
+    const EntryLayout& layout=ActiveEntryLayout) {
     using namespace Aevrynd;
     using namespace Mistwatch;
     if(target>96)throw std::invalid_argument("Middle-layer prototype target exceeds bounded budget");
@@ -61,7 +62,7 @@ inline MiddleLayerResult CreateMiddleLayer(const Aevrynd::HeightField3D& terrain
         const auto stem=TransformBounds(BroadleafLowerTrunkBounds(),pose);
         const BoxCollider3D trunk{stem.center,stem.extents};
         // 全冠保留原作者任務排除；細樹幹不能取代樹冠通路檢查。
-        if(!PropClearsObjectives({crown.center,crown.extents})||!BroadleafClearsSettlement(crown)) {
+        if(!PropClearsObjectives({crown.center,crown.extents},layout)||!BroadleafClearsSettlement(crown)) {
             ++result.rejectedClearance;continue;
         }
         bool unsuitable=!terrain.Contains(x,z)||terrain.SampleNormal(x,z).y<.97f;

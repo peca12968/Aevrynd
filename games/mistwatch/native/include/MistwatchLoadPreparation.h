@@ -9,6 +9,7 @@
 #include "MistwatchPlayerLocomotion.h"
 #include "MistwatchWestCliffRelief.h"
 #include "MistwatchRangerHut.h"
+#include "MistwatchValleySaveDomain.h"
 #include <Aevrynd/ThirdPersonCameraMotion3D.h>
 #include <Aevrynd/ConvexAabbSweep3D.h>
 #include <algorithm>
@@ -32,7 +33,7 @@ enum class LoadPreparationError {
     BoarUnsupported, BoarBodyOverlap, BoarTerrainAboveBodyTop, MotionRestoreRejected, LocomotionRestoreRejected
 };
 // 衍生地形是另一個明確版本；預設路徑仍維持既有 canonical 驗證。
-enum class LoadTerrainProfile { Canonical, WestCliffLedgesV1, WestCliffSlope45V1, WestCliffStanding45V1 };
+enum class LoadTerrainProfile { Canonical, WestCliffLedgesV1, WestCliffSlope45V1, WestCliffStanding45V1, ValleyContactV7 };
 struct LoadPreparationInputs {
     const Aevrynd::CharacterController3D& controller;
     const Explorer& explorer;
@@ -159,13 +160,18 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
     std::span<const Aevrynd::BoxCollider3D> extraSolids,FirLayoutSelector firLayout,
     FallenLogProfile fallenProfile,const EntranceWorldAuthor* authored=nullptr,
     std::span<const Aevrynd::ConvexAabbSweep3D* const> hulls={},
-    LoadTerrainProfile terrainProfile=LoadTerrainProfile::Canonical) noexcept {
+    LoadTerrainProfile terrainProfile=LoadTerrainProfile::Canonical,const ValleySaveDomain* valley=nullptr) noexcept {
     using namespace Aevrynd;
     using namespace LoadPreparationDetail;
     const auto fail=[](LoadPreparationError error){return LoadPreparationResult{error,{}};};
     try {
         ValidateFallenLogRoute(firLayout,fallenProfile);
-        if(terrainProfile==LoadTerrainProfile::Canonical){
+        if(terrainProfile==LoadTerrainProfile::ValleyContactV7){
+            if(!valley||!valley->MatchesTerrain(terrain)||!valley->MatchesAttachments(hulls,extraCameraOnly)||!saved.worldIdentity||*saved.worldIdentity!=valley->Identity()||
+                firLayout!=FirLayoutSelector::ForestWood||fallenProfile!=FallenLogProfile::ScannedStraightV1)
+                return fail(LoadPreparationError::InvalidTerrain);
+        }else if(saved.worldIdentity)return fail(LoadPreparationError::InvalidTerrain);
+        else if(terrainProfile==LoadTerrainProfile::Canonical){
             if(fallenProfile==FallenLogProfile::ScannedStraightV1)ValidateFallenLogTerrain(terrain);
         }else if(terrainProfile==LoadTerrainProfile::WestCliffLedgesV1||terrainProfile==LoadTerrainProfile::WestCliffSlope45V1||
             terrainProfile==LoadTerrainProfile::WestCliffStanding45V1){
@@ -198,6 +204,8 @@ inline LoadPreparationResult PrepareSavedGame(const SaveGame& saved,const LoadPr
         p.solids=authored?authored->WorldSolids(saved.session.bridgeRepaired):
             WorldSolids(saved.session.bridgeRepaired,firLayout,fallenProfile);
         p.solids.insert(p.solids.end(),extraSolids.begin(),extraSolids.end());
+        if(terrainProfile==LoadTerrainProfile::ValleyContactV7&&!valley->MatchesWorld(saved.session.bridgeRepaired,p.solids))
+            return fail(LoadPreparationError::InvalidExtraSolids);
         if(saved.motion){
             // 不積分重力、不先落地再重跳。引擎以保存的真實體積／支撐驗證並恢復速度。
             double highest{};

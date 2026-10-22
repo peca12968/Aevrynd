@@ -1,0 +1,18 @@
+{
+  "asset": "Rock Face 03",
+  "source": "https://polyhaven.com/a/rock_face_03",
+  "license": "CC0-1.0",
+  "license_url": "https://polyhaven.com/license",
+  "photography": "Dario Barresi",
+  "processing": "Rico Cilliers",
+  "resolution": 2048,
+  "original_pixels_modified": false,
+  "retained_source_receipt": "C:/AevryndBuilds/m3052-cliff-material-source/run1/receipt.json",
+  "license_and_asset_page_rechecked": "2026-10-21",
+  "channels": {
+    "2k/base-color.jpg": "644EE79DF7FFBF5F6AFC330B64DD3F33794BAB8820915FE61FFE0C88ECFD7ECE",
+    "2k/roughness.jpg": "9CA3E9E196685F702328F24D66F039B72F5330FC35CF2A2C265CFA50A7916301",
+    "2k/normal-dx.jpg": "83B039065BFF5DE79CA55674C59361152D808FE3779498E5C2EE0725C1172FAA"
+  },
+  "scope": "Official original three maps reused byte-for-byte. Texture assets are third-party CC0, not exclusively Aevrynd-owned; no Unreal Engine code or asset used. Normal convention is DirectX. Engine's existing terrain layer projection and scalar settings remain unchanged."
+}

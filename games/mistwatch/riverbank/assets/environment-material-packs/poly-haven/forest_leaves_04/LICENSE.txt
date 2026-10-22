@@ -1,0 +1,12 @@
+Forest Leaves 04 — original texture maps
+Author: Rob Tuytel / Poly Haven
+Asset: https://polyhaven.com/a/forest_leaves_04
+License: CC0 1.0 Universal, https://creativecommons.org/publicdomain/zero/1.0/
+Provider license statement: https://polyhaven.com/license
+
+This package contains the original 2K diffuse, DirectX normal and roughness JPG
+maps fetched from the provider's public asset service. No provider example
+render, logo, website copy, model or Blender source is included.
+
+來源、完整下載 URL、原官方 MD5、實際位元組數與 SHA-256 記錄於 source-receipt.json。
+此套件為森林落葉材質候選；下載成功不代表引擎上傳、畫質或正式採用通過。

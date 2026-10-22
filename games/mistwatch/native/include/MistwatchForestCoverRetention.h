@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchForestCover.h"
 #include "MistwatchGroupedCanopyVolume.h"
+#include "MistwatchImmutableVolumeBounds.h"
 #include <bit>
 #include <cstdint>
 #include <memory>
@@ -16,6 +17,7 @@ struct ForestCoverWorldView {
     std::size_t expectedWoodCount{};
     std::uint64_t expectedInputFingerprint{};
     const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr;
+    EntryLayoutId layoutId{ActiveEntryLayout.id};
 };
 enum class ForestCoverRetentionGate : unsigned { Domain,GroundAnchor,Clearance,Volume,Terrain,Spacing };
 enum class ForestCoverPlantOrigin : unsigned { Retained,OriginalPatchFill,NewPatchFill };
@@ -78,7 +80,16 @@ inline std::uint64_t ForestCoverRetentionWorldFingerprint(const ForestCoverWorld
     if(world.trees.size()>10000||world.understory.ferns.size()>10000||world.understory.saplings.size()>10000||
         !CanopyVolume::ValidWoodParts(world.solids)||!CanopyVolume::ValidWoodParts(world.wood))
         throw std::invalid_argument("Invalid complete retention world");
-    Hasher hash;hash.Word(world.groupedWood?0x52545732u:0x52545731u);
+    const auto& layout=ResolveEntryLayout(world.layoutId);
+    // Original的舊證書序列保持，但其六站定義不得靜默改名沿用舊身份。
+    static_assert(EntryLayoutFingerprint(OriginalEntryLayout)==12043458969776406530ull);
+    Hasher hash;
+    if(layout.id==EntryLayoutId::Original)hash.Word(world.groupedWood?0x52545732u:0x52545731u);
+    else {
+        hash.Word(world.groupedWood?0x52545734u:0x52545733u);
+        hash.Word(1u);hash.Word(static_cast<std::uint32_t>(layout.id));
+        for(unsigned id=0;id<6;++id){hash.Word(id);hash.Vector(layout.Site(static_cast<EntrySiteId>(id)));}
+    }
     const auto& grid=world.terrain.Settings();hash.Vector(grid.origin);hash.Word(grid.width);hash.Word(grid.depth);hash.Float(grid.cellSize);
     hash.Count(world.terrain.SampleCount());
     for(unsigned z=0;z<grid.depth;++z)for(unsigned x=0;x<grid.width;++x)hash.Float(world.terrain.Height(x,z));
@@ -107,13 +118,14 @@ class ValidatedForestCoverOriginal final {
         std::array<ForestCoverAsset,5> assets;
         std::array<std::uint64_t,5> assetIdentities;
         ForestCoverSettings settings;
+        EntryLayout layout;
         ForestCoverResult original;
         State(const Aevrynd::HeightField3D& t,std::span<const Aevrynd::Vec3> treesIn,const ForestUnderstory& u,
             std::span<const Aevrynd::BoxCollider3D> s,const std::array<ForestCoverAsset,5>& a,
             const std::array<std::uint64_t,5>& ids,ForestCoverSettings settingsIn,
-            std::span<const Aevrynd::BoxCollider3D> w,ForestCoverResult result)
+            std::span<const Aevrynd::BoxCollider3D> w,ForestCoverResult result,const EntryLayout& sourceLayout)
             :terrain(t),trees(treesIn.begin(),treesIn.end()),understory(u),solids(s.begin(),s.end()),
-            wood(w.begin(),w.end()),assets(a),assetIdentities(ids),settings(settingsIn),original(std::move(result)){}
+            wood(w.begin(),w.end()),assets(a),assetIdentities(ids),settings(settingsIn),layout(sourceLayout),original(std::move(result)){}
     };
     std::shared_ptr<const State> state_;
     static bool Same(const Aevrynd::Transform3D& a,const Aevrynd::Transform3D& b){
@@ -124,6 +136,11 @@ class ValidatedForestCoverOriginal final {
         using ForestCoverRetentionDetail::Same;return Same(a.center,b.center)&&Same(a.extents,b.extents);
     }
     static bool Same(Aevrynd::Vec3 a,Aevrynd::Vec3 b){return ForestCoverRetentionDetail::Same(a,b);}
+    static bool SameLayout(const EntryLayout& a,const EntryLayout& b){
+        if(a.id!=b.id)return false;
+        for(unsigned id=0;id<6;++id)if(!Same(a.Site(static_cast<EntrySiteId>(id)),b.Site(static_cast<EntrySiteId>(id))))return false;
+        return true;
+    }
     template<class T>static bool SameRange(std::span<const T> a,std::span<const T> b){
         if(a.size()!=b.size())return false;
         for(std::size_t i=0;i<a.size();++i)if(!Same(a[i],b[i]))return false;
@@ -151,12 +168,13 @@ public:
         std::span<const Aevrynd::Vec3> trees,const ForestUnderstory& understory,
         std::span<const Aevrynd::BoxCollider3D> solids,const std::array<ForestCoverAsset,5>& assets,
         const std::array<std::uint64_t,5>& assetIdentities,ForestCoverSettings settings={},
-        std::span<const Aevrynd::BoxCollider3D> wood={}){
+        std::span<const Aevrynd::BoxCollider3D> wood={},EntryLayoutId layoutId=ActiveEntryLayout.id){
         // 原入口、亂數與完整體積旗標不變；不足額仍由原 retention 的同一位置拒絕。
-        auto original=CreateForestCover(terrain,trees,understory,solids,assets,settings,wood,true);
+        const auto& layout=ResolveEntryLayout(layoutId);
+        auto original=CreateForestCover(terrain,trees,understory,solids,assets,settings,wood,true,layout);
         ValidatedForestCoverOriginal token;
         token.state_=std::make_shared<const State>(terrain,trees,understory,solids,assets,assetIdentities,
-            settings,wood,std::move(original));return token;
+            settings,wood,std::move(original),layout);return token;
     }
     [[nodiscard]]const ForestCoverResult& Original()const{
         if(!state_)throw std::invalid_argument("RETENTION_ORIGINAL_TOKEN_REQUIRED");
@@ -169,7 +187,7 @@ public:
         // 與舊 verifiedOld 一樣，獨立逐 bit 核對完整人口，含未寫入放置雜湊的欄位。
         if(!generated.reachedBudget||!ForestCoverRetentionDetail::Same(generated,canonicalOld))
             throw std::invalid_argument("Retention canonical source mismatch or shortfall");
-        if(original.groupedWood||!SameTerrain(s.terrain,original.terrain)||
+        if(original.groupedWood||!SameLayout(s.layout,ResolveEntryLayout(original.layoutId))||!SameTerrain(s.terrain,original.terrain)||
             !SameRange<Aevrynd::Vec3>(s.trees,original.trees)||
             !SameRange<Aevrynd::Transform3D>(s.understory.ferns,original.understory.ferns)||
             !SameRange<Aevrynd::Transform3D>(s.understory.saplings,original.understory.saplings)||
@@ -236,12 +254,14 @@ inline ForestCoverRetentionResult CreateRetained(const ForestCoverResult& canoni
     }else{
         // 舊 API 保留獨立重建與逐位核對，作為新入口的非同源對照。
         const auto verifiedOld=CreateForestCover(original.terrain,original.trees,original.understory,original.solids,assets,
-            settings,original.wood,true);
+            settings,original.wood,true,ResolveEntryLayout(original.layoutId));
         if(!verifiedOld.reachedBudget||!Same(verifiedOld,canonicalOld))throw std::invalid_argument("Retention canonical source mismatch or shortfall");
     }
     output.cover.plants.reserve(settings.targetPlants);output.provenance.reserve(settings.targetPlants);
     output.cover.patches=canonicalOld.patches;
     for(auto& patch:output.cover.patches)patch.accepted=0;
+    CanopyVolume::ImmutableVolumeBoundsCache finalSolidBounds(finalWorld.solids);
+    CanopyVolume::ImmutableVolumeBoundsCache finalWoodBounds(finalWorld.wood);
     const auto safe=[&](const ForestCoverPlant& plant,ForestCoverRetentionGate& gate) {
         const auto root=plant.transform.position;
         gate=ForestCoverRetentionGate::Domain;
@@ -249,13 +269,13 @@ inline ForestCoverRetentionResult CreateRetained(const ForestCoverResult& canoni
         gate=ForestCoverRetentionGate::GroundAnchor;
         if(!Same(root.y,finalWorld.terrain.SampleHeight(root.x,root.z)))return false;
         gate=ForestCoverRetentionGate::Clearance;
-        if(!ForestCoverClearance(root,plant.radius,finalWorld.solids))return false;
+        if(!ForestCoverClearance(root,plant.radius,finalWorld.solids,ResolveEntryLayout(finalWorld.layoutId)))return false;
         const auto& asset=assets[plant.variant];
         const CanopyVolume::PlantVolume volume{root,CanopyVolume::ConservativeLocalVolume(asset.radius,asset.minimumY,asset.maximumY),
             plant.transform.scale.x,plant.transform.rotation};
         gate=ForestCoverRetentionGate::Volume;
-        if(!CanopyVolume::ClearsCanopyWood(volume,finalWorld.solids)||
-            !(finalWorld.groupedWood?finalWorld.groupedWood->Clears(volume):CanopyVolume::ClearsCanopyWood(volume,finalWorld.wood)))return false;
+        if(!finalSolidBounds.Clears(volume)||
+            !(finalWorld.groupedWood?finalWorld.groupedWood->Clears(volume):finalWoodBounds.Clears(volume)))return false;
         gate=ForestCoverRetentionGate::Terrain;
         if(!ForestCoverFootprint(finalWorld.terrain,root,plant.radius,settings))return false;
         gate=ForestCoverRetentionGate::Spacing;
@@ -317,7 +337,7 @@ inline ForestCoverRetentionResult CreateRetained(const ForestCoverResult& canoni
     for(auto centre:anchors) {
         if(output.cover.plants.size()>=settings.targetPlants||activePatches>=settings.maximumPatches)break;
         centre.y=finalWorld.terrain.SampleHeight(centre.x,centre.z);
-        if(!ForestCoverClearance(centre,.5f,finalWorld.solids))continue;
+        if(!ForestCoverClearance(centre,.5f,finalWorld.solids,ResolveEntryLayout(finalWorld.layoutId)))continue;
         bool overlaps=false;
         for(const auto& patch:output.cover.patches)if(patch.accepted&&std::hypot(centre.x-patch.centre.x,centre.z-patch.centre.z)<3.2f){overlaps=true;break;}
         if(overlaps)continue;
@@ -335,7 +355,9 @@ inline ForestCoverRetentionResult CreateRetained(const ForestCoverResult& canoni
     }
     for(auto& plant:output.cover.plants)plant.patch=mapping[plant.patch];
     output.cover.patches=std::move(compact);output.cover.reachedBudget=output.cover.plants.size()==settings.targetPlants;
-    Hasher provenance;provenance.Word(0x52544631u);provenance.Count(output.originalInputFingerprint);provenance.Count(output.finalInputFingerprint);
+    Hasher provenance;
+    provenance.Word(original.layoutId==EntryLayoutId::Original&&finalWorld.layoutId==EntryLayoutId::Original?0x52544631u:0x52544632u);
+    provenance.Count(output.originalInputFingerprint);provenance.Count(output.finalInputFingerprint);
     Settings(provenance,settings);
     for(unsigned index=0;index<5;++index) {provenance.Count(assetIdentities[index]);provenance.Float(assets[index].radius);
         provenance.Float(assets[index].height);provenance.Float(assets[index].minimumY);provenance.Float(assets[index].maximumY);}

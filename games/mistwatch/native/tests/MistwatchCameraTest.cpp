@@ -1,4 +1,5 @@
 #include "MistwatchCamera.h"
+#include "MistwatchFoliageView.h"
 #include "MistwatchWorld.h"
 #include "MistwatchRangerHut.h"
 #include <Aevrynd/ThirdPersonCameraMotion3D.h>
@@ -10,6 +11,25 @@ bool CameraOverlaps(Aevrynd::Vec3 point,const Aevrynd::BoxCollider3D& solid) {
         std::abs(point.z-solid.center.z)<solid.extents.z+.08f;
 }
 int main() {
+    {
+        using namespace Aevrynd;using namespace Mistwatch::FoliageView;
+        const Camera3D view{{0,1.2f,-6},{0,1.2f,0},{0,1,0},{}};
+        if(LeafIdentity(false,1)||!LeafIdentity(true,1)||LeafIdentity(true,1).id.high!=Namespace){
+            std::cerr<<"FOLIAGE_VIEW_FIRST_DIVERGENCE identity escaped explicit forest world\n";return 19;}
+        const auto opacity=[&](Vec3 center){return Opacity(view,{},1.8f,{center,1,{.2f,.8f,.2f}});};
+        if(opacity({0,1.2f,-3})!=.12f||opacity({3,1.2f,-3})!=1.f||opacity({0,1.2f,2})!=1.f||opacity({0,1.2f,-9})!=1.f){
+            std::cerr<<"FOLIAGE_VIEW_FIRST_DIVERGENCE front/clear/behind classification\n";return 16;}
+        const float edge=opacity({.5f,1.2f,-3});
+        if(!ResolveWindow(false,true,{})||ResolveWindow(true,true,Profile)||!ResolveWindow(true,true,LocalProfile)||
+            ResolveWindow(true,true,L"original")||ResolveWindow(false,false,{})){
+            std::cerr<<"FOLIAGE_VIEW_FIRST_DIVERGENCE local window context\n";return 20;}
+        if(!(edge>.12f&&edge<1.f)||opacity({1.2f,1.2f,-3})!=1.f||opacity({0,1.2f,-3})!=.12f||
+            Resolve(false,false,{})||!Resolve(false,true,{})||Resolve(true,true,L"original")||!Resolve(true,true,Profile)){
+            std::cerr<<"FOLIAGE_VIEW_FIRST_DIVERGENCE spatial restore or context\n";return 17;}
+        bool rejected=false;try{auto bad=view;bad.position.x=std::numeric_limits<float>::quiet_NaN();(void)Opacity(bad,{},1.8f,{{0,1,-3},1,{1,1,1}});}catch(const std::invalid_argument&){rejected=true;}
+        if(!rejected){std::cerr<<"FOLIAGE_VIEW_FIRST_DIVERGENCE nonfinite\n";return 18;}
+        std::cout<<"FOLIAGE_VIEW_POLICY_PASS spatial_transition=1 rays=3\n";
+    }
     const auto terrain=Mistwatch::CreateTerrain();
     const auto solids=Mistwatch::WorldSolids(false);
     const std::array extra{Mistwatch::RangerHutCameraRoofSolid()};

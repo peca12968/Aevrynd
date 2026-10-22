@@ -12,6 +12,7 @@ struct RoadsideCoverResult {
     unsigned left{},right{};
     std::uint64_t fingerprint{1469598103934665603ull};
 };
+enum class RoadsideInputPhase {FinalWorld,PlanBeforeSoftLayers};
 
 // 低草不是碰撞地物：保留完整可見道路及橫向任務支線，不套用大樹／石頭的 9m 樹冠禁放帶。
 // 原 ForestCoverClearance 和 PropClearsObjectives 完全保留；此規則只用於新增且有獨立身份的路肩低草。
@@ -53,12 +54,16 @@ inline void ValidateRoadsideCoverInputs(
     const ShrubCanopyResult& shrubs,const std::array<ForestCoverAsset,5>& grassAssets,
     const std::array<FernColonyAsset,4>& fernAssets,
     std::span<const Aevrynd::BoxCollider3D> before,std::span<const Aevrynd::BoxCollider3D> after,const ShrubCompositionContract& composition={},
-    const WoodlandBridgeWorld::ValidatedWorld* groupedWorld=nullptr) {
+    const WoodlandBridgeWorld::ValidatedWorld* groupedWorld=nullptr,RoadsideInputPhase phase=RoadsideInputPhase::FinalWorld) {
     const auto need=[](bool ok,const char* why){if(!ok)throw std::invalid_argument(why);};
+    need(phase==RoadsideInputPhase::FinalWorld||phase==RoadsideInputPhase::PlanBeforeSoftLayers,"ROADSIDE_UNKNOWN_AUTHOR_PHASE");
     if(groupedWorld)groupedWorld->RequireValid();
     if(groupedWorld)need(before.empty()&&after.empty(),"ROADSIDE_MIXED_WORLD_INPUT");
-    need(original.reachedBudget&&original.plants.size()==3600&&understory.ferns.size()==420&&
-        colonies.reachedBudget&&colonies.plants.size()==300&&shrubs.reachedBudget&&shrubs.plants.size()==composition.ExpectedCount(),
+    const bool finalSoft=original.reachedBudget&&original.plants.size()==3600&&colonies.reachedBudget&&colonies.plants.size()==300;
+    const bool emptyPlanningSoft=!original.reachedBudget&&original.plants.empty()&&original.patches.empty()&&
+        !colonies.reachedBudget&&colonies.plants.empty()&&colonies.colonies.empty();
+    need((phase==RoadsideInputPhase::FinalWorld?finalSoft:emptyPlanningSoft)&&understory.ferns.size()==420&&
+        shrubs.reachedBudget&&shrubs.plants.size()==composition.ExpectedCount(),
         "ROADSIDE_COMPLETE_EXISTING_VEGETATION_REQUIRED");
     if(!groupedWorld)need(before.size()==8853&&after.size()==8854&&CanopyVolume::ValidWoodParts(before)&&
         CanopyVolume::ValidWoodParts(after),"ROADSIDE_COMPLETE_TWO_STATE_WORLD_REQUIRED");

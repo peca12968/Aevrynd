@@ -1,0 +1,32 @@
+Aevrynd / Nettle Plant source and native runtime assets
+
+Official source: https://polyhaven.com/a/nettle_plant
+Modeling: Rico Cilliers. Photography: Rob Tuytel.
+Asset license: CC0-1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
+Official asset-license information: https://polyhaven.com/license
+Commercial use and redistribution are allowed under CC0.
+Only the downloadable asset files are included, not Poly Haven site preview renders or branding.
+
+Imported 2026-10-11, Asia/Taipei. Official API MD5/size and local SHA256 are
+recorded in provenance/prepare-receipt.json and provenance/official-files.json.
+
+Six original LOD0 plants: medium a/b, small a/b, tall a/b. These are distinct
+plants, not six LOD levels. Their display-only X translations were removed;
+original local pivots, vertices, UVs and triangles were retained. Native AEMESH
+conversion reflects Z and reverses triangle winding for Aevrynd's coordinate
+system. Native authoring may uniformly scale these plants; that is an explicit
+game-content choice and not a claim that the original scan has different units.
+
+Three 2048x2048 DDS textures with 12 mip levels: base BC7 sRGB, normal BC5
+linear, packed AO/roughness/metallic BC7 linear. The independent official alpha
+mask is used at cutoff 0.5. RGB border dilation does not alter alpha coverage.
+OpenGL normal green is inverted once to DirectX. Packed ARM channels are
+preserved. Both source and cooked receipts are retained.
+
+recipes/Prepare.py is the exact one-off Root preparation recipe, preserved
+for audit. Its original paths point to the preparation environment and it
+refuses to overwrite existing artifacts. It is not an installed background
+service, automatic downloader, or portable end-user command.
+
+Acquisition and cooking do not prove world placement, animation, native GPU
+rendering, performance or visual acceptance. Those require separate evidence.

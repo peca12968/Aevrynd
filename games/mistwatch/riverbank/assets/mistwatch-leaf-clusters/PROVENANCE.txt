@@ -1,0 +1,32 @@
+Mistwatch branch-anchored leaf clusters v1 (2026-10-12)
+
+Derived from the existing Poly Haven island-tree-01 CC0 asset; original
+license and source URLs remain in engine/assets/realistic-cc0-first-batch/
+LICENSE.md and runtime-asset-manifest.json. Original texture atlas is reused.
+No character or Blender source was changed.
+
+Original leaf AEM SHA256:
+1773F7705A43DA3B3673D0D34C66C2C4FEFC47952970CB84665A774D6A54F871
+Derived leaves-v1.aemesh SHA256:
+23E72E7CE41CCA9567F2843EE8602B2D910B984F4D93D644199FD44E539E7767
+Vertices 158509; triangles 161589; original leaf triangles 530015.
+
+Authoring: 18cm cells; at most five source islands per cell, ordered by
+distance to a real source branch vertex. Preserve the closest leaf anchor.
+Uniform positive island scaling toward a 10.5cm diagonal, capped at 2.4x
+and clipped to the original full AABB and horizontal radius. Retained
+source UV/packed normal/color/triangle winding are unchanged. Source
+attachment gaps are preserved, not welded. All W=127: no leaf wind motion.
+This is an authored visual/performance candidate, not an automatic LOD.
+
+Reproducible author/independent verifier, source maps and exact transforms:
+Evidence/m2768-leaf-cluster-candidate/{Author.py,Verify.py,candidate-v1/}
+Normal-quality native six-view evidence:
+Evidence/m2770-leaf-native/{run1,run2-close,audit-six.json}
+Independent limited static review: Evidence/m2772-leaf-visual-review/Review.txt
+These evidence paths are workspace-relative, not runtime dependencies.
+
+Only --woodland-candidate and its isolated replay/capture world use this
+asset. Original eight-tree game, source collision geometry and saves remain.
+Near-view readability improved; full art quality, 360-degree moving-camera
+review, leaf wind animation, GBV and final release remain unqualified.

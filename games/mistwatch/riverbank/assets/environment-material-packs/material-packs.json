@@ -1,0 +1,94 @@
+{
+  "license": "CC0-1.0",
+  "commercialUse": true,
+  "resolutionPolicy": {
+    "distant": 512,
+    "environment": 1024,
+    "near": 2048,
+    "hero": 4096,
+    "defaultImportedResolution": 1024
+  },
+  "packs": [
+    {
+      "id": "worn-planks",
+      "source": "Poly Haven",
+      "author": "Dimitrios Savva",
+      "sourceUrl": "https://polyhaven.com/a/worn_planks",
+      "licenseUrl": "https://polyhaven.com/license",
+      "retrievedAt": "2026-10-07T09:38:52.9022262Z",
+      "detailClass": "environment",
+      "physicalWidthMeters": 1.4,
+      "normalConvention": "DirectX",
+      "directory": "poly-haven/worn_planks/1k",
+      "maps": ["base-color.jpg", "roughness.jpg", "normal-dx.png"],
+      "sha256": {
+        "base-color.jpg": "698C09B337375A9AAE12A76AD09FF2FDA11D735E6C1BBB18D72875BD61988DB6",
+        "roughness.jpg": "C79F640DC2D7EF81D69DE463EF6676B7C540D598FB0E462A6EB39EB5462770A9",
+        "normal-dx.png": "743411ACF7332D8176D4E402237BB4B2D28A89FDC9BA160BB1EEE2DE6FBFB74B"
+      },
+      "originalUrls": {
+        "base-color.jpg": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/worn_planks/worn_planks_diff_1k.jpg",
+        "roughness.jpg": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/worn_planks/worn_planks_rough_1k.jpg",
+        "normal-dx.png": "https://dl.polyhaven.org/file/ph-assets/Textures/png/1k/worn_planks/worn_planks_nor_dx_1k.png"
+      }
+    },
+    {
+      "id": "aerial-ground-rock",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/aerial_ground_rock",
+      "licenseUrl": "https://polyhaven.com/license",
+      "detailClass": "environment",
+      "directory": "poly-haven/aerial_ground_rock/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
+    },
+    {
+      "id": "rock-surface",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/rock_surface",
+      "licenseUrl": "https://polyhaven.com/license",
+      "retrievedAt": "2026-08-27",
+      "detailClass": "environment",
+      "directory": "poly-haven/rock_surface/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"],
+      "sha256": {
+        "base-color.jpg": "07EDDA2BBE4715B01AAE2E4BAC9F21F204CF4AAE37B4733EF01DE33281E5E60E",
+        "normal-dx.jpg": "1E1AA5B06F74D22734318CD93ECF49FFE7095C4B2307C5C9B3A4550207C6B1B7",
+        "roughness.jpg": "CA710D895B01CF323BF00F53194C43504A39D2C964FBFC343C4F45C7D41B10DC"
+      }
+    },
+    {
+      "id": "bark-brown-02",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/bark_brown_02",
+      "licenseUrl": "https://polyhaven.com/license",
+      "detailClass": "near",
+      "directory": "poly-haven/bark_brown_02/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
+    },
+    {
+      "id": "brick-floor",
+      "source": "Poly Haven",
+      "sourceUrl": "https://polyhaven.com/a/brick_floor",
+      "licenseUrl": "https://polyhaven.com/license",
+      "detailClass": "environment",
+      "directory": "poly-haven/brick_floor/1k",
+      "maps": ["base-color.jpg", "normal-dx.jpg", "roughness.jpg"]
+    },
+    {
+      "id": "wood-siding-006",
+      "source": "ambientCG",
+      "sourceUrl": "https://ambientcg.com/view?id=WoodSiding006",
+      "licenseUrl": "https://ambientcg.com/index.php?menu=license",
+      "detailClass": "near",
+      "directory": "ambientcg/woodsiding006/1k"
+    },
+    {
+      "id": "ground-037",
+      "source": "ambientCG",
+      "sourceUrl": "https://ambientcg.com/view?id=Ground037",
+      "licenseUrl": "https://ambientcg.com/index.php?menu=license",
+      "detailClass": "environment",
+      "directory": "ambientcg/ground037/1k"
+    }
+  ]
+}

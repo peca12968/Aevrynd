@@ -21,7 +21,7 @@ inline const Aevrynd::Mesh3D& ForestPropLogMesh() {
 inline Aevrynd::MeshBounds3D ForestPropBounds(unsigned style) {
     return style==3?ForestPropLogMesh().Bounds():BoulderBounds();
 }
-inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b) {
+inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b,const EntryLayout& layout=ActiveEntryLayout) {
     const float minX=b.center.x-b.extents.x,maxX=b.center.x+b.extents.x;
     const float minZ=b.center.z-b.extents.z,maxZ=b.center.z+b.extents.z;
     if(minX<4.5f && maxX> -4.5f)return false;
@@ -36,12 +36,12 @@ inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b) {
         return std::hypot((std::max)(0.f,std::abs(p.x-b.center.x)-b.extents.x),
             (std::max)(0.f,std::abs(p.z-b.center.z)-b.extents.z))>=radius;
     };
-    for(const auto p:Session::supplies) {
+    for(const auto p:layout.supplies) {
         if(!clears(p,3.f))return false;
         // 保留補給點通往中央主路的橫向支線。
         if(minZ<p.z+2.f && maxZ>p.z-2.f && minX<(std::max)(0.f,p.x)+2.f && maxX>(std::min)(0.f,p.x)-2.f)return false;
     }
-    for(const auto p:Session::repairSites) {
+    for(const auto p:layout.repairSites) {
         if(!clears(p,4.f))return false;
         if(minZ<p.z+1.5f && maxZ>p.z-1.5f && minX<(std::max)(0.f,p.x)+1.f && maxX>(std::min)(0.f,p.x)-1.f)return false;
     }
@@ -53,7 +53,7 @@ inline bool PropClearsObjectives(const Aevrynd::BoxCollider3D& b) {
         clears(Session::generator,5.f) && clears(Session::beacon,5.f) && clears(Session::rangerLog,5.f);
 }
 inline std::vector<ForestProp> ForestProps(const Aevrynd::HeightField3D& terrain,
-    std::span<const Aevrynd::Vec3> trees) {
+    std::span<const Aevrynd::Vec3> trees,const EntryLayout& layout=ActiveEntryLayout) {
     using namespace Aevrynd;
     std::vector<ForestProp> props;
     std::uint32_t seed=0x50524f50u;
@@ -76,7 +76,7 @@ inline std::vector<ForestProp> ForestProps(const Aevrynd::HeightField3D& terrain
         transform.position.y=ground-(initial.center.y-initial.extents.y)-(log?.05f:.12f);
         auto bounds=TransformBounds(ForestPropBounds(mesh),transform);
         BoxCollider3D collider{bounds.center,bounds.extents};
-        if(!PropClearsObjectives(collider))continue;
+        if(!PropClearsObjectives(collider,layout))continue;
         // 斜坡上的長倒木容易懸空，僅接受腳印高度差小於 15 公分的落點。
         float minimum=ground,maximum=ground;
         for(float x:{-1.f,1.f})for(float z:{-1.f,1.f}) {

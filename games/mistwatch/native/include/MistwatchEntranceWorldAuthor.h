@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchEntranceCanopy.h"
 #include "MistwatchMiddleLayer.h"
+#include "MistwatchOriginalForestSource.h"
 
 namespace Mistwatch {
 enum class EntranceRole : unsigned { Fir, Rock, Sapling, Middle };
@@ -93,11 +94,14 @@ struct EntranceWorldAuthor {
         return result;
     }
 };
-inline EntranceWorldAuthor CreateEntranceWorldAuthor(const HeightField3D& terrain,
+namespace EntranceWorldDetail {
+// 只處理原配置內容，不接受任意layout切換來借用原世界身份。
+template<class MakeOriginalWorld>
+inline EntranceWorldAuthor AuthorOriginalForest(const HeightField3D& terrain,
     const MatureFirLayout& sourceFirs,std::span<const ForestProp> retainedProps,
     const ForestUnderstory& sourceUnderstory,std::span<const BroadleafTree> sourceBroadleaf,
     const MiddleLayerResult& sourceMiddle,const std::array<FernColonyAsset,4>& fernAssets,
-    FallenLogProfile profile){
+    FallenLogProfile profile,MakeOriginalWorld makeOriginalWorld){
     using namespace EntranceWorldDetail;
     Need(sourceFirs.reachedBudget&&sourceFirs.firs.size()==100&&sourceFirs.roots.size()==100&&
         sourceFirs.fingerprint==8236695966185867318ull&&
@@ -107,13 +111,13 @@ inline EntranceWorldAuthor CreateEntranceWorldAuthor(const HeightField3D& terrai
     Need(sourceUnderstory.ferns.size()==420&&sourceUnderstory.saplings.size()==42&&sourceBroadleaf.size()==12,
         "original-understory-broadleaf-counts");
     ValidateFallenLogOriginalProps(retainedProps);
-    const auto canonicalUnderstory=CreateUnderstory(terrain,sourceFirs.roots,retainedProps);
+    const auto canonicalUnderstory=CreateUnderstory(terrain,sourceFirs.roots,retainedProps,OriginalEntryLayout);
     Need(canonicalUnderstory.ferns.size()==420&&canonicalUnderstory.saplings.size()==42,"canonical-understory-counts");
     for(unsigned id=0;id<420;++id)Need(PoseWords(sourceUnderstory.ferns[id])==
         PoseWords(canonicalUnderstory.ferns[id]),"original-fern-full-bit-identity",id);
     for(unsigned id=0;id<42;++id)Need(PoseWords(sourceUnderstory.saplings[id])==
         PoseWords(canonicalUnderstory.saplings[id]),"original-sapling-full-bit-identity",id);
-    const auto canonicalBroadleaf=CreateBroadleafTrees(terrain,sourceFirs.roots,retainedProps,sourceUnderstory);
+    const auto canonicalBroadleaf=CreateBroadleafTrees(terrain,sourceFirs.roots,retainedProps,sourceUnderstory,OriginalEntryLayout);
     Need(canonicalBroadleaf.size()==12,"canonical-broadleaf-count");
     for(unsigned id=0;id<12;++id)Need(PoseWords(sourceBroadleaf[id].transform)==
         PoseWords(canonicalBroadleaf[id].transform)&&BoxWords(sourceBroadleaf[id].trunk)==
@@ -172,7 +176,7 @@ inline EntranceWorldAuthor CreateEntranceWorldAuthor(const HeightField3D& terrai
         result.middle.trees.push_back(sourceMiddle.trees[id]);result.middleSourceIds.push_back(id);
     }
     result.middle.reachedBudget=result.middle.trees.size()==23;
-    const auto originalWorld=WorldSolids(false,FirLayoutSelector::ForestWood,profile);
+    const auto originalWorld=makeOriginalWorld();
     Need(originalWorld.size()==223,"original-world-order");
     result.mission.assign(originalWorld.begin(),originalWorld.begin()+33);
     std::size_t index=33;
@@ -191,7 +195,7 @@ inline EntranceWorldAuthor CreateEntranceWorldAuthor(const HeightField3D& terrai
         Need(terrain.Contains(fern.position.x,fern.position.z),"relocated-fern-terrain-domain",move.sourceId);
         fern.position.y=terrain.SampleHeight(fern.position.x,fern.position.z);
         Need(Session::Finite(fern.position)&&terrain.SampleNormal(fern.position.x,fern.position.z).y>=.88f&&
-            PropClearsObjectives({fern.position,{.9f,1.f,.9f}}),"relocated-fern-original-mission-slope",move.sourceId);
+            PropClearsObjectives({fern.position,{.9f,1.f,.9f}},OriginalEntryLayout),"relocated-fern-original-mission-slope",move.sourceId);
     }
     result.applied=true;
     const auto solids=result.VegetationSolids(false);
@@ -229,6 +233,24 @@ inline EntranceWorldAuthor CreateEntranceWorldAuthor(const HeightField3D& terrai
     for(unsigned id=0;id<420;++id){for(auto word:PoseWords(result.understory.ferns[id]))
         Detail::Mix(result.fingerprint,word);Detail::Mix(result.fingerprint,id%4);}
     return result;
+}
+}
+inline EntranceWorldAuthor CreateEntranceWorldAuthor(const HeightField3D& terrain,
+    const MatureFirLayout& sourceFirs,std::span<const ForestProp> retainedProps,
+    const ForestUnderstory& sourceUnderstory,std::span<const BroadleafTree> sourceBroadleaf,
+    const MiddleLayerResult& sourceMiddle,const std::array<FernColonyAsset,4>& fernAssets,
+    FallenLogProfile profile){
+    // 舊入口仍只能授權原關卡；先拒絕，再執行任何原世界重建。
+    EntranceWorldDetail::Need(OriginalEntryLayoutActive,"entry-layout-requires-new-typed-world-author");
+    return EntranceWorldDetail::AuthorOriginalForest(terrain,sourceFirs,retainedProps,sourceUnderstory,
+        sourceBroadleaf,sourceMiddle,fernAssets,profile,[&]{return WorldSolids(false,FirLayoutSelector::ForestWood,profile);});
+}
+// 僅重建可保留的原作者，不把結果宣告成Pilot世界；新配置仍須另外驗完整typed世界。
+inline EntranceWorldAuthor CreateOriginalEntranceWorldAuthor(const OriginalForestSource& source,
+    const HeightField3D& terrain,const std::array<FernColonyAsset,4>& fernAssets,FallenLogProfile profile){
+    ValidateFallenLogTerrain(terrain);
+    return EntranceWorldDetail::AuthorOriginalForest(terrain,source.Firs(),source.Props(),source.Understory(),
+        source.Broadleaf(),source.Middle(),fernAssets,profile,[&]{return source.MappedSolids(false,profile);});
 }
 inline void ValidateEntranceFernWood(const EntranceWorldAuthor& author,
     const std::array<FernColonyAsset,4>& assets,std::span<const BoxCollider3D> wood){

@@ -1,0 +1,29 @@
+霧境守望：成熟森林與彎曲河岸開發入口
+狀態：WIP；不是穩定版、正式畫質升級或完整引擎發布。
+
+本目錄使用共用 AevryndEngine，與原 Mistwatch 入口分開。
+預設不啟用。Windows／Visual Studio 2022 x64 範例：
+cmake -S . -B E:/AevryndBuilds/riverbank -G "Visual Studio 17 2022" -A x64 -DAEVRYND_BUILD_MISTWATCH_RIVERBANK_WIP=ON
+cmake --build E:/AevryndBuilds/riverbank --config Release --target MistwatchRiverbank -- /m:1 /nr:false
+執行 E:/AevryndBuilds/riverbank/riverbank/Release/Aevrynd-Mistwatch-Riverbank.exe --forest-grove-candidate
+請保留同層 assets。runtime-identity.json 核對完整 448 個執行資產，不靜默回退到其他目錄。
+
+WASD 移動、Shift 跑步、Space 跳躍、Ctrl 蹲下、E 互動、Q 閃避、F 反擊。
+滑鼠左鍵拖曳／方向鍵轉鏡頭、滾輪縮放；J 任務手冊、Esc 暫停、F5 存檔、F9 讀檔。
+
+目前河岸世界識別：871859920946925248。不同世界不混讀存檔。
+原有通路、物件與十二株成熟樹保留。河岸實際改變 1486 格高度，保護 46610 格及 188 個植物腳印。
+Poly Haven Jacaranda 為 CC0 第三方資產；作者、來源及修改鏈見 THIRD-PARTY.txt 與 provenance 目錄。
+資產中的六份 ambientCG 材質 .blend 與 engine_probe.obj 是已存在於基準 Git 歷史的原始相同資料，不是使用者的女人偶或編譯中間檔。
+
+本地已驗證範圍（2026-10-23）：
+目前來源重新編譯引擎、角色綁定物件與遊戲；63 份同來源 Shader 產物經核對後重用。
+四項 CPU 測試：變更河岸的行走／跑步／跳躍／蹲起、靜態碰撞索引、上坡低頂支撐、坡地站立。
+完整任務 GPU 驗證：6666 ticks、229 張完整讀回畫面、0 GPU 錯誤／警告。
+一般及 GPU 模式入口：各 582 ticks、實際 F5/F9 與精確狀態還原、各兩張畫面。
+輸入為程式化按鍵及合成焦點，不等於真人鍵鼠遊玩。不是全新完整 ALL_BUILD、完整回歸或效能基準。
+選定畫面與先前候選非逐像素相同，未宣稱渲染全面等價；原建置失敗與逾期紀錄保留。
+
+本地證據：E:/AevryndEvidence/m4154-integrated-riverbank-native/RootHandoff.json。
+這是本地實機來源內容的開發保存，不將保存／推送本身當成美術或完整遊戲驗收。
+河岸陡峭、林相重複、建物與遊戲角色仍粗略，完整寫實美術、真人 10～15 分鐘體驗與穩定發布仍未完成。

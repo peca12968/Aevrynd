@@ -30,6 +30,7 @@ struct SaveGame {
     Encounter encounter;
     Evasion evasion;
     std::optional<SavedPlayerMotion> motion;
+    std::optional<std::uint64_t> worldIdentity;
 
     static bool ValidPoint(Aevrynd::Vec3 point) {
         // 與 Session::Valid 的世界座標界限一致。
@@ -82,7 +83,7 @@ struct SaveGame {
         return true;
     }
     bool Valid() const {
-        if(!session.Valid()||!encounter.Valid()||!ValidEvasion(evasion)||!ValidMotion()||!ValidPoint(encounter.feet)||!ValidPoint(encounter.strikeTarget)||
+        if((worldIdentity&&(!*worldIdentity||!motion))||!session.Valid()||!encounter.Valid()||!ValidEvasion(evasion)||!ValidMotion()||!ValidPoint(encounter.feet)||!ValidPoint(encounter.strikeTarget)||
            encounter.health>3||!std::isfinite(encounter.phaseTime)||!std::isfinite(encounter.playerCooldown)||
            encounter.playerCooldown<0||encounter.playerCooldown>.65f)return false;
         // 此層僅驗證快照結構；地形高度不是常數，正式載入必須通過世界預檢。
@@ -121,7 +122,9 @@ struct SaveGame {
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out.precision(std::numeric_limits<float>::max_digits10);
-        out<<"MISTWATCH_SAVE "<<(motion?3:2)<<'\n'<<session.Serialize()<<"\nENCOUNTER "
+        out<<"MISTWATCH_SAVE "<<(worldIdentity?4:motion?3:2)<<'\n';
+        if(worldIdentity)out<<"WORLD "<<*worldIdentity<<'\n';
+        out<<session.Serialize()<<"\nENCOUNTER "
            <<encounter.health<<' '<<static_cast<unsigned>(encounter.phase)<<' '
            <<encounter.feet.x<<' '<<encounter.feet.y<<' '<<encounter.feet.z<<' '
            <<encounter.strikeTarget.x<<' '<<encounter.strikeTarget.y<<' '<<encounter.strikeTarget.z<<' '
@@ -162,9 +165,17 @@ struct SaveGame {
         } else {
             unsigned version{};
             std::string remainder,sessionLine;
-            if(magic!="MISTWATCH_SAVE"||!(in>>version)||(version!=1&&version!=2&&version!=3))return false;
-            if(!std::getline(in,remainder)||remainder.find_first_not_of(" \t\r")!=std::string::npos||
-               !std::getline(in,sessionLine)||!candidate.session.Restore(sessionLine))return false;
+            if(magic!="MISTWATCH_SAVE"||!(in>>version)||(version!=1&&version!=2&&version!=3&&version!=4))return false;
+            if(!std::getline(in,remainder)||remainder.find_first_not_of(" \t\r")!=std::string::npos)return false;
+            if(version==4){std::string key;std::uint64_t identity{};
+                if(!(in>>magic>>key)||magic!="WORLD"||key.empty())return false;
+                for(char c:key)if(c<'0'||c>'9')return false;
+                const auto parsed=std::from_chars(key.data(),key.data()+key.size(),identity);
+                if(parsed.ec!=std::errc{}||parsed.ptr!=key.data()+key.size()||!identity||!std::getline(in,remainder)||
+                    remainder.find_first_not_of(" \t\r")!=std::string::npos)return false;
+                candidate.worldIdentity=identity;
+            }
+            if(!std::getline(in,sessionLine)||!candidate.session.Restore(sessionLine))return false;
             unsigned phase{},countered{};
             auto& enemy=candidate.encounter;
             if(!(in>>magic>>enemy.health>>phase>>enemy.feet.x>>enemy.feet.y>>enemy.feet.z
@@ -175,7 +186,7 @@ struct SaveGame {
             if(version==1&&enemy.feet.y!=Session::arena.y)return false;
             auto& action=candidate.evasion;
             if(!(in>>magic>>action.direction.x>>action.direction.y>>action.direction.z>>action.remaining>>action.cooldown)||magic!="EVASION")return false;
-            if(version==3){
+            if(version==3||version==4){
                 SavedPlayerMotion saved;auto& c=saved.controller;auto& l=saved.locomotion;auto& m=l.motor;
                 // 整數必須完整、非負且不溢位；不能讓 -2 被 unsigned 轉成很大的合法 tick。
                 const auto integer=[&](auto& value){

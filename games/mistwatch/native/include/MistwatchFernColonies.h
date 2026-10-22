@@ -62,7 +62,9 @@ inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain
     const ForestCoverResult& grass,std::span<const Aevrynd::Transform3D> existing,
     std::span<const Aevrynd::BoxCollider3D> solids,const std::array<FernColonyAsset,4>& assets,
     FernColonySettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false,
-    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr) {
+    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr,const EntryLayout& layout=ActiveEntryLayout,
+    std::span<const ForestCoverReservation> reservations={}) {
+    ValidateForestCoverReservations(reservations);
     // 群組入口只接受已驗完整世界，不允許混用或以零目標跳過失效身分。
     if(groupedWood&&(!fullSolidVolumes||!canopyWood.empty()||groupedWood->Identity().groupCount==0||
         groupedWood->Identity().groupCount>GroupedCanopyVolume::MaximumGroups||
@@ -123,7 +125,8 @@ inline FernColonyResult CreateFernColonies(const Aevrynd::HeightField3D& terrain
             const unsigned variant=(std::min)(unsigned(random()*4.f),3u);
             const float scale=.6f+.18f*random(),radius=assets[variant].radius*scale;
             const float yaw=random()*6.2831853f;
-            if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
+            if(!ForestCoverClearance(root,radius,solids,layout)||
+                (!reservations.empty()&&!ForestCoverReservationClearance(root,radius,reservations))){++result.rejectedClearance;continue;}
             // 開始完整實體體積檢查
 if(fullSolidVolumes&&!solids.empty()&&!CanopyVolume::ClearsCanopyWood(
                 CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,

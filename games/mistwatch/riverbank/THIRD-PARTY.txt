@@ -1,0 +1,7 @@
+Jacaranda Tree: Rico Cilliers (All), Rob Tuytel (guidance), Poly Haven.
+Asset: https://polyhaven.com/a/jacaranda_tree
+License: CC0-1.0, https://polyhaven.com/license and https://creativecommons.org/publicdomain/zero/1.0/
+Existing official API/download hash receipts retained; no preview images copied.
+Aevrynd modifications: game LOD and source-backed zero-normal repair; original healthy normals, UV, vertex colors and9 DDS texture bytes retained; finite source wood-cell collision construction.
+Original high source208307808 bytes and Blender authoring/repair history retained in the original E evidence workspace, not silently duplicated or adopted as full visual/contact quality.
+All other runtime assets preserve their existing license/provenance files from the exact423-asset base. No exclusive ownership claim for third-party assets.

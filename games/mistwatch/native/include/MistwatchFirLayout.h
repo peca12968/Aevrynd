@@ -50,12 +50,12 @@ inline MatureFirLayout CreateLegacyMatureFirLayout(std::span<const Vec3> roots) 
     return result;
 }
 
-inline bool ClearsMissionRiverAndBranches(Vec3 root,float radius=0) {
+inline bool ClearsMissionRiverAndBranches(Vec3 root,float radius=0,const EntryLayout& layout=ActiveEntryLayout) {
     if(!Mistwatch::Session::Finite(root)||!std::isfinite(radius)||radius<0)return false;
     if(Mistwatch::RiverDistance(root.x,root.z)<Mistwatch::RiverOuterWidth(root.x)+2.f+radius)return false;
-    for(const auto p:Mistwatch::Session::supplies)
+    for(const auto p:layout.supplies)
         if(std::hypot(root.x-p.x,root.z-p.z)<3.f+radius)return false;
-    for(const auto p:Mistwatch::Session::repairSites) {
+    for(const auto p:layout.repairSites) {
         if(std::hypot(root.x-p.x,root.z-p.z)<4.f+radius)return false;
         if(std::abs(root.z-p.z)<1.5f+radius&&root.x>(std::min)(0.f,p.x)-1.f-radius&&
             root.x<(std::max)(0.f,p.x)+1.f+radius)return false;
@@ -70,14 +70,14 @@ inline bool ClearsMissionRiverAndBranches(Vec3 root,float radius=0) {
     return true;
 }
 
-inline bool ClearsLegacyWorld(Vec3 root,float radius=0) {
-    return std::abs(root.x)>=4.f+radius&&ClearsMissionRiverAndBranches(root,radius);
+inline bool ClearsLegacyWorld(Vec3 root,float radius=0,const EntryLayout& layout=ActiveEntryLayout) {
+    return std::abs(root.x)>=4.f+radius&&ClearsMissionRiverAndBranches(root,radius,layout);
 }
 
 // 舊 abs(x)<4 是直線美術空帶；wood-only 候選改守正式彎曲道路的真半寬、樹幹半徑與15cm餘裕。
 // 這只是一個待 native 可玩/鏡頭驗證的幾何候選，不宣稱已證明遊玩安全。
-inline bool ClearsForestWoodWorld(Vec3 root,float radius) {
-    if(!ClearsMissionRiverAndBranches(root,radius))return false;
+inline bool ClearsForestWoodWorld(Vec3 root,float radius,const EntryLayout& layout=ActiveEntryLayout) {
+    if(!ClearsMissionRiverAndBranches(root,radius,layout))return false;
     const float centre=.35f*std::sin(root.z*.19f);
     const float halfWidth=2.8f+.3f*std::sin(root.z*.37f);
     return std::abs(root.x-centre)>=halfWidth+radius+.15f;
@@ -95,7 +95,7 @@ inline void Mix(std::uint64_t& hash,float value){Mix(hash,std::bit_cast<std::uin
 }
 
 inline MatureFirLayout CreateForestWoodMatureFirLayout(const HeightField3D& terrain,
-    unsigned target=100,std::uint32_t seed=0x57464952u) {
+    unsigned target=100,std::uint32_t seed=0x57464952u,const EntryLayout& layout=ActiveEntryLayout) {
     if(target!=100||terrain.SampleCount()==0)throw std::invalid_argument("Prototype requires the real bounded 100-fir terrain");
     MatureFirLayout result;
     Detail::Random centreRandom{seed^0x43454e54u};
@@ -107,7 +107,7 @@ inline MatureFirLayout CreateForestWoodMatureFirLayout(const HeightField3D& terr
         root.y=terrain.SampleHeight(root.x,root.z);
         if(!terrain.Contains(root.x-ClearanceReserve,root.z-ClearanceReserve)||
             !terrain.Contains(root.x+ClearanceReserve,root.z+ClearanceReserve)||
-            !ClearsForestWoodWorld(root,ClearanceReserve)){++result.rejectedClearance;return false;}
+            !ClearsForestWoodWorld(root,ClearanceReserve,layout)){++result.rejectedClearance;return false;}
         for(const auto old:result.patchCentres)
             if(std::hypot(root.x-old.x,root.z-old.z)<10.f){++result.rejectedSpacing;return false;}
         result.patchCentres.push_back(root);return true;
@@ -153,7 +153,7 @@ inline MatureFirLayout CreateForestWoodMatureFirLayout(const HeightField3D& terr
                 throw std::runtime_error("Reserved patch escaped the terrain");
             root.y=terrain.SampleHeight(root.x,root.z);
             const auto groundedCollider=MatureFirCollider(root,scale);
-            if(!ClearsForestWoodWorld(root,radius))
+            if(!ClearsForestWoodWorld(root,radius,layout))
                 throw std::runtime_error("Reserved patch violated world clearance");
             bool crowded=false;
             for(const auto& old:result.firs) {
@@ -178,10 +178,10 @@ inline MatureFirLayout CreateForestWoodMatureFirLayout(const HeightField3D& terr
 }
 
 inline MatureFirLayout SelectMatureFirLayout(const HeightField3D& terrain,std::span<const Vec3> legacyRoots,
-    FirLayoutSelector selector) {
+    FirLayoutSelector selector,const EntryLayout& layout=ActiveEntryLayout) {
     switch(selector) {
     case FirLayoutSelector::Legacy:return CreateLegacyMatureFirLayout(legacyRoots);
-    case FirLayoutSelector::ForestWood:return CreateForestWoodMatureFirLayout(terrain);
+    case FirLayoutSelector::ForestWood:return CreateForestWoodMatureFirLayout(terrain,100,0x57464952u,layout);
     }
     throw std::invalid_argument("Invalid fir layout selector");
 }

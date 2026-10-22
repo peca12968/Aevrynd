@@ -1,0 +1,24 @@
+Forest Leaves 04: Aevrynd habitat-layer encoding record
+
+CC0 texture maps by Rob Tuytel / Poly Haven.
+Source asset: https://polyhaven.com/a/forest_leaves_04
+License: https://polyhaven.com/license
+Original provider license notice remains unchanged in LICENSE.txt.
+
+The three PNG files are lossless local re-encodings of the original 2K JPG
+maps, not original provider PNG downloads. The WIC BGRA conversion retained
+every decoded RGBA pixel, verified in the m2120 forest-leaf-cook-bgra batch.
+Roughness uses linear R. The normal map uses the original DirectX direction.
+No generated concept image or provider preview image is used as a texture.
+
+Prior conversion evidence (local development archive):
+D:/Download/Aevrynd/Evidence/m2120-forest-leaf-cook-bgra
+D:/Download/Aevrynd/Evidence/m2124-forest-leaf-png-candidate
+Actual bytes and SHA-256:
+forest_leaves_04_diff_2k.png 10402792 40B1786AFA17C9930CCAE93A9CA75880FC52FC34B96453489C767B2CC82D7EE9
+forest_leaves_04_rough_2k.png 6083648 713874257D143AF49C482CE8B7648CB7C5C748CA6540DB0E44563A04A9FE09CE
+forest_leaves_04_nor_dx_2k.png 11539651 19BBAA0EB67EDA146129946B9605CFC9B472A302BA1F75EB8EA0B48AA21BAA33
+
+This authored habitat profile changes layer 1 only. Ground037 moss remains
+layer 0 and the original rock material remains layer 2. Old material profiles
+and their regression tests remain intact. Technical tests are not art approval.

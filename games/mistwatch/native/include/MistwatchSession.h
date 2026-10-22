@@ -1,9 +1,11 @@
 #pragma once
 #include "MistwatchTerrainProfile.h"
+#include "MistwatchEntryLayout.h"
 #include "MistwatchFieldRelayTask.h"
 #include <Aevrynd/Math.h>
 #include <array>
 #include <cmath>
+#include <charconv>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -23,7 +25,7 @@ struct Session {
     unsigned relayLinked{},relaySectors{};
     unsigned relayPatchA{},relayPatchB{},relayFieldTasks{},extractionRoute{};
     Aevrynd::Vec3 feet{};
-    static constexpr std::array<Aevrynd::Vec3, 3> supplies{{{4,0,6},{-5,0,14},{8,0,22}}};
+    static constexpr std::array<Aevrynd::Vec3, 3> supplies=ActiveEntryLayout.supplies;
     static constexpr Aevrynd::Vec3 bridge{0,0,30}, arena{0,0,48}, beacon{0,0,70};
     static constexpr Aevrynd::Vec3 fuse{-7,0,59}, generator{7,0,65};
     static constexpr Aevrynd::Vec3 rangerLog{8,0,79};
@@ -32,7 +34,7 @@ struct Session {
     static constexpr std::array<unsigned,3> fuseCode{2,0,3};
     static constexpr unsigned solvedFuseDials=fuseCode[0]|(fuseCode[1]<<2)|(fuseCode[2]<<4);
     // 工具位於低矮避雨棚內，兩處木料沿南岸支線分布。
-    static constexpr std::array<Aevrynd::Vec3,3> repairSites{{{-8,0,18},{8,0,-8},{-8,0,26}}};
+    static constexpr std::array<Aevrynd::Vec3,3> repairSites=ActiveEntryLayout.repairSites;
     bool Alive() const { return health != 0; }
     Stage CurrentStage() const {
         if (beaconLit) return Stage::Complete;
@@ -201,7 +203,10 @@ struct Session {
         std::ostringstream out;
         out.imbue(std::locale::classic());
         out.precision(9);
-        out << "MISTWATCH 7 " << collected << ' ' << health << ' ' << bridgeRepaired << ' '
+        if constexpr(OriginalEntryLayoutActive)out<<"MISTWATCH 7 ";
+        else out<<"MISTWATCH 8 ENTRY_LAYOUT "<<static_cast<std::uint32_t>(ActiveEntryLayout.id)<<' '
+                <<EntryLayoutFingerprint(ActiveEntryLayout)<<' '<<ActiveEntryWorldEpoch<<' ';
+        out << collected << ' ' << health << ' ' << bridgeRepaired << ' '
             << guardianDefeated << ' ' << beaconLit << ' ' << feet.x << ' ' << feet.y << ' ' << feet.z
             << ' ' << fuseCollected << ' ' << powerRestored << ' ' << circuit << ' ' << repairMaterials
             << ' ' << fuseClueRead << ' ' << fuseDials << ' ' << relayLinked << ' ' << relaySectors
@@ -215,8 +220,25 @@ struct Session {
         std::string magic, extra;
         unsigned version{}, repaired{}, defeated{}, lit{};
         Session candidate;
-        if (!(in>>magic>>version>>candidate.collected>>candidate.health>>repaired>>defeated>>lit
-              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) || magic!="MISTWATCH" || (version<1 || version>7) ||
+        if(!(in>>magic>>version)||magic!="MISTWATCH")return false;
+        if constexpr(OriginalEntryLayoutActive) {
+            if(version<1||version>7)return false;
+        } else {
+            // 新入口只接受自身六站點身份；原1～7舊檔不能默默套用不同任務位置。
+            std::string tag;
+            std::uint32_t layoutId{},worldEpoch{};std::uint64_t layoutHash{};
+            const auto integer=[&](auto& value){
+                std::string token;if(!(in>>token)||token.empty())return false;
+                for(char ch:token)if(ch<'0'||ch>'9')return false;
+                const auto result=std::from_chars(token.data(),token.data()+token.size(),value);
+                return result.ec==std::errc{}&&result.ptr==token.data()+token.size();
+            };
+            if(version!=8||!(in>>tag)||tag!="ENTRY_LAYOUT"||!integer(layoutId)||!integer(layoutHash)||!integer(worldEpoch)||
+               layoutId!=static_cast<std::uint32_t>(ActiveEntryLayout.id)||
+               layoutHash!=EntryLayoutFingerprint(ActiveEntryLayout)||worldEpoch!=ActiveEntryWorldEpoch)return false;
+        }
+        if (!(in>>candidate.collected>>candidate.health>>repaired>>defeated>>lit
+              >>candidate.feet.x>>candidate.feet.y>>candidate.feet.z) ||
               repaired>1 || defeated>1 || lit>1) return false;
         unsigned fuseValue{},powerValue{};
         if(version>=2) {

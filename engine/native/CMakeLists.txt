@@ -32,6 +32,22 @@ target_compile_options(AevryndPhaseSkyDiffuseTest PRIVATE /W4 /WX /fp:strict /pe
 add_test(NAME AevryndPhaseSkyDiffuseTest COMMAND AevryndPhaseSkyDiffuseTest)
 set_tests_properties(AevryndPhaseSkyDiffuseTest PROPERTIES LABELS "release-gates")
 
+add_executable(AevryndPhaseSkyAmbient3DTest tests/PhaseSkyAmbient3DSmoke.cpp)
+target_include_directories(AevryndPhaseSkyAmbient3DTest PRIVATE include)
+target_compile_features(AevryndPhaseSkyAmbient3DTest PRIVATE cxx_std_20)
+target_compile_definitions(AevryndPhaseSkyAmbient3DTest PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(AevryndPhaseSkyAmbient3DTest PRIVATE /W4 /WX /utf-8 /permissive- /fp:strict /MP1)
+set_target_properties(AevryndPhaseSkyAmbient3DTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL INTERPROCEDURAL_OPTIMIZATION FALSE)
+add_test(NAME AevryndPhaseSkyAmbient3DTest COMMAND AevryndPhaseSkyAmbient3DTest)
+set_tests_properties(AevryndPhaseSkyAmbient3DTest PROPERTIES LABELS "release-gates;phase-sky-ambient" TIMEOUT 60)
+
+add_executable(AevryndStaticColorOcclusionTest tests/StaticColorOcclusion3DSmoke.cpp)
+target_include_directories(AevryndStaticColorOcclusionTest PRIVATE include)
+target_compile_features(AevryndStaticColorOcclusionTest PRIVATE cxx_std_20)
+target_compile_options(AevryndStaticColorOcclusionTest PRIVATE /W4 /WX /fp:strict /permissive- /utf-8 /MP1)
+add_test(NAME AevryndStaticColorOcclusionTest COMMAND AevryndStaticColorOcclusionTest)
+set_tests_properties(AevryndStaticColorOcclusionTest PROPERTIES LABELS "release-gates;camera" TIMEOUT 30)
+
 add_executable(AevryndOcclusionNormalTest tests/OcclusionNormalSmoke.cpp)
 target_include_directories(AevryndOcclusionNormalTest PRIVATE include)
 target_compile_features(AevryndOcclusionNormalTest PRIVATE cxx_std_20)
@@ -240,6 +256,7 @@ function(aevrynd_compile_shader output_name source_name entry profile symbol)
   endif()
   if(source_name STREQUAL "World.hlsl" OR source_name STREQUAL "AmbientOcclusion.hlsl")
     list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/OcclusionDither.hlsli")
+    list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/OcclusionWindow.hlsli")
   endif()
   add_custom_command(
     OUTPUT "${output}"
@@ -440,6 +457,13 @@ set_tests_properties(AevryndWindowsGuiTestWrapperNonzeroPropagationTest PROPERTI
 add_test(NAME AevryndWindowsGuiTestWrapperExactExitCodeTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/VerifyWindowsGuiTestWrapper.ps1" -Wrapper "${AEVRYND_WINDOWS_GUI_TEST_WRAPPER}" -Executable "$<TARGET_FILE:AevryndWindowsGuiTestWrapperFailureTest>" -ExpectedExitCode 37)
 
 add_executable(AevryndDrawListTest tests/DrawListSmoke.cpp)
+add_executable(AevryndOcclusionVelocity3DTest tests/OcclusionVelocity3DSmoke.cpp)
+target_compile_features(AevryndOcclusionVelocity3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndOcclusionVelocity3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_compile_definitions(AevryndOcclusionVelocity3DTest PRIVATE AEVRYND_SOURCE_DIR=L"${CMAKE_SOURCE_DIR}")
+target_link_libraries(AevryndOcclusionVelocity3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndOcclusionVelocity3DTest COMMAND AevryndOcclusionVelocity3DTest)
+set_tests_properties(AevryndOcclusionVelocity3DTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 add_executable(AevryndForwardPlusPointLightContractTest tests/ForwardPlusPointLightContractSmoke.cpp)
 target_compile_options(AevryndForwardPlusPointLightContractTest PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(AevryndForwardPlusPointLightContractTest PRIVATE AevryndEngine)
@@ -1711,6 +1735,13 @@ foreach(query_window_profile IN ITEMS Default Strict)
   set_tests_properties(${query_window_target} PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE
     LABELS "controller-query-window-cpu;additional-mandatory-cpu")
 endforeach()
+
+add_executable(AevryndStaticAabbIndexTest tests/StaticAabbIndex3DSmoke.cpp)
+target_compile_features(AevryndStaticAabbIndexTest PRIVATE cxx_std_20)
+target_compile_options(AevryndStaticAabbIndexTest PRIVATE /W4 /WX /permissive- /utf-8 /fp:strict /MP1)
+target_link_libraries(AevryndStaticAabbIndexTest PRIVATE AevryndEngine)
+add_test(NAME AevryndStaticAabbIndexTest COMMAND AevryndStaticAabbIndexTest)
+set_tests_properties(AevryndStaticAabbIndexTest PROPERTIES TIMEOUT 120 LABELS "release-gates;spatial;cpu")
 
 # 上升中水平切入可行走坡面，仍須完成真地形與屋頂／動態體的必要接觸交易。
 add_executable(AevryndCharacterAscendingTerrain3DTest tests/CharacterAscendingTerrain3DSmoke.cpp)

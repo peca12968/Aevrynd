@@ -1,0 +1,1188 @@
+{
+  "assetCount": 12,
+  "schemaVersion": 1,
+  "downloadedInputBytes": 466330098,
+  "memoryGate": "pass",
+  "memoryGateMethod": "gltfpack-process-tree",
+  "memoryGateDetail": "Windows Job Object peak memory plus sampled process-tree working set; conservative maximum under 2 GiB.",
+  "catalogId": "gameplay-ultra-realistic-cc0",
+  "downloadBudgetBytes": 1073741824,
+  "runtimeBytes": 242768188,
+  "assets": [
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "forest-ground-04/source/forest_ground_04_diff_2k.jpg",
+          "width": 2048,
+          "bytes": 4529321,
+          "height": 2048,
+          "sha256": "24b8aaf4c8547305d80b0e029ec365219ab1b90748d4ca5651bdc9e75bfde5e6"
+        },
+        {
+          "path": "forest-ground-04/source/forest_ground_04_nor_gl_2k.jpg",
+          "width": 2048,
+          "bytes": 5288849,
+          "height": 2048,
+          "sha256": "b37ac799ed410976541e0011c246fca254e74eaa3f096ae7a7d74178db5a6d9b"
+        },
+        {
+          "path": "forest-ground-04/source/forest_ground_04_rough_2k.jpg",
+          "width": 2048,
+          "bytes": 2509805,
+          "height": 2048,
+          "sha256": "24194662948424c323c75e0918461ad9d38bc0a275022000144f248b3efb4119"
+        },
+        {
+          "path": "forest-ground-04/source/forest_ground_04_arm_2k.jpg",
+          "width": 2048,
+          "bytes": 3418726,
+          "height": 2048,
+          "sha256": "a6086cb5611fabcc3dd4c9ac74bcf6cf8ed5d07e136ebe51255a5a3bea9e42c6",
+          "officialSource": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/forest_ground_04/forest_ground_04_arm_2k.jpg",
+          "officialMd5": "c688030cc91fbaab71cbc71fc6b280fe"
+        },
+        {
+          "path": "forest-ground-04/forest-ground-04.materials.json",
+          "width": 0,
+          "bytes": 374,
+          "height": 0,
+          "sha256": "84a8b4a16a8ab65e6f01919d34018365e1037f9ebfbbf5fd4149a261880fd7e3"
+        }
+      ],
+      "id": "forest_ground_04",
+      "lodLevels": null,
+      "source": "poly-haven",
+      "resolution": "2k",
+      "textureBytes": 15746701.0,
+      "assetName": "forest-ground-04",
+      "license": "CC0-1.0",
+      "kind": "pbr-material",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/forest_ground_04"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "ground108/source/Ground108_1K-JPG_AmbientOcclusion.jpg",
+          "width": 1024,
+          "bytes": 860514,
+          "height": 1024,
+          "sha256": "55c4c608a84c0a73fe1964e460ec9f8dce9ab860173e48a1f54df94720f27943"
+        },
+        {
+          "path": "ground108/source/Ground108_1K-JPG_Color.jpg",
+          "width": 1024,
+          "bytes": 1637079,
+          "height": 1024,
+          "sha256": "a0ccdc1264230444f9eaab9d8fd2a809052209fb682c911da9795fa3213b3bf5"
+        },
+        {
+          "path": "ground108/source/Ground108_1K-JPG_Displacement.jpg",
+          "width": 1024,
+          "bytes": 493979,
+          "height": 1024,
+          "sha256": "c7ce1d834c3a04358ae1866f9f9db61eaf812ec39bd8a4c7f2e7b83c2fa49056"
+        },
+        {
+          "path": "ground108/source/Ground108_1K-JPG_NormalDX.jpg",
+          "width": 1024,
+          "bytes": 2108413,
+          "height": 1024,
+          "sha256": "a89f4cb69cf7cd37399f0d27a8b4c3dae8e21f7e77c939ddba1142e52f206e4a"
+        },
+        {
+          "path": "ground108/source/Ground108_1K-JPG_NormalGL.jpg",
+          "width": 1024,
+          "bytes": 2108634,
+          "height": 1024,
+          "sha256": "908957d4302f6a0e5c8bdddd50ff837175f77992775b7a242311ec0b4337f16c"
+        },
+        {
+          "path": "ground108/source/Ground108_1K-JPG_Roughness.jpg",
+          "width": 1024,
+          "bytes": 797916,
+          "height": 1024,
+          "sha256": "4e78fbde7da89c2e48e6162ed6feba621a2eab6ee82e03b1d6e92c7169133b64"
+        },
+        {
+          "path": "ground108/source/Ground108.png",
+          "width": 512,
+          "bytes": 495744,
+          "height": 512,
+          "sha256": "d814761db879d09d185b340572cf2fd2bfc03537f360cd910e4e43bd45cd6560"
+        },
+        {
+          "path": "ground108/ground108.materials.json",
+          "width": 0,
+          "bytes": 475,
+          "height": 0,
+          "sha256": "5e7cb914450293d4966af5405ad1d6c64923a4eb6fd94db3cd525c7bc42a9f62"
+        }
+      ],
+      "id": "Ground108",
+      "lodLevels": null,
+      "source": "ambientcg",
+      "resolution": "1k",
+      "textureBytes": 8502279.0,
+      "assetName": "ground108",
+      "license": "CC0-1.0",
+      "kind": "pbr-material",
+      "archive": {
+        "sha256": "eeb4312e1b8d88f65e880723339e7a6fafd4fb112aca7af7c6cdbe15456209a9",
+        "bytes": 9835610
+      },
+      "officialPage": "https://ambientcg.com/view?id=Ground108"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "coastal-cliff-01/coastal-cliff-01-lod0.glb",
+          "width": 0,
+          "bytes": 15375624,
+          "height": 0,
+          "sha256": "13924d67fa9d6ddd8cf480c4669134e8e8ef7cd0e9276f98ea5b31e6ed941a54"
+        },
+        {
+          "path": "coastal-cliff-01/coastal-cliff-01-lod1.glb",
+          "width": 0,
+          "bytes": 8885268,
+          "height": 0,
+          "sha256": "3006df5bff695e9463f4287859eddd92f794d6432094faccbf65d35d838924da"
+        },
+        {
+          "path": "coastal-cliff-01/coastal-cliff-01-lod2.glb",
+          "width": 0,
+          "bytes": 3872688,
+          "height": 0,
+          "sha256": "6ac7a47e9212e7a9b3e745fe754eaadafda4dacf5c6d545a9006e3f55d8ae6ae"
+        },
+        {
+          "path": "coastal-cliff-01/coastal-cliff-01.materials.json",
+          "bytes": 390,
+          "sha256": "1b34d77191ced74f4c4693925bbbfa3cacdb23a149abea0f6e867c8eb3e88d76"
+        },
+        {
+          "path": "coastal-cliff-01/textures/coastal_cliff_01_arm_1k.jpg",
+          "bytes": 640985,
+          "sha256": "7f287d0b44a3162b5e360fe45ccc8b6009c189d21bd33c1094060eef613c6fa6",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "coastal-cliff-01/textures/coastal_cliff_01_diff_1k.jpg",
+          "bytes": 699457,
+          "sha256": "6c9626fdb5550ba260b195638c8c89053faedc22005f4ca94d3be5df72ae525a",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "coastal-cliff-01/textures/coastal_cliff_01_nor_gl_1k.jpg",
+          "bytes": 853524,
+          "sha256": "afbe8c2f9ff62dd616f776c074b996d2d275eef982a40aee1f28f4f3b3a3cf0e",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "id": "coastal_cliff_01",
+      "lodLevels": [
+        {
+          "level": 0,
+          "requestedRatio": 1.0,
+          "vertices": 238686,
+          "triangles": 461824,
+          "file": "coastal-cliff-01-lod0.glb",
+          "bytes": 15375624,
+          "sha256": "13924D67FA9D6DDD8CF480C4669134E8E8EF7CD0E9276F98EA5B31E6ED941A54"
+        },
+        {
+          "level": 1,
+          "requestedRatio": 0.5,
+          "vertices": 122455,
+          "triangles": 230911,
+          "file": "coastal-cliff-01-lod1.glb",
+          "bytes": 8885268,
+          "sha256": "3006DF5BFF695E9463F4287859EDDD92F794D6432094FACCBF65D35D838924DA"
+        },
+        {
+          "level": 2,
+          "requestedRatio": 0.15,
+          "vertices": 39417,
+          "triangles": 69273,
+          "file": "coastal-cliff-01-lod2.glb",
+          "bytes": 3872688,
+          "sha256": "6AC7A47E9212E7A9B3E745FE754EAADAFDA4DACF5C6D545A9006E3F55D8AE6AE"
+        }
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": null,
+      "assetName": "coastal-cliff-01",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/coastal_cliff_01"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "boulder-01/boulder-01-lod0.glb",
+          "width": 0,
+          "bytes": 6229588,
+          "height": 0,
+          "sha256": "82550460f2b28c80d95846ac64222ab7a9d3fdb3b4530710e23739eba79b6412"
+        },
+        {
+          "path": "boulder-01/boulder-01-lod1.glb",
+          "width": 0,
+          "bytes": 5336184,
+          "height": 0,
+          "sha256": "ac41bbdffc041c80aa9f2176a2ffc0f3443440112afe54ef143277dba08ba02a"
+        },
+        {
+          "path": "boulder-01/boulder-01-lod2.glb",
+          "width": 0,
+          "bytes": 4813872,
+          "height": 0,
+          "sha256": "5fc3940f5df446e228bd7a3dc64bab63ad033fda14c2bba446d08836df6c169f"
+        },
+        {
+          "path": "boulder-01/boulder-01.materials.json",
+          "bytes": 372,
+          "sha256": "bb0349133838c9a9fb405029c22fccacd255a7c1e1dc9380921b4c4f9b5b39f9"
+        },
+        {
+          "path": "boulder-01/textures/boulder_01_arm_1k.jpg",
+          "bytes": 659386,
+          "sha256": "c57187c5746b6be913fa53846cb44ff78743e7ca5000f131c9627b99563c2b87",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "boulder-01/textures/boulder_01_diff_1k.jpg",
+          "bytes": 987467,
+          "sha256": "c38f0e918f6dc16b8d386ba3cdd89805c78320c119a1ceec85856f82b09a65b8",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "boulder-01/textures/boulder_01_nor_gl_1k.jpg",
+          "bytes": 1183552,
+          "sha256": "0810cf6e89d89bb6eb065b4d2e2855288f5dcbd2c15c6e40ab90d462021b50aa",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "id": "boulder_01",
+      "lodLevels": [
+        {
+          "level": 0,
+          "requestedRatio": 1.0,
+          "vertices": 67042,
+          "triangles": 66122,
+          "file": "boulder-01-lod0.glb",
+          "bytes": 6229588,
+          "sha256": "82550460F2B28C80D95846AC64222AB7A9D3FDB3B4530710E23739EBA79B6412"
+        },
+        {
+          "level": 1,
+          "requestedRatio": 0.5,
+          "vertices": 38482,
+          "triangles": 33061,
+          "file": "boulder-01-lod1.glb",
+          "bytes": 5336184,
+          "sha256": "AC41BBDFFC041C80AA9F2176A2FFC0F3443440112AFE54EF143277DBA08BA02A"
+        },
+        {
+          "level": 2,
+          "requestedRatio": 0.15,
+          "vertices": 33466,
+          "triangles": 26611,
+          "file": "boulder-01-lod2.glb",
+          "bytes": 4813872,
+          "sha256": "5FC3940F5DF446E228BD7A3DC64BAB63AD033FDA14C2BBA446D08836DF6C169F"
+        }
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": null,
+      "assetName": "boulder-01",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/boulder_01"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "island-tree-01/island-tree-01-lod0.glb",
+          "width": 0,
+          "height": 0,
+          "bytes": 39852252,
+          "sha256": "b101d353477c8695f9d28781d0ad4344863b012b86a726668540a46b450ee6ff"
+        },
+        {
+          "path": "island-tree-01/island-tree-01-lod1.glb",
+          "width": 0,
+          "height": 0,
+          "bytes": 21250416,
+          "sha256": "c1da336cd188f30c886ec3bb33a5fd41bdfa65c37326359537e110af8f0d8472"
+        },
+        {
+          "path": "island-tree-01/island-tree-01-lod2.glb",
+          "width": 0,
+          "height": 0,
+          "bytes": 7718788,
+          "sha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24"
+        },
+        {
+          "path": "island-tree-01/island-tree-01.materials.json",
+          "width": 0,
+          "height": 0,
+          "bytes": 1131,
+          "sha256": "1375a73f7d771cfd72a26c04389f4802c06767549cd9092618d3d9c415d9e585"
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_arm_1k.jpg",
+          "bytes": 727403,
+          "sha256": "bf972dff0fbc71f146b4c02103fc3596477a49a9eff46b87b13c89b7b90d18ca",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_branches_arm_1k.jpg",
+          "bytes": 484806,
+          "sha256": "9e3f82263247ce4f619692cea4c4f6fe9936ff465a86623481849062642c7d05",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_branches_diff_1k.jpg",
+          "bytes": 528304,
+          "sha256": "bee5ec22196e9e31ad0c95a5a9b4636571cc0124d5bb27a92f1e307d289cc60d",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_branches_nor_gl_1k.jpg",
+          "bytes": 819101,
+          "sha256": "2d67393ba76a0f49cf965fa0c99d8c16268e71e87b1203d35539bfdb971a514e",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_diff_1k.jpg",
+          "bytes": 791327,
+          "sha256": "51bff9a3a6ed7d89ff4c73f01708b7267ed8d7a82b0cb12343741894f708218f",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_leaves_arm_1k.jpg",
+          "bytes": 489476,
+          "sha256": "90da3a072dbcb052715b1313b9dbc69a4aa8a09a31a4b3868411a2bb51d72037",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_leaves_alpha_1k.png",
+          "bytes": 57438,
+          "sha256": "f4341f147988dbe6b58d9ca841a8f0e4bcff25bc40d05f9877da82006d489c39",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_leaves_diff_1k.jpg",
+          "bytes": 191886,
+          "sha256": "f56d762a1507754752abf164cc12acbc1e87ce87fa609ac44b98a1b0037c89d8",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_leaves_nor_gl_1k.jpg",
+          "bytes": 379443,
+          "sha256": "07ba461c0c95da4e49a42981766bdb6191d4c3c4d815796c082266dcc3cecdb8",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "island-tree-01/textures/island_tree_01_nor_gl_1k.jpg",
+          "bytes": 1207134,
+          "sha256": "ca22e428e1b1ebac47b2fc67ec355700c8779d6628d2fc6c3ebae9002988f63e",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "id": "island_tree_01",
+      "lodLevels": [
+        {
+          "hasNormals": true,
+          "hasUv": true,
+          "boundsMaximum": [
+            2.4108076095581055,
+            2.583538055419922,
+            5.0071187019348145
+          ],
+          "ratio": 1.0,
+          "level": 0,
+          "triangles": 1599403,
+          "sha256": "b101d353477c8695f9d28781d0ad4344863b012b86a726668540a46b450ee6ff",
+          "boundsMinimum": [
+            -2.3444457054138184,
+            -2.2340102195739746,
+            -0.020327899605035782
+          ],
+          "bytes": 39852252,
+          "visualNonEmpty": true,
+          "file": "island-tree-01-lod0.glb",
+          "materialSlots": 3,
+          "vertices": 1303928
+        },
+        {
+          "hasNormals": true,
+          "hasUv": true,
+          "boundsMaximum": [
+            2.41068696975708,
+            2.583538055419922,
+            5.0071187019348145
+          ],
+          "ratio": 0.5,
+          "level": 1,
+          "triangles": 795949,
+          "sha256": "c1da336cd188f30c886ec3bb33a5fd41bdfa65c37326359537e110af8f0d8472",
+          "boundsMinimum": [
+            -2.3436460494995117,
+            -2.2340102195739746,
+            -0.020327899605035782
+          ],
+          "bytes": 21250416,
+          "visualNonEmpty": true,
+          "file": "island-tree-01-lod1.glb",
+          "materialSlots": 3,
+          "vertices": 737317
+        },
+        {
+          "hasNormals": true,
+          "hasUv": true,
+          "boundsMaximum": [
+            2.4106826782226562,
+            2.583538055419922,
+            5.0071187019348145
+          ],
+          "ratio": 0.15,
+          "level": 2,
+          "triangles": 235039,
+          "sha256": "bfa461b8df0d9b14e00460be80112bee99e4a1b1e528d953f9da076ccbcaaa24",
+          "boundsMinimum": [
+            -2.3436460494995117,
+            -2.233956813812256,
+            -0.01643257960677147
+          ],
+          "bytes": 7718788,
+          "visualNonEmpty": true,
+          "file": "island-tree-01-lod2.glb",
+          "materialSlots": 3,
+          "vertices": 307739
+        }
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": null,
+      "assetName": "island-tree-01",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/island_tree_01"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "dead-tree-trunk-02/dead-tree-trunk-02-lod0.glb",
+          "width": 0,
+          "bytes": 4905968,
+          "height": 0,
+          "sha256": "897040e0cfc9883b9fa68db0f16b02976e2f3c3e125bf9840ce9f9e565d4ab9b"
+        },
+        {
+          "path": "dead-tree-trunk-02/dead-tree-trunk-02-lod1.glb",
+          "width": 0,
+          "bytes": 3977256,
+          "height": 0,
+          "sha256": "664e159a4b4cddd5c016785611b0461852f52e666b181124512d529640e21ddc"
+        },
+        {
+          "path": "dead-tree-trunk-02/dead-tree-trunk-02-lod2.glb",
+          "width": 0,
+          "bytes": 3284664,
+          "height": 0,
+          "sha256": "0d7c7c67959d2516cfd6776b771ab4dccc29dd4058d4d0828f3e12c06c4c8ea9"
+        },
+        {
+          "path": "dead-tree-trunk-02/dead-tree-trunk-02.materials.json",
+          "bytes": 396,
+          "sha256": "7124b09081bdc9ad6ab854587ba199ac64d6bd8eb65ddb0e5696c963302e7f50"
+        },
+        {
+          "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_arm_1k.jpg",
+          "bytes": 805609,
+          "sha256": "ea15561ce36572ebd0db3c997f70d68a76d4bcbfef7efb4f91c8fd3b5f766e62",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_diff_1k.jpg",
+          "bytes": 932059,
+          "sha256": "fac23e81ab5639dcde93db605e5dd94c65e0aa2b1fb4a303f37de9afbb9af5b4",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "dead-tree-trunk-02/textures/dead_tree_trunk_02_nor_gl_1k.jpg",
+          "bytes": 1192056,
+          "sha256": "9b26c29b89afced0ddb91dbe6f917e59038bed5ba6076dfceb8d1b4b00ca04f7",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "id": "dead_tree_trunk_02",
+      "lodLevels": [
+        {
+          "level": 0,
+          "requestedRatio": 1.0,
+          "vertices": 46112,
+          "triangles": 83128,
+          "file": "dead-tree-trunk-02-lod0.glb",
+          "bytes": 4905968,
+          "sha256": "897040E0CFC9883B9FA68DB0F16B02976E2F3C3E125BF9840CE9F9E565D4AB9B"
+        },
+        {
+          "level": 1,
+          "requestedRatio": 0.5,
+          "vertices": 24883,
+          "triangles": 41564,
+          "file": "dead-tree-trunk-02-lod1.glb",
+          "bytes": 3977256,
+          "sha256": "664E159A4B4CDDD5C016785611B0461852F52E666B181124512D529640E21DDC"
+        },
+        {
+          "level": 2,
+          "requestedRatio": 0.15,
+          "vertices": 8705,
+          "triangles": 12469,
+          "file": "dead-tree-trunk-02-lod2.glb",
+          "bytes": 3284664,
+          "sha256": "0D7C7C67959D2516CFD6776B771AB4DCCC29DD4058D4D0828F3E12C06C4C8EA9"
+        }
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": null,
+      "assetName": "dead-tree-trunk-02",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/dead_tree_trunk_02"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_AmbientOcclusion.jpg",
+          "width": 1024,
+          "bytes": 466317,
+          "height": 1024,
+          "sha256": "d024563853d609dce0d078200ecdacea5d3190a0bea9b8c0d92cdd44033d66e6"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_Color.jpg",
+          "width": 1024,
+          "bytes": 979821,
+          "height": 1024,
+          "sha256": "19d984cdf32b07ddd2df209318c5fe77bcd6d844373fec40f4c79dcea39ac898"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_Displacement.jpg",
+          "width": 1024,
+          "bytes": 297391,
+          "height": 1024,
+          "sha256": "5aebf3806c2f9e2314929c0f0f263786d4210081f002ac4fdda956acab72f62e"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_NormalDX.jpg",
+          "width": 1024,
+          "bytes": 1307038,
+          "height": 1024,
+          "sha256": "688d099e799dd1ab88b41053afb23772c80944a0f0768538634470fb83b3508b"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_NormalGL.jpg",
+          "width": 1024,
+          "bytes": 1294439,
+          "height": 1024,
+          "sha256": "a0a78b16f67b1b2f92eca2eabf32e8f09fd83bbc6a7c02dc3463942bb00269c0"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_Opacity.jpg",
+          "width": 1024,
+          "bytes": 5749,
+          "height": 1024,
+          "sha256": "2008de7b3881528fc666f36141aa619785494e29c4c801de14b220ff4452a23f"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B_1K-JPG_Roughness.jpg",
+          "width": 1024,
+          "bytes": 662184,
+          "height": 1024,
+          "sha256": "6a91f9db4d37a28f586e3f71d6caeba8c2508dc5d811e49bcf916619f66299d2"
+        },
+        {
+          "path": "roofing-tiles014-b/source/RoofingTiles014B.png",
+          "width": 512,
+          "bytes": 338554,
+          "height": 512,
+          "sha256": "a16d4dfcf09536e83119a8284c0cd8ca42da38918c402439ace3a9da5897f474"
+        },
+        {
+          "path": "roofing-tiles014-b/roofing-tiles014-b.materials.json",
+          "width": 0,
+          "bytes": 503,
+          "height": 0,
+          "sha256": "fa08e72ca0d87f0a6c155eced1aaf67c048ed65ed1dace50192f8306a354f4a7"
+        }
+      ],
+      "id": "RoofingTiles014B",
+      "lodLevels": null,
+      "source": "ambientcg",
+      "resolution": "1k",
+      "textureBytes": 5351493.0,
+      "assetName": "roofing-tiles014-b",
+      "license": "CC0-1.0",
+      "kind": "pbr-material",
+      "archive": {
+        "sha256": "62a52cd30b95a91b159fedf3b7f056f88316f16ec479daae285937052fe181f9",
+        "bytes": 6481693
+      },
+      "officialPage": "https://ambientcg.com/view?id=RoofingTiles014B"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "bricks100/source/Bricks100_1K-JPG_AmbientOcclusion.jpg",
+          "width": 1024,
+          "bytes": 359977,
+          "height": 512,
+          "sha256": "7ef8dd9bfd21202fab3b445dd7962ecce22a30035637a9ddca1c40a856d6474b"
+        },
+        {
+          "path": "bricks100/source/Bricks100_1K-JPG_Color.jpg",
+          "width": 1024,
+          "bytes": 727003,
+          "height": 512,
+          "sha256": "e5596ce79d9a63d6b9a9e9ac15a0bb60d8a5c39b684999a872467641bc91d30d"
+        },
+        {
+          "path": "bricks100/source/Bricks100_1K-JPG_Displacement.jpg",
+          "width": 1024,
+          "bytes": 186182,
+          "height": 512,
+          "sha256": "e9d0fc436330c9c0829e437d5e0f48926ae6396279e02874e0d79dd3af4a839f"
+        },
+        {
+          "path": "bricks100/source/Bricks100_1K-JPG_NormalDX.jpg",
+          "width": 1024,
+          "bytes": 829625,
+          "height": 512,
+          "sha256": "e54950f7dcafe8e7593d0d3d6b02930c04adbe31fe43d51a6825ad57bc2b547e"
+        },
+        {
+          "path": "bricks100/source/Bricks100_1K-JPG_NormalGL.jpg",
+          "width": 1024,
+          "bytes": 830327,
+          "height": 512,
+          "sha256": "3fd468809d149512cbbb7a0ee298bdb1d7c2213da05e5453e6612b8006bd3708"
+        },
+        {
+          "path": "bricks100/source/Bricks100_1K-JPG_Roughness.jpg",
+          "width": 1024,
+          "bytes": 346000,
+          "height": 512,
+          "sha256": "907a11988e16ff1ec831523b8fd31a61b3493a37b2253b04718b7f711356786f"
+        },
+        {
+          "path": "bricks100/source/Bricks100.png",
+          "width": 512,
+          "bytes": 429720,
+          "height": 512,
+          "sha256": "8858e77a5261a56e82bf270fcf9c83d668ce1c7e9cccb8d7107b0a1cc4c3c412"
+        },
+        {
+          "path": "bricks100/bricks100.materials.json",
+          "width": 0,
+          "bytes": 475,
+          "height": 0,
+          "sha256": "52ca174982319e70bb7278ace7f3c4ebe17b751a1b8276f2b215298b5f7f4874"
+        }
+      ],
+      "id": "Bricks100",
+      "lodLevels": null,
+      "source": "ambientcg",
+      "resolution": "1k",
+      "textureBytes": 3708834.0,
+      "assetName": "bricks100",
+      "license": "CC0-1.0",
+      "kind": "pbr-material",
+      "archive": {
+        "sha256": "46551bf55181bce3ed0d5c56757ed9d89bbf9960d4f22efef18e090b072f6df4",
+        "bytes": 4827385
+      },
+      "officialPage": "https://ambientcg.com/view?id=Bricks100"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "stony-dirt-path/source/stony_dirt_path_arm_1k.jpg",
+          "width": 1024,
+          "bytes": 848546,
+          "height": 1024,
+          "sha256": "e38820894100350df10c2490dbe8a1b4c31dc523266a84c6c7a1a829d2792502"
+        },
+        {
+          "path": "stony-dirt-path/source/stony_dirt_path_diff_1k.jpg",
+          "width": 1024,
+          "bytes": 1234067,
+          "height": 1024,
+          "sha256": "a662000ff3f7f64e23c25d2b8cd5947b9c8fd893510c5ed49c0daa2847004758"
+        },
+        {
+          "path": "stony-dirt-path/source/stony_dirt_path_nor_gl_1k.jpg",
+          "width": 1024,
+          "bytes": 1416394,
+          "height": 1024,
+          "sha256": "2866303f71066f42bd218410bf6d38d9a21cda34c6e3543a8ac92900b7a09c75"
+        },
+        {
+          "path": "stony-dirt-path/stony-dirt-path.materials.json",
+          "width": 0,
+          "bytes": 371,
+          "height": 0,
+          "sha256": "c7db86d06c1c0105e10584b440f0614c2cebad0fcc8301f4ff500ffb9d4abe35"
+        }
+      ],
+      "id": "stony_dirt_path",
+      "lodLevels": null,
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": 3499007.0,
+      "assetName": "stony-dirt-path",
+      "license": "CC0-1.0",
+      "kind": "pbr-material",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/stony_dirt_path"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "tree-small-02/tree-small-02-lod0.glb",
+          "width": 0,
+          "height": 0,
+          "bytes": 28868108,
+          "sha256": "14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14"
+        },
+        {
+          "path": "tree-small-02/tree-small-02-lod1.glb",
+          "width": 0,
+          "height": 0,
+          "bytes": 14306876,
+          "sha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928"
+        },
+        {
+          "path": "tree-small-02/tree-small-02-lod2.glb",
+          "width": 0,
+          "height": 0,
+          "bytes": 8924792,
+          "sha256": "7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11"
+        },
+        {
+          "path": "tree-small-02/tree-small-02.materials.json",
+          "width": 0,
+          "height": 0,
+          "bytes": 1065,
+          "sha256": "2ef55ff1c896a60424e5c475887a9b4346f2c6dd401808a9d8a1ea42a85afb6e"
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_arm_1k.jpg",
+          "bytes": 708242,
+          "sha256": "891c5a1bb124292984b01558e9f2b0302d27d2fa3ccf9dfc6c34f9ea4ca24e6c",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_branch_arm_1k.jpg",
+          "bytes": 375732,
+          "sha256": "8968b46d76c67da09ebbf4eed04b8123c9e0ddf5b55d123968b35b32aa76d27a",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_branch_diff_1k.jpg",
+          "bytes": 449977,
+          "sha256": "a71b768e330c0c6cca097e30314f6b4e842ef724a1370f6aab14b4434eec64cb",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_branch_nor_gl_1k.jpg",
+          "bytes": 581596,
+          "sha256": "a2efae9e7fede259601188cd5cb7e561fc502bd87e04d862a9532b2d8e647a62",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_diff_1k.jpg",
+          "bytes": 863246,
+          "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_leaves_arm_1k.jpg",
+          "bytes": 633698,
+          "sha256": "71f81374daf5a8f3e6eb2c694264a1769fdb0bea508178e4105618eecea83c3e",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_leaves_diff_1k.jpg",
+          "bytes": 340003,
+          "sha256": "261e7d7a5ac7d2e16ea8823ff8510be8f3f615999724232994039ad2885e5c36",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_leaves_nor_gl_1k.jpg",
+          "bytes": 681604,
+          "sha256": "8c72e04fb23e16ae1df79c01385a638473d1dd4dede3d51e83d70153c129f09b",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "tree-small-02/textures/tree_small_02_nor_gl_1k.jpg",
+          "bytes": 1228646,
+          "sha256": "9c83be074c950ea1b94c732c0c0291b53b9ba357f932d378bafe3ca3b4418871",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "id": "tree_small_02",
+      "lodLevels": [
+        {
+          "level": 0,
+          "requestedRatio": 0.35,
+          "vertices": 729844,
+          "triangles": 721738,
+          "file": "tree-small-02-lod0.glb",
+          "bytes": 28868108,
+          "sha256": "14958831b4c65ab2d670937a355b8b73bd723c63eb1a37e1f24e3e0905c5fc14",
+          "boundsMinimum": [
+            -1.30830085,
+            -0.0240319986,
+            -1.38229871
+          ],
+          "boundsMaximum": [
+            1.607655859224,
+            4.532637094038,
+            2.909586827966
+          ],
+          "materialSlots": 3,
+          "hasNormals": true,
+          "hasUv": true,
+          "visualNonEmpty": true
+        },
+        {
+          "level": 1,
+          "requestedRatio": 0.12,
+          "vertices": 278856,
+          "triangles": 245084,
+          "file": "tree-small-02-lod1.glb",
+          "bytes": 14306876,
+          "sha256": "10ee0f69bc66cca34f27b5b4e409d02655d6fd72048f277f24d443952a25e928",
+          "boundsMinimum": [
+            -1.30830085,
+            -0.0240319986,
+            -1.3799094
+          ],
+          "boundsMaximum": [
+            1.6046505447,
+            4.531851791316,
+            2.897888337916
+          ],
+          "materialSlots": 3,
+          "hasNormals": true,
+          "hasUv": true,
+          "visualNonEmpty": true
+        },
+        {
+          "level": 2,
+          "requestedRatio": 0.04,
+          "vertices": 104685,
+          "triangles": 82854,
+          "file": "tree-small-02-lod2.glb",
+          "bytes": 8924792,
+          "sha256": "7123bac2d577623782d5480c99872b869d2768906cc9267146bb4a419c428d11",
+          "boundsMinimum": [
+            -1.30338943,
+            -0.0222652573,
+            -1.36024463
+          ],
+          "boundsMaximum": [
+            1.59748361815,
+            4.525581933881,
+            2.860872649442
+          ],
+          "materialSlots": 3,
+          "hasNormals": true,
+          "hasUv": true,
+          "visualNonEmpty": true
+        }
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": 5862744,
+      "assetName": "tree-small-02",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/tree_small_02"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "files": [
+        {
+          "path": "xanderklinge/source/xanderklinge_1k.hdr",
+          "width": 1024,
+          "bytes": 1865245,
+          "height": 512,
+          "sha256": "e688f624cd66973515154f200d6998b8731fd57dd8f6c2d71eb315454e9c3ef8"
+        }
+      ],
+      "id": "xanderklinge",
+      "lodLevels": null,
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": 1865245.0,
+      "assetName": "xanderklinge",
+      "license": "CC0-1.0",
+      "kind": "hdri",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/xanderklinge"
+    },
+    {
+      "commercialUse": true,
+      "memoryGate": "pass",
+      "materialBinding": "runtime-sidecar-integration-required",
+      "files": [
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+          "bytes": 789264,
+          "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+          "bytes": 776567,
+          "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+          "bytes": 1137533,
+          "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_arm_1k.jpg",
+          "bytes": 829710,
+          "sha256": "22736ea32fdcb9b515601225f554fde2da533b721063ee63e9a52502b93c5f54",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_diff_1k.jpg",
+          "bytes": 772467,
+          "sha256": "fd13a53cc8e69cd356245eb0017c51f56e35726683123888f94ed4451cc0486d",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_nor_gl_1k.jpg",
+          "bytes": 1054639,
+          "sha256": "d8e80fa8849a2bcf37203d8359d1f498738306cee7065cac03c3131a6b71791f",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_twig_alpha_1k.png",
+          "bytes": 371026,
+          "sha256": "3f399629337e7ac3af27a01b08ffb9c0d60224a9dd374a1427761a5c2eea9d6e",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_twig_arm_1k.jpg",
+          "bytes": 407309,
+          "sha256": "d66c81fc073ee7ea97a76b6da2399769f16944e50ef0e007f09c95619f597c79",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_twig_diff_1k.jpg",
+          "bytes": 371741,
+          "sha256": "8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/textures/fir_tree_01_twig_nor_gl_1k.jpg",
+          "bytes": 472604,
+          "sha256": "d470dc39b1d02bbeba06feb0ad818680ef3c24623b4db597270301a5fb8c9369",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "path": "fir-tree-01-c/fir-tree-01-c.materials.json",
+          "bytes": 1353,
+          "sha256": "427f62a6d8b05ef6d21fd70b0ecd7d6f84d84b55d905fcc1a8fd6dea6b8391e8",
+          "width": 0,
+          "height": 0
+        },
+        {
+          "path": "fir-tree-01-c/fir-tree-01-c-provenance-receipt.json",
+          "bytes": 4437,
+          "sha256": "7936ed9f7dbdfc872a913800b34bfd54fcf766aac3f42e2de5baaa736e380773",
+          "width": 0,
+          "height": 0
+        },
+        {
+          "path": "fir-tree-01-c/fir-tree-01-c-cook-receipt.json",
+          "bytes": 4926,
+          "sha256": "95e71a03d732476a45d02a8652b966b39559e45a8dd6754fe2d9daa0a8ac239b",
+          "width": 0,
+          "height": 0
+        }
+      ],
+      "id": "fir_tree_01_c",
+      "lodLevels": [
+        {
+          "level": 0,
+          "authoredSourceObject": "fir_tree_01_c_LOD1",
+          "decimateRatio": 0.65,
+          "vertices": 31128,
+          "triangles": 44770,
+          "bounds": {
+            "minimum": [
+              -2.761598587036133,
+              -2.982006311416626,
+              -0.09382282942533493
+            ],
+            "maximum": [
+              3.5874412059783936,
+              3.023411273956299,
+              14.451992988586426
+            ]
+          },
+      "bytes": 28084844,
+      "sha256": "0D24218B14369E4A1DB6CF7E14795267DD6C4BAE944B2C2FD980BB42DCAE04AE"
+        },
+        {
+          "level": 1,
+          "authoredSourceObject": "fir_tree_01_c_LOD2",
+          "decimateRatio": 0.5,
+          "vertices": 14584,
+          "triangles": 15755,
+          "bounds": {
+            "minimum": [
+              -2.761598587036133,
+              -2.982006311416626,
+              -0.09320797026157379
+            ],
+            "maximum": [
+              3.5883054733276367,
+              3.023411273956299,
+              14.45848560333252
+            ]
+          },
+      "bytes": 27308728,
+      "sha256": "C34EC27D222AB260109B856A91C5ABE0317A5172E05DBACCD76940F33AEBC8CE"
+        },
+        {
+          "level": 2,
+          "authoredSourceObject": "fir_tree_01_c_LOD2",
+          "decimateRatio": 0.18,
+          "vertices": 7850,
+          "triangles": 5672,
+          "bounds": {
+            "minimum": [
+              -2.7567975521087646,
+              -2.969953775405884,
+              -0.1000855341553688
+            ],
+            "maximum": [
+              3.568830966949463,
+              3.0443902015686035,
+              14.48098373413086
+            ]
+          },
+      "bytes": 26688168,
+      "sha256": "1C1844CAB203BF202FD5F2EC9B93994343797A647FA113BB1EA71B3AF5E792A5"
+        }
+      ],
+      "source": "poly-haven",
+      "resolution": "1k",
+      "textureBytes": 6982860,
+      "assetName": "fir-tree-01-c",
+      "license": "CC0-1.0",
+      "kind": "mesh-pbr",
+      "archive": null,
+      "officialPage": "https://polyhaven.com/a/fir_tree_01",
+      "sourcePayloadPolicy": "Blend/GLB/BIN excluded; provenance and deterministic cook receipts retained"
+    }
+  ],
+  "peakWorkingSetBytes": 368406528,
+  "peakJobMemoryBytes": 366972928,
+  "peakProcessTreeBytes": 368406528,
+  "memorySampleCount": 16,
+  "maxProcessCount": 2,
+  "peakWorkingSetLimitBytes": 2147483648
+}

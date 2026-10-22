@@ -1,4 +1,5 @@
 #include "OcclusionDither.hlsli"
+#include "OcclusionWindow.hlsli"
 #include "OcclusionNormal.hlsli"
 
 Texture2D<float> sceneDepth : register(t0);
@@ -23,9 +24,33 @@ cbuffer Scene : register(b0)
     float4 fogColor;
     float4 cameraFogStart;
     float4 fogEndEnabled;
-    float4 pointPositionRadius[3];
-    float4 pointColorIntensity[3];
+    float4 forwardPlusParameters;
+    float4 forwardPlusReserved[5];
     float4 colorPipeline;
+    row_major float4x4 inverseViewProjection;
+    float4 worldViewport;
+    row_major float4x4 previousViewProjection;
+    float4 motionParameters;
+    row_major float4x4 currentUnjitteredViewProjection;
+    float4 temporalJitterPixels;
+    float4 heightFogParameters;
+    float4 aerialExtinctionScatteringHeight;
+    float4 aerialDistancePhase;
+    float4 aerialSkyRadianceSunScale;
+    float4 environmentDiffuseScaleIntensity;
+    float4 environmentSpecularScaleIntensity;
+    float4 environmentAnalyticIblWeights;
+    uint4 environmentPhaseReceipt;
+    float4 phaseSkyZenith;
+    float4 phaseSkyHorizon;
+    float4 phaseSkyGround;
+    float4 phaseAnalyticDiffuse;
+    float4 phaseSunDisk;
+    float4 environmentObjectFill;
+    float4 terrainParallaxParameters;
+    float4 terrainParallaxView;
+    float4 occlusionWindowEllipse;
+    float4 occlusionWindowParameters;
 };
 
 cbuffer AmbientOcclusionConstants : register(b1)
@@ -218,7 +243,7 @@ void DepthPixelMain(DepthVertexOutput input)
         const float signedCoverage = input.lodInvert != 0 ? threshold - input.lodCoverage - 0.0000001 : input.lodCoverage - threshold;
         clip(signedCoverage);
     }
-    ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
+    ClipOcclusionOpacity(input.occlusionCoordinate,ScreenWindowOcclusionOpacity((input.position.xy*colorPipeline.zw-worldViewport.xy)/max(worldViewport.zw,float2(0.000001,0.000001)),input.position.z,input.occlusionOpacity,occlusionWindowEllipse,occlusionWindowParameters),input.occlusionSeeds);
 }
 
 uint DepthObjectIdPixelMain(DepthVertexOutput input) : SV_TARGET

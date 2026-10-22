@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 #include "Math.h"
+#include "ScreenOcclusionWindow3D.h"
 #include "TerrainLayerCoverage3D.h"
 #include "Viewport.h"
 #include "EnvironmentIbl3D.h"
@@ -677,6 +678,10 @@ struct RendererStats {
     uint32_t lastTerrainParallaxHeightLayerMask{};
     bool terrainParallaxEnabled{};
     TerrainParallaxSettings3D terrainParallaxAppliedSettings{};
+    std::array<float,8> screenOcclusionWindowBoundValues{},lastCapturedOcclusionWindow{};
+    std::array<float,16> lastCapturedViewProjection{},lastCapturedUnjitteredViewProjection{};
+    Vec2 lastCapturedTemporalJitter{};
+    std::uint64_t lastCapturedRenderSerial{};
     unsigned outputWidth{},outputHeight{};
     uint32_t adapterLuidLow{};
     int32_t adapterLuidHigh{};
@@ -1071,7 +1076,7 @@ public:
     static constexpr size_t MaxSystemGlyphCacheBytes=2*1024*1024;
     static constexpr size_t RetainedSystemGlyphsAfterTrim=64;
     explicit DrawList(DrawListCapacityProfile capacityProfile=DrawListCapacityProfile::Frame):capacityProfile_(capacityProfile){if(capacityProfile_==DrawListCapacityProfile::Frame){vertices.reserve(InitialVertexCapacity);worldVertices.reserve(InitialVertexCapacity);worldIndices.reserve(InitialWorldIndexCapacity);meshInstances.reserve(InitialMeshInstanceCapacity);pointLights_.reserve(InitialPointLightCapacity);additiveSpans_.reserve(InitialAdditiveSpanCapacity);}else vertices.reserve(Minimal2DVertexCapacity);}
-    void Clear(){AbortPreparedWorldOriginShift3D();vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();staticMeshSubmission_={};staticMeshSubmissionGeneration_=0;skinnedMeshInstances.clear();skinPaletteJoints.clear();localReflectionProbes_.clear();resourceLeases_.clear();resourceLeaseKeys_.clear();skinPaletteCount_=0;nextSkinnedSubmissionGroupId_=1;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();cameraCut3D_=false;performanceTelemetryEnabled3D_=false;presentObservationEnabled3D_=false;unsynchronizedDiagnosticPresent3D_=false;determinismIntegrityMode3D_=DeterminismIntegrityMode3D::Runtime;atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
+    void Clear(){AbortPreparedWorldOriginShift3D();vertices.clear();worldVertices.clear();worldIndices.clear();meshInstances.clear();staticMeshSubmission_={};staticMeshSubmissionGeneration_=0;skinnedMeshInstances.clear();skinPaletteJoints.clear();localReflectionProbes_.clear();resourceLeases_.clear();resourceLeaseKeys_.clear();skinPaletteCount_=0;nextSkinnedSubmissionGroupId_=1;++skinPaletteGeneration_;if(!skinPaletteGeneration_)++skinPaletteGeneration_;pointLights_.clear();additiveSpans_.clear();blendMode_=BlendMode2D::Alpha;transform_={};transformCosine_=1.f;transformSine_=0.f;transformIdentity_=true;clipEnabled_=false;viewProjection_=Matrix4::Identity();screenOcclusionWindow_={};cameraCut3D_=false;performanceTelemetryEnabled3D_=false;presentObservationEnabled3D_=false;unsynchronizedDiagnosticPresent3D_=false;determinismIntegrityMode3D_=DeterminismIntegrityMode3D::Runtime;atmosphere_={};stats_.inputTriangles=stats_.submittedTriangles=stats_.culledTriangles=stats_.textGlyphs=stats_.textSourcePixels=stats_.textSpans=stats_.textContainmentTests=stats_.textContainedSpans=stats_.textContainmentBypassedTriangles=stats_.textCulledSpans=stats_.textCullingBypassedTriangles=stats_.primitiveCullTests=stats_.primitiveCulled=stats_.primitiveCulledTriangles=stats_.primitiveContained=stats_.primitiveContainedTriangles=stats_.ellipseSegments=stats_.ellipseOutlineSegments=stats_.ellipseTrigonometricEvaluations=stats_.ellipseTrigonometricEvaluationsSaved=stats_.ellipseStepCacheHits=stats_.ellipseStepCacheMisses=stats_.sharedVertexTransforms=stats_.sharedVertexTransformsSaved=stats_.primitiveColorPacks=stats_.primitiveColorPacksSaved=stats_.geometryBatches=stats_.geometryCulledBatches=stats_.geometryVertices=stats_.geometryTransformsSaved=stats_.additiveTriangles=stats_.additiveSpans=stats_.radialLightBatches=stats_.radialLightCandidates=stats_.radialLightsSubmitted=stats_.radialLightsCulled=stats_.radialLightsBudgetDropped=0;}
     void SetTranslation(Vec2 translation){transform_.translation=translation;UpdateTransformIdentity2D();}
     Vec2 Translation()const{return transform_.translation;}
     void SetTransform2D(Transform2D transform){transform_=transform;transformCosine_=std::cos(transform.rotation);transformSine_=std::sin(transform.rotation);UpdateTransformIdentity2D();}
@@ -1181,6 +1186,9 @@ public:
     const TerrainDistanceMaterialSettings3D& TerrainDistanceMaterial()const{return terrainDistanceMaterial_;}
     void SetTerrainParallax(TerrainParallaxSettings3D settings){terrainParallax_=NormalizeTerrainParallaxSettings3D(settings);}
     const TerrainParallaxSettings3D& TerrainParallax()const{return terrainParallax_;}
+    // 明確的frame政策：將此frame所有部分occlusion opacity限制在主體窗口；預設關閉。
+    void SetScreenOcclusionWindow(ScreenOcclusionWindow3D settings){screenOcclusionWindow_=NormalizeScreenOcclusionWindow3D(settings);}
+    const ScreenOcclusionWindow3D& ScreenOcclusionWindow()const{return screenOcclusionWindow_;}
     void SetVolumetricClouds(VolumetricCloudSettings3D settings){volumetricClouds_=NormalizeVolumetricCloudSettings3D(settings);}
     const VolumetricCloudSettings3D& VolumetricClouds()const{return volumetricClouds_;}
     void SetDirectionalLightShafts(DirectionalLightShaftSettings3D settings){directionalLightShafts_=NormalizeDirectionalLightShaftSettings3D(settings);}
@@ -1262,6 +1270,7 @@ private:
     std::vector<LocalReflectionProbe3D> localReflectionProbes_{};
     TerrainDistanceMaterialSettings3D terrainDistanceMaterial_{};
     TerrainParallaxSettings3D terrainParallax_{};
+    ScreenOcclusionWindow3D screenOcclusionWindow_{};
     VolumetricCloudSettings3D volumetricClouds_{};
     DirectionalLightShaftSettings3D directionalLightShafts_{};
     SkinSubsurfaceSettings3D skinSubsurface_{};

@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchCanopyCollision.h"
 #include "MistwatchRootStemTerrain.h"
+#include <functional>
 #include <string>
 
 namespace Mistwatch {
@@ -14,6 +15,8 @@ struct EntranceCanopyMetadata {
     std::uint64_t originalFingerprint{},faceChecks{},exactOverlayFaces{},woodParts{};
     unsigned appended{};
 };
+// 僅供呼叫端以完整真實輸入與固定內容雜湊驗證的烘焙資料；所有幾何／接地／蕨體檢查仍執行。
+using EntranceCanopyQualifiedWood=std::function<std::vector<CanopyWoodProxy>(const CanopyPopulation&)>;
 namespace EntranceCanopyDetail {
 inline void Need(bool okay,std::size_t index,const char* gate) {
     if(!okay)throw std::runtime_error("ENTRANCE_CANOPY_FIRST_DIVERGENCE anchor="+
@@ -56,7 +59,8 @@ inline void CheckGround(const Mesh3D& mesh,const Transform3D& pose,const HeightF
 inline CanopyPopulation AppendEntranceCanopy(const CanopyPopulation& original,
     const std::array<Mesh3D,3>& meshes,const CanopyGeometry& geometry,const Mesh3D& derived,
     const HeightField3D& terrain,std::span<const BoxCollider3D> solids,const ForestUnderstory& understory,
-    const std::array<FernColonyAsset,4>& ferns,EntranceCanopyMetadata& metadata) {
+    const std::array<FernColonyAsset,4>& ferns,EntranceCanopyMetadata& metadata,const EntryLayout& layout=ActiveEntryLayout,
+    const EntranceCanopyQualifiedWood& qualifiedWood={}) {
     using EntranceCanopyDetail::Need;
     Need(original.reachedBudget&&original.plants.size()==4&&
         original.fingerprint==6584434718760703877ull,0,"original-four-forestwood-identity");
@@ -88,6 +92,14 @@ inline CanopyPopulation AppendEntranceCanopy(const CanopyPopulation& original,
     }
     Need(originalIdentity==original.fingerprint,0,"original-four-pose-hash-mismatch");
     auto result=original;EntranceCanopyMetadata checked;checked.originalFingerprint=original.fingerprint;
+    const auto checkWood=[&](const CanopyWoodProxy& proxy,std::size_t index){
+        Need(!proxy.parts.empty()&&proxy.spacing==.15&&CanopyVolume::ValidWoodParts(proxy.parts),index,"full-wood-grid-proxy");
+        for(std::size_t i=0;i<understory.ferns.size();++i){const auto& f=ferns[i%4];
+            Need(CanopyVolume::ClearsCanopyWood(understory.ferns[i],
+                CanopyVolume::ConservativeLocalVolume(f.radius,f.minimumY,f.height),proxy.parts),
+                index,"retained-fern-full-volume-vs-new-wood");}
+        checked.woodParts+=proxy.parts.size();
+    };
     ForestCoverSettings settings;
     for(std::size_t index=0;index<EntranceCanopyAnchors.size();++index){
         const auto anchor=EntranceCanopyAnchors[index];
@@ -95,7 +107,7 @@ inline CanopyPopulation AppendEntranceCanopy(const CanopyPopulation& original,
             std::isfinite(anchor.scale)&&anchor.scale>=1.f&&anchor.scale<=1.15f,index,"invalid-authored-anchor");
         const Vec3 root{anchor.x,terrain.SampleHeight(anchor.x,anchor.z),anchor.z};
         const float radius=geometry.radius*anchor.scale,baseRadius=geometry.rootRadius*anchor.scale;
-        Need(ForestCoverClearance(root,radius,solids)&&terrain.Contains(root.x-radius,root.z-radius)&&
+        Need(ForestCoverClearance(root,radius,solids,layout)&&terrain.Contains(root.x-radius,root.z-radius)&&
             terrain.Contains(root.x+radius,root.z+radius),index,"original-crown-world-clearance");
         Need(ForestCoverFootprint(terrain,root,baseRadius,settings),index,"original-root-footprint");
         for(std::size_t i=0;i<understory.ferns.size();++i){const auto& f=understory.ferns[i];
@@ -111,7 +123,7 @@ inline CanopyPopulation AppendEntranceCanopy(const CanopyPopulation& original,
         const auto centre=(minimum+maximum)*.5f,extents=(maximum-minimum)*.5f;
         const MeshBounds3D local{centre,Length(extents),extents};const auto bounds=TransformBounds(local,pose);
         BoxCollider3D collider{bounds.center,bounds.extents};
-        Need(ForestCoverClearance(collider.center,(std::max)(collider.extents.x,collider.extents.z),solids),
+        Need(ForestCoverClearance(collider.center,(std::max)(collider.extents.x,collider.extents.z),solids,layout),
             index,"original-final-envelope-clearance");
         for(const auto& plant:result.plants)Need(
             std::abs(plant.lower.center.x-collider.center.x)>=plant.lower.extents.x+collider.extents.x+.03f||
@@ -120,20 +132,21 @@ inline CanopyPopulation AppendEntranceCanopy(const CanopyPopulation& original,
         // 新株真正短幹用與原四株完全相同的 helper，不能另造便宜的碰撞代理。
         const auto finalStem=PlantDerivedRootStem(derived,geometry,pose,terrain);
         const auto finalBox=ExtendRootCollision(collider,finalStem,pose);
-        Need(PropClearsObjectives(finalBox),index,"final-root-objective-clearance");
+        Need(PropClearsObjectives(finalBox,layout),index,"final-root-objective-clearance");
         EntranceCanopyDetail::CheckGround(finalStem,pose,terrain,-.04f,index,checked,true);
         EntranceCanopyDetail::CheckGround(meshes[1],pose,terrain,.04f,index,checked);
         EntranceCanopyDetail::CheckGround(meshes[2],pose,terrain,-.04f,index,checked);
-        const auto proxy=CreateCanopyWoodProxy(finalStem,meshes[2],pose);
-        Need(!proxy.parts.empty()&&CanopyVolume::ValidWoodParts(proxy.parts),index,"full-wood-grid-proxy");
-        for(std::size_t i=0;i<understory.ferns.size();++i){const auto& f=ferns[i%4];
-            Need(CanopyVolume::ClearsCanopyWood(understory.ferns[i],
-                CanopyVolume::ConservativeLocalVolume(f.radius,f.minimumY,f.height),proxy.parts),
-                index,"retained-fern-full-volume-vs-new-wood");}
+        // 未烘焙路徑保持原逐株作者／檢查順序。烘焙路徑須先有完整八株真輸入才能驗證身分。
+        if(!qualifiedWood)checkWood(CreateCanopyWoodProxy(finalStem,meshes[2],pose),index);
         result.plants.push_back({pose,collider,radius,baseRadius,std::move(rooted)});
         for(float value:{root.x,pose.position.y,root.z,anchor.yaw,anchor.scale,radius,baseRadius}){
             result.fingerprint^=std::bit_cast<std::uint32_t>(value);result.fingerprint*=1099511628211ull;}
-        ++result.attempts;++checked.appended;checked.woodParts+=proxy.parts.size();
+        ++result.attempts;++checked.appended;
+    }
+    if(qualifiedWood){
+        const auto proxies=qualifiedWood(result);
+        Need(proxies.size()==EntranceCanopyAnchors.size(),4,"qualified-wood-group-count");
+        for(std::size_t index=0;index<proxies.size();++index)checkWood(proxies[index],index);
     }
     result.groundChecks+=checked.faceChecks;
     result.reachedBudget=result.plants.size()==EntranceCanopyTotalCount;

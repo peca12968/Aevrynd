@@ -34,7 +34,8 @@ struct BroadleafTree {
     Aevrynd::BoxCollider3D trunk;
 };
 inline std::vector<BroadleafTree> CreateBroadleafTrees(const Aevrynd::HeightField3D& terrain,
-    std::span<const Aevrynd::Vec3> conifers,std::span<const ForestProp> props,const ForestUnderstory& understory) {
+    std::span<const Aevrynd::Vec3> conifers,std::span<const ForestProp> props,const ForestUnderstory& understory,
+    const EntryLayout& layout=ActiveEntryLayout) {
     using namespace Aevrynd;
     std::vector<BroadleafTree> result;
     std::uint32_t seed=0x42524f41u;
@@ -48,7 +49,7 @@ inline std::vector<BroadleafTree> CreateBroadleafTrees(const Aevrynd::HeightFiel
         const auto stem=TransformBounds(BroadleafLowerTrunkBounds(),pose);
         const BoxCollider3D trunk{stem.center,stem.extents};
         // 整個樹冠腳印都避開任務與主支線；不以細樹幹碰撞掩蓋視線／通行問題。
-        if(!PropClearsObjectives({crown.center,crown.extents})||!BroadleafClearsSettlement(crown)||terrain.SampleNormal(x,z).y<.97f)continue;
+        if(!PropClearsObjectives({crown.center,crown.extents},layout)||!BroadleafClearsSettlement(crown)||terrain.SampleNormal(x,z).y<.97f)continue;
         bool occupied=false;
         for(float dx:{-1.f,1.f})for(float dz:{-1.f,1.f}) {
             const float px=stem.center.x+dx*stem.extents.x,pz=stem.center.z+dz*stem.extents.z;

@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "runtimeManifestSha256": "74ed8f989c97436ba71c838153ff2b60c8e3769f65f66b8b726652699624d506",
+  "quality": "Ultra",
+  "mipPolicy": "complete-chain",
+  "tool": {
+    "name": "DirectXTex texconv",
+    "tag": "may2026",
+    "commit": "4feb3e1",
+    "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+  },
+  "memoryGate": "pass",
+  "peakWorkingSetLimitBytes": 2147483648,
+  "peakWorkingSetBytes": 432373760,
+  "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
+  "assets": [
+    {
+      "assetName": "fern-02",
+      "assetId": "fern_02",
+      "officialPage": "https://polyhaven.com/a/fern_02",
+      "outputResolution": 2048,
+      "expectedMipCount": 12,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "fern",
+          "alphaMode": "mask",
+          "alphaSource": "separate",
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 8,
+          "doubleSided": true,
+          "materialClass": "foliage",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": {
+            "source": {
+              "cutoffByte": 128,
+              "visiblePixels": 704697,
+              "totalPixels": 4194304,
+              "fraction": 0.1680128574371338,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "prepared": {
+              "cutoffByte": 128,
+              "visiblePixels": 704697,
+              "totalPixels": 4194304,
+              "fraction": 0.1680128574371338,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "mipPolicy": "DirectXTex --keep-coverage",
+            "mipCoverageCutoff": 0.5
+          },
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 1,
+              "maximum": 244,
+              "mean": 124.24094486236572
+            },
+            "preparedGreen": {
+              "minimum": 11,
+              "maximum": 254,
+              "mean": 130.75905513763428
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 180,
+              "maximum": 255,
+              "mean": 252.4658477306366
+            },
+            "roughness": {
+              "minimum": 67,
+              "maximum": 255,
+              "mean": 240.35716915130615
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 0,
+              "mean": 0.0
+            }
+          },
+          "sources": {
+            "base": {
+              "path": "prepared/fern_02_diff_2k.png",
+              "sha256": "25168368e55d56e1d4eb97aaf72b1ea7c59b61aa75d64ebca86150a34762a583"
+            },
+            "normal": {
+              "path": "prepared/fern_02_nor_gl_2k.png",
+              "sha256": "0f66d392641b547bc4e5a2254f93177db2b28dadbe03c8eaac92ff8e8cb5def9"
+            },
+            "arm": {
+              "path": "prepared/fern_02_arm_2k.png",
+              "sha256": "2dda0a50bdca24de284782409cf2c50d43f2866d0f59cc04327bd4eabfff93b6"
+            },
+            "alphaMask": {
+              "path": "prepared/fern_02_alpha_2k.png",
+              "sha256": "f51eb9b8f9f4b25a882f8fe12d1ef53ba69448bac7e71396ec1f05b684e9ea75"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "fern-02/fern-base.dds",
+              "sourceColorSpace": "sRGB",
+              "bytes": 5592580,
+              "sha256": "faebcc3eab0bc4a7c334e40e4229e7d35e5745119c2d0a50eef0db22e1e8d563",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "fern-02/fern-normal.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 5592580,
+              "sha256": "980126cb53f2e3407f14a066b1b96e9f9205eba67cff74b761d4ba11263bb860",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "fern-02/fern-arm.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 5592580,
+              "sha256": "f3f3eaf5c28f1c70ecf466042dc10fc62ae0c66169746ba9833f9e63a1a79cf9",
+              "height": 2048,
+              "width": 2048,
+              "mips": 12,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

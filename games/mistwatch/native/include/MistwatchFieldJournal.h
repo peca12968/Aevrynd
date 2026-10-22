@@ -3,6 +3,7 @@
 #include "MistwatchFieldInput.h"
 #include "MistwatchObjectiveGuide.h"
 #include "MistwatchActionFeedback.h"
+#include "MistwatchCameraSettings.h"
 #include <Aevrynd/Renderer.h>
 #include <algorithm>
 #include <array>
@@ -20,6 +21,10 @@ struct Hud {
     std::vector<std::string> journal;
     bool valid{},compactJournal{};
 };
+inline void PresentCameraSettings(Hud& hud,const CameraSettings& settings,bool started,bool paused) {
+    // 選單才使用原方位列；遊玩時保留實際目標導航，也不擠壓任務與存讀檔提示。
+    if(hud.valid&&settings.Valid()&&(!started||paused))hud.navigation=settings.MenuLine();
+}
 // 18 像素字型縮至約 10 像素會丟失中文字細筆畫；最低維持原生字框尺度。
 inline constexpr float MinimumChineseTextScale=2.6f;
 inline const char* Bearing(ObjectiveBearing bearing) {
@@ -206,7 +211,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.context="補給 "+std::to_string(count(session.collected))+" / 3；工具與木料 "+std::to_string(count(session.repairMaterials))+" / 3；橋："+(session.bridgeRepaired?std::string("已修復"):"未修復");
         hud.controls="R 重試 · F9 嘗試讀檔 · Esc 暫停 · J 查看手冊";
     }
-    if(!started){hud.objective="孤橋復聯：暴雨切斷谷北通訊";hud.instruction="Enter 開始巡守；J 查看任務手冊。";}
+    if(!started){hud.objective="孤橋復聯：暴雨切斷谷北通訊";hud.instruction="Enter 開始新巡守；F9 讀取存檔繼續；J 查看任務手冊。";}
     else if(paused){hud.objective="已暫停；目前目標保留";hud.instruction="角色與世界暫停更新。";
         hud.controls="Esc 繼續 · M 靜音 · PageUp / PageDown 音量 · J 手冊";}
     if(started&&!paused&&FieldInput::RepeatContext(session)){
@@ -231,7 +236,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         "主路穿過橋頭；箱子與木料在南岸，工具在西側低棚。",
         "補給 "+std::to_string(count(session.collected))+"/3；工具與木料 "+std::to_string(count(session.repairMaterials))+"/3；橋："+(session.bridgeRepaired?std::string("已修復"):"尚未修復"),
         "互動需接近且符合站位；方位箭頭不是穿牆通行線。",
-        !started?"Enter 開始後可用 F5 儲存／F9 載入；J 關閉手冊。":
+        !started?"Enter 開始新巡守；F9 讀取存檔繼續；J 關閉手冊。":
         paused?"暫停中：Esc 繼續後，F5 儲存／F9 載入；J 關閉手冊。":
         "操作：拖曳／滾輪調鏡頭；C 回正；F5 儲存；F9 載入；Esc 暫停。"};
     if(session.guardianDefeated)hud.journal.push_back("野豬已擊退：谷北木屋與工棚內有供電線索。");

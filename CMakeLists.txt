@@ -224,3 +224,9 @@ if(AEVRYND_STREAMLINE_PACKAGE_TEST_TARGET)
     MistwatchLandscapeTest
     MistwatchCameraTest)
 endif()
+
+# Independent opt-in development entry; do not change original Mistwatch gates.
+option(AEVRYND_BUILD_MISTWATCH_RIVERBANK_WIP "Build reversible riverbank gameplay WIP" OFF)
+if(AEVRYND_BUILD_MISTWATCH_RIVERBANK_WIP)
+  add_subdirectory(games/mistwatch/riverbank)
+endif()

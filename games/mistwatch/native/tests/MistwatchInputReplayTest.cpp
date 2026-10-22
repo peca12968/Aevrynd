@@ -644,6 +644,24 @@ int main()try {
         bad.Tick(initial,0,1.8f,true,false,Dt,nullptr,nullptr,true,nullptr,{}, {std::numeric_limits<float>::quiet_NaN(),0,0});
         Need(bad.Finished()&&!bad.Passed()&&Released(bad),"Nonfinite controller velocity must fail");
     }
+    {
+        InputReplay grove;Session s;const auto before=s.Serialize();
+        Need(grove.EnableGroveRoute()&&grove.GroveRoute()&&!grove.EnableGroveRoute(),"Grove route opt-in exclusivity");
+        Need(!grove.EnableBridgeRoute()&&!grove.EnableCombatRoute()&&!grove.EnableCheckpointRoute()&&
+            !grove.EnableCompletionRoute()&&!grove.EnablePowerRoute()&&!grove.EnableDeathRetryRoute()&&
+            !grove.EnableResumeSaveRoute(true)&&!grove.EnableWestCliffRoute(-44)&&!grove.EnableDashJumpRoute()&&
+            !grove.EnableMotionCheckpointRoute()&&!grove.EnablePivotCheckpointRoute(),"Grove route mixed incompatible controls");
+        Need(InputReplay::GrovePointCount()==14&&InputReplay::GrovePoint(4).x==-14.5f&&
+            InputReplay::GrovePoint(4).z==50,"Actual near-tree route waypoint contract");
+        Need(InputReplay::GrovePoint(9).x==-18&&InputReplay::GrovePoint(9).z==43.5f,
+            "Grove south exit must avoid the actual blocked tree envelope");
+        bool rejected=false;try{(void)InputReplay::GrovePoint(InputReplay::GrovePointCount());}catch(const std::invalid_argument&){rejected=true;}
+        Need(rejected,"Grove route accepted unknown waypoint");
+        Tick(grove,s);Need(grove.Phase()=="walk-road"&&grove.BridgeRoute()&&grove.CombatRoute(),"Grove route bypassed normal bridge/combat prerequisites");
+        Tick(grove,s);Need(!grove.Finished()&&grove.Phase()=="walk-road"&&grove.Controls().Down('W')&&
+            before==s.Serialize(),"Grove route skipped normal production-control prerequisite flow");
+        InputReplay old;Need(old.EnableCheckpointRoute()&&!old.EnableGroveRoute(),"Grove route replaced existing checkpoint route");
+    }
     SuccessAndRequiredEvidence();DeadlineAndInputSafety();BridgeRouteControls();CombatRouteControls();PowerRouteControls();CompletionRouteControls();DeathRetryRouteControls();CheckpointRouteControls();
     std::cout<<"INPUT_REPLAY_DRIVER_UNIT_PASS synthetic_observations_only=1 native_play_evidence=0\n";
     return 0;

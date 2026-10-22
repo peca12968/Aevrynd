@@ -1,0 +1,49 @@
+{
+  "source": "https://polyhaven.com/a/grass_medium_02",
+  "license_id": "CC0-1.0",
+  "utc": "2026-10-02T07:04:05.2451274Z",
+  "files": [
+    {
+      "file": "grass_medium_02_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/grass_medium_02/grass_medium_02_nor_gl_2k.jpg",
+      "size": 353362,
+      "md5": "9ca6e2499ce71446f0cd8a3fc8c54a1b",
+      "sha256": "98AB154F35798B1E28660C28016E9A9F768859EFBE86DBCB2C5BFF1AEBCD6318"
+    },
+    {
+      "file": "grass_medium_02_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/grass_medium_02/grass_medium_02_diff_2k.jpg",
+      "size": 456989,
+      "md5": "3431e6de76f40f25bef48755f4c6a76a",
+      "sha256": "70C0E294FD94B980D01ED91BDE30AB19FE7EEED1F2717088CC88AB20BB115C87"
+    },
+    {
+      "file": "grass_medium_02_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/grass_medium_02/grass_medium_02_arm_2k.jpg",
+      "size": 698115,
+      "md5": "66eb24d4e6dbda01faad666a3517dcd1",
+      "sha256": "8878F8C5A6287C265231F0818C437A6F9DCF1D9FC01D085DECF07324ECBA1FD9"
+    },
+    {
+      "file": "grass_medium_02_alpha_2k.png",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/2k/grass_medium_02/grass_medium_02_alpha_2k.png",
+      "size": 303260,
+      "md5": "3b2ba296de3cffad18e8119e6ca693e5",
+      "sha256": "C96ABF8DA86AA750FF6425B8DED78AA98CF61858834E3557AD2DCC5348359337"
+    },
+    {
+      "file": "grass_medium_02_2k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/grass_medium_02/grass_medium_02_2k.gltf",
+      "size": 8864,
+      "md5": "fc24d97b602c74c1a9357a7570ae2b87",
+      "sha256": "6966503DE862FD46D5525AC56E0E3F7CA6A45CC8989C80AF97D39F1B37EF480F"
+    },
+    {
+      "file": "grass_medium_02.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/grass_medium_02/grass_medium_02.bin",
+      "size": 272048,
+      "md5": "145041ae03fe02783a0adbd1cdcb4988",
+      "sha256": "AA8493BC1544A89E08BF440C7BA361042BFE6EA48B1FEFC7E4AF2DFFF42FDF4A"
+    }
+  ]
+}

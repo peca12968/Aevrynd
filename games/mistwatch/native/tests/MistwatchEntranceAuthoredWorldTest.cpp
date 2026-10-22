@@ -314,6 +314,7 @@ int main(){try{
     auto missing=derived;missing.indices.pop_back();
     Reject([&]{EntranceCanopyMetadata m;(void)AppendEntranceCanopy(original,meshes,geometry,missing,terrain,live,author.understory,fernAssets,m);},"missing-root-cap-index-accepted");
     std::vector<BoxCollider3D> wood,newWood,originalWood;std::uint64_t triangles{},surface{},enclosed{};unsigned newLeft{},newRight{};
+    std::vector<CanopyWoodProxy> qualifiedWood;
     for(std::size_t i=0;i<population.plants.size();++i){const auto& p=population.plants[i];
         const auto root=PlantDerivedRootStem(derived,geometry,p.pose,terrain);
         const auto box=ExtendRootCollision(p.lower,root,p.pose);
@@ -333,7 +334,7 @@ int main(){try{
         if(i<4){const auto expected=CreateCanopyWoodProxy(PlantDerivedRootStem(derived,geometry,original.plants[i].pose,terrain),meshes[2],original.plants[i].pose);
             Need(proxy.parts.size()==expected.parts.size()&&proxy.fingerprint==expected.fingerprint,"original-four-wood-proxy-identity");
             for(std::size_t j=0;j<proxy.parts.size();++j)Need(Same(proxy.parts[j],expected.parts[j]),"original-four-every-wood-box-bits");}
-        else newWood.insert(newWood.end(),proxy.parts.begin(),proxy.parts.end());
+        else {newWood.insert(newWood.end(),proxy.parts.begin(),proxy.parts.end());qualifiedWood.push_back(proxy);}
         if(i<4)originalWood.insert(originalWood.end(),proxy.parts.begin(),proxy.parts.end());
         Need(wood.size()+proxy.parts.size()<=9000,"unchanged-full-world-wood-budget");
         wood.insert(wood.end(),proxy.parts.begin(),proxy.parts.end());triangles+=proxy.sourceTriangles;surface+=proxy.surfaceCells;enclosed+=proxy.enclosedGridCells;
@@ -341,6 +342,31 @@ int main(){try{
         std::cout<<"ACTUAL_TREE index="<<i<<" root="<<p.pose.position.x<<','<<p.pose.position.y<<','<<p.pose.position.z<<" wood_parts="<<proxy.parts.size()<<" wood_fp="<<proxy.fingerprint<<'\n';
     }
     Need(newLeft==2&&newRight==2&&newWood.size()==metadata.woodParts,"actual-two-patches-world-cohort");
+    unsigned qualifiedCalls{};EntranceCanopyMetadata cachedMetadata;
+    const auto cached=AppendEntranceCanopy(original,meshes,geometry,derived,terrain,live,author.understory,fernAssets,
+        cachedMetadata,ActiveEntryLayout,[&](const CanopyPopulation& actual){
+            ++qualifiedCalls;Need(actual.plants.size()==population.plants.size(),"qualified-complete-eight-input");
+            for(std::size_t i=0;i<actual.plants.size();++i){const auto& a=actual.plants[i];const auto& b=population.plants[i];
+                Need(Same(a.pose,b.pose)&&Same(a.lower,b.lower)&&Same(a.rootedTrunk,b.rootedTrunk)&&
+                    a.crownRadius==b.crownRadius&&a.rootRadius==b.rootRadius,"qualified-actual-mesh-pose-input");}
+            return qualifiedWood;
+        });
+    Need(qualifiedCalls==1&&cached.fingerprint==population.fingerprint&&cached.groundChecks==population.groundChecks&&
+        cached.attempts==population.attempts&&cached.reachedBudget==population.reachedBudget&&
+        cachedMetadata.originalFingerprint==metadata.originalFingerprint&&cachedMetadata.faceChecks==metadata.faceChecks&&
+        cachedMetadata.exactOverlayFaces==metadata.exactOverlayFaces&&cachedMetadata.woodParts==metadata.woodParts&&
+        cachedMetadata.appended==metadata.appended,"qualified-output-and-all-ground-gates-identical");
+    const auto rejectQualified=[&](std::vector<CanopyWoodProxy> bad){
+        Reject([&]{EntranceCanopyMetadata m;(void)AppendEntranceCanopy(original,meshes,geometry,derived,terrain,live,
+            author.understory,fernAssets,m,ActiveEntryLayout,[&](const CanopyPopulation&){return bad;});},"invalid-qualified-wood-accepted");
+    };
+    auto badQualified=qualifiedWood;badQualified.pop_back();rejectQualified(badQualified);
+    badQualified=qualifiedWood;badQualified[0].parts[0].center.x=std::numeric_limits<float>::quiet_NaN();rejectQualified(badQualified);
+    badQualified=qualifiedWood;badQualified[0].spacing=.3;rejectQualified(badQualified);
+    Reject([&]{EntranceCanopyMetadata m;(void)AppendEntranceCanopy(original,meshes,geometry,derived,terrain,live,
+        author.understory,fernAssets,m,ActiveEntryLayout,[](const CanopyPopulation&)->std::vector<CanopyWoodProxy>{
+            throw std::runtime_error("qualified-input-witness-refused");});},"qualified-witness-error-fell-back-or-accepted");
+    std::cout<<"QUALIFIED_ENTRANCE_WOOD_PASS groups="<<qualifiedWood.size()<<" callback_calls="<<qualifiedCalls<<'\n';
     ValidateEntranceFernWood(author,fernAssets,wood);
     // 使用剛完成完整幾何核驗的真八株與95杉，獨立產生 native 對照地表證書。
     std::vector<Vec3> habitatCanopyRoots;

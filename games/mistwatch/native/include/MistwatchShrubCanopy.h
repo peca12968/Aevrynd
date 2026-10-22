@@ -1,5 +1,6 @@
 #pragma once
 #include "MistwatchFernColonies.h"
+#include "MistwatchImmutableVolumeBounds.h"
 #include <numeric>
 #include <bit>
 #include <map>
@@ -144,7 +145,7 @@ inline ShrubCanopyResult CreateShrubCanopy(const Aevrynd::Mesh3D& leaves,const A
     std::span<const Aevrynd::BoxCollider3D> solids,const ForestUnderstory& understory,const ForestCoverResult& grass,
     const FernColonyResult& colonies,const std::array<FernColonyAsset,4>& fernAssets,unsigned target=64,
     std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false,ShrubSearchTrace* trace=nullptr,
-    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr) {
+    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr,const EntryLayout& layout=ActiveEntryLayout) {
     using namespace Aevrynd;
     if(trace&&!trace->records.empty())throw std::invalid_argument("SHRUB_TRACE_NOT_EMPTY");
     // 舊 flat 分支不改；群組必須明確啟用完整實體體積，失效物件在生成前拒絕。
@@ -180,6 +181,8 @@ inline ShrubCanopyResult CreateShrubCanopy(const Aevrynd::Mesh3D& leaves,const A
     std::uint32_t seed=0x53485242u;
     const auto random=[&](){seed=seed*1664525u+1013904223u;return float(seed>>8)/16777216.f;};
     const ForestCoverSettings footprint{};
+    CanopyVolume::ImmutableVolumeBoundsCache solidBounds(solids);
+    CanopyVolume::ImmutableVolumeBoundsCache canopyWoodBounds(canopyWood);
     for(unsigned attempt=0;attempt<24000&&result.plants.size()<target;++attempt){
         ++result.attempted;
         const unsigned variant=unsigned(random()*4.f);const float scale=.85f+.25f*random();
@@ -191,21 +194,21 @@ inline ShrubCanopyResult CreateShrubCanopy(const Aevrynd::Mesh3D& leaves,const A
             trace->records.push_back({attempt,root,variant,scale,radius,ShrubSearchStage::Clearance,0});
             record=&trace->records.back();
         }
-        if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
+        if(!ForestCoverClearance(root,radius,solids,layout)){++result.rejectedClearance;continue;}
         if(record)record->stage=ShrubSearchStage::SolidVolume;
         // 開始完整實體體積檢查
-if(fullSolidVolumes&&!solids.empty()&&!CanopyVolume::ClearsCanopyWood(
+if(fullSolidVolumes&&!solids.empty()&&!solidBounds.Clears(
             CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(result.variants[variant].radius,
-                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}},solids)){
+                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}})){
             ++result.rejectedClearance;continue;
         }
 // 結束完整實體體積檢查
 if(record)record->stage=ShrubSearchStage::CanopyWood;
 if((groupedWood||!canopyWood.empty())&&!(groupedWood?groupedWood->Clears(
             CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(result.variants[variant].radius,
-                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}}):CanopyVolume::ClearsCanopyWood(
+                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}}):canopyWoodBounds.Clears(
             CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(result.variants[variant].radius,
-                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}},canopyWood))){
+                result.variants[variant].minimumY,result.variants[variant].maximumY),scale,{}}))){
             ++result.rejectedClearance;continue;
         }
         if(record)record->stage=ShrubSearchStage::Terrain;

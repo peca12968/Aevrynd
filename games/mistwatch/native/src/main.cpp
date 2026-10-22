@@ -12,6 +12,9 @@
 #include "MistwatchEncounter.h"
 #include "MistwatchEncounterFeedback.h"
 #include "MistwatchCamera.h"
+#include "MistwatchFoliageView.h"
+#include "MistwatchGroveFloor.h"
+#include <Aevrynd/StaticColorOcclusion3D.h>
 #include "MistwatchCameraInput.h"
 #include "MistwatchObjectiveGuide.h"
 #include "MistwatchObjectivePointer.h"
@@ -49,6 +52,10 @@
 #include "MistwatchCanopyPopulation.h"
 #include "MistwatchCanopyCollision.h"
 #include "MistwatchRootStemTerrain.h"
+#include "MistwatchValleyTerrain.h"
+#include "MistwatchNorthWatershed.h"
+#include "MistwatchValleyStartupBake.h"
+#include "MistwatchValleyPlacement.h"
 #include "MistwatchEntranceCanopy.h"
 #include "MistwatchEntranceWorldAuthor.h"
 #include "MistwatchWoodlandRecipe.h"
@@ -78,6 +85,7 @@
 #include "MistwatchCliffMaterial.h"
 #include "MistwatchCliffWorldProfile.h"
 #include "MistwatchRockSegment.h"
+#include "MistwatchVolumetricOutcrop.h"
 #include "MistwatchShoulderDraw.h"
 #include "MistwatchOuterForestFloor.h"
 #include "MistwatchReplayCostProbe.h"
@@ -87,6 +95,8 @@
 #include "MistwatchAuthoredLandscapePlanting.h"
 #include "MistwatchMixedLandscapeCanopy.h"
 #include "MistwatchLandscapeCrownGrowth.h"
+#include "MistwatchSlopeGrove.h"
+#include "MistwatchForestPlayable.h"
 #include "MistwatchCoreHerbClusters.h"
 #include "MistwatchCoreHerbRouteLayout.h"
 #include "MistwatchCoreHerbSupport.h"
@@ -101,6 +111,8 @@
 #include <Aevrynd/PinnedAssetRead3D.h>
 #include "MistwatchAudio.h"
 #include "MistwatchPlayback.h"
+#include "MistwatchCameraSettings.h"
+#include "MistwatchCameraSettingsFile.h"
 #include "MistwatchInputReplay.h"
 #include "MistwatchSupplyCrate.h"
 #include "MistwatchSupplyCrateBoardUv.h"
@@ -142,6 +154,7 @@
 #include <iterator>
 #include <memory>
 #include <chrono>
+#include <functional>
 #include <numeric>
 #include <iomanip>
 #include <bit>
@@ -280,6 +293,12 @@ class MistwatchGame final : public IGame {
     std::size_t submittedMiddleLayerTriangles{};
     std::size_t broadleafTriangles{};
     HeightField3D terrain;
+    bool valleyWorldEnabled{};
+    bool manualValleyCandidate{};
+    bool valleyWorkshopEnabled{};
+    bool valleyTerraceEnabled{};
+    std::filesystem::path valleyEvidenceDirectory;
+    std::optional<Mistwatch::ValleySaveDomain> valleySaveDomain;
     MeshResource3D terrainMesh;
     bool entranceRoadEnabled{};
     std::array<MeshResource3D,3> entranceRoadMeshes;
@@ -311,6 +330,14 @@ class MistwatchGame final : public IGame {
     std::array<MeshResource3D,Mistwatch::WoodlandCanopy::TotalCount> canopyRootMeshes;
     std::array<Mesh3D,3> canopySource;
     Mistwatch::CanopyPopulation canopyPopulation;
+    // 谷地只重用本次啟動已完整作者的木體；保存真輸入快照，絕不讀取跨程序快取。
+    Mistwatch::CanopyPopulation valleyPreparedCanopy;
+    std::vector<Mistwatch::CanopyWoodProxy> valleyPreparedWood;
+    Mesh3D valleyPreparedBranches;
+    bool valleyBakeEnabled{};
+    std::filesystem::path valleyBakeExportPath;
+    std::vector<std::byte> valleyBakeWitness;
+    std::optional<Mistwatch::ValleyStartupBake::Data> valleyLoadedBake;
     Mistwatch::EntranceCanopyMetadata entranceCanopy;
     std::vector<BoxCollider3D> canopySolids;
     std::uint64_t canopyWoodSurfaceCells{},canopyWoodEnclosedGridCells{},canopyWoodSourceTriangles{};
@@ -372,16 +399,26 @@ class MistwatchGame final : public IGame {
     Mistwatch::WestCliffRelief::MeshReceipt cliffReliefMeshReceipt;
     std::array<std::uint64_t,4> cliffReliefSupportCounts{};
     Mistwatch::LoadTerrainProfile RuntimeTerrainProfile()const{
-        return cliffReliefEnabled?Mistwatch::LoadTerrainProfile::WestCliffStanding45V1:Mistwatch::LoadTerrainProfile::Canonical;
+        return valleyWorldEnabled?Mistwatch::LoadTerrainProfile::ValleyContactV7:
+            cliffReliefEnabled?Mistwatch::LoadTerrainProfile::WestCliffStanding45V1:Mistwatch::LoadTerrainProfile::Canonical;
     }
     bool cliffMaterialDiagnostic{},cliffMaterialEnabled{};
+    bool valleyMaterialAudit{};
+    bool valleyNorthWatershed{};
+    bool valleyOutcropPreview{};
+    bool valleyJointRockBank{};
+    bool valleySlopeGrove{};
+    bool manualForestGroveCandidate{},forestPlayableWorld{},groveFloorLitterEnabled{};
+    Mistwatch::SlopeGrove::Resources slopeGrove;
+    std::vector<BoxCollider3D> valleyRockSolids;
+    Mistwatch::VolumetricOutcrop::Resources valleyOutcrop;
     std::uint64_t cliffMaterialObservedFrames{};
     std::array<std::uint64_t,4> cliffMaterialObservedDraws{};
     Material3D cliffMaterial;
     struct CliffMaterialFrame {std::uint64_t cameraHash{},serial{};std::array<unsigned,4> draws{};std::array<std::uint64_t,4> textures{};} cliffMaterialFrame,cliffMaterialFrozen;
     const Material3D& TerrainRenderMaterial()const{return cliffMaterialEnabled?cliffMaterial:groundMaterial;}
     void WriteCliffMaterialReceipt(const std::filesystem::path& base,const CliffMaterialFrame& frame)const {
-        if(!cliffMaterialDiagnostic)return;
+        if(!cliffMaterialDiagnostic&&!valleyMaterialAudit)return;
         auto path=base;path+=L".cliff-material.txt";
         if(std::filesystem::exists(path))throw std::runtime_error("Cliff material receipt refuses overwrite");
         std::ofstream out(path);out<<"schema=cliff-material-v1\nprofile="<<(cliffMaterialEnabled?"rock-face-03-2k":"original")
@@ -403,10 +440,10 @@ class MistwatchGame final : public IGame {
     std::optional<Mistwatch::ForestLeafDomain::Receipt> leafFloorDomainReceipt;
     struct CliffFrame { Camera3D camera; std::uint64_t cameraHash{},sceneSerial{};unsigned width{},height{};std::array<unsigned,2> draws{}; } cliffFrame,cliffFrozen;
     void WriteCliffReceipt(const std::filesystem::path& base,const CliffFrame& frame)const {
-        if(!cliffDiagnostic)return;
+        if(!cliffDiagnostic&&!valleyMaterialAudit)return;
         auto path=base;path+=L".cliff.txt";
         if(std::filesystem::exists(path))throw std::runtime_error("Cliff receipt refuses overwrite");
-        std::ofstream out(path);out<<std::setprecision(17)<<"profile="<<(cliffCoverageEnabled?"west-cliff-v1":"original")
+        std::ofstream out(path);out<<std::setprecision(17)<<"profile="<<(valleyMaterialAudit?"valley-render-location-v1":cliffCoverageEnabled?"west-cliff-v1":"original")
             <<"\ncamera_hash="<<frame.cameraHash<<"\nscene_serial="<<frame.sceneSerial<<"\nart_accepted=0\n";
         const std::array<const MeshResource3D*,4> meshes{&entranceRoadMeshes[0],&landscapeMesh,&entranceRoadMeshes[1],&entranceRoadMeshes[2]};
         const std::array<const char*,4> names{"core","ring","road","gravel"};
@@ -414,7 +451,7 @@ class MistwatchGame final : public IGame {
             const auto& resource=*meshes[slot];if(!resource||!resource.cpuMesh)throw std::runtime_error("Cliff export actual mesh missing");
             const auto& mesh=*resource.cpuMesh;
             out<<names[slot]<<"_actual="<<Mistwatch::EntranceRoadDomainDetail::Fingerprint(mesh)<<'\n';
-            if(slot<2){const auto& r=cliffReceipts[slot];
+            if(slot<2&&cliffDiagnostic){const auto& r=cliffReceipts[slot];
                 out<<names[slot]<<"_before="<<r.beforeFingerprint<<'\n'<<names[slot]<<"_after="<<r.afterFingerprint
                     <<'\n'<<names[slot]<<"_changed="<<r.changed<<'\n'<<names[slot]<<"_draws="<<frame.draws[slot]
                     <<'\n'<<names[slot]<<"_geometry_before="<<r.beforeGeometryFingerprint<<'\n'<<names[slot]<<"_geometry_after="<<r.afterGeometryFingerprint<<'\n';}
@@ -825,6 +862,14 @@ class MistwatchGame final : public IGame {
     TerrainDistanceMaterialSettings3D groundDistanceSettings;
     Material3D groundMaterial, barkMaterial, woodMaterial, rockMaterial;
     bool manualForestSurfaceCandidate{};
+    bool foliageViewEnabled{};
+    bool foliageViewWindowEnabled{};
+    struct FoliageViewRequest {RenderObjectIdentity3D identity;float opacity;};
+    std::vector<FoliageViewRequest> foliageViewRequests;
+    std::uint64_t foliageViewFrames{},foliageViewFadedFrames{},foliageViewColorInstances{},foliageViewShadowCopies{};
+    float foliageViewMinimumOpacity{1.f};
+    struct FoliageViewPhase {std::string name;std::uint64_t frames{},colors{},shadows{};float minimum{1.f};};
+    std::vector<FoliageViewPhase> foliageViewPhases;
     std::filesystem::path manualForestSurfaceReceiptPrefix;
     Mistwatch::ForestSurfaceProfile::Selection forestSurfaceSelection{};
     void WriteForestSurfaceReceipt(const std::filesystem::path& prefix,const RendererStats& stats)const{
@@ -858,6 +903,7 @@ class MistwatchGame final : public IGame {
     }
     std::vector<BoxCollider3D> solids;
     Mistwatch::OrbitCamera orbit;
+    Mistwatch::CameraSettings cameraOptions;
     Mistwatch::Encounter encounter;
     Mistwatch::Evasion evasion;
     Mistwatch::PlayerLocomotion playerLocomotion;
@@ -890,6 +936,7 @@ class MistwatchGame final : public IGame {
     Mistwatch::SurveyMap::DrawReceipt surveyMapDraw;
     Mistwatch::GameAudio gameAudio;
     std::filesystem::path audioSettings;
+    std::filesystem::path cameraSettings;
     std::string message="ENTER: begin expedition";
     Mistwatch::ActionFeedbackToast actionFeedback;
     Mistwatch::TuningInputRepeat tuningInputRepeat;
@@ -973,6 +1020,17 @@ class MistwatchGame final : public IGame {
         if(inputReplayCaptureRequested||inputReplayCapturePending){
             if(stats.rejectedFrameCaptures)throw std::runtime_error("Input replay image rejected");
             if(inputReplayCapturePending&&stats.successfulFrameCaptures>inputReplayCaptureBase){
+                if(stats.successfulFrameCaptures!=inputReplayCaptureBase+1||!stats.lastCapturedRenderSerial)
+                    throw std::runtime_error("Capture uploaded-view identity mismatch");
+                const auto path=inputReplayDirectory/(std::to_string(inputReplayImages)+"-"+inputReplayPhase+".png.uploaded-view.txt");
+                std::ofstream view(path);view.precision(9);
+                view<<"render_serial="<<stats.lastCapturedRenderSerial<<"\nuploaded_vp_bits=";
+                for(float v:stats.lastCapturedViewProjection)view<<std::bit_cast<std::uint32_t>(v)<<',';
+                view<<"\nuploaded_unjittered_vp_bits=";
+                for(float v:stats.lastCapturedUnjitteredViewProjection)view<<std::bit_cast<std::uint32_t>(v)<<',';
+                view<<"\njitter="<<stats.lastCapturedTemporalJitter.x<<','<<stats.lastCapturedTemporalJitter.y<<"\nwindow=";
+                for(float v:stats.lastCapturedOcclusionWindow)view<<v<<',';
+                view<<'\n';view.close();if(!view)throw std::runtime_error("Capture uploaded-view write failed");
                 inputReplayCapturePending=false;++inputReplayImages;
             }else{
                 if(std::chrono::steady_clock::now()-inputReplayCaptureStart>std::chrono::seconds(15))
@@ -988,7 +1046,7 @@ class MistwatchGame final : public IGame {
                     <<"\nrepair_materials="<<session.repairMaterials<<"\nheight="<<controller.Settings().height
                     <<"\ncollected="<<session.collected<<"\nbridge_repaired="<<session.bridgeRepaired
                     <<"\nhealth="<<session.health<<"\nstage="<<static_cast<unsigned>(session.CurrentStage())
-                    <<"\nroute="<<(inputReplay.SprintFlowRoute()?"sprint-flow":inputReplay.DashJumpRoute()?"dash-handoff":inputReplay.WestCliffRoute()?(inputReplay.WestCliffTargetX()==-47.f?"west-cliff-47":"west-cliff-44"):inputReplay.PivotCheckpointRoute()?"pivot-save":inputReplay.MotionCheckpointRoute()?"motion-save":inputReplay.CheckpointRoute()?"checkpoint":inputReplay.DeathRetryRoute()?"death-retry":inputReplay.CompletionRoute()?"completion":inputReplay.PowerRoute()?"power":inputReplay.CombatRoute()?"combat":inputReplay.BridgeRoute()?"bridge":"shelter")
+                    <<"\nroute="<<(inputReplay.GroveRoute()?"grove-walk":inputReplay.ResumeSaveRoute()?(inputReplay.ResumeAccept()?"resume-save":"reject-save"):inputReplay.SprintFlowRoute()?"sprint-flow":inputReplay.DashJumpRoute()?"dash-handoff":inputReplay.WestCliffRoute()?(inputReplay.WestCliffTargetX()==-47.f?"west-cliff-47":"west-cliff-44"):inputReplay.PivotCheckpointRoute()?"pivot-save":inputReplay.MotionCheckpointRoute()?"motion-save":inputReplay.CheckpointRoute()?"checkpoint":inputReplay.DeathRetryRoute()?"death-retry":inputReplay.CompletionRoute()?"completion":inputReplay.PowerRoute()?"power":inputReplay.CombatRoute()?"combat":inputReplay.BridgeRoute()?"bridge":"shelter")
                     <<"\nenemy_health="<<encounter.health<<"\nguardian_defeated="<<session.guardianDefeated
                     <<"\ndodges="<<inputReplay.Dodges()<<"\ncounters="<<inputReplay.Counters()
                     <<"\ndamage_events="<<inputReplay.DamageEvents()<<"\nretries="<<inputReplay.Retries()
@@ -1062,13 +1120,19 @@ class MistwatchGame final : public IGame {
                     }
                     contact.close();if(!contact)throw std::runtime_error("West sole contact write failed");
                 }
+                if(inputReplay.ResumeSaveRoute()){
+                    std::ofstream resume(inputReplayDirectory/"resume-transaction.txt");
+                    resume<<"expected_accept="<<inputReplay.ResumeAccept()<<"\nexact_restore_observed="<<inputReplay.ResumeExactObserved()
+                        <<"\nrestored_simulation_advanced="<<inputReplay.ResumeAdvanceObserved()<<"\nrejection_left_state_unchanged="<<inputReplay.ResumeRejectedUnchanged()<<'\n';
+                    resume.close();if(!resume)throw std::runtime_error("Resume transaction receipt failed");
+                }
                 inputReplayRecorded=true;
             }
             e.Quit();return true;
         }
         // 僅診斷模式讀回真正存檔；驅動只取得唯讀觀測，不能寫入快照或替代正式 F5/F9。
         Mistwatch::SaveGame replayDisk;
-        const bool replayDiskExists=inputReplay.CheckpointRoute()&&std::filesystem::exists(save);
+        const bool replayDiskExists=(inputReplay.CheckpointRoute()||inputReplay.ResumeSaveRoute())&&std::filesystem::exists(save);
         const bool replayDiskValid=replayDiskExists&&Mistwatch::ReadSaveFile(save,replayDisk);
         const auto replayMotion=CaptureSaveGame();
         const Mistwatch::WestCliffReplayWorld replayWorld{controller,terrain,solids,RuntimeRoofHulls(),
@@ -1078,16 +1142,19 @@ class MistwatchGame final : public IGame {
             controller.Settings().height,started,paused,dt,&encounter,&evasion,controller.Grounded(),
             replayDiskValid?&replayDisk:nullptr,message,controller.Velocity(),&replayMotion,
             !explorer.footSwings[0].Active()&&!explorer.footSwings[1].Active(),
-            cliffReliefEnabled?&replayWorld:nullptr,inputReplay.DashJumpRoute()?&controller:nullptr,replayWorld.motionAccepted);
-        if(inputReplay.WestCliffRoute()&&!inputReplayWestWorldWritten&&inputReplay.Phase().starts_with("west-cliff-")){
+            cliffReliefEnabled?&replayWorld:nullptr,(inputReplay.DashJumpRoute()||inputReplay.GroveRoute())?&controller:nullptr,replayWorld.motionAccepted);
+        if(!inputReplayWestWorldWritten&&
+            ((inputReplay.WestCliffRoute()&&inputReplay.Phase().starts_with("west-cliff-"))||
+             (inputReplay.GroveRoute()&&inputReplay.Phase().starts_with("grove-")))){
             // 只輸出當下正式世界供診斷，不改動或刪除碰撞體；凸屋頂仍由正式控制器處理。
-            std::ofstream boxes(inputReplayDirectory/"west-world-boxes.tsv");boxes.precision(9);
+            const auto prefix=inputReplay.GroveRoute()?"grove-world-":"west-world-";
+            std::ofstream boxes(inputReplayDirectory/(std::string(prefix)+"boxes.tsv"));boxes.precision(9);
             boxes<<"index\tx\ty\tz\tex\tey\tez\n";
             for(std::size_t i=0;i<solids.size();++i){const auto& b=solids[i];
                 boxes<<i<<'\t'<<b.center.x<<'\t'<<b.center.y<<'\t'<<b.center.z<<'\t'
                     <<b.extents.x<<'\t'<<b.extents.y<<'\t'<<b.extents.z<<'\n';}
             boxes.close();if(!boxes)throw std::runtime_error("West cliff collision snapshot write failed");
-            std::ofstream heights(inputReplayDirectory/"west-world-heightfield.tsv");heights.precision(9);
+            std::ofstream heights(inputReplayDirectory/(std::string(prefix)+"heightfield.tsv"));heights.precision(9);
             heights<<"ix\tiz\tx\ty\tz\n";const auto& settings=terrain.Settings();
             for(unsigned z=0;z<settings.depth;++z)for(unsigned x=0;x<settings.width;++x){
                 const auto point=terrain.SamplePosition(x,z);
@@ -1125,7 +1192,7 @@ class MistwatchGame final : public IGame {
             constexpr char hex[]="0123456789ABCDEF";
             for(unsigned char byte:state.Serialize())inputReplayTrace<<hex[byte>>4]<<hex[byte&15];
         };
-        if(inputReplay.CheckpointRoute())writeSnapshot(CaptureSaveGame());
+        if(inputReplay.CheckpointRoute()||inputReplay.ResumeSaveRoute())writeSnapshot(CaptureSaveGame());
         inputReplayTrace<<'\t';if(replayDiskValid)writeSnapshot(replayDisk);
         inputReplayTrace<<'\t'<<unsigned(lastCameraMotion.status)<<'\t'<<lastCameraMotion.subjectVisible
             <<'\t'<<Mistwatch::LoadPreparationDetail::FinitePose(explorer.model.skeleton,explorer.pose)
@@ -1258,7 +1325,8 @@ class MistwatchGame final : public IGame {
         const auto previousFixed=cameraFixedTicks,previousCapture=captureCameraTicks;
         const auto previousDisplacement=cameraMaximumTickDisplacement,previousOcclusion=cameraOcclusionSeconds;
         bool accepted=false;
-        try{orbit.Update(drag,wheel,keyboard,dt,recenter,explorer.yaw);if(attempted)*attempted=true;accepted=UpdatePlayerCamera(dt);}
+        try{orbit.Update(drag,wheel,keyboard,dt,recenter,explorer.yaw,cameraOptions.Sensitivity(),cameraOptions.invertVertical);
+            if(attempted)*attempted=true;accepted=UpdatePlayerCamera(dt);}
         catch(...){accepted=false;}
         if(!accepted){
             playerCameraMotion=previousCamera;orbit=previousOrbit;lastPlayerFraming=previousFraming;lastCameraMotion=previousResult;
@@ -1274,6 +1342,7 @@ class MistwatchGame final : public IGame {
     std::uint64_t CaptureElapsedNs()const {
         return std::uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-captureStart).count());
     }
+    #include "MistwatchValleyWorld.inl"
     std::vector<BoxCollider3D> RuntimeBaseSolids(bool repaired)const {
         return entranceWorld.applied?entranceWorld.WorldSolids(repaired):
             Mistwatch::WorldSolids(repaired,firLayoutSelector,fallenLogProfile);
@@ -1295,6 +1364,8 @@ class MistwatchGame final : public IGame {
     std::vector<BoxCollider3D> RuntimeExtraSolids()const {
         auto result=middleLayerSolids;
         result.insert(result.end(),canopySolids.begin(),canopySolids.end());
+        result.insert(result.end(),valleyRockSolids.begin(),valleyRockSolids.end());
+        result.insert(result.end(),slopeGrove.solids.begin(),slopeGrove.solids.end());
         return result;
     }
     void RollbackWoodlandCanopy(Engine& e)noexcept {
@@ -1364,7 +1435,31 @@ class MistwatchGame final : public IGame {
             <<"\nleaf_source_triangles="<<canopySource[1].indices.size()/3<<'\n';
         out.close();if(!out)throw std::runtime_error("Woodland actual receipt write failed");
     }
-    void InitializeCanopy(Engine& e) {
+    std::vector<std::byte> ValleyStartupWitness(const Mistwatch::CanopyPopulation* candidate=nullptr)const {
+        namespace Bake=Mistwatch::ValleyStartupBake;
+        const auto& population=candidate?*candidate:canopyPopulation;
+        if(!valleyWorldEnabled||!entranceWorld.applied||population.plants.size()!=8||entranceWorld.props.size()!=33||
+            !propMeshes[0].cpuMesh||!fallenLogs.mesh.cpuMesh)throw std::runtime_error("Startup bake requires complete original eight world");
+        Bake::Writer w;w.U32(Bake::Version);w.Field(terrain);w.Mesh(canopySource[2]);w.U32(8);
+        for(const auto& p:population.plants){w.Mesh(p.rootedTrunk);w.Pose(p.pose);w.Box(p.lower);}
+        w.Mesh(*propMeshes[0].cpuMesh);w.Mesh(*fallenLogs.mesh.cpuMesh);w.U32(33);
+        for(const auto& p:entranceWorld.props){w.U32(p.mesh);w.Pose(p.transform);w.Box(p.collider);}
+        return std::move(w.bytes);
+    }
+    void BindValleyStartupBake(Engine& e,std::vector<std::byte> witness){
+        namespace Bake=Mistwatch::ValleyStartupBake;
+        if(valleyLoadedBake){
+            if(witness!=valleyBakeWitness)throw std::runtime_error("Startup bake actual input changed after entrance binding");
+            return;
+        }
+        if constexpr(Bake::FileBytes==0||Bake::FileSha256.size()!=64)throw std::runtime_error("Startup bake has no qualified payload seal");
+        const PinnedAssetRead3D file(e.ExecutableDirectory()/"assets"/std::filesystem::path(Bake::RelativePath),Bake::FileBytes);
+        if(!Mistwatch::ForestIbl::ExactHash(file.Bytes(),Bake::FileSha256))throw std::runtime_error("Startup bake payload integrity mismatch");
+        auto loaded=Bake::Decode(file.Bytes(),witness);
+        valleyBakeWitness=std::move(witness);valleyLoadedBake=std::move(loaded);
+    }
+    void InitializeCanopy(Engine& e,const std::function<void(const char*)>& stages={}) {
+        const auto stage=[&](const char* name){if(stages)stages(name);};
         if(woodlandCanopyEnabled&&(!Mistwatch::WorldProfileHasWoodCollision(worldProfile)||
             firLayoutSelector!=Mistwatch::FirLayoutSelector::ForestWood||
             fallenLogProfile!=Mistwatch::FallenLogProfile::ScannedStraightV1||rightForeground||
@@ -1413,6 +1508,7 @@ class MistwatchGame final : public IGame {
         }
         if(canopyTriangles!=606094)throw std::runtime_error("Canopy true primitive count changed");
 
+        stage("canopy_meshes_materials");
         const auto geometry=Mistwatch::MeasureCanopy(canopySource);
         canopyPopulation=Mistwatch::CreateCanopyPopulation(canopySource,geometry,terrain,
             RetainedAuthoringWorldSolids(session.bridgeRepaired),understory,{}, {},fernFootprints,{});
@@ -1443,9 +1539,22 @@ class MistwatchGame final : public IGame {
             understory=entranceWorld.understory;broadleafTrees=entranceWorld.broadleaf;
             middleLayer=entranceWorld.middle;middleLayerSolids.clear();
             for(const auto& tree:middleLayer.trees)middleLayerSolids.push_back(tree.trunk);
+            Mistwatch::EntranceCanopyQualifiedWood qualifiedWood;
+            if(valleyBakeEnabled){
+                qualifiedWood=[&](const Mistwatch::CanopyPopulation& candidate){
+                    auto actual=candidate;
+                    for(auto& plant:actual.plants){
+                        plant.rootedTrunk=Mistwatch::PlantDerivedRootStem(stem.mesh,geometry,plant.pose,terrain);
+                        plant.lower=Mistwatch::ExtendRootCollision(plant.lower,plant.rootedTrunk,plant.pose);
+                    }
+                    BindValleyStartupBake(e,ValleyStartupWitness(&actual));
+                    return std::vector<Mistwatch::CanopyWoodProxy>(valleyLoadedBake->wood.begin()+4,valleyLoadedBake->wood.end());
+                };
+            }
             canopyPopulation=Mistwatch::AppendEntranceCanopy(canopyPopulation,canopySource,geometry,stem.mesh,terrain,
-                RuntimeWorldSolids(session.bridgeRepaired),understory,fernFootprints,entranceCanopy);
+                RuntimeWorldSolids(session.bridgeRepaired),understory,fernFootprints,entranceCanopy,Mistwatch::ActiveEntryLayout,qualifiedWood);
         }
+        stage("canopy_population_and_entrance");
         canopyTriangles=606207;
         std::vector<Mistwatch::CanopyWoodProxy> proxies;
         proxies.reserve(canopyPopulation.plants.size());
@@ -1455,13 +1564,21 @@ class MistwatchGame final : public IGame {
             // 同一 pose、真正短幹與完整木格同時供渲染／角色／鏡頭／後續地被避讓。
             plant.rootedTrunk=Mistwatch::PlantDerivedRootStem(stem.mesh,geometry,plant.pose,terrain);
             plant.lower=Mistwatch::ExtendRootCollision(plant.lower,plant.rootedTrunk,plant.pose);
+        }
+        if(valleyBakeEnabled||!valleyBakeExportPath.empty()){
+            auto actual=ValleyStartupWitness();
+            if(valleyBakeEnabled)BindValleyStartupBake(e,std::move(actual));
+            else valleyBakeWitness=std::move(actual);
+        }
+        for(std::size_t i=0;i<canopyPopulation.plants.size();++i){auto& plant=canopyPopulation.plants[i];
             if(Mistwatch::WorldProfileHasWoodCollision(worldProfile)){
-                auto proxy=Mistwatch::CreateCanopyWoodProxy(plant.rootedTrunk,canopySource[2],plant.pose);
+                auto proxy=valleyLoadedBake?valleyLoadedBake->wood.at(i):Mistwatch::CreateCanopyWoodProxy(plant.rootedTrunk,canopySource[2],plant.pose);
                 if(canopySolids.size()+proxy.parts.size()>9000)throw std::runtime_error("Canopy wood collision author budget exceeded");
                 canopySolids.insert(canopySolids.end(),proxy.parts.begin(),proxy.parts.end());
                 proxies.push_back(std::move(proxy));
             }else canopySolids.push_back(plant.lower);
         }
+        stage("canopy_wood_proxies");
         if(entranceWorld.applied)Mistwatch::ValidateEntranceFernWood(entranceWorld,fernFootprints,canopySolids);
         if(woodlandCanopyEnabled){
             auto authored=Mistwatch::WoodlandCanopy::ApplyRecipe(terrain,entranceWorld,canopyPopulation,
@@ -1528,6 +1645,12 @@ class MistwatchGame final : public IGame {
             understory=entranceWorld.understory;broadleafTrees=entranceWorld.broadleaf;
         }
         canopyPose=canopyPopulation.plants.front().pose;
+        if(valleyWorldEnabled){
+            if(canopyPopulation.plants.size()!=8||proxies.size()!=8||woodlandCanopyEnabled)
+                throw std::runtime_error("Valley prepared canopy scope");
+            valleyPreparedCanopy=canopyPopulation;valleyPreparedWood=proxies;valleyPreparedBranches=canopySource[2];
+        }
+        stage("canopy_validation_and_upload");
     }
     Vec3 FocusProbeStartFeet() const {
         // 焦點測試不是重疊恢復測試；使用真玩家與敵人體積另留四分之一公尺。
@@ -1565,13 +1688,14 @@ class MistwatchGame final : public IGame {
         snapshot.motion=Mistwatch::SavedPlayerMotion{controller.CaptureMotionState(),
             playerLocomotion.CaptureMotionState(),explorer.yaw,explorer.requestedYaw,explorer.phase,
             explorer.locomotionDistance,explorer.locomotionSeconds};
+        if(valleySaveDomain)snapshot.worldIdentity=valleySaveDomain->Identity();
         return snapshot;
     }
     void SaveCheckpoint() {
         const auto snapshot=CaptureSaveGame();
         // 先確認目前世界可安全還原，避免走出地形後寫下格式合法、實際讀不回的檔案。
         // 預檢只操作候選 CPU 狀態；失敗不寫檔，也不取代先前可用的檢查點。
-        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,RuntimeRoofCameraOnly(),RuntimeExtraSolids(),firLayoutSelector,fallenLogProfile,entranceWorld.applied?&entranceWorld:nullptr,RuntimeRoofHulls(),RuntimeTerrainProfile());
+        const auto prepared=Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,RuntimeRoofCameraOnly(),RuntimeExtraSolids(),firLayoutSelector,fallenLogProfile,entranceWorld.applied?&entranceWorld:nullptr,RuntimeRoofHulls(),RuntimeTerrainProfile(),valleySaveDomain?&*valleySaveDomain:nullptr);
         if(!prepared||!Mistwatch::ValidatePreparedPairLoad(*prepared.candidate)){
             message="Save position unavailable";
             actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::SavePositionUnavailable);
@@ -1588,6 +1712,11 @@ class MistwatchGame final : public IGame {
         auto temporary=audioSettings;temporary+=".tmp";
         std::ofstream out(temporary);out<<gameAudio.options.Serialize();out.close();
         if(!out||!MoveFileExW(temporary.c_str(),audioSettings.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))message="Audio settings save failed";
+    }
+    void SaveCameraOptions() {
+        if(cameraSettings.empty())return;
+        if(!Mistwatch::WriteCameraSettingsFile(cameraSettings,cameraOptions))
+            message="鏡頭設定寫入失敗；本次設定仍有效。";
     }
     void StopGameAudio(Engine& e) {
         gameAudio.Shutdown(e.Audio());
@@ -1676,10 +1805,11 @@ public:
         }
     }
 public:
-    explicit MistwatchGame(bool candidate=false,bool roofCandidate=false,bool shoulderCandidate=false,bool cliffCandidate=false,bool reliefCandidate=false,bool surfaceCandidate=false):
+    explicit MistwatchGame(bool candidate=false,bool roofCandidate=false,bool shoulderCandidate=false,bool cliffCandidate=false,bool reliefCandidate=false,bool surfaceCandidate=false,bool valleyCandidate=false,bool terraceCandidate=false,bool groveCandidate=false):
+        manualValleyCandidate(valleyCandidate||terraceCandidate||groveCandidate),valleyTerraceEnabled(terraceCandidate||groveCandidate),
         manualWorkshopRoofCandidate(roofCandidate),manualWoodlandCandidate(candidate),
         shoulderGroveEnabled(shoulderCandidate),manualCliffWorldCandidate(cliffCandidate),manualCliffReliefCandidate(reliefCandidate),
-        manualForestSurfaceCandidate(surfaceCandidate){}
+        manualForestSurfaceCandidate(surfaceCandidate),manualForestGroveCandidate(groveCandidate){}
 private:
     void RollbackForestIbl(Engine& e)noexcept{
         if(!forestIblHandle)return;
@@ -1743,6 +1873,25 @@ private:
         if(!restored)throw std::runtime_error("Forest IBL did not restore baseline");
     }
     void OnStart(Engine& e) override {
+        std::ofstream startupStages;
+        wchar_t startupStagePath[32768]{};
+        const auto startupStageLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_STARTUP_STAGES",startupStagePath,32768);
+        if(startupStageLength){
+            const std::filesystem::path path(startupStagePath);
+            if(startupStageLength>=32768||!path.is_absolute()||std::filesystem::exists(path)||
+                (!manualValleyCandidate&&!GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_INPUT_REPLAY",nullptr,0)))
+                throw std::runtime_error("Startup stage recording requires fresh isolated diagnostic path");
+            startupStages.open(path);startupStages<<"stage\tinterval_seconds\ttotal_seconds\n";
+            if(!startupStages)throw std::runtime_error("Startup stage recording unavailable");
+        }
+        const auto startupStageBegin=std::chrono::steady_clock::now();auto startupStagePrevious=startupStageBegin;
+        const auto startupStage=[&](const char* stage){
+            if(!startupStages.is_open())return;
+            const auto now=std::chrono::steady_clock::now();
+            startupStages<<stage<<'\t'<<std::chrono::duration<double>(now-startupStagePrevious).count()<<'\t'
+                <<std::chrono::duration<double>(now-startupStageBegin).count()<<'\n';startupStages.flush();
+            if(!startupStages)throw std::runtime_error("Startup stage recording failed");startupStagePrevious=now;
+        };
         const auto rollbackIbl=[&e](MistwatchGame* game)noexcept {game->RollbackForestIbl(e);};
         std::unique_ptr<MistwatchGame,decltype(rollbackIbl)> iblStartupGuard(this,rollbackIbl);
         const auto rollbackRock=[&e](MistwatchGame* game)noexcept {game->rockSegment.Release(e);};
@@ -1779,6 +1928,11 @@ private:
             game->workshopMesh={};game->workshopRoof.reset();
         };
         std::unique_ptr<MistwatchGame,decltype(rollbackWorkshopRoof)> workshopRoofStartupGuard(this,rollbackWorkshopRoof);
+        const auto rollbackValley=[&e](MistwatchGame* game)noexcept {
+            try{game->valleyOutcrop.Release(e);}catch(...){}
+            for(auto& mesh:game->slopeGrove.roots)if(mesh){try{e.DestroyMesh3D(mesh.handle);mesh={};++game->slopeGrove.released;}catch(...){}}
+        };
+        std::unique_ptr<MistwatchGame,decltype(rollbackValley)> valleyStartupGuard(this,rollbackValley);
         // 資產載入前決定完整世界版本；截斷或相對截圖路徑不能啟用舊世界。
         wchar_t profileCapture[32768]{};
         const auto profileCaptureLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",profileCapture,32768);
@@ -1803,8 +1957,48 @@ private:
         if(validProfileReplay){const std::filesystem::path path(profileReplay);
             if(!path.is_absolute()||std::filesystem::exists(path))
                 throw std::runtime_error("Input replay requires a fresh absolute output directory");}
+        const std::array<std::wstring,6> forestDependencies{
+            profileFlag(L"AEVRYND_MISTWATCH_VALLEY_WORLD"),profileFlag(L"AEVRYND_MISTWATCH_VALLEY_ROCK_MATERIAL"),
+            profileFlag(L"AEVRYND_MISTWATCH_NORTH_WATERSHED"),profileFlag(L"AEVRYND_MISTWATCH_VOLUMETRIC_OUTCROP"),
+            profileFlag(L"AEVRYND_MISTWATCH_JOINT_ROCK_BANK"),profileFlag(L"AEVRYND_MISTWATCH_SLOPE_GROVE")};
+        forestPlayableWorld=Mistwatch::ForestPlayable::Resolve(manualForestGroveCandidate,validProfileCapture,validProfileReplay,
+            profileFlag(L"AEVRYND_MISTWATCH_PLAYABLE_WORLD"),profileFlag(L"AEVRYND_MISTWATCH_INPUT_REPLAY_ROUTE"),forestDependencies);
+        groveFloorLitterEnabled=Mistwatch::GroveFloor::Resolve(forestPlayableWorld,validProfileCapture,validProfileReplay,
+            profileFlag(L"AEVRYND_MISTWATCH_GROVE_FLOOR"));
         forestSurfaceSelection=Mistwatch::ForestSurfaceProfile::Resolve(manualForestSurfaceCandidate,
             validProfileCapture,validProfileReplay,profileFlag(L"AEVRYND_MISTWATCH_FOREST_SURFACE_PROFILE"));
+        foliageViewEnabled=Mistwatch::FoliageView::Resolve(validProfileCapture||validProfileReplay,forestPlayableWorld,
+            profileFlag(L"AEVRYND_MISTWATCH_FOLIAGE_VIEW"));
+        foliageViewWindowEnabled=Mistwatch::FoliageView::ResolveWindow(validProfileCapture||validProfileReplay,forestPlayableWorld,
+            profileFlag(L"AEVRYND_MISTWATCH_FOLIAGE_VIEW"));
+        const auto suppliedValleyProfile=profileFlag(L"AEVRYND_MISTWATCH_VALLEY_WORLD");
+        const auto valleyProfile=forestPlayableWorld?std::wstring(L"south-valley-authored-terrace-v9"):suppliedValleyProfile;
+        if(!valleyProfile.empty()&&valleyProfile!=L"original"&&valleyProfile!=L"south-valley-contact-supports-v7"&&valleyProfile!=L"south-valley-contact-workshop-v8"&&valleyProfile!=L"south-valley-authored-terrace-v9")
+            throw std::runtime_error("Unknown valley world profile");
+        if(manualValleyCandidate&&(validProfileReplay||validProfileCapture||!suppliedValleyProfile.empty()))
+            throw std::runtime_error("Manual valley requires separate normal-input entry without replay/capture overrides");
+        valleyTerraceEnabled=valleyTerraceEnabled||valleyProfile==L"south-valley-authored-terrace-v9";
+        valleyWorkshopEnabled=manualValleyCandidate||valleyProfile==L"south-valley-contact-workshop-v8"||valleyTerraceEnabled;
+        valleyWorldEnabled=valleyWorkshopEnabled||valleyProfile==L"south-valley-contact-supports-v7";
+        if(valleyWorldEnabled&&(!validProfileReplay&&!manualValleyCandidate||validProfileCapture))
+            throw std::runtime_error("Valley study requires isolated replay or explicit manual candidate");
+        const auto valleyReplayRoute=profileFlag(L"AEVRYND_MISTWATCH_INPUT_REPLAY_ROUTE");
+        if(valleyWorldEnabled&&!manualValleyCandidate&&valleyReplayRoute!=L"shelter"&&valleyReplayRoute!=L"completion"&&valleyReplayRoute!=L"checkpoint"&&valleyReplayRoute!=L"resume-save"&&valleyReplayRoute!=L"reject-save"&&!(forestPlayableWorld&&valleyReplayRoute==L"grove-walk"))
+            throw std::runtime_error("Valley study requires isolated shelter, completion or checkpoint replay");
+        const auto bakeProfile=profileFlag(L"AEVRYND_MISTWATCH_VALLEY_STARTUP_BAKE");
+        if(!bakeProfile.empty()&&bakeProfile!=L"canopy-support-v1")throw std::runtime_error("Unknown valley startup bake profile");
+        valleyBakeEnabled=bakeProfile==L"canopy-support-v1";
+        wchar_t bakeExportBuffer[32768]{};
+        const auto bakeExportLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_VALLEY_BAKE_EXPORT",bakeExportBuffer,32768);
+        if(bakeExportLength>=32768)throw std::runtime_error("Startup bake export path truncated");
+        const std::wstring_view bakeExport(bakeExportBuffer,bakeExportLength);
+        if((valleyBakeEnabled||!bakeExport.empty())&&(!valleyTerraceEnabled||validProfileCapture))
+            throw std::runtime_error("Startup bake requires explicit v9 valley");
+        if(!bakeExport.empty()){
+            valleyBakeExportPath=std::filesystem::path(bakeExport);
+            if(valleyBakeEnabled||!validProfileReplay||valleyReplayRoute!=L"shelter"||!valleyBakeExportPath.is_absolute()||std::filesystem::exists(valleyBakeExportPath))
+                throw std::runtime_error("Startup bake export requires fresh isolated author replay");
+        }
         const std::array<std::wstring,11> cliffOverrides{
             profileFlag(L"AEVRYND_MISTWATCH_WOODLAND_PROFILE"),profileFlag(L"AEVRYND_MISTWATCH_WORKSHOP_ROOF"),
             profileFlag(L"AEVRYND_MISTWATCH_SHOULDER_GROVE_PROFILE"),profileFlag(L"AEVRYND_MISTWATCH_SHOULDER_GROUNDCOVER"),
@@ -1849,7 +2043,42 @@ private:
         // 覆蓋配方可選原版或既有西坡配方；外部對照必須兩邊使用相同覆蓋，僅換三張岩圖。
         if(cliffMaterialDiagnostic&&((!validProfileCapture&&!cliffWorldEnabled)||!cliffDiagnostic||rockSegmentDiagnostic))
             throw std::runtime_error("Cliff material requires isolated terrain capture without rock segment");
+        // 谷地換岩層三圖並接既有西坡選材；道路／幾何／碰撞／光照與固定世界資料保持原樣。
+        const auto valleyMaterialProfile=forestPlayableWorld?std::wstring(L"rock-face-03-2k"):profileFlag(L"AEVRYND_MISTWATCH_VALLEY_ROCK_MATERIAL");
+        if(!valleyMaterialProfile.empty()){
+            if((valleyMaterialProfile!=L"original"&&valleyMaterialProfile!=L"rock-face-03-2k")||
+                !valleyTerraceEnabled||(!validProfileReplay&&!manualValleyCandidate)||validProfileCapture||
+                cliffMaterialDiagnostic||cliffWorldEnabled||rockSegmentDiagnostic)
+                throw std::runtime_error("Valley rock material requires explicit isolated v9 world");
+            valleyMaterialAudit=true;cliffMaterialEnabled=valleyMaterialProfile==L"rock-face-03-2k";
+        }
+        const auto northProfile=forestPlayableWorld?std::wstring(L"authored-north-v2"):profileFlag(L"AEVRYND_MISTWATCH_NORTH_WATERSHED");
+        if(!northProfile.empty()){
+            if(northProfile!=L"authored-north-v2"||!valleyMaterialAudit||!valleyTerraceEnabled||
+                (!validProfileReplay&&!manualValleyCandidate))throw std::runtime_error("North watershed requires isolated v9 authoring world");
+            valleyNorthWatershed=true;
+        }
+        const auto outcropProfile=profileFlag(L"AEVRYND_MISTWATCH_VOLUMETRIC_OUTCROP");
+        if(!outcropProfile.empty()){
+            if(outcropProfile!=L"three-rock-visual-v1"||!validProfileReplay||manualValleyCandidate||
+                valleyReplayRoute!=L"shelter"||!valleyMaterialAudit||!cliffMaterialEnabled||!valleyNorthWatershed)
+                throw std::runtime_error("Outcrop preview requires isolated shelter route, no manual or save route");
+            valleyOutcropPreview=true;
+        }
+        const auto bankProfile=profileFlag(L"AEVRYND_MISTWATCH_JOINT_ROCK_BANK");
+        if(!bankProfile.empty()){
+            if(bankProfile!=L"upstream-contact-soil-v1"||!valleyOutcropPreview)
+                throw std::runtime_error("Joint rock bank requires isolated outcrop authoring");
+            valleyJointRockBank=true;
+        }
         const auto reliefProfile=profileFlag(L"AEVRYND_MISTWATCH_CLIFF_RELIEF");
+        const auto groveProfile=profileFlag(L"AEVRYND_MISTWATCH_SLOPE_GROVE");
+        if(!groveProfile.empty()){
+            if(groveProfile!=L"young-canopy-slope-bands-v1"||!valleyJointRockBank)
+                throw std::runtime_error("Slope grove requires isolated joint bank world");
+            valleySlopeGrove=true;
+        }
+        if(forestPlayableWorld){valleyOutcropPreview=true;valleyJointRockBank=true;valleySlopeGrove=true;}
         if(!reliefProfile.empty()&&reliefProfile!=L"west-cliff-ledges-v1")throw std::runtime_error("Unknown cliff relief profile");
         cliffReliefEnabled=manualCliffReliefCandidate||!reliefProfile.empty();
         if(cliffReliefEnabled&&((manualCliffWorldCandidate&&!reliefProfile.empty())||
@@ -2121,7 +2350,8 @@ private:
         if(!roofProfile.empty()&&roofProfile!=L"original"&&roofProfile!=L"workshop-gabled-roof-candidate-v1")
             throw std::runtime_error("Invalid workshop roof profile");
         if(manualWorkshopRoofCandidate&&roofProfile==L"original")throw std::runtime_error("Conflicting workshop roof candidate selection");
-        const bool roofRequested=cliffWorldEnabled||manualWorkshopRoofCandidate||roofProfile==L"workshop-gabled-roof-candidate-v1";
+        if(valleyWorkshopEnabled&&roofProfile==L"original")throw std::runtime_error("Valley workshop entry cannot disable its roof");
+        const bool roofRequested=valleyWorkshopEnabled||cliffWorldEnabled||manualWorkshopRoofCandidate||roofProfile==L"workshop-gabled-roof-candidate-v1";
         const auto woodUvProfile=profileFlag(L"AEVRYND_MISTWATCH_WORKSHOP_WOOD_UV");
         if(!woodUvProfile.empty()&&woodUvProfile!=L"original"&&woodUvProfile!=L"workshop-face-metric-wood-candidate-v2")
             throw std::runtime_error("Invalid workshop wood UV profile");
@@ -2168,6 +2398,7 @@ private:
         rangerDeskMesh=e.CreateMeshResource3D(Mistwatch::CreateRangerDesk());
         if(!rangerDeskMesh||rangerDeskMesh.vertexCount!=216||rangerDeskMesh.indexCount!=324||rangerDeskMesh.TriangleCount()!=108)
             throw std::runtime_error("Ranger desk actual GPU resource differs from qualified mesh");
+        startupStage("profiles_and_structures");
         materials.Initialize(e,e.ExecutableDirectory()/"assets"/"mistwatch-materials");
         wchar_t groundCapture[2]{},legacyGround[3]{};
         const auto roadProfile=playableArt(Mistwatch::PlayableArt::Feature::Road,L"AEVRYND_MISTWATCH_ENTRANCE_ROAD");
@@ -2317,6 +2548,7 @@ private:
         if(!loadedHut)throw std::runtime_error("Weathered hut material unavailable");
         hutMaterial=diagnosticLegacyRangerHut?woodMaterial:Mistwatch::HutWeatheredWoodMaterial(woodMaterial,*loadedHut,{});
         rockMaterial=*materials.Find("rock");
+        startupStage("ground_materials");
         const auto forestRoot=e.ExecutableDirectory()/"assets"/"mistwatch-forest";
         forestMaterials.Initialize(e,forestRoot);
         constexpr const char* slots[]{"bark","twig","dead-branches","trunk-c"};
@@ -2382,6 +2614,7 @@ private:
                 landscapeTwigUnionBounds=Mistwatch::LandscapeTwigDraw::UnionBounds(landscapeDetailedFirTwig,landscapeFirMeshes[1]);
             }
         }
+        startupStage("fir_assets");
         const auto broadleafRoot=e.ExecutableDirectory()/"assets"/"mistwatch-broadleaf";
         broadleafMaterials.Initialize(e,broadleafRoot);
         constexpr const char* broadleafSlots[]{"branches","leaves","trunk"};
@@ -2411,6 +2644,7 @@ private:
             broadleafMeshes[slot]=e.CreateMeshResource3D(loaded.mesh);
             if(!broadleafMeshes[slot])throw std::runtime_error("Broadleaf upload failed");
         }
+        startupStage("broadleaf_assets");
         const auto boulderRoot=e.ExecutableDirectory()/"assets"/"mistwatch-boulders";
         boulderMaterials.Initialize(e,boulderRoot);
         MaterialTextureSetDefinition3D boulderTextures{"materials/slot-0-base.dds","materials/slot-0-arm.dds",1024,
@@ -2511,6 +2745,7 @@ private:
         if(broadleafTrees.size()!=12||broadleafTriangles!=82854)throw std::runtime_error("Broadleaf population/geometry invalid");
         fernMesh=e.CreateMeshResource3D(CreateFernMesh3D(EnvironmentMeshDetail3D::Near,17));
         if(!fernMesh)throw std::runtime_error("Fern GPU upload failed");
+        startupStage("terrain_and_props");
         const auto fernRoot=e.ExecutableDirectory()/"assets"/"mistwatch-ferns";
         fernMaterials.Initialize(e,fernRoot);
         if(!fernMaterials.Load(Mistwatch::FernMaterialDefinition()))throw std::runtime_error("Fern material unavailable");
@@ -2582,11 +2817,12 @@ private:
                 if(!nettleMeshes[variant])throw std::runtime_error("Nettle upload failed");
             }
         }
+        startupStage("fern_and_grass_assets");
         relayDish=e.CreateMeshResource3D(Mistwatch::CreateRelayDish());
         if(!relayDish)throw std::runtime_error("Relay dish GPU upload failed");
         // 作者世界與完整冠層先完成，所有後續地被皆讀同一最終世界。
         if(Mistwatch::WorldProfileHasWoodCollision(worldProfile)&&firLayoutSelector==Mistwatch::FirLayoutSelector::ForestWood)
-            InitializeCanopy(e);
+            InitializeCanopy(e,startupStage);
         if(woodlandFailAfterCanopy)throw std::runtime_error("WOODLAND_ISOLATED_AFTER_CANOPY_FAILURE");
         solids=RuntimeWorldSolids(session.bridgeRepaired);
         trailLitter=Mistwatch::CreateTrailLitter(terrain,solids);
@@ -2597,7 +2833,8 @@ private:
         // 原生成器與舊模式保持；作者版地被使用完成的 render/body/camera 同世界。
         if(Mistwatch::WorldProfileHasCanopy(worldProfile)&&
             !(Mistwatch::WorldProfileHasWoodCollision(worldProfile)&&firLayoutSelector==Mistwatch::FirLayoutSelector::ForestWood))
-            InitializeCanopy(e);
+            InitializeCanopy(e,startupStage);
+        startupStage("canopy_and_litter");
         // 真實作者樹根完成後才編碼地表，避免材質斑塊仍跟隨已退讓的舊株。
         if((deciduousHabitat||habitatFloorProfile!=Mistwatch::ForestHabitatFloorProfile::Original)&&(!entranceWorld.applied||!layeredGround))
             throw std::runtime_error("Habitat candidate requires authored layered world");
@@ -2711,6 +2948,7 @@ private:
             Mistwatch::RootSupportDetail::MeshFingerprint(*landscapeMesh.cpuMesh)!=shoulderGrove.surfaceFingerprint))
             throw std::runtime_error("Shoulder uploaded terrain identity mismatch");
         solids=RuntimeWorldSolids(session.bridgeRepaired);
+        startupStage("habitat_and_terrain_upload");
         forestCoverClearanceColliders=solids.size();
         // 舊世界固體保留2D路線排除；新增木件只篩完整3D植物體積，避免高枝投影抹掉地被。
         std::vector<BoxCollider3D> vegetationSolids=solids;
@@ -2823,6 +3061,7 @@ private:
         if(!shrubLeaves)throw std::runtime_error("Shrub leaf source missing");
         if(shrubTarget!=64u&&(!entranceWorld.applied||fallenLogProfile!=Mistwatch::FallenLogProfile::ScannedStraightV1))
             throw std::runtime_error("Shrub density candidate requires complete authored world");
+        startupStage("grass_and_fern_authoring");
         Mistwatch::ShrubCompositionContract shrubComposition;
         if(shrubArcDensity){
             // 明確選用新版；以同一世界的原64株驗證完整前綴，不能略過下游組合契約。
@@ -2891,6 +3130,7 @@ private:
             roadsideBroadleaf=Mistwatch::CreateRoadsideBroadleaf(terrain,forestCover,understory,fernColonies,shrubCanopy,
                 grassFootprints,fernFootprints,roadsideBroadleafBounds,before,after,shrubComposition,woodlandWorld?&*woodlandWorld:nullptr);
         }
+        startupStage("shrubs_and_roadside");
         std::optional<Mesh3D> cliffReliefForestSource;
         std::optional<Mesh3D> leafForestSource;
         if(entranceRoadEnabled){
@@ -2971,6 +3211,7 @@ private:
             entranceUnderstory=Mistwatch::CreateEntranceUnderstory(terrain,forestCover,understory,fernColonies,
                 shrubCanopy,grassFootprints,fernFootprints,roadsideBroadleaf,before,after,nullptr,shrubComposition,woodlandWorld?&*woodlandWorld:nullptr);
         }
+        startupStage("road_domains_materials_understory");
         e.SetClearColor({.16f,.23f,.25f,1});
         wchar_t local[32768]{};
         const auto count=GetEnvironmentVariableW(L"LOCALAPPDATA",local,32768);
@@ -2980,6 +3221,16 @@ private:
         if(count && count<32768) save=std::filesystem::path(local)/"Aevrynd"/"Mistwatch"/
             (woodlandWorld?"save-woodland-canopy-v2.txt":!validProfileCapture?"save.txt":shelterDetailEnabled?"save-framed-corrugated-shelter-v1.txt":entranceUnderstoryEnabled?"save-entrance-understory-v2.txt":entranceRoadEnabled?"save-entrance-road-material-domain-v1.txt":rightForeground?"save-entrance-right-foreground-v1.txt":roadsideCoverEnabled?"save-roadside-ground-cover-v1.txt":
                 roadsideBroadleafEnabled?"save-roadside-broadleaf-v1.txt":"save.txt");
+        if(valleyWorldEnabled){
+            if(!count||count>=32768||!std::filesystem::path(local).is_absolute())throw std::runtime_error("Valley requires valid LOCALAPPDATA");
+            const auto root=std::filesystem::path(local)/"Aevrynd"/"Mistwatch";
+            save=root/"save-valley-contact-v7.txt";
+            if(manualValleyCandidate){const auto sessions=root/"valley-sessions";std::filesystem::create_directories(sessions);
+                const auto stamp=std::chrono::steady_clock::now().time_since_epoch().count();
+                valleyEvidenceDirectory=sessions/(std::to_string(GetCurrentProcessId())+"-"+std::to_string(stamp));
+                if(!std::filesystem::create_directory(valleyEvidenceDirectory))throw std::runtime_error("Manual valley receipt refuses reuse");
+            }
+        }
         if(manualForestSurfaceCandidate){
             if(!count||count>=32768||!std::filesystem::path(local).is_absolute())
                 throw std::runtime_error("Forest surface candidate requires valid LOCALAPPDATA");
@@ -3034,7 +3285,7 @@ private:
         wchar_t replayRoute[16]{};
         const auto replayRouteCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_INPUT_REPLAY_ROUTE",replayRoute,16);
         if(replayRouteCount&&(!replayCount||replayRouteCount>=16||
-            (std::wstring_view(replayRoute)!=L"shelter"&&std::wstring_view(replayRoute)!=L"bridge"&&std::wstring_view(replayRoute)!=L"combat"&&std::wstring_view(replayRoute)!=L"power"&&std::wstring_view(replayRoute)!=L"completion"&&std::wstring_view(replayRoute)!=L"death-retry"&&std::wstring_view(replayRoute)!=L"checkpoint"&&std::wstring_view(replayRoute)!=L"motion-save"&&std::wstring_view(replayRoute)!=L"pivot-save"&&std::wstring_view(replayRoute)!=L"west-cliff-47"&&std::wstring_view(replayRoute)!=L"west-cliff-44"&&std::wstring_view(replayRoute)!=L"dash-handoff"&&std::wstring_view(replayRoute)!=L"sprint-flow")))
+            (std::wstring_view(replayRoute)!=L"shelter"&&std::wstring_view(replayRoute)!=L"bridge"&&std::wstring_view(replayRoute)!=L"combat"&&std::wstring_view(replayRoute)!=L"power"&&std::wstring_view(replayRoute)!=L"completion"&&std::wstring_view(replayRoute)!=L"death-retry"&&std::wstring_view(replayRoute)!=L"checkpoint"&&std::wstring_view(replayRoute)!=L"motion-save"&&std::wstring_view(replayRoute)!=L"pivot-save"&&std::wstring_view(replayRoute)!=L"west-cliff-47"&&std::wstring_view(replayRoute)!=L"west-cliff-44"&&std::wstring_view(replayRoute)!=L"dash-handoff"&&std::wstring_view(replayRoute)!=L"sprint-flow"&&std::wstring_view(replayRoute)!=L"resume-save"&&std::wstring_view(replayRoute)!=L"reject-save"&&std::wstring_view(replayRoute)!=L"grove-walk")))
             throw std::runtime_error("Invalid input replay route");
         if((std::wstring_view(replayRoute)==L"west-cliff-47"||std::wstring_view(replayRoute)==L"west-cliff-44")&&!cliffReliefEnabled)
             throw std::runtime_error("West cliff replay requires the slope world candidate");
@@ -3111,6 +3362,8 @@ private:
             artReceipt.flush();
             if(!artReceipt)throw std::runtime_error("Playable art initialization receipt unavailable");
             save=inputReplayDirectory/"test-save.txt";
+            if(replayRouteCount&&(std::wstring_view(replayRoute)==L"resume-save"||std::wstring_view(replayRoute)==L"reject-save")&&
+                !inputReplay.EnableResumeSaveRoute(std::wstring_view(replayRoute)==L"resume-save"))throw std::runtime_error("Resume replay configuration rejected");
             if(replayRouteCount&&std::wstring_view(replayRoute)==L"dash-handoff"&&!inputReplay.EnableDashJumpRoute())
                 throw std::runtime_error("Input dash handoff replay route unavailable");
             if(replayRouteCount&&std::wstring_view(replayRoute)==L"sprint-flow"&&!inputReplay.EnableSprintFlowRoute())
@@ -3127,6 +3380,9 @@ private:
                 throw std::runtime_error("Input death/retry replay route unavailable");
             if(replayRouteCount&&std::wstring_view(replayRoute)==L"checkpoint"&&!inputReplay.EnableCheckpointRoute())
                 throw std::runtime_error("Input checkpoint replay route unavailable");
+            if(replayRouteCount&&std::wstring_view(replayRoute)==L"grove-walk"&&
+                (!forestPlayableWorld||!valleySlopeGrove||!inputReplay.EnableGroveRoute()))
+                throw std::runtime_error("Grove replay requires the complete forest grove world");
             if(replayRouteCount&&std::wstring_view(replayRoute)==L"motion-save"&&!inputReplay.EnableMotionCheckpointRoute())
                 throw std::runtime_error("Input motion checkpoint replay route unavailable");
             if(replayRouteCount&&std::wstring_view(replayRoute)==L"pivot-save"&&!inputReplay.EnablePivotCheckpointRoute())
@@ -3403,6 +3659,11 @@ private:
             std::ifstream file(audioSettings);std::string line;
             if(std::getline(file,line))gameAudio.options.Restore(line);
         }
+        // 自動擷取與輸入重播保持固定預設值，不讀寫玩家的鏡頭偏好。
+        if(capture.empty()&&inputReplayDirectory.empty()&&!save.empty()){
+            cameraSettings=save.parent_path()/"camera-settings.txt";
+            Mistwatch::ReadCameraSettingsFile(cameraSettings,cameraOptions);
+        }
         // 自動影像驗證靜音，不寫玩家音量設定；播放收據仍記錄真實裝置與 voice 結果。
         if(!capture.empty()||!inputReplayDirectory.empty())gameAudio.options.muted=true;
         gameAudio.Initialize(e.Audio());
@@ -3482,10 +3743,29 @@ private:
             terrain=std::move(derived.terrain);cliffReliefReceipt=derived.receipt;cliffReliefMeshReceipt=meshReceipt;
             cliffReceipts[0]=covered.receipt;
         }
+        if(valleyWorldEnabled&&!inputReplayDirectory.empty())valleyEvidenceDirectory=inputReplayDirectory;
+        startupStage("actors_save_and_scene_setup");
+        InitializeValleyWorld(e,startupStage);
+        if(inputReplay.GroveRoute()&&(slopeGrove.trees.size()!=8||slopeGrove.roots.size()!=8||slopeGrove.solids.size()!=512||slopeGrove.acquired!=8))
+            throw std::runtime_error("Grove replay actual initialized resources incomplete");
+        startupStage("derived_valley_world");
+        wchar_t seedBuffer[32768]{};
+        const auto seedCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_REPLAY_SAVE_SEED",seedBuffer,32768);
+        if(seedCount>=32768)throw std::runtime_error("Replay save seed path truncated");
+        const std::wstring_view seed(seedBuffer,seedCount);
+        if(!seed.empty()){
+            const std::filesystem::path source(seed);
+            if(!inputReplay.ResumeSaveRoute()||!source.is_absolute()||!std::filesystem::is_regular_file(source)||
+                std::filesystem::is_symlink(source)||std::filesystem::file_size(source)>Mistwatch::SaveGame::MaximumBytes+1||
+                save!=inputReplayDirectory/"test-save.txt"||std::filesystem::exists(save))throw std::runtime_error("Replay seed requires bounded fresh isolated resume output");
+            std::filesystem::copy_file(source,save,std::filesystem::copy_options::none);
+        }
+        if(inputReplay.ResumeSaveRoute()&&seed.empty())throw std::runtime_error("Resume replay seed missing");
         InitializeCoreHerbs(e);
         WriteCompleteUnderstoryRetention();
         InitializeRouteGrass(e);
         InitializeForestIbl(e);
+        startupStage("herbs_route_ibl");
         if(captureCostEnabled&&e.WindowMode3D()==EngineWindowMode3D::OffscreenNoActivateDiagnostic){
             // 場景拒絕或旁錄失敗仍由已建立的startup guards負責回收，不能先解除其責任。
             if(!Mistwatch::CaptureBenchmarkRemainsStatic(!capture.empty(),captureBenchmark,captureFrameCamera,captureWalk,
@@ -3515,7 +3795,9 @@ private:
         (void)shelterStartupGuard.release();
         (void)workshopRoofStartupGuard.release();
         (void)iblStartupGuard.release();
+        (void)valleyStartupGuard.release();
         if(captureCostEnabled)captureReadyNs=CaptureElapsedNs();
+        startupStage("complete");
     }
     void OnUpdate(Engine& e,float dt) override {
         if(PrepareInputReplay(e,dt))return;
@@ -4152,14 +4434,15 @@ private:
         const auto cameraTurn=[&]{return float(in.Down(VK_RIGHT)&&!(relayNavigationHeld&2u))-
             float(in.Down(VK_LEFT)&&!(relayNavigationHeld&1u));};
         // 焦點安全仍優先；可遊玩狀態的讀檔先於暫停及音量鍵，避免同一步遺失或修改設定。
-        if(started&&!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
+        if(!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
             Mistwatch::SaveGame saved;
             auto prepared=Mistwatch::ReadSaveFile(save,saved)?Mistwatch::PrepareSavedGame(saved,
-                {controller,explorer,boar,orbit},terrain,RuntimeRoofCameraOnly(),RuntimeExtraSolids(),firLayoutSelector,fallenLogProfile,entranceWorld.applied?&entranceWorld:nullptr,RuntimeRoofHulls(),RuntimeTerrainProfile()):Mistwatch::LoadPreparationResult{};
+                {controller,explorer,boar,orbit},terrain,RuntimeRoofCameraOnly(),RuntimeExtraSolids(),firLayoutSelector,fallenLogProfile,entranceWorld.applied?&entranceWorld:nullptr,RuntimeRoofHulls(),RuntimeTerrainProfile(),valleySaveDomain?&*valleySaveDomain:nullptr):Mistwatch::LoadPreparationResult{};
             if(prepared&&Mistwatch::ValidatePreparedPairLoad(*prepared.candidate)){
                 Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera,&playerLocomotion});
                 tuningInputRepeat.Reset();ResetPlayablePairRuntime();
+                started=true;paused=false;
                 cameraOcclusionSeconds=0;
                 gameAudio.director.Reset();
                 message="Loaded";
@@ -4176,6 +4459,10 @@ private:
         const bool wasStarted=started,wasPaused=paused;
         Mistwatch::UpdatePlaybackControl(started,paused,in.Focused()&&!in.FocusLost(),in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
         const bool resumedFromPause=wasStarted&&wasPaused&&!paused;
+        const bool cameraSettingsEditable=Mistwatch::CanEditCameraSettings(in.Focused()&&!in.FocusLost(),
+            wasStarted,wasPaused,started,paused,in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
+        if(cameraOptions.Adjust(cameraSettingsEditable,in.Pressed(VK_OEM_4),in.Pressed(VK_OEM_6),
+            in.Pressed('I'),in.Pressed(VK_BACK)))SaveCameraOptions();
         // 只在真正開始時更新回饋；恢復暫停或無焦點按鍵不能覆蓋既有操作結果。
         if(!wasStarted&&started)message="New expedition";
         bool changedAudio=false;
@@ -4305,7 +4592,8 @@ private:
         bool cameraAttempted=false,worldCommitted=false,saveAfterCommit=false,retainCounterAttack=false;
         playableLastContact.reset();playableLastPairStatus.reset();
         const auto orbitInput=[&]{orbit.Update(playableInputs.Drag(),playableInputs.Wheel(),
-            cameraTurn(),dt,playableInputs.RecenterRequested(),explorer.yaw);};
+            cameraTurn(),dt,playableInputs.RecenterRequested(),explorer.yaw,
+            cameraOptions.Sensitivity(),cameraOptions.invertVertical);};
         const auto holdFrame=[&](const char* reason,bool contactPolicy=false,
             PlayableRecoveryCause recoveryCause=PlayableRecoveryCause::None){
             // 先還原整個世界候選，再由原camera owner只算camera-only候選；兩者不累加dt。
@@ -4605,16 +4893,32 @@ private:
             ++submittedMiddleLayer;
         }
         scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
+        foliageViewRequests.clear();std::uint64_t firViewOrdinal{};
         // 鏡頭到樹冠包絡距離決定針葉細節，六公尺過渡帶保留互補色彩與陰影。
         const auto submitFir=[&](Transform3D transform) {
+            const auto leafIdentity=Mistwatch::FoliageView::LeafIdentity(forestPlayableWorld,++firViewOrdinal);
+            if(foliageViewEnabled&&started&&session.Alive()){
+                auto bounds=firMeshes[1].bounds;
+                if(nearFirTwigLod){
+                    const auto other=detailedFirTwig.bounds;const auto lo=bounds.center-bounds.extents,hi=bounds.center+bounds.extents;
+                    const auto a=other.center-other.extents,b=other.center+other.extents;
+                    const Vec3 low{(std::min)(lo.x,a.x),(std::min)(lo.y,a.y),(std::min)(lo.z,a.z)};
+                    const Vec3 high{(std::max)(hi.x,b.x),(std::max)(hi.y,b.y),(std::max)(hi.z,b.z)};
+                    bounds.center=(low+high)*.5f;bounds.extents=(high-low)*.5f;bounds.radius=Length(bounds.extents);
+                }
+                const float opacity=Mistwatch::FoliageView::Opacity(playerCameraMotion.Camera(),session.feet,
+                    controller.Settings().height,TransformBounds(bounds,transform));
+                if(opacity<1.f)foliageViewRequests.push_back({leafIdentity,opacity});
+            }
             for(unsigned slot=0;slot<4;++slot) {
+                const auto identity=slot==1?leafIdentity:RenderObjectIdentity3D{};
                 if(slot==1&&nearFirTwigLod) {
                     const std::array<MeshLodLevel3D,2> levels{{
                         {detailedFirTwig,firMaterials[slot],12.f,6.f},
                         {firMeshes[slot],firMaterials[slot]}}};
-                    if(!scene.MeshLodChain(levels,MeshLodDistanceMetric3D::BoundsSurface,transform))
+                    if(!scene.MeshLodChain(levels,MeshLodDistanceMetric3D::BoundsSurface,transform,{},identity))
                         throw std::runtime_error("Fir twig LOD insertion failed");
-                } else if(!scene.Mesh(firMeshes[slot],transform,firMaterials[slot]))
+                } else if(!scene.Mesh(firMeshes[slot],transform,firMaterials[slot],{},identity))
                     throw std::runtime_error("Fir scene insertion failed");
             }
         };
@@ -4723,6 +5027,8 @@ private:
         }
         submittedFallenLogs=0;submittedFallenTriangles=0;
         if(rockSegmentEnabled)rockSegment.Submit(scene);
+        if(valleyOutcropPreview)valleyOutcrop.Submit(scene);
+        if(valleySlopeGrove)slopeGrove.Submit(scene);
         for(std::size_t index=0;index<forestProps.size();++index){
             const auto& prop=forestProps[index];
             if(prop.FallenLog()&&fallenLogProfile==Mistwatch::FallenLogProfile::ScannedStraightV1){
@@ -5042,6 +5348,32 @@ private:
         if(counterCueSubmitted>Mistwatch::CounterWindowCue::MaximumLines)
             throw std::runtime_error("Counter window cue line budget exceeded");
         const auto sceneStats=scene.Submit(draw,camera,{1280,720},submission);
+        if(foliageViewWindowEnabled&&started&&session.Alive()){
+            const float height=controller.Settings().height;
+            draw.SetScreenOcclusionWindow(ProjectScreenOcclusionWindow3D(draw.ViewProjection(),
+                session.feet+Vec3{0,height*.5f,0},{.50f,height*.5f+.10f,.50f}));
+        }
+        std::uint64_t fadedColors{},preservedShadows{};float minimumOpacity=1.f;
+        for(const auto& request:foliageViewRequests){
+            if(foliageViewWindowEnabled&&!draw.ScreenOcclusionWindow().enabled)continue;
+            const auto result=ApplyStaticColorOcclusion3D(draw.meshInstances,request.identity,request.opacity);
+            if(result.status==StaticColorOcclusionStatus3D::NotVisible)continue;
+            if(result.status!=StaticColorOcclusionStatus3D::Applied)throw std::runtime_error("Foliage color-only occlusion update rejected");
+            fadedColors+=result.matchedColor;preservedShadows+=result.shadowCopies;
+            minimumOpacity=(std::min)(minimumOpacity,request.opacity);
+        }
+        ++foliageViewFrames;foliageViewFadedFrames+=fadedColors?1:0;
+        foliageViewColorInstances+=fadedColors;foliageViewShadowCopies+=preservedShadows;
+        foliageViewMinimumOpacity=(std::min)(foliageViewMinimumOpacity,minimumOpacity);
+        if(inputReplay.GroveRoute()){
+            const std::string phase(inputReplay.Phase());
+            if(foliageViewPhases.empty()||foliageViewPhases.back().name!=phase){
+                if(foliageViewPhases.size()>=128)throw std::runtime_error("Foliage view phase evidence bound");
+                foliageViewPhases.push_back({phase});
+            }
+            auto& proof=foliageViewPhases.back();++proof.frames;proof.colors+=fadedColors;proof.shadows+=preservedShadows;
+            proof.minimum=(std::min)(proof.minimum,minimumOpacity);
+        }
         firLodSubmission=sceneStats;
         landscapeFrame.sceneSerial=sceneStats.submissionSerial;landscapeFrame.camera=camera;
         landscapeFrame.cameraHash=14695981039346656037ull;
@@ -5087,7 +5419,7 @@ private:
         }
         groundcoverFrame.sceneSerial=landscapeFrame.sceneSerial;groundcoverFrame.cameraHash=landscapeFrame.cameraHash;
         cliffFrame={};
-        if(cliffDiagnostic){
+        if(cliffDiagnostic||valleyMaterialAudit){
             cliffFrame.camera=camera;cliffFrame.cameraHash=landscapeFrame.cameraHash;cliffFrame.sceneSerial=landscapeFrame.sceneSerial;
             RECT viewport{};if(!GetClientRect(e.Window(),&viewport)||viewport.right<=0||viewport.bottom<=0)
                 throw std::runtime_error("Cliff viewport unavailable");
@@ -5105,7 +5437,7 @@ private:
         }
         rockSegmentFrame={};
         cliffMaterialFrame={};
-        if(cliffMaterialDiagnostic){
+        if(cliffMaterialDiagnostic||valleyMaterialAudit){
             cliffMaterialFrame.cameraHash=landscapeFrame.cameraHash;cliffMaterialFrame.serial=landscapeFrame.sceneSerial;
             const std::array<const MeshResource3D*,4> meshes{&entranceRoadMeshes[0],&landscapeMesh,&entranceRoadMeshes[1],&entranceRoadMeshes[2]};
             const std::array<const Material3D*,4> surfaces{&TerrainRenderMaterial(),&TerrainRenderMaterial(),&entranceRoadSurface,&settlementSurfaceMaterial};
@@ -5137,6 +5469,8 @@ private:
             if(!submission.gpuInstancing)throw std::runtime_error("Rock segment requires GPU instances");
             rockSegmentFrame=rockSegment.Observe(draw.meshInstances,camera,submission,landscapeFrame.cameraHash,landscapeFrame.sceneSerial);
         }
+        if(valleyOutcropPreview)valleyOutcrop.Observe(draw.meshInstances);
+        if(valleySlopeGrove)slopeGrove.Observe(draw.meshInstances);
         for(auto& observer:landscapeTwigObservers)observer.reset();
         if(landscapeTwigDistanceLod)for(unsigned ordinal=0;ordinal<landscapeTrees.size();++ordinal){
             if(shoulderGroveEnabled&&Mistwatch::ShoulderGrove::IsSelected(shoulderGrove,ordinal))continue;
@@ -5338,7 +5672,8 @@ private:
         if(!Mistwatch::ExplorerSurface::Submit(draw,explorer.model,explorer.art,explorerMesh.handle,palette,
             explorerTransform,explorerMaterials,explorerSurfaceSubmission))
             throw std::runtime_error("Explorer surface window submission failed");
-        const auto fieldHud=Mistwatch::FieldPresentation::Build(session,guide,encounter,started,paused,fieldJournalOpen);
+        auto fieldHud=Mistwatch::FieldPresentation::Build(session,guide,encounter,started,paused,fieldJournalOpen);
+        Mistwatch::FieldPresentation::PresentCameraSettings(fieldHud,cameraOptions,started,paused);
         Mistwatch::FieldPresentation::Draw(draw,fieldHud,session,Mistwatch::FieldPresentation::LastAction(message),
             actionFeedback,e.Audio().GetStats().deviceAvailable,gameAudio.options.muted,
             unsigned(gameAudio.options.volume*100+.5f),started,paused);
@@ -5364,6 +5699,13 @@ private:
             inputReplayCaptureBase=e.GetRendererStats().successfulFrameCaptures;
             const auto path=inputReplayDirectory/(std::to_string(inputReplayImages)+"-"+inputReplayPhase+".png");
             if(!e.CaptureNextFrame3D(path))throw std::runtime_error("Input replay capture request rejected");
+            auto statePath=path;statePath+=L".view.txt";std::ofstream state(statePath);state.precision(9);
+            state<<"expected_render_serial="<<e.GetRendererStats().submittedFrames+1<<"\nrequested_unjittered_vp_bits=";
+            for(const auto& row:draw.ViewProjection().values)for(float v:row)state<<std::bit_cast<std::uint32_t>(v)<<',';
+            state<<"\nsubject="<<session.feet.x<<','<<session.feet.y<<','<<session.feet.z<<','<<controller.Settings().height
+                <<"\nwindow=";
+            for(float v:PackScreenOcclusionWindow3D(draw.ScreenOcclusionWindow()))state<<v<<',';
+            state<<'\n';state.close();if(!state)throw std::runtime_error("Capture view request receipt failed");
             inputReplayCapturePending=true;inputReplayCaptureRequested=false;
         }
         if(!capture.empty() && !capturePending && ++captureFrames>=45 &&
@@ -5431,6 +5773,18 @@ private:
         bool forestSurfaceReceiptWritten=true;
         // 寫檔失敗先記錄，既有場景及 GPU 資源完整回收後才回報失敗。
         try{
+            if(!inputReplayDirectory.empty()){
+                std::ofstream proof(inputReplayDirectory/"foliage-view.txt");proof.precision(9);
+                proof<<"profile="<<(foliageViewWindowEnabled?"subject-window-needles-v2":foliageViewEnabled?"foreground-needles-color-v1":"original")
+                    <<"\nrendered_frames="<<foliageViewFrames<<"\nfaded_frames="<<foliageViewFadedFrames
+                    <<"\ncolor_instances="<<foliageViewColorInstances<<"\npreserved_shadow_copies="<<foliageViewShadowCopies
+                    <<"\nminimum_opacity="<<foliageViewMinimumOpacity<<"\nphysics_modified=0\nalpha_map_visibility_query=0\n";
+                proof.close();if(!proof)throw std::runtime_error("Foliage view receipt write failed");
+                std::ofstream phases(inputReplayDirectory/"foliage-view-phases.tsv");phases.precision(9);
+                phases<<"phase\tframes\tcolor_instances\tshadow_copies\tminimum_opacity\n";
+                for(const auto& row:foliageViewPhases)phases<<row.name<<'\t'<<row.frames<<'\t'<<row.colors<<'\t'<<row.shadows<<'\t'<<row.minimum<<'\n';
+                phases.close();if(!phases)throw std::runtime_error("Foliage view phase receipt failed");
+            }
             if(!manualForestSurfaceReceiptPrefix.empty())WriteForestSurfaceReceipt(manualForestSurfaceReceiptPrefix,e.GetRendererStats());
             else if(!inputReplayDirectory.empty())WriteForestSurfaceReceipt(inputReplayDirectory/"last-render",e.GetRendererStats());
         }catch(...){forestSurfaceReceiptWritten=false;}
@@ -5578,6 +5932,17 @@ private:
             out.close();if(!out)throw std::runtime_error("Supply cleanup receipt failed");
         }
         e.DestroySkinnedMesh3D(explorerMesh.handle);e.DestroySkinnedMesh3D(boarMesh.handle);
+        if(valleyMaterialAudit){
+            const auto path=valleyEvidenceDirectory/"valley-rock-material-runtime.txt";
+            if(std::filesystem::exists(path)||!cliffMaterialObservedFrames)throw std::runtime_error("Valley rock material runtime evidence unavailable");
+            std::ofstream out(path);out<<"schema=valley-rock-material-v1\nprofile="<<(cliffMaterialEnabled?"rock-face-03-2k":"original")
+                <<"\nrendered_frames="<<cliffMaterialObservedFrames<<"\nterrain_texture="<<TerrainRenderMaterial().textures.semanticIdentity
+                <<"\noriginal_texture="<<groundMaterial.textures.semanticIdentity<<"\nroad_texture="<<entranceRoadSurface.textures.semanticIdentity
+                <<"\ngravel_texture="<<settlementSurfaceMaterial.textures.semanticIdentity<<"\nworld="<<valleySaveDomain->Identity()<<'\n';
+            const std::array<const char*,4> names{"core","ring","road","gravel"};
+            for(unsigned i=0;i<4;++i)out<<names[i]<<"_observed_frames="<<cliffMaterialObservedDraws[i]<<'\n';
+            out.close();if(!out)throw std::runtime_error("Valley rock material evidence write failed");
+        }
         if(cliffWorldEnabled&&!inputReplayDirectory.empty()){
             const auto path=inputReplayDirectory/"cliff-world-runtime.txt";
             if(std::filesystem::exists(path))throw std::runtime_error("Cliff runtime receipt refuses overwrite");
@@ -5590,6 +5955,17 @@ private:
             for(unsigned i=0;i<4;++i)out<<names[i]<<"_observed_frames="<<cliffMaterialObservedDraws[i]<<'\n';
             out<<"capture_mode="<<!capture.empty()<<"\nfixed_camera="<<captureFrameCamera<<"\nart_accepted=0\n";
             out.close();if(!out)throw std::runtime_error("Cliff runtime receipt write failed");
+        }
+        if(valleyOutcropPreview){
+            valleyOutcrop.Release(e);
+            if(valleyOutcrop.mesh||valleyOutcrop.acquired!=1||valleyOutcrop.released!=1)
+                throw std::runtime_error("Outcrop exact resource release incomplete");
+            valleyOutcrop.Write(valleyEvidenceDirectory);
+        }
+        if(valleySlopeGrove){
+            slopeGrove.Release(e);
+            if(slopeGrove.acquired!=8||slopeGrove.released!=8)throw std::runtime_error("Slope grove exact cleanup");
+            slopeGrove.Write(valleyEvidenceDirectory,!inputReplayDirectory.empty());
         }
         materials.Shutdown();forestMaterials.Shutdown();broadleafMaterials.Shutdown();boulderMaterials.Shutdown();
         fernMaterials.Shutdown();
@@ -5807,9 +6183,12 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
         const auto first=arguments.find_first_not_of(L" \t");
         const auto last=arguments.find_last_not_of(L" \t");
         const auto argument=first==std::wstring_view::npos?std::wstring_view{}:arguments.substr(first,last-first+1);
-        if(!argument.empty()&&argument!=L"--woodland-candidate"&&argument!=L"--workshop-roof-candidate"&&argument!=L"--shoulder-grove-candidate"&&argument!=L"--cliff-world-candidate"&&argument!=L"--cliff-relief-candidate"&&argument!=L"--forest-surface-candidate")throw std::runtime_error("WOODLAND_COMMAND_LINE_INVALID");
+        if(!argument.empty()&&argument!=L"--woodland-candidate"&&argument!=L"--workshop-roof-candidate"&&argument!=L"--shoulder-grove-candidate"&&argument!=L"--cliff-world-candidate"&&argument!=L"--cliff-relief-candidate"&&argument!=L"--forest-surface-candidate"&&argument!=L"--valley-world-candidate"&&argument!=L"--valley-terrace-candidate"&&argument!=Mistwatch::ForestPlayable::Argument)throw std::runtime_error("WOODLAND_COMMAND_LINE_INVALID");
+        const bool groveCandidate=argument==Mistwatch::ForestPlayable::Argument;
+        const bool valleyCandidate=argument==L"--valley-world-candidate";
+        const bool terraceCandidate=argument==L"--valley-terrace-candidate";
         const bool surfaceCandidate=argument==L"--forest-surface-candidate";
-        const bool manualCandidate=!argument.empty()&&!surfaceCandidate;
+        const bool manualCandidate=!argument.empty()&&!surfaceCandidate&&!valleyCandidate&&!terraceCandidate&&!groveCandidate;
         const bool reliefCandidate=argument==L"--cliff-relief-candidate";
         const bool cliffCandidate=argument==L"--cliff-world-candidate"||reliefCandidate;
         const bool shoulderCandidate=argument==L"--shoulder-grove-candidate";
@@ -5821,6 +6200,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
         if(cliffCandidate)config.title=L"Aevrynd - Mistwatch [Cliff world candidate WIP]";
         if(reliefCandidate)config.title=L"Aevrynd - Mistwatch [Cliff relief candidate WIP]";
         if(surfaceCandidate)config.title=L"Aevrynd - Mistwatch [Forest surface candidate WIP]";
+        if(valleyCandidate)config.title=L"Aevrynd - Mistwatch [Valley candidate WIP - separate saves]";
+        if(terraceCandidate)config.title=L"Aevrynd - Mistwatch [Authored valley terrace WIP - separate saves]";
+        if(groveCandidate)config.title=L"Aevrynd - Mistwatch [Forest grove WIP - separate saves]";
         wchar_t costProbe[8]{};
         const auto costCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_REPLAY_COST_PROBE",costProbe,8);
         if(costCount&&(costCount!=1||costProbe[0]!=L'1'))throw std::runtime_error("Invalid frame cost probe option");
@@ -5848,7 +6230,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
             config.enableUnsynchronizedDiagnosticPresent=true;
         }
         Engine engine(config);
-        return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate),instance,show);
+        return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate,valleyCandidate,terraceCandidate,groveCandidate),instance,show);
     } catch(const std::exception& error) {
         std::ofstream log("mistwatch-startup-error.txt");
         log<<error.what()<<'\n';

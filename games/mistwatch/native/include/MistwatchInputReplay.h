@@ -48,8 +48,17 @@ struct WestCliffReplayWorld {
 // 獨立 Input 預設有焦點；此測試不宣稱驗證作業系統焦點或實體鍵盤。
 class InputReplay {
 public:
+    // 唯讀路線資訊供配置驗證；讀取真正回放陣列，不能另造一份看似一致的路點。
+    static constexpr Aevrynd::Vec3 BridgeSupplyApproach(unsigned index) {
+        if(index>=3)throw std::invalid_argument("Unknown replay supply");
+        const auto& point=bridgePoints_[5+index*3];return {point.x,0,point.z};
+    }
+    static constexpr Aevrynd::Vec3 BridgeSupplyReturn(unsigned index) {
+        if(index>=3)throw std::invalid_argument("Unknown replay supply");
+        const auto& point=bridgePoints_[6+index*3];return {point.x,0,point.z};
+    }
     bool EnableDashJumpRoute(){
-        if(ticks_||dashJumpRoute_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;
+        if(groveRoute_||ticks_||resumeSaveRoute_||dashJumpRoute_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;
         dashJumpRoute_=checkpointRoute_=true;return true;
     }
     bool DashJumpRoute()const{return dashJumpRoute_;}
@@ -57,31 +66,50 @@ public:
     bool SprintFlowRoute()const{return sprintFlowRoute_;}
     const std::array<DashJumpReplayEvidence,3>& DashJumpEvidence()const{return dashJumpEvidence_;}
     bool EnablePivotCheckpointRoute(){
-        if(dashJumpRoute_||ticks_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;
+        if(groveRoute_||dashJumpRoute_||resumeSaveRoute_||ticks_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;
         pivotCheckpointRoute_=checkpointRoute_=true;return true;
     }
     bool PivotCheckpointRoute()const{return pivotCheckpointRoute_;}
-    bool EnableBridgeRoute(){if(dashJumpRoute_||ticks_!=0||westCliffRoute_)return false;bridgeRoute_=true;return true;}
+    bool EnableBridgeRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_!=0||westCliffRoute_)return false;bridgeRoute_=true;return true;}
     bool BridgeRoute()const{return bridgeRoute_;}
-    bool EnableCombatRoute(){if(dashJumpRoute_||ticks_!=0||deathRetryRoute_||westCliffRoute_)return false;combatRoute_=bridgeRoute_=true;return true;}
+    bool EnableCombatRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_!=0||deathRetryRoute_||westCliffRoute_)return false;combatRoute_=bridgeRoute_=true;return true;}
     bool CombatRoute()const{return combatRoute_;}
-    bool EnablePowerRoute(){if(dashJumpRoute_||ticks_!=0||deathRetryRoute_||checkpointRoute_||westCliffRoute_)return false;powerRoute_=combatRoute_=bridgeRoute_=true;return true;}
+    bool EnablePowerRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_!=0||deathRetryRoute_||checkpointRoute_||westCliffRoute_)return false;powerRoute_=combatRoute_=bridgeRoute_=true;return true;}
     bool PowerRoute()const{return powerRoute_;}
-    bool EnableCompletionRoute(){if(dashJumpRoute_||ticks_!=0||deathRetryRoute_||checkpointRoute_||westCliffRoute_)return false;completionRoute_=powerRoute_=combatRoute_=bridgeRoute_=true;return true;}
+    bool EnableCompletionRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_!=0||deathRetryRoute_||checkpointRoute_||westCliffRoute_)return false;completionRoute_=powerRoute_=combatRoute_=bridgeRoute_=true;return true;}
     bool CompletionRoute()const{return completionRoute_;}
-    bool EnableDeathRetryRoute(){if(dashJumpRoute_||ticks_!=0||combatRoute_)return false;deathRetryRoute_=bridgeRoute_=true;return true;}
+    bool EnableDeathRetryRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_!=0||combatRoute_)return false;deathRetryRoute_=bridgeRoute_=true;return true;}
     bool DeathRetryRoute()const{return deathRetryRoute_;}
-    bool EnableCheckpointRoute(){if(dashJumpRoute_||ticks_!=0||deathRetryRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;checkpointRoute_=combatRoute_=bridgeRoute_=true;return true;}
+    bool EnableCheckpointRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_!=0||deathRetryRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;checkpointRoute_=combatRoute_=bridgeRoute_=true;return true;}
     bool CheckpointRoute()const{return checkpointRoute_;}
-    bool EnableMotionCheckpointRoute(){if(dashJumpRoute_||ticks_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_)return false;checkpointRoute_=motionOnly_=true;return true;}
+    bool EnableMotionCheckpointRoute(){if(groveRoute_||resumeSaveRoute_||dashJumpRoute_||ticks_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_)return false;checkpointRoute_=motionOnly_=true;return true;}
     bool MotionCheckpointRoute()const{return motionOnly_;}
+    bool EnableResumeSaveRoute(bool accept){
+        if(groveRoute_||ticks_||resumeSaveRoute_||bridgeRoute_||combatRoute_||checkpointRoute_||deathRetryRoute_||powerRoute_||completionRoute_||westCliffRoute_||dashJumpRoute_)return false;
+        resumeSaveRoute_=true;resumeAccept_=accept;return true;
+    }
+    bool ResumeSaveRoute()const{return resumeSaveRoute_;}
+    bool ResumeAccept()const{return resumeAccept_;}
+    bool ResumeExactObserved()const{return resumeExact_;}
+    bool ResumeAdvanceObserved()const{return resumeAdvanced_;}
+    bool ResumeRejectedUnchanged()const{return resumeRejected_;}
     bool EnableWestCliffRoute(float targetX,bool standingPolicy=false){
-        if(dashJumpRoute_||ticks_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||
+        if(groveRoute_||dashJumpRoute_||resumeSaveRoute_||ticks_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||
             westCliffRoute_||(targetX!=-47.f&&targetX!=-44.f))return false;
         westCliffTargetX_=targetX;westCliffStandingPolicy_=standingPolicy;westCliffRoute_=combatRoute_=bridgeRoute_=true;return true;
     }
     bool WestCliffRoute()const{return westCliffRoute_;}
     float WestCliffTargetX()const{return westCliffTargetX_;}
+    bool EnableGroveRoute(){
+        if(ticks_||groveRoute_||resumeSaveRoute_||dashJumpRoute_||bridgeRoute_||combatRoute_||deathRetryRoute_||checkpointRoute_||powerRoute_||completionRoute_||westCliffRoute_)return false;
+        groveRoute_=combatRoute_=bridgeRoute_=true;return true;
+    }
+    bool GroveRoute()const{return groveRoute_;}
+    static constexpr unsigned GrovePointCount(){return unsigned(std::size(grovePoints_));}
+    static constexpr Aevrynd::Vec3 GrovePoint(unsigned i){
+        if(i>=std::size(grovePoints_))throw std::invalid_argument("Unknown grove route point");
+        return {grovePoints_[i].x,0,grovePoints_[i].z};
+    }
     unsigned SavedCheckpoint()const{return savedCheckpoint_;}
     unsigned LoadedCheckpoint()const{return loadedCheckpoint_;}
     unsigned DamageEvents()const{return damageEvents_;}
@@ -94,11 +122,16 @@ public:
     unsigned Ticks()const{return ticks_;}
     std::string_view Failure()const{return failure_;}
     std::string_view Phase()const {
+        if(resumeSaveRoute_&&!Finished())return resumePhases_[resumeAction_];
         switch(phase_){
         case Step::Initial:return "initial";
         case Step::StartRelease:return "start-release";
         case Step::WaitStart:return "wait-start";
         case Step::WalkRoad:return "walk-road";
+        case Step::GroveWalk:
+            if(grovePoint_>=std::size(grovePoints_))return "grove-invalid";
+            std::snprintf(grovePhase_.data(),grovePhase_.size(),"grove-%u-%s-%u",grovePoint_,grovePoints_[grovePoint_].name,groveAction_);
+            return grovePhase_.data();
         case Step::ApproachShelter:return "approach-shelter";
         case Step::Crouch:return "crouch-outside";
         case Step::EnterShelter:return "enter-shelter";
@@ -168,6 +201,7 @@ public:
         observedSpeed_=std::hypot(observedVelocity.x,observedVelocity.z);
         observedVelocity_=observedVelocity;
         if(paused){Fail("production-handler-paused");Apply(desired);return;}
+        if(resumeSaveRoute_){TickResumeSave(started,motionSnapshot,disk,feedback,desired);Apply(desired);return;}
         if(combatRoute_&&session.health!=100){Fail("combat-player-damaged");Apply(desired);return;}
         if(deathRetryRoute_&&phase_!=Step::DeathRetry&&session.health!=100){Fail("death-route-early-damage");Apply(desired);return;}
         if(ticks_-progressTick_>=600){Fail("phase-stalled-600-ticks");Apply(desired);return;}
@@ -188,6 +222,8 @@ public:
             if(started)Advance(dashJumpRoute_?Step::DashJump:(motionOnly_||pivotCheckpointRoute_)?Step::Checkpoint:Step::WalkRoad);break;
         case Step::WalkRoad:
             Walk(session,cameraYaw,0.f,18.f,.18f,Step::ApproachShelter,desired);break;
+        case Step::GroveWalk:
+            TickGrove(session,cameraYaw,controllerHeight,grounded,dt,desired,motionSnapshot,feetSettled,handoffActor,handoffMotionAccepted);break;
         case Step::ApproachShelter:
             // 棚頂東緣 -5.5，角色半徑 .45，停止容差 .18；中心 -4.8 才保證整個站姿離開棚頂。
             Walk(session,cameraYaw,-4.8f,18.f,.18f,Step::Crouch,desired);break;
@@ -255,22 +291,81 @@ public:
         Apply(desired);
     }
 private:
-    enum class Step {Initial,StartRelease,WaitStart,WalkRoad,ApproachShelter,Crouch,EnterShelter,
+    enum class Step {Initial,StartRelease,WaitStart,WalkRoad,GroveWalk,ApproachShelter,Crouch,EnterShelter,
         InteractRelease,Interact,VerifyTools,LowRoofRelease,VerifyLowRoof,ExitShelter,StandRelease,VerifyStanding,BridgeRoute,Combat,Power,Completion,DeathRetry,Checkpoint,WestCliff,DashJump,Complete,Failed};
     using Keys=std::array<bool,256>;
+    bool groveRoute_{};
+    unsigned grovePoint_{},groveAction_{},groveActionTicks_{};
+    mutable std::array<char,96> grovePhase_{};
+    struct GrovePointData {float x,z;const char* name;};
+    inline static constexpr GrovePointData grovePoints_[]{
+        {0,46,"road"},{0,55.5f,"tree-corridor-east"},{-10,55.5f,"forest-approach"},
+        {-13.5f,46,"grove-east"},{-14.5f,50,"tree-close"},{-13.5f,54,"grove-northeast"},
+        {-18,55,"grove-north"},{-22.5f,54.5f,"grove-northwest"},{-22.5f,45.5f,"grove-west"},
+        {-18,43.5f,"grove-south"},{-13.5f,46,"grove-east-return"},{-10,55.5f,"forest-return"},
+        {0,55.5f,"tree-corridor-return"},{0,46,"road-return"}
+    };
+    bool resumeSaveRoute_{},resumeAccept_{},resumeExact_{},resumeAdvanced_{},resumeRejected_{};
+    unsigned resumeAction_{};
+    SaveGame resumeInitial_,resumeSaved_;
+    inline static constexpr const char* resumePhases_[]{"resume-settle","resume-F9","resume-verify","resume-advance"};
+    // 選單初始控制器尚未模擬，快照未必可存；仍逐欄比較真實觀測，不用空Serialize冒充相等。
+    static bool SameObservedSnapshot(const SaveGame& a,const SaveGame& b){
+        const auto base=[](const SaveGame& s){return SaveGame{s.session,s.encounter,s.evasion}.Serialize();};
+        const auto av=base(a);if(av.empty()||av!=base(b)||a.worldIdentity!=b.worldIdentity||bool(a.motion)!=bool(b.motion))return false;
+        if(!a.motion)return true;
+        const auto same=[](Aevrynd::Vec3 p,Aevrynd::Vec3 q){return p.x==q.x&&p.y==q.y&&p.z==q.z;};
+        const auto& p=*a.motion;const auto& q=*b.motion;const auto& c=p.controller;const auto& d=q.controller;
+        const auto& m=p.locomotion.motor;const auto& n=q.locomotion.motor;
+        return same(c.feet,d.feet)&&same(c.velocity,d.velocity)&&c.height==d.height&&c.yaw==d.yaw&&c.grounded==d.grounded&&
+            same(m.velocity,n.velocity)&&m.heading==n.heading&&m.headingReady==n.headingReady&&m.phase==n.phase&&m.supportTicks==n.supportTicks&&
+            m.tick==n.tick&&m.runFlight==n.runFlight&&m.wasDashing==n.wasDashing&&p.locomotion.remainder==q.locomotion.remainder&&
+            p.locomotion.dodgeFlight==q.locomotion.dodgeFlight&&p.explorerYaw==q.explorerYaw&&p.explorerRequestedYaw==q.explorerRequestedYaw&&
+            p.explorerPhase==q.explorerPhase&&p.explorerDistance==q.explorerDistance&&p.explorerSeconds==q.explorerSeconds;
+    }
+    void TickResumeSave(bool started,const SaveGame* live,const SaveGame* disk,std::string_view feedback,Keys& keys){
+        if(!live){Fail("resume-live-observation-missing");return;}
+        switch(resumeAction_){
+        case 0:
+            if(started||!SameObservedSnapshot(*live,*live)){Fail("resume-menu-initial-invalid");return;}
+            resumeInitial_=*live;
+            if(resumeAccept_){if(!disk||!disk->Valid()||!disk->motion||disk->evasion.remaining<=0){Fail("resume-active-save-fixture-required");return;}resumeSaved_=*disk;}
+            ++resumeAction_;return;
+        case 1:
+            if(started||!SameObservedSnapshot(resumeInitial_,*live)){Fail("resume-menu-changed-before-F9");return;}
+            keys[VK_F9]=true;++resumeAction_;return;
+        case 2:
+            if(resumeAccept_){
+                if(!started||feedback!="Loaded"||!live->Valid()||live->Serialize()!=resumeSaved_.Serialize()){
+                    Fail("resume-fresh-process-full-snapshot-mismatch");return;}
+                resumeExact_=true;++loadedCheckpoint_;++resumeAction_;return;
+            }
+            if(started||feedback!="Save unavailable"||!SameObservedSnapshot(resumeInitial_,*live)){
+                Fail("resume-rejected-save-mutated-menu-state");return;}
+            resumeRejected_=true;Advance(Step::Complete);return;
+        case 3:
+            if(!started||!live->Valid()||!disk||disk->Serialize()!=resumeSaved_.Serialize()||!CheckpointStableFields(resumeSaved_,*live)||
+                live->motion->locomotion.motor.tick<=resumeSaved_.motion->locomotion.motor.tick||
+                live->evasion.remaining>=resumeSaved_.evasion.remaining||live->encounter.phaseTime>=resumeSaved_.encounter.phaseTime||
+                Aevrynd::Dot(live->session.feet-resumeSaved_.session.feet,resumeSaved_.evasion.direction)<=0){
+                Fail("resume-restored-world-did-not-advance");return;}
+            resumeAdvanced_=true;Advance(Step::Complete);return;
+        default:Fail("resume-action-invalid");return;
+        }
+    }
     struct BridgePoint {float x,z;unsigned action;std::array<std::string_view,4> phases;};
     // 每段先回主路再沿路前進，避免直接切越林木；互動仍由正式 E 處理器執行。
     // 先取南端木材再沿主路北上，避免收完北側物資後折返南端；收集與修橋條件完全不變。
     inline static constexpr BridgePoint bridgePoints_[]{
         {0,18,0,{"bridge-road-18"}}, {0,-8,0,{"wood-1-road"}},
         {6,-8,4,{"wood-1-approach","wood-1-release","wood-1-press","wood-1-verify"}},
-        {0,-8,0,{"wood-1-return"}}, {0,6,0,{"bridge-road-6"}},
-        {2,6,1,{"supply-0-approach","supply-0-release","supply-0-press","supply-0-verify"}},
-        {0,6,0,{"supply-0-return"}}, {0,14,0,{"bridge-road-14"}},
-        {-3,14,2,{"supply-1-approach","supply-1-release","supply-1-press","supply-1-verify"}},
-        {0,14,0,{"supply-1-return"}}, {0,22,0,{"bridge-road-22"}},
-        {6,22,3,{"supply-2-approach","supply-2-release","supply-2-press","supply-2-verify"}},
-        {0,22,0,{"supply-2-return"}}, {0,26,0,{"wood-2-road"}},
+        {0,-8,0,{"wood-1-return"}}, {0,SupplyApproach(0).z,0,{OriginalEntryLayoutActive?"bridge-road-6":"pilot-supply-spur-junction"}},
+        {SupplyApproach(0).x,SupplyApproach(0).z,1,{"supply-0-approach","supply-0-release","supply-0-press","supply-0-verify"}},
+        {0,SupplyApproach(0).z,0,{"supply-0-return"}}, {0,Session::supplies[1].z,0,{"bridge-road-14"}},
+        {SupplyApproach(1).x,SupplyApproach(1).z,2,{"supply-1-approach","supply-1-release","supply-1-press","supply-1-verify"}},
+        {0,Session::supplies[1].z,0,{"supply-1-return"}}, {0,Session::supplies[2].z,0,{"bridge-road-22"}},
+        {SupplyApproach(2).x,SupplyApproach(2).z,3,{"supply-2-approach","supply-2-release","supply-2-press","supply-2-verify"}},
+        {0,Session::supplies[2].z,0,{"supply-2-return"}}, {0,26,0,{"wood-2-road"}},
         {-6,26,5,{"wood-2-approach","wood-2-release","wood-2-press","wood-2-verify"}},
         {0,26,0,{"wood-2-return"}},
         {0,28.2f,6,{"repair-bridge-approach","repair-bridge-release","repair-bridge-press","repair-bridge-verify"}},
@@ -376,6 +471,36 @@ private:
     void Apply(const Keys& keys){for(unsigned key=0;key<256;++key)controls_.SetKey(key,keys[key]);}
     void Advance(Step next){phase_=next;progressTick_=ticks_;bestDistance_=std::numeric_limits<float>::infinity();braking_=false;}
     void Fail(std::string_view reason){failure_=reason;phase_=Step::Failed;}
+    void TickGrove(const Session& session,float yaw,float height,bool grounded,float dt,Keys& keys,
+        const SaveGame* live,bool feetSettled,const Aevrynd::CharacterController3D* actor,bool motionAccepted){
+        if(!groveRoute_||grovePoint_>=std::size(grovePoints_)||groveAction_>3||!actor||!motionAccepted||!live||!live->Valid()||
+            !live->motion||live->session.Serialize()!=session.Serialize()||session.health!=100||session.collected!=7||
+            session.repairMaterials!=7||!session.bridgeRepaired||!session.guardianDefeated||std::abs(dt-1.f/60.f)>1.e-8f){Fail("grove-live-world-unavailable");return;}
+        const auto& c=live->motion->controller;const auto actual=actor->CaptureMotionState();
+        const auto same=[](Aevrynd::Vec3 a,Aevrynd::Vec3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;};
+        if(!same(c.feet,actual.feet)||!same(c.feet,session.feet)||!same(c.velocity,actual.velocity)||
+            !same(c.velocity,observedVelocity_)||c.height!=height||c.grounded!=grounded||c.yaw!=actual.yaw||
+            (std::abs(height-1.8f)>.001f&&std::abs(height-1.4f)>.001f)){Fail("grove-motion-identity-mismatch");return;}
+        const auto point=grovePoints_[grovePoint_];
+        if(groveAction_==0){
+            if(Distance(session.feet,point.x,point.z)<=.18f&&observedSpeed_<.001f){
+                if(grounded&&feetSettled){groveAction_=1;groveActionTicks_=0;BridgeProgress();}
+                return;
+            }
+            Walk(session,yaw,point.x,point.z,.18f,Step::GroveWalk,keys);return;
+        }
+        // 在真樹旁使用正常Ctrl與方向鍵環視；不修改鏡頭、角色或碰撞資料。
+        if(grovePoint_==4&&groveAction_<3){
+            if(groveAction_==1){keys[VK_CONTROL]=true;keys[VK_RIGHT]=true;
+                if(groveActionTicks_&&std::abs(height-1.4f)>.001f){Fail("grove-crouch-not-applied");return;}}
+            else {keys[VK_LEFT]=true;if(groveActionTicks_&&std::abs(height-1.8f)>.001f){Fail("grove-stand-not-restored");return;}}
+            if(++groveActionTicks_>=120){++groveAction_;groveActionTicks_=0;BridgeProgress();}
+            return;
+        }
+        if(!grounded||!feetSettled||observedSpeed_>=.001f||std::abs(height-1.8f)>.001f)return;
+        ++grovePoint_;groveAction_=groveActionTicks_=0;
+        Advance(grovePoint_==std::size(grovePoints_)?Step::Complete:Step::GroveWalk);
+    }
     void DashJumpAdvance(unsigned action){dashJumpAction_=action;BridgeProgress();}
     // 真按鍵操作的有界觀測路線；停止條件仍讀正式速度、接地及足部，不能直接煞停或轉身。
     void TickSprintFlow(float yaw,float height,bool grounded,bool feetSettled,Keys& keys){
@@ -616,7 +741,7 @@ private:
                 if(enemy->phase!=EnemyPhase::Defeated||!session.guardianDefeated||session.CurrentStage()!=Stage::Fuse){
                     Fail("combat-victory-not-confirmed");return;
                 }
-                Advance(westCliffRoute_?Step::WestCliff:powerRoute_?Step::Power:Step::Complete);return;
+                Advance(groveRoute_?Step::GroveWalk:westCliffRoute_?Step::WestCliff:powerRoute_?Step::Power:Step::Complete);return;
             }
             if(enemy->phase!=EnemyPhase::Recovery){Fail("combat-counter-outside-recovery");return;}
             CombatAdvance(1);return;
@@ -707,7 +832,8 @@ private:
         if(motionOnly_){TickMotionCheckpoint(motionSnapshot,disk,feedback,dt,keys);return;}
         if(!enemy||!evasion){Fail("checkpoint-observation-missing");return;}
         const SaveGame live=motionSnapshot?*motionSnapshot:SaveGame{session,*enemy,*evasion};
-        auto envelope=live;envelope.motion.reset();
+        // 此處只投影比較任務／敵人／短衝觀測；完整world/motion仍由live.Valid與正式載入檢查。
+        const SaveGame envelope{live.session,live.encounter,live.evasion};
         if(envelope.Serialize()!=SaveGame{session,*enemy,*evasion}.Serialize()||
            (live.motion&&live.motion->controller.height!=height)){
             Fail("checkpoint-motion-observation-mismatch");return;
@@ -797,7 +923,7 @@ private:
            pivotRound_>1||checkpointAction_>=std::size(pivotPhases_)||bridgeRoute_||combatRoute_||motionOnly_||
            session.health!=100||session.CurrentStage()!=Stage::Supplies||session.collected||session.repairMaterials||session.bridgeRepaired||
            std::abs(height-1.8f)>=.001f||evasion->remaining!=0||evasion->cooldown!=0){Fail("pivot-save-live-invalid");return;}
-        auto envelope=*live;envelope.motion.reset();
+        const SaveGame envelope{live->session,live->encounter,live->evasion};
         const auto& p=*live->motion;const auto& c=p.controller;const auto& m=p.locomotion.motor;
         if(envelope.Serialize()!=SaveGame{session,*enemy,*evasion}.Serialize()||c.grounded!=grounded||c.height!=height||
            !PivotSamePoint(c.velocity,observedVelocity_)||p.locomotion.dodgeFlight||m.runFlight||m.wasDashing){Fail("pivot-save-observation-mismatch");return;}

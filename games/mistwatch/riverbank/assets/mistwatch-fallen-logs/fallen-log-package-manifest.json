@@ -1,0 +1,295 @@
+{
+  "schema": "mistwatch.fallen-log.portable-package.1",
+  "profile": "scanned-straight-v1",
+  "asset_id": "dead_tree_trunk",
+  "provider": "Poly Haven",
+  "license": "CC0-1.0",
+  "official_page": "https://polyhaven.com/a/dead_tree_trunk",
+  "official_api": "https://api.polyhaven.com/files/dead_tree_trunk",
+  "official_license": "https://polyhaven.com/license",
+  "cc0_reference": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "path_base": "source-package-root",
+  "runtime_relative_asset_directory": "assets/mistwatch-fallen-logs",
+  "files": [
+    {
+      "path": "meshes/dead-tree-trunk-lod2-node0-mesh0-primitive0-materialnone-material-none.aemesh",
+      "bytes": 434012,
+      "sha256": "B7F6A05BF928787082DEA92A0051557496E45894A9C2B1A0AF1E51110ABD0D46",
+      "format": "AEMESH-v1",
+      "vertices": 8956,
+      "indices": 45807,
+      "triangles": 15269,
+      "lod": 2,
+      "node": 0,
+      "mesh": 0,
+      "primitive": 0,
+      "material_index": -1,
+      "winding_reversed": true,
+      "has_normals": true,
+      "has_uv": true,
+      "source_texcoord": 0
+    },
+    {
+      "path": "materials/slot-0-base.dds",
+      "bytes": 5592580,
+      "sha256": "DA9DB4EDE331A22F4E47BA2EAB34CFCFB2C6979F6F180007E28DFC61EA23410B",
+      "channel": "base",
+      "width": 2048,
+      "height": 2048,
+      "mips": 12,
+      "dxgi_format": 99,
+      "resource_dimension": 3,
+      "array_size": 1,
+      "color_space": "sRGB"
+    },
+    {
+      "path": "materials/slot-0-arm.dds",
+      "bytes": 5592580,
+      "sha256": "147D81E27AFEAA1D1AFC6E88D70D3814912A7D6235110CA4935EDF6FFB5838FE",
+      "channel": "arm",
+      "width": 2048,
+      "height": 2048,
+      "mips": 12,
+      "dxgi_format": 98,
+      "resource_dimension": 3,
+      "array_size": 1,
+      "color_space": "linear"
+    },
+    {
+      "path": "materials/slot-0-normal.dds",
+      "bytes": 5592580,
+      "sha256": "F2F8EBD0A4C52C543047FB8131AD42391374313D595CD0901DDF5136C2B01354",
+      "channel": "normal",
+      "width": 2048,
+      "height": 2048,
+      "mips": 12,
+      "dxgi_format": 83,
+      "resource_dimension": 3,
+      "array_size": 1,
+      "color_space": "linear"
+    }
+  ],
+  "runtime_copy_paths": [
+    "meshes/dead-tree-trunk-lod2-node0-mesh0-primitive0-materialnone-material-none.aemesh",
+    "materials/slot-0-base.dds",
+    "materials/slot-0-arm.dds",
+    "materials/slot-0-normal.dds",
+    "fallen-log-package-manifest.json",
+    "LICENSE.md"
+  ],
+  "runtime_file_count": 6,
+  "license_notice": "LICENSE.md",
+  "official_source_files": [
+    {
+      "path": "source/dead-tree-trunk/dead_tree_trunk_2k.gltf",
+      "bytes": 2812,
+      "sha256": "63133E2CD4C8C9D08114EF158284403BA4FAD802B7F1162F73A8323B509A1B53",
+      "official_download_url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/dead_tree_trunk/dead_tree_trunk_2k.gltf",
+      "official_md5": "0101cc9b4167fee9872c4153602c1179"
+    },
+    {
+      "path": "source/dead-tree-trunk/textures/dead_tree_trunk_diff_2k.jpg",
+      "bytes": 2580084,
+      "sha256": "57B3F04A2B9B1017ABFEFBBCA1B5D4F5421960FEFD964A0B9DD4036BE4D58D0C",
+      "official_download_url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/dead_tree_trunk/dead_tree_trunk_diff_2k.jpg",
+      "official_md5": "c75e5dc80be2e5d4bc873db388e2093c"
+    },
+    {
+      "path": "source/dead-tree-trunk/textures/dead_tree_trunk_arm_2k.jpg",
+      "bytes": 2608763,
+      "sha256": "F244CFBFAB760D877980065593710F74947BB70EAC9D47D9A189537D23BA1F6B",
+      "official_download_url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/dead_tree_trunk/dead_tree_trunk_arm_2k.jpg",
+      "official_md5": "908ade4a274dd887658eb055415ad61b"
+    },
+    {
+      "path": "source/dead-tree-trunk/textures/dead_tree_trunk_nor_gl_2k.jpg",
+      "bytes": 3804907,
+      "sha256": "9447959386AA3EE0E3552BD095C3DBBCB13C58CC6A87CB4B51CC4517B695040C",
+      "official_download_url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/dead_tree_trunk/dead_tree_trunk_nor_gl_2k.jpg",
+      "official_md5": "c09438c886b3327dca4f61b758dbd570"
+    },
+    {
+      "path": "source/dead-tree-trunk/dead_tree_trunk.bin",
+      "bytes": 2293788,
+      "sha256": "C1AC6B3195246E8647A28EEE2FBFDD4712A045C7CF2DCB4F5ABCC2D40A446CA6",
+      "official_download_url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/dead_tree_trunk/dead_tree_trunk.bin",
+      "official_md5": "2a2b05e67a5c51fba5fc7591a7857957"
+    }
+  ],
+  "derived_source_files": [
+    {
+      "path": "source/dead-tree-trunk/dead-tree-trunk-source-full.glb",
+      "bytes": 2295508,
+      "sha256": "7515D1A4CA08CF7C50C6A12005A91B7A9987E8FBFE8E179D91A019D7819DA2E6"
+    },
+    {
+      "path": "source/dead-tree-trunk/dead-tree-trunk.materials.json",
+      "bytes": 413,
+      "sha256": "8EA01622B3C382BF48FDB55D73BE530DE35993F0F4348C6B23F9ED4A1D1896C1"
+    }
+  ],
+  "geometry_derivation": {
+    "source_gltf": "source/dead-tree-trunk/dead_tree_trunk_2k.gltf",
+    "original_source_vertices": 52593,
+    "original_source_indices": 305406,
+    "original_source_triangles": 101802,
+    "lod": 2,
+    "requested_ratio": 0.15,
+    "locally_generated_not_official_lod_download": true,
+    "original_gltf_binary_and_images_unchanged": true,
+    "uv_transform": {
+      "offset": [
+        0,
+        0
+      ],
+      "rotation": 0,
+      "scale": [
+        1,
+        1
+      ]
+    },
+    "aemesh_coordinate_conversion": "Z reflection with corresponding winding reversal",
+    "lod_script_clears_materials": true,
+    "lod2_geometry_material_index": -1
+  },
+  "binding": {
+    "original_gltf": "source/dead-tree-trunk/dead_tree_trunk_2k.gltf",
+    "original_node_mesh_primitive_material": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "lod2_node_mesh_primitive_material": [
+      0,
+      0,
+      0,
+      -1
+    ],
+    "explicit_external_mapping": "Unique LOD2 materialnone/-1 primitive -> original glTF material0 -> cooked slot-0; the LOD2 geometry itself contains no material0 binding.",
+    "original_texture_indices": {
+      "normal": 0,
+      "base_color": 1,
+      "metallic_roughness": 2
+    },
+    "base_color_factor": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "base_color_factor_source": "glTF default; field absent",
+    "roughness_factor": 1,
+    "roughness_factor_source": "glTF default; field absent",
+    "metallic_factor": 0,
+    "double_sided": true,
+    "normal_scale": 1,
+    "normal_scale_source": "glTF default; field absent",
+    "emissive": 0,
+    "surface_encoding": "MaterialSurfaceMapEncoding3D::PackedOrm",
+    "manual_arm_channel_mapping": {
+      "R": "AO",
+      "G": "roughness",
+      "B": "metallic"
+    },
+    "original_gltf_has_occlusion_texture": false,
+    "ao_binding_is_explicit_runtime_extension": true,
+    "source_identical_ao_binding_claimed": false,
+    "normal_conversion": "OpenGL green inverted to DirectX",
+    "normal_inversion_maximum_error": 0,
+    "arm_channel_preservation_maximum_error": 0,
+    "conversion_evidence": "provenance/material-bake-receipt.json",
+    "runtime_material_id": "fallen-log",
+    "maximum_texture_resolution": 2048,
+    "use_uv": true,
+    "texture_scale": 1,
+    "pose_ownership": "FallenLogProfile source content; portable assets do not perform runtime seating or require offline support code."
+  },
+  "cook_recipe": {
+    "instructions": "recipes/CookRecipe.json",
+    "files": [
+      {
+        "path": "recipes/build-static-mesh-lods.py",
+        "bytes": 6674,
+        "sha256": "C163DB476E94F2BE3EBE94B9F77009D7B0A364A00382C3D841A018CEB8662C91"
+      },
+      {
+        "path": "recipes/convert-glb-to-aemesh.py",
+        "bytes": 28473,
+        "sha256": "33BC28F796F30CA5CCBD51B5022579FB994B16E60799A6D7ED9FA5FD66AA0C61"
+      },
+      {
+        "path": "recipes/bake-photoreal-materials.py",
+        "bytes": 30106,
+        "sha256": "90E648ECE087DA2A8DAAADC12756492F5F3F9E3ABCDD4C08337B0CF03D2366BC"
+      },
+      {
+        "path": "recipes/bake-photoreal-materials-hidden.py",
+        "bytes": 30149,
+        "sha256": "7ACFEBE1C50BFFE4572146307733AF87E0C55D41375798A7E894753D0AB3D5A0"
+      },
+      {
+        "path": "recipes/material-source-manifest.json",
+        "bytes": 1817,
+        "sha256": "81389E58F0DEC11BB8E7B2911524DC52D5494CAF061F5E53CDF571D0DC6EC669"
+      }
+    ],
+    "runtime_required": false,
+    "recook_executed_in_this_package": false,
+    "hidden_baker_original_inverse": {
+      "original": "recipes/bake-photoreal-materials.py",
+      "actual": "recipes/bake-photoreal-materials-hidden.py",
+      "only_difference": "one subprocess.Popen creationflags=subprocess.CREATE_NO_WINDOW insertion",
+      "whole_original_inverse_verified": true
+    }
+  },
+  "archival_provenance": {
+    "files": [
+      {
+        "path": "provenance/m1950-source-root-receipt.json",
+        "bytes": 6411,
+        "sha256": "13A4390A21D75F4D790F31FD6BF0B223C9E97C63AF62A522443929886707E5F2"
+      },
+      {
+        "path": "provenance/m1958-material-root-receipt.json",
+        "bytes": 8144,
+        "sha256": "8BD44D8AC75214DAF5182E210E776A245B527D3B75BDBB3EC8967BB28ABE6BA2"
+      },
+      {
+        "path": "provenance/m1960-lod-root-receipt.json",
+        "bytes": 7520,
+        "sha256": "AE56919F1BDD332FD86F2FAE425B9AC89918AB41BB2438E6A77638ACEFCD05BD"
+      },
+      {
+        "path": "provenance/material-bake-receipt.json",
+        "bytes": 4373,
+        "sha256": "23E20060291A456EFD0B2AF0DC9FAACC83693DA500A49F0529589B387D059684"
+      },
+      {
+        "path": "provenance/mesh-receipt.json",
+        "bytes": 1737,
+        "sha256": "4E59D8E062A5FF81CAFB7011E520F18DD16AF1FAD6917CCFB7957DA97D39B263"
+      },
+      {
+        "path": "provenance/lod-receipt.json",
+        "bytes": 1839,
+        "sha256": "F7E19205B51C85BD6D2D3721AD02688153DD23D5B22C300E8E7094F29C76B182"
+      }
+    ],
+    "runtime_required": false,
+    "note": "Immutable historical receipts may retain original absolute execution paths. They are archival observations only: no runtime, recipe argument or source lookup depends on those historical paths."
+  },
+  "scope": {
+    "status": "portable-payload-and-source-package-prepared",
+    "fresh_recook_executed": false,
+    "fresh_build_executed": false,
+    "native_executed": false,
+    "gpu_executed": false,
+    "new_art_accepted": false,
+    "game_adopted": false,
+    "formal_integration_qualified": false,
+    "legacy_package_replaced": false,
+    "seat_or_full_world_claim_added": false,
+    "scope_note": "This package only transports the already cooked four payloads and their recorded source/recipe/license provenance. Root must freshly qualify formal integration; historical receipts are not new art/native/full49 proof."
+  }
+}

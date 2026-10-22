@@ -1,6 +1,7 @@
 #pragma once
 #include "MistwatchShrubCanopy.h"
 #include "MistwatchGroupedCanopyVolume.h"
+#include "MistwatchImmutableVolumeBounds.h"
 #include "MistwatchShrubComposition.h"
 #include <Aevrynd/FeasibleCircleArcs2D.h>
 #include <algorithm>
@@ -115,33 +116,40 @@ class ValidatedShrubArcPrefix final {
         std::array<FernColonyAsset,4> fernAssets;
         bool fullSolidVolumes{};
         std::shared_ptr<const GroupedCanopyVolume::ValidatedWood> groupedWood;
+        EntryLayout layout;
         ShrubCanopyResult original;
         State(const Aevrynd::Mesh3D& l,const Aevrynd::HeightField3D& t,std::span<const Aevrynd::BoxCollider3D> s,
             const ForestUnderstory& u,const ForestCoverResult& g,const FernColonyResult& c,
             const std::array<FernColonyAsset,4>& f,std::span<const Aevrynd::BoxCollider3D> w,bool full,
-            const GroupedCanopyVolume::ValidatedWood* grouped,ShrubCanopyResult result)
+            const GroupedCanopyVolume::ValidatedWood* grouped,ShrubCanopyResult result,const EntryLayout& sourceLayout)
             :leaves(l),terrain(t),solids(s.begin(),s.end()),wood(w.begin(),w.end()),understory(u),grass(g),
             colonies(c),fernAssets(f),fullSolidVolumes(full),
             groupedWood(grouped?std::make_shared<const GroupedCanopyVolume::ValidatedWood>(*grouped):nullptr),
-            original(std::move(result)){}
+            layout(sourceLayout),original(std::move(result)){}
     };
     std::shared_ptr<const State> state_;
+    static bool SameLayout(const EntryLayout& a,const EntryLayout& b){
+        if(a.id!=b.id)return false;
+        for(unsigned id=0;id<6;++id)if(!ShrubArcDetail::Same(a.Site(static_cast<EntrySiteId>(id)),b.Site(static_cast<EntrySiteId>(id))))return false;
+        return true;
+    }
 public:
     ValidatedShrubArcPrefix()=default;
     [[nodiscard]] static ValidatedShrubArcPrefix CreateOriginal64(const Aevrynd::Mesh3D& leaves,
         const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> solids,
         const ForestUnderstory& understory,const ForestCoverResult& grass,const FernColonyResult& colonies,
         const std::array<FernColonyAsset,4>& fernAssets,std::span<const Aevrynd::BoxCollider3D> canopyWood={},
-        bool fullSolidVolumes=false,const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr){
+        bool fullSolidVolumes=false,const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr,EntryLayoutId layoutId=ActiveEntryLayout.id){
+        const auto& layout=ResolveEntryLayout(layoutId);
         auto original=CreateShrubCanopy(leaves,terrain,solids,understory,grass,colonies,fernAssets,
-            64,canopyWood,fullSolidVolumes,nullptr,groupedWood);
+            64,canopyWood,fullSolidVolumes,nullptr,groupedWood,layout);
         if(!original.reachedBudget||original.plants.size()!=64||original.attempted!=64+original.rejectedClearance+
             original.rejectedTerrain+original.rejectedVegetation||
             ShrubCompositionDetail::PlacementFingerprint(original)!=original.fingerprint)
             throw std::invalid_argument("SHRUB_ARC_PREFIX_ORIGINAL_64_REQUIRED");
         ValidatedShrubArcPrefix token;
         token.state_=std::make_shared<const State>(leaves,terrain,solids,understory,grass,colonies,fernAssets,
-            canopyWood,fullSolidVolumes,groupedWood,std::move(original));
+            canopyWood,fullSolidVolumes,groupedWood,std::move(original),layout);
         return token;
     }
     [[nodiscard]] const ShrubCanopyResult& Original()const{
@@ -152,10 +160,13 @@ public:
         const Aevrynd::HeightField3D& terrain,std::span<const Aevrynd::BoxCollider3D> solids,
         const ForestUnderstory& understory,const ForestCoverResult& grass,const FernColonyResult& colonies,
         const std::array<FernColonyAsset,4>& fernAssets,std::span<const Aevrynd::BoxCollider3D> canopyWood={},
-        bool fullSolidVolumes=false,const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr)const{
+        bool fullSolidVolumes=false,const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr,EntryLayoutId layoutId=ActiveEntryLayout.id)const{
         const auto& original=Original();const auto& s=*state_;
         if(!ShrubCompositionDetail::Same(original,original64))
             throw std::invalid_argument("SHRUB_ARC_PREFIX_BITS_CHANGED");
+        // 擴增不是重新作者；即使人口剛好相同，也不能跨配置沿用原64株。
+        if(!SameLayout(s.layout,ResolveEntryLayout(layoutId)))
+            throw std::invalid_argument("SHRUB_ARC_PREFIX_LAYOUT_CHANGED");
         if(s.fullSolidVolumes!=fullSolidVolumes||!ShrubArcDetail::Same(s.leaves,leaves)||
             !ShrubArcDetail::Same(s.terrain,terrain)||!ShrubArcDetail::SameRange<Aevrynd::BoxCollider3D>(s.solids,solids)||
             !ShrubArcDetail::SameRange<Aevrynd::BoxCollider3D>(s.wood,canopyWood)||
@@ -173,7 +184,7 @@ inline ShrubCanopyResult Continue(const Aevrynd::HeightField3D& terrain,
     const ForestUnderstory& understory,const ForestCoverResult& grass,const FernColonyResult& colonies,
     const std::array<FernColonyAsset,4>& fernAssets,unsigned target,ShrubCanopyResult result,
     ShrubArcDiagnostics& diagnostics,std::span<const Aevrynd::BoxCollider3D> canopyWood,
-    bool fullSolidVolumes,ShrubArcTrace* trace,const GroupedCanopyVolume::ValidatedWood* groupedWood){
+    bool fullSolidVolumes,ShrubArcTrace* trace,const GroupedCanopyVolume::ValidatedWood* groupedWood,const EntryLayout& layout){
     namespace D=ShrubArcDensityDetail;namespace C=ShrubArcDetail;namespace A=Aevrynd::FeasibleCircleArcs2D;
     diagnostics.prefixAttempts=result.attempted;
     if(target<=64)return result;
@@ -231,15 +242,17 @@ inline ShrubCanopyResult Continue(const Aevrynd::HeightField3D& terrain,
     }
     diagnostics.generated=static_cast<unsigned>(proposals.size());
     C::Need(diagnostics.prefixAttempts+diagnostics.generated<=D::MaximumAttempts,"SHRUB_ARC_GENERATED_BUDGET");
+    CanopyVolume::ImmutableVolumeBoundsCache solidBounds(solids);
+    CanopyVolume::ImmutableVolumeBoundsCache canopyWoodBounds(canopyWood);
     for(const auto& p:proposals){if(result.plants.size()==target)break;budget.Time();++result.attempted;++diagnostics.evaluated;
         const float x=static_cast<float>(p.root.x),z=static_cast<float>(p.root.z);
         if(!C::InDomain(x,z)){++result.rejectedClearance;continue;}
         const Aevrynd::Vec3 root{x,terrain.SampleHeight(x,z),z};const auto& author=result.variants[p.variant];
         C::Need(p.radius==author.radius*p.scale,"SHRUB_ARC_AUTHOR_RADIUS");
-        if(!ForestCoverClearance(root,p.radius,solids)){++result.rejectedClearance;continue;}
+        if(!ForestCoverClearance(root,p.radius,solids,layout)){++result.rejectedClearance;continue;}
         const CanopyVolume::PlantVolume volume{root,CanopyVolume::ConservativeLocalVolume(author.radius,author.minimumY,author.maximumY),p.scale,{}};
-        if(fullSolidVolumes&&!solids.empty()&&!CanopyVolume::ClearsCanopyWood(volume,solids)){++result.rejectedClearance;continue;}
-        if(!canopyWood.empty()&&!CanopyVolume::ClearsCanopyWood(volume,canopyWood)){++result.rejectedClearance;continue;}
+        if(fullSolidVolumes&&!solids.empty()&&!solidBounds.Clears(volume)){++result.rejectedClearance;continue;}
+        if(!canopyWood.empty()&&!canopyWoodBounds.Clears(volume)){++result.rejectedClearance;continue;}
         if(groupedWood&&!groupedWood->Clears(volume)){++result.rejectedClearance;continue;}
         if(!ForestCoverFootprint(terrain,root,p.radius,{})){++result.rejectedTerrain;continue;}
         bool occupied=false;
@@ -279,15 +292,16 @@ inline ShrubCanopyResult CreateShrubArcDensity(const Aevrynd::Mesh3D& leaves,
     const ForestUnderstory& understory,const ForestCoverResult& grass,const FernColonyResult& colonies,
     const std::array<FernColonyAsset,4>& fernAssets,unsigned target=64,
     std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false,ShrubArcTrace* trace=nullptr,
-    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr){
+    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr,EntryLayoutId layoutId=ActiveEntryLayout.id){
     if(trace&&!trace->candidates.empty())throw std::invalid_argument("SHRUB_GAP_TRACE_NOT_EMPTY");
+    const auto& layout=ResolveEntryLayout(layoutId);
     LastShrubArcDiagnostics={};
     // 舊入口保持原驗證順序；非法 129、NaN 與尺寸不得由新分支截斷。
     const unsigned prefixTarget=target>128?target:(std::min)(target,64u);
     auto result=CreateShrubCanopy(leaves,terrain,solids,understory,grass,colonies,fernAssets,
-        prefixTarget,canopyWood,fullSolidVolumes,nullptr,groupedWood);
+        prefixTarget,canopyWood,fullSolidVolumes,nullptr,groupedWood,layout);
     return ShrubArcDetail::Continue(terrain,solids,understory,grass,colonies,fernAssets,target,std::move(result),
-        LastShrubArcDiagnostics,canopyWood,fullSolidVolumes,trace,groupedWood);
+        LastShrubArcDiagnostics,canopyWood,fullSolidVolumes,trace,groupedWood,layout);
 }
 inline ShrubCanopyResult CreateShrubArcDensityFromValidatedPrefix(const ValidatedShrubArcPrefix& token,
     const ShrubCanopyResult& original64,const Aevrynd::Mesh3D& leaves,
@@ -295,13 +309,13 @@ inline ShrubCanopyResult CreateShrubArcDensityFromValidatedPrefix(const Validate
     const ForestUnderstory& understory,const ForestCoverResult& grass,const FernColonyResult& colonies,
     const std::array<FernColonyAsset,4>& fernAssets,unsigned target=128,
     std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false,ShrubArcTrace* trace=nullptr,
-    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr){
+    const GroupedCanopyVolume::ValidatedWood* groupedWood=nullptr,EntryLayoutId layoutId=ActiveEntryLayout.id){
     if(trace&&!trace->candidates.empty())throw std::invalid_argument("SHRUB_GAP_TRACE_NOT_EMPTY");
     LastShrubArcDiagnostics={};
     token.Validate(original64,leaves,terrain,solids,understory,grass,colonies,fernAssets,
-        canopyWood,fullSolidVolumes,groupedWood);
+        canopyWood,fullSolidVolumes,groupedWood,layoutId);
     if(target<64||target>128)throw std::invalid_argument("SHRUB_ARC_PREFIX_TARGET");
     return ShrubArcDetail::Continue(terrain,solids,understory,grass,colonies,fernAssets,target,original64,
-        LastShrubArcDiagnostics,canopyWood,fullSolidVolumes,trace,groupedWood);
+        LastShrubArcDiagnostics,canopyWood,fullSolidVolumes,trace,groupedWood,ResolveEntryLayout(layoutId));
 }
 }

@@ -1,0 +1,131 @@
+{
+  "status": "OFFICIAL_JACARANDA_SOURCE_ACQUIRED_NOT_COOKED",
+  "started_utc": "2026-10-21T22:15:45.051105+00:00",
+  "original_round_start": "2026-10-22T06:02:19+08:00",
+  "preview_deadline": "2026-10-22T06:32:19+08:00",
+  "prior_failure": "E:\\AevryndEvidence\\m4108-mature-canopy-study\\first-geometry-divergence.json",
+  "files": [
+    {
+      "name": "jacaranda_tree_1k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/jacaranda_tree/jacaranda_tree_1k.gltf",
+      "official_md5": "8fed93ff7cbdaac0f5c199ef1fd0f694",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/jacaranda_tree_1k.gltf",
+        "bytes": 9526,
+        "sha256": "BA4AA8AB4C3E3741CE3699604D6EC1607CD6B126AE2D32ABBCC0D98E8EDB3BE4"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_branches_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_branches_nor_gl_1k.jpg",
+      "official_md5": "789084affb01f4a22290a848558f5e12",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_branches_nor_gl_1k.jpg",
+        "bytes": 819101,
+        "sha256": "2D67393BA76A0F49CF965FA0C99D8C16268E71E87B1203D35539BFDB971A514E"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_branches_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_branches_diff_1k.jpg",
+      "official_md5": "e5bacbfd3e7ce397bdd34b0bac6669ca",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_branches_diff_1k.jpg",
+        "bytes": 531544,
+        "sha256": "5A4FE735F0C346CEC83B6B444A0169FC14D2B31BBB7B26E26B1B6C726B6E06F6"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_branches_arm_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_branches_arm_1k.jpg",
+      "official_md5": "5b6f5b3838f4a8f60fea14fa3a3fef9f",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_branches_arm_1k.jpg",
+        "bytes": 484806,
+        "sha256": "9E3F82263247CE4F619692CEA4C4F6FE9936FF465A86623481849062642C7D05"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_trunk_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_trunk_nor_gl_1k.jpg",
+      "official_md5": "af34d3a054b498f153e4793f7520a630",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_trunk_nor_gl_1k.jpg",
+        "bytes": 1096100,
+        "sha256": "B2AD4E5DAF8EC3FB87BA6C5F38E6A6924C9A6ADEBEC20389F503E42DA5D04587"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_trunk_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_trunk_diff_1k.jpg",
+      "official_md5": "c3edc2e76157023e7a5c35cd13867498",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_trunk_diff_1k.jpg",
+        "bytes": 896938,
+        "sha256": "E5582FBA664A9255252D1EE8088F75AD557F07360AA7F4513F2B2F1577E90BE9"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_trunk_arm_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_trunk_arm_1k.jpg",
+      "official_md5": "7232b4514e9412725a6a8e65a69f4ed4",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_trunk_arm_1k.jpg",
+        "bytes": 895975,
+        "sha256": "4A12E238CF3B8BA860626E99BF128E56AB41642FA4C2502A77DF41A338689B78"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_leaves_nor_gl_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_leaves_nor_gl_1k.jpg",
+      "official_md5": "7cbd82c0dd4b8c8a4ab314338f50404d",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_leaves_nor_gl_1k.jpg",
+        "bytes": 700843,
+        "sha256": "61520BE2529FFE8E3D93D4361892134833BB4657117E121749089769067914C1"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_leaves_diff_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_leaves_diff_1k.jpg",
+      "official_md5": "8ae91737f39567629768a255817d80be",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_leaves_diff_1k.jpg",
+        "bytes": 533896,
+        "sha256": "6FE80C1F514EF690CCCEFB90B7E559FBD1AA9C8935FDC02523CC8AB83C22F7C2"
+      }
+    },
+    {
+      "name": "textures/jacaranda_tree_leaves_arm_1k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/jacaranda_tree/jacaranda_tree_leaves_arm_1k.jpg",
+      "official_md5": "fabee050680fd173032acf003ef61191",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/textures/jacaranda_tree_leaves_arm_1k.jpg",
+        "bytes": 332762,
+        "sha256": "577EAB0A07279FB4AFD24522E85E0F188058C88DB4B35EB0B330005B0D745B7A"
+      }
+    },
+    {
+      "name": "jacaranda_tree.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/jacaranda_tree/jacaranda_tree.bin",
+      "official_md5": "ae25eacd5e67ea2e9bbbaa2854b6ed99",
+      "actual": {
+        "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/jacaranda_tree.bin",
+        "bytes": 208307808,
+        "sha256": "4310D1E25DB8AC63D6D345AFC8154A1DF7E85B301DFAD228BE66D85D6C52BBFC"
+      }
+    }
+  ],
+  "ended_utc": "2026-10-21T22:15:50.705860+00:00",
+  "official_api": {
+    "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/official-files-api.json",
+    "bytes": 84958,
+    "sha256": "1C30EBC67D9DB03CD4B919F6402F02FAC1E1A9EACD137512E23D5FC437DCD335"
+  },
+  "info": {
+    "path": "E:/AevryndEvidence/m4108-mature-canopy-study/jacaranda-source/official-info-api.json",
+    "bytes": 1177,
+    "sha256": "CDE984A2224E395D4CEA3933772532323B337C52ADEE44ECA38AE65FDA0796FD"
+  },
+  "rights": "Poly Haven asset CC0-1.0; official asset/license pages rechecked2026-10-22. No website preview images copied. Method1 geometric failure retained; mature source is changed construction premise, not a passed deformation."
+}

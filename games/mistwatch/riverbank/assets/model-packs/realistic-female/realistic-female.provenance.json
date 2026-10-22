@@ -1,0 +1,95 @@
+{
+  "schema": "aevrynd.character-asset-provenance",
+  "version": 1,
+  "assetId": "realistic-female",
+  "canonicalRuntimePath": "assets/model-packs/realistic-female/realistic-female.aeskin",
+  "generator": {
+    "id": "tools/blender/create-cc0-f2-m2-characters.py",
+    "version": "blender-5.2-readonly-hand-retrofit-v1",
+    "options": [
+      "GLTF_SEPARATE",
+      "use_selection=true",
+      "export_animations=true",
+      "export_skins=true",
+      "export_tangents=true",
+      "export_yup=true",
+      "export_apply=false"
+    ]
+  },
+  "converter": {
+    "id": "tools/convert-gltf-to-aeskin-v2.ps1",
+    "version": "aeskin-v2",
+    "options": [
+      "Scale=1",
+      "MaximumVertices=1000000",
+      "MaximumIndices=3000000",
+      "MaximumJoints=256",
+      "MaximumPrimitives=1024",
+      "MaximumAnimations=128"
+    ]
+  },
+  "artifacts": [
+    {
+      "identity": "realistic-female-source-gltf",
+      "role": "source-gltf",
+      "path": "source/realistic-female.gltf",
+      "bytes": 106478,
+      "sha256": "c7fb36382f6460e38613e501015250473b15b960022c64a335178c1a565c95ed"
+    },
+    {
+      "identity": "realistic-female-source-bin",
+      "role": "source-bin",
+      "path": "source/realistic-female.bin",
+      "bytes": 1944160,
+      "sha256": "dc4defdacdd1904c4117cbc615fe48c6a357974f2c7507f17aa87700fb64a970"
+    },
+    {
+      "identity": "realistic-female-cooked-aeskin",
+      "role": "cooked-aeskin",
+      "path": "realistic-female.aeskin",
+      "bytes": 1480232,
+      "sha256": "1554edd3215f2dd697288b1189b24a2247637a61d594ac60b4589ff45f082c07"
+    }
+  ],
+  "skeleton": {
+    "identity": "F2FemaleRig",
+    "jointCount": 39
+  },
+  "materials": [
+    "SkinWarmPBR",
+    "LipsRosePBR",
+    "EyeScleraPBR",
+    "IrisHazelPBR",
+    "HairChestnutPBR",
+    "DressEmeraldPBR",
+    "DressTrimPBR",
+    "BootLeatherPBR",
+    "AccessoryGoldPBR"
+  ],
+  "lods": [
+    {
+      "identity": "lod0",
+      "level": 0,
+      "source": "cooked-aeskin"
+    }
+  ],
+  "animations": [
+    {
+      "identity": "IdleBreathing",
+      "source": "authored",
+      "clip": "IdleBreathing"
+    },
+    {
+      "identity": "GripPrototype",
+      "source": "authored",
+      "clip": "GripPrototype"
+    }
+  ],
+  "runtimeFallbacks": [
+    {
+      "identity": "procedural-locomotion",
+      "kind": "runtime-procedural",
+      "authored": false
+    }
+  ]
+}

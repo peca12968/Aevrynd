@@ -4,12 +4,19 @@
 #include "MistwatchWorld.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 namespace Mistwatch {
 struct OrbitCamera {
     float yaw{}, pitch{.3f}, distance{6.f};
-    void Update(Aevrynd::Vec2 drag,float wheel,float keyboard,float dt,bool recenter=false,float heading=0) {
+    void Update(Aevrynd::Vec2 drag,float wheel,float keyboard,float dt,bool recenter=false,float heading=0,
+        float sensitivity=1.f,bool invertVertical=false) {
         if(!std::isfinite(drag.x)||!std::isfinite(drag.y)||!std::isfinite(wheel)||
-           !std::isfinite(keyboard)||!std::isfinite(dt)||dt<0||(recenter&&!std::isfinite(heading))) return;
+           !std::isfinite(keyboard)||!std::isfinite(dt)||dt<0||(recenter&&!std::isfinite(heading))||
+           !std::isfinite(sensitivity)||sensitivity<.25f||sensitivity>2.f) return;
+        // 只調整滑鼠位移；鍵盤、縮放、回正與碰撞解算仍使用原路徑。
+        const double x=double(drag.x)*sensitivity,y=double(drag.y)*sensitivity*(invertVertical?-1.:1.);
+        if(std::abs(x)>(std::numeric_limits<float>::max)()||std::abs(y)>(std::numeric_limits<float>::max)())return;
+        drag={float(x),float(y)};
         if(recenter&&drag.x==0&&drag.y==0&&keyboard==0)yaw=std::remainder(heading,6.2831853f);
         else yaw=std::remainder(yaw-drag.x*.005f+keyboard*(std::min)(dt,.1f)*1.5f,6.2831853f);
         pitch=std::clamp(pitch+drag.y*.004f,-.15f,1.1f);

@@ -1,4 +1,5 @@
 #include "OcclusionDither.hlsli"
+#include "OcclusionWindow.hlsli"
 #include "PhaseSkyDiffuse.hlsli"
 #include "TerrainRockVariation.hlsli"
 
@@ -35,6 +36,8 @@ cbuffer Scene : register(b0)
     float4 environmentObjectFill;
     float4 terrainParallaxParameters;
     float4 terrainParallaxView;
+    float4 occlusionWindowEllipse;
+    float4 occlusionWindowParameters;
 };
 
 struct PointLightGpu3D
@@ -67,6 +70,8 @@ struct MotionInstanceInput
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
     float4 previousRow0 : PREVIOUS0;
     float4 previousRow1 : PREVIOUS1;
     float4 previousRow2 : PREVIOUS2;
@@ -82,6 +87,9 @@ struct MotionVertexOutput
     nointerpolation float lodCoverage : TEXCOORD2;
     nointerpolation uint lodSeed : TEXCOORD3;
     nointerpolation uint lodInvert : TEXCOORD4;
+    float3 occlusionCoordinate : TEXCOORD5;
+    nointerpolation float occlusionOpacity : TEXCOORD6;
+    nointerpolation uint2 occlusionSeeds : TEXCOORD7;
 };
 
 void ClipMotionLod(float4 position, float coverage, uint seed, uint invert)
@@ -106,6 +114,9 @@ MotionVertexOutput VelocityWorldVertexMain(MotionWorldInput input)
     output.lodCoverage = 1.0;
     output.lodSeed = 0u;
     output.lodInvert = 0u;
+    output.occlusionCoordinate=input.position;
+    output.occlusionOpacity=1.0;
+    output.occlusionSeeds=uint2(0u,0u);
     return output;
 }
 
@@ -123,11 +134,22 @@ MotionVertexOutput VelocityInstancedVertexMain(MotionInstanceInput input)
     output.lodInvert = (input.textureData >> 12) & 1u;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = StaticLodSeed(input.textureData, objectSeed);
+    output.occlusionCoordinate=input.position;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
     return output;
+}
+
+// 速度與深度/彩色共用物件座標、seed與主體窗口；隱藏表面不可覆寫後方可見表面的速度。
+void ClipVelocityOcclusion(float4 position,float3 coordinate,float opacity,uint2 seeds)
+{
+    const float2 uv=(position.xy*colorPipeline.zw-worldViewport.xy)/max(worldViewport.zw,float2(0.000001,0.000001));
+    ClipOcclusionOpacity(coordinate,ScreenWindowOcclusionOpacity(uv,position.z,opacity,occlusionWindowEllipse,occlusionWindowParameters),seeds);
 }
 
 float2 VelocityPixelMain(MotionVertexOutput input) : SV_TARGET
 {
+    ClipVelocityOcclusion(input.position,input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
     ClipMotionLod(input.position, input.lodCoverage, input.lodSeed, input.lodInvert);
     if (motionParameters.x < 0.5 || input.currentClip.w <= 1e-6 || input.previousClip.w <= 1e-6)
         return float2(0.0,0.0);
@@ -315,6 +337,8 @@ struct SkinPaletteJoint
 };
 StructuredBuffer<SkinPaletteJoint> skinPalette : register(t13);
 SamplerState materialSampler : register(s0);
+// 速度通道沿用AO根簽章，材質取樣必須使用s1的各向異性wrap，而不是s0的point clamp。
+SamplerState velocityMaterialSampler : register(s1);
 SamplerState screenPointClampSampler : register(s2);
 
 struct MotionMaterialInstanceInput
@@ -328,6 +352,8 @@ struct MotionMaterialInstanceInput
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
     float4 normalRow1 : NROW1;
     float4 normalRow2 : NROW2;
     float4 tint : TINT;
@@ -350,6 +376,8 @@ struct MotionMaterialSkinnedInput
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
     float4 tint : TINT;
     uint skinPaletteBase : SKINBASE;
     float4 previousRow0 : PREVIOUS0;
@@ -370,6 +398,9 @@ struct MotionMaterialVertexOutput
     nointerpolation float lodCoverage : TEXCOORD5;
     nointerpolation uint lodSeed : TEXCOORD6;
     nointerpolation uint lodInvert : TEXCOORD7;
+    float3 occlusionCoordinate : TEXCOORD8;
+    nointerpolation float occlusionOpacity : TEXCOORD9;
+    nointerpolation uint2 occlusionSeeds : TEXCOORD10;
 };
 
 MotionMaterialVertexOutput VelocityMaskedInstancedVertexMain(MotionMaterialInstanceInput input)
@@ -382,20 +413,24 @@ MotionMaterialVertexOutput VelocityMaskedInstancedVertexMain(MotionMaterialInsta
     output.position=mul(viewProjection,currentWorld);
     output.currentClip=mul(currentUnjitteredViewProjection,currentWorld);
     output.previousClip=mul(previousViewProjection,previousWorld);
-    output.uv=input.uv;
+    output.uv=input.uv*max(0.001,float((input.textureData>>16)&32767u)*(16.0/32767.0));
     output.alphaCutoff=saturate(input.normalRow1.w);
     output.alpha=input.color.a*input.tint.a;
     output.lodCoverage=float((input.textureData>>4)&255u)/255.0;
     output.lodInvert=(input.textureData>>12)&1u;
     const uint objectSeed=asuint(input.transformRow0.w)*73856093u^asuint(input.transformRow1.w)*19349663u^asuint(input.transformRow2.w)*83492791u;
     output.lodSeed=StaticLodSeed(input.textureData,objectSeed);
+    output.occlusionCoordinate=input.position;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
     return output;
 }
 
 float2 VelocityMaskedPixelMain(MotionMaterialVertexOutput input) : SV_TARGET
 {
+    ClipVelocityOcclusion(input.position,input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
     // 速度根簽章將基色描述符映射至 t2，因此此處以同一資源槽裁切透明遮罩。
-    clip(input.alpha*normalTexture.Sample(materialSampler,input.uv).a-input.alphaCutoff);
+    clip(input.alpha*normalTexture.Sample(velocityMaterialSampler,input.uv).a-input.alphaCutoff);
     ClipMotionLod(input.position,input.lodCoverage,input.lodSeed,input.lodInvert);
     if(motionParameters.x<0.5||input.currentClip.w<=1e-6||input.previousClip.w<=1e-6)return float2(0.0,0.0);
     const float2 currentNdc=input.currentClip.xy/input.currentClip.w;
@@ -414,6 +449,8 @@ struct MotionSkinnedVertexInput
     float4 transformRow2 : INSTANCE2;
     float4 transformRow3 : INSTANCE3;
     uint textureData : TEXTURE;
+    float occlusionOpacity : OCCLUSION;
+    uint2 occlusionSeeds : OCCLUSIONSEED;
     uint skinPaletteBase : SKINBASE;
     float4 previousRow0 : PREVIOUS0;
     float4 previousRow1 : PREVIOUS1;
@@ -449,13 +486,16 @@ MotionMaterialVertexOutput VelocityMaskedSkinnedVertexMain(MotionMaterialSkinned
     output.position=mul(viewProjection,currentWorld);
     output.currentClip=mul(currentUnjitteredViewProjection,currentWorld);
     output.previousClip=mul(previousViewProjection,previousWorld);
-    output.uv=input.uv;
+    output.uv=input.uv*max(0.001,float((input.textureData>>16)&255u)*(16.0/255.0));
     output.alphaCutoff=float((input.skinPaletteBase>>12)&255u)/255.0;
     output.alpha=input.color.a*input.tint.a;
     output.lodCoverage=float((input.textureData>>4)&255u)/255.0;
     output.lodInvert=(input.textureData>>12)&1u;
     const uint objectSeed=asuint(input.transformRow0.w)*73856093u^asuint(input.transformRow1.w)*19349663u^asuint(input.transformRow2.w)*83492791u;
     output.lodSeed=((input.textureData>>13)&7u)^objectSeed;
+    output.occlusionCoordinate=currentLocal.xyz;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
     return output;
 }
 
@@ -474,6 +514,9 @@ MotionVertexOutput VelocitySkinnedVertexMain(MotionSkinnedVertexInput input)
     output.lodInvert = (input.textureData >> 12) & 1u;
     const uint objectSeed = asuint(input.transformRow0.w) * 73856093u ^ asuint(input.transformRow1.w) * 19349663u ^ asuint(input.transformRow2.w) * 83492791u;
     output.lodSeed = ((input.textureData >> 13) & 7u) ^ objectSeed;
+    output.occlusionCoordinate=currentLocal.xyz;
+    output.occlusionOpacity=input.occlusionOpacity;
+    output.occlusionSeeds=input.occlusionSeeds;
     return output;
 }
 
@@ -2462,7 +2505,7 @@ float4 EvaluateWorldPixel(WorldPixelInput input, bool isFrontFace, bool alphaToC
         }
     }
     // MASK 的材質 alpha 已先裁切；遮擋淡化再套用同一個穩定圖樣。
-    ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
+    ClipOcclusionOpacity(input.occlusionCoordinate,ScreenWindowOcclusionOpacity((input.position.xy*colorPipeline.zw-worldViewport.xy)/max(worldViewport.zw,float2(0.000001,0.000001)),input.position.z,input.occlusionOpacity,occlusionWindowEllipse,occlusionWindowParameters),input.occlusionSeeds);
 
     const float terrainMask = input.materialClass == 3 ? 1.0 : 0.0;
     float terrainDetailWeight = 1.0;
@@ -3869,7 +3912,7 @@ uint ObjectIdPixelMain(WorldPixelInput input) : SV_TARGET
 {
     // ID pass 重用正式 LOD 點陣裁切；surface 四個 UNORM bytes 在此承載無損 frame token。
     ClipWorldLod(input);
-    ClipOcclusionOpacity(input.occlusionCoordinate,input.occlusionOpacity,input.occlusionSeeds);
+    ClipOcclusionOpacity(input.occlusionCoordinate,ScreenWindowOcclusionOpacity((input.position.xy*colorPipeline.zw-worldViewport.xy)/max(worldViewport.zw,float2(0.000001,0.000001)),input.position.z,input.occlusionOpacity,occlusionWindowEllipse,occlusionWindowParameters),input.occlusionSeeds);
     return input.objectToken;
 }
 

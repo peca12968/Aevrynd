@@ -1,0 +1,445 @@
+{
+  "schemaVersion": 1,
+  "status": "pass",
+  "runtimeManifestSha256": "f0516825f99f33e429bf8cd8e70c5747f944fe027e0ec9876edd44ea533fbdf8",
+  "quality": "Ultra",
+  "mipPolicy": "complete-chain",
+  "tool": {
+    "name": "DirectXTex texconv",
+    "tag": "may2026",
+    "commit": "4feb3e1",
+    "sha256": "dcfdec10244e02cf5037fba089c55fb7e1326b1c8181742d77d15fa5cb5eef06"
+  },
+  "memoryGate": "pass",
+  "peakWorkingSetLimitBytes": 2147483648,
+  "peakWorkingSetBytes": 226119680,
+  "memoryGateMethod": "Win32 GetProcessMemoryInfo baker peak plus maximum pinned texconv child peak",
+  "assets": [
+    {
+      "assetName": "fir-tree-01-c",
+      "assetId": "fir_tree_01_c",
+      "officialPage": "https://polyhaven.com/a/fir_tree_01",
+      "outputResolution": 1024,
+      "expectedMipCount": 11,
+      "license": "CC0-1.0",
+      "commercialUse": true,
+      "materials": [
+        {
+          "slot": "bark",
+          "alphaMode": "opaque",
+          "alphaSource": null,
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 0,
+          "doubleSided": false,
+          "materialClass": "surface",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": null,
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 15,
+              "maximum": 242,
+              "mean": 127.67564582824707
+            },
+            "preparedGreen": {
+              "minimum": 13,
+              "maximum": 240,
+              "mean": 127.32435417175293
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 96,
+              "maximum": 254,
+              "mean": 217.3873996734619
+            },
+            "roughness": {
+              "minimum": 206,
+              "maximum": 255,
+              "mean": 235.9764051437378
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 29,
+              "mean": 1.0480194091796875
+            }
+          },
+          "sources": {
+            "base": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+              "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+            },
+            "normal": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+              "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+            },
+            "arm": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+              "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "fir-tree-01-c/bark-base.dds",
+              "sourceColorSpace": "sRGB",
+              "bytes": 1398276,
+              "sha256": "49fd9058e6a5059e6bced88360e44d0bcf303a164a3c0f4c08a151ddb236015a",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "fir-tree-01-c/bark-normal.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "21291b807a30761309f810086d6732b752546c951e2a2a091101dd4f7cdb29f3",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "fir-tree-01-c/bark-arm.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "a1d895baa855d31dd705e10be6b3c8ed56e2e663665b8a7001c0cf39e128a3e8",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        },
+        {
+          "slot": "twig",
+          "alphaMode": "mask",
+          "alphaSource": "separate",
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 8,
+          "doubleSided": true,
+          "materialClass": "foliage",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": {
+            "source": {
+              "cutoffByte": 128,
+              "visiblePixels": 247702,
+              "totalPixels": 1048576,
+              "fraction": 0.23622703552246094,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "prepared": {
+              "cutoffByte": 128,
+              "visiblePixels": 247702,
+              "totalPixels": 1048576,
+              "fraction": 0.23622703552246094,
+              "minimum": 0,
+              "maximum": 255
+            },
+            "mipPolicy": "DirectXTex --keep-coverage",
+            "mipCoverageCutoff": 0.5
+          },
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 116.23333358764648
+            },
+            "preparedGreen": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 138.76666641235352
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 0,
+              "maximum": 255,
+              "mean": 188.79489994049072
+            },
+            "roughness": {
+              "minimum": 50,
+              "maximum": 245,
+              "mean": 151.5759630203247
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 31,
+              "mean": 0.8437690734863281
+            }
+          },
+          "sources": {
+            "base": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_twig_diff_1k.jpg",
+              "sha256": "8c0833a10e4fd44498d848cf9e659fe250a3813984cbd679f42430eb98c61fb8"
+            },
+            "normal": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_twig_nor_gl_1k.jpg",
+              "sha256": "d470dc39b1d02bbeba06feb0ad818680ef3c24623b4db597270301a5fb8c9369"
+            },
+            "arm": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_twig_arm_1k.jpg",
+              "sha256": "d66c81fc073ee7ea97a76b6da2399769f16944e50ef0e007f09c95619f597c79"
+            },
+            "alphaMask": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_twig_alpha_1k.png",
+              "sha256": "3f399629337e7ac3af27a01b08ffb9c0d60224a9dd374a1427761a5c2eea9d6e"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "fir-tree-01-c/twig-base.dds",
+              "sourceColorSpace": "sRGB",
+              "bytes": 1398276,
+              "sha256": "b1a458c5584b5fa40ce04144f341e013b1a999881bf17fff2880032363d58d5e",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "fir-tree-01-c/twig-normal.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "3f656dfa0f462f4812c17ff0487261c770a637d8d7c97536c9d98a36f429d3bb",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "fir-tree-01-c/twig-arm.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "37af8ba7a3a7f94edb8a58f3bb716c978ca9631bd04027625ea5818be0223e10",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        },
+        {
+          "slot": "dead-branches",
+          "alphaMode": "opaque",
+          "alphaSource": null,
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 0,
+          "doubleSided": false,
+          "materialClass": "surface",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": null,
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 15,
+              "maximum": 242,
+              "mean": 127.67564582824707
+            },
+            "preparedGreen": {
+              "minimum": 13,
+              "maximum": 240,
+              "mean": 127.32435417175293
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 96,
+              "maximum": 254,
+              "mean": 217.3873996734619
+            },
+            "roughness": {
+              "minimum": 206,
+              "maximum": 255,
+              "mean": 235.9764051437378
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 29,
+              "mean": 1.0480194091796875
+            }
+          },
+          "sources": {
+            "base": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_bark_diff_1k.jpg",
+              "sha256": "a5d25150ba1bee10008c039f98aa3c73b4477a404d6715c511ca9b5b0f4a9077"
+            },
+            "normal": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_bark_nor_gl_1k.jpg",
+              "sha256": "6a570ab53ab2249ecdfa93e7d3b9a8a2cb1a8ad391400e5a64c708914779b2c3"
+            },
+            "arm": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_bark_arm_1k.jpg",
+              "sha256": "95d4e9e62cd309fbc38a175e2306379c76c062425b09c0fb72c5b7356a719123"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "fir-tree-01-c/dead-branches-base.dds",
+              "sourceColorSpace": "sRGB",
+              "bytes": 1398276,
+              "sha256": "49fd9058e6a5059e6bced88360e44d0bcf303a164a3c0f4c08a151ddb236015a",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "fir-tree-01-c/dead-branches-normal.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "21291b807a30761309f810086d6732b752546c951e2a2a091101dd4f7cdb29f3",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "fir-tree-01-c/dead-branches-arm.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "a1d895baa855d31dd705e10be6b3c8ed56e2e663665b8a7001c0cf39e128a3e8",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        },
+        {
+          "slot": "trunk-c",
+          "alphaMode": "opaque",
+          "alphaSource": null,
+          "alphaCutoff": 0.5,
+          "alphaDilationPixels": 0,
+          "doubleSided": false,
+          "materialClass": "surface",
+          "normalConversion": "OpenGL green inverted to DirectX",
+          "surfacePacking": "ARM preserved as AO/Roughness/Metallic",
+          "maskCoverage": null,
+          "normalChannelAudit": {
+            "sourceGreen": {
+              "minimum": 5,
+              "maximum": 252,
+              "mean": 127.19349002838135
+            },
+            "preparedGreen": {
+              "minimum": 3,
+              "maximum": 250,
+              "mean": 127.80650997161865
+            },
+            "maximumInversionError": 0
+          },
+          "surfaceChannelAudit": {
+            "maximumPreservationError": 0,
+            "ao": {
+              "minimum": 24,
+              "maximum": 255,
+              "mean": 227.428617477417
+            },
+            "roughness": {
+              "minimum": 124,
+              "maximum": 255,
+              "mean": 207.20611572265625
+            },
+            "metallic": {
+              "minimum": 0,
+              "maximum": 41,
+              "mean": 1.5211982727050781
+            }
+          },
+          "sources": {
+            "base": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_diff_1k.jpg",
+              "sha256": "fd13a53cc8e69cd356245eb0017c51f56e35726683123888f94ed4451cc0486d"
+            },
+            "normal": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_nor_gl_1k.jpg",
+              "sha256": "d8e80fa8849a2bcf37203d8359d1f498738306cee7065cac03c3131a6b71791f"
+            },
+            "arm": {
+              "path": "fir-tree-01-c/textures/fir_tree_01_trunk_c_arm_1k.jpg",
+              "sha256": "22736ea32fdcb9b515601225f554fde2da533b721063ee63e9a52502b93c5f54"
+            }
+          },
+          "outputs": [
+            {
+              "channel": "base",
+              "path": "fir-tree-01-c/trunk-c-base.dds",
+              "sourceColorSpace": "sRGB",
+              "bytes": 1398276,
+              "sha256": "c5f308b9a1ebc6fbf4a1eb44750309e1cc191fd829bfdc50098d69b817f8a168",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 99,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "normal",
+              "path": "fir-tree-01-c/trunk-c-normal.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "22726faaab8c104237ffe7c8f17ccfa50637561222b4148b61eda0b0fcc03344",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 83,
+              "dimension": 3,
+              "array": 1
+            },
+            {
+              "channel": "arm",
+              "path": "fir-tree-01-c/trunk-c-arm.dds",
+              "sourceColorSpace": "linear",
+              "bytes": 1398276,
+              "sha256": "6b894f1c1da10361f2f07c1211cb1902342fbdee10afef66c03150c995836dee",
+              "height": 1024,
+              "width": 1024,
+              "mips": 11,
+              "format": 98,
+              "dimension": 3,
+              "array": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

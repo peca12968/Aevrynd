@@ -11,7 +11,7 @@ inline Aevrynd::BoxCollider3D SaplingCollider(const Aevrynd::Transform3D& tree) 
     return {tree.position+Aevrynd::Vec3{0,1.5f,0},{radius,1.5f,radius}};
 }
 inline ForestUnderstory CreateUnderstory(const Aevrynd::HeightField3D& terrain,
-    std::span<const Aevrynd::Vec3> trees,std::span<const ForestProp> props) {
+    std::span<const Aevrynd::Vec3> trees,std::span<const ForestProp> props,const EntryLayout& layout=ActiveEntryLayout) {
     using namespace Aevrynd;
     ForestUnderstory result;
     std::uint32_t seed=0x4645524eu;
@@ -23,7 +23,7 @@ inline ForestUnderstory CreateUnderstory(const Aevrynd::HeightField3D& terrain,
         const float x=-31.f+62.f*random(),z=-9.f+97.f*random();
         const float radius=sapling?1.4f:.9f;
         const float patch=.5f+.25f*std::sin(x*.35f+z*.17f)+.25f*std::cos(z*.28f-x*.13f);
-        if(random()>patch || !PropClearsObjectives({{x,0,z},{radius,1,radius}}))continue;
+        if(random()>patch || !PropClearsObjectives({{x,0,z},{radius,1,radius}},layout))continue;
         if(terrain.SampleNormal(x,z).y<.88f)continue;
         bool occupied=false;
         for(const auto tree:trees)occupied|=std::hypot(x-tree.x,z-tree.z)<(sapling?2.2f:1.f);

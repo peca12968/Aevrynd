@@ -61,3 +61,23 @@ games/mistwatch/assets/leaf-clusters/PROVENANCE.txt -text whitespace=blank-at-eo
 games/mistwatch/native/include/MistwatchBoar.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 games/mistwatch/native/tools/export_boar.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 games/mistwatch/tools/author_root_stem.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# New closed development source/runtime cohort preserves exact bytes.
+games/mistwatch/riverbank/** -text
+engine/native/include/Aevrynd/StaticAabbIndex3D.h -text
+
+# Closed development sources retain legitimate Windows CRLF bytes; immutable
+# licensed runtime payloads are verified by runtime-identity.json, not text diff.
+games/mistwatch/riverbank/** whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+games/mistwatch/riverbank/assets/** -diff
+
+# These eight actually changed files are the tested Windows/mixed-EOL inputs.
+# Preserve their bytes; do not silently clean them to untested LF-only blobs.
+.gitattributes -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+CMakeLists.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/CMakeLists.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/include/Aevrynd/Renderer.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/shaders/AmbientOcclusion.hlsl -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/shaders/World.hlsl -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/src/D3D12Renderer.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/tests/DrawListSmoke.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

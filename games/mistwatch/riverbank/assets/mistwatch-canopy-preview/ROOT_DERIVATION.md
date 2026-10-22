@@ -1,0 +1,11 @@
+# CC0 Canopy Root Derivation
+
+The source is Poly Haven `island_tree_01`, distributed under CC0. The original batch `LICENSE.md` and `runtime-asset-manifest.json` accompany the runtime assets. The source scan meshes and all nine DDS textures remain unchanged.
+
+`tools/author_root_stem.py` derives the root from the original LOD2 primitive 0 trunk. It verifies source SHA256 `B964D1F7B16FB3602FF038AE111C79D0BFC029185896E95DA97CC1ACB4F59145`, clips the lowest 0.10 m, continues the original cut outline and UV gradients into 152 short stem triangles, and closes the bottom with 74 downward triangles. It retains the 4,986 original complete triangles above the cut and their attributes. Removed faces are not classified as scan ground.
+
+CMake generates `island-tree-01-lod2-trunk-root-stem.aemesh` and `author-receipt.json` only inside each build's private `games/mistwatch/native/generated-root-stem` directory. The author accepts an absent or empty output directory and refuses any nonempty directory. A changed or incomplete generated asset requires a new fresh build directory. Generated binaries are not source assets. The receipt records source, author and output SHA256, topology counts and preserved source mappings.
+
+The runtime destination is `assets/mistwatch-canopy-preview`. It contains exactly 17 files: the three original slots (LOD2 primitive 0 trunk, LOD1 primitive 1 leaves, LOD2 primitive 2 branches), nine original DDS files with 11 mip levels each, the derived root mesh, `LICENSE.md`, `runtime-asset-manifest.json`, `root-stem-derivation.json` and this document. The derivation receipt is copied from the build's `author-receipt.json`. The complete three-slot tree contains 606,207 triangles after substituting the derived 5,330-triangle trunk for the original 5,217-triangle trunk.
+
+Planting preserves the four authored poses and the original root anchor. The lowest stem blends 2 cm below terrain. Collision extends only downward to enclose the rooted mesh; horizontal clearance and grass/fern placement remain fixed. The tests cover deterministic derivation, native mesh loading, true intersections against terrain triangles, profile selection and collision containment. These CPU contracts do not establish native material, shadow, GPU validation, save/load, input, performance or visual acceptance; those require separate integration evidence.

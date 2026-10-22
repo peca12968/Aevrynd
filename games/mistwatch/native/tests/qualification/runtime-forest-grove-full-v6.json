@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "profile": "authored-forest-grove-full-v6",
+  "parent": "authored-current-forest-full-v5",
+  "parent_count": 418,
+  "count": 423,
+  "parent_manifest_sha256": "8A2B65C6F27D9E7AC7CED21E69327D41514A4D72B22773B582D7D9CD6A57816B",
+  "copies": [
+    ["mistwatch-materials/poly-haven/rock_face_03/2k/base-color.jpg", "engine/assets/material-packs/poly-haven/rock_face_03/2k/base-color.jpg", 3814362, "644EE79DF7FFBF5F6AFC330B64DD3F33794BAB8820915FE61FFE0C88ECFD7ECE"],
+    ["mistwatch-materials/poly-haven/rock_face_03/2k/normal-dx.jpg", "engine/assets/material-packs/poly-haven/rock_face_03/2k/normal-dx.jpg", 4462567, "83B039065BFF5DE79CA55674C59361152D808FE3779498E5C2EE0725C1172FAA"],
+    ["mistwatch-materials/poly-haven/rock_face_03/2k/roughness.jpg", "engine/assets/material-packs/poly-haven/rock_face_03/2k/roughness.jpg", 2601552, "9CA3E9E196685F702328F24D66F039B72F5330FC35CF2A2C265CFA50A7916301"],
+    ["mistwatch-materials/poly-haven/rock_face_03/SOURCE.json", "engine/assets/material-packs/poly-haven/rock_face_03/SOURCE.json", 1006, "14B8AF68B46111587B8E5AC497254F2413444A59F1966DA60ECDABC1229745AA"]
+  ],
+  "startup_bake": {
+    "path": "mistwatch-world/valley-startup-v1.bin",
+    "bytes": 7948440,
+    "sha256": "CC01776A1F99929A6AC61792BFA0B5EA7A73B72587E328CA727641722D559242",
+    "decoder_source": "games/mistwatch/native/include/MistwatchValleyStartupBake.h",
+    "decoder_sha256": "B2A0534BDCDC2F2BF520AD7A62AE5BE376E4FEEA50409033F68661D151A10D8B"
+  }
+}

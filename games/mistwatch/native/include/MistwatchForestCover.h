@@ -3,6 +3,7 @@
 #include "MistwatchScannedGrass.h"
 #include "MistwatchCanopyVolumeClearance.h"
 #include "MistwatchImmutableVolumeBounds.h"
+#include "MistwatchIndexedVolumeBounds.h"
 #include <array>
 #include <span>
 #include <limits>
@@ -12,6 +13,26 @@ struct ForestCoverAsset {
     float radius{},height{};
     float minimumY{},maximumY{};
 };
+// 植被規劃使用真正的水平圓形間距，不把灌木的空角落方盒當成玩家碰撞。
+enum class ForestCoverReservationKind {Shrub,WindMixedRoadside};
+struct ForestCoverReservation {Aevrynd::Vec3 centre;float radius{};ForestCoverReservationKind kind{ForestCoverReservationKind::Shrub};};
+inline void ValidateForestCoverReservations(std::span<const ForestCoverReservation> reservations){
+    if(reservations.size()>512)throw std::invalid_argument("FOREST_COVER_RESERVATION_BUDGET");
+    for(const auto& p:reservations)if(!Session::Finite(p.centre)||!std::isfinite(p.radius)||p.radius<=0||p.radius>8||
+        (p.kind!=ForestCoverReservationKind::Shrub&&p.kind!=ForestCoverReservationKind::WindMixedRoadside))
+        throw std::invalid_argument("FOREST_COVER_RESERVATION_INVALID");
+}
+inline bool ForestCoverReservationClearance(Aevrynd::Vec3 root,float radius,std::span<const ForestCoverReservation> reservations){
+    if(!Session::Finite(root)||!std::isfinite(radius)||radius<=0)return false;
+    for(const auto& p:reservations){
+        if(!Session::Finite(p.centre)||!std::isfinite(p.radius)||p.radius<=0||p.radius>8||
+            (p.kind!=ForestCoverReservationKind::Shrub&&p.kind!=ForestCoverReservationKind::WindMixedRoadside))return false;
+        // 路肩沿用原CreateRoadsideBroadleaf的風包絡混合間距，灌木仍用完整半徑+.03。
+        const float separation=p.kind==ForestCoverReservationKind::Shrub?radius+p.radius+.03f:.65f*(radius+p.radius+.19f);
+        if(std::hypot(root.x-p.centre.x,root.z-p.centre.z)<separation)return false;
+    }
+    return true;
+}
 struct ForestCoverPlant {
     Aevrynd::Transform3D transform;
     unsigned variant{},patch{};
@@ -57,13 +78,13 @@ inline float ForestCoverScale(Aevrynd::Vec3 root) {
     return .5f+.25f*std::sin(root.x*1.7f+root.z);
 }
 inline bool ForestCoverClearance(Aevrynd::Vec3 root,float radius,
-    std::span<const Aevrynd::BoxCollider3D> solids) {
+    std::span<const Aevrynd::BoxCollider3D> solids,const EntryLayout& layout=ActiveEntryLayout) {
     if(!Session::Finite(root)||!std::isfinite(radius)||radius<=0)return false;
     // 原草的根部排除區加上完整模型半徑；另保留所有地物／任務通路排除。
     if(std::abs(root.x)<1.8f+radius||SettlementTrailDistance(root.x,root.z)<.7f+radius||
        RiverDistance(root.x,root.z)<RiverOuterWidth(root.x)+1.5f+2.f*radius)return false;
-    if(!PropClearsObjectives({root,{radius,1.f,radius}}))return false;
-    for(const auto p:Session::repairSites)
+    if(!PropClearsObjectives({root,{radius,1.f,radius}},layout))return false;
+    for(const auto p:layout.repairSites)
         if(std::hypot(root.x-p.x,root.z-p.z)<3.f+radius)return false;
     for(const auto p:{Session::fuse,Session::rangerLog})
         if(std::abs(root.x-p.x)<3.f+radius&&std::abs(root.z-p.z)<3.5f+radius)return false;
@@ -126,7 +147,9 @@ inline bool ForestCoverFootprint(const Aevrynd::HeightField3D& terrain,Aevrynd::
 inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain,
     std::span<const Aevrynd::Vec3> trees,const ForestUnderstory& understory,
     std::span<const Aevrynd::BoxCollider3D> solids,const std::array<ForestCoverAsset,5>& assets,
-    ForestCoverSettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false) {
+    ForestCoverSettings settings={},std::span<const Aevrynd::BoxCollider3D> canopyWood={},bool fullSolidVolumes=false,
+    const EntryLayout& layout=ActiveEntryLayout,std::span<const ForestCoverReservation> reservations={}) {
+    ValidateForestCoverReservations(reservations);
     if(!CanopyVolume::ValidWoodParts(canopyWood))throw std::invalid_argument("Invalid canopy wood parts for grass");
     if(settings.targetPlants>10000||!settings.maximumPatches||settings.maximumPatches>1000||
        !settings.attemptsPerPatch||settings.attemptsPerPatch>10000||
@@ -143,7 +166,7 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
     if(!canopyWood.empty())for(const auto& asset:assets)
         if(!CanopyVolume::Detail::ValidLocal(CanopyVolume::ConservativeLocalVolume(asset.radius,asset.minimumY,asset.maximumY)))
             throw std::invalid_argument("Invalid normalized grass full volume");
-    CanopyVolume::ImmutableVolumeBoundsCache solidVolumeBounds(solids),canopyVolumeBounds(canopyWood);
+    CanopyVolume::IndexedVolumeBounds solidVolumeBounds(solids),canopyVolumeBounds(canopyWood);
     ForestCoverResult result;
     result.plants.reserve(settings.targetPlants);
     std::uint32_t seed=settings.seed;
@@ -176,7 +199,8 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
     for(auto centre:anchors) {
         if(result.plants.size()>=settings.targetPlants||result.patches.size()>=settings.maximumPatches)break;
         centre.y=terrain.SampleHeight(centre.x,centre.z);
-        if(!ForestCoverClearance(centre,.5f,solids))continue;
+        if(!ForestCoverClearance(centre,.5f,solids,layout)||
+            (!reservations.empty()&&!ForestCoverReservationClearance(centre,.5f,reservations)))continue;
         bool overlaps=false;
         for(const auto& patch:result.patches)if(std::hypot(centre.x-patch.centre.x,centre.z-patch.centre.z)<3.2f){overlaps=true;break;}
         if(overlaps)continue;
@@ -194,7 +218,8 @@ inline ForestCoverResult CreateForestCover(const Aevrynd::HeightField3D& terrain
             const float scale=ForestCoverScale(root);
             const unsigned variant=(std::min)(unsigned(random()*5.f),4u);
             const float radius=assets[variant].radius*scale;
-            if(!ForestCoverClearance(root,radius,solids)){++result.rejectedClearance;continue;}
+            if(!ForestCoverClearance(root,radius,solids,layout)||
+                (!reservations.empty()&&!ForestCoverReservationClearance(root,radius,reservations))){++result.rejectedClearance;continue;}
             // 開始完整實體體積檢查
 if(fullSolidVolumes&&!solids.empty()&&!solidVolumeBounds.Clears(
                 CanopyVolume::PlantVolume{root,CanopyVolume::ConservativeLocalVolume(assets[variant].radius,

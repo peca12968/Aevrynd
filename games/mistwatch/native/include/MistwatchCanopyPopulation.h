@@ -80,7 +80,7 @@ inline Mesh3D RootCanopyToTerrain(const Mesh3D& original,const CanopyGeometry& g
 inline CanopyPopulation CreateCanopyPopulation(const std::array<Mesh3D,3>& meshes,const CanopyGeometry& geometry,
     const HeightField3D& terrain,std::span<const BoxCollider3D> solids,const ForestUnderstory& understory,
     const ForestCoverResult& grass,const FernColonyResult& colonies,const std::array<FernColonyAsset,4>& ferns,
-    const ShrubCanopyResult& shrubs,unsigned target=4) {
+    const ShrubCanopyResult& shrubs,unsigned target=4,const EntryLayout& layout=ActiveEntryLayout) {
     if(target>8||solids.size()>10000||grass.plants.size()>10000||colonies.plants.size()>1000||shrubs.plants.size()>128)
         throw std::invalid_argument("Invalid canopy bounded input");
     const auto measured=MeasureCanopy(meshes);
@@ -111,7 +111,7 @@ inline CanopyPopulation CreateCanopyPopulation(const std::array<Mesh3D,3>& meshe
         const float x=(attempt%2?1.f:-1.f)*(7.f+(prioritizeStart?19.f:29.f)*random()),z=(prioritizeStart?-3.f:-8.f)+(prioritizeStart?29.f:94.f)*random();
         const float scale=1.f+.15f*random(),yaw=random()*6.2831853f;
         const Vec3 root{x,terrain.SampleHeight(x,z),z};const float radius=geometry.radius*scale,baseRadius=geometry.rootRadius*scale;
-        if(!ForestCoverClearance(root,radius,solids)||!terrain.Contains(x-radius,z-radius)||!terrain.Contains(x+radius,z+radius)){
+        if(!ForestCoverClearance(root,radius,solids,layout)||!terrain.Contains(x-radius,z-radius)||!terrain.Contains(x+radius,z+radius)){
             ++result.clearanceRejected;continue;
         }
         if(!ForestCoverFootprint(terrain,root,baseRadius,baseSettings)){++result.rootRejected;continue;}
@@ -133,7 +133,7 @@ inline CanopyPopulation CreateCanopyPopulation(const std::array<Mesh3D,3>& meshe
         const auto centre=(minimum+maximum)*.5f,extents=(maximum-minimum)*.5f;
         const auto local=MeshBounds3D{centre,Length(extents),extents};const auto bounds=TransformBounds(local,pose);
         const BoxCollider3D collider{bounds.center,bounds.extents};
-        if(!ForestCoverClearance(collider.center,(std::max)(collider.extents.x,collider.extents.z),solids)){
+        if(!ForestCoverClearance(collider.center,(std::max)(collider.extents.x,collider.extents.z),solids,layout)){
             ++result.clearanceRejected;continue;
         }
         for(const auto& p:result.plants)occupied|=
