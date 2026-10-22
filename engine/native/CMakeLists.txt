@@ -1723,3 +1723,14 @@ target_link_options(AevryndCharacterAscendingTerrain3DTest PRIVATE /STACK:167772
 add_test(NAME AevryndCharacterAscendingTerrain3DTest COMMAND AevryndCharacterAscendingTerrain3DTest)
 set_tests_properties(AevryndCharacterAscendingTerrain3DTest PROPERTIES TIMEOUT 60
   LABELS "terrain-locomotion;additional-mandatory-cpu")
+
+# 已有真地形支撐時，上坡遇靜態下緣仍保留安全子步與可行的等高移動。
+add_executable(AevryndCharacterSupportedUnderside3DTest tests/CharacterSupportedUphillUnderside3DSmoke.cpp)
+target_compile_features(AevryndCharacterSupportedUnderside3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndCharacterSupportedUnderside3DTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(AevryndCharacterSupportedUnderside3DTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+set_property(TARGET AevryndCharacterSupportedUnderside3DTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndCharacterSupportedUnderside3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndCharacterSupportedUnderside3DTest COMMAND AevryndCharacterSupportedUnderside3DTest)
+set_tests_properties(AevryndCharacterSupportedUnderside3DTest PROPERTIES TIMEOUT 30
+  LABELS "terrain-locomotion;additional-mandatory-cpu")

@@ -17,8 +17,8 @@ bool ValidTerrainPolicies(const CharacterControllerSettings3D& s){return ValidTe
 bool HasSolidStandingSupport(Vec3,Vec3,std::span<const BoxCollider3D>,std::span<const ConvexAabbSweep3D* const>,bool&);
 struct TerrainStandingSurface {bool inside{},steep{};float height{};Vec3 downhill{},contour{};};
 // 使用實際 a/c/b、b/c/d 三角面，不用鄰域平均法線掩蓋尖坡；域外不是接觸。
-bool ReadTerrainStandingSurface(const HeightField3D* terrain,Vec3 feet,float maximumGrade,TerrainStandingSurface& out){
-    out={};if(!terrain||maximumGrade==0)return true;
+bool ReadTerrainStandingSurface(const HeightField3D* terrain,Vec3 feet,float maximumGrade,TerrainStandingSurface& out,bool includeGradient=false){
+    out={};if(!terrain||(maximumGrade==0&&!includeGradient))return true;
     const auto& s=terrain->Settings();
     if(!Finite(feet)||!Finite(s.origin)||s.width<2||s.depth<2||s.width>1000000||s.depth>1000000||
        !std::isfinite(s.cellSize)||s.cellSize<=0||std::uint64_t(s.width)*s.depth!=terrain->SampleCount())return false;
@@ -36,15 +36,15 @@ bool ReadTerrainStandingSurface(const HeightField3D* terrain,Vec3 feet,float max
     if(dx<=0||dz<=0||!std::isfinite(dx)||!std::isfinite(dz)||!std::isfinite(a)||!std::isfinite(b)||!std::isfinite(c)||!std::isfinite(d))return false;
     const bool upper=(double(feet.x)-left)/dx+(double(feet.z)-back)/dz>1;
     const double gx=upper?(d-c)/dx:(b-a)/dx,gz=upper?(d-b)/dz:(c-a)/dz,grade=std::hypot(gx,gz);
-    out.inside=true;out.height=terrain->SampleHeight(feet.x,feet.z);out.steep=grade>maximumGrade;
+    out.inside=true;out.height=terrain->SampleHeight(feet.x,feet.z);out.steep=maximumGrade>0&&grade>maximumGrade;
     if(!std::isfinite(out.height)||!std::isfinite(grade))return false;
-    if(out.steep){const double scale=std::hypot(1.,grade);
+    if(out.steep||(includeGradient&&grade>0)){const double scale=std::hypot(1.,grade);
         out.downhill={float(-gx/grade/scale),float(-grade/scale),float(-gz/grade/scale)};
         out.contour={float(-gz/grade),0,float(gx/grade)};
     }
     return Finite(out.downhill)&&Finite(out.contour);
 }
-struct TerrainPathContact {bool valid{},clear{true};double enter{},leave{1},firstContact{2};};
+struct TerrainPathContact {bool valid{},clear{true};double enter{},leave{1},firstContact{2},minimumGap{std::numeric_limits<double>::infinity()};};
 // 足點線段逐一裁切真實三角面；只驗證高度場交集，不能把域外空間當成壞資料。
 TerrainPathContact TerrainPathClear(const HeightField3D& terrain,Vec3 from,Vec3 motion){
     const auto& s=terrain.Settings();
@@ -99,6 +99,7 @@ TerrainPathContact TerrainPathClear(const HeightField3D& terrain,Vec3 from,Vec3 
             };
             const double lowGap=gap(low),highGap=gap(high);
             if(!std::isfinite(lowGap)||!std::isfinite(highGap))return {};
+            result.minimumGap=std::min({result.minimumGap,lowGap,highGap});
             // 非零長度貼面移動不是離地；只有起點／終點的單點接觸仍保留空中前段。
             if(lowGap<0||highGap<0||(lowGap==0&&highGap==0&&high>low)){
                 result.clear=false;
@@ -752,10 +753,11 @@ bool CharacterController3D::StepConvexInternal(CharacterControl3D control,std::s
     const double maxDistance=std::max({std::abs(double(v.x))*dt,std::abs(double(v.z))*dt,
         (standingPolicy?std::hypot(double(s.maximumFallSpeed),double(s.moveSpeed)*4):double(s.maximumFallSpeed))*dt});
     const unsigned steps=unsigned(std::clamp(std::ceil(maxDistance/std::max(.05,double(s.radius)*.5)),1.,64.));
-    const float h=dt/float(steps);const Vec3 extents=Extents();bool anyTerrainLimited=false;
+    const float h=dt/float(steps);const Vec3 extents=Extents();bool anyTerrainLimited=false,terrainUndersideBlocked=false;
     Vec3 terrainProbe{};bool probeLimited=false;
     if(!LimitTerrainSegment(terrain,s.maximumTerrainUphillGrade,p,terrainProbe,probeLimited))return false;
     for(unsigned i=0;i<steps;++i){
+        const auto priorSubstepStats=stats;const auto priorSubstepContact=pendingContact;const bool priorSubstepTerrainLimited=anyTerrainLimited;
         TerrainStandingSurface surface;
         if(!ReadTerrainStandingSurface(terrain,p,s.maximumTerrainStandingGrade,surface))return false;
         bool solidSupport=false;
@@ -824,9 +826,65 @@ bool CharacterController3D::StepConvexInternal(CharacterControl3D control,std::s
             if(p.y<ground||(v.y<=0&&(p.y<=ground||touch||(!endpoint.steep&&!grounded&&previousSupport&&p.y-ground<=s.groundSnapDistance)))){
                 // 高度場修正也必須走完整體積的連續路徑，不能跳到頂棚另一側。
                 BodySweep correction;
-                if(!SweepBody(p+Vec3{0,extents.y,0},extents,{0,ground-p.y,0},boxes,hulls,correction)||correction.fraction<1)return false;
+                const Vec3 terrainCorrection{0,(ground+extents.y)-(p.y+extents.y),0};
+                // 掃掠以實際float身體中心的起終點為準；feet差量會在緊淨空下算出超過終點的假命中。
+                if(!SweepBody(p+Vec3{0,extents.y,0},extents,terrainCorrection,boxes,hulls,correction))return false;
+                if(correction.fraction<1){
+                    // 只有已驗支撐的靜態上坡步行可保留已完成子步；上升、動態或未知入口仍整筆拒絕。
+                    bool underside=correction.count>0;
+                    for(std::size_t n=0;n<correction.count;++n)underside=underside&&correction.normals[n].y<0;
+                    TerrainStandingSurface prefix;
+                    if(!dynamic.empty()||!wasGrounded||velocity_.y>0||control.jump||!previousSupport||v.y>0||(desired.x==0&&desired.z==0)||
+                       !terrain->Contains(before.x,before.z)||ground<=before.y||!underside||
+                       !ReadTerrainStandingSurface(terrain,before,s.maximumTerrainStandingGrade,prefix,true)||
+                       !prefix.inside||prefix.steep||before.y!=prefix.height||
+                       !BodyClear(before+Vec3{0,extents.y,0},extents,boxes,hulls))return false;
+                    p=before;v={};grounded=true;stats=priorSubstepStats;++stats.collisions;
+                    pendingContact=priorSubstepContact;anyTerrainLimited=priorSubstepTerrainLimited;terrainUndersideBlocked=true;
+                    // 不把可行的等高輸入一起歸零；任何試走仍須完整掃掠、全程地形與終態體積檢查。
+                    const Vec3 tangent=prefix.contour*Dot(requested,prefix.contour),trialMotion=tangent*h;
+                    if(!Finite(tangent)||!Finite(trialMotion))return false;
+                    if(trialMotion.x==0&&trialMotion.z==0)break;
+                    const auto path=TerrainPathClear(*terrain,p,trialMotion);if(!path.valid)return false;
+                    if(!std::isfinite(path.minimumGap))return false;
+                    // Float SampleHeight的支撐值可低於解析三角面末位；不是把負gap當clear。
+                    // 完整路徑各面端點給出真最高高度，向外轉float，再以原20cm跨階上限及完整三段掃掠處理。
+                    const Vec3 trialEnd=p+trialMotion;
+                    if(!terrain->Contains(trialEnd.x,trialEnd.z))break;
+                    const float endpointHeight=terrain->SampleHeight(trialEnd.x,trialEnd.z);
+                    if(!std::isfinite(endpointHeight))return false;
+                    const double requiredHeight=std::max({double(p.y),double(endpointHeight),double(p.y)-path.minimumGap});
+                    float raisedHeight=float(requiredHeight);
+                    if(double(raisedHeight)<requiredHeight)raisedHeight=std::nextafter(raisedHeight,(std::numeric_limits<float>::infinity)());
+                    const float rise=raisedHeight-p.y;
+                    if(!std::isfinite(rise)||rise<0)return false;
+                    if(rise>.20f)break;
+                    BodySweep lift;
+                    if(!SweepBody(p+Vec3{0,extents.y,0},extents,{0,(raisedHeight+extents.y)-(p.y+extents.y),0},boxes,hulls,lift))return false;
+                    if(lift.fraction<1)break;
+                    Vec3 trial{p.x,raisedHeight,p.z},trialVelocity=tangent;bool trialSupported=false,trialLimited=false;auto trialCollisions=stats.collisions;
+                    if(!BodyClear(trial+Vec3{0,extents.y,0},extents,boxes,hulls))return false;
+                    if(!MoveBody(trial,trialVelocity,extents,trialMotion,boxes,hulls,trialSupported,trialCollisions,
+                        terrain,s.maximumTerrainUphillGrade,s.maximumTerrainStandingGrade,trialLimited,nullptr))return false;
+                    if(!terrain->Contains(trial.x,trial.z))break;
+                    const float trialGround=terrain->SampleHeight(trial.x,trial.z);
+                    if(!std::isfinite(trialGround))return false;
+                    if(std::abs(trialGround-p.y)>.20f)break;
+                    Vec3 wholeStep=trial-p;wholeStep.y=trialGround-p.y;bool wholeLimited=false;
+                    if(!LimitTerrainSegment(terrain,s.maximumTerrainUphillGrade,p,wholeStep,wholeLimited))return false;
+                    if(wholeLimited)break;
+                    TerrainStandingSurface finalSurface;
+                    if(!ReadTerrainStandingSurface(terrain,{trial.x,trialGround,trial.z},s.maximumTerrainStandingGrade,finalSurface))return false;
+                    if(finalSurface.inside&&finalSurface.steep)break;
+                    BodySweep settle;
+                    if(!SweepBody(trial+Vec3{0,extents.y,0},extents,{0,(trialGround+extents.y)-(trial.y+extents.y),0},boxes,hulls,settle))return false;
+                    if(settle.fraction<1)break;
+                    trial.y=trialGround;if(!BodyClear(trial+Vec3{0,extents.y,0},extents,boxes,hulls))return false;
+                    p=trial;v=trialVelocity;grounded=true;stats.collisions=trialCollisions;anyTerrainLimited|=trialLimited;
+                    continue;
+                }
                 bool blocked=false;
-                if(!DynamicAuxiliaryClear(p+Vec3{0,extents.y,0},extents,{0,ground-p.y,0},dynamic,dynamicStatus,blocked,verticalResponse))return false;
+                if(!DynamicAuxiliaryClear(p+Vec3{0,extents.y,0},extents,terrainCorrection,dynamic,dynamicStatus,blocked,verticalResponse))return false;
                 if(blocked){
                     // 上方的可選吸附可取消；已低於真地形的必要修正無解時仍整筆拒絕。
                     if(verticalResponse!=CharacterDynamicVerticalResponse3D::BlockOnly||p.y<ground){
@@ -848,7 +906,7 @@ bool CharacterController3D::StepConvexInternal(CharacterControl3D control,std::s
         if(!Finite(v)||!BodyClear(p+Vec3{0,extents.y,0},extents,boxes,hulls)||
             !DynamicBodiesClear(p+Vec3{0,extents.y,0},extents,dynamic,dynamicStatus))return false;
     }
-    if(anyTerrainLimited&&dt>0){v.x=(p.x-position_.x)/dt;v.z=(p.z-position_.z)/dt;}
+    if(anyTerrainLimited&&!terrainUndersideBlocked&&dt>0){v.x=(p.x-position_.x)/dt;v.z=(p.z-position_.z)/dt;}
     if(grounded&&!wasGrounded)++stats.landings;++stats.steps;
     if(dynamicStatus)*dynamicStatus=CharacterDynamicStepStatus3D::Applied;
     // 只由成功的真支撐補足寬限；起跳／上升／陡坡滑行立即作廢。失敗與零時間不消耗。
