@@ -1,0 +1,64 @@
+{
+  "status": "MEASUREMENT_API_AND_COUNTEREXAMPLES_VERIFIED_NOT_BANK_ACCEPTANCE",
+  "recorded_at": "2026-10-23T09:32:57.900221+08:00",
+  "source_files": [
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/engine/native/include/Aevrynd/RigidTerrainMetrics3D.h",
+      "bytes": 4093,
+      "sha256": "72BD00F41772CD9CB39F4FC44A8C89D6FC0C0F6B12E3974EE2189815D9965A4D"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/engine/native/tests/RigidTerrainMetrics3DSmoke.cpp",
+      "bytes": 3805,
+      "sha256": "06FFE997CB8EE852C675C9F99930800664371E8B15EA519DE35C797BEEB62A1D"
+    }
+  ],
+  "actual_compiler_reads": [
+    {
+      "path": "E:/AevryndEvidence/m4175-rigid-height-reference/build/RigidTerrainMetricsTest.dir/Release/RigidTer.8C337AC1.tlog/CL.read.1.tlog",
+      "bytes": 51226,
+      "sha256": "86B6B21B0BF785A575B6C74F6FAFE94905D2C8B150222F6942240B7D1C7B0C03"
+    },
+    {
+      "path": "E:/AevryndEvidence/m4175-rigid-height-reference/build/CurrentBankMetrics.dir/Release/CurrentB.377431BD.tlog/CL.read.1.tlog",
+      "bytes": 56784,
+      "sha256": "8A07F4C0DB9C431534C697F56259D675CD80E1930652B7C51F2A63C58E796444"
+    }
+  ],
+  "measurement_case": {
+    "path": "E:/AevryndEvidence/m4175-rigid-height-reference/current-bank-metrics.tsv",
+    "bytes": 1085,
+    "sha256": "F2081F8941E0AAB293A02D9AB06571706C941000C51B3F1150E78CCFE72EEEE9"
+  },
+  "test_executions": [
+    {
+      "name": "unit",
+      "process_exit": 0,
+      "strict_execution_gate_passed": true
+    },
+    {
+      "name": "actual-bank",
+      "process_exit": 0,
+      "strict_execution_gate_passed": true
+    }
+  ],
+  "unit_counterexample": "Identical supported1m source object and0.5m water plane, same explicit lower support. Deepen only underwater bed under upper overhang points: vertex/bed gap rises0.94->4m, object height1m and emergence0.5m unchanged. This disproves equating the three measurements; it does not prove the original object physically accepted.",
+  "invalid_cases": 9,
+  "invalid_output_atomic": true,
+  "all8_actual_source_poses_measured": true,
+  "original_public_bank_build_executed_and_still_rejected": true,
+  "original_ground_gap_gate_passed": false,
+  "geometry_pose_scale_field_and_water_unchanged": true,
+  "measured_vertex_domain": "All retained source vertices with explicitly supplied lower-support source indices. Not actualGPU buffer/refraction/triangle/continuous-contact evidence or a physical stability judgement.",
+  "world_height_max": 1.6186128854751587,
+  "emergence_max": 0.5743297338485718,
+  "current_ground_gap_threshold_exceedances": 4,
+  "raw_measurements_correct": true,
+  "interpretations_must_be_separate": true,
+  "formal_or_visual_adoption": false,
+  "score_changed": false,
+  "geometry_implementation_remains_private_rejected_preview": "E:/AevryndEvidence/m4173-bank-rocks-rejected-preview",
+  "new_game_or_gpu_runs_this_measurement_work": 0,
+  "all_build_root_gates_passed": false,
+  "scope": "Header-only engine measurement API and synthetic regression test. Existing qualified current engine library/old exact bank object reused for directCPUexecution; not rebuiltrenderer/cleanALL_BUILD/stable game. Configure/build compiler-helper cleanup remains a failed root gate if present. No source geometry, water, UI/site or independent character modifications. These8case records are local rejected-preview measurements, not a remotely reproducible promoted playableworld."
+}

@@ -1765,3 +1765,14 @@ target_link_libraries(AevryndCharacterSupportedUnderside3DTest PRIVATE AevryndEn
 add_test(NAME AevryndCharacterSupportedUnderside3DTest COMMAND AevryndCharacterSupportedUnderside3DTest)
 set_tests_properties(AevryndCharacterSupportedUnderside3DTest PROPERTIES TIMEOUT 30
   LABELS "terrain-locomotion;additional-mandatory-cpu")
+
+# Source-relative measurements, not an automatic contact/appearance verdict.
+add_executable(AevryndRigidTerrainMetrics3DTest tests/RigidTerrainMetrics3DSmoke.cpp)
+target_compile_features(AevryndRigidTerrainMetrics3DTest PRIVATE cxx_std_20)
+target_compile_options(AevryndRigidTerrainMetrics3DTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(AevryndRigidTerrainMetrics3DTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+set_property(TARGET AevryndRigidTerrainMetrics3DTest PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+target_link_libraries(AevryndRigidTerrainMetrics3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndRigidTerrainMetrics3DTest COMMAND AevryndRigidTerrainMetrics3DTest)
+set_tests_properties(AevryndRigidTerrainMetrics3DTest PROPERTIES TIMEOUT 30
+  LABELS "rigid-metrics;terrain-water-reference;cpu")
