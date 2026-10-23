@@ -1,0 +1,65 @@
+{
+  "status": "SCOPED_BANK_CONSTRUCTION_SAVED_APPEARANCE_UNACCEPTED",
+  "recorded_utc": "2026-10-23T00:25:45.749481+00:00",
+  "base_commit": "91a4d59371d864057531694723ea6fb58438ce19",
+  "world": "10095887347505673138",
+  "normal_and_gbv_route_ticks": 6666,
+  "images_decoded_total": 462,
+  "manual_ticks_each": 582,
+  "actual_gbv_executed": true,
+  "formal_adoption": false,
+  "visual_score_changed": false,
+  "main_changed": false,
+  "website_changed": false,
+  "recommended_playable_changed": false,
+  "original_started": "2026-10-23T07:43:12.5171754+08:00",
+  "original_support_deadline": "2026-10-23T07:53:12.5171754+08:00",
+  "support_deadline_met": false,
+  "original_preview_deadline": "2026-10-23T08:13:12.5171754+08:00",
+  "first_candidate_rejected": true,
+  "first_b_preview_observed_bracket": [
+    "2026-10-23T08:12:54.6908789+08:00",
+    "2026-10-23T08:13:11.914041+08:00"
+  ],
+  "original_failed_build_gates_retained": true,
+  "scope": "Separate CPU/game actual source correspondence, full normal and actual GBV missions and manual-path synthetic GetInput F5/F9 restoration passed. Original compiler AV, LNK error and auxiliary-drain failed build gates retained; not a fresh clean ALL_BUILD or stable release. Dry-bank slope is a retained construction direction, not whole-scene art acceptance. Water remains milky, terrain/props/character coarse. Existing main/recommended bearing bridge and independent character/site work unchanged.",
+  "local_evidence_root": "E:/AevryndEvidence/m4168-bank-external-definition",
+  "tested_source_files": [
+    {
+      "path": "games/mistwatch/riverbank/src/main.cpp",
+      "sha256": "B2B472A171DA689752A02DA4770868E6A9242B4C699CCB6C90DEC4EA59B69D24"
+    },
+    {
+      "path": "games/mistwatch/riverbank/include/MistwatchErodedBankConstruction.h",
+      "sha256": "CC49819A76EEAC300FD73FCC1BC187EE6BD611282B54B81F4EEA931111796F75"
+    },
+    {
+      "path": "games/mistwatch/riverbank/src/ErodedBankConstruction.cpp",
+      "sha256": "C44A67A07849503A0745CC14B4C8AD7AB799390235D5049E60A62417D40BA083"
+    },
+    {
+      "path": "games/mistwatch/riverbank/include/RiverbankMethods.inl",
+      "sha256": "A325F767A87400D01EBA723421292A13578FC4C132E35F105C2F1B4D639F5116"
+    },
+    {
+      "path": "games/mistwatch/riverbank/tests/WaterlineBankConstructionTest.cpp",
+      "sha256": "26F5629E0114B8B0E550AA856B296BB433AD07156731610D4DDCB13894F66D35"
+    },
+    {
+      "path": "games/mistwatch/riverbank/tests/fixtures/riverbank-guards.tsv",
+      "sha256": "1345AFB5BE031ECE6EC427DB9952E6D450459E84ADBB97A07F544628CC0EF585"
+    },
+    {
+      "path": "games/mistwatch/riverbank/evidence/20261023-waterline-bank-wip.png",
+      "sha256": "8DE59BBF74C1FC186CAD6E0C6066DBF46D37886223F88B04112C0FACC3286455"
+    }
+  ],
+  "integration_configure_gate_passed": false,
+  "integrated_graph_inspected_only": true,
+  "integration_command_correction": "First root configure omitted explicit WIP=ON; emitted enabled graph then independently checked, but both original root-job auxiliary-drain failures retained.",
+  "manual_guard_correction": "Old engine audit contained four stale game/CMake inputs; unchanged engine inputs still verified, four current game inputs must match this exact artifact preparation pins.",
+  "independent_readback_script_failures": [
+    "First graph lookup used a disabled optional target",
+    "Enabled graph reader initially expected an unquoted CTest name; actual quoted name/fixture checked, no gate weakened"
+  ]
+}

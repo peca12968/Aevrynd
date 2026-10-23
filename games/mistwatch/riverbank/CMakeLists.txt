@@ -2,6 +2,7 @@
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_executable(MistwatchRiverbank WIN32 src/main.cpp)
 target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchExplorerNapeHairBinding>)
+target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction>)
 target_compile_features(MistwatchRiverbank PRIVATE cxx_std_20)
 target_compile_options(MistwatchRiverbank PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
 target_include_directories(MistwatchRiverbank BEFORE PRIVATE include)
@@ -54,3 +55,29 @@ set_target_properties(MistwatchStormWaterContractTest PROPERTIES MSVC_RUNTIME_LI
 add_test(NAME MistwatchStormWaterContractTest COMMAND MistwatchStormWaterContractTest
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv")
 set_tests_properties(MistwatchStormWaterContractTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;storm-water;shore-wave")
+
+# Keep the tested construction in its own translation unit. The monolithic
+# candidate encountered a compiler AV; no optimization/quality gate is reduced.
+add_library(MistwatchWaterlineBankConstruction OBJECT src/ErodedBankConstruction.cpp)
+target_compile_features(MistwatchWaterlineBankConstruction PRIVATE cxx_std_20)
+target_compile_options(MistwatchWaterlineBankConstruction PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchWaterlineBankConstruction PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchWaterlineBankConstruction BEFORE PRIVATE include)
+target_link_libraries(MistwatchWaterlineBankConstruction PRIVATE AevryndEngine)
+set_target_properties(MistwatchWaterlineBankConstruction PROPERTIES
+  MSVC_RUNTIME_LIBRARY MultiThreadedDLL INTERPROCEDURAL_OPTIMIZATION FALSE)
+
+add_executable(MistwatchWaterlineBankContractTest tests/WaterlineBankConstructionTest.cpp)
+target_sources(MistwatchWaterlineBankContractTest PRIVATE $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction>)
+target_compile_features(MistwatchWaterlineBankContractTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchWaterlineBankContractTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchWaterlineBankContractTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchWaterlineBankContractTest BEFORE PRIVATE include)
+target_link_libraries(MistwatchWaterlineBankContractTest PRIVATE AevryndEngine)
+set_target_properties(MistwatchWaterlineBankContractTest PROPERTIES
+  MSVC_RUNTIME_LIBRARY MultiThreadedDLL INTERPROCEDURAL_OPTIMIZATION FALSE)
+add_test(NAME MistwatchWaterlineBankContractTest COMMAND MistwatchWaterlineBankContractTest
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-guards.tsv")
+set_tests_properties(MistwatchWaterlineBankContractTest PROPERTIES
+  TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;waterline-bank;protected-roots")

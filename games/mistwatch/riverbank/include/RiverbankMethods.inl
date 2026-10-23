@@ -12,6 +12,15 @@
         for(std::size_t i=0;i<understory.ferns.size();++i)add(understory.ferns[i].position,fernFootprints[i%4].radius*understory.ferns[i].scale.x);
         for(const auto& p:understory.saplings)add(p.position,1.4f*p.scale.x);
         auto rebuilt=Mistwatch::RiverbankConstruction::Build(terrain,matureContactWorld.All(false),roots);
+        const auto coherentBank=rebuilt.field;
+        auto bankSlope=Mistwatch::ErodedBank::Build(terrain,coherentBank,rebuilt.guards);
+        rebuilt.field=std::move(bankSlope.field);rebuilt.changed=0;rebuilt.maximumChange=0;
+        for(unsigned iz=0;iz<terrain.Settings().depth;++iz)for(unsigned ix=0;ix<terrain.Settings().width;++ix){
+            const float a=terrain.Height(ix,iz),b=rebuilt.field.Height(ix,iz);
+            if(std::bit_cast<unsigned>(a)!=std::bit_cast<unsigned>(b)){++rebuilt.changed;rebuilt.maximumChange=(std::max)(rebuilt.maximumChange,std::abs(a-b));}
+        }
+        if(rebuilt.maximumChange>4.5f)throw std::runtime_error("BANK_SLOPE_TOTAL_ORIGINAL_BOUND");
+
         std::vector<std::pair<MeshResource3D*,MeshResource3D>> uploads;
         const auto upload=[&](MeshResource3D& old){
             if(!old)return;
@@ -38,6 +47,12 @@
         for(unsigned z=0;z<terrain.Settings().depth;++z)for(unsigned x=0;x<terrain.Settings().width;++x){const auto p=terrain.SamplePosition(x,z);field<<p.x<<'\t'<<p.z<<'\t'<<riverbankOriginal->Height(x,z)<<'\t'<<p.y<<'\n';}
         field.close();std::ofstream guards(output/"riverbank-guards.tsv");guards.precision(9);guards<<"x\tz\tex\tez\n";
         for(const auto& g:rebuilt.guards)guards<<g.x<<'\t'<<g.z<<'\t'<<g.ex<<'\t'<<g.ez<<'\n';guards.close();
-        std::ofstream receipt(output/"riverbank-construction.txt");receipt<<"profile=coherent-riverbend-v1\nchanged_samples="<<rebuilt.changed<<"\nmaximum_change="<<rebuilt.maximumChange<<"\nprotected_samples="<<rebuilt.protectedSamples<<"\nguards="<<rebuilt.guards.size()<<"\nuploads="<<uploads.size()<<"\nold_terrain="<<Mistwatch::WestCliffRelief::Fingerprint(*riverbankOriginal)<<"\nactual_terrain="<<Mistwatch::WestCliffRelief::Fingerprint(terrain)<<"\nart_accepted=0\n";
+        std::ofstream receipt(output/"riverbank-construction.txt");receipt<<"profile=coherent-riverbend-and-waterline-anchored-bank-v3\nchanged_samples="<<rebuilt.changed<<"\nmaximum_change="<<rebuilt.maximumChange<<"\nprotected_samples="<<rebuilt.protectedSamples<<"\nguards="<<rebuilt.guards.size()<<"\nuploads="<<uploads.size()<<"\nold_terrain="<<Mistwatch::WestCliffRelief::Fingerprint(*riverbankOriginal)<<"\nactual_terrain="<<Mistwatch::WestCliffRelief::Fingerprint(terrain)<<"\nart_accepted=0\n";
         receipt.close();if(!field||!guards||!receipt)throw std::runtime_error("RIVERBANK_COMPLETE_SOURCE_EXPORT_FAILED");
+        std::ofstream slopes(output/"bank-slope-heightfield.tsv");slopes.precision(9);slopes<<"x\tz\tbefore\tafter\n";
+        for(unsigned iz=0;iz<terrain.Settings().depth;++iz)for(unsigned ix=0;ix<terrain.Settings().width;++ix){const auto p=terrain.SamplePosition(ix,iz);slopes<<p.x<<'\t'<<p.z<<'\t'<<coherentBank.Height(ix,iz)<<'\t'<<p.y<<'\n';}
+        slopes.close();std::ofstream slopeReceipt(output/"bank-slope-construction.txt");slopeReceipt.precision(9);
+        slopeReceipt<<"profile=waterline-anchored-dry-bank-v2\nchanged="<<bankSlope.changed<<"\nmaximum_lowering="<<bankSlope.maximumLowering<<"\nprotected_samples="<<bankSlope.protectedSamples<<"\ncoherent_fingerprint="<<Mistwatch::WestCliffRelief::Fingerprint(coherentBank)<<"\nactual_fingerprint="<<Mistwatch::WestCliffRelief::Fingerprint(terrain)<<"\noriginal_4_5m_bound_preserved=1\nart_accepted=0\n";
+        slopeReceipt.close();if(!slopes||!slopeReceipt)throw std::runtime_error("BANK_SLOPE_ACTUAL_FIELD_EXPORT_FAILED");
+
     }

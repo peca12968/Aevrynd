@@ -1,5 +1,6 @@
 #include "MistwatchSession.h"
 #include "MistwatchRiverbankConstruction.h"
+#include "MistwatchErodedBankConstruction.h"
 #include "MistwatchFuseDialVisual.h"
 #include "MistwatchBeaconDetail.h"
 #include "MistwatchGeneratorDetail.h"
