@@ -1,6 +1,8 @@
 #include "MistwatchSession.h"
 #include "MistwatchRiverbankConstruction.h"
 #include "MistwatchErodedBankConstruction.h"
+#include "MistwatchBankRocks.h"
+#include "MistwatchBankRocksPreview.h"
 #include "MistwatchFuseDialVisual.h"
 #include "MistwatchBeaconDetail.h"
 #include "MistwatchGeneratorDetail.h"
@@ -1824,11 +1826,11 @@ public:
         }
     }
 public:
-    explicit MistwatchGame(bool candidate=false,bool roofCandidate=false,bool shoulderCandidate=false,bool cliffCandidate=false,bool reliefCandidate=false,bool surfaceCandidate=false,bool valleyCandidate=false,bool terraceCandidate=false,bool groveCandidate=false):
+    explicit MistwatchGame(bool candidate=false,bool roofCandidate=false,bool shoulderCandidate=false,bool cliffCandidate=false,bool reliefCandidate=false,bool surfaceCandidate=false,bool valleyCandidate=false,bool terraceCandidate=false,bool groveCandidate=false,bool bankRocksPreview=false):
         manualValleyCandidate(valleyCandidate||terraceCandidate||groveCandidate),valleyTerraceEnabled(terraceCandidate||groveCandidate),
         manualWorkshopRoofCandidate(roofCandidate),manualWoodlandCandidate(candidate),
         shoulderGroveEnabled(shoulderCandidate),manualCliffWorldCandidate(cliffCandidate),manualCliffReliefCandidate(reliefCandidate),
-        manualForestSurfaceCandidate(surfaceCandidate),manualForestGroveCandidate(groveCandidate){}
+        manualForestSurfaceCandidate(surfaceCandidate),manualForestGroveCandidate(groveCandidate){bankRocksPreviewRequested=bankRocksPreview;}
 private:
     void RollbackForestIbl(Engine& e)noexcept{
         if(!forestIblHandle)return;
@@ -1982,6 +1984,8 @@ private:
             profileFlag(L"AEVRYND_MISTWATCH_JOINT_ROCK_BANK"),profileFlag(L"AEVRYND_MISTWATCH_SLOPE_GROVE")};
         forestPlayableWorld=Mistwatch::ForestPlayable::Resolve(manualForestGroveCandidate,validProfileCapture,validProfileReplay,
             profileFlag(L"AEVRYND_MISTWATCH_PLAYABLE_WORLD"),profileFlag(L"AEVRYND_MISTWATCH_INPUT_REPLAY_ROUTE"),forestDependencies);
+        bankRocksPreviewActive=Mistwatch::BankRocksPreview::Resolve(bankRocksPreviewRequested,validProfileReplay,forestPlayableWorld,
+            profileFlag(L"AEVRYND_MISTWATCH_BANK_ROCKS_PREVIEW"));
         groveFloorLitterEnabled=Mistwatch::GroveFloor::Resolve(forestPlayableWorld,validProfileCapture,validProfileReplay,
             profileFlag(L"AEVRYND_MISTWATCH_GROVE_FLOOR"));
         forestSurfaceSelection=Mistwatch::ForestSurfaceProfile::Resolve(manualForestSurfaceCandidate,
@@ -5072,6 +5076,10 @@ private:
             }else if(!scene.Mesh(propMeshes[prop.FallenLog()?1:0],prop.transform,prop.FallenLog()?barkMaterial:boulderMaterial))
                 throw std::runtime_error("Retained forest-prop scene insertion failed");
         }
+        if(bankRockModel)for(std::size_t i=0;i<bankRockModel->parts.size();++i){
+            if(!scene.Mesh(bankRockMesh,bankRockModel->parts[i].pose,boulderMaterial,{},{{0x4d5742414e4b524bull,i+1},1}))
+                throw std::runtime_error("BANK_ROCK_PREVIEW_ACTUAL_MESH_SUBMISSION_FAILED");
+        }
         submittedSupplies=0;
         auto supplyWood=woodMaterial;
         supplyWood.useUv=true;
@@ -5714,6 +5722,10 @@ private:
         Mistwatch::FieldPresentation::Draw(draw,fieldHud,session,Mistwatch::FieldPresentation::LastAction(message),
             actionFeedback,e.Audio().GetStats().deviceAvailable,gameAudio.options.muted,
             unsigned(gameAudio.options.volume*100+.5f),started,paused);
+        if(bankRocksPreviewActive){
+            draw.Quad({1000,30},{548,44},{.025f,.035f,.045f,.94f});
+            draw.SystemText({742,16},"岸線岩石預覽：高度檢查未驗收",17.f,{1.f,.81f,.36f,1});
+        }
         surveyMapRequested=Mistwatch::SurveyMap::ShouldShow(started,paused,session.Alive(),fieldJournalOpen);
         Mistwatch::ObjectivePointer::Submit(draw,
             Mistwatch::ObjectivePointer::Build(session,guide,started,paused,fieldJournalOpen));
@@ -6207,6 +6219,7 @@ private:
         (void)shelterStopGuard.release();
         // 先完成其他場景資源釋放；IBL 收據寫入失敗不得跳過其清理責任。
         ReleaseForestIbl(e);(void)iblStopGuard.release();
+        ReleaseBankRocksPreview(e);
         if(!inputReplayDirectory.empty()){
             std::ofstream out(inputReplayDirectory/"cleanup.txt");
             out<<"normal_on_stop_completed=1\nresult_recorded="<<inputReplayRecorded<<'\n';
@@ -6222,8 +6235,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
         const auto first=arguments.find_first_not_of(L" \t");
         const auto last=arguments.find_last_not_of(L" \t");
         const auto argument=first==std::wstring_view::npos?std::wstring_view{}:arguments.substr(first,last-first+1);
-        if(!argument.empty()&&argument!=L"--woodland-candidate"&&argument!=L"--workshop-roof-candidate"&&argument!=L"--shoulder-grove-candidate"&&argument!=L"--cliff-world-candidate"&&argument!=L"--cliff-relief-candidate"&&argument!=L"--forest-surface-candidate"&&argument!=L"--valley-world-candidate"&&argument!=L"--valley-terrace-candidate"&&argument!=Mistwatch::ForestPlayable::Argument)throw std::runtime_error("WOODLAND_COMMAND_LINE_INVALID");
-        const bool groveCandidate=argument==Mistwatch::ForestPlayable::Argument;
+        if(!argument.empty()&&argument!=L"--woodland-candidate"&&argument!=L"--workshop-roof-candidate"&&argument!=L"--shoulder-grove-candidate"&&argument!=L"--cliff-world-candidate"&&argument!=L"--cliff-relief-candidate"&&argument!=L"--forest-surface-candidate"&&argument!=L"--valley-world-candidate"&&argument!=L"--valley-terrace-candidate"&&argument!=Mistwatch::ForestPlayable::Argument&&argument!=Mistwatch::BankRocksPreview::Argument)throw std::runtime_error("WOODLAND_COMMAND_LINE_INVALID");
+        const bool bankRocksCandidate=argument==Mistwatch::BankRocksPreview::Argument;
+        const bool groveCandidate=argument==Mistwatch::ForestPlayable::Argument||bankRocksCandidate;
         const bool valleyCandidate=argument==L"--valley-world-candidate";
         const bool terraceCandidate=argument==L"--valley-terrace-candidate";
         const bool surfaceCandidate=argument==L"--forest-surface-candidate";
@@ -6242,6 +6256,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
         if(valleyCandidate)config.title=L"Aevrynd - Mistwatch [Valley candidate WIP - separate saves]";
         if(terraceCandidate)config.title=L"Aevrynd - Mistwatch [Authored valley terrace WIP - separate saves]";
         if(groveCandidate)config.title=L"Aevrynd - Mistwatch [Forest grove WIP - separate saves]";
+        if(bankRocksCandidate)config.title=L"Aevrynd - Mistwatch [Bank rocks UNACCEPTED preview - separate saves]";
         wchar_t costProbe[8]{};
         const auto costCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_REPLAY_COST_PROBE",costProbe,8);
         if(costCount&&(costCount!=1||costProbe[0]!=L'1'))throw std::runtime_error("Invalid frame cost probe option");
@@ -6275,7 +6290,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
             config.windowMode=EngineWindowMode3D::OffscreenNoActivateDiagnostic;config.enableUnsynchronizedDiagnosticPresent=false;
         }
         Engine engine(config);
-        return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate,valleyCandidate,terraceCandidate,groveCandidate),instance,show);
+        return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate,valleyCandidate,terraceCandidate,groveCandidate,bankRocksCandidate),instance,show);
     } catch(const std::exception& error) {
         std::ofstream log("mistwatch-startup-error.txt");
         log<<error.what()<<'\n';

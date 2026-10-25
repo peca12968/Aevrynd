@@ -7,6 +7,7 @@
     void InitializeManualEntryEvidence(){
         indexedGameplayProofEnabled=!inputReplayDirectory.empty();
         save=save.parent_path()/(save.stem().wstring()+L"-riverbank-v1-bearing-bridge-v1"+save.extension().wstring());
+        if(bankRocksPreviewActive)save=save.parent_path()/(save.stem().wstring()+L"-bank-rocks-preview-unaccepted"+save.extension().wstring());
         if(indexedGameplayProofEnabled){indexedGameplayOutput=inputReplayDirectory;return;}
         MatureContact::Require(manualForestGroveCandidate&&forestPlayableWorld&&save.is_absolute(),"INDEXED_MANUAL_REQUIRES_EXISTING_FOREST_ARGUMENT");
         save=save.parent_path()/(save.stem().string()+"-mature-indexed-v1"+save.extension().string());

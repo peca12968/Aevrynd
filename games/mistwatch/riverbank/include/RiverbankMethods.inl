@@ -39,6 +39,7 @@
         try{upload(terrainMesh);for(auto& mesh:entranceRoadMeshes)upload(mesh);}
         catch(...){for(auto& pair:uploads)e.DestroyMesh3D(pair.second.handle);throw;}
         for(auto& pair:uploads){e.DestroyMesh3D(pair.first->handle);*pair.first=pair.second;}
+        bankProtectedDomains=rebuilt.guards;
         riverbankOriginal=terrain;terrain=std::move(rebuilt.field);
 
         const auto output=indexedGameplayOutput.empty()?valleyEvidenceDirectory:indexedGameplayOutput;

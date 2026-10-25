@@ -3,6 +3,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_executable(MistwatchRiverbank WIN32 src/main.cpp)
 target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchExplorerNapeHairBinding>)
 target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction>)
+target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchBankRocksConstruction>)
 target_compile_features(MistwatchRiverbank PRIVATE cxx_std_20)
 target_compile_options(MistwatchRiverbank PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
 target_include_directories(MistwatchRiverbank BEFORE PRIVATE include)
@@ -81,3 +82,36 @@ add_test(NAME MistwatchWaterlineBankContractTest COMMAND MistwatchWaterlineBankC
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-guards.tsv")
 set_tests_properties(MistwatchWaterlineBankContractTest PROPERTIES
   TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;waterline-bank;protected-roots")
+
+# Explicit unaccepted preview only; the original strict height rejection remains.
+add_library(MistwatchBankRocksConstruction OBJECT src/BankRocks.cpp)
+target_compile_features(MistwatchBankRocksConstruction PRIVATE cxx_std_20)
+target_compile_options(MistwatchBankRocksConstruction PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchBankRocksConstruction PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchBankRocksConstruction BEFORE PRIVATE include)
+target_link_libraries(MistwatchBankRocksConstruction PRIVATE AevryndEngine)
+set_target_properties(MistwatchBankRocksConstruction PROPERTIES
+  MSVC_RUNTIME_LIBRARY MultiThreadedDLL INTERPROCEDURAL_OPTIMIZATION FALSE)
+add_executable(MistwatchBankRocksPreviewTest tests/BankRocksPreviewTest.cpp)
+target_sources(MistwatchBankRocksPreviewTest PRIVATE
+  $<TARGET_OBJECTS:MistwatchBankRocksConstruction> $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction>)
+target_compile_features(MistwatchBankRocksPreviewTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchBankRocksPreviewTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchBankRocksPreviewTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchBankRocksPreviewTest BEFORE PRIVATE include)
+target_link_libraries(MistwatchBankRocksPreviewTest PRIVATE AevryndEngine bcrypt)
+set_target_properties(MistwatchBankRocksPreviewTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+add_test(NAME MistwatchBankRocksPreviewTest COMMAND MistwatchBankRocksPreviewTest
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-guards.tsv"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/mature-world-before.f32"
+  "${CMAKE_CURRENT_SOURCE_DIR}/assets/mistwatch-boulders/meshes/boulder-01-lod0-node0-mesh0-primitive0-material0-boulder-01.aemesh"
+  --no-report --rebuild-current-final-bank)
+set_tests_properties(MistwatchBankRocksPreviewTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;unaccepted-bank-rocks;finite-proxy")
+add_executable(MistwatchBankRocksPreviewModeTest tests/BankRocksPreviewModeTest.cpp)
+target_compile_features(MistwatchBankRocksPreviewModeTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchBankRocksPreviewModeTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_include_directories(MistwatchBankRocksPreviewModeTest BEFORE PRIVATE include)
+set_target_properties(MistwatchBankRocksPreviewModeTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+add_test(NAME MistwatchBankRocksPreviewModeTest COMMAND MistwatchBankRocksPreviewModeTest)
+set_tests_properties(MistwatchBankRocksPreviewModeTest PROPERTIES TIMEOUT 30 LABELS "riverbank-development;preview-opt-in;cpu")

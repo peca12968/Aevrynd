@@ -1,0 +1,275 @@
+{
+  "status": "EXPLICIT_UNACCEPTED_BANK_ROCK_PLAYABLE_DEVELOPMENT_ENTRY_VERIFIED_NOT_RELEASE",
+  "recorded_utc": "2026-10-25T13:41:39.651102+00:00",
+  "source_parent": "09ea6a960568457818cd616b69c36406514b7db4",
+  "source": [
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/CMakeLists.txt",
+      "bytes": 9901,
+      "sha256": "FEE0500CA3F15E5AEC847DBF1E3C0DC474E29C8448B9BF08B9CC5DBD936B60E8"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/src/main.cpp",
+      "bytes": 507021,
+      "sha256": "B734F9DC247835890726F5A877EC0413A67C5BBAC9A256E4EFFDC961CA345339"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/src/BankRocks.cpp",
+      "bytes": 7843,
+      "sha256": "F505B5BA668A6F97B0C5EFC4A300C7BD99FC4C76EDDBEDF549896D84D7367DBE"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/MistwatchBankRocks.h",
+      "bytes": 1163,
+      "sha256": "238F7D1DD5D6F744F0AABD07A45DE6DEB4750F1487D65F095CBAB266ABB04CE3"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/MistwatchBankRocksPreview.h",
+      "bytes": 828,
+      "sha256": "9A5E6CD62BE371AD2AB6E58A3CC874FB4BB9C3CF2D3F462DFD0FA45373F58EA2"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/BankRocksMethods.inl",
+      "bytes": 5382,
+      "sha256": "AADD31B0451259EAC6CF8C3E541CECAD363F18E6C9AE6C7DADD8EB14EA4BE6B2"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/IndexedGameplayWorld.inl",
+      "bytes": 7328,
+      "sha256": "D2A7BFEB7680639048151B44DD325C95388E8E0EF07812412EC589810D5A4D42"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/RiverbankMethods.inl",
+      "bytes": 5974,
+      "sha256": "8F0F646700F56D0DCCF6C858786AD4897CCF4FF8A0E19F1E98ACC0951328D30B"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/include/ManualEntrySmoke.inl",
+      "bytes": 8066,
+      "sha256": "D7C542DCA4CF8B92F3CCB2382DA91B0593EB45BE940CD8B4CF6251876E90234B"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/tests/BankRocksPreviewTest.cpp",
+      "bytes": 5348,
+      "sha256": "45AFC1CCC454724C9CF4C30D69963AF849790F32143760A7F8DC21ADD1E2D94E"
+    },
+    {
+      "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/tests/BankRocksPreviewModeTest.cpp",
+      "bytes": 1098,
+      "sha256": "84E5F6FFEF3BA85F4104A22D678D129B920D2E7BFBEB87FAC48420F1E0F8E989"
+    }
+  ],
+  "posttest_document_changes": [
+    {
+      "original_test_pin": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/DEVELOPMENT-NOTES.txt",
+        "bytes": 12400,
+        "sha256": "4EEAD6E408DE26215A147A7AAF69C4E9A9B94E7A749E09667E5F4C2F93F08B0B"
+      },
+      "current_document": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/DEVELOPMENT-NOTES.txt",
+        "bytes": 15621,
+        "sha256": "716A79AD55BBD17A27F0DFB802B19A5F9AFF1988A6CA3212C228722C0FBEC65B"
+      },
+      "scope": "Verified post-native append only, comparing newline-normalized original HEAD prefix; original runtime source pins/gates not changed. First finalizer rejected this document drift before copying images, preserved separately."
+    }
+  ],
+  "game": {
+    "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/build/Release/Aevrynd-Mistwatch-BankRocks-OptIn-WIP.exe",
+    "bytes": 7680512,
+    "sha256": "BF4B9A10EC271374742959094D2B15FD996BC3B9E87E14799A81DF724A6B38DE"
+  },
+  "engine": {
+    "path": "E:/AevryndEvidence/m4152-isolated-cpp-compiler/fresh-build/b/engine/native/Release/AevryndEngine.lib",
+    "bytes": 58935680,
+    "sha256": "457BBB5FA0CF22289CCFD33F8B4B13DA5B6859FF292C38A4A2426148E949008A"
+  },
+  "readbacks": [
+    {
+      "folder": "route-preview-gbv-completion",
+      "receipt": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-preview-gbv-completion/receipt.json",
+        "bytes": 1009653,
+        "sha256": "65300652259B13B443157E72B1F470E05C97177F21FE82CD47C701C3074E6FE4"
+      },
+      "readback": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-preview-gbv-completion/readback.json",
+        "bytes": 225572,
+        "sha256": "E6F6C7D3428B4375A87298C9E6F67BFEC868DCBB26F672C1470A3A72C12CD98B"
+      },
+      "started_utc": "2026-10-23T02:06:47.210440+00:00",
+      "ended_utc": "2026-10-23T02:12:07.079598+00:00",
+      "exit": 0,
+      "pngs": 229
+    },
+    {
+      "folder": "route-default-completion",
+      "receipt": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-default-completion/receipt.json",
+        "bytes": 1005973,
+        "sha256": "901113AF6BF43A7C1A6E6E419AD1D60DC3F8B8803B0AA264443D155730878F0A"
+      },
+      "readback": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-default-completion/readback.json",
+        "bytes": 222739,
+        "sha256": "1C0FDFCED22191C159BB52C7613D4F66881E9D1EB956A34DFD6F7530DF826FD3"
+      },
+      "started_utc": "2026-10-23T02:16:47.060114+00:00",
+      "ended_utc": "2026-10-23T02:19:27.901036+00:00",
+      "exit": 0,
+      "pngs": 229
+    },
+    {
+      "folder": "manual-preview-normal",
+      "receipt": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-preview-normal/receipt.json",
+        "bytes": 769385,
+        "sha256": "FA96066DE2E53DC62EBF16DDB977498D110D04144C158BD547E02C16D9EE09F2"
+      },
+      "readback": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-preview-normal/readback.json",
+        "bytes": 4341,
+        "sha256": "2B66ACFE81FEFF10483CA32C619F8EDF23A89A1E070CEF3D53A419BD6A2A6599"
+      },
+      "started_utc": "2026-10-23T02:20:34.274867+00:00",
+      "ended_utc": "2026-10-23T02:20:54.723931+00:00",
+      "exit": 0,
+      "pngs": 2
+    },
+    {
+      "folder": "manual-default-normal",
+      "receipt": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-default-normal/receipt.json",
+        "bytes": 768842,
+        "sha256": "CA4E27D4EF397C5FD86C34878968765AFFC2D85E6E490712C31952EE27C4C84D"
+      },
+      "readback": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-default-normal/readback.json",
+        "bytes": 4312,
+        "sha256": "C640598C52A7036BB36687FB2EB1961CD78791F7C5BB6F56FDD5EBBA12D7DC42"
+      },
+      "started_utc": "2026-10-23T02:21:27.070849+00:00",
+      "ended_utc": "2026-10-23T02:21:47.451617+00:00",
+      "exit": 0,
+      "pngs": 2
+    },
+    {
+      "folder": "manual-preview-gbv",
+      "receipt": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-preview-gbv/receipt.json",
+        "bytes": 769297,
+        "sha256": "0872840E41CFD4782666DD75E74F36B57F24C6C1D72CD70523311DC08D6B16C4"
+      },
+      "readback": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-preview-gbv/readback.json",
+        "bytes": 4308,
+        "sha256": "099FBDF8F80EC6F334F49B1E7C55BCF9FEAF06D5ADF6989B7A2A6CA4FE2514F3"
+      },
+      "started_utc": "2026-10-25T13:36:27.062260+00:00",
+      "ended_utc": "2026-10-25T13:37:50.777490+00:00",
+      "exit": 0,
+      "pngs": 2
+    }
+  ],
+  "source_readbacks": [
+    {
+      "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-preview-gbv-completion/source-readback.json",
+      "bytes": 6300,
+      "sha256": "14A5A7BB2B7578622857F2A357B8DAE0ACA7BA599573145AE411F49D5D00170C"
+    },
+    {
+      "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-default-completion/source-readback.json",
+      "bytes": 4058,
+      "sha256": "6CBAB6F42CDC85CF83249EEB1B762DD11857D1E0BD638511FE2A832EB6A6CFF7"
+    }
+  ],
+  "figures": [
+    {
+      "file": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/evidence/20261023-bank-preview-bridge.png",
+        "bytes": 1604245,
+        "sha256": "060D1825C903B11F2B0241DDDDA1C6DCB32DC9F500C2BF67735AF0AA801CD153"
+      },
+      "original": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/route-preview-gbv-completion/native/48-repair-bridge-verify.png",
+        "bytes": 1604245,
+        "sha256": "060D1825C903B11F2B0241DDDDA1C6DCB32DC9F500C2BF67735AF0AA801CD153"
+      },
+      "captured_file_utc": "2026-10-23T02:09:28.040877+00:00",
+      "scope": "Existing exact-source complete bridge view captured Oct23; not a new Oct25 capture."
+    },
+    {
+      "file": {
+        "path": "E:/AevryndIntegration/m4150-riverbank-source/games/mistwatch/riverbank/evidence/20261025-bank-preview-manual-gbv.png",
+        "bytes": 1565382,
+        "sha256": "2D1D6702D08C164235E49543A51A91E7451973B9F6FD6085B84ADA036363B9F3"
+      },
+      "original": {
+        "path": "E:/AevryndEvidence/m4176-bank-rocks-optin/manual-preview-gbv/native/1-manual-F9.png",
+        "bytes": 1565382,
+        "sha256": "2D1D6702D08C164235E49543A51A91E7451973B9F6FD6085B84ADA036363B9F3"
+      },
+      "captured_file_utc": "2026-10-25T13:37:41.218889+00:00",
+      "scope": "New Oct25 actual ordinary entry F9 image, synthetic Engine.GetInput/focus, not physical human input."
+    }
+  ],
+  "entry_argument": "--forest-bank-rocks-preview",
+  "default_argument": "--forest-grove-candidate",
+  "preview_world": "830460213834353322",
+  "default_world": "10095887347505673138",
+  "own_preview_save_prefix": "-bank-rocks-preview-unaccepted",
+  "mesh_observation": {
+    "schema": "bank-rocks-explicit-unaccepted-preview-v1",
+    "active": "1",
+    "manual_cli": "1",
+    "height_gate_applicable": "1",
+    "height_gate_passed": "0",
+    "formal_adoption": "0",
+    "source_oracles_enabled": "0",
+    "rock_count": "8",
+    "legacy_gap_rejections": "4",
+    "world": "830460213834353322",
+    "save": "E:\\AevryndEvidence\\m4176-bank-rocks-optin\\manual-preview-gbv\\isolated-local\\Aevrynd\\Mistwatch\\save-forest-grove-v13-8535528500199423151-riverbank-v1-bearing-bridge-v1-bank-rocks-preview-unaccepted-mature-indexed-v1.txt",
+    "water_level": "-1.3999999761581421",
+    "mesh_acquisitions": "1",
+    "resident_mesh_delta": "0",
+    "mesh_handle": "32",
+    "original_prop_mesh_handle": "32"
+  },
+  "mesh_cleanup": {
+    "active": "1",
+    "acquisitions": "1",
+    "released": "1",
+    "references_before": "1",
+    "references_after": "0",
+    "remaining_owned": "0",
+    "cleanup": "success"
+  },
+  "protected_index": {
+    "path": "D:/Download/Aevrynd/Games/.git/worktrees/mistwatch-clean-20261002/index",
+    "bytes": 307756,
+    "sha256": "8F24DB8AC12F2F4ACE0083CADAF332F195CCA3315743B5A08C903072928DB981"
+  },
+  "original_family_start": "2026-10-23T08:46:19.8312087+08:00",
+  "original_support_deadline": "2026-10-23T08:56:19.8312087+08:00",
+  "support_overrun_preserved": true,
+  "first_complete_original_geometry_preview_observed": [
+    "2026-10-23T09:08:34.8949244+08:00",
+    "2026-10-23T09:08:35.2096768+08:00"
+  ],
+  "original_geometry_methods": 3,
+  "new_geometry_method": false,
+  "strict_original_height_gate_passed": false,
+  "known_ground_gap_rejections": 4,
+  "build_clean_release_gate_passed": false,
+  "formal_adoption": false,
+  "visual_score_changed": false,
+  "full_scene_appearance_accepted": false,
+  "main_recommended_site_character_unchanged": true,
+  "remote_jobs_this_phase": 0,
+  "scope": "Same third8stoneposes and geometry, no fourth placement or changed threshold. Original strict Build rejects; explicit opt-in rejected preview adds separate read-only metric checks, WIP label, separate save prefix and exact reference release. Default old CLI/profile staysoff andoldworldID. Qualified original engine/nape/shaders reused; current repo game/stone/slopeTUs recompiled. Not ALL_BUILD/stable/wholeart/contactacceptance. All new outputs/TEMP E. No website/character/remoteCodex/Node/install work. Strict root build gates tracked separately; compilerhelpercleanup remains failed, never clean-release qualification. Exact current repo source and sharedobjectlink plus CPU8poses/rawsource equality admit only reversible explicitlyunaccepted developmententry.",
+  "appearance": "Eight existing authored actual stones add shoreline structure. Water remains milky; broad forest/ground/building/character quality still coarse. Partial promising geology, not full world acceptance. Conservative proxy boxes and retained CPU vertices are not exact triangle/continuous contacts. No complete human play/FPS or clean ALL_BUILD proof.",
+  "rights": "Reuse existing Poly Haven boulder_01 CC0; original licensed source, author and LICENSE.md retained. No new imported assets or model/LFS copies.",
+  "execution_gap": "No offline/paused/unexecuted period between Oct23 and Oct25 is claimed as continuous execution. Existing completed jobs observed, not restarted. Only missing manual-preview-gbv run once Oct25, original handle36001.",
+  "next": "Keep separate preview; directly improve actual whole-world visual construction with new falsifiable premise, not another rock position/scale/yaw sweep or old water diagnostic family without new evidence."
+}

@@ -1,3 +1,4 @@
+    #include "BankRocksMethods.inl"
     #include "RiverbankMethods.inl"
     #include "StormRiverMethods.inl"
     std::optional<Mistwatch::BearingBridge::Model> bearingBridge;
@@ -10,12 +11,19 @@
         const auto before=RuntimeWorldSolids(false),after=RuntimeWorldSolids(true);
         matureContactWorld.Load(e.ExecutableDirectory()/"assets/mature-contact",before,after);matureStudy.contactWorld=&matureContactWorld;
         RebuildRiverbank(e);
+        InitializeBankRocksPreview(e);
         RebuildStormRiver(e);
         bearingBridge=Mistwatch::BearingBridge::Build(terrain);
         std::vector<BoxCollider3D> repairedWithBearings(matureContactWorld.All(true).begin(),matureContactWorld.All(true).end());
         repairedWithBearings.insert(repairedWithBearings.end(),bearingBridge->additions.begin(),bearingBridge->additions.end());
+        std::vector<BoxCollider3D> beforeWithRocks(matureContactWorld.All(false).begin(),matureContactWorld.All(false).end());
+        if(bankRockModel){
+            beforeWithRocks.insert(beforeWithRocks.end(),bankRockModel->additions.begin(),bankRockModel->additions.end());
+            repairedWithBearings.insert(repairedWithBearings.end(),bankRockModel->additions.begin(),bankRockModel->additions.end());
+        }
         matureIndexedDomain=std::make_unique<Mistwatch::IndexedValleySaveDomain>(*valleySaveDomain,*riverbankOriginal,terrain,before,after,
-            matureContactWorld.All(false),repairedWithBearings,RuntimeRoofHulls(),RuntimeRoofCameraOnly());
+            beforeWithRocks,repairedWithBearings,RuntimeRoofHulls(),RuntimeRoofCameraOnly());
+        WriteBankRocksPreviewProfile();
         {
             std::ofstream parts(indexedGameplayOutput/"bearing-bridge-source.tsv");parts.precision(9);parts<<"role\tx\ty\tz\tsx\tsy\tsz\ttone\n";
             for(const auto& p:bearingBridge->parts)parts<<unsigned(p.role)<<'\t'<<p.center.x<<'\t'<<p.center.y<<'\t'<<p.center.z<<'\t'<<p.size.x<<'\t'<<p.size.y<<'\t'<<p.size.z<<'\t'<<p.tone<<'\n';
