@@ -81,3 +81,6 @@ engine/native/shaders/AmbientOcclusion.hlsl -text whitespace=blank-at-eol,blank-
 engine/native/shaders/World.hlsl -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 engine/native/src/D3D12Renderer.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 engine/native/tests/DrawListSmoke.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# 已實測的磁碟區掛載修正維持原始 CRLF 位元組，仍檢查真正行尾空白。
+engine/native/src/NativeMaterialDds3D.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

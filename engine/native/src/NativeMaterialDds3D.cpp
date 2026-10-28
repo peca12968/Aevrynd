@@ -5,6 +5,7 @@
 #endif
 #include <windows.h>
 #include <bcrypt.h>
+#include <winioctl.h>
 
 #include <algorithm>
 #include <array>
@@ -65,6 +66,86 @@ bool IsHexSha256(std::string_view value) {
            });
 }
 
+bool IsRegisteredVolumeMount(const std::filesystem::path &path) {
+    // 真正的磁碟區掛載也有 reparse 屬性；一般目錄 junction 與符號連結仍不接納。
+    const HANDLE directory = CreateFileW(
+        path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (directory == INVALID_HANDLE_VALUE)
+        return false;
+    struct CloseDirectory {
+        HANDLE value;
+        ~CloseDirectory() { CloseHandle(value); }
+    } close{directory};
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!GetFileInformationByHandle(directory, &info) ||
+        !(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        !(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+        return false;
+    std::array<std::uint8_t, MAXIMUM_REPARSE_DATA_BUFFER_SIZE> data{};
+    DWORD returned{};
+    if (!DeviceIoControl(directory, FSCTL_GET_REPARSE_POINT, nullptr, 0,
+                         data.data(), static_cast<DWORD>(data.size()),
+                         &returned, nullptr) || returned < 16 ||
+        returned > data.size())
+        return false;
+    DWORD tag{};
+    WORD payloadBytes{}, offset{}, length{};
+    std::memcpy(&tag, data.data(), sizeof(tag));
+    std::memcpy(&payloadBytes, data.data() + 4, sizeof(payloadBytes));
+    std::memcpy(&offset, data.data() + 8, sizeof(offset));
+    std::memcpy(&length, data.data() + 10, sizeof(length));
+    const std::size_t pathBytes = returned - 16;
+    if (tag != IO_REPARSE_TAG_MOUNT_POINT || payloadBytes < 8 ||
+        std::size_t{payloadBytes} + 8 != returned || !length ||
+        offset % sizeof(wchar_t) || length % sizeof(wchar_t) ||
+        offset > pathBytes || length > pathBytes - offset)
+        return false;
+    std::wstring substitute(length / sizeof(wchar_t), L'\0');
+    std::memcpy(substitute.data(), data.data() + 16 + offset, length);
+    if (substitute.find(L'\0') != std::wstring::npos)
+        return false;
+    std::wstring mount = path.native();
+    if (mount.empty() || mount.back() != L'\\')
+        mount += L'\\';
+    std::array<wchar_t, 50> volume{};
+    if (!GetVolumeNameForVolumeMountPointW(
+            mount.c_str(), volume.data(), static_cast<DWORD>(volume.size())))
+        return false;
+    const std::wstring name(volume.data());
+    constexpr std::wstring_view prefix = L"\\\\?\\Volume{";
+    if (!name.starts_with(prefix) || !name.ends_with(L"}\\") ||
+        name.size() != prefix.size() + 36 + 2)
+        return false;
+    const std::wstring expected = L"\\??\\" + name.substr(4);
+    if (CompareStringOrdinal(substitute.c_str(), -1, expected.c_str(), -1,
+                             TRUE) != CSTR_EQUAL)
+        return false;
+    // 同為 MOUNT_POINT tag 不足以放行；路徑還須列於 Windows 登記的掛載清單。
+    DWORD required{};
+    if (GetVolumePathNamesForVolumeNameW(name.c_str(), nullptr, 0, &required) ||
+        GetLastError() != ERROR_MORE_DATA || required < 2 || required > 65536)
+        return false;
+    std::vector<wchar_t> paths(required, L'\0');
+    DWORD written{};
+    if (!GetVolumePathNamesForVolumeNameW(name.c_str(), paths.data(), required,
+                                        &written) || written > paths.size())
+        return false;
+    for (std::size_t begin = 0; begin < written && paths[begin];) {
+        std::size_t end = begin;
+        while (end < written && paths[end])
+            ++end;
+        if (end == written)
+            return false;
+        if (CompareStringOrdinal(paths.data() + begin, -1, mount.c_str(), -1,
+                                 TRUE) == CSTR_EQUAL)
+            return true;
+        begin = end + 1;
+    }
+    return false;
+}
+
 bool SafeRegularFile(const std::filesystem::path &path) {
     if (path.empty())
         return false;
@@ -77,7 +158,8 @@ bool SafeRegularFile(const std::filesystem::path &path) {
         current /= component;
         const DWORD attributes = GetFileAttributesW(current.c_str());
         if (attributes == INVALID_FILE_ATTRIBUTES ||
-            (attributes & FILE_ATTRIBUTE_REPARSE_POINT))
+            ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+             !IsRegisteredVolumeMount(current)))
             return false;
     }
     const DWORD attributes = GetFileAttributesW(absolute.c_str());
