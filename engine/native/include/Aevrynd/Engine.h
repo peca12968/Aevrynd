@@ -194,6 +194,7 @@ public:
     ReadbackCaptureSequenceResult3D EndReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token){return renderer_?renderer_->EndReadbackCaptureSequence3D(token):ReadbackCaptureSequenceResult3D{ReadbackCaptureSequenceStatus3D::DeviceLost,{}};}
     ReadbackCaptureSequenceGpuProvenance3D ReadbackCaptureSequenceGpuProvenance(ReadbackCaptureSequenceToken3D token)const{return renderer_?renderer_->ReadbackCaptureSequenceGpuProvenance(token):ReadbackCaptureSequenceGpuProvenance3D{};}
     bool CancelReadbackCaptureSequence3D(ReadbackCaptureSequenceToken3D token)noexcept{return renderer_&&renderer_->CancelReadbackCaptureSequence3D(token);}
+    bool SetLocalReflectionProbeMaterialMask3D(EnvironmentLightingHandle3D environment,LocalReflectionMaterialMask3D mask){return renderer_&&renderer_->SetLocalReflectionProbeMaterialMask3D(environment,mask);}
     ReflectionProbeCaptureHandle3D CreateReflectionProbeCapture3D(ReflectionProbeCaptureSettings3D settings){return renderer_?renderer_->CreateReflectionProbeCapture3D(settings):ReflectionProbeCaptureHandle3D{};}
     void DestroyReflectionProbeCapture3D(ReflectionProbeCaptureHandle3D handle){if(renderer_)renderer_->DestroyReflectionProbeCapture3D(handle);}
     bool MarkReflectionProbeCaptureDirty3D(ReflectionProbeCaptureHandle3D handle){return renderer_&&renderer_->MarkReflectionProbeCaptureDirty3D(handle);}

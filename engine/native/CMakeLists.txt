@@ -1201,6 +1201,17 @@ target_compile_definitions(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE AE
 target_link_libraries(AevryndLocalReflectionProbeD3D12VisualTest PRIVATE AevryndEngine)
 add_test(NAME AevryndLocalReflectionProbeD3D12VisualTest COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$<TARGET_FILE:AevryndLocalReflectionProbeD3D12VisualTest>'")
 
+# 局部反射接收域：保留原 All 行為，另驗水面隔離與真正執行的 GBV。
+add_executable(AevryndLocalReflectionMaterialDomain3DTest tests/LocalReflectionMaterialDomain3DSmoke.cpp)
+target_compile_options(AevryndLocalReflectionMaterialDomain3DTest PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndLocalReflectionMaterialDomain3DTest PRIVATE AevryndEngine)
+add_test(NAME AevryndLocalReflectionMaterialDomain3DTest COMMAND $<TARGET_FILE:AevryndLocalReflectionMaterialDomain3DTest>)
+add_executable(AevryndLocalReflectionMaterialDomainD3D12Test tests/LocalReflectionMaterialDomainD3D12Smoke.cpp)
+target_compile_options(AevryndLocalReflectionMaterialDomainD3D12Test PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(AevryndLocalReflectionMaterialDomainD3D12Test PRIVATE AevryndEngine)
+add_test(NAME AevryndLocalReflectionMaterialDomainD3D12Test COMMAND powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$out = Join-Path '${CMAKE_BINARY_DIR}/test-artifacts' ('reflection-material-domain-' + [guid]::NewGuid().ToString()); & '$<TARGET_FILE:AevryndLocalReflectionMaterialDomainD3D12Test>' $out; exit $LASTEXITCODE")
+set_tests_properties(AevryndLocalReflectionMaterialDomainD3D12Test PROPERTIES ENVIRONMENT "AEVRYND_GPU_VALIDATION=1" TIMEOUT 90)
+
 add_executable(AevryndReflectionProbeCaptureD3D12Test tests/ReflectionProbeCaptureD3D12Smoke.cpp)
 target_compile_options(AevryndReflectionProbeCaptureD3D12Test PRIVATE /W4 /permissive- /utf-8)
 target_link_libraries(AevryndReflectionProbeCaptureD3D12Test PRIVATE AevryndEngine Psapi)

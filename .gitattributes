@@ -84,3 +84,9 @@ engine/native/tests/DrawListSmoke.cpp -text whitespace=blank-at-eol,blank-at-eof
 
 # 已實測的磁碟區掛載修正維持原始 CRLF 位元組，仍檢查真正行尾空白。
 engine/native/src/NativeMaterialDds3D.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Keep exact compiled bytes for the scoped reflection material-domain implementation.
+engine/native/include/Aevrynd/Renderer.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/include/Aevrynd/Engine.h -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/src/D3D12Renderer.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+engine/native/tests/LocalReflectionMaterialDomainD3D12Smoke.cpp -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
