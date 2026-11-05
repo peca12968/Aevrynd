@@ -1060,6 +1060,12 @@ struct RendererStats {
         }
     };
     CompletedGpuPassTimingReceipt3D lastShadowRenderingGpuTiming{}, lastProductionCaptureCopyGpuTiming{};
+    // 同一完成幀的原始 GPU 時間戳，依命令錄製順序保存各階段邊界。
+    struct CompletedGpuSceneTiming3D {
+        uint64_t serial{};
+        // 陰影起／訖、深度與 AO、不透明場景、體積霧、透明與後製、截圖起／訖。
+        std::array<uint64_t,8> boundaries{};
+    } lastCompletedGpuSceneTiming{};
     uint64_t lastGpuFrameNanoseconds{};
     uint64_t totalGpuFrameNanoseconds{};
     uint64_t peakGpuFrameNanoseconds{};

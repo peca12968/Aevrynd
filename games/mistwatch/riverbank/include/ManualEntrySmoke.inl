@@ -28,7 +28,7 @@
         std::filesystem::create_directories(indexedGameplayOutput);
         if(manualEntrySmoke){
             if(manualSmokeCostEnabled){
-                MatureContact::Require(inputReplayCost.BeginStreaming(indexedGameplayOutput),"MANUAL_SMOKE_COST_STREAM_REJECTED");
+                MatureContact::Require(inputReplayCost.BeginStreaming(indexedGameplayOutput,true),"MANUAL_SMOKE_COST_STREAM_REJECTED");
                 frameCostDirectory=indexedGameplayOutput;
             }
             MatureContact::Require(!std::filesystem::exists(save),"MANUAL_SMOKE_REQUIRES_ISOLATED_FRESH_PLAYER_SAVE");

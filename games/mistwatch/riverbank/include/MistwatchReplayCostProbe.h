@@ -33,7 +33,7 @@ public:
     using Row=std::array<std::uint64_t,Columns.size()>;
     static_assert(sizeof(Row)==67*sizeof(std::uint64_t)&&std::endian::native==std::endian::little);
     void Begin(){rows_.reserve(MaximumRows);}
-    [[nodiscard]] bool BeginStreaming(const std::filesystem::path& directory){
+    [[nodiscard]] bool BeginStreaming(const std::filesystem::path& directory,bool measureGpuStages=false){
         if(streaming_||streamFailed_||!rows_.empty()||lastEngineSerial_||!SafeDirectory(directory))return false;
         Handle directoryLock(CreateFileW(directory.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
         if(!directoryLock.Valid()||!Identity(directoryLock.Get(),directoryIdentity_))return false;
@@ -48,7 +48,10 @@ public:
         if(!WriteBytes(file.Get(),markerData.data(),sizeof(markerData))||!FlushFileBuffers(file.Get())||!Identity(file.Get(),markerIdentity_)){
             streamFailed_=true;return false;
         }
-        streamDirectory_=directory;rows_.reserve(MaximumRows);streaming_=true;return true;
+        streamDirectory_=directory;rows_.reserve(MaximumRows);streaming_=true;
+        measureGpuStages_=measureGpuStages;
+        if(measureGpuStages_)gpuStageRows_.reserve(MaximumRows);
+        return true;
     }
     [[nodiscard]] bool Append(const Aevrynd::EngineFrameCost3D& frame,const Aevrynd::RendererStats& stats){
         if(streamFailed_||finalized_)return false;
@@ -63,6 +66,13 @@ public:
         const auto& gpu=stats.lastCompletedGpuTimingReceipt;
         if(gpu.Complete()&&(gpu.serial<lastGpuSerial_||gpu.serial>stats.lastSubmissionTelemetryReceipt.serial))return false;
         const bool newGpu=gpu.Complete()&&gpu.serial>lastGpuSerial_;
+        const auto& scene=stats.lastCompletedGpuSceneTiming;
+        if(newGpu&&measureGpuStages_){
+            const auto& boundaries=scene.boundaries;
+            if(scene.serial!=gpu.serial||boundaries.front()<gpu.beginTick||boundaries.back()>gpu.endTick||
+                !std::is_sorted(boundaries.begin(),boundaries.end()))return false;
+            if(gpuStageRows_.size()>=MaximumRows*MaximumChunks){overflow_=true;return false;}
+        }
         const auto& copy=stats.lastProductionCaptureCopyGpuTiming;
         if(copy.valid&&(copy.serial<lastCopySerial_||copy.serial>stats.lastSubmissionTelemetryReceipt.serial))return false;
         const bool newCopy=copy.valid&&copy.recorded&&copy.serial>lastCopySerial_;
@@ -111,7 +121,14 @@ public:
             if(!FlushChunk())return false;
         }
         rows_.push_back(row);lastEngineSerial_=frame.serial;lastSubmissionSerial_=stats.lastSubmissionTelemetryReceipt.serial;
-        if(newGpu)lastGpuSerial_=gpu.serial;
+        if(newGpu){
+            lastGpuSerial_=gpu.serial;
+            if(measureGpuStages_){
+                GpuStageRow stage{gpu.serial,gpu.beginTick,gpu.endTick,gpu.frequency};
+                std::copy(scene.boundaries.begin(),scene.boundaries.end(),stage.begin()+4);
+                gpuStageRows_.push_back(stage);
+            }
+        }
         if(copy.valid)lastCopySerial_=copy.serial;
         return true;
     }
@@ -193,6 +210,21 @@ private:
         if(!file.Valid()||!WriteBytes(file.Get(),header.data(),sizeof(header))||!WriteBytes(file.Get(),rows_.data(),rows_.size()*sizeof(Row))||!FlushFileBuffers(file.Get())||!Identity(file.Get(),chunk.file))return Fail();
         chunks_[chunkCount_++]=chunk;flushedRows_+=chunk.rows;rows_.clear();return true;
     }
+    using GpuStageRow=std::array<std::uint64_t,12>;
+    bool WriteGpuStages(const std::filesystem::path& directory){
+        Handle out(CreateFileW((directory/L"gpu-stage-cost.tsv").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr));
+        if(!out.Valid())return false;
+        constexpr std::string_view header="gpu_serial\tbegin_tick\tend_tick\tfrequency\tshadow_begin\tshadow_end\tdepth_ao_begin\topaque_begin\tatmosphere_begin\ttransparency_post_begin\tcapture_begin\tcapture_end\n";
+        if(!WriteBytes(out.Get(),header.data(),header.size()))return false;
+        std::string line;line.reserve(12*22);
+        for(const auto& row:gpuStageRows_){
+            line.clear();
+            for(const auto value:row){if(!line.empty())line+='\t';line+=std::to_string(value);}
+            line+='\n';
+            if(!WriteBytes(out.Get(),line.data(),line.size()))return false;
+        }
+        return FlushFileBuffers(out.Get())!=FALSE;
+    }
     bool WriteStreaming(const std::filesystem::path& directory,bool rejected){
         if(finalized_||streamFailed_||directory!=streamDirectory_||!SafeDirectory(directory))return false;
         Handle directoryLock(CreateFileW(directory.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr));
@@ -234,9 +266,13 @@ private:
         const std::string receipt="schema=mistwatch.replay-frame-cost.3\nrows="+std::to_string(count)+"\ntotal_rows="+std::to_string(count)+"\ncapacity="+std::to_string(MaximumRows)+"\nchunk_capacity="+std::to_string(MaximumChunks)+"\nchunks="+std::to_string(chunkCount_)+"\nmaximum_total_rows="+std::to_string(MaximumRows*MaximumChunks)+"\noverflow="+std::to_string(overflow_)+"\nobservation_rejected="+std::to_string(rejected)+
             "\nwrite_timing=bounded-chunks-and-on-stop-assembly\nio_scope=chunk-write-in-append-final-assembly-on-stop\nchunk_io_frame_attribution=caller-frame-may-include-io\nchunk_io_separately_measured=0\nchunk_format=fixed-u64-header-and-67-u64-rows\nchunk_checksum=fnv1a64-raw-rows\nchunk_identity=stream-and-file-id\nstream_identity="+std::to_string(streamIdentity_)+
             "\ncpu_scope=fixed-update-through-post-render-excludes-input-message-pump\ngpu_scope=completed-serial-deduplicated-not-added-to-cpu\ninstrumentation_overhead_included=1\npresentation_window_state=before-and-after-original-present\ncomplete_occlusion=unknown\nforeground_control=none\n";
-        if(!WriteBytes(meta.Get(),receipt.data(),receipt.size())||!FlushFileBuffers(meta.Get()))return Fail();finalized_=true;return true;
+        if(!WriteBytes(meta.Get(),receipt.data(),receipt.size())||!FlushFileBuffers(meta.Get()))return Fail();
+        if(measureGpuStages_&&!WriteGpuStages(directory))return Fail();
+        finalized_=true;return true;
     }
     std::vector<Row> rows_;
+    std::vector<GpuStageRow> gpuStageRows_;
+    bool measureGpuStages_{};
     std::uint64_t lastEngineSerial_{},lastSubmissionSerial_{},lastGpuSerial_{},lastCopySerial_{};
     bool overflow_{};
     bool streaming_{},streamFailed_{},finalized_{};
