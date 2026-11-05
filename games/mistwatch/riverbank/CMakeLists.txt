@@ -1,7 +1,13 @@
 # Explicit development target: original Mistwatch entry and old423 cohort are unchanged.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# 河岸版使用自己的角色標頭編譯後頸毛髮綁定，確保姿態定義在所有編譯單元一致。
+add_library(MistwatchRiverbankExplorerNapeHairBinding OBJECT ../native/src/MistwatchExplorerNapeHairBinding.cpp)
+target_include_directories(MistwatchRiverbankExplorerNapeHairBinding BEFORE PRIVATE include)
+target_compile_features(MistwatchRiverbankExplorerNapeHairBinding PRIVATE cxx_std_20)
+target_compile_options(MistwatchRiverbankExplorerNapeHairBinding PRIVATE /W4 /WX /permissive- /utf-8 /fp:precise /MP1)
+target_link_libraries(MistwatchRiverbankExplorerNapeHairBinding PRIVATE AevryndEngine)
 add_executable(MistwatchRiverbank WIN32 src/main.cpp)
-target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchExplorerNapeHairBinding>)
+target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchRiverbankExplorerNapeHairBinding>)
 target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction>)
 target_sources(MistwatchRiverbank PRIVATE $<TARGET_OBJECTS:MistwatchBankRocksConstruction>)
 target_compile_features(MistwatchRiverbank PRIVATE cxx_std_20)
@@ -22,7 +28,7 @@ add_test(NAME MistwatchRiverbankRuntimeIdentity
     --source "${CMAKE_CURRENT_SOURCE_DIR}/assets" --output "$<TARGET_FILE_DIR:MistwatchRiverbank>/assets" --verify-only)
 set_tests_properties(MistwatchRiverbankRuntimeIdentity PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE LABELS "riverbank-development;runtime-identity")
 add_executable(MistwatchRiverbankLocomotionTest tests/RiverbankLocomotionTest.cpp)
-target_sources(MistwatchRiverbankLocomotionTest PRIVATE $<TARGET_OBJECTS:MistwatchExplorerNapeHairBinding>)
+target_sources(MistwatchRiverbankLocomotionTest PRIVATE $<TARGET_OBJECTS:MistwatchRiverbankExplorerNapeHairBinding>)
 target_compile_features(MistwatchRiverbankLocomotionTest PRIVATE cxx_std_20)
 target_compile_options(MistwatchRiverbankLocomotionTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
 target_include_directories(MistwatchRiverbankLocomotionTest BEFORE PRIVATE include)
@@ -34,6 +40,16 @@ add_test(NAME MistwatchRiverbankLocomotionTest COMMAND MistwatchRiverbankLocomot
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/mature-world-before.f32"
   "${CMAKE_CURRENT_BINARY_DIR}/bank-trace.tsv")
 set_tests_properties(MistwatchRiverbankLocomotionTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;changed-terrain;locomotion")
+
+add_executable(MistwatchRiverbankShelterGuidanceTest tests/ShelterGuidanceTest.cpp)
+target_include_directories(MistwatchRiverbankShelterGuidanceTest BEFORE PRIVATE include)
+target_compile_features(MistwatchRiverbankShelterGuidanceTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchRiverbankShelterGuidanceTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchRiverbankShelterGuidanceTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(MistwatchRiverbankShelterGuidanceTest PRIVATE AevryndEngine)
+set_target_properties(MistwatchRiverbankShelterGuidanceTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+add_test(NAME MistwatchRiverbankShelterGuidanceTest COMMAND MistwatchRiverbankShelterGuidanceTest)
+set_tests_properties(MistwatchRiverbankShelterGuidanceTest PROPERTIES TIMEOUT 30 LABELS "riverbank-development;gameplay-guidance;cpu")
 
 add_executable(MistwatchBearingBridgeContractTest tests/BearingBridgeConstructionTest.cpp)
 target_compile_features(MistwatchBearingBridgeContractTest PRIVATE cxx_std_20)

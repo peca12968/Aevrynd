@@ -312,7 +312,16 @@ struct Explorer {
         }
         if(crouched){
             pose.localTransforms[0].translation.y-=.45f;
-            pose.localTransforms[1].rotation.x=.3f;
+            // 蹲姿由脊椎前傾協調重心；頭部反向補償保留原本視線方向。
+            // 骨盆、兩腿、腳掌目標、站姿與控制器保持原值。
+            pose.localTransforms[1].rotation.x=.6f;
+            pose.localTransforms[2].rotation.x=-.3f;
+            // 肩膀抵銷軀幹前傾，前臂向前屈曲以協調蹲姿重心。
+            // 保留步態擺動、骨盆、頭部及兩側足部反向運動學。
+            for(unsigned side=0;side<2;++side){
+                pose.localTransforms[3+side*3].rotation.x-=.6f;
+                pose.localTransforms[4+side*3].rotation.x=-.65f;
+            }
             for(unsigned side=0;side<2;++side){pose.localTransforms[9+side*3].rotation.x-=.8f;pose.localTransforms[10+side*3].rotation.x+=1.4f;}
         }
         BuildAnimationPoseGlobalMatrices3D(model.skeleton,pose);

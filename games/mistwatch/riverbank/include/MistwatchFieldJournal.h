@@ -1,5 +1,6 @@
 #pragma once
 #include "MistwatchSession.h"
+#include "MistwatchWorld.h"
 #include "MistwatchFieldInput.h"
 #include "MistwatchObjectiveGuide.h"
 #include "MistwatchActionFeedback.h"
@@ -128,11 +129,25 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         // 工具就緒包含正式蹲姿門檻；木料仍以副本查原門檻，不改任務或長程導航。
         if(started&&!paused&&session.Alive()&&!guide.useReady){
             if(guide.earlyToolsReady)hud.instruction="E：拾取低棚工具。";
-            else for(unsigned site:{1u,2u}){
-                auto pickupProbe=session;
-                if(pickupProbe.CollectRepairMaterial(site,false)){
-                    hud.instruction=site==1?"E：拾取東南木料。":"E：拾取西岸木料。";
-                    break;
+            else {
+                // 西側低棚是相機屋頂清單最後一項。沿開口向東留出站姿接近區。
+                const auto& roof=CameraCeilingSolids().back();
+                constexpr float approachDepth=1.5f, groundLevelTolerance=.6f;
+                const float eastEdge=roof.center.x+roof.extents.x;
+                const auto feet=session.feet;
+                if((session.repairMaterials&1u)==0 &&
+                    feet.x>=roof.center.x-roof.extents.x && feet.x<=eastEdge+approachDepth &&
+                    std::abs(feet.z-roof.center.z)<=roof.extents.z &&
+                    std::abs(feet.y-Session::repairSites[0].y)<=groundLevelTolerance){
+                    hud.instruction=feet.x>=eastEdge?"按住 Ctrl 從低棚東側開口進入，靠近工具後按 E。":
+                        "保持蹲姿，靠近工具後按 E。";
+                }
+                for(unsigned site:{1u,2u}){
+                    auto pickupProbe=session;
+                    if(pickupProbe.CollectRepairMaterial(site,false)){
+                        hud.instruction=site==1?"E：拾取東南木料。":"E：拾取西岸木料。";
+                        break;
+                    }
                 }
             }
         }

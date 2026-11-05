@@ -4,6 +4,16 @@ import argparse,hashlib,json,os,shutil,tempfile
 def need(v,m):
     if not v:raise RuntimeError(m)
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+def io_path(path):
+    # 長路徑前綴只用於檔案操作，保留清單中的相對檔名與雜湊。
+    if os.name != 'nt':
+        return path
+    absolute = os.path.abspath(path)
+    if absolute.startswith('\\\\?\\'):
+        return Path(absolute)
+    if absolute.startswith('\\\\'):
+        return Path('\\\\?\\UNC\\' + absolute[2:])
+    return Path('\\\\?\\' + absolute)
 def inventory(root):
     need(root.is_dir() and not root.is_symlink(),'RUNTIME_ROOT')
     result={}
@@ -13,6 +23,7 @@ def inventory(root):
     return result
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--manifest',type=Path,required=True);ap.add_argument('--source',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--verify-only',action='store_true');a=ap.parse_args()
+    a.manifest, a.source, a.output = (io_path(path) for path in (a.manifest, a.source, a.output))
     document=json.loads(a.manifest.read_bytes());expected=document['entries']
     need(document['count']==len(expected)==448 and document['status']=='FIXED_DEVELOPMENT_RUNTIME_IDENTITY_NOT_RELEASE_ACCEPTANCE','EXACT448_AUTHORITY')
     for name in expected:

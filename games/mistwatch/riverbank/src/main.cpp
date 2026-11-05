@@ -120,6 +120,7 @@
 #include "MistwatchCameraSettings.h"
 #include "MistwatchCameraSettingsFile.h"
 #include "MistwatchInputReplay.h"
+#include "MistwatchManualEntryRoute.h"
 #include "MistwatchSupplyCrate.h"
 #include "MistwatchSupplyCrateBoardUv.h"
 #include "MistwatchRangerHut.h"
@@ -1014,11 +1015,11 @@ class MistwatchGame final : public IGame {
     bool inputReplayWestWorldWritten{};
     std::uint64_t inputReplayCaptureBase{};
     std::chrono::steady_clock::time_point inputReplayCaptureStart{};
-    bool inputReplayCostEnabled{},captureCostEnabled{},inputReplayCostFailed{};
-    std::filesystem::path captureCostDirectory;
+    bool inputReplayCostEnabled{},captureCostEnabled{},inputReplayCostFailed{},manualSmokeCostEnabled{};
+    std::filesystem::path frameCostDirectory;
     Mistwatch::ReplayCostProbe inputReplayCost;
     void RecordInputReplayCost(Engine& e){
-        if((!inputReplayCostEnabled&&!captureCostEnabled)||inputReplayCostFailed||!e.GetFrameCostProbe3D().complete)return;
+        if(frameCostDirectory.empty()||inputReplayCostFailed||!e.GetFrameCostProbe3D().complete)return;
         if(!inputReplayCost.Append(e.GetFrameCostProbe3D(),e.GetRendererStats())){
             inputReplayCostFailed=true;
             throw std::runtime_error("Input replay frame cost identity/accounting rejected");
@@ -1826,11 +1827,11 @@ public:
         }
     }
 public:
-    explicit MistwatchGame(bool candidate=false,bool roofCandidate=false,bool shoulderCandidate=false,bool cliffCandidate=false,bool reliefCandidate=false,bool surfaceCandidate=false,bool valleyCandidate=false,bool terraceCandidate=false,bool groveCandidate=false,bool bankRocksPreview=false):
+    explicit MistwatchGame(bool candidate=false,bool roofCandidate=false,bool shoulderCandidate=false,bool cliffCandidate=false,bool reliefCandidate=false,bool surfaceCandidate=false,bool valleyCandidate=false,bool terraceCandidate=false,bool groveCandidate=false,bool bankRocksPreview=false,bool manualSmokeCost=false):
         manualValleyCandidate(valleyCandidate||terraceCandidate||groveCandidate),valleyTerraceEnabled(terraceCandidate||groveCandidate),
         manualWorkshopRoofCandidate(roofCandidate),manualWoodlandCandidate(candidate),
         shoulderGroveEnabled(shoulderCandidate),manualCliffWorldCandidate(cliffCandidate),manualCliffReliefCandidate(reliefCandidate),
-        manualForestSurfaceCandidate(surfaceCandidate),manualForestGroveCandidate(groveCandidate){bankRocksPreviewRequested=bankRocksPreview;}
+        manualForestSurfaceCandidate(surfaceCandidate),manualForestGroveCandidate(groveCandidate),manualSmokeCostEnabled(manualSmokeCost){bankRocksPreviewRequested=bankRocksPreview;}
 private:
     void RollbackForestIbl(Engine& e)noexcept{
         if(!forestIblHandle)return;
@@ -3300,8 +3301,8 @@ private:
             const std::filesystem::path outputPath(output);
             if(outputCount>=32768||!outputPath.is_absolute()||!std::filesystem::is_directory(outputPath.parent_path()))
                 throw std::runtime_error("Capture cost probe output parent must exist");
-            captureCostDirectory=outputPath.parent_path();
-            if(std::filesystem::exists(captureCostDirectory/"frame-cost.tsv")||std::filesystem::exists(captureCostDirectory/"frame-cost.txt"))
+            frameCostDirectory=outputPath.parent_path();
+            if(std::filesystem::exists(frameCostDirectory/"frame-cost.tsv")||std::filesystem::exists(frameCostDirectory/"frame-cost.txt"))
                 throw std::runtime_error("Capture cost probe cannot overwrite existing evidence");
         }
         // 短截圖保持原8192筆on-stop-only；長回放稍後在全新證據目錄啟用有界分段記錄。
@@ -3319,8 +3320,11 @@ private:
             if(!inputReplayDirectory.is_absolute()||std::filesystem::exists(inputReplayDirectory))
                 throw std::runtime_error("Input replay requires a fresh absolute output directory");
             std::filesystem::create_directories(inputReplayDirectory);
-            if(inputReplayCostEnabled&&!inputReplayCost.BeginStreaming(inputReplayDirectory))
-                throw std::runtime_error("Replay cost streaming evidence initialization rejected");
+            if(inputReplayCostEnabled){
+                if(!inputReplayCost.BeginStreaming(inputReplayDirectory))
+                    throw std::runtime_error("Replay cost streaming evidence initialization rejected");
+                frameCostDirectory=inputReplayDirectory;
+            }
             if(e.WindowMode3D()==EngineWindowMode3D::OffscreenNoActivateDiagnostic){
                 RECT rect{},client{};const auto desktop=DiagnosticWindow3D::VirtualDesktop();
                 if(!GetWindowRect(e.Window(),&rect)||!GetClientRect(e.Window(),&client))throw std::runtime_error("Replay window receipt unavailable");
@@ -5839,12 +5843,12 @@ private:
             if(!manualForestSurfaceReceiptPrefix.empty())WriteForestSurfaceReceipt(manualForestSurfaceReceiptPrefix,e.GetRendererStats());
             else if(!inputReplayDirectory.empty())WriteForestSurfaceReceipt(inputReplayDirectory/"last-render",e.GetRendererStats());
         }catch(...){forestSurfaceReceiptWritten=false;}
-        if(inputReplayCostEnabled||captureCostEnabled){
+        if(!frameCostDirectory.empty()){
             try{RecordInputReplayCost(e);}catch(...){inputReplayCostFailed=true;}
-            try{costWritten=inputReplayCost.Write(captureCostEnabled?captureCostDirectory:inputReplayDirectory,inputReplayCostFailed);}catch(...){costWritten=false;}
+            try{costWritten=inputReplayCost.Write(frameCostDirectory,inputReplayCostFailed);}catch(...){costWritten=false;}
             if(captureCostEnabled){
                 try{
-                    std::ofstream timeline(captureCostDirectory/"capture-timeline.txt");
+                    std::ofstream timeline(frameCostDirectory/"capture-timeline.txt");
                     timeline<<"schema=mistwatch.capture-timeline.1\nclock=steady-relative-to-original-capture-start\n"
                         <<"ready_ns="<<captureReadyNs<<"\nbenchmark_complete_ns="<<benchmarkCompleteNs
                         <<"\ncapture_request_ns="<<captureRequestNs<<"\ncapture_observed_ns="<<captureObservedNs
@@ -6284,13 +6288,19 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
             config.enableUnsynchronizedDiagnosticPresent=true;
         }
         wchar_t manualSmokeOutput[32768]{};const auto manualSmokeLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_SMOKE_OUTPUT",manualSmokeOutput,32768);
+        wchar_t manualCost[8]{};
+        const auto manualCostCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_SMOKE_COST_PROBE",manualCost,8);
+        if(manualCostCount&&(manualCostCount!=1||manualCost[0]!=L'1'||!manualSmokeLength))
+            throw std::runtime_error("Manual cost probe requires isolated engine input smoke");
         if(manualSmokeLength){
             const std::filesystem::path path(manualSmokeOutput);
             if(manualSmokeLength>=32768||!groveCandidate||replayCount||captureCount||windowCount||presentCount||captureCostCount||costCount||!path.is_absolute()||std::filesystem::exists(path))throw std::runtime_error("MANUAL_SMOKE_REQUIRES_FRESH_ISOLATED_MANUAL_FOREST_CONTEXT");
-            config.windowMode=EngineWindowMode3D::OffscreenNoActivateDiagnostic;config.enableUnsynchronizedDiagnosticPresent=false;
+            config.windowMode=EngineWindowMode3D::OffscreenNoActivateDiagnostic;
+            config.enableFrameCostProbe=manualCostCount==1;
+            config.enableUnsynchronizedDiagnosticPresent=config.enableFrameCostProbe;
         }
         Engine engine(config);
-        return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate,valleyCandidate,terraceCandidate,groveCandidate,bankRocksCandidate),instance,show);
+        return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate,valleyCandidate,terraceCandidate,groveCandidate,bankRocksCandidate,manualCostCount==1),instance,show);
     } catch(const std::exception& error) {
         std::ofstream log("mistwatch-startup-error.txt");
         log<<error.what()<<'\n';
