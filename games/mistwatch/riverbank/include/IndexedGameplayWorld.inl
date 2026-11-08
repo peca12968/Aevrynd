@@ -2,6 +2,7 @@
     #include "RiverbankMethods.inl"
     #include "StormRiverMethods.inl"
     std::optional<Mistwatch::BearingBridge::Model> bearingBridge;
+    MeshResource3D bearingBridgeTimber;
     std::ofstream indexedGameplayTrace;
     unsigned indexedGameplayCommits{},indexedGameplayRepairedCommits{},indexedBridgeComparisons{};
     void InitializeIndexedGameplayWorld(Engine& e){
@@ -14,6 +15,12 @@
         InitializeBankRocksPreview(e);
         RebuildStormRiver(e);
         bearingBridge=Mistwatch::BearingBridge::Build(terrain);
+        const auto timber=Mistwatch::BridgeTimberVisual::Create(*bearingBridge);
+        bearingBridgeTimber=e.CreateMeshResource3D(timber.wood);
+        if(!bearingBridgeTimber||!bearingBridgeTimber.cpuMesh||
+            bearingBridgeTimber.vertexCount!=timber.wood.vertices.size()||
+            bearingBridgeTimber.indexCount!=timber.wood.indices.size())
+            throw std::runtime_error("BRIDGE_TIMBER_RESOURCE_CONSTRUCTION_FAILED");
         std::vector<BoxCollider3D> repairedWithBearings(matureContactWorld.All(true).begin(),matureContactWorld.All(true).end());
         repairedWithBearings.insert(repairedWithBearings.end(),bearingBridge->additions.begin(),bearingBridge->additions.end());
         std::vector<BoxCollider3D> beforeWithRocks(matureContactWorld.All(false).begin(),matureContactWorld.All(false).end());

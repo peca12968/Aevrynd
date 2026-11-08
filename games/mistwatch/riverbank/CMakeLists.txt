@@ -62,6 +62,17 @@ add_test(NAME MistwatchBearingBridgeContractTest COMMAND MistwatchBearingBridgeC
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv")
 set_tests_properties(MistwatchBearingBridgeContractTest PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE LABELS "riverbank-development;finite-bridge;rail-contact")
 
+add_executable(MistwatchBridgeTimberVisualTest tests/BridgeTimberVisualTest.cpp)
+target_compile_features(MistwatchBridgeTimberVisualTest PRIVATE cxx_std_20)
+target_compile_options(MistwatchBridgeTimberVisualTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+target_compile_definitions(MistwatchBridgeTimberVisualTest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_include_directories(MistwatchBridgeTimberVisualTest BEFORE PRIVATE include)
+target_link_libraries(MistwatchBridgeTimberVisualTest PRIVATE AevryndEngine)
+set_target_properties(MistwatchBridgeTimberVisualTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+add_test(NAME MistwatchBridgeTimberVisualTest COMMAND MistwatchBridgeTimberVisualTest
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/riverbank-heightfield.tsv")
+set_tests_properties(MistwatchBridgeTimberVisualTest PROPERTIES TIMEOUT 30 LABELS "riverbank-development;bridge-timber;cpu")
+
 add_executable(MistwatchStormWaterContractTest tests/StormWaterContractTest.cpp)
 target_compile_features(MistwatchStormWaterContractTest PRIVATE cxx_std_20)
 target_compile_options(MistwatchStormWaterContractTest PRIVATE /W4 /WX /permissive- /utf-8 /MP1)

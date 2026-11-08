@@ -65,6 +65,7 @@
 #include "MistwatchWoodlandRecipe.h"
 #include "MistwatchWoodlandBridgeWorld.h"
 #include "MistwatchBearingBridge.h"
+#include "MistwatchBridgeTimberVisual.h"
 #include "MistwatchStormRiver.h"
 #include "MistwatchWoodlandProfile.h"
 #include "MistwatchLeafCluster.h"
@@ -2567,7 +2568,7 @@ private:
         }
         barkMaterial=*materials.Find("bark");
         woodMaterial=*materials.Find("wood");
-        // 僅巡林屋採作者UV；桌子、補給箱與修橋木材保留共用材質。
+        // 巡林屋與修好的橋共用風化木材；桌子、補給箱與修橋工作區沿用原材質。
         const auto* loadedHut=materials.Find("hut-weathered-wood");
         if(!loadedHut)throw std::runtime_error("Weathered hut material unavailable");
         hutMaterial=diagnosticLegacyRangerHut?woodMaterial:Mistwatch::HutWeatheredWoodMaterial(woodMaterial,*loadedHut,{});
@@ -5101,7 +5102,19 @@ private:
         }
         submittedBridgeWorksite=0;
         if(session.bridgeRepaired) {
-            if(bearingBridge)Mistwatch::BearingBridge::Submit(scene,*bearingBridge,woodMaterial,boulderMaterial);
+            if(bearingBridge) {
+                // 沿用棚屋的 Worn Planks 材質，木構件共用網格，石基礎維持原材質。
+                if(!bearingBridgeTimber||!bearingBridgeTimber.cpuMesh||!hutMaterial.textures||!hutMaterial.useUv)
+                    throw std::runtime_error("BRIDGE_TIMBER_ACTUAL_RESOURCE_MISSING");
+                if(!scene.Mesh(bearingBridgeTimber,{},hutMaterial,{},{{0x4d57425254494d42ull,1},1}))
+                    throw std::runtime_error("BRIDGE_TIMBER_ACTUAL_SUBMISSION_FAILED");
+                for(const auto& part:bearingBridge->parts)if(part.role==Mistwatch::BearingBridge::Role::Footing) {
+                    auto material=boulderMaterial;
+                    material.tint.r*=part.tone;material.tint.g*=part.tone;material.tint.b*=part.tone;
+                    if(!scene.MaterialBox(part.center,part.size,material))
+                        throw std::runtime_error("BRIDGE_TIMBER_FOOTING_SUBMISSION_FAILED");
+                }
+            }
             else scene.MaterialBox({0,-.1f,36},{4,.2f,8},woodMaterial);
         }
         else {
@@ -5925,6 +5938,7 @@ private:
         for(auto& mesh:trailLitterMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++trailDestroyed;}mesh={};}
         unsigned suppliesDestroyed{};
         unsigned bridgeWorksiteDestroyed{};
+        if(bearingBridgeTimber){e.DestroyMesh3D(bearingBridgeTimber.handle);bearingBridgeTimber={};}
         for(auto& mesh:bridgeWorksiteMeshes){if(mesh){e.DestroyMesh3D(mesh.handle);++bridgeWorksiteDestroyed;}mesh={};}
         if(bridgeWorksiteDestroyed!=2)throw std::runtime_error("Bridge worksite cleanup incomplete");
         if(!capture.empty()) {
