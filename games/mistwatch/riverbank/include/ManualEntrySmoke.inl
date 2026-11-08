@@ -10,7 +10,11 @@
     bool manualClipEnabled{},manualClipCapturing{};
     unsigned manualClipFirstTick{},manualClipFrames{};
     std::ofstream manualClipTimeline;
+    bool manualClockEnabled{},manualClockCapturing{},manualClockCaptured{},manualClockRestartCleared{},manualClockLoadCleared{};
+    std::chrono::seconds manualClockElapsed{};
+    std::string manualClockHud;
     std::filesystem::path ManualSmokeCapturePath()const {
+        if(manualClockCapturing)return indexedGameplayOutput/"2-manual-playtest-clock.png";
         if(!manualClipCapturing)
             return indexedGameplayOutput/Mistwatch::ManualEntryRoute::CaptureName(manualSmokeRoute,manualSmokeCaptureCount);
         auto frame=std::to_string(manualClipFrames);
@@ -27,6 +31,10 @@
         MatureContact::Require(!clipLength||(!indexedGameplayProofEnabled&&clipLength==1&&clip[0]==L'1'),
             "MANUAL_BRIDGE_CLIP_REQUIRES_ISOLATED_COMPLETION");
         manualClipEnabled=clipLength==1;
+        wchar_t clock[3]{};const auto clockLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_PLAYTEST_CLOCK",clock,3);
+        MatureContact::Require(!clockLength||(!indexedGameplayProofEnabled&&!manualClipEnabled&&clockLength==1&&clock[0]==L'1'),
+            "MANUAL_PLAYTEST_CLOCK_REQUIRES_ISOLATED_COMPLETION");
+        manualClockEnabled=clockLength==1;
         if(indexedGameplayProofEnabled){
             static_cast<void>(Mistwatch::ManualEntryRoute::Resolve(false,true,std::wstring_view(route,routeLength)));
             indexedGameplayOutput=inputReplayDirectory;return;
@@ -38,6 +46,8 @@
         manualSmokeRoute=Mistwatch::ManualEntryRoute::Resolve(manualEntrySmoke,false,std::wstring_view(route,routeLength));
         MatureContact::Require(!manualClipEnabled||manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion,
             "MANUAL_BRIDGE_CLIP_REQUIRES_ISOLATED_COMPLETION");
+        MatureContact::Require(!manualClockEnabled||manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion,
+            "MANUAL_PLAYTEST_CLOCK_REQUIRES_ISOLATED_COMPLETION");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion)
             MatureContact::Require(inputReplay.EnableCompletionRoute(),"MANUAL_COMPLETION_ROUTE_REJECTED");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry)
@@ -78,6 +88,10 @@
                     MatureContact::Require(bool(manualClipTimeline),"MANUAL_BRIDGE_CLIP_TIMELINE_WRITE_FAILED");
                     return true;
                 }
+                if(manualClockCapturing){
+                    MatureContact::Require(manualClockElapsed.count()>0&&!manualClockHud.empty(),"MANUAL_PLAYTEST_CLOCK_CAPTURE_NOT_PRESENTED");
+                    manualClockCapturing=false;manualClockCaptured=true;return true;
+                }
                 ++manualSmokeCaptureCount;
                 if(!manualSmokeMenuDone){manualSmokeMenuDone=true;return true;}
                 const bool completion=manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion;
@@ -117,6 +131,14 @@
                         (completion?manualSmokeNewExpeditionObserved&&session.bridgeRepaired&&session.beaconLit&&session.CurrentStage()==Mistwatch::Stage::Complete&&session.repairMaterials==7:session.repairMaterials==1)&&
                         matureSaveHandlerCalls==1&&matureLoadHandlerCalls==1&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,
                         "MANUAL_ENTRY_COMPLETE_OPERATION_MISSING");
+                }
+                if(manualClockEnabled){
+                    MatureContact::Require(manualClockCaptured&&manualClockRestartCleared&&manualClockLoadCleared,
+                        "MANUAL_PLAYTEST_CLOCK_FLOW_INCOMPLETE");
+                    std::ofstream clockReceipt(indexedGameplayOutput/"playtest-clock.txt");
+                    clockReceipt<<"synthetic_input=1\nelapsed_seconds="<<manualClockElapsed.count()
+                        <<"\nhud_context="<<manualClockHud<<"\nrestart_cleared=1\nload_cleared=1\n";
+                    clockReceipt.close();MatureContact::Require(bool(clockReceipt),"MANUAL_PLAYTEST_CLOCK_RECEIPT_FAILED");
                 }
                 std::ofstream out(indexedGameplayOutput/"result.txt");out<<"passed=1\ninput=engine-GetInput\ninput_replay_directory_empty=1\nsource_oracles_enabled="<<indexedGameplayProofEnabled
                     <<"\nticks="<<inputReplay.Ticks()<<"\nmaterials="<<session.repairMaterials<<"\nheight="<<controller.Settings().height<<"\nsave_calls="<<matureSaveHandlerCalls<<"\nload_calls="<<matureLoadHandlerCalls
@@ -164,6 +186,11 @@
         if(deathRetry){
             manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
         }
+        if(manualClockEnabled&&!manualClockCaptured){
+            MatureContact::Require(session.beaconLit&&playtestClock.CompletedTime().has_value(),"MANUAL_PLAYTEST_CLOCK_RESULT_MISSING");
+            manualClockCapturing=true;manualSmokeCaptureRequested=true;
+            manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
+        }
         if(manualSmokeStage==0){actual.SetKey(VK_F5,true);manualSmokeStage=1;return false;}
         if(manualSmokeStage==1){
             Mistwatch::SaveGame disk;MatureContact::Require(matureSaveHandlerCalls==1&&message=="Saved"&&Mistwatch::ReadSaveFile(save,disk)&&disk.Serialize()==CaptureSaveGame().Serialize(),"MANUAL_REAL_F5_SAVE_FAILED");
@@ -176,6 +203,10 @@
                 if(manualSmokeIdle==2){
                     MatureContact::Require(!session.beaconLit&&!session.bridgeRepaired&&session.collected==0&&
                         session.repairMaterials==0&&session.CurrentStage()==Mistwatch::Stage::Supplies&&message=="New expedition","MANUAL_ACTUAL_POSTWIN_R_RESTART_MISSING");
+                    if(manualClockEnabled){
+                        MatureContact::Require(!playtestClock.CompletedTime(),"MANUAL_PLAYTEST_CLOCK_RESTART_RETAINED_OLD_TIME");
+                        manualClockRestartCleared=true;
+                    }
                     manualSmokeNewExpeditionObserved=true;
                 }
             }
@@ -185,8 +216,18 @@
         MatureContact::Require(manualSmokeStage==3&&matureLoadHandlerCalls==1&&message=="Loaded"&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,"MANUAL_REAL_F9_RESTORE_FAILED");
         manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
     }
-    void RenderManualEntrySmoke(Engine& e,const Matrix4& viewProjection){
+    void RenderManualEntrySmoke(Engine& e,const Matrix4& viewProjection,const std::string& hudContext){
         if(!manualEntrySmoke||!manualSmokeCaptureRequested)return;
+        if(manualClockCapturing){
+            const auto completed=playtestClock.CompletedTime();
+            MatureContact::Require(completed&&hudContext==PlaytestClockContext(*completed),
+                "MANUAL_PLAYTEST_CLOCK_HUD_CONTEXT_MISSING");
+            manualClockElapsed=*completed;manualClockHud=hudContext;
+        }else if(manualClockEnabled&&manualSmokeStage==3){
+            MatureContact::Require(!playtestClock.CompletedTime()&&!hudContext.starts_with("測試計時 "),
+                "MANUAL_PLAYTEST_CLOCK_LOADED_OLD_TIME");
+            manualClockLoadCleared=true;
+        }
         manualSmokeCaptureBase=e.GetRendererStats().successfulFrameCaptures;
         const auto path=ManualSmokeCapturePath();
         MatureContact::Require(e.CaptureNextFrame3D(path),"MANUAL_SMOKE_CAPTURE_REJECTED");

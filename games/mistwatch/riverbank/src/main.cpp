@@ -118,6 +118,7 @@
 #include <Aevrynd/PinnedAssetRead3D.h>
 #include "MistwatchAudio.h"
 #include "MistwatchPlayback.h"
+#include "MistwatchPlaytestClock.h"
 #include "MistwatchCameraSettings.h"
 #include "MistwatchCameraSettingsFile.h"
 #include "MistwatchInputReplay.h"
@@ -941,6 +942,7 @@ class MistwatchGame final : public IGame {
     SkinningWorkspace3D boarSkinning;
     Mistwatch::BoarHitReaction::Scratch boarHitScratch;
     bool started{}, paused{};
+    Mistwatch::PlaytestClock playtestClock;
     bool fieldJournalOpen{};
     bool surveyMapRequested{};
     unsigned trackedRelay{Mistwatch::NoTrackedRelay},previewRelay{Mistwatch::NoTrackedRelay};
@@ -4454,6 +4456,13 @@ private:
             return;
         }
         auto& in=matureKeyActive?matureKeyControls:inputReplayDirectory.empty()?e.GetInput():inputReplay.Controls();
+        const bool trackPlaytest=(!manualEntrySmoke||manualClockEnabled)&&!matureKeyActive&&inputReplayDirectory.empty()&&capture.empty();
+        const auto clockNow=trackPlaytest?Mistwatch::PlaytestClock::Clock::now():Mistwatch::PlaytestClock::Clock::time_point{};
+        const auto updatePlaytestActivity=[&] {
+            if(trackPlaytest)playtestClock.SetActive(clockNow,
+                started&&!paused&&in.Focused()&&!in.FocusLost()&&session.Alive()&&!session.beaconLit);
+        };
+        updatePlaytestActivity();
         // 取物緩衝屬短暫輸入，不寫入存檔，也不能跨越選單、焦點或存讀檔邊界。
         if(!started||paused||!in.Focused()||in.FocusLost()||!session.Alive()||session.beaconLit||
            in.Pressed(VK_ESCAPE)||in.Pressed('J')||in.Pressed(VK_F5)||in.Pressed(VK_F9)||in.Pressed('R'))
@@ -4474,6 +4483,7 @@ private:
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera,&playerLocomotion});
                 tuningInputRepeat.Reset();ResetPlayablePairRuntime();
                 started=true;paused=false;
+                playtestClock.Clear();
                 cameraOcclusionSeconds=0;
                 gameAudio.director.Reset();
                 message="Loaded";
@@ -4496,7 +4506,11 @@ private:
         if(cameraOptions.Adjust(cameraSettingsEditable,in.Pressed(VK_OEM_4),in.Pressed(VK_OEM_6),
             in.Pressed('I'),in.Pressed(VK_BACK)))SaveCameraOptions();
         // 只在真正開始時更新回饋；恢復暫停或無焦點按鍵不能覆蓋既有操作結果。
-        if(!wasStarted&&started)message="New expedition";
+        if(!wasStarted&&started){
+            message="New expedition";
+            if(trackPlaytest)playtestClock.Start(clockNow);
+        }
+        updatePlaytestActivity();
         bool changedAudio=false;
         if(in.Pressed('M')){gameAudio.options.muted=!gameAudio.options.muted;changedAudio=true;}
         if(in.Pressed(VK_PRIOR)){gameAudio.options.volume=std::clamp(gameAudio.options.volume+.1f,0.f,1.f);changedAudio=true;}
@@ -4591,6 +4605,7 @@ private:
         }
         if(in.Pressed('R') && session.beaconLit) {
             session={};solids=RuntimeGameplayBody(false,session.feet);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
+            if(trackPlaytest)playtestClock.Start(clockNow);
         }
         if(in.Pressed('R') && !session.Alive()) {
             session.Retry();if(matureIndexedDomain)solids=RuntimeGameplayBody(session.bridgeRepaired,session.feet);ResetController();
@@ -4823,9 +4838,19 @@ private:
         catch(...){runtimeSourceFailure="unknown frame exception";holdFrame("Frame candidate unavailable - prior state and controls retained");}
         // 檔案與音效只在成功提交後執行；不能把提交後I/O例外當成世界已回滾。
         if(!worldCommitted)return;
+        if(trackPlaytest&&(session.beaconLit||!session.Alive())){
+            const auto committedAt=Mistwatch::PlaytestClock::Clock::now();
+            if(session.beaconLit)playtestClock.Finish(committedAt);
+            else playtestClock.SetActive(committedAt,false);
+        }
         RecordIndexedGameplayCommit();
         if(saveAfterCommit)SaveCheckpoint();
         TickAudio(e,dt);
+    }
+    std::string PlaytestClockContext(std::chrono::seconds elapsed)const {
+        const auto seconds=elapsed.count();
+        return std::string(manualClockEnabled?"測試計時 ":"本輪遊玩 ")+
+            std::to_string(seconds/60)+" 分 "+std::to_string(seconds%60)+" 秒";
     }
     void OnRender(Engine& e,float) override {
         counterCueSubmitted=0;
@@ -5740,6 +5765,9 @@ private:
             explorerTransform,explorerMaterials,explorerSurfaceSubmission))
             throw std::runtime_error("Explorer surface window submission failed");
         auto fieldHud=Mistwatch::FieldPresentation::Build(session,guide,encounter,started,paused,fieldJournalOpen);
+        if(fieldHud.valid&&started&&!paused&&session.beaconLit){
+            if(const auto elapsed=playtestClock.CompletedTime())fieldHud.context=PlaytestClockContext(*elapsed);
+        }
         Mistwatch::FieldPresentation::PresentCameraSettings(fieldHud,cameraOptions,started,paused);
         Mistwatch::FieldPresentation::Draw(draw,fieldHud,session,Mistwatch::FieldPresentation::LastAction(message),
             actionFeedback,e.Audio().GetStats().deviceAvailable,gameAudio.options.muted,
@@ -5766,7 +5794,7 @@ private:
                 draw.SystemText({348,184},"地圖資料暫不可用；原任務狀態已保留。",18.2f,{.9f,.95f,.96f,1});
             }
         }
-        RenderManualEntrySmoke(e,draw.ViewProjection());
+        RenderManualEntrySmoke(e,draw.ViewProjection(),fieldHud.context);
         if(inputReplayCaptureRequested){
             inputReplayCaptureBase=e.GetRendererStats().successfulFrameCaptures;
             const auto path=inputReplayDirectory/(std::to_string(inputReplayImages)+"-"+inputReplayPhase+".png");
