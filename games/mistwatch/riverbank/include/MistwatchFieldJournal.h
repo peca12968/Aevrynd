@@ -123,7 +123,8 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.objective="任務資料待確認";return hud;
     }
     hud.valid=true;
-    hud.controls="WASD 移動 · Shift 跑步 · Space 跳躍 · Ctrl 蹲下 · Q 閃避 · E 互動 · F 反擊 · J 完整操作";
+    hud.controls="WASD 移動 · Shift 跑步 · Space 跳躍 · Ctrl 蹲下 · Q 閃避 · E 互動 · F 反擊";
+    hud.controls+=started?" · Esc 地圖 · J 手冊":" · J 手冊";
     const auto count=[](unsigned bits){return unsigned(bool(bits&1))+unsigned(bool(bits&2))+unsigned(bool(bits&4));};
     std::string target;
     switch(session.CurrentStage()) {
@@ -233,7 +234,8 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.controls="R 重試 · F9 嘗試讀檔 · Esc 暫停 · J 查看手冊";
     }
     if(!started){hud.objective="孤橋復聯：暴雨切斷谷北通訊";hud.instruction="Enter 開始新巡守；F9 讀取存檔繼續；J 查看任務手冊。";}
-    else if(paused){hud.objective="已暫停；目前目標保留";hud.instruction="角色與世界暫停更新。";
+    else if(paused){hud.objective="已暫停；目前目標保留";
+        hud.instruction=session.Alive()&&journalOpen?"按 J 關閉手冊，查看巡守地圖。":"角色與世界暫停更新。";
         hud.controls="Esc 繼續 · M 靜音 · PageUp / PageDown 音量 · J 手冊";}
     if(started&&!paused&&FieldInput::RepeatContext(session)){
         // 只描述本模式可用的數字鍵，不改調整、確認或長按規則。
@@ -258,8 +260,8 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         "補給 "+std::to_string(count(session.collected))+"/3；工具與木料 "+std::to_string(count(session.repairMaterials))+"/3；橋："+(session.bridgeRepaired?std::string("已修復"):"尚未修復"),
         "互動需接近且符合站位；方位箭頭不是穿牆通行線。",
         !started?"Enter 開始新巡守；F9 讀取存檔繼續；J 關閉手冊。":
-        paused?"暫停中：Esc 繼續後，F5 儲存／F9 載入；J 關閉手冊。":
-        "操作：拖曳／滾輪調鏡頭；C 回正；F5 儲存；F9 載入；Esc 暫停。"};
+        paused?"J 關閉手冊查看地圖。Esc 繼續後可 F5 儲存／F9 載入。":
+        "操作：拖曳／滾輪調鏡頭；C 回正；F5 儲存；F9 載入；Esc 暫停看地圖。"};
     if(session.guardianDefeated)hud.journal.push_back("野豬已擊退：谷北木屋與工棚內有供電線索。");
     if(session.fuseClueRead)hud.journal.push_back("已讀日誌：保險絲櫃轉盤 2 - 0 - 3；1、2、3 分別轉對應轉盤，調至線索數字。");
     if(session.fuseCollected)hud.journal.push_back("發電機：1 切換 A+B，2 切換 B+C，3 切換 C；三燈全亮才送電。");
