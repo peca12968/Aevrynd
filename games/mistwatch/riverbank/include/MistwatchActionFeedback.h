@@ -6,7 +6,7 @@
 namespace Mistwatch {
 // 純 UI 操作結果，不是存檔通行證，也不推測目前世界是否可還原。
 enum class ActionFeedbackEvent : std::uint8_t {
-    None, Saved, SaveFailed, SavePositionUnavailable, Loaded, LoadUnavailable
+    None, Saved, SaveFailed, SavePositionUnavailable, Loaded, LoadUnavailable, RetryFromBridge, RetryFromStart
 };
 enum class ActionFeedbackClock : std::uint8_t { Active, Suspended, LoadTransaction };
 
@@ -21,7 +21,9 @@ public:
         case ActionFeedbackEvent::SaveFailed:
         case ActionFeedbackEvent::SavePositionUnavailable:
         case ActionFeedbackEvent::Loaded:
-        case ActionFeedbackEvent::LoadUnavailable:break;
+        case ActionFeedbackEvent::LoadUnavailable:
+        case ActionFeedbackEvent::RetryFromBridge:
+        case ActionFeedbackEvent::RetryFromStart:break;
         default:return false;
         }
         event_=event;remaining_=DurationSeconds;return true;
@@ -52,6 +54,8 @@ public:
         case ActionFeedbackEvent::SavePositionUnavailable:return "Last action: Save position unavailable";
         case ActionFeedbackEvent::Loaded:return "Last action: Loaded";
         case ActionFeedbackEvent::LoadUnavailable:return "Last action: Load unavailable";
+        case ActionFeedbackEvent::RetryFromBridge:return "Last action: Retry from bridgehead";
+        case ActionFeedbackEvent::RetryFromStart:return "Last action: Retry from starting point";
         default:return {};
         }
     }

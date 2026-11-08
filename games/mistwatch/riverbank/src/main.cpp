@@ -4562,6 +4562,7 @@ private:
             TickAudio(e,dt);return;
         }
         bool resetTick=false;
+        auto retryFeedback=Mistwatch::ActionFeedbackEvent::None;
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(playableRecoveryCause!=PlayableRecoveryCause::None&&in.Pressed('R')&&playableFrame){
             const auto previousAudioDirector=gameAudio.director;bool recovered=false;
@@ -4594,12 +4595,16 @@ private:
             session.Retry();if(matureIndexedDomain)solids=RuntimeGameplayBody(session.bridgeRepaired,session.feet);ResetController();
             // 重試保留已完成任務；已擊敗的野豬不能重設為未擊敗而破壞檢查點一致性。
             if(!session.guardianDefeated)encounter={};
-            ResetBoarPose();evasion={};resetTick=true;
+            ResetBoarPose();evasion={};
+            message=session.bridgeRepaired?"Retry from bridgehead":"Retry from starting point";
+            retryFeedback=session.bridgeRepaired?Mistwatch::ActionFeedbackEvent::RetryFromBridge:Mistwatch::ActionFeedbackEvent::RetryFromStart;
+            resetTick=true;
         }
         if(resetTick){
             tuningInputRepeat.Reset();
             fieldJournalOpen=false;
             actionFeedback.Clear();
+            if(retryFeedback!=Mistwatch::ActionFeedbackEvent::None)actionFeedback.Publish(retryFeedback);
             if(!UpdatePlayerCamera(dt))throw std::runtime_error("Reset-tick player camera unavailable");
             ResetPlayablePairRuntime();
             TickAudio(e,dt);return;

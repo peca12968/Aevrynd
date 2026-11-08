@@ -23,6 +23,8 @@
         manualSmokeRoute=Mistwatch::ManualEntryRoute::Resolve(manualEntrySmoke,false,std::wstring_view(route,routeLength));
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion)
             MatureContact::Require(inputReplay.EnableCompletionRoute(),"MANUAL_COMPLETION_ROUTE_REJECTED");
+        if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry)
+            MatureContact::Require(inputReplay.EnableDeathRetryRoute(),"MANUAL_DEATH_RETRY_ROUTE_REJECTED");
         indexedGameplayOutput=manualEntrySmoke?std::filesystem::path(raw):save.parent_path()/"mature-indexed-runs"/(std::to_string(GetCurrentProcessId())+"-"+std::to_string(GetTickCount64()));
         MatureContact::Require(indexedGameplayOutput.is_absolute()&&!std::filesystem::exists(indexedGameplayOutput),"MANUAL_EVIDENCE_REQUIRES_FRESH_ABSOLUTE_OUTPUT");
         std::filesystem::create_directories(indexedGameplayOutput);
@@ -42,6 +44,7 @@
         if(!manualEntrySmoke)return false;
         auto& actual=e.GetInput();actual.SetFocused(true);actual.ConsumePresses();
         if(manualSmokeFinished)return true;
+        const bool deathRetry=manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry;
         if(manualSmokeCaptureRequested||manualSmokeCapturePending){
             const auto s=e.GetRendererStats();
             if(manualSmokeCapturePending&&s.successfulFrameCaptures>manualSmokeCaptureBase){
@@ -53,27 +56,55 @@
                 manualSmokeCapturePending=false;++manualSmokeCaptureCount;
                 if(!manualSmokeMenuDone){manualSmokeMenuDone=true;return true;}
                 const bool completion=manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion;
+                if(deathRetry&&manualSmokeCaptureCount==2){
+                    MatureContact::Require(!session.Alive()&&inputReplay.DamageEvents()==5&&inputReplay.Retries()==0,
+                        "MANUAL_ACTUAL_DEFEAT_CAPTURE_MISSING");
+                    return true;
+                }
+                if(deathRetry&&manualSmokeCaptureCount==3){
+                    MatureContact::Require(session.health==100&&session.bridgeRepaired&&message=="Retry from bridgehead"&&
+                        actionFeedback.Visible()&&actionFeedback.Event()==Mistwatch::ActionFeedbackEvent::RetryFromBridge,
+                        "MANUAL_ACTUAL_RETRY_FEEDBACK_MISSING");
+                    return true;
+                }
                 if(completion&&!manualSmokeBridgeDone){
                     MatureContact::Require(session.bridgeRepaired&&!inputReplay.Finished(),"MANUAL_BRIDGE_CAPTURE_STATE_MISSING");
                     manualSmokeBridgeDone=true;return true;
                 }
                 MatureContact::Require(manualSmokeCaptureCount==Mistwatch::ManualEntryRoute::CaptureCount(manualSmokeRoute)&&inputReplay.Passed()&&started&&!paused&&
-                    (completion?manualSmokeNewExpeditionObserved&&session.bridgeRepaired&&session.beaconLit&&session.CurrentStage()==Mistwatch::Stage::Complete&&session.repairMaterials==7:session.repairMaterials==1)&&
-                    controller.Settings().height>1.79f&&matureSaveHandlerCalls==1&&matureLoadHandlerCalls==1&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,"MANUAL_ENTRY_COMPLETE_OPERATION_MISSING");
+                    controller.Settings().height>1.79f,"MANUAL_ENTRY_COMPLETE_OPERATION_MISSING");
+                if(deathRetry){
+                    MatureContact::Require(session.health==100&&session.collected==7&&session.repairMaterials==7&&session.bridgeRepaired&&
+                        session.CurrentStage()==Mistwatch::Stage::Encounter&&session.feet.z>40.f&&controller.Grounded()&&
+                        inputReplay.DamageEvents()==5&&inputReplay.Retries()==1&&matureSaveHandlerCalls==0&&matureLoadHandlerCalls==0,
+                        "MANUAL_ACTUAL_DEATH_RETRY_ROUTE_INCOMPLETE");
+                }else{
+                    MatureContact::Require(
+                        (completion?manualSmokeNewExpeditionObserved&&session.bridgeRepaired&&session.beaconLit&&session.CurrentStage()==Mistwatch::Stage::Complete&&session.repairMaterials==7:session.repairMaterials==1)&&
+                        matureSaveHandlerCalls==1&&matureLoadHandlerCalls==1&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,
+                        "MANUAL_ENTRY_COMPLETE_OPERATION_MISSING");
+                }
                 std::ofstream out(indexedGameplayOutput/"result.txt");out<<"passed=1\ninput=engine-GetInput\ninput_replay_directory_empty=1\nsource_oracles_enabled="<<indexedGameplayProofEnabled
                     <<"\nticks="<<inputReplay.Ticks()<<"\nmaterials="<<session.repairMaterials<<"\nheight="<<controller.Settings().height<<"\nsave_calls="<<matureSaveHandlerCalls<<"\nload_calls="<<matureLoadHandlerCalls
-                    <<"\nworld="<<matureIndexedDomain->Identity()<<"\nrestored_snapshot_exact=1\nimages="<<manualSmokeCaptureCount
-                    <<"\nroute="<<(completion?"completion":"shelter")<<"\nbridge_repaired="<<session.bridgeRepaired<<"\nstage="<<static_cast<unsigned>(session.CurrentStage())<<"\nbeacon_lit="<<session.beaconLit
+                    <<"\nworld="<<matureIndexedDomain->Identity()<<"\nrestored_snapshot_exact="<<!deathRetry<<"\nimages="<<manualSmokeCaptureCount
+                    <<"\nroute="<<(deathRetry?"death-retry":completion?"completion":"shelter")<<"\nbridge_repaired="<<session.bridgeRepaired<<"\nstage="<<static_cast<unsigned>(session.CurrentStage())<<"\nbeacon_lit="<<session.beaconLit
                     <<"\npostwin_restart_observed="<<manualSmokeNewExpeditionObserved
                     <<"\nforest_surface="<<Mistwatch::ForestSurfaceProfile::Name(forestSurfaceSelection.profile)
                     <<"\ndebug_errors="<<s.debugErrorCount<<"\ndebug_warnings="<<s.debugWarningCount
                     <<"\ndebug_layer_enabled="<<s.debugLayerEnabled<<"\ngpu_validation_requested="<<s.gpuValidationRequested<<"\ngpu_validation_executed="<<s.gpuValidationExecuted
                     <<"\nmanual_physical_input=0\nfocus=synthetic-engine-input-focus-only-not-OS-focus\n";
+                if(deathRetry)out<<"damage_events="<<inputReplay.DamageEvents()<<"\nretries="<<inputReplay.Retries()
+                    <<"\nretry_feedback_observed=1\nhealth="<<session.health<<"\ncollected="<<session.collected<<'\n';
                 out.close();MatureContact::Require(bool(out),"MANUAL_SMOKE_RESULT_FAILED");manualSmokeFinished=true;e.Quit();return true;
             }
             MatureContact::Require(std::chrono::steady_clock::now()-manualSmokeCaptureStart<=std::chrono::seconds(15),"MANUAL_SMOKE_CAPTURE15S_TIMEOUT");return true;
         }
         if(!inputReplay.Finished()){
+            const std::string_view phase=inputReplay.Phase();
+            if(deathRetry&&((manualSmokeCaptureCount==1&&phase=="death-retry-press")||
+                (manualSmokeCaptureCount==2&&phase=="death-retry-verify"))){
+                manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
+            }
             if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion&&!manualSmokeBridgeDone&&std::string_view(inputReplay.Phase())=="cross-bridge") {
                 MatureContact::Require(session.bridgeRepaired,"MANUAL_BRIDGE_REQUIRES_REAL_REPAIR");
                 manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
@@ -86,6 +117,9 @@
         }
         MatureContact::Require(inputReplay.Passed(),("MANUAL_ENGINE_INPUT_ROUTE_FAILED: "+std::string(inputReplay.Failure())).c_str());
         for(unsigned k=0;k<256;++k)actual.SetKey(k,false);
+        if(deathRetry){
+            manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
+        }
         if(manualSmokeStage==0){actual.SetKey(VK_F5,true);manualSmokeStage=1;return false;}
         if(manualSmokeStage==1){
             Mistwatch::SaveGame disk;MatureContact::Require(matureSaveHandlerCalls==1&&message=="Saved"&&Mistwatch::ReadSaveFile(save,disk)&&disk.Serialize()==CaptureSaveGame().Serialize(),"MANUAL_REAL_F5_SAVE_FAILED");

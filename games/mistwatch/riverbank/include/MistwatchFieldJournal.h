@@ -70,15 +70,20 @@ inline std::string_view Toast(ActionFeedbackEvent event) {
     case ActionFeedbackEvent::SavePositionUnavailable:return "上次操作：此位置無法安全建立存檔";
     case ActionFeedbackEvent::Loaded:return "上次操作：已載入";
     case ActionFeedbackEvent::LoadUnavailable:return "上次操作：無法載入，保留目前狀態";
+    case ActionFeedbackEvent::RetryFromBridge:return "已回到橋頭，保留已完成進度";
+    case ActionFeedbackEvent::RetryFromStart:return "已回到起點，保留已取得物資";
     default:return {};
     }
 }
 inline std::string_view LastAction(std::string_view text) {
-    constexpr std::array<std::pair<std::string_view,std::string_view>,29> names{{
+    constexpr std::array<std::pair<std::string_view,std::string_view>,31> names{{
         {"ENTER: begin expedition","等待開始巡守"},{"Saved","已儲存"},{"Save failed","儲存失敗"},
         {"Loaded","已載入"},{"Save unavailable","無法載入，保留目前狀態"},
         {"Save position unavailable","此位置無法安全建立存檔"},{"Audio settings save failed","音量設定寫入失敗"},
-        {"New expedition","新一輪巡守已開始"},{"Low ceiling - move clear before standing","上方空間不足；保持蹲姿移出屋簷，再放開 Ctrl"},
+        {"New expedition","新一輪巡守已開始"},
+        {"Retry from bridgehead","已回到橋頭，保留已完成進度"},
+        {"Retry from starting point","已回到起點，保留已取得物資"},
+        {"Low ceiling - move clear before standing","上方空間不足；保持蹲姿移出屋簷，再放開 Ctrl"},
         {"Headroom clear - standing restored","已離開低頂，恢復站立"},
         {"Camera clearance - movement held","鏡頭空間不足，本步保留原位置"},{"Fell into the ravine - R to retry","跌入谷底，按 R 重試"},
         {"Antenna rotated - find the green signal lock, then E","天線已旋轉，訊號 100 後按 E"},
