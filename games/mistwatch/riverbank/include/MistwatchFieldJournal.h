@@ -160,8 +160,9 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
     }
     case Stage::RepairMaterials: {
         constexpr std::array names{"西側低棚工具","東南木料","西岸木料"};
-        target=names[guide.index%3];hud.objective="取齊工具與兩組木料，修通跨谷橋";
-        hud.instruction=guide.useReady?"E：拾取維修物資":guide.index==0?
+        target=guide.shelterApproach?"低棚入口路線":names[guide.index%3];hud.objective="取齊工具與兩組木料，修通跨谷橋";
+        hud.instruction=guide.useReady?"E：拾取維修物資":guide.shelterApproach?
+            "沿指引繞過棚外，到東側開口再按 Ctrl 蹲入。":guide.index==0?
             "由低棚東側開口進入；按 Ctrl 蹲下接近工具。":"沿南岸支路找木料，接近後按 E。";
         hud.context=std::string("工具：")+((session.repairMaterials&1)?"已取得":"未取得")+"；木料 "+std::to_string(count(session.repairMaterials&6))+" / 2";break;
     }

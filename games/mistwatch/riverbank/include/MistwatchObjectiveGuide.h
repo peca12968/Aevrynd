@@ -5,6 +5,7 @@
 #include "MistwatchCamera.h"
 #include "MistwatchBridgeRepairPrompt.h"
 #include <limits>
+#include <optional>
 #include <string>
 
 namespace Mistwatch {
@@ -25,7 +26,7 @@ inline unsigned CycleTrackedRelay(const Session& session,unsigned from,int direc
 enum class ObjectiveBearing { AtTarget, Ahead, Right, Behind, Left };
 struct ObjectiveGuide {
     bool valid{}, hasTarget{}, useReady{}, counterReady{}, evadeReady{}, tuneReady{};
-    bool earlyToolsReady{};
+    bool earlyToolsReady{}, shelterApproach{};
     BridgeRepairIntent bridgeIntent{BridgeRepairIntent::None};
     unsigned index{};
     // index/useReady/tuneReady 仍是近場操作；此欄只識別玩家確認的導航目的地。
@@ -47,6 +48,56 @@ inline const char* BearingName(ObjectiveBearing bearing) {
     }
     return "unknown";
 }
+inline bool ShelterWallCrossed(Aevrynd::Vec3 from,Aevrynd::Vec3 to,
+    const Aevrynd::BoxCollider3D& wall,float radius) {
+    const auto extents=wall.extents+Aevrynd::Vec3{radius,0,radius};
+    const auto sameOutsideFace=[](float start,float end,float center,float extent){
+        const double lower=double(center)-extent,upper=double(center)+extent;
+        return (start<=lower&&end<=lower)||(start>=upper&&end>=upper);
+    };
+    // 貼著外側邊界平移或離開不算穿牆。跨向內側仍使用完整線段碰撞。
+    if(sameOutsideFace(from.x,to.x,wall.center.x,extents.x)||
+       sameOutsideFace(from.z,to.z,wall.center.z,extents.z))return false;
+    return Aevrynd::SegmentIntersectsAabb3D(from,to,wall.center,extents);
+}
+// 低棚入口朝東。以原牆碰撞加上角色半徑決定可繞行的棚外轉角。
+inline std::optional<Aevrynd::Vec3> ShelterApproach(Aevrynd::Vec3 feet,float radius) {
+    if(!std::isfinite(radius)||radius<=0)return std::nullopt;
+    static const auto structure=RepairShelterSolids();
+    const auto& roof=structure.front();
+    constexpr float cornerMargin=.35f;
+    const float xClearance=roof.extents.x+radius+cornerMargin;
+    const float zClearance=roof.extents.z+radius+cornerMargin;
+    const auto tool=Session::repairSites[0];
+    const auto wallClear=[&](Aevrynd::Vec3 from,Aevrynd::Vec3 to) {
+        // 只檢查低棚三面牆的平面投影。其他地物仍由實際碰撞處理。
+        from.y=to.y=tool.y+.65f;
+        for(const auto& wall:std::span(structure).subspan(1,3))
+            if(ShelterWallCrossed(from,to,wall,radius))
+                return false;
+        return true;
+    };
+    if(wallClear(feet,tool))return std::nullopt;
+    const Aevrynd::Vec3 entrance{roof.center.x+xClearance,tool.y,roof.center.z};
+    std::optional<Aevrynd::Vec3> next;
+    double shortest=(std::numeric_limits<double>::infinity)();
+    const auto distance=[](Aevrynd::Vec3 a,Aevrynd::Vec3 b){return std::hypot(double(a.x)-b.x,double(a.z)-b.z);};
+    for(float side:{-1.f,1.f}){
+        const float z=roof.center.z+side*zClearance;
+        const std::array route{entrance,Aevrynd::Vec3{entrance.x,tool.y,z},
+            Aevrynd::Vec3{roof.center.x-xClearance,tool.y,z}};
+        double remaining=0;
+        for(unsigned i=0;i<route.size();++i){
+            if(i)remaining+=distance(route[i],route[i-1]);
+            const double leg=distance(feet,route[i]);
+            const double length=leg+remaining;
+            if(leg>.01&&length<shortest&&wallClear(feet,route[i])){
+                shortest=length;next=route[i];
+            }
+        }
+    }
+    return next;
+}
 inline bool CounterLineClear(const Session& session,const Encounter& enemy,
     std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain) {
     if(!ValidEncounterWorld(solids,terrain))return false;
@@ -60,7 +111,7 @@ inline bool CounterLineClear(const Session& session,const Encounter& enemy,
 inline ObjectiveGuide BuildObjectiveGuide(const Session& session,const Encounter& enemy,const Evasion& evasion,
     const Aevrynd::Camera3D& renderedCamera,bool crouched,bool grounded,
     std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain,
-    unsigned preferredRelay=NoTrackedRelay) {
+    unsigned preferredRelay=NoTrackedRelay,std::optional<float> presentationRadius=std::nullopt) {
     using namespace ObjectiveGuideDetail;
     ObjectiveGuide guide;
     if(!session.Valid())return guide;
@@ -111,6 +162,14 @@ inline ObjectiveGuide BuildObjectiveGuide(const Session& session,const Encounter
         guide.instruction=guide.useReady?"E: collect repair item":guide.index==0?
             "Follow main trail; east shelter opening, CTRL crouch inside":"Follow the south-bank trail to the timber cache";
         guide.context=std::string("Tools ")+((session.repairMaterials&1)?"OK":"missing")+" | Timber "+std::to_string(Count(session.repairMaterials&6))+" / 2";
+        // 只有畫面導航使用中繼點。索引與操作門檻仍取自實際工具。
+        if(presentationRadius&&guide.index==0&&!guide.useReady){
+            if(const auto step=ShelterApproach(session.feet,*presentationRadius)){
+                guide.target=*step;
+                guide.shelterApproach=true;
+                name="East shelter approach";
+            }
+        }
         break;
     }
     case Stage::Bridge:

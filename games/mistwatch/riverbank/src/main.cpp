@@ -5408,7 +5408,7 @@ private:
            (shoulderGroundcoverEnabled&&!groundcoverTreePopulation))
             throw std::runtime_error("Groundcover retained tree submission mismatch");
         const auto guide=Mistwatch::BuildObjectiveGuide(session,encounter,evasion,camera,
-            controller.Settings().height<1.5f,controller.Grounded(),RuntimeGuideSource(solids),terrain,trackedRelay);
+            controller.Settings().height<1.5f,controller.Grounded(),RuntimeGuideSource(solids),terrain,trackedRelay,controller.Settings().radius);
         const auto counterCue=Mistwatch::CounterWindowCue::Build(session,guide,encounter,terrain,started,paused);
         const auto counterCueReceipt=Mistwatch::CounterWindowCue::Submit(scene,counterCue,terrain);
         counterCueSubmitted=counterCueReceipt.submitted;

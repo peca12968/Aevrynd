@@ -1,4 +1,5 @@
 #include "MistwatchPlayerLocomotion.h"
+#include "MistwatchObjectiveGuide.h"
 #include <Aevrynd/StaticAabbIndex3D.h>
 #include <bit>
 #include <cstring>
@@ -69,6 +70,57 @@ void Scenario(Source& source,const char* name,Vec3 start,unsigned kind){
     if(kind==2)Need(crouched==60&&controller.Settings().height==1.8f&&start.z-finish.z>.5f&&controller.Grounded(),"real crouch walk stand restoration");
     std::cout<<"BANK_SCENARIO_PASS name="<<name<<" frames=180 altered="<<altered<<" peak_jump="<<peakJump<<" peak_speed="<<peakSpeed<<" finish="<<finish.x<<','<<finish.y<<','<<finish.z<<'\n';
 }
+
+// 每幀依正式展示指引移動，實際通過牆體碰撞、東側入口與蹲姿拾取。
+void VerifyShelterNavigation(Source& source) {
+    using namespace Mistwatch;
+    const auto& roof=CameraCeilingSolids().back();
+    const float eastEdge=roof.center.x+roof.extents.x;
+    Camera3D camera;camera.position={0,3,-6};camera.target={0,1,0};
+    const Encounter enemy;
+    const Evasion evasion;
+    CharacterControllerSettings3D settings;
+    settings.maximumTerrainUphillGrade=settings.maximumTerrainStandingGrade=1.f;
+    constexpr float deltaTime=1.f/60.f;
+    for(float zOffset:{0.f,-3.f,3.f}){
+        Session session;session.collected=7;session.repairMaterials=6;
+        Vec3 feet{roof.center.x-roof.extents.x-.7f,0,roof.center.z+zOffset};
+        feet.y=source.field.SampleHeight(feet.x,feet.z);
+        CharacterController3D controller(settings);controller.Reset(feet);
+        bool enteredEast=false;
+        unsigned steps=0;
+        for(;steps<480;++steps){
+            session.feet=controller.Position();
+            const auto local=source.Nearby(session.feet);
+            const bool crouched=controller.Settings().height<1.5f;
+            const auto guide=BuildObjectiveGuide(session,enemy,evasion,camera,crouched,controller.Grounded(),
+                local,source.field,NoTrackedRelay,settings.radius);
+            Need(guide.valid&&guide.index==0&&session.repairMaterials==6,"shelter guidance retains the tool interaction");
+            if(guide.useReady){
+                Need(enteredEast&&crouched&&controller.Grounded()&&session.CollectRepairMaterial(0,true),
+                    "engine movement permits the original crouched tool pickup");
+                break;
+            }
+            if(!guide.shelterApproach&&!enteredEast){
+                Need(session.feet.x>eastEdge,"shelter route offers entry only from the open east side");
+                Need(controller.TrySetHeight(1.4f,local),"crouch at the east opening");
+                enteredEast=true;
+            }
+            const float dx=guide.target.x-session.feet.x,dz=guide.target.z-session.feet.z;
+            const float remaining=std::hypot(dx,dz);
+            Need(std::isfinite(remaining)&&remaining>.001f,"shelter route supplies a usable direction");
+            Need(controller.Step({{dx/remaining,0,dz/remaining},false,.5f},local,
+                std::span<const ConvexAabbSweep3D* const>{},source.field,deltaTime),"shelter movement step on actual terrain");
+        }
+        if(session.repairMaterials!=7){
+            const auto p=controller.Position();
+            std::cerr<<"SHELTER_GUIDANCE_FIRST_DIVERGENCE start_z_offset="<<zOffset
+                <<" steps="<<steps<<" feet="<<p.x<<','<<p.y<<','<<p.z<<" entered_east="<<enteredEast<<'\n';
+        }
+        Need(session.repairMaterials==7,"guided path reaches the crouched tool pickup before timeout");
+        std::cout<<"SHELTER_GUIDED_TRAVERSAL_PASS start_z_offset="<<zOffset<<" steps="<<steps<<'\n';
+    }
+}
 }
 int main(int argc,char**argv){
     try{
@@ -76,6 +128,7 @@ int main(int argc,char**argv){
         Scenario(source,"east-south-walk-run-stop",{16,0,30},0);
         Scenario(source,"east-north-jump-land",{13,0,43},1);
         Scenario(source,"west-south-crouch-walk-stand",{-13,0,29},2);
+        VerifyShelterNavigation(source);
         trace.close();Need(bool(trace),"trace fully written");std::cout<<"RIVERBANK_PRODUCTION_LOCOMOTION_PASS scenarios=3 frames="<<frames<<" changed_frames="<<changedFrames<<" checks="<<checks<<"\n";
     }catch(const std::exception& e){std::cerr<<"FIRST_DIVERGENCE "<<e.what()<<'\n';return 1;}
 }
