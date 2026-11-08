@@ -18,8 +18,10 @@ inline Aevrynd::Mesh3D CreateRiverMesh(const Aevrynd::HeightField3D& terrain) {
 }
 inline Aevrynd::WaterSurfaceSettings3D RiverSurface() {
     Aevrynd::WaterSurfaceSettings3D surface;
-    surface.absorption={.34f,.22f,.15f};surface.deepColor={.014f,.035f,.04f};
-    surface.minimumRoughness=.05f;surface.maximumRoughness=.18f;
+    // 以暴雨後懸浮泥砂為美術參考。係數為本場景調色，河面反射率與岸邊泡沫沿用原設定。
+    // https://www.usgs.gov/water-science-school/science/turbidity-and-water
+    surface.absorption={.24f,.35f,.47f};surface.deepColor={.038f,.034f,.022f};
+    surface.minimumRoughness=.065f;surface.maximumRoughness=.21f;
     surface.broadWaveStrength=.025f;surface.detailWaveStrength=.012f;
     surface.foamStartDepth=.02f;surface.foamEndDepth=.16f;surface.foamStrength=.18f;
     surface.shallowAlpha=.38f;surface.deepAlpha=.86f;
