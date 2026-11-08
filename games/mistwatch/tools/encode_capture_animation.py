@@ -9,9 +9,12 @@ parser.add_argument("directory", type=Path)
 parser.add_argument("prefix")
 parser.add_argument("output", type=Path)
 parser.add_argument("--frames", type=int, default=36)
+parser.add_argument("--frame-ms", type=int, default=100)
 args = parser.parse_args()
 if not 2 <= args.frames <= 120 or args.output.suffix.lower() != ".webp":
     raise ValueError("Require 2..120 captured frames and a .webp output")
+if not 16 <= args.frame_ms <= 2000:
+    raise ValueError("Require a frame interval between 16 and 2000 ms")
 if args.output.exists():
     raise FileExistsError(args.output)
 frames = []
@@ -25,10 +28,10 @@ changed = sum(ImageChops.difference(a, b).getbbox() is not None for a, b in zip(
 if not changed:
     raise ValueError("All native captures are identical; cannot claim motion")
 frames[0].save(args.output, format="WEBP", save_all=True, append_images=frames[1:],
-               duration=100, loop=0, quality=90, method=4)
+               duration=args.frame_ms, loop=0, quality=90, method=4)
 with Image.open(args.output) as result:
     if result.n_frames != args.frames or result.size != frames[0].size:
         raise ValueError("Encoded animation failed frame count or size verification")
 print(json.dumps({"output": str(args.output), "native_frames": args.frames,
-                  "changed_transitions": changed, "frame_duration_ms": 100,
+                  "changed_transitions": changed, "frame_duration_ms": args.frame_ms,
                   "size": frames[0].size, "bytes": args.output.stat().st_size}, indent=2))

@@ -6,12 +6,27 @@
     std::string manualSmokeExpectedSave;
     Mistwatch::ManualEntryRoute::Route manualSmokeRoute{Mistwatch::ManualEntryRoute::Route::Shelter};
     bool manualSmokeBridgeDone{},manualSmokeNewExpeditionObserved{};
+    static constexpr unsigned ManualClipFrames=60,ManualClipTickStep=3;
+    bool manualClipEnabled{},manualClipCapturing{};
+    unsigned manualClipFirstTick{},manualClipFrames{};
+    std::ofstream manualClipTimeline;
+    std::filesystem::path ManualSmokeCapturePath()const {
+        if(!manualClipCapturing)
+            return indexedGameplayOutput/Mistwatch::ManualEntryRoute::CaptureName(manualSmokeRoute,manualSmokeCaptureCount);
+        auto frame=std::to_string(manualClipFrames);
+        frame.insert(0,3-frame.size(),'0');
+        return indexedGameplayOutput/"bridge-clip"/("bridge-"+frame+".png");
+    }
     void InitializeManualEntryEvidence(){
         indexedGameplayProofEnabled=!inputReplayDirectory.empty();
         save=save.parent_path()/(save.stem().wstring()+L"-riverbank-v1-bearing-bridge-v1"+save.extension().wstring());
         if(bankRocksPreviewActive)save=save.parent_path()/(save.stem().wstring()+L"-bank-rocks-preview-unaccepted"+save.extension().wstring());
         wchar_t route[64]{};const auto routeLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_SMOKE_ROUTE",route,64);
         MatureContact::Require(routeLength<64,"MANUAL_SMOKE_ROUTE_TRUNCATED");
+        wchar_t clip[3]{};const auto clipLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_BRIDGE_CLIP",clip,3);
+        MatureContact::Require(!clipLength||(!indexedGameplayProofEnabled&&clipLength==1&&clip[0]==L'1'),
+            "MANUAL_BRIDGE_CLIP_REQUIRES_ISOLATED_COMPLETION");
+        manualClipEnabled=clipLength==1;
         if(indexedGameplayProofEnabled){
             static_cast<void>(Mistwatch::ManualEntryRoute::Resolve(false,true,std::wstring_view(route,routeLength)));
             indexedGameplayOutput=inputReplayDirectory;return;
@@ -21,6 +36,8 @@
         wchar_t raw[32768]{};const auto n=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_SMOKE_OUTPUT",raw,32768);
         MatureContact::Require(n<32768,"MANUAL_SMOKE_OUTPUT_TRUNCATED");manualEntrySmoke=n>0;
         manualSmokeRoute=Mistwatch::ManualEntryRoute::Resolve(manualEntrySmoke,false,std::wstring_view(route,routeLength));
+        MatureContact::Require(!manualClipEnabled||manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion,
+            "MANUAL_BRIDGE_CLIP_REQUIRES_ISOLATED_COMPLETION");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion)
             MatureContact::Require(inputReplay.EnableCompletionRoute(),"MANUAL_COMPLETION_ROUTE_REJECTED");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry)
@@ -49,11 +66,19 @@
             const auto s=e.GetRendererStats();
             if(manualSmokeCapturePending&&s.successfulFrameCaptures>manualSmokeCaptureBase){
                 MatureContact::Require(s.successfulFrameCaptures==manualSmokeCaptureBase+1&&s.lastCapturedRenderSerial,"MANUAL_SMOKE_CAPTURE_IDENTITY_MISSING");
-                auto path=indexedGameplayOutput/Mistwatch::ManualEntryRoute::CaptureName(manualSmokeRoute,manualSmokeCaptureCount);path+=L".uploaded-view.txt";
+                auto path=ManualSmokeCapturePath();path+=L".uploaded-view.txt";
                 std::ofstream receipt(path);receipt<<"render_serial="<<s.lastCapturedRenderSerial<<"\nuploaded_unjittered_vp_bits=";
                 for(float v:s.lastCapturedUnjitteredViewProjection)receipt<<std::bit_cast<std::uint32_t>(v)<<',';
                 receipt<<'\n';receipt.close();MatureContact::Require(bool(receipt),"MANUAL_UPLOADED_VIEW_WRITE_FAILED");
-                manualSmokeCapturePending=false;++manualSmokeCaptureCount;
+                manualSmokeCapturePending=false;
+                if(manualClipCapturing){
+                    manualClipTimeline<<manualClipFrames<<'\t'<<inputReplay.Ticks()<<'\t'<<s.lastCapturedRenderSerial<<'\t'<<session.feet.z<<'\n';
+                    manualClipCapturing=false;
+                    if(++manualClipFrames==ManualClipFrames)manualClipTimeline.close();
+                    MatureContact::Require(bool(manualClipTimeline),"MANUAL_BRIDGE_CLIP_TIMELINE_WRITE_FAILED");
+                    return true;
+                }
+                ++manualSmokeCaptureCount;
                 if(!manualSmokeMenuDone){manualSmokeMenuDone=true;return true;}
                 const bool completion=manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion;
                 if(deathRetry&&manualSmokeCaptureCount==2){
@@ -69,6 +94,15 @@
                 }
                 if(completion&&!manualSmokeBridgeDone){
                     MatureContact::Require(session.bridgeRepaired&&!inputReplay.Finished(),"MANUAL_BRIDGE_CAPTURE_STATE_MISSING");
+                    if(manualClipEnabled){
+                        manualClipFirstTick=inputReplay.Ticks();
+                        const auto clipDirectory=indexedGameplayOutput/"bridge-clip";
+                        MatureContact::Require(std::filesystem::create_directory(clipDirectory),"MANUAL_BRIDGE_CLIP_OUTPUT_NOT_FRESH");
+                        manualClipTimeline.open(clipDirectory/"timeline.tsv");
+                        manualClipTimeline.precision(9);
+                        manualClipTimeline<<"frame\ttick_60hz\trender_serial\tplayer_z\n";
+                        MatureContact::Require(bool(manualClipTimeline),"MANUAL_BRIDGE_CLIP_TIMELINE_OPEN_FAILED");
+                    }
                     manualSmokeBridgeDone=true;return true;
                 }
                 MatureContact::Require(manualSmokeCaptureCount==Mistwatch::ManualEntryRoute::CaptureCount(manualSmokeRoute)&&inputReplay.Passed()&&started&&!paused&&
@@ -100,6 +134,15 @@
             MatureContact::Require(std::chrono::steady_clock::now()-manualSmokeCaptureStart<=std::chrono::seconds(15),"MANUAL_SMOKE_CAPTURE15S_TIMEOUT");return true;
         }
         if(!inputReplay.Finished()){
+            // 每三個實際遊戲更新取一張，等待讀回期間凍結遊戲更新。
+            if(manualClipEnabled&&manualSmokeBridgeDone&&manualClipFrames<ManualClipFrames){
+                const auto next=manualClipFirstTick+manualClipFrames*ManualClipTickStep;
+                MatureContact::Require(inputReplay.Ticks()<=next,"MANUAL_BRIDGE_CLIP_TICK_MISSED");
+                if(inputReplay.Ticks()==next){
+                    manualClipCapturing=true;manualSmokeCaptureRequested=true;
+                    manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
+                }
+            }
             const std::string_view phase=inputReplay.Phase();
             if(deathRetry&&((manualSmokeCaptureCount==1&&phase=="death-retry-press")||
                 (manualSmokeCaptureCount==2&&phase=="death-retry-verify"))){
@@ -116,6 +159,7 @@
             return false;
         }
         MatureContact::Require(inputReplay.Passed(),("MANUAL_ENGINE_INPUT_ROUTE_FAILED: "+std::string(inputReplay.Failure())).c_str());
+        MatureContact::Require(!manualClipEnabled||manualClipFrames==ManualClipFrames,"MANUAL_BRIDGE_CLIP_INCOMPLETE");
         for(unsigned k=0;k<256;++k)actual.SetKey(k,false);
         if(deathRetry){
             manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
@@ -144,7 +188,7 @@
     void RenderManualEntrySmoke(Engine& e,const Matrix4& viewProjection){
         if(!manualEntrySmoke||!manualSmokeCaptureRequested)return;
         manualSmokeCaptureBase=e.GetRendererStats().successfulFrameCaptures;
-        const auto path=indexedGameplayOutput/Mistwatch::ManualEntryRoute::CaptureName(manualSmokeRoute,manualSmokeCaptureCount);
+        const auto path=ManualSmokeCapturePath();
         MatureContact::Require(e.CaptureNextFrame3D(path),"MANUAL_SMOKE_CAPTURE_REJECTED");
         auto metadata=path;metadata+=L".view.txt";std::ofstream out(metadata);out<<"expected_render_serial="<<e.GetRendererStats().submittedFrames+1<<"\nrequested_unjittered_vp_bits=";
         for(const auto& row:viewProjection.values)for(float v:row)out<<std::bit_cast<std::uint32_t>(v)<<',';
