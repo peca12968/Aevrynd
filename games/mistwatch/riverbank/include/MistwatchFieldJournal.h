@@ -234,9 +234,16 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.controls="R 重試 · F9 嘗試讀檔 · Esc 暫停 · J 查看手冊";
     }
     if(!started){hud.objective="孤橋復聯：暴雨切斷谷北通訊";hud.instruction="Enter 開始新巡守；F9 讀取存檔繼續；J 查看任務手冊。";}
-    else if(paused){hud.objective="已暫停；目前目標保留";
-        hud.instruction=session.Alive()&&journalOpen?"按 J 關閉手冊，查看巡守地圖。":"角色與世界暫停更新。";
-        hud.controls="Esc 繼續 · F5 儲存 · F9 載入 · M 靜音 · PageUp / PageDown 音量 · J 手冊";}
+    else if(paused){
+        hud.objective.insert(0,"已暫停 · ");
+        if(!session.Alive()){
+            hud.instruction=session.bridgeRepaired?"先按 Esc 繼續，再按 R 從橋頭重試。":"先按 Esc 繼續，再按 R 從起點重試。";
+        }else{
+            hud.instruction=journalOpen?"按 J 關閉手冊，查看巡守地圖。":"角色與世界暫停更新。";
+            if(session.beaconLit)hud.context="按 Esc 繼續後，可按 R 開始新一輪。";
+        }
+        hud.controls="Esc 繼續 · F5 儲存 · F9 載入 · M 靜音 · PageUp / PageDown 音量 · J 手冊";
+    }
     if(started&&!paused&&FieldInput::RepeatContext(session)){
         // 只描述本模式可用的數字鍵，不改調整、確認或長按規則。
         const bool thirdKey=session.CurrentStage()!=Stage::Relays||
