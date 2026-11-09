@@ -13,6 +13,9 @@
     bool manualClockEnabled{},manualClockCapturing{},manualClockCaptured{},manualClockRestartCleared{},manualClockLoadCleared{};
     std::chrono::seconds manualClockElapsed{};
     std::string manualClockHud;
+    bool manualShadowOptionsEnabled{};
+    unsigned manualShadowOptionsStep{};
+    std::uint64_t manualShadowOptionsRender{};
     std::filesystem::path ManualSmokeCapturePath()const {
         if(manualClockCapturing)return indexedGameplayOutput/"2-manual-playtest-clock.png";
         if(!manualClipCapturing)
@@ -35,6 +38,11 @@
         MatureContact::Require(!clockLength||(!indexedGameplayProofEnabled&&!manualClipEnabled&&clockLength==1&&clock[0]==L'1'),
             "MANUAL_PLAYTEST_CLOCK_REQUIRES_ISOLATED_COMPLETION");
         manualClockEnabled=clockLength==1;
+        wchar_t shadowOptions[3]{};
+        const auto shadowOptionsLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_SHADOW_OPTIONS",shadowOptions,3);
+        MatureContact::Require(!shadowOptionsLength||(!indexedGameplayProofEnabled&&!manualClipEnabled&&!manualClockEnabled&&
+            shadowOptionsLength==1&&shadowOptions[0]==L'1'),"MANUAL_SHADOW_OPTIONS_REQUIRES_ISOLATED_MENU");
+        manualShadowOptionsEnabled=shadowOptionsLength==1;
         if(indexedGameplayProofEnabled){
             static_cast<void>(Mistwatch::ManualEntryRoute::Resolve(false,true,std::wstring_view(route,routeLength)));
             indexedGameplayOutput=inputReplayDirectory;return;
@@ -48,6 +56,8 @@
             "MANUAL_BRIDGE_CLIP_REQUIRES_ISOLATED_COMPLETION");
         MatureContact::Require(!manualClockEnabled||manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion,
             "MANUAL_PLAYTEST_CLOCK_REQUIRES_ISOLATED_COMPLETION");
+        MatureContact::Require(!manualShadowOptionsEnabled||(manualEntrySmoke&&manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Shelter),
+            "MANUAL_SHADOW_OPTIONS_REQUIRES_ISOLATED_MENU");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion)
             MatureContact::Require(inputReplay.EnableCompletionRoute(),"MANUAL_COMPLETION_ROUTE_REJECTED");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry)
@@ -66,6 +76,49 @@
             entry.close();MatureContact::Require(bool(entry),"MANUAL_ENTRY_RECEIPT_FAILED");
             manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();
         }
+    }
+    bool PrepareManualShadowOptions(Engine& e){
+        struct Step {const char* name;bool g;unsigned menuKey;bool started,paused,shadows;};
+        constexpr std::array steps{
+            Step{"menu-off",true,0,false,false,false},
+            Step{"menu-release",false,0,false,false,false},
+            Step{"menu-on",true,0,false,false,true},
+            Step{"release-before-start",false,0,false,false,true},
+            Step{"start-with-g",true,VK_RETURN,true,false,true},
+            Step{"release-in-game",false,0,true,false,true},
+            Step{"g-in-game",true,0,true,false,true},
+            Step{"release-before-pause",false,0,true,false,true},
+            Step{"pause-with-g",true,VK_ESCAPE,true,true,true},
+            Step{"release-in-pause",false,0,true,true,true},
+            Step{"pause-off",true,0,true,true,false},
+            Step{"release-before-resume",false,0,true,true,false},
+            Step{"resume-with-g",true,VK_ESCAPE,true,false,false}
+        };
+        const auto stats=e.GetRendererStats();
+        const auto& shadow=stats.lastDirectionalShadowProvenance;
+        if(!shadow.frameSerial||shadow.frameSerial==manualShadowOptionsRender)return true;
+        const Step initial{"default-menu",false,0,false,false,true};
+        const auto& observed=manualShadowOptionsStep?steps[manualShadowOptionsStep-1]:initial;
+        const bool rendererAgrees=observed.shadows?shadow.activeCascades>0:
+            shadow.activeCascades==0&&shadow.drawCalls==0&&shadow.cascadeDrawCalls==0;
+        MatureContact::Require(started==observed.started&&paused==observed.paused&&sunShadowsEnabled==observed.shadows&&rendererAgrees,
+            ("MANUAL_SHADOW_OPTIONS_DIVERGED: "+std::string(observed.name)).c_str());
+        const bool done=manualShadowOptionsStep==steps.size();
+        std::ofstream out(indexedGameplayOutput/"sun-shadow-options.tsv",std::ios::app);
+        if(!manualShadowOptionsStep)out<<"step\trender_serial\tstarted\tpaused\tshadows\tactive_cascades\tdraw_calls\n";
+        out<<observed.name<<'\t'<<shadow.frameSerial<<'\t'<<started<<'\t'<<paused<<'\t'<<sunShadowsEnabled<<'\t'
+            <<shadow.activeCascades<<'\t'<<shadow.drawCalls<<'\n';
+        if(done)out<<"passed=1\n";
+        out.close();
+        MatureContact::Require(bool(out),"MANUAL_SHADOW_OPTIONS_RECEIPT_FAILED");
+        if(done){manualSmokeFinished=true;e.Quit();return true;}
+        manualShadowOptionsRender=shadow.frameSerial;
+        const auto& next=steps[manualShadowOptionsStep++];
+        auto& input=e.GetInput();
+        input.SetKey('G',next.g);
+        input.SetKey(VK_RETURN,next.menuKey==VK_RETURN);
+        input.SetKey(VK_ESCAPE,next.menuKey==VK_ESCAPE);
+        return false;
     }
     bool PrepareManualEntrySmoke(Engine& e,float dt){
         if(!manualEntrySmoke)return false;
@@ -155,6 +208,7 @@
             }
             MatureContact::Require(std::chrono::steady_clock::now()-manualSmokeCaptureStart<=std::chrono::seconds(15),"MANUAL_SMOKE_CAPTURE15S_TIMEOUT");return true;
         }
+        if(manualShadowOptionsEnabled)return PrepareManualShadowOptions(e);
         if(!inputReplay.Finished()){
             // 每三個實際遊戲更新取一張，等待讀回期間凍結遊戲更新。
             if(manualClipEnabled&&manualSmokeBridgeDone&&manualClipFrames<ManualClipFrames){

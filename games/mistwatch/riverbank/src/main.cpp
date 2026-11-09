@@ -942,6 +942,7 @@ class MistwatchGame final : public IGame {
     SkinningWorkspace3D boarSkinning;
     Mistwatch::BoarHitReaction::Scratch boarHitScratch;
     bool started{}, paused{};
+    bool sunShadowsEnabled{true};
     Mistwatch::PlaytestClock playtestClock;
     bool fieldJournalOpen{};
     bool surveyMapRequested{};
@@ -4501,10 +4502,11 @@ private:
         const bool wasStarted=started,wasPaused=paused;
         Mistwatch::UpdatePlaybackControl(started,paused,in.Focused()&&!in.FocusLost(),in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
         const bool resumedFromPause=wasStarted&&wasPaused&&!paused;
-        const bool cameraSettingsEditable=Mistwatch::CanEditCameraSettings(in.Focused()&&!in.FocusLost(),
+        const bool menuSettingsEditable=Mistwatch::CanEditCameraSettings(in.Focused()&&!in.FocusLost(),
             wasStarted,wasPaused,started,paused,in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
-        if(cameraOptions.Adjust(cameraSettingsEditable,in.Pressed(VK_OEM_4),in.Pressed(VK_OEM_6),
+        if(cameraOptions.Adjust(menuSettingsEditable,in.Pressed(VK_OEM_4),in.Pressed(VK_OEM_6),
             in.Pressed('I'),in.Pressed(VK_BACK)))SaveCameraOptions();
+        if(menuSettingsEditable&&in.Pressed('G'))sunShadowsEnabled=!sunShadowsEnabled;
         // 只在真正開始時更新回饋；恢復暫停或無焦點按鍵不能覆蓋既有操作結果。
         if(!wasStarted&&started){
             message="New expedition";
@@ -5370,7 +5372,7 @@ private:
         draw.SetWaterOptics({true,.018f,.35f,.035f});
         draw.SetScreenSpaceReflections({true,.7f,32.f,.65f,.28f,12});
         if(diagnosticNoAo) draw.SetAmbientOcclusion({false});
-        if(diagnosticNoShadows)draw.SetDirectionalShadowMapEnabled(false);
+        draw.SetDirectionalShadowMapEnabled(sunShadowsEnabled&&!diagnosticNoShadows);
         if(diagnosticNoBloom)draw.SetBloom({false});
         draw.SetDirectionalLight(Mistwatch::ForestLighting::Light(forestLightingContrast));
         draw.SetExposureCompensation(.5f);
@@ -5769,6 +5771,8 @@ private:
             if(const auto elapsed=playtestClock.CompletedTime())fieldHud.context=PlaytestClockContext(*elapsed);
         }
         Mistwatch::FieldPresentation::PresentCameraSettings(fieldHud,cameraOptions,started,paused);
+        if(fieldHud.valid&&(!started||paused))
+            fieldHud.navigation+=draw.DirectionalShadowMapEnabled()?" · G 日照陰影 開":" · G 日照陰影 關";
         Mistwatch::FieldPresentation::Draw(draw,fieldHud,session,Mistwatch::FieldPresentation::LastAction(message),
             actionFeedback,e.Audio().GetStats().deviceAvailable,gameAudio.options.muted,
             unsigned(gameAudio.options.volume*100+.5f),started,paused);
