@@ -236,7 +236,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
     if(!started){hud.objective="孤橋復聯：暴雨切斷谷北通訊";hud.instruction="Enter 開始新巡守；F9 讀取存檔繼續；J 查看任務手冊。";}
     else if(paused){hud.objective="已暫停；目前目標保留";
         hud.instruction=session.Alive()&&journalOpen?"按 J 關閉手冊，查看巡守地圖。":"角色與世界暫停更新。";
-        hud.controls="Esc 繼續 · M 靜音 · PageUp / PageDown 音量 · J 手冊";}
+        hud.controls="Esc 繼續 · F5 儲存 · F9 載入 · M 靜音 · PageUp / PageDown 音量 · J 手冊";}
     if(started&&!paused&&FieldInput::RepeatContext(session)){
         // 只描述本模式可用的數字鍵，不改調整、確認或長按規則。
         const bool thirdKey=session.CurrentStage()!=Stage::Relays||
@@ -250,7 +250,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.journal={"生命已耗盡；目前不能移動、拾取物品或反擊。",
             session.bridgeRepaired?"恢復遊戲後按 R 回橋頭，已取得物資與修橋進度會保留。":"恢復遊戲後按 R 回起點，已取得物資會保留。",
             "F9 嘗試載入既有存檔；沒有可用存檔時保留目前狀態。",
-            "暫停時先按 Esc 繼續，再重試或讀檔；J 關閉手冊。"};
+            "暫停中可按 F9 讀檔；按 Esc 繼續後可用 R 重試。J 關閉手冊。"};
         return hud;
     }
     hud.compactJournal=session.Alive()&&started&&!paused&&session.CurrentStage()==Stage::Encounter;
@@ -260,7 +260,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         "補給 "+std::to_string(count(session.collected))+"/3；工具與木料 "+std::to_string(count(session.repairMaterials))+"/3；橋："+(session.bridgeRepaired?std::string("已修復"):"尚未修復"),
         "互動需接近且符合站位；方位箭頭不是穿牆通行線。",
         !started?"Enter 開始新巡守；F9 讀取存檔繼續；J 關閉手冊。":
-        paused?"J 關閉手冊查看地圖。Esc 繼續後可 F5 儲存／F9 載入。":
+        paused?"F5 儲存／F9 載入；完成後仍維持暫停。J 關閉手冊查看地圖。":
         "操作：拖曳／滾輪調鏡頭；C 回正；F5 儲存；F9 載入；Esc 暫停看地圖。"};
     if(session.guardianDefeated)hud.journal.push_back("野豬已擊退：谷北木屋與工棚內有供電線索。");
     if(session.fuseClueRead)hud.journal.push_back("已讀日誌：保險絲櫃轉盤 2 - 0 - 3；1、2、3 分別轉對應轉盤，調至線索數字。");

@@ -1,6 +1,9 @@
     std::filesystem::path indexedGameplayOutput;
     bool indexedGameplayProofEnabled{},manualEntrySmoke{},manualSmokeMenuDone{},manualSmokeCaptureRequested{},manualSmokeCapturePending{},manualSmokeFinished{};
-    unsigned manualSmokeCaptureCount{},manualSmokeStage{},manualSmokeIdle{};
+    enum class ManualCheckpointStep { Begin,LoadMissing,VerifyMissing,VerifySave,ResumeSaved,ChangeState,LoadPaused,VerifyRestore,Capture };
+    ManualCheckpointStep manualCheckpointStep{ManualCheckpointStep::Begin};
+    unsigned manualSmokeCaptureCount{},manualSmokeIdle{};
+    bool manualPausedCheckpointCapturing{};
     std::uint64_t manualSmokeCaptureBase{};
     std::chrono::steady_clock::time_point manualSmokeCaptureStart{};
     std::string manualSmokeExpectedSave;
@@ -18,6 +21,7 @@
     unsigned manualShadowOptionsStep{};
     std::uint64_t manualShadowOptionsRender{};
     std::filesystem::path ManualSmokeCapturePath()const {
+        if(manualPausedCheckpointCapturing)return indexedGameplayOutput/"paused-checkpoint.png";
         if(manualBeaconReadyCapturing)return indexedGameplayOutput/"beacon-ready.png";
         if(manualClockCapturing)return indexedGameplayOutput/"2-manual-playtest-clock.png";
         if(!manualClipCapturing)
@@ -157,6 +161,7 @@
                 for(float v:s.lastCapturedUnjitteredViewProjection)receipt<<std::bit_cast<std::uint32_t>(v)<<',';
                 receipt<<'\n';receipt.close();MatureContact::Require(bool(receipt),"MANUAL_UPLOADED_VIEW_WRITE_FAILED");
                 manualSmokeCapturePending=false;
+                if(manualPausedCheckpointCapturing){manualPausedCheckpointCapturing=false;return true;}
                 if(manualClipCapturing){
                     manualClipTimeline<<manualClipFrames<<'\t'<<inputReplay.Ticks()<<'\t'<<s.lastCapturedRenderSerial<<'\t'<<session.feet.z<<'\n';
                     manualClipCapturing=false;
@@ -220,7 +225,8 @@
                 }else{
                     MatureContact::Require(
                         (completion?manualSmokeNewExpeditionObserved&&session.bridgeRepaired&&session.beaconLit&&session.CurrentStage()==Mistwatch::Stage::Complete&&session.repairMaterials==7:session.repairMaterials==1)&&
-                        matureSaveHandlerCalls==1&&matureLoadHandlerCalls==1&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,
+                        matureSaveHandlerCalls==1&&matureLoadHandlerCalls==(completion?2u:1u)&&
+                        manualCheckpointStep==ManualCheckpointStep::Capture&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,
                         "MANUAL_ENTRY_COMPLETE_OPERATION_MISSING");
                 }
                 MatureContact::Require(!manualBeaconReadyEnabled||manualBeaconReadyCaptured,"MANUAL_BEACON_READY_NOT_CAPTURED");
@@ -237,6 +243,7 @@
                     <<"\nworld="<<matureIndexedDomain->Identity()<<"\nrestored_snapshot_exact="<<!deathRetry<<"\nimages="<<manualSmokeCaptureCount
                     <<"\nroute="<<(deathRetry?"death-retry":completion?"completion":"shelter")<<"\nbridge_repaired="<<session.bridgeRepaired<<"\nstage="<<static_cast<unsigned>(session.CurrentStage())<<"\nbeacon_lit="<<session.beaconLit
                     <<"\npostwin_restart_observed="<<manualSmokeNewExpeditionObserved
+                    <<"\npaused_checkpoint_verified="<<completion
                     <<"\nforest_surface="<<Mistwatch::ForestSurfaceProfile::Name(forestSurfaceSelection.profile)
                     <<"\ndebug_errors="<<s.debugErrorCount<<"\ndebug_warnings="<<s.debugWarningCount
                     <<"\ndebug_layer_enabled="<<s.debugLayerEnabled<<"\ngpu_validation_requested="<<s.gpuValidationRequested<<"\ngpu_validation_executed="<<s.gpuValidationExecuted
@@ -290,39 +297,100 @@
             manualClockCapturing=true;manualSmokeCaptureRequested=true;
             manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
         }
-        if(manualSmokeStage==0){actual.SetKey(VK_F5,true);manualSmokeStage=1;return false;}
-        if(manualSmokeStage==1){
-            Mistwatch::SaveGame disk;MatureContact::Require(matureSaveHandlerCalls==1&&message=="Saved"&&Mistwatch::ReadSaveFile(save,disk)&&disk.Serialize()==CaptureSaveGame().Serialize(),"MANUAL_REAL_F5_SAVE_FAILED");
-            manualSmokeExpectedSave=disk.Serialize();manualSmokeStage=2;return false;
+        // 通關路線在地圖暫停期間測試存讀檔；低棚路線仍覆蓋遊玩中存讀檔。
+        const bool pauseCheckpoint=manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion;
+        switch(manualCheckpointStep){
+        case ManualCheckpointStep::Begin:
+            actual.SetKey(pauseCheckpoint?VK_ESCAPE:VK_F5,true);
+            manualCheckpointStep=pauseCheckpoint?ManualCheckpointStep::LoadMissing:ManualCheckpointStep::VerifySave;
+            return false;
+        case ManualCheckpointStep::LoadMissing:
+            MatureContact::Require(started&&paused,"MANUAL_CHECKPOINT_FIRST_PAUSE_MISSING");
+            manualSmokeExpectedSave=CaptureSaveGame().Serialize();
+            actual.SetKey(VK_F9,true);
+            manualCheckpointStep=ManualCheckpointStep::VerifyMissing;
+            return false;
+        case ManualCheckpointStep::VerifyMissing:
+            MatureContact::Require(paused&&matureLoadHandlerCalls==1&&matureSaveHandlerCalls==0&&
+                !std::filesystem::exists(save)&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave&&
+                actionFeedback.Event()==Mistwatch::ActionFeedbackEvent::LoadUnavailable,
+                "MANUAL_PAUSED_MISSING_SAVE_CHANGED_STATE");
+            actual.SetKey(VK_F5,true);
+            manualCheckpointStep=ManualCheckpointStep::VerifySave;
+            return false;
+        case ManualCheckpointStep::VerifySave:{
+            Mistwatch::SaveGame disk;
+            MatureContact::Require(paused==pauseCheckpoint&&matureSaveHandlerCalls==1&&message=="Saved"&&
+                Mistwatch::ReadSaveFile(save,disk)&&disk.Serialize()==CaptureSaveGame().Serialize(),
+                "MANUAL_REAL_F5_SAVE_FAILED");
+            manualSmokeExpectedSave=disk.Serialize();
+            if(pauseCheckpoint){
+                manualCheckpointStep=ManualCheckpointStep::ResumeSaved;
+                manualPausedCheckpointCapturing=true;
+                manualSmokeCaptureRequested=true;
+                manualSmokeCaptureStart=std::chrono::steady_clock::now();
+                return true;
+            }
+            manualCheckpointStep=ManualCheckpointStep::ChangeState;
+            return false;
         }
-        if(manualSmokeStage==2&&++manualSmokeIdle<30){
-            // 完成後世界時間本來就凍結；以既有R重開，再以F9還原完成旅程，不直接改狀態。
-            if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion){
-                if(manualSmokeIdle==1)actual.SetKey('R',true);
-                if(manualSmokeIdle==2){
+        case ManualCheckpointStep::ResumeSaved:
+            actual.SetKey(VK_ESCAPE,true);
+            manualCheckpointStep=ManualCheckpointStep::ChangeState;
+            return false;
+        case ManualCheckpointStep::ChangeState:
+            if(++manualSmokeIdle<30){
+                if(pauseCheckpoint&&manualSmokeIdle==1){
+                    MatureContact::Require(!paused,"MANUAL_CHECKPOINT_RESUME_MISSING");
+                    actual.SetKey('R',true);
+                }
+                if(pauseCheckpoint&&manualSmokeIdle==2){
                     MatureContact::Require(!session.beaconLit&&!session.bridgeRepaired&&session.collected==0&&
-                        session.repairMaterials==0&&session.CurrentStage()==Mistwatch::Stage::Supplies&&message=="New expedition","MANUAL_ACTUAL_POSTWIN_R_RESTART_MISSING");
+                        session.repairMaterials==0&&session.CurrentStage()==Mistwatch::Stage::Supplies&&message=="New expedition",
+                        "MANUAL_ACTUAL_POSTWIN_R_RESTART_MISSING");
                     if(manualClockEnabled){
                         MatureContact::Require(!playtestClock.CompletedTime(),"MANUAL_PLAYTEST_CLOCK_RESTART_RETAINED_OLD_TIME");
                         manualClockRestartCleared=true;
                     }
                     manualSmokeNewExpeditionObserved=true;
                 }
+                return false;
             }
+            MatureContact::Require(CaptureSaveGame().Serialize()!=manualSmokeExpectedSave,
+                "MANUAL_F9_REQUIRES_ACTUALLY_CHANGED_MOTION_CLOCK");
+            actual.SetKey(pauseCheckpoint?VK_ESCAPE:VK_F9,true);
+            manualCheckpointStep=pauseCheckpoint?ManualCheckpointStep::LoadPaused:ManualCheckpointStep::VerifyRestore;
             return false;
+        case ManualCheckpointStep::LoadPaused:
+            MatureContact::Require(paused,"MANUAL_CHECKPOINT_SECOND_PAUSE_MISSING");
+            actual.SetKey(VK_F9,true);
+            actual.SetKey(VK_F5,true);
+            manualCheckpointStep=ManualCheckpointStep::VerifyRestore;
+            return false;
+        case ManualCheckpointStep::VerifyRestore:
+            MatureContact::Require(paused==pauseCheckpoint&&matureLoadHandlerCalls==(pauseCheckpoint?2u:1u)&&
+                matureSaveHandlerCalls==1&&message=="Loaded"&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave&&
+                actionFeedback.Event()==Mistwatch::ActionFeedbackEvent::Loaded,"MANUAL_REAL_F9_RESTORE_FAILED");
+            manualCheckpointStep=ManualCheckpointStep::Capture;
+            if(pauseCheckpoint){actual.SetKey(VK_ESCAPE,true);return false;}
+            break;
+        case ManualCheckpointStep::Capture:break;
         }
-        if(manualSmokeStage==2){MatureContact::Require(CaptureSaveGame().Serialize()!=manualSmokeExpectedSave,"MANUAL_F9_REQUIRES_ACTUALLY_CHANGED_MOTION_CLOCK");actual.SetKey(VK_F9,true);manualSmokeStage=3;return false;}
-        MatureContact::Require(manualSmokeStage==3&&matureLoadHandlerCalls==1&&message=="Loaded"&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,"MANUAL_REAL_F9_RESTORE_FAILED");
+        MatureContact::Require(!paused&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,
+            "MANUAL_CHECKPOINT_CAPTURE_STATE_CHANGED");
         manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
     }
     void RenderManualEntrySmoke(Engine& e,const Matrix4& viewProjection,const std::string& hudContext){
         if(!manualEntrySmoke||!manualSmokeCaptureRequested)return;
+        if(manualPausedCheckpointCapturing)
+            MatureContact::Require(started&&paused&&surveyMapDraw.drawn&&
+                actionFeedback.Event()==Mistwatch::ActionFeedbackEvent::Saved,"MANUAL_PAUSED_CHECKPOINT_UI_MISSING");
         if(manualClockCapturing){
             const auto completed=playtestClock.CompletedTime();
             MatureContact::Require(completed&&hudContext==PlaytestClockContext(*completed),
                 "MANUAL_PLAYTEST_CLOCK_HUD_CONTEXT_MISSING");
             manualClockElapsed=*completed;manualClockHud=hudContext;
-        }else if(manualClockEnabled&&manualSmokeStage==3){
+        }else if(manualClockEnabled&&manualCheckpointStep==ManualCheckpointStep::Capture){
             MatureContact::Require(!playtestClock.CompletedTime()&&!hudContext.starts_with("測試計時 "),
                 "MANUAL_PLAYTEST_CLOCK_LOADED_OLD_TIME");
             manualClockLoadCleared=true;

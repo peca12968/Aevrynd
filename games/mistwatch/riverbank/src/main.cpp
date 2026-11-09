@@ -4488,8 +4488,8 @@ private:
         if(!in.Down(VK_RIGHT))relayNavigationHeld&=~2u;
         const auto cameraTurn=[&]{return float(in.Down(VK_RIGHT)&&!(relayNavigationHeld&2u))-
             float(in.Down(VK_LEFT)&&!(relayNavigationHeld&1u));};
-        // 焦點安全仍優先；可遊玩狀態的讀檔先於暫停及音量鍵，避免同一步遺失或修改設定。
-        if(!paused&&in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
+        // 讀檔在所有畫面先於其他操作；從暫停讀檔時維持暫停。
+        if(in.Focused()&&!in.FocusLost()&&in.Pressed(VK_F9)&&!save.empty()) {
             Mistwatch::SaveGame saved;
             if(matureIndexedDomain)++matureLoadHandlerCalls;
             auto prepared=Mistwatch::ReadSaveFile(save,saved)?PrepareRuntimeCheckpoint(saved):Mistwatch::LoadPreparationResult{};
@@ -4497,7 +4497,7 @@ private:
                 Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera,&playerLocomotion});
                 tuningInputRepeat.Reset();ResetPlayablePairRuntime();
-                started=true;paused=false;
+                started=true;
                 playtestClock.Clear();
                 cameraOcclusionSeconds=0;
                 gameAudio.director.Reset();
