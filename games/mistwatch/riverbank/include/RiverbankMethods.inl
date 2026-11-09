@@ -31,6 +31,17 @@
                 const float rock=(std::max)(v.v,.85f*exposed);Vec2 encoded{};
                 if(!TryEncodeTerrainLayerCoverage3D((std::min)(v.u,1.f-rock),rock,encoded))throw std::runtime_error("RIVERBANK_REAL_BANK_MATERIAL_INVALID");
                 v.u=encoded.x;v.v=encoded.y;
+                // 沿實際水位柔化雨後濕岸。只染色，保留 alpha 海拔、原地形和橋頭通路。
+                const float rise=v.y-Mistwatch::StormRiver::Height;
+                using Mistwatch::RiverbankConstruction::Smooth;
+                const float wet=Mistwatch::ErodedBank::Domain(v.x,v.z)*
+                    Smooth((rise+.25f)/.25f)*Smooth((1.3f-rise)/1.3f);
+                if(wet>0.f){
+                    const auto color=UnpackColorRgba8(v.color);
+                    const auto rgb=PackColorRgba8({color.r*(1.f-.24f*wet),color.g*(1.f-.15f*wet),
+                        color.b*(1.f-.11f*wet),0.f});
+                    v.color=(v.color&0xff000000u)|rgb;
+                }
             }
             auto fresh=e.CreateMeshResource3D(cpu);
             if(!fresh||!fresh.cpuMesh||fresh.cpuMesh->indices!=cpu.indices||fresh.cpuMesh->vertices.size()!=cpu.vertices.size()||std::memcmp(fresh.cpuMesh->vertices.data(),cpu.vertices.data(),cpu.vertices.size()*sizeof(Vertex3D))!=0){if(fresh)e.DestroyMesh3D(fresh.handle);throw std::runtime_error("RIVERBANK_GPU_GEOMETRY_UPLOAD_MISMATCH");}
