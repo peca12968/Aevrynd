@@ -7,6 +7,15 @@
 namespace Mistwatch::ForestPlayable {
 inline constexpr std::wstring_view Profile=L"upstream-grove-wip-v1";
 inline constexpr std::wstring_view Argument=L"--forest-grove-candidate";
+inline constexpr std::wstring_view PrototypeArgument=L"--prototype";
+
+constexpr std::wstring_view SelectRiverbankArgument(std::wstring_view arguments,bool capture,bool replay) noexcept {
+    const auto first=arguments.find_first_not_of(L" \t");
+    if(first==std::wstring_view::npos)return capture||replay?std::wstring_view{}:Argument;
+    const auto argument=arguments.substr(first,arguments.find_last_not_of(L" \t")-first+1);
+    return argument==PrototypeArgument?std::wstring_view{}:argument;
+}
+
 // 只有明示的新完整世界入口可操作／存檔；舊低階原型的限制仍由原路徑檢查。
 inline bool Resolve(bool manual,bool capture,bool replay,std::wstring_view requested,
                     std::wstring_view route,std::span<const std::wstring> dependencies){

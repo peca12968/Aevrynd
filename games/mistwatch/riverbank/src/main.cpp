@@ -6286,10 +6286,10 @@ private:
 };
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
     try {
-        const std::wstring_view arguments=commandLine?commandLine:L"";
-        const auto first=arguments.find_first_not_of(L" \t");
-        const auto last=arguments.find_last_not_of(L" \t");
-        const auto argument=first==std::wstring_view::npos?std::wstring_view{}:arguments.substr(first,last-first+1);
+        const auto replayCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_INPUT_REPLAY",nullptr,0);
+        const auto captureCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",nullptr,0);
+        // 河岸版執行檔直接進入試玩；既有無參數的擷取與回放仍由診斷設定選擇場景。
+        const auto argument=Mistwatch::ForestPlayable::SelectRiverbankArgument(commandLine?commandLine:L"",captureCount>0,replayCount>0);
         if(!argument.empty()&&argument!=L"--woodland-candidate"&&argument!=L"--workshop-roof-candidate"&&argument!=L"--shoulder-grove-candidate"&&argument!=L"--cliff-world-candidate"&&argument!=L"--cliff-relief-candidate"&&argument!=L"--forest-surface-candidate"&&argument!=L"--valley-world-candidate"&&argument!=L"--valley-terrace-candidate"&&argument!=Mistwatch::ForestPlayable::Argument&&argument!=Mistwatch::BankRocksPreview::Argument)throw std::runtime_error("WOODLAND_COMMAND_LINE_INVALID");
         const bool bankRocksCandidate=argument==Mistwatch::BankRocksPreview::Argument;
         const bool groveCandidate=argument==Mistwatch::ForestPlayable::Argument||bankRocksCandidate;
@@ -6322,8 +6322,6 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
         wchar_t windowOption[32]{};
         const auto windowCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_REPLAY_WINDOW",windowOption,32);
         if(windowCount>=32)throw std::runtime_error("Invalid replay window option length");
-        const auto replayCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_INPUT_REPLAY",nullptr,0);
-        const auto captureCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_CAPTURE",nullptr,0);
         config.windowMode=DiagnosticWindow3D::SelectMode(std::wstring_view(windowOption,windowCount),replayCount>0,config.enableFrameCostProbe,captureCount>0);
         wchar_t presentOption[32]{};
         const auto presentCount=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_REPLAY_PRESENT",presentOption,32);
