@@ -13,10 +13,12 @@
     bool manualClockEnabled{},manualClockCapturing{},manualClockCaptured{},manualClockRestartCleared{},manualClockLoadCleared{};
     std::chrono::seconds manualClockElapsed{};
     std::string manualClockHud;
+    bool manualBeaconReadyEnabled{},manualBeaconReadyCapturing{},manualBeaconReadyCaptured{};
     bool manualShadowOptionsEnabled{};
     unsigned manualShadowOptionsStep{};
     std::uint64_t manualShadowOptionsRender{};
     std::filesystem::path ManualSmokeCapturePath()const {
+        if(manualBeaconReadyCapturing)return indexedGameplayOutput/"beacon-ready.png";
         if(manualClockCapturing)return indexedGameplayOutput/"2-manual-playtest-clock.png";
         if(!manualClipCapturing)
             return indexedGameplayOutput/Mistwatch::ManualEntryRoute::CaptureName(manualSmokeRoute,manualSmokeCaptureCount);
@@ -43,6 +45,12 @@
         MatureContact::Require(!shadowOptionsLength||(!indexedGameplayProofEnabled&&!manualClipEnabled&&!manualClockEnabled&&
             shadowOptionsLength==1&&shadowOptions[0]==L'1'),"MANUAL_SHADOW_OPTIONS_REQUIRES_ISOLATED_MENU");
         manualShadowOptionsEnabled=shadowOptionsLength==1;
+        wchar_t beaconReady[3]{};
+        const auto beaconReadyLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_BEACON_READY",beaconReady,3);
+        MatureContact::Require(!beaconReadyLength||(!indexedGameplayProofEnabled&&!manualClipEnabled&&!manualClockEnabled&&
+            !manualShadowOptionsEnabled&&beaconReadyLength==1&&beaconReady[0]==L'1'),
+            "MANUAL_BEACON_READY_REQUIRES_ISOLATED_COMPLETION");
+        manualBeaconReadyEnabled=beaconReadyLength==1;
         if(indexedGameplayProofEnabled){
             static_cast<void>(Mistwatch::ManualEntryRoute::Resolve(false,true,std::wstring_view(route,routeLength)));
             indexedGameplayOutput=inputReplayDirectory;return;
@@ -58,6 +66,8 @@
             "MANUAL_PLAYTEST_CLOCK_REQUIRES_ISOLATED_COMPLETION");
         MatureContact::Require(!manualShadowOptionsEnabled||(manualEntrySmoke&&manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Shelter),
             "MANUAL_SHADOW_OPTIONS_REQUIRES_ISOLATED_MENU");
+        MatureContact::Require(!manualBeaconReadyEnabled||(manualEntrySmoke&&manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion),
+            "MANUAL_BEACON_READY_REQUIRES_ISOLATED_COMPLETION");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion)
             MatureContact::Require(inputReplay.EnableCompletionRoute(),"MANUAL_COMPLETION_ROUTE_REJECTED");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry)
@@ -141,6 +151,21 @@
                     MatureContact::Require(bool(manualClipTimeline),"MANUAL_BRIDGE_CLIP_TIMELINE_WRITE_FAILED");
                     return true;
                 }
+                if(manualBeaconReadyCapturing){
+                    const auto detail=Mistwatch::CreateBeaconDetail(session);
+                    MatureContact::Require(detail&&!detail->lit&&session.Alive()&&session.CurrentStage()==Mistwatch::Stage::Beacon&&
+                        session.Near(Mistwatch::Session::beacon),"MANUAL_BEACON_READY_CAPTURE_STATE");
+                    const auto& lens=detail->parts[Mistwatch::BeaconLensPart].material;
+                    const auto& status=detail->parts[Mistwatch::BeaconStatusPart].material;
+                    MatureContact::Require(lens.tint.b>lens.tint.g&&lens.tint.g>lens.tint.r&&
+                        status.tint.b>status.tint.g&&status.tint.g>status.tint.r&&lens.surface.emissive==0.f&&status.surface.emissive==0.f,
+                        "MANUAL_BEACON_READY_PASSIVE_BLUE_MATERIAL");
+                    std::ofstream beacon(indexedGameplayOutput/"beacon-ready.txt");
+                    beacon<<"stage="<<static_cast<unsigned>(session.CurrentStage())<<"\nbeacon_lit="<<session.beaconLit
+                        <<"\npassive_blue_material=1\nrender_serial="<<s.lastCapturedRenderSerial<<'\n';
+                    beacon.close();MatureContact::Require(bool(beacon),"MANUAL_BEACON_READY_RECEIPT_FAILED");
+                    manualBeaconReadyCapturing=false;manualBeaconReadyCaptured=true;return true;
+                }
                 if(manualClockCapturing){
                     MatureContact::Require(manualClockElapsed.count()>0&&!manualClockHud.empty(),"MANUAL_PLAYTEST_CLOCK_CAPTURE_NOT_PRESENTED");
                     manualClockCapturing=false;manualClockCaptured=true;return true;
@@ -185,6 +210,7 @@
                         matureSaveHandlerCalls==1&&matureLoadHandlerCalls==1&&CaptureSaveGame().Serialize()==manualSmokeExpectedSave,
                         "MANUAL_ENTRY_COMPLETE_OPERATION_MISSING");
                 }
+                MatureContact::Require(!manualBeaconReadyEnabled||manualBeaconReadyCaptured,"MANUAL_BEACON_READY_NOT_CAPTURED");
                 if(manualClockEnabled){
                     MatureContact::Require(manualClockCaptured&&manualClockRestartCleared&&manualClockLoadCleared,
                         "MANUAL_PLAYTEST_CLOCK_FLOW_INCOMPLETE");
@@ -220,6 +246,12 @@
                 }
             }
             const std::string_view phase=inputReplay.Phase();
+            if(manualBeaconReadyEnabled&&!manualBeaconReadyCaptured&&phase=="completion-beacon"&&
+                session.CurrentStage()==Mistwatch::Stage::Beacon&&controller.Grounded()&&
+                std::hypot(session.feet.x-Mistwatch::Session::beacon.x,session.feet.z-Mistwatch::Session::beacon.z)<=1.95f){
+                manualBeaconReadyCapturing=true;manualSmokeCaptureRequested=true;
+                manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
+            }
             if(deathRetry&&((manualSmokeCaptureCount==1&&phase=="death-retry-press")||
                 (manualSmokeCaptureCount==2&&phase=="death-retry-verify"))){
                 manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;

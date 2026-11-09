@@ -28,10 +28,14 @@ inline std::optional<BeaconDetail> CreateBeaconDetail(const Session& session,
     const Material3D darkSteel{{.11f,.14f,.15f,1},{.65f,.58f,0,1}};
     const Material3D bolts{{.45f,.47f,.46f,1},{.35f,.75f,0,1}};
     const Material3D panel{{.055f,.07f,.075f,1},{.78f,.12f,0,1}};
-    const Material3D lens{session.beaconLit?Color{.98f,.48f,.12f,1}:Color{.12f,.075f,.04f,1},
-        {.23f,0,session.beaconLit?.9f:0,1}};
-    const Material3D status{session.beaconLit?Color{.25f,.7f,.32f,1}:Color{.07f,.035f,.025f,1},
-        {.45f,0,session.beaconLit?.5f:0,1}};
+    const bool ready=session.Alive()&&session.CurrentStage()==Stage::Beacon;
+    // 待送出的藍色面板是被動材質；只有信標完成後才使用原本的發光材質。
+    const Color lensTint=session.beaconLit?Color{.98f,.48f,.12f,1}:
+        ready?Color{.12f,.48f,.74f,1}:Color{.12f,.075f,.04f,1};
+    const Color statusTint=session.beaconLit?Color{.25f,.7f,.32f,1}:
+        ready?Color{.16f,.57f,.81f,1}:Color{.07f,.035f,.025f,1};
+    const Material3D lens{lensTint,{.23f,0,session.beaconLit?.9f:0,1}};
+    const Material3D status{statusTint,{.45f,0,session.beaconLit?.5f:0,1}};
     const auto add=[&](Vec3 center,Vec3 size,Material3D material){
         result.parts[count++]={anchor+center,size,material};
     };

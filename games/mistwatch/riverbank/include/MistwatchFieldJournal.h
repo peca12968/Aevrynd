@@ -215,7 +215,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
     }
     case Stage::Beacon:
         target="谷中救援信標";hud.objective="送出救援定位與已確認的橋頭入口";
-        hud.instruction=guide.useReady?"E：送出信標。":"回主土路，依方位接近信標。";
+        hud.instruction=guide.useReady?"E：送出信標。":"回主土路，依方位尋找藍色面板的信標。";
         hud.context="橋已修復；供電與三站已完成；入口已確認。";break;
     case Stage::Complete:
         hud.objective="巡守完成：救援台已收到定位";
