@@ -1699,7 +1699,21 @@ class MistwatchGame final : public IGame {
         state.active=started&&!paused&&session.Alive();state.grounded=controller.Grounded();state.crouched=controller.Settings().height<1.5f;
         const auto listener=lastRenderedCamera.position;
         const auto right=Mistwatch::AudioListenerRight(lastRenderedCamera);
-        gameAudio.Tick(e.Audio(),state,listener,right,dt);
+        if(manualWaterAudioEnabled&&!gameAudio.options.muted){
+            gameAudio.options.muted=true;
+            e.Audio().SetMasterVolume(0);
+        }
+        Mistwatch::WaterAudioObservation observed;
+        gameAudio.Tick(e.Audio(),state,listener,right,dt,matureIndexedDomain?riverMesh.cpuMesh.get():nullptr,
+            manualWaterAudioEnabled?&observed:nullptr);
+        if(observed.submitted){
+            std::ofstream out(indexedGameplayOutput/"water-audio.tsv",std::ios::app);
+            out.imbue(std::locale::classic());out.precision(9);
+            out<<observed.listener.x<<'\t'<<observed.listener.y<<'\t'<<observed.listener.z<<'\t'
+                <<observed.source.x<<'\t'<<observed.source.y<<'\t'<<observed.source.z<<'\t'
+                <<observed.pan<<'\t'<<observed.gain<<'\t'<<observed.masterVolume<<'\t'<<observed.played<<'\n';
+            out.close();MatureContact::Require(bool(out),"MANUAL_WATER_AUDIO_OBSERVATION_WRITE_FAILED");
+        }
     }
     Mistwatch::SaveGame CaptureSaveGame() const {
         Mistwatch::SaveGame snapshot{session,encounter,evasion};

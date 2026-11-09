@@ -13,7 +13,7 @@
     bool manualClockEnabled{},manualClockCapturing{},manualClockCaptured{},manualClockRestartCleared{},manualClockLoadCleared{};
     std::chrono::seconds manualClockElapsed{};
     std::string manualClockHud;
-    bool manualBeaconReadyEnabled{},manualBeaconReadyCapturing{},manualBeaconReadyCaptured{};
+    bool manualBeaconReadyEnabled{},manualBeaconReadyCapturing{},manualBeaconReadyCaptured{},manualWaterAudioEnabled{};
     bool manualShadowOptionsEnabled{};
     unsigned manualShadowOptionsStep{};
     std::uint64_t manualShadowOptionsRender{};
@@ -51,6 +51,12 @@
             !manualShadowOptionsEnabled&&beaconReadyLength==1&&beaconReady[0]==L'1'),
             "MANUAL_BEACON_READY_REQUIRES_ISOLATED_COMPLETION");
         manualBeaconReadyEnabled=beaconReadyLength==1;
+        wchar_t waterAudio[3]{};
+        const auto waterAudioLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_MANUAL_WATER_AUDIO",waterAudio,3);
+        MatureContact::Require(!waterAudioLength||(!indexedGameplayProofEnabled&&!manualClipEnabled&&!manualClockEnabled&&
+            !manualShadowOptionsEnabled&&!manualBeaconReadyEnabled&&waterAudioLength==1&&waterAudio[0]==L'1'),
+            "MANUAL_WATER_AUDIO_REQUIRES_ISOLATED_COMPLETION");
+        manualWaterAudioEnabled=waterAudioLength==1;
         if(indexedGameplayProofEnabled){
             static_cast<void>(Mistwatch::ManualEntryRoute::Resolve(false,true,std::wstring_view(route,routeLength)));
             indexedGameplayOutput=inputReplayDirectory;return;
@@ -68,6 +74,8 @@
             "MANUAL_SHADOW_OPTIONS_REQUIRES_ISOLATED_MENU");
         MatureContact::Require(!manualBeaconReadyEnabled||(manualEntrySmoke&&manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion),
             "MANUAL_BEACON_READY_REQUIRES_ISOLATED_COMPLETION");
+        MatureContact::Require(!manualWaterAudioEnabled||(manualEntrySmoke&&manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion),
+            "MANUAL_WATER_AUDIO_REQUIRES_ISOLATED_COMPLETION");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion)
             MatureContact::Require(inputReplay.EnableCompletionRoute(),"MANUAL_COMPLETION_ROUTE_REJECTED");
         if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry)
@@ -84,6 +92,11 @@
             std::ofstream entry(indexedGameplayOutput/"entry.txt");entry<<"entry=existing-forest-manual-argument\ninput_replay_directory_empty=1\nsource_oracles_enabled="<<indexedGameplayProofEnabled
                 <<"\nsave="<<save.string()<<"\nphysical_keyboard_verified=0\ninput=engine-GetInput-test-driven-not-replay-controls\n";
             entry.close();MatureContact::Require(bool(entry),"MANUAL_ENTRY_RECEIPT_FAILED");
+            if(manualWaterAudioEnabled){
+                std::ofstream water(indexedGameplayOutput/"water-audio.tsv");
+                water<<"listener_x\tlistener_y\tlistener_z\tsource_x\tsource_y\tsource_z\tpan\tgain\tmaster_volume\tplayed\n";
+                water.close();MatureContact::Require(bool(water),"MANUAL_WATER_AUDIO_HEADER_WRITE_FAILED");
+            }
             manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();
         }
     }

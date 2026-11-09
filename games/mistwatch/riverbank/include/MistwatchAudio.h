@@ -3,6 +3,7 @@
 #include "MistwatchRiverProfile.h"
 #include <Aevrynd/Audio.h>
 #include <Aevrynd/Camera.h>
+#include <Aevrynd/Mesh3D.h>
 #include <cstring>
 #include <numbers>
 #include <stdexcept>
@@ -122,8 +123,19 @@ struct AudioDirector {
         previous=state;return events;
     }
 };
-inline Aevrynd::Vec3 NearestRiverSource(Aevrynd::Vec3 listener) {
-    Aevrynd::Vec3 result{};float best=1.e20f;
+inline Aevrynd::Vec3 NearestRiverSource(Aevrynd::Vec3 listener,const Aevrynd::Mesh3D* stormSurface=nullptr) {
+    Aevrynd::Vec3 result{};
+    float best=1.e20f;
+    if(stormSurface){
+        // 河岸版以目前水面網格取樣聲源，僅在播放水聲時掃描，沒有逐幀重建。
+        for(const auto& vertex:stormSurface->vertices){
+            const Aevrynd::Vec3 point{vertex.x,vertex.y,vertex.z};
+            const auto delta=point-listener;
+            const float squared=Aevrynd::Dot(delta,delta);
+            if(squared<best){best=squared;result=point;}
+        }
+        if(best<1.e20f)return result;
+    }
     for(unsigned i=0;i<=200;++i) {
         const float x=-50.f+float(i)*.5f;
         const Aevrynd::Vec3 p{x,RiverHeight,RiverCenterZ(x)};
@@ -132,6 +144,11 @@ inline Aevrynd::Vec3 NearestRiverSource(Aevrynd::Vec3 listener) {
     }
     return result;
 }
+struct WaterAudioObservation {
+    Aevrynd::Vec3 listener{},source{};
+    float pan{},gain{},masterVolume{};
+    bool submitted{},played{};
+};
 struct GameAudio {
     std::array<Aevrynd::SoundHandle,SoundCount> sounds{};
     std::array<std::uint64_t,SoundCount> requests{};
@@ -140,7 +157,9 @@ struct GameAudio {
         for(unsigned i=0;i<SoundCount;++i){sounds[i]=audio.CreateSound(CreateGameSound(Sound(i)));if(!sounds[i])throw std::runtime_error("Game audio resource invalid");}
         audio.SetMasterVolume(options.Gain());
     }
-    void Tick(Aevrynd::AudioEngine& audio,const AudioState& state,Aevrynd::Vec3 listener,Aevrynd::Vec3 right,float dt) {
+    void Tick(Aevrynd::AudioEngine& audio,const AudioState& state,Aevrynd::Vec3 listener,Aevrynd::Vec3 right,float dt,
+        const Aevrynd::Mesh3D* stormSurface=nullptr,WaterAudioObservation* waterObservation=nullptr) {
+        if(waterObservation)*waterObservation={};
         const auto events=director.Tick(state,dt);
         if(events.stopWind)audio.StopAll();
         // 沒有輸出裝置時保留遊戲與事件邏輯，不反覆送出必然失敗的播放請求。
@@ -148,11 +167,19 @@ struct GameAudio {
         const auto play=[&](Sound sound,Aevrynd::AudioPlayback playback) {++requests[unsigned(sound)];return audio.Play(sounds[unsigned(sound)],playback);};
         const auto spatial=[&](Sound sound,Aevrynd::Vec3 source,float range,float volume,float pitch) {
             const Aevrynd::AudioSpatial3D position{listener,right,source,range,1.5f,volume,pitch};
-            if(Aevrynd::CalculateSpatialAudio(position).volume<=.001f)return;
-            ++requests[unsigned(sound)];audio.PlaySpatial(sounds[unsigned(sound)],position);
+            if(Aevrynd::CalculateSpatialAudio(position).volume<=.001f)return false;
+            ++requests[unsigned(sound)];return audio.PlaySpatial(sounds[unsigned(sound)],position);
         };
         if(events.startWind)play(Sound::Wind,{.35f,1,true});
-        if(events.water)spatial(Sound::Water,NearestRiverSource(listener),30,.6f,1);
+        if(events.water){
+            const auto source=NearestRiverSource(listener,stormSurface);
+            const auto before=requests[unsigned(Sound::Water)];
+            const bool played=spatial(Sound::Water,source,30,.6f,1);
+            if(waterObservation&&requests[unsigned(Sound::Water)]>before){
+                const auto stats=audio.GetStats();
+                *waterObservation={listener,source,stats.lastSpatialPan,stats.lastSpatialGain,stats.masterVolume,true,played};
+            }
+        }
         if(events.step){const unsigned variant=director.variation++%3;spatial(Sound((events.wood?3u:0u)+variant),state.session.feet,20,events.stepVolume,events.stepPitch);}
         if(events.landing)spatial(Sound::Landing,state.session.feet,20,.75f,1);
         if(events.interact)play(Sound::Interact,{.65f});
