@@ -3261,12 +3261,17 @@ private:
         // 美術預設升格不搬移、刪除或覆寫玩家舊存檔；隔離診斷仍使用原分支名稱。
         if(woodlandWorld&&(!count||count>=32768||!std::filesystem::path(local).is_absolute()))
             throw std::runtime_error("Woodland candidate requires valid LOCALAPPDATA");
-        if(count && count<32768) save=std::filesystem::path(local)/"Aevrynd"/"Mistwatch"/
+        auto playerSaveDirectory=std::filesystem::path(local)/"Aevrynd"/"Mistwatch";
+        if(manualForestGroveCandidate&&forestPlayableWorld){
+            playerSaveDirectory=Mistwatch::SelectRiverbankSaveDirectory(local);
+            if(playerSaveDirectory.empty())throw std::runtime_error("RIVERBANK_PLAYER_DATA_UNAVAILABLE");
+        }
+        if(count && count<32768) save=playerSaveDirectory/
             (woodlandWorld?"save-woodland-canopy-v2.txt":!validProfileCapture?"save.txt":shelterDetailEnabled?"save-framed-corrugated-shelter-v1.txt":entranceUnderstoryEnabled?"save-entrance-understory-v2.txt":entranceRoadEnabled?"save-entrance-road-material-domain-v1.txt":rightForeground?"save-entrance-right-foreground-v1.txt":roadsideCoverEnabled?"save-roadside-ground-cover-v1.txt":
                 roadsideBroadleafEnabled?"save-roadside-broadleaf-v1.txt":"save.txt");
         if(valleyWorldEnabled){
             if(!count||count>=32768||!std::filesystem::path(local).is_absolute())throw std::runtime_error("Valley requires valid LOCALAPPDATA");
-            const auto root=std::filesystem::path(local)/"Aevrynd"/"Mistwatch";
+            const auto& root=playerSaveDirectory;
             save=root/"save-valley-contact-v7.txt";
             if(manualValleyCandidate){const auto sessions=root/"valley-sessions";std::filesystem::create_directories(sessions);
                 const auto stamp=std::chrono::steady_clock::now().time_since_epoch().count();

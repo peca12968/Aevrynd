@@ -6,6 +6,28 @@
 #include <fstream>
 
 namespace Mistwatch {
+
+// 河岸版優先保留已使用的本機備用存檔。原磁碟恢復後也不會自動切換或搬移進度。
+inline std::filesystem::path SelectRiverbankSaveDirectory(const std::filesystem::path& local) {
+    namespace fs=std::filesystem;
+    std::error_code error;
+    if(!local.is_absolute()||!fs::is_directory(local,error))return {};
+    const auto readable=[](const fs::path& directory) {
+        std::error_code readError;
+        // 直接開啟目錄才能辨別掛載已失效的 junction。
+        static_cast<void>(fs::directory_iterator(directory,readError));
+        return !readError;
+    };
+    const auto alternate=local/"MistwatchRiverbankPlaytest"/"Aevrynd"/"Mistwatch";
+    if(readable(alternate))return alternate;
+    const auto primary=local/"Aevrynd"/"Mistwatch";
+    fs::create_directories(primary,error);
+    if(!error&&readable(primary))return primary;
+    fs::create_directories(alternate,error);
+    if(!error&&readable(alternate))return alternate;
+    return {};
+}
+
 enum class SaveFileResult { Saved, InvalidPath, InvalidSnapshot, DirectoryUnavailable,
     TemporaryUnavailable, WriteFailed, FlushFailed, CloseFailed, ReplaceFailed, Exception };
 
