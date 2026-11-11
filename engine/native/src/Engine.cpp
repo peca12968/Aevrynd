@@ -329,7 +329,7 @@ LRESULT Engine::HandleMessage(UINT message,WPARAM wParam,LPARAM lParam){
     case WM_CLOSE:running_=false;DestroyWindow(hwnd_);return 0;
     case WM_DESTROY:PostQuitMessage(0);return 0;
     case WM_SIZE:
-        if(wParam==SIZE_MINIMIZED){minimized_=true;trimPending_=true;}
+        if(wParam==SIZE_MINIMIZED){input_.MarkSuspended();minimized_=true;trimPending_=true;}
         else{minimized_=false;if(!resizing_)renderer_->Resize(unsigned(LOWORD(lParam)),unsigned(HIWORD(lParam)));}
         return 0;
     case WM_ENTERSIZEMOVE:resizing_=true;return 0;

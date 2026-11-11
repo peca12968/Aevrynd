@@ -26,7 +26,7 @@ inline unsigned CycleTrackedRelay(const Session& session,unsigned from,int direc
 enum class ObjectiveBearing { AtTarget, Ahead, Right, Behind, Left };
 struct ObjectiveGuide {
     bool valid{}, hasTarget{}, useReady{}, counterReady{}, evadeReady{}, tuneReady{};
-    bool earlyToolsReady{}, shelterApproach{};
+    bool earlyToolsReady{}, shelterApproach{}, settlementApproach{}, rangerDeskApproach{};
     BridgeRepairIntent bridgeIntent{BridgeRepairIntent::None};
     unsigned index{};
     // index/useReady/tuneReady 仍是近場操作；此欄只識別玩家確認的導航目的地。
@@ -60,32 +60,33 @@ inline bool ShelterWallCrossed(Aevrynd::Vec3 from,Aevrynd::Vec3 to,
        sameOutsideFace(from.z,to.z,wall.center.z,extents.z))return false;
     return Aevrynd::SegmentIntersectsAabb3D(from,to,wall.center,extents);
 }
-// 低棚入口朝東。以原牆碰撞加上角色半徑決定可繞行的棚外轉角。
-inline std::optional<Aevrynd::Vec3> ShelterApproach(Aevrynd::Vec3 feet,float radius) {
+inline bool BuildingWallClear(Aevrynd::Vec3 from,Aevrynd::Vec3 to,float footHeight,
+    std::span<const Aevrynd::BoxCollider3D> walls,float radius) {
+    // 以建築基準高度檢查牆面。其他地物仍由實際碰撞處理。
+    from.y=to.y=footHeight+.65f;
+    for(const auto& wall:walls)
+        if(ShelterWallCrossed(from,to,wall,radius))return false;
+    return true;
+}
+// 使用結構原有的牆與角色半徑，找通往開口一側且不穿牆的下一個轉角。
+inline std::optional<Aevrynd::Vec3> BuildingApproach(Aevrynd::Vec3 feet,float radius,Aevrynd::Vec3 target,
+    const Aevrynd::BoxCollider3D& roof,std::span<const Aevrynd::BoxCollider3D> walls,float entrySide) {
     if(!std::isfinite(radius)||radius<=0)return std::nullopt;
-    static const auto structure=RepairShelterSolids();
-    const auto& roof=structure.front();
     constexpr float cornerMargin=.35f;
     const float xClearance=roof.extents.x+radius+cornerMargin;
     const float zClearance=roof.extents.z+radius+cornerMargin;
-    const auto tool=Session::repairSites[0];
     const auto wallClear=[&](Aevrynd::Vec3 from,Aevrynd::Vec3 to) {
-        // 只檢查低棚三面牆的平面投影。其他地物仍由實際碰撞處理。
-        from.y=to.y=tool.y+.65f;
-        for(const auto& wall:std::span(structure).subspan(1,3))
-            if(ShelterWallCrossed(from,to,wall,radius))
-                return false;
-        return true;
+        return BuildingWallClear(from,to,target.y,walls,radius);
     };
-    if(wallClear(feet,tool))return std::nullopt;
-    const Aevrynd::Vec3 entrance{roof.center.x+xClearance,tool.y,roof.center.z};
+    if(wallClear(feet,target))return std::nullopt;
+    const Aevrynd::Vec3 entrance{roof.center.x+entrySide*xClearance,target.y,roof.center.z};
     std::optional<Aevrynd::Vec3> next;
     double shortest=(std::numeric_limits<double>::infinity)();
     const auto distance=[](Aevrynd::Vec3 a,Aevrynd::Vec3 b){return std::hypot(double(a.x)-b.x,double(a.z)-b.z);};
     for(float side:{-1.f,1.f}){
         const float z=roof.center.z+side*zClearance;
-        const std::array route{entrance,Aevrynd::Vec3{entrance.x,tool.y,z},
-            Aevrynd::Vec3{roof.center.x-xClearance,tool.y,z}};
+        const std::array route{entrance,Aevrynd::Vec3{entrance.x,target.y,z},
+            Aevrynd::Vec3{roof.center.x-entrySide*xClearance,target.y,z}};
         double remaining=0;
         for(unsigned i=0;i<route.size();++i){
             if(i)remaining+=distance(route[i],route[i-1]);
@@ -97,6 +98,41 @@ inline std::optional<Aevrynd::Vec3> ShelterApproach(Aevrynd::Vec3 feet,float rad
         }
     }
     return next;
+}
+// 入口導引無法繞過室內桌子時，逐段驗證桌角至日誌的通路。
+inline std::optional<Aevrynd::Vec3> RangerDeskApproach(Aevrynd::Vec3 feet,float radius,
+    Aevrynd::Vec3 target,const Aevrynd::BoxCollider3D& roof,const Aevrynd::BoxCollider3D& desk,
+    std::span<const Aevrynd::BoxCollider3D> walls) {
+    if(!std::isfinite(radius)||radius<=0||std::abs(feet.x-roof.center.x)>roof.extents.x||
+        std::abs(feet.z-roof.center.z)>roof.extents.z||
+        BuildingWallClear(feet,target,target.y,std::span(&desk,1),radius))return std::nullopt;
+    const auto distance=[](Aevrynd::Vec3 a,Aevrynd::Vec3 b){return std::hypot(double(a.x)-b.x,double(a.z)-b.z);};
+    const auto clear=[&](Aevrynd::Vec3 a,Aevrynd::Vec3 b){return BuildingWallClear(a,b,target.y,walls,radius);};
+    const float depth=desk.extents.z+radius+.08f;
+    const float west=desk.center.x-(desk.extents.x+radius+.04f);
+    const float east=desk.center.x+(desk.extents.x+radius+.02f);
+    std::optional<Aevrynd::Vec3> next;
+    double shortest=(std::numeric_limits<double>::infinity)();
+    const auto consider=[&](Aevrynd::Vec3 point,double remaining){
+        const double leg=distance(feet,point);
+        if(leg>.01&&leg+remaining<shortest&&clear(feet,point)){
+            shortest=leg+remaining;
+            next=point;
+        }
+    };
+    for(float side:{-1.f,1.f}){
+        const float z=desk.center.z+side*depth;
+        const Aevrynd::Vec3 logSide{west,target.y,z},rear{east,target.y,z};
+        if(!clear(logSide,target))continue;
+        const double lastLeg=distance(logSide,target);
+        consider(logSide,lastLeg);
+        if(clear(rear,logSide))consider(rear,distance(rear,logSide)+lastLeg);
+    }
+    return next;
+}
+inline std::optional<Aevrynd::Vec3> ShelterApproach(Aevrynd::Vec3 feet,float radius) {
+    static const auto structure=RepairShelterSolids();
+    return BuildingApproach(feet,radius,Session::repairSites[0],structure.front(),std::span(structure).subspan(1,3),1.f);
 }
 inline bool CounterLineClear(const Session& session,const Encounter& enemy,
     std::span<const Aevrynd::BoxCollider3D> solids,const Aevrynd::HeightField3D& terrain) {
@@ -212,6 +248,25 @@ inline ObjectiveGuide BuildObjectiveGuide(const Session& session,const Encounter
             guide.context="Ranger log: 2 - 0 - 3";
             if(session.NearInterior(Session::fuse))guide.context+=" | Dials "+std::to_string(session.FuseDial(0))+" - "+
                 std::to_string(session.FuseDial(1))+" - "+std::to_string(session.FuseDial(2));
+        }
+        if(presentationRadius&&!guide.useReady&&!guide.tuneReady){
+            static const auto workshop=WorkshopSolids();
+            static const auto hut=RangerHutSolids();
+            const auto& building=session.fuseClueRead?workshop:hut;
+            const float side=session.fuseClueRead?1.f:-1.f;
+            if(const auto step=BuildingApproach(session.feet,*presentationRadius,guide.target,building.front(),
+                std::span(building).subspan(1),side)){
+                guide.target=*step;
+                guide.settlementApproach=true;
+                name=session.fuseClueRead?"East workshop entrance":"West ranger hut entrance";
+            }else if(!session.fuseClueRead){
+                if(const auto around=RangerDeskApproach(session.feet,*presentationRadius,guide.target,
+                    hut.front(),hut[2],std::span(hut).subspan(1))){
+                    guide.target=*around;
+                    guide.rangerDeskApproach=true;
+                    name="Around ranger desk";
+                }
+            }
         }
         break;
     case Stage::Generator:

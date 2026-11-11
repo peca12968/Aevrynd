@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -26,6 +27,7 @@ struct Data {
     std::array<Marker,MarkerBudget> markers{};unsigned markerCount{};
     Aevrynd::Vec3 playerWorld{};Aevrynd::Vec2 player{},cameraForward{};
     float minimumHeight{},maximumHeight{};
+    std::optional<float> waterSurface;
     bool relayControls{};unsigned trackedRelay{NoTrackedRelay},previewRelay{NoTrackedRelay};
 };
 inline bool Project(const Bounds& b,Aevrynd::Vec3 p,Aevrynd::Vec2& result) noexcept {
@@ -43,12 +45,14 @@ inline Aevrynd::Vec2 Screen(const Data& d,Aevrynd::Vec2 unit) noexcept {
 // 只讀當幀地形與已揭露任務；不複製 Guide 的自由文字或任何謎題答案。
 inline Data Build(const Session& session,const ObjectiveGuide& guide,const Aevrynd::Camera3D& camera,
                   const Aevrynd::HeightField3D& terrain,unsigned tracked=NoTrackedRelay,
-                  unsigned preview=NoTrackedRelay,bool relayControls=false) {
+                  unsigned preview=NoTrackedRelay,bool relayControls=false,std::optional<float> waterSurface=std::nullopt) {
     Data d;
     if(!session.Valid()||!session.Alive()||!guide.valid||!Session::Finite(camera.position)||!Session::Finite(camera.target)||
        !Session::Finite(camera.up)||!std::isfinite(camera.projection.verticalFieldOfView)||
        !std::isfinite(camera.projection.orthographicHeight)||!std::isfinite(camera.projection.nearPlane)||
        !std::isfinite(camera.projection.farPlane))return d;
+    if(waterSurface&&!std::isfinite(*waterSurface))return d;
+    d.waterSurface=waterSurface;
     const auto& s=terrain.Settings();
     if(s.width<2||s.depth<2||!Session::Finite(s.origin)||!std::isfinite(s.cellSize)||s.cellSize<=0||
        std::uint64_t(s.width)*s.depth!=terrain.SampleCount())return d;
@@ -144,7 +148,7 @@ inline Layout MeasureLayout(const Aevrynd::DrawList& draw,const Data& d) {
     };
     add("巡守地圖 · 暫停檢視",20.f);
     add("地形示意，不能判斷可通行");
-    add("北方（+Z）向上；色階僅表示地形高度");
+    add(d.waterSurface?"北方（+Z）向上；綠色為高度，藍色為水域採樣":"北方（+Z）向上；色階僅表示地形高度");
     add("白點：目前位置；白箭頭：目前鏡頭方向");
     for(unsigned i=0;i<d.markerCount;++i){
         const auto& marker=d.markers[i];auto label=MarkerLabel(marker);
@@ -193,6 +197,7 @@ inline DrawReceipt Draw(Aevrynd::DrawList& draw,const Data& d) {
             if(marker.kind==Kind::Relay&&marker.index==selected&&!marker.completed)++found;}
         if(found!=1)throw std::runtime_error("SURVEY_MAP_UNKNOWN_TRACKED_RELAY");
     }
+    if(d.waterSurface&&!std::isfinite(*d.waterSurface))throw std::runtime_error("SURVEY_MAP_INVALID_WATER_SURFACE");
     const auto layout=MeasureLayout(draw,d);
     // 先完成全部資料與字型驗證，再提交任何圖元，不以縮字或裁切掩蓋失敗。
     for(const auto& t:d.tiles)if(!std::isfinite(t.height)||t.height<d.minimumHeight||t.height>d.maximumHeight)
@@ -203,8 +208,10 @@ inline DrawReceipt Draw(Aevrynd::DrawList& draw,const Data& d) {
     for(unsigned row=0;row<Rows;++row)for(unsigned col=0;col<Columns;++col) {
         const auto& t=d.tiles[row*Columns+col];
         const float a=range>0?float((double(t.height)-d.minimumHeight)/range):.5f;
-        draw.Quad({d.plot.x+(float(col)+.5f)*cw,d.plot.y+(float(row)+.5f)*ch},{cw,ch},
-                  {.10f+.30f*a,.20f+.31f*a,.18f+.28f*a,1});
+        // 採樣格只標示低於實際風暴水位的地形；橋梁仍由獨立任務標記表示。
+        const auto color=d.waterSurface&&t.height<*d.waterSurface?
+            Aevrynd::Color{.12f,.35f,.55f,1}:Aevrynd::Color{.10f+.30f*a,.20f+.31f*a,.18f+.28f*a,1};
+        draw.Quad({d.plot.x+(float(col)+.5f)*cw,d.plot.y+(float(row)+.5f)*ch},{cw,ch},color);
     }
     for(unsigned i=0;i<d.markerCount;++i) {
         const auto p=Screen(d,d.markers[i].unit);draw.Circle(p,5.f,MarkerColor(i),16);

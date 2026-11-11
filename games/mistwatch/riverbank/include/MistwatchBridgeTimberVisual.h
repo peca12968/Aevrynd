@@ -4,7 +4,7 @@
 #include <Aevrynd/BeveledBox3D.h>
 
 namespace Mistwatch::BridgeTimberVisual {
-inline constexpr const char* Profile="bearing-bridge-grain-bevel-v1";
+inline constexpr const char* Profile="bearing-bridge-grain-bevel-v2";
 inline constexpr unsigned Members=53,Vertices=Members*96u,Indices=Members*132u;
 inline constexpr float GrainMeters=1.4f;
 struct Range {std::size_t part{},firstVertex{},firstIndex{};};
@@ -24,6 +24,10 @@ inline Model Create(const BearingBridge::Model& original) {
             throw std::runtime_error("BRIDGE_TIMBER_BEVELED_MEMBER");
         const std::array<float,3> lengths{p.size.x,p.size.y,p.size.z};
         const auto band=WorkshopVisual::Bands[(part*3u+1u)%WorkshopVisual::Bands.size()];
+        // 每塊木料各自偏移、調整紋理密度與方向，打散相鄰木板上重複的木節。
+        const float phase=(float((part*37u+11u)%67u)+.5f)/67.f;
+        const float grainMeters=GrainMeters+.01f*float(int((part*13u+3u)%17u)-8);
+        const bool reverse=(part*19u+7u)%23u<11u;
         for(std::size_t i=first;i<out.wood.vertices.size();++i) {
             auto& v=out.wood.vertices[i];const auto packed=UnpackNormalSnorm8(v.normal);
             const std::array<float,3> normals{packed.x,packed.y,packed.z};
@@ -36,7 +40,8 @@ inline Model Create(const BearingBridge::Model& original) {
             // 板面長軸沿實際米制木紋；端面／倒角各自投影，避免方盒每面塞入整張多板圖。
             const float transverse=local[across]/lengths[across]+.5f;
             v.u=(band.x+transverse*(band.y-band.x))/WorkshopVisual::StaticDecodedScale;
-            v.v=(.13f*float(part%7u)+(local[grain]+lengths[grain]*.5f)/GrainMeters)/WorkshopVisual::StaticDecodedScale;
+            const float along=(reverse?-local[grain]:local[grain])+lengths[grain]*.5f;
+            v.v=(phase+along/grainMeters)/WorkshopVisual::StaticDecodedScale;
             if(!std::isfinite(v.u)||!std::isfinite(v.v))throw std::runtime_error("BRIDGE_TIMBER_NONFINITE_UV");
         }
     }

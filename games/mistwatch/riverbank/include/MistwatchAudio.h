@@ -39,9 +39,14 @@ inline Aevrynd::AudioClip CreateGameSound(Sound sound) {
             value=(.3f*std::sin(t*65.f*6.2831853f)+.25f*middle)*std::exp(-t*17.f);
         else if(sound==Sound::Warning)
             value=(.15f*std::sin(t*(90.f+25.f*std::sin(t*14.f))*6.2831853f)+.12f*low)*std::exp(-t*3.f);
-        else {
-            const float frequency=sound==Sound::Tune?720.f:sound==Sound::Interact?420.f:t<.2f?440.f:t<.4f?554.365f:659.255f;
-            value=.13f*std::sin(t*frequency*6.2831853f)*std::exp(-t*(sound==Sound::Success?1.5f:15.f));
+        else if(sound==Sound::Success) {
+            // 每個音符沿用前一個音符結束的相位，避免切換時產生爆音。
+            const float cycles=t<.2f?440.f*t:t<.4f?
+                440.f*.2f+554.365f*(t-.2f):(440.f+554.365f)*.2f+659.255f*(t-.4f);
+            value=.13f*std::sin(cycles*6.2831853f)*std::exp(-t*1.5f);
+        } else {
+            const float frequency=sound==Sound::Tune?720.f:420.f;
+            value=.13f*std::sin(t*frequency*6.2831853f)*std::exp(-t*15.f);
         }
         const auto sample=std::int16_t(std::clamp(value*fade,-.6f,.6f)*32767.f);
         std::memcpy(clip.samples.data()+i*2,&sample,2);
@@ -51,6 +56,16 @@ inline Aevrynd::AudioClip CreateGameSound(Sound sound) {
 struct AudioOptions {
     float volume{.45f};bool muted{};
     float Gain()const{return muted?0.f:volume;}
+    bool Adjust(bool allowed,bool quieter,bool louder,bool toggleMute) noexcept {
+        if(!allowed)return false;
+        // 相反方向同時按下相互抵消；音量達上限或下限時不重寫設定檔。
+        const float nextVolume=quieter==louder?volume:std::clamp(volume+(louder?.1f:-.1f),0.f,1.f);
+        const bool nextMuted=muted!=toggleMute;
+        if(nextVolume==volume&&nextMuted==muted)return false;
+        volume=nextVolume;
+        muted=nextMuted;
+        return true;
+    }
     std::string Serialize()const {
         std::ostringstream out;out.imbue(std::locale::classic());out.precision(9);
         out<<"MISTWATCH_AUDIO 1 "<<volume<<' '<<muted;return out.str();

@@ -121,6 +121,66 @@ void VerifyShelterNavigation(Source& source) {
         std::cout<<"SHELTER_GUIDED_TRAVERSAL_PASS start_z_offset="<<zOffset<<" steps="<<steps<<'\n';
     }
 }
+
+// 每幀依箭頭讓正式角色控制器穿越聚落入口，使用原地形與碰撞來源。
+void VerifySettlementNavigation(Source& source) {
+    using namespace Mistwatch;
+    Camera3D camera;camera.position={0,3,-6};camera.target={0,1,0};
+    const Encounter enemy;
+    const Evasion evasion;
+    CharacterControllerSettings3D settings;
+    settings.maximumTerrainUphillGrade=settings.maximumTerrainStandingGrade=1.f;
+    constexpr float dt=1.f/60.f;
+    for(bool cabinet:{false,true}){
+        const auto target=cabinet?Session::fuse:Session::rangerLog;
+        const auto& roof=CameraCeilingSolids()[cabinet?0u:1u];
+        const float openSide=cabinet?1.f:-1.f;
+        for(float zOffset:{0.f,-2.f,2.f}){
+            Session session;
+            session.collected=session.repairMaterials=7;
+            session.bridgeRepaired=session.guardianDefeated=true;
+            session.fuseClueRead=cabinet;
+            Vec3 feet{target.x-openSide*(roof.extents.x+1.f),0,target.z+zOffset};
+            feet.y=source.field.SampleHeight(feet.x,feet.z);
+            CharacterController3D controller(settings);
+            controller.Reset(feet);
+            bool approachedOpening=false,used=false;
+            unsigned steps=0;
+            for(;steps<600;++steps){
+                session.feet=controller.Position();
+                approachedOpening|=(session.feet.x-roof.center.x)*openSide>roof.extents.x;
+                const auto local=source.Nearby(session.feet);
+                const auto guide=BuildObjectiveGuide(session,enemy,evasion,camera,false,controller.Grounded(),
+                    local,source.field,NoTrackedRelay,settings.radius);
+                Need(guide.valid&&guide.hasTarget,"settlement navigation has no target");
+                if(guide.useReady||guide.tuneReady){
+                    Need(approachedOpening&&controller.Grounded(),"settlement action before using the open doorway");
+                    if(cabinet){
+                        for(unsigned wheel=0;wheel<Session::fuseCode.size();++wheel)
+                            for(unsigned turn=0;turn<Session::fuseCode[wheel];++turn)
+                                Need(session.CycleFuseDial(wheel),"reached cabinet cannot turn a dial");
+                        used=session.CollectFuse();
+                    }else used=session.ReadFuseClue();
+                    break;
+                }
+                const float dx=guide.target.x-session.feet.x,dz=guide.target.z-session.feet.z;
+                const float distance=std::hypot(dx,dz);
+                Need(std::isfinite(distance)&&distance>.001f,"settlement guide supplies no walking direction");
+                Need(controller.Step({{dx/distance,0,dz/distance},false,.5f},local,
+                    std::span<const ConvexAabbSweep3D* const>{},source.field,dt),"settlement movement step rejected");
+            }
+            const char* building=cabinet?"workshop":"ranger-hut";
+            if(!used){
+                const auto p=controller.Position();
+                std::cerr<<"SETTLEMENT_GUIDANCE_FIRST_DIVERGENCE building="<<building<<" start_z_offset="<<zOffset
+                    <<" steps="<<steps<<" feet="<<p.x<<','<<p.y<<','<<p.z<<" approached_opening="<<approachedOpening<<'\n';
+            }
+            Need(used,"standing route did not complete the interior action");
+            std::cout<<"SETTLEMENT_GUIDED_TRAVERSAL_PASS building="<<building<<" start_z_offset="<<zOffset
+                <<" steps="<<steps<<'\n';
+        }
+    }
+}
 }
 int main(int argc,char**argv){
     try{
@@ -129,6 +189,7 @@ int main(int argc,char**argv){
         Scenario(source,"east-north-jump-land",{13,0,43},1);
         Scenario(source,"west-south-crouch-walk-stand",{-13,0,29},2);
         VerifyShelterNavigation(source);
+        VerifySettlementNavigation(source);
         trace.close();Need(bool(trace),"trace fully written");std::cout<<"RIVERBANK_PRODUCTION_LOCOMOTION_PASS scenarios=3 frames="<<frames<<" changed_frames="<<changedFrames<<" checks="<<checks<<"\n";
     }catch(const std::exception& e){std::cerr<<"FIRST_DIVERGENCE "<<e.what()<<'\n';return 1;}
 }

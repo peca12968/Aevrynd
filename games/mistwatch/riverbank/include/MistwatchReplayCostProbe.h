@@ -71,6 +71,9 @@ public:
             const auto& boundaries=scene.boundaries;
             if(scene.serial!=gpu.serial||boundaries.front()<gpu.beginTick||boundaries.back()>gpu.endTick||
                 !std::is_sorted(boundaries.begin(),boundaries.end()))return false;
+            const auto& preOpaque=scene.preOpaqueBoundaries;
+            if(preOpaque.front()<boundaries[2]||preOpaque.back()>boundaries[3]||
+                !std::is_sorted(preOpaque.begin(),preOpaque.end()))return false;
             if(gpuStageRows_.size()>=MaximumRows*MaximumChunks){overflow_=true;return false;}
         }
         const auto& copy=stats.lastProductionCaptureCopyGpuTiming;
@@ -126,6 +129,7 @@ public:
             if(measureGpuStages_){
                 GpuStageRow stage{gpu.serial,gpu.beginTick,gpu.endTick,gpu.frequency};
                 std::copy(scene.boundaries.begin(),scene.boundaries.end(),stage.begin()+4);
+                std::copy(scene.preOpaqueBoundaries.begin(),scene.preOpaqueBoundaries.end(),stage.begin()+12);
                 gpuStageRows_.push_back(stage);
             }
         }
@@ -210,13 +214,13 @@ private:
         if(!file.Valid()||!WriteBytes(file.Get(),header.data(),sizeof(header))||!WriteBytes(file.Get(),rows_.data(),rows_.size()*sizeof(Row))||!FlushFileBuffers(file.Get())||!Identity(file.Get(),chunk.file))return Fail();
         chunks_[chunkCount_++]=chunk;flushedRows_+=chunk.rows;rows_.clear();return true;
     }
-    using GpuStageRow=std::array<std::uint64_t,12>;
+    using GpuStageRow=std::array<std::uint64_t,16>;
     bool WriteGpuStages(const std::filesystem::path& directory){
         Handle out(CreateFileW((directory/L"gpu-stage-cost.tsv").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr));
         if(!out.Valid())return false;
-        constexpr std::string_view header="gpu_serial\tbegin_tick\tend_tick\tfrequency\tshadow_begin\tshadow_end\tdepth_ao_begin\topaque_begin\tatmosphere_begin\ttransparency_post_begin\tcapture_begin\tcapture_end\n";
+        constexpr std::string_view header="gpu_serial\tbegin_tick\tend_tick\tfrequency\tshadow_begin\tshadow_end\tdepth_ao_begin\topaque_begin\tatmosphere_begin\ttransparency_post_begin\tcapture_begin\tcapture_end\tdepth_begin\tdepth_end\tao_raw_end\tao_resolve_begin\n";
         if(!WriteBytes(out.Get(),header.data(),header.size()))return false;
-        std::string line;line.reserve(12*22);
+        std::string line;line.reserve(16*22);
         for(const auto& row:gpuStageRows_){
             line.clear();
             for(const auto value:row){if(!line.empty())line+='\t';line+=std::to_string(value);}

@@ -1,5 +1,7 @@
 #pragma once
 #include <array>
+#include <chrono>
+#include <optional>
 #include <windows.h>
 #include <Xinput.h>
 #include "Math.h"
@@ -7,20 +9,24 @@
 namespace Aevrynd {
 class Input {
 public:
+    using Clock=std::chrono::steady_clock;
     bool Focused()const{return focused_;}
+    // 保留第一次中斷及其時間，直到下一次固定更新取走輸入。
+    std::optional<Clock::time_point> SuspendedAt()const noexcept{return suspendedAt_;}
+    void MarkSuspended(Clock::time_point now=Clock::now()) noexcept {
+        if(!suspendedAt_)suspendedAt_=now;
+        focusLost_=true;
+        ResetDeviceState();
+    }
     bool FocusLost()const{return focusLost_;}
     void SetFocused(bool focused){
         if(focused_==focused)return;
-        const bool pendingLoss=focusLost_||!focused;
         focused_=focused;
-        // 失焦可能收不到放開事件；清除持續輸入與邊緣，避免背景移動或恢復時鏡頭跳動。
-        keys_.fill(false);ConsumePresses();mouseDown_=rightMouseDown_=false;
-        focusLost_=pendingLoss;
-        mouseInitialized_=false;mouseInsideCanvas_=false;
-        gamepadConnected_=false;gamepadButtons_=0;gamepadLX_=gamepadLY_=gamepadRX_=gamepadRY_=0;
+        if(focused_)ResetDeviceState();
+        else MarkSuspended();
     }
     void BeginFrame(){}
-    void ConsumePresses(bool preserveFocusLoss=false){pressed_.fill(false);mousePressed_=rightMousePressed_=false;mouseDelta_={};leftMouseDragDelta_={};mouseWheel_=0;gamepadPressed_=0;if(!preserveFocusLoss)focusLost_=false;}
+    void ConsumePresses(bool preserveFocusLoss=false){pressed_.fill(false);mousePressed_=rightMousePressed_=false;mouseDelta_={};leftMouseDragDelta_={};mouseWheel_=0;gamepadPressed_=0;if(!preserveFocusLoss){focusLost_=false;suspendedAt_.reset();}}
     void PollGamepad(){if(!focused_)return;XINPUT_STATE state{};if(XInputGetState(0,&state)==ERROR_SUCCESS){gamepadConnected_=true;WORD buttons=state.Gamepad.wButtons;gamepadPressed_|=buttons&~gamepadButtons_;gamepadButtons_=buttons;auto axis=[](SHORT value,SHORT deadzone){if(value>deadzone)return float(value-deadzone)/float(32767-deadzone);if(value<-deadzone)return float(value+deadzone)/float(32768-deadzone);return 0.f;};gamepadLX_=axis(state.Gamepad.sThumbLX,XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);gamepadLY_=axis(state.Gamepad.sThumbLY,XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);gamepadRX_=axis(state.Gamepad.sThumbRX,XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);gamepadRY_=axis(state.Gamepad.sThumbRY,XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);}else{gamepadConnected_=false;gamepadButtons_=0;gamepadLX_=gamepadLY_=gamepadRX_=gamepadRY_=0;}}
     void SetKey(unsigned key,bool down){ if(focused_&&key<256){if(down&&!keys_[key])pressed_[key]=true;keys_[key]=down;} }
     bool Down(unsigned key)const{return key<256&&keys_[key];}
@@ -64,7 +70,14 @@ public:
     float GamepadLeftX()const{return gamepadLX_;}float GamepadLeftY()const{return gamepadLY_;}
     float GamepadRightX()const{return gamepadRX_;}float GamepadRightY()const{return gamepadRY_;}
 private:
+    void ResetDeviceState() noexcept {
+        // 最小化或失焦可能收不到放開事件，避免舊輸入跨過中斷。
+        keys_.fill(false);ConsumePresses(true);mouseDown_=rightMouseDown_=false;
+        mouseInitialized_=false;mouseInsideCanvas_=false;
+        gamepadConnected_=false;gamepadButtons_=0;gamepadLX_=gamepadLY_=gamepadRX_=gamepadRY_=0;
+    }
     bool focused_{true},focusLost_{};
+    std::optional<Clock::time_point> suspendedAt_;
     std::array<bool,256> keys_{}; std::array<bool,256> pressed_{};
     Vec2 mouse_{},mouseDelta_{},leftMouseDragDelta_{};float mouseWheel_{};bool mouseInitialized_{},mouseInsideCanvas_{true},mouseDown_{},mousePressed_{},rightMouseDown_{},rightMousePressed_{};
     bool gamepadConnected_{};WORD gamepadButtons_{},gamepadPressed_{};float gamepadLX_{},gamepadLY_{},gamepadRX_{},gamepadRY_{};

@@ -121,6 +121,7 @@
 #include "MistwatchPlaytestClock.h"
 #include "MistwatchCameraSettings.h"
 #include "MistwatchCameraSettingsFile.h"
+#include "MistwatchGraphicsSettings.h"
 #include "MistwatchInputReplay.h"
 #include "MistwatchManualEntryRoute.h"
 #include "MistwatchSupplyCrate.h"
@@ -942,7 +943,7 @@ class MistwatchGame final : public IGame {
     SkinningWorkspace3D boarSkinning;
     Mistwatch::BoarHitReaction::Scratch boarHitScratch;
     bool started{}, paused{};
-    bool sunShadowsEnabled{true};
+    Mistwatch::GraphicsSettings graphicsOptions;
     Mistwatch::PlaytestClock playtestClock;
     bool fieldJournalOpen{};
     bool surveyMapRequested{};
@@ -952,10 +953,13 @@ class MistwatchGame final : public IGame {
     Mistwatch::GameAudio gameAudio;
     std::filesystem::path audioSettings;
     std::filesystem::path cameraSettings;
+    std::filesystem::path graphicsSettings;
     std::string message="ENTER: begin expedition";
     Mistwatch::ActionFeedbackToast actionFeedback;
+    Mistwatch::FieldPresentation::DefeatCause defeatCause{};
     Mistwatch::TuningInputRepeat tuningInputRepeat;
     std::filesystem::path save;
+    Mistwatch::FieldPresentation::TitleCheckpoint titleCheckpoint{Mistwatch::FieldPresentation::TitleCheckpoint::Unchecked};
     std::filesystem::path capture;
     unsigned captureFrames{};
     unsigned captureSequenceFrames{},captureCompleted{},captureConsumed{};
@@ -1730,7 +1734,22 @@ class MistwatchGame final : public IGame {
             RuntimeRoofCameraOnly(),RuntimeRoofHulls(),firLayoutSelector,fallenLogProfile,*matureIndexedDomain);
         return Mistwatch::PrepareSavedGame(snapshot,{controller,explorer,boar,orbit},terrain,RuntimeRoofCameraOnly(),RuntimeExtraSolids(),firLayoutSelector,fallenLogProfile,entranceWorld.applied?&entranceWorld:nullptr,RuntimeRoofHulls(),RuntimeTerrainProfile(),valleySaveDomain?&*valleySaveDomain:nullptr);
     }
+    static Mistwatch::FieldPresentation::TitleCheckpoint InspectTitleCheckpoint(const std::filesystem::path& path) {
+        using Status=Mistwatch::FieldPresentation::TitleCheckpoint;
+        if(path.empty())return Status::NoPath;
+        std::error_code error;
+        const auto status=std::filesystem::status(path,error);
+        if(status.type()==std::filesystem::file_type::not_found)return Status::Missing;
+        if(error||!std::filesystem::is_regular_file(status))return Status::Unreadable;
+        Mistwatch::SaveGame candidate;
+        return Mistwatch::ReadSaveFile(path,candidate)?Status::Found:Status::Unreadable;
+    }
     void SaveCheckpoint() {
+        // 暫停與倒下畫面共用此入口，避免以倒下狀態覆蓋可用檢查點。
+        if(!session.Alive()){
+            actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::SaveUnavailableAfterDefeat);
+            return;
+        }
         if(matureIndexedDomain)++matureSaveHandlerCalls;
         const auto snapshot=CaptureSaveGame();
         // 先確認目前世界可安全還原，避免走出地形後寫下格式合法、實際讀不回的檔案。
@@ -1748,10 +1767,7 @@ class MistwatchGame final : public IGame {
     }
     void SaveAudioOptions() {
         if(audioSettings.empty())return;
-        std::error_code error;std::filesystem::create_directories(audioSettings.parent_path(),error);
-        auto temporary=audioSettings;temporary+=".tmp";
-        std::ofstream out(temporary);out<<gameAudio.options.Serialize();out.close();
-        if(!out||!MoveFileExW(temporary.c_str(),audioSettings.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH))message="Audio settings save failed";
+        if(!Mistwatch::WriteSettingsFile(audioSettings,gameAudio.options.Serialize()))message="Audio settings save failed";
     }
     void SaveCameraOptions() {
         if(cameraSettings.empty())return;
@@ -3705,7 +3721,7 @@ private:
             !boar.PlaceFeet(encounter.feet,terrain))throw std::runtime_error("Boar initial pose failed");
         if(!boarHitScratch.Initialize(boar.model))
             throw std::runtime_error("Boar hit render skeleton incompatible");
-        if(capture.empty()&&!save.empty()) {
+        if(capture.empty()&&inputReplayDirectory.empty()&&!save.empty()) {
             audioSettings=save.parent_path()/"audio-settings.txt";
             std::ifstream file(audioSettings);std::string line;
             if(std::getline(file,line))gameAudio.options.Restore(line);
@@ -3714,6 +3730,10 @@ private:
         if(capture.empty()&&inputReplayDirectory.empty()&&!save.empty()){
             cameraSettings=save.parent_path()/"camera-settings.txt";
             Mistwatch::ReadCameraSettingsFile(cameraSettings,cameraOptions);
+            if(!manualEntrySmoke){
+                graphicsSettings=save.parent_path()/"graphics-settings.txt";
+                Mistwatch::ReadGraphicsSettingsFile(graphicsSettings,graphicsOptions);
+            }
         }
         // 自動影像驗證靜音，不寫玩家音量設定；播放收據仍記錄真實裝置與 voice 結果。
         if(!capture.empty()||!inputReplayDirectory.empty())gameAudio.options.muted=true;
@@ -3812,6 +3832,12 @@ private:
             std::filesystem::copy_file(source,save,std::filesystem::copy_options::none);
         }
         if(inputReplay.ResumeSaveRoute()&&seed.empty())throw std::runtime_error("Resume replay seed missing");
+        if(matureIndexedDomain&&!manualEntrySmoke&&inputReplayDirectory.empty()&&capture.empty()){
+            if(const auto recovered=Mistwatch::RecoveredRiverbankCheckpoint(local,save,matureIndexedDomain->Identity()))
+                save=*recovered;
+        }
+        // 主選單只檢查一次檔案格式；真正的讀檔仍要驗證世界與碰撞後才提交。
+        if(!started)titleCheckpoint=InspectTitleCheckpoint(save);
         InitializeCoreHerbs(e);
         WriteCompleteUnderstoryRetention();
         InitializeRouteGrass(e);
@@ -4477,11 +4503,16 @@ private:
         }
         auto& in=matureKeyActive?matureKeyControls:inputReplayDirectory.empty()?e.GetInput():inputReplay.Controls();
         const bool trackPlaytest=(!manualEntrySmoke||manualClockEnabled)&&!matureKeyActive&&inputReplayDirectory.empty()&&capture.empty();
+        const auto playtestStageBefore=session.CurrentStage();
         const auto clockNow=trackPlaytest?Mistwatch::PlaytestClock::Clock::now():Mistwatch::PlaytestClock::Clock::time_point{};
         const auto updatePlaytestActivity=[&] {
             if(trackPlaytest)playtestClock.SetActive(clockNow,
                 started&&!paused&&in.Focused()&&!in.FocusLost()&&session.Alive()&&!session.beaconLit);
         };
+        // 失焦或最小化可能跳過固定更新，須依視窗事件時間停錶。
+        if(trackPlaytest){
+            if(const auto suspended=in.SuspendedAt())playtestClock.SetActive(*suspended,false);
+        }
         updatePlaytestActivity();
         // 取物緩衝屬短暫輸入，不寫入存檔，也不能跨越選單、焦點或存讀檔邊界。
         if(!started||paused||!in.Focused()||in.FocusLost()||!session.Alive()||session.beaconLit||
@@ -4503,6 +4534,9 @@ private:
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera,&playerLocomotion});
                 tuningInputRepeat.Reset();ResetPlayablePairRuntime();
                 started=true;
+                // 讀檔後回到新進度的地圖或方向指引。
+                fieldJournalOpen=false;
+                defeatCause={};
                 playtestClock.Clear();
                 cameraOcclusionSeconds=0;
                 gameAudio.director.Reset();
@@ -4510,6 +4544,8 @@ private:
                 actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::Loaded);
                 TickAudio(e,dt);
             }else{
+                if(!started&&titleCheckpoint==Mistwatch::FieldPresentation::TitleCheckpoint::Found)
+                    titleCheckpoint=Mistwatch::FieldPresentation::TitleCheckpoint::Unreadable;
                 message="Save unavailable";
                 actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::LoadUnavailable);
             }
@@ -4517,26 +4553,41 @@ private:
             // 失敗也不更新遊戲音效事件觀測器；底層已播放的聲音仍由引擎正常服務。
             return;
         }
-        if(matureIndexedDomain&&!RefreshRuntimeBody(dt)){message="World collision query unavailable - controls retained";return;}
+        const bool focused=in.Focused()&&!in.FocusLost();
+        const bool beginPressed=in.Pressed(VK_RETURN),pausePressed=in.Pressed(VK_ESCAPE);
+        if(trackPlaytest&&!manualEntrySmoke&&focused&&started&&session.Alive()&&session.beaconLit&&
+           fieldJournalOpen&&!save.empty()&&!beginPressed&&!pausePressed&&!in.Pressed('J')&&
+           !in.Pressed(VK_F5)&&!in.Pressed('R')&&in.Pressed('K')){
+            const auto summary=playtestClock.CompletedSummary();
+            if(!summary.empty()){
+                const auto path=save.parent_path()/"last-playtest-summary.txt";
+                message=Mistwatch::WriteSettingsFile(path,summary)?"已匯出本輪遊玩時間":"無法匯出本輪遊玩時間";
+            }
+        }
+        // 暫停與失焦不依賴碰撞查詢；恢復當步只處理選單狀態，下一步才重新查詢。
+        const bool needsWorldStep=focused&&(started?(!paused&&!pausePressed):beginPressed);
+        if(needsWorldStep&&matureIndexedDomain&&!RefreshRuntimeBody(dt)){message="World collision query unavailable - controls retained";return;}
         const bool wasStarted=started,wasPaused=paused;
-        Mistwatch::UpdatePlaybackControl(started,paused,in.Focused()&&!in.FocusLost(),in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
+        Mistwatch::UpdatePlaybackControl(started,paused,focused,beginPressed,pausePressed);
         const bool resumedFromPause=wasStarted&&wasPaused&&!paused;
-        const bool menuSettingsEditable=Mistwatch::CanEditCameraSettings(in.Focused()&&!in.FocusLost(),
-            wasStarted,wasPaused,started,paused,in.Pressed(VK_RETURN),in.Pressed(VK_ESCAPE));
+        const bool menuSettingsEditable=Mistwatch::CanEditCameraSettings(focused,
+            wasStarted,wasPaused,started,paused,beginPressed,pausePressed);
         if(cameraOptions.Adjust(menuSettingsEditable,in.Pressed(VK_OEM_4),in.Pressed(VK_OEM_6),
             in.Pressed('I'),in.Pressed(VK_BACK)))SaveCameraOptions();
-        if(menuSettingsEditable&&in.Pressed('G'))sunShadowsEnabled=!sunShadowsEnabled;
+        if(menuSettingsEditable&&graphicsOptions.Toggle(in.Pressed('G'),in.Pressed('H'))&&
+           !graphicsSettings.empty()&&!Mistwatch::WriteSettingsFile(graphicsSettings,graphicsOptions.Serialize()))
+            message="畫質設定寫入失敗，本次設定仍有效。";
         // 只在真正開始時更新回饋；恢復暫停或無焦點按鍵不能覆蓋既有操作結果。
         if(!wasStarted&&started){
             message="New expedition";
             if(trackPlaytest)playtestClock.Start(clockNow);
         }
         updatePlaytestActivity();
-        bool changedAudio=false;
-        if(in.Pressed('M')){gameAudio.options.muted=!gameAudio.options.muted;changedAudio=true;}
-        if(in.Pressed(VK_PRIOR)){gameAudio.options.volume=std::clamp(gameAudio.options.volume+.1f,0.f,1.f);changedAudio=true;}
-        if(in.Pressed(VK_NEXT)){gameAudio.options.volume=std::clamp(gameAudio.options.volume-.1f,0.f,1.f);changedAudio=true;}
-        if(changedAudio){e.Audio().SetMasterVolume(gameAudio.options.Gain());SaveAudioOptions();}
+        if(gameAudio.options.Adjust(focused&&capture.empty()&&inputReplayDirectory.empty(),
+            in.Pressed(VK_NEXT),in.Pressed(VK_PRIOR),in.Pressed('M'))){
+            e.Audio().SetMasterVolume(gameAudio.options.Gain());
+            SaveAudioOptions();
+        }
         std::optional<Mistwatch::PlayableFrameGuard> playableFrame;
         playableCameraOnlyCommitted=false;playableOutcome=PlayableOutcome::None;
         if(started&&!paused&&!resumedFromPause&&session.Alive()&&!session.beaconLit){
@@ -4597,8 +4648,6 @@ private:
             }else TryUpdateCameraOnly(in.LeftMouseDragDelta(),in.MouseWheel(),cameraTurn(),dt);
             TickAudio(e,dt);return;
         }
-        bool resetTick=false;
-        auto retryFeedback=Mistwatch::ActionFeedbackEvent::None;
         if(std::isfinite(dt) && dt>0)waterTime=std::fmod(waterTime+(std::min)(dt,.1f),3600.f);
         if(playableRecoveryCause!=PlayableRecoveryCause::None&&in.Pressed('R')&&playableFrame){
             const auto previousAudioDirector=gameAudio.director;bool recovered=false;
@@ -4624,25 +4673,49 @@ private:
             if(!recovered){playableFrame->Rollback();gameAudio.director=previousAudioDirector;
                 playableOutcome=PlayableOutcome::InitialPairRecovery;message="Safe retry unavailable - ESC pauses; prior state retained";return;}
         }
-        if(in.Pressed('R') && session.beaconLit) {
-            session={};solids=RuntimeGameplayBody(false,session.feet);ResetController();encounter={};ResetBoarPose();evasion={};orbit={};message="New expedition";resetTick=true;
-            if(trackPlaytest)playtestClock.Start(clockNow);
-        }
-        if(in.Pressed('R') && !session.Alive()) {
-            session.Retry();if(matureIndexedDomain)solids=RuntimeGameplayBody(session.bridgeRepaired,session.feet);ResetController();
-            // 重試保留已完成任務；已擊敗的野豬不能重設為未擊敗而破壞檢查點一致性。
-            if(!session.guardianDefeated)encounter={};
-            ResetBoarPose();evasion={};
-            message=session.bridgeRepaired?"Retry from bridgehead":"Retry from starting point";
-            retryFeedback=session.bridgeRepaired?Mistwatch::ActionFeedbackEvent::RetryFromBridge:Mistwatch::ActionFeedbackEvent::RetryFromStart;
-            resetTick=true;
-        }
-        if(resetTick){
+        if(in.Pressed('R')&&(session.beaconLit||!session.Alive())){
+            const bool newExpedition=session.beaconLit;
+            const auto refs=PlayableRefs();
+            if(!playableScratch.Capture(refs)){
+                message="重試暫時無法準備，已保留進度。請再按 R，或按 F9 載入存檔。";return;
+            }
+            Mistwatch::PlayableFrameGuard reset(refs,playableScratch);
+            const auto previousAudioDirector=gameAudio.director;
+            std::vector<BoxCollider3D> previousSolids;
+            bool solidsSwapped=false;
+            try{
+                if(newExpedition)session={};else session.Retry();
+                if(newExpedition||matureIndexedDomain){
+                    previousSolids=RuntimeGameplayBody(session.bridgeRepaired,session.feet);
+                    solids.swap(previousSolids);
+                    solidsSwapped=true;
+                }
+                ResetController();
+                // 已擊敗的野豬保留原狀，避免讓既有任務和檢查點失去一致性。
+                if(newExpedition||!session.guardianDefeated)encounter={};
+                ResetBoarPose();evasion={};
+                if(newExpedition)orbit={};
+                if(!UpdatePlayerCamera(dt))throw std::runtime_error("Reset-tick player camera unavailable");
+            }catch(const std::exception& error){
+                if(solidsSwapped)solids.swap(previousSolids);
+                reset.Rollback();
+                gameAudio.director=previousAudioDirector;
+                runtimeSourceFailure=error.what();
+                message="重試位置暫不可用，已保留進度。請再按 R，或按 F9 載入存檔。";return;
+            }
+            reset.Commit();
+            defeatCause={};
             tuningInputRepeat.Reset();
             fieldJournalOpen=false;
             actionFeedback.Clear();
-            if(retryFeedback!=Mistwatch::ActionFeedbackEvent::None)actionFeedback.Publish(retryFeedback);
-            if(!UpdatePlayerCamera(dt))throw std::runtime_error("Reset-tick player camera unavailable");
+            if(newExpedition){
+                message="New expedition";
+                if(trackPlaytest)playtestClock.Start(clockNow);
+            }else{
+                message=session.bridgeRepaired?"Retry from bridgehead":"Retry from starting point";
+                actionFeedback.Publish(session.bridgeRepaired?Mistwatch::ActionFeedbackEvent::RetryFromBridge:
+                    Mistwatch::ActionFeedbackEvent::RetryFromStart);
+            }
             ResetPlayablePairRuntime();
             TickAudio(e,dt);return;
         }
@@ -4658,6 +4731,7 @@ private:
             TickAudio(e,dt);return;
         }
         if(!playableFrame){message="Frame transaction unavailable";return;}
+        const bool bridgeWasRepaired=session.bridgeRepaired;
         const auto edges=playableInputs.Front();
         // 此副本只在世界交易成功時發布；鏡頭或身體拒絕不得偷走緩衝時間。
         auto nextPickupIntent=pickupIntent;
@@ -4758,8 +4832,8 @@ private:
                     if(session.CurrentStage()==Mistwatch::Stage::Relays){
                         const auto result=Mistwatch::FieldInput::Lever(session,lever);
                         if(result!=Mistwatch::FieldInput::Result::None)message=Mistwatch::FieldInput::Feedback(result);
-                    }else if(session.CycleFuseDial(lever))message="Cabinet dial turned - match the ranger log, then E";
-                    else if(session.ToggleCircuit(lever))message="Circuit switched - light all three lamps";
+                    }else if(session.CycleFuseDial(lever))message=Mistwatch::FieldInput::CabinetFeedback(session,true);
+                    else if(session.ToggleCircuit(lever))message=Mistwatch::FieldInput::GeneratorFeedback(session);
                 }
                 if(edges.Pressed(Mistwatch::FrameEdge::Interact)){
                     nextPickupIntent.Clear();
@@ -4784,8 +4858,6 @@ private:
                     message=bridgePlayerRejected?"Move character clear before bridge repair":
                         bridgeCameraRejected?"Move camera clear before bridge repair":changed?"Objective updated":session.CurrentStage()==Mistwatch::Stage::RepairMaterials?
                         "Find tools in west shelter (CTRL), and both timber caches":
-                        session.CurrentStage()==Mistwatch::Stage::Fuse&&session.NearInterior(Mistwatch::Session::fuse)?
-                        "Cabinet locked - read ranger log, set dials 1 / 2 / 3":
                         session.CurrentStage()==Mistwatch::Stage::Relays?"Ridge relay: 1 left / 2 right, green signal lock, then E":"Move closer to the objective";
                     if(!bridgePlayerRejected&&!bridgeCameraRejected&&
                        (fieldResult!=Mistwatch::FieldInput::Result::None||!changed))
@@ -4846,12 +4918,18 @@ private:
             // 可見狀態只在這一點提交；通常只借原solids，真正修橋才交換新vector。
             if(pendingWorld)solids.swap(*pendingWorld);
             playableFrame->Commit();playableInputs.CommitWorld(retainCounterAttack);
+            // 原因只跟隨已提交的失敗結果；讀檔沒有當輪證據時維持未指定。
+            if(!session.Alive()){
+                using Cause=Mistwatch::FieldPresentation::DefeatCause;
+                if(terminalFall)defeatCause=Cause::Ravine;
+                else if(damage>0)defeatCause=Cause::Boar;
+            }
             if(!session.Alive()||session.beaconLit)nextPickupIntent.Clear();
             pickupIntent=nextPickupIntent;
             if(!Mistwatch::CanTrackRelay(session,trackedRelay))trackedRelay=Mistwatch::NoTrackedRelay;
             if(!Mistwatch::CanTrackRelay(session,previewRelay))previewRelay=Mistwatch::NoTrackedRelay;
             playableCommittedContact=contacts;
-            worldCommitted=true;saveAfterCommit=!terminalFall&&edges.Pressed(Mistwatch::FrameEdge::Save)&&!save.empty();
+            worldCommitted=true;saveAfterCommit=!terminalFall&&session.Alive()&&edges.Pressed(Mistwatch::FrameEdge::Save)&&!save.empty();
             playableRecoveryCause=PlayableRecoveryCause::None;playableNeedsContactPolicy=false;playableOutcome=PlayableOutcome::WorldCommitted;
             inputReplayMotionAccepted=true;inputReplayMotionSteps=motion.steps;inputReplayLastDashing=motion.dashing;
             inputReplayLastDamage=damage;inputReplayCameraAttempted=true;inputReplayCameraRollback=false;
@@ -4859,14 +4937,31 @@ private:
         catch(...){runtimeSourceFailure="unknown frame exception";holdFrame("Frame candidate unavailable - prior state and controls retained");}
         // 檔案與音效只在成功提交後執行；不能把提交後I/O例外當成世界已回滾。
         if(!worldCommitted)return;
-        if(trackPlaytest&&(session.beaconLit||!session.Alive())){
+        if(!bridgeWasRepaired&&session.bridgeRepaired)
+            actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::BridgeRepaired);
+        const auto playtestStageAfter=session.CurrentStage();
+        if(trackPlaytest&&(playtestStageBefore!=playtestStageAfter||session.beaconLit||!session.Alive())){
             const auto committedAt=Mistwatch::PlaytestClock::Clock::now();
             if(session.beaconLit)playtestClock.Finish(committedAt);
-            else playtestClock.SetActive(committedAt,false);
+            else {
+                playtestClock.EnterLeg(committedAt,PlaytestLeg(playtestStageAfter));
+                if(!session.Alive())playtestClock.SetActive(committedAt,false);
+            }
         }
         RecordIndexedGameplayCommit();
         if(saveAfterCommit)SaveCheckpoint();
         TickAudio(e,dt);
+    }
+    static Mistwatch::PlaytestClock::Leg PlaytestLeg(Mistwatch::Stage stage)noexcept{
+        using Leg=Mistwatch::PlaytestClock::Leg;
+        using Stage=Mistwatch::Stage;
+        switch(stage){
+        case Stage::Supplies:case Stage::RepairMaterials:case Stage::Bridge:return Leg::BridgePreparation;
+        case Stage::Encounter:return Leg::Encounter;
+        case Stage::Fuse:case Stage::Generator:return Leg::SettlementPower;
+        case Stage::Relays:case Stage::Beacon:case Stage::Complete:return Leg::RescueSignal;
+        }
+        return Leg::BridgePreparation;
     }
     std::string PlaytestClockContext(std::chrono::seconds elapsed)const {
         const auto seconds=elapsed.count();
@@ -4988,20 +5083,27 @@ private:
         }
         scene.Mesh(riverMesh,{},Mistwatch::RiverMaterial());
         foliageViewRequests.clear();std::uint64_t firViewOrdinal{};
+        std::optional<Mistwatch::FoliageView::OpacityQuery> firView;
+        auto firViewBounds=firMeshes[1].bounds;
+        if(foliageViewEnabled&&started&&session.Alive()&&(!firLayout.firs.empty()||!understory.saplings.empty())){
+            // 同一幀的鏡頭視線與樹冠局部包絡共用；每棵樹仍使用自己的世界變換。
+            firView.emplace(playerCameraMotion.Camera(),session.feet,controller.Settings().height);
+            if(nearFirTwigLod){
+                const auto other=detailedFirTwig.bounds;
+                const auto lo=firViewBounds.center-firViewBounds.extents,hi=firViewBounds.center+firViewBounds.extents;
+                const auto a=other.center-other.extents,b=other.center+other.extents;
+                const Vec3 low{(std::min)(lo.x,a.x),(std::min)(lo.y,a.y),(std::min)(lo.z,a.z)};
+                const Vec3 high{(std::max)(hi.x,b.x),(std::max)(hi.y,b.y),(std::max)(hi.z,b.z)};
+                firViewBounds.center=(low+high)*.5f;
+                firViewBounds.extents=(high-low)*.5f;
+                firViewBounds.radius=Length(firViewBounds.extents);
+            }
+        }
         // 鏡頭到樹冠包絡距離決定針葉細節，六公尺過渡帶保留互補色彩與陰影。
         const auto submitFir=[&](Transform3D transform) {
             const auto leafIdentity=Mistwatch::FoliageView::LeafIdentity(forestPlayableWorld,++firViewOrdinal);
-            if(foliageViewEnabled&&started&&session.Alive()){
-                auto bounds=firMeshes[1].bounds;
-                if(nearFirTwigLod){
-                    const auto other=detailedFirTwig.bounds;const auto lo=bounds.center-bounds.extents,hi=bounds.center+bounds.extents;
-                    const auto a=other.center-other.extents,b=other.center+other.extents;
-                    const Vec3 low{(std::min)(lo.x,a.x),(std::min)(lo.y,a.y),(std::min)(lo.z,a.z)};
-                    const Vec3 high{(std::max)(hi.x,b.x),(std::max)(hi.y,b.y),(std::max)(hi.z,b.z)};
-                    bounds.center=(low+high)*.5f;bounds.extents=(high-low)*.5f;bounds.radius=Length(bounds.extents);
-                }
-                const float opacity=Mistwatch::FoliageView::Opacity(playerCameraMotion.Camera(),session.feet,
-                    controller.Settings().height,TransformBounds(bounds,transform));
+            if(firView){
+                const float opacity=firView->Opacity(TransformBounds(firViewBounds,transform));
                 if(opacity<1.f)foliageViewRequests.push_back({leafIdentity,opacity});
             }
             for(unsigned slot=0;slot<4;++slot) {
@@ -5390,8 +5492,10 @@ private:
         draw.SetWaterSurface(Mistwatch::RiverSurface());
         draw.SetWaterOptics({true,.018f,.35f,.035f});
         draw.SetScreenSpaceReflections({true,.7f,32.f,.65f,.28f,12});
-        if(diagnosticNoAo) draw.SetAmbientOcclusion({false});
-        draw.SetDirectionalShadowMapEnabled(sunShadowsEnabled&&!diagnosticNoShadows);
+        // 共用的遮蔽階段必須同時停用環境遮蔽與接觸陰影；每幀重送可恢復預設。
+        draw.SetAmbientOcclusion({graphicsOptions.ambientShading&&!diagnosticNoAo});
+        draw.SetContactShadows({graphicsOptions.ambientShading});
+        draw.SetDirectionalShadowMapEnabled(graphicsOptions.sunShadows&&!diagnosticNoShadows);
         if(diagnosticNoBloom)draw.SetBloom({false});
         draw.SetDirectionalLight(Mistwatch::ForestLighting::Light(forestLightingContrast));
         draw.SetExposureCompensation(.5f);
@@ -5785,13 +5889,22 @@ private:
         if(!Mistwatch::ExplorerSurface::Submit(draw,explorer.model,explorer.art,explorerMesh.handle,palette,
             explorerTransform,explorerMaterials,explorerSurfaceSubmission))
             throw std::runtime_error("Explorer surface window submission failed");
-        auto fieldHud=Mistwatch::FieldPresentation::Build(session,guide,encounter,started,paused,fieldJournalOpen);
-        if(fieldHud.valid&&started&&!paused&&session.beaconLit){
-            if(const auto elapsed=playtestClock.CompletedTime())fieldHud.context=PlaytestClockContext(*elapsed);
+        auto fieldHud=Mistwatch::FieldPresentation::Build(session,guide,encounter,started,paused,fieldJournalOpen,
+            titleCheckpoint,defeatCause);
+        const bool showSafeRetry=Mistwatch::FieldPresentation::PresentSafeRetry(fieldHud,session,started,paused,
+            playableRecoveryCause!=PlayableRecoveryCause::None);
+        if(fieldHud.valid&&started&&session.beaconLit){
+            if(!paused){
+                if(const auto elapsed=playtestClock.CompletedTime())fieldHud.context=PlaytestClockContext(*elapsed);
+            }
+            if(fieldJournalOpen)
+                Mistwatch::FieldPresentation::AppendPlaytestDebrief(fieldHud,playtestClock,paused,!manualEntrySmoke,!save.empty());
         }
         Mistwatch::FieldPresentation::PresentCameraSettings(fieldHud,cameraOptions,started,paused);
-        if(fieldHud.valid&&(!started||paused))
+        if(fieldHud.valid&&(!started||paused)){
             fieldHud.navigation+=draw.DirectionalShadowMapEnabled()?" · G 日照陰影 開":" · G 日照陰影 關";
+            fieldHud.navigation+=graphicsOptions.ambientShading?" · H 遮蔽與接觸陰影 開":" · H 遮蔽與接觸陰影 關";
+        }
         Mistwatch::FieldPresentation::Draw(draw,fieldHud,session,Mistwatch::FieldPresentation::LastAction(message),
             actionFeedback,e.Audio().GetStats().deviceAvailable,gameAudio.options.muted,
             unsigned(gameAudio.options.volume*100+.5f),started,paused);
@@ -5801,7 +5914,7 @@ private:
         }
         surveyMapRequested=Mistwatch::SurveyMap::ShouldShow(started,paused,session.Alive(),fieldJournalOpen);
         Mistwatch::ObjectivePointer::Submit(draw,
-            Mistwatch::ObjectivePointer::Build(session,guide,started,paused,fieldJournalOpen));
+            Mistwatch::ObjectivePointer::Build(session,guide,started,paused,fieldJournalOpen||showSafeRetry));
         if(surveyMapRequested){
             const auto hudLayout=Mistwatch::FieldPresentation::MeasureLayout(draw,fieldHud,session,
                 Mistwatch::FieldPresentation::LastAction(message),actionFeedback,started,paused,
@@ -5809,7 +5922,8 @@ private:
             // 與實際字型排版核對，不以估計高度覆蓋操作結果。
             if(hudLayout.showToast&&hudLayout.toast.Bottom()+8>Mistwatch::SurveyMap::Top)
                 throw std::runtime_error("Survey map overlaps action feedback");
-            const auto survey=Mistwatch::SurveyMap::Build(session,guide,camera,terrain,trackedRelay,previewRelay,true);
+            const std::optional<float> waterSurface=matureIndexedDomain?std::optional{Mistwatch::StormRiver::Height}:std::nullopt;
+            const auto survey=Mistwatch::SurveyMap::Build(session,guide,camera,terrain,trackedRelay,previewRelay,true,waterSurface);
             surveyMapDraw=Mistwatch::SurveyMap::Draw(draw,survey);
             if(!surveyMapDraw.drawn){
                 // 不可靠座標不能畫成假位置；地圖不可用也不能結束玩家的既有遊戲。
@@ -5817,7 +5931,7 @@ private:
                 draw.SystemText({348,184},"地圖資料暫不可用；原任務狀態已保留。",18.2f,{.9f,.95f,.96f,1});
             }
         }
-        RenderManualEntrySmoke(e,draw.ViewProjection(),fieldHud.context);
+        RenderManualEntrySmoke(e,draw.ViewProjection(),fieldHud);
         if(inputReplayCaptureRequested){
             inputReplayCaptureBase=e.GetRendererStats().successfulFrameCaptures;
             const auto path=inputReplayDirectory/(std::to_string(inputReplayImages)+"-"+inputReplayPhase+".png");

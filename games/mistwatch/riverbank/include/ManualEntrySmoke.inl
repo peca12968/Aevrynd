@@ -16,6 +16,8 @@
     bool manualClockEnabled{},manualClockCapturing{},manualClockCaptured{},manualClockRestartCleared{},manualClockLoadCleared{};
     std::chrono::seconds manualClockElapsed{};
     std::string manualClockHud;
+    Mistwatch::PlaytestClock::LegSeconds manualDebriefLegs{};
+    std::uint64_t manualDebriefRenderSerial{};
     bool manualBeaconReadyEnabled{},manualBeaconReadyCapturing{},manualBeaconReadyCaptured{},manualWaterAudioEnabled{};
     bool manualShadowOptionsEnabled{};
     unsigned manualShadowOptionsStep{};
@@ -128,12 +130,13 @@
         const auto& observed=manualShadowOptionsStep?steps[manualShadowOptionsStep-1]:initial;
         const bool rendererAgrees=observed.shadows?shadow.activeCascades>0:
             shadow.activeCascades==0&&shadow.drawCalls==0&&shadow.cascadeDrawCalls==0;
-        MatureContact::Require(started==observed.started&&paused==observed.paused&&sunShadowsEnabled==observed.shadows&&rendererAgrees,
+        MatureContact::Require(started==observed.started&&paused==observed.paused&&
+            graphicsOptions.sunShadows==observed.shadows&&rendererAgrees,
             ("MANUAL_SHADOW_OPTIONS_DIVERGED: "+std::string(observed.name)).c_str());
         const bool done=manualShadowOptionsStep==steps.size();
         std::ofstream out(indexedGameplayOutput/"sun-shadow-options.tsv",std::ios::app);
         if(!manualShadowOptionsStep)out<<"step\trender_serial\tstarted\tpaused\tshadows\tactive_cascades\tdraw_calls\n";
-        out<<observed.name<<'\t'<<shadow.frameSerial<<'\t'<<started<<'\t'<<paused<<'\t'<<sunShadowsEnabled<<'\t'
+        out<<observed.name<<'\t'<<shadow.frameSerial<<'\t'<<started<<'\t'<<paused<<'\t'<<graphicsOptions.sunShadows<<'\t'
             <<shadow.activeCascades<<'\t'<<shadow.drawCalls<<'\n';
         if(done)out<<"passed=1\n";
         out.close();
@@ -186,6 +189,7 @@
                 }
                 if(manualClockCapturing){
                     MatureContact::Require(manualClockElapsed.count()>0&&!manualClockHud.empty(),"MANUAL_PLAYTEST_CLOCK_CAPTURE_NOT_PRESENTED");
+                    manualDebriefRenderSerial=s.lastCapturedRenderSerial;
                     manualClockCapturing=false;manualClockCaptured=true;return true;
                 }
                 ++manualSmokeCaptureCount;
@@ -235,7 +239,14 @@
                         "MANUAL_PLAYTEST_CLOCK_FLOW_INCOMPLETE");
                     std::ofstream clockReceipt(indexedGameplayOutput/"playtest-clock.txt");
                     clockReceipt<<"synthetic_input=1\nelapsed_seconds="<<manualClockElapsed.count()
-                        <<"\nhud_context="<<manualClockHud<<"\nrestart_cleared=1\nload_cleared=1\n";
+                        <<"\nhud_context="<<manualClockHud<<"\nrestart_cleared=1\nload_cleared=1\n"
+                        <<"debrief_title="<<Mistwatch::FieldPresentation::JournalTitle(session)
+                        <<"\ndebrief_render_serial="<<manualDebriefRenderSerial<<"\ndebrief_legs_seconds=";
+                    for(std::size_t index=0;index<manualDebriefLegs.size();++index){
+                        if(index)clockReceipt<<',';
+                        clockReceipt<<manualDebriefLegs[index].count();
+                    }
+                    clockReceipt<<'\n';
                     clockReceipt.close();MatureContact::Require(bool(clockReceipt),"MANUAL_PLAYTEST_CLOCK_RECEIPT_FAILED");
                 }
                 std::ofstream out(indexedGameplayOutput/"result.txt");out<<"passed=1\ninput=engine-GetInput\ninput_replay_directory_empty=1\nsource_oracles_enabled="<<indexedGameplayProofEnabled
@@ -294,9 +305,11 @@
         }
         if(manualClockEnabled&&!manualClockCaptured){
             MatureContact::Require(session.beaconLit&&playtestClock.CompletedTime().has_value(),"MANUAL_PLAYTEST_CLOCK_RESULT_MISSING");
+            if(!fieldJournalOpen){actual.SetKey('J',true);return false;}
             manualClockCapturing=true;manualSmokeCaptureRequested=true;
             manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
         }
+        if(manualClockEnabled&&manualClockCaptured&&fieldJournalOpen){actual.SetKey('J',true);return false;}
         // 通關路線在地圖暫停期間測試存讀檔；低棚路線仍覆蓋遊玩中存讀檔。
         const bool pauseCheckpoint=manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::Completion;
         switch(manualCheckpointStep){
@@ -349,7 +362,8 @@
                         session.repairMaterials==0&&session.CurrentStage()==Mistwatch::Stage::Supplies&&message=="New expedition",
                         "MANUAL_ACTUAL_POSTWIN_R_RESTART_MISSING");
                     if(manualClockEnabled){
-                        MatureContact::Require(!playtestClock.CompletedTime(),"MANUAL_PLAYTEST_CLOCK_RESTART_RETAINED_OLD_TIME");
+                        MatureContact::Require(!playtestClock.CompletedTime()&&!playtestClock.CompletedLegs(),
+                            "MANUAL_PLAYTEST_CLOCK_RESTART_RETAINED_OLD_TIME");
                         manualClockRestartCleared=true;
                     }
                     manualSmokeNewExpeditionObserved=true;
@@ -380,18 +394,38 @@
             "MANUAL_CHECKPOINT_CAPTURE_STATE_CHANGED");
         manualSmokeCaptureRequested=true;manualSmokeCaptureStart=std::chrono::steady_clock::now();return true;
     }
-    void RenderManualEntrySmoke(Engine& e,const Matrix4& viewProjection,const std::string& hudContext){
+    void RenderManualEntrySmoke(Engine& e,const Matrix4& viewProjection,const Mistwatch::FieldPresentation::Hud& hud){
         if(!manualEntrySmoke||!manualSmokeCaptureRequested)return;
+        if(manualSmokeRoute==Mistwatch::ManualEntryRoute::Route::DeathRetry){
+            using Cause=Mistwatch::FieldPresentation::DefeatCause;
+            if(manualSmokeCaptureCount==1)
+                MatureContact::Require(!session.Alive()&&defeatCause==Cause::Boar&&
+                    hud.valid&&hud.objective=="巡守失敗 · 遭野豬擊倒","MANUAL_DEFEAT_HUD_CAUSE_MISSING");
+            if(manualSmokeCaptureCount==2)
+                MatureContact::Require(session.Alive()&&defeatCause==Cause::Unknown&&
+                    hud.valid&&!hud.objective.starts_with("巡守失敗"),"MANUAL_RETRY_HUD_RETAINED_DEFEAT_CAUSE");
+        }
         if(manualPausedCheckpointCapturing)
             MatureContact::Require(started&&paused&&surveyMapDraw.drawn&&
                 actionFeedback.Event()==Mistwatch::ActionFeedbackEvent::Saved,"MANUAL_PAUSED_CHECKPOINT_UI_MISSING");
         if(manualClockCapturing){
             const auto completed=playtestClock.CompletedTime();
-            MatureContact::Require(completed&&hudContext==PlaytestClockContext(*completed),
+            MatureContact::Require(completed&&hud.context==PlaytestClockContext(*completed),
                 "MANUAL_PLAYTEST_CLOCK_HUD_CONTEXT_MISSING");
-            manualClockElapsed=*completed;manualClockHud=hudContext;
+            const auto legs=playtestClock.CompletedLegs();
+            MatureContact::Require(fieldJournalOpen&&legs&&hud.valid&&hud.journal.size()==7&&
+                hud.journal.front()=="救援任務完成"&&Mistwatch::FieldPresentation::JournalTitle(session)=="巡守結案（J 關閉）",
+                "MANUAL_PLAYTEST_DEBRIEF_PANEL_MISSING");
+            std::chrono::seconds sum{};
+            for(const auto time:*legs){
+                MatureContact::Require(time.count()>0,"MANUAL_PLAYTEST_DEBRIEF_LEG_NOT_EXERCISED");
+                sum+=time;
+            }
+            MatureContact::Require(sum==*completed,"MANUAL_PLAYTEST_DEBRIEF_LEGS_DO_NOT_SUM");
+            manualClockElapsed=*completed;manualClockHud=hud.context;manualDebriefLegs=*legs;
         }else if(manualClockEnabled&&manualCheckpointStep==ManualCheckpointStep::Capture){
-            MatureContact::Require(!playtestClock.CompletedTime()&&!hudContext.starts_with("測試計時 "),
+            MatureContact::Require(!playtestClock.CompletedTime()&&!playtestClock.CompletedLegs()&&
+                !hud.context.starts_with("測試計時 "),
                 "MANUAL_PLAYTEST_CLOCK_LOADED_OLD_TIME");
             manualClockLoadCleared=true;
         }

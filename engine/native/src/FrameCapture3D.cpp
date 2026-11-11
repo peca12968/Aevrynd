@@ -38,12 +38,38 @@ struct CaptureCostScope3D {
 struct CaptureComApartment3D {HRESULT result{CoInitializeEx(nullptr,COINIT_MULTITHREADED)};~CaptureComApartment3D(){if(result==S_OK||result==S_FALSE)CoUninitialize();}};
 double SrgbToLinear3D(double value){return value<=.04045?value/12.92:std::pow((value+.055)/1.055,2.4);}
 double LuminancePercentile3D(const std::array<std::size_t,256>& histogram,std::size_t samples,double percentile){const std::size_t rank=(std::max)(std::size_t{1},std::size_t(std::ceil(percentile*samples)));std::size_t accumulated{};for(std::size_t bin=0;bin<histogram.size();++bin){accumulated+=histogram[bin];if(accumulated>=rank)return double(bin)/255.0;}return 1;}
-bool SameFileIdentity3D(const FILE_ID_INFO& left,const FILE_ID_INFO& right){return left.VolumeSerialNumber==right.VolumeSerialNumber&&std::ranges::equal(left.FileId.Identifier,right.FileId.Identifier);}
+struct CaptureFileIdentity3D {
+    FILE_ID_INFO extended{};
+    BY_HANDLE_FILE_INFORMATION legacy{};
+    bool useLegacy{};
+};
+bool ReadCaptureFileIdentity3D(HANDLE file,CaptureFileIdentity3D& identity){
+    identity={};
+    if(GetFileInformationByHandleEx(file,FileIdInfo,&identity.extended,sizeof(identity.extended)))return true;
+    const DWORD error=GetLastError();
+    if(error!=ERROR_INVALID_PARAMETER&&error!=ERROR_NOT_SUPPORTED&&error!=ERROR_INVALID_FUNCTION)return false;
+    // FAT 系列不提供 128 位檔案 ID；只在明確辨識的檔案系統使用其正式 64 位身分。
+    // NTFS、ReFS 與未知檔案系統仍保留原本的 128 位驗證，不接受降級。
+    std::array<wchar_t,32> filesystem{};
+    if(!GetVolumeInformationByHandleW(file,nullptr,0,nullptr,nullptr,nullptr,filesystem.data(),DWORD(filesystem.size())))return false;
+    if(_wcsicmp(filesystem.data(),L"exFAT")&&_wcsicmp(filesystem.data(),L"FAT32")&&_wcsicmp(filesystem.data(),L"FAT"))return false;
+    identity.useLegacy=true;
+    return GetFileInformationByHandle(file,&identity.legacy)!=FALSE;
+}
+bool SameFileIdentity3D(const CaptureFileIdentity3D& left,const CaptureFileIdentity3D& right){
+    if(left.useLegacy!=right.useLegacy)return false;
+    if(!left.useLegacy)return left.extended.VolumeSerialNumber==right.extended.VolumeSerialNumber&&
+        std::ranges::equal(left.extended.FileId.Identifier,right.extended.FileId.Identifier);
+    const auto& a=left.legacy;const auto& b=right.legacy;
+    return a.dwVolumeSerialNumber==b.dwVolumeSerialNumber&&a.nFileIndexHigh==b.nFileIndexHigh&&a.nFileIndexLow==b.nFileIndexLow&&
+        a.nFileSizeHigh==b.nFileSizeHigh&&a.nFileSizeLow==b.nFileSizeLow&&
+        a.ftLastWriteTime.dwHighDateTime==b.ftLastWriteTime.dwHighDateTime&&a.ftLastWriteTime.dwLowDateTime==b.ftLastWriteTime.dwLowDateTime;
+}
 bool PinAndHashFinalFile3D(const std::filesystem::path& path,PublishedFrameCapture3D& publication){
     publication={};const HANDLE file=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL|FILE_FLAG_SEQUENTIAL_SCAN,nullptr);if(file==INVALID_HANDLE_VALUE)return false;
-    FILE_ID_INFO identityBefore{},identityAfter{};FILE_STANDARD_INFO sizeBefore{},sizeAfter{};BCRYPT_ALG_HANDLE algorithm{};BCRYPT_HASH_HANDLE hash{};bool valid=GetFileInformationByHandleEx(file,FileIdInfo,&identityBefore,sizeof(identityBefore))&&GetFileInformationByHandleEx(file,FileStandardInfo,&sizeBefore,sizeof(sizeBefore))&&sizeBefore.EndOfFile.QuadPart>0&&BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)>=0&&BCryptCreateHash(algorithm,&hash,nullptr,0,nullptr,0,0)>=0;
+    CaptureFileIdentity3D identityBefore{},identityAfter{};FILE_STANDARD_INFO sizeBefore{},sizeAfter{};BCRYPT_ALG_HANDLE algorithm{};BCRYPT_HASH_HANDLE hash{};bool valid=ReadCaptureFileIdentity3D(file,identityBefore)&&GetFileInformationByHandleEx(file,FileStandardInfo,&sizeBefore,sizeof(sizeBefore))&&sizeBefore.EndOfFile.QuadPart>0&&BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)>=0&&BCryptCreateHash(algorithm,&hash,nullptr,0,nullptr,0,0)>=0;
     std::array<unsigned char,64*1024> bytes{};std::uint64_t consumed{};while(valid){DWORD count{};if(!ReadFile(file,bytes.data(),DWORD(bytes.size()),&count,nullptr)){valid=false;break;}if(!count)break;consumed+=count;if(BCryptHashData(hash,bytes.data(),count,0)<0)valid=false;}
-    valid=valid&&consumed==std::uint64_t(sizeBefore.EndOfFile.QuadPart)&&BCryptFinishHash(hash,reinterpret_cast<unsigned char*>(publication.finalFileSha256.data()),ULONG(publication.finalFileSha256.size()),0)>=0&&GetFileInformationByHandleEx(file,FileIdInfo,&identityAfter,sizeof(identityAfter))&&GetFileInformationByHandleEx(file,FileStandardInfo,&sizeAfter,sizeof(sizeAfter))&&SameFileIdentity3D(identityBefore,identityAfter)&&sizeBefore.EndOfFile.QuadPart==sizeAfter.EndOfFile.QuadPart;
+    valid=valid&&consumed==std::uint64_t(sizeBefore.EndOfFile.QuadPart)&&BCryptFinishHash(hash,reinterpret_cast<unsigned char*>(publication.finalFileSha256.data()),ULONG(publication.finalFileSha256.size()),0)>=0&&ReadCaptureFileIdentity3D(file,identityAfter)&&GetFileInformationByHandleEx(file,FileStandardInfo,&sizeAfter,sizeof(sizeAfter))&&SameFileIdentity3D(identityBefore,identityAfter)&&sizeBefore.EndOfFile.QuadPart==sizeAfter.EndOfFile.QuadPart;
     if(hash)BCryptDestroyHash(hash);if(algorithm)BCryptCloseAlgorithmProvider(algorithm,0);CloseHandle(file);if(!valid){publication={};return false;}publication.finalFileBytes=consumed;return true;
 }
 }

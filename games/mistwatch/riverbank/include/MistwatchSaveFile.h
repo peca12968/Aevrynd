@@ -4,10 +4,11 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 namespace Mistwatch {
 
-// 河岸版優先保留已使用的本機備用存檔。原磁碟恢復後也不會自動切換或搬移進度。
+// 備用目錄已有存檔或設定時才保留優先權；只建立過啟動目錄不會遮住恢復後的原存檔。
 inline std::filesystem::path SelectRiverbankSaveDirectory(const std::filesystem::path& local) {
     namespace fs=std::filesystem;
     std::error_code error;
@@ -19,7 +20,14 @@ inline std::filesystem::path SelectRiverbankSaveDirectory(const std::filesystem:
         return !readError;
     };
     const auto alternate=local/"MistwatchRiverbankPlaytest"/"Aevrynd"/"Mistwatch";
-    if(readable(alternate))return alternate;
+    for(fs::directory_iterator entry(alternate,error),end;!error&&entry!=end;entry.increment(error)){
+        const auto name=entry->path().filename().native();
+        const bool checkpoint=name==L"save.txt"||(name.starts_with(L"save-")&&name.ends_with(L".txt"));
+        if(checkpoint||name==L"audio-settings.txt"||name==L"camera-settings.txt"||name==L"graphics-settings.txt"){
+            std::error_code typeError;
+            if(entry->is_regular_file(typeError))return alternate;
+        }
+    }
     const auto primary=local/"Aevrynd"/"Mistwatch";
     fs::create_directories(primary,error);
     if(!error&&readable(primary))return primary;
@@ -49,9 +57,24 @@ inline SaveFileResult WriteSaveFile(const std::filesystem::path& target,const Sa
         if(!target.parent_path().empty())std::filesystem::create_directories(target.parent_path(),error);
         if(error)return SaveFileResult::DirectoryUnavailable;
         static std::atomic<unsigned long long> sequence{};
-        temporary=target;
-        temporary+=L"."+std::to_wstring(GetCurrentProcessId())+L"."+std::to_wstring(++sequence)+L".tmp";
-        handle=CreateFileW(temporary.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+        // 舊程序可能在暫存檔完成前結束，而 Windows 會重用程序識別碼。
+        const auto prefix=L"."+std::to_wstring(GetCurrentProcessId())+L".";
+        constexpr int maxTemporaryAttempts=8;
+        for(int attempt=0;attempt<maxTemporaryAttempts;++attempt){
+            const auto suffix=prefix+std::to_wstring(++sequence)+L".tmp";
+            temporary=target;
+            temporary+=suffix;
+            if(temporary.native().size()>=MAX_PATH){
+                // 目標檔名合法但追加尾碼後可能超過 Win32 上限，改用同目錄的短暫存名稱。
+                temporary=target.parent_path()/(L".mw-save"+suffix);
+                if(CompareStringOrdinal(temporary.filename().c_str(),-1,target.filename().c_str(),-1,TRUE)==CSTR_EQUAL)continue;
+            }
+            handle=CreateFileW(temporary.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+            if(handle!=INVALID_HANDLE_VALUE)break;
+            const DWORD failure=GetLastError();
+            if(failure!=ERROR_FILE_EXISTS&&failure!=ERROR_ALREADY_EXISTS)
+                return SaveFileResult::TemporaryUnavailable;
+        }
         if(handle==INVALID_HANDLE_VALUE)return SaveFileResult::TemporaryUnavailable;
         ownsTemporary=true;
         DWORD written{};
@@ -78,4 +101,21 @@ inline bool ReadSaveFile(const std::filesystem::path& target,SaveGame& candidate
         return candidate.RestoreStream(input);
     }catch(...){return false;}
 }
+
+// 只有備用目錄缺少本世界的確切存檔，才讓已恢復的主目錄進度重新可見。
+// 設定仍由原本的位置載入與寫入。兩份存檔均不搬移、不改名。
+inline std::optional<std::filesystem::path> RecoveredRiverbankCheckpoint(
+    const std::filesystem::path& local,const std::filesystem::path& selected,std::uint64_t expectedWorld) {
+    namespace fs=std::filesystem;
+    const auto fallback=local/"MistwatchRiverbankPlaytest"/"Aevrynd"/"Mistwatch";
+    if(!local.is_absolute()||selected.parent_path()!=fallback||!selected.has_filename()||!expectedWorld)
+        return std::nullopt;
+    std::error_code error;
+    if(fs::symlink_status(selected,error).type()!=fs::file_type::not_found)return std::nullopt;
+    const auto primary=local/"Aevrynd"/"Mistwatch"/selected.filename();
+    SaveGame candidate;
+    if(!ReadSaveFile(primary,candidate)||candidate.worldIdentity!=expectedWorld)return std::nullopt;
+    return primary;
+}
+
 }

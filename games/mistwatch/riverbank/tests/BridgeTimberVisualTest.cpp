@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <cstring>
+#include <set>
 
 using namespace Aevrynd;
 namespace { unsigned checks{};void Need(bool ok,const char* why){++checks;if(!ok)throw std::runtime_error(why);} }
@@ -25,12 +26,14 @@ int main(int argc,char** argv) {
             Need(a.center.x==b.center.x&&a.center.y==b.center.y&&a.center.z==b.center.z&&a.size.x==b.size.x&&a.size.y==b.size.y&&a.size.z==b.size.z&&a.role==b.role&&a.tone==b.tone,"ORIGINAL_PART_NOT_MUTATED");
         }
         Need(original.additions.size()==saved.additions.size()&&std::memcmp(original.additions.data(),saved.additions.data(),original.additions.size()*sizeof(BoxCollider3D))==0,"COLLISION_SOURCE_UNCHANGED");
-        unsigned plankTops{};std::array<bool,57> members{};
+        unsigned plankTops{},reversePlanks{};std::array<bool,57> members{};
+        std::set<int> plankPhases;
         for(const auto& range:visual.ranges) {
             Need(range.part<57&&!members[range.part],"UNIQUE_PART_OWNERSHIP");members[range.part]=true;
             const auto& part=original.parts[range.part];Need(part.role!=Mistwatch::BearingBridge::Role::Footing,"STONE_NOT_RETEXTURED");
             Vec3 low{1.e6f,1.e6f,1.e6f},high{-1.e6f,-1.e6f,-1.e6f};
             unsigned topVertices{};
+            float leftGrain{},rightGrain{};
             for(std::size_t i=range.firstVertex;i<range.firstVertex+96u;++i) {
                 const auto& v=visual.wood.vertices[i];const Vec3 p{v.x,v.y,v.z};
                 const auto n=UnpackNormalSnorm8(v.normal);
@@ -39,17 +42,27 @@ int main(int argc,char** argv) {
                 high.x=(std::max)(high.x,p.x);high.y=(std::max)(high.y,p.y);high.z=(std::max)(high.z,p.z);
                 if(part.role==Mistwatch::BearingBridge::Role::Plank&&n.y>.99f) {
                     Need(std::abs(v.y)<1.e-7f,"VISIBLE_DECK_TOP_STAYS_ZERO");++topVertices;
-                    const float expected=(.13f*float(range.part%7u)+(v.x-part.center.x+2.f)/1.4f)/Mistwatch::WorkshopVisual::StaticDecodedScale;
-                    Need(std::abs(v.v-expected)<2.e-6f,"GRAIN_ALONG_FOUR_METER_PLANK_NOT_STRETCHED_ATLAS");
+                    const float grain=v.v*Mistwatch::WorkshopVisual::StaticDecodedScale;
+                    if(v.x<part.center.x)leftGrain=grain;else rightGrain=grain;
                 }
             }
             for(unsigned axis=0;axis<3;++axis) {
                 const std::array<float,3> lo{low.x,low.y,low.z},hi{high.x,high.y,high.z},c{part.center.x,part.center.y,part.center.z},s{part.size.x,part.size.y,part.size.z};
                 Need(std::abs(lo[axis]-(c[axis]-s[axis]*.5f))<4.e-6f&&std::abs(hi[axis]-(c[axis]+s[axis]*.5f))<4.e-6f,"MEMBER_OUTER_BOUNDS_UNCHANGED");
             }
-            if(part.role==Mistwatch::BearingBridge::Role::Plank){Need(topVertices==4,"ONE_COMPLETE_TOP_FACE_PER_PLANK");++plankTops;}
+            if(part.role==Mistwatch::BearingBridge::Role::Plank){
+                Need(topVertices==4,"ONE_COMPLETE_TOP_FACE_PER_PLANK");++plankTops;
+                const float span=std::abs(rightGrain-leftGrain);
+                const float meters=(part.size.x-2.f*.006f)/span;
+                Need(meters>=1.319f&&meters<=1.481f,"GRAIN_ALONG_FOUR_METER_PLANK_NOT_STRETCHED_ATLAS");
+                if(rightGrain<leftGrain)++reversePlanks;
+                const float phase=(std::min)(leftGrain,rightGrain)-.006f/meters;
+                Need(phase>=-1.e-5f&&phase<1.f,"PHASE_WITHIN_TEXTURE_PERIOD");
+                Need(plankPhases.insert(int(std::lround(1024.f*phase))).second,"REPEATED_PLANK_GRAIN_PHASE");
+            }
         }
         Need(plankTops==32,"ALL32DECK_PLANKS");
+        Need(reversePlanks>0&&reversePlanks<plankTops,"BOTH_GRAIN_DIRECTIONS");
         for(std::size_t i=0;i<57;++i)Need(members[i]==(original.parts[i].role!=Mistwatch::BearingBridge::Role::Footing),"NO_MEMBER_HIDDEN_OR_ADDED");
         for(std::size_t i=0;i<visual.wood.indices.size();i+=3) {
             const auto& a=visual.wood.vertices[visual.wood.indices[i]];

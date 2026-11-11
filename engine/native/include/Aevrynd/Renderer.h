@@ -1065,6 +1065,8 @@ struct RendererStats {
         uint64_t serial{};
         // 陰影起／訖、深度與 AO、不透明場景、體積霧、透明與後製、截圖起／訖。
         std::array<uint64_t,8> boundaries{};
+        // 深度起／訖、原始 AO 訖、AO 時序與濾波起；排序與上述邊界分開保留。
+        std::array<uint64_t,4> preOpaqueBoundaries{};
     } lastCompletedGpuSceneTiming{};
     uint64_t lastGpuFrameNanoseconds{};
     uint64_t totalGpuFrameNanoseconds{};

@@ -15,6 +15,7 @@ public:
     explicit FocusProbe(unsigned& result):failures(result){}
     std::thread restoreWindow;
     bool observedRestore{};
+    std::optional<Input::Clock::time_point> minimizedAt;
 
     static LRESULT CALLBACK CaptureWindowProc(HWND window,UINT message,WPARAM wParam,LPARAM lParam) {
         // 輔助視窗收到放開不自動交還擷取，才能驗證遊戲沒有誤釋放別人的擷取。
@@ -247,8 +248,34 @@ public:
         if(input.FocusLost())++failures;
         CaptureCancellationContract(engine);
         // 在第一個固定更新前最小化；必須經過引擎背景迴圈，不能先由遊戲消費失焦。
-        SendMessageW(engine.Window(),WM_KILLFOCUS,0,0);
+        // 前一個擷取案例刻意讓 W 保持按住。先放開，讓此案例產生自己的按下事件。
+        SendMessageW(engine.Window(),WM_KEYUP,'W',0);
+        input.ConsumePresses();
+        SendMessageW(engine.Window(),WM_KEYDOWN,'W',0);
+        input.SetMouse({10,10});
+        input.SetMouseButton(true);
+        input.SetMouse({30,20});
+        input.AddMouseWheel(1);
+        if(!input.Down('W')||!input.Pressed('W')||!input.MouseDown()||
+           Length(input.LeftMouseDragDelta())==0||input.MouseWheel()==0){
+            std::cerr<<"FIRST_DIVERGENCE: minimize fixture lacks active input\n";++failures;
+        }
+        const auto beforeMinimize=Input::Clock::now();
         SendMessageW(engine.Window(),WM_SIZE,SIZE_MINIMIZED,0);
+        minimizedAt=input.SuspendedAt();
+        // 先驗證最小化本身，再注入後到的失焦訊息。
+        if(!input.Focused()||!input.FocusLost()||input.Down('W')||input.Pressed('W')||
+           input.MouseDown()||input.MousePressed()||input.MouseWheel()!=0||
+           Length(input.LeftMouseDragDelta())!=0){
+            std::cerr<<"FIRST_DIVERGENCE: minimize alone did not interrupt and clear gameplay input\n";++failures;
+        }
+        if(!minimizedAt||*minimizedAt<beforeMinimize||*minimizedAt>Input::Clock::now()){
+            std::cerr<<"FIRST_DIVERGENCE: minimize did not stamp the window event\n";++failures;
+        }
+        SendMessageW(engine.Window(),WM_KILLFOCUS,0,0);
+        if(input.SuspendedAt()!=minimizedAt){
+            std::cerr<<"FIRST_DIVERGENCE: later focus loss replaced the minimize time\n";++failures;
+        }
         restoreWindow=std::thread([window=engine.Window()] {
             Sleep(200);
             PostMessageW(window,WM_SIZE,SIZE_RESTORED,MAKELPARAM(1280,720));
@@ -256,7 +283,12 @@ public:
         });
     }
     void OnUpdate(Engine& engine,float) override {
-        if(observedRestore)return;
+        if(observedRestore){
+            if(engine.GetInput().SuspendedAt()||engine.GetInput().FocusLost()){
+                std::cerr<<"FIRST_DIVERGENCE: interruption survived its first fixed update\n";++failures;
+            }
+            std::cout<<"input_focus_failures="<<failures<<'\n';engine.Quit();return;
+        }
         observedRestore=true;
         // 若恢復訊息提早到達而漏測背景迴圈，必須失敗，不能以自動修剪誤認通過。
         const auto memoryStats=engine.GetMemoryStats();
@@ -268,7 +300,12 @@ public:
         if(!engine.GetInput().Focused()||!engine.GetInput().FocusLost()){
             std::cerr<<"FIRST_DIVERGENCE: minimized loop erased unconsumed focus loss\n";++failures;
         }
-        std::cout<<"input_focus_failures="<<failures<<" minimized_trim_count="<<minimizedTrimCount<<'\n';engine.Quit();
+        if(!minimizedAt||engine.GetInput().SuspendedAt()!=minimizedAt||
+           Input::Clock::now()-*minimizedAt<std::chrono::milliseconds(100)){
+            std::cerr<<"FIRST_DIVERGENCE: restored update lost the pre-minimize boundary\n";++failures;
+        }
+        std::cout<<"minimized_trim_count="<<minimizedTrimCount<<'\n';
+        if(!failures)std::cout<<"INPUT_MINIMIZED_TIME_BOUNDARY_PASS\n";
     }
     void OnRender(Engine&,float) override {}
     void OnStop(Engine&) override {if(restoreWindow.joinable())restoreWindow.join();}

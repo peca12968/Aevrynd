@@ -1,4 +1,5 @@
 #pragma once
+#include "MistwatchPlaytestClock.h"
 #include "MistwatchSession.h"
 #include "MistwatchWorld.h"
 #include "MistwatchFieldInput.h"
@@ -17,6 +18,19 @@
 #include <vector>
 
 namespace Mistwatch::FieldPresentation {
+enum class TitleCheckpoint { Unchecked, Missing, Found, Unreadable, NoPath };
+enum class DefeatCause { Unknown, Ravine, Boar };
+
+inline const char* TitleCheckpointHint(TitleCheckpoint status) {
+    switch(status) {
+    case TitleCheckpoint::Missing:return "尚無存檔。進入遊戲後可按 F5 儲存。";
+    case TitleCheckpoint::Found:return "找到存檔，按 F9 嘗試繼續。";
+    case TitleCheckpoint::Unreadable:return "目前無法載入存檔。";
+    case TitleCheckpoint::NoPath:return "目前無法使用存檔功能。";
+    default:return "F9 嘗試讀取存檔。";
+    }
+}
+
 struct Hud {
     std::string objective,navigation,instruction,context,controls;
     std::vector<std::string> journal;
@@ -25,6 +39,17 @@ struct Hud {
 inline void PresentCameraSettings(Hud& hud,const CameraSettings& settings,bool started,bool paused) {
     // 選單才使用原方位列；遊玩時保留實際目標導航，也不擠壓任務與存讀檔提示。
     if(hud.valid&&settings.Valid()&&(!started||paused))hud.navigation=settings.MenuLine();
+}
+// 安全重試只在執行中的場景出現，不搶占暫停、倒下或結案提示。
+inline bool PresentSafeRetry(Hud& hud,const Session& session,bool started,bool paused,bool recoveryRequested) {
+    if(!recoveryRequested||!hud.valid||!started||paused||!session.Alive()||session.beaconLit)return false;
+    hud.navigation.clear();
+    hud.instruction="目前位置需要調整。可按 R 嘗試回到安全位置。";
+    hud.controls="R 安全重試 · Esc 暫停 · J 手冊";
+    return true;
+}
+inline constexpr std::string_view JournalTitle(const Session& session) noexcept {
+    return session.beaconLit?"巡守結案（J 關閉）":"巡守手冊（J 關閉；手冊不會自動暫停遊戲）";
 }
 // 18 像素字型縮至約 10 像素會丟失中文字細筆畫；最低維持原生字框尺度。
 inline constexpr float MinimumChineseTextScale=2.6f;
@@ -68,15 +93,17 @@ inline std::string_view Toast(ActionFeedbackEvent event) {
     case ActionFeedbackEvent::Saved:return "上次操作：已儲存";
     case ActionFeedbackEvent::SaveFailed:return "上次操作：寫入失敗，未確認新存檔";
     case ActionFeedbackEvent::SavePositionUnavailable:return "上次操作：此位置無法安全建立存檔";
+    case ActionFeedbackEvent::SaveUnavailableAfterDefeat:return "倒下時無法儲存，已保留原存檔";
     case ActionFeedbackEvent::Loaded:return "上次操作：已載入";
     case ActionFeedbackEvent::LoadUnavailable:return "上次操作：無法載入，保留目前狀態";
     case ActionFeedbackEvent::RetryFromBridge:return "已回到橋頭，保留已完成進度";
     case ActionFeedbackEvent::RetryFromStart:return "已回到起點，保留已取得物資";
+    case ActionFeedbackEvent::BridgeRepaired:return "跨谷橋已修復。沿橋前往谷北。";
     default:return {};
     }
 }
 inline std::string_view LastAction(std::string_view text) {
-    constexpr std::array<std::pair<std::string_view,std::string_view>,31> names{{
+    constexpr std::array<std::pair<std::string_view,std::string_view>,45> names{{
         {"ENTER: begin expedition","等待開始巡守"},{"Saved","已儲存"},{"Save failed","儲存失敗"},
         {"Loaded","已載入"},{"Save unavailable","無法載入，保留目前狀態"},
         {"Save position unavailable","此位置無法安全建立存檔"},{"Audio settings save failed","音量設定寫入失敗"},
@@ -85,13 +112,16 @@ inline std::string_view LastAction(std::string_view text) {
         {"Retry from starting point","已回到起點，保留已取得物資"},
         {"Low ceiling - move clear before standing","上方空間不足；保持蹲姿移出屋簷，再放開 Ctrl"},
         {"Headroom clear - standing restored","已離開低頂，恢復站立"},
+        {"Initial body overlap - R: safe retry / ESC: pause","目前位置有碰撞。可按 R 嘗試回到安全位置。"},
+        {"NPC has no legal yield route - R: safe retry / ESC: pause","附近的野豬無法讓路。可按 R 嘗試回到安全位置。"},
+        {"Safe retry - expedition progress retained","已回到安全位置，巡守進度已保留。"},
+        {"Safe retry unavailable - ESC pauses; prior state retained","暫時無法回到安全位置，進度已保留。可按 Esc 暫停。"},
         {"Camera clearance - movement held","鏡頭空間不足，本步保留原位置"},{"Fell into the ravine - R to retry","跌入谷底，按 R 重試"},
         {"Antenna rotated - find the green signal lock, then E","天線已旋轉，訊號 100 後按 E"},
-        {"Cabinet dial turned - match the ranger log, then E","轉盤已轉動，依已讀日誌設定後按 E"},
-        {"Circuit switched - light all three lamps","電路已切換，需三燈全亮"},
-        {"Move camera clear before bridge repair","修橋前請先移開鏡頭"},{"Objective updated","任務已更新"},
+        {"Move character clear before bridge repair","目前站位無法修橋。移到橋頭旁，再按 E。"},
+        {"Move camera clear before bridge repair","鏡頭空間不足。拖曳轉動鏡頭後，再按 E。"},
+        {"Objective updated","任務已更新"},
         {"Find tools in west shelter (CTRL), and both timber caches","請蹲入西側低棚取工具，並找齊兩組木料"},
-        {"Cabinet locked - read ranger log, set dials 1 / 2 / 3","櫃子未開：先讀日誌，再設定 1、2、3 轉盤"},
         {"Ridge relay: 1 left / 2 right, green signal lock, then E","中繼站：依近場指引操作，訊號 100 後按 E"},
         {"Move closer to the objective","請接近目前目標"},{"Boar defeated - find the ranger log","野豬已擊退，接著找巡守日誌"},
         {"Leave the marked circle - Q: evade","離開預警圈，Q 閃避沒有無敵時間"},
@@ -100,7 +130,19 @@ inline std::string_view LastAction(std::string_view text) {
         {"Counter cooling down - keep clear","反擊尚未恢復；保持安全距離"},
         {"Boar approaching - watch for the marked circle","野豬正在接近；留意地面預警圈"},
         {"Capture mode - initial playable scene","初始場景擷取，非遊玩紀錄"},
-        {"TEST FIXTURE - not a playthrough or player save","測試配置，非通關或玩家存檔"}
+        {"TEST FIXTURE - not a playthrough or player save","測試配置，非通關或玩家存檔"},
+        {"World collision query unavailable - controls retained","場景碰撞資料暫時無法確認；位置已保留。可按 Esc 暫停。"},
+        {"Input queue full - ESC cancels pending controls","尚有操作未完成；按 Esc 暫停可清除待處理操作。"},
+        {"Frame preparation unavailable - input retained","本次操作暫時無法準備；已保留操作。可按 Esc 暫停。"},
+        {"Frame transaction unavailable","本次移動暫時無法處理；可按 Esc 暫停後再繼續。"},
+        {"Invalid expedition state - prior frame retained","巡守資料需要確認；已保留原狀態。可按 Esc 暫停。"},
+        {"Contact query unavailable - controls retained","接觸位置暫時無法確認；位置已保留。可按 Esc 暫停。"},
+        {"Body contact policy pending - controls retained; ESC pauses","身體接觸尚未處理完成；位置已保留。可按 Esc 暫停。"},
+        {"Foot placement unavailable - controls retained","落腳位置暫時無法確認；位置已保留。可按 Esc 暫停。"},
+        {"Movement unavailable - controls retained","本次移動尚未完成；位置已保留。可按 Esc 暫停。"},
+        {"Boar footing unavailable - controls retained","野豬落腳位置暫時無法確認；位置已保留。可按 Esc 暫停。"},
+        {"NPC movement unavailable - controls retained","野豬移動尚未完成；位置已保留。可按 Esc 暫停。"},
+        {"Frame candidate unavailable - prior state and controls retained","本次操作尚未完成；狀態與操作已保留。可按 Esc 暫停。"}
     }};
     for(const auto& item:names)if(text==item.first)return item.second;
     return text;
@@ -114,7 +156,8 @@ inline std::string StatusLine(const Session& session,std::string_view lastAction
 
 // 只讀原引導及 Session 的近場取物門檻；不另造安全通路或提前公布轉盤答案。
 inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encounter& enemy,
-    bool started,bool paused,bool journalOpen) {
+    bool started,bool paused,bool journalOpen,TitleCheckpoint checkpoint=TitleCheckpoint::Unchecked,
+    DefeatCause defeat=DefeatCause::Unknown) {
     Hud hud;
     if(!session.Valid()||!guide.valid||(guide.hasTarget&&(!std::isfinite(guide.distance)||guide.distance<0||
         guide.distance>double((std::numeric_limits<unsigned>::max)())-1||guide.index>=3))){hud.objective="任務資料待確認";return hud;}
@@ -127,6 +170,8 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
     hud.controls+=started?" · Esc 地圖 · J 手冊":" · J 手冊";
     const auto count=[](unsigned bits){return unsigned(bool(bits&1))+unsigned(bool(bits&2))+unsigned(bool(bits&4));};
     std::string target;
+    const bool cabinetNeedsClue=session.CurrentStage()==Stage::Fuse&&!session.fuseClueRead&&
+        session.NearInterior(Session::fuse);
     switch(session.CurrentStage()) {
     case Stage::Supplies: {
         hud.objective="備齊跨谷物資：三箱補給、工具與兩組木料";
@@ -170,8 +215,8 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
     case Stage::Bridge:
         target="跨谷橋";hud.objective="修橋，建立通往谷北聚落的入口";
         hud.instruction=guide.bridgeIntent==BridgeRepairIntent::AttemptRequiresAuthoritativeCheck?
-            "E：嘗試修橋；操作時檢查新橋與鏡頭空間。":"沿主土路到橋頭。";
-        hud.context="工具與木料已齊；按鍵成功前不宣稱橋已修復。";break;
+            "E：嘗試修橋。":"沿主土路到橋頭。";
+        hud.context="工具與木料已齊。修好後可沿橋進入谷北。";break;
     case Stage::Encounter:
         target="野豬";hud.objective="離開攻擊預警，在恢復空檔反擊";
         hud.instruction=enemy.phase==EnemyPhase::Windup?"離開橙色攻擊區；Q 閃避沒有無敵時間。":
@@ -186,12 +231,26 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         target=session.fuseClueRead?"西側工棚保險絲櫃":"北側巡守日誌";
         hud.instruction=!session.fuseClueRead?(guide.useReady?"E：閱讀巡守日誌":"由木屋西門進入，接近日誌。"):
             guide.useReady?"E：打開櫃子，取得保險絲。":guide.tuneReady?"1、2、3：轉動各轉盤；可用 J 重看已讀線索。":"由工棚東側開口進入，接近櫃子。";
-        hud.context=session.fuseClueRead?"日誌線索：2 - 0 - 3":"日誌尚未閱讀；不提前公布櫃子答案。";
+        if(guide.settlementApproach){
+            target=session.fuseClueRead?"工棚東側入口":"木屋西側入口";
+            hud.instruction=session.fuseClueRead?"沿箭頭繞到工棚東側入口。":"沿箭頭繞到木屋西側入口。";
+        }else if(guide.rangerDeskApproach){
+            target="木屋內繞行";
+            hud.instruction="沿箭頭繞過桌子，靠近日誌後按 E。";
+        }
+        if(cabinetNeedsClue)hud.instruction="保險絲櫃需要日誌線索；先到北側木屋讀完日誌，再回來。";
+        hud.context=session.fuseClueRead?"日誌線索：2 - 0 - 3":"請先到北側木屋閱讀日誌。";
         if(session.fuseClueRead&&session.NearInterior(Session::fuse))hud.context+="；目前 "+std::to_string(session.FuseDial(0))+" - "+std::to_string(session.FuseDial(1))+" - "+std::to_string(session.FuseDial(2));break;
     case Stage::Generator:
         target="東側發電機";hud.objective="裝回保險絲，恢復谷北設備供電";
         hud.instruction=guide.useReady?"E：三燈已亮，啟動發電機。":guide.tuneReady?"1 切換 A+B；2 切換 B+C；3 切換 C；讓三盞燈全亮。":"沿聚落東側支路接近發電機。";
-        hud.context="已亮燈 "+std::to_string(count(session.circuit))+" / 3";break;
+        hud.context="已亮燈 "+std::to_string(count(session.circuit))+" / 3";
+        if(guide.tuneReady||guide.useReady){
+            hud.context+=(session.circuit&1u)?"；A 亮":"；A 熄";
+            hud.context+=(session.circuit&2u)?"、B 亮":"、B 熄";
+            hud.context+=(session.circuit&4u)?"、C 亮":"、C 熄";
+        }
+        break;
     case Stage::Relays: {
         constexpr std::array names{"西側山脊中繼站","東側瞭望中繼站","西北中繼站"};
         const unsigned index=guide.index%3;
@@ -222,29 +281,38 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.instruction="救援台：由南側已修橋入谷。這次巡守結束。";
         if(started&&!paused&&session.Alive()){
             hud.instruction="巡守已完成；可調整鏡頭檢視，角色與任務不再前進。";
-            hud.controls="左鍵拖曳環繞／滾輪縮放／←→ 旋轉 · F5 保存 · F9 恢復 · R 重開 · Esc 暫停 · J 手冊";
+            hud.controls="左鍵拖曳環繞／滾輪縮放／←→ 旋轉 · F5 保存 · F9 恢復 · R 重開 · Esc 暫停 · J 結案";
         }
         hud.context="F5 保存；F9 恢復；R 開始新一輪。";break;
     }
     if(guide.hasTarget)hud.navigation=target+"；"+Bearing(guide.bearing)+"；約 "+std::to_string(unsigned(std::ceil(guide.distance)))+" 公尺（方位提示，不保證直線可通行）";
     if(!session.Alive()){
-        hud.objective="巡守失敗";hud.navigation.clear();
+        hud.objective="巡守失敗";
+        if(defeat==DefeatCause::Ravine)hud.objective+=" · 跌落河谷";
+        if(defeat==DefeatCause::Boar)hud.objective+=" · 遭野豬擊倒";
+        hud.navigation.clear();
         hud.instruction=session.bridgeRepaired?"R：從橋頭重試，保留已完成任務。":"R：從起點重試，保留已取得物資。";
         hud.context="補給 "+std::to_string(count(session.collected))+" / 3；工具與木料 "+std::to_string(count(session.repairMaterials))+" / 3；橋："+(session.bridgeRepaired?std::string("已修復"):"未修復");
         hud.controls="R 重試 · F9 嘗試讀檔 · Esc 暫停 · J 查看手冊";
     }
-    if(!started){hud.objective="孤橋復聯：暴雨切斷谷北通訊";hud.instruction="Enter 開始新巡守；F9 讀取存檔繼續；J 查看任務手冊。";}
+    if(!started){
+        hud.objective="孤橋復聯：暴雨切斷谷北通訊";
+        hud.instruction="Enter 開始新巡守；J 查看任務手冊。";
+        hud.context=TitleCheckpointHint(checkpoint);
+    }
     else if(paused){
         hud.objective.insert(0,"已暫停 · ");
         if(!session.Alive()){
             hud.instruction=session.bridgeRepaired?"先按 Esc 繼續，再按 R 從橋頭重試。":"先按 Esc 繼續，再按 R 從起點重試。";
         }else{
-            hud.instruction=journalOpen?"按 J 關閉手冊，查看巡守地圖。":"角色與世界暫停更新。";
+            hud.instruction=journalOpen?(session.beaconLit?"按 J 關閉結案，查看巡守地圖。":"按 J 關閉手冊，查看巡守地圖。"):"角色與世界暫停更新。";
             if(session.beaconLit)hud.context="按 Esc 繼續後，可按 R 開始新一輪。";
         }
-        hud.controls="Esc 繼續 · F5 儲存 · F9 載入 · M 靜音 · PageUp / PageDown 音量 · J 手冊";
+        hud.controls=session.Alive()?"Esc 繼續 · F5 儲存":"Esc 繼續";
+        hud.controls+=" · F9 載入 · M 靜音 · PageUp / PageDown 音量";
+        hud.controls+=session.beaconLit?" · J 結案":" · J 手冊";
     }
-    if(started&&!paused&&FieldInput::RepeatContext(session)){
+    if(started&&!paused&&!guide.useReady&&!cabinetNeedsClue&&FieldInput::RepeatContext(session)){
         // 只描述本模式可用的數字鍵，不改調整、確認或長按規則。
         const bool thirdKey=session.CurrentStage()!=Stage::Relays||
             (session.NearRelay(FieldRelayTask::NorthWestRelay)&&
@@ -253,11 +321,21 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
             " 點按微調；長按 1、2 連續調整；E 仍需另按確認。";
     }
     if(!journalOpen)return hud;
+    // 手冊打開時方向箭頭隱藏。保留目的地，但提示如何恢復指引。
+    if(started&&!paused&&session.Alive()&&!guide.useReady&&!guide.tuneReady&&!cabinetNeedsClue&&
+        (guide.shelterApproach||guide.settlementApproach||guide.rangerDeskApproach))
+        hud.instruction="按 J 關閉手冊，再沿方向箭頭前進。";
     if(!session.Alive()){
         hud.journal={"生命已耗盡；目前不能移動、拾取物品或反擊。",
             session.bridgeRepaired?"恢復遊戲後按 R 回橋頭，已取得物資與修橋進度會保留。":"恢復遊戲後按 R 回起點，已取得物資會保留。",
             "F9 嘗試載入既有存檔；沒有可用存檔時保留目前狀態。",
             "暫停中可按 F9 讀檔；按 Esc 繼續後可用 R 重試。J 關閉手冊。"};
+        return hud;
+    }
+    if(session.beaconLit){
+        hud.journal={"救援任務完成",
+            "跨谷橋已修復，谷北已恢復供電，三座中繼站已連線。",
+            "救援台已收到定位與橋頭入口。F5 可保存完成進度。"};
         return hud;
     }
     hud.compactJournal=session.Alive()&&started&&!paused&&session.CurrentStage()==Stage::Encounter;
@@ -266,21 +344,51 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         "主路穿過橋頭；箱子與木料在南岸，工具在西側低棚。",
         "補給 "+std::to_string(count(session.collected))+"/3；工具與木料 "+std::to_string(count(session.repairMaterials))+"/3；橋："+(session.bridgeRepaired?std::string("已修復"):"尚未修復"),
         "互動需接近且符合站位；方位箭頭不是穿牆通行線。",
-        !started?"Enter 開始新巡守；F9 讀取存檔繼續；J 關閉手冊。":
+        !started?"Enter 開始新巡守；J 關閉手冊。":
         paused?"F5 儲存／F9 載入；完成後仍維持暫停。J 關閉手冊查看地圖。":
         "操作：拖曳／滾輪調鏡頭；C 回正；F5 儲存；F9 載入；Esc 暫停看地圖。"};
     if(session.guardianDefeated)hud.journal.push_back("野豬已擊退：谷北木屋與工棚內有供電線索。");
     if(session.fuseClueRead)hud.journal.push_back("已讀日誌：保險絲櫃轉盤 2 - 0 - 3；1、2、3 分別轉對應轉盤，調至線索數字。");
     if(session.fuseCollected)hud.journal.push_back("發電機：1 切換 A+B，2 切換 B+C，3 切換 C；三燈全亮才送電。");
     if(session.powerRestored){
+        constexpr std::array stationNames{"西站","東站","西北站"};
+        std::string progress="中繼進度 ";
+        for(unsigned station=0;station<stationNames.size();++station){
+            if(station)progress+=" · ";
+            progress+=stationNames[station];
+            progress+=' ';
+            if(session.relayLinked&(1u<<station))progress+="已連線";
+            else if(!session.RelayFieldTaskReady(station))
+                progress+=station==FieldRelayTask::WestRelay?"待查線":"待確認入口";
+            else progress+=session.RelaySignal(station)==100?"待連線":"待調向";
+        }
+        hud.journal.push_back(std::move(progress));
         hud.journal.push_back("三站沒有固定先後：西站查線，東站調向，西北站回報入口。");
         hud.journal.push_back("西站接線圖：電源先到 A；A 可接地、接 B 或回電源。");
         hud.journal.push_back("B 可接中繼、接地或回 A；檢查畫面上的實際電流路徑。");
         hud.journal.push_back("西北入口卡：涉水與未知捷徑不能回報安全；使用已修橋主路。");
     }
     if(session.relayLinked&2)hud.journal.push_back("救援台已接到東站呼叫：請提供谷北定位與可用入口。");
-    if(session.beaconLit)hud.journal.push_back("救援台已收到信標及橋頭入口；此次巡守已完成。");
     return hud;
+}
+
+inline void AppendDebriefTimes(Hud& hud,const PlaytestClock::LegSeconds& elapsed){
+    constexpr std::array names{"南岸備料與修橋","過橋與野豬遭遇","聚落尋線索與供電","中繼站與救援信標"};
+    for(std::size_t index=0;index<names.size();++index){
+        const auto seconds=elapsed[index].count();
+        hud.journal.push_back(std::string(names[index])+"  "+std::to_string(seconds/60)+" 分 "+std::to_string(seconds%60)+" 秒");
+    }
+}
+
+inline void AppendPlaytestDebrief(Hud& hud,const PlaytestClock& clock,bool paused,
+    bool playerFacing,bool hasSavePath) {
+    if(const auto legs=clock.CompletedLegs()){
+        AppendDebriefTimes(hud,*legs);
+        if(playerFacing)hud.journal.push_back(hasSavePath?"K 匯出本輪用時至存檔資料夾":"目前沒有可用的存檔位置，無法匯出用時。");
+    }else if(playerFacing){
+        hud.journal.push_back("本輪沒有完整計時。讀檔後接續的進度不會計入首輪用時。");
+        hud.journal.push_back(paused?"先按 Esc 繼續，再按 R 可開始新的計時巡守。":"按 R 可開始新的計時巡守。");
+    }
 }
 
 // 以實際字型量測分行，不截斷 UTF-8；寬度不夠單字也不能被悄悄裁掉。
@@ -390,7 +498,7 @@ inline MeasuredHudLayout MeasureLayout(const Aevrynd::DrawList& draw,const Hud& 
                 bottom=(std::max)(bottom,y+measured(text,2.6f,1120).y+4);y+=24;
             }
             result.journal={60,80,1160,bottom-80};
-            contained(result.journal,80,108,measured("巡守手冊（J 關閉；手冊不會自動暫停遊戲）",2.9f,1120));
+            contained(result.journal,80,108,measured(JournalTitle(session),2.9f,1120));
         }
     }
     result.showToast=started&&toast.Visible();
@@ -415,7 +523,7 @@ inline MeasuredHudLayout MeasureLayout(const Aevrynd::DrawList& draw,const Hud& 
             throw std::runtime_error("HUD toast has no reserved gap before bottom panel");
     }
     if(result.showJournal&&!hud.compactJournal){
-        contained(result.journal,80,result.journalTitleY,measured("巡守手冊（J 關閉；手冊不會自動暫停遊戲）",2.9f,1120));
+        contained(result.journal,80,result.journalTitleY,measured(JournalTitle(session),2.9f,1120));
         float y=result.journalRowsY;
         for(const auto& text:result.journalRows){contained(result.journal,80,y,measured(text,2.6f,1120));y+=24;}
     }
@@ -458,7 +566,7 @@ inline void Draw(Aevrynd::DrawList& draw,const Hud& hud,const Session& session,
             for(const auto& text:hud.journal){line(40,y,text,2.6f,1200,gold);y+=28;}
         }else{
             panel(layout.journal,{.02f,.04f,.04f,.95f});
-            line(80,layout.journalTitleY,"巡守手冊（J 關閉；手冊不會自動暫停遊戲）",2.9f,1120,gold);
+            line(80,layout.journalTitleY,JournalTitle(session),2.9f,1120,gold);
             float y=layout.journalRowsY;
             for(const auto& text:layout.journalRows){line(80,y,text,2.6f,1120,white);y+=24;}
         }

@@ -63,11 +63,32 @@ inline const char* Feedback(Result result) {
     }
 }
 
+inline const char* GeneratorFeedback(const Session& session) {
+    return session.circuit==7?"三盞燈已亮。按 E 啟動發電機。":
+        "發電機尚未啟動。用 1、2、3 切換電路，三盞燈全亮後按 E。";
+}
+
+// 轉盤可以先調整，但只有讀過日誌且對準才能開櫃。
+inline const char* CabinetFeedback(const Session& session,bool dialTurned) {
+    if(!session.fuseClueRead)
+        return dialTurned?"轉盤已轉動。先到北側木屋閱讀日誌，才能開櫃。":
+            "保險絲櫃尚未開啟。先到北側木屋閱讀日誌。";
+    if(session.fuseDials==Session::solvedFuseDials)
+        return "轉盤已對準。按 E 打開保險絲櫃。";
+    return dialTurned?"轉盤已轉動。可按 J 重看日誌，核對三個位置。":
+        "轉盤尚未對準。按 J 重看日誌，再調整 1、2、3。";
+}
+
 // 實際 E 操作後只讀目前模式；拒絕操作也要說明原因，不替玩家接線或連站。
 // nullptr 代表不覆蓋呼叫端其他任務的回饋，成功結果則保留原提示及另按 E 的規則。
 inline const char* InteractionFeedback(const Session& session,Result result) {
     if(result!=Result::None)return Feedback(result);
-    if(!session.Valid()||!session.Alive()||session.CurrentStage()!=Stage::Relays)return nullptr;
+    if(!session.Valid()||!session.Alive())return nullptr;
+    if(session.CurrentStage()==Stage::Fuse&&session.NearInterior(Session::fuse))
+        return CabinetFeedback(session,false);
+    if(session.CurrentStage()==Stage::Generator&&session.Near(Session::generator))
+        return GeneratorFeedback(session);
+    if(session.CurrentStage()!=Stage::Relays)return nullptr;
     if(session.NearRelay(FieldRelayTask::WestRelay)&&
        !(session.relayFieldTasks&FieldRelayTask::WestCircuitBit)) {
         switch(FieldRelayTask::TraceCircuit(session.relayPatchA,session.relayPatchB).status) {
