@@ -12,6 +12,7 @@
 
 namespace Mistwatch::SurveyMap {
 inline constexpr float Top=176.f,Bottom=560.f,MinimumTextPixels=18.2f;
+inline constexpr float PanelLeft=8.f,PanelRightLimit=1272.f,PanelRightPadding=12.f,LegendLeft=348.f;
 inline constexpr unsigned Columns=25,Rows=30,TileBudget=Columns*Rows,MarkerBudget=4;
 inline bool ShouldShow(bool started,bool paused,bool alive,bool journalOpen) noexcept {
     return started&&paused&&alive&&!journalOpen;
@@ -134,16 +135,17 @@ inline Aevrynd::Color MarkerColor(unsigned index) {
     return colors.at(index);
 }
 struct TextLine {std::string text;Aevrynd::Vec2 position{},size{};float pixels{MinimumTextPixels};};
-struct Layout {std::array<TextLine,12> lines{};unsigned count{};};
+struct Layout {std::array<TextLine,12> lines{};unsigned count{};float panelRight{LegendLeft};};
 inline Layout MeasureLayout(const Aevrynd::DrawList& draw,const Data& d) {
     Layout result;if(!d.valid)return result;
     const auto add=[&](std::string text,float pixels=MinimumTextPixels) {
         if(result.count>=result.lines.size())throw std::runtime_error("SURVEY_MAP_TEXT_BUDGET");
-        const Aevrynd::Vec2 pos{348.f,184.f+float(result.count)*32.f};
+        const Aevrynd::Vec2 pos{LegendLeft,184.f+float(result.count)*32.f};
         const auto size=draw.MeasureSystemText(text,pixels);
         if(!std::isfinite(size.x)||!std::isfinite(size.y)||size.x<=0||size.y<=0||pixels<MinimumTextPixels||
-           pos.x<348||pos.y<Top||pos.x+size.x>1260||pos.y+size.y>Bottom-8)
+           pos.x<LegendLeft||pos.y<Top||pos.x+size.x>PanelRightLimit-PanelRightPadding||pos.y+size.y>Bottom-8)
             throw std::runtime_error("SURVEY_MAP_MEASURED_TEXT_OUTSIDE_PANEL");
+        result.panelRight=(std::max)(result.panelRight,std::ceil(pos.x+size.x)+PanelRightPadding);
         result.lines[result.count++]={std::move(text),pos,size,pixels};
     };
     add("巡守地圖 · 暫停檢視",20.f);
@@ -202,7 +204,8 @@ inline DrawReceipt Draw(Aevrynd::DrawList& draw,const Data& d) {
     // 先完成全部資料與字型驗證，再提交任何圖元，不以縮字或裁切掩蓋失敗。
     for(const auto& t:d.tiles)if(!std::isfinite(t.height)||t.height<d.minimumHeight||t.height>d.maximumHeight)
         throw std::runtime_error("SURVEY_MAP_INVALID_TILE");
-    draw.Quad({640,(Top+Bottom)*.5f},{1264,Bottom-Top},{.025f,.045f,.055f,.96f});
+    const float panelWidth=layout.panelRight-PanelLeft;
+    draw.Quad({PanelLeft+panelWidth*.5f,(Top+Bottom)*.5f},{panelWidth,Bottom-Top},{.025f,.045f,.055f,.96f});
     const float cw=d.plot.width/Columns,ch=d.plot.height/Rows;
     const double range=double(d.maximumHeight)-d.minimumHeight;
     for(unsigned row=0;row<Rows;++row)for(unsigned col=0;col<Columns;++col) {

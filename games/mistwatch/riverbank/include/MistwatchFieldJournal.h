@@ -476,6 +476,7 @@ inline MeasuredHudLayout MeasureLayout(const Aevrynd::DrawList& draw,const Hud& 
     constexpr std::array<float,5> rows{584,609,634,661,690};
     for(std::size_t i=0;i<sizes.size();++i)contained(result.bottom,20,rows[i],sizes[i]);
     result.showJournal=!hud.journal.empty();
+    const float journalBottomFloor=session.beaconLit?0.f:520.f;
     if(result.showJournal){
         if(hud.compactJournal){
             result.journal={20,92,1240,70};
@@ -491,14 +492,20 @@ inline MeasuredHudLayout MeasureLayout(const Aevrynd::DrawList& draw,const Hud& 
                 result.journalRows.insert(result.journalRows.end(),wrapped.begin(),wrapped.end());
             }
             if(result.journalRows.size()>16)throw std::runtime_error("HUD journal exceeds measured row budget");
-            // 保留全部文字位置；最末列若超出原底板，只延伸底板，不裁切或縮字。
-            float bottom=520;
-            float y=145;
+            // 結案底板貼合文字，讓玩家繼續看見救援信標及周圍場景。
+            const auto journalTitle=measured(JournalTitle(session),2.9f,1120);
+            const float bottomPadding=session.beaconLit?16.f:4.f;
+            float bottom=(std::max)(journalBottomFloor,result.journalTitleY+journalTitle.y+bottomPadding);
+            float contentWidth=journalTitle.x;
+            float y=result.journalRowsY;
             for(const auto& text:result.journalRows){
-                bottom=(std::max)(bottom,y+measured(text,2.6f,1120).y+4);y+=24;
+                const auto size=measured(text,2.6f,1120);
+                bottom=(std::max)(bottom,y+size.y+bottomPadding);
+                contentWidth=(std::max)(contentWidth,size.x);
+                y+=24;
             }
-            result.journal={60,80,1160,bottom-80};
-            contained(result.journal,80,108,measured(JournalTitle(session),2.9f,1120));
+            result.journal={60,80,session.beaconLit?std::ceil(contentWidth)+40.f:1160.f,bottom-80};
+            contained(result.journal,80,result.journalTitleY,journalTitle);
         }
     }
     result.showToast=started&&toast.Visible();
@@ -514,7 +521,7 @@ inline MeasuredHudLayout MeasureLayout(const Aevrynd::DrawList& draw,const Hud& 
             if(shift>result.journalTitleY-result.journal.top-8)
                 throw std::runtime_error("HUD journal cannot reserve readable toast gap");
             result.journalTitleY-=shift;result.journalRowsY-=shift;
-            result.journal.height=(std::max)(520.f,result.journal.Bottom()-shift)-result.journal.top;
+            result.journal.height=(std::max)(journalBottomFloor,result.journal.Bottom()-shift)-result.journal.top;
             result.toast.top=(std::max)(113.f,result.journal.Bottom()+8.f);
             result.toastTextY=result.toast.top+7;
         }

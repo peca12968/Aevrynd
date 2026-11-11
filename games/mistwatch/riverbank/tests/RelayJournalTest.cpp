@@ -1,7 +1,9 @@
 #include "MistwatchFieldJournal.h"
+#include "MistwatchSurveyMap.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -34,6 +36,38 @@ int main() {
             Require(hud.valid && session.Serialize() == before, "journal changed the session");
             return hud;
         };
+        unsigned mapChecks = 0;
+        float widestPanel = 0;
+        const auto checkMapPanel = [&](bool relayControls, std::optional<float> waterSurface) {
+            const auto guide = BuildObjectiveGuide(session, enemy, evasion, camera, false, true, solids, terrain);
+            const auto data = SurveyMap::Build(session, guide, camera, terrain,
+                                              relayControls ? 0u : NoTrackedRelay,
+                                              relayControls ? 0u : NoTrackedRelay,
+                                              relayControls, waterSurface);
+            Aevrynd::DrawList draw;
+            const auto layout = SurveyMap::MeasureLayout(draw, data);
+            const auto receipt = SurveyMap::Draw(draw, data);
+            Require(receipt.drawn && receipt.tiles == SurveyMap::TileBudget &&
+                    receipt.markers == data.markerCount && receipt.textLines == layout.count &&
+                    draw.vertices.size() >= 6 && draw.Stats2D().textGlyphs > 0,
+                    "survey panel lost its map or text");
+            float textRight = 0;
+            for (unsigned index = 0; index < layout.count; ++index) {
+                const auto& line = layout.lines[index];
+                Require(line.pixels >= SurveyMap::MinimumTextPixels, "survey legend text was reduced");
+                textRight = (std::max)(textRight, line.position.x + line.size.x);
+            }
+            float left = draw.vertices.front().x;
+            float right = left;
+            for (unsigned index = 0; index < 6; ++index) {
+                left = (std::min)(left, draw.vertices[index].x);
+                right = (std::max)(right, draw.vertices[index].x);
+            }
+            Require(left == 8.f && right >= textRight + 12.f, "survey panel clips or moves the legend");
+            Require(right <= std::ceil(textRight) + 12.f, "survey panel hides scene beyond measured legend");
+            widestPanel = (std::max)(widestPanel, right - left);
+            ++mapChecks;
+        };
         const auto goToRelay = [&](unsigned index) {
             session.feet = Session::relaySites[index];
             session.feet.y = GroundElevation(session.feet.x, session.feet.z);
@@ -45,10 +79,12 @@ int main() {
             Require(session.RelaySignal(index) == 100, "did not reach the true antenna lock");
         };
 
+        checkMapPanel(false, std::nullopt);
         Require(std::ranges::none_of(journal().journal, [](const auto& row) { return row.starts_with("中繼進度 "); }),
                 "relay progress is visible before power");
         Require(session.Restore("MISTWATCH 3 7 80 1 1 0 0 0 69 1 1 7"), "powered legacy checkpoint rejected");
         Require(session.CurrentStage() == Stage::Relays, "powered checkpoint lacks relay stage");
+        checkMapPanel(true, 1.f);
         goToRelay(1);
         align(1);
         Require(session.TuneRelay(1, 1) && session.RelaySignal(1) < 100, "east relay fixture failed to leave lock");
@@ -84,6 +120,8 @@ int main() {
         session.feet = Session::beacon;
         Require(session.LightBeacon(), "fixture could not submit the beacon");
         Require(journal().journal.front() == "救援任務完成", "completion stopped showing the existing debrief");
+        checkMapPanel(false, 1.f);
+        std::cout << "COMPACT_SURVEY_PANEL_PASS cases=" << mapChecks << " widest=" << widestPanel << '\n';
         std::cout << "RELAY_JOURNAL_PROGRESS_PASS stations=3 stages=4 field_checks=2 state_unchanged=1\n";
         return 0;
     } catch (const std::exception& error) {

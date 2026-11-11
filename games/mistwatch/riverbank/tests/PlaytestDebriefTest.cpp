@@ -88,7 +88,23 @@ int main(){
         auto smokeUnmeasured=paused;
         FieldPresentation::AppendPlaytestDebrief(smokeUnmeasured,clock,true,false,true);
         Require(smokeUnmeasured.journal==paused.journal,"unmeasured synthetic debrief gained prompts");
+        Aevrynd::DrawList draw(Aevrynd::DrawListCapacityProfile::Minimal2D);
+        ActionFeedbackToast toast;
+        Require(toast.Publish(ActionFeedbackEvent::Saved),"could not set save notification");
+        const auto timedLayout=FieldPresentation::MeasureLayout(draw,timedPlayer,session,"",toast,true);
+        const auto untimedLayout=FieldPresentation::MeasureLayout(draw,unmeasured,session,"",toast,true);
+        Require(timedLayout.showJournal&&timedLayout.journal.width<900.f&&timedLayout.journal.height<400.f,
+            "completed debrief still hides most of the world");
+        Require(timedLayout.journalRows==timedPlayer.journal&&untimedLayout.journalRows==unmeasured.journal&&
+            untimedLayout.journal.height<timedLayout.journal.height,"debrief layout lost text or ignored its height");
+        Require(timedLayout.showToast&&timedLayout.toast.top>=timedLayout.journal.Bottom()+8.f&&
+            timedLayout.toast.Bottom()+4.f<=timedLayout.bottom.top,"save notification overlaps the debrief");
+        const auto fieldLayout=FieldPresentation::MeasureLayout(draw,active,Session{},"",{},true);
+        Require(fieldLayout.showJournal&&fieldLayout.journal.width==1160.f&&fieldLayout.journal.height>=440.f,
+            "active field journal unexpectedly changed size");
         std::cout<<"DEBRIEF_TIMING_FEEDBACK_PASS measured=3 unmeasured=3\n";
+        std::cout<<"DEBRIEF_COMPACT_LAYOUT_PASS width="<<timedLayout.journal.width
+            <<" height="<<timedLayout.journal.height<<"\n";
         std::cout<<"PLAYTEST_DEBRIEF_PROBE_PASS legs=4 wall_time_exclusions=pass journal=pass\n";
         return 0;
     }catch(const std::exception& error){
