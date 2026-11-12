@@ -183,9 +183,12 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
     hud.controls+=started?" · Esc 地圖 · J 手冊":" · J 手冊";
     const auto count=[](unsigned bits){return unsigned(bool(bits&1))+unsigned(bool(bits&2))+unsigned(bool(bits&4));};
     std::string target;
-    const bool cabinetNeedsClue=session.CurrentStage()==Stage::Fuse&&!session.fuseClueRead&&
+    const auto stage=session.CurrentStage();
+    const bool cabinetNeedsClue=stage==Stage::Fuse&&!session.fuseClueRead&&
         session.NearInterior(Session::fuse);
-    switch(session.CurrentStage()) {
+    if(started&&!paused&&session.Alive()&&(stage==Stage::Supplies||stage==Stage::RepairMaterials))
+        hud.controls="WASD 移動 · Shift 跑步 · Space 跳躍 · Ctrl 蹲下 · E 互動 · 左鍵拖曳轉鏡頭 · 滾輪縮放 · Esc 地圖 · J 手冊";
+    switch(stage) {
     case Stage::Supplies: {
         hud.objective="備齊跨谷物資：三箱補給、工具與兩組木料";
         target="補給箱 "+std::to_string(guide.index+1);
@@ -229,8 +232,11 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         case CounterOpportunity::Closed:hud.instruction="留意蓄力預警，避免直迎衝撞。";break;
         }
         hud.context="野豬生命 "+std::to_string(enemy.health)+" / 3";
-        if(started&&!paused&&session.Alive())
-            hud.context+="；"+(guide.evadeReady?std::string("Q 可閃避"):"Q 目前不可用：冷卻、蹲下或離地");break;
+        if(started&&!paused&&session.Alive()){
+            hud.context+="；"+(guide.evadeReady?std::string("Q 可閃避"):"Q 目前不可用：冷卻、蹲下或離地");
+            hud.controls="WASD＋Q 定向閃避 · Q 後撤 · F 反擊 · Esc 地圖 · J 手冊";
+        }
+        break;
     case Stage::Fuse:
         hud.objective="讀巡守日誌，開啟工棚的保險絲櫃";
         target=session.fuseClueRead?"西側工棚保險絲櫃":"北側巡守日誌";

@@ -36,6 +36,56 @@ int main() {
             Require(hud.valid && session.Serialize() == before, "journal changed the session");
             return hud;
         };
+        const auto exploration = journal(false, false);
+        Require(exploration.controls.find("Space 跳躍") != std::string::npos &&
+                exploration.controls.find("Ctrl 蹲下") != std::string::npos,
+                "ordinary exploration lost its traversal controls");
+        const auto showsCamera = [](const FieldPresentation::Hud& hud) {
+            return hud.controls.find("左鍵拖曳轉鏡頭") != std::string::npos &&
+                   hud.controls.find("滾輪縮放") != std::string::npos;
+        };
+        Require(showsCamera(exploration) && exploration.controls.find("E 互動") != std::string::npos &&
+                exploration.controls.find("Q 後撤") == std::string::npos,
+                "opening controls must teach camera movement and interaction before combat");
+        Session repair;
+        repair.collected = 7;
+        const auto repairGuide = BuildObjectiveGuide(repair, enemy, evasion, camera, false, true, solids, terrain);
+        const auto repairHud = FieldPresentation::Build(repair, repairGuide, enemy, true, false, false);
+        const auto pausedRepair = FieldPresentation::Build(repair, repairGuide, enemy, true, true, false);
+        Require(repairHud.valid && repair.CurrentStage() == Stage::RepairMaterials &&
+                showsCamera(repairHud) && !showsCamera(pausedRepair) && pausedRepair.controls.starts_with("Esc 繼續"),
+                "repair route lost the camera hint or replaced the paused controls");
+        Session combat;
+        combat.collected = combat.repairMaterials = 7;
+        combat.bridgeRepaired = true;
+        combat.feet = Session::bridge;
+        combat.feet.y = GroundElevation(combat.feet.x, combat.feet.z);
+        const auto savedCombat = combat.Serialize();
+        const auto combatGuide = BuildObjectiveGuide(combat, enemy, evasion, camera, false, true, solids, terrain);
+        const auto combatHud = FieldPresentation::Build(combat, combatGuide, enemy, true, false, false);
+        Require(combatHud.valid && combat.CurrentStage() == Stage::Encounter &&
+                combatHud.controls.find("Q 後撤") != std::string::npos &&
+                combatHud.controls.find("WASD＋Q 定向閃避") != std::string::npos &&
+                combatHud.controls.find("F 反擊") != std::string::npos &&
+                combatHud.controls.find("J 手冊") != std::string::npos,
+                "combat HUD must distinguish the dodge inputs and retain counter/help");
+        const auto pausedCombat = FieldPresentation::Build(combat, combatGuide, enemy, true, true, false);
+        Require(pausedCombat.controls.starts_with("Esc 繼續") &&
+                pausedCombat.controls.find("F5 儲存") != std::string::npos &&
+                pausedCombat.controls.find("定向閃避") == std::string::npos &&
+                combat.Serialize() == savedCombat,
+                "encounter HUD changed pause controls or gameplay state");
+        auto fullControls = combatHud;
+        fullControls.controls = exploration.controls;
+        const Aevrynd::DrawList hudDraw;
+        const auto action = FieldPresentation::LastAction("Boar approaching - watch for the marked circle");
+        const ActionFeedbackToast toast;
+        const auto fullLayout = FieldPresentation::MeasureLayout(hudDraw, fullControls, combat, action, toast, true);
+        const auto combatLayout = FieldPresentation::MeasureLayout(hudDraw, combatHud, combat, action, toast, true);
+        Require(fullLayout.bottom.width - combatLayout.bottom.width >= 120.f,
+                "encounter controls did not give back meaningful scene width");
+        std::cout << "encounter_hud_width_before=" << fullLayout.bottom.width
+                  << " encounter_hud_width_after=" << combatLayout.bottom.width << '\n';
         unsigned mapChecks = 0;
         float widestPanel = 0;
         const auto checkMapPanel = [&](bool relayControls, std::optional<float> waterSurface) {

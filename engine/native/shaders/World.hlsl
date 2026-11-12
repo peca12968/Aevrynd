@@ -3839,14 +3839,7 @@ float BloomSemanticDeviceDepth(WorldPixelInput input)
 
 float4 WorldBloomSemanticPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
 {
-    float4 output = EvaluateWorldPixel(input, isFrontFace, false);
-    output.a = BloomSemanticDeviceDepth(input);
-    return output;
-}
-
-float4 WorldBloomSemanticMasked1xPixelMain(WorldPixelInput input, bool isFrontFace : SV_IsFrontFace) : SV_TARGET
-{
-    // 1x MASK 必須走硬裁切；SV_Coverage 僅屬於 MSAA 路徑。
+    // 單樣本遮罩仍執行硬裁切，只有 MSAA 版本輸出 SV_Coverage。
     float4 output = EvaluateWorldPixel(input, isFrontFace, false);
     output.a = BloomSemanticDeviceDepth(input);
     return output;
