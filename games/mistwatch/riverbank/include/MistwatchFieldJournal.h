@@ -192,17 +192,10 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.instruction=guide.useReady?"E：拾取補給":"沿主土路尋找箱子；沿途也能先取木料。";
         // 工具就緒包含正式蹲姿門檻；木料仍以副本查原門檻，不改任務或長程導航。
         if(started&&!paused&&session.Alive()&&!guide.useReady){
-            if(guide.earlyToolsReady)hud.instruction="E：拾取低棚工具。";
-            else {
-                if(const auto* hint=ShelterToolApproachHint(session))hud.instruction=hint;
-                for(unsigned site:{1u,2u}){
-                    auto pickupProbe=session;
-                    if(pickupProbe.CollectRepairMaterial(site,false)){
-                        hud.instruction=site==1?"E：拾取東南木料。":"E：拾取西岸木料。";
-                        break;
-                    }
-                }
-            }
+            constexpr std::array repairHints{"E：拾取低棚工具。","E：拾取東南木料。","E：拾取西岸木料。"};
+            if(guide.earlyRepairIndex&&*guide.earlyRepairIndex<repairHints.size())
+                hud.instruction=repairHints[*guide.earlyRepairIndex];
+            else if(const auto* hint=ShelterToolApproachHint(session))hud.instruction=hint;
         }
         hud.context="補給 "+std::to_string(count(session.collected))+" / 3；工具與木料 "+std::to_string(count(session.repairMaterials))+" / 3";break;
     }

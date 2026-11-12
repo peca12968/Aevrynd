@@ -1,4 +1,5 @@
 #include "MistwatchFieldJournal.h"
+#include "MistwatchObjectivePointer.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -27,6 +28,13 @@ int main() {
             Require(session.Serialize() == before, "the hint modified gameplay state");
             return hud.instruction;
         };
+        using PointerStatus=ObjectivePointer::Status;
+        const auto cue=[&](const ObjectiveGuide& guide,bool paused=false,bool journal=false){
+            return ObjectivePointer::Build(session,guide,true,paused,journal).status;
+        };
+        const auto guideAt=[&](bool crouched,unsigned tracked=NoTrackedRelay){
+            return BuildObjectiveGuide(session,enemy,evasion,camera,crouched,true,solids,terrain,tracked);
+        };
         const auto& roof = CameraCeilingSolids().back();
         const auto tool = Session::repairSites[0];
         const float eastEdge = roof.center.x + roof.extents.x;
@@ -42,7 +50,20 @@ int main() {
         Require(instruction(true).starts_with("保持蹲姿"), "inside approach instruction is missing");
         session.feet = {tool.x + .76f, tool.y, tool.z};
         Require(instruction(true) == "E：拾取低棚工具。", "ready pickup must take priority");
+        const auto earlyTool=guideAt(true);
+        Require(earlyTool.earlyRepairIndex==0u&&cue(earlyTool)==PointerStatus::Interact&&
+            cue(earlyTool,true)==PointerStatus::Hidden&&cue(earlyTool,false,true)==PointerStatus::Hidden,
+            "early tool interaction cue failed");
+        Require(!guideAt(false).earlyRepairIndex&&cue(guideAt(false))==PointerStatus::Arrow,
+            "standing player received a tool interaction cue");
         Require(session.CollectRepairMaterial(0, true), "original tool pickup was rejected");
+        Require(cue(guideAt(true))==PointerStatus::Arrow,"collected tool retained the interaction cue");
+        for(unsigned site:{1u,2u}){
+            session.feet=Session::repairSites[site];
+            const auto earlyTimber=guideAt(false);
+            Require(earlyTimber.earlyRepairIndex==site&&cue(earlyTimber)==PointerStatus::Interact,
+                "early timber interaction cue failed");
+        }
         Require(!instruction(true).starts_with("保持蹲姿"), "tool hint remains after pickup");
         session.feet = Session::supplies[0];
         Require(instruction(false) == "E：拾取補給", "ready supplies lost their instruction");
@@ -99,6 +120,11 @@ int main() {
         session.feet={tool.x+.76f,tool.y,tool.z};
         const auto ready=routeGuide(true,true);
         Require(ready.useReady&&!ready.shelterApproach,"route masks the ready tool pickup");
+        Aevrynd::DrawList interactionDraw;
+        const auto submitted=ObjectivePointer::Submit(interactionDraw,
+            ObjectivePointer::Build(session,ready,true,false,false));
+        Require(submitted.submitted&&submitted.status==PointerStatus::Interact&&submitted.lines==4&&
+            submitted.quads==2&&interactionDraw.vertices.size()==36,"interaction keycap geometry differs");
         Require(FieldPresentation::Build(session,ready,enemy,true,false,false).instruction=="E：拾取維修物資",
             "ready tool pickup must take priority over crouch help");
         std::cout << "SHELTER_TOOL_ENTRY_GUIDANCE_PASS\n";
@@ -117,6 +143,7 @@ int main() {
         session.feet=Session::bridge;
         Require(session.CurrentStage()==Stage::Bridge&&instruction(false)=="E：嘗試修橋。"&&!session.bridgeRepaired,
             "BRIDGE_NEAR_PROMPT");
+        Require(cue(guideAt(false))==PointerStatus::AtTarget,"unchecked bridge repair advertised ready");
         session.feet.z-=3.f;
         Require(instruction(false)=="沿主土路到橋頭。","BRIDGE_OUT_OF_REACH_PROMPT");
         session.bridgeRepaired=true;
@@ -238,6 +265,15 @@ int main() {
         session.feet=Session::generator;
         Require(session.ToggleCircuit(2)&&session.RepairGenerator()&&session.CurrentStage()==Stage::Relays&&
             !generatorHud().context.starts_with("已亮燈"),"generator guidance survived or changed the original repair action");
+        session.feet=Session::relaySites[1];
+        session.relaySectors=Session::RelayTargetSector(1)<<4;
+        const auto nearbyRelay=guideAt(false,1);
+        const auto distantRelay=guideAt(false,0);
+        Require(nearbyRelay.index==1&&nearbyRelay.useReady&&cue(nearbyRelay)==PointerStatus::Interact,
+            "ready tracked relay lacks the interaction cue");
+        Require(distantRelay.useReady&&distantRelay.navigationRelayIndex==0&&cue(distantRelay)==PointerStatus::Arrow,
+            "nearby action hid the pinned remote relay bearing");
+        std::cout << "INTERACTION_READY_CUE_PASS\n";
         std::cout << "GENERATOR_LAMP_GUIDANCE_PASS masks=8\n";
         std::cout << "BRIDGE_REPAIR_FEEDBACK_PASS cases=6\n";
         std::cout << "SETTLEMENT_ENTRANCE_GUIDE_PASS starts=" << settlementStarts << '\n';

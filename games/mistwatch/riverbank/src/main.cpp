@@ -82,6 +82,7 @@
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
 #include "MistwatchBoarHitReaction.h"
+#include "MistwatchBoarDefeatView.h"
 #include "MistwatchExplorerCounterMotion.h"
 #include "MistwatchLandscape.h"
 #include "MistwatchLandscapeTwigDraw.h"
@@ -943,6 +944,7 @@ class MistwatchGame final : public IGame {
     SkinnedMeshResource3D boarMesh;
     SkinningWorkspace3D boarSkinning;
     Mistwatch::BoarHitReaction::Scratch boarHitScratch;
+    Mistwatch::BoarDefeatView boarDefeat;
     Mistwatch::ExplorerCounterMotion::Clock explorerCounter;
     AnimationPose3D explorerCounterDraw;
     bool started{}, paused{};
@@ -1320,6 +1322,7 @@ class MistwatchGame final : public IGame {
             cameraFixedTicks,captureCameraTicks,cameraMaximumTickDisplacement,cameraOcclusionSeconds,inputReplayLowRoofObserved};
     }
     void ResetPlayablePairRuntime()noexcept {
+        boarDefeat.Clear();
         pickupIntent.Clear();
         trackedRelay=previewRelay=Mistwatch::NoTrackedRelay;
         playablePairState={};playableInputs.Clear();playableRecoveryCause=PlayableRecoveryCause::None;playableNeedsContactPolicy=false;
@@ -4944,6 +4947,7 @@ private:
         // 檔案與音效只在成功提交後執行；不能把提交後I/O例外當成世界已回滾。
         if(!worldCommitted)return;
         explorerCounter.Commit(dt,boarHealthBefore,encounter.health,session.Alive());
+        boarDefeat.Commit(dt,boarHealthBefore,encounter,session.guardianDefeated,session.Alive(),boar,terrain);
         if(!bridgeWasRepaired&&session.bridgeRepaired)
             actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::BridgeRepaired);
         const auto playtestStageAfter=session.CurrentStage();
@@ -5876,7 +5880,11 @@ private:
             for(const auto byte:std::as_bytes(std::span{&matrix,1})){hash^=std::to_integer<std::uint8_t>(byte);hash*=1099511628211ull;}
             grassFixtureState.cameraHash=hash;
         }
-        if(!session.guardianDefeated) {
+        if(session.guardianDefeated&&boarDefeat.Visible()){
+            const auto palette=AddSkinPaletteFromPose(draw,boar.model,boarDefeat.Pose(),boarSkinning);
+            if(!draw.SkinnedMeshInstance(boarMesh.handle,palette,boarDefeat.Transform()))
+                throw std::runtime_error("Boar defeat view submission failed");
+        }else if(!session.guardianDefeated){
             // 暫停時正式冷卻凍結，保持目前受擊姿態；渲染不推進另一份計時。
             const auto hitPlan=Mistwatch::BoarHitReaction::Build(encounter,started&&session.Alive());
             if(hitPlan.status==Mistwatch::BoarHitReaction::Status::Invalid)

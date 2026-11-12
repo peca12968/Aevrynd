@@ -27,7 +27,8 @@ enum class ObjectiveBearing { AtTarget, Ahead, Right, Behind, Left };
 enum class CounterOpportunity { Closed, Used, Evading, Cooldown, TooFar, HeightDifference, Obstructed, Ready };
 struct ObjectiveGuide {
     bool valid{}, hasTarget{}, useReady{}, counterReady{}, evadeReady{}, tuneReady{};
-    bool earlyToolsReady{}, shelterApproach{}, settlementApproach{}, rangerDeskApproach{};
+    bool shelterApproach{}, settlementApproach{}, rangerDeskApproach{};
+    std::optional<unsigned> earlyRepairIndex;
     BridgeRepairIntent bridgeIntent{BridgeRepairIntent::None};
     CounterOpportunity counterOpportunity{CounterOpportunity::Closed};
     unsigned index{};
@@ -185,9 +186,13 @@ inline ObjectiveGuide BuildObjectiveGuide(const Session& session,const Encounter
         nearest(Session::supplies,session.collected,names);
         guide.objective="Find supplies for the bridge expedition";
         guide.useReady=candidate.Collect(guide.index);
-        // 提前取工具只旁記正式門檻，不改補給箱的遠程目標或 useReady 語意。
-        auto toolsProbe=session;
-        guide.earlyToolsReady=toolsProbe.CollectRepairMaterial(0,crouched);
+        // 提前取材沿用正式互動判定；同時保留補給箱的長程目標。
+        auto repairProbe=session;
+        for(unsigned site=0;site<Session::repairSites.size();++site){
+            if(repairProbe.CollectRepairMaterial(site,crouched)){
+                guide.earlyRepairIndex=site;break;
+            }
+        }
         guide.instruction=guide.useReady?"E: collect supplies":"Follow the main dirt trail; approach the crate";
         guide.context="Supplies "+std::to_string(Count(session.collected))+" / 3 | Repair items "+std::to_string(Count(session.repairMaterials))+" / 3";
         break;
