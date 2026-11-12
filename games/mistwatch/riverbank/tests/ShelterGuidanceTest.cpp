@@ -87,9 +87,21 @@ int main() {
             }
             Require(hops>0&&hops<4&&session.feet.x>eastEdge,"shelter route failed to reach the open east side");
         }
+        session.feet={eastEdge+.7f,tool.y,tool.z};
+        const auto materialEntry=FieldPresentation::Build(session,routeGuide(false,true),enemy,true,false,false);
+        Require(materialEntry.instruction.starts_with("按住 Ctrl"),"material-stage east opening must say to hold Ctrl");
+        session.feet.x=eastEdge-.25f;
+        const auto materialInside=FieldPresentation::Build(session,routeGuide(true,true),enemy,true,false,false);
+        Require(materialInside.instruction.starts_with("保持蹲姿")&&materialInside.instruction.find("按住 Ctrl")!=std::string::npos,
+            "material-stage interior must tell the player to keep crouching");
+        const auto materialPause=FieldPresentation::Build(session,routeGuide(true,true),enemy,true,true,false);
+        Require(!materialPause.instruction.starts_with("保持蹲姿"),"pause must not advertise live shelter movement");
         session.feet={tool.x+.76f,tool.y,tool.z};
         const auto ready=routeGuide(true,true);
         Require(ready.useReady&&!ready.shelterApproach,"route masks the ready tool pickup");
+        Require(FieldPresentation::Build(session,ready,enemy,true,false,false).instruction=="E：拾取維修物資",
+            "ready tool pickup must take priority over crouch help");
+        std::cout << "SHELTER_TOOL_ENTRY_GUIDANCE_PASS\n";
         session.repairMaterials=7;
         Require(FieldPresentation::LastAction("Move character clear before bridge repair")==
             "目前站位無法修橋。移到橋頭旁，再按 E。","BRIDGE_PLAYER_REJECTION_FEEDBACK");

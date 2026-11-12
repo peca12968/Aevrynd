@@ -154,6 +154,19 @@ inline std::string StatusLine(const Session& session,std::string_view lastAction
     return "生命 "+std::to_string(session.health)+"；上次操作："+std::string(lastAction);
 }
 
+inline const char* ShelterToolApproachHint(const Session& session) {
+    if(session.repairMaterials&1u)return nullptr;
+    static const auto roof=RepairShelterSolids().front();
+    constexpr float approachDepth=1.5f,groundLevelTolerance=.6f;
+    const float eastEdge=roof.center.x+roof.extents.x;
+    const auto feet=session.feet;
+    if(feet.x<roof.center.x-roof.extents.x||feet.x>eastEdge+approachDepth||
+       std::abs(feet.z-roof.center.z)>roof.extents.z||
+       std::abs(feet.y-Session::repairSites[0].y)>groundLevelTolerance)return nullptr;
+    return feet.x>=eastEdge?"按住 Ctrl 從低棚東側開口進入，靠近工具後按 E。":
+        "保持蹲姿（按住 Ctrl），靠近工具後按 E。";
+}
+
 // 只讀原引導及 Session 的近場取物門檻；不另造安全通路或提前公布轉盤答案。
 inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encounter& enemy,
     bool started,bool paused,bool journalOpen,TitleCheckpoint checkpoint=TitleCheckpoint::Unchecked,
@@ -166,7 +179,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.objective="任務資料待確認";return hud;
     }
     hud.valid=true;
-    hud.controls="WASD 移動 · Shift 跑步 · Space 跳躍 · Ctrl 蹲下 · Q 閃避 · E 互動 · F 反擊";
+    hud.controls="WASD 移動 · Shift 跑步 · Space 跳躍 · Ctrl 蹲下 · Q 後撤／WASD＋Q 定向閃避 · E 互動 · F 反擊";
     hud.controls+=started?" · Esc 地圖 · J 手冊":" · J 手冊";
     const auto count=[](unsigned bits){return unsigned(bool(bits&1))+unsigned(bool(bits&2))+unsigned(bool(bits&4));};
     std::string target;
@@ -181,18 +194,7 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         if(started&&!paused&&session.Alive()&&!guide.useReady){
             if(guide.earlyToolsReady)hud.instruction="E：拾取低棚工具。";
             else {
-                // 西側低棚是相機屋頂清單最後一項。沿開口向東留出站姿接近區。
-                const auto& roof=CameraCeilingSolids().back();
-                constexpr float approachDepth=1.5f, groundLevelTolerance=.6f;
-                const float eastEdge=roof.center.x+roof.extents.x;
-                const auto feet=session.feet;
-                if((session.repairMaterials&1u)==0 &&
-                    feet.x>=roof.center.x-roof.extents.x && feet.x<=eastEdge+approachDepth &&
-                    std::abs(feet.z-roof.center.z)<=roof.extents.z &&
-                    std::abs(feet.y-Session::repairSites[0].y)<=groundLevelTolerance){
-                    hud.instruction=feet.x>=eastEdge?"按住 Ctrl 從低棚東側開口進入，靠近工具後按 E。":
-                        "保持蹲姿，靠近工具後按 E。";
-                }
+                if(const auto* hint=ShelterToolApproachHint(session))hud.instruction=hint;
                 for(unsigned site:{1u,2u}){
                     auto pickupProbe=session;
                     if(pickupProbe.CollectRepairMaterial(site,false)){
@@ -208,8 +210,11 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         constexpr std::array names{"西側低棚工具","東南木料","西岸木料"};
         target=guide.shelterApproach?"低棚入口路線":names[guide.index%3];hud.objective="取齊工具與兩組木料，修通跨谷橋";
         hud.instruction=guide.useReady?"E：拾取維修物資":guide.shelterApproach?
-            "沿指引繞過棚外，到東側開口再按 Ctrl 蹲入。":guide.index==0?
-            "由低棚東側開口進入；按 Ctrl 蹲下接近工具。":"沿南岸支路找木料，接近後按 E。";
+            "沿指引繞過棚外，到東側開口後按住 Ctrl 蹲入。":guide.index==0?
+            "由低棚東側開口進入，按住 Ctrl 接近工具。":"沿南岸支路找木料，接近後按 E。";
+        if(started&&!paused&&guide.index==0&&!guide.useReady&&!guide.shelterApproach){
+            if(const auto* hint=ShelterToolApproachHint(session))hud.instruction=hint;
+        }
         hud.context=std::string("工具：")+((session.repairMaterials&1)?"已取得":"未取得")+"；木料 "+std::to_string(count(session.repairMaterials&6))+" / 2";break;
     }
     case Stage::Bridge:
@@ -219,10 +224,17 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         hud.context="工具與木料已齊。修好後可沿橋進入谷北。";break;
     case Stage::Encounter:
         target="野豬";hud.objective="離開攻擊預警，在恢復空檔反擊";
-        hud.instruction=enemy.phase==EnemyPhase::Windup?"離開橙色攻擊區；Q 閃避沒有無敵時間。":
-            guide.counterReady?"F：本次恢復空檔可反擊一次。":
-            enemy.phase==EnemyPhase::Recovery&&enemy.countered?"本次已反擊；準備下一次攻擊。":
-            enemy.phase==EnemyPhase::Recovery?"恢復空檔：靠近野豬，確認路徑未遮擋。":"留意蓄力預警，避免直迎衝撞。";
+        if(enemy.phase==EnemyPhase::Windup)hud.instruction="離開橙色攻擊區；Q 閃避沒有無敵時間。";
+        else switch(guide.counterOpportunity){
+        case CounterOpportunity::Ready:hud.instruction="F：本次恢復空檔可反擊一次。";break;
+        case CounterOpportunity::Used:hud.instruction="本次已反擊；準備下一次攻擊。";break;
+        case CounterOpportunity::Evading:hud.instruction="等閃避動作結束，出現 F 提示時再反擊。";break;
+        case CounterOpportunity::Cooldown:hud.instruction="反擊尚在冷卻，留意下一次攻擊。";break;
+        case CounterOpportunity::TooFar:hud.instruction="恢復空檔：進入 2.5 公尺內，出現 F 提示時反擊。";break;
+        case CounterOpportunity::HeightDifference:hud.instruction="高低差過大；先移到與野豬相近的地面。";break;
+        case CounterOpportunity::Obstructed:hud.instruction="反擊路徑被擋住，繞到能接近野豬的位置。";break;
+        case CounterOpportunity::Closed:hud.instruction="留意蓄力預警，避免直迎衝撞。";break;
+        }
         hud.context="野豬生命 "+std::to_string(enemy.health)+" / 3";
         if(started&&!paused&&session.Alive())
             hud.context+="；"+(guide.evadeReady?std::string("Q 可閃避"):"Q 目前不可用：冷卻、蹲下或離地");break;

@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 namespace Mistwatch {
-enum class Sound : unsigned { Dirt0,Dirt1,Dirt2,Wood0,Wood1,Wood2,Landing,Interact,Tune,Warning,Hurt,Success,Wind,Water,Count };
+enum class Sound : unsigned { Dirt0,Dirt1,Dirt2,Wood0,Wood1,Wood2,Landing,Interact,Tune,Warning,Hurt,Success,Wind,Water,Counter,Count };
 inline constexpr unsigned SoundCount=unsigned(Sound::Count);
 // 本作原創程序音色，並非森林錄音；所有樣本具有有限振幅與平滑端點。
 inline Aevrynd::AudioClip CreateGameSound(Sound sound) {
@@ -39,7 +39,12 @@ inline Aevrynd::AudioClip CreateGameSound(Sound sound) {
             value=(.3f*std::sin(t*65.f*6.2831853f)+.25f*middle)*std::exp(-t*17.f);
         else if(sound==Sound::Warning)
             value=(.15f*std::sin(t*(90.f+25.f*std::sin(t*14.f))*6.2831853f)+.12f*low)*std::exp(-t*3.f);
-        else if(sound==Sound::Success) {
+        else if(sound==Sound::Counter) {
+            // 反擊音色包含短促的接觸聲與下降的低頻，與玩家受傷的持續低音區分。
+            const float contact=.24f*(noise-middle)*std::exp(-t*75.f);
+            const float body=.24f*std::sin(t*(118.f-96.f*t)*6.2831853f)*std::exp(-t*27.f);
+            value=contact+body;
+        } else if(sound==Sound::Success) {
             // 每個音符沿用前一個音符結束的相位，避免切換時產生爆音。
             const float cycles=t<.2f?440.f*t:t<.4f?
                 440.f*.2f+554.365f*(t-.2f):(440.f+554.365f)*.2f+659.255f*(t-.4f);
@@ -89,7 +94,7 @@ struct AudioState {
     bool active{},grounded{},crouched{};
 };
 struct AudioEvents {
-    bool startWind{},stopWind{},water{},step{},wood{},landing{},interact{},tune{},warning{},hurt{},success{};
+    bool startWind{},stopWind{},water{},step{},wood{},landing{},interact{},tune{},warning{},hurt{},counter{},success{};
     float stepVolume{.7f},stepPitch{1.f};
 };
 struct AudioDirector {
@@ -133,7 +138,8 @@ struct AudioDirector {
         events.tune=a.circuit!=b.circuit||a.fuseDials!=b.fuseDials||a.relaySectors!=b.relaySectors||
             a.relayPatchA!=b.relayPatchA||a.relayPatchB!=b.relayPatchB||a.extractionRoute!=b.extractionRoute;
         events.warning=previous.enemyPhase!=EnemyPhase::Windup&&state.enemyPhase==EnemyPhase::Windup;
-        events.hurt=b.health<a.health||state.enemyHealth<previous.enemyHealth;
+        events.hurt=b.health<a.health;
+        events.counter=!teleported&&state.enemyHealth<previous.enemyHealth;
         events.success=!a.beaconLit&&b.beaconLit;
         previous=state;return events;
     }
@@ -201,6 +207,7 @@ struct GameAudio {
         if(events.tune)play(Sound::Tune,{.45f});
         if(events.warning)spatial(Sound::Warning,state.enemyFeet,25,.8f,1);
         if(events.hurt)play(Sound::Hurt,{.7f});
+        if(events.counter)spatial(Sound::Counter,state.enemyFeet,18,.85f,1);
         if(events.success)play(Sound::Success,{.7f});
     }
     void Shutdown(Aevrynd::AudioEngine& audio) {

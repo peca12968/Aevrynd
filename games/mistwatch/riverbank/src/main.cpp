@@ -82,6 +82,7 @@
 #include "MistwatchRiver.h"
 #include "MistwatchBoar.h"
 #include "MistwatchBoarHitReaction.h"
+#include "MistwatchExplorerCounterMotion.h"
 #include "MistwatchLandscape.h"
 #include "MistwatchLandscapeTwigDraw.h"
 #include "MistwatchLandscapeCrownRange.h"
@@ -942,6 +943,8 @@ class MistwatchGame final : public IGame {
     SkinnedMeshResource3D boarMesh;
     SkinningWorkspace3D boarSkinning;
     Mistwatch::BoarHitReaction::Scratch boarHitScratch;
+    Mistwatch::ExplorerCounterMotion::Clock explorerCounter;
+    AnimationPose3D explorerCounterDraw;
     bool started{}, paused{};
     Mistwatch::GraphicsSettings graphicsOptions;
     Mistwatch::PlaytestClock playtestClock;
@@ -4532,7 +4535,7 @@ private:
             if(prepared&&Mistwatch::ValidatePreparedPairLoad(*prepared.candidate)){
                 Mistwatch::SwapPreparedSavedGame(*prepared.candidate,{session,encounter,evasion,controller,explorer,boar,orbit,
                     solids,playerCameraMotion,lastPlayerFraming,lastCameraMotion,lastRenderedCamera,&playerLocomotion});
-                tuningInputRepeat.Reset();ResetPlayablePairRuntime();
+                tuningInputRepeat.Reset();ResetPlayablePairRuntime();explorerCounter.Clear();
                 started=true;
                 // 讀檔後回到新進度的地圖或方向指引。
                 fieldJournalOpen=false;
@@ -4667,6 +4670,7 @@ private:
                 if(recovered){
                     message="Safe retry - expedition progress retained";
                     playableFrame->Commit();ResetPlayablePairRuntime();tuningInputRepeat.Reset();fieldJournalOpen=false;actionFeedback.Clear();
+                    explorerCounter.Clear();
                 }
             }catch(...){recovered=false;}
             if(recovered){TickAudio(e,dt);return;}
@@ -4704,6 +4708,7 @@ private:
                 message="重試位置暫不可用，已保留進度。請再按 R，或按 F9 載入存檔。";return;
             }
             reset.Commit();
+            explorerCounter.Clear();
             defeatCause={};
             tuningInputRepeat.Reset();
             fieldJournalOpen=false;
@@ -4732,6 +4737,7 @@ private:
         }
         if(!playableFrame){message="Frame transaction unavailable";return;}
         const bool bridgeWasRepaired=session.bridgeRepaired;
+        const auto boarHealthBefore=encounter.health;
         const auto edges=playableInputs.Front();
         // 此副本只在世界交易成功時發布；鏡頭或身體拒絕不得偷走緩衝時間。
         auto nextPickupIntent=pickupIntent;
@@ -4937,6 +4943,7 @@ private:
         catch(...){runtimeSourceFailure="unknown frame exception";holdFrame("Frame candidate unavailable - prior state and controls retained");}
         // 檔案與音效只在成功提交後執行；不能把提交後I/O例外當成世界已回滾。
         if(!worldCommitted)return;
+        explorerCounter.Commit(dt,boarHealthBefore,encounter.health,session.Alive());
         if(!bridgeWasRepaired&&session.bridgeRepaired)
             actionFeedback.Publish(Mistwatch::ActionFeedbackEvent::BridgeRepaired);
         const auto playtestStageAfter=session.CurrentStage();
@@ -5884,7 +5891,11 @@ private:
             if(!draw.SkinnedMeshInstance(boarMesh.handle,animalPalette,CreateTransformMatrix(encounter.feet,{0,boar.yaw,0},{1,1,1})))
                 throw std::runtime_error("Boar skin submission failed");
         }
-        const auto palette=AddSkinPaletteFromPose(draw,explorer.model,explorer.pose,explorerSkinning);
+        const auto* playerDrawPose=&explorer.pose;
+        const auto counterWeight=explorerCounter.Weight();
+        if(started&&session.Alive()&&counterWeight>0&&Mistwatch::ExplorerCounterMotion::Apply(
+            explorer.model.skeleton,explorer.pose,counterWeight,explorerCounterDraw))playerDrawPose=&explorerCounterDraw;
+        const auto palette=AddSkinPaletteFromPose(draw,explorer.model,*playerDrawPose,explorerSkinning);
         const auto explorerTransform=CreateTransformMatrix(session.feet,{0,explorer.yaw,0},{1,1,1});
         if(!Mistwatch::ExplorerSurface::Submit(draw,explorer.model,explorer.art,explorerMesh.handle,palette,
             explorerTransform,explorerMaterials,explorerSurfaceSubmission))

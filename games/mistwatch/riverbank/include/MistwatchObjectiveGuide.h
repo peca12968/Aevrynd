@@ -24,10 +24,12 @@ inline unsigned CycleTrackedRelay(const Session& session,unsigned from,int direc
     return NoTrackedRelay;
 }
 enum class ObjectiveBearing { AtTarget, Ahead, Right, Behind, Left };
+enum class CounterOpportunity { Closed, Used, Evading, Cooldown, TooFar, HeightDifference, Obstructed, Ready };
 struct ObjectiveGuide {
     bool valid{}, hasTarget{}, useReady{}, counterReady{}, evadeReady{}, tuneReady{};
     bool earlyToolsReady{}, shelterApproach{}, settlementApproach{}, rangerDeskApproach{};
     BridgeRepairIntent bridgeIntent{BridgeRepairIntent::None};
+    CounterOpportunity counterOpportunity{CounterOpportunity::Closed};
     unsigned index{};
     // index/useReady/tuneReady 仍是近場操作；此欄只識別玩家確認的導航目的地。
     unsigned navigationRelayIndex{NoTrackedRelay};bool relayTrackingActive{};
@@ -221,8 +223,16 @@ inline ObjectiveGuide BuildObjectiveGuide(const Session& session,const Encounter
             evasion.cooldown<0||evasion.cooldown>Evasion::Cooldown||evasion.remaining<0||evasion.remaining>Evasion::Duration)return ObjectiveGuide{};
         select(enemy.feet,"Wild boar");guide.objective="Evade boar strikes, then counter the opening";
         const double range=std::hypot(double(enemy.feet.x)-session.feet.x,double(enemy.feet.z)-session.feet.z);
-        guide.counterReady=enemy.phase==EnemyPhase::Recovery&&!enemy.countered&&enemy.playerCooldown<=0&&
-            evasion.remaining<=0&&range<=2.5&&std::abs(session.feet.y-enemy.feet.y)<2.f&&CounterLineClear(session,enemy,solids,terrain);
+        if(enemy.phase==EnemyPhase::Recovery){
+            if(enemy.countered)guide.counterOpportunity=CounterOpportunity::Used;
+            else if(evasion.remaining>0)guide.counterOpportunity=CounterOpportunity::Evading;
+            else if(enemy.playerCooldown>0)guide.counterOpportunity=CounterOpportunity::Cooldown;
+            else if(range>2.5)guide.counterOpportunity=CounterOpportunity::TooFar;
+            else if(std::abs(session.feet.y-enemy.feet.y)>=2.f)guide.counterOpportunity=CounterOpportunity::HeightDifference;
+            else if(!CounterLineClear(session,enemy,solids,terrain))guide.counterOpportunity=CounterOpportunity::Obstructed;
+            else guide.counterOpportunity=CounterOpportunity::Ready;
+        }
+        guide.counterReady=guide.counterOpportunity==CounterOpportunity::Ready;
         guide.evadeReady=grounded&&!crouched&&evasion.cooldown<=0&&evasion.remaining<=0;
         if(enemy.phase==EnemyPhase::Windup)guide.instruction="Leave the marked strike circle";
         else if(enemy.phase==EnemyPhase::Recovery&&enemy.countered)guide.instruction="Counter used; wait for the next opening";
