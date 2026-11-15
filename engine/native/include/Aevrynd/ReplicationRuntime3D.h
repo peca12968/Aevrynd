@@ -1,6 +1,6 @@
 #pragma once
-#include "NetworkTransport3D.h"
-#include "ReplicationProtocol3D.h"
+#include <Aevrynd/NetworkTransport3D.h>
+#include <Aevrynd/ReplicationProtocol3D.h>
 #include <deque>
 #include <map>
 #include <optional>
@@ -16,6 +16,9 @@ class ReplicationServer3D {
 public:
  ReplicationServer3D(LoopbackNetworkTransport3D& transport,NetworkEndpoint3D endpoint,std::uint64_t sessionEpoch,ReplicationRuntimeSettings3D settings={});
  bool AddClient(std::uint32_t clientId,NetworkEndpoint3D endpoint,GlobalPosition3D spawn={});
+ bool RemoveClient(std::uint32_t clientId);
+ bool SetClientEntityFlags(std::uint32_t clientId,std::uint32_t flags);
+ bool SetClientMovementEnabled(std::uint32_t clientId,bool enabled);
  bool SetClientPosition(std::uint32_t clientId,GlobalPosition3D position);
  void Tick();
  std::optional<ReplicationPlayerState3D> Player(std::uint32_t clientId)const;
@@ -23,7 +26,7 @@ public:
  std::size_t ClientCount()const noexcept{return clients_.size();}
  ReplicationRuntimeStats3D Stats()const{return stats_;}
 private:
- struct Client {NetworkEndpoint3D endpoint{};ReplicationPlayerState3D player{};std::map<std::uint64_t,ReplicationInputCommand3D> inputs{};std::deque<ReplicationSnapshot3D> snapshots{};std::set<std::pair<std::int64_t,std::int64_t>> interest{};std::set<NetworkEntityId3D> visible{},everVisible{};std::uint64_t lastInputSequence{},lastInputTick{},ackSnapshotTick{},interestEpoch{},interestEntered{},interestExited{},entityReentries{},entityDespawns{};std::size_t lastSnapshotEntities{},lastSnapshotDespawns{};};
+ struct Client {NetworkEndpoint3D endpoint{};ReplicationPlayerState3D player{};std::map<std::uint64_t,ReplicationInputCommand3D> inputs{};std::deque<ReplicationSnapshot3D> snapshots{};std::set<std::pair<std::int64_t,std::int64_t>> interest{};std::set<NetworkEntityId3D> visible{},everVisible{};std::uint64_t lastInputSequence{},lastInputTick{},ackSnapshotTick{},interestEpoch{},interestEntered{},interestExited{},entityReentries{},entityDespawns{};std::size_t lastSnapshotEntities{},lastSnapshotDespawns{};std::uint32_t entityFlags{};bool movementEnabled{true};};
  void Receive();void SendSnapshots();
  LoopbackNetworkTransport3D& transport_;NetworkEndpoint3D endpoint_{};std::uint64_t sessionEpoch_{},tick_{};ReplicationRuntimeSettings3D settings_{};std::map<std::uint32_t,Client> clients_{};ReplicationRuntimeStats3D stats_{};
 };

@@ -1,4 +1,13 @@
 #include "MistwatchSession.h"
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+#include "LocalWorldClient.h"
+#ifdef AEVRYND_MISTWATCH_PROFILES
+#include "RiverbankGuildPanel.h"
+#endif
+#endif
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+#include "RiverbankAvatar.h"
+#endif
 #include "MistwatchRiverbankConstruction.h"
 #include "MistwatchErodedBankConstruction.h"
 #include "MistwatchBankRocks.h"
@@ -1935,6 +1944,41 @@ private:
         if(!restored)throw std::runtime_error("Forest IBL did not restore baseline");
     }
     void OnStart(Engine& e) override {
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        {
+        wchar_t value[8]{};
+        const auto length=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_PORT",value,8);
+        unsigned parsed{};
+        if(!length||length>5)throw std::runtime_error("A valid AEVRYND_MISTWATCH_LOCAL_WORLD_PORT is required");
+        for(unsigned i=0;i<length;++i){
+            if(value[i]<L'0'||value[i]>L'9')throw std::runtime_error("Invalid local world port");
+            parsed=parsed*10+static_cast<unsigned>(value[i]-L'0');
+        }
+        if(!parsed||parsed>65535)throw std::runtime_error("Invalid local world port");
+        localWorldPort=static_cast<unsigned short>(parsed);
+        }
+        if(e.WindowMode3D()==EngineWindowMode3D::OffscreenNoActivateDiagnostic){
+            wchar_t path[32768]{};
+            const auto n=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_SCREENSHOT",path,32768);
+            if(!n||n>=32768)throw std::runtime_error("A fresh diagnostic screenshot path is required");
+            localWorldScreenshot=path;
+            if(!localWorldScreenshot.is_absolute()||localWorldScreenshot.extension()!=L".png"||
+                !std::filesystem::is_directory(localWorldScreenshot.parent_path())||std::filesystem::exists(localWorldScreenshot))
+                throw std::runtime_error("Invalid local world screenshot path");
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            wchar_t guildCapture[2]{};
+            localWorldGuildCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_GUILD_CAPTURE",guildCapture,2)==1&&
+                guildCapture[0]==L'1';
+            wchar_t territoryCapture[2]{};
+            localWorldTerritoryCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_TERRITORY_CAPTURE",territoryCapture,2)==1&&
+                territoryCapture[0]==L'1';
+#endif
+#ifdef AEVRYND_MISTWATCH_BATTLE
+            wchar_t arena[2]{};
+            localWorldArenaCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_ARENA_CAPTURE",arena,2)==1&&arena[0]==L'1';
+#endif
+        }
+#endif
         std::ofstream startupStages;
         wchar_t startupStagePath[32768]{};
         const auto startupStageLength=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_STARTUP_STAGES",startupStagePath,32768);
@@ -3283,11 +3327,15 @@ private:
         // 美術預設升格不搬移、刪除或覆寫玩家舊存檔；隔離診斷仍使用原分支名稱。
         if(woodlandWorld&&(!count||count>=32768||!std::filesystem::path(local).is_absolute()))
             throw std::runtime_error("Woodland candidate requires valid LOCALAPPDATA");
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        const auto playerSaveDirectory=e.ExecutableDirectory()/"mmo-local-profile";
+#else
         auto playerSaveDirectory=std::filesystem::path(local)/"Aevrynd"/"Mistwatch";
         if(manualForestGroveCandidate&&forestPlayableWorld){
             playerSaveDirectory=Mistwatch::SelectRiverbankSaveDirectory(local);
             if(playerSaveDirectory.empty())throw std::runtime_error("RIVERBANK_PLAYER_DATA_UNAVAILABLE");
         }
+#endif
         if(count && count<32768) save=playerSaveDirectory/
             (woodlandWorld?"save-woodland-canopy-v2.txt":!validProfileCapture?"save.txt":shelterDetailEnabled?"save-framed-corrugated-shelter-v1.txt":entranceUnderstoryEnabled?"save-entrance-understory-v2.txt":entranceRoadEnabled?"save-entrance-road-material-domain-v1.txt":rightForeground?"save-entrance-right-foreground-v1.txt":roadsideCoverEnabled?"save-roadside-ground-cover-v1.txt":
                 roadsideBroadleafEnabled?"save-roadside-broadleaf-v1.txt":"save.txt");
@@ -3838,12 +3886,14 @@ private:
             std::filesystem::copy_file(source,save,std::filesystem::copy_options::none);
         }
         if(inputReplay.ResumeSaveRoute()&&seed.empty())throw std::runtime_error("Resume replay seed missing");
+#ifndef AEVRYND_MISTWATCH_MMO_CLIENT
         if(matureIndexedDomain&&!manualEntrySmoke&&inputReplayDirectory.empty()&&capture.empty()){
             if(const auto recovered=Mistwatch::RecoveredRiverbankCheckpoint(local,save,matureIndexedDomain->Identity()))
                 save=*recovered;
         }
         // 主選單只檢查一次檔案格式；真正的讀檔仍要驗證世界與碰撞後才提交。
         if(!started)titleCheckpoint=InspectTitleCheckpoint(save);
+#endif
         InitializeCoreHerbs(e);
         WriteCompleteUnderstoryRetention();
         InitializeRouteGrass(e);
@@ -3881,9 +3931,342 @@ private:
         (void)valleyStartupGuard.release();
         if(captureCostEnabled)captureReadyNs=CaptureElapsedNs();
         InitializeIndexedGameplayWorld(e);
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        // The shared riverbank begins with its crossing open, independently of the single-player save.
+        session.collected=7;
+        session.repairMaterials=7;
+        session.bridgeRepaired=true;
+#endif
         startupStage("complete");
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+#ifndef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+        localWorldPeerPose=explorer.pose;
+#endif
+        localWorld=std::make_unique<Mistwatch::LocalWorldClient>(localWorldPort);
+#endif
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+        riverbankAvatar.emplace(e,e.ExecutableDirectory()/"character"/"RiverbankExplorer.aeskin");
+#endif
     }
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+    unsigned short localWorldPort{};
+    std::unique_ptr<Mistwatch::LocalWorldClient> localWorld;
+#ifndef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+    AnimationPose3D localWorldPeerPose;
+#endif
+    std::filesystem::path localWorldScreenshot;
+    std::optional<std::uint64_t> localWorldCaptureCount;
+    Mistwatch::LocalWorldClient::Status localWorldStatus{Mistwatch::LocalWorldClient::Status::Connecting};
+#ifdef AEVRYND_MISTWATCH_PROFILES
+    Mistwatch::RiverbankGuildPanel riverbankGuild;
+    bool localWorldGuildCapture{}, localWorldTerritoryCapture{};
+    unsigned territoryApproachStep{};
+    std::chrono::steady_clock::time_point nextTerritoryQuery{};
+
+    bool CaptureTerritoryProgress() const {
+        const auto* state=localWorld->Territory();
+        return localWorldTerritoryCapture&&territoryApproachStep==3&&state&&state->challenger&&state->progress>=6;
+    }
+
+    void DrawRiverbankTerritory(Aevrynd::DrawList& draw) {
+        using Area=Mistwatch::RiverbankTerritory;
+        const auto* state=localWorld->Territory();
+        if(!state)return;
+        const float distance=std::hypot(session.feet.x-Area::CenterX,session.feet.z-Area::CenterZ);
+        draw.Quad({1059,91},{408,146},{.035f,.065f,.052f,.94f});
+        draw.SystemText({875,27},"北岸瞭望地 · "+std::to_string(int(distance))+" 公尺",18.f,{.85f,.95f,.89f,1});
+        draw.SystemText({875,58},"歸屬 "+(state->ownerName.empty()?std::string("無"):state->ownerName),16.f,{.93f,.96f,.94f,1});
+        const auto status=state->contested?std::string("雙方在場 · 佔領暫停"):
+            state->challenger?state->challengerName+" · 佔領中 "+std::to_string(state->progress*100u/Area::HoldTicks)+"%":
+            "過橋往東 · 會長或幹部可發起佔領";
+        draw.SystemText({875,87},status,15.f,{.90f,.91f,.75f,1});
+        draw.SystemText({875,116},"領地獎勵 "+std::to_string(state->rewards)+" · 歷史場次 "+std::to_string(state->revision),
+            15.f,{.78f,.88f,.83f,1});
+    }
+
+    void DrawRiverbankTerritoryBoundary() {
+        using Area=Mistwatch::RiverbankTerritory;
+        const auto* state=localWorld->Territory();
+        if(!state)return;
+        const float distance=std::hypot(session.feet.x-Area::CenterX,session.feet.z-Area::CenterZ);
+        if(distance>34.f)return;
+        const Color ring=state->contested?Color{1,.29f,.19f,1}:state->challenger?Color{.95f,.70f,.20f,1}:
+            Color{.32f,.77f,.67f,1};
+        const auto marker=[&](unsigned step){
+            const float angle=float(step)*6.2831853f/40.f;
+            const float x=Area::CenterX+Area::Radius*std::cos(angle),z=Area::CenterZ+Area::Radius*std::sin(angle);
+            return Vec3{x,terrain.SampleHeight(x,z)+.06f,z};
+        };
+        for(unsigned step=0;step<40;++step)scene.Line(marker(step),marker(step+1),3.f,ring);
+    }
+#endif
+#ifdef AEVRYND_MISTWATCH_BATTLE
+    std::optional<Vec3> battleBoarFeet;
+    bool localWorldArenaCapture{};
+
+    bool CaptureSharedWindup() const {
+        if(!localWorldArenaCapture)return false;
+        const auto* battle=localWorld->Battle();
+        const auto* world=localWorld->Snapshot();
+        if(!battle||!world||!battleBoarFeet||world->entities.size()!=2||
+            !Mistwatch::RiverbankEncounter::InArena({session.feet.x,session.feet.z})||
+            battle->boss.phase!=Mistwatch::EncounterPhase::Windup||battle->boss.phaseTicks<5||
+            battle->boss.health>=Mistwatch::RiverbankEncounter::BossHealth)return false;
+        const Vec3 center{battle->boss.strikeCenter.x,session.feet.y,battle->boss.strikeCenter.z};
+        if(Length(center-session.feet)>10.f)return false;
+        const auto other=std::ranges::find_if(world->entities,[&](const auto& entity){return entity.id.low!=localWorld->PlayerId();});
+        if(other==world->entities.end())return false;
+        const auto otherFeet=LocalWorldFeet(*other);
+        return otherFeet&&Mistwatch::RiverbankEncounter::InArena({otherFeet->x,otherFeet->z})&&Length(*otherFeet-center)<=12.f;
+    }
+
+    void SaveSharedWindupReceipt() const {
+        const auto& battle=*localWorld->Battle();
+        const auto& boss=battle.boss;
+        auto receipt=localWorldScreenshot;
+        receipt+=L".battle.txt";
+        if(std::filesystem::exists(receipt))throw std::runtime_error("Arena screenshot receipt already exists");
+        std::ofstream output(receipt);
+        output.precision(9);
+        output<<"epoch="<<battle.epoch<<"\ntick="<<battle.tick<<"\nowner="<<battle.owner<<"\nrole="<<unsigned(battle.player.playerClass)
+            <<"\nphase="<<unsigned(boss.phase)<<"\nboss_health="<<boss.health<<"\nremaining_ticks="<<boss.phaseTicks
+            <<"\nboss_run="<<boss.run<<"\ntarget="<<boss.target<<"\nstrike_x="<<boss.strikeCenter.x<<"\nstrike_z="<<boss.strikeCenter.z<<'\n';
+        output.close();
+        if(!output)throw std::runtime_error("Arena screenshot receipt write failed");
+    }
+
+    void UpdateRiverbankBattle(bool focused, Input& input, float dt) {
+        using Phase=Mistwatch::EncounterPhase;
+        const auto* battle=localWorld->Battle();
+        if(!battle){battleBoarFeet.reset();return;}
+        if(focused&&input.Pressed('F'))(void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::Attack);
+        else if(focused&&input.Pressed('Q'))(void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::ClassSkill);
+        const auto& boss=battle->boss;
+        if(boss.phase==Phase::Defeated||!terrain.Contains(boss.position.x,boss.position.z)){battleBoarFeet.reset();return;}
+        const Vec3 point{boss.position.x,terrain.SampleHeight(boss.position.x,boss.position.z),boss.position.z};
+        const auto phase=boss.phase==Phase::Windup?Mistwatch::EnemyPhase::Windup:
+            boss.phase==Phase::Recovery?Mistwatch::EnemyPhase::Recovery:Mistwatch::EnemyPhase::Pursuit;
+        const Vec3 movement=battleBoarFeet?point-*battleBoarFeet:Vec3{};
+        battleBoarFeet=point;
+        const Vec3 look=boss.phase==Phase::Windup?Vec3{boss.strikeCenter.x-point.x,0,boss.strikeCenter.z-point.z}:
+            Length(movement)>.0001f?movement:session.feet-point;
+        const bool animated=boar.Update(movement,dt,phase,float(boss.phaseTicks)/float(Mistwatch::RiverbankEncounter::TicksPerSecond),look);
+        if(!animated||!boar.PlaceFeet(point,terrain)){
+            const auto vector=[](Vec3 v){return std::to_string(v.x)+","+std::to_string(v.y)+","+std::to_string(v.z);};
+            throw std::runtime_error(std::string(animated?"Shared riverbank boss grounding failed":"Shared riverbank boss animation failed")+
+                " tick="+std::to_string(battle->tick)+" phase="+std::to_string(unsigned(boss.phase))+" dt="+std::to_string(dt)+
+                " position="+vector(point)+" global_delta="+vector(movement)+" look="+vector(look)+
+                " yaw="+std::to_string(boar.yaw)+" cycle="+std::to_string(boar.cycle));
+        }
+    }
+
+    void DrawRiverbankBattleTelegraph() {
+        const auto* battle=localWorld->Battle();
+        if(!battle||battle->boss.phase!=Mistwatch::EncounterPhase::Windup)return;
+        const auto center=battle->boss.strikeCenter;
+        const auto ringPoint=[&](unsigned index){
+            const float angle=float(index)*6.2831853f/32.f;
+            const float x=center.x+std::cos(angle)*Mistwatch::RiverbankEncounter::StrikeRadius;
+            const float z=center.z+std::sin(angle)*Mistwatch::RiverbankEncounter::StrikeRadius;
+            return Vec3{x,terrain.SampleHeight(x,z)+.055f,z};
+        };
+        for(unsigned step=0;step<32;++step)scene.Line(ringPoint(step),ringPoint(step+1),4.f,{1,.23f,.06f,1});
+    }
+
+    void DrawRiverbankBattleHud(DrawList& draw) const {
+        const auto* battle=localWorld->Battle();
+        if(!battle)return;
+        const auto& player=battle->player;
+        const auto& boss=battle->boss;
+        const auto stats=Mistwatch::CombatStatsFor(player.playerClass);
+        const auto remaining=[](unsigned ticks){return std::to_string((ticks+19)/20)+" 秒";};
+        draw.Quad({273,153},{526,80},{.032f,.055f,.05f,.94f});
+        draw.SystemText({20,122},"生命 "+std::to_string(player.health)+" / "+std::to_string(stats.health)+
+            " · 資源 "+std::to_string(player.resource)+" / 100 · 戰利品 "+std::to_string(player.rewards),16.f,{.92f,.96f,.90f,1});
+        const char* skill=player.playerClass==Mistwatch::RiverbankClass::Guardian?"挑釁護衛":
+            player.playerClass==Mistwatch::RiverbankClass::Ranger?"連射":"治療／救援";
+        const auto actions=player.health?"F 普攻  "+remaining(player.attackCooldown)+"　Q "+skill+"  "+remaining(player.skillCooldown):
+            "你已倒地，等待附近的祭司救援";
+        draw.SystemText({20,157},actions,15.f,{.82f,.90f,.86f,1});
+        using Phase=Mistwatch::EncounterPhase;
+        const auto distance=std::hypot(session.feet.x-boss.position.x,session.feet.z-boss.position.z);
+        if(distance>24.f)return;
+        const auto line=!Mistwatch::RiverbankEncounter::InArena({session.feet.x,session.feet.z})?
+            "進入北岸林間空地即可挑戰巡林野豬":
+            boss.phase==Phase::Defeated?"巡林野豬已倒下 · 重生 "+remaining(boss.phaseTicks):
+            boss.phase==Phase::Windup?"巡林野豬即將衝撞 · 離開橘圈":
+            "巡林野豬 · 生命 "+std::to_string(boss.health)+" / "+std::to_string(Mistwatch::RiverbankEncounter::BossHealth);
+        draw.Quad({640,37},{407,52},{.07f,.045f,.021f,.95f});
+        draw.SystemText({451,24},line,17.f,{1,.80f,.56f,1});
+    }
+#endif
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+    std::optional<Mistwatch::RiverbankAvatar> riverbankAvatar;
+#endif
+    std::optional<Vec3> LocalWorldFeet(const ReplicatedEntityState3D& entity) const {
+        Vec3 feet{};
+        if(!ToLocalPosition3D(entity.position,WorldOrigin3D{},feet)||!terrain.Contains(feet.x,feet.z))return {};
+        feet.y=terrain.SampleHeight(feet.x,feet.z);
+        return feet;
+    }
+    void UpdateLocalWorld(Engine& e,float dt) {
+        auto& input=e.GetInput();
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        riverbankGuild.Toggle(input,*localWorld);
+        const bool focused=input.Focused()&&!input.FocusLost()&&!riverbankGuild.Open();
+#else
+        const bool focused=input.Focused()&&!input.FocusLost();
+#endif
+        const float x=float(input.Down('D'))-float(input.Down('A'));
+        const float z=float(input.Down('W'))-float(input.Down('S'));
+        const float yaw=Mistwatch::PlayerCameraMovementYaw(playerCameraMotion.Camera(),orbit.yaw);
+        const auto axis=[](float axisInput){return static_cast<std::int16_t>(std::clamp(axisInput,-1.f,1.f)*32767.f);};
+        auto moveX=focused?axis(x*std::cos(yaw)-z*std::sin(yaw)):std::int16_t{};
+        auto moveZ=focused?axis(x*std::sin(yaw)+z*std::cos(yaw)):std::int16_t{};
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        const auto* arenaView=localWorld->Snapshot();
+        if(localWorldArenaCapture&&arenaView&&arenaView->entities.size()==2&&session.feet.z<44.5f)moveZ=32767;
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        if(localWorldTerritoryCapture&&arenaView&&arenaView->entities.size()==2){
+            constexpr std::array<Vec2,3> route{{{0,41.f},{10.55f,41.f},{10.55f,54.f}}};
+            if(territoryApproachStep<route.size()){
+                const auto target=route[territoryApproachStep];
+                const float dx=target.x-session.feet.x,dz=target.y-session.feet.z;
+                const float distance=std::hypot(dx,dz);
+                if(distance<.23f)++territoryApproachStep;
+                else {
+                    const float scale=(std::min)(1.f,distance*4.f)/distance;
+                    moveX=axis(dx*scale);moveZ=axis(dz*scale);
+                }
+            }
+        }
+#endif
+#endif
+        localWorldStatus=localWorld->Poll(moveX,moveZ);
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        if(localWorldGuildCapture&&localWorld->CanUseGuild())riverbankGuild.OpenForCapture();
+        riverbankGuild.Update(input,*localWorld);
+        const auto now=std::chrono::steady_clock::now();
+        if(now>=nextTerritoryQuery&&localWorld->RequestTerritory())nextTerritoryQuery=now+std::chrono::milliseconds(400);
+#endif
+        if(localWorldStatus==Mistwatch::LocalWorldClient::Status::ChoosingClass){
+            using PlayerClass=Mistwatch::RiverbankClass;
+            if(!localWorldScreenshot.empty()||(focused&&input.Pressed('1')))(void)localWorld->ChooseClass(PlayerClass::Guardian);
+            else if(focused&&input.Pressed('2'))(void)localWorld->ChooseClass(PlayerClass::Ranger);
+            else if(focused&&input.Pressed('3'))(void)localWorld->ChooseClass(PlayerClass::Priest);
+        }
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+        riverbankAvatar->Update(localWorld->Snapshot(),dt);
+#endif
+        if(const auto* view=localWorld->Snapshot()){
+            const auto own=std::ranges::find_if(view->entities,[&](const auto& entity){return entity.id.low==localWorld->PlayerId();});
+            if(own!=view->entities.end())if(const auto feet=LocalWorldFeet(*own)){
+                const Vec3 movement=*feet-session.feet;
+                session.feet=*feet;
+                explorer.Update(movement,dt,false);
+                const auto contacts=RuntimeGameplayBody(session.bridgeRepaired,session.feet);
+                (void)explorer.PlaceFeet(session.feet,true,false,terrain,contacts,RuntimeRoofHulls());
+            }
+        }
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        UpdateRiverbankBattle(focused,input,dt);
+#endif
+        const float turn=focused?float(input.Down(VK_RIGHT))-float(input.Down(VK_LEFT)):0.f;
+        (void)TryUpdateCameraOnly(focused?input.LeftMouseDragDelta():Vec2{},focused?input.MouseWheel():0.f,
+                                   turn,dt,nullptr,focused&&input.Pressed('C'));
+    }
+    void RenderLocalWorld(Engine& e,DrawList& draw) {
+        bool separatedPeer=false;
+        unsigned peers=0;
+        if(const auto* view=localWorld->Snapshot()){
+#ifndef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+            const auto remotePalette=AddSkinPaletteFromPose(draw,explorer.model,localWorldPeerPose,explorerSkinning);
+#endif
+            for(const auto& entity:view->entities){
+                if(entity.id.low==localWorld->PlayerId())continue;
+                const auto feet=LocalWorldFeet(entity);
+                if(!feet)continue;
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+                if(!riverbankAvatar->Submit(draw,entity.id,*feet))
+#else
+                const float heading=std::hypot(entity.velocity.x,entity.velocity.z)>.001f?
+                    std::atan2(entity.velocity.x,entity.velocity.z):0.f;
+                Mistwatch::ExplorerSurface::Submission remoteReceipt;
+                if(!Mistwatch::ExplorerSurface::Submit(draw,explorer.model,explorer.art,explorerMesh.handle,remotePalette,
+                    CreateTransformMatrix(*feet,{0,heading,0},{1,1,1}),explorerMaterials,remoteReceipt))
+#endif
+                    throw std::runtime_error("Local world peer mesh submission failed");
+                ++peers;
+                separatedPeer|=Length(*feet-session.feet)>.8f;
+            }
+        }
+        draw.Quad({273,60},{526,106},{.04f,.07f,.065f,.94f});
+        draw.SystemText({20,18},"霧境守望 · 河岸多人測試",22.f,{.77f,.93f,.81f,1});
+        using Status=Mistwatch::LocalWorldClient::Status;
+        std::string status;
+        switch(localWorldStatus){
+        case Status::Connecting: status="正在連線至本機世界";break;
+        case Status::ChoosingClass: status="按 1 選守衛、2 選遊俠、3 選祭司";break;
+        case Status::Joining: status="等待伺服器確認職業並進入河岸";break;
+        case Status::Ready: status=std::string(Mistwatch::RiverbankClassName(localWorld->SelectedClass()))+
+            " · 其他玩家 "+std::to_string(peers)+" 位 · WASD 移動 · 拖曳鏡頭";break;
+        case Status::Disconnected: status="與本機世界的連線已中斷";break;
+        }
+        draw.SystemText({20,58},status,16.f,{.94f,.96f,.93f,1});
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        DrawRiverbankBattleHud(draw);
+#endif
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        DrawRiverbankTerritory(draw);
+        riverbankGuild.Draw(draw,*localWorld);
+#endif
+        if(!localWorldScreenshot.empty()){
+            const auto count=e.GetRendererStats().successfulFrameCaptures;
+            if(localWorldCaptureCount&&count>*localWorldCaptureCount){e.Quit();return;}
+            bool captureReady=separatedPeer;
+#ifdef AEVRYND_MISTWATCH_BATTLE
+            if(localWorldArenaCapture)captureReady=captureReady&&CaptureSharedWindup();
+#endif
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            const auto* guildReply=localWorld->GuildReply();
+            if(localWorldGuildCapture)captureReady=captureReady&&riverbankGuild.Open()&&guildReply&&guildReply->state.inviteId>0;
+            if(localWorldTerritoryCapture)captureReady=captureReady&&CaptureTerritoryProgress();
+#endif
+            if(!localWorldCaptureCount&&captureReady){
+#ifdef AEVRYND_MISTWATCH_BATTLE
+                if(localWorldArenaCapture)SaveSharedWindupReceipt();
+#endif
+#ifdef AEVRYND_MISTWATCH_PROFILES
+                if(localWorldGuildCapture){
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".guild.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Guild screenshot receipt already exists");
+                    std::ofstream proof(receipt);
+                    proof<<localWorld->PlayerId()<<'\n'<<guildReply->state.inviteId<<'\n'<<guildReply->state.inviteName<<'\n';
+                    proof.close();
+                    if(!proof)throw std::runtime_error("Guild screenshot receipt write failed");
+                }
+                if(localWorldTerritoryCapture){
+                    const auto& state=*localWorld->Territory();
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".territory.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Territory screenshot receipt already exists");
+                    std::ofstream proof(receipt);
+                    proof<<localWorld->PlayerId()<<'\n'<<state.challenger<<'\n'<<state.progress<<'\n'<<state.challengerName<<'\n';
+                    proof.close();
+                    if(!proof)throw std::runtime_error("Territory screenshot receipt write failed");
+                }
+#endif
+                if(!e.CaptureNextFrame3D(localWorldScreenshot))throw std::runtime_error("Local world screenshot request rejected");
+                localWorldCaptureCount=count;
+            }
+        }
+    }
+#endif
     void OnUpdate(Engine& e,float dt) override {
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        UpdateLocalWorld(e,dt);
+#else
         if(PrepareManualEntrySmoke(e,dt))return;
         if(PrepareInputReplay(e,dt))return;
         // 上一步觀測已寫出；所有早退分支也必須清掉傷害／閃避事件，不能延用舊攻擊。
@@ -4962,6 +5345,7 @@ private:
         RecordIndexedGameplayCommit();
         if(saveAfterCommit)SaveCheckpoint();
         TickAudio(e,dt);
+#endif
     }
     static Mistwatch::PlaytestClock::Leg PlaytestLeg(Mistwatch::Stage stage)noexcept{
         using Leg=Mistwatch::PlaytestClock::Leg;
@@ -5345,6 +5729,12 @@ private:
         }
         if(!Mistwatch::SubmitBeaconDetail(scene,session))
             throw std::runtime_error("Beacon detail scene insertion failed");
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        DrawRiverbankBattleTelegraph();
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        DrawRiverbankTerritoryBoundary();
+#endif
+#endif
         submittedWorkshop=0;
         if(plankedWorkshop){
             if(!scene.Mesh(workshopMesh,{},hutMaterial))throw std::runtime_error("Workshop actual submission failed");
@@ -5413,6 +5803,21 @@ private:
             camera.position=camera.target+(captureWorkshopGroundWide?Vec3{11,5,-10}:Vec3{7,3,-7});
         }
         if(captureBoarOverview && !capture.empty()) {camera.position=encounter.feet+Vec3{3,1.4f,1};camera.target=encounter.feet+Vec3{0,.55f,0};}
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        if(CaptureSharedWindup()){
+            const auto strike=localWorld->Battle()->boss.strikeCenter;
+            const Vec3 center{strike.x,terrain.SampleHeight(strike.x,strike.z),strike.z};
+            camera.target=(center+session.feet+*battleBoarFeet)*(1.f/3.f)+Vec3{0,.65f,0};
+            camera.position=camera.target+Vec3{7.f,6.f,-9.f};
+        }
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        if(CaptureTerritoryProgress()){
+            using Area=Mistwatch::RiverbankTerritory;
+            camera.target={Area::CenterX-1.f,terrain.SampleHeight(Area::CenterX,Area::CenterZ)+.35f,Area::CenterZ};
+            camera.position=camera.target+Vec3{-7.f,6.5f,-8.f};
+        }
+#endif
+#endif
         if(captureBoulderOverview && !capture.empty()) {
             const auto rock=std::find_if(forestProps.begin(),forestProps.end(),[](const auto& p){return !p.FallenLog();});
             if(rock==forestProps.end())throw std::runtime_error("Boulder detail fixture missing");
@@ -5880,6 +6285,7 @@ private:
             for(const auto byte:std::as_bytes(std::span{&matrix,1})){hash^=std::to_integer<std::uint8_t>(byte);hash*=1099511628211ull;}
             grassFixtureState.cameraHash=hash;
         }
+#ifndef AEVRYND_MISTWATCH_MMO_CLIENT
         if(session.guardianDefeated&&boarDefeat.Visible()){
             const auto palette=AddSkinPaletteFromPose(draw,boar.model,boarDefeat.Pose(),boarSkinning);
             if(!draw.SkinnedMeshInstance(boarMesh.handle,palette,boarDefeat.Transform()))
@@ -5899,6 +6305,18 @@ private:
             if(!draw.SkinnedMeshInstance(boarMesh.handle,animalPalette,CreateTransformMatrix(encounter.feet,{0,boar.yaw,0},{1,1,1})))
                 throw std::runtime_error("Boar skin submission failed");
         }
+#elif defined(AEVRYND_MISTWATCH_BATTLE)
+        if(battleBoarFeet){
+            const auto palette=AddSkinPaletteFromPose(draw,boar.model,boar.pose,boarSkinning);
+            if(!draw.SkinnedMeshInstance(boarMesh.handle,palette,CreateTransformMatrix(*battleBoarFeet,{0,boar.yaw,0},{1,1,1})))
+                throw std::runtime_error("Shared riverbank boss rendering failed");
+        }
+#endif
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+        const auto* state=localWorld->Snapshot();
+        const NetworkEntityId3D id=state?NetworkEntityId3D{state->sessionEpoch,localWorld->PlayerId()}:NetworkEntityId3D{};
+        if(!riverbankAvatar->Submit(draw,id,session.feet))throw std::runtime_error("Riverbank avatar submission failed");
+#else
         const auto* playerDrawPose=&explorer.pose;
         const auto counterWeight=explorerCounter.Weight();
         if(started&&session.Alive()&&counterWeight>0&&Mistwatch::ExplorerCounterMotion::Apply(
@@ -5908,6 +6326,10 @@ private:
         if(!Mistwatch::ExplorerSurface::Submit(draw,explorer.model,explorer.art,explorerMesh.handle,palette,
             explorerTransform,explorerMaterials,explorerSurfaceSubmission))
             throw std::runtime_error("Explorer surface window submission failed");
+#endif
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        RenderLocalWorld(e,draw);
+#else
         auto fieldHud=Mistwatch::FieldPresentation::Build(session,guide,encounter,started,paused,fieldJournalOpen,
             titleCheckpoint,defeatCause);
         const bool showSafeRetry=Mistwatch::FieldPresentation::PresentSafeRetry(fieldHud,session,started,paused,
@@ -5993,8 +6415,12 @@ private:
             if(captureCostEnabled&&!captureRequestNs)captureRequestNs=CaptureElapsedNs();
             if(!capturePending)throw std::runtime_error("Frame capture request rejected");
         }
+#endif
     }
     void OnStop(Engine& e) override {
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+        if(riverbankAvatar)riverbankAvatar->Release(e);
+#endif
         matureStudy.Shutdown(e,indexedGameplayOutput,!inputReplayDirectory.empty());
         const auto rollbackIbl=[&e](MistwatchGame* game)noexcept {game->RollbackForestIbl(e);};
         std::unique_ptr<MistwatchGame,decltype(rollbackIbl)> iblStopGuard(this,rollbackIbl);
@@ -6454,6 +6880,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
         const bool shoulderCandidate=argument==L"--shoulder-grove-candidate";
         const bool roofCandidate=argument==L"--workshop-roof-candidate"||shoulderCandidate;
         EngineConfig config{L"Aevrynd - Mistwatch",1280,720};
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        if(!groveCandidate||bankRocksCandidate||captureCount||replayCount)
+            throw std::runtime_error("Local world requires the standard Riverbank entry");
+#endif
         if(manualCandidate)config.title=L"Aevrynd - Mistwatch [Woodland candidate WIP]";
         if(roofCandidate)config.title=L"Aevrynd - Mistwatch [Workshop roof candidate WIP]";
         if(shoulderCandidate)config.title=L"Aevrynd - Mistwatch [Shoulder grove candidate WIP]";
@@ -6500,6 +6930,15 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR commandLine,int show) {
             config.enableFrameCostProbe=manualCostCount==1;
             config.enableUnsynchronizedDiagnosticPresent=config.enableFrameCostProbe;
         }
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        if(manualSmokeLength)throw std::runtime_error("Single-player smoke is unavailable in the local world client");
+        config.title=L"Aevrynd - Mistwatch [Riverbank Multiplayer]";
+        if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_SCREENSHOT",nullptr,0)){
+            if(windowCount||presentCount||captureCostCount||costCount)
+                throw std::runtime_error("Local world screenshot requires its own diagnostic window");
+            config.windowMode=EngineWindowMode3D::OffscreenNoActivateDiagnostic;
+        }
+#endif
         Engine engine(config);
         return engine.Run(std::make_unique<MistwatchGame>(manualCandidate,roofCandidate,shoulderCandidate,cliffCandidate,reliefCandidate,surfaceCandidate,valleyCandidate,terraceCandidate,groveCandidate,bankRocksCandidate,manualCostCount==1),instance,show);
     } catch(const std::exception& error) {

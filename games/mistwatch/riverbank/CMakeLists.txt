@@ -172,3 +172,29 @@ target_include_directories(MistwatchBankRocksPreviewModeTest BEFORE PRIVATE incl
 set_target_properties(MistwatchBankRocksPreviewModeTest PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
 add_test(NAME MistwatchBankRocksPreviewModeTest COMMAND MistwatchBankRocksPreviewModeTest)
 set_tests_properties(MistwatchBankRocksPreviewModeTest PROPERTIES TIMEOUT 30 LABELS "riverbank-development;preview-opt-in;cpu")
+
+if(TARGET MistwatchLocalWorldClient)
+  add_executable(MistwatchRiverbankLocalWorld WIN32 src/main.cpp)
+  target_sources(MistwatchRiverbankLocalWorld PRIVATE $<TARGET_OBJECTS:MistwatchRiverbankExplorerNapeHairBinding>
+    $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction> $<TARGET_OBJECTS:MistwatchBankRocksConstruction>)
+  target_include_directories(MistwatchRiverbankLocalWorld BEFORE PRIVATE include)
+  target_compile_features(MistwatchRiverbankLocalWorld PRIVATE cxx_std_20)
+  target_compile_options(MistwatchRiverbankLocalWorld PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+  target_compile_definitions(MistwatchRiverbankLocalWorld PRIVATE AEVRYND_MISTWATCH_MMO_CLIENT)
+  target_link_libraries(MistwatchRiverbankLocalWorld PRIVATE MistwatchLocalWorldClient)
+  target_link_options(MistwatchRiverbankLocalWorld PRIVATE /STACK:16777216 /INCREMENTAL:NO)
+  set_target_properties(MistwatchRiverbankLocalWorld PROPERTIES OUTPUT_NAME "Aevrynd-Mistwatch-Local-World"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/riverbank-local-world/$<CONFIG>" MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+  add_custom_command(TARGET MistwatchRiverbankLocalWorld POST_BUILD
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/package_runtime.py"
+      --manifest "${CMAKE_CURRENT_SOURCE_DIR}/runtime-identity.json"
+      --source "${CMAKE_CURRENT_SOURCE_DIR}/assets" --output "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/assets" VERBATIM)
+  if(MISTWATCH_LOCAL_WORLD_AVATAR)
+    target_compile_definitions(MistwatchRiverbankLocalWorld PRIVATE AEVRYND_MISTWATCH_RIVERBANK_AVATAR=1)
+    set_property(TARGET MistwatchRiverbankLocalWorld APPEND PROPERTY LINK_DEPENDS "${MISTWATCH_LOCAL_WORLD_AVATAR}")
+    add_custom_command(TARGET MistwatchRiverbankLocalWorld POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character"
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${MISTWATCH_LOCAL_WORLD_AVATAR}"
+        "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character/RiverbankExplorer.aeskin" VERBATIM)
+  endif()
+endif()
