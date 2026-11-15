@@ -55,6 +55,19 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   add_test(NAME MistwatchRiverbankLiveReconnectTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLiveReconnect.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
+  add_test(NAME MistwatchRiverbankPartyLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankParty.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
+  set_tests_properties(MistwatchRiverbankPartyLoopbackTest PROPERTIES TIMEOUT 25 LABELS "mistwatch;party;network")
+  add_test(NAME MistwatchRiverbankPartyCombatLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankPartyCombat.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankPartyCombatLoopbackTest PROPERTIES TIMEOUT 65 LABELS "mistwatch;party;combat;network")
+  add_test(NAME MistwatchRiverbankBossGearLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankBossGear.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankBossGearLoopbackTest PROPERTIES TIMEOUT 100 LABELS "mistwatch;gear;network")
+
   set_tests_properties(MistwatchRiverbankProfileStoreTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;profile")
   set_tests_properties(MistwatchRiverbankProfileReconnectTest PROPERTIES TIMEOUT 70 LABELS "mistwatch;profile")
   set_tests_properties(MistwatchRiverbankGuildLoopbackTest PROPERTIES TIMEOUT 30 LABELS "mistwatch;guild;network")

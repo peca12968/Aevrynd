@@ -73,6 +73,16 @@ CREATE TABLE riverbank_expedition (
 );
 PRAGMA user_version = 4;
 )sql";
+constexpr char BossGearSchema[] = R"sql(
+CREATE TABLE riverbank_boss_kit (
+    character_id INTEGER PRIMARY KEY,
+    reward_world INTEGER NOT NULL,
+    reward_encounter INTEGER NOT NULL,
+    FOREIGN KEY (character_id, reward_world, reward_encounter)
+        REFERENCES riverbank_reward(character_id, world, encounter)
+);
+PRAGMA user_version = 5;
+)sql";
 
 void Require(sqlite3* db, int code, int expected = SQLITE_OK) {
     if (code != expected) throw std::runtime_error(std::string("Riverbank profile database: ") + sqlite3_errmsg(db));
@@ -190,13 +200,14 @@ RiverbankProfileStore::RiverbankProfileStore(const std::filesystem::path& path) 
         Require(db, version.Step(), SQLITE_ROW);
         schema = version.Value(0);
     }
-    if (schema < 0 || schema > 4) throw std::runtime_error("Unsupported Riverbank profile schema");
-    if (schema < 4) {
+    if (schema < 0 || schema > 5) throw std::runtime_error("Unsupported Riverbank profile schema");
+    if (schema < 5) {
         Transaction upgrade(db);
         if (!schema) Execute(db, Schema);
         if (schema < 2) Execute(db, GuildSchema);
         if (schema < 3) Execute(db, TerritorySchema);
-        Execute(db, ExpeditionSchema);
+        if (schema < 4) Execute(db, ExpeditionSchema);
+        Execute(db, BossGearSchema);
         upgrade.Commit();
     }
 }
@@ -420,6 +431,42 @@ void RiverbankProfileStore::ClaimTerritory(std::int64_t previous, std::int64_t w
         credit.Reset();
     }
     claim.Commit();
+}
+
+RiverbankGearState RiverbankProfileStore::ReadBossGear(std::int64_t profile) {
+    auto* db = storage->handle;
+    Statement read(db, "SELECT EXISTS(SELECT 1 FROM riverbank_reward WHERE character_id=?1), "
+                       "EXISTS(SELECT 1 FROM riverbank_boss_kit WHERE character_id=?1)");
+    read.Bind(1, profile);
+    Require(db, read.Step(), SQLITE_ROW);
+    const RiverbankGearState gear{read.Value(0) != 0, read.Value(1) != 0};
+    if (gear.equipped && !gear.earned) throw std::runtime_error("Equipped Riverbank gear lacks a valid reward");
+    return gear;
+}
+
+GearResult RiverbankProfileStore::ChangeBossGear(std::int64_t profile, GearAction action) {
+    auto* db = storage->handle;
+    if (profile <= 0) return GearResult::Rejected;
+    switch (action) {
+    case GearAction::View:
+        return GearResult::Ok;
+    case GearAction::Equip: {
+        // 以既有的首領結算作為裝備來源。相同角色只能裝備一份。
+        Statement equip(db, "INSERT INTO riverbank_boss_kit(character_id, reward_world, reward_encounter) "
+                            "SELECT character_id,world,encounter FROM riverbank_reward WHERE character_id=?1 "
+                            "ORDER BY world,encounter LIMIT 1 ON CONFLICT(character_id) DO NOTHING");
+        equip.Bind(1, profile);
+        equip.Done();
+        return ReadBossGear(profile).equipped ? GearResult::Ok : GearResult::NotEarned;
+    }
+    case GearAction::Unequip: {
+        Statement unequip(db, "DELETE FROM riverbank_boss_kit WHERE character_id=?1");
+        unequip.Bind(1, profile);
+        unequip.Done();
+        return GearResult::Ok;
+    }
+    }
+    return GearResult::Rejected;
 }
 
 ExpeditionStage RiverbankProfileStore::ReadExpedition(std::int64_t profile) {

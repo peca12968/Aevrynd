@@ -8,6 +8,8 @@
 #include "RiverbankGuildWire.h"
 #include "RiverbankTerritoryWire.h"
 #include "RiverbankExpeditionWire.h"
+#include "RiverbankPartyWire.h"
+#include "RiverbankGearWire.h"
 #endif
 #include <Aevrynd/ReplicationRuntime3D.h>
 
@@ -76,18 +78,32 @@ public:
             transport_.AdvanceTo(++tick_);
             world_.Tick();
 #ifdef AEVRYND_MISTWATCH_BATTLE
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            std::array<Mistwatch::RiverbankEncounter::SupportMembership, MaxClients> supportGroups{};
+            std::size_t grouped = 0;
+#endif
             for (const auto& [id, peer] : peers_) {
                 if (peer.playerClass == RiverbankClass::None) continue;
+#ifdef AEVRYND_MISTWATCH_PROFILES
+                const auto members = party_.Members(peer.profileId);
+                if (!members.empty()) supportGroups[grouped++] = {id, static_cast<std::uint64_t>(members.front())};
+#endif
                 Vec3 local{};
                 const auto player = world_.Player(id);
                 if (!player || !ToLocalPosition3D(player->position, WorldOrigin3D{}, local) ||
                     !encounter_.SetPosition(id, {local.x, local.z})) throw std::runtime_error("Cannot bind combat to world position");
             }
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            encounter_.Tick(std::span(supportGroups).first(grouped));
+#else
             encounter_.Tick();
+#endif
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
             CommitRewards();
             TickTerritory();
+            ExpireProfiles();
+            party_.ExpireInvites(tick_);
 #endif
             for (auto it = peers_.begin(); it != peers_.end();) {
                 NetworkPacket3D packet;
@@ -120,6 +136,8 @@ private:
         std::int64_t guildId{};
         Mistwatch::GuildRank rank{};
         std::uint64_t territorySequence{}, territoryQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
+        std::uint64_t gearSequence{}, gearRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
+        std::uint64_t partySequence{}, partyRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t expeditionSequence{}, expeditionQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
 #endif
     };
@@ -163,6 +181,8 @@ private:
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if (Mistwatch::RiverbankGuildWire::HasMagic(bytes)) return HandleGuild(client, bytes);
         if (Mistwatch::RiverbankTerritoryWire::HasMagic(bytes)) return HandleTerritory(client, bytes);
+        if (Mistwatch::RiverbankGearWire::HasMagic(bytes)) return HandleGear(id, client, bytes);
+        if (Mistwatch::RiverbankPartyWire::HasMagic(bytes)) return HandleParty(client, bytes);
         if (Mistwatch::RiverbankExpeditionWire::HasMagic(bytes)) return HandleExpedition(id, client, bytes);
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -217,12 +237,14 @@ private:
         if (std::ranges::any_of(peers_, [&](const auto& entry) { return entry.second.profileId == found->id; })) return false;
         auto suspended = suspendedProfiles_.find(found->id);
         if (suspended != suspendedProfiles_.end() && tick_ - suspended->second.lostTick > ResumeWindowTicks) {
+            party_.Forget(found->id);
             suspendedProfiles_.erase(suspended);
             suspended = suspendedProfiles_.end();
         }
         const bool resuming = suspended != suspendedProfiles_.end();
         if (!JoinWorld(id, client, found->playerClass, resuming ? suspended->second.position : GlobalPosition3D{}) ||
-            !encounter_.RestoreRewards(id, found->rewards)) return false;
+            !encounter_.RestoreRewards(id, found->rewards) ||
+            !encounter_.SetBossGear(id, profiles_->ReadBossGear(found->id).equipped)) return false;
         if (resuming) {
             const auto& saved = suspended->second;
             if (!encounter_.RestoreCombat(id, saved.combat, tick_ - saved.lostTick) ||
@@ -235,14 +257,27 @@ private:
         return client.transport.Queue(Wire::EncodeResponse(found->playerClass));
     }
 
+    void ExpireProfiles() {
+        std::erase_if(suspendedProfiles_, [&](const auto& entry) {
+            if (tick_ - entry.second.lostTick <= ResumeWindowTicks) return false;
+            party_.Forget(entry.first);
+            return true;
+        });
+    }
+
     void SuspendProfile(std::uint32_t id, const Client& client) {
         if (!client.profileId) return;
+        party_.CancelInvites(client.profileId);
         const auto player = world_.Player(id);
         const auto combat = encounter_.Suspend(id);
-        if (!player || !combat) return;
-        std::erase_if(suspendedProfiles_, [&](const auto& entry) { return tick_ - entry.second.lostTick > ResumeWindowTicks; });
+        if (!player || !combat) {
+            party_.Forget(client.profileId);
+            return;
+        }
+        ExpireProfiles();
         if (!suspendedProfiles_.contains(client.profileId) && suspendedProfiles_.size() >= ResumeCapacity) {
             const auto oldest = std::ranges::min_element(suspendedProfiles_, {}, [](const auto& entry) { return entry.second.lostTick; });
+            party_.Forget(oldest->first);
             suspendedProfiles_.erase(oldest);
         }
         suspendedProfiles_.insert_or_assign(client.profileId, SuspendedProfile{player->position, *combat, tick_});
@@ -301,6 +336,58 @@ private:
         state.contested = territory_.Contested();
         state.rewards = profiles_->TerritoryRewards(client.profileId);
         return client.transport.Queue(Wire::EncodeState(sequence, state));
+    }
+
+    bool HandleGear(std::uint32_t id, Client& client, std::span<const std::byte> bytes) {
+        namespace Wire = Mistwatch::RiverbankGearWire;
+        using Mistwatch::GearResult;
+        const auto request = Wire::DecodeRequest(bytes);
+        if (!profiles_ || !client.profileId || !request) return false;
+        auto result = GearResult::Rejected;
+        if (request->sequence > client.gearSequence) {
+            client.gearSequence = request->sequence;
+            if (client.gearRequestTick != tick_) {
+                client.gearRequestTick = tick_;
+                result = profiles_->ChangeBossGear(client.profileId, request->action);
+            }
+        }
+        const auto gear = profiles_->ReadBossGear(client.profileId);
+        if (!encounter_.SetBossGear(id, gear.equipped)) return false;
+        return client.transport.Queue(Wire::EncodeReply({request->sequence, result, gear}));
+    }
+
+    bool HandleParty(Client& client, std::span<const std::byte> bytes) {
+        namespace Wire = Mistwatch::RiverbankPartyWire;
+        using Mistwatch::PartyResult;
+        const auto request = Wire::DecodeRequest(bytes);
+        if (!request || !client.profileId) return false;
+        auto result = PartyResult::Rejected;
+        if (request->sequence > client.partySequence) {
+            client.partySequence = request->sequence;
+            if (client.partyRequestTick != tick_) {
+                client.partyRequestTick = tick_;
+                const auto target = peers_.find(request->target);
+                result = party_.Apply(client.profileId, request->action,
+                    target == peers_.end() ? 0 : target->second.profileId, tick_);
+            }
+        }
+
+        Wire::Reply reply{};
+        reply.sequence = request->sequence;
+        reply.result = result;
+        const auto group = party_.Members(client.profileId);
+        reply.members = static_cast<std::uint8_t>(group.size());
+        const auto inviter = party_.Inviter(client.profileId, tick_);
+        for (const auto& [id, member] : peers_) {
+            if (!member.profileId) continue;
+            if (member.profileId == inviter) reply.inviter = id;
+            if (std::ranges::find(group, member.profileId) == group.end()) continue;
+            const auto status = encounter_.Player(id);
+            if (!status) return false;
+            if (group.front() == member.profileId) reply.leader = id;
+            reply.online.push_back({id, status->playerClass, status->health});
+        }
+        return client.transport.Queue(Wire::EncodeReply(reply));
     }
 
     bool HandleExpedition(std::uint32_t id, Client& client, std::span<const std::byte> bytes) {
@@ -386,6 +473,7 @@ private:
     std::unique_ptr<Mistwatch::RiverbankProfileStore> profiles_;
     std::map<std::int64_t, SuspendedProfile> suspendedProfiles_;
     Mistwatch::RiverbankTerritory territory_;
+    Mistwatch::RiverbankParty party_;
     Mistwatch::TerritoryState territoryOwner_;
 #endif
 };

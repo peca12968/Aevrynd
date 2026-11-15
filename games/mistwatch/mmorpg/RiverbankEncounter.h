@@ -3,6 +3,7 @@
 #include "RiverbankClass.h"
 #include <map>
 #include <optional>
+#include <span>
 
 namespace Mistwatch {
 struct ArenaPosition {
@@ -60,12 +61,16 @@ public:
 
     bool Join(std::uint64_t id, RiverbankClass playerClass);
     bool RestoreRewards(std::uint64_t id, unsigned earned);
+    bool SetBossGear(std::uint64_t id, bool equipped);
     std::optional<SuspendedRiverbankCombat> Suspend(std::uint64_t id) const;
     bool RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks);
     bool Leave(std::uint64_t id);
     bool SetPosition(std::uint64_t id, ArenaPosition position);
     bool Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally = 0);
-    void Tick();
+    struct SupportMembership {
+        std::uint64_t actor{}, group{};
+    };
+    void Tick(std::span<const SupportMembership> groups = {});
     std::optional<EncounterPlayerStatus> Player(std::uint64_t id) const;
     const RiverbankBossStatus& Boss() const { return boss; }
 
@@ -77,12 +82,13 @@ private:
         std::optional<Request> request;
         std::uint64_t sequence{};
         unsigned guardTicks{};
-        bool contributed{};
+        bool contributed{}, bossGear{};
     };
 
     bool InRange(const Participant& player, ArenaPosition from, float range) const;
     std::uint64_t Target() const;
-    unsigned ResolveAction(std::uint64_t id, Participant& participant, const Request& request);
+    unsigned ResolveAction(std::uint64_t id, Participant& participant, const Request& request,
+                           std::span<const SupportMembership> groups);
     void MoveBoss(ArenaPosition target, float step);
     void Reset();
     void Finish();

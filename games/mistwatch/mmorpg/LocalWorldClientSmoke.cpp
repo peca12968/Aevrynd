@@ -8,6 +8,45 @@
 
 #ifdef AEVRYND_MISTWATCH_PROFILES
 namespace {
+int VerifyPartyInvitation(Mistwatch::LocalWorldClient& client) {
+    using namespace Mistwatch;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(7);
+    bool announced{}, accepted{};
+    std::uint64_t lastReply{};
+    auto nextView = std::chrono::steady_clock::time_point{};
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto status = client.Poll(0, 0);
+        if (status == LocalWorldClient::Status::Disconnected) return 20;
+        if (status != LocalWorldClient::Status::Ready) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            continue;
+        }
+        if (!announced) {
+            announced = true;
+            std::cout << "NATIVE_PARTY_READY " << client.PlayerId() << std::endl;
+        }
+        if (const auto* group = client.Party(); group && group->sequence != lastReply) {
+            lastReply = group->sequence;
+            if (accepted) {
+                if (group->result != PartyResult::Ok || group->members != 4 ||
+                    std::ranges::find(group->online, client.PlayerId(), &RiverbankPartyWire::Member::actor) == group->online.end())
+                    return 21;
+                std::cout << "NATIVE_PARTY_ACCEPT_PASS" << std::endl;
+                return 0;
+            }
+            if (group->inviter) {
+                if (!client.RequestParty(PartyAction::Accept, group->inviter)) return 22;
+                accepted = true;
+            }
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (!accepted && now >= nextView && client.RequestParty(PartyAction::View))
+            nextView = now + std::chrono::milliseconds(100);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return 23;
+}
+
 int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client) {
     using Status = Mistwatch::LocalWorldClient::Status;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
@@ -50,7 +89,8 @@ int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client) {
 int main(int argc, char** argv) {
     const bool guildView = argc == 3 && std::string_view(argv[2]) == "--guild-view";
     const bool reconnect = argc == 3 && std::string_view(argv[2]) == "--live-reconnect";
-    if (argc != 2 && !guildView && !reconnect) return 1;
+    const bool party = argc == 3 && std::string_view(argv[2]) == "--party-accept";
+    if (argc != 2 && !guildView && !reconnect && !party) return 1;
     unsigned short port{};
     const std::string_view raw(argv[1]);
     const auto parsed = std::from_chars(raw.data(), raw.data() + raw.size(), port);
@@ -58,6 +98,7 @@ int main(int argc, char** argv) {
     Mistwatch::LocalWorldClient client(port);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 #ifdef AEVRYND_MISTWATCH_PROFILES
+    if (party) return VerifyPartyInvitation(client);
     if (reconnect) return VerifyLiveReconnect(client);
     if (guildView) {
         bool requested = false;

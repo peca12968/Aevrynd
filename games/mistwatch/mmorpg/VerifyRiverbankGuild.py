@@ -137,7 +137,7 @@ def verify(server, evidence_directory, native_client):
         assert native.stdout.strip() == 'NATIVE_GUILD_VIEW_PASS'
 
     with closing(sqlite3.connect(database)) as db:
-        assert db.execute('PRAGMA user_version').fetchone() == (4,)
+        assert db.execute('PRAGMA user_version').fetchone() == (5,)
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
         assert db.execute('SELECT character_id, world, encounter FROM riverbank_reward').fetchall() == [(9, 17, 1)]
         assert db.execute('SELECT COUNT(*) FROM riverbank_guild WHERE retired=0').fetchone() == (2,)

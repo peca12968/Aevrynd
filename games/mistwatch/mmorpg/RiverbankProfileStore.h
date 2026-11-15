@@ -4,6 +4,7 @@
 #include "RiverbankGuild.h"
 #include "RiverbankTerritory.h"
 #include "RiverbankExpedition.h"
+#include "RiverbankGear.h"
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -39,6 +40,8 @@ public:
     unsigned TerritoryRewards(std::int64_t profileId);
     void ClaimTerritory(std::int64_t previous, std::int64_t winner, std::span<const std::int64_t> recipients);
 
+    RiverbankGearState ReadBossGear(std::int64_t profileId);
+    GearResult ChangeBossGear(std::int64_t profileId, GearAction action);
     ExpeditionStage ReadExpedition(std::int64_t profileId);
     ExpeditionResult InteractExpedition(std::int64_t profileId, ArenaPosition position);
 

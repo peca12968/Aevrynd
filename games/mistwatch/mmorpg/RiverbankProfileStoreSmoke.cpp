@@ -30,11 +30,17 @@ int main(int argc, char** argv) {
             Require(first && second && first->id != second->id, "Two profiles were not distinct");
             savedGuard = first->id;
             Require(!store.Create(guard, RiverbankClass::Ranger), "Existing profile changed class");
+            Require(!store.ReadBossGear(first->id).earned && store.ChangeBossGear(first->id, GearAction::Equip) == GearResult::NotEarned,
+                "Uncredited own character could equip a boss item");
             const std::array firstParty{first->id, second->id, first->id};
             store.Award(17, 5, firstParty);
             store.Award(17, 5, firstParty);
             Require(store.Find(guard)->rewards == 1 && store.Find(priest)->rewards == 1, "Same encounter rewarded more than once");
 
+            Require(store.ReadBossGear(first->id).earned && !store.ReadBossGear(first->id).equipped &&
+                store.ChangeBossGear(first->id, GearAction::Equip) == GearResult::Ok &&
+                store.ChangeBossGear(first->id, GearAction::Equip) == GearResult::Ok,
+                "Credited character could not equip its own reward");
             const std::array invalidParty{first->id, second->id + 40};
             bool rolledBack = false;
             try { store.Award(17, 6, invalidParty); } catch (const std::runtime_error&) { rolledBack = true; }
@@ -51,6 +57,10 @@ int main(int argc, char** argv) {
             Require(guardSaved && guardSaved->id == savedGuard && guardSaved->rewards == 1 &&
                 guardSaved->playerClass == RiverbankClass::Guardian && priestSaved && priestSaved->rewards == 1,
                 "Restart did not restore immutable classes and loot");
+            Require(reopened.ReadBossGear(savedGuard).equipped &&
+                reopened.ChangeBossGear(savedGuard, GearAction::Unequip) == GearResult::Ok &&
+                reopened.ReadBossGear(savedGuard).earned && !reopened.ReadBossGear(savedGuard).equipped,
+                "Restart or unequip lost the durable boss item reference");
             const std::array nextParty{guardSaved->id};
             reopened.Award(18, 5, nextParty);
             Require(reopened.Find(guard)->rewards == 2, "Same encounter number in a new world was not counted");

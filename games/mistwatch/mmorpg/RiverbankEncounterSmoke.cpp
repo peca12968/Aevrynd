@@ -1,5 +1,6 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankBattleWire.h"
+#include <array>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -64,9 +65,15 @@ void DownedAndRejoin() {
     Require(arena.SetPosition(1, {0, 1}) && arena.SetPosition(2, {0, 6}), "Position update failed");
     for (unsigned frame = 0; frame < 150 && arena.Player(1)->health; ++frame) arena.Tick();
     Require(!arena.Player(1)->health, "The player did not go down after three strikes");
+    using Member = RiverbankEncounter::SupportMembership;
     Require(arena.Submit(2, 1, RiverbankAction::ClassSkill, 1), "Revive request failed");
-    arena.Tick();
-    Require(arena.Player(1)->health == 42, "The priest did not revive the ranger");
+    arena.Tick(std::array{Member{2, 9}});
+    Require(arena.Player(1)->health == 0 && arena.Player(2)->resource == 100 &&
+            arena.Player(2)->skillCooldown == 0, "Off-team revive changed health or consumed resources");
+    Require(arena.Submit(2, 2, RiverbankAction::ClassSkill, 1), "Teammate revive request failed");
+    arena.Tick(std::array{Member{1, 9}, Member{2, 9}});
+    Require(arena.Player(1)->health == 42 && arena.Player(2)->resource == 60,
+            "The priest did not revive the ranger after they joined the same group");
     Require(arena.Leave(1) && !arena.Player(1) && !arena.Submit(1, 9, RiverbankAction::Attack), "Disconnected player's request remained valid");
 }
 
@@ -111,6 +118,21 @@ void NorthBankBoundary() {
     Require(sawWindup, "Entering the north bank did not trigger a valid windup");
 }
 
+void BossGearChangesSkillResults() {
+    RiverbankEncounter arena({0, 0});
+    Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Priest), "Gear test setup failed");
+    auto injured = *arena.Suspend(1);
+    injured.status.health = 80;
+    Require(arena.RestoreCombat(1, injured, 0) && arena.SetPosition(1, {0, 1}) &&
+            arena.SetPosition(2, {0, 6}) && arena.SetBossGear(2, true) && arena.SetBossGear(1, true), "Gear did not equip");
+    Require(arena.Submit(2, 1, RiverbankAction::ClassSkill, 1) && arena.Submit(1, 1, RiverbankAction::ClassSkill),
+            "Equipped skills failed to queue");
+    arena.Tick();
+    Require(arena.Player(1)->health == 126 && arena.Player(2)->resource == 60, "Equipped priest heal amount is incorrect");
+    for (unsigned i = 0; i < RiverbankEncounter::WindupTicks; ++i) arena.Tick();
+    Require(arena.Player(1)->health == 114, "Equipped guardian did not mitigate the guarded strike");
+}
+
 void BattleWireRoundTrip() {
     namespace Wire = Mistwatch::RiverbankBattleWire;
     const auto action = Wire::EncodeAction({0x1000200030004000ull, 7, RiverbankAction::ClassSkill});
@@ -142,6 +164,7 @@ int main() {
         RestoreLiveCombat();
         NorthBankBoundary();
         BattleWireRoundTrip();
+        BossGearChangesSkillResults();
         std::cout << "RIVERBANK_ENCOUNTER_RULES_PASS roles=3 windup=1 simultaneous_attacks=3 revive=1 reward_once=1 respawn=1 north_bank_boundary=1 wire=1\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

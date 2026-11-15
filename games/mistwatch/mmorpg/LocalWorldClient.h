@@ -7,6 +7,8 @@
 #include "RiverbankGuildWire.h"
 #include "RiverbankTerritory.h"
 #include "RiverbankExpeditionWire.h"
+#include "RiverbankPartyWire.h"
+#include "RiverbankGearWire.h"
 #endif
 #include <Aevrynd/ReplicationProtocol3D.h>
 #include <memory>
@@ -33,6 +35,10 @@ public:
     const RiverbankGuildWire::Response* GuildReply() const noexcept;
     bool RequestTerritory();
     const TerritoryState* Territory() const noexcept;
+    bool RequestGear(GearAction action);
+    const RiverbankGearWire::Reply* Gear() const noexcept;
+    bool RequestParty(PartyAction action, std::uint32_t target = 0);
+    const RiverbankPartyWire::Reply* Party() const noexcept;
     bool RequestExpedition(bool interact);
     const RiverbankExpeditionWire::Reply* Expedition() const noexcept;
 #endif

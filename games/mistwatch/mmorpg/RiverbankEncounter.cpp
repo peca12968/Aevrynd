@@ -1,4 +1,5 @@
 #include "RiverbankEncounter.h"
+#include "RiverbankGear.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -40,6 +41,13 @@ bool RiverbankEncounter::RestoreRewards(std::uint64_t id, unsigned earned) {
     const auto player = party.find(id);
     if (player == party.end() || player->second.position || player->second.sequence) return false;
     player->second.status.rewards = earned;
+    return true;
+}
+
+bool RiverbankEncounter::SetBossGear(std::uint64_t id, bool equipped) {
+    const auto player = party.find(id);
+    if (player == party.end()) return false;
+    player->second.bossGear = equipped;
     return true;
 }
 
@@ -105,7 +113,8 @@ std::uint64_t RiverbankEncounter::Target() const {
     return nearest;
 }
 
-unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& participant, const Request& request) {
+unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& participant, const Request& request,
+                                           std::span<const SupportMembership> groups) {
     auto& status = participant.status;
     if (!status.health || !participant.position || !InArena(*participant.position, anchor)) return 0;
     const auto stats = CombatStatsFor(status.playerClass);
@@ -127,13 +136,20 @@ unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& partic
         break;
     case RiverbankClass::Ranger:
         if (!InRange(participant, boss.position, stats.attackRange)) return 0;
-        damage = 28;
+        damage = participant.bossGear ? RiverbankBossGearStats::VolleyDamage : 28u;
         break;
     case RiverbankClass::Priest: {
+        // 以伺服器本次結算的隊伍判定支援資格。未組隊的玩家可彼此支援。
+        const auto groupFor = [groups](std::uint64_t actor) {
+            const auto member = std::ranges::find(groups, actor, &SupportMembership::actor);
+            return member == groups.end() ? std::uint64_t{} : member->group;
+        };
+        const auto casterGroup = groupFor(id);
         auto ally = party.find(request.ally);
         if (!request.ally) {
             float lowestHealthFraction = 1.f;
             for (auto choice = party.begin(); choice != party.end(); ++choice) {
+                if (groupFor(choice->first) != casterGroup) continue;
                 const auto& health = choice->second.status;
                 const float fraction = float(health.health) / float(CombatStatsFor(health.playerClass).health);
                 if (fraction >= lowestHealthFraction || !InRange(choice->second, *participant.position, 9.f)) continue;
@@ -141,11 +157,13 @@ unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& partic
                 ally = choice;
             }
         }
-        if (ally == party.end() || !InRange(ally->second, *participant.position, 9.f)) return 0;
+        if (ally == party.end() || groupFor(ally->first) != casterGroup ||
+            !InRange(ally->second, *participant.position, 9.f)) return 0;
         auto& recipient = ally->second.status;
         const auto maximum = CombatStatsFor(recipient.playerClass).health;
         if (recipient.health == maximum) return 0;
-        recipient.health = recipient.health ? std::min(maximum, recipient.health + 40u) : maximum * 2 / 5;
+        const auto heal = participant.bossGear ? RiverbankBossGearStats::HealAmount : 40u;
+        recipient.health = recipient.health ? std::min(maximum, recipient.health + heal) : maximum * 2 / 5;
         break;
     }
     default: return 0;
@@ -156,7 +174,7 @@ unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& partic
     return damage;
 }
 
-void RiverbankEncounter::Tick() {
+void RiverbankEncounter::Tick(std::span<const SupportMembership> groups) {
     ++tick;
     unsigned damage = 0;
     for (auto& [id, participant] : party) {
@@ -167,7 +185,7 @@ void RiverbankEncounter::Tick() {
         status.guarding = participant.guardTicks != 0;
         if (tick % 5 == 0 && status.resource < MaxResource) ++status.resource;
         if (participant.request && boss.phase != EncounterPhase::Defeated)
-            damage = std::min(BossHealth, damage + ResolveAction(id, participant, *participant.request));
+            damage = std::min(BossHealth, damage + ResolveAction(id, participant, *participant.request, groups));
         participant.request.reset();
     }
     if (boss.phase == EncounterPhase::Defeated) {
@@ -186,7 +204,8 @@ void RiverbankEncounter::Tick() {
                 auto& status = victim.status;
                 if (!status.health || !victim.position || !InArena(*victim.position, anchor) ||
                     !InRange(victim, boss.strikeCenter, StrikeRadius)) continue;
-                const unsigned hit = status.guarding ? 16u : 46u;
+                const auto guardedHit = victim.bossGear ? RiverbankBossGearStats::GuardDamageTaken : 16u;
+                const unsigned hit = status.guarding ? guardedHit : 46u;
                 status.health -= std::min(status.health, hit);
             }
             boss.phase = EncounterPhase::Recovery;

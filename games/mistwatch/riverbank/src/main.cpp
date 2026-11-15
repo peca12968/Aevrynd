@@ -3,6 +3,8 @@
 #include "LocalWorldClient.h"
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankGuildPanel.h"
+#include "RiverbankPartyPanel.h"
+#include "RiverbankGearPanel.h"
 #endif
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
@@ -1975,6 +1977,12 @@ private:
             wchar_t expeditionCapture[2]{};
             localWorldExpeditionCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_EXPEDITION_CAPTURE",expeditionCapture,2)==1&&
                 expeditionCapture[0]==L'1';
+            wchar_t partyCapture[2]{};
+            localWorldPartyCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_PARTY_CAPTURE",partyCapture,2)==1&&
+                partyCapture[0]==L'1';
+            wchar_t gearCapture[2]{};
+            localWorldGearCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_GEAR_CAPTURE",gearCapture,2)==1&&
+                gearCapture[0]==L'1';
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
             wchar_t arena[2]{};
@@ -3962,7 +3970,9 @@ private:
     Mistwatch::LocalWorldClient::Status localWorldStatus{Mistwatch::LocalWorldClient::Status::Connecting};
 #ifdef AEVRYND_MISTWATCH_PROFILES
     Mistwatch::RiverbankGuildPanel riverbankGuild;
-    bool localWorldGuildCapture{}, localWorldTerritoryCapture{};
+    Mistwatch::RiverbankPartyPanel riverbankParty;
+    Mistwatch::RiverbankGearPanel riverbankGear;
+    bool localWorldGuildCapture{}, localWorldTerritoryCapture{}, localWorldPartyCapture{}, localWorldGearCapture{};
     bool localWorldExpeditionCapture{}, expeditionInteractPending{}, expeditionCaptureInteracted{};
     unsigned territoryApproachStep{};
     std::chrono::steady_clock::time_point nextTerritoryQuery{};
@@ -4138,10 +4148,15 @@ private:
         draw.Quad({273,153},{526,80},{.032f,.055f,.05f,.94f});
         draw.SystemText({20,122},"生命 "+std::to_string(player.health)+" / "+std::to_string(stats.health)+
             " · 資源 "+std::to_string(player.resource)+" / 100 · 戰利品 "+std::to_string(player.rewards),16.f,{.92f,.96f,.90f,1});
-        const char* skill=player.playerClass==Mistwatch::RiverbankClass::Guardian?"挑釁護衛":
-            player.playerClass==Mistwatch::RiverbankClass::Ranger?"連射":"治療／救援";
+        bool grouped=false;
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        if(const auto* roster=localWorld->Party())grouped=roster->members!=0;
+#endif
+        const auto priestSupport=grouped?"隊伍治療／救援":"治療／救援";
+        const auto skill=player.playerClass==Mistwatch::RiverbankClass::Guardian?"挑釁護衛":
+            player.playerClass==Mistwatch::RiverbankClass::Ranger?"連射":priestSupport;
         const auto actions=player.health?"F 普攻  "+remaining(player.attackCooldown)+"　Q "+skill+"  "+remaining(player.skillCooldown):
-            "你已倒地，等待附近的祭司救援";
+            (grouped?"你已倒地，等待隊伍中的祭司救援":"你已倒地，等待附近的未組隊祭司救援");
         draw.SystemText({20,157},actions,15.f,{.82f,.90f,.86f,1});
         using Phase=Mistwatch::EncounterPhase;
         const auto distance=std::hypot(session.feet.x-boss.position.x,session.feet.z-boss.position.z);
@@ -4167,8 +4182,10 @@ private:
     void UpdateLocalWorld(Engine& e,float dt) {
         auto& input=e.GetInput();
 #ifdef AEVRYND_MISTWATCH_PROFILES
-        riverbankGuild.Toggle(input,*localWorld);
-        const bool focused=input.Focused()&&!input.FocusLost()&&!riverbankGuild.Open();
+        if(!riverbankParty.Open()&&!riverbankGear.Open())riverbankGuild.Toggle(input,*localWorld);
+        if(!riverbankGear.Open())riverbankParty.Toggle(input,*localWorld,riverbankGuild.Open());
+        riverbankGear.Toggle(input,*localWorld,riverbankGuild.Open()||riverbankParty.Open());
+        const bool focused=input.Focused()&&!input.FocusLost()&&!riverbankGuild.Open()&&!riverbankParty.Open()&&!riverbankGear.Open();
 #else
         const bool focused=input.Focused()&&!input.FocusLost();
 #endif
@@ -4210,6 +4227,27 @@ private:
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if(localWorldGuildCapture&&localWorld->CanUseGuild())riverbankGuild.OpenForCapture();
         riverbankGuild.Update(input,*localWorld);
+        if(localWorldPartyCapture){
+            // 離屏驗收沿用正式面板的按鍵路徑，輸入僅送到此測試程序。
+            Input captureKeys;
+            if(!riverbankParty.Open()&&localWorld->CanUseGuild()){
+                captureKeys.SetKey('P',true);
+                riverbankParty.Toggle(captureKeys,*localWorld,false);
+            }
+            if(const auto* party=localWorld->Party();party&&party->inviter)captureKeys.SetKey('J',true);
+            riverbankParty.Update(captureKeys,*localWorld);
+        }else riverbankParty.Update(input,*localWorld);
+        if(localWorldGearCapture){
+            // 僅離屏驗收使用，按鍵走與手動操作相同的裝備面板。
+            Input captureKeys;
+            if(!riverbankGear.Open()&&localWorld->CanUseGuild()){
+                captureKeys.SetKey('B',true);
+                riverbankGear.Toggle(captureKeys,*localWorld,false);
+            }
+            if(const auto* gear=localWorld->Gear();gear&&gear->gear.earned&&!gear->gear.equipped)
+                captureKeys.SetKey(VK_RETURN,true);
+            riverbankGear.Update(captureKeys,*localWorld);
+        }else riverbankGear.Update(input,*localWorld);
         const auto now=std::chrono::steady_clock::now();
         if(now>=nextTerritoryQuery&&localWorld->RequestTerritory())nextTerritoryQuery=now+std::chrono::milliseconds(400);
         if(!localWorld->CanUseGuild())expeditionInteractPending=false;
@@ -4302,6 +4340,8 @@ private:
         DrawRiverbankTerritory(draw);
         DrawRiverbankExpedition(draw);
         riverbankGuild.Draw(draw,*localWorld);
+        riverbankParty.Draw(draw,*localWorld);
+        riverbankGear.Draw(draw,*localWorld);
 #endif
         if(!localWorldScreenshot.empty()){
             const auto count=e.GetRendererStats().successfulFrameCaptures;
@@ -4311,10 +4351,15 @@ private:
             if(localWorldArenaCapture)captureReady=captureReady&&CaptureSharedWindup();
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
+            const auto* gearReply=localWorld->Gear();
+            if(localWorldGearCapture)captureReady=riverbankGear.Open()&&gearReply&&gearReply->gear.equipped;
             const auto* guildReply=localWorld->GuildReply();
             if(localWorldGuildCapture)captureReady=captureReady&&riverbankGuild.Open()&&guildReply&&guildReply->state.inviteId>0;
             if(localWorldTerritoryCapture)captureReady=captureReady&&CaptureTerritoryProgress();
             if(localWorldExpeditionCapture)captureReady=captureReady&&CaptureExpeditionBoard();
+            const auto* partyReply=localWorld->Party();
+            if(localWorldPartyCapture)captureReady=captureReady&&riverbankParty.Open()&&partyReply&&
+                partyReply->members==2&&partyReply->online.size()==2&&partyReply->leader!=localWorld->PlayerId();
 #endif
             if(!localWorldCaptureCount&&captureReady){
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -4339,6 +4384,25 @@ private:
                     proof<<localWorld->PlayerId()<<'\n'<<state.challenger<<'\n'<<state.progress<<'\n'<<state.challengerName<<'\n';
                     proof.close();
                     if(!proof)throw std::runtime_error("Territory screenshot receipt write failed");
+                }
+                if(localWorldGearCapture){
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".gear.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Gear screenshot receipt already exists");
+                    std::ofstream proof(receipt);
+                    proof<<localWorld->PlayerId()<<'\n'<<unsigned(localWorld->SelectedClass())<<'\n'
+                         <<gearReply->gear.earned<<'\n'<<gearReply->gear.equipped<<'\n';
+                    proof.close();
+                    if(!proof)throw std::runtime_error("Gear screenshot receipt write failed");
+                }
+                if(localWorldPartyCapture){
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".party.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Party screenshot receipt already exists");
+                    std::ofstream proof(receipt);
+                    proof<<localWorld->PlayerId()<<'\n'<<partyReply->leader<<'\n'<<unsigned(partyReply->members)<<'\n';
+                    proof.close();
+                    if(!proof)throw std::runtime_error("Party screenshot receipt write failed");
                 }
                 if(localWorldExpeditionCapture){
                     auto receipt=localWorldScreenshot;

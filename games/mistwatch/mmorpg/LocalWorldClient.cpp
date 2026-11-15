@@ -55,6 +55,10 @@ struct LocalWorldClient::State {
     std::optional<TerritoryState> territory;
     std::uint64_t nextExpeditionSequence{1}, pendingExpeditionSequence{};
     std::optional<RiverbankExpeditionWire::Reply> expedition;
+    std::uint64_t nextPartySequence{1}, pendingPartySequence{};
+    std::optional<RiverbankPartyWire::Reply> party;
+    std::uint64_t nextGearSequence{1}, pendingGearSequence{};
+    std::optional<RiverbankGearWire::Reply> gear;
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
     std::optional<RiverbankBattleWire::Encounter> encounter;
@@ -145,6 +149,24 @@ struct LocalWorldClient::State {
 
     bool Receive(std::span<const std::byte> bytes) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
+        if (RiverbankGearWire::HasMagic(bytes)) {
+            const auto reply = RiverbankGearWire::DecodeReply(bytes);
+            if (!profileTicket || !reply || !pendingGearSequence || reply->sequence != pendingGearSequence) return false;
+            pendingGearSequence = 0;
+            gear = *reply;
+            lastPacket = Clock::now();
+            return true;
+        }
+        if (RiverbankPartyWire::HasMagic(bytes)) {
+            auto reply = RiverbankPartyWire::DecodeReply(bytes);
+            if (!profileTicket || !reply || !pendingPartySequence || reply->sequence != pendingPartySequence ||
+                (reply->members && std::ranges::find(reply->online, id, &RiverbankPartyWire::Member::actor) == reply->online.end()))
+                return false;
+            pendingPartySequence = 0;
+            party = std::move(*reply);
+            lastPacket = Clock::now();
+            return true;
+        }
         if (RiverbankExpeditionWire::HasMagic(bytes)) {
             const auto reply = RiverbankExpeditionWire::DecodeReply(bytes);
             if (!profileTicket || !reply || !pendingExpeditionSequence || reply->sequence != pendingExpeditionSequence ||
@@ -253,8 +275,11 @@ struct LocalWorldClient::State {
         guildReply.reset();
         pendingTerritorySequence = 0;
         territory.reset();
-        pendingExpeditionSequence = 0;
+        pendingExpeditionSequence = pendingPartySequence = pendingGearSequence = 0;
         expedition.reset();
+        party.reset();
+        gear.reset();
+        nextPartySequence = nextGearSequence = 1;
         nextGuildSequence = nextTerritorySequence = nextExpeditionSequence = 1;
         profileLookupComplete = false;
         if (retryTransport && connectedProfileClass != RiverbankClass::None) {
@@ -321,6 +346,31 @@ bool LocalWorldClient::RequestTerritory() {
 
 const TerritoryState* LocalWorldClient::Territory() const noexcept {
     return state_->territory ? &*state_->territory : nullptr;
+}
+
+bool LocalWorldClient::RequestGear(GearAction action) {
+    if (!CanUseGuild() || action > GearAction::Unequip || state_->pendingGearSequence ||
+        state_->nextGearSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    if (!state_->peer->Queue(RiverbankGearWire::EncodeRequest({state_->nextGearSequence, action}))) return false;
+    state_->pendingGearSequence = state_->nextGearSequence++;
+    return true;
+}
+
+const RiverbankGearWire::Reply* LocalWorldClient::Gear() const noexcept {
+    return state_->gear ? &*state_->gear : nullptr;
+}
+
+bool LocalWorldClient::RequestParty(PartyAction action, std::uint32_t target) {
+    if (!CanUseGuild() || state_->pendingPartySequence || state_->nextPartySequence == (std::numeric_limits<std::uint64_t>::max)())
+        return false;
+    const RiverbankPartyWire::Request request{state_->nextPartySequence, action, target};
+    if (!RiverbankPartyWire::ValidRequest(request) || !state_->peer->Queue(RiverbankPartyWire::EncodeRequest(request))) return false;
+    state_->pendingPartySequence = state_->nextPartySequence++;
+    return true;
+}
+
+const RiverbankPartyWire::Reply* LocalWorldClient::Party() const noexcept {
+    return state_->party ? &*state_->party : nullptr;
 }
 
 bool LocalWorldClient::RequestExpedition(bool interact) {
