@@ -6,6 +6,7 @@
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankGuildWire.h"
 #include "RiverbankTerritory.h"
+#include "RiverbankExpeditionWire.h"
 #endif
 #include <Aevrynd/ReplicationProtocol3D.h>
 #include <memory>
@@ -13,7 +14,7 @@
 namespace Mistwatch {
 class LocalWorldClient {
 public:
-    enum class Status { Connecting, ChoosingClass, Joining, Ready, Disconnected };
+    enum class Status { Connecting, ChoosingClass, Joining, Ready, Reconnecting, Disconnected };
     explicit LocalWorldClient(unsigned short port);
     ~LocalWorldClient();
     LocalWorldClient(const LocalWorldClient&) = delete;
@@ -32,6 +33,8 @@ public:
     const RiverbankGuildWire::Response* GuildReply() const noexcept;
     bool RequestTerritory();
     const TerritoryState* Territory() const noexcept;
+    bool RequestExpedition(bool interact);
+    const RiverbankExpeditionWire::Reply* Expedition() const noexcept;
 #endif
     std::uint32_t PlayerId() const noexcept;
     const Aevrynd::ReplicationSnapshot3D* Snapshot() const noexcept;

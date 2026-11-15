@@ -32,6 +32,11 @@ struct EncounterPlayerStatus {
     bool guarding{};
 };
 
+struct SuspendedRiverbankCombat {
+    EncounterPlayerStatus status;
+    std::uint64_t contributionRun{};
+};
+
 struct RiverbankBossStatus {
     EncounterPhase phase{};
     ArenaPosition position{}, strikeCenter{};
@@ -46,7 +51,7 @@ public:
     static constexpr unsigned WindupTicks = 20;
     static constexpr float StrikeRadius = 2.4f;
     static constexpr ArenaPosition NorthBankCenter{0.f, 48.f};
-    // 首領戰維持在乾燥空地，南側為河床。
+    // The fight stays on the dry clearing. The riverbed starts south of the arena.
     static constexpr bool InArena(ArenaPosition point, ArenaPosition center = NorthBankCenter) {
         return point.x >= center.x - 8.f && point.x <= center.x + 8.f &&
                point.z >= center.z - 5.f && point.z <= center.z + 12.f;
@@ -55,6 +60,8 @@ public:
 
     bool Join(std::uint64_t id, RiverbankClass playerClass);
     bool RestoreRewards(std::uint64_t id, unsigned earned);
+    std::optional<SuspendedRiverbankCombat> Suspend(std::uint64_t id) const;
+    bool RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks);
     bool Leave(std::uint64_t id);
     bool SetPosition(std::uint64_t id, ArenaPosition position);
     bool Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally = 0);

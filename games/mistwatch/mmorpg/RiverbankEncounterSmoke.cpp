@@ -70,6 +70,24 @@ void DownedAndRejoin() {
     Require(arena.Leave(1) && !arena.Player(1) && !arena.Submit(1, 9, RiverbankAction::Attack), "Disconnected player's request remained valid");
 }
 
+void RestoreLiveCombat() {
+    RiverbankEncounter arena({0, 0});
+    Require(arena.Join(1, RiverbankClass::Ranger) && arena.SetPosition(1, {0, 1}) &&
+        arena.Submit(1, 1, RiverbankAction::ClassSkill), "Reconnect combat setup failed");
+    arena.Tick();
+    for (unsigned step = 0; step < RiverbankEncounter::WindupTicks; ++step) arena.Tick();
+    const auto saved = arena.Suspend(1);
+    Require(saved && saved->status.health == 59 && saved->status.skillCooldown > 10 &&
+        saved->contributionRun == arena.Boss().run, "Reconnect did not save the active encounter");
+    Require(arena.Leave(1) && arena.Join(3, RiverbankClass::Ranger) && arena.RestoreRewards(3, 7) &&
+        arena.RestoreCombat(3, *saved, 10), "Live combat did not resume");
+    const auto restored = arena.Suspend(3);
+    Require(restored && restored->status.health == saved->status.health && restored->status.rewards == 7 &&
+        restored->status.resource == saved->status.resource + 2 &&
+        restored->status.skillCooldown == saved->status.skillCooldown - 10 && restored->contributionRun == saved->contributionRun,
+        "Reconnect changed health, persistent rewards, cooldowns, or contribution");
+}
+
 void NorthBankBoundary() {
     RiverbankEncounter arena;
     Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Ranger), "North bank party setup failed");
@@ -121,6 +139,7 @@ int main() {
         RolesAndTelegraph();
         DefeatOnceAndReset();
         DownedAndRejoin();
+        RestoreLiveCombat();
         NorthBankBoundary();
         BattleWireRoundTrip();
         std::cout << "RIVERBANK_ENCOUNTER_RULES_PASS roles=3 windup=1 simultaneous_attacks=3 revive=1 reward_once=1 respawn=1 north_bank_boundary=1 wire=1\n";

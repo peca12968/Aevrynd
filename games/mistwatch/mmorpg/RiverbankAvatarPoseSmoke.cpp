@@ -42,17 +42,42 @@ int main(int argc, char** argv) {
 
     DrawList scene;
     const SkinnedMeshHandle3D mesh{1, asset.model.skeletonCompatibilityId};
-    const auto materials = Mistwatch::RiverbankAvatarMaterials(asset);
-    for (const Vec3 position : {feet, feet + Vec3{2.f, 0, 0}}) {
+    using Mistwatch::RiverbankClass;
+    const auto base = Mistwatch::RiverbankAvatarMaterials(asset);
+    const std::array roles{RiverbankClass::Guardian, RiverbankClass::Ranger, RiverbankClass::Priest};
+    const std::array vests{Color{.30f, .073f, .044f, 1.f}, Color{.091f, .20f, .085f, 1.f}, Color{.56f, .46f, .29f, 1.f}};
+    const auto vest = std::ranges::find(asset.materialSlotNames, "AX textile | Warm woven vest");
+    if (vest == asset.materialSlotNames.end()) return 10;
+    const auto vestIndex = static_cast<std::size_t>(vest - asset.materialSlotNames.begin());
+    for (std::size_t actor = 0; actor < roles.size(); ++actor) {
+        const auto playerClass = Mistwatch::ReadRiverbankClassFlags(Mistwatch::RiverbankClassFlags(roles[actor]) | 1u);
+        const auto materials = Mistwatch::RiverbankAvatarMaterials(asset, playerClass);
+        if (PackColorRgba8(materials[vestIndex].tint) != PackColorRgba8(vests[actor])) return 11;
+        const Vec3 position = feet + Vec3{2.f * static_cast<float>(actor), 0, 0};
         const auto transform = motion.Evaluate(asset.model.skeleton, state, position, scratch, pose);
         const auto palette = AddSkinPaletteFromPose(scene, asset.model, pose, workspace);
         if (!SubmitSkinnedRenderable3D(scene, mesh, palette, transform,
             static_cast<std::uint32_t>(asset.model.bindMesh.indices.size()), asset.submeshes, materials)) return 8;
+        bool submittedVest = false;
+        std::size_t changedFabricParts = 0;
+        for (std::size_t part = 0; part < asset.submeshes.size(); ++part) {
+            const auto slot = asset.submeshes[part].materialSlot;
+            const auto& drawPart = scene.skinnedMeshInstances.at(actor * asset.submeshes.size() + part);
+            const auto before = PackColorRgba8(base[slot].tint);
+            const auto after = PackColorRgba8(materials[slot].tint);
+            if (drawPart.tint != after || drawPart.shadingModel != base[slot].shadingModel) return 12;
+            if (slot == vestIndex) submittedVest = true;
+            if (before != after) {
+                if (base[slot].shadingModel != CharacterShadingModel3D::Cloth) return 13;
+                ++changedFabricParts;
+            }
+        }
+        if (!submittedVest || changedFabricParts != 3) return 14;
     }
-    if (scene.skinnedMeshInstances.size() != 36 || scene.skinPaletteJoints.size() != 160) return 9;
+    if (scene.skinnedMeshInstances.size() != 54 || scene.skinPaletteJoints.size() != 240) return 9;
     std::cout << "samples=195 pelvis_planar_drift_m=" << largestDrift
               << " lowest_animated_floor_m=" << lowest << " highest_animated_floor_m=" << highest
-              << " two_player_draw_commands=" << scene.skinnedMeshInstances.size() << '\n';
+              << " three_role_draw_commands=" << scene.skinnedMeshInstances.size() << '\n';
     if (largestDrift > .035f || lowest < -.004f || highest > .005f) return 7;
     return 0;
 }

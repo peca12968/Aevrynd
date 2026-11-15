@@ -3,6 +3,7 @@
 #include "RiverbankClass.h"
 #include "RiverbankGuild.h"
 #include "RiverbankTerritory.h"
+#include "RiverbankExpedition.h"
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -16,7 +17,7 @@ struct RiverbankProfile {
     unsigned rewards{};
 };
 
-// 資料庫由專用伺服器管理，角色票證僅保存雜湊。
+// The dedicated local server owns the database and never stores the raw client ticket.
 class RiverbankProfileStore {
 public:
     explicit RiverbankProfileStore(const std::filesystem::path& database);
@@ -27,7 +28,7 @@ public:
     std::optional<RiverbankProfile> Find(const RiverbankTicket& ticket);
     std::optional<RiverbankProfile> Create(const RiverbankTicket& ticket, RiverbankClass playerClass);
 
-    // 先以一筆交易完整寫入符合資格的隊伍獎勵，再回報勝利。
+    // Write the whole eligible party’s rewards in one transaction before reporting a win.
     void Award(std::uint64_t world, std::uint64_t encounter, std::span<const std::int64_t> eligibleProfiles);
 
     GuildState ReadGuild(std::int64_t profileId);
@@ -37,6 +38,9 @@ public:
     std::string GuildName(std::int64_t guildId);
     unsigned TerritoryRewards(std::int64_t profileId);
     void ClaimTerritory(std::int64_t previous, std::int64_t winner, std::span<const std::int64_t> recipients);
+
+    ExpeditionStage ReadExpedition(std::int64_t profileId);
+    ExpeditionResult InteractExpedition(std::int64_t profileId, ArenaPosition position);
 
 private:
     struct Database;

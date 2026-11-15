@@ -7,7 +7,7 @@
 
 namespace Mistwatch {
 struct RiverbankAvatarMotion {
-    // 與 W3 的 Blender 地面量測及匯入幾何共用。
+    // Shared by W3's Blender ground measurement and the imported geometry.
     static constexpr float GroundDatum = -1.562f;
 
     struct Player {
@@ -19,7 +19,7 @@ struct RiverbankAvatarMotion {
             const bool moving = movement > 0.0001f;
             if (moving) heading = std::atan2(tickDisplacement.x, tickDisplacement.z);
             walking = std::clamp(walking + (moving ? elapsed : -elapsed) * 7.0f, 0.0f, 1.0f);
-            // 本機世界以每秒 20 次更新傳送每次位移公尺數。
+            // The local world transmits metres per server tick at 20 Hz.
             distance += movement * elapsed * 20.f;
             if (walking == 0.0f) distance = 0.0f;
         }
@@ -49,7 +49,7 @@ struct RiverbankAvatarMotion {
         Aevrynd::SampleAnimationClipInto(skeleton, walk, phase * walk.duration, sampled);
         Aevrynd::BlendAnimationPosesInto(skeleton, idle, sampled, player.walking, pose);
         const auto world = Aevrynd::CreateTransformMatrix(feet, {0, player.heading - assetYaw, 0}, {1, 1, 1});
-        // 扣除骨架根部的線性位移，將 Blender 量測的腳底高度對齊伺服器位置。
+        // Remove linear root travel and put the measured Blender floor on the replicated foot position.
         return world * Aevrynd::CreateTranslationMatrix(Aevrynd::Vec3{0, -GroundDatum, 0} - travel * (phase * player.walking));
     }
 

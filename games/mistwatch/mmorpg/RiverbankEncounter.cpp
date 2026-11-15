@@ -43,6 +43,27 @@ bool RiverbankEncounter::RestoreRewards(std::uint64_t id, unsigned earned) {
     return true;
 }
 
+std::optional<SuspendedRiverbankCombat> RiverbankEncounter::Suspend(std::uint64_t id) const {
+    const auto player = party.find(id);
+    if (player == party.end()) return std::nullopt;
+    return SuspendedRiverbankCombat{player->second.status, player->second.contributed ? boss.run : 0};
+}
+
+bool RiverbankEncounter::RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks) {
+    const auto player = party.find(id);
+    if (player == party.end() || player->second.position || player->second.sequence ||
+        player->second.status.playerClass != saved.status.playerClass) return false;
+
+    auto& status = player->second.status;
+    const auto cooldown = [elapsedTicks](unsigned ticks) { return elapsedTicks < ticks ? ticks - static_cast<unsigned>(elapsedTicks) : 0u; };
+    status.health = saved.status.health;
+    status.resource = static_cast<unsigned>((std::min)(std::uint64_t(MaxResource), saved.status.resource + elapsedTicks / 5));
+    status.attackCooldown = cooldown(saved.status.attackCooldown);
+    status.skillCooldown = cooldown(saved.status.skillCooldown);
+    player->second.contributed = boss.phase != EncounterPhase::Defeated && saved.contributionRun == boss.run;
+    return true;
+}
+
 bool RiverbankEncounter::SetPosition(std::uint64_t id, ArenaPosition position) {
     const auto player = party.find(id);
     if (player == party.end() || !Finite(position)) return false;
@@ -176,7 +197,7 @@ void RiverbankEncounter::Tick() {
     if (boss.phase == EncounterPhase::Recovery && --boss.phaseTicks) return;
     boss.target = target;
     if (!target) {
-        // 尚未交戰時巡邏。交戰後若隊伍撤離，等待首領重置。
+        // Patrol is only for an unengaged encounter. A withdrawn party lets an engaged boss reset.
         if (boss.phase == EncounterPhase::Patrol) {
             const ArenaPosition goal{anchor.x + (patrolLeg ? -2.f : 2.f), anchor.z};
             MoveBoss(goal, .035f);

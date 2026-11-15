@@ -63,7 +63,9 @@ target_compile_definitions(AevryndTerrainLayerCoverage3DTest PRIVATE AEVRYND_SOU
 add_test(NAME AevryndTerrainLayerCoverage3DTest COMMAND AevryndTerrainLayerCoverage3DTest)
 set_tests_properties(AevryndTerrainLayerCoverage3DTest PROPERTIES LABELS "release-gates")
 
+include("${CMAKE_CURRENT_LIST_DIR}/ReplicationSources.cmake")
 add_library(AevryndEngine STATIC
+  ${AEVRYND_REPLICATION_SOURCES}
   src/ArchitectureMeshes3D.cpp
   src/Animation3D.cpp
   src/AnimationGraph3D.cpp
@@ -102,19 +104,15 @@ add_library(AevryndEngine STATIC
   src/MeshLoader.cpp
   src/MeshProcessing3D.cpp
   src/Navigation3D.cpp
-  src/NetworkTransport3D.cpp
   src/PhysicsWorld3D.cpp
   src/PbrMaterialCooker3D.cpp
   src/PhotorealAssetProfile3D.cpp
   src/PhotorealMaterialImport3D.cpp
   src/Profiling.cpp
   src/ProceduralPlacement3D.cpp
-  src/ReplicationProtocol3D.cpp
-  src/ReplicationRuntime3D.cpp
   src/ReplicationWorldAdapter3D.cpp
   src/SceneECS3D.cpp
   src/Serialization.cpp
-  src/WorldDeltaPersistence3D.cpp
   src/SkinnedModel3D.cpp
   src/SkinnedModelAsset.cpp
   src/SkinnedMaterialSidecar3D.cpp
@@ -128,7 +126,6 @@ add_library(AevryndEngine STATIC
   src/WorldPartition3D.cpp
   src/WorldPartitionD3D12Adapter3D.cpp
   src/WorldPartitionTerrainVegetationAdapter3D.cpp
-  src/WorldOrigin3D.cpp
   src/WorldOriginRuntime3D.cpp
   src/VisibilityBvh3D.cpp
   src/Vegetation3D.cpp

@@ -51,7 +51,7 @@ public:
         }
         if (++progress_ != HoldTicks) return {};
 
-        // 先提交領地交易，才同步新的歸屬。
+        // The caller commits the claim before publishing the resulting state.
         std::vector<std::int64_t> recipients;
         recipients.reserve(players.size());
         for (const auto& player : players) recipients.push_back(player.profile);

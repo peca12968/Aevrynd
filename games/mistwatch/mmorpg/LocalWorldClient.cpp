@@ -41,42 +41,57 @@ struct LocalWorldClient::State {
     Clock::time_point lastPacket = Clock::now();
     std::uint64_t epoch{}, nextSequence{1}, lastSubmittedTick{};
     std::uint32_t id{};
-    bool connected{};
+    unsigned short port{};
+    bool connected{}, reconnecting{};
+    Clock::time_point retryAt{}, reconnectUntil{};
     RiverbankClass requestedClass{RiverbankClass::None};
 #ifdef AEVRYND_MISTWATCH_PROFILES
     std::optional<RiverbankTicket> profileTicket = ProfileTicketFromEnvironment();
     bool profileLookupComplete{};
+    RiverbankClass connectedProfileClass{RiverbankClass::None};
     std::uint64_t nextGuildSequence{1}, pendingGuildSequence{};
     std::optional<RiverbankGuildWire::Response> guildReply;
     std::uint64_t nextTerritorySequence{1}, pendingTerritorySequence{};
     std::optional<TerritoryState> territory;
+    std::uint64_t nextExpeditionSequence{1}, pendingExpeditionSequence{};
+    std::optional<RiverbankExpeditionWire::Reply> expedition;
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
     std::optional<RiverbankBattleWire::Encounter> encounter;
     std::uint64_t nextActionSequence{1};
 #endif
 
-    explicit State(unsigned short port) {
+    explicit State(unsigned short localPort) : port(localPort) { (void)OpenTransport(); }
+
+    bool OpenTransport() {
         Socket socket(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
         const BOOL immediate = TRUE;
         if (!port || !socket || !Nonblocking(socket.Get()) || setsockopt(socket.Get(), IPPROTO_TCP, TCP_NODELAY,
-                reinterpret_cast<const char*>(&immediate), sizeof(immediate)) != 0) return;
+                reinterpret_cast<const char*>(&immediate), sizeof(immediate)) != 0) return false;
         sockaddr_in address{};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         address.sin_port = htons(port);
         connected = connect(socket.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
-        if (!connected && WSAGetLastError() != WSAEWOULDBLOCK) return;
+        if (!connected && WSAGetLastError() != WSAEWOULDBLOCK) return false;
         peer.emplace(Peer{std::move(socket), {}, {}, 0});
+        lastPacket = Clock::now();
+        return true;
     }
 
     Status Poll(std::int16_t x, std::int16_t z) {
-        if (!peer) return Status::Disconnected;
+        const auto now = Clock::now();
+        if (reconnecting && now >= reconnectUntil) return Disconnect(false);
+        if (!peer) {
+            if (!reconnecting) return Status::Disconnected;
+            if (now < retryAt) return Status::Reconnecting;
+            if (!OpenTransport()) return Disconnect();
+        }
         bool waitingForChoice = id != 0 && requestedClass == RiverbankClass::None;
 #ifdef AEVRYND_MISTWATCH_PROFILES
         waitingForChoice = waitingForChoice && (!profileTicket || profileLookupComplete);
 #endif
-        if (!waitingForChoice && Clock::now() - lastPacket >= std::chrono::seconds(5)) return Disconnect();
+        if (!waitingForChoice && now - lastPacket >= std::chrono::seconds(5)) return Disconnect();
         if (!connected) {
             const auto socket = peer->socket.Get();
             fd_set ready{}, failed{};
@@ -85,24 +100,31 @@ struct LocalWorldClient::State {
             timeval immediate{};
             const int result = select(0, nullptr, &ready, &failed, &immediate);
             if (result == SOCKET_ERROR || FD_ISSET(socket, &failed)) return Disconnect();
-            if (!FD_ISSET(socket, &ready)) return Status::Connecting;
+            if (!FD_ISSET(socket, &ready)) return reconnecting ? Status::Reconnecting : Status::Connecting;
             int error{};
             int size = sizeof(error);
             if (getsockopt(socket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &size) != 0 || error)
                 return Disconnect();
             connected = true;
         }
-        if (!peer->Read([this](auto bytes) { return Receive(bytes); })) return Disconnect();
-        if ((snapshot && !SubmitMovement(x, z)) || !peer->Flush()) return Disconnect();
-        if (!id) return Status::Connecting;
+        bool invalid = false;
+        if (!peer->Read([&](auto bytes) { invalid = !Receive(bytes); return !invalid; })) return Disconnect(!invalid);
+        if (snapshot && !SubmitMovement(x, z)) return Disconnect(false);
+        if (!peer->Flush()) return Disconnect();
+        const auto waiting = reconnecting ? Status::Reconnecting : Status::Joining;
+        if (!id) return reconnecting ? Status::Reconnecting : Status::Connecting;
 #ifdef AEVRYND_MISTWATCH_PROFILES
-        if (profileTicket && !profileLookupComplete) return Status::Joining;
+        if (profileTicket && !profileLookupComplete) return waiting;
 #endif
         if (requestedClass == RiverbankClass::None) return Status::ChoosingClass;
-        if (!snapshot) return Status::Joining;
+        if (!snapshot) return waiting;
 #ifdef AEVRYND_MISTWATCH_BATTLE
-        if (!encounter) return Status::Joining;
+        if (!encounter) return waiting;
 #endif
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        if (profileTicket) connectedProfileClass = requestedClass;
+#endif
+        reconnecting = false;
         return Status::Ready;
     }
 
@@ -115,7 +137,7 @@ struct LocalWorldClient::State {
 #else
         const bool queued = peer->Queue(EncodeRiverbankClass(playerClass));
 #endif
-        if (!queued) { Disconnect(); return false; }
+        if (!queued) { Disconnect(false); return false; }
         requestedClass = playerClass;
         lastPacket = Clock::now();
         return true;
@@ -123,6 +145,15 @@ struct LocalWorldClient::State {
 
     bool Receive(std::span<const std::byte> bytes) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
+        if (RiverbankExpeditionWire::HasMagic(bytes)) {
+            const auto reply = RiverbankExpeditionWire::DecodeReply(bytes);
+            if (!profileTicket || !reply || !pendingExpeditionSequence || reply->sequence != pendingExpeditionSequence ||
+                (expedition && reply->stage < expedition->stage)) return false;
+            pendingExpeditionSequence = 0;
+            expedition = *reply;
+            lastPacket = Clock::now();
+            return true;
+        }
         if (RiverbankTerritoryWire::HasMagic(bytes)) {
             auto reply = RiverbankTerritoryWire::DecodeState(bytes);
             if (!profileTicket || !reply || !pendingTerritorySequence || reply->sequence != pendingTerritorySequence ||
@@ -143,6 +174,7 @@ struct LocalWorldClient::State {
         if (RiverbankProfileWire::HasPrefix(bytes)) {
             const auto found = RiverbankProfileWire::DecodeResponse(bytes);
             if (!id || !profileTicket || !found || snapshot ||
+                (reconnecting && *found != connectedProfileClass) ||
                 (requestedClass != RiverbankClass::None && *found != requestedClass) ||
                 (requestedClass == RiverbankClass::None && profileLookupComplete)) return false;
             profileLookupComplete = true;
@@ -204,20 +236,38 @@ struct LocalWorldClient::State {
         return true;
     }
 
-    Status Disconnect() {
+    Status Disconnect(bool retryTransport = true) {
         peer.reset();
         snapshot.reset();
+        connected = false;
+        epoch = lastSubmittedTick = 0;
+        nextSequence = 1;
         id = 0;
         requestedClass = RiverbankClass::None;
 #ifdef AEVRYND_MISTWATCH_BATTLE
         encounter.reset();
+        nextActionSequence = 1;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         pendingGuildSequence = 0;
         guildReply.reset();
         pendingTerritorySequence = 0;
         territory.reset();
+        pendingExpeditionSequence = 0;
+        expedition.reset();
+        nextGuildSequence = nextTerritorySequence = nextExpeditionSequence = 1;
+        profileLookupComplete = false;
+        if (retryTransport && connectedProfileClass != RiverbankClass::None) {
+            const auto now = Clock::now();
+            if (!reconnecting) reconnectUntil = now + std::chrono::seconds(30);
+            reconnecting = true;
+            retryAt = now + std::chrono::milliseconds(500);
+            return Status::Reconnecting;
+        }
+#else
+        (void)retryTransport;
 #endif
+        reconnecting = false;
         return Status::Disconnected;
     }
 };
@@ -271,6 +321,18 @@ bool LocalWorldClient::RequestTerritory() {
 
 const TerritoryState* LocalWorldClient::Territory() const noexcept {
     return state_->territory ? &*state_->territory : nullptr;
+}
+
+bool LocalWorldClient::RequestExpedition(bool interact) {
+    if (!CanUseGuild() || state_->pendingExpeditionSequence || state_->nextExpeditionSequence == (std::numeric_limits<std::uint64_t>::max)())
+        return false;
+    if (!state_->peer->Queue(RiverbankExpeditionWire::EncodeRequest({state_->nextExpeditionSequence, interact}))) return false;
+    state_->pendingExpeditionSequence = state_->nextExpeditionSequence++;
+    return true;
+}
+
+const RiverbankExpeditionWire::Reply* LocalWorldClient::Expedition() const noexcept {
+    return state_->expedition ? &*state_->expedition : nullptr;
 }
 #endif
 std::uint32_t LocalWorldClient::PlayerId() const noexcept { return state_->id; }

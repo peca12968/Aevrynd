@@ -60,6 +60,19 @@ CREATE TABLE riverbank_territory_reward (
 CREATE INDEX riverbank_territory_rewards_by_character ON riverbank_territory_reward(character_id);
 PRAGMA user_version = 3;
 )sql";
+constexpr char ExpeditionSchema[] = R"sql(
+CREATE TABLE riverbank_expedition (
+    character_id INTEGER PRIMARY KEY REFERENCES riverbank_character(id),
+    stage INTEGER NOT NULL CHECK(stage BETWEEN 1 AND 4),
+    combat_world INTEGER,
+    combat_encounter INTEGER,
+    CHECK((stage IN (1, 2) AND combat_world IS NULL AND combat_encounter IS NULL) OR
+          (stage IN (3, 4) AND combat_world IS NOT NULL AND combat_encounter IS NOT NULL)),
+    FOREIGN KEY (character_id, combat_world, combat_encounter)
+        REFERENCES riverbank_reward(character_id, world, encounter)
+);
+PRAGMA user_version = 4;
+)sql";
 
 void Require(sqlite3* db, int code, int expected = SQLITE_OK) {
     if (code != expected) throw std::runtime_error(std::string("Riverbank profile database: ") + sqlite3_errmsg(db));
@@ -177,12 +190,13 @@ RiverbankProfileStore::RiverbankProfileStore(const std::filesystem::path& path) 
         Require(db, version.Step(), SQLITE_ROW);
         schema = version.Value(0);
     }
-    if (schema < 0 || schema > 3) throw std::runtime_error("Unsupported Riverbank profile schema");
-    if (schema < 3) {
+    if (schema < 0 || schema > 4) throw std::runtime_error("Unsupported Riverbank profile schema");
+    if (schema < 4) {
         Transaction upgrade(db);
         if (!schema) Execute(db, Schema);
         if (schema < 2) Execute(db, GuildSchema);
-        Execute(db, TerritorySchema);
+        if (schema < 3) Execute(db, TerritorySchema);
+        Execute(db, ExpeditionSchema);
         upgrade.Commit();
     }
 }
@@ -223,12 +237,21 @@ void RiverbankProfileStore::Award(std::uint64_t world, std::uint64_t encounter, 
     auto* db = storage->handle;
     Transaction award(db);
     Statement credit(db, "INSERT OR IGNORE INTO riverbank_reward(character_id, world, encounter) VALUES (?1, ?2, ?3)");
+    Statement expedition(db, "UPDATE riverbank_expedition SET stage=3, combat_world=?2, combat_encounter=?3 "
+                              "WHERE character_id=?1 AND stage=2");
     for (const auto id : profiles) {
         if (id <= 0) throw std::invalid_argument("Invalid Riverbank reward recipient");
         credit.Bind(1, id);
         credit.Bind(2, worldId);
         credit.Bind(3, encounterId);
         credit.Done();
+        if (sqlite3_changes(db) == 1) {
+            expedition.Bind(1, id);
+            expedition.Bind(2, worldId);
+            expedition.Bind(3, encounterId);
+            expedition.Done();
+            expedition.Reset();
+        }
         credit.Reset();
     }
     award.Commit();
@@ -397,5 +420,40 @@ void RiverbankProfileStore::ClaimTerritory(std::int64_t previous, std::int64_t w
         credit.Reset();
     }
     claim.Commit();
+}
+
+ExpeditionStage RiverbankProfileStore::ReadExpedition(std::int64_t profile) {
+    auto* db = storage->handle;
+    Statement progress(db, "SELECT stage FROM riverbank_expedition WHERE character_id=?1");
+    progress.Bind(1, profile);
+    const auto status = progress.Step();
+    if (status == SQLITE_DONE) return ExpeditionStage::Available;
+    Require(db, status, SQLITE_ROW);
+    const auto stage = progress.Value(0);
+    if (stage < 1 || stage > 4) throw std::runtime_error("Invalid Riverbank expedition stage");
+    return ExpeditionStage(stage);
+}
+
+ExpeditionResult RiverbankProfileStore::InteractExpedition(std::int64_t profile, ArenaPosition position) {
+    auto* db = storage->handle;
+    Transaction interaction(db);
+    const auto stage = ReadExpedition(profile);
+    if (stage == ExpeditionStage::Hunt) return ExpeditionResult::HuntRequired;
+    if (stage == ExpeditionStage::Complete) return ExpeditionResult::Finished;
+    if (!RiverbankExpedition::CanInteract(stage, position)) return ExpeditionResult::TooFar;
+
+    if (stage == ExpeditionStage::Available) {
+        Statement accept(db, "INSERT INTO riverbank_expedition(character_id, stage) VALUES (?1, 1)");
+        accept.Bind(1, profile);
+        accept.Done();
+    } else {
+        Statement advance(db, "UPDATE riverbank_expedition SET stage=stage+1 WHERE character_id=?1 AND stage=?2");
+        advance.Bind(1, profile);
+        advance.Bind(2, static_cast<std::int64_t>(stage));
+        advance.Done();
+        if (sqlite3_changes(db) != 1) throw std::runtime_error("Riverbank expedition stage changed during interaction");
+    }
+    interaction.Commit();
+    return ExpeditionResult::Advanced;
 }
 }

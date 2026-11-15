@@ -1972,6 +1972,9 @@ private:
             wchar_t territoryCapture[2]{};
             localWorldTerritoryCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_TERRITORY_CAPTURE",territoryCapture,2)==1&&
                 territoryCapture[0]==L'1';
+            wchar_t expeditionCapture[2]{};
+            localWorldExpeditionCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_EXPEDITION_CAPTURE",expeditionCapture,2)==1&&
+                expeditionCapture[0]==L'1';
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
             wchar_t arena[2]{};
@@ -3960,8 +3963,60 @@ private:
 #ifdef AEVRYND_MISTWATCH_PROFILES
     Mistwatch::RiverbankGuildPanel riverbankGuild;
     bool localWorldGuildCapture{}, localWorldTerritoryCapture{};
+    bool localWorldExpeditionCapture{}, expeditionInteractPending{}, expeditionCaptureInteracted{};
     unsigned territoryApproachStep{};
     std::chrono::steady_clock::time_point nextTerritoryQuery{};
+    std::chrono::steady_clock::time_point nextExpeditionQuery{};
+
+    bool CaptureExpeditionBoard() const {
+        const auto* quest=localWorld->Expedition();
+        return localWorldExpeditionCapture&&quest&&quest->stage==Mistwatch::ExpeditionStage::CheckTrail;
+    }
+
+    void DrawRiverbankExpedition(Aevrynd::DrawList& draw) const {
+        using Stage=Mistwatch::ExpeditionStage;
+        using Quest=Mistwatch::RiverbankExpedition;
+        const auto* quest=localWorld->Expedition();
+        if(!quest)return;
+        const auto destination=Quest::Destination(quest->stage);
+        const auto distance=std::hypot(session.feet.x-destination.x,session.feet.z-destination.z);
+        static constexpr std::array<std::string_view,5> objectives{
+            "到南岸營地的委託牌領取任務", "沿道路向北，勘查橋前路標", "過橋組隊挑戰巡林野豬",
+            "返回南岸營地的委託牌回報", "巡林委託已完成"};
+        static constexpr std::array<std::string_view,5> actions{
+            "按 E 領取委託", "按 E 勘查路標", "在首領戰中做出貢獻並取得戰利品", "按 E 回報並領取徽章", "已取得巡林徽章"};
+        const auto stage=static_cast<std::size_t>(quest->stage);
+        draw.Quad({236,636},{456,128},{.045f,.067f,.053f,.95f});
+        draw.SystemText({23,585},"巡林委託",19.f,{.83f,.95f,.86f,1});
+        draw.SystemText({23,619},objectives[stage],17.f,{.93f,.96f,.93f,1});
+        const auto hint=Quest::CanInteract(quest->stage,{session.feet.x,session.feet.z})||quest->stage==Stage::Complete||
+            (quest->stage==Stage::Hunt&&distance<15.f)?
+            std::string(actions[stage]):"距離 "+std::to_string(int(distance))+" 公尺";
+        draw.SystemText({23,650},hint,16.f,{.89f,.88f,.68f,1});
+    }
+
+    void DrawRiverbankExpeditionMarkers() {
+        using Stage=Mistwatch::ExpeditionStage;
+        using Quest=Mistwatch::RiverbankExpedition;
+        constexpr Color wood{.27f,.17f,.082f,1};
+        constexpr Color brass{.71f,.49f,.18f,1};
+        const Vec3 board{Quest::Board.x,terrain.SampleHeight(Quest::Board.x,Quest::Board.z),Quest::Board.z};
+        const Vec3 trail{Quest::Trail.x,terrain.SampleHeight(Quest::Trail.x,Quest::Trail.z),Quest::Trail.z};
+        for(const float offset : {-.48f,.48f})
+            scene.Box(board+Vec3{offset,.65f,0},{.12f,1.3f,.12f},wood);
+        scene.Box(board+Vec3{0,1.18f,0},{1.15f,.6f,.13f},wood);
+        scene.Box(board+Vec3{0,1.21f,-.075f},{.80f,.38f,.04f},brass);
+        scene.Box(trail+Vec3{0,.49f,0},{.12f,.98f,.13f},wood);
+        scene.Box(trail+Vec3{0,1.05f,0},{.54f,.25f,.15f},brass);
+
+        const auto* quest=localWorld->Expedition();
+        if(!quest||quest->stage==Stage::Complete||quest->stage==Stage::Hunt)return;
+        const auto anchor=quest->stage==Stage::CheckTrail?trail:board;
+        if(std::hypot(anchor.x-session.feet.x,anchor.z-session.feet.z)>30.f)return;
+        constexpr Color marker{.82f,.66f,.27f,1};
+        scene.Line(anchor+Vec3{-.18f,1.87f,0},anchor+Vec3{0,1.63f,0},3.f,marker);
+        scene.Line(anchor+Vec3{0,1.63f,0},anchor+Vec3{.18f,1.87f,0},3.f,marker);
+    }
 
     bool CaptureTerritoryProgress() const {
         const auto* state=localWorld->Territory();
@@ -4140,6 +4195,15 @@ private:
                 }
             }
         }
+        if(localWorldExpeditionCapture&&arenaView&&arenaView->entities.size()==2&&!CaptureExpeditionBoard()){
+            using Quest=Mistwatch::RiverbankExpedition;
+            const float dx=Quest::Board.x-session.feet.x,dz=Quest::Board.z-1.35f-session.feet.z;
+            const float distance=std::hypot(dx,dz);
+            if(distance>.22f){
+                const float scale=(std::min)(1.f,distance*4.f)/distance;
+                moveX=axis(dx*scale);moveZ=axis(dz*scale);
+            }
+        }
 #endif
 #endif
         localWorldStatus=localWorld->Poll(moveX,moveZ);
@@ -4148,6 +4212,23 @@ private:
         riverbankGuild.Update(input,*localWorld);
         const auto now=std::chrono::steady_clock::now();
         if(now>=nextTerritoryQuery&&localWorld->RequestTerritory())nextTerritoryQuery=now+std::chrono::milliseconds(400);
+        if(!localWorld->CanUseGuild())expeditionInteractPending=false;
+        else {
+            const auto* quest=localWorld->Expedition();
+            expeditionInteractPending|=focused&&input.Pressed('E');
+            if(localWorldExpeditionCapture&&!expeditionCaptureInteracted&&quest&&quest->stage==Mistwatch::ExpeditionStage::Available&&
+                Mistwatch::RiverbankExpedition::CanInteract(quest->stage,{session.feet.x,session.feet.z}))
+                expeditionInteractPending=true;
+            if(expeditionInteractPending){
+                if(localWorld->RequestExpedition(true)){
+                    expeditionInteractPending=false;
+                    expeditionCaptureInteracted=localWorldExpeditionCapture;
+                    nextExpeditionQuery=now+std::chrono::milliseconds(550);
+                }
+            } else if(now>=nextExpeditionQuery&&localWorld->RequestExpedition(false)){
+                nextExpeditionQuery=now+std::chrono::milliseconds(550);
+            }
+        }
 #endif
         if(localWorldStatus==Mistwatch::LocalWorldClient::Status::ChoosingClass){
             using PlayerClass=Mistwatch::RiverbankClass;
@@ -4210,6 +4291,7 @@ private:
         case Status::Joining: status="等待伺服器確認職業並進入河岸";break;
         case Status::Ready: status=std::string(Mistwatch::RiverbankClassName(localWorld->SelectedClass()))+
             " · 其他玩家 "+std::to_string(peers)+" 位 · WASD 移動 · 拖曳鏡頭";break;
+        case Status::Reconnecting: status="連線中斷，正在重新登入河岸";break;
         case Status::Disconnected: status="與本機世界的連線已中斷";break;
         }
         draw.SystemText({20,58},status,16.f,{.94f,.96f,.93f,1});
@@ -4218,6 +4300,7 @@ private:
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         DrawRiverbankTerritory(draw);
+        DrawRiverbankExpedition(draw);
         riverbankGuild.Draw(draw,*localWorld);
 #endif
         if(!localWorldScreenshot.empty()){
@@ -4231,6 +4314,7 @@ private:
             const auto* guildReply=localWorld->GuildReply();
             if(localWorldGuildCapture)captureReady=captureReady&&riverbankGuild.Open()&&guildReply&&guildReply->state.inviteId>0;
             if(localWorldTerritoryCapture)captureReady=captureReady&&CaptureTerritoryProgress();
+            if(localWorldExpeditionCapture)captureReady=captureReady&&CaptureExpeditionBoard();
 #endif
             if(!localWorldCaptureCount&&captureReady){
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -4255,6 +4339,15 @@ private:
                     proof<<localWorld->PlayerId()<<'\n'<<state.challenger<<'\n'<<state.progress<<'\n'<<state.challengerName<<'\n';
                     proof.close();
                     if(!proof)throw std::runtime_error("Territory screenshot receipt write failed");
+                }
+                if(localWorldExpeditionCapture){
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".expedition.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Expedition screenshot receipt already exists");
+                    std::ofstream proof(receipt);
+                    proof<<localWorld->PlayerId()<<'\n'<<unsigned(localWorld->Expedition()->stage)<<'\n';
+                    proof.close();
+                    if(!proof)throw std::runtime_error("Expedition screenshot receipt write failed");
                 }
 #endif
                 if(!e.CaptureNextFrame3D(localWorldScreenshot))throw std::runtime_error("Local world screenshot request rejected");
@@ -5733,6 +5826,7 @@ private:
         DrawRiverbankBattleTelegraph();
 #ifdef AEVRYND_MISTWATCH_PROFILES
         DrawRiverbankTerritoryBoundary();
+        DrawRiverbankExpeditionMarkers();
 #endif
 #endif
         submittedWorkshop=0;
@@ -5815,6 +5909,11 @@ private:
             using Area=Mistwatch::RiverbankTerritory;
             camera.target={Area::CenterX-1.f,terrain.SampleHeight(Area::CenterX,Area::CenterZ)+.35f,Area::CenterZ};
             camera.position=camera.target+Vec3{-7.f,6.5f,-8.f};
+        }
+        if(CaptureExpeditionBoard()){
+            const auto board=Mistwatch::RiverbankExpedition::Board;
+            camera.target={board.x,terrain.SampleHeight(board.x,board.z)+.75f,board.z};
+            camera.position=camera.target+Vec3{-3.1f,2.25f,-4.8f};
         }
 #endif
 #endif
