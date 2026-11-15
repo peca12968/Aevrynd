@@ -233,7 +233,14 @@ inline Hud Build(const Session& session,const ObjectiveGuide& guide,const Encoun
         }
         hud.context="野豬生命 "+std::to_string(enemy.health)+" / 3";
         if(started&&!paused&&session.Alive()){
-            hud.context+="；"+(guide.evadeReady?std::string("Q 可閃避"):"Q 目前不可用：冷卻、蹲下或離地");
+            switch(guide.evadeAvailability){
+            case EvasionAvailability::Ready:hud.context+="；Q 可閃避";break;
+            case EvasionAvailability::Active:hud.context+="；正在閃避";break;
+            case EvasionAvailability::Cooldown:hud.context+="；Q 冷卻中";break;
+            case EvasionAvailability::Crouched:hud.context+="；蹲下時無法閃避";break;
+            case EvasionAvailability::Airborne:hud.context+="；離地時無法閃避";break;
+            case EvasionAvailability::Unavailable:hud.context+="；Q 暫時不可用";break;
+            }
             hud.controls="WASD＋Q 定向閃避 · Q 後撤 · F 反擊 · Esc 地圖 · J 手冊";
         }
         break;

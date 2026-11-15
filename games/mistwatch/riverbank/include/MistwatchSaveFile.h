@@ -1,5 +1,6 @@
 #pragma once
 #include "MistwatchSaveGame.h"
+#include "MistwatchSettingsFile.h"
 #include <Windows.h>
 #include <atomic>
 #include <filesystem>
@@ -12,15 +13,15 @@ namespace Mistwatch {
 inline std::filesystem::path SelectRiverbankSaveDirectory(const std::filesystem::path& local) {
     namespace fs=std::filesystem;
     std::error_code error;
-    if(!local.is_absolute()||!fs::is_directory(local,error))return {};
+    if(!local.is_absolute()||!fs::is_directory(ProfileIoPath(local),error))return {};
     const auto readable=[](const fs::path& directory) {
         std::error_code readError;
         // 直接開啟目錄才能辨別掛載已失效的 junction。
-        static_cast<void>(fs::directory_iterator(directory,readError));
+        static_cast<void>(fs::directory_iterator(ProfileIoPath(directory),readError));
         return !readError;
     };
     const auto alternate=local/"MistwatchRiverbankPlaytest"/"Aevrynd"/"Mistwatch";
-    for(fs::directory_iterator entry(alternate,error),end;!error&&entry!=end;entry.increment(error)){
+    for(fs::directory_iterator entry(ProfileIoPath(alternate),error),end;!error&&entry!=end;entry.increment(error)){
         const auto name=entry->path().filename().native();
         const bool checkpoint=name==L"save.txt"||(name.starts_with(L"save-")&&name.ends_with(L".txt"));
         if(checkpoint||name==L"audio-settings.txt"||name==L"camera-settings.txt"||name==L"graphics-settings.txt"){
@@ -29,9 +30,9 @@ inline std::filesystem::path SelectRiverbankSaveDirectory(const std::filesystem:
         }
     }
     const auto primary=local/"Aevrynd"/"Mistwatch";
-    fs::create_directories(primary,error);
+    fs::create_directories(ProfileIoPath(primary),error);
     if(!error&&readable(primary))return primary;
-    fs::create_directories(alternate,error);
+    fs::create_directories(ProfileIoPath(alternate),error);
     if(!error&&readable(alternate))return alternate;
     return {};
 }
@@ -54,7 +55,8 @@ inline SaveFileResult WriteSaveFile(const std::filesystem::path& target,const Sa
         const auto bytes=game.Serialize();
         if(bytes.empty()||bytes.size()>SaveGame::MaximumBytes)return SaveFileResult::InvalidSnapshot;
         std::error_code error;
-        if(!target.parent_path().empty())std::filesystem::create_directories(target.parent_path(),error);
+        const auto ioTarget=ProfileIoPath(target);
+        if(!ioTarget.parent_path().empty())std::filesystem::create_directories(ioTarget.parent_path(),error);
         if(error)return SaveFileResult::DirectoryUnavailable;
         static std::atomic<unsigned long long> sequence{};
         // 舊程序可能在暫存檔完成前結束，而 Windows 會重用程序識別碼。
@@ -69,6 +71,7 @@ inline SaveFileResult WriteSaveFile(const std::filesystem::path& target,const Sa
                 temporary=target.parent_path()/(L".mw-save"+suffix);
                 if(CompareStringOrdinal(temporary.filename().c_str(),-1,target.filename().c_str(),-1,TRUE)==CSTR_EQUAL)continue;
             }
+            temporary=ProfileIoPath(temporary);
             handle=CreateFileW(temporary.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
             if(handle!=INVALID_HANDLE_VALUE)break;
             const DWORD failure=GetLastError();
@@ -84,7 +87,7 @@ inline SaveFileResult WriteSaveFile(const std::filesystem::path& target,const Sa
         if(!FlushFileBuffers(handle)){cleanup();return SaveFileResult::FlushFailed;}
         const BOOL closed=CloseHandle(handle);handle=INVALID_HANDLE_VALUE;
         if(!closed){cleanup();return SaveFileResult::CloseFailed;}
-        if(!MoveFileExW(temporary.c_str(),target.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
+        if(!MoveFileExW(temporary.c_str(),ioTarget.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)){
             cleanup();return SaveFileResult::ReplaceFailed;
         }
         ownsTemporary=false;
@@ -96,7 +99,7 @@ inline SaveFileResult WriteSaveFile(const std::filesystem::path& target,const Sa
 inline bool ReadSaveFile(const std::filesystem::path& target,SaveGame& candidate) noexcept {
     try {
         if(target.empty())return false;
-        std::ifstream input(target,std::ios::binary);
+        std::ifstream input(ProfileIoPath(target),std::ios::binary);
         if(!input)return false;
         return candidate.RestoreStream(input);
     }catch(...){return false;}
@@ -111,7 +114,7 @@ inline std::optional<std::filesystem::path> RecoveredRiverbankCheckpoint(
     if(!local.is_absolute()||selected.parent_path()!=fallback||!selected.has_filename()||!expectedWorld)
         return std::nullopt;
     std::error_code error;
-    if(fs::symlink_status(selected,error).type()!=fs::file_type::not_found)return std::nullopt;
+    if(fs::symlink_status(ProfileIoPath(selected),error).type()!=fs::file_type::not_found)return std::nullopt;
     const auto primary=local/"Aevrynd"/"Mistwatch"/selected.filename();
     SaveGame candidate;
     if(!ReadSaveFile(primary,candidate)||candidate.worldIdentity!=expectedWorld)return std::nullopt;

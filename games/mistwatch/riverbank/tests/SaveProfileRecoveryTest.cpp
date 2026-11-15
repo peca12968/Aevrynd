@@ -1,4 +1,5 @@
 #include "MistwatchAudio.h"
+#include "MistwatchCameraSettingsFile.h"
 #include "MistwatchGraphicsSettings.h"
 #include "MistwatchSaveFile.h"
 #include "MistwatchSettingsFile.h"
@@ -69,6 +70,39 @@ int main() {
             Require(entry.path() == longCheckpoint || entry.path() == shortCollision, "unexpected temporary checkpoint file");
         std::cout << "RIVERBANK_SAVE_LONG_TEMP_PASS target_chars=253 collision_preserved=1\n";
 
+        const std::wstring extendedName =
+            L"save-forest-grove-v13-8535528500199423151-riverbank-v1-bearing-bridge-v1-mature-indexed-v1.txt";
+        constexpr std::size_t extendedLength = 275;
+        Require(root.native().size() + extendedName.size() + 2 < extendedLength,
+                "extended checkpoint fixture root is too deep");
+        const auto extendedFolder = root / std::wstring(extendedLength - root.native().size() - extendedName.size() - 2, L'長');
+        Require(fs::create_directory(extendedFolder), "could not prepare the extended checkpoint folder");
+        const auto extendedTarget = extendedFolder / extendedName;
+        Require(extendedTarget.native().size() == extendedLength, "extended checkpoint fixture length differs");
+        Require(WriteSaveFile(extendedTarget, primarySave) == SaveFileResult::Saved,
+                "EXTENDED_PATH_CHECKPOINT_WRITE_FAILED");
+        SaveGame extendedRestored;
+        Require(ReadSaveFile(extendedTarget, extendedRestored) && extendedRestored.Serialize() == primarySave.Serialize(),
+                "extended checkpoint did not roundtrip");
+        extendedRestored.session.health = 67;
+        Require(WriteSaveFile(extendedTarget, extendedRestored) == SaveFileResult::Saved,
+                "extended checkpoint replacement failed");
+        const auto explicitPath = fs::path(std::wstring(LR"(\\?\)") + extendedTarget.native());
+        HANDLE locked = CreateFileW(explicitPath.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+        Require(locked != INVALID_HANDLE_VALUE, "could not lock the extended checkpoint");
+        const auto lockedResult = WriteSaveFile(extendedTarget, primarySave);
+        const bool closedCheckpoint = CloseHandle(locked) != 0;
+        SaveGame afterLockedReplace;
+        Require(closedCheckpoint && lockedResult == SaveFileResult::ReplaceFailed &&
+                ReadSaveFile(extendedTarget, afterLockedReplace) &&
+                afterLockedReplace.Serialize() == extendedRestored.Serialize(),
+                "failed extended replacement did not preserve the prior checkpoint");
+        for (const auto& entry : fs::directory_iterator(extendedFolder))
+            Require(entry.path().filename() == extendedName, "extended checkpoint left a temporary file");
+        Require(DeleteFileW(explicitPath.c_str()) != 0, "could not remove the isolated extended checkpoint");
+        std::cout << "RIVERBANK_EXTENDED_CHECKPOINT_PASS target_chars=275 replaced=1 failed_replace_preserved=1\n";
+
         Require(SelectRiverbankSaveDirectory(local) == primary,
                 "empty fallback hides recovered primary checkpoint");
         SaveGame restored;
@@ -114,6 +148,55 @@ int main() {
         for (const auto& entry : fs::directory_iterator(exportFolder))
             Require(entry.path() == exportFile || entry.path() == exportCollision, "unexpected temporary playtest export");
         std::cout << "RIVERBANK_PLAYTEST_LONG_EXPORT_PASS target_chars=253 collision_preserved=1 failed_replace_preserved=1\n";
+
+        constexpr std::size_t extendedExportLength = 275;
+        Require(root.native().size() + exportName.size() + 2 < extendedExportLength,
+                "extended export fixture root is too deep");
+        const auto extendedProfile = root / std::wstring(
+            extendedExportLength - root.native().size() - exportName.size() - 2, L'p');
+        const auto prefixPath = [](const fs::path& path) {
+            return fs::path(std::wstring(LR"(\\?\)") + path.native());
+        };
+        const auto longExport = extendedProfile / exportName;
+        Require(longExport.native().size() == extendedExportLength, "extended export path length differs");
+        Require(WriteSettingsFile(longExport, firstSummary), "EXTENDED_PROFILE_EXPORT_WRITE_FAILED");
+        Require(readExport(prefixPath(longExport)) == firstSummary &&
+                WriteSettingsFile(longExport, nextSummary) && readExport(prefixPath(longExport)) == nextSummary,
+                "extended export did not roundtrip and replace");
+        HANDLE heldExport = CreateFileW(prefixPath(longExport).c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
+                                        FILE_ATTRIBUTE_NORMAL, nullptr);
+        Require(heldExport != INVALID_HANDLE_VALUE, "could not lock the extended export");
+        const bool overwroteExport = WriteSettingsFile(longExport, firstSummary);
+        const bool closedExport = CloseHandle(heldExport) != 0;
+        Require(closedExport && !overwroteExport && readExport(prefixPath(longExport)) == nextSummary,
+                "failed extended export changed the prior report");
+        const auto longGraphics = extendedProfile / "graphics-settings.txt";
+        const GraphicsSettings lowGraphics{false, false};
+        GraphicsSettings loadedGraphics;
+        Require(WriteSettingsFile(longGraphics, lowGraphics.Serialize()) &&
+                ReadGraphicsSettingsFile(longGraphics, loadedGraphics) &&
+                loadedGraphics.Serialize() == lowGraphics.Serialize(), "extended graphics settings did not roundtrip");
+        const auto longCamera = extendedProfile / "camera-settings.txt";
+        const CameraSettings preferredCamera{150, true};
+        CameraSettings loadedCamera;
+        Require(WriteCameraSettingsFile(longCamera, preferredCamera) &&
+                ReadCameraSettingsFile(longCamera, loadedCamera) &&
+                loadedCamera.Serialize() == preferredCamera.Serialize(), "extended camera settings did not roundtrip");
+        const auto longAudio = extendedProfile / "audio-settings.txt";
+        const AudioOptions preferredAudio{0.35f, true};
+        AudioOptions loadedAudio;
+        Require(WriteSettingsFile(longAudio, preferredAudio.Serialize()) &&
+                loadedAudio.Restore(readExport(prefixPath(longAudio))) &&
+                loadedAudio.Serialize() == preferredAudio.Serialize(), "extended audio settings did not roundtrip");
+        for (const auto& entry : fs::directory_iterator(prefixPath(extendedProfile))) {
+            const auto name = entry.path().filename();
+            Require(name == longExport.filename() || name == longGraphics.filename() ||
+                    name == longCamera.filename() || name == longAudio.filename(), "extended profile left a temporary file");
+        }
+        for (const auto& file : {longExport, longGraphics, longCamera, longAudio})
+            Require(fs::remove(prefixPath(file)), "could not remove an isolated extended profile fixture");
+        Require(fs::remove(prefixPath(extendedProfile)), "could not remove the isolated profile directory");
+        std::cout << "RIVERBANK_EXTENDED_PROFILE_PASS target_chars=275 settings=3 locked_report_preserved=1\n";
 
         const auto settingsLocal = root / "settings";
         const auto settingsAlternate = settingsLocal / "MistwatchRiverbankPlaytest" / "Aevrynd" / "Mistwatch";

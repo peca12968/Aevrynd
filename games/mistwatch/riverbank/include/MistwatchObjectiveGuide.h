@@ -31,6 +31,7 @@ struct ObjectiveGuide {
     std::optional<unsigned> earlyRepairIndex;
     BridgeRepairIntent bridgeIntent{BridgeRepairIntent::None};
     CounterOpportunity counterOpportunity{CounterOpportunity::Closed};
+    EvasionAvailability evadeAvailability{EvasionAvailability::Unavailable};
     unsigned index{};
     // index/useReady/tuneReady 仍是近場操作；此欄只識別玩家確認的導航目的地。
     unsigned navigationRelayIndex{NoTrackedRelay};bool relayTrackingActive{};
@@ -238,7 +239,8 @@ inline ObjectiveGuide BuildObjectiveGuide(const Session& session,const Encounter
             else guide.counterOpportunity=CounterOpportunity::Ready;
         }
         guide.counterReady=guide.counterOpportunity==CounterOpportunity::Ready;
-        guide.evadeReady=grounded&&!crouched&&evasion.cooldown<=0&&evasion.remaining<=0;
+        guide.evadeAvailability=evasion.Availability(grounded,crouched);
+        guide.evadeReady=guide.evadeAvailability==EvasionAvailability::Ready;
         if(enemy.phase==EnemyPhase::Windup)guide.instruction="Leave the marked strike circle";
         else if(enemy.phase==EnemyPhase::Recovery&&enemy.countered)guide.instruction="Counter used; wait for the next opening";
         else if(guide.counterReady)guide.instruction="F: counter once during this opening";

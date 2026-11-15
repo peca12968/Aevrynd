@@ -69,6 +69,25 @@ int main() {
                 combatHud.controls.find("F 反擊") != std::string::npos &&
                 combatHud.controls.find("J 手冊") != std::string::npos,
                 "combat HUD must distinguish the dodge inputs and retain counter/help");
+        const auto evadeHint = [&](const Evasion& action, bool crouched, bool grounded) {
+            const auto guide = BuildObjectiveGuide(combat, enemy, action, camera, crouched, grounded, solids, terrain);
+            const auto hud = FieldPresentation::Build(combat, guide, enemy, true, false, false);
+            Require(hud.valid, "the evade hint rejected a valid encounter");
+            return hud.context;
+        };
+        Evasion recovering;
+        recovering.cooldown = .5f;
+        Require(evadeHint(evasion, false, true).ends_with("Q 可閃避"),
+                "ready encounter must show Q can evade");
+        Require(evadeHint(recovering, false, true).ends_with("Q 冷卻中"),
+                "encounter must name the active dodge cooldown");
+        Require(evadeHint(recovering, true, true).ends_with("蹲下時無法閃避"),
+                "encounter must explain why a crouched player cannot evade");
+        Require(evadeHint(recovering, false, false).ends_with("離地時無法閃避"),
+                "encounter must explain why an airborne player cannot evade");
+        recovering.remaining = .1f;
+        Require(evadeHint(recovering, false, true).ends_with("正在閃避"),
+                "encounter must distinguish ongoing evasion from cooldown");
         const auto pausedCombat = FieldPresentation::Build(combat, combatGuide, enemy, true, true, false);
         Require(pausedCombat.controls.starts_with("Esc 繼續") &&
                 pausedCombat.controls.find("F5 儲存") != std::string::npos &&

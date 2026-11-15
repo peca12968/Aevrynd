@@ -33,7 +33,7 @@ struct GraphicsSettings {
 };
 
 inline bool ReadGraphicsSettingsFile(const std::filesystem::path& file,GraphicsSettings& settings) {
-    std::ifstream in(file,std::ios::binary);
+    std::ifstream in(ProfileIoPath(file),std::ios::binary);
     std::array<char,GraphicsSettings{}.Serialize().size()+1> text{};
     in.read(text.data(),std::streamsize(text.size()));
     const auto bytes=in.gcount();

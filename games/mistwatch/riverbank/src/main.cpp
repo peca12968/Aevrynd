@@ -1744,7 +1744,7 @@ class MistwatchGame final : public IGame {
         using Status=Mistwatch::FieldPresentation::TitleCheckpoint;
         if(path.empty())return Status::NoPath;
         std::error_code error;
-        const auto status=std::filesystem::status(path,error);
+        const auto status=std::filesystem::status(Mistwatch::ProfileIoPath(path),error);
         if(status.type()==std::filesystem::file_type::not_found)return Status::Missing;
         if(error||!std::filesystem::is_regular_file(status))return Status::Unreadable;
         Mistwatch::SaveGame candidate;
@@ -3729,7 +3729,7 @@ private:
             throw std::runtime_error("Boar hit render skeleton incompatible");
         if(capture.empty()&&inputReplayDirectory.empty()&&!save.empty()) {
             audioSettings=save.parent_path()/"audio-settings.txt";
-            std::ifstream file(audioSettings);std::string line;
+            std::ifstream file(Mistwatch::ProfileIoPath(audioSettings));std::string line;
             if(std::getline(file,line))gameAudio.options.Restore(line);
         }
         // 自動擷取與輸入重播保持固定預設值，不讀寫玩家的鏡頭偏好。
