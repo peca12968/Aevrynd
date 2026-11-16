@@ -28,19 +28,31 @@ def until(peer, epoch, player, predicate):
     raise RuntimeError('指定的多人快照未到達')
 
 
-def native_roundtrip(server, client, folder):
+def native_roundtrip(server, client, folder, manual=False):
     ticket = secrets.token_bytes(32)
     with start(server, folder / 'NativeProfiles.sqlite3') as (port, _epoch), closing(socket.socket()) as listener:
         listener.bind(('127.0.0.1', 0))
         listener.listen(2)
         listener.settimeout(5)
         drop = threading.Event()
+        retry_allowed = threading.Event()
         done = threading.Event()
         failure = queue.Queue()
 
         def relay():
             try:
                 for first in (True, False):
+                    if manual and not first:
+                        listener.settimeout(.15)
+                        while not done.is_set() and not retry_allowed.is_set():
+                            try:
+                                rejected, _ = listener.accept()
+                                rejected.close()
+                            except TimeoutError:
+                                pass
+                        if done.is_set():
+                            return
+                        listener.settimeout(7)
                     source, _ = listener.accept()
                     with closing(source), closing(world.connect(port)) as target:
                         peers = {source: target, target: source}
@@ -58,7 +70,8 @@ def native_roundtrip(server, client, folder):
         forwarding = threading.Thread(target=relay, daemon=True)
         forwarding.start()
         env = dict(os.environ, AEVRYND_MISTWATCH_PROFILE_TICKET=ticket.hex())
-        with subprocess.Popen([str(client), str(listener.getsockname()[1]), '--live-reconnect'], env=env, text=True,
+        mode = '--manual-reconnect' if manual else '--live-reconnect'
+        with subprocess.Popen([str(client), str(listener.getsockname()[1]), mode], env=env, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW) as game:
             opened = queue.Queue()
             reader = threading.Thread(target=lambda: opened.put(game.stdout.readline().strip()), daemon=True)
@@ -67,15 +80,25 @@ def native_roundtrip(server, client, folder):
                 initial = opened.get(timeout=6)
                 if not initial.startswith('READY_FOR_TRANSPORT_DROP '):
                     raise RuntimeError(f'原生客戶端未完成首次登入：{initial}')
+                dropped_at = time.monotonic()
                 drop.set()
-                output, errors = game.communicate(timeout=8)
+                if manual:
+                    reader.join(timeout=1)
+                    threading.Thread(target=lambda: opened.put(game.stdout.readline().strip()), daemon=True).start()
+                    ended = opened.get(timeout=36)
+                    elapsed = time.monotonic() - dropped_at
+                    if ended != 'MANUAL_RETRY_REQUIRED ' + initial.split()[1] or elapsed < 29:
+                        raise RuntimeError(f'自動重連尚未完整逾時：{elapsed:.2f} 秒 {ended}')
+                    retry_allowed.set()
+                output, errors = game.communicate(timeout=9 if manual else 8)
                 accepted = output.strip()
                 if game.returncode or not accepted.startswith('NATIVE_LIVE_RECONNECT_PASS '):
                     raise RuntimeError(f'原生客戶端重連未通過：{game.returncode} {accepted} {errors}')
                 if not failure.empty():
                     raise failure.get_nowait()
                 return {'original_connection': int(initial.split()[1]), 'new_connection': int(accepted.split()[1]),
-                        'native_client_sha256': world.sha256(client.read_bytes()).hexdigest()}
+                        'native_client_sha256': world.sha256(client.read_bytes()).hexdigest(),
+                        'manual_retry': manual, 'offline_seconds': round(elapsed, 3) if manual else None}
             finally:
                 done.set()
                 if game.poll() is None:
@@ -137,4 +160,14 @@ def run(server, output, client=None):
 
 
 if __name__ == '__main__':
-    run(*(Path(argument).resolve(strict=True) for argument in sys.argv[1:]))
+    if len(sys.argv) == 5 and sys.argv[-1] == '--manual':
+        server, destination, client = (Path(argument).resolve(strict=True) for argument in sys.argv[1:4])
+        base = Path(mkdtemp(prefix='manual-reconnect-', dir=destination))
+        receipt = native_roundtrip(server, client, base, manual=True)
+        receipt.update(status='LIVE_MANUAL_RECONNECT_VERIFIED',
+                       server_sha256=world.sha256(server.read_bytes()).hexdigest())
+        output = base/'ManualReconnectVerification.json'
+        output.write_text(json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
+        print(output,flush=True)
+    else:
+        run(*(Path(argument).resolve(strict=True) for argument in sys.argv[1:]))

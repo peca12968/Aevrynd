@@ -36,6 +36,8 @@ public:
     const RiverbankFieldWire::Reply* FieldHunt() const noexcept;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
+    bool CanRetryConnection() const noexcept;
+    bool RetryConnection() noexcept;
     bool CanUseGuild() const noexcept;
     bool CanUseTrailSupplies() const noexcept;
     bool RequestTrailSupplies(TrailSupplyAction action);

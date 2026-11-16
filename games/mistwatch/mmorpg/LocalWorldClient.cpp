@@ -66,7 +66,20 @@ struct LocalWorldClient::State {
     Clock::time_point retryAt{}, reconnectUntil{};
     RiverbankClass requestedClass{RiverbankClass::None};
 #ifdef AEVRYND_MISTWATCH_PROFILES
+    static constexpr auto ReconnectWindow = std::chrono::seconds(30);
     std::optional<RiverbankTicket> profileTicket = ProfileTicketFromEnvironment();
+    bool CanRetryConnection() const noexcept {
+        return profileTicket && connectedProfileClass != RiverbankClass::None && port &&
+            !peer && !reconnecting;
+    }
+
+    bool RetryConnection() noexcept {
+        if (!CanRetryConnection()) return false;
+        retryAt = Clock::now();
+        reconnectUntil = retryAt + ReconnectWindow;
+        reconnecting = true;
+        return true;
+    }
     bool profileLookupComplete{};
     RiverbankClass connectedProfileClass{RiverbankClass::None};
     std::uint64_t nextGuildSequence{1}, pendingGuildSequence{};
@@ -364,7 +377,7 @@ struct LocalWorldClient::State {
         profileLookupComplete = false;
         if (retryTransport && connectedProfileClass != RiverbankClass::None) {
             const auto now = Clock::now();
-            if (!reconnecting) reconnectUntil = now + std::chrono::seconds(30);
+            if (!reconnecting) reconnectUntil = now + ReconnectWindow;
             reconnecting = true;
             retryAt = now + std::chrono::milliseconds(500);
             return Status::Reconnecting;
@@ -423,6 +436,8 @@ const RiverbankFieldWire::Reply* LocalWorldClient::FieldHunt() const noexcept {
 }
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
+bool LocalWorldClient::CanRetryConnection() const noexcept { return state_->CanRetryConnection(); }
+bool LocalWorldClient::RetryConnection() noexcept { return state_->RetryConnection(); }
 bool LocalWorldClient::CanUseGuild() const noexcept {
     return state_->peer && state_->profileTicket && state_->snapshot && state_->encounter;
 }
@@ -512,7 +527,8 @@ const RiverbankPartyWire::Reply* LocalWorldClient::Party() const noexcept {
 bool LocalWorldClient::RequestExpedition(bool interact) {
     if (!CanUseGuild() || state_->pendingExpeditionSequence || state_->nextExpeditionSequence == (std::numeric_limits<std::uint64_t>::max)())
         return false;
-    if (!state_->peer->Queue(RiverbankExpeditionWire::EncodeRequest({state_->nextExpeditionSequence, interact}))) return false;
+    const bool watch = state_->Supports(RiverbankExpeditionWire::WatchSurveyCapability);
+    if (!state_->peer->Queue(RiverbankExpeditionWire::EncodeRequest({state_->nextExpeditionSequence, interact, watch}))) return false;
     state_->pendingExpeditionSequence = state_->nextExpeditionSequence++;
     return true;
 }

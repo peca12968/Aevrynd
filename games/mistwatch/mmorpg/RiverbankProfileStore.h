@@ -20,6 +20,11 @@ struct RiverbankProfile {
     bool trailPack{};
 };
 
+struct RiverbankWatchMember {
+    std::int64_t profileId{};
+    ArenaPosition position{};
+};
+
 // The dedicated local server owns the database and never stores the raw client ticket.
 class RiverbankProfileStore {
 public:
@@ -50,8 +55,9 @@ public:
 
     RiverbankGearState ReadBossGear(std::int64_t profileId);
     GearResult ChangeBossGear(std::int64_t profileId, GearAction action);
-    ExpeditionStage ReadExpedition(std::int64_t profileId);
-    ExpeditionResult InteractExpedition(std::int64_t profileId, ArenaPosition position);
+    ExpeditionStage ReadExpedition(std::int64_t profileId, bool watchSurvey = false);
+    ExpeditionResult InteractExpedition(std::int64_t profileId, ArenaPosition position, bool watchSurvey = false,
+                                        std::span<const RiverbankWatchMember> watchMembers = {});
 
 private:
     struct Database;

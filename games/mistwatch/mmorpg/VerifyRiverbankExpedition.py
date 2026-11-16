@@ -21,8 +21,8 @@ AVAILABLE, CHECK_TRAIL, HUNT, REPORT, COMPLETE = range(5)
 VIEWED, ADVANCED, TOO_FAR, HUNT_REQUIRED, FINISHED = range(5)
 
 
-def expedition(peer, sequence, interact=False):
-    request = b'AEEX\x01\x01' + struct.pack('<QB', sequence, int(interact))
+def expedition(peer, sequence, interact=False, watch=False):
+    request = b'AEEX\x01\x01' + struct.pack('<QB', sequence, int(interact) | (int(watch) << 1))
     peer.sendall(struct.pack('!I', len(request)) + request)
     deadline = time.monotonic() + 4
     while time.monotonic() < deadline:
@@ -33,7 +33,7 @@ def expedition(peer, sequence, interact=False):
             continue
         assert len(data) == 16 and data.startswith(b'AEEX\x01\x02')
         received, stage, result = struct.unpack_from('<QBB', data, 6)
-        assert received == sequence and stage <= COMPLETE
+        assert received == sequence and stage <= (9 if watch else COMPLETE)
         return stage, result
     raise AssertionError('Expedition reply did not arrive')
 

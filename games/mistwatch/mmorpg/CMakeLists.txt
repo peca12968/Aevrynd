@@ -60,6 +60,13 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   add_test(NAME MistwatchRiverbankExpeditionLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankExpedition.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME MistwatchRiverbankWatchSurveyLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankWatchSurvey.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME MistwatchRiverbankPartyWatchLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankPartyWatch.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankPartyWatchLoopbackTest PROPERTIES TIMEOUT 300 LABELS "mistwatch;expedition;party;network")
   add_test(NAME MistwatchRiverbankLiveReconnectTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLiveReconnect.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
@@ -127,7 +134,12 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   set_tests_properties(MistwatchRiverbankGuildLoopbackTest PROPERTIES TIMEOUT 30 LABELS "mistwatch;guild;network")
   set_tests_properties(MistwatchRiverbankTerritoryLoopbackTest PROPERTIES TIMEOUT 100 LABELS "mistwatch;guild;territory;network")
   set_tests_properties(MistwatchRiverbankExpeditionLoopbackTest PROPERTIES TIMEOUT 135 LABELS "mistwatch;expedition;network")
+  set_tests_properties(MistwatchRiverbankWatchSurveyLoopbackTest PROPERTIES TIMEOUT 235 LABELS "mistwatch;expedition;network")
   set_tests_properties(MistwatchRiverbankLiveReconnectTest PROPERTIES TIMEOUT 30 LABELS "mistwatch;profile;network")
+  add_test(NAME MistwatchRiverbankManualReconnectTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLiveReconnect.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>" --manual)
+  set_tests_properties(MistwatchRiverbankManualReconnectTest PROPERTIES TIMEOUT 58 LABELS "mistwatch;profile;network")
 endif()
 add_executable(MistwatchLocalWorldClientSmoke LocalWorldClientSmoke.cpp)
 target_link_libraries(MistwatchLocalWorldClientSmoke PRIVATE MistwatchLocalWorldClient)
@@ -181,6 +193,17 @@ if(MISTWATCH_LOCAL_WORLD_AVATAR AND TARGET AevryndEngine)
   add_test(NAME MistwatchRiverbankAvatarPoseTest
     COMMAND MistwatchRiverbankAvatarPoseSmoke "${MISTWATCH_LOCAL_WORLD_AVATAR}")
   set_tests_properties(MistwatchRiverbankAvatarPoseTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;character")
+  if(MISTWATCH_RIVERBANK_HAIR_VARIANTS)
+    add_executable(MistwatchRiverbankHistoricalHairSmoke RiverbankHistoricalHairSmoke.cpp)
+    target_compile_features(MistwatchRiverbankHistoricalHairSmoke PRIVATE cxx_std_20)
+    target_compile_definitions(MistwatchRiverbankHistoricalHairSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(MistwatchRiverbankHistoricalHairSmoke PRIVATE /W4 /WX /permissive- /utf-8 /MP1)
+    target_link_libraries(MistwatchRiverbankHistoricalHairSmoke PRIVATE AevryndEngine)
+    set_target_properties(MistwatchRiverbankHistoricalHairSmoke PROPERTIES MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+    add_test(NAME MistwatchRiverbankHistoricalHairTest
+      COMMAND MistwatchRiverbankHistoricalHairSmoke "${MISTWATCH_LOCAL_WORLD_AVATAR}" ${MISTWATCH_RIVERBANK_HAIR_VARIANTS})
+    set_tests_properties(MistwatchRiverbankHistoricalHairTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;character")
+  endif()
   foreach(wardrobe IN LISTS MISTWATCH_RIVERBANK_WARDROBES)
     get_filename_component(role_asset "${wardrobe}" NAME_WE)
     add_test(NAME "MistwatchWardrobePose-${role_asset}" COMMAND MistwatchRiverbankAvatarPoseSmoke "${wardrobe}")

@@ -223,7 +223,12 @@ if(TARGET MistwatchLocalWorldClient)
         "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character/RiverbankExplorer.aeskin" VERBATIM)
     if(MISTWATCH_RIVERBANK_WARDROBES)
       target_compile_definitions(MistwatchRiverbankLocalWorld PRIVATE AEVRYND_MISTWATCH_RIVERBANK_WARDROBE=1)
-      foreach(wardrobe IN LISTS MISTWATCH_RIVERBANK_WARDROBES)
+      set(wardrobe_files "${MISTWATCH_RIVERBANK_WARDROBES}")
+      if(MISTWATCH_RIVERBANK_HAIR_VARIANTS)
+        target_compile_definitions(MistwatchRiverbankLocalWorld PRIVATE AEVRYND_MISTWATCH_RIVERBANK_HAIR=1)
+        list(APPEND wardrobe_files "${MISTWATCH_RIVERBANK_HAIR_VARIANTS}")
+      endif()
+      foreach(wardrobe IN LISTS wardrobe_files)
         set_property(TARGET MistwatchRiverbankLocalWorld APPEND PROPERTY LINK_DEPENDS "${wardrobe}")
         add_custom_command(TARGET MistwatchRiverbankLocalWorld POST_BUILD
           COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${wardrobe}"

@@ -67,15 +67,19 @@ inline Aevrynd::SkinnedModelAssetData LoadRiverbankAvatarAsset(const std::filesy
 }
 
 inline constexpr std::string_view RiverbankVestMaterial = "AX textile | Warm woven vest";
+inline constexpr std::string_view RiverbankHairMaterial = "AX owned | Chestnut keratin";
 
 struct RiverbankAvatarMeshPart {
     Aevrynd::SkinnedModel3D model;
     std::vector<Aevrynd::SkinnedSubmesh3D> submeshes;
 };
 
+enum class RiverbankAvatarPart { Body, Vest, BodyWithoutHair, Hair };
+
 // 共用骨架及權重。服裝版本只提供該材質使用的頂點與切線。
 inline RiverbankAvatarMeshPart CompactRiverbankAvatarPart(
-    const Aevrynd::SkinnedModelAssetData& base, const Aevrynd::SkinnedModel3D& appearance, bool vest) {
+    const Aevrynd::SkinnedModelAssetData& base, const Aevrynd::SkinnedModel3D& appearance,
+    RiverbankAvatarPart selection) {
     RiverbankAvatarMeshPart part;
     part.model.skeleton = base.model.skeleton;
     part.model.inverseBindMatrices = base.model.inverseBindMatrices;
@@ -84,7 +88,15 @@ inline RiverbankAvatarMeshPart CompactRiverbankAvatarPart(
     constexpr auto missing = (std::numeric_limits<std::uint32_t>::max)();
     std::vector<std::uint32_t> remap(base.model.bindMesh.vertices.size(), missing);
     for (const auto& surface : base.submeshes) {
-        if ((base.materialSlotNames.at(surface.materialSlot) == RiverbankVestMaterial) != vest) continue;
+        const auto& material = base.materialSlotNames.at(surface.materialSlot);
+        const bool vest = material == RiverbankVestMaterial;
+        const bool hair = material == RiverbankHairMaterial;
+        switch (selection) {
+        case RiverbankAvatarPart::Body: if (vest) continue; break;
+        case RiverbankAvatarPart::Vest: if (!vest) continue; break;
+        case RiverbankAvatarPart::BodyWithoutHair: if (vest || hair) continue; break;
+        case RiverbankAvatarPart::Hair: if (!hair) continue; break;
+        }
         auto range = surface;
         range.firstIndex = static_cast<std::uint32_t>(part.model.bindMesh.indices.size());
         part.submeshes.push_back(range);
@@ -100,9 +112,34 @@ inline RiverbankAvatarMeshPart CompactRiverbankAvatarPart(
             part.model.bindMesh.indices.push_back(compact);
         }
     }
-    if (part.submeshes.empty() || (vest && part.submeshes.size() != 1))
+    if (part.submeshes.empty() ||
+        ((selection == RiverbankAvatarPart::Vest || selection == RiverbankAvatarPart::Hair) && part.submeshes.size() != 1))
         throw std::runtime_error("Riverbank avatar material partition is incomplete");
     return part;
+}
+
+inline RiverbankAvatarMeshPart CompactRiverbankAvatarPart(
+    const Aevrynd::SkinnedModelAssetData& base, const Aevrynd::SkinnedModel3D& appearance, bool vest) {
+    return CompactRiverbankAvatarPart(base, appearance, vest ? RiverbankAvatarPart::Vest : RiverbankAvatarPart::Body);
+}
+
+inline RiverbankAvatarMeshPart LoadRiverbankAvatarHair(const std::filesystem::path& path,
+    const Aevrynd::SkinnedModelAssetData& base, const Aevrynd::SkinnedSubmesh3D& baseline) {
+    auto loaded = Aevrynd::LoadSkinnedModelAssetFileDetailed(path);
+    if (!loaded) throw std::runtime_error("Riverbank hair load failed: " + loaded.error);
+    auto& hair = loaded.asset;
+    const auto head = std::ranges::find(base.jointNames, "head");
+    if (head == base.jointNames.end() || hair.model.skeletonCompatibilityId != base.model.skeletonCompatibilityId ||
+        hair.submeshes.size() != 1 || hair.materialSlotNames.size() != 1 ||
+        hair.materialSlotNames.front() != RiverbankHairMaterial || !hair.clips.empty() ||
+        hair.submeshes.front().flags != baseline.flags)
+        throw std::runtime_error("Riverbank hair does not match the shared avatar");
+    const auto joint = static_cast<std::size_t>(head - base.jointNames.begin());
+    if (!std::ranges::all_of(hair.model.influences, [joint](const auto& influence) {
+        return influence.joints[0] == joint && influence.weights[0] == 65535;
+    })) throw std::runtime_error("Riverbank hair must be rigidly attached to the head");
+    hair.submeshes.front().materialSlot = baseline.materialSlot;
+    return {std::move(hair.model), std::move(hair.submeshes)};
 }
 
 inline std::vector<Aevrynd::Material3D> RiverbankAvatarMaterials(

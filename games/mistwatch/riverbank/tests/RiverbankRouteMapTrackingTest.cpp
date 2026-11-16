@@ -120,6 +120,10 @@ void VerifyBridgeRouting() {
     const auto report = *ExpeditionLandmark(ExpeditionStage::Report);
     const auto hunt = *ExpeditionLandmark(ExpeditionStage::Hunt);
     const auto board = *ExpeditionLandmark(ExpeditionStage::Available);
+    const auto east = *ExpeditionLandmark(ExpeditionStage::WatchEast);
+    const auto west = *ExpeditionLandmark(ExpeditionStage::WatchWest);
+    const auto watchReport = *ExpeditionLandmark(ExpeditionStage::WatchReport);
+    Require(!ExpeditionLandmark(ExpeditionStage::WatchRecorded), "Completed watch survey kept a destination");
     const float south = RiverbankBridgeDeck.center.z - RiverbankBridgeDeck.extents.z;
     const float north = RiverbankBridgeDeck.center.z + RiverbankBridgeDeck.extents.z;
 
@@ -187,6 +191,13 @@ void VerifyBridgeRouting() {
     Require(routeSamples > 3900 && riverBends > 100, "Bank survey did not exercise outer river bends");
     std::cout << "RIVERBANK_BRIDGE_ROUTES " << routeSamples << " bank_detours=" << riverBends << '\n';
 
+    const auto reachEast = PlanExpeditionRoute(east, board.world);
+    const auto traverseNorth = PlanExpeditionRoute(west, east.world);
+    const auto returnToCamp = PlanExpeditionRoute(watchReport, west.world);
+    Require(reachEast.leg == BridgeLeg::Approach && staysOnLandOrDeck(board.world, reachEast) &&
+            traverseNorth.leg == BridgeLeg::None && staysOnLandOrDeck(east.world, traverseNorth) &&
+            returnToCamp.leg == BridgeLeg::Approach && staysOnLandOrDeck(west.world, returnToCamp),
+            "Watch survey guidance did not follow the north bank and bridge");
     const auto crossing = PlanExpeditionRoute(hunt, {.5f, 0, south-1});
     Require(crossing.leg == BridgeLeg::Cross && crossing.count == 2 && crossing.stops[0].z > north,
             "Southern bridge entry did not advance to the north exit");

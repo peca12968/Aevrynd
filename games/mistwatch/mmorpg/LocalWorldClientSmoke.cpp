@@ -69,18 +69,24 @@ int VerifyTerritoryHistory(Mistwatch::LocalWorldClient& client) {
     return 28;
 }
 
-int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client) {
+int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client, bool manual) {
     using Status = Mistwatch::LocalWorldClient::Status;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(manual ? 49 : 12);
     Aevrynd::GlobalPosition3D previous{};
     std::uint64_t stopTick{}, oldId{}, oldEpoch{};
-    bool sawReconnect{}, restored{};
+    bool sawReconnect{}, manualAttempted{}, restored{};
     while (std::chrono::steady_clock::now() < deadline) {
         const auto status = client.Poll(stopTick && !restored ? 0 : 32767, 0);
-        if (status == Status::Disconnected) return 10;
+        if (status == Status::Disconnected) {
+            if (!manual || !oldId || !sawReconnect || manualAttempted || !client.CanRetryConnection()) return 10;
+            std::cout << "MANUAL_RETRY_REQUIRED " << oldId << std::endl;
+            if (!client.RetryConnection() || client.CanRetryConnection() || client.RetryConnection()) return 29;
+            manualAttempted = true;
+        }
         if (status == Status::ChoosingClass && (oldId || !client.ChooseClass(Mistwatch::RiverbankClass::Guardian))) return 10;
         sawReconnect |= status == Status::Reconnecting;
         if (status == Status::Ready) {
+            if (client.CanRetryConnection() || client.RetryConnection()) return 30;
             const auto* view = client.Snapshot();
             const auto own = std::ranges::find_if(view->entities, [&](const auto& entity) { return entity.id.low == client.PlayerId(); });
             if (own == view->entities.end()) return 11;
@@ -92,7 +98,7 @@ int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client) {
                 std::cout << "READY_FOR_TRANSPORT_DROP " << oldId << std::endl;
             } else if (oldId && client.PlayerId() != oldId) {
                 if (!restored) {
-                    if (!sawReconnect || view->sessionEpoch != oldEpoch || own->position != previous ||
+                    if (!sawReconnect || manual != manualAttempted || view->sessionEpoch != oldEpoch || own->position != previous ||
                         client.SelectedClass() != Mistwatch::RiverbankClass::Guardian) return 12;
                     restored = true;
                 } else if (own->position.offset.x > previous.offset.x) {
@@ -121,9 +127,10 @@ int main(int argc, char** argv) {
     }
     const bool guildView = argc == 3 && std::string_view(argv[2]) == "--guild-view";
     const bool reconnect = argc == 3 && std::string_view(argv[2]) == "--live-reconnect";
+    const bool manualReconnect = argc == 3 && std::string_view(argv[2]) == "--manual-reconnect";
     const bool party = argc == 3 && std::string_view(argv[2]) == "--party-accept";
     const bool history = argc == 3 && std::string_view(argv[2]) == "--territory-history";
-    if (argc != 2 && !guildView && !reconnect && !party && !history) return 1;
+    if (argc != 2 && !guildView && !reconnect && !manualReconnect && !party && !history) return 1;
     unsigned short port{};
     const std::string_view raw(argv[1]);
     const auto parsed = std::from_chars(raw.data(), raw.data() + raw.size(), port);
@@ -132,7 +139,7 @@ int main(int argc, char** argv) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 #ifdef AEVRYND_MISTWATCH_PROFILES
     if (party) return VerifyPartyInvitation(client);
-    if (reconnect) return VerifyLiveReconnect(client);
+    if (reconnect || manualReconnect) return VerifyLiveReconnect(client, manualReconnect);
     if (history) return VerifyTerritoryHistory(client);
     if (guildView) {
         bool requested = false;

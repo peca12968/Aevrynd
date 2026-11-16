@@ -4027,11 +4027,14 @@ private:
         if(!quest)return;
         const auto destination=Quest::Destination(quest->stage);
         const auto distance=std::hypot(session.feet.x-destination.x,session.feet.z-destination.z);
-        static constexpr std::array<std::string_view,5> objectives{
+        static constexpr std::array<std::string_view,10> objectives{
             "到南岸營地的委託牌領取任務", "沿道路向北，勘查橋前路標", "過橋組隊挑戰巡林野豬",
-            "返回南岸營地的委託牌回報", "巡林委託已完成"};
-        static constexpr std::array<std::string_view,5> actions{
-            "按 E 領取委託", "按 E 勘查路標", "在首領戰中做出貢獻並取得戰利品", "按 E 回報並領取徽章", "已取得巡林徽章"};
+            "返回南岸營地的委託牌回報", "巡林委託已完成", "回營地委託牌領取北岸勘查",
+            "過橋後朝東，查看林間瞭望樁", "沿北岸高地前往西側瞭望樁", "回南岸營地交回兩處紀錄", "北岸勘查已完成"};
+        static constexpr std::array<std::string_view,10> actions{
+            "按 E 領取委託", "按 E 勘查路標", "在首領戰中做出貢獻並取得戰利品", "按 E 回報並領取徽章",
+            "已取得巡林徽章", "已取得巡林徽章 · 按 E 領取勘查", "按 E 記錄東側地況", "按 E 記錄西側地況",
+            "按 E 交回紀錄", "兩處瞭望點已登記"};
         const auto stage=static_cast<std::size_t>(quest->stage);
         float offset=0.f;
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -4041,12 +4044,14 @@ private:
         }
 #endif
         draw.Quad({236+offset,636},{456,128},{.045f,.067f,.053f,.95f});
-        draw.SystemText({23+offset,585},"巡林委託",19.f,{.83f,.95f,.86f,1});
+        draw.SystemText({23+offset,585},quest->stage>=Stage::WatchAvailable?"北岸瞭望勘查":"巡林委託",19.f,{.83f,.95f,.86f,1});
         draw.SystemText({23+offset,619},objectives[stage],17.f,{.93f,.96f,.93f,1});
-        const auto hint=Quest::CanInteract(quest->stage,{session.feet.x,session.feet.z})||quest->stage==Stage::Complete||
+        const auto hint=Quest::CanInteract(quest->stage,{session.feet.x,session.feet.z})||!Quest::HasDestination(quest->stage)||
             (quest->stage==Stage::Hunt&&distance<15.f)?
             std::string(actions[stage]):"距離 "+std::to_string(int(distance))+" 公尺";
         draw.SystemText({23+offset,650},hint,16.f,{.89f,.88f,.68f,1});
+        if(Quest::IsWatchPost(quest->stage))
+            draw.SystemText({23+offset,675},"同階段的隊友在瞭望樁 5 公尺內可一同記錄",13.f,{.69f,.82f,.74f,1});
     }
 
     bool CaptureTrailSupplyPanel() const {
@@ -4124,9 +4129,16 @@ private:
         scene.Box(trail+Vec3{0,.49f,0},{.12f,.98f,.13f},wood);
         scene.Box(trail+Vec3{0,1.05f,0},{.54f,.25f,.15f},brass);
 
+        for(const auto site : {Quest::EastWatch,Quest::WestWatch}){
+            const Vec3 foot{site.x,terrain.SampleHeight(site.x,site.z),site.z};
+            scene.Box(foot+Vec3{0,.65f,0},{.15f,1.3f,.15f},wood);
+            scene.Box(foot+Vec3{0,1.12f,0},{.55f,.31f,.14f},wood);
+            scene.Box(foot+Vec3{0,1.13f,-.085f},{.38f,.17f,.04f},{.52f,.70f,.59f,1});
+        }
         const auto* quest=localWorld->Expedition();
-        if(!quest||quest->stage==Stage::Complete||quest->stage==Stage::Hunt)return;
-        const auto anchor=quest->stage==Stage::CheckTrail?trail:board;
+        if(!quest||!Quest::HasDestination(quest->stage)||quest->stage==Stage::Hunt)return;
+        const auto site=Quest::Destination(quest->stage);
+        const Vec3 anchor{site.x,terrain.SampleHeight(site.x,site.z),site.z};
         if(std::hypot(anchor.x-session.feet.x,anchor.z-session.feet.z)>30.f)return;
         constexpr Color marker{.82f,.66f,.27f,1};
         scene.Line(anchor+Vec3{-.18f,1.87f,0},anchor+Vec3{0,1.63f,0},3.f,marker);
@@ -4560,8 +4572,14 @@ private:
 
     void UpdateLocalWorld(Engine& e,float dt) {
         auto& input=e.GetInput();
-        const bool windowFocused=input.Focused()&&!input.FocusLost();
+        bool windowFocused=input.Focused()&&!input.FocusLost();
 #ifdef AEVRYND_MISTWATCH_PROFILES
+        if(windowFocused&&localWorldScreenshot.empty()&&
+           localWorldStatus==Mistwatch::LocalWorldClient::Status::Disconnected&&
+           input.Pressed(VK_RETURN)&&localWorld->RetryConnection()){
+            localWorldStatus=Mistwatch::LocalWorldClient::Status::Reconnecting;
+            windowFocused=false;
+        }
         const auto socialOpen=[&]{return riverbankGuild.Open()||riverbankParty.Open()||riverbankGear.Open();};
         const bool mapConsumesInput=riverbankRouteMap.Update(windowFocused&&localWorldScreenshot.empty(),
             localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready,input.Pressed(VK_TAB),input.Pressed(VK_ESCAPE),
@@ -4840,7 +4858,12 @@ private:
                 " · 其他玩家 "+std::to_string(peers)+" 位 · WASD 移動"+
                 (localWorld->CanSprint()?" · Shift 跑步":"")+" · 拖曳鏡頭";break;
             case Status::Reconnecting: status="連線中斷，正在重新登入河岸";break;
-            case Status::Disconnected: status="與河岸世界的連線已中斷";break;
+            case Status::Disconnected:
+                status="與河岸世界的連線已中斷";
+#ifdef AEVRYND_MISTWATCH_PROFILES
+                if(localWorld->CanRetryConnection())status+=" · Enter 重新連線";
+#endif
+                break;
             }
             draw.SystemText({20,58},status,16.f,{.94f,.96f,.93f,1});
             if(localWorldScreenshot.empty())draw.SystemText({432,20},"F10 設定",16.f,{.86f,.92f,.88f,1});

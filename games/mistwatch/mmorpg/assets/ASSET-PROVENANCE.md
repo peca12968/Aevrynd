@@ -30,3 +30,25 @@ RiverbankExplorer.aeskin 是 Aevrynd 角色歷史素材的遊戲用版本。G3 �
 一輪專用跑姿由相同的 80 骨骼製作，0.708333 秒前進 2.266667 公尺。在共用版本增加跑步片段，保留原本的網格、材質、綁定姿勢、步行及側倒資料。斜坡依左右靴底分開調整腿部，維持原跑姿的騰空高度及靴子朝向。坡面支撐取自各靴底下方的地形高度。測試包含合成坡面與河岸東坡 972 個跑姿樣本。
 
 含跑步動作的共用 AESKIN SHA-256 為 `03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587`。
+
+## r0012 職業髮型
+
+守衛沿用 T2。遊俠使用 T1，祭司使用較短的 S3。兩款由歷史後頸髮型曲線匯出，與共同角色共用頭骨、材質與姿勢。使用含跑步片段的基準時，建置會核對兩款檔案，再一併放進多人試玩套件。
+
+r0012 Blender 來源 SHA-256 為 7918cb2a631938402fd55d7e8c3dc30b45e48dd1d047b3b1748ab742324cf4b2。
+- Ranger SHA-256 為 fe27db7b117514aa5ce9fa26fa64a41b3cd3b7162d5153f56f076af14eafe6cd。
+- Priest SHA-256 為 09eab6f46a2058c69a72b3090429a93b556d8efd1bacf921bf7ad161a901b3ec。
+
+## 開發歷史庫
+
+以下是相對於 AevryndEvidence 歷史庫根目錄的路徑。角色製作用 Blender 副本及相容部件，原始檔保留作為來源。遊戲套件使用已匯出並核對雜湊的 AESKIN。
+
+| 用途 | 歷史庫相對路徑 |
+| --- | --- |
+| G3 骨架及分層衣物 | `female-next-owned-garments/female-next-r0022-G3-layers-RESEARCH.blend` |
+| W3 步行 | `female-next-owned-walk/female-next-r0021-W3-walk-RESEARCH.blend` |
+| P3 長褲驗證紀錄 | `female-next-owned-trousers/trousers-draft-preflight.json` |
+| F3 足型 | `female-next-owned-feet/female-next-r0020-F3-feet-RESEARCH.blend` |
+| r0012 後頸髮型 | `female-next-owned-nape-groom/female-next-r0012-owned-nape-groom-FOUNDATION.blend` |
+
+後期 r0426 眼部及 r0594 唇形研究的面索引與遊戲基準不同。可以參考輪廓及材質，在現用骨架上重作細節。需要整體替換時，先重驗骨架、表情、接地、服裝和動作。

@@ -23,8 +23,9 @@ inline constexpr std::array landmarks{
 };
 
 inline std::optional<Landmark> ExpeditionLandmark(std::optional<ExpeditionStage> stage) {
-    constexpr std::array labels{"到營地領取巡林委託", "勘查橋前路標", "挑戰巡林野豬", "返回營地回報"};
-    if (!stage || static_cast<std::size_t>(*stage) >= labels.size()) return {};
+    constexpr std::array labels{"到營地領取巡林委託", "勘查橋前路標", "挑戰巡林野豬", "返回營地回報", "",
+        "到營地領取北岸勘查", "勘查東側瞭望樁", "勘查西側瞭望樁", "回報北岸勘查"};
+    if (!stage || !RiverbankExpedition::HasDestination(*stage)) return {};
     const auto destination = RiverbankExpedition::Destination(*stage);
     return Landmark{labels[static_cast<std::size_t>(*stage)], {destination.x, 0, destination.z}, {.99f,.81f,.43f,1}};
 }

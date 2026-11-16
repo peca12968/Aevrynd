@@ -275,7 +275,8 @@ private:
         flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
-        if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability | Mistwatch::RiverbankTerritoryHistoryWire::Capability;
+        if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability |
+            Mistwatch::RiverbankTerritoryHistoryWire::Capability | Mistwatch::RiverbankExpeditionWire::WatchSurveyCapability;
 #endif
         if (!Mistwatch::IsRiverbankClass(selected) || !world_.AddClient(id, Endpoint(id), position) ||
             !world_.SetClientEntityFlags(id, flags)) return false;
@@ -572,10 +573,27 @@ private:
             const auto player = world_.Player(id);
             Vec3 position{};
             if (!fighter || !player || !ToLocalPosition3D(player->position, WorldOrigin3D{}, position)) return false;
-            result = fighter->health ? profiles_->InteractExpedition(client.profileId, {position.x, position.z}) :
-                Mistwatch::ExpeditionResult::Downed;
+            if (!fighter->health) result = Mistwatch::ExpeditionResult::Downed;
+            else {
+                std::array<Mistwatch::RiverbankWatchMember, Mistwatch::RiverbankParty::MaxMembers - 1> nearby{};
+                std::size_t count{};
+                if (request->watchSurvey) {
+                    const auto group = party_.Members(client.profileId);
+                    for (const auto& [memberId, member] : peers_) {
+                        if (memberId == id || std::ranges::find(group, member.profileId) == group.end()) continue;
+                        const auto status = encounter_.Player(memberId);
+                        const auto entity = world_.Player(memberId);
+                        Vec3 feet{};
+                        if (status && status->health && entity && ToLocalPosition3D(entity->position, WorldOrigin3D{}, feet))
+                            nearby.at(count++) = {member.profileId, {feet.x, feet.z}};
+                    }
+                }
+                result = profiles_->InteractExpedition(client.profileId, {position.x, position.z}, request->watchSurvey,
+                                                     std::span{nearby}.first(count));
+            }
         }
-        return client.transport.Queue(Wire::EncodeReply({request->sequence, profiles_->ReadExpedition(client.profileId), result}));
+        const auto stage = profiles_->ReadExpedition(client.profileId, request->watchSurvey);
+        return client.transport.Queue(Wire::EncodeReply({request->sequence, stage, result}));
     }
 
     void TickTerritory() {

@@ -34,7 +34,11 @@ public:
         }
 
         try {
-            auto body = CompactRiverbankAvatarPart(asset, asset.model, false);
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_HAIR
+            auto body = CompactRiverbankAvatarPart(asset, asset.model, RiverbankAvatarPart::BodyWithoutHair);
+#else
+            auto body = CompactRiverbankAvatarPart(asset, asset.model, RiverbankAvatarPart::Body);
+#endif
             bodySurfaces = std::move(body.submeshes);
             mesh = engine.CreateSkinnedMeshResource3D(body.model);
             if (!mesh) throw std::runtime_error("Riverbank shared body GPU upload failed");
@@ -57,6 +61,18 @@ public:
                 if (!wardrobe[slot + 1])
                     throw std::runtime_error(std::string("Riverbank class vest GPU upload failed: ") + names[slot]);
             }
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_HAIR
+            auto original = CompactRiverbankAvatarPart(asset, asset.model, RiverbankAvatarPart::Hair);
+            const auto hairPath = path.parent_path();
+            auto ranger = LoadRiverbankAvatarHair(hairPath / "RiverbankExplorer-Hair-Ranger.aeskin", asset, original.submeshes.front());
+            auto priest = LoadRiverbankAvatarHair(hairPath / "RiverbankExplorer-Hair-Priest.aeskin", asset, original.submeshes.front());
+            const std::array parts{&original, &ranger, &priest};
+            for (std::size_t index = 0; index < parts.size(); ++index) {
+                hairMeshes[index] = engine.CreateSkinnedMeshResource3D(parts[index]->model);
+                if (!hairMeshes[index]) throw std::runtime_error("Riverbank class hair GPU upload failed");
+                hairSurfaces[index] = parts[index]->submeshes.front();
+            }
+#endif
         } catch (...) {
             Release(engine);
             throw;
@@ -116,14 +132,21 @@ public:
             return Aevrynd::SubmitSkinnedRenderable3D(draw, mesh.handle, palette, placement,
                 static_cast<std::uint32_t>(mesh.indexCount), asset.submeshes, bindings);
         const auto& vest = wardrobe.at(role);
-        const std::array parts{
+        std::array parts{
             Aevrynd::SkinnedRenderablePart3D{.mesh=mesh.handle, .transform=placement,
                 .totalIndexCount=static_cast<std::uint32_t>(mesh.indexCount), .submeshes=bodySurfaces,
                 .materialBindings=bindings, .key={1}},
             Aevrynd::SkinnedRenderablePart3D{.mesh=vest.handle, .transform=placement,
                 .totalIndexCount=static_cast<std::uint32_t>(vest.indexCount),
                 .submeshes=std::span{&vestSurface, std::size_t{1}}, .materialBindings=bindings, .key={2}},
+            Aevrynd::SkinnedRenderablePart3D{},
         };
+        if (!hairMeshes.front()) return Aevrynd::SubmitSkinnedRenderableGroup3D(draw, palette, std::span{parts}.first<2>());
+        const auto index = role > 0 ? role - 1 : 0;
+        const auto& hair = hairMeshes.at(index);
+        parts[2] = {.mesh=hair.handle, .transform=placement,
+            .totalIndexCount=static_cast<std::uint32_t>(hair.indexCount),
+            .submeshes=std::span{&hairSurfaces.at(index), std::size_t{1}}, .materialBindings=bindings, .key={3}};
         return Aevrynd::SubmitSkinnedRenderableGroup3D(draw, palette, parts);
     }
 
@@ -152,6 +175,10 @@ public:
     }
 
     void Release(Aevrynd::Engine& engine) {
+        for (auto& hair : hairMeshes) {
+            if (hair) engine.DestroySkinnedMesh3D(hair.handle);
+            hair = {};
+        }
         for (auto& outfit : wardrobe) {
             if (outfit) engine.DestroySkinnedMesh3D(outfit.handle);
             outfit = {};
@@ -174,6 +201,8 @@ private:
     std::vector<Aevrynd::SkinnedSubmesh3D> bodySurfaces;
     Aevrynd::SkinnedSubmesh3D vestSurface{};
     std::array<Aevrynd::SkinnedMeshResource3D, 4> wardrobe{};
+    std::array<Aevrynd::SkinnedMeshResource3D, 3> hairMeshes{};
+    std::array<Aevrynd::SkinnedSubmesh3D, 3> hairSurfaces{};
     std::array<std::vector<Aevrynd::Material3D>, 4> materials;
     std::map<Aevrynd::NetworkEntityId3D, Player> players;
     Aevrynd::SkinningWorkspace3D skinning;

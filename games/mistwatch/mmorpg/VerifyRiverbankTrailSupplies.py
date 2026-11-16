@@ -130,7 +130,7 @@ def verify(server, output):
         ticket = customer.ticket
 
     with closing(sqlite3.connect(database)) as db:
-        assert db.execute('PRAGMA user_version').fetchone() == (7,)
+        assert db.execute('PRAGMA user_version').fetchone() == (8,)
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
         assert db.execute('SELECT character_id,first_world,first_encounter,second_world,second_encounter '
                           'FROM riverbank_trail_pack').fetchall() == [(1, epoch, first, epoch, second)]
