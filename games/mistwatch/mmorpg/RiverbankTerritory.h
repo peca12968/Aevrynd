@@ -10,6 +10,7 @@ class RiverbankTerritory {
 public:
     static constexpr float CenterX = 14.f, CenterZ = 54.f, Radius = 3.f;
     static constexpr unsigned HoldTicks = 240;
+    static constexpr std::size_t HistoryLimit = 5;
 
     struct Presence {
         std::int64_t profile{}, guild{};
@@ -62,6 +63,11 @@ private:
     std::int64_t owner_{}, challenger_{};
     unsigned progress_{};
     bool contested_{};
+};
+
+struct TerritoryClaim {
+    std::uint64_t revision{};
+    std::string claimedUtc, previousOwner, winner;
 };
 
 struct TerritoryState {

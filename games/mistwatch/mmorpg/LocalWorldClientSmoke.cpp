@@ -48,6 +48,27 @@ int VerifyPartyInvitation(Mistwatch::LocalWorldClient& client) {
     return 23;
 }
 
+int VerifyTerritoryHistory(Mistwatch::LocalWorldClient& client) {
+    using Status = Mistwatch::LocalWorldClient::Status;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    bool requested{};
+    while (std::chrono::steady_clock::now() < deadline) {
+        const auto status = client.Poll(0, 0);
+        if (status == Status::Disconnected || status == Status::ChoosingClass) return 26;
+        if (const auto* claims = client.TerritoryHistory()) {
+            for (const auto& claim : *claims)
+                std::cout << claim.revision << '\t' << claim.previousOwner << '\t' << claim.winner << '\t' << claim.claimedUtc << '\n';
+            return 0;
+        }
+        if (!requested && status == Status::Ready && client.CanUseGuild()) {
+            if (!client.CanReadTerritoryHistory() || !client.RequestTerritoryHistory() || client.RequestTerritoryHistory()) return 27;
+            requested = true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return 28;
+}
+
 int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client) {
     using Status = Mistwatch::LocalWorldClient::Status;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
@@ -101,7 +122,8 @@ int main(int argc, char** argv) {
     const bool guildView = argc == 3 && std::string_view(argv[2]) == "--guild-view";
     const bool reconnect = argc == 3 && std::string_view(argv[2]) == "--live-reconnect";
     const bool party = argc == 3 && std::string_view(argv[2]) == "--party-accept";
-    if (argc != 2 && !guildView && !reconnect && !party) return 1;
+    const bool history = argc == 3 && std::string_view(argv[2]) == "--territory-history";
+    if (argc != 2 && !guildView && !reconnect && !party && !history) return 1;
     unsigned short port{};
     const std::string_view raw(argv[1]);
     const auto parsed = std::from_chars(raw.data(), raw.data() + raw.size(), port);
@@ -111,6 +133,7 @@ int main(int argc, char** argv) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
     if (party) return VerifyPartyInvitation(client);
     if (reconnect) return VerifyLiveReconnect(client);
+    if (history) return VerifyTerritoryHistory(client);
     if (guildView) {
         bool requested = false;
         while (std::chrono::steady_clock::now() < deadline) {

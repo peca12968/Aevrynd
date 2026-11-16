@@ -43,6 +43,7 @@ public:
     GuildResult ChangeGuild(std::int64_t profileId, GuildAction action, std::int64_t target, std::string_view name);
 
     TerritoryState ReadTerritoryOwner();
+    std::vector<TerritoryClaim> ReadTerritoryHistory();
     std::string GuildName(std::int64_t guildId);
     unsigned TerritoryRewards(std::int64_t profileId);
     void ClaimTerritory(std::int64_t previous, std::int64_t winner, std::span<const std::int64_t> recipients);

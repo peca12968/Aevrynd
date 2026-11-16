@@ -514,6 +514,21 @@ TerritoryState RiverbankProfileStore::ReadTerritoryOwner() {
     return state;
 }
 
+std::vector<TerritoryClaim> RiverbankProfileStore::ReadTerritoryHistory() {
+    auto* db = storage->handle;
+    Statement read(db, "SELECT claim.revision, claim.claimed_utc, COALESCE(previous.name, ''), winner.name "
+                       "FROM riverbank_territory_claim AS claim "
+                       "LEFT JOIN riverbank_guild AS previous ON previous.id=claim.previous_guild_id "
+                       "JOIN riverbank_guild AS winner ON winner.id=claim.guild_id ORDER BY claim.revision DESC LIMIT ?1");
+    read.Bind(1, static_cast<std::int64_t>(RiverbankTerritory::HistoryLimit));
+    std::vector<TerritoryClaim> result;
+    for (int code = read.Step(); code != SQLITE_DONE; code = read.Step()) {
+        Require(db, code, SQLITE_ROW);
+        result.push_back({static_cast<std::uint64_t>(read.Value(0)), read.Text(1), read.Text(2), read.Text(3)});
+    }
+    return result;
+}
+
 std::string RiverbankProfileStore::GuildName(std::int64_t guildId) {
     if (!guildId) return {};
     auto* db = storage->handle;

@@ -52,7 +52,7 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
   add_test(NAME MistwatchRiverbankTerritoryLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankTerritory.py"
-      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
   add_test(NAME MistwatchRiverbankExpeditionLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankExpedition.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")

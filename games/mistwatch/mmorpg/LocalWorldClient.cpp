@@ -3,6 +3,7 @@
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankProfileWire.h"
 #include "RiverbankTerritoryWire.h"
+#include "RiverbankTerritoryHistoryWire.h"
 #endif
 #include <algorithm>
 #include <chrono>
@@ -72,6 +73,8 @@ struct LocalWorldClient::State {
     std::optional<RiverbankGuildWire::Response> guildReply;
     std::uint64_t nextTerritorySequence{1}, pendingTerritorySequence{};
     std::optional<TerritoryState> territory;
+    std::uint64_t nextHistorySequence{1}, pendingHistorySequence{};
+    std::optional<std::vector<TerritoryClaim>> territoryHistory;
     std::uint64_t nextExpeditionSequence{1}, pendingExpeditionSequence{};
     std::optional<RiverbankExpeditionWire::Reply> expedition;
     std::uint64_t nextPartySequence{1}, pendingPartySequence{};
@@ -233,6 +236,15 @@ struct LocalWorldClient::State {
             lastPacket = Clock::now();
             return true;
         }
+        if (RiverbankTerritoryHistoryWire::HasMagic(bytes)) {
+            auto reply = RiverbankTerritoryHistoryWire::DecodeReply(bytes);
+            if (!profileTicket || !reply || !pendingHistorySequence || reply->sequence != pendingHistorySequence)
+                return false;
+            pendingHistorySequence = 0;
+            territoryHistory = std::move(reply->claims);
+            lastPacket = Clock::now();
+            return true;
+        }
         if (RiverbankGuildWire::HasMagic(bytes)) {
             auto response = RiverbankGuildWire::DecodeResponse(bytes);
             if (!profileTicket || !response || !pendingGuildSequence || response->sequence != pendingGuildSequence) return false;
@@ -337,6 +349,9 @@ struct LocalWorldClient::State {
         guildReply.reset();
         pendingTerritorySequence = 0;
         territory.reset();
+        nextHistorySequence = 1;
+        pendingHistorySequence = 0;
+        territoryHistory.reset();
         pendingExpeditionSequence = pendingPartySequence = pendingGearSequence = 0;
         expedition.reset();
         party.reset();
@@ -451,6 +466,22 @@ bool LocalWorldClient::RequestTerritory() {
 
 const TerritoryState* LocalWorldClient::Territory() const noexcept {
     return state_->territory ? &*state_->territory : nullptr;
+}
+
+bool LocalWorldClient::CanReadTerritoryHistory() const noexcept {
+    return CanUseGuild() && state_->Supports(RiverbankTerritoryHistoryWire::Capability);
+}
+
+bool LocalWorldClient::RequestTerritoryHistory() {
+    if (!CanReadTerritoryHistory() || state_->pendingHistorySequence ||
+        state_->nextHistorySequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    if (!state_->peer->Queue(RiverbankTerritoryHistoryWire::Query(state_->nextHistorySequence))) return false;
+    state_->pendingHistorySequence = state_->nextHistorySequence++;
+    return true;
+}
+
+const std::vector<TerritoryClaim>* LocalWorldClient::TerritoryHistory() const noexcept {
+    return state_->territoryHistory ? &*state_->territoryHistory : nullptr;
 }
 
 bool LocalWorldClient::RequestGear(GearAction action) {

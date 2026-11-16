@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LocalWorldClient.h"
+#include "RiverbankTerritoryHud.h"
 #include <Aevrynd/Engine.h>
 #include <algorithm>
 
@@ -25,6 +26,11 @@ public:
 
     void Update(const Aevrynd::Input& input, LocalWorldClient& client) {
         if (!open_ || !client.CanUseGuild()) return;
+        if (mode_ == Mode::History) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= nextView_ && client.RequestTerritoryHistory()) nextView_ = now + std::chrono::seconds(1);
+            return;
+        }
         const auto* reply = client.GuildReply();
         if (reply && reply->sequence != renderedSequence_) {
             renderedSequence_ = reply->sequence;
@@ -36,6 +42,10 @@ public:
             } else if (mode_ != Mode::Actions) {
                 if (input.Pressed(VK_RETURN) && Send(client, mode_ == Mode::Leave ? GuildAction::Leave : GuildAction::Transfer, confirmTarget_))
                     mode_ = Mode::Actions;
+            } else if (input.Pressed('H') && client.CanReadTerritoryHistory()) {
+                mode_ = Mode::History;
+                nextView_ = {};
+                return;
             } else if (reply) {
                 SelectTarget(input, client);
                 Act(input, client, reply->state);
@@ -53,6 +63,21 @@ public:
         draw.Quad({640, 393}, {860, 376}, {.035f,.065f,.052f,.97f});
         draw.SystemText({246, 221}, "河岸公會", 25.f, {.81f,.97f,.86f,1});
         draw.SystemText({246, 266}, "你的玩家編號 " + std::to_string(client.PlayerId()) + "   ·   Esc 返回", 17.f, {1,1,1,1});
+        if (mode_ == Mode::History) {
+            Line(draw, 310, "北岸瞭望地 · 最近五次歸屬變更（UTC）");
+            const auto* claims = client.TerritoryHistory();
+            if (!claims) { Line(draw, 354, "讀取領地紀錄中"); return; }
+            if (claims->empty()) { Line(draw, 354, "尚無領地佔領紀錄"); return; }
+            float y = 354.f;
+            for (const auto& claim : *claims) {
+                const auto from = claim.previousOwner.empty() ? std::string("無") : RiverbankTerritoryDisplayName(claim.previousOwner);
+                const auto date = claim.claimedUtc.substr(0, 10) + " " + claim.claimedUtc.substr(11, 8);
+                Line(draw, y, "#" + std::to_string(claim.revision) + "  " + date + "   " + from + " → " +
+                    RiverbankTerritoryDisplayName(claim.winner));
+                y += 39.f;
+            }
+            return;
+        }
         if (!client.GuildReply()) { Line(draw, 311, "讀取公會資料中"); return; }
         const auto& guild = client.GuildReply()->state;
         Line(draw, 310, guild.guildId ? guild.name + "   ·   " + RankName(guild.rank) : "尚未加入公會");
@@ -77,11 +102,12 @@ public:
             if (guild.rank == GuildRank::Leader) Line(draw, 437, "P 升為幹部  ·  O 改為成員  ·  T 移交會長");
             Line(draw, 479, "L 離開公會");
         }
-        if (!message_.empty()) Line(draw, 534, message_);
+        if (mode_ == Mode::Actions && client.CanReadTerritoryHistory()) Line(draw, 516, "H 領地紀錄");
+        if (!message_.empty()) Line(draw, 551, message_);
     }
 
 private:
-    enum class Mode { Actions, Name, Leave, Transfer };
+    enum class Mode { Actions, Name, Leave, Transfer, History };
     bool open_{};
     Mode mode_{Mode::Actions};
     std::uint64_t selected_{}, confirmTarget_{}, renderedSequence_{};

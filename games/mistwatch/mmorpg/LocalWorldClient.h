@@ -44,6 +44,9 @@ public:
     const RiverbankGuildWire::Response* GuildReply() const noexcept;
     bool RequestTerritory();
     const TerritoryState* Territory() const noexcept;
+    bool CanReadTerritoryHistory() const noexcept;
+    bool RequestTerritoryHistory();
+    const std::vector<TerritoryClaim>* TerritoryHistory() const noexcept;
     bool RequestGear(GearAction action);
     const RiverbankGearWire::Reply* Gear() const noexcept;
     bool RequestParty(PartyAction action, std::uint32_t target = 0);

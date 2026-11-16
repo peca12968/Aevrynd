@@ -1,11 +1,14 @@
 """Resolve a contested takeover through real movement, then restart the dedicated server."""
 from contextlib import ExitStack, closing
+from datetime import datetime
 from math import dist
 from pathlib import Path
 import json
+import os
 import secrets
 import sqlite3
 import struct
+import subprocess
 import sys
 import time
 from tempfile import mkdtemp
@@ -21,6 +24,8 @@ EAST = (17.5, 54.)
 INSIDE_WEST = (12.1, 54.)
 INSIDE_EAST = (15.9, 54.)
 STATE = struct.Struct('<QQQQIIB')
+HISTORY_REPLY = struct.Struct('<QB')
+HISTORY_ROW = struct.Struct('<Q20s')
 
 
 def territory(peer, sequence):
@@ -48,11 +53,45 @@ def territory(peer, sequence):
     raise AssertionError('Territory reply did not arrive')
 
 
+def territory_history(peer, sequence):
+    request = b'AETH\x01\x01' + struct.pack('<Q', sequence)
+    peer.sendall(struct.pack('!I', len(request)) + request)
+    deadline = time.monotonic() + 4
+    while time.monotonic() < deadline:
+        size, = struct.unpack('!I', world.exact(peer, 4))
+        assert 1 <= size <= 65536
+        data = world.exact(peer, size)
+        if data[:4] in (b'AENP', b'AECB'):
+            continue
+        assert data.startswith(b'AETH\x01\x02') and len(data) >= 6 + HISTORY_REPLY.size
+        received, count = HISTORY_REPLY.unpack_from(data, 6)
+        assert received == sequence and count <= 5
+        offset = 6 + HISTORY_REPLY.size
+        claims = []
+        for _ in range(count):
+            revision, timestamp = HISTORY_ROW.unpack_from(data, offset)
+            timestamp = timestamp.decode('ascii')
+            datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%SZ')
+            offset += HISTORY_ROW.size
+            names = []
+            for _ in range(2):
+                length = data[offset]
+                offset += 1
+                assert length <= 48 and offset + length <= len(data)
+                names.append(data[offset:offset + length].decode('utf-8'))
+                offset += length
+            claims.append((revision, *names, timestamp))
+        assert offset == len(data)
+        return claims
+    raise AssertionError('Territory history reply did not arrive')
+
+
 def play(port, epoch, sockets, tickets):
     roles = (1, 2, 3, 2)
     players = [Player(sockets.enter_context(closing(world.connect(port))), ticket, epoch, role, True)
                for ticket, role in zip(tickets, roles, strict=True)]
     north, south, member, observer = players
+    assert territory_history(observer.peer, 1) == []
     status, (north_id, *_rest) = north.guild(CREATE, name='北岸守望'.encode())
     assert status == OK
     status, (south_id, *_rest) = south.guild(CREATE, name='河谷巡衛'.encode())
@@ -103,6 +142,8 @@ def play(port, epoch, sockets, tickets):
     assert first_progress['owner'] == 0 and first_progress['challenger_name'] == '北岸守望'
     north_claim = wait(lambda state: state['owner'] == north_id, 16)
     assert north_claim['revision'] == 1 and north_claim['owner_name'] == '北岸守望' and north_claim['rewards'] == 0
+    first_claims = territory_history(observer.peer, 2)
+    assert [claim[:3] for claim in first_claims] == [(1, '', '北岸守望')]
 
     walk((n, WEST), (m, WEST), (s, INSIDE_EAST))
     started = wait(lambda state: state['challenger'] == south_id and state['progress'] >= 24, 5)
@@ -114,40 +155,54 @@ def play(port, epoch, sockets, tickets):
         step()
     held = inspect()
     assert held == paused, (held, paused)
+    assert territory_history(observer.peer, 3) == first_claims
 
     walk((n, WEST))
     south_claim = wait(lambda state: state['owner'] == south_id, 16)
     assert south_claim['revision'] == 2 and south_claim['owner_name'] == '河谷巡衛' and south_claim['rewards'] == 0
     assert south.guild(LEAVE)[0] == 5
-    return north_id, south_id, paused['progress']
+    claims = territory_history(observer.peer, 4)
+    assert [claim[:3] for claim in claims] == [(2, '北岸守望', '河谷巡衛'), (1, '', '北岸守望')]
+    assert claims[1:] == first_claims
+    return north_id, south_id, paused['progress'], claims
 
 
-def verify(server, evidence):
+def verify(server, evidence, native_client):
     root = Path(mkdtemp(prefix='territory-loopback-', dir=evidence)).resolve()
     database = root / 'Territory.sqlite3'
     tickets = [secrets.token_bytes(32) for _ in range(4)]
     started = time.monotonic()
     with start(server, database) as (port, epoch), ExitStack() as sockets:
-        north, south, paused = play(port, epoch, sockets, tickets)
-    with start(server, database) as (port, restarted), ExitStack() as sockets:
+        north, south, paused, history = play(port, epoch, sockets, tickets)
+    with start(server, database) as (port, restarted):
         assert restarted != epoch
         restores = []
         for index in (3, 2, 1, 0):
-            peer = sockets.enter_context(closing(world.connect(port)))
-            player = Player(peer, tickets[index], restarted, (1, 2, 3, 2)[index])
-            assert player.guild(VIEW)[0] == OK
-            state = territory(peer, 1)
-            assert (state['revision'], state['owner'], state['challenger'], state['progress']) == (2, south, 0, 0)
-            restores.append(state['rewards'])
+            with closing(world.connect(port)) as peer:
+                player = Player(peer, tickets[index], restarted, (1, 2, 3, 2)[index])
+                assert player.guild(VIEW)[0] == OK
+                state = territory(peer, 1)
+                assert (state['revision'], state['owner'], state['challenger'], state['progress']) == (2, south, 0, 0)
+                assert territory_history(peer, 1) == history
+                restores.append(state['rewards'])
         assert restores == [0, 1, 1, 1]
+        env = dict(os.environ, AEVRYND_MISTWATCH_PROFILE_TICKET=tickets[3].hex())
+        native = subprocess.run([str(native_client), str(port), '--territory-history'], env=env, capture_output=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW, encoding='utf-8', check=True, timeout=8)
+        assert native.stdout.splitlines() == [f'{revision}\t{previous}\t{winner}\t{timestamp}'
+                                              for revision, previous, winner, timestamp in history]
     with closing(sqlite3.connect(database)) as db:
         claims = db.execute('SELECT revision, previous_guild_id, guild_id FROM riverbank_territory_claim ORDER BY revision').fetchall()
         rewards = db.execute('SELECT revision, character_id FROM riverbank_territory_reward ORDER BY revision, character_id').fetchall()
         assert claims == [(1, None, north), (2, north, south)]
+        timestamps = db.execute('SELECT claimed_utc FROM riverbank_territory_claim ORDER BY revision DESC').fetchall()
+        assert [(claim[3],) for claim in history] == timestamps
         assert rewards == [(1, 1), (1, 3), (2, 2)]
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
     receipt = dict(status='RIVERBANK_TERRITORY_LOOPBACK_VERIFIED', simultaneous_clients=4, guilds=2,
-                   defender_held_progress=paused, claims=claims, rewards=rewards, restored_rewards=restores,
+                   defender_held_progress=paused, claims=claims, player_facing_history=history,
+                   rewards=rewards, restored_rewards=restores,
+                   native_client_sha256=world.sha256(native_client.read_bytes()).hexdigest(),
                    server_sha256=world.sha256(server.read_bytes()).hexdigest(), seconds=round(time.monotonic() - started, 2))
     output = root / 'TerritoryLoopbackVerification.json'
     output.write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')
@@ -155,4 +210,4 @@ def verify(server, evidence):
 
 
 if __name__ == '__main__':
-    verify(Path(sys.argv[1]).resolve(strict=True), Path(sys.argv[2]).resolve(strict=True))
+    verify(*(Path(value).resolve(strict=True) for value in sys.argv[1:]))

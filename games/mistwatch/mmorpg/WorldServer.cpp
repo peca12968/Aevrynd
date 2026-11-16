@@ -10,6 +10,7 @@
 #include "RiverbankProfileRegistration.h"
 #include "RiverbankGuildWire.h"
 #include "RiverbankTerritoryWire.h"
+#include "RiverbankTerritoryHistoryWire.h"
 #include "RiverbankExpeditionWire.h"
 #include "RiverbankPartyWire.h"
 #include "RiverbankGearWire.h"
@@ -55,6 +56,7 @@ public:
             registration_ = std::make_unique<Mistwatch::RiverbankProfileRegistration>(*profiles_, capacity_);
             territoryOwner_ = profiles_->ReadTerritoryOwner();
             territory_.ApplyOwnership(territoryOwner_.owner);
+            territoryHistory_ = profiles_->ReadTerritoryHistory();
         }
 #endif
         sockaddr_in address{};
@@ -167,6 +169,7 @@ private:
         std::int64_t guildId{};
         Mistwatch::GuildRank rank{};
         std::uint64_t territorySequence{}, territoryQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
+        std::uint64_t territoryHistorySequence{}, territoryHistoryQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t gearSequence{}, gearRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t partySequence{}, partyRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t expeditionSequence{}, expeditionQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
@@ -216,6 +219,7 @@ private:
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if (Mistwatch::RiverbankGuildWire::HasMagic(bytes)) return HandleGuild(client, bytes);
         if (Mistwatch::RiverbankTerritoryWire::HasMagic(bytes)) return HandleTerritory(client, bytes);
+        if (Mistwatch::RiverbankTerritoryHistoryWire::HasMagic(bytes)) return HandleTerritoryHistory(client, bytes);
         if (Mistwatch::RiverbankGearWire::HasMagic(bytes)) return HandleGear(id, client, bytes);
         if (Mistwatch::RiverbankTrailSuppliesWire::HasMagic(bytes)) return HandleTrailSupplies(id, client, bytes);
         if (Mistwatch::RiverbankPartyWire::HasMagic(bytes)) return HandleParty(client, bytes);
@@ -267,7 +271,7 @@ private:
         flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
-        if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability;
+        if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability | Mistwatch::RiverbankTerritoryHistoryWire::Capability;
 #endif
         if (!Mistwatch::IsRiverbankClass(selected) || !world_.AddClient(id, Endpoint(id), position) ||
             !world_.SetClientEntityFlags(id, flags)) return false;
@@ -455,6 +459,16 @@ private:
         return client.transport.Queue(Wire::EncodeState(sequence, state));
     }
 
+    bool HandleTerritoryHistory(Client& client, std::span<const std::byte> bytes) {
+        namespace Wire = Mistwatch::RiverbankTerritoryHistoryWire;
+        const auto sequence = Wire::DecodeQuery(bytes);
+        if (!client.profileId || sequence <= client.territoryHistorySequence || client.territoryHistoryQueryTick == tick_) return false;
+        client.territoryHistorySequence = sequence;
+        client.territoryHistoryQueryTick = tick_;
+        const auto reply = Wire::EncodeReply(sequence, territoryHistory_);
+        return !reply.empty() && client.transport.Queue(reply);
+    }
+
     bool HandleGear(std::uint32_t id, Client& client, std::span<const std::byte> bytes) {
         namespace Wire = Mistwatch::RiverbankGearWire;
         using Mistwatch::GearResult;
@@ -577,6 +591,7 @@ private:
             profiles_->ClaimTerritory(territory_.Owner(), territory_.Challenger(), recipients);
             territoryOwner_ = profiles_->ReadTerritoryOwner();
             territory_.ApplyOwnership(territoryOwner_.owner);
+            territoryHistory_ = profiles_->ReadTerritoryHistory();
         }
     }
 
@@ -635,6 +650,7 @@ private:
     Mistwatch::RiverbankTerritory territory_;
     Mistwatch::RiverbankParty party_;
     Mistwatch::TerritoryState territoryOwner_;
+    std::vector<Mistwatch::TerritoryClaim> territoryHistory_;
 #endif
 };
 } // namespace
