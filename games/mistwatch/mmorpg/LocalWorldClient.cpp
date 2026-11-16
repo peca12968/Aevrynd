@@ -121,7 +121,7 @@ struct LocalWorldClient::State {
         return true;
     }
 
-    Status Poll(std::int16_t x, std::int16_t z) {
+    Status Poll(std::int16_t x, std::int16_t z, bool sprint) {
         const auto now = Clock::now();
         if (reconnecting && now >= reconnectUntil) return Disconnect(false);
         if (!peer) {
@@ -151,7 +151,7 @@ struct LocalWorldClient::State {
         }
         bool invalid = false;
         if (!peer->Read([&](auto bytes) { invalid = !Receive(bytes); return !invalid; })) return Disconnect(!invalid);
-        if (snapshot && !SubmitMovement(x, z)) return Disconnect(false);
+        if (snapshot && !SubmitMovement(x, z, sprint)) return Disconnect(false);
         if (!peer->Flush()) return Disconnect();
         const auto waiting = reconnecting ? Status::Reconnecting : Status::Joining;
         if (!id) return reconnecting ? Status::Reconnecting : Status::Connecting;
@@ -298,7 +298,7 @@ struct LocalWorldClient::State {
         return true;
     }
 
-    bool SubmitMovement(std::int16_t x, std::int16_t z) {
+    bool SubmitMovement(std::int16_t x, std::int16_t z, bool sprint) {
 #ifdef AEVRYND_MISTWATCH_BATTLE
         if (!encounter || !encounter->player.health) return true;
 #endif
@@ -307,7 +307,8 @@ struct LocalWorldClient::State {
         constexpr std::uint64_t lead = 3;
         if (snapshot->serverTick > (std::numeric_limits<std::uint64_t>::max)() - lead
             || nextSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
-        const ReplicationInputCommand3D input{epoch, snapshot->serverTick + lead, nextSequence, id, x, z, 0, false};
+        const ReplicationInputCommand3D input{epoch, snapshot->serverTick + lead, nextSequence, id, x, z, 0, false,
+                                              sprint && Supports(RiverbankSprintCapability)};
         std::vector<std::byte> bytes;
         if (!EncodeReplicationPacket3D(input, bytes) || !peer->Queue(bytes)) return false;
         ++nextSequence;
@@ -363,7 +364,8 @@ struct LocalWorldClient::State {
 
 LocalWorldClient::LocalWorldClient(unsigned short port) : state_(std::make_unique<State>(port)) {}
 LocalWorldClient::~LocalWorldClient() = default;
-LocalWorldClient::Status LocalWorldClient::Poll(std::int16_t x, std::int16_t z) { return state_->Poll(x, z); }
+LocalWorldClient::Status LocalWorldClient::Poll(std::int16_t x, std::int16_t z, bool sprint) { return state_->Poll(x, z, sprint); }
+bool LocalWorldClient::CanSprint() const noexcept { return state_->Supports(RiverbankSprintCapability); }
 bool LocalWorldClient::ChooseClass(RiverbankClass playerClass) { return state_->ChooseClass(playerClass); }
 RiverbankClass LocalWorldClient::SelectedClass() const noexcept {
     return state_->snapshot ? state_->requestedClass : RiverbankClass::None;

@@ -13,7 +13,7 @@ inline constexpr std::size_t MaximumReplicationPacketBytes3D=64*1024;
 struct NetworkEntityId3D {std::uint64_t high{},low{};explicit constexpr operator bool()const{return high||low;}constexpr auto operator<=>(const NetworkEntityId3D&)const=default;};
 enum class ReplicationMessageType3D:std::uint8_t {Handshake=1,InputCommand,Snapshot,Ack,MutationRequest,MutationReceipt};
 struct ReplicationHandshake3D {std::uint64_t sessionEpoch{};std::uint32_t clientId{};std::uint16_t protocolVersion{ReplicationProtocolVersion3D};};
-struct ReplicationInputCommand3D {std::uint64_t sessionEpoch{},tick{},sequence{};std::uint32_t clientId{};std::int16_t moveX{},moveZ{},yaw{};bool jump{};};
+struct ReplicationInputCommand3D {std::uint64_t sessionEpoch{},tick{},sequence{};std::uint32_t clientId{};std::int16_t moveX{},moveZ{},yaw{};bool jump{},sprint{};};
 struct ReplicatedEntityState3D {NetworkEntityId3D id{};GlobalPosition3D position{};Vec3 velocity{};std::uint32_t flags{};};
 struct ReplicationSnapshot3D {std::uint64_t sessionEpoch{},serverTick{},baselineTick{},interestEpoch{},originGeneration{};std::uint32_t clientId{};bool full{};std::vector<ReplicatedEntityState3D> entities{};std::vector<NetworkEntityId3D> despawned{};};
 struct ReplicationAck3D {std::uint64_t sessionEpoch{},snapshotTick{},inputTick{};std::uint32_t clientId{};};

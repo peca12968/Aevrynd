@@ -43,8 +43,8 @@ bool MatrixRotation(const Matrix4& matrix,Quaternion3D& output)noexcept{
 }
 }
 
-bool SolveTwoBoneIk3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,TwoBoneIkTarget3D target,
-    AnimationPose3D& pose,TwoBoneIkResult3D* result,Matrix4 poseRoot)noexcept{
+static bool SolveChain(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,TwoBoneIkTarget3D target,
+    AnimationPose3D& pose,TwoBoneIkResult3D* result,Matrix4 poseRoot,bool keepEndOrientation)noexcept{
     TwoBoneIkResult3D report;auto fail=[&](TwoBoneIkStatus3D status){report.status=status;if(result)*result=report;return false;};
     if(!skeleton.Valid()||skeleton.joints.size()>256)return fail(TwoBoneIkStatus3D::InvalidSkeleton);
     if(chain.upper>=skeleton.joints.size()||chain.middle>=skeleton.joints.size()||chain.end>=skeleton.joints.size()||
@@ -83,11 +83,28 @@ bool SolveTwoBoneIk3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,TwoBoneI
     const Quaternion3D middleDelta=FromTo(lowerAfterUpper,desiredEnd-desiredMiddle,bendNormal),newMiddleGlobal=Multiply(middleDelta,middleBaseGlobal),newMiddleLocal=Multiply(Conjugate(newUpperGlobal),newMiddleGlobal);
     if(!Finite(newUpperLocal)||!Finite(newMiddleLocal))return fail(TwoBoneIkStatus3D::InvalidPose);
     JointTransform3D upperTransform=pose.localTransforms[chain.upper],middleTransform=pose.localTransforms[chain.middle];upperTransform.quaternion=newUpperLocal;upperTransform.usesQuaternion=true;middleTransform.quaternion=newMiddleLocal;middleTransform.usesQuaternion=true;
+    JointTransform3D endTransform=pose.localTransforms[chain.end];
+    if(keepEndOrientation){
+        Quaternion3D originalEnd{};
+        if(!MatrixRotation(pose.globalMatrices[chain.end],originalEnd))return fail(TwoBoneIkStatus3D::InvalidPose);
+        endTransform.quaternion=Multiply(Conjugate(newMiddleGlobal),originalEnd);
+        endTransform.usesQuaternion=true;
+    }
     std::array<Matrix4,256> solvedGlobals{};std::array<bool,256> affected{};
-    for(std::size_t joint=0;joint<skeleton.joints.size();++joint){const int parent=skeleton.joints[joint].parent;affected[joint]=joint==chain.upper||(parent>=0&&affected[std::size_t(parent)]);if(!affected[joint]){solvedGlobals[joint]=pose.globalMatrices[joint];continue;}const JointTransform3D& local=joint==chain.upper?upperTransform:joint==chain.middle?middleTransform:pose.localTransforms[joint];solvedGlobals[joint]=parent<0?poseRoot*local.Matrix():solvedGlobals[std::size_t(parent)]*local.Matrix();if(!Finite(solvedGlobals[joint]))return fail(TwoBoneIkStatus3D::InvalidPose);}
+    for(std::size_t joint=0;joint<skeleton.joints.size();++joint){const int parent=skeleton.joints[joint].parent;affected[joint]=joint==chain.upper||(parent>=0&&affected[std::size_t(parent)]);if(!affected[joint]){solvedGlobals[joint]=pose.globalMatrices[joint];continue;}const JointTransform3D& local=joint==chain.upper?upperTransform:joint==chain.middle?middleTransform:joint==chain.end?endTransform:pose.localTransforms[joint];solvedGlobals[joint]=parent<0?poseRoot*local.Matrix():solvedGlobals[std::size_t(parent)]*local.Matrix();if(!Finite(solvedGlobals[joint]))return fail(TwoBoneIkStatus3D::InvalidPose);}
     const Vec3 solvedPosition=TransformPoint(solvedGlobals[chain.end],{});const float endError=DiagnosticDistance(solvedPosition,target.positionModel);if(!Finite(solvedPosition)||!Finite(endError)||!Finite(bendNormal))return fail(TwoBoneIkStatus3D::InvalidPose);
-    pose.localTransforms[chain.upper]=upperTransform;pose.localTransforms[chain.middle]=middleTransform;for(std::size_t joint=0;joint<skeleton.joints.size();++joint)pose.globalMatrices[joint]=solvedGlobals[joint];
+    pose.localTransforms[chain.upper]=upperTransform;pose.localTransforms[chain.middle]=middleTransform;if(keepEndOrientation)pose.localTransforms[chain.end]=endTransform;for(std::size_t joint=0;joint<skeleton.joints.size();++joint)pose.globalMatrices[joint]=solvedGlobals[joint];
     report.solvedPositionModel=solvedPosition;report.bendNormalModel=bendNormal;report.endError=endError;report.status=report.clamped?TwoBoneIkStatus3D::Clamped:TwoBoneIkStatus3D::Solved;
     if(result)*result=report;return true;
+}
+
+bool SolveTwoBoneIk3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,TwoBoneIkTarget3D target,
+    AnimationPose3D& pose,TwoBoneIkResult3D* result,Matrix4 poseRoot)noexcept{
+    return SolveChain(skeleton,chain,target,pose,result,poseRoot,false);
+}
+
+bool SolveTwoBoneIkKeepEndOrientation3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,
+    TwoBoneIkTarget3D target,AnimationPose3D& pose,TwoBoneIkResult3D* result,Matrix4 poseRoot)noexcept{
+    return SolveChain(skeleton,chain,target,pose,result,poseRoot,true);
 }
 }

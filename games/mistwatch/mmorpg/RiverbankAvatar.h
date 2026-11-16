@@ -75,16 +75,17 @@ public:
             auto& player = players[entity.id];
             const bool downed = (entity.flags & RiverbankBattleWire::DownedEntityFlag) != 0;
             if (entity.id.low == localId) {
-                player.motion.Advance(entity.velocity, dt, downed);
+                player.motion.Advance(entity.velocity, dt, downed, motion.HasRunClip());
             } else {
                 Aevrynd::Vec3 feet{};
                 if (!Aevrynd::ToLocalPosition3D(entity.position, Aevrynd::WorldOrigin3D{}, feet)) {
                     players.erase(entity.id);
                     continue;
                 }
-                if (player.peer.Observe(snapshot->serverTick, feet, downed))
-                    player.motion.distance = player.motion.walking = 0.f;
-                player.motion.AdvanceByTravel(player.peer.Advance(dt), dt, downed);
+                if (player.peer.Observe(snapshot->serverTick, feet, downed,
+                    (entity.flags & RiverbankSprintCapability) != 0))
+                    player.motion.ResetGait();
+                player.motion.AdvanceByTravel(player.peer.Advance(dt), dt, downed, motion.HasRunClip());
             }
             const auto playerClass = ReadRiverbankClassFlags(entity.flags);
             player.playerClass = IsRiverbankClass(playerClass) ? playerClass : RiverbankClass::None;
@@ -105,8 +106,9 @@ public:
         const auto found = players.find(id);
         const Player empty{};
         const auto& state = found == players.end() ? empty : found->second;
-        const auto normal = state.motion.downedSeconds > 0 ? terrain.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
-        const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal);
+        const auto normal = state.motion.downedSeconds > 0 || motion.HasRunClip()
+            ? terrain.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
+        const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal, &terrain);
         const auto palette = Aevrynd::AddBoundSkinPaletteFromPose(draw, paletteBinding, pose, skinning);
         const auto role = static_cast<std::size_t>(state.playerClass);
         const auto& bindings = materials.at(role);
@@ -144,7 +146,8 @@ public:
     void ResetAfterWarp(Aevrynd::NetworkEntityId3D id) {
         if (const auto player = players.find(id); player != players.end()) {
             auto& state = player->second.motion;
-            state.distance = state.walking = state.downedSeconds = 0.f;
+            state.ResetGait();
+            state.downedSeconds = 0.f;
         }
     }
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "Animation3D.h"
+#include <Aevrynd/Animation3D.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -23,6 +23,11 @@ struct TwoBoneIkResult3D {
 
 // poseRoot 必須與建立 pose.globalMatrices 時使用的根矩陣完全相同；失敗時 pose 保持逐位元不變。
 bool SolveTwoBoneIk3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,
+    TwoBoneIkTarget3D target,AnimationPose3D& pose,TwoBoneIkResult3D* result=nullptr,
+    Matrix4 poseRoot=Matrix4::Identity())noexcept;
+
+// 保留末端在模型空間的原動畫朝向，只調整鏈節位置。
+bool SolveTwoBoneIkKeepEndOrientation3D(const Skeleton3D& skeleton,TwoBoneIkChain3D chain,
     TwoBoneIkTarget3D target,AnimationPose3D& pose,TwoBoneIkResult3D* result=nullptr,
     Matrix4 poseRoot=Matrix4::Identity())noexcept;
 }

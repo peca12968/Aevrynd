@@ -24,7 +24,8 @@ public:
     LocalWorldClient(const LocalWorldClient&) = delete;
     LocalWorldClient& operator=(const LocalWorldClient&) = delete;
 
-    Status Poll(std::int16_t moveX, std::int16_t moveZ);
+    Status Poll(std::int16_t moveX, std::int16_t moveZ, bool sprint = false);
+    bool CanSprint() const noexcept;
     bool ChooseClass(RiverbankClass playerClass);
     RiverbankClass SelectedClass() const noexcept;
 #ifdef AEVRYND_MISTWATCH_BATTLE

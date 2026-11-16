@@ -142,6 +142,7 @@ if(MISTWATCH_LOCAL_WORLD_AVATAR AND TARGET AevryndEngine)
   add_executable(MistwatchRiverbankAvatarPoseSmoke RiverbankAvatarPoseSmoke.cpp)
   set_property(SOURCE RiverbankAvatarPoseSmoke.cpp APPEND PROPERTY OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/RiverbankAvatarAsset.h" "${CMAKE_CURRENT_SOURCE_DIR}/RiverbankAvatarMotion.h")
+  target_include_directories(MistwatchRiverbankAvatarPoseSmoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../riverbank/include")
   target_link_libraries(MistwatchRiverbankAvatarPoseSmoke PRIVATE AevryndEngine d3d12 dxgi dwmapi)
   target_compile_definitions(MistwatchRiverbankAvatarPoseSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(MistwatchRiverbankAvatarPoseSmoke PRIVATE /W4 /WX /permissive- /utf-8)

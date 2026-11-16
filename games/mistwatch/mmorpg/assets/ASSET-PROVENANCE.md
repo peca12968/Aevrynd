@@ -24,3 +24,9 @@ RiverbankExplorer.aeskin 是 Aevrynd 角色歷史素材的遊戲用版本。G3 �
 | Guardian | d9e3b391ee44e852aa85cad40cb1f207acf1ef6e5d7d082d2b3f24a10c12d841 |
 | Ranger | 182f1baacdd1b7431aca9f49e579df150c392bdbffbb364cddc1ee77eeff5c6f |
 | Priest | 0c215fa6a19b37ef02df4486262485ebc4f9df4262184d0e3da743582cb393de |
+
+## 多人跑步
+
+一輪專用跑姿由相同的 80 骨骼製作，0.708333 秒前進 2.266667 公尺。在共用版本增加跑步片段，保留原本的網格、材質、綁定姿勢、步行及側倒資料。斜坡依左右靴底分開調整腿部，維持原跑姿的騰空高度及靴子朝向。坡面支撐取自各靴底下方的地形高度。測試包含合成坡面與河岸東坡 972 個跑姿樣本。
+
+含跑步動作的共用 AESKIN SHA-256 為 `03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587`。

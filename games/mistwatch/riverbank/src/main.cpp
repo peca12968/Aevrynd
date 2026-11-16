@@ -4604,7 +4604,7 @@ private:
         }
 #endif
 #endif
-        localWorldStatus=localWorld->Poll(moveX,moveZ);
+        localWorldStatus=localWorld->Poll(moveX,moveZ,focused&&input.Down(VK_SHIFT));
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if(localWorldGuildCapture&&localWorld->CanUseGuild())riverbankGuild.OpenForCapture();
         riverbankGuild.Update(input,*localWorld);
@@ -4768,7 +4768,8 @@ private:
             case Status::ChoosingClass: status="按 1 選守衛、2 選遊俠、3 選祭司";break;
             case Status::Joining: status="等待伺服器確認職業並進入河岸";break;
             case Status::Ready: status=std::string(Mistwatch::RiverbankClassName(localWorld->SelectedClass()))+
-                " · 其他玩家 "+std::to_string(peers)+" 位 · WASD 移動 · 拖曳鏡頭";break;
+                " · 其他玩家 "+std::to_string(peers)+" 位 · WASD 移動"+
+                (localWorld->CanSprint()?" · Shift 跑步":"")+" · 拖曳鏡頭";break;
             case Status::Reconnecting: status="連線中斷，正在重新登入河岸";break;
             case Status::Disconnected: status="與河岸世界的連線已中斷";break;
             }

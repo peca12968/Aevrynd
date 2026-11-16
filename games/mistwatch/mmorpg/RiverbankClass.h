@@ -8,6 +8,8 @@
 
 namespace Mistwatch {
 enum class RiverbankClass : std::uint8_t { None, Guardian, Ranger, Priest };
+// 舊版伺服器未公告此旗標，客戶端維持原版行走封包。
+inline constexpr std::uint32_t RiverbankSprintCapability = 1u << 20;
 
 constexpr bool IsRiverbankClass(RiverbankClass value) {
     return value >= RiverbankClass::Guardian && value <= RiverbankClass::Priest;

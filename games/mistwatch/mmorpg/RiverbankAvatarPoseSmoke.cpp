@@ -1,5 +1,6 @@
 #include "RiverbankAvatarMotion.h"
 #include "RiverbankAvatarAsset.h"
+#include "MistwatchWorld.h"
 #include "RiverbankPeerPresentation.h"
 #include <Aevrynd/SkinnedRenderable3D.h>
 #include <iostream>
@@ -7,6 +8,184 @@
 using namespace Aevrynd;
 
 namespace {
+bool VerifyRiverbankTerrainContact(const Mistwatch::RiverbankAvatarMotion& motion,
+    const SkinnedModelAssetData& asset, const std::array<std::vector<std::uint32_t>, 2>& boots) {
+    const auto terrain = Mistwatch::CreateTerrain();
+    AnimationPose3D scratch, pose;
+    SkinningWorkspace3D skinning;
+    Mesh3D skinned;
+    constexpr float frame = 1.f / 60.f, heading = 1.04719755f;
+    const Vec3 direction{std::sin(heading), 0, std::cos(heading)};
+    unsigned samples = 0, flightSamples = 0;
+    float deepest = 0.f, steepest = 0.f;
+    for (const float phase : {0.f, .25f, .5f, .75f}) {
+        Mistwatch::RiverbankAvatarMotion::Player actor{motion.Stride() * phase, heading, 1.f, 0.f, 1.f};
+        for (unsigned tick = 0; tick <= 242; ++tick) {
+            auto feet = direction * (3.2f * frame * tick);
+            feet.y = terrain.SampleHeight(feet.x, feet.z);
+            const auto normal = terrain.SampleNormal(feet.x, feet.z);
+            steepest = (std::max)(steepest, std::hypot(normal.x, normal.z) / normal.y);
+            const auto placement = motion.Evaluate(asset.model.skeleton, actor, feet, scratch, pose, normal, &terrain);
+            if (!SkinModelInto(asset.model, pose, skinning, skinned)) return false;
+            float minimum = std::numeric_limits<float>::infinity();
+            for (const auto& boot : boots) {
+                for (const auto index : boot) {
+                    const auto& vertex = skinned.vertices[index];
+                    const auto point = TransformPoint(placement, {vertex.x, vertex.y, vertex.z});
+                    if (!terrain.Contains(point.x, point.z)) return false;
+                    minimum = (std::min)(minimum, point.y - terrain.SampleHeight(point.x, point.z));
+                }
+            }
+            if (!std::isfinite(minimum)) return false;
+            deepest = (std::min)(deepest, minimum);
+            flightSamples += minimum > .012f;
+            ++samples;
+            actor.AdvanceByTravel(direction * (3.2f * frame), frame, false, true);
+        }
+    }
+    std::cout << "riverbank_route_samples=" << samples << " airborne_samples=" << flightSamples
+              << " deepest_m=" << deepest << " maximum_grade=" << steepest << '\n';
+    return samples == 972 && flightSamples > 0 && deepest >= -.006f && steepest >= .15f;
+}
+
+bool VerifyRunSlopeContact(const Mistwatch::RiverbankAvatarMotion& motion,
+    const SkinnedModelAssetData& asset) {
+    const auto findJoint = [&](std::string_view name) {
+        return static_cast<std::size_t>(std::ranges::find(asset.jointNames, name) - asset.jointNames.begin());
+    };
+    const std::array legs{
+        TwoBoneIkChain3D{findJoint("thigh.L"), findJoint("shin.L"), findJoint("foot.L")},
+        TwoBoneIkChain3D{findJoint("thigh.R"), findJoint("shin.R"), findJoint("foot.R")},
+    };
+    for (const auto& leg : legs) if (leg.end >= asset.jointNames.size()) return false;
+    const auto sole = std::ranges::find(asset.materialSlotNames, Mistwatch::RiverbankBootSole);
+    const auto slot = static_cast<std::size_t>(sole - asset.materialSlotNames.begin());
+    std::array<std::vector<std::uint32_t>, 2> boots;
+    for (const auto& surface : asset.submeshes) {
+        if (surface.materialSlot != slot) continue;
+        for (const auto v : std::span(asset.model.bindMesh.indices).subspan(surface.firstIndex, surface.indexCount))
+            boots[asset.model.bindMesh.vertices[v].x > 0.f].push_back(v);
+    }
+    for (auto& vertices : boots) {
+        std::ranges::sort(vertices);
+        vertices.erase(std::unique(vertices.begin(), vertices.end()), vertices.end());
+        if (vertices.empty()) return false;
+    }
+
+    AnimationPose3D work, flatPose, slopePose;
+    SkinningWorkspace3D skinning;
+    Mesh3D skinned;
+    const auto& skeleton = asset.model.skeleton;
+    const auto feet = Vec3{1.8f, 2.2f, -4.5f};
+    const auto gaps = [&](const AnimationPose3D& pose, Matrix4 placement, Vec3 normal) {
+        std::array<float, 2> result;
+        result.fill(std::numeric_limits<float>::infinity());
+        if (!SkinModelInto(asset.model, pose, skinning, skinned)) return result;
+        for (std::size_t side = 0; side < boots.size(); ++side)
+            for (const auto vertex : boots[side]) {
+                const auto& p = skinned.vertices[vertex];
+                const auto delta = TransformPoint(placement, {p.x,p.y,p.z}) - feet;
+                result[side] = (std::min)(result[side], Dot(delta, normal) / normal.y);
+            }
+        return result;
+    };
+    int samples = 0, airborneSamples = 0;
+    float deepest = 0.f, clearanceError = 0.f, orientationError = 0.f, legError = 0.f, maxAnkleChange = 0.f;
+    const std::array normals{Normalize(Vec3{0, 1, -.17f}), Normalize(Vec3{0, 1, .36f}), Normalize(Vec3{.36f, 1, 0})};
+    const auto modelPosition = [](const AnimationPose3D& pose, std::size_t joint) {
+        return TransformPoint(pose.globalMatrices[joint], {});
+    };
+    for (const float heading : {0.f, 1.570796327f, -2.35619449f})
+        for (const float amount : {.5f, 1.f})
+            for (const int phase : {0, 7, 15, 23, 29, 42, 53, 61, 68}) {
+                const Mistwatch::RiverbankAvatarMotion::Player player{motion.Stride()*phase/68.f, heading, 1.f, 0.f, amount};
+                const auto flat = motion.Evaluate(skeleton, player, feet, work, flatPose);
+                const auto expected = gaps(flatPose, flat, {0, 1, 0});
+                for (const auto normal : normals) {
+                    const auto slope = motion.Evaluate(skeleton, player, feet, work, slopePose, normal);
+                    const auto actual = gaps(slopePose, slope, normal);
+                    ++samples;
+                    if (amount == 1.f && (std::min)(expected[0],expected[1]) > .02f) {
+                        if ((std::min)(actual[0],actual[1]) <= .012f) return false;
+                        ++airborneSamples;
+                    }
+                    for (std::size_t side = 0; side < boots.size(); ++side) {
+                        if (!std::isfinite(actual[side]) || !std::isfinite(expected[side])) return false;
+                        deepest = (std::min)(deepest, actual[side]);
+                        clearanceError = (std::max)(clearanceError, std::abs(expected[side] - actual[side]));
+                        const auto leg = legs[side];
+                        const auto upper = modelPosition(slopePose, leg.upper);
+                        const auto middle = modelPosition(slopePose, leg.middle);
+                        const auto foot = modelPosition(slopePose, leg.end);
+                        const auto flatUpper = modelPosition(flatPose, leg.upper);
+                        const auto flatMiddle = modelPosition(flatPose, leg.middle);
+                        const auto flatFoot = modelPosition(flatPose, leg.end);
+                        maxAnkleChange = (std::max)(maxAnkleChange, std::abs(foot.y - flatFoot.y));
+                        legError = (std::max)({legError, std::abs(Length(upper-middle)-Length(flatUpper-flatMiddle)),
+                                              std::abs(Length(middle-foot)-Length(flatMiddle-flatFoot))});
+                        for (int row = 0; row < 3; ++row)
+                            for (int column = 0; column < 3; ++column)
+                                orientationError = (std::max)(orientationError, std::abs(slopePose.globalMatrices[leg.end][row][column]
+                                    - flatPose.globalMatrices[leg.end][row][column]));
+                    }
+                }
+            }
+    std::cout << "slope_cases=" << samples << " airborne_preserved=" << airborneSamples
+              << " deepest_m=" << deepest << " max_clearance_change_m=" << clearanceError
+              << " max_ankle_adjustment_m=" << maxAnkleChange << " segment_length_error_m=" << legError
+              << " ankle_orientation_error=" << orientationError << '\n';
+    return VerifyRiverbankTerrainContact(motion, asset, boots) && samples == 162 && airborneSamples > 0 && deepest >= -.006f && clearanceError < .015f &&
+        maxAnkleChange > .04f && legError < .0002f && orientationError < .0002f;
+}
+
+bool VerifyRunPlayback(const Mistwatch::RiverbankAvatarMotion& motion,
+    const SkinnedModelAssetData& asset) {
+    constexpr float frame = 1.f / 60.f;
+    Mistwatch::RiverbankAvatarMotion::Player actor;
+    AnimationPose3D work, pose;
+    SkinningWorkspace3D skinning;
+    Mesh3D skinned;
+    float lowest = 100.f;
+    int transitions = 0;
+    for (int sample = 0; sample < 8; ++sample) {
+        actor.ResetGait();
+        actor.walking = 1.f;
+        actor.distance = static_cast<float>(sample) * motion.Stride() / 8.f;
+        for (int direction : {1, -1}) {
+            const float speed = direction > 0 ? .16f : .1f;
+            float last = actor.runWeight;
+            for (int index = 0; index < 12; ++index) {
+                const float before = actor.distance;
+                actor.Advance({0, 0, speed}, frame, false, true);
+                if ((actor.runWeight - last) * static_cast<float>(direction) < -1.e-5f ||
+                    std::abs(actor.runWeight - last) > frame * 7.f + 1.e-5f || actor.distance <= before)
+                    return false;
+                if (actor.runWeight > 0.f && actor.runWeight < 1.f) {
+                    ++transitions;
+                    const auto world = motion.Evaluate(asset.model.skeleton, actor, {}, work, pose);
+                    if (!SkinModelInto(asset.model, pose, skinning, skinned)) return false;
+                    for (const auto& vertex : skinned.vertices)
+                        lowest = (std::min)(lowest, TransformPoint(world, {vertex.x, vertex.y, vertex.z}).y);
+                }
+                last = actor.runWeight;
+            }
+            if (std::abs(actor.runWeight - (direction > 0 ? 1.f : 0.f)) > 1.e-5f) return false;
+        }
+    }
+
+    Mistwatch::RiverbankPeerPresentation peer;
+    if (!peer.Observe(10, {}, false, true) || peer.Observe(13, {0, 0, .48f}, false, true)) return false;
+    for (int i = 0; i < 9; ++i) {
+        const auto step = peer.Advance(frame);
+        if (std::abs(step.z - .48f / 9.f) > 1.e-5f) return false;
+    }
+    if (std::abs(peer.Position()->z - .48f) > 1.e-5f || !peer.Observe(14, {0, 0, 2.f}, false, true)) return false;
+
+    std::cout << "transition_samples=" << transitions << " min_blended_floor_m=" << lowest
+              << " missed_sprint_snapshots=2 recovered_peer_ticks=3\n";
+    return transitions == 128 && std::isfinite(lowest) && lowest >= -.0015f;
+}
+
 bool VerifyPeerPresentation() {
     using Mistwatch::RiverbankPeerPresentation;
     RiverbankPeerPresentation peer;
@@ -58,6 +237,8 @@ int main(int argc, char** argv) {
     if (!VerifyPeerPresentation()) return 23;
     const auto asset = Mistwatch::LoadRiverbankAvatarAsset(argv[1]);
     const Mistwatch::RiverbankAvatarMotion motion(asset);
+    if (motion.HasRunClip() && !VerifyRunPlayback(motion, asset)) return 24;
+    if (motion.HasRunClip() && !VerifyRunSlopeContact(motion, asset)) return 25;
     const auto joint = std::ranges::find(asset.jointNames, "pelvis");
     if (joint == asset.jointNames.end()) return 3;
     const auto pelvis = static_cast<std::size_t>(joint - asset.jointNames.begin());

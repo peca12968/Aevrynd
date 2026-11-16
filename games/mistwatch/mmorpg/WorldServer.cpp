@@ -44,7 +44,7 @@ public:
     WorldServer(unsigned short port, std::size_t capacity)
         : listener_(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)), capacity_(capacity), epoch_(MakeEpoch()),
           transport_({capacity_ + 1}), world_(transport_, ServerEndpoint, epoch_, {.tickRate=20, .maximumClients=capacity_,
-                                                      .movementLateGraceTicks=4}) {
+                                                      .movementLateGraceTicks=4, .sprintMovementMultiplier=1.6f}) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
         wchar_t database[32768]{};
         const auto length = GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_PROFILE_DB", database, 32768);
@@ -257,7 +257,7 @@ private:
     }
 
     bool JoinWorld(std::uint32_t id, Client& client, RiverbankClass selected, GlobalPosition3D position = {}) {
-        auto flags = Mistwatch::RiverbankClassFlags(selected);
+        auto flags = Mistwatch::RiverbankClassFlags(selected) | Mistwatch::RiverbankSprintCapability;
 #ifdef AEVRYND_MISTWATCH_BATTLE
         flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability;
 #endif

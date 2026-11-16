@@ -4,7 +4,7 @@
 #include <stdexcept>
 
 namespace Aevrynd {namespace {
-bool Valid(const ReplicationRuntimeSettings3D&s){return s.tickRate&&s.maximumClients&&s.maximumInputHistory&&s.maximumSnapshotHistory&&s.maximumPacketsPerTick&&s.maximumSnapshotEntities&&s.interestLoadRadius>=0&&s.interestRetainRadius>=s.interestLoadRadius&&std::isfinite(s.interestChunkSize)&&s.interestChunkSize>0&&std::isfinite(s.movementPerTick)&&s.movementPerTick>0&&s.movementLateGraceTicks<=s.maximumInputHistory;}
+bool Valid(const ReplicationRuntimeSettings3D&s){return s.tickRate&&s.maximumClients&&s.maximumInputHistory&&s.maximumSnapshotHistory&&s.maximumPacketsPerTick&&s.maximumSnapshotEntities&&s.interestLoadRadius>=0&&s.interestRetainRadius>=s.interestLoadRadius&&std::isfinite(s.interestChunkSize)&&s.interestChunkSize>0&&std::isfinite(s.movementPerTick)&&s.movementPerTick>0&&s.movementLateGraceTicks<=s.maximumInputHistory&&std::isfinite(s.sprintMovementMultiplier)&&s.sprintMovementMultiplier>=1.f&&std::isfinite(s.movementPerTick*s.sprintMovementMultiplier);}
 bool ChunkOf(GlobalPosition3D p,float size,std::pair<std::int64_t,std::int64_t>&out){if(!NormalizeGlobalPosition3D(p))return false;const long double x=static_cast<long double>(p.chunk.x)*32+p.offset.x,z=static_cast<long double>(p.chunk.z)*32+p.offset.z,cx=std::floor(x/size),cz=std::floor(z/size);if(cx<(std::numeric_limits<std::int64_t>::min)()||cx>(std::numeric_limits<std::int64_t>::max)()||cz<(std::numeric_limits<std::int64_t>::min)()||cz>(std::numeric_limits<std::int64_t>::max)())return false;out={static_cast<std::int64_t>(cx),static_cast<std::int64_t>(cz)};return true;}
 bool Contains(const std::set<std::pair<std::int64_t,std::int64_t>>&set,GlobalPosition3D p,float size){std::pair<std::int64_t,std::int64_t> key{};return ChunkOf(p,size,key)&&set.contains(key);}
 void Move(ReplicationPlayerState3D& state,const ReplicationInputCommand3D& input,float scale,
@@ -102,7 +102,7 @@ void ReplicationServer3D::Tick(const ReplicationMovementConstraint3D& constraint
             c.inputs.erase(found);
             c.lastInputTick=tick_;
         }
-        Move(c.player,input,settings_.movementPerTick,constraint);
+        Move(c.player,input,settings_.movementPerTick*(input.sprint?settings_.sprintMovementMultiplier:1.f),constraint);
     }
     SendSnapshots();
     ++stats_.ticks;
@@ -112,7 +112,7 @@ std::optional<ReplicationServerClientTelemetry3D> ReplicationServer3D::ClientTel
 
 ReplicationClient3D::ReplicationClient3D(LoopbackNetworkTransport3D&t,NetworkEndpoint3D e,NetworkEndpoint3D server,std::uint64_t epoch,std::uint32_t id,ReplicationRuntimeSettings3D s):transport_(t),endpoint_(e),server_(server),sessionEpoch_(epoch),clientId_(id),settings_(s){if(!e||!server||!epoch||!id||!Valid(s))throw std::invalid_argument("Invalid replication client settings");predicted_.entity={epoch,id};}
 bool ReplicationClient3D::SubmitInput(std::int16_t x,std::int16_t z,bool jump){pending_={sessionEpoch_,tick_+1,sequence_+1,clientId_,x,z,0,jump};return true;}
-void ReplicationClient3D::Simulate(ReplicationPlayerState3D&s,const ReplicationInputCommand3D&i)const{Move(s,i,settings_.movementPerTick);}
+void ReplicationClient3D::Simulate(ReplicationPlayerState3D&s,const ReplicationInputCommand3D&i)const{Move(s,i,settings_.movementPerTick*(i.sprint?settings_.sprintMovementMultiplier:1.f));}
 void ReplicationClient3D::Apply(const ReplicationSnapshot3D&s){if(s.sessionEpoch!=sessionEpoch_||s.clientId!=clientId_||s.serverTick<=latestSnapshotTick_)return;latestSnapshotTick_=s.serverTick;const ReplicatedEntityState3D* own{};for(const auto&e:s.entities){ReplicationPlayerState3D state{e.id,e.position,e.velocity,s.serverTick};if(e.id==predicted_.entity)own=&e;else{auto&pair=remote_[e.id];pair.first=pair.second.entity?pair.second:state;pair.second=state;}}for(auto id:s.despawned)remote_.erase(id);if(own){predicted_={own->id,own->position,own->velocity,s.serverTick};while(!history_.empty()&&history_.front().input.tick<=s.serverTick)history_.pop_front();for(auto&frame:history_){Simulate(predicted_,frame.input);frame.state=predicted_;++stats_.replayedInputs;}++stats_.reconciliations;}ReplicationAck3D ack{sessionEpoch_,s.serverTick,predicted_.tick,clientId_};std::vector<std::byte>bytes;if(EncodeReplicationPacket3D(ack,bytes))transport_.Send(endpoint_,server_,bytes);}
 void ReplicationClient3D::Receive(){NetworkPacket3D packet;for(std::size_t n=0;n<settings_.maximumPacketsPerTick&&transport_.TryReceive(endpoint_,packet);++n){ReplicationMessage3D message;if(packet.source!=server_||!DecodeReplicationPacket3D(packet.bytes,message)){++stats_.packetRejects;continue;}if(auto*s=std::get_if<ReplicationSnapshot3D>(&message))Apply(*s);else ++stats_.packetRejects;}}
 void ReplicationClient3D::Tick(){Receive();++tick_;ReplicationInputCommand3D input=pending_;if(input.tick!=tick_)input={sessionEpoch_,tick_,sequence_+1,clientId_,0,0,0,false};input.sequence=++sequence_;std::vector<std::byte>bytes;if(EncodeReplicationPacket3D(input,bytes))transport_.Send(endpoint_,server_,bytes);Simulate(predicted_,input);history_.push_back({input,predicted_});while(history_.size()>settings_.maximumInputHistory){history_.pop_front();++stats_.historyDrops;}pending_={};++stats_.ticks;}

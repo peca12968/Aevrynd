@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Aevrynd/Math.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -11,11 +12,14 @@ public:
     static constexpr float TickSeconds = .05f;
 
     // 只在已確認的兩點之間插值。停更時到達最後一點就停止。
-    [[nodiscard]] bool Observe(std::uint64_t tick, Aevrynd::Vec3 position, bool downed) {
+    [[nodiscard]] bool Observe(std::uint64_t tick, Aevrynd::Vec3 position, bool downed, bool supportsRun = false) {
         if (lastTick && tick <= *lastTick) return false;
         const auto step = position - target;
         const auto tickGap = lastTick ? tick - *lastTick : 0;
-        const bool snap = !lastTick || tickGap > 3 || std::hypot(step.x, step.z) > .32f || downed != wasDowned;
+        // 兩刻未收到快照時，跑步仍可在三刻的權威位移內補間。
+        const float limit = supportsRun && tickGap <= 3
+            ? std::max(.32f, .16f * static_cast<float>(tickGap) + .002f) : .32f;
+        const bool snap = !lastTick || tickGap > 3 || std::hypot(step.x, step.z) > limit || downed != wasDowned;
         lastTick = tick;
         wasDowned = downed;
         target = position;

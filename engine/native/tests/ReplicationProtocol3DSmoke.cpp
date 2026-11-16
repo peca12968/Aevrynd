@@ -12,6 +12,20 @@ int main(){
  WorldChunkDeltaOperation3D operation{4,2,100,{8,9},SetTerrainHeightDelta3D{2,3,4.5f}};messages.emplace_back(ReplicationMutationRequest3D{7,22,2,{{10,11},3,1,{-2,0,7}},operation});
  messages.emplace_back(ReplicationMutationReceipt3D{7,22,100,4,2,true,true,{8,9}});
  for(const auto& source:messages){std::vector<std::byte> bytes;ReplicationPacketReceipt3D encoded{},decoded{};if(!EncodeReplicationPacket3D(source,bytes,&encoded)||bytes.empty())return 1;ReplicationMessage3D target;if(!DecodeReplicationPacket3D(bytes,target,&decoded)||target.index()!=source.index()||encoded.sha256!=decoded.sha256||encoded.crc32c!=decoded.crc32c)return 2;auto corrupt=bytes;corrupt.back()^=std::byte{1};if(DecodeReplicationPacket3D(corrupt,target))return 3;for(std::size_t n=0;n<bytes.size();++n)if(DecodeReplicationPacket3D(std::span<const std::byte>(bytes).first(n),target))return 4;}
+ // 舊版封包仍使用旗標 0 和 1，跑步與跳躍也能各自或同時傳送。
+ for (unsigned controls = 0; controls < 4; ++controls) {
+     const ReplicationInputCommand3D command{
+         7, 101, controls + 1, 2, 123, -456, 7, bool(controls & 1u), bool(controls & 2u)
+     };
+     std::vector<std::byte> encoded;
+     if (!EncodeReplicationPacket3D(command, encoded) || encoded.empty() ||
+         std::to_integer<unsigned>(encoded.back()) != controls) return 16;
+     ReplicationMessage3D decoded;
+     if (!DecodeReplicationPacket3D(encoded, decoded)) return 17;
+     const auto* input = std::get_if<ReplicationInputCommand3D>(&decoded);
+     if (!input || input->jump != command.jump || input->sprint != command.sprint ||
+         input->moveX != command.moveX || input->moveZ != command.moveZ || input->sequence != command.sequence) return 18;
+ }
  ReplicationSnapshot3D invalid=snapshot;invalid.entities[0].velocity.x=std::numeric_limits<float>::quiet_NaN();std::vector<std::byte> bytes;if(EncodeReplicationPacket3D(invalid,bytes))return 5;
  ReplicationCodecLimits3D tiny{};tiny.maximumEntities=0;if(EncodeReplicationPacket3D(snapshot,bytes,nullptr,tiny))return 6;
  LoopbackNetworkSettings3D settings{};settings.maximumEndpoints=3;settings.maximumQueuedPackets=16;settings.maximumQueuedBytes=4096;settings.maximumPacketBytes=1024;settings.seed=77;settings.lossPermille=200;settings.duplicatePermille=300;settings.reorderPermille=400;settings.maximumJitterTicks=3;LoopbackNetworkTransport3D a(settings),b(settings);for(auto endpoint:{NetworkEndpoint3D{1},NetworkEndpoint3D{2},NetworkEndpoint3D{3}})if(!a.RegisterEndpoint(endpoint)||!b.RegisterEndpoint(endpoint))return 7;
