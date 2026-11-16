@@ -3,6 +3,7 @@
 #include <ws2tcpip.h>
 #include <Aevrynd/ReplicationProtocol3D.h>
 #include <array>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -31,6 +32,13 @@ struct Winsock {
     }
     ~Winsock() { WSACleanup(); }
 };
+
+inline std::optional<in_addr> TailnetIPv4(const char* text) {
+    in_addr result{};
+    if (InetPtonA(AF_INET, text, &result) != 1 || (ntohl(result.s_addr) & 0xffc00000u) != 0x64400000u)
+        return std::nullopt;
+    return result;
+}
 
 inline bool Nonblocking(SOCKET socket) {
     unsigned long enabled = 1;

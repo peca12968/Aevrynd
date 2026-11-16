@@ -14,8 +14,26 @@ using namespace Aevrynd;
 using Clock = std::chrono::steady_clock;
 using namespace LocalWorldTcp;
 
-#ifdef AEVRYND_MISTWATCH_PROFILES
 namespace {
+struct TailnetRoute {
+    in_addr remote;
+    in_addr local;
+};
+
+std::optional<TailnetRoute> ReadTailnetRoute() {
+    char remote[16]{}, local[16]{};
+    const auto remoteLength = GetEnvironmentVariableA("AEVRYND_MISTWATCH_TAILNET_REMOTE", remote, sizeof(remote));
+    const auto localLength = GetEnvironmentVariableA("AEVRYND_MISTWATCH_TAILNET_LOCAL", local, sizeof(local));
+    if (!remoteLength && !localLength) return std::nullopt;
+    if (remoteLength >= sizeof(remote) || localLength >= sizeof(local))
+        throw std::runtime_error("Invalid Riverbank tailnet addresses");
+    const auto destination = TailnetIPv4(remote);
+    const auto source = TailnetIPv4(local);
+    if (!destination || !source) throw std::runtime_error("Both Riverbank tailnet IPv4 addresses are required");
+    return TailnetRoute{*destination, *source};
+}
+
+#ifdef AEVRYND_MISTWATCH_PROFILES
 unsigned TicketDigit(wchar_t value) {
     if (value >= L'0' && value <= L'9') return static_cast<unsigned>(value - L'0');
     if (value >= L'a' && value <= L'f') return static_cast<unsigned>(value - L'a') + 10;
@@ -31,11 +49,12 @@ std::optional<RiverbankTicket> ProfileTicketFromEnvironment() {
     for (std::size_t i = 0; i < result.size(); ++i) result[i] = std::byte((TicketDigit(text[i * 2]) << 4u) | TicketDigit(text[i * 2 + 1]));
     return result;
 }
-}
 #endif
+}
 
 struct LocalWorldClient::State {
     Winsock winsock;
+    const std::optional<TailnetRoute> tailnet = ReadTailnetRoute();
     std::optional<Peer> peer;
     std::optional<ReplicationSnapshot3D> snapshot;
     Clock::time_point lastPacket = Clock::now();
@@ -59,13 +78,24 @@ struct LocalWorldClient::State {
     std::optional<RiverbankPartyWire::Reply> party;
     std::uint64_t nextGearSequence{1}, pendingGearSequence{};
     std::optional<RiverbankGearWire::Reply> gear;
+    std::uint64_t nextTrailSupplySequence{1}, pendingTrailSupplySequence{};
+    std::optional<RiverbankTrailSuppliesWire::Reply> trailSupplies;
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
     std::optional<RiverbankBattleWire::Encounter> encounter;
     std::uint64_t nextActionSequence{1};
+    std::optional<RiverbankFieldWire::Reply> field;
+    Clock::time_point nextFieldQuery{};
+    std::uint64_t nextFieldSequence{1}, pendingFieldSequence{};
 #endif
 
     explicit State(unsigned short localPort) : port(localPort) { (void)OpenTransport(); }
+
+    bool Supports(std::uint32_t capability) const noexcept {
+        if (!snapshot) return false;
+        const auto self = std::ranges::find(snapshot->entities, NetworkEntityId3D{epoch, id}, &ReplicatedEntityState3D::id);
+        return self != snapshot->entities.end() && (self->flags & capability) != 0;
+    }
 
     bool OpenTransport() {
         Socket socket(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
@@ -75,6 +105,14 @@ struct LocalWorldClient::State {
         sockaddr_in address{};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (tailnet) {
+            sockaddr_in source{};
+            source.sin_family = AF_INET;
+            source.sin_addr = tailnet->local;
+            // 私網連線固定使用本機的 Tailscale 位址，避免改走其他介面。
+            if (::bind(socket.Get(), reinterpret_cast<const sockaddr*>(&source), sizeof(source)) != 0) return false;
+            address.sin_addr = tailnet->remote;
+        }
         address.sin_port = htons(port);
         connected = connect(socket.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0;
         if (!connected && WSAGetLastError() != WSAEWOULDBLOCK) return false;
@@ -149,6 +187,16 @@ struct LocalWorldClient::State {
 
     bool Receive(std::span<const std::byte> bytes) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
+        if (RiverbankTrailSuppliesWire::HasMagic(bytes)) {
+            const auto reply = RiverbankTrailSuppliesWire::DecodeReply(bytes);
+            if (!profileTicket || !reply || !pendingTrailSupplySequence || reply->sequence != pendingTrailSupplySequence ||
+                (trailSupplies && (reply->state.earnedHides < trailSupplies->state.earnedHides ||
+                    (trailSupplies->state.ownsPack && !reply->state.ownsPack)))) return false;
+            trailSupplies = *reply;
+            pendingTrailSupplySequence = 0;
+            lastPacket = Clock::now();
+            return true;
+        }
         if (RiverbankGearWire::HasMagic(bytes)) {
             const auto reply = RiverbankGearWire::DecodeReply(bytes);
             if (!profileTicket || !reply || !pendingGearSequence || reply->sequence != pendingGearSequence) return false;
@@ -206,6 +254,15 @@ struct LocalWorldClient::State {
         }
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
+        if (RiverbankFieldWire::HasMagic(bytes)) {
+            const auto next = RiverbankFieldWire::DecodeReply(bytes);
+            if (!next || next->sequence != pendingFieldSequence ||
+                (field && (next->field.run < field->field.run || next->hides < field->hides))) return false;
+            field = *next;
+            pendingFieldSequence = 0;
+            lastPacket = Clock::now();
+            return true;
+        }
         if (RiverbankBattleWire::HasMagic(bytes)) {
             auto next = RiverbankBattleWire::DecodeEncounter(bytes);
             if (!snapshot || !next || next->epoch != epoch || next->owner != id || next->tick != snapshot->serverTick ||
@@ -269,6 +326,10 @@ struct LocalWorldClient::State {
 #ifdef AEVRYND_MISTWATCH_BATTLE
         encounter.reset();
         nextActionSequence = 1;
+        field.reset();
+        nextFieldQuery = {};
+        nextFieldSequence = 1;
+        pendingFieldSequence = 0;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         pendingGuildSequence = 0;
@@ -279,6 +340,9 @@ struct LocalWorldClient::State {
         expedition.reset();
         party.reset();
         gear.reset();
+        trailSupplies.reset();
+        nextTrailSupplySequence = 1;
+        pendingTrailSupplySequence = 0;
         nextPartySequence = nextGearSequence = 1;
         nextGuildSequence = nextTerritorySequence = nextExpeditionSequence = 1;
         profileLookupComplete = false;
@@ -317,10 +381,42 @@ bool LocalWorldClient::RequestBattleAction(RiverbankAction action) {
 const RiverbankBattleWire::Encounter* LocalWorldClient::Battle() const noexcept {
     return state_->encounter ? &*state_->encounter : nullptr;
 }
+
+bool LocalWorldClient::RequestFieldHunt() {
+    using namespace RiverbankFieldWire;
+    const auto now = Clock::now();
+    if (!state_->peer || !state_->snapshot || state_->pendingFieldSequence || now < state_->nextFieldQuery ||
+        state_->nextFieldSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    if (!state_->Supports(Capability) ||
+        !state_->peer->Queue(EncodeQuery(state_->nextFieldSequence))) return false;
+    state_->pendingFieldSequence = state_->nextFieldSequence++;
+    state_->nextFieldQuery = now + std::chrono::milliseconds(100);
+    return true;
+}
+
+const RiverbankFieldWire::Reply* LocalWorldClient::FieldHunt() const noexcept {
+    return state_->field ? &*state_->field : nullptr;
+}
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
 bool LocalWorldClient::CanUseGuild() const noexcept {
     return state_->peer && state_->profileTicket && state_->snapshot && state_->encounter;
+}
+
+bool LocalWorldClient::CanUseTrailSupplies() const noexcept {
+    return CanUseGuild() && state_->Supports(RiverbankTrailSuppliesWire::Capability);
+}
+
+bool LocalWorldClient::RequestTrailSupplies(TrailSupplyAction action) {
+    if (!CanUseTrailSupplies() || state_->pendingTrailSupplySequence ||
+        state_->nextTrailSupplySequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    if (!state_->peer->Queue(RiverbankTrailSuppliesWire::EncodeRequest({state_->nextTrailSupplySequence, action}))) return false;
+    state_->pendingTrailSupplySequence = state_->nextTrailSupplySequence++;
+    return true;
+}
+
+const RiverbankTrailSuppliesWire::Reply* LocalWorldClient::TrailSupplies() const noexcept {
+    return state_->trailSupplies ? &*state_->trailSupplies : nullptr;
 }
 
 bool LocalWorldClient::RequestGuild(GuildAction action, std::uint64_t target, std::string_view name) {

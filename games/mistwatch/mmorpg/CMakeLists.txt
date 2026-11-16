@@ -40,6 +40,10 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   target_compile_definitions(MistwatchRiverbankProfileStoreSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(MistwatchRiverbankProfileStoreSmoke PRIVATE /W4 /WX /permissive- /utf-8)
   add_test(NAME MistwatchRiverbankProfileStoreTest COMMAND MistwatchRiverbankProfileStoreSmoke "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME MistwatchRiverbankLaunchReceiptTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLaunchReceipt.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankLaunchReceiptTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;profile;network")
   add_test(NAME MistwatchRiverbankProfileReconnectTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankProfiles.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
@@ -67,6 +71,23 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankBossGear.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(MistwatchRiverbankBossGearLoopbackTest PROPERTIES TIMEOUT 100 LABELS "mistwatch;gear;network")
+  add_test(NAME MistwatchRiverbankTrailSuppliesTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankTrailSupplies.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankTrailSuppliesTest PROPERTIES TIMEOUT 120 LABELS "mistwatch;profile;field;network")
+  add_test(NAME MistwatchRiverbankAsyncRegistrationTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankAsyncRegistration.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankAsyncRegistrationTest PROPERTIES TIMEOUT 25 LABELS "mistwatch;profile;network")
+  add_test(NAME MistwatchRiverbankFieldHuntLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankFieldHunt.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankFieldHuntLoopbackTest PROPERTIES TIMEOUT 105 LABELS "mistwatch;combat;field;network")
+  add_test(NAME MistwatchRiverbankCoopJourneyLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankCoopJourney.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankCoopJourneyLoopbackTest PROPERTIES TIMEOUT 150 LABELS "mistwatch;party;expedition;network")
+
 
   set_tests_properties(MistwatchRiverbankProfileStoreTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;profile")
   set_tests_properties(MistwatchRiverbankProfileReconnectTest PROPERTIES TIMEOUT 70 LABELS "mistwatch;profile")
@@ -83,6 +104,9 @@ add_test(NAME MistwatchNativeLocalWorldClientTest
     "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}/NativeClientVerification.json"
     "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
 set_tests_properties(MistwatchNativeLocalWorldClientTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;network")
+add_test(NAME MistwatchTailnetAddressValidationTest COMMAND MistwatchLocalWorldClientSmoke --tailnet-addresses)
+set_tests_properties(MistwatchTailnetAddressValidationTest PROPERTIES TIMEOUT 5 LABELS "mistwatch;network")
+
 option(MISTWATCH_TEST_RIVERBANK_ENCOUNTER "Build the isolated riverbank encounter rules test" OFF)
 if(MISTWATCH_TEST_RIVERBANK_ENCOUNTER)
   add_executable(MistwatchRiverbankEncounterSmoke RiverbankEncounter.cpp RiverbankEncounterSmoke.cpp)

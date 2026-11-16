@@ -1,4 +1,5 @@
 #include "LocalWorldClient.h"
+#include "LocalWorldTcp.h"
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -87,6 +88,16 @@ int VerifyLiveReconnect(Mistwatch::LocalWorldClient& client) {
 #endif
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view(argv[1]) == "--tailnet-addresses") {
+        using namespace Mistwatch::LocalWorldTcp;
+        const Winsock winsock;
+        for (const char* value : {"100.64.0.1", "100.127.255.254"})
+            if (!TailnetIPv4(value)) return 24;
+        for (const char* value : {"", "127.0.0.1", "192.168.1.2", "100.63.0.1", "100.128.0.1", "::1", "example.com"})
+            if (TailnetIPv4(value)) return 25;
+        std::cout << "RIVERBANK_TAILNET_ADDRESS_VALIDATION_PASS\n";
+        return 0;
+    }
     const bool guildView = argc == 3 && std::string_view(argv[2]) == "--guild-view";
     const bool reconnect = argc == 3 && std::string_view(argv[2]) == "--live-reconnect";
     const bool party = argc == 3 && std::string_view(argv[2]) == "--party-accept";

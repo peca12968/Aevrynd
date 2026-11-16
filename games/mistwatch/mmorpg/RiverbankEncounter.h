@@ -35,7 +35,7 @@ struct EncounterPlayerStatus {
 
 struct SuspendedRiverbankCombat {
     EncounterPlayerStatus status;
-    std::uint64_t contributionRun{};
+    std::uint64_t contributionRun{}, fieldContributionRun{};
 };
 
 struct RiverbankBossStatus {
@@ -57,11 +57,20 @@ public:
         return point.x >= center.x - 8.f && point.x <= center.x + 8.f &&
                point.z >= center.z - 5.f && point.z <= center.z + 12.f;
     }
+    static constexpr unsigned FieldHealth = 84;
+    static constexpr unsigned FieldWindupTicks = 24;
+    static constexpr float FieldStrikeRadius = 1.5f;
+    static constexpr unsigned FieldRespawnTicks = 8 * TicksPerSecond;
+    static constexpr ArenaPosition EastPastureCenter{15.f, 15.f};
+    static constexpr bool InPasture(ArenaPosition point) {
+        return point.x >= 11.f && point.x <= 19.f && point.z >= 11.f && point.z <= 19.f;
+    }
     explicit RiverbankEncounter(ArenaPosition anchor = NorthBankCenter);
 
     bool Join(std::uint64_t id, RiverbankClass playerClass);
-    bool RestoreRewards(std::uint64_t id, unsigned earned);
+    bool RestoreRewards(std::uint64_t id, unsigned earned, unsigned fieldHides = 0);
     bool SetBossGear(std::uint64_t id, bool equipped);
+    bool SetTrailPack(std::uint64_t id, bool equipped);
     std::optional<SuspendedRiverbankCombat> Suspend(std::uint64_t id) const;
     bool RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks);
     bool Leave(std::uint64_t id);
@@ -72,7 +81,9 @@ public:
     };
     void Tick(std::span<const SupportMembership> groups = {});
     std::optional<EncounterPlayerStatus> Player(std::uint64_t id) const;
-    const RiverbankBossStatus& Boss() const { return boss; }
+    const RiverbankBossStatus& Boss() const { return northBank.state; }
+    const RiverbankBossStatus& Field() const { return pasture.state; }
+    unsigned FieldHides(std::uint64_t id) const;
 
 private:
     struct Request { RiverbankAction action; std::uint64_t ally; };
@@ -82,21 +93,34 @@ private:
         std::optional<Request> request;
         std::uint64_t sequence{};
         unsigned guardTicks{};
-        bool contributed{}, bossGear{};
+        std::uint64_t fieldContributionRun{};
+        unsigned fieldHides{};
+        bool contributed{}, bossGear{}, trailPack{};
+    };
+
+    struct Site {
+        ArenaPosition anchor;
+        bool field;
+        RiverbankBossStatus state{};
+        std::uint64_t tauntOwner{};
+        unsigned disengagedTicks{}, patrolLeg{};
+
+        bool Contains(ArenaPosition point) const { return field ? InPasture(point) : InArena(point, anchor); }
+        unsigned MaxHealth() const { return field ? FieldHealth : BossHealth; }
     };
 
     bool InRange(const Participant& player, ArenaPosition from, float range) const;
-    std::uint64_t Target() const;
-    unsigned ResolveAction(std::uint64_t id, Participant& participant, const Request& request,
+    std::uint64_t Target(const Site& site) const;
+    unsigned ResolveAction(Site& site, std::uint64_t id, Participant& participant, const Request& request,
                            std::span<const SupportMembership> groups);
-    void MoveBoss(ArenaPosition target, float step);
-    void Reset();
-    void Finish();
+    void CreditContribution(const Site& site, Participant& participant);
+    static void Move(Site& site, ArenaPosition target, float step);
+    void Advance(Site& site, unsigned damage);
+    void Reset(Site& site);
+    void Finish(Site& site);
 
-    ArenaPosition anchor;
     std::map<std::uint64_t, Participant> party;
-    RiverbankBossStatus boss;
-    std::uint64_t tick{}, tauntOwner{};
-    unsigned disengagedTicks{}, patrolLeg{};
+    Site northBank, pasture;
+    std::uint64_t tick{};
 };
 }

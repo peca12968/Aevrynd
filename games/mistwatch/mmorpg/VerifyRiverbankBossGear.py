@@ -18,8 +18,8 @@ OK, NOT_EARNED, REJECTED = range(3)
 
 
 class GearPlayer(Player):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.gear_sequence = 0
 
     def gear(self, action, replay=False):
@@ -87,7 +87,7 @@ def verify(server, evidence):
 
     with closing(sqlite3.connect(database)) as db:
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
-        assert db.execute('PRAGMA user_version').fetchone() == (5,)
+        assert db.execute('PRAGMA user_version').fetchone() == (7,)
         assert db.execute('SELECT COUNT(*) FROM riverbank_reward').fetchone() == (3,)
         kit = db.execute('SELECT character_id,reward_world,reward_encounter FROM riverbank_boss_kit').fetchall()
         assert kit == [(2, epoch, victory['encounter'])]

@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Aevrynd/SkinnedModelAsset.h>
+#include "RiverbankAvatarAsset.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <limits>
+#include <span>
 
 namespace Mistwatch {
 struct RiverbankAvatarMotion {
@@ -30,6 +32,18 @@ struct RiverbankAvatarMotion {
         const auto pelvis = std::ranges::find(asset.jointNames, "pelvis");
         if (clip == asset.clips.end() || pelvis == asset.jointNames.end())
             throw std::runtime_error("Riverbank avatar pelvis or walk clip missing");
+        if (HasRiverbankBoots(asset)) {
+            const auto sole = std::ranges::find(asset.materialSlotNames, RiverbankBootSole);
+            const auto slot = static_cast<std::size_t>(sole - asset.materialSlotNames.begin());
+            groundDatum = std::numeric_limits<float>::infinity();
+            for (const auto& part : asset.submeshes) {
+                if (part.materialSlot != slot) continue;
+                for (const auto vertex : std::span(asset.model.bindMesh.indices).subspan(part.firstIndex, part.indexCount))
+                    groundDatum = std::min(groundDatum, asset.model.bindMesh.vertices[vertex].y);
+            }
+            if (!std::isfinite(groundDatum) || groundDatum > GroundDatum - .005f || groundDatum < GroundDatum - .022f)
+                throw std::runtime_error("Riverbank boot sole has an invalid authored ground datum");
+        }
         walk = clip->clip;
         walk.looping = false;
         idle = Aevrynd::SampleAnimationClip(asset.model.skeleton, walk, 0.0f);
@@ -50,7 +64,7 @@ struct RiverbankAvatarMotion {
         Aevrynd::BlendAnimationPosesInto(skeleton, idle, sampled, player.walking, pose);
         const auto world = Aevrynd::CreateTransformMatrix(feet, {0, player.heading - assetYaw, 0}, {1, 1, 1});
         // Remove linear root travel and put the measured Blender floor on the replicated foot position.
-        return world * Aevrynd::CreateTranslationMatrix(Aevrynd::Vec3{0, -GroundDatum, 0} - travel * (phase * player.walking));
+        return world * Aevrynd::CreateTranslationMatrix(Aevrynd::Vec3{0, -groundDatum, 0} - travel * (phase * player.walking));
     }
 
     float Stride() const noexcept { return stride; }
@@ -59,6 +73,6 @@ private:
     Aevrynd::AnimationClip3D walk;
     Aevrynd::AnimationPose3D idle;
     Aevrynd::Vec3 travel{};
-    float stride{}, assetYaw{};
+    float stride{}, assetYaw{}, groundDatum{GroundDatum};
 };
 }

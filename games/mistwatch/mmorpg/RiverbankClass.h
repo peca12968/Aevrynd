@@ -22,7 +22,7 @@ inline constexpr std::string_view RiverbankClassName(RiverbankClass value) {
     }
 }
 
-// 第零位元保留給引擎標示自身實體，職業使用遊戲層的第八至十五位元。
+// Bit zero remains the engine's self-entity marker. Bits 8–15 belong to the game layer.
 constexpr std::uint32_t RiverbankClassFlags(RiverbankClass value) { return std::uint32_t(value) << 8u; }
 constexpr RiverbankClass ReadRiverbankClassFlags(std::uint32_t flags) { return RiverbankClass((flags >> 8u) & 255u); }
 

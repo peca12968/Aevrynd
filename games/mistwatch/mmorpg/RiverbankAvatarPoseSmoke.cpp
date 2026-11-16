@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
         }
         if (!submittedVest || changedFabricParts != 3) return 14;
     }
-    if (scene.skinnedMeshInstances.size() != 54 || scene.skinPaletteJoints.size() != 240) return 9;
+    if (scene.skinnedMeshInstances.size() != (Mistwatch::HasRiverbankBoots(asset) ? 66u : 54u) || scene.skinPaletteJoints.size() != 240) return 9;
     std::cout << "samples=195 pelvis_planar_drift_m=" << largestDrift
               << " lowest_animated_floor_m=" << lowest << " highest_animated_floor_m=" << highest
               << " three_role_draw_commands=" << scene.skinnedMeshInstances.size() << '\n';

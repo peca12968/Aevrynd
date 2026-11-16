@@ -83,6 +83,30 @@ CREATE TABLE riverbank_boss_kit (
 );
 PRAGMA user_version = 5;
 )sql";
+constexpr char FieldHidesSchema[] = R"sql(
+CREATE TABLE riverbank_field_hide (
+    character_id INTEGER NOT NULL REFERENCES riverbank_character(id),
+    world INTEGER NOT NULL,
+    encounter INTEGER NOT NULL,
+    PRIMARY KEY (character_id, world, encounter)
+);
+PRAGMA user_version = 6;
+)sql";
+constexpr char TrailSuppliesSchema[] = R"sql(
+CREATE TABLE riverbank_trail_pack (
+    character_id INTEGER NOT NULL PRIMARY KEY,
+    first_world INTEGER NOT NULL,
+    first_encounter INTEGER NOT NULL,
+    second_world INTEGER NOT NULL,
+    second_encounter INTEGER NOT NULL,
+    CHECK (first_world < second_world OR (first_world = second_world AND first_encounter < second_encounter)),
+    FOREIGN KEY (character_id, first_world, first_encounter)
+        REFERENCES riverbank_field_hide(character_id, world, encounter),
+    FOREIGN KEY (character_id, second_world, second_encounter)
+        REFERENCES riverbank_field_hide(character_id, world, encounter)
+);
+PRAGMA user_version = 7;
+)sql";
 
 void Require(sqlite3* db, int code, int expected = SQLITE_OK) {
     if (code != expected) throw std::runtime_error(std::string("Riverbank profile database: ") + sqlite3_errmsg(db));
@@ -90,14 +114,34 @@ void Require(sqlite3* db, int code, int expected = SQLITE_OK) {
 
 void Execute(sqlite3* db, const char* sql) { Require(db, sqlite3_exec(db, sql, nullptr, nullptr, nullptr)); }
 
+constexpr int ProfileBusyTimeoutMs = 2500;
+enum class TransactionWait { Normal, NoWait };
+
 struct Transaction {
     sqlite3* db;
-    bool committed{};
-    explicit Transaction(sqlite3* database) : db(database) { Execute(db, "BEGIN IMMEDIATE"); }
-    ~Transaction() { if (!committed) sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr); }
+    bool active{};
+    explicit Transaction(sqlite3* database, TransactionWait wait = TransactionWait::Normal) : db(database) {
+        if (wait == TransactionWait::Normal) {
+            Execute(db, "BEGIN IMMEDIATE");
+            active = true;
+            return;
+        }
+        // 只有取得寫入權才開始扣款。資料庫忙碌時不等待，以免阻塞整個遊戲更新。
+        Require(db, sqlite3_busy_timeout(db, 0));
+        const auto started = sqlite3_exec(db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
+        const auto restored = sqlite3_busy_timeout(db, ProfileBusyTimeoutMs);
+        if (restored != SQLITE_OK && started == SQLITE_OK)
+            sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+        Require(db, restored);
+        if (started == SQLITE_BUSY) return;
+        Require(db, started);
+        active = true;
+    }
+    ~Transaction() { if (active) sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr); }
     Transaction(const Transaction&) = delete;
     Transaction& operator=(const Transaction&) = delete;
-    void Commit() { Execute(db, "COMMIT"); committed = true; }
+    explicit operator bool() const noexcept { return active; }
+    void Commit() { Execute(db, "COMMIT"); active = false; }
 };
 
 struct Statement {
@@ -176,6 +220,15 @@ void ClearGuildInvite(sqlite3* db, std::int64_t profile) {
 struct RiverbankProfileStore::Database {
     HANDLE lease{INVALID_HANDLE_VALUE};
     sqlite3* handle{};
+    std::filesystem::path path;
+    void Open(const std::filesystem::path& file) {
+        path = file;
+        const int opened = sqlite3_open16(file.c_str(), &handle);
+        if (!handle) throw std::runtime_error("Cannot open the Riverbank profile database");
+        Require(handle, opened);
+        // 同一個租約下的註冊和遊戲結算可能同時寫入。由 SQLite 排程，避免瞬間 SQLITE_BUSY 結束伺服器。
+        Require(handle, sqlite3_busy_timeout(handle, ProfileBusyTimeoutMs));
+    }
     ~Database() {
         if (handle) sqlite3_close(handle);
         if (lease != INVALID_HANDLE_VALUE) CloseHandle(lease);
@@ -189,10 +242,8 @@ RiverbankProfileStore::RiverbankProfileStore(const std::filesystem::path& path) 
     leasePath += L".lock";
     storage->lease = CreateFileW(leasePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (storage->lease == INVALID_HANDLE_VALUE) throw std::runtime_error("Riverbank profile database is already open or inaccessible");
-    const int opened = sqlite3_open16(path.c_str(), &storage->handle);
-    if (!storage->handle) throw std::runtime_error("Cannot open the Riverbank profile database");
+    storage->Open(path);
     auto* db = storage->handle;
-    Require(db, opened);
     Execute(db, "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
     std::int64_t schema{};
     {
@@ -200,24 +251,38 @@ RiverbankProfileStore::RiverbankProfileStore(const std::filesystem::path& path) 
         Require(db, version.Step(), SQLITE_ROW);
         schema = version.Value(0);
     }
-    if (schema < 0 || schema > 5) throw std::runtime_error("Unsupported Riverbank profile schema");
-    if (schema < 5) {
+    if (schema < 0 || schema > 7) throw std::runtime_error("Unsupported Riverbank profile schema");
+    if (schema < 7) {
         Transaction upgrade(db);
         if (!schema) Execute(db, Schema);
         if (schema < 2) Execute(db, GuildSchema);
         if (schema < 3) Execute(db, TerritorySchema);
         if (schema < 4) Execute(db, ExpeditionSchema);
-        Execute(db, BossGearSchema);
+        if (schema < 5) Execute(db, BossGearSchema);
+        if (schema < 6) Execute(db, FieldHidesSchema);
+        Execute(db, TrailSuppliesSchema);
         upgrade.Commit();
     }
 }
 
 RiverbankProfileStore::~RiverbankProfileStore() = default;
 
+RiverbankProfileStore::RiverbankProfileStore(std::unique_ptr<Database> connection) : storage(std::move(connection)) {}
+
+std::unique_ptr<RiverbankProfileStore> RiverbankProfileStore::OpenRegistrationConnection() const {
+    if (storage->lease == INVALID_HANDLE_VALUE) throw std::logic_error("A database lease is required for the registration connection");
+    auto connection = std::make_unique<Database>();
+    connection->Open(storage->path);
+    Execute(connection->handle, "PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;");
+    return std::unique_ptr<RiverbankProfileStore>(new RiverbankProfileStore(std::move(connection)));
+}
+
 std::optional<RiverbankProfile> RiverbankProfileStore::Find(const RiverbankTicket& ticket) {
     if (!HasTicket(ticket)) return std::nullopt;
     auto* db = storage->handle;
-    Statement read(db, "SELECT id, profession, (SELECT COUNT(*) FROM riverbank_reward WHERE character_id = c.id) "
+    Statement read(db, "SELECT id, profession, (SELECT COUNT(*) FROM riverbank_reward WHERE character_id = c.id), "
+                       "(SELECT COUNT(*) FROM riverbank_field_hide WHERE character_id = c.id), "
+                       "EXISTS(SELECT 1 FROM riverbank_trail_pack WHERE character_id = c.id) "
                        "FROM riverbank_character AS c WHERE ticket_sha256 = ?1");
     read.Bind(1, Digest(ticket));
     const int code = read.Step();
@@ -225,13 +290,18 @@ std::optional<RiverbankProfile> RiverbankProfileStore::Find(const RiverbankTicke
     Require(db, code, SQLITE_ROW);
     const auto job = read.Value(1);
     const auto rewards = read.Value(2);
-    if (read.Value(0) <= 0 || job < 1 || job > 3 || rewards < 0 || rewards > (std::numeric_limits<unsigned>::max)())
+    const auto hides = read.Value(3);
+    constexpr auto MaxCount = (std::numeric_limits<unsigned>::max)();
+    const bool pack = read.Value(4) != 0;
+    if (read.Value(0) <= 0 || job < 1 || job > 3 || rewards < 0 || rewards > MaxCount ||
+        hides < 0 || hides > MaxCount || (pack && hides < RiverbankTrailSupplies::HideCost))
         throw std::runtime_error("Invalid Riverbank character record");
-    return RiverbankProfile{read.Value(0), RiverbankClass(job), static_cast<unsigned>(rewards)};
+    return RiverbankProfile{read.Value(0), RiverbankClass(job), static_cast<unsigned>(rewards), static_cast<unsigned>(hides), pack};
 }
 
 std::optional<RiverbankProfile> RiverbankProfileStore::Create(const RiverbankTicket& ticket, RiverbankClass playerClass) {
     if (!HasTicket(ticket) || !IsRiverbankClass(playerClass)) return std::nullopt;
+    if (const auto existing = Find(ticket)) return existing->playerClass == playerClass ? existing : std::nullopt;
     auto* db = storage->handle;
     Statement create(db, "INSERT OR IGNORE INTO riverbank_character(ticket_sha256, profession) VALUES (?1, ?2)");
     create.Bind(1, Digest(ticket));
@@ -266,6 +336,61 @@ void RiverbankProfileStore::Award(std::uint64_t world, std::uint64_t encounter, 
         credit.Reset();
     }
     award.Commit();
+}
+
+void RiverbankProfileStore::AwardFieldHides(std::uint64_t world, std::uint64_t encounter,
+                                                std::span<const std::int64_t> profiles) {
+    if (profiles.empty()) return;
+    const auto worldId = PositiveId(world);
+    const auto encounterId = PositiveId(encounter);
+    auto* db = storage->handle;
+    Transaction award(db);
+    Statement credit(db, "INSERT OR IGNORE INTO riverbank_field_hide(character_id, world, encounter) VALUES (?1, ?2, ?3)");
+    for (const auto id : profiles) {
+        if (id <= 0) throw std::invalid_argument("Invalid field hunt reward recipient");
+        credit.Bind(1, id);
+        credit.Bind(2, worldId);
+        credit.Bind(3, encounterId);
+        credit.Done();
+        credit.Reset();
+    }
+    award.Commit();
+}
+
+TrailSupplyResult RiverbankProfileStore::ExchangeTrailPack(std::int64_t profileId) {
+    auto* db = storage->handle;
+    Transaction exchange(db, TransactionWait::NoWait);
+    if (!exchange) return TrailSupplyResult::Rejected;
+    {
+        Statement prior(db, "SELECT 1 FROM riverbank_trail_pack WHERE character_id=?1");
+        prior.Bind(1, profileId);
+        const auto result = prior.Step();
+        if (result == SQLITE_ROW) return TrailSupplyResult::AlreadyOwned;
+        Require(db, result, SQLITE_DONE);
+    }
+    // 只從該角色已落盤的兩筆獸皮收據兌換，保留原狩獵歷程。
+    static_assert(RiverbankTrailSupplies::HideCost == 2);
+    std::array<std::int64_t, 4> hides{};
+    {
+        Statement earned(db, "SELECT world,encounter FROM riverbank_field_hide WHERE character_id=?1 "
+                             "ORDER BY world,encounter LIMIT 2");
+        earned.Bind(1, profileId);
+        for (std::size_t receipt = 0; receipt < RiverbankTrailSupplies::HideCost; ++receipt) {
+            const auto result = earned.Step();
+            if (result == SQLITE_DONE) return TrailSupplyResult::NotEnough;
+            Require(db, result, SQLITE_ROW);
+            hides[receipt * 2] = earned.Value(0);
+            hides[receipt * 2 + 1] = earned.Value(1);
+        }
+    }
+    Statement write(db, "INSERT INTO riverbank_trail_pack(character_id,first_world,first_encounter,second_world,second_encounter) "
+                        "VALUES (?1,?2,?3,?4,?5)");
+    write.Bind(1, profileId);
+    for (std::size_t index = 0; index < hides.size(); ++index)
+        write.Bind(static_cast<int>(index) + 2, hides[index]);
+    write.Done();
+    exchange.Commit();
+    return TrailSupplyResult::Exchanged;
 }
 
 GuildState RiverbankProfileStore::ReadGuild(std::int64_t profileId) {

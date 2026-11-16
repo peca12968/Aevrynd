@@ -248,7 +248,10 @@ if(AEVRYND_BUILD_MISTWATCH_MULTIPLAYER)
   set(MISTWATCH_LOCAL_WORLD_AVATAR "" CACHE FILEPATH "Optional verified Riverbank Explorer AESKIN asset")
   if(MISTWATCH_LOCAL_WORLD_AVATAR)
     file(SHA256 "${MISTWATCH_LOCAL_WORLD_AVATAR}" riverbank_avatar_sha)
-    if(NOT riverbank_avatar_sha STREQUAL "d91fd676b12027d6907fa3e45a8892e61ea7316506f081a9af9074fa3e715d7b")
+    set(verified_riverbank_avatar_hashes
+      "d91fd676b12027d6907fa3e45a8892e61ea7316506f081a9af9074fa3e715d7b"
+      "f129fa70cbee1b7e27f990f60069b59915b9b948ac43740ecd92684fe005305b")
+    if(NOT riverbank_avatar_sha IN_LIST verified_riverbank_avatar_hashes)
       message(FATAL_ERROR "Riverbank Explorer asset hash differs from the verified export")
     endif()
   endif()

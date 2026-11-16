@@ -2,6 +2,7 @@
 #include "RiverbankClass.h"
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankBattleWire.h"
+#include "RiverbankFieldWire.h"
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankGuildWire.h"
@@ -9,6 +10,7 @@
 #include "RiverbankExpeditionWire.h"
 #include "RiverbankPartyWire.h"
 #include "RiverbankGearWire.h"
+#include "RiverbankTrailSuppliesWire.h"
 #endif
 #include <Aevrynd/ReplicationProtocol3D.h>
 #include <memory>
@@ -28,9 +30,14 @@ public:
 #ifdef AEVRYND_MISTWATCH_BATTLE
     bool RequestBattleAction(RiverbankAction action);
     const RiverbankBattleWire::Encounter* Battle() const noexcept;
+    bool RequestFieldHunt();
+    const RiverbankFieldWire::Reply* FieldHunt() const noexcept;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
     bool CanUseGuild() const noexcept;
+    bool CanUseTrailSupplies() const noexcept;
+    bool RequestTrailSupplies(TrailSupplyAction action);
+    const RiverbankTrailSuppliesWire::Reply* TrailSupplies() const noexcept;
     bool RequestGuild(GuildAction action, std::uint64_t target = 0, std::string_view name = {});
     const RiverbankGuildWire::Response* GuildReply() const noexcept;
     bool RequestTerritory();

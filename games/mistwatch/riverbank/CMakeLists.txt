@@ -174,6 +174,14 @@ add_test(NAME MistwatchBankRocksPreviewModeTest COMMAND MistwatchBankRocksPrevie
 set_tests_properties(MistwatchBankRocksPreviewModeTest PROPERTIES TIMEOUT 30 LABELS "riverbank-development;preview-opt-in;cpu")
 
 if(TARGET MistwatchLocalWorldClient)
+  # 驗證多人設定的輸入阻擋、偏好存讀與基本環境音事件。
+  add_executable(MistwatchRiverbankSettingsMenuSmoke tests/RiverbankSettingsMenuSmoke.cpp)
+  target_include_directories(MistwatchRiverbankSettingsMenuSmoke PRIVATE include ../mmorpg)
+  target_compile_definitions(MistwatchRiverbankSettingsMenuSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(MistwatchRiverbankSettingsMenuSmoke PRIVATE /W4 /WX /permissive- /utf-8)
+  target_link_libraries(MistwatchRiverbankSettingsMenuSmoke PRIVATE AevryndEngine)
+  add_test(NAME MistwatchRiverbankSettingsMenuSmoke COMMAND MistwatchRiverbankSettingsMenuSmoke "${CMAKE_CURRENT_BINARY_DIR}/multiplayer-settings-test")
+  set_tests_properties(MistwatchRiverbankSettingsMenuSmoke PROPERTIES TIMEOUT 20 LABELS "mistwatch;client;settings")
   add_executable(MistwatchRiverbankLocalWorld WIN32 src/main.cpp)
   target_sources(MistwatchRiverbankLocalWorld PRIVATE $<TARGET_OBJECTS:MistwatchRiverbankExplorerNapeHairBinding>
     $<TARGET_OBJECTS:MistwatchWaterlineBankConstruction> $<TARGET_OBJECTS:MistwatchBankRocksConstruction>)

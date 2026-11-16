@@ -5,12 +5,30 @@
 #include <stdexcept>
 
 namespace Mistwatch {
+inline constexpr std::string_view RiverbankBootLeather = "AX footwear | Oiled umber leather";
+inline constexpr std::string_view RiverbankBootSole = "AX footwear | Vulcanized sole";
+
+inline bool HasRiverbankBoots(const Aevrynd::SkinnedModelAssetData& asset) {
+    return std::ranges::find(asset.materialSlotNames, RiverbankBootSole) != asset.materialSlotNames.end();
+}
 inline Aevrynd::SkinnedModelAssetData LoadRiverbankAvatarAsset(const std::filesystem::path& path) {
     using namespace Aevrynd;
     auto loaded = LoadSkinnedModelAssetFileDetailed(path);
     if (!loaded) throw std::runtime_error("Riverbank avatar load failed: " + loaded.error);
     auto& asset = loaded.asset;
-    if (asset.submeshes.size() != 20 || asset.materials.size() != 14)
+    const bool boots = HasRiverbankBoots(asset);
+    if (boots) {
+        for (const auto label : {RiverbankBootLeather, RiverbankBootSole}) {
+            const auto material = std::ranges::find(asset.materialSlotNames, label);
+            if (material == asset.materialSlotNames.end())
+                throw std::runtime_error("Riverbank boot material missing");
+            const auto slot = static_cast<std::size_t>(material - asset.materialSlotNames.begin());
+            if (asset.materials[slot].alphaMode != SkinnedMaterialAlphaMode3D::Opaque ||
+                std::ranges::count(asset.submeshes, slot, &SkinnedSubmesh3D::materialSlot) != 2)
+                throw std::runtime_error("Riverbank boot parts differ from the verified export");
+        }
+    }
+    if (asset.submeshes.size() != (boots ? 24u : 20u) || asset.materials.size() != (boots ? 16u : 14u))
         throw std::runtime_error("Riverbank avatar model and material set differ from the verified export");
 
     // The current GPU skin path supports opaque and masked geometry. Preserve the iris and omit only
@@ -31,7 +49,7 @@ inline Aevrynd::SkinnedModelAssetData LoadRiverbankAvatarAsset(const std::filesy
         drawIndices.insert(drawIndices.end(), start, start + part.indexCount);
         drawParts.push_back(part);
     }
-    if (drawParts.size() != 18) throw std::runtime_error("Riverbank avatar eye surface inventory changed");
+    if (drawParts.size() != (boots ? 22u : 18u)) throw std::runtime_error("Riverbank avatar eye surface inventory changed");
     asset.model.bindMesh.indices = std::move(drawIndices);
     asset.submeshes = std::move(drawParts);
     return std::move(asset);

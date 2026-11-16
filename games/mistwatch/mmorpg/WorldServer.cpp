@@ -2,14 +2,17 @@
 #include "RiverbankClass.h"
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankBattleWire.h"
+#include "RiverbankFieldWire.h"
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankProfileWire.h"
+#include "RiverbankProfileRegistration.h"
 #include "RiverbankGuildWire.h"
 #include "RiverbankTerritoryWire.h"
 #include "RiverbankExpeditionWire.h"
 #include "RiverbankPartyWire.h"
 #include "RiverbankGearWire.h"
+#include "RiverbankTrailSuppliesWire.h"
 #endif
 #include <Aevrynd/ReplicationRuntime3D.h>
 
@@ -46,6 +49,7 @@ public:
         if (length >= 32768) throw std::runtime_error("Riverbank profile database path is too long");
         if (length) {
             profiles_ = std::make_unique<Mistwatch::RiverbankProfileStore>(std::filesystem::path(database));
+            registration_ = std::make_unique<Mistwatch::RiverbankProfileRegistration>(*profiles_, MaxClients);
             territoryOwner_ = profiles_->ReadTerritoryOwner();
             territory_.ApplyOwnership(territoryOwner_.owner);
         }
@@ -75,6 +79,9 @@ public:
                 if (it->second.transport.Read([&](auto bytes) { return Handle(id, it->second, bytes); })) ++it;
                 else it = Remove(it);
             }
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            DeliverRegistrations();
+#endif
             transport_.AdvanceTo(++tick_);
             world_.Tick();
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -100,7 +107,8 @@ public:
 #endif
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
-            CommitRewards();
+            CommitRewards(false);
+            CommitRewards(true);
             TickTerritory();
             ExpireProfiles();
             party_.ExpireInvites(tick_);
@@ -131,7 +139,10 @@ private:
         RiverbankClass playerClass{RiverbankClass::None};
 #ifdef AEVRYND_MISTWATCH_PROFILES
         std::int64_t profileId{};
-        unsigned savedRewards{};
+        bool registrationPending{};
+        unsigned savedRewards{}, savedFieldHides{};
+        bool trailPack{};
+        std::uint64_t supplySequence{}, supplyRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t guildSequence{}, guildRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::int64_t guildId{};
         Mistwatch::GuildRank rank{};
@@ -139,6 +150,9 @@ private:
         std::uint64_t gearSequence{}, gearRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t partySequence{}, partyRequestTick{(std::numeric_limits<std::uint64_t>::max)()};
         std::uint64_t expeditionSequence{}, expeditionQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
+#endif
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        std::uint64_t fieldSequence{}, fieldQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
 #endif
     };
     using Peers = std::map<std::uint32_t, Client>;
@@ -182,10 +196,19 @@ private:
         if (Mistwatch::RiverbankGuildWire::HasMagic(bytes)) return HandleGuild(client, bytes);
         if (Mistwatch::RiverbankTerritoryWire::HasMagic(bytes)) return HandleTerritory(client, bytes);
         if (Mistwatch::RiverbankGearWire::HasMagic(bytes)) return HandleGear(id, client, bytes);
+        if (Mistwatch::RiverbankTrailSuppliesWire::HasMagic(bytes)) return HandleTrailSupplies(id, client, bytes);
         if (Mistwatch::RiverbankPartyWire::HasMagic(bytes)) return HandleParty(client, bytes);
         if (Mistwatch::RiverbankExpeditionWire::HasMagic(bytes)) return HandleExpedition(id, client, bytes);
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
+        if (Mistwatch::RiverbankFieldWire::HasMagic(bytes)) {
+            namespace Wire = Mistwatch::RiverbankFieldWire;
+            const auto sequence = Wire::DecodeQuery(bytes);
+            if (!sequence || sequence <= client.fieldSequence || client.fieldQueryTick == tick_) return false;
+            client.fieldSequence = sequence;
+            client.fieldQueryTick = tick_;
+            return client.transport.Queue(Wire::EncodeReply({sequence, encounter_.Field(), encounter_.FieldHides(id)}));
+        }
         if (Mistwatch::RiverbankBattleWire::HasMagic(bytes)) {
             const auto action = Mistwatch::RiverbankBattleWire::DecodeAction(bytes);
             if (!action) return false;
@@ -209,8 +232,15 @@ private:
     }
 
     bool JoinWorld(std::uint32_t id, Client& client, RiverbankClass selected, GlobalPosition3D position = {}) {
+        auto flags = Mistwatch::RiverbankClassFlags(selected);
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        flags |= Mistwatch::RiverbankFieldWire::Capability;
+#endif
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability;
+#endif
         if (!Mistwatch::IsRiverbankClass(selected) || !world_.AddClient(id, Endpoint(id), position) ||
-            !world_.SetClientEntityFlags(id, Mistwatch::RiverbankClassFlags(selected))) return false;
+            !world_.SetClientEntityFlags(id, flags)) return false;
 #ifdef AEVRYND_MISTWATCH_BATTLE
         if (!encounter_.Join(id, selected)) return false;
 #endif
@@ -230,31 +260,57 @@ private:
     bool HandleProfile(std::uint32_t id, Client& client, std::span<const std::byte> bytes) {
         namespace Wire = Mistwatch::RiverbankProfileWire;
         const auto request = Wire::DecodeRequest(bytes);
-        if (!request) return false;
-        const auto found = request->choice == RiverbankClass::None ? profiles_->Find(request->ticket) :
-            profiles_->Create(request->ticket, request->choice);
-        if (!found) return request->choice == RiverbankClass::None && client.transport.Queue(Wire::EncodeResponse(RiverbankClass::None));
-        if (std::ranges::any_of(peers_, [&](const auto& entry) { return entry.second.profileId == found->id; })) return false;
-        auto suspended = suspendedProfiles_.find(found->id);
+        if (!request || client.registrationPending) return false;
+        if (request->choice != RiverbankClass::None) {
+            client.registrationPending = registration_->Submit(id, request->ticket, request->choice);
+            return client.registrationPending;
+        }
+
+        const auto found = profiles_->Find(request->ticket);
+        return found ? JoinProfile(id, client, *found) : client.transport.Queue(Wire::EncodeResponse(RiverbankClass::None));
+    }
+
+    void DeliverRegistrations() {
+        for (auto peer = peers_.begin(); peer != peers_.end();) {
+            auto& [id, client] = *peer;
+            if (!client.registrationPending) { ++peer; continue; }
+            const auto outcome = registration_->Take(id);
+            if (!outcome) { ++peer; continue; }
+            client.registrationPending = false;
+            if (outcome->databaseError) std::cerr << "Riverbank character registration could not be saved\n";
+            // 角色可能在註冊期間由其他連線結算後離開。使用當下主連線看到的存檔資料入場。
+            const auto saved = outcome->profile ? profiles_->Find(outcome->ticket) : std::nullopt;
+            if (!saved || saved->id != outcome->profile->id || saved->playerClass != outcome->profile->playerClass ||
+                !JoinProfile(id, client, *saved)) peer = Remove(peer);
+            else ++peer;
+        }
+    }
+
+    bool JoinProfile(std::uint32_t id, Client& client, const Mistwatch::RiverbankProfile& found) {
+        if (std::ranges::any_of(peers_, [&](const auto& entry) { return entry.second.profileId == found.id; })) return false;
+        auto suspended = suspendedProfiles_.find(found.id);
         if (suspended != suspendedProfiles_.end() && tick_ - suspended->second.lostTick > ResumeWindowTicks) {
-            party_.Forget(found->id);
+            party_.Forget(found.id);
             suspendedProfiles_.erase(suspended);
             suspended = suspendedProfiles_.end();
         }
         const bool resuming = suspended != suspendedProfiles_.end();
-        if (!JoinWorld(id, client, found->playerClass, resuming ? suspended->second.position : GlobalPosition3D{}) ||
-            !encounter_.RestoreRewards(id, found->rewards) ||
-            !encounter_.SetBossGear(id, profiles_->ReadBossGear(found->id).equipped)) return false;
+        if (!JoinWorld(id, client, found.playerClass, resuming ? suspended->second.position : GlobalPosition3D{}) ||
+            !encounter_.RestoreRewards(id, found.rewards, found.fieldHides) ||
+            !encounter_.SetBossGear(id, profiles_->ReadBossGear(found.id).equipped) ||
+            !encounter_.SetTrailPack(id, found.trailPack)) return false;
         if (resuming) {
             const auto& saved = suspended->second;
             if (!encounter_.RestoreCombat(id, saved.combat, tick_ - saved.lostTick) ||
                 !world_.SetClientMovementEnabled(id, saved.combat.status.health != 0)) return false;
             suspendedProfiles_.erase(suspended);
         }
-        client.profileId = found->id;
-        client.savedRewards = found->rewards;
+        client.profileId = found.id;
+        client.savedRewards = found.rewards;
+        client.savedFieldHides = found.fieldHides;
+        client.trailPack = found.trailPack;
         LoadMembership(client);
-        return client.transport.Queue(Wire::EncodeResponse(found->playerClass));
+        return client.transport.Queue(Mistwatch::RiverbankProfileWire::EncodeResponse(found.playerClass));
     }
 
     void ExpireProfiles() {
@@ -356,6 +412,40 @@ private:
         return client.transport.Queue(Wire::EncodeReply({request->sequence, result, gear}));
     }
 
+    bool HandleTrailSupplies(std::uint32_t id, Client& client, std::span<const std::byte> bytes) {
+        namespace Wire = Mistwatch::RiverbankTrailSuppliesWire;
+        using Mistwatch::TrailSupplyResult;
+        const auto request = Wire::DecodeRequest(bytes);
+        if (!client.profileId || !request) return false;
+        auto result = TrailSupplyResult::Rejected;
+        if (request->sequence > client.supplySequence) {
+            client.supplySequence = request->sequence;
+            if (client.supplyRequestTick != tick_) {
+                client.supplyRequestTick = tick_;
+                result = TrailSupplyResult::Viewed;
+                if (request->action == Mistwatch::TrailSupplyAction::Exchange) {
+                    const auto fighter = encounter_.Player(id);
+                    const auto player = world_.Player(id);
+                    Vec3 position{};
+                    if (!fighter || !player || !ToLocalPosition3D(player->position, WorldOrigin3D{}, position)) return false;
+                    if (!fighter->health) result = TrailSupplyResult::Downed;
+                    else if (!Mistwatch::RiverbankTrailSupplies::AtCampBoard({position.x, position.z})) result = TrailSupplyResult::TooFar;
+                    else if (client.trailPack) result = TrailSupplyResult::AlreadyOwned;
+                    else if (client.savedFieldHides < Mistwatch::RiverbankTrailSupplies::HideCost)
+                        result = TrailSupplyResult::NotEnough;
+                    else {
+                        result = profiles_->ExchangeTrailPack(client.profileId);
+                        if (result == TrailSupplyResult::Exchanged || result == TrailSupplyResult::AlreadyOwned) {
+                            if (!encounter_.SetTrailPack(id, true)) return false;
+                            client.trailPack = true;
+                        }
+                    }
+                }
+            }
+        }
+        return client.transport.Queue(Wire::EncodeReply({request->sequence, result, {client.savedFieldHides, client.trailPack}}));
+    }
+
     bool HandleParty(Client& client, std::span<const std::byte> bytes) {
         namespace Wire = Mistwatch::RiverbankPartyWire;
         using Mistwatch::PartyResult;
@@ -429,27 +519,34 @@ private:
         }
     }
 
-    void CommitRewards() {
-        if (!profiles_ || encounter_.Boss().phase != Mistwatch::EncounterPhase::Defeated) return;
+    void CommitRewards(bool field) {
+        const auto& site = field ? encounter_.Field() : encounter_.Boss();
+        if (!profiles_ || site.phase != Mistwatch::EncounterPhase::Defeated) return;
+        const auto saved = field ? &Client::savedFieldHides : &Client::savedRewards;
         std::array<std::int64_t, MaxClients> eligible{};
         std::array<Client*, MaxClients> credited{};
         std::size_t count{};
         for (auto& [id, client] : peers_) {
             const auto player = encounter_.Player(id);
-            if (!client.profileId || !player || player->rewards == client.savedRewards) continue;
-            if (player->rewards <= client.savedRewards || player->rewards - client.savedRewards != 1)
+            if (!client.profileId || !player) continue;
+            const auto earned = field ? encounter_.FieldHides(id) : player->rewards;
+            if (earned == client.*saved) continue;
+            if (earned <= client.*saved || earned - client.*saved != 1)
                 throw std::runtime_error("Unexpected Riverbank reward count");
             eligible[count] = client.profileId;
             credited[count++] = &client;
         }
         if (!count) return;
-        profiles_->Award(epoch_, encounter_.Boss().run, std::span(eligible).first(count));
-        for (auto* client : std::span(credited).first(count)) ++client->savedRewards;
+        const auto recipients = std::span(eligible).first(count);
+        if (field) profiles_->AwardFieldHides(epoch_, site.run, recipients);
+        else profiles_->Award(epoch_, site.run, recipients);
+        for (auto* client : std::span(credited).first(count)) ++(client->*saved);
     }
 #endif
 
     Peers::iterator Remove(Peers::iterator peer) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
+        if (peer->second.registrationPending) registration_->Cancel(peer->first);
         SuspendProfile(peer->first, peer->second);
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -471,6 +568,7 @@ private:
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
     std::unique_ptr<Mistwatch::RiverbankProfileStore> profiles_;
+    std::unique_ptr<Mistwatch::RiverbankProfileRegistration> registration_;
     std::map<std::int64_t, SuspendedProfile> suspendedProfiles_;
     Mistwatch::RiverbankTerritory territory_;
     Mistwatch::RiverbankParty party_;

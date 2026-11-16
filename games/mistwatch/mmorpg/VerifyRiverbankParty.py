@@ -20,8 +20,8 @@ OK, REJECTED, FULL = range(3)
 
 
 class Player:
-    def __init__(self, port, epoch, sockets, role, ticket=None):
-        self.peer = sockets.enter_context(closing(world.connect(port)))
+    def __init__(self, port, epoch, sockets, role, ticket=None, *, connect=world.connect):
+        self.peer = sockets.enter_context(closing(connect(port)))
         session, self.id = world.hello(self.peer)
         if session != epoch:
             raise AssertionError('Client joined a different world')

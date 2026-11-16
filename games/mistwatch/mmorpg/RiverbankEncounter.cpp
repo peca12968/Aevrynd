@@ -1,5 +1,6 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankGear.h"
+#include "RiverbankTrailSupplies.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -20,9 +21,10 @@ float Distance(ArenaPosition left, ArenaPosition right) {
 bool Finite(ArenaPosition point) { return std::isfinite(point.x) && std::isfinite(point.z); }
 }
 
-RiverbankEncounter::RiverbankEncounter(ArenaPosition center) : anchor(center) {
+RiverbankEncounter::RiverbankEncounter(ArenaPosition center) : northBank{center, false}, pasture{EastPastureCenter, true} {
     if (!Finite(center)) throw std::invalid_argument("Invalid riverbank arena position");
-    Reset();
+    Reset(northBank);
+    Reset(pasture);
 }
 
 bool RiverbankEncounter::Join(std::uint64_t id, RiverbankClass playerClass) {
@@ -33,14 +35,16 @@ bool RiverbankEncounter::Join(std::uint64_t id, RiverbankClass playerClass) {
 }
 
 bool RiverbankEncounter::Leave(std::uint64_t id) {
-    if (tauntOwner == id) tauntOwner = 0;
+    if (northBank.tauntOwner == id) northBank.tauntOwner = 0;
+    if (pasture.tauntOwner == id) pasture.tauntOwner = 0;
     return party.erase(id) > 0;
 }
 
-bool RiverbankEncounter::RestoreRewards(std::uint64_t id, unsigned earned) {
+bool RiverbankEncounter::RestoreRewards(std::uint64_t id, unsigned earned, unsigned fieldHides) {
     const auto player = party.find(id);
     if (player == party.end() || player->second.position || player->second.sequence) return false;
     player->second.status.rewards = earned;
+    player->second.fieldHides = fieldHides;
     return true;
 }
 
@@ -51,10 +55,18 @@ bool RiverbankEncounter::SetBossGear(std::uint64_t id, bool equipped) {
     return true;
 }
 
+bool RiverbankEncounter::SetTrailPack(std::uint64_t id, bool equipped) {
+    const auto player = party.find(id);
+    if (player == party.end()) return false;
+    player->second.trailPack = equipped;
+    return true;
+}
+
 std::optional<SuspendedRiverbankCombat> RiverbankEncounter::Suspend(std::uint64_t id) const {
     const auto player = party.find(id);
     if (player == party.end()) return std::nullopt;
-    return SuspendedRiverbankCombat{player->second.status, player->second.contributed ? boss.run : 0};
+    return SuspendedRiverbankCombat{player->second.status, player->second.contributed ? Boss().run : 0,
+                                    player->second.fieldContributionRun};
 }
 
 bool RiverbankEncounter::RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks) {
@@ -65,10 +77,14 @@ bool RiverbankEncounter::RestoreCombat(std::uint64_t id, const SuspendedRiverban
     auto& status = player->second.status;
     const auto cooldown = [elapsedTicks](unsigned ticks) { return elapsedTicks < ticks ? ticks - static_cast<unsigned>(elapsedTicks) : 0u; };
     status.health = saved.status.health;
-    status.resource = static_cast<unsigned>((std::min)(std::uint64_t(MaxResource), saved.status.resource + elapsedTicks / 5));
+    const auto recovered = (elapsedTicks / RiverbankTrailSupplies::RecoveryPulseTicks) *
+        RiverbankTrailSupplies::RecoveryPerPulse(player->second.trailPack);
+    status.resource = static_cast<unsigned>((std::min)(std::uint64_t(MaxResource), saved.status.resource + recovered));
     status.attackCooldown = cooldown(saved.status.attackCooldown);
     status.skillCooldown = cooldown(saved.status.skillCooldown);
-    player->second.contributed = boss.phase != EncounterPhase::Defeated && saved.contributionRun == boss.run;
+    player->second.contributed = Boss().phase != EncounterPhase::Defeated && saved.contributionRun == Boss().run;
+    if (Field().phase != EncounterPhase::Defeated && saved.fieldContributionRun == Field().run)
+        player->second.fieldContributionRun = saved.fieldContributionRun;
     return true;
 }
 
@@ -94,34 +110,42 @@ std::optional<EncounterPlayerStatus> RiverbankEncounter::Player(std::uint64_t id
     return entry == party.end() ? std::nullopt : std::optional{entry->second.status};
 }
 
+unsigned RiverbankEncounter::FieldHides(std::uint64_t id) const {
+    const auto entry = party.find(id);
+    return entry == party.end() ? 0u : entry->second.fieldHides;
+}
+
 bool RiverbankEncounter::InRange(const Participant& player, ArenaPosition from, float range) const {
     return player.position && Distance(*player.position, from) <= range;
 }
 
-std::uint64_t RiverbankEncounter::Target() const {
-    const auto guarded = party.find(tauntOwner);
+std::uint64_t RiverbankEncounter::Target(const Site& site) const {
+    const auto& boss = site.state;
+    const float sight = site.field ? 8.f : AggroRadius;
+    const auto guarded = party.find(site.tauntOwner);
     if (guarded != party.end() && guarded->second.status.health && guarded->second.guardTicks &&
-        guarded->second.position && InArena(*guarded->second.position, anchor) &&
-        InRange(guarded->second, boss.position, AggroRadius)) return tauntOwner;
+        guarded->second.position && site.Contains(*guarded->second.position) &&
+        InRange(guarded->second, boss.position, sight)) return site.tauntOwner;
     std::uint64_t nearest{};
-    float distance = AggroRadius;
+    float distance = sight;
     for (const auto& [id, member] : party) {
-        if (!member.status.health || !member.position || !InArena(*member.position, anchor)) continue;
+        if (!member.status.health || !member.position || !site.Contains(*member.position)) continue;
         const float next = Distance(*member.position, boss.position);
         if (next < distance) { nearest = id; distance = next; }
     }
     return nearest;
 }
 
-unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& participant, const Request& request,
+unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Participant& participant, const Request& request,
                                            std::span<const SupportMembership> groups) {
     auto& status = participant.status;
-    if (!status.health || !participant.position || !InArena(*participant.position, anchor)) return 0;
+    if (!status.health) return 0;
+    const auto& boss = site.state;
     const auto stats = CombatStatsFor(status.playerClass);
     if (request.action == RiverbankAction::Attack) {
         if (status.attackCooldown || !InRange(participant, boss.position, stats.attackRange)) return 0;
         status.attackCooldown = stats.attackCooldown;
-        participant.contributed = true;
+        CreditContribution(site, participant);
         return stats.attackDamage;
     }
     if (status.skillCooldown || status.resource < stats.skillCost) return 0;
@@ -132,7 +156,7 @@ unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& partic
         if (!InRange(participant, boss.position, 6.f)) return 0;
         participant.guardTicks = 45;
         status.guarding = true;
-        tauntOwner = id;
+        site.tauntOwner = id;
         break;
     case RiverbankClass::Ranger:
         if (!InRange(participant, boss.position, stats.attackRange)) return 0;
@@ -170,42 +194,58 @@ unsigned RiverbankEncounter::ResolveAction(std::uint64_t id, Participant& partic
     }
     status.resource -= stats.skillCost;
     status.skillCooldown = stats.skillCooldown;
-    participant.contributed = true;
+    CreditContribution(site, participant);
     return damage;
+}
+
+void RiverbankEncounter::CreditContribution(const Site& site, Participant& participant) {
+    if (site.field) participant.fieldContributionRun = site.state.run;
+    else participant.contributed = true;
 }
 
 void RiverbankEncounter::Tick(std::span<const SupportMembership> groups) {
     ++tick;
-    unsigned damage = 0;
+    unsigned bossDamage = 0, fieldDamage = 0;
     for (auto& [id, participant] : party) {
         auto& status = participant.status;
         if (status.attackCooldown) --status.attackCooldown;
         if (status.skillCooldown) --status.skillCooldown;
         if (participant.guardTicks) --participant.guardTicks;
         status.guarding = participant.guardTicks != 0;
-        if (tick % 5 == 0 && status.resource < MaxResource) ++status.resource;
-        if (participant.request && boss.phase != EncounterPhase::Defeated)
-            damage = std::min(BossHealth, damage + ResolveAction(id, participant, *participant.request, groups));
+        if (tick % RiverbankTrailSupplies::RecoveryPulseTicks == 0)
+            status.resource = std::min(MaxResource, status.resource + RiverbankTrailSupplies::RecoveryPerPulse(participant.trailPack));
+        if (participant.request && participant.position) {
+            if (northBank.Contains(*participant.position) && Boss().phase != EncounterPhase::Defeated)
+                bossDamage = std::min(BossHealth, bossDamage + ResolveAction(northBank, id, participant, *participant.request, groups));
+            else if (pasture.Contains(*participant.position) && Field().phase != EncounterPhase::Defeated)
+                fieldDamage = std::min(FieldHealth, fieldDamage + ResolveAction(pasture, id, participant, *participant.request, groups));
+        }
         participant.request.reset();
     }
+    Advance(northBank, bossDamage);
+    Advance(pasture, fieldDamage);
+}
+
+void RiverbankEncounter::Advance(Site& site, unsigned damage) {
+    auto& boss = site.state;
     if (boss.phase == EncounterPhase::Defeated) {
-        if (--boss.phaseTicks == 0) Reset();
+        if (--boss.phaseTicks == 0) Reset(site);
         return;
     }
-    if (damage >= boss.health) { Finish(); return; }
+    if (damage >= boss.health) { Finish(site); return; }
     boss.health -= damage;
 
-    const auto target = Target();
-    disengagedTicks = target || boss.phase == EncounterPhase::Patrol ? 0 : disengagedTicks + 1;
-    if (!target && boss.phase != EncounterPhase::Patrol && disengagedTicks >= ResetDelay) { Reset(); return; }
+    const auto target = Target(site);
+    site.disengagedTicks = target || boss.phase == EncounterPhase::Patrol ? 0 : site.disengagedTicks + 1;
+    if (!target && boss.phase != EncounterPhase::Patrol && site.disengagedTicks >= ResetDelay) { Reset(site); return; }
     if (boss.phase == EncounterPhase::Windup) {
         if (--boss.phaseTicks == 0) {
             for (auto& [id, victim] : party) {
                 auto& status = victim.status;
-                if (!status.health || !victim.position || !InArena(*victim.position, anchor) ||
-                    !InRange(victim, boss.strikeCenter, StrikeRadius)) continue;
-                const auto guardedHit = victim.bossGear ? RiverbankBossGearStats::GuardDamageTaken : 16u;
-                const unsigned hit = status.guarding ? guardedHit : 46u;
+                if (!status.health || !victim.position || !site.Contains(*victim.position) ||
+                    !InRange(victim, boss.strikeCenter, site.field ? FieldStrikeRadius : StrikeRadius)) continue;
+                const auto guardedHit = site.field ? 8u : victim.bossGear ? RiverbankBossGearStats::GuardDamageTaken : 16u;
+                const unsigned hit = status.guarding ? guardedHit : site.field ? 22u : 46u;
                 status.health -= std::min(status.health, hit);
             }
             boss.phase = EncounterPhase::Recovery;
@@ -218,46 +258,51 @@ void RiverbankEncounter::Tick(std::span<const SupportMembership> groups) {
     if (!target) {
         // Patrol is only for an unengaged encounter. A withdrawn party lets an engaged boss reset.
         if (boss.phase == EncounterPhase::Patrol) {
-            const ArenaPosition goal{anchor.x + (patrolLeg ? -2.f : 2.f), anchor.z};
-            MoveBoss(goal, .035f);
-            if (Distance(boss.position, goal) <= .001f) patrolLeg ^= 1u;
+            const ArenaPosition goal{site.anchor.x + (site.patrolLeg ? -2.f : 2.f), site.anchor.z};
+            Move(site, goal, site.field ? .055f : .035f);
+            if (Distance(boss.position, goal) <= .001f) site.patrolLeg ^= 1u;
         } else boss.phase = EncounterPhase::Pursuit;
         return;
     }
     boss.phase = EncounterPhase::Pursuit;
     const auto position = *party.at(target).position;
-    if (Distance(boss.position, position) <= 1.65f) {
+    if (Distance(boss.position, position) <= (site.field ? 1.30f : 1.65f)) {
         boss.phase = EncounterPhase::Windup;
         boss.strikeCenter = position;
-        boss.phaseTicks = WindupTicks;
+        boss.phaseTicks = site.field ? FieldWindupTicks : WindupTicks;
     } else {
-        MoveBoss(position, .14f);
+        Move(site, position, site.field ? .15f : .14f);
     }
 }
 
-void RiverbankEncounter::MoveBoss(ArenaPosition position, float step) {
+void RiverbankEncounter::Move(Site& site, ArenaPosition position, float step) {
+    auto& boss = site.state;
     const auto distance = Distance(boss.position, position);
     if (distance <= step) { boss.position = position; return; }
     boss.position.x += (position.x - boss.position.x) * step / distance;
     boss.position.z += (position.z - boss.position.z) * step / distance;
 }
 
-void RiverbankEncounter::Finish() {
+void RiverbankEncounter::Finish(Site& site) {
+    auto& boss = site.state;
     boss.health = 0;
     boss.phase = EncounterPhase::Defeated;
     boss.target = 0;
-    boss.phaseTicks = RespawnDelay;
+    boss.phaseTicks = site.field ? FieldRespawnTicks : RespawnDelay;
     for (auto& [id, participant] : party) {
-        auto& status = participant.status;
-        if (participant.contributed && participant.position && InArena(*participant.position, anchor) &&
-            status.rewards < (std::numeric_limits<unsigned>::max)()) ++status.rewards;
+        const bool contributed = site.field ? participant.fieldContributionRun == boss.run : participant.contributed;
+        if (!contributed || !participant.position || !site.Contains(*participant.position)) continue;
+        auto& reward = site.field ? participant.fieldHides : participant.status.rewards;
+        if (reward < (std::numeric_limits<unsigned>::max)()) ++reward;
     }
 }
 
-void RiverbankEncounter::Reset() {
-    boss = {EncounterPhase::Patrol, anchor, {}, BossHealth, 0, 0, boss.run + 1};
-    disengagedTicks = patrolLeg = 0;
-    tauntOwner = 0;
-    for (auto& [id, participant] : party) participant.contributed = false;
+void RiverbankEncounter::Reset(Site& site) {
+    site.state = {EncounterPhase::Patrol, site.anchor, {}, site.MaxHealth(), 0, 0, site.state.run + 1};
+    site.disengagedTicks = site.patrolLeg = 0;
+    site.tauntOwner = 0;
+    if (!site.field)
+        for (auto& [id, participant] : party) participant.contributed = false;
 }
+
 }
