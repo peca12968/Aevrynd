@@ -3979,7 +3979,11 @@ private:
         localWorld=std::make_unique<Mistwatch::LocalWorldClient>(localWorldPort);
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_WARDROBE
+        riverbankAvatar.emplace(e,e.ExecutableDirectory()/"character"/"RiverbankExplorer.aeskin",true);
+#else
         riverbankAvatar.emplace(e,e.ExecutableDirectory()/"character"/"RiverbankExplorer.aeskin");
+#endif
 #endif
     }
 #ifdef AEVRYND_MISTWATCH_MMO_CLIENT

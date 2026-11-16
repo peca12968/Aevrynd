@@ -212,5 +212,14 @@ if(TARGET MistwatchLocalWorldClient)
       COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character"
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${MISTWATCH_LOCAL_WORLD_AVATAR}"
         "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character/RiverbankExplorer.aeskin" VERBATIM)
+    if(MISTWATCH_RIVERBANK_WARDROBES)
+      target_compile_definitions(MistwatchRiverbankLocalWorld PRIVATE AEVRYND_MISTWATCH_RIVERBANK_WARDROBE=1)
+      foreach(wardrobe IN LISTS MISTWATCH_RIVERBANK_WARDROBES)
+        set_property(TARGET MistwatchRiverbankLocalWorld APPEND PROPERTY LINK_DEPENDS "${wardrobe}")
+        add_custom_command(TARGET MistwatchRiverbankLocalWorld POST_BUILD
+          COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${wardrobe}"
+            "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character/" VERBATIM)
+      endforeach()
+    endif()
   endif()
 endif()

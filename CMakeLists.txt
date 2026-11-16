@@ -252,9 +252,26 @@ if(AEVRYND_BUILD_MISTWATCH_MULTIPLAYER)
     set(verified_riverbank_avatar_hashes
       "d91fd676b12027d6907fa3e45a8892e61ea7316506f081a9af9074fa3e715d7b"
       "f129fa70cbee1b7e27f990f60069b59915b9b948ac43740ecd92684fe005305b"
-      "a1a1d2bd0290ba2ec01527bb6d7af10fe214514ca34a6230fab3cf874cfef42a")
+      "a1a1d2bd0290ba2ec01527bb6d7af10fe214514ca34a6230fab3cf874cfef42a"
+      "013a9f3a37f0942652ebd79932cb33955987515ffd829f4a981add4aa7f40d2e")
     if(NOT riverbank_avatar_sha IN_LIST verified_riverbank_avatar_hashes)
       message(FATAL_ERROR "Riverbank Explorer asset hash differs from the verified export")
+    endif()
+    if(riverbank_avatar_sha STREQUAL "013a9f3a37f0942652ebd79932cb33955987515ffd829f4a981add4aa7f40d2e")
+      foreach(wardrobe_entry IN ITEMS
+        "Guardian|d9e3b391ee44e852aa85cad40cb1f207acf1ef6e5d7d082d2b3f24a10c12d841"
+        "Ranger|182f1baacdd1b7431aca9f49e579df150c392bdbffbb364cddc1ee77eeff5c6f"
+        "Priest|0c215fa6a19b37ef02df4486262485ebc4f9df4262184d0e3da743582cb393de")
+        string(REPLACE "|" ";" wardrobe_fields "${wardrobe_entry}")
+        list(GET wardrobe_fields 0 wardrobe_role)
+        list(GET wardrobe_fields 1 wardrobe_hash)
+        set(wardrobe_path "${CMAKE_CURRENT_SOURCE_DIR}/games/mistwatch/mmorpg/assets/RiverbankExplorer-${wardrobe_role}.aeskin")
+        file(SHA256 "${wardrobe_path}" wardrobe_actual)
+        if(NOT wardrobe_actual STREQUAL wardrobe_hash)
+          message(FATAL_ERROR "Riverbank ${wardrobe_role} wardrobe asset differs from the verified export")
+        endif()
+        list(APPEND MISTWATCH_RIVERBANK_WARDROBES "${wardrobe_path}")
+      endforeach()
     endif()
   endif()
   add_subdirectory(games/mistwatch/mmorpg)

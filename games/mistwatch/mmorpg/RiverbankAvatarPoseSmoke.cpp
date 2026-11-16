@@ -139,7 +139,6 @@ int main(int argc, char** argv) {
     }
 
     DrawList scene;
-    const SkinnedMeshHandle3D mesh{1, asset.model.skeletonCompatibilityId};
     using Mistwatch::RiverbankClass;
     const auto base = Mistwatch::RiverbankAvatarMaterials(asset);
     const std::array roles{RiverbankClass::Guardian, RiverbankClass::Ranger, RiverbankClass::Priest};
@@ -164,6 +163,19 @@ int main(int argc, char** argv) {
         if (expectedFirstIndex != group.firstIndex + group.indexCount) return 23;
     }
     if (expectedFirstIndex != asset.model.bindMesh.indices.size()) return 23;
+    const auto body = Mistwatch::CompactRiverbankAvatarPart(asset, asset.model, false);
+    const auto vestPart = Mistwatch::CompactRiverbankAvatarPart(asset, asset.model, true);
+    if (body.submeshes.size() + vestPart.submeshes.size() != asset.submeshes.size() ||
+        vestPart.submeshes.front().materialSlot != vestIndex ||
+        body.model.bindMesh.indices.size() + vestPart.model.bindMesh.indices.size() != asset.model.bindMesh.indices.size()) return 25;
+    const SkinnedMeshHandle3D bodyHandle{3, asset.model.skeletonCompatibilityId, 80};
+    const SkinnedMeshHandle3D vestHandle{4, asset.model.skeletonCompatibilityId, 80};
+    std::vector<SkinnedVertex3D> gpuVertices;
+    if (!BuildGpuSkinnedVertices(body.model, gpuVertices) || !BuildGpuSkinnedVertices(vestPart.model, gpuVertices)) return 26;
+    const auto compactVertices = body.model.bindMesh.vertices.size() + 4 * vestPart.model.bindMesh.vertices.size();
+    if (compactVertices >= 2 * asset.model.bindMesh.vertices.size()) return 27;
+    std::vector<SkinnedSubmesh3D> renderedSurfaces = body.submeshes;
+    renderedSurfaces.push_back(vestPart.submeshes.front());
     for (std::size_t actor = 0; actor < roomActors; ++actor) {
         const auto role = actor % roles.size();
         const auto playerClass = Mistwatch::ReadRiverbankClassFlags(Mistwatch::RiverbankClassFlags(roles[role]) | 1u);
@@ -172,12 +184,19 @@ int main(int argc, char** argv) {
         const Vec3 position = feet + Vec3{2.f * static_cast<float>(actor), 0, 0};
         const auto transform = motion.Evaluate(asset.model.skeleton, state, position, scratch, pose);
         const auto palette = AddSkinPaletteFromPose(scene, asset.model, pose, workspace);
-        if (!SubmitSkinnedRenderable3D(scene, mesh, palette, transform,
-            static_cast<std::uint32_t>(asset.model.bindMesh.indices.size()), asset.submeshes, materials)) return 8;
+        const std::array parts{
+            SkinnedRenderablePart3D{.mesh=bodyHandle, .transform=transform,
+                .totalIndexCount=static_cast<std::uint32_t>(body.model.bindMesh.indices.size()), .submeshes=body.submeshes,
+                .materialBindings=materials, .key={1}},
+            SkinnedRenderablePart3D{.mesh=vestHandle, .transform=transform,
+                .totalIndexCount=static_cast<std::uint32_t>(vestPart.model.bindMesh.indices.size()), .submeshes=vestPart.submeshes,
+                .materialBindings=materials, .key={2}},
+        };
+        if (!SubmitSkinnedRenderableGroup3D(scene, palette, parts)) return 8;
         bool submittedVest = false;
         std::size_t changedFabricParts = 0;
         for (std::size_t part = 0; part < asset.submeshes.size(); ++part) {
-            const auto slot = asset.submeshes[part].materialSlot;
+            const auto slot = renderedSurfaces[part].materialSlot;
             const auto& drawPart = scene.skinnedMeshInstances.at(actor * asset.submeshes.size() + part);
             const auto before = PackColorRgba8(base[slot].tint);
             const auto after = PackColorRgba8(materials[slot].tint);
@@ -200,6 +219,10 @@ int main(int argc, char** argv) {
         if (!scene.SkinnedMeshInstance(wildlife, palette, Matrix4::Identity(), {}, {}, {}, .25f, false,
                                        MaterialClass3D::Surface, true, DirectionalShadowAllCascades3D, 0, 3)) return 24;
     }
+    std::cout << "shared_body_vertices=" << body.model.bindMesh.vertices.size()
+              << " one_vest_vertices=" << vestPart.model.bindMesh.vertices.size()
+              << " five_resource_vertices=" << compactVertices
+              << " original_four_mesh_vertices=" << 4 * asset.model.bindMesh.vertices.size() << '\n';
     std::cout << "room_actors=" << roomActors << " boars=2 full_room_draw_commands=" << scene.skinnedMeshInstances.size()
               << " full_room_skin_joints=" << scene.skinPaletteJoints.size() << '\n';
     std::cout << "samples=195 pelvis_planar_drift_m=" << largestDrift

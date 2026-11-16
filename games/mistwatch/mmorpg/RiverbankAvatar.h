@@ -13,7 +13,7 @@
 namespace Mistwatch {
 class RiverbankAvatar {
 public:
-    RiverbankAvatar(Aevrynd::Engine& engine, const std::filesystem::path& path)
+    RiverbankAvatar(Aevrynd::Engine& engine, const std::filesystem::path& path, bool useWardrobe = false)
         : asset(LoadRiverbankAvatarAsset(path)), motion(asset),
           materials{RiverbankAvatarMaterials(asset), RiverbankAvatarMaterials(asset, RiverbankClass::Guardian),
                     RiverbankAvatarMaterials(asset, RiverbankClass::Ranger), RiverbankAvatarMaterials(asset, RiverbankClass::Priest)} {
@@ -25,8 +25,40 @@ public:
                 downedViewJoints[n] = static_cast<std::size_t>(joint - asset.jointNames.begin());
             }
         }
-        mesh = engine.CreateSkinnedMeshResource3D(asset.model);
-        if (!mesh) throw std::runtime_error("Riverbank avatar GPU upload failed");
+        if (!useWardrobe) {
+            mesh = engine.CreateSkinnedMeshResource3D(asset.model);
+            if (!mesh) throw std::runtime_error("Riverbank avatar GPU upload failed");
+            return;
+        }
+
+        try {
+            auto body = CompactRiverbankAvatarPart(asset, asset.model, false);
+            bodySurfaces = std::move(body.submeshes);
+            mesh = engine.CreateSkinnedMeshResource3D(body.model);
+            if (!mesh) throw std::runtime_error("Riverbank shared body GPU upload failed");
+
+            auto vest = CompactRiverbankAvatarPart(asset, asset.model, true);
+            vestSurface = vest.submeshes.front();
+            wardrobe.front() = engine.CreateSkinnedMeshResource3D(vest.model);
+            if (!wardrobe.front()) throw std::runtime_error("Riverbank base vest GPU upload failed");
+
+            const std::array names{"RiverbankExplorer-Guardian.aeskin", "RiverbankExplorer-Ranger.aeskin",
+                                   "RiverbankExplorer-Priest.aeskin"};
+            for (std::size_t slot = 0; slot < names.size(); ++slot) {
+                const auto outfit = LoadRiverbankAvatarAsset(path.parent_path() / names[slot]);
+                if (outfit.model.bindMesh.vertices.size() != asset.model.bindMesh.vertices.size() ||
+                    outfit.model.bindMesh.indices != asset.model.bindMesh.indices ||
+                    outfit.materialSlotNames != asset.materialSlotNames)
+                    throw std::runtime_error("Riverbank wardrobe does not match the shared avatar");
+                auto roleVest = CompactRiverbankAvatarPart(asset, outfit.model, true);
+                wardrobe[slot + 1] = engine.CreateSkinnedMeshResource3D(roleVest.model);
+                if (!wardrobe[slot + 1])
+                    throw std::runtime_error(std::string("Riverbank class vest GPU upload failed: ") + names[slot]);
+            }
+        } catch (...) {
+            Release(engine);
+            throw;
+        }
     }
 
     void Update(const Aevrynd::ReplicationSnapshot3D* snapshot, std::uint32_t localId, float dt) {
@@ -74,8 +106,21 @@ public:
         const auto normal = state.motion.downedSeconds > 0 ? terrain.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
         const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal);
         const auto palette = Aevrynd::AddSkinPaletteFromPose(draw, asset.model, pose, skinning);
-        return Aevrynd::SubmitSkinnedRenderable3D(draw, mesh.handle, palette, placement,
-            static_cast<std::uint32_t>(mesh.indexCount), asset.submeshes, materials.at(static_cast<std::size_t>(state.playerClass)));
+        const auto role = static_cast<std::size_t>(state.playerClass);
+        const auto& bindings = materials.at(role);
+        if (!wardrobe.front())
+            return Aevrynd::SubmitSkinnedRenderable3D(draw, mesh.handle, palette, placement,
+                static_cast<std::uint32_t>(mesh.indexCount), asset.submeshes, bindings);
+        const auto& vest = wardrobe.at(role);
+        const std::array parts{
+            Aevrynd::SkinnedRenderablePart3D{.mesh=mesh.handle, .transform=placement,
+                .totalIndexCount=static_cast<std::uint32_t>(mesh.indexCount), .submeshes=bodySurfaces,
+                .materialBindings=bindings, .key={1}},
+            Aevrynd::SkinnedRenderablePart3D{.mesh=vest.handle, .transform=placement,
+                .totalIndexCount=static_cast<std::uint32_t>(vest.indexCount),
+                .submeshes=std::span{&vestSurface, std::size_t{1}}, .materialBindings=bindings, .key={2}},
+        };
+        return Aevrynd::SubmitSkinnedRenderableGroup3D(draw, palette, parts);
     }
 
     std::optional<std::array<Aevrynd::Vec3, 2>> DownedView(Aevrynd::NetworkEntityId3D id,
@@ -102,7 +147,11 @@ public:
     }
 
     void Release(Aevrynd::Engine& engine) {
-        engine.DestroySkinnedMesh3D(mesh.handle);
+        for (auto& outfit : wardrobe) {
+            if (outfit) engine.DestroySkinnedMesh3D(outfit.handle);
+            outfit = {};
+        }
+        if (mesh) engine.DestroySkinnedMesh3D(mesh.handle);
         mesh = {};
     }
 
@@ -116,6 +165,9 @@ private:
     RiverbankAvatarMotion motion;
     std::array<std::size_t, 2> downedViewJoints{};
     Aevrynd::SkinnedMeshResource3D mesh;
+    std::vector<Aevrynd::SkinnedSubmesh3D> bodySurfaces;
+    Aevrynd::SkinnedSubmesh3D vestSurface{};
+    std::array<Aevrynd::SkinnedMeshResource3D, 4> wardrobe{};
     std::array<std::vector<Aevrynd::Material3D>, 4> materials;
     std::map<Aevrynd::NetworkEntityId3D, Player> players;
     Aevrynd::SkinningWorkspace3D skinning;

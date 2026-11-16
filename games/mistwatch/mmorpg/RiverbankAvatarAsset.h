@@ -2,6 +2,7 @@
 
 #include "RiverbankClass.h"
 #include <Aevrynd/SkinnedModelAsset.h>
+#include <limits>
 #include <stdexcept>
 
 namespace Mistwatch {
@@ -63,6 +64,45 @@ inline Aevrynd::SkinnedModelAssetData LoadRiverbankAvatarAsset(const std::filesy
     asset.model.bindMesh.indices = std::move(drawIndices);
     asset.submeshes = std::move(drawParts);
     return std::move(asset);
+}
+
+inline constexpr std::string_view RiverbankVestMaterial = "AX textile | Warm woven vest";
+
+struct RiverbankAvatarMeshPart {
+    Aevrynd::SkinnedModel3D model;
+    std::vector<Aevrynd::SkinnedSubmesh3D> submeshes;
+};
+
+// 共用骨架及權重。服裝版本只提供該材質使用的頂點與切線。
+inline RiverbankAvatarMeshPart CompactRiverbankAvatarPart(
+    const Aevrynd::SkinnedModelAssetData& base, const Aevrynd::SkinnedModel3D& appearance, bool vest) {
+    RiverbankAvatarMeshPart part;
+    part.model.skeleton = base.model.skeleton;
+    part.model.inverseBindMatrices = base.model.inverseBindMatrices;
+    part.model.skeletonCompatibilityId = base.model.skeletonCompatibilityId;
+    const auto& indices = base.model.bindMesh.indices;
+    constexpr auto missing = (std::numeric_limits<std::uint32_t>::max)();
+    std::vector<std::uint32_t> remap(base.model.bindMesh.vertices.size(), missing);
+    for (const auto& surface : base.submeshes) {
+        if ((base.materialSlotNames.at(surface.materialSlot) == RiverbankVestMaterial) != vest) continue;
+        auto range = surface;
+        range.firstIndex = static_cast<std::uint32_t>(part.model.bindMesh.indices.size());
+        part.submeshes.push_back(range);
+        for (std::size_t offset = 0; offset < surface.indexCount; ++offset) {
+            const auto index = indices.at(surface.firstIndex + offset);
+            auto& compact = remap.at(index);
+            if (compact == missing) {
+                compact = static_cast<std::uint32_t>(part.model.bindMesh.vertices.size());
+                part.model.bindMesh.vertices.push_back(appearance.bindMesh.vertices.at(index));
+                part.model.influences.push_back(base.model.influences.at(index));
+                if (!appearance.tangents.empty()) part.model.tangents.push_back(appearance.tangents.at(index));
+            }
+            part.model.bindMesh.indices.push_back(compact);
+        }
+    }
+    if (part.submeshes.empty() || (vest && part.submeshes.size() != 1))
+        throw std::runtime_error("Riverbank avatar material partition is incomplete");
+    return part;
 }
 
 inline std::vector<Aevrynd::Material3D> RiverbankAvatarMaterials(
