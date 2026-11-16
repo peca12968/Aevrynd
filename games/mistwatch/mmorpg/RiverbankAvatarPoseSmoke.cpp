@@ -1,12 +1,61 @@
 #include "RiverbankAvatarMotion.h"
 #include "RiverbankAvatarAsset.h"
+#include "RiverbankPeerPresentation.h"
 #include <Aevrynd/SkinnedRenderable3D.h>
 #include <iostream>
 
 using namespace Aevrynd;
 
+namespace {
+bool VerifyPeerPresentation() {
+    using Mistwatch::RiverbankPeerPresentation;
+    RiverbankPeerPresentation peer;
+    constexpr float frame = 1.f / 60.f;
+    if (peer.Position() || !peer.Observe(100, {}, false)) return false;
+    Mistwatch::RiverbankAvatarMotion::Player walk;
+    int frozenFrames = 0, originalFrozenFrames = 0;
+    float largestStep = 0.f, originalLargestStep = 0.f;
+    float previousRaw = 0.f;
+    for (std::uint64_t tick = 101; tick <= 110; ++tick) {
+        const float canonicalX = static_cast<float>(tick - 100) * .1f;
+        if (peer.Observe(tick, {canonicalX, 0, 0}, false)) return false;
+        for (int renderFrame = 0; renderFrame < 3; ++renderFrame) {
+            const auto step = peer.Advance(frame);
+            const float rawStep = canonicalX - previousRaw;
+            previousRaw = canonicalX;
+            frozenFrames += step.x < .0001f;
+            originalFrozenFrames += rawStep < .0001f;
+            largestStep = std::max(largestStep, step.x);
+            originalLargestStep = std::max(originalLargestStep, rawStep);
+            if (step.x < .032f || step.x > .035f || peer.Position()->x > canonicalX + .00001f) return false;
+            walk.AdvanceByTravel(step, frame, false);
+        }
+        if (std::abs(peer.Position()->x - canonicalX) > .00001f) return false;
+    }
+    if (std::abs(walk.distance - 1.f) > .00001f || walk.heading < 1.56f || walk.walking != 1.f) return false;
+    std::cout << "peer_render_frames=30 raw_frozen_frames=" << originalFrozenFrames << " frozen_frames=" << frozenFrames
+              << " raw_max_step_m=" << originalLargestStep << " max_step_m=" << largestStep << '\n';
+
+    // 遺失兩刻時以三刻的時間到達已知位置。舊資料及重複資料不可覆蓋。
+    if (peer.Observe(113, {1.3f, 0, 0}, false) || peer.Observe(112, {50.f, 0, 0}, false) ||
+        peer.Observe(113, {50.f, 0, 0}, false)) return false;
+    for (int f = 0; f < 9; ++f) {
+        if (std::abs(peer.Advance(frame).x - .3f / 9.f) > .00001f) return false;
+    }
+    if (std::abs(peer.Advance(.5f).x) > .00001f || peer.Position()->x != 1.3f || peer.Advance(.1f).x != 0.f) return false;
+
+    // 倒地、復起、傳送及長時間中斷各自驗證立即對齊。
+    if (!peer.Observe(114, {1.4f, 0, 0}, true) || peer.Position()->x != 1.4f ||
+        !peer.Observe(115, {1.45f, 0, 0}, false) || peer.Position()->x != 1.45f ||
+        !peer.Observe(116, {60.f, 0, 0}, false) || peer.Position()->x != 60.f ||
+        !peer.Observe(124, {60.2f, 0, 0}, false) || peer.Position()->x != 60.2f) return false;
+    return peer.Advance(frame).x == 0.f && peer.Position()->x == 60.2f;
+}
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) return 1;
+    if (!VerifyPeerPresentation()) return 23;
     const auto asset = Mistwatch::LoadRiverbankAvatarAsset(argv[1]);
     const Mistwatch::RiverbankAvatarMotion motion(asset);
     const auto joint = std::ranges::find(asset.jointNames, "pelvis");

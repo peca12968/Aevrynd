@@ -3,6 +3,7 @@
 #include "RiverbankAvatarMotion.h"
 #include "RiverbankAvatarAsset.h"
 #include "RiverbankBattleWire.h"
+#include "RiverbankPeerPresentation.h"
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/ReplicationProtocol3D.h>
@@ -28,7 +29,7 @@ public:
         if (!mesh) throw std::runtime_error("Riverbank avatar GPU upload failed");
     }
 
-    void Update(const Aevrynd::ReplicationSnapshot3D* snapshot, float dt) {
+    void Update(const Aevrynd::ReplicationSnapshot3D* snapshot, std::uint32_t localId, float dt) {
         if (!snapshot) {
             players.clear();
             return;
@@ -38,16 +39,38 @@ public:
         });
         for (const auto& entity : snapshot->entities) {
             auto& player = players[entity.id];
-            player.motion.Advance(entity.velocity, dt, (entity.flags & RiverbankBattleWire::DownedEntityFlag) != 0);
+            const bool downed = (entity.flags & RiverbankBattleWire::DownedEntityFlag) != 0;
+            if (entity.id.low == localId) {
+                player.motion.Advance(entity.velocity, dt, downed);
+            } else {
+                Aevrynd::Vec3 feet{};
+                if (!Aevrynd::ToLocalPosition3D(entity.position, Aevrynd::WorldOrigin3D{}, feet)) {
+                    players.erase(entity.id);
+                    continue;
+                }
+                if (player.peer.Observe(snapshot->serverTick, feet, downed))
+                    player.motion.distance = player.motion.walking = 0.f;
+                player.motion.AdvanceByTravel(player.peer.Advance(dt), dt, downed);
+            }
             const auto playerClass = ReadRiverbankClassFlags(entity.flags);
             player.playerClass = IsRiverbankClass(playerClass) ? playerClass : RiverbankClass::None;
         }
     }
 
+    std::optional<Aevrynd::Vec3> PeerFeet(Aevrynd::NetworkEntityId3D id, const Aevrynd::HeightField3D& terrain) const {
+        const auto player = players.find(id);
+        if (player == players.end()) return {};
+        auto feet = player->second.peer.Position();
+        if (!feet || !terrain.Contains(feet->x, feet->z)) return {};
+        feet->y = terrain.SampleHeight(feet->x, feet->z);
+        return feet;
+    }
+
     bool Submit(Aevrynd::DrawList& draw, Aevrynd::NetworkEntityId3D id, Aevrynd::Vec3 feet,
         const Aevrynd::HeightField3D& terrain) {
         const auto found = players.find(id);
-        const Player state = found == players.end() ? Player{} : found->second;
+        const Player empty{};
+        const auto& state = found == players.end() ? empty : found->second;
         const auto normal = state.motion.downedSeconds > 0 ? terrain.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
         const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal);
         const auto palette = Aevrynd::AddSkinPaletteFromPose(draw, asset.model, pose, skinning);
@@ -86,6 +109,7 @@ public:
 private:
     struct Player {
         RiverbankAvatarMotion::Player motion;
+        RiverbankPeerPresentation peer;
         RiverbankClass playerClass = RiverbankClass::None;
     };
     Aevrynd::SkinnedModelAssetData asset;

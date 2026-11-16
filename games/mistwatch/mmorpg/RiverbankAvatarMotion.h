@@ -16,15 +16,20 @@ struct RiverbankAvatarMotion {
         float distance{}, heading{}, walking{}, downedSeconds{};
 
         void Advance(Aevrynd::Vec3 tickDisplacement, float elapsed, bool downed = false) {
-            elapsed = std::clamp(elapsed, 0.0f, 0.1f);
+            // 本機仍沿用權威快照中的每刻位移。
+            elapsed = std::clamp(elapsed, 0.f, .1f);
+            AdvanceByTravel(tickDisplacement * (elapsed * 20.f), elapsed, downed, .0001f * elapsed * 20.f);
+        }
+
+        void AdvanceByTravel(Aevrynd::Vec3 displacement, float elapsed, bool downed, float movementThreshold = .000001f) {
+            elapsed = std::clamp(elapsed, 0.f, .1f);
             downedSeconds = std::clamp(downedSeconds + (downed ? elapsed : -elapsed * 2.5f), 0.f, 1.f);
-            const float movement = std::hypot(tickDisplacement.x, tickDisplacement.z);
-            const bool moving = !downed && movement > 0.0001f;
-            if (moving) heading = std::atan2(tickDisplacement.x, tickDisplacement.z);
-            walking = std::clamp(walking + (moving ? elapsed : -elapsed) * 7.0f, 0.0f, 1.0f);
-            // The local world transmits metres per server tick at 20 Hz.
-            if (!downed) distance += movement * elapsed * 20.f;
-            if (walking == 0.0f) distance = 0.0f;
+            const float movement = std::hypot(displacement.x, displacement.z);
+            const bool moving = !downed && movement > movementThreshold;
+            if (moving) heading = std::atan2(displacement.x, displacement.z);
+            walking = std::clamp(walking + (moving ? elapsed : -elapsed) * 7.f, 0.f, 1.f);
+            if (!downed) distance += movement;
+            if (walking == 0.f) distance = 0.f;
         }
     };
 

@@ -4658,7 +4658,7 @@ private:
             else if(focused&&input.Pressed('3'))(void)localWorld->ChooseClass(PlayerClass::Priest);
         }
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
-        riverbankAvatar->Update(localWorld->Snapshot(),dt);
+        riverbankAvatar->Update(localWorld->Snapshot(),localWorld->PlayerId(),dt);
 #endif
         if(const auto* view=localWorld->Snapshot()){
             const auto own=std::ranges::find_if(view->entities,[&](const auto& entity){return entity.id.low==localWorld->PlayerId();});
@@ -4719,11 +4719,13 @@ private:
 #endif
             for(const auto& entity:view->entities){
                 if(entity.id.low==localWorld->PlayerId())continue;
-                const auto feet=LocalWorldFeet(entity);
-                if(!feet)continue;
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+                const auto feet=riverbankAvatar->PeerFeet(entity.id,terrain);
+                if(!feet)continue;
                 if(!riverbankAvatar->Submit(draw,entity.id,*feet,terrain))
 #else
+                const auto feet=LocalWorldFeet(entity);
+                if(!feet)continue;
                 const float heading=std::hypot(entity.velocity.x,entity.velocity.z)>.001f?
                     std::atan2(entity.velocity.x,entity.velocity.z):0.f;
                 Mistwatch::ExplorerSurface::Submission remoteReceipt;
