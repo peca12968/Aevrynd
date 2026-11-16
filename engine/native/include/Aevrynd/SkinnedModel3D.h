@@ -45,6 +45,25 @@ struct SkinningStats3D {
     std::size_t outputBytes{};
 };
 
+class SkinningWorkspace3D;
+
+// 在載入時驗證模型並保留骨架綁定。每幀只處理姿勢與必要的骨骼矩陣。
+class SkinPaletteBinding3D {
+public:
+    explicit operator bool() const noexcept {
+        return bool(compatibility_) && !inverseBindMatrices_.empty();
+    }
+private:
+    friend SkinPaletteBinding3D PrepareSkinPaletteBinding3D(const SkinnedModel3D&,const SkinnedModelLimits3D&);
+    friend SkinPaletteRange3D AddBoundSkinPaletteFromPose(DrawList&,const SkinPaletteBinding3D&,
+        const AnimationPose3D&,SkinningWorkspace3D&);
+    std::vector<Matrix4> inverseBindMatrices_;
+    SkeletonCompatibilityId3D compatibility_{};
+};
+
+SkinPaletteBinding3D PrepareSkinPaletteBinding3D(const SkinnedModel3D& model,
+    const SkinnedModelLimits3D& limits={});
+
 class SkinningWorkspace3D {
 public:
     [[nodiscard]] ReusableMemoryStats MemoryStats()const;
@@ -54,6 +73,8 @@ private:
         SkinningWorkspace3D&,Mesh3D&,SkinningStats3D*,const SkinnedModelLimits3D&);
     friend SkinPaletteRange3D AddSkinPaletteFromPose(DrawList&,const SkinnedModel3D&,
         const AnimationPose3D&,SkinningWorkspace3D&,const SkinnedModelLimits3D&);
+    friend SkinPaletteRange3D AddBoundSkinPaletteFromPose(DrawList&,const SkinPaletteBinding3D&,
+        const AnimationPose3D&,SkinningWorkspace3D&);
     Mesh3D scratch_{};
     std::vector<Matrix4> skinMatrices_{};
     std::vector<Matrix4> normalMatrices_{};
@@ -70,4 +91,6 @@ bool BuildGpuSkinnedVertices(const SkinnedModel3D& model,std::vector<SkinnedVert
 SkinPaletteRange3D AddSkinPaletteFromPose(DrawList& draw,const SkinnedModel3D& model,
     const AnimationPose3D& pose,SkinningWorkspace3D& workspace,
     const SkinnedModelLimits3D& limits={});
+SkinPaletteRange3D AddBoundSkinPaletteFromPose(DrawList& draw,const SkinPaletteBinding3D& binding,
+    const AnimationPose3D& pose,SkinningWorkspace3D& workspace);
 }

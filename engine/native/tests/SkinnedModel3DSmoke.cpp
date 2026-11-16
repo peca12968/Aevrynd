@@ -16,9 +16,51 @@ SkinnedModel3D CreateModel(){
 }
 AnimationPose3D BindPose(){AnimationPose3D pose;pose.globalMatrices={Matrix4::Identity(),CreateTranslationMatrix({1,0,0})};return pose;}
 SkinPaletteJoint3D PaletteJoint(Matrix4 skin){const Matrix4 normal=CreateNormalMatrix(skin);return{skin,{Vec4{normal[0][0],normal[0][1],normal[0][2],0},Vec4{normal[1][0],normal[1][1],normal[1][2],0},Vec4{normal[2][0],normal[2][1],normal[2][2],0}}};}
+bool VerifyPreparedPaletteBinding() {
+    SkinnedModel3D model=CreateModel();
+    const auto binding=PrepareSkinPaletteBinding3D(model);
+    DrawList prepared(DrawListCapacityProfile::Minimal2D), original(DrawListCapacityProfile::Minimal2D);
+    SkinningWorkspace3D workspace;
+    AnimationPose3D pose=BindPose();
+    pose.globalMatrices.back()=CreateTranslationMatrix({3,1,0});
+    const auto expected=AddSkinPaletteFromPose(original,model,pose,workspace);
+    const auto actual=AddBoundSkinPaletteFromPose(prepared,binding,pose,workspace);
+    if(!expected||!actual||actual.skeletonCompatibilityId!=expected.skeletonCompatibilityId||
+        actual.jointCount!=expected.jointCount||actual.firstJoint!=expected.firstJoint)return false;
+    for(std::size_t joint=0;joint<actual.jointCount;++joint){
+        const auto& first=original.skinPaletteJoints[joint];
+        const auto& second=prepared.skinPaletteJoints[joint];
+        for(std::size_t row=0;row<4;++row)
+            for(std::size_t column=0;column<4;++column)
+                if(first.skin[row][column]!=second.skin[row][column])return false;
+        for(std::size_t row=0;row<3;++row){
+            const Vec4 a=first.normalRows[row],b=second.normalRows[row];
+            if(a.x!=b.x||a.y!=b.y||a.z!=b.z||a.w!=b.w)return false;
+        }
+    }
+
+    // 綁定持有自己的矩陣。損毀來源之後仍可完成已驗證角色的姿勢提交。
+    model.bindMesh.indices.clear();
+    model.inverseBindMatrices.clear();
+    prepared.Clear();
+    if(PrepareSkinPaletteBinding3D(model)||!AddBoundSkinPaletteFromPose(prepared,binding,pose,workspace)||
+        prepared.skinPaletteJoints.size()!=2)return false;
+    pose.globalMatrices.front()[0][0]=(std::numeric_limits<float>::quiet_NaN)();
+    if(AddBoundSkinPaletteFromPose(prepared,binding,pose,workspace))return false;
+    pose=BindPose();
+    pose.globalMatrices.pop_back();
+    return !AddBoundSkinPaletteFromPose(prepared,binding,pose,workspace)&&
+        !AddBoundSkinPaletteFromPose(prepared,SkinPaletteBinding3D{},BindPose(),workspace)&&
+        prepared.skinPaletteJoints.size()==2;
+}
+
 }
 
 int main(){
+    if(!VerifyPreparedPaletteBinding()){
+        std::cerr<<"Prepared palette binding changed pose results or rejected input state\n";
+        return 34;
+    }
     SkinnedModel3D compatibilityModel=CreateModel();const std::vector<std::string> names{"Root","Child"};compatibilityModel.skeletonCompatibilityId=ComputeSkeletonCompatibilityId3D(names,compatibilityModel.skeleton,compatibilityModel.inverseBindMatrices);auto reorderedNames=names;std::swap(reorderedNames[0],reorderedNames[1]);auto reparented=compatibilityModel.skeleton;reparented.joints[1].parent=-1;auto rebound=compatibilityModel.inverseBindMatrices;rebound[1][0][3]+=.001f;if(!compatibilityModel.skeletonCompatibilityId||compatibilityModel.skeletonCompatibilityId==ComputeSkeletonCompatibilityId3D(reorderedNames,compatibilityModel.skeleton,compatibilityModel.inverseBindMatrices)||compatibilityModel.skeletonCompatibilityId==ComputeSkeletonCompatibilityId3D(names,reparented,compatibilityModel.inverseBindMatrices)||compatibilityModel.skeletonCompatibilityId==ComputeSkeletonCompatibilityId3D(names,compatibilityModel.skeleton,rebound)){std::cerr<<"Skeleton compatibility hashing failed\n";return 30;}
     auto changedBind=compatibilityModel.skeleton;changedBind.joints[1].bindTransform.translation.y+=.001f;if(compatibilityModel.skeletonCompatibilityId==ComputeSkeletonCompatibilityId3D(names,changedBind,compatibilityModel.inverseBindMatrices)){std::cerr<<"Bind transform did not affect compatibility\n";return 31;}
     auto renamedNames=names;renamedNames[1]="Other";if(compatibilityModel.skeletonCompatibilityId==ComputeSkeletonCompatibilityId3D(renamedNames,compatibilityModel.skeleton,compatibilityModel.inverseBindMatrices)){std::cerr<<"Joint rename did not affect compatibility\n";return 33;}

@@ -93,13 +93,54 @@ bool BuildGpuSkinnedVertices(const SkinnedModel3D& model,std::vector<SkinnedVert
     }catch(const std::bad_alloc&){return false;}
 }
 
-SkinPaletteRange3D AddSkinPaletteFromPose(DrawList& draw,const SkinnedModel3D& model,const AnimationPose3D& pose,SkinningWorkspace3D& workspace,const SkinnedModelLimits3D& limits){
-    if(!model.Valid(limits)||pose.globalMatrices.size()!=model.skeleton.joints.size())return{};for(const Matrix4& matrix:pose.globalMatrices)if(!FiniteMatrix(matrix))return{};
+namespace {
+SkinPaletteRange3D AssembleSkinPalette(DrawList& draw,std::span<const Matrix4> inverseBindMatrices,
+    SkeletonCompatibilityId3D compatibility,const AnimationPose3D& pose,
+    std::vector<SkinPaletteJoint3D>& paletteJoints){
+    if(pose.globalMatrices.size()!=inverseBindMatrices.size())return{};
+    for(const Matrix4& matrix:pose.globalMatrices)if(!FiniteMatrix(matrix))return{};
     try{
-        workspace.paletteJoints_.clear();workspace.paletteJoints_.reserve(model.skeleton.joints.size());
-        for(std::size_t joint=0;joint<model.skeleton.joints.size();++joint){const Matrix4 skin=pose.globalMatrices[joint]*model.inverseBindMatrices[joint],normal=CreateNormalMatrix(skin);if(!FiniteMatrix(skin)||!FiniteMatrix(normal))return{};SkinPaletteJoint3D palette{};palette.skin=skin;for(std::size_t row=0;row<3;++row)palette.normalRows[row]={normal[row][0],normal[row][1],normal[row][2],0};workspace.paletteJoints_.push_back(palette);}
-        const SkeletonCompatibilityId3D compatibility=model.skeletonCompatibilityId?model.skeletonCompatibilityId:ComputeStructuralSkeletonCompatibilityId3D(model.skeleton,model.inverseBindMatrices);
-        return draw.AddSkinPalette(workspace.paletteJoints_,compatibility);
+        paletteJoints.clear();
+        paletteJoints.reserve(inverseBindMatrices.size());
+        for(std::size_t joint=0;joint<inverseBindMatrices.size();++joint){
+            const Matrix4 skin=pose.globalMatrices[joint]*inverseBindMatrices[joint];
+            const Matrix4 normal=CreateNormalMatrix(skin);
+            if(!FiniteMatrix(skin)||!FiniteMatrix(normal))return{};
+            SkinPaletteJoint3D palette{};
+            palette.skin=skin;
+            for(std::size_t row=0;row<3;++row)
+                palette.normalRows[row]={normal[row][0],normal[row][1],normal[row][2],0};
+            paletteJoints.push_back(palette);
+        }
+        return draw.AddSkinPalette(paletteJoints,compatibility);
     }catch(const std::bad_alloc&){return{};}
+}
+}
+
+SkinPaletteBinding3D PrepareSkinPaletteBinding3D(const SkinnedModel3D& model,const SkinnedModelLimits3D& limits){
+    if(!model.Valid(limits))return{};
+    const auto compatibility=model.skeletonCompatibilityId?model.skeletonCompatibilityId:
+        ComputeStructuralSkeletonCompatibilityId3D(model.skeleton,model.inverseBindMatrices);
+    if(!compatibility)return{};
+    try{
+        SkinPaletteBinding3D result;
+        result.inverseBindMatrices_=model.inverseBindMatrices;
+        result.compatibility_=compatibility;
+        return result;
+    }catch(const std::bad_alloc&){return{};}
+}
+
+SkinPaletteRange3D AddSkinPaletteFromPose(DrawList& draw,const SkinnedModel3D& model,const AnimationPose3D& pose,
+    SkinningWorkspace3D& workspace,const SkinnedModelLimits3D& limits){
+    if(!model.Valid(limits))return{};
+    const auto compatibility=model.skeletonCompatibilityId?model.skeletonCompatibilityId:
+        ComputeStructuralSkeletonCompatibilityId3D(model.skeleton,model.inverseBindMatrices);
+    return AssembleSkinPalette(draw,model.inverseBindMatrices,compatibility,pose,workspace.paletteJoints_);
+}
+
+SkinPaletteRange3D AddBoundSkinPaletteFromPose(DrawList& draw,const SkinPaletteBinding3D& binding,
+    const AnimationPose3D& pose,SkinningWorkspace3D& workspace){
+    if(!binding)return{};
+    return AssembleSkinPalette(draw,binding.inverseBindMatrices_,binding.compatibility_,pose,workspace.paletteJoints_);
 }
 }

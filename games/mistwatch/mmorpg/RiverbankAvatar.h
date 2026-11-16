@@ -15,8 +15,10 @@ class RiverbankAvatar {
 public:
     RiverbankAvatar(Aevrynd::Engine& engine, const std::filesystem::path& path, bool useWardrobe = false)
         : asset(LoadRiverbankAvatarAsset(path)), motion(asset),
+          paletteBinding(PrepareSkinPaletteBinding3D(asset.model)),
           materials{RiverbankAvatarMaterials(asset), RiverbankAvatarMaterials(asset, RiverbankClass::Guardian),
                     RiverbankAvatarMaterials(asset, RiverbankClass::Ranger), RiverbankAvatarMaterials(asset, RiverbankClass::Priest)} {
+        if (!paletteBinding) throw std::runtime_error("Riverbank avatar palette binding is invalid");
         if (motion.HasDownedClip()) {
             const std::array<std::string_view, 2> jointNames{"head", "spine"};
             for (std::size_t n = 0; n < jointNames.size(); ++n) {
@@ -105,7 +107,7 @@ public:
         const auto& state = found == players.end() ? empty : found->second;
         const auto normal = state.motion.downedSeconds > 0 ? terrain.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
         const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal);
-        const auto palette = Aevrynd::AddSkinPaletteFromPose(draw, asset.model, pose, skinning);
+        const auto palette = Aevrynd::AddBoundSkinPaletteFromPose(draw, paletteBinding, pose, skinning);
         const auto role = static_cast<std::size_t>(state.playerClass);
         const auto& bindings = materials.at(role);
         if (!wardrobe.front())
@@ -163,6 +165,7 @@ private:
     };
     Aevrynd::SkinnedModelAssetData asset;
     RiverbankAvatarMotion motion;
+    Aevrynd::SkinPaletteBinding3D paletteBinding;
     std::array<std::size_t, 2> downedViewJoints{};
     Aevrynd::SkinnedMeshResource3D mesh;
     std::vector<Aevrynd::SkinnedSubmesh3D> bodySurfaces;
