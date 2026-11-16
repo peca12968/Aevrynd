@@ -60,6 +60,15 @@
         "AEVRYND_INTERNAL_RENDERER_TEST_HOOKS": "OFF",
         "AEVRYND_MISTWATCH_NATIVE_GATES": "ON"
       }
+    },
+    {
+      "name": "windows-mistwatch-multiplayer-gates",
+      "inherits": "windows-release-gates",
+      "displayName": "Windows Mistwatch Multiplayer Gates (VS2022 x64)",
+      "description": "Dedicated server and native networking checks without a graphics session.",
+      "cacheVariables": {
+        "AEVRYND_BUILD_MISTWATCH_SERVER_ONLY": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -110,6 +119,16 @@
         "Mistwatch"
       ],
       "jobs": 2
+    },
+    {
+      "name": "windows-mistwatch-multiplayer-gates",
+      "configurePreset": "windows-mistwatch-multiplayer-gates",
+      "configuration": "Release",
+      "targets": [
+        "MistwatchWorldServer",
+        "MistwatchLocalWorldClientSmoke"
+      ],
+      "jobs": 1
     }
   ],
   "testPresets": [
@@ -192,6 +211,24 @@
       "filter": {
         "include": {
           "label": "^mistwatch-native-gbv$"
+        }
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mistwatch-multiplayer-gates",
+      "configurePreset": "windows-mistwatch-multiplayer-gates",
+      "configuration": "Release",
+      "filter": {
+        "include": {
+          "label": "^mistwatch-multiplayer-gates$"
         }
       },
       "execution": {

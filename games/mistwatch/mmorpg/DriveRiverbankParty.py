@@ -33,7 +33,12 @@ class Player:
             raise RuntimeError(f'Player {self.id} received the wrong class')
 
     def move_towards(self, epoch, target):
-        x, z = target[0] - self.position[0], target[1] - self.position[1]
+        x_now, z_now = self.position
+        if target[1] > 40.0 and z_now < 40.3:
+            target = (0.0, 41.0) if abs(x_now) <= .75 and z_now >= 30.25 else (0.0, 31.0)
+        elif target[1] < 32.0 and z_now > 31.7:
+            target = (0.0, 31.0) if abs(x_now) <= .75 and z_now <= 41.75 else (0.0, 41.0)
+        x, z = target[0] - x_now, target[1] - z_now
         length = hypot(x, z)
         if length <= .19 or not self.state['hp']:
             return

@@ -4568,6 +4568,10 @@ private:
             socialOpen()||riverbankSettingsMenu.Open()||input.Pressed(VK_F10));
         if(windowFocused&&riverbankRouteMap.Open()){
             if(input.Pressed(VK_BACK))riverbankRouteMap.ClearWaypoint();
+            else if(input.Pressed('E')){
+                const auto* expedition=localWorld->Expedition();
+                if(expedition)riverbankRouteMap.TrackExpedition(expedition->stage);
+            }
             else for(std::size_t i=0;i<Mistwatch::RiverbankRouteMap::landmarks.size();++i){
                 if(input.Pressed(unsigned('1')+unsigned(i))){riverbankRouteMap.Track(i);break;}
             }
@@ -4819,7 +4823,9 @@ private:
 #ifdef AEVRYND_MISTWATCH_PROFILES
         }else if(riverbankRouteMap.Open()&&localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready){
             if(!riverbankMapTerrain)riverbankMapTerrain=Mistwatch::RiverbankRouteMap::Build(terrain);
-            Mistwatch::RiverbankRouteMap::Draw(draw,riverbankMapTerrain,session.feet,riverbankRouteMap.Waypoint());
+            const auto* expedition=localWorld->Expedition();
+            Mistwatch::RiverbankRouteMap::Draw(draw,riverbankMapTerrain,session.feet,riverbankRouteMap,
+                expedition?std::optional{expedition->stage}:std::nullopt);
 #endif
         }else{
             draw.Quad({273,60},{526,106},{.04f,.07f,.065f,.94f});
@@ -4849,8 +4855,11 @@ private:
             DrawRiverbankTerritory(draw);
             DrawRiverbankExpedition(draw);
             DrawRiverbankTrailSupplies(draw);
-            if(localWorldStatus==Status::Ready&&!riverbankGuild.Open()&&!riverbankParty.Open()&&!riverbankGear.Open())
-                Mistwatch::RiverbankRouteMap::DrawTrackedLandmark(draw,riverbankRouteMap.Waypoint(),session.feet);
+            if(localWorldStatus==Status::Ready&&!riverbankGuild.Open()&&!riverbankParty.Open()&&!riverbankGear.Open()){
+                const auto* expedition=localWorld->Expedition();
+                Mistwatch::RiverbankRouteMap::DrawTrackedLandmark(draw,riverbankRouteMap,
+                    expedition?std::optional{expedition->stage}:std::nullopt,session.feet);
+            }
             riverbankGuild.Draw(draw,*localWorld);
             riverbankParty.Draw(draw,*localWorld);
             riverbankGear.Draw(draw,*localWorld);

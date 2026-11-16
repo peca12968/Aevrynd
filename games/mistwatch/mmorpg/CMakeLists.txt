@@ -25,6 +25,10 @@ if(MISTWATCH_ENABLE_RIVERBANK_BATTLE)
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankBattle.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}/SharedBattleVerification.json")
   set_tests_properties(MistwatchRiverbankBattleLoopbackTest PROPERTIES TIMEOUT 45 LABELS "mistwatch;combat;network")
+  add_test(NAME MistwatchRiverbankCrossingLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankCrossing.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankCrossingLoopbackTest PROPERTIES TIMEOUT 85 LABELS "mistwatch;network;crossing")
 endif()
 option(MISTWATCH_ENABLE_RIVERBANK_PROFILES "Enable local persistent characters in the private battle build" OFF)
 if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
@@ -139,6 +143,23 @@ add_test(NAME MistwatchRiverbankNetworkLatencyTest
 set_tests_properties(MistwatchRiverbankNetworkLatencyTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;network")
 add_test(NAME MistwatchTailnetAddressValidationTest COMMAND MistwatchLocalWorldClientSmoke --tailnet-addresses)
 set_tests_properties(MistwatchTailnetAddressValidationTest PROPERTIES TIMEOUT 5 LABELS "mistwatch;network")
+
+# 專用伺服器與原生 TCP 客戶端的固定驗收，不需要互動式圖形桌面。
+if(AEVRYND_BUILD_MISTWATCH_SERVER_ONLY AND MISTWATCH_ENABLE_RIVERBANK_PROFILES)
+  set_property(TEST
+    MistwatchWorldServerLoopbackTest
+    MistwatchNativeLocalWorldClientTest
+    MistwatchRiverbankNetworkLatencyTest
+    MistwatchRiverbankLaunchReceiptTest
+    MistwatchRiverbankCrossingLoopbackTest
+    MistwatchRiverbankFullRoomTest
+    MistwatchRiverbankExpandedRoomTest
+    MistwatchRiverbankCoopJourneyLoopbackTest
+    MistwatchRiverbankTerritoryLoopbackTest
+    MistwatchRiverbankFieldContactTest
+    MistwatchRiverbankLiveReconnectTest
+    APPEND PROPERTY LABELS mistwatch-multiplayer-gates)
+endif()
 
 option(MISTWATCH_TEST_RIVERBANK_ENCOUNTER "Build the isolated riverbank encounter rules test" OFF)
 if(MISTWATCH_TEST_RIVERBANK_ENCOUNTER)

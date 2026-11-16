@@ -2,6 +2,7 @@
 #include "RiverbankClass.h"
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankBattleWire.h"
+#include "RiverbankCrossing.h"
 #include "RiverbankFieldWire.h"
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
@@ -100,7 +101,10 @@ public:
             world_.Tick([this](const ReplicationPlayerState3D& player,Vec3 delta){
                 Vec3 from{};
                 if(!ToLocalPosition3D(player.position,WorldOrigin3D{},from))return Vec3{};
-                const auto allowed=encounter_.ConstrainPlayerMovement({from.x,from.z},{delta.x,delta.z});
+                const Mistwatch::ArenaPosition start{from.x,from.z};
+                const auto ground=Mistwatch::RiverbankCrossing::ResolveStep(start,{delta.x,delta.z});
+                const auto encounter=encounter_.ConstrainPlayerMovement(start,ground);
+                const auto allowed=Mistwatch::RiverbankCrossing::ClipStep(start,encounter);
                 return Vec3{allowed.x,0.f,allowed.z};
             });
 #else
