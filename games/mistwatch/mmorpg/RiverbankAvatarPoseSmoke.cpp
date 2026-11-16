@@ -11,6 +11,7 @@ namespace {
 bool VerifyRiverbankTerrainContact(const Mistwatch::RiverbankAvatarMotion& motion,
     const SkinnedModelAssetData& asset, const std::array<std::vector<std::uint32_t>, 2>& boots) {
     const auto terrain = Mistwatch::CreateTerrain();
+    const Mistwatch::RiverbankWalkSurface surface{terrain};
     AnimationPose3D scratch, pose;
     SkinningWorkspace3D skinning;
     Mesh3D skinned;
@@ -25,7 +26,7 @@ bool VerifyRiverbankTerrainContact(const Mistwatch::RiverbankAvatarMotion& motio
             feet.y = terrain.SampleHeight(feet.x, feet.z);
             const auto normal = terrain.SampleNormal(feet.x, feet.z);
             steepest = (std::max)(steepest, std::hypot(normal.x, normal.z) / normal.y);
-            const auto placement = motion.Evaluate(asset.model.skeleton, actor, feet, scratch, pose, normal, &terrain);
+            const auto placement = motion.Evaluate(asset.model.skeleton, actor, feet, scratch, pose, normal, &surface);
             if (!SkinModelInto(asset.model, pose, skinning, skinned)) return false;
             float minimum = std::numeric_limits<float>::infinity();
             for (const auto& boot : boots) {
@@ -46,6 +47,50 @@ bool VerifyRiverbankTerrainContact(const Mistwatch::RiverbankAvatarMotion& motio
     std::cout << "riverbank_route_samples=" << samples << " airborne_samples=" << flightSamples
               << " deepest_m=" << deepest << " maximum_grade=" << steepest << '\n';
     return samples == 972 && flightSamples > 0 && deepest >= -.006f && steepest >= .15f;
+}
+
+bool VerifyBridgeDeckContact(const Mistwatch::RiverbankAvatarMotion& motion,
+    const SkinnedModelAssetData& asset, const std::array<std::vector<std::uint32_t>, 2>& boots) {
+    const auto terrain = Mistwatch::CreateTerrain();
+    const Mistwatch::RiverbankWalkSurface open{terrain, true};
+    const Mistwatch::RiverbankWalkSurface closed{terrain, false};
+    const auto& deck = Mistwatch::RiverbankBridgeDeck;
+    const auto south = deck.center.z - deck.extents.z;
+    const auto north = deck.center.z + deck.extents.z;
+    const auto top = deck.center.y + deck.extents.y;
+    if (closed.SampleHeight(0, deck.center.z) > top - 7.f ||
+        open.SampleHeight(deck.extents.x + .01f, deck.center.z) != closed.SampleHeight(deck.extents.x + .01f, deck.center.z) ||
+        open.SampleHeight(0, south - .01f) != closed.SampleHeight(0, south - .01f) ||
+        open.SampleHeight(0, north + .01f) != closed.SampleHeight(0, north + .01f)) return false;
+
+    AnimationPose3D scratch, pose;
+    SkinningWorkspace3D skinning;
+    Mesh3D mesh;
+    float deepest = 0.f;
+    unsigned samples = 0;
+    for (float heading : {0.f, 3.14159265f}) {
+        for (float x : {-.75f, 0.f, .75f}) {
+            for (unsigned step = 0; step <= 32; ++step) {
+                const auto z = south + (north - south) * float(step) / 32.f;
+                const auto height = open.SampleHeight(x, z);
+                const auto normal = open.SampleNormal(x, z);
+                if (height != top || normal.x != 0.f || normal.y != 1.f || normal.z != 0.f) return false;
+                if (step == 0 || step == 32) continue;
+                const Mistwatch::RiverbankAvatarMotion::Player actor{float(step) * .25f, heading, 1.f, 0.f, 1.f};
+                const auto transform = motion.Evaluate(asset.model.skeleton, actor, {x, height, z},
+                    scratch, pose, normal, &open);
+                if (!SkinModelInto(asset.model, pose, skinning, mesh)) return false;
+                for (const auto& boot : boots) for (const auto index : boot) {
+                    const auto& vertex = mesh.vertices[index];
+                    const auto point = TransformPoint(transform, {vertex.x, vertex.y, vertex.z});
+                    deepest = (std::min)(deepest, point.y - open.SampleHeight(point.x, point.z));
+                }
+                ++samples;
+            }
+        }
+    }
+    std::cout << "bridge_deck_run_samples=" << samples << " deepest_m=" << deepest << '\n';
+    return samples == 186 && deepest >= -.006f;
 }
 
 bool VerifyRunSlopeContact(const Mistwatch::RiverbankAvatarMotion& motion,
@@ -134,7 +179,8 @@ bool VerifyRunSlopeContact(const Mistwatch::RiverbankAvatarMotion& motion,
               << " deepest_m=" << deepest << " max_clearance_change_m=" << clearanceError
               << " max_ankle_adjustment_m=" << maxAnkleChange << " segment_length_error_m=" << legError
               << " ankle_orientation_error=" << orientationError << '\n';
-    return VerifyRiverbankTerrainContact(motion, asset, boots) && samples == 162 && airborneSamples > 0 && deepest >= -.006f && clearanceError < .015f &&
+    return VerifyRiverbankTerrainContact(motion, asset, boots) && VerifyBridgeDeckContact(motion, asset, boots) &&
+        samples == 162 && airborneSamples > 0 && deepest >= -.006f && clearanceError < .015f &&
         maxAnkleChange > .04f && legError < .0002f && orientationError < .0002f;
 }
 

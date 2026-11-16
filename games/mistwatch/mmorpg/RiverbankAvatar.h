@@ -92,23 +92,23 @@ public:
         }
     }
 
-    std::optional<Aevrynd::Vec3> PeerFeet(Aevrynd::NetworkEntityId3D id, const Aevrynd::HeightField3D& terrain) const {
+    std::optional<Aevrynd::Vec3> PeerFeet(Aevrynd::NetworkEntityId3D id, const RiverbankWalkSurface& surface) const {
         const auto player = players.find(id);
         if (player == players.end()) return {};
         auto feet = player->second.peer.Position();
-        if (!feet || !terrain.Contains(feet->x, feet->z)) return {};
-        feet->y = terrain.SampleHeight(feet->x, feet->z);
+        if (!feet || !surface.Contains(feet->x, feet->z)) return {};
+        feet->y = surface.SampleHeight(feet->x, feet->z);
         return feet;
     }
 
     bool Submit(Aevrynd::DrawList& draw, Aevrynd::NetworkEntityId3D id, Aevrynd::Vec3 feet,
-        const Aevrynd::HeightField3D& terrain) {
+        const RiverbankWalkSurface& surface) {
         const auto found = players.find(id);
         const Player empty{};
         const auto& state = found == players.end() ? empty : found->second;
         const auto normal = state.motion.downedSeconds > 0 || motion.HasRunClip()
-            ? terrain.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
-        const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal, &terrain);
+            ? surface.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
+        const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal, &surface);
         const auto palette = Aevrynd::AddBoundSkinPaletteFromPose(draw, paletteBinding, pose, skinning);
         const auto role = static_cast<std::size_t>(state.playerClass);
         const auto& bindings = materials.at(role);
@@ -128,11 +128,11 @@ public:
     }
 
     std::optional<std::array<Aevrynd::Vec3, 2>> DownedView(Aevrynd::NetworkEntityId3D id,
-        Aevrynd::Vec3 feet, const Aevrynd::HeightField3D& terrain) {
+        Aevrynd::Vec3 feet, const RiverbankWalkSurface& surface) {
         const auto player = players.find(id);
         if (!motion.HasDownedClip() || player == players.end() || player->second.motion.downedSeconds < .40f) return {};
         const auto placement = motion.Evaluate(asset.model.skeleton, player->second.motion, feet, sampled, pose,
-            terrain.SampleNormal(feet.x, feet.z));
+            surface.SampleNormal(feet.x, feet.z));
         return std::array{
             Aevrynd::TransformPoint(placement * pose.globalMatrices[downedViewJoints[0]], {}),
             Aevrynd::TransformPoint(placement * pose.globalMatrices[downedViewJoints[1]], {})};

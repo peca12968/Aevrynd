@@ -1,4 +1,5 @@
 #pragma once
+#include "MistwatchBridgeDeck.h"
 
 #include "RiverbankAvatarAsset.h"
 #include <Aevrynd/SkeletalIk3D.h>
@@ -130,7 +131,7 @@ struct RiverbankAvatarMotion {
     }
 
     Aevrynd::Matrix4 Evaluate(const Aevrynd::Skeleton3D& skeleton, const Player& player,
-        Aevrynd::Vec3 feet, Aevrynd::AnimationPose3D& sampled, Aevrynd::AnimationPose3D& pose, Aevrynd::Vec3 groundNormal = {0, 1, 0}, const Aevrynd::HeightField3D* terrain = nullptr) const {
+        Aevrynd::Vec3 feet, Aevrynd::AnimationPose3D& sampled, Aevrynd::AnimationPose3D& pose, Aevrynd::Vec3 groundNormal = {0, 1, 0}, const RiverbankWalkSurface* surface = nullptr) const {
         const auto world = Aevrynd::CreateTransformMatrix(feet, {0, player.heading - assetYaw, 0}, {1, 1, 1});
         if (HasDownedClip() && player.downedSeconds > 0) {
             Aevrynd::SampleAnimationClipInto(skeleton, downed, player.downedSeconds, pose);
@@ -166,10 +167,10 @@ struct RiverbankAvatarMotion {
         // 根位移由伺服器決定，動畫僅播放原地姿勢。
         const float lift = amount > 0.f && (amount < 1.f || player.walking < 1.f) ? RunBlendFloorLift(pose) : 0.f;
         auto offset = Aevrynd::Vec3{0, lift - groundDatum, 0} - rootTravel * (phase * player.walking);
-        if (HasRunClip() && groundNormal.y >= .8f && (terrain || std::hypot(groundNormal.x, groundNormal.z) > .002f)) {
+        if (HasRunClip() && groundNormal.y >= .8f && (surface || std::hypot(groundNormal.x, groundNormal.z) > .002f)) {
             const auto inverseYaw = Aevrynd::CreateRotationMatrix({0, assetYaw - player.heading, 0});
             const auto normal = Aevrynd::TransformNormal(inverseYaw, groundNormal);
-            offset.y += ConformRunFeet(skeleton, pose, offset, normal, world, terrain);
+            offset.y += ConformRunFeet(skeleton, pose, offset, normal, world, surface);
         }
         return world * Aevrynd::CreateTranslationMatrix(offset);
     }
@@ -206,13 +207,13 @@ private:
 
     float ConformRunFeet(const Aevrynd::Skeleton3D& skeleton, Aevrynd::AnimationPose3D& pose,
         Aevrynd::Vec3 offset, Aevrynd::Vec3 normal, const Aevrynd::Matrix4& modelToWorld,
-        const Aevrynd::HeightField3D* terrain) const {
+        const RiverbankWalkSurface* surface) const {
         using namespace Aevrynd;
         const auto clearance = [&](Vec3 local) {
-            if (terrain) {
+            if (surface) {
                 const auto world = TransformPoint(modelToWorld, local);
-                if (terrain->Contains(world.x,world.z))
-                    return world.y - terrain->SampleHeight(world.x,world.z);
+                if (surface->Contains(world.x,world.z))
+                    return world.y - surface->SampleHeight(world.x,world.z);
             }
             return Dot(local, normal) / normal.y;
         };

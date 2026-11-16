@@ -3974,6 +3974,9 @@ private:
         session.collected=7;
         session.repairMaterials=7;
         session.bridgeRepaired=true;
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        solids=RuntimeWorldSolids(true);
+#endif
 #endif
         startupStage("complete");
 #ifdef AEVRYND_MISTWATCH_MMO_CLIENT
@@ -4224,7 +4227,7 @@ private:
         std::optional<std::array<Vec3,2>> downed;
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
         if(battle&&!battle->player.health)
-            downed=riverbankAvatar->DownedView({battle->epoch,battle->owner},session.feet,terrain);
+            downed=riverbankAvatar->DownedView({battle->epoch,battle->owner},session.feet,{terrain,session.bridgeRepaired});
 #endif
         std::optional<Vec3> threat;
         const Mistwatch::Boar* threatModel{};
@@ -4512,7 +4515,7 @@ private:
     std::optional<Vec3> LocalWorldFeet(const ReplicatedEntityState3D& entity) const {
         Vec3 feet{};
         if(!ToLocalPosition3D(entity.position,WorldOrigin3D{},feet)||!terrain.Contains(feet.x,feet.z))return {};
-        feet.y=terrain.SampleHeight(feet.x,feet.z);
+        feet.y=Mistwatch::RiverbankWalkSurface{terrain,session.bridgeRepaired}.SampleHeight(feet.x,feet.z);
         return feet;
     }
     Mistwatch::RiverbankSettingsMenu riverbankSettingsMenu;
@@ -4762,9 +4765,9 @@ private:
             for(const auto& entity:view->entities){
                 if(entity.id.low==localWorld->PlayerId())continue;
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
-                const auto feet=riverbankAvatar->PeerFeet(entity.id,terrain);
+                const auto feet=riverbankAvatar->PeerFeet(entity.id,{terrain,session.bridgeRepaired});
                 if(!feet)continue;
-                if(!riverbankAvatar->Submit(draw,entity.id,*feet,terrain))
+                if(!riverbankAvatar->Submit(draw,entity.id,*feet,{terrain,session.bridgeRepaired}))
 #else
                 const auto feet=LocalWorldFeet(entity);
                 if(!feet)continue;
@@ -7011,7 +7014,7 @@ private:
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
         const auto* state=localWorld->Snapshot();
         const NetworkEntityId3D id=state?NetworkEntityId3D{state->sessionEpoch,localWorld->PlayerId()}:NetworkEntityId3D{};
-        if(!riverbankAvatar->Submit(draw,id,session.feet,terrain))throw std::runtime_error("Riverbank avatar submission failed");
+        if(!riverbankAvatar->Submit(draw,id,session.feet,{terrain,session.bridgeRepaired}))throw std::runtime_error("Riverbank avatar submission failed");
 #else
         const auto* playerDrawPose=&explorer.pose;
         const auto counterWeight=explorerCounter.Weight();

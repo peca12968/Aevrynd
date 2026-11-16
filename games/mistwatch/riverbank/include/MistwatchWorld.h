@@ -3,6 +3,7 @@
 #include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/TerrainLayerCoverage3D.h>
 #include "MistwatchSession.h"
+#include "MistwatchBridgeDeck.h"
 #include "MistwatchForestProps.h"
 #include "MistwatchUnderstory.h"
 #include "MistwatchBroadleaf.h"
@@ -231,7 +232,7 @@ inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired) {
     for(unsigned index=0;index<3;++index) {
         const auto relay=RelaySolids(index);result.insert(result.end(),relay.begin(),relay.end());
     }
-    if(repaired) result.push_back({{0,-.2f,36},{2,.2f,4}});
+    if(repaired) result.push_back(RiverbankBridgeDeck);
     const auto trees=TreePositions();
     for(const auto tree:trees) result.push_back({tree+Aevrynd::Vec3{0,2,0},{.25f,2,.25f}});
     const auto terrain=CreateTerrain();
@@ -258,7 +259,7 @@ inline std::vector<Aevrynd::BoxCollider3D> WorldSolids(bool repaired,FirLayoutSe
     for(unsigned index=0;index<3;++index) {
         const auto relay=RelaySolids(index);result.insert(result.end(),relay.begin(),relay.end());
     }
-    if(repaired)result.push_back({{0,-.2f,36},{2,.2f,4}});
+    if(repaired)result.push_back(RiverbankBridgeDeck);
     const auto terrain=CreateTerrain();
     const auto layout=CreateMatureFirLayout(terrain,selector);
     for(const auto& tree:layout.firs)result.push_back(tree.collider);
