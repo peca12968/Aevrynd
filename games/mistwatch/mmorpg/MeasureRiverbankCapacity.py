@@ -18,7 +18,7 @@ import time
 import VerifyRiverbankBattle as battle
 from VerifyRiverbankGuild import OK, VIEW, guild_command
 from VerifyRiverbankProfiles import login_request, login_response
-from VerifyWorldServer import connect, hello, ready_line
+from VerifyWorldServer import connect, hello, ready_line, wait
 
 
 class MemoryCounters(ctypes.Structure):
@@ -56,16 +56,18 @@ class ProcessCounters:
         return dict(cpu_ms=cpu_100ns / 10000, working_set_bytes=memory.working_set, private_bytes=memory.private_bytes)
 
 
+# 採樣依序讀取每條連線，留出排程時間後仍要求所有移動在指定的更新生效。
+MOVEMENT_LEAD_TICKS = 8
 DIRECTIONS = ((32767, 0), (0, 32767), (-32767, 0), (0, -32767),
               (23169, 23169), (-23169, 23169), (-23169, -23169), (23169, -23169))
 
 
-def attach(resources, port, epoch, role):
+def attach(resources, port, epoch, role, ticket, reconnect=False):
     peer = resources.enter_context(closing(connect(port)))
     session, player = hello(peer)
     if session != epoch:
         raise RuntimeError('測試角色連到不同的世界')
-    login_request(peer, token_bytes(32), role)
+    login_request(peer, ticket, 0 if reconnect else role)
     if login_response(peer) != role:
         raise RuntimeError('伺服器拒絕測試角色')
     return peer, player, role
@@ -90,12 +92,12 @@ def distribution(values):
             'p95': round(ordered[ceil(len(ordered) * .95) - 1], 3), 'max': round(ordered[-1], 3)}
 
 
-def measure(clients, port, epoch, process, seconds):
+def measure(clients, epoch, process, seconds):
     initial_tick, initial_positions = shared_frame(clients, epoch)
     process_samples = [process.sample()]
     times, rtts = [], []
     last_tick = initial_tick
-    first_input_tick = initial_tick + 3
+    first_input_tick = initial_tick + MOVEMENT_LEAD_TICKS
     begin = last_time = time.perf_counter()
     next_sample = begin + 2
     sequence, guild_sequence = 0, 0
@@ -107,8 +109,9 @@ def measure(clients, port, epoch, process, seconds):
         sequence += 1
         sign = 1 if sequence // 24 % 2 == 0 else -1
         for index, (peer, player, _role) in enumerate(clients):
-            dx, dz = DIRECTIONS[index]
-            battle.send_movement(peer, epoch, last_tick, sequence, player, dx * sign, dz * sign)
+            dx, dz = DIRECTIONS[index % len(DIRECTIONS)]
+            battle.send_movement(peer, epoch, last_tick, sequence, player, dx * sign, dz * sign,
+                                 lead_ticks=MOVEMENT_LEAD_TICKS)
         tick, positions = shared_frame(clients, epoch)
         now = time.perf_counter()
         if tick <= last_tick:
@@ -137,10 +140,8 @@ def measure(clients, port, epoch, process, seconds):
     process_samples.append(process.sample())
     if first_moved_tick != first_input_tick:
         raise RuntimeError(f'首次移動未在預定更新套用，expected={first_input_tick} observed={first_moved_tick}')
-    if len(clients) == 8:
-        with closing(connect(port)) as excess:
-            if excess.recv(1) != b'':
-                raise RuntimeError('滿員後仍傳送新玩家握手')
+    if not all(observed_moves.values()):
+        raise RuntimeError('有已登入的測試角色從未同步移動')
     advanced = last_tick - initial_tick
     return dict(connected_players=len(clients), agreement_frames=agreed, server_updates=advanced, observed_moves_by_player=observed_moves,
                 seconds=round(duration, 3), updates_per_second=round(advanced / duration, 3),
@@ -148,11 +149,34 @@ def measure(clients, port, epoch, process, seconds):
                 mean_server_cpu_ms_per_update=round((process_samples[-1]['cpu_ms'] - process_samples[0]['cpu_ms']) / advanced, 3),
                 sampled_working_set_bytes=max(sample['working_set_bytes'] for sample in process_samples),
                 sampled_private_memory_bytes=max(sample['private_bytes'] for sample in process_samples),
-                refused_connection_when_full=len(clients) == 8,
                 first_movement_applied_at_scheduled_tick=True)
 
 
-def run(server, output, seconds, count):
+def verify_full_room(resources, clients, port, epoch, ticket):
+    # 停止送入新移動，等先前已排定的指令套用，再記錄斷線前的位置。
+    tick, _ = shared_frame(clients, epoch)
+    drained_tick = tick + MOVEMENT_LEAD_TICKS
+    while tick < drained_tick:
+        tick, positions = shared_frame(clients, epoch)
+    with closing(connect(port)) as excess:
+        if excess.recv(1) != b'':
+            raise RuntimeError('滿員後仍傳送新玩家握手')
+
+    peer, departed, role = clients[-1]
+    peer.close()
+    witness, witness_id, _ = clients[0]
+    wait(witness, epoch, witness_id, lambda _, states, __: departed not in states)
+    replacement = attach(resources, port, epoch, role, ticket, reconnect=True)
+    if replacement[1] == departed:
+        raise RuntimeError('重連重用了舊的連線識別')
+    _, restored = shared_frame([*clients[:-1], replacement], epoch)
+    if restored[replacement[1]] != positions[departed]:
+        raise RuntimeError('重連後角色位置未恢復')
+    return dict(refused_connection_when_full=True, resumed_after_full_room_disconnect=True,
+                restored_position_m=restored[replacement[1]])
+
+
+def run(server, output, seconds, count, verify_full):
     digest = sha256(server.read_bytes()).hexdigest()
     with ExitStack() as resources:
         errors = resources.enter_context((output / 'Server.stderr.log').open('xb'))
@@ -165,8 +189,12 @@ def run(server, output, seconds, count):
         resources.callback(child.terminate)
         port, epoch = ready_line(child)
         counters = resources.enter_context(closing(ProcessCounters(child.pid)))
-        clients = [attach(resources, port, epoch, index % 3 + 1) for index in range(count)]
-        result = measure(clients, port, epoch, counters, seconds)
+        tickets = [token_bytes(32) for _ in range(count)]
+        clients = [attach(resources, port, epoch, index % 3 + 1, ticket)
+                   for index, ticket in enumerate(tickets)]
+        result = measure(clients, epoch, counters, seconds)
+        if verify_full:
+            result.update(verify_full_room(resources, clients, port, epoch, tickets[-1]))
         if child.poll() is not None:
             raise RuntimeError('專用伺服器提前結束')
     if digest != sha256(server.read_bytes()).hexdigest():
@@ -182,11 +210,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--clients', type=int, default=8, choices=range(2, 9))
+    parser.add_argument('--clients', type=int, default=8, choices=range(2, 17))
+    parser.add_argument('--verify-full', action='store_true', help='檢查滿員拒絕及離開後以同一角色重連')
     parser.add_argument('--seconds', type=int, default=30)
     args = parser.parse_args()
     if not 10 <= args.seconds <= 300:
         parser.error('量測時間請設定為 10 至 300 秒')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    run(args.server.resolve(strict=True), Path(mkdtemp(prefix='capacity-', dir=output)), args.seconds, args.clients)
+    run(args.server.resolve(strict=True), Path(mkdtemp(prefix='capacity-', dir=output)),
+        args.seconds, args.clients, args.verify_full)

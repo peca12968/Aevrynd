@@ -35,7 +35,7 @@ using Mistwatch::RiverbankClass;
 using namespace Mistwatch::LocalWorldTcp;
 using Clock = std::chrono::steady_clock;
 constexpr NetworkEndpoint3D ServerEndpoint{1};
-constexpr std::size_t MaxClients = 8;
+constexpr std::size_t MaxClients = 16;
 constexpr auto TickDuration = std::chrono::milliseconds(50);
 
 class WorldServer {

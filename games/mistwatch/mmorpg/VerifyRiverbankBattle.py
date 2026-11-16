@@ -16,8 +16,8 @@ def frame(peer, data):
     peer.sendall(struct.pack('!I', len(data)) + data)
 
 
-def send_movement(peer, epoch, tick, sequence, player, move_x=0, move_z=32767):
-    payload = struct.pack('<QQQIhhhB', epoch, tick + 3, sequence, player, move_x, move_z, 0, 0)
+def send_movement(peer, epoch, tick, sequence, player, move_x=0, move_z=32767, *, lead_ticks=3):
+    payload = struct.pack('<QQQIhhhB', epoch, tick + lead_ticks, sequence, player, move_x, move_z, 0, 0)
     frame(peer, wire.HEADER.pack(b'AENP', 1, 2, 0, len(payload), wire.crc32c(payload), wire.sha256(payload).digest()) + payload)
 
 
