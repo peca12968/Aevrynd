@@ -59,6 +59,17 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   add_test(NAME MistwatchRiverbankLiveReconnectTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLiveReconnect.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
+  add_executable(MistwatchRiverbankTerritoryHudSmoke RiverbankTerritoryHudSmoke.cpp)
+  target_compile_definitions(MistwatchRiverbankTerritoryHudSmoke PRIVATE NOMINMAX)
+  target_compile_options(MistwatchRiverbankTerritoryHudSmoke PRIVATE /W4 /WX /permissive- /utf-8)
+  add_test(NAME MistwatchRiverbankTerritoryHudTest COMMAND MistwatchRiverbankTerritoryHudSmoke)
+  set_tests_properties(MistwatchRiverbankTerritoryHudTest PROPERTIES TIMEOUT 10 LABELS "mistwatch;territory")
+  add_executable(MistwatchRiverbankPartyMarkerSmoke RiverbankPartyMarkerSmoke.cpp)
+  target_link_libraries(MistwatchRiverbankPartyMarkerSmoke PRIVATE ${MISTWATCH_RUNTIME_LIBRARY})
+  target_compile_definitions(MistwatchRiverbankPartyMarkerSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(MistwatchRiverbankPartyMarkerSmoke PRIVATE /W4 /WX /permissive- /utf-8)
+  add_test(NAME MistwatchRiverbankPartyMarkerTest COMMAND MistwatchRiverbankPartyMarkerSmoke)
+  set_tests_properties(MistwatchRiverbankPartyMarkerTest PROPERTIES TIMEOUT 10 LABELS "mistwatch;party")
   add_test(NAME MistwatchRiverbankPartyLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankParty.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")

@@ -6,7 +6,8 @@ from ctypes import wintypes
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
-from math import ceil
+from itertools import combinations
+from math import ceil, dist
 import os
 from pathlib import Path
 from secrets import token_bytes
@@ -100,6 +101,10 @@ def measure(clients, epoch, process, seconds):
     if code != OK or state[0] != 0:
         raise RuntimeError('無法以公會查詢同步量測起點')
     initial_tick, initial_positions = shared_frame(clients, epoch)
+    spawn_gaps = [dist(left, right) for left, right in combinations(initial_positions.values(), 2)]
+    minimum_spawn_gap = min(spawn_gaps) if spawn_gaps else None
+    if minimum_spawn_gap is not None and minimum_spawn_gap < 1.05:
+        raise RuntimeError(f'營地出生位置重疊或距離不足，minimum={minimum_spawn_gap:.3f} m')
     process_samples = [process.sample()]
     times, rtts = [], []
     last_tick = initial_tick
@@ -155,6 +160,7 @@ def measure(clients, epoch, process, seconds):
                 mean_server_cpu_ms_per_update=round((process_samples[-1]['cpu_ms'] - process_samples[0]['cpu_ms']) / advanced, 3),
                 sampled_working_set_bytes=max(sample['working_set_bytes'] for sample in process_samples),
                 sampled_private_memory_bytes=max(sample['private_bytes'] for sample in process_samples),
+                minimum_spawn_gap_m=minimum_spawn_gap,
                 first_movement_applied_at_scheduled_tick=True)
 
 
@@ -199,8 +205,12 @@ def run(server, output, seconds, count, verify_full, capacity):
         port, epoch = ready_line(child)
         counters = resources.enter_context(closing(ProcessCounters(child.pid)))
         tickets = [token_bytes(32) for _ in range(count)]
-        clients = [attach(resources, port, epoch, index % 3 + 1, ticket)
-                   for index, ticket in enumerate(tickets)]
+        clients = []
+        for index, ticket in enumerate(tickets):
+            clients.append(attach(resources, port, epoch, index % 3 + 1, ticket))
+            # 登入期間也讀取既有連線。資料庫註冊較慢時，避免最早加入的客戶端累積快照。
+            if len(clients) % 4 == 0:
+                shared_frame(clients, epoch)
         result = measure(clients, epoch, counters, seconds)
         if verify_full:
             result.update(verify_full_room(resources, clients, port, epoch, tickets[-1]))

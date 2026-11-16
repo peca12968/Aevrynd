@@ -6,6 +6,7 @@
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankProfileWire.h"
+#include "RiverbankCampSpawn.h"
 #include "RiverbankProfileRegistration.h"
 #include "RiverbankGuildWire.h"
 #include "RiverbankTerritoryWire.h"
@@ -235,7 +236,11 @@ private:
             if (action->kind == Mistwatch::RiverbankAction::ReturnToCamp) {
                 if (!encounter_.ReturnToCamp(id, action->sequence)) return true;
                 // 先清除倒地時尚在排程的移動，正常狀態會在這一輪快照後恢復。
-                return world_.SetClientMovementEnabled(id, false) && world_.SetClientPosition(id, {});
+                GlobalPosition3D position{};
+#ifdef AEVRYND_MISTWATCH_PROFILES
+                if (profiles_) position = CampSpawn(id);
+#endif
+                return world_.SetClientMovementEnabled(id, false) && world_.SetClientPosition(id, position);
             }
             // Cooldown, range and duplicates are ordinary rejected actions, not connection errors.
             (void)encounter_.Submit(id, action->sequence, action->kind, action->ally);
@@ -275,6 +280,37 @@ private:
     }
 
 #ifdef AEVRYND_MISTWATCH_PROFILES
+    GlobalPosition3D CampSpawn(std::uint32_t actor) const {
+        static_assert(Mistwatch::RiverbankCampSpawnSites.size() > MaximumRoomCapacity);
+        std::array<Vec3, MaximumRoomCapacity> occupants{};
+        std::size_t count = 0;
+        for (const auto& [id, client] : peers_) {
+            if (id == actor || client.playerClass == RiverbankClass::None) continue;
+            if (const auto state = world_.Player(id); state &&
+                ToLocalPosition3D(state->position, WorldOrigin3D{}, occupants[count])) ++count;
+        }
+        constexpr float minimumSpacingSquared = 1.05f * 1.05f;
+        float bestClearance = -1.f;
+        Vec3 chosen{};
+        for (const auto marker : Mistwatch::RiverbankCampSpawnSites) {
+            float clearance = std::numeric_limits<float>::infinity();
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto difference = marker - occupants[i];
+                clearance = std::min(clearance, difference.x * difference.x + difference.z * difference.z);
+            }
+            if (clearance > bestClearance) {
+                chosen = marker;
+                bestClearance = clearance;
+            }
+            if (clearance >= minimumSpacingSquared) break;
+        }
+        // 玩家可移動至格點之間。若所有格點都有人靠近，採取距離最近玩家最遠的格點。
+        GlobalPosition3D position{};
+        if (!ToGlobalPosition3D(chosen, WorldOrigin3D{}, position))
+            throw std::logic_error("Invalid Riverbank camp spawn site");
+        return position;
+    }
+
     static constexpr std::uint64_t ResumeWindowTicks = 120 * Mistwatch::RiverbankEncounter::TicksPerSecond;
     struct SuspendedProfile {
         GlobalPosition3D position;
@@ -320,7 +356,7 @@ private:
             suspended = suspendedProfiles_.end();
         }
         const bool resuming = suspended != suspendedProfiles_.end();
-        if (!JoinWorld(id, client, found.playerClass, resuming ? suspended->second.position : GlobalPosition3D{}) ||
+        if (!JoinWorld(id, client, found.playerClass, resuming ? suspended->second.position : CampSpawn(id)) ||
             !encounter_.RestoreRewards(id, found.rewards, found.fieldHides) ||
             !encounter_.SetBossGear(id, profiles_->ReadBossGear(found.id).equipped) ||
             !encounter_.SetTrailPack(id, found.trailPack)) return false;

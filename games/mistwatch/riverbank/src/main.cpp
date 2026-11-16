@@ -10,7 +10,10 @@
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankGuildPanel.h"
 #include "RiverbankPartyPanel.h"
+#include "RiverbankPartyMarker.h"
+#include "RiverbankTerritoryHud.h"
 #include "RiverbankGearPanel.h"
+#include "RiverbankCampSpawn.h"
 #endif
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
@@ -4131,17 +4134,35 @@ private:
 
     void DrawRiverbankTerritory(Aevrynd::DrawList& draw) {
         using Area=Mistwatch::RiverbankTerritory;
+        using Phase=Mistwatch::RiverbankTerritoryPhase;
         const auto* state=localWorld->Territory();
         if(!state)return;
+        const auto hud=Mistwatch::ReadRiverbankTerritoryHud(*state);
         const float distance=std::hypot(session.feet.x-Area::CenterX,session.feet.z-Area::CenterZ);
-        draw.Quad({1059,91},{408,146},{.035f,.065f,.052f,.94f});
-        draw.SystemText({875,27},"北岸瞭望地 · "+std::to_string(int(distance))+" 公尺",18.f,{.85f,.95f,.89f,1});
-        draw.SystemText({875,58},"歸屬 "+(state->ownerName.empty()?std::string("無"):state->ownerName),16.f,{.93f,.96f,.94f,1});
-        const auto status=state->contested?std::string("雙方在場 · 佔領暫停"):
-            state->challenger?state->challengerName+" · 佔領中 "+std::to_string(state->progress*100u/Area::HoldTicks)+"%":
-            "過橋往東 · 會長或幹部可發起佔領";
-        draw.SystemText({875,87},status,15.f,{.90f,.91f,.75f,1});
-        draw.SystemText({875,116},"領地獎勵 "+std::to_string(state->rewards)+" · 歷史場次 "+std::to_string(state->revision),
+        draw.Quad({1059,99},{408,162},{.035f,.065f,.052f,.94f});
+        const auto location=Area::Contains(session.feet.x,session.feet.z)?std::string("已進入領地"):
+            std::to_string(int(distance))+" 公尺";
+        draw.SystemText({875,27},"北岸瞭望地 · "+location,18.f,{.85f,.95f,.89f,1});
+        const auto owner=state->owner?Mistwatch::RiverbankTerritoryDisplayName(state->ownerName):"無";
+        draw.SystemText({875,55},"歸屬 "+owner,16.f,{.93f,.96f,.94f,1});
+        const Color accent=hud.phase==Phase::Contested?Color{1.f,.68f,.43f,1}:
+            hud.phase==Phase::Capturing?Color{.99f,.83f,.40f,1}:Color{.77f,.91f,.80f,1};
+        if(hud.showProgress){
+            const auto name=state->challenger?Mistwatch::RiverbankTerritoryDisplayName(state->challengerName):"";
+            const auto text=hud.phase==Phase::Contested?
+                (name.empty()?std::string("多個公會在場 · 佔領暫停"):name+" · 佔領暫停"):
+                name+" · 正在佔領";
+            draw.SystemText({875,84},text,15.f,accent);
+            draw.SystemText({1200,84},std::to_string(hud.percent)+"%",15.f,accent);
+            constexpr float fullWidth=367.f;
+            const float filled=fullWidth*hud.fraction;
+            draw.Quad({1058.5f,114},{fullWidth,6},{.20f,.27f,.23f,1});
+            if(filled>0.f)draw.Quad({875.f+filled*.5f,114},{filled,6},accent);
+        }else{
+            const auto text=hud.phase==Phase::Held?"敵方會長或幹部進圈可發起爭奪":"會長或幹部進圈可發起佔領";
+            draw.SystemText({875,86},text,15.f,accent);
+        }
+        draw.SystemText({875,138},"領地獎勵 "+std::to_string(state->rewards)+" · 歷史場次 "+std::to_string(state->revision),
             15.f,{.78f,.88f,.83f,1});
     }
 
@@ -4263,7 +4284,7 @@ private:
             if(const auto* battle=localWorld->Battle();battle&&battle->player.health){
                 const auto recovered=session.feet;
                 if(battle->owner!=campCapturePlayer||Length(recovered-campDownedFeet)<10.f||
-                    std::hypot(recovered.x,recovered.z)>.01f||
+                    !Mistwatch::IsRiverbankCampSpawn(recovered)||
                     std::hypot(lastRenderedCamera.target.x-recovered.x,lastRenderedCamera.target.z-recovered.z)>.1f)
                     throw std::runtime_error("Camp return did not restore the active player and camera");
                 auto receipt=localWorldScreenshot;receipt+=L".camp.txt";
@@ -4716,6 +4737,10 @@ private:
         unsigned peers=0;
 #ifdef AEVRYND_MISTWATCH_PROFILES
         const auto* party=localWorld->Party();
+        const bool showPartyMarkers=party&&!riverbankParty.Open()&&!riverbankSettingsMenu.Open()&&
+            !riverbankGuild.Open()&&!riverbankGear.Open();
+        std::array<Mistwatch::RiverbankPartyMarker,Mistwatch::RiverbankParty::MaxMembers-1> partyMarkers{};
+        std::size_t partyMarkerCount=0;
 #endif
         if(const auto* view=localWorld->Snapshot()){
 #ifndef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
@@ -4741,21 +4766,38 @@ private:
                 ++peers;
                 separatedPeer|=distance>.8f;
 #ifdef AEVRYND_MISTWATCH_PROFILES
-                if(party&&!riverbankParty.Open()&&!riverbankSettingsMenu.Open()&&distance<=12.f){
+                if(showPartyMarkers&&distance<=12.f&&partyMarkerCount<partyMarkers.size()){
                     const auto member=std::ranges::find(party->online,entity.id.low,&Mistwatch::RiverbankPartyWire::Member::actor);
-                    if(member!=party->online.end()&&!member->health){
-                        const auto marker=ProjectToViewport(*feet+Vec3{0,2.f,0},lastRenderedCamera,{1280,720});
-                        if(marker.visible&&marker.position.x>70.f&&marker.position.x<1210.f&&
-                            marker.position.y>230.f&&marker.position.y<565.f){
-                            const auto center=marker.position;
-                            draw.Quad(center,{94,24},{.10f,.047f,.036f,.93f});
-                            draw.SystemText(center+Vec2{-33.f,-9.f},"隊友倒地",15.f,{1.f,.70f,.47f,1.f});
-                        }
+                    if(member!=party->online.end()){
+                        const auto point=ProjectToViewport(*feet+Vec3{0,2.f,0},lastRenderedCamera,{1280,720});
+                        if(const auto marker=Mistwatch::MakeRiverbankPartyMarker(*member,entity.flags,point,distance))
+                            partyMarkers[partyMarkerCount++]=*marker;
                     }
                 }
 #endif
             }
         }
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        const auto candidates=std::span(partyMarkers).first(partyMarkerCount);
+        const auto visibleMarkers=Mistwatch::ArrangeRiverbankPartyMarkers(candidates);
+        for(const auto& marker:candidates.first(visibleMarkers)){
+            const auto center=marker.center;
+            if(marker.downed){
+                draw.Quad(center,{94,24},{.10f,.047f,.036f,.93f});
+                draw.SystemText(center+Vec2{-30.f,-9.f},"隊友倒地",15.f,{1.f,.70f,.47f,1.f});
+                continue;
+            }
+            draw.Quad(center,{74,26},{.035f,.075f,.06f,.94f});
+            draw.SystemText(center+Vec2{-14.f,-11.f},Mistwatch::RiverbankClassName(marker.playerClass),
+                            14.f,{.81f,.97f,.88f,1.f});
+            if(marker.showHealth){
+                constexpr float width=58.f;
+                draw.Quad(center+Vec2{0,8.f},{width,3.f},{.22f,.28f,.24f,1.f});
+                const auto filled=width*marker.healthFraction;
+                draw.Quad(center+Vec2{(filled-width)*.5f,8.f},{filled,3.f},{.43f,.83f,.58f,1.f});
+            }
+        }
+#endif
         if(riverbankSettingsMenu.Open()){
             DrawRiverbankSettings(draw);
         }else{
