@@ -14,6 +14,7 @@
 #include "RiverbankTerritoryHud.h"
 #include "RiverbankGearPanel.h"
 #include "RiverbankCampSpawn.h"
+#include "RiverbankRouteMap.h"
 #endif
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
@@ -4002,6 +4003,8 @@ private:
     Mistwatch::RiverbankGuildPanel riverbankGuild;
     Mistwatch::RiverbankPartyPanel riverbankParty;
     Mistwatch::RiverbankGearPanel riverbankGear;
+    Mistwatch::RiverbankRouteMap::Menu riverbankRouteMap;
+    std::optional<Mistwatch::RiverbankRouteMap::TerrainGrid> riverbankMapTerrain;
     bool localWorldGuildCapture{}, localWorldTerritoryCapture{}, localWorldPartyCapture{}, localWorldGearCapture{};
     bool localWorldExpeditionCapture{}, expeditionInteractPending{}, expeditionCaptureInteracted{};
     unsigned territoryApproachStep{};
@@ -4557,20 +4560,30 @@ private:
         const bool windowFocused=input.Focused()&&!input.FocusLost();
 #ifdef AEVRYND_MISTWATCH_PROFILES
         const auto socialOpen=[&]{return riverbankGuild.Open()||riverbankParty.Open()||riverbankGear.Open();};
+        const bool mapConsumesInput=riverbankRouteMap.Update(windowFocused&&localWorldScreenshot.empty(),
+            localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready,input.Pressed(VK_TAB),input.Pressed(VK_ESCAPE),
+            socialOpen()||riverbankSettingsMenu.Open()||input.Pressed(VK_F10));
+        if(windowFocused&&riverbankRouteMap.Open()){
+            if(input.Pressed(VK_BACK))riverbankRouteMap.ClearWaypoint();
+            else for(std::size_t i=0;i<Mistwatch::RiverbankRouteMap::landmarks.size();++i){
+                if(input.Pressed(unsigned('1')+unsigned(i))){riverbankRouteMap.Track(i);break;}
+            }
+        }
 #else
         const auto socialOpen=[] {return false;};
+        const bool mapConsumesInput=false;
 #endif
         const auto settings=riverbankSettingsMenu.Update(windowFocused&&localWorldScreenshot.empty(),
-            input.Pressed(VK_F10),input.Pressed(VK_ESCAPE),socialOpen());
+            input.Pressed(VK_F10),input.Pressed(VK_ESCAPE),socialOpen()||mapConsumesInput);
         if(settings.editable)UpdateRiverbankSettings(e,input);
 #ifdef AEVRYND_MISTWATCH_PROFILES
-        if(!settings.consumesInput){
+        if(!settings.consumesInput&&!mapConsumesInput){
             if(!riverbankParty.Open()&&!riverbankGear.Open())riverbankGuild.Toggle(input,*localWorld);
             if(!riverbankGear.Open())riverbankParty.Toggle(input,*localWorld,riverbankGuild.Open());
             riverbankGear.Toggle(input,*localWorld,riverbankGuild.Open()||riverbankParty.Open());
         }
 #endif
-        const bool focused=windowFocused&&!settings.consumesInput&&!socialOpen();
+        const bool focused=windowFocused&&!settings.consumesInput&&!socialOpen()&&!mapConsumesInput;
         const float x=float(input.Down('D'))-float(input.Down('A'));
         const float z=float(input.Down('W'))-float(input.Down('S'));
         const float yaw=Mistwatch::PlayerCameraMovementYaw(playerCameraMotion.Camera(),orbit.yaw);
@@ -4737,7 +4750,7 @@ private:
         unsigned peers=0;
 #ifdef AEVRYND_MISTWATCH_PROFILES
         const auto* party=localWorld->Party();
-        const bool showPartyMarkers=party&&!riverbankParty.Open()&&!riverbankSettingsMenu.Open()&&
+        const bool showPartyMarkers=party&&!riverbankParty.Open()&&!riverbankSettingsMenu.Open()&&!riverbankRouteMap.Open()&&
             !riverbankGuild.Open()&&!riverbankGear.Open();
         std::array<Mistwatch::RiverbankPartyMarker,Mistwatch::RiverbankParty::MaxMembers-1> partyMarkers{};
         std::size_t partyMarkerCount=0;
@@ -4800,6 +4813,11 @@ private:
 #endif
         if(riverbankSettingsMenu.Open()){
             DrawRiverbankSettings(draw);
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        }else if(riverbankRouteMap.Open()&&localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready){
+            if(!riverbankMapTerrain)riverbankMapTerrain=Mistwatch::RiverbankRouteMap::Build(terrain);
+            Mistwatch::RiverbankRouteMap::Draw(draw,riverbankMapTerrain,session.feet,riverbankRouteMap.Waypoint());
+#endif
         }else{
             draw.Quad({273,60},{526,106},{.04f,.07f,.065f,.94f});
             draw.SystemText({20,18},"霧境守望 · 河岸多人測試",22.f,{.77f,.93f,.81f,1});
@@ -4817,6 +4835,10 @@ private:
             }
             draw.SystemText({20,58},status,16.f,{.94f,.96f,.93f,1});
             if(localWorldScreenshot.empty())draw.SystemText({432,20},"F10 設定",16.f,{.86f,.92f,.88f,1});
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            if(localWorldScreenshot.empty()&&localWorldStatus==Status::Ready)
+                draw.SystemText({20,80},"Tab 河岸地圖",16.f,{.86f,.92f,.88f,1});
+#endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
             DrawRiverbankBattleHud(draw);
 #endif
@@ -4824,6 +4846,8 @@ private:
             DrawRiverbankTerritory(draw);
             DrawRiverbankExpedition(draw);
             DrawRiverbankTrailSupplies(draw);
+            if(localWorldStatus==Status::Ready&&!riverbankGuild.Open()&&!riverbankParty.Open()&&!riverbankGear.Open())
+                Mistwatch::RiverbankRouteMap::DrawTrackedLandmark(draw,riverbankRouteMap.Waypoint(),session.feet);
             riverbankGuild.Draw(draw,*localWorld);
             riverbankParty.Draw(draw,*localWorld);
             riverbankGear.Draw(draw,*localWorld);
