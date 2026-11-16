@@ -92,7 +92,10 @@ def run(args, session):
             if args.share_tailnet and args.port and tailnet.port_reserved(tailnet.tailscale('serve', 'status', '--json'), args.port):
                 raise RuntimeError('該連接埠已有 Tailscale 服務，請改用其他連接埠')
             diagnostics = resources.enter_context((session / 'server.log').open('xb'))
-            server = subprocess.Popen([str(args.server), str(args.port)], cwd=session, stdin=subprocess.DEVNULL,
+            command = [str(args.server), str(args.port)]
+            if args.capacity is not None:
+                command.extend(('--capacity', str(args.capacity)))
+            server = subprocess.Popen(command, cwd=session, stdin=subprocess.DEVNULL,
                                       stdout=subprocess.PIPE, stderr=diagnostics, text=True,
                                       env=dict(environment, AEVRYND_MISTWATCH_PROFILE_DB=str(database)),
                                       creationflags=subprocess.CREATE_NO_WINDOW)
@@ -110,6 +113,8 @@ def run(args, session):
                 tailnet.wait_for_forwarding(relay, local_node, port, epoch)
 
         report = {'port': port, 'epoch': epoch, 'server_pid': server.pid if server else None}
+        if server:
+            report['room_capacity'] = args.capacity or 16
         if server_node:
             report['tailnet_address'] = server_node.address
         if args.check_server:
@@ -146,7 +151,11 @@ def main():
     mode.add_argument('--share-tailnet', action='store_true', help='遊戲執行時在現有 Tailscale 私有網路分享')
     mode.add_argument('--join-tailnet', type=tailnet.address, metavar='IP', help='加入這個 Tailscale IPv4 位址的河岸世界')
     parser.add_argument('--port', type=int, default=0, help='連接埠。主機使用 0 自動選擇，加入時填入主機提供的連接埠')
+    parser.add_argument('--capacity', type=int, choices=range(1, 33), metavar='1..32',
+                        help='開房人數上限，預設 16')
     args = parser.parse_args()
+    if args.capacity is not None and args.join_tailnet:
+        parser.error('房間容量由開房者設定')
     if not 0 <= args.port <= 65535 or (args.join_tailnet and (not args.port or args.server)):
         parser.error('加入私網時請提供有效連接埠，主機執行檔由開房者指定')
     args.data = args.data.resolve()

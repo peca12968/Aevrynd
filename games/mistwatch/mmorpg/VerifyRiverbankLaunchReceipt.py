@@ -6,18 +6,16 @@ import sys
 from tempfile import mkdtemp
 
 
-def main():
-    server, evidence_dir = map(Path, sys.argv[1:])
+def check_room(server, evidence_dir, capacity=None):
     data = Path(mkdtemp(prefix='launcher-receipt-', dir=evidence_dir))
     launcher = Path(__file__).with_name('LaunchRiverbank.py')
-    result = subprocess.run(
-        [sys.executable, '-B', str(launcher), '--server', str(server),
-         '--data', str(data), '--check-server'],
-        capture_output=True, check=True, text=True, timeout=12,
-    )
+    command = [sys.executable, '-B', str(launcher), '--server', str(server), '--data', str(data), '--check-server']
+    if capacity is not None:
+        command.extend(('--capacity', str(capacity)))
+    result = subprocess.run(command, capture_output=True, check=True, text=True, timeout=8)
     (receipt,) = (data / 'sessions').glob('riverbank-*/launch.json')
     persisted = json.loads(receipt.read_text(encoding='utf-8'))
-    if persisted != json.loads(result.stdout):
+    if persisted != json.loads(result.stdout) or persisted['room_capacity'] != (capacity or 16):
         raise AssertionError('主控台與啟動收據不一致')
     if not (0 < persisted['port'] <= 65535 and persisted['epoch'] > 0
             and persisted['server_pid'] > 0 and persisted['player'] == 1
@@ -31,4 +29,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    server, evidence_dir = map(Path, sys.argv[1:])
+    check_room(server, evidence_dir)
+    check_room(server, evidence_dir, capacity=32)

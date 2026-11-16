@@ -147,10 +147,28 @@ int main(int argc, char** argv) {
     const auto vest = std::ranges::find(asset.materialSlotNames, "AX textile | Warm woven vest");
     if (vest == asset.materialSlotNames.end()) return 10;
     const auto vestIndex = static_cast<std::size_t>(vest - asset.materialSlotNames.begin());
-    for (std::size_t actor = 0; actor < roles.size(); ++actor) {
-        const auto playerClass = Mistwatch::ReadRiverbankClassFlags(Mistwatch::RiverbankClassFlags(roles[actor]) | 1u);
+    constexpr std::size_t roomActors = 32;
+    const auto unbatched = LoadSkinnedModelAssetFileDetailed(argv[1]);
+    if (!unbatched || asset.model.bindMesh.vertices.size() != unbatched.asset.model.bindMesh.vertices.size()) return 23;
+    std::size_t expectedFirstIndex = 0;
+    for (const auto& group : asset.submeshes) {
+        if (group.firstIndex != expectedFirstIndex) return 23;
+        const auto& baseline = unbatched.asset.model.bindMesh.indices;
+        for (const auto& part : unbatched.asset.submeshes) {
+            if (part.materialSlot != group.materialSlot) continue;
+            const auto first = baseline.begin() + part.firstIndex;
+            if (expectedFirstIndex + part.indexCount > asset.model.bindMesh.indices.size() ||
+                !std::equal(first, first + part.indexCount, asset.model.bindMesh.indices.begin() + expectedFirstIndex)) return 23;
+            expectedFirstIndex += part.indexCount;
+        }
+        if (expectedFirstIndex != group.firstIndex + group.indexCount) return 23;
+    }
+    if (expectedFirstIndex != asset.model.bindMesh.indices.size()) return 23;
+    for (std::size_t actor = 0; actor < roomActors; ++actor) {
+        const auto role = actor % roles.size();
+        const auto playerClass = Mistwatch::ReadRiverbankClassFlags(Mistwatch::RiverbankClassFlags(roles[role]) | 1u);
         const auto materials = Mistwatch::RiverbankAvatarMaterials(asset, playerClass);
-        if (PackColorRgba8(materials[vestIndex].tint) != PackColorRgba8(vests[actor])) return 11;
+        if (PackColorRgba8(materials[vestIndex].tint) != PackColorRgba8(vests[role])) return 11;
         const Vec3 position = feet + Vec3{2.f * static_cast<float>(actor), 0, 0};
         const auto transform = motion.Evaluate(asset.model.skeleton, state, position, scratch, pose);
         const auto palette = AddSkinPaletteFromPose(scene, asset.model, pose, workspace);
@@ -172,10 +190,21 @@ int main(int argc, char** argv) {
         }
         if (!submittedVest || changedFabricParts != 3) return 14;
     }
-    if (scene.skinnedMeshInstances.size() != (Mistwatch::HasRiverbankBoots(asset) ? 66u : 54u) || scene.skinPaletteJoints.size() != 240) return 9;
+    const auto commandsPerActor = Mistwatch::HasRiverbankBoots(asset) ? 15u : 13u;
+    if (scene.skinnedMeshInstances.size() != roomActors * commandsPerActor || scene.skinPaletteJoints.size() != roomActors * 80) return 9;
+    // 兩隻野豬各需要一個繪製項目及 16 根骨骼。
+    const SkinnedMeshHandle3D wildlife{2, {}, 16};
+    const std::array<SkinPaletteJoint3D, 16> wildlifeJoints{};
+    for (int boar = 0; boar < 2; ++boar) {
+        const auto palette = scene.AddSkinPalette(wildlifeJoints);
+        if (!scene.SkinnedMeshInstance(wildlife, palette, Matrix4::Identity(), {}, {}, {}, .25f, false,
+                                       MaterialClass3D::Surface, true, DirectionalShadowAllCascades3D, 0, 3)) return 24;
+    }
+    std::cout << "room_actors=" << roomActors << " boars=2 full_room_draw_commands=" << scene.skinnedMeshInstances.size()
+              << " full_room_skin_joints=" << scene.skinPaletteJoints.size() << '\n';
     std::cout << "samples=195 pelvis_planar_drift_m=" << largestDrift
               << " lowest_animated_floor_m=" << lowest << " highest_animated_floor_m=" << highest
-              << " three_role_draw_commands=" << scene.skinnedMeshInstances.size() << '\n';
+              << " three_role_draw_commands=" << 3 * commandsPerActor << '\n';
     if (largestDrift > .035f || lowest < -.004f || highest > .005f) return 7;
     return 0;
 }

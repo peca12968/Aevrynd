@@ -35,14 +35,15 @@ using Mistwatch::RiverbankClass;
 using namespace Mistwatch::LocalWorldTcp;
 using Clock = std::chrono::steady_clock;
 constexpr NetworkEndpoint3D ServerEndpoint{1};
-constexpr std::size_t MaxClients = 16;
+constexpr std::size_t DefaultRoomCapacity = 16;
+constexpr std::size_t MaximumRoomCapacity = 32;
 constexpr auto TickDuration = std::chrono::milliseconds(50);
 
 class WorldServer {
 public:
-    explicit WorldServer(unsigned short port)
-        : listener_(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)), epoch_(MakeEpoch()),
-          transport_({MaxClients + 1}), world_(transport_, ServerEndpoint, epoch_, {.tickRate=20, .maximumClients=MaxClients,
+    WorldServer(unsigned short port, std::size_t capacity)
+        : listener_(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)), capacity_(capacity), epoch_(MakeEpoch()),
+          transport_({capacity_ + 1}), world_(transport_, ServerEndpoint, epoch_, {.tickRate=20, .maximumClients=capacity_,
                                                       .movementLateGraceTicks=4}) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
         wchar_t database[32768]{};
@@ -50,7 +51,7 @@ public:
         if (length >= 32768) throw std::runtime_error("Riverbank profile database path is too long");
         if (length) {
             profiles_ = std::make_unique<Mistwatch::RiverbankProfileStore>(std::filesystem::path(database));
-            registration_ = std::make_unique<Mistwatch::RiverbankProfileRegistration>(*profiles_, MaxClients);
+            registration_ = std::make_unique<Mistwatch::RiverbankProfileRegistration>(*profiles_, capacity_);
             territoryOwner_ = profiles_->ReadTerritoryOwner();
             territory_.ApplyOwnership(territoryOwner_.owner);
         }
@@ -63,7 +64,7 @@ public:
         if (!listener_ || setsockopt(listener_.Get(), SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
                 reinterpret_cast<const char*>(&exclusive), sizeof(exclusive)) != 0
             || bind(listener_.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) != 0
-            || listen(listener_.Get(), static_cast<int>(MaxClients)) != 0 || !Nonblocking(listener_.Get())
+            || listen(listener_.Get(), static_cast<int>(capacity_)) != 0 || !Nonblocking(listener_.Get())
             || !transport_.RegisterEndpoint(ServerEndpoint)) throw std::runtime_error("Cannot start local world listener");
         int size = sizeof(address);
         if (getsockname(listener_.Get(), reinterpret_cast<sockaddr*>(&address), &size) != 0)
@@ -104,7 +105,7 @@ public:
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #ifdef AEVRYND_MISTWATCH_PROFILES
-            std::array<Mistwatch::RiverbankEncounter::SupportMembership, MaxClients> supportGroups{};
+            std::array<Mistwatch::RiverbankEncounter::SupportMembership, MaximumRoomCapacity> supportGroups{};
             std::size_t grouped = 0;
 #endif
             for (const auto& [id, peer] : peers_) {
@@ -183,14 +184,14 @@ private:
     static NetworkEndpoint3D Endpoint(std::uint32_t id) { return {id + 1}; }
 
     void Accept() {
-        for (std::size_t attempt = 0; attempt < MaxClients; ++attempt) {
+        for (std::size_t attempt = 0; attempt < capacity_; ++attempt) {
             Socket socket(accept(listener_.Get(), nullptr, nullptr));
             if (!socket) {
                 if (WSAGetLastError() == WSAEWOULDBLOCK) return;
                 throw std::runtime_error("Local accept failed");
             }
             const BOOL immediate = TRUE;
-            if (peers_.size() == MaxClients || nextId_ == (std::numeric_limits<std::uint32_t>::max)()
+            if (peers_.size() == capacity_ || nextId_ == (std::numeric_limits<std::uint32_t>::max)()
                 || !Nonblocking(socket.Get()) || setsockopt(socket.Get(), IPPROTO_TCP, TCP_NODELAY,
                     reinterpret_cast<const char*>(&immediate), sizeof(immediate)) != 0) continue;
             const auto id = nextId_++;
@@ -275,7 +276,6 @@ private:
 
 #ifdef AEVRYND_MISTWATCH_PROFILES
     static constexpr std::uint64_t ResumeWindowTicks = 120 * Mistwatch::RiverbankEncounter::TicksPerSecond;
-    static constexpr std::size_t ResumeCapacity = 4 * MaxClients;
     struct SuspendedProfile {
         GlobalPosition3D position;
         Mistwatch::SuspendedRiverbankCombat combat;
@@ -356,7 +356,7 @@ private:
             return;
         }
         ExpireProfiles();
-        if (!suspendedProfiles_.contains(client.profileId) && suspendedProfiles_.size() >= ResumeCapacity) {
+        if (!suspendedProfiles_.contains(client.profileId) && suspendedProfiles_.size() >= 4 * capacity_) {
             const auto oldest = std::ranges::min_element(suspendedProfiles_, {}, [](const auto& entry) { return entry.second.lostTick; });
             party_.Forget(oldest->first);
             suspendedProfiles_.erase(oldest);
@@ -527,7 +527,7 @@ private:
     void TickTerritory() {
         if (!profiles_) return;
         using Area = Mistwatch::RiverbankTerritory;
-        std::array<Area::Presence, MaxClients> present{};
+        std::array<Area::Presence, MaximumRoomCapacity> present{};
         std::size_t count{};
         for (const auto& [id, peer] : peers_) {
             if (!peer.guildId) continue;
@@ -548,8 +548,8 @@ private:
         const auto& site = field ? encounter_.Field() : encounter_.Boss();
         if (!profiles_ || site.phase != Mistwatch::EncounterPhase::Defeated) return;
         const auto saved = field ? &Client::savedFieldHides : &Client::savedRewards;
-        std::array<std::int64_t, MaxClients> eligible{};
-        std::array<Client*, MaxClients> credited{};
+        std::array<std::int64_t, MaximumRoomCapacity> eligible{};
+        std::array<Client*, MaximumRoomCapacity> credited{};
         std::size_t count{};
         for (auto& [id, client] : peers_) {
             const auto player = encounter_.Player(id);
@@ -583,6 +583,7 @@ private:
     }
 
     Socket listener_;
+    const std::size_t capacity_;
     std::uint64_t epoch_, tick_{};
     std::uint32_t nextId_{1};
     LoopbackNetworkTransport3D transport_;
@@ -605,15 +606,25 @@ private:
 int main(int argc, char** argv) {
     try {
         unsigned short port = 0;
-        if (argc > 2) throw std::invalid_argument("Usage: MistwatchWorldServer [local-port]");
-        if (argc == 2) {
-            const std::string_view value(argv[1]);
+        std::size_t capacity = DefaultRoomCapacity;
+        int argument = 1;
+        if (argument < argc && std::string_view(argv[argument]) != "--capacity") {
+            const std::string_view value(argv[argument++]);
             const auto result = std::from_chars(value.data(), value.data() + value.size(), port);
             if (result.ec != std::errc{} || result.ptr != value.data() + value.size())
                 throw std::invalid_argument("Invalid local port");
         }
+        if (argument < argc) {
+            if (argc - argument != 2 || std::string_view(argv[argument++]) != "--capacity")
+                throw std::invalid_argument("Usage: MistwatchWorldServer [local-port] [--capacity 1..32]");
+            const std::string_view value(argv[argument]);
+            const auto result = std::from_chars(value.data(), value.data() + value.size(), capacity);
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+                !capacity || capacity > MaximumRoomCapacity)
+                throw std::invalid_argument("Room capacity must be between 1 and 32");
+        }
         const Winsock winsock;
-        WorldServer server(port);
+        WorldServer server(port, capacity);
         server.Run();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

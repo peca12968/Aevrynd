@@ -31,25 +31,35 @@ inline Aevrynd::SkinnedModelAssetData LoadRiverbankAvatarAsset(const std::filesy
     if (asset.submeshes.size() != (boots ? 24u : 20u) || asset.materials.size() != (boots ? 16u : 14u))
         throw std::runtime_error("Riverbank avatar model and material set differ from the verified export");
 
-    // The current GPU skin path supports opaque and masked geometry. Preserve the iris and omit only
-    // the two translucent reflection layers from the draw mesh until the renderer supports them.
+    // 相同材質的部位共用角色骨架、變換和繪製設定，併為連續索引範圍。
+    // 目前保留虹膜，略過 GPU 骨架路徑尚未支援的兩個角膜反射表面。
     const auto& sourceIndices = asset.model.bindMesh.indices;
     std::vector<std::uint32_t> drawIndices;
     std::vector<SkinnedSubmesh3D> drawParts;
     drawIndices.reserve(sourceIndices.size());
-    drawParts.reserve(asset.submeshes.size());
-    for (auto part : asset.submeshes) {
-        if (asset.materials[part.materialSlot].alphaMode == SkinnedMaterialAlphaMode3D::Blend) {
-            if (asset.materialSlotNames[part.materialSlot] != "AX owned | Corneal Fresnel reflection")
+    drawParts.reserve(asset.materials.size());
+    std::size_t omittedSubmeshes = 0;
+    for (std::uint32_t slot = 0; slot < asset.materials.size(); ++slot) {
+        if (asset.materials[slot].alphaMode == SkinnedMaterialAlphaMode3D::Blend) {
+            if (asset.materialSlotNames[slot] != "AX owned | Corneal Fresnel reflection")
                 throw std::runtime_error("Unexpected transparent material on Riverbank avatar");
+            omittedSubmeshes += std::ranges::count(asset.submeshes, slot, &SkinnedSubmesh3D::materialSlot);
             continue;
         }
-        const auto start = sourceIndices.begin() + part.firstIndex;
-        part.firstIndex = static_cast<std::uint32_t>(drawIndices.size());
-        drawIndices.insert(drawIndices.end(), start, start + part.indexCount);
-        drawParts.push_back(part);
+        SkinnedSubmesh3D group{static_cast<std::uint32_t>(drawIndices.size()), 0, slot, 0};
+        for (const auto& part : asset.submeshes) {
+            if (part.materialSlot != slot) continue;
+            if (group.indexCount == 0) group.flags = part.flags;
+            if (group.flags != part.flags) throw std::runtime_error("Riverbank avatar material parts use incompatible flags");
+            const auto start = sourceIndices.begin() + part.firstIndex;
+            drawIndices.insert(drawIndices.end(), start, start + part.indexCount);
+            group.indexCount += part.indexCount;
+        }
+        if (!group.indexCount) throw std::runtime_error("Riverbank avatar material has no geometry");
+        drawParts.push_back(group);
     }
-    if (drawParts.size() != (boots ? 22u : 18u)) throw std::runtime_error("Riverbank avatar eye surface inventory changed");
+    if (omittedSubmeshes != 2 || drawParts.size() != (boots ? 15u : 13u))
+        throw std::runtime_error("Riverbank avatar eye surface inventory changed");
     asset.model.bindMesh.indices = std::move(drawIndices);
     asset.submeshes = std::move(drawParts);
     return std::move(asset);

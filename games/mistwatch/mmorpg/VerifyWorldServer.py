@@ -19,12 +19,20 @@ ENTITY = struct.Struct('<QQ3q3i3fI')
 ENCOUNTER_FRAME = 256
 
 
+def crc32c_entry(value):
+    for _ in range(8):
+        value = (value >> 1) ^ (0x82f63b78 if value & 1 else 0)
+    return value
+
+
+# 逐位元多項式折疊成單一位元組表，仍核對傳輸原有的 CRC32C 與 SHA-256。
+CRC32C_TABLE = tuple(crc32c_entry(value) for value in range(256))
+
+
 def crc32c(payload):
     crc = 0xffffffff
     for byte in payload:
-        crc ^= byte
-        for _ in range(8):
-            crc = (crc >> 1) ^ (0x82f63b78 if crc & 1 else 0)
+        crc = (crc >> 8) ^ CRC32C_TABLE[(crc ^ byte) & 0xff]
     return crc ^ 0xffffffff
 
 

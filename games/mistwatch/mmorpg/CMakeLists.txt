@@ -84,6 +84,11 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
       --server "$<TARGET_FILE:MistwatchWorldServer>" --output "${CMAKE_CURRENT_BINARY_DIR}"
       --clients 16 --seconds 10 --verify-full)
   set_tests_properties(MistwatchRiverbankFullRoomTest PROPERTIES TIMEOUT 35 LABELS "mistwatch;capacity;network")
+  add_test(NAME MistwatchRiverbankExpandedRoomTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/MeasureRiverbankCapacity.py"
+      --server "$<TARGET_FILE:MistwatchWorldServer>" --output "${CMAKE_CURRENT_BINARY_DIR}"
+      --clients 32 --capacity 32 --seconds 10 --verify-full)
+  set_tests_properties(MistwatchRiverbankExpandedRoomTest PROPERTIES TIMEOUT 45 LABELS "mistwatch;capacity;network")
   add_test(NAME MistwatchRiverbankFieldHuntLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankFieldHunt.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")

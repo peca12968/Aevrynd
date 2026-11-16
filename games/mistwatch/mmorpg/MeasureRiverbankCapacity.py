@@ -93,6 +93,12 @@ def distribution(values):
 
 
 def measure(clients, epoch, process, seconds):
+    # 先排空依序登入累積的快照，再用讀取公會請求的回覆核對近期世界更新。
+    shared_frame(clients, epoch)
+    witness, _, _ = clients[0]
+    code, state = guild_command(witness, 1, VIEW)
+    if code != OK or state[0] != 0:
+        raise RuntimeError('無法以公會查詢同步量測起點')
     initial_tick, initial_positions = shared_frame(clients, epoch)
     process_samples = [process.sample()]
     times, rtts = [], []
@@ -100,7 +106,7 @@ def measure(clients, epoch, process, seconds):
     first_input_tick = initial_tick + MOVEMENT_LEAD_TICKS
     begin = last_time = time.perf_counter()
     next_sample = begin + 2
-    sequence, guild_sequence = 0, 0
+    sequence, guild_sequence = 0, 1
     first_moved_tick = None
     last_positions = initial_positions
     observed_moves = {player: 0 for _peer, player, _role in clients}
@@ -176,13 +182,16 @@ def verify_full_room(resources, clients, port, epoch, ticket):
                 restored_position_m=restored[replacement[1]])
 
 
-def run(server, output, seconds, count, verify_full):
+def run(server, output, seconds, count, verify_full, capacity):
     digest = sha256(server.read_bytes()).hexdigest()
     with ExitStack() as resources:
         errors = resources.enter_context((output / 'Server.stderr.log').open('xb'))
         env = {key: value for key, value in os.environ.items() if not key.upper().startswith('AEVRYND_')}
         env['AEVRYND_MISTWATCH_PROFILE_DB'] = str(output / 'CapacityProfiles.sqlite3')
-        child = subprocess.Popen([str(server), '0'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        command = [str(server), '0']
+        if capacity is not None:
+            command.extend(('--capacity', str(capacity)))
+        child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                  stderr=errors, text=True, env=env, creationflags=subprocess.CREATE_NO_WINDOW)
         resources.callback(child.stdout.close)
         resources.callback(child.wait, 5)
@@ -199,7 +208,8 @@ def run(server, output, seconds, count, verify_full):
             raise RuntimeError('專用伺服器提前結束')
     if digest != sha256(server.read_bytes()).hexdigest():
         raise RuntimeError('量測期間伺服器執行檔已變更')
-    result.update(server_path=str(server), server_sha256=digest, recorded_utc=datetime.now(timezone.utc).isoformat(),
+    result.update(room_capacity=capacity if capacity is not None else 16,
+                  server_path=str(server), server_sha256=digest, recorded_utc=datetime.now(timezone.utc).isoformat(),
                   scope='localhost, independent protocol clients, authoritative movement and guild view; no renderer')
     receipt = output / 'RiverbankCapacity.json'
     receipt.write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
@@ -210,13 +220,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--clients', type=int, default=8, choices=range(2, 17))
+    parser.add_argument('--clients', type=int, default=8, choices=range(2, 33), metavar='2..32')
+    parser.add_argument('--capacity', type=int, choices=range(1, 33), metavar='1..32',
+                        help='明確設定伺服器房間人數上限')
     parser.add_argument('--verify-full', action='store_true', help='檢查滿員拒絕及離開後以同一角色重連')
     parser.add_argument('--seconds', type=int, default=30)
     args = parser.parse_args()
     if not 10 <= args.seconds <= 300:
         parser.error('量測時間請設定為 10 至 300 秒')
+    limit = args.capacity if args.capacity is not None else 16
+    if args.clients > limit or (args.verify_full and args.clients != limit):
+        parser.error('測試人數必須符合房間容量。滿員測試的人數須等於上限')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     run(args.server.resolve(strict=True), Path(mkdtemp(prefix='capacity-', dir=output)),
-        args.seconds, args.clients, args.verify_full)
+        args.seconds, args.clients, args.verify_full, args.capacity)
