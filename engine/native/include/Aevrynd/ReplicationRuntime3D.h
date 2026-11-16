@@ -7,7 +7,7 @@
 #include <set>
 
 namespace Aevrynd {
-struct ReplicationRuntimeSettings3D {std::uint32_t tickRate{60};std::size_t maximumClients{8},maximumInputHistory{256},maximumSnapshotHistory{64},maximumPacketsPerTick{256},maximumSnapshotEntities{4096};std::int32_t interestLoadRadius{2},interestRetainRadius{3};float interestChunkSize{32.f},movementPerTick{.1f};};
+struct ReplicationRuntimeSettings3D {std::uint32_t tickRate{60};std::size_t maximumClients{8},maximumInputHistory{256},maximumSnapshotHistory{64},maximumPacketsPerTick{256},maximumSnapshotEntities{4096};std::int32_t interestLoadRadius{2},interestRetainRadius{3};float interestChunkSize{32.f},movementPerTick{.1f};std::size_t movementLateGraceTicks{};};
 struct ReplicationRuntimeStats3D {std::uint64_t ticks{},inputsReceived{},duplicateInputs{},staleInputs{},futureInputs{},snapshotsSent{},fullSnapshots{},deltaSnapshots{},acks{},reconciliations{},replayedInputs{},historyDrops{},packetRejects{};};
 struct ReplicationPlayerState3D {NetworkEntityId3D entity{};GlobalPosition3D position{};Vec3 velocity{};std::uint64_t tick{};};
 struct ReplicationServerClientTelemetry3D {std::uint32_t clientId{};std::uint64_t interestEpoch{},interestEntered{},interestExited{},entityReentries{},entityDespawns{};std::size_t interestChunks{},visibleEntities{},lastSnapshotEntities{},lastSnapshotDespawns{};GlobalPosition3D authoritativePosition{};};

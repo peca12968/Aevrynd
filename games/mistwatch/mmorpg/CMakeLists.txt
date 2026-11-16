@@ -109,6 +109,10 @@ add_test(NAME MistwatchNativeLocalWorldClientTest
     "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}/NativeClientVerification.json"
     "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
 set_tests_properties(MistwatchNativeLocalWorldClientTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;network")
+add_test(NAME MistwatchRiverbankNetworkLatencyTest
+  COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLatency.py"
+    "$<TARGET_FILE:MistwatchWorldServer>" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>" "${CMAKE_CURRENT_BINARY_DIR}")
+set_tests_properties(MistwatchRiverbankNetworkLatencyTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;network")
 add_test(NAME MistwatchTailnetAddressValidationTest COMMAND MistwatchLocalWorldClientSmoke --tailnet-addresses)
 set_tests_properties(MistwatchTailnetAddressValidationTest PROPERTIES TIMEOUT 5 LABELS "mistwatch;network")
 

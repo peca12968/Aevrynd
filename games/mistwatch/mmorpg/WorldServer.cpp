@@ -42,7 +42,8 @@ class WorldServer {
 public:
     explicit WorldServer(unsigned short port)
         : listener_(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)), epoch_(MakeEpoch()),
-          transport_({MaxClients + 1}), world_(transport_, ServerEndpoint, epoch_, {20, MaxClients}) {
+          transport_({MaxClients + 1}), world_(transport_, ServerEndpoint, epoch_, {.tickRate=20, .maximumClients=MaxClients,
+                                                      .movementLateGraceTicks=4}) {
 #ifdef AEVRYND_MISTWATCH_PROFILES
         wchar_t database[32768]{};
         const auto length = GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_PROFILE_DB", database, 32768);
