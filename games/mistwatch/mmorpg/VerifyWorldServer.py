@@ -69,7 +69,7 @@ def choose(peer, job):
     peer.sendall(struct.pack('!I', len(payload)) + payload)
 
 
-def snapshot_with_classes(peer, epoch, player):
+def snapshot_with_flags(peer, epoch, player):
     kind, body = packet(peer)
     if kind == ENCOUNTER_FRAME:
         kind, body = packet(peer)
@@ -77,16 +77,21 @@ def snapshot_with_classes(peer, epoch, player):
     session, tick, _, _, _, destination, full, entities, gone = SNAPSHOT.unpack_from(body)
     assert session == epoch and destination == player and full == 1
     assert len(body) == SNAPSHOT.size + entities * ENTITY.size + gone * 16
-    states, classes, offset = {}, {}, SNAPSHOT.size
+    states, entity_flags, offset = {}, {}, SNAPSHOT.size
     for _ in range(entities):
         hi, low, chunk_x, _, chunk_z, x_mm, _, z_mm, *_, flags = ENTITY.unpack_from(body, offset)
         assert hi == epoch and low not in states
         assert bool(flags & 1) == (low == player)
         states[low] = (chunk_x * 32 + x_mm / 1000, chunk_z * 32 + z_mm / 1000)
-        classes[low] = (flags >> 8) & 255
+        entity_flags[low] = flags
         offset += ENTITY.size
     removed = [struct.unpack_from('<QQ', body, offset + 16 * i) for i in range(gone)]
-    return tick, states, removed, classes
+    return tick, states, removed, entity_flags
+
+
+def snapshot_with_classes(peer, epoch, player):
+    tick, states, removed, flags = snapshot_with_flags(peer, epoch, player)
+    return tick, states, removed, {actor: (value >> 8) & 255 for actor, value in flags.items()}
 
 
 def snapshot(peer, epoch, player):

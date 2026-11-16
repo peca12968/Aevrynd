@@ -40,6 +40,55 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 5; ++i) state.Advance({}, .05f);
     if (state.distance != 0.f || state.walking != 0.f || state.heading < 1.56f) return 6;
 
+    if (motion.HasDownedClip()) {
+        auto fallen = state;
+        const auto head = std::ranges::find(asset.jointNames, "head");
+        if (head == asset.jointNames.end()) return 15;
+        const auto headIndex = static_cast<std::size_t>(head - asset.jointNames.begin());
+        float gap = 0.f, signedWorstGap = 0.f;
+        int worstFrame = 0;
+        for (int frame = 0; frame <= 24; ++frame) {
+            if (frame != 0) fallen.Advance({}, 1.f / 24.f, true);
+            const auto placement = motion.Evaluate(asset.model.skeleton, fallen, feet, scratch, pose);
+            if (!SkinModelInto(asset.model, pose, workspace, skin)) return 16;
+            float floor = 100.f;
+            for (const auto& v : skin.vertices) floor = std::min(floor, TransformPoint(placement, {v.x, v.y, v.z}).y);
+            if (std::abs(floor - feet.y) > gap) {
+                signedWorstGap = floor - feet.y;
+                gap = std::abs(signedWorstGap);
+                worstFrame = frame;
+            }
+            if (!std::isfinite(floor)) return 17;
+        }
+        fallen.Advance({}, .001f, true);
+        const auto placement = motion.Evaluate(asset.model.skeleton, fallen, feet, scratch, pose);
+        const Vec3 at = TransformPoint(placement * pose.globalMatrices[headIndex], {});
+        const Vec3 hips = TransformPoint(placement * pose.globalMatrices[pelvis], {});
+        const float headHeight = at.y - feet.y;
+        const float horizontalReach = std::hypot(at.x - hips.x, at.z - hips.z);
+        std::cout << "downed_ground_gap_m=" << gap << " signed_gap_m=" << signedWorstGap << " worst_frame=" << worstFrame << " downed_head_height_m=" << headHeight
+                  << " downed_head_reach_m=" << horizontalReach << '\n';
+        if (gap > .03f || headHeight < .05f || headHeight > .37f || horizontalReach < .5f) return 18;
+        float slopeGap = 0.f;
+        for (const auto normal : {Normalize(Vec3{.26f, 1.f, 0}), Normalize(Vec3{-.46f, 1.f, .35f}),
+                                  Normalize(Vec3{0, 1.f, -.57f})}) {
+            for (const float heading : {0.f, 1.57f, -2.36f}) {
+                fallen.heading = heading;
+                const auto onSlope = motion.Evaluate(asset.model.skeleton, fallen, feet, scratch, pose, normal);
+                if (!SkinModelInto(asset.model, pose, workspace, skin)) return 20;
+                float supportGap = 100.f;
+                for (const auto& v : skin.vertices)
+                    supportGap = std::min(supportGap, Dot(TransformPoint(onSlope, {v.x, v.y, v.z}) - feet, normal));
+                if (!std::isfinite(supportGap)) return 21;
+                slopeGap = std::max(slopeGap, std::abs(supportGap));
+            }
+        }
+        std::cout << "downed_slope_cases=9 max_support_gap_m=" << slopeGap << '\n';
+        if (slopeGap > .01f) return 22;
+        for (int frame = 0; frame < 10; ++frame) fallen.Advance({}, .05f);
+        if (fallen.downedSeconds != 0.f) return 19;
+    }
+
     DrawList scene;
     const SkinnedMeshHandle3D mesh{1, asset.model.skeletonCompatibilityId};
     using Mistwatch::RiverbankClass;

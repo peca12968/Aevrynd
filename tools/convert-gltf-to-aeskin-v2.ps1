@@ -6,7 +6,8 @@ param(
     [int]$MaximumIndices = 3000000,
     [int]$MaximumJoints = 256,
     [int]$MaximumPrimitives = 1024,
-    [int]$MaximumAnimations = 128
+    [int]$MaximumAnimations = 128,
+    [string[]]$PreserveConstantOverridesFor = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -151,7 +152,53 @@ $materialRecords=@();for($slot=0;$slot-lt$materials.Count;$slot++){$material=$ma
 $matl=Chunk MATL $materialRecords.Count 64 {param($w)foreach($record in $materialRecords){$w.Write([uint32]$record[0]);$w.Write([uint32]$record[1]);for($index=2;$index-lt$record.Count;$index++){$w.Write([float]$record[$index])}}};$matl|Add-Member Required $false
 
 $clipRecords=@();$trackRecords=@();$keyRecords=@();$animations=@($document.animations|Where-Object{$null-ne$_});if($animations.Count-gt$MaximumAnimations){throw 'Animation limit exceeded.'}
-foreach($animation in $animations){$tracks=@{};foreach($channel in @($animation.channels)){$sampler=$animation.samplers[[int]$channel.sampler];$path=[string]$channel.target.path;if($path-notin@('translation','rotation','scale')){throw 'Animation path unsupported.'};$node=[int]$channel.target.node;if(-not$nodeToJoint.ContainsKey($node)){throw 'Animation target is not a joint.'};$times=Read-Accessor ([int]$sampler.input);$values=Read-Accessor ([int]$sampler.output);$expected=if($path-eq'rotation'){4}else{3};if($times.Components-ne1-or$values.Components-ne$expected-or$times.Count-ne$values.Count){throw 'Animation sampler shape invalid.'};$constant=$true;for($k=1;$k-lt$values.Count;$k++){for($c=0;$c-lt$expected;$c++){if([Math]::Abs($values.Values[$k][$c]-$values.Values[0][$c])-gt1e-7){$constant=$false}}};$interp=if($null-ne$sampler.interpolation){[string]$sampler.interpolation}else{'LINEAR'};if($constant){continue};if($interp-ne'LINEAR'){throw "Non-constant $interp animation is unsupported."};$joint=[int]$nodeToJoint[$node];if(-not$tracks.ContainsKey($joint)){$tracks[$joint]=@{}};$tracks[$joint][$path]=@($times,$values)}
+foreach ($animation in $animations) {
+    $tracks = @{}
+    $preserveConstants = [string]$animation.name -cin $PreserveConstantOverridesFor
+    foreach ($channel in @($animation.channels)) {
+        $sampler = $animation.samplers[[int]$channel.sampler]
+        $path = [string]$channel.target.path
+        if ($path -notin @('translation','rotation','scale')) { throw 'Animation path unsupported.' }
+        $node = [int]$channel.target.node
+        if (-not $nodeToJoint.ContainsKey($node)) { throw 'Animation target is not a joint.' }
+        $times = Read-Accessor ([int]$sampler.input)
+        $values = Read-Accessor ([int]$sampler.output)
+        $expected = if ($path -eq 'rotation') { 4 } else { 3 }
+        if ($times.Components -ne 1 -or $values.Components -ne $expected -or $times.Count -ne $values.Count) {
+            throw 'Animation sampler shape invalid.'
+        }
+        $constant = $true
+        for ($key = 1; $key -lt $values.Count; ++$key) {
+            for ($component = 0; $component -lt $expected; ++$component) {
+                if ([Math]::Abs($values.Values[$key][$component] - $values.Values[0][$component]) -gt 1e-7) {
+                    $constant = $false
+                }
+            }
+        }
+        if ($constant) {
+            if (-not $preserveConstants) { continue }
+            $rest = $document.nodes[$node].$path
+            if ($null -eq $rest) {
+                $rest = switch ($path) {
+                    'translation' { @(0,0,0) }
+                    'rotation' { @(0,0,0,1) }
+                    'scale' { @(1,1,1) }
+                }
+            }
+            $overridesRest = $false
+            for ($component = 0; $component -lt $expected; ++$component) {
+                if ([Math]::Abs($values.Values[0][$component] - $rest[$component]) -gt 1e-7) {
+                    $overridesRest = $true
+                }
+            }
+            if (-not $overridesRest) { continue }
+        } elseif ($null -ne $sampler.interpolation -and $sampler.interpolation -ne 'LINEAR') {
+            throw "Non-constant $($sampler.interpolation) animation is unsupported."
+        }
+        $joint = [int]$nodeToJoint[$node]
+        if (-not $tracks.ContainsKey($joint)) { $tracks[$joint] = @{} }
+        $tracks[$joint][$path] = @($times,$values)
+    }
     $firstTrack=$trackRecords.Count;$duration=0.0;foreach($jointValue in @($tracks.Keys|Sort-Object)){$joint=[int]$jointValue;$paths=$tracks[$joint];$firstPath=[string]@($paths.Keys)[0];$timeline=$paths[$firstPath][0];foreach($pair in $paths.Values){if($pair[0].Count-ne$timeline.Count){throw 'Animated TRS timelines differ.'};for($k=0;$k-lt$timeline.Count;$k++){if([Math]::Abs($pair[0].Values[$k][0]-$timeline.Values[$k][0])-gt1e-7){throw 'Animated TRS timelines differ.'}}};$firstKey=$keyRecords.Count;$node=$document.nodes[$jointNodes[$joint]];$bt=if($null-ne$node.translation){@($node.translation)}else{@(0,0,0)};$br=if($null-ne$node.rotation){@($node.rotation)}else{@(0,0,0,1)};$bs=if($null-ne$node.scale){@($node.scale)}else{@(1,1,1)};for($k=0;$k-lt$timeline.Count;$k++){$t=if($paths.translation){$paths.translation[1].Values[$k]}else{$bt};$r=if($paths.rotation){$paths.rotation[1].Values[$k]}else{$br};$s=if($paths.scale){$paths.scale[1].Values[$k]}else{$bs};$time=[float]$timeline.Values[$k][0];$duration=[Math]::Max($duration,$time);$keyRecords+=,@($time,([double]$t[0]*$Scale),([double]$t[1]*$Scale),(-[double]$t[2]*$Scale),(-[double]$r[0]),(-[double]$r[1]),[double]$r[2],[double]$r[3],[double]$s[0],[double]$s[1],[double]$s[2])};$trackRecords+=,@([uint32]$joint,0,[uint32]$firstKey,[uint32]$timeline.Count,7,0)};$name=[string]$animation.name;if([string]::IsNullOrWhiteSpace($name)){$name="Animation_$($clipRecords.Count)"};$ref=Add-String $strings $name;$clipRecords+=,@([uint32]$ref[0],[uint32]$ref[1],1,[double]$duration,[uint32]$firstTrack,[uint32]($trackRecords.Count-$firstTrack),0,0)}
 $clip=Chunk CLIP $clipRecords.Count 32 {param($w)foreach($r in $clipRecords){$w.Write([uint32]$r[0]);$w.Write([uint32]$r[1]);$w.Write([uint32]$r[2]);$w.Write([float]$r[3]);for($i=4;$i-lt8;$i++){$w.Write([uint32]$r[$i])}}}
 $trak=Chunk TRAK $trackRecords.Count 24 {param($w)foreach($r in $trackRecords){foreach($v in $r){$w.Write([uint32]$v)}}}

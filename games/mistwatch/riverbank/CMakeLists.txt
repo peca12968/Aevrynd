@@ -175,6 +175,14 @@ set_tests_properties(MistwatchBankRocksPreviewModeTest PROPERTIES TIMEOUT 30 LAB
 
 if(TARGET MistwatchLocalWorldClient)
   # 驗證多人設定的輸入阻擋、偏好存讀與基本環境音事件。
+  add_executable(MistwatchRiverbankCombatCameraSmoke tests/RiverbankCombatCameraSmoke.cpp)
+  target_include_directories(MistwatchRiverbankCombatCameraSmoke PRIVATE include)
+  target_compile_definitions(MistwatchRiverbankCombatCameraSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_compile_options(MistwatchRiverbankCombatCameraSmoke PRIVATE /W4 /WX /permissive- /utf-8)
+  target_link_libraries(MistwatchRiverbankCombatCameraSmoke PRIVATE AevryndEngine)
+  add_test(NAME MistwatchRiverbankCombatCameraTest COMMAND MistwatchRiverbankCombatCameraSmoke)
+  set_tests_properties(MistwatchRiverbankCombatCameraTest PROPERTIES TIMEOUT 10 LABELS "mistwatch;client;camera")
+
   add_executable(MistwatchRiverbankSettingsMenuSmoke tests/RiverbankSettingsMenuSmoke.cpp)
   target_include_directories(MistwatchRiverbankSettingsMenuSmoke PRIVATE include ../mmorpg)
   target_compile_definitions(MistwatchRiverbankSettingsMenuSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

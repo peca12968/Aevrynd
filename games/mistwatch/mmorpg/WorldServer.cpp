@@ -84,6 +84,16 @@ public:
             DeliverRegistrations();
 #endif
             transport_.AdvanceTo(++tick_);
+#ifdef AEVRYND_MISTWATCH_BATTLE
+            // 先寫入快照。本輪戰鬥造成的倒地會在下一份快照同步。
+            for (const auto& [id, peer] : peers_) {
+                if (peer.playerClass == RiverbankClass::None) continue;
+                const auto player = encounter_.Player(id);
+                using Mistwatch::RiverbankBattleWire::DownedEntityFlag;
+                if (!player || !world_.SetClientEntityFlags(id, peer.joinFlags | (player->health ? 0u : DownedEntityFlag)))
+                    throw std::runtime_error("Cannot publish Riverbank avatar stance");
+            }
+#endif
             world_.Tick();
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #ifdef AEVRYND_MISTWATCH_PROFILES
@@ -153,6 +163,7 @@ private:
         std::uint64_t expeditionSequence{}, expeditionQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
+        std::uint32_t joinFlags{};
         std::uint64_t fieldSequence{}, fieldQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
 #endif
     };
@@ -213,6 +224,11 @@ private:
         if (Mistwatch::RiverbankBattleWire::HasMagic(bytes)) {
             const auto action = Mistwatch::RiverbankBattleWire::DecodeAction(bytes);
             if (!action) return false;
+            if (action->kind == Mistwatch::RiverbankAction::ReturnToCamp) {
+                if (!encounter_.ReturnToCamp(id, action->sequence)) return true;
+                // 先清除倒地時尚在排程的移動，正常狀態會在這一輪快照後恢復。
+                return world_.SetClientMovementEnabled(id, false) && world_.SetClientPosition(id, {});
+            }
             // Cooldown, range and duplicates are ordinary rejected actions, not connection errors.
             (void)encounter_.Submit(id, action->sequence, action->kind, action->ally);
             return true;
@@ -235,7 +251,7 @@ private:
     bool JoinWorld(std::uint32_t id, Client& client, RiverbankClass selected, GlobalPosition3D position = {}) {
         auto flags = Mistwatch::RiverbankClassFlags(selected);
 #ifdef AEVRYND_MISTWATCH_BATTLE
-        flags |= Mistwatch::RiverbankFieldWire::Capability;
+        flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability;
@@ -244,6 +260,7 @@ private:
             !world_.SetClientEntityFlags(id, flags)) return false;
 #ifdef AEVRYND_MISTWATCH_BATTLE
         if (!encounter_.Join(id, selected)) return false;
+        client.joinFlags = flags;
 #endif
         client.playerClass = selected;
         return true;

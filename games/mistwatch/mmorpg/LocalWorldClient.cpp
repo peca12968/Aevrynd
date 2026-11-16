@@ -371,11 +371,18 @@ RiverbankClass LocalWorldClient::SelectedClass() const noexcept {
 #ifdef AEVRYND_MISTWATCH_BATTLE
 bool LocalWorldClient::RequestBattleAction(RiverbankAction action) {
     const auto* battle = Battle();
-    if (!battle || !battle->player.health || state_->nextActionSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    const bool returnToCamp = action == RiverbankAction::ReturnToCamp;
+    if (!battle || state_->nextActionSequence == (std::numeric_limits<std::uint64_t>::max)() ||
+        (returnToCamp ? !CanReturnToCamp() : !battle->player.health)) return false;
     const auto message = RiverbankBattleWire::EncodeAction({state_->nextActionSequence, 0, action});
     if (!state_->peer->Queue(message)) return false;
     ++state_->nextActionSequence;
     return true;
+}
+
+bool LocalWorldClient::CanReturnToCamp() const noexcept {
+    const auto* battle = Battle();
+    return battle && !battle->player.health && state_->Supports(RiverbankBattleWire::CampReturnCapability);
 }
 
 const RiverbankBattleWire::Encounter* LocalWorldClient::Battle() const noexcept {

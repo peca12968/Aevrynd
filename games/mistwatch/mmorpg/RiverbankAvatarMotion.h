@@ -13,16 +13,17 @@ struct RiverbankAvatarMotion {
     static constexpr float GroundDatum = -1.562f;
 
     struct Player {
-        float distance{}, heading{}, walking{};
+        float distance{}, heading{}, walking{}, downedSeconds{};
 
-        void Advance(Aevrynd::Vec3 tickDisplacement, float elapsed) {
+        void Advance(Aevrynd::Vec3 tickDisplacement, float elapsed, bool downed = false) {
             elapsed = std::clamp(elapsed, 0.0f, 0.1f);
+            downedSeconds = std::clamp(downedSeconds + (downed ? elapsed : -elapsed * 2.5f), 0.f, 1.f);
             const float movement = std::hypot(tickDisplacement.x, tickDisplacement.z);
-            const bool moving = movement > 0.0001f;
+            const bool moving = !downed && movement > 0.0001f;
             if (moving) heading = std::atan2(tickDisplacement.x, tickDisplacement.z);
             walking = std::clamp(walking + (moving ? elapsed : -elapsed) * 7.0f, 0.0f, 1.0f);
             // The local world transmits metres per server tick at 20 Hz.
-            distance += movement * elapsed * 20.f;
+            if (!downed) distance += movement * elapsed * 20.f;
             if (walking == 0.0f) distance = 0.0f;
         }
     };
@@ -46,6 +47,13 @@ struct RiverbankAvatarMotion {
         }
         walk = clip->clip;
         walk.looping = false;
+        const auto fallen = std::ranges::find(asset.clips, "RiverbankExplorer_Downed", &Aevrynd::NamedAnimationClip3D::name);
+        if (fallen != asset.clips.end()) {
+            downed = fallen->clip;
+            downed.looping = false;
+            if (std::abs(downed.duration - 1.f) > .001f)
+                throw std::runtime_error("Riverbank avatar downed motion must last one second");
+        }
         idle = Aevrynd::SampleAnimationClip(asset.model.skeleton, walk, 0.0f);
         const auto end = Aevrynd::SampleAnimationClip(asset.model.skeleton, walk, walk.duration);
         const auto index = static_cast<std::size_t>(pelvis - asset.jointNames.begin());
@@ -58,19 +66,34 @@ struct RiverbankAvatarMotion {
     }
 
     Aevrynd::Matrix4 Evaluate(const Aevrynd::Skeleton3D& skeleton, const Player& player,
-        Aevrynd::Vec3 feet, Aevrynd::AnimationPose3D& sampled, Aevrynd::AnimationPose3D& pose) const {
+        Aevrynd::Vec3 feet, Aevrynd::AnimationPose3D& sampled, Aevrynd::AnimationPose3D& pose, Aevrynd::Vec3 groundNormal = {0, 1, 0}) const {
+        const auto world = Aevrynd::CreateTransformMatrix(feet, {0, player.heading - assetYaw, 0}, {1, 1, 1});
+        if (HasDownedClip() && player.downedSeconds > 0) {
+            Aevrynd::SampleAnimationClipInto(skeleton, downed, player.downedSeconds, pose);
+            // 角色側倒後以草坡法線為支撐面，權威座標仍是原本的接地錨點。
+            constexpr Aevrynd::Vec3 up{0, 1, 0};
+            const float t = std::clamp((player.downedSeconds - .15f) / .70f, 0.f, 1.f);
+            const Aevrynd::Vec3 alignedUp = Aevrynd::Normalize(up + (groundNormal - up) * (t * t * (3.f - 2.f * t)));
+            const auto axis = Aevrynd::Cross(up, alignedUp);
+            Aevrynd::JointTransform3D support;
+            support.usesQuaternion = true;
+            support.quaternion = Aevrynd::NormalizeQuaternion3D({axis.x, axis.y, axis.z, 1.f + alignedUp.y});
+            return Aevrynd::CreateTranslationMatrix(feet) * support.Matrix() *
+                Aevrynd::CreateRotationMatrix({0, player.heading - assetYaw, 0}) *
+                Aevrynd::CreateTranslationMatrix({0, -groundDatum, 0});
+        }
         const float phase = std::fmod(player.distance, stride) / stride;
         Aevrynd::SampleAnimationClipInto(skeleton, walk, phase * walk.duration, sampled);
         Aevrynd::BlendAnimationPosesInto(skeleton, idle, sampled, player.walking, pose);
-        const auto world = Aevrynd::CreateTransformMatrix(feet, {0, player.heading - assetYaw, 0}, {1, 1, 1});
         // Remove linear root travel and put the measured Blender floor on the replicated foot position.
         return world * Aevrynd::CreateTranslationMatrix(Aevrynd::Vec3{0, -groundDatum, 0} - travel * (phase * player.walking));
     }
 
     float Stride() const noexcept { return stride; }
+    bool HasDownedClip() const noexcept { return !downed.tracks.empty(); }
 
 private:
-    Aevrynd::AnimationClip3D walk;
+    Aevrynd::AnimationClip3D walk, downed;
     Aevrynd::AnimationPose3D idle;
     Aevrynd::Vec3 travel{};
     float stride{}, assetYaw{}, groundDatum{GroundDatum};

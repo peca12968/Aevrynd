@@ -1,6 +1,7 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankBattleWire.h"
 #include <array>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -75,6 +76,49 @@ void DownedAndRejoin() {
     Require(arena.Player(1)->health == 42 && arena.Player(2)->resource == 60,
             "The priest did not revive the ranger after they joined the same group");
     Require(arena.Leave(1) && !arena.Player(1) && !arena.Submit(1, 9, RiverbankAction::Attack), "Disconnected player's request remained valid");
+}
+
+void FieldBoarDisengagesFromDownedPlayer() {
+    RiverbankEncounter arena;
+    constexpr ArenaPosition victim{16.275f, 15.f};
+    Require(arena.Join(1, RiverbankClass::Ranger) && arena.SetPosition(1, victim), "Field defeat setup failed");
+    for (int tick = 0; tick < 280 && arena.Player(1)->health; ++tick) arena.Tick();
+    const auto struck = arena.Field();
+    Require(!arena.Player(1)->health && struck.phase == EncounterPhase::Recovery,
+        "Field boar did not down the lone player");
+    for (unsigned tick = 0; tick < struck.phaseTicks; ++tick) {
+        arena.Tick();
+        Require(RiverbankEncounter::InPasture(arena.Field().position), "Disengaging boar left the pasture");
+    }
+    const auto field = arena.Field();
+    const float distance = std::hypot(field.position.x - victim.x, field.position.z - victim.z);
+    std::cout << "field_clearance_m=" << distance << '\n';
+    Require(distance >= 2.70f && field.health == struck.health && field.run == struck.run && !field.target,
+        "Field boar stayed over the downed player or reset the encounter");
+
+    for (int tick = 0; tick < 90 && arena.Field().run == struck.run; ++tick) arena.Tick();
+    Require(arena.Field().phase == EncounterPhase::Patrol && arena.Field().run == struck.run + 1,
+        "Uncontested field encounter did not reset normally");
+}
+
+void CampReturnPreservesRewards() {
+    RiverbankEncounter arena;
+    Require(arena.Join(1, RiverbankClass::Ranger) && arena.RestoreRewards(1, 7, 2) &&
+            arena.SetPosition(1, {0, 48}) && arena.Submit(1, 17, RiverbankAction::Attack), "Camp return setup failed");
+    Require(!arena.ReturnToCamp(1, 18), "A standing player could return to camp");
+    for (unsigned frame = 0; frame < 180 && arena.Player(1)->health; ++frame) arena.Tick();
+    const auto downed = arena.Suspend(1);
+    Require(downed && !downed->status.health && downed->contributionRun, "Camp return did not start with an active downed player");
+    Require(!arena.ReturnToCamp(1, 17) && arena.ReturnToCamp(1, 18) && !arena.ReturnToCamp(1, 18),
+            "Camp return did not enforce the action sequence");
+    const auto recovered = arena.Suspend(1);
+    Require(recovered && recovered->status.health == 105 && recovered->status.resource == downed->status.resource &&
+            recovered->status.rewards == 7 && arena.FieldHides(1) == 2 && !recovered->contributionRun &&
+            !recovered->fieldContributionRun, "Camp return lost prior rewards or retained combat credit");
+    namespace Wire = Mistwatch::RiverbankBattleWire;
+    Require(bool(Wire::DecodeAction(Wire::EncodeAction({18, 0, RiverbankAction::ReturnToCamp}))) &&
+            !Wire::DecodeAction(Wire::EncodeAction({18, 2, RiverbankAction::ReturnToCamp})),
+            "Camp return accepted a request targeting another character");
 }
 
 void RestoreLiveCombat() {
@@ -161,6 +205,8 @@ int main() {
         RolesAndTelegraph();
         DefeatOnceAndReset();
         DownedAndRejoin();
+        CampReturnPreservesRewards();
+        FieldBoarDisengagesFromDownedPlayer();
         RestoreLiveCombat();
         NorthBankBoundary();
         BattleWireRoundTrip();

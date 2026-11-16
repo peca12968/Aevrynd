@@ -9,6 +9,8 @@
 namespace Mistwatch::RiverbankBattleWire {
 constexpr std::array Magic{std::byte{'A'}, std::byte{'E'}, std::byte{'C'}, std::byte{'B'}};
 constexpr std::size_t HeaderBytes = Magic.size() + 2;
+inline constexpr std::uint32_t CampReturnCapability = 1u << 18;
+inline constexpr std::uint32_t DownedEntityFlag = 1u << 19;
 enum class Kind : std::uint8_t { Action = 1, Encounter = 2 };
 
 struct Action {
@@ -79,7 +81,8 @@ inline std::optional<Action> DecodeAction(std::span<const std::byte> frame) {
     if (!detail::Accept(frame, ActionBytes, Kind::Action)) return std::nullopt;
     auto* in = frame.data() + HeaderBytes;
     const Action value{detail::Read<std::uint64_t>(in), detail::Read<std::uint64_t>(in), RiverbankAction(*in)};
-    if (!value.sequence || (value.kind != RiverbankAction::Attack && value.kind != RiverbankAction::ClassSkill)) return std::nullopt;
+    if (!value.sequence || (value.kind != RiverbankAction::Attack && value.kind != RiverbankAction::ClassSkill &&
+        (value.kind != RiverbankAction::ReturnToCamp || value.ally))) return std::nullopt;
     return value;
 }
 

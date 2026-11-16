@@ -245,12 +245,14 @@ if(AEVRYND_BUILD_MISTWATCH_MULTIPLAYER)
   set(MISTWATCH_ENABLE_RIVERBANK_BATTLE ON)
   set(MISTWATCH_ENABLE_RIVERBANK_PROFILES ON)
   set(MISTWATCH_TEST_RIVERBANK_ENCOUNTER ON)
-  set(MISTWATCH_LOCAL_WORLD_AVATAR "" CACHE FILEPATH "Optional verified Riverbank Explorer AESKIN asset")
+  set(MISTWATCH_LOCAL_WORLD_AVATAR "${CMAKE_CURRENT_SOURCE_DIR}/games/mistwatch/mmorpg/assets/RiverbankExplorer.aeskin"
+    CACHE FILEPATH "Verified Riverbank Explorer AESKIN asset; empty disables the alternate avatar")
   if(MISTWATCH_LOCAL_WORLD_AVATAR)
     file(SHA256 "${MISTWATCH_LOCAL_WORLD_AVATAR}" riverbank_avatar_sha)
     set(verified_riverbank_avatar_hashes
       "d91fd676b12027d6907fa3e45a8892e61ea7316506f081a9af9074fa3e715d7b"
-      "f129fa70cbee1b7e27f990f60069b59915b9b948ac43740ecd92684fe005305b")
+      "f129fa70cbee1b7e27f990f60069b59915b9b948ac43740ecd92684fe005305b"
+      "a1a1d2bd0290ba2ec01527bb6d7af10fe214514ca34a6230fab3cf874cfef42a")
     if(NOT riverbank_avatar_sha IN_LIST verified_riverbank_avatar_hashes)
       message(FATAL_ERROR "Riverbank Explorer asset hash differs from the verified export")
     endif()

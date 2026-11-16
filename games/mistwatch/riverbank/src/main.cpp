@@ -3,6 +3,8 @@
 #include "LocalWorldClient.h"
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankFieldBoarPose.h"
+#include "RiverbankCombatCamera.h"
+#include "RiverbankDownedCamera.h"
 #include "RiverbankSettingsMenu.h"
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
@@ -1997,6 +1999,10 @@ private:
             wchar_t fieldCapture[2]{};
             localWorldFieldCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_FIELD_CAPTURE",fieldCapture,2)==1&&
                 fieldCapture[0]==L'1';
+            wchar_t campCapture[2]{};
+            localWorldCampCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_CAMP_CAPTURE",campCapture,2)==1&&
+                campCapture[0]==L'1';
+            if(localWorldCampCapture&&localWorldArenaCapture)throw std::runtime_error("Incompatible camp and arena capture modes");
 #endif
         }
 #endif
@@ -4014,13 +4020,20 @@ private:
         static constexpr std::array<std::string_view,5> actions{
             "按 E 領取委託", "按 E 勘查路標", "在首領戰中做出貢獻並取得戰利品", "按 E 回報並領取徽章", "已取得巡林徽章"};
         const auto stage=static_cast<std::size_t>(quest->stage);
-        draw.Quad({236,636},{456,128},{.045f,.067f,.053f,.95f});
-        draw.SystemText({23,585},"巡林委託",19.f,{.83f,.95f,.86f,1});
-        draw.SystemText({23,619},objectives[stage],17.f,{.93f,.96f,.93f,1});
+        float offset=0.f;
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        if(riverbankCombatView&&Length(lastRenderedCamera.position-playerCameraMotion.Camera().position)>.35f){
+            const auto player=ProjectToViewport(session.feet+Vec3{0,.85f,0},lastRenderedCamera,{1280,720});
+            if(player.visible&&player.position.x<560.f)offset=808.f;
+        }
+#endif
+        draw.Quad({236+offset,636},{456,128},{.045f,.067f,.053f,.95f});
+        draw.SystemText({23+offset,585},"巡林委託",19.f,{.83f,.95f,.86f,1});
+        draw.SystemText({23+offset,619},objectives[stage],17.f,{.93f,.96f,.93f,1});
         const auto hint=Quest::CanInteract(quest->stage,{session.feet.x,session.feet.z})||quest->stage==Stage::Complete||
             (quest->stage==Stage::Hunt&&distance<15.f)?
             std::string(actions[stage]):"距離 "+std::to_string(int(distance))+" 公尺";
-        draw.SystemText({23,650},hint,16.f,{.89f,.88f,.68f,1});
+        draw.SystemText({23+offset,650},hint,16.f,{.89f,.88f,.68f,1});
     }
 
     bool CaptureTrailSupplyPanel() const {
@@ -4146,8 +4159,127 @@ private:
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
     std::optional<Vec3> battleBoarFeet, fieldBoarFeet;
+    Mistwatch::RiverbankCombatCamera riverbankCombatCamera;
+    Mistwatch::RiverbankDownedCamera riverbankDownedCamera;
+    std::optional<Camera3D> riverbankCombatView;
+    std::vector<BoxCollider3D> combatCameraFoliage;
+
+    void FindCombatCameraFoliage() {
+        combatCameraFoliage.clear();
+        const auto add=[&](const MeshBounds3D& local,const Transform3D& pose) {
+            if(std::hypot(pose.position.x-session.feet.x,pose.position.z-session.feet.z)>16.f)return;
+            const auto bounds=TransformBounds(local,pose);
+            combatCameraFoliage.push_back({bounds.center,bounds.extents});
+        };
+        // 視線使用實際提交的植被包絡，碰撞繼續交由原有實體幾何處理。
+        for(const auto& tree:broadleafTrees){
+            auto pose=tree.transform;pose.scale=pose.scale*.4f;
+            const auto pivot=TransformBounds({MatureStudy::RootPivot,0,{0,0,0}},pose).center;
+            pose.position=pose.position+(tree.transform.position-pivot);
+            for(unsigned slot=0;slot<2;++slot)add(matureStudy.meshes[slot].bounds,pose);
+        }
+        for(const auto& tree:middleLayer.trees)
+            for(unsigned slot=0;slot<2;++slot)add(broadleafMeshes[slot].bounds,tree.transform);
+        if(shrubsEnabled){
+            const auto shrubs=[&](const auto& plants) {
+                for(const auto& plant:plants)if(!InsideFieldShrubClearing(plant.pose.position))
+                    for(const auto& mesh:shrubMeshes[plant.variant])add(mesh.bounds,plant.pose);
+            };
+            shrubs(shrubCanopy.plants);
+            shrubs(entranceUnderstory.plants);
+        }
+    }
+
+    void UpdateRiverbankCombatCamera(float dt) {
+        using Phase=Mistwatch::EncounterPhase;
+        const auto* battle=localWorld->Battle();
+        std::optional<std::array<Vec3,2>> downed;
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+        if(battle&&!battle->player.health)
+            downed=riverbankAvatar->DownedView({battle->epoch,battle->owner},session.feet,terrain);
+#endif
+        std::optional<Vec3> threat;
+        const Mistwatch::Boar* threatModel{};
+        const auto consider=[&](const std::optional<Vec3>& point, Phase phase,const Mistwatch::Boar& model) {
+            if(point&&(phase==Phase::Pursuit||phase==Phase::Windup||phase==Phase::Recovery||
+                (downed&&phase==Phase::Patrol))&&(!threat||Length(*point-session.feet)<Length(*threat-session.feet))){
+                threat=point;
+                threatModel=&model;
+            }
+        };
+        if(battle)consider(battleBoarFeet,battle->boss.phase,boar);
+        if(const auto* field=localWorld->FieldHunt())consider(fieldBoarFeet,field->field.phase,fieldBoar);
+        const auto& base=playerCameraMotion.Camera();
+        if(downed||riverbankCombatView||(threat&&Length(*threat-session.feet)<5.f))FindCombatCameraFoliage();
+        else combatCameraFoliage.clear();
+        auto view=base;
+        if(downed||riverbankDownedCamera.Moving()){
+            std::optional<BoxCollider3D> obstruction;
+            if(downed&&threat&&Length(*threat-session.feet)<5.f){
+                static const auto localBounds=boar.model.bindMesh.Bounds();
+                const auto bounds=TransformBounds(localBounds,{*threat,{0,threatModel->yaw,0},{1,1,1}});
+                obstruction=BoxCollider3D{bounds.center,bounds.extents};
+            }
+            view=riverbankDownedCamera.Update(base,downed,obstruction,dt,solids,terrain,RuntimeCameraOnly(),combatCameraFoliage);
+        }else view=riverbankCombatCamera.Update(base,session.feet,threat,dt,solids,terrain,RuntimeCameraOnly(),combatCameraFoliage);
+        riverbankCombatView.reset();
+        if(Length(view.position-base.position)>.001f||Length(view.target-base.target)>.001f)riverbankCombatView=view;
+    }
     Mistwatch::Boar fieldBoar;
-    bool localWorldArenaCapture{}, localWorldFieldCapture{};
+    bool localWorldArenaCapture{}, localWorldFieldCapture{}, localWorldCampCapture{};
+    enum class CampCapturePhase { Approach, DownedFrame, ReturnReady, ReturnSent, CampFrame };
+    CampCapturePhase campCapturePhase=CampCapturePhase::Approach;
+    std::uint64_t campFrameCount{};
+    std::uint32_t campCapturePlayer{};
+    Vec3 campDownedFeet{};
+
+    void CaptureCampReturn(Engine& e,std::uint64_t count) {
+        switch(campCapturePhase) {
+        case CampCapturePhase::Approach:
+            if(localWorld->CanReturnToCamp()){
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+                const auto* world=localWorld->Snapshot();
+                if(!world||!riverbankAvatar->DownedCaptureReady({world->sessionEpoch,localWorld->PlayerId()}))break;
+#endif
+                const auto initial=localWorldScreenshot.parent_path()/(localWorldScreenshot.stem().wstring()+L"-downed.png");
+                if(std::filesystem::exists(initial)||!e.CaptureNextFrame3D(initial))
+                    throw std::runtime_error("Could not capture the downed player");
+                campCapturePlayer=localWorld->PlayerId();
+                campDownedFeet=session.feet;
+                campFrameCount=count;
+                campCapturePhase=CampCapturePhase::DownedFrame;
+            }
+            break;
+        case CampCapturePhase::DownedFrame:
+            if(count>campFrameCount)campCapturePhase=CampCapturePhase::ReturnReady;
+            break;
+        case CampCapturePhase::ReturnReady:
+            break;
+        case CampCapturePhase::ReturnSent:
+            if(const auto* battle=localWorld->Battle();battle&&battle->player.health){
+                const auto recovered=session.feet;
+                if(battle->owner!=campCapturePlayer||Length(recovered-campDownedFeet)<10.f||
+                    std::hypot(recovered.x,recovered.z)>.01f||
+                    std::hypot(lastRenderedCamera.target.x-recovered.x,lastRenderedCamera.target.z-recovered.z)>.1f)
+                    throw std::runtime_error("Camp return did not restore the active player and camera");
+                auto receipt=localWorldScreenshot;receipt+=L".camp.txt";
+                if(std::filesystem::exists(receipt))throw std::runtime_error("Camp screenshot receipt already exists");
+                std::ofstream out(receipt);
+                out<<"player="<<battle->owner<<"\nhealth="<<battle->player.health
+                    <<"\ndowned_x="<<campDownedFeet.x<<"\ndowned_z="<<campDownedFeet.z
+                    <<"\nspawn_x="<<recovered.x<<"\nspawn_z="<<recovered.z
+                    <<"\ncamera_target_x="<<lastRenderedCamera.target.x<<"\ncamera_target_z="<<lastRenderedCamera.target.z<<'\n';
+                out.close();
+                if(!out||!e.CaptureNextFrame3D(localWorldScreenshot))throw std::runtime_error("Could not capture camp return");
+                campFrameCount=count;
+                campCapturePhase=CampCapturePhase::CampFrame;
+            }
+            break;
+        case CampCapturePhase::CampFrame:
+            if(count>campFrameCount)e.Quit();
+            break;
+        }
+    }
 
     bool CaptureSharedWindup() const {
         if(!localWorldArenaCapture)return false;
@@ -4182,6 +4314,19 @@ private:
             <<report.field.health<<'\n'<<report.field.phaseTicks<<'\n';
         output.close();
         if(!output)throw std::runtime_error("Field screenshot receipt write failed");
+        auto viewPath=localWorldScreenshot;viewPath+=L".camera.txt";
+        if(std::filesystem::exists(viewPath))throw std::runtime_error("Field camera receipt already exists");
+        const auto separation=[&](const Camera3D& camera) {
+            const auto avatar=ProjectToViewport(session.feet+Vec3{0,.7f,0},camera,{1280,720});
+            const auto enemy=ProjectToViewport(*fieldBoarFeet+Vec3{0,.65f,0},camera,{1280,720});
+            return avatar.visible&&enemy.visible?Length(avatar.position-enemy.position):-1.f;
+        };
+        const auto& base=playerCameraMotion.Camera();
+        std::ofstream view(viewPath);
+        view<<"base_separation_px="<<separation(base)<<"\npresented_separation_px="<<separation(lastRenderedCamera)
+            <<"\ncamera_shift_m="<<Length(lastRenderedCamera.position-base.position)<<'\n';
+        view.close();
+        if(!view)throw std::runtime_error("Field camera receipt write failed");
     }
 
     void SaveSharedWindupReceipt() const {
@@ -4203,7 +4348,9 @@ private:
         using Phase=Mistwatch::EncounterPhase;
         const auto* battle=localWorld->Battle();
         if(!battle){battleBoarFeet.reset();return;}
-        if(focused&&input.Pressed('F'))(void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::Attack);
+        if(focused&&input.Pressed(VK_RETURN)&&localWorld->CanReturnToCamp())
+            (void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::ReturnToCamp);
+        else if(focused&&input.Pressed('F'))(void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::Attack);
         else if(focused&&input.Pressed('Q'))(void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::ClassSkill);
         const auto& boss=battle->boss;
         if(boss.phase==Phase::Defeated||!terrain.Contains(boss.position.x,boss.position.z)){battleBoarFeet.reset();return;}
@@ -4298,7 +4445,8 @@ private:
         const auto skill=player.playerClass==Mistwatch::RiverbankClass::Guardian?"挑釁護衛":
             player.playerClass==Mistwatch::RiverbankClass::Ranger?"連射":priestSupport;
         const auto actions=player.health?"F 普攻  "+remaining(player.attackCooldown)+"　Q "+skill+"  "+remaining(player.skillCooldown):
-            (grouped?"你已倒地，等待隊伍中的祭司救援":"你已倒地，等待附近的未組隊祭司救援");
+            (localWorld->CanReturnToCamp()?"你已倒地 · Enter 回營地 · 可等待祭司救援":
+             grouped?"你已倒地，等待隊伍中的祭司救援":"你已倒地，等待附近的未組隊祭司救援");
         draw.SystemText({20,157},actions,15.f,{.82f,.90f,.86f,1});
         using Phase=Mistwatch::EncounterPhase;
         using Hunt=Mistwatch::RiverbankEncounter;
@@ -4407,7 +4555,8 @@ private:
 #ifdef AEVRYND_MISTWATCH_BATTLE
         const auto* arenaView=localWorld->Snapshot();
         if(localWorldArenaCapture&&arenaView&&arenaView->entities.size()==2&&session.feet.z<44.5f)moveZ=32767;
-        if(localWorldFieldCapture&&arenaView&&arenaView->entities.size()==2){
+        if((localWorldFieldCapture||(localWorldCampCapture&&campCapturePhase==CampCapturePhase::Approach))&&
+            arenaView&&arenaView->entities.size()==2){
             const Vec2 target{13.8f,15.f};
             const Vec2 delta{target.x-session.feet.x,target.y-session.feet.z};
             const float range=std::hypot(delta.x,delta.y);
@@ -4516,18 +4665,40 @@ private:
             if(own!=view->entities.end())if(const auto feet=LocalWorldFeet(*own)){
                 const Vec3 movement=*feet-session.feet;
                 session.feet=*feet;
-                explorer.Update(movement,dt,false);
+                // 權威座標大幅切換時重設鏡頭與步態速度，避免從草坡一路拖回營地。
+                const bool changedZone=Length(movement)>2.f;
+                if(changedZone){
+                    playerCameraMotion.Reset();
+#ifdef AEVRYND_MISTWATCH_BATTLE
+                    riverbankCombatCamera={};
+                    riverbankDownedCamera={};
+                    riverbankCombatView.reset();
+#endif
+#ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
+                    riverbankAvatar->ResetAfterWarp(own->id);
+#endif
+                }
+                explorer.Update(changedZone?Vec3{}:movement,dt,false);
                 const auto contacts=RuntimeGameplayBody(session.bridgeRepaired,session.feet);
                 (void)explorer.PlaceFeet(session.feet,true,false,terrain,contacts,RuntimeRoofHulls());
             }
         }
 #ifdef AEVRYND_MISTWATCH_BATTLE
-        UpdateRiverbankBattle(focused,input,dt);
+        if(localWorldCampCapture&&campCapturePhase==CampCapturePhase::ReturnReady){
+            if(!localWorld->CanReturnToCamp())throw std::runtime_error("Camp capture lost the downed player");
+            Input key;
+            key.SetKey(VK_RETURN,true);
+            UpdateRiverbankBattle(true,key,dt);
+            campCapturePhase=CampCapturePhase::ReturnSent;
+        }else UpdateRiverbankBattle(focused,input,dt);
         UpdateRiverbankField(dt);
 #endif
         const float turn=focused?float(input.Down(VK_RIGHT))-float(input.Down(VK_LEFT)):0.f;
         (void)TryUpdateCameraOnly(focused?input.LeftMouseDragDelta():Vec2{},focused?input.MouseWheel():0.f,
                                    turn,dt,nullptr,focused&&input.Pressed('C'));
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        UpdateRiverbankCombatCamera(dt);
+#endif
         if(localWorldScreenshot.empty()){
             Mistwatch::AudioState audio;
             audio.session=session;
@@ -4539,6 +4710,9 @@ private:
     void RenderLocalWorld(Engine& e,DrawList& draw) {
         bool separatedPeer=false;
         unsigned peers=0;
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        const auto* party=localWorld->Party();
+#endif
         if(const auto* view=localWorld->Snapshot()){
 #ifndef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
             const auto remotePalette=AddSkinPaletteFromPose(draw,explorer.model,localWorldPeerPose,explorerSkinning);
@@ -4548,7 +4722,7 @@ private:
                 const auto feet=LocalWorldFeet(entity);
                 if(!feet)continue;
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
-                if(!riverbankAvatar->Submit(draw,entity.id,*feet))
+                if(!riverbankAvatar->Submit(draw,entity.id,*feet,terrain))
 #else
                 const float heading=std::hypot(entity.velocity.x,entity.velocity.z)>.001f?
                     std::atan2(entity.velocity.x,entity.velocity.z):0.f;
@@ -4557,8 +4731,23 @@ private:
                     CreateTransformMatrix(*feet,{0,heading,0},{1,1,1}),explorerMaterials,remoteReceipt))
 #endif
                     throw std::runtime_error("Local world peer mesh submission failed");
+                const float distance=Length(*feet-session.feet);
                 ++peers;
-                separatedPeer|=Length(*feet-session.feet)>.8f;
+                separatedPeer|=distance>.8f;
+#ifdef AEVRYND_MISTWATCH_PROFILES
+                if(party&&!riverbankParty.Open()&&!riverbankSettingsMenu.Open()&&distance<=12.f){
+                    const auto member=std::ranges::find(party->online,entity.id.low,&Mistwatch::RiverbankPartyWire::Member::actor);
+                    if(member!=party->online.end()&&!member->health){
+                        const auto marker=ProjectToViewport(*feet+Vec3{0,2.f,0},lastRenderedCamera,{1280,720});
+                        if(marker.visible&&marker.position.x>70.f&&marker.position.x<1210.f&&
+                            marker.position.y>230.f&&marker.position.y<565.f){
+                            const auto center=marker.position;
+                            draw.Quad(center,{94,24},{.10f,.047f,.036f,.93f});
+                            draw.SystemText(center+Vec2{-33.f,-9.f},"隊友倒地",15.f,{1.f,.70f,.47f,1.f});
+                        }
+                    }
+                }
+#endif
             }
         }
         if(riverbankSettingsMenu.Open()){
@@ -4593,6 +4782,9 @@ private:
         }
         if(!localWorldScreenshot.empty()){
             const auto count=e.GetRendererStats().successfulFrameCaptures;
+#ifdef AEVRYND_MISTWATCH_BATTLE
+            if(localWorldCampCapture){CaptureCampReturn(e,count);return;}
+#endif
             if(localWorldCaptureCount&&count>*localWorldCaptureCount){e.Quit();return;}
             bool captureReady=separatedPeer;
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -6206,6 +6398,10 @@ private:
         if(!ThirdPersonCameraPathClear3D(camera.position,camera.position,solids,terrain,
             RuntimeCameraOnly(),.155f))
             throw std::runtime_error("Changed world invalidated rendered player camera");
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        if(riverbankCombatView&&ThirdPersonCameraPathClear3D(camera.position,riverbankCombatView->position,solids,
+            terrain,RuntimeCameraOnly(),.155f))camera=*riverbankCombatView;
+#endif
         if(captureRangerHutOverview&&!capture.empty()) {
             camera.target=Mistwatch::Session::rangerLog+Vec3{0,1.6f,0};
             camera.position=camera.target+Vec3{-7,3.2f,-7};
@@ -6742,7 +6938,7 @@ private:
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
         const auto* state=localWorld->Snapshot();
         const NetworkEntityId3D id=state?NetworkEntityId3D{state->sessionEpoch,localWorld->PlayerId()}:NetworkEntityId3D{};
-        if(!riverbankAvatar->Submit(draw,id,session.feet))throw std::runtime_error("Riverbank avatar submission failed");
+        if(!riverbankAvatar->Submit(draw,id,session.feet,terrain))throw std::runtime_error("Riverbank avatar submission failed");
 #else
         const auto* playerDrawPose=&explorer.pose;
         const auto counterWeight=explorerCounter.Weight();

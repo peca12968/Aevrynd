@@ -44,8 +44,14 @@ public:
     void Draw(Aevrynd::DrawList& draw, const LocalWorldClient& client) const {
         if (!client.CanUseGuild()) return;
         const auto* reply = client.Party();
+        const auto downed = reply ? std::ranges::count_if(reply->online, [&](const auto& member) {
+            return member.actor != client.PlayerId() && member.health == 0;
+        }) : 0;
+        std::string shortcut = "P 隊伍";
+        if (reply && reply->inviter) shortcut += " · 有新邀請";
+        else if (downed) shortcut += " · " + std::to_string(downed) + " 人倒地";
         draw.Quad({109,232}, {195,27}, {.041f,.068f,.055f,.95f});
-        draw.SystemText({20, 218}, reply && reply->inviter ? "P 隊伍 · 有新邀請" : "P 隊伍", 15.f, {.78f,.91f,.83f,1});
+        draw.SystemText({20, 218}, shortcut, 15.f, {.78f,.91f,.83f,1});
         if (!open_) return;
         draw.Quad({640, 389}, {760, 368}, {.035f,.065f,.052f,.97f});
         draw.SystemText({282, 226}, "河岸隊伍", 25.f, {.81f,.97f,.86f,1});
@@ -59,8 +65,10 @@ public:
             float row = 333.f;
             for (const auto& member : reply->online) {
                 std::string text = member.actor == reply->leader ? "隊長 " : "隊員 ";
-                text += std::to_string(member.actor) + "   " + std::string(RiverbankClassName(member.playerClass)) +
-                    "   ·   生命 " + std::to_string(member.health) + " / " + std::to_string(CombatStatsFor(member.playerClass).health);
+                text += std::to_string(member.actor) + "   " + std::string(RiverbankClassName(member.playerClass));
+                if (member.health == 0) text += "   ·   倒地";
+                else text += "   ·   生命 " + std::to_string(member.health) + " / " +
+                    std::to_string(CombatStatsFor(member.playerClass).health);
                 Line(draw, row, text);
                 row += 27.f;
             }

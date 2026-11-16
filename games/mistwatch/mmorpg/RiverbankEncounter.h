@@ -11,7 +11,7 @@ struct ArenaPosition {
 };
 
 enum class EncounterPhase : std::uint8_t { Patrol, Pursuit, Windup, Recovery, Defeated };
-enum class RiverbankAction : std::uint8_t { Attack = 1, ClassSkill = 2 };
+enum class RiverbankAction : std::uint8_t { Attack = 1, ClassSkill = 2, ReturnToCamp = 3 };
 
 struct ClassCombatStats {
     unsigned health, attackDamage, attackCooldown, skillCost, skillCooldown;
@@ -74,6 +74,7 @@ public:
     std::optional<SuspendedRiverbankCombat> Suspend(std::uint64_t id) const;
     bool RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks);
     bool Leave(std::uint64_t id);
+    bool ReturnToCamp(std::uint64_t id, std::uint64_t sequence);
     bool SetPosition(std::uint64_t id, ArenaPosition position);
     bool Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally = 0);
     struct SupportMembership {

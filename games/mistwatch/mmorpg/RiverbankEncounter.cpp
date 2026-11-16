@@ -40,6 +40,24 @@ bool RiverbankEncounter::Leave(std::uint64_t id) {
     return party.erase(id) > 0;
 }
 
+bool RiverbankEncounter::ReturnToCamp(std::uint64_t id, std::uint64_t sequence) {
+    const auto found = party.find(id);
+    if (found == party.end() || !sequence || sequence <= found->second.sequence || found->second.status.health) return false;
+    auto& player = found->second;
+    player.sequence = sequence;
+    player.request.reset();
+    player.position = ArenaPosition{};
+    player.status.health = CombatStatsFor(player.status.playerClass).health;
+    player.guardTicks = 0;
+    player.status.guarding = false;
+    // 回營地放棄這一輪戰鬥的參與資格，已領取的戰利品與進度仍保留。
+    player.contributed = false;
+    player.fieldContributionRun = 0;
+    if (northBank.tauntOwner == id) northBank.tauntOwner = 0;
+    if (pasture.tauntOwner == id) pasture.tauntOwner = 0;
+    return true;
+}
+
 bool RiverbankEncounter::RestoreRewards(std::uint64_t id, unsigned earned, unsigned fieldHides) {
     const auto player = party.find(id);
     if (player == party.end() || player->second.position || player->second.sequence) return false;
@@ -253,7 +271,24 @@ void RiverbankEncounter::Advance(Site& site, unsigned damage) {
         }
         return;
     }
-    if (boss.phase == EncounterPhase::Recovery && --boss.phaseTicks) return;
+    if (boss.phase == EncounterPhase::Recovery) {
+        if (site.field && !target) {
+            boss.target = 0;
+            // 擊倒最後一個目標後退開，保留原脫戰計時與野豬生命值。
+            constexpr float clearance = 2.80f;
+            const float distance = Distance(boss.position, boss.strikeCenter);
+            if (distance < clearance) {
+                const float dx = distance > .001f ? (boss.position.x - boss.strikeCenter.x) / distance : 1.f;
+                const float dz = distance > .001f ? (boss.position.z - boss.strikeCenter.z) / distance : 0.f;
+                ArenaPosition goal{std::clamp(boss.strikeCenter.x + dx * clearance, site.anchor.x - 4.f, site.anchor.x + 4.f),
+                                   std::clamp(boss.strikeCenter.z + dz * clearance, site.anchor.z - 4.f, site.anchor.z + 4.f)};
+                const float room = Distance(goal, boss.strikeCenter);
+                if (room < clearance - .001f && Distance(site.anchor, boss.strikeCenter) > room) goal = site.anchor;
+                Move(site, goal, .15f);
+            }
+        }
+        if (--boss.phaseTicks) return;
+    }
     boss.target = target;
     if (!target) {
         // Patrol is only for an unengaged encounter. A withdrawn party lets an engaged boss reset.

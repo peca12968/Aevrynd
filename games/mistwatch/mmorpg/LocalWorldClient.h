@@ -29,6 +29,7 @@ public:
     RiverbankClass SelectedClass() const noexcept;
 #ifdef AEVRYND_MISTWATCH_BATTLE
     bool RequestBattleAction(RiverbankAction action);
+    bool CanReturnToCamp() const noexcept;
     const RiverbankBattleWire::Encounter* Battle() const noexcept;
     bool RequestFieldHunt();
     const RiverbankFieldWire::Reply* FieldHunt() const noexcept;
