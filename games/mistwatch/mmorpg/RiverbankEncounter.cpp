@@ -1,6 +1,7 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankGear.h"
 #include "RiverbankTrailSupplies.h"
+#include <CharacterDynamicContact3D.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -19,6 +20,50 @@ float Distance(ArenaPosition left, ArenaPosition right) {
 }
 
 bool Finite(ArenaPosition point) { return std::isfinite(point.x) && std::isfinite(point.z); }
+
+// 共用單人模式人體半寬與野豬身體半徑。多人伺服器目前只裁定水平接觸。
+constexpr Aevrynd::Vec3 PlayerHalfExtent{.45f,.90f,.45f};
+constexpr float BoarRadius=1.30f, BoarHalfHeight=.80f, ContactMargin=.002f;
+
+Aevrynd::Vec3 Planar(ArenaPosition point) { return {point.x,0.f,point.z}; }
+
+bool SweepBody(Aevrynd::Vec3 player,Aevrynd::Vec3 boar,Aevrynd::Vec3 relative,
+               Aevrynd::BoxCylinderContact3D& contact) {
+    const float broad=BoarRadius+PlayerHalfExtent.x+Aevrynd::Length(relative);
+    if(std::abs(player.x-boar.x)>broad||std::abs(player.z-boar.z)>broad){
+        contact={};
+        return true;
+    }
+    return Aevrynd::QueryBoxCylinderContact3D(player,PlayerHalfExtent,relative,{boar,BoarRadius,BoarHalfHeight},contact);
+}
+
+Aevrynd::Vec3 ClipBodyStep(Aevrynd::Vec3 player,Aevrynd::Vec3 boar,Aevrynd::Vec3 relative,bool allowSlide) {
+    using Kind=Aevrynd::BoxCylinderContactKind3D;
+    const float length=Aevrynd::Length(relative);
+    if(length==0.f)return {};
+    Aevrynd::BoxCylinderContact3D hit;
+    if(!SweepBody(player,boar,relative,hit))return {};
+    if(hit.kind==Kind::Clear)return relative;
+    const float into=Aevrynd::Dot(relative,hit.horizontalNormal);
+    if(hit.kind==Kind::StartedOverlapping){
+        Aevrynd::BoxCylinderContact3D end;
+        // 重生或舊座標已重疊時，只接受沿表面向外且降低穿入量的位移。
+        if(into>0.f&&SweepBody(player+relative,boar,{},end)&&
+           (end.kind==Kind::Clear||end.horizontalPenetration<hit.horizontalPenetration))return relative;
+        return {};
+    }
+    if(hit.kind!=Kind::SideEntry)return {};
+    const auto backed=relative*std::max(0.f,static_cast<float>(hit.first)-ContactMargin/length);
+    if(!allowSlide||into>=0.f)return backed;
+    const float normalLength=Aevrynd::Dot(hit.horizontalNormal,hit.horizontalNormal);
+    if(normalLength<=0.f)return backed;
+    const auto tangent=relative-hit.horizontalNormal*(into/normalLength);
+    // 快照只有起點與終點，側滑候選本身也必須是一條安全直線。
+    Aevrynd::BoxCylinderContact3D side;
+    if(Aevrynd::Dot(tangent,relative)>Aevrynd::Dot(backed,relative)&&
+       SweepBody(player,boar,tangent,side)&&side.kind==Kind::Clear)return tangent;
+    return backed;
+}
 }
 
 RiverbankEncounter::RiverbankEncounter(ArenaPosition center) : northBank{center, false}, pasture{EastPastureCenter, true} {
@@ -111,6 +156,15 @@ bool RiverbankEncounter::SetPosition(std::uint64_t id, ArenaPosition position) {
     if (player == party.end() || !Finite(position)) return false;
     player->second.position = position;
     return true;
+}
+
+ArenaPosition RiverbankEncounter::ConstrainPlayerMovement(ArenaPosition from,ArenaPosition translation) const {
+    if(!Finite(from)||!Finite(translation))return {};
+    auto allowed=Planar(translation);
+    for(const auto* site:{&northBank,&pasture})
+        if(site->state.health&&site->state.phase!=EncounterPhase::Defeated)
+            allowed=ClipBodyStep(Planar(from),Planar(site->state.position),allowed,true);
+    return {allowed.x,allowed.z};
 }
 
 bool RiverbankEncounter::Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally) {
@@ -301,21 +355,30 @@ void RiverbankEncounter::Advance(Site& site, unsigned damage) {
     }
     boss.phase = EncounterPhase::Pursuit;
     const auto position = *party.at(target).position;
-    if (Distance(boss.position, position) <= (site.field ? 1.30f : 1.65f)) {
-        boss.phase = EncounterPhase::Windup;
-        boss.strikeCenter = position;
-        boss.phaseTicks = site.field ? FieldWindupTicks : WindupTicks;
-    } else {
+    if (Distance(boss.position, position) > (site.field ? 1.30f : 1.65f)) {
         Move(site, position, site.field ? .15f : .14f);
+        const auto towards=Planar(boss.position)-Planar(position);
+        Aevrynd::BoxCylinderContact3D contact;
+        // 接觸面阻擋追擊時可蓄力，避免野豬因抵達新的停步距離而一直追撞。
+        if(!SweepBody(Planar(position),Planar(boss.position),Aevrynd::Normalize(towards)*(ContactMargin*2.f),contact)||
+           contact.kind==Aevrynd::BoxCylinderContactKind3D::Clear)return;
     }
+    boss.phase = EncounterPhase::Windup;
+    boss.strikeCenter = position;
+    boss.phaseTicks = site.field ? FieldWindupTicks : WindupTicks;
 }
 
-void RiverbankEncounter::Move(Site& site, ArenaPosition position, float step) {
-    auto& boss = site.state;
-    const auto distance = Distance(boss.position, position);
-    if (distance <= step) { boss.position = position; return; }
-    boss.position.x += (position.x - boss.position.x) * step / distance;
-    boss.position.z += (position.z - boss.position.z) * step / distance;
+void RiverbankEncounter::Move(Site& site,ArenaPosition position,float step) const {
+    auto& boss=site.state;
+    const auto previous=Planar(boss.position);
+    const auto requested=Planar(position)-previous;
+    const float distance=Aevrynd::Length(requested);
+    if(distance==0.f)return;
+    auto allowed=requested*std::min(1.f,step/distance);
+    for(const auto& [id,player]:party)
+        if(player.status.health&&player.position)
+            allowed=ClipBodyStep(Planar(*player.position),previous,allowed*-1.f,false)*-1.f;
+    boss.position={previous.x+allowed.x,previous.z+allowed.z};
 }
 
 void RiverbankEncounter::Finish(Site& site) {

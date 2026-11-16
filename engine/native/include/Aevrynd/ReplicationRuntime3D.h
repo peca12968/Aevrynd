@@ -2,6 +2,7 @@
 #include <Aevrynd/NetworkTransport3D.h>
 #include <Aevrynd/ReplicationProtocol3D.h>
 #include <deque>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -10,6 +11,8 @@ namespace Aevrynd {
 struct ReplicationRuntimeSettings3D {std::uint32_t tickRate{60};std::size_t maximumClients{8},maximumInputHistory{256},maximumSnapshotHistory{64},maximumPacketsPerTick{256},maximumSnapshotEntities{4096};std::int32_t interestLoadRadius{2},interestRetainRadius{3};float interestChunkSize{32.f},movementPerTick{.1f};std::size_t movementLateGraceTicks{};};
 struct ReplicationRuntimeStats3D {std::uint64_t ticks{},inputsReceived{},duplicateInputs{},staleInputs{},futureInputs{},snapshotsSent{},fullSnapshots{},deltaSnapshots{},acks{},reconciliations{},replayedInputs{},historyDrops{},packetRejects{};};
 struct ReplicationPlayerState3D {NetworkEntityId3D entity{};GlobalPosition3D position{};Vec3 velocity{};std::uint64_t tick{};};
+// 遊戲可在廣播前裁剪一刻的位移。輸入朝向或長度不可由客戶端繞過此處。
+using ReplicationMovementConstraint3D = std::function<Vec3(const ReplicationPlayerState3D&, Vec3)>;
 struct ReplicationServerClientTelemetry3D {std::uint32_t clientId{};std::uint64_t interestEpoch{},interestEntered{},interestExited{},entityReentries{},entityDespawns{};std::size_t interestChunks{},visibleEntities{},lastSnapshotEntities{},lastSnapshotDespawns{};GlobalPosition3D authoritativePosition{};};
 
 class ReplicationServer3D {
@@ -20,7 +23,7 @@ public:
  bool SetClientEntityFlags(std::uint32_t clientId,std::uint32_t flags);
  bool SetClientMovementEnabled(std::uint32_t clientId,bool enabled);
  bool SetClientPosition(std::uint32_t clientId,GlobalPosition3D position);
- void Tick();
+ void Tick(const ReplicationMovementConstraint3D& constraint={});
  std::optional<ReplicationPlayerState3D> Player(std::uint32_t clientId)const;
  std::optional<ReplicationServerClientTelemetry3D> ClientTelemetry(std::uint32_t clientId)const;
  std::size_t ClientCount()const noexcept{return clients_.size();}

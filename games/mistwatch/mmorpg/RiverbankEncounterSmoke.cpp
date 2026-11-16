@@ -13,6 +13,25 @@ void Require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 
+void LiveBodyStopsCrossingWithoutTrappingThePlayer() {
+    RiverbankEncounter arena;
+    const auto step=arena.ConstrainPlayerMovement({13.2f,15.f},{.1f,0.f});
+    Require(step.x>.047f&&step.x<.051f&&step.z==0.f,"The live boar did not stop the player at its footprint");
+    const auto tangent=arena.ConstrainPlayerMovement({13.24f,15.f},{.07f,.07f});
+    Require(std::abs(tangent.x)<.00001f&&tangent.z>.069f,"The player could not move along the body");
+    const auto inward=arena.ConstrainPlayerMovement({13.30f,15.f},{.1f,0.f});
+    const auto escape=arena.ConstrainPlayerMovement({13.30f,15.f},{-.1f,0.f});
+    Require(inward.x==0.f&&escape.x==-.1f,"Overlapping old positions must allow escape only");
+    const auto open=arena.ConstrainPlayerMovement({1.f,1.f},{.1f,.03f});
+    Require(open.x==.1f&&open.z==.03f,"The wild boar affected movement in the camp");
+
+    Require(arena.Join(1,RiverbankClass::Guardian)&&arena.SetPosition(1,{13.f,15.f}),"Contact case setup failed");
+    for(unsigned tick=0;tick<8&&arena.Field().phase!=EncounterPhase::Windup;++tick)arena.Tick();
+    Require(arena.Field().phase==EncounterPhase::Windup&&arena.Field().target==1&&
+            arena.Field().position.x>=14.749f&&arena.Field().position.x<=14.76f,
+            "The wild boar crossed the player or stalled before beginning its windup");
+}
+
 void RolesAndTelegraph() {
     RiverbankEncounter arena({0, 0});
     Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Ranger) &&
@@ -202,6 +221,7 @@ void BattleWireRoundTrip() {
 
 int main() {
     try {
+        LiveBodyStopsCrossingWithoutTrappingThePlayer();
         RolesAndTelegraph();
         DefeatOnceAndReset();
         DownedAndRejoin();

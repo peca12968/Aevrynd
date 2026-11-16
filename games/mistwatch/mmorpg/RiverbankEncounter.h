@@ -76,6 +76,7 @@ public:
     bool Leave(std::uint64_t id);
     bool ReturnToCamp(std::uint64_t id, std::uint64_t sequence);
     bool SetPosition(std::uint64_t id, ArenaPosition position);
+    ArenaPosition ConstrainPlayerMovement(ArenaPosition from, ArenaPosition translation) const;
     bool Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally = 0);
     struct SupportMembership {
         std::uint64_t actor{}, group{};
@@ -115,7 +116,7 @@ private:
     unsigned ResolveAction(Site& site, std::uint64_t id, Participant& participant, const Request& request,
                            std::span<const SupportMembership> groups);
     void CreditContribution(const Site& site, Participant& participant);
-    static void Move(Site& site, ArenaPosition target, float step);
+    void Move(Site& site, ArenaPosition target, float step) const;
     void Advance(Site& site, unsigned damage);
     void Reset(Site& site);
     void Finish(Site& site);

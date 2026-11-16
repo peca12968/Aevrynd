@@ -18,7 +18,8 @@ from VerifyRiverbankProfiles import start
 import VerifyWorldServer as world
 
 VIEWED, EXCHANGED, NOT_ENOUGH, TOO_FAR, DOWNED, ALREADY_OWNED, REJECTED = range(7)
-MEADOW = (13.8, 15.0)
+# 集合點靠牧場北側，保留與巡邏野豬的空間。
+MEADOW = (11.4, 18.2)
 
 
 class Customer(Hunter):

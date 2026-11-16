@@ -88,6 +88,10 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankFieldHunt.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(MistwatchRiverbankFieldHuntLoopbackTest PROPERTIES TIMEOUT 105 LABELS "mistwatch;combat;field;network")
+  add_test(NAME MistwatchRiverbankFieldContactTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankFieldContact.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankFieldContactTest PROPERTIES TIMEOUT 40 LABELS "mistwatch;combat;field;network")
   add_test(NAME MistwatchRiverbankCampRecoveryTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankCampRecovery.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
@@ -123,6 +127,7 @@ set_tests_properties(MistwatchTailnetAddressValidationTest PROPERTIES TIMEOUT 5 
 option(MISTWATCH_TEST_RIVERBANK_ENCOUNTER "Build the isolated riverbank encounter rules test" OFF)
 if(MISTWATCH_TEST_RIVERBANK_ENCOUNTER)
   add_executable(MistwatchRiverbankEncounterSmoke RiverbankEncounter.cpp RiverbankEncounterSmoke.cpp)
+  target_link_libraries(MistwatchRiverbankEncounterSmoke PRIVATE ${MISTWATCH_RUNTIME_LIBRARY})
   target_compile_definitions(MistwatchRiverbankEncounterSmoke PRIVATE NOMINMAX)
   target_compile_options(MistwatchRiverbankEncounterSmoke PRIVATE /W4 /WX /permissive- /utf-8)
   add_test(NAME MistwatchRiverbankEncounterTest COMMAND MistwatchRiverbankEncounterSmoke)

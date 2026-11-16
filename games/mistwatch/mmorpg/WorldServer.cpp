@@ -93,8 +93,15 @@ public:
                 if (!player || !world_.SetClientEntityFlags(id, peer.joinFlags | (player->health ? 0u : DownedEntityFlag)))
                     throw std::runtime_error("Cannot publish Riverbank avatar stance");
             }
-#endif
+            world_.Tick([this](const ReplicationPlayerState3D& player,Vec3 delta){
+                Vec3 from{};
+                if(!ToLocalPosition3D(player.position,WorldOrigin3D{},from))return Vec3{};
+                const auto allowed=encounter_.ConstrainPlayerMovement({from.x,from.z},{delta.x,delta.z});
+                return Vec3{allowed.x,0.f,allowed.z};
+            });
+#else
             world_.Tick();
+#endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #ifdef AEVRYND_MISTWATCH_PROFILES
             std::array<Mistwatch::RiverbankEncounter::SupportMembership, MaxClients> supportGroups{};
