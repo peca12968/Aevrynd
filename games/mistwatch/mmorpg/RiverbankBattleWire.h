@@ -14,6 +14,7 @@ inline constexpr std::uint32_t StructureCoverCapability = 1u << 24;
 inline constexpr std::uint32_t DownedEntityFlag = 1u << 19;
 inline constexpr std::uint32_t DodgeCapability = 1u << 25;
 inline constexpr std::uint32_t DodgingEntityFlag = 1u << 26;
+inline constexpr std::uint32_t TerritoryCombatCapability = 1u << 29;
 
 inline std::uint64_t PackDodgeDirection(std::int16_t x, std::int16_t z) {
     return std::uint64_t(std::bit_cast<std::uint16_t>(x)) |

@@ -32,4 +32,14 @@ inline std::vector<Aevrynd::BoxCollider3D> RangerHutSolids() {
     }
     return result;
 }
+
+inline std::vector<Aevrynd::BoxCollider3D> RepairShelterSolids() {
+    const auto p=Session::repairSites[0];
+    // 東側入口開放；屋頂下緣 1.45 公尺，蹲姿 1.4 可進，站姿 1.8 被阻擋。
+    return {{p+Aevrynd::Vec3{0,1.55f,0},{2.5f,.1f,2.f}},
+        {p+Aevrynd::Vec3{-2.4f,.7f,0},{.1f,.7f,2.f}},
+        {p+Aevrynd::Vec3{0,.7f,-1.9f},{2.5f,.7f,.1f}},
+        {p+Aevrynd::Vec3{0,.7f,1.9f},{2.5f,.7f,.1f}},
+        {p+Aevrynd::Vec3{0,.23f,0},{.3f,.23f,.2f}}};
+}
 }

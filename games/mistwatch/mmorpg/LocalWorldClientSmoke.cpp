@@ -8,7 +8,43 @@
 #include <thread>
 
 #ifdef AEVRYND_MISTWATCH_PROFILES
+#include "RiverbankGuildPanel.h"
 namespace {
+int VerifyClosedGuildInvitation(Mistwatch::LocalWorldClient& client) {
+    using namespace Mistwatch;
+    using Clock = std::chrono::steady_clock;
+    const auto deadline = Clock::now() + std::chrono::seconds(9);
+    RiverbankGuildPanel panel;
+    const Aevrynd::Input idle;
+    bool announced{}, declined{};
+    std::uint64_t lastReply{};
+    while (Clock::now() < deadline) {
+        const auto status = client.Poll(0, 0);
+        if (status == LocalWorldClient::Status::Disconnected) return 40;
+        if (status == LocalWorldClient::Status::Ready) {
+            if (panel.Open()) return 41;
+            if (const auto* reply = client.GuildReply(); reply && reply->sequence != lastReply) {
+                lastReply = reply->sequence;
+                if (reply->result != GuildResult::Ok || reply->state.guildId) return 42;
+                if (!announced) {
+                    if (reply->state.inviteId) return 43;
+                    std::cout << "NATIVE_CLOSED_GUILD_PANEL_READY " << client.PlayerId() << std::endl;
+                    announced = true;
+                } else if (declined && !reply->state.inviteId) {
+                    std::cout << "NATIVE_CLOSED_GUILD_INVITE_PASS\n";
+                    return 0;
+                } else if (reply->state.inviteName == "Cedar Patrol" &&
+                           client.RequestGuild(GuildAction::Decline, std::uint64_t(reply->state.inviteId))) {
+                    declined = true;
+                }
+            }
+            panel.Update(idle, client);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return 44;
+}
+
 int VerifyPartyInvitation(Mistwatch::LocalWorldClient& client) {
     using namespace Mistwatch;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(7);
@@ -125,12 +161,15 @@ int main(int argc, char** argv) {
         std::cout << "RIVERBANK_TAILNET_ADDRESS_VALIDATION_PASS\n";
         return 0;
     }
+    const bool guildInvite = argc == 3 && std::string_view(argv[2]) == "--guild-invite-closed";
     const bool guildView = argc == 3 && std::string_view(argv[2]) == "--guild-view";
+    const bool guildRoster = argc == 3 && std::string_view(argv[2]) == "--guild-roster";
+    const bool guildRosterLegacy = argc == 3 && std::string_view(argv[2]) == "--guild-roster-legacy";
     const bool reconnect = argc == 3 && std::string_view(argv[2]) == "--live-reconnect";
     const bool manualReconnect = argc == 3 && std::string_view(argv[2]) == "--manual-reconnect";
     const bool party = argc == 3 && std::string_view(argv[2]) == "--party-accept";
     const bool history = argc == 3 && std::string_view(argv[2]) == "--territory-history";
-    if (argc != 2 && !guildView && !reconnect && !manualReconnect && !party && !history) return 1;
+    if (argc != 2 && !guildInvite && !guildView && !guildRoster && !guildRosterLegacy && !reconnect && !manualReconnect && !party && !history) return 1;
     unsigned short port{};
     const std::string_view raw(argv[1]);
     const auto parsed = std::from_chars(raw.data(), raw.data() + raw.size(), port);
@@ -138,9 +177,40 @@ int main(int argc, char** argv) {
     Mistwatch::LocalWorldClient client(port);
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 #ifdef AEVRYND_MISTWATCH_PROFILES
+    if (guildInvite) return VerifyClosedGuildInvitation(client);
     if (party) return VerifyPartyInvitation(client);
     if (reconnect || manualReconnect) return VerifyLiveReconnect(client, manualReconnect);
     if (history) return VerifyTerritoryHistory(client);
+    if (guildRoster || guildRosterLegacy) {
+        bool requested = false;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (client.Poll(0, 0) == Mistwatch::LocalWorldClient::Status::Disconnected) return 33;
+#ifdef AEVRYND_MISTWATCH_BATTLE
+            if (client.CanUseGuild() && client.IsDodging()) return 39;
+#endif
+            if (client.CanUseGuild() && guildRosterLegacy) {
+                if (client.CanReadGuildRoster() || client.RequestGuildRoster(0)) return 34;
+                std::cout << "NATIVE_GUILD_ROSTER_LEGACY_PASS\n";
+                return 0;
+            }
+            if (const auto* roster = client.GuildRoster()) {
+                if (!roster->guildId || roster->page || roster->total != 2 || roster->members.size() != 2) return 35;
+                const auto& leader = roster->members[0];
+                const auto& member = roster->members[1];
+                if (leader.rank != Mistwatch::GuildRank::Leader || leader.self || leader.onlinePlayer ||
+                    member.rank != Mistwatch::GuildRank::Member || !member.self ||
+                    member.onlinePlayer != client.PlayerId() || member.playerClass != Mistwatch::RiverbankClass::Guardian) return 36;
+                std::cout << "NATIVE_GUILD_ROSTER_PASS\n";
+                return 0;
+            }
+            if (!requested && client.CanReadGuildRoster()) {
+                if (!client.RequestGuildRoster(0) || client.RequestGuildRoster(0)) return 37;
+                requested = true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return 38;
+    }
     if (guildView) {
         bool requested = false;
         while (std::chrono::steady_clock::now() < deadline) {

@@ -45,6 +45,7 @@ public:
     void AwardFieldHides(std::uint64_t world, std::uint64_t encounter, std::span<const std::int64_t> eligibleProfiles);
     TrailSupplyResult ExchangeTrailPack(std::int64_t profileId);
     GuildState ReadGuild(std::int64_t profileId);
+    GuildRosterPage ReadGuildRoster(std::int64_t profileId, std::uint32_t page);
     GuildResult ChangeGuild(std::int64_t profileId, GuildAction action, std::int64_t target, std::string_view name);
 
     TerritoryState ReadTerritoryOwner();

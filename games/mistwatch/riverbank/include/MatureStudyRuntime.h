@@ -88,14 +88,21 @@ struct Runtime {
             if(!meshes[slot]||!meshes[slot].cpuMesh){const auto stats=engine.GetRendererStats();throw std::runtime_error(std::string("Mature study GPU upload failed role=")+data.name+" resident="+std::to_string(stats.residentMeshBytes)+" budget="+std::to_string(stats.meshMemoryBudgetBytes)+" budget_rejections="+std::to_string(stats.meshBudgetRejections)+" bounds_rejections="+std::to_string(stats.invalidMeshBoundsRejections));}
         }
     }
-    template<class Scene> void Draw(Scene& scene,const Aevrynd::Transform3D& original,const Aevrynd::BoxCollider3D& oldBody,std::span<const Aevrynd::BoxCollider3D> solids) {
-        auto pose=original;pose.scale=pose.scale*.4f;
+    static Aevrynd::Transform3D DisplayPose(const Aevrynd::Transform3D& original) {
+        auto pose=original;
+        pose.scale=pose.scale*.4f;
         const auto pivot=Aevrynd::TransformBounds({RootPivot,0,{0,0,0}},pose).center;
         pose.position=pose.position+(original.position-pivot);
+        return pose;
+    }
+    template<class Scene> void Draw(Scene& scene,const Aevrynd::Transform3D& original,
+                                    const Aevrynd::BoxCollider3D& oldBody,std::span<const Aevrynd::BoxCollider3D> solids,
+                                    Aevrynd::RenderObjectIdentity3D leaves={}) {
+        const auto pose=DisplayPose(original);
         contact.Observe(original,pose,oldBody,solids);
         if(contactWorld)contactWorld->ObserveDraw(original,pose);
         for(unsigned slot=0;slot<3;++slot){
-            if(!scene.Mesh(meshes[slot],pose,surfaces[slot]))throw std::runtime_error("Mature study actual scene insertion failed");
+            if(!scene.Mesh(meshes[slot],pose,surfaces[slot],{},slot==1?leaves:Aevrynd::RenderObjectIdentity3D{}))throw std::runtime_error("Mature study actual scene insertion failed");
             ++submitted;
         }
     }

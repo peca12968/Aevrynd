@@ -12,6 +12,8 @@ inline const std::vector<Aevrynd::BoxCollider3D>& Solids() {
         boxes.push_back(FuseCaseSolid());
         const auto hut = RangerHutSolids();
         boxes.insert(boxes.end(), hut.begin(), hut.end());
+        const auto shelter = RepairShelterSolids();
+        boxes.insert(boxes.end(), shelter.begin(), shelter.end());
         return boxes;
     }();
     return solids;
@@ -27,6 +29,15 @@ inline bool HasLine(ArenaPosition from, ArenaPosition to) {
 }
 
 inline constexpr Aevrynd::Vec3 PlayerBody{RiverbankBounds::BodyClearance,.9f,RiverbankBounds::BodyClearance};
+inline bool CanStandInShelter(ArenaPosition feet) {
+    static const auto roof = RepairShelterSolids().front();
+    const float ground = GroundElevation(feet.x, feet.z);
+    // 可以貼著屋簷站立。掃掠保留的水平間隙避免已站立角色自動蹲下。
+    return std::abs(feet.x - roof.center.x) >= roof.extents.x + PlayerBody.x ||
+        std::abs(feet.z - roof.center.z) >= roof.extents.z + PlayerBody.z ||
+        ground + 2.f * PlayerBody.y < roof.center.y - roof.extents.y ||
+        ground > roof.center.y + roof.extents.y;
+}
 inline ArenaPosition ClipStep(ArenaPosition from, ArenaPosition delta, Aevrynd::Vec3 body = PlayerBody) {
     if (!std::isfinite(from.x) || !std::isfinite(from.z) || !std::isfinite(delta.x) || !std::isfinite(delta.z) ||
         (delta.x == 0.f && delta.z == 0.f)) return {};

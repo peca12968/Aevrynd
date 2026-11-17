@@ -55,7 +55,10 @@ public:
     static constexpr float DodgeStepMeters = .25f;
     static constexpr unsigned BossHealth = 330;
     static constexpr unsigned WindupTicks = 20;
+    static constexpr unsigned RecoveryTicks = 18;
     static constexpr float StrikeRadius = 2.4f;
+    static constexpr float BoarBodyRadius = 1.30f;
+    static constexpr float PlayerContactHalfWidth = .45f;
     static constexpr ArenaPosition NorthBankCenter{0.f, 48.f};
     // The fight stays on the dry clearing. The riverbed starts south of the arena.
     static constexpr bool InArena(ArenaPosition point, ArenaPosition center = NorthBankCenter) {
@@ -80,7 +83,7 @@ public:
     bool RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks);
     bool Leave(std::uint64_t id);
     bool ReturnToCamp(std::uint64_t id, std::uint64_t sequence);
-    bool SetPosition(std::uint64_t id, ArenaPosition position);
+    bool SetPosition(std::uint64_t id, ArenaPosition position, std::int64_t guild = 0);
     bool StartDodge(std::uint64_t id, std::uint64_t sequence, ArenaPosition direction);
     std::optional<ArenaPosition> DodgeStep(std::uint64_t id) const;
     ArenaPosition ConstrainPlayerMovement(ArenaPosition from, ArenaPosition translation) const;
@@ -104,7 +107,8 @@ private:
         unsigned guardTicks{}, dodgeTicks{}, dodgeCooldown{};
         ArenaPosition dodgeStep{};
         std::uint64_t fieldContributionRun{};
-        unsigned fieldHides{};
+        unsigned fieldHides{}, pendingTerritoryDamage{};
+        std::int64_t guild{};
         bool contributed{}, bossGear{}, trailPack{};
     };
 
@@ -121,8 +125,10 @@ private:
 
     bool InRange(const Participant& player, ArenaPosition from, float range) const;
     std::uint64_t Target(const Site& site) const;
-    unsigned ResolveAction(Site& site, std::uint64_t id, Participant& participant, const Request& request,
-                           std::span<const SupportMembership> groups);
+    unsigned ResolveAttack(Site& site, std::uint64_t id, Participant& participant, RiverbankAction action);
+    void ResolveTerritoryAttack(Participant& participant, RiverbankAction action);
+    void ResolveSupport(std::uint64_t id, Participant& participant, std::uint64_t target,
+                        std::span<const SupportMembership> groups);
     void CreditContribution(const Site& site, Participant& participant);
     void Move(Site& site, ArenaPosition target, float step) const;
     void Advance(Site& site, unsigned damage);

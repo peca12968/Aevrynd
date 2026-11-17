@@ -114,6 +114,16 @@ CREATE TABLE riverbank_watch_survey (
 );
 PRAGMA user_version = 8;
 )sql";
+constexpr char WatchRouteSchema[] = R"sql(
+ALTER TABLE riverbank_watch_survey RENAME TO riverbank_watch_survey_v8;
+CREATE TABLE riverbank_watch_survey (
+    character_id INTEGER PRIMARY KEY REFERENCES riverbank_expedition(character_id),
+    stage INTEGER NOT NULL CHECK(stage BETWEEN 6 AND 10)
+);
+INSERT INTO riverbank_watch_survey(character_id, stage) SELECT character_id, stage FROM riverbank_watch_survey_v8;
+DROP TABLE riverbank_watch_survey_v8;
+PRAGMA user_version = 9;
+)sql";
 
 void Require(sqlite3* db, int code, int expected = SQLITE_OK) {
     if (code != expected) throw std::runtime_error(std::string("Riverbank profile database: ") + sqlite3_errmsg(db));
@@ -258,8 +268,8 @@ RiverbankProfileStore::RiverbankProfileStore(const std::filesystem::path& path) 
         Require(db, version.Step(), SQLITE_ROW);
         schema = version.Value(0);
     }
-    if (schema < 0 || schema > 8) throw std::runtime_error("Unsupported Riverbank profile schema");
-    if (schema < 8) {
+    if (schema < 0 || schema > 9) throw std::runtime_error("Unsupported Riverbank profile schema");
+    if (schema < 9) {
         Transaction upgrade(db);
         if (!schema) Execute(db, Schema);
         if (schema < 2) Execute(db, GuildSchema);
@@ -268,7 +278,8 @@ RiverbankProfileStore::RiverbankProfileStore(const std::filesystem::path& path) 
         if (schema < 5) Execute(db, BossGearSchema);
         if (schema < 6) Execute(db, FieldHidesSchema);
         if (schema < 7) Execute(db, TrailSuppliesSchema);
-        Execute(db, WatchSurveySchema);
+        if (schema < 8) Execute(db, WatchSurveySchema);
+        Execute(db, WatchRouteSchema);
         upgrade.Commit();
     }
 }
@@ -422,6 +433,36 @@ GuildState RiverbankProfileStore::ReadGuild(std::int64_t profileId) {
         state.inviteName = invite.Text(1);
     }
     return state;
+}
+
+GuildRosterPage RiverbankProfileStore::ReadGuildRoster(std::int64_t profileId, std::uint32_t page) {
+    const auto own = ReadGuild(profileId);
+    if (!own.guildId) return {};
+    auto* db = storage->handle;
+    Statement count(db, "SELECT COUNT(*) FROM riverbank_guild_member WHERE guild_id=?1");
+    count.Bind(1, own.guildId);
+    Require(db, count.Step(), SQLITE_ROW);
+    const auto total = count.Value(0);
+    if (total <= 0 || total > (std::numeric_limits<std::uint32_t>::max)())
+        throw std::runtime_error("公會名單的成員數無效");
+    GuildRosterPage roster;
+    roster.guildId = static_cast<std::uint64_t>(own.guildId);
+    roster.total = static_cast<std::uint32_t>(total);
+    roster.page = (std::min)(page, (roster.total - 1) / GuildRosterPageSize);
+    Statement read(db, "SELECT m.character_id,c.profession,m.rank FROM riverbank_guild_member AS m "
+                       "JOIN riverbank_character AS c ON c.id=m.character_id WHERE m.guild_id=?1 "
+                       "ORDER BY m.rank DESC,m.character_id ASC LIMIT ?2 OFFSET ?3");
+    read.Bind(1, own.guildId);
+    read.Bind(2, std::int64_t(GuildRosterPageSize));
+    read.Bind(3, std::int64_t(roster.page) * GuildRosterPageSize);
+    int step;
+    while ((step = read.Step()) == SQLITE_ROW) {
+        const auto id = read.Value(0);
+        roster.members.push_back({static_cast<std::uint64_t>(id), 0, RiverbankClass(read.Value(1)),
+                                  GuildRank(read.Value(2)), id == profileId});
+    }
+    Require(db, step, SQLITE_DONE);
+    return roster;
 }
 
 GuildResult RiverbankProfileStore::ChangeGuild(std::int64_t profile, GuildAction action, std::int64_t target, std::string_view name) {
@@ -635,7 +676,7 @@ ExpeditionStage RiverbankProfileStore::ReadExpedition(std::int64_t profile, bool
     Require(db, statusSurvey, SQLITE_ROW);
     const auto watch = survey.Value(0);
     if (watch < static_cast<std::int64_t>(ExpeditionStage::WatchEast) ||
-        watch > static_cast<std::int64_t>(ExpeditionStage::WatchRecorded))
+        watch > static_cast<std::int64_t>(ExpeditionStage::WatchEastRemaining))
         throw std::runtime_error("Invalid Riverbank watch survey stage");
     return ExpeditionStage(watch);
 }
@@ -647,7 +688,8 @@ ExpeditionResult RiverbankProfileStore::InteractExpedition(std::int64_t profile,
     const auto stage = ReadExpedition(profile, watchSurvey);
     if (stage == ExpeditionStage::Hunt) return ExpeditionResult::HuntRequired;
     if (!RiverbankExpedition::HasDestination(stage)) return ExpeditionResult::Finished;
-    if (!RiverbankExpedition::CanInteract(stage, position)) return ExpeditionResult::TooFar;
+    const auto post = RiverbankExpedition::PostAt(stage, position);
+    if (!post && !RiverbankExpedition::CanInteract(stage, position)) return ExpeditionResult::TooFar;
 
     if (stage == ExpeditionStage::WatchAvailable) {
         Statement accept(db, "INSERT INTO riverbank_watch_survey(character_id, stage) VALUES (?1, ?2)");
@@ -655,18 +697,25 @@ ExpeditionResult RiverbankProfileStore::InteractExpedition(std::int64_t profile,
         accept.Bind(2, static_cast<std::int64_t>(ExpeditionStage::WatchEast));
         accept.Done();
     } else if (stage >= ExpeditionStage::WatchEast) {
-        const auto writeStep = [&](std::int64_t recipient) {
-            Statement advance(db, "UPDATE riverbank_watch_survey SET stage=stage+1 WHERE character_id=?1 AND stage=?2");
+        const auto writeStep = [&](std::int64_t recipient, ExpeditionStage previous, ExpeditionStage next) {
+            Statement advance(db, "UPDATE riverbank_watch_survey SET stage=?3 WHERE character_id=?1 AND stage=?2");
             advance.Bind(1, recipient);
-            advance.Bind(2, static_cast<std::int64_t>(stage));
+            advance.Bind(2, static_cast<std::int64_t>(previous));
+            advance.Bind(3, static_cast<std::int64_t>(next));
             advance.Done();
-            return sqlite3_changes(db) == 1;
+            if (sqlite3_changes(db) != 1) throw std::runtime_error("Riverbank watch survey changed during interaction");
         };
-        if (!writeStep(profile)) throw std::runtime_error("Riverbank watch survey stage changed during interaction");
-        // 隊友必須在同一瞭望樁、同一階段。領取與回報維持個人進度。
-        for (const auto& member : watchMembers)
-            if (member.profileId != profile && RiverbankExpedition::CanShareWatchPost(stage, member.position))
-                (void)writeStep(member.profileId);
+        if (post) {
+            writeStep(profile, stage, *RiverbankExpedition::AfterPost(stage, *post));
+            // 同一座樁可以同時讓首次和第二次到場的隊友取得各自進度。
+            for (const auto& member : watchMembers) {
+                if (member.profileId == profile || !RiverbankExpedition::CanSharePost(*post, member.position)) continue;
+                const auto previous = ReadExpedition(member.profileId, true);
+                if (const auto next = RiverbankExpedition::AfterPost(previous, *post)) writeStep(member.profileId, previous, *next);
+            }
+        } else {
+            writeStep(profile, stage, ExpeditionStage::WatchRecorded);
+        }
     } else if (stage == ExpeditionStage::Available) {
         Statement accept(db, "INSERT INTO riverbank_expedition(character_id, stage) VALUES (?1, 1)");
         accept.Bind(1, profile);

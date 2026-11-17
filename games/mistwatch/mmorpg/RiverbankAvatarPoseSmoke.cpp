@@ -93,6 +93,60 @@ bool VerifyBridgeDeckContact(const Mistwatch::RiverbankAvatarMotion& motion,
     return samples == 186 && deepest >= -.006f;
 }
 
+bool VerifyCrouchHeadroom(const Mistwatch::RiverbankAvatarMotion& motion,
+    const SkinnedModelAssetData& asset, const std::array<std::vector<std::uint32_t>, 2>& boots) {
+    const auto terrain = Mistwatch::CreateTerrain();
+    const Mistwatch::RiverbankWalkSurface surface{terrain};
+    const auto roof = Mistwatch::RepairShelterSolids().front();
+    const auto roofY = roof.center.y - roof.extents.y;
+    const Vec3 feet{-6.8f, terrain.SampleHeight(-6.8f, 17.18f), 17.18f};
+    const auto normal = surface.SampleNormal(feet.x, feet.z);
+    AnimationPose3D scratch, pose;
+    SkinningWorkspace3D skinning;
+    Mesh3D skinned;
+    float maximum = -std::numeric_limits<float>::infinity();
+    float sole = std::numeric_limits<float>::infinity();
+    const auto measure = [&](const Mistwatch::RiverbankAvatarMotion::Player& actor) {
+        const auto placement = motion.Evaluate(asset.model.skeleton, actor, feet, scratch, pose, normal, &surface);
+        if (!SkinModelInto(asset.model, pose, skinning, skinned)) return false;
+        maximum = -std::numeric_limits<float>::infinity();
+        sole = std::numeric_limits<float>::infinity();
+        for (const auto& vertex : skinned.vertices) {
+            const auto point = TransformPoint(placement, {vertex.x, vertex.y, vertex.z});
+            if (!std::isfinite(point.y)) return false;
+            maximum = std::max(maximum, point.y);
+        }
+        for (const auto& boot : boots) {
+            for (const auto index : boot) {
+                const auto& vertex = skinned.vertices[index];
+                const auto point = TransformPoint(placement, {vertex.x, vertex.y, vertex.z});
+                if (!terrain.Contains(point.x, point.z)) return false;
+                sole = std::min(sole, point.y - terrain.SampleHeight(point.x, point.z));
+            }
+        }
+        return std::isfinite(sole) && std::isfinite(maximum);
+    };
+
+    Mistwatch::RiverbankAvatarMotion::Player actor;
+    if (!measure(actor) || maximum <= roofY) return false;
+    // 第一個蹲姿快照即使還沒有累計時間，也能直接對齊權威姿勢。
+    actor.ObserveStance(true, 0.f);
+    if (!measure(actor) || maximum > roofY - .005f || std::abs(sole) > .008f) return false;
+    const float firstTop = maximum;
+    constexpr float dt = 1.f / 60.f;
+    float walkingTop = maximum, walkingSole = sole;
+    for (unsigned frame = 0; frame < 120; ++frame) {
+        actor.AdvanceByTravel({-.9f * dt, 0, 0}, dt, false, true);
+        if (!measure(actor)) return false;
+        walkingTop = std::max(walkingTop, maximum);
+        walkingSole = std::min(walkingSole, sole);
+    }
+    std::cout << "crouch_first_headroom_m=" << roofY - firstTop
+              << " crouch_walk_headroom_m=" << roofY - walkingTop
+              << " crouch_lowest_sole_m=" << walkingSole << '\n';
+    return walkingTop <= roofY - .005f && walkingSole >= -.008f;
+}
+
 bool VerifyRunSlopeContact(const Mistwatch::RiverbankAvatarMotion& motion,
     const SkinnedModelAssetData& asset) {
     const auto findJoint = [&](std::string_view name) {
@@ -179,7 +233,8 @@ bool VerifyRunSlopeContact(const Mistwatch::RiverbankAvatarMotion& motion,
               << " deepest_m=" << deepest << " max_clearance_change_m=" << clearanceError
               << " max_ankle_adjustment_m=" << maxAnkleChange << " segment_length_error_m=" << legError
               << " ankle_orientation_error=" << orientationError << '\n';
-    return VerifyRiverbankTerrainContact(motion, asset, boots) && VerifyBridgeDeckContact(motion, asset, boots) &&
+    return VerifyCrouchHeadroom(motion, asset, boots) &&
+        VerifyRiverbankTerrainContact(motion, asset, boots) && VerifyBridgeDeckContact(motion, asset, boots) &&
         samples == 162 && airborneSamples > 0 && deepest >= -.006f && clearanceError < .015f &&
         maxAnkleChange > .04f && legError < .0002f && orientationError < .0002f;
 }

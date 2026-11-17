@@ -15,6 +15,8 @@ struct ReplicationPlayerState3D {NetworkEntityId3D entity{};GlobalPosition3D pos
 using ReplicationMovementConstraint3D = std::function<Vec3(const ReplicationPlayerState3D&, Vec3)>;
 // 伺服器可替換一刻的水平位移。替換後仍經過相同的碰撞與位移範圍限制。
 using ReplicationServerStep3D = std::function<std::optional<Vec3>(const ReplicationPlayerState3D&)>;
+// 只處理已通過身分、序號與更新週期檢查的輸入。每個玩家每個週期呼叫一次。
+using ReplicationVerticalStep3D = std::function<float(const ReplicationPlayerState3D&, const ReplicationInputCommand3D*, bool)>;
 struct ReplicationServerClientTelemetry3D {std::uint32_t clientId{};std::uint64_t interestEpoch{},interestEntered{},interestExited{},entityReentries{},entityDespawns{};std::size_t interestChunks{},visibleEntities{},lastSnapshotEntities{},lastSnapshotDespawns{};GlobalPosition3D authoritativePosition{};};
 
 class ReplicationServer3D {
@@ -25,7 +27,8 @@ public:
  bool SetClientEntityFlags(std::uint32_t clientId,std::uint32_t flags);
  bool SetClientMovementEnabled(std::uint32_t clientId,bool enabled);
  bool SetClientPosition(std::uint32_t clientId,GlobalPosition3D position);
- void Tick(const ReplicationMovementConstraint3D& constraint={},const ReplicationServerStep3D& serverStep={});
+ void Tick(const ReplicationMovementConstraint3D& constraint={},const ReplicationServerStep3D& serverStep={},
+           const ReplicationVerticalStep3D& verticalStep={});
  std::optional<ReplicationPlayerState3D> Player(std::uint32_t clientId)const;
  std::optional<ReplicationServerClientTelemetry3D> ClientTelemetry(std::uint32_t clientId)const;
  std::size_t ClientCount()const noexcept{return clients_.size();}

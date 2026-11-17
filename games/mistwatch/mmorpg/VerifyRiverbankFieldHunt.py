@@ -149,7 +149,7 @@ def verify(server, output):
         tickets = [profile.ticket for profile in profiles]
 
     with sqlite3.connect(database) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (8,)
+        assert db.execute("PRAGMA user_version").fetchone() == (9,)
         assert db.execute("SELECT character_id,world,encounter FROM riverbank_field_hide ORDER BY character_id").fetchall() == [
             (1, epoch, defeated["run"]), (2, epoch, defeated["run"])]
         assert db.execute("SELECT COUNT(*) FROM riverbank_reward").fetchone() == (0,)

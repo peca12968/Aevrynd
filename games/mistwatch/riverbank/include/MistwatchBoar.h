@@ -15,7 +15,8 @@ struct Boar {
     bool initialized{};
     static constexpr std::array<Aevrynd::Vec3,4> restFeet{{
         {-.25f,.075f,.43f},{.25f,.075f,.43f},{-.25f,.075f,-.52f},{.25f,.075f,-.52f}}};
-    Boar() {
+    Boar() : Boar(false) {}
+    explicit Boar(bool continuousCoat) {
         using namespace Aevrynd;
         const std::array<Vec3,16> joints{{{0,.62f,0},{0,.75f,.49f},{0,.52f,.94f},
             {-.25f,.57f,.4f},{-.25f,.31f,.28f},restFeet[0],
@@ -43,17 +44,104 @@ struct Boar {
             for(auto index:mesh.indices)model.bindMesh.indices.push_back(base+index);
         };
         const Color hide{.23f,.15f,.085f,1},shoulder{.18f,.11f,.055f,1},hoof{.055f,.035f,.025f,1};
-        part(0,sphere,{0,.65f,-.15f},{.74f,.72f,1.48f},{},hide);
-        part(0,sphere,{0,.74f,.28f},{.81f,.73f,.77f},{},shoulder);
-        part(1,sphere,{0,.68f,.67f},{.53f,.53f,.62f},{.2f,0,0},hide);
-        part(2,sphere,{0,.49f,1.01f},{.39f,.28f,.36f},{},hide);
-        part(2,sphere,{0,.49f,1.18f},{.35f,.24f,.08f},{},{.105f,.065f,.045f,1});
-        for(float sign:{-1.f,1.f}) {
-            part(1,cone,{sign*.22f,.91f,.53f},{.2f,.35f,.12f},{.1f,0,-sign*.35f},shoulder);
-            part(1,sphere,{sign*.235f,.78f,.82f},{.055f,.055f,.075f},{},{.025f,.015f,.01f,1});
-            part(1,sphere,{sign*.257f,.792f,.831f},{.013f,.013f,.02f},{},{.65f,.62f,.52f,1});
-            part(2,sphere,{sign*.095f,.515f,1.219f},{.062f,.046f,.014f},{},hoof);
-            part(2,cone,{sign*.225f,.5f,1.04f},{.09f,.22f,.085f},{-.45f,0,-sign*.5f},{.7f,.64f,.47f,1});
+        // 沿體軸從臀部至鼻尖建立連續斷面，讓肩峰、頸部與口鼻有完整輪廓。
+        struct ProfileRing {float z, centerHeight, halfWidth, halfHeight;};
+        constexpr std::array profile{
+            ProfileRing{-.905f,.633f,.105f,.110f}, ProfileRing{-.855f,.637f,.197f,.201f},
+            ProfileRing{-.705f,.626f,.302f,.271f}, ProfileRing{-.500f,.620f,.340f,.309f},
+            ProfileRing{-.250f,.634f,.363f,.332f}, ProfileRing{.000f,.670f,.389f,.356f},
+            ProfileRing{.220f,.708f,.399f,.377f}, ProfileRing{.390f,.746f,.362f,.362f},
+            ProfileRing{.495f,.743f,.297f,.336f}, ProfileRing{.594f,.716f,.255f,.283f},
+            ProfileRing{.687f,.682f,.237f,.255f}, ProfileRing{.779f,.644f,.213f,.220f},
+            ProfileRing{.871f,.583f,.182f,.181f}, ProfileRing{.963f,.541f,.163f,.151f},
+            ProfileRing{1.054f,.505f,.157f,.118f}, ProfileRing{1.130f,.490f,.160f,.111f},
+            ProfileRing{1.190f,.493f,.152f,.101f}, ProfileRing{1.217f,.494f,.133f,.082f}};
+        constexpr unsigned sides = 36;
+        constexpr float tau = 6.28318530718f;
+        const auto sample = [&](std::size_t row, float angle) {
+            const auto [z, center, width, height] = profile[row];
+            const float vertical = std::cos(angle);
+            const float narrowing = 1.f - .12f * (std::max)(0.f, -vertical);
+            return Vec3{width * narrowing * std::sin(angle), center + height * vertical, z};
+        };
+        const auto ease = [](float value) {
+            const float unit = std::clamp(value, 0.f, 1.f);
+            return unit * unit * (3.f - 2.f * unit);
+        };
+        const auto pigment = [&](Vec3 point, float angle) {
+            const float dorsal = (std::max)(0.f, std::cos(angle));
+            const float coarse = std::sin(point.z * 29.f + angle * 7.f);
+            const float bristle = std::sin(point.z * 211.f + angle * 35.f);
+            const float patch = 1.f + .11f * coarse + .045f * bristle;
+            const float muzzle = ease((point.z - .965f) / .245f);
+            const Color body{(.147f - .049f * dorsal) * patch, (.103f - .039f * dorsal) * patch,
+                             (.069f - .027f * dorsal) * patch, 1.f};
+            constexpr Color nose{.071f,.050f,.041f,1.f};
+            return Color{std::lerp(body.r,nose.r,muzzle),std::lerp(body.g,nose.g,muzzle),
+                         std::lerp(body.b,nose.b,muzzle),1.f};
+        };
+        const auto torsoWeights = [&](float z) -> SkinInfluences3D {
+            const auto neck = static_cast<std::uint16_t>(std::lround(65535.f * ease((z - .265f) / .375f)));
+            const auto jaw = static_cast<std::uint16_t>(std::lround(float(neck) * ease((z - .865f) / .205f)));
+            std::array<std::pair<std::uint16_t, std::uint16_t>, 3> weights{{
+                {static_cast<std::uint16_t>(65535u - neck),std::uint16_t{0}},
+                {static_cast<std::uint16_t>(neck - jaw),std::uint16_t{1}}, {jaw,std::uint16_t{2}}}};
+            std::ranges::sort(weights, [](auto a, auto b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
+            SkinInfluences3D result{};
+            for (std::size_t index = 0; index < weights.size() && weights[index].first; ++index) {
+                result.weights[index] = weights[index].first;
+                result.joints[index] = weights[index].second;
+            }
+            return result;
+        };
+        const auto appendTorsoVertex = [&](Vec3 point, Vec3 normal, float angle) {
+            model.bindMesh.vertices.push_back({point.x,point.y,point.z,PackNormalSnorm8(normal),PackColorRgba8(pigment(point,angle))});
+            model.influences.push_back(torsoWeights(point.z));
+        };
+        if (continuousCoat) {
+            for (std::size_t row = 0; row < profile.size(); ++row) {
+                const auto before = row ? row - 1 : row;
+                const auto after = (std::min)(row + 1, profile.size() - 1);
+                for (unsigned side = 0; side < sides; ++side) {
+                    const float angle = float(side) * tau / float(sides);
+                    const Vec3 around = sample(row, angle + .025f) - sample(row, angle - .025f);
+                    const Vec3 along = sample(after, angle) - sample(before, angle);
+                    appendTorsoVertex(sample(row, angle), Normalize(Cross(along, around)), angle);
+                }
+            }
+            const auto tailCap = static_cast<std::uint32_t>(model.bindMesh.vertices.size());
+            appendTorsoVertex({0,profile.front().centerHeight,profile.front().z},{0,0,-1},0);
+            const auto noseCap = tailCap + 1;
+            appendTorsoVertex({0,profile.back().centerHeight,profile.back().z},{0,0,1},0);
+            const auto endRing = static_cast<std::uint32_t>(profile.size() - 1);
+            for (std::uint32_t side = 0; side < sides; ++side) {
+                const auto next = (side + 1) % sides;
+                model.bindMesh.indices.insert(model.bindMesh.indices.end(),{side,next,tailCap,endRing*sides+side,noseCap,endRing*sides+next});
+                for (std::uint32_t ring = 0; ring < endRing; ++ring) {
+                    const auto a = ring*sides+side, b=ring*sides+next, c=a+sides, d=b+sides;
+                    model.bindMesh.indices.insert(model.bindMesh.indices.end(),{a,c,b,b,c,d});
+                }
+            }
+            for(float sign:{-1.f,1.f}) {
+                part(1,cone,{sign*.177f,.913f,.663f},{.144f,.244f,.089f},{.17f,0,-sign*.5f},shoulder);
+                part(1,sphere,{sign*.184f,.733f,.806f},{.028f,.031f,.041f},{},{.023f,.015f,.009f,1});
+                part(1,sphere,{sign*.197f,.740f,.806f},{.005f,.006f,.008f},{},{.52f,.42f,.32f,1});
+                part(2,sphere,{sign*.077f,.515f,1.217f},{.049f,.031f,.010f},{},hoof);
+                part(2,cone,{sign*.144f,.480f,1.063f},{.055f,.157f,.065f},{-.29f,0,-sign*.51f},{.59f,.51f,.36f,1});
+            }
+        } else {
+            part(0,sphere,{0,.65f,-.15f},{.74f,.72f,1.48f},{},hide);
+            part(0,sphere,{0,.74f,.28f},{.81f,.73f,.77f},{},shoulder);
+            part(1,sphere,{0,.68f,.67f},{.53f,.53f,.62f},{.2f,0,0},hide);
+            part(2,sphere,{0,.49f,1.01f},{.39f,.28f,.36f},{},hide);
+            part(2,sphere,{0,.49f,1.18f},{.35f,.24f,.08f},{},{.105f,.065f,.045f,1});
+            for(float sign:{-1.f,1.f}) {
+                part(1,cone,{sign*.22f,.91f,.53f},{.2f,.35f,.12f},{.1f,0,-sign*.35f},shoulder);
+                part(1,sphere,{sign*.235f,.78f,.82f},{.055f,.055f,.075f},{},{.025f,.015f,.01f,1});
+                part(1,sphere,{sign*.257f,.792f,.831f},{.013f,.013f,.02f},{},{.65f,.62f,.52f,1});
+                part(2,sphere,{sign*.095f,.515f,1.219f},{.062f,.046f,.014f},{},hoof);
+                part(2,cone,{sign*.225f,.5f,1.04f},{.09f,.22f,.085f},{-.45f,0,-sign*.5f},{.7f,.64f,.47f,1});
+            }
         }
         for(unsigned leg=0;leg<4;++leg) {
             const unsigned upper=3+leg*3;
@@ -64,9 +152,27 @@ struct Boar {
             for(float side:{-1.f,1.f})part(upper+2,sphere,c+Vec3{side*.035f,-.002f,.045f},{.067f,.14f,.19f},{},hoof);
         }
         part(15,cone,{0,.71f,-.87f},{.06f,.28f,.06f},{-1.3f,0,0},shoulder);
-        for(unsigned tuft=0;tuft<11;++tuft) {
-            const float z=-.65f+float(tuft)*.09f;
-            part(0,cone,{0,1.04f,z},{.04f,.12f+.025f*std::sin(float(tuft)),.04f},{-.25f,0,0},hoof);
+        if (continuousCoat) {
+            const auto bristleMesh = Mesh3D::CreateUnitCone(5);
+            for (std::size_t row = 2; row < 8; ++row) {
+                for (int strand = 0; strand < 12; ++strand) {
+                    const float sway = std::sin(float(static_cast<int>(row) * 17 + strand * 7) * 3.17f);
+                    const float angle = .094f * float(strand % 3 - 1) + .038f * sway;
+                    const float along = (float(strand / 3) + .45f + .19f * sway) / 4.f;
+                    const auto a = sample(row, angle), b = sample(row + 1, angle);
+                    const auto p = a + (b - a) * along;
+                    const float height = .059f + .018f * sway - .021f * std::abs(angle);
+                    const auto first = model.influences.size();
+                    part(0,bristleMesh,p+Vec3{.003f*sway,.012f,0},{.010f,height,.014f},
+                         {-.50f,0,.17f*float(strand % 3 - 1)},{.079f,.056f,.041f,1.f});
+                    std::fill(model.influences.begin() + first, model.influences.end(), torsoWeights(p.z));
+                }
+            }
+        } else {
+            for(unsigned tuft=0;tuft<11;++tuft) {
+                const float z=-.65f+float(tuft)*.09f;
+                part(0,cone,{0,1.04f,z},{.04f,.12f+.025f*std::sin(float(tuft)),.04f},{-.25f,0,0},hoof);
+            }
         }
         model.skeletonCompatibilityId=ComputeStructuralSkeletonCompatibilityId3D(model.skeleton,model.inverseBindMatrices);
         Update({},0,EnemyPhase::Pursuit,0,{});

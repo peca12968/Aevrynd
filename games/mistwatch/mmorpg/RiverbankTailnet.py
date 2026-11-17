@@ -33,6 +33,31 @@ def address(text):
     return text
 
 
+def epoch_number(value):
+    value = int(value)
+    if not 1 <= value <= (1 << 64) - 1:
+        raise ValueError('房間識別超出有效範圍')
+    return value
+
+
+def room_invite(host, port, world_epoch):
+    return f'{address(host)}:{port}/{epoch_number(world_epoch)}'
+
+
+def parse_room_invite(value):
+    host, colon, rest = value.strip().partition(':')
+    port, slash, world = rest.partition('/')
+    if (not colon or not slash or not port.isascii() or not port.isdecimal() or len(port) > 5
+            or not world.isascii() or not world.isdecimal() or len(world) > 20 or not 1 <= int(port) <= 65535):
+        raise ValueError('邀請碼格式應為「Tailscale IPv4:連接埠/房間識別」')
+    return address(host), int(port), epoch_number(world)
+
+
+def require_room_epoch(received, expected):
+    if expected is not None and received != expected:
+        raise ValueError('原房間已關閉或重新啟動，請向房主取得新的邀請碼')
+
+
 def node_from_status(entry, requested=None):
     if not entry.get('Online') or not entry.get('ID'):
         raise RuntimeError('Tailscale 裝置目前離線或身分無法確認')

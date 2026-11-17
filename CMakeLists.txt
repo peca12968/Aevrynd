@@ -254,12 +254,16 @@ if(AEVRYND_BUILD_MISTWATCH_MULTIPLAYER)
       "f129fa70cbee1b7e27f990f60069b59915b9b948ac43740ecd92684fe005305b"
       "a1a1d2bd0290ba2ec01527bb6d7af10fe214514ca34a6230fab3cf874cfef42a"
       "013a9f3a37f0942652ebd79932cb33955987515ffd829f4a981add4aa7f40d2e"
-      "03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587")
+      "03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587"
+      "d5e382b063a007e98b772df846322de6b7014ac6ee9d7e9497a1aa008c16e776"
+      "549ccccab3d8de8592a251b41b0fc7c7b583a4d7eff83218018a4e65a28fa031")
     if(NOT riverbank_avatar_sha IN_LIST verified_riverbank_avatar_hashes)
       message(FATAL_ERROR "Riverbank Explorer asset hash differs from the verified export")
     endif()
     if(riverbank_avatar_sha STREQUAL "013a9f3a37f0942652ebd79932cb33955987515ffd829f4a981add4aa7f40d2e" OR
-       riverbank_avatar_sha STREQUAL "03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587")
+       riverbank_avatar_sha STREQUAL "03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587" OR
+       riverbank_avatar_sha STREQUAL "d5e382b063a007e98b772df846322de6b7014ac6ee9d7e9497a1aa008c16e776" OR
+       riverbank_avatar_sha STREQUAL "549ccccab3d8de8592a251b41b0fc7c7b583a4d7eff83218018a4e65a28fa031")
       foreach(wardrobe_entry IN ITEMS
         "Guardian|d9e3b391ee44e852aa85cad40cb1f207acf1ef6e5d7d082d2b3f24a10c12d841"
         "Ranger|182f1baacdd1b7431aca9f49e579df150c392bdbffbb364cddc1ee77eeff5c6f"
@@ -275,7 +279,13 @@ if(AEVRYND_BUILD_MISTWATCH_MULTIPLAYER)
         list(APPEND MISTWATCH_RIVERBANK_WARDROBES "${wardrobe_path}")
       endforeach()
     endif()
-    if(riverbank_avatar_sha STREQUAL "03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587")
+    if(riverbank_avatar_sha STREQUAL "d5e382b063a007e98b772df846322de6b7014ac6ee9d7e9497a1aa008c16e776" OR
+       riverbank_avatar_sha STREQUAL "549ccccab3d8de8592a251b41b0fc7c7b583a4d7eff83218018a4e65a28fa031")
+      set(MISTWATCH_RIVERBANK_AUTHORED_JUMP ON)
+    endif()
+    if(riverbank_avatar_sha STREQUAL "03d30e0c5c050394391e9b18693b33616b67364ed87920eb92b8ea2a22ec5587" OR
+       riverbank_avatar_sha STREQUAL "d5e382b063a007e98b772df846322de6b7014ac6ee9d7e9497a1aa008c16e776" OR
+       riverbank_avatar_sha STREQUAL "549ccccab3d8de8592a251b41b0fc7c7b583a4d7eff83218018a4e65a28fa031")
       foreach(hair_entry IN ITEMS
         "Ranger|fe27db7b117514aa5ce9fa26fa64a41b3cd3b7162d5153f56f076af14eafe6cd"
         "Priest|09eab6f46a2058c69a72b3090429a93b556d8efd1bacf921bf7ad161a901b3ec")

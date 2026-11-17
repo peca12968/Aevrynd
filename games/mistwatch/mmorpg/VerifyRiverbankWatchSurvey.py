@@ -86,7 +86,7 @@ def verify(server, evidence):
         assert expedition(guard.peer, 1, watch=True) == (RECORDED, VIEWED)
         assert expedition(guard.peer, 2) == (COMPLETE, VIEWED)
     with closing(sqlite3.connect(database)) as db:
-        assert db.execute('PRAGMA user_version').fetchone() == (8,)
+        assert db.execute('PRAGMA user_version').fetchone() == (9,)
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
         assert db.execute('SELECT character_id,stage FROM riverbank_watch_survey').fetchall() == [(1, RECORDED)]
         assert db.execute('SELECT COUNT(*) FROM riverbank_reward').fetchone() == (3,)

@@ -87,7 +87,7 @@ def verify(server, evidence):
 
     with closing(sqlite3.connect(database)) as db:
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
-        assert db.execute('PRAGMA user_version').fetchone() == (8,)
+        assert db.execute('PRAGMA user_version').fetchone() == (9,)
         assert db.execute('SELECT COUNT(*) FROM riverbank_reward').fetchone() == (3,)
         kit = db.execute('SELECT character_id,reward_world,reward_encounter FROM riverbank_boss_kit').fetchall()
         assert kit == [(2, epoch, victory['encounter'])]

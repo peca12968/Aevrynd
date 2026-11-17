@@ -1,4 +1,5 @@
 #include "RiverbankRouteMap.h"
+#include "MistwatchTerritoryClearing.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -7,6 +8,27 @@ using namespace Mistwatch::RiverbankRouteMap;
 
 void Require(bool passed, const char* message) {
     if (!passed) throw std::runtime_error(message);
+}
+
+void VerifyTerritoryUnderstoryHeight() {
+    using namespace Mistwatch::TerritoryClearing;
+    using Area = Mistwatch::RiverbankTerritory;
+    using Aevrynd::Transform3D;
+    const Transform3D shrub{{Area::CenterX - 2.f, 3.f, Area::CenterZ - 2.f}, {0.f, .7f, 0.f}, {1.2f, 1.5f, .9f}};
+    const auto low = UnderstoryPose(shrub, 1.1f);
+    Require(std::abs(low.scale.y * 1.1f - LowUnderstoryHeight) < .00001f, "Ring shrub exceeds the low-canopy limit");
+    Require(low.position.x == shrub.position.x && low.position.y == shrub.position.y &&
+            low.position.z == shrub.position.z && low.scale.x == shrub.scale.x &&
+            low.scale.z == shrub.scale.z && low.rotation.y == shrub.rotation.y,
+            "Trimming moved a root, changed orientation, or removed the low cover footprint");
+    Require(UnderstoryPose(shrub, .18f).scale.y == shrub.scale.y, "Existing low groundcover was trimmed");
+
+    auto fringe = shrub;
+    fringe.position = {Area::CenterX + (MaintainedRadius + WoodlandRadius) * .5f, 3.f, Area::CenterZ};
+    const auto transition = UnderstoryPose(fringe, 1.1f);
+    Require(low.scale.y < transition.scale.y && transition.scale.y < fringe.scale.y, "Shrub height does not blend into the woods");
+    fringe.position.x = Area::CenterX + 32.f;
+    Require(UnderstoryPose(fringe, 1.1f).scale.y == fringe.scale.y, "Distant woodland was thinned");
 }
 
 void VerifyMapInput() {
@@ -113,6 +135,63 @@ void VerifyExpeditionRoute() {
     menu.ClearWaypoint();
     Require(!menu.TracksExpedition() && !menu.Target(Stage::Report), "Backspace did not clear the expedition");
 }
+void VerifyDefaultQuestGuidance() {
+    using Stage = Mistwatch::ExpeditionStage;
+    using Quest = Mistwatch::RiverbankExpedition;
+    Menu automatic;
+    automatic.FollowInitialExpedition(Stage::Complete);
+    Require(!automatic.TracksExpedition(), "A completed quest enabled an empty route");
+    automatic.FollowInitialExpedition(Stage::Available);
+    Require(automatic.TracksExpedition() && automatic.Target(Stage::Available), "Initial quest did not guide the player");
+    Require(!automatic.Target(Stage::WatchRecorded), "Finished quest left an active marker");
+    automatic.Update(true, true, true, false, false);
+    automatic.ClearWaypoint();
+    automatic.FollowInitialExpedition(Stage::CheckTrail);
+    Require(!automatic.Target(Stage::CheckTrail), "A refreshed quest overrode explicitly disabled tracking");
+    automatic.Track(4);
+    automatic.FollowInitialExpedition(Stage::Hunt);
+    Require(automatic.Waypoint() == 4 && !automatic.TracksExpedition(), "Quest replaced a tracked landmark");
+    automatic.TrackExpedition(Stage::Hunt);
+    Require(automatic.Target(Stage::Hunt) && !automatic.Waypoint(), "Player could not restore quest tracking");
+    const auto south = NextExpeditionStep(Stage::Hunt, {-6, 0, 28});
+    const auto crossing = NextExpeditionStep(Stage::Hunt, {0, 0, 35});
+    const auto north = NextExpeditionStep(Stage::Hunt, {0, 0, 42});
+    Require(south && south->instruction == "先到南岸橋口" && south->point.z == 31.f &&
+        crossing && crossing->instruction == "沿木橋前往北岸" && crossing->point.z == 41.f &&
+        north && north->instruction.empty(), "Quest card and marker did not advance around the bridge");
+    const auto board = NextExpeditionStep(Stage::Available, {Quest::Board.x-2.3f, 0, Quest::Board.z});
+    Require(board && board->guidance.arrived && !NextExpeditionStep(Stage::WatchRecorded, {}),
+        "Guidance does not use the interaction radius or survived completion");
+}
+
+void VerifyManualLandmarkAcrossRiver() {
+    using Aevrynd::Vec2;
+    using Aevrynd::Vec3;
+    constexpr std::size_t territory = 4;
+    const Aevrynd::HeightField3D terrain({{-50.f,0,-20.f},101,121,1.f});
+    const auto grid = Build(terrain);
+    Require(grid.has_value(), "Manual route map fixture was invalid");
+    Menu menu;
+    menu.Update(true, true, true, false, false);
+    menu.Track(territory);
+    const Vec3 southStart{17, 0, 21};
+    Require(!IsDryBankSegment(southStart, landmarks[territory].world),
+            "Fixture did not reproduce the direct route through the river");
+    Aevrynd::DrawList draw;
+    Draw(draw, grid, southStart, menu, {}, 1, nullptr);
+    const auto nearBridgeStop = [&](Vec3 position) {
+        Vec2 unit{};
+        Require(Mistwatch::SurveyMap::Project(grid->bounds, position, unit), "Bridge entry outside map");
+        const float x = grid->plot.x + unit.x * grid->plot.width;
+        const float y = grid->plot.y + unit.y * grid->plot.height;
+        const auto color = Aevrynd::PackColorRgba8(landmarks[territory].color);
+        return std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
+            return vertex.color == color && std::hypot(vertex.x - x, vertex.y - y) < 5.f;
+        });
+    };
+    Require(nearBridgeStop({0,0,31}) && nearBridgeStop({0,0,41}),
+            "The displayed route to the territory crosses the river away from the bridge");
+}
 void VerifyPartyMapPositions() {
     using namespace Mistwatch;
     namespace Wire = RiverbankPartyWire;
@@ -176,6 +255,18 @@ void VerifyBridgeRouting() {
     const auto west = *ExpeditionLandmark(ExpeditionStage::WatchWest);
     const auto watchReport = *ExpeditionLandmark(ExpeditionStage::WatchReport);
     Require(!ExpeditionLandmark(ExpeditionStage::WatchRecorded), "Completed watch survey kept a destination");
+    const auto firstNearWest = ExpeditionLandmark(ExpeditionStage::WatchEither, {-14, 0, 72});
+    const auto firstNearEast = ExpeditionLandmark(ExpeditionStage::WatchEither, {20, 0, 54});
+    const auto eastAfterWest = ExpeditionLandmark(ExpeditionStage::WatchEastRemaining, {-14, 0, 72});
+    Require(firstNearWest && firstNearWest->world.x == west.world.x &&
+            firstNearEast && firstNearEast->world.x == east.world.x &&
+            eastAfterWest && eastAfterWest->world.x == east.world.x,
+            "Watch guidance did not choose the nearby unrecorded post");
+    const auto reachedEither = NextExpeditionStep(ExpeditionStage::WatchEither, west.world);
+    Require(reachedEither && reachedEither->guidance.arrived, "The west-first hint did not recognize arrival");
+    Require(Mistwatch::RiverbankExpedition::CanInteract(ExpeditionStage::WatchEither, {-15,73}) &&
+            !Mistwatch::RiverbankExpedition::CanInteract(ExpeditionStage::WatchEastRemaining, {-15,73}),
+            "The west post remained actionable after recording it");
     const float south = RiverbankBridgeDeck.center.z - RiverbankBridgeDeck.extents.z;
     const float north = RiverbankBridgeDeck.center.z + RiverbankBridgeDeck.extents.z;
 
@@ -261,11 +352,14 @@ void VerifyBridgeRouting() {
 
 int main() {
     try {
+        VerifyTerritoryUnderstoryHeight();
         VerifyMapInput();
         VerifyLandmarkGeometry();
         VerifyGuidance();
+        VerifyDefaultQuestGuidance();
         VerifyExpeditionRoute();
         VerifyBridgeRouting();
+        VerifyManualLandmarkAcrossRiver();
         VerifyPartyMapPositions();
         std::cout << "RIVERBANK_ROUTE_MAP_TRACKING_PASS\n";
         return 0;

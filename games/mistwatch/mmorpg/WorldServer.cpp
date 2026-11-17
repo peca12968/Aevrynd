@@ -2,6 +2,8 @@
 #include "RiverbankClass.h"
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankBattleWire.h"
+#include "RiverbankJump.h"
+#include "RiverbankCrouch.h"
 #include "RiverbankCrossing.h"
 #include "RiverbankStructureMovement.h"
 #include "RiverbankFieldWire.h"
@@ -92,11 +94,18 @@ public:
             transport_.AdvanceTo(++tick_);
 #ifdef AEVRYND_MISTWATCH_BATTLE
             // 先寫入快照。本輪戰鬥造成的倒地會在下一份快照同步。
-            for (const auto& [id, peer] : peers_) {
+            for (auto& [id, peer] : peers_) {
                 if (peer.playerClass == RiverbankClass::None) continue;
                 const auto player = encounter_.Player(id);
                 using namespace Mistwatch::RiverbankBattleWire;
                 auto flags = peer.joinFlags;
+                const auto body = world_.Player(id);
+                Vec3 local{};
+                if (!body || !ToLocalPosition3D(body->position, WorldOrigin3D{}, local))
+                    throw std::runtime_error("Cannot resolve Riverbank stance");
+                peer.crouch.Advance({local.x, local.z}, !peer.jump.Active(),
+                    player && player->health && !encounter_.DodgeStep(id));
+                if (peer.crouch.Active()) flags |= Mistwatch::RiverbankCrouchedFlag;
                 if (player && !player->health) flags |= DownedEntityFlag;
                 if (encounter_.DodgeStep(id)) flags |= DodgingEntityFlag;
                 if (!player || !world_.SetClientEntityFlags(id, flags))
@@ -106,18 +115,27 @@ public:
                 Vec3 from{};
                 if(!ToLocalPosition3D(player.position,WorldOrigin3D{},from))return Vec3{};
                 const Mistwatch::ArenaPosition start{from.x,from.z};
-                const auto request=Mistwatch::RiverbankCrossing::TerrainRequest(start,{delta.x,delta.z});
+                const auto& crouch = peers_.at(static_cast<std::uint32_t>(player.entity.low)).crouch;
+                const auto body = crouch.Body();
+                const auto request=Mistwatch::RiverbankCrossing::TerrainRequest(start,crouch.Constrain({delta.x,delta.z}));
                 const auto ground=Mistwatch::RiverbankCrossing::ResolveStep(start,request);
-                const auto structure=Mistwatch::RiverbankStructureMovement::ResolveStep(start,ground);
+                const auto structure=Mistwatch::RiverbankStructureMovement::ResolveStep(start,ground,body);
                 const auto encounter=encounter_.ConstrainPlayerMovement(start,structure);
                 const auto waterSafe=Mistwatch::RiverbankCrossing::ClipStep(start,encounter);
-                const auto structureSafe=Mistwatch::RiverbankStructureMovement::ClipStep(start,waterSafe);
+                const auto structureSafe=Mistwatch::RiverbankStructureMovement::ClipStep(start,waterSafe,body);
                 const auto allowed=Mistwatch::RiverbankCrossing::LimitTerrainSegment(start,structureSafe);
                 return Vec3{allowed.x,0.f,allowed.z};
             }, [this](const ReplicationPlayerState3D& player) -> std::optional<Vec3> {
                 const auto step = encounter_.DodgeStep(player.entity.low);
                 if (!step) return {};
                 return Vec3{step->x,0.f,step->z};
+            }, [this](const ReplicationPlayerState3D& player, const ReplicationInputCommand3D* input, bool enabled) {
+                auto& peer=peers_.at(static_cast<std::uint32_t>(player.entity.low));
+                auto& jump=peer.jump;
+                Vec3 local{};
+                if(!ToLocalPosition3D(player.position,WorldOrigin3D{},local))return 0.f;
+                const bool dodging=encounter_.DodgeStep(player.entity.low).has_value();
+                return jump.Advance(input?std::optional{input->jump}:std::nullopt,enabled,!dodging&&!peer.crouch.Active())-local.y;
             });
 #else
             world_.Tick();
@@ -130,13 +148,16 @@ public:
             for (const auto& [id, peer] : peers_) {
                 if (peer.playerClass == RiverbankClass::None) continue;
 #ifdef AEVRYND_MISTWATCH_PROFILES
+                const auto guild = peer.guildId;
                 const auto members = party_.Members(peer.profileId);
                 if (!members.empty()) supportGroups[grouped++] = {id, static_cast<std::uint64_t>(members.front())};
+#else
+                constexpr std::int64_t guild = 0;
 #endif
                 Vec3 local{};
                 const auto player = world_.Player(id);
                 if (!player || !ToLocalPosition3D(player->position, WorldOrigin3D{}, local) ||
-                    !encounter_.SetPosition(id, {local.x, local.z})) throw std::runtime_error("Cannot bind combat to world position");
+                    !encounter_.SetPosition(id, {local.x, local.z}, guild)) throw std::runtime_error("Cannot bind combat to world position");
             }
 #ifdef AEVRYND_MISTWATCH_PROFILES
             encounter_.Tick(std::span(supportGroups).first(grouped));
@@ -192,6 +213,8 @@ private:
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
         std::uint32_t joinFlags{};
+        Mistwatch::RiverbankJump jump;
+        Mistwatch::RiverbankCrouch crouch;
         std::uint64_t fieldSequence{}, fieldQueryTick{(std::numeric_limits<std::uint64_t>::max)()};
 #endif
     };
@@ -242,6 +265,12 @@ private:
         if (Mistwatch::RiverbankExpeditionWire::HasMagic(bytes)) return HandleExpedition(id, client, bytes);
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
+        if (Mistwatch::RiverbankCrouchWire::HasMagic(bytes)) {
+            const auto request = Mistwatch::RiverbankCrouchWire::Decode(bytes);
+            if (!request) return false;
+            client.crouch.Request(*request);
+            return true;
+        }
         if (Mistwatch::RiverbankFieldWire::HasMagic(bytes)) {
             namespace Wire = Mistwatch::RiverbankFieldWire;
             const auto sequence = Wire::DecodeQuery(bytes);
@@ -255,6 +284,8 @@ private:
             if (!action) return false;
             if (action->kind == Mistwatch::RiverbankAction::ReturnToCamp) {
                 if (!encounter_.ReturnToCamp(id, action->sequence)) return true;
+                client.jump = {};
+                client.crouch = {};
                 // 先清除倒地時尚在排程的移動，正常狀態會在這一輪快照後恢復。
                 GlobalPosition3D position{};
 #ifdef AEVRYND_MISTWATCH_PROFILES
@@ -265,7 +296,8 @@ private:
             if (action->kind == Mistwatch::RiverbankAction::Dodge) {
                 const auto direction = Mistwatch::RiverbankBattleWire::UnpackDodgeDirection(action->ally);
                 if (!direction) return false;
-                (void)encounter_.StartDodge(id, action->sequence, *direction);
+                if (!client.jump.Active() && !client.crouch.Active() && !client.crouch.Requested())
+                    (void)encounter_.StartDodge(id, action->sequence, *direction);
                 return true;
             }
             // 冷卻、距離與重複操作由伺服器拒絕，連線仍維持。
@@ -290,13 +322,15 @@ private:
     bool JoinWorld(std::uint32_t id, Client& client, RiverbankClass selected, GlobalPosition3D position = {}) {
         auto flags = Mistwatch::RiverbankClassFlags(selected) | Mistwatch::RiverbankSprintCapability;
 #ifdef AEVRYND_MISTWATCH_BATTLE
-        flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability |
+        flags |= Mistwatch::RiverbankJumpCapability | Mistwatch::RiverbankCrouchCapability | Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability |
             Mistwatch::RiverbankBattleWire::StructureCoverCapability | Mistwatch::RiverbankBattleWire::DodgeCapability;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability |
             Mistwatch::RiverbankTerritoryHistoryWire::Capability | Mistwatch::RiverbankExpeditionWire::WatchSurveyCapability |
-            Mistwatch::RiverbankPartyWire::MapPositionsCapability;
+            Mistwatch::RiverbankExpeditionWire::WatchRouteCapability |
+            Mistwatch::RiverbankPartyWire::MapPositionsCapability | Mistwatch::RiverbankGuildWire::RosterCapability |
+            Mistwatch::RiverbankBattleWire::TerritoryCombatCapability;
 #endif
         if (!Mistwatch::IsRiverbankClass(selected) || !world_.AddClient(id, Endpoint(id), position) ||
             !world_.SetClientEntityFlags(id, flags)) return false;
@@ -341,6 +375,7 @@ private:
     }
 
     static constexpr std::uint64_t ResumeWindowTicks = 120 * Mistwatch::RiverbankEncounter::TicksPerSecond;
+    static constexpr std::size_t SuspendedProfilesPerSeat = 4;
     struct SuspendedProfile {
         GlobalPosition3D position;
         Mistwatch::SuspendedRiverbankCombat combat;
@@ -421,12 +456,16 @@ private:
             return;
         }
         ExpireProfiles();
-        if (!suspendedProfiles_.contains(client.profileId) && suspendedProfiles_.size() >= 4 * capacity_) {
+        if (!suspendedProfiles_.contains(client.profileId) && suspendedProfiles_.size() >= SuspendedProfilesPerSeat * capacity_) {
             const auto oldest = std::ranges::min_element(suspendedProfiles_, {}, [](const auto& entry) { return entry.second.lostTick; });
             party_.Forget(oldest->first);
             suspendedProfiles_.erase(oldest);
         }
-        suspendedProfiles_.insert_or_assign(client.profileId, SuspendedProfile{player->position, *combat, tick_});
+        auto groundPosition=player->position;
+        // 重連角色回到原水平位置的地面。跳躍高度是這段連線的暫時狀態。
+        groundPosition.chunk.y=0;
+        groundPosition.offset.y=0.f;
+        suspendedProfiles_.insert_or_assign(client.profileId, SuspendedProfile{groundPosition, *combat, tick_});
     }
 
     bool HandleGuild(Client& client, std::span<const std::byte> bytes) {
@@ -434,6 +473,24 @@ private:
         using Mistwatch::GuildResult;
         namespace Wire = Mistwatch::RiverbankGuildWire;
         if (!profiles_ || !client.profileId) return false;
+        if (const auto query = Wire::DecodeRosterQuery(bytes)) {
+            Mistwatch::GuildRosterPage roster;
+            if (query->sequence > client.guildSequence) {
+                client.guildSequence = query->sequence;
+                if (client.guildRequestTick != tick_) {
+                    client.guildRequestTick = tick_;
+                    roster = profiles_->ReadGuildRoster(client.profileId, query->page);
+                    for (auto& member : roster.members) {
+                        // 角色資料取自持久化名單，上線編號取自本房間已登入的連線。
+                        const auto peer = std::ranges::find_if(peers_, [&](const auto& entry) {
+                            return entry.second.profileId == static_cast<std::int64_t>(member.characterId);
+                        });
+                        if (peer != peers_.end()) member.onlinePlayer = peer->first;
+                    }
+                }
+            }
+            return client.transport.Queue(Wire::EncodeRosterReply(query->sequence, roster));
+        }
         const auto request = Wire::DecodeRequest(bytes);
         if (!request) return false;
         auto result = GuildResult::Rejected;
@@ -618,7 +675,11 @@ private:
                                                      std::span{nearby}.first(count));
             }
         }
-        const auto stage = profiles_->ReadExpedition(client.profileId, request->watchSurvey);
+        auto stage = profiles_->ReadExpedition(client.profileId, request->watchSurvey);
+        // 舊客戶端仍收到可顯示的東側目的地，資料庫保留實際記錄的瞭望樁。
+        using Stage = Mistwatch::ExpeditionStage;
+        if (request->watchRoutes && stage == Stage::WatchEast) stage = Stage::WatchEither;
+        if (!request->watchRoutes && stage == Stage::WatchEastRemaining) stage = Stage::WatchEast;
         return client.transport.Queue(Wire::EncodeReply({request->sequence, stage, result}));
     }
 
@@ -646,8 +707,9 @@ private:
     void CommitRewards(bool field) {
         const auto& site = field ? encounter_.Field() : encounter_.Boss();
         if (!profiles_ || site.phase != Mistwatch::EncounterPhase::Defeated) return;
+        if (!field && site.run == settledBossRewardRun_) return;
         const auto saved = field ? &Client::savedFieldHides : &Client::savedRewards;
-        std::array<std::int64_t, MaximumRoomCapacity> eligible{};
+        std::array<std::int64_t, MaximumRoomCapacity * (1 + SuspendedProfilesPerSeat)> eligible{};
         std::array<Client*, MaximumRoomCapacity> credited{};
         std::size_t count{};
         for (auto& [id, client] : peers_) {
@@ -660,11 +722,24 @@ private:
             eligible[count] = client.profileId;
             credited[count++] = &client;
         }
-        if (!count) return;
+        const auto onlineCount = count;
+        if (!field) {
+            // 斷線前已參戰且仍位於首領區的角色，使用同一筆勝利交易結算。
+            for (const auto& [profile, entry] : suspendedProfiles_) {
+                Vec3 lastPosition{};
+                if (entry.combat.contributionRun == site.run && tick_ - entry.lostTick <= ResumeWindowTicks &&
+                    ToLocalPosition3D(entry.position, WorldOrigin3D{}, lastPosition) &&
+                    Mistwatch::RiverbankEncounter::InArena({lastPosition.x, lastPosition.z}))
+                    eligible[count++] = profile;
+            }
+        }
         const auto recipients = std::span(eligible).first(count);
         if (field) profiles_->AwardFieldHides(epoch_, site.run, recipients);
-        else profiles_->Award(epoch_, site.run, recipients);
-        for (auto* client : std::span(credited).first(count)) ++(client->*saved);
+        else {
+            profiles_->Award(epoch_, site.run, recipients);
+            settledBossRewardRun_ = site.run;
+        }
+        for (auto* client : std::span(credited).first(onlineCount)) ++(client->*saved);
     }
 #endif
 
@@ -695,6 +770,7 @@ private:
     std::unique_ptr<Mistwatch::RiverbankProfileStore> profiles_;
     std::unique_ptr<Mistwatch::RiverbankProfileRegistration> registration_;
     std::map<std::int64_t, SuspendedProfile> suspendedProfiles_;
+    std::uint64_t settledBossRewardRun_{};
     Mistwatch::RiverbankTerritory territory_;
     Mistwatch::RiverbankParty party_;
     Mistwatch::TerritoryState territoryOwner_;

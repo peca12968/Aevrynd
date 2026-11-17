@@ -1,6 +1,7 @@
 #include "MistwatchSession.h"
 #ifdef AEVRYND_MISTWATCH_MMO_CLIENT
 #include "LocalWorldClient.h"
+#include "RiverbankClassSelection.h"
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankFieldBoarPose.h"
 #include "RiverbankCombatCamera.h"
@@ -12,11 +13,14 @@
 #include "RiverbankPartyPanel.h"
 #include "RiverbankPartyMarker.h"
 #include "RiverbankCombatFeedback.h"
+#include "RiverbankStrikeCue.h"
 #include "RiverbankStructureMovement.h"
 #include "RiverbankTerritoryHud.h"
+#include "MistwatchTerritoryClearing.h"
 #include "RiverbankGearPanel.h"
 #include "RiverbankCampSpawn.h"
 #include "RiverbankRouteMap.h"
+#include "RiverbankExpeditionSign.h"
 #endif
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
@@ -963,7 +967,11 @@ class MistwatchGame final : public IGame {
     SkinningWorkspace3D explorerSkinning;
     const std::array<Material3D,5> explorerMaterials=Mistwatch::ExplorerArtMaterials();
     Mistwatch::ExplorerSurface::Submission explorerSurfaceSubmission;
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+    Mistwatch::Boar boar{true};
+#else
     Mistwatch::Boar boar;
+#endif
     SkinnedMeshResource3D boarMesh;
     SkinningWorkspace3D boarSkinning;
     Mistwatch::BoarHitReaction::Scratch boarHitScratch;
@@ -1981,8 +1989,10 @@ private:
                 throw std::runtime_error("Invalid local world screenshot path");
 #ifdef AEVRYND_MISTWATCH_PROFILES
             wchar_t guildCapture[2]{};
-            localWorldGuildCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_GUILD_CAPTURE",guildCapture,2)==1&&
-                guildCapture[0]==L'1';
+            if(GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_GUILD_CAPTURE",guildCapture,2)==1){
+                localWorldGuildCapture=guildCapture[0]==L'1';
+                localWorldInviteNoticeCapture=guildCapture[0]==L'2';
+            }
             wchar_t territoryCapture[2]{};
             localWorldTerritoryCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_TERRITORY_CAPTURE",territoryCapture,2)==1&&
                 territoryCapture[0]==L'1';
@@ -2370,7 +2380,11 @@ private:
         middleLayerEnabled=Mistwatch::WorldProfileHasMiddle(worldProfile);
         canopyEnabled=Mistwatch::WorldProfileHasCanopy(worldProfile);
         if(!canopyEnabled)canopyPopulation.fingerprint=0;
+#ifdef AEVRYND_MISTWATCH_MMO_CLIENT
+        const auto wildlife=LoadSkinnedModelAssetFile(e.ExecutableDirectory()/"character"/"RiverbankBoar.aeskin");
+#else
         const auto wildlife=LoadSkinnedModelAssetFile(e.ExecutableDirectory()/"assets"/"mistwatch-wildlife"/"boar.aeskin");
+#endif
         if(!wildlife||wildlife.model.skeleton.joints.size()!=16||
             wildlife.model.bindMesh.indices!=boar.model.bindMesh.indices)throw std::runtime_error("Boar asset unavailable or incompatible");
         boar.model=wildlife.model;
@@ -4014,8 +4028,9 @@ private:
     Mistwatch::RiverbankPartyPanel riverbankParty;
     Mistwatch::RiverbankGearPanel riverbankGear;
     Mistwatch::RiverbankRouteMap::Menu riverbankRouteMap;
+    std::optional<Mistwatch::RiverbankRouteMap::ExpeditionStep> expeditionNextStep;
     std::optional<Mistwatch::RiverbankRouteMap::TerrainGrid> riverbankMapTerrain;
-    bool localWorldGuildCapture{}, localWorldTerritoryCapture{}, localWorldPartyCapture{}, localWorldGearCapture{};
+    bool localWorldGuildCapture{}, localWorldInviteNoticeCapture{}, localWorldTerritoryCapture{}, localWorldPartyCapture{}, localWorldGearCapture{};
     bool localWorldExpeditionCapture{}, expeditionInteractPending{}, expeditionCaptureInteracted{};
     unsigned territoryApproachStep{};
     std::chrono::steady_clock::time_point nextTerritoryQuery{};
@@ -4031,17 +4046,19 @@ private:
         using Stage=Mistwatch::ExpeditionStage;
         using Quest=Mistwatch::RiverbankExpedition;
         const auto* quest=localWorld->Expedition();
-        if(!quest)return;
-        const auto destination=Quest::Destination(quest->stage);
+        if(!quest||localWorldStatus!=Mistwatch::LocalWorldClient::Status::Ready)return;
+        const auto nearbyStage=Quest::RecommendedDestination(quest->stage,{session.feet.x,session.feet.z});
+        const auto destination=Quest::Destination(nearbyStage);
         const auto distance=std::hypot(session.feet.x-destination.x,session.feet.z-destination.z);
-        static constexpr std::array<std::string_view,10> objectives{
+        static constexpr std::array<std::string_view,12> objectives{
             "到南岸營地的委託牌領取任務", "沿道路向北，勘查橋前路標", "過橋組隊挑戰巡林野豬",
             "返回南岸營地的委託牌回報", "巡林委託已完成", "回營地委託牌領取北岸勘查",
-            "過橋後朝東，查看林間瞭望樁", "沿北岸高地前往西側瞭望樁", "回南岸營地交回兩處紀錄", "北岸勘查已完成"};
-        static constexpr std::array<std::string_view,10> actions{
+            "過橋後朝東，查看林間瞭望樁", "沿北岸高地前往西側瞭望樁", "回南岸營地交回兩處紀錄", "北岸勘查已完成",
+            "前往東側瞭望樁，補齊最後一筆", "任選東側或西側瞭望樁先勘查"};
+        static constexpr std::array<std::string_view,12> actions{
             "按 E 領取委託", "按 E 勘查路標", "在首領戰中做出貢獻並取得戰利品", "按 E 回報並領取徽章",
             "已取得巡林徽章", "已取得巡林徽章 · 按 E 領取勘查", "按 E 記錄東側地況", "按 E 記錄西側地況",
-            "按 E 交回紀錄", "兩處瞭望點已登記"};
+            "按 E 交回紀錄", "兩處瞭望點已登記", "按 E 記錄東側地況", "按 E 記錄這座瞭望樁"};
         const auto stage=static_cast<std::size_t>(quest->stage);
         float offset=0.f;
 #ifdef AEVRYND_MISTWATCH_BATTLE
@@ -4050,15 +4067,35 @@ private:
             if(player.visible&&player.position.x<560.f)offset=808.f;
         }
 #endif
+        const bool survey=quest->stage>=Stage::WatchAvailable;
+        const bool active=Quest::HasDestination(quest->stage);
+        std::string title=survey?"北岸瞭望勘查":"巡林委託";
+        const auto surveyStep=quest->stage==Stage::WatchEither?2u:quest->stage==Stage::WatchEastRemaining?3u:
+            survey?stage-static_cast<std::size_t>(Stage::WatchAvailable)+1u:stage+1u;
+        if(active)title+="  "+std::to_string(surveyStep)+"/4";
+        const bool actionable=Quest::CanInteract(quest->stage,{session.feet.x,session.feet.z});
+        const bool battleClose=quest->stage==Stage::Hunt&&distance<15.f;
+        std::string hint;
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        if(const auto* battle=localWorld->Battle();active&&battle&&!battle->player.health)
+            hint="返回營地或由隊友救援，繼續委託";
+#endif
+        if(hint.empty()){
+            if(actionable||!active||(battleClose&&(!expeditionNextStep||expeditionNextStep->instruction.empty())))
+                hint=actions[stage];
+            else if(expeditionNextStep){
+                hint=expeditionNextStep->instruction;
+                if(!hint.empty())hint+=" · ";
+                const auto& guide=expeditionNextStep->guidance;
+                hint+=std::string(guide.direction)+" "+std::to_string(std::max(guide.meters,1L))+" 公尺";
+            }else hint="距離 "+std::to_string(int(distance))+" 公尺";
+        }
         draw.Quad({236+offset,636},{456,128},{.045f,.067f,.053f,.95f});
-        draw.SystemText({23+offset,585},quest->stage>=Stage::WatchAvailable?"北岸瞭望勘查":"巡林委託",19.f,{.83f,.95f,.86f,1});
+        draw.SystemText({23+offset,585},title,19.f,{.83f,.95f,.86f,1});
         draw.SystemText({23+offset,619},objectives[stage],17.f,{.93f,.96f,.93f,1});
-        const auto hint=Quest::CanInteract(quest->stage,{session.feet.x,session.feet.z})||!Quest::HasDestination(quest->stage)||
-            (quest->stage==Stage::Hunt&&distance<15.f)?
-            std::string(actions[stage]):"距離 "+std::to_string(int(distance))+" 公尺";
         draw.SystemText({23+offset,650},hint,16.f,{.89f,.88f,.68f,1});
         if(Quest::IsWatchPost(quest->stage))
-            draw.SystemText({23+offset,675},"同階段的隊友在瞭望樁 5 公尺內可一同記錄",13.f,{.69f,.82f,.74f,1});
+            draw.SystemText({23+offset,675},"還沒記錄這座樁的隊友，在 5 公尺內可一同記錄",13.f,{.69f,.82f,.74f,1});
     }
 
     bool CaptureTrailSupplyPanel() const {
@@ -4126,26 +4163,34 @@ private:
         using Stage=Mistwatch::ExpeditionStage;
         using Quest=Mistwatch::RiverbankExpedition;
         constexpr Color wood{.27f,.17f,.082f,1};
-        constexpr Color brass{.71f,.49f,.18f,1};
+        namespace Signs=Mistwatch::RiverbankSigns;
         const Vec3 board{Quest::Board.x,terrain.SampleHeight(Quest::Board.x,Quest::Board.z),Quest::Board.z};
         const Vec3 trail{Quest::Trail.x,terrain.SampleHeight(Quest::Trail.x,Quest::Trail.z),Quest::Trail.z};
         for(const float offset : {-.48f,.48f})
             scene.Box(board+Vec3{offset,.65f,0},{.12f,1.3f,.12f},wood);
         scene.Box(board+Vec3{0,1.18f,0},{1.15f,.6f,.13f},wood);
-        scene.Box(board+Vec3{0,1.21f,-.075f},{.80f,.38f,.04f},brass);
-        scene.Box(trail+Vec3{0,.49f,0},{.12f,.98f,.13f},wood);
-        scene.Box(trail+Vec3{0,1.05f,0},{.54f,.25f,.15f},brass);
+        scene.Box(board+Vec3{0,1.49f,0},{1.22f,.08f,.20f},{.21f,.13f,.058f,1.f});
+        Signs::Plate(scene,board+Vec3{0,1.22f,0},{.99f,.42f},.13f,{.074f,.145f,.112f,1},Signs::campLabel);
+        scene.Box(trail+Vec3{0,.54f,0},{.12f,1.08f,.13f},wood);
+        scene.Box(trail+Vec3{0,1.13f,0},{.67f,.34f,.14f},wood);
+        Signs::Plate(scene,trail+Vec3{0,1.13f,0},{.56f,.26f},.14f,{.13f,.18f,.15f,1},Signs::bridgeLabel);
 
-        for(const auto site : {Quest::EastWatch,Quest::WestWatch}){
+        for(const auto post : {Quest::Post::East,Quest::Post::West}){
+            const auto site=Quest::PostLocation(post);
             const Vec3 foot{site.x,terrain.SampleHeight(site.x,site.z),site.z};
             scene.Box(foot+Vec3{0,.65f,0},{.15f,1.3f,.15f},wood);
-            scene.Box(foot+Vec3{0,1.12f,0},{.55f,.31f,.14f},wood);
-            scene.Box(foot+Vec3{0,1.13f,-.085f},{.38f,.17f,.04f},{.52f,.70f,.59f,1});
+            scene.Box(foot+Vec3{0,1.17f,0},{.61f,.43f,.14f},wood);
+            const bool east=post==Quest::Post::East;
+            Signs::Plate(scene,foot+Vec3{0,1.17f,0},{.49f,.34f},.14f,
+                east?Color{.075f,.168f,.226f,1}:Color{.245f,.123f,.065f,1},
+                east?std::span{Signs::eastLabel}:std::span{Signs::westLabel});
         }
         const auto* quest=localWorld->Expedition();
-        if(!quest||!Quest::HasDestination(quest->stage)||quest->stage==Stage::Hunt)return;
-        const auto site=Quest::Destination(quest->stage);
-        const Vec3 anchor{site.x,terrain.SampleHeight(site.x,site.z),site.z};
+        if(!quest||!expeditionNextStep||
+           (quest->stage==Stage::Hunt&&expeditionNextStep->instruction.empty()))return;
+        const auto site=expeditionNextStep->point;
+        const float height=Mistwatch::RiverbankWalkSurface{terrain,session.bridgeRepaired}.SampleHeight(site.x,site.z);
+        const Vec3 anchor{site.x,height,site.z};
         if(std::hypot(anchor.x-session.feet.x,anchor.z-session.feet.z)>30.f)return;
         constexpr Color marker{.82f,.66f,.27f,1};
         scene.Line(anchor+Vec3{-.18f,1.87f,0},anchor+Vec3{0,1.63f,0},3.f,marker);
@@ -4164,8 +4209,10 @@ private:
         if(!state)return;
         const auto hud=Mistwatch::ReadRiverbankTerritoryHud(*state);
         const float distance=std::hypot(session.feet.x-Area::CenterX,session.feet.z-Area::CenterZ);
-        draw.Quad({1059,99},{408,162},{.035f,.065f,.052f,.94f});
-        const auto location=Area::Contains(session.feet.x,session.feet.z)?std::string("已進入領地"):
+        const bool inside=Area::Contains(session.feet.x,session.feet.z);
+        const bool guildFight=inside&&state->contested&&localWorld->HasTerritoryCombat();
+        draw.Quad({1059,guildFight?112.f:99.f},{408,guildFight?188.f:162.f},{.035f,.065f,.052f,.94f});
+        const auto location=inside?std::string("已進入領地"):
             std::to_string(int(distance))+" 公尺";
         draw.SystemText({875,27},"北岸瞭望地 · "+location,18.f,{.85f,.95f,.89f,1});
         const auto owner=state->owner?Mistwatch::RiverbankTerritoryDisplayName(state->ownerName):"無";
@@ -4187,8 +4234,64 @@ private:
             const auto text=hud.phase==Phase::Held?"敵方會長或幹部進圈可發起爭奪":"會長或幹部進圈可發起佔領";
             draw.SystemText({875,86},text,15.f,accent);
         }
-        draw.SystemText({875,138},"領地獎勵 "+std::to_string(state->rewards)+" · 歷史場次 "+std::to_string(state->revision),
+        if(guildFight)draw.SystemText({875,138},"不同公會成員可在圈內按 F 交戰",15.f,accent);
+        draw.SystemText({875,guildFight?163.f:138.f},"領地獎勵 "+std::to_string(state->rewards)+" · 歷史場次 "+std::to_string(state->revision),
             15.f,{.78f,.88f,.83f,1});
+    }
+
+    static constexpr std::uint64_t TerritoryMatureCanopy=0x4d5754564d415455ull;
+    static constexpr std::uint64_t TerritoryMiddleCanopy=0x4d5754564d494444ull;
+    unsigned territoryFadedCanopies{},territoryCanopyShadows{};
+
+    void ClearTerritorySightline(const Camera3D& camera,Aevrynd::DrawList& draw) {
+        using Area=Mistwatch::RiverbankTerritory;
+        using RaySet=Mistwatch::FoliageView::OpacityQuery;
+        territoryFadedCanopies=territoryCanopyShadows=0;
+        if(!localWorld||!localWorld->Battle()||!Area::Contains(session.feet.x,session.feet.z))return;
+
+        std::array<std::optional<RaySet>,4> rays;
+        rays[0].emplace(camera,session.feet,controller.Settings().height);
+        if(const auto* view=localWorld->Snapshot()){
+            std::size_t count=1;
+            for(const auto& actor:view->entities){
+                if(count==rays.size())break;
+                if(actor.id.low==localWorld->PlayerId())continue;
+                const auto feet=LocalWorldFeet(actor);
+                if(feet&&Area::Contains(feet->x,feet->z)&&
+                    ProjectToViewport(*feet+Vec3{0,1.f,0},camera,{1280,720}).visible)rays[count++].emplace(camera,*feet,1.7f);
+            }
+        }
+
+        const auto fade=[&](const MeshBounds3D& local,const Transform3D& pose,RenderObjectIdentity3D identity){
+            if(std::hypot(pose.position.x-session.feet.x,pose.position.z-session.feet.z)>18.f)return;
+            const auto bounds=TransformBounds(local,pose);
+            float opacity=1.f;
+            for(const auto& ray:rays)if(ray)opacity=(std::min)(opacity,ray->Opacity(bounds));
+            if(opacity>=1.f)return;
+            const auto result=ApplyStaticColorOcclusion3D(draw.meshInstances,identity,opacity);
+            if(result.status==StaticColorOcclusionStatus3D::NotVisible)return;
+            if(result.status!=StaticColorOcclusionStatus3D::Applied)throw std::runtime_error("Territory canopy occlusion rejected");
+            ++territoryFadedCanopies;
+            territoryCanopyShadows+=static_cast<unsigned>(result.shadowCopies);
+        };
+        for(std::size_t i=0;i<broadleafTrees.size();++i)
+            fade(matureStudy.meshes[1].bounds,MatureStudy::Runtime::DisplayPose(broadleafTrees[i].transform),{{TerritoryMatureCanopy,i+1},1});
+        for(std::size_t i=0;i<middleLayer.trees.size();++i)
+            fade(broadleafMeshes[1].bounds,middleLayer.trees[i].transform,{{TerritoryMiddleCanopy,i+1},1});
+        if(canopyEnabled)for(std::size_t i=0;i<canopyPopulation.plants.size();++i)
+            fade(canopyMeshes[1].bounds,canopyPopulation.plants[i].pose,{{0x43414e4f50594658ull,i*3+2},1});
+        if(shrubsEnabled){
+            const auto shrubs=[&](const auto& plants,std::uint64_t identityNamespace){
+                for(std::size_t i=0;i<plants.size();++i){
+                    const auto& plant=plants[i];
+                    const auto& meshes=shrubMeshes[plant.variant];
+                    const auto pose=TerritoryUnderstoryPose(plant.pose,meshes[0].bounds,meshes[1].bounds);
+                    fade(meshes[1].bounds,pose,{{identityNamespace,i*2+2},1});
+                }
+            };
+            shrubs(shrubCanopy.plants,0x4d57534852554253ull);
+            shrubs(entranceUnderstory.plants,0x4d57454e54555354ull);
+        }
     }
 
     void DrawRiverbankTerritoryBoundary() {
@@ -4214,6 +4317,18 @@ private:
     std::optional<Camera3D> riverbankCombatView;
     std::vector<BoxCollider3D> combatCameraFoliage;
 
+    Transform3D TerritoryUnderstoryPose(Transform3D pose,const MeshBounds3D& first,
+                                        const MeshBounds3D& second={}) const {
+#if defined(AEVRYND_MISTWATCH_MMO_CLIENT) && defined(AEVRYND_MISTWATCH_PROFILES)
+        return Mistwatch::TerritoryClearing::UnderstoryPose(pose,
+            (std::max)(first.center.y+first.extents.y,second.center.y+second.extents.y));
+#else
+        (void)first;
+        (void)second;
+        return pose;
+#endif
+    }
+
     void FindCombatCameraFoliage() {
         combatCameraFoliage.clear();
         const auto add=[&](const MeshBounds3D& local,const Transform3D& pose) {
@@ -4223,17 +4338,18 @@ private:
         };
         // 視線使用實際提交的植被包絡，碰撞繼續交由原有實體幾何處理。
         for(const auto& tree:broadleafTrees){
-            auto pose=tree.transform;pose.scale=pose.scale*.4f;
-            const auto pivot=TransformBounds({MatureStudy::RootPivot,0,{0,0,0}},pose).center;
-            pose.position=pose.position+(tree.transform.position-pivot);
+            const auto pose=MatureStudy::Runtime::DisplayPose(tree.transform);
             for(unsigned slot=0;slot<2;++slot)add(matureStudy.meshes[slot].bounds,pose);
         }
         for(const auto& tree:middleLayer.trees)
             for(unsigned slot=0;slot<2;++slot)add(broadleafMeshes[slot].bounds,tree.transform);
         if(shrubsEnabled){
             const auto shrubs=[&](const auto& plants) {
-                for(const auto& plant:plants)if(!InsideFieldShrubClearing(plant.pose.position))
-                    for(const auto& mesh:shrubMeshes[plant.variant])add(mesh.bounds,plant.pose);
+                for(const auto& plant:plants)if(!InsideFieldShrubClearing(plant.pose.position)){
+                    const auto& meshes=shrubMeshes[plant.variant];
+                    const auto pose=TerritoryUnderstoryPose(plant.pose,meshes[0].bounds,meshes[1].bounds);
+                    for(const auto& mesh:meshes)add(mesh.bounds,pose);
+                }
             };
             shrubs(shrubCanopy.plants);
             shrubs(entranceUnderstory.plants);
@@ -4275,7 +4391,7 @@ private:
         riverbankCombatView.reset();
         if(Length(view.position-base.position)>.001f||Length(view.target-base.target)>.001f)riverbankCombatView=view;
     }
-    Mistwatch::Boar fieldBoar;
+    Mistwatch::Boar fieldBoar{true};
     Mistwatch::RiverbankCombatFeedback combatFeedback;
     bool localWorldArenaCapture{}, localWorldFieldCapture{}, localWorldCampCapture{};
     bool localWorldDodgeCapture{}, dodgeCaptureSent{};
@@ -4482,11 +4598,49 @@ private:
         const auto* battle=localWorld->Battle();
         using Hunt=Mistwatch::RiverbankEncounter;
         using Phase=Mistwatch::EncounterPhase;
-        if(battle&&battle->boss.phase==Phase::Windup)
-            DrawRiverbankStrike(battle->boss.strikeCenter,Hunt::StrikeRadius,{1,.23f,.06f,1});
+        const auto strike=[&](const Mistwatch::RiverbankBossStatus& enemy,bool field,float radius,Color color){
+            if(enemy.phase!=Phase::Windup)return;
+            DrawRiverbankStrike(enemy.strikeCenter,radius,color);
+            if(!battle||!battle->player.health||localWorld->IsDodging())return;
+            const auto exit=Mistwatch::RiverbankStrikeExit(enemy,field,{session.feet.x,session.feet.z},
+                                                           localWorld->HasStructureCover());
+            if(!exit)return;
+            const auto ground=[&](Vec3 point){
+                point.y=terrain.SampleHeight(point.x,point.z)+.095f;return point;
+            };
+            const Vec3 delta{exit->x-session.feet.x,0,exit->z-session.feet.z};
+            const float arrowLength=std::min(1.17f,std::hypot(delta.x,delta.z));
+            const Vec3 direction=Normalize(delta);
+            const Vec3 side{-direction.z,0,direction.x};
+            const auto tail=session.feet+direction*(arrowLength*.24f);
+            const auto tip=session.feet+direction*arrowLength;
+            constexpr Color ink{.80f,.96f,.77f,1};
+            scene.Line(ground(tail),ground(tip),4.f,ink);
+            scene.Line(ground(tip),ground(tip-direction*(arrowLength*.27f)+side*(arrowLength*.16f)),4.f,ink);
+            scene.Line(ground(tip),ground(tip-direction*(arrowLength*.27f)-side*(arrowLength*.16f)),4.f,ink);
+        };
+        if(battle)strike(battle->boss,false,Hunt::StrikeRadius,{1,.23f,.06f,1});
         const auto* field=localWorld->FieldHunt();
-        if(fieldBoarFeet&&field&&field->field.phase==Phase::Windup)
-            DrawRiverbankStrike(field->field.strikeCenter,Hunt::FieldStrikeRadius,{1,.64f,.10f,1});
+        if(fieldBoarFeet&&field)strike(field->field,true,Hunt::FieldStrikeRadius,{1,.64f,.10f,1});
+    }
+
+    void DrawRiverbankStrikeStatus(DrawList& draw, float left, float textY, float width,
+                                  Mistwatch::EncounterPhase phase, const Mistwatch::RiverbankStrikeCue& cue) const {
+        using Exposure=Mistwatch::RiverbankStrikeExposure;
+        using Phase=Mistwatch::EncounterPhase;
+        constexpr float barHeight=3.f;
+        const auto tenths=cue.DisplayTenths();
+        const auto time=std::to_string(tenths/10)+"."+std::to_string(tenths%10)+" 秒";
+        const auto label=phase==Phase::Recovery?
+            (cue.clearCounterPath?"野豬停頓 · 可反擊":cue.withinCounterRange?"野豬停頓 · 從入口反擊":"野豬停頓 · 靠近後反擊"):
+            (cue.exposure==Exposure::Exposed?"圈內 · 立刻離開":cue.exposure==Exposure::Covered?"圈內 · 掩體遮蔽":"位於攻擊圈外");
+        const auto color=phase==Phase::Recovery?Color{.62f,.94f,.74f,1}:
+            cue.exposure==Exposure::Exposed?Color{1,.59f,.44f,1}:Color{1,.83f,.56f,1};
+        draw.SystemText({left,textY},std::string(label)+" · "+time,15.f,color);
+        const auto y=textY+21.f;
+        const auto filled=width*cue.Fraction();
+        draw.Quad({left+width*.5f,y},{width,barHeight},{.22f,.27f,.24f,1});
+        if(filled>0.f)draw.Quad({left+filled*.5f,y},{filled,barHeight},color);
     }
 
     void DrawRiverbankBattleHud(DrawList& draw) const {
@@ -4533,36 +4687,41 @@ private:
         }
         using Phase=Mistwatch::EncounterPhase;
         using Hunt=Mistwatch::RiverbankEncounter;
+        const Mistwatch::ArenaPosition feet{session.feet.x,session.feet.z};
+        const bool checksCover=localWorld->HasStructureCover();
         if(const auto* report=localWorld->FieldHunt()){
             const auto center=Hunt::EastPastureCenter;
             const float range=std::hypot(session.feet.x-center.x,session.feet.z-center.z);
             if(range<=25.f){
                 const auto& field=report->field;
                 const auto bearing=std::string(session.feet.x<center.x?"東":"西")+(session.feet.z<center.z?"北":"南");
-                const auto line=!Hunt::InPasture({session.feet.x,session.feet.z})?
+                const auto cue=Mistwatch::DescribeRiverbankStrike(field,true,feet,checksCover,stats.attackRange);
+                const auto line=!Hunt::InPasture(feet)?
                     "草坡狩獵 · 往"+bearing+" "+std::to_string(static_cast<unsigned>(std::ceil(range)))+" 公尺":
                     field.phase==Phase::Defeated?"草坡野豬已倒下 · 重生 "+remaining(field.phaseTicks):
-                    field.phase==Phase::Windup?"草坡野豬即將衝撞 · 離開黃圈":
+                    field.phase==Phase::Windup?"草坡野豬 · 衝撞蓄力":
                     "草坡野豬 · 生命 "+std::to_string(field.health)+" / "+std::to_string(Hunt::FieldHealth);
-                draw.Quad({694,43},{300,62},{.07f,.058f,.026f,.95f});
+                draw.Quad({694,cue.duration?58.f:43.f},{300,cue.duration?92.f:62.f},{.07f,.058f,.026f,.95f});
                 draw.SystemText({554,20},line,16.f,{1,.87f,.58f,1});
-                draw.SystemText({554,47},"累計獵得獸皮 "+std::to_string(report->hides),15.f,{.93f,.90f,.78f,1});
+                if(cue.duration)DrawRiverbankStrikeStatus(draw,554.f,43.f,280.f,field.phase,cue);
+                draw.SystemText({554,cue.duration?76.f:47.f},"累計獵得獸皮 "+std::to_string(report->hides),15.f,{.93f,.90f,.78f,1});
                 return;
             }
         }
         const auto distance=std::hypot(session.feet.x-boss.position.x,session.feet.z-boss.position.z);
         if(distance>24.f)return;
-        const Mistwatch::ArenaPosition feet{session.feet.x,session.feet.z};
-        const bool behindCover=localWorld->HasStructureCover()&&distance<=stats.attackRange&&
+        const auto cue=Mistwatch::DescribeRiverbankStrike(boss,false,feet,checksCover,stats.attackRange);
+        const bool behindCover=!cue.duration&&checksCover&&distance<=stats.attackRange&&
             !Mistwatch::RiverbankStructureMovement::HasLine(feet,boss.position);
         const auto line=!Hunt::InArena(feet)?
             "進入北岸林間空地即可挑戰巡林野豬":
             boss.phase==Phase::Defeated?"巡林野豬已倒下 · 重生 "+remaining(boss.phaseTicks):
-            boss.phase==Phase::Windup?"巡林野豬即將衝撞 · 離開橘圈":
+            boss.phase==Phase::Windup?"巡林野豬 · 衝撞蓄力":
             behindCover?"建物遮擋 · 移到入口再攻擊":
             "巡林野豬 · 生命 "+std::to_string(boss.health)+" / "+std::to_string(Mistwatch::RiverbankEncounter::BossHealth);
-        draw.Quad({640,37},{407,52},{.07f,.045f,.021f,.95f});
+        draw.Quad({640,cue.duration?49.f:37.f},{407,cue.duration?76.f:52.f},{.07f,.045f,.021f,.95f});
         draw.SystemText({451,24},line,17.f,{1,.80f,.56f,1});
+        if(cue.duration)DrawRiverbankStrikeStatus(draw,451.f,43.f,378.f,boss.phase,cue);
     }
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
@@ -4571,7 +4730,7 @@ private:
     std::optional<Vec3> LocalWorldFeet(const ReplicatedEntityState3D& entity) const {
         Vec3 feet{};
         if(!ToLocalPosition3D(entity.position,WorldOrigin3D{},feet)||!terrain.Contains(feet.x,feet.z))return {};
-        feet.y=Mistwatch::RiverbankWalkSurface{terrain,session.bridgeRepaired}.SampleHeight(feet.x,feet.z);
+        feet.y+=Mistwatch::RiverbankWalkSurface{terrain,session.bridgeRepaired}.SampleHeight(feet.x,feet.z);
         return feet;
     }
     Mistwatch::RiverbankSettingsMenu riverbankSettingsMenu;
@@ -4707,7 +4866,8 @@ private:
         }
 #endif
 #endif
-        localWorldStatus=localWorld->Poll(moveX,moveZ,focused&&input.Down(VK_SHIFT));
+        localWorldStatus=localWorld->Poll(moveX,moveZ,focused&&input.Down(VK_SHIFT),
+            focused?std::optional{input.Pressed(VK_SPACE)}:std::nullopt,focused&&input.Down(VK_CONTROL));
 #ifdef AEVRYND_MISTWATCH_BATTLE
         if(localWorldDodgeCapture&&!dodgeCaptureSent&&localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready&&
            localWorld->Battle()&&localWorld->CanDodge()){
@@ -4769,9 +4929,9 @@ private:
 #endif
         if(localWorldStatus==Mistwatch::LocalWorldClient::Status::ChoosingClass){
             using PlayerClass=Mistwatch::RiverbankClass;
-            if(!localWorldScreenshot.empty()||(focused&&input.Pressed('1')))(void)localWorld->ChooseClass(PlayerClass::Guardian);
-            else if(focused&&input.Pressed('2'))(void)localWorld->ChooseClass(PlayerClass::Ranger);
-            else if(focused&&input.Pressed('3'))(void)localWorld->ChooseClass(PlayerClass::Priest);
+            const auto selected=!localWorldScreenshot.empty()?PlayerClass::Guardian:
+                focused?Mistwatch::RiverbankClassSelection::ReadSelection(input):PlayerClass::None;
+            if(selected!=PlayerClass::None)(void)localWorld->ChooseClass(selected);
         }
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
         riverbankAvatar->Update(localWorld->Snapshot(),localWorld->PlayerId(),dt);
@@ -4796,9 +4956,18 @@ private:
                 }
                 explorer.Update(changedZone?Vec3{}:movement,dt,false);
                 const auto contacts=RuntimeGameplayBody(session.bridgeRepaired,session.feet);
-                (void)explorer.PlaceFeet(session.feet,true,false,terrain,contacts,RuntimeRoofHulls());
+                const bool grounded=own->position.chunk.y==0&&own->position.offset.y<=.002f;
+                (void)explorer.PlaceFeet(session.feet,grounded,false,terrain,contacts,RuntimeRoofHulls());
             }
         }
+#ifdef AEVRYND_MISTWATCH_PROFILES
+        expeditionNextStep.reset();
+        if(const auto* quest=localWorld->Expedition();quest&&localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready){
+            riverbankRouteMap.FollowInitialExpedition(quest->stage);
+            if(riverbankRouteMap.TracksExpedition())
+                expeditionNextStep=Mistwatch::RiverbankRouteMap::NextExpeditionStep(quest->stage,session.feet);
+        }
+#endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
         if(localWorldCampCapture&&campCapturePhase==CampCapturePhase::ReturnReady){
             if(!localWorld->CanReturnToCamp())throw std::runtime_error("Camp capture lost the downed player");
@@ -4891,6 +5060,9 @@ private:
 #endif
         if(riverbankSettingsMenu.Open()){
             DrawRiverbankSettings(draw);
+        }else if(localWorldStatus==Mistwatch::LocalWorldClient::Status::ChoosingClass){
+            Mistwatch::RiverbankClassSelection::Draw(draw,
+                Mistwatch::RiverbankClassSelection::HoveredClass(e.GetInput()));
 #ifdef AEVRYND_MISTWATCH_PROFILES
         }else if(riverbankRouteMap.Open()&&localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready){
             if(!riverbankMapTerrain)riverbankMapTerrain=Mistwatch::RiverbankRouteMap::Build(terrain);
@@ -4902,14 +5074,19 @@ private:
             draw.Quad({273,60},{526,106},{.04f,.07f,.065f,.94f});
             draw.SystemText({20,18},"霧境守望 · 河岸多人測試",22.f,{.77f,.93f,.81f,1});
             using Status=Mistwatch::LocalWorldClient::Status;
-            std::string status;
+            std::string status,controls;
             switch(localWorldStatus){
             case Status::Connecting: status="正在連線至河岸世界";break;
-            case Status::ChoosingClass: status="按 1 選守衛、2 選遊俠、3 選祭司";break;
+            case Status::ChoosingClass: break;
             case Status::Joining: status="等待伺服器確認職業並進入河岸";break;
             case Status::Ready: status=std::string(Mistwatch::RiverbankClassName(localWorld->SelectedClass()))+
-                " · 其他玩家 "+std::to_string(peers)+" 位 · WASD 移動"+
-                (localWorld->CanSprint()?" · Shift 跑步":"")+" · 拖曳鏡頭";break;
+                " · 其他玩家 "+std::to_string(peers)+" 位";
+                controls="WASD 移動";
+                if(localWorld->CanSprint())controls+=" · Shift 跑步";
+                if(localWorld->CanJump())controls+=" · Space 跳躍";
+                if(localWorld->CanCrouch())controls+=localWorld->IsCrouched()?" · Ctrl 蹲行中":" · Ctrl 蹲行";
+                controls+=" · 拖曳鏡頭";
+                break;
             case Status::Reconnecting: status="連線中斷，正在重新登入河岸";break;
             case Status::Disconnected:
                 status="與河岸世界的連線已中斷";
@@ -4919,10 +5096,11 @@ private:
                 break;
             }
             draw.SystemText({20,58},status,16.f,{.94f,.96f,.93f,1});
+            if(!controls.empty())draw.SystemText({20,81},controls,15.f,{.94f,.96f,.93f,1});
             if(localWorldScreenshot.empty())draw.SystemText({432,20},"F10 設定",16.f,{.86f,.92f,.88f,1});
 #ifdef AEVRYND_MISTWATCH_PROFILES
             if(localWorldScreenshot.empty()&&localWorldStatus==Status::Ready)
-                draw.SystemText({20,80},"Tab 河岸地圖",16.f,{.86f,.92f,.88f,1});
+                draw.SystemText({312,58},"Tab 河岸地圖",16.f,{.86f,.92f,.88f,1});
 #endif
 #ifdef AEVRYND_MISTWATCH_BATTLE
             DrawRiverbankBattleHud(draw);
@@ -4932,9 +5110,7 @@ private:
             DrawRiverbankExpedition(draw);
             DrawRiverbankTrailSupplies(draw);
             if(localWorldStatus==Status::Ready&&!riverbankGuild.Open()&&!riverbankParty.Open()&&!riverbankGear.Open()){
-                const auto* expedition=localWorld->Expedition();
-                Mistwatch::RiverbankRouteMap::DrawTrackedLandmark(draw,riverbankRouteMap,
-                    expedition?std::optional{expedition->stage}:std::nullopt,session.feet);
+                Mistwatch::RiverbankRouteMap::DrawTrackedLandmark(draw,riverbankRouteMap,session.feet);
             }
             riverbankGuild.Draw(draw,*localWorld);
             riverbankParty.Draw(draw,*localWorld);
@@ -4958,7 +5134,9 @@ private:
             if(localWorldGearCapture)captureReady=riverbankGear.Open()&&gearReply&&gearReply->gear.equipped;
             if(localWorldTrailSupplyCapture)captureReady=CaptureTrailSupplyPanel();
             const auto* guildReply=localWorld->GuildReply();
-            if(localWorldGuildCapture)captureReady=captureReady&&riverbankGuild.Open()&&guildReply&&guildReply->state.inviteId>0;
+            if(localWorldGuildCapture||localWorldInviteNoticeCapture)
+                captureReady=captureReady&&(riverbankGuild.Open()==localWorldGuildCapture)&&guildReply&&
+                    !guildReply->state.guildId&&guildReply->state.inviteId>0;
             if(localWorldTerritoryCapture)captureReady=captureReady&&CaptureTerritoryProgress();
             if(localWorldExpeditionCapture)captureReady=captureReady&&CaptureExpeditionBoard();
             const auto* partyReply=localWorld->Party();
@@ -4983,12 +5161,13 @@ private:
                 }
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
-                if(localWorldGuildCapture){
+                if(localWorldGuildCapture||localWorldInviteNoticeCapture){
                     auto receipt=localWorldScreenshot;
                     receipt+=L".guild.txt";
                     if(std::filesystem::exists(receipt))throw std::runtime_error("Guild screenshot receipt already exists");
                     std::ofstream proof(receipt);
                     proof<<localWorld->PlayerId()<<'\n'<<guildReply->state.inviteId<<'\n'<<guildReply->state.inviteName<<'\n';
+                    if(localWorldInviteNoticeCapture)proof<<"panel_open=0\n";
                     proof.close();
                     if(!proof)throw std::runtime_error("Guild screenshot receipt write failed");
                 }
@@ -5001,6 +5180,17 @@ private:
                     proof<<localWorld->PlayerId()<<'\n'<<state.challenger<<'\n'<<state.progress<<'\n'<<state.challengerName<<'\n';
                     proof.close();
                     if(!proof)throw std::runtime_error("Territory screenshot receipt write failed");
+                }
+                if(Mistwatch::RiverbankTerritory::Contains(session.feet.x,session.feet.z)){
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".sightlines.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Territory sightline receipt already exists");
+                    std::ofstream proof(receipt);
+                    proof<<"faded_canopies="<<territoryFadedCanopies<<"\nretained_shadow_copies="<<territoryCanopyShadows
+                         <<"\nplayer_feet="<<session.feet.x<<','<<session.feet.y<<','<<session.feet.z
+                         <<"\ncamera="<<lastRenderedCamera.position.x<<','<<lastRenderedCamera.position.y<<','<<lastRenderedCamera.position.z<<'\n';
+                    proof.close();
+                    if(!proof)throw std::runtime_error("Territory sightline receipt write failed");
                 }
                 if(localWorldTrailSupplyCapture)SaveTrailSupplyCaptureReceipt();
                 if(localWorldGearCapture){
@@ -6180,9 +6370,13 @@ private:
             const auto& plant=shrubCanopy.plants[index];
 #ifdef AEVRYND_MISTWATCH_BATTLE
             if(InsideFieldShrubClearing(plant.pose.position))continue;
+            const auto& meshes=shrubMeshes[plant.variant];
+            const auto pose=TerritoryUnderstoryPose(plant.pose,meshes[0].bounds,meshes[1].bounds);
+#else
+            const auto& pose=plant.pose;
 #endif
             for(unsigned slot=0;slot<2;++slot){const auto material=slot?broadleafSurface[1]:barkMaterial;
-                if(!scene.Mesh(shrubMeshes[plant.variant][slot],plant.pose,material,{},{{0x4d57534852554253ull,index*2+slot+1},1}))throw std::runtime_error("Shrub submission failed");}
+                if(!scene.Mesh(shrubMeshes[plant.variant][slot],pose,material,{},{{0x4d57534852554253ull,index*2+slot+1},1}))throw std::runtime_error("Shrub submission failed");}
             ++submittedShrubs;
         }
         submittedEntranceUnderstory=0;
@@ -6190,10 +6384,14 @@ private:
             const auto& plant=entranceUnderstory.plants[index];
 #ifdef AEVRYND_MISTWATCH_BATTLE
             if(InsideFieldShrubClearing(plant.pose.position))continue;
+            const auto& meshes=shrubMeshes[plant.variant];
+            const auto pose=TerritoryUnderstoryPose(plant.pose,meshes[0].bounds,meshes[1].bounds);
+#else
+            const auto& pose=plant.pose;
 #endif
             for(unsigned slot=0;slot<2;++slot){
                 const auto material=slot?broadleafSurface[1]:barkMaterial;
-                if(!scene.Mesh(shrubMeshes[plant.variant][slot],plant.pose,material,{},{{0x4d57454e54555354ull,index*2+slot+1},1}))
+                if(!scene.Mesh(shrubMeshes[plant.variant][slot],pose,material,{},{{0x4d57454e54555354ull,index*2+slot+1},1}))
                     throw std::runtime_error("Entrance understory submission failed");
             }
             ++submittedEntranceUnderstory;
@@ -6246,12 +6444,24 @@ private:
         if(landscapeFrame.acceptedFir!=((authoredLandscapePlanting||mixedLandscapeCanopy)?2016u:2080u-shoulderSelectedBase*4)||
            landscapeFrame.acceptedBroadleaf!=((authoredLandscapePlanting||mixedLandscapeCanopy)?48u:0u))
             throw std::runtime_error("Landscape population submission mismatch");
-        for(const auto& tree:broadleafTrees)matureStudy.Draw(scene,tree.transform,tree.trunk,matureContactWorld.Original(false));
+        for(std::size_t i=0;i<broadleafTrees.size();++i){
+            const auto& tree=broadleafTrees[i];
+            RenderObjectIdentity3D leaves{};
+#if defined(AEVRYND_MISTWATCH_MMO_CLIENT) && defined(AEVRYND_MISTWATCH_PROFILES)
+            leaves={{TerritoryMatureCanopy,i+1},1};
+#endif
+            matureStudy.Draw(scene,tree.transform,tree.trunk,matureContactWorld.Original(false),leaves);
+        }
         // 中層候選共用既有合法闊葉網格與材質；真樹幹亦加入角色及鏡頭碰撞。
         submittedMiddleLayer=0;submittedMiddleLayerTriangles=0;
-        for(const auto& tree:middleLayer.trees) {
+        for(std::size_t i=0;i<middleLayer.trees.size();++i) {
+            const auto& tree=middleLayer.trees[i];
             for(unsigned slot=0;slot<3;++slot) {
-                if(!scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot]))
+                RenderObjectIdentity3D identity{};
+#if defined(AEVRYND_MISTWATCH_MMO_CLIENT) && defined(AEVRYND_MISTWATCH_PROFILES)
+                if(slot==1)identity={{TerritoryMiddleCanopy,i+1},1};
+#endif
+                if(!scene.Mesh(broadleafMeshes[slot],tree.transform,broadleafSurface[slot],{},identity))
                     throw std::runtime_error("Middle-layer scene insertion failed");
                 submittedMiddleLayerTriangles+=broadleafMeshes[slot].TriangleCount();
             }
@@ -6384,7 +6594,12 @@ private:
             const auto& plant=roadsideBroadleaf.plants[index];
             if(!Mistwatch::GrassRootSelected(plant.transform.position,session.feet))continue;
             const auto& mesh=roadsideBroadleafMeshes[plant.variant];
-            if(!scene.Mesh(mesh,plant.transform,roadsideBroadleafSurface,{},{{0x4d5752424c454146ull,index+1},1}))
+#ifdef AEVRYND_MISTWATCH_BATTLE
+            const auto pose=TerritoryUnderstoryPose(plant.transform,mesh.bounds);
+#else
+            const auto& pose=plant.transform;
+#endif
+            if(!scene.Mesh(mesh,pose,roadsideBroadleafSurface,{},{{0x4d5752424c454146ull,index+1},1}))
                 throw std::runtime_error("Roadside broadleaf scene insertion failed");
             ++submittedRoadsideBroadleaf;submittedRoadsideBroadleafTriangles+=mesh.TriangleCount();
         }
@@ -6772,7 +6987,13 @@ private:
         if(counterCueSubmitted>Mistwatch::CounterWindowCue::MaximumLines)
             throw std::runtime_error("Counter window cue line budget exceeded");
         const auto sceneStats=scene.Submit(draw,camera,{1280,720},submission);
-        if(foliageViewWindowEnabled&&started&&session.Alive()){
+#if defined(AEVRYND_MISTWATCH_MMO_CLIENT) && defined(AEVRYND_MISTWATCH_PROFILES)
+        ClearTerritorySightline(camera,draw);
+        const bool canopySightlineActive=territoryFadedCanopies!=0;
+#else
+        constexpr bool canopySightlineActive=false;
+#endif
+        if(!canopySightlineActive&&foliageViewWindowEnabled&&started&&session.Alive()){
             const float height=controller.Settings().height;
             draw.SetScreenOcclusionWindow(ProjectScreenOcclusionWindow3D(draw.ViewProjection(),
                 session.feet+Vec3{0,height*.5f,0},{.50f,height*.5f+.10f,.50f}));

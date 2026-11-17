@@ -2,8 +2,10 @@
 
 #include "RiverbankAvatarMotion.h"
 #include "RiverbankAvatarAsset.h"
+#include "RiverbankCrouch.h"
 #include "RiverbankBattleWire.h"
 #include "RiverbankPeerPresentation.h"
+#include "RiverbankJumpPresentation.h"
 #include <Aevrynd/Engine.h>
 #include <Aevrynd/HeightField3D.h>
 #include <Aevrynd/ReplicationProtocol3D.h>
@@ -90,19 +92,24 @@ public:
         for (const auto& entity : snapshot->entities) {
             auto& player = players[entity.id];
             const bool downed = (entity.flags & RiverbankBattleWire::DownedEntityFlag) != 0;
+            Aevrynd::Vec3 feet{};
+            if (!Aevrynd::ToLocalPosition3D(entity.position, Aevrynd::WorldOrigin3D{}, feet)) {
+                players.erase(entity.id);
+                continue;
+            }
+            player.motion.ObserveStance(!downed && (entity.flags & RiverbankCrouchedFlag) != 0, dt);
+            player.jump.Observe(snapshot->serverTick, feet.y, entity.velocity.y,
+                !downed && (entity.flags & RiverbankJumpCapability) != 0);
             if (entity.id.low == localId) {
+                player.jump.Advance(dt, feet.y);
                 player.motion.Advance(entity.velocity, dt, downed, motion.HasRunClip());
             } else {
-                Aevrynd::Vec3 feet{};
-                if (!Aevrynd::ToLocalPosition3D(entity.position, Aevrynd::WorldOrigin3D{}, feet)) {
-                    players.erase(entity.id);
-                    continue;
-                }
                 if (player.peer.Observe(snapshot->serverTick, feet, downed,
                     (entity.flags & RiverbankSprintCapability) != 0,
                     (entity.flags & RiverbankBattleWire::DodgingEntityFlag) != 0))
                     player.motion.ResetGait();
                 player.motion.AdvanceByTravel(player.peer.Advance(dt), dt, downed, motion.HasRunClip());
+                player.jump.Advance(dt, player.peer.Position()->y);
             }
             const auto playerClass = ReadRiverbankClassFlags(entity.flags);
             player.playerClass = IsRiverbankClass(playerClass) ? playerClass : RiverbankClass::None;
@@ -114,7 +121,7 @@ public:
         if (player == players.end()) return {};
         auto feet = player->second.peer.Position();
         if (!feet || !surface.Contains(feet->x, feet->z)) return {};
-        feet->y = surface.SampleHeight(feet->x, feet->z);
+        feet->y += surface.SampleHeight(feet->x, feet->z);
         return feet;
     }
 
@@ -123,9 +130,11 @@ public:
         const auto found = players.find(id);
         const Player empty{};
         const auto& state = found == players.end() ? empty : found->second;
-        const auto normal = state.motion.downedSeconds > 0 || motion.HasRunClip()
+        const float height = feet.y - surface.SampleHeight(feet.x,feet.z);
+        const bool airborne = height > RiverbankJumpPresentation::GroundTolerance;
+        const auto normal = !airborne&&(state.motion.downedSeconds > 0 || motion.HasRunClip())
             ? surface.SampleNormal(feet.x, feet.z) : Aevrynd::Vec3{0, 1, 0};
-        const auto placement = motion.Evaluate(asset.model.skeleton, state.motion, feet, sampled, pose, normal, &surface);
+        const auto placement = motion.Evaluate(asset.model.skeleton,state.motion,feet,sampled,pose,normal, airborne ? nullptr : &surface, state.jump.ClipTime(height));
         const auto palette = Aevrynd::AddBoundSkinPaletteFromPose(draw, paletteBinding, pose, skinning);
         const auto role = static_cast<std::size_t>(state.playerClass);
         const auto& bindings = materials.at(role);
@@ -192,6 +201,7 @@ private:
     struct Player {
         RiverbankAvatarMotion::Player motion;
         RiverbankPeerPresentation peer;
+        RiverbankJumpPresentation jump;
         RiverbankClass playerClass = RiverbankClass::None;
     };
     Aevrynd::SkinnedModelAssetData asset;

@@ -1,6 +1,7 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankBattleWire.h"
 #include "RiverbankCombatFeedback.h"
+#include "RiverbankStrikeCue.h"
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -96,6 +97,103 @@ void DownedAndRejoin() {
     Require(arena.Player(1)->health == 42 && arena.Player(2)->resource == 60,
             "The priest did not revive the ranger after they joined the same group");
     Require(arena.Leave(1) && !arena.Player(1) && !arena.Submit(1, 9, RiverbankAction::Attack), "Disconnected player's request remained valid");
+}
+
+void PriestSupportAcrossArenaBoundary() {
+    using Member = RiverbankEncounter::SupportMembership;
+    const auto teammates = std::array{Member{1, 9}, Member{2, 9}};
+    RiverbankEncounter arena;
+    Require(arena.Join(1, RiverbankClass::Ranger) && arena.Join(2, RiverbankClass::Priest),
+            "Priest support fixture did not join");
+    auto downed = *arena.Suspend(1);
+    downed.status.health = 0;
+    Require(arena.RestoreCombat(1, downed, 0) && arena.SetPosition(1, {4.f, 45.f}) &&
+            arena.SetPosition(2, {4.f, 35.f}), "Priest support fixture could not set positions");
+    Require(arena.Submit(2, 1, RiverbankAction::ClassSkill, 1), "Out-of-range support did not queue");
+    arena.Tick(teammates);
+    Require(arena.Player(1)->health == 0 && arena.Player(2)->resource == 100 &&
+            arena.Player(2)->skillCooldown == 0, "Out-of-range support should not resolve or spend resources");
+    Require(arena.SetPosition(2, {4.f, 42.f}) && arena.Submit(2, 2, RiverbankAction::ClassSkill),
+            "Boundary support did not queue");
+    arena.Tick(teammates);
+    Require(arena.Player(1)->health == 42 && arena.Player(2)->resource == 60 &&
+            arena.Player(2)->skillCooldown == 120, "A nearby downed teammate was excluded by the arena boundary");
+    Require(arena.Suspend(2)->contributionRun == 0 && arena.Suspend(2)->fieldContributionRun == 0,
+            "Support outside an encounter incorrectly granted combat credit");
+}
+
+void GuildTerritoryResolvesSimultaneousDamage() {
+    RiverbankEncounter arena;
+    const auto wounded = [&](std::uint64_t actor, std::int64_t guild, ArenaPosition at) {
+        Require(arena.Join(actor, RiverbankClass::Ranger), "Guild fixture did not join");
+        auto combat = *arena.Suspend(actor);
+        combat.status.health = 13;
+        Require(arena.RestoreCombat(actor, combat, 0) && arena.SetPosition(actor, at, guild),
+                "Guild fixture did not bind");
+    };
+    wounded(1, 10, {12.f, 54.f});
+    wounded(2, 20, {16.f, 54.f});
+    wounded(3, 0, {13.f, 54.f});
+    wounded(4, 10, {11.4f, 54.f});
+    wounded(5, 20, {10.5f, 54.f});
+    Require(arena.Submit(1, 1, RiverbankAction::Attack) && arena.Submit(2, 1, RiverbankAction::Attack),
+            "Simultaneous guild attacks did not queue");
+    arena.Tick();
+    Require(arena.Player(1)->health == 0 && arena.Player(2)->health == 0 &&
+            arena.Player(1)->attackCooldown == 14 && arena.Player(2)->attackCooldown == 14,
+            "Live opponents did not resolve the same-tick strikes together");
+    Require(arena.Player(3)->health == 13 && arena.Player(4)->health == 13 && arena.Player(5)->health == 13,
+            "Guild strikes hit a bystander, a same-guild actor, or a target outside the ring");
+    Require(arena.Player(1)->rewards == 0 && arena.Player(2)->rewards == 0,
+            "Guild knockdowns incorrectly generated boss rewards");
+}
+
+void GuildTerritoryHonorsGuardAndDodge() {
+    RiverbankEncounter arena;
+    Require(arena.Join(1, RiverbankClass::Ranger) && arena.Join(2, RiverbankClass::Guardian) &&
+            arena.SetPosition(1, {12.5f, 54.f}, 10) && arena.SetPosition(2, {15.5f, 54.f}, 20),
+            "Guard and dodge fixture failed");
+    Require(arena.StartDodge(2, 1, {1.f, 0.f}) && arena.Submit(1, 1, RiverbankAction::Attack),
+            "Dodge challenge did not queue");
+    for (unsigned tick = 0; tick < RiverbankEncounter::DodgeTicks; ++tick) arena.Tick();
+    Require(arena.Player(2)->health == 150 && arena.Player(1)->attackCooldown == 0,
+            "A guild attack hit a dodging opponent");
+    Require(arena.Submit(1, 2, RiverbankAction::Attack) && arena.Submit(2, 2, RiverbankAction::ClassSkill),
+            "Synchronized guard and strike did not queue");
+    arena.Tick();
+    Require(arena.Player(2)->guarding && arena.Player(2)->health == 143 &&
+            arena.Player(1)->attackCooldown == 14,
+            "A guard raised in the same tick failed to reduce guild strike damage");
+}
+
+void GuildTerritoryPriestSupportsOtherParties() {
+    RiverbankEncounter arena;
+    const auto down = [&](std::uint64_t id, std::int64_t guild, ArenaPosition at) {
+        Require(arena.Join(id, RiverbankClass::Guardian), "Guild support fixture did not join");
+        auto saved = *arena.Suspend(id);
+        saved.status.health = 0;
+        Require(arena.RestoreCombat(id, saved, 0) && arena.SetPosition(id, at, guild),
+                "Guild support fixture could not set a downed player");
+    };
+    down(1, 20, {15.5f, 54.f});
+    down(2, 10, {14.5f, 54.f});
+    Require(arena.Join(3, RiverbankClass::Priest) && arena.SetPosition(3, {10.4f, 54.f}, 10),
+            "Guild priest fixture did not join");
+    using Member = RiverbankEncounter::SupportMembership;
+    const auto parties = std::array{Member{1, 9}, Member{2, 7}, Member{3, 9}};
+    const auto requireBlocked = [&](std::uint64_t sequence, std::uint64_t recipient) {
+        Require(arena.Submit(3, sequence, RiverbankAction::ClassSkill, recipient), "Blocked help fixture did not queue");
+        arena.Tick(parties);
+        Require(!arena.Player(1)->health && !arena.Player(2)->health && arena.Player(3)->resource == 100 &&
+                !arena.Player(3)->skillCooldown, "Outside or rival-party support affected the guild fight");
+    };
+    requireBlocked(1, 2);
+    Require(arena.SetPosition(3, {12.8f, 54.f}, 10), "Priest did not enter the ring");
+    requireBlocked(2, 1);
+    Require(arena.Submit(3, 3, RiverbankAction::ClassSkill), "Cross-party rescue fixture did not queue");
+    arena.Tick(parties);
+    Require(arena.Player(2)->health == 60 && !arena.Player(1)->health && arena.Player(3)->resource == 60 &&
+            arena.Player(3)->skillCooldown == 120, "A priest could not revive a downed guild member in another party");
 }
 
 void FieldBoarDisengagesFromDownedPlayer() {
@@ -354,6 +452,74 @@ void DodgeRejectsReplayAndAvoidsOnlyDuringItsWindow() {
             "Reserved bits were accepted in the dodge action");
 }
 
+void ClientStrikeCueTracksServerRules() {
+    constexpr ArenaPosition inside{-6.9f, 58.7f};
+    constexpr ArenaPosition outside{-7.f, 56.5f};
+    RiverbankBossStatus enemy{EncounterPhase::Windup, outside, outside, 320, 20, 1, 1};
+    const auto covered = DescribeRiverbankStrike(enemy, false, inside, true, 13.f);
+    Require(covered.exposure == RiverbankStrikeExposure::Covered && covered.DisplayTenths() == 10 &&
+            covered.Fraction() == 1.f, "Covered windup cue did not represent the server");
+    Require(DescribeRiverbankStrike(enemy, false, inside, false, 13.f).exposure == RiverbankStrikeExposure::Exposed,
+            "Old servers without the cover capability must show circle exposure");
+    const auto exposed = DescribeRiverbankStrike(enemy, false, outside, true, 2.6f);
+    Require(exposed.exposure == RiverbankStrikeExposure::Exposed, "Circle center was treated as safe");
+    Require(DescribeRiverbankStrike(enemy, false, {-4.f,56.5f}, true, 2.6f).exposure == RiverbankStrikeExposure::Outside,
+            "Outside player was treated as exposed");
+    Require(!DescribeRiverbankStrike(enemy, false, {0.f,0.f}, true, 2.6f).duration,
+            "Telegraph was shown outside the encounter zone");
+    enemy.phaseTicks = 1;
+    const auto last = DescribeRiverbankStrike(enemy, false, outside, true, 2.6f);
+    Require(last.DisplayTenths() == 1 && last.Fraction() < .06f, "Last attack tick was rounded to zero");
+    enemy.phase = EncounterPhase::Recovery;
+    enemy.phaseTicks = RiverbankEncounter::RecoveryTicks;
+    const auto openCounter = DescribeRiverbankStrike(enemy, false, outside, true, 2.6f);
+    Require(openCounter.withinCounterRange && openCounter.clearCounterPath && openCounter.DisplayTenths() == 9,
+            "Recovery should start with a 0.9 second counter window");
+    const auto blockedCounter = DescribeRiverbankStrike(enemy, false, inside, true, 13.f);
+    Require(blockedCounter.withinCounterRange && !blockedCounter.clearCounterPath, "Walls blocked a previous strike but not the counter cue");
+    const auto distantCounter = DescribeRiverbankStrike(enemy, false, {1.f,56.5f}, true, 2.6f);
+    Require(!distantCounter.withinCounterRange && !distantCounter.clearCounterPath, "Distant player was advised to counter immediately");
+    enemy = {EncounterPhase::Windup, {15.f,15.f}, {15.f,15.f}, 84, 24, 1, 1};
+    const auto calf = DescribeRiverbankStrike(enemy, true, {16.5f,15.f}, true, 2.6f);
+    Require(calf.DisplayTenths() == 12 && calf.exposure == RiverbankStrikeExposure::Exposed,
+            "Field boar cue did not use its own timing and radius");
+    const auto clear = DescribeRiverbankStrike(enemy, true, {16.51f,15.f}, true, 2.6f);
+    Require(clear.exposure == RiverbankStrikeExposure::Outside, "Field radius boundary did not match server collision");
+}
+
+void StrikeExitAvoidsFalseSafeDirections() {
+    using Hunt = RiverbankEncounter;
+    using Exposure = RiverbankStrikeExposure;
+    constexpr ArenaPosition feet{0.f,48.f};
+    RiverbankBossStatus enemy{EncounterPhase::Windup,{2.3f,48.f},{1.f,48.f},320,20,1,1};
+    const auto open = RiverbankStrikeExit(enemy,false,feet,true);
+    Require(open && open->x < feet.x && std::abs(open->z-feet.z)<.01f &&
+            StrikeExposureAt(false,*open,enemy.position,enemy.strikeCenter,true)==Exposure::Outside,
+            "Open escape did not go directly away from the strike");
+    enemy = {EncounterPhase::Windup,{-4.0f,56.5f},{-7.f,55.3f},320,20,1,1};
+    constexpr ArenaPosition byWall{-7.f,56.5f};
+    const auto direct = RiverbankStructureMovement::ClipStep(byWall,{0.f,1.43f});
+    Require(direct.z < 1.42f, "Fixture must put the wall on the shortest radial escape");
+    const auto around = RiverbankStrikeExit(enemy,false,byWall,true);
+    Require(around &&
+            StrikeExposureAt(false,*around,enemy.position,enemy.strikeCenter,true)==Exposure::Outside,
+            "Escape guidance did not route away from the obstructed direction");
+    const ArenaPosition delta{around->x-byWall.x,around->z-byWall.z};
+    const auto clipped = RiverbankStructureMovement::ClipStep(byWall,delta);
+    Require(std::hypot(clipped.x-delta.x,clipped.z-delta.z)<.001f,
+            "Escape guidance suggested moving through a wall");
+
+    enemy = {EncounterPhase::Windup,{16.8f,15.f},{15.4f,15.f},84,24,1,1};
+    constexpr ArenaPosition pasture{15.85f,15.f};
+    const auto field = RiverbankStrikeExit(enemy,true,pasture,true);
+    Require(field && field->x < pasture.x &&
+            StrikeExposureAt(true,*field,enemy.position,enemy.strikeCenter,true)==Exposure::Outside,
+            "Pasture guide sent the player into the boar body");
+    Require(!RiverbankStrikeExit(enemy,true,{0.f,0.f},true), "Guide appeared outside the attack");
+    enemy.phase=EncounterPhase::Recovery;
+    Require(!RiverbankStrikeExit(enemy,true,pasture,true), "Guide remained during recovery");
+}
+
 void BattleWireRoundTrip() {
     namespace Wire = Mistwatch::RiverbankBattleWire;
     const auto action = Wire::EncodeAction({0x1000200030004000ull, 7, RiverbankAction::ClassSkill});
@@ -383,6 +549,10 @@ int main() {
         RolesAndTelegraph();
         DefeatOnceAndReset();
         DownedAndRejoin();
+        PriestSupportAcrossArenaBoundary();
+        GuildTerritoryResolvesSimultaneousDamage();
+        GuildTerritoryHonorsGuardAndDodge();
+        GuildTerritoryPriestSupportsOtherParties();
         CampReturnPreservesRewards();
         FieldBoarDisengagesFromDownedPlayer();
         RestoreLiveCombat();
@@ -391,6 +561,9 @@ int main() {
         WorkshopWallBlocksPriestSupport();
         std::cout << "RIVERBANK_STRUCTURE_COVER_PASS attacks=2 support=2 boss_strike=1\n";
         BattleWireRoundTrip();
+        ClientStrikeCueTracksServerRules();
+        StrikeExitAvoidsFalseSafeDirections();
+        std::cout << "RIVERBANK_STRIKE_CUE_PASS boss=1 field=1 cover=1 boundary=1 timing=1 recovery=1\n";
         DodgeRejectsReplayAndAvoidsOnlyDuringItsWindow();
         std::cout << "RIVERBANK_DODGE_RULES_PASS direction=1 cost=1 cooldown=1 replay=1 reconnect=1 strike=1\n";
         FeedbackUsesFreshAuthoritativeSnapshots();

@@ -1,11 +1,13 @@
 #include "LocalWorldTcp.h"
 #include "LocalWorldClient.h"
+#include "RiverbankCrouch.h"
 #ifdef AEVRYND_MISTWATCH_PROFILES
 #include "RiverbankProfileWire.h"
 #include "RiverbankTerritoryWire.h"
 #include "RiverbankTerritoryHistoryWire.h"
 #endif
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <limits>
 #include <optional>
@@ -16,6 +18,18 @@ using Clock = std::chrono::steady_clock;
 using namespace LocalWorldTcp;
 
 namespace {
+std::optional<std::uint64_t> InitialRoomEpochFromEnvironment() {
+    char input[21]{};
+    const auto length = GetEnvironmentVariableA("AEVRYND_MISTWATCH_INITIAL_ROOM_EPOCH", input, sizeof(input));
+    if (!length) return std::nullopt;
+    if (length >= sizeof(input)) throw std::runtime_error("Invalid room invitation epoch");
+    std::uint64_t expected{};
+    const auto parsed = std::from_chars(input, input + length, expected);
+    if (parsed.ptr != input + length || parsed.ec != std::errc{} || !expected)
+        throw std::runtime_error("Invalid room invitation epoch");
+    return expected;
+}
+
 struct TailnetRoute {
     in_addr remote;
     in_addr local;
@@ -56,6 +70,7 @@ std::optional<RiverbankTicket> ProfileTicketFromEnvironment() {
 struct LocalWorldClient::State {
     Winsock winsock;
     const std::optional<TailnetRoute> tailnet = ReadTailnetRoute();
+    std::optional<std::uint64_t> initialRoomEpoch = InitialRoomEpochFromEnvironment();
     std::optional<Peer> peer;
     std::optional<ReplicationSnapshot3D> snapshot;
     Clock::time_point lastPacket = Clock::now();
@@ -84,6 +99,8 @@ struct LocalWorldClient::State {
     RiverbankClass connectedProfileClass{RiverbankClass::None};
     std::uint64_t nextGuildSequence{1}, pendingGuildSequence{};
     std::optional<RiverbankGuildWire::Response> guildReply;
+    bool pendingGuildRoster{};
+    std::optional<GuildRosterPage> guildRoster;
     std::uint64_t nextTerritorySequence{1}, pendingTerritorySequence{};
     std::optional<TerritoryState> territory;
     std::uint64_t nextHistorySequence{1}, pendingHistorySequence{};
@@ -138,7 +155,9 @@ struct LocalWorldClient::State {
         return true;
     }
 
-    Status Poll(std::int16_t x, std::int16_t z, bool sprint) {
+    bool jumpQueued{}, releaseJump{}, lastCrouch{};
+
+    Status Poll(std::int16_t x, std::int16_t z, bool sprint, std::optional<bool> jumpInput, bool crouch) {
         const auto now = Clock::now();
         if (reconnecting && now >= reconnectUntil) return Disconnect(false);
         if (!peer) {
@@ -168,7 +187,14 @@ struct LocalWorldClient::State {
         }
         bool invalid = false;
         if (!peer->Read([&](auto bytes) { invalid = !Receive(bytes); return !invalid; })) return Disconnect(!invalid);
-        if (snapshot && !SubmitMovement(x, z, sprint)) return Disconnect(false);
+        crouch = crouch && Supports(RiverbankCrouchCapability);
+        if (crouch != lastCrouch) {
+            if (!peer->Queue(RiverbankCrouchWire::Encode(crouch))) return Disconnect(false);
+            lastCrouch = crouch;
+        }
+        if (crouch || Supports(RiverbankCrouchedFlag) || !jumpInput || !Supports(RiverbankJumpCapability)) jumpQueued=false;
+        else jumpQueued|=*jumpInput;
+        if (snapshot && !SubmitMovement(x, z, sprint && !crouch && !Supports(RiverbankCrouchedFlag))) return Disconnect(false);
         if (!peer->Flush()) return Disconnect();
         const auto waiting = reconnecting ? Status::Reconnecting : Status::Joining;
         if (!id) return reconnecting ? Status::Reconnecting : Status::Connecting;
@@ -260,6 +286,17 @@ struct LocalWorldClient::State {
             return true;
         }
         if (RiverbankGuildWire::HasMagic(bytes)) {
+            if (pendingGuildRoster) {
+                auto response = RiverbankGuildWire::DecodeRosterReply(bytes);
+                if (!profileTicket || !response || !pendingGuildSequence || response->sequence != pendingGuildSequence ||
+                    std::ranges::any_of(response->roster.members, [&](const auto& member) {
+                        return member.self != (member.onlinePlayer == id);
+                    })) return false;
+                pendingGuildSequence = 0;
+                pendingGuildRoster = false;
+                guildRoster = std::move(response->roster);
+                return true;
+            }
             auto response = RiverbankGuildWire::DecodeResponse(bytes);
             if (!profileTicket || !response || !pendingGuildSequence || response->sequence != pendingGuildSequence) return false;
             pendingGuildSequence = 0;
@@ -302,7 +339,9 @@ struct LocalWorldClient::State {
         if (!DecodeReplicationPacket3D(bytes, message)) return false;
         if (!id) {
             const auto* hello = std::get_if<ReplicationHandshake3D>(&message);
-            if (!hello) return false;
+            if (!hello || (initialRoomEpoch && hello->sessionEpoch != *initialRoomEpoch)) return false;
+            // 只限制邀請碼的首次登入。既有角色的伺服器重啟恢復維持原流程。
+            initialRoomEpoch.reset();
             epoch = hello->sessionEpoch;
             id = hello->clientId;
 #ifdef AEVRYND_MISTWATCH_PROFILES
@@ -326,19 +365,22 @@ struct LocalWorldClient::State {
 
     bool SubmitMovement(std::int16_t x, std::int16_t z, bool sprint) {
 #ifdef AEVRYND_MISTWATCH_BATTLE
-        if (!encounter || !encounter->player.health) return true;
+        if (!encounter || !encounter->player.health) { jumpQueued=false; return true; }
 #endif
-        if ((!x && !z) || snapshot->serverTick == lastSubmittedTick) return true;
+        const bool jump=jumpQueued&&!releaseJump;
+        if ((!x && !z && !jump && !releaseJump) || snapshot->serverTick == lastSubmittedTick) return true;
         // 以收到的伺服器時鐘排程。一次快照最多提出一筆移動，不補送失焦期間的按鍵。
         constexpr std::uint64_t lead = 3;
         if (snapshot->serverTick > (std::numeric_limits<std::uint64_t>::max)() - lead
             || nextSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
-        const ReplicationInputCommand3D input{epoch, snapshot->serverTick + lead, nextSequence, id, x, z, 0, false,
+        const ReplicationInputCommand3D input{epoch, snapshot->serverTick + lead, nextSequence, id, x, z, 0, jump,
                                               sprint && Supports(RiverbankSprintCapability)};
         std::vector<std::byte> bytes;
         if (!EncodeReplicationPacket3D(input, bytes) || !peer->Queue(bytes)) return false;
         ++nextSequence;
         lastSubmittedTick = snapshot->serverTick;
+        if (jump) jumpQueued=false;
+        releaseJump=jump;
         return true;
     }
 
@@ -347,6 +389,7 @@ struct LocalWorldClient::State {
         snapshot.reset();
         connected = false;
         epoch = lastSubmittedTick = 0;
+        jumpQueued=releaseJump=lastCrouch=false;
         nextSequence = 1;
         id = 0;
         requestedClass = RiverbankClass::None;
@@ -361,6 +404,8 @@ struct LocalWorldClient::State {
 #ifdef AEVRYND_MISTWATCH_PROFILES
         pendingGuildSequence = 0;
         guildReply.reset();
+        pendingGuildRoster = false;
+        guildRoster.reset();
         pendingTerritorySequence = 0;
         territory.reset();
         nextHistorySequence = 1;
@@ -394,7 +439,12 @@ struct LocalWorldClient::State {
 
 LocalWorldClient::LocalWorldClient(unsigned short port) : state_(std::make_unique<State>(port)) {}
 LocalWorldClient::~LocalWorldClient() = default;
-LocalWorldClient::Status LocalWorldClient::Poll(std::int16_t x, std::int16_t z, bool sprint) { return state_->Poll(x, z, sprint); }
+LocalWorldClient::Status LocalWorldClient::Poll(std::int16_t x, std::int16_t z, bool sprint, std::optional<bool> jumpInput, bool crouch) {
+    return state_->Poll(x, z, sprint, jumpInput, crouch);
+}
+bool LocalWorldClient::CanCrouch() const noexcept { return state_->Supports(RiverbankCrouchCapability); }
+bool LocalWorldClient::IsCrouched() const noexcept { return state_->Supports(RiverbankCrouchedFlag); }
+bool LocalWorldClient::CanJump() const noexcept { return state_->Supports(RiverbankJumpCapability); }
 bool LocalWorldClient::CanSprint() const noexcept { return state_->Supports(RiverbankSprintCapability); }
 bool LocalWorldClient::ChooseClass(RiverbankClass playerClass) { return state_->ChooseClass(playerClass); }
 RiverbankClass LocalWorldClient::SelectedClass() const noexcept {
@@ -425,7 +475,7 @@ bool LocalWorldClient::RequestDodge(std::int16_t x, std::int16_t z) {
 }
 
 bool LocalWorldClient::CanDodge() const noexcept {
-    return state_->Supports(RiverbankBattleWire::DodgeCapability);
+    return state_->Supports(RiverbankBattleWire::DodgeCapability) && !IsCrouched();
 }
 
 bool LocalWorldClient::IsDodging() const noexcept {
@@ -437,6 +487,10 @@ bool LocalWorldClient::IsDodging() const noexcept {
 
 bool LocalWorldClient::HasStructureCover() const noexcept {
     return state_->Supports(RiverbankBattleWire::StructureCoverCapability);
+}
+
+bool LocalWorldClient::HasTerritoryCombat() const noexcept {
+    return state_->Supports(RiverbankBattleWire::TerritoryCombatCapability);
 }
 
 bool LocalWorldClient::CanReturnToCamp() const noexcept {
@@ -500,6 +554,24 @@ const RiverbankGuildWire::Response* LocalWorldClient::GuildReply() const noexcep
     return state_->guildReply ? &*state_->guildReply : nullptr;
 }
 
+bool LocalWorldClient::CanReadGuildRoster() const noexcept {
+    return CanUseGuild() && state_->Supports(RiverbankGuildWire::RosterCapability);
+}
+
+bool LocalWorldClient::RequestGuildRoster(std::uint32_t page) {
+    if (!CanReadGuildRoster() || state_->pendingGuildSequence ||
+        state_->nextGuildSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    const auto frame = RiverbankGuildWire::EncodeRosterQuery({state_->nextGuildSequence, page});
+    if (!state_->peer->Queue(frame)) return false;
+    state_->pendingGuildSequence = state_->nextGuildSequence++;
+    state_->pendingGuildRoster = true;
+    return true;
+}
+
+const GuildRosterPage* LocalWorldClient::GuildRoster() const noexcept {
+    return state_->guildRoster ? &*state_->guildRoster : nullptr;
+}
+
 bool LocalWorldClient::RequestTerritory() {
     if (!CanUseGuild() || state_->pendingTerritorySequence || state_->nextTerritorySequence == (std::numeric_limits<std::uint64_t>::max)())
         return false;
@@ -559,7 +631,8 @@ bool LocalWorldClient::RequestExpedition(bool interact) {
     if (!CanUseGuild() || state_->pendingExpeditionSequence || state_->nextExpeditionSequence == (std::numeric_limits<std::uint64_t>::max)())
         return false;
     const bool watch = state_->Supports(RiverbankExpeditionWire::WatchSurveyCapability);
-    if (!state_->peer->Queue(RiverbankExpeditionWire::EncodeRequest({state_->nextExpeditionSequence, interact, watch}))) return false;
+    const bool routes = watch && state_->Supports(RiverbankExpeditionWire::WatchRouteCapability);
+    if (!state_->peer->Queue(RiverbankExpeditionWire::EncodeRequest({state_->nextExpeditionSequence, interact, watch, routes}))) return false;
     state_->pendingExpeditionSequence = state_->nextExpeditionSequence++;
     return true;
 }

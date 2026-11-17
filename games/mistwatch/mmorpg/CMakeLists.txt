@@ -44,6 +44,10 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   target_compile_definitions(MistwatchRiverbankProfileStoreSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(MistwatchRiverbankProfileStoreSmoke PRIVATE /W4 /WX /permissive- /utf-8)
   add_test(NAME MistwatchRiverbankProfileStoreTest COMMAND MistwatchRiverbankProfileStoreSmoke "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME MistwatchRiverbankRoomInviteLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankRoomInvite.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankRoomInviteLoopbackTest PROPERTIES TIMEOUT 45 LABELS "mistwatch;profile;network")
   add_test(NAME MistwatchRiverbankLaunchReceiptTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankLaunchReceipt.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
@@ -51,6 +55,14 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   add_test(NAME MistwatchRiverbankProfileReconnectTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankProfiles.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME MistwatchRiverbankCrouchLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankCrouch.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankCrouchLoopbackTest PROPERTIES TIMEOUT 65 LABELS "mistwatch;movement;network")
+  add_test(NAME MistwatchRiverbankJumpLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankJump.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankJumpLoopbackTest PROPERTIES TIMEOUT 30 LABELS "mistwatch;movement;network")
   add_test(NAME MistwatchRiverbankGuildLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankGuild.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" "$<TARGET_FILE:MistwatchLocalWorldClientSmoke>")
@@ -109,6 +121,14 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankPartyCombat.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(MistwatchRiverbankPartyCombatLoopbackTest PROPERTIES TIMEOUT 65 LABELS "mistwatch;party;combat;network")
+  add_test(NAME MistwatchRiverbankBossRescueLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankBossRescue.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankBossRescueLoopbackTest PROPERTIES TIMEOUT 120 LABELS "mistwatch;party;combat;network")
+  add_test(NAME MistwatchRiverbankOfflineBossCreditLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankBossRescue.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}" --offline-until-victory)
+  set_tests_properties(MistwatchRiverbankOfflineBossCreditLoopbackTest PROPERTIES TIMEOUT 120 LABELS "mistwatch;party;combat;network")
   add_test(NAME MistwatchRiverbankBossGearLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankBossGear.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
@@ -153,6 +173,10 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   set_tests_properties(MistwatchRiverbankProfileReconnectTest PROPERTIES TIMEOUT 70 LABELS "mistwatch;profile")
   set_tests_properties(MistwatchRiverbankGuildLoopbackTest PROPERTIES TIMEOUT 30 LABELS "mistwatch;guild;network")
   set_tests_properties(MistwatchRiverbankTerritoryLoopbackTest PROPERTIES TIMEOUT 100 LABELS "mistwatch;guild;territory;network")
+  add_test(NAME MistwatchRiverbankTerritoryCombatLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankTerritoryCombat.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankTerritoryCombatLoopbackTest PROPERTIES TIMEOUT 125 LABELS "mistwatch;guild;territory;network;combat")
   set_tests_properties(MistwatchRiverbankExpeditionLoopbackTest PROPERTIES TIMEOUT 135 LABELS "mistwatch;expedition;network")
   set_tests_properties(MistwatchRiverbankWatchSurveyLoopbackTest PROPERTIES TIMEOUT 235 LABELS "mistwatch;expedition;network")
   set_tests_properties(MistwatchRiverbankLiveReconnectTest PROPERTIES TIMEOUT 30 LABELS "mistwatch;profile;network")
@@ -183,13 +207,19 @@ if(AEVRYND_BUILD_MISTWATCH_SERVER_ONLY AND MISTWATCH_ENABLE_RIVERBANK_PROFILES)
     MistwatchNativeLocalWorldClientTest
     MistwatchRiverbankNetworkLatencyTest
     MistwatchRiverbankLaunchReceiptTest
+    MistwatchRiverbankRoomInviteLoopbackTest
     MistwatchRiverbankCrossingLoopbackTest
     MistwatchRiverbankFullRoomTest
     MistwatchRiverbankExpandedRoomTest
     MistwatchRiverbankCoopJourneyLoopbackTest
     MistwatchRiverbankTerritoryLoopbackTest
+    MistwatchRiverbankTerritoryCombatLoopbackTest
     MistwatchRiverbankFieldContactTest
     MistwatchRiverbankLiveReconnectTest
+    MistwatchRiverbankCrouchLoopbackTest
+    MistwatchRiverbankJumpLoopbackTest
+    MistwatchRiverbankBossRescueLoopbackTest
+    MistwatchRiverbankOfflineBossCreditLoopbackTest
     APPEND PROPERTY LABELS mistwatch-multiplayer-gates)
 endif()
 
@@ -213,6 +243,15 @@ if(MISTWATCH_LOCAL_WORLD_AVATAR AND TARGET AevryndEngine)
   add_test(NAME MistwatchRiverbankAvatarPoseTest
     COMMAND MistwatchRiverbankAvatarPoseSmoke "${MISTWATCH_LOCAL_WORLD_AVATAR}")
   set_tests_properties(MistwatchRiverbankAvatarPoseTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;character")
+  if(MISTWATCH_RIVERBANK_AUTHORED_JUMP)
+    add_executable(MistwatchRiverbankJumpPoseSmoke RiverbankJumpPoseSmoke.cpp)
+    target_include_directories(MistwatchRiverbankJumpPoseSmoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../riverbank/include")
+    target_link_libraries(MistwatchRiverbankJumpPoseSmoke PRIVATE AevryndEngine d3d12 dxgi dwmapi)
+    target_compile_definitions(MistwatchRiverbankJumpPoseSmoke PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(MistwatchRiverbankJumpPoseSmoke PRIVATE /W4 /WX /permissive- /utf-8)
+    add_test(NAME MistwatchRiverbankJumpPoseTest COMMAND MistwatchRiverbankJumpPoseSmoke "${MISTWATCH_LOCAL_WORLD_AVATAR}")
+    set_tests_properties(MistwatchRiverbankJumpPoseTest PROPERTIES TIMEOUT 20 LABELS "mistwatch;character;movement")
+  endif()
   if(MISTWATCH_RIVERBANK_HAIR_VARIANTS)
     add_executable(MistwatchRiverbankHistoricalHairSmoke RiverbankHistoricalHairSmoke.cpp)
     target_compile_features(MistwatchRiverbankHistoricalHairSmoke PRIVATE cxx_std_20)

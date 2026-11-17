@@ -18,6 +18,7 @@ public:
         if (open_ && input.Pressed(VK_ESCAPE)) {
             if (mode_ == Mode::Actions) open_ = false;
             mode_ = Mode::Actions;
+            nextView_ = {};
         } else if (mode_ == Mode::Actions && input.Pressed('G')) {
             open_ = !open_;
             if (open_) nextView_ = {};
@@ -25,10 +26,22 @@ public:
     }
 
     void Update(const Aevrynd::Input& input, LocalWorldClient& client) {
-        if (!open_ || !client.CanUseGuild()) return;
+        if (!client.CanUseGuild()) {
+            open_ = false;
+            mode_ = Mode::Actions;
+            nextView_ = {};
+            renderedSequence_ = selected_ = confirmTarget_ = 0;
+            requested_ = GuildAction::View;
+            message_.clear();
+            return;
+        }
         if (mode_ == Mode::History) {
             const auto now = std::chrono::steady_clock::now();
             if (now >= nextView_ && client.RequestTerritoryHistory()) nextView_ = now + std::chrono::seconds(1);
+            return;
+        }
+        if (mode_ == Mode::Roster) {
+            UpdateRoster(input, client);
             return;
         }
         const auto* reply = client.GuildReply();
@@ -36,7 +49,7 @@ public:
             renderedSequence_ = reply->sequence;
             if (requested_ != GuildAction::View) message_ = ResultText(reply->result);
         }
-        if (input.Focused() && !input.FocusLost()) {
+        if (open_ && input.Focused() && !input.FocusLost()) {
             if (mode_ == Mode::Name) {
                 EditName(input, client);
             } else if (mode_ != Mode::Actions) {
@@ -46,19 +59,31 @@ public:
                 mode_ = Mode::History;
                 nextView_ = {};
                 return;
+            } else if (input.Pressed('V') && reply && reply->state.guildId && client.CanReadGuildRoster()) {
+                mode_ = Mode::Roster;
+                rosterPage_ = 0;
+                nextView_ = {};
+                return;
             } else if (reply) {
                 SelectTarget(input, client);
                 Act(input, client, reply->state);
             }
         }
         const auto now = std::chrono::steady_clock::now();
-        if (now >= nextView_ && Send(client, GuildAction::View)) nextView_ = now + std::chrono::seconds(1);
+        // 未入會玩家即使關閉面板也可收到邀請，已入會玩家在開啟面板時才更新。
+        if ((open_ || !reply || !reply->state.guildId) && now >= nextView_ &&
+            Send(client, GuildAction::View))
+            nextView_ = now + std::chrono::seconds(open_ ? 1 : 2);
     }
 
     void Draw(Aevrynd::DrawList& draw, const LocalWorldClient& client) const {
         if (!client.CanUseGuild()) return;
-        draw.Quad({65,202}, {111,27}, {.041f,.068f,.055f,.95f});
-        draw.SystemText({20, 188}, "G 公會", 15.f, {.78f,.91f,.83f,1});
+        const auto* reply = client.GuildReply();
+        const bool invited = reply && !reply->state.guildId && reply->state.inviteId;
+        const float width = invited ? 195.f : 111.f;
+        draw.Quad({9.5f + width * .5f, 202.f}, {width, 27.f}, {.041f,.068f,.055f,.95f});
+        draw.SystemText({20, 188}, invited ? "G 公會 · 有新邀請" : "G 公會", 15.f,
+                        invited ? Aevrynd::Color{.98f,.85f,.55f,1} : Aevrynd::Color{.78f,.91f,.83f,1});
         if (!open_) return;
         draw.Quad({640, 393}, {860, 376}, {.035f,.065f,.052f,.97f});
         draw.SystemText({246, 221}, "河岸公會", 25.f, {.81f,.97f,.86f,1});
@@ -78,8 +103,12 @@ public:
             }
             return;
         }
-        if (!client.GuildReply()) { Line(draw, 311, "讀取公會資料中"); return; }
-        const auto& guild = client.GuildReply()->state;
+        if (mode_ == Mode::Roster) {
+            DrawRoster(draw, client);
+            return;
+        }
+        if (!reply) { Line(draw, 311, "讀取公會資料中"); return; }
+        const auto& guild = reply->state;
         Line(draw, 310, guild.guildId ? guild.name + "   ·   " + RankName(guild.rank) : "尚未加入公會");
         if (mode_ == Mode::Name) {
             Line(draw, 353, "輸入英文名稱，或用 Ctrl+V 貼上中文名稱");
@@ -102,18 +131,58 @@ public:
             if (guild.rank == GuildRank::Leader) Line(draw, 437, "P 升為幹部  ·  O 改為成員  ·  T 移交會長");
             Line(draw, 479, "L 離開公會");
         }
-        if (mode_ == Mode::Actions && client.CanReadTerritoryHistory()) Line(draw, 516, "H 領地紀錄");
+        if (mode_ == Mode::Actions) {
+            const bool showRoster = guild.guildId && client.CanReadGuildRoster();
+            const bool showHistory = client.CanReadTerritoryHistory();
+            if (showRoster || showHistory)
+                Line(draw, 516, showRoster ? (showHistory ? "V 成員名單   ·   H 領地紀錄" : "V 成員名單") : "H 領地紀錄");
+        }
         if (!message_.empty()) Line(draw, 551, message_);
     }
 
 private:
-    enum class Mode { Actions, Name, Leave, Transfer, History };
+    enum class Mode { Actions, Name, Leave, Transfer, History, Roster };
     bool open_{};
     Mode mode_{Mode::Actions};
     std::uint64_t selected_{}, confirmTarget_{}, renderedSequence_{};
+    std::uint32_t rosterPage_{};
     GuildAction requested_{GuildAction::View};
     std::chrono::steady_clock::time_point nextView_{};
     std::string name_, message_;
+
+    void UpdateRoster(const Aevrynd::Input& input, LocalWorldClient& client) {
+        if (const auto* roster = client.GuildRoster(); roster && roster->total) {
+            const auto last = (roster->total - 1) / GuildRosterPageSize;
+            rosterPage_ = (std::min)(rosterPage_, last);
+            if (rosterPage_ == roster->page && input.Focused() && !input.FocusLost()) {
+                const auto previous = rosterPage_;
+                if (input.Pressed(VK_LEFT) && rosterPage_ > 0) --rosterPage_;
+                if (input.Pressed(VK_RIGHT) && rosterPage_ < last) ++rosterPage_;
+                if (previous != rosterPage_) nextView_ = {};
+            }
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= nextView_ && client.RequestGuildRoster(rosterPage_))
+            nextView_ = now + std::chrono::seconds(1);
+    }
+
+    void DrawRoster(Aevrynd::DrawList& draw, const LocalWorldClient& client) const {
+        const auto* roster = client.GuildRoster();
+        if (!roster || roster->page != rosterPage_) { Line(draw, 311, "讀取成員名單中"); return; }
+        if (!roster->guildId) { Line(draw, 311, "目前沒有公會成員資料"); return; }
+        const auto pages = (roster->total - 1) / GuildRosterPageSize + 1;
+        Line(draw, 310, "成員 " + std::to_string(roster->total) + " 位 · 第 " +
+            std::to_string(roster->page + 1) + " / " + std::to_string(pages) + " 頁");
+        float y = 345.f;
+        for (const auto& member : roster->members) {
+            auto label = "角色 " + std::to_string(member.characterId) + (member.self ? "（你）" : "");
+            label += " · " + std::string(RiverbankClassName(member.playerClass)) + " · " + RankName(member.rank);
+            label += member.onlinePlayer ? " · 在線（玩家 " + std::to_string(member.onlinePlayer) + "）" : " · 離線";
+            Line(draw, y, label);
+            y += 32.f;
+        }
+        if (pages > 1) Line(draw, 551, "← → 翻頁");
+    }
 
     bool Send(LocalWorldClient& client, GuildAction action, std::uint64_t target = 0, std::string_view name = {}) {
         if (!client.RequestGuild(action, target, name)) return false;

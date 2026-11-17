@@ -9,6 +9,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <limits>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -20,7 +21,19 @@ struct RiverbankAvatarMotion {
     static constexpr float RunStride = 3.2f * 68.f / 96.f;
 
     struct Player {
-        float distance{}, heading{}, walking{}, downedSeconds{}, runWeight{};
+        float distance{}, heading{}, walking{}, downedSeconds{}, runWeight{}, crouchWeight{};
+
+        bool stanceKnown{};
+        void ObserveStance(bool crouched, float elapsed) noexcept {
+            if (!stanceKnown) {
+                // 重連到低屋頂內時，第一個顯示姿勢直接採用權威狀態。
+                crouchWeight = crouched ? 1.f : 0.f;
+                stanceKnown = true;
+                return;
+            }
+            const float step = std::clamp(elapsed, 0.f, .1f) * 14.f;
+            crouchWeight += std::clamp((crouched ? 1.f : 0.f) - crouchWeight, -step, step);
+        }
 
         void ResetGait() { distance = walking = runWeight = 0.f; }
 
@@ -91,6 +104,13 @@ struct RiverbankAvatarMotion {
             if (std::abs(downed.duration - 1.f) > .001f)
                 throw std::runtime_error("Riverbank avatar downed motion must last one second");
         }
+        const auto jumping = std::ranges::find(asset.clips, "RiverbankExplorer_Jump", &Aevrynd::NamedAnimationClip3D::name);
+        if (jumping != asset.clips.end()) {
+            jump = jumping->clip;
+            jump.looping = false;
+            if (!HasRiverbankBoots(asset) || std::abs(jump.duration - 1.f) > .001f)
+                throw std::runtime_error("Riverbank avatar jump requires the one-second authored boot motion");
+        }
         idle = Aevrynd::SampleAnimationClip(asset.model.skeleton, walk, 0.0f);
         const auto end = Aevrynd::SampleAnimationClip(asset.model.skeleton, walk, walk.duration);
         const auto index = static_cast<std::size_t>(pelvis - asset.jointNames.begin());
@@ -131,7 +151,7 @@ struct RiverbankAvatarMotion {
     }
 
     Aevrynd::Matrix4 Evaluate(const Aevrynd::Skeleton3D& skeleton, const Player& player,
-        Aevrynd::Vec3 feet, Aevrynd::AnimationPose3D& sampled, Aevrynd::AnimationPose3D& pose, Aevrynd::Vec3 groundNormal = {0, 1, 0}, const RiverbankWalkSurface* surface = nullptr) const {
+        Aevrynd::Vec3 feet, Aevrynd::AnimationPose3D& sampled, Aevrynd::AnimationPose3D& pose, Aevrynd::Vec3 groundNormal = {0, 1, 0}, const RiverbankWalkSurface* surface = nullptr, std::optional<float> jumpTime = {}) const {
         const auto world = Aevrynd::CreateTransformMatrix(feet, {0, player.heading - assetYaw, 0}, {1, 1, 1});
         if (HasDownedClip() && player.downedSeconds > 0) {
             Aevrynd::SampleAnimationClipInto(skeleton, downed, player.downedSeconds, pose);
@@ -147,8 +167,18 @@ struct RiverbankAvatarMotion {
                 Aevrynd::CreateRotationMatrix({0, player.heading - assetYaw, 0}) *
                 Aevrynd::CreateTranslationMatrix({0, -groundDatum, 0});
         }
+        if (HasJumpClip() && jumpTime && *jumpTime < .94f) {
+            Aevrynd::SampleAnimationClipInto(skeleton, jump, *jumpTime, pose);
+            auto offset = Aevrynd::Vec3{0, -groundDatum, 0};
+            if (HasRunClip() && surface && groundNormal.y >= .8f) {
+                const auto inverseYaw = Aevrynd::CreateRotationMatrix({0, assetYaw - player.heading, 0});
+                const auto normal = Aevrynd::TransformNormal(inverseYaw, groundNormal);
+                offset.y += ConformRunFeet(skeleton, pose, offset, normal, world, surface);
+            }
+            return world * Aevrynd::CreateTranslationMatrix(offset);
+        }
         const float phase = std::fmod(player.distance, stride) / stride;
-        const float amount = HasRunClip() ? player.runWeight : 0.f;
+        const float amount = HasRunClip() ? player.runWeight * (1.f - player.crouchWeight) : 0.f;
         if (player.walking == 0.f) {
             pose = idle;
         } else {
@@ -167,6 +197,14 @@ struct RiverbankAvatarMotion {
         // 根位移由伺服器決定，動畫僅播放原地姿勢。
         const float lift = amount > 0.f && (amount < 1.f || player.walking < 1.f) ? RunBlendFloorLift(pose) : 0.f;
         auto offset = Aevrynd::Vec3{0, lift - groundDatum, 0} - rootTravel * (phase * player.walking);
+        if (HasJumpClip() && jumpTime) {
+            Aevrynd::SampleAnimationClipInto(skeleton, jump, *jumpTime, sampled);
+            const float t = std::clamp((*jumpTime - .94f) / .06f, 0.f, 1.f);
+            Aevrynd::BlendAnimationPosesInto(skeleton, sampled, pose, t, pose);
+            offset = Aevrynd::Vec3{0, -groundDatum, 0} + (offset - Aevrynd::Vec3{0, -groundDatum, 0}) * t;
+        }
+        if (HasRunClip() && player.crouchWeight > 0.f)
+            ApplyCrouch(skeleton, pose, player.crouchWeight);
         if (HasRunClip() && groundNormal.y >= .8f && (surface || std::hypot(groundNormal.x, groundNormal.z) > .002f)) {
             const auto inverseYaw = Aevrynd::CreateRotationMatrix({0, assetYaw - player.heading, 0});
             const auto normal = Aevrynd::TransformNormal(inverseYaw, groundNormal);
@@ -177,6 +215,7 @@ struct RiverbankAvatarMotion {
 
     float Stride() const noexcept { return stride; }
     bool HasDownedClip() const noexcept { return !downed.tracks.empty(); }
+    bool HasJumpClip() const noexcept { return !jump.tracks.empty(); }
     bool HasRunClip() const noexcept { return !run.tracks.empty(); }
 
 private:
@@ -267,10 +306,38 @@ private:
         return -minimum;
     }
 
+    void ApplyCrouch(const Aevrynd::Skeleton3D& skeleton, Aevrynd::AnimationPose3D& pose, float weight) const {
+        using namespace Aevrynd;
+        const auto forward = Normalize(travel);
+        const auto lift = Vec3{0, -.34f, 0} - forward * .11f;
+        std::array<Vec3, 2> targets{};
+        for (std::size_t side = 0; side < runLegs.size(); ++side)
+            targets[side] = TransformPoint(pose.globalMatrices[runLegs[side].end], {});
+        auto shift = lift * weight;
+        const auto parent = skeleton.joints[runPelvis].parent;
+        if (parent >= 0) {
+            const auto basis = CreateNormalMatrix(pose.globalMatrices[static_cast<std::size_t>(parent)]);
+            shift = {
+                shift.x * basis[0][0] + shift.y * basis[1][0] + shift.z * basis[2][0],
+                shift.x * basis[0][1] + shift.y * basis[1][1] + shift.z * basis[2][1],
+                shift.x * basis[0][2] + shift.y * basis[1][2] + shift.z * basis[2][2],
+            };
+        }
+        auto& pelvis = pose.localTransforms[runPelvis];
+        pelvis.translation = pelvis.translation + shift;
+        BuildAnimationPoseGlobalMatrices3D(skeleton, pose);
+        // 降低骨盆後維持原步態的左右足部落點，沿角色前方解膝部彎曲。
+        for (std::size_t side = 0; side < runLegs.size(); ++side) {
+            const auto& leg = runLegs[side];
+            const auto hip = TransformPoint(pose.globalMatrices[leg.upper], {});
+            (void)SolveTwoBoneIkKeepEndOrientation3D(skeleton, leg, {targets[side], hip + forward}, pose);
+        }
+    }
+
     std::array<Aevrynd::TwoBoneIkChain3D, 2> runLegs{};
     std::size_t runPelvis{};
     std::vector<RunContact> runContacts;
-    Aevrynd::AnimationClip3D walk, downed, run;
+    Aevrynd::AnimationClip3D walk, downed, run, jump;
     Aevrynd::AnimationPose3D idle;
     Aevrynd::Vec3 travel{}, runTravel{};
     float stride{}, assetYaw{}, groundDatum{GroundDatum};

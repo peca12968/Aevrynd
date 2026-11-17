@@ -2,6 +2,8 @@
 #include "RiverbankGear.h"
 #include "RiverbankTrailSupplies.h"
 #include "RiverbankStructureMovement.h"
+#include "RiverbankTerritory.h"
+#include "RiverbankStrikeCue.h"
 #include <CharacterDynamicContact3D.h>
 #include <algorithm>
 #include <cmath>
@@ -23,8 +25,9 @@ float Distance(ArenaPosition left, ArenaPosition right) {
 bool Finite(ArenaPosition point) { return std::isfinite(point.x) && std::isfinite(point.z); }
 
 // 共用單人模式人體半寬與野豬身體半徑。多人伺服器目前只裁定水平接觸。
-constexpr Aevrynd::Vec3 PlayerHalfExtent{.45f,.90f,.45f};
-constexpr float BoarRadius=1.30f, BoarHalfHeight=.80f, ContactMargin=.002f;
+constexpr auto PlayerWidth = RiverbankEncounter::PlayerContactHalfWidth;
+constexpr Aevrynd::Vec3 PlayerHalfExtent{PlayerWidth,.90f,PlayerWidth};
+constexpr float BoarRadius=RiverbankEncounter::BoarBodyRadius, BoarHalfHeight=.80f, ContactMargin=.002f;
 
 Aevrynd::Vec3 Planar(ArenaPosition point) { return {point.x,0.f,point.z}; }
 
@@ -153,10 +156,11 @@ bool RiverbankEncounter::RestoreCombat(std::uint64_t id, const SuspendedRiverban
     return true;
 }
 
-bool RiverbankEncounter::SetPosition(std::uint64_t id, ArenaPosition position) {
+bool RiverbankEncounter::SetPosition(std::uint64_t id, ArenaPosition position, std::int64_t guild) {
     const auto player = party.find(id);
-    if (player == party.end() || !Finite(position)) return false;
+    if (player == party.end() || !Finite(position) || guild < 0) return false;
     player->second.position = position;
+    player->second.guild = guild;
     return true;
 }
 
@@ -237,8 +241,7 @@ std::uint64_t RiverbankEncounter::Target(const Site& site) const {
     return nearest;
 }
 
-unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Participant& participant, const Request& request,
-                                           std::span<const SupportMembership> groups) {
+unsigned RiverbankEncounter::ResolveAttack(Site& site, std::uint64_t id, Participant& participant, RiverbankAction action) {
     auto& status = participant.status;
     if (!status.health) return 0;
     const auto& boss = site.state;
@@ -247,7 +250,7 @@ unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Partici
         return InRange(participant,boss.position,range) &&
             RiverbankStructureMovement::HasLine(*participant.position,boss.position);
     };
-    if (request.action == RiverbankAction::Attack) {
+    if (action == RiverbankAction::Attack) {
         if (status.attackCooldown || !canTargetBoss(stats.attackRange)) return 0;
         status.attackCooldown = stats.attackCooldown;
         CreditContribution(site, participant);
@@ -267,42 +270,106 @@ unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Partici
         if (!canTargetBoss(stats.attackRange)) return 0;
         damage = participant.bossGear ? RiverbankBossGearStats::VolleyDamage : 28u;
         break;
-    case RiverbankClass::Priest: {
-        // 以伺服器本次結算的隊伍判定支援資格。未組隊的玩家可彼此支援。
-        const auto groupFor = [groups](std::uint64_t actor) {
-            const auto member = std::ranges::find(groups, actor, &SupportMembership::actor);
-            return member == groups.end() ? std::uint64_t{} : member->group;
-        };
-        const auto casterGroup = groupFor(id);
-        auto ally = party.find(request.ally);
-        if (!request.ally) {
-            float lowestHealthFraction = 1.f;
-            for (auto choice = party.begin(); choice != party.end(); ++choice) {
-                if (groupFor(choice->first) != casterGroup) continue;
-                const auto& health = choice->second.status;
-                const float fraction = float(health.health) / float(CombatStatsFor(health.playerClass).health);
-                if (fraction >= lowestHealthFraction || !InRange(choice->second, *participant.position, 9.f) ||
-                    !RiverbankStructureMovement::HasLine(*participant.position,*choice->second.position)) continue;
-                lowestHealthFraction = fraction;
-                ally = choice;
-            }
-        }
-        if (ally == party.end() || groupFor(ally->first) != casterGroup ||
-            !InRange(ally->second, *participant.position, 9.f) ||
-            !RiverbankStructureMovement::HasLine(*participant.position,*ally->second.position)) return 0;
-        auto& recipient = ally->second.status;
-        const auto maximum = CombatStatsFor(recipient.playerClass).health;
-        if (recipient.health == maximum) return 0;
-        const auto heal = participant.bossGear ? RiverbankBossGearStats::HealAmount : 40u;
-        recipient.health = recipient.health ? std::min(maximum, recipient.health + heal) : maximum * 2 / 5;
-        break;
-    }
     default: return 0;
     }
     status.resource -= stats.skillCost;
     status.skillCooldown = stats.skillCooldown;
     CreditContribution(site, participant);
     return damage;
+}
+
+void RiverbankEncounter::ResolveTerritoryAttack(Participant& participant, RiverbankAction action) {
+    auto& status = participant.status;
+    const auto stats = CombatStatsFor(status.playerClass);
+    const bool skill = action == RiverbankAction::ClassSkill;
+    const bool unavailable = skill ? status.skillCooldown || status.resource < stats.skillCost : status.attackCooldown;
+    if (!status.health || unavailable) return;
+
+    const bool shields = skill && status.playerClass == RiverbankClass::Guardian;
+    const float range = shields ? 6.f : stats.attackRange;
+    const auto from = *participant.position;
+    Participant* nearest = nullptr;
+    float nearestDistance = range;
+    for (auto& entry : party) {
+        auto& target = entry.second;
+        if (!target.guild || target.guild == participant.guild || !target.status.health || (!shields && target.dodgeTicks) ||
+            !target.position || !RiverbankTerritory::Contains(target.position->x, target.position->z)) continue;
+        const float distance = Distance(from, *target.position);
+        if (distance > range || (nearest && distance >= nearestDistance) ||
+            !RiverbankStructureMovement::HasLine(from, *target.position)) continue;
+        nearest = &target;
+        nearestDistance = distance;
+    }
+    if (!nearest) return;
+
+    if (!skill) {
+        status.attackCooldown = stats.attackCooldown;
+        nearest->pendingTerritoryDamage += stats.attackDamage;
+    } else {
+        status.resource -= stats.skillCost;
+        status.skillCooldown = stats.skillCooldown;
+        if (shields) {
+            participant.guardTicks = 45;
+            status.guarding = true;
+        } else {
+            nearest->pendingTerritoryDamage += participant.bossGear ? RiverbankBossGearStats::VolleyDamage : 28u;
+        }
+    }
+}
+
+void RiverbankEncounter::ResolveSupport(std::uint64_t id, Participant& participant, std::uint64_t target,
+                                        std::span<const SupportMembership> groups) {
+    auto& status = participant.status;
+    const auto stats = CombatStatsFor(status.playerClass);
+    if (!status.health || status.skillCooldown || status.resource < stats.skillCost) return;
+
+    // 救援以施術者和隊友的距離及視線判定，戰鬥區邊界只影響參戰資格。
+    const auto groupFor = [groups](std::uint64_t actor) {
+        const auto member = std::ranges::find(groups, actor, &SupportMembership::actor);
+        return member == groups.end() ? std::uint64_t{} : member->group;
+    };
+    const auto casterGroup = groupFor(id);
+    const auto eligible = [&](const auto& entry) {
+        const auto& [actor, member] = entry;
+        if (!InRange(member, *participant.position, 9.f)) return false;
+        // 圈內公會成員依公會判定支援，施術者也必須在圈內。
+        if (member.guild && RiverbankTerritory::Contains(member.position->x, member.position->z)) {
+            if (participant.guild != member.guild ||
+                !RiverbankTerritory::Contains(participant.position->x, participant.position->z)) return false;
+        } else if (groupFor(actor) != casterGroup) {
+            return false;
+        }
+        return RiverbankStructureMovement::HasLine(*participant.position, *member.position);
+    };
+
+    auto ally = party.find(target);
+    if (!target) {
+        float lowestHealthFraction = 1.f;
+        for (auto choice = party.begin(); choice != party.end(); ++choice) {
+            const auto& health = choice->second.status;
+            const float fraction = float(health.health) / float(CombatStatsFor(health.playerClass).health);
+            if (fraction >= lowestHealthFraction || !eligible(*choice)) continue;
+            lowestHealthFraction = fraction;
+            ally = choice;
+        }
+    }
+    if (ally == party.end() || !eligible(*ally)) return;
+
+    auto& recipient = ally->second.status;
+    const auto maximum = CombatStatsFor(recipient.playerClass).health;
+    if (recipient.health == maximum) return;
+    const auto heal = participant.bossGear ? RiverbankBossGearStats::HealAmount : 40u;
+    recipient.health = recipient.health ? std::min(maximum, recipient.health + heal) : maximum * 2 / 5;
+    status.resource -= stats.skillCost;
+    status.skillCooldown = stats.skillCooldown;
+
+    for (const auto* site : {&northBank, &pasture}) {
+        if (site->state.phase != EncounterPhase::Defeated && site->Contains(*participant.position) &&
+            site->Contains(*ally->second.position)) {
+            CreditContribution(*site, participant);
+            break;
+        }
+    }
 }
 
 void RiverbankEncounter::CreditContribution(const Site& site, Participant& participant) {
@@ -322,12 +389,24 @@ void RiverbankEncounter::Tick(std::span<const SupportMembership> groups) {
         if (tick % RiverbankTrailSupplies::RecoveryPulseTicks == 0)
             status.resource = std::min(MaxResource, status.resource + RiverbankTrailSupplies::RecoveryPerPulse(participant.trailPack));
         if (participant.request && participant.position) {
-            if (northBank.Contains(*participant.position) && Boss().phase != EncounterPhase::Defeated)
-                bossDamage = std::min(BossHealth, bossDamage + ResolveAction(northBank, id, participant, *participant.request, groups));
+            const auto request = *participant.request;
+            if (request.action == RiverbankAction::ClassSkill && status.playerClass == RiverbankClass::Priest)
+                ResolveSupport(id, participant, request.ally, groups);
+            else if (participant.guild && RiverbankTerritory::Contains(participant.position->x, participant.position->z))
+                ResolveTerritoryAttack(participant, request.action);
+            else if (northBank.Contains(*participant.position) && Boss().phase != EncounterPhase::Defeated)
+                bossDamage = std::min(BossHealth, bossDamage + ResolveAttack(northBank, id, participant, request.action));
             else if (pasture.Contains(*participant.position) && Field().phase != EncounterPhase::Defeated)
-                fieldDamage = std::min(FieldHealth, fieldDamage + ResolveAction(pasture, id, participant, *participant.request, groups));
+                fieldDamage = std::min(FieldHealth, fieldDamage + ResolveAttack(pasture, id, participant, request.action));
         }
         participant.request.reset();
+    }
+    // 同一更新的雙方出手先集中，再依守衛的防護狀態扣血。
+    for (auto& entry : party) {
+        auto& participant = entry.second;
+        const auto pending = std::exchange(participant.pendingTerritoryDamage, 0u);
+        const auto damage = participant.status.guarding ? (pending + 1u) / 2u : pending;
+        participant.status.health -= std::min(participant.status.health, damage);
     }
     Advance(northBank, bossDamage);
     Advance(pasture, fieldDamage);
@@ -353,15 +432,15 @@ void RiverbankEncounter::Advance(Site& site, unsigned damage) {
         if (--boss.phaseTicks == 0) {
             for (auto& [id, victim] : party) {
                 auto& status = victim.status;
-                if (!status.health || victim.dodgeTicks || !victim.position || !site.Contains(*victim.position) ||
-                    !InRange(victim, boss.strikeCenter, site.field ? FieldStrikeRadius : StrikeRadius) ||
-                    !RiverbankStructureMovement::HasLine(boss.position,*victim.position)) continue;
+                if (!status.health || victim.dodgeTicks || !victim.position ||
+                    StrikeExposureAt(site.field, *victim.position, boss.position, boss.strikeCenter,
+                                     true, site.anchor) != RiverbankStrikeExposure::Exposed) continue;
                 const auto guardedHit = site.field ? 8u : victim.bossGear ? RiverbankBossGearStats::GuardDamageTaken : 16u;
                 const unsigned hit = status.guarding ? guardedHit : site.field ? 22u : 46u;
                 status.health -= std::min(status.health, hit);
             }
             boss.phase = EncounterPhase::Recovery;
-            boss.phaseTicks = 18;
+            boss.phaseTicks = RecoveryTicks;
         }
         return;
     }

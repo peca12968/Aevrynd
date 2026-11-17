@@ -23,10 +23,11 @@ inline constexpr std::array landmarks{
     Landmark{"北岸瞭望地 · 公會領地", {RiverbankTerritory::CenterX, 0, RiverbankTerritory::CenterZ}, {.87f,.70f,1,1}},
 };
 
-inline std::optional<Landmark> ExpeditionLandmark(std::optional<ExpeditionStage> stage) {
+inline std::optional<Landmark> ExpeditionLandmark(std::optional<ExpeditionStage> stage, Aevrynd::Vec3 player = {}) {
     constexpr std::array labels{"到營地領取巡林委託", "勘查橋前路標", "挑戰巡林野豬", "返回營地回報", "",
-        "到營地領取北岸勘查", "勘查東側瞭望樁", "勘查西側瞭望樁", "回報北岸勘查"};
+        "到營地領取北岸勘查", "勘查東側瞭望樁", "勘查西側瞭望樁", "回報北岸勘查", "", "勘查東側瞭望樁"};
     if (!stage || !RiverbankExpedition::HasDestination(*stage)) return {};
+    stage = RiverbankExpedition::RecommendedDestination(*stage, {player.x, player.z});
     const auto destination = RiverbankExpedition::Destination(*stage);
     return Landmark{labels[static_cast<std::size_t>(*stage)], {destination.x, 0, destination.z}, {.99f,.81f,.43f,1}};
 }
@@ -114,34 +115,70 @@ inline ExpeditionRoute PlanExpeditionRoute(const Landmark& target, Aevrynd::Vec3
     return route;
 }
 
+struct ExpeditionStep {
+    Aevrynd::Vec3 point;
+    Guidance guidance;
+    std::string_view instruction;
+};
+
+inline std::optional<ExpeditionStep> NextRouteStep(const Landmark& target, Aevrynd::Vec3 player,
+                                                   double arrivalRadius) {
+    const auto route = PlanExpeditionRoute(target, player);
+    auto next = target;
+    next.world = route.stops.front();
+    const auto guidance = GuideTo(next, player, route.leg == BridgeLeg::None ? arrivalRadius : .25);
+    if (!guidance) return {};
+    const bool south = next.world.z < RiverbankBridgeDeck.center.z;
+    std::string_view instruction;
+    switch (route.leg) {
+    case BridgeLeg::None: break;
+    case BridgeLeg::Bank: instruction = south ? "沿南岸繞行" : "沿北岸繞行"; break;
+    case BridgeLeg::Approach: instruction = south ? "先到南岸橋口" : "先到北岸橋口"; break;
+    case BridgeLeg::Cross: instruction = south ? "沿木橋前往南岸" : "沿木橋前往北岸"; break;
+    }
+    return ExpeditionStep{next.world, *guidance, instruction};
+}
+
+inline std::optional<ExpeditionStep> NextExpeditionStep(ExpeditionStage stage, Aevrynd::Vec3 player) {
+    const auto target = ExpeditionLandmark(stage, player);
+    return target ? NextRouteStep(*target, player, RiverbankExpedition::Reach) : std::nullopt;
+}
+
 class Menu {
 public:
     bool Open() const noexcept { return open_; }
     std::optional<std::size_t> Waypoint() const noexcept { return waypoint_; }
     bool TracksExpedition() const noexcept { return expedition_; }
 
-    std::optional<Landmark> Target(std::optional<ExpeditionStage> stage) const {
-        if (expedition_) return ExpeditionLandmark(stage);
+    std::optional<Landmark> Target(std::optional<ExpeditionStage> stage, Aevrynd::Vec3 player = {}) const {
+        if (expedition_) return ExpeditionLandmark(stage, player);
         if (waypoint_) return landmarks[*waypoint_];
         return {};
+    }
+
+    void FollowInitialExpedition(ExpeditionStage stage) noexcept {
+        if (trackingChosen_ || !RiverbankExpedition::HasDestination(stage)) return;
+        expedition_ = trackingChosen_ = true;
     }
 
     void Track(std::size_t landmark) noexcept {
         if (!open_ || landmark >= landmarks.size()) return;
         expedition_ = false;
+        trackingChosen_ = true;
         waypoint_ = landmark;
     }
 
     void TrackExpedition(std::optional<ExpeditionStage> stage) {
         if (!open_ || !ExpeditionLandmark(stage)) return;
         waypoint_.reset();
-        expedition_ = true;
+        expedition_ = trackingChosen_ = true;
     }
 
     void ClearWaypoint() noexcept {
         if (!open_) return;
         waypoint_.reset();
         expedition_ = false;
+        trackingChosen_ = true;
     }
 
     bool Update(bool focused, bool ready, bool toggle, bool escape, bool otherPanel) noexcept {
@@ -160,6 +197,7 @@ public:
 private:
     bool open_{};
     bool expedition_{};
+    bool trackingChosen_{};
     std::optional<std::size_t> waypoint_;
 };
 
@@ -239,9 +277,8 @@ inline void Draw(Aevrynd::DrawList& draw, const std::optional<TerrainGrid>& data
     }
     const auto marker = screen(playerUnit);
     const auto waypoint = menu.Waypoint();
-    if (const auto target = menu.Target(stage)) {
-        const auto route = menu.TracksExpedition() ? PlanExpeditionRoute(*target, player)
-                                                   : ExpeditionRoute{{target->world}};
+    if (const auto target = menu.Target(stage, player)) {
+        const auto route = PlanExpeditionRoute(*target, player);
         auto previous = marker;
         for (unsigned i = 0; i < route.count; ++i) {
             Vec2 projected{};
@@ -252,11 +289,17 @@ inline void Draw(Aevrynd::DrawList& draw, const std::optional<TerrainGrid>& data
             previous = stop;
         }
     }
-    const auto expedition = ExpeditionLandmark(stage);
-    if (expedition) {
+    const auto expedition = ExpeditionLandmark(stage, player);
+    const auto markExpedition = [&](const Landmark& point) {
         Vec2 projected{};
-        if (SurveyMap::Project(grid.bounds, expedition->world, projected))
-            draw.Circle(screen(projected), 11.f, expedition->color, 16);
+        if (SurveyMap::Project(grid.bounds, point.world, projected))
+            draw.Circle(screen(projected), 11.f, point.color, 16);
+    };
+    if (stage == ExpeditionStage::WatchEither) {
+        markExpedition(*ExpeditionLandmark(ExpeditionStage::WatchEast));
+        markExpedition(*ExpeditionLandmark(ExpeditionStage::WatchWest));
+    } else if (expedition) {
+        markExpedition(*expedition);
     }
     draw.SystemText({732,171}, "1–5 追蹤地標 · E 追蹤委託", 18.f, text);
     for (std::size_t i = 0; i < landmarks.size(); ++i) {
@@ -297,33 +340,23 @@ inline void Draw(Aevrynd::DrawList& draw, const std::optional<TerrainGrid>& data
     draw.SystemText({732,575}, "開啟地圖時，世界照常運作。", 16.f, text);
 }
 
-inline void DrawTrackedLandmark(Aevrynd::DrawList& draw, const Menu& menu,
-                                std::optional<ExpeditionStage> stage, Aevrynd::Vec3 player) {
-    const auto target = menu.Target(stage);
-    if (!target) return;
-    const auto route = menu.TracksExpedition() ? PlanExpeditionRoute(*target, player)
-                                               : ExpeditionRoute{{target->world}};
-    auto next = *target;
-    next.world = route.stops.front();
-    const bool bridge = route.leg != BridgeLeg::None;
-    const auto guidance = GuideTo(next, player, bridge ? .25 : 2.);
-    if (!guidance) return;
-    const std::string distance = guidance->arrived ? "已接近地標" :
-        std::string(guidance->direction) + " · " + (bridge ? "" : "直線 ") +
-        std::to_string(guidance->meters) + " 公尺";
-    if (bridge) {
-        const auto south = next.world.z < RiverbankBridgeDeck.center.z;
-        const auto label = route.leg == BridgeLeg::Bank ? (south ? "沿南岸繞行" : "沿北岸繞行") :
-            route.leg == BridgeLeg::Approach ? (south ? "先到南岸橋口" : "先到北岸橋口") :
-            (south ? "沿木橋前往南岸" : "沿木橋前往北岸");
-        draw.Quad({640,630},{354,77},{.036f,.060f,.059f,.94f});
-        draw.SystemText({478,600}, target->label, 17.f, target->color);
-        draw.SystemText({478,623}, label, 16.f, {.89f,.95f,.91f,1});
-        draw.SystemText({478,645}, distance, 15.f, {.89f,.95f,.91f,1});
+inline void DrawTrackedLandmark(Aevrynd::DrawList& draw, const Menu& menu, Aevrynd::Vec3 player) {
+    if (!menu.Waypoint()) return;
+    const auto& target = landmarks[*menu.Waypoint()];
+    const auto step = NextRouteStep(target, player, 2.);
+    if (!step) return;
+    const auto& guidance = step->guidance;
+    std::string distance;
+    if (!step->instruction.empty()) {
+        distance = step->instruction;
+        if (!guidance.arrived)
+            distance += " · " + std::string(guidance.direction) + " " + std::to_string(guidance.meters) + " 公尺";
     } else {
-        draw.Quad({640,642},{354,53},{.036f,.060f,.059f,.94f});
-        draw.SystemText({478,621}, target->label, 17.f, target->color);
-        draw.SystemText({478,645}, distance, 15.f, {.89f,.95f,.91f,1});
+        distance = guidance.arrived ? "已接近地標" :
+            std::string(guidance.direction) + " · 直線 " + std::to_string(guidance.meters) + " 公尺";
     }
+    draw.Quad({640,642},{354,53},{.036f,.060f,.059f,.94f});
+    draw.SystemText({478,621},target.label,17.f,target.color);
+    draw.SystemText({478,645},distance,15.f,{.89f,.95f,.91f,1});
 }
 }

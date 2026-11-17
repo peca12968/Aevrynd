@@ -13,6 +13,7 @@
 #include "RiverbankTrailSuppliesWire.h"
 #endif
 #include <Aevrynd/ReplicationProtocol3D.h>
+#include <optional>
 #include <memory>
 
 namespace Mistwatch {
@@ -24,7 +25,10 @@ public:
     LocalWorldClient(const LocalWorldClient&) = delete;
     LocalWorldClient& operator=(const LocalWorldClient&) = delete;
 
-    Status Poll(std::int16_t moveX, std::int16_t moveZ, bool sprint = false);
+    Status Poll(std::int16_t moveX, std::int16_t moveZ, bool sprint = false, std::optional<bool> jumpInput = {}, bool crouch = false);
+    bool CanCrouch() const noexcept;
+    bool IsCrouched() const noexcept;
+    bool CanJump() const noexcept;
     bool CanSprint() const noexcept;
     bool ChooseClass(RiverbankClass playerClass);
     RiverbankClass SelectedClass() const noexcept;
@@ -35,6 +39,7 @@ public:
     bool IsDodging() const noexcept;
     bool CanReturnToCamp() const noexcept;
     bool HasStructureCover() const noexcept;
+    bool HasTerritoryCombat() const noexcept;
     const RiverbankBattleWire::Encounter* Battle() const noexcept;
     bool RequestFieldHunt();
     const RiverbankFieldWire::Reply* FieldHunt() const noexcept;
@@ -48,6 +53,9 @@ public:
     const RiverbankTrailSuppliesWire::Reply* TrailSupplies() const noexcept;
     bool RequestGuild(GuildAction action, std::uint64_t target = 0, std::string_view name = {});
     const RiverbankGuildWire::Response* GuildReply() const noexcept;
+    bool CanReadGuildRoster() const noexcept;
+    bool RequestGuildRoster(std::uint32_t page);
+    const GuildRosterPage* GuildRoster() const noexcept;
     bool RequestTerritory();
     const TerritoryState* Territory() const noexcept;
     bool CanReadTerritoryHistory() const noexcept;

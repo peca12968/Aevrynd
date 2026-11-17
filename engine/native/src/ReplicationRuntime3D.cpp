@@ -93,18 +93,28 @@ void ReplicationServer3D::Receive(){
     }
 }
 void ReplicationServer3D::SendSnapshots(){for(auto&[id,c]:clients_){std::pair<std::int64_t,std::int64_t> center{};if(!ChunkOf(c.player.position,settings_.interestChunkSize,center)){++stats_.packetRejects;continue;}std::set<std::pair<std::int64_t,std::int64_t>> next;for(const auto&v:c.interest)if((std::max)(std::llabs(v.first-center.first),std::llabs(v.second-center.second))<=settings_.interestRetainRadius)next.insert(v);for(int z=-settings_.interestLoadRadius;z<=settings_.interestLoadRadius;++z)for(int x=-settings_.interestLoadRadius;x<=settings_.interestLoadRadius;++x)next.emplace(center.first+x,center.second+z);if(next!=c.interest){for(const auto&chunk:next)if(!c.interest.contains(chunk))++c.interestEntered;for(const auto&chunk:c.interest)if(!next.contains(chunk))++c.interestExited;c.interest=std::move(next);if(c.interestEpoch==(std::numeric_limits<std::uint64_t>::max)()){++stats_.packetRejects;continue;}++c.interestEpoch;}ReplicationSnapshot3D s{};s.sessionEpoch=sessionEpoch_;s.serverTick=tick_;s.clientId=id;s.interestEpoch=c.interestEpoch;s.originGeneration=1;s.baselineTick=c.ackSnapshotTick;const auto baseline=std::ranges::find_if(c.snapshots,[&](const auto&x){return x.serverTick==c.ackSnapshotTick;});s.full=c.ackSnapshotTick==0||baseline==c.snapshots.end();std::set<NetworkEntityId3D> visible;for(const auto&[otherId,other]:clients_){if(!Contains(c.interest,other.player.position,settings_.interestChunkSize))continue;visible.insert(other.player.entity);if(visible.size()>settings_.maximumSnapshotEntities){++stats_.packetRejects;break;}ReplicatedEntityState3D state{other.player.entity,other.player.position,other.player.velocity,other.entityFlags|(otherId==id?1u:0u)};bool changed=s.full;if(!changed){const auto previous=std::ranges::find_if(baseline->entities,[&](const auto&value){return value.id==state.id;});changed=previous==baseline->entities.end()||previous->position!=state.position||previous->velocity.x!=state.velocity.x||previous->velocity.y!=state.velocity.y||previous->velocity.z!=state.velocity.z||previous->flags!=state.flags;}if(changed)s.entities.push_back(state);}for(auto old:c.visible)if(!visible.contains(old))s.despawned.push_back(old);for(const auto entity:visible){if(!c.visible.contains(entity)&&c.everVisible.contains(entity))++c.entityReentries;c.everVisible.insert(entity);}c.entityDespawns+=s.despawned.size();c.visible=std::move(visible);std::vector<std::byte> bytes;if(s.entities.size()>settings_.maximumSnapshotEntities||!EncodeReplicationPacket3D(s,bytes)||!transport_.Send(endpoint_,c.endpoint,bytes)){++stats_.packetRejects;continue;}c.lastSnapshotEntities=s.entities.size();c.lastSnapshotDespawns=s.despawned.size();ReplicationSnapshot3D stored=s;stored.entities.clear();for(const auto&[otherId,other]:clients_)if(c.visible.contains(other.player.entity))stored.entities.push_back({other.player.entity,other.player.position,other.player.velocity,other.entityFlags|(otherId==id?1u:0u)});c.snapshots.push_back(std::move(stored));while(c.snapshots.size()>settings_.maximumSnapshotHistory)c.snapshots.pop_front();++stats_.snapshotsSent;if(s.full)++stats_.fullSnapshots;else ++stats_.deltaSnapshots;}}
-void ReplicationServer3D::Tick(const ReplicationMovementConstraint3D& constraint,const ReplicationServerStep3D& serverStep){
+void ReplicationServer3D::Tick(const ReplicationMovementConstraint3D& constraint,const ReplicationServerStep3D& serverStep,
+                               const ReplicationVerticalStep3D& verticalStep){
     Receive();
     ++tick_;
     for(auto&[id,c]:clients_){
         ReplicationInputCommand3D input{sessionEpoch_,tick_,c.lastInputSequence,id,0,0,0,false};
+        bool applied=false;
         if(auto found=c.inputs.find(tick_);found!=c.inputs.end()){
-            if(c.movementEnabled)input=found->second;
+            if(c.movementEnabled){input=found->second;applied=true;}
             c.inputs.erase(found);
             c.lastInputTick=tick_;
         }
         const auto step=serverStep&&c.movementEnabled?serverStep(c.player):std::nullopt;
         Move(c.player,input,settings_.movementPerTick*(input.sprint?settings_.sprintMovementMultiplier:1.f),constraint,step);
+        if(verticalStep){
+            const float deltaY=verticalStep(c.player,applied?&input:nullptr,c.movementEnabled);
+            GlobalPosition3D next{};
+            if(deltaY!=0.f&&std::isfinite(deltaY)&&AddGlobalPosition3D(c.player.position,{0,deltaY,0},next)){
+                c.player.position=next;
+                c.player.velocity.y=deltaY;
+            }
+        }
     }
     SendSnapshots();
     ++stats_.ticks;

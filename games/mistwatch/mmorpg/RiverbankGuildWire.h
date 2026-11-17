@@ -8,8 +8,18 @@
 namespace Mistwatch::RiverbankGuildWire {
 constexpr std::array Magic{std::byte{'A'}, std::byte{'E'}, std::byte{'G'}, std::byte{'D'}};
 constexpr std::size_t HeaderBytes = Magic.size() + 2;
+constexpr std::uint32_t RosterCapability = 1u << 27;
+static_assert((RosterCapability & (RiverbankBattleWire::DownedEntityFlag | RiverbankBattleWire::DodgingEntityFlag |
+    RiverbankBattleWire::DodgeCapability | RiverbankBattleWire::CampReturnCapability |
+    RiverbankBattleWire::StructureCoverCapability)) == 0);
+constexpr std::size_t RosterQueryBytes = HeaderBytes + 12;
+constexpr std::size_t RosterReplyBytes = HeaderBytes + 25;
+constexpr std::size_t RosterRowBytes = 15;
 constexpr std::size_t RequestBytes = HeaderBytes + 2 * sizeof(std::uint64_t) + 1;
 constexpr std::size_t ResponseBytes = HeaderBytes + 3 * sizeof(std::uint64_t) + 4;
+
+struct RosterQuery { std::uint64_t sequence{}; std::uint32_t page{}; };
+struct RosterReply { std::uint64_t sequence{}; GuildRosterPage roster; };
 
 struct Request {
     std::uint64_t sequence{};
@@ -26,6 +36,92 @@ struct Response {
 
 inline bool HasMagic(std::span<const std::byte> input) {
     return input.size() >= Magic.size() && std::ranges::equal(input.first(Magic.size()), Magic);
+}
+
+inline std::optional<RosterQuery> DecodeRosterQuery(std::span<const std::byte> frame) {
+    if (frame.size() != RosterQueryBytes || !HasMagic(frame) || frame[4] != std::byte{1} ||
+        frame[5] != std::byte{3}) return std::nullopt;
+    auto* cursor = frame.data() + HeaderBytes;
+    const auto sequence = RiverbankBattleWire::detail::Read<std::uint64_t>(cursor);
+    const auto page = RiverbankBattleWire::detail::Read<std::uint32_t>(cursor);
+    return sequence ? std::optional{RosterQuery{sequence, page}} : std::nullopt;
+}
+
+inline auto EncodeRosterQuery(RosterQuery query) {
+    std::array<std::byte, RosterQueryBytes> frame{};
+    auto* cursor = std::ranges::copy(Magic, frame.data()).out;
+    *cursor++ = std::byte{1};
+    *cursor++ = std::byte{3};
+    RiverbankBattleWire::detail::Put(cursor, query.sequence);
+    RiverbankBattleWire::detail::Put(cursor, query.page);
+    return frame;
+}
+
+inline std::optional<RosterReply> DecodeRosterReply(std::span<const std::byte> frame) {
+    if (frame.size() < RosterReplyBytes || !HasMagic(frame) || frame[4] != std::byte{1} ||
+        frame[5] != std::byte{4}) return std::nullopt;
+    using RiverbankBattleWire::detail::Read;
+    auto* cursor = frame.data() + HeaderBytes;
+    const auto sequence = Read<std::uint64_t>(cursor);
+    GuildRosterPage roster;
+    roster.guildId = Read<std::uint64_t>(cursor);
+    roster.page = Read<std::uint32_t>(cursor);
+    roster.total = Read<std::uint32_t>(cursor);
+    const auto count = std::to_integer<std::uint32_t>(*cursor++);
+    constexpr auto maxId = std::uint64_t((std::numeric_limits<std::int64_t>::max)());
+    const auto offset = std::uint64_t(roster.page) * GuildRosterPageSize;
+    if (!sequence || roster.guildId > maxId || count > GuildRosterPageSize ||
+        frame.size() != RosterReplyBytes + count * RosterRowBytes ||
+        (!roster.guildId && (roster.page || roster.total || count)) ||
+        (roster.guildId && (offset >= roster.total ||
+         count != (std::min)(std::uint64_t(GuildRosterPageSize), roster.total - offset)))) return std::nullopt;
+    bool sawSelf = false;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        GuildRosterMember entry;
+        entry.characterId = Read<std::uint64_t>(cursor);
+        entry.onlinePlayer = Read<std::uint32_t>(cursor);
+        entry.playerClass = RiverbankClass(*cursor++);
+        entry.rank = GuildRank(*cursor++);
+        const auto self = std::to_integer<unsigned>(*cursor++);
+        if (!entry.characterId || entry.characterId > maxId || !IsRiverbankClass(entry.playerClass) ||
+            entry.rank < GuildRank::Member || entry.rank > GuildRank::Leader ||
+            self > 1 || (self && (sawSelf || !entry.onlinePlayer))) return std::nullopt;
+        if (!roster.members.empty()) {
+            const auto& previous = roster.members.back();
+            if (previous.rank < entry.rank || (previous.rank == entry.rank && previous.characterId >= entry.characterId))
+                return std::nullopt;
+        }
+        if (std::ranges::any_of(roster.members, [&](const auto& previous) {
+            return entry.characterId == previous.characterId ||
+                (entry.onlinePlayer && entry.onlinePlayer == previous.onlinePlayer);
+        })) return std::nullopt;
+        entry.self = self != 0;
+        sawSelf |= entry.self;
+        roster.members.push_back(entry);
+    }
+    return RosterReply{sequence, std::move(roster)};
+}
+
+inline std::vector<std::byte> EncodeRosterReply(std::uint64_t sequence, const GuildRosterPage& roster) {
+    if (roster.members.size() > GuildRosterPageSize) return {};
+    std::vector<std::byte> frame(RosterReplyBytes + roster.members.size() * RosterRowBytes);
+    auto* cursor = std::ranges::copy(Magic, frame.data()).out;
+    *cursor++ = std::byte{1};
+    *cursor++ = std::byte{4};
+    using RiverbankBattleWire::detail::Put;
+    Put(cursor, sequence);
+    Put(cursor, roster.guildId);
+    Put(cursor, roster.page);
+    Put(cursor, roster.total);
+    *cursor++ = std::byte(roster.members.size());
+    for (const auto& member : roster.members) {
+        Put(cursor, member.characterId);
+        Put(cursor, member.onlinePlayer);
+        *cursor++ = std::byte(member.playerClass);
+        *cursor++ = std::byte(member.rank);
+        *cursor++ = std::byte(member.self ? 1 : 0);
+    }
+    return frame;
 }
 
 inline std::optional<Request> DecodeRequest(std::span<const std::byte> frame) {

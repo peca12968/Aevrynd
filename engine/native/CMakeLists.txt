@@ -242,6 +242,8 @@ endif()
 set(AEVRYND_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
 function(aevrynd_compile_shader output_name source_name entry profile symbol)
   set(output "${AEVRYND_SHADER_OUTPUT_DIR}/${output_name}")
+  set(bytecode "${output}.dxbc")
+  set(embed_script "${CMAKE_CURRENT_SOURCE_DIR}/AevryndEmbedShader.cmake")
   set(shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}")
   if(source_name STREQUAL "World.hlsl")
     list(APPEND shader_dependencies "${CMAKE_CURRENT_SOURCE_DIR}/shaders/PhaseSkyDiffuse.hlsli")
@@ -262,8 +264,10 @@ function(aevrynd_compile_shader output_name source_name entry profile symbol)
   add_custom_command(
     OUTPUT "${output}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${AEVRYND_SHADER_OUTPUT_DIR}"
-    COMMAND "${AEVRYND_FXC}" /nologo /WX /O3 /T "${profile}" /E "${entry}" /Fh "${output}" /Vn "${symbol}" ${ARGN} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
-    DEPENDS ${shader_dependencies}
+    COMMAND "${AEVRYND_FXC}" /nologo /WX /O3 /T "${profile}" /E "${entry}" /Fo "${bytecode}" ${ARGN} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source_name}"
+    COMMAND "${CMAKE_COMMAND}" "-Dshader_bytecode=${bytecode}" "-Dshader_output=${output}"
+      "-Dshader_symbol=${symbol}" -P "${embed_script}"
+    DEPENDS ${shader_dependencies} "${embed_script}"
     VERBATIM
   )
   set(AEVRYND_SHADER_HEADERS ${AEVRYND_SHADER_HEADERS} "${output}" PARENT_SCOPE)

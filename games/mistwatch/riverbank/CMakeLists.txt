@@ -214,6 +214,16 @@ if(TARGET MistwatchLocalWorldClient)
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/package_runtime.py"
       --manifest "${CMAKE_CURRENT_SOURCE_DIR}/runtime-identity.json"
       --source "${CMAKE_CURRENT_SOURCE_DIR}/assets" --output "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/assets" VERBATIM)
+  set(multiplayer_boar "${CMAKE_CURRENT_SOURCE_DIR}/../mmorpg/assets/RiverbankBoar.aeskin")
+  file(SHA256 "${multiplayer_boar}" multiplayer_boar_sha)
+  if(NOT multiplayer_boar_sha STREQUAL "1693b2a2db62a22ee379b799fe7b0b28a0bdb9ce18032cc51b148c9f27c15426")
+    message(FATAL_ERROR "Riverbank multiplayer boar asset hash differs from the verified export")
+  endif()
+  set_property(TARGET MistwatchRiverbankLocalWorld APPEND PROPERTY LINK_DEPENDS "${multiplayer_boar}")
+  add_custom_command(TARGET MistwatchRiverbankLocalWorld POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${multiplayer_boar}"
+      "$<TARGET_FILE_DIR:MistwatchRiverbankLocalWorld>/character/RiverbankBoar.aeskin" VERBATIM)
   if(MISTWATCH_LOCAL_WORLD_AVATAR)
     target_compile_definitions(MistwatchRiverbankLocalWorld PRIVATE AEVRYND_MISTWATCH_RIVERBANK_AVATAR=1)
     set_property(TARGET MistwatchRiverbankLocalWorld APPEND PROPERTY LINK_DEPENDS "${MISTWATCH_LOCAL_WORLD_AVATAR}")
