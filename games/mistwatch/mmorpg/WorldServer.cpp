@@ -3,6 +3,7 @@
 #ifdef AEVRYND_MISTWATCH_BATTLE
 #include "RiverbankBattleWire.h"
 #include "RiverbankCrossing.h"
+#include "RiverbankStructureMovement.h"
 #include "RiverbankFieldWire.h"
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
@@ -102,9 +103,13 @@ public:
                 Vec3 from{};
                 if(!ToLocalPosition3D(player.position,WorldOrigin3D{},from))return Vec3{};
                 const Mistwatch::ArenaPosition start{from.x,from.z};
-                const auto ground=Mistwatch::RiverbankCrossing::ResolveStep(start,{delta.x,delta.z});
-                const auto encounter=encounter_.ConstrainPlayerMovement(start,ground);
-                const auto allowed=Mistwatch::RiverbankCrossing::ClipStep(start,encounter);
+                const auto request=Mistwatch::RiverbankCrossing::TerrainRequest(start,{delta.x,delta.z});
+                const auto ground=Mistwatch::RiverbankCrossing::ResolveStep(start,request);
+                const auto structure=Mistwatch::RiverbankStructureMovement::ResolveStep(start,ground);
+                const auto encounter=encounter_.ConstrainPlayerMovement(start,structure);
+                const auto waterSafe=Mistwatch::RiverbankCrossing::ClipStep(start,encounter);
+                const auto structureSafe=Mistwatch::RiverbankStructureMovement::ClipStep(start,waterSafe);
+                const auto allowed=Mistwatch::RiverbankCrossing::LimitTerrainSegment(start,structureSafe);
                 return Vec3{allowed.x,0.f,allowed.z};
             });
 #else
@@ -272,11 +277,13 @@ private:
     bool JoinWorld(std::uint32_t id, Client& client, RiverbankClass selected, GlobalPosition3D position = {}) {
         auto flags = Mistwatch::RiverbankClassFlags(selected) | Mistwatch::RiverbankSprintCapability;
 #ifdef AEVRYND_MISTWATCH_BATTLE
-        flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability;
+        flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability |
+            Mistwatch::RiverbankBattleWire::StructureCoverCapability;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability |
-            Mistwatch::RiverbankTerritoryHistoryWire::Capability | Mistwatch::RiverbankExpeditionWire::WatchSurveyCapability;
+            Mistwatch::RiverbankTerritoryHistoryWire::Capability | Mistwatch::RiverbankExpeditionWire::WatchSurveyCapability |
+            Mistwatch::RiverbankPartyWire::MapPositionsCapability;
 #endif
         if (!Mistwatch::IsRiverbankClass(selected) || !world_.AddClient(id, Endpoint(id), position) ||
             !world_.SetClientEntityFlags(id, flags)) return false;
@@ -545,6 +552,7 @@ private:
         Wire::Reply reply{};
         reply.sequence = request->sequence;
         reply.result = result;
+        reply.mapPositions = request->mapPositions;
         const auto group = party_.Members(client.profileId);
         reply.members = static_cast<std::uint8_t>(group.size());
         const auto inviter = party_.Inviter(client.profileId, tick_);
@@ -555,7 +563,12 @@ private:
             const auto status = encounter_.Player(id);
             if (!status) return false;
             if (group.front() == member.profileId) reply.leader = id;
-            reply.online.push_back({id, status->playerClass, status->health});
+            Vec3 position{};
+            if (reply.mapPositions) {
+                const auto player = world_.Player(id);
+                if (!player || !ToLocalPosition3D(player->position, WorldOrigin3D{}, position)) return false;
+            }
+            reply.online.push_back({id, status->playerClass, status->health, {position.x, position.z}});
         }
         return client.transport.Queue(Wire::EncodeReply(reply));
     }

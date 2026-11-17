@@ -1,6 +1,7 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankGear.h"
 #include "RiverbankTrailSupplies.h"
+#include "RiverbankStructureMovement.h"
 #include <CharacterDynamicContact3D.h>
 #include <algorithm>
 #include <cmath>
@@ -197,13 +198,17 @@ std::uint64_t RiverbankEncounter::Target(const Site& site) const {
     const auto guarded = party.find(site.tauntOwner);
     if (guarded != party.end() && guarded->second.status.health && guarded->second.guardTicks &&
         guarded->second.position && site.Contains(*guarded->second.position) &&
-        InRange(guarded->second, boss.position, sight)) return site.tauntOwner;
+        InRange(guarded->second, boss.position, sight) &&
+        RiverbankStructureMovement::HasLine(boss.position,*guarded->second.position)) return site.tauntOwner;
     std::uint64_t nearest{};
     float distance = sight;
     for (const auto& [id, member] : party) {
         if (!member.status.health || !member.position || !site.Contains(*member.position)) continue;
         const float next = Distance(*member.position, boss.position);
-        if (next < distance) { nearest = id; distance = next; }
+        if (next < distance && RiverbankStructureMovement::HasLine(boss.position,*member.position)) {
+            nearest = id;
+            distance = next;
+        }
     }
     return nearest;
 }
@@ -214,8 +219,12 @@ unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Partici
     if (!status.health) return 0;
     const auto& boss = site.state;
     const auto stats = CombatStatsFor(status.playerClass);
+    const auto canTargetBoss = [&](float range) {
+        return InRange(participant,boss.position,range) &&
+            RiverbankStructureMovement::HasLine(*participant.position,boss.position);
+    };
     if (request.action == RiverbankAction::Attack) {
-        if (status.attackCooldown || !InRange(participant, boss.position, stats.attackRange)) return 0;
+        if (status.attackCooldown || !canTargetBoss(stats.attackRange)) return 0;
         status.attackCooldown = stats.attackCooldown;
         CreditContribution(site, participant);
         return stats.attackDamage;
@@ -225,13 +234,13 @@ unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Partici
     unsigned damage = 0;
     switch (status.playerClass) {
     case RiverbankClass::Guardian:
-        if (!InRange(participant, boss.position, 6.f)) return 0;
+        if (!canTargetBoss(6.f)) return 0;
         participant.guardTicks = 45;
         status.guarding = true;
         site.tauntOwner = id;
         break;
     case RiverbankClass::Ranger:
-        if (!InRange(participant, boss.position, stats.attackRange)) return 0;
+        if (!canTargetBoss(stats.attackRange)) return 0;
         damage = participant.bossGear ? RiverbankBossGearStats::VolleyDamage : 28u;
         break;
     case RiverbankClass::Priest: {
@@ -248,13 +257,15 @@ unsigned RiverbankEncounter::ResolveAction(Site& site, std::uint64_t id, Partici
                 if (groupFor(choice->first) != casterGroup) continue;
                 const auto& health = choice->second.status;
                 const float fraction = float(health.health) / float(CombatStatsFor(health.playerClass).health);
-                if (fraction >= lowestHealthFraction || !InRange(choice->second, *participant.position, 9.f)) continue;
+                if (fraction >= lowestHealthFraction || !InRange(choice->second, *participant.position, 9.f) ||
+                    !RiverbankStructureMovement::HasLine(*participant.position,*choice->second.position)) continue;
                 lowestHealthFraction = fraction;
                 ally = choice;
             }
         }
         if (ally == party.end() || groupFor(ally->first) != casterGroup ||
-            !InRange(ally->second, *participant.position, 9.f)) return 0;
+            !InRange(ally->second, *participant.position, 9.f) ||
+            !RiverbankStructureMovement::HasLine(*participant.position,*ally->second.position)) return 0;
         auto& recipient = ally->second.status;
         const auto maximum = CombatStatsFor(recipient.playerClass).health;
         if (recipient.health == maximum) return 0;
@@ -315,7 +326,8 @@ void RiverbankEncounter::Advance(Site& site, unsigned damage) {
             for (auto& [id, victim] : party) {
                 auto& status = victim.status;
                 if (!status.health || !victim.position || !site.Contains(*victim.position) ||
-                    !InRange(victim, boss.strikeCenter, site.field ? FieldStrikeRadius : StrikeRadius)) continue;
+                    !InRange(victim, boss.strikeCenter, site.field ? FieldStrikeRadius : StrikeRadius) ||
+                    !RiverbankStructureMovement::HasLine(boss.position,*victim.position)) continue;
                 const auto guardedHit = site.field ? 8u : victim.bossGear ? RiverbankBossGearStats::GuardDamageTaken : 16u;
                 const unsigned hit = status.guarding ? guardedHit : site.field ? 22u : 46u;
                 status.health -= std::min(status.health, hit);
@@ -374,7 +386,10 @@ void RiverbankEncounter::Move(Site& site,ArenaPosition position,float step) cons
     const auto requested=Planar(position)-previous;
     const float distance=Aevrynd::Length(requested);
     if(distance==0.f)return;
-    auto allowed=requested*std::min(1.f,step/distance);
+    const auto delta=requested*std::min(1.f,step/distance);
+    const auto structure=RiverbankStructureMovement::ResolveStep(boss.position,{delta.x,delta.z},
+                                                               {BoarRadius,BoarHalfHeight,BoarRadius});
+    auto allowed=Planar(structure);
     for(const auto& [id,player]:party)
         if(player.status.health&&player.position)
             allowed=ClipBodyStep(Planar(*player.position),previous,allowed*-1.f,false)*-1.f;

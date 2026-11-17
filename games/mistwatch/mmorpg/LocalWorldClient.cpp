@@ -91,6 +91,7 @@ struct LocalWorldClient::State {
     std::uint64_t nextExpeditionSequence{1}, pendingExpeditionSequence{};
     std::optional<RiverbankExpeditionWire::Reply> expedition;
     std::uint64_t nextPartySequence{1}, pendingPartySequence{};
+    bool pendingPartyPositions{};
     std::optional<RiverbankPartyWire::Reply> party;
     std::uint64_t nextGearSequence{1}, pendingGearSequence{};
     std::optional<RiverbankGearWire::Reply> gear;
@@ -224,7 +225,7 @@ struct LocalWorldClient::State {
         if (RiverbankPartyWire::HasMagic(bytes)) {
             auto reply = RiverbankPartyWire::DecodeReply(bytes);
             if (!profileTicket || !reply || !pendingPartySequence || reply->sequence != pendingPartySequence ||
-                (reply->members && std::ranges::find(reply->online, id, &RiverbankPartyWire::Member::actor) == reply->online.end()))
+                reply->mapPositions != pendingPartyPositions || (reply->members && std::ranges::find(reply->online, id, &RiverbankPartyWire::Member::actor) == reply->online.end()))
                 return false;
             pendingPartySequence = 0;
             party = std::move(*reply);
@@ -366,6 +367,7 @@ struct LocalWorldClient::State {
         pendingHistorySequence = 0;
         territoryHistory.reset();
         pendingExpeditionSequence = pendingPartySequence = pendingGearSequence = 0;
+        pendingPartyPositions = false;
         expedition.reset();
         party.reset();
         gear.reset();
@@ -408,6 +410,10 @@ bool LocalWorldClient::RequestBattleAction(RiverbankAction action) {
     if (!state_->peer->Queue(message)) return false;
     ++state_->nextActionSequence;
     return true;
+}
+
+bool LocalWorldClient::HasStructureCover() const noexcept {
+    return state_->Supports(RiverbankBattleWire::StructureCoverCapability);
 }
 
 bool LocalWorldClient::CanReturnToCamp() const noexcept {
@@ -514,9 +520,11 @@ const RiverbankGearWire::Reply* LocalWorldClient::Gear() const noexcept {
 bool LocalWorldClient::RequestParty(PartyAction action, std::uint32_t target) {
     if (!CanUseGuild() || state_->pendingPartySequence || state_->nextPartySequence == (std::numeric_limits<std::uint64_t>::max)())
         return false;
-    const RiverbankPartyWire::Request request{state_->nextPartySequence, action, target};
+    const RiverbankPartyWire::Request request{state_->nextPartySequence, action, target,
+        state_->Supports(RiverbankPartyWire::MapPositionsCapability)};
     if (!RiverbankPartyWire::ValidRequest(request) || !state_->peer->Queue(RiverbankPartyWire::EncodeRequest(request))) return false;
     state_->pendingPartySequence = state_->nextPartySequence++;
+    state_->pendingPartyPositions = request.mapPositions;
     return true;
 }
 

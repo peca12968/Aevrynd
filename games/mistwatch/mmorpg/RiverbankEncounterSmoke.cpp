@@ -181,6 +181,70 @@ void NorthBankBoundary() {
     Require(sawWindup, "Entering the north bank did not trigger a valid windup");
 }
 
+void WorkshopWallsBlockCombat() {
+    constexpr ArenaPosition inside{-6.9f, 58.7f};
+    constexpr ArenaPosition outside{-7.f, 56.5f};
+    static_assert(RiverbankEncounter::InArena(inside) && RiverbankEncounter::InArena(outside));
+    Require(std::hypot(inside.x - outside.x, inside.z - outside.z) < RiverbankEncounter::StrikeRadius,
+            "The cover fixture would be outside the strike area");
+
+    RiverbankEncounter behindWall;
+    Require(behindWall.Join(1, RiverbankClass::Ranger) && behindWall.SetPosition(1, inside), "Covered ranger setup failed");
+    Require(behindWall.Submit(1, 1, RiverbankAction::Attack), "Covered attack did not queue");
+    behindWall.Tick();
+    Require(behindWall.Submit(1, 2, RiverbankAction::ClassSkill), "Covered volley did not queue");
+    behindWall.Tick();
+    const auto blocked = behindWall.Player(1);
+    Require(behindWall.Boss().health == RiverbankEncounter::BossHealth && !behindWall.Boss().target &&
+            behindWall.Boss().phase == EncounterPhase::Patrol && blocked->resource == 100 &&
+            !blocked->attackCooldown && !blocked->skillCooldown, "A wall did not block the ranger or boss sight");
+
+    RiverbankEncounter openField;
+    Require(openField.Join(1, RiverbankClass::Ranger) && openField.SetPosition(1, {6.9f, 58.7f}),
+            "Open ranger setup failed");
+    Require(openField.Submit(1, 1, RiverbankAction::Attack), "Open attack did not queue");
+    openField.Tick();
+    Require(openField.Submit(1, 2, RiverbankAction::ClassSkill), "Open volley did not queue");
+    openField.Tick();
+    Require(openField.Boss().health == RiverbankEncounter::BossHealth - 41 && openField.Boss().target == 1 &&
+            openField.Player(1)->resource == 68 && openField.Player(1)->skillCooldown == 100,
+            "The open attack lane stopped resolving ranged damage");
+
+    RiverbankEncounter exchange;
+    Require(exchange.Join(1, RiverbankClass::Guardian) && exchange.SetPosition(1, outside) &&
+            exchange.Join(2, RiverbankClass::Ranger) && exchange.SetPosition(2, inside), "Boss strike cover setup failed");
+    for (unsigned tick = 0; tick != 180 && exchange.Boss().phase != EncounterPhase::Recovery; ++tick)
+        exchange.Tick();
+    Require(exchange.Boss().phase == EncounterPhase::Recovery && exchange.Boss().target == 1 &&
+            exchange.Boss().strikeCenter.x == outside.x && exchange.Boss().strikeCenter.z == outside.z &&
+            exchange.Player(1)->health == 104 && exchange.Player(2)->health == 105,
+            "A covered player took strike damage, or the unobstructed strike failed");
+}
+
+void WorkshopWallBlocksPriestSupport() {
+    for (const unsigned initialHealth : {0u, 20u}) {
+        RiverbankEncounter arena;
+        Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Priest),
+                "Support test setup failed");
+        auto injured = *arena.Suspend(1);
+        injured.status.health = initialHealth;
+        Require(arena.RestoreCombat(1, injured, 0) && arena.SetPosition(1, {-7.f, 56.4f}) &&
+                arena.SetPosition(2, {-6.75f, 58.7f}), "Support fixture failed");
+        for (unsigned sequence = 1; sequence <= 2; ++sequence) {
+            const auto target = sequence == 1 ? 1u : 0u;
+            Require(arena.Submit(2, sequence, RiverbankAction::ClassSkill, target), "Covered support did not queue");
+            arena.Tick();
+            Require(arena.Player(1)->health == initialHealth && arena.Player(2)->resource == 100 &&
+                    !arena.Player(2)->skillCooldown, "Healing or revival crossed a wall");
+        }
+        Require(arena.SetPosition(2, {-4.f, 56.3f}) &&
+                arena.Submit(2, 3, RiverbankAction::ClassSkill, 1), "Open support fixture failed");
+        arena.Tick();
+        Require(arena.Player(1)->health == 60 && arena.Player(2)->resource == 60 &&
+                arena.Player(2)->skillCooldown == 120, "An open lane stopped healing or reviving");
+    }
+}
+
 void BossGearChangesSkillResults() {
     RiverbankEncounter arena({0, 0});
     Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Priest), "Gear test setup failed");
@@ -229,6 +293,9 @@ int main() {
         FieldBoarDisengagesFromDownedPlayer();
         RestoreLiveCombat();
         NorthBankBoundary();
+        WorkshopWallsBlockCombat();
+        WorkshopWallBlocksPriestSupport();
+        std::cout << "RIVERBANK_STRUCTURE_COVER_PASS attacks=2 support=2 boss_strike=1\n";
         BattleWireRoundTrip();
         BossGearChangesSkillResults();
         std::cout << "RIVERBANK_ENCOUNTER_RULES_PASS roles=3 windup=1 simultaneous_attacks=3 revive=1 reward_once=1 respawn=1 north_bank_boundary=1 wire=1\n";

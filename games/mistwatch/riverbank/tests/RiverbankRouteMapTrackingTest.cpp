@@ -113,6 +113,58 @@ void VerifyExpeditionRoute() {
     menu.ClearWaypoint();
     Require(!menu.TracksExpedition() && !menu.Target(Stage::Report), "Backspace did not clear the expedition");
 }
+void VerifyPartyMapPositions() {
+    using namespace Mistwatch;
+    namespace Wire = RiverbankPartyWire;
+    const Mistwatch::SurveyMap::Bounds bounds{-50.,-20.,50.,100.};
+    const Wire::Member remote{7, RiverbankClass::Ranger, 105, {22.f,98.f}};
+    const auto point = PartyMapPoint(bounds, 1, remote);
+    Require(point && point->y < .02f && point->x > .71f && point->x < .73f,
+            "A player near the north map edge had no marker at the authoritative position");
+    Require(!PartyMapPoint(bounds, 7, remote), "The local character duplicated the player marker");
+    auto outside = remote;
+    outside.position.z = 101.f;
+    Require(!PartyMapPoint(bounds, 1, outside), "Off-map position was incorrectly clamped");
+
+    Wire::Reply reply{};
+    reply.sequence = 3;
+    reply.members = 2;
+    reply.leader = 7;
+    reply.mapPositions = true;
+    reply.online = {remote};
+    auto bytes = Wire::EncodeReply(reply);
+    const auto decoded = Wire::DecodeReply(bytes);
+    Require(decoded && decoded->mapPositions && decoded->online.front().position.z == remote.position.z,
+            "Party location reply lost its coordinates");
+    bytes.pop_back();
+    Require(!Wire::DecodeReply(bytes), "Truncated party location was accepted");
+    reply.online.front().position.x = std::numeric_limits<float>::quiet_NaN();
+    Require(!Wire::DecodeReply(Wire::EncodeReply(reply)), "Nonfinite party location was accepted");
+    reply.mapPositions = false;
+    const auto legacy = Wire::DecodeReply(Wire::EncodeReply(reply));
+    Require(legacy && !legacy->mapPositions && legacy->online.size() == 1,
+            "Legacy roster became unreadable");
+
+    const Aevrynd::HeightField3D terrain({{-50.f,0,-20.f},101,121,1.f});
+    const auto grid = Build(terrain);
+    Require(grid.has_value(), "Party marker map fixture was invalid");
+    reply.mapPositions = true;
+    reply.members = 3;
+    reply.online = {remote, {9, RiverbankClass::Priest, 0, {-17.f,11.f}}, {1, RiverbankClass::Guardian, 150, {0,0}}};
+    Aevrynd::DrawList draw;
+    Draw(draw, grid, {0,0,0}, Menu{}, {}, 1, &reply);
+    const auto contains = [&](Aevrynd::Color color) {
+        return std::ranges::find(draw.vertices, Aevrynd::PackColorRgba8(color), &Aevrynd::Vertex::color) != draw.vertices.end();
+    };
+    Require(contains({.35f,.84f,1.f,1}) && contains({1.f,.58f,.29f,1}),
+            "Living and downed party markers were not drawn");
+    draw.Clear();
+    reply.mapPositions = false;
+    Draw(draw, grid, {0,0,0}, Menu{}, {}, 1, &reply);
+    Require(!contains({.35f,.84f,1.f,1}) && !contains({1.f,.58f,.29f,1}),
+            "Legacy roster drew party members at fabricated coordinates");
+}
+
 void VerifyBridgeRouting() {
     using Aevrynd::Vec3;
     using Mistwatch::ExpeditionStage;
@@ -214,6 +266,7 @@ int main() {
         VerifyGuidance();
         VerifyExpeditionRoute();
         VerifyBridgeRouting();
+        VerifyPartyMapPositions();
         std::cout << "RIVERBANK_ROUTE_MAP_TRACKING_PASS\n";
         return 0;
     } catch (const std::exception& error) {

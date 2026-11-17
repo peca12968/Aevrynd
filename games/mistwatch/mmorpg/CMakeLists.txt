@@ -63,6 +63,22 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
   add_test(NAME MistwatchRiverbankWatchSurveyLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankWatchSurvey.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  add_test(NAME MistwatchRiverbankStaticStructureLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankStaticStructures.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankStaticStructureLoopbackTest PROPERTIES TIMEOUT 180 LABELS "mistwatch;map;network")
+  add_test(NAME MistwatchRiverbankCombatCoverLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankCombatCover.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankCombatCoverLoopbackTest PROPERTIES TIMEOUT 105 LABELS "mistwatch;combat;network")
+  add_test(NAME MistwatchRiverbankWorldBoundsLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankWorldBounds.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankWorldBoundsLoopbackTest PROPERTIES TIMEOUT 135 LABELS "mistwatch;map;network")
+  add_test(NAME MistwatchRiverbankPartyMapLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankPartyMap.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankPartyMapLoopbackTest PROPERTIES TIMEOUT 125 LABELS "mistwatch;map;party;network")
   add_test(NAME MistwatchRiverbankPartyWatchLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankPartyWatch.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")

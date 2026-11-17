@@ -8,6 +8,8 @@
 #include "MistwatchUnderstory.h"
 #include "MistwatchBroadleaf.h"
 #include "MistwatchRiverProfile.h"
+#include "MistwatchRiverbankBounds.h"
+#include "MistwatchStaticStructures.h"
 #include "MistwatchRelay.h"
 #include "MistwatchFirLayout.h"
 #include "MistwatchFallenLogProfile.h"
@@ -18,8 +20,9 @@
 #include <vector>
 namespace Mistwatch {
 inline Aevrynd::HeightField3D CreateTerrain() {
-    Aevrynd::HeightField3D terrain({{-50,0,-20},201,241,.5f});
-    for(unsigned z=0;z<241;++z) for(unsigned x=0;x<201;++x) {
+    namespace Bounds = RiverbankBounds;
+    Aevrynd::HeightField3D terrain({{Bounds::MinimumX,0,Bounds::MinimumZ},Bounds::SamplesX,Bounds::SamplesZ,Bounds::CellSize});
+    for(unsigned z=0;z<Bounds::SamplesZ;++z) for(unsigned x=0;x<Bounds::SamplesX;++x) {
         const auto p=terrain.SamplePosition(x,z);
         terrain.SetHeight(x,z,GroundElevation(p.x,p.z));
     }
@@ -176,33 +179,6 @@ inline std::vector<Aevrynd::Vec3> GroundCoverPositions(const Aevrynd::HeightFiel
         for(const auto p:{Session::fuse,Session::rangerLog})shelter|=std::abs(x-p.x)<3.f&&std::abs(z-p.z)<3.5f;
         if(shelter)continue;
         result.push_back({x,terrain.SampleHeight(x,z),z});
-    }
-    return result;
-}
-inline std::vector<Aevrynd::BoxCollider3D> WorkshopSolids() {
-    const auto p=Session::fuse;
-    return {{p+Aevrynd::Vec3{0,2.7f,0},{2.5f,.15f,2.f}},
-            {p+Aevrynd::Vec3{-2.4f,1.3f,0},{.1f,1.3f,2.f}},
-            {p+Aevrynd::Vec3{0,1.3f,-1.9f},{2.5f,1.3f,.1f}},
-            {p+Aevrynd::Vec3{0,1.3f,1.9f},{2.5f,1.3f,.1f}}};
-}
-inline Aevrynd::BoxCollider3D GeneratorSolid() {
-    return {Session::generator+Aevrynd::Vec3{0,.6f,0},{.85f,.6f,.6f}};
-}
-inline Aevrynd::BoxCollider3D FuseCaseSolid() {
-    return {Session::fuse+Aevrynd::Vec3{-.9f,.45f,0},{.35f,.45f,.4f}};
-}
-inline std::vector<Aevrynd::BoxCollider3D> RangerHutSolids() {
-    const auto p=Session::rangerLog;
-    // 西側朝向主路，東側為實牆，南北窗戶由同一組板材／立柱碰撞體構成。
-    std::vector<Aevrynd::BoxCollider3D> result{
-        {p+Aevrynd::Vec3{0,2.7f,0},{2.5f,.15f,3.f}},
-        {p+Aevrynd::Vec3{2.4f,1.3f,0},{.1f,1.3f,3.f}},
-        {p+Aevrynd::Vec3{.9f,.5f,0},{.35f,.5f,.8f}}};
-    for(float z:{-2.9f,2.9f}) {
-        result.push_back({p+Aevrynd::Vec3{0,.45f,z},{2.5f,.45f,.1f}});
-        result.push_back({p+Aevrynd::Vec3{0,2.4f,z},{2.5f,.2f,.1f}});
-        for(float x:{-2.3f,0.f,2.3f})result.push_back({p+Aevrynd::Vec3{x,1.55f,z},{.15f,.65f,.1f}});
     }
     return result;
 }

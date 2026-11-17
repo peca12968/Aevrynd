@@ -4,6 +4,7 @@
 #include "MistwatchBridgeDeck.h"
 #include "MistwatchRiverProfile.h"
 #include "RiverbankExpedition.h"
+#include "RiverbankPartyWire.h"
 #include "RiverbankTerritory.h"
 #include <numbers>
 
@@ -202,8 +203,17 @@ inline std::optional<TerrainGrid> Build(const Aevrynd::HeightField3D& terrain) {
     return grid;
 }
 
+inline std::optional<Aevrynd::Vec2> PartyMapPoint(const SurveyMap::Bounds& bounds, std::uint32_t self,
+                                                   const RiverbankPartyWire::Member& member) {
+    Aevrynd::Vec2 unit{};
+    if (!member.actor || member.actor == self ||
+        !SurveyMap::Project(bounds, {member.position.x, 0, member.position.z}, unit)) return {};
+    return unit;
+}
+
 inline void Draw(Aevrynd::DrawList& draw, const std::optional<TerrainGrid>& data, Aevrynd::Vec3 player,
-                 const Menu& menu, std::optional<ExpeditionStage> stage) {
+                 const Menu& menu, std::optional<ExpeditionStage> stage, std::uint32_t self,
+                 const RiverbankPartyWire::Reply* group) {
     using namespace Aevrynd;
     constexpr Color text{.89f,.95f,.91f,1};
     draw.Quad({640,364}, {964,544}, {.036f,.060f,.059f,.98f});
@@ -268,6 +278,17 @@ inline void Draw(Aevrynd::DrawList& draw, const std::optional<TerrainGrid>& data
         if (menu.TracksExpedition()) draw.Quad({918,474},{380,33},{.15f,.22f,.20f,1});
         draw.SystemText({737,465}, std::string(menu.TracksExpedition() ? "追蹤中 · " : "E  ")+expedition->label,
                         17.f, expedition->color);
+    }
+    if (group && group->mapPositions && group->members) {
+        constexpr Color ally{.35f,.84f,1.f,1}, downed{1.f,.58f,.29f,1};
+        for (const auto& member : group->online) {
+            if (const auto point = PartyMapPoint(grid.bounds, self, member)) {
+                const auto anchor = screen(*point);
+                draw.Circle(anchor, 8.f, member.health ? ally : downed, 16);
+                draw.Circle(anchor, 4.f, {.046f,.065f,.060f,1}, 16);
+            }
+        }
+        draw.SystemText({190,593}, "藍圈為隊友 · 橙圈為倒地隊友", 15.f, text);
     }
     draw.Circle(marker, 8.f, {.046f,.065f,.060f,1}, 16);
     draw.Circle(marker, 4.f, {1,1,1,1}, 16);

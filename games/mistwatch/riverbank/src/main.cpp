@@ -11,6 +11,7 @@
 #include "RiverbankGuildPanel.h"
 #include "RiverbankPartyPanel.h"
 #include "RiverbankPartyMarker.h"
+#include "RiverbankStructureMovement.h"
 #include "RiverbankTerritoryHud.h"
 #include "RiverbankGearPanel.h"
 #include "RiverbankCampSpawn.h"
@@ -4512,10 +4513,14 @@ private:
         }
         const auto distance=std::hypot(session.feet.x-boss.position.x,session.feet.z-boss.position.z);
         if(distance>24.f)return;
-        const auto line=!Mistwatch::RiverbankEncounter::InArena({session.feet.x,session.feet.z})?
+        const Mistwatch::ArenaPosition feet{session.feet.x,session.feet.z};
+        const bool behindCover=localWorld->HasStructureCover()&&distance<=stats.attackRange&&
+            !Mistwatch::RiverbankStructureMovement::HasLine(feet,boss.position);
+        const auto line=!Hunt::InArena(feet)?
             "進入北岸林間空地即可挑戰巡林野豬":
             boss.phase==Phase::Defeated?"巡林野豬已倒下 · 重生 "+remaining(boss.phaseTicks):
             boss.phase==Phase::Windup?"巡林野豬即將衝撞 · 離開橘圈":
+            behindCover?"建物遮擋 · 移到入口再攻擊":
             "巡林野豬 · 生命 "+std::to_string(boss.health)+" / "+std::to_string(Mistwatch::RiverbankEncounter::BossHealth);
         draw.Quad({640,37},{407,52},{.07f,.045f,.021f,.95f});
         draw.SystemText({451,24},line,17.f,{1,.80f,.56f,1});
@@ -4843,7 +4848,7 @@ private:
             if(!riverbankMapTerrain)riverbankMapTerrain=Mistwatch::RiverbankRouteMap::Build(terrain);
             const auto* expedition=localWorld->Expedition();
             Mistwatch::RiverbankRouteMap::Draw(draw,riverbankMapTerrain,session.feet,riverbankRouteMap,
-                expedition?std::optional{expedition->stage}:std::nullopt);
+                expedition?std::optional{expedition->stage}:std::nullopt,localWorld->PlayerId(),localWorld->Party());
 #endif
         }else{
             draw.Quad({273,60},{526,106},{.04f,.07f,.065f,.94f});

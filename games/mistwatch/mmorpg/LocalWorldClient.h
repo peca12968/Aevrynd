@@ -31,6 +31,7 @@ public:
 #ifdef AEVRYND_MISTWATCH_BATTLE
     bool RequestBattleAction(RiverbankAction action);
     bool CanReturnToCamp() const noexcept;
+    bool HasStructureCover() const noexcept;
     const RiverbankBattleWire::Encounter* Battle() const noexcept;
     bool RequestFieldHunt();
     const RiverbankFieldWire::Reply* FieldHunt() const noexcept;
