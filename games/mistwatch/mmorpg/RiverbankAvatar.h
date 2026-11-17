@@ -97,7 +97,7 @@ public:
                 players.erase(entity.id);
                 continue;
             }
-            player.motion.ObserveStance(!downed && (entity.flags & RiverbankCrouchedFlag) != 0, dt);
+            player.motion.ObserveStance(!downed && (entity.flags & RiverbankCrouchedFlag) != 0, downed, dt);
             player.jump.Observe(snapshot->serverTick, feet.y, entity.velocity.y,
                 !downed && (entity.flags & RiverbankJumpCapability) != 0);
             if (entity.id.low == localId) {
@@ -176,12 +176,9 @@ public:
         return !motion.HasDownedClip() || (player != players.end() && player->second.motion.downedSeconds >= 1.f);
     }
 
-    void ResetAfterWarp(Aevrynd::NetworkEntityId3D id) {
-        if (const auto player = players.find(id); player != players.end()) {
-            auto& state = player->second.motion;
-            state.ResetGait();
-            state.downedSeconds = 0.f;
-        }
+    void ResetAfterWarp(Aevrynd::NetworkEntityId3D id, bool downed) {
+        if (const auto player = players.find(id); player != players.end())
+            player->second.motion.ResetAfterWarp(downed);
     }
 
     void Release(Aevrynd::Engine& engine) {

@@ -4685,6 +4685,14 @@ private:
             const auto color=healthChange<0?Color{1,.68f,.60f,1}:Color{.62f,.94f,.77f,1};
             draw.SystemText({20,175},notice,15.f,color);
         }
+        if(const auto earned=combatFeedback.RewardDelta()){
+            std::string reward="首領戰利品 +"+std::to_string(earned);
+#ifdef AEVRYND_MISTWATCH_PROFILES
+            if(localWorld->CanUseGuild())reward+=" · B 開啟裝備";
+#endif
+            draw.Quad({640,691},{330,32},{.10f,.08f,.032f,.96f});
+            draw.SystemText({490,680},reward,16.f,{1.f,.88f,.60f,1.f});
+        }
         using Phase=Mistwatch::EncounterPhase;
         using Hunt=Mistwatch::RiverbankEncounter;
         const Mistwatch::ArenaPosition feet{session.feet.x,session.feet.z};
@@ -4951,7 +4959,8 @@ private:
                     riverbankCombatView.reset();
 #endif
 #ifdef AEVRYND_MISTWATCH_RIVERBANK_AVATAR
-                    riverbankAvatar->ResetAfterWarp(own->id);
+                    riverbankAvatar->ResetAfterWarp(own->id,
+                        (own->flags & Mistwatch::RiverbankBattleWire::DownedEntityFlag) != 0);
 #endif
                 }
                 explorer.Update(changedZone?Vec3{}:movement,dt,false);

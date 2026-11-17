@@ -416,6 +416,58 @@ void FeedbackUsesFreshAuthoritativeSnapshots() {
     Require(!feedback.HealthDelta() && feedback.LatestAction() == Action::None, "New world replayed earlier combat");
 }
 
+void FeedbackReportsDurableBossRewardsOnce() {
+    RiverbankCombatFeedback feedback;
+    RiverbankBattleWire::Encounter frame{11, 120, 9, {RiverbankClass::Ranger, 105, 100, 0, 0, 2, false}, {}};
+    feedback.Update(&frame, .05f);
+    Require(!feedback.RewardDelta(), "Initial login announced existing boss rewards");
+    ++frame.tick;
+    ++frame.player.rewards;
+    feedback.Update(&frame, .05f);
+    Require(feedback.RewardDelta() == 1, "Online boss loot was not announced");
+    ++frame.tick;
+    ++frame.player.rewards;
+    feedback.Update(&frame, .05f);
+    Require(feedback.RewardDelta() == 2, "Closely spaced rewards did not combine");
+    auto stale = frame;
+    --stale.tick;
+    stale.player.rewards = 40;
+    feedback.Update(&stale, RiverbankCombatFeedback::RewardNoticeSeconds);
+    feedback.Update(&frame, .05f);
+    Require(!feedback.RewardDelta(), "An expired or stale snapshot replayed reward feedback");
+
+    feedback.Update(nullptr, .05f);
+    frame.tick += 80;
+    ++frame.owner;
+    ++frame.player.rewards;
+    frame.player.health = 0;
+    feedback.Update(&frame, .05f);
+    Require(feedback.RewardDelta() == 1 && !feedback.HealthDelta(),
+            "Same-world reconnect did not distinguish a new reward from stale combat feedback");
+    feedback.Update(nullptr, .05f);
+    ++frame.tick;
+    ++frame.owner;
+    feedback.Update(&frame, .05f);
+    Require(!feedback.RewardDelta(), "Reconnecting twice announced the same reward");
+    ++frame.tick;
+    --frame.player.rewards;
+    feedback.Update(&frame, .05f);
+    ++frame.tick;
+    ++frame.player.rewards;
+    feedback.Update(&frame, .05f);
+    Require(!feedback.RewardDelta(), "A regressed count caused duplicate loot feedback");
+
+    ++frame.epoch;
+    frame.tick = 1;
+    frame.player.rewards += 10;
+    feedback.Update(&frame, .05f);
+    Require(!feedback.RewardDelta(), "A new world replayed historical boss rewards");
+    ++frame.tick;
+    ++frame.player.rewards;
+    feedback.Update(&frame, .05f);
+    Require(feedback.RewardDelta() == 1, "New world's next reward was not tracked");
+}
+
 void DodgeRejectsReplayAndAvoidsOnlyDuringItsWindow() {
     RiverbankEncounter arena({0, 0});
     Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Ranger) &&
@@ -567,6 +619,8 @@ int main() {
         DodgeRejectsReplayAndAvoidsOnlyDuringItsWindow();
         std::cout << "RIVERBANK_DODGE_RULES_PASS direction=1 cost=1 cooldown=1 replay=1 reconnect=1 strike=1\n";
         FeedbackUsesFreshAuthoritativeSnapshots();
+        FeedbackReportsDurableBossRewardsOnce();
+        std::cout << "RIVERBANK_REWARD_FEEDBACK_PASS initial=1 live=1 reconnect=1 replay=1 restart=1\n";
         std::cout << "RIVERBANK_COMBAT_FEEDBACK_PASS damage=1 heal=1 revive=1 attack=1 skill=1 resync=1\n";
         BossGearChangesSkillResults();
         std::cout << "RIVERBANK_ENCOUNTER_RULES_PASS roles=3 windup=1 simultaneous_attacks=3 revive=1 reward_once=1 respawn=1 north_bank_boundary=1 wire=1\n";

@@ -130,7 +130,7 @@ bool VerifyCrouchHeadroom(const Mistwatch::RiverbankAvatarMotion& motion,
     Mistwatch::RiverbankAvatarMotion::Player actor;
     if (!measure(actor) || maximum <= roofY) return false;
     // 第一個蹲姿快照即使還沒有累計時間，也能直接對齊權威姿勢。
-    actor.ObserveStance(true, 0.f);
+    actor.ObserveStance(true, false, 0.f);
     if (!measure(actor) || maximum > roofY - .005f || std::abs(sole) > .008f) return false;
     const float firstTop = maximum;
     constexpr float dt = 1.f / 60.f;
@@ -391,6 +391,38 @@ int main(int argc, char** argv) {
         const auto head = std::ranges::find(asset.jointNames, "head");
         if (head == asset.jointNames.end()) return 15;
         const auto headIndex = static_cast<std::size_t>(head - asset.jointNames.begin());
+        Mistwatch::RiverbankAvatarMotion::Player resumed;
+        resumed.ObserveStance(false, true, 0.f);
+        const auto firstPose = motion.Evaluate(asset.model.skeleton, resumed, feet, scratch, pose);
+        const float resumedHead = TransformPoint(firstPose * pose.globalMatrices[headIndex], {}).y - feet.y;
+        if (resumed.downedSeconds != 1.f || !std::isfinite(resumedHead) || resumedHead > .45f) return 30;
+        Mistwatch::RiverbankAvatarMotion::Player witnessed;
+        witnessed.ObserveStance(false, false, 0.f);
+        witnessed.ObserveStance(false, true, .05f);
+        witnessed.Advance({}, .05f, true);
+        if (witnessed.downedSeconds != .05f) return 31;
+        // 大幅度權威位置重設時也必須立即呈現已倒地的快照。
+        auto warped = resumed;
+        warped.distance = .9f;
+        warped.walking = .6f;
+        warped.runWeight = .3f;
+        constexpr Vec3 relocated{2.3f, 1.1f, 5.2f};
+        warped.ResetAfterWarp(true);
+        const auto warpPose = motion.Evaluate(asset.model.skeleton, warped, relocated, scratch, pose);
+        const float warpedHead = TransformPoint(warpPose * pose.globalMatrices[headIndex], {}).y - relocated.y;
+        std::cout << "authority_warp_downed_seconds=" << warped.downedSeconds
+                  << " warped_head_height_m=" << warpedHead << '\n';
+        if (warped.downedSeconds != 1.f || !std::isfinite(warpedHead) ||
+            std::abs(warpedHead - resumedHead) > .001f) return 32;
+        if (warped.distance != 0.f || warped.walking != 0.f || warped.runWeight != 0.f) return 33;
+        warped.ResetAfterWarp(false);
+        const auto campPose = motion.Evaluate(asset.model.skeleton, warped, relocated, scratch, pose);
+        const auto campHead = TransformPoint(campPose * pose.globalMatrices[headIndex], {}).y - relocated.y;
+        std::cout << "authority_warp_recovered_seconds=" << warped.downedSeconds
+                  << " recovered_head_height_m=" << campHead << '\n';
+        if (warped.downedSeconds != 0.f || !std::isfinite(campHead) || campHead < 1.2f) return 34;
+        std::cout << "rejoined_downed_head_height_m=" << resumedHead << " witnessed_fall_seconds="
+                  << witnessed.downedSeconds << '\n';
         float gap = 0.f, signedWorstGap = 0.f;
         int worstFrame = 0;
         for (int frame = 0; frame <= 24; ++frame) {

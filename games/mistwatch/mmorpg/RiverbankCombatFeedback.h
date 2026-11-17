@@ -8,17 +8,21 @@ class RiverbankCombatFeedback {
 public:
     enum class Action { None, Attack, Skill };
     static constexpr float NoticeSeconds = 1.6f;
+    static constexpr float RewardNoticeSeconds = 5.f;
 
     void Update(const RiverbankBattleWire::Encounter* frame, float elapsed) {
         if (elapsed > 0.f) {
             healthRemaining_ = std::max(0.f, healthRemaining_ - elapsed);
             actionRemaining_ = std::max(0.f, actionRemaining_ - elapsed);
+            rewardRemaining_ = std::max(0.f, rewardRemaining_ - elapsed);
         }
         if (!frame) {
             last_.reset();
             ClearNotices();
+            rewardRemaining_ = 0.f;
             return;
         }
+        UpdateRewards(*frame);
         if (!last_ || frame->epoch != last_->epoch || frame->owner != last_->owner ||
             frame->player.playerClass != last_->player.playerClass) {
             last_ = *frame;
@@ -54,12 +58,39 @@ public:
     int HealthDelta() const { return healthRemaining_ > 0.f ? healthDelta_ : 0; }
     bool Recovered() const { return healthRemaining_ > 0.f && recovered_; }
     Action LatestAction() const { return actionRemaining_ > 0.f ? action_ : Action::None; }
+    unsigned RewardDelta() const { return rewardRemaining_ > 0.f ? rewardDelta_ : 0; }
 
 private:
+    struct RewardBaseline {
+        std::uint64_t world, tick;
+        RiverbankClass role;
+        unsigned total;
+    };
+
+    void UpdateRewards(const RiverbankBattleWire::Encounter& frame) {
+        const auto& player = frame.player;
+        if (!rewardBaseline_ || rewardBaseline_->world != frame.epoch ||
+            rewardBaseline_->role != player.playerClass) {
+            rewardBaseline_ = RewardBaseline{frame.epoch, frame.tick, player.playerClass, player.rewards};
+            rewardRemaining_ = 0.f;
+            return;
+        }
+        if (frame.tick <= rewardBaseline_->tick) return;
+        rewardBaseline_->tick = frame.tick;
+        // 戰利品永久累計。保留同世界的結算基準，讓斷線期間的發獎可在重連時顯示一次。
+        if (player.rewards > rewardBaseline_->total) {
+            rewardDelta_ = RewardDelta() + (player.rewards - rewardBaseline_->total);
+            rewardBaseline_->total = player.rewards;
+            rewardRemaining_ = RewardNoticeSeconds;
+        }
+    }
+
     void ClearNotices() { healthRemaining_ = actionRemaining_ = 0.f; }
 
     std::optional<RiverbankBattleWire::Encounter> last_;
-    float healthRemaining_{}, actionRemaining_{};
+    std::optional<RewardBaseline> rewardBaseline_;
+    float healthRemaining_{}, actionRemaining_{}, rewardRemaining_{};
+    unsigned rewardDelta_{};
     int healthDelta_{};
     Action action_{};
     bool recovered_{};

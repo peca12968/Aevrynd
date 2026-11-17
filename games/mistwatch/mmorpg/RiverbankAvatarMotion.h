@@ -24,10 +24,11 @@ struct RiverbankAvatarMotion {
         float distance{}, heading{}, walking{}, downedSeconds{}, runWeight{}, crouchWeight{};
 
         bool stanceKnown{};
-        void ObserveStance(bool crouched, float elapsed) noexcept {
+        void ObserveStance(bool crouched, bool downed, float elapsed) noexcept {
             if (!stanceKnown) {
-                // 重連到低屋頂內時，第一個顯示姿勢直接採用權威狀態。
+                // 首次看見角色時採用權威姿勢。已倒地的角色不會重播上次跌倒。
                 crouchWeight = crouched ? 1.f : 0.f;
+                downedSeconds = downed ? 1.f : 0.f;
                 stanceKnown = true;
                 return;
             }
@@ -36,6 +37,12 @@ struct RiverbankAvatarMotion {
         }
 
         void ResetGait() { distance = walking = runWeight = 0.f; }
+
+        void ResetAfterWarp(bool downed) noexcept {
+            ResetGait();
+            // 大幅度權威位置變更後，直接採用目前倒地狀態。
+            downedSeconds = downed ? 1.f : 0.f;
+        }
 
         void Advance(Aevrynd::Vec3 tickDisplacement, float elapsed, bool downed = false, bool runAvailable = false) {
             // 本機仍沿用權威快照中的每刻位移。
