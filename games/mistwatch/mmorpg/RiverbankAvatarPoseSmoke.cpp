@@ -232,6 +232,21 @@ bool VerifyRunPlayback(const Mistwatch::RiverbankAvatarMotion& motion,
     return transitions == 128 && std::isfinite(lowest) && lowest >= -.0015f;
 }
 
+bool VerifyPeerDodgePresentation() {
+    Mistwatch::RiverbankPeerPresentation peer;
+    if (!peer.Observe(7,{},false,true) ||
+        peer.Observe(10,{.530f,0,.530f},false,true,true)) return false;
+    if (std::abs(peer.Advance(.05f).x-.530f/3.f)>1.e-5f ||
+        std::abs(peer.Advance(.1f).x-.530f*2.f/3.f)>1.e-5f) return false;
+    if (peer.Observe(12,{.82f,0,.82f},false,true) ||
+        std::abs(peer.Advance(.1f).x-.29f)>1.e-5f) return false;
+    if (!peer.Observe(14,{1.21f,0,1.21f},false,true) ||
+        !peer.Observe(18,{1.51f,0,1.51f},false,true,true) ||
+        !peer.Observe(19,{41.f,0,41.f},false,true,true)) return false;
+    std::cout << "peer_dodge_interpolation=1 exit_interpolation=1 teleport_snap=1\n";
+    return true;
+}
+
 bool VerifyPeerPresentation() {
     using Mistwatch::RiverbankPeerPresentation;
     RiverbankPeerPresentation peer;
@@ -280,7 +295,7 @@ bool VerifyPeerPresentation() {
 
 int main(int argc, char** argv) {
     if (argc != 2) return 1;
-    if (!VerifyPeerPresentation()) return 23;
+    if (!VerifyPeerPresentation() || !VerifyPeerDodgePresentation()) return 23;
     const auto asset = Mistwatch::LoadRiverbankAvatarAsset(argv[1]);
     const Mistwatch::RiverbankAvatarMotion motion(asset);
     if (motion.HasRunClip() && !VerifyRunPlayback(motion, asset)) return 24;

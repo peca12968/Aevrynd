@@ -94,7 +94,7 @@ bool RiverbankEncounter::ReturnToCamp(std::uint64_t id, std::uint64_t sequence) 
     player.request.reset();
     player.position = ArenaPosition{};
     player.status.health = CombatStatsFor(player.status.playerClass).health;
-    player.guardTicks = 0;
+    player.guardTicks = player.dodgeTicks = 0;
     player.status.guarding = false;
     // 回營地放棄這一輪戰鬥的參與資格，已領取的戰利品與進度仍保留。
     player.contributed = false;
@@ -130,7 +130,7 @@ std::optional<SuspendedRiverbankCombat> RiverbankEncounter::Suspend(std::uint64_
     const auto player = party.find(id);
     if (player == party.end()) return std::nullopt;
     return SuspendedRiverbankCombat{player->second.status, player->second.contributed ? Boss().run : 0,
-                                    player->second.fieldContributionRun};
+                                    player->second.fieldContributionRun, player->second.dodgeCooldown};
 }
 
 bool RiverbankEncounter::RestoreCombat(std::uint64_t id, const SuspendedRiverbankCombat& saved, std::uint64_t elapsedTicks) {
@@ -146,6 +146,7 @@ bool RiverbankEncounter::RestoreCombat(std::uint64_t id, const SuspendedRiverban
     status.resource = static_cast<unsigned>((std::min)(std::uint64_t(MaxResource), saved.status.resource + recovered));
     status.attackCooldown = cooldown(saved.status.attackCooldown);
     status.skillCooldown = cooldown(saved.status.skillCooldown);
+    player->second.dodgeCooldown = cooldown(saved.dodgeCooldown);
     player->second.contributed = Boss().phase != EncounterPhase::Defeated && saved.contributionRun == Boss().run;
     if (Field().phase != EncounterPhase::Defeated && saved.fieldContributionRun == Field().run)
         player->second.fieldContributionRun = saved.fieldContributionRun;
@@ -168,10 +169,33 @@ ArenaPosition RiverbankEncounter::ConstrainPlayerMovement(ArenaPosition from,Are
     return {allowed.x,allowed.z};
 }
 
+bool RiverbankEncounter::StartDodge(std::uint64_t id, std::uint64_t sequence, ArenaPosition direction) {
+    const auto entry = party.find(id);
+    const auto length = std::hypot(direction.x, direction.z);
+    if (entry == party.end() || !sequence || sequence <= entry->second.sequence ||
+        !std::isfinite(length) || length == 0.f) return false;
+    auto& player = entry->second;
+    if (player.request) return false;
+    player.sequence = sequence;
+    if (!player.position || !player.status.health || player.dodgeCooldown || player.status.resource < DodgeCost) return false;
+
+    player.status.resource -= DodgeCost;
+    player.dodgeTicks = DodgeTicks;
+    player.dodgeCooldown = DodgeCooldownTicks;
+    player.dodgeStep = {direction.x / length * DodgeStepMeters, direction.z / length * DodgeStepMeters};
+    return true;
+}
+
+std::optional<ArenaPosition> RiverbankEncounter::DodgeStep(std::uint64_t id) const {
+    const auto entry = party.find(id);
+    if (entry == party.end() || !entry->second.status.health || !entry->second.dodgeTicks) return {};
+    return entry->second.dodgeStep;
+}
+
 bool RiverbankEncounter::Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally) {
     const auto player = party.find(id);
     if (player == party.end() || !sequence || sequence <= player->second.sequence || player->second.request ||
-        (action != RiverbankAction::Attack && action != RiverbankAction::ClassSkill) ||
+        player->second.dodgeTicks || (action != RiverbankAction::Attack && action != RiverbankAction::ClassSkill) ||
         (ally && (action != RiverbankAction::ClassSkill || player->second.status.playerClass != RiverbankClass::Priest))) return false;
     player->second.sequence = sequence;
     player->second.request = Request{action, ally};
@@ -307,6 +331,10 @@ void RiverbankEncounter::Tick(std::span<const SupportMembership> groups) {
     }
     Advance(northBank, bossDamage);
     Advance(pasture, fieldDamage);
+    for (auto& [id, participant] : party) {
+        if (participant.dodgeTicks) --participant.dodgeTicks;
+        if (participant.dodgeCooldown) --participant.dodgeCooldown;
+    }
 }
 
 void RiverbankEncounter::Advance(Site& site, unsigned damage) {
@@ -325,7 +353,7 @@ void RiverbankEncounter::Advance(Site& site, unsigned damage) {
         if (--boss.phaseTicks == 0) {
             for (auto& [id, victim] : party) {
                 auto& status = victim.status;
-                if (!status.health || !victim.position || !site.Contains(*victim.position) ||
+                if (!status.health || victim.dodgeTicks || !victim.position || !site.Contains(*victim.position) ||
                     !InRange(victim, boss.strikeCenter, site.field ? FieldStrikeRadius : StrikeRadius) ||
                     !RiverbankStructureMovement::HasLine(boss.position,*victim.position)) continue;
                 const auto guardedHit = site.field ? 8u : victim.bossGear ? RiverbankBossGearStats::GuardDamageTaken : 16u;

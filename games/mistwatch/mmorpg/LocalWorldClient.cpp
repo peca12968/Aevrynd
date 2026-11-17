@@ -403,6 +403,7 @@ RiverbankClass LocalWorldClient::SelectedClass() const noexcept {
 #ifdef AEVRYND_MISTWATCH_BATTLE
 bool LocalWorldClient::RequestBattleAction(RiverbankAction action) {
     const auto* battle = Battle();
+    if (action == RiverbankAction::Dodge) return false;
     const bool returnToCamp = action == RiverbankAction::ReturnToCamp;
     if (!battle || state_->nextActionSequence == (std::numeric_limits<std::uint64_t>::max)() ||
         (returnToCamp ? !CanReturnToCamp() : !battle->player.health)) return false;
@@ -410,6 +411,28 @@ bool LocalWorldClient::RequestBattleAction(RiverbankAction action) {
     if (!state_->peer->Queue(message)) return false;
     ++state_->nextActionSequence;
     return true;
+}
+
+bool LocalWorldClient::RequestDodge(std::int16_t x, std::int16_t z) {
+    using namespace RiverbankBattleWire;
+    const auto* battle = Battle();
+    if (!CanDodge() || !battle || !battle->player.health || (!x && !z) ||
+        state_->nextActionSequence == (std::numeric_limits<std::uint64_t>::max)()) return false;
+    const auto message = EncodeAction({state_->nextActionSequence, PackDodgeDirection(x,z), RiverbankAction::Dodge});
+    if (!state_->peer->Queue(message)) return false;
+    ++state_->nextActionSequence;
+    return true;
+}
+
+bool LocalWorldClient::CanDodge() const noexcept {
+    return state_->Supports(RiverbankBattleWire::DodgeCapability);
+}
+
+bool LocalWorldClient::IsDodging() const noexcept {
+    const auto* snapshot = Snapshot();
+    return snapshot && std::ranges::any_of(snapshot->entities, [](const auto& actor) {
+        return (actor.flags & 1u) && (actor.flags & RiverbankBattleWire::DodgingEntityFlag);
+    });
 }
 
 bool LocalWorldClient::HasStructureCover() const noexcept {

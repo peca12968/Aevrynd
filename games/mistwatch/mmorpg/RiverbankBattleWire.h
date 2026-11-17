@@ -12,9 +12,23 @@ constexpr std::size_t HeaderBytes = Magic.size() + 2;
 inline constexpr std::uint32_t CampReturnCapability = 1u << 18;
 inline constexpr std::uint32_t StructureCoverCapability = 1u << 24;
 inline constexpr std::uint32_t DownedEntityFlag = 1u << 19;
+inline constexpr std::uint32_t DodgeCapability = 1u << 25;
+inline constexpr std::uint32_t DodgingEntityFlag = 1u << 26;
+
+inline std::uint64_t PackDodgeDirection(std::int16_t x, std::int16_t z) {
+    return std::uint64_t(std::bit_cast<std::uint16_t>(x)) |
+           (std::uint64_t(std::bit_cast<std::uint16_t>(z)) << 16);
+}
+
+inline std::optional<ArenaPosition> UnpackDodgeDirection(std::uint64_t payload) {
+    if (!payload || (payload >> 32)) return {};
+    return ArenaPosition{float(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(payload))),
+                         float(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(payload >> 16)))};
+}
 enum class Kind : std::uint8_t { Action = 1, Encounter = 2 };
 
 struct Action {
+    // 職業技能使用隊友 ID，閃避使用兩個 16 位元水平分量。
     std::uint64_t sequence{}, ally{};
     RiverbankAction kind{};
 };
@@ -82,8 +96,11 @@ inline std::optional<Action> DecodeAction(std::span<const std::byte> frame) {
     if (!detail::Accept(frame, ActionBytes, Kind::Action)) return std::nullopt;
     auto* in = frame.data() + HeaderBytes;
     const Action value{detail::Read<std::uint64_t>(in), detail::Read<std::uint64_t>(in), RiverbankAction(*in)};
-    if (!value.sequence || (value.kind != RiverbankAction::Attack && value.kind != RiverbankAction::ClassSkill &&
-        (value.kind != RiverbankAction::ReturnToCamp || value.ally))) return std::nullopt;
+    if (!value.sequence) return std::nullopt;
+    if (value.kind == RiverbankAction::Dodge)
+        return UnpackDodgeDirection(value.ally) ? std::optional{value} : std::nullopt;
+    if (value.kind != RiverbankAction::Attack && value.kind != RiverbankAction::ClassSkill &&
+        (value.kind != RiverbankAction::ReturnToCamp || value.ally)) return std::nullopt;
     return value;
 }
 

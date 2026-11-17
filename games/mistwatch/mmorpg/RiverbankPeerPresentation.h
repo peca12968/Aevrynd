@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RiverbankEncounter.h"
 #include <Aevrynd/Math.h>
 #include <algorithm>
 #include <cmath>
@@ -12,16 +13,19 @@ public:
     static constexpr float TickSeconds = .05f;
 
     // 只在已確認的兩點之間插值。停更時到達最後一點就停止。
-    [[nodiscard]] bool Observe(std::uint64_t tick, Aevrynd::Vec3 position, bool downed, bool supportsRun = false) {
+    [[nodiscard]] bool Observe(std::uint64_t tick, Aevrynd::Vec3 position, bool downed, bool supportsRun = false, bool dodging = false) {
         if (lastTick && tick <= *lastTick) return false;
         const auto step = position - target;
         const auto tickGap = lastTick ? tick - *lastTick : 0;
-        // 兩刻未收到快照時，跑步仍可在三刻的權威位移內補間。
-        const float limit = supportsRun && tickGap <= 3
-            ? std::max(.32f, .16f * static_cast<float>(tickGap) + .002f) : .32f;
+        // 閃避結束的快照可能涵蓋上一刻的短衝，仍以最近的權威標記限制插值。
+        const bool dodgeInterval = dodging || wasDodging;
+        const float speedLimit = dodgeInterval ? RiverbankEncounter::DodgeStepMeters : .16f;
+        const float limit = (supportsRun || dodgeInterval) && tickGap <= 3
+            ? std::max(.32f, speedLimit * static_cast<float>(tickGap) + .002f) : .32f;
         const bool snap = !lastTick || tickGap > 3 || std::hypot(step.x, step.z) > limit || downed != wasDowned;
         lastTick = tick;
         wasDowned = downed;
+        wasDodging = dodging;
         target = position;
         if (snap) {
             shown = target;
@@ -54,6 +58,6 @@ private:
     std::optional<std::uint64_t> lastTick;
     Aevrynd::Vec3 shown{}, target{};
     float remaining{};
-    bool wasDowned{};
+    bool wasDowned{}, wasDodging{};
 };
 }

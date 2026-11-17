@@ -11,6 +11,7 @@
 #include "RiverbankGuildPanel.h"
 #include "RiverbankPartyPanel.h"
 #include "RiverbankPartyMarker.h"
+#include "RiverbankCombatFeedback.h"
 #include "RiverbankStructureMovement.h"
 #include "RiverbankTerritoryHud.h"
 #include "RiverbankGearPanel.h"
@@ -2007,7 +2008,12 @@ private:
             wchar_t campCapture[2]{};
             localWorldCampCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_CAMP_CAPTURE",campCapture,2)==1&&
                 campCapture[0]==L'1';
-            if(localWorldCampCapture&&localWorldArenaCapture)throw std::runtime_error("Incompatible camp and arena capture modes");
+            wchar_t dodgeCapture[2]{};
+            localWorldDodgeCapture=GetEnvironmentVariableW(L"AEVRYND_MISTWATCH_LOCAL_WORLD_DODGE_CAPTURE",dodgeCapture,2)==1&&
+                dodgeCapture[0]==L'1';
+            if((localWorldCampCapture&&localWorldArenaCapture)||
+               (localWorldDodgeCapture&&(localWorldCampCapture||localWorldArenaCapture||localWorldFieldCapture)))
+                throw std::runtime_error("Incompatible riverbank capture modes");
 #endif
         }
 #endif
@@ -4270,7 +4276,9 @@ private:
         if(Length(view.position-base.position)>.001f||Length(view.target-base.target)>.001f)riverbankCombatView=view;
     }
     Mistwatch::Boar fieldBoar;
+    Mistwatch::RiverbankCombatFeedback combatFeedback;
     bool localWorldArenaCapture{}, localWorldFieldCapture{}, localWorldCampCapture{};
+    bool localWorldDodgeCapture{}, dodgeCaptureSent{};
     enum class CampCapturePhase { Approach, DownedFrame, ReturnReady, ReturnSent, CampFrame };
     CampCapturePhase campCapturePhase=CampCapturePhase::Approach;
     std::uint64_t campFrameCount{};
@@ -4388,9 +4396,19 @@ private:
         if(!output)throw std::runtime_error("Arena screenshot receipt write failed");
     }
 
+    bool TryRiverbankDodge(const Input& input, std::int16_t x, std::int16_t z, float yaw) {
+        if(!input.Pressed('X')||!localWorld->CanDodge())return false;
+        if(!x&&!z){
+            x=static_cast<std::int16_t>(-std::sin(yaw)*32767.f);
+            z=static_cast<std::int16_t>(std::cos(yaw)*32767.f);
+        }
+        return localWorld->RequestDodge(x,z);
+    }
+
     void UpdateRiverbankBattle(bool focused, Input& input, float dt) {
         using Phase=Mistwatch::EncounterPhase;
         const auto* battle=localWorld->Battle();
+        combatFeedback.Update(battle,dt);
         if(!battle){battleBoarFeet.reset();return;}
         if(focused&&input.Pressed(VK_RETURN)&&localWorld->CanReturnToCamp())
             (void)localWorld->RequestBattleAction(Mistwatch::RiverbankAction::ReturnToCamp);
@@ -4488,10 +4506,31 @@ private:
         const auto priestSupport=grouped?"隊伍治療／救援":"治療／救援";
         const auto skill=player.playerClass==Mistwatch::RiverbankClass::Guardian?"挑釁護衛":
             player.playerClass==Mistwatch::RiverbankClass::Ranger?"連射":priestSupport;
-        const auto actions=player.health?"F 普攻  "+remaining(player.attackCooldown)+"　Q "+skill+"  "+remaining(player.skillCooldown):
+        const auto dodge=localWorld->CanDodge()?"　X 閃避":"";
+        const auto actions=player.health?"F 普攻  "+remaining(player.attackCooldown)+"　Q "+skill+"  "+remaining(player.skillCooldown)+dodge:
             (localWorld->CanReturnToCamp()?"你已倒地 · Enter 回營地 · 可等待祭司救援":
              grouped?"你已倒地，等待隊伍中的祭司救援":"你已倒地，等待附近的未組隊祭司救援");
-        draw.SystemText({20,157},actions,15.f,{.82f,.90f,.86f,1});
+        draw.SystemText({20,153},actions,15.f,{.82f,.90f,.86f,1});
+        std::string notice;
+        const int healthChange=combatFeedback.HealthDelta();
+        if(combatFeedback.Recovered())notice="恢復行動";
+        else if(healthChange<0)notice="受傷 "+std::to_string(healthChange);
+        else if(healthChange>0)notice="生命 +"+std::to_string(healthChange);
+        using FeedbackAction=Mistwatch::RiverbankCombatFeedback::Action;
+        const auto action=combatFeedback.LatestAction();
+        if(action!=FeedbackAction::None){
+            if(!notice.empty())notice+=" · ";
+            if(action==FeedbackAction::Attack)notice+="普攻命中";
+            else notice+=std::string(skill)+"成功";
+        }
+        if(localWorld->IsDodging()){
+            if(!notice.empty())notice+=" · ";
+            notice+="閃避中";
+        }
+        if(!notice.empty()){
+            const auto color=healthChange<0?Color{1,.68f,.60f,1}:Color{.62f,.94f,.77f,1};
+            draw.SystemText({20,175},notice,15.f,color);
+        }
         using Phase=Mistwatch::EncounterPhase;
         using Hunt=Mistwatch::RiverbankEncounter;
         if(const auto* report=localWorld->FieldHunt()){
@@ -4669,6 +4708,15 @@ private:
 #endif
 #endif
         localWorldStatus=localWorld->Poll(moveX,moveZ,focused&&input.Down(VK_SHIFT));
+#ifdef AEVRYND_MISTWATCH_BATTLE
+        if(localWorldDodgeCapture&&!dodgeCaptureSent&&localWorldStatus==Mistwatch::LocalWorldClient::Status::Ready&&
+           localWorld->Battle()&&localWorld->CanDodge()){
+            Input key;
+            key.SetKey('X',true);
+            if(!TryRiverbankDodge(key,0,0,yaw))throw std::runtime_error("Could not submit X for dodge capture");
+            dodgeCaptureSent=true;
+        }else if(focused)(void)TryRiverbankDodge(input,moveX,moveZ,yaw);
+#endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if(localWorldGuildCapture&&localWorld->CanUseGuild())riverbankGuild.OpenForCapture();
         riverbankGuild.Update(input,*localWorld);
@@ -4903,6 +4951,7 @@ private:
 #ifdef AEVRYND_MISTWATCH_BATTLE
             if(localWorldArenaCapture)captureReady=captureReady&&CaptureSharedWindup();
             if(localWorldFieldCapture)captureReady=captureReady&&CaptureSharedField();
+            if(localWorldDodgeCapture)captureReady=captureReady&&dodgeCaptureSent&&localWorld->IsDodging();
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
             const auto* gearReply=localWorld->Gear();
@@ -4920,6 +4969,18 @@ private:
 #ifdef AEVRYND_MISTWATCH_BATTLE
                 if(localWorldArenaCapture)SaveSharedWindupReceipt();
                 if(localWorldFieldCapture)SaveSharedFieldReceipt();
+                if(localWorldDodgeCapture){
+                    const auto* snapshot=localWorld->Snapshot();
+                    if(!snapshot)throw std::runtime_error("Dodge capture is missing the authority snapshot");
+                    auto receipt=localWorldScreenshot;
+                    receipt+=L".dodge.txt";
+                    if(std::filesystem::exists(receipt))throw std::runtime_error("Dodge capture receipt already exists");
+                    std::ofstream out(receipt);
+                    out<<"epoch="<<snapshot->sessionEpoch<<"\ntick="<<snapshot->serverTick
+                       <<"\nplayer="<<localWorld->PlayerId()<<"\nkey=X\n";
+                    out.close();
+                    if(!out)throw std::runtime_error("Dodge capture receipt write failed");
+                }
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
                 if(localWorldGuildCapture){

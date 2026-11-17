@@ -40,17 +40,17 @@ def character_ticket(slot, scope=None):
         return ticket
 
 
-def smoke_connection(port, epoch, node=None):
-    connection = tailnet.open_peer(node.address, node.address, port) if node else connect(port)
-    with closing(connection) as peer:
-        received, player = hello(peer)
-        login_request(peer, token_bytes(32), 1)
-        if login_response(peer) != 1:
-            raise RuntimeError('無法建立測試角色')
-        tick, positions, _, roles = snapshot_with_classes(peer, received, player)
-        if received != epoch or player not in positions or roles.get(player) != 1:
-            raise RuntimeError('本機角色連線驗證失敗')
-        return {'player': player, 'snapshot_tick': tick}
+def smoke_connection(peer, expected_epoch=None):
+    epoch, player = hello(peer)
+    if expected_epoch is not None and epoch != expected_epoch:
+        raise RuntimeError('連線抵達不同的河岸世界')
+    login_request(peer, token_bytes(32), 1)
+    if login_response(peer) != 1:
+        raise RuntimeError('無法建立測試角色')
+    tick, positions, _, roles = snapshot_with_classes(peer, epoch, player)
+    if not tick or player not in positions or roles.get(player) != 1:
+        raise RuntimeError('世界快照沒有已登入的測試角色')
+    return {'epoch': epoch, 'player': player, 'snapshot_tick': tick}
 
 
 @contextmanager
@@ -84,10 +84,15 @@ def run(args, session):
     local_node, server_node = tailnet.network_nodes(args.join_tailnet) if args.share_tailnet or args.join_tailnet else (None, None)
     with ExitStack() as resources:
         server = relay = None
+        smoke = None
         if args.join_tailnet:
             port = args.port
             with closing(tailnet.open_peer(local_node.address, server_node.address, port)) as peer:
-                epoch, _ = hello(peer)
+                if args.check_server:
+                    smoke = smoke_connection(peer)
+                    epoch = smoke['epoch']
+                else:
+                    epoch, _ = hello(peer)
         else:
             if args.share_tailnet and args.port and tailnet.port_reserved(tailnet.tailscale('serve', 'status', '--json'), args.port):
                 raise RuntimeError('該連接埠已有 Tailscale 服務，請改用其他連接埠')
@@ -117,9 +122,14 @@ def run(args, session):
             report['room_capacity'] = args.capacity or 16
         if server_node:
             report['tailnet_address'] = server_node.address
+        if args.join_tailnet and args.check_server:
+            report['separate_tailnet_device'] = local_node.profile_scope != server_node.profile_scope
         if args.check_server:
             if server:
-                report.update(smoke_connection(port, epoch, local_node if relay else None))
+                connection = tailnet.open_peer(local_node.address, local_node.address, port) if relay else connect(port)
+                with closing(connection) as peer:
+                    smoke = smoke_connection(peer, epoch)
+            report.update(smoke)
             print(json.dumps(report), flush=True)
             write_launch_report(session, report)
             return
@@ -146,7 +156,7 @@ def main():
     parser.add_argument('--client', type=Path, help='Aevrynd-Mistwatch-Local-World.exe 的路徑')
     parser.add_argument('--data', required=True, type=Path, help='多人存檔與啟動記錄的資料夾')
     parser.add_argument('--two', action='store_true', help='同時開啟兩個遊戲視窗')
-    parser.add_argument('--check-server', action='store_true', help='以隔離存檔測試連線')
+    parser.add_argument('--check-server', action='store_true', help='測試登入及快照。加入私網檢查時請使用專用測試房間')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--share-tailnet', action='store_true', help='遊戲執行時在現有 Tailscale 私有網路分享')
     mode.add_argument('--join-tailnet', type=tailnet.address, metavar='IP', help='加入這個 Tailscale IPv4 位址的河岸世界')
@@ -170,7 +180,7 @@ def main():
     session = Path(mkdtemp(prefix='riverbank-', dir=sessions))
     try:
         run(args, session)
-    except (AssertionError, Empty, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+    except (AssertionError, Empty, EOFError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         (session / 'launch-error.txt').write_text(str(error) + '\n', encoding='utf-8')
         print(f'{error}\n{session}', file=sys.stderr)
         return 1

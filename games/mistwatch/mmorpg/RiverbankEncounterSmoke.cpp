@@ -1,5 +1,6 @@
 #include "RiverbankEncounter.h"
 #include "RiverbankBattleWire.h"
+#include "RiverbankCombatFeedback.h"
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -260,6 +261,99 @@ void BossGearChangesSkillResults() {
     Require(arena.Player(1)->health == 114, "Equipped guardian did not mitigate the guarded strike");
 }
 
+void FeedbackUsesFreshAuthoritativeSnapshots() {
+    using Action = RiverbankCombatFeedback::Action;
+    RiverbankCombatFeedback feedback;
+    RiverbankBattleWire::Encounter frame{7, 50, 9, {RiverbankClass::Ranger, 105, 100, 0, 0, 0, false}, {}};
+    feedback.Update(&frame, .05f);
+    Require(!feedback.HealthDelta() && feedback.LatestAction() == Action::None, "First sync reported old combat");
+
+    ++frame.tick;
+    frame.player.health = 59;
+    feedback.Update(&frame, .05f);
+    Require(feedback.HealthDelta() == -46 && !feedback.Recovered(), "Server damage was not reported");
+    ++frame.tick;
+    frame.player.attackCooldown = CombatStatsFor(RiverbankClass::Ranger).attackCooldown;
+    feedback.Update(&frame, .05f);
+    Require(feedback.HealthDelta() == -46 && feedback.LatestAction() == Action::Attack, "Confirmed attack erased damage");
+    ++frame.tick;
+    --frame.player.attackCooldown;
+    frame.player.skillCooldown = CombatStatsFor(RiverbankClass::Ranger).skillCooldown;
+    frame.player.health = 99;
+    feedback.Update(&frame, .05f);
+    Require(feedback.HealthDelta() == 40 && feedback.LatestAction() == Action::Skill, "Heal or confirmed skill missing");
+
+    auto stale = frame;
+    --stale.tick;
+    stale.player.health = 1;
+    feedback.Update(&stale, RiverbankCombatFeedback::NoticeSeconds);
+    feedback.Update(&frame, .05f);
+    Require(!feedback.HealthDelta() && feedback.LatestAction() == Action::None, "Late or duplicate frame replayed feedback");
+    ++frame.tick;
+    frame.player.health = 0;
+    --frame.player.skillCooldown;
+    --frame.player.attackCooldown;
+    feedback.Update(&frame, .05f);
+    Require(feedback.HealthDelta() == -99 && feedback.LatestAction() == Action::None, "Cooldown decay reported an attack");
+    ++frame.tick;
+    frame.player.health = 42;
+    feedback.Update(&frame, .05f);
+    Require(feedback.HealthDelta() == 42 && feedback.Recovered(), "Standing again was not reported");
+
+    frame.tick += 8;
+    frame.player.health = 70;
+    feedback.Update(&frame, .05f);
+    Require(!feedback.HealthDelta() && !feedback.Recovered(), "Skipped snapshots reported old health changes");
+    ++frame.tick;
+    frame.player.health = 24;
+    feedback.Update(&frame, .05f);
+    Require(feedback.HealthDelta() == -46, "Coherent frame after a gap did not resume feedback");
+    ++frame.owner;
+    frame.player.health = 85;
+    feedback.Update(&frame, .05f);
+    Require(!feedback.HealthDelta(), "A reconnect attributed a new owner's health to the last actor");
+    feedback.Update(nullptr, .05f);
+    ++frame.epoch;
+    feedback.Update(&frame, .05f);
+    Require(!feedback.HealthDelta() && feedback.LatestAction() == Action::None, "New world replayed earlier combat");
+}
+
+void DodgeRejectsReplayAndAvoidsOnlyDuringItsWindow() {
+    RiverbankEncounter arena({0, 0});
+    Require(arena.Join(1, RiverbankClass::Guardian) && arena.Join(2, RiverbankClass::Ranger) &&
+            arena.SetPosition(1, {0, 1}) && arena.SetPosition(2, {0, 2}), "Dodge fixture failed");
+    Require(!arena.StartDodge(2, 1, {}), "Zero direction activated dodge");
+    arena.Tick();
+    Require(arena.Boss().phase == EncounterPhase::Windup && arena.Boss().target == 1, "Dodge fixture did not lock a strike");
+    for (unsigned t = 1; t < RiverbankEncounter::WindupTicks; ++t) arena.Tick();
+    Require(arena.StartDodge(2, 1, {32767.f, 32767.f}), "Dodge was not accepted");
+    const auto step = arena.DodgeStep(2);
+    Require(step && std::abs(std::hypot(step->x, step->z) - RiverbankEncounter::DodgeStepMeters) < .0001f,
+            "Diagonal input increased dodge speed");
+    Require(arena.Player(2)->resource == 70 && !arena.StartDodge(2, 2, {0, -1}) &&
+            !arena.Submit(2, 3, RiverbankAction::Attack), "Dodge allowed double debit or attacking during the dodge");
+
+    arena.Tick();
+    Require(arena.Boss().phase == EncounterPhase::Recovery && arena.Player(1)->health == 104 &&
+            arena.Player(2)->health == 105, "The shared strike did not distinguish the dodging player");
+
+    const auto saved = *arena.Suspend(2);
+    Require(arena.Leave(2) && arena.Join(3, RiverbankClass::Ranger) &&
+            arena.RestoreCombat(3, saved, 1) && arena.SetPosition(3, {0, 15}),
+            "Dodge reconnect fixture failed");
+    Require(!arena.DodgeStep(3) && !arena.StartDodge(3, 1, {1, 0}), "Reconnect restored movement or bypassed cooldown");
+    for (unsigned t = 0; t < RiverbankEncounter::DodgeCooldownTicks; ++t) arena.Tick();
+    Require(!arena.StartDodge(3, 1, {1, 0}) && arena.StartDodge(3, 2, {1, 0}), "Cooldown replay was accepted");
+
+    namespace Wire = RiverbankBattleWire;
+    const auto packed = Wire::PackDodgeDirection(-32767, 12345);
+    const auto decoded = Wire::DecodeAction(Wire::EncodeAction({3, packed, RiverbankAction::Dodge}));
+    const auto direction = decoded ? Wire::UnpackDodgeDirection(decoded->ally) : std::nullopt;
+    Require(direction && direction->x == -32767.f && direction->z == 12345.f, "Dodge direction did not round trip");
+    Require(!Wire::DecodeAction(Wire::EncodeAction({4, packed | (1ull << 32), RiverbankAction::Dodge})),
+            "Reserved bits were accepted in the dodge action");
+}
+
 void BattleWireRoundTrip() {
     namespace Wire = Mistwatch::RiverbankBattleWire;
     const auto action = Wire::EncodeAction({0x1000200030004000ull, 7, RiverbankAction::ClassSkill});
@@ -297,6 +391,10 @@ int main() {
         WorkshopWallBlocksPriestSupport();
         std::cout << "RIVERBANK_STRUCTURE_COVER_PASS attacks=2 support=2 boss_strike=1\n";
         BattleWireRoundTrip();
+        DodgeRejectsReplayAndAvoidsOnlyDuringItsWindow();
+        std::cout << "RIVERBANK_DODGE_RULES_PASS direction=1 cost=1 cooldown=1 replay=1 reconnect=1 strike=1\n";
+        FeedbackUsesFreshAuthoritativeSnapshots();
+        std::cout << "RIVERBANK_COMBAT_FEEDBACK_PASS damage=1 heal=1 revive=1 attack=1 skill=1 resync=1\n";
         BossGearChangesSkillResults();
         std::cout << "RIVERBANK_ENCOUNTER_RULES_PASS roles=3 windup=1 simultaneous_attacks=3 revive=1 reward_once=1 respawn=1 north_bank_boundary=1 wire=1\n";
     } catch (const std::exception& error) {

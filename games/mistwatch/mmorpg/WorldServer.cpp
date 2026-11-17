@@ -95,8 +95,11 @@ public:
             for (const auto& [id, peer] : peers_) {
                 if (peer.playerClass == RiverbankClass::None) continue;
                 const auto player = encounter_.Player(id);
-                using Mistwatch::RiverbankBattleWire::DownedEntityFlag;
-                if (!player || !world_.SetClientEntityFlags(id, peer.joinFlags | (player->health ? 0u : DownedEntityFlag)))
+                using namespace Mistwatch::RiverbankBattleWire;
+                auto flags = peer.joinFlags;
+                if (player && !player->health) flags |= DownedEntityFlag;
+                if (encounter_.DodgeStep(id)) flags |= DodgingEntityFlag;
+                if (!player || !world_.SetClientEntityFlags(id, flags))
                     throw std::runtime_error("Cannot publish Riverbank avatar stance");
             }
             world_.Tick([this](const ReplicationPlayerState3D& player,Vec3 delta){
@@ -111,6 +114,10 @@ public:
                 const auto structureSafe=Mistwatch::RiverbankStructureMovement::ClipStep(start,waterSafe);
                 const auto allowed=Mistwatch::RiverbankCrossing::LimitTerrainSegment(start,structureSafe);
                 return Vec3{allowed.x,0.f,allowed.z};
+            }, [this](const ReplicationPlayerState3D& player) -> std::optional<Vec3> {
+                const auto step = encounter_.DodgeStep(player.entity.low);
+                if (!step) return {};
+                return Vec3{step->x,0.f,step->z};
             });
 #else
             world_.Tick();
@@ -255,7 +262,13 @@ private:
 #endif
                 return world_.SetClientMovementEnabled(id, false) && world_.SetClientPosition(id, position);
             }
-            // Cooldown, range and duplicates are ordinary rejected actions, not connection errors.
+            if (action->kind == Mistwatch::RiverbankAction::Dodge) {
+                const auto direction = Mistwatch::RiverbankBattleWire::UnpackDodgeDirection(action->ally);
+                if (!direction) return false;
+                (void)encounter_.StartDodge(id, action->sequence, *direction);
+                return true;
+            }
+            // 冷卻、距離與重複操作由伺服器拒絕，連線仍維持。
             (void)encounter_.Submit(id, action->sequence, action->kind, action->ally);
             return true;
         }
@@ -278,7 +291,7 @@ private:
         auto flags = Mistwatch::RiverbankClassFlags(selected) | Mistwatch::RiverbankSprintCapability;
 #ifdef AEVRYND_MISTWATCH_BATTLE
         flags |= Mistwatch::RiverbankFieldWire::Capability | Mistwatch::RiverbankBattleWire::CampReturnCapability |
-            Mistwatch::RiverbankBattleWire::StructureCoverCapability;
+            Mistwatch::RiverbankBattleWire::StructureCoverCapability | Mistwatch::RiverbankBattleWire::DodgeCapability;
 #endif
 #ifdef AEVRYND_MISTWATCH_PROFILES
         if (profiles_) flags |= Mistwatch::RiverbankTrailSuppliesWire::Capability |

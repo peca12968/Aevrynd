@@ -30,6 +30,9 @@ public:
     RiverbankClass SelectedClass() const noexcept;
 #ifdef AEVRYND_MISTWATCH_BATTLE
     bool RequestBattleAction(RiverbankAction action);
+    bool RequestDodge(std::int16_t x, std::int16_t z);
+    bool CanDodge() const noexcept;
+    bool IsDodging() const noexcept;
     bool CanReturnToCamp() const noexcept;
     bool HasStructureCover() const noexcept;
     const RiverbankBattleWire::Encounter* Battle() const noexcept;

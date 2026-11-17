@@ -99,7 +99,8 @@ public:
                     continue;
                 }
                 if (player.peer.Observe(snapshot->serverTick, feet, downed,
-                    (entity.flags & RiverbankSprintCapability) != 0))
+                    (entity.flags & RiverbankSprintCapability) != 0,
+                    (entity.flags & RiverbankBattleWire::DodgingEntityFlag) != 0))
                     player.motion.ResetGait();
                 player.motion.AdvanceByTravel(player.peer.Advance(dt), dt, downed, motion.HasRunClip());
             }

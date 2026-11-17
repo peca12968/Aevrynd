@@ -11,7 +11,7 @@ struct ArenaPosition {
 };
 
 enum class EncounterPhase : std::uint8_t { Patrol, Pursuit, Windup, Recovery, Defeated };
-enum class RiverbankAction : std::uint8_t { Attack = 1, ClassSkill = 2, ReturnToCamp = 3 };
+enum class RiverbankAction : std::uint8_t { Attack = 1, ClassSkill = 2, ReturnToCamp = 3, Dodge = 4 };
 
 struct ClassCombatStats {
     unsigned health, attackDamage, attackCooldown, skillCost, skillCooldown;
@@ -36,6 +36,7 @@ struct EncounterPlayerStatus {
 struct SuspendedRiverbankCombat {
     EncounterPlayerStatus status;
     std::uint64_t contributionRun{}, fieldContributionRun{};
+    unsigned dodgeCooldown{};
 };
 
 struct RiverbankBossStatus {
@@ -48,6 +49,10 @@ struct RiverbankBossStatus {
 class RiverbankEncounter {
 public:
     static constexpr unsigned TicksPerSecond = 20;
+    static constexpr unsigned DodgeTicks = 6;
+    static constexpr unsigned DodgeCooldownTicks = TicksPerSecond;
+    static constexpr unsigned DodgeCost = 30;
+    static constexpr float DodgeStepMeters = .25f;
     static constexpr unsigned BossHealth = 330;
     static constexpr unsigned WindupTicks = 20;
     static constexpr float StrikeRadius = 2.4f;
@@ -76,6 +81,8 @@ public:
     bool Leave(std::uint64_t id);
     bool ReturnToCamp(std::uint64_t id, std::uint64_t sequence);
     bool SetPosition(std::uint64_t id, ArenaPosition position);
+    bool StartDodge(std::uint64_t id, std::uint64_t sequence, ArenaPosition direction);
+    std::optional<ArenaPosition> DodgeStep(std::uint64_t id) const;
     ArenaPosition ConstrainPlayerMovement(ArenaPosition from, ArenaPosition translation) const;
     bool Submit(std::uint64_t id, std::uint64_t sequence, RiverbankAction action, std::uint64_t ally = 0);
     struct SupportMembership {
@@ -94,7 +101,8 @@ private:
         std::optional<ArenaPosition> position;
         std::optional<Request> request;
         std::uint64_t sequence{};
-        unsigned guardTicks{};
+        unsigned guardTicks{}, dodgeTicks{}, dodgeCooldown{};
+        ArenaPosition dodgeStep{};
         std::uint64_t fieldContributionRun{};
         unsigned fieldHides{};
         bool contributed{}, bossGear{}, trailPack{};

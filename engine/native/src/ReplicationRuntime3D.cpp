@@ -8,9 +8,10 @@ bool Valid(const ReplicationRuntimeSettings3D&s){return s.tickRate&&s.maximumCli
 bool ChunkOf(GlobalPosition3D p,float size,std::pair<std::int64_t,std::int64_t>&out){if(!NormalizeGlobalPosition3D(p))return false;const long double x=static_cast<long double>(p.chunk.x)*32+p.offset.x,z=static_cast<long double>(p.chunk.z)*32+p.offset.z,cx=std::floor(x/size),cz=std::floor(z/size);if(cx<(std::numeric_limits<std::int64_t>::min)()||cx>(std::numeric_limits<std::int64_t>::max)()||cz<(std::numeric_limits<std::int64_t>::min)()||cz>(std::numeric_limits<std::int64_t>::max)())return false;out={static_cast<std::int64_t>(cx),static_cast<std::int64_t>(cz)};return true;}
 bool Contains(const std::set<std::pair<std::int64_t,std::int64_t>>&set,GlobalPosition3D p,float size){std::pair<std::int64_t,std::int64_t> key{};return ChunkOf(p,size,key)&&set.contains(key);}
 void Move(ReplicationPlayerState3D& state,const ReplicationInputCommand3D& input,float scale,
-          const ReplicationMovementConstraint3D& constraint={}) {
-    Vec3 delta{float(input.moveX)/32767.f*scale,0,float(input.moveZ)/32767.f*scale};
-    if(constraint&&(input.moveX||input.moveZ)){
+          const ReplicationMovementConstraint3D& constraint={},std::optional<Vec3> serverStep={}) {
+    Vec3 delta=serverStep.value_or(Vec3{float(input.moveX)/32767.f*scale,0,float(input.moveZ)/32767.f*scale});
+    if(delta.y!=0.f||!std::isfinite(delta.x)||!std::isfinite(delta.z))delta={};
+    if(constraint&&(delta.x!=0.f||delta.z!=0.f)){
         const auto proposal=constraint(state,delta);
         const auto squared=[](Vec3 v){return double(v.x)*v.x+double(v.z)*v.z;};
         const double proposed=squared(proposal);
@@ -92,7 +93,7 @@ void ReplicationServer3D::Receive(){
     }
 }
 void ReplicationServer3D::SendSnapshots(){for(auto&[id,c]:clients_){std::pair<std::int64_t,std::int64_t> center{};if(!ChunkOf(c.player.position,settings_.interestChunkSize,center)){++stats_.packetRejects;continue;}std::set<std::pair<std::int64_t,std::int64_t>> next;for(const auto&v:c.interest)if((std::max)(std::llabs(v.first-center.first),std::llabs(v.second-center.second))<=settings_.interestRetainRadius)next.insert(v);for(int z=-settings_.interestLoadRadius;z<=settings_.interestLoadRadius;++z)for(int x=-settings_.interestLoadRadius;x<=settings_.interestLoadRadius;++x)next.emplace(center.first+x,center.second+z);if(next!=c.interest){for(const auto&chunk:next)if(!c.interest.contains(chunk))++c.interestEntered;for(const auto&chunk:c.interest)if(!next.contains(chunk))++c.interestExited;c.interest=std::move(next);if(c.interestEpoch==(std::numeric_limits<std::uint64_t>::max)()){++stats_.packetRejects;continue;}++c.interestEpoch;}ReplicationSnapshot3D s{};s.sessionEpoch=sessionEpoch_;s.serverTick=tick_;s.clientId=id;s.interestEpoch=c.interestEpoch;s.originGeneration=1;s.baselineTick=c.ackSnapshotTick;const auto baseline=std::ranges::find_if(c.snapshots,[&](const auto&x){return x.serverTick==c.ackSnapshotTick;});s.full=c.ackSnapshotTick==0||baseline==c.snapshots.end();std::set<NetworkEntityId3D> visible;for(const auto&[otherId,other]:clients_){if(!Contains(c.interest,other.player.position,settings_.interestChunkSize))continue;visible.insert(other.player.entity);if(visible.size()>settings_.maximumSnapshotEntities){++stats_.packetRejects;break;}ReplicatedEntityState3D state{other.player.entity,other.player.position,other.player.velocity,other.entityFlags|(otherId==id?1u:0u)};bool changed=s.full;if(!changed){const auto previous=std::ranges::find_if(baseline->entities,[&](const auto&value){return value.id==state.id;});changed=previous==baseline->entities.end()||previous->position!=state.position||previous->velocity.x!=state.velocity.x||previous->velocity.y!=state.velocity.y||previous->velocity.z!=state.velocity.z||previous->flags!=state.flags;}if(changed)s.entities.push_back(state);}for(auto old:c.visible)if(!visible.contains(old))s.despawned.push_back(old);for(const auto entity:visible){if(!c.visible.contains(entity)&&c.everVisible.contains(entity))++c.entityReentries;c.everVisible.insert(entity);}c.entityDespawns+=s.despawned.size();c.visible=std::move(visible);std::vector<std::byte> bytes;if(s.entities.size()>settings_.maximumSnapshotEntities||!EncodeReplicationPacket3D(s,bytes)||!transport_.Send(endpoint_,c.endpoint,bytes)){++stats_.packetRejects;continue;}c.lastSnapshotEntities=s.entities.size();c.lastSnapshotDespawns=s.despawned.size();ReplicationSnapshot3D stored=s;stored.entities.clear();for(const auto&[otherId,other]:clients_)if(c.visible.contains(other.player.entity))stored.entities.push_back({other.player.entity,other.player.position,other.player.velocity,other.entityFlags|(otherId==id?1u:0u)});c.snapshots.push_back(std::move(stored));while(c.snapshots.size()>settings_.maximumSnapshotHistory)c.snapshots.pop_front();++stats_.snapshotsSent;if(s.full)++stats_.fullSnapshots;else ++stats_.deltaSnapshots;}}
-void ReplicationServer3D::Tick(const ReplicationMovementConstraint3D& constraint){
+void ReplicationServer3D::Tick(const ReplicationMovementConstraint3D& constraint,const ReplicationServerStep3D& serverStep){
     Receive();
     ++tick_;
     for(auto&[id,c]:clients_){
@@ -102,7 +103,8 @@ void ReplicationServer3D::Tick(const ReplicationMovementConstraint3D& constraint
             c.inputs.erase(found);
             c.lastInputTick=tick_;
         }
-        Move(c.player,input,settings_.movementPerTick*(input.sprint?settings_.sprintMovementMultiplier:1.f),constraint);
+        const auto step=serverStep&&c.movementEnabled?serverStep(c.player):std::nullopt;
+        Move(c.player,input,settings_.movementPerTick*(input.sprint?settings_.sprintMovementMultiplier:1.f),constraint,step);
     }
     SendSnapshots();
     ++stats_.ticks;

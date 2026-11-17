@@ -71,6 +71,10 @@ if(MISTWATCH_ENABLE_RIVERBANK_PROFILES)
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankCombatCover.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
   set_tests_properties(MistwatchRiverbankCombatCoverLoopbackTest PROPERTIES TIMEOUT 105 LABELS "mistwatch;combat;network")
+  add_test(NAME MistwatchRiverbankDodgeLoopbackTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankDodge.py"
+      "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
+  set_tests_properties(MistwatchRiverbankDodgeLoopbackTest PROPERTIES TIMEOUT 105 LABELS "mistwatch;combat;network")
   add_test(NAME MistwatchRiverbankWorldBoundsLoopbackTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/VerifyRiverbankWorldBounds.py"
       "$<TARGET_FILE:MistwatchWorldServer>" "${CMAKE_CURRENT_BINARY_DIR}")
